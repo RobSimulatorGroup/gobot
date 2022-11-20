@@ -5,7 +5,7 @@
    The above copyright notice and this permission notice shall be included in all copies or substantial portions of the Software.
 */
 
-#include "gobot/main/application.hpp"
+#include "../include/application.hpp"
 #include "gobot/log.hpp"
 
 #include <set>
@@ -13,7 +13,7 @@
 #define GLFW_INCLUDE_VULKAN
 #include <GLFW/glfw3.h>
 
-namespace gobot::main {
+namespace gobot::experiment {
 const uint32_t WIDTH = 800;
 const uint32_t HEIGHT = 600;
 

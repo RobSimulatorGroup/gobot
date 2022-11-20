@@ -12,7 +12,7 @@
 
 class GLFWwindow;
 
-namespace gobot::main {
+namespace gobot::experiment {
 
 class Application {
 public:
