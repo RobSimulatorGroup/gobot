@@ -23,7 +23,6 @@ using Method = rttr::method;
 using Argument = rttr::argument;
 
 
-
 using String = QString;
 using Uuid = QUuid;
 

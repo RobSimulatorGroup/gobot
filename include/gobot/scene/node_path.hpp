@@ -7,3 +7,20 @@
 */
 
 #pragma once
+
+#include "gobot/core/type_define.hpp"
+
+namespace gobot::scene {
+
+class NodePath {
+public:
+    NodePath();
+
+    bool IsAbsolute() const;
+
+private:
+    std::vector<core::String> path_;
+    bool absolute_;
+};
+
+}

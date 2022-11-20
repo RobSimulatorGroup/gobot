@@ -31,12 +31,12 @@ set(INCLUDE_DIR
         ${EIGEN3_INCLUDE_DIR})
 
 
-file(GLOB_RECURSE SOURCE_CORE CONFIGURE_DEPENDS "${CMAKE_CURRENT_SOURCE_DIR}/src/gobot/core/*.cpp")
-file(GLOB_RECURSE SOURCE_SCENE CONFIGURE_DEPENDS "${CMAKE_CURRENT_SOURCE_DIR}/src/gobot/scene/*.cpp")
-file(GLOB_RECURSE SOURCE_EDITOR CONFIGURE_DEPENDS "${CMAKE_CURRENT_SOURCE_DIR}/src/gobot/editor/*.cpp")
+file(GLOB_RECURSE SOURCE_CORE CONFIGURE_DEPENDS "src/gobot/core/*.cpp")
+file(GLOB_RECURSE SOURCE_SCENE CONFIGURE_DEPENDS "src/gobot/scene/*.cpp")
+file(GLOB_RECURSE SOURCE_EDITOR CONFIGURE_DEPENDS "src/gobot/editor/*.cpp")
 
-
-
+qt5_wrap_cpp(SOURCE_CORE "include/gobot/core/object.hpp")
+qt5_wrap_cpp(SOURCE_SCENE "include/gobot/scene/scene_tree.hpp")
 
 add_library(gobot SHARED ${SOURCE_CORE} ${SOURCE_SCENE})
 target_link_libraries(gobot

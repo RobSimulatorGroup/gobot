@@ -3,7 +3,7 @@
  * to deal in the Software without restriction, including without limitation the rights to use, copy, modify, merge, publish, distribute, sublicense,
  * and/or sell copies of the Software, and to permit persons to whom the Software is furnished to do so, subject to the following conditions:
  * The above copyright notice and this permission notice shall be included in all copies or substantial portions of the Software.
- * This file is created by Qiqi Wu, 22-11-6
+ * This file is created by Qiqi Wu, 22-11-20
 */
 
 #pragma once
@@ -12,14 +12,22 @@
 
 namespace gobot::scene {
 
-class Node : public core::Object {
-    GOBCLASS(Node, core::Object)
+class Node;
+
+class SceneTree : public core::Object {
+    Q_OBJECT
+    GOBCLASS(SceneTree, core::Object)
 public:
+    SceneTree();
 
-    Node();
+    Q_SIGNALS:
+    void treeChanged();
 
-private:
-    std::vector<Node> children_node_;
+    void nodeAdded(Node *node);
+
+    void nodeRemoved(Node *node);
+
+    void nodeRenamed(Node *node);
 
 };
 
