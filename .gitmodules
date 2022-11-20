@@ -1,0 +1,6 @@
+[submodule "3rdpart/spdlog"]
+	path = 3rdpart/spdlog
+	url = git@github.com:Wuqiqi123/spdlog.git
+[submodule "3rdpart/rttr"]
+	path = 3rdpart/rttr
+	url = https://github.com/Wuqiqi123/rttr.git
