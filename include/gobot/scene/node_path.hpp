@@ -8,7 +8,7 @@
 
 #pragma once
 
-#include "gobot/core/type_define.hpp"
+#include "gobot/core/types.hpp"
 
 namespace gobot::scene {
 
