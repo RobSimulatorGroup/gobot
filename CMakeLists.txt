@@ -1,6 +1,10 @@
 cmake_minimum_required (VERSION 3.15)
 project (gobot)
 
+set(CMAKE_CXX_STANDARD 17)
+set(CMAKE_CXX_STANDARD_REQUIRED ON)
+set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -std=c++17")
+
 include(cmake/CPM.cmake)
 
 if(PROJECT_SOURCE_DIR STREQUAL PROJECT_BINARY_DIR)
@@ -12,17 +16,9 @@ endif()
 
 add_subdirectory(3rdpart)
 
-find_package(spdlog REQUIRED)
 find_package(Qt5 COMPONENTS Core Gui Widgets REQUIRED)
 
-set(CMAKE_CXX_STANDARD 17)
-set(CMAKE_CXX_STANDARD_REQUIRED ON)
-set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -std=c++17")
-
-
 find_package (Eigen3 3.3 REQUIRED)
-
-find_package(Qt5 COMPONENTS Core Widgets REQUIRED)
 
 set(INCLUDE_DIR
         include
