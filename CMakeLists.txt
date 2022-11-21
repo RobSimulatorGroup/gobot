@@ -13,7 +13,6 @@ endif()
 add_subdirectory(3rdpart)
 
 find_package(spdlog REQUIRED)
-find_package(Vulkan REQUIRED)
 find_package(Qt5 COMPONENTS Core Gui Widgets REQUIRED)
 
 set(CMAKE_CXX_STANDARD 17)
