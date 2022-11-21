@@ -5,6 +5,9 @@ set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -std=c++17")
 
+option(BUILD_EXPERIMENT "using imgui and glfw" OFF)
+option(BUILD_TESTS "build tests" OFF)
+
 include(cmake/CPM.cmake)
 
 if(PROJECT_SOURCE_DIR STREQUAL PROJECT_BINARY_DIR)
@@ -51,9 +54,15 @@ target_link_libraries(gobot_editor
         nlohmann_json
         )
 
-option(BUILD_EXPERIMENT "using imgui and glfw" OFF)
+
 if (BUILD_EXPERIMENT)
     add_subdirectory(experiment)
 endif ()
+
+if (BUILD_TESTS)
+    enable_testing()
+    add_subdirectory(tests)
+endif ()
+
 
 
