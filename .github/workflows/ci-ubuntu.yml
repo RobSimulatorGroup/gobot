@@ -19,15 +19,8 @@ jobs:
 
     steps:
     - uses: actions/checkout@v3
-
-    - name: executing remote ssh commands using password
-      uses: appleboy/ssh-action@master
-      with:
-        host: ${{ secrets.HOST }}
-        username: ${{ secrets.USERNAME }}
-        password: ${{ secrets.PASSWORD }}
-        port: ${{ secrets.PORT }}
-        script: whoami
+      submodules: 'true'
+      token: ${{ secrets.PAT_TOKEN }}
 
     - name: Update Submodules
       run: git submodule update --init --recursive
