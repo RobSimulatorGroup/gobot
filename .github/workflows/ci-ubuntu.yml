@@ -19,9 +19,8 @@ jobs:
 
     steps:
     - uses: actions/checkout@v3
-
-    - name: Update Submodules
-      run: git submodule update --init --recursive
+      with:
+        submodules: 'true'
 
     - name: Install Qt
       uses: jurplel/install-qt-action@v3
