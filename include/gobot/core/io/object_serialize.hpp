@@ -8,7 +8,6 @@
 
 namespace gobot::io {
 
-
 core::Varint ObjectFromJson(const core::Type& type,  const core::Json& json);
 
 core::Json ObjectToJson(rttr::instance obj);
