@@ -1,9 +1,9 @@
-cmake_minimum_required (VERSION 3.15)
+cmake_minimum_required (VERSION 3.23)
 project (gobot)
 
-set(CMAKE_CXX_STANDARD 17)
+set(CMAKE_CXX_STANDARD 20)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
-set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -std=c++17")
+set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -std=c++20")
 
 option(BUILD_EXPERIMENT "using imgui and glfw" OFF)
 option(BUILD_TESTS "build tests" OFF)
@@ -41,6 +41,7 @@ target_link_libraries(gobot
         spdlog::spdlog
         Qt5::Core
         RTTR::Core
+        nlohmann_json
 )
 target_include_directories(gobot PUBLIC ${INCLUDE_DIR})
 
@@ -51,7 +52,6 @@ target_link_libraries(gobot_editor
         PUBLIC
         gobot
         Qt5::Widgets
-        nlohmann_json
         )
 
 

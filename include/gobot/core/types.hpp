@@ -7,6 +7,7 @@
 #include <rttr/variant.h>
 #include <QString>
 #include <QUuid>
+#include <nlohmann/json.hpp>
 
 namespace gobot::core {
 
@@ -21,5 +22,7 @@ using Argument = rttr::argument;
 
 using String = QString;
 using Uuid = QUuid;
+
+using Json = nlohmann::json;
 
 }
