@@ -32,5 +32,8 @@
 *.app
 
 cmake-build-debug/
+out/
 
 .idea
+.vs
+CMakeSettings.json

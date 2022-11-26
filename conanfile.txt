@@ -1,0 +1,15 @@
+[requires]
+qt/5.15.7
+eigen/3.4.0
+spdlog/1.11.0
+nlohmann_json/3.11.2
+pybind11/2.10.0
+
+[generators]
+qt
+cmake
+cmake_find_package_multi
+cmake_paths
+
+[options]
+qt:shared=True
