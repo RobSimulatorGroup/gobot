@@ -37,6 +37,9 @@ if (NOT EXISTS ${CMAKE_BINARY_DIR}/conanbuildinfo.cmake)
         conan_cmake_profile(FILEPATH      "${CMAKE_BINARY_DIR}/profile"
                             SETTINGS      ${settings}
                             CONF          tools.system.package_manager:mode=install)
+
+        message(${settings})
+
         conan_cmake_install(PATH_OR_REFERENCE ${PROJECT_SOURCE_DIR}
                             BUILD missing
                             REMOTE conancenter
