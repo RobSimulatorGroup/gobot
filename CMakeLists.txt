@@ -10,7 +10,7 @@ option(BUILD_TESTS "build tests" OFF)
 if (NOT EXISTS ${CMAKE_BINARY_DIR}/conanbuildinfo.cmake)
     if (NOT EXISTS "${CMAKE_BINARY_DIR}/conan.cmake")
         message(STATUS "Downloading conan.cmake from https://github.com/conan-io/cmake-conan")
-        file(DOWNLOAD "https://raw.githubusercontent.com/conan-io/cmake-conan/develop/conan.cmake" "${CMAKE_BINARY_DIR}/conan.cmake")
+        file(DOWNLOAD "https://raw.githubusercontent.com/wuyingnan/cmake-conan/develop/conan.cmake" "${CMAKE_BINARY_DIR}/conan.cmake")
     endif ()
     include(${CMAKE_BINARY_DIR}/conan.cmake)
     if (CONAN_PROFILE_BUILD AND CONAN_PROFILE_HOST)
@@ -35,6 +35,7 @@ if (NOT EXISTS ${CMAKE_BINARY_DIR}/conanbuildinfo.cmake)
         endif ()
 
         conan_cmake_profile(FILEPATH      "${CMAKE_BINARY_DIR}/profile"
+                            INCLUDE       default
                             SETTINGS      ${settings}
                             CONF          tools.system.package_manager:mode=install)
 
