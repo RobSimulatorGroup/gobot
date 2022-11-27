@@ -14,15 +14,18 @@ if (NOT EXISTS ${CMAKE_BINARY_DIR}/conanbuildinfo.cmake)
     endif ()
     include(${CMAKE_BINARY_DIR}/conan.cmake)
     if (CONAN_PROFILE_BUILD AND CONAN_PROFILE_HOST)
-    conan_cmake_install(PATH_OR_REFERENCE .. BUILD missing
-                        SETTINGS_HOST build_type=${CMAKE_BUILD_TYPE}
-                        SETTINGS_BUILD build_type=${CMAKE_BUILD_TYPE}
-                        PROFILE_BUILD ${CONAN_PROFILE_BUILD}
-                        PROFILE_HOST ${CONAN_PROFILE_HOST})
-                        # ENV_HOST CONAN_CMAKE_TOOLCHAIN_FILE=${CMAKE_TOOLCHAIN_FILE})
+        conan_cmake_install(PATH_OR_REFERENCE .. BUILD missing
+                            SETTINGS_HOST build_type=${CMAKE_BUILD_TYPE}
+                            SETTINGS_BUILD build_type=${CMAKE_BUILD_TYPE}
+                            PROFILE_BUILD ${CONAN_PROFILE_BUILD}
+                            PROFILE_HOST ${CONAN_PROFILE_HOST})
+                            # ENV_HOST CONAN_CMAKE_TOOLCHAIN_FILE=${CMAKE_TOOLCHAIN_FILE})
     else ()
         conan_cmake_autodetect(settings)
-        conan_cmake_install(PATH_OR_REFERENCE ${PROJECT_SOURCE_DIR} BUILD missing SETTINGS ${settings})
+        conan_cmake_profile(FILEPATH      "${CMAKE_BINARY_DIR}/profile"
+                            SETTINGS      ${settings}
+                            CONF          tools.system.package_manager:mode=install)
+        conan_cmake_install(PATH_OR_REFERENCE ${PROJECT_SOURCE_DIR} BUILD missing PROFILE "${CMAKE_BINARY_DIR}/profile")
     endif ()
 endif ()
 
