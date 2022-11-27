@@ -6,6 +6,7 @@
 
 #include "gobot/core/types.hpp"
 #include "gobot/core/marcos.hpp"
+#include "gobot/notification_enum.hpp"
 #include <rttr/rttr_enable.h>
 
 #include <QObject>
@@ -19,7 +20,7 @@ protected:                                                                      
     static FORCE_INLINE auto GetNotificationCallback() -> void(Object::*)(int) {                    \
          return (void(Object::*)(int)) &Class::NotificationCallBack;                                \
     }                                                                                               \
-    void NotificationImpl(int notification, bool reversed) override {                               \
+    void NotificationImpl(NotificationType notification, bool reversed) override {                  \
         if (!reversed) { BaseClass::NotificationImpl(notification, reversed); }                     \
                                                                                                     \
 	    if (Class::GetNotificationCallback() != BaseClass::GetNotificationCallback()) {             \
@@ -113,6 +114,20 @@ public:
 
     Object();
 
+    [[nodiscard]] std::string_view GetClassName() const { return get_type().get_name().data(); }
+
+    template <typename T, typename... Args>
+    static std::enable_if_t<std::is_base_of_v<Object, T>, T*> New(Args&&... args) {
+        auto* obj = new T(std::forward<Args>(args)...);
+        return obj->PostNew();
+    }
+
+    template <typename T, typename = std::enable_if_t<std::is_base_of_v<Object, T>>>
+    static void Delete(T* object) {
+        object->PreDelete();
+        delete object;
+    }
+
     template <class T>
     static T *CastTo(Object *object) {
         return dynamic_cast<T *>(object);
@@ -132,17 +147,24 @@ protected:
         return &Object::NotificationCallBack;
     }
 
-    virtual void NotificationImpl(int notification, bool reversed) {
+    virtual void NotificationImpl(NotificationType notification, bool reversed) {
     }
 
 
 public:
     // Notification
-    void Notification(int notification, bool reversed = false) {
+    void Notification(NotificationType notification, bool reversed = false) {
         NotificationImpl(notification, reversed);
     }
 
+private:
+    void PostNew() {
+        Notification(NotificationType::PostNew);
+    }
 
+    void PreDelete() {
+        Notification(NotificationType::PreDelete, true);
+    }
 
 };
 

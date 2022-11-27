@@ -41,9 +41,9 @@ public:
         sink_list.push_back(console_sink);
 
         // add rotate file sink
-        auto rotating_sink = std::make_shared<spdlog::sinks::rotating_file_sink_mt>("rs.log", 1024 * 1024,
+        auto rotating_sink = std::make_shared<spdlog::sinks::rotating_file_sink_mt>("gobot.log", 1024 * 1024,
                                                                                5, false);
-        logger_ = std::make_shared<spdlog::logger>("RS", begin(sink_list), end(sink_list));
+        logger_ = std::make_shared<spdlog::logger>("GOBOT", begin(sink_list), end(sink_list));
         sink_list.push_back(rotating_sink);
 
         sink_list[0]->set_pattern("%^[%T] %n: %v%$");
@@ -72,9 +72,9 @@ private:
 #define SPDLOG_STR_H(x) #x
 #define SPDLOG_STR_HELPER(x) SPDLOG_STR_H(x)
 
-#define LOG_TRACE(...) rs::Logger::getInstance().getLogger()->trace("[" __FILE__ ":" SPDLOG_STR_HELPER(__LINE__) "] ", __VA_ARGS__)
-#define LOG_DEBUG(...) rs::Logger::getInstance().getLogger()->debug("[" __FILE__ ":" SPDLOG_STR_HELPER(__LINE__) "] " __VA_ARGS__)
-#define LOG_INFO(...)  rs::Logger::getInstance().getLogger()->info("[" __FILE__ ": " SPDLOG_STR_HELPER(__LINE__) "] " __VA_ARGS__)
-#define LOG_WARN(...)  rs::Logger::getInstance().getLogger()->warn("[" __FILE__ ": " SPDLOG_STR_HELPER(__LINE__) "] " __VA_ARGS__)
-#define LOG_ERROR(...) rs::Logger::getInstance().getLogger()->error("[" __FILE__ ": " SPDLOG_STR_HELPER(__LINE__) "] " __VA_ARGS__)
-#define LOG_FATAL(...) rs::Logger::getInstance().getLogger()->critical("[" __FILE__ ": " SPDLOG_STR_HELPER(__LINE__) "] " __VA_ARGS__)
+#define LOG_TRACE(...) gobot::Logger::getInstance().getLogger()->trace("[" __FILE__ ":" SPDLOG_STR_HELPER(__LINE__) "] ", __VA_ARGS__)
+#define LOG_DEBUG(...) gobot::Logger::getInstance().getLogger()->debug("[" __FILE__ ":" SPDLOG_STR_HELPER(__LINE__) "] " __VA_ARGS__)
+#define LOG_INFO(...)  gobot::Logger::getInstance().getLogger()->info("[" __FILE__ ": " SPDLOG_STR_HELPER(__LINE__) "] " __VA_ARGS__)
+#define LOG_WARN(...)  gobot::Logger::getInstance().getLogger()->warn("[" __FILE__ ": " SPDLOG_STR_HELPER(__LINE__) "] " __VA_ARGS__)
+#define LOG_ERROR(...) gobot::Logger::getInstance().getLogger()->error("[" __FILE__ ": " SPDLOG_STR_HELPER(__LINE__) "] " __VA_ARGS__)
+#define LOG_FATAL(...) gobot::Logger::getInstance().getLogger()->critical("[" __FILE__ ": " SPDLOG_STR_HELPER(__LINE__) "] " __VA_ARGS__)
