@@ -24,7 +24,7 @@
 // Should always inline, except in dev builds because it makes debugging harder.
 #ifndef FORCE_INLINE
 #ifdef NDEBUG
-#define FORCE_INLINE _ALWAYS_INLINE_
+#define FORCE_INLINE ALWAYS_INLINE
 #else
 #define FORCE_INLINE inline
 #endif
