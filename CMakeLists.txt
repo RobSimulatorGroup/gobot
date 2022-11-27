@@ -37,7 +37,9 @@ if (NOT EXISTS ${CMAKE_BINARY_DIR}/conanbuildinfo.cmake)
         conan_cmake_profile(FILEPATH      "${CMAKE_BINARY_DIR}/profile"
                             INCLUDE       default
                             SETTINGS      ${settings}
-                            CONF          tools.system.package_manager:mode=install)
+                            CONF          tools.system.package_manager:mode=install
+                                          tools.system.package_manager:sudo=True
+                                          tools.system.package_manager:sudo_askpass=True)
 
         message(${settings})
 
