@@ -37,7 +37,7 @@ THE SOFTWARE.
 #include <type_traits>
 #include <mutex>
 
-namespace third_parts {
+namespace third_part {
 // NOLINTBEGIN
 
 template<typename _T, class _D = std::default_delete<_T>>
@@ -106,13 +106,13 @@ public:
 template<typename _R, typename _S, typename = void>
 struct _Static_cast_or_dynamic_cast_helper {
     constexpr _R operator()(_S & __s) const {
-        return dynamic_cast<_R>(forward<_S>(__s));
+        return dynamic_cast<_R>(std::forward<_S>(__s));
     }
 };
 template<typename _R, typename _S>
 struct _Static_cast_or_dynamic_cast_helper<_R, _S, decltype(static_cast<void>(static_cast<_R>(std::declval<_S>())))> {
     constexpr _R operator()(_S & __s) const {
-        return static_cast<_R>(forward<_S>(__s));
+        return static_cast<_R>(std::forward<_S>(__s));
     }
 };
 template<typename _R, typename _S>
@@ -399,15 +399,15 @@ public:
         return *this;
     }
     intrusive_ptr & operator=(intrusive_ptr && __r) noexcept {
-        intrusive_ptr(move(__r)).swap(*this);
+        intrusive_ptr(std::move(__r)).swap(*this);
         return *this;
     }
     ~intrusive_ptr(){
         const auto __t = __x_t;
         if(__t){
             if(__t->_Impl_intrusive_ptr::_Ref_count_base::__drop_ref()){
-                auto __d = move(_Impl_intrusive_ptr::__locate_intrusive_base(__t)->get_deleter());
-                move(__d)(__t);
+                auto __d = std::move(_Impl_intrusive_ptr::__locate_intrusive_base(__t)->get_deleter());
+                std::move(__d)(__t);
             }
         }
     }
@@ -564,7 +564,7 @@ intrusive_ptr<_T> make_intrusive(_Args &&... __args){
     static_assert(!std::is_array<_T>::value, "intrusive_ptr does not accept arrays.");
     static_assert(!std::is_reference<_T>::value, "intrusive_ptr does not accept references.");
 
-    return intrusive_ptr<_T>(new _T(forward<_Args>(__args)...));
+    return intrusive_ptr<_T>(new _T(std::forward<_Args>(__args)...));
 }
 
 template<typename _U, typename _T>
@@ -662,7 +662,7 @@ public:
         return *this;
     }
     intrusive_weak_ptr & operator=(intrusive_weak_ptr && __r) noexcept {
-        intrusive_weak_ptr(move(__r)).swap(*this);
+        intrusive_weak_ptr(std::move(__r)).swap(*this);
         return *this;
     }
     ~intrusive_weak_ptr(){

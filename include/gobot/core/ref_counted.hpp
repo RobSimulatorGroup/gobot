@@ -5,19 +5,51 @@
 #pragma once
 
 #include <intrusive_ptr.hpp>
-#include "gobot/log.hpp"
+
+#include "gobot/core/object.hpp"
 
 namespace gobot::core {
 
-class RefCounted : public third_parts::intrusive_base<RefCounted> {
+template <typename T>
+using Ref = third_part::intrusive_ptr<T>;
 
+template <typename T>
+using RefWeak = third_part::intrusive_weak_ptr<T>;
+
+class RefCounted : public third_part::intrusive_base<RefCounted>, public Object  {
+    GOBCLASS(RefCounted, Object)
+public:
 
 };
 
-template <typename T>
-using Ref = third_parts::intrusive_ptr<T>;
 
-template <typename T>
-using RefWeak = third_parts::intrusive_weak_ptr<T>;
+}
+
+namespace gobot {
+template<typename T, typename ...Args>
+auto make_intrusive(Args &&... args){
+    return third_part::make_intrusive<T>(args...);
+}
+
+//template<typename _U, typename _T>
+//intrusive_ptr<_U> static_pointer_cast(intrusive_ptr<_T> __r) noexcept {
+//    const auto __u = static_cast<_U *>(__r.get());
+//    __r.release();
+//    return intrusive_ptr<_U>(__u);
+//}
+//template<typename _U, typename _T>
+//intrusive_ptr<_U> dynamic_pointer_cast(intrusive_ptr<_T> __r) noexcept {
+//    const auto __u = dynamic_cast<_U *>(__r.get());
+//    if(__u){
+//        __r.release();
+//    }
+//    return intrusive_ptr<_U>(__u);
+//}
+//template<typename _U, typename _T>
+//intrusive_ptr<_U> const_pointer_cast(intrusive_ptr<_T> __r) noexcept {
+//    const auto __u = const_cast<_U *>(__r.get());
+//    __r.release();
+//    return intrusive_ptr<_U>(__u);
+//}
 
 }
