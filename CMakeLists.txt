@@ -10,26 +10,42 @@ option(BUILD_TESTS "build tests" OFF)
 if (NOT EXISTS ${CMAKE_BINARY_DIR}/conanbuildinfo.cmake)
     if (NOT EXISTS "${CMAKE_BINARY_DIR}/conan.cmake")
         message(STATUS "Downloading conan.cmake from https://github.com/conan-io/cmake-conan")
-        file(DOWNLOAD "https://raw.githubusercontent.com/conan-io/cmake-conan/0.18.1/conan.cmake" "${CMAKE_BINARY_DIR}/conan.cmake")
+        file(DOWNLOAD "https://raw.githubusercontent.com/conan-io/cmake-conan/develop/conan.cmake" "${CMAKE_BINARY_DIR}/conan.cmake")
     endif ()
     include(${CMAKE_BINARY_DIR}/conan.cmake)
     if (CONAN_PROFILE_BUILD AND CONAN_PROFILE_HOST)
-        conan_cmake_install(PATH_OR_REFERENCE .. BUILD missing
+        conan_cmake_install(PATH_OR_REFERENCE ${PROJECT_SOURCE_DIR}
+                            BUILD missing
+                            REMOTE conancenter
                             SETTINGS_HOST build_type=${CMAKE_BUILD_TYPE}
                             SETTINGS_BUILD build_type=${CMAKE_BUILD_TYPE}
                             PROFILE_BUILD ${CONAN_PROFILE_BUILD}
                             PROFILE_HOST ${CONAN_PROFILE_HOST})
                             # ENV_HOST CONAN_CMAKE_TOOLCHAIN_FILE=${CMAKE_TOOLCHAIN_FILE})
     else ()
+        cmake_host_system_information(RESULT CMAKE_SYSTEM_NAME QUERY OS_NAME)
+
         conan_cmake_autodetect(settings)
+
+        # This is hacky for detecting os. Wait cmake-conan to have a correct implementation.
+        if (MSVC)
+            set(settings ${settings} os=Windows)
+        else ()
+            set(settings ${settings} os=Linux)
+        endif ()
+
         conan_cmake_profile(FILEPATH      "${CMAKE_BINARY_DIR}/profile"
                             SETTINGS      ${settings}
                             CONF          tools.system.package_manager:mode=install)
-        conan_cmake_install(PATH_OR_REFERENCE ${PROJECT_SOURCE_DIR} BUILD missing PROFILE "${CMAKE_BINARY_DIR}/profile")
+        conan_cmake_install(PATH_OR_REFERENCE ${PROJECT_SOURCE_DIR}
+                            BUILD missing
+                            REMOTE conancenter
+                            SETTINGS_HOST build_type=${CMAKE_BUILD_TYPE}
+                            SETTINGS_BUILD build_type=${CMAKE_BUILD_TYPE}
+                            PROFILE "${CMAKE_BINARY_DIR}/profile")
     endif ()
 endif ()
 
-# 在 conan_cmake_install 执行后，会在 CMAKE_BINARY_DIR 目录下生成 cmake 的配置信息和 Qt 的依赖库路径信息，我们将其引入到 CMake 工程中，并调用 conan_basic_setup 来自动配置各个环境变量信息。
 include(${CMAKE_BINARY_DIR}/conanbuildinfo.cmake)
 include(${CMAKE_BINARY_DIR}/conan_paths.cmake)
 conan_basic_setup(${PROJECT_NAME} KEEP_RPATHS)
