@@ -46,7 +46,8 @@ if (NOT EXISTS ${CMAKE_BINARY_DIR}/conanbuildinfo.cmake)
                             REMOTE conancenter
                             SETTINGS_HOST build_type=${CMAKE_BUILD_TYPE}
                             SETTINGS_BUILD build_type=${CMAKE_BUILD_TYPE}
-                            PROFILE "${CMAKE_BINARY_DIR}/profile")
+                            PROFILE_HOST "${CMAKE_BINARY_DIR}/profile"
+                            PROFILE_BUILD "${CMAKE_BINARY_DIR}/profile")
     endif ()
 endif ()
 
