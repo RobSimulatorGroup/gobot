@@ -7,36 +7,4 @@
 
 namespace gobot::core {
 
-RefCounted::RefCounted() {
-    refcount_.Init(); // count = 1
-    refcount_init_.Init(); // count = 1
-}
-
-bool RefCounted::IsReferenced() const {
-    return refcount_init_.GetCount() != 1;
-}
-
-bool RefCounted::InitRef() {
-    if (Reference()) {
-        if (!IsReferenced() && refcount_init_.UnRef()) {
-            UnReference(); // first referencing is already 1, so compensate for the ref above
-        }
-
-        return true;
-    } else {
-        return false;
-    }
-}
-
-bool RefCounted::Reference() {
-    uint32_t rc_val = refcount_.RefValue();
-    bool success = rc_val != 0;
-    return success;
-}
-bool RefCounted::UnReference() {
-    uint32_t rc_val = refcount_.UnRefValue();
-    bool die = rc_val == 0;
-    return die;
-}
-
 }

@@ -4,7 +4,14 @@
 
 #include <gtest/gtest.h>
 
+#include <gobot/core/ref_counted.hpp>
 
-TEST(example, add) {
+namespace {
 
+}
+
+TEST(TestRefCounted, add) {
+//    auto* test_ref_counted = new TestRefCounted();
+//    gobot::core::Ref<TestRefCounted> ref(test_ref_counted);
+//    ASSERT_TRUE(ref->GetReferenceCount() == 1);
 }
