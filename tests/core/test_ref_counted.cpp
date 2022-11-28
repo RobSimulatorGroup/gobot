@@ -18,7 +18,7 @@ public:
 TEST(TestRefCounted, test_count) {
     gobot::core::Ref<gobot::core::RefCounted> p;
     gobot::core::RefWeak<gobot::core::RefCounted> wp;
-    p = gobot::make_intrusive<TestResource>();
+    p = gobot::core::make_ref<TestResource>();
     ASSERT_TRUE(p.use_count() == 1);
     gobot::core::Ref<gobot::core::RefCounted> p1 = p;
     ASSERT_TRUE(p.use_count() == 2);

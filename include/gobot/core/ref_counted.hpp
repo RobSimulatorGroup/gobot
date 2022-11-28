@@ -22,34 +22,33 @@ public:
 
 };
 
-
-}
-
-namespace gobot {
 template<typename T, typename ...Args>
-auto make_intrusive(Args &&... args){
+auto make_ref(Args &&... args){
     return third_part::make_intrusive<T>(args...);
 }
 
-//template<typename _U, typename _T>
-//intrusive_ptr<_U> static_pointer_cast(intrusive_ptr<_T> __r) noexcept {
-//    const auto __u = static_cast<_U *>(__r.get());
-//    __r.release();
-//    return intrusive_ptr<_U>(__u);
-//}
-//template<typename _U, typename _T>
-//intrusive_ptr<_U> dynamic_pointer_cast(intrusive_ptr<_T> __r) noexcept {
-//    const auto __u = dynamic_cast<_U *>(__r.get());
-//    if(__u){
-//        __r.release();
-//    }
-//    return intrusive_ptr<_U>(__u);
-//}
-//template<typename _U, typename _T>
-//intrusive_ptr<_U> const_pointer_cast(intrusive_ptr<_T> __r) noexcept {
-//    const auto __u = const_cast<_U *>(__r.get());
-//    __r.release();
-//    return intrusive_ptr<_U>(__u);
-//}
+}
 
+
+template<typename U, typename T>
+gobot::core::Ref<U> static_pointer_cast(gobot::core::Ref<T> ref) noexcept {
+    const auto u = static_cast<U *>(ref.get());
+    ref.release();
+    return gobot::core::Ref<U>(u);
+}
+
+template<typename U, typename T>
+gobot::core::Ref<U> dynamic_pointer_cast(gobot::core::Ref<T> ref) noexcept {
+    const auto u = dynamic_cast<U *>(ref.get());
+    if(u){
+        ref.release();
+    }
+    return gobot::core::Ref<U>(u);
+}
+
+template<typename U, typename T>
+gobot::core::Ref<U> const_pointer_cast(gobot::core::Ref<T> ref) noexcept {
+    const auto u = const_cast<U *>(ref.get());
+    ref.release();
+    return gobot::core::Ref<U>(u);
 }
