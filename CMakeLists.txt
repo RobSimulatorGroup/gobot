@@ -3,6 +3,8 @@ project (gobot)
 
 set(CMAKE_CXX_STANDARD 20)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
+set(CMAKE_PREFIX_PATH ${CMAKE_BINARY_DIR})
+set(CMAKE_MODULE_PATH ${CMAKE_BINARY_DIR})
 
 option(BUILD_EXPERIMENT "using imgui and glfw" OFF)
 option(BUILD_TESTS "build tests" OFF)
@@ -66,7 +68,7 @@ endif()
 
 add_subdirectory(3rdpart)
 find_package(Qt5 COMPONENTS Core Widgets Gui CONFIG REQUIRED)
-find_package (Eigen3 3.4 REQUIRED)
+find_package (Eigen3 3.4 CONFIG REQUIRED)
 
 set(CMAKE_AUTOMOC ON)
 set(CMAKE_AUTORCC ON)
