@@ -42,6 +42,7 @@ target_link_libraries(gobot
         Qt5::Core
         RTTR::Core
         nlohmann_json
+        intrusive_ptr
 )
 target_include_directories(gobot PUBLIC ${INCLUDE_DIR})
 

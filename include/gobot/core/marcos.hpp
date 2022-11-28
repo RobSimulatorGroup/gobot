@@ -11,20 +11,20 @@
 #include <rttr/rttr_enable.h>
 
 // Should always inline no matter what.
-#ifndef _ALWAYS_INLINE_
+#ifndef ALWAYS_INLINE
 #if defined(__GNUC__)
-#define _ALWAYS_INLINE_ __attribute__((always_inline)) inline
+#define ALWAYS_INLINE __attribute__((always_inline)) inline
 #elif defined(_MSC_VER)
-#define _ALWAYS_INLINE_ __forceinline
+#define ALWAYS_INLINE __forceinline
 #else
-#define _ALWAYS_INLINE_ inline
+#define ALWAYS_INLINE inline
 #endif
 #endif
 
 // Should always inline, except in dev builds because it makes debugging harder.
 #ifndef FORCE_INLINE
 #ifdef NDEBUG
-#define FORCE_INLINE _ALWAYS_INLINE_
+#define FORCE_INLINE ALWAYS_INLINE
 #else
 #define FORCE_INLINE inline
 #endif
