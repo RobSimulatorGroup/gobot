@@ -94,6 +94,7 @@ target_include_directories(gobot
 target_link_libraries(gobot
     PUBLIC
     RTTR::Core
+    intrusive_ptr
     ${CONAN_LIBS}
 )
 set_target_properties(gobot

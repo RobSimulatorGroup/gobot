@@ -4,7 +4,7 @@
 
 #pragma once
 
-#include <intrusive_ptr.hpp>
+#include <intrusive_ptr/intrusive_ptr.hpp>
 
 #include "gobot/core/object.hpp"
 
