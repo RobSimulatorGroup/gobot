@@ -1,15 +1,17 @@
 #https://modern-cmake-cn.github.io/Modern-CMake-zh_CN/chapters/testing/googletest.html
-if(googletest_ADDED)
+find_package(gtest REQUIRED)
+
+if(GTEST_FOUND)
     include(GoogleTest)
     mark_as_advanced(
             BUILD_GMOCK BUILD_GTEST BUILD_SHARED_LIBS
             gmock_build_tests gtest_build_samples gtest_build_tests
             gtest_disable_pthreads gtest_force_shared_crt gtest_hide_internal_symbols
     )
-    set_target_properties(gtest PROPERTIES FOLDER extern)
-    set_target_properties(gtest_main PROPERTIES FOLDER extern)
-    set_target_properties(gmock PROPERTIES FOLDER extern)
-    set_target_properties(gmock_main PROPERTIES FOLDER extern)
+    set_target_properties(GTest::gtest PROPERTIES FOLDER extern)
+    set_target_properties(GTest::gtest_main PROPERTIES FOLDER extern)
+    set_target_properties(GTest::gmock PROPERTIES FOLDER extern)
+    set_target_properties(GTest::gmock_main PROPERTIES FOLDER extern)
     message(STATUS "gtest configured correctly")
 else()
     message(ERROR "gtest was not configured properly")
