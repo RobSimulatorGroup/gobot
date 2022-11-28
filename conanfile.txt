@@ -4,6 +4,7 @@ eigen/3.4.0
 spdlog/1.11.0
 nlohmann_json/3.11.2
 pybind11/2.10.0
+gtest/1.12.1
 
 [generators]
 qt
