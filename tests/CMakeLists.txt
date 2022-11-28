@@ -1,4 +1,8 @@
 #https://modern-cmake-cn.github.io/Modern-CMake-zh_CN/chapters/testing/googletest.html
+message("------------------------------")
+message("CMAKE_PREFIX_PATH" "${CMAKE_BINARY_DIR}")
+message("CMAKE_MODULE_PATH" "${CMAKE_BINARY_DIR}")
+
 find_package(gtest CONFIG REQUIRED)
 
 include(GoogleTest)
