@@ -22,13 +22,16 @@ public:
 
 };
 
+
+
+}
+
+namespace godot {
+
 template<typename T, typename ...Args>
 auto make_ref(Args &&... args){
     return third_part::make_intrusive<T>(args...);
 }
-
-}
-
 
 template<typename U, typename T>
 gobot::core::Ref<U> static_pointer_cast(gobot::core::Ref<T> ref) noexcept {
@@ -51,4 +54,6 @@ gobot::core::Ref<U> const_pointer_cast(gobot::core::Ref<T> ref) noexcept {
     const auto u = const_cast<U *>(ref.get());
     ref.release();
     return gobot::core::Ref<U>(u);
+}
+
 }
