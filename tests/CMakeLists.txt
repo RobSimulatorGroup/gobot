@@ -13,20 +13,17 @@ set_target_properties(GTest::gmock PROPERTIES FOLDER extern)
 set_target_properties(GTest::gmock_main PROPERTIES FOLDER extern)
 message(STATUS "gtest configured correctly")
 
-macro(package_add_test TESTNAME)
-    # create an exectuable in which the tests will be stored
-    add_executable(${TESTNAME} ${ARGN})
-    # link the Google test infrastructure, mocking library, and a default main fuction to
-    # the test executable.  Remove g_test_main if writing your own main function.
-    target_link_libraries(${TESTNAME} gtest gmock gtest_main)
+
+macro(package_add_test TESTNAME FILES)
+    add_executable(${TESTNAME} ${FILES})
+    target_link_libraries(${TESTNAME} gtest gmock gtest_main gobot)
     # gtest_discover_tests replaces gtest_add_tests,
     # see https://cmake.org/cmake/help/v3.10/module/GoogleTest.html for more options to pass to it
     gtest_discover_tests(${TESTNAME}
             EXTRA_ARGS --gtest_color=yes
-            # set a working directory so your project root so that you can find test data via paths relative to the project root
             WORKING_DIRECTORY ${PROJECT_DIR}
             )
     set_target_properties(${TESTNAME} PROPERTIES FOLDER tests)
 endmacro()
 
-package_add_test(example_add example_add.cpp)
+package_add_test(test_ref_counted core/test_ref_counted.cpp )

@@ -14,6 +14,7 @@ namespace gobot::scene {
 
 class Node : public core::Object {
     GOBCLASS(Node, core::Object)
+
 public:
 
     Node();
