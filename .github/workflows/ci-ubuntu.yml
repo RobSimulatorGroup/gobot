@@ -25,6 +25,21 @@ jobs:
     - name: Get Conan
       uses: turtlebrowser/get-conan@v1.1
 
+    - name: Set Conan cache
+      uses: actions/cache@v3
+      env:
+        cache-name: cache-conan-packages
+      with:
+        path: ${{ env.CONAN_USER_HOME }}
+        key: host-${{ runner.os }}-target-${{ runner.os }}-${{ hashFiles('conanfile.txt') }}
+        restore-keys: |
+          ${{ runner.os }}-target-${{ runner.os }}-
+     
+    - if: ${{ steps.cache-conan-packages.outputs.cache-hit != 'true' }}
+      name: List the state of node modules
+      continue-on-error: true
+      run: echo $CONAN_USER_HOME
+
     - name: Configure CMake
       # Configure CMake in a 'build' subdirectory. `CMAKE_BUILD_TYPE` is only required if you are using a single-configuration generator such as make.
       # See https://cmake.org/cmake/help/latest/variable/CMAKE_BUILD_TYPE.html?highlight=cmake_build_type
