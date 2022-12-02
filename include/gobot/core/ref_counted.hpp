@@ -4,19 +4,19 @@
 
 #pragma once
 
-#include <intrusive_ptr.hpp>
+#include <intrusive_ptr/intrusive_ptr.hpp>
 
 #include "gobot/core/object.hpp"
 
 namespace gobot::core {
 
 template <typename T>
-using Ref = third_part::intrusive_ptr<T>;
+using Ref = third_party::intrusive_ptr<T>;
 
 template <typename T>
-using RefWeak = third_part::intrusive_weak_ptr<T>;
+using RefWeak = third_party::intrusive_weak_ptr<T>;
 
-class RefCounted : public third_part::intrusive_base<RefCounted>, public Object  {
+class RefCounted : public third_party::intrusive_base<RefCounted>, public Object  {
     GOBCLASS(RefCounted, Object)
 public:
 
@@ -30,7 +30,7 @@ namespace godot {
 
 template<typename T, typename ...Args>
 auto make_ref(Args &&... args){
-    return third_part::make_intrusive<T>(args...);
+    return third_party::make_intrusive<T>(args...);
 }
 
 template<typename U, typename T>

@@ -49,7 +49,7 @@ protected:                                                                      
 namespace gobot::core {
 
 
-enum class PropertyHint {
+enum class GOBOT_EXPORT PropertyHint {
     None, ///< no hint provided.
     Range, ///< hint_text = "min,max[,step][,or_greater][,or_less][,hide_slider][,radians][,degrees][,exp][,suffix:<keyword>] range.
     Flags, ///< hint_text= "flag1,flag2,etc" (as bit flags)
@@ -59,7 +59,7 @@ enum class PropertyHint {
     GlobalDir, ///< a directory path must be passed
 };
 
-enum class PropertyUsageFlags {
+enum class GOBOT_EXPORT PropertyUsageFlags {
     None = 0,
     Storage = 1 << 1,
     Editor = 1 << 2,
@@ -67,7 +67,7 @@ enum class PropertyUsageFlags {
 };
 
 
-struct PropertyInfo {
+struct GOBOT_EXPORT PropertyInfo {
     String name;
     PropertyHint hint = PropertyHint::None;
     String hint_string;
@@ -108,7 +108,7 @@ struct PropertyInfo {
 };
 
 
-class Object : public QObject {
+class GOBOT_EXPORT Object : public QObject {
     GOBCLASS(Object)
 public:
 
@@ -149,7 +149,6 @@ protected:
 
     virtual void NotificationImpl(NotificationType notification, bool reversed) {
     }
-
 
 public:
     // Notification
