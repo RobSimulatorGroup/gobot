@@ -18,6 +18,7 @@ using VarintMapView  = rttr::variant_associative_view;
 using Instance = rttr::instance;
 using Method = rttr::method;
 using Argument = rttr::argument;
+using Enumeration = rttr::enumeration;
 
 
 using String = QString;
