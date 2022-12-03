@@ -9,7 +9,7 @@
 
 #include "gobot/scene/scene_tree.hpp"
 
-namespace gobot::scene {
+namespace gobot {
 
 SceneTree::SceneTree() {
 

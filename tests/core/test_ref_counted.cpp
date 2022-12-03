@@ -8,7 +8,7 @@
 
 namespace {
 
-class TestResource : public gobot::core::RefCounted {
+class TestResource : public gobot::RefCounted {
 public:
     TestResource() = default;
 };
@@ -16,17 +16,17 @@ public:
 }
 
 TEST(TestRefCounted, test_count) {
-    gobot::core::Ref<gobot::core::RefCounted> p;
-    gobot::core::RefWeak<gobot::core::RefCounted> wp;
-    p = godot::make_ref<TestResource>();
+    gobot::Ref<gobot::RefCounted> p;
+    gobot::RefWeak<gobot::RefCounted> wp;
+    p = godot::make_intrusive<TestResource>();
     ASSERT_TRUE(p.use_count() == 1);
-    gobot::core::Ref<gobot::core::RefCounted> p1 = p;
+    gobot::Ref<gobot::RefCounted> p1 = p;
     ASSERT_TRUE(p.use_count() == 2);
     ASSERT_TRUE(p.weak_count() == 0);
 
     wp = p;
     ASSERT_TRUE(p.weak_count() == 1);
-    gobot::core::Ref<gobot::core::RefCounted> p2 = wp.lock();
+    gobot::Ref<gobot::RefCounted> p2 = wp.lock();
     ASSERT_TRUE(p.use_count() == 3);
     ASSERT_EQ(p2.get(), p.get());
     ASSERT_EQ(p2.get(), p1.get());

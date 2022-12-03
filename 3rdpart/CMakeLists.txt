@@ -20,6 +20,13 @@ CPMAddPackage(
         VERSION 2.10.1
         EXCLUDE_FROM_ALL YES)
 
+
+CPMAddPackage(
+        NAME magic_enum
+        GITHUB_REPOSITORY Neargye/magic_enum
+        VERSION 0.8.1
+        EXCLUDE_FROM_ALL YES)
+
 add_library(intrusive_ptr INTERFACE)
 target_include_directories(intrusive_ptr INTERFACE
         $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/intrusive_ptr>

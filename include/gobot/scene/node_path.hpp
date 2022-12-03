@@ -10,7 +10,7 @@
 
 #include "gobot/core/types.hpp"
 
-namespace gobot::scene {
+namespace gobot {
 
 class NodePath {
 public:
@@ -19,7 +19,7 @@ public:
     bool IsAbsolute() const;
 
 private:
-    std::vector<core::String> path_;
+    std::vector<String> path_;
     bool absolute_;
 };
 

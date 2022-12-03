@@ -5,6 +5,6 @@
 
 #include "gobot/core/ref_counted.hpp"
 
-namespace gobot::core {
+namespace gobot {
 
 }

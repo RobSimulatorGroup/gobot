@@ -9,7 +9,7 @@
 #include <QUuid>
 #include <nlohmann/json.hpp>
 
-namespace gobot::core {
+namespace gobot {
 
 using Varint = rttr::variant;
 using Type = rttr::type;

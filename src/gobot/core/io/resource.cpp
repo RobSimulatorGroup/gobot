@@ -8,10 +8,17 @@
 
 #include "gobot/core/io/resource.hpp"
 
-namespace gobot::core {
+#include "gobot/core/registration.hpp"
+
+namespace gobot {
 
 Resource::Resource() {
 
 }
 
 }
+
+GOBOT_REGISTRATION {
+    gobot::Class_<gobot::Resource>("gobot::core::Resource");
+
+};

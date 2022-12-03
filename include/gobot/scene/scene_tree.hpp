@@ -10,13 +10,13 @@
 
 #include "gobot/core/object.hpp"
 
-namespace gobot::scene {
+namespace gobot {
 
 class Node;
 
-class SceneTree : public core::Object {
+class SceneTree : public Object {
     Q_OBJECT
-    GOBCLASS(SceneTree, core::Object)
+    GOBCLASS(SceneTree, Object)
 public:
     SceneTree();
 

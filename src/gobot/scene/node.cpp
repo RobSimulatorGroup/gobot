@@ -8,7 +8,7 @@
 
 #include "gobot/scene/node.hpp"
 
-namespace gobot::scene {
+namespace gobot {
 
 Node::Node() {
 

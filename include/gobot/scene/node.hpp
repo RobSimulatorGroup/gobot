@@ -10,10 +10,10 @@
 
 #include "gobot/core/object.hpp"
 
-namespace gobot::scene {
+namespace gobot {
 
-class Node : public core::Object {
-    GOBCLASS(Node, core::Object)
+class Node : public Object {
+    GOBCLASS(Node, Object)
 
 public:
 

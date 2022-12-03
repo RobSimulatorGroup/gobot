@@ -39,3 +39,4 @@ macro(package_add_test TESTNAME FILES)
 endmacro()
 
 package_add_test(test_ref_counted core/test_ref_counted.cpp )
+package_add_test(test_registration core/test_registration.cpp )

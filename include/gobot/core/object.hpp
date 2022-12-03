@@ -46,7 +46,7 @@ protected:                                                                      
     GOBOT_CLASS_TO_RTTR(__VA_ARGS__)
 
 
-namespace gobot::core {
+namespace gobot {
 
 
 enum class PropertyHint {

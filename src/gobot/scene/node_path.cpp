@@ -5,7 +5,7 @@
 
 #include "gobot/scene/node_path.hpp"
 
-namespace gobot::scene {
+namespace gobot {
 
 NodePath::NodePath() {
 }

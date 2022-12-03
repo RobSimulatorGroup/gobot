@@ -8,7 +8,9 @@
 
 #include "gobot/core/object.hpp"
 
-namespace gobot::core {
+#include "gobot/core/registration.hpp"
+
+namespace gobot {
 
 Object::Object() {
 
@@ -16,3 +18,22 @@ Object::Object() {
 
 
 }
+
+GOBOT_REGISTRATION {
+
+    gobot::QuickEnumeration_<gobot::PropertyHint>("PropertyHint");
+
+    gobot::QuickEnumeration_<gobot::PropertyUsageFlags>("PropertyUsageFlags");
+
+    gobot::Class_<gobot::PropertyInfo>("PropertyInfo")
+            .constructor()(gobot::CtorAsObject)
+            .property("name", &gobot::PropertyInfo::name)
+            .property("hint", &gobot::PropertyInfo::hint)
+            .property("hint_string", &gobot::PropertyInfo::hint_string)
+            .property("PropertyUsageFlags", &gobot::PropertyInfo::usage);
+
+    gobot::Class_<gobot::Object>("Object")
+            .constructor()(gobot::CtorAsRawPtr)
+            .property_readonly("class_name", &gobot::Object::GetClassName);
+
+};
