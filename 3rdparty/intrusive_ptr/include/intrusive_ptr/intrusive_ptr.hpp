@@ -37,7 +37,7 @@ THE SOFTWARE.
 #include <type_traits>
 #include <mutex>
 
-namespace third_part {
+namespace third_party {
 // NOLINTBEGIN
 
 template<typename _T, class _D = std::default_delete<_T>>

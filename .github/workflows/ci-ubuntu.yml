@@ -22,15 +22,23 @@ jobs:
       with:
         submodules: 'true'
 
-    - name: Install Qt
-      uses: jurplel/install-qt-action@v3
+    - name: Get Conan
+      uses: turtlebrowser/get-conan@v1.1
 
-    - name: Install Eigen3
-      uses: kupns-aka-kupa/setup-eigen3@v1
-      with:
-        version: 3.4.0
+    - name: Set Conan cache
+      uses: actions/cache@v3
       env:
-        CMAKE_GENERATOR: ${{ matrix.gen }}
+        cache-name: cache-conan-packages
+      with:
+        path: ~/.conan/data
+        key: host-${{ runner.os }}-target-${{ runner.os }}-${{ hashFiles('conanfile.txt') }}
+        restore-keys: |
+          host-${{ runner.os }}-target-${{ runner.os }}-
+     
+    - if: ${{ steps.cache-conan-packages.outputs.cache-hit != 'true' }}
+      name: Show CONAN_USER_HOME storage location
+      continue-on-error: true
+      run: echo $CONAN_USER_HOME
 
     - name: Configure CMake
       # Configure CMake in a 'build' subdirectory. `CMAKE_BUILD_TYPE` is only required if you are using a single-configuration generator such as make.
