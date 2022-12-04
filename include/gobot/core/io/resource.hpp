@@ -11,14 +11,33 @@
 namespace gobot {
 
 class Resource: public RefCounted {
+    Q_OBJECT
     GOBCLASS(Resource, RefCounted)
 public:
     Resource();
+
+    virtual void SetPath(const String &path);
+
+    String GetPath() const;
+
+    void SetName(const String &p_name);
+
+    String GetName() const;
+
+    void SetResourceUuid(const QUuid &uuid);
+
+    Uuid GetResourceUuid() const;
+
+
+Q_SIGNALS:
+    void resourceChanged();
 
 private:
     String name_;
     String path_cache_;
     bool local_to_scene_{false};
+    Uuid uuid_{};
+
 };
 
 }

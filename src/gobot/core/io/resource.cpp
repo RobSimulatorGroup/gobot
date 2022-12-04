@@ -15,6 +15,32 @@ Resource::Resource() {
 
 }
 
+void Resource::SetPath(const String &path) {
+
+}
+
+String Resource::GetPath() const {
+    return path_cache_;
+}
+
+void Resource::SetName(const String &name) {
+    name_ = name;
+    Q_EMIT resourceChanged();
+}
+
+String Resource::GetName() const {
+    return name_;
+}
+
+void Resource::SetResourceUuid(const QUuid &uuid) {
+    uuid_ = uuid;
+}
+
+Uuid Resource::GetResourceUuid() const {
+    return uuid_;
+}
+
+
 }
 
 GOBOT_REGISTRATION {
