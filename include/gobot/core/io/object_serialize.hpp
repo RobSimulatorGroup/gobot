@@ -6,10 +6,10 @@
 
 #include "gobot/core/types.hpp"
 
-namespace gobot::io {
+namespace gobot {
 
-core::Varint ObjectFromJson(const core::Type& type,  const core::Json& json);
+Varint ObjectFromJson(const Type& type,  const Json& json);
 
-core::Json ObjectToJson(rttr::instance obj);
+Json ObjectToJson(rttr::instance obj);
 
 }

@@ -6,6 +6,7 @@
 */
 
 #include "gobot/core/object.hpp"
+#include "gobot/core/notification_enum.hpp"
 
 #include "gobot/core/registration.hpp"
 
@@ -34,5 +35,8 @@ GOBOT_REGISTRATION {
     gobot::Class_<gobot::Object>("Object")
             .constructor()(gobot::CtorAsRawPtr)
             .property_readonly("class_name", &gobot::Object::GetClassName);
+
+
+    gobot::QuickEnumeration_<gobot::NotificationType>("NotificationType");
 
 };

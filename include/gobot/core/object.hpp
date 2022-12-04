@@ -9,7 +9,7 @@
 
 #include "gobot/core/types.hpp"
 #include "gobot/core/marcos.hpp"
-#include "gobot/notification_enum.hpp"
+#include "notification_enum.hpp"
 #include <rttr/rttr_enable.h>
 
 #include <QObject>

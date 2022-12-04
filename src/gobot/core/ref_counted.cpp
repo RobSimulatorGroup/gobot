@@ -8,6 +8,18 @@
 
 #include "gobot/core/ref_counted.hpp"
 
+#include "gobot/core/registration.hpp"
+
 namespace gobot {
 
 }
+
+GOBOT_REGISTRATION {
+
+    gobot::Class_<gobot::RefCounted>("RefCounted")
+            .constructor()(gobot::CtorAsRawPtr)
+            .property_readonly("use_count", &gobot::RefCounted::use_count)
+            .property_readonly("weak_count", &gobot::RefCounted::weak_count)
+            .method("is_unique", &gobot::RefCounted::unique);
+
+};
