@@ -6,7 +6,7 @@
 */
 
 #include "gobot/core/io/resource.hpp"
-
+#include "gobot/log.hpp"
 #include "gobot/core/registration.hpp"
 
 namespace gobot {
@@ -38,6 +38,71 @@ void Resource::SetResourceUuid(const QUuid &uuid) {
 
 Uuid Resource::GetResourceUuid() const {
     return uuid_;
+}
+
+Uuid Resource::GenerateUuid() {
+    uuid_ = Uuid::createUuid();
+    return uuid_;
+}
+
+std::unordered_map<String, Resource*> ResourceCache::s_resources;
+std::mutex ResourceCache::s_lock;
+
+bool ResourceCache::Has(const String &path) {
+    s_lock.lock();
+
+    auto it = s_resources.find(path);
+
+    if (it != s_resources.end() && it->second->use_count() == 0) {
+        // This resource is in the process of being deleted, ignore its existence.
+        it->second->path_cache_ = String();
+        it->second = nullptr;
+        s_resources.erase(path);
+    }
+
+    s_lock.unlock();
+
+    if (it == s_resources.end()) {
+        return false;
+    }
+
+    return true;
+}
+
+Ref<Resource> ResourceCache::GetRef(const String &path) {
+    Ref<Resource> ref;
+    s_lock.lock();
+
+    auto it = s_resources.find(path);
+
+    if (it != s_resources.end()) {
+        ref = Ref<Resource>(it->second);
+    }
+
+    if (it == s_resources.end() && it->second->use_count() == 0) {
+        // This resource is in the process of being deleted, ignore its existence
+        it->second->path_cache_ = String();
+        it->second = nullptr;
+        s_resources.erase(path);
+    }
+
+    s_lock.unlock();
+
+    return ref;
+}
+
+void ResourceCache::Clear() {
+    if (!s_resources.empty()) {
+        LOG_ERROR("Resources still in use at exit");
+#ifdef NDEBUG
+#else
+        for (const auto& [path, resource]: s_resources) {
+            LOG_TRACE("Resource:{} with path:{} is still in use", path.toStdString(), resource->GetClassName());
+        }
+#endif
+    }
+
+    s_resources.clear();
 }
 
 

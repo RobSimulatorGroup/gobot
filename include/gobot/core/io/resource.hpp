@@ -7,6 +7,7 @@
 */
 
 #include "gobot/core/ref_counted.hpp"
+#include <mutex>
 
 namespace gobot {
 
@@ -28,15 +29,36 @@ public:
 
     Uuid GetResourceUuid() const;
 
+    Uuid GenerateUuid();
+
 
 Q_SIGNALS:
     void resourceChanged();
 
 private:
+    friend class ResourceCache;
+
     String name_;
     String path_cache_;
     bool local_to_scene_{false};
     Uuid uuid_{};
+
+};
+
+
+class ResourceCache {
+public:
+    static bool Has(const String &path);
+
+    static Ref<Resource> GetRef(const String &path);
+
+private:
+    friend class Resource;
+    friend class ResourceLoader; //need the lock
+    static std::mutex s_lock;
+    static std::unordered_map<String, Resource*> s_resources;
+
+    static void Clear();
 
 };
 

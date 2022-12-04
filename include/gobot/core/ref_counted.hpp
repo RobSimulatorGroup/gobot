@@ -30,7 +30,7 @@ public:
 namespace godot {
 
 template<typename T, typename ...Args>
-auto make_ref(Args &&... args){
+auto MakeRef(Args &&... args){
     return third_party::make_intrusive<T>(args...);
 }
 

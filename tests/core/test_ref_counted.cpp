@@ -21,7 +21,7 @@ public:
 TEST(TestRefCounted, test_count) {
     gobot::Ref<gobot::RefCounted> p;
     gobot::RefWeak<gobot::RefCounted> wp;
-    p = godot::make_ref<TestResource>();
+    p = godot::MakeRef<TestResource>();
     ASSERT_TRUE(p.use_count() == 1);
     gobot::Ref<gobot::RefCounted> p1 = p;
     ASSERT_TRUE(p.use_count() == 2);
