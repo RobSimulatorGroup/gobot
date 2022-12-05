@@ -17,7 +17,9 @@ class Resource: public RefCounted {
 public:
     Resource();
 
-    virtual void SetPath(const String &path);
+    ~Resource();
+
+    virtual void SetPath(const String &path, bool take_over = false);
 
     String GetPath() const;
 
@@ -37,6 +39,8 @@ Q_SIGNALS:
 
 private:
     friend class ResourceCache;
+
+    std::unordered_set<Object*> owners_;
 
     String name_;
     String path_cache_;

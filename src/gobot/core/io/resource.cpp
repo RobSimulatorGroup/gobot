@@ -15,8 +15,54 @@ Resource::Resource() {
 
 }
 
-void Resource::SetPath(const String &path) {
+Resource::~Resource() {
+    if (!path_cache_.isEmpty()) {
+        ResourceCache::s_lock.lock();
+        ResourceCache::s_resources.erase(path_cache_);
+        ResourceCache::s_lock.unlock();
+    }
+    if (!owners_.empty()) {
+        LOG_WARN("Resource is still owned.");
+    }
+}
 
+void Resource::SetPath(const String &path, bool take_over) {
+    if (path_cache_ == path) {
+        return;
+    }
+
+    if (path.isEmpty()) {
+        take_over = false; // Can't take over an empty path
+    }
+
+    ResourceCache::s_lock.lock();
+
+    if (!path_cache_.isEmpty()) {
+        ResourceCache::s_resources.erase(path_cache_);
+    }
+
+    path_cache_.clear();
+
+    Ref<Resource> existing = ResourceCache::GetRef(path);
+
+    if (existing.use_count()) {
+        if (take_over) {
+            existing->path_cache_ = String();
+            ResourceCache::s_resources.erase(path);
+        } else {
+            ResourceCache::s_lock.unlock();
+            LOG_ERROR("Another resource is loaded from path {} (possible cyclic resource inclusion).", path);
+        }
+    }
+
+    path_cache_ = path;
+
+    if (!path_cache_.isEmpty()) {
+        ResourceCache::s_resources[path_cache_] = this;
+    }
+    ResourceCache::s_lock.unlock();
+
+//    _resource_path_changed();
 }
 
 String Resource::GetPath() const {
@@ -97,7 +143,7 @@ void ResourceCache::Clear() {
 #ifdef NDEBUG
 #else
         for (const auto& [path, resource]: s_resources) {
-            LOG_TRACE("Resource:{} with path:{} is still in use", path.toStdString(), resource->GetClassName());
+            LOG_TRACE("Resource:{} with path:{} is still in use", path, resource->GetClassName());
         }
 #endif
     }
