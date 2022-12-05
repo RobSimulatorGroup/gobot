@@ -30,7 +30,7 @@ jobs:
       env:
         cache-name: cache-conan-packages
       with:
-        path: ~/.conan/data
+        path: ~/.conan
         key: host-${{ runner.os }}-target-${{ runner.os }}-${{ hashFiles('conanfile.txt') }}
         restore-keys: |
           host-${{ runner.os }}-target-${{ runner.os }}-
