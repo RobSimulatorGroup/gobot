@@ -34,7 +34,13 @@ jobs:
         key: host-${{ runner.os }}-target-${{ runner.os }}-${{ hashFiles('conanfile.txt') }}
         restore-keys: |
           host-${{ runner.os }}-target-${{ runner.os }}-
-     
+
+    - name: Set APT cache
+      uses: awalsh128/cache-apt-pkgs-action@latest
+      with:
+        packages: libgl-dev
+        version: 1.0
+
     - if: ${{ steps.cache-conan-packages.outputs.cache-hit != 'true' }}
       name: Show CONAN_USER_HOME storage location
       continue-on-error: true
