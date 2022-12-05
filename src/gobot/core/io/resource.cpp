@@ -1,17 +1,114 @@
-/* Copyright(c) 2020-2022, Qiqi Wu<1258552199@qq.com>.
- * Permission is hereby granted, free of charge, to any person obtaining a copy of this software and associated documentation files (the "Software"),
- * to deal in the Software without restriction, including without limitation the rights to use, copy, modify, merge, publish, distribute, sublicense,
- * and/or sell copies of the Software, and to permit persons to whom the Software is furnished to do so, subject to the following conditions:
- * The above copyright notice and this permission notice shall be included in all copies or substantial portions of the Software.
+/* The gobot is a robot simulation platform.
+ * Copyright(c) 2021-2022, RobSimulatorGroup, Qiqi Wu<1258552199@qq.com>.
+ * Everyone is permitted to copy and distribute verbatim copies of this license document, but changing it is not allowed.
+ * This version of the GNU Lesser General Public License incorporates the terms and conditions of version 3 of the GNU General Public License.
  * This file is created by Qiqi Wu, 22-11-20
 */
 
 #include "gobot/core/io/resource.hpp"
+#include "gobot/log.hpp"
+#include "gobot/core/registration.hpp"
 
-namespace gobot::core {
+namespace gobot {
 
 Resource::Resource() {
 
 }
 
+void Resource::SetPath(const String &path) {
+
 }
+
+String Resource::GetPath() const {
+    return path_cache_;
+}
+
+void Resource::SetName(const String &name) {
+    name_ = name;
+    Q_EMIT resourceChanged();
+}
+
+String Resource::GetName() const {
+    return name_;
+}
+
+void Resource::SetResourceUuid(const QUuid &uuid) {
+    uuid_ = uuid;
+}
+
+Uuid Resource::GetResourceUuid() const {
+    return uuid_;
+}
+
+Uuid Resource::GenerateUuid() {
+    uuid_ = Uuid::createUuid();
+    return uuid_;
+}
+
+std::unordered_map<String, Resource*> ResourceCache::s_resources;
+std::mutex ResourceCache::s_lock;
+
+bool ResourceCache::Has(const String &path) {
+    s_lock.lock();
+
+    auto it = s_resources.find(path);
+
+    if (it != s_resources.end() && it->second->use_count() == 0) {
+        // This resource is in the process of being deleted, ignore its existence.
+        it->second->path_cache_ = String();
+        it->second = nullptr;
+        s_resources.erase(path);
+    }
+
+    s_lock.unlock();
+
+    if (it == s_resources.end()) {
+        return false;
+    }
+
+    return true;
+}
+
+Ref<Resource> ResourceCache::GetRef(const String &path) {
+    Ref<Resource> ref;
+    s_lock.lock();
+
+    auto it = s_resources.find(path);
+
+    if (it != s_resources.end()) {
+        ref = Ref<Resource>(it->second);
+    }
+
+    if (it == s_resources.end() && it->second->use_count() == 0) {
+        // This resource is in the process of being deleted, ignore its existence
+        it->second->path_cache_ = String();
+        it->second = nullptr;
+        s_resources.erase(path);
+    }
+
+    s_lock.unlock();
+
+    return ref;
+}
+
+void ResourceCache::Clear() {
+    if (!s_resources.empty()) {
+        LOG_ERROR("Resources still in use at exit");
+#ifdef NDEBUG
+#else
+        for (const auto& [path, resource]: s_resources) {
+            LOG_TRACE("Resource:{} with path:{} is still in use", path.toStdString(), resource->GetClassName());
+        }
+#endif
+    }
+
+    s_resources.clear();
+}
+
+
+}
+
+GOBOT_REGISTRATION {
+    gobot::Class_<gobot::Resource>("gobot::core::Resource");
+
+};

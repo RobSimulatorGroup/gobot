@@ -1,4 +1,7 @@
-/* Copyright(c) 2020-2022, Qiqi Wu<1258552199@qq.com>.
+/* The gobot is a robot simulation platform.
+ * Copyright(c) 2021-2022, RobSimulatorGroup, Qiqi Wu<1258552199@qq.com>.
+ * Everyone is permitted to copy and distribute verbatim copies of this license document, but changing it is not allowed.
+ * This version of the GNU Lesser General Public License incorporates the terms and conditions of version 3 of the GNU General Public License.
  * This file is created by Qiqi Wu, 22-11-26
 */
 
@@ -8,7 +11,7 @@
 
 #include "gobot/core/object.hpp"
 
-namespace gobot::core {
+namespace gobot {
 
 template <typename T>
 using Ref = third_party::intrusive_ptr<T>;
@@ -22,38 +25,36 @@ public:
 
 };
 
-
-
 }
 
 namespace godot {
 
 template<typename T, typename ...Args>
-auto make_ref(Args &&... args){
+auto MakeRef(Args &&... args){
     return third_party::make_intrusive<T>(args...);
 }
 
 template<typename U, typename T>
-gobot::core::Ref<U> static_pointer_cast(gobot::core::Ref<T> ref) noexcept {
+gobot::Ref<U> static_pointer_cast(gobot::Ref<T> ref) noexcept {
     const auto u = static_cast<U *>(ref.get());
     ref.release();
-    return gobot::core::Ref<U>(u);
+    return gobot::Ref<U>(u);
 }
 
 template<typename U, typename T>
-gobot::core::Ref<U> dynamic_pointer_cast(gobot::core::Ref<T> ref) noexcept {
+gobot::Ref<U> dynamic_pointer_cast(gobot::Ref<T> ref) noexcept {
     const auto u = dynamic_cast<U *>(ref.get());
     if(u){
         ref.release();
     }
-    return gobot::core::Ref<U>(u);
+    return gobot::Ref<U>(u);
 }
 
 template<typename U, typename T>
-gobot::core::Ref<U> const_pointer_cast(gobot::core::Ref<T> ref) noexcept {
+gobot::Ref<U> const_pointer_cast(gobot::Ref<T> ref) noexcept {
     const auto u = const_cast<U *>(ref.get());
     ref.release();
-    return gobot::core::Ref<U>(u);
+    return gobot::Ref<U>(u);
 }
 
 }

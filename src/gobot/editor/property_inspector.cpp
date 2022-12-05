@@ -1,9 +1,9 @@
-/* Copyright(c) 2020-2022, Qiqi Wu<1258552199@qq.com>.
- * Permission is hereby granted, free of charge, to any person obtaining a copy of this software and associated documentation files (the "Software"),
- * to deal in the Software without restriction, including without limitation the rights to use, copy, modify, merge, publish, distribute, sublicense,
- * and/or sell copies of the Software, and to permit persons to whom the Software is furnished to do so, subject to the following conditions:
- * The above copyright notice and this permission notice shall be included in all copies or substantial portions of the Software.
- * This file is created by Qiqi Wu, 22-11-6
+/* The gobot is a robot simulation platform.
+ * Copyright(c) 2021-2022, RobSimulatorGroup, Qiqi Wu<1258552199@qq.com>.
+ * Everyone is permitted to copy and distribute verbatim copies of this license document, but changing it is not allowed.
+ * This version of the GNU Lesser General Public License incorporates the terms and conditions of version 3 of the GNU General Public License.
+ * This file is created by Qiqi Wu, 22-11-20
 */
+
 
 #include "gobot/editor/property_inspector/property_inspector.hpp"
