@@ -36,7 +36,7 @@ jobs:
           host-${{ runner.os }}-target-${{ runner.os }}-
 
     - name: Install gl
-      run: apt install libgl-dev
+      run: sudo apt install -y libgl-dev
 
     - if: ${{ steps.cache-conan-packages.outputs.cache-hit != 'true' }}
       name: Show CONAN_USER_HOME storage location
