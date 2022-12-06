@@ -27,7 +27,7 @@ public:
 
     String GetName() const;
 
-    void SetResourceUuid(const QUuid &uuid);
+    void SetResourceUuid(const Uuid &uuid);
 
     Uuid GetResourceUuid() const;
 

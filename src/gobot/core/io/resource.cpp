@@ -78,7 +78,7 @@ String Resource::GetName() const {
     return name_;
 }
 
-void Resource::SetResourceUuid(const QUuid &uuid) {
+void Resource::SetResourceUuid(const Uuid &uuid) {
     uuid_ = uuid;
 }
 
