@@ -12,7 +12,7 @@
 #include <rttr/enumeration.h>
 
 
-TEST(TestRefCounted, test_registration) {
+TEST(TestRegistration, test_registration) {
     auto property_usage_flags = gobot::Type::get_by_name("PropertyUsageFlags");
     ASSERT_TRUE(property_usage_flags.is_enumeration());
     auto enumeration = property_usage_flags.get_enumeration();

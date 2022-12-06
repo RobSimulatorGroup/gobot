@@ -33,6 +33,11 @@ public:
 
     Uuid GenerateUuid();
 
+    virtual void ReloadFromFile();
+
+    static bool IsResourceFile(const String& path);
+
+    void CopyFrom(const Ref<Resource> &resource);
 
 Q_SIGNALS:
     void resourceChanged();
@@ -58,7 +63,8 @@ public:
 
 private:
     friend class Resource;
-    friend class ResourceLoader; //need the lock
+    friend class ResourceLoader;
+
     static std::mutex s_lock;
     static std::unordered_map<String, Resource*> s_resources;
 

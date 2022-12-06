@@ -46,3 +46,14 @@ TEST(TestRefCounted, test_count) {
     ASSERT_TRUE(p.use_count() == 0);
 
 }
+
+TEST(TestRefCounted, test_nullptr) {
+    gobot::Ref<gobot::RefCounted> p{nullptr};
+    ASSERT_TRUE(p.use_count() == 0);
+    ASSERT_FALSE(p.operator bool());
+
+    p = godot::MakeRef<TestResource>();
+    ASSERT_TRUE(p.unique());
+    ASSERT_TRUE(p.operator bool());
+    ASSERT_TRUE(p.is_valid());
+}

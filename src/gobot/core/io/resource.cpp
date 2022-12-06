@@ -6,6 +6,7 @@
 */
 
 #include "gobot/core/io/resource.hpp"
+#include "gobot/core/io/resource_loader.hpp"
 #include "gobot/log.hpp"
 #include "gobot/core/registration.hpp"
 
@@ -62,7 +63,6 @@ void Resource::SetPath(const String &path, bool take_over) {
     }
     ResourceCache::s_lock.unlock();
 
-//    _resource_path_changed();
 }
 
 String Resource::GetPath() const {
@@ -90,6 +90,32 @@ Uuid Resource::GenerateUuid() {
     uuid_ = Uuid::createUuid();
     return uuid_;
 }
+
+
+bool Resource::IsResourceFile(const String& path) {
+    // "::" means property name
+    return path.startsWith("res://") && !path.contains("::");
+}
+
+void Resource::ReloadFromFile() {
+    auto path = GetPath();
+    if (!IsResourceFile(path)) {
+        return;
+    }
+
+    Ref<Resource> resource = ResourceLoader::Load(path, GetClassName().data(), ResourceFormatLoader::CacheMode::Ignore);
+
+    if (!resource.is_valid()) {
+        return;
+    }
+
+    CopyFrom(resource);
+}
+
+void Resource::CopyFrom(const Ref<Resource> &resource) {
+
+}
+
 
 std::unordered_map<String, Resource*> ResourceCache::s_resources;
 std::mutex ResourceCache::s_lock;
