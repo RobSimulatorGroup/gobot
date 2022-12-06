@@ -35,11 +35,8 @@ jobs:
         restore-keys: |
           host-${{ runner.os }}-target-${{ runner.os }}-
 
-    - name: Set APT cache
-      uses: awalsh128/cache-apt-pkgs-action@latest
-      with:
-        packages: libgl-dev
-        version: 1.0
+    - name: Install gl
+      run: apt install libgl-dev
 
     - if: ${{ steps.cache-conan-packages.outputs.cache-hit != 'true' }}
       name: Show CONAN_USER_HOME storage location
