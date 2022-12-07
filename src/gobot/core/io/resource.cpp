@@ -133,19 +133,18 @@ bool Resource::CopyFrom(const Ref<Resource> &resource) {
 
     ResetState(); //may want to reset state
 
-//    List<PropertyInfo> pi;
-//    resource->get_property_list(&pi);
-//
-//    for (const PropertyInfo &E : pi) {
-//        if (!(E.usage & PROPERTY_USAGE_STORAGE)) {
-//            continue;
-//        }
-//        if (E.name == "resource_path") {
-//            continue; //do not change path
-//        }
-//
-//        set(E.name, resource->get(E.name));
-//    }
+    for (const auto& prop : resource->get_type().get_properties()) {
+        auto property_info = prop.get_metadata("").get_value<PropertyInfo>();
+        USING_ENUM_BITWISE_OPERATORS;
+        if (!(bool)(property_info.usage & PropertyUsageFlags::Storage)) {
+            continue;
+        }
+        if (property_info.name == "resource_path") {
+            continue; //do not change path
+        }
+        // TODO
+        prop.set_value(Instance(this), prop.get_value(resource));
+    }
     return true;
 }
 

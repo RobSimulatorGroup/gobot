@@ -9,6 +9,7 @@
 
 #include <rttr/rttr_enable.h>
 #include <rttr/detail/base/core_prerequisites.h>
+#include <magic_enum.hpp>
 
 // Should always inline no matter what.
 #ifndef ALWAYS_INLINE
@@ -74,3 +75,8 @@ static void godot_auto_register_reflection_function_();
 friend void gobot::godot_auto_register_reflection_function_();                              \
 template<typename Ctor_Type, typename Policy, typename Accessor, typename Arg_Indexer>      \
 friend struct rttr::detail::constructor_invoker;
+
+
+// out-of-the-box bitwise operators for enums.
+#define USING_ENUM_BITWISE_OPERATORS  using namespace magic_enum::bitwise_operators
+
