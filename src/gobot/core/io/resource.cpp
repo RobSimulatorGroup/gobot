@@ -181,6 +181,8 @@ void ResourceCache::Clear() {
 }
 
 GOBOT_REGISTRATION {
-    gobot::Class_<gobot::Resource>("gobot::core::Resource");
+    Class_<Resource>("Resource")
+        .constructor()(CtorAsRawPtr)
+        .property("name", &gobot::Resource::GetName, &gobot::Resource::SetName);
 
 };

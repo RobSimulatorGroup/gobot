@@ -21,22 +21,22 @@ Object::Object() {
 
 GOBOT_REGISTRATION {
 
-    gobot::QuickEnumeration_<gobot::PropertyHint>("PropertyHint");
+    QuickEnumeration_<PropertyHint>("PropertyHint");
 
-    gobot::QuickEnumeration_<gobot::PropertyUsageFlags>("PropertyUsageFlags");
+    QuickEnumeration_<PropertyUsageFlags>("PropertyUsageFlags");
 
-    gobot::Class_<gobot::PropertyInfo>("PropertyInfo")
-            .constructor()(gobot::CtorAsObject)
+    Class_<PropertyInfo>("PropertyInfo")
+            .constructor()(CtorAsObject)
             .property("name", &gobot::PropertyInfo::name)
             .property("hint", &gobot::PropertyInfo::hint)
             .property("hint_string", &gobot::PropertyInfo::hint_string)
             .property("PropertyUsageFlags", &gobot::PropertyInfo::usage);
 
-    gobot::Class_<gobot::Object>("Object")
-            .constructor()(gobot::CtorAsRawPtr)
-            .property_readonly("class_name", &gobot::Object::GetClassName);
+    Class_<Object>("Object")
+            .constructor()(CtorAsRawPtr)
+            .property_readonly("class_name", &Object::GetClassName);
 
 
-    gobot::QuickEnumeration_<gobot::NotificationType>("NotificationType");
+    QuickEnumeration_<NotificationType>("NotificationType");
 
 };
