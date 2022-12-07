@@ -27,6 +27,10 @@ Resource::~Resource() {
     }
 }
 
+void Resource::SetPath(const String &path) {
+    SetPath(path, false);
+}
+
 void Resource::SetPath(const String &path, bool take_over) {
     if (path_cache_ == path) {
         return;
@@ -112,8 +116,37 @@ void Resource::ReloadFromFile() {
     CopyFrom(resource);
 }
 
-void Resource::CopyFrom(const Ref<Resource> &resource) {
+void Resource::ResetState() {
 
+}
+
+bool Resource::CopyFrom(const Ref<Resource> &resource) {
+    if (!resource.is_valid()) {
+        LOG_ERROR("input resource is invalid");
+        return false;
+    }
+
+    if (GetClassName() != resource->GetClassName()) {
+        LOG_ERROR("input resource's type:{} is not same as this type: {}", resource->GetClassName(), GetClassName());
+        return false;
+    }
+
+    ResetState(); //may want to reset state
+
+//    List<PropertyInfo> pi;
+//    resource->get_property_list(&pi);
+//
+//    for (const PropertyInfo &E : pi) {
+//        if (!(E.usage & PROPERTY_USAGE_STORAGE)) {
+//            continue;
+//        }
+//        if (E.name == "resource_path") {
+//            continue; //do not change path
+//        }
+//
+//        set(E.name, resource->get(E.name));
+//    }
+    return true;
 }
 
 
@@ -183,6 +216,7 @@ void ResourceCache::Clear() {
 GOBOT_REGISTRATION {
     Class_<Resource>("Resource")
         .constructor()(CtorAsRawPtr)
-        .property("name", &gobot::Resource::GetName, &gobot::Resource::SetName);
+        .property("name", &Resource::GetName, &Resource::SetName)
+        .property("resource_path", &Resource::GetPath, overload_cast<const String &>(&Resource::SetPath));
 
 };

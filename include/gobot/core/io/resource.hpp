@@ -37,7 +37,13 @@ public:
 
     static bool IsResourceFile(const String& path);
 
-    void CopyFrom(const Ref<Resource> &resource);
+    // for resources that use variable amount of properties, either via _validate_property or _get_property_list, this function needs to be implemented to correctly clear state
+    virtual void ResetState();
+
+    bool CopyFrom(const Ref<Resource> &resource);
+
+protected:
+    void SetPath(const String &path);
 
 Q_SIGNALS:
     void resourceChanged();
@@ -52,6 +58,7 @@ private:
     bool local_to_scene_{false};
     Uuid uuid_{};
 
+    GOBOT_REGISTRATION_FRIEND
 };
 
 
@@ -69,6 +76,7 @@ private:
     static std::unordered_map<String, Resource*> s_resources;
 
     static void Clear();
+
 
 };
 

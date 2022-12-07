@@ -8,6 +8,7 @@
 #pragma once
 
 #include <rttr/rttr_enable.h>
+#include <rttr/detail/base/core_prerequisites.h>
 
 // Should always inline no matter what.
 #ifndef ALWAYS_INLINE
@@ -51,3 +52,25 @@
 #define CAT5(A, B, C, D, E) A##B##C##D##E
 
 #define GOB_UNUSED(x) (void)x;
+
+
+
+
+
+namespace rttr
+{
+namespace detail
+{
+template<typename Ctor_Type, typename Policy, typename Accessor, typename Arg_Indexer>
+struct constructor_invoker;
+}
+}
+
+namespace gobot {
+static void godot_auto_register_reflection_function_();
+}
+
+#define GOBOT_REGISTRATION_FRIEND                                                           \
+friend void gobot::godot_auto_register_reflection_function_();                              \
+template<typename Ctor_Type, typename Policy, typename Accessor, typename Arg_Indexer>      \
+friend struct rttr::detail::constructor_invoker;
