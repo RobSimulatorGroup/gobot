@@ -30,6 +30,6 @@ bool ResourceLoader::Exists(const String &path, const String &type_hint) {
 
 GOBOT_REGISTRATION {
 
-    gobot::Class_<gobot::ResourceLoader>("ResourceLoader");
+    Class_<ResourceLoader>("ResourceLoader");
 
 };
