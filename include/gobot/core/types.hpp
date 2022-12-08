@@ -11,10 +11,11 @@
 #include <QString>
 #include <QUuid>
 #include <nlohmann/json.hpp>
+#include "gobot/core/string_name.hpp"
 
 namespace gobot {
 
-using Varint = rttr::variant;
+using Variant = rttr::variant;
 using Type = rttr::type;
 using VarintListView = rttr::variant_sequential_view;
 using VarintMapView  = rttr::variant_associative_view;

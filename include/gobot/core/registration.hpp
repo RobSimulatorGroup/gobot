@@ -87,23 +87,26 @@ static constexpr overload_cast_impl<Args...> overload_cast{};
 /// Const member function selector for overload_cast
 ///  - regular: static_cast<Return (Class::*)(Arg) const>(&Class::func)
 ///  - sweet:   overload_cast<Arg>(&Class::func, const_)
+
+namespace detail {
 static constexpr auto const_ = std::true_type{};
+}
 
 }
 
 #define GOBOT_REGISTRATION                                                          \
 namespace gobot {                                                                   \
-    static void godot_auto_register_reflection_function_();                         \
+    static void gobot_auto_register_reflection_function_();                         \
 }                                                                                   \
 namespace                                                                           \
 {                                                                                   \
-    struct godot__auto__register__                                                  \
+    struct gobot__auto__register__                                                  \
     {                                                                               \
-        godot__auto__register__()                                                   \
+        gobot__auto__register__()                                                   \
         {                                                                           \
-            gobot::godot_auto_register_reflection_function_();                      \
+            gobot::gobot_auto_register_reflection_function_();                      \
         }                                                                           \
     };                                                                              \
 }                                                                                   \
-static const godot__auto__register__ RTTR_CAT(auto_register__, __LINE__);           \
-static void gobot::godot_auto_register_reflection_function_()
+static const gobot__auto__register__ RTTR_CAT(auto_register__, __LINE__);           \
+static void gobot::gobot_auto_register_reflection_function_()

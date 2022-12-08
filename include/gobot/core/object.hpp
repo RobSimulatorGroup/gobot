@@ -117,7 +117,9 @@ public:
 
     Object();
 
-    [[nodiscard]] std::string_view GetClassName() const { return get_type().get_name().data(); }
+    [[nodiscard]] FORCE_INLINE std::string_view GetClassName() const { return get_type().get_name().data(); }
+
+    [[nodiscard]] FORCE_INLINE Type GetType() const { return get_type(); }
 
     template <typename T, typename... Args>
     static std::enable_if_t<std::is_base_of_v<Object, T>, T*> New(Args&&... args) {
@@ -140,6 +142,10 @@ public:
     static const T *CastTo(const Object *object) {
         return dynamic_cast<const T *>(object);
     }
+
+    bool SetProperty(const StringName& name, Argument argument);
+
+    bool GetProperty(const StringName& name, Variant& varint);
 
 protected:
 

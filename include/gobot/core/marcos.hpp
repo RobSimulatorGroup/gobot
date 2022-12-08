@@ -68,11 +68,11 @@ struct constructor_invoker;
 }
 
 namespace gobot {
-static void godot_auto_register_reflection_function_();
+static void gobot_auto_register_reflection_function_();
 }
 
 #define GOBOT_REGISTRATION_FRIEND                                                           \
-friend void gobot::godot_auto_register_reflection_function_();                              \
+friend void gobot::gobot_auto_register_reflection_function_();                              \
 template<typename Ctor_Type, typename Policy, typename Accessor, typename Arg_Indexer>      \
 friend struct rttr::detail::constructor_invoker;
 

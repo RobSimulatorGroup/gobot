@@ -16,6 +16,29 @@ Object::Object() {
 
 }
 
+bool Object::SetProperty(const StringName& name, Argument argument) {
+    auto type = GetType();
+    for (const auto& prop : type.get_properties()) {
+        if (prop.is_readonly() && prop.get_name() == name) {
+            return prop.set_value(Instance(this), argument);
+        }
+    }
+
+    return false;
+}
+
+
+bool Object::GetProperty(const StringName& name, Variant& variant) {
+    auto type = GetType();
+    for (const auto& prop : type.get_properties()) {
+        if (prop.get_name() == name) {
+            variant = prop.get_value(Instance(this));
+            return true;
+        }
+    }
+
+    return false;
+}
 
 }
 
