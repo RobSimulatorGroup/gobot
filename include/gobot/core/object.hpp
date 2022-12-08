@@ -143,9 +143,9 @@ public:
         return dynamic_cast<const T *>(object);
     }
 
-    bool SetProperty(const StringName& name, Argument argument);
+    bool Set(const String& name, Argument arg);
 
-    bool GetProperty(const StringName& name, Variant& varint);
+    Variant Get(const String& name) const;
 
 protected:
 

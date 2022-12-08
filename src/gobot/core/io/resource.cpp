@@ -142,7 +142,7 @@ bool Resource::CopyFrom(const Ref<Resource> &resource) {
         if (property_info.name == "resource_path") {
             continue; //do not change path
         }
-        prop.set_value(Instance(this), prop.get_value(resource));
+        Set(property_info.name, resource->Get(property_info.name));
     }
     return true;
 }

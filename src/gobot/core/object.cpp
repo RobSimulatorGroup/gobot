@@ -6,6 +6,8 @@
 */
 
 #include "gobot/core/object.hpp"
+
+#include <utility>
 #include "gobot/core/notification_enum.hpp"
 
 #include "gobot/core/registration.hpp"
@@ -16,28 +18,19 @@ Object::Object() {
 
 }
 
-bool Object::SetProperty(const StringName& name, Argument argument) {
+bool Object::Set(const String& name, Argument arg) {
     auto type = GetType();
-    for (const auto& prop : type.get_properties()) {
-        if (prop.is_readonly() && prop.get_name() == name) {
-            return prop.set_value(Instance(this), argument);
-        }
-    }
-
-    return false;
+    return type.set_property_value(name.toStdString(), Instance(this), std::move(arg));
 }
 
 
-bool Object::GetProperty(const StringName& name, Variant& variant) {
-    auto type = GetType();
-    for (const auto& prop : type.get_properties()) {
-        if (prop.get_name() == name) {
-            variant = prop.get_value(Instance(this));
-            return true;
-        }
-    }
+Variant Object::Get(const String& name) const {
+    Variant res;
 
-    return false;
+    auto type = GetType();
+    res = type.get_property_value(name.toStdString(), Instance(this));
+
+    return res;
 }
 
 }
