@@ -6,8 +6,11 @@
  * This file is created by Qiqi Wu, 22-11-20
 */
 
-#include "gobot/core/ref_counted.hpp"
+#pragma once
+
 #include <mutex>
+#include "gobot/core/ref_counted.hpp"
+#include "gobot/core/object_id.hpp"
 
 namespace gobot {
 
@@ -42,6 +45,10 @@ public:
 
     bool CopyFrom(const Ref<Resource> &resource);
 
+    void RegisterOwner(Object *owner);
+
+    void UnregisterOwner(Object *owner);
+
 protected:
     void SetPath(const String &path);
 
@@ -51,7 +58,7 @@ Q_SIGNALS:
 private:
     friend class ResourceCache;
 
-    std::unordered_set<Object*> owners_;
+    std::unordered_set<ObjectID> owners_;
 
     String name_;
     String path_cache_;

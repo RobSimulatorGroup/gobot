@@ -16,6 +16,14 @@ Resource::Resource() {
 
 }
 
+void RegisterOwner(Object *owner) {
+
+}
+
+void UnregisterOwner(Object *owner) {
+
+}
+
 Resource::~Resource() {
     if (!path_cache_.isEmpty()) {
         ResourceCache::s_lock.lock();

@@ -11,29 +11,51 @@
 #include "gobot/core/object_id.hpp"
 #include "gobot/core/marcos.hpp"
 
+namespace gobot {
+
 class ObjectID {
 public:
     ALWAYS_INLINE ObjectID() {}
 
-    ALWAYS_INLINE explicit ObjectID(const uint64_t p_id) { id = p_id; }
-    ALWAYS_INLINE explicit ObjectID(const int64_t p_id) { id = p_id; }
+    ALWAYS_INLINE explicit ObjectID(const uint64_t id) { id_ = id; }
+
+    ALWAYS_INLINE explicit ObjectID(const int64_t id) { id_ = id; }
 
     // The First bits of uint64_t marks it is a reference.
-    [[nodiscard]] ALWAYS_INLINE bool IsRefCounted() const { return (id & (uint64_t(1) << 63)) != 0; }
+    [[nodiscard]] ALWAYS_INLINE bool IsRefCounted() const { return (id_ & (uint64_t(1) << 63)) != 0; }
 
-    ALWAYS_INLINE bool IsValid() const { return id != 0; }
-    ALWAYS_INLINE bool IsNull() const { return id == 0; }
+    [[nodiscard]] ALWAYS_INLINE bool IsValid() const { return id_ != 0; }
 
-    ALWAYS_INLINE operator uint64_t() const { return id; }
-    ALWAYS_INLINE operator int64_t() const { return id; }
+    [[nodiscard]] ALWAYS_INLINE bool IsNull() const { return id_ == 0; }
 
-    ALWAYS_INLINE bool operator==(const ObjectID &p_id) const { return id == p_id.id; }
-    ALWAYS_INLINE bool operator!=(const ObjectID &p_id) const { return id != p_id.id; }
-    ALWAYS_INLINE bool operator<(const ObjectID &p_id) const { return id < p_id.id; }
+    ALWAYS_INLINE operator uint64_t() const { return id_; }
 
-    ALWAYS_INLINE void operator=(int64_t p_int64) { id = p_int64; }
-    ALWAYS_INLINE void operator=(uint64_t p_uint64) { id = p_uint64; }
+    ALWAYS_INLINE operator int64_t() const { return id_; }
+
+    ALWAYS_INLINE bool operator==(const ObjectID &id) const { return id_ == id.id_; }
+
+    ALWAYS_INLINE bool operator!=(const ObjectID &id) const { return id_ != id.id_; }
+
+    ALWAYS_INLINE bool operator<(const ObjectID &id) const { return id_ < id.id_; }
+
+    ALWAYS_INLINE void operator=(int64_t p_int64) { id_ = p_int64; }
+
+    ALWAYS_INLINE void operator=(uint64_t p_uint64) { id_ = p_uint64; }
 
 private:
-    std::uint64_t id = 0; // 0 is invalid
+    std::uint64_t id_ = 0; // 0 is invalid
 };
+
+}
+
+namespace std
+{
+template <>
+struct hash<gobot::ObjectID>
+{
+    std::size_t operator()(const gobot::ObjectID& id) const
+    {
+        return std::hash<std::uint64_t>()(id.operator int64_t());
+    }
+};
+}
