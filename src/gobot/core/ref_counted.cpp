@@ -12,6 +12,11 @@
 
 namespace gobot {
 
+RefCounted::RefCounted()
+    : Object(true)
+{
+}
+
 }
 
 GOBOT_REGISTRATION {

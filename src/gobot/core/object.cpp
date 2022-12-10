@@ -16,7 +16,23 @@
 namespace gobot {
 
 Object::Object() {
+    ConstructObject(false);
+}
 
+void Object::ConstructObject(bool reference) {
+    type_is_reference_ = reference;
+    instance_id_ = ObjectDB::AddInstance(this);
+}
+
+Object::Object(bool reference) {
+    ConstructObject(reference);
+}
+
+Object::~Object() {
+    if (instance_id_ != ObjectID()) {
+        ObjectDB::RemoveInstance(this);
+        instance_id_ = ObjectID();
+    }
 }
 
 bool Object::Set(const String& name, Argument arg) {
@@ -43,14 +59,15 @@ uint64_t ObjectDB::s_validator_counter = 0;
 
 ObjectID ObjectDB::AddInstance(Object *object) {
     s_spin_lock.lock();
+
+    // realloc to 2 * slots
     if (s_slot_count == s_slot_max) [[unlikely]] {
         if (s_slot_count == (1 << OBJECTDB_SLOT_MAX_COUNT_BITS)) {
-            LOG_FATAL("");
+            LOG_FATAL("slot_count to max slot count");
             GENERATE_TRAP();
         }
 
         uint32_t new_slot_max = s_slot_max > 0 ? s_slot_max * 2 : 1;
-
 
         s_object_slots = (ObjectSlot *)realloc(s_object_slots, sizeof(ObjectSlot) * new_slot_max);
         for (uint32_t i = s_slot_max; i < new_slot_max; i++) {
@@ -66,7 +83,7 @@ ObjectID ObjectDB::AddInstance(Object *object) {
     if (s_object_slots[slot].object != nullptr) {
         s_spin_lock.unlock();
         if (s_object_slots[slot].object != nullptr) [[unlikely]] {
-            LOG_ERROR("");
+            LOG_ERROR("The slot placed has a not null object");
             return {};
         }
     }

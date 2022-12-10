@@ -22,7 +22,7 @@ using RefWeak = third_party::intrusive_weak_ptr<T>;
 class RefCounted : public third_party::intrusive_base<RefCounted>, public Object  {
     GOBCLASS(RefCounted, Object)
 public:
-
+    RefCounted();
 };
 
 }
