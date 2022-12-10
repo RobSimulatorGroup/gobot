@@ -21,6 +21,11 @@ struct wrapper_mapper<gobot::Ref<T>> {
         return obj.get();
     }
 
+    static RTTR_INLINE rttr::wrapper_holder_type get_wrapper_holder_type()
+    {
+        return rttr::wrapper_holder_type::ref;
+    }
+
     static inline type create(const wrapped_type& t)
     {
         return type(t);

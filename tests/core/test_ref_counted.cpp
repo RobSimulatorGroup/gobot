@@ -8,6 +8,7 @@
 #include <gtest/gtest.h>
 
 #include <gobot/core/ref_counted.hpp>
+#include <gobot/log.hpp>
 
 namespace {
 
@@ -61,11 +62,7 @@ TEST(TestRefCounted, test_nullptr) {
 
 TEST(TestRefRegister, test_ref) {
     gobot::Ref<gobot::RefCounted> p{nullptr};
-    ASSERT_TRUE(p.use_count() == 0);
-    ASSERT_FALSE(p.operator bool());
-
-    p = gobot::MakeRef<TestResource>();
-    ASSERT_TRUE(p.unique());
-    ASSERT_TRUE(p.operator bool());
-    ASSERT_TRUE(p.is_valid());
+    gobot::Variant variant(p);
+    ASSERT_TRUE(variant.get_type().is_wrapper());
+    LOG_INFO("{}", (int) variant.get_type().get_wrapper_holder_type());
 }
