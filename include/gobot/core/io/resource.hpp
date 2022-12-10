@@ -14,6 +14,8 @@
 
 namespace gobot {
 
+class Node;
+
 class Resource: public RefCounted {
     Q_OBJECT
     GOBCLASS(Resource, RefCounted)
@@ -49,6 +51,8 @@ public:
 
     void UnregisterOwner(Object *owner);
 
+    Ref<Resource> DuplicateForLocalScene(Node* for_scene);
+
 protected:
     void SetPath(const String &path);
 
@@ -62,6 +66,7 @@ private:
 
     String name_;
     String path_cache_;
+    Node *local_scene_ = nullptr;
     bool local_to_scene_{false};
     Uuid uuid_{};
 

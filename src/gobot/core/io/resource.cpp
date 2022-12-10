@@ -16,12 +16,43 @@ Resource::Resource() {
 
 }
 
-void RegisterOwner(Object *owner) {
-
+void Resource::RegisterOwner(Object *p_owner) {
+    owners_.insert(p_owner->GetInstanceId());
 }
 
-void UnregisterOwner(Object *owner) {
+void Resource::UnregisterOwner(Object *p_owner) {
+    owners_.erase(p_owner->GetInstanceId());
+}
 
+Ref<Resource> Resource::DuplicateForLocalScene(Node* for_scene) {
+    auto type = GetType();
+    auto new_resource = type.create();
+    if (!new_resource.can_convert<Resource>()) {
+        LOG_ERROR("Cannot Create new Resource: {}", GetClassName());
+        return nullptr;
+    }
+
+    Ref<Resource> r(new_resource.convert<Resource*>());
+
+    local_scene_ = for_scene;
+
+    for (const auto& prop : type.get_properties()) {
+        auto property_info = prop.get_metadata("").get_value<PropertyInfo>();
+        USING_ENUM_BITWISE_OPERATORS;
+        if (!(bool)(property_info.usage & PropertyUsageFlags::Storage)) {
+            continue;
+        }
+        auto prop_value = prop.get_value(Instance(this));
+        if (prop.get_type().is_derived_from<Resource>()) {
+            auto re = prop_value.convert<Resource*>();
+            if (re->local_to_scene_) {
+                Ref<Resource> dupe = re->DuplicateForLocalScene(for_scene);
+            }
+        }
+        prop.set_value(r, prop_value);
+    }
+
+    return r;
 }
 
 Resource::~Resource() {

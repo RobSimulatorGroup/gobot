@@ -21,7 +21,7 @@ public:
 TEST(TestRefCounted, test_count) {
     gobot::Ref<gobot::RefCounted> p;
     gobot::RefWeak<gobot::RefCounted> wp;
-    p = godot::MakeRef<TestResource>();
+    p = gobot::MakeRef<TestResource>();
     ASSERT_TRUE(p.use_count() == 1);
     gobot::Ref<gobot::RefCounted> p1 = p;
     ASSERT_TRUE(p.use_count() == 2);
@@ -52,7 +52,19 @@ TEST(TestRefCounted, test_nullptr) {
     ASSERT_TRUE(p.use_count() == 0);
     ASSERT_FALSE(p.operator bool());
 
-    p = godot::MakeRef<TestResource>();
+    p = gobot::MakeRef<TestResource>();
+    ASSERT_TRUE(p.unique());
+    ASSERT_TRUE(p.operator bool());
+    ASSERT_TRUE(p.is_valid());
+}
+
+
+TEST(TestRefRegister, test_ref) {
+    gobot::Ref<gobot::RefCounted> p{nullptr};
+    ASSERT_TRUE(p.use_count() == 0);
+    ASSERT_FALSE(p.operator bool());
+
+    p = gobot::MakeRef<TestResource>();
     ASSERT_TRUE(p.unique());
     ASSERT_TRUE(p.operator bool());
     ASSERT_TRUE(p.is_valid());

@@ -14,7 +14,7 @@
 namespace gobot {
 
 template <typename T>
-using Ref = third_party::intrusive_ptr<T>;
+using Ref = typename third_party::intrusive_ptr<T>;
 
 template <typename T>
 using RefWeak = third_party::intrusive_weak_ptr<T>;
@@ -25,9 +25,6 @@ public:
     RefCounted();
 };
 
-}
-
-namespace godot {
 
 template<typename T, typename ...Args>
 auto MakeRef(Args &&... args){
@@ -57,4 +54,6 @@ gobot::Ref<U> const_pointer_cast(gobot::Ref<T> ref) noexcept {
     return gobot::Ref<U>(u);
 }
 
-}
+} // end of namespace gobot
+
+#include "gobot/core/ref_wrapper_mapper.hpp"
