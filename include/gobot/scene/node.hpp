@@ -19,7 +19,7 @@ public:
     Node();
 
 private:
-    std::vector<Node> children_node_;
+    std::vector<Node*> children_node_;
 
 };
 

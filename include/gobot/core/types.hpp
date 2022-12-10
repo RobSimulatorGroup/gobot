@@ -11,7 +11,6 @@
 #include <QString>
 #include <QUuid>
 #include <nlohmann/json.hpp>
-#include "gobot/core/string_name.hpp"
 
 namespace gobot {
 

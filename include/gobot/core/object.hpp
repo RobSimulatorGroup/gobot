@@ -7,12 +7,15 @@
 
 #pragma once
 
+#include <rttr/rttr_enable.h>
+#include <QObject>
+
 #include "gobot/core/types.hpp"
 #include "gobot/core/marcos.hpp"
-#include "notification_enum.hpp"
-#include <rttr/rttr_enable.h>
+#include "gobot/core/notification_enum.hpp"
+#include "gobot/core/spin_lock.hpp"
+#include "gobot/core/object_id.hpp"
 
-#include <QObject>
 
 // Do nothing for 1
 #define GOBOT_CLASS_1(...)    \
@@ -86,12 +89,12 @@ struct GOBOT_EXPORT PropertyInfo {
         return *this;
     }
 
-    PropertyInfo& SetHint(const String& _hint_string) {
+    PropertyInfo& SetHintString(const String& _hint_string) {
         hint_string = _hint_string;
         return *this;
     }
 
-    PropertyInfo& SetHint(const PropertyUsageFlags& property_usage_flags) {
+    PropertyInfo& SetUsageFlags(const PropertyUsageFlags& property_usage_flags) {
         usage = property_usage_flags;
         return *this;
     }
@@ -145,7 +148,11 @@ public:
 
     bool Set(const String& name, Argument arg);
 
-    Variant Get(const String& name) const;
+    [[nodiscard]] Variant Get(const String& name) const;
+
+    [[nodiscard]] ALWAYS_INLINE bool IsRefCounted() const { return type_is_reference_; }
+
+    [[nodiscard]] ALWAYS_INLINE ObjectID GetInstanceId() const { return instance_id_; }
 
 protected:
 
@@ -174,7 +181,45 @@ private:
         Notification(NotificationType::PreDelete, true);
     }
 
+private:
+    friend class RefCounted;
+    bool type_is_reference_ = false;
+    ObjectID instance_id_;
 };
 
 
-} // end of namespace gobot::core
+class ObjectDB {
+// This needs to add up to 63, 1 bit is for reference.
+#define OBJECTDB_VALIDATOR_BITS 39
+#define OBJECTDB_VALIDATOR_MASK ((uint64_t(1) << OBJECTDB_VALIDATOR_BITS) - 1)
+#define OBJECTDB_SLOT_MAX_COUNT_BITS 24
+#define OBJECTDB_SLOT_MAX_COUNT_MASK ((uint64_t(1) << OBJECTDB_SLOT_MAX_COUNT_BITS) - 1)
+#define OBJECTDB_REFERENCE_BIT (uint64_t(1) << (OBJECTDB_SLOT_MAX_COUNT_BITS + OBJECTDB_VALIDATOR_BITS))
+
+public:
+
+    struct ObjectSlot { // 128 bits per slot.
+        uint64_t validator : OBJECTDB_VALIDATOR_BITS;
+        uint64_t next_free : OBJECTDB_SLOT_MAX_COUNT_BITS;
+        uint64_t is_ref_counted : 1;
+        Object *object = nullptr;
+    };
+
+
+private:
+    static ObjectID AddInstance(Object *object);
+
+    static void RemoveInstance(Object *object);
+
+private:
+    friend class Object;
+
+    static SpinLock s_spin_lock;
+    static uint32_t s_slot_count;
+    static uint32_t s_slot_max;
+    static ObjectSlot* s_object_slots;
+    static uint64_t s_validator_counter;
+
+};
+
+} // end of namespace gobot
