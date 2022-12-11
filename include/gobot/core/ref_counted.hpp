@@ -8,6 +8,7 @@
 #pragma once
 
 #include <intrusive_ptr/intrusive_ptr.hpp>
+#include <rttr/wrapper_mapper.h>
 
 #include "gobot/core/object.hpp"
 
@@ -56,4 +57,37 @@ gobot::Ref<U> const_pointer_cast(gobot::Ref<T> ref) noexcept {
 
 } // end of namespace gobot
 
-#include "gobot/core/ref_wrapper_mapper.hpp"
+namespace rttr {
+
+template<typename T>
+struct wrapper_mapper<gobot::Ref<T>> {
+    using wrapped_type = decltype(std::declval<gobot::Ref<T>>().get());
+    using type = gobot::Ref<T>;
+
+    static inline wrapped_type get(const type &obj) {
+        return obj.get();
+    }
+
+    static RTTR_INLINE rttr::wrapper_holder_type get_wrapper_holder_type() {
+        return rttr::wrapper_holder_type::Ref;
+    }
+
+    static inline type create(const wrapped_type &t) {
+        return type(t);
+    }
+
+    template<typename U>
+    static gobot::Ref<U> convert(const type &source, bool &ok) {
+
+        auto cast = gobot::dynamic_pointer_cast<U>(source);
+        if (cast) {
+            ok = true;
+            return cast;
+        } else {
+            ok = false;
+            return gobot::Ref<U>();
+        }
+    }
+};
+
+}

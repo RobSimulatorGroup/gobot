@@ -22,6 +22,7 @@ using Instance = rttr::instance;
 using Method = rttr::method;
 using Argument = rttr::argument;
 using Enumeration = rttr::enumeration;
+using WrapperHolderType = rttr::wrapper_holder_type;
 
 
 using String = QString;
