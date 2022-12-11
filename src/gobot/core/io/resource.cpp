@@ -46,12 +46,12 @@ Ref<Resource> Resource::DuplicateForLocalScene(Node* for_scene) {
         if (prop.get_type().get_wrapper_holder_type() == WrapperHolderType::Ref) {
             if (!prop_value.can_convert<Ref<Resource>>()) {
                 LOG_ERROR("prop:{} cannot convert to Ref<Resource>", prop.get_name().data());
-                continue;
-            }
-            auto re = prop_value.convert<Ref<Resource>>();
-            if (re->local_to_scene_) {
-                Ref<Resource> prop_copy = re->DuplicateForLocalScene(for_scene);
-                re = prop_copy;
+            } else {
+                auto re = prop_value.convert<Ref<Resource>>();
+                if (re->local_to_scene_) {
+                    Ref<Resource> prop_copy = re->DuplicateForLocalScene(for_scene);
+                    re = prop_copy;
+                }
             }
         }
         r->Set(prop.get_name().data(), prop_value);
@@ -80,10 +80,13 @@ Ref<Resource> Resource::Clone(bool subresources) const {
         Variant p = Get(prop_name);
         if (p.get_type().get_wrapper_holder_type() == WrapperHolderType::Ref &&
                   (subresources || (bool)(property_info.usage & PropertyUsageFlags::NotSharedOnClone))) {
-            auto sr = p.convert<Ref<Resource>>();
-            if (sr.is_valid()) {
+            if (!p.can_convert<Ref<Resource>>()) {
+                LOG_ERROR("prop:{} cannot convert to Ref<Resource>", prop.get_name().data());
+            } else {
+                auto sr = p.convert<Ref<Resource>>();
                 r->Set(prop_name, sr->Clone(subresources));
             }
+
         } else {
             r->Set(prop_name, p);
         }
