@@ -24,7 +24,7 @@ void Resource::UnregisterOwner(Object *p_owner) {
     owners_.erase(p_owner->GetInstanceId());
 }
 
-Ref<Resource> Resource::DuplicateForLocalScene(Node* for_scene) {
+Ref<Resource> Resource::CloneForLocalScene(Node* for_scene) {
     auto type = GetType();
     auto new_resource = type.create();
     if (!new_resource.is_valid() && new_resource.can_convert<Resource*>()) {
@@ -49,7 +49,7 @@ Ref<Resource> Resource::DuplicateForLocalScene(Node* for_scene) {
             } else {
                 auto re = prop_value.convert<Ref<Resource>>();
                 if (re->local_to_scene_) {
-                    Ref<Resource> prop_copy = re->DuplicateForLocalScene(for_scene);
+                    Ref<Resource> prop_copy = re->CloneForLocalScene(for_scene);
                     re = prop_copy;
                 }
             }
