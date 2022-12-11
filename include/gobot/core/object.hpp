@@ -116,7 +116,7 @@ struct GOBOT_EXPORT PropertyInfo {
 
 static constexpr const char *PROPERTY_INFO_KEY  = "PROPERTY_INFO_KEY";
 
-MetaData AddPropertyInfo(const PropertyInfo& property_info);
+MetaData AddMetaPropertyInfo(const PropertyInfo& property_info);
 
 
 class GOBOT_EXPORT Object : public QObject {

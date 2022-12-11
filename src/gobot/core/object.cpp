@@ -15,7 +15,7 @@
 
 namespace gobot {
 
-MetaData AddPropertyInfo(const PropertyInfo& property_info) {
+MetaData AddMetaPropertyInfo(const PropertyInfo& property_info) {
     return rttr::metadata(PROPERTY_INFO_KEY, property_info);
 }
 
