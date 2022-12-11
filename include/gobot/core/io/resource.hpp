@@ -53,6 +53,9 @@ public:
 
     Ref<Resource> DuplicateForLocalScene(Node* for_scene);
 
+    // If subresources is false, a shallow copy is returned.
+    // Nested resources within subresources are not duplicated and are shared from the original resource.
+    // This behavior can be overridden by the PropertyUsageFlags::NotSharedOnClone flag
     virtual Ref<Resource> Clone(bool subresources = false) const;
 
 protected:
