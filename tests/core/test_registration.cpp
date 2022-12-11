@@ -38,5 +38,5 @@ TEST(TestRegistration, test_registration) {
 TEST(TestRegistration, test_types) {
     auto uuid = gobot::Uuid::createUuid();
     gobot::Variant var_uuid = uuid;
-    ASSERT_TRUE(var_uuid.to_string() == var_uuid.to_string());
+    ASSERT_TRUE(uuid.toString().toStdString() == var_uuid.to_string());
 }
