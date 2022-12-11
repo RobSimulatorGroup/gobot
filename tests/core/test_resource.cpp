@@ -11,6 +11,4 @@
 
 TEST(TestResource, test_nullptr) {
 
-
-
 }

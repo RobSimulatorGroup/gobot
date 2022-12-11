@@ -22,11 +22,9 @@ TEST(TestRegistration, test_registration) {
     for(const auto& name: names) {
         string_names.emplace_back(name.data());
     }
-    ASSERT_TRUE(string_names.size() == 4);
     ASSERT_TRUE(string_names.at(0) == "None");
     ASSERT_TRUE(string_names.at(1) == "Storage");
     ASSERT_TRUE(string_names.at(2) == "Editor");
-    ASSERT_TRUE(string_names.at(3) == "UsageDefault");
 
     auto object_type = gobot::Type::get_by_name("Object");
     auto object_type2 = gobot::Type::get<gobot::Object>();

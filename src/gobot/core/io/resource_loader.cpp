@@ -17,12 +17,11 @@ Ref<Resource> ResourceLoader::Load(const String &path,
                                    const String &type_hint,
                                    ResourceFormatLoader::CacheMode cache_mode) {
 
-
+    return nullptr;
 }
 
 bool ResourceLoader::Exists(const String &path, const String &type_hint) {
-
-
+    return false;
 }
 
 
