@@ -60,7 +60,7 @@ Ref<Resource> Resource::DuplicateForLocalScene(Node* for_scene) {
     return r;
 }
 
-Ref<Resource> Resource::Clone(bool subresources) const {
+Ref<Resource> Resource::Clone(bool shallow_copy) const {
     auto type = GetType();
     auto new_resource = type.create();
     if (!new_resource.is_valid() && new_resource.can_convert<Resource*>()) {
@@ -79,14 +79,13 @@ Ref<Resource> Resource::Clone(bool subresources) const {
         auto prop_name = prop.get_name().data();
         Variant p = Get(prop_name);
         if (p.get_type().get_wrapper_holder_type() == WrapperHolderType::Ref &&
-                  (subresources || (bool)(property_info.usage & PropertyUsageFlags::NotSharedOnClone))) {
+                  (shallow_copy || (bool)(property_info.usage & PropertyUsageFlags::NotSharedOnClone))) {
             if (!p.can_convert<Ref<Resource>>()) {
                 LOG_ERROR("prop:{} cannot convert to Ref<Resource>", prop.get_name().data());
             } else {
                 auto sr = p.convert<Ref<Resource>>();
-                r->Set(prop_name, sr->Clone(subresources));
+                r->Set(prop_name, sr->Clone(shallow_copy));
             }
-
         } else {
             r->Set(prop_name, p);
         }
