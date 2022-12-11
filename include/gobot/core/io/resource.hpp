@@ -53,6 +53,8 @@ public:
 
     Ref<Resource> DuplicateForLocalScene(Node* for_scene);
 
+    virtual Ref<Resource> Clone(bool subresources = false) const;
+
 protected:
     void SetPath(const String &path);
 

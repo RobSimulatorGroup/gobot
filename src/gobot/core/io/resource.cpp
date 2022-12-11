@@ -27,14 +27,14 @@ void Resource::UnregisterOwner(Object *p_owner) {
 Ref<Resource> Resource::DuplicateForLocalScene(Node* for_scene) {
     auto type = GetType();
     auto new_resource = type.create();
-    if (!new_resource.can_convert<Resource>()) {
+    if (!new_resource.is_valid() && new_resource.can_convert<Resource*>()) {
         LOG_ERROR("Cannot Create new Resource: {}", GetClassName());
         return nullptr;
     }
 
     Ref<Resource> r(new_resource.convert<Resource*>());
 
-    local_scene_ = for_scene;
+    r->local_scene_ = for_scene;
 
     for (const auto& prop : type.get_properties()) {
         auto property_info = prop.get_metadata(PROPERTY_INFO_KEY).get_value<PropertyInfo>();
@@ -42,10 +42,10 @@ Ref<Resource> Resource::DuplicateForLocalScene(Node* for_scene) {
         if (!(bool)(property_info.usage & PropertyUsageFlags::Storage)) {
             continue;
         }
-        auto prop_value = prop.get_value(Instance(this));
+        auto prop_value = Get(prop.get_name().data());
         if (prop.get_type().get_wrapper_holder_type() == WrapperHolderType::Ref) {
-            if (prop_value.can_convert<Ref<Resource>>()) {
-                LOG_ERROR();
+            if (!prop_value.can_convert<Ref<Resource>>()) {
+                LOG_ERROR("prop:{} cannot convert to Ref<Resource>", prop.get_name().data());
                 continue;
             }
             auto re = prop_value.convert<Ref<Resource>>();
@@ -54,7 +54,39 @@ Ref<Resource> Resource::DuplicateForLocalScene(Node* for_scene) {
                 re = prop_copy;
             }
         }
-        prop.set_value(r, prop_value);
+        r->Set(prop.get_name().data(), prop_value);
+    }
+
+    return r;
+}
+
+Ref<Resource> Resource::Clone(bool subresources) const {
+    auto type = GetType();
+    auto new_resource = type.create();
+    if (!new_resource.is_valid() && new_resource.can_convert<Resource*>()) {
+        LOG_ERROR("Cannot Create new Resource: {}", GetClassName());
+        return nullptr;
+    }
+
+    Ref<Resource> r(new_resource.convert<Resource*>());
+
+    for (const auto& prop : type.get_properties()) {
+        auto property_info = prop.get_metadata(PROPERTY_INFO_KEY).get_value<PropertyInfo>();
+        USING_ENUM_BITWISE_OPERATORS;
+        if (!(bool)(property_info.usage & PropertyUsageFlags::Storage)) {
+            continue;
+        }
+        auto prop_name = prop.get_name().data();
+        Variant p = Get(prop_name);
+        if (p.get_type().get_wrapper_holder_type() == WrapperHolderType::Ref &&
+                  (subresources || (bool)(property_info.usage & PropertyUsageFlags::DoNotSharedOnDuplicate))) {
+            auto sr = p.convert<Ref<Resource>>();
+            if (sr.is_valid()) {
+                r->Set(prop_name, sr->Clone(subresources));
+            }
+        } else {
+            r->Set(prop_name, p);
+        }
     }
 
     return r;
