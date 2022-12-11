@@ -9,6 +9,7 @@
 
 #include <gobot/core/object.hpp>
 #include <gobot/core/types.hpp>
+#include <gobot/log.hpp>
 #include <rttr/enumeration.h>
 
 
@@ -32,4 +33,10 @@ TEST(TestRegistration, test_registration) {
     ASSERT_TRUE(object_type.is_valid());
     ASSERT_TRUE(object_type == object_type2);
 
+}
+
+TEST(TestRegistration, test_types) {
+    auto uuid = gobot::Uuid::createUuid();
+    gobot::Variant var_uuid = uuid;
+    ASSERT_TRUE(var_uuid.to_string() == var_uuid.to_string());
 }
