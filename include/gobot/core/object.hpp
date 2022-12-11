@@ -69,7 +69,7 @@ enum class GOBOT_EXPORT PropertyUsageFlags {
     None = 0,
     Storage = 1 << 1,
     Editor = 1 << 2,
-    DoNotSharedOnDuplicate = 1 << 3,
+    NotSharedOnClone = 1 << 3,
     Default = Storage | Editor
 };
 

@@ -79,7 +79,7 @@ Ref<Resource> Resource::Clone(bool subresources) const {
         auto prop_name = prop.get_name().data();
         Variant p = Get(prop_name);
         if (p.get_type().get_wrapper_holder_type() == WrapperHolderType::Ref &&
-                  (subresources || (bool)(property_info.usage & PropertyUsageFlags::DoNotSharedOnDuplicate))) {
+                  (subresources || (bool)(property_info.usage & PropertyUsageFlags::NotSharedOnClone))) {
             auto sr = p.convert<Ref<Resource>>();
             if (sr.is_valid()) {
                 r->Set(prop_name, sr->Clone(subresources));
