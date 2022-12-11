@@ -8,6 +8,8 @@
 #pragma once
 
 #include <rttr/rttr_enable.h>
+#include <rttr/detail/base/core_prerequisites.h>
+#include <magic_enum.hpp>
 
 // Should always inline no matter what.
 #ifndef ALWAYS_INLINE
@@ -51,3 +53,32 @@
 #define CAT5(A, B, C, D, E) A##B##C##D##E
 
 #define GOB_UNUSED(x) (void)x;
+
+
+#ifdef _MSC_VER
+#define GENERATE_TRAP() __debugbreak()
+#else
+#define GENERATE_TRAP() __builtin_trap()
+#endif
+
+
+
+namespace rttr::detail
+{
+template<typename Ctor_Type, typename Policy, typename Accessor, typename Arg_Indexer>
+struct constructor_invoker;
+}
+
+namespace gobot {
+static void gobot_auto_register_reflection_function_();
+}
+
+#define GOBOT_REGISTRATION_FRIEND                                                           \
+friend void gobot::gobot_auto_register_reflection_function_();                              \
+template<typename Ctor_Type, typename Policy, typename Accessor, typename Arg_Indexer>      \
+friend struct rttr::detail::constructor_invoker;
+
+
+// out-of-the-box bitwise operators for enums.
+#define USING_ENUM_BITWISE_OPERATORS  using namespace magic_enum::bitwise_operators
+

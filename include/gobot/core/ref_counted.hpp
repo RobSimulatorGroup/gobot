@@ -8,13 +8,14 @@
 #pragma once
 
 #include <intrusive_ptr/intrusive_ptr.hpp>
+#include <rttr/wrapper_mapper.h>
 
 #include "gobot/core/object.hpp"
 
 namespace gobot {
 
 template <typename T>
-using Ref = third_party::intrusive_ptr<T>;
+using Ref = typename third_party::intrusive_ptr<T>;
 
 template <typename T>
 using RefWeak = third_party::intrusive_weak_ptr<T>;
@@ -22,12 +23,9 @@ using RefWeak = third_party::intrusive_weak_ptr<T>;
 class RefCounted : public third_party::intrusive_base<RefCounted>, public Object  {
     GOBCLASS(RefCounted, Object)
 public:
-
+    RefCounted();
 };
 
-}
-
-namespace godot {
 
 template<typename T, typename ...Args>
 auto MakeRef(Args &&... args){
@@ -56,5 +54,40 @@ gobot::Ref<U> const_pointer_cast(gobot::Ref<T> ref) noexcept {
     ref.release();
     return gobot::Ref<U>(u);
 }
+
+} // end of namespace gobot
+
+namespace rttr {
+
+template<typename T>
+struct wrapper_mapper<gobot::Ref<T>> {
+    using wrapped_type = decltype(std::declval<gobot::Ref<T>>().get());
+    using type = gobot::Ref<T>;
+
+    static inline wrapped_type get(const type &obj) {
+        return obj.get();
+    }
+
+    static RTTR_INLINE rttr::wrapper_holder_type get_wrapper_holder_type() {
+        return rttr::wrapper_holder_type::Ref;
+    }
+
+    static inline type create(const wrapped_type &t) {
+        return type(t);
+    }
+
+    template<typename U>
+    static gobot::Ref<U> convert(const type &source, bool &ok) {
+
+        auto cast = gobot::dynamic_pointer_cast<U>(source);
+        if (cast) {
+            ok = true;
+            return cast;
+        } else {
+            ok = false;
+            return gobot::Ref<U>();
+        }
+    }
+};
 
 }

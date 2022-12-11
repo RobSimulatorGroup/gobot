@@ -68,12 +68,22 @@ private:
 
 } // end of namespace gobot
 
+template<>
+struct fmt::formatter<gobot::String> : fmt::formatter<std::string>
+{
+    static auto format(const gobot::String& str, format_context &ctx) -> decltype(ctx.out())
+    {
+        return format_to(ctx.out(), "{}", str.toStdString());
+    }
+};
+
+
 #define SPDLOG_STR_H(x) #x
 #define SPDLOG_STR_HELPER(x) SPDLOG_STR_H(x)
 
 #define LOG_TRACE(...) gobot::Logger::getInstance().getLogger()->trace("[" __FILE__ ":" SPDLOG_STR_HELPER(__LINE__) "] ", __VA_ARGS__)
 #define LOG_DEBUG(...) gobot::Logger::getInstance().getLogger()->debug("[" __FILE__ ":" SPDLOG_STR_HELPER(__LINE__) "] " __VA_ARGS__)
-#define LOG_INFO(...)  gobot::Logger::getInstance().getLogger()->info("[" __FILE__ ": " SPDLOG_STR_HELPER(__LINE__) "] " __VA_ARGS__)
-#define LOG_WARN(...)  gobot::Logger::getInstance().getLogger()->warn("[" __FILE__ ": " SPDLOG_STR_HELPER(__LINE__) "] " __VA_ARGS__)
-#define LOG_ERROR(...) gobot::Logger::getInstance().getLogger()->error("[" __FILE__ ": " SPDLOG_STR_HELPER(__LINE__) "] " __VA_ARGS__)
-#define LOG_FATAL(...) gobot::Logger::getInstance().getLogger()->critical("[" __FILE__ ": " SPDLOG_STR_HELPER(__LINE__) "] " __VA_ARGS__)
+#define LOG_INFO(...)  gobot::Logger::getInstance().getLogger()->info("[" __FILE__ ":" SPDLOG_STR_HELPER(__LINE__) "] " __VA_ARGS__)
+#define LOG_WARN(...)  gobot::Logger::getInstance().getLogger()->warn("[" __FILE__ ":" SPDLOG_STR_HELPER(__LINE__) "] " __VA_ARGS__)
+#define LOG_ERROR(...) gobot::Logger::getInstance().getLogger()->error("[" __FILE__ ":" SPDLOG_STR_HELPER(__LINE__) "] " __VA_ARGS__)
+#define LOG_FATAL(...) gobot::Logger::getInstance().getLogger()->critical("[" __FILE__ ":" SPDLOG_STR_HELPER(__LINE__) "] " __VA_ARGS__)

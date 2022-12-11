@@ -14,7 +14,7 @@
 
 namespace gobot {
 
-using Varint = rttr::variant;
+using Variant = rttr::variant;
 using Type = rttr::type;
 using VarintListView = rttr::variant_sequential_view;
 using VarintMapView  = rttr::variant_associative_view;
@@ -22,6 +22,8 @@ using Instance = rttr::instance;
 using Method = rttr::method;
 using Argument = rttr::argument;
 using Enumeration = rttr::enumeration;
+using MetaData = rttr::detail::metadata;
+using WrapperHolderType = rttr::wrapper_holder_type;
 
 
 using String = QString;

@@ -57,6 +57,56 @@ inline void QuickEnumeration_(std::string_view name) {
     EnumRegistrationImpl(name, enum_data_map, std::make_index_sequence<size>());
 }
 
+
+// This is copy from pybind11
+template <typename... Args>
+struct overload_cast_impl {
+    template <typename Return>
+    constexpr auto operator()(Return (*pf)(Args...)) const noexcept -> decltype(pf) {
+        return pf;
+    }
+
+    template <typename Return, typename Class>
+    constexpr auto operator()(Return (Class::*pmf)(Args...), std::false_type = {}) const noexcept
+    -> decltype(pmf) {
+        return pmf;
+    }
+
+    template <typename Return, typename Class>
+    constexpr auto operator()(Return (Class::*pmf)(Args...) const, std::true_type) const noexcept
+    -> decltype(pmf) {
+        return pmf;
+    }
+};
+
+/// Syntax sugar for resolving overloaded function pointers:
+///  - regular: static_cast<Return (Class::*)(Arg0, Arg1, Arg2)>(&Class::func)
+///  - sweet:   overload_cast<Arg0, Arg1, Arg2>(&Class::func)
+template <typename... Args>
+static constexpr overload_cast_impl<Args...> overload_cast{};
+/// Const member function selector for overload_cast
+///  - regular: static_cast<Return (Class::*)(Arg) const>(&Class::func)
+///  - sweet:   overload_cast<Arg>(&Class::func, const_)
+
+namespace detail {
+static constexpr auto const_ = std::true_type{};
 }
 
-#define GOBOT_REGISTRATION RTTR_REGISTRATION
+}
+
+#define GOBOT_REGISTRATION                                                          \
+namespace gobot {                                                                   \
+    static void gobot_auto_register_reflection_function_();                         \
+}                                                                                   \
+namespace                                                                           \
+{                                                                                   \
+    struct gobot__auto__register__                                                  \
+    {                                                                               \
+        gobot__auto__register__()                                                   \
+        {                                                                           \
+            gobot::gobot_auto_register_reflection_function_();                      \
+        }                                                                           \
+    };                                                                              \
+}                                                                                   \
+static const gobot__auto__register__ RTTR_CAT(auto_register__, __LINE__);           \
+static void gobot::gobot_auto_register_reflection_function_()

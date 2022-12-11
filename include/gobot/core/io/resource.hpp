@@ -6,10 +6,15 @@
  * This file is created by Qiqi Wu, 22-11-20
 */
 
-#include "gobot/core/ref_counted.hpp"
+#pragma once
+
 #include <mutex>
+#include "gobot/core/ref_counted.hpp"
+#include "gobot/core/object_id.hpp"
 
 namespace gobot {
+
+class Node;
 
 class Resource: public RefCounted {
     Q_OBJECT
@@ -17,7 +22,9 @@ class Resource: public RefCounted {
 public:
     Resource();
 
-    virtual void SetPath(const String &path);
+    ~Resource();
+
+    virtual void SetPath(const String &path, bool take_over = false);
 
     String GetPath() const;
 
@@ -25,12 +32,34 @@ public:
 
     String GetName() const;
 
-    void SetResourceUuid(const QUuid &uuid);
+    void SetResourceUuid(const Uuid &uuid);
 
     Uuid GetResourceUuid() const;
 
     Uuid GenerateUuid();
 
+    virtual void ReloadFromFile();
+
+    static bool IsResourceFile(const String& path);
+
+    // for resources that use variable amount of properties, either via _validate_property or _get_property_list, this function needs to be implemented to correctly clear state
+    virtual void ResetState();
+
+    bool CopyFrom(const Ref<Resource> &resource);
+
+    void RegisterOwner(Object *owner);
+
+    void UnregisterOwner(Object *owner);
+
+    Ref<Resource> CloneForLocalScene(Node* for_scene);
+
+    // By default, sub-resources are shared between resource copies for efficiency.
+    // If copy_subresource is false, a shallow copy is returned. Nested resources within subresources are not duplicated and are shared from the original resource.
+    // This behavior can be overridden by the PropertyUsageFlags::NotSharedOnClone flag
+    virtual Ref<Resource> Clone(bool copy_subresource = false) const;
+
+protected:
+    void SetPath(const String &path);
 
 Q_SIGNALS:
     void resourceChanged();
@@ -38,11 +67,15 @@ Q_SIGNALS:
 private:
     friend class ResourceCache;
 
+    std::unordered_set<ObjectID> owners_;
+
     String name_;
     String path_cache_;
+    Node *local_scene_ = nullptr;
     bool local_to_scene_{false};
     Uuid uuid_{};
 
+    GOBOT_REGISTRATION_FRIEND
 };
 
 
@@ -54,11 +87,13 @@ public:
 
 private:
     friend class Resource;
-    friend class ResourceLoader; //need the lock
+    friend class ResourceLoader;
+
     static std::mutex s_lock;
     static std::unordered_map<String, Resource*> s_resources;
 
     static void Clear();
+
 
 };
 
