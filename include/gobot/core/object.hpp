@@ -73,6 +73,7 @@ enum class GOBOT_EXPORT PropertyUsageFlags {
 };
 
 
+
 struct GOBOT_EXPORT PropertyInfo {
     String name;
     PropertyHint hint = PropertyHint::None;
@@ -112,6 +113,10 @@ struct GOBOT_EXPORT PropertyInfo {
     }
 
 };
+
+static constexpr const char *PROPERTY_INFO_KEY  = "PROPERTY_INFO_KEY";
+
+MetaData AddPropertyInfo(const PropertyInfo& property_info);
 
 
 class GOBOT_EXPORT Object : public QObject {

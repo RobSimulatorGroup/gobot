@@ -37,7 +37,7 @@ Ref<Resource> Resource::DuplicateForLocalScene(Node* for_scene) {
     local_scene_ = for_scene;
 
     for (const auto& prop : type.get_properties()) {
-        auto property_info = prop.get_metadata("").get_value<PropertyInfo>();
+        auto property_info = prop.get_metadata(PROPERTY_INFO_KEY).get_value<PropertyInfo>();
         USING_ENUM_BITWISE_OPERATORS;
         if (!(bool)(property_info.usage & PropertyUsageFlags::Storage)) {
             continue;
@@ -173,7 +173,7 @@ bool Resource::CopyFrom(const Ref<Resource> &resource) {
     ResetState(); //may want to reset state
 
     for (const auto& prop : resource->get_type().get_properties()) {
-        auto property_info = prop.get_metadata("").get_value<PropertyInfo>();
+        auto property_info = prop.get_metadata(PROPERTY_INFO_KEY).get_value<PropertyInfo>();
         USING_ENUM_BITWISE_OPERATORS;
         if (!(bool)(property_info.usage & PropertyUsageFlags::Storage)) {
             continue;
