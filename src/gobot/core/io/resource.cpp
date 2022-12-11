@@ -43,10 +43,15 @@ Ref<Resource> Resource::DuplicateForLocalScene(Node* for_scene) {
             continue;
         }
         auto prop_value = prop.get_value(Instance(this));
-        if (prop.get_type().is_derived_from<Resource>()) {
-            auto re = prop_value.convert<Resource*>();
+        if (prop.get_type().get_wrapper_holder_type() == WrapperHolderType::Ref) {
+            if (prop_value.can_convert<Ref<Resource>>()) {
+                LOG_ERROR();
+                continue;
+            }
+            auto re = prop_value.convert<Ref<Resource>>();
             if (re->local_to_scene_) {
-                Ref<Resource> dupe = re->DuplicateForLocalScene(for_scene);
+                Ref<Resource> prop_copy = re->DuplicateForLocalScene(for_scene);
+                re = prop_copy;
             }
         }
         prop.set_value(r, prop_value);
