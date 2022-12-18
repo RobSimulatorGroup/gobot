@@ -10,6 +10,8 @@
 #include "gobot/log.hpp"
 #include "gobot/core/registration.hpp"
 
+#include "expected/expected.hpp"
+
 namespace gobot {
 
 Resource::Resource() {
@@ -105,8 +107,12 @@ Resource::~Resource() {
     }
 }
 
-void Resource::SetPath(const String &path) {
+void Resource::SetPathNotTakeOver(const String &path) {
     SetPath(path, false);
+}
+
+void Resource::SetPathTakeOver(const String &path) {
+    SetPath(path, true);
 }
 
 void Resource::SetPath(const String &path, bool take_over) {
@@ -135,6 +141,7 @@ void Resource::SetPath(const String &path, bool take_over) {
         } else {
             ResourceCache::s_lock.unlock();
             LOG_ERROR("Another resource is loaded from path {} (possible cyclic resource inclusion).", path);
+            return;
         }
     }
 
@@ -293,6 +300,6 @@ GOBOT_REGISTRATION {
     Class_<Resource>("Resource")
         .constructor()(CtorAsRawPtr)
         .property("name", &Resource::GetName, &Resource::SetName)
-        .property("resource_path", &Resource::GetPath, overload_cast<const String &>(&Resource::SetPath));
+        .property("resource_path", &Resource::GetPath, &Resource::SetPathNotTakeOver);
 
 };

@@ -98,6 +98,7 @@ target_link_libraries(gobot
     PUBLIC
     RTTR::Core
     intrusive_ptr
+    expected
     ${CONAN_LIBS}
 )
 

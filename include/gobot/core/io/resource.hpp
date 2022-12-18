@@ -24,6 +24,8 @@ public:
 
     ~Resource();
 
+    // Take over will delete old resource cache, further attempts to load an overridden resource by path will instead return this resource
+    // If take_over is false and same path resource cache already existed, this operation will failed.
     virtual void SetPath(const String &path, bool take_over = false);
 
     String GetPath() const;
@@ -59,7 +61,9 @@ public:
     virtual Ref<Resource> Clone(bool copy_subresource = false) const;
 
 protected:
-    void SetPath(const String &path);
+    void SetPathNotTakeOver(const String &path);
+
+    void SetPathTakeOver(const String &path);
 
 Q_SIGNALS:
     void resourceChanged();

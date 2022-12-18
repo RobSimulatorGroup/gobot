@@ -7,19 +7,51 @@
 */
 
 #include "gobot/core/ref_counted.hpp"
+#include "gobot/core/io/resource.hpp"
 
 namespace gobot {
+
+enum ResourceSaverFlags {
+    None = 0,
+    ChangePath = 1,
+};
 
 class ResourceFormatSaver : public RefCounted {
     GOBCLASS(ResourceFormatSaver, RefCounted);
 public:
+    virtual bool Save(const Ref<Resource> &resource, const String &path, ResourceSaverFlags flags = ResourceSaverFlags::None) = 0;
 
+    virtual bool Recognize(const Ref<Resource> &p_resource) const = 0;
+
+    virtual void GetRecognizedExtensions(const Ref<Resource> &resource, std::vector<String>* extensions) const = 0;
+
+    virtual bool RecognizePath(const Ref<Resource> &resource, const String &path) const = 0;
 };
 
 class ResourceSaver {
-
 public:
 
+    using ResourceSavedCallback = std::function<void(Ref<Resource> resource, const String &path)>;
+
+    static bool Save(const Ref<Resource> &resource, const String &target_path = "", ResourceSaverFlags flags = ResourceSaverFlags::None);
+
+    static void GetRecognizedExtensions(const Ref<Resource> &resource, std::vector<String>* extensions);
+
+    static void AddResourceFormatSaver(Ref<ResourceFormatSaver> format_saver, bool at_front = false);
+
+    static void RemoveResourceFormatSaver(const Ref<ResourceFormatSaver>& format_saver);
+
+    static void SetTimestampOnSave(bool timestamp) { s_timestamp_on_save = timestamp; }
+
+    static bool GetTimestampOnSave() { return s_timestamp_on_save; }
+
+    static void SetSaveCallback(ResourceSavedCallback callback);
+
+private:
+    static std::deque<Ref<ResourceFormatSaver>> s_savers;
+    static bool s_timestamp_on_save;
+
+    static ResourceSavedCallback resource_saved_callback;
 
 
 };
