@@ -14,6 +14,21 @@
 
 namespace gobot {
 
+bool ResourceFormatSaver::RecognizePath(const Ref<Resource> &resource, const String &path) const {
+    auto extension = GetFileExtension(path);
+
+    std::vector<String> extensions;
+    GetRecognizedExtensions(resource, &extensions);
+
+    for (const String& ext : extensions) {
+        if (ext.toLower() == extension.toLower()) {
+            return true;
+        }
+    }
+
+    return false;
+}
+
 bool ResourceSaver::Save(const Ref<Resource>& resource, const String& target_path, ResourceSaverFlags flags) {
     String path = target_path;
     if (path.isEmpty()) {
@@ -23,8 +38,6 @@ bool ResourceSaver::Save(const Ref<Resource>& resource, const String& target_pat
         LOG_ERROR("Can't save resource to empty path. Provide non-empty path or a Resource with non-empty resource_path.");
         return false;
     }
-
-    auto extension = GetFileExtension(path);
 
     for (auto & s_saver : s_savers) {
         if (!s_saver->Recognize(resource)) {

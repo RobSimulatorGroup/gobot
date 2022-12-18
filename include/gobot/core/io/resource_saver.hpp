@@ -25,7 +25,7 @@ public:
 
     virtual void GetRecognizedExtensions(const Ref<Resource> &resource, std::vector<String>* extensions) const = 0;
 
-    virtual bool RecognizePath(const Ref<Resource> &resource, const String &path) const = 0;
+    virtual bool RecognizePath(const Ref<Resource> &resource, const String &path) const;
 };
 
 class ResourceSaver {

@@ -12,7 +12,7 @@
 
 namespace gobot {
 
-class ResourceFormatLoaderJson : public ResourceFormatLoader {
+class ResourceFormatLoaderScene : public ResourceFormatLoader {
 public:
 //    virtual Ref<Resource> load(const String &p_path, const String &p_original_path = "", Error *r_error = nullptr, bool p_use_sub_threads = false, float *r_progress = nullptr, CacheMode p_cache_mode = CACHE_MODE_REUSE);
 //    virtual void get_recognized_extensions(List<String> *p_extensions) const;
@@ -20,13 +20,13 @@ public:
     virtual String get_resource_type(const String &p_path) const;
 };
 
-
-class ResourceFormatSaverJson : public ResourceFormatSaver {
+class ResourceFormatSaverScene : public ResourceFormatSaver {
 public:
-    virtual bool save(const Ref<Resource> &p_resource, const String &p_path, uint32_t p_flags = 0);
-//    virtual void get_recognized_extensions(const Ref<Resource> &p_resource, List<String> *p_extensions) const;
-    virtual bool recognize(const Ref<Resource> &p_resource) const;
-};
+    bool Save(const Ref<Resource> &resource, const String &path, ResourceSaverFlags flags = ResourceSaverFlags::None) override;
 
+    void GetRecognizedExtensions(const Ref<Resource> &resource, std::vector<String>* extensions) const override;
+
+    bool Recognize(const Ref<Resource> &resource) const override;
+};
 
 }
