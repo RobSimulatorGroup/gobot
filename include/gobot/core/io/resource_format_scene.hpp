@@ -9,6 +9,7 @@
 
 #include "gobot/core/io/resource_loader.hpp"
 #include "gobot/core/io/resource_saver.hpp"
+#include "gobot/scene/package_scene.hpp"
 
 namespace gobot {
 
@@ -26,7 +27,7 @@ public:
     bool Save(const String &path, const Ref<Resource> &resource, ResourceSaverFlags flags = ResourceSaverFlags::None);
 
 private:
-
+    Ref<PackedScene> packed_scene_;
 };
 
 class ResourceFormatSaverScene : public ResourceFormatSaver {

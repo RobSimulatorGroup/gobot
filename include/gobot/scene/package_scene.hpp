@@ -11,8 +11,8 @@
 
 namespace gobot {
 
-class PackageScene: public Resource {
-    GOBCLASS(PackageScene, Resource)
+class PackedScene: public Resource {
+    GOBCLASS(PackedScene, Resource)
 public:
 
 
