@@ -20,6 +20,15 @@ public:
     virtual String get_resource_type(const String &p_path) const;
 };
 
+
+class ResourceFormatSaverSceneInstance {
+public:
+    bool Save(const String &path, const Ref<Resource> &resource, ResourceSaverFlags flags = ResourceSaverFlags::None);
+
+private:
+
+};
+
 class ResourceFormatSaverScene : public ResourceFormatSaver {
 public:
     bool Save(const Ref<Resource> &resource, const String &path, ResourceSaverFlags flags = ResourceSaverFlags::None) override;

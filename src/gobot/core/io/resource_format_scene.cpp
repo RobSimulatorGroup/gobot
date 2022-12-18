@@ -7,26 +7,31 @@
 
 
 #include "gobot/core/io/resource_format_scene.hpp"
+#include "gobot/scene/package_scene.hpp"
 
 namespace gobot {
 
-bool ResourceFormatSaverScene::Save(const Ref<Resource> &resource, const String &path, ResourceSaverFlags flags)
-{
+bool ResourceFormatSaverScene::Save(const Ref<Resource> &resource, const String &path, ResourceSaverFlags flags) {
+    if (path.endsWith(".jscn") && !gobot::dynamic_pointer_cast<PackageScene>(resource)) {
+        return false;
+    }
 
+    ResourceFormatSaverSceneInstance saver;
+    return saver.Save(path, resource, flags);
 }
 
 void ResourceFormatSaverScene::GetRecognizedExtensions(const Ref<Resource> &resource,
                                                        std::vector<String>* extensions) const {
-
+    if (gobot::dynamic_pointer_cast<PackageScene>(resource)) {
+        extensions->push_back("jscn"); // scene.
+    } else {
+        extensions->push_back("jres"); // resource.
+    }
 }
 
 bool ResourceFormatSaverScene::Recognize(const Ref<Resource> &resource) const {
-
+    return true;
 }
 
-bool ResourceFormatSaverScene::RecognizePath(const Ref<Resource> &resource, const String &path) const {
-
-
-}
 
 }
