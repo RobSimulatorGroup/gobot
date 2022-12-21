@@ -13,6 +13,19 @@ namespace gobot {
 
 bool ResourceFormatSaverSceneInstance::Save(const String &path, const Ref<Resource> &resource, ResourceSaverFlags flags)
 {
+    if (path.endsWith(".jscn")) {
+        packed_scene_ = gobot::dynamic_pointer_cast<PackedScene>(resource);
+    }
+
+    local_path_ = path;
+
+    // Save resources.
+    FindResources(resource, true);
+
+    return true;
+}
+
+void ResourceFormatSaverSceneInstance::FindResources(const Variant &variant, bool main) {
 
 }
 

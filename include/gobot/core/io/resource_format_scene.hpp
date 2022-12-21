@@ -27,7 +27,12 @@ public:
     bool Save(const String &path, const Ref<Resource> &resource, ResourceSaverFlags flags = ResourceSaverFlags::None);
 
 private:
+    void FindResources(const Variant &variant, bool main = false);
+
     Ref<PackedScene> packed_scene_;
+    String local_path_;
+    std::vector<Ref<Resource>> external_resources_;
+    std::vector<Ref<Resource>> internal_resources_;
 };
 
 class ResourceFormatSaverScene : public ResourceFormatSaver {
