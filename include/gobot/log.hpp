@@ -23,7 +23,7 @@
 
 namespace gobot {
 
-class Logger {
+class GOBOT_EXPORT Logger {
 public:
     static Logger &getInstance() {
         static Logger instance;
