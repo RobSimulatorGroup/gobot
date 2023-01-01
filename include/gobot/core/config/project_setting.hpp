@@ -12,10 +12,15 @@
 
 namespace gobot {
 
-class ProjectSettings : public Object {
+class GOBOT_EXPORT ProjectSettings : public Object {
     GOBCLASS(ProjectSettings, Object)
 public:
     static ProjectSettings& GetInstance();
+
+    [[nodiscard]] String LocalizePath(const String &path) const;
+
+    // For test
+    void SetProjectPath(const String& project_path);
 
 private:
     ProjectSettings();

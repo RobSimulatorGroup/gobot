@@ -7,10 +7,11 @@
 */
 
 #include "gobot/core/io/resource_saver.hpp"
-
-#include <utility>
 #include "gobot/core/string_utils.hpp"
 #include "gobot/log.hpp"
+#include "gobot/core/config/project_setting.hpp"
+#include <utility>
+
 
 namespace gobot {
 
@@ -20,14 +21,20 @@ bool ResourceFormatSaver::RecognizePath(const Ref<Resource> &resource, const Str
     std::vector<String> extensions;
     GetRecognizedExtensions(resource, &extensions);
 
-    for (const String& ext : extensions) {
-        if (ext.toLower() == extension.toLower()) {
-            return true;
-        }
+    if (std::ranges::any_of(extensions, [&](auto const& ext){ return ext.toLower() == extension.toLower(); })) {
+        return true;
     }
 
     return false;
 }
+
+bool ResourceFormatSaver::Recognize(const Ref<Resource> &resource) const {
+    return false;
+}
+
+std::deque<Ref<ResourceFormatSaver>> ResourceSaver::s_savers;
+
+ResourceSaver::ResourceSavedCallback ResourceSaver::resource_saved_callback;
 
 bool ResourceSaver::Save(const Ref<Resource>& resource, const String& target_path, ResourceSaverFlags flags) {
     String path = target_path;
@@ -50,16 +57,17 @@ bool ResourceSaver::Save(const Ref<Resource>& resource, const String& target_pat
 
         String old_path = resource->GetPath();
 
-        // TODO(wqq)
-        String local_path = path;
+        String local_path =  ProjectSettings::GetInstance().LocalizePath(path);
+
+        USING_ENUM_BITWISE_OPERATORS;
 
         Ref<Resource> rwcopy = resource;
-        if (flags & ResourceSaverFlags::ChangePath) {
+        if ((bool)(flags & ResourceSaverFlags::ChangePath)) {
             rwcopy->SetPath(local_path);
         }
 
         if (s_saver->Save(resource, path)) {
-            if (flags & ResourceSaverFlags::ChangePath) {
+            if ((bool)(flags & ResourceSaverFlags::ChangePath)) {
                 rwcopy->SetPath(old_path);
             }
             if (resource_saved_callback && path.startsWith("res://")) {
