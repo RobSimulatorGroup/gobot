@@ -9,7 +9,7 @@
 
 namespace gobot {
 
-enum class NotificationType {
+enum class GOBOT_EXPORT NotificationType {
     PostNew,
     PreDelete,
 
