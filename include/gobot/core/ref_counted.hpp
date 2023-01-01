@@ -20,7 +20,7 @@ using Ref = typename third_party::intrusive_ptr<T>;
 template <typename T>
 using RefWeak = third_party::intrusive_weak_ptr<T>;
 
-class RefCounted : public third_party::intrusive_base<RefCounted>, public Object  {
+class GOBOT_EXPORT RefCounted : public third_party::intrusive_base<RefCounted>, public Object  {
     GOBCLASS(RefCounted, Object)
 public:
     RefCounted();
