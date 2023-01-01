@@ -11,8 +11,18 @@
 #include <gobot/log.hpp>
 #include <QDir>
 
-TEST(TestDir, test_clean_path) {
-    QDir path(QDir::cleanPath("/bin/"));
+TEST(TestDir, test_dir) {
+    ASSERT_TRUE(QDir::cleanPath("/bin/") == QDir::cleanPath("/bin"));
+}
 
-    LOG_ERROR("111: {}", path.path());
+TEST(TestProjectSetting, test_localize_path) {
+    auto& project_setting = gobot::ProjectSettings::GetInstance();
+    project_setting.SetProjectPath("/home/wqq/test_project");
+
+    ASSERT_TRUE(project_setting.LocalizePath("/home/wqq/test_project/") == "res://");
+    ASSERT_TRUE(project_setting.LocalizePath("/home/wqq/test_project") == "res://");
+    ASSERT_TRUE(project_setting.LocalizePath("/home/wqq/test_project/test") == "res://test/");
+
+    ASSERT_TRUE(project_setting.LocalizePath("res://test") == "res://test");
+    ASSERT_TRUE(project_setting.LocalizePath("res://test/..") == "res://");
 }

@@ -6,6 +6,8 @@
 */
 
 #include "gobot/core/config/project_setting.hpp"
+#include "gobot/log.hpp"
+#include "gobot/core/string_utils.hpp"
 #include <QDir>
 
 namespace gobot {
@@ -20,12 +22,12 @@ ProjectSettings& ProjectSettings::GetInstance() {
 }
 
 void ProjectSettings::SetProjectPath(const String& project_path) {
-    project_path_ = project_path;
+    project_path_ = QDir::cleanPath(project_path);
 }
 
 String ProjectSettings::LocalizePath(const String &path) const {
-    if (project_path_.isEmpty() || ( QDir::isAbsolutePath(path) && !path.startsWith(project_path_))) {
-        return QDir::cleanPath(path);
+    if (project_path_.isEmpty() || ( IsAbsolutePath(path) && !path.startsWith(project_path_))) {
+        return SimplifyPath(path);
     }
 
     // Check if we have a special path (like res://) or a protocol identifier.
@@ -41,16 +43,18 @@ String ProjectSettings::LocalizePath(const String &path) const {
         }
     }
     if (found) {
-        return QDir::cleanPath(path);
+        return path.left(p + 3) + QDir::cleanPath(path.mid(p + 3));
     }
 
     String clean_path = QDir::cleanPath(path);
     QDir dir(clean_path);
     if (dir.exists()) {
-        if (!clean_path.startsWith(project_path_)) {
+        auto temp_clean_path = clean_path + "/";
+        auto temp_project_path = project_path_ + "/";
+        if (!temp_clean_path.startsWith(temp_project_path)) {
             return path;
         }
-        return clean_path.replace(project_path_, "res://");
+        return temp_clean_path.replace(temp_project_path, "res://");
     } else {
         int sep = clean_path.lastIndexOf("/");
         if (sep == -1) {

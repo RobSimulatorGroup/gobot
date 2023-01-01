@@ -13,8 +13,13 @@
 
 namespace gobot {
 
-String GetFileExtension(const String& path) {
-    return QFileInfo(path).completeSuffix();
-}
+String GetFileExtension(const String& path);
+
+bool IsNetworkSharePath(const String& path);
+
+
+bool IsAbsolutePath(const String& path);
+
+String SimplifyPath(const String& path);
 
 }
