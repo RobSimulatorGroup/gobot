@@ -272,13 +272,13 @@ void ToJsonRecursively(Instance obj2, Json& writer)
 
 }
 
-ResourceFormatSaverSceneInstance* s_resource_format_saver = nullptr;
+ResourceFormatSaverSceneInstance* VariantSerializer::s_resource_format_saver_ = nullptr;
 
-Json VariantToJson(Instance obj,
-                   ResourceFormatSaverSceneInstance* resource_format_saver) {
+Json VariantSerializer::VariantToJson(Instance obj,
+                                      ResourceFormatSaverSceneInstance* resource_format_saver) {
 
     Json json;
-    s_resource_format_saver = resource_format_saver;
+    s_resource_format_saver_ = resource_format_saver;
     ToJsonRecursively(obj, json);
     return json;
 }

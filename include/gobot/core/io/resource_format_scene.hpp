@@ -27,6 +27,8 @@ public:
     bool Save(const String &path, const Ref<Resource> &resource, ResourceSaverFlags flags = ResourceSaverFlags::None);
 
 private:
+    friend class VariantSerializer;
+
     void FindResources(const Variant &variant, bool main = false);
 
     Ref<PackedScene> packed_scene_;

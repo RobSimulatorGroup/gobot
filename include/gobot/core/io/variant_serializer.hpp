@@ -9,11 +9,19 @@
 #pragma once
 
 #include "gobot/core/types.hpp"
-#include "gobot/core/io/resource_format_scene.hpp"
 
 namespace gobot {
 
-Json VariantToJson(Instance obj,
-                   ResourceFormatSaverSceneInstance* resource_format_saver = nullptr);
+class ResourceFormatSaverSceneInstance;
+
+class VariantSerializer {
+public:
+    static Json VariantToJson(Instance obj, ResourceFormatSaverSceneInstance* resource_format_saver = nullptr);
+
+private:
+    static ResourceFormatSaverSceneInstance* s_resource_format_saver_;
+};
+
+
 
 }

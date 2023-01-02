@@ -72,9 +72,9 @@ bool ResourceFormatSaverSceneInstance::Save(const String &path, const Ref<Resour
         for (auto& prop : variant.get_type().get_properties()) {
             auto property_info = prop.get_metadata(PROPERTY_INFO_KEY).get_value<PropertyInfo>();
             USING_ENUM_BITWISE_OPERATORS;
-            if (!(bool)(property_info.usage & PropertyUsageFlags::Storage)) {
+            if ((bool)(property_info.usage & PropertyUsageFlags::Storage)) {
                 Variant value = saved_resource->Get(prop.get_name().data());
-                data_json = VariantToJson(value, external_resources_, internal_resources_);
+                data_json = VariantSerializer::VariantToJson(value, this);
             }
         }
 
