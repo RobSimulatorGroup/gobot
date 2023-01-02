@@ -16,13 +16,21 @@ TEST(TestDir, test_dir) {
 }
 
 TEST(TestProjectSetting, test_localize_path) {
+    QDir dir("/tmp/test_project");
+    if (!dir.exists()){
+        dir.mkpath("/tmp/test_project");
+    }
     auto& project_setting = gobot::ProjectSettings::GetInstance();
-    project_setting.SetProjectPath("/home/wqq/test_project");
+    project_setting.SetProjectPath("/tmp/test_project");
 
-    ASSERT_TRUE(project_setting.LocalizePath("/home/wqq/test_project/") == "res://");
-    ASSERT_TRUE(project_setting.LocalizePath("/home/wqq/test_project") == "res://");
-    ASSERT_TRUE(project_setting.LocalizePath("/home/wqq/test_project/test") == "res://test/");
+    ASSERT_TRUE(project_setting.LocalizePath("/tmp/test_project/") == "res://");
+    ASSERT_TRUE(project_setting.LocalizePath("/tmp/test_project") == "res://");
+    ASSERT_TRUE(project_setting.LocalizePath("/tmp/test_project/test") == "res://test");
 
     ASSERT_TRUE(project_setting.LocalizePath("res://test") == "res://test");
     ASSERT_TRUE(project_setting.LocalizePath("res://test/..") == "res://");
+
+    ASSERT_TRUE(project_setting.LocalizePath("test") == "res://test");
+    ASSERT_TRUE(project_setting.LocalizePath("test/tt") == "res://test/tt");
+
 }

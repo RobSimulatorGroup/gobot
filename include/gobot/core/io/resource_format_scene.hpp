@@ -9,7 +9,7 @@
 
 #include "gobot/core/io/resource_loader.hpp"
 #include "gobot/core/io/resource_saver.hpp"
-#include "gobot/scene/package_scene.hpp"
+#include "gobot/scene/resources/packed_scene.hpp"
 
 namespace gobot {
 
@@ -31,8 +31,10 @@ private:
 
     Ref<PackedScene> packed_scene_;
     String local_path_;
-    std::vector<Ref<Resource>> external_resources_;
-    std::vector<Ref<Resource>> internal_resources_;
+    std::unordered_map<Ref<Resource>, Uuid> external_resources_;
+    std::unordered_map<Ref<Resource>, Uuid> internal_resources_;
+    std::vector<Ref<Resource>> saved_resources_;
+    std::unordered_set<Ref<Resource>> resource_set_;
 };
 
 class ResourceFormatSaverScene : public ResourceFormatSaver {

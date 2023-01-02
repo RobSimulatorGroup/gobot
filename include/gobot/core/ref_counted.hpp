@@ -91,3 +91,17 @@ struct wrapper_mapper<gobot::Ref<T>> {
 };
 
 }
+
+namespace std {
+
+template<class T>
+struct hash<gobot::Ref<T>> {
+    std::size_t operator()(const gobot::Ref<T>& ref) const
+    {
+        return std::hash<T*>()(ref.get());
+    }
+};
+
+}
+
+

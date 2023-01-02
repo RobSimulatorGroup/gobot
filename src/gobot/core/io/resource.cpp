@@ -176,8 +176,7 @@ Uuid Resource::GetResourceUuid() const {
 }
 
 Uuid Resource::GenerateUuid() {
-    uuid_ = Uuid::createUuid();
-    return uuid_;
+    return Uuid::createUuid();
 }
 
 

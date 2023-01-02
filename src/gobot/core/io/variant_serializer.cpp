@@ -1,10 +1,13 @@
-///* Copyright(c) 2020-2022, Qiqi Wu<1258552199@qq.com>.
-// * This file is created by Qiqi Wu, 22-11-22
-//*/
-//
-//
-//#include "gobot/core/io/object_serialize.hpp"
-//
+/* Copyright(c) 2020-2022, Qiqi Wu<1258552199@qq.com>.
+ * Permission is hereby granted, free of charge, to any person obtaining a copy of this software and associated documentation files (the "Software"),
+ * to deal in the Software without restriction, including without limitation the rights to use, copy, modify, merge, publish, distribute, sublicense,
+ * and/or sell copies of the Software, and to permit persons to whom the Software is furnished to do so, subject to the following conditions:
+ * The above copyright notice and this permission notice shall be included in all copies or substantial portions of the Software.
+ * This file is created by Qiqi Wu, 22-11-20
+*/
+
+#include "gobot/core/io/variant_serializer.hpp"
+
 //namespace gobot::io {
 //
 //
@@ -241,3 +244,39 @@
 //core::Json ObjectToJson(rttr::instance obj);
 //
 //}
+
+namespace gobot {
+
+
+void ToJsonRecursively(Instance obj2, Json& writer)
+{
+//    Instance obj = obj2.get_type().get_raw_type().is_wrapper() ? obj2.get_wrapped_instance() : obj2;
+//
+//    auto prop_list = obj.get_derived_type().get_properties();
+//    for (auto prop : prop_list)
+//    {
+//        if (prop.get_metadata("NO_SERIALIZE"))
+//            continue;
+//
+//        variant prop_value = prop.get_value(obj);
+//        if (!prop_value)
+//            continue; // cannot serialize, because we cannot retrieve the value
+//
+//        const auto name = prop.get_name();
+//        writer.String(name.data(), static_cast<rapidjson::SizeType>(name.length()), false);
+//        if (!write_variant(prop_value, writer))
+//        {
+//            std::cerr << "cannot serialize property: " << name << std::endl;
+//        }
+//    }
+
+}
+
+
+Json VariantToJson(Instance obj,
+                   const std::unordered_map<Ref<Resource>, Uuid>& external_resources,
+                   const std::unordered_map<Ref<Resource>, Uuid>& internal_resources) {
+
+}
+
+}

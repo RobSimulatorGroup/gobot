@@ -135,7 +135,8 @@ public:
     template <typename T, typename... Args>
     static std::enable_if_t<std::is_base_of_v<Object, T>, T*> New(Args&&... args) {
         auto* obj = new T(std::forward<Args>(args)...);
-        return obj->PostNew();
+        obj->PostNew();
+        return obj;
     }
 
     template <typename T, typename = std::enable_if_t<std::is_base_of_v<Object, T>>>

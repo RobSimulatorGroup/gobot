@@ -11,11 +11,33 @@
 
 namespace gobot {
 
+class PackedScene;
+
+class SceneState : public RefCounted {
+    GOBCLASS(SceneState, RefCounted)
+public:
+    struct NodeData {
+
+    };
+
+    std::size_t GetNodeCount() const;
+
+    Ref<PackedScene> GetNodeInstance(std::size_t idx) const;
+
+private:
+    std::vector<NodeData> nodes_;
+};
+
 class PackedScene : public Resource {
     GOBCLASS(PackedScene, Resource)
 public:
 
+    PackedScene();
 
+    Ref<SceneState> GetState() const;
+
+private:
+    Ref<SceneState> state_;
 };
 
 }

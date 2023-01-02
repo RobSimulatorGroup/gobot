@@ -10,14 +10,15 @@
 #include <rttr/variant.h>
 #include <QString>
 #include <QUuid>
+#include <QColor>
 #include <nlohmann/json.hpp>
 
 namespace gobot {
 
 using Variant = rttr::variant;
 using Type = rttr::type;
-using VarintListView = rttr::variant_sequential_view;
-using VarintMapView  = rttr::variant_associative_view;
+using VariantListView = rttr::variant_sequential_view;
+using VariantMapView  = rttr::variant_associative_view;
 using Instance = rttr::instance;
 using Method = rttr::method;
 using Argument = rttr::argument;
@@ -28,6 +29,7 @@ using WrapperHolderType = rttr::wrapper_holder_type;
 
 using String = QString;
 using Uuid = QUuid;
+using Color = QColor;
 
 using Json = nlohmann::json;
 

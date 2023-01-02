@@ -38,7 +38,7 @@ public:
 
     Uuid GetResourceUuid() const;
 
-    Uuid GenerateUuid();
+    static Uuid GenerateUuid();
 
     virtual void ReloadFromFile();
 
@@ -52,6 +52,8 @@ public:
     void RegisterOwner(Object *owner);
 
     void UnregisterOwner(Object *owner);
+
+    FORCE_INLINE bool IsBuiltIn() const { return path_cache_.isEmpty() || path_cache_.contains("::"); }
 
     Ref<Resource> CloneForLocalScene(Node* for_scene);
 

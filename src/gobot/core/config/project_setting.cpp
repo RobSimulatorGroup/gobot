@@ -46,22 +46,22 @@ String ProjectSettings::LocalizePath(const String &path) const {
         return path.left(p + 3) + QDir::cleanPath(path.mid(p + 3));
     }
 
-    String clean_path = QDir::cleanPath(path);
-    QDir dir(clean_path);
-    if (dir.exists()) {
-        auto temp_clean_path = clean_path + "/";
+    auto simplify_path = SimplifyPath(String(path).replace("\\", "/"));
+    if (QDir::setCurrent(simplify_path)) {
+        String cwd = QDir::currentPath();
+        cwd.append("/");
         auto temp_project_path = project_path_ + "/";
-        if (!temp_clean_path.startsWith(temp_project_path)) {
+        if (!cwd.startsWith(temp_project_path)) {
             return path;
         }
-        return temp_clean_path.replace(temp_project_path, "res://");
+        return cwd.replace(temp_project_path, "res://");
     } else {
-        int sep = clean_path.lastIndexOf("/");
+        int sep = simplify_path.lastIndexOf("/");
         if (sep == -1) {
-            return "res://" + clean_path;
+            return "res://" + simplify_path;
         }
 
-        String parent = clean_path.left(sep);
+        String parent = simplify_path.left(sep);
         String plocal = LocalizePath(parent);
         if (plocal.isEmpty()) {
             return "";
