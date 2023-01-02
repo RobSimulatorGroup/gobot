@@ -14,7 +14,6 @@
 namespace gobot {
 
 Json VariantToJson(Instance obj,
-                   const std::unordered_map<Ref<Resource>, Uuid>& external_resources = {},
-                   const std::unordered_map<Ref<Resource>, Uuid>& internal_resources = {});
+                   ResourceFormatSaverSceneInstance* resource_format_saver = nullptr);
 
 }

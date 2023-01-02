@@ -272,11 +272,15 @@ void ToJsonRecursively(Instance obj2, Json& writer)
 
 }
 
+ResourceFormatSaverSceneInstance* s_resource_format_saver = nullptr;
 
 Json VariantToJson(Instance obj,
-                   const std::unordered_map<Ref<Resource>, Uuid>& external_resources,
-                   const std::unordered_map<Ref<Resource>, Uuid>& internal_resources) {
+                   ResourceFormatSaverSceneInstance* resource_format_saver) {
 
+    Json json;
+    s_resource_format_saver = resource_format_saver;
+    ToJsonRecursively(obj, json);
+    return json;
 }
 
 }
