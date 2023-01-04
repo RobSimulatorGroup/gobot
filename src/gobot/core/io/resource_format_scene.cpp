@@ -148,15 +148,6 @@ void ResourceFormatSaverSceneInstance::FindResources(const Variant &variant, boo
             const Variant &v = value.extract_wrapped_value();
             FindResources(v);
         }
-    } else if (type_category == TypeCategory::Compound) {
-        for (auto& prop : type.get_properties()) {
-            auto property_info = prop.get_metadata(PROPERTY_INFO_KEY).get_value<PropertyInfo>();
-            USING_ENUM_BITWISE_OPERATORS;
-            if (!(bool)(property_info.usage & PropertyUsageFlags::Storage)) {
-                Variant v = prop.get_value(variant);
-                FindResources(v);
-            }
-        }
     }
 
     // Other types won't handle.

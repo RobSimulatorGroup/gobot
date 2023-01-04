@@ -20,6 +20,16 @@ public:
 
 private:
     static ResourceFormatSaverSceneInstance* s_resource_format_saver_;
+
+    static void ToJsonRecursively(Instance object, Json& writer);
+
+    static bool WriteVariant(const Variant& var, Json& writer);
+
+    static bool WriteAtomicTypesToJson(const Type& t, const Variant& var, Json& writer);
+
+    static void WriteAssociativeContainer(const VariantMapView& view, Json& writer);
+
+    static void WriteArray(const VariantListView& view, Json& writer);
 };
 
 

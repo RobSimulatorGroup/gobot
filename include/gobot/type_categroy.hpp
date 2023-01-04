@@ -54,7 +54,6 @@ enum class TypeCategory {
     Ref,
     Array,
     Dictionary,
-    Compound,
     Unsupported
 };
 
@@ -109,8 +108,6 @@ inline TypeCategory GetTypeCategory(const Type& type) {
         return TypeCategory::Array;
     } else if (type.is_associative_container()) {
         return TypeCategory::Dictionary;
-    } else if (!type.get_properties().empty()) {
-        return TypeCategory::Compound;
     }
     LOG_WARN("The type:{} is Unsupported", type.get_name().data());
     return TypeCategory::Unsupported;
