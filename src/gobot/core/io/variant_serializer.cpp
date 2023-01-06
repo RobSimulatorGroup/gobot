@@ -356,24 +356,27 @@ bool VariantSerializer::WriteVariant(const Variant& var, Json& writer)
     auto wrapped_type = value_type.is_wrapper() ? value_type.get_wrapped_type() : value_type;
     bool is_wrapper = wrapped_type != value_type;
 
-    if (WriteAtomicTypesToJson(is_wrapper ? wrapped_type : value_type,
-                               is_wrapper ? var.extract_wrapped_value() : var, writer)) {
+    if (value_type.is_arithmetic() || value_type.is_enumeration() || value_type == Type::get<String>()) {
+        return WriteAtomicTypesToJson(is_wrapper ? wrapped_type : value_type,
+                                      is_wrapper ? var.extract_wrapped_value() : var, writer);
     } else if (var.is_sequential_container()) {
         WriteArray(var.create_sequential_view(), writer);
     } else if (var.is_associative_container()) {
         WriteAssociativeContainer(var.create_associative_view(), writer);
     } else {
-        auto child_props = is_wrapper ? wrapped_type.get_properties() : value_type.get_properties();
+        auto child_props = is_wrapper ? Instance(var.extract_wrapped_value())
+                                                 .get_derived_type().get_properties() : value_type.get_properties();
         if (!child_props.empty()) {
             ToJsonRecursively(var, writer);
         } else {
             bool ok = false;
             auto text = var.to_string(&ok);
-            if (!ok) {
+            if (ok) {
                 writer = text;
+                return true;
+            } else {
                 return false;
             }
-            writer = text;
         }
     }
 
@@ -381,49 +384,59 @@ bool VariantSerializer::WriteVariant(const Variant& var, Json& writer)
 }
 
 
+void VariantSerializer::SaveResource(Instance instance, const Type& type, Json& writer) {
+    if (type.get_wrapper_holder_type() == rttr::wrapper_holder_type::Ref) {
+        if (s_resource_format_saver_) {
+            auto res = Ref<Resource>(instance.try_convert<Resource>());
+            if (!res) {
+                LOG_ERROR("Cannot convert object to Resource {}", type.get_name().data());
+                return;
+            }
+            if (s_resource_format_saver_->external_resources_.contains(res)) {
+                writer = fmt::format("ExtResource({})", res->GetResourceUuid().toString());
+            } else if (s_resource_format_saver_->internal_resources_.contains(res)) {
+                writer = fmt::format("SubResource({})", res->GetResourceUuid().toString());
+            }
+        } else {
+            LOG_ERROR("Unsupported wrapper type: {}", type.get_name().data());
+            return;
+        }
+    } else {
+        LOG_ERROR("Unsupported wrapper type: {}", type.get_name().data());
+        return;
+    }
+}
+
 void VariantSerializer::ToJsonRecursively(Instance object, Json& writer)
 {
     auto raw_type = object.get_type().get_raw_type();
     Instance obj = raw_type.is_wrapper() ? object.get_wrapped_instance() : object;
-
     if (raw_type.is_wrapper()) {
-        if (raw_type.get_wrapper_holder_type() == rttr::wrapper_holder_type::Ref) {
-            if (s_resource_format_saver_) {
-                auto res = Ref<Resource>(obj.try_convert<Resource>());
-                if (!res) {
-                    LOG_ERROR("Cannot convert object to Resource {}", raw_type.get_name().data());
-                    return;
-                }
-                if (s_resource_format_saver_->external_resources_.contains(res)) {
-                    writer = fmt::format("ExtResource({})", res->GetResourceUuid().toString());
-                } else if (s_resource_format_saver_->internal_resources_.contains(res)) {
-                    writer = fmt::format("SubResource({})", res->GetResourceUuid().toString());
-                }
-            } else {
-                LOG_ERROR("Unsupported wrapper type: {}", raw_type.get_name().data());
-                return;
-            }
-        } else {
-            LOG_ERROR("Unsupported wrapper type: {}", raw_type.get_name().data());
-            return;
-        }
+        SaveResource(obj, raw_type, writer);
+        return;
     }
 
     auto prop_list = obj.get_derived_type().get_properties();
 
     for (auto prop : prop_list) {
-        if (prop.get_metadata(PROPERTY_INFO_KEY))
-            continue;
+        PropertyInfo property_info;
+        auto meta_data = prop.get_metadata(PROPERTY_INFO_KEY);
+        if (meta_data.is_valid()) {
+            property_info = meta_data.get_value<PropertyInfo>();
+        }
+        USING_ENUM_BITWISE_OPERATORS;
+        if (static_cast<bool>(property_info.usage & PropertyUsageFlags::Storage)) {
+            Variant prop_value = prop.get_value(obj);
+            if (!prop_value)
+                continue; // cannot serialize, because we cannot retrieve the value
 
-        Variant prop_value = prop.get_value(obj);
-        if (!prop_value)
-            continue; // cannot serialize, because we cannot retrieve the value
-
-        const auto name = prop.get_name();
-//        writer.String(name.data(), static_cast<rapidjson::SizeType>(name.length()), false);
-        if (!WriteVariant(prop_value, writer))
-        {
-            LOG_ERROR("Cannot serialize property: {}", name.data());
+            Json prop_json;
+            const auto prop_name = prop.get_name();
+            if (!WriteVariant(prop_value, prop_json)) {
+                LOG_ERROR("Cannot serialize property: {}", prop_name.data());
+            } else {
+                writer[prop_name.data()] = prop_json;
+            }
         }
     }
 

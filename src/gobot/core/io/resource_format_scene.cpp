@@ -65,7 +65,7 @@ bool ResourceFormatSaverSceneInstance::Save(const String &path, const Ref<Resour
         if (main && packed_scene_.is_valid()) {
             break; // Save as a scene.
         }
-        Json data_json;
+        Json resource_data_json;
 
         Variant variant = saved_resource;
 
@@ -74,17 +74,17 @@ bool ResourceFormatSaverSceneInstance::Save(const String &path, const Ref<Resour
             USING_ENUM_BITWISE_OPERATORS;
             if ((bool)(property_info.usage & PropertyUsageFlags::Storage)) {
                 Variant value = saved_resource->Get(prop.get_name().data());
-                data_json[prop.get_name().data()] = VariantSerializer::VariantToJson(value, this);
+                resource_data_json[prop.get_name().data()] = VariantSerializer::VariantToJson(value, this);
             }
         }
 
         if (main) {
-            root["__RESOURCE__"] = data_json;
+            root["__RESOURCE__"] = resource_data_json;
         } else {
             if (!root.contains("__SUB_RESOURCES__")) {
                 root["__SUB_RESOURCES__"] = Json::object();
             }
-            data_json["__MATA_TYPE__"] = saved_resource->GetClassName();
+            resource_data_json["__MATA_TYPE__"] = saved_resource->GetClassName();
             root["__SUB_RESOURCES__"][saved_resource->GetResourceUuid().toString().toStdString()] = data_json;
         }
     }
