@@ -52,7 +52,7 @@ bool ResourceFormatSaverSceneInstance::Save(const String &path, const Ref<Resour
     for (const auto& [res, uuid]: external_resources_) {
         Json ext_res;
         ext_res["__MATA_TYPE__"] = res->GetClassName();
-        ext_res["__path__"] = res->GetPath().toStdString();
+        ext_res["__PATH__"] = res->GetPath().toStdString();
         ext_res["__ID__"] = res->GetResourceUuid().toString().toStdString();
         root["__EXT_RESOURCES__"].push_back(ext_res);
     }
@@ -74,7 +74,7 @@ bool ResourceFormatSaverSceneInstance::Save(const String &path, const Ref<Resour
             USING_ENUM_BITWISE_OPERATORS;
             if ((bool)(property_info.usage & PropertyUsageFlags::Storage)) {
                 Variant value = saved_resource->Get(prop.get_name().data());
-                data_json = VariantSerializer::VariantToJson(value, this);
+                data_json[prop.get_name().data()] = VariantSerializer::VariantToJson(value, this);
             }
         }
 
@@ -82,11 +82,10 @@ bool ResourceFormatSaverSceneInstance::Save(const String &path, const Ref<Resour
             root["__RESOURCE__"] = data_json;
         } else {
             if (!root.contains("__SUB_RESOURCES__")) {
-                root["__SUB_RESOURCES__"] = Json::array();
+                root["__SUB_RESOURCES__"] = Json::object();
             }
             data_json["__MATA_TYPE__"] = saved_resource->GetClassName();
-            data_json["__ID__"] = saved_resource->GetResourceUuid().toString().toStdString();
-            root["__SUB_RESOURCES__"].push_back(data_json);
+            root["__SUB_RESOURCES__"][saved_resource->GetResourceUuid().toString().toStdString()] = data_json;
         }
     }
 
@@ -147,6 +146,15 @@ void ResourceFormatSaverSceneInstance::FindResources(const Variant &variant, boo
             FindResources(k);
             const Variant &v = value.extract_wrapped_value();
             FindResources(v);
+        }
+    }  else if (type_category == TypeCategory::Compound) {
+        for (auto &prop: type.get_properties()) {
+            auto property_info = prop.get_metadata(PROPERTY_INFO_KEY).get_value<PropertyInfo>();
+            USING_ENUM_BITWISE_OPERATORS;
+            if (!(bool) (property_info.usage & PropertyUsageFlags::Storage)) {
+                Variant v = prop.get_value(variant);
+                FindResources(v);
+            }
         }
     }
 

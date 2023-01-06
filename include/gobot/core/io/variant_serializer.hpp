@@ -9,12 +9,13 @@
 #pragma once
 
 #include "gobot/core/types.hpp"
+#include "gobot/core/marcos.hpp"
 
 namespace gobot {
 
 class ResourceFormatSaverSceneInstance;
 
-class VariantSerializer {
+class GOBOT_EXPORT VariantSerializer {
 public:
     static Json VariantToJson(Instance obj, ResourceFormatSaverSceneInstance* resource_format_saver = nullptr);
 

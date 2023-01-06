@@ -13,7 +13,7 @@
 
 namespace gobot {
 
-class ResourceFormatLoaderScene : public ResourceFormatLoader {
+class GOBOT_EXPORT ResourceFormatLoaderScene : public ResourceFormatLoader {
 public:
 //    virtual Ref<Resource> load(const String &p_path, const String &p_original_path = "", Error *r_error = nullptr, bool p_use_sub_threads = false, float *r_progress = nullptr, CacheMode p_cache_mode = CACHE_MODE_REUSE);
 //    virtual void get_recognized_extensions(List<String> *p_extensions) const;
@@ -22,7 +22,7 @@ public:
 };
 
 
-class ResourceFormatSaverSceneInstance {
+class GOBOT_EXPORT ResourceFormatSaverSceneInstance {
 public:
     bool Save(const String &path, const Ref<Resource> &resource, ResourceSaverFlags flags = ResourceSaverFlags::None);
 
@@ -39,7 +39,7 @@ private:
     std::unordered_set<Ref<Resource>> resource_set_;
 };
 
-class ResourceFormatSaverScene : public ResourceFormatSaver {
+class GOBOT_EXPORT ResourceFormatSaverScene : public ResourceFormatSaver {
 public:
     bool Save(const Ref<Resource> &resource, const String &path, ResourceSaverFlags flags = ResourceSaverFlags::None) override;
 
