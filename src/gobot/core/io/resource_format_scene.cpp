@@ -85,7 +85,7 @@ bool ResourceFormatSaverSceneInstance::Save(const String &path, const Ref<Resour
                 root["__SUB_RESOURCES__"] = Json::object();
             }
             resource_data_json["__MATA_TYPE__"] = saved_resource->GetClassName();
-            root["__SUB_RESOURCES__"][saved_resource->GetResourceUuid().toString().toStdString()] = data_json;
+            root["__SUB_RESOURCES__"][saved_resource->GetResourceUuid().toString().toStdString()] = resource_data_json;
         }
     }
 

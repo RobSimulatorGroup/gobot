@@ -292,8 +292,7 @@ bool VariantSerializer::WriteAtomicTypesToJson(const Type& t, const Variant& var
                 return true;
             }
         }
-    } else if (t == Type::get<std::string>())
-    {
+    } else if (t == Type::get<std::string>()) {
         writer = var.to_string();
         return true;
     }
@@ -304,50 +303,51 @@ bool VariantSerializer::WriteAtomicTypesToJson(const Type& t, const Variant& var
 
 void VariantSerializer::WriteArray(const VariantListView& view, Json& writer)
 {
-//    writer.StartArray();
+    writer = Json::array();
     for (const auto& item : view) {
+        Json value;
         if (item.is_sequential_container()) {
-            WriteArray(item.create_sequential_view(), writer);
+            WriteArray(item.create_sequential_view(), value);
         } else {
             Variant wrapped_var = item.extract_wrapped_value();
             Type value_type = wrapped_var.get_type();
             if (value_type.is_arithmetic() || value_type == Type::get<std::string>() || value_type.is_enumeration()) {
-                WriteAtomicTypesToJson(value_type, wrapped_var, writer);
+                WriteAtomicTypesToJson(value_type, wrapped_var, value);
             } else { // object
-                ToJsonRecursively(wrapped_var, writer);
+                ToJsonRecursively(wrapped_var, value);
             }
         }
+        writer.emplace_back(value);
     }
-//    writer.EndArray();
 }
 
 void VariantSerializer::WriteAssociativeContainer(const VariantMapView& view, Json& writer)
 {
-//    static const string_view key_name("key");
-//    static const string_view value_name("value");
-
-//    writer.StartArray();
+    static const char* key_name("key");
+    static const char* value_name("value");
 
     if (view.is_key_only_type()) {
         for (auto& item : view) {
-            WriteVariant(item.first, writer);
+            Json value;
+            WriteVariant(item.first.extract_wrapped_value(), value);
+            writer.emplace_back(value);
         }
     } else {
         for (auto& item : view) {
-//            writer.StartObject();
-//            writer.String(key_name.data(), static_cast<rapidjson::SizeType>(key_name.length()), false);
-
-            WriteVariant(item.first, writer);
-
-//            writer.String(value_name.data(), static_cast<rapidjson::SizeType>(value_name.length()), false);
-
-            WriteVariant(item.second, writer);
-
-//            writer.EndObject();
+            Json node;
+            Json key;
+            WriteVariant(item.first.extract_wrapped_value(), key);
+            if (key) {
+                node[key_name] = key;
+            }
+            Json value;
+            WriteVariant(item.second.extract_wrapped_value(), value);
+            if (value) {
+                node[value_name] = value;
+            }
+            writer.emplace_back(node);
         }
     }
-
-//    writer.EndArray();
 }
 
 bool VariantSerializer::WriteVariant(const Variant& var, Json& writer)
