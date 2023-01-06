@@ -356,7 +356,7 @@ bool VariantSerializer::WriteVariant(const Variant& var, Json& writer)
     auto wrapped_type = value_type.is_wrapper() ? value_type.get_wrapped_type() : value_type;
     bool is_wrapper = wrapped_type != value_type;
 
-    if (value_type.is_arithmetic() || value_type.is_enumeration() || value_type == Type::get<String>()) {
+    if (wrapped_type.is_arithmetic() || wrapped_type.is_enumeration() || wrapped_type == Type::get<String>()) {
         return WriteAtomicTypesToJson(is_wrapper ? wrapped_type : value_type,
                                       is_wrapper ? var.extract_wrapped_value() : var, writer);
     } else if (var.is_sequential_container()) {
@@ -411,7 +411,7 @@ void VariantSerializer::ToJsonRecursively(Instance object, Json& writer)
 {
     auto raw_type = object.get_type().get_raw_type();
     Instance obj = raw_type.is_wrapper() ? object.get_wrapped_instance() : object;
-    if (raw_type.is_wrapper()) {
+    if (raw_type.is_wrapper() && raw_type.get_wrapper_holder_type() == rttr::wrapper_holder_type::Ref) {
         SaveResource(obj, raw_type, writer);
         return;
     }
