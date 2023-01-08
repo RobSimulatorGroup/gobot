@@ -20,7 +20,7 @@ TEST(TestProjectSetting, test_localize_path) {
     if (!dir.exists()){
         dir.mkpath("/tmp/test_project");
     }
-    auto& project_setting = gobot::ProjectSettings::GetInstance();
+    auto& project_setting = gobot::ProjectSettings::GetSingleton();
     project_setting.SetProjectPath("/tmp/test_project");
 
     ASSERT_TRUE(project_setting.LocalizePath("/tmp/test_project/") == "res://");

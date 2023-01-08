@@ -16,7 +16,7 @@ ProjectSettings::ProjectSettings() {
 
 }
 
-ProjectSettings& ProjectSettings::GetInstance() {
+ProjectSettings& ProjectSettings::GetSingleton() {
     static ProjectSettings project_settings;
     return project_settings;
 }

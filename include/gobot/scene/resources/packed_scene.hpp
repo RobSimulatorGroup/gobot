@@ -13,7 +13,7 @@ namespace gobot {
 
 class PackedScene;
 
-class SceneState : public RefCounted {
+class GOBOT_API SceneState : public RefCounted {
     GOBCLASS(SceneState, RefCounted)
 public:
     struct NodeData {
@@ -28,7 +28,7 @@ private:
     std::vector<NodeData> nodes_;
 };
 
-class PackedScene : public Resource {
+class GOBOT_API PackedScene : public Resource {
     GOBCLASS(PackedScene, Resource)
 public:
 

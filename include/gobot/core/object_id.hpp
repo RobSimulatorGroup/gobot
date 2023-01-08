@@ -13,7 +13,7 @@
 
 namespace gobot {
 
-class ObjectID {
+class GOBOT_API ObjectID {
 public:
     ALWAYS_INLINE ObjectID() {}
 

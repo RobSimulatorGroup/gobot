@@ -13,10 +13,70 @@
 #include "gobot/core/types.hpp"
 #include "gobot/type_categroy.hpp"
 #include "gobot/core/io/variant_serializer.hpp"
+#include "gobot/scene/resources/packed_scene.hpp"
 
 #include <QFile>
 
 namespace gobot {
+
+ResourceFormatLoaderScene::ResourceFormatLoaderScene() {
+
+}
+
+Ref<Resource> ResourceFormatLoaderScene::Load(const String &path,
+                                              const String &original_path,
+                                              CacheMode cache_mode) {
+    QFile file;
+    if (!file.open(QIODevice::ReadOnly)) {
+        LOG_ERROR("Cannot open file: {}.", path);
+        return {};
+    }
+
+}
+
+ResourceFormatLoaderScene& ResourceFormatLoaderScene::GetSingleton() {
+    static ResourceFormatLoaderScene resource_format_loader_scene;
+    return resource_format_loader_scene;
+}
+
+void ResourceFormatLoaderScene::GetRecognizedExtensionsForType(const String& type, std::vector<String>* extensions) const {
+    if (type.isEmpty()) {
+        GetRecognizedExtensions(extensions);
+        return;
+    }
+
+    auto type_class = Type::get_by_name(type.toStdString());
+    auto packed_scene_type = Type::get<PackedScene>();
+    if (packed_scene_type == type_class) {
+        extensions->push_back("jscn");
+    }
+
+    if (type_class != packed_scene_type) {
+        extensions->push_back("jres");
+    }
+}
+
+
+void ResourceFormatLoaderScene::GetRecognizedExtensions(std::vector<String> *extensions) const {
+    extensions->push_back("jscn");
+    extensions->push_back("jres");
+}
+
+bool ResourceFormatLoaderScene::HandlesType(const String& type) const {
+    return true;
+}
+
+
+///////////////////////////////////////////////////////////////////
+
+ResourceFormatSaverScene::ResourceFormatSaverScene() {
+
+}
+
+ResourceFormatSaverScene& ResourceFormatSaverScene::GetSingleton() {
+    static ResourceFormatSaverScene resource_format_saver_scene;
+    return resource_format_saver_scene;
+}
 
 bool ResourceFormatSaverSceneInstance::Save(const String &path, const Ref<Resource> &resource, ResourceSaverFlags flags)
 {
@@ -29,7 +89,7 @@ bool ResourceFormatSaverSceneInstance::Save(const String &path, const Ref<Resour
         return false;
     }
 
-    local_path_ = ProjectSettings::GetInstance().LocalizePath(path);
+    local_path_ = ProjectSettings::GetSingleton().LocalizePath(path);
 
     // Save resources.
     FindResources(resource, true);
@@ -182,6 +242,8 @@ void ResourceFormatSaverScene::GetRecognizedExtensions(const Ref<Resource> &reso
 bool ResourceFormatSaverScene::Recognize(const Ref<Resource> &resource) const {
     return true;
 }
+
+
 
 
 }

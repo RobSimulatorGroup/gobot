@@ -15,11 +15,15 @@ namespace gobot {
 
 class ResourceFormatSaverSceneInstance;
 
-class GOBOT_EXPORT VariantSerializer {
+class GOBOT_API VariantSerializer {
 public:
     static Json VariantToJson(Instance obj, ResourceFormatSaverSceneInstance* resource_format_saver = nullptr);
 
+    static Json JsonToVariant(const Type& type);
+
 private:
+
+    // Save
     static ResourceFormatSaverSceneInstance* s_resource_format_saver_;
 
     static void ToJsonRecursively(Instance object, Json& writer);
@@ -33,6 +37,7 @@ private:
     static void WriteAssociativeContainer(const VariantMapView& view, Json& writer);
 
     static void WriteArray(const VariantListView& view, Json& writer);
+
 };
 
 

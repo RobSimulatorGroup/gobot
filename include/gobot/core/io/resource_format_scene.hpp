@@ -13,16 +13,42 @@
 
 namespace gobot {
 
-class GOBOT_EXPORT ResourceFormatLoaderScene : public ResourceFormatLoader {
+
+class GOBOT_API ResourceLoaderSceneInstance {
 public:
-//    virtual Ref<Resource> load(const String &p_path, const String &p_original_path = "", Error *r_error = nullptr, bool p_use_sub_threads = false, float *r_progress = nullptr, CacheMode p_cache_mode = CACHE_MODE_REUSE);
-//    virtual void get_recognized_extensions(List<String> *p_extensions) const;
-    virtual bool handles_type(const String &p_type) const;
-    virtual String get_resource_type(const String &p_path) const;
+
+
+private:
+    friend class ResourceFormatLoaderScene;
+
+    String local_path_;
+    String res_path_;
+    bool is_scene_{false};
+    String res_type;
+};
+
+class GOBOT_API ResourceFormatLoaderScene : public ResourceFormatLoader {
+public:
+
+    static ResourceFormatLoaderScene& GetSingleton();
+
+    Ref<Resource> Load(const String &p_path,
+                       const String &p_original_path = "",
+                       CacheMode p_cache_mode = CacheMode::Reuse) override;
+
+    void GetRecognizedExtensionsForType(const String& type, std::vector<String>* extensions) const override;
+
+    void GetRecognizedExtensions(std::vector<String> *extensions) const override;
+
+    bool HandlesType(const String& type) const override;
+
+private:
+    ResourceFormatLoaderScene();
+
 };
 
 
-class GOBOT_EXPORT ResourceFormatSaverSceneInstance {
+class GOBOT_API ResourceFormatSaverSceneInstance {
 public:
     bool Save(const String &path, const Ref<Resource> &resource, ResourceSaverFlags flags = ResourceSaverFlags::None);
 
@@ -39,13 +65,18 @@ private:
     std::unordered_set<Ref<Resource>> resource_set_;
 };
 
-class GOBOT_EXPORT ResourceFormatSaverScene : public ResourceFormatSaver {
+class GOBOT_API ResourceFormatSaverScene : public ResourceFormatSaver {
 public:
     bool Save(const Ref<Resource> &resource, const String &path, ResourceSaverFlags flags = ResourceSaverFlags::None) override;
 
     void GetRecognizedExtensions(const Ref<Resource> &resource, std::vector<String>* extensions) const override;
 
     bool Recognize(const Ref<Resource> &resource) const override;
+
+    static ResourceFormatSaverScene& GetSingleton();
+
+private:
+    ResourceFormatSaverScene();
 };
 
 }

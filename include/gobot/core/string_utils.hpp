@@ -19,6 +19,10 @@ bool IsNetworkSharePath(const String& path);
 
 bool IsAbsolutePath(const String& path);
 
+bool IsRelativePath(const String& path);
+
 String SimplifyPath(const String& path);
+
+String ValidateLocalPath(const String& path);
 
 }

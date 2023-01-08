@@ -11,7 +11,7 @@
 
 namespace gobot {
 
-class Mesh : public Resource {
+class GOBOT_API Mesh : public Resource {
     GOBCLASS(Mesh, Resource);
 public:
 

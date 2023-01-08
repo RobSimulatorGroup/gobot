@@ -12,19 +12,33 @@ namespace gobot {
 
 class Resource;
 
-class GOBOT_EXPORT ResourceFormatLoader : public RefCounted {
+class GOBOT_API ResourceFormatLoader : public RefCounted {
     GOBCLASS(ResourceFormatLoader, RefCounted);
 public:
     enum class CacheMode {
         Ignore, // Resource and subresources do not use path cache, no path is set into resource.
-        Reuse, // Resource and subresources use patch cache, reuse existing loaded resources instead of loading from disk when available.
+        Reuse, // Resource and subresources use path cache, reuse existing loaded resources instead of loading from disk when available.
         Replace // Resource and subresource use path cache, but replace existing loaded resources when available with information from disk.
     };
+
+    virtual Ref<Resource> Load(const String &p_path,
+                               const String &p_original_path = "",
+                               CacheMode p_cache_mode = CacheMode::Reuse) = 0;
+
+    virtual bool HandlesType(const String &type) const = 0;
+
+    virtual bool RecognizePath(const String &path, const String &type_hint = String()) const;
+
+    virtual void GetRecognizedExtensions(std::vector<String> *extensions) const = 0;
+
+    virtual void GetRecognizedExtensionsForType(const String &type, std::vector<String> *extensions) const;
+
+    virtual bool Exists(const String &path) const;
 
 };
 
 
-class GOBOT_EXPORT ResourceLoader {
+class GOBOT_API ResourceLoader {
 
 public:
     static Ref<Resource> Load(const String &path,
@@ -33,9 +47,24 @@ public:
 
     static bool Exists(const String &path, const String &type_hint = "");
 
+    static void AddResourceFormatLoader(Ref<ResourceFormatLoader> format_loader, bool at_front = false);
+
+    static void RemoveResourceFormatLoader(const Ref<ResourceFormatLoader>& format_loader);
+
+    static void SetTimestampOnLoad(bool timestamp) { s_timestamp_on_load = timestamp; }
+
+    static bool GetTimestampOnLoad() { return s_timestamp_on_load; }
 
 private:
 
+    static Ref<Resource> LoadImpl(const String &path,
+                                  const String &original_path,
+                                  const String &type_hint,
+                                  ResourceFormatLoader::CacheMode cache_mode);
+
+    static std::deque<Ref<ResourceFormatLoader>> s_loaders;
+
+    static bool s_timestamp_on_load;
 
 };
 

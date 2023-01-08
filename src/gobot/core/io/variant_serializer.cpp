@@ -207,6 +207,10 @@ void VariantSerializer::ToJsonRecursively(Instance object, Json& writer)
 
 Json VariantSerializer::VariantToJson(Instance obj,
                                       ResourceFormatSaverSceneInstance* resource_format_saver) {
+    if (!obj.is_valid()) {
+        return {};
+    }
+
     Json json;
     s_resource_format_saver_ = resource_format_saver;
     ToJsonRecursively(obj, json);

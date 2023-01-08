@@ -8,10 +8,11 @@
 #pragma once
 
 #include "gobot/core/types.hpp"
+#include "gobot/core/marcos.hpp"
 
 namespace gobot {
 
-class NodePath {
+class GOBOT_API NodePath {
 public:
     NodePath();
 

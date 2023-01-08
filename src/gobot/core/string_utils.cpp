@@ -6,6 +6,7 @@
 */
 
 #include "gobot/core/string_utils.hpp"
+#include "gobot/core/config/project_setting.hpp"
 
 namespace gobot {
 
@@ -26,6 +27,10 @@ bool IsAbsolutePath(const String& path){
     } else {
         return false;
     }
+}
+
+bool IsRelativePath(const String& path) {
+    return !IsAbsolutePath(path);
 }
 
 String SimplifyPath(const String& path) {
@@ -109,6 +114,14 @@ String SimplifyPath(const String& path) {
     }
 
     return drive + s;
+}
+
+String ValidateLocalPath(const String& path) {
+    if (IsRelativePath(path)) {
+        return "res://" + path;
+    } else {
+        return ProjectSettings::GetSingleton().LocalizePath(path);
+    }
 }
 
 }

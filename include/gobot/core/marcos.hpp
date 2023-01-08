@@ -33,9 +33,9 @@
 
 #if !defined(GOBOT_EXPORT)
 #if defined(WIN32) || defined(_WIN32)
-#define GOBOT_EXPORT __declspec(dllexport)
+#define GOBOT_API __declspec(dllexport)
 #else
-#define GOBOT_EXPORT __attribute__((visibility("default")))
+#define GOBOT_API __attribute__((visibility("default")))
 #endif
 #endif
 

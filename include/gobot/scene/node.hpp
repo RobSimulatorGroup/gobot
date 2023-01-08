@@ -11,7 +11,7 @@
 
 namespace gobot {
 
-class Node : public Object {
+class GOBOT_API Node : public Object {
     GOBCLASS(Node, Object)
 
 public:

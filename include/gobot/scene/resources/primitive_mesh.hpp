@@ -11,39 +11,39 @@
 
 namespace gobot {
 
-class PrimitiveMesh : public Mesh {
+class GOBOT_API PrimitiveMesh : public Mesh {
     GOBCLASS(PrimitiveMesh, Mesh)
 public:
 
 };
 
 
-class BoxMesh : public PrimitiveMesh {
+class GOBOT_API BoxMesh : public PrimitiveMesh {
     GOBCLASS(BoxMesh, PrimitiveMesh)
 public:
 
 };
 
-class CylinderMesh : public PrimitiveMesh {
+class GOBOT_API CylinderMesh : public PrimitiveMesh {
     GOBCLASS(CylinderMesh, PrimitiveMesh)
 public:
 
 };
 
-class PlaneMesh : public PrimitiveMesh {
+class GOBOT_API PlaneMesh : public PrimitiveMesh {
     GOBCLASS(PlaneMesh, PrimitiveMesh)
 public:
 
 };
 
-class SphereMesh : public PrimitiveMesh {
+class GOBOT_API SphereMesh : public PrimitiveMesh {
     GOBCLASS(SphereMesh, PrimitiveMesh)
 public:
 
 };
 
 
-class CapsuleMesh : public PrimitiveMesh {
+class GOBOT_API CapsuleMesh : public PrimitiveMesh {
     GOBCLASS(CapsuleMesh, PrimitiveMesh)
 public:
 
