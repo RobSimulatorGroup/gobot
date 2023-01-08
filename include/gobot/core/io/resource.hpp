@@ -96,7 +96,11 @@ private:
     friend class ResourceLoader;
 
     static std::mutex s_lock;
+
+    // [path, resource]
     static std::unordered_map<String, Resource*> s_resources;
+
+    static std::unordered_map<String, std::unordered_map<String, String>> s_resource_path_cache;
 
     static void Clear();
 

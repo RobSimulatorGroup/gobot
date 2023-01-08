@@ -14,10 +14,206 @@
 #include "gobot/type_categroy.hpp"
 #include "gobot/core/io/variant_serializer.hpp"
 #include "gobot/scene/resources/packed_scene.hpp"
+#include "gobot/core/string_utils.hpp"
 
+#include <QTextStream>
 #include <QFile>
 
+#define FORMAT_VERSION 1.0
+
 namespace gobot {
+
+
+ResourceLoaderSceneInstance::ResourceLoaderSceneInstance() {
+
+}
+
+bool ResourceLoaderSceneInstance::LoadResource() {
+    Json json = Json::parse(file_context_.toStdString());
+    if (json.contains("__VERSION__")) {
+        float version = json["__VERSION__"];
+        if (version != FORMAT_VERSION) {
+            LOG_ERROR("__VERSION__ must be {}", FORMAT_VERSION);
+            return false;
+        }
+    } else {
+        LOG_ERROR("The json: {} must contains __VERSION__", json);
+        return false;
+    }
+    if (json.contains("__META_TYPE__")) {
+        std::string meta_type = json["__META_TYPE__"];
+        if (meta_type != "SCENE" && meta_type != "RESOURCE") {
+            LOG_ERROR("__META_TYPE__ must SCENE or RESOURCE");
+            return false;
+        }
+    } else {
+        LOG_ERROR("The json: {} must contains __META_TYPE__", json);
+        return false;
+    }
+
+    if (json.contains("__EXT_RESOURCES__")) {
+        Json ext_resources = json["__EXT_RESOURCES__"];
+        if (ext_resources.is_array()) {
+            for (const auto& ext_res: ext_resources) {
+                if (!ext_res.contains("__PATH__")) {
+                    LOG_ERROR("Missing '__PATH__' in external resource");
+                    return false;
+                }
+
+                if (!ext_res.contains("__TYPE__")) {
+                    LOG_ERROR("Missing '__TYPE__' in external resource");
+                    return false;
+                }
+
+                if (!ext_res.contains("__ID__")) {
+                    LOG_ERROR("Missing '__ID__' in external resource");
+                    return false;
+                }
+
+                std::string _path = ext_res["__PATH__"];
+                std::string _type = ext_res["__TYPE__"];
+                std::string _id = ext_res["__ID__"];
+                String path(_path.c_str());
+                String type(_type.c_str());
+                String id(_id.c_str());
+
+                if (!path.contains("://") && IsRelativePath(path)) {
+                    // path is relative to file being loaded, so convert to a resource path
+//                    path = ProjectSettings::GetSingleton().LocalizePath(local_path_.get_base_dir().path_join(path));
+                }
+
+                ExtResource er;
+                er.path = path;
+                er.type = type;
+
+                Ref<Resource> res = ResourceLoader::Load(path, type);
+                if (!res) {
+                    LOG_ERROR("");
+                } else {
+				    res->SetResourceUuid(id);
+                }
+
+                er.cache = res;
+
+                ext_resources_[id] = er;
+            }
+        }
+    }
+
+    if (json.contains("__SUB_RESOURCES__")) {
+        Json sub_resources = json["__SUB_RESOURCES__"];
+        if (sub_resources.is_array()) {
+            for (const auto& sub_res: sub_resources) {
+                if (!sub_res.contains("__TYPE__")) {
+                    LOG_ERROR("Missing '__TYPE__' in external resource");
+                    return false;
+                }
+
+                if (!sub_res.contains("__ID__")) {
+                    LOG_ERROR("Missing '__TYPE__' in external resource");
+                    return false;
+                }
+
+                std::string _type = sub_res["__TYPE__"];
+                std::string _id = sub_res["__ID__"];
+                String type(_type.c_str());
+                String id(_id.c_str());
+
+                String path = local_path_ + "::" + id;
+
+                Ref<Resource> res;
+                bool do_assign = false;
+                if (cache_mode_ == ResourceFormatLoader::CacheMode::Replace && ResourceCache::Has(path)) {
+                    //reuse existing
+                    Ref<Resource> cache = ResourceCache::GetRef(path);
+                    if (cache.is_valid() && cache->GetClassName().data() == type) {
+                        res = cache;
+                        res->ResetState();
+                        do_assign = true;
+                    }
+                }
+
+                if (!res) {
+                    Ref<Resource> cache = ResourceCache::GetRef(path);
+                    if (cache_mode_ != ResourceFormatLoader::CacheMode::Ignore && cache.is_valid()) { //only if it doesn't exist
+                        //cached, do not assign
+                        res = cache;
+                    } else {
+                        //create
+                        Variant new_obj = Type::get_by_name(type.toStdString()).create();
+                        if (!new_obj.can_convert<Object*>()) {
+                            LOG_ERROR("");
+                            return false;
+                        }
+                        auto* obj = new_obj.convert<Object*>();
+
+                        auto *r = Object::CastTo<Resource>(obj);
+                        if (!r) {
+                            LOG_ERROR("Can't create sub resource of type, because not a resource: {}", type);
+                            return false;
+                        }
+
+                        res = Ref<Resource>(r);
+                        do_assign = true;
+                    }
+                }
+
+                sub_resources_[id] = res; //always assign int resources
+                if (do_assign) {
+                    if (cache_mode_ == ResourceFormatLoader::CacheMode::Ignore) {
+                        res->SetPath(path);
+                    } else {
+                        res->SetPath(path, cache_mode_ == ResourceFormatLoader::CacheMode::Replace);
+                        res->SetResourceUuid(id);
+                    }
+                }
+
+            }
+        } else {
+            return {};
+        }
+    }
+
+    if (json.contains("__RESOURCE__")) {
+        if (is_scene_) {
+            LOG_ERROR("");
+            return false;
+        }
+
+        Ref<Resource> cache = ResourceCache::GetRef(local_path_);
+        if (cache_mode_ == ResourceFormatLoader::CacheMode::Replace && cache.is_valid() && cache->GetClassName().data() == res_type_) {
+            cache->ResetState();
+            resource_ = cache;
+        }
+
+        if (!resource_.is_valid()) {
+
+            Variant new_obj = Type::get_by_name(res_type_.toStdString()).create();
+            if (!new_obj.can_convert<Object*>()) {
+                LOG_ERROR("");
+                return false;
+            }
+            auto* obj = new_obj.convert<Object*>();
+
+            auto *r = Object::CastTo<Resource>(obj);
+            if (!r) {
+                LOG_ERROR("Can't create sub resource of type, because not a resource: {}", res_type_);
+                return false;
+            }
+
+            resource_ = Ref<Resource>(r);
+        }
+
+    }
+
+
+    return true;
+}
+
+
+Ref<Resource> ResourceLoaderSceneInstance::GetResource() const {
+    return resource_;
+}
 
 ResourceFormatLoaderScene::ResourceFormatLoaderScene() {
 
@@ -26,12 +222,22 @@ ResourceFormatLoaderScene::ResourceFormatLoaderScene() {
 Ref<Resource> ResourceFormatLoaderScene::Load(const String &path,
                                               const String &original_path,
                                               CacheMode cache_mode) {
-    QFile file;
+    QFile file(path);
     if (!file.open(QIODevice::ReadOnly)) {
         LOG_ERROR("Cannot open file: {}.", path);
         return {};
     }
 
+    ResourceLoaderSceneInstance loader;
+    loader.file_context_ = file.readAll();
+    loader.cache_mode_ = cache_mode;
+    loader.local_path_ = ProjectSettings::GetSingleton().LocalizePath(!original_path.isEmpty() ? original_path : path);
+
+    if (loader.LoadResource()) {
+        return loader.GetResource();
+    }
+
+    return {};
 }
 
 ResourceFormatLoaderScene& ResourceFormatLoaderScene::GetSingleton() {
@@ -106,12 +312,12 @@ bool ResourceFormatSaverSceneInstance::Save(const String &path, const Ref<Resour
 
     Json root;
     root["__VERSION__"] = 1.0;
-    root["__META_TYPE__"] = packed_scene_.is_valid() ? "SCENE" : resource->GetClassName();
+    root["__META_TYPE__"] = packed_scene_.is_valid() ? "SCENE" : "RESOURCE";
 
     root["__EXT_RESOURCES__"] = Json::array();
     for (const auto& [res, uuid]: external_resources_) {
         Json ext_res;
-        ext_res["__MATA_TYPE__"] = res->GetClassName();
+        ext_res["__TYPE__"] = res->GetClassName();
         ext_res["__PATH__"] = res->GetPath().toStdString();
         ext_res["__ID__"] = res->GetResourceUuid().toString().toStdString();
         root["__EXT_RESOURCES__"].push_back(ext_res);
@@ -128,6 +334,7 @@ bool ResourceFormatSaverSceneInstance::Save(const String &path, const Ref<Resour
         Json resource_data_json;
 
         Variant variant = saved_resource;
+        resource_data_json["__TYPE__"] = variant.get_type().get_name().data();
 
         for (auto& prop : variant.get_type().get_properties()) {
             auto property_info = prop.get_metadata(PROPERTY_INFO_KEY).get_value<PropertyInfo>();
@@ -142,14 +349,14 @@ bool ResourceFormatSaverSceneInstance::Save(const String &path, const Ref<Resour
             root["__RESOURCE__"] = resource_data_json;
         } else {
             if (!root.contains("__SUB_RESOURCES__")) {
-                root["__SUB_RESOURCES__"] = Json::object();
+                root["__SUB_RESOURCES__"] = Json::array();
             }
-            resource_data_json["__MATA_TYPE__"] = saved_resource->GetClassName();
-            root["__SUB_RESOURCES__"][saved_resource->GetResourceUuid().toString().toStdString()] = resource_data_json;
+            resource_data_json["__ID__"] = saved_resource->GetResourceUuid().toString().toStdString();
+            root["__SUB_RESOURCES__"].emplace_back(resource_data_json);
         }
     }
 
-
+    file.write(root.dump(4).c_str());
     return true;
 }
 

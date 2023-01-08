@@ -218,4 +218,10 @@ Json VariantSerializer::VariantToJson(Instance obj,
     return json;
 }
 
+
+
+Json VariantSerializer::JsonToVariant(const Json& json, const Type& type) {
+
+}
+
 }
