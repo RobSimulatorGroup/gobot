@@ -205,7 +205,8 @@ bool ResourceLoaderSceneInstance::LoadResource() {
         }
 
         for (const auto&[key, value] : json["__RESOURCE__"].items()) {
-            auto variant = VariantSerializer::JsonToVariant(value);
+            auto value_type = resource_->GetPropertyType(key.c_str());
+            auto variant = VariantSerializer::JsonToVariant(value_type, value);
 
             if (!variant.is_valid()) {
                 LOG_ERROR("");
@@ -229,45 +230,6 @@ bool ResourceLoaderSceneInstance::LoadResource() {
             return false;
         }
 
-        Ref<Resource> cache = ResourceCache::GetRef(local_path_);
-        if (cache_mode_ == ResourceFormatLoader::CacheMode::Replace && cache.is_valid() && cache->GetClassName().data() == res_type_) {
-            cache->ResetState();
-            resource_ = cache;
-        }
-
-        if (!resource_.is_valid()) {
-
-            Variant new_obj = Type::get_by_name(res_type_.toStdString()).create();
-            if (!new_obj.can_convert<Object*>()) {
-                LOG_ERROR("");
-                return false;
-            }
-            auto* obj = new_obj.convert<Object*>();
-
-            auto *r = Object::CastTo<Resource>(obj);
-            if (!r) {
-                LOG_ERROR("Can't create sub resource of type, because not a resource: {}", res_type_);
-                return false;
-            }
-
-            resource_ = Ref<Resource>(r);
-        }
-
-        for (const auto&[key, value] : json["__RESOURCE__"].items()) {
-            auto variant = VariantSerializer::JsonToVariant(value);
-
-            if (!variant.is_valid()) {
-                LOG_ERROR("");
-            }
-
-            resource_->Set(key.c_str(), variant);
-        }
-
-        if (cache_mode_ != ResourceFormatLoader::CacheMode::Ignore) {
-            if (!ResourceCache::Has(local_path_)) {
-                resource_->SetPath(local_path_);
-            }
-        }
 
         return true;
     }

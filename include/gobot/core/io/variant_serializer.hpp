@@ -19,7 +19,7 @@ class GOBOT_API VariantSerializer {
 public:
     static Json VariantToJson(Instance obj, ResourceFormatSaverSceneInstance* resource_format_saver = nullptr);
 
-    static Variant JsonToVariant(const Json& json);
+    static Variant JsonToVariant(const Type& type, const Json& json);
 
 private:
 
@@ -37,6 +37,17 @@ private:
     static void WriteAssociativeContainer(const VariantMapView& view, Json& writer);
 
     static void WriteArray(const VariantListView& view, Json& writer);
+
+    // Load
+    static void FromJsonRecursively(Instance instance, const Json& json);
+
+    static Variant ExtractPrimitiveTypes(const Type& type, const Json& json_value);
+
+    static void WriteArrayRecursively(VariantListView& view, const Json& json_array_value);
+
+    static void WriteAssociativeViewRecursively(VariantMapView& view, const Json& json_array_value);
+
+    static Variant ExtractValue(const Type& type, const Json& json);
 
 };
 

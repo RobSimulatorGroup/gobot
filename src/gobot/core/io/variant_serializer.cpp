@@ -10,6 +10,7 @@
 #include "gobot/core/object.hpp"
 #include "gobot/log.hpp"
 #include "gobot/core/io/resource_format_scene.hpp"
+#include "rttr/enumeration.h"
 
 namespace gobot {
 
@@ -48,12 +49,7 @@ bool VariantSerializer::WriteAtomicTypesToJson(const Type& t, const Variant& var
             writer = var.to_string();
             return true;
         } else {
-            ok = false;
-            auto value = var.to_uint64(&ok);
-            if (ok) {
-                writer = value;
-                return true;
-            }
+            return false;
         }
     } else if (t == Type::get<std::string>()) {
         writer = var.to_string();
@@ -219,9 +215,186 @@ Json VariantSerializer::VariantToJson(Instance obj,
 }
 
 
+Variant VariantSerializer::ExtractPrimitiveTypes(const Type& type, const Json& json_value)
+{
+    if (json_value.is_boolean()) {
+        if (type == Type::get<bool>()){
+            return json_value.get<bool>();
+        } else {
+            LOG_ERROR("");
+        }
+    } else if (json_value.is_number_unsigned()) {
+        if (type == Type::get<uint8_t>()) {
+            return json_value.get<uint8_t>();
+        } else if (type == Type::get<uint16_t>()) {
+            return json_value.get<uint16_t>();
+        } else if (type == Type::get<uint32_t>()) {
+            return json_value.get<uint32_t>();
+        } else if (type == Type::get<uint64_t>()) {
+            return json_value.get<uint64_t>();
+        } else {
+            LOG_ERROR("");
+        }
+    } else if (json_value.is_number_integer()) {
+        if (type == Type::get<int8_t>()) {
+            return json_value.get<int8_t>();
+        } else if (type == Type::get<int16_t>()) {
+            return json_value.get<int16_t>();
+        } else if (type == Type::get<int32_t>()) {
+            return json_value.get<int32_t>();
+        } else if (type == Type::get<int64_t>()) {
+            return json_value.get<int64_t>();
+        } else {
+            LOG_ERROR("");
+        }
+    } else if (json_value.is_number_float()) {
+        if (type == Type::get<float>()) {
+            return json_value.get<float>();
+        } else if (type == Type::get<double>()) {
+            return json_value.get<double>();
+        } else {
+            LOG_ERROR("");
+        }
+    } else if (json_value.is_string()) {
+        if (type == Type::get<std::string>()) {
+            return json_value.get<std::string>();
+        } else if (type == Type::get<String>()) {
+            return String(json_value.get<std::string>().c_str());
+        } else if (type.is_enumeration()) {
+            auto enum_class = type.get_enumeration();
+            return enum_class.name_to_value(json_value.get<std::string>());
+        }
+        else {
+            LOG_ERROR("");
+        }
+    }
 
-Variant VariantSerializer::JsonToVariant(const Json& json) {
+    return {};
+}
 
+
+void VariantSerializer::WriteArrayRecursively(VariantListView& view, const Json& json_array_value)
+{
+    view.set_size(json_array_value.size());
+    const auto array_value_type = view.get_rank_type(1);
+
+    for (std::size_t i = 0; i < json_array_value.size(); ++i) {
+        auto& json_index_value = json_array_value[i];
+        if (json_index_value.is_array()) {
+            auto sub_array_view = view.get_value(i).create_sequential_view();
+            WriteArrayRecursively(sub_array_view, json_index_value);
+        } else if (json_index_value.is_object()) {
+            Variant var_tmp = view.get_value(i);
+            Variant wrapped_var = var_tmp.extract_wrapped_value();
+            FromJsonRecursively(wrapped_var, json_index_value);
+            view.set_value(i, wrapped_var);
+        } else {
+            auto extracted_value = ExtractPrimitiveTypes(array_value_type, json_index_value);
+            if (extracted_value.is_valid()) {
+                view.set_value(i, extracted_value);
+            }
+        }
+    }
+}
+
+Variant VariantSerializer::ExtractValue(const Type& type, const Json& json)
+{
+    if (json.is_primitive()) {
+        return ExtractPrimitiveTypes(type, json);
+    } else if (json.is_object()) {
+        rttr::constructor ctor = type.get_constructor();
+        for (auto& item : type.get_constructors()) {
+            if (item.get_instantiated_type() == type)
+                ctor = item;
+        }
+        auto extracted_value = ctor.invoke();
+        FromJsonRecursively(extracted_value, json);
+        return extracted_value;
+    }
+
+    return {};
+}
+
+void VariantSerializer::WriteAssociativeViewRecursively(VariantMapView& view, const Json& json_array_value)
+{
+    for (std::size_t i = 0; i < json_array_value.size(); ++i) {
+        auto& json_index_value = json_array_value[i];
+        if (json_index_value.is_object())  { // a key-value associative view
+            if (json_index_value.contains("key") && json_index_value.contains("value")) {
+                auto key_var = ExtractValue(view.get_key_type(), json_index_value["key"]);
+                auto value_var = ExtractValue(view.get_key_type(), json_index_value["value"]);
+                if (key_var && value_var) {
+                    view.insert(key_var, value_var);
+                }
+            }
+        } else  { // a key-only associative view
+            Variant extracted_value = ExtractPrimitiveTypes(view.get_key_type(), json_index_value);
+            if (extracted_value) {
+                view.insert(extracted_value);
+            }
+        }
+    }
+}
+
+void VariantSerializer::FromJsonRecursively(Instance instance, const Json& json) {
+    Instance obj = instance.get_type().get_raw_type().is_wrapper() ? instance.get_wrapped_instance() : instance;
+
+    const auto prop_list = obj.get_derived_type().get_properties();
+
+    for (auto prop : prop_list)
+    {
+        PropertyInfo property_info;
+        auto meta_data = prop.get_metadata(PROPERTY_INFO_KEY);
+        if (meta_data.is_valid()) {
+            property_info = meta_data.get_value<PropertyInfo>();
+        }
+        USING_ENUM_BITWISE_OPERATORS;
+        if (static_cast<bool>(property_info.usage & PropertyUsageFlags::Storage)) {
+            const auto prop_name = prop.get_name();
+            if (!json.contains(prop_name.data())) {
+                LOG_ERROR("");
+                continue;
+            }
+            const auto& child_json = json[prop_name.data()];
+            const auto& prop_type = prop.get_type();
+            if (child_json.is_array()) {
+                if (prop_type.is_sequential_container()) {
+                    auto value = prop.get_value(obj);
+                    auto view = value.create_sequential_view();
+                    WriteArrayRecursively(view, child_json);
+                } else if (prop_type.is_associative_container()) {
+                    auto value = prop.get_value(obj);
+                    auto view = value.create_associative_view();
+                    WriteAssociativeViewRecursively(view, child_json);
+                }
+            } else if (child_json.is_object()) {
+                auto var = prop.get_value(obj);
+                FromJsonRecursively(var, child_json);
+                prop.set_value(obj, var);
+            } else {
+                auto extracted_value = ExtractPrimitiveTypes(prop.get_type(), child_json);
+                if (extracted_value) // REMARK: CONVERSION WORKS ONLY WITH "const type", check whether this is correct or not!
+                    prop.set_value(obj, extracted_value);
+            }
+        }
+    }
+}
+
+
+Variant VariantSerializer::JsonToVariant(const Type& type, const Json& json) {
+    if (json.is_null()) {
+        LOG_ERROR("");
+        return {};
+    }
+
+    if (json.is_primitive()) {
+        return ExtractPrimitiveTypes(type, json);
+    } else if (json.is_structured()) {
+        auto value = type.create();
+        FromJsonRecursively(value, json);
+        return value;
+    }
+    return {};
 }
 
 }

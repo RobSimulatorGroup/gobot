@@ -159,6 +159,8 @@ public:
 
     [[nodiscard]] Variant Get(const String& name) const;
 
+    Type GetPropertyType(const String& name) const;
+
     [[nodiscard]] ALWAYS_INLINE bool IsRefCounted() const { return type_is_reference_; }
 
     [[nodiscard]] ALWAYS_INLINE ObjectID GetInstanceId() const { return instance_id_; }
