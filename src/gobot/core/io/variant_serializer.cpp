@@ -220,7 +220,7 @@ Json VariantSerializer::VariantToJson(Instance obj,
 
 
 
-Json VariantSerializer::JsonToVariant(const Json& json, const Type& type) {
+Variant VariantSerializer::JsonToVariant(const Json& json) {
 
 }
 

@@ -19,7 +19,7 @@ class GOBOT_API VariantSerializer {
 public:
     static Json VariantToJson(Instance obj, ResourceFormatSaverSceneInstance* resource_format_saver = nullptr);
 
-    static Json JsonToVariant(const Json& json, const Type& type);
+    static Variant JsonToVariant(const Json& json);
 
 private:
 
