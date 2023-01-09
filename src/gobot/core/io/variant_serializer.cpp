@@ -339,10 +339,10 @@ void VariantSerializer::WriteAssociativeViewRecursively(VariantMapView& view, co
 
 void VariantSerializer::FromJsonRecursively(Instance instance, const Json& json) {
     Instance obj = instance.get_type().get_raw_type().is_wrapper() ? instance.get_wrapped_instance() : instance;
-    if (raw_type.is_wrapper() && raw_type.get_wrapper_holder_type() == rttr::wrapper_holder_type::Ref) {
-        SaveResource(obj, raw_type, writer);
-        return;
-    }
+//    if (raw_type.is_wrapper() && raw_type.get_wrapper_holder_type() == rttr::wrapper_holder_type::Ref) {
+//        SaveResource(obj, raw_type, writer);
+//        return;
+//    }
 
     const auto prop_list = obj.get_derived_type().get_properties();
 

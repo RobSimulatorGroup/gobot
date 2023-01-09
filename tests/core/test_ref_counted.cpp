@@ -11,10 +11,12 @@
 #include <gobot/core/types.hpp>
 #include <gobot/log.hpp>
 #include <gobot/core/registration.hpp>
+#include <gobot/core/notification_enum.hpp>
 
-namespace {
+namespace gobot {
 
-class TestResource : public gobot::RefCounted {
+class TestResource : public RefCounted {
+    GOBCLASS(TestResource, RefCounted)
 public:
     TestResource() = default;
 };
@@ -23,15 +25,16 @@ public:
 
 GOBOT_REGISTRATION {
 
-    Class_<TestResource>("TestResource");
-    gobot::Type::register_wrapper_converter_for_base_classes<gobot::Ref<TestResource>, gobot::Ref<RefCounted>>();
+    Class_<TestResource>("TestResource")
+        .constructor()(CtorAsRawPtr);
+    gobot::Type::register_wrapper_converter_for_base_classes<Ref<TestResource>, Ref<RefCounted>>();
 };
 
 
 TEST(TestRefCounted, test_count) {
     gobot::Ref<gobot::RefCounted> p;
     gobot::RefWeak<gobot::RefCounted> wp;
-    p = gobot::MakeRef<TestResource>();
+    p = gobot::MakeRef<gobot::TestResource>();
     ASSERT_TRUE(p.use_count() == 1);
     gobot::Ref<gobot::RefCounted> p1 = p;
     ASSERT_TRUE(p.use_count() == 2);
@@ -62,7 +65,7 @@ TEST(TestRefCounted, test_nullptr) {
     ASSERT_TRUE(p.use_count() == 0);
     ASSERT_FALSE(p.operator bool());
 
-    p = gobot::MakeRef<TestResource>();
+    p = gobot::MakeRef<gobot::TestResource>();
     ASSERT_TRUE(p.unique());
     ASSERT_TRUE(p.operator bool());
     ASSERT_TRUE(p.is_valid());
@@ -77,7 +80,7 @@ TEST(TestRefRegister, test_ref) {
     ASSERT_TRUE(ref.get_type().get_wrapper_holder_type() == gobot::WrapperHolderType::Ref);
 
     {
-        gobot::Variant resource = gobot::MakeRef<TestResource>();
+        gobot::Variant resource = gobot::MakeRef<gobot::TestResource>();
         ASSERT_TRUE(resource.can_convert<gobot::Ref<gobot::RefCounted>>());
         p = resource.convert<gobot::Ref<gobot::RefCounted>>();
     }
@@ -87,7 +90,12 @@ TEST(TestRefRegister, test_ref) {
 
 
 TEST(TestRefRegister, test_get_wrapped_instance) {
-    gobot::Variant resource = gobot::MakeRef<TestResource>();
+    gobot::Variant resource = gobot::MakeRef<gobot::TestResource>();
     gobot::Instance instance = resource;
-    ASSERT_TRUE(instance.get_wrapped_instance().get_type() == gobot::Type::get<TestResource*>());
+    ASSERT_TRUE(instance.get_wrapped_instance().get_type() == gobot::Type::get<gobot::TestResource*>());
+}
+
+TEST(TestRefRegister, test_create) {
+    gobot::Variant resource = gobot::Type::get<gobot::TestResource>().create();
+    ASSERT_TRUE(resource.can_convert<gobot::TestResource*>());
 }
