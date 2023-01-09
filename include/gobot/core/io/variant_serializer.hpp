@@ -28,7 +28,8 @@ private:
 
     static void ToJsonRecursively(Instance object, Json& writer);
 
-    static void SaveResource(Instance instance, const Type& t, Json& writer);
+    // return is continue or not
+    static bool SaveResource(Instance instance, const Type& t, Json& writer);
 
     static bool WriteVariant(const Variant& var, Json& writer);
 

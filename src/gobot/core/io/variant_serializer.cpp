@@ -143,13 +143,13 @@ bool VariantSerializer::WriteVariant(const Variant& var, Json& writer)
 }
 
 
-void VariantSerializer::SaveResource(Instance instance, const Type& type, Json& writer) {
+bool VariantSerializer::SaveResource(Instance instance, const Type& type, Json& writer) {
     if (type.get_wrapper_holder_type() == rttr::wrapper_holder_type::Ref) {
         if (s_resource_format_saver_) {
             auto res = Ref<Resource>(instance.try_convert<Resource>());
             if (!res) {
                 LOG_ERROR("Cannot convert object to Resource {}", type.get_name().data());
-                return;
+                return false;
             }
             if (s_resource_format_saver_->external_resources_.contains(res)) {
                 writer = fmt::format("ExtResource({})", res->GetResourceUuid().toString());
@@ -158,12 +158,11 @@ void VariantSerializer::SaveResource(Instance instance, const Type& type, Json& 
             }
         } else {
             LOG_ERROR("Unsupported wrapper type: {}", type.get_name().data());
-            return;
+            return false;
         }
-    } else {
-        LOG_ERROR("Unsupported wrapper type: {}", type.get_name().data());
-        return;
     }
+
+    return true;
 }
 
 void VariantSerializer::ToJsonRecursively(Instance object, Json& writer)
@@ -221,7 +220,7 @@ Variant VariantSerializer::ExtractPrimitiveTypes(const Type& type, const Json& j
         if (type == Type::get<bool>()){
             return json_value.get<bool>();
         } else {
-            LOG_ERROR("");
+            LOG_ERROR("json_value:{} and type: {} is unmatched.", json_value, type.get_name().data());
         }
     } else if (json_value.is_number_unsigned()) {
         if (type == Type::get<uint8_t>()) {
@@ -233,7 +232,7 @@ Variant VariantSerializer::ExtractPrimitiveTypes(const Type& type, const Json& j
         } else if (type == Type::get<uint64_t>()) {
             return json_value.get<uint64_t>();
         } else {
-            LOG_ERROR("");
+            LOG_ERROR("json_value:{} and type: {} is unmatched.", json_value, type.get_name().data());
         }
     } else if (json_value.is_number_integer()) {
         if (type == Type::get<int8_t>()) {
@@ -245,7 +244,7 @@ Variant VariantSerializer::ExtractPrimitiveTypes(const Type& type, const Json& j
         } else if (type == Type::get<int64_t>()) {
             return json_value.get<int64_t>();
         } else {
-            LOG_ERROR("");
+            LOG_ERROR("json_value:{} and type: {} is unmatched.", json_value, type.get_name().data());
         }
     } else if (json_value.is_number_float()) {
         if (type == Type::get<float>()) {
@@ -253,7 +252,7 @@ Variant VariantSerializer::ExtractPrimitiveTypes(const Type& type, const Json& j
         } else if (type == Type::get<double>()) {
             return json_value.get<double>();
         } else {
-            LOG_ERROR("");
+            LOG_ERROR("json_value:{} and type: {} is unmatched.", json_value, type.get_name().data());
         }
     } else if (json_value.is_string()) {
         if (type == Type::get<std::string>()) {
@@ -265,7 +264,7 @@ Variant VariantSerializer::ExtractPrimitiveTypes(const Type& type, const Json& j
             return enum_class.name_to_value(json_value.get<std::string>());
         }
         else {
-            LOG_ERROR("");
+            LOG_ERROR("json_value:{} and type: {} is unmatched.", json_value, type.get_name().data());
         }
     }
 
@@ -338,8 +337,11 @@ void VariantSerializer::WriteAssociativeViewRecursively(VariantMapView& view, co
 
 void VariantSerializer::FromJsonRecursively(Instance instance, const Json& json) {
     Instance obj = instance.get_type().get_raw_type().is_wrapper() ? instance.get_wrapped_instance() : instance;
-
     const auto prop_list = obj.get_derived_type().get_properties();
+//    if (raw_type.is_wrapper() && raw_type.get_wrapper_holder_type() == rttr::wrapper_holder_type::Ref) {
+//        SaveResource(obj, raw_type, writer);
+//        return;
+//    }
 
     for (auto prop : prop_list)
     {
@@ -383,7 +385,7 @@ void VariantSerializer::FromJsonRecursively(Instance instance, const Json& json)
 
 Variant VariantSerializer::JsonToVariant(const Type& type, const Json& json) {
     if (json.is_null()) {
-        LOG_ERROR("");
+        LOG_ERROR("Input json is null");
         return {};
     }
 
@@ -391,6 +393,10 @@ Variant VariantSerializer::JsonToVariant(const Type& type, const Json& json) {
         return ExtractPrimitiveTypes(type, json);
     } else if (json.is_structured()) {
         auto value = type.create();
+        if (type.is_derived_from<RefCounted>()) {
+            auto* ref_counted = value.convert<RefCounted*>();
+            value = Ref<RefCounted>(ref_counted);
+        }
         FromJsonRecursively(value, json);
         return value;
     }

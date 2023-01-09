@@ -84,3 +84,11 @@ TEST(TestRefRegister, test_ref) {
 
     ASSERT_TRUE(p.use_count() == 1);
 }
+
+
+TEST(TestRefRegister, test_get_wrapped_instance) {
+    gobot::Variant resource = gobot::MakeRef<TestResource>();
+    gobot::Instance instance = resource;
+    LOG_ERROR("{}", instance.get_wrapped_instance().get_type().get_name().data());
+    ASSERT_TRUE(instance.get_wrapped_instance().get_type() == gobot::Type::get<TestResource*>());
+}
