@@ -98,4 +98,5 @@ TEST(TestRefRegister, test_get_wrapped_instance) {
 TEST(TestRefRegister, test_create) {
     gobot::Variant resource = gobot::Type::get<gobot::TestResource>().create();
     ASSERT_TRUE(resource.can_convert<gobot::TestResource*>());
+    ASSERT_TRUE(resource.get_type().is_derived_from<gobot::TestResource>());
 }
