@@ -14,6 +14,8 @@
 
 namespace gobot {
 
+const char* CLASS_TAG = "__CLASS__";
+
 ResourceFormatSaverSceneInstance* VariantSerializer::s_resource_format_saver_ = nullptr;
 
 bool VariantSerializer::WriteAtomicTypesToJson(const Type& t, const Variant& var, Json& writer)
@@ -170,8 +172,9 @@ void VariantSerializer::ToJsonRecursively(Instance object, Json& writer)
     auto raw_type = object.get_type().get_raw_type();
     Instance obj = raw_type.is_wrapper() ? object.get_wrapped_instance() : object;
     if (raw_type.is_wrapper() && raw_type.get_wrapper_holder_type() == rttr::wrapper_holder_type::Ref) {
-        SaveResource(obj, raw_type, writer);
-        return;
+        if (!SaveResource(obj, raw_type, writer)) {
+            return;
+        };
     }
 
     auto prop_list = obj.get_derived_type().get_properties();
@@ -316,8 +319,7 @@ Variant VariantSerializer::ExtractValue(const Type& type, const Json& json)
 
 void VariantSerializer::WriteAssociativeViewRecursively(VariantMapView& view, const Json& json_array_value)
 {
-    for (std::size_t i = 0; i < json_array_value.size(); ++i) {
-        auto& json_index_value = json_array_value[i];
+    for (const auto& json_index_value : json_array_value) {
         if (json_index_value.is_object())  { // a key-value associative view
             if (json_index_value.contains("key") && json_index_value.contains("value")) {
                 auto key_var = ExtractValue(view.get_key_type(), json_index_value["key"]);
@@ -337,14 +339,14 @@ void VariantSerializer::WriteAssociativeViewRecursively(VariantMapView& view, co
 
 void VariantSerializer::FromJsonRecursively(Instance instance, const Json& json) {
     Instance obj = instance.get_type().get_raw_type().is_wrapper() ? instance.get_wrapped_instance() : instance;
-    const auto prop_list = obj.get_derived_type().get_properties();
-//    if (raw_type.is_wrapper() && raw_type.get_wrapper_holder_type() == rttr::wrapper_holder_type::Ref) {
-//        SaveResource(obj, raw_type, writer);
-//        return;
-//    }
+    if (raw_type.is_wrapper() && raw_type.get_wrapper_holder_type() == rttr::wrapper_holder_type::Ref) {
+        SaveResource(obj, raw_type, writer);
+        return;
+    }
 
-    for (auto prop : prop_list)
-    {
+    const auto prop_list = obj.get_derived_type().get_properties();
+
+    for (auto prop : prop_list) {
         PropertyInfo property_info;
         auto meta_data = prop.get_metadata(PROPERTY_INFO_KEY);
         if (meta_data.is_valid()) {
@@ -354,7 +356,7 @@ void VariantSerializer::FromJsonRecursively(Instance instance, const Json& json)
         if (static_cast<bool>(property_info.usage & PropertyUsageFlags::Storage)) {
             const auto prop_name = prop.get_name();
             if (!json.contains(prop_name.data())) {
-                LOG_ERROR("");
+                LOG_ERROR("Cannot find key: {} in json: {}", prop_name.data(), json);
                 continue;
             }
             const auto& child_json = json[prop_name.data()];
