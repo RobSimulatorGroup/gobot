@@ -92,9 +92,9 @@ private:
 
     Node *GetChildByName(const String& name) const;
 
-    void ValidateChildName(Node *p_child);
+    void ValidateChildName(Node* child);
 
-    void GenerateSerialChildName(const Node *p_child, String&name) const;
+    void GenerateSerialChildName(const Node* child, String&name) const;
 
 private:
     String name_;
