@@ -54,6 +54,8 @@
 
 #define GOB_UNUSED(x) (void)x;
 
+#define GOB_STRINGIFY(x) #x
+
 
 #ifdef _MSC_VER
 #define GENERATE_TRAP() __debugbreak()

@@ -8,6 +8,8 @@
 #pragma once
 
 #include "gobot/core/types.hpp"
+#include <vector>
+
 
 namespace gobot {
 
@@ -15,7 +17,27 @@ class NodePath {
 public:
     NodePath();
 
+    NodePath(const std::vector<String> &path, bool absolute);
+
+    NodePath(const NodePath& path) = default;
+
+    NodePath& operator=(const NodePath &path) = default;
+
+    NodePath(const String& path);
+
     bool IsAbsolute() const;
+
+    void Simplify();
+
+    NodePath Simplified() const;
+
+    bool IsEmpty() const;
+
+    operator String() const;
+
+    bool operator==(const NodePath &path) const;
+
+    bool operator!=(const NodePath &path) const;
 
 private:
     std::vector<String> path_;
