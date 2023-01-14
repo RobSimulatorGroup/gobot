@@ -50,6 +50,8 @@ private:
 
     static Variant ExtractValue(const Type& type, const Json& json);
 
+    static void LoadResource(Instance instance, const Type& t, const Json& json);
+
 };
 
 

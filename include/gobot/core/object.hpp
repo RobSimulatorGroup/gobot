@@ -133,26 +133,28 @@ public:
     [[nodiscard]] FORCE_INLINE Type GetType() const { return get_type(); }
 
     template <typename T, typename... Args>
-    static std::enable_if_t<std::is_base_of_v<Object, T>, T*> New(Args&&... args) {
+    static T* New(Args&&... args) {
+        static_assert(std::is_base_of_v<Object, T>, "Object must be the base of T");
         auto* obj = new T(std::forward<Args>(args)...);
         obj->PostNew();
         return obj;
     }
 
-    template <typename T, typename = std::enable_if_t<std::is_base_of_v<Object, T>>>
+    template <typename T>
     static void Delete(T* object) {
+        static_assert(std::is_base_of_v<Object, T>, "Object must be the base of T");
         object->PreDelete();
         delete object;
     }
 
     template <class T>
-    static T *CastTo(Object *object) {
-        return dynamic_cast<T *>(object);
+    static T* PointerCastTo(Object *object) {
+        return dynamic_cast<T*>(object);
     }
 
     template <class T>
-    static const T *CastTo(const Object *object) {
-        return dynamic_cast<const T *>(object);
+    static const T* PointerCastTo(const Object *object) {
+        return dynamic_cast<const T*>(object);
     }
 
     bool Set(const String& name, Argument arg);

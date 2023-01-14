@@ -99,7 +99,7 @@ inline TypeCategory GetTypeCategory(const Type& type) {
     // TODO(wqq): math types
 
     else if (type.is_wrapper()) {
-        if (type.get_wrapper_holder_type() == rttr::wrapper_holder_type::Ref) {
+        if (type.get_wrapper_holder_type() == WrapperHolderType::Ref) {
             return TypeCategory::Ref;
         }
         // Other type is Unsupported

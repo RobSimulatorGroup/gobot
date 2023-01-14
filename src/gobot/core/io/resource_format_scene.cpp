@@ -114,10 +114,8 @@ bool ResourceLoaderSceneInstance::LoadResource() {
                     return false;
                 }
 
-                std::string _type = sub_res["__TYPE__"];
-                std::string _id = sub_res["__ID__"];
-                String type(_type.c_str());
-                String id(_id.c_str());
+                String type = String::fromStdString(to_string(sub_res["__TYPE__"]));
+                String id = String::fromStdString(to_string(sub_res["__ID__"]));
 
                 String path = local_path_ + "::" + id;
 
@@ -147,7 +145,7 @@ bool ResourceLoaderSceneInstance::LoadResource() {
                         }
                         auto* obj = new_obj.convert<Object*>();
 
-                        auto *r = Object::CastTo<Resource>(obj);
+                        auto *r = Object::PointerCastTo<Resource>(obj);
                         if (!r) {
                             LOG_ERROR("Can't create sub resource of type, because not a resource: {}", type);
                             return false;
@@ -170,6 +168,7 @@ bool ResourceLoaderSceneInstance::LoadResource() {
 
             }
         } else {
+            LOG_ERROR("");
             return {};
         }
     }
@@ -195,7 +194,7 @@ bool ResourceLoaderSceneInstance::LoadResource() {
             }
             auto* obj = new_obj.convert<Object*>();
 
-            auto *r = Object::CastTo<Resource>(obj);
+            auto *r = Object::PointerCastTo<Resource>(obj);
             if (!r) {
                 LOG_ERROR("Can't create sub resource of type, because not a resource: {}", res_type_);
                 return false;

@@ -146,22 +146,20 @@ bool VariantSerializer::WriteVariant(const Variant& var, Json& writer)
 
 
 bool VariantSerializer::SaveResource(Instance instance, const Type& type, Json& writer) {
-    if (type.get_wrapper_holder_type() == rttr::wrapper_holder_type::Ref) {
-        if (s_resource_format_saver_) {
-            auto res = Ref<Resource>(instance.try_convert<Resource>());
-            if (!res) {
-                LOG_ERROR("Cannot convert object to Resource {}", type.get_name().data());
-                return false;
-            }
-            if (s_resource_format_saver_->external_resources_.contains(res)) {
-                writer = fmt::format("ExtResource({})", res->GetResourceUuid().toString());
-            } else if (s_resource_format_saver_->internal_resources_.contains(res)) {
-                writer = fmt::format("SubResource({})", res->GetResourceUuid().toString());
-            }
-        } else {
-            LOG_ERROR("Unsupported wrapper type: {}", type.get_name().data());
+    if (s_resource_format_saver_) {
+        auto res = Ref<Resource>(instance.try_convert<Resource>());
+        if (!res) {
+            LOG_ERROR("Cannot convert object to Resource {}", type.get_name().data());
             return false;
         }
+        if (s_resource_format_saver_->external_resources_.contains(res)) {
+            writer = fmt::format("ExtResource({})", res->GetResourceUuid().toString());
+        } else if (s_resource_format_saver_->internal_resources_.contains(res)) {
+            writer = fmt::format("SubResource({})", res->GetResourceUuid().toString());
+        }
+    } else {
+        LOG_ERROR("Unsupported wrapper type: {}", type.get_name().data());
+        return false;
     }
 
     return true;
@@ -171,7 +169,7 @@ void VariantSerializer::ToJsonRecursively(Instance object, Json& writer)
 {
     auto raw_type = object.get_type().get_raw_type();
     Instance obj = raw_type.is_wrapper() ? object.get_wrapped_instance() : object;
-    if (raw_type.is_wrapper() && raw_type.get_wrapper_holder_type() == rttr::wrapper_holder_type::Ref) {
+    if (raw_type.is_wrapper() && raw_type.get_wrapper_holder_type() == WrapperHolderType::Ref) {
         if (!SaveResource(obj, raw_type, writer)) {
             return;
         };
@@ -337,12 +335,32 @@ void VariantSerializer::WriteAssociativeViewRecursively(VariantMapView& view, co
     }
 }
 
+void VariantSerializer::LoadResource(Instance instance, const Type& t, const Json& json) {
+    if (json.is_string()) {
+        auto str = String::fromStdString(json.get<std::string>());
+        auto left_bracket = str.indexOf("(");
+        auto right_bracket = str.indexOf(")");
+        auto key_word = str.left(left_bracket + 1);
+        auto uuid = str.mid(left_bracket + 1, right_bracket - left_bracket);
+        if (key_word == "SubResource") {
+
+        } else if (key_word == "ExtResource") {
+
+        } else {
+
+        }
+            
+    }
+
+}
+
 void VariantSerializer::FromJsonRecursively(Instance instance, const Json& json) {
+    auto raw_type = instance.get_type().get_raw_type();
     Instance obj = instance.get_type().get_raw_type().is_wrapper() ? instance.get_wrapped_instance() : instance;
-//    if (raw_type.is_wrapper() && raw_type.get_wrapper_holder_type() == rttr::wrapper_holder_type::Ref) {
-//        SaveResource(obj, raw_type, writer);
-//        return;
-//    }
+    if (raw_type.is_wrapper() && raw_type.get_wrapper_holder_type() == WrapperHolderType::Ref) {
+        LoadResource(obj, raw_type, json);
+        return;
+    }
 
     const auto prop_list = obj.get_derived_type().get_properties();
 
