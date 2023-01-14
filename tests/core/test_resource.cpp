@@ -7,8 +7,21 @@
 
 #include <gtest/gtest.h>
 
+#include <gobot/core/ref_counted.hpp>
 #include <gobot/core/io/resource.hpp>
+#include <gobot/core/types.hpp>
+#include <gobot/scene/resources/primitive_mesh.hpp>
 
-TEST(TestResource, test_nullptr) {
+TEST(TestResource, test_cast) {
+    gobot::Ref<gobot::Resource> res(gobot::MakeRef<gobot::Resource>());
+    gobot::Instance instance(res);
+    gobot::Variant var(res);
+    gobot::Instance instance2(var);
 
+    ASSERT_TRUE(instance.get_wrapped_instance().try_convert<gobot::Resource>() != nullptr);
+    ASSERT_TRUE(instance2.get_wrapped_instance().try_convert<gobot::Resource>() != nullptr);
+
+    gobot::Ref<gobot::BoxMesh> box_mesh(gobot::MakeRef<gobot::BoxMesh>());
+    gobot::Instance instance_box(box_mesh);
+    ASSERT_TRUE(instance_box.get_wrapped_instance().try_convert<gobot::Resource>() != nullptr);
 }

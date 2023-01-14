@@ -14,18 +14,25 @@
 namespace gobot {
 
 class ResourceFormatSaverSceneInstance;
+class ResourceFormatLoaderSceneInstance;
 
 class GOBOT_API VariantSerializer {
 public:
     static Json VariantToJson(Instance obj, ResourceFormatSaverSceneInstance* resource_format_saver = nullptr);
 
-    static Variant JsonToVariant(const Type& type, const Json& json);
+    static Variant JsonToVariant(const Type& type,
+                                 const Json& json,
+                                 ResourceFormatLoaderSceneInstance* s_resource_format_loader = nullptr);
 
 private:
 
-    // Save
+    // For Save
     static ResourceFormatSaverSceneInstance* s_resource_format_saver_;
 
+    // For Load
+    static ResourceFormatLoaderSceneInstance* s_resource_format_loader_;
+
+    //////////////////////////////////////////
     static void ToJsonRecursively(Instance object, Json& writer);
 
     // return is continue or not
@@ -39,7 +46,10 @@ private:
 
     static void WriteArray(const VariantListView& view, Json& writer);
 
-    // Load
+    ///////////////////////////////////////////
+
+    static bool LoadSubResource(Instance instance, const String& uuid);
+
     static void FromJsonRecursively(Instance instance, const Json& json);
 
     static Variant ExtractPrimitiveTypes(const Type& type, const Json& json_value);

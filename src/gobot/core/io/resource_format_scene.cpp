@@ -24,11 +24,11 @@
 namespace gobot {
 
 
-ResourceLoaderSceneInstance::ResourceLoaderSceneInstance() {
+ResourceFormatLoaderSceneInstance::ResourceFormatLoaderSceneInstance() {
 
 }
 
-bool ResourceLoaderSceneInstance::LoadResource() {
+bool ResourceFormatLoaderSceneInstance::LoadResource() {
     Json json = Json::parse(file_context_.toStdString());
     if (json.contains("__VERSION__")) {
         float version = json["__VERSION__"];
@@ -237,7 +237,7 @@ bool ResourceLoaderSceneInstance::LoadResource() {
 }
 
 
-Ref<Resource> ResourceLoaderSceneInstance::GetResource() const {
+Ref<Resource> ResourceFormatLoaderSceneInstance::GetResource() const {
     return resource_;
 }
 
@@ -254,7 +254,7 @@ Ref<Resource> ResourceFormatLoaderScene::Load(const String &path,
         return {};
     }
 
-    ResourceLoaderSceneInstance loader;
+    ResourceFormatLoaderSceneInstance loader;
     loader.file_context_ = file.readAll();
     loader.cache_mode_ = cache_mode;
     loader.local_path_ = ProjectSettings::GetSingleton().LocalizePath(!original_path.isEmpty() ? original_path : path);

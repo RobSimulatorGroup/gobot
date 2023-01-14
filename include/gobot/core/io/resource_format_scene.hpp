@@ -14,6 +14,36 @@
 
 namespace gobot {
 
+
+class GOBOT_API ResourceFormatLoaderSceneInstance {
+public:
+    ResourceFormatLoaderSceneInstance();
+
+    bool LoadResource();
+
+    [[nodiscard]] Ref<Resource> GetResource() const;
+private:
+    friend class ResourceFormatLoaderScene;
+    friend class VariantSerializer;
+
+    Ref<Resource> resource_{nullptr};
+    String file_context_;
+    String local_path_;
+    bool is_scene_{false};
+    String res_type_;
+    ResourceFormatLoader::CacheMode cache_mode_;
+
+    struct ExtResource {
+        Ref<Resource> cache;
+        String path;
+        String type;
+    };
+
+    std::unordered_map<String, ExtResource> ext_resources_;
+    std::unordered_map<String, Ref<Resource>> sub_resources_;
+};
+
+
 class GOBOT_API ResourceFormatLoaderScene : public ResourceFormatLoader {
 public:
     static ResourceFormatLoaderScene& GetSingleton();
@@ -32,34 +62,6 @@ private:
     ResourceFormatLoaderScene();
 
 };
-
-class GOBOT_API ResourceLoaderSceneInstance {
-public:
-    ResourceLoaderSceneInstance();
-
-    bool LoadResource();
-
-    [[nodiscard]] Ref<Resource> GetResource() const;
-private:
-    friend ResourceFormatLoaderScene;
-
-    Ref<Resource> resource_{nullptr};
-    String file_context_;
-    String local_path_;
-    bool is_scene_{false};
-    String res_type_;
-    ResourceFormatLoaderScene::CacheMode cache_mode_;
-
-    struct ExtResource {
-        Ref<Resource> cache;
-        String path;
-        String type;
-    };
-
-    std::unordered_map<String, ExtResource> ext_resources_;
-    std::unordered_map<String, Ref<Resource>> sub_resources_;
-};
-
 
 class GOBOT_API ResourceFormatSaverSceneInstance {
 public:

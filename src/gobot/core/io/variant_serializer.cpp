@@ -17,6 +17,7 @@ namespace gobot {
 const char* CLASS_TAG = "__CLASS__";
 
 ResourceFormatSaverSceneInstance* VariantSerializer::s_resource_format_saver_ = nullptr;
+ResourceFormatLoaderSceneInstance* VariantSerializer::s_resource_format_loader_ = nullptr;
 
 bool VariantSerializer::WriteAtomicTypesToJson(const Type& t, const Variant& var, Json& writer)
 {
@@ -210,7 +211,6 @@ Json VariantSerializer::VariantToJson(Instance obj,
     Json json;
     s_resource_format_saver_ = resource_format_saver;
     ToJsonRecursively(obj, json);
-    s_resource_format_saver_ = nullptr;
     return json;
 }
 
@@ -335,6 +335,17 @@ void VariantSerializer::WriteAssociativeViewRecursively(VariantMapView& view, co
     }
 }
 
+
+bool VariantSerializer::LoadSubResource(Instance instance, const String& uuid) {
+    if (s_resource_format_loader_) {
+        auto res = Ref<Resource>(instance.try_convert<Resource>());
+//
+//        res = sub_resources_[uuid];
+    }
+
+    return false;
+}
+
 void VariantSerializer::LoadResource(Instance instance, const Type& t, const Json& json) {
     if (json.is_string()) {
         auto str = String::fromStdString(json.get<std::string>());
@@ -342,8 +353,11 @@ void VariantSerializer::LoadResource(Instance instance, const Type& t, const Jso
         auto right_bracket = str.indexOf(")");
         auto key_word = str.left(left_bracket + 1);
         auto uuid = str.mid(left_bracket + 1, right_bracket - left_bracket);
-        if (key_word == "SubResource") {
-
+        if (Uuid::fromString(uuid).isNull()) {
+            LOG_ERROR("");
+            return;
+        } else if (key_word == "SubResource") {
+            LoadSubResource(instance, uuid);
         } else if (key_word == "ExtResource") {
 
         } else {
@@ -403,11 +417,15 @@ void VariantSerializer::FromJsonRecursively(Instance instance, const Json& json)
 }
 
 
-Variant VariantSerializer::JsonToVariant(const Type& type, const Json& json) {
+Variant VariantSerializer::JsonToVariant(const Type& type,
+                                         const Json& json,
+                                         ResourceFormatLoaderSceneInstance* s_resource_format_loader) {
     if (json.is_null()) {
         LOG_ERROR("Input json is null");
         return {};
     }
+
+    s_resource_format_loader_ = s_resource_format_loader;
 
     if (json.is_primitive()) {
         return ExtractPrimitiveTypes(type, json);
