@@ -62,12 +62,18 @@ public:
 
     NodePath GetPathTo(const Node *node, bool use_unique_path = false) const;
 
-    Node *find_common_parent_with(const Node *p_node) const;
+    Node* FindCommonParentWith(const Node* node) const;
+
+    void SetOwner(Node *owner);
+
+    Node* GetOwner() const;
 
 protected:
     void AddChildNoCheck(Node *child, const String& name);
 
-    void SetNameNocheck(const String& name);
+    void SetNameNoCheck(const String& name);
+
+    void SetOwnerNoCheck(Node *owner);
 
     void Notification(NotificationType notification);
 
@@ -93,7 +99,6 @@ private:
     void ValidateChildName(Node *p_child);
 
     void GenerateSerialChildName(const Node *p_child, String&name) const;
-
 
 
 private:
