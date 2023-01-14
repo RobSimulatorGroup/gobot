@@ -105,6 +105,8 @@ private:
     SceneTree* tree_ = nullptr;
 
     Node* parent_ = nullptr;
+
+    // TODO(wqq): Do we need ower?
 };
 
 }
