@@ -60,13 +60,9 @@ public:
 
     NodePath GetPath() const;
 
-    NodePath GetPathTo(const Node *node, bool use_unique_path = false) const;
+    NodePath GetPathTo(const Node *node) const;
 
     Node* FindCommonParentWith(const Node* node) const;
-
-    void SetOwner(Node *owner);
-
-    Node* GetOwner() const;
 
 protected:
     void AddChildNoCheck(Node *child, const String& name);
@@ -109,10 +105,6 @@ private:
     SceneTree* tree_ = nullptr;
 
     Node* parent_ = nullptr;
-
-    // https://github.com/godotengine/godot-proposals/issues/390
-    Node* owner_ = nullptr;
-
 };
 
 }
