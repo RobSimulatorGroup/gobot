@@ -100,7 +100,6 @@ private:
 
     void GenerateSerialChildName(const Node *p_child, String&name) const;
 
-
 private:
     String name_;
     std::vector<Node*> children_node_;
@@ -110,6 +109,8 @@ private:
     SceneTree* tree_ = nullptr;
 
     Node* parent_ = nullptr;
+
+    // https://github.com/godotengine/godot-proposals/issues/390
     Node* owner_ = nullptr;
 
 };
