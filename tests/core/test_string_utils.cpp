@@ -7,6 +7,47 @@
 
 #include <gtest/gtest.h>
 #include <gobot/core/string_utils.hpp>
+#include <gobot/log.hpp>
 
-TEST(TestDir, test_get_file_extension) {
+TEST(TestStringUtils, test_get_file_extension) {
+    ASSERT_TRUE(gobot::GetFileExtension("1111.json") == "json");
+    ASSERT_TRUE(gobot::GetFileExtension("res://1111.json") == "json");
+}
+
+TEST(TestStringUtils, test_is_absolute_path) {
+    ASSERT_FALSE(gobot::IsAbsolutePath(""));
+    ASSERT_TRUE(gobot::IsAbsolutePath("/"));
+    ASSERT_TRUE(gobot::IsAbsolutePath("/1111"));
+    ASSERT_TRUE(gobot::IsAbsolutePath("C:/1111.json"));
+    ASSERT_TRUE(gobot::IsAbsolutePath("C:\\1111.json"));
+}
+
+TEST(TestStringUtils, test_simplify_path) {
+    ASSERT_TRUE(gobot::SimplifyPath("/usr/lib/../") == "/usr");
+    ASSERT_TRUE(gobot::SimplifyPath("res://test.jscn") == "res://test.jscn");
+    ASSERT_TRUE(gobot::SimplifyPath("/usr/lib/./dpkg") == "/usr/lib/dpkg");
+    ASSERT_TRUE(gobot::SimplifyPath("res://font/test/../") == "res://font");
+    ASSERT_TRUE(gobot::SimplifyPath("res://font/./test.jscn") == "res://font/test.jscn");
+}
+
+TEST(TestStringUtils, test_validate_local_path) {
+    ASSERT_TRUE(gobot::ValidateLocalPath("font") == "res://font");
+}
+
+TEST(TestStringUtils, test_base_dir) {
+    ASSERT_TRUE(gobot::GetBaseDir("font.json") == "");
+    ASSERT_TRUE(gobot::GetBaseDir("C:\\font.json") == "C:\\");
+    ASSERT_TRUE(gobot::GetBaseDir("/usr/lib/font.json") == "/usr/lib");
+}
+
+TEST(TestStringUtils, test_path_join) {
+    ASSERT_TRUE(gobot::PathJoin("/usr", "font.json") == "/usr/font.json");
+    ASSERT_TRUE(gobot::PathJoin("/usr/", "font.json") == "/usr/font.json");
+}
+
+
+int main(int argc, char **argv)
+{
+    ::testing::InitGoogleTest(&argc, argv);
+    return RUN_ALL_TESTS();
 }
