@@ -7,10 +7,10 @@
 
 #include <gtest/gtest.h>
 
-#include <gobot/core/ref_counted.hpp>
-#include <gobot/core/io/resource.hpp>
-#include <gobot/core/types.hpp>
-#include <gobot/scene/resources/primitive_mesh.hpp>
+#include "gobot/core/ref_counted.hpp"
+#include "gobot/core/io/resource.hpp"
+#include "gobot/core/types.hpp"
+#include "gobot/scene/resources/primitive_mesh.hpp"
 
 TEST(TestResource, test_cast) {
     gobot::Ref<gobot::Resource> res(gobot::MakeRef<gobot::Resource>());

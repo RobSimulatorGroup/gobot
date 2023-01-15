@@ -100,3 +100,9 @@ TEST(TestRefRegister, test_create) {
     ASSERT_TRUE(resource.can_convert<gobot::TestResource*>());
     ASSERT_TRUE(resource.get_type().is_derived_from<gobot::TestResource>());
 }
+
+int main(int argc, char **argv)
+{
+    ::testing::InitGoogleTest(&argc, argv);
+    return RUN_ALL_TESTS();
+}
