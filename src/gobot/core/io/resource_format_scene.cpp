@@ -19,7 +19,7 @@
 #include <QTextStream>
 #include <QFile>
 
-#define FORMAT_VERSION 1.0
+#define FORMAT_VERSION 1
 
 namespace gobot {
 
@@ -32,7 +32,7 @@ bool ResourceFormatLoaderSceneInstance::LoadResource() {
     Json json = Json::parse(file_context_.toStdString());
     if (json.contains("__VERSION__")) {
         float version = json["__VERSION__"];
-        if (version != FORMAT_VERSION) {
+        if (version > FORMAT_VERSION) {
             LOG_ERROR("__VERSION__ must be {}", FORMAT_VERSION);
             return false;
         }
@@ -329,7 +329,7 @@ bool ResourceFormatSaverSceneInstance::Save(const String &path, const Ref<Resour
     }
 
     Json root;
-    root["__VERSION__"] = 1.0;
+    root["__VERSION__"] = FORMAT_VERSION;
     root["__META_TYPE__"] = packed_scene_.is_valid() ? "SCENE" : "RESOURCE";
 
     root["__EXT_RESOURCES__"] = Json::array();
