@@ -9,15 +9,18 @@
 
 #include "gobot/core/types.hpp"
 #include <vector>
+#include <QStringList>
 
 
 namespace gobot {
+
+using StringList = QStringList;
 
 class NodePath {
 public:
     NodePath();
 
-    NodePath(const std::vector<String> &path, bool absolute);
+    NodePath(const std::vector<String>& path, bool absolute);
 
     NodePath(const NodePath& path) = default;
 
@@ -41,6 +44,7 @@ public:
 
 private:
     std::vector<String> path_;
+    std::vector<String> subpath_;
     bool absolute_;
 };
 

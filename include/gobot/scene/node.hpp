@@ -20,7 +20,7 @@ class Node : public Object {
 public:
     Node();
 
-    ~Node();
+    ~Node() = default;
 
     Node(const String& name);
 

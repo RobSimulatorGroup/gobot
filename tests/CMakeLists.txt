@@ -31,3 +31,5 @@ endmacro()
 package_add_test(test_ref_counted core/test_ref_counted.cpp )
 package_add_test(test_registration core/test_registration.cpp )
 package_add_test(test_resource core/test_resource.cpp )
+
+package_add_test(test_node_path scene/test_node_path.cpp)

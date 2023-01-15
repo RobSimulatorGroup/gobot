@@ -10,6 +10,40 @@
 
 namespace gobot {
 
+static constexpr Qt::SplitBehaviorFlags FlagSkipEmptyParts = Qt::SkipEmptyParts;
+
+NodePath::NodePath(const String &path) {
+    if (!path.length()) return;
+
+    String raw_path = path;
+    std::vector<String> path_list;
+
+    int subpath_pos = path.indexOf(u':');
+    if (subpath_pos == 0) {
+        // exception: invalid path
+    }
+    if (subpath_pos > 0) {
+        path_list = raw_path.split(u':', FlagSkipEmptyParts).toVector().toStdVector();
+        if (!path_list.empty()) {
+            this->subpath_ = std::vector(path_list.begin() + 1, path_list.end());
+            raw_path = path_list.front();
+        }
+    } else {// subpath_pos == -1, no subpath exists
+        if (raw_path.isEmpty()) {
+            // exception: invvalid path
+        }
+        this->subpath_ = std::vector<String>();
+    }
+
+    bool absolute = (raw_path.front() == u'/');
+    if (absolute) {
+        raw_path.remove(0, 1);
+    }
+    this->path_ = raw_path.split(u'/', FlagSkipEmptyParts).toVector().toStdVector();
+    if (this->path_.empty())
+        this->path_.push_back(raw_path);
+}
+
 NodePath::NodePath() {
 }
 
