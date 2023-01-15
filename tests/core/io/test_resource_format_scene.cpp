@@ -8,12 +8,18 @@
 #include <gtest/gtest.h>
 
 #include <gobot/core/ref_counted.hpp>
-#include "gobot/core/io/resource_format_scene.hpp"
+#include <gobot/core/io/resource_format_scene.hpp>
+#include <gobot/core/config/project_setting.hpp>
 
 static gobot::Ref<gobot::ResourceFormatLoaderScene> resource_loader_scene;
 static gobot::Ref<gobot::ResourceFormatSaverScene> resource_saver_scene;
 
 TEST(TestResource, test_cast) {
+    gobot::ProjectSettings project_settings;
+
+    auto* project_setting = gobot::ProjectSettings::GetSingleton();
+    project_setting->SetProjectPath("/tmp/test_project");
+
     resource_saver_scene = gobot::MakeRef<gobot::ResourceFormatSaverScene>();
     gobot::ResourceSaver::AddResourceFormatSaver(resource_saver_scene, true);
 

@@ -92,7 +92,7 @@ void ResourceSaver::GetRecognizedExtensions(const Ref<Resource> &resource, std::
 }
 
 void ResourceSaver::AddResourceFormatSaver(Ref<ResourceFormatSaver> format_saver, bool at_front) {
-    if (format_saver.is_valid()) {
+    if (!format_saver.is_valid()) {
         LOG_ERROR("It's not a reference to a valid ResourceFormatSaver object.");
         return;
     }

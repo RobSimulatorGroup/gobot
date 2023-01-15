@@ -132,7 +132,7 @@ bool ResourceLoader::Exists(const String &path, const String &type_hint) {
 }
 
 void ResourceLoader::AddResourceFormatLoader(Ref<ResourceFormatLoader> format_loader, bool at_front) {
-    if (format_loader.is_valid()) {
+    if (!format_loader.is_valid()) {
         LOG_ERROR("It's not a reference to a valid ResourceFormatLoader object.");
         return;
     }
@@ -155,11 +155,9 @@ void ResourceLoader::RemoveResourceFormatLoader(const Ref<ResourceFormatLoader>&
     s_loaders.erase(it);
 }
 
-
 }
 
 GOBOT_REGISTRATION {
-
     Class_<ResourceLoader>("ResourceLoader");
 
 };

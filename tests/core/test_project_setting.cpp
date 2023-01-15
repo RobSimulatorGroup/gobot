@@ -20,17 +20,19 @@ TEST(TestProjectSetting, test_localize_path) {
     if (!dir.exists()){
         dir.mkpath("/tmp/test_project");
     }
-    auto& project_setting = gobot::ProjectSettings::GetSingleton();
-    project_setting.SetProjectPath("/tmp/test_project");
+    gobot::ProjectSettings project_settings;
 
-    ASSERT_TRUE(project_setting.LocalizePath("/tmp/test_project/") == "res://");
-    ASSERT_TRUE(project_setting.LocalizePath("/tmp/test_project") == "res://");
-    ASSERT_TRUE(project_setting.LocalizePath("/tmp/test_project/test") == "res://test");
+    auto* project_setting = gobot::ProjectSettings::GetSingleton();
+    project_setting->SetProjectPath("/tmp/test_project");
 
-    ASSERT_TRUE(project_setting.LocalizePath("res://test") == "res://test");
-    ASSERT_TRUE(project_setting.LocalizePath("res://test/..") == "res://");
+    ASSERT_TRUE(project_setting->LocalizePath("/tmp/test_project/") == "res://");
+    ASSERT_TRUE(project_setting->LocalizePath("/tmp/test_project") == "res://");
+    ASSERT_TRUE(project_setting->LocalizePath("/tmp/test_project/test") == "res://test");
 
-    ASSERT_TRUE(project_setting.LocalizePath("test") == "res://test");
-    ASSERT_TRUE(project_setting.LocalizePath("test/tt") == "res://test/tt");
+    ASSERT_TRUE(project_setting->LocalizePath("res://test") == "res://test");
+    ASSERT_TRUE(project_setting->LocalizePath("res://test/..") == "res://");
+
+    ASSERT_TRUE(project_setting->LocalizePath("test") == "res://test");
+    ASSERT_TRUE(project_setting->LocalizePath("test/tt") == "res://test/tt");
 
 }
