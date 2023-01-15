@@ -76,7 +76,7 @@ bool ResourceFormatLoaderSceneInstance::LoadResource() {
 
                 if (!path.contains("://") && IsRelativePath(path)) {
                     // path is relative to file being loaded, so convert to a resource path
-                    path = ProjectSettings::GetSingleton().LocalizePath(PathJoin(GetBaseDir(local_path_), path));
+                    path = ProjectSettings::GetSingleton()->LocalizePath(PathJoin(GetBaseDir(local_path_), path));
                 }
 
                 Ref<Resource> res = ResourceLoader::Load(path, type);
@@ -233,8 +233,14 @@ Ref<Resource> ResourceFormatLoaderSceneInstance::GetResource() const {
     return resource_;
 }
 
-ResourceFormatLoaderScene::ResourceFormatLoaderScene() {
+ResourceFormatLoaderScene* ResourceFormatLoaderScene::s_singleton = nullptr;
 
+ResourceFormatLoaderScene::ResourceFormatLoaderScene() {
+    s_singleton = this;
+}
+
+ResourceFormatLoaderScene::~ResourceFormatLoaderScene() {
+    s_singleton = nullptr;
 }
 
 Ref<Resource> ResourceFormatLoaderScene::Load(const String &path,
@@ -249,7 +255,7 @@ Ref<Resource> ResourceFormatLoaderScene::Load(const String &path,
     ResourceFormatLoaderSceneInstance loader;
     loader.file_context_ = file.readAll();
     loader.cache_mode_ = cache_mode;
-    loader.local_path_ = ProjectSettings::GetSingleton().LocalizePath(!original_path.isEmpty() ? original_path : path);
+    loader.local_path_ = ProjectSettings::GetSingleton()->LocalizePath(!original_path.isEmpty() ? original_path : path);
 
     if (loader.LoadResource()) {
         return loader.GetResource();
@@ -258,9 +264,8 @@ Ref<Resource> ResourceFormatLoaderScene::Load(const String &path,
     return {};
 }
 
-ResourceFormatLoaderScene& ResourceFormatLoaderScene::GetSingleton() {
-    static ResourceFormatLoaderScene resource_format_loader_scene;
-    return resource_format_loader_scene;
+ResourceFormatLoaderScene* ResourceFormatLoaderScene::GetSingleton() {
+    return s_singleton;
 }
 
 void ResourceFormatLoaderScene::GetRecognizedExtensionsForType(const String& type, std::vector<String>* extensions) const {
@@ -293,15 +298,6 @@ bool ResourceFormatLoaderScene::HandlesType(const String& type) const {
 
 ///////////////////////////////////////////////////////////////////
 
-ResourceFormatSaverScene::ResourceFormatSaverScene() {
-
-}
-
-ResourceFormatSaverScene& ResourceFormatSaverScene::GetSingleton() {
-    static ResourceFormatSaverScene resource_format_saver_scene;
-    return resource_format_saver_scene;
-}
-
 bool ResourceFormatSaverSceneInstance::Save(const String &path, const Ref<Resource> &resource, ResourceSaverFlags flags)
 {
     if (path.endsWith(".jscn")) {
@@ -313,7 +309,7 @@ bool ResourceFormatSaverSceneInstance::Save(const String &path, const Ref<Resour
         return false;
     }
 
-    local_path_ = ProjectSettings::GetSingleton().LocalizePath(path);
+    local_path_ = ProjectSettings::GetSingleton()->LocalizePath(path);
 
     // Save resources.
     FindResources(resource, true);
@@ -446,6 +442,20 @@ void ResourceFormatSaverSceneInstance::FindResources(const Variant &variant, boo
     }
 
     // Other types won't handle.
+}
+
+ResourceFormatSaverScene* ResourceFormatSaverScene::s_singleton = nullptr;
+
+ResourceFormatSaverScene::ResourceFormatSaverScene() {
+    s_singleton = this;
+}
+
+ResourceFormatSaverScene::~ResourceFormatSaverScene() {
+    s_singleton = nullptr;
+}
+
+ResourceFormatSaverScene* ResourceFormatSaverScene::GetSingleton() {
+    return s_singleton;
 }
 
 bool ResourceFormatSaverScene::Save(const Ref<Resource> &resource, const String &path, ResourceSaverFlags flags) {

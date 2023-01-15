@@ -57,7 +57,7 @@ bool ResourceSaver::Save(const Ref<Resource>& resource, const String& target_pat
 
         String old_path = resource->GetPath();
 
-        String local_path =  ProjectSettings::GetSingleton().LocalizePath(path);
+        String local_path =  ProjectSettings::GetSingleton()->LocalizePath(path);
 
         USING_ENUM_BITWISE_OPERATORS;
 

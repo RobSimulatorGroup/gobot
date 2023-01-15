@@ -12,13 +12,18 @@
 
 namespace gobot {
 
-ProjectSettings::ProjectSettings() {
+ProjectSettings *ProjectSettings::s_singleton = nullptr;
 
+ProjectSettings::ProjectSettings() {
+    s_singleton = this;
 }
 
-ProjectSettings& ProjectSettings::GetSingleton() {
-    static ProjectSettings project_settings;
-    return project_settings;
+ProjectSettings::~ProjectSettings() {
+    s_singleton = nullptr;
+}
+
+ProjectSettings* ProjectSettings::GetSingleton() {
+    return s_singleton;
 }
 
 void ProjectSettings::SetProjectPath(const String& project_path) {

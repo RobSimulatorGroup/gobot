@@ -15,7 +15,13 @@ namespace gobot {
 class GOBOT_API ProjectSettings : public Object {
     GOBCLASS(ProjectSettings, Object)
 public:
-    static ProjectSettings& GetSingleton();
+    static ProjectSettings* s_singleton;
+
+    ProjectSettings();
+
+    ~ProjectSettings();
+
+    static ProjectSettings* GetSingleton();
 
     [[nodiscard]] String LocalizePath(const String &path) const;
 
@@ -23,8 +29,6 @@ public:
     void SetProjectPath(const String& project_path);
 
 private:
-    ProjectSettings();
-
     String project_path_;
 };
 

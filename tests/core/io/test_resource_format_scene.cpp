@@ -7,8 +7,18 @@
 
 #include <gtest/gtest.h>
 
+#include <gobot/core/ref_counted.hpp>
 #include "gobot/core/io/resource_format_scene.hpp"
 
+static gobot::Ref<gobot::ResourceFormatLoaderScene> resource_loader_scene;
+static gobot::Ref<gobot::ResourceFormatSaverScene> resource_saver_scene;
+
 TEST(TestResource, test_cast) {
+    resource_saver_scene = gobot::MakeRef<gobot::ResourceFormatSaverScene>();
+    gobot::ResourceSaver::AddResourceFormatSaver(resource_saver_scene, true);
+
+    resource_loader_scene = gobot::MakeRef<gobot::ResourceFormatLoaderScene>();
+    gobot::ResourceLoader::AddResourceFormatLoader(resource_loader_scene, true);
+
 
 }

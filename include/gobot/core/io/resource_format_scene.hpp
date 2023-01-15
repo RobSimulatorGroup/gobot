@@ -40,7 +40,15 @@ private:
 
 class GOBOT_API ResourceFormatLoaderScene : public ResourceFormatLoader {
 public:
-    static ResourceFormatLoaderScene& GetSingleton();
+
+    static ResourceFormatLoaderScene* s_singleton;
+
+    ResourceFormatLoaderScene();
+
+    ~ResourceFormatLoaderScene();
+
+    static ResourceFormatLoaderScene* GetSingleton();
+
 
     Ref<Resource> Load(const String &p_path,
                        const String &p_original_path = "",
@@ -51,10 +59,6 @@ public:
     void GetRecognizedExtensions(std::vector<String> *extensions) const override;
 
     bool HandlesType(const String& type) const override;
-
-private:
-    ResourceFormatLoaderScene();
-
 };
 
 class GOBOT_API ResourceFormatSaverSceneInstance {
@@ -76,16 +80,19 @@ private:
 
 class GOBOT_API ResourceFormatSaverScene : public ResourceFormatSaver {
 public:
+    static ResourceFormatSaverScene* s_singleton;
+
+    ResourceFormatSaverScene();
+
+    ~ResourceFormatSaverScene();
+
+    static ResourceFormatSaverScene* GetSingleton();
+
     bool Save(const Ref<Resource> &resource, const String &path, ResourceSaverFlags flags = ResourceSaverFlags::None) override;
 
     void GetRecognizedExtensions(const Ref<Resource> &resource, std::vector<String>* extensions) const override;
 
     bool Recognize(const Ref<Resource> &resource) const override;
-
-    static ResourceFormatSaverScene& GetSingleton();
-
-private:
-    ResourceFormatSaverScene();
 };
 
 }
