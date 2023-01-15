@@ -29,7 +29,7 @@
       "__TYPE__": "Node",
       "__ID__": "10000000-0000-0000-0000-000000000000",
       "name": "node1",
-      "parent": null
+      "__PARENT__": null
     },
     {
       "__TYPE__": "Node2",
