@@ -124,4 +124,77 @@ String ValidateLocalPath(const String& path) {
     }
 }
 
+// If the string is a valid file path, returns the base directory name
+// "/path/to/file.txt" =>  "/path/to"
+String GetBaseDir(const String& path) {
+    int end = 0;
+
+    // URL scheme style base.
+    int basepos = path.indexOf("://");;
+    if (basepos != -1) {
+        end = basepos + 3;
+    }
+
+    // Windows top level directory base.
+    if (end == 0) {
+        basepos = path.indexOf(":/");
+        if (basepos == -1) {
+            basepos = path.indexOf(":\\");
+        }
+        if (basepos != -1) {
+            end = basepos + 2;
+        }
+    }
+
+    // Windows UNC network share path.
+    if (end == 0) {
+        if (IsNetworkSharePath(path)) {
+            basepos = path.indexOf("/", 2);
+            if (basepos == -1) {
+                basepos = path.indexOf("\\", 2);
+            }
+            int servpos = path.indexOf("/", basepos + 1);
+            if (servpos == -1) {
+                servpos = path.indexOf("\\", basepos + 1);
+            }
+            if (servpos != -1) {
+                end = servpos + 1;
+            }
+        }
+    }
+
+    // Unix root directory base.
+    if (end == 0) {
+        if (path.startsWith("/")) {
+            end = 1;
+        }
+    }
+
+    String rs;
+    String base;
+    if (end != 0) {
+        rs = path.mid(end);
+        base = path.mid(0, end);
+    } else {
+        rs = path;
+    }
+
+    int sep = std::max(rs.lastIndexOf("/"), rs.lastIndexOf("\\"));
+    if (sep == -1) {
+        return base;
+    }
+
+    return base + rs.mid(0, sep);
+}
+
+String PathJoin(const String &base, const String &file) {
+    if (base.isEmpty()) {
+        return file;
+    }
+    if (base.endsWith('/')  || (file.size() > 0 && file.startsWith('/'))) {
+        return base + file;
+    }
+    return base + "/" + file;
+}
+
 }

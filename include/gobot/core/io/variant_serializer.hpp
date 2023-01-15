@@ -48,7 +48,9 @@ private:
 
     ///////////////////////////////////////////
 
-    static bool LoadSubResource(Instance instance, const String& uuid);
+    static void LoadSubResource(Instance obj, const String& uuid);
+
+    static void LoadExtResource(Instance obj, const String& uuid);
 
     static void FromJsonRecursively(Instance instance, const Json& json);
 
@@ -60,7 +62,7 @@ private:
 
     static Variant ExtractValue(const Type& type, const Json& json);
 
-    static void LoadResource(Instance instance, const Type& t, const Json& json);
+    static void LoadResource(Instance obj, const Type& t, const Json& json);
 
 };
 

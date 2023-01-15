@@ -25,4 +25,8 @@ String SimplifyPath(const String& path);
 
 String ValidateLocalPath(const String& path);
 
+String GetBaseDir(const String& path);
+
+String PathJoin(const String &base, const String &file);
+
 }

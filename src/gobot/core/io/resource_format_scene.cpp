@@ -70,32 +70,24 @@ bool ResourceFormatLoaderSceneInstance::LoadResource() {
                     return false;
                 }
 
-                std::string _path = ext_res["__PATH__"];
-                std::string _type = ext_res["__TYPE__"];
-                std::string _id = ext_res["__ID__"];
-                String path(_path.c_str());
-                String type(_type.c_str());
-                String id(_id.c_str());
+                auto path = String::fromStdString(ext_res["__PATH__"]);
+                auto type = String::fromStdString(ext_res["__TYPE__"]);
+                auto id = String::fromStdString(ext_res["__ID__"]);
 
                 if (!path.contains("://") && IsRelativePath(path)) {
                     // path is relative to file being loaded, so convert to a resource path
-//                    path = ProjectSettings::GetSingleton().LocalizePath(local_path_.get_base_dir().path_join(path));
+                    path = ProjectSettings::GetSingleton().LocalizePath(PathJoin(GetBaseDir(local_path_), path));
                 }
-
-                ExtResource er;
-                er.path = path;
-                er.type = type;
 
                 Ref<Resource> res = ResourceLoader::Load(path, type);
                 if (!res) {
                     LOG_ERROR("");
+                    return false;
                 } else {
 				    res->SetResourceUuid(id);
                 }
 
-                er.cache = res;
-
-                ext_resources_[id] = er;
+                ext_resources_[id] = res;
             }
         }
     }

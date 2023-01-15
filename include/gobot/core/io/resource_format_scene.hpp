@@ -33,13 +33,7 @@ private:
     String res_type_;
     ResourceFormatLoader::CacheMode cache_mode_;
 
-    struct ExtResource {
-        Ref<Resource> cache;
-        String path;
-        String type;
-    };
-
-    std::unordered_map<String, ExtResource> ext_resources_;
+    std::unordered_map<String, Ref<Resource>> ext_resources_;
     std::unordered_map<String, Ref<Resource>> sub_resources_;
 };
 

@@ -336,17 +336,39 @@ void VariantSerializer::WriteAssociativeViewRecursively(VariantMapView& view, co
 }
 
 
-bool VariantSerializer::LoadSubResource(Instance instance, const String& uuid) {
+void VariantSerializer::LoadSubResource(Instance obj, const String& uuid) {
     if (s_resource_format_loader_) {
-        auto res = Ref<Resource>(instance.try_convert<Resource>());
-//
-//        res = sub_resources_[uuid];
+        auto res = Ref<Resource>(obj.try_convert<Resource>());
+        if (!res) {
+            LOG_ERROR("");
+            return;
+        }
+        auto it = s_resource_format_loader_->sub_resources_.find(uuid);
+        if (it == s_resource_format_loader_->sub_resources_.end()) {
+            LOG_ERROR("");
+            return;
+        }
+        res = it->second;
     }
-
-    return false;
 }
 
-void VariantSerializer::LoadResource(Instance instance, const Type& t, const Json& json) {
+void VariantSerializer::LoadExtResource(Instance obj, const String& uuid) {
+    if (s_resource_format_loader_) {
+        auto res = Ref<Resource>(obj.try_convert<Resource>());
+        if (!res) {
+            LOG_ERROR("");
+            return;
+        }
+        auto it = s_resource_format_loader_->ext_resources_.find(uuid);
+        if (it == s_resource_format_loader_->ext_resources_.end()) {
+            LOG_ERROR("");
+            return;
+        }
+        res = it->second;
+    }
+}
+
+void VariantSerializer::LoadResource(Instance obj, const Type& t, const Json& json) {
     if (json.is_string()) {
         auto str = String::fromStdString(json.get<std::string>());
         auto left_bracket = str.indexOf("(");
@@ -357,15 +379,13 @@ void VariantSerializer::LoadResource(Instance instance, const Type& t, const Jso
             LOG_ERROR("");
             return;
         } else if (key_word == "SubResource") {
-            LoadSubResource(instance, uuid);
+            LoadSubResource(obj, uuid);
         } else if (key_word == "ExtResource") {
-
+            LoadExtResource(obj, uuid);
         } else {
-
+            LOG_ERROR("");
         }
-            
     }
-
 }
 
 void VariantSerializer::FromJsonRecursively(Instance instance, const Json& json) {
