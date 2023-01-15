@@ -352,7 +352,6 @@ bool ResourceFormatSaverSceneInstance::Save(const String &path, const Ref<Resour
         Json resource_data_json;
 
         Variant variant = saved_resource;
-        resource_data_json["__TYPE__"] = variant.get_type().get_name().data();
 
         for (auto& prop : variant.get_type().get_properties()) {
             auto property_info = prop.get_metadata(PROPERTY_INFO_KEY).get_value<PropertyInfo>();
@@ -365,10 +364,13 @@ bool ResourceFormatSaverSceneInstance::Save(const String &path, const Ref<Resour
 
         if (main) {
             root["__RESOURCE__"] = resource_data_json;
+            root["__TYPE__"] = variant.get_type().get_name().data();
+            root["__ID__"] = saved_resource->GetResourceUuid().toString().toStdString();
         } else {
             if (!root.contains("__SUB_RESOURCES__")) {
                 root["__SUB_RESOURCES__"] = Json::array();
             }
+            resource_data_json["__TYPE__"] = variant.get_type().get_name().data();
             resource_data_json["__ID__"] = saved_resource->GetResourceUuid().toString().toStdString();
             root["__SUB_RESOURCES__"].emplace_back(resource_data_json);
         }
