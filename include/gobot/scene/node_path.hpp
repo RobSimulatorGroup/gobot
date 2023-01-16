@@ -7,6 +7,7 @@
 
 #pragma once
 
+#include "gobot/log.hpp"
 #include "gobot/core/types.hpp"
 #include <vector>
 #include <QStringList>
@@ -18,34 +19,35 @@ using StringList = QStringList;
 
 class NodePath {
 public:
-    NodePath();
-
     NodePath(const std::vector<String>& path, bool absolute);
+    NodePath(const std::vector<String>& path, const std::vector<String>& subpath, bool absolute);
+    NodePath(const NodePath& path);
+    explicit NodePath(const String& path);
+    NodePath() = default;
+    ~NodePath() = default;
 
-    NodePath(const NodePath& path) = default;
-
-    NodePath& operator=(const NodePath &path) = default;
-
-    NodePath(const String& path);
-
-    bool IsAbsolute() const;
-
+    [[nodiscard]] bool IsAbsolute() const;
+    [[nodiscard]] ulong GetNameCount() const;
+    [[nodiscard]] String GetName(int idx) const;
+    [[nodiscard]] ulong GetSubNameCount() const;
+    [[nodiscard]] String GetSubName(int idx) const;
+    [[nodiscard]] std::vector<String> GetNames() const;
+    [[nodiscard]] std::vector<String> GetSubNames() const;
     void Simplify();
-
     NodePath Simplified() const;
-
     bool IsEmpty() const;
-
     operator String() const;
 
+    NodePath& operator=(const NodePath &path) = default;
     bool operator==(const NodePath &path) const;
-
     bool operator!=(const NodePath &path) const;
 
 private:
     std::vector<String> path_;
     std::vector<String> subpath_;
-    bool absolute_;
+    bool valid_ = false;
+    bool absolute_ = false;
+
 };
 
 }
