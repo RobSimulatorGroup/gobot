@@ -3,6 +3,7 @@
  * Everyone is permitted to copy and distribute verbatim copies of this license document, but changing it is not allowed.
  * This version of the GNU Lesser General Public License incorporates the terms and conditions of version 3 of the GNU General Public License.
  * This file is created by Qiqi Wu, 22-11-6
+ * This file is modified by Zikun Yu, 23-1-15
 */
 
 #pragma once
@@ -19,10 +20,10 @@ using StringList = QStringList;
 
 class NodePath {
 public:
-    NodePath(const std::vector<String>& path, bool absolute);
-    NodePath(const std::vector<String>& path, const std::vector<String>& subpath, bool absolute);
-    NodePath(const NodePath& path);
-    explicit NodePath(const String& path);
+    NodePath(const std::vector<String> &path, bool absolute);
+    NodePath(const std::vector<String> &path, const std::vector<String> &subpath, bool absolute);
+    NodePath(const NodePath &path);
+    explicit NodePath(const String &path);
     NodePath() = default;
     ~NodePath() = default;
 
@@ -33,14 +34,16 @@ public:
     [[nodiscard]] String GetSubName(int idx) const;
     [[nodiscard]] std::vector<String> GetNames() const;
     [[nodiscard]] std::vector<String> GetSubNames() const;
-    void Simplify();
-    NodePath Simplified() const;
-    bool IsEmpty() const;
-    operator String() const;
 
-    NodePath& operator=(const NodePath &path) = default;
+    explicit operator String() const;
+    [[nodiscard]] bool IsEmpty() const;
+
     bool operator==(const NodePath &path) const;
     bool operator!=(const NodePath &path) const;
+    NodePath& operator=(const NodePath &path) = default;
+
+    void Simplify();
+    [[nodiscard]] NodePath Simplified() const;
 
 private:
     std::vector<String> path_;

@@ -20,24 +20,8 @@ public:
 
 }
 
-//TEST(TestNodePath, test_ctor) {
-//    gobot::String path = "/root";
-//    gobot::NodePath node_path(path);
-
 TEST(TestNodePath, rel_path) {
     const gobot::NodePath node_path_relative = gobot::NodePath("/Path2D/PathFollow2D/Sprite2D:position:x");
 
     ASSERT_TRUE(node_path_relative.IsAbsolute() == true);
-
-    std::cout << "GetNames: ";
-    for (const auto& str : node_path_relative.GetNames()) {
-        std::cout << str.toStdString() << " ";
-    }
-    std::cout << std::endl;
-
-    std::cout << "GetSubNames: ";
-    for (const auto& str : node_path_relative.GetSubNames()) {
-        std::cout << str.toStdString() << " ";
-    }
-    std::cout << std::endl;
 }

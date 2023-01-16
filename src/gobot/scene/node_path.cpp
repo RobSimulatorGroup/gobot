@@ -3,6 +3,7 @@
  * Everyone is permitted to copy and distribute verbatim copies of this license document, but changing it is not allowed.
  * This version of the GNU Lesser General Public License incorporates the terms and conditions of version 3 of the GNU General Public License.
  * This file is created by Qiqi Wu, 22-11-6
+ * This file is modified by Zikun Yu, 23-1-15
 */
 
 
@@ -14,7 +15,7 @@ template <typename T>
 using Vector = QVector<T>;
 static constexpr Qt::SplitBehaviorFlags FlagSkipEmptyParts = Qt::SkipEmptyParts;
 
-NodePath::NodePath(const std::vector<String>& path, bool absolute) {
+NodePath::NodePath(const std::vector<String> &path, bool absolute) {
     subpath_ = std::vector<String>();
     absolute_ = absolute;
 
@@ -55,7 +56,7 @@ NodePath::NodePath(const NodePath &path) {
     absolute_ = path.absolute_;
 }
 
-NodePath::NodePath(const String& path) {
+NodePath::NodePath(const String &path) {
     bool is_valid = true;
     if (!path.length()) {
         LOG_ERROR("Invalid NodePath {}.", path);
@@ -109,9 +110,8 @@ bool NodePath::IsAbsolute() const {
 }
 
 ulong NodePath::GetNameCount() const {
-    if (!valid_) {
-        return 0;
-    }
+    if (!valid_) return 0;
+
     return path_.size();
 }
 
@@ -128,9 +128,8 @@ String NodePath::GetName(int idx) const {
 }
 
 ulong NodePath::GetSubNameCount() const {
-    if (!valid_) {
-        return 0;
-    }
+    if (!valid_) return 0;
+
     return subpath_.size();
 }
 
@@ -147,18 +146,93 @@ String NodePath::GetSubName(int idx) const {
 }
 
 std::vector<String> NodePath::GetNames() const {
-    if (valid_) {
-        return path_;
-    }
+    if (!valid_) return path_;
+
     return {};
 }
 
 std::vector<String> NodePath::GetSubNames() const {
-    if (valid_) {
-        return subpath_;
-    }
+    if (!valid_) return subpath_;
+
     return {};
 }
 
+NodePath::operator String() const {
+    if (valid_) return {};
+
+    String ret;
+    if (absolute_) ret = "/";
+
+    for (int i = 0; i < path_.size(); ++i) {
+        if (i > 0) ret += "/";
+        ret += path_[i];
+    }
+
+    for (const auto &str : subpath_) {
+        ret += ":" + str;
+    }
+
+    return ret;
+}
+
+bool NodePath::IsEmpty() const {
+    return (!valid_ || path_.empty());
+}
+
+bool NodePath::operator==(const NodePath &path) const {
+    if (valid_ != path.valid_) return false;
+
+    if (absolute_ != path.absolute_) return false;
+
+    if (path_.size() != path.path_.size()) return false;
+
+    if (subpath_.size() != path.subpath_.size()) return false;
+
+    if (!path_.empty()) {
+        for (int i = 0; i < path_.size(); ++i) {
+            if (path_[i] != path.path_[i]) return false;
+        }
+    }
+
+    if (!subpath_.empty()) {
+        for (int i = 0; i < subpath_.size(); ++i) {
+            if (subpath_[i] != path.subpath_[i]) return false;
+        }
+    }
+
+    return true;
+}
+
+bool NodePath::operator!=(const NodePath &path) const {
+    return !(*this == path);
+}
+
+void NodePath::Simplify() {
+    if (IsEmpty()) return;
+
+    for (int i = 0; i < path_.size(); ++i) {
+        if (path_.size() == 1) break;
+
+        if (path_[i] == ".") {
+            path_.erase(path_.begin() + i);
+            i--;
+        } else if (i > 0 && path_[i] == ".." && path_[i - 1] != "." && path_[i - 1] != "..") {
+            // remove path_[i - 1] and path_[i]
+            path_.erase(path_.begin() + i - 1, path_.begin() + i + 1);
+            i -= 2;
+            if (path_.empty()) {
+                path_.emplace_back(".");
+                break;
+            }
+        }
+    }
+}
+
+NodePath NodePath::Simplified() const {
+    NodePath np = *this;
+    np.Simplify();
+
+    return np;
+}
 
 }
