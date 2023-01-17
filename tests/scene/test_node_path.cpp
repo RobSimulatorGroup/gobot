@@ -20,8 +20,125 @@ public:
 
 }
 
-TEST(TestNodePath, rel_path) {
-    const gobot::NodePath node_path_relative = gobot::NodePath("/Path2D/PathFollow2D/Sprite2D:position:x");
+TEST(TestNodePath, relative_path) {
+    const gobot::NodePath node_path_relative = gobot::NodePath("Path2D/PathFollow2D/Sprite2D:position:x");
 
-    ASSERT_TRUE(node_path_relative.IsAbsolute() == true);
+    // The constructor should return the same node path.
+    ASSERT_TRUE(
+            gobot::NodePath(node_path_relative.GetNames(),
+                            node_path_relative.GetSubNames(),
+                            false) ==
+            node_path_relative);
+    // The returned property path should match the expected value.
+    ASSERT_TRUE(node_path_relative.GetAsPropertyPath() ==
+        gobot::NodePath(":Path2D/PathFollow2D/Sprite2D:position:x"));
+    // The returned concatenated names should match the expected value.
+    ASSERT_TRUE(node_path_relative.GetConcatenatedNames() == "Path2D/PathFollow2D/Sprite2D");
+    // The returned concatenated subnames should match the expected value.
+    ASSERT_TRUE(node_path_relative.GetConcatenatedSubNames() == "position:x");
+
+    // The returned name at index 0 should match the expected value.
+    ASSERT_TRUE(node_path_relative.GetName(0) == "Path2D");
+    // The returned name at index 1 should match the expected value.
+    ASSERT_TRUE(node_path_relative.GetName(1) == "PathFollow2D");
+    // The returned name at index 2 should match the expected value.
+    ASSERT_TRUE(node_path_relative.GetName(2) == "Sprite2D");
+LOG_OFF;
+    // The returned name at invalid index 3 should match the expected value.
+    ASSERT_TRUE(node_path_relative.GetName(3) == "");
+    // The returned name at invalid index -1 should match the expected value.
+    ASSERT_TRUE(node_path_relative.GetName(-1) == "");
+LOG_ON;
+    // The returned number of names should match the expected value.
+    ASSERT_TRUE(node_path_relative.GetNameCount() == 3);
+
+    // The returned subname at index 0 should match the expected value.
+    ASSERT_TRUE(node_path_relative.GetSubName(0) == "position");
+    // The returned subname at index 1 should match the expected value.
+    ASSERT_TRUE(node_path_relative.GetSubName(1) == "x");
+LOG_OFF;
+    // The returned subname at invalid index 2 should match the expected value.
+    ASSERT_TRUE(node_path_relative.GetSubName(2) == "");
+    // The returned subname at invalid index -1 should match the expected value.
+    ASSERT_TRUE(node_path_relative.GetSubName(-1) == "");
+LOG_ON;
+    // The returned number of subnames should match the expected value.
+    ASSERT_TRUE(node_path_relative.GetSubNameCount() == 2);
+
+    // The node path should be considered relative.
+    ASSERT_TRUE(node_path_relative.IsAbsolute() == false);
+    // The node path shouldn't be considered empty.
+    ASSERT_TRUE(node_path_relative.IsEmpty() == false);
+}
+
+TEST(TestNodePath, absolute_path) {
+    const gobot::NodePath node_path_absolute = gobot::NodePath("/root/Sprite2D");
+
+    // The constructor should return the same node path.
+    ASSERT_TRUE(gobot::NodePath(node_path_absolute.GetNames(), true) == node_path_absolute);
+    // The returned property path should match the expected value.
+    ASSERT_TRUE(node_path_absolute.GetAsPropertyPath() == gobot::NodePath(":root/Sprite2D"));
+    // The returned concatenated names should match the expected value.
+    ASSERT_TRUE(node_path_absolute.GetConcatenatedNames() == "/root/Sprite2D");
+    // The returned concatenated subnames should match the expected value.
+    ASSERT_TRUE(node_path_absolute.GetConcatenatedSubNames() == "");
+
+    // The returned name at index 0 should match the expected value.
+    ASSERT_TRUE(node_path_absolute.GetName(0) == "root");
+    // The returned name at index 1 should match the expected value.
+    ASSERT_TRUE(node_path_absolute.GetName(1) == "Sprite2D");
+LOG_OFF;
+    // The returned name at invalid index 2 should match the expected value.
+    ASSERT_TRUE(node_path_absolute.GetName(2) == "");
+    // The returned name at invalid index -1 should match the expected value.
+    ASSERT_TRUE(node_path_absolute.GetName(-1) == "");
+LOG_ON;
+    // The returned number of names should match the expected value.
+    ASSERT_TRUE(node_path_absolute.GetNameCount() == 2);
+    // The returned number of subnames should match the expected value.
+    ASSERT_TRUE(node_path_absolute.GetSubNameCount() == 0);
+
+    // The node path should be considered absolute.
+    ASSERT_TRUE(node_path_absolute.IsAbsolute() == true);
+    // The node path shouldn't be considered empty.
+    ASSERT_TRUE(node_path_absolute.IsEmpty() == false);
+}
+
+TEST(TestNodePath, empty_path) {
+    const gobot::NodePath node_path_empty = gobot::NodePath();
+
+    // The constructor should return the same node path.
+    ASSERT_TRUE(
+            gobot::NodePath(node_path_empty.GetNames(),
+                            node_path_empty.GetSubNames(),
+                            false) ==
+                    node_path_empty);
+    // The returned property path should match the expected value.
+    ASSERT_TRUE(node_path_empty.GetAsPropertyPath() == gobot::NodePath());
+LOG_OFF;
+    // The returned concatenated names should match the expected value.
+    ASSERT_TRUE(node_path_empty.GetConcatenatedNames() == "");
+    // The returned concatenated subnames should match the expected value.
+    ASSERT_TRUE(node_path_empty.GetConcatenatedSubNames() == "");
+LOG_ON;
+
+    // The returned number of names should match the expected value.
+    ASSERT_TRUE(node_path_empty.GetNameCount() == 0);
+    // The returned number of subnames should match the expected value.
+    ASSERT_TRUE(node_path_empty.GetSubNameCount() == 0);
+
+    // The node path shouldn't be considered absolute.
+    ASSERT_TRUE(node_path_empty.IsAbsolute() == false);
+    // The node path should be considered empty.
+    ASSERT_TRUE(node_path_empty.IsEmpty() == true);
+}
+
+TEST(TestNodePath, complex_path) {
+    const gobot::NodePath node_path_complex = gobot::NodePath("Path2D/./PathFollow2D/../Sprite2D:position:x");
+    const gobot::NodePath node_path_simplified = node_path_complex.Simplified();
+
+    // The returned concatenated names should match the expected value.
+    ASSERT_TRUE(node_path_simplified.GetConcatenatedNames() == "Path2D/Sprite2D");
+    // The returned concatenated subnames should match the expected value.
+    ASSERT_TRUE(node_path_simplified.GetConcatenatedSubNames() == "position:x");
 }

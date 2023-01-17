@@ -16,13 +16,11 @@
 
 namespace gobot {
 
-using StringList = QStringList;
-
 class NodePath {
 public:
     NodePath(const std::vector<String> &path, bool absolute);
     NodePath(const std::vector<String> &path, const std::vector<String> &subpath, bool absolute);
-    NodePath(const NodePath &path);
+    NodePath(const NodePath &path) = default;
     explicit NodePath(const String &path);
     NodePath() = default;
     ~NodePath() = default;
@@ -34,7 +32,10 @@ public:
     [[nodiscard]] String GetSubName(int idx) const;
     [[nodiscard]] std::vector<String> GetNames() const;
     [[nodiscard]] std::vector<String> GetSubNames() const;
+    [[nodiscard]] String GetConcatenatedNames() const;
+    [[nodiscard]] String GetConcatenatedSubNames() const;
 
+    [[nodiscard]] NodePath GetAsPropertyPath() const;
     explicit operator String() const;
     [[nodiscard]] bool IsEmpty() const;
 
@@ -46,11 +47,15 @@ public:
     [[nodiscard]] NodePath Simplified() const;
 
 private:
-    std::vector<String> path_;
-    std::vector<String> subpath_;
-    bool valid_ = false;
-    bool absolute_ = false;
+    struct Data {
+        std::vector<String> path_ = std::vector<String>();
+        std::vector<String> subpath_ = std::vector<String>();
+        String concatenated_path_ = String();
+        String concatenated_subpath_ = String();
+        bool absolute_ = false;
+    };
 
+    mutable Data data_;
 };
 
 }

@@ -88,3 +88,6 @@ struct fmt::formatter<gobot::String> : fmt::formatter<std::string>
 #define LOG_WARN(...)  gobot::Logger::getInstance().getLogger()->warn("[" __FILE__ ":" SPDLOG_STR_HELPER(__LINE__) "] " __VA_ARGS__)
 #define LOG_ERROR(...) gobot::Logger::getInstance().getLogger()->error("[" __FILE__ ":" SPDLOG_STR_HELPER(__LINE__) "] " __VA_ARGS__)
 #define LOG_FATAL(...) gobot::Logger::getInstance().getLogger()->critical("[" __FILE__ ":" SPDLOG_STR_HELPER(__LINE__) "] " __VA_ARGS__)
+
+#define LOG_OFF gobot::Logger::getInstance().getLogger()->set_level(spdlog::level::off)
+#define LOG_ON gobot::Logger::getInstance().getLogger()->set_level(spdlog::level::trace)
