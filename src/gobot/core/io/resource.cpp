@@ -12,6 +12,8 @@
 
 #include "expected/expected.hpp"
 
+#include <random>
+
 namespace gobot {
 
 Resource::Resource() {
@@ -175,8 +177,22 @@ Uuid Resource::GetResourceUuid() const {
     return uuid_;
 }
 
-Uuid Resource::GenerateUuid() {
-    return Uuid::createUuid();
+String Resource::GenerateResourceUniqueId() {
+    int length = 5;
+
+    static auto& chrs = "0123456789"
+                        "abcdefghijklmnopqrstuvwxyz"
+                        "ABCDEFGHIJKLMNOPQRSTUVWXYZ";
+
+    thread_local static std::mt19937 rg{std::random_device{}()};
+    thread_local static std::uniform_int_distribution<> pick(0, sizeof(chrs) - 2);
+
+    String s;
+    s.reserve(length);
+
+    while(length--)
+        s += chrs[pick(rg)];
+    return s;
 }
 
 

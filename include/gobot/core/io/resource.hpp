@@ -34,11 +34,11 @@ public:
 
     String GetName() const;
 
+    static String GenerateResourceUniqueId();
+
     void SetResourceUuid(const Uuid &uuid);
 
     Uuid GetResourceUuid() const;
-
-    static Uuid GenerateUuid();
 
     virtual void ReloadFromFile();
 

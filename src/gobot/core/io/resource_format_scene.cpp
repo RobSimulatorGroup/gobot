@@ -319,7 +319,7 @@ bool ResourceFormatSaverSceneInstance::Save(const String &path, const Ref<Resour
         for (std::size_t i = 0; i < packed_scene_->GetState()->GetNodeCount(); i++) {
             Ref<PackedScene> instance = packed_scene_->GetState()->GetNodeInstance(i);
             if (instance.is_valid() && !external_resources_.contains(instance)) {
-                external_resources_[instance] = Resource::GenerateUuid();
+                external_resources_[instance] = Resource::GenerateResourceUniqueId();
             }
         }
     }
@@ -396,7 +396,7 @@ void ResourceFormatSaverSceneInstance::FindResources(const Variant &variant, boo
                 return;
             }
 
-            external_resources_[res] = Resource::GenerateUuid();
+            external_resources_[res] = Resource::GenerateResourceUniqueId();
             return;
         }
 

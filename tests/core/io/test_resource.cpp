@@ -11,6 +11,7 @@
 #include "gobot/core/io/resource.hpp"
 #include "gobot/core/types.hpp"
 #include "gobot/scene/resources/primitive_mesh.hpp"
+#include "gobot/log.hpp"
 
 TEST(TestResource, test_cast) {
     gobot::Ref<gobot::Resource> res(gobot::MakeRef<gobot::Resource>());
@@ -24,4 +25,10 @@ TEST(TestResource, test_cast) {
     gobot::Ref<gobot::BoxMesh> box_mesh(gobot::MakeRef<gobot::BoxMesh>());
     gobot::Instance instance_box(box_mesh);
     ASSERT_TRUE(instance_box.get_wrapped_instance().try_convert<gobot::Resource>() != nullptr);
+}
+
+TEST(TestResource, test_generate_unique_id) {
+    for(int i= 0 ; i< 5; i++) {
+        LOG_INFO("{}", gobot::Resource::GenerateResourceUniqueId());
+    }
 }
