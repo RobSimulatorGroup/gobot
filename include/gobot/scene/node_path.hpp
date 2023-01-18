@@ -9,6 +9,7 @@
 #pragma once
 
 #include "gobot/log.hpp"
+#include "gobot/error_marcos.hpp"
 #include "gobot/core/types.hpp"
 #include <vector>
 #include <QStringList>

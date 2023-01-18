@@ -32,3 +32,30 @@
 		return;                                                                                 \
 	} else                                                                                      \
 		((void)0)
+
+
+/**
+ * Try using `ERR_FAIL_INDEX_V_MSG`.
+ * Only use this macro if there is no sensible error message.
+ *
+ * Ensures an integer index `m_index` is less than `m_size` and greater than or equal to 0.
+ * If not, the current function returns `m_retval`.
+ */
+#define ERR_FAIL_INDEX_MSG(index, size, msg)                                                    \
+    if (unlikely((index) < 0 || (index) >= (size))) {                                           \
+        LOG_ERROR("Invalid index {} out of {}. {}", index, size, GOB_STRINGIFY(msg));           \
+        return;                                                                                 \
+    } else                                                                                      \
+        ((void)0)
+
+
+/**
+ * Ensures an integer index `m_index` is less than `m_size` and greater than or equal to 0.
+ * If not, prints `m_msg` and the current function returns `m_retval`.
+ */
+#define ERR_FAIL_INDEX_V(index, size, ret)                                                      \
+    if (unlikely((index) < 0 || (index) >= (size))) {                                           \
+        LOG_ERROR("Invalid index {} out of {}, return {}.", idx, size, GOB_STRINGIFY(ret));     \
+        return ret;                                                                             \
+    } else                                                                                      \
+        ((void)0)

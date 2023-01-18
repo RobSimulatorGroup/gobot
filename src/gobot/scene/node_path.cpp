@@ -27,10 +27,7 @@ NodePath::NodePath(const std::vector<String> &path, const std::vector<String> &s
 }
 
 NodePath::NodePath(const String &path) {
-    if (!path.length()) {
-        LOG_ERROR("Invalid NodePath {}.", path);
-        return;
-    }
+    if (!path.length()) return;
 
     String raw_path = path;
     bool is_absolute = (raw_path.front() == u'/');
@@ -73,14 +70,8 @@ ulong NodePath::GetNameCount() const {
 }
 
 String NodePath::GetName(int idx) const {
-    if (idx < 0 || idx >= data_.path_.size()) {
-        LOG_ERROR("Invalid index {}.", idx);
-        return {};
-    }
-    if (data_.path_.empty()) {
-        LOG_ERROR("Empty NodePath {}.");
-        return {};
-    }
+    ERR_FAIL_COND_V(data_.path_.empty(), String());
+    ERR_FAIL_INDEX_V(idx, data_.path_.size(), String());
     return data_.path_[idx];
 }
 
@@ -89,14 +80,8 @@ ulong NodePath::GetSubNameCount() const {
 }
 
 String NodePath::GetSubName(int idx) const {
-    if (idx < 0 || idx >= data_.subpath_.size()) {
-        LOG_ERROR("Invalid index {}.", idx);
-        return {};
-    }
-    if (data_.subpath_.empty()) {
-        LOG_ERROR("Void NodePath.");
-        return {};
-    }
+    ERR_FAIL_COND_V(data_.subpath_.empty(), String());
+    ERR_FAIL_INDEX_V(idx, data_.subpath_.size(), String());
     return data_.subpath_[idx];
 }
 
@@ -109,7 +94,7 @@ std::vector<String> NodePath::GetSubNames() const {
 }
 
 String NodePath::GetConcatenatedNames() const {
-    if (IsEmpty()) LOG_ERROR("Empty NodePath.");
+    ERR_FAIL_COND_V(IsEmpty(), String());
 
     if (data_.concatenated_path_.isEmpty()) {
         String concatenated;
@@ -126,7 +111,7 @@ String NodePath::GetConcatenatedNames() const {
 }
 
 String NodePath::GetConcatenatedSubNames() const {
-    if (IsEmpty()) LOG_ERROR("Empty NodePath.");
+    ERR_FAIL_COND_V(IsEmpty(), String());
 
     if (data_.concatenated_subpath_.isEmpty()) {
         String concatenated;
