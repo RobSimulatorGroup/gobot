@@ -6,7 +6,6 @@
 */
 
 #include <gtest/gtest.h>
-#include <iostream>
 
 #include <gobot/log.hpp>
 #include <gobot/scene/node_path.hpp>
