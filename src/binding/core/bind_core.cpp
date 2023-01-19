@@ -14,7 +14,7 @@
 #include "gobot/core/registration.hpp"
 
 #ifdef BUILD_WITH_PYBIND11
-PYBIND11_EMBEDDED_MODULE(fast_calc, m) {
+PYBIND11_EMBEDDED_MODULE(gobot, m) {
     using namespace gobot;
 #else
 GOBOT_REGISTRATION {
@@ -25,15 +25,15 @@ QuickEnumeration_<PropertyHint>("PropertyHint");
 QuickEnumeration_<PropertyUsageFlags>("PropertyUsageFlags");
 
 Class_<PropertyInfo>("PropertyInfo")
-.constructor()(CtorAsObject)
-.property("name", &gobot::PropertyInfo::name)
-.property("hint", &gobot::PropertyInfo::hint)
-.property("hint_string", &gobot::PropertyInfo::hint_string)
-.property("PropertyUsageFlags", &gobot::PropertyInfo::usage);
+    .constructor()(CtorAsObject)
+    .property("name", &gobot::PropertyInfo::name)
+    .property("hint", &gobot::PropertyInfo::hint)
+    .property("hint_string", &gobot::PropertyInfo::hint_string)
+    .property("PropertyUsageFlags", &gobot::PropertyInfo::usage);
 
 Class_<Object>("Object")
-.constructor()(CtorAsRawPtr)
-.property_readonly("class_name", &Object::GetClassName);
+    .constructor()(CtorAsRawPtr)
+    .property_readonly("class_name", &Object::GetClassName);
 
 
 QuickEnumeration_<NotificationType>("NotificationType");

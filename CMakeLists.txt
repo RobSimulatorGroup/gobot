@@ -112,7 +112,7 @@ target_link_libraries(gobot_rttr PUBLIC gobot )
 if (BUILD_WITH_PYBIND11)
     add_library(gobot_python SHARED ${RTTR_BIND} )
     target_compile_definitions(gobot_python PRIVATE BUILD_WITH_PYBIND11)
-    target_link_libraries(gobot_python PUBLIC gobot )
+    target_link_libraries(gobot_python PRIVATE gobot pybind11::embed )
 endif()
 
 
