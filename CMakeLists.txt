@@ -11,6 +11,7 @@ set(CMAKE_MODULE_PATH ${CMAKE_BINARY_DIR})
 
 option(BUILD_EXPERIMENT "using imgui and glfw" OFF)
 option(BUILD_TESTS "build tests" OFF)
+option(BUILD_WITH_PYBIND11 "build python bindings with pybind11" ON)
 
 if (NOT EXISTS ${CMAKE_BINARY_DIR}/conanbuildinfo.cmake)
     if (NOT EXISTS "${CMAKE_BINARY_DIR}/conan.cmake")
@@ -73,6 +74,9 @@ find_package(Qt5 COMPONENTS Core Widgets Gui CONFIG REQUIRED)
 find_package (Eigen3 3.4 CONFIG REQUIRED)
 
 
+find_package(pybind11 REQUIRED)
+find_package(python3 3.10 COMPONENTS Interpreter Development)
+
 set(CMAKE_AUTOMOC ON)
 set(CMAKE_AUTORCC ON)
 set(CMAKE_AUTOUIC ON)
@@ -84,7 +88,7 @@ file(GLOB_RECURSE SOURCE_EDITOR CONFIGURE_DEPENDS "src/gobot/editor/*.cpp")
 file(GLOB_RECURSE HEAD_FILES CONFIGURE_DEPENDS "include/*hpp")
 
 #https://github.com/bincrafters/community/issues/466#issuecomment-426265654
-add_library(gobot SHARED ${SOURCE_CORE} ${SOURCE_SCENE} ${SOURCE_EDITOR} ${HEAD_FILES})
+add_library(gobot SHARED ${SOURCE_CORE} ${SOURCE_SCENE} ${HEAD_FILES})
 if (MSVC)
     target_compile_options(gobot PUBLIC "/Zc:preprocessor")
 endif ()
@@ -100,6 +104,17 @@ target_link_libraries(gobot
     intrusive_ptr
     ${CONAN_LIBS}
 )
+
+file(GLOB_RECURSE RTTR_BIND CONFIGURE_DEPENDS "src/binding/core/*.cpp")
+add_library(gobot_rttr SHARED ${RTTR_BIND} )
+target_link_libraries(gobot_rttr PUBLIC gobot )
+
+if (BUILD_WITH_PYBIND11)
+    add_library(gobot_python SHARED ${RTTR_BIND} )
+    target_compile_definitions(gobot_python PRIVATE BUILD_WITH_PYBIND11)
+    target_link_libraries(gobot_python PUBLIC gobot )
+endif()
+
 
 set_target_properties(gobot
     PROPERTIES

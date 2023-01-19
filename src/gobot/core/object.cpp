@@ -134,24 +134,3 @@ void ObjectDB::RemoveInstance(Object *object) {
 
 }
 
-GOBOT_REGISTRATION {
-
-    QuickEnumeration_<PropertyHint>("PropertyHint");
-
-    QuickEnumeration_<PropertyUsageFlags>("PropertyUsageFlags");
-
-    Class_<PropertyInfo>("PropertyInfo")
-            .constructor()(CtorAsObject)
-            .property("name", &gobot::PropertyInfo::name)
-            .property("hint", &gobot::PropertyInfo::hint)
-            .property("hint_string", &gobot::PropertyInfo::hint_string)
-            .property("PropertyUsageFlags", &gobot::PropertyInfo::usage);
-
-    Class_<Object>("Object")
-            .constructor()(CtorAsRawPtr)
-            .property_readonly("class_name", &Object::GetClassName);
-
-
-    QuickEnumeration_<NotificationType>("NotificationType");
-
-};

@@ -110,3 +110,23 @@ namespace                                                                       
 }                                                                                   \
 static const gobot__auto__register__ RTTR_CAT(auto_register__, __LINE__);           \
 static void gobot::gobot_auto_register_reflection_function_()
+
+
+namespace godot {
+
+
+template<typename ClassType, typename... Options>
+class ClassR_ {
+public:
+    ClassR_(const char* name) {
+
+    }
+
+
+public:
+    const char* name;
+
+};
+
+
+}
