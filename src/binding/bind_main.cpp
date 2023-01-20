@@ -20,6 +20,8 @@ PYBIND11_EMBEDDED_MODULE(gobot, m) {
 GOBOT_REGISTRATION {
 #endif
 
+
+
 QuickEnumeration_<PropertyHint>("PropertyHint");
 
 QuickEnumeration_<PropertyUsageFlags>("PropertyUsageFlags");

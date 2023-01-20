@@ -74,9 +74,6 @@ find_package(Qt5 COMPONENTS Core Widgets Gui CONFIG REQUIRED)
 find_package (Eigen3 3.4 CONFIG REQUIRED)
 
 
-find_package(pybind11 REQUIRED)
-find_package(python3 3.10 COMPONENTS Interpreter Development)
-
 set(CMAKE_AUTOMOC ON)
 set(CMAKE_AUTORCC ON)
 set(CMAKE_AUTOUIC ON)
@@ -105,14 +102,16 @@ target_link_libraries(gobot
     ${CONAN_LIBS}
 )
 
-file(GLOB_RECURSE RTTR_BIND CONFIGURE_DEPENDS "src/binding/core/*.cpp")
+file(GLOB_RECURSE RTTR_BIND CONFIGURE_DEPENDS "src/binding/*.cpp")
 add_library(gobot_rttr SHARED ${RTTR_BIND} )
 target_link_libraries(gobot_rttr PUBLIC gobot )
 
 if (BUILD_WITH_PYBIND11)
+    find_package(pybind11 REQUIRED)
+    find_package(python3 3.10 COMPONENTS Interpreter Development)
     add_library(gobot_python SHARED ${RTTR_BIND} )
     target_compile_definitions(gobot_python PRIVATE BUILD_WITH_PYBIND11)
-    target_link_libraries(gobot_python PRIVATE gobot pybind11::embed )
+    target_link_libraries(gobot_python PRIVATE gobot gobot_rttr pybind11::embed )
 endif()
 
 

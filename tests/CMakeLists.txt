@@ -28,6 +28,24 @@ macro(package_add_test TESTNAME FILES)
     set_target_properties(${TESTNAME} PROPERTIES FOLDER tests)
 endmacro()
 
+
+macro(python_binding_test TESTNAME FILES)
+    add_executable(${TESTNAME} ${FILES})
+    target_link_libraries(${TESTNAME} gtest gmock gtest_main)
+    target_link_libraries(${TESTNAME} -Wl,--no-as-needed gobot_python)
+    # gtest_discover_tests replaces gtest_add_tests,
+    # see https://cmake.org/cmake/help/v3.10/module/GoogleTest.html for more options to pass to it
+    gtest_discover_tests(${TESTNAME}
+            EXTRA_ARGS --gtest_color=yes
+            WORKING_DIRECTORY ${PROJECT_DIR}
+            )
+    set_target_properties(${TESTNAME} PROPERTIES FOLDER tests)
+endmacro()
+
 package_add_test(test_ref_counted core/test_ref_counted.cpp )
 package_add_test(test_registration core/test_registration.cpp )
 package_add_test(test_resource core/test_resource.cpp )
+
+######################################################################
+
+python_binding_test(test_pybind binding/test_pybind.cpp )
