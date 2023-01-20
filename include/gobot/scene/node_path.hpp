@@ -28,7 +28,6 @@ class NodePath {
  *  A NodePath is composed of a list of slash-separated node names (like a filesystem path) and
  *  an optional colon-separated list of "subnames" which can be resources or properties.
  */
-
 public:
     NodePath(const std::vector<String> &path, bool absolute);
     NodePath(const std::vector<String> &path, const std::vector<String> &subpath, bool absolute);
@@ -105,7 +104,7 @@ public:
     * @brief Gets all subnames concatenated with a colon character (:) as separator,
     *  i.e. the right side of the first colon in a node path.
     *
-    * @returns a String of resource of property path.
+    * @returns a String of resource or property path.
     */
     [[nodiscard]] String GetConcatenatedSubNames() const;
 
@@ -145,14 +144,16 @@ public:
 
 private:
     struct Data {
-        std::vector<String> path_ = std::vector<String>();
-        std::vector<String> subpath_ = std::vector<String>();
-        String concatenated_path_ = String();
-        String concatenated_subpath_ = String();
-        bool absolute_ = false;
+        std::vector<String> path = std::vector<String>();
+        std::vector<String> subpath = std::vector<String>();
+        String concatenated_path = String();
+        String concatenated_subpath = String();
+        bool absolute = false;
     };
 
     mutable Data data_;
+
+    static constexpr Qt::SplitBehaviorFlags S_FLAG_SKIP_EMPTY_PARTS = Qt::SkipEmptyParts;
 };
 
 }

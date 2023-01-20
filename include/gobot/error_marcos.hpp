@@ -42,7 +42,7 @@
  * If not, the current function returns `m_retval`.
  */
 #define ERR_FAIL_INDEX_MSG(index, size, msg)                                                    \
-    if (unlikely((index) < 0 || (index) >= (size))) {                                           \
+    if ((index) < 0 || (index) >= (size)) [[unlikely]] {                                        \
         LOG_ERROR("Invalid index {} out of {}. {}", index, size, GOB_STRINGIFY(msg));           \
         return;                                                                                 \
     } else                                                                                      \
@@ -54,7 +54,7 @@
  * If not, prints `m_msg` and the current function returns `m_retval`.
  */
 #define ERR_FAIL_INDEX_V(index, size, ret)                                                      \
-    if (unlikely((index) < 0 || (index) >= (size))) {                                           \
+    if ((index) < 0 || (index) >= (size)) [[unlikely]] {                                        \
         LOG_ERROR("Invalid index {} out of {}, return {}.", idx, size, GOB_STRINGIFY(ret));     \
         return ret;                                                                             \
     } else                                                                                      \

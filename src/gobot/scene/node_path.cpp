@@ -8,22 +8,22 @@
 
 
 #include "gobot/scene/node_path.hpp"
+#include "gobot/core/registration.hpp"
 
 namespace gobot {
 
 template <typename T>
 using Vector = QVector<T>;
-static constexpr Qt::SplitBehaviorFlags FlagSkipEmptyParts = Qt::SkipEmptyParts;
 
 NodePath::NodePath(const std::vector<String> &path, bool absolute) {
-    data_.path_ = path;
-    data_.absolute_ = absolute;
+    data_.path = path;
+    data_.absolute = absolute;
 }
 
 NodePath::NodePath(const std::vector<String> &path, const std::vector<String> &subpath, bool absolute) {
-    data_.path_ = path;
-    data_.subpath_ = subpath;
-    data_.absolute_ = absolute;
+    data_.path = path;
+    data_.subpath = subpath;
+    data_.absolute = absolute;
 }
 
 NodePath::NodePath(const String &path) {
@@ -36,7 +36,7 @@ NodePath::NodePath(const String &path) {
     int subpath_pos = path.indexOf(u':');
 
     if (subpath_pos >= 0) {
-        subpath_list = raw_path.split(u':', FlagSkipEmptyParts).toVector();
+        subpath_list = raw_path.split(u':', S_FLAG_SKIP_EMPTY_PARTS).toVector();
         if (subpath_pos > 0) {
             raw_path = subpath_list.front();
             subpath_list.pop_front();
@@ -51,87 +51,87 @@ NodePath::NodePath(const String &path) {
         path_list = Vector<String>();
     } else {
         if (is_absolute) raw_path.remove(0, 1);
-        path_list = raw_path.split(u'/', FlagSkipEmptyParts).toVector();
+        path_list = raw_path.split(u'/', S_FLAG_SKIP_EMPTY_PARTS).toVector();
         if (path_list.isEmpty())
             path_list = Vector<String>(raw_path.size(), raw_path);
     }
 
-    data_.absolute_ = is_absolute;
-    data_.path_ = std::vector<String>(path_list.begin(), path_list.end());
-    data_.subpath_ = std::vector<String>(subpath_list.begin(), subpath_list.end());
+    data_.absolute = is_absolute;
+    data_.path = std::move(std::vector<String>(path_list.begin(), path_list.end()));
+    data_.subpath = std::move(std::vector<String>(subpath_list.begin(), subpath_list.end()));
 }
 
 bool NodePath::IsAbsolute() const {
-    return data_.absolute_;
+    return data_.absolute;
 }
 
 ulong NodePath::GetNameCount() const {
-    return data_.path_.size();
+    return data_.path.size();
 }
 
 String NodePath::GetName(int idx) const {
-    ERR_FAIL_COND_V(data_.path_.empty(), String());
-    ERR_FAIL_INDEX_V(idx, data_.path_.size(), String());
-    return data_.path_[idx];
+    ERR_FAIL_COND_V(data_.path.empty(), String());
+    ERR_FAIL_INDEX_V(idx, data_.path.size(), String());
+    return data_.path[idx];
 }
 
 ulong NodePath::GetSubNameCount() const {
-    return data_.subpath_.size();
+    return data_.subpath.size();
 }
 
 String NodePath::GetSubName(int idx) const {
-    ERR_FAIL_COND_V(data_.subpath_.empty(), String());
-    ERR_FAIL_INDEX_V(idx, data_.subpath_.size(), String());
-    return data_.subpath_[idx];
+    ERR_FAIL_COND_V(data_.subpath.empty(), String());
+    ERR_FAIL_INDEX_V(idx, data_.subpath.size(), String());
+    return data_.subpath[idx];
 }
 
 std::vector<String> NodePath::GetNames() const {
-    return data_.path_;
+    return data_.path;
 }
 
 std::vector<String> NodePath::GetSubNames() const {
-    return data_.subpath_;
+    return data_.subpath;
 }
 
 String NodePath::GetConcatenatedNames() const {
     ERR_FAIL_COND_V(IsEmpty(), String());
 
-    if (data_.concatenated_path_.isEmpty()) {
+    if (data_.concatenated_path.isEmpty()) {
         String concatenated;
-        std::vector<String> path = data_.path_;
+        std::vector<String> path = data_.path;
 
-        if (data_.absolute_) concatenated += "/";
+        if (data_.absolute) concatenated += "/";
         for (int i = 0; i < path.size(); ++i) {
             concatenated += i == 0 ? path[i] : "/" + path[i];
         }
-        data_.concatenated_path_ = concatenated;
+        data_.concatenated_path = concatenated;
     }
 
-    return data_.concatenated_path_;
+    return data_.concatenated_path;
 }
 
 String NodePath::GetConcatenatedSubNames() const {
     ERR_FAIL_COND_V(IsEmpty(), String());
 
-    if (data_.concatenated_subpath_.isEmpty()) {
+    if (data_.concatenated_subpath.isEmpty()) {
         String concatenated;
-        std::vector<String> subpath = data_.subpath_;
+        std::vector<String> subpath = data_.subpath;
         for (int i = 0; i < subpath.size(); ++i) {
             concatenated += i == 0 ? subpath[i] : ":" + subpath[i];
         }
-        data_.concatenated_subpath_ = concatenated;
+        data_.concatenated_subpath = concatenated;
     }
 
-    return data_.concatenated_subpath_;
+    return data_.concatenated_subpath;
 }
 
 NodePath NodePath::GetAsPropertyPath() const {
-    if (IsEmpty() || data_.path_.empty()) return *this;
+    if (IsEmpty() || data_.path.empty()) return *this;
 
-    std::vector<String> new_path = data_.subpath_;
-    String initial_subname = data_.path_[0];
-    for (int i = 1; i < data_.path_.size(); ++i) {
-        initial_subname += "/" + data_.path_[i];
+    std::vector<String> new_path = data_.subpath;
+    String initial_subname = data_.path[0];
+    for (int i = 1; i < data_.path.size(); ++i) {
+        initial_subname += "/" + data_.path[i];
     }
     new_path.insert(new_path.begin(), initial_subname);
 
@@ -142,14 +142,14 @@ NodePath::operator String() const {
     if (IsEmpty()) return {};
 
     String ret;
-    if (data_.absolute_) ret = "/";
+    if (data_.absolute) ret = "/";
 
-    for (int i = 0; i < data_.path_.size(); ++i) {
+    for (int i = 0; i < data_.path.size(); ++i) {
         if (i > 0) ret += "/";
-        ret += data_.path_[i];
+        ret += data_.path[i];
     }
 
-    for (const auto & str : data_.subpath_) {
+    for (const auto & str : data_.subpath) {
         ret += ":" + str;
     }
 
@@ -157,27 +157,27 @@ NodePath::operator String() const {
 }
 
 bool NodePath::IsEmpty() const {
-    return data_.path_.empty() && data_.subpath_.empty();
+    return data_.path.empty() && data_.subpath.empty();
 }
 
 bool NodePath::operator==(const NodePath &path) const {
     if (IsEmpty() != path.IsEmpty()) return false;
 
-    if (data_.absolute_ != path.data_.absolute_) return false;
+    if (data_.absolute != path.data_.absolute) return false;
 
-    if (data_.path_.size() != path.data_.path_.size()) return false;
+    if (data_.path.size() != path.data_.path.size()) return false;
 
-    if (data_.subpath_.size() != path.data_.subpath_.size()) return false;
+    if (data_.subpath.size() != path.data_.subpath.size()) return false;
 
-    if (!data_.path_.empty()) {
-        for (int i = 0; i < data_.path_.size(); ++i) {
-            if (data_.path_[i] != path.data_.path_[i]) return false;
+    if (!data_.path.empty()) {
+        for (int i = 0; i < data_.path.size(); ++i) {
+            if (data_.path[i] != path.data_.path[i]) return false;
         }
     }
 
-    if (!data_.subpath_.empty()) {
-        for (int i = 0; i < data_.subpath_.size(); ++i) {
-            if (data_.subpath_[i] != path.data_.subpath_[i]) return false;
+    if (!data_.subpath.empty()) {
+        for (int i = 0; i < data_.subpath.size(); ++i) {
+            if (data_.subpath[i] != path.data_.subpath[i]) return false;
         }
     }
 
@@ -191,18 +191,18 @@ bool NodePath::operator!=(const NodePath &path) const {
 void NodePath::Simplify() {
     if (IsEmpty()) return;
 
-    for (int i = 0; i < data_.path_.size(); ++i) {
-        if (data_.path_.size() == 1) break;
+    for (int i = 0; i < data_.path.size(); ++i) {
+        if (data_.path.size() == 1) break;
 
-        if (data_.path_[i] == ".") {
-            data_.path_.erase(data_.path_.begin() + i);
+        if (data_.path[i] == ".") {
+            data_.path.erase(data_.path.begin() + i);
             i--;
-        } else if (i > 0 && data_.path_[i] == ".." && data_.path_[i - 1] != "." && data_.path_[i - 1] != "..") {
+        } else if (i > 0 && data_.path[i] == ".." && data_.path[i - 1] != "." && data_.path[i - 1] != "..") {
             // remove path_[i - 1] and path_[i]
-            data_.path_.erase(data_.path_.begin() + i - 1, data_.path_.begin() + i + 1);
+            data_.path.erase(data_.path.begin() + i - 1, data_.path.begin() + i + 1);
             i -= 2;
-            if (data_.path_.empty()) {
-                data_.path_.emplace_back(".");
+            if (data_.path.empty()) {
+                data_.path.emplace_back(".");
                 break;
             }
         }
@@ -216,4 +216,29 @@ NodePath NodePath::Simplified() const {
     return np;
 }
 
-}
+} // End of namespace gobot
+
+GOBOT_REGISTRATION {
+
+    Class_<NodePath>("NodePath")
+            .constructor<const std::vector<String>&, bool>()
+            .constructor<const std::vector<String>&, const std::vector<String>, bool>()
+            .constructor<const NodePath&>()
+            .constructor<const String&>()
+
+            .property_readonly("is_absolute", &NodePath::IsAbsolute)
+            .property_readonly("is_empty", &NodePath::IsEmpty)
+            .property_readonly("name_count", &NodePath::GetNameCount)
+            .property_readonly("subname_count", &NodePath::GetSubNameCount)
+            .property_readonly("name_list", &NodePath::GetNames)
+            .property_readonly("subname_list", &NodePath::GetSubNames)
+            .property_readonly("name_path", &NodePath::GetConcatenatedNames)
+            .property_readonly("subname_path", &NodePath::GetConcatenatedSubNames)
+            .property_readonly("to_property_path", &NodePath::GetAsPropertyPath)
+            .property_readonly("simplified", &NodePath::Simplified)
+
+            .method("get_name", &NodePath::GetName)
+            .method("get_subname", &NodePath::GetSubName)
+            .method("simplify", &NodePath::Simplify)
+            ;
+};
