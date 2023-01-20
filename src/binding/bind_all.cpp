@@ -5,8 +5,22 @@
  * This file is created by Qiqi Wu, 22-11-20
 */
 
-namespace gobot {
+#ifdef BUILD_WITH_PYBIND11
+#include <pybind11/embed.h>
+#include <pybind11/pybind11.h>
+#else
+#include "gobot/core/registration.hpp"
+#endif
 
-void BindCore();
+#include "binding/core/bind_core.hpp"
 
-}
+#ifdef BUILD_WITH_PYBIND11
+PYBIND11_EMBEDDED_MODULE(gobot, m) {
+    using namespace gobot;
+#else
+GOBOT_REGISTRATION {
+#endif
+
+    BindCore();
+
+};
