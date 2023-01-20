@@ -5,13 +5,19 @@
  * This file is created by Qiqi Wu, 22-11-20
 */
 
+#include "gobot/core/registration.hpp"
+
 #include "binding/core/bind_core.hpp"
 #include "gobot/core/object.hpp"
-#include "gobot/core/registration.hpp"
 
 namespace gobot {
 
-void BindCore() {
+#ifdef BUILD_WITH_PYBIND11
+void BindCore(::pybind11::module_& m)
+#else
+void BindCore(void* m)
+#endif
+{
 
     QuickEnumeration_<PropertyHint>("PropertyHint");
 
@@ -22,7 +28,11 @@ void BindCore() {
             .property("name", &gobot::PropertyInfo::name)
             .property("hint", &gobot::PropertyInfo::hint)
             .property("hint_string", &gobot::PropertyInfo::hint_string)
-            .property("PropertyUsageFlags", &gobot::PropertyInfo::usage);
+            .property("usage", &gobot::PropertyInfo::usage);
+
+    ClassR_<PropertyInfo>(m, "PropertyInfo")
+            .Constructor(CtorPolicyType::AsObject)
+            .Property("name", &gobot::PropertyInfo::name);
 
     Class_<Object>("Object")
             .constructor()(CtorAsRawPtr)

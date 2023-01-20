@@ -11,7 +11,6 @@ set(CMAKE_MODULE_PATH ${CMAKE_BINARY_DIR})
 
 option(BUILD_EXPERIMENT "using imgui and glfw" OFF)
 option(BUILD_TESTS "build tests" OFF)
-option(BUILD_WITH_PYBIND11 "build python bindings with pybind11" ON)
 
 if (NOT EXISTS ${CMAKE_BINARY_DIR}/conanbuildinfo.cmake)
     if (NOT EXISTS "${CMAKE_BINARY_DIR}/conan.cmake")
@@ -106,13 +105,14 @@ file(GLOB_RECURSE RTTR_BIND CONFIGURE_DEPENDS "src/binding/*.cpp")
 add_library(gobot_rttr SHARED ${RTTR_BIND} )
 target_link_libraries(gobot_rttr PUBLIC gobot )
 
-if (BUILD_WITH_PYBIND11)
-    find_package(pybind11 REQUIRED)
-    find_package(python3 3.10 COMPONENTS Interpreter Development)
-    add_library(gobot_python SHARED ${RTTR_BIND} )
-    target_compile_definitions(gobot_python PRIVATE BUILD_WITH_PYBIND11)
-    target_link_libraries(gobot_python PRIVATE gobot gobot_rttr pybind11::embed )
-endif()
+
+find_package(pybind11 REQUIRED)
+find_package(python3 3.10 COMPONENTS Interpreter Development)
+add_library(gobot_python SHARED ${RTTR_BIND} )
+target_compile_definitions(gobot_python PRIVATE BUILD_WITH_PYBIND11)
+target_link_libraries(gobot_python PRIVATE gobot gobot_rttr
+                      PUBLIC
+                      pybind11::embed pybind11::pybind11)
 
 
 set_target_properties(gobot

@@ -7,11 +7,9 @@
 
 #ifdef BUILD_WITH_PYBIND11
 #include <pybind11/embed.h>
-#include <pybind11/pybind11.h>
-#else
-#include "gobot/core/registration.hpp"
 #endif
 
+#include "gobot/core/registration.hpp"
 #include "binding/core/bind_core.hpp"
 
 #ifdef BUILD_WITH_PYBIND11
@@ -19,8 +17,9 @@ PYBIND11_EMBEDDED_MODULE(gobot, m) {
     using namespace gobot;
 #else
 GOBOT_REGISTRATION {
+    void* m;
 #endif
 
-    BindCore();
+    BindCore(m);
 
 };

@@ -7,6 +7,11 @@
 
 namespace gobot {
 
-void BindCore();
+#ifdef BUILD_WITH_PYBIND11
+void BindCore(::pybind11::module_& m);
+#else
+    // rttr don't need this
+void BindCore(void* m);
+#endif
 
 }
