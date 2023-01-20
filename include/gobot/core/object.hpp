@@ -81,6 +81,8 @@ struct GOBOT_EXPORT PropertyInfo {
     String hint_string;
     PropertyUsageFlags usage = PropertyUsageFlags::None;
 
+    PropertyInfo() = default;
+
     PropertyInfo& SetName(const String& _name) {
         name = _name;
         return *this;

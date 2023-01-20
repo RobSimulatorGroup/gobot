@@ -6,20 +6,25 @@
 */
 
 #ifdef BUILD_WITH_PYBIND11
+#include <Python.h>
 #include <pybind11/embed.h>
+#include <pybind11/pybind11.h>
 #endif
 
-#include "gobot/core/registration.hpp"
+#include "binding/reg.hpp"
 #include "binding/core/bind_core.hpp"
+#include "binding/core/io/bind_resource.hpp"
+#include "gobot/core/object.hpp"
 
 #ifdef BUILD_WITH_PYBIND11
 PYBIND11_EMBEDDED_MODULE(gobot, m) {
     using namespace gobot;
 #else
 GOBOT_REGISTRATION {
-    void* m;
+    void* m = nullptr;
 #endif
 
     BindCore(m);
+    BindResource(m);
 
 };

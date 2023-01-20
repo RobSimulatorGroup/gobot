@@ -2,24 +2,16 @@
  * Copyright(c) 2021-2022, RobSimulatorGroup, Qiqi Wu<1258552199@qq.com>.
  * Everyone is permitted to copy and distribute verbatim copies of this license document, but changing it is not allowed.
  * This version of the GNU Lesser General Public License incorporates the terms and conditions of version 3 of the GNU General Public License.
- * This file is created by Qiqi Wu, 22-11-27
+ * This file is created by Qiqi Wu, 22-11-20
 */
 
-#include <gtest/gtest.h>
+namespace gobot {
+#ifdef BUILD_WITH_PYBIND11
+void BindResource(::pybind11::module_& m);
+#else
+// rttr don't need this
+void BindResource(void* m);
+#endif
 
-#include <pybind11/embed.h>
-namespace py = pybind11;
 
-TEST(TestPybind, test_pybind_setup) {
-    py::scoped_interpreter guard{};
-
-    ASSERT_NO_THROW(py::module_::import("sys"));
-
-    auto gobot = py::module_::import("gobot");
-
-    py::exec(R"(
-        from gobot import PropertyInfo
-    )");
 }
-
-

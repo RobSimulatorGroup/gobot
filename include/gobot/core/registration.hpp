@@ -7,11 +7,6 @@
 
 #pragma once
 
-#ifdef BUILD_WITH_PYBIND11
-#include <Python.h>
-#include <pybind11/pybind11.h>
-#endif
-
 #include <rttr/registration>
 
 #include <magic_enum.hpp>
@@ -115,88 +110,3 @@ namespace                                                                       
 }                                                                                   \
 static const gobot__auto__register__ RTTR_CAT(auto_register__, __LINE__);           \
 static void gobot::gobot_auto_register_reflection_function_()
-
-
-namespace gobot {
-
-enum class CtorPolicyType {
-    AsSharedPtr,
-    AsObject,
-    AsRawPtr
-};
-
-struct DummyModule{};
-
-template<typename ClassType, typename... Options>
-class ClassR_ {
-public:
-
-#ifdef BUILD_WITH_PYBIND11
-    ClassR_(::pybind11::module_& m, const char* name)
-        : class_obj_(m, name)
-#else
-    ClassR_(void*, const char* name)
-        : class_obj_(name)
-#endif
-    {
-    }
-
-    template<typename... Args, typename AccLevel = gobot::PublicAccess,
-             typename Tp = typename std::enable_if<rttr::detail::contains<AccLevel, rttr::detail::access_levels_list>::value>::type>
-    ClassR_& Constructor(CtorPolicyType ctor_policy_type, AccLevel level = AccLevel()) {
-#ifdef BUILD_WITH_PYBIND11
-        class_obj_.def(pybind11::init<Args...>());
-#else
-        switch (ctor_policy_type) {
-            case CtorPolicyType::AsSharedPtr:
-                class_obj_.template constructor<Args...>(level)(CtorAsSharedPtr);
-                break;
-            case CtorPolicyType::AsObject:
-                class_obj_.template constructor<Args...>(level)(CtorAsObject);
-                break;
-            case CtorPolicyType::AsRawPtr:
-                class_obj_.template constructor<Args...>(level)(CtorAsRawPtr);
-                break;
-        }
-#endif
-        return *this;
-    }
-
-    // This used for virtual class.
-    template<typename Func ,
-             typename AccLevel = PublicAccess,
-             typename Tp = typename std::enable_if<!rttr::detail::contains<Func, rttr::detail::access_levels_list>::value>::type>
-    ClassR_& Constructor(Func&& func, CtorPolicyType ctor_policy_type, AccLevel acc_level = AccLevel()) {
-#ifdef BUILD_WITH_PYBIND11
-        // pybind11 handle virtual class using trampoline class
-#else
-        class_obj_.template constructor(acc_level)(ctor_policy_type);
-#endif
-
-    }
-
-    template<typename A,
-             typename AccLevel = PublicAccess,
-             typename Tp = typename std::enable_if<rttr::detail::contains<AccLevel, rttr::detail::access_levels_list>::value>::type>
-    ClassR_& Property(const char* name, A acc, AccLevel level = AccLevel()) {
-#ifdef BUILD_WITH_PYBIND11
-        class_obj_.def_readwrite(name, acc);
-#else
-        class_obj_.property(name, acc, level);
-#endif
-        return *this;
-    }
-
-private:
-#ifdef BUILD_WITH_PYBIND11
-    pybind11::class_<ClassType, Options...> class_obj_;
-#else
-    rttr::registration::class_<ClassType> class_obj_;
-#endif
-
-    const char* name_{};
-
-};
-
-
-}

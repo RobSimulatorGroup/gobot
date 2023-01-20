@@ -75,6 +75,7 @@ private:
     bool local_to_scene_{false};
     Uuid uuid_{};
 
+    friend void BindResource(void* m);
     GOBOT_REGISTRATION_FRIEND
 };
 

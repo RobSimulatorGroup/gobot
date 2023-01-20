@@ -5,7 +5,7 @@
  * This file is created by Qiqi Wu, 22-11-20
 */
 
-#include "gobot/core/registration.hpp"
+#include "binding/reg.hpp"
 
 #include "binding/core/bind_core.hpp"
 #include "gobot/core/object.hpp"
@@ -23,15 +23,15 @@ void BindCore(void* m)
 
     QuickEnumeration_<PropertyUsageFlags>("PropertyUsageFlags");
 
-    Class_<PropertyInfo>("PropertyInfo")
-            .constructor()(CtorAsObject)
-            .property("name", &gobot::PropertyInfo::name)
-            .property("hint", &gobot::PropertyInfo::hint)
-            .property("hint_string", &gobot::PropertyInfo::hint_string)
-            .property("usage", &gobot::PropertyInfo::usage);
+//    Class_<PropertyInfo>("PropertyInfo")
+//            .constructor()(CtorAsObject)
+//            .property("name", &gobot::PropertyInfo::name)
+//            .property("hint", &gobot::PropertyInfo::hint)
+//            .property("hint_string", &gobot::PropertyInfo::hint_string)
+//            .property("usage", &gobot::PropertyInfo::usage);
 
     ClassR_<PropertyInfo>(m, "PropertyInfo")
-            .Constructor(CtorPolicyType::AsObject)
+            .Constructor()(CtorAsObject)
             .Property("name", &gobot::PropertyInfo::name);
 
     Class_<Object>("Object")

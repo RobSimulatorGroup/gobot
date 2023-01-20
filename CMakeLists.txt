@@ -108,11 +108,10 @@ target_link_libraries(gobot_rttr PUBLIC gobot )
 
 find_package(pybind11 REQUIRED)
 find_package(python3 3.10 COMPONENTS Interpreter Development)
-add_library(gobot_python SHARED ${RTTR_BIND} )
+add_library(gobot_python SHARED ${RTTR_BIND} include/binding/reg.hpp)
 target_compile_definitions(gobot_python PRIVATE BUILD_WITH_PYBIND11)
 target_link_libraries(gobot_python PRIVATE gobot gobot_rttr
-                      PUBLIC
-                      pybind11::embed pybind11::pybind11)
+                      PUBLIC pybind11::embed pybind11::pybind11)
 
 
 set_target_properties(gobot
