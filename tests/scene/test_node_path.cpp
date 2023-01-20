@@ -10,14 +10,6 @@
 #include <gobot/log.hpp>
 #include <gobot/scene/node_path.hpp>
 
-namespace {
-
-class TestNodePath : public gobot::NodePath {
-public:
-    TestNodePath() = default;
-};
-
-}
 
 TEST(TestNodePath, relative_path) {
     const gobot::NodePath node_path_relative = gobot::NodePath("Path2D/PathFollow2D/Sprite2D:position:x");
