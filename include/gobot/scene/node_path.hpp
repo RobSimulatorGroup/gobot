@@ -147,7 +147,7 @@ private:
     // For rttr
     void SetStrData(const String& str);
 
-    String GeStrData();
+    String GetStrData();
 
     struct Data {
         std::vector<String> path = std::vector<String>();

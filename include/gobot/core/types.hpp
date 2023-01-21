@@ -19,6 +19,7 @@ using Type = rttr::type;
 using VarintListView = rttr::variant_sequential_view;
 using VarintMapView  = rttr::variant_associative_view;
 using Instance = rttr::instance;
+using Property = rttr::property;
 using Method = rttr::method;
 using Argument = rttr::argument;
 using Enumeration = rttr::enumeration;
