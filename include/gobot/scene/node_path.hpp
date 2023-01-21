@@ -125,7 +125,7 @@ public:
      */
     [[nodiscard]] bool IsEmpty() const;
 
-    bool operator==(const NodePath &path) const;
+    bool operator==(const NodePath &path) const = default;
     bool operator!=(const NodePath &path) const;
     NodePath& operator=(const NodePath &path) = default;
 
@@ -149,6 +149,8 @@ private:
         String concatenated_path = String();
         String concatenated_subpath = String();
         bool absolute = false;
+
+        bool operator==(const Data &data) const = default;
     };
 
     mutable Data data_;

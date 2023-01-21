@@ -160,30 +160,6 @@ bool NodePath::IsEmpty() const {
     return data_.path.empty() && data_.subpath.empty();
 }
 
-bool NodePath::operator==(const NodePath &path) const {
-    if (IsEmpty() != path.IsEmpty()) return false;
-
-    if (data_.absolute != path.data_.absolute) return false;
-
-    if (data_.path.size() != path.data_.path.size()) return false;
-
-    if (data_.subpath.size() != path.data_.subpath.size()) return false;
-
-    if (!data_.path.empty()) {
-        for (int i = 0; i < data_.path.size(); ++i) {
-            if (data_.path[i] != path.data_.path[i]) return false;
-        }
-    }
-
-    if (!data_.subpath.empty()) {
-        for (int i = 0; i < data_.subpath.size(); ++i) {
-            if (data_.subpath[i] != path.data_.subpath[i]) return false;
-        }
-    }
-
-    return true;
-}
-
 bool NodePath::operator!=(const NodePath &path) const {
     return !(*this == path);
 }
@@ -221,10 +197,11 @@ NodePath NodePath::Simplified() const {
 GOBOT_REGISTRATION {
 
     Class_<NodePath>("NodePath")
-            .constructor<const std::vector<String>&, bool>()
-            .constructor<const std::vector<String>&, const std::vector<String>, bool>()
-            .constructor<const NodePath&>()
-            .constructor<const String&>()
+            .constructor<const std::vector<String>&, bool>()(CtorAsObject)
+            .constructor<const std::vector<String>&, const std::vector<String>, bool>()(CtorAsObject)
+            .constructor<const NodePath&>()(CtorAsObject)
+            .constructor<const String&>()(CtorAsObject)
+            .constructor()(CtorAsObject)
 
             .property_readonly("is_absolute", &NodePath::IsAbsolute)
             .property_readonly("is_empty", &NodePath::IsEmpty)
