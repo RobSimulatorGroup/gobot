@@ -13,4 +13,8 @@ Node::Node() {
 
 }
 
+void Node::Notification(NotificationType notification) {
+
+}
+
 }

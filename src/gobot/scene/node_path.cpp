@@ -36,7 +36,7 @@ NodePath::NodePath(const String &path) {
     int subpath_pos = path.indexOf(u':');
 
     if (subpath_pos >= 0) {
-        subpath_list = raw_path.split(u':', S_FLAG_SKIP_EMPTY_PARTS).toVector();
+        subpath_list = raw_path.split(u':', s_split_behavior_flags).toVector();
         if (subpath_pos > 0) {
             raw_path = subpath_list.front();
             subpath_list.pop_front();
@@ -51,7 +51,7 @@ NodePath::NodePath(const String &path) {
         path_list = Vector<String>();
     } else {
         if (is_absolute) raw_path.remove(0, 1);
-        path_list = raw_path.split(u'/', S_FLAG_SKIP_EMPTY_PARTS).toVector();
+        path_list = raw_path.split(u'/', s_split_behavior_flags).toVector();
         if (path_list.isEmpty())
             path_list = Vector<String>(raw_path.size(), raw_path);
     }
@@ -192,15 +192,20 @@ NodePath NodePath::Simplified() const {
     return np;
 }
 
+void NodePath::SetStrData(const String& str) {
+    *this = NodePath(str);
+}
+
+String NodePath::GeStrData() {
+    return this->operator String();
+}
+
+
 } // End of namespace gobot
 
 GOBOT_REGISTRATION {
 
     Class_<NodePath>("NodePath")
-            .constructor<const std::vector<String>&, bool>()(CtorAsObject)
-            .constructor<const std::vector<String>&, const std::vector<String>, bool>()(CtorAsObject)
-            .constructor<const NodePath&>()(CtorAsObject)
-            .constructor<const String&>()(CtorAsObject)
             .constructor()(CtorAsObject)
 
             .property_readonly("is_absolute", &NodePath::IsAbsolute)
@@ -213,6 +218,9 @@ GOBOT_REGISTRATION {
             .property_readonly("subname_path", &NodePath::GetConcatenatedSubNames)
             .property_readonly("to_property_path", &NodePath::GetAsPropertyPath)
             .property_readonly("simplified", &NodePath::Simplified)
+            .property_readonly("to_string", &NodePath::operator String)
+
+            .property("str_data", &NodePath::GeStrData, &NodePath::SetStrData)
 
             .method("get_name", &NodePath::GetName)
             .method("get_subname", &NodePath::GetSubName)

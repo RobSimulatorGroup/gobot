@@ -8,9 +8,10 @@
 
 #pragma once
 
-#include "gobot/log.hpp"
 #include "gobot/error_marcos.hpp"
 #include "gobot/core/types.hpp"
+#include "gobot/core/marcos.hpp"
+#include "gobot/log.hpp"
 #include <vector>
 #include <QStringList>
 
@@ -51,7 +52,7 @@ public:
      *
      * @returns number of node names.
      */
-    [[nodiscard]] ulong GetNameCount() const;
+    [[nodiscard]] std::size_t GetNameCount() const;
 
     /**
      * @brief Gets the node name indicated by idx (0 to GetNameCount - 1).
@@ -68,7 +69,7 @@ public:
      *
      * @returns number of node subnames.
      */
-    [[nodiscard]] ulong GetSubNameCount() const;
+    [[nodiscard]] std::size_t GetSubNameCount() const;
 
     /**
      * @brief Gets the resource or property name indicated by idx (0 to GetSubnameCount).
@@ -143,6 +144,11 @@ public:
     [[nodiscard]] NodePath Simplified() const;
 
 private:
+    // For rttr
+    void SetStrData(const String& str);
+
+    String GeStrData();
+
     struct Data {
         std::vector<String> path = std::vector<String>();
         std::vector<String> subpath = std::vector<String>();
@@ -155,7 +161,18 @@ private:
 
     mutable Data data_;
 
-    static constexpr Qt::SplitBehaviorFlags S_FLAG_SKIP_EMPTY_PARTS = Qt::SkipEmptyParts;
+    static constexpr Qt::SplitBehaviorFlags s_split_behavior_flags = Qt::SkipEmptyParts;
+
+    GOBOT_REGISTRATION_FRIEND
 };
 
 }
+
+template<>
+struct fmt::formatter<gobot::NodePath> : fmt::formatter<std::string>
+{
+    static auto format(const gobot::NodePath& node_path, format_context &ctx) -> decltype(ctx.out())
+    {
+        return fmt::formatter<gobot::String>::format(node_path.operator gobot::String(), ctx);
+    }
+};
