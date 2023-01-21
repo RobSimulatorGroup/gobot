@@ -147,4 +147,7 @@ TEST(TestNodePath, test_type) {
     auto var2 = type.create();
     prop.set_value(var2, gobot::String("/home/gobot"));
     ASSERT_TRUE(prop.get_value(var2).to_string() == "/home/gobot");
+
+    auto node_path2 = var2.convert<gobot::NodePath>();
+    ASSERT_TRUE(node_path2.operator gobot::String() == gobot::String("/home/gobot"));
 }
