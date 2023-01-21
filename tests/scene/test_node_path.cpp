@@ -137,6 +137,8 @@ TEST(TestNodePath, complex_path) {
 TEST(TestNodePath, test_type) {
     gobot::Variant var = gobot::NodePath("/home/gobot");
     auto node_path = var.convert<gobot::NodePath>();
+    ASSERT_TRUE(node_path.operator gobot::
+    String() == gobot::String("/home/gobot"));
 
     auto prop = var.get_type().get_property("str_data");
     ASSERT_TRUE(prop.get_value(var).to_string() == "/home/gobot");
