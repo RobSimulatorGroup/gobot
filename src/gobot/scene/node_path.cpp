@@ -196,7 +196,7 @@ void NodePath::SetStrData(const String& str) {
     *this = NodePath(str);
 }
 
-String NodePath::GeStrData() {
+String NodePath::GetStrData() {
     return this->operator String();
 }
 
@@ -220,7 +220,7 @@ GOBOT_REGISTRATION {
             .property_readonly("simplified", &NodePath::Simplified)
             .property_readonly("to_string", &NodePath::operator String)
 
-            .property("str_data", &NodePath::GeStrData, &NodePath::SetStrData)
+            .property("str_data", &NodePath::GetStrData, &NodePath::SetStrData)
 
             .method("get_name", &NodePath::GetName)
             .method("get_subname", &NodePath::GetSubName)
