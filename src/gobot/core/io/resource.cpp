@@ -10,7 +10,6 @@
 #include "gobot/log.hpp"
 #include "gobot/core/registration.hpp"
 
-#include "expected/expected.hpp"
 
 #include <random>
 

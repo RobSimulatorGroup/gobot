@@ -109,6 +109,7 @@ bool ResourceFormatLoaderSceneInstance::LoadResource() {
                 String type = String::fromStdString(to_string(sub_res["__TYPE__"]));
                 String id = String::fromStdString(to_string(sub_res["__ID__"]));
 
+                // local resource's id is local_path + "::" + id
                 String path = local_path_ + "::" + id;
 
                 Ref<Resource> res;
@@ -366,8 +367,9 @@ bool ResourceFormatSaverSceneInstance::Save(const String &path, const Ref<Resour
             if (!root.contains("__SUB_RESOURCES__")) {
                 root["__SUB_RESOURCES__"] = Json::array();
             }
-            resource_data_json["__TYPE__"] = variant.get_type().get_name().data();
-            resource_data_json["__ID__"] = saved_resource->GetResourceUuid().toString().toStdString();
+            auto class_name = variant.get_type().get_name().data();
+            resource_data_json["__TYPE__"] = class_name;
+            resource_data_json["__ID__"] =  std::string(class_name) + "_" + saved_resource->GetResourceUuid().toString().toStdString();
             root["__SUB_RESOURCES__"].emplace_back(resource_data_json);
         }
     }
@@ -396,7 +398,7 @@ void ResourceFormatSaverSceneInstance::FindResources(const Variant &variant, boo
                 return;
             }
 
-            external_resources_[res] = Resource::GenerateResourceUniqueId();
+            external_resources_[res] = String::number(external_resources_.size() + 1) + "_" + Resource::GenerateResourceUniqueId();
             return;
         }
 

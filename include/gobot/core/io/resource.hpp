@@ -34,6 +34,8 @@ public:
 
     String GetName() const;
 
+    // 5 char of number/uppercase letter/lowercase letter；
+    // 916132832 combination of all.
     static String GenerateResourceUniqueId();
 
     void SetResourceUuid(const Uuid &uuid);
