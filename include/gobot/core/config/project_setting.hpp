@@ -25,6 +25,8 @@ public:
 
     [[nodiscard]] String LocalizePath(const String &path) const;
 
+    String GlobalizePath(const String &path) const;
+
     // For test
     void SetProjectPath(const String& project_path);
 

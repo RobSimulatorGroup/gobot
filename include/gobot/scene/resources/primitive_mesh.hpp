@@ -28,6 +28,9 @@ class GOBOT_API CylinderMesh : public PrimitiveMesh {
     GOBCLASS(CylinderMesh, PrimitiveMesh)
 public:
 
+
+private:
+
 };
 
 class GOBOT_API PlaneMesh : public PrimitiveMesh {

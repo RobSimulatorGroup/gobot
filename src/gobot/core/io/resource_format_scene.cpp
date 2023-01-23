@@ -304,11 +304,15 @@ bool ResourceFormatSaverSceneInstance::Save(const String &path, const Ref<Resour
     if (path.endsWith(".jscn")) {
         packed_scene_ = gobot::dynamic_pointer_cast<PackedScene>(resource);
     }
-    QFile file(path);
+
+    auto global_path = ProjectSettings::GetSingleton()->GlobalizePath(path);
+    QFile file(global_path);
     if (!file.open(QIODevice::WriteOnly)) {
-        LOG_ERROR("Cannot save file: {}", path);
         return false;
     }
+
+    USING_ENUM_BITWISE_OPERATORS;
+    takeover_paths_ = static_cast<bool>(flags & ResourceSaverFlags::ReplaceSubResourcePaths);
 
     local_path_ = ProjectSettings::GetSingleton()->LocalizePath(path);
 
@@ -375,13 +379,13 @@ bool ResourceFormatSaverSceneInstance::Save(const String &path, const Ref<Resour
 
         if (main) {
             root["__RESOURCE__"] = resource_data_json;
-            root["__TYPE__"] = Instance(variant).get_derived_type().get_name();
+            root["__TYPE__"] = Object::GetClassNameByInstance(variant).toStdString();
             root["__ID__"] = saved_resource->GetUniqueId().toStdString();
         } else {
             if (!root.contains("__SUB_RESOURCES__")) {
                 root["__SUB_RESOURCES__"] = Json::array();
             }
-            auto class_name = Instance(variant).get_derived_type().get_name();
+            auto class_name = Object::GetClassNameByInstance(variant).toStdString();
             resource_data_json["__TYPE__"] = class_name;
             if (saved_resource->GetUniqueId().isEmpty()) {
                 String new_id;
@@ -420,6 +424,7 @@ void ResourceFormatSaverSceneInstance::FindResources(const Variant &variant, boo
         if (!res.is_valid() || external_resources_.contains(res)) {
             return;
         }
+        // built in means internal_resources_
         if (!main && !res->IsBuiltIn()) {
             if (res->GetPath() == local_path_) {
                 LOG_ERROR("Circular reference to resource being saved found: {}.", local_path_);

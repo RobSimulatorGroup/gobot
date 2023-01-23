@@ -70,6 +70,7 @@ private:
 
     void FindResources(const Variant &variant, bool main = false);
 
+    bool takeover_paths_ = false;
     Ref<PackedScene> packed_scene_;
     String local_path_;
     std::unordered_map<Ref<Resource>, Uuid> external_resources_;

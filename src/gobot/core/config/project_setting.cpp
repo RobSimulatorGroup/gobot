@@ -79,5 +79,18 @@ String ProjectSettings::LocalizePath(const String &path) const {
     }
 }
 
+String ProjectSettings::GlobalizePath(const String &path) const {
+    String path_copy = path;
+    if (path_copy.startsWith("res://")) {
+        if (!project_path_.isEmpty()) {
+            return path_copy.replace("res:/", project_path_);
+        }
+        return path_copy.replace("res://", "");
+    }
+    // TODO(wqq): add userdata path
+
+    return path_copy;
+}
+
 
 }

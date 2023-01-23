@@ -13,7 +13,8 @@ namespace gobot {
 
 enum class GOBOT_API ResourceSaverFlags {
     None = 0,
-    ChangePath = 1,
+    ChangePath = 1 << 0,
+    ReplaceSubResourcePaths = 1 << 1
 };
 
 class GOBOT_API ResourceFormatSaver : public RefCounted {

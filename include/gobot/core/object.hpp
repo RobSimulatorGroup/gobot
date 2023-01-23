@@ -159,6 +159,12 @@ public:
 
     bool Set(const String& name, Argument arg);
 
+    static String GetClassNameByInstance(Instance instance) {
+        auto raw_type = instance.get_type().get_raw_type();
+        Instance obj = raw_type.is_wrapper() ? instance.get_wrapped_instance() : instance;
+        return obj.get_derived_type().get_name().data();
+    }
+
     [[nodiscard]] Variant Get(const String& name) const;
 
     Type GetPropertyType(const String& name) const;
