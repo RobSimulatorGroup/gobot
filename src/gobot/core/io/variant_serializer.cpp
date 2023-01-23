@@ -154,9 +154,9 @@ bool VariantSerializer::SaveResource(Instance instance, const Type& type, Json& 
             return false;
         }
         if (s_resource_format_saver_->external_resources_.contains(res)) {
-            writer = fmt::format("ExtResource({})", res->GetResourceUuid().toString());
+            writer = fmt::format("ExtResource({})", res->GetUniqueId());
         } else if (s_resource_format_saver_->internal_resources_.contains(res)) {
-            writer = fmt::format("SubResource({})", res->GetResourceUuid().toString());
+            writer = fmt::format("SubResource({})", res->GetUniqueId());
         }
     } else {
         LOG_ERROR("Unsupported wrapper type: {}", type.get_name().data());

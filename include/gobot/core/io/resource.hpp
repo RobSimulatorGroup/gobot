@@ -38,9 +38,9 @@ public:
     // 916132832 combination of all.
     static String GenerateResourceUniqueId();
 
-    void SetResourceUuid(const Uuid &uuid);
+    void SetUniqueId(const String &unique_id);
 
-    Uuid GetResourceUuid() const;
+    String GetUniqueId() const;
 
     virtual void ReloadFromFile();
 
@@ -81,7 +81,7 @@ private:
     String path_cache_;
     Node *local_scene_ = nullptr;
     bool local_to_scene_{false};
-    Uuid uuid_{};
+    String unique_id_;
 
     GOBOT_REGISTRATION_FRIEND
 };

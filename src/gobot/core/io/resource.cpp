@@ -168,12 +168,12 @@ String Resource::GetName() const {
     return name_;
 }
 
-void Resource::SetResourceUuid(const Uuid &uuid) {
-    uuid_ = uuid;
+void Resource::SetUniqueId(const String &unique_id) {
+    unique_id_ = unique_id;
 }
 
-Uuid Resource::GetResourceUuid() const {
-    return uuid_;
+String Resource::GetUniqueId() const {
+    return unique_id_;
 }
 
 String Resource::GenerateResourceUniqueId() {

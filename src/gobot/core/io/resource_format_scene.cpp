@@ -84,7 +84,7 @@ bool ResourceFormatLoaderSceneInstance::LoadResource() {
                     LOG_ERROR("");
                     return false;
                 } else {
-				    res->SetResourceUuid(id);
+                    res->SetUniqueId(id);
                 }
 
                 ext_resources_[id] = res;
@@ -155,7 +155,7 @@ bool ResourceFormatLoaderSceneInstance::LoadResource() {
                         res->SetPath(path);
                     } else {
                         res->SetPath(path, cache_mode_ == ResourceFormatLoader::CacheMode::Replace);
-                        res->SetResourceUuid(id);
+                        res->SetUniqueId(id);
                     }
                 }
 
@@ -334,8 +334,22 @@ bool ResourceFormatSaverSceneInstance::Save(const String &path, const Ref<Resour
         Json ext_res;
         ext_res["__TYPE__"] = res->GetClassName();
         ext_res["__PATH__"] = res->GetPath().toStdString();
-        ext_res["__ID__"] = res->GetResourceUuid().toString().toStdString();
+        ext_res["__ID__"] = res->GetUniqueId().toStdString();
         root["__EXT_RESOURCES__"].push_back(ext_res);
+    }
+
+    std::unordered_set<String> used_unique_ids;
+
+    for (auto& res : saved_resources_) {
+        if (res != saved_resources_.back()  && res->IsBuiltIn()) {
+            if (!res->GetUniqueId().isEmpty()) {
+                if (used_unique_ids.contains(res->GetUniqueId())) {
+                    res->SetUniqueId(""); // Repeated.
+                } else {
+                    used_unique_ids.emplace(res->GetUniqueId());
+                }
+            }
+        }
     }
 
     for (const auto& saved_resource: saved_resources_) {
@@ -361,15 +375,29 @@ bool ResourceFormatSaverSceneInstance::Save(const String &path, const Ref<Resour
 
         if (main) {
             root["__RESOURCE__"] = resource_data_json;
-            root["__TYPE__"] = variant.get_type().get_name().data();
-            root["__ID__"] = saved_resource->GetResourceUuid().toString().toStdString();
+            root["__TYPE__"] = Instance(variant).get_derived_type().get_name();
+            root["__ID__"] = saved_resource->GetUniqueId().toStdString();
         } else {
             if (!root.contains("__SUB_RESOURCES__")) {
                 root["__SUB_RESOURCES__"] = Json::array();
             }
-            auto class_name = variant.get_type().get_name().data();
+            auto class_name = Instance(variant).get_derived_type().get_name();
             resource_data_json["__TYPE__"] = class_name;
-            resource_data_json["__ID__"] =  std::string(class_name) + "_" + saved_resource->GetResourceUuid().toString().toStdString();
+            if (saved_resource->GetUniqueId().isEmpty()) {
+                String new_id;
+                while (true) {
+                    new_id = String(class_name.data()) + "_" + Resource::GenerateResourceUniqueId();
+
+                    if (!used_unique_ids.contains(new_id)) {
+                        break;
+                    }
+                }
+
+                saved_resource->SetUniqueId(new_id);
+                used_unique_ids.insert(new_id);
+            }
+
+            resource_data_json["__ID__"] =  std::string(class_name) + "_" + saved_resource->GetUniqueId().toStdString();
             root["__SUB_RESOURCES__"].emplace_back(resource_data_json);
         }
     }
