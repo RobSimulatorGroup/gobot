@@ -179,6 +179,10 @@ void VariantSerializer::ToJsonRecursively(Instance object, Json& writer)
     auto prop_list = obj.get_derived_type().get_properties();
 
     for (auto prop : prop_list) {
+        if (prop.is_readonly()) {
+            // Not save readonly key
+            continue;
+        }
         PropertyInfo property_info;
         auto meta_data = prop.get_metadata(PROPERTY_INFO_KEY);
         if (meta_data.is_valid()) {

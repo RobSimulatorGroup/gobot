@@ -313,7 +313,7 @@ void ResourceCache::Clear() {
 GOBOT_REGISTRATION {
     Class_<Resource>("Resource")
         .constructor()(CtorAsRawPtr)
-        .property("name", &Resource::GetName, &Resource::SetName)
+        .property("resource_name", &Resource::GetName, &Resource::SetName)
         .property("resource_path", &Resource::GetPath, &Resource::SetPathNotTakeOver);
 
 };

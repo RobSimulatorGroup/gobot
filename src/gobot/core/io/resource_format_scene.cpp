@@ -370,10 +370,13 @@ bool ResourceFormatSaverSceneInstance::Save(const String &path, const Ref<Resour
         auto type = Object::GetDerivedTypeByInstance(variant);
 
         for (auto& prop : type.get_properties()) {
+            if (prop.is_readonly()) {
+                continue;
+            }
             PropertyInfo property_info;
             auto property_metadata = prop.get_metadata(PROPERTY_INFO_KEY);
             if (property_metadata.is_valid()) {
-                property_metadata.convert(property_info);
+                property_info = property_metadata.get_value<PropertyInfo>();
             }
             USING_ENUM_BITWISE_OPERATORS;
             if ((bool)(property_info.usage & PropertyUsageFlags::Storage)) {
