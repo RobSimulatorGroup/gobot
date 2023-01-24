@@ -11,6 +11,7 @@
 #include <gobot/core/io/resource_format_scene.hpp>
 #include <gobot/core/config/project_setting.hpp>
 #include <gobot/scene/resources/cylinder_shape_3d.hpp>
+#include <gobot/core/types.hpp>
 
 static gobot::Ref<gobot::ResourceFormatLoaderScene> resource_loader_scene;
 static gobot::Ref<gobot::ResourceFormatSaverScene> resource_saver_scene;
@@ -27,6 +28,10 @@ TEST(TestResource, test_save) {
 
     gobot::Ref<gobot::CylinderShape3D> cy = gobot::MakeRef<gobot::CylinderShape3D>();
 
-    gobot::ResourceSaver::Save(cy, "res://cyl.jres", gobot::ResourceSaverFlags::ReplaceSubResourcePaths);
+
+    USING_ENUM_BITWISE_OPERATORS;
+    gobot::ResourceSaver::Save(cy, "res://cyl.jres",
+                               gobot::ResourceSaverFlags::ReplaceSubResourcePaths |
+                               gobot::ResourceSaverFlags::ChangePath);
 
 }

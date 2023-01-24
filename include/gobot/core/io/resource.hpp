@@ -97,7 +97,7 @@ private:
     friend class Resource;
     friend class ResourceLoader;
 
-    static std::mutex s_lock;
+    static std::recursive_mutex s_lock;
 
     // [path, resource]
     static std::unordered_map<String, Resource*> s_resources;

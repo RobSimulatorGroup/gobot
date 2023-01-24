@@ -248,7 +248,7 @@ bool Resource::CopyFrom(const Ref<Resource> &resource) {
 
 
 std::unordered_map<String, Resource*> ResourceCache::s_resources;
-std::mutex ResourceCache::s_lock;
+std::recursive_mutex ResourceCache::s_lock;
 
 bool ResourceCache::Has(const String &path) {
     s_lock.lock();
@@ -281,7 +281,7 @@ Ref<Resource> ResourceCache::GetRef(const String &path) {
         ref = Ref<Resource>(it->second);
     }
 
-    if (it == s_resources.end() && it->second->use_count() == 0) {
+    if (it != s_resources.end() && it->second->use_count() == 0) {
         // This resource is in the process of being deleted, ignore its existence
         it->second->path_cache_ = String();
         it->second = nullptr;
