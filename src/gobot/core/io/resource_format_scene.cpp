@@ -18,6 +18,7 @@
 
 #include <QTextStream>
 #include <QFile>
+#include <QDir>
 
 #define FORMAT_VERSION 1
 
@@ -307,6 +308,11 @@ bool ResourceFormatSaverSceneInstance::Save(const String &path, const Ref<Resour
 
     auto global_path = ProjectSettings::GetSingleton()->GlobalizePath(path);
     QFile file(global_path);
+    QDir dir;
+    auto base_dir = GetBaseDir(global_path);
+    if (!dir.exists(base_dir))
+        dir.mkpath(base_dir); // You can check the success if needed
+
     if (!file.open(QIODevice::WriteOnly)) {
         return false;
     }
