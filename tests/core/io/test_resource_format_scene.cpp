@@ -27,6 +27,6 @@ TEST(TestResource, test_save) {
 
     gobot::Ref<gobot::CylinderShape3D> cy = gobot::MakeRef<gobot::CylinderShape3D>();
 
-    gobot::ResourceSaver::Save(cy, "res://cyl.jres");
+    gobot::ResourceSaver::Save(cy, "res://cyl.jres", gobot::ResourceSaverFlags::ReplaceSubResourcePaths);
 
 }

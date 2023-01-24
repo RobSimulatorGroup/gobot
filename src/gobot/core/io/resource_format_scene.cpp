@@ -415,6 +415,10 @@ bool ResourceFormatSaverSceneInstance::Save(const String &path, const Ref<Resour
                 saved_resource->SetUniqueId(new_id);
                 used_unique_ids.insert(new_id);
             }
+            if (takeover_paths_) {
+                saved_resource->SetPath(path + "::" + saved_resource->GetUniqueId(), true);
+            }
+            internal_resources_[saved_resource] = saved_resource->GetUniqueId();
 
             resource_data_json["__ID__"] =  std::string(class_name) + "_" + saved_resource->GetUniqueId().toStdString();
             root["__SUB_RESOURCES__"].emplace_back(resource_data_json);
