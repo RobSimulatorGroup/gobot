@@ -54,7 +54,7 @@ bool VariantSerializer::WriteAtomicTypesToJson(const Type& t, const Variant& var
         } else {
             return false;
         }
-    } else if (t == Type::get<std::string>()) {
+    } else if (t == Type::get<std::string>() || t == Type::get<String>()) {
         writer = var.to_string();
         return true;
     }
@@ -202,15 +202,20 @@ void VariantSerializer::ToJsonRecursively(Instance object, Json& writer)
 
 }
 
-Json VariantSerializer::VariantToJson(Instance obj,
+Json VariantSerializer::VariantToJson(const Variant& variant,
                                       ResourceFormatSaverSceneInstance* resource_format_saver) {
-    if (!obj.is_valid()) {
+    if (!variant.is_valid()) {
         return {};
     }
 
     Json json;
+    auto type = variant.get_type();
+    if(WriteAtomicTypesToJson(type, variant, json)) {
+        return json;
+    }
+
     s_resource_format_saver_ = resource_format_saver;
-    ToJsonRecursively(obj, json);
+    ToJsonRecursively(variant, json);
     return json;
 }
 

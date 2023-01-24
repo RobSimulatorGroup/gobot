@@ -18,11 +18,14 @@ class ResourceFormatLoaderSceneInstance;
 
 class GOBOT_API VariantSerializer {
 public:
-    static Json VariantToJson(Instance obj, ResourceFormatSaverSceneInstance* resource_format_saver = nullptr);
+    static Json VariantToJson(const Variant& variant,
+                              ResourceFormatSaverSceneInstance* resource_format_saver = nullptr);
 
     static Variant JsonToVariant(const Type& type,
                                  const Json& json,
                                  ResourceFormatLoaderSceneInstance* s_resource_format_loader = nullptr);
+
+    static bool IsPrimitiveTypes(Instance instance);
 
 private:
 

@@ -367,25 +367,31 @@ bool ResourceFormatSaverSceneInstance::Save(const String &path, const Ref<Resour
         Json resource_data_json;
 
         Variant variant = saved_resource;
+        auto type = Object::GetDerivedTypeByInstance(variant);
 
-        for (auto& prop : variant.get_type().get_properties()) {
-            auto property_info = prop.get_metadata(PROPERTY_INFO_KEY).get_value<PropertyInfo>();
+        for (auto& prop : type.get_properties()) {
+            PropertyInfo property_info;
+            auto property_metadata = prop.get_metadata(PROPERTY_INFO_KEY);
+            if (property_metadata.is_valid()) {
+                property_metadata.convert(property_info);
+            }
             USING_ENUM_BITWISE_OPERATORS;
             if ((bool)(property_info.usage & PropertyUsageFlags::Storage)) {
                 Variant value = saved_resource->Get(prop.get_name().data());
+
                 resource_data_json[prop.get_name().data()] = VariantSerializer::VariantToJson(value, this);
             }
         }
 
         if (main) {
             root["__RESOURCE__"] = resource_data_json;
-            root["__TYPE__"] = Object::GetClassNameByInstance(variant).toStdString();
+            root["__TYPE__"] = type.get_name().data();
             root["__ID__"] = saved_resource->GetUniqueId().toStdString();
         } else {
             if (!root.contains("__SUB_RESOURCES__")) {
                 root["__SUB_RESOURCES__"] = Json::array();
             }
-            auto class_name = Object::GetClassNameByInstance(variant).toStdString();
+            auto class_name = type.get_name();
             resource_data_json["__TYPE__"] = class_name;
             if (saved_resource->GetUniqueId().isEmpty()) {
                 String new_id;

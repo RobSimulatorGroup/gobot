@@ -79,7 +79,7 @@ struct GOBOT_API PropertyInfo {
     String name;
     PropertyHint hint = PropertyHint::None;
     String hint_string;
-    PropertyUsageFlags usage = PropertyUsageFlags::None;
+    PropertyUsageFlags usage = PropertyUsageFlags::Default;
 
     PropertyInfo& SetName(const String& _name) {
         name = _name;
@@ -159,10 +159,15 @@ public:
 
     bool Set(const String& name, Argument arg);
 
-    static String GetClassNameByInstance(Instance instance) {
+    static Type GetDerivedTypeByInstance(Instance instance) {
         auto raw_type = instance.get_type().get_raw_type();
         Instance obj = raw_type.is_wrapper() ? instance.get_wrapped_instance() : instance;
-        return obj.get_derived_type().get_name().data();
+        return obj.get_derived_type();
+    }
+
+    static Instance GetWrapperInstance(Instance instance) {
+        auto raw_type = instance.get_type().get_raw_type();
+        return raw_type.is_wrapper() ? instance.get_wrapped_instance() : instance;
     }
 
     [[nodiscard]] Variant Get(const String& name) const;
