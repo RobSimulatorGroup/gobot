@@ -246,9 +246,15 @@ ResourceFormatLoaderScene::~ResourceFormatLoaderScene() {
 }
 
 Ref<Resource> ResourceFormatLoaderScene::Load(const String &path,
-                                              const String &original_path,
                                               CacheMode cache_mode) {
-    QFile file(path);
+
+    auto global_path = ProjectSettings::GetSingleton()->GlobalizePath(path);
+    QFile file(global_path);
+    QDir dir;
+    auto base_dir = GetBaseDir(global_path);
+    if (!dir.exists(base_dir))
+        dir.mkpath(base_dir); // You can check the success if needed
+
     if (!file.open(QIODevice::ReadOnly)) {
         LOG_ERROR("Cannot open file: {}.", path);
         return {};
@@ -257,7 +263,7 @@ Ref<Resource> ResourceFormatLoaderScene::Load(const String &path,
     ResourceFormatLoaderSceneInstance loader;
     loader.file_context_ = file.readAll();
     loader.cache_mode_ = cache_mode;
-    loader.local_path_ = ProjectSettings::GetSingleton()->LocalizePath(!original_path.isEmpty() ? original_path : path);
+    loader.local_path_ = ProjectSettings::GetSingleton()->LocalizePath(path);
 
     if (loader.LoadResource()) {
         return loader.GetResource();
@@ -395,7 +401,6 @@ bool ResourceFormatSaverSceneInstance::Save(const String &path, const Ref<Resour
         if (main) {
             root["__RESOURCE__"] = resource_data_json;
             root["__TYPE__"] = type.get_name().data();
-            root["__ID__"] = saved_resource->GetUniqueId().toStdString();
         } else {
             if (!root.contains("__SUB_RESOURCES__")) {
                 root["__SUB_RESOURCES__"] = Json::array();

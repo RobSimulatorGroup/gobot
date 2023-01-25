@@ -50,9 +50,8 @@ public:
     static ResourceFormatLoaderScene* GetSingleton();
 
 
-    Ref<Resource> Load(const String &p_path,
-                       const String &p_original_path = "",
-                       CacheMode p_cache_mode = CacheMode::Reuse) override;
+    Ref<Resource> Load(const String &path,
+                       CacheMode cache_mode = CacheMode::Reuse) override;
 
     void GetRecognizedExtensionsForType(const String& type, std::vector<String>* extensions) const override;
 

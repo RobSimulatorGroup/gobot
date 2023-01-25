@@ -12,11 +12,12 @@
 #include <gobot/core/config/project_setting.hpp>
 #include <gobot/scene/resources/cylinder_shape_3d.hpp>
 #include <gobot/core/types.hpp>
+#include <gobot/log.hpp>
 
 static gobot::Ref<gobot::ResourceFormatLoaderScene> resource_loader_scene;
 static gobot::Ref<gobot::ResourceFormatSaverScene> resource_saver_scene;
 
-TEST(TestResource, test_save) {
+TEST(TestResource, test_save_load) {
     gobot::ProjectSettings project_settings;
 
     auto* project_setting = gobot::ProjectSettings::GetSingleton();
@@ -24,6 +25,9 @@ TEST(TestResource, test_save) {
 
     resource_saver_scene = gobot::MakeRef<gobot::ResourceFormatSaverScene>();
     gobot::ResourceSaver::AddResourceFormatSaver(resource_saver_scene, true);
+
+    resource_loader_scene = gobot::MakeRef<gobot::ResourceFormatLoaderScene>();
+    gobot::ResourceLoader::AddResourceFormatLoader(resource_loader_scene, true);
 
 
     gobot::Ref<gobot::CylinderShape3D> cy = gobot::MakeRef<gobot::CylinderShape3D>();
@@ -33,5 +37,9 @@ TEST(TestResource, test_save) {
     gobot::ResourceSaver::Save(cy, "res://cyl.jres",
                                gobot::ResourceSaverFlags::ReplaceSubResourcePaths |
                                gobot::ResourceSaverFlags::ChangePath);
+
+    gobot::Ref<gobot::Resource> cylinder = gobot::ResourceLoader::Load("res://cyl.jres");
+    LOG_ERROR("11111111111 {}", cylinder.is_valid());
+//    LOG_ERROR("1111 {}", cylinder->get_type().get_name().data());
 
 }

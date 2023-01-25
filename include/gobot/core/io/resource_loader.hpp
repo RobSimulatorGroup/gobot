@@ -21,9 +21,8 @@ public:
         Replace // Resource and subresource use path cache, but replace existing loaded resources when available with information from disk.
     };
 
-    virtual Ref<Resource> Load(const String &p_path,
-                               const String &p_original_path = "",
-                               CacheMode p_cache_mode = CacheMode::Reuse) = 0;
+    virtual Ref<Resource> Load(const String &local_path,
+                               CacheMode cache_mode = CacheMode::Reuse) = 0;
 
     virtual bool HandlesType(const String &type) const = 0;
 
@@ -58,7 +57,6 @@ public:
 private:
 
     static Ref<Resource> LoadImpl(const String &path,
-                                  const String &original_path,
                                   const String &type_hint,
                                   ResourceFormatLoader::CacheMode cache_mode);
 

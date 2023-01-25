@@ -49,7 +49,6 @@ std::deque<Ref<ResourceFormatLoader>> ResourceLoader::s_loaders;
 bool ResourceLoader::s_timestamp_on_load = false;
 
 Ref<Resource> ResourceLoader::LoadImpl(const String &path,
-                                       const String &original_path,
                                        const String &type_hint,
                                        ResourceFormatLoader::CacheMode cache_mode) {
     // Try all loaders and pick the first match for the type hint
@@ -59,7 +58,7 @@ Ref<Resource> ResourceLoader::LoadImpl(const String &path,
             continue;
         }
         found = true;
-        Ref<Resource> res = loader->Load(path, !original_path.isEmpty() ? original_path : path, cache_mode);
+        Ref<Resource> res = loader->Load(path, cache_mode);
         if (!res) {
             continue;
         }
@@ -92,7 +91,9 @@ Ref<Resource> ResourceLoader::Load(const String &path,
         if (existing.is_valid()) {
             return existing; //use cached
         }
-        Ref<Resource> res = LoadImpl(path, local_path, type_hint, cache_mode);
+
+        // TODO(wqq): Add multi-thread loader
+        Ref<Resource> res = LoadImpl(path, type_hint, cache_mode);
         if (!res) {
             LOG_ERROR("Loading resource: {}", path);
             return {};
@@ -100,7 +101,7 @@ Ref<Resource> ResourceLoader::Load(const String &path,
 
         return res;
     } else {
-        Ref<Resource> res = LoadImpl(path, local_path, type_hint, cache_mode);
+        Ref<Resource> res = LoadImpl(path, type_hint, cache_mode);
         if (!res) {
             LOG_ERROR("Loading resource: {}", path);
             return {};
