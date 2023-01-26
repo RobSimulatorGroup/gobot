@@ -47,10 +47,12 @@ bool ResourceFormatLoaderSceneInstance::LoadResource() {
             LOG_ERROR("__META_TYPE__ must SCENE or RESOURCE");
             return false;
         }
-        if (!json.contains("__TYPE__")) {
-            LOG_ERROR("The json: {} must contains __META_TYPE__", json);
-            return false;
-        }
+        is_scene_ = meta_type == "SCENE" ? true : false;
+    } else {
+        LOG_ERROR("The json: {} must contains __META_TYPE__", json);
+        return false;
+    }
+    if (json.contains("__TYPE__")) {
         res_type_ = String::fromStdString(json["__TYPE__"]);
     } else {
         LOG_ERROR("The json: {} must contains __META_TYPE__", json);
@@ -87,7 +89,7 @@ bool ResourceFormatLoaderSceneInstance::LoadResource() {
 
                 Ref<Resource> res = ResourceLoader::Load(path, type);
                 if (!res) {
-                    LOG_ERROR("");
+                    LOG_ERROR("Cannot load type:{} from path:{}", type, path);
                     return false;
                 } else {
                     res->SetUniqueId(id);
@@ -138,15 +140,11 @@ bool ResourceFormatLoaderSceneInstance::LoadResource() {
                     } else {
                         //create
                         Variant new_obj = Type::get_by_name(type.toStdString()).create();
-                        if (!new_obj.can_convert<Object*>()) {
-                            LOG_ERROR("");
-                            return false;
-                        }
-                        auto* obj = new_obj.convert<Object*>();
+                        bool success{false};
+                        auto* r = new_obj.convert<Resource*>();
 
-                        auto *r = Object::PointerCastTo<Resource>(obj);
                         if (!r) {
-                            LOG_ERROR("Can't create sub resource of type, because not a resource: {}", type);
+                            LOG_ERROR("Can't create sub resource of type, because not a Resource: {}", type);
                             return false;
                         }
 
@@ -167,14 +165,14 @@ bool ResourceFormatLoaderSceneInstance::LoadResource() {
 
             }
         } else {
-            LOG_ERROR("");
+            LOG_ERROR("__SUB_RESOURCES__ must array");
             return {};
         }
     }
 
     if (json.contains("__RESOURCE__")) {
         if (is_scene_) {
-            LOG_ERROR("");
+            LOG_ERROR("__RESOURCE__ and __META_TYPE__: SCENE are conflicted");
             return false;
         }
 
@@ -187,11 +185,6 @@ bool ResourceFormatLoaderSceneInstance::LoadResource() {
         if (!resource_.is_valid()) {
 
             Variant new_obj = Type::get_by_name(res_type_.toStdString()).create();
-            if (!new_obj.can_convert<Resource*>()) {
-                LOG_ERROR("Cannot ");
-                return false;
-            }
-
             auto *r = new_obj.convert<Resource*>();
             if (!r) {
                 LOG_ERROR("Can't create sub resource of type, because not a resource: {}", res_type_);
@@ -206,7 +199,7 @@ bool ResourceFormatLoaderSceneInstance::LoadResource() {
             auto variant = VariantSerializer::JsonToVariant(value_type, value);
 
             if (!variant.is_valid()) {
-                LOG_ERROR("");
+                LOG_ERROR("Convert Json:{} to Variant:({})", value.dump(4), value_type.get_name().data());
             }
 
             resource_->Set(key.c_str(), variant);

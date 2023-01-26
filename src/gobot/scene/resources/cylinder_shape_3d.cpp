@@ -40,7 +40,6 @@ float CylinderShape3D::GetHeight() const {
     return height_;
 }
 
-
 }
 
 GOBOT_REGISTRATION {
