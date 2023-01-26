@@ -45,6 +45,7 @@ float CylinderShape3D::GetHeight() const {
 
 GOBOT_REGISTRATION {
     Class_<CylinderShape3D>("CylinderShape3D")
+            .constructor()(CtorAsRawPtr)
             .property("height", &CylinderShape3D::GetHeight, &CylinderShape3D::SetHeight)
             .property("radius", &CylinderShape3D::GetRadius, &CylinderShape3D::SetRadius);
 

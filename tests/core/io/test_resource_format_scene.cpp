@@ -31,6 +31,7 @@ TEST(TestResource, test_save_load) {
 
 
     gobot::Ref<gobot::CylinderShape3D> cy = gobot::MakeRef<gobot::CylinderShape3D>();
+    cy->SetRadius(1.1);
 
 
     USING_ENUM_BITWISE_OPERATORS;
@@ -39,7 +40,8 @@ TEST(TestResource, test_save_load) {
                                gobot::ResourceSaverFlags::ChangePath);
 
     gobot::Ref<gobot::Resource> cylinder = gobot::ResourceLoader::Load("res://cyl.jres");
-    LOG_ERROR("11111111111 {}", cylinder.is_valid());
-//    LOG_ERROR("1111 {}", cylinder->get_type().get_name().data());
+    ASSERT_TRUE(cylinder->get_type().get_name() == "CylinderShape3D");
+    cy = gobot::dynamic_pointer_cast<gobot::CylinderShape3D>(cylinder);
+    ASSERT_TRUE(cy->GetRadius() ==  1.1f);
 
 }

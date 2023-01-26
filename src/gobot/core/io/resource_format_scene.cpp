@@ -47,6 +47,11 @@ bool ResourceFormatLoaderSceneInstance::LoadResource() {
             LOG_ERROR("__META_TYPE__ must SCENE or RESOURCE");
             return false;
         }
+        if (!json.contains("__TYPE__")) {
+            LOG_ERROR("The json: {} must contains __META_TYPE__", json);
+            return false;
+        }
+        res_type_ = String::fromStdString(json["__TYPE__"]);
     } else {
         LOG_ERROR("The json: {} must contains __META_TYPE__", json);
         return false;
@@ -182,13 +187,12 @@ bool ResourceFormatLoaderSceneInstance::LoadResource() {
         if (!resource_.is_valid()) {
 
             Variant new_obj = Type::get_by_name(res_type_.toStdString()).create();
-            if (!new_obj.can_convert<Object*>()) {
-                LOG_ERROR("");
+            if (!new_obj.can_convert<Resource*>()) {
+                LOG_ERROR("Cannot ");
                 return false;
             }
-            auto* obj = new_obj.convert<Object*>();
 
-            auto *r = Object::PointerCastTo<Resource>(obj);
+            auto *r = new_obj.convert<Resource*>();
             if (!r) {
                 LOG_ERROR("Can't create sub resource of type, because not a resource: {}", res_type_);
                 return false;
