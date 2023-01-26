@@ -19,7 +19,7 @@ void PrimitiveMesh::SetMaterial(const Ref<Material>& material) {
     material_ = material;
 }
 
-Ref<Material> PrimitiveMesh::GetMaterial() const {
+const Ref<Material>& PrimitiveMesh::GetMaterial() const {
     return material_;
 }
 

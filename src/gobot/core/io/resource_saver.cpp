@@ -61,7 +61,7 @@ bool ResourceSaver::Save(const Ref<Resource>& resource, const String& target_pat
 
         USING_ENUM_BITWISE_OPERATORS;
 
-        Ref<Resource> rwcopy = resource;
+        Resource* rwcopy = resource.get();
         if ((bool)(flags & ResourceSaverFlags::ChangePath)) {
             rwcopy->SetPath(local_path);
         }

@@ -67,6 +67,7 @@ TEST_F(TestResourceFormatScene, test_subresource) {
 
 
     LOG_ERROR("{}", material_3d.use_count());
+    LOG_ERROR("{}", box_mesh->GetMaterial().use_count());
 
     USING_ENUM_BITWISE_OPERATORS;
     gobot::ResourceSaver::Save(box_mesh, "res://box_mesh.jres",
@@ -74,6 +75,7 @@ TEST_F(TestResourceFormatScene, test_subresource) {
                                gobot::ResourceSaverFlags::ChangePath);
     LOG_ERROR("{}", box_mesh->GetMaterial() == material_3d);
     LOG_ERROR("{}", material_3d.use_count());
+    LOG_ERROR("{}", box_mesh->GetMaterial().use_count());
 
 //    gobot::Ref<gobot::Resource> cylinder = gobot::ResourceLoader::Load("res://cyl.jres");
 //    ASSERT_TRUE(cylinder->get_type().get_name() == "CylinderShape3D");

@@ -389,8 +389,7 @@ bool ResourceFormatSaverSceneInstance::Save(const String &path, const Ref<Resour
             USING_ENUM_BITWISE_OPERATORS;
             if ((bool)(property_info.usage & PropertyUsageFlags::Storage)) {
                 Variant value = saved_resource->Get(prop.get_name().data());
-                auto aa = VariantSerializer::VariantToJson(value, this);
-                resource_data_json[prop.get_name().data()] = aa;
+                resource_data_json[prop.get_name().data()] = VariantSerializer::VariantToJson(value, this);;
             }
         }
 

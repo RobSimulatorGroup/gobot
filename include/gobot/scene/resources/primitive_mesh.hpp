@@ -19,7 +19,7 @@ public:
 
     void SetMaterial(const Ref<Material>& material);
 
-    Ref<Material> GetMaterial() const;
+    const Ref<Material>& GetMaterial() const;
 
 private:
     Ref<Material> material_{nullptr};
