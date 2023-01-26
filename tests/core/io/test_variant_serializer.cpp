@@ -14,12 +14,74 @@
 #include <gobot/log.hpp>
 
 
+
+TEST(TestVariantSerializer, test_primitive_type) {
+    // test int
+    {
+        int i{1};
+        auto json = gobot::VariantSerializer::VariantToJson(i);
+        gobot::Variant var = gobot::VariantSerializer::JsonToVariant(gobot::Type::get<int>(), json);
+        ASSERT_TRUE(var.get_value<int>() == i);
+        auto json2 = gobot::VariantSerializer::VariantToJson(var);
+        ASSERT_TRUE(json == json2);
+    }
+    // test uint
+    {
+        uint16_t u16{1};
+        auto json = gobot::VariantSerializer::VariantToJson(u16);
+        gobot::Variant var = gobot::VariantSerializer::JsonToVariant(gobot::Type::get<uint16_t>(), json);
+        ASSERT_TRUE(var.get_value<uint16_t>() == u16);
+        auto json2 = gobot::VariantSerializer::VariantToJson(var);
+        ASSERT_TRUE(json == json2);
+    }
+
+    // test float/double
+    {
+        float f{0.1};
+        auto json = gobot::VariantSerializer::VariantToJson(f);
+        gobot::Variant var = gobot::VariantSerializer::JsonToVariant(gobot::Type::get<float>(), json);
+        ASSERT_TRUE(var.get_value<float>() == f);
+        auto json2 = gobot::VariantSerializer::VariantToJson(var);
+        ASSERT_TRUE(json == json2);
+    }
+
+    // test std::string
+    {
+        std::string str{"111"};
+        auto json = gobot::VariantSerializer::VariantToJson(str);
+        gobot::Variant var = gobot::VariantSerializer::JsonToVariant(gobot::Type::get<std::string>(), json);
+        ASSERT_TRUE(var.get_value<std::string>() == str);
+        auto json2 = gobot::VariantSerializer::VariantToJson(var);
+        ASSERT_TRUE(json == json2);
+    }
+
+    // test std::string
+    {
+        std::string str{"111"};
+        auto json = gobot::VariantSerializer::VariantToJson(str);
+        gobot::Variant var = gobot::VariantSerializer::JsonToVariant(gobot::Type::get<std::string>(), json);
+        ASSERT_TRUE(var.get_value<std::string>() == str);
+        auto json2 = gobot::VariantSerializer::VariantToJson(var);
+        ASSERT_TRUE(json == json2);
+    }
+
+    // test gobot::String
+    {
+        gobot::String str{"111"};
+        auto json = gobot::VariantSerializer::VariantToJson(str);
+        gobot::Variant var = gobot::VariantSerializer::JsonToVariant(gobot::Type::get<gobot::String>(), json);
+        ASSERT_TRUE(var.get_value<gobot::String>() == str);
+        auto json2 = gobot::VariantSerializer::VariantToJson(var);
+        ASSERT_TRUE(json == json2);
+    }
+
+}
+
 TEST(TestVariantSerializer, test_vector_int) {
     std::vector<int> vector_int{1, 2, 3};
     gobot::Variant var(vector_int);
     auto json = gobot::VariantSerializer::VariantToJson(var);
-    LOG_ERROR("{}", json.dump(4));
-    gobot::Variant aa = gobot::VariantSerializer::JsonToVariant(var.get_type(), json);
-    LOG_INFO("{}", aa.get_type().get_name().data());
-
+    gobot::Variant var2 = gobot::VariantSerializer::JsonToVariant(var.get_type(), json);
+    auto json2 = gobot::VariantSerializer::VariantToJson(var2);
+    ASSERT_TRUE(json == json2);
 }
