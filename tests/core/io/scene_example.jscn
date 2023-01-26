@@ -5,22 +5,22 @@
     {
       "__TYPE__": "BoxMesh",
       "__PATH__": "res://mesh/box_mesh1.jscn",
-      "__ID__": "abcde"
+      "__ID__": "1_abcde"
     }
   ],
   "__SUB_RESOURCES__": [
     {
       "__TYPE__": "CylinderMesh",
-      "__ID__": "12345",
+      "__ID__": "CylinderMesh_12345",
       "height": 0.5
     },
     {
       "__TYPE__": "StandardMaterial3D",
-      "__ID__": "ABCDE"
+      "__ID__": "StandardMaterial3D_ABCDE"
     },
     {
       "__TYPE__": "BoxMesh",
-      "__ID__": "MNBVC",
+      "__ID__": "BoxMesh_MNBVC",
       "material": "SubResource(ABCDE)"
     }
   ],
@@ -31,7 +31,7 @@
       "__PARENT__": null
     },
     {
-      "__TYPE__": "Node2",
+      "__TYPE__": "Frame",
       "name": "node1",
       "__PARENT__": "."
     }
