@@ -117,3 +117,13 @@ TEST(TestVariantSerializer, test_simple_map) {
     auto equal = variant.get_value<std::map<gobot::String, gobot::String>>() == map;
     ASSERT_TRUE(equal);
 }
+
+TEST(TestVariantSerializer, test_struct_map) {
+    std::map<gobot::String, gobot::PropertyInfo> property_info_map{{"111", {"name1"}}, {"2222", {"name2"}}};
+    auto json = gobot::VariantSerializer::VariantToJson(property_info_map);
+    std::map<gobot::String, gobot::PropertyInfo> map_2;
+    gobot::Variant variant(map_2);
+    ASSERT_TRUE(gobot::VariantSerializer::JsonToVariant(variant, json));
+    auto equal = variant.get_value<std::map<gobot::String, gobot::PropertyInfo>>() == property_info_map;
+    ASSERT_TRUE(equal);
+}
