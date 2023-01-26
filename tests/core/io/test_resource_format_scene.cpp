@@ -14,25 +14,37 @@
 #include <gobot/core/types.hpp>
 #include <gobot/log.hpp>
 
-static gobot::Ref<gobot::ResourceFormatLoaderScene> resource_loader_scene;
-static gobot::Ref<gobot::ResourceFormatSaverScene> resource_saver_scene;
 
-TEST(TestResource, test_save_load) {
+class TestResourceFormatScene : public testing::Test {
+protected:
+    static void SetUpTestSuite() {
+        static gobot::Ref<gobot::ResourceFormatLoaderScene> resource_loader_scene;
+        static gobot::Ref<gobot::ResourceFormatSaverScene> resource_saver_scene;
+
+        resource_saver_scene = gobot::MakeRef<gobot::ResourceFormatSaverScene>();
+        gobot::ResourceSaver::AddResourceFormatSaver(resource_saver_scene, true);
+
+        resource_loader_scene = gobot::MakeRef<gobot::ResourceFormatLoaderScene>();
+        gobot::ResourceLoader::AddResourceFormatLoader(resource_loader_scene, true);
+    }
+
+    static void TearDownTestSuite() {
+    }
+
+    void SetUp() override {
+        auto* project_setting = gobot::ProjectSettings::GetSingleton();
+        project_setting->SetProjectPath("/tmp/test_project");
+    }
+
+    void TearDown() override {
+    }
+
     gobot::ProjectSettings project_settings;
+};
 
-    auto* project_setting = gobot::ProjectSettings::GetSingleton();
-    project_setting->SetProjectPath("/tmp/test_project");
-
-    resource_saver_scene = gobot::MakeRef<gobot::ResourceFormatSaverScene>();
-    gobot::ResourceSaver::AddResourceFormatSaver(resource_saver_scene, true);
-
-    resource_loader_scene = gobot::MakeRef<gobot::ResourceFormatLoaderScene>();
-    gobot::ResourceLoader::AddResourceFormatLoader(resource_loader_scene, true);
-
-
+TEST_F(TestResourceFormatScene, test_save_load) {
     gobot::Ref<gobot::CylinderShape3D> cy = gobot::MakeRef<gobot::CylinderShape3D>();
     cy->SetRadius(1.1);
-
 
     USING_ENUM_BITWISE_OPERATORS;
     gobot::ResourceSaver::Save(cy, "res://cyl.jres",
@@ -43,5 +55,13 @@ TEST(TestResource, test_save_load) {
     ASSERT_TRUE(cylinder->get_type().get_name() == "CylinderShape3D");
     cy = gobot::dynamic_pointer_cast<gobot::CylinderShape3D>(cylinder);
     ASSERT_TRUE(cy->GetRadius() ==  1.1f);
+
+}
+
+TEST(TestResourceFormatScene, test_subresource) {
+
+}
+
+TEST(TestResourceFormatScene, ext_subresource) {
 
 }
