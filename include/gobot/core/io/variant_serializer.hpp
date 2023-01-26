@@ -49,17 +49,17 @@ private:
 
     ///////////////////////////////////////////
 
-    static bool LoadSubResource(Instance obj, const String& uuid);
+    static bool LoadSubResource(Instance obj, const String& id);
 
-    static bool LoadExtResource(Instance obj, const String& uuid);
+    static bool LoadExtResource(Instance obj, const String& id);
 
     static bool FromJsonRecursively(Instance variant, const Json& json);
 
     static Variant ExtractPrimitiveTypes(const Type& type, const Json& json_value);
 
-    static void WriteArrayRecursively(VariantListView& view, const Json& json_array_value);
+    static bool WriteArrayRecursively(VariantListView& view, const Json& json_array_value);
 
-    static void WriteAssociativeViewRecursively(VariantMapView& view, const Json& json_array_value);
+    static bool WriteAssociativeViewRecursively(VariantMapView& view, const Json& json_array_value);
 
     static Variant ExtractValue(const Type& type, const Json& json);
 

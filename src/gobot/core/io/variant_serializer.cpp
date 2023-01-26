@@ -180,7 +180,7 @@ void VariantSerializer::ToJsonRecursively(Instance object, Json& writer)
 
     for (auto prop : prop_list) {
         if (prop.is_readonly()) {
-            // Not save readonly key
+            // Not load readonly key
             continue;
         }
         PropertyInfo property_info;
@@ -277,28 +277,31 @@ Variant VariantSerializer::ExtractPrimitiveTypes(const Type& type, const Json& j
 }
 
 
-void VariantSerializer::WriteArrayRecursively(VariantListView& view, const Json& json_array_value)
+bool VariantSerializer::WriteArrayRecursively(VariantListView& view, const Json& json_array_value)
 {
     view.set_size(json_array_value.size());
     const auto array_value_type = view.get_rank_type(1);
+    bool set_success{true};
 
     for (std::size_t i = 0; i < json_array_value.size(); ++i) {
         auto& json_index_value = json_array_value[i];
         if (json_index_value.is_array()) {
             auto sub_array_view = view.get_value(i).create_sequential_view();
-            WriteArrayRecursively(sub_array_view, json_index_value);
+            set_success &= WriteArrayRecursively(sub_array_view, json_index_value);
         } else if (json_index_value.is_object()) {
             Variant var_tmp = view.get_value(i);
             Variant wrapped_var = var_tmp.extract_wrapped_value();
-            FromJsonRecursively(wrapped_var, json_index_value);
-            view.set_value(i, wrapped_var);
+            set_success &= FromJsonRecursively(wrapped_var, json_index_value);
+            set_success &= view.set_value(i, wrapped_var);
         } else {
             auto extracted_value = ExtractPrimitiveTypes(array_value_type, json_index_value);
             if (extracted_value.is_valid()) {
-                view.set_value(i, extracted_value);
+                set_success &= view.set_value(i, extracted_value);
             }
         }
     }
+
+    return set_success;
 }
 
 Variant VariantSerializer::ExtractValue(const Type& type, const Json& json)
@@ -335,8 +338,10 @@ Variant VariantSerializer::ExtractValue(const Type& type, const Json& json)
     return {};
 }
 
-void VariantSerializer::WriteAssociativeViewRecursively(VariantMapView& view, const Json& json_array_value)
+bool VariantSerializer::WriteAssociativeViewRecursively(VariantMapView& view, const Json& json_array_value)
 {
+    bool set_success{true};
+
     for (const auto& json_index_value : json_array_value) {
         if (json_index_value.is_object())  { // a key-value associative view
             if (json_index_value.contains("key") && json_index_value.contains("value")) {
@@ -344,28 +349,33 @@ void VariantSerializer::WriteAssociativeViewRecursively(VariantMapView& view, co
                 auto value_var = ExtractValue(view.get_value_type(), json_index_value["value"]);
                 if (key_var && value_var) {
                     view.insert(key_var, value_var);
+                } else {
+                    set_success = false;
                 }
             }
         } else  { // a key-only associative view
             Variant extracted_value = ExtractPrimitiveTypes(view.get_key_type(), json_index_value);
             if (extracted_value) {
                 view.insert(extracted_value);
+            } else {
+                set_success = false;
             }
         }
     }
+    return set_success;
 }
 
 
-bool VariantSerializer::LoadSubResource(Instance obj, const String& uuid) {
+bool VariantSerializer::LoadSubResource(Instance obj, const String& id) {
     if (s_resource_format_loader_) {
         auto res = Ref<Resource>(obj.try_convert<Resource>());
         if (!res) {
-            LOG_ERROR("");
+            LOG_ERROR("Cannot convert target to Resource type");
             return false;
         }
-        auto it = s_resource_format_loader_->sub_resources_.find(uuid);
+        auto it = s_resource_format_loader_->sub_resources_.find(id);
         if (it == s_resource_format_loader_->sub_resources_.end()) {
-            LOG_ERROR("");
+            LOG_ERROR("Cannot find sub-resource of id: {}", id);
             return false;
         }
         res = it->second;
@@ -374,16 +384,16 @@ bool VariantSerializer::LoadSubResource(Instance obj, const String& uuid) {
     return false;
 }
 
-bool VariantSerializer::LoadExtResource(Instance obj, const String& uuid) {
+bool VariantSerializer::LoadExtResource(Instance obj, const String& id) {
     if (s_resource_format_loader_) {
         auto res = Ref<Resource>(obj.try_convert<Resource>());
         if (!res) {
-            LOG_ERROR("");
+            LOG_ERROR("Cannot convert target to Resource type");
             return false;
         }
-        auto it = s_resource_format_loader_->ext_resources_.find(uuid);
+        auto it = s_resource_format_loader_->ext_resources_.find(id);
         if (it == s_resource_format_loader_->ext_resources_.end()) {
-            LOG_ERROR("");
+            LOG_ERROR("Cannot find ext-resource of id: {}", id);
             return false;
         }
         res = it->second;
@@ -398,14 +408,11 @@ bool VariantSerializer::LoadResource(Instance obj, const Type& t, const Json& js
         auto left_bracket = str.indexOf("(");
         auto right_bracket = str.indexOf(")");
         auto key_word = str.left(left_bracket + 1);
-        auto uuid = str.mid(left_bracket + 1, right_bracket - left_bracket);
-        if (Uuid::fromString(uuid).isNull()) {
-            LOG_ERROR("");
-            return false;
-        } else if (key_word == "SubResource") {
-            return LoadSubResource(obj, uuid);
+        auto id = str.mid(left_bracket + 1, right_bracket - left_bracket);
+        if (key_word == "SubResource") {
+            return LoadSubResource(obj, id);
         } else if (key_word == "ExtResource") {
-            return LoadExtResource(obj, uuid);
+            return LoadExtResource(obj, id);
         } else {
             LOG_ERROR("");
             return false;
@@ -424,7 +431,13 @@ bool VariantSerializer::FromJsonRecursively(Instance instance, const Json& json)
 
     const auto prop_list = obj.get_derived_type().get_properties();
 
+    bool set_success{true};
+
     for (auto prop : prop_list) {
+        if (prop.is_readonly()) {
+            continue;
+        }
+
         PropertyInfo property_info;
         auto meta_data = prop.get_metadata(PROPERTY_INFO_KEY);
         if (meta_data.is_valid()) {
@@ -443,23 +456,25 @@ bool VariantSerializer::FromJsonRecursively(Instance instance, const Json& json)
                 if (prop_type.is_sequential_container()) {
                     auto value = prop.get_value(obj);
                     auto view = value.create_sequential_view();
-                    WriteArrayRecursively(view, child_json);
+                    set_success &= WriteArrayRecursively(view, child_json);
                 } else if (prop_type.is_associative_container()) {
                     auto value = prop.get_value(obj);
                     auto view = value.create_associative_view();
-                    WriteAssociativeViewRecursively(view, child_json);
+                    set_success &= WriteAssociativeViewRecursively(view, child_json);
                 }
             } else if (child_json.is_object()) {
                 auto var = prop.get_value(obj);
-                FromJsonRecursively(var, child_json);
-                prop.set_value(obj, var);
+                set_success &= FromJsonRecursively(var, child_json);
+                set_success &= prop.set_value(obj, var);
             } else {
                 auto extracted_value = ExtractPrimitiveTypes(prop.get_type(), child_json);
                 if (extracted_value) // REMARK: CONVERSION WORKS ONLY WITH "const type", check whether this is correct or not!
-                    prop.set_value(obj, extracted_value);
+                    set_success &= prop.set_value(obj, extracted_value);
             }
         }
     }
+
+    return set_success;
 }
 
 
@@ -485,18 +500,17 @@ bool VariantSerializer::JsonToVariant(Variant& variant,
             variant = var;
             return true;
         }
-    } else if (type.is_array()) {
-        if (type.is_sequential_container()) {
+    } else if (type.is_sequential_container()) {
             auto view = variant.create_sequential_view();
-            WriteArrayRecursively(view, json);
-        } else if (type.is_associative_container()) {
+            return WriteArrayRecursively(view, json);
+    } else if (type.is_associative_container()) {
             auto view = variant.create_associative_view();
-            WriteAssociativeViewRecursively(view, json);
-        }
+            return WriteAssociativeViewRecursively(view, json);
     } else {
         return FromJsonRecursively(variant, json);
     }
 
+    return false;
 }
 
 }

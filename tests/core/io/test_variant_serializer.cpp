@@ -94,7 +94,7 @@ TEST(TestVariantSerializer, test_struct) {
     gobot::PropertyInfo property_info_2;
     gobot::Variant variant(property_info_2);
     ASSERT_TRUE(gobot::VariantSerializer::JsonToVariant(variant, json));
-    ASSERT_TRUE(variant.get_value<gobot::PropertyInfo>() == property_info_2);
+    ASSERT_TRUE(variant.get_value<gobot::PropertyInfo>() == property_info);
 }
 
 TEST(TestVariantSerializer, test_vector_struct) {
@@ -114,6 +114,6 @@ TEST(TestVariantSerializer, test_simple_map) {
     std::map<gobot::String, gobot::String> map_2;
     gobot::Variant variant(map_2);
     ASSERT_TRUE(gobot::VariantSerializer::JsonToVariant(variant, json));
-    LOG_ERROR("{}", json.dump(1));
-//    ASSERT_TRUE(map == map_2);
+    auto equal = variant.get_value<std::map<gobot::String, gobot::String>>() == map;
+    ASSERT_TRUE(equal);
 }
