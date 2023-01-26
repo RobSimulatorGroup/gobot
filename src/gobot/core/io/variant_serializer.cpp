@@ -99,12 +99,12 @@ void VariantSerializer::WriteAssociativeContainer(const VariantMapView& view, Js
             Json node;
             Json key;
             WriteVariant(item.first.extract_wrapped_value(), key);
-            if (key) {
+            if (!key.is_null()) {
                 node[key_name] = key;
             }
             Json value;
             WriteVariant(item.second.extract_wrapped_value(), value);
-            if (value) {
+            if (!value.is_null()) {
                 node[value_name] = value;
             }
             writer.emplace_back(node);
@@ -321,8 +321,14 @@ Variant VariantSerializer::ExtractValue(const Type& type, const Json& json)
                 ctor = item;
         }
         auto value = ctor.invoke();
-        auto view = value.create_sequential_view();
-        WriteArrayRecursively(view, json);
+        if (type.is_sequential_container()) {
+            auto view = value.create_sequential_view();
+            WriteArrayRecursively(view, json);
+        } else if (type.is_associative_container()) {
+            auto view = value.create_associative_view();
+            WriteAssociativeViewRecursively(view, json);
+        }
+
         return value;
     }
 
@@ -335,7 +341,7 @@ void VariantSerializer::WriteAssociativeViewRecursively(VariantMapView& view, co
         if (json_index_value.is_object())  { // a key-value associative view
             if (json_index_value.contains("key") && json_index_value.contains("value")) {
                 auto key_var = ExtractValue(view.get_key_type(), json_index_value["key"]);
-                auto value_var = ExtractValue(view.get_key_type(), json_index_value["value"]);
+                auto value_var = ExtractValue(view.get_value_type(), json_index_value["value"]);
                 if (key_var && value_var) {
                     view.insert(key_var, value_var);
                 }
@@ -350,39 +356,43 @@ void VariantSerializer::WriteAssociativeViewRecursively(VariantMapView& view, co
 }
 
 
-void VariantSerializer::LoadSubResource(Instance obj, const String& uuid) {
+bool VariantSerializer::LoadSubResource(Instance obj, const String& uuid) {
     if (s_resource_format_loader_) {
         auto res = Ref<Resource>(obj.try_convert<Resource>());
         if (!res) {
             LOG_ERROR("");
-            return;
+            return false;
         }
         auto it = s_resource_format_loader_->sub_resources_.find(uuid);
         if (it == s_resource_format_loader_->sub_resources_.end()) {
             LOG_ERROR("");
-            return;
+            return false;
         }
         res = it->second;
+        return true;
     }
+    return false;
 }
 
-void VariantSerializer::LoadExtResource(Instance obj, const String& uuid) {
+bool VariantSerializer::LoadExtResource(Instance obj, const String& uuid) {
     if (s_resource_format_loader_) {
         auto res = Ref<Resource>(obj.try_convert<Resource>());
         if (!res) {
             LOG_ERROR("");
-            return;
+            return false;
         }
         auto it = s_resource_format_loader_->ext_resources_.find(uuid);
         if (it == s_resource_format_loader_->ext_resources_.end()) {
             LOG_ERROR("");
-            return;
+            return false;
         }
         res = it->second;
+        return true;
     }
+    return false;
 }
 
-void VariantSerializer::LoadResource(Instance obj, const Type& t, const Json& json) {
+bool VariantSerializer::LoadResource(Instance obj, const Type& t, const Json& json) {
     if (json.is_string()) {
         auto str = String::fromStdString(json.get<std::string>());
         auto left_bracket = str.indexOf("(");
@@ -391,23 +401,25 @@ void VariantSerializer::LoadResource(Instance obj, const Type& t, const Json& js
         auto uuid = str.mid(left_bracket + 1, right_bracket - left_bracket);
         if (Uuid::fromString(uuid).isNull()) {
             LOG_ERROR("");
-            return;
+            return false;
         } else if (key_word == "SubResource") {
-            LoadSubResource(obj, uuid);
+            return LoadSubResource(obj, uuid);
         } else if (key_word == "ExtResource") {
-            LoadExtResource(obj, uuid);
+            return LoadExtResource(obj, uuid);
         } else {
             LOG_ERROR("");
+            return false;
         }
     }
+
+    return false;
 }
 
-void VariantSerializer::FromJsonRecursively(Instance instance, const Json& json) {
+bool VariantSerializer::FromJsonRecursively(Instance instance, const Json& json) {
     auto raw_type = instance.get_type().get_raw_type();
     Instance obj = instance.get_type().get_raw_type().is_wrapper() ? instance.get_wrapped_instance() : instance;
     if (raw_type.is_wrapper() && raw_type.get_wrapper_holder_type() == WrapperHolderType::Ref) {
-        LoadResource(obj, raw_type, json);
-        return;
+        return LoadResource(obj, raw_type, json);
     }
 
     const auto prop_list = obj.get_derived_type().get_properties();
@@ -451,21 +463,40 @@ void VariantSerializer::FromJsonRecursively(Instance instance, const Json& json)
 }
 
 
-Variant VariantSerializer::JsonToVariant(const Type& type,
-                                         const Json& json,
-                                         ResourceFormatLoaderSceneInstance* s_resource_format_loader) {
+bool VariantSerializer::JsonToVariant(Variant& variant,
+                                      const Json& json,
+                                      ResourceFormatLoaderSceneInstance* s_resource_format_loader) {
     if (json.is_null()) {
         LOG_ERROR("Input json is null");
         return {};
     }
-    if (!type.is_valid()) {
+    if (!variant.is_valid()) {
         LOG_ERROR("Input type is invalid");
         return {};
     }
 
     s_resource_format_loader_ = s_resource_format_loader;
 
-    return ExtractValue(type, json);
+    auto type = variant.get_type();
+    if (type.is_enumeration() || type.is_arithmetic() ||
+        type == Type::get<std::string>() || type == Type::get<String>()) {
+        auto var = ExtractPrimitiveTypes(type, json);
+        if (var.is_valid()) {
+            variant = var;
+            return true;
+        }
+    } else if (type.is_array()) {
+        if (type.is_sequential_container()) {
+            auto view = variant.create_sequential_view();
+            WriteArrayRecursively(view, json);
+        } else if (type.is_associative_container()) {
+            auto view = variant.create_associative_view();
+            WriteAssociativeViewRecursively(view, json);
+        }
+    } else {
+        return FromJsonRecursively(variant, json);
+    }
+
 }
 
 }

@@ -21,9 +21,9 @@ public:
     static Json VariantToJson(const Variant& variant,
                               ResourceFormatSaverSceneInstance* resource_format_saver = nullptr);
 
-    static Variant JsonToVariant(const Type& type,
-                                 const Json& json,
-                                 ResourceFormatLoaderSceneInstance* s_resource_format_loader = nullptr);
+    static bool JsonToVariant(Variant& variant,
+                              const Json& json,
+                              ResourceFormatLoaderSceneInstance* s_resource_format_loader = nullptr);
 
 private:
 
@@ -49,11 +49,11 @@ private:
 
     ///////////////////////////////////////////
 
-    static void LoadSubResource(Instance obj, const String& uuid);
+    static bool LoadSubResource(Instance obj, const String& uuid);
 
-    static void LoadExtResource(Instance obj, const String& uuid);
+    static bool LoadExtResource(Instance obj, const String& uuid);
 
-    static void FromJsonRecursively(Instance instance, const Json& json);
+    static bool FromJsonRecursively(Instance variant, const Json& json);
 
     static Variant ExtractPrimitiveTypes(const Type& type, const Json& json_value);
 
@@ -63,7 +63,7 @@ private:
 
     static Variant ExtractValue(const Type& type, const Json& json);
 
-    static void LoadResource(Instance obj, const Type& t, const Json& json);
+    static bool LoadResource(Instance obj, const Type& t, const Json& json);
 
 };
 

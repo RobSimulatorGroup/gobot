@@ -195,14 +195,13 @@ bool ResourceFormatLoaderSceneInstance::LoadResource() {
         }
 
         for (const auto&[key, value] : json["__RESOURCE__"].items()) {
-            auto value_type = resource_->GetPropertyType(key.c_str());
-            auto variant = VariantSerializer::JsonToVariant(value_type, value);
+            auto property_value = resource_->Get(key.c_str());
 
-            if (!variant.is_valid()) {
-                LOG_ERROR("Convert Json:{} to Variant:({})", value.dump(4), value_type.get_name().data());
+            if (!VariantSerializer::JsonToVariant(property_value, value)) {
+                LOG_ERROR("Convert Json:{} to Variant:({})", value.dump(4), property_value.get_type().get_name().data());
             }
 
-            resource_->Set(key.c_str(), variant);
+            resource_->Set(key.c_str(), property_value);
         }
 
         if (cache_mode_ != ResourceFormatLoader::CacheMode::Ignore) {

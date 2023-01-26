@@ -102,12 +102,7 @@ struct GOBOT_API PropertyInfo {
     }
 
 
-    bool operator==(const PropertyInfo &property_info) const {
-        return  (name == property_info.name) &&
-                (hint == property_info.hint) &&
-                (hint_string == property_info.hint_string) &&
-                (usage == property_info.usage);
-    }
+    bool operator==(const PropertyInfo &property_info) const = default;
 
     bool operator<(const PropertyInfo &p_info) const {
         return name < p_info.name;
