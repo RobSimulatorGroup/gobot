@@ -389,8 +389,9 @@ bool ResourceFormatSaverSceneInstance::Save(const String &path, const Ref<Resour
             USING_ENUM_BITWISE_OPERATORS;
             if ((bool)(property_info.usage & PropertyUsageFlags::Storage)) {
                 Variant value = saved_resource->Get(prop.get_name().data());
-
-                resource_data_json[prop.get_name().data()] = VariantSerializer::VariantToJson(value, this);
+                auto aa = VariantSerializer::VariantToJson(value, this);
+                LOG_ERROR("{}", aa.dump(4));
+                resource_data_json[prop.get_name().data()] = aa;
             }
         }
 
@@ -459,10 +460,15 @@ void ResourceFormatSaverSceneInstance::FindResources(const Variant &variant, boo
             return;
         }
 
-        for (auto& prop : type.get_properties()) {
-            auto property_info = prop.get_metadata(PROPERTY_INFO_KEY).get_value<PropertyInfo>();
+
+        for (auto& prop : Object::GetDerivedTypeByInstance(variant).get_properties()) {
+            PropertyInfo property_info;
+            auto meta_data = prop.get_metadata(PROPERTY_INFO_KEY);
+            if (meta_data.is_valid()) {
+                property_info = meta_data.get_value<PropertyInfo>();
+            }
             USING_ENUM_BITWISE_OPERATORS;
-            if (!(bool)(property_info.usage & PropertyUsageFlags::Storage)) {
+            if ((bool)(property_info.usage & PropertyUsageFlags::Storage)) {
                 Variant v = res->Get(prop.get_name().data());
                 FindResources(v);
             }
@@ -487,7 +493,11 @@ void ResourceFormatSaverSceneInstance::FindResources(const Variant &variant, boo
         }
     }  else if (type_category == TypeCategory::Compound) {
         for (auto &prop: type.get_properties()) {
-            auto property_info = prop.get_metadata(PROPERTY_INFO_KEY).get_value<PropertyInfo>();
+            PropertyInfo property_info;
+            auto meta_data = prop.get_metadata(PROPERTY_INFO_KEY);
+            if (meta_data.is_valid()) {
+                property_info = meta_data.get_value<PropertyInfo>();
+            }
             USING_ENUM_BITWISE_OPERATORS;
             if (!(bool) (property_info.usage & PropertyUsageFlags::Storage)) {
                 Variant v = prop.get_value(variant);

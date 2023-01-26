@@ -171,9 +171,8 @@ void VariantSerializer::ToJsonRecursively(Instance object, Json& writer)
     auto raw_type = object.get_type().get_raw_type();
     Instance obj = raw_type.is_wrapper() ? object.get_wrapped_instance() : object;
     if (raw_type.is_wrapper() && raw_type.get_wrapper_holder_type() == WrapperHolderType::Ref) {
-        if (!SaveResource(obj, raw_type, writer)) {
-            return;
-        };
+        SaveResource(obj, raw_type, writer);
+        return;
     }
 
     auto prop_list = obj.get_derived_type().get_properties();

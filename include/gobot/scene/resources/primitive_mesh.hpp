@@ -8,13 +8,21 @@
 #pragma once
 
 #include "gobot/scene/resources/mesh.hpp"
+#include "gobot/scene/resources/material.hpp"
 
 namespace gobot {
 
 class GOBOT_API PrimitiveMesh : public Mesh {
     GOBCLASS(PrimitiveMesh, Mesh)
 public:
+    PrimitiveMesh();
 
+    void SetMaterial(const Ref<Material>& material);
+
+    Ref<Material> GetMaterial() const;
+
+private:
+    Ref<Material> material_{nullptr};
 };
 
 
@@ -22,12 +30,20 @@ class GOBOT_API BoxMesh : public PrimitiveMesh {
     GOBCLASS(BoxMesh, PrimitiveMesh)
 public:
 
+    BoxMesh();
+
+    void SetWidth(float width);
+
+    float GetWidth() const;
+
+private:
+    float width_{0.5};
 };
 
 class GOBOT_API CylinderMesh : public PrimitiveMesh {
     GOBCLASS(CylinderMesh, PrimitiveMesh)
 public:
-
+    CylinderMesh();
 
 private:
 
@@ -36,12 +52,13 @@ private:
 class GOBOT_API PlaneMesh : public PrimitiveMesh {
     GOBCLASS(PlaneMesh, PrimitiveMesh)
 public:
-
+    PlaneMesh();
 };
 
 class GOBOT_API SphereMesh : public PrimitiveMesh {
     GOBCLASS(SphereMesh, PrimitiveMesh)
 public:
+    SphereMesh();
 
 };
 
@@ -50,6 +67,7 @@ class GOBOT_API CapsuleMesh : public PrimitiveMesh {
     GOBCLASS(CapsuleMesh, PrimitiveMesh)
 public:
 
+    CapsuleMesh();
 };
 
 

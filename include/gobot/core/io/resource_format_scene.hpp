@@ -72,8 +72,8 @@ private:
     bool takeover_paths_ = false;
     Ref<PackedScene> packed_scene_;
     String local_path_;
-    std::unordered_map<Ref<Resource>, Uuid> external_resources_;
-    std::unordered_map<Ref<Resource>, Uuid> internal_resources_;
+    std::unordered_map<Ref<Resource>, String> external_resources_;
+    std::unordered_map<Ref<Resource>, String> internal_resources_;
     std::vector<Ref<Resource>> saved_resources_;
     std::unordered_set<Ref<Resource>> resource_set_;
 };

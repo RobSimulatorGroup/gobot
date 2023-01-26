@@ -11,6 +11,7 @@
 #include <gobot/core/io/resource_format_scene.hpp>
 #include <gobot/core/config/project_setting.hpp>
 #include <gobot/scene/resources/cylinder_shape_3d.hpp>
+#include <gobot/scene/resources/primitive_mesh.hpp>
 #include <gobot/core/types.hpp>
 #include <gobot/log.hpp>
 
@@ -58,10 +59,28 @@ TEST_F(TestResourceFormatScene, test_save_load) {
 
 }
 
-TEST(TestResourceFormatScene, test_subresource) {
+TEST_F(TestResourceFormatScene, test_subresource) {
+    gobot::Ref<gobot::BoxMesh> box_mesh = gobot::MakeRef<gobot::BoxMesh>();
+    box_mesh->SetWidth(1.1);
+    auto material_3d = gobot::MakeRef<gobot::Material3D>();
+    box_mesh->SetMaterial(material_3d);
 
+
+    LOG_ERROR("{}", material_3d.use_count());
+
+    USING_ENUM_BITWISE_OPERATORS;
+    gobot::ResourceSaver::Save(box_mesh, "res://box_mesh.jres",
+                               gobot::ResourceSaverFlags::ReplaceSubResourcePaths |
+                               gobot::ResourceSaverFlags::ChangePath);
+    LOG_ERROR("{}", box_mesh->GetMaterial() == material_3d);
+    LOG_ERROR("{}", material_3d.use_count());
+
+//    gobot::Ref<gobot::Resource> cylinder = gobot::ResourceLoader::Load("res://cyl.jres");
+//    ASSERT_TRUE(cylinder->get_type().get_name() == "CylinderShape3D");
+//    cy = gobot::dynamic_pointer_cast<gobot::CylinderShape3D>(cylinder);
+//    ASSERT_TRUE(cy->GetRadius() ==  1.1f);
 }
 
-TEST(TestResourceFormatScene, ext_subresource) {
-
-}
+//TEST(TestResourceFormatScene, ext_subresource) {
+//
+//}

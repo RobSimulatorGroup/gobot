@@ -5,17 +5,23 @@
  * This file is created by Qiqi Wu, 22-12-21
 */
 
-#pragma once
-
-#include "gobot/core/io/resource.hpp"
+#include "gobot/scene/resources/mesh.hpp"
+#include "gobot/core/registration.hpp"
 
 namespace gobot {
 
-class GOBOT_API Mesh : public Resource {
-    GOBCLASS(Mesh, Resource);
-public:
-    Mesh();
+Mesh::Mesh() {
+
+}
+
+}
+
+GOBOT_REGISTRATION {
+    Class_<Mesh>("Mesh")
+        .constructor()(CtorAsRawPtr);
+
+    gobot::Type::register_wrapper_converter_for_base_classes<Ref<Mesh>, Ref<Resource>>();
 
 };
 
-}
+
