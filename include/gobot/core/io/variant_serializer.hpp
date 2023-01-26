@@ -25,8 +25,6 @@ public:
                                  const Json& json,
                                  ResourceFormatLoaderSceneInstance* s_resource_format_loader = nullptr);
 
-    static bool IsPrimitiveTypes(Instance instance);
-
 private:
 
     // For Save

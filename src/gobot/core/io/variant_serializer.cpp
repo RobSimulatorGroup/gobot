@@ -29,7 +29,7 @@ bool VariantSerializer::WriteAtomicTypesToJson(const Type& t, const Variant& var
         else if (t == Type::get<int16_t>())
             writer = var.to_int16();
         else if (t == Type::get<int32_t>())
-            writer == var.to_int32();
+            writer = var.to_int32();
         else if (t == Type::get<int64_t>())
             writer = var.to_int64();
         else if (t == Type::get<uint8_t>())
@@ -219,7 +219,7 @@ Json VariantSerializer::VariantToJson(const Variant& variant,
     }
 
     s_resource_format_saver_ = resource_format_saver;
-    ToJsonRecursively(variant, json);
+    WriteVariant(variant, json);
     return json;
 }
 
