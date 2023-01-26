@@ -17,6 +17,9 @@
 TEST(TestVariantSerializer, test_vector_int) {
     std::vector<int> vector_int{1, 2, 3};
     gobot::Variant var(vector_int);
-    auto aa = gobot::VariantSerializer::VariantToJson(var);
-    LOG_ERROR("{}", aa.dump(4));
+    auto json = gobot::VariantSerializer::VariantToJson(var);
+    LOG_ERROR("{}", json.dump(4));
+    gobot::Variant aa = gobot::VariantSerializer::JsonToVariant(var.get_type(), json);
+    LOG_INFO("{}", aa.get_type().get_name().data());
+
 }

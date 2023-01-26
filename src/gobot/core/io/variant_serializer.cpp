@@ -212,13 +212,8 @@ Json VariantSerializer::VariantToJson(const Variant& variant,
         return {};
     }
 
-    Json json;
-    auto type = variant.get_type();
-    if(WriteAtomicTypesToJson(type, variant, json)) {
-        return json;
-    }
-
     s_resource_format_saver_ = resource_format_saver;
+    Json json;
     WriteVariant(variant, json);
     return json;
 }
@@ -316,9 +311,19 @@ Variant VariantSerializer::ExtractValue(const Type& type, const Json& json)
             if (item.get_instantiated_type() == type)
                 ctor = item;
         }
-        auto extracted_value = ctor.invoke();
-        FromJsonRecursively(extracted_value, json);
-        return extracted_value;
+        auto value = ctor.invoke();
+        FromJsonRecursively(value, json);
+        return value;
+    } else if (json.is_array()) {
+        rttr::constructor ctor = type.get_constructor();
+        for (auto& item : type.get_constructors()) {
+            if (item.get_instantiated_type() == type)
+                ctor = item;
+        }
+        auto value = ctor.invoke();
+        auto view = value.create_sequential_view();
+        WriteArrayRecursively(view, json);
+        return value;
     }
 
     return {};
@@ -453,21 +458,14 @@ Variant VariantSerializer::JsonToVariant(const Type& type,
         LOG_ERROR("Input json is null");
         return {};
     }
+    if (!type.is_valid()) {
+        LOG_ERROR("Input type is invalid");
+        return {};
+    }
 
     s_resource_format_loader_ = s_resource_format_loader;
 
-    if (json.is_primitive()) {
-        return ExtractPrimitiveTypes(type, json);
-    } else if (json.is_structured()) {
-        auto value = type.create();
-        if (type.is_derived_from<RefCounted>()) {
-            auto* ref_counted = value.convert<RefCounted*>();
-            value = Ref<RefCounted>(ref_counted);
-        }
-        FromJsonRecursively(value, json);
-        return value;
-    }
-    return {};
+    return ExtractValue(type, json);
 }
 
 }
