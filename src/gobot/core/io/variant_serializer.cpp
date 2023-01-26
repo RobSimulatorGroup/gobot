@@ -213,7 +213,19 @@ Json VariantSerializer::VariantToJson(const Variant& variant,
 
     s_resource_format_saver_ = resource_format_saver;
     Json json;
-    WriteVariant(variant, json);
+
+    auto type = variant.get_type();
+    if (type.is_arithmetic() || type.is_enumeration() ||
+        type == Type::get<String>() || type == Type::get<std::string>()) {
+        WriteAtomicTypesToJson(type, variant, json);
+    } else if (type.is_sequential_container()) {
+        WriteArray(variant.create_sequential_view(), json);
+    } else if (type.is_associative_container()) {
+        WriteAssociativeContainer(variant.create_associative_view(), json);
+    } else {
+        ToJsonRecursively(variant, json);
+    }
+
     return json;
 }
 

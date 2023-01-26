@@ -390,7 +390,6 @@ bool ResourceFormatSaverSceneInstance::Save(const String &path, const Ref<Resour
             if ((bool)(property_info.usage & PropertyUsageFlags::Storage)) {
                 Variant value = saved_resource->Get(prop.get_name().data());
                 auto aa = VariantSerializer::VariantToJson(value, this);
-                LOG_ERROR("{}", aa.dump(4));
                 resource_data_json[prop.get_name().data()] = aa;
             }
         }
@@ -422,7 +421,7 @@ bool ResourceFormatSaverSceneInstance::Save(const String &path, const Ref<Resour
             }
             internal_resources_[saved_resource] = saved_resource->GetUniqueId();
 
-            resource_data_json["__ID__"] =  std::string(class_name) + "_" + saved_resource->GetUniqueId().toStdString();
+            resource_data_json["__ID__"] = saved_resource->GetUniqueId().toStdString();
             root["__SUB_RESOURCES__"].emplace_back(resource_data_json);
         }
     }
