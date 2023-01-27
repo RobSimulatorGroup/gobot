@@ -375,6 +375,22 @@ bool ResourceFormatSaverSceneInstance::Save(const String &path, const Ref<Resour
         Json resource_data_json;
         auto type = Object::GetDerivedTypeByInstance(saved_resource);
 
+        for (auto& prop : type.get_properties()) {
+            if (prop.is_readonly()) {
+                continue;
+            }
+            PropertyInfo property_info;
+            auto property_metadata = prop.get_metadata(PROPERTY_INFO_KEY);
+            if (property_metadata.is_valid()) {
+                property_info = property_metadata.get_value<PropertyInfo>();
+            }
+            USING_ENUM_BITWISE_OPERATORS;
+            if ((bool)(property_info.usage & PropertyUsageFlags::Storage)) {
+                Variant value = saved_resource->Get(prop.get_name().data());
+                resource_data_json[prop.get_name().data()] = VariantSerializer::VariantToJson(value, this);;
+            }
+        }
+
         if (main) {
             root["__RESOURCE__"] = resource_data_json;
             root["__TYPE__"] = type.get_name().data();
@@ -404,22 +420,6 @@ bool ResourceFormatSaverSceneInstance::Save(const String &path, const Ref<Resour
 
             resource_data_json["__ID__"] = saved_resource->GetUniqueId().toStdString();
             root["__SUB_RESOURCES__"].emplace_back(resource_data_json);
-        }
-
-        for (auto& prop : type.get_properties()) {
-            if (prop.is_readonly()) {
-                continue;
-            }
-            PropertyInfo property_info;
-            auto property_metadata = prop.get_metadata(PROPERTY_INFO_KEY);
-            if (property_metadata.is_valid()) {
-                property_info = property_metadata.get_value<PropertyInfo>();
-            }
-            USING_ENUM_BITWISE_OPERATORS;
-            if ((bool)(property_info.usage & PropertyUsageFlags::Storage)) {
-                Variant value = saved_resource->Get(prop.get_name().data());
-                resource_data_json[prop.get_name().data()] = VariantSerializer::VariantToJson(value, this);;
-            }
         }
     }
 
