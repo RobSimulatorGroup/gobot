@@ -125,7 +125,7 @@ bool ResourceFormatLoaderSceneInstance::LoadResource() {
                 if (cache_mode_ == ResourceFormatLoader::CacheMode::Replace && ResourceCache::Has(path)) {
                     //reuse existing
                     Ref<Resource> cache = ResourceCache::GetRef(path);
-                    if (cache.is_valid() && cache->GetClassName().data() == type) {
+                    if (cache.IsValid() && cache->GetClassName().data() == type) {
                         res = cache;
                         res->ResetState();
                         do_assign = true;
@@ -134,7 +134,7 @@ bool ResourceFormatLoaderSceneInstance::LoadResource() {
 
                 if (!res) {
                     Ref<Resource> cache = ResourceCache::GetRef(path);
-                    if (cache_mode_ != ResourceFormatLoader::CacheMode::Ignore && cache.is_valid()) { //only if it doesn't exist
+                    if (cache_mode_ != ResourceFormatLoader::CacheMode::Ignore && cache.IsValid()) { //only if it doesn't exist
                         //cached, do not assign
                         res = cache;
                     } else {
@@ -177,12 +177,12 @@ bool ResourceFormatLoaderSceneInstance::LoadResource() {
         }
 
         Ref<Resource> cache = ResourceCache::GetRef(local_path_);
-        if (cache_mode_ == ResourceFormatLoader::CacheMode::Replace && cache.is_valid() && cache->GetClassName().data() == res_type_) {
+        if (cache_mode_ == ResourceFormatLoader::CacheMode::Replace && cache.IsValid() && cache->GetClassName().data() == res_type_) {
             cache->ResetState();
             resource_ = cache;
         }
 
-        if (!resource_.is_valid()) {
+        if (!resource_.IsValid()) {
 
             Variant new_obj = Type::get_by_name(res_type_.toStdString()).create();
             auto *r = new_obj.convert<Resource*>();
@@ -327,11 +327,11 @@ bool ResourceFormatSaverSceneInstance::Save(const String &path, const Ref<Resour
     // Save resources.
     FindResources(resource, true);
 
-    if (packed_scene_.is_valid()) {
+    if (packed_scene_.IsValid()) {
         // Add instances to external resources if saving a packed scene.
         for (std::size_t i = 0; i < packed_scene_->GetState()->GetNodeCount(); i++) {
             Ref<PackedScene> instance = packed_scene_->GetState()->GetNodeInstance(i);
-            if (instance.is_valid() && !external_resources_.contains(instance)) {
+            if (instance.IsValid() && !external_resources_.contains(instance)) {
                 external_resources_[instance] = Resource::GenerateResourceUniqueId();
             }
         }
@@ -339,7 +339,7 @@ bool ResourceFormatSaverSceneInstance::Save(const String &path, const Ref<Resour
 
     Json root;
     root["__VERSION__"] = FORMAT_VERSION;
-    root["__META_TYPE__"] = packed_scene_.is_valid() ? "SCENE" : "RESOURCE";
+    root["__META_TYPE__"] = packed_scene_.IsValid() ? "SCENE" : "RESOURCE";
 
     root["__EXT_RESOURCES__"] = Json::array();
     for (const auto& [res, uuid]: external_resources_) {
@@ -369,7 +369,7 @@ bool ResourceFormatSaverSceneInstance::Save(const String &path, const Ref<Resour
             continue;
         }
         bool main = (saved_resource == saved_resources_.back());
-        if (main && packed_scene_.is_valid()) {
+        if (main && packed_scene_.IsValid()) {
             break; // Save as a scene.
         }
         Json resource_data_json;
@@ -438,7 +438,7 @@ void ResourceFormatSaverSceneInstance::FindResources(const Variant &variant, boo
             LOG_ERROR("Cannot convert variant: {} to Ref<Resource>", variant.get_type().get_name().data());
             return;
         }
-        if (!res.is_valid() || external_resources_.contains(res)) {
+        if (!res.IsValid() || external_resources_.contains(res)) {
             return;
         }
         // built in means internal_resources_

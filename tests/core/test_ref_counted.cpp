@@ -33,42 +33,30 @@ GOBOT_REGISTRATION {
 
 TEST(TestRefCounted, test_count) {
     gobot::Ref<gobot::RefCounted> p;
-    gobot::RefWeak<gobot::RefCounted> wp;
     p = gobot::MakeRef<gobot::TestResource>();
-    ASSERT_TRUE(p.use_count() == 1);
+    ASSERT_TRUE(p.UseCount() == 1);
+
     gobot::Ref<gobot::RefCounted> p1 = p;
-    ASSERT_TRUE(p.use_count() == 2);
-    ASSERT_TRUE(p.weak_count() == 0);
+    ASSERT_TRUE(p.UseCount() == 2);
 
-    wp = p;
-    ASSERT_TRUE(p.weak_count() == 1);
-    gobot::Ref<gobot::RefCounted> p2 = wp.lock();
-    ASSERT_TRUE(p.use_count() == 3);
-    ASSERT_EQ(p2.get(), p.get());
-    ASSERT_EQ(p2.get(), p1.get());
+    ASSERT_EQ(p.Get(), p1.Get());
 
-    wp.reset();
-    ASSERT_TRUE(p.weak_count() == 0);
-    p2.reset();
-    ASSERT_TRUE(p.use_count() == 2);
+    p1.Reset();
+    ASSERT_TRUE(p->GetReferenceCount() == 1);
 
-    p1.reset();
-    ASSERT_TRUE(p.use_count() == 1);
-
-    p.reset();
-    ASSERT_TRUE(p.use_count() == 0);
-
+    p.Reset();
+    ASSERT_TRUE(p.UseCount() == 0);
 }
 
 TEST(TestRefCounted, test_nullptr) {
     gobot::Ref<gobot::RefCounted> p{nullptr};
-    ASSERT_TRUE(p.use_count() == 0);
+    ASSERT_TRUE(p.UseCount() == 0);
     ASSERT_FALSE(p.operator bool());
 
     p = gobot::MakeRef<gobot::TestResource>();
-    ASSERT_TRUE(p.unique());
+    ASSERT_TRUE(p->Unique());
     ASSERT_TRUE(p.operator bool());
-    ASSERT_TRUE(p.is_valid());
+    ASSERT_TRUE(p.IsValid());
 }
 
 
@@ -85,7 +73,7 @@ TEST(TestRefRegister, test_ref) {
         p = resource.convert<gobot::Ref<gobot::RefCounted>>();
     }
 
-    ASSERT_TRUE(p.use_count() == 1);
+    ASSERT_TRUE(p.UseCount() == 1);
 }
 
 

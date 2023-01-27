@@ -88,7 +88,7 @@ Ref<Resource> ResourceLoader::Load(const String &path,
     if (cache_mode != ResourceFormatLoader::CacheMode::Ignore) {
         Ref<Resource> existing = ResourceCache::GetRef(local_path);
 
-        if (existing.is_valid()) {
+        if (existing.IsValid()) {
             return existing; //use cached
         }
 
@@ -133,7 +133,7 @@ bool ResourceLoader::Exists(const String &path, const String &type_hint) {
 }
 
 void ResourceLoader::AddResourceFormatLoader(Ref<ResourceFormatLoader> format_loader, bool at_front) {
-    if (!format_loader.is_valid()) {
+    if (!format_loader.IsValid()) {
         LOG_ERROR("It's not a reference to a valid ResourceFormatLoader object.");
         return;
     }

@@ -61,7 +61,7 @@ bool ResourceSaver::Save(const Ref<Resource>& resource, const String& target_pat
 
         USING_ENUM_BITWISE_OPERATORS;
 
-        Resource* rwcopy = resource.get();
+        Resource* rwcopy = resource.Get();
         if ((bool)(flags & ResourceSaverFlags::ChangePath)) {
             rwcopy->SetPath(local_path);
         }
@@ -92,7 +92,7 @@ void ResourceSaver::GetRecognizedExtensions(const Ref<Resource> &resource, std::
 }
 
 void ResourceSaver::AddResourceFormatSaver(Ref<ResourceFormatSaver> format_saver, bool at_front) {
-    if (!format_saver.is_valid()) {
+    if (!format_saver.IsValid()) {
         LOG_ERROR("It's not a reference to a valid ResourceFormatSaver object.");
         return;
     }

@@ -143,7 +143,7 @@ void Resource::SetPath(const String &path, bool take_over) {
 
     Ref<Resource> existing = ResourceCache::GetRef(path);
 
-    if (existing.use_count()) {
+    if (existing.UseCount()) {
         if (take_over) {
             existing->path_cache_ = String();
             ResourceCache::s_resources.erase(path);
@@ -216,7 +216,7 @@ void Resource::ReloadFromFile() {
 
     Ref<Resource> resource = ResourceLoader::Load(path, GetClassName().data(), ResourceFormatLoader::CacheMode::Ignore);
 
-    if (!resource.is_valid()) {
+    if (!resource.IsValid()) {
         return;
     }
 
@@ -228,7 +228,7 @@ void Resource::ResetState() {
 }
 
 bool Resource::CopyFrom(const Ref<Resource> &resource) {
-    if (!resource.is_valid()) {
+    if (!resource.IsValid()) {
         LOG_ERROR("input resource is invalid");
         return false;
     }
@@ -267,7 +267,7 @@ bool ResourceCache::Has(const String &path) {
 
     auto it = s_resources.find(path);
 
-    if (it != s_resources.end() && it->second->use_count() == 0) {
+    if (it != s_resources.end() && it->second->GetReferenceCount() == 0) {
         // This resource is in the process of being deleted, ignore its existence.
         it->second->path_cache_ = String();
         it->second = nullptr;
@@ -293,7 +293,7 @@ Ref<Resource> ResourceCache::GetRef(const String &path) {
         ref = Ref<Resource>(it->second);
     }
 
-    if (it != s_resources.end() && it->second->use_count() == 0) {
+    if (it != s_resources.end() && it->second->GetReferenceCount() == 0) {
         // This resource is in the process of being deleted, ignore its existence
         it->second->path_cache_ = String();
         it->second = nullptr;

@@ -361,6 +361,8 @@ public:
     explicit constexpr intrusive_ptr(_T * __t) noexcept
             : __x_t(__t)
     {
+        if (__x_t->_Impl_intrusive_ptr::_Ref_count_base::__get_ref() > 1)
+        __x_t->_Impl_intrusive_ptr::_Ref_count_base::__add_ref();
     }
     template<typename _U, typename _E,
             typename std::enable_if<

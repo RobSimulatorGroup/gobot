@@ -70,8 +70,8 @@ TEST_F(TestResourceFormatScene, test_subresource) {
                                gobot::ResourceSaverFlags::ReplaceSubResourcePaths |
                                gobot::ResourceSaverFlags::ChangePath);
 
-//    gobot::Ref<gobot::Resource> cylinder = gobot::ResourceLoader::Load("res://cyl.jres");
-//    ASSERT_TRUE(cylinder->get_type().get_name() == "CylinderShape3D");
+    gobot::Ref<gobot::Resource> box = gobot::ResourceLoader::Load("res://box_mesh.jres");
+    ASSERT_TRUE(box->get_type().get_name() == "BoxMesh");
 //    cy = gobot::dynamic_pointer_cast<gobot::CylinderShape3D>(cylinder);
 //    ASSERT_TRUE(cy->GetRadius() ==  1.1f);
 }
