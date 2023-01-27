@@ -54,13 +54,14 @@
 
 #define GOB_UNUSED(x) (void)x;
 
+#define GOB_STRINGIFY(x) #x
+
 
 #ifdef _MSC_VER
 #define GENERATE_TRAP() __debugbreak()
 #else
 #define GENERATE_TRAP() __builtin_trap()
 #endif
-
 
 
 namespace rttr::detail

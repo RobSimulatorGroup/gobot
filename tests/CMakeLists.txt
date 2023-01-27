@@ -35,3 +35,5 @@ package_add_test(test_resource core/io/test_resource.cpp)
 package_add_test(test_string_utils core/test_string_utils.cpp)
 package_add_test(test_variant_serializer core/io/test_variant_serializer.cpp)
 package_add_test(test_resource_format_scene core/io/test_resource_format_scene.cpp)
+
+package_add_test(test_node_path scene/test_node_path.cpp)
