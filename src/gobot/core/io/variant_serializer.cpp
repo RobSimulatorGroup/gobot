@@ -146,10 +146,11 @@ bool VariantSerializer::WriteVariant(const Variant& var, Json& writer)
 }
 
 
-bool VariantSerializer::SaveResource(Instance instance, const Type& type, Json& writer) {
+bool VariantSerializer::SaveResource(const Variant& variant, const Type& type, Json& writer) {
     if (s_resource_format_saver_) {
-        auto res = Ref<Resource>(instance.try_convert<Resource>());
-        if (!res) {
+        bool success{false};
+        auto res = variant.convert<Ref<Resource>>(&success);
+        if (!success) {
             LOG_ERROR("Cannot convert object to Resource {}", type.get_name().data());
             return false;
         }
@@ -166,12 +167,13 @@ bool VariantSerializer::SaveResource(Instance instance, const Type& type, Json& 
     return true;
 }
 
-void VariantSerializer::ToJsonRecursively(Instance object, Json& writer)
+void VariantSerializer::ToJsonRecursively(const Variant& variant, Json& writer)
 {
+    Instance object(variant);
     auto raw_type = object.get_type().get_raw_type();
     Instance obj = raw_type.is_wrapper() ? object.get_wrapped_instance() : object;
     if (raw_type.is_wrapper() && raw_type.get_wrapper_holder_type() == WrapperHolderType::Ref) {
-        SaveResource(obj, raw_type, writer);
+        SaveResource(variant, raw_type, writer);
         return;
     }
 

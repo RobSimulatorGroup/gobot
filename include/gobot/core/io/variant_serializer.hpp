@@ -34,10 +34,10 @@ private:
     static ResourceFormatLoaderSceneInstance* s_resource_format_loader_;
 
     //////////////////////////////////////////
-    static void ToJsonRecursively(Instance object, Json& writer);
+    static void ToJsonRecursively(const Variant& variant, Json& writer);
 
     // return is continue or not
-    static bool SaveResource(Instance instance, const Type& t, Json& writer);
+    static bool SaveResource(const Variant& variant, const Type& t, Json& writer);
 
     static bool WriteVariant(const Variant& var, Json& writer);
 
