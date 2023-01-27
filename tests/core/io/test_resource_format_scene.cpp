@@ -72,8 +72,8 @@ TEST_F(TestResourceFormatScene, test_subresource) {
 
     gobot::Ref<gobot::Resource> box = gobot::ResourceLoader::Load("res://box_mesh.jres");
     ASSERT_TRUE(box->get_type().get_name() == "BoxMesh");
-//    cy = gobot::dynamic_pointer_cast<gobot::CylinderShape3D>(cylinder);
-//    ASSERT_TRUE(cy->GetRadius() ==  1.1f);
+    auto box_load = gobot::dynamic_pointer_cast<gobot::BoxMesh>(box);
+    ASSERT_TRUE(box_load->GetWidth() ==  1.1f);
 }
 
 //TEST(TestResourceFormatScene, ext_subresource) {
