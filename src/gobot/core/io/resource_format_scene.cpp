@@ -114,8 +114,8 @@ bool ResourceFormatLoaderSceneInstance::LoadResource() {
                     return false;
                 }
 
-                String type = String::fromStdString(to_string(sub_res["__TYPE__"]));
-                String id = String::fromStdString(to_string(sub_res["__ID__"]));
+                String type = String::fromStdString(std::string(sub_res["__TYPE__"]));
+                String id = String::fromStdString(std::string(sub_res["__ID__"]));
 
                 // local resource's id is local_path + "::" + id
                 String path = local_path_ + "::" + id;
@@ -141,9 +141,9 @@ bool ResourceFormatLoaderSceneInstance::LoadResource() {
                         //create
                         Variant new_obj = Type::get_by_name(type.toStdString()).create();
                         bool success{false};
-                        auto* r = new_obj.convert<Resource*>();
+                        auto* r = new_obj.convert<Resource*>(&success);
 
-                        if (!r) {
+                        if (!success) {
                             LOG_ERROR("Can't create sub resource of type, because not a Resource: {}", type);
                             return false;
                         }
