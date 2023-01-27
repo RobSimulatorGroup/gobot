@@ -114,7 +114,7 @@ public:
 
 
     [[nodiscard]] inline size_t UseCount() const noexcept {
-        if (ptr_) ptr_->GetReferenceCount();
+        if (ptr_) return ptr_->GetReferenceCount();
         else return 0;
     }
 
