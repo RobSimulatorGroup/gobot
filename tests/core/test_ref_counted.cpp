@@ -89,6 +89,13 @@ TEST(TestRefRegister, test_create) {
     ASSERT_TRUE(resource.get_type().is_derived_from<gobot::TestResource>());
 }
 
+TEST(TestRefRegister, test_init_ref_with_ref) {
+    auto p = gobot::MakeRef<gobot::TestResource>();
+
+    gobot::Ref<gobot::TestResource> p2(p.Get());
+    ASSERT_TRUE(p.UseCount() == 2);
+}
+
 int main(int argc, char **argv)
 {
     ::testing::InitGoogleTest(&argc, argv);
