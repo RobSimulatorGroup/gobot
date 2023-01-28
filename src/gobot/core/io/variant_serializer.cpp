@@ -157,7 +157,7 @@ bool VariantSerializer::SaveResource(const Variant& variant, const Type& type, J
         if (s_resource_format_saver_->external_resources_.contains(res)) {
             writer = fmt::format("ExtResource({})", s_resource_format_saver_->external_resources_[res]);
         } else if (s_resource_format_saver_->internal_resources_.contains(res)) {
-            writer = fmt::format("SubResource({})", s_resource_format_saver_->external_resources_[res]);
+            writer = fmt::format("SubResource({})", res->GetUniqueId());
         }
     } else {
         LOG_ERROR("Unsupported wrapper type: {}", type.get_name().data());
