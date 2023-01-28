@@ -62,6 +62,7 @@ TEST_F(TestResourceFormatScene, test_subresource) {
     gobot::Ref<gobot::BoxMesh> box_mesh = gobot::MakeRef<gobot::BoxMesh>();
     box_mesh->SetWidth(1.1);
     auto material_3d = gobot::MakeRef<gobot::Material3D>();
+    material_3d->SetAlbedo(gobot::Color::fromRgb(255, 255, 100));
     box_mesh->SetMaterial(material_3d);
 
 
@@ -74,8 +75,30 @@ TEST_F(TestResourceFormatScene, test_subresource) {
     ASSERT_TRUE(box->get_type().get_name() == "BoxMesh");
     auto box_load = gobot::dynamic_pointer_cast<gobot::BoxMesh>(box);
     ASSERT_TRUE(box_load->GetWidth() ==  1.1f);
+    auto material3d = gobot::dynamic_pointer_cast<gobot::Material3D>(box_load->GetMaterial());
+    ASSERT_TRUE(material3d.IsValid());
+    ASSERT_TRUE(material3d->GetAlbedo().blue() == 100);
 }
 
-//TEST(TestResourceFormatScene, ext_subresource) {
+TEST_F(TestResourceFormatScene, test_extresource) {
+//    gobot::Ref<gobot::BoxMesh> box_mesh = gobot::MakeRef<gobot::BoxMesh>();
+//    box_mesh->SetWidth(1.1);
+//    auto material_3d = gobot::MakeRef<gobot::Material3D>();
+//    USING_ENUM_BITWISE_OPERATORS;
+//    gobot::ResourceSaver::Save(material_3d, "res://meterial.jres",
+//                               gobot::ResourceSaverFlags::ReplaceSubResourcePaths |
+//                               gobot::ResourceSaverFlags::ChangePath);
 //
-//}
+//    box_mesh->SetMaterial(material_3d);
+//
+//    gobot::ResourceSaver::Save(box_mesh, "res://box_mesh_ext.jres",
+//                               gobot::ResourceSaverFlags::ReplaceSubResourcePaths |
+//                               gobot::ResourceSaverFlags::ChangePath);
+//
+//    gobot::Ref<gobot::Resource> box = gobot::ResourceLoader::Load("res://box_mesh_ext.jres");
+//    ASSERT_TRUE(box->get_type().get_name() == "BoxMesh");
+//    auto box_load = gobot::dynamic_pointer_cast<gobot::BoxMesh>(box);
+//    ASSERT_TRUE(box_load->GetWidth() ==  1.1f);
+
+
+}

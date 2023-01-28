@@ -150,6 +150,33 @@ bool ResourceFormatLoaderSceneInstance::LoadResource() {
 
                         res = Ref<Resource>(r);
                         do_assign = true;
+
+                        for (const auto&[key, value] : sub_res.items()) {
+                            if (key.starts_with("__")) {
+                                continue;
+                            }
+                            auto property_value = res->Get(key.c_str());
+                            if (!property_value.is_valid()) {
+                                continue;
+                            }
+
+                            if (!VariantSerializer::JsonToVariant(property_value, value, this)) {
+                                LOG_ERROR("Convert Json:{} to Variant({})", value.dump(4), property_value.get_type().get_name().data());
+                                continue;
+                            }
+
+                            if (!property_value.convert(res->GetPropertyType(key.c_str()))) {
+                                LOG_ERROR("Cannot convert source type: {} to target type: {}",
+                                          property_value.get_type().get_name().data(),
+                                          res->GetPropertyType(key.c_str()).get_name().data());
+                                continue;
+                            }
+
+                            if (!res->Set(key.c_str(), property_value)) {
+                                LOG_ERROR("Convert set key:{} to resource", key.c_str());
+                                continue;
+                            }
+                        }
                     }
                 }
 
@@ -185,8 +212,9 @@ bool ResourceFormatLoaderSceneInstance::LoadResource() {
         if (!resource_.IsValid()) {
 
             Variant new_obj = Type::get_by_name(res_type_.toStdString()).create();
-            auto *r = new_obj.convert<Resource*>();
-            if (!r) {
+            bool success{false};
+            auto *r = new_obj.convert<Resource*>(&success);
+            if (!success) {
                 LOG_ERROR("Can't create sub resource of type, because not a resource: {}", res_type_);
                 return false;
             }
@@ -196,12 +224,26 @@ bool ResourceFormatLoaderSceneInstance::LoadResource() {
 
         for (const auto&[key, value] : json["__RESOURCE__"].items()) {
             auto property_value = resource_->Get(key.c_str());
-
-            if (!VariantSerializer::JsonToVariant(property_value, value)) {
-                LOG_ERROR("Convert Json:{} to Variant:({})", value.dump(4), property_value.get_type().get_name().data());
+            if (!property_value.is_valid()) {
+                continue;
             }
 
-            resource_->Set(key.c_str(), property_value);
+            if (!VariantSerializer::JsonToVariant(property_value, value, this)) {
+                LOG_ERROR("Convert Json:{} to Variant({})", value.dump(4), property_value.get_type().get_name().data());
+                continue;
+            }
+
+            if (!property_value.convert(resource_->GetPropertyType(key.c_str()))) {
+                LOG_ERROR("Cannot convert source type: {} to target type: {}",
+                          property_value.get_type().get_name().data(),
+                          resource_->GetPropertyType(key.c_str()).get_name().data());
+                continue;
+            }
+
+            if (!resource_->Set(key.c_str(), property_value)) {
+                LOG_ERROR("Convert set key:{} to resource", key.c_str());
+                continue;
+            }
         }
 
         if (cache_mode_ != ResourceFormatLoader::CacheMode::Ignore) {

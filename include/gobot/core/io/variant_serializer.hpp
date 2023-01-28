@@ -49,11 +49,11 @@ private:
 
     ///////////////////////////////////////////
 
-    static bool LoadSubResource(Instance obj, const String& id);
+    static bool LoadSubResource(Variant& variant, const String& id);
 
-    static bool LoadExtResource(Instance obj, const String& id);
+    static bool LoadExtResource(Variant& variant, const String& id);
 
-    static bool FromJsonRecursively(Instance variant, const Json& json);
+    static bool FromJsonRecursively(Variant& variant, const Json& json);
 
     static Variant ExtractPrimitiveTypes(const Type& type, const Json& json_value);
 
@@ -63,7 +63,7 @@ private:
 
     static Variant ExtractValue(const Type& type, const Json& json);
 
-    static bool LoadResource(Instance obj, const Type& t, const Json& json);
+    static bool LoadResource(Variant& variant, const Json& json);
 
 };
 

@@ -328,4 +328,6 @@ GOBOT_REGISTRATION {
         .property("resource_name", &Resource::GetName, &Resource::SetName)
         .property("resource_path", &Resource::GetPath, &Resource::SetPathNotTakeOver);
 
+    gobot::Type::register_wrapper_converter_for_base_classes<Ref<Resource>, Ref<RefCounted>>();
+
 };

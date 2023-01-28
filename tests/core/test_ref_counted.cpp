@@ -81,6 +81,7 @@ TEST(TestRefRegister, test_get_wrapped_instance) {
     gobot::Variant resource = gobot::MakeRef<gobot::TestResource>();
     gobot::Instance instance = resource;
     ASSERT_TRUE(instance.get_wrapped_instance().get_type() == gobot::Type::get<gobot::TestResource*>());
+    ASSERT_TRUE(instance.get_wrapped_instance().is_valid());
 }
 
 TEST(TestRefRegister, test_create) {

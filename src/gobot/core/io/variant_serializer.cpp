@@ -379,55 +379,45 @@ bool VariantSerializer::WriteAssociativeViewRecursively(VariantMapView& view, co
 }
 
 
-bool VariantSerializer::LoadSubResource(Instance obj, const String& id) {
+bool VariantSerializer::LoadSubResource(Variant& variant, const String& id) {
     if (s_resource_format_loader_) {
-        auto res = Ref<Resource>(obj.try_convert<Resource>());
-        if (!res) {
-            LOG_ERROR("Cannot convert target to Resource type");
-            return false;
-        }
         auto it = s_resource_format_loader_->sub_resources_.find(id);
         if (it == s_resource_format_loader_->sub_resources_.end()) {
             LOG_ERROR("Cannot find sub-resource of id: {}", id);
             return false;
         }
-        res = it->second;
+        variant = it->second;
         return true;
     }
     return false;
 }
 
-bool VariantSerializer::LoadExtResource(Instance obj, const String& id) {
+bool VariantSerializer::LoadExtResource(Variant& variant, const String& id) {
     if (s_resource_format_loader_) {
-        auto res = Ref<Resource>(obj.try_convert<Resource>());
-        if (!res) {
-            LOG_ERROR("Cannot convert target to Resource type");
-            return false;
-        }
         auto it = s_resource_format_loader_->ext_resources_.find(id);
         if (it == s_resource_format_loader_->ext_resources_.end()) {
             LOG_ERROR("Cannot find ext-resource of id: {}", id);
             return false;
         }
-        res = it->second;
+        variant = it->second;
         return true;
     }
     return false;
 }
 
-bool VariantSerializer::LoadResource(Instance obj, const Type& t, const Json& json) {
+bool VariantSerializer::LoadResource(Variant& variant, const Json& json) {
     if (json.is_string()) {
         auto str = String::fromStdString(json.get<std::string>());
         auto left_bracket = str.indexOf("(");
         auto right_bracket = str.indexOf(")");
-        auto key_word = str.left(left_bracket + 1);
-        auto id = str.mid(left_bracket + 1, right_bracket - left_bracket);
+        auto key_word = str.left(left_bracket);
+        auto id = str.mid(left_bracket + 1, right_bracket - left_bracket - 1);
         if (key_word == "SubResource") {
-            return LoadSubResource(obj, id);
+            return LoadSubResource(variant, id);
         } else if (key_word == "ExtResource") {
-            return LoadExtResource(obj, id);
+            return LoadExtResource(variant, id);
         } else {
-            LOG_ERROR("");
+            LOG_ERROR("Cannot load Resource of type: {}, from json: {}", variant.get_type().get_name().data(), json.dump(4));
             return false;
         }
     }
@@ -435,11 +425,12 @@ bool VariantSerializer::LoadResource(Instance obj, const Type& t, const Json& js
     return false;
 }
 
-bool VariantSerializer::FromJsonRecursively(Instance instance, const Json& json) {
+bool VariantSerializer::FromJsonRecursively(Variant& variant, const Json& json) {
+    Instance instance(variant);
     auto raw_type = instance.get_type().get_raw_type();
     Instance obj = instance.get_type().get_raw_type().is_wrapper() ? instance.get_wrapped_instance() : instance;
     if (raw_type.is_wrapper() && raw_type.get_wrapper_holder_type() == WrapperHolderType::Ref) {
-        return LoadResource(obj, raw_type, json);
+        return LoadResource(variant, json);
     }
 
     const auto prop_list = obj.get_derived_type().get_properties();
