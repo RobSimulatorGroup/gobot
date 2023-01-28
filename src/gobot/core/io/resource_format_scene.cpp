@@ -500,6 +500,9 @@ void ResourceFormatSaverSceneInstance::FindResources(const Variant &variant, boo
 
 
         for (auto& prop : Object::GetDerivedTypeByInstance(variant).get_properties()) {
+            if (prop.is_readonly()) {
+                continue;
+            }
             PropertyInfo property_info;
             auto meta_data = prop.get_metadata(PROPERTY_INFO_KEY);
             if (meta_data.is_valid()) {
