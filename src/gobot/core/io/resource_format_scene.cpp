@@ -384,11 +384,11 @@ bool ResourceFormatSaverSceneInstance::Save(const String &path, const Ref<Resour
     root["__META_TYPE__"] = packed_scene_.IsValid() ? "SCENE" : "RESOURCE";
 
     root["__EXT_RESOURCES__"] = Json::array();
-    for (const auto& [res, uuid]: external_resources_) {
+    for (const auto& [res, id]: external_resources_) {
         Json ext_res;
         ext_res["__TYPE__"] = res->GetClassName();
         ext_res["__PATH__"] = res->GetPath().toStdString();
-        ext_res["__ID__"] = res->GetUniqueId().toStdString();
+        ext_res["__ID__"] = id.toStdString();
         root["__EXT_RESOURCES__"].push_back(ext_res);
     }
 
