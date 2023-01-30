@@ -17,7 +17,8 @@ message(STATUS "gtest configured correctly")
 
 macro(package_add_test TESTNAME FILES)
     add_executable(${TESTNAME} ${FILES})
-    target_link_libraries(${TESTNAME} gtest gmock gtest_main gobot)
+    target_link_libraries(${TESTNAME} gtest gmock gtest_main)
+    target_link_libraries(${TESTNAME} -Wl,--no-as-needed  gobot)
     # gtest_discover_tests replaces gtest_add_tests,
     # see https://cmake.org/cmake/help/v3.10/module/GoogleTest.html for more options to pass to it
     gtest_discover_tests(${TESTNAME}
@@ -28,3 +29,7 @@ macro(package_add_test TESTNAME FILES)
 endmacro()
 
 package_add_test(test_ref_counted core/test_ref_counted.cpp )
+package_add_test(test_registration core/test_registration.cpp )
+package_add_test(test_resource core/test_resource.cpp )
+
+package_add_test(test_node_path scene/test_node_path.cpp)

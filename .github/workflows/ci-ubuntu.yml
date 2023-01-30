@@ -25,20 +25,18 @@ jobs:
     - name: Get Conan
       uses: turtlebrowser/get-conan@v1.1
 
+    - name: Install dependencies
+      run: sudo apt install -y libx11-xcb-dev libfontenc-dev libice-dev libsm-dev libxaw7-dev libxcomposite-dev libxcursor-dev libxdamage-dev libxext-dev libxfixes-dev libxi-dev libxinerama-dev libxkbfile-dev libxmu-dev libxmuu-dev libxpm-dev libxrandr-dev libxrender-dev libxres-dev libxss-dev libxt-dev libxtst-dev libxv-dev libxvmc-dev libxxf86vm-dev libxcb-render0-dev libxcb-render-util0-dev libxcb-xkb-dev libxcb-icccm4-dev libxcb-image0-dev libxcb-keysyms1-dev libxcb-randr0-dev libxcb-shape0-dev libxcb-sync-dev libxcb-xfixes0-dev libxcb-xinerama0-dev libxcb-dri3-dev uuid-dev libxcb-util-dev autoconf libgl-dev
+
     - name: Set Conan cache
       uses: actions/cache@v3
       env:
         cache-name: cache-conan-packages
       with:
-        path: ~/.conan/data
+        path: ~/.conan
         key: host-${{ runner.os }}-target-${{ runner.os }}-${{ hashFiles('conanfile.txt') }}
         restore-keys: |
           host-${{ runner.os }}-target-${{ runner.os }}-
-     
-    - if: ${{ steps.cache-conan-packages.outputs.cache-hit != 'true' }}
-      name: Show CONAN_USER_HOME storage location
-      continue-on-error: true
-      run: echo $CONAN_USER_HOME
 
     - name: Configure CMake
       # Configure CMake in a 'build' subdirectory. `CMAKE_BUILD_TYPE` is only required if you are using a single-configuration generator such as make.

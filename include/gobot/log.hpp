@@ -1,10 +1,9 @@
-// Copyright(c) 2020-2021, Qiqi Wu<1258552199@qq.com>.
-// Permission is hereby granted, free of charge, to any person obtaining a copy of this software and associated documentation files (the "Software"),
-// to deal in the Software without restriction, including without limitation the rights to use, copy, modify, merge, publish, distribute, sublicense,
-// and/or sell copies of the Software, and to permit persons to whom the Software is furnished to do so, subject to the following conditions:
-// The above copyright notice and this permission notice shall be included in all copies or substantial portions of the Software.
-
-// This file is create by Qiqi Wu, 2021/4/7
+/* The gobot is a robot simulation platform.
+ * Copyright(c) 2021-2022, RobSimulatorGroup, Qiqi Wu<1258552199@qq.com>.
+ * Everyone is permitted to copy and distribute verbatim copies of this license document, but changing it is not allowed.
+ * This version of the GNU Lesser General Public License incorporates the terms and conditions of version 3 of the GNU General Public License.
+ * This file is created by Qiqi Wu, 2021/4/7
+*/
 
 #pragma once
 
@@ -20,6 +19,7 @@
 #include <spdlog/sinks/stdout_sinks.h>
 #include <spdlog/sinks/stdout_color_sinks.h>
 #include <spdlog/sinks/rotating_file_sink.h>
+#include "gobot/core/types.hpp"
 
 
 namespace gobot {
@@ -69,12 +69,25 @@ private:
 
 } // end of namespace gobot
 
+template<>
+struct fmt::formatter<gobot::String> : fmt::formatter<std::string>
+{
+    static auto format(const gobot::String& str, format_context &ctx) -> decltype(ctx.out())
+    {
+        return format_to(ctx.out(), "{}", str.toStdString());
+    }
+};
+
+
 #define SPDLOG_STR_H(x) #x
 #define SPDLOG_STR_HELPER(x) SPDLOG_STR_H(x)
 
 #define LOG_TRACE(...) gobot::Logger::getInstance().getLogger()->trace("[" __FILE__ ":" SPDLOG_STR_HELPER(__LINE__) "] ", __VA_ARGS__)
 #define LOG_DEBUG(...) gobot::Logger::getInstance().getLogger()->debug("[" __FILE__ ":" SPDLOG_STR_HELPER(__LINE__) "] " __VA_ARGS__)
-#define LOG_INFO(...)  gobot::Logger::getInstance().getLogger()->info("[" __FILE__ ": " SPDLOG_STR_HELPER(__LINE__) "] " __VA_ARGS__)
-#define LOG_WARN(...)  gobot::Logger::getInstance().getLogger()->warn("[" __FILE__ ": " SPDLOG_STR_HELPER(__LINE__) "] " __VA_ARGS__)
-#define LOG_ERROR(...) gobot::Logger::getInstance().getLogger()->error("[" __FILE__ ": " SPDLOG_STR_HELPER(__LINE__) "] " __VA_ARGS__)
-#define LOG_FATAL(...) gobot::Logger::getInstance().getLogger()->critical("[" __FILE__ ": " SPDLOG_STR_HELPER(__LINE__) "] " __VA_ARGS__)
+#define LOG_INFO(...)  gobot::Logger::getInstance().getLogger()->info("[" __FILE__ ":" SPDLOG_STR_HELPER(__LINE__) "] " __VA_ARGS__)
+#define LOG_WARN(...)  gobot::Logger::getInstance().getLogger()->warn("[" __FILE__ ":" SPDLOG_STR_HELPER(__LINE__) "] " __VA_ARGS__)
+#define LOG_ERROR(...) gobot::Logger::getInstance().getLogger()->error("[" __FILE__ ":" SPDLOG_STR_HELPER(__LINE__) "] " __VA_ARGS__)
+#define LOG_FATAL(...) gobot::Logger::getInstance().getLogger()->critical("[" __FILE__ ":" SPDLOG_STR_HELPER(__LINE__) "] " __VA_ARGS__)
+
+#define LOG_OFF gobot::Logger::getInstance().getLogger()->set_level(spdlog::level::off)
+#define LOG_ON gobot::Logger::getInstance().getLogger()->set_level(spdlog::level::trace)

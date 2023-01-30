@@ -1,14 +1,15 @@
-/* Copyright(c) 2020-2022, Qiqi Wu<1258552199@qq.com>.
- * Permission is hereby granted, free of charge, to any person obtaining a copy of this software and associated documentation files (the "Software"),
- * to deal in the Software without restriction, including without limitation the rights to use, copy, modify, merge, publish, distribute, sublicense,
- * and/or sell copies of the Software, and to permit persons to whom the Software is furnished to do so, subject to the following conditions:
- * The above copyright notice and this permission notice shall be included in all copies or substantial portions of the Software.
+/* The gobot is a robot simulation platform.
+ * Copyright(c) 2021-2022, RobSimulatorGroup, Qiqi Wu<1258552199@qq.com>.
+ * Everyone is permitted to copy and distribute verbatim copies of this license document, but changing it is not allowed.
+ * This version of the GNU Lesser General Public License incorporates the terms and conditions of version 3 of the GNU General Public License.
  * This file is created by Qiqi Wu, 22-11-6
 */
 
 #pragma once
 
 #include <rttr/rttr_enable.h>
+#include <rttr/detail/base/core_prerequisites.h>
+#include <magic_enum.hpp>
 
 // Should always inline no matter what.
 #ifndef ALWAYS_INLINE
@@ -52,3 +53,33 @@
 #define CAT5(A, B, C, D, E) A##B##C##D##E
 
 #define GOB_UNUSED(x) (void)x;
+
+#define GOB_STRINGIFY(x) #x
+
+
+#ifdef _MSC_VER
+#define GENERATE_TRAP() __debugbreak()
+#else
+#define GENERATE_TRAP() __builtin_trap()
+#endif
+
+
+namespace rttr::detail
+{
+template<typename Ctor_Type, typename Policy, typename Accessor, typename Arg_Indexer>
+struct constructor_invoker;
+}
+
+namespace gobot {
+static void gobot_auto_register_reflection_function_();
+}
+
+#define GOBOT_REGISTRATION_FRIEND                                                           \
+friend void gobot::gobot_auto_register_reflection_function_();                              \
+template<typename Ctor_Type, typename Policy, typename Accessor, typename Arg_Indexer>      \
+friend struct rttr::detail::constructor_invoker;
+
+
+// out-of-the-box bitwise operators for enums.
+#define USING_ENUM_BITWISE_OPERATORS  using namespace magic_enum::bitwise_operators
+

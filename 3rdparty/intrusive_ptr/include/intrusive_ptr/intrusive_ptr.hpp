@@ -465,6 +465,10 @@ public:
         return get() != nullptr;
     }
 
+    constexpr bool is_valid() const noexcept {
+        return get() != nullptr;
+    }
+
     constexpr _T & operator*() const {
         assert(get());
 

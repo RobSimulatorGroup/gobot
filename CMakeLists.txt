@@ -72,6 +72,7 @@ endif()
 find_package(Qt5 COMPONENTS Core Widgets Gui CONFIG REQUIRED)
 find_package (Eigen3 3.4 CONFIG REQUIRED)
 
+
 set(CMAKE_AUTOMOC ON)
 set(CMAKE_AUTORCC ON)
 set(CMAKE_AUTOUIC ON)
@@ -80,17 +81,17 @@ file(GLOB_RECURSE SOURCE_CORE CONFIGURE_DEPENDS "src/gobot/core/*.cpp")
 file(GLOB_RECURSE SOURCE_SCENE CONFIGURE_DEPENDS "src/gobot/scene/*.cpp")
 file(GLOB_RECURSE SOURCE_EDITOR CONFIGURE_DEPENDS "src/gobot/editor/*.cpp")
 
-qt5_wrap_cpp(SOURCE_CORE "include/gobot/core/object.hpp")
-qt5_wrap_cpp(SOURCE_SCENE "include/gobot/scene/scene_tree.hpp")
+file(GLOB_RECURSE HEAD_FILES CONFIGURE_DEPENDS "include/*hpp")
 
-add_library(gobot SHARED ${SOURCE_CORE} ${SOURCE_SCENE}) 
+#https://github.com/bincrafters/community/issues/466#issuecomment-426265654
+add_library(gobot SHARED ${SOURCE_CORE} ${SOURCE_SCENE} ${SOURCE_EDITOR} ${HEAD_FILES})
 if (MSVC)
     target_compile_options(gobot PUBLIC "/Zc:preprocessor")
 endif ()
 
 target_include_directories(gobot
     PUBLIC
-    include
+    ${CMAKE_CURRENT_SOURCE_DIR}/include
 )
 
 target_link_libraries(gobot
@@ -99,14 +100,13 @@ target_link_libraries(gobot
     intrusive_ptr
     ${CONAN_LIBS}
 )
+
 set_target_properties(gobot
     PROPERTIES
     ARCHIVE_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/lib"
     LIBRARY_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/lib"
     RUNTIME_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/bin"
 )
-
-qt5_wrap_cpp(SOURCE_EDITOR "include/gobot/editor/main_window.hpp")
 
 add_executable(gobot_editor src/main.cpp ${SOURCE_EDITOR})
 if (MSVC)
