@@ -9,9 +9,12 @@
 
 #include <QtWidgets/QMainWindow>
 
+#include "gobot/core/marcos.hpp"
+
 namespace gobot::main {
 
-class MainWindow : public QMainWindow {
+class GOBOT_EXPORT MainWindow
+    : public QMainWindow {
   Q_OBJECT
 
 public:

@@ -128,7 +128,7 @@ public:
 
     ~Object();
 
-    [[nodiscard]] FORCE_INLINE std::string_view GetClassName() const { return get_type().get_name().data(); }
+    [[nodiscard]] FORCE_INLINE std::string_view GetClassStringView() const { return get_type().get_name().data(); }
 
     [[nodiscard]] FORCE_INLINE Type GetType() const { return get_type(); }
 

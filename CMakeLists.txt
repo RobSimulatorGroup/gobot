@@ -12,6 +12,7 @@ set(CMAKE_MODULE_PATH ${CMAKE_BINARY_DIR})
 option(BUILD_EXPERIMENT "using imgui and glfw" OFF)
 option(BUILD_TESTS "build tests" OFF)
 
+# ---------------------------------------- START OF CONAN SETUP ----------------------------------------
 if (NOT EXISTS ${CMAKE_BINARY_DIR}/conanbuildinfo.cmake)
     if (NOT EXISTS "${CMAKE_BINARY_DIR}/conan.cmake")
         message(STATUS "Downloading conan.cmake from https://github.com/conan-io/cmake-conan")
@@ -61,6 +62,7 @@ endif ()
 include(${CMAKE_BINARY_DIR}/conanbuildinfo.cmake)
 include(${CMAKE_BINARY_DIR}/conan_paths.cmake)
 conan_basic_setup(${PROJECT_NAME} KEEP_RPATHS)
+# ---------------------------------------- END OF CONAN SETUP ----------------------------------------
 
 if(PROJECT_SOURCE_DIR STREQUAL PROJECT_BINARY_DIR)
     message(
@@ -72,26 +74,26 @@ endif()
 find_package(Qt5 COMPONENTS Core Widgets Gui CONFIG REQUIRED)
 find_package (Eigen3 3.4 CONFIG REQUIRED)
 
-
-set(CMAKE_AUTOMOC ON)
-set(CMAKE_AUTORCC ON)
-set(CMAKE_AUTOUIC ON)
+INCLUDE(GenerateExportHeader)
 
 file(GLOB_RECURSE SOURCE_CORE CONFIGURE_DEPENDS "src/gobot/core/*.cpp")
 file(GLOB_RECURSE SOURCE_SCENE CONFIGURE_DEPENDS "src/gobot/scene/*.cpp")
 file(GLOB_RECURSE SOURCE_EDITOR CONFIGURE_DEPENDS "src/gobot/editor/*.cpp")
+file(GLOB_RECURSE HEADER_FILES CONFIGURE_DEPENDS "include/*hpp")
 
-file(GLOB_RECURSE HEAD_FILES CONFIGURE_DEPENDS "include/*hpp")
-
-#https://github.com/bincrafters/community/issues/466#issuecomment-426265654
-add_library(gobot SHARED ${SOURCE_CORE} ${SOURCE_SCENE} ${SOURCE_EDITOR} ${HEAD_FILES})
+# https://github.com/bincrafters/community/issues/466#issuecomment-426265654
+add_library(gobot SHARED ${SOURCE_CORE} ${SOURCE_SCENE} ${SOURCE_EDITOR} ${HEADER_FILES})
 if (MSVC)
     target_compile_options(gobot PUBLIC "/Zc:preprocessor")
 endif ()
 
+# https://forum.qt.io/topic/97296/export-qobject-based-class-from-dll/2
+GENERATE_EXPORT_HEADER(gobot)
+
 target_include_directories(gobot
     PUBLIC
     ${CMAKE_CURRENT_SOURCE_DIR}/include
+    ${PROJECT_BINARY_DIR}
 )
 
 target_link_libraries(gobot
@@ -106,9 +108,12 @@ set_target_properties(gobot
     ARCHIVE_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/lib"
     LIBRARY_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/lib"
     RUNTIME_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/bin"
+    AUTOMOC ON
+    AUTORCC ON
+    AUTOUIC ON
 )
 
-add_executable(gobot_editor src/main.cpp ${SOURCE_EDITOR})
+add_executable(gobot_editor src/main.cpp)
 if (MSVC)
     target_compile_options(gobot_editor PUBLIC "/Zc:preprocessor")
 endif ()

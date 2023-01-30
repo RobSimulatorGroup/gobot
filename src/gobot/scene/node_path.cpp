@@ -65,7 +65,7 @@ bool NodePath::IsAbsolute() const {
     return data_.absolute;
 }
 
-ulong NodePath::GetNameCount() const {
+std::size_t NodePath::GetNameCount() const {
     return data_.path.size();
 }
 
@@ -75,7 +75,7 @@ String NodePath::GetName(int idx) const {
     return data_.path[idx];
 }
 
-ulong NodePath::GetSubNameCount() const {
+std::size_t NodePath::GetSubNameCount() const {
     return data_.subpath.size();
 }
 
