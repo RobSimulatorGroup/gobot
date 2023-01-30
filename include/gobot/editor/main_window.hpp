@@ -9,7 +9,7 @@
 
 #include <QtWidgets/QMainWindow>
 
-#include "gobot/core/marcos.hpp"
+#include "gobot/core/macros.hpp"
 
 namespace gobot::main {
 

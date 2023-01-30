@@ -9,7 +9,7 @@
 
 #include <cstdint>
 #include "gobot/core/object_id.hpp"
-#include "gobot/core/marcos.hpp"
+#include "gobot/core/macros.hpp"
 
 namespace gobot {
 

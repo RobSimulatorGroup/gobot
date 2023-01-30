@@ -11,7 +11,7 @@
 #include <QObject>
 
 #include "gobot/core/types.hpp"
-#include "gobot/core/marcos.hpp"
+#include "gobot/core/macros.hpp"
 #include "gobot/core/notification_enum.hpp"
 #include "gobot/core/spin_lock.hpp"
 #include "gobot/core/object_id.hpp"

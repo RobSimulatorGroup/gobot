@@ -8,9 +8,9 @@
 
 #pragma once
 
-#include "gobot/error_marcos.hpp"
+#include "gobot/error_macros.hpp"
 #include "gobot/core/types.hpp"
-#include "gobot/core/marcos.hpp"
+#include "gobot/core/macros.hpp"
 #include "gobot/log.hpp"
 #include <vector>
 #include <QStringList>
