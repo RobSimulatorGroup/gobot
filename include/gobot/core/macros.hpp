@@ -10,6 +10,7 @@
 #include <rttr/rttr_enable.h>
 #include <rttr/detail/base/core_prerequisites.h>
 #include <magic_enum.hpp>
+#include <gobot_export.h>
 
 // Should always inline no matter what.
 #ifndef ALWAYS_INLINE
@@ -28,14 +29,6 @@
 #define FORCE_INLINE ALWAYS_INLINE
 #else
 #define FORCE_INLINE inline
-#endif
-#endif
-
-#if !defined(GOBOT_EXPORT)
-#if defined(WIN32) || defined(_WIN32)
-#define GOBOT_EXPORT __declspec(dllexport)
-#else
-#define GOBOT_EXPORT __attribute__((visibility("default")))
 #endif
 #endif
 

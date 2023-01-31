@@ -28,7 +28,7 @@ Ref<Resource> Resource::CloneForLocalScene(Node* for_scene) {
     auto type = GetType();
     auto new_resource = type.create();
     if (!new_resource.is_valid() && new_resource.can_convert<Resource*>()) {
-        LOG_ERROR("Cannot Create new Resource: {}", GetClassName());
+        LOG_ERROR("Cannot Create new Resource: {}", GetClassStringView());
         return nullptr;
     }
 
@@ -64,7 +64,7 @@ Ref<Resource> Resource::Clone(bool copy_subresource) const {
     auto type = GetType();
     auto new_resource = type.create();
     if (!new_resource.is_valid() && new_resource.can_convert<Resource*>()) {
-        LOG_ERROR("Cannot Create new Resource: {}", GetClassName());
+        LOG_ERROR("Cannot Create new Resource: {}", GetClassStringView());
         return nullptr;
     }
 
@@ -185,7 +185,7 @@ void Resource::ReloadFromFile() {
         return;
     }
 
-    Ref<Resource> resource = ResourceLoader::Load(path, GetClassName().data(), ResourceFormatLoader::CacheMode::Ignore);
+    Ref<Resource> resource = ResourceLoader::Load(path, GetClassStringView().data(), ResourceFormatLoader::CacheMode::Ignore);
 
     if (!resource.is_valid()) {
         return;
@@ -204,8 +204,8 @@ bool Resource::CopyFrom(const Ref<Resource> &resource) {
         return false;
     }
 
-    if (GetClassName() != resource->GetClassName()) {
-        LOG_ERROR("input resource's type:{} is not same as this type: {}", resource->GetClassName(), GetClassName());
+    if (GetClassStringView() != resource->GetClassStringView()) {
+        LOG_ERROR("input resource's type:{} is not same as this type: {}", resource->GetClassStringView(), GetClassStringView());
         return false;
     }
 
@@ -278,7 +278,7 @@ void ResourceCache::Clear() {
 #ifdef NDEBUG
 #else
         for (const auto& [path, resource]: s_resources) {
-            LOG_TRACE("Resource:{} with path:{} is still in use", path, resource->GetClassName());
+            LOG_TRACE("Resource:{} with path:{} is still in use", path, resource->GetClassStringView());
         }
 #endif
     }

@@ -11,7 +11,7 @@
 #include <QObject>
 
 #include "gobot/core/types.hpp"
-#include "gobot/core/marcos.hpp"
+#include "gobot/core/macros.hpp"
 #include "gobot/core/notification_enum.hpp"
 #include "gobot/core/spin_lock.hpp"
 #include "gobot/core/object_id.hpp"
@@ -128,7 +128,7 @@ public:
 
     ~Object();
 
-    [[nodiscard]] FORCE_INLINE std::string_view GetClassName() const { return get_type().get_name().data(); }
+    [[nodiscard]] FORCE_INLINE std::string_view GetClassStringView() const { return get_type().get_name().data(); }
 
     [[nodiscard]] FORCE_INLINE Type GetType() const { return get_type(); }
 

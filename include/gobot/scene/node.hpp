@@ -8,7 +8,7 @@
 #pragma once
 
 #include "gobot/core/object.hpp"
-#include "gobot/error_marcos.hpp"
+#include "gobot/error_macros.hpp"
 
 namespace gobot {
 
