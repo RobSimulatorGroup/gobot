@@ -21,7 +21,7 @@ public:
 
     ~ProjectSettings();
 
-    static ProjectSettings* GetSingleton();
+    static ProjectSettings* GetInstance();
 
     [[nodiscard]] String LocalizePath(const String &path) const;
 

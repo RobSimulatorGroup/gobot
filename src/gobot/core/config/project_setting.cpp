@@ -6,7 +6,6 @@
 */
 
 #include "gobot/core/config/project_setting.hpp"
-#include "gobot/log.hpp"
 #include "gobot/core/string_utils.hpp"
 #include <QDir>
 
@@ -22,7 +21,7 @@ ProjectSettings::~ProjectSettings() {
     s_singleton = nullptr;
 }
 
-ProjectSettings* ProjectSettings::GetSingleton() {
+ProjectSettings* ProjectSettings::GetInstance() {
     return s_singleton;
 }
 

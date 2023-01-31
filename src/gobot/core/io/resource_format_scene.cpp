@@ -84,7 +84,7 @@ bool ResourceFormatLoaderSceneInstance::LoadResource() {
 
                 if (!path.contains("://") && IsRelativePath(path)) {
                     // path is relative to file being loaded, so convert to a resource path
-                    path = ProjectSettings::GetSingleton()->LocalizePath(PathJoin(GetBaseDir(local_path_), path));
+                    path = ProjectSettings::GetInstance()->LocalizePath(PathJoin(GetBaseDir(local_path_), path));
                 }
 
                 Ref<Resource> res = ResourceLoader::Load(path, type);
@@ -286,7 +286,7 @@ ResourceFormatLoaderScene::~ResourceFormatLoaderScene() {
 Ref<Resource> ResourceFormatLoaderScene::Load(const String &path,
                                               CacheMode cache_mode) {
 
-    auto global_path = ProjectSettings::GetSingleton()->GlobalizePath(path);
+    auto global_path = ProjectSettings::GetInstance()->GlobalizePath(path);
     QFile file(global_path);
     QDir dir;
     auto base_dir = GetBaseDir(global_path);
@@ -301,7 +301,7 @@ Ref<Resource> ResourceFormatLoaderScene::Load(const String &path,
     ResourceFormatLoaderSceneInstance loader;
     loader.file_context_ = file.readAll();
     loader.cache_mode_ = cache_mode;
-    loader.local_path_ = ProjectSettings::GetSingleton()->LocalizePath(path);
+    loader.local_path_ = ProjectSettings::GetInstance()->LocalizePath(path);
 
     if (loader.LoadResource()) {
         return loader.GetResource();
@@ -310,7 +310,7 @@ Ref<Resource> ResourceFormatLoaderScene::Load(const String &path,
     return {};
 }
 
-ResourceFormatLoaderScene* ResourceFormatLoaderScene::GetSingleton() {
+ResourceFormatLoaderScene* ResourceFormatLoaderScene::GetInstance() {
     return s_singleton;
 }
 
@@ -350,7 +350,7 @@ bool ResourceFormatSaverSceneInstance::Save(const String &path, const Ref<Resour
         packed_scene_ = gobot::dynamic_pointer_cast<PackedScene>(resource);
     }
 
-    auto global_path = ProjectSettings::GetSingleton()->GlobalizePath(path);
+    auto global_path = ProjectSettings::GetInstance()->GlobalizePath(path);
     QFile file(global_path);
     QDir dir;
     auto base_dir = GetBaseDir(global_path);
@@ -364,7 +364,7 @@ bool ResourceFormatSaverSceneInstance::Save(const String &path, const Ref<Resour
     USING_ENUM_BITWISE_OPERATORS;
     takeover_paths_ = static_cast<bool>(flags & ResourceSaverFlags::ReplaceSubResourcePaths);
 
-    local_path_ = ProjectSettings::GetSingleton()->LocalizePath(path);
+    local_path_ = ProjectSettings::GetInstance()->LocalizePath(path);
 
     // Save resources.
     FindResources(resource, true);
@@ -560,7 +560,7 @@ ResourceFormatSaverScene::~ResourceFormatSaverScene() {
     s_singleton = nullptr;
 }
 
-ResourceFormatSaverScene* ResourceFormatSaverScene::GetSingleton() {
+ResourceFormatSaverScene* ResourceFormatSaverScene::GetInstance() {
     return s_singleton;
 }
 

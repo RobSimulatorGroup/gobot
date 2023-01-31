@@ -22,7 +22,7 @@ TEST(TestProjectSetting, test_localize_path) {
     }
     gobot::ProjectSettings project_settings;
 
-    auto* project_setting = gobot::ProjectSettings::GetSingleton();
+    auto* project_setting = gobot::ProjectSettings::GetInstance();
     project_setting->SetProjectPath("/tmp/test_project");
 
     ASSERT_TRUE(project_setting->LocalizePath("/tmp/test_project/") == "res://");

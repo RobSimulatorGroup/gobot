@@ -25,7 +25,7 @@ public:
     ~Resource();
 
     // Take over will delete old resource cache, further attempts to load an overridden resource by path will instead return this resource
-    // If take_over is false and same path resource cache already existed, this operation will failed.
+    // If the take_over is false and same path resource cache already existed, this operation will fail.
     virtual void SetPath(const String &path, bool take_over = false);
 
     String GetPath() const;
@@ -34,8 +34,7 @@ public:
 
     String GetName() const;
 
-    // 5 char of number/uppercase letter/lowercase letter；
-    // 916132832 combination of all.
+    // Generate 5 characters string made up with 0-9|a-z|A-Z
     static String GenerateResourceUniqueId();
 
     void SetUniqueId(const String &unique_id);
@@ -46,7 +45,7 @@ public:
 
     static bool IsResourceFile(const String& path);
 
-    // for resources that use variable amount of properties, either via _validate_property or _get_property_list, this function needs to be implemented to correctly clear state
+    // for resources that use various amount of properties, either via _validate_property or _get_property_list, this function needs to be implemented to correctly clear state
     virtual void ResetState();
 
     bool CopyFrom(const Ref<Resource> &resource);

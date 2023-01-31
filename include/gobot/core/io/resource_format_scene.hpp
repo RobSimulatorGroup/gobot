@@ -47,7 +47,7 @@ public:
 
     ~ResourceFormatLoaderScene();
 
-    static ResourceFormatLoaderScene* GetSingleton();
+    static ResourceFormatLoaderScene* GetInstance();
 
 
     Ref<Resource> Load(const String &path,
@@ -86,7 +86,7 @@ public:
 
     ~ResourceFormatSaverScene();
 
-    static ResourceFormatSaverScene* GetSingleton();
+    static ResourceFormatSaverScene* GetInstance();
 
     bool Save(const Ref<Resource> &resource, const String &path, ResourceSaverFlags flags = ResourceSaverFlags::None) override;
 

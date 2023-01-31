@@ -24,15 +24,15 @@ public:
     virtual Ref<Resource> Load(const String &local_path,
                                CacheMode cache_mode = CacheMode::Reuse) = 0;
 
-    virtual bool HandlesType(const String &type) const = 0;
+    [[nodiscard]] virtual bool HandlesType(const String &type) const = 0;
 
-    virtual bool RecognizePath(const String &path, const String &type_hint = String()) const;
+    [[nodiscard]] virtual bool RecognizePath(const String &path, const String &type_hint = String()) const;
 
     virtual void GetRecognizedExtensions(std::vector<String> *extensions) const = 0;
 
     virtual void GetRecognizedExtensionsForType(const String &type, std::vector<String> *extensions) const;
 
-    virtual bool Exists(const String &path) const;
+    [[nodiscard]] virtual bool Exists(const String &path) const;
 
 };
 

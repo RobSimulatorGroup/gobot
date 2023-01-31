@@ -21,7 +21,7 @@
     {
       "__TYPE__": "BoxMesh",
       "__ID__": "BoxMesh_MNBVC",
-      "material": "SubResource(ABCDE)"
+      "material": "SubResource(StandardMaterial3D_ABCDE)"
     }
   ],
   "__NODES__": [

@@ -33,7 +33,7 @@ protected:
     }
 
     void SetUp() override {
-        auto* project_setting = gobot::ProjectSettings::GetSingleton();
+        auto* project_setting = gobot::ProjectSettings::GetInstance();
         project_setting->SetProjectPath("/tmp/test_project");
     }
 

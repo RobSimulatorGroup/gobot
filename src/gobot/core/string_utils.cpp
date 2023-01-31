@@ -120,7 +120,7 @@ String ValidateLocalPath(const String& path) {
     if (IsRelativePath(path)) {
         return "res://" + path;
     } else {
-        return ProjectSettings::GetSingleton()->LocalizePath(path);
+        return ProjectSettings::GetInstance()->LocalizePath(path);
     }
 }
 
