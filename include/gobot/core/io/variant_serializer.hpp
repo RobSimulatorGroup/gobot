@@ -9,7 +9,7 @@
 #pragma once
 
 #include "gobot/core/types.hpp"
-#include "gobot/core/marcos.hpp"
+#include "gobot/core/macros.hpp"
 
 namespace gobot {
 

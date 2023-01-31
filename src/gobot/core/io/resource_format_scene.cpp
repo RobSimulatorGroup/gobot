@@ -125,7 +125,7 @@ bool ResourceFormatLoaderSceneInstance::LoadResource() {
                 if (cache_mode_ == ResourceFormatLoader::CacheMode::Replace && ResourceCache::Has(path)) {
                     //reuse existing
                     Ref<Resource> cache = ResourceCache::GetRef(path);
-                    if (cache.IsValid() && cache->GetClassName().data() == type) {
+                    if (cache.IsValid() && cache->GetClassStringView().data() == type) {
                         res = cache;
                         res->ResetState();
                         do_assign = true;
@@ -204,7 +204,7 @@ bool ResourceFormatLoaderSceneInstance::LoadResource() {
         }
 
         Ref<Resource> cache = ResourceCache::GetRef(local_path_);
-        if (cache_mode_ == ResourceFormatLoader::CacheMode::Replace && cache.IsValid() && cache->GetClassName().data() == res_type_) {
+        if (cache_mode_ == ResourceFormatLoader::CacheMode::Replace && cache.IsValid() && cache->GetClassStringView().data() == res_type_) {
             cache->ResetState();
             resource_ = cache;
         }
@@ -386,7 +386,7 @@ bool ResourceFormatSaverSceneInstance::Save(const String &path, const Ref<Resour
     root["__EXT_RESOURCES__"] = Json::array();
     for (const auto& [res, id]: external_resources_) {
         Json ext_res;
-        ext_res["__TYPE__"] = res->GetClassName();
+        ext_res["__TYPE__"] = res->GetClassStringView();
         ext_res["__PATH__"] = res->GetPath().toStdString();
         ext_res["__ID__"] = id.toStdString();
         root["__EXT_RESOURCES__"].push_back(ext_res);

@@ -8,7 +8,7 @@
 #pragma once
 
 #include "gobot/log.hpp"
-#include "gobot/core/marcos.hpp"
+#include "gobot/core/macros.hpp"
 
 #define ERR_FAIL_COND(cond)                                                                    \
 	if (cond) [[unlikely]] {                                                                   \

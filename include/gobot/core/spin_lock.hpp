@@ -8,7 +8,7 @@
 #pragma once
 
 #include <atomic>
-#include "gobot/core/marcos.hpp"
+#include "gobot/core/macros.hpp"
 
 namespace gobot {
 
