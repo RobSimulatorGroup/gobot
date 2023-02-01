@@ -15,6 +15,7 @@
 #include "gobot/core/io/variant_serializer.hpp"
 #include "gobot/scene/resources/packed_scene.hpp"
 #include "gobot/core/string_utils.hpp"
+#include "gobot/error_macros.hpp"
 
 #include <QTextStream>
 #include <QFile>
@@ -125,7 +126,7 @@ bool ResourceFormatLoaderSceneInstance::LoadResource() {
                 if (cache_mode_ == ResourceFormatLoader::CacheMode::Replace && ResourceCache::Has(path)) {
                     //reuse existing
                     Ref<Resource> cache = ResourceCache::GetRef(path);
-                    if (cache.IsValid() && cache->GetClassStringView().data() == type) {
+                    if (cache.IsValid() && cache->GetClassStringName().data() == type) {
                         res = cache;
                         res->ResetState();
                         do_assign = true;
@@ -204,7 +205,8 @@ bool ResourceFormatLoaderSceneInstance::LoadResource() {
         }
 
         Ref<Resource> cache = ResourceCache::GetRef(local_path_);
-        if (cache_mode_ == ResourceFormatLoader::CacheMode::Replace && cache.IsValid() && cache->GetClassStringView().data() == res_type_) {
+        if (cache_mode_ == ResourceFormatLoader::CacheMode::Replace && cache.IsValid() &&
+                cache->GetClassStringName().data() == res_type_) {
             cache->ResetState();
             resource_ = cache;
         }
@@ -293,10 +295,7 @@ Ref<Resource> ResourceFormatLoaderScene::Load(const String &path,
     if (!dir.exists(base_dir))
         dir.mkpath(base_dir); // You can check the success if needed
 
-    if (!file.open(QIODevice::ReadOnly)) {
-        LOG_ERROR("Cannot open file: {}.", path);
-        return {};
-    }
+    ERR_FAIL_COND_V_MSG(!file.open(QIODevice::ReadOnly), {}, fmt::format("Cannot open file: {}.", path));
 
     ResourceFormatLoaderSceneInstance loader;
     loader.file_context_ = file.readAll();
@@ -386,7 +385,7 @@ bool ResourceFormatSaverSceneInstance::Save(const String &path, const Ref<Resour
     root["__EXT_RESOURCES__"] = Json::array();
     for (const auto& [res, id]: external_resources_) {
         Json ext_res;
-        ext_res["__TYPE__"] = res->GetClassStringView();
+        ext_res["__TYPE__"] = res->GetClassStringName();
         ext_res["__PATH__"] = res->GetPath().toStdString();
         ext_res["__ID__"] = id.toStdString();
         root["__EXT_RESOURCES__"].push_back(ext_res);

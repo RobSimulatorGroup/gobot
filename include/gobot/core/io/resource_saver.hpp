@@ -38,7 +38,7 @@ public:
 
     static void GetRecognizedExtensions(const Ref<Resource> &resource, std::vector<String>* extensions);
 
-    static void AddResourceFormatSaver(Ref<ResourceFormatSaver> format_saver, bool at_front = false);
+    static void AddResourceFormatSaver(const Ref<ResourceFormatSaver>& format_saver, bool at_front = false);
 
     static void RemoveResourceFormatSaver(const Ref<ResourceFormatSaver>& format_saver);
 

@@ -10,6 +10,7 @@
 #include "gobot/core/string_utils.hpp"
 #include "gobot/log.hpp"
 #include "gobot/core/config/project_setting.hpp"
+#include "gobot/error_macros.hpp"
 #include <utility>
 
 
@@ -41,10 +42,9 @@ bool ResourceSaver::Save(const Ref<Resource>& resource, const String& target_pat
     if (path.isEmpty()) {
         path = resource->GetPath();
     }
-    if (path.isEmpty()) {
-        LOG_ERROR("Can't save resource to empty path. Provide non-empty path or a Resource with non-empty resource_path.");
-        return false;
-    }
+
+    ERR_FAIL_COND_V_MSG(path.isEmpty(), false,
+                        "Can't save resource to empty path. Provide non-empty path or a Resource with non-empty resource_path.");
 
     for (auto & s_saver : s_savers) {
         if (!s_saver->Recognize(resource)) {
@@ -91,11 +91,8 @@ void ResourceSaver::GetRecognizedExtensions(const Ref<Resource> &resource, std::
     }
 }
 
-void ResourceSaver::AddResourceFormatSaver(Ref<ResourceFormatSaver> format_saver, bool at_front) {
-    if (!format_saver.IsValid()) {
-        LOG_ERROR("It's not a reference to a valid ResourceFormatSaver object.");
-        return;
-    }
+void ResourceSaver::AddResourceFormatSaver(const Ref<ResourceFormatSaver>& format_saver, bool at_front) {
+    ERR_FAIL_COND_MSG(!format_saver.IsValid(), "It's not a reference to a valid ResourceFormatSaver object.");
 
     if (at_front) {
         s_savers.push_front(format_saver);

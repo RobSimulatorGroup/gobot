@@ -46,7 +46,7 @@ public:
 
     static bool Exists(const String &path, const String &type_hint = "");
 
-    static void AddResourceFormatLoader(Ref<ResourceFormatLoader> format_loader, bool at_front = false);
+    static void AddResourceFormatLoader(const Ref<ResourceFormatLoader>& format_loader, bool at_front = false);
 
     static void RemoveResourceFormatLoader(const Ref<ResourceFormatLoader>& format_loader);
 

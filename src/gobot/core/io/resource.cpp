@@ -9,6 +9,7 @@
 #include "gobot/core/io/resource_loader.hpp"
 #include "gobot/log.hpp"
 #include "gobot/core/registration.hpp"
+#include "gobot/error_macros.hpp"
 
 
 #include <random>
@@ -30,16 +31,17 @@ void Resource::UnregisterOwner(Object *p_owner) {
 Ref<Resource> Resource::CloneForLocalScene(Node* for_scene) {
     auto type = GetType();
     auto new_resource = type.create();
-    if (!new_resource.is_valid() && new_resource.can_convert<Resource*>()) {
-        LOG_ERROR("Cannot Create new Resource: {}", GetClassStringView());
-        return nullptr;
-    }
+    ERR_FAIL_COND_V_MSG(!new_resource.is_valid() && new_resource.can_convert<Resource*>(),
+                        nullptr, fmt::format("Failed to Create new Resource: {}", GetClassStringName()));
 
     Ref<Resource> r(new_resource.convert<Resource*>());
 
     r->local_scene_ = for_scene;
 
     for (const auto& prop : type.get_properties()) {
+        if (prop.is_readonly()) {
+            continue;
+        }
         PropertyInfo property_info;
         auto meta_data = prop.get_metadata(PROPERTY_INFO_KEY);
         if (meta_data.is_valid()) {
@@ -70,14 +72,16 @@ Ref<Resource> Resource::CloneForLocalScene(Node* for_scene) {
 Ref<Resource> Resource::Clone(bool copy_subresource) const {
     auto type = GetType();
     auto new_resource = type.create();
-    if (!new_resource.is_valid() && new_resource.can_convert<Resource*>()) {
-        LOG_ERROR("Cannot Create new Resource: {}", GetClassStringView());
-        return nullptr;
-    }
+    ERR_FAIL_COND_V_MSG(!new_resource.is_valid() && new_resource.can_convert<Resource*>(),
+                        nullptr, fmt::format("Failed to Create new Resource: {}", GetClassStringName()));
+
 
     Ref<Resource> r(new_resource.convert<Resource*>());
 
     for (const auto& prop : type.get_properties()) {
+        if (prop.is_readonly()) {
+            continue;
+        }
         PropertyInfo property_info;
         auto meta_data = prop.get_metadata(PROPERTY_INFO_KEY);
         if (meta_data.is_valid()) {
@@ -210,15 +214,12 @@ bool Resource::IsResourceFile(const String& path) {
 
 void Resource::ReloadFromFile() {
     auto path = GetPath();
-    if (!IsResourceFile(path)) {
-        return;
-    }
 
-    Ref<Resource> resource = ResourceLoader::Load(path, GetClassStringView().data(), ResourceFormatLoader::CacheMode::Ignore);
+    ERR_FAIL_COND(!IsResourceFile(path));
 
-    if (!resource.IsValid()) {
-        return;
-    }
+    Ref<Resource> resource = ResourceLoader::Load(path, GetClassStringName().data(), ResourceFormatLoader::CacheMode::Ignore);
+
+    ERR_FAIL_COND(!resource.IsValid());
 
     CopyFrom(resource);
 }
@@ -228,19 +229,17 @@ void Resource::ResetState() {
 }
 
 bool Resource::CopyFrom(const Ref<Resource> &resource) {
-    if (!resource.IsValid()) {
-        LOG_ERROR("input resource is invalid");
-        return false;
-    }
-
-    if (GetClassStringView() != resource->GetClassStringView()) {
-        LOG_ERROR("input resource's type:{} is not same as this type: {}", resource->GetClassStringView(), GetClassStringView());
-        return false;
-    }
+    ERR_FAIL_COND_V_MSG(!resource.IsValid(), false, "Input resource is invalid");
+    ERR_FAIL_COND_V_MSG(GetClassStringName() != resource->GetClassStringName(), false,
+                        fmt::format("Input resource's type:{} is not same as this type: {}", resource->GetClassStringName(),
+                        GetClassStringName()));
 
     ResetState(); //may want to reset state
 
     for (const auto& prop : resource->get_type().get_properties()) {
+        if (prop.is_readonly()) {
+            continue;
+        }
         PropertyInfo property_info;
         auto meta_data = prop.get_metadata(PROPERTY_INFO_KEY);
         if (meta_data.is_valid()) {
@@ -250,10 +249,11 @@ bool Resource::CopyFrom(const Ref<Resource> &resource) {
         if (!(bool)(property_info.usage & PropertyUsageFlags::Storage)) {
             continue;
         }
-        if (property_info.name == "resource_path") {
+        String prop_name = prop.get_name().data();
+        if (prop_name == "resource_path") {
             continue; //do not change path
         }
-        Set(property_info.name, resource->Get(property_info.name));
+        Set(prop_name, resource->Get(prop_name));
     }
     return true;
 }
@@ -311,7 +311,7 @@ void ResourceCache::Clear() {
 #ifdef NDEBUG
 #else
         for (const auto& [path, resource]: s_resources) {
-            LOG_TRACE("Resource:{} with path:{} is still in use", path, resource->GetClassStringView());
+            LOG_TRACE("Resource:{} with path:{} is still in use", path, resource->GetClassStringName());
         }
 #endif
     }

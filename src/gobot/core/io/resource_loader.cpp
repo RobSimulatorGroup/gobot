@@ -11,6 +11,7 @@
 #include "gobot/core/registration.hpp"
 #include "gobot/core/string_utils.hpp"
 #include "gobot/log.hpp"
+#include "gobot/error_macros.hpp"
 
 namespace gobot {
 
@@ -65,16 +66,10 @@ Ref<Resource> ResourceLoader::LoadImpl(const String &path,
         return res;
     }
 
-    if (!found) {
-        LOG_ERROR("Failed loading resource: {}. Make sure resources have been imported by opening the project in the editor at least once.", path);
-        return {};
-    }
+    ERR_FAIL_COND_V_MSG(!found, {},
+                        fmt::format("Failed loading resource: {}. Make sure resources have been imported by opening the project in the editor at least once.", path));
 
-    if(!QFile::exists(path)) {
-        LOG_ERROR("Resource file not found: {}.", path);
-        return {};
-    }
-
+    ERR_FAIL_COND_V_MSG(!QFile::exists(path), {}, fmt::format("Resource file not found: {}.", path));
     LOG_ERROR("No loader found for resource: {}.", path);
     return {};
 }
@@ -94,18 +89,12 @@ Ref<Resource> ResourceLoader::Load(const String &path,
 
         // TODO(wqq): Add multi-thread loader
         Ref<Resource> res = LoadImpl(path, type_hint, cache_mode);
-        if (!res) {
-            LOG_ERROR("Loading resource: {}", path);
-            return {};
-        }
+        ERR_FAIL_COND_V_MSG(!res, {}, fmt::format("Loading resource: {} failed.", path));
 
         return res;
     } else {
         Ref<Resource> res = LoadImpl(path, type_hint, cache_mode);
-        if (!res) {
-            LOG_ERROR("Loading resource: {}", path);
-            return {};
-        }
+        ERR_FAIL_COND_V_MSG(!res, {}, fmt::format("Loading resource: {} failed.", path));
 
         return res;
     }
@@ -132,11 +121,8 @@ bool ResourceLoader::Exists(const String &path, const String &type_hint) {
     return false;
 }
 
-void ResourceLoader::AddResourceFormatLoader(Ref<ResourceFormatLoader> format_loader, bool at_front) {
-    if (!format_loader.IsValid()) {
-        LOG_ERROR("It's not a reference to a valid ResourceFormatLoader object.");
-        return;
-    }
+void ResourceLoader::AddResourceFormatLoader(const Ref<ResourceFormatLoader>& format_loader, bool at_front) {
+    ERR_FAIL_COND_MSG(!format_loader.IsValid(), "It's not a reference to a valid ResourceFormatLoader object.");
 
     if (at_front) {
         s_loaders.push_front(format_loader);
@@ -148,10 +134,7 @@ void ResourceLoader::AddResourceFormatLoader(Ref<ResourceFormatLoader> format_lo
 void ResourceLoader::RemoveResourceFormatLoader(const Ref<ResourceFormatLoader>& format_loader) {
     auto it = std::find(s_loaders.begin(), s_loaders.end(), format_loader);
 
-    if (it == s_loaders.end()) {
-        LOG_ERROR("The format saver is not");
-        return;
-    }
+    ERR_FAIL_COND_MSG(it == s_loaders.end(), "The format saver is not find");
 
     s_loaders.erase(it);
 }

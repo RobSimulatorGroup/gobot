@@ -154,7 +154,7 @@ GOBOT_REGISTRATION {
 
     Class_<Object>("Object")
             .constructor()(CtorAsRawPtr)
-            .property_readonly("class_name", &Object::GetClassStringView);
+            .property_readonly("class_name", &Object::GetClassStringName);
 
 
     QuickEnumeration_<NotificationType>("NotificationType");

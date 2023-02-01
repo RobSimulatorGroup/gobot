@@ -63,7 +63,7 @@ public:
 
     template<class U>
     Ref(Ref<U> other) : ptr_(other.Get()) {
-        static_assert(std::is_convertible<U*, T*>::value, "Y* is not assignable to T*");
+        static_assert(std::is_convertible<U*, T*>::value, "U* is not assignable to T*");
         if(ptr_ != nullptr) ptr_->AddRef();
     }
 
