@@ -48,7 +48,7 @@ bool ResourceFormatLoaderSceneInstance::LoadResource() {
             LOG_ERROR("__META_TYPE__ must SCENE or RESOURCE");
             return false;
         }
-        is_scene_ = meta_type == "SCENE" ? true : false;
+        is_scene_ = meta_type == "SCENE";
     } else {
         LOG_ERROR("The json: {} must contains __META_TYPE__", json);
         return false;

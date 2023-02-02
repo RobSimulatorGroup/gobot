@@ -31,7 +31,7 @@ private:
     String local_path_;
     bool is_scene_{false};
     String res_type_;
-    ResourceFormatLoader::CacheMode cache_mode_;
+    ResourceFormatLoader::CacheMode cache_mode_{ResourceFormatLoader::CacheMode::Reuse};
 
     std::unordered_map<String, Ref<Resource>> ext_resources_;
     std::unordered_map<String, Ref<Resource>> sub_resources_;
