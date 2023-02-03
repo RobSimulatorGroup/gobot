@@ -58,7 +58,7 @@ jobs:
 
     - name: Print cache directory
       if: ${{ failure() && matrix.os == 'windows-latest' }}
-      run: tree ~/.conan /a /f
+      run: tree C:/Users/runneradmin/.conan /a /f
 
     - name: Setup tmate session
       if: ${{ failure() }}
