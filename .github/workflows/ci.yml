@@ -57,6 +57,7 @@ jobs:
     #  run: ctest -C ${{env.BUILD_TYPE}}
 
     - name: Print cache directory1
+      if: ${{ matrix.os == 'windows-latest' }}
       run: tree C:/Users/runneradmin/.conan /a /f
 
     - name: Print cache directory
