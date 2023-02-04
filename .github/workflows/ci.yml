@@ -19,6 +19,11 @@ jobs:
 
     runs-on: ${{ matrix.os }}
 
+    env:
+      CONAN_USER_HOME: "~"
+      CONAN_USER_HOME_SHORT: "~/.conan_short"
+      CONAN_USE_ALWAYS_SHORT_PATHS: True
+
     steps:
     - uses: actions/checkout@v3
       with:
@@ -36,7 +41,9 @@ jobs:
       env:
         cache-name: cache-conan-packages
       with:
-        path: ~/.conan
+        path: |
+          ~/.conan
+          ~/.conan_short
         key: host-${{ runner.os }}-target-${{ runner.os }}-${{ hashFiles('conanfile.txt') }}
         restore-keys: |
           host-${{ runner.os }}-target-${{ runner.os }}-
@@ -56,15 +63,15 @@ jobs:
     #   See https://cmake.org/cmake/help/latest/manual/ctest.1.html for more detail
     #  run: ctest -C ${{env.BUILD_TYPE}}
 
-    - name: Print cache directory1
+    - name: Print cache directory
       if: ${{ matrix.os == 'windows-latest' }}
       run: tree C:/Users/runneradmin/.conan /a /f
 
-    - name: Print cache directory
-      if: ${{ failure() && matrix.os == 'windows-latest' }}
-      run: tree C:/Users/runneradmin/.conan /a /f
+    - name: Print cache directory 2
+      if: ${{ matrix.os == 'windows-latest' }}
+      run: tree C:/Users/runneradmin/.conan_short /a /f
 
     - name: Setup tmate session
-      if: ${{ failure() }}
+      if: ${{ failure() || matrix.os == 'windows-latest' }}
       uses: mxschmitt/action-tmate@v3
       timeout-minutes: 15
