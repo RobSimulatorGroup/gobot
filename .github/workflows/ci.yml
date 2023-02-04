@@ -61,7 +61,7 @@ jobs:
     #   See https://cmake.org/cmake/help/latest/manual/ctest.1.html for more detail
     #  run: ctest -C ${{env.BUILD_TYPE}}
 
-    - name: Setup tmate session
-      if: ${{ failure() || matrix.os == 'windows-latest' }}
+    - name: Start debug session if failure
+      if: ${{ failure() }}
       uses: mxschmitt/action-tmate@v3
       timeout-minutes: 15
