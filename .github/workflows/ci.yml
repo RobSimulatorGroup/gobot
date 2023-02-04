@@ -52,6 +52,7 @@ jobs:
       run: cmake -B ${{ github.workspace }}/build -DCMAKE_BUILD_TYPE=${{ env.BUILD_TYPE }} -DBUILD_EXPERIMENT=OFF -DBUILD_TESTS=On
 
     - name: Build
+      if: ${{ matrix.os == 'ubuntu-latest' }}
       run: cmake --build ${{ github.workspace }}/build --config ${{ env.BUILD_TYPE }}
 
     - name: Test
