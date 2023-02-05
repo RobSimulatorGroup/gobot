@@ -133,6 +133,13 @@ if (BUILD_TESTS)
 endif ()
 
 if (MSVC)
+    add_custom_command(TARGET gobot POST_BUILD
+        COMMAND "${CMAKE_COMMAND}" -E copy_directory
+            "$<TARGET_FILE_DIR:RTTR::Core>"
+            "$<TARGET_FILE_DIR:gobot>"
+        COMMENT "Copying RTTR files..."
+    )
+
     # Retrieve the absolute path to qmake and then use that path to find
     # the binaries
     get_target_property(_qmake_executable Qt5::qmake IMPORTED_LOCATION)
