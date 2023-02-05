@@ -18,7 +18,12 @@ message(STATUS "gtest configured correctly")
 macro(package_add_test TESTNAME FILES)
     add_executable(${TESTNAME} ${FILES})
     target_link_libraries(${TESTNAME} gtest gmock gtest_main)
-    target_link_libraries(${TESTNAME} -Wl,--no-as-needed  gobot)
+    if (MSVC)
+        target_link_libraries(${TESTNAME} gobot)
+    else ()
+        target_link_libraries(${TESTNAME} -Wl,--no-as-needed gobot)
+    endif ()
+    
     # gtest_discover_tests replaces gtest_add_tests,
     # see https://cmake.org/cmake/help/v3.10/module/GoogleTest.html for more options to pass to it
     gtest_discover_tests(${TESTNAME}

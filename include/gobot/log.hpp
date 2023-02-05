@@ -74,7 +74,7 @@ struct fmt::formatter<gobot::String> : fmt::formatter<std::string>
 {
     static auto format(const gobot::String& str, format_context &ctx) -> decltype(ctx.out())
     {
-        return format_to(ctx.out(), "{}", str.toStdString());
+        return fmt::format_to(ctx.out(), "{}", str.toStdString());
     }
 };
 
