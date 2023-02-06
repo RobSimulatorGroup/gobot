@@ -147,9 +147,9 @@ if (MSVC)
     find_program(WINDEPLOYQT_EXECUTABLE windeployqt HINTS "${_qt_bin_dir}")
     find_program(MACDEPLOYQT_EXECUTABLE macdeployqt HINTS "${_qt_bin_dir}")
     add_custom_command(TARGET gobot_editor POST_BUILD
-        COMMAND "${CMAKE_COMMAND}" -E
-            env PATH="${_qt_bin_dir} ${}" "${WINDEPLOYQT_EXECUTABLE}" --debug --verbose 2
-                "$<TARGET_FILE:gobot_editor>"
+        COMMAND "${CMAKE_COMMAND}" -E env
+        "PATH=${_qt_bin_dir}"
+        "${WINDEPLOYQT_EXECUTABLE}" --debug --verbose 2 "$<TARGET_FILE:gobot_editor>"
         COMMENT "Running windeployqt..."
   )
 endif ()
