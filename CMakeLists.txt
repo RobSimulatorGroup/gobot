@@ -149,7 +149,7 @@ if (MSVC)
     add_custom_command(TARGET gobot_editor POST_BUILD
         COMMAND "${CMAKE_COMMAND}" -E env
         "PATH=${_qt_bin_dir}"
-        "${WINDEPLOYQT_EXECUTABLE}" --debug --verbose 2 "$<TARGET_FILE:gobot_editor>"
+        "${WINDEPLOYQT_EXECUTABLE}" "$<TARGET_FILE:gobot_editor>"
         COMMENT "Running windeployqt..."
   )
 endif ()
