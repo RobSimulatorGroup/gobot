@@ -110,17 +110,19 @@ static constexpr auto const_ = std::true_type{};
 #if RTTR_COMPILER == RTTR_COMPILER_MSVC
 #define GOBOT_REGISTRATION GOBOT_STATIC_REGISTRATION
 #else
-#define GOBOT_REGISTRATION                                         \
-  namespace gobot {                                                \
-  namespace {                                                      \
-  static void gobot_auto_register_reflection_function_()           \
-      RTTR_DECLARE_PLUGIN_CTOR;                                    \
-  static void gobot_auto_unregister_reflection_function()          \
-      RTTR_DECLARE_PLUGIN_DTOR;                                    \
-  }                                                                \
-  }                                                                \
-  static void gobot::gobot_auto_unregister_reflection_function() { \
-    rttr::detail::get_registration_manager().unregister();         \
-  }                                                                \
-  static void gobot::gobot_auto_register_reflection_function_()
+#define GOBOT_REGISTRATION                                       \
+  namespace gobot {                                              \
+  namespace {                                                    \
+  static void gobot_auto_register_reflection_function_()         \
+      RTTR_DECLARE_PLUGIN_CTOR;                                  \
+  static void gobot_auto_unregister_reflection_function()        \
+      RTTR_DECLARE_PLUGIN_DTOR;                                  \
+  }                                                              \
+  }                                                              \
+  static void gobot::gobot_auto_unregister_reflection_function() \
+      RTTR_DECLARE_PLUGIN_DTOR {                                 \
+    rttr::detail::get_registration_manager().unregister();       \
+  }                                                              \
+  static void gobot::gobot_auto_register_reflection_function_()  \
+      RTTR_DECLARE_PLUGIN_CTOR
 #endif
