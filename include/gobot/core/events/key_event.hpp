@@ -42,8 +42,8 @@ private:
     uint16_t repeat_count_;
 };
 
-class KeyReleasedEvent : public KeyEvent
-{
+class KeyReleasedEvent : public KeyEvent {
+    GOBCLASS(KeyReleasedEvent, KeyEvent)
 public:
     explicit KeyReleasedEvent(KeyCode key_code);
 
@@ -52,8 +52,8 @@ public:
     EVENT_CLASS_TYPE(KeyReleased)
 };
 
-class KeyTypedEvent : public KeyEvent
-{
+class KeyTypedEvent : public KeyEvent {
+    GOBCLASS(KeyTypedEvent, KeyEvent)
 public:
     explicit KeyTypedEvent(KeyCode key_code);
 
