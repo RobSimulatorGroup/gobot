@@ -1,3 +1,9 @@
 [submodule "3rdparty/rttr"]
 	path = 3rdparty/rttr
 	url = git@github.com:Wuqiqi123/rttr.git
+[submodule "3rdparty/imgui"]
+	path = 3rdparty/imgui
+	url = git@github.com:RobSimulatorGroup/imgui.git
+[submodule "3rdparty/glfw"]
+	path = 3rdparty/glfw
+	url = git@github.com:RobSimulatorGroup/glfw.git
