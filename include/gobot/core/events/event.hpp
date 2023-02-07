@@ -79,4 +79,32 @@ protected:
     bool handled_ = false;
 };
 
+class EventDispatcher
+{
+public:
+    explicit EventDispatcher(Event& event)
+        : event_(event)
+    {
+    }
+
+    template<typename T, typename F>
+    bool Dispatch(const F& func)
+    {
+        if(event_.GetEventType() == T::GetStaticType()) {
+            event_.handled_ |= func(static_cast<T&>(event_));
+            return true;
+        }
+        return false;
+    }
+
+    friend inline std::ostream& operator<<(std::ostream& os, const Event& e)
+    {
+        return os << e.ToString().toStdString();
+    }
+
+private:
+    Event& event_;
+};
+
+
 }
