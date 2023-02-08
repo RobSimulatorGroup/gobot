@@ -16,7 +16,17 @@ option(BUILD_TESTS "build tests" OFF)
 if (NOT EXISTS ${CMAKE_BINARY_DIR}/conanbuildinfo.cmake)
     if (NOT EXISTS "${CMAKE_BINARY_DIR}/conan.cmake")
         message(STATUS "Downloading conan.cmake from https://github.com/conan-io/cmake-conan")
-        file(DOWNLOAD "https://raw.githubusercontent.com/wuyingnan/cmake-conan/develop/conan.cmake" "${CMAKE_BINARY_DIR}/conan.cmake")
+        file(DOWNLOAD "https://raw.githubusercontent.com/conan-io/cmake-conan/develop/conan.cmake" "${CMAKE_BINARY_DIR}/conan.cmake"
+             SHOW_PROGRESS
+             TIMEOUT 10
+             STATUS CONAN_CMAKE_DOWNLOAD_STATUS)
+        list(GET CONAN_CMAKE_DOWNLOAD_STATUS 0 CONAN_CMAKE_DOWNLOAD_VALUE)
+        list(GET CONAN_CMAKE_DOWNLOAD_STATUS 1 CONAN_CMAKE_DOWNLOAD_MESSAGE)
+        if (NOT ${CONAN_CMAKE_DOWNLOAD_VALUE})
+            message(WARNING "Failed to download conan.cmake! Message: ${CONAN_CMAKE_DOWNLOAD_MESSAGE}")
+            message(STATUS "Try to copy conan.cmake to ${CMAKE_BINARY_DIR}")
+            file(COPY_FILE "${CMAKE_CURRENT_SOURCE_DIR}/cmake/conan.cmake" "${CMAKE_BINARY_DIR}/conan.cmake") 
+        endif ()
     endif ()
     include(${CMAKE_BINARY_DIR}/conan.cmake)
     if (CONAN_PROFILE_BUILD AND CONAN_PROFILE_HOST)
@@ -83,8 +93,10 @@ file(GLOB_RECURSE HEADER_FILES CONFIGURE_DEPENDS "include/*hpp")
 
 # https://github.com/bincrafters/community/issues/466#issuecomment-426265654
 add_library(gobot SHARED ${SOURCE_CORE} ${SOURCE_SCENE} ${SOURCE_EDITOR} ${HEADER_FILES})
-if (MSVC)
+if (CMAKE_CXX_COMPILER_ID STREQUAL "MSVC")
     target_compile_options(gobot PUBLIC "/Zc:preprocessor")
+elseif (CMAKE_CXX_COMPILER_ID STREQUAL "GNU")
+    target_compile_options(gobot PUBLIC "-fno-gnu-unique")
 endif ()
 
 # https://forum.qt.io/topic/97296/export-qobject-based-class-from-dll/2
@@ -133,6 +145,13 @@ if (BUILD_TESTS)
 endif ()
 
 if (MSVC)
+    add_custom_command(TARGET gobot POST_BUILD
+        COMMAND "${CMAKE_COMMAND}" -E copy_directory
+            "$<TARGET_FILE_DIR:RTTR::Core>"
+            "$<TARGET_FILE_DIR:gobot>"
+        COMMENT "Copying RTTR files..."
+    )
+
     # Retrieve the absolute path to qmake and then use that path to find
     # the binaries
     get_target_property(_qmake_executable Qt5::qmake IMPORTED_LOCATION)
@@ -140,9 +159,9 @@ if (MSVC)
     find_program(WINDEPLOYQT_EXECUTABLE windeployqt HINTS "${_qt_bin_dir}")
     find_program(MACDEPLOYQT_EXECUTABLE macdeployqt HINTS "${_qt_bin_dir}")
     add_custom_command(TARGET gobot_editor POST_BUILD
-        COMMAND "${CMAKE_COMMAND}" -E
-            env PATH="${_qt_bin_dir} ${}" "${WINDEPLOYQT_EXECUTABLE}" --debug --verbose 2
-                "$<TARGET_FILE:gobot_editor>"
+        COMMAND "${CMAKE_COMMAND}" -E env
+        "PATH=${_qt_bin_dir}"
+        "${WINDEPLOYQT_EXECUTABLE}" "$<TARGET_FILE:gobot_editor>"
         COMMENT "Running windeployqt..."
   )
 endif ()
