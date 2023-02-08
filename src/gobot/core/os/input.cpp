@@ -19,11 +19,11 @@ Input::Input()
 
 void Input::Reset()
 {
-    memset(key_pressed_, 0, static_cast<std::uint32_t>(KeyCode::MaxKeyCode));
-    memset(key_held_, 0, static_cast<std::uint32_t>(KeyCode::MaxKeyCode));
+    memset(key_pressed_, 0, static_cast<std::uint32_t>(KeyCode::MaxKey));
+    memset(key_held_, 0, static_cast<std::uint32_t>(KeyCode::MaxKey));
 
-    memset(mouse_clicked_, 0, static_cast<std::uint32_t>(MouseKeyCode::MaxMouseKeyCode));
-    memset(mouse_held_, 0, static_cast<std::uint32_t>(MouseKeyCode::MaxMouseKeyCode));
+    memset(mouse_clicked_, 0, static_cast<std::uint32_t>(MouseKeyCode::MaxButton));
+    memset(mouse_held_, 0, static_cast<std::uint32_t>(MouseKeyCode::MaxButton));
 
     mouse_on_screen_ = true;
     scroll_offset_  = 0.0f;
@@ -31,8 +31,8 @@ void Input::Reset()
 
 void Input::ResetPressed()
 {
-    memset(key_pressed_, 0, static_cast<std::uint32_t>(KeyCode::MaxKeyCode));
-    memset(mouse_clicked_, 0, static_cast<std::uint32_t>(MouseKeyCode::MaxMouseKeyCode));
+    memset(key_pressed_, 0, static_cast<std::uint32_t>(KeyCode::MaxKey));
+    memset(mouse_clicked_, 0, static_cast<std::uint32_t>(MouseKeyCode::MaxButton));
     scroll_offset_ = 0;
 }
 

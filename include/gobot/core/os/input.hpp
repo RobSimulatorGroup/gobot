@@ -8,7 +8,7 @@
 #pragma once
 
 #include "gobot/core/object.hpp"
-#include "gobot/core/os/keycode.hpp"
+#include "gobot/core/os/keycodes.hpp"
 #include "gobot/core/events/event.hpp"
 #include "gobot/core/events/key_event.hpp"
 #include "gobot/core/events/mouse_event.hpp"
@@ -90,11 +90,11 @@ private:
 
     mutable std::mutex mutex_;
 
-    bool key_pressed_[static_cast<KeyCodeUInt>(KeyCode::MaxKeyCode)];
-    bool key_held_[static_cast<KeyCodeUInt>(KeyCode::MaxKeyCode)];
+    bool key_pressed_[static_cast<KeyCodeUInt>(KeyCode::MaxKey)];
+    bool key_held_[static_cast<KeyCodeUInt>(KeyCode::MaxKey)];
 
-    bool mouse_held_[static_cast<MouseKeyCodeUInt>(MouseKeyCode::MaxMouseKeyCode)];
-    bool mouse_clicked_[static_cast<MouseKeyCodeUInt>(MouseKeyCode::MaxMouseKeyCode)];
+    bool mouse_held_[static_cast<MouseKeyCodeUInt>(MouseKeyCode::MaxButton)];
+    bool mouse_clicked_[static_cast<MouseKeyCodeUInt>(MouseKeyCode::MaxButton)];
 
     float scroll_offset_ = 0.0f;
 
@@ -102,8 +102,6 @@ private:
     MouseMode mouse_mode_;
 
     Eigen::Vector2f mouse_position_;
-
-//    std::map<int, Controller> m_Controllers;
 };
 
 }

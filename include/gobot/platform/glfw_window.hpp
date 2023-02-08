@@ -11,8 +11,8 @@
 namespace gobot {
 
 class GLFWWindow {
-
-
+public:
+    GLFWWindow();
 
 };
 

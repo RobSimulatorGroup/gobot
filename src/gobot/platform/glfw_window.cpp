@@ -8,8 +8,12 @@
 #include "gobot/platform/glfw_window.hpp"
 #include "gobot/core/events/key_event.hpp"
 #include "gobot/core/events/mouse_event.hpp"
+#include "gobot/platform/glfw_keycodes.hpp"
 
 namespace gobot {
 
+GLFWWindow::GLFWWindow() {
+
+}
 
 }
