@@ -14,10 +14,9 @@ namespace gobot {
 enum class RenderAPI : std::uint8_t
 {
     OPENGL = 0,
-    VULKAN,   // Unsupported
-    DIRECT3D, // Unsupported
-    METAL,    // Unsupported
-    NONE,     // Unsupported
+    VULKAN,   // Unsupported right now
+    DIRECT3D, // Unsupported right now
+    METAL     // Unsupported right now
 };
 
 class GraphicsContext
