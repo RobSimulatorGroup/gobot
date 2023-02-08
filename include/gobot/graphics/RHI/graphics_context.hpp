@@ -25,13 +25,16 @@ class GraphicsContext
 public:
     virtual ~GraphicsContext();
 
-    static RenderAPI GetRenderAPI() { return s_RenderAPI; }
+    static RenderAPI GetRenderAPI() { return s_render_api; }
 
     static void SetRenderAPI(RenderAPI api);
 
     virtual void Init() = 0;
+
     virtual void Present() = 0;
+
     virtual float GetGPUMemoryUsed() = 0;
+
     virtual float GetTotalGPUMemory() = 0;
 
     virtual std::size_t GetMinUniformBufferOffsetAlignment() const = 0;
@@ -42,12 +45,12 @@ public:
 
     virtual void OnImGui() = 0;
 
-static GraphicsContext* Create();
+    static GraphicsContext* Create();
 
 protected:
     static GraphicsContext* (*CreateFunc)();
 
-    static RenderAPI s_RenderAPI;
+    static RenderAPI s_render_api;
 };
 
 }
