@@ -8,6 +8,7 @@
 #pragma once
 
 #include "gobot/core/os/window.hpp"
+#include "gobot/platform/opengl/GL.hpp"
 
 #include <GLFW/glfw3.h>
 
@@ -25,7 +26,9 @@ public:
 
     [[nodiscard]] std::uint32_t GetHeight() const override { return window_data_.height; }
 
-    [[nodiscard]] FORCE_INLINE WindowHandle GetNativeWindowHandle() const override { return native_window_handle_; }
+    void SetBorderlessWindow(bool borderless);
+
+    [[nodiscard]] FORCE_INLINE WindowHandle GetNativeWindowHandle() const override { return native_handle_; }
 
     FORCE_INLINE void SetEventCallback(const EventCallbackFn& callback) override {
         window_data_.event_callback = callback;
@@ -34,16 +37,18 @@ public:
     void OnUpdate() override;
 
 private:
-private:
-    GLFWwindow* native_window_handle_ = nullptr;
+    GLFWwindow* native_handle_ = nullptr;
 
     struct WindowData
     {
         bool v_sync = true;
         bool over_title_bar = false;
+        bool exit;
         uint32_t width = 0;
         uint32_t height = 0;
         String title;
+        RenderAPI render_api;
+        float dpi_scale;
 
         EventCallbackFn event_callback;
     };

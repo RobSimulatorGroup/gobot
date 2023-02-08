@@ -73,6 +73,7 @@ endif()
 
 find_package(Qt5 COMPONENTS Core Widgets Gui CONFIG REQUIRED)
 find_package (Eigen3 3.4 CONFIG REQUIRED)
+find_package(OpenGL REQUIRED)
 
 INCLUDE(GenerateExportHeader)
 
@@ -100,6 +101,9 @@ target_include_directories(gobot
 target_link_libraries(gobot
     PUBLIC
     RTTR::Core
+    OpenGL::GL
+    glad
+    glfw
     intrusive_ptr
     ${CONAN_LIBS}
 )

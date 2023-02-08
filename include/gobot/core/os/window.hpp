@@ -10,6 +10,7 @@
 #include <utility>
 
 #include "gobot/core/events/event.hpp"
+#include "gobot/graphics/RHI/graphics_context.hpp"
 
 namespace gobot {
 
@@ -17,29 +18,29 @@ struct WindowDesc
 {
     WindowDesc(uint32_t width = 1280,
                uint32_t height = 720,
-               int renderAPI = 0,
+               RenderAPI render_api = RenderAPI::OpenGL,
                String title = "Gobot",
                bool fullscreen = false,
                bool vsync = true,
                bool borderless = false)
-        : width_(width),
-          height_(height),
-          title_(std::move(title)),
-          full_screen_(fullscreen),
-          vsync_(vsync),
-          borderless_(borderless),
-          RenderAPI(renderAPI)
-        {
-        }
+        : width(width),
+          height(height),
+          title(std::move(title)),
+          full_screen(fullscreen),
+          vsync(vsync),
+          borderless(borderless),
+          render_api(render_api)
+    {
+    }
 
-    std::uint32_t width_;
-    std::uint32_t height_;
-    bool full_screen_;
-    bool vsync_;
-    bool borderless_;
-    bool show_console_ = true;
-    String title_;
-    int RenderAPI;
+    std::uint32_t width;
+    std::uint32_t height;
+    bool full_screen;
+    bool vsync;
+    bool borderless;
+    bool show_console = true;
+    String title;
+    RenderAPI render_api;
 };
 
 class Window

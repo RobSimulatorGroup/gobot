@@ -13,10 +13,10 @@ namespace gobot {
 
 enum class RenderAPI : std::uint8_t
 {
-    OPENGL = 0,
-    VULKAN,   // Unsupported right now
-    DIRECT3D, // Unsupported right now
-    METAL     // Unsupported right now
+    OpenGL,
+    Vulkan,   // Unsupported right now
+    Direct3D, // Unsupported right now
+    Metal     // Unsupported right now
 };
 
 class GraphicsContext
@@ -27,6 +27,8 @@ public:
     static RenderAPI GetRenderAPI() { return s_render_api; }
 
     static void SetRenderAPI(RenderAPI api);
+
+    static GraphicsContext* Create();
 
     virtual void Init() = 0;
 
@@ -44,7 +46,6 @@ public:
 
     virtual void OnImGui() = 0;
 
-    static GraphicsContext* Create();
 
 protected:
     static GraphicsContext* (*CreateFunc)();
