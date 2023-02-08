@@ -84,4 +84,20 @@ public:
     EVENT_CLASS_TYPE(MouseButtonReleased)
 };
 
+
+class MouseEnterEvent : public Event {
+    GOBCLASS(MouseEnterEvent, Event)
+public:
+    MouseEnterEvent(bool enter);
+
+    [[nodiscard]] FORCE_INLINE bool GetEntered() const { return entered_; }
+
+    String ToString() const override;
+
+    EVENT_CLASS_TYPE(MouseEntered)
+    EVENT_CLASS_CATEGORY(EventCategoryMouse | EventCategoryInput)
+private:
+    bool entered_;
+};
+
 }

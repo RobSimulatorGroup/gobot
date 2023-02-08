@@ -142,16 +142,17 @@ enum class KeyCode : std::uint32_t {
     RightControl = 345,
     RightAlt     = 346,
     RightSuper   = 347,
-    Menu         = 348
-
+    Menu         = 348,
+    MaxKeyCode
 };
 
-enum class MouseKeyCode  : std::uint16_t
+enum class MouseKeyCode : std::uint16_t
 {
     ButtonLeft   = 0,
     ButtonMiddle = 1,
     ButtonRight  = 2,
     NoCursor     = 3,
+    MaxMouseKeyCode
 };
 
 }

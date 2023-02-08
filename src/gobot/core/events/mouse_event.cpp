@@ -69,5 +69,17 @@ String MouseButtonReleasedEvent::ToString() const
     return fmt::format("MouseButtonReleasedEvent: {}", magic_enum::enum_name(button_)).c_str();
 }
 
+///////////////////////////////////////////////////////////////////////
+
+
+MouseEnterEvent::MouseEnterEvent(bool enter)
+    : entered_(enter)
+{
+}
+
+String MouseEnterEvent::ToString() const
+{
+    return fmt::format("MouseEnterEvent: {}", entered_).c_str();
+}
 
 }
