@@ -34,8 +34,8 @@ bool ResourceFormatSaver::Recognize(const Ref<Resource> &resource) const {
 }
 
 std::deque<Ref<ResourceFormatSaver>> ResourceSaver::s_savers;
-
 ResourceSaver::ResourceSavedCallback ResourceSaver::resource_saved_callback;
+bool ResourceSaver::s_timestamp_on_save = false;
 
 bool ResourceSaver::Save(const Ref<Resource>& resource, const String& target_path, ResourceSaverFlags flags) {
     String path = target_path;
