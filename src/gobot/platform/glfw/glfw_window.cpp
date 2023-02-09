@@ -26,6 +26,8 @@ GLFWWindow::GLFWWindow(const WindowDesc& properties) {
     initialised_  = false;
     v_sync_ = properties.vsync;
     LOG_INFO("VSync : {}", v_sync_ ? "True" : "False");
+
+    Init(properties);
 }
 
 GLFWWindow::~GLFWWindow() {
@@ -41,15 +43,15 @@ bool GLFWWindow::Init(const WindowDesc& properties) {
 
     if (s_num_glfw_windows == 0) {
         int success = glfwInit();
-        CRASH_COND_MSG(success, "Could not initialize GLFW!");
+        CRASH_COND_MSG(!success, "Could not initialize GLFW!");
         glfwSetErrorCallback(GLFWErrorCallback);
     }
     s_num_glfw_windows++;
 
     GLFWmonitor* monitor = glfwGetPrimaryMonitor();
-    float xscale, yscale;
-    glfwGetMonitorContentScale(monitor, &xscale, &yscale);
-    window_data_.dpi_scale = xscale;
+    float x_scale, y_scale;
+    glfwGetMonitorContentScale(monitor, &x_scale, &y_scale);
+    window_data_.dpi_scale = x_scale;
 
     {
 #ifdef GOBOT_DEBUG
@@ -69,7 +71,11 @@ bool GLFWWindow::Init(const WindowDesc& properties) {
         glfwWindowHint(GLFW_OPENGL_PROFILE, GLFW_OPENGL_CORE_PROFILE);
     }
 
-    SetBorderlessWindow(properties.borderless);
+    if(properties.borderless) {
+        glfwWindowHint(GLFW_DECORATED, false);
+    } else {
+        glfwWindowHint(GLFW_DECORATED, true);
+    }
 
     const GLFWvidmode* mode = glfwGetVideoMode(monitor);
     uint32_t screen_width  = 0;
@@ -92,7 +98,6 @@ bool GLFWWindow::Init(const WindowDesc& properties) {
     glfwGetFramebufferSize(native_handle_, &w, &h);
 
     window_data_.title = properties.title;
-    window_data_.exit = false;
     window_data_.width  = w;
     window_data_.height = h;
 
@@ -145,15 +150,6 @@ void GLFWWindow::SetVSync(bool v_sync) {
     LOG_INFO("VSync : {0}", v_sync ? "True" : "False");
 }
 
-
-void GLFWWindow::SetBorderlessWindow(bool borderless)
-{
-    if(borderless) {
-        glfwWindowHint(GLFW_DECORATED, false);
-    } else {
-        glfwWindowHint(GLFW_DECORATED, true);
-    }
-}
 
 bool GLFWWindow::IsMaximized() {
     return glfwGetWindowAttrib(native_handle_, GLFW_MAXIMIZED);

@@ -21,19 +21,17 @@ public:
 
     ~GLFWWindow() override;
 
-    [[nodiscard]] String GetTitle() const override { return window_data_.title; };
+    [[nodiscard]] FORCE_INLINE String GetTitle() const override { return window_data_.title; };
 
     void SetWindowTitle(const String& title) override;
 
-    [[nodiscard]] std::uint32_t GetWidth() const override { return window_data_.width; }
+    [[nodiscard]] FORCE_INLINE std::uint32_t GetWidth() const override { return window_data_.width; }
 
-    [[nodiscard]] std::uint32_t GetHeight() const override { return window_data_.height; }
+    [[nodiscard]] FORCE_INLINE std::uint32_t GetHeight() const override { return window_data_.height; }
 
     void ToggleVSync() override;
 
     void SetVSync(bool v_sync) override;
-
-    void SetBorderlessWindow(bool borderless);
 
     [[nodiscard]] FORCE_INLINE float GetScreenRatio() const override { return window_data_.dpi_scale; }
 
@@ -63,11 +61,10 @@ private:
 private:
     GLFWwindow* native_handle_ = nullptr;
 
+
+
     struct WindowData
     {
-        bool v_sync = true;
-        bool over_title_bar = false;
-        bool exit;
         uint32_t width = 0;
         uint32_t height = 0;
         String title;

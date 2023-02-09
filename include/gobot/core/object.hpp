@@ -121,7 +121,7 @@ public:
 
     Object();
 
-    ~Object();
+    ~Object() override;
 
     [[nodiscard]] FORCE_INLINE std::string_view GetClassStringName() const { return get_type().get_name().data(); }
 
@@ -203,7 +203,7 @@ private:
 
     FORCE_INLINE void ConstructObject(bool reference);
 
-    Object(bool reference);
+    explicit Object(bool reference);
 
 private:
     friend class RefCounted;

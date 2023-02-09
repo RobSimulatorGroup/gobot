@@ -88,11 +88,11 @@ public:
 class GOBOT_EXPORT MouseEnterEvent : public Event {
     GOBCLASS(MouseEnterEvent, Event)
 public:
-    MouseEnterEvent(bool enter);
+    explicit MouseEnterEvent(bool enter);
 
     [[nodiscard]] FORCE_INLINE bool GetEntered() const { return entered_; }
 
-    String ToString() const override;
+    [[nodiscard]] String ToString() const override;
 
     EVENT_CLASS_TYPE(MouseEntered)
     EVENT_CLASS_CATEGORY(EventCategoryMouse | EventCategoryInput)
