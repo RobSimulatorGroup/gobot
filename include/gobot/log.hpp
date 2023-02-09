@@ -19,6 +19,7 @@
 #include <spdlog/sinks/stdout_sinks.h>
 #include <spdlog/sinks/stdout_color_sinks.h>
 #include <spdlog/sinks/rotating_file_sink.h>
+#include "gobot/core/types.hpp"
 
 
 namespace gobot {
@@ -73,7 +74,7 @@ struct fmt::formatter<gobot::String> : fmt::formatter<std::string>
 {
     static auto format(const gobot::String& str, format_context &ctx) -> decltype(ctx.out())
     {
-        return format_to(ctx.out(), "{}", str.toStdString());
+        return fmt::format_to(ctx.out(), "{}", str.toStdString());
     }
 };
 
@@ -87,3 +88,6 @@ struct fmt::formatter<gobot::String> : fmt::formatter<std::string>
 #define LOG_WARN(...)  gobot::Logger::getInstance().getLogger()->warn("[" __FILE__ ":" SPDLOG_STR_HELPER(__LINE__) "] " __VA_ARGS__)
 #define LOG_ERROR(...) gobot::Logger::getInstance().getLogger()->error("[" __FILE__ ":" SPDLOG_STR_HELPER(__LINE__) "] " __VA_ARGS__)
 #define LOG_FATAL(...) gobot::Logger::getInstance().getLogger()->critical("[" __FILE__ ":" SPDLOG_STR_HELPER(__LINE__) "] " __VA_ARGS__)
+
+#define LOG_OFF gobot::Logger::getInstance().getLogger()->set_level(spdlog::level::off)
+#define LOG_ON gobot::Logger::getInstance().getLogger()->set_level(spdlog::level::trace)

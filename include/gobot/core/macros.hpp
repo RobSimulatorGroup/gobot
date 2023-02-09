@@ -10,6 +10,7 @@
 #include <rttr/rttr_enable.h>
 #include <rttr/detail/base/core_prerequisites.h>
 #include <magic_enum.hpp>
+#include <gobot_export.h>
 
 // Should always inline no matter what.
 #ifndef ALWAYS_INLINE
@@ -31,14 +32,6 @@
 #endif
 #endif
 
-#if !defined(GOBOT_EXPORT)
-#if defined(WIN32) || defined(_WIN32)
-#define GOBOT_EXPORT __declspec(dllexport)
-#else
-#define GOBOT_EXPORT __attribute__((visibility("default")))
-#endif
-#endif
-
 // C++ preprocessor __VA_ARGS__ number of arguments
 #define PP_NARG_COUNT(...) PP_NARG_(__VA_ARGS__,PP_RSEQ_N())
 #define PP_NARG_(...) PP_ARG_N(__VA_ARGS__)
@@ -54,13 +47,14 @@
 
 #define GOB_UNUSED(x) (void)x;
 
+#define GOB_STRINGIFY(x) #x
+
 
 #ifdef _MSC_VER
 #define GENERATE_TRAP() __debugbreak()
 #else
 #define GENERATE_TRAP() __builtin_trap()
 #endif
-
 
 
 namespace rttr::detail

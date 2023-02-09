@@ -11,7 +11,7 @@
 #include <QObject>
 
 #include "gobot/core/types.hpp"
-#include "gobot/core/marcos.hpp"
+#include "gobot/core/macros.hpp"
 #include "gobot/core/notification_enum.hpp"
 #include "gobot/core/spin_lock.hpp"
 #include "gobot/core/object_id.hpp"
@@ -55,7 +55,7 @@ protected:                                                                      
 namespace gobot {
 
 
-enum class GOBOT_EXPORT PropertyHint {
+enum class PropertyHint {
     None, ///< no hint provided.
     Range, ///< hint_text = "min,max[,step][,or_greater][,or_less][,hide_slider][,radians][,degrees][,exp][,suffix:<keyword>] range.
     Flags, ///< hint_text= "flag1,flag2,etc" (as bit flags)
@@ -65,7 +65,7 @@ enum class GOBOT_EXPORT PropertyHint {
     GlobalDir, ///< a directory path must be passed
 };
 
-enum class GOBOT_EXPORT PropertyUsageFlags {
+enum class PropertyUsageFlags {
     None = 0,
     Storage = 1 << 1,
     Editor = 1 << 2,
@@ -75,11 +75,11 @@ enum class GOBOT_EXPORT PropertyUsageFlags {
 
 
 
-struct GOBOT_EXPORT PropertyInfo {
+struct PropertyInfo {
     String name;
     PropertyHint hint = PropertyHint::None;
     String hint_string;
-    PropertyUsageFlags usage = PropertyUsageFlags::None;
+    PropertyUsageFlags usage = PropertyUsageFlags::Default;
 
     PropertyInfo& SetName(const String& _name) {
         name = _name;
@@ -102,12 +102,7 @@ struct GOBOT_EXPORT PropertyInfo {
     }
 
 
-    bool operator==(const PropertyInfo &property_info) const {
-        return  (name == property_info.name) &&
-                (hint == property_info.hint) &&
-                (hint_string == property_info.hint_string) &&
-                (usage == property_info.usage);
-    }
+    bool operator==(const PropertyInfo &property_info) const = default;
 
     bool operator<(const PropertyInfo &p_info) const {
         return name < p_info.name;
@@ -128,35 +123,51 @@ public:
 
     ~Object();
 
-    [[nodiscard]] FORCE_INLINE std::string_view GetClassName() const { return get_type().get_name().data(); }
+    [[nodiscard]] FORCE_INLINE std::string_view GetClassStringName() const { return get_type().get_name().data(); }
 
     [[nodiscard]] FORCE_INLINE Type GetType() const { return get_type(); }
 
     template <typename T, typename... Args>
-    static std::enable_if_t<std::is_base_of_v<Object, T>, T*> New(Args&&... args) {
+    static T* New(Args&&... args) {
+        static_assert(std::is_base_of_v<Object, T>, "Object must be the base of T");
         auto* obj = new T(std::forward<Args>(args)...);
-        return obj->PostNew();
+        obj->PostNew();
+        return obj;
     }
 
-    template <typename T, typename = std::enable_if_t<std::is_base_of_v<Object, T>>>
+    template <typename T>
     static void Delete(T* object) {
+        static_assert(std::is_base_of_v<Object, T>, "Object must be the base of T");
         object->PreDelete();
         delete object;
     }
 
     template <class T>
-    static T *CastTo(Object *object) {
-        return dynamic_cast<T *>(object);
+    static T* PointerCastTo(Object *object) {
+        return dynamic_cast<T*>(object);
     }
 
     template <class T>
-    static const T *CastTo(const Object *object) {
-        return dynamic_cast<const T *>(object);
+    static const T* PointerCastTo(const Object *object) {
+        return dynamic_cast<const T*>(object);
     }
 
     bool Set(const String& name, Argument arg);
 
+    static Type GetDerivedTypeByInstance(Instance instance) {
+        auto raw_type = instance.get_type().get_raw_type();
+        Instance obj = raw_type.is_wrapper() ? instance.get_wrapped_instance() : instance;
+        return obj.get_derived_type();
+    }
+
+    static Instance GetWrapperInstance(Instance instance) {
+        auto raw_type = instance.get_type().get_raw_type();
+        return raw_type.is_wrapper() ? instance.get_wrapped_instance() : instance;
+    }
+
     [[nodiscard]] Variant Get(const String& name) const;
+
+    Type GetPropertyType(const String& name) const;
 
     [[nodiscard]] ALWAYS_INLINE bool IsRefCounted() const { return type_is_reference_; }
 
@@ -201,7 +212,7 @@ private:
 };
 
 
-class ObjectDB {
+class GOBOT_EXPORT ObjectDB {
 // This needs to add up to 63, 1 bit is for reference.
 #define OBJECTDB_VALIDATOR_BITS 39
 #define OBJECTDB_VALIDATOR_MASK ((uint64_t(1) << OBJECTDB_VALIDATOR_BITS) - 1)

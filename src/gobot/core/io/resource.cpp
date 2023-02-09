@@ -9,6 +9,10 @@
 #include "gobot/core/io/resource_loader.hpp"
 #include "gobot/log.hpp"
 #include "gobot/core/registration.hpp"
+#include "gobot/error_macros.hpp"
+
+
+#include <random>
 
 namespace gobot {
 
@@ -27,17 +31,22 @@ void Resource::UnregisterOwner(Object *p_owner) {
 Ref<Resource> Resource::CloneForLocalScene(Node* for_scene) {
     auto type = GetType();
     auto new_resource = type.create();
-    if (!new_resource.is_valid() && new_resource.can_convert<Resource*>()) {
-        LOG_ERROR("Cannot Create new Resource: {}", GetClassName());
-        return nullptr;
-    }
+    ERR_FAIL_COND_V_MSG(!new_resource.is_valid() && new_resource.can_convert<Resource*>(),
+                        nullptr, fmt::format("Failed to Create new Resource: {}", GetClassStringName()));
 
     Ref<Resource> r(new_resource.convert<Resource*>());
 
     r->local_scene_ = for_scene;
 
     for (const auto& prop : type.get_properties()) {
-        auto property_info = prop.get_metadata(PROPERTY_INFO_KEY).get_value<PropertyInfo>();
+        if (prop.is_readonly()) {
+            continue;
+        }
+        PropertyInfo property_info;
+        auto meta_data = prop.get_metadata(PROPERTY_INFO_KEY);
+        if (meta_data.is_valid()) {
+            property_info = meta_data.get_value<PropertyInfo>();
+        }
         USING_ENUM_BITWISE_OPERATORS;
         if (!(bool)(property_info.usage & PropertyUsageFlags::Storage)) {
             continue;
@@ -63,15 +72,21 @@ Ref<Resource> Resource::CloneForLocalScene(Node* for_scene) {
 Ref<Resource> Resource::Clone(bool copy_subresource) const {
     auto type = GetType();
     auto new_resource = type.create();
-    if (!new_resource.is_valid() && new_resource.can_convert<Resource*>()) {
-        LOG_ERROR("Cannot Create new Resource: {}", GetClassName());
-        return nullptr;
-    }
+    ERR_FAIL_COND_V_MSG(!new_resource.is_valid() && new_resource.can_convert<Resource*>(),
+                        nullptr, fmt::format("Failed to Create new Resource: {}", GetClassStringName()));
+
 
     Ref<Resource> r(new_resource.convert<Resource*>());
 
     for (const auto& prop : type.get_properties()) {
-        auto property_info = prop.get_metadata(PROPERTY_INFO_KEY).get_value<PropertyInfo>();
+        if (prop.is_readonly()) {
+            continue;
+        }
+        PropertyInfo property_info;
+        auto meta_data = prop.get_metadata(PROPERTY_INFO_KEY);
+        if (meta_data.is_valid()) {
+            property_info = meta_data.get_value<PropertyInfo>();
+        }
         USING_ENUM_BITWISE_OPERATORS;
         if (!(bool)(property_info.usage & PropertyUsageFlags::Storage)) {
             continue;
@@ -105,8 +120,12 @@ Resource::~Resource() {
     }
 }
 
-void Resource::SetPath(const String &path) {
+void Resource::SetPathNotTakeOver(const String &path) {
     SetPath(path, false);
+}
+
+void Resource::SetPathTakeOver(const String &path) {
+    SetPath(path, true);
 }
 
 void Resource::SetPath(const String &path, bool take_over) {
@@ -128,13 +147,14 @@ void Resource::SetPath(const String &path, bool take_over) {
 
     Ref<Resource> existing = ResourceCache::GetRef(path);
 
-    if (existing.use_count()) {
+    if (existing.UseCount()) {
         if (take_over) {
             existing->path_cache_ = String();
             ResourceCache::s_resources.erase(path);
         } else {
             ResourceCache::s_lock.unlock();
             LOG_ERROR("Another resource is loaded from path {} (possible cyclic resource inclusion).", path);
+            return;
         }
     }
 
@@ -160,17 +180,30 @@ String Resource::GetName() const {
     return name_;
 }
 
-void Resource::SetResourceUuid(const Uuid &uuid) {
-    uuid_ = uuid;
+void Resource::SetUniqueId(const String &unique_id) {
+    unique_id_ = unique_id;
 }
 
-Uuid Resource::GetResourceUuid() const {
-    return uuid_;
+String Resource::GetUniqueId() const {
+    return unique_id_;
 }
 
-Uuid Resource::GenerateUuid() {
-    uuid_ = Uuid::createUuid();
-    return uuid_;
+String Resource::GenerateResourceUniqueId() {
+    int length = 5;
+
+    static auto& chrs = "0123456789"
+                        "abcdefghijklmnopqrstuvwxyz"
+                        "ABCDEFGHIJKLMNOPQRSTUVWXYZ";
+
+    thread_local static std::mt19937 rg{std::random_device{}()};
+    thread_local static std::uniform_int_distribution<> pick(0, sizeof(chrs) - 2);
+
+    String s;
+    s.reserve(length);
+
+    while(length--)
+        s += chrs[pick(rg)];
+    return s;
 }
 
 
@@ -181,15 +214,12 @@ bool Resource::IsResourceFile(const String& path) {
 
 void Resource::ReloadFromFile() {
     auto path = GetPath();
-    if (!IsResourceFile(path)) {
-        return;
-    }
 
-    Ref<Resource> resource = ResourceLoader::Load(path, GetClassName().data(), ResourceFormatLoader::CacheMode::Ignore);
+    ERR_FAIL_COND(!IsResourceFile(path));
 
-    if (!resource.is_valid()) {
-        return;
-    }
+    Ref<Resource> resource = ResourceLoader::Load(path, GetClassStringName().data(), ResourceFormatLoader::CacheMode::Ignore);
+
+    ERR_FAIL_COND(!resource.IsValid());
 
     CopyFrom(resource);
 }
@@ -199,42 +229,45 @@ void Resource::ResetState() {
 }
 
 bool Resource::CopyFrom(const Ref<Resource> &resource) {
-    if (!resource.is_valid()) {
-        LOG_ERROR("input resource is invalid");
-        return false;
-    }
-
-    if (GetClassName() != resource->GetClassName()) {
-        LOG_ERROR("input resource's type:{} is not same as this type: {}", resource->GetClassName(), GetClassName());
-        return false;
-    }
+    ERR_FAIL_COND_V_MSG(!resource.IsValid(), false, "Input resource is invalid");
+    ERR_FAIL_COND_V_MSG(GetClassStringName() != resource->GetClassStringName(), false,
+                        fmt::format("Input resource's type:{} is not same as this type: {}", resource->GetClassStringName(),
+                        GetClassStringName()));
 
     ResetState(); //may want to reset state
 
     for (const auto& prop : resource->get_type().get_properties()) {
-        auto property_info = prop.get_metadata(PROPERTY_INFO_KEY).get_value<PropertyInfo>();
+        if (prop.is_readonly()) {
+            continue;
+        }
+        PropertyInfo property_info;
+        auto meta_data = prop.get_metadata(PROPERTY_INFO_KEY);
+        if (meta_data.is_valid()) {
+            property_info = meta_data.get_value<PropertyInfo>();
+        }
         USING_ENUM_BITWISE_OPERATORS;
         if (!(bool)(property_info.usage & PropertyUsageFlags::Storage)) {
             continue;
         }
-        if (property_info.name == "resource_path") {
+        String prop_name = prop.get_name().data();
+        if (prop_name == "resource_path") {
             continue; //do not change path
         }
-        Set(property_info.name, resource->Get(property_info.name));
+        Set(prop_name, resource->Get(prop_name));
     }
     return true;
 }
 
 
 std::unordered_map<String, Resource*> ResourceCache::s_resources;
-std::mutex ResourceCache::s_lock;
+std::recursive_mutex ResourceCache::s_lock;
 
 bool ResourceCache::Has(const String &path) {
     s_lock.lock();
 
     auto it = s_resources.find(path);
 
-    if (it != s_resources.end() && it->second->use_count() == 0) {
+    if (it != s_resources.end() && it->second->GetReferenceCount() == 0) {
         // This resource is in the process of being deleted, ignore its existence.
         it->second->path_cache_ = String();
         it->second = nullptr;
@@ -260,7 +293,7 @@ Ref<Resource> ResourceCache::GetRef(const String &path) {
         ref = Ref<Resource>(it->second);
     }
 
-    if (it == s_resources.end() && it->second->use_count() == 0) {
+    if (it != s_resources.end() && it->second->GetReferenceCount() == 0) {
         // This resource is in the process of being deleted, ignore its existence
         it->second->path_cache_ = String();
         it->second = nullptr;
@@ -278,7 +311,7 @@ void ResourceCache::Clear() {
 #ifdef NDEBUG
 #else
         for (const auto& [path, resource]: s_resources) {
-            LOG_TRACE("Resource:{} with path:{} is still in use", path, resource->GetClassName());
+            LOG_TRACE("Resource:{} with path:{} is still in use", path, resource->GetClassStringName());
         }
 #endif
     }
@@ -292,7 +325,9 @@ void ResourceCache::Clear() {
 GOBOT_REGISTRATION {
     Class_<Resource>("Resource")
         .constructor()(CtorAsRawPtr)
-        .property("name", &Resource::GetName, &Resource::SetName)
-        .property("resource_path", &Resource::GetPath, overload_cast<const String &>(&Resource::SetPath));
+        .property("resource_name", &Resource::GetName, &Resource::SetName)
+        .property("resource_path", &Resource::GetPath, &Resource::SetPathNotTakeOver);
+
+    gobot::Type::register_wrapper_converter_for_base_classes<Ref<Resource>, Ref<RefCounted>>();
 
 };

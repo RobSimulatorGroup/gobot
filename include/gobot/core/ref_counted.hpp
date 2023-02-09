@@ -7,53 +7,286 @@
 
 #pragma once
 
-#include <intrusive_ptr/intrusive_ptr.hpp>
 #include <rttr/wrapper_mapper.h>
 
 #include "gobot/core/object.hpp"
 
 namespace gobot {
 
-template <typename T>
-using Ref = typename third_party::intrusive_ptr<T>;
 
-template <typename T>
-using RefWeak = third_party::intrusive_weak_ptr<T>;
-
-class RefCounted : public third_party::intrusive_base<RefCounted>, public Object  {
+class GOBOT_EXPORT RefCounted : public Object {
     GOBCLASS(RefCounted, Object)
 public:
+    ~RefCounted();
+
     RefCounted();
+
+    RefCounted(const RefCounted &);
+
+    RefCounted &operator=(const RefCounted &);
+
+    void AddRef() noexcept;
+
+    void RemoveRef() noexcept;
+
+    [[nodiscard]] inline bool Unique() const noexcept {
+        return rc_ == 1;
+    }
+
+    [[nodiscard]] inline size_t GetReferenceCount() const noexcept {
+        return rc_;
+    }
+
+protected:
+    std::atomic<size_t> rc_;
+};
+
+template<class T>
+class Ref {
+    using this_type = Ref<T>;
+public:
+    using element_type = T;
+
+    Ref() noexcept : ptr_(nullptr) {}
+
+    Ref(T* raw_ptr, bool add_ref = true) noexcept
+        : ptr_(raw_ptr)
+    {
+        if( ptr_ != nullptr && add_ref ) ptr_->AddRef();
+    }
+
+    Ref(const Ref &other)
+        : ptr_(other.ptr_)
+    {
+        if(ptr_ != nullptr) ptr_->AddRef();
+    }
+
+    template<class U>
+    Ref(Ref<U> other) : ptr_(other.Get()) {
+        static_assert(std::is_convertible<U*, T*>::value, "U* is not assignable to T*");
+        if(ptr_ != nullptr) ptr_->AddRef();
+    }
+
+    ~Ref() {
+        if (ptr_ != nullptr) {
+            ptr_->RemoveRef();
+        }
+    }
+
+    template<class U>
+    Ref& operator=(const Ref<U>& rhs)
+    {
+        this_type(rhs).Swap(*this);
+        return *this;
+    }
+
+    Ref& operator=(const Ref& rhs)
+    {
+        this_type(rhs).Swap(*this);
+        return *this;
+    }
+
+    Ref& operator=(T* rhs)
+    {
+        this_type(rhs).Swap(*this);
+        return *this;
+    }
+
+    // move semantic
+    Ref(Ref && rhs) noexcept
+        : ptr_(rhs.ptr_)
+    {
+        rhs.ptr_ = nullptr;
+    }
+
+    Ref& operator=(Ref&& rhs) noexcept
+    {
+        this_type(static_cast<Ref&&>(rhs)).Swap(*this);
+        return *this;
+    }
+
+    template<class U>
+    Ref& operator=(Ref<U>&& rhs) noexcept
+    {
+        this_type(static_cast<Ref<U>&&>(rhs)).Swap(*this);
+        return *this;
+    }
+
+
+    [[nodiscard]] inline size_t UseCount() const noexcept {
+        if (ptr_) return ptr_->GetReferenceCount();
+        else return 0;
+    }
+
+    T* Detach() noexcept {
+        T * ret = ptr_;
+        ptr_ = nullptr;
+        return ret;
+    }
+
+    T* Release() noexcept {
+        return Detach();
+    }
+
+    void Reset()
+    {
+        this_type().Swap(*this);
+    }
+    void Reset(T * rhs)
+    {
+        this_type(rhs).Swap(*this);
+    }
+    void Reset(T * rhs, bool add_ref )
+    {
+        this_type(rhs, add_ref).Swap(*this);
+    }
+
+    [[nodiscard]] bool IsValid() const noexcept {
+        return ptr_ != nullptr;
+    }
+
+    T* Get() const noexcept {
+        return ptr_;
+    }
+
+    T* operator->() const noexcept {
+        return ptr_;
+    }
+
+    T* operator*() const {
+        return *ptr_;
+    }
+
+    explicit operator bool() const noexcept {
+        return ptr_ != nullptr;
+    }
+
+    void Swap(Ref &other) noexcept {
+        std::swap(ptr_, other.ptr_);
+    }
+
+    template<class C>
+    Ref<C> DynamicPointerCast() const noexcept {
+        return (ptr_) ? dynamic_cast<C *>(Get()) : nullptr;
+    }
+
+    template<class C>
+    Ref<C> StaticPointerCast() const noexcept {
+        return (ptr_) ? static_cast<C *>(Get()) : nullptr;
+    }
+
+    template<typename U>
+    constexpr bool operator==(const Ref<U> & r) const noexcept {
+        return ptr_ == r.ptr_;
+    }
+    template<typename U>
+    constexpr bool operator==(U * u) const noexcept {
+        return ptr_ == u;
+    }
+
+    template<typename U>
+    friend constexpr bool operator==(U * u, const Ref<T> & r) noexcept {
+        return u == r.ptr_;
+    }
+
+    template<typename U>
+    constexpr bool operator!=(const Ref<U> & r) const noexcept {
+        return ptr_ != r.ptr_;
+    }
+    template<typename U>
+    constexpr bool operator!=(U * u) const noexcept {
+        return ptr_ != u;
+    }
+    template<typename U>
+    friend constexpr bool operator!=(U * u, const Ref<T>& r) noexcept {
+        return u != r.ptr_;
+    }
+
+    template<typename U>
+    constexpr bool operator<(const Ref<U> & r) const noexcept {
+        return ptr_ < r.ptr_;
+    }
+    template<typename U>
+    constexpr bool operator<(U * u) const noexcept {
+        return ptr_ < u;
+    }
+    template<typename U>
+    friend constexpr bool operator<(U * u, const Ref<T> & r)  noexcept {
+        return u < r.ptr_;
+    }
+
+    template<typename U>
+    constexpr bool operator>(const Ref<U> & r) const noexcept {
+        return ptr_ > r.ptr_;
+    }
+    template<typename U>
+    constexpr bool operator>(U * u) const noexcept {
+        return ptr_ > u;
+    }
+    template<typename U>
+    friend constexpr bool operator>(U * u, const Ref<T> & r) noexcept {
+        return u > r.ptr_;
+    }
+
+    template<typename U>
+    constexpr bool operator<=(const Ref<U> & r) const noexcept {
+        return ptr_ <= r.ptr_;
+    }
+    template<typename U>
+    constexpr bool operator<=(U * u) const noexcept {
+        return ptr_ <= u;
+    }
+    template<typename U>
+    friend constexpr bool operator<=(U * u, const Ref<T> & r) noexcept {
+        return u <= r.ptr_;
+    }
+
+    template<typename U>
+    constexpr bool operator>=(const Ref<U> & r) const noexcept {
+        return ptr_ >= r.ptr_;
+    }
+    template<typename U>
+    constexpr bool operator>=(U * u) const noexcept {
+        return ptr_ >= u;
+    }
+
+    template<typename U>
+    friend constexpr bool operator>=(U * u, const Ref<T> & r) noexcept {
+        return u >= r.ptr_;
+    }
+
+    friend void swap(Ref<T>& l, Ref<T>& r) noexcept {
+        l.Swap(r);
+    }
+
+private:
+    T* ptr_;
 };
 
 
 template<typename T, typename ...Args>
 auto MakeRef(Args &&... args){
-    return third_party::make_intrusive<T>(args...);
+    static_assert(!std::is_array<T>::value, "Ref does not accept arrays.");
+    static_assert(!std::is_reference<T>::value, "Ref does not accept references.");
+
+    return Ref<T>(new T(std::forward<Args>(args)...));
 }
 
 template<typename U, typename T>
-gobot::Ref<U> static_pointer_cast(gobot::Ref<T> ref) noexcept {
-    const auto u = static_cast<U *>(ref.get());
-    ref.release();
-    return gobot::Ref<U>(u);
+Ref<U> const_pointer_cast(Ref<T> r) noexcept {
+    return const_cast<U*>(r.Get());
 }
 
-template<typename U, typename T>
-gobot::Ref<U> dynamic_pointer_cast(gobot::Ref<T> ref) noexcept {
-    const auto u = dynamic_cast<U *>(ref.get());
-    if(u){
-        ref.release();
-    }
-    return gobot::Ref<U>(u);
+template<class T, class U>
+Ref<T> static_pointer_cast(Ref<U> const &r) noexcept {
+return r.template StaticPointerCast<T>();
 }
 
-template<typename U, typename T>
-gobot::Ref<U> const_pointer_cast(gobot::Ref<T> ref) noexcept {
-    const auto u = const_cast<U *>(ref.get());
-    ref.release();
-    return gobot::Ref<U>(u);
+template<class T, class U>
+Ref<T> dynamic_pointer_cast(Ref<U> const &r) noexcept {
+return r.template DynamicPointerCast<T>();
 }
+
 
 } // end of namespace gobot
 
@@ -61,15 +294,15 @@ namespace rttr {
 
 template<typename T>
 struct wrapper_mapper<gobot::Ref<T>> {
-    using wrapped_type = decltype(std::declval<gobot::Ref<T>>().get());
+    using wrapped_type = decltype(std::declval<gobot::Ref<T>>().Get());
     using type = gobot::Ref<T>;
 
     static inline wrapped_type get(const type &obj) {
-        return obj.get();
+        return obj.Get();
     }
 
-    static RTTR_INLINE rttr::wrapper_holder_type get_wrapper_holder_type() {
-        return rttr::wrapper_holder_type::Ref;
+    static RTTR_INLINE gobot::WrapperHolderType get_wrapper_holder_type() {
+        return gobot::WrapperHolderType::Ref;
     }
 
     static inline type create(const wrapped_type &t) {
@@ -78,8 +311,7 @@ struct wrapper_mapper<gobot::Ref<T>> {
 
     template<typename U>
     static gobot::Ref<U> convert(const type &source, bool &ok) {
-
-        auto cast = gobot::dynamic_pointer_cast<U>(source);
+        auto cast = source.template DynamicPointerCast<U>();
         if (cast) {
             ok = true;
             return cast;
@@ -91,3 +323,16 @@ struct wrapper_mapper<gobot::Ref<T>> {
 };
 
 }
+
+namespace std {
+
+template<typename T>
+struct hash<gobot::Ref<T>>   {
+size_t operator()(const gobot::Ref<T>& ptr) const noexcept {
+    return std::hash<T*>()(ptr.Get());
+}
+};
+
+}
+
+

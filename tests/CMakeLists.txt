@@ -18,7 +18,12 @@ message(STATUS "gtest configured correctly")
 macro(package_add_test TESTNAME FILES)
     add_executable(${TESTNAME} ${FILES})
     target_link_libraries(${TESTNAME} gtest gmock gtest_main)
-    target_link_libraries(${TESTNAME} -Wl,--no-as-needed  gobot)
+    if (MSVC)
+        target_link_libraries(${TESTNAME} gobot)
+    else ()
+        target_link_libraries(${TESTNAME} -Wl,--no-as-needed gobot)
+    endif ()
+    
     # gtest_discover_tests replaces gtest_add_tests,
     # see https://cmake.org/cmake/help/v3.10/module/GoogleTest.html for more options to pass to it
     gtest_discover_tests(${TESTNAME}
@@ -30,4 +35,11 @@ endmacro()
 
 package_add_test(test_ref_counted core/test_ref_counted.cpp )
 package_add_test(test_registration core/test_registration.cpp )
-package_add_test(test_resource core/test_resource.cpp )
+package_add_test(test_project_setting core/test_project_setting.cpp )
+package_add_test(test_resource core/io/test_resource.cpp)
+package_add_test(test_string_utils core/test_string_utils.cpp)
+package_add_test(test_variant_serializer core/io/test_variant_serializer.cpp)
+package_add_test(test_resource_format_scene core/io/test_resource_format_scene.cpp)
+
+package_add_test(test_node_path scene/test_node_path.cpp)
+package_add_test(test_box_mesh scene/test_primitive_mesh.cpp)

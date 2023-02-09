@@ -235,7 +235,7 @@
 //
 //    to_json_recursively(obj, writer);
 //
-//    return sb.GetString();
+//    return sb.GeStrData();
 //}
 //
 //core::Json ObjectToJson(rttr::instance obj);
