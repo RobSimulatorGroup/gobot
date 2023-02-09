@@ -37,6 +37,8 @@ public:
 
     void SetBorderlessWindow(bool borderless);
 
+    [[nodiscard]] float GetDPIScale() const override;
+
     [[nodiscard]] FORCE_INLINE WindowHandle GetNativeWindowHandle() const override { return native_handle_; }
 
     FORCE_INLINE void SetEventCallback(const EventCallbackFn& callback) override {

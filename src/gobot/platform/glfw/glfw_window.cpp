@@ -150,6 +150,10 @@ void GLFWWindow::SetBorderlessWindow(bool borderless)
     }
 }
 
+float GLFWWindow::GetDPIScale() const {
+    return window_data_.dpi_scale;
+}
+
 void GLFWWindow::OnUpdate() {
 
     {
