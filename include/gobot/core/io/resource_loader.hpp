@@ -12,7 +12,7 @@ namespace gobot {
 
 class Resource;
 
-class GOBOT_API ResourceFormatLoader : public RefCounted {
+class GOBOT_EXPORT ResourceFormatLoader : public RefCounted {
     GOBCLASS(ResourceFormatLoader, RefCounted);
 public:
     enum class CacheMode {
@@ -37,7 +37,7 @@ public:
 };
 
 
-class GOBOT_API ResourceLoader {
+class GOBOT_EXPORT ResourceLoader {
 
 public:
     static Ref<Resource> Load(const String &path,

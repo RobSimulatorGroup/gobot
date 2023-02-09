@@ -11,7 +11,7 @@ namespace gobot {
 
 
 // Shape3D is for collision checker
-class GOBOT_API Shape3D : public Resource {
+class GOBOT_EXPORT Shape3D : public Resource {
     GOBCLASS(Shape3D, Resource)
 
 public:

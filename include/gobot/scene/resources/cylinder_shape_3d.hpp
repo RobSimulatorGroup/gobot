@@ -9,7 +9,7 @@
 
 namespace gobot {
 
-class GOBOT_API CylinderShape3D : public Shape3D {
+class GOBOT_EXPORT CylinderShape3D : public Shape3D {
     GOBCLASS(CylinderShape3D, Shape3D);
 public:
     CylinderShape3D();

@@ -16,7 +16,7 @@ namespace gobot {
 
 class Node;
 
-class GOBOT_API Resource: public RefCounted {
+class GOBOT_EXPORT Resource: public RefCounted {
     Q_OBJECT
     GOBCLASS(Resource, RefCounted)
 public:
@@ -86,7 +86,7 @@ private:
 };
 
 
-class GOBOT_API ResourceCache {
+class GOBOT_EXPORT ResourceCache {
 public:
     static bool Has(const String &path);
 

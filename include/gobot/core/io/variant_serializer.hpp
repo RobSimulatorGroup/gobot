@@ -16,7 +16,7 @@ namespace gobot {
 class ResourceFormatSaverSceneInstance;
 class ResourceFormatLoaderSceneInstance;
 
-class GOBOT_API VariantSerializer {
+class GOBOT_EXPORT VariantSerializer {
 public:
     static Json VariantToJson(const Variant& variant,
                               ResourceFormatSaverSceneInstance* resource_format_saver = nullptr);

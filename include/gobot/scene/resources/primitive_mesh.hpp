@@ -12,7 +12,7 @@
 
 namespace gobot {
 
-class GOBOT_API PrimitiveMesh : public Mesh {
+class GOBOT_EXPORT PrimitiveMesh : public Mesh {
     GOBCLASS(PrimitiveMesh, Mesh)
 public:
     PrimitiveMesh();
@@ -26,7 +26,7 @@ private:
 };
 
 
-class GOBOT_API BoxMesh : public PrimitiveMesh {
+class GOBOT_EXPORT BoxMesh : public PrimitiveMesh {
     GOBCLASS(BoxMesh, PrimitiveMesh)
 public:
 
@@ -40,7 +40,7 @@ private:
     float width_{0.5};
 };
 
-class GOBOT_API CylinderMesh : public PrimitiveMesh {
+class GOBOT_EXPORT CylinderMesh : public PrimitiveMesh {
     GOBCLASS(CylinderMesh, PrimitiveMesh)
 public:
     CylinderMesh();
@@ -49,13 +49,13 @@ private:
 
 };
 
-class GOBOT_API PlaneMesh : public PrimitiveMesh {
+class GOBOT_EXPORT PlaneMesh : public PrimitiveMesh {
     GOBCLASS(PlaneMesh, PrimitiveMesh)
 public:
     PlaneMesh();
 };
 
-class GOBOT_API SphereMesh : public PrimitiveMesh {
+class GOBOT_EXPORT SphereMesh : public PrimitiveMesh {
     GOBCLASS(SphereMesh, PrimitiveMesh)
 public:
     SphereMesh();
@@ -63,7 +63,7 @@ public:
 };
 
 
-class GOBOT_API CapsuleMesh : public PrimitiveMesh {
+class GOBOT_EXPORT CapsuleMesh : public PrimitiveMesh {
     GOBCLASS(CapsuleMesh, PrimitiveMesh)
 public:
 

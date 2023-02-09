@@ -13,7 +13,7 @@ namespace gobot {
 
 class Node;
 
-class GOBOT_API SceneTree : public Object {
+class GOBOT_EXPORT SceneTree : public Object {
     Q_OBJECT
     GOBCLASS(SceneTree, Object)
 public:

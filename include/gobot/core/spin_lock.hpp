@@ -12,7 +12,7 @@
 
 namespace gobot {
 
-class GOBOT_API SpinLock {
+class SpinLock {
     std::atomic_flag locked = ATOMIC_FLAG_INIT;
 
 public:

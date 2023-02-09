@@ -55,7 +55,7 @@ protected:                                                                      
 namespace gobot {
 
 
-enum class GOBOT_API PropertyHint {
+enum class PropertyHint {
     None, ///< no hint provided.
     Range, ///< hint_text = "min,max[,step][,or_greater][,or_less][,hide_slider][,radians][,degrees][,exp][,suffix:<keyword>] range.
     Flags, ///< hint_text= "flag1,flag2,etc" (as bit flags)
@@ -65,7 +65,7 @@ enum class GOBOT_API PropertyHint {
     GlobalDir, ///< a directory path must be passed
 };
 
-enum class GOBOT_API PropertyUsageFlags {
+enum class PropertyUsageFlags {
     None = 0,
     Storage = 1 << 1,
     Editor = 1 << 2,
@@ -75,7 +75,7 @@ enum class GOBOT_API PropertyUsageFlags {
 
 
 
-struct GOBOT_API PropertyInfo {
+struct PropertyInfo {
     String name;
     PropertyHint hint = PropertyHint::None;
     String hint_string;
@@ -115,7 +115,7 @@ static constexpr const char *PROPERTY_INFO_KEY  = "PROPERTY_INFO_KEY";
 MetaData AddMetaPropertyInfo(const PropertyInfo& property_info);
 
 
-class GOBOT_API Object : public QObject {
+class GOBOT_EXPORT Object : public QObject {
     GOBCLASS(Object)
 public:
 
@@ -212,7 +212,7 @@ private:
 };
 
 
-class GOBOT_API ObjectDB {
+class GOBOT_EXPORT ObjectDB {
 // This needs to add up to 63, 1 bit is for reference.
 #define OBJECTDB_VALIDATOR_BITS 39
 #define OBJECTDB_VALIDATOR_MASK ((uint64_t(1) << OBJECTDB_VALIDATOR_BITS) - 1)

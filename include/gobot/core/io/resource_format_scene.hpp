@@ -15,7 +15,7 @@
 namespace gobot {
 
 
-class GOBOT_API ResourceFormatLoaderSceneInstance {
+class GOBOT_EXPORT ResourceFormatLoaderSceneInstance {
 public:
     ResourceFormatLoaderSceneInstance();
 
@@ -38,7 +38,7 @@ private:
 };
 
 
-class GOBOT_API ResourceFormatLoaderScene : public ResourceFormatLoader {
+class GOBOT_EXPORT ResourceFormatLoaderScene : public ResourceFormatLoader {
 public:
 
     static ResourceFormatLoaderScene* s_singleton;
@@ -60,7 +60,7 @@ public:
     bool HandlesType(const String& type) const override;
 };
 
-class GOBOT_API ResourceFormatSaverSceneInstance {
+class GOBOT_EXPORT ResourceFormatSaverSceneInstance {
 public:
     bool Save(const String &path, const Ref<Resource> &resource, ResourceSaverFlags flags = ResourceSaverFlags::None);
 
@@ -78,7 +78,7 @@ private:
     std::unordered_set<Ref<Resource>> resource_set_;
 };
 
-class GOBOT_API ResourceFormatSaverScene : public ResourceFormatSaver {
+class GOBOT_EXPORT ResourceFormatSaverScene : public ResourceFormatSaver {
 public:
     static ResourceFormatSaverScene* s_singleton;
 

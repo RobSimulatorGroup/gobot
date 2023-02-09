@@ -11,7 +11,7 @@
 
 namespace gobot {
 
-class ViewPort : public Node {
+class GOBOT_EXPORT ViewPort : public Node {
     GOBCLASS(ViewPort, Node)
 public:
 

@@ -11,13 +11,13 @@
 
 namespace gobot {
 
-enum class GOBOT_API ResourceSaverFlags {
+enum class ResourceSaverFlags {
     None = 0,
     ChangePath = 1 << 0,
     ReplaceSubResourcePaths = 1 << 1
 };
 
-class GOBOT_API ResourceFormatSaver : public RefCounted {
+class GOBOT_EXPORT ResourceFormatSaver : public RefCounted {
     GOBCLASS(ResourceFormatSaver, RefCounted);
 public:
     virtual bool Save(const Ref<Resource> &resource, const String &path, ResourceSaverFlags flags = ResourceSaverFlags::None) = 0;
@@ -29,7 +29,7 @@ public:
     virtual bool RecognizePath(const Ref<Resource> &resource, const String &path) const;
 };
 
-class GOBOT_API ResourceSaver {
+class GOBOT_EXPORT ResourceSaver {
 public:
 
     using ResourceSavedCallback = std::function<void(Ref<Resource> resource, const String &path)>;

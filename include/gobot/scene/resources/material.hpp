@@ -12,9 +12,8 @@
 namespace gobot {
 
 // Material is a base Resource used for coloring and shading geometry.
-class GOBOT_API Material : public Resource {
+class GOBOT_EXPORT Material : public Resource {
     GOBCLASS(Material, Resource)
-
 public:
     Material();
 
@@ -24,9 +23,8 @@ private:
 };
 
 
-class Material3D: public Material {
+class GOBOT_EXPORT Material3D: public Material {
     GOBCLASS(Material3D, Material)
-
 public:
     Material3D();
 

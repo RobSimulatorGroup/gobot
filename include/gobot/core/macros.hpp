@@ -32,14 +32,6 @@
 #endif
 #endif
 
-#if !defined(GOBOT_API)
-#if defined(WIN32) || defined(_WIN32)
-#define GOBOT_API __declspec(dllexport)
-#else
-#define GOBOT_API __attribute__((visibility("default")))
-#endif
-#endif
-
 // C++ preprocessor __VA_ARGS__ number of arguments
 #define PP_NARG_COUNT(...) PP_NARG_(__VA_ARGS__,PP_RSEQ_N())
 #define PP_NARG_(...) PP_ARG_N(__VA_ARGS__)
