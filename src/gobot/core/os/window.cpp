@@ -5,7 +5,7 @@
  * This file is created by Qiqi Wu, 23-2-8
 */
 
-#include "gobot/core/os/window.hpp"
+#include "gobot/core/window/window.hpp"
 #include "gobot/error_macros.hpp"
 
 namespace gobot {

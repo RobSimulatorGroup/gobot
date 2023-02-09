@@ -7,7 +7,7 @@
 
 #pragma once
 
-#include "gobot/core/os/window.hpp"
+#include "gobot/core/window/window.hpp"
 #include "gobot/platform/opengl/GL.hpp"
 
 #include <gobot_export.h>
@@ -21,9 +21,7 @@ public:
 
     ~GLFWWindow() override;
 
-    bool Init(const WindowDesc& properties);
-
-    [[nodiscard]] String GetTitle() const override;
+    [[nodiscard]] String GetTitle() const override { return window_data_.title; };
 
     void SetWindowTitle(const String& title) override;
 
@@ -37,15 +35,30 @@ public:
 
     void SetBorderlessWindow(bool borderless);
 
-    [[nodiscard]] float GetDPIScale() const override;
+    [[nodiscard]] FORCE_INLINE float GetScreenRatio() const override { return window_data_.dpi_scale; }
+
+    [[nodiscard]] FORCE_INLINE float GetDPIScale() const override { return window_data_.dpi_scale; }
 
     [[nodiscard]] FORCE_INLINE WindowHandle GetNativeWindowHandle() const override { return native_handle_; }
+
+    [[nodiscard]] bool IsMaximized() override;
+
+    void Maximize() override;
+
+    void Minimize() override;
+
+    void Restore() override;
 
     FORCE_INLINE void SetEventCallback(const EventCallbackFn& callback) override {
         window_data_.event_callback = callback;
     }
 
     void OnUpdate() override;
+
+private:
+    bool Init(const WindowDesc& properties);
+
+    void Shutdown() const;
 
 private:
     GLFWwindow* native_handle_ = nullptr;
@@ -65,7 +78,6 @@ private:
     };
 
 
-    bool init_ = false;
     WindowData window_data_;
 };
 

@@ -7,7 +7,7 @@
 
 #pragma once
 
-#include "gobot/core/os/keycodes.hpp"
+#include "gobot/core/window/keycodes.hpp"
 #include "gobot/core/events/event.hpp"
 
 namespace gobot {

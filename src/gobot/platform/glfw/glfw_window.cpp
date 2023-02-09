@@ -23,7 +23,7 @@ static void GLFWErrorCallback(int error, const char* description)
 }
 
 GLFWWindow::GLFWWindow(const WindowDesc& properties) {
-    init_  = false;
+    initialised_  = false;
     v_sync_ = properties.vsync;
     LOG_INFO("VSync : {}", v_sync_ ? "True" : "False");
 }
@@ -114,8 +114,13 @@ bool GLFWWindow::Init(const WindowDesc& properties) {
     return true;
 }
 
-String GLFWWindow::GetTitle() const {
-    return window_data_.title;
+void GLFWWindow::Shutdown() const
+{
+    glfwDestroyWindow(native_handle_);
+    --s_num_glfw_windows;
+
+    if(s_num_glfw_windows == 0)
+        glfwTerminate();
 }
 
 void GLFWWindow::SetWindowTitle(const String& title) {
@@ -150,15 +155,30 @@ void GLFWWindow::SetBorderlessWindow(bool borderless)
     }
 }
 
-float GLFWWindow::GetDPIScale() const {
-    return window_data_.dpi_scale;
+bool GLFWWindow::IsMaximized() {
+    return glfwGetWindowAttrib(native_handle_, GLFW_MAXIMIZED);
+}
+
+void GLFWWindow::Maximize() {
+    glfwMaximizeWindow(native_handle_);
+}
+
+void GLFWWindow::Minimize() {
+    glfwIconifyWindow(native_handle_);
+}
+
+void GLFWWindow::Restore()  {
+    glfwRestoreWindow(native_handle_);
 }
 
 void GLFWWindow::OnUpdate() {
+    // Check if any events have been activated (key pressed, mouse moved etc.) and call corresponding response functions
+    glfwPollEvents();
 
+    if(window_data_.render_api == RenderAPI::OpenGL)
     {
-        // TODO(wqq): profile
-        glfwPollEvents();
+        // Swap the screen buffers
+        glfwSwapBuffers(native_handle_);
     }
 
 

@@ -8,9 +8,11 @@
 #pragma once
 
 #include <utility>
+#include <Eigen/Dense>
 
 #include "gobot/core/events/event.hpp"
 #include "gobot/graphics/RHI/graphics_context.hpp"
+
 
 namespace gobot {
 
@@ -53,6 +55,8 @@ public:
 
     virtual ~Window() = default;
 
+    [[nodiscard]] bool HasInitialised() const { return initialised_; }
+
     static Window* Create(const WindowDesc& windowDesc);
 
     [[nodiscard]] virtual std::uint32_t GetWidth() const = 0;
@@ -71,15 +75,21 @@ public:
 
     virtual void SetVSync(bool v_sync) = 0;
 
-//    [[nodiscard]] virtual float GetScreenRatio() const = 0;
+    [[nodiscard]] virtual float GetScreenRatio() const = 0;
 
     [[nodiscard]] virtual WindowHandle GetNativeWindowHandle() const = 0;
 
-//    [[nodiscard]] virtual bool IsMaximized() = 0;
+    [[nodiscard]] virtual bool IsMaximized() = 0;
 
-//    virtual void Minimize() = 0;
-//
-//    virtual void Maximize() = 0;
+    virtual void Minimize() = 0;
+
+    virtual void Maximize() = 0;
+
+    virtual void Restore() = 0;
+
+    void SetWindowFocus(bool focus) { window_focus_ = focus; }
+
+    [[nodiscard]] bool GetWindowFocus() const { return window_focus_; }
 
 //    virtual void SetIcon(const std::string& filePath, const std::string& smallIconFilePath = "") = 0;
 
@@ -90,11 +100,9 @@ public:
 protected:
     static Window* (*CreateFunc)(const WindowDesc&);
 
-//    bool init_ = false;
-//    glm::vec2 m_Position;
+    bool initialised_ = false;
     bool v_sync_       = false;
-//    bool m_HasResized  = false;
-//    bool m_WindowFocus = true;
+    bool window_focus_ = true;
 //
 //    SharedPtr<Lumos::Graphics::SwapChain> m_SwapChain;
 //    SharedPtr<Lumos::Graphics::GraphicsContext> m_GraphicsContext;
