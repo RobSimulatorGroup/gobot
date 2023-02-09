@@ -23,14 +23,14 @@
 
 #define GOBOT_CLASS_2(Class, BaseClass)                                                             \
 protected:                                                                                          \
-    static FORCE_INLINE auto GetNotificationCallback() -> void(Object::*)(int) {                    \
-         return (void(Object::*)(int)) &Class::NotificationCallBack;                                \
+    static FORCE_INLINE auto GetNotificationCallBack() -> void(Object::*)(NotificationType) {                    \
+         return (void(Object::*)(NotificationType)) &Class::NotificationCallBack;                                \
     }                                                                                               \
     void NotificationImpl(NotificationType notification, bool reversed) override {                  \
         if (!reversed) { BaseClass::NotificationImpl(notification, reversed); }                     \
                                                                                                     \
-	    if (Class::GetNotificationCallback() != BaseClass::GetNotificationCallback()) {             \
-            Notification(notification);                                                             \
+	    if (Class::GetNotificationCallBack() != BaseClass::GetNotificationCallBack()) {             \
+            NotificationCallBack(notification);                                                             \
 		}                                                                                           \
 		if (reversed) { BaseClass::NotificationImpl(notification, reversed); }                      \
     }
@@ -121,7 +121,7 @@ public:
 
     Object();
 
-    ~Object();
+    ~Object() override;
 
     [[nodiscard]] FORCE_INLINE std::string_view GetClassStringName() const { return get_type().get_name().data(); }
 
@@ -176,9 +176,9 @@ public:
 protected:
 
     /// Notification
-    void NotificationCallBack(int notification) {}
+    void NotificationCallBack(NotificationType notification) {}
 
-    static FORCE_INLINE auto GetNotificationCallback() -> void(Object::*)(int)  {
+    static FORCE_INLINE auto GetNotificationCallBack() -> void(Object::*)(NotificationType)  {
         return &Object::NotificationCallBack;
     }
 
@@ -203,7 +203,7 @@ private:
 
     FORCE_INLINE void ConstructObject(bool reference);
 
-    Object(bool reference);
+    explicit Object(bool reference);
 
 private:
     friend class RefCounted;

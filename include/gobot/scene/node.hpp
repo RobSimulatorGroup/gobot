@@ -3,11 +3,14 @@
  * Everyone is permitted to copy and distribute verbatim copies of this license document, but changing it is not allowed.
  * This version of the GNU Lesser General Public License incorporates the terms and conditions of version 3 of the GNU General Public License.
  * This file is created by Qiqi Wu, 22-11-6
+ * This file is modified by Zikun Yu, 23-1-20
 */
 
 #pragma once
 
 #include "gobot/core/object.hpp"
+#include "gobot/scene/scene_tree.hpp"
+#include "gobot/scene/node_path.hpp"
 #include "gobot/error_macros.hpp"
 
 namespace gobot {
@@ -17,37 +20,27 @@ class SceneTree;
 
 class GOBOT_EXPORT Node : public Object {
     GOBCLASS(Node, Object)
+
 public:
-    Node();
+    Node() = default;
 
-    ~Node() = default;
-
-    Node(const String& name);
+    ~Node() override;
 
     String GetName() const;
-
-    void SetName(const String & name);
+    void SetName(const String &p_name);
 
     void AddChild(Node *child);
-
     void AddSibling(Node *sibling);
-
     void RemoveChild(Node *child);
 
-    Node* GetChild(int p_index) const;
-
+    std::size_t GetChildCount() const;
+    Node* GetChild(int index) const;
     bool HasNode(const NodePath& path) const;
-
-    // https://docs.godotengine.org/zh_CN/stable/tutorials/scripting/scene_unique_nodes.html
     Node* GetNode(const NodePath &path) const;
-
     Node* GetNodeOrNull(const NodePath &path) const;
 
+    virtual void Reparent(Node *parent, bool keep_global_transform = true);
     Node* GetParent() const;
-
-    void PrintTree();
-
-    void PrintTreePretty();
 
     FORCE_INLINE SceneTree* GetTree() const {
         ERR_FAIL_COND_V(!tree_, nullptr);
@@ -59,54 +52,59 @@ public:
     bool IsAncestorOf(const Node *node) const;
 
     NodePath GetPath() const;
-
     NodePath GetPathTo(const Node *node) const;
-
     Node* FindCommonParentWith(const Node* node) const;
 
-protected:
-    void AddChildNoCheck(Node *child, const String& name);
+    void MoveChild(Node *child, int index);
 
+    std::vector<Node *>::iterator GetIterator() const;
+    int GetIndex() const;
+
+//    void PrintTreePretty();
+//    void PrintTree();
+
+protected:
+    void NotificationCallBack(NotificationType notification);
+
+    virtual void AddChildNotify(Node *child);
+    virtual void RemoveChildNotify(Node *child);
+    virtual void MoveChildNotify(Node *child);
+
+    void AddChildNoCheck(Node *child, const String& name);
     void SetNameNoCheck(const String& name);
 
-    void SetOwnerNoCheck(Node *owner);
-
-    void Notification(NotificationType notification);
-
 private:
-    friend class SceneTree;
+    Node *parent_ = nullptr;
+    std::vector<Node *> children_;
 
-    void PropagateReverseNotification(int p_notification);
+    String name_;
+    SceneTree *tree_ = nullptr;
+    bool inside_tree_ = false;
+    mutable NodePath path_cache_;
 
-    void PropagateEnterTree();
-
-    void PropagateReady();
-
-    void PropagateExitTree();
-
-    void PropagateAfterExitTree();
-
-    friend class SceneTree;
-
-    void SetTree(SceneTree* tree);
+//    void PrintTreePretty(const String &prefix, bool last);
+//    void PrintTree(const Node *node);
 
     Node *GetChildByName(const String& name) const;
 
+    friend class SceneTree;
+
+    void SetTree(SceneTree *tree);
+
     void ValidateChildName(Node* child);
 
-    void GenerateSerialChildName(const Node* child, String&name) const;
+    String ValidateNodeName(const String &p_name) const;
 
-private:
-    String name_;
-    std::vector<Node*> children_node_;
-    mutable NodePath *path_cache_ = nullptr;
+    const String invalid_node_name_characters = ". : @ / \" ";
 
-    bool inside_tree_ = false;
-    SceneTree* tree_ = nullptr;
+//    void GenerateSerialChildName(const Node* child, String&name) const;
 
-    Node* parent_ = nullptr;
-
-    // TODO(wqq): Do we need ower?
+    void PropagateNotification(NotificationType p_notification);
+    void PropagateReverseNotification(NotificationType p_notification);
+    void PropagateReady();
+    void PropagateEnterTree();
+    void PropagateExitTree();
+    void PropagateAfterExitTree();
 };
 
-}
+} // End of namespace gobot
