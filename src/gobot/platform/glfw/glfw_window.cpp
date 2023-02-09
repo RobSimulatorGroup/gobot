@@ -82,8 +82,8 @@ bool GLFWWindow::Init(const WindowDesc& properties) {
         screen_height = properties.height;
     }
 
-    native_handle_ = glfwCreateWindow(screen_width,
-                                      screen_height,
+    native_handle_ = glfwCreateWindow(static_cast<int>(screen_width),
+                                      static_cast<int>(screen_height),
                                       properties.title.toStdString().c_str(),
                                       nullptr,
                                       nullptr);
@@ -96,8 +96,7 @@ bool GLFWWindow::Init(const WindowDesc& properties) {
     window_data_.width  = w;
     window_data_.height = h;
 
-    if(window_data_.render_api == RenderAPI::OpenGL)
-    {
+    if(window_data_.render_api == RenderAPI::OpenGL) {
         glfwMakeContextCurrent(native_handle_);
 
         if(!gladLoadGLLoader(reinterpret_cast<GLADloadproc>(glfwGetProcAddress)))
@@ -105,6 +104,12 @@ bool GLFWWindow::Init(const WindowDesc& properties) {
             LOG_ERROR("Failed to initialise OpenGL context");
         }
     }
+
+    glfwSetWindowUserPointer(native_handle_, &window_data_);
+
+    if(glfwRawMouseMotionSupported())
+        glfwSetInputMode(native_handle_, GLFW_RAW_MOUSE_MOTION, GLFW_TRUE);
+
 
     return true;
 }
