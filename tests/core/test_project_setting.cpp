@@ -9,6 +9,7 @@
 
 #include <gobot/core/config/project_setting.hpp>
 #include <gobot/log.hpp>
+#include <gobot/core/string_utils.hpp>
 #include <QDir>
 
 TEST(TestDir, test_dir) {
@@ -16,6 +17,31 @@ TEST(TestDir, test_dir) {
 }
 
 TEST(TestProjectSetting, test_localize_path) {
+
+#ifdef _WIN32
+    QDir project_path_dir = gobot::PathJoin(QDir::home().path(), "test_project");
+
+    if (!project_path_dir.exists()){
+        project_path_dir.mkpath(project_path_dir.path());
+    }
+    gobot::ProjectSettings project_settings;
+
+    gobot::String project_path = project_path_dir.path();
+
+    auto* project_setting = gobot::ProjectSettings::GetInstance();
+    project_setting->SetProjectPath(project_path);
+
+    ASSERT_TRUE(project_setting->LocalizePath(project_path) == "res://");
+    ASSERT_TRUE(project_setting->LocalizePath(project_path) == "res://");
+    ASSERT_TRUE(project_setting->LocalizePath( gobot::PathJoin(project_path, "test")) == "res://test");
+
+    ASSERT_TRUE(project_setting->LocalizePath("res://test") == "res://test");
+    ASSERT_TRUE(project_setting->LocalizePath("res://test/..") == "res://");
+
+    ASSERT_TRUE(project_setting->LocalizePath("test") == "res://test");
+    ASSERT_TRUE(project_setting->LocalizePath("test/tt") == "res://test/tt");
+
+#else
     QDir dir("/tmp/test_project");
     if (!dir.exists()){
         dir.mkpath("/tmp/test_project");
@@ -34,5 +60,6 @@ TEST(TestProjectSetting, test_localize_path) {
 
     ASSERT_TRUE(project_setting->LocalizePath("test") == "res://test");
     ASSERT_TRUE(project_setting->LocalizePath("test/tt") == "res://test/tt");
+#endif
 
 }
