@@ -11,7 +11,31 @@
 #include <gobot/core/types.hpp>
 #include <gobot/log.hpp>
 #include <rttr/enumeration.h>
+#include <rttr/library.h>
 
+class ReflectionTestEnvironment : public ::testing::Environment {
+ public:
+  virtual void SetUp() {
+    lib_ = std::make_unique<rttr::library>("gobot");
+    lib_->load();
+    std::cerr << "LIB: " << lib_->get_file_name() << "\n";
+    std::cerr << "IS LOADED: " << lib_->is_loaded() << "\n";
+    auto types = lib_->get_types();
+    std::cerr << "We have type num: " << types.size() << "\n";
+    for (auto& type : types) {
+      std::cerr << "Type " << type.get_name() << "\n";
+    }
+  }
+
+  virtual void TearDown() { 
+     std::cerr << "Teardown"
+              << "\n";
+      lib_->unload();
+  }
+
+ private:
+  std::unique_ptr<rttr::library> lib_;
+};
 
 TEST(TestRegistration, test_registration) {
     auto property_usage_flags = gobot::Type::get_by_name("PropertyUsageFlags");
@@ -37,4 +61,11 @@ TEST(TestRegistration, test_types) {
     auto uuid = gobot::Uuid::createUuid();
     gobot::Variant var_uuid = uuid;
     ASSERT_TRUE(uuid.toString().toStdString() == var_uuid.to_string());
+}
+
+int main(int argc, char *argv[]) {
+    ::testing::InitGoogleTest(&argc, argv);
+    // gtest takes ownership of the ReflectionTestEnvironment ptr - we don't delete it.
+    ::testing::AddGlobalTestEnvironment(new ReflectionTestEnvironment);
+    return RUN_ALL_TESTS();
 }

@@ -2,7 +2,7 @@
 Go, robot go! 
 
 [![license](https://img.shields.io/github/license/RobSimulatorGroup/gobot.svg)](https://github.com/RobSimulatorGroup/gobot/blob/master/LICENSE)
-[![CI Ubuntu](https://github.com/RobSimulatorGroup/gobot/actions/workflows/ci-ubuntu.yml/badge.svg?branch=master&event=push)](https://github.com/RobSimulatorGroup/gobot/actions)
+[![CI](https://github.com/RobSimulatorGroup/gobot/actions/workflows/ci.yml/badge.svg?branch=master&event=push)](https://github.com/RobSimulatorGroup/gobot/actions)
 <!-- Add badges for any CI status, testing status, released version -->
 
 ## Supported Platforms
