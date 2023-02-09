@@ -35,5 +35,11 @@ endmacro()
 
 package_add_test(test_ref_counted core/test_ref_counted.cpp )
 package_add_test(test_registration core/test_registration.cpp )
-package_add_test(test_resource core/test_resource.cpp )
+package_add_test(test_project_setting core/test_project_setting.cpp )
+package_add_test(test_resource core/io/test_resource.cpp)
+package_add_test(test_string_utils core/test_string_utils.cpp)
+package_add_test(test_variant_serializer core/io/test_variant_serializer.cpp)
+package_add_test(test_resource_format_scene core/io/test_resource_format_scene.cpp)
+
 package_add_test(test_node_path scene/test_node_path.cpp)
+package_add_test(test_box_mesh scene/test_primitive_mesh.cpp)

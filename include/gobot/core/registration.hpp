@@ -94,19 +94,31 @@ static constexpr auto const_ = std::true_type{};
 
 }
 
-#define GOBOT_REGISTRATION                                                          \
-namespace gobot {                                                                   \
-    static void gobot_auto_register_reflection_function_();                         \
-}                                                                                   \
-namespace                                                                           \
-{                                                                                   \
-    struct gobot__auto__register__                                                  \
-    {                                                                               \
-        gobot__auto__register__()                                                   \
-        {                                                                           \
-            gobot::gobot_auto_register_reflection_function_();                      \
-        }                                                                           \
-    };                                                                              \
-}                                                                                   \
-static const gobot__auto__register__ RTTR_CAT(auto_register__, __LINE__);           \
-static void gobot::gobot_auto_register_reflection_function_()
+#define GOBOT_STATIC_REGISTRATION                                             \
+  namespace gobot {                                                           \
+  static void gobot_auto_register_reflection_function_();                     \
+  namespace {                                                                 \
+  struct gobot__auto__register__ {                                            \
+    gobot__auto__register__() { gobot_auto_register_reflection_function_(); } \
+  };                                                                          \
+  }                                                                           \
+  }                                                                           \
+  static const gobot::gobot__auto__register__ RTTR_CAT(auto_register__,       \
+                                                       __LINE__);             \
+  static void gobot::gobot_auto_register_reflection_function_()
+
+#if RTTR_COMPILER == RTTR_COMPILER_MSVC
+#define GOBOT_REGISTRATION GOBOT_STATIC_REGISTRATION
+#else
+#define GOBOT_REGISTRATION                                  \
+  namespace gobot {                                         \
+  static void gobot_auto_register_reflection_function_()    \
+      RTTR_DECLARE_PLUGIN_CTOR;                             \
+  static void gobot_auto_unregister_reflection_function()   \
+      RTTR_DECLARE_PLUGIN_DTOR;                             \
+  }                                                         \
+  static void gobot_auto_unregister_reflection_function() { \
+    rttr::detail::get_registration_manager().unregister();  \
+  }                                                         \
+  static void gobot::gobot_auto_register_reflection_function_()
+#endif

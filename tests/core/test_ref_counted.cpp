@@ -11,10 +11,12 @@
 #include <gobot/core/types.hpp>
 #include <gobot/log.hpp>
 #include <gobot/core/registration.hpp>
+#include <gobot/core/notification_enum.hpp>
 
-namespace {
+namespace gobot {
 
-class TestResource : public gobot::RefCounted {
+class TestResource : public RefCounted {
+    GOBCLASS(TestResource, RefCounted)
 public:
     TestResource() = default;
 };
@@ -23,49 +25,38 @@ public:
 
 GOBOT_REGISTRATION {
 
-    Class_<TestResource>("TestResource");
-    gobot::Type::register_wrapper_converter_for_base_classes<gobot::Ref<TestResource>, gobot::Ref<RefCounted>>();
+    Class_<TestResource>("TestResource")
+        .constructor()(CtorAsRawPtr);
+    gobot::Type::register_wrapper_converter_for_base_classes<Ref<TestResource>, Ref<RefCounted>>();
 };
 
 
 TEST(TestRefCounted, test_count) {
     gobot::Ref<gobot::RefCounted> p;
-    gobot::RefWeak<gobot::RefCounted> wp;
-    p = gobot::MakeRef<TestResource>();
-    ASSERT_TRUE(p.use_count() == 1);
+    p = gobot::MakeRef<gobot::TestResource>();
+    ASSERT_TRUE(p.UseCount() == 1);
+
     gobot::Ref<gobot::RefCounted> p1 = p;
-    ASSERT_TRUE(p.use_count() == 2);
-    ASSERT_TRUE(p.weak_count() == 0);
+    ASSERT_TRUE(p.UseCount() == 2);
 
-    wp = p;
-    ASSERT_TRUE(p.weak_count() == 1);
-    gobot::Ref<gobot::RefCounted> p2 = wp.lock();
-    ASSERT_TRUE(p.use_count() == 3);
-    ASSERT_EQ(p2.get(), p.get());
-    ASSERT_EQ(p2.get(), p1.get());
+    ASSERT_EQ(p.Get(), p1.Get());
 
-    wp.reset();
-    ASSERT_TRUE(p.weak_count() == 0);
-    p2.reset();
-    ASSERT_TRUE(p.use_count() == 2);
+    p1.Reset();
+    ASSERT_TRUE(p->GetReferenceCount() == 1);
 
-    p1.reset();
-    ASSERT_TRUE(p.use_count() == 1);
-
-    p.reset();
-    ASSERT_TRUE(p.use_count() == 0);
-
+    p.Reset();
+    ASSERT_TRUE(p.UseCount() == 0);
 }
 
 TEST(TestRefCounted, test_nullptr) {
     gobot::Ref<gobot::RefCounted> p{nullptr};
-    ASSERT_TRUE(p.use_count() == 0);
+    ASSERT_TRUE(p.UseCount() == 0);
     ASSERT_FALSE(p.operator bool());
 
-    p = gobot::MakeRef<TestResource>();
-    ASSERT_TRUE(p.unique());
+    p = gobot::MakeRef<gobot::TestResource>();
+    ASSERT_TRUE(p->Unique());
     ASSERT_TRUE(p.operator bool());
-    ASSERT_TRUE(p.is_valid());
+    ASSERT_TRUE(p.IsValid());
 }
 
 
@@ -77,10 +68,37 @@ TEST(TestRefRegister, test_ref) {
     ASSERT_TRUE(ref.get_type().get_wrapper_holder_type() == gobot::WrapperHolderType::Ref);
 
     {
-        gobot::Variant resource = gobot::MakeRef<TestResource>();
+        gobot::Variant resource = gobot::MakeRef<gobot::TestResource>();
         ASSERT_TRUE(resource.can_convert<gobot::Ref<gobot::RefCounted>>());
         p = resource.convert<gobot::Ref<gobot::RefCounted>>();
     }
 
-    ASSERT_TRUE(p.use_count() == 1);
+    ASSERT_TRUE(p.UseCount() == 1);
+}
+
+
+TEST(TestRefRegister, test_get_wrapped_instance) {
+    gobot::Variant resource = gobot::MakeRef<gobot::TestResource>();
+    gobot::Instance instance = resource;
+    ASSERT_TRUE(instance.get_wrapped_instance().get_type() == gobot::Type::get<gobot::TestResource*>());
+    ASSERT_TRUE(instance.get_wrapped_instance().is_valid());
+}
+
+TEST(TestRefRegister, test_create) {
+    gobot::Variant resource = gobot::Type::get<gobot::TestResource>().create();
+    ASSERT_TRUE(resource.can_convert<gobot::TestResource*>());
+    ASSERT_TRUE(resource.get_type().is_derived_from<gobot::TestResource>());
+}
+
+TEST(TestRefRegister, test_init_ref_with_ref) {
+    auto p = gobot::MakeRef<gobot::TestResource>();
+
+    gobot::Ref<gobot::TestResource> p2(p.Get());
+    ASSERT_TRUE(p.UseCount() == 2);
+}
+
+int main(int argc, char **argv)
+{
+    ::testing::InitGoogleTest(&argc, argv);
+    return RUN_ALL_TESTS();
 }
