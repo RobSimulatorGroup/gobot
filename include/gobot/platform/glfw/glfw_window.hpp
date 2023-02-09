@@ -10,21 +10,30 @@
 #include "gobot/core/os/window.hpp"
 #include "gobot/platform/opengl/GL.hpp"
 
+#include <gobot_export.h>
 #include <GLFW/glfw3.h>
 
 namespace gobot {
 
-class GLFWWindow : public Window {
+class GOBOT_EXPORT GLFWWindow : public Window {
 public:
-    GLFWWindow(const WindowDesc& properties);
+    explicit GLFWWindow(const WindowDesc& properties);
 
-    ~GLFWWindow();
+    ~GLFWWindow() override;
 
     bool Init(const WindowDesc& properties);
+
+    [[nodiscard]] String GetTitle() const override;
+
+    void SetWindowTitle(const String& title) override;
 
     [[nodiscard]] std::uint32_t GetWidth() const override { return window_data_.width; }
 
     [[nodiscard]] std::uint32_t GetHeight() const override { return window_data_.height; }
+
+    void ToggleVSync() override;
+
+    void SetVSync(bool v_sync) override;
 
     void SetBorderlessWindow(bool borderless);
 

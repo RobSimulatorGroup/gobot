@@ -12,7 +12,7 @@
 
 namespace gobot {
 
-class MouseMovedEvent : public Event {
+class GOBOT_EXPORT MouseMovedEvent : public Event {
     GOBCLASS(MouseMovedEvent, Event)
 public:
     explicit MouseMovedEvent(float x, float y);
@@ -31,7 +31,7 @@ private:
     float mouse_y_{0.0};
 };
 
-class MouseScrolledEvent : public Event {
+class GOBOT_EXPORT MouseScrolledEvent : public Event {
     GOBCLASS(MouseScrolledEvent, Event)
 public:
     explicit MouseScrolledEvent(float x_offset, float y_offset);
@@ -50,7 +50,7 @@ private:
     float y_offset_;
 };
 
-class MouseButtonEvent : public Event {
+class GOBOT_EXPORT MouseButtonEvent : public Event {
     GOBCLASS(MouseButtonEvent, Event)
 public:
     explicit MouseButtonEvent(MouseKeyCode button);
@@ -64,7 +64,7 @@ protected:
     MouseKeyCode button_;
 };
 
-class MouseButtonPressedEvent : public MouseButtonEvent {
+class GOBOT_EXPORT MouseButtonPressedEvent : public MouseButtonEvent {
     GOBCLASS(MouseButtonPressedEvent, MouseButtonEvent)
 public:
     explicit MouseButtonPressedEvent(MouseKeyCode button);
@@ -74,7 +74,7 @@ public:
     EVENT_CLASS_TYPE(MouseButtonPressed)
 };
 
-class MouseButtonReleasedEvent : public MouseButtonEvent {
+class GOBOT_EXPORT MouseButtonReleasedEvent : public MouseButtonEvent {
     GOBCLASS(MouseButtonReleasedEvent, MouseButtonEvent)
 public:
     explicit MouseButtonReleasedEvent(MouseKeyCode button);
@@ -85,7 +85,7 @@ public:
 };
 
 
-class MouseEnterEvent : public Event {
+class GOBOT_EXPORT MouseEnterEvent : public Event {
     GOBCLASS(MouseEnterEvent, Event)
 public:
     MouseEnterEvent(bool enter);

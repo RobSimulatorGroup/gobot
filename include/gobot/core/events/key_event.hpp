@@ -13,7 +13,7 @@
 
 namespace gobot {
 
-class KeyEvent : public Event {
+class GOBOT_EXPORT KeyEvent : public Event {
     GOBCLASS(KeyEvent, Event)
 public:
 
@@ -27,7 +27,7 @@ protected:
     KeyCode key_code_;
 };
 
-class KeyPressedEvent : public KeyEvent {
+class GOBOT_EXPORT KeyPressedEvent : public KeyEvent {
     GOBCLASS(KeyPressedEvent, KeyEvent)
 public:
     KeyPressedEvent(KeyCode key_code, uint16_t repeat_count);
@@ -42,7 +42,7 @@ private:
     uint16_t repeat_count_;
 };
 
-class KeyReleasedEvent : public KeyEvent {
+class GOBOT_EXPORT KeyReleasedEvent : public KeyEvent {
     GOBCLASS(KeyReleasedEvent, KeyEvent)
 public:
     explicit KeyReleasedEvent(KeyCode key_code);
@@ -52,7 +52,7 @@ public:
     EVENT_CLASS_TYPE(KeyReleased)
 };
 
-class KeyTypedEvent : public KeyEvent {
+class GOBOT_EXPORT KeyTypedEvent : public KeyEvent {
     GOBCLASS(KeyTypedEvent, KeyEvent)
 public:
     explicit KeyTypedEvent(KeyCode key_code);

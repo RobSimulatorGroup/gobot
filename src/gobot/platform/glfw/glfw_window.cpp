@@ -114,6 +114,33 @@ bool GLFWWindow::Init(const WindowDesc& properties) {
     return true;
 }
 
+String GLFWWindow::GetTitle() const {
+    return window_data_.title;
+}
+
+void GLFWWindow::SetWindowTitle(const String& title) {
+    glfwSetWindowTitle(native_handle_, title.toStdString().c_str());
+}
+
+void GLFWWindow::ToggleVSync() {
+    if(v_sync_) {
+        SetVSync(false);
+    } else {
+        SetVSync(true);
+    }
+
+    LOG_INFO("VSync : {0}", v_sync_ ? "True" : "False");
+}
+
+void GLFWWindow::SetVSync(bool v_sync) {
+    v_sync_ = v_sync;
+    if(window_data_.render_api == RenderAPI::OpenGL)
+        glfwSwapInterval(v_sync ? 1 : 0);
+
+    LOG_INFO("VSync : {0}", v_sync ? "True" : "False");
+}
+
+
 void GLFWWindow::SetBorderlessWindow(bool borderless)
 {
     if(borderless) {

@@ -43,11 +43,13 @@ struct WindowDesc
     RenderAPI render_api;
 };
 
-class Window
+class GOBOT_EXPORT Window
 {
 public:
     using WindowHandle = void*;
     using EventCallbackFn = std::function<void(Event&)>;
+
+    Window() = default;
 
     virtual ~Window() = default;
 
@@ -69,26 +71,24 @@ public:
 
     virtual void SetVSync(bool v_sync) = 0;
 
-    [[nodiscard]] virtual float GetScreenRatio() const = 0;
+//    [[nodiscard]] virtual float GetScreenRatio() const = 0;
 
     [[nodiscard]] virtual WindowHandle GetNativeWindowHandle() const = 0;
 
-    [[nodiscard]] virtual bool IsMaximized() = 0;
+//    [[nodiscard]] virtual bool IsMaximized() = 0;
 
-    virtual void Minimize() = 0;
-
-    virtual void Maximize() = 0;
+//    virtual void Minimize() = 0;
+//
+//    virtual void Maximize() = 0;
 
 //    virtual void SetIcon(const std::string& filePath, const std::string& smallIconFilePath = "") = 0;
 
-    virtual void OnUpdate();
+    virtual void OnUpdate() = 0;
 
-    virtual void SetEventCallback(const EventCallbackFn& callback);
+    virtual void SetEventCallback(const EventCallbackFn& callback) = 0;
 
 protected:
     static Window* (*CreateFunc)(const WindowDesc&);
-
-    Window() = default;
 
 //    bool init_ = false;
 //    glm::vec2 m_Position;

@@ -11,7 +11,7 @@
 
 namespace gobot {
 
-class WindowResizeEvent : public Event {
+class GOBOT_EXPORT WindowResizeEvent : public Event {
     GOBCLASS(WindowResizeEvent, Event)
 public:
     WindowResizeEvent(unsigned int width, unsigned int height);
@@ -30,7 +30,7 @@ private:
     unsigned int height_;
 };
 
-class WindowCloseEvent : public Event {
+class GOBOT_EXPORT WindowCloseEvent : public Event {
     GOBCLASS(WindowCloseEvent, Event)
 public:
     WindowCloseEvent() = default;
@@ -39,7 +39,7 @@ public:
     EVENT_CLASS_CATEGORY(EventCategoryApplication)
 };
 
-class AppTickEvent : public Event {
+class GOBOT_EXPORT AppTickEvent : public Event {
     GOBCLASS(AppTickEvent, Event)
 public:
     AppTickEvent() = default;
@@ -48,7 +48,7 @@ public:
     EVENT_CLASS_CATEGORY(EventCategoryApplication)
 };
 
-class AppUpdateEvent : public Event {
+class GOBOT_EXPORT AppUpdateEvent : public Event {
     GOBCLASS(AppUpdateEvent, Event)
 public:
     AppUpdateEvent() = default;
@@ -57,7 +57,7 @@ public:
     EVENT_CLASS_CATEGORY(EventCategoryApplication)
 };
 
-class AppRenderEvent : public Event {
+class GOBOT_EXPORT AppRenderEvent : public Event {
     GOBCLASS(AppRenderEvent, Event)
 public:
     AppRenderEvent() = default;
