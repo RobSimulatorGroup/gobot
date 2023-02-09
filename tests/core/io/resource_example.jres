@@ -1,0 +1,14 @@
+{
+  "__VERSION__": 1.0,
+  "__META_TYPE__": "RESOURCE",
+  "__TYPE__": "BoxMesh",
+  "__SUB_RESOURCES__": [
+    {
+      "__TYPE__": "FontFile",
+      "__ID__": "FontFile_8ou5k"
+    }
+  ],
+  "__RESOURCE__": {
+    "default_font": "SubResource(FontFile_8ou5k)"
+  }
+}

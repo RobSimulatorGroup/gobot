@@ -34,6 +34,13 @@
 		((void)0)
 
 
+#define ERR_FAIL_COND_V_MSG(cond, ret, msg)                                                                              \
+	if (cond) [[unlikely]] {                                                                                             \
+		LOG_ERROR("Failed condition {}. Returning: {}. {}", GOB_STRINGIFY(cond), GOB_STRINGIFY(ret), GOB_STRINGIFY(msg));\
+		return ret;                                                                                                      \
+	} else                                                                                                               \
+		((void)0)
+
 /**
  * Try using `ERR_FAIL_INDEX_V_MSG`.
  * Only use this macro if there is no sensible error message.

@@ -2,13 +2,26 @@
  * Copyright(c) 2021-2022, RobSimulatorGroup, Qiqi Wu<1258552199@qq.com>.
  * Everyone is permitted to copy and distribute verbatim copies of this license document, but changing it is not allowed.
  * This version of the GNU Lesser General Public License incorporates the terms and conditions of version 3 of the GNU General Public License.
- * This file is created by Qiqi Wu, 22-12-11
+ * This file is created by Qiqi Wu, 22-12-21
 */
 
-#include <gtest/gtest.h>
+#include "gobot/scene/resources/mesh.hpp"
+#include "gobot/core/registration.hpp"
 
-#include <gobot/core/io/resource.hpp>
+namespace gobot {
 
-TEST(TestResource, test_nullptr) {
+Mesh::Mesh() {
 
 }
+
+}
+
+GOBOT_REGISTRATION {
+    Class_<Mesh>("Mesh")
+        .constructor()(CtorAsRawPtr);
+
+    gobot::Type::register_wrapper_converter_for_base_classes<Ref<Mesh>, Ref<Resource>>();
+
+};
+
+

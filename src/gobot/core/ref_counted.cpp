@@ -13,8 +13,30 @@
 namespace gobot {
 
 RefCounted::RefCounted()
-    : Object(true)
+    : Object(true),
+      rc_(0)
 {
+}
+
+RefCounted::RefCounted(const RefCounted &)
+        : rc_(0) {
+}
+
+RefCounted::~RefCounted() {
+}
+
+RefCounted& RefCounted::operator=(const RefCounted &) {
+    // intentionally don't copy reference count
+    return *this;
+}
+
+void RefCounted::AddRef() noexcept {
+    ++rc_;
+}
+
+void RefCounted::RemoveRef() noexcept {
+    if (--rc_ == 0)
+        delete this;
 }
 
 }
@@ -23,8 +45,7 @@ GOBOT_REGISTRATION {
 
     Class_<RefCounted>("RefCounted")
             .constructor()(CtorAsRawPtr)
-            .property_readonly("use_count", &RefCounted::use_count)
-            .property_readonly("weak_count", &RefCounted::weak_count)
-            .method("is_unique", &RefCounted::unique);
+            .property_readonly("use_count", &RefCounted::GetReferenceCount)
+            .method("is_unique", &RefCounted::Unique);
 
 };

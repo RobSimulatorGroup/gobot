@@ -54,6 +54,11 @@ Variant Object::Get(const String& name) const {
     return res;
 }
 
+Type Object::GetPropertyType(const String& name) const {
+    auto property = GetType().get_property(name.toStdString());
+    return property.get_type();
+}
+
 
 SpinLock ObjectDB::s_spin_lock;
 uint32_t ObjectDB::s_slot_count;
@@ -149,7 +154,7 @@ GOBOT_REGISTRATION {
 
     Class_<Object>("Object")
             .constructor()(CtorAsRawPtr)
-            .property_readonly("class_name", &Object::GetClassStringView);
+            .property_readonly("class_name", &Object::GetClassStringName);
 
 
     QuickEnumeration_<NotificationType>("NotificationType");

@@ -16,7 +16,7 @@ namespace gobot {
 
 class Node;
 
-class Resource: public RefCounted {
+class GOBOT_EXPORT Resource: public RefCounted {
     Q_OBJECT
     GOBCLASS(Resource, RefCounted)
 public:
@@ -24,6 +24,8 @@ public:
 
     ~Resource();
 
+    // Take over will delete old resource cache, further attempts to load an overridden resource by path will instead return this resource
+    // If the take_over is false and same path resource cache already existed, this operation will fail.
     virtual void SetPath(const String &path, bool take_over = false);
 
     String GetPath() const;
@@ -32,17 +34,18 @@ public:
 
     String GetName() const;
 
-    void SetResourceUuid(const Uuid &uuid);
+    // Generate 5 characters string made up with 0-9|a-z|A-Z
+    static String GenerateResourceUniqueId();
 
-    Uuid GetResourceUuid() const;
+    void SetUniqueId(const String &unique_id);
 
-    Uuid GenerateUuid();
+    String GetUniqueId() const;
 
     virtual void ReloadFromFile();
 
     static bool IsResourceFile(const String& path);
 
-    // for resources that use variable amount of properties, either via _validate_property or _get_property_list, this function needs to be implemented to correctly clear state
+    // for resources that use various amount of properties, either via _validate_property or _get_property_list, this function needs to be implemented to correctly clear state
     virtual void ResetState();
 
     bool CopyFrom(const Ref<Resource> &resource);
@@ -50,6 +53,8 @@ public:
     void RegisterOwner(Object *owner);
 
     void UnregisterOwner(Object *owner);
+
+    FORCE_INLINE bool IsBuiltIn() const { return path_cache_.isEmpty() || path_cache_.contains("::"); }
 
     Ref<Resource> CloneForLocalScene(Node* for_scene);
 
@@ -59,7 +64,9 @@ public:
     virtual Ref<Resource> Clone(bool copy_subresource = false) const;
 
 protected:
-    void SetPath(const String &path);
+    void SetPathNotTakeOver(const String &path);
+
+    void SetPathTakeOver(const String &path);
 
 Q_SIGNALS:
     void resourceChanged();
@@ -73,13 +80,13 @@ private:
     String path_cache_;
     Node *local_scene_ = nullptr;
     bool local_to_scene_{false};
-    Uuid uuid_{};
+    String unique_id_;
 
     GOBOT_REGISTRATION_FRIEND
 };
 
 
-class ResourceCache {
+class GOBOT_EXPORT ResourceCache {
 public:
     static bool Has(const String &path);
 
@@ -89,8 +96,12 @@ private:
     friend class Resource;
     friend class ResourceLoader;
 
-    static std::mutex s_lock;
+    static std::recursive_mutex s_lock;
+
+    // [path, resource]
     static std::unordered_map<String, Resource*> s_resources;
+
+    static std::unordered_map<String, std::unordered_map<String, String>> s_resource_path_cache;
 
     static void Clear();
 
