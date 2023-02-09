@@ -7,6 +7,7 @@
 */
 
 #include "gobot/scene/node.hpp"
+#include "gobot/core/registration.hpp"
 
 namespace gobot {
 
@@ -572,3 +573,32 @@ Node::~Node() {
 }
 
 } // End of namespace gobot
+
+GOBOT_REGISTRATION {
+
+    Class_<Node>("Node")
+            .constructor()(CtorAsRawPtr)
+
+            .property_readonly("child_count", &Node::GetChildCount)
+            .property_readonly("inside_tree", &Node::IsInsideTree)
+            .property_readonly("iterator", &Node::GetIterator)
+            .property_readonly("index", &Node::GetIndex)
+
+            .property("name", &Node::GetName, &Node::SetName)
+
+            .method("has_node", &Node::HasNode)
+            .method("add_child", &Node::AddChild)
+            .method("add_sibling", &Node::AddSibling)
+            .method("remove_child", &Node::RemoveChild)
+            .method("get_child", &Node::GetChild)
+            .method("get_node", &Node::GetNode)
+            .method("get_node_or_null", &Node::GetNodeOrNull)
+            .method("reparent", &Node::Reparent)
+            .method("get_parent", &Node::GetParent)
+            .method("get_tree", &Node::GetTree)
+            .method("is_ancestor_of", &Node::IsAncestorOf)
+            .method("get_path", &Node::GetPath)
+            .method("get_path_to", &Node::GetPathTo)
+            .method("move_child", &Node::MoveChild)
+            ;
+};
