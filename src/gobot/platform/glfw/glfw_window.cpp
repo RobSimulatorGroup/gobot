@@ -53,22 +53,14 @@ bool GLFWWindow::Init(const WindowDesc& properties) {
     glfwGetMonitorContentScale(monitor, &x_scale, &y_scale);
     window_data_.dpi_scale = x_scale;
 
-    {
-#ifdef GOBOT_DEBUG
-        if (window_data_.render_api == RenderAPI::OpenGL)
-            glfwWindowHint(GLFW_OPENGL_DEBUG_CONTEXT, GLFW_TRUE);
-#endif
-
-        native_handle_ = glfwCreateWindow(static_cast<int>(properties.width),
-                                          static_cast<int>(properties.height),
-                                          window_data_.title.toStdString().c_str(), nullptr, nullptr);
-        ++s_num_glfw_windows;
-    }
-
     if(window_data_.render_api == RenderAPI::OpenGL) {
         glfwWindowHint(GLFW_CONTEXT_VERSION_MAJOR, 4);
         glfwWindowHint(GLFW_CONTEXT_VERSION_MINOR, 6);
         glfwWindowHint(GLFW_OPENGL_PROFILE, GLFW_OPENGL_CORE_PROFILE);
+
+#ifdef GOBOT_DEBUG
+        glfwWindowHint(GLFW_OPENGL_DEBUG_CONTEXT, GLFW_TRUE);
+#endif
     }
 
     if(properties.borderless) {

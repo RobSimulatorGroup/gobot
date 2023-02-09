@@ -61,8 +61,6 @@ private:
 private:
     GLFWwindow* native_handle_ = nullptr;
 
-
-
     struct WindowData
     {
         uint32_t width = 0;
@@ -73,7 +71,6 @@ private:
 
         EventCallbackFn event_callback;
     };
-
 
     WindowData window_data_;
 };
