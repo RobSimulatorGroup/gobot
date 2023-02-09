@@ -8,25 +8,26 @@
 #pragma once
 
 #include <QFileInfo>
+#include <gobot_export.h>
 
 #include "gobot/core/types.hpp"
 
 namespace gobot {
 
-String GetFileExtension(const String& path);
+String GOBOT_EXPORT GetFileExtension(const String& path);
 
-bool IsNetworkSharePath(const String& path);
+bool GOBOT_EXPORT IsNetworkSharePath(const String& path);
 
-bool IsAbsolutePath(const String& path);
+bool GOBOT_EXPORT IsAbsolutePath(const String& path);
 
-bool IsRelativePath(const String& path);
+bool GOBOT_EXPORT IsRelativePath(const String& path);
 
-String SimplifyPath(const String& path);
+String GOBOT_EXPORT SimplifyPath(const String& path);
 
-String ValidateLocalPath(const String& path);
+String GOBOT_EXPORT ValidateLocalPath(const String& path);
 
-String GetBaseDir(const String& path);
+String GOBOT_EXPORT GetBaseDir(const String& path);
 
-String PathJoin(const String &base, const String &file);
+String GOBOT_EXPORT PathJoin(const String &base, const String &file);
 
 }

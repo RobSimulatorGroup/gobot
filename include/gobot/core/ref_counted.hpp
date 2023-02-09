@@ -14,7 +14,7 @@
 namespace gobot {
 
 
-class RefCounted : public Object {
+class GOBOT_EXPORT RefCounted : public Object {
     GOBCLASS(RefCounted, Object)
 public:
     ~RefCounted();
