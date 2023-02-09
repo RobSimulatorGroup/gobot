@@ -1,6 +1,4 @@
 add_subdirectory(rttr)
-add_subdirectory(glfw)
-add_subdirectory(glad)
 
 add_library(imgui
         imgui/imgui.cpp
@@ -20,10 +18,10 @@ add_library(imgui
         )
 
 
-target_link_libraries(imgui PUBLIC glfw glad)
+#target_link_libraries(imgui PUBLIC glfw glad)
 
 target_include_directories(imgui PUBLIC imgui imgui/backends)
 
 find_package(OpenGL REQUIRED)
 add_executable(imgui_glfw_opengl3_example imgui/examples/example_glfw_opengl3/main.cpp)
-target_link_libraries(imgui_glfw_opengl3_example imgui OpenGL::GL)
+target_link_libraries(imgui_glfw_opengl3_example imgui ${CONAN_LIBS} OpenGL::GL)

@@ -16,6 +16,13 @@ class GobotConan(ConanFile):
         self.requires("pybind11/2.10.0")
         self.requires("gtest/1.12.1")
         self.requires("magic_enum/0.8.1")
+        self.requires("glad/0.1.36")
+        self.requires("glfw/3.3.8")
+
+    def configure(self):
+        self.options['glad'].spec = 'gl'
+        self.options['glad'].gl_profile = 'core'
+        self.options["glad"].gl_version = "4.6"
 
     def imports(self):
         self.copy("*.dll", dst="bin", src="bin") # From bin to bin

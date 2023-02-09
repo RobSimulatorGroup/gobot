@@ -4,6 +4,3 @@
 [submodule "3rdparty/imgui"]
 	path = 3rdparty/imgui
 	url = https://github.com/RobSimulatorGroup/imgui.git
-[submodule "3rdparty/glfw"]
-	path = 3rdparty/glfw
-	url = https://github.com/RobSimulatorGroup/glfw.git

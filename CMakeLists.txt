@@ -4,8 +4,6 @@ project (gobot)
 set(CMAKE_CXX_STANDARD 20)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 
-add_subdirectory(3rdparty)
-
 set(CMAKE_PREFIX_PATH ${CMAKE_BINARY_DIR})
 set(CMAKE_MODULE_PATH ${CMAKE_BINARY_DIR})
 
@@ -87,6 +85,8 @@ find_package(OpenGL REQUIRED)
 
 INCLUDE(GenerateExportHeader)
 
+add_subdirectory(3rdparty)
+
 file(GLOB_RECURSE SOURCE_CORE CONFIGURE_DEPENDS "src/gobot/core/*.cpp")
 file(GLOB_RECURSE SOURCE_SCENE CONFIGURE_DEPENDS "src/gobot/scene/*.cpp")
 file(GLOB_RECURSE SOURCE_PLATFORM CONFIGURE_DEPENDS "src/gobot/platform/*.cpp")
@@ -114,8 +114,6 @@ target_link_libraries(gobot
     PUBLIC
     RTTR::Core
     OpenGL::GL
-    glad
-    glfw
     ${CONAN_LIBS}
 )
 
