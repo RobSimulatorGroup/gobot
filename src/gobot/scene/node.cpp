@@ -352,6 +352,8 @@ NodePath Node::GetPath() const {
 NodePath Node::GetPathTo(const Node *node) const {
     ERR_FAIL_NULL_V(node, NodePath());
 
+    if (this == node) return NodePath(".");
+
     const Node *common_parent = FindCommonParentWith(node);
     ERR_FAIL_COND_V(!common_parent, NodePath());
 
@@ -399,29 +401,29 @@ Node* Node::FindCommonParentWith(const Node *node) const {
     return const_cast<Node *>(common_parent);
 }
 
-//void Node::PrintTreePretty() {
-//    PrintTreePretty("", true);
-//}
-//
-//void Node::PrintTree() {
-//    PrintTree(this);
-//}
-//
-//void Node::PrintTreePretty(const String &prefix, bool last) {
-//    String new_prefix = last ? String(" ┖╴ ") : String(" ┠╴ ");
-//    std::cout << prefix.toStdString() << new_prefix.toStdString() << GetName().toStdString();
-//    for (const auto & child : data_.children) {
-//        new_prefix = last ? String("   ") : String(" ┃ ");
-//        child->PrintTreePretty(prefix + new_prefix, child == data_.children.back());
-//    }
-//}
-//
-//void Node::PrintTree(const Node *node) {
-//    std::cout << node->GetPathTo(this).operator String().toStdString() << std::endl;
-//    for (const auto & child : data_.children) {
-//        child->PrintTree(node);
-//    }
-//}
+void Node::PrintTreePretty() {
+    PrintTreePretty("", true);
+}
+
+void Node::PrintTree() {
+    PrintTree(this);
+}
+
+void Node::PrintTreePretty(const String &prefix, bool last) {
+    String new_prefix = last ? String(" ┖╴ ") : String(" ┠╴ ");
+    std::cout << prefix.toStdString() << new_prefix.toStdString() << GetName().toStdString() << std::endl;
+    for (const auto & child : children_) {
+        new_prefix = last ? String("   ") : String(" ┃ ");
+        child->PrintTreePretty(prefix + new_prefix, child == children_.back());
+    }
+}
+
+void Node::PrintTree(const Node *node) {
+    std::cout << node->GetPathTo(this).operator String().toStdString() << std::endl;
+    for (const auto & child : children_) {
+        child->PrintTree(node);
+    }
+}
 
 void Node::PropagateNotification(NotificationType p_notification) {
     Notification(p_notification);

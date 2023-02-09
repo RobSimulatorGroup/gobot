@@ -60,8 +60,8 @@ public:
     std::vector<Node *>::iterator GetIterator() const;
     int GetIndex() const;
 
-//    void PrintTreePretty();
-//    void PrintTree();
+    void PrintTreePretty();
+    void PrintTree();
 
 protected:
     void NotificationCallBack(NotificationType notification);
@@ -82,8 +82,8 @@ private:
     bool inside_tree_ = false;
     mutable NodePath path_cache_;
 
-//    void PrintTreePretty(const String &prefix, bool last);
-//    void PrintTree(const Node *node);
+    void PrintTreePretty(const String &prefix, bool last);
+    void PrintTree(const Node *node);
 
     Node *GetChildByName(const String& name) const;
 
