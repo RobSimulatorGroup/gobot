@@ -20,47 +20,208 @@ class SceneTree;
 
 class GOBOT_EXPORT Node : public Object {
     GOBCLASS(Node, Object)
+/**
+ * @brief Node as a building block, can be assigned as the child of another node,
+ *  resulting in a tree arrangement. A given node can contain any number of nodes
+ *  as children with the requirement that all siblings should have unique names.
+ */
 
 public:
     Node() = default;
 
     ~Node() override;
 
+    /**
+     * @brief This name is unique among the siblings (other child node from the same
+     *  parent). When set to an existing name, the node will be automatically renamed.
+     *  Note: Auto-generated names might include "@" character, which is reserved for
+     *  unique names when using AddChild. When setting the name manually, any "@"
+     *  will be removed.
+     *
+     * @return the name of the node.
+     */
     String GetName() const;
+
+    /**
+     * @brief See GetName.
+     *
+     * @param p_name[String]: Given name.
+     */
     void SetName(const String &p_name);
 
+    /**
+     * @brief Adds a child node. Nodes can have any number of children, but every child
+     *  must have a unique name in a branch. Child nodes are automatically deleted when
+     *  the parent node is deleted, so an entire scene can be removed by deleting its
+     *  topmost node (root).
+     *
+     * @param child[Node*]: Child node pointer.
+     */
     void AddChild(Node *child);
+
+    /**
+     * @brief See AddChild.
+     *
+     * @param sibling[Node*]: Sibling node pointer.
+     */
     void AddSibling(Node *sibling);
+
+    /**
+     * @biref See AddChild.
+     *
+     * @param child[Node*]: Child node pointer.
+     */
     void RemoveChild(Node *child);
 
+    /**
+     * @brief See AddChild.
+     *
+     * @return the number of child nodes.
+     */
     std::size_t GetChildCount() const;
+
+    /**
+     * @brief See AddChild. This method is often used for iterating all children of a node.
+     *  To query the index of a node, see GetIterator or GetIndex.
+     *
+     * @param index[int]: Index of child in the children list.
+     *
+     * @return a child node by its index (See GetChildCount).
+     */
     Node* GetChild(int index) const;
+
+    /**
+     * @brief See NodePath.
+     *
+     * @param path[NodePath]: Path points to the node.
+     *
+     * @return true if the node that the path points to exists.
+     */
     bool HasNode(const NodePath& path) const;
+
+    /**
+     * @brief Fetches a node. The node path can be either a relative path (from the current node)
+     *  or an absolute path (in the scene tree) to a node. If the path does not exist, nullptr is
+     *  returned and an error is logged. Attempts to access methods on the return value will result
+     *  in an "Attempts to call <method> on a null instance." error.
+     *  Note: Fetching absolute paths only works when the node is inside the scene tree (See IsInsideTree).
+     *
+     * @param path[NodePath]: Path points to the node.
+     *
+     * @return the node pointer that the path points to if it exists, otherwise nullptr with an error logged.
+     */
     Node* GetNode(const NodePath &path) const;
+
+    /**
+     * @brief See GetNode. Dose not log an error if path does not point to a valid node.
+     *
+     * @param path[NodePath]: Path points to the node.
+     *
+     * @return the node pointer that the path points to if it exists, otherwise nullptr.
+     */
     Node* GetNodeOrNull(const NodePath &path) const;
 
+    /**
+     * @brief The node sets the given parent node in replace of the original parent which is required.
+     *
+     * @param parent[Node*]: New parent node pointer.
+     * @param keep_global_transform[bool]: Keep the global transform.
+     */
     virtual void Reparent(Node *parent, bool keep_global_transform = true);
+
+    /**
+     * @brief See GetNode.
+     *
+     * @return the parent node of the current node, or null if the node lacks a parent.
+     */
     Node* GetParent() const;
 
+    /**
+     * @brief See SceneTree.
+     *
+     * @return pointer to the scene tree that the node attached to.
+     */
     FORCE_INLINE SceneTree* GetTree() const {
         ERR_FAIL_COND_V(!tree_, nullptr);
         return tree_;
     }
 
+    /**
+     * @brief The node is inside a tree that is notified EnterTree (See SetTree), and outside the tree that is
+     *  notified ExitTree.
+     *
+     * @return true if it is inside a tree, otherwise false.
+     */
     FORCE_INLINE bool IsInsideTree() const { return inside_tree_; }
 
+    /**
+     * @brief Ancestor of a node locates at higher layer in the same tree and can be traced in the ascending order.
+     *
+     * @param node[Node*]: Pointer to a node
+     *
+     * @return true if this node is an ancestor of the given node, otherwise false.
+     */
     bool IsAncestorOf(const Node *node) const;
 
+    /**
+     * @brief This only works if the current node is inside the tree (See IsInsideTree).
+     *
+     * @return the absolute path of the current node.
+     */
     NodePath GetPath() const;
+
+    /**
+     * @brief This only works if both nodes are in the same tree.
+
+     * @param node[Node*]: Pointer to a node that path points to.
+     *
+     * @return the relative path from this node to the specified node.
+     */
     NodePath GetPathTo(const Node *node) const;
+
+    /**
+     * @brief Common parent exists for two sibling nodes.
+     *
+     * @param node[Node*]: Pointer to a node that could be a sibling.
+     *
+     * @return pinter to the sibling node if common parent exists, otherwise nullptr.
+     */
     Node* FindCommonParentWith(const Node* node) const;
 
+    /**
+     * @brief Move a child to another position among the children list by index. This works only if
+     *  the given child is one of the children.
+     *
+     * @param child[Node*]: Pointer to a child node in the same tree.
+     * @param index[int]: Index of the moving child.
+     */
     void MoveChild(Node *child, int index);
 
+    /**
+     * @brief Get the STL iterator of the node in the children list.
+     *
+     * @return std::vector<Node*>::iterator.
+     */
     std::vector<Node *>::iterator GetIterator() const;
+
+    /**
+     * @brief Get the position of the node in the children list.
+     *
+     * @return a position.
+     */
     int GetIndex() const;
 
+    /**
+     * @brief Similar to PrintTree, this prints the tree to stdout. This version displays a more graphical
+     *  representation similar to what is displayed in the scene inspector. It is useful for inspecting
+     *  larger trees.
+     */
     void PrintTreePretty();
+
+    /**
+     * @brief Print the tree to stdout. Used mainly for debugging purposes. This version displays the path
+     *  relative to the current node, and is good for copy/pasting into the GetNode function.
+     */
     void PrintTree();
 
 protected:

@@ -83,7 +83,6 @@ void Node::SetName(const String &p_name) {
         parent_->ValidateChildName(this);
     }
 
-    // TODO: UniqueName
     PropagateNotification(NotificationType::PathRenamed);
 
     if (IsInsideTree()) {
@@ -116,7 +115,7 @@ void Node::ValidateChildName(Node *child) {
     }
 
     if (!unique) {
-        // TODO: Temporarily set as default
+        // Temporarily set as default
         String name = "@" + String(child->GetName()) + "@" + String::number(children_.size());
         child->name_ = name;
     }
@@ -132,14 +131,27 @@ String Node::ValidateNodeName(const String &p_name) const {
     return name;
 }
 
-////void Node::GenerateSerialChildName(const Node *child, String &name) const {
-////    if (name == String()) {
-////        // No name and a new name is needed, create one.
-////        name = String::fromStdString(std::string(child->GetClassName()));
-////    }
-////
-////
-////}
+//void Node::GenerateSerialChildName(const Node *child, String &name) const {
+//    if (name == String()) {
+//        // No name and a new name is needed, create one.
+//        name = String::fromStdString(child->GetClassStringName().data());
+//    }
+//
+//    // Quickly test if proposed name exists
+//    bool exists = false;
+//    for (const auto & c : children_) {
+//        if (c == child) continue; // Exclude self in renaming if it's already a child
+//
+//        if (c->name_ == name) {
+//            exists = true;
+//            break;
+//        }
+//    }
+//
+//    if (!exists) {
+//        return; // If it does not exist, it does not need validation
+//    }
+//}
 
 void Node::AddChildNoCheck(Node *child, const String &name) {
     child->name_ = name;
@@ -250,7 +262,7 @@ Node* Node::GetNodeOrNull(const NodePath &path) const {
 Node* Node::GetNode(const NodePath &path) const {
     Node *node = GetNodeOrNull(path);
 
-    if (node == nullptr) {
+    if (node == nullptr) [[unlikely]] {
         String desc;
         if (IsInsideTree()) {
             desc = GetPath().operator String();

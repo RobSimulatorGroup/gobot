@@ -19,7 +19,7 @@
 namespace gobot {
 
 class GOBOT_EXPORT NodePath {
-  /**
+/**
  * @brief pre-parsed scene tree path.
  *  A pre-parsed relative or absolute path in a scene tree, for use with Node.get_node and similar functions.
  *  It can reference a node, a resource within a node, or a property of a node or resource.
