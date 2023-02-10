@@ -42,7 +42,7 @@ jobs:
         cache-name: cache-conan-packages
       with:
         path: ${{ env.CONAN_USER_HOME }}
-        key: host-${{ runner.os }}-target-${{ runner.os }}-${{ hashFiles('conanfile.txt') }}
+        key: host-${{ runner.os }}-target-${{ runner.os }}-${{ hashFiles('conanfile.py') }}
         restore-keys: |
           host-${{ runner.os }}-target-${{ runner.os }}-
 
