@@ -45,9 +45,11 @@ struct WindowDesc
     RenderAPI render_api;
 };
 
-class GOBOT_EXPORT Window
-{
+class GOBOT_EXPORT Window : public Object {
+    GOBCLASS(Window, Object);
 public:
+
+
     using WindowHandle = void*;
     using EventCallbackFn = std::function<void(Event&)>;
 

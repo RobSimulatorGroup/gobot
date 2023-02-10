@@ -8,7 +8,7 @@
 #pragma once
 
 #include "gobot/core/object.hpp"
-#include "gobot/core/window/keycodes.hpp"
+#include "gobot/core/os/keycodes.hpp"
 #include "gobot/core/events/event.hpp"
 #include "gobot/core/events/key_event.hpp"
 #include "gobot/core/events/mouse_event.hpp"

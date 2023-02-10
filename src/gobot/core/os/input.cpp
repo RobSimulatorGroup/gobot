@@ -5,7 +5,7 @@
  * This file is created by Qiqi Wu, 23-2-8
 */
 
-#include "gobot/core/window/input.hpp"
+#include "gobot/core/os/input.hpp"
 
 
 namespace gobot {

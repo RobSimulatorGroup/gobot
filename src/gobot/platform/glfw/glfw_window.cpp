@@ -12,7 +12,7 @@
 #include "gobot/core/events/mouse_event.hpp"
 #include "gobot/platform/glfw/glfw_keycodes.hpp"
 #include "gobot/graphics/RHI/graphics_context.hpp"
-#include "gobot/core/window/input.hpp"
+#include "gobot/core/os/input.hpp"
 #include "gobot/log.hpp"
 #include "gobot/error_macros.hpp"
 

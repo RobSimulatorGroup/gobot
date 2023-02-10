@@ -7,7 +7,7 @@
 
 #pragma once
 
-#include "gobot/core/window/window.hpp"
+#include "gobot/core/os/window.hpp"
 #include "gobot/platform/opengl/GL.hpp"
 
 #include <gobot_export.h>
