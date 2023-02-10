@@ -134,4 +134,9 @@ TEST_F(TestNodeComplex, add_sibling) {
     ASSERT_EQ(gobot::SceneTree::GetInstance()->GetRoot()->GetChild(0), node1);
     ASSERT_EQ(gobot::SceneTree::GetInstance()->GetRoot()->GetChild(1), node1_1);
     ASSERT_EQ(gobot::SceneTree::GetInstance()->GetRoot()->GetChild(2), node2);
+
+    // Nodes name should be validated as unique and renamed if not
+    node1->SetName("Node9");
+    node1_1->SetName("Node9");
+    ASSERT_EQ(node1_1->GetName(), "Node10");
 }

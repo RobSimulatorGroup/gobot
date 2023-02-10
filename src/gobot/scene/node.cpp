@@ -7,6 +7,8 @@
 */
 
 #include "gobot/scene/node.hpp"
+
+#include <ranges>
 #include "gobot/core/registration.hpp"
 
 namespace gobot {
@@ -81,7 +83,7 @@ void Node::SetName(const String &p_name) {
 
     SetNameNoCheck(name);
     if (parent_) {
-        parent_->ValidateChildName(this);
+        parent_->ValidateChildName(this, true);
     }
 
     PropagateNotification(NotificationType::PathRenamed);
@@ -93,32 +95,41 @@ void Node::SetName(const String &p_name) {
     }
 }
 
-void Node::ValidateChildName(Node *child) {
+void Node::ValidateChildName(Node* child, bool force_human_readable) {
     /* Make sure the name is unique */
-    // TODO: serial version not implemented.
 
-    // default and reserves '@' character for unique names.
-    bool unique = true;
+    if (force_human_readable) {
+        // This approach to autoset node names is human-readable but very slow
 
-    if (child->name_ == String()) {
-        // new unique name must be assigned
-        unique = false;
+        String name = child->name_;
+        GenerateSerialChildName(child, name);
+        child->name_ = name;
     } else {
-        // check if exists
-        for (const auto & ith_child : children_) {
-            if (ith_child == child)
-                continue;
-            if (ith_child->name_ == child->name_) {
-                unique = false;
-                break;
+        //This approach to autoset node names is fast but not as readable
+        // It's the default and reserves the '@' character for unique names.
+
+        bool unique = true;
+
+        if (child->name_ == String()) {
+            // new unique name must be assigned
+            unique = false;
+        } else {
+            // check if exists
+            for (const auto & ith_child : children_) {
+                if (ith_child == child)
+                    continue;
+                if (ith_child->name_ == child->name_) {
+                    unique = false;
+                    break;
+                }
             }
         }
-    }
 
-    if (!unique) {
-        // Temporarily set as default
-        String name = "@" + String(child->GetName()) + "@" + String::number(children_.size());
-        child->name_ = name;
+        if (!unique) {
+            // Temporarily set as default
+            String name = "@" + String(child->GetName()) + "@" + String::number(children_.size());
+            child->name_ = name;
+        }
     }
 }
 
@@ -132,27 +143,90 @@ String Node::ValidateNodeName(const String &p_name) const {
     return name;
 }
 
-//void Node::GenerateSerialChildName(const Node *child, String &name) const {
-//    if (name == String()) {
-//        // No name and a new name is needed, create one.
-//        name = String::fromStdString(child->GetClassStringName().data());
-//    }
-//
-//    // Quickly test if proposed name exists
-//    bool exists = false;
-//    for (const auto & c : children_) {
-//        if (c == child) continue; // Exclude self in renaming if it's already a child
-//
-//        if (c->name_ == name) {
-//            exists = true;
-//            break;
-//        }
-//    }
-//
-//    if (!exists) {
-//        return; // If it does not exist, it does not need validation
-//    }
-//}
+String IncreaseNumericString(const String &s) {
+    String res = s;
+    bool carry = res.length() > 0;
+
+    for (int i = res.length() - 1; i >= 0; i --) {
+        if (!carry) {
+            break;
+        }
+        QChar n = s[i];
+        if (n == '9') {
+            res[i] = '0';
+        } else {
+            res[i] = s[i].unicode() + 1;
+            carry = false;
+        }
+    }
+
+    if (carry) {
+        res = "1" + res;
+    }
+
+    return res;
+}
+
+void Node::GenerateSerialChildName(const Node *child, String &name) const {
+    if (name == String()) {
+        // No name and a new name is needed, create one.
+        name = String::fromStdString(child->GetClassStringName().data());
+    }
+
+    // Quickly test if proposed name exists
+    bool exists = false;
+    for (const auto & c : children_) {
+        if (c == child) continue; // Exclude self in renaming if it's already a child
+
+        if (c->name_ == name) {
+            exists = true;
+            break;
+        }
+    }
+
+    if (!exists) {
+        return; // If it does not exist, it does not need validation
+    }
+
+    // Extract trailing number
+    String name_string = name;
+    String nums;
+    for (const auto & i : std::ranges::reverse_view(name_string)) {
+        if (i.isDigit()) {
+            nums = i + nums;
+        } else {
+            break;
+        }
+    }
+
+    // Extract base name
+    name_string = name_string.mid(0, name_string.length() - nums.length());
+
+    for (;;) {
+        String attempt = name_string + nums;
+        exists = false;
+
+        for (const auto & i : children_) {
+            if (i == child) continue;
+            if (i->name_ == attempt) {
+                exists = true;
+                break;
+            }
+        }
+
+        if (!exists) {
+            name = attempt;
+            return;
+        } else {
+            if (nums.length() == 0) {
+                // Name was undecorated to skip to 2 for a more natural result
+                nums = "2";
+            } else {
+                nums = IncreaseNumericString(nums);
+            }
+        }
+    }
+}
 
 void Node::AddChildNoCheck(Node *child, const String &name) {
     child->name_ = name;
@@ -168,22 +242,22 @@ void Node::AddChildNoCheck(Node *child, const String &name) {
     AddChildNotify(child);
 }
 
-void Node::AddChild(Node *child) {
+void Node::AddChild(Node *child, bool force_readable_name) {
     ERR_FAIL_NULL(child);
     ERR_FAIL_COND_MSG(child == this, String("Can't add child '%s'", child->GetName()));
     ERR_FAIL_COND_MSG(child == parent_, String("Can't add child '%s' to '%s', already has a parent '%s'.",
                                                     child->GetName(), GetName(), child->data_.parent->GetName()));
 
-    ValidateChildName(child);
+    ValidateChildName(child, force_readable_name);
     AddChildNoCheck(child, child->name_);
 }
 
-void Node::AddSibling(Node *sibling) {
+void Node::AddSibling(Node *sibling, bool force_readable_name) {
     ERR_FAIL_NULL(sibling);
     ERR_FAIL_NULL(parent_);
     ERR_FAIL_COND_MSG(sibling == this, String("Can't add sibling '%s' to itself.", sibling->GetName()));
 
-    parent_->AddChild(sibling);
+    parent_->AddChild(sibling, force_readable_name);
     parent_->MoveChild(sibling, GetIndex() + 1);
 }
 

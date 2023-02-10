@@ -55,16 +55,39 @@ public:
      *  the parent node is deleted, so an entire scene can be removed by deleting its
      *  topmost node (root).
      *
+     *  If force_readable_name is true, it improves the readability of the added node.
+     *  If not named, the node is renamed to its type, and if it shares name with a
+     *  sibling, a number is suffixed more appropriately. This operation is very slow.
+     *  As such, it is recommended leaving this to false, which assigns a dummy name
+     *  featuring @ in both situations.
+     *
+     *  Note: If the child node already has a parent, the function will fail. Use RemoveChild
+     *  first to remove the node from its current parent. If you need the child node to be
+     *  added below a specific node in the list of children, use AddSibling instead of
+     *  this method.
+     *
      * @param child[Node*]: Child node pointer.
+     * @param force_readable_name[bool]: Generate a human readable name for child node.
      */
-    void AddChild(Node *child);
+    void AddChild(Node *child, bool force_readable_name = false);
 
     /**
-     * @brief See AddChild.
+     * @brief Adds a sibling to current node's parent, at the same level as that node,
+     *  right below it.
+     *
+     *  If force_readable_name is true, it improves the readability of the added node.
+     *  If not named, the node is renamed to its type, and if it shares name with a
+     *  sibling, a number is suffixed more appropriately. This operation is very slow.
+     *  As such, it is recommended leaving this to false, which assigns a dummy name
+     *  featuring @ in both situations.
+     *
+     *  Use AddChild instead of this method if you don't need the child node to be added
+     *  below a specific node in the list of children.
      *
      * @param sibling[Node*]: Sibling node pointer.
+     * @param force_readable_name[bool]: Generate a human readable name for child node.
      */
-    void AddSibling(Node *sibling);
+    void AddSibling(Node *sibling, bool force_readable_name = false);
 
     /**
      * @biref See AddChild.
@@ -74,7 +97,8 @@ public:
     void RemoveChild(Node *child);
 
     /**
-     * @brief See AddChild.
+     * @brief Removes a child node from its parent's list of children. The node is NOT
+     *  deleted and must be deleted manually.
      *
      * @return the number of child nodes.
      */
@@ -252,13 +276,13 @@ private:
 
     void SetTree(SceneTree *tree);
 
-    void ValidateChildName(Node* child);
+    void ValidateChildName(Node* child, bool force_human_readable);
 
     String ValidateNodeName(const String &p_name) const;
 
     const String invalid_node_name_characters = ". : @ / \" ";
 
-//    void GenerateSerialChildName(const Node* child, String&name) const;
+    void GenerateSerialChildName(const Node* child, String &name) const;
 
     void PropagateNotification(NotificationType p_notification);
     void PropagateReverseNotification(NotificationType p_notification);
