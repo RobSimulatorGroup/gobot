@@ -47,16 +47,20 @@ public:
 
     void Restore() override;
 
+    void SetIcon(const std::string& file_path, const std::string& small_icon_file_path = "") override;
+
     FORCE_INLINE void SetEventCallback(const EventCallbackFn& callback) override {
         window_data_.event_callback = callback;
     }
 
     void OnUpdate() override;
 
+    void UpdateCursorImGui() override;
+
+    void HideMouse(bool hide) override;
+
 private:
     bool Init(const WindowDesc& properties);
-
-    void Shutdown() const;
 
 private:
     GLFWwindow* native_handle_ = nullptr;
@@ -70,6 +74,7 @@ private:
         float dpi_scale;
 
         EventCallbackFn event_callback;
+        GLFWWindow* holder_{nullptr};
     };
 
     WindowData window_data_;

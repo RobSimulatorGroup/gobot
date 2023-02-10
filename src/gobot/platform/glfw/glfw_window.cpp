@@ -6,6 +6,8 @@
 */
 
 #include "gobot/platform/glfw/glfw_window.hpp"
+
+#include "gobot/core/events/application_event.hpp"
 #include "gobot/core/events/key_event.hpp"
 #include "gobot/core/events/mouse_event.hpp"
 #include "gobot/platform/glfw/glfw_keycodes.hpp"
@@ -13,9 +15,13 @@
 #include "gobot/log.hpp"
 #include "gobot/error_macros.hpp"
 
+#include <imgui.h>
+
 namespace gobot {
 
-static int s_num_glfw_windows   = 0;
+static int s_num_glfw_windows = 0;
+
+static GLFWcursor* g_mouse_cursors[ImGuiMouseCursor_COUNT] = { nullptr };
 
 static void GLFWErrorCallback(int error, const char* description)
 {
@@ -31,6 +37,16 @@ GLFWWindow::GLFWWindow(const WindowDesc& properties) {
 }
 
 GLFWWindow::~GLFWWindow() {
+    for(auto& g_mouse_cursor : g_mouse_cursors) {
+        glfwDestroyCursor(g_mouse_cursor);
+        g_mouse_cursor = nullptr;
+    }
+
+    glfwDestroyWindow(native_handle_);
+    --s_num_glfw_windows;
+
+    if(s_num_glfw_windows < 1)
+        glfwTerminate();
 
 }
 
@@ -92,6 +108,7 @@ bool GLFWWindow::Init(const WindowDesc& properties) {
     window_data_.title = properties.title;
     window_data_.width  = w;
     window_data_.height = h;
+    window_data_.holder_ = this;
 
     if(window_data_.render_api == RenderAPI::OpenGL) {
         glfwMakeContextCurrent(native_handle_);
@@ -108,16 +125,162 @@ bool GLFWWindow::Init(const WindowDesc& properties) {
         glfwSetInputMode(native_handle_, GLFW_RAW_MOUSE_MOTION, GLFW_TRUE);
 
 
+    glfwSetInputMode(native_handle_, GLFW_STICKY_KEYS, true);
+
+    // Set GLFW callbacks
+    glfwSetWindowSizeCallback(native_handle_, [](GLFWwindow* window, int width, int height) {
+        WindowData& data = *static_cast<WindowData*>((glfwGetWindowUserPointer(window)));
+
+        int w, h;
+        glfwGetFramebufferSize(window, &w, &h);
+
+        data.dpi_scale = (float)w / (float)width;
+
+        data.width =  static_cast<std::uint32_t>(width * data.dpi_scale);
+        data.height = static_cast<std::uint32_t>(height * data.dpi_scale);
+
+        WindowResizeEvent event(data.width, data.height, data.dpi_scale);
+        data.event_callback(event);
+    });
+    glfwSetWindowCloseCallback(native_handle_, [](GLFWwindow* window) {
+        WindowData& data = *static_cast<WindowData*>((glfwGetWindowUserPointer(window)));
+        WindowCloseEvent event;
+        data.event_callback(event);
+    });
+    glfwSetWindowFocusCallback(native_handle_, [](GLFWwindow* window, int focused) {
+        WindowData& data = *static_cast<WindowData*>((glfwGetWindowUserPointer(window)));
+        data.holder_->SetWindowFocus(focused);
+    });
+    glfwSetWindowIconifyCallback(native_handle_, [](GLFWwindow* window, int32_t state) {
+        WindowData& data = *static_cast<WindowData*>((glfwGetWindowUserPointer(window)));
+        switch(state) {
+            case GL_TRUE:
+                data.holder_->SetWindowFocus(false);
+                break;
+            case GL_FALSE:
+                data.holder_->SetWindowFocus(true);
+                break;
+            default:
+                LOG_INFO("Unsupported window iconify state from callback");
+        }
+    });
+    glfwSetKeyCallback(native_handle_, [](GLFWwindow* window, int key, int scancode, int action, int mods)
+    {
+        WindowData& data = *static_cast<WindowData*>((glfwGetWindowUserPointer(window)));
+        switch(action) {
+            case GLFW_PRESS: {
+                KeyPressedEvent event(GLFWToGobotKeyboardKey(key), 0);
+                data.event_callback(event);
+                break;
+            }
+            case GLFW_RELEASE: {
+                KeyReleasedEvent event(GLFWToGobotKeyboardKey(key));
+                data.event_callback(event);
+                break;
+            }
+            case GLFW_REPEAT:
+            {
+                KeyPressedEvent event(GLFWToGobotKeyboardKey(key), 1);
+                data.event_callback(event);
+                break;
+            }
+        }
+    });
+    glfwSetMouseButtonCallback(native_handle_, [](GLFWwindow* window, int button, int action, int mods)
+    {
+        WindowData& data = *static_cast<WindowData*>((glfwGetWindowUserPointer(window)));
+        switch(action) {
+            case GLFW_PRESS: {
+                MouseButtonPressedEvent event(GLFWToGobotMouseKey(button));
+                data.event_callback(event);
+                break;
+            }
+            case GLFW_RELEASE: {
+                MouseButtonReleasedEvent event(GLFWToGobotMouseKey(button));
+                data.event_callback(event);
+                break;
+            }
+        }
+    });
+    glfwSetScrollCallback(native_handle_, [](GLFWwindow* window, double xOffset, double yOffset) {
+        WindowData& data = *static_cast<WindowData*>((glfwGetWindowUserPointer(window)));
+        MouseScrolledEvent event((float)xOffset, (float)yOffset);
+        data.event_callback(event);
+    });
+    glfwSetCursorPosCallback(native_handle_, [](GLFWwindow* window, double xPos, double yPos) {
+        WindowData& data = *static_cast<WindowData*>((glfwGetWindowUserPointer(window)));
+        MouseMovedEvent event((float)xPos /* * data.DPIScale*/, (float)yPos /* * data.DPIScale*/);
+        data.event_callback(event);
+    });
+    glfwSetCursorEnterCallback(native_handle_, [](GLFWwindow* window, int enter) {
+        WindowData& data = *static_cast<WindowData*>((glfwGetWindowUserPointer(window)));
+        MouseEnterEvent event(enter > 0);
+        data.event_callback(event);
+    });
+    glfwSetCharCallback(native_handle_, [](GLFWwindow* window, unsigned int keycode) {
+        WindowData& data = *static_cast<WindowData*>((glfwGetWindowUserPointer(window)));
+        KeyTypedEvent event(GLFWToGobotKeyboardKey(keycode));
+        data.event_callback(event);
+    });
+    glfwSetDropCallback(native_handle_, [](GLFWwindow* window, int numDropped, const char** filenames) {
+        WindowData& data = *static_cast<WindowData*>((glfwGetWindowUserPointer(window)));
+        String file_path = filenames[0];
+        WindowFileEvent event(file_path);
+        data.event_callback(event);
+    });
+
+    g_mouse_cursors[ImGuiMouseCursor_Arrow]      = glfwCreateStandardCursor(GLFW_ARROW_CURSOR);
+    g_mouse_cursors[ImGuiMouseCursor_TextInput]  = glfwCreateStandardCursor(GLFW_IBEAM_CURSOR);
+    g_mouse_cursors[ImGuiMouseCursor_ResizeAll]  = glfwCreateStandardCursor(GLFW_ARROW_CURSOR);
+    g_mouse_cursors[ImGuiMouseCursor_ResizeNS]   = glfwCreateStandardCursor(GLFW_VRESIZE_CURSOR);
+    g_mouse_cursors[ImGuiMouseCursor_ResizeEW]   = glfwCreateStandardCursor(GLFW_HRESIZE_CURSOR);
+    g_mouse_cursors[ImGuiMouseCursor_ResizeNESW] = glfwCreateStandardCursor(GLFW_ARROW_CURSOR);
+    g_mouse_cursors[ImGuiMouseCursor_ResizeNWSE] = glfwCreateStandardCursor(GLFW_ARROW_CURSOR);
+    g_mouse_cursors[ImGuiMouseCursor_Hand]       = glfwCreateStandardCursor(GLFW_HAND_CURSOR);
+
+    LOG_INFO("Initialised GLFW version : {0}", glfwGetVersionString());
     return true;
 }
 
-void GLFWWindow::Shutdown() const
+void GLFWWindow::SetIcon(const std::string& file_path, const std::string& small_icon_file_path)
 {
-    glfwDestroyWindow(native_handle_);
-    --s_num_glfw_windows;
+    // TODO(wqq): Consider godot's Image
+    //  glfwSetWindowIcon(native_handle_, int(images.size()), images.data());
+}
 
-    if(s_num_glfw_windows == 0)
-        glfwTerminate();
+void GLFWWindow::UpdateCursorImGui()
+{
+    ImGuiIO& io = ImGui::GetIO();
+    ImGuiMouseCursor imgui_cursor = ImGui::GetMouseCursor();
+
+    if((io.ConfigFlags & ImGuiConfigFlags_NoMouseCursorChange) ||
+        glfwGetInputMode(native_handle_, GLFW_CURSOR) == GLFW_CURSOR_DISABLED)
+        return;
+
+    if(imgui_cursor == ImGuiMouseCursor_None || io.MouseDrawCursor)
+    {
+        // Hide OS mouse cursor if imgui is drawing it or if it wants no cursor
+
+        // TODO: This was disabled as it would override control of hiding the cursor
+        //       Need to find a solution to support both
+        // glfwSetInputMode(m_Handle, GLFW_CURSOR, GLFW_CURSOR_HIDDEN);
+    }
+    else
+    {
+        glfwSetCursor(native_handle_,
+                      g_mouse_cursors[imgui_cursor] ? g_mouse_cursors[imgui_cursor] :
+                                                      g_mouse_cursors[ImGuiMouseCursor_Arrow]);
+        // glfwSetInputMode(m_Handle, GLFW_CURSOR, GLFW_CURSOR_NORMAL);
+    }
+}
+
+void GLFWWindow::HideMouse(bool hide)
+{
+    if(hide) {
+        glfwSetInputMode(native_handle_, GLFW_CURSOR, GLFW_CURSOR_HIDDEN);
+    } else {
+        glfwSetInputMode(native_handle_, GLFW_CURSOR, GLFW_CURSOR_NORMAL);
+    }
 }
 
 void GLFWWindow::SetWindowTitle(const String& title) {

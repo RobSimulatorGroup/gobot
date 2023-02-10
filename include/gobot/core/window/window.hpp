@@ -91,9 +91,13 @@ public:
 
     [[nodiscard]] bool GetWindowFocus() const { return window_focus_; }
 
-//    virtual void SetIcon(const std::string& filePath, const std::string& smallIconFilePath = "") = 0;
+    virtual void SetIcon(const std::string& file_path, const std::string& small_icon_file_path = "") = 0;
 
     virtual void OnUpdate() = 0;
+
+    virtual void UpdateCursorImGui() = 0;
+
+    virtual void HideMouse(bool hide) {};
 
     virtual void SetEventCallback(const EventCallbackFn& callback) = 0;
 

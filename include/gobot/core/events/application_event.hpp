@@ -14,7 +14,9 @@ namespace gobot {
 class GOBOT_EXPORT WindowResizeEvent : public Event {
     GOBCLASS(WindowResizeEvent, Event)
 public:
-    WindowResizeEvent(unsigned int width, unsigned int height);
+    WindowResizeEvent(std::uint32_t width, std::uint32_t height);
+
+    WindowResizeEvent(std::uint32_t width, std::uint32_t height, float dpi_scale);
 
     [[nodiscard]] FORCE_INLINE unsigned int GetWidth() const { return width_; }
 
@@ -26,8 +28,9 @@ public:
     EVENT_CLASS_CATEGORY(EventCategoryApplication)
 
 private:
-    unsigned int width_;
-    unsigned int height_;
+    std::uint32_t width_;
+    std::uint32_t height_;
+    float dpi_scale_;
 };
 
 class GOBOT_EXPORT WindowCloseEvent : public Event {
@@ -37,6 +40,21 @@ public:
 
     EVENT_CLASS_TYPE(WindowClose)
     EVENT_CLASS_CATEGORY(EventCategoryApplication)
+};
+
+class GOBOT_EXPORT WindowFileEvent : public Event {
+    GOBCLASS(WindowFileEvent, Event)
+public:
+    explicit WindowFileEvent(String file_path);
+
+    [[nodiscard]] FORCE_INLINE const String& GetFilePath() const { return file_path_; }
+
+    [[nodiscard]] String ToString() const override;
+
+    EVENT_CLASS_TYPE(WindowFile)
+    EVENT_CLASS_CATEGORY(EventCategoryApplication)
+private:
+    String file_path_;
 };
 
 class GOBOT_EXPORT AppTickEvent : public Event {

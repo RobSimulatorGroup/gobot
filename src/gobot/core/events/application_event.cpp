@@ -6,15 +6,34 @@
 */
 
 #include "gobot/core/events/application_event.hpp"
+
+#include <utility>
 #include "gobot/log.hpp"
 
 namespace gobot {
 
 
-WindowResizeEvent::WindowResizeEvent(unsigned int width, unsigned int height)
+WindowResizeEvent::WindowResizeEvent(std::uint32_t width, std::uint32_t height)
     : width_(width),
-      height_(height)
+      height_(height),
+      dpi_scale_(1.0)
 {
+}
+
+WindowResizeEvent::WindowResizeEvent(std::uint32_t width, std::uint32_t height, float dpi_scale)
+    : width_(width),
+      height_(height),
+      dpi_scale_(dpi_scale)
+{
+}
+
+WindowFileEvent::WindowFileEvent(String file_path)
+    : file_path_(std::move(file_path))
+{
+}
+
+String WindowFileEvent::ToString() const {
+    return fmt::format("WindowFileEvent: {}", file_path_).c_str();
 }
 
 String WindowResizeEvent::ToString() const

@@ -114,6 +114,7 @@ target_link_libraries(gobot
     PUBLIC
     RTTR::Core
     OpenGL::GL
+    imgui
     ${CONAN_LIBS}
 )
 
