@@ -99,6 +99,8 @@ public:
 
     virtual void HideMouse(bool hide) {};
 
+    virtual void SetMousePosition(const Eigen::Vector2f& pos) {};
+
     virtual void SetEventCallback(const EventCallbackFn& callback) = 0;
 
 protected:

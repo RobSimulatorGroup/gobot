@@ -13,8 +13,9 @@ namespace gobot {
 Input *Input::s_singleton = nullptr;
 
 Input::Input()
-    :  mouse_mode_(MouseMode::Visible)
 {
+    s_singleton = this;
+    Reset();
 }
 
 void Input::Reset()
@@ -83,7 +84,8 @@ bool Input::OnMouseScrolled(MouseScrolledEvent& e)
 
 bool Input::OnMouseMoved(MouseMovedEvent& e)
 {
-    StoreMousePosition(e.GetX(), e.GetY());
+    mouse_position_.x() = e.GetX();
+    mouse_position_.y() = e.GetY();
     return false;
 }
 

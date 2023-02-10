@@ -54,7 +54,7 @@ public:
 
     float GetScrollOffset() const { return scroll_offset_; }
 
-    void StoreMousePosition(float xpos, float ypos) { mouse_position_ = Eigen::Vector2f(xpos, ypos); }
+    void StoreMousePosition(Eigen::Vector2f pos) { mouse_position_ = std::move(pos); }
 
     const Eigen::Vector2f& GetMousePosition() const { return mouse_position_; }
 
@@ -96,12 +96,12 @@ private:
     bool mouse_held_[static_cast<MouseKeyCodeUInt>(MouseKeyCode::MaxButton)];
     bool mouse_clicked_[static_cast<MouseKeyCodeUInt>(MouseKeyCode::MaxButton)];
 
-    float scroll_offset_ = 0.0f;
+    float scroll_offset_{0.0f};
 
-    bool mouse_on_screen_;
-    MouseMode mouse_mode_;
+    bool mouse_on_screen_{true};
+    MouseMode mouse_mode_{MouseMode::Visible};
 
-    Eigen::Vector2f mouse_position_;
+    Eigen::Vector2f mouse_position_{0.0, 0.0};
 };
 
 }

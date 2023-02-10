@@ -12,6 +12,7 @@
 #include "gobot/core/events/mouse_event.hpp"
 #include "gobot/platform/glfw/glfw_keycodes.hpp"
 #include "gobot/graphics/RHI/graphics_context.hpp"
+#include "gobot/core/window/input.hpp"
 #include "gobot/log.hpp"
 #include "gobot/error_macros.hpp"
 
@@ -281,6 +282,13 @@ void GLFWWindow::HideMouse(bool hide)
     } else {
         glfwSetInputMode(native_handle_, GLFW_CURSOR, GLFW_CURSOR_NORMAL);
     }
+}
+
+
+void GLFWWindow::SetMousePosition(const Eigen::Vector2f& pos)
+{
+    Input::GetInstance()->StoreMousePosition(pos);
+    glfwSetCursorPos(native_handle_, pos.x(), pos.y());
 }
 
 void GLFWWindow::SetWindowTitle(const String& title) {

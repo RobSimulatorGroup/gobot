@@ -59,6 +59,8 @@ public:
 
     void HideMouse(bool hide) override;
 
+    void SetMousePosition(const Eigen::Vector2f& pos);
+
 private:
     bool Init(const WindowDesc& properties);
 
