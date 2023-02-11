@@ -55,12 +55,12 @@ class Matrix;
   template <typename Type>                             \
   using RowVector##SizeSuffix = Matrix<Type, 1, Size>;
 
-#define GOBOT_MATRIX_MAKE_FIXED_TYPEDEFS(Size)         \
-  template <typename Type>                             \
-  using Matrix##Size##X = Matrix<Type, Size, Dynamic>; \
-                                                       \
-  template <typename Type>                             \
-  using Matrix##X##Size = Matrix<Type, Dynamic, Size>;
+#define GOBOT_MATRIX_MAKE_FIXED_TYPEDEFS(Size)                \
+  template <typename Type>                                    \
+  using Matrix##Size##X = Matrix<Type, Size, Eigen::Dynamic>; \
+                                                              \
+  template <typename Type>                                    \
+  using Matrix##X##Size = Matrix<Type, Eigen::Dynamic, Size>;
 
 GOBOT_MATRIX_MAKE_TYPEDEFS(2, 2)
 GOBOT_MATRIX_MAKE_TYPEDEFS(3, 3)
@@ -69,9 +69,9 @@ GOBOT_MATRIX_MAKE_TYPEDEFS(5, 5)
 GOBOT_MATRIX_MAKE_TYPEDEFS(6, 6)
 GOBOT_MATRIX_MAKE_TYPEDEFS(7, 7)
 GOBOT_MATRIX_MAKE_TYPEDEFS(Eigen::Dynamic, X)
-//GOBOT_MATRIX_MAKE_FIXED_TYPEDEFS(2)
-//GOBOT_MATRIX_MAKE_FIXED_TYPEDEFS(3)
-//GOBOT_MATRIX_MAKE_FIXED_TYPEDEFS(4)
+GOBOT_MATRIX_MAKE_FIXED_TYPEDEFS(2)
+GOBOT_MATRIX_MAKE_FIXED_TYPEDEFS(3)
+GOBOT_MATRIX_MAKE_FIXED_TYPEDEFS(4)
 
 #undef GOBOT_MATRIX_MAKE_TYPEDEFS
 #undef GOBOT_MATRIX_MAKE_FIXED_TYPEDEFS
