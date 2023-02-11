@@ -17,7 +17,10 @@ class GobotConan(ConanFile):
         self.requires("gtest/1.12.1")
         self.requires("magic_enum/0.8.1")
         self.requires("glad/0.1.36")
-        self.requires("glfw/3.3.8")
+        self.requires("openssl/1.1.1s") # conflict with sdl
+        self.requires("sdl/2.26.1")
+        self.requires("sdl_image/2.0.5")
+        self.requires("libpng/1.6.38")
 
     def configure(self):
         self.options['glad'].spec = 'gl'

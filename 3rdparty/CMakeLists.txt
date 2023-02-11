@@ -13,8 +13,8 @@ add_library(imgui
         imgui/imstb_truetype.h
         imgui/backends/imgui_impl_opengl3.cpp
         imgui/backends/imgui_impl_opengl3.h
-        imgui/backends/imgui_impl_glfw.cpp
-        imgui/backends/imgui_impl_glfw.h
+        imgui/backends/imgui_impl_sdl.h
+        imgui/backends/imgui_impl_sdl.cpp
         )
 
 
@@ -23,5 +23,5 @@ add_library(imgui
 target_include_directories(imgui PUBLIC imgui imgui/backends)
 
 find_package(OpenGL REQUIRED)
-add_executable(imgui_glfw_opengl3_example imgui/examples/example_glfw_opengl3/main.cpp)
-target_link_libraries(imgui_glfw_opengl3_example imgui ${CONAN_LIBS} OpenGL::GL)
+add_executable(imgui_sdl_opengl3_example imgui/examples/example_sdl_opengl3/main.cpp)
+target_link_libraries(imgui_sdl_opengl3_example imgui ${CONAN_LIBS} OpenGL::GL)

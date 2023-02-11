@@ -39,16 +39,17 @@ String MouseScrolledEvent::ToString() const
 
 /////////////////////////////////////////////////////////////////////////
 
-MouseButtonEvent::MouseButtonEvent(MouseKeyCode button)
-    : button_(button)
+MouseButtonEvent::MouseButtonEvent(MouseButton button, MouseButtonClickMode click_mode)
+    : button_(button),
+      click_mode_(click_mode)
 {
 }
 
 /////////////////////////////////////////////////////////////////////////
 
 
-MouseButtonPressedEvent::MouseButtonPressedEvent(MouseKeyCode button)
-    : MouseButtonEvent(button)
+MouseButtonPressedEvent::MouseButtonPressedEvent(MouseButton button, MouseButtonClickMode click_mode)
+    : MouseButtonEvent(button, click_mode)
 {
 }
 
@@ -59,8 +60,8 @@ String MouseButtonPressedEvent::ToString() const
 
 //////////////////////////////////////////////////////////////////////
 
-MouseButtonReleasedEvent::MouseButtonReleasedEvent(MouseKeyCode button)
-    : MouseButtonEvent(button)
+MouseButtonReleasedEvent::MouseButtonReleasedEvent(MouseButton button, MouseButtonClickMode click_mode)
+    : MouseButtonEvent(button, click_mode)
 {
 }
 

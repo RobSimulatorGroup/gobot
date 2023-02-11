@@ -9,6 +9,7 @@
 
 #include "gobot/core/object.hpp"
 #include "gobot/core/os/keycodes.hpp"
+#include "gobot/core/os/mouse_button.hpp"
 #include "gobot/core/events/event.hpp"
 #include "gobot/core/events/key_event.hpp"
 #include "gobot/core/events/mouse_event.hpp"
@@ -32,7 +33,7 @@ class Input : public Object {
 
 public:
     using KeyCodeUInt = std::underlying_type_t<KeyCode>;
-    using MouseKeyCodeUInt = std::underlying_type_t<MouseKeyCode>;
+    using MouseButtonUInt = std::underlying_type_t<MouseButton>;
 
     Input();
 
@@ -46,9 +47,9 @@ public:
 
     FORCE_INLINE void SetKeyHeld(KeyCode key, bool held) { key_held_[KeyCodeUInt(key)] = held; }
 
-    void SetMouseClicked(MouseKeyCode key, bool clicked) { mouse_clicked_[MouseKeyCodeUInt(key)] = clicked; }
+    void SetMouseClicked(MouseButton key, bool clicked) { mouse_clicked_[MouseButtonUInt(key)] = clicked; }
 
-    void SetMouseHeld(MouseKeyCode key, bool held) { mouse_held_[MouseKeyCodeUInt(key)] = held; }
+    void SetMouseHeld(MouseButton key, bool held) { mouse_held_[MouseButtonUInt(key)] = held; }
 
     void SetScrollOffset(float offset) { scroll_offset_ = offset; }
 
@@ -90,11 +91,11 @@ private:
 
     mutable std::mutex mutex_;
 
-    bool key_pressed_[static_cast<KeyCodeUInt>(KeyCode::MaxKey)];
-    bool key_held_[static_cast<KeyCodeUInt>(KeyCode::MaxKey)];
+    bool key_pressed_[static_cast<KeyCodeUInt>(KeyCode::KeyCodeMaxNum)];
+    bool key_held_[static_cast<KeyCodeUInt>(KeyCode::KeyCodeMaxNum)];
 
-    bool mouse_held_[static_cast<MouseKeyCodeUInt>(MouseKeyCode::MaxButton)];
-    bool mouse_clicked_[static_cast<MouseKeyCodeUInt>(MouseKeyCode::MaxButton)];
+    bool mouse_held_[static_cast<MouseButtonUInt>(MouseButton::ButtonMaxNum)];
+    bool mouse_clicked_[static_cast<MouseButtonUInt>(MouseButton::ButtonMaxNum)];
 
     float scroll_offset_{0.0f};
 

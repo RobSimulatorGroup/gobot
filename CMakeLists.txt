@@ -89,12 +89,13 @@ add_subdirectory(3rdparty)
 
 file(GLOB_RECURSE SOURCE_CORE CONFIGURE_DEPENDS "src/gobot/core/*.cpp")
 file(GLOB_RECURSE SOURCE_SCENE CONFIGURE_DEPENDS "src/gobot/scene/*.cpp")
-file(GLOB_RECURSE SOURCE_PLATFORM CONFIGURE_DEPENDS "src/gobot/platform/*.cpp")
+file(GLOB_RECURSE SOURCE_DRIVERS CONFIGURE_DEPENDS "src/gobot/drivers/*.cpp")
 file(GLOB_RECURSE SOURCE_EDITOR CONFIGURE_DEPENDS "src/gobot/editor/*.cpp")
+file(GLOB_RECURSE SOURCE_MAIN CONFIGURE_DEPENDS "src/gobot/main/*.cpp")
 file(GLOB_RECURSE HEADER_FILES CONFIGURE_DEPENDS "include/*hpp")
 
 # https://github.com/bincrafters/community/issues/466#issuecomment-426265654
-add_library(gobot SHARED ${SOURCE_PLATFORM} ${SOURCE_CORE} ${SOURCE_SCENE} ${SOURCE_EDITOR} ${HEADER_FILES})
+add_library(gobot SHARED ${SOURCE_DRIVERS} ${SOURCE_MAIN} ${SOURCE_CORE} ${SOURCE_SCENE} ${SOURCE_EDITOR} ${HEADER_FILES})
 if (CMAKE_CXX_COMPILER_ID STREQUAL "MSVC")
     target_compile_options(gobot PUBLIC "/Zc:preprocessor")
 elseif (CMAKE_CXX_COMPILER_ID STREQUAL "GNU")
@@ -128,8 +129,9 @@ set_target_properties(gobot
     AUTOUIC ON
 )
 
-add_executable(gobot_editor src/main.cpp)
+add_executable(gobot_editor src/gobot/platform/linux/gobot_linux.cpp)
 if (MSVC)
+    add_executable(gobot_editor src/gobot/platform/windows/godot_windows.cpp)
     target_compile_options(gobot_editor PUBLIC "/Zc:preprocessor")
 endif ()
 target_link_libraries(gobot_editor

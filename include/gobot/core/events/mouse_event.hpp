@@ -8,6 +8,7 @@
 #pragma once
 
 #include "gobot/core/os/keycodes.hpp"
+#include "gobot/core/os/mouse_button.hpp"
 #include "gobot/core/events/event.hpp"
 
 namespace gobot {
@@ -53,21 +54,21 @@ private:
 class GOBOT_EXPORT MouseButtonEvent : public Event {
     GOBCLASS(MouseButtonEvent, Event)
 public:
-    explicit MouseButtonEvent(MouseKeyCode button);
+    explicit MouseButtonEvent(MouseButton button, MouseButtonClickMode click_mode);
 
-    [[nodiscard]] FORCE_INLINE MouseKeyCode GetMouseButton() const { return button_; }
+    [[nodiscard]] FORCE_INLINE MouseButton GetMouseButton() const { return button_; }
 
     EVENT_CLASS_CATEGORY(EventCategoryMouse | EventCategoryInput | EventCategoryMouseButton)
 
 protected:
-
-    MouseKeyCode button_;
+    MouseButton button_;
+    MouseButtonClickMode click_mode_;
 };
 
 class GOBOT_EXPORT MouseButtonPressedEvent : public MouseButtonEvent {
     GOBCLASS(MouseButtonPressedEvent, MouseButtonEvent)
 public:
-    explicit MouseButtonPressedEvent(MouseKeyCode button);
+    explicit MouseButtonPressedEvent(MouseButton button, MouseButtonClickMode = MouseButtonClickMode::Single);
 
     [[nodiscard]] String ToString() const override;
 
@@ -77,7 +78,7 @@ public:
 class GOBOT_EXPORT MouseButtonReleasedEvent : public MouseButtonEvent {
     GOBCLASS(MouseButtonReleasedEvent, MouseButtonEvent)
 public:
-    explicit MouseButtonReleasedEvent(MouseKeyCode button);
+    explicit MouseButtonReleasedEvent(MouseButton button, MouseButtonClickMode = MouseButtonClickMode::Single);
 
     [[nodiscard]] String ToString() const override;
 

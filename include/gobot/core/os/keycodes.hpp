@@ -11,157 +11,318 @@
 
 namespace gobot {
 
+// From SDL_scancode.h
 enum class KeyCode : std::uint32_t {
-    // From glfw3.h
-    Space      = 32,
-    Apostrophe = 39, /* ' */
-    Comma      = 44, /* , */
-    Minus      = 45, /* - */
-    Period     = 46, /* . */
-    Slash      = 47, /* / */
+    Unknown     = 0,
 
-    D0 = 48, /* 0 */
-    D1 = 49, /* 1 */
-    D2 = 50, /* 2 */
-    D3 = 51, /* 3 */
-    D4 = 52, /* 4 */
-    D5 = 53, /* 5 */
-    D6 = 54, /* 6 */
-    D7 = 55, /* 7 */
-    D8 = 56, /* 8 */
-    D9 = 57, /* 9 */
+    A           = 4,
+    B           = 5,
+    C           = 6,
+    D           = 7,
+    E           = 8,
+    F           = 9,
+    G           = 10,
+    H           = 11,
+    I           = 12,
+    J           = 13,
+    K           = 14,
+    L           = 15,
+    M           = 16,
+    N           = 17,
+    O           = 18,
+    P           = 19,
+    Q           = 20,
+    R           = 21,
+    S           = 22,
+    T           = 23,
+    U           = 24,
+    V           = 25,
+    W           = 26,
+    X           = 27,
+    Y           = 28,
+    Z           = 29,
 
-    Semicolon = 59, /* ; */
-    Equal     = 61, /* = */
+    D1          = 30, /* 1 */
+    D2          = 31, /* 2 */
+    D3          = 32, /* 3 */
+    D4          = 33, /* 4 */
+    D5          = 34, /* 5 */
+    D6          = 35, /* 6 */
+    D7          = 36, /* 7 */
+    D8          = 37, /* 8 */
+    D9          = 38, /* 9 */
+    D0          = 39, /* 0 */
 
-    A = 65,
-    B = 66,
-    C = 67,
-    D = 68,
-    E = 69,
-    F = 70,
-    G = 71,
-    H = 72,
-    I = 73,
-    J = 74,
-    K = 75,
-    L = 76,
-    M = 77,
-    N = 78,
-    O = 79,
-    P = 80,
-    Q = 81,
-    R = 82,
-    S = 83,
-    T = 84,
-    U = 85,
-    V = 86,
-    W = 87,
-    X = 88,
-    Y = 89,
-    Z = 90,
+    Enter       = 40,
+    Escape      = 41,
+    Backspace   = 42,
+    Tab         = 43,
+    Space       = 44,
 
-    LeftBracket  = 91, /* [ */
-    Backslash    = 92, /* \ */
-    RightBracket = 93, /* ] */
-    GraveAccent  = 96, /* ` */
+    Minus       = 45,  /* - */
+    Equal       = 46,  /* = */
+    LeftBracket = 47,  /* [ */
+    RightBracket = 48, /* ] */
+    Backslash   = 49,  /* \ */
+    Nonushash   = 50,
+    Semicolon   = 51,  /* ; */
+    Apostrophe  = 52,  /* ' */
+    GraveAccent = 53,  /* ` */
+    Comma       = 54,  /* , */
+    Period      = 55,  /* . */
+    Slash       = 56,  /* / */
 
-    World1 = 161, /* non-US #1 */
-    World2 = 162, /* non-US #2 */
+    CapsLock    = 57,
 
-    /* Function keys */
-    Escape      = 256,
-    Enter       = 257,
-    Tab         = 258,
-    Backspace   = 259,
-    Insert      = 260,
-    Delete      = 261,
-    Right       = 262,
-    Left        = 263,
-    Down        = 264,
-    Up          = 265,
-    PageUp      = 266,
-    PageDown    = 267,
-    Home        = 268,
-    End         = 269,
-    CapsLock    = 280,
-    ScrollLock  = 281,
-    NumLock     = 282,
-    PrintScreen = 283,
-    Pause       = 284,
-    F1          = 290,
-    F2          = 291,
-    F3          = 292,
-    F4          = 293,
-    F5          = 294,
-    F6          = 295,
-    F7          = 296,
-    F8          = 297,
-    F9          = 298,
-    F10         = 299,
-    F11         = 300,
-    F12         = 301,
-    F13         = 302,
-    F14         = 303,
-    F15         = 304,
-    F16         = 305,
-    F17         = 306,
-    F18         = 307,
-    F19         = 308,
-    F20         = 309,
-    F21         = 310,
-    F22         = 311,
-    F23         = 312,
-    F24         = 313,
-    F25         = 314,
+    F1          = 58,
+    F2          = 59,
+    F3          = 60,
+    F4          = 61,
+    F5          = 62,
+    F6          = 63,
+    F7          = 64,
+    F8          = 65,
+    F9          = 66,
+    F10         = 67,
+    F11         = 68,
+    F12         = 69,
 
-    /* Keypad */
-    KP0        = 320,
-    KP1        = 321,
-    KP2        = 322,
-    KP3        = 323,
-    KP4        = 324,
-    KP5        = 325,
-    KP6        = 326,
-    KP7        = 327,
-    KP8        = 328,
-    KP9        = 329,
-    KPDecimal  = 330,
-    KPDivide   = 331,
-    KPMultiply = 332,
-    KPSubtract = 333,
-    KPAdd      = 334,
-    KPEnter    = 335,
-    KPEqual    = 336,
+    PrintScreen = 70,
+    ScrollLock  = 71,
+    Pause       = 72,
+    Insert      = 73,
 
-    LeftShift    = 340,
-    LeftControl  = 341,
-    LeftAlt      = 342,
-    LeftSuper    = 343,
-    RightShift   = 344,
-    RightControl = 345,
-    RightAlt     = 346,
-    RightSuper   = 347,
-    Menu         = 348,
-    KeyLast = Menu,
-    MaxKey
+    Home        = 74,
+    PageUp      = 75,
+    Delete      = 76,
+    End         = 77,
+    PageDown    = 78,
+    Right       = 79,
+    Left        = 80,
+    Down        = 81,
+    Up          = 82,
+    NumLock     = 83, /**< num lock on PC, clear on Mac keyboards> **/
+
+    KP_Divide    = 84,
+    KP_Multiply  = 85,
+    KP_Minus     = 86,
+    KP_Plus      = 87,
+    KP_Enter     = 88,
+    KP_1         = 89,
+    KP_2         = 90,
+    KP_3         = 91,
+    KP_4         = 92,
+    KP_5         = 93,
+    KP_6         = 94,
+    KP_7         = 95,
+    KP_8         = 96,
+    KP_9         = 97,
+    KP_0         = 98,
+    KP_Period    = 99,
+
+    NonusBackSlash = 100,
+    Application = 101,
+    Power       = 102,
+    KPEquals    = 103,
+    F13         = 104,
+    F14         = 105,
+    F15         = 106,
+    F16         = 107,
+    F17         = 108,
+    F18         = 109,
+    F19         = 110,
+    F20         = 111,
+    F21         = 112,
+    F22         = 113,
+    F23         = 114,
+    F24         = 115,
+    Execute     = 116,
+    Help        = 117,    /**< AL Integrated Help Center */
+    Menu        = 118,    /**< Menu (show menu) */
+    Select      = 119,
+    Stop        = 120,    /**< AC Stop */
+    Again       = 121,   /**< AC Redo/Repeat */
+    Undo        = 122,    /**< AC Undo */
+    Cut         = 123,     /**< AC Cut */
+    Copy        = 124,    /**< AC Copy */
+    Paste       = 125,   /**< AC Paste */
+    Find        = 126,    /**< AC Find */
+    Mute        = 127,
+    VolumeUp    = 128,
+    VolumeDown  = 129,
+    /* not sure whether there's a reason to enable these */
+/*     SDL_SCANCODE_LOCKINGCAPSLOCK = 130,  */
+/*     SDL_SCANCODE_LOCKINGNUMLOCK = 131, */
+/*     SDL_SCANCODE_LOCKINGSCROLLLOCK = 132, */
+    KP_Comma        = 133,
+    KP_Equalsas400  = 134,
+
+    International1 = 135, /**< used on Asian keyboards, see
+                                            footnotes in USB doc */
+    International2 = 136,
+    International3 = 137, /**< Yen */
+    International4 = 138,
+    International5 = 139,
+    International6 = 140,
+    International7 = 141,
+    International8 = 142,
+    International9 = 143,
+    Lang1          = 144, /**< Hangul/English toggle */
+    Lang2          = 145, /**< Hanja conversion */
+    Lang3          = 146, /**< Katakana */
+    Lang4          = 147, /**< Hiragana */
+    Lang5          = 148, /**< Zenkaku/Hankaku */
+    Lang6          = 149, /**< reserved */
+    Lang7          = 150, /**< reserved */
+    Lang8          = 151, /**< reserved */
+    Lang9          = 152, /**< reserved */
+
+    AltErase       = 153,    /**< Erase-Eaze */
+    SysReq         = 154,
+    Cancel         = 155,      /**< AC Cancel */
+    Clear          = 156,
+    Prior          = 157,
+    Enter2         = 158,
+    Separator      = 159,
+    Out            = 160,
+    Oper           = 161,
+    ClearAgain     = 162,
+    Crsel          = 163,
+    Exsel          = 164,
+
+    KP_00               = 176,
+    KP_000              = 177,
+    ThousandsSeparator  = 178,
+    DecimalSeparator    = 179,
+    CurrencyUnit        = 180,
+    CurrencySubunit     = 181,
+    KP_LeftParen        = 182,
+    KP_RightParen       = 183,
+    KP_LeftBrace        = 184,
+    KP_RightBrace       = 185,
+    KP_Tab              = 186,
+    KP_BackSpace        = 187,
+    KP_A                = 188,
+    KP_B                = 189,
+    KP_C                = 190,
+    KP_D                = 191,
+    KP_E                = 192,
+    KP_F                = 193,
+    KP_Xor              = 194,
+    KP_Power            = 195,
+    KP_Percent          = 196,
+    KP_Less             = 197,
+    KP_Greater          = 198,
+    KP_Ampersand        = 199,
+    KP_DBLAmpersand     = 200,
+    KP_VerticalBar      = 201,
+    KP_DBLVerticalBar   = 202,
+    KP_Colon            = 203,
+    KP_Hash             = 204,
+    KP_Space            = 205,
+    KP_At               = 206,
+    KP_Exclam           = 207,
+    KP_MemStore         = 208,
+    KP_MemRecall        = 209,
+    KP_MemClear         = 210,
+    KP_MemAdd           = 211,
+    KP_MemSubtract      = 212,
+    KP_MemMultiply      = 213,
+    KP_MemDivide        = 214,
+    KP_PlusMinus        = 215,
+    KP_Clear            = 216,
+    KP_ClearEntry       = 217,
+    KP_Binary           = 218,
+    KP_Octal            = 219,
+    KP_Decimal          = 220,
+    KP_Hexadeciaml      = 221,
+
+    LeftCtrl            = 224,
+    LeftShift           = 225,
+    LeftAlt             = 226, /**< alt, option */
+    LeftSuper           = 227, /**< windows, command (apple), meta */
+    RightCtrl           = 228,
+    RightShift          = 229,
+    RightAlt            = 230, /**< alt gr, option */
+    RightSuper          = 231, /**< windows, command (apple), meta */
+
+    Mode = 257,        /**< I'm not sure if this is really not covered
+                                 *   by any of the above, but since there's a
+                                 *   special KMOD_MODE for it I'm adding it here
+                                 */
+
+    AudioNext           = 258,
+    AudioPrev           = 259,
+    AudioStop           = 260,
+    AudioPlay           = 261,
+    AudioMute           = 262,
+    MediaSelect         = 263,
+    WWW                 = 264,             /**< AL Internet Browser */
+    Mail                = 265,
+    Calculator          = 266,      /**< AL Calculator */
+    Computer            = 267,
+    AC_Search           = 268,       /**< AC Search */
+    AC_Home             = 269,         /**< AC Home */
+    AC_Back             = 270,         /**< AC Back */
+    AC_Forward          = 271,      /**< AC Forward */
+    AC_Stop             = 272,         /**< AC Stop */
+    AC_Refresh          = 273,      /**< AC Refresh */
+    AC_BookMarks        = 274,    /**< AC Bookmarks */
+
+    BrightNessDown      = 275,
+    BrightNessUp        = 276,
+    DisplaySwitch       = 277, /**< display mirroring/dual display
+                                           switch, video mode switch */
+    KBDILLUMToggle      = 278,
+    KBDILLUMDown        = 279,
+    KBDILLUMUp          = 280,
+    Eject               = 281,
+    Sleep               = 282,           /**< SC System Sleep */
+
+    APP1                = 283,
+    APP2                = 284,
+
+    AudioRewind         = 285,
+    AudioFastForward    = 286,
+
+    SoftLeft            = 287, /**< Usually situated below the display on phones and
+                                      used as a multi-function feature key for selecting
+                                      a software defined function shown on the bottom left
+                                      of the display. */
+    SoftRight           = 288, /**< Usually situated below the display on phones and
+                                       used as a multi-function feature key for selecting
+                                       a software defined function shown on the bottom right
+                                       of the display. */
+    Call                = 289, /**< Used for accepting phone calls. */
+    EndCall             = 290, /**< Used for rejecting phone calls. */
+
+    /* @} *//* Mobile keys */
+
+    /* Add any other keys here. */
+
+    KeyCodeMaxNum = 512 /**< not a key, just marks the number of scancodes
+                                 for array bounds */
 };
 
-enum class MouseKeyCode : std::uint16_t
-{
-    Button1 = 0,
-    Button2 = 1,
-    Button3 = 2,
-    Button4 = 3,
-    Button5 = 4,
-    Button6 = 5,
-    Button7 = 6,
-    Button8 = 7,
-    ButtonLeft   = Button1,
-    ButtonMiddle = Button2,
-    ButtonRight  = Button3,
-    ButtonLast = Button8,
-    MaxButton
+enum class KeyModifiers {
+    None = 0x0000,
+    LeftShift = 0x0001,
+    RightShift = 0x0002,
+    LeftCtrl = 0x0040,
+    RightCtrl = 0x0080,
+    LeftAlt = 0x0100,
+    RightAlt = 0x0200,
+    LeftSuper = 0x0400,
+    RightSuper = 0x0800,
+    NumLock = 0x1000,
+    CapsLock = 0x2000,
+    Mode = 0x4000,
+    ScrollLock = 0x8000,
+
+    Ctrl = LeftShift | RightShift,
+    Shift = LeftShift | RightShift,
+    Alt = LeftAlt | RightAlt,
+    Super = LeftSuper | RightSuper
 };
 
-}
+} // end of namespace gobot
