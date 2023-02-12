@@ -7,12 +7,54 @@
 
 #pragma once
 
+#include "gobot/core/os/window.hpp"
+#include <Eigen/Dense>
+
+class SDL_Window;
+
 namespace gobot {
 
-class SDLWindow {
+class SDLWindow : public WindowInterface {
+public:
+    SDLWindow();
 
+    ~SDLWindow() override;
 
+    [[nodiscard]] std::uint32_t GetWidth() const override;
 
+    [[nodiscard]] std::uint32_t GetHeight() const override;
+
+    [[nodiscard]] Eigen::Vector2i GetWindowSize() const override;
+
+    [[nodiscard]] String GetTitle() const override;
+
+    void SetWindowTitle(const String& title) override;
+
+    [[nodiscard]] bool IsMaximized() override;
+
+    [[nodiscard]] bool IsMinimized() override;
+
+    void Maximize() override;
+
+    void Minimize() override;
+
+    void Restore() override;
+
+    void RaiseWindow() override;
+
+    virtual void SetIcon(const std::string& file_path, const std::string& small_icon_file_path = "") {};
+
+    void UpdateCursorImGui();
+
+    void OnUpdate();
+
+    [[nodiscard]] WindowHandle GetNativeWindowHandle() const override;
+
+private:
+//    void Init();
+
+    RenderAPI render_api_;
+    SDL_Window* native_window_{nullptr};
 };
 
 

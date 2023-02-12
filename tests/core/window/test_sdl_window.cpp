@@ -6,15 +6,10 @@
 */
 
 #include <gtest/gtest.h>
-#include <gobot/platform/glfw/glfw_window.hpp>
+#include <gobot/drivers/sdl/sdl_window.hpp>
 
 
-TEST(TestGLFWWindow, test_create) {
-    gobot::WindowDesc window_desc;
-//    window_desc.full_screen = true;
-//    window_desc.borderless = true;
-
-    auto* glfw_window = new gobot::GLFWWindow(window_desc);
-
+TEST(TestSDLWindow, test_create) {
+    auto* glfw_window = new gobot::SDLWindow();
     sleep(1000);
 }
