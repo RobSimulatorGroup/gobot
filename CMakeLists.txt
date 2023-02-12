@@ -94,7 +94,7 @@ file(GLOB_RECURSE HEADER_FILES CONFIGURE_DEPENDS "include/*hpp")
 # https://github.com/bincrafters/community/issues/466#issuecomment-426265654
 add_library(gobot SHARED ${SOURCE_CORE} ${SOURCE_SCENE} ${SOURCE_EDITOR} ${HEADER_FILES})
 if (CMAKE_CXX_COMPILER_ID STREQUAL "MSVC")
-    target_compile_options(gobot PUBLIC "/Zc:preprocessor")
+    target_compile_options(gobot PUBLIC "/Zc:preprocessor,__cplusplus")
 elseif (CMAKE_CXX_COMPILER_ID STREQUAL "GNU")
     target_compile_options(gobot PUBLIC "-fno-gnu-unique")
 endif ()

@@ -9,6 +9,7 @@
 #pragma once
 
 #include <Eigen/Dense>
+#include "gobot/core/math/math_defs.hpp"
 
 namespace gobot {
 
@@ -34,7 +35,6 @@ class Matrix : public Eigen::Matrix<_Scalar, _Rows, _Cols, _Options, _MaxRows,
   }
 };
 
-
 template <typename _Scalar, int _Rows, int _Cols,
           int _Options = Eigen::AutoAlign |
                          ((_Rows == 1 && _Cols != 1) ? Eigen::RowMajor
@@ -44,22 +44,21 @@ template <typename _Scalar, int _Rows, int _Cols,
           int _MaxRows = _Rows, int _MaxCols = _Cols>
 class Matrix;
 
-
 #define GOBOT_MATRIX_MAKE_TYPEDEFS(Size, SizeSuffix)   \
-  template <typename Type>                             \
+  template <typename Type = real_t>                    \
   using Matrix##SizeSuffix = Matrix<Type, Size, Size>; \
                                                        \
-  template <typename Type>                             \
+  template <typename Type = real_t>                    \
   using Vector##SizeSuffix = Matrix<Type, Size, 1>;    \
                                                        \
-  template <typename Type>                             \
+  template <typename Type = real_t>                    \
   using RowVector##SizeSuffix = Matrix<Type, 1, Size>;
 
 #define GOBOT_MATRIX_MAKE_FIXED_TYPEDEFS(Size)                \
-  template <typename Type>                                    \
+  template <typename Type = real_t>                           \
   using Matrix##Size##X = Matrix<Type, Size, Eigen::Dynamic>; \
                                                               \
-  template <typename Type>                                    \
+  template <typename Type = real_t>                           \
   using Matrix##X##Size = Matrix<Type, Eigen::Dynamic, Size>;
 
 GOBOT_MATRIX_MAKE_TYPEDEFS(2, 2)
