@@ -10,6 +10,6 @@
 
 
 TEST(TestSDLWindow, test_create) {
-    auto* glfw_window = new gobot::SDLWindow();
+    auto* sdl_window = new gobot::SDLWindow();
     sleep(1000);
 }

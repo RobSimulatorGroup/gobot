@@ -22,9 +22,8 @@ static const char* s_default_window_title = "Gobot";
 SDLWindow::SDLWindow()
     : render_api_(RenderAPI::OpenGL)
 {
-    Uint32 flags = SDL_WasInit(0);
-    if ((flags | SDL_INIT_VIDEO) && (flags | SDL_INIT_EVENTS) ) {
-        CRASH_COND_MSG(SDL_Init(SDL_INIT_VIDEO | SDL_INIT_EVENTS) < 0, "Could not initialize GLFW!");
+    if (SDL_WasInit(SDL_INIT_VIDEO) != SDL_INIT_VIDEO) {
+        CRASH_COND_MSG(SDL_Init(SDL_INIT_VIDEO) < 0, "Could not initialize SDL2!");
     }
 
     native_window_ = SDL_CreateWindow(s_default_window_title,
@@ -199,6 +198,13 @@ Eigen::Vector2i SDLWindow::GetWindowSize() const
     return {width, height};
 }
 
+bool SDLWindow::SetWindowFullscreen()
+{
+    auto ret = SDL_SetWindowFullscreen(native_window_, SDL_WINDOW_FULLSCREEN_DESKTOP);
+    ERR_FAIL_COND_V_MSG(ret != 0, false, fmt::format("Error creating window: {}", SDL_GetError()));
+    return true;
+}
+
 String SDLWindow::GetTitle() const {
     return SDL_GetWindowTitle(native_window_);
 }
@@ -222,6 +228,23 @@ bool SDLWindow::IsMinimized()
 {
     auto flag = SDL_GetWindowFlags(native_window_);
     return flag & SDL_WINDOW_MINIMIZED;
+}
+
+bool SDLWindow::IsFullscreen()
+{
+    auto flag = SDL_GetWindowFlags(native_window_);
+    return flag & SDL_WINDOW_FULLSCREEN_DESKTOP;
+}
+
+void SDLWindow::SetWindowBordered(bool bordered)
+{
+    SDL_SetWindowBordered(native_window_, bordered ? SDL_TRUE : SDL_FALSE);
+}
+
+bool SDLWindow::IsWindowBordered()
+{
+    auto flag = SDL_GetWindowFlags(native_window_);
+    return flag & SDL_WINDOW_BORDERLESS;
 }
 
 void SDLWindow::Maximize()

@@ -26,6 +26,14 @@ public:
 
     [[nodiscard]] Eigen::Vector2i GetWindowSize() const override;
 
+    [[nodiscard]] bool SetWindowFullscreen() override;
+
+    [[nodiscard]] bool IsFullscreen() override;
+
+    [[nodiscard]] bool IsWindowBordered() override;
+
+    void SetWindowBordered(bool bordered) override;
+
     [[nodiscard]] String GetTitle() const override;
 
     void SetWindowTitle(const String& title) override;

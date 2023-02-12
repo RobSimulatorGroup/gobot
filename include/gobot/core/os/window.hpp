@@ -32,6 +32,12 @@ public:
 
     virtual void SetWindowTitle(const String& title) = 0;
 
+    [[nodiscard]] virtual bool SetWindowFullscreen() = 0;
+
+    virtual void SetWindowBordered(bool bordered) = 0;
+
+    [[nodiscard]] virtual bool IsWindowBordered() = 0;
+
     [[nodiscard]] virtual WindowHandle GetNativeWindowHandle() const = 0;
 
     [[nodiscard]] virtual bool IsMaximized() = 0;
@@ -43,6 +49,8 @@ public:
     virtual void Maximize() = 0;
 
     virtual void Restore() = 0;
+
+    [[nodiscard]] virtual bool IsFullscreen() = 0;
 
     virtual void RaiseWindow() = 0;
 
