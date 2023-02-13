@@ -17,6 +17,11 @@ TEST(TestSDLWindow, test_create) {
     auto image = gobot::Image::LoadFromFile("icon.svg");
     auto* sdl_window = new gobot::SDLWindow();
     sdl_window->SetIcon(image);
+    sdl_window->Maximize();
+    //    sleep(10);
+    sdl_window->Minimize();
+    //    sleep(10);
+    sdl_window->Restore();
 
-    sleep(10);
+//    sleep(10);
 }

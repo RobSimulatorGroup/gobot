@@ -31,7 +31,7 @@ public:
 
     [[nodiscard]] virtual String GetTitle() const = 0;
 
-    virtual void SetWindowTitle(const String& title) = 0;
+    virtual void SetTitle(const String& title) = 0;
 
     [[nodiscard]] virtual bool SetWindowFullscreen() = 0;
 

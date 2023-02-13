@@ -210,7 +210,7 @@ String SDLWindow::GetTitle() const {
     return SDL_GetWindowTitle(native_window_);
 }
 
-void SDLWindow::SetWindowTitle(const String& title)
+void SDLWindow::SetTitle(const String& title)
 {
     SDL_SetWindowTitle(native_window_, title.toStdString().c_str());
 }

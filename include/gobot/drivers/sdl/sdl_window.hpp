@@ -37,18 +37,22 @@ public:
 
     [[nodiscard]] String GetTitle() const override;
 
-    void SetWindowTitle(const String& title) override;
+    void SetTitle(const String& title) override;
 
     [[nodiscard]] bool IsMaximized() override;
 
     [[nodiscard]] bool IsMinimized() override;
 
+    // Make a window as large as possible.
     void Maximize() override;
 
+    // Minimize a window to an iconic representation.
     void Minimize() override;
 
+    // Restore the size and position of a minimized or maximized window.
     void Restore() override;
 
+    // Raise a window above other windows and set the input focus.
     void RaiseWindow() override;
 
     void SetIcon(const Ref<Image>& image) override;
