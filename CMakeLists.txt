@@ -119,6 +119,13 @@ target_link_libraries(gobot
     ${CONAN_LIBS}
 )
 
+# copy icon to bin
+add_custom_command(
+        TARGET gobot POST_BUILD
+        COMMAND ${CMAKE_COMMAND} -E copy
+        ${CMAKE_CURRENT_SOURCE_DIR}/icon.svg
+        ${CMAKE_BINARY_DIR}/bin/icon.svg)
+
 set_target_properties(gobot
     PROPERTIES
     ARCHIVE_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/lib"

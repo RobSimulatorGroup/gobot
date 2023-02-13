@@ -14,9 +14,9 @@ TEST(TestSDLWindow, test_create) {
 
     auto ref = gobot::MakeRef<gobot::ResourceFormatLoaderSDLImage>();
 
-    auto image = gobot::Image::LoadFromFile("/home/wqq/gobot/icon.svg");
+    auto image = gobot::Image::LoadFromFile("icon.svg");
     auto* sdl_window = new gobot::SDLWindow();
     sdl_window->SetIcon(image);
 
-    sleep(1000);
+    sleep(10);
 }
