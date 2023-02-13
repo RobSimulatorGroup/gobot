@@ -9,30 +9,16 @@
 #pragma once
 
 #include <Eigen/Dense>
+
 #include "gobot/core/math/math_defs.hpp"
 
 namespace gobot {
 
-template <typename _Scalar, int _Rows, int _Cols, int _Options, int _MaxRows,
-          int _MaxCols>
-class Matrix : public Eigen::Matrix<_Scalar, _Rows, _Cols, _Options, _MaxRows,
-                                    _MaxCols> {
- public:
-  constexpr size_t GetCols() const {
-    if (std::is_constant_evaluated()) {
-      return _Cols;
-    } else {
-      return this->cols();
-    }
-  }
-
-  constexpr size_t GetRows() const {
-    if (std::is_constant_evaluated()) {
-      return _Rows;
-    } else {
-      return this->rows();
-    }
-  }
+template <typename _Scalar, int _Options, int _MaxRows, int _MaxCols>
+struct MatrixData {
+  int rows;
+  int cols;
+  std::vector<_Scalar> storage;
 };
 
 template <typename _Scalar, int _Rows, int _Cols,
@@ -42,7 +28,25 @@ template <typename _Scalar, int _Rows, int _Cols,
                               ? Eigen::ColMajor
                               : EIGEN_DEFAULT_MATRIX_STORAGE_ORDER_OPTION),
           int _MaxRows = _Rows, int _MaxCols = _Cols>
-class Matrix;
+class Matrix : public Eigen::Matrix<_Scalar, _Rows, _Cols, _Options, _MaxRows,
+                                    _MaxCols> {
+ public:
+  MatrixData<_Scalar, _Options, _MaxRows, _MaxCols> GetMatrixData() const {
+    if constexpr (_Rows != Eigen::Dynamic && _Cols != Eigen::Dynamic) {
+      return {this->RowsAtCompileTime,
+              this->ColsAtCompileTime,
+              {this->data(), this->data() + this->SizeAtCompileTime}};
+    } else {
+      return {this->rows(),
+              this->cols(),
+              {this->data(), this->data() + this->size()}};
+    }
+  }
+
+  void SetMatrixData(
+      MatrixData<_Scalar, _Options, _MaxRows, _MaxCols> data) {
+  }
+};
 
 #define GOBOT_MATRIX_MAKE_TYPEDEFS(Size, SizeSuffix)   \
   template <typename Type = real_t>                    \

@@ -11,18 +11,5 @@
 #include <gobot/core/math/matrix.hpp>
 
 TEST(TestMatrix, test_constructor) { 
-   gobot::Matrix3 a;
-    std::cerr << "\n------------------------------------------" << std::endl;
-    if (__cplusplus == 202002L)
-      std::cerr << "C++20\n";
-    else if (__cplusplus == 201703L)
-      std::cerr << "C++17\n";
-    else if (__cplusplus == 201402L)
-      std::cerr << "C++14\n";
-    else if (__cplusplus == 201103L)
-      std::cerr << "C++11\n";
-    else if (__cplusplus == 199711L)
-      std::cerr << "C++98\n";
-    else
-      std::cerr << "pre-standard C++\n";
+   gobot::Matrix3<> a;
 }

@@ -9,6 +9,8 @@
 
 #pragma once
 
+namespace gobot {
+
 #define CMP_EPSILON 0.00001
 #define CMP_EPSILON2 (CMP_EPSILON * CMP_EPSILON)
 
@@ -91,3 +93,4 @@ using real_t = double;
 #else
 using real_t = float;
 #endif
+};  // namespace gobot

@@ -11,10 +11,17 @@
 #include "gobot/core/registration.hpp"
 
 GOBOT_REGISTRATION {
-  Matrix3<> a;
-  a = Matrix3<float>();
-  //Class_<Matrix3d>("Matrix3d").constructor()(CtorAsObject);
-  //    //.property("resource_name", &MatrixXd::GetName, &MatrixXd::SetName)
-  //    //.property("resource_path", &MatrixXd::GetPath,
-  //    //          &MatrixXd::SetPathNotTakeOver);
+  //Class_<MatrixShape>("MatrixShape")
+  //    .constructor()(CtorAsObject)
+  //    .property("rows", &MatrixShape::rows)
+  //    .property("cols", &MatrixShape::cols);
+
+  //Matrix3<> a;
+  //Class_<Matrix3<>>("Matrix3")
+  //    .constructor()(CtorAsObject)
+  //    .property("matrix_shape", &Matrix3<>::GetMatrixShape,
+  //              &Matrix3<>::SetMatrixShape);
+      //.property("resource_name", &MatrixXd::GetName, &MatrixXd::SetName)
+      //.property("resource_path", &MatrixXd::GetPath,
+      //          &MatrixXd::SetPathNotTakeOver);
 };

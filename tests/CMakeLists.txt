@@ -17,6 +17,7 @@ message(STATUS "gtest configured correctly")
 
 macro(package_add_test TESTNAME FILES)
     add_executable(${TESTNAME} ${FILES})
+    target_compile_options(${TESTNAME} PUBLIC "${GOBOT_COMPILE_OPTIONS}")
     target_link_libraries(${TESTNAME} gtest gmock gtest_main)
     if (MSVC)
         target_link_libraries(${TESTNAME} gobot)
