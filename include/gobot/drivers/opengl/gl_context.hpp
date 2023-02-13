@@ -33,11 +33,6 @@ public:
     void WaitIdle() const override { }
 
     void OnImGui() override;
-
-    static void MakeDefault();
-
-protected:
-    static GraphicsContext* CreateFuncGL();
 };
 
 }

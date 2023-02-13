@@ -7,6 +7,7 @@
 
 #pragma once
 
+#include "gobot/core/io/image.hpp"
 #include "gobot/core/events/event.hpp"
 #include "gobot/graphics/RHI/graphics_context.hpp"
 #include <Eigen/Dense>
@@ -54,7 +55,7 @@ public:
 
     virtual void RaiseWindow() = 0;
 
-    virtual void SetIcon(const std::string& file_path, const std::string& small_icon_file_path = "") = 0;
+    virtual void SetIcon(const Ref<Image>& image) = 0;
 
     virtual void OnUpdate() = 0;
 

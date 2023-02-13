@@ -8,6 +8,7 @@
 #pragma once
 
 #include "gobot/core/os/window.hpp"
+
 #include <Eigen/Dense>
 
 class SDL_Window;
@@ -50,7 +51,7 @@ public:
 
     void RaiseWindow() override;
 
-    virtual void SetIcon(const std::string& file_path, const std::string& small_icon_file_path = "") {};
+    void SetIcon(const Ref<Image>& image) override;
 
     void UpdateCursorImGui();
 
@@ -59,8 +60,6 @@ public:
     [[nodiscard]] WindowHandle GetNativeWindowHandle() const override;
 
 private:
-//    void Init();
-
     RenderAPI render_api_;
     SDL_Window* native_window_{nullptr};
 };

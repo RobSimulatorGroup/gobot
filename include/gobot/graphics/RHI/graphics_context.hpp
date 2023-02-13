@@ -24,8 +24,6 @@ class GraphicsContext
 public:
     virtual ~GraphicsContext();
 
-    static RenderAPI GetRenderAPI() { return s_render_api; }
-
     static void SetRenderAPI(RenderAPI api);
 
     static GraphicsContext* Create();
@@ -46,11 +44,6 @@ public:
 
     virtual void OnImGui() = 0;
 
-
-protected:
-    static GraphicsContext* (*CreateFunc)();
-
-    static RenderAPI s_render_api;
 };
 
 }

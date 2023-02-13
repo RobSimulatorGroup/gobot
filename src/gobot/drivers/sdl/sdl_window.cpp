@@ -12,6 +12,7 @@
 
 #include <imgui.h>
 #include <SDL.h>
+#include <SDL_image.h>
 
 namespace gobot {
 
@@ -27,11 +28,12 @@ SDLWindow::SDLWindow()
     }
 
     native_window_ = SDL_CreateWindow(s_default_window_title,
-                                      SDL_WINDOWPOS_UNDEFINED,
-                                      SDL_WINDOWPOS_UNDEFINED,
+                                      SDL_WINDOWPOS_CENTERED,
+                                      SDL_WINDOWPOS_CENTERED,
                                       s_default_width,
                                       s_default_height,
                                       SDL_WINDOW_SHOWN);
+
 
     CRASH_COND_MSG(native_window_ == nullptr, fmt::format("Error creating window: {}", SDL_GetError()));
 }
@@ -265,15 +267,16 @@ void SDLWindow::Restore()
 void SDLWindow::RaiseWindow()
 {
     SDL_RaiseWindow(native_window_);
-
-//    SDL_SetWindowIcon();
 }
 
-//void SDLWindow::SetIcon(const std::string& file_path, const std::string& small_icon_file_path)
-//{
-//    // TODO(wqq): Consider godot's Image
-//    //  glfwSetWindowIcon(native_handle_, int(images.size()), images.data());
-//}
+void SDLWindow::SetIcon(const Ref<Image>& image)
+{
+    if (image && image->IsSDLImage()) {
+        SDL_SetWindowIcon(native_window_, image->GetSDLImage());
+    }
+    LOG_ERROR("Input image is not sdl image");
+}
+
 
 void SDLWindow::UpdateCursorImGui()
 {
