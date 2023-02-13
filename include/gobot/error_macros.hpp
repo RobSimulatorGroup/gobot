@@ -93,9 +93,6 @@
         ((void)0)
 
 #define ERR_FAIL_V_MSG(ret, msg)                                                                \
-    if (true) {                                                                                 \
-        LOG_ERROR("Method/funtion failed. Returning: {}. {}",                                   \
-            GOB_STRINGIFY(ret), GOB_STRINGIFY(MSG));                                            \
-        return ret;                                                                             \
-    } else                                                                                      \
-        ((void)0)
+    LOG_ERROR("Method/funtion failed. Returning: {}. {}",                                       \
+        GOB_STRINGIFY(ret), GOB_STRINGIFY(MSG));                                                \
+    return ret;

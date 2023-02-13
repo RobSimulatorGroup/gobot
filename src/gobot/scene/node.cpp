@@ -390,7 +390,7 @@ bool Node::HasNode(const NodePath &path) const {
     return GetNodeOrNull(path) != nullptr;
 }
 
-void Node::Reparent(Node *parent, bool keep_global_transform) {
+void Node::Reparent(Node *parent) {
     ERR_FAIL_NULL(parent);
     ERR_FAIL_NULL_MSG(parent_, "Node needs a parent to be reparented.");
 
@@ -655,7 +655,6 @@ GOBOT_REGISTRATION {
 
             .property_readonly("child_count", &Node::GetChildCount)
             .property_readonly("inside_tree", &Node::IsInsideTree)
-            .property_readonly("iterator", &Node::GetIterator)
             .property_readonly("index", &Node::GetIndex)
 
             .property("name", &Node::GetName, &Node::SetName)

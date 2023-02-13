@@ -149,9 +149,8 @@ public:
      * @brief The node sets the given parent node in replace of the original parent which is required.
      *
      * @param parent[Node*]: New parent node pointer.
-     * @param keep_global_transform[bool]: Keep the global transform.
      */
-    virtual void Reparent(Node *parent, bool keep_global_transform = true);
+    virtual void Reparent(Node *parent);
 
     /**
      * @brief See GetNode.
