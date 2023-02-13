@@ -24,6 +24,7 @@ ResourceFormatLoaderSDLImage::ResourceFormatLoaderSDLImage()
 
 ResourceFormatLoaderSDLImage* ResourceFormatLoaderSDLImage::GetInstance()
 {
+    ERR_FAIL_COND_V_MSG(s_singleton == nullptr, nullptr, "Must call this after initialize ResourceFormatLoaderSDLImage");
     return s_singleton;
 }
 
@@ -37,7 +38,7 @@ Ref<Resource> ResourceFormatLoaderSDLImage::Load(const String &path, CacheMode c
     ERR_FAIL_COND_V_MSG(io == nullptr, {}, fmt::format("Can not open {}", path));
 
     auto sdl_image_type = SDLImageHandle::GetSDLImageType(io);
-    ERR_FAIL_COND_V_MSG(sdl_image_type == SDLImageType::Unknown, {}, "");
+    ERR_FAIL_COND_V_MSG(sdl_image_type == SDLImageType::Unknown, {}, "Unknown SDL type");
 
     Ref<Image> image = New<Image>();
     image->SetSDLImage(SDLImageHandle::LoadSDLImage(sdl_image_type, io));

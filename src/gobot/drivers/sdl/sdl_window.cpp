@@ -12,7 +12,6 @@
 
 #include <imgui.h>
 #include <SDL.h>
-#include <SDL_image.h>
 
 namespace gobot {
 
@@ -273,8 +272,9 @@ void SDLWindow::SetIcon(const Ref<Image>& image)
 {
     if (image && image->IsSDLImage()) {
         SDL_SetWindowIcon(native_window_, image->GetSDLImage());
+    } else {
+        LOG_ERROR("Input image is not sdl image");
     }
-    LOG_ERROR("Input image is not sdl image");
 }
 
 

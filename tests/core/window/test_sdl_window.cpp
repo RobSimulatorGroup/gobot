@@ -7,10 +7,16 @@
 
 #include <gtest/gtest.h>
 #include <gobot/drivers/sdl/sdl_window.hpp>
+#include <gobot/core/io/image_load.hpp>
 
 
 TEST(TestSDLWindow, test_create) {
+
+    auto ref = gobot::MakeRef<gobot::ResourceFormatLoaderSDLImage>();
+
+    auto image = gobot::Image::LoadFromFile("/home/wqq/gobot/icon.svg");
     auto* sdl_window = new gobot::SDLWindow();
+    sdl_window->SetIcon(image);
 
     sleep(1000);
 }

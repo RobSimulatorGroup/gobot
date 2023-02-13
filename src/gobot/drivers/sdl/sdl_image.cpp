@@ -44,6 +44,9 @@ SDLImageType SDLImageHandle::GetSDLImageType(SDLStreamIO* sdl_stream_io)
     res = IMG_isJPG(sdl_stream_io);
     if (res) return SDLImageType::JPG;
 
+    res = IMG_isSVG(sdl_stream_io);
+    if (res) return SDLImageType::SVG;
+
     res = IMG_isCUR(sdl_stream_io);
     if (res) return SDLImageType::CUR;
 
