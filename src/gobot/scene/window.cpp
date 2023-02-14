@@ -20,7 +20,7 @@ namespace gobot {
 Window::Window() {
     switch (window_driver_) {
         case WindowDriver::SDL:
-        case WindowDriver::WindowsGUI:
+        case WindowDriver::Win32:
         case WindowDriver::IOSWindow:
             window_interface_ = std::make_unique<SDLWindow>();
     }

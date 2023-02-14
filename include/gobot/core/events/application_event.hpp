@@ -16,8 +16,6 @@ class GOBOT_EXPORT WindowResizeEvent : public Event {
 public:
     WindowResizeEvent(std::uint32_t width, std::uint32_t height);
 
-    WindowResizeEvent(std::uint32_t width, std::uint32_t height, float dpi_scale);
-
     [[nodiscard]] FORCE_INLINE unsigned int GetWidth() const { return width_; }
 
     [[nodiscard]] FORCE_INLINE unsigned int GetHeight() const { return height_; }
@@ -30,7 +28,6 @@ public:
 private:
     std::uint32_t width_;
     std::uint32_t height_;
-    float dpi_scale_;
 };
 
 class GOBOT_EXPORT WindowCloseEvent : public Event {
@@ -42,16 +39,47 @@ public:
     EVENT_CLASS_CATEGORY(EventCategoryApplication)
 };
 
-class GOBOT_EXPORT WindowFileEvent : public Event {
-    GOBCLASS(WindowFileEvent, Event)
+class WindowFocusEvent : public Event {
+    GOBCLASS(WindowFocusEvent, Event)
 public:
-    explicit WindowFileEvent(String file_path);
+    WindowFocusEvent() = default;
+    EVENT_CLASS_TYPE(WindowFocus)
+    EVENT_CLASS_CATEGORY(EventCategoryApplication)
+};
+
+class WindowLostFocusEvent : public Event {
+    GOBCLASS(WindowLostFocusEvent, Event)
+public:
+    WindowLostFocusEvent() = default;
+    EVENT_CLASS_TYPE(WindowLostFocus)
+    EVENT_CLASS_CATEGORY(EventCategoryApplication)
+};
+
+class WindowMovedEvent : public Event {
+    GOBCLASS(WindowMovedEvent, Event)
+public:
+    WindowMovedEvent(std::uint32_t x, std::uint32_t y);
+
+    [[nodiscard]] String ToString() const override;
+
+    EVENT_CLASS_TYPE(WindowMoved)
+    EVENT_CLASS_CATEGORY(EventCategoryApplication)
+private:
+    std::uint32_t x_;
+    std::uint32_t y_;
+};
+
+
+class GOBOT_EXPORT WindowDropFileEvent : public Event {
+    GOBCLASS(WindowDropFileEvent, Event)
+public:
+    explicit WindowDropFileEvent(String file_path);
 
     [[nodiscard]] FORCE_INLINE const String& GetFilePath() const { return file_path_; }
 
     [[nodiscard]] String ToString() const override;
 
-    EVENT_CLASS_TYPE(WindowFile)
+    EVENT_CLASS_TYPE(WindowDropFile)
     EVENT_CLASS_CATEGORY(EventCategoryApplication)
 private:
     String file_path_;

@@ -17,7 +17,7 @@ namespace gobot {
 
 enum class WindowDriver {
     SDL,            // Default(already cross-platform for all platforms)
-    WindowsGUI,     // not implemented
+    Win32,     // not implemented
     IOSWindow       // not implemented
 };
 

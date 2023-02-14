@@ -57,9 +57,9 @@ public:
 
     virtual void SetIcon(const Ref<Image>& image) = 0;
 
-    virtual void OnUpdate() = 0;
+    virtual void ProcessEvents() = 0;
 
-    virtual void UpdateCursorImGui() = 0;
+//    virtual void UpdateCursorImGui() = 0;
 
 //    virtual void SetEventCallback(const EventCallbackFn& callback) = 0;
 

@@ -15,31 +15,38 @@ namespace gobot {
 
 WindowResizeEvent::WindowResizeEvent(std::uint32_t width, std::uint32_t height)
     : width_(width),
-      height_(height),
-      dpi_scale_(1.0)
+      height_(height)
 {
-}
-
-WindowResizeEvent::WindowResizeEvent(std::uint32_t width, std::uint32_t height, float dpi_scale)
-    : width_(width),
-      height_(height),
-      dpi_scale_(dpi_scale)
-{
-}
-
-WindowFileEvent::WindowFileEvent(String file_path)
-    : file_path_(std::move(file_path))
-{
-}
-
-String WindowFileEvent::ToString() const {
-    return fmt::format("WindowFileEvent: {}", file_path_).c_str();
 }
 
 String WindowResizeEvent::ToString() const
 {
     return fmt::format("WindowResizeEvent: {}, {}", width_, height_).c_str();
 }
+
+////////////////////////////////////////////////////
+
+WindowMovedEvent::WindowMovedEvent(std::uint32_t x, std::uint32_t y)
+    : x_(x),
+      y_(y)
+{
+}
+
+String WindowMovedEvent::ToString() const {
+    return fmt::format("WindowMovedEvent: ({}, {})", x_, y_).c_str();
+}
+
+////////////////////////////////////////////
+
+WindowDropFileEvent::WindowDropFileEvent(String file_path)
+    : file_path_(std::move(file_path))
+{
+}
+
+String WindowDropFileEvent::ToString() const {
+    return fmt::format("WindowFileEvent: {}", file_path_).c_str();
+}
+
 
 
 }

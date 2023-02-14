@@ -7,10 +7,14 @@
 
 
 #include "gobot/drivers/sdl/sdl_window.hpp"
+#include "gobot/core/events/application_event.hpp"
+#include "gobot/core/events/mouse_event.hpp"
+#include "gobot/core/events/key_event.hpp"
 #include "gobot/log.hpp"
 #include "gobot/error_macros.hpp"
 
 #include <imgui.h>
+#include <imgui_impl_sdl.h>
 #include <SDL.h>
 
 namespace gobot {
@@ -33,8 +37,9 @@ SDLWindow::SDLWindow()
                                       s_default_height,
                                       SDL_WINDOW_SHOWN);
 
-
     CRASH_COND_MSG(native_window_ == nullptr, fmt::format("Error creating window: {}", SDL_GetError()));
+
+    windows_id_ = SDL_GetWindowID(native_window_);
 }
 
 SDLWindow::~SDLWindow()
@@ -42,65 +47,7 @@ SDLWindow::~SDLWindow()
     SDL_DestroyWindow(native_window_);
 }
 
-//void SDLWindow::Init() {
-//
-//    Uint32 flags = SDL_WasInit(0);
-//    if ((flags | SDL_INIT_VIDEO) && (flags | SDL_INIT_EVENTS) ) {
-//        CRASH_COND_MSG(SDL_Init(SDL_INIT_VIDEO | SDL_INIT_EVENTS) < 0, "Could not initialize GLFW!");
-//    }
-//
-//    native_window_ = SDL_CreateWindow(s_default_window_title,
-//                                      SDL_WINDOWPOS_UNDEFINED,
-//                                      SDL_WINDOWPOS_UNDEFINED,
-//                                      s_default_width,
-//                                      s_default_height,
-//                                      SDL_WINDOW_SHOWN);
-//
-//    CRASH_COND_MSG(native_window_ == nullptr, fmt::format("Error creating window: {}", SDL_GetError()));
-//
-//    if(glfwRawMouseMotionSupported())
-//        glfwSetInputMode(native_handle_, GLFW_RAW_MOUSE_MOTION, GLFW_TRUE);
-//
-//
-//    glfwSetInputMode(native_handle_, GLFW_STICKY_KEYS, true);
-//
-//    // Set GLFW callbacks
-//    glfwSetWindowSizeCallback(native_handle_, [](GLFWwindow* window, int width, int height) {
-//        WindowData& data = *static_cast<WindowData*>((glfwGetWindowUserPointer(window)));
-//
-//        int w, h;
-//        glfwGetFramebufferSize(window, &w, &h);
-//
-//        data.dpi_scale = (float)w / (float)width;
-//
-//        data.width =  static_cast<std::uint32_t>(width * data.dpi_scale);
-//        data.height = static_cast<std::uint32_t>(height * data.dpi_scale);
-//
-//        WindowResizeEvent event(data.width, data.height, data.dpi_scale);
-//        data.event_callback(event);
-//    });
-//    glfwSetWindowCloseCallback(native_handle_, [](GLFWwindow* window) {
-//        WindowData& data = *static_cast<WindowData*>((glfwGetWindowUserPointer(window)));
-//        WindowCloseEvent event;
-//        data.event_callback(event);
-//    });
-//    glfwSetWindowFocusCallback(native_handle_, [](GLFWwindow* window, int focused) {
-//        WindowData& data = *static_cast<WindowData*>((glfwGetWindowUserPointer(window)));
-//        data.holder_->SetWindowFocus(focused);
-//    });
-//    glfwSetWindowIconifyCallback(native_handle_, [](GLFWwindow* window, int32_t state) {
-//        WindowData& data = *static_cast<WindowData*>((glfwGetWindowUserPointer(window)));
-//        switch(state) {
-//            case GL_TRUE:
-//                data.holder_->SetWindowFocus(false);
-//                break;
-//            case GL_FALSE:
-//                data.holder_->SetWindowFocus(true);
-//                break;
-//            default:
-//                LOG_INFO("Unsupported window iconify state from callback");
-//        }
-//    });
+
 //    glfwSetKeyCallback(native_handle_, [](GLFWwindow* window, int key, int scancode, int action, int mods)
 //    {
 //        WindowData& data = *static_cast<WindowData*>((glfwGetWindowUserPointer(window)));
@@ -159,24 +106,8 @@ SDLWindow::~SDLWindow()
 //        KeyTypedEvent event(GLFWToGobotKeyboardKey(keycode));
 //        data.event_callback(event);
 //    });
-//    glfwSetDropCallback(native_handle_, [](GLFWwindow* window, int numDropped, const char** filenames) {
-//        WindowData& data = *static_cast<WindowData*>((glfwGetWindowUserPointer(window)));
-//        String file_path = filenames[0];
-//        WindowFileEvent event(file_path);
-//        data.event_callback(event);
-//    });
-//
-//    g_mouse_cursors[ImGuiMouseCursor_Arrow]      = glfwCreateStandardCursor(GLFW_ARROW_CURSOR);
-//    g_mouse_cursors[ImGuiMouseCursor_TextInput]  = glfwCreateStandardCursor(GLFW_IBEAM_CURSOR);
-//    g_mouse_cursors[ImGuiMouseCursor_ResizeAll]  = glfwCreateStandardCursor(GLFW_ARROW_CURSOR);
-//    g_mouse_cursors[ImGuiMouseCursor_ResizeNS]   = glfwCreateStandardCursor(GLFW_VRESIZE_CURSOR);
-//    g_mouse_cursors[ImGuiMouseCursor_ResizeEW]   = glfwCreateStandardCursor(GLFW_HRESIZE_CURSOR);
-//    g_mouse_cursors[ImGuiMouseCursor_ResizeNESW] = glfwCreateStandardCursor(GLFW_ARROW_CURSOR);
-//    g_mouse_cursors[ImGuiMouseCursor_ResizeNWSE] = glfwCreateStandardCursor(GLFW_ARROW_CURSOR);
-//    g_mouse_cursors[ImGuiMouseCursor_Hand]       = glfwCreateStandardCursor(GLFW_HAND_CURSOR);
-//
-//    LOG_INFO("Initialised GLFW version : {0}", glfwGetVersionString());
-//}
+
+
 
 std::uint32_t SDLWindow::GetWidth() const
 {
@@ -277,42 +208,107 @@ void SDLWindow::SetIcon(const Ref<Image>& image)
     }
 }
 
-
-void SDLWindow::UpdateCursorImGui()
-{
-    ImGuiIO& io = ImGui::GetIO();
-    ImGuiMouseCursor imgui_cursor = ImGui::GetMouseCursor();
-
-//    if((io.ConfigFlags & ImGuiConfigFlags_NoMouseCursorChange) ||
-//       glfwGetInputMode(native_handle_, GLFW_CURSOR) == GLFW_CURSOR_DISABLED)
-//        return;
-//
-//    if(imgui_cursor == ImGuiMouseCursor_None || io.MouseDrawCursor)
-//    {
-//        // Hide OS mouse cursor if imgui is drawing it or if it wants no cursor
-//
-//        // TODO: This was disabled as it would override control of hiding the cursor
-//        //       Need to find a solution to support both
-//        // glfwSetInputMode(m_Handle, GLFW_CURSOR, GLFW_CURSOR_HIDDEN);
-//    }
-//    else
-//    {
-//        glfwSetCursor(native_handle_,
-//                      g_mouse_cursors[imgui_cursor] ? g_mouse_cursors[imgui_cursor] :
-//                      g_mouse_cursors[ImGuiMouseCursor_Arrow]);
-//        // glfwSetInputMode(m_Handle, GLFW_CURSOR, GLFW_CURSOR_NORMAL);
-//    }
+std::uint32_t SDLWindow::GetWindowID() const {
+    return windows_id_;
 }
 
-void SDLWindow::OnUpdate() {
+void SDLWindow::ProcessEvents() {
     // Check if any events have been activated (key pressed, mouse moved etc.) and call corresponding response functions
-//    glfwPollEvents();
-//
-//    if(window_data_.render_api == RenderAPI::OpenGL)
-//    {
-//        // Swap the screen buffers
-//        glfwSwapBuffers(native_handle_);
-//    }
+    SDL_Event event;
+    while (SDL_PollEvent(&event)) {
+        // this should only run if there's imgui on
+        ImGui_ImplSDL2_ProcessEvent(&event);
+        switch (event.type) {
+            case SDL_WINDOWEVENT: {
+                if (event.window.windowID == windows_id_) {
+                    switch (event.window.event) {
+                        case SDL_WINDOWEVENT_RESIZED: {
+                            WindowResizeEvent resize_event(event.window.data1, event.window.data2);
+                            event_callback(resize_event);
+                            break;
+                        }
+                        case SDL_WINDOWEVENT_CLOSE: {
+                            WindowCloseEvent close_event;
+                            event_callback(close_event);
+                            break;
+                        }
+                        case SDL_WINDOWEVENT_ENTER:
+                        case SDL_WINDOWEVENT_TAKE_FOCUS:
+                        case SDL_WINDOWEVENT_FOCUS_GAINED:
+                        case SDL_WINDOWEVENT_MAXIMIZED: {
+                            WindowFocusEvent focus_event;
+                            event_callback(focus_event);
+                            break;
+                        }
+                        case SDL_WINDOWEVENT_MINIMIZED:
+                        case SDL_WINDOWEVENT_LEAVE:
+                        case SDL_WINDOWEVENT_FOCUS_LOST: {
+                            WindowLostFocusEvent lose_focus_event;
+                            event_callback(lose_focus_event);
+                            break;
+                        }
+                        case SDL_WINDOWEVENT_MOVED: {
+                            WindowMovedEvent moved_event(event.window.data1, event.window.data2);
+                            event_callback(moved_event);
+                            break;
+                        }
+                        default:
+                            break;
+                    }
+                }
+            }
+            case SDL_DROPFILE: {
+                if (event.drop.windowID == windows_id_) {
+                    char* dropped_file_dir = event.drop.file;
+                    WindowDropFileEvent drop_file_event(dropped_file_dir);
+                    event_callback(drop_file_event);
+                    SDL_free(dropped_file_dir);    // Free dropped_file_dir memory
+                    break;
+                }
+            }
+            case SDL_KEYDOWN:
+            {
+                if (event.key.windowID == windows_id_) {
+                    KeyPressedEvent key_press_event((KeyCode)event.key.keysym.scancode, event.key.repeat);
+                    event_callback(key_press_event);
+                    break;
+                }
+            }
+            case SDL_KEYUP:
+            {
+                if (event.key.windowID == windows_id_) {
+                    KeyReleasedEvent key_released_event((KeyCode)event.key.keysym.scancode);
+                    event_callback(key_released_event);
+                    break;
+                }
+            }
+            case SDL_MOUSEBUTTONUP:
+            {
+//                MouseButtonReleasedEvent mouse_button_released_event(event.key.keysym.scancode);
+//                event_callback(mouse_button_released_event);
+                break;
+            }
+            case SDL_MOUSEBUTTONDOWN:
+            {
+//                MouseButtonPressedEvent mouseButtonPressedEvent(event.key.keysym.scancode);
+//                event_callback(mouseButtonPressedEvent);
+                break;
+            }
+            case SDL_MOUSEWHEEL:
+            {
+                MouseScrolledEvent mouseScrolledEvent(static_cast<float>(event.wheel.x), static_cast<float>(event.wheel.y));
+                event_callback(mouseScrolledEvent);
+                break;
+            }
+            case SDL_MOUSEMOTION:
+            {
+                MouseMovedEvent mouseMovedEvent(static_cast<float>(event.motion.x), static_cast<float>(event.motion.y));
+                event_callback(mouseMovedEvent);
+                break;
+            }
+        }
+    }
 }
+
 
 }

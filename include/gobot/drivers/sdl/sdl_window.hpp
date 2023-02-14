@@ -57,15 +57,18 @@ public:
 
     void SetIcon(const Ref<Image>& image) override;
 
-    void UpdateCursorImGui();
+    [[nodiscard]] std::uint32_t GetWindowID() const;
 
-    void OnUpdate();
+    void ProcessEvents() override;
 
     [[nodiscard]] WindowHandle GetNativeWindowHandle() const override;
 
 private:
     RenderAPI render_api_;
     SDL_Window* native_window_{nullptr};
+
+    EventCallbackFn event_callback;
+    std::uint32_t windows_id_; // cache of sdl windows id
 };
 
 

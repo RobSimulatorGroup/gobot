@@ -20,7 +20,7 @@ enum class EventType
     WindowFocus,
     WindowLostFocus,
     WindowMoved,
-    WindowFile,
+    WindowDropFile,
     AppTick,
     AppUpdate,
     AppRender,
