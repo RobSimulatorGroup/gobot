@@ -24,18 +24,18 @@ public:
 
     Eigen::Vector2i GetSize() const;
 
-    FORCE_INLINE void SetSDLImage(SDLImage* sdl_image) { sdl_image_ = sdl_image; }
+    FORCE_INLINE void SetSDLImage(UniqueSDLImage sdl_image) { sdl_image_ = std::move(sdl_image); }
 
     FORCE_INLINE bool IsSDLImage() const { return sdl_image_ != nullptr; }
 
-    FORCE_INLINE const SDLImage* GetSDLImage() const {  return sdl_image_; }
+    FORCE_INLINE const SDLImage* GetSDLImage() const {  return sdl_image_.get(); }
 
-    FORCE_INLINE SDLImage* GetSDLImage() {  return sdl_image_; }
+    FORCE_INLINE SDLImage* GetSDLImage() {  return sdl_image_.get(); }
 
     static Ref<Image> LoadFromFile(const String &path);
 
 private:
-    SDLImage* sdl_image_{nullptr};
+    UniqueSDLImage sdl_image_{nullptr, &FreeSDLImage};
 
 };
 

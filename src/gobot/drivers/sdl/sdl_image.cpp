@@ -29,6 +29,12 @@ const std::vector<String> SDLImageHandle::s_sdl_image_types = {
         "webp",
 };
 
+void FreeSDLImage(SDLImage* image)
+{
+    if (image)
+        SDL_FreeSurface(image);
+}
+
 SDLImageType SDLImageHandle::GetSDLImageType(SDLStreamIO* sdl_stream_io)
 {
     // Returns non-zero if this is XXX data, zero otherwise.
@@ -80,43 +86,43 @@ SDLImageType SDLImageHandle::GetSDLImageType(SDLStreamIO* sdl_stream_io)
     return SDLImageType::Unknown;
 }
 
-SDLImage* SDLImageHandle::LoadSDLImage(SDLImageType sdl_image_type, SDLStreamIO* sdl_stream_io)
+UniqueSDLImage SDLImageHandle::LoadSDLImage(SDLImageType sdl_image_type, SDLStreamIO* sdl_stream_io)
 {
     switch (sdl_image_type) {
         case SDLImageType::BMP:
-            return IMG_LoadBMP_RW(sdl_stream_io);
+            return {IMG_LoadBMP_RW(sdl_stream_io), &FreeSDLImage};
         case SDLImageType::PNG:
-            return IMG_LoadPNG_RW(sdl_stream_io);
+            return {IMG_LoadPNG_RW(sdl_stream_io), &FreeSDLImage};
         case SDLImageType::ICO:
-            return IMG_LoadICO_RW(sdl_stream_io);
+            return {IMG_LoadICO_RW(sdl_stream_io), &FreeSDLImage};
         case SDLImageType::JPG:
-            return IMG_LoadJPG_RW(sdl_stream_io);
+            return {IMG_LoadJPG_RW(sdl_stream_io), &FreeSDLImage};
         case SDLImageType::SVG:
-            return IMG_LoadSVG_RW(sdl_stream_io);
+            return {IMG_LoadSVG_RW(sdl_stream_io), &FreeSDLImage};
         case SDLImageType::CUR:
-            return IMG_LoadCUR_RW(sdl_stream_io);
+            return {IMG_LoadCUR_RW(sdl_stream_io), &FreeSDLImage};
         case SDLImageType::GIF:
-            return IMG_LoadGIF_RW(sdl_stream_io);
+            return {IMG_LoadGIF_RW(sdl_stream_io), &FreeSDLImage};
         case SDLImageType::LBM:
-            return IMG_LoadLBM_RW(sdl_stream_io);
+            return {IMG_LoadLBM_RW(sdl_stream_io), &FreeSDLImage};
         case SDLImageType::PCX:
-            return IMG_LoadPCX_RW(sdl_stream_io);
+            return {IMG_LoadPCX_RW(sdl_stream_io), &FreeSDLImage};
         case SDLImageType::PNM:
-            return IMG_LoadPNM_RW(sdl_stream_io);
+            return {IMG_LoadPNM_RW(sdl_stream_io), &FreeSDLImage};
         case SDLImageType::TIF:
-            return IMG_LoadTIF_RW(sdl_stream_io);
+            return {IMG_LoadTIF_RW(sdl_stream_io), &FreeSDLImage};
         case SDLImageType::XCF:
-            return IMG_LoadXCF_RW(sdl_stream_io);
+            return {IMG_LoadXCF_RW(sdl_stream_io), &FreeSDLImage};
         case SDLImageType::XPM:
-            return IMG_LoadXPM_RW(sdl_stream_io);
+            return {IMG_LoadXPM_RW(sdl_stream_io), &FreeSDLImage};
         case SDLImageType::XV:
-            return IMG_LoadXV_RW(sdl_stream_io);
+            return {IMG_LoadXV_RW(sdl_stream_io), &FreeSDLImage};
         case SDLImageType::WEBP:
-            return IMG_LoadWEBP_RW(sdl_stream_io);
+            return {IMG_LoadWEBP_RW(sdl_stream_io), &FreeSDLImage};
         case SDLImageType::Unknown:
-            return nullptr;
+            return {nullptr, &FreeSDLImage};
     }
-    return nullptr;
+    return {nullptr, &FreeSDLImage};
 }
 
 
