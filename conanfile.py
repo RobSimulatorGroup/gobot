@@ -21,7 +21,8 @@ class GobotConan(ConanFile):
         self.requires("sdl/2.26.1")
         self.requires("sdl_image/2.0.5")
         self.requires("libpng/1.6.38") # conflict with libpng
-        self.requires("xkbcommon/1.5.0")
+        if self.settings.os == "Linux":
+            self.requires("xkbcommon/1.5.0")
 
     def configure(self):
         self.options['glad'].spec = 'gl'
