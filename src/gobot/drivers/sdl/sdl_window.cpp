@@ -302,16 +302,22 @@ void SDLWindow::ProcessEvents() {
                 }
                 break;
             }
-            case SDL_MOUSEWHEEL:
-            {
-                MouseScrolledEvent mouseScrolledEvent(static_cast<float>(event.wheel.x), static_cast<float>(event.wheel.y));
-                event_callback(mouseScrolledEvent);
+            case SDL_MOUSEWHEEL: {
+                if (event.wheel.windowID == windows_id_) {
+                    MouseScrolledEvent mouse_scrolled_event(event.wheel.preciseX, event.wheel.preciseY);
+                    event_callback(mouse_scrolled_event);
+                }
                 break;
             }
-            case SDL_MOUSEMOTION:
-            {
-                MouseMovedEvent mouseMovedEvent(static_cast<float>(event.motion.x), static_cast<float>(event.motion.y));
-                event_callback(mouseMovedEvent);
+            case SDL_MOUSEMOTION: {
+                if (event.motion.windowID == windows_id_) {
+                    MouseMovedEvent mouse_moved_event(event.motion.x,
+                                                      event.motion.y,
+                                                      event.motion.xrel,
+                                                      event.motion.yrel,
+                                                      event.motion.state);
+                    event_callback(mouse_moved_event);
+                }
                 break;
             }
         }

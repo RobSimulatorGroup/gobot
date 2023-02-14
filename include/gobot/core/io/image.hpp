@@ -24,7 +24,7 @@ public:
 
     Eigen::Vector2i GetSize() const;
 
-    FORCE_INLINE void SetSDLImage(UniqueSDLImage sdl_image) { sdl_image_ = std::move(sdl_image); }
+    FORCE_INLINE void SetSDLImage(UniqueSDLImagePtr sdl_image) { sdl_image_ = std::move(sdl_image); }
 
     FORCE_INLINE bool IsSDLImage() const { return sdl_image_ != nullptr; }
 
@@ -35,7 +35,7 @@ public:
     static Ref<Image> LoadFromFile(const String &path);
 
 private:
-    UniqueSDLImage sdl_image_{nullptr, &FreeSDLImage};
+    UniqueSDLImagePtr sdl_image_{nullptr, &FreeSDLImage};
 
 };
 

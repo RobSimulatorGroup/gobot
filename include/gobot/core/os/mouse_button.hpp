@@ -24,8 +24,19 @@ enum class MouseButton : std::uint8_t
     Right     = 3,
     X1        = 4,
     X2        = 5,
+
     ButtonMaxNum = 8 /**< not a button, just marks the number of buttons
                                  for array bounds */
+};
+
+// Same as SDL_MouseButtonEvent
+enum class MouseButtonMask
+{
+    Left      = 1 << (static_cast<std::uint8_t>(MouseButton::Left) - 1),
+    Middle    = 1 << (static_cast<std::uint8_t>(MouseButton::Middle) - 1),
+    Right     = 1 << (static_cast<std::uint8_t>(MouseButton::Right) - 1),
+    X1        = 1 << (static_cast<std::uint8_t>(MouseButton::X1) - 1),
+    X2        = 1 << (static_cast<std::uint8_t>(MouseButton::X2) - 1),
 };
 
 }  // end of namespace gobot

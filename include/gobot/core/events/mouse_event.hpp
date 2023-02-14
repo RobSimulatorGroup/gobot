@@ -16,11 +16,21 @@ namespace gobot {
 class GOBOT_EXPORT MouseMovedEvent : public Event {
     GOBCLASS(MouseMovedEvent, Event)
 public:
-    explicit MouseMovedEvent(float x, float y);
+    explicit MouseMovedEvent(std::int32_t x,
+                             std::int32_t y,
+                             std::int32_t rel_x,
+                             std::int32_t rel_y,
+                             std::uint32_t state);
 
-    [[nodiscard]] FORCE_INLINE float GetX() const { return mouse_x_; }
+    [[nodiscard]] FORCE_INLINE std::int32_t GetX() const { return x_; }
 
-    [[nodiscard]] FORCE_INLINE float GetY() const { return mouse_y_; }
+    [[nodiscard]] FORCE_INLINE std::int32_t GetY() const { return y_; }
+
+    [[nodiscard]] FORCE_INLINE std::int32_t GetRelX() const { return rel_x_; }
+
+    [[nodiscard]] FORCE_INLINE std::int32_t GetRelY() const { return rel_y_; }
+
+    [[nodiscard]] FORCE_INLINE std::uint32_t GetState() const { return state_; }
 
     [[nodiscard]] String ToString() const override;
 
@@ -28,8 +38,11 @@ public:
     EVENT_CLASS_CATEGORY(EventCategoryMouse | EventCategoryInput)
 
 private:
-    float mouse_x_{0.0};
-    float mouse_y_{0.0};
+    std::int32_t x_{0};
+    std::int32_t y_{0};
+    std::int32_t rel_x_{0};
+    std::int32_t rel_y_{0};
+    std::uint32_t state_;
 };
 
 class GOBOT_EXPORT MouseScrolledEvent : public Event {
@@ -64,6 +77,8 @@ public:
     [[nodiscard]] FORCE_INLINE std::int32_t GetXCoordinate() const { return x_coordinate_; }
 
     [[nodiscard]] FORCE_INLINE std::int32_t GetYCoordinate() const { return y_coordinate_; }
+
+    [[nodiscard]] FORCE_INLINE MouseButtonClickMode GetMouseButtonClickMode() const { return click_mode_; }
 
     EVENT_CLASS_CATEGORY(EventCategoryMouse | EventCategoryInput | EventCategoryMouseButton)
 

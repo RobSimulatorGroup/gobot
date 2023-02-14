@@ -86,7 +86,7 @@ SDLImageType SDLImageHandle::GetSDLImageType(SDLStreamIO* sdl_stream_io)
     return SDLImageType::Unknown;
 }
 
-UniqueSDLImage SDLImageHandle::LoadSDLImage(SDLImageType sdl_image_type, SDLStreamIO* sdl_stream_io)
+UniqueSDLImagePtr SDLImageHandle::LoadSDLImage(SDLImageType sdl_image_type, SDLStreamIO* sdl_stream_io)
 {
     switch (sdl_image_type) {
         case SDLImageType::BMP:

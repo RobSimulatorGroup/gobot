@@ -12,15 +12,23 @@
 
 namespace gobot {
 
-MouseMovedEvent::MouseMovedEvent(float x, float y)
-    : mouse_x_(x),
-      mouse_y_(y)
+MouseMovedEvent::MouseMovedEvent(std::int32_t x,
+                                 std::int32_t y,
+                                 std::int32_t rel_x,
+                                 std::int32_t rel_y,
+                                 std::uint32_t state)
+    : x_(x),
+      y_(y),
+      rel_x_(rel_x),
+      rel_y_(rel_y),
+      state_(state)
 {
 }
 
 String MouseMovedEvent::ToString() const
 {
-    return fmt::format("MouseMovedEvent: {}, {}", mouse_x_, mouse_y_).c_str();
+    return fmt::format("MouseMovedEvent: x: {}, y: {}, rel_x: {}, rel_y: {}, state: {#b}",
+                       x_, y_, rel_x_, rel_y_, state_).c_str();
 }
 
 ///////////////////////////////////////////////////////////////////////
