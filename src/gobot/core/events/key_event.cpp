@@ -9,11 +9,10 @@
 #include "gobot/core/events/key_event.hpp"
 #include "gobot/log.hpp"
 #include "gobot/core/registration.hpp"
-#include <magic_enum.hpp>
 
 namespace gobot {
 
-KeyEvent::KeyEvent(KeyCode key_code, std::uint16_t key_mod)
+KeyEvent::KeyEvent(KeyCode key_code, KeyModifiers key_mod)
     : key_code_(key_code),
       key_mod_(key_mod)
 {
@@ -22,7 +21,7 @@ KeyEvent::KeyEvent(KeyCode key_code, std::uint16_t key_mod)
 //////////////////////////////////////////////////////////////////
 
 KeyPressedEvent::KeyPressedEvent(KeyCode key_code,
-                                 std::uint16_t key_mod,
+                                 KeyModifiers key_mod,
                                  std::uint16_t repeat_count)
     : KeyEvent(key_code, key_mod),
       repeat_count_(repeat_count)
@@ -36,7 +35,7 @@ String KeyPressedEvent::ToString() const
 
 //////////////////////////////////////////////////////////////////
 
-KeyReleasedEvent::KeyReleasedEvent(KeyCode key_code, std::uint16_t key_mod)
+KeyReleasedEvent::KeyReleasedEvent(KeyCode key_code, KeyModifiers key_mod)
     : KeyEvent(key_code, key_mod)
 {
 }

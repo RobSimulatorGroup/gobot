@@ -16,7 +16,7 @@ MouseMovedEvent::MouseMovedEvent(std::int32_t x,
                                  std::int32_t y,
                                  std::int32_t rel_x,
                                  std::int32_t rel_y,
-                                 std::uint32_t state)
+                                 MouseButtonMask state)
     : x_(x),
       y_(y),
       rel_x_(rel_x),
@@ -28,7 +28,7 @@ MouseMovedEvent::MouseMovedEvent(std::int32_t x,
 String MouseMovedEvent::ToString() const
 {
     return fmt::format("MouseMovedEvent: x: {}, y: {}, rel_x: {}, rel_y: {}, state: {#b}",
-                       x_, y_, rel_x_, rel_y_, state_).c_str();
+                       x_, y_, rel_x_, rel_y_, static_cast<std::uint32_t>(state_)).c_str();
 }
 
 ///////////////////////////////////////////////////////////////////////

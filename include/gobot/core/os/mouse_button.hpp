@@ -30,7 +30,7 @@ enum class MouseButton : std::uint8_t
 };
 
 // Same as SDL_MouseButtonEvent
-enum class MouseButtonMask
+enum class MouseButtonMask : std::uint32_t
 {
     Left      = 1 << (static_cast<std::uint8_t>(MouseButton::Left) - 1),
     Middle    = 1 << (static_cast<std::uint8_t>(MouseButton::Middle) - 1),

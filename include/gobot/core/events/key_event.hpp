@@ -17,24 +17,25 @@ class GOBOT_EXPORT KeyEvent : public Event {
     GOBCLASS(KeyEvent, Event)
 public:
 
-    KeyEvent(KeyCode key_code, std::uint16_t key_mod);
+    KeyEvent(KeyCode key_code, KeyModifiers key_mod);
 
     [[nodiscard]] FORCE_INLINE KeyCode GetKeyCode() const { return key_code_; }
 
-    [[nodiscard]] FORCE_INLINE std::uint16_t GetKeyMod() const { return key_mod_; }
+    [[nodiscard]] FORCE_INLINE KeyModifiers GetKeyMod() const { return key_mod_; }
 
     EVENT_CLASS_CATEGORY(EventCategoryKeyboard | EventCategoryInput)
 
 protected:
     KeyCode key_code_;
-    std::uint16_t key_mod_;
+    KeyModifiers key_mod_;
+
 };
 
 class GOBOT_EXPORT KeyPressedEvent : public KeyEvent {
     GOBCLASS(KeyPressedEvent, KeyEvent)
 public:
     KeyPressedEvent(KeyCode key_code,
-                    std::uint16_t key_mod,
+                    KeyModifiers key_mod,
                     std::uint16_t repeat_count);
 
     [[nodiscard]] FORCE_INLINE uint16_t GetRepeatCount() const { return repeat_count_; }
@@ -50,7 +51,7 @@ private:
 class GOBOT_EXPORT KeyReleasedEvent : public KeyEvent {
     GOBCLASS(KeyReleasedEvent, KeyEvent)
 public:
-    KeyReleasedEvent(KeyCode key_code, std::uint16_t key_mod);
+    KeyReleasedEvent(KeyCode key_code, KeyModifiers key_mod);
 
     [[nodiscard]] String ToString() const override;
 

@@ -226,14 +226,14 @@ void SDLWindow::ProcessEvents() {
             }
             case SDL_KEYDOWN: {
                 if (event.key.windowID == windows_id_) {
-                    KeyPressedEvent key_press_event((KeyCode)event.key.keysym.scancode, event.key.keysym.mod, event.key.repeat);
+                    KeyPressedEvent key_press_event((KeyCode)event.key.keysym.scancode, (KeyModifiers)event.key.keysym.mod, event.key.repeat);
                     event_callback(key_press_event);
                 }
                 break;
             }
             case SDL_KEYUP: {
                 if (event.key.windowID == windows_id_) {
-                    KeyReleasedEvent key_released_event((KeyCode)event.key.keysym.scancode, event.key.keysym.mod);
+                    KeyReleasedEvent key_released_event((KeyCode)event.key.keysym.scancode, (KeyModifiers)event.key.keysym.mod);
                     event_callback(key_released_event);
                 }
                 break;
@@ -272,7 +272,7 @@ void SDLWindow::ProcessEvents() {
                                                       event.motion.y,
                                                       event.motion.xrel,
                                                       event.motion.yrel,
-                                                      event.motion.state);
+                                                      (MouseButtonMask) event.motion.state);
                     event_callback(mouse_moved_event);
                 }
                 break;

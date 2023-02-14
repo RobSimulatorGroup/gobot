@@ -304,7 +304,7 @@ enum class KeyCode : std::uint32_t {
                                  for array bounds */
 };
 
-enum class KeyModifiers {
+enum class KeyModifiers : std::uint16_t {
     None = 0x0000,
     LeftShift = 0x0001,
     RightShift = 0x0002,

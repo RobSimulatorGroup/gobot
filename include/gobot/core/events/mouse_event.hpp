@@ -20,7 +20,7 @@ public:
                              std::int32_t y,
                              std::int32_t rel_x,
                              std::int32_t rel_y,
-                             std::uint32_t state);
+                             MouseButtonMask state);
 
     [[nodiscard]] FORCE_INLINE std::int32_t GetX() const { return x_; }
 
@@ -30,7 +30,7 @@ public:
 
     [[nodiscard]] FORCE_INLINE std::int32_t GetRelY() const { return rel_y_; }
 
-    [[nodiscard]] FORCE_INLINE std::uint32_t GetState() const { return state_; }
+    [[nodiscard]] FORCE_INLINE MouseButtonMask GetButtonMask() const { return state_; }
 
     [[nodiscard]] String ToString() const override;
 
@@ -42,7 +42,7 @@ private:
     std::int32_t y_{0};
     std::int32_t rel_x_{0};
     std::int32_t rel_y_{0};
-    std::uint32_t state_;
+    MouseButtonMask state_;
 };
 
 class GOBOT_EXPORT MouseScrolledEvent : public Event {
