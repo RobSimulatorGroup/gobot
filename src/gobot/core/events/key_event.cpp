@@ -13,19 +13,19 @@
 
 namespace gobot {
 
-KeyEvent::KeyEvent(KeyCode key_code)
-: key_code_(key_code) {
-
+KeyEvent::KeyEvent(KeyCode key_code, std::uint16_t key_mod)
+    : key_code_(key_code),
+      key_mod_(key_mod)
+{
 }
 
 //////////////////////////////////////////////////////////////////
 
 KeyPressedEvent::KeyPressedEvent(KeyCode key_code,
-                                 std::uint16_t repeat_count,
-                                 std::uint16_t key_mod)
-    : KeyEvent(key_code),
-      repeat_count_(repeat_count),
-      key_mod_(key_mod)
+                                 std::uint16_t key_mod,
+                                 std::uint16_t repeat_count)
+    : KeyEvent(key_code, key_mod),
+      repeat_count_(repeat_count)
 {
 }
 
@@ -36,8 +36,8 @@ String KeyPressedEvent::ToString() const
 
 //////////////////////////////////////////////////////////////////
 
-KeyReleasedEvent::KeyReleasedEvent(KeyCode key_code)
-    : KeyEvent(key_code)
+KeyReleasedEvent::KeyReleasedEvent(KeyCode key_code, std::uint16_t key_mod)
+    : KeyEvent(key_code, key_mod)
 {
 }
 

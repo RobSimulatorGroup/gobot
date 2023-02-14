@@ -226,14 +226,14 @@ void SDLWindow::ProcessEvents() {
             }
             case SDL_KEYDOWN: {
                 if (event.key.windowID == windows_id_) {
-                    KeyPressedEvent key_press_event((KeyCode)event.key.keysym.scancode, event.key.repeat, event.key.keysym.sym);
+                    KeyPressedEvent key_press_event((KeyCode)event.key.keysym.scancode, event.key.keysym.mod, event.key.repeat);
                     event_callback(key_press_event);
                 }
                 break;
             }
             case SDL_KEYUP: {
                 if (event.key.windowID == windows_id_) {
-                    KeyReleasedEvent key_released_event((KeyCode)event.key.keysym.scancode);
+                    KeyReleasedEvent key_released_event((KeyCode)event.key.keysym.scancode, event.key.keysym.mod);
                     event_callback(key_released_event);
                 }
                 break;
