@@ -7,9 +7,11 @@
 
 #pragma once
 
+#include <gobot_export.h>
+
 namespace gobot {
 
-class OS {
+class GOBOT_EXPORT OS {
 
 private:
     static OS* s_singleton;

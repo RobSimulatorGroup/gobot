@@ -37,7 +37,9 @@ enum class SDLImageType {
 using SDLImage    = SDL_Surface;
 using SDLStreamIO = SDL_RWops;
 
-void FreeSDLImage(SDLImage* image);
+void GOBOT_EXPORT FreeSDLImage(SDLImage* image);
+
+
 using UniqueSDLImagePtr = std::unique_ptr<SDLImage, decltype(&FreeSDLImage)>;
 
 class GOBOT_EXPORT SDLImageHandle {

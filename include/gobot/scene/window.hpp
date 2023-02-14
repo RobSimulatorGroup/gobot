@@ -27,7 +27,7 @@ class GOBOT_EXPORT Window : public Node {
 public:
     Window();
 
-    virtual ~Window();
+    ~Window() override;
 
 private:
     WindowDriver window_driver_{WindowDriver::SDL};

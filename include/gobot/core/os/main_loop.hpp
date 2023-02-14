@@ -11,7 +11,7 @@
 
 namespace gobot {
 
-class MainLoop : public Object {
+class GOBOT_EXPORT MainLoop : public Object {
     GOBCLASS(MainLoop, Object)
 public:
     MainLoop() = default;

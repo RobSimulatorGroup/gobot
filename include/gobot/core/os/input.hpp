@@ -13,6 +13,7 @@
 #include "gobot/core/events/event.hpp"
 #include "gobot/core/events/key_event.hpp"
 #include "gobot/core/events/mouse_event.hpp"
+#include <gobot_export.h>
 
 #include "Eigen/Dense"
 
@@ -28,7 +29,7 @@ enum class MouseMode
 };
 
 
-class Input : public Object {
+class GOBOT_EXPORT Input : public Object {
     GOBCLASS(Input, Object);
 
 public:

@@ -15,7 +15,7 @@ class SDL_Window;
 
 namespace gobot {
 
-class SDLWindow : public WindowInterface {
+class GOBOT_EXPORT SDLWindow : public WindowInterface {
 public:
     SDLWindow();
 

@@ -8,10 +8,11 @@
 #pragma once
 
 #include "gobot/graphics/RHI/graphics_context.hpp"
+#include <gobot_export.h>
 
 namespace gobot {
 
-class GLContext : public GraphicsContext
+class GOBOT_EXPORT GLContext : public GraphicsContext
 {
 public:
     GLContext();

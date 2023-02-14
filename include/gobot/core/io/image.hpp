@@ -13,7 +13,7 @@
 
 namespace gobot {
 
-class Image : public Resource {
+class GOBOT_EXPORT Image : public Resource {
     GOBCLASS(Image, Resource);
 public:
     Image();

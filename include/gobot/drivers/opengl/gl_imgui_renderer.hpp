@@ -11,7 +11,7 @@
 
 namespace gobot {
 
-class GLIMGUIRenderer : public IMGUIRenderer
+class GOBOT_EXPORT GLIMGUIRenderer : public IMGUIRenderer
 {
 public:
     GLIMGUIRenderer(std::uint32_t width, std::uint32_t height, bool clear_screen);
