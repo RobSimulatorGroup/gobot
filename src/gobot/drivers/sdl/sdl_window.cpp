@@ -153,8 +153,11 @@ void SDLWindow::ProcessEvents() {
     // Check if any events have been activated (key pressed, mouse moved etc.) and call corresponding response functions
     SDL_Event event;
     while (SDL_PollEvent(&event)) {
-        // this should only run if there's imgui on
-        ImGui_ImplSDL2_ProcessEvent(&event);
+        if (ImGui::GetCurrentContext()) {
+            // this should only run if there's imgui on
+            ImGui_ImplSDL2_ProcessEvent(&event);
+        }
+
         switch (event.type) {
             case SDL_WINDOWEVENT: {
                 if (event.window.windowID == windows_id_) {
