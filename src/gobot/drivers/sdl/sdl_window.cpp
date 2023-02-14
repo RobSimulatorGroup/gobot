@@ -256,6 +256,7 @@ void SDLWindow::ProcessEvents() {
                             break;
                     }
                 }
+                break;
             }
             case SDL_DROPFILE: {
                 if (event.drop.windowID == windows_id_) {
@@ -263,35 +264,42 @@ void SDLWindow::ProcessEvents() {
                     WindowDropFileEvent drop_file_event(dropped_file_dir);
                     event_callback(drop_file_event);
                     SDL_free(dropped_file_dir);    // Free dropped_file_dir memory
-                    break;
                 }
+                break;
             }
-            case SDL_KEYDOWN:
-            {
+            case SDL_KEYDOWN: {
                 if (event.key.windowID == windows_id_) {
                     KeyPressedEvent key_press_event((KeyCode)event.key.keysym.scancode, event.key.repeat);
                     event_callback(key_press_event);
-                    break;
                 }
+                break;
             }
-            case SDL_KEYUP:
-            {
+            case SDL_KEYUP: {
                 if (event.key.windowID == windows_id_) {
                     KeyReleasedEvent key_released_event((KeyCode)event.key.keysym.scancode);
                     event_callback(key_released_event);
-                    break;
                 }
+                break;
             }
-            case SDL_MOUSEBUTTONUP:
-            {
-//                MouseButtonReleasedEvent mouse_button_released_event(event.key.keysym.scancode);
-//                event_callback(mouse_button_released_event);
+            case SDL_MOUSEBUTTONUP: {
+                if (event.button.windowID == windows_id_) {
+                    MouseButtonPressedEvent mouse_button_pressed_event((MouseButton)event.button.button,
+                                                                 event.button.x,
+                                                                 event.button.y,
+                                                                 (MouseButtonClickMode)event.button.clicks);
+                    event_callback(mouse_button_pressed_event);
+                }
                 break;
             }
             case SDL_MOUSEBUTTONDOWN:
             {
-//                MouseButtonPressedEvent mouseButtonPressedEvent(event.key.keysym.scancode);
-//                event_callback(mouseButtonPressedEvent);
+                if (event.button.windowID == windows_id_) {
+                    MouseButtonReleasedEvent mouse_released_event((MouseButton)event.button.button,
+                                                                 event.button.x,
+                                                                 event.button.y,
+                                                                 (MouseButtonClickMode)event.button.clicks);
+                    event_callback(mouse_released_event);
+                }
                 break;
             }
             case SDL_MOUSEWHEEL:

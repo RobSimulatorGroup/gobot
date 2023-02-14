@@ -9,13 +9,15 @@
 
 namespace gobot {
 
-enum class MouseButtonClickMode {
-    Single,
-    Double
+// Same as SDL_MouseButtonEvent
+enum class MouseButtonClickMode : std::uint8_t
+{
+    Single = 1,
+    Double = 2
 };
 
-// From SDL_mouse.h
-enum class MouseButton
+// Same as SDL_MouseButtonEvent
+enum class MouseButton : std::uint8_t
 {
     Left      = 1,
     Middle    = 2,

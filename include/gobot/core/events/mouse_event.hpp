@@ -54,21 +54,33 @@ private:
 class GOBOT_EXPORT MouseButtonEvent : public Event {
     GOBCLASS(MouseButtonEvent, Event)
 public:
-    explicit MouseButtonEvent(MouseButton button, MouseButtonClickMode click_mode);
+    explicit MouseButtonEvent(MouseButton button,
+                              std::int32_t x_coordinate,
+                              std::int32_t y_coordinate,
+                              MouseButtonClickMode click_mode);
 
     [[nodiscard]] FORCE_INLINE MouseButton GetMouseButton() const { return button_; }
+
+    [[nodiscard]] FORCE_INLINE std::int32_t GetXCoordinate() const { return x_coordinate_; }
+
+    [[nodiscard]] FORCE_INLINE std::int32_t GetYCoordinate() const { return y_coordinate_; }
 
     EVENT_CLASS_CATEGORY(EventCategoryMouse | EventCategoryInput | EventCategoryMouseButton)
 
 protected:
     MouseButton button_;
+    std::int32_t x_coordinate_;
+    std::int32_t y_coordinate_;
     MouseButtonClickMode click_mode_;
-};
+ };
 
 class GOBOT_EXPORT MouseButtonPressedEvent : public MouseButtonEvent {
     GOBCLASS(MouseButtonPressedEvent, MouseButtonEvent)
 public:
-    explicit MouseButtonPressedEvent(MouseButton button, MouseButtonClickMode = MouseButtonClickMode::Single);
+    explicit MouseButtonPressedEvent(MouseButton button,
+                                     std::int32_t x_coordinate,
+                                     std::int32_t y_coordinate,
+                                     MouseButtonClickMode click_mode);
 
     [[nodiscard]] String ToString() const override;
 
@@ -78,7 +90,10 @@ public:
 class GOBOT_EXPORT MouseButtonReleasedEvent : public MouseButtonEvent {
     GOBCLASS(MouseButtonReleasedEvent, MouseButtonEvent)
 public:
-    explicit MouseButtonReleasedEvent(MouseButton button, MouseButtonClickMode = MouseButtonClickMode::Single);
+    explicit MouseButtonReleasedEvent(MouseButton button,
+                                      std::int32_t x_coordinate,
+                                      std::int32_t y_coordinate,
+                                      MouseButtonClickMode click_mode);
 
     [[nodiscard]] String ToString() const override;
 

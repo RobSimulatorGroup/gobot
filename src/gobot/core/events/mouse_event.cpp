@@ -39,8 +39,13 @@ String MouseScrolledEvent::ToString() const
 
 /////////////////////////////////////////////////////////////////////////
 
-MouseButtonEvent::MouseButtonEvent(MouseButton button, MouseButtonClickMode click_mode)
+MouseButtonEvent::MouseButtonEvent(MouseButton button,
+                                   std::int32_t x_coordinate,
+                                   std::int32_t y_coordinate,
+                                   MouseButtonClickMode click_mode)
     : button_(button),
+      x_coordinate_(x_coordinate),
+      y_coordinate_(y_coordinate),
       click_mode_(click_mode)
 {
 }
@@ -48,8 +53,11 @@ MouseButtonEvent::MouseButtonEvent(MouseButton button, MouseButtonClickMode clic
 /////////////////////////////////////////////////////////////////////////
 
 
-MouseButtonPressedEvent::MouseButtonPressedEvent(MouseButton button, MouseButtonClickMode click_mode)
-    : MouseButtonEvent(button, click_mode)
+MouseButtonPressedEvent::MouseButtonPressedEvent(MouseButton button,
+                                                 std::int32_t x_coordinate,
+                                                 std::int32_t y_coordinate,
+                                                 MouseButtonClickMode click_mode)
+    : MouseButtonEvent(button, x_coordinate, y_coordinate, click_mode)
 {
 }
 
@@ -60,8 +68,11 @@ String MouseButtonPressedEvent::ToString() const
 
 //////////////////////////////////////////////////////////////////////
 
-MouseButtonReleasedEvent::MouseButtonReleasedEvent(MouseButton button, MouseButtonClickMode click_mode)
-    : MouseButtonEvent(button, click_mode)
+MouseButtonReleasedEvent::MouseButtonReleasedEvent(MouseButton button,
+                                                   std::int32_t x_coordinate,
+                                                   std::int32_t y_coordinate,
+                                                   MouseButtonClickMode click_mode)
+    : MouseButtonEvent(button, x_coordinate, y_coordinate, click_mode)
 {
 }
 
