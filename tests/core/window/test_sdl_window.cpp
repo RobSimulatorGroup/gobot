@@ -25,5 +25,5 @@ TEST(TestSDLWindow, test_create) {
     });
     sdl_window->ProcessEvents();
 
-    sleep(10);
+//    sleep(10);
 }
