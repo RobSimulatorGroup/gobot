@@ -13,7 +13,7 @@ class Main {
 public:
     static bool Start();
 
-    static void Cleanup(bool force = false);
+    static void Cleanup();
 };
 
 }

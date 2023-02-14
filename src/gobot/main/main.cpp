@@ -13,7 +13,7 @@ bool Main::Start() {
     return false;
 }
 
-void Main::Cleanup(bool force) {
+void Main::Cleanup() {
 
 }
 

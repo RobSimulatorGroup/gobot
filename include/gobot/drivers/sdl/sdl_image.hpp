@@ -34,8 +34,6 @@ enum class SDLImageType {
     Unknown,
 };
 
-
-
 using SDLImage    = SDL_Surface;
 using SDLStreamIO = SDL_RWops;
 

@@ -6,7 +6,7 @@
 */
 
 #include "gobot/core/os/input.hpp"
-
+#include "gobot/error_macros.hpp"
 
 namespace gobot {
 
@@ -97,6 +97,7 @@ bool Input::OnMouseEnter(MouseEnterEvent& e)
 
 
 Input* Input::GetInstance() {
+    ERR_FAIL_COND_V_MSG(s_singleton == nullptr, nullptr, "Must call this after initialize Input");
     return s_singleton;
 }
 
