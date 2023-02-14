@@ -43,16 +43,5 @@ String KeyReleasedEvent::ToString() const
     return fmt::format("KeyReleasedEvent: {}", magic_enum::enum_name(key_code_)).c_str();
 }
 
-/////////////////////////////////////////////////////////////////
-
-KeyTypedEvent::KeyTypedEvent(KeyCode key_code)
-    : KeyEvent(key_code)
-{
-}
-
-String KeyTypedEvent::ToString() const
-{
-    return fmt::format("KeyTypedEvent: {}", magic_enum::enum_name(key_code_)).c_str();
-}
 
 }

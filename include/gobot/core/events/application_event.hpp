@@ -39,19 +39,21 @@ public:
     EVENT_CLASS_CATEGORY(EventCategoryApplication)
 };
 
-class WindowFocusEvent : public Event {
-    GOBCLASS(WindowFocusEvent, Event)
+class WindowMaximizedEvent : public Event {
+    GOBCLASS(WindowMaximizedEvent, Event)
 public:
-    WindowFocusEvent() = default;
-    EVENT_CLASS_TYPE(WindowFocus)
+    WindowMaximizedEvent() = default;
+
+    EVENT_CLASS_TYPE(WindowMaximized)
     EVENT_CLASS_CATEGORY(EventCategoryApplication)
 };
 
-class WindowLostFocusEvent : public Event {
-    GOBCLASS(WindowLostFocusEvent, Event)
+class WindowMinimizedEvent : public Event {
+    GOBCLASS(WindowMinimizedEvent, Event)
 public:
-    WindowLostFocusEvent() = default;
-    EVENT_CLASS_TYPE(WindowLostFocus)
+    WindowMinimizedEvent() = default;
+
+    EVENT_CLASS_TYPE(WindowMinimized)
     EVENT_CLASS_CATEGORY(EventCategoryApplication)
 };
 
@@ -69,6 +71,14 @@ private:
     std::uint32_t y_;
 };
 
+class WindowTakeFocusEvent : public Event {
+    GOBCLASS(WindowTakeFocusEvent, Event)
+public:
+    WindowTakeFocusEvent() = default;
+
+    EVENT_CLASS_TYPE(WindowTakeFocus)
+    EVENT_CLASS_CATEGORY(EventCategoryApplication)
+};
 
 class GOBOT_EXPORT WindowDropFileEvent : public Event {
     GOBCLASS(WindowDropFileEvent, Event)

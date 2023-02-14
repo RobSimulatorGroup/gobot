@@ -232,19 +232,39 @@ void SDLWindow::ProcessEvents() {
                             event_callback(close_event);
                             break;
                         }
-                        case SDL_WINDOWEVENT_ENTER:
-                        case SDL_WINDOWEVENT_TAKE_FOCUS:
-                        case SDL_WINDOWEVENT_FOCUS_GAINED:
-                        case SDL_WINDOWEVENT_MAXIMIZED: {
-                            WindowFocusEvent focus_event;
+                        case SDL_WINDOWEVENT_ENTER: {
+                            MouseEnterEvent enter_event;
+                            event_callback(enter_event);
+                            break;
+                        }
+                        case SDL_WINDOWEVENT_FOCUS_GAINED: {
+                            KeyboardFocusEvent focus_event;
                             event_callback(focus_event);
                             break;
                         }
-                        case SDL_WINDOWEVENT_MINIMIZED:
-                        case SDL_WINDOWEVENT_LEAVE:
                         case SDL_WINDOWEVENT_FOCUS_LOST: {
-                            WindowLostFocusEvent lose_focus_event;
+                            KeyboardLoseFocusEvent lose_focus_event;
                             event_callback(lose_focus_event);
+                            break;
+                        }
+                        case SDL_WINDOWEVENT_TAKE_FOCUS: {
+                            WindowTakeFocusEvent take_focus_event;
+                            event_callback(take_focus_event);
+                            break;
+                        }
+                        case SDL_WINDOWEVENT_MAXIMIZED: {
+                            WindowMaximizedEvent maximized_event;
+                            event_callback(maximized_event);
+                            break;
+                        }
+                        case SDL_WINDOWEVENT_MINIMIZED: {
+                            WindowMinimizedEvent minimized_event;
+                            event_callback(minimized_event);
+                            break;
+                        }
+                        case SDL_WINDOWEVENT_LEAVE: {
+                            MouseLeaveEvent leave_event;
+                            event_callback(leave_event);
                             break;
                         }
                         case SDL_WINDOWEVENT_MOVED: {

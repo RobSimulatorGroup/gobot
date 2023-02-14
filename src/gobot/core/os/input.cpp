@@ -91,7 +91,11 @@ bool Input::OnMouseMoved(MouseMovedEvent& e)
 
 bool Input::OnMouseEnter(MouseEnterEvent& e)
 {
-    SetMouseOnScreen(e.GetEntered());
+    return false;
+}
+
+bool Input::OnMouseLeave(MouseLeaveEvent& e)
+{
     return false;
 }
 

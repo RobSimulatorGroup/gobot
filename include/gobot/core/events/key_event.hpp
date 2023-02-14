@@ -52,14 +52,22 @@ public:
     EVENT_CLASS_TYPE(KeyReleased)
 };
 
-class GOBOT_EXPORT KeyTypedEvent : public KeyEvent {
-    GOBCLASS(KeyTypedEvent, KeyEvent)
+class GOBOT_EXPORT KeyboardFocusEvent : public Event {
+    GOBCLASS(KeyboardFocusEvent, Event)
 public:
-    explicit KeyTypedEvent(KeyCode key_code);
+    explicit KeyboardFocusEvent() = default;
 
-    [[nodiscard]] String ToString() const override;
+    EVENT_CLASS_TYPE(KeyboardFocus)
+    EVENT_CLASS_CATEGORY(EventCategoryKeyboard | EventCategoryInput)
+};
 
-    EVENT_CLASS_TYPE(KeyTyped)
+class GOBOT_EXPORT KeyboardLoseFocusEvent : public Event {
+    GOBCLASS(KeyboardLoseFocusEvent, Event)
+public:
+    explicit KeyboardLoseFocusEvent() = default;
+
+    EVENT_CLASS_TYPE(KeyboardLoseFocus)
+    EVENT_CLASS_CATEGORY(EventCategoryKeyboard | EventCategoryInput)
 };
 
 }

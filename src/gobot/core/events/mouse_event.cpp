@@ -92,14 +92,4 @@ String MouseButtonReleasedEvent::ToString() const
 ///////////////////////////////////////////////////////////////////////
 
 
-MouseEnterEvent::MouseEnterEvent(bool enter)
-    : entered_(enter)
-{
-}
-
-String MouseEnterEvent::ToString() const
-{
-    return fmt::format("MouseEnterEvent: {}", entered_).c_str();
-}
-
 }

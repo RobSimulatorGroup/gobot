@@ -86,6 +86,8 @@ private:
 
     bool OnMouseEnter(MouseEnterEvent& e);
 
+    bool OnMouseLeave(MouseLeaveEvent& e);
+
 private:
     static Input* s_singleton;
 
