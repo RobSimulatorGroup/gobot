@@ -10,6 +10,10 @@ set(CMAKE_MODULE_PATH ${CMAKE_BINARY_DIR})
 option(BUILD_EXPERIMENT "using imgui and glfw" OFF)
 option(BUILD_TESTS "build tests" OFF)
 
+if(UNIX AND NOT APPLE)
+    set(LINUX TRUE)
+endif()
+
 # ---------------------------------------- START OF CONAN SETUP ----------------------------------------
 if (NOT EXISTS ${CMAKE_BINARY_DIR}/conanbuildinfo.cmake)
     if (NOT EXISTS "${CMAKE_BINARY_DIR}/conan.cmake")
@@ -136,10 +140,12 @@ set_target_properties(gobot
     AUTOUIC ON
 )
 
-add_executable(gobot_editor src/gobot/platform/linux/gobot_linux.cpp)
+
 if (MSVC)
     add_executable(gobot_editor src/gobot/platform/windows/godot_windows.cpp)
     target_compile_options(gobot_editor PUBLIC "/Zc:preprocessor")
+elseif(LINUX)
+    add_executable(gobot_editor src/gobot/platform/linux/gobot_linux.cpp)
 endif ()
 target_link_libraries(gobot_editor
     PRIVATE
