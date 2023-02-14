@@ -5,7 +5,6 @@
  * This file is created by Qiqi Wu, 23-2-10
 */
 
-#include "gobot/platform/windows/gobot_windows.hpp"
 
 int WINAPI WinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, LPSTR lpCmdLine, int nCmdShow) {
 //    godot_hinstance = hInstance;
