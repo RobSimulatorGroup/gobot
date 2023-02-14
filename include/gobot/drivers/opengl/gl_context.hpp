@@ -17,7 +17,7 @@ class GOBOT_EXPORT GLContext : public GraphicsContext
 public:
     GLContext();
 
-    ~GLContext();
+    ~GLContext() override;
 
     void Present() override;
 

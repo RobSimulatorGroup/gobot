@@ -18,13 +18,13 @@ public:
 
     ~MainLoop() override = default;
 
-    virtual void Initialize();
+    virtual void Initialize() {};
 
-    virtual bool PhysicsProcess(double time);
+    virtual bool PhysicsProcess(double time) {};
 
-    virtual bool Process(double time);
+    virtual bool Process(double time) {};
 
-    virtual void Finalize();
+    virtual void Finalize() {};
 };
 
 

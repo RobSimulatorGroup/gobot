@@ -9,6 +9,24 @@
 
 namespace gobot {
 
+GLContext::GLContext()
+{
 
+}
+
+GLContext::~GLContext()
+{
+
+}
+
+void GLContext::Present()
+{
+
+}
+
+void GLContext::OnImGui()
+{
+
+}
 
 }
