@@ -7,11 +7,12 @@
 
 #include <gtest/gtest.h>
 #include <gobot/drivers/sdl/sdl_window.hpp>
+#include <gobot/core/config/project_setting.hpp>
 #include <gobot/core/io/image_load.hpp>
 
 
 TEST(TestSDLWindow, test_create) {
-
+    gobot::ProjectSettings project_settings;
     auto ref = gobot::MakeRef<gobot::ResourceFormatLoaderSDLImage>();
 
     auto image = gobot::Image::LoadFromFile("icon.svg");

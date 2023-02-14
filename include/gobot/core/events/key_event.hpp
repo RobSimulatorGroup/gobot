@@ -30,7 +30,9 @@ protected:
 class GOBOT_EXPORT KeyPressedEvent : public KeyEvent {
     GOBCLASS(KeyPressedEvent, KeyEvent)
 public:
-    KeyPressedEvent(KeyCode key_code, uint16_t repeat_count);
+    KeyPressedEvent(KeyCode key_code,
+                    std::uint16_t repeat_count,
+                    std::uint16_t key_mod);
 
     [[nodiscard]] FORCE_INLINE uint16_t GetRepeatCount() const { return repeat_count_; }
 
@@ -39,7 +41,8 @@ public:
     EVENT_CLASS_TYPE(KeyPressed)
 
 private:
-    uint16_t repeat_count_;
+    std::uint16_t repeat_count_;
+    std::uint16_t key_mod_;
 };
 
 class GOBOT_EXPORT KeyReleasedEvent : public KeyEvent {

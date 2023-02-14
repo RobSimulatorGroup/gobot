@@ -13,7 +13,6 @@
 #include "gobot/log.hpp"
 #include "gobot/error_macros.hpp"
 
-#include <imgui.h>
 #include <imgui_impl_sdl.h>
 #include <SDL.h>
 
@@ -46,68 +45,6 @@ SDLWindow::~SDLWindow()
 {
     SDL_DestroyWindow(native_window_);
 }
-
-
-//    glfwSetKeyCallback(native_handle_, [](GLFWwindow* window, int key, int scancode, int action, int mods)
-//    {
-//        WindowData& data = *static_cast<WindowData*>((glfwGetWindowUserPointer(window)));
-//        switch(action) {
-//            case GLFW_PRESS: {
-//                KeyPressedEvent event(GLFWToGobotKeyboardKey(key), 0);
-//                data.event_callback(event);
-//                break;
-//            }
-//            case GLFW_RELEASE: {
-//                KeyReleasedEvent event(GLFWToGobotKeyboardKey(key));
-//                data.event_callback(event);
-//                break;
-//            }
-//            case GLFW_REPEAT:
-//            {
-//                KeyPressedEvent event(GLFWToGobotKeyboardKey(key), 1);
-//                data.event_callback(event);
-//                break;
-//            }
-//        }
-//    });
-//    glfwSetMouseButtonCallback(native_handle_, [](GLFWwindow* window, int button, int action, int mods)
-//    {
-//        WindowData& data = *static_cast<WindowData*>((glfwGetWindowUserPointer(window)));
-//        switch(action) {
-//            case GLFW_PRESS: {
-//                MouseButtonPressedEvent event(GLFWToGobotMouseKey(button));
-//                data.event_callback(event);
-//                break;
-//            }
-//            case GLFW_RELEASE: {
-//                MouseButtonReleasedEvent event(GLFWToGobotMouseKey(button));
-//                data.event_callback(event);
-//                break;
-//            }
-//        }
-//    });
-//    glfwSetScrollCallback(native_handle_, [](GLFWwindow* window, double xOffset, double yOffset) {
-//        WindowData& data = *static_cast<WindowData*>((glfwGetWindowUserPointer(window)));
-//        MouseScrolledEvent event((float)xOffset, (float)yOffset);
-//        data.event_callback(event);
-//    });
-//    glfwSetCursorPosCallback(native_handle_, [](GLFWwindow* window, double xPos, double yPos) {
-//        WindowData& data = *static_cast<WindowData*>((glfwGetWindowUserPointer(window)));
-//        MouseMovedEvent event((float)xPos /* * data.DPIScale*/, (float)yPos /* * data.DPIScale*/);
-//        data.event_callback(event);
-//    });
-//    glfwSetCursorEnterCallback(native_handle_, [](GLFWwindow* window, int enter) {
-//        WindowData& data = *static_cast<WindowData*>((glfwGetWindowUserPointer(window)));
-//        MouseEnterEvent event(enter > 0);
-//        data.event_callback(event);
-//    });
-//    glfwSetCharCallback(native_handle_, [](GLFWwindow* window, unsigned int keycode) {
-//        WindowData& data = *static_cast<WindowData*>((glfwGetWindowUserPointer(window)));
-//        KeyTypedEvent event(GLFWToGobotKeyboardKey(keycode));
-//        data.event_callback(event);
-//    });
-
-
 
 std::uint32_t SDLWindow::GetWidth() const
 {
@@ -289,7 +226,7 @@ void SDLWindow::ProcessEvents() {
             }
             case SDL_KEYDOWN: {
                 if (event.key.windowID == windows_id_) {
-                    KeyPressedEvent key_press_event((KeyCode)event.key.keysym.scancode, event.key.repeat);
+                    KeyPressedEvent key_press_event((KeyCode)event.key.keysym.scancode, event.key.repeat, event.key.keysym.sym);
                     event_callback(key_press_event);
                 }
                 break;

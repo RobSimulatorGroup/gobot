@@ -20,9 +20,12 @@ KeyEvent::KeyEvent(KeyCode key_code)
 
 //////////////////////////////////////////////////////////////////
 
-KeyPressedEvent::KeyPressedEvent(KeyCode key_code, uint16_t repeatCount)
+KeyPressedEvent::KeyPressedEvent(KeyCode key_code,
+                                 std::uint16_t repeat_count,
+                                 std::uint16_t key_mod)
     : KeyEvent(key_code),
-      repeat_count_(repeatCount)
+      repeat_count_(repeat_count),
+      key_mod_(key_mod)
 {
 }
 
