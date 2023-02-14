@@ -22,11 +22,11 @@ enum class RenderAPI : std::uint8_t
 class GraphicsContext
 {
 public:
-    virtual ~GraphicsContext();
+    virtual ~GraphicsContext() = default;
 
-    static void SetRenderAPI(RenderAPI api);
-
-    static GraphicsContext* Create();
+//    static void SetRenderAPI(RenderAPI api);
+//
+//    static GraphicsContext* Create();
 
     virtual void Init() = 0;
 
@@ -36,9 +36,9 @@ public:
 
     virtual float GetTotalGPUMemory() = 0;
 
-    virtual std::size_t GetMinUniformBufferOffsetAlignment() const = 0;
+    [[nodiscard]] virtual std::size_t GetMinUniformBufferOffsetAlignment() const = 0;
 
-    virtual bool FlipImGUITexture() const = 0;
+    [[nodiscard]] virtual bool FlipImGUITexture() const = 0;
 
     virtual void WaitIdle() const = 0;
 

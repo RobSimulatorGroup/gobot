@@ -20,9 +20,9 @@ public:
 
     virtual void Initialize() {};
 
-    virtual bool PhysicsProcess(double time) {};
+    virtual bool PhysicsProcess(double time) {return false; };
 
-    virtual bool Process(double time) {};
+    virtual bool Process(double time) { return false;};
 
     virtual void Finalize() {};
 };

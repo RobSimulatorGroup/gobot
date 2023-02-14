@@ -13,7 +13,7 @@
 #include "gobot/log.hpp"
 #include "gobot/error_macros.hpp"
 
-#include <imgui_impl_sdl.h>
+#include <imgui_impl_sdl2.h>
 #include <SDL.h>
 
 namespace gobot {
