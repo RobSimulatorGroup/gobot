@@ -45,3 +45,5 @@ package_add_test(test_glfw_window core/window/test_sdl_window.cpp)
 
 package_add_test(test_node_path scene/test_node_path.cpp)
 package_add_test(test_box_mesh scene/test_primitive_mesh.cpp)
+package_add_test(test_node scene/test_node.cpp)
+package_add_test(test_node_complex scene/test_node_complex.cpp)
