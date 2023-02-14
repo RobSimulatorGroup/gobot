@@ -27,7 +27,7 @@ MouseMovedEvent::MouseMovedEvent(std::int32_t x,
 
 String MouseMovedEvent::ToString() const
 {
-    return fmt::format("MouseMovedEvent: x: {}, y: {}, rel_x: {}, rel_y: {}, state: {#b}",
+    return fmt::format("MouseMovedEvent: x: {0}, y: {1}, rel_x: {2}, rel_y: {3}, state: {4:#b}",
                        x_, y_, rel_x_, rel_y_, static_cast<std::uint32_t>(state_)).c_str();
 }
 

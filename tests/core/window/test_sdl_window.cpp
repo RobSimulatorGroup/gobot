@@ -9,6 +9,7 @@
 #include <gobot/drivers/sdl/sdl_window.hpp>
 #include <gobot/core/config/project_setting.hpp>
 #include <gobot/core/io/image_load.hpp>
+#include <gobot/log.hpp>
 
 
 TEST(TestSDLWindow, test_create) {
@@ -17,12 +18,12 @@ TEST(TestSDLWindow, test_create) {
 
     auto image = gobot::Image::LoadFromFile("icon.svg");
     auto* sdl_window = new gobot::SDLWindow();
-    sdl_window->SetIcon(image);
-    sdl_window->Maximize();
-    //    sleep(10);
-    sdl_window->Minimize();
-    //    sleep(10);
-    sdl_window->Restore();
 
-//    sleep(10);
+    sdl_window->SetIcon(image);
+    sdl_window->SetEventCallback([](gobot::Event& event) -> void {
+        LOG_INFO("{}", event.ToString());
+    });
+    sdl_window->ProcessEvents();
+
+    sleep(10);
 }

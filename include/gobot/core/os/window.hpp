@@ -59,14 +59,10 @@ public:
 
     virtual void ProcessEvents() = 0;
 
-//    virtual void UpdateCursorImGui() = 0;
-
-//    virtual void SetEventCallback(const EventCallbackFn& callback) = 0;
+    virtual void SetEventCallback(const EventCallbackFn& callback) = 0;
 
 protected:
-//
-//    SharedPtr<Lumos::Graphics::SwapChain> m_SwapChain;
-//    SharedPtr<Lumos::Graphics::GraphicsContext> m_GraphicsContext;
+
 };
 
 

@@ -164,52 +164,52 @@ void SDLWindow::ProcessEvents() {
                     switch (event.window.event) {
                         case SDL_WINDOWEVENT_RESIZED: {
                             WindowResizeEvent resize_event(event.window.data1, event.window.data2);
-                            event_callback(resize_event);
+                            RunEventCallback(resize_event);
                             break;
                         }
                         case SDL_WINDOWEVENT_CLOSE: {
                             WindowCloseEvent close_event;
-                            event_callback(close_event);
+                            RunEventCallback(close_event);
                             break;
                         }
                         case SDL_WINDOWEVENT_ENTER: {
                             MouseEnterEvent enter_event;
-                            event_callback(enter_event);
+                            RunEventCallback(enter_event);
                             break;
                         }
                         case SDL_WINDOWEVENT_FOCUS_GAINED: {
                             KeyboardFocusEvent focus_event;
-                            event_callback(focus_event);
+                            RunEventCallback(focus_event);
                             break;
                         }
                         case SDL_WINDOWEVENT_FOCUS_LOST: {
                             KeyboardLoseFocusEvent lose_focus_event;
-                            event_callback(lose_focus_event);
+                            RunEventCallback(lose_focus_event);
                             break;
                         }
                         case SDL_WINDOWEVENT_TAKE_FOCUS: {
                             WindowTakeFocusEvent take_focus_event;
-                            event_callback(take_focus_event);
+                            RunEventCallback(take_focus_event);
                             break;
                         }
                         case SDL_WINDOWEVENT_MAXIMIZED: {
                             WindowMaximizedEvent maximized_event;
-                            event_callback(maximized_event);
+                            RunEventCallback(maximized_event);
                             break;
                         }
                         case SDL_WINDOWEVENT_MINIMIZED: {
                             WindowMinimizedEvent minimized_event;
-                            event_callback(minimized_event);
+                            RunEventCallback(minimized_event);
                             break;
                         }
                         case SDL_WINDOWEVENT_LEAVE: {
                             MouseLeaveEvent leave_event;
-                            event_callback(leave_event);
+                            RunEventCallback(leave_event);
                             break;
                         }
                         case SDL_WINDOWEVENT_MOVED: {
                             WindowMovedEvent moved_event(event.window.data1, event.window.data2);
-                            event_callback(moved_event);
+                            RunEventCallback(moved_event);
                             break;
                         }
                         default:
@@ -222,7 +222,7 @@ void SDLWindow::ProcessEvents() {
                 if (event.drop.windowID == windows_id_) {
                     char* dropped_file_dir = event.drop.file;
                     WindowDropFileEvent drop_file_event(dropped_file_dir);
-                    event_callback(drop_file_event);
+                    RunEventCallback(drop_file_event);
                     SDL_free(dropped_file_dir);    // Free dropped_file_dir memory
                 }
                 break;
@@ -230,14 +230,14 @@ void SDLWindow::ProcessEvents() {
             case SDL_KEYDOWN: {
                 if (event.key.windowID == windows_id_) {
                     KeyPressedEvent key_press_event((KeyCode)event.key.keysym.scancode, (KeyModifiers)event.key.keysym.mod, event.key.repeat);
-                    event_callback(key_press_event);
+                    RunEventCallback(key_press_event);
                 }
                 break;
             }
             case SDL_KEYUP: {
                 if (event.key.windowID == windows_id_) {
                     KeyReleasedEvent key_released_event((KeyCode)event.key.keysym.scancode, (KeyModifiers)event.key.keysym.mod);
-                    event_callback(key_released_event);
+                    RunEventCallback(key_released_event);
                 }
                 break;
             }
@@ -247,7 +247,7 @@ void SDLWindow::ProcessEvents() {
                                                                  event.button.x,
                                                                  event.button.y,
                                                                  (MouseButtonClickMode)event.button.clicks);
-                    event_callback(mouse_button_pressed_event);
+                    RunEventCallback(mouse_button_pressed_event);
                 }
                 break;
             }
@@ -258,14 +258,14 @@ void SDLWindow::ProcessEvents() {
                                                                  event.button.x,
                                                                  event.button.y,
                                                                  (MouseButtonClickMode)event.button.clicks);
-                    event_callback(mouse_released_event);
+                    RunEventCallback(mouse_released_event);
                 }
                 break;
             }
             case SDL_MOUSEWHEEL: {
                 if (event.wheel.windowID == windows_id_) {
                     MouseScrolledEvent mouse_scrolled_event(event.wheel.preciseX, event.wheel.preciseY);
-                    event_callback(mouse_scrolled_event);
+                    RunEventCallback(mouse_scrolled_event);
                 }
                 break;
             }
@@ -276,11 +276,18 @@ void SDLWindow::ProcessEvents() {
                                                       event.motion.xrel,
                                                       event.motion.yrel,
                                                       (MouseButtonMask) event.motion.state);
-                    event_callback(mouse_moved_event);
+                    RunEventCallback(mouse_moved_event);
                 }
                 break;
             }
         }
+    }
+}
+
+void SDLWindow::RunEventCallback(Event& event)
+{
+    if (event_callback_) {
+        event_callback_(event);
     }
 }
 

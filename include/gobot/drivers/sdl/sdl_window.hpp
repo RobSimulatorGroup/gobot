@@ -63,11 +63,15 @@ public:
 
     [[nodiscard]] WindowHandle GetNativeWindowHandle() const override;
 
+    void SetEventCallback(const EventCallbackFn& callback) override { event_callback_ = callback; }
+
+    void RunEventCallback(Event& event);
+
 private:
     RenderAPI render_api_;
     SDL_Window* native_window_{nullptr};
 
-    EventCallbackFn event_callback;
+    EventCallbackFn event_callback_{nullptr};
     std::uint32_t windows_id_; // cache of sdl windows id
 };
 
