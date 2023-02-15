@@ -17,18 +17,8 @@ endif()
 # ---------------------------------------- START OF CONAN SETUP ----------------------------------------
 if (NOT EXISTS ${CMAKE_BINARY_DIR}/conanbuildinfo.cmake)
     if (NOT EXISTS "${CMAKE_BINARY_DIR}/conan.cmake")
-        message(STATUS "Downloading conan.cmake from https://github.com/conan-io/cmake-conan")
-        file(DOWNLOAD "https://raw.githubusercontent.com/conan-io/cmake-conan/develop/conan.cmake" "${CMAKE_BINARY_DIR}/conan.cmake"
-             SHOW_PROGRESS
-             TIMEOUT 10
-             STATUS CONAN_CMAKE_DOWNLOAD_STATUS)
-        list(GET CONAN_CMAKE_DOWNLOAD_STATUS 0 CONAN_CMAKE_DOWNLOAD_VALUE)
-        list(GET CONAN_CMAKE_DOWNLOAD_STATUS 1 CONAN_CMAKE_DOWNLOAD_MESSAGE)
-        if (NOT ${CONAN_CMAKE_DOWNLOAD_VALUE})
-            message(WARNING "Failed to download conan.cmake! Message: ${CONAN_CMAKE_DOWNLOAD_MESSAGE}")
-            message(STATUS "Try to copy conan.cmake to ${CMAKE_BINARY_DIR}")
-            file(COPY_FILE "${CMAKE_CURRENT_SOURCE_DIR}/cmake/conan.cmake" "${CMAKE_BINARY_DIR}/conan.cmake") 
-        endif ()
+        message(STATUS "Try to copy conan.cmake to ${CMAKE_BINARY_DIR}")
+        file(COPY_FILE "${CMAKE_CURRENT_SOURCE_DIR}/cmake/conan.cmake" "${CMAKE_BINARY_DIR}/conan.cmake")
     endif ()
     include(${CMAKE_BINARY_DIR}/conan.cmake)
     if (CONAN_PROFILE_BUILD AND CONAN_PROFILE_HOST)

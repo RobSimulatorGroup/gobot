@@ -6,8 +6,14 @@
 */
 
 
-int WINAPI WinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, LPSTR lpCmdLine, int nCmdShow) {
-//    godot_hinstance = hInstance;
-//    return main(0, nullptr);
+#ifndef UNICODE
+#define UNICODE
+#endif
+
+#include <windows.h>
+
+int WINAPI wWinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, PWSTR pCmdLine, int nCmdShow)
+{
+
     return 0;
 }
