@@ -14,7 +14,7 @@
 
 namespace gobot {
 
-template <typename _Scalar, int _Options, int _MaxRows, int _MaxCols>
+template <typename _Scalar>
 struct MatrixData {
   int rows;
   int cols;
@@ -31,20 +31,43 @@ template <typename _Scalar, int _Rows, int _Cols,
 class Matrix : public Eigen::Matrix<_Scalar, _Rows, _Cols, _Options, _MaxRows,
                                     _MaxCols> {
  public:
-  MatrixData<_Scalar, _Options, _MaxRows, _MaxCols> GetMatrixData() const {
+  using BaseType =
+      Eigen::Matrix<_Scalar, _Rows, _Cols, _Options, _MaxRows, _MaxCols>;
+  using BaseType::BaseType;
+
+  MatrixData<_Scalar> GetMatrixData() const {
+    auto self_view = this->reshaped();
     if constexpr (_Rows != Eigen::Dynamic && _Cols != Eigen::Dynamic) {
-      return {this->RowsAtCompileTime,
-              this->ColsAtCompileTime,
-              {this->data(), this->data() + this->SizeAtCompileTime}};
+      return {_Rows, _Cols, std::vector(self_view.begin(), self_view.end())};
     } else {
-      return {this->rows(),
-              this->cols(),
-              {this->data(), this->data() + this->size()}};
-    }
+      return {this->rows(), this->cols(),
+              std::vector(self_view.begin(), self_view.end())};
+    };
   }
 
-  void SetMatrixData(
-      MatrixData<_Scalar, _Options, _MaxRows, _MaxCols> data) {
+  void SetMatrixData(MatrixData<_Scalar> data) {
+    if constexpr (_Rows != Eigen::Dynamic) {
+      if (data.rows != _Rows) {
+        return;
+      }
+    }
+
+    if constexpr (_Cols != Eigen::Dynamic) {
+      if (data.cols != _Cols) {
+        return;
+      }
+    }
+
+    if (data.rows * data.cols != data.storage.size()) {
+      return;
+    }
+
+    if constexpr (_Rows == Eigen::Dynamic || _Cols == Eigen::Dynamic) {
+      this->resize(data.rows, data.cols);
+    }
+    
+    auto self_view = this->reshaped();
+    std::copy(data.begin(), data.end(), self_view.begin());
   }
 };
 
