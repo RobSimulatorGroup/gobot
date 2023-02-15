@@ -34,6 +34,70 @@ void Node3D::NotificationCallBack(NotificationType notification) {
     }
 }
 
+Matrix3d Node3D::Euler2Matrix(const Vector3d &euler, EulerOrder order) {
+    Matrix3d m;
+    switch (order) {
+        case EulerOrder::XYZ: {
+            m = Eigen::AngleAxisd(euler[0], Vector3d::UnitX())
+              * Eigen::AngleAxisd(euler[1], Vector3d::UnitY())
+              * Eigen::AngleAxisd(euler[2], Vector3d::UnitZ());
+        } break;
+        case EulerOrder::ZYX: {
+            m = Eigen::AngleAxisd(euler[2], Vector3d::UnitZ())
+              * Eigen::AngleAxisd(euler[1], Vector3d::UnitY())
+              * Eigen::AngleAxisd(euler[0], Vector3d::UnitX());
+        }
+    }
+
+    return m;
+}
+
+Vector3d Node3D::Matrix2Euler(const Matrix3d &m, EulerOrder order) {
+    Vector3d euler;
+    switch (order) {
+        case EulerOrder::XYZ: {
+            euler = m.eulerAngles(0, 1, 2);
+        } break;
+        case EulerOrder::ZYX: {
+            euler = m.eulerAngles(2, 1, 0);
+        }
+    }
+
+    return euler;
+}
+
+Vector3d Node3D::GetScaleFromTransform(const Transform3d &transform) {
+    double sx = transform.linear().block<3, 1>(0, 0).norm();
+    double sy = transform.linear().block<3, 1>(0, 1).norm();
+    double sz = transform.linear().block<3, 1>(0, 2).norm();
+
+    return {sx, sy, sz};
+}
+
+Vector3d Node3D::GetEulerFromTransform(const Transform3d &transform, EulerOrder order) {
+    return Matrix2Euler(transform.linear(), order);
+}
+
+void Node3D::UpdateLocalTransform() const {
+    // This function is called when the local transform (data.local_transform) is dirty
+    // and the right value is contained in the Euler rotation and scale.
+
+    local_transform_.linear() = Euler2Matrix(euler_rotation_, euler_rotation_order_);
+    local_transform_ *= Eigen::Scaling(scale_[0], scale_[1], scale_[2]);
+
+    dirty_ &= ~DIRTY_LOCAL_TRANSFORM;
+}
+
+void Node3D::UpdateRotationAndScale() const {
+    // This function is called when the Euler rotation (euler_rotation_) is dirty
+    // and the right value is contained in the local transform.
+
+    scale_ = GetScaleFromTransform(local_transform_);
+    euler_rotation_ = GetEulerFromTransform(local_transform_, euler_rotation_order_);
+
+    dirty_ &= ~DIRTY_EULER_AND_SCALE;
+}
+
 Node3D *Node3D::GetParentNode3D() const {
     return dynamic_cast<Node3D *>(GetParent());
 }
@@ -50,11 +114,20 @@ void Node3D::SetPosition(const Vector3d &position) {
 void Node3D::SetRotationEditMode(RotationEditMode mode) {
     if (rotation_edit_mode_ == mode) return;
 
-    // todo: normalize local_transform_ if edit in rotation matrix
-    bool transform_changed = false;
-    if (rotation_edit_mode_ == RotationEditMode::RotationMatrix && !(dirty_ | DIRTY_LOCAL_TRANSFORM)) {
-        transform_changed = true;
+    rotation_edit_mode_ = mode;
+
+    if (mode == RotationEditMode::Euler && (dirty_ & DIRTY_EULER_AND_SCALE)) {
+        // If going to Euler mode, ensure that vectors are _not_ dirty, else the retrieved value may be wrong.
+        // Otherwise keep what is there, so switching back and forth between modes does not break the vectors.
+
+        UpdateRotationAndScale();
     }
+
+    // todo: notify property list change
+}
+
+Node3D::RotationEditMode Node3D::GetRotationEditMode() const {
+    return rotation_edit_mode_;
 }
 
 void Node3D::SetRotationOrder(EulerOrder order) {
@@ -64,7 +137,16 @@ void Node3D::SetRotationOrder(EulerOrder order) {
     ERR_FAIL_INDEX(static_cast<int32_t>(order), 6);
     bool transform_changed = false;
 
-    // todo: update rot/scale if dirty
+    if (dirty_ & DIRTY_EULER_AND_SCALE) {
+        UpdateRotationAndScale();
+    } else if (dirty_ & DIRTY_LOCAL_TRANSFORM) {
+        Matrix3d m = Euler2Matrix(euler_rotation_, euler_rotation_order_);
+        euler_rotation_ = Matrix2Euler(m, order);
+        transform_changed = true;
+    } else {
+        dirty_ |= DIRTY_LOCAL_TRANSFORM;
+        transform_changed = true;
+    }
 
     euler_rotation_order_ = order;
 
@@ -77,10 +159,14 @@ void Node3D::SetRotationOrder(EulerOrder order) {
 }
 
 void Node3D::SetRotation(const Vector3d &euler_rad) {
-    // todo: update scale only if rotation and scale are dirty
+    if (dirty_ & DIRTY_EULER_AND_SCALE) {
+        // Update scale only if rotation and scale are dirty, as rotation will be overridden.
+        scale_ = GetScaleFromTransform(local_transform_);
+        dirty_ &= ~DIRTY_EULER_AND_SCALE;
+    }
 
     euler_rotation_ = euler_rad;
-    // todo: set dirty
+    dirty_ = DIRTY_LOCAL_TRANSFORM;
     PropagateTransformChanged(this);
 
     if (notify_local_transform_) {
@@ -94,10 +180,14 @@ void Node3D::SetRotationDeg(const Vector3d &euler_deg) {
 }
 
 void Node3D::SetScale(const Vector3d &scale) {
-    // todo: update rotation only if rotation and scale are dirty
+    if (dirty_ & DIRTY_EULER_AND_SCALE) {
+        // Update rotation only if rotation and scale are dirty, as scale will be overridden.
+        euler_rotation_ = Matrix2Euler(local_transform_.linear(), euler_rotation_order_);
+        dirty_ &= ~DIRTY_EULER_AND_SCALE;
+    }
 
     scale_ = scale;
-    // todo: set dirty
+    dirty_ = DIRTY_LOCAL_TRANSFORM;
     PropagateTransformChanged(this);
 
     if (notify_local_transform_) {
@@ -108,13 +198,13 @@ void Node3D::SetScale(const Vector3d &scale) {
 void Node3D::SetGlobalPosition(const Vector3d &position) {
     Transform3d transform = GetGlobalTransform();
     transform.translation() = position;
-    // set global transform
+    SetGlobalTransform(transform);
 }
 
 
 void Node3D::SetTransform(const Transform3d &transform) {
     local_transform_ = transform;
-    // todo: mark rot/scale dirty
+    dirty_ = DIRTY_EULER_AND_SCALE;
 
     PropagateTransformChanged(this);
 
@@ -143,7 +233,9 @@ Node3D::EulerOrder Node3D::GetRotationOrder() const {
 }
 
 Vector3d Node3D::GetRotation() const {
-    // todo: update rotation and scale if dirty
+    if (dirty_ & DIRTY_EULER_AND_SCALE) {
+        UpdateRotationAndScale();
+    }
 
     return euler_rotation_;
 }
@@ -154,7 +246,9 @@ Vector3d Node3D::GetRotationDeg() const {
 }
 
 Vector3d Node3D::GetScale() const {
-    // todo: update rotation and scale if dirty
+    if (dirty_ & DIRTY_EULER_AND_SCALE) {
+        UpdateRotationAndScale();
+    }
 
     return scale_;
 }
@@ -164,6 +258,21 @@ Transform3d Node3D::GetGlobalTransform() const {
     ERR_FAIL_COND_V(!IsInsideTree(), Transform3d());
 
     // todo: update local transform if dirty
+    if (dirty_ & DIRTY_GLOBAL_TRANSFORM) {
+        UpdateLocalTransform();
+
+        if (parent_) {
+            global_transform_ = parent_->global_transform_ * local_transform_;
+        } else {
+            global_transform_ = local_transform_;
+        }
+
+        if (disable_scale_) {
+            global_transform_.linear().normalize();
+        }
+
+        dirty_ &= ~DIRTY_GLOBAL_TRANSFORM;
+    }
 
     return global_transform_;
 }

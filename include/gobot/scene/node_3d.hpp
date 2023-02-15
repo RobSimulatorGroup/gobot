@@ -11,13 +11,13 @@
 
 #include <Eigen/Dense>
 #include <Eigen/Geometry>
-#include <cmath>
+//#include <cmath>
 
 namespace gobot {
 
 using Matrix3d = Eigen::Matrix3d;
 using Vector3d = Eigen::Vector3d;
-using Transform3d = Eigen::Isometry3d;
+using Transform3d = Eigen::Affine3d;
 using Quaternion = Eigen::Quaterniond;
 
 class ViewPort;
@@ -29,15 +29,10 @@ public:
     enum class RotationEditMode {
         Euler,
         Quaternion,
-        RotationMatrix,
     };
 
     enum class EulerOrder {
         XYZ,
-        XZY,
-        YXZ,
-        YZX,
-        ZXY,
         ZYX
     };
 
@@ -50,7 +45,7 @@ public:
     void SetPosition(const Vector3d &position);
 
     void SetRotationEditMode(RotationEditMode mode);
-//    RotationEditMode GetRotationEditMode() const;
+    RotationEditMode GetRotationEditMode() const;
 
     void SetRotationOrder(EulerOrder order);
     void SetRotation(const Vector3d &euler_rad);
@@ -120,6 +115,9 @@ public:
 //    NodePath GetVisibilityParent() const;
 
 protected:
+    FORCE_INLINE void UpdateLocalTransform() const;
+    FORCE_INLINE void UpdateRotationAndScale() const;
+
     void NotificationCallBack(NotificationType notification);
 
 private:
@@ -134,6 +132,12 @@ private:
 
     FORCE_INLINE double Deg2Rad(double deg) const { return deg * (M_PI / 180.0); };
     FORCE_INLINE double Rad2Deg(double rad) const { return rad * (180.0 / M_PI); };
+
+    static FORCE_INLINE Matrix3d Euler2Matrix(const Vector3d &euler, EulerOrder order);
+    static FORCE_INLINE Vector3d Matrix2Euler(const Matrix3d &m, EulerOrder order);
+
+    static FORCE_INLINE Vector3d GetScaleFromTransform(const Transform3d &transform) ;
+    static FORCE_INLINE Vector3d GetEulerFromTransform(const Transform3d &transform, EulerOrder order) ;
 
     mutable Transform3d global_transform_ = Transform3d::Identity();
     mutable Transform3d local_transform_ = Transform3d::Identity();
