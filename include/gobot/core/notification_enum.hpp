@@ -13,6 +13,13 @@ enum class NotificationType {
     PostNew,
     PreDelete,
 
+    EnterTree,
+    ExitTree,
+    PathRenamed,
+    Ready,
+    Parented,
+    Unparented,
+    MovedInParent,
 };
 
 }
