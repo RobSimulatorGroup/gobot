@@ -9,6 +9,7 @@
 #include <gtest/gtest.h>
 
 #include <gobot/core/math/matrix.hpp>
+#include <gobot/core/io/variant_serializer.hpp>
 
 TEST(TestMatrix, test_setter_getter) {
   using namespace gobot;
@@ -17,4 +18,14 @@ TEST(TestMatrix, test_setter_getter) {
   Matrix3<> test;
   test.SetMatrixData(data);
   ASSERT_EQ(matrix, test);
+}
+
+TEST(TestMatrix, test_registration) {
+  using namespace gobot;
+  Matrix3<> matrix{Eigen::Matrix<real_t, 3, 3>::Random()};
+  auto json = gobot::VariantSerializer::VariantToJson(matrix);
+  Matrix3<> test;
+  Variant test_variant(test);
+  ASSERT_TRUE(gobot::VariantSerializer::JsonToVariant(test_variant, json));
+  ASSERT_EQ(test, matrix);
 }

@@ -11,17 +11,14 @@
 #include "gobot/core/registration.hpp"
 
 GOBOT_REGISTRATION {
-  //Class_<MatrixShape>("MatrixShape")
-  //    .constructor()(CtorAsObject)
-  //    .property("rows", &MatrixShape::rows)
-  //    .property("cols", &MatrixShape::cols);
+  Class_<MatrixData<real_t>>("MatrixShape")
+      .constructor()(CtorAsObject)
+      .property("rows", &MatrixData<real_t>::rows)
+      .property("cols", &MatrixData<real_t>::cols)
+      .property("storage", &MatrixData<real_t>::storage);
 
-  //Matrix3<> a;
-  //Class_<Matrix3<>>("Matrix3")
-  //    .constructor()(CtorAsObject)
-  //    .property("matrix_shape", &Matrix3<>::GetMatrixShape,
-  //              &Matrix3<>::SetMatrixShape);
-      //.property("resource_name", &MatrixXd::GetName, &MatrixXd::SetName)
-      //.property("resource_path", &MatrixXd::GetPath,
-      //          &MatrixXd::SetPathNotTakeOver);
+  Class_<Matrix3<>>("Matrix3")
+      .constructor()(CtorAsObject)
+      .property("matrix_data", &Matrix3<>::GetMatrixData,
+                &Matrix3<>::SetMatrixData);
 };
