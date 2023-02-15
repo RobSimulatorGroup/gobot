@@ -10,6 +10,11 @@
 
 #include <gobot/core/math/matrix.hpp>
 
-TEST(TestMatrix, test_constructor) { 
-   gobot::Matrix3<> a;
+TEST(TestMatrix, test_setter_getter) {
+  using namespace gobot;
+  Matrix3<> matrix{Eigen::Matrix<real_t, 3, 3>::Random()};
+  auto data = matrix.GetMatrixData();
+  Matrix3<> test;
+  test.SetMatrixData(data);
+  ASSERT_EQ(matrix, test);
 }

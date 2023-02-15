@@ -45,7 +45,7 @@ class Matrix : public Eigen::Matrix<_Scalar, _Rows, _Cols, _Options, _MaxRows,
     };
   }
 
-  void SetMatrixData(MatrixData<_Scalar> data) {
+  void SetMatrixData(const MatrixData<_Scalar>& data) {
     if constexpr (_Rows != Eigen::Dynamic) {
       if (data.rows != _Rows) {
         return;
@@ -65,9 +65,9 @@ class Matrix : public Eigen::Matrix<_Scalar, _Rows, _Cols, _Options, _MaxRows,
     if constexpr (_Rows == Eigen::Dynamic || _Cols == Eigen::Dynamic) {
       this->resize(data.rows, data.cols);
     }
-    
+
     auto self_view = this->reshaped();
-    std::copy(data.begin(), data.end(), self_view.begin());
+    std::copy(data.storage.cbegin(), data.storage.cend(), self_view.begin());
   }
 };
 
