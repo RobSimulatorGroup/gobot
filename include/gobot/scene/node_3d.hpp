@@ -126,12 +126,13 @@ private:
         DIRTY_GLOBAL_TRANSFORM = 4,
     };
 
+    void NotifyDirty();
     void PropagateTransformChanged(Node3D *origin);
 
-    void UpdateVisibilityParent(bool update_root);
+//    void UpdateVisibilityParent(bool update_root);
 
-    FORCE_INLINE double Deg2Rad(double deg) const { return deg * (M_PI / 180.0); };
-    FORCE_INLINE double Rad2Deg(double rad) const { return rad * (180.0 / M_PI); };
+    static FORCE_INLINE double Deg2Rad(double deg) { return deg * (M_PI / 180.0); };
+    static FORCE_INLINE double Rad2Deg(double rad) { return rad * (180.0 / M_PI); };
 
     static FORCE_INLINE Matrix3d Euler2Matrix(const Vector3d &euler, EulerOrder order);
     static FORCE_INLINE Vector3d Matrix2Euler(const Matrix3d &m, EulerOrder order);
@@ -158,7 +159,7 @@ private:
     Node3D *parent_ = nullptr;
     std::vector<Node3D *> children_;
 
-//    bool ignore_notification_ = false;
+    bool ignore_notification_ = false;
     bool notify_local_transform_ = false;
     bool notify_transform_ = false;
 

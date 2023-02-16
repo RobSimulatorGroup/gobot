@@ -9,10 +9,26 @@
 
 namespace gobot {
 
+void Node3D::NotifyDirty() {
+
+}
+
 void Node3D::NotificationCallBack(NotificationType notification) {
     switch (notification) {
         case NotificationType::EnterTree: {
             ERR_FAIL_COND(!GetTree());
+
+            Node *p = GetParent();
+            if (p) {
+                parent_ = dynamic_cast<Node3D *>(p);
+                parent_->children_.push_back(this);
+            }
+
+            dirty_ |= DIRTY_GLOBAL_TRANSFORM; // Global is always dirty upon entering a scene
+            NotifyDirty();
+
+            Notification(NotificationType::EnterWorld);
+            // todo: update visibility parent
 
         } break;
 
@@ -499,17 +515,6 @@ void Node3D::PropagateTransformChanged(Node3D *origin) {
     }
 
     // todo: do transform
-}
-
-void Node3D::UpdateVisibilityParent(bool update_root) {
-    if (!visibility_parent_path_.IsEmpty()) {
-        if (!update_root) {
-            return;
-        }
-        Node *parent = GetNodeOrNull(visibility_parent_path_);
-        ERR_FAIL_COND_MSG(!parent, String("Can't find visibility parent node at path: " + visibility_parent_path_));
-        
-    }
 }
 
 } // End of namespace gobot
