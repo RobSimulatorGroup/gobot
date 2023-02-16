@@ -53,12 +53,11 @@ public:
     void SetScale(const Vector3d &scale);
 
     void SetGlobalPosition(const Vector3d &position);
-//    void SetGlobalRotation(const Vector3d &euler_rad);
-//    void SetGlobalRotationDeg(const Vector3d &euler_deg);
-
+    void SetGlobalRotation(const Vector3d &euler_rad);
+    void SetGlobalRotationDeg(const Vector3d &euler_deg);
 
     void SetTransform(const Transform3d &transform);
-//    void SetQuaternion(const Quaternion &quaternion);
+    void SetQuaternion(const Quaternion &quaternion);
     void SetGlobalTransform(const Transform3d &transform);
 
     Vector3d GetPosition() const;
@@ -68,51 +67,50 @@ public:
     Vector3d GetRotationDeg() const;
     Vector3d GetScale() const;
 
-//    Vector3d GetGlobalPosition() const;
-//    Vector3d GetGlobalRotation() const;
-//    Vector3d GetGlobalRotationDeg() const;
+    Vector3d GetGlobalPosition() const;
+    Vector3d GetGlobalRotation() const;
+    Vector3d GetGlobalRotationDeg() const;
 
-//
-//    Transform3d GetTransform() const;
-//    Transform3d GetBasis() const;
-//    Quaternion GetQuaternion() const;
+    Transform3d GetTransform() const;
+    Matrix3d GetRotationMatrix() const;
+    Quaternion GetQuaternion() const;
     Transform3d GetGlobalTransform() const;
 
-//    Transform3d GetRelativeTransform(const Node *parent) const;
-//
-//    void Rotate(const Vector3d &axis, double angle);
-//    void RotateX(double angle);
-//    void RotateY(double angle);
-//    void RotateZ(double angle);
-//    void Translate(const Vector3d &offset);
-//    void Scale(const Vector3d &ratio);
-//
-//    void RotateObjectLocal(const Vector3d &axis, double angle);
-//    void ScaleObjectLocal(const Vector3d &ratio);
-//    void TranslateObjectLocal(const Vector3d &offset);
-//
-//    Vector3d ToLocal(Vector3d global) const;
-//    Vector3d ToGlobal(Vector3d local) const;
-//
-//    void SetNotifyTransform(bool enabled);
-//    bool IsTransformNotificationEnabled() const;
-//
-//    void SetNotifyLocalTransform(bool enabled);
-//    bool IsLocalTransformNotificationEnabled() const;
-//
+    Transform3d GetRelativeTransform(const Node *parent) const;
+
+    void Rotate(const Vector3d &axis, double angle);
+    void RotateX(double angle);
+    void RotateY(double angle);
+    void RotateZ(double angle);
+    void Translate(const Vector3d &offset);
+    void Scale(const Vector3d &ratio);
+
+    void RotateObjectLocal(const Vector3d &axis, double angle);
+    void ScaleObjectLocal(const Vector3d &ratio);
+    void TranslateObjectLocal(const Vector3d &offset);
+
+    Vector3d ToLocal(const Vector3d &global) const;
+    Vector3d ToGlobal(const Vector3d &local) const;
+
+    void SetNotifyTransform(bool enabled);
+    bool IsTransformNotificationEnabled() const;
+
+    void SetNotifyLocalTransform(bool enabled);
+    bool IsLocalTransformNotificationEnabled() const;
+
 //    void Orthonormalize();
-//    void SetIdentity();
-//
-//    void SetVisible(bool visible);
-//    void Show();
-//    void Hide();
-//    bool IsVisible() const;
-//    bool IsVisibleInTree() const;
-//
-//    void ForceUpdateTransform();
-//
-//    void SetVisibilityParent(const NodePath &path);
-//    NodePath GetVisibilityParent() const;
+    void SetIdentity();
+
+    void SetVisible(bool visible);
+    void Show();
+    void Hide();
+    bool IsVisible() const;
+    bool IsVisibleInTree() const;
+
+    void ForceUpdateTransform();
+
+    void SetVisibilityParent(const NodePath &path);
+    NodePath GetVisibilityParent() const;
 
 protected:
     FORCE_INLINE void UpdateLocalTransform() const;
@@ -130,14 +128,17 @@ private:
 
     void PropagateTransformChanged(Node3D *origin);
 
+    void UpdateVisibilityParent(bool update_root);
+
     FORCE_INLINE double Deg2Rad(double deg) const { return deg * (M_PI / 180.0); };
     FORCE_INLINE double Rad2Deg(double rad) const { return rad * (180.0 / M_PI); };
 
     static FORCE_INLINE Matrix3d Euler2Matrix(const Vector3d &euler, EulerOrder order);
     static FORCE_INLINE Vector3d Matrix2Euler(const Matrix3d &m, EulerOrder order);
 
-    static FORCE_INLINE Vector3d GetScaleFromTransform(const Transform3d &transform) ;
-    static FORCE_INLINE Vector3d GetEulerFromTransform(const Transform3d &transform, EulerOrder order) ;
+    static FORCE_INLINE Vector3d GetScaleFromTransform(const Transform3d &transform);
+    static FORCE_INLINE Vector3d GetEulerFromTransform(const Transform3d &transform, EulerOrder order);
+    static FORCE_INLINE Quaternion GetQuaternionFromTransform(const Transform3d &transform);
 
     mutable Transform3d global_transform_ = Transform3d::Identity();
     mutable Transform3d local_transform_ = Transform3d::Identity();
@@ -148,6 +149,8 @@ private:
 
     mutable int dirty_ = DIRTY_NONE;
 
+    NodePath visibility_parent_path_;
+
     ViewPort *viewport_ = nullptr;
 
     bool inside_world_ = false;
@@ -157,7 +160,7 @@ private:
 
 //    bool ignore_notification_ = false;
     bool notify_local_transform_ = false;
-//    bool notify_transform_ = false;
+    bool notify_transform_ = false;
 
     bool visible_ = false;
     bool disable_scale_ = false;
