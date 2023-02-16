@@ -31,6 +31,10 @@ jobs:
 
     - name: Install Qt
       uses: jurplel/install-qt-action@v3
+      with:
+        archives: 'qtbase'
+        cache: 'true'
+        cache-key-prefix: 'install-qt-action'
 
     - name: Get Conan
       uses: turtlebrowser/get-conan@v1.1
