@@ -14,7 +14,7 @@
 
 namespace gobot {
 
-template <typename _Scalar>
+template <typename _Scalar = real_t>
 struct MatrixData {
   int rows;
   int cols;
