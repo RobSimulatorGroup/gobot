@@ -4,8 +4,6 @@ class GobotConan(ConanFile):
     name = "gobot"
     license = "LGPL-3.0"
     description = "Robot simulator"
-    settings = "os", "compiler", "build_type", "arch"
-    generators = "pkg_config", "cmake", "cmake_find_package_multi", "cmake_paths"
     default_options = {"gtest:shared": True}
 
     def requirements(self):
