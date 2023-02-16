@@ -57,7 +57,7 @@ public:
 
     void GetRecognizedExtensions(std::vector<String> *extensions) const override;
 
-    bool HandlesType(const String& type) const override;
+    [[nodiscard]] bool HandlesType(const String& type) const override;
 };
 
 class GOBOT_EXPORT ResourceFormatSaverSceneInstance {

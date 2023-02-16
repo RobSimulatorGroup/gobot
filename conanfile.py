@@ -16,6 +16,12 @@ class GobotConan(ConanFile):
         self.requires("pybind11/2.10.0")
         self.requires("gtest/1.12.1")
         self.requires("magic_enum/0.8.1")
+        self.requires("openssl/1.1.1s") # conflict with sdl
+        self.requires("sdl/2.26.1")
+        self.requires("sdl_image/2.0.5")
+        self.requires("libpng/1.6.38") # conflict with sdl_image
+        if self.settings.os == "Linux":
+            self.requires("xkbcommon/1.5.0")  # conflict with sdl_image
 
     def imports(self):
         self.copy("*.dll", dst="bin", src="bin") # From bin to bin

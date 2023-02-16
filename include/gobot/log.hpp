@@ -54,7 +54,7 @@ public:
 
         // set log level
         logger_->set_level(spdlog::level::trace);
-        logger_->flush_on(spdlog::level::trace);
+        logger_->flush_on(spdlog::level::err);
     }
 
     Logger(const Logger &) = delete;

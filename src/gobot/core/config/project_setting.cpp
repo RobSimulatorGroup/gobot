@@ -7,6 +7,7 @@
 
 #include "gobot/core/config/project_setting.hpp"
 #include "gobot/core/string_utils.hpp"
+#include "gobot/error_macros.hpp"
 #include <QDir>
 
 namespace gobot {
@@ -22,6 +23,7 @@ ProjectSettings::~ProjectSettings() {
 }
 
 ProjectSettings* ProjectSettings::GetInstance() {
+    ERR_FAIL_COND_V_MSG(s_singleton == nullptr, nullptr, "Must call this after initialize ProjectSettings");
     return s_singleton;
 }
 

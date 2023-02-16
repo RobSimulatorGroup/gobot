@@ -96,3 +96,18 @@
     LOG_ERROR("Method/funtion failed. Returning: {}. {}",                                       \
         GOB_STRINGIFY(ret), GOB_STRINGIFY(MSG));                                                \
     return ret;
+
+#define CRASH_COND(cond)                                                                        \
+	if (cond) [[unlikely]] {                                                                    \
+		LOG_FATAL("FATAL: Condition: {}.", GOB_STRINGIFY(cond));                                \
+		GENERATE_TRAP();                                                                        \
+	} else                                                                                      \
+		((void)0)
+
+#define CRASH_COND_MSG(cond, msg)                                                               \
+	if (cond) [[unlikely]] {                                                                    \
+		LOG_FATAL("FATAL: Condition: {}. Msg: {}", GOB_STRINGIFY(cond), msg);                   \
+		GENERATE_TRAP();                                                                        \
+	} else                                                                                      \
+		((void)0)
+
