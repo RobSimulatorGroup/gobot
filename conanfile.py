@@ -5,7 +5,8 @@ class GobotConan(ConanFile):
     license = "LGPL-3.0"
     description = "Robot simulator"
     default_options = {"gtest:shared": True}
-
+    settings = "os", "compiler", "build_type", "arch"
+    generators = "qt", "cmake", "cmake_find_package_multi", "cmake_paths"
     def requirements(self):
         self.requires("eigen/3.4.0")
         self.requires("spdlog/1.11.0")
@@ -15,6 +16,9 @@ class GobotConan(ConanFile):
         self.requires("magic_enum/0.8.1")
         self.requires("sdl/2.26.1")
         self.requires("sdl_image/2.0.5")
+
+    def configure(self):
+        self.options['sdl'].wayland = False
 
     def imports(self):
         self.copy("*.dll", dst="bin", src="bin") # From bin to bin
