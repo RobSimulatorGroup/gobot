@@ -30,11 +30,12 @@ jobs:
         submodules: 'true'
 
     - name: Install Qt
+      if: ${{ matrix.os == 'ubuntu-latest' }}
       uses: jurplel/install-qt-action@v3
       with:
+        version: '5.15.2'
         archives: 'qtbase'
-        cache: 'true'
-        cache-key-prefix: 'install-qt-action'
+        set-env: 'true'
 
     - name: Get Conan
       uses: turtlebrowser/get-conan@v1.1

@@ -6,7 +6,7 @@ class GobotConan(ConanFile):
     description = "Robot simulator"
     settings = "os", "compiler", "build_type", "arch"
     generators = "cmake", "cmake_find_package_multi", "cmake_paths"
-    default_options = {"qt:shared": True, "gtest:shared": True}
+    default_options = {"gtest:shared": True}
 
     def requirements(self):
         self.requires("eigen/3.4.0")
