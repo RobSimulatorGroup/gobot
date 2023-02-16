@@ -18,8 +18,8 @@ class GobotConan(ConanFile):
         self.requires("sdl/2.26.1")
         self.requires("sdl_image/2.0.5")
 
-    # def configure(self):
-    #     self.options['sdl'].wayland = False
+    def configure(self):
+        self.options['sdl'].wayland = False
 
     def imports(self):
         self.copy("*.dll", dst="bin", src="bin") # From bin to bin
