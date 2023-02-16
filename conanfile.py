@@ -8,7 +8,6 @@ class GobotConan(ConanFile):
     settings = "os", "compiler", "build_type", "arch"
     generators = "cmake", "cmake_find_package_multi", "cmake_paths"
     def requirements(self):
-        # self.requires("opengl/system")
         self.requires("eigen/3.4.0")
         self.requires("spdlog/1.11.0")
         self.requires("nlohmann_json/3.11.2")
