@@ -8,11 +8,35 @@
 #pragma once
 
 #include <Eigen/Geometry>
+#include <rttr/type.h>
 
 namespace gobot {
 
-using Quaterniond = Eigen::Quaterniond;
-using Quaternionf = Eigen::Quaternionf;
+namespace internal {
+template<typename T>
+class Quaternion : public Eigen::Quaternion<T> {
+public:
+    T GetX() const { return this->x(); }
+
+    T GetY() const { return this->y(); }
+
+    T GetZ() const { return this->z(); }
+
+    T GetW() const { return this->w(); }
+
+    void SetX(T x) { this->x() = x; }
+
+    void SetY(T y) { this->y() = y; }
+
+    void SetZ(T z) { this->z() = z; }
+
+    void SetW(T w) { this->w() = w; }
+};
+
+} // end of namespace internal
+
+using Quaterniond = internal::Quaternion<double>;
+using Quaternionf = internal::Quaternion<float>;
 
 using AngleAxisd = Eigen::AngleAxisd;
 using AngleAxisf = Eigen::AngleAxisf;
@@ -26,6 +50,9 @@ using Projective2d = Eigen::Projective2d;
 using Projective2f = Eigen::Projective2f;
 using Projective3d = Eigen::Projective3d;
 using Projective3f = Eigen::Projective3f;
+
+
+
 
 #ifdef MATRIX_IS_DOUBLE
 using Quaternion = Quaterniond;

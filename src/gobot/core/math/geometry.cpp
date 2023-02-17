@@ -10,11 +10,14 @@
 
 namespace gobot {
 
-
 }
 
 GOBOT_REGISTRATION {
-    Class_<Eigen::Quaterniond>("Quaterniond")
-            .constructor()(CtorAsObject);
+    Class_<Quaterniond>("Quaterniond")
+            .constructor()(CtorAsObject)
+            .property("x", &Quaterniond::GetX, &Quaterniond::SetX)
+            .property("y", &Quaterniond::GetY, &Quaterniond::SetY)
+            .property("z", &Quaterniond::GetZ, &Quaterniond::SetZ)
+            .property("w", &Quaterniond::GetW, &Quaterniond::SetW);
 
 };
