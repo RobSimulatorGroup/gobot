@@ -6,7 +6,6 @@
  * This file is modified by Zikun Yu, 23-1-15
 */
 
-
 #include "gobot/scene/node_path.hpp"
 #include "gobot/core/registration.hpp"
 

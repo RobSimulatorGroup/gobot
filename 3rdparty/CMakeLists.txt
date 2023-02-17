@@ -3,6 +3,7 @@ add_subdirectory(rttr)
 add_subdirectory(glad)
 
 add_library(imgui
+        SHARED
         imgui/imgui.cpp
         imgui/imgui.h
         imgui/imgui_demo.cpp

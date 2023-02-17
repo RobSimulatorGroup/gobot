@@ -73,7 +73,7 @@ if(PROJECT_SOURCE_DIR STREQUAL PROJECT_BINARY_DIR)
     )
 endif()
 
-find_package(Qt5 COMPONENTS Core Widgets Gui CONFIG REQUIRED)
+find_package(Qt5 5.15 COMPONENTS Core Gui CONFIG REQUIRED)
 find_package (Eigen3 3.4 CONFIG REQUIRED)
 find_package(OpenGL REQUIRED)
 
@@ -109,6 +109,8 @@ target_link_libraries(gobot
     PUBLIC
     RTTR::Core
     OpenGL::GL
+    Qt5::Core
+    Qt5::Gui
     imgui
     ${CONAN_LIBS}
 )
