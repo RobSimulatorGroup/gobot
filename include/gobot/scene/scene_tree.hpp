@@ -10,14 +10,15 @@
 
 #include "gobot/core/object.hpp"
 #include "gobot/scene/node.hpp"
+#include "gobot/core/os/main_loop.hpp"
 
 namespace gobot {
 
 class Node;
 
-class GOBOT_EXPORT SceneTree : public Object {
+class GOBOT_EXPORT SceneTree : public MainLoop {
     Q_OBJECT
-    GOBCLASS(SceneTree, Object)
+    GOBCLASS(SceneTree, MainLoop)
 
 public:
     SceneTree();

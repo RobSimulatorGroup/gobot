@@ -6,11 +6,33 @@
 */
 
 #include "gobot/main/main.hpp"
+#include "gobot/scene/scene_tree.hpp"
+#include "gobot/core/config/project_setting.hpp"
+#include "gobot/core/os/input.hpp"
+#include "gobot/scene/scene_initializer.hpp"
 
 namespace gobot {
 
+
+static ProjectSettings* s_project_settings = nullptr;
+static Input* s_input = nullptr;
+
+bool Main::Setup() {
+    s_project_settings = Object::New<ProjectSettings>();
+    s_input = Object::New<Input>();
+
+    return Setup2();
+}
+
+bool Main::Setup2() {
+    SceneInitializer::Init();
+}
+
+
 bool Main::Start() {
-    return false;
+    MainLoop *main_loop = nullptr;
+    main_loop = Object::New<SceneTree>();
+
 }
 
 void Main::Cleanup() {
