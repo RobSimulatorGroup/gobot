@@ -11,9 +11,6 @@
 #include <Eigen/Dense>
 #include <rttr/type.h>
 
-#include "rttr/detail/comparison/compare_less.h"
-#include "rttr/detail/comparison/compare_equal.h"
-
 #include "gobot/core/math/math_defs.hpp"
 
 namespace gobot {
