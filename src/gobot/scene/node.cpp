@@ -244,9 +244,9 @@ void Node::AddChildNoCheck(Node *child, const String &name) {
 
 void Node::AddChild(Node *child, bool force_readable_name) {
     ERR_FAIL_NULL(child);
-    ERR_FAIL_COND_MSG(child == this, String("Can't add child '%s'", child->GetName()));
-    ERR_FAIL_COND_MSG(child == parent_, String("Can't add child '%s' to '%s', already has a parent '%s'.",
-                                                    child->GetName(), GetName(), child->data_.parent->GetName()));
+    ERR_FAIL_COND_MSG(child == this, fmt::format("Can't add child '%s'", child->GetName()));
+    ERR_FAIL_COND_MSG(child == parent_, fmt::format("Can't add child '%s' to '%s', already has a parent {}.",
+                                                    child->GetName(), GetName(), child->parent_->GetName()));
 
     ValidateChildName(child, force_readable_name);
     AddChildNoCheck(child, child->name_);
@@ -255,7 +255,7 @@ void Node::AddChild(Node *child, bool force_readable_name) {
 void Node::AddSibling(Node *sibling, bool force_readable_name) {
     ERR_FAIL_NULL(sibling);
     ERR_FAIL_NULL(parent_);
-    ERR_FAIL_COND_MSG(sibling == this, String("Can't add sibling '%s' to itself.", sibling->GetName()));
+    ERR_FAIL_COND_MSG(sibling == this, fmt::format("Can't add sibling '%s' to itself.", sibling->GetName()));
 
     parent_->AddChild(sibling, force_readable_name);
     parent_->MoveChild(sibling, GetIndex() + 1);
@@ -266,7 +266,7 @@ void Node::RemoveChild(Node *child) {
 
     auto it = std::find(children_.begin(), children_.end(), child);
     ERR_FAIL_COND_MSG(it == children_.end(),
-                      String("Cannot remove child '%s' as it is not a child of this node.", child->GetName()));
+                      fmt::format("Cannot remove child '%s' as it is not a child of this node.", child->GetName()));
 
     child->SetTree(nullptr);
     RemoveChildNotify(child);
@@ -350,10 +350,10 @@ Node* Node::GetNode(const NodePath &path) const {
 
         if (path.IsAbsolute()) {
             ERR_FAIL_V_MSG(nullptr,
-                           String("Node not found: "%s" (absolute path attempted from "%s").", path, desc));
+                           fmt::format("Node not found: {} (absolute path attempted from {}).", path, desc));
         } else {
             ERR_FAIL_V_MSG(nullptr,
-                           String("Node not found: "%s" (relative to "%s").", path, desc));
+                           fmt::format("Node not found: {} (relative to {}).", path, desc));
         }
     }
 
@@ -598,7 +598,7 @@ void Node::PropagateAfterExitTree() {
 void Node::MoveChild(Node *child, int index) {
     ERR_FAIL_NULL(child);
     ERR_FAIL_COND_MSG(child->parent_ != this, "Moving child is not a child of this node.");
-    ERR_FAIL_INDEX_MSG(index, children_.size(), String("Invalid new child index {}.", index));
+    ERR_FAIL_INDEX_MSG(index, children_.size(), fmt::format("Invalid new child index {}.", index));
 
     auto old_index = child->GetIndex();
 
