@@ -13,22 +13,27 @@
 #define GOBOT_MATRIX_MAKE_RTTR_REGISTRATION(Type, TypeSuffix, Size, SizeSuffix)                   \
     Class_<Matrix##SizeSuffix##TypeSuffix>(GOB_STRINGIFY(Matrix##SizeSuffix##TypeSuffix))         \
         .constructor()(CtorAsObject)                                                              \
-        .property("storage", &MatrixData<Type>::storage);                                         \
+        .property("matrix_data", &Matrix##SizeSuffix##TypeSuffix::GetMatrixData,                  \
+                                 &Matrix##SizeSuffix##TypeSuffix::SetMatrixData);                 \
     Class_<Vector##SizeSuffix##TypeSuffix>(GOB_STRINGIFY(Vector##SizeSuffix##TypeSuffix))         \
         .constructor()(CtorAsObject)                                                              \
-        .property("storage", &MatrixData<Type>::storage);                                         \
+        .property("matrix_data", &Vector##SizeSuffix##TypeSuffix::GetMatrixData,                  \
+                                 &Vector##SizeSuffix##TypeSuffix::SetMatrixData);                 \
     Class_<RowVector##SizeSuffix##TypeSuffix>(GOB_STRINGIFY(RowVector##SizeSuffix##TypeSuffix))   \
         .constructor()(CtorAsObject)                                                              \
-        .property("storage", &MatrixData<Type>::storage);
+        .property("matrix_data", &RowVector##SizeSuffix##TypeSuffix::GetMatrixData,               \
+                                 &RowVector##SizeSuffix##TypeSuffix::SetMatrixData);
 
 
 #define GOBOT_MATRIX_MAKE_FIXED_RTTR_REGISTRATION(Type, TypeSuffix, Size)                         \
      Class_<Matrix##Size##X##TypeSuffix>(GOB_STRINGIFY(Matrix##Size##X##TypeSuffix))              \
         .constructor()(CtorAsObject)                                                              \
-        .property("storage", &MatrixData<Type>::storage);                                         \
+        .property("matrix_data", &Matrix##Size##X##TypeSuffix::GetMatrixData,                     \
+                                 &Matrix##Size##X##TypeSuffix::SetMatrixData);                    \
      Class_<Matrix##X##Size##TypeSuffix>(GOB_STRINGIFY(Matrix##X##Size##TypeSuffix))              \
         .constructor()(CtorAsObject)                                                              \
-        .property("storage", &MatrixData<Type>::storage);                                         \
+        .property("matrix_data", &Matrix##X##Size##TypeSuffix::GetMatrixData,                     \
+                                 &Matrix##X##Size##TypeSuffix::SetMatrixData);
 
 
 #define GOBOT_MAKE_RTTR_REGISTRATION_ALL_SIZES(Type, TypeSuffix)             \

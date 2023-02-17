@@ -20,9 +20,9 @@ namespace gobot {
 
 template <typename Scalar>
 struct MatrixData {
-  int rows;
-  int cols;
-  std::vector<Scalar> storage;
+    Eigen::Index rows;
+    Eigen::Index cols;
+    std::vector<Scalar> storage;
 };
 
 namespace internal {
