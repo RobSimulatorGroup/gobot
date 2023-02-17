@@ -11,6 +11,9 @@
 #include <Eigen/Dense>
 #include <rttr/type.h>
 
+#include "rttr/detail/comparison/compare_less.h"
+#include "rttr/detail/comparison/compare_equal.h"
+
 #include "gobot/core/math/math_defs.hpp"
 
 namespace gobot {
@@ -133,10 +136,6 @@ GOBOT_MAKE_DEFAULT_ALL_SIZES(double)
 #else
 GOBOT_MAKE_DEFAULT_ALL_SIZES(float)
 #endif
-
-#undef GOBOT_MATRIX_MAKE_DEFAULT
-#undef GOBOT_MATRIX_MAKE_FIXED_DEFAULT
-#undef GOBOT_MAKE_DEFAULT_ALL_SIZES
 
 };  // namespace gobot
 
