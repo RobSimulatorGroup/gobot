@@ -6,19 +6,31 @@
  * the GNU General Public License. This file is created by Yingnan Wu, 23-2-10
  */
 
-#include <iostream>
 #include "gobot/core/math/matrix.hpp"
 #include "gobot/core/registration.hpp"
 
 GOBOT_REGISTRATION {
-  Class_<MatrixData<real_t>>("MatrixShape")
+  Class_<MatrixData<int>>("MatrixDatai")
       .constructor()(CtorAsObject)
-      .property("rows", &MatrixData<real_t>::rows)
-      .property("cols", &MatrixData<real_t>::cols)
-      .property("storage", &MatrixData<real_t>::storage);
+      .property("rows", &MatrixData<int>::rows)
+      .property("cols", &MatrixData<int>::cols)
+      .property("storage", &MatrixData<int>::storage);
 
-  Class_<Matrix3<>>("Matrix3")
+    Class_<MatrixData<double>>("MatrixDatad")
+            .constructor()(CtorAsObject)
+            .property("rows", &MatrixData<double>::rows)
+            .property("cols", &MatrixData<double>::cols)
+            .property("storage", &MatrixData<double>::storage);
+
+    Class_<MatrixData<float>>("MatrixDataf")
+            .constructor()(CtorAsObject)
+            .property("rows", &MatrixData<float>::rows)
+            .property("cols", &MatrixData<float>::cols)
+            .property("storage", &MatrixData<float>::storage);
+
+  Class_<Matrix3i>("Matrix3i")
       .constructor()(CtorAsObject)
-      .property("matrix_data", &Matrix3<>::GetMatrixData,
-                &Matrix3<>::SetMatrixData);
+      .property("matrix_data", &Matrix3i::GetMatrixData,
+                &Matrix3i::SetMatrixData);
+
 };

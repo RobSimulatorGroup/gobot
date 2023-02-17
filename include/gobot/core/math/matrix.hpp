@@ -9,115 +9,157 @@
 #pragma once
 
 #include <Eigen/Dense>
+#include <rttr/type.h>
 
 #include "gobot/core/math/math_defs.hpp"
 
 namespace gobot {
 
-template <typename _Scalar>
+template <typename Scalar>
 struct MatrixData {
   int rows;
   int cols;
-  std::vector<_Scalar> storage;
+  std::vector<Scalar> storage;
 };
 
-template <typename _Scalar, int _Rows, int _Cols,
-          int _Options = Eigen::AutoAlign |
-                         ((_Rows == 1 && _Cols != 1) ? Eigen::RowMajor
-                          : (_Cols == 1 && _Rows != 1)
-                              ? Eigen::ColMajor
-                              : EIGEN_DEFAULT_MATRIX_STORAGE_ORDER_OPTION),
-          int _MaxRows = _Rows, int _MaxCols = _Cols>
-class Matrix : public Eigen::Matrix<_Scalar, _Rows, _Cols, _Options, _MaxRows,
-                                    _MaxCols> {
- public:
-  using BaseType =
-      Eigen::Matrix<_Scalar, _Rows, _Cols, _Options, _MaxRows, _MaxCols>;
-  using BaseType::BaseType;
+namespace internal {
 
-  MatrixData<_Scalar> GetMatrixData() const {
-    auto self_view = this->reshaped();
-    if constexpr (_Rows != Eigen::Dynamic && _Cols != Eigen::Dynamic) {
-      return {_Rows, _Cols, std::vector(self_view.begin(), self_view.end())};
-    } else {
-      return {this->rows(), this->cols(),
-              std::vector(self_view.begin(), self_view.end())};
-    };
-  }
+template<typename _Scalar, int _Rows, int _Cols,
+        int _Options = Eigen::AutoAlign |
+                       ((_Rows == 1 && _Cols != 1) ? Eigen::RowMajor
+                                                   : (_Cols == 1 && _Rows != 1)
+                                                     ? Eigen::ColMajor
+                                                     : EIGEN_DEFAULT_MATRIX_STORAGE_ORDER_OPTION),
+        int _MaxRows = _Rows, int _MaxCols = _Cols>
+class Matrix : public Eigen::Matrix<_Scalar, _Rows, _Cols> {
+public:
+    using BaseType =
+            Eigen::Matrix<_Scalar, _Rows, _Cols, _Options, _MaxRows, _MaxCols>;
+    using BaseType::BaseType;
 
-  void SetMatrixData(const MatrixData<_Scalar>& data) {
-    if constexpr (_Rows != Eigen::Dynamic) {
-      if (data.rows != _Rows) {
-        return;
-      }
+    MatrixData<_Scalar> GetMatrixData() const {
+        auto self_view = this->reshaped();
+        if constexpr (_Rows != Eigen::Dynamic && _Cols != Eigen::Dynamic) {
+            return {_Rows, _Cols, std::vector(self_view.begin(), self_view.end())};
+        } else {
+            return {this->rows(), this->cols(),
+                    std::vector(self_view.begin(), self_view.end())};
+        };
     }
 
-    if constexpr (_Cols != Eigen::Dynamic) {
-      if (data.cols != _Cols) {
-        return;
-      }
-    }
+    void SetMatrixData(const MatrixData<_Scalar> &data) {
+        if constexpr (_Rows != Eigen::Dynamic) {
+            if (data.rows != _Rows) {
+                return;
+            }
+        }
 
-    if (data.rows * data.cols != data.storage.size()) {
-      return;
-    }
+        if constexpr (_Cols != Eigen::Dynamic) {
+            if (data.cols != _Cols) {
+                return;
+            }
+        }
 
-    if constexpr (_Rows == Eigen::Dynamic || _Cols == Eigen::Dynamic) {
-      this->resize(data.rows, data.cols);
-    }
+        if (data.rows * data.cols != data.storage.size()) {
+            return;
+        }
 
-    auto self_view = this->reshaped();
-    std::copy(data.storage.cbegin(), data.storage.cend(), self_view.begin());
-  }
+        if constexpr (_Rows == Eigen::Dynamic || _Cols == Eigen::Dynamic) {
+            this->resize(data.rows, data.cols);
+        }
+
+        auto self_view = this->reshaped();
+        std::copy(data.storage.cbegin(), data.storage.cend(), self_view.begin());
+    }
 };
 
-#define GOBOT_MATRIX_MAKE_TYPEDEFS(Size, SizeSuffix)   \
-  template <typename Type = real_t>                    \
-  using Matrix##SizeSuffix = Matrix<Type, Size, Size>; \
-                                                       \
-  template <typename Type = real_t>                    \
-  using Vector##SizeSuffix = Matrix<Type, Size, 1>;    \
-                                                       \
-  template <typename Type = real_t>                    \
-  using RowVector##SizeSuffix = Matrix<Type, 1, Size>;
+} // end of namespace internal
 
-#define GOBOT_MATRIX_MAKE_FIXED_TYPEDEFS(Size)                \
-  template <typename Type = real_t>                           \
-  using Matrix##Size##X = Matrix<Type, Size, Eigen::Dynamic>; \
-                                                              \
-  template <typename Type = real_t>                           \
-  using Matrix##X##Size = Matrix<Type, Eigen::Dynamic, Size>;
+#define GOBOT_MATRIX_MAKE_TYPEDEFS(Type, TypeSuffix, Size, SizeSuffix)   \
+  using Matrix##SizeSuffix##TypeSuffix    = internal::Matrix<Type, Size, Size>;    \
+  using Vector##SizeSuffix##TypeSuffix    = internal::Matrix<Type, Size, 1>;       \
+  using RowVector##SizeSuffix##TypeSuffix = internal::Matrix<Type, 1, Size>;
 
-GOBOT_MATRIX_MAKE_TYPEDEFS(2, 2)
-GOBOT_MATRIX_MAKE_TYPEDEFS(3, 3)
-GOBOT_MATRIX_MAKE_TYPEDEFS(4, 4)
-GOBOT_MATRIX_MAKE_TYPEDEFS(5, 5)
-GOBOT_MATRIX_MAKE_TYPEDEFS(6, 6)
-GOBOT_MATRIX_MAKE_TYPEDEFS(7, 7)
-GOBOT_MATRIX_MAKE_TYPEDEFS(Eigen::Dynamic, X)
-GOBOT_MATRIX_MAKE_FIXED_TYPEDEFS(2)
-GOBOT_MATRIX_MAKE_FIXED_TYPEDEFS(3)
-GOBOT_MATRIX_MAKE_FIXED_TYPEDEFS(4)
+#define GOBOT_MATRIX_MAKE_FIXED_TYPEDEFS(Type, TypeSuffix, Size)           \
+  using Matrix##Size##X##TypeSuffix = internal::Matrix<Type, Size, Eigen::Dynamic>;  \
+  using Matrix##X##Size##TypeSuffix = internal::Matrix<Type, Eigen::Dynamic, Size>;
+
+
+
+
+#define GOBOT_MAKE_TYPEDEFS_ALL_SIZES(Type, TypeSuffix)             \
+GOBOT_MATRIX_MAKE_TYPEDEFS(Type, TypeSuffix, 2, 2)                  \
+GOBOT_MATRIX_MAKE_TYPEDEFS(Type, TypeSuffix, 3, 3)                  \
+GOBOT_MATRIX_MAKE_TYPEDEFS(Type, TypeSuffix, 4, 4)                  \
+GOBOT_MATRIX_MAKE_TYPEDEFS(Type, TypeSuffix, Eigen::Dynamic, X)     \
+GOBOT_MATRIX_MAKE_FIXED_TYPEDEFS(Type, TypeSuffix, 2)               \
+GOBOT_MATRIX_MAKE_FIXED_TYPEDEFS(Type, TypeSuffix, 3)               \
+GOBOT_MATRIX_MAKE_FIXED_TYPEDEFS(Type, TypeSuffix, 4)               \
+GOBOT_MATRIX_MAKE_FIXED_TYPEDEFS(Type, TypeSuffix, 5)               \
+GOBOT_MATRIX_MAKE_FIXED_TYPEDEFS(Type, TypeSuffix, 6)               \
+GOBOT_MATRIX_MAKE_FIXED_TYPEDEFS(Type, TypeSuffix, 7)
+
+GOBOT_MAKE_TYPEDEFS_ALL_SIZES(int,                  i)
+GOBOT_MAKE_TYPEDEFS_ALL_SIZES(float,                f)
+GOBOT_MAKE_TYPEDEFS_ALL_SIZES(double,               d)
 
 #undef GOBOT_MATRIX_MAKE_TYPEDEFS
 #undef GOBOT_MATRIX_MAKE_FIXED_TYPEDEFS
+#undef GOBOT_MAKE_TYPEDEFS_ALL_SIZES
 
-template <typename Type, int Size>
-using Vector = Matrix<Type, Size, 1>;
+#define GOBOT_MATRIX_MAKE_DEFAULT(Type, Size, SizeSuffix)              \
+  using Matrix##SizeSuffix    = internal::Matrix<Type, Size, Size>;    \
+  using Vector##SizeSuffix    = internal::Matrix<Type, Size, 1>;       \
+  using RowVector##SizeSuffix = internal::Matrix<Type, 1, Size>;
 
-template <typename Type, int Size>
-using RowVector = Matrix<Type, 1, Size>;
+#define GOBOT_MATRIX_MAKE_FIXED_DEFAULT(Type, Size)                      \
+  using Matrix##Size##X = internal::Matrix<Type, Size, Eigen::Dynamic>;  \
+  using Matrix##X##Size = internal::Matrix<Type, Eigen::Dynamic, Size>;
+
+#define GOBOT_MAKE_DEFAULT_ALL_SIZES(Type)                         \
+GOBOT_MATRIX_MAKE_DEFAULT(Type, 2, 2)                              \
+GOBOT_MATRIX_MAKE_DEFAULT(Type, 3, 3)                              \
+GOBOT_MATRIX_MAKE_DEFAULT(Type, 4, 4)                              \
+GOBOT_MATRIX_MAKE_DEFAULT(Type, Eigen::Dynamic, X)                 \
+GOBOT_MATRIX_MAKE_FIXED_DEFAULT(Type, 2)                           \
+GOBOT_MATRIX_MAKE_FIXED_DEFAULT(Type, 3)                           \
+GOBOT_MATRIX_MAKE_FIXED_DEFAULT(Type, 4)                           \
+GOBOT_MATRIX_MAKE_FIXED_DEFAULT(Type, 5)                           \
+GOBOT_MATRIX_MAKE_FIXED_DEFAULT(Type, 6)                           \
+GOBOT_MATRIX_MAKE_FIXED_DEFAULT(Type, 7)
+
+#ifdef MATRIX_IS_DOUBLE
+GOBOT_MAKE_DEFAULT_ALL_SIZES(double)
+#else
+GOBOT_MAKE_DEFAULT_ALL_SIZES(float)
+#endif
+
+#undef GOBOT_MATRIX_MAKE_DEFAULT
+#undef GOBOT_MATRIX_MAKE_FIXED_DEFAULT
+#undef GOBOT_MAKE_DEFAULT_ALL_SIZES
 
 };  // namespace gobot
+
+namespace rttr::detail {
+
+template<typename Scalar, int Rows, int Cols>
+struct template_type_trait<gobot::internal::Matrix<Scalar, Rows, Cols>> : std::true_type {
+static std::vector<::rttr::type> get_template_arguments() {
+    return {::rttr::type::get<Scalar>(), ::rttr::type::get<int>(), ::rttr::type::get<int>() }; }
+};
+
+} // end of namespace rttr::detail
 
 namespace Eigen::internal {
 
 template <typename _Scalar, int _Rows, int _Cols, int _Options, int _MaxRows,
           int _MaxCols>
-class traits<gobot::Matrix<_Scalar, _Rows, _Cols, _Options, _MaxRows, _MaxCols>>
+class traits<gobot::internal::Matrix<_Scalar, _Rows, _Cols, _Options, _MaxRows, _MaxCols>>
     : public Eigen::internal::traits<
           Eigen::Matrix<_Scalar, _Rows, _Cols, _Options, _MaxRows, _MaxCols>> {
 };
+
+
 };  // namespace Eigen::internal
 
 // rttr::registration
