@@ -196,7 +196,7 @@ void NodePath::SetStrData(const String& str) {
     *this = NodePath(str);
 }
 
-String NodePath::GetStrData() {
+String NodePath::GetStrData() const {
     return this->operator String();
 }
 
@@ -226,4 +226,4 @@ GOBOT_REGISTRATION {
             .method("get_subname", &NodePath::GetSubName)
             .method("simplify", &NodePath::Simplify)
             ;
-};
+}
