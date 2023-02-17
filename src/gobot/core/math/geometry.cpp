@@ -8,10 +8,6 @@
 #include "gobot/core/math/geometry.hpp"
 #include "gobot/core/registration.hpp"
 
-namespace gobot {
-
-}
-
 GOBOT_REGISTRATION {
     Class_<Quaterniond>("Quaterniond")
             .constructor()(CtorAsObject)

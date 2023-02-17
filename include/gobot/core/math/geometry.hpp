@@ -16,6 +16,10 @@ namespace internal {
 template<typename T>
 class Quaternion : public Eigen::Quaternion<T> {
 public:
+    using EigenBase = Eigen::Quaternion<T>;
+
+    using EigenBase::EigenBase;
+
     T GetX() const { return this->x(); }
 
     T GetY() const { return this->y(); }
