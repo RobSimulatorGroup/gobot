@@ -41,7 +41,17 @@ bool Main::Start() {
 
 bool Main::Iteration()
 {
-    return false;
+    bool exit = false;
+    if (OS::GetInstance()->GetMainLoop()->PhysicsProcess(0.01)) {
+        exit = true;
+    }
+
+    if (OS::GetInstance()->GetMainLoop()->Process(0.01)) {
+        exit = true;
+    }
+
+    return exit;
+
 }
 
 void Main::Cleanup() {
