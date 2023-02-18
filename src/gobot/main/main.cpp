@@ -26,6 +26,8 @@ bool Main::Setup() {
 
 bool Main::Setup2() {
     SceneInitializer::Init();
+
+    return true;
 }
 
 
@@ -33,10 +35,14 @@ bool Main::Start() {
     MainLoop *main_loop = nullptr;
     main_loop = Object::New<SceneTree>();
 
+    return true;
 }
 
 void Main::Cleanup() {
+    SceneInitializer::Destroy();
 
+    Object::Delete(s_input);
+    Object::Delete(s_project_settings);
 }
 
 }

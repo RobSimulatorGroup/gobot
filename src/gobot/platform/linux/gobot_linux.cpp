@@ -5,8 +5,23 @@
  * This file is created by Qiqi Wu, 23-2-10
 */
 
+#include "gobot/main/main.hpp"
+#include "gobot/platform/linux/os_linux.hpp"
+
+using namespace gobot;
 
 int main(int argc, char *argv[]) {
+    if (!Main::Setup()) {
+        return -1;
+    }
 
+    LinuxOS os;
+
+    if(Main::Start()) {
+        os.Run();
+    }
+
+    Main::Cleanup();
     return 0;
+
 }

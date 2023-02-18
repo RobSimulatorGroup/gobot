@@ -22,12 +22,14 @@ class GOBOT_EXPORT SceneTree : public MainLoop {
 
 public:
     SceneTree();
+
     ~SceneTree() override;
 
-//    virtual void Initialize();
-//    virtual void Finalize();
+    void Initialize() override;
 
-    FORCE_INLINE Node* GetRoot() const { return root; }
+    void Finalize() override;
+
+    [[nodiscard]] FORCE_INLINE Node* GetRoot() const { return root; }
 
     [[nodiscard]] int GetNodeCount() const;
 

@@ -13,6 +13,16 @@ namespace gobot {
 
 SceneTree *SceneTree::singleton = nullptr;
 
+void SceneTree::Initialize()
+{
+
+}
+
+void SceneTree::Finalize()
+{
+
+}
+
 int SceneTree::GetNodeCount() const {
     return node_count;
 }

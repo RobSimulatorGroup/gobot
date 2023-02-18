@@ -6,28 +6,28 @@
 */
 
 #include "gobot/scene/scene_initializer.hpp"
+#include "gobot/core/io/resource_format_scene.hpp"
 
 namespace gobot {
 
-//static Ref<ResourceFormatSaverText> s_resource_saver_text;
-//static Ref<ResourceFormatLoaderText> resource_loader_text;
-//
-//static Ref<ResourceFormatLoaderCompressedTexture2D> resource_loader_stream_texture;
-//static Ref<ResourceFormatLoaderCompressedTextureLayered> resource_loader_texture_layered;
-//static Ref<ResourceFormatLoaderCompressedTexture3D> resource_loader_texture_3d;
-//
-//static Ref<ResourceFormatSaverShader> resource_saver_shader;
-//static Ref<ResourceFormatLoaderShader> resource_loader_shader;
-//
-//static Ref<ResourceFormatSaverShaderInclude> resource_saver_shader_include;
-//static Ref<ResourceFormatLoaderShaderInclude> resource_loader_shader_include;
+static Ref<ResourceFormatSaverScene> s_resource_saver_scene = nullptr;
+static Ref<ResourceFormatLoaderScene> s_resource_loader_scene = nullptr;
+
 
 void SceneInitializer::Init() {
+    s_resource_saver_scene = MakeRef<ResourceFormatSaverScene>();
+    ResourceSaver::AddResourceFormatSaver(s_resource_saver_scene, true);
 
+    s_resource_loader_scene = MakeRef<ResourceFormatLoaderScene>();
+    ResourceLoader::AddResourceFormatLoader(s_resource_loader_scene, true);
 }
 
 void SceneInitializer::Destroy() {
+    ResourceSaver::RemoveResourceFormatSaver(s_resource_saver_scene);
+    s_resource_saver_scene.Reset();
 
+    ResourceLoader::RemoveResourceFormatLoader(s_resource_loader_scene);
+    s_resource_loader_scene.Reset();
 }
 
 }
