@@ -14,10 +14,12 @@ class TestNode : public testing::Test {
 protected:
     void SetUp() override {
         tree = gobot::SceneTree::New<gobot::SceneTree>();
+        tree->Initialize();
         node = gobot::Node::New<gobot::Node>();
     }
 
     void TearDown() override {
+        tree->Initialize();
         gobot::Node::Delete(node);
         gobot::SceneTree::Delete(tree);
     }

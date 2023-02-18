@@ -9,19 +9,33 @@
 
 #include "gobot/scene/scene_tree.hpp"
 #include "gobot/scene/window.hpp"
+#include "gobot/error_macros.hpp"
 
 namespace gobot {
 
-SceneTree *SceneTree::singleton = nullptr;
+SceneTree *SceneTree::s_singleton = nullptr;
 
 void SceneTree::Initialize()
 {
+    ERR_FAIL_COND(!root);
+    root->SetTree(this);
+    MainLoop::Initialize();
+}
 
+SceneTree* SceneTree::GetInstance() {
+    ERR_FAIL_COND_V_MSG(s_singleton == nullptr, nullptr, "Must call this after initialize SceneTree");
+    return s_singleton;
 }
 
 void SceneTree::Finalize()
 {
+    MainLoop::Finalize();
 
+    if (root) {
+        root->SetTree(nullptr);
+        root->PropagateAfterExitTree();
+        Node::Delete(root);
+    }
 }
 
 int SceneTree::GetNodeCount() const {
@@ -29,18 +43,26 @@ int SceneTree::GetNodeCount() const {
 }
 
 SceneTree::SceneTree() {
-    if (singleton == nullptr) {
-        singleton = this;
+    if (s_singleton == nullptr) {
+        s_singleton = this;
     }
 
     root = Node::New<Window>();
     root->SetName("root");
-    root->SetTree(this);
 
-    Object::connect(root, &Window::windowCloseRequested, this, &SceneTree::MainWindowClose);
+    Object::connect(root, &Window::windowCloseRequested, this, &SceneTree::OnWindowClose);
+    Object::connect(root, &Window::windowResizeRequested, this, &SceneTree::OnWindowResize);
 }
 
-void SceneTree::MainWindowClose() {
+void SceneTree::OnWindowResize(WindowResizeEvent& e)
+{
+    if (e.GetWidth() == 0 || e.GetHeight() == 0) {
+        return;
+    }
+//    Renderer::OnWindowResize(e.GetWidth(), e.GetHeight());
+}
+
+void SceneTree::OnWindowClose() {
     quit_ = true;
 }
 
@@ -68,8 +90,8 @@ SceneTree::~SceneTree() {
         Node::Delete(root);
     }
 
-    if (singleton == this) {
-        singleton = nullptr;
+    if (s_singleton == this) {
+        s_singleton = nullptr;
     }
 }
 

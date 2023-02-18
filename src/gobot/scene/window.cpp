@@ -25,7 +25,7 @@ Window::Window() {
 
     window_interface_->Maximize();
 
-    InstallWindowCallbacks();
+    RegisterWindowCallbacks();
 }
 
 
@@ -48,8 +48,28 @@ bool Window::IsVisible() const
 
 void Window::OnEvent(Event& e)
 {
-    if (e.GetEventType() == EventType::WindowClose) {
-        Q_EMIT windowCloseRequested();
+    if (e.GetCategoryFlags() == EventCategory::EventCategoryWindow) {
+        if (e.GetEventType() == EventType::WindowClose) {
+            Q_EMIT windowCloseRequested();
+        }
+        else if (e.GetEventType() == EventType::WindowResize) {
+            Q_EMIT windowResizeRequested(dynamic_cast<WindowResizeEvent&>(e));
+        }
+        else if (e.GetEventType() == EventType::WindowMaximized) {
+            Q_EMIT windowMaximizedRequested();
+        }
+        else if (e.GetEventType() == EventType::WindowMinimized) {
+            Q_EMIT windowMinimizedRequested();
+        }
+        else if (e.GetEventType() == EventType::WindowMoved) {
+            Q_EMIT windowMovedRequested();
+        }
+        else if (e.GetEventType() == EventType::WindowTakeFocus) {
+            Q_EMIT windowTakeFocusRequested();
+        }
+        else if (e.GetEventType() == EventType::WindowDropFile) {
+            Q_EMIT windowDropFileRequested();
+        }
     }
 }
 
@@ -58,7 +78,7 @@ void Window::PullEvent()
     window_interface_->ProcessEvents();
 }
 
-void Window::InstallWindowCallbacks()
+void Window::RegisterWindowCallbacks()
 {
     window_interface_->SetEventCallback(BIND_EVENT_FN(Window::OnEvent));
 }

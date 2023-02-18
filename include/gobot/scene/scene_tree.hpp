@@ -11,6 +11,7 @@
 #include "gobot/core/object.hpp"
 #include "gobot/scene/node.hpp"
 #include "gobot/core/os/main_loop.hpp"
+#include "gobot/core/events/window_event.hpp"
 
 namespace gobot {
 
@@ -30,9 +31,7 @@ public:
 
     [[nodiscard]] int GetNodeCount() const;
 
-    static SceneTree *GetInstance() {
-        return singleton;
-    }
+    static SceneTree* GetInstance();
 
     void Initialize() override;
 
@@ -52,7 +51,9 @@ Q_SIGNALS:
     void nodeRenamed(Node *node);
 
 private:
-    void MainWindowClose();
+    void OnWindowClose();
+
+    void OnWindowResize(WindowResizeEvent& e);
 
 private:
     bool quit_ = false;
@@ -60,7 +61,7 @@ private:
     Window *root = nullptr;
     int node_count = 0;
 
-    static SceneTree *singleton;
+    static SceneTree *s_singleton;
 
     friend class Node;
 };

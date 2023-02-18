@@ -23,7 +23,7 @@ public:
     [[nodiscard]] String ToString() const override;
 
     EVENT_CLASS_TYPE(WindowResize)
-    EVENT_CLASS_CATEGORY(EventCategoryApplication)
+    EVENT_CLASS_CATEGORY(EventCategoryWindow)
 
 private:
     std::uint32_t width_;
@@ -36,7 +36,7 @@ public:
     WindowCloseEvent() = default;
 
     EVENT_CLASS_TYPE(WindowClose)
-    EVENT_CLASS_CATEGORY(EventCategoryApplication)
+    EVENT_CLASS_CATEGORY(EventCategoryWindow)
 };
 
 class WindowMaximizedEvent : public Event {
@@ -45,7 +45,7 @@ public:
     WindowMaximizedEvent() = default;
 
     EVENT_CLASS_TYPE(WindowMaximized)
-    EVENT_CLASS_CATEGORY(EventCategoryApplication)
+    EVENT_CLASS_CATEGORY(EventCategoryWindow)
 };
 
 class WindowMinimizedEvent : public Event {
@@ -54,7 +54,7 @@ public:
     WindowMinimizedEvent() = default;
 
     EVENT_CLASS_TYPE(WindowMinimized)
-    EVENT_CLASS_CATEGORY(EventCategoryApplication)
+    EVENT_CLASS_CATEGORY(EventCategoryWindow)
 };
 
 class WindowMovedEvent : public Event {
@@ -65,7 +65,7 @@ public:
     [[nodiscard]] String ToString() const override;
 
     EVENT_CLASS_TYPE(WindowMoved)
-    EVENT_CLASS_CATEGORY(EventCategoryApplication)
+    EVENT_CLASS_CATEGORY(EventCategoryWindow)
 private:
     std::uint32_t x_;
     std::uint32_t y_;
@@ -77,7 +77,7 @@ public:
     WindowTakeFocusEvent() = default;
 
     EVENT_CLASS_TYPE(WindowTakeFocus)
-    EVENT_CLASS_CATEGORY(EventCategoryApplication)
+    EVENT_CLASS_CATEGORY(EventCategoryWindow)
 };
 
 class GOBOT_EXPORT WindowDropFileEvent : public Event {
@@ -90,37 +90,9 @@ public:
     [[nodiscard]] String ToString() const override;
 
     EVENT_CLASS_TYPE(WindowDropFile)
-    EVENT_CLASS_CATEGORY(EventCategoryApplication)
+    EVENT_CLASS_CATEGORY(EventCategoryWindow)
 private:
     String file_path_;
 };
-
-class GOBOT_EXPORT AppTickEvent : public Event {
-    GOBCLASS(AppTickEvent, Event)
-public:
-    AppTickEvent() = default;
-
-    EVENT_CLASS_TYPE(AppTick)
-    EVENT_CLASS_CATEGORY(EventCategoryApplication)
-};
-
-class GOBOT_EXPORT AppUpdateEvent : public Event {
-    GOBCLASS(AppUpdateEvent, Event)
-public:
-    AppUpdateEvent() = default;
-
-    EVENT_CLASS_TYPE(AppUpdate)
-    EVENT_CLASS_CATEGORY(EventCategoryApplication)
-};
-
-class GOBOT_EXPORT AppRenderEvent : public Event {
-    GOBCLASS(AppRenderEvent, Event)
-public:
-    AppRenderEvent() = default;
-
-    EVENT_CLASS_TYPE(AppRender)
-    EVENT_CLASS_CATEGORY(EventCategoryApplication)
-};
-
 
 }

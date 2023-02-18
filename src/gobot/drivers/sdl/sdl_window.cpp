@@ -7,7 +7,7 @@
 
 
 #include "gobot/drivers/sdl/sdl_window.hpp"
-#include "gobot/core/events/application_event.hpp"
+#include "gobot/core/events/window_event.hpp"
 #include "gobot/core/events/mouse_event.hpp"
 #include "gobot/core/events/key_event.hpp"
 #include "gobot/log.hpp"

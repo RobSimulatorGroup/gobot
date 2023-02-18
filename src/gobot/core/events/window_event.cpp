@@ -5,7 +5,7 @@
  * This file is created by Qiqi Wu, 23-2-7
 */
 
-#include "gobot/core/events/application_event.hpp"
+#include "gobot/core/events/window_event.hpp"
 
 #include <utility>
 #include "gobot/log.hpp"

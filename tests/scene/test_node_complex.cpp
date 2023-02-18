@@ -14,12 +14,14 @@ class TestNodeComplex : public testing::Test {
 protected:
     void SetUp() override {
         tree = gobot::SceneTree::New<gobot::SceneTree>();
+        tree->Initialize();
         node1 = gobot::Node::New<gobot::Node>();
         node2 = gobot::Node::New<gobot::Node>();
         node1_1 = gobot::Node::New<gobot::Node>();
     }
 
     void TearDown() override {
+        // TODO(wqq): Delete node directly is not right when node already on the scene tree
         gobot::Node::Delete(node1_1);
         gobot::Node::Delete(node1);
         gobot::Node::Delete(node2);

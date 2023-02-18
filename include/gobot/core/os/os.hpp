@@ -20,9 +20,7 @@ public:
 
     virtual ~OS();
 
-    static OS* GetInstance() {
-        return s_singleton;
-    }
+    static OS* GetInstance();
 
     virtual MainLoop* GetMainLoop() const;
 

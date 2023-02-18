@@ -2,31 +2,28 @@
  * Copyright(c) 2021-2023, RobSimulatorGroup, Qiqi Wu<1258552199@qq.com>.
  * Everyone is permitted to copy and distribute verbatim copies of this license document, but changing it is not allowed.
  * This version of the GNU Lesser General Public License incorporates the terms and conditions of version 3 of the GNU General Public License.
- * This file is created by Qiqi Wu, 23-2-10
+ * This file is created by Qiqi Wu, 23-2-18
 */
 
-#pragma once
-
-#include <chrono>
+#include "gobot/core/config/engine.hpp"
+#include "gobot/error_macros.hpp"
 
 namespace gobot {
 
-class Main {
-public:
-    using TimePoint = std::chrono::high_resolution_clock::time_point;
+Engine* Engine::s_singleton = nullptr;
 
-    static bool Setup(int argc, char** argv);
 
-    static bool Setup2();
+Engine::Engine() {
+    s_singleton = this;
+}
 
-    static bool Start();
+Engine::~Engine() {
+    s_singleton = nullptr;
+}
 
-    static bool Iteration();
-
-    static void Cleanup();
-
-private:
-    static TimePoint s_last_ticks;
-};
+Engine *Engine::GetInstance() {
+    ERR_FAIL_COND_V_MSG(s_singleton == nullptr, nullptr, "Must call this after initialize Engine");
+    return s_singleton;
+}
 
 }

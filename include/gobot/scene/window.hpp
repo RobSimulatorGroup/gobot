@@ -8,7 +8,7 @@
 #pragma once
 
 #include "gobot/scene/node.hpp"
-
+#include "gobot/core/events/window_event.hpp"
 #include "gobot/core/events/event.hpp"
 #include "gobot/graphics/RHI/graphics_context.hpp"
 #include "gobot/core/os/window.hpp"
@@ -40,9 +40,15 @@ public:
 
 Q_SIGNALS:
     void windowCloseRequested();
+    void windowResizeRequested(WindowResizeEvent& event);
+    void windowMaximizedRequested();
+    void windowMinimizedRequested();
+    void windowMovedRequested();
+    void windowTakeFocusRequested();
+    void windowDropFileRequested();
 
 private:
-    void InstallWindowCallbacks();
+    void RegisterWindowCallbacks();
 
 private:
 
