@@ -34,9 +34,9 @@ public:
 
     bool IsVisible() const;
 
-    static WindowInterface* GetMainWindowInstance();
-
     void OnEvent(Event& e);
+
+    void PullEvent();
 
 Q_SIGNALS:
     void windowCloseRequested();
@@ -45,10 +45,9 @@ private:
     void InstallWindowCallbacks();
 
 private:
-    static WindowInterface* s_main_window;
 
     WindowDriver window_driver_{WindowDriver::SDL};
-    WindowInterface* window_interface_{nullptr};
+    std::unique_ptr<WindowInterface> window_interface_{nullptr};
 };
 
 }

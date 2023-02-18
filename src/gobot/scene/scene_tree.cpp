@@ -56,6 +56,11 @@ bool SceneTree::Process(double time) {
 }
 
 
+void SceneTree::PullEvent() {
+    root->PullEvent();
+}
+
+
 SceneTree::~SceneTree() {
     if (root) {
         root->SetTree(nullptr);

@@ -42,6 +42,8 @@ public:
 
     bool Process(double time) override;
 
+    void PullEvent() override;
+
 
 Q_SIGNALS:
     void treeChanged();

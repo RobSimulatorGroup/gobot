@@ -21,7 +21,7 @@ void LinuxOS::Run()
     main_loop_->Initialize();
 
     while (true) {
-        Window::GetMainWindowInstance()->ProcessEvents();
+        OS::GetInstance()->GetMainLoop()->PullEvent();
         if (Main::Iteration()) {
             break;
         }
