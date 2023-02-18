@@ -27,6 +27,8 @@ Window::Window() {
 
     s_main_window = window_interface_;
     window_interface_->Maximize();
+
+    InstallWindowCallbacks();
 }
 
 WindowInterface* Window::GetMainWindowInstance()
@@ -37,6 +39,31 @@ WindowInterface* Window::GetMainWindowInstance()
 Window::~Window() {
     delete window_interface_;
     s_main_window = nullptr;
+}
+
+void Window::SetVisible(bool visible)
+{
+    if (visible)
+        window_interface_->ShowWindow();
+    else
+        window_interface_->HideWindow();
+}
+
+bool Window::IsVisible() const
+{
+    return !window_interface_->IsWindowHide();
+}
+
+void Window::OnEvent(Event& e)
+{
+    if (e.GetEventType() == EventType::WindowClose) {
+        Q_EMIT windowCloseRequested();
+    }
+}
+
+void Window::InstallWindowCallbacks()
+{
+    window_interface_->SetEventCallback(BIND_EVENT_FN(Window::OnEvent));
 }
 
 

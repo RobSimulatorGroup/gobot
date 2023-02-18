@@ -14,6 +14,7 @@
 
 namespace gobot {
 
+class Window;
 class Node;
 
 class GOBOT_EXPORT SceneTree : public MainLoop {
@@ -25,17 +26,22 @@ public:
 
     ~SceneTree() override;
 
-    void Initialize() override;
-
-    void Finalize() override;
-
-    [[nodiscard]] FORCE_INLINE Node* GetRoot() const { return root; }
+    [[nodiscard]] FORCE_INLINE Window* GetRoot() const { return root; }
 
     [[nodiscard]] int GetNodeCount() const;
 
     static SceneTree *GetInstance() {
         return singleton;
     }
+
+    void Initialize() override;
+
+    void Finalize() override;
+
+    bool PhysicsProcess(double time) override;
+
+    bool Process(double time) override;
+
 
 Q_SIGNALS:
     void treeChanged();
@@ -44,7 +50,12 @@ Q_SIGNALS:
     void nodeRenamed(Node *node);
 
 private:
-    Node *root = nullptr;
+    void MainWindowClose();
+
+private:
+    bool quit_ = false;
+
+    Window *root = nullptr;
     int node_count = 0;
 
     static SceneTree *singleton;

@@ -35,6 +35,12 @@ public:
 
     void SetWindowBordered(bool bordered) override;
 
+    void ShowWindow() override;
+
+    void HideWindow() override;
+
+    bool IsWindowHide() override;
+
     [[nodiscard]] String GetTitle() const override;
 
     void SetTitle(const String& title) override;
@@ -66,6 +72,7 @@ public:
     void SetEventCallback(const EventCallbackFn& callback) override { event_callback_ = callback; }
 
     void RunEventCallback(Event& event);
+
 
 private:
     RenderAPI render_api_;

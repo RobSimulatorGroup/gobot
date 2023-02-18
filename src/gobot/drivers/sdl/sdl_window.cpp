@@ -145,6 +145,22 @@ void SDLWindow::SetIcon(const Ref<Image>& image)
     }
 }
 
+void SDLWindow::ShowWindow()
+{
+    SDL_ShowWindow(native_window_);
+}
+
+void  SDLWindow::HideWindow()
+{
+    SDL_HideWindow(native_window_);
+}
+
+bool SDLWindow::IsWindowHide()
+{
+    auto flag = SDL_GetWindowFlags(native_window_);
+    return flag & SDL_WINDOW_HIDDEN;
+}
+
 std::uint32_t SDLWindow::GetWindowID() const {
     return windows_id_;
 }

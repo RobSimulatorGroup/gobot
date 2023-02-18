@@ -23,16 +23,26 @@ enum class WindowDriver {
 
 
 class GOBOT_EXPORT Window : public Node {
+    Q_OBJECT
     GOBCLASS(Window, Node);
 public:
     Window();
 
     ~Window() override;
 
+    void SetVisible(bool visible);
+
+    bool IsVisible() const;
+
     static WindowInterface* GetMainWindowInstance();
 
+    void OnEvent(Event& e);
+
+Q_SIGNALS:
+    void windowCloseRequested();
+
 private:
-    void UpdateWindowCallbacks();
+    void InstallWindowCallbacks();
 
 private:
     static WindowInterface* s_main_window;

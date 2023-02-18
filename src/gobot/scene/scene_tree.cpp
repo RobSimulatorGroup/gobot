@@ -36,7 +36,25 @@ SceneTree::SceneTree() {
     root = Node::New<Window>();
     root->SetName("root");
     root->SetTree(this);
+
+    Object::connect(root, &Window::windowCloseRequested, this, &SceneTree::MainWindowClose);
 }
+
+void SceneTree::MainWindowClose() {
+    quit_ = true;
+}
+
+
+bool SceneTree::PhysicsProcess(double time) {
+
+    return quit_;
+}
+
+bool SceneTree::Process(double time) {
+
+    return quit_;
+}
+
 
 SceneTree::~SceneTree() {
     if (root) {
