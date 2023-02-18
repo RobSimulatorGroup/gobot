@@ -8,6 +8,7 @@
 
 
 #include "gobot/scene/scene_tree.hpp"
+#include "gobot/scene/window.hpp"
 
 namespace gobot {
 
@@ -32,7 +33,7 @@ SceneTree::SceneTree() {
         singleton = this;
     }
 
-    root = Node::New<Node>();
+    root = Node::New<Window>();
     root->SetName("root");
     root->SetTree(this);
 }
