@@ -20,13 +20,17 @@ public:
 
     virtual ~OS();
 
+    static OS* GetInstance() {
+        return s_singleton;
+    }
+
     virtual MainLoop* GetMainLoop() const;
 
     virtual void SetMainLoop(MainLoop* main_loop);
 
     virtual void DeleteMainLoop();
 
-private:
+protected:
     friend class Main;
     static OS* s_singleton;
 

@@ -17,6 +17,8 @@ public:
 
     static bool Start();
 
+    static bool Iteration();
+
     static void Cleanup();
 };
 

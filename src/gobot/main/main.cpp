@@ -10,6 +10,7 @@
 #include "gobot/core/config/project_setting.hpp"
 #include "gobot/core/os/input.hpp"
 #include "gobot/scene/scene_initializer.hpp"
+#include "gobot/core/os/os.hpp"
 
 namespace gobot {
 
@@ -32,10 +33,15 @@ bool Main::Setup2() {
 
 
 bool Main::Start() {
-    MainLoop *main_loop = nullptr;
-    main_loop = Object::New<SceneTree>();
+    MainLoop * main_loop = Object::New<SceneTree>();
+    OS::GetInstance()->SetMainLoop(main_loop);
 
     return true;
+}
+
+bool Main::Iteration()
+{
+    return false;
 }
 
 void Main::Cleanup() {

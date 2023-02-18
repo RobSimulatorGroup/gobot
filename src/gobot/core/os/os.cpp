@@ -9,14 +9,16 @@
 
 namespace gobot {
 
+OS* OS::s_singleton = nullptr;
+
 OS::OS()
 {
-
+    s_singleton = this;
 }
 
 OS::~OS()
 {
-
+    s_singleton = nullptr;
 }
 
 MainLoop* OS::GetMainLoop() const

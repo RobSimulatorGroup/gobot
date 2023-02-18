@@ -6,13 +6,29 @@
 */
 
 #include "gobot/platform/linux/os_linux.hpp"
+#include "gobot/main/main.hpp"
 #include "gobot/log.hpp"
 
 namespace gobot {
 
 void LinuxOS::Run()
 {
+    if (!main_loop_) {
+        return;
+    }
 
+    main_loop_->Initialize();
+
+    while (true) {
+//        DisplayServer::get_singleton()->process_events(); // get rid of pending events
+        if (Main::Iteration()) {
+            break;
+        }
+    }
+
+    main_loop_->Finalize();
 }
+
+
 
 }
