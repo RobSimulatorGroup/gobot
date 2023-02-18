@@ -6,12 +6,13 @@
 */
 
 #include "gobot/main/main.hpp"
+#include "gobot/scene/window.hpp"
 #include "gobot/platform/linux/os_linux.hpp"
 
 using namespace gobot;
 
 int main(int argc, char *argv[]) {
-    if (!Main::Setup()) {
+    if (!Main::Setup(argc, argv)) {
         return -1;
     }
 

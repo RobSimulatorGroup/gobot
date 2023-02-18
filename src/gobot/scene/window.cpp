@@ -15,18 +15,28 @@
 
 namespace gobot {
 
+WindowInterface* Window::s_main_window = nullptr;
+
 Window::Window() {
     switch (window_driver_) {
         case WindowDriver::SDL:
         case WindowDriver::Win32:
         case WindowDriver::IOSWindow:
-            window_interface_ = std::make_unique<SDLWindow>();
+            window_interface_ = new SDLWindow();
     }
 
+    s_main_window = window_interface_;
+    window_interface_->Maximize();
+}
+
+WindowInterface* Window::GetMainWindowInstance()
+{
+    return s_main_window;
 }
 
 Window::~Window() {
-
+    delete window_interface_;
+    s_main_window = nullptr;
 }
 
 

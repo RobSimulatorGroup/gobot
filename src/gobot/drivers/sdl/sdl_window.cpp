@@ -34,7 +34,7 @@ SDLWindow::SDLWindow()
                                       SDL_WINDOWPOS_CENTERED,
                                       s_default_width,
                                       s_default_height,
-                                      SDL_WINDOW_SHOWN | SDL_WINDOW_OPENGL | SDL_WINDOW_RESIZABLE | SDL_WINDOW_MAXIMIZED);
+                                      SDL_WINDOW_SHOWN | SDL_WINDOW_OPENGL | SDL_WINDOW_RESIZABLE);
 
     CRASH_COND_MSG(native_window_ == nullptr, fmt::format("Error creating window: {}", SDL_GetError()));
 

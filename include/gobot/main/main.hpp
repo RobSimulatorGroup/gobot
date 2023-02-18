@@ -11,7 +11,7 @@ namespace gobot {
 
 class Main {
 public:
-    static bool Setup();
+    static bool Setup(int argc, char** argv);
 
     static bool Setup2();
 

@@ -29,9 +29,16 @@ public:
 
     ~Window() override;
 
+    static WindowInterface* GetMainWindowInstance();
+
 private:
+    void UpdateWindowCallbacks();
+
+private:
+    static WindowInterface* s_main_window;
+
     WindowDriver window_driver_{WindowDriver::SDL};
-    std::unique_ptr<WindowInterface> window_interface_{nullptr};
+    WindowInterface* window_interface_{nullptr};
 };
 
 }

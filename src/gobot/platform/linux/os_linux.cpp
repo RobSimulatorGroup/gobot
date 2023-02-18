@@ -6,6 +6,7 @@
 */
 
 #include "gobot/platform/linux/os_linux.hpp"
+#include "gobot/scene/window.hpp"
 #include "gobot/main/main.hpp"
 #include "gobot/log.hpp"
 
@@ -20,7 +21,7 @@ void LinuxOS::Run()
     main_loop_->Initialize();
 
     while (true) {
-//        DisplayServer::get_singleton()->process_events(); // get rid of pending events
+        Window::GetMainWindowInstance()->ProcessEvents();
         if (Main::Iteration()) {
             break;
         }

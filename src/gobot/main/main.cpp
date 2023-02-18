@@ -11,6 +11,7 @@
 #include "gobot/core/os/input.hpp"
 #include "gobot/scene/scene_initializer.hpp"
 #include "gobot/core/os/os.hpp"
+#include <cxxopts.hpp>
 
 namespace gobot {
 
@@ -18,9 +19,33 @@ namespace gobot {
 static ProjectSettings* s_project_settings = nullptr;
 static Input* s_input = nullptr;
 
-bool Main::Setup() {
+bool Main::Setup(int argc, char** argv) {
+    cxxopts::Options options("gobot_editor",
+                             R"(
+The gobot is a robot simulation platform.
+Free and open source software under the terms of the LGPL3 license.
+Copyright(c) 2021-2023, RobSimulatorGroup)");
+
+    options.add_options()
+            ("path", "gobot project path", cxxopts::value<std::string>())
+            ("version", "query version of gobot")
+            ("v,verbose", "verbose output", cxxopts::value<bool>())
+            ("q,quiet", "quieter output", cxxopts::value<bool>())
+            ("h,help", "Print usage")
+            ;
+
+    auto result = options.parse(argc, argv);
+
+    if (result.count("help"))
+    {
+        std::cout << options.help() << std::endl;
+        exit(0);
+    }
+
+
     s_project_settings = Object::New<ProjectSettings>();
     s_input = Object::New<Input>();
+
 
     return Setup2();
 }
@@ -33,7 +58,7 @@ bool Main::Setup2() {
 
 
 bool Main::Start() {
-    MainLoop * main_loop = Object::New<SceneTree>();
+    MainLoop* main_loop = Object::New<SceneTree>();
     OS::GetInstance()->SetMainLoop(main_loop);
 
     return true;

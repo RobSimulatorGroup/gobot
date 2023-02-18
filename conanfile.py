@@ -16,6 +16,7 @@ class GobotConan(ConanFile):
         self.requires("magic_enum/0.8.1")
         self.requires("sdl/2.26.1")
         self.requires("sdl_image/2.0.5")
+        self.requires("cxxopts/3.0.0")
 
     def imports(self):
         self.copy("*.dll", dst="bin", src="bin") # From bin to bin
