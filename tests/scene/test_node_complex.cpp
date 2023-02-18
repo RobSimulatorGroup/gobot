@@ -8,6 +8,7 @@
 #include <gtest/gtest.h>
 
 #include <gobot/scene/node.hpp>
+#include <gobot/scene/window.hpp>
 
 class TestNodeComplex : public testing::Test {
 protected:
