@@ -1,7 +1,7 @@
 cmake_minimum_required (VERSION 3.16)
 project (gobot)
 
-set(CMAKE_CXX_STANDARD 23)
+set(CMAKE_CXX_STANDARD 20)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 
 add_subdirectory(3rdparty)
@@ -95,7 +95,7 @@ file(GLOB_RECURSE HEADER_FILES CONFIGURE_DEPENDS "include/*hpp")
 add_library(gobot SHARED ${SOURCE_CORE} ${SOURCE_SCENE} ${SOURCE_EDITOR} ${HEADER_FILES})
 
 if (CMAKE_CXX_COMPILER_ID STREQUAL "MSVC")
-    set(GOBOT_COMPILE_OPTIONS "/Zc:preprocessor,__cplusplus")
+    set(GOBOT_COMPILE_OPTIONS "/Zc:preprocessor,__cplusplus" "/bigobj")
 elseif (CMAKE_CXX_COMPILER_ID STREQUAL "GNU")
     set(GOBOT_COMPILE_OPTIONS "-fno-gnu-unique")
 endif ()
