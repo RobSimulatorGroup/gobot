@@ -37,7 +37,7 @@ enum class EventType
 enum EventCategory
 {
     None                     = 0,
-    EventCategoryWindow = 1 << 0,
+    EventCategoryWindow      = 1 << 0,
     EventCategoryInput       = 1 << 1,
     EventCategoryKeyboard    = 1 << 2,
     EventCategoryMouse       = 1 << 3,
