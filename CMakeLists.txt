@@ -95,7 +95,7 @@ file(GLOB_RECURSE HEADER_FILES CONFIGURE_DEPENDS "include/*hpp")
 add_library(gobot SHARED ${SOURCE_CORE} ${SOURCE_SCENE} ${SOURCE_EDITOR} ${HEADER_FILES})
 
 if (CMAKE_CXX_COMPILER_ID STREQUAL "MSVC")
-    set(GOBOT_COMPILE_OPTIONS "/Zc:preprocessor,__cplusplus")
+    set(GOBOT_COMPILE_OPTIONS "/Zc:preprocessor,__cplusplus" "/bigobj")
 elseif (CMAKE_CXX_COMPILER_ID STREQUAL "GNU")
     set(GOBOT_COMPILE_OPTIONS "-fno-gnu-unique")
 endif ()

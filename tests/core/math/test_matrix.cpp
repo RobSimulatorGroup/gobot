@@ -14,19 +14,19 @@
 
 TEST(TestMatrix, test_setter_getter) {
   using namespace gobot;
-  Matrix3i matrix{Eigen::Matrix3i::Random()};
+  Matrix3 matrix{Eigen::Matrix3<real_t>::Random()};
   auto data = matrix.GetMatrixData();
-  Matrix3i test;
+  Matrix3 test;
   test.SetMatrixData(data);
   ASSERT_EQ(matrix, test);
 }
 
 TEST(TestMatrix, test_registration) {
   using namespace gobot;
-  Matrix3i matrix{Eigen::Matrix3i::Identity()};
+  Matrix3 matrix{Eigen::Matrix3<real_t>::Random()};
   auto json = gobot::VariantSerializer::VariantToJson(matrix);
 
-  Variant test_variant((Matrix3i()));
+  Variant test_variant((Matrix3()));
   ASSERT_TRUE(gobot::VariantSerializer::JsonToVariant(test_variant, json));
-  ASSERT_EQ(test_variant.get_value<Matrix3i>(), matrix);
+  ASSERT_EQ(test_variant.get_value<Matrix3>(), matrix);
 }

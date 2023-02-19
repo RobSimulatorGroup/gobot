@@ -11,31 +11,33 @@
 
 #include <Eigen/Geometry>
 
+#include "gobot/core/math/math_defs.hpp"
+
 namespace gobot {
 
 namespace internal {
-template <typename T>
-class Quaternion : public Eigen::Quaternion<T> {
+template <typename _Scalar>
+class Quaternion : public Eigen::Quaternion<_Scalar> {
  public:
-  using EigenBase = Eigen::Quaternion<T>;
+  using Base = Eigen::Quaternion<_Scalar>;
 
-  using EigenBase::EigenBase;
+  using Base::Base;
 
-  T GetX() const { return this->x(); }
+  _Scalar GetX() const { return this->x(); }
 
-  T GetY() const { return this->y(); }
+  _Scalar GetY() const { return this->y(); }
 
-  T GetZ() const { return this->z(); }
+  _Scalar GetZ() const { return this->z(); }
 
-  T GetW() const { return this->w(); }
+  _Scalar GetW() const { return this->w(); }
 
-  void SetX(T x) { this->x() = x; }
+  void SetX(_Scalar x) { this->x() = x; }
 
-  void SetY(T y) { this->y() = y; }
+  void SetY(_Scalar y) { this->y() = y; }
 
-  void SetZ(T z) { this->z() = z; }
+  void SetZ(_Scalar z) { this->z() = z; }
 
-  void SetW(T w) { this->w() = w; }
+  void SetW(_Scalar w) { this->w() = w; }
 };
 
 }  // end of namespace internal
@@ -56,20 +58,11 @@ using Projective2f = Eigen::Projective2f;
 using Projective3d = Eigen::Projective3d;
 using Projective3f = Eigen::Projective3f;
 
-#ifdef MATRIX_IS_DOUBLE
-using Quaternion = Quaterniond;
-using AngleAxis = AngleAxisd;
-using Affine2 = Affine2d;
-using Affine3 = Affine3d;
-using Projective2 = Projective2d;
-using Projective3 = Projective2d;
-#else
-using Quaternion = Quaternionf;
-using AngleAxis = AngleAxisf;
-using Affine2 = Affine2f;
-using Affine3 = Affine3f;
-using Projective2 = Projective2f;
-using Projective3 = Projective2f;
-#endif
+using Quaternion = internal::Quaternion<real_t>;
+using AngleAxis = Eigen::AngleAxis<real_t>;
+using Affine2 = Eigen::Transform<real_t,2,Eigen::Affine>;
+using Affine3 = Eigen::Transform<real_t,3,Eigen::Affine>;
+using Projective2 = Eigen::Transform<real_t,2,Eigen::Projective>;
+using Projective3 = Eigen::Transform<real_t,3,Eigen::Projective>;
 
 }  // namespace gobot
