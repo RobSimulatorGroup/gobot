@@ -17,11 +17,11 @@
 
 namespace gobot {
 
-template <typename Scalar>
+template <typename _Scalar>
 struct MatrixData {
   Eigen::Index rows;
   Eigen::Index cols;
-  std::vector<Scalar> storage;
+  std::vector<_Scalar> storage;
 };
 
 namespace internal {

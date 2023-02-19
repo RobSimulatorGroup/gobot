@@ -3,6 +3,7 @@
  * Everyone is permitted to copy and distribute verbatim copies of this license document, but changing it is not allowed.
  * This version of the GNU Lesser General Public License incorporates the terms and conditions of version 3 of the GNU General Public License.
  * This file is created by Qiqi Wu, 23-2-17
+ * This file is modified by Yingnan Wu, 23-2-19
 */
 
 #pragma once
@@ -48,6 +49,11 @@ using Quaternionf = internal::Quaternion<float>;
 using AngleAxisd = Eigen::AngleAxisd;
 using AngleAxisf = Eigen::AngleAxisf;
 
+using Isometry2d = Eigen::Isometry2d;
+using Isometry2f = Eigen::Isometry2f;
+using Isometry3d = Eigen::Isometry3d;
+using Isometry3f = Eigen::Isometry3f;
+
 using Affine2d = Eigen::Affine2d;
 using Affine2f = Eigen::Affine2f;
 using Affine3d = Eigen::Affine3d;
@@ -60,6 +66,8 @@ using Projective3f = Eigen::Projective3f;
 
 using Quaternion = internal::Quaternion<real_t>;
 using AngleAxis = Eigen::AngleAxis<real_t>;
+using Isometry2 = Eigen::Transform<real_t, 2, Eigen::Isometry>;
+using Isometry3 = Eigen::Transform<real_t, 3, Eigen::Isometry>;
 using Affine2 = Eigen::Transform<real_t,2,Eigen::Affine>;
 using Affine3 = Eigen::Transform<real_t,3,Eigen::Affine>;
 using Projective2 = Eigen::Transform<real_t,2,Eigen::Projective>;
