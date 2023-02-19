@@ -7,37 +7,38 @@
 
 #pragma once
 
-#include <Eigen/Geometry>
 #include <rttr/type.h>
+
+#include <Eigen/Geometry>
 
 namespace gobot {
 
 namespace internal {
-template<typename T>
+template <typename T>
 class Quaternion : public Eigen::Quaternion<T> {
-public:
-    using EigenBase = Eigen::Quaternion<T>;
+ public:
+  using EigenBase = Eigen::Quaternion<T>;
 
-    using EigenBase::EigenBase;
+  using EigenBase::EigenBase;
 
-    T GetX() const { return this->x(); }
+  T GetX() const { return this->x(); }
 
-    T GetY() const { return this->y(); }
+  T GetY() const { return this->y(); }
 
-    T GetZ() const { return this->z(); }
+  T GetZ() const { return this->z(); }
 
-    T GetW() const { return this->w(); }
+  T GetW() const { return this->w(); }
 
-    void SetX(T x) { this->x() = x; }
+  void SetX(T x) { this->x() = x; }
 
-    void SetY(T y) { this->y() = y; }
+  void SetY(T y) { this->y() = y; }
 
-    void SetZ(T z) { this->z() = z; }
+  void SetZ(T z) { this->z() = z; }
 
-    void SetW(T w) { this->w() = w; }
+  void SetW(T w) { this->w() = w; }
 };
 
-} // end of namespace internal
+}  // end of namespace internal
 
 using Quaterniond = internal::Quaternion<double>;
 using Quaternionf = internal::Quaternion<float>;
@@ -55,9 +56,6 @@ using Projective2f = Eigen::Projective2f;
 using Projective3d = Eigen::Projective3d;
 using Projective3f = Eigen::Projective3f;
 
-
-
-
 #ifdef MATRIX_IS_DOUBLE
 using Quaternion = Quaterniond;
 using AngleAxis = AngleAxisd;
@@ -74,4 +72,4 @@ using Projective2 = Projective2f;
 using Projective3 = Projective2f;
 #endif
 
-}
+}  // namespace gobot
