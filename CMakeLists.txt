@@ -134,10 +134,12 @@ set_target_properties(gobot
 
 
 if (MSVC)
-    add_executable(gobot_editor src/gobot/platform/windows/godot_windows.cpp)
+    file(GLOB_RECURSE SOURCE_PLATFORM CONFIGURE_DEPENDS "src/gobot/platform/windows/ *.cpp")
+    add_executable(gobot_editor ${SOURCE_PLATFORM})
     target_compile_options(gobot_editor PUBLIC "/Zc:preprocessor")
 elseif(LINUX)
-    add_executable(gobot_editor src/gobot/platform/linux/gobot_linux.cpp)
+    file(GLOB_RECURSE SOURCE_PLATFORM CONFIGURE_DEPENDS "src/gobot/platform/linux/*.cpp")
+    add_executable(gobot_editor ${SOURCE_PLATFORM})
 endif ()
 target_link_libraries(gobot_editor
     PRIVATE

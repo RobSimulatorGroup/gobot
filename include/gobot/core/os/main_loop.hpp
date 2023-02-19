@@ -22,7 +22,9 @@ public:
 
     virtual bool PhysicsProcess(double time) {return false; };
 
-    virtual bool Process(double time) { return false;};
+    virtual bool Process(double time) { return false; };
+
+    virtual void PullEvent() {};
 
     virtual void Finalize() {};
 };

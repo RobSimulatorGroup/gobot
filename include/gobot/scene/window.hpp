@@ -8,7 +8,7 @@
 #pragma once
 
 #include "gobot/scene/node.hpp"
-
+#include "gobot/core/events/window_event.hpp"
 #include "gobot/core/events/event.hpp"
 #include "gobot/graphics/RHI/graphics_context.hpp"
 #include "gobot/core/os/window.hpp"
@@ -23,13 +23,35 @@ enum class WindowDriver {
 
 
 class GOBOT_EXPORT Window : public Node {
+    Q_OBJECT
     GOBCLASS(Window, Node);
 public:
     Window();
 
     ~Window() override;
 
+    void SetVisible(bool visible);
+
+    bool IsVisible() const;
+
+    void OnEvent(Event& e);
+
+    void PullEvent();
+
+Q_SIGNALS:
+    void windowCloseRequested();
+    void windowResizeRequested(WindowResizeEvent& event);
+    void windowMaximizedRequested();
+    void windowMinimizedRequested();
+    void windowMovedRequested();
+    void windowTakeFocusRequested();
+    void windowDropFileRequested();
+
 private:
+    void RegisterWindowCallbacks();
+
+private:
+
     WindowDriver window_driver_{WindowDriver::SDL};
     std::unique_ptr<WindowInterface> window_interface_{nullptr};
 };

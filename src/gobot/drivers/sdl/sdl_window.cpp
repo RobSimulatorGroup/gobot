@@ -7,7 +7,7 @@
 
 
 #include "gobot/drivers/sdl/sdl_window.hpp"
-#include "gobot/core/events/application_event.hpp"
+#include "gobot/core/events/window_event.hpp"
 #include "gobot/core/events/mouse_event.hpp"
 #include "gobot/core/events/key_event.hpp"
 #include "gobot/log.hpp"
@@ -34,7 +34,7 @@ SDLWindow::SDLWindow()
                                       SDL_WINDOWPOS_CENTERED,
                                       s_default_width,
                                       s_default_height,
-                                      SDL_WINDOW_SHOWN);
+                                      SDL_WINDOW_SHOWN | SDL_WINDOW_OPENGL | SDL_WINDOW_RESIZABLE);
 
     CRASH_COND_MSG(native_window_ == nullptr, fmt::format("Error creating window: {}", SDL_GetError()));
 
@@ -143,6 +143,22 @@ void SDLWindow::SetIcon(const Ref<Image>& image)
     } else {
         LOG_ERROR("Input image is not sdl image");
     }
+}
+
+void SDLWindow::ShowWindow()
+{
+    SDL_ShowWindow(native_window_);
+}
+
+void  SDLWindow::HideWindow()
+{
+    SDL_HideWindow(native_window_);
+}
+
+bool SDLWindow::IsWindowHide()
+{
+    auto flag = SDL_GetWindowFlags(native_window_);
+    return flag & SDL_WINDOW_HIDDEN;
 }
 
 std::uint32_t SDLWindow::GetWindowID() const {

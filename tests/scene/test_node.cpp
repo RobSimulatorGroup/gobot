@@ -8,16 +8,18 @@
 #include <gtest/gtest.h>
 
 #include <gobot/scene/node.hpp>
+#include <gobot/scene/window.hpp>
 
 class TestNode : public testing::Test {
 protected:
     void SetUp() override {
         tree = gobot::SceneTree::New<gobot::SceneTree>();
+        tree->Initialize();
         node = gobot::Node::New<gobot::Node>();
     }
 
     void TearDown() override {
-        gobot::Node::Delete(node);
+        tree->Finalize();
         gobot::SceneTree::Delete(tree);
     }
 

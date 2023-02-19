@@ -20,14 +20,14 @@ void Node::NotificationCallBack(NotificationType notification) {
             // TODO: ERR_FAIL_COND(!ViewPort);
             ERR_FAIL_COND(!GetTree());
 
-            GetTree()->node_count++;
+            GetTree()->node_count_++;
         } break;
 
         case NotificationType::ExitTree: {
             // TODO: ERR_FAIL_COND(!ViewPort);
             ERR_FAIL_COND(!GetTree());
 
-            GetTree()->node_count--;
+            GetTree()->node_count_--;
 
             if (!path_cache_.IsEmpty()) {
                 path_cache_ = NodePath();

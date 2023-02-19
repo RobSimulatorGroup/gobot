@@ -27,8 +27,15 @@ ProjectSettings* ProjectSettings::GetInstance() {
     return s_singleton;
 }
 
-void ProjectSettings::SetProjectPath(const String& project_path) {
+bool ProjectSettings::SetProjectPath(const String& project_path) {
     project_path_ = QDir::cleanPath(project_path);
+    QDir dir;
+    if (!dir.exists(project_path_)) {
+        LOG_ERROR("Invalid project path specified: {}", project_path);
+        return false;
+    }
+    // TODO(wqq): check if it is a project path(has a project file)
+    return true;
 }
 
 String ProjectSettings::LocalizePath(const String &path) const {

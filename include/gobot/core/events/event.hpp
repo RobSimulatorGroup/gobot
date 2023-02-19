@@ -22,9 +22,6 @@ enum class EventType
     WindowMoved,
     WindowTakeFocus,
     WindowDropFile,
-    AppTick,
-    AppUpdate,
-    AppRender,
     KeyPressed,
     KeyReleased,
     KeyboardFocus,
@@ -40,7 +37,7 @@ enum class EventType
 enum EventCategory
 {
     None                     = 0,
-    EventCategoryApplication = 1 << 0,
+    EventCategoryWindow      = 1 << 0,
     EventCategoryInput       = 1 << 1,
     EventCategoryKeyboard    = 1 << 2,
     EventCategoryMouse       = 1 << 3,
@@ -83,6 +80,11 @@ public:
 
     [[nodiscard]] FORCE_INLINE bool Handled() const { return handled_; }
 
+    friend std::ostream& operator<<(std::ostream& os, const Event& e)
+    {
+        return os << e.ToString().toStdString();
+    }
+
 protected:
     bool handled_ = false;
 };
@@ -103,11 +105,6 @@ public:
             return true;
         }
         return false;
-    }
-
-    friend inline std::ostream& operator<<(std::ostream& os, const Event& e)
-    {
-        return os << e.ToString().toStdString();
     }
 
 private:

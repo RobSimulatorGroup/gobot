@@ -8,13 +8,31 @@
 #pragma once
 
 #include <gobot_export.h>
+#include "gobot/core/os/main_loop.hpp"
 
 namespace gobot {
 
-class GOBOT_EXPORT OS {
+class MainLoop;
 
-private:
+class GOBOT_EXPORT OS {
+public:
+    OS();
+
+    virtual ~OS();
+
+    static OS* GetInstance();
+
+    virtual MainLoop* GetMainLoop() const;
+
+    virtual void SetMainLoop(MainLoop* main_loop);
+
+    virtual void DeleteMainLoop();
+
+protected:
+    friend class Main;
     static OS* s_singleton;
+
+    MainLoop* main_loop_ = nullptr;
 };
 
 

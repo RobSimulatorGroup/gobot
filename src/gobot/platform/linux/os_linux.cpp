@@ -2,27 +2,34 @@
  * Copyright(c) 2021-2023, RobSimulatorGroup, Qiqi Wu<1258552199@qq.com>.
  * Everyone is permitted to copy and distribute verbatim copies of this license document, but changing it is not allowed.
  * This version of the GNU Lesser General Public License incorporates the terms and conditions of version 3 of the GNU General Public License.
- * This file is created by Qiqi Wu, 23-2-10
+ * This file is created by Qiqi Wu, 23-2-18
 */
 
-#include "gobot/main/main.hpp"
-#include "gobot/scene/window.hpp"
 #include "gobot/platform/linux/os_linux.hpp"
+#include "gobot/scene/window.hpp"
+#include "gobot/main/main.hpp"
+#include "gobot/log.hpp"
 
-using namespace gobot;
+namespace gobot {
 
-int main(int argc, char *argv[]) {
-    if (!Main::Setup(argc, argv)) {
-        return -1;
+void LinuxOS::Run()
+{
+    if (!main_loop_) {
+        return;
     }
 
-    LinuxOS os;
+    main_loop_->Initialize();
 
-    if(Main::Start()) {
-        os.Run();
+    while (true) {
+        OS::GetInstance()->GetMainLoop()->PullEvent();
+        if (Main::Iteration()) {
+            break;
+        }
     }
 
-    Main::Cleanup();
-    return 0;
+    main_loop_->Finalize();
+}
+
+
 
 }
