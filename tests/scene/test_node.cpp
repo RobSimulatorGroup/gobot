@@ -19,8 +19,7 @@ protected:
     }
 
     void TearDown() override {
-        tree->Initialize();
-        gobot::Node::Delete(node);
+        tree->Finalize();
         gobot::SceneTree::Delete(tree);
     }
 

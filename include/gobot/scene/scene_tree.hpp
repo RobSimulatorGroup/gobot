@@ -27,7 +27,7 @@ public:
 
     ~SceneTree() override;
 
-    [[nodiscard]] FORCE_INLINE Window* GetRoot() const { return root; }
+    [[nodiscard]] FORCE_INLINE Window* GetRoot() const { return root_; }
 
     [[nodiscard]] int GetNodeCount() const;
 
@@ -56,14 +56,13 @@ private:
     void OnWindowResize(WindowResizeEvent& e);
 
 private:
-    bool quit_ = false;
-
-    Window *root = nullptr;
-    int node_count = 0;
-
+    friend class Node;
     static SceneTree *s_singleton;
 
-    friend class Node;
+    bool quit_ = false;
+
+    Window *root_ = nullptr;
+    int node_count_ = 0;
 };
 
 }

@@ -17,8 +17,8 @@ SceneTree *SceneTree::s_singleton = nullptr;
 
 void SceneTree::Initialize()
 {
-    ERR_FAIL_COND(!root);
-    root->SetTree(this);
+    ERR_FAIL_COND(!root_);
+    root_->SetTree(this);
     MainLoop::Initialize();
 }
 
@@ -31,15 +31,16 @@ void SceneTree::Finalize()
 {
     MainLoop::Finalize();
 
-    if (root) {
-        root->SetTree(nullptr);
-        root->PropagateAfterExitTree();
-        Node::Delete(root);
+    if (root_) {
+        root_->SetTree(nullptr);
+        root_->PropagateAfterExitTree();
+        Node::Delete(root_);
+        root_ = nullptr;
     }
 }
 
 int SceneTree::GetNodeCount() const {
-    return node_count;
+    return node_count_;
 }
 
 SceneTree::SceneTree() {
@@ -47,11 +48,11 @@ SceneTree::SceneTree() {
         s_singleton = this;
     }
 
-    root = Node::New<Window>();
-    root->SetName("root");
+    root_ = Node::New<Window>();
+    root_->SetName("root");
 
-    Object::connect(root, &Window::windowCloseRequested, this, &SceneTree::OnWindowClose);
-    Object::connect(root, &Window::windowResizeRequested, this, &SceneTree::OnWindowResize);
+    Object::connect(root_, &Window::windowCloseRequested, this, &SceneTree::OnWindowClose);
+    Object::connect(root_, &Window::windowResizeRequested, this, &SceneTree::OnWindowResize);
 }
 
 void SceneTree::OnWindowResize(WindowResizeEvent& e)
@@ -79,15 +80,16 @@ bool SceneTree::Process(double time) {
 
 
 void SceneTree::PullEvent() {
-    root->PullEvent();
+    root_->PullEvent();
 }
 
 
 SceneTree::~SceneTree() {
-    if (root) {
-        root->SetTree(nullptr);
-        root->PropagateAfterExitTree();
-        Node::Delete(root);
+    if (root_) {
+        root_->SetTree(nullptr);
+        root_->PropagateAfterExitTree();
+        Node::Delete(root_);
+        root_ = nullptr;
     }
 
     if (s_singleton == this) {
