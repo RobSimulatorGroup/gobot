@@ -21,6 +21,12 @@ Engine::~Engine() {
     s_singleton = nullptr;
 }
 
+VersionInfo Engine::GetVersionInfo() const {
+    // TODO(wqq)
+    return {};
+}
+
+
 Engine *Engine::GetInstance() {
     ERR_FAIL_COND_V_MSG(s_singleton == nullptr, nullptr, "Must call this after initialize Engine");
     return s_singleton;

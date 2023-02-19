@@ -11,6 +11,13 @@
 
 namespace gobot {
 
+struct VersionInfo {
+    uint8_t major;
+    uint8_t minor;
+    uint8_t patch;
+    String commit;
+};
+
 class Engine : public Object {
     GOBCLASS(Engine, Object)
 public:
@@ -20,9 +27,17 @@ public:
 
     static Engine* GetInstance();
 
-private:
+    [[nodiscard]] FORCE_INLINE double GetTimeScale() const { return time_scale_; }
 
+    FORCE_INLINE void SetTimeScale(double time_scale) { time_scale_ = time_scale; }
+
+    [[nodiscard]] VersionInfo GetVersionInfo() const;
+
+
+private:
     static Engine* s_singleton;
+
+    double time_scale_;
 };
 
 }

@@ -78,20 +78,18 @@ bool Main::Iteration()
 {
 
     auto time_now = std::chrono::high_resolution_clock::now();
-    auto duration = time_now - s_last_ticks;
+    auto duration = std::chrono::duration<double, std::ratio<1>>(time_now-s_last_ticks).count();
+
     s_last_ticks = time_now;
-    // TODO(wqq): get frame time
 
     bool exit = false;
-    if (OS::GetInstance()->GetMainLoop()->PhysicsProcess(0.01)) {
+    if (OS::GetInstance()->GetMainLoop()->PhysicsProcess(duration)) {
         exit = true;
     }
 
-    if (OS::GetInstance()->GetMainLoop()->Process(0.01)) {
+    if (OS::GetInstance()->GetMainLoop()->Process(duration)) {
         exit = true;
     }
-
-
 
     return exit;
 
