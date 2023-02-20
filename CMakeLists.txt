@@ -4,29 +4,21 @@ project (gobot)
 set(CMAKE_CXX_STANDARD 23)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 
-add_subdirectory(3rdparty)
-
 set(CMAKE_PREFIX_PATH ${CMAKE_BINARY_DIR})
 set(CMAKE_MODULE_PATH ${CMAKE_BINARY_DIR})
 
 option(BUILD_EXPERIMENT "using imgui and glfw" OFF)
 option(BUILD_TESTS "build tests" OFF)
 
+if(UNIX AND NOT APPLE)
+    set(LINUX TRUE)
+endif()
+
 # ---------------------------------------- START OF CONAN SETUP ----------------------------------------
 if (NOT EXISTS ${CMAKE_BINARY_DIR}/conanbuildinfo.cmake)
     if (NOT EXISTS "${CMAKE_BINARY_DIR}/conan.cmake")
-        message(STATUS "Downloading conan.cmake from https://github.com/conan-io/cmake-conan")
-        file(DOWNLOAD "https://raw.githubusercontent.com/conan-io/cmake-conan/develop/conan.cmake" "${CMAKE_BINARY_DIR}/conan.cmake"
-             SHOW_PROGRESS
-             TIMEOUT 10
-             STATUS CONAN_CMAKE_DOWNLOAD_STATUS)
-        list(GET CONAN_CMAKE_DOWNLOAD_STATUS 0 CONAN_CMAKE_DOWNLOAD_VALUE)
-        list(GET CONAN_CMAKE_DOWNLOAD_STATUS 1 CONAN_CMAKE_DOWNLOAD_MESSAGE)
-        if (NOT ${CONAN_CMAKE_DOWNLOAD_VALUE})
-            message(WARNING "Failed to download conan.cmake! Message: ${CONAN_CMAKE_DOWNLOAD_MESSAGE}")
-            message(STATUS "Try to copy conan.cmake to ${CMAKE_BINARY_DIR}")
-            file(COPY_FILE "${CMAKE_CURRENT_SOURCE_DIR}/cmake/conan.cmake" "${CMAKE_BINARY_DIR}/conan.cmake") 
-        endif ()
+        message(STATUS "Try to copy conan.cmake to ${CMAKE_BINARY_DIR}")
+        file(COPY_FILE "${CMAKE_CURRENT_SOURCE_DIR}/cmake/conan.cmake" "${CMAKE_BINARY_DIR}/conan.cmake")
     endif ()
     include(${CMAKE_BINARY_DIR}/conan.cmake)
     if (CONAN_PROFILE_BUILD AND CONAN_PROFILE_HOST)
@@ -81,19 +73,23 @@ if(PROJECT_SOURCE_DIR STREQUAL PROJECT_BINARY_DIR)
     )
 endif()
 
-find_package(Qt5 COMPONENTS Core Widgets Gui CONFIG REQUIRED)
+find_package(Qt5 5.15 COMPONENTS Core Gui CONFIG REQUIRED)
 find_package (Eigen3 3.4 CONFIG REQUIRED)
+find_package(OpenGL REQUIRED)
 
 INCLUDE(GenerateExportHeader)
 
+add_subdirectory(3rdparty)
+
 file(GLOB_RECURSE SOURCE_CORE CONFIGURE_DEPENDS "src/gobot/core/*.cpp")
 file(GLOB_RECURSE SOURCE_SCENE CONFIGURE_DEPENDS "src/gobot/scene/*.cpp")
+file(GLOB_RECURSE SOURCE_DRIVERS CONFIGURE_DEPENDS "src/gobot/drivers/*.cpp")
 file(GLOB_RECURSE SOURCE_EDITOR CONFIGURE_DEPENDS "src/gobot/editor/*.cpp")
+file(GLOB_RECURSE SOURCE_MAIN CONFIGURE_DEPENDS "src/gobot/main/*.cpp")
 file(GLOB_RECURSE HEADER_FILES CONFIGURE_DEPENDS "include/*hpp")
 
 # https://github.com/bincrafters/community/issues/466#issuecomment-426265654
-add_library(gobot SHARED ${SOURCE_CORE} ${SOURCE_SCENE} ${SOURCE_EDITOR} ${HEADER_FILES})
-
+add_library(gobot SHARED ${SOURCE_DRIVERS} ${SOURCE_MAIN} ${SOURCE_CORE} ${SOURCE_SCENE} ${SOURCE_EDITOR} ${HEADER_FILES})
 if (CMAKE_CXX_COMPILER_ID STREQUAL "MSVC")
     set(GOBOT_COMPILE_OPTIONS "/Zc:preprocessor,__cplusplus")
 elseif (CMAKE_CXX_COMPILER_ID STREQUAL "GNU")
@@ -113,8 +109,19 @@ target_include_directories(gobot
 target_link_libraries(gobot
     PUBLIC
     RTTR::Core
+    OpenGL::GL
+    Qt5::Core
+    Qt5::Gui
+    imgui
     ${CONAN_LIBS}
 )
+
+# copy icon to bin
+add_custom_command(
+        TARGET gobot POST_BUILD
+        COMMAND ${CMAKE_COMMAND} -E copy
+        ${CMAKE_CURRENT_SOURCE_DIR}/icon.svg
+        ${CMAKE_BINARY_DIR}/bin/icon.svg)
 
 set_target_properties(gobot
     PROPERTIES
@@ -126,14 +133,18 @@ set_target_properties(gobot
     AUTOUIC ON
 )
 
-add_executable(gobot_editor src/main.cpp)
+
 if (MSVC)
+    file(GLOB_RECURSE SOURCE_PLATFORM CONFIGURE_DEPENDS "src/gobot/platform/windows/ *.cpp")
+    add_executable(gobot_editor ${SOURCE_PLATFORM})
     target_compile_options(gobot_editor PUBLIC "/Zc:preprocessor")
+elseif(LINUX)
+    file(GLOB_RECURSE SOURCE_PLATFORM CONFIGURE_DEPENDS "src/gobot/platform/linux/*.cpp")
+    add_executable(gobot_editor ${SOURCE_PLATFORM})
 endif ()
 target_link_libraries(gobot_editor
     PRIVATE
     gobot
-    ${CONAN_LIBS}
 )
 
 if (BUILD_EXPERIMENT)
@@ -153,16 +164,4 @@ if (MSVC)
         COMMENT "Copying RTTR files..."
     )
 
-    # Retrieve the absolute path to qmake and then use that path to find
-    # the binaries
-    get_target_property(_qmake_executable Qt5::qmake IMPORTED_LOCATION)
-    get_filename_component(_qt_bin_dir "${_qmake_executable}" DIRECTORY)
-    find_program(WINDEPLOYQT_EXECUTABLE windeployqt HINTS "${_qt_bin_dir}")
-    find_program(MACDEPLOYQT_EXECUTABLE macdeployqt HINTS "${_qt_bin_dir}")
-    add_custom_command(TARGET gobot_editor POST_BUILD
-        COMMAND "${CMAKE_COMMAND}" -E env
-        "PATH=${_qt_bin_dir}"
-        "${WINDEPLOYQT_EXECUTABLE}" "$<TARGET_FILE:gobot_editor>"
-        COMMENT "Running windeployqt..."
-  )
 endif ()

@@ -27,14 +27,14 @@
 
 #define ERR_FAIL_COND_MSG(cond, msg)                                                            \
 	if (cond) [[unlikely]] {                                                                    \
-        LOG_ERROR("Failed condition {}. {}", GOB_STRINGIFY(cond), GOB_STRINGIFY(msg));          \
+        LOG_ERROR("Failed condition {}. {}", GOB_STRINGIFY(cond), msg);                         \
 		return;                                                                                 \
 	} else                                                                                      \
 		((void)0)
 
 #define ERR_FAIL_COND_V_MSG(cond, ret, msg)                                                     \
 	if (cond) [[unlikely]] {                                                                    \
-        LOG_ERROR("Failed condition {}. {}", GOB_STRINGIFY(cond), GOB_STRINGIFY(msg));          \
+        LOG_ERROR("Failed condition {}. {}", GOB_STRINGIFY(cond), msg);                         \
 		return ret;                                                                             \
 	} else                                                                                      \
 		((void)0)
@@ -48,7 +48,7 @@
  */
 #define ERR_FAIL_INDEX_MSG(index, size, msg)                                                    \
     if ((index) < 0 || (index) >= (size)) [[unlikely]] {                                        \
-        LOG_ERROR("Invalid index {} out of {}. {}", index, size, GOB_STRINGIFY(msg));           \
+        LOG_ERROR("Invalid index {} out of {}. {}", index, size, msg);                          \
         return;                                                                                 \
     } else                                                                                      \
         ((void)0)
@@ -73,7 +73,7 @@
 
 #define ERR_FAIL_NULL_MSG(ptr, msg)                                                             \
     if (ptr == nullptr) [[unlikely]] {                                                          \
-        LOG_ERROR("Pointer {} is null. {}", GOB_STRINGIFY(ptr), GOB_STRINGIFY(msg));            \
+        LOG_ERROR("Pointer {} is null. {}", GOB_STRINGIFY(ptr), msg);                           \
         return;                                                                                 \
     } else                                                                                      \
         ((void)0)
@@ -87,12 +87,27 @@
 
 #define ERR_FAIL_NULL_V_MSG(ptr, ret, msg)                                                      \
     if (ptr == nullptr) [[unlikely]] {                                                          \
-        LOG_ERROR("Pointer {} is null. {}", GOB_STRINGIFY(ptr), GOB_STRINGIFY(msg));            \
+        LOG_ERROR("Pointer {} is null. {}", GOB_STRINGIFY(ptr), msg);                           \
         return ret;                                                                             \
     } else                                                                                      \
         ((void)0)
 
 #define ERR_FAIL_V_MSG(ret, msg)                                                                \
-    LOG_ERROR("Method/funtion failed. Returning: {}. {}",                                       \
-        GOB_STRINGIFY(ret), GOB_STRINGIFY(MSG));                                                \
+    LOG_ERROR("Method/function failed. Returning: {}. {}",                                      \
+        GOB_STRINGIFY(ret), msg);                                                               \
     return ret;
+
+#define CRASH_COND(cond)                                                                        \
+	if (cond) [[unlikely]] {                                                                    \
+		LOG_FATAL("FATAL: Condition: {}.", GOB_STRINGIFY(cond));                                \
+		GENERATE_TRAP();                                                                        \
+	} else                                                                                      \
+		((void)0)
+
+#define CRASH_COND_MSG(cond, msg)                                                               \
+	if (cond) [[unlikely]] {                                                                    \
+		LOG_FATAL("FATAL: Condition: {}. Msg: {}", GOB_STRINGIFY(cond), msg);                   \
+		GENERATE_TRAP();                                                                        \
+	} else                                                                                      \
+		((void)0)
+

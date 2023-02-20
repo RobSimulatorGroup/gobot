@@ -27,7 +27,7 @@ public:
 
     [[nodiscard]] String GlobalizePath(const String &path) const;
 
-    void SetProjectPath(const String& project_path);
+    bool SetProjectPath(const String& project_path);
 
 private:
     String project_path_;
