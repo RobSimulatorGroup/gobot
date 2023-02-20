@@ -8,28 +8,25 @@
 
 #include <gtest/gtest.h>
 
+#include <gobot/log.hpp>
 #include <gobot/core/math/matrix.hpp>
 #include <gobot/core/io/variant_serializer.hpp>
 
-//TEST(TestMatrix, test_setter_getter) {
-//  using namespace gobot;
-//  Matrix3<> matrix{Eigen::Matrix<real_t, 3, 3>::Random()};
-//  auto data = matrix.GetMatrixData();
-//  Matrix3<> test;
-//  test.SetMatrixData(data);
-//  ASSERT_EQ(matrix, test);
-//}
+TEST(TestMatrix, test_setter_getter) {
+  using namespace gobot;
+  Matrix3 matrix{Eigen::Matrix3<real_t>::Random()};
+  auto data = matrix.GetMatrixData();
+  Matrix3 test;
+  test.SetMatrixData(data);
+  ASSERT_EQ(matrix, test);
+}
 
 TEST(TestMatrix, test_matrix_data_registration) {
   using namespace gobot;
-  Matrix3<> matrix{Eigen::Matrix<real_t, 3, 3>::Identity()};
-  auto json = gobot::VariantSerializer::VariantToJson(matrix.GetMatrixData());
-  MatrixData<> test;
-  Variant test_variant(test);
+  Matrix3 matrix{Eigen::Matrix3<real_t>::Random()};
+  auto json = gobot::VariantSerializer::VariantToJson(matrix);
+
+  Variant test_variant((Matrix3()));
   ASSERT_TRUE(gobot::VariantSerializer::JsonToVariant(test_variant, json));
-  auto out = test_variant.get_value<MatrixData<>>();
-  std::vector<real_t> storage{1.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 1.0};
-  ASSERT_EQ(out.rows, 3);
-  ASSERT_EQ(out.cols, 3);
-  ASSERT_EQ(out.storage, storage);
+  ASSERT_EQ(test_variant.get_value<Matrix3>(), matrix);
 }

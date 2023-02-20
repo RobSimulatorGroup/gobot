@@ -461,10 +461,12 @@ bool VariantSerializer::FromJsonRecursively(Variant& variant, const Json& json) 
                     auto value = prop.get_value(obj);
                     auto view = value.create_sequential_view();
                     set_success &= WriteArrayRecursively(view, child_json);
+                    set_success &= prop.set_value(obj, value);
                 } else if (prop_type.is_associative_container()) {
                     auto value = prop.get_value(obj);
                     auto view = value.create_associative_view();
                     set_success &= WriteAssociativeViewRecursively(view, child_json);
+                    set_success &= prop.set_value(obj, value);
                 }
             } else if (child_json.is_object()) {
                 auto var = prop.get_value(obj);
