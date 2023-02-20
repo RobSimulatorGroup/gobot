@@ -2,19 +2,20 @@
  * Copyright(c) 2021-2023, RobSimulatorGroup, Qiqi Wu<1258552199@qq.com>.
  * Everyone is permitted to copy and distribute verbatim copies of this license document, but changing it is not allowed.
  * This version of the GNU Lesser General Public License incorporates the terms and conditions of version 3 of the GNU General Public License.
- * This file is created by Qiqi Wu, 23-2-12
+ * This file is created by Qiqi Wu, 23-2-20
 */
 
-#pragma once
+#include "gobot/graphics/swap_chain.hpp"
+#include "gobot/error_macros.hpp"
 
-#include "gobot/drivers/opengl/gl.hpp"
+namespace gobot {
 
-#if GL_DEBUG
-#define GLCall(x)                          \
-    GLClearError();                        \
-    x;                                     \
-    if(!GLLogCall(#x, __FILE__, __LINE__)) \
-        LUMOS_BREAK();
-#else
-#define GLCall(x) x
-#endif
+SwapChain* (*SwapChain::CreateFunc)(uint32_t, uint32_t) = nullptr;
+
+SwapChain* SwapChain::Create(uint32_t width, uint32_t height)
+{
+    CRASH_COND_MSG(CreateFunc == nullptr, "No SwapChain Create Function");
+    return CreateFunc(width, height);
+}
+
+}
