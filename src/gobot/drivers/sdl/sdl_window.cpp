@@ -22,9 +22,7 @@ static const int s_default_width = 1280;
 static const int s_default_height = 720;
 static const char* s_default_window_title = "Gobot";
 
-SDLWindow::SDLWindow()
-    : render_api_(RenderAPI::OpenGL)
-{
+SDLWindow::SDLWindow() {
     if (SDL_WasInit(SDL_INIT_VIDEO) != SDL_INIT_VIDEO) {
         CRASH_COND_MSG(SDL_Init(SDL_INIT_VIDEO) < 0, "Could not initialize SDL2!");
     }
@@ -44,6 +42,19 @@ SDLWindow::SDLWindow()
 SDLWindow::~SDLWindow()
 {
     SDL_DestroyWindow(native_window_);
+}
+
+void SDLWindow::SetWindowPosition(const Eigen::Vector2i& position)
+{
+
+    SDL_SetWindowPosition(native_window_, position.x(), position.y());
+}
+
+Eigen::Vector2i SDLWindow::GetWindowPosition() const
+{
+    int x, y;
+    SDL_GetWindowPosition(native_window_, &x, &y);
+    return {x, y};
 }
 
 std::uint32_t SDLWindow::GetWidth() const
@@ -67,6 +78,11 @@ Eigen::Vector2i SDLWindow::GetWindowSize() const
     return {width, height};
 }
 
+void SDLWindow::SetWindowSize(const Eigen::Vector2i& size)
+{
+    SDL_SetWindowSize(native_window_, size.x(), size.y());
+}
+
 bool SDLWindow::SetWindowFullscreen()
 {
     auto ret = SDL_SetWindowFullscreen(native_window_, SDL_WINDOW_FULLSCREEN_DESKTOP);
@@ -74,11 +90,11 @@ bool SDLWindow::SetWindowFullscreen()
     return true;
 }
 
-String SDLWindow::GetTitle() const {
+String SDLWindow::GetWindowTitle() const {
     return SDL_GetWindowTitle(native_window_);
 }
 
-void SDLWindow::SetTitle(const String& title)
+void SDLWindow::SetWindowTitle(const String& title)
 {
     SDL_SetWindowTitle(native_window_, title.toStdString().c_str());
 }
@@ -155,7 +171,7 @@ void  SDLWindow::HideWindow()
     SDL_HideWindow(native_window_);
 }
 
-bool SDLWindow::IsWindowHide()
+bool SDLWindow::IsWindowHide() const
 {
     auto flag = SDL_GetWindowFlags(native_window_);
     return flag & SDL_WINDOW_HIDDEN;
@@ -165,7 +181,7 @@ std::uint32_t SDLWindow::GetWindowID() const {
     return windows_id_;
 }
 
-void SDLWindow::ProcessEvents() {
+void SDLWindow::PollEvents() {
     // Check if any events have been activated (key pressed, mouse moved etc.) and call corresponding response functions
     SDL_Event event;
     while (SDL_PollEvent(&event)) {

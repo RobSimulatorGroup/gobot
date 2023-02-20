@@ -9,10 +9,10 @@
 
 #include "gobot/core/io/image.hpp"
 #include "gobot/core/events/event.hpp"
-#include "gobot/graphics/RHI/graphics_context.hpp"
 #include <Eigen/Dense>
 
 namespace gobot {
+
 
 class WindowInterface {
 public:
@@ -29,9 +29,15 @@ public:
 
     [[nodiscard]]  virtual Eigen::Vector2i GetWindowSize() const = 0;
 
-    [[nodiscard]] virtual String GetTitle() const = 0;
+    virtual void SetWindowSize(const Eigen::Vector2i& size) = 0;
 
-    virtual void SetTitle(const String& title) = 0;
+    [[nodiscard]] virtual String GetWindowTitle() const = 0;
+
+    virtual void SetWindowTitle(const String& title) = 0;
+
+    virtual void SetWindowPosition(const Eigen::Vector2i& position) = 0;
+
+    [[nodiscard]] virtual Eigen::Vector2i GetWindowPosition() const = 0;
 
     [[nodiscard]] virtual bool SetWindowFullscreen() = 0;
 
@@ -43,7 +49,7 @@ public:
 
     virtual void HideWindow() = 0;
 
-    virtual bool IsWindowHide() = 0;
+    [[nodiscard]] virtual bool IsWindowHide() const = 0;
 
     [[nodiscard]] virtual WindowHandle GetNativeWindowHandle() const = 0;
 
@@ -63,9 +69,9 @@ public:
 
     virtual void SetIcon(const Ref<Image>& image) = 0;
 
-    virtual void ProcessEvents() = 0;
-
     virtual void SetEventCallback(const EventCallbackFn& callback) = 0;
+
+    virtual void PollEvents() = 0;
 
 protected:
 

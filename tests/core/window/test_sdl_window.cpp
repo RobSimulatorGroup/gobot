@@ -23,7 +23,7 @@ TEST(TestSDLWindow, test_create) {
     sdl_window->SetEventCallback([](gobot::Event& event) -> void {
         LOG_INFO("{}", event.ToString());
     });
-    sdl_window->ProcessEvents();
+    sdl_window->PollEvents();
 
 //    sleep(10);
 }

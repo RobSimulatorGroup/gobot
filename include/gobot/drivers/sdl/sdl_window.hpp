@@ -15,17 +15,23 @@ class SDL_Window;
 
 namespace gobot {
 
-class GOBOT_EXPORT SDLWindow : public WindowInterface {
+class GOBOT_EXPORT SDLWindow final: public WindowInterface {
 public:
     SDLWindow();
 
     ~SDLWindow() override;
+
+    void SetWindowPosition(const Eigen::Vector2i& position) override;
+
+    [[nodiscard]] Eigen::Vector2i GetWindowPosition() const override;
 
     [[nodiscard]] std::uint32_t GetWidth() const override;
 
     [[nodiscard]] std::uint32_t GetHeight() const override;
 
     [[nodiscard]] Eigen::Vector2i GetWindowSize() const override;
+
+    void SetWindowSize(const Eigen::Vector2i& size) override;
 
     [[nodiscard]] bool SetWindowFullscreen() override;
 
@@ -39,11 +45,11 @@ public:
 
     void HideWindow() override;
 
-    bool IsWindowHide() override;
+    [[nodiscard]] bool IsWindowHide() const override;
 
-    [[nodiscard]] String GetTitle() const override;
+    [[nodiscard]] String GetWindowTitle() const override;
 
-    void SetTitle(const String& title) override;
+    void SetWindowTitle(const String& title) override;
 
     [[nodiscard]] bool IsMaximized() override;
 
@@ -65,7 +71,7 @@ public:
 
     [[nodiscard]] std::uint32_t GetWindowID() const;
 
-    void ProcessEvents() override;
+    void PollEvents() override;
 
     [[nodiscard]] WindowHandle GetNativeWindowHandle() const override;
 
@@ -75,7 +81,6 @@ public:
 
 
 private:
-    RenderAPI render_api_;
     SDL_Window* native_window_{nullptr};
 
     EventCallbackFn event_callback_{nullptr};
