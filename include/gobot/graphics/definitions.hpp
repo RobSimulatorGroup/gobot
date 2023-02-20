@@ -320,7 +320,7 @@ struct Descriptor
     uint32_t binding;
     uint32_t textureCount = 1;
     uint32_t mipLevel     = 0;
-    std::string name;
+    String name;
 
     TextureType textureType;
     DescriptorType type = DescriptorType::IMAGE_SAMPLER;

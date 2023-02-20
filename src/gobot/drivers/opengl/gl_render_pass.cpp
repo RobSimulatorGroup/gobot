@@ -7,6 +7,7 @@
 
 #include "gobot/drivers/opengl/gl_render_pass.hpp"
 #include "gobot/drivers/opengl/gl_frame_buffer.hpp"
+#include "gobot/drivers/opengl/gl_renderer.hpp"
 
 namespace gobot {
 
@@ -42,8 +43,8 @@ void GLRenderPass::BeginRenderpass(CommandBuffer* commandBuffer, float* clearCol
         glViewport(0, 0, width, height);
     }
 
-//    if(m_Clear)
-//        GLRenderer::ClearInternal(RENDERER_BUFFER_COLOUR | RENDERER_BUFFER_DEPTH | RENDERER_BUFFER_STENCIL);
+    if(m_Clear)
+        GLRenderer::ClearInternal(RENDERER_BUFFER_COLOUR | RENDERER_BUFFER_DEPTH | RENDERER_BUFFER_STENCIL);
 }
 
 void GLRenderPass::EndRenderpass(CommandBuffer* commandBuffer)

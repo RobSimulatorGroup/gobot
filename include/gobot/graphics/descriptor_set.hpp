@@ -22,16 +22,16 @@ public:
     virtual ~DescriptorSet() = default;
     static DescriptorSet* Create(const DescriptorDesc& desc);
 
-    virtual void Update()                                                                                                                = 0;
-    virtual void SetDynamicOffset(uint32_t offset)                                                                                       = 0;
-    virtual uint32_t GetDynamicOffset() const                                                                                            = 0;
+    virtual void Update() = 0;
+    virtual void SetDynamicOffset(uint32_t offset) = 0;
+    virtual uint32_t GetDynamicOffset() const = 0;
     virtual void SetTexture(const String& name, Texture** texture, uint32_t textureCount, TextureType textureType = TextureType(0)) = 0;
     virtual void SetTexture(const String& name, Texture* texture, uint32_t mipIndex = 0, TextureType textureType = TextureType(0))  = 0;
-    virtual void SetBuffer(const String& name, UniformBuffer* buffer)                                                               = 0;
-    virtual UniformBuffer* GetUnifromBuffer(const String& name)                                                           = 0;
-    virtual void SetUniform(const String& bufferName, const String& uniformName, void* data)                                   = 0;
-    virtual void SetUniform(const String& bufferName, const String& uniformName, void* data, uint32_t size)                    = 0;
-    virtual void SetUniformBufferData(const String& bufferName, void* data)                                                         = 0;
+    virtual void SetBuffer(const String& name, UniformBuffer* buffer) = 0;
+    virtual UniformBuffer* GetUnifromBuffer(const String& name) = 0;
+    virtual void SetUniform(const String& bufferName, const String& uniformName, void* data) = 0;
+    virtual void SetUniform(const String& bufferName, const String& uniformName, void* data, uint32_t size) = 0;
+    virtual void SetUniformBufferData(const String& bufferName, void* data) = 0;
     virtual void TransitionImages(CommandBuffer* commandBuffer = nullptr) { }
     virtual void SetUniformDynamic(const String& bufferName, uint32_t size) { }
 

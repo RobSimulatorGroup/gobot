@@ -52,7 +52,7 @@ private:
 //        Buffer LocalStorage;
         bool HasUpdated;
     };
-    std::unordered_map<std::string, UniformBufferInfo> m_UniformBuffers;
+    std::unordered_map<String, UniformBufferInfo> m_UniformBuffers;
 };
 
 }
