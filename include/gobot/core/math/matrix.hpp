@@ -45,18 +45,18 @@ class Matrix : public Eigen::Matrix<_Scalar, _Rows, _Cols> {
 
   void SetMatrixData(const MatrixData<_Scalar> &data) {
     if constexpr (_Rows != Eigen::Dynamic) {
-      if (data.rows != _Rows) {
+      if (data.rows != _Rows) [[unlikely]] {
         return;
       }
     }
 
     if constexpr (_Cols != Eigen::Dynamic) {
-      if (data.cols != _Cols) {
+      if (data.cols != _Cols) [[unlikely]] {
         return;
       }
     }
 
-    if (data.rows * data.cols != data.storage.size()) {
+    if (data.rows * data.cols != data.storage.size()) [[unlikely]] {
       return;
     }
 

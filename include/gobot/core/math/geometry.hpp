@@ -45,33 +45,18 @@ public:
     {
     }
 
-    MatrixData<_Scalar> GetMatrixData() const {
+    std::vector<_Scalar> GetMatrixData() const {
         auto self_view = this->matrix().reshaped();
-        return {this->rows(), this->cols(),
-                std::vector(self_view.begin(), self_view.end())};
+        return {std::vector(self_view.begin(), self_view.end())};
     }
 
-    void SetMatrixData(const MatrixData<_Scalar> &data) {
-        if (data.rows != _Dim || data.cols != _Dim) [[unlikely]] {
+    void SetMatrixData(const std::vector<_Scalar> &data) {
+        auto self_view = this->matrix().reshaped();
+        if (self_view.size() != data.size()) [[unlikely]] {
             return;
         }
-
-        if (data.rows * data.cols != data.storage.size()) [[unlikely]] {
-            return;
-        }
-
-        auto self_view = this->matrix().reshaped();
-        std::copy(data.storage.cbegin(), data.storage.cend(), self_view.begin());
+        std::copy(data.cbegin(), data.cend(), self_view.begin());
     }
-
-    Quaternion<_Scalar> GetQuaternion() const {
-        return Quaternion<_Scalar>(this->rotation());
-    }
-
-    void SetQuaternion(const Quaternion<_Scalar>& quaternion) const {
-        this->linear() = quaternion.toRotationMatrix();
-    }
-
 };
 
 }  // end of namespace internal
@@ -113,3 +98,29 @@ using Projective2 = internal::Transform<real_t,2,Eigen::Projective>;
 using Projective3 = internal::Transform<real_t,3,Eigen::Projective>;
 
 }  // namespace gobot
+
+namespace rttr::detail {
+
+#define GOBOT_GEOMETRY_MAKE_FIXED_RTTR(Name, Type)                         \
+template<>                                                                 \
+struct template_type_trait<gobot::Name> : std::true_type {                 \
+    static std::vector<::rttr::type> get_template_arguments() {            \
+        return {::rttr::type::get<Type>() }; }                             \
+};
+
+GOBOT_GEOMETRY_MAKE_FIXED_RTTR(Isometry2d, double);
+GOBOT_GEOMETRY_MAKE_FIXED_RTTR(Isometry3d, double);
+GOBOT_GEOMETRY_MAKE_FIXED_RTTR(Isometry2f, float);
+GOBOT_GEOMETRY_MAKE_FIXED_RTTR(Isometry3f, float);
+
+GOBOT_GEOMETRY_MAKE_FIXED_RTTR(Affine2d , double);
+GOBOT_GEOMETRY_MAKE_FIXED_RTTR(Affine3d, double);
+GOBOT_GEOMETRY_MAKE_FIXED_RTTR(Affine2f, float);
+GOBOT_GEOMETRY_MAKE_FIXED_RTTR(Affine3f, float);
+
+GOBOT_GEOMETRY_MAKE_FIXED_RTTR(Projective2d , double);
+GOBOT_GEOMETRY_MAKE_FIXED_RTTR(Projective3d, double);
+GOBOT_GEOMETRY_MAKE_FIXED_RTTR(Projective2f, float);
+GOBOT_GEOMETRY_MAKE_FIXED_RTTR(Projective3f, float);
+
+}  // end of namespace rttr::detail

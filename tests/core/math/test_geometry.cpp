@@ -21,3 +21,14 @@ TEST(TestGeoMetry, test_setter_getter) {
     ASSERT_EQ(isometry.matrix(), test.matrix());
 }
 
+
+TEST(TestGeoMetry, test_matrix_data_registration) {
+    using namespace gobot;
+    Isometry3 isometry{Isometry3::Identity()};
+    auto json = gobot::VariantSerializer::VariantToJson(isometry);
+
+    Variant test_variant((Isometry3()));
+    ASSERT_TRUE(gobot::VariantSerializer::JsonToVariant(test_variant, json));
+    ASSERT_EQ(test_variant.get_value<Isometry3>().matrix(), isometry.matrix());
+}
+

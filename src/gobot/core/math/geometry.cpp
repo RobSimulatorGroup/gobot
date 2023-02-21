@@ -7,6 +7,14 @@
 
 #include "gobot/core/math/geometry.hpp"
 #include "gobot/core/registration.hpp"
+#include "gobot/core/macros.hpp"
+
+#define GOBOT_GEOMETRY_MAKE_RTTR_REGISTRATION(Name)                                               \
+    Class_<Name>(GOB_STRINGIFY(Name))                                                             \
+        .constructor()(CtorAsObject)                                                              \
+        .property("matrix_data", &Name::GetMatrixData,                                            \
+                                 &Name::SetMatrixData);
+
 
 GOBOT_REGISTRATION {
     Class_<Quaterniond>("Quaterniond")
@@ -15,5 +23,20 @@ GOBOT_REGISTRATION {
             .property("y", &Quaterniond::GetY, &Quaterniond::SetY)
             .property("z", &Quaterniond::GetZ, &Quaterniond::SetZ)
             .property("w", &Quaterniond::GetW, &Quaterniond::SetW);
+
+    GOBOT_GEOMETRY_MAKE_RTTR_REGISTRATION(Isometry2f)
+    GOBOT_GEOMETRY_MAKE_RTTR_REGISTRATION(Isometry2d)
+    GOBOT_GEOMETRY_MAKE_RTTR_REGISTRATION(Isometry3f)
+    GOBOT_GEOMETRY_MAKE_RTTR_REGISTRATION(Isometry3d)
+
+    GOBOT_GEOMETRY_MAKE_RTTR_REGISTRATION(Affine2f)
+    GOBOT_GEOMETRY_MAKE_RTTR_REGISTRATION(Affine2d)
+    GOBOT_GEOMETRY_MAKE_RTTR_REGISTRATION(Affine3f)
+    GOBOT_GEOMETRY_MAKE_RTTR_REGISTRATION(Affine3d)
+
+    GOBOT_GEOMETRY_MAKE_RTTR_REGISTRATION(Projective2f)
+    GOBOT_GEOMETRY_MAKE_RTTR_REGISTRATION(Projective2d)
+    GOBOT_GEOMETRY_MAKE_RTTR_REGISTRATION(Projective3f)
+    GOBOT_GEOMETRY_MAKE_RTTR_REGISTRATION(Projective2d)
 
 };
