@@ -7,6 +7,7 @@
 
 #include "gobot/core/config/project_setting.hpp"
 #include "gobot/core/string_utils.hpp"
+#include "gobot/error_macros.hpp"
 #include <QDir>
 
 namespace gobot {
@@ -22,11 +23,19 @@ ProjectSettings::~ProjectSettings() {
 }
 
 ProjectSettings* ProjectSettings::GetInstance() {
+    ERR_FAIL_COND_V_MSG(s_singleton == nullptr, nullptr, "Must call this after initialize ProjectSettings");
     return s_singleton;
 }
 
-void ProjectSettings::SetProjectPath(const String& project_path) {
+bool ProjectSettings::SetProjectPath(const String& project_path) {
     project_path_ = QDir::cleanPath(project_path);
+    QDir dir;
+    if (!dir.exists(project_path_)) {
+        LOG_ERROR("Invalid project path specified: {}", project_path);
+        return false;
+    }
+    // TODO(wqq): check if it is a project path(has a project file)
+    return true;
 }
 
 String ProjectSettings::LocalizePath(const String &path) const {

@@ -57,6 +57,13 @@
 #endif
 
 
+#ifdef NDEBUG
+#undef GOBOT_DEBUG
+#else
+#define GOBOT_DEBUG
+#endif
+
+
 namespace rttr::detail
 {
 template<typename Ctor_Type, typename Policy, typename Accessor, typename Arg_Indexer>

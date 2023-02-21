@@ -8,24 +8,25 @@
 
 #include <gtest/gtest.h>
 
+#include <gobot/log.hpp>
 #include <gobot/core/math/matrix.hpp>
 #include <gobot/core/io/variant_serializer.hpp>
 
 TEST(TestMatrix, test_setter_getter) {
   using namespace gobot;
-  Matrix3<> matrix{Eigen::Matrix<real_t, 3, 3>::Random()};
+  Matrix3 matrix{Eigen::Matrix3<real_t>::Random()};
   auto data = matrix.GetMatrixData();
-  Matrix3<> test;
+  Matrix3 test;
   test.SetMatrixData(data);
   ASSERT_EQ(matrix, test);
 }
 
-TEST(TestMatrix, test_registration) {
+TEST(TestMatrix, test_matrix_data_registration) {
   using namespace gobot;
-  Matrix3<> matrix{Eigen::Matrix<real_t, 3, 3>::Random()};
+  Matrix3 matrix{Eigen::Matrix3<real_t>::Random()};
   auto json = gobot::VariantSerializer::VariantToJson(matrix);
-  Matrix3<> test;
-  Variant test_variant(test);
+
+  Variant test_variant((Matrix3()));
   ASSERT_TRUE(gobot::VariantSerializer::JsonToVariant(test_variant, json));
-  ASSERT_EQ(test, matrix);
+  ASSERT_EQ(test_variant.get_value<Matrix3>(), matrix);
 }

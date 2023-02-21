@@ -310,6 +310,7 @@ Ref<Resource> ResourceFormatLoaderScene::Load(const String &path,
 }
 
 ResourceFormatLoaderScene* ResourceFormatLoaderScene::GetInstance() {
+    ERR_FAIL_COND_V_MSG(s_singleton == nullptr, nullptr, "Must call this after initialize ResourceFormatLoaderScene");
     return s_singleton;
 }
 
@@ -560,6 +561,7 @@ ResourceFormatSaverScene::~ResourceFormatSaverScene() {
 }
 
 ResourceFormatSaverScene* ResourceFormatSaverScene::GetInstance() {
+    ERR_FAIL_COND_V_MSG(s_singleton == nullptr, nullptr, "Must call this after initialize ResourceFormatSaverScene");
     return s_singleton;
 }
 
