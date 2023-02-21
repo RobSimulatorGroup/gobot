@@ -36,6 +36,10 @@ public:
     void SetW(Scalar w) { this->w() = w; }
 };
 
+
+template <typename Scalar>
+using EulerAngle = Matrix<Scalar, 3, 1>;
+
 template <typename Scalar, int Dim, int Mode, int Options = Eigen::AutoAlign>
 class Transform: public Eigen::Transform<Scalar, Dim, Mode, Options> {
 public:
@@ -80,7 +84,7 @@ public:
         this->linear() = Eigen::Rotation2D(angle).toRotationMatrix();
     }
 
-    Matrix<Scalar, 3, 1> GetEulerAngle(EulerOrder euler_order) const {
+    EulerAngle<Scalar> GetEulerAngle(EulerOrder euler_order) const {
         static_assert(Dim == 3 && Mode != Eigen::Projective, "GetEulerAngle can only called when Dim is 3");
         switch (euler_order) {
             case EulerOrder::RXYZ:
@@ -112,7 +116,7 @@ public:
         return {};
     }
 
-    void SetEulerAngle(const Matrix<Scalar, 3, 1>& angles , EulerOrder euler_order) {
+    void SetEulerAngle(const EulerAngle<Scalar>& angles , EulerOrder euler_order) {
         static_assert(Dim == 3 && Mode != Eigen::Projective, "SetEulerAngle can only called when Dim is 3");
         static auto unit_x = Matrix<Scalar, 3, 1>::UnitX();
         static auto unit_y = Matrix<Scalar, 3, 1>::UnitY();
@@ -190,6 +194,9 @@ using AngleAxisf = Eigen::AngleAxisf;
 using Quaterniond = internal::Quaternion<double>;
 using Quaternionf = internal::Quaternion<float>;
 
+using EulerAngled = internal::EulerAngle<double>;
+using EulerAnglef = internal::EulerAngle<float>;
+
 using Isometry2d = internal::Transform<double, 2, Eigen::Isometry>;
 using Isometry2f = internal::Transform<float, 2, Eigen::Isometry>;
 using Isometry3d = internal::Transform<double, 3, Eigen::Isometry>;
@@ -209,6 +216,8 @@ using Projective3f = internal::Transform<float, 3, Eigen::Projective>;
 using AngleAxis = Eigen::AngleAxis<real_t>;
 
 using Quaternion = internal::Quaternion<real_t>;
+
+using EulerAngle = internal::EulerAngle<real_t>;
 
 using Isometry2 = internal::Transform<real_t, 2, Eigen::Isometry>;
 using Isometry3 = internal::Transform<real_t, 3, Eigen::Isometry>;
