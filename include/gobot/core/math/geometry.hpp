@@ -13,49 +13,171 @@
 #include <Eigen/Geometry>
 
 #include "gobot/core/math/math_defs.hpp"
+#include "gobot/core/math/matrix.hpp"
+#include "gobot/core/macros.hpp"
 
 namespace gobot {
 
 namespace internal {
-template <typename _Scalar>
-class Quaternion : public Eigen::Quaternion<_Scalar> {
+template <typename Scalar>
+class Quaternion : public Eigen::Quaternion<Scalar> {
 public:
-    using Base = Eigen::Quaternion<_Scalar>;
+    using Base = Eigen::Quaternion<Scalar>;
     using Base::Base;
 
-    _Scalar GetX() const { return this->x(); }
-    _Scalar GetY() const { return this->y(); }
-    _Scalar GetZ() const { return this->z(); }
-    _Scalar GetW() const { return this->w(); }
+    Scalar GetX() const { return this->x(); }
+    Scalar GetY() const { return this->y(); }
+    Scalar GetZ() const { return this->z(); }
+    Scalar GetW() const { return this->w(); }
 
-    void SetX(_Scalar x) { this->x() = x; }
-    void SetY(_Scalar y) { this->y() = y; }
-    void SetZ(_Scalar z) { this->z() = z; }
-    void SetW(_Scalar w) { this->w() = w; }
+    void SetX(Scalar x) { this->x() = x; }
+    void SetY(Scalar y) { this->y() = y; }
+    void SetZ(Scalar z) { this->z() = z; }
+    void SetW(Scalar w) { this->w() = w; }
 };
 
-template <typename _Scalar, int _Dim, int _Mode, int _Options = Eigen::AutoAlign>
-class Transform: public Eigen::Transform<_Scalar, _Dim, _Mode, _Options> {
+template <typename Scalar, int Dim, int Mode, int Options = Eigen::AutoAlign>
+class Transform: public Eigen::Transform<Scalar, Dim, Mode, Options> {
 public:
-    using Base = Eigen::Transform<_Scalar, _Dim, _Mode, _Options>;
+    using Base = Eigen::Transform<Scalar, Dim, Mode, Options>;
     using Base::Base;
 
-    Transform(const Eigen::Transform<_Scalar, _Dim, _Mode, _Options>& transform)
-        : Eigen::Transform<_Scalar, _Dim, _Mode, _Options>(transform)
+    Transform(const Eigen::Transform<Scalar, Dim, Mode, Options>& transform)
+        : Eigen::Transform<Scalar, Dim, Mode, Options>(transform)
     {
     }
 
-    std::vector<_Scalar> GetMatrixData() const {
+    std::vector<Scalar> GetMatrixData() const {
         auto self_view = this->matrix().reshaped();
         return {std::vector(self_view.begin(), self_view.end())};
     }
 
-    void SetMatrixData(const std::vector<_Scalar> &data) {
+    void SetMatrixData(const std::vector<Scalar> &data) {
         auto self_view = this->matrix().reshaped();
         if (self_view.size() != data.size()) [[unlikely]] {
             return;
         }
         std::copy(data.cbegin(), data.cend(), self_view.begin());
+    }
+
+    Quaternion<Scalar> GetQuaternion() const {
+        static_assert(Dim == 3 && Mode != Eigen::Projective, "GetQuaternion can only called when Dim is 3");
+        return Quaternion<Scalar>(this->rotation());
+    }
+
+    void SetQuaternion(const Quaternion<Scalar>& quaternion) {
+        static_assert(Dim == 3 && Mode != Eigen::Projective, "SetQuaternion can only called when Dim is 3");
+        this->linear() = quaternion.toRotationMatrix();
+    }
+
+    Scalar GetAngle() const {
+        static_assert(Dim == 2 && Mode != Eigen::Projective, "GetAngle can only called when Dim is 2");
+        return Eigen::Rotation2D(this->linear()).angle();
+    }
+
+    void SetAngle(const Scalar& angle) {
+        static_assert(Dim == 2 && Mode != Eigen::Projective, "SetAngle can only called when Dim is 2");
+        this->linear() = Eigen::Rotation2D(angle).toRotationMatrix();
+    }
+
+    Matrix<Scalar, 3, 1> GetEulerAngle(EulerOrder euler_order) const {
+        static_assert(Dim == 3 && Mode != Eigen::Projective, "GetEulerAngle can only called when Dim is 3");
+        switch (euler_order) {
+            case EulerOrder::RXYZ:
+                return this->rotation().eulerAngles(0, 1, 2);
+            case EulerOrder::RYZX:
+                return this->rotation().eulerAngles(1, 2, 0);
+            case EulerOrder::RZYX:
+                return this->rotation().eulerAngles(2, 1, 0);
+            case EulerOrder::RXZY:
+                return this->rotation().eulerAngles(0, 2, 1);
+            case EulerOrder::RXZX:
+                return this->rotation().eulerAngles(0, 2, 0);
+            case EulerOrder::RYXZ:
+                return this->rotation().eulerAngles(1, 0, 2);
+            case EulerOrder::SXYZ:
+                return this->rotation().eulerAngles(2, 1, 0);
+            case EulerOrder::SYZX:
+                return this->rotation().eulerAngles(0, 2, 1);
+            case EulerOrder::SZYX:
+                return this->rotation().eulerAngles(0, 1, 2);
+            case EulerOrder::SXZY:
+                return this->rotation().eulerAngles(1, 2, 0);
+            case EulerOrder::SXZX:
+                return this->rotation().eulerAngles(0, 2, 0);
+            case EulerOrder::SYXZ:
+                return this->rotation().eulerAngles(2, 0, 1);
+        }
+        // never go here
+        return {};
+    }
+
+    void SetEulerAngle(const Matrix<Scalar, 3, 1>& angles , EulerOrder euler_order) {
+        static_assert(Dim == 3 && Mode != Eigen::Projective, "SetEulerAngle can only called when Dim is 3");
+        static auto unit_x = Matrix<Scalar, 3, 1>::UnitX();
+        static auto unit_y = Matrix<Scalar, 3, 1>::UnitY();
+        static auto unit_z = Matrix<Scalar, 3, 1>::UnitZ();
+        switch (euler_order) {
+            case EulerOrder::RXYZ:
+                this->linear() = (Eigen::AngleAxis<Scalar>(angles.x(), unit_x) *
+                        Eigen::AngleAxis<Scalar>(angles.y(), unit_y) *
+                        Eigen::AngleAxis<Scalar>(angles.z(), unit_z)).toRotationMatrix();
+                break;
+            case EulerOrder::RYZX:
+                this->linear() = Eigen::AngleAxis<Scalar>(angles.x(), unit_y) *
+                        Eigen::AngleAxis<Scalar>(angles.y(), unit_z) *
+                        Eigen::AngleAxis<Scalar>(angles.z(), unit_x).toRotationMatrix();
+                break;
+            case EulerOrder::RZYX:
+                this->linear() = Eigen::AngleAxis<Scalar>(angles.x(), unit_z) *
+                        Eigen::AngleAxis<Scalar>(angles.y(), unit_y) *
+                        Eigen::AngleAxis<Scalar>(angles.z(), unit_x).toRotationMatrix();
+                break;
+            case EulerOrder::RXZY:
+                this->linear() = Eigen::AngleAxis<Scalar>(angles.x(), unit_x) *
+                        Eigen::AngleAxis<Scalar>(angles.y(), unit_z) *
+                        Eigen::AngleAxis<Scalar>(angles.z(), unit_y).toRotationMatrix();
+                break;
+            case EulerOrder::RXZX:
+                this->linear() = Eigen::AngleAxis<Scalar>(angles.x(), unit_x) *
+                        Eigen::AngleAxis<Scalar>(angles.y(), unit_z) *
+                        Eigen::AngleAxis<Scalar>(angles.z(), unit_z).toRotationMatrix();
+                break;
+            case EulerOrder::RYXZ:
+                this->linear() = Eigen::AngleAxis<Scalar>(angles.x(), unit_y) *
+                        Eigen::AngleAxis<Scalar>(angles.y(), unit_x) *
+                        Eigen::AngleAxis<Scalar>(angles.z(), unit_z).toRotationMatrix();
+                break;
+            case EulerOrder::SXYZ:
+                this->linear() = Eigen::AngleAxis<Scalar>(angles.z(), unit_z) *
+                        Eigen::AngleAxis<Scalar>(angles.y(), unit_y) *
+                        Eigen::AngleAxis<Scalar>(angles.x(), unit_x).toRotationMatrix();
+                break;
+            case EulerOrder::SYZX:
+                this->linear() = Eigen::AngleAxis<Scalar>(angles.z(), unit_x) *
+                        Eigen::AngleAxis<Scalar>(angles.y(), unit_z) *
+                        Eigen::AngleAxis<Scalar>(angles.x(), unit_y).toRotationMatrix();
+                break;
+            case EulerOrder::SZYX:
+                this->linear() = Eigen::AngleAxis<Scalar>(angles.z(), unit_x) *
+                        Eigen::AngleAxis<Scalar>(angles.y(), unit_y) *
+                        Eigen::AngleAxis<Scalar>(angles.x(), unit_z).toRotationMatrix();
+                break;
+            case EulerOrder::SXZY:
+                this->linear() = Eigen::AngleAxis<Scalar>(angles.z(), unit_y) *
+                        Eigen::AngleAxis<Scalar>(angles.y(), unit_z) *
+                        Eigen::AngleAxis<Scalar>(angles.x(), unit_x).toRotationMatrix();
+                break;
+            case EulerOrder::SXZX:
+                this->linear() = Eigen::AngleAxis<Scalar>(angles.z(), unit_x) *
+                        Eigen::AngleAxis<Scalar>(angles.y(), unit_z) *
+                        Eigen::AngleAxis<Scalar>(angles.x(), unit_x).toRotationMatrix();
+            case EulerOrder::SYXZ:
+                this->linear() = Eigen::AngleAxis<Scalar>(angles.z(), unit_z) *
+                        Eigen::AngleAxis<Scalar>(angles.y(), unit_x) *
+                        Eigen::AngleAxis<Scalar>(angles.x(), unit_y).toRotationMatrix();
+                break;
+        }
     }
 };
 
@@ -91,16 +213,16 @@ using Quaternion = internal::Quaternion<real_t>;
 using Isometry2 = internal::Transform<real_t, 2, Eigen::Isometry>;
 using Isometry3 = internal::Transform<real_t, 3, Eigen::Isometry>;
 
-using Affine2 = internal::Transform<real_t,2,Eigen::Affine>;
-using Affine3 = internal::Transform<real_t,3,Eigen::Affine>;
+using Affine2 = internal::Transform<real_t, 2, Eigen::Affine>;
+using Affine3 = internal::Transform<real_t, 3, Eigen::Affine>;
 
-using Projective2 = internal::Transform<real_t,2,Eigen::Projective>;
-using Projective3 = internal::Transform<real_t,3,Eigen::Projective>;
+using Projective2 = internal::Transform<real_t, 2, Eigen::Projective>;
+using Projective3 = internal::Transform<real_t, 3, Eigen::Projective>;
 
 }  // namespace gobot
 
 namespace rttr::detail {
-
+// Remark: If we didn't explict list all types, the clion will raise a error, but the build(gcc-10) is fine.
 #define GOBOT_GEOMETRY_MAKE_FIXED_RTTR(Name, Type)                         \
 template<>                                                                 \
 struct template_type_trait<gobot::Name> : std::true_type {                 \

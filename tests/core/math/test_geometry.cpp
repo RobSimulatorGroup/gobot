@@ -12,7 +12,7 @@
 #include <gobot/core/math/geometry.hpp>
 #include <gobot/core/io/variant_serializer.hpp>
 
-TEST(TestGeoMetry, test_setter_getter) {
+TEST(TestGeometry, test_setter_getter) {
     using namespace gobot;
     Isometry3 isometry = Isometry3::Identity();
     auto data = isometry.GetMatrixData();
@@ -22,7 +22,7 @@ TEST(TestGeoMetry, test_setter_getter) {
 }
 
 
-TEST(TestGeoMetry, test_matrix_data_registration) {
+TEST(TestGeometry, test_matrix_data_registration) {
     using namespace gobot;
     Isometry3 isometry{Isometry3::Identity()};
     auto json = gobot::VariantSerializer::VariantToJson(isometry);
@@ -32,3 +32,49 @@ TEST(TestGeoMetry, test_matrix_data_registration) {
     ASSERT_EQ(test_variant.get_value<Isometry3>().matrix(), isometry.matrix());
 }
 
+TEST(TestGeometry, test_isometry) {
+    using namespace gobot;
+    Isometry3 isometry{Isometry3::Identity()};
+    auto quaternion = isometry.GetQuaternion();
+    auto euler_angle = isometry.GetEulerAngle(EulerOrder::RXYZ);
+    ASSERT_FLOAT_EQ(quaternion.GetX(), 0.0);
+    ASSERT_FLOAT_EQ(quaternion.GetY(), 0.0);
+    ASSERT_FLOAT_EQ(quaternion.GetZ(), 0.0);
+    ASSERT_FLOAT_EQ(quaternion.GetW(), 1.0);
+    ASSERT_FLOAT_EQ(euler_angle.x(), 0.0);
+    ASSERT_FLOAT_EQ(euler_angle.y(), 0.0);
+    ASSERT_FLOAT_EQ(euler_angle.z(), 0.0);
+
+    isometry.SetEulerAngle(Vector3{0, 0, Math_PI * 0.5}, EulerOrder::RXYZ);
+    quaternion = isometry.GetQuaternion();
+    euler_angle = isometry.GetEulerAngle(EulerOrder::RXYZ);
+    ASSERT_FLOAT_EQ(quaternion.GetX(), 0.0);
+    ASSERT_FLOAT_EQ(quaternion.GetY(), 0.0);
+    ASSERT_FLOAT_EQ(quaternion.GetZ(), 0.70710671);
+    ASSERT_FLOAT_EQ(quaternion.GetW(), 0.70710671);
+    ASSERT_FLOAT_EQ(euler_angle.x(), 0.0);
+    ASSERT_FLOAT_EQ(euler_angle.y(), 0.0);
+    ASSERT_FLOAT_EQ(euler_angle.z(), Math_PI * 0.5);
+
+    isometry.SetEulerAngle(Vector3{Math_PI * 0.5, 0.0, 0.0}, EulerOrder::RXYZ);
+    quaternion = isometry.GetQuaternion();
+    euler_angle = isometry.GetEulerAngle(EulerOrder::RXYZ);
+    ASSERT_FLOAT_EQ(quaternion.GetX(), 0.70710671);
+    ASSERT_FLOAT_EQ(quaternion.GetY(), 0.0);
+    ASSERT_FLOAT_EQ(quaternion.GetZ(), 0.0);
+    ASSERT_FLOAT_EQ(quaternion.GetW(), 0.70710671);
+    ASSERT_FLOAT_EQ(euler_angle.x(), Math_PI * 0.5);
+    ASSERT_FLOAT_EQ(euler_angle.y(), 0.0);
+    ASSERT_FLOAT_EQ(euler_angle.z(), 0.0);
+
+    isometry.SetEulerAngle(Vector3{Math_PI * 0.25, Math_PI * 0.25, Math_PI * 0.25}, EulerOrder::RXYZ);
+    quaternion = isometry.GetQuaternion();
+    euler_angle = isometry.GetEulerAngle(EulerOrder::RXYZ);
+    ASSERT_FLOAT_EQ(quaternion.GetX(), 0.46193981);
+    ASSERT_FLOAT_EQ(quaternion.GetY(), 0.19134171);
+    ASSERT_FLOAT_EQ(quaternion.GetZ(), 0.46193981);
+    ASSERT_FLOAT_EQ(quaternion.GetW(), 0.73253775);
+    ASSERT_FLOAT_EQ(euler_angle.x(), Math_PI * 0.25);
+    ASSERT_FLOAT_EQ(euler_angle.y(), Math_PI * 0.25);
+    ASSERT_FLOAT_EQ(euler_angle.z(), Math_PI * 0.25);
+}

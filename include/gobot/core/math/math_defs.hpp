@@ -81,7 +81,25 @@ enum class Side { Left, Top, Right, Bottom };
 
 enum class Corner { TopLeft, TopRight, BottomRight, BottomLeft };
 
-enum class EulerOrder { XYZ, XZY, YXZ, YZX, ZXY, ZYX };
+// We follow Tait–Bryan angles
+// https://en.wikipedia.org/wiki/Euler_angles
+enum class EulerOrder {
+    // rotated axis, (intrinsic rotations)
+    RXYZ,
+    RYZX,
+    RZYX,
+    RXZY,
+    RXZX,
+    RYXZ,
+
+    // static axis (extrinsic rotations)
+    SXYZ,
+    SYZX,
+    SZYX,
+    SXZY,
+    SXZX,
+    SYXZ
+};
 
 /**
  * The "Real" type is an abstract type used for real numbers, such as 1.5,
