@@ -5,8 +5,9 @@
  * This file is created by Qiqi Wu, 23-2-20
 */
 
-
 #include "gobot/render/frame_buffer.hpp"
+#include "gobot/core/hash_combine.hpp"
+#include "gobot/render/texture.hpp"
 #include "gobot/error_macros.hpp"
 
 namespace gobot {
@@ -18,41 +19,37 @@ Framebuffer *Framebuffer::Create(const FramebufferDesc &framebufferDesc) {
     return CreateFunc(framebufferDesc);
 }
 
-static std::unordered_map<std::size_t, Ref<Framebuffer>> m_FramebufferCache;
+static std::unordered_map<std::size_t, Ref<Framebuffer>> framebuffer_cache;
+
+Framebuffer::~Framebuffer()
+{
+}
 
 Ref<Framebuffer> Framebuffer::Get(const FramebufferDesc &framebufferDesc) {
     size_t hash = 0;
-//    HashCombine(hash, framebufferDesc.attachmentCount, framebufferDesc.width, framebufferDesc.height,
-//                framebufferDesc.layer, framebufferDesc.renderPass, framebufferDesc.screenFBO);
-//
-//    for (uint32_t i = 0; i < framebufferDesc.attachmentCount; i++) {
-//        HashCombine(hash, framebufferDesc.attachmentTypes[i]);
-//
-//        if (framebufferDesc.attachments[i]) {
-//            HashCombine(hash, framebufferDesc.attachments[i]->GetImageHande());
-//#ifdef LUMOS_RENDER_API_VULKAN
-//
-//            if(GraphicsContext::GetRenderAPI() == RenderAPI::VULKAN)
-//                    {
-//                        VkDescriptorImageInfo* depthImageHandle = (VkDescriptorImageInfo*)(framebufferDesc.attachments[i]->GetDescriptorInfo());
-//                        HashCombine(hash, depthImageHandle->imageLayout, depthImageHandle->imageView, depthImageHandle->sampler);
-//                    }
-//#endif
-//        }
-//    }
+    HashCombine(hash, framebufferDesc.attachmentCount, framebufferDesc.width, framebufferDesc.height,
+                framebufferDesc.layer, framebufferDesc.renderPass, framebufferDesc.screenFBO);
 
-    auto found = m_FramebufferCache.find(hash);
-    if (found != m_FramebufferCache.end() && found->second) {
+    for (uint32_t i = 0; i < framebufferDesc.attachmentCount; i++) {
+        HashCombine(hash, framebufferDesc.attachmentTypes[i]);
+
+        if (framebufferDesc.attachments[i]) {
+            HashCombine(hash, framebufferDesc.attachments[i]->GetImageHande());
+        }
+    }
+
+    auto found = framebuffer_cache.find(hash);
+    if (found != framebuffer_cache.end() && found->second) {
         return found->second;
     }
 
     auto framebuffer = Ref<Framebuffer>(Create(framebufferDesc));
-    m_FramebufferCache[hash] = framebuffer;
+    framebuffer_cache[hash] = framebuffer;
     return framebuffer;
 }
 
 void Framebuffer::ClearCache() {
-    m_FramebufferCache.clear();
+    framebuffer_cache.clear();
 }
 
 void Framebuffer::DeleteUnusedCache() {
@@ -60,7 +57,7 @@ void Framebuffer::DeleteUnusedCache() {
     static std::size_t keysToDelete[keyDeleteSize];
     std::size_t keysToDeleteCount = 0;
 
-    for (auto &&[key, value]: m_FramebufferCache) {
+    for (auto &&[key, value]: framebuffer_cache) {
         if (!value) {
             keysToDelete[keysToDeleteCount] = key;
             keysToDeleteCount++;
@@ -70,12 +67,9 @@ void Framebuffer::DeleteUnusedCache() {
     }
 
     for (std::size_t i = 0; i < keysToDeleteCount; i++) {
-        m_FramebufferCache[keysToDelete[i]] = nullptr;
-        m_FramebufferCache.erase(keysToDelete[i]);
+        framebuffer_cache[keysToDelete[i]] = nullptr;
+        framebuffer_cache.erase(keysToDelete[i]);
     }
-}
-
-Framebuffer::~Framebuffer() {
 }
 
 }

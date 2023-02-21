@@ -6,12 +6,13 @@
 */
 
 #include "gobot/drivers/opengl/gl_functions.hpp"
+#include "gobot/drivers/opengl/gl_command_buffer.hpp"
 
 namespace gobot {
 
 void OpenGLMakeDefault()
 {
-//    GLCommandBuffer::MakeDefault();
+    GLCommandBuffer::MakeDefault();
 //    GLContext::MakeDefault();
 //    GLDescriptorSet::MakeDefault();
 //    GLFramebuffer::MakeDefault();

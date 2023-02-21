@@ -9,7 +9,7 @@
 
 #include "gobot/render/pipeline.hpp"
 #include "gobot/render/frame_buffer.hpp"
-#include "gobot/render/BufferLayout.h"
+#include "gobot/render/buffer_layout.hpp"
 
 namespace gobot {
 
@@ -21,13 +21,19 @@ class GOBOT_EXPORT GLPipeline : public Pipeline
 {
 public:
     GLPipeline(const PipelineDesc& pipelineDesc);
+
     ~GLPipeline();
 
     bool Init(const PipelineDesc& pipelineDesc);
-    void Bind(Graphics::CommandBuffer* commandBuffer, uint32_t layer) override;
-    void End(Graphics::CommandBuffer* commandBuffer) override;
+
+    void Bind(CommandBuffer* commandBuffer, uint32_t layer) override;
+
+    void End(CommandBuffer* commandBuffer) override;
+
     void ClearRenderTargets(CommandBuffer* commandBuffer) override;
+
     void BindVertexArray();
+
     void CreateFramebuffers();
 
     Shader* GetShader() const override { return m_Shader; }
@@ -39,8 +45,8 @@ protected:
 
 private:
     Shader* m_Shader = nullptr;
-    SharedPtr<RenderPass> m_RenderPass;
-    std::vector<SharedPtr<Framebuffer>> m_Framebuffers;
+    Ref<RenderPass> m_RenderPass;
+    std::vector<Ref<Framebuffer>> m_Framebuffers;
     std::string pipelineName;
     bool m_TransparencyEnabled = false;
     uint32_t m_VertexArray     = -1;

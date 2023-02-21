@@ -125,7 +125,7 @@ void GLRenderer::SetViewportInternal(uint32_t x, uint32_t y, uint32_t width, uin
     glViewport(x, y, width, height);
 }
 
-const std::string& GLRenderer::GetTitleInternal() const
+const String& GLRenderer::GetTitleInternal() const
 {
     return m_RendererTitle;
 }

@@ -13,21 +13,21 @@ namespace gobot {
 
 Renderer* (*Renderer::CreateFunc)() = nullptr;
 
-Renderer* Renderer::s_Instance = nullptr;
+Renderer* Renderer::render_instance = nullptr;
 
 void Renderer::Init(bool loadEmbeddedShaders)
 {
     CRASH_COND_MSG(CreateFunc == nullptr, "No Renderer Create Function");
-    s_Instance = CreateFunc();
-    s_Instance->InitInternal();
-    s_Instance->LoadEngineShaders(loadEmbeddedShaders);
+    render_instance = CreateFunc();
+    render_instance->InitInternal();
+    render_instance->LoadEngineShaders(loadEmbeddedShaders);
 }
 
 void Renderer::Release()
 {
-    delete s_Instance;
+    delete render_instance;
 
-    s_Instance = nullptr;
+    render_instance = nullptr;
 }
 
 void Renderer::LoadEngineShaders(bool loadEmbeddedShaders)

@@ -177,7 +177,7 @@ enum class TextureType
     OTHER
 };
 
-enum SubPassContents
+enum class SubPassContents
 {
     INLINE,
     SECONDARY
