@@ -5,7 +5,7 @@
  * This file is created by Qiqi Wu, 23-2-20
 */
 
-#include "gobot/graphics/shader.hpp"
+#include "gobot/render/shader.hpp"
 #include "gobot/error_macros.hpp"
 #include "gobot/log.hpp"
 

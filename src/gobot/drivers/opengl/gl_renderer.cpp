@@ -14,7 +14,7 @@
 #include "gobot/log.hpp"
 #include "gobot/error_macros.hpp"
 #include "gobot/drivers/opengl/gl.hpp"
-#include "gobot/graphics/frame_buffer.hpp"
+#include "gobot/render/frame_buffer.hpp"
 
 
 namespace gobot {

@@ -9,7 +9,7 @@
 
 #include "gobot/core/io/resource.hpp"
 #include "gobot/drivers/sdl/sdl_image.hpp"
-#include <Eigen/Dense>
+#include "gobot/core/math/matrix.hpp"
 
 namespace gobot {
 
@@ -22,7 +22,7 @@ public:
 
     int GetHeight() const;
 
-    Eigen::Vector2i GetSize() const;
+    Vector2i GetSize() const;
 
     FORCE_INLINE void SetSDLImage(UniqueSDLImagePtr sdl_image) { sdl_image_ = std::move(sdl_image); }
 

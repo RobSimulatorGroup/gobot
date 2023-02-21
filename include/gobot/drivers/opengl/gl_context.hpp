@@ -7,9 +7,8 @@
 
 #pragma once
 
-#include <Eigen/Dense>
 #include <gobot_export.h>
-#include "gobot/graphics/graphics_context.hpp"
+#include "gobot/render/graphics_context.hpp"
 
 namespace gobot {
 

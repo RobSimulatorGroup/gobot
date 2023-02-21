@@ -44,13 +44,13 @@ SDLWindow::~SDLWindow()
     SDL_DestroyWindow(native_window_);
 }
 
-void SDLWindow::SetWindowPosition(const Eigen::Vector2i& position)
+void SDLWindow::SetWindowPosition(const Vector2i& position)
 {
 
     SDL_SetWindowPosition(native_window_, position.x(), position.y());
 }
 
-Eigen::Vector2i SDLWindow::GetWindowPosition() const
+Vector2i SDLWindow::GetWindowPosition() const
 {
     int x, y;
     SDL_GetWindowPosition(native_window_, &x, &y);
@@ -71,14 +71,14 @@ std::uint32_t SDLWindow::GetHeight() const
     return height;
 }
 
-Eigen::Vector2i SDLWindow::GetWindowSize() const
+Vector2i SDLWindow::GetWindowSize() const
 {
     int width, height;
     SDL_GetWindowSize(native_window_, &width, &height);
     return {width, height};
 }
 
-void SDLWindow::SetWindowSize(const Eigen::Vector2i& size)
+void SDLWindow::SetWindowSize(const Vector2i& size)
 {
     SDL_SetWindowSize(native_window_, size.x(), size.y());
 }

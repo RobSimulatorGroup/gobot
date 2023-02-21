@@ -7,11 +7,11 @@
 
 #pragma once
 
-#include "gobot/graphics/texture.hpp"
+#include "gobot/render/texture.hpp"
 
 namespace gobot {
 
-class GLTexture2D : public Texture2D
+class GOBOT_EXPORT GLTexture2D : public Texture2D
 {
 public:
     GLTexture2D(TextureDesc parameters, uint32_t width, uint32_t height);

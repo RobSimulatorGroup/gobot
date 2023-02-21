@@ -5,18 +5,17 @@
  * This file is created by Qiqi Wu, 23-2-20
 */
 
-#include "gobot/graphics/descriptor_set.hpp"
+#include "gobot/render/swap_chain.hpp"
 #include "gobot/error_macros.hpp"
 
 namespace gobot {
 
-DescriptorSet* (*DescriptorSet::CreateFunc)(const DescriptorDesc&) = nullptr;
+SwapChain* (*SwapChain::CreateFunc)(uint32_t, uint32_t) = nullptr;
 
-DescriptorSet* DescriptorSet::Create(const DescriptorDesc& desc)
+SwapChain* SwapChain::Create(uint32_t width, uint32_t height)
 {
-    CRASH_COND_MSG(CreateFunc == nullptr, "No DescriptorSet Create Function");
-
-    return CreateFunc(desc);
+    CRASH_COND_MSG(CreateFunc == nullptr, "No SwapChain Create Function");
+    return CreateFunc(width, height);
 }
 
 }

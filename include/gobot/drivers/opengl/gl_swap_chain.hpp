@@ -7,14 +7,14 @@
 
 #pragma once
 
-#include "gobot/graphics/swap_chain.hpp"
+#include "gobot/render/swap_chain.hpp"
 
 namespace gobot {
 
 class GLCommandBuffer;
 class GLTexture2D;
 
-class GLSwapChain : public SwapChain
+class GOBOT_EXPORT  GLSwapChain : public SwapChain
 {
 public:
     GLSwapChain(uint32_t width, uint32_t height);

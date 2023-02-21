@@ -5,7 +5,7 @@
  * This file is created by Qiqi Wu, 23-2-20
 */
 
-#include "gobot/graphics/texture.hpp"
+#include "gobot/render/texture.hpp"
 #include "gobot/log.hpp"
 #include "gobot/error_macros.hpp"
 

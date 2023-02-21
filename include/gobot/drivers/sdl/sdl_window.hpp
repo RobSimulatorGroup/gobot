@@ -9,8 +9,6 @@
 
 #include "gobot/core/os/window.hpp"
 
-#include <Eigen/Dense>
-
 class SDL_Window;
 
 namespace gobot {
@@ -21,17 +19,17 @@ public:
 
     ~SDLWindow() override;
 
-    void SetWindowPosition(const Eigen::Vector2i& position) override;
+    void SetWindowPosition(const Vector2i& position) override;
 
-    [[nodiscard]] Eigen::Vector2i GetWindowPosition() const override;
+    [[nodiscard]] Vector2i GetWindowPosition() const override;
 
     [[nodiscard]] std::uint32_t GetWidth() const override;
 
     [[nodiscard]] std::uint32_t GetHeight() const override;
 
-    [[nodiscard]] Eigen::Vector2i GetWindowSize() const override;
+    [[nodiscard]] Vector2i GetWindowSize() const override;
 
-    void SetWindowSize(const Eigen::Vector2i& size) override;
+    void SetWindowSize(const Vector2i& size) override;
 
     [[nodiscard]] bool SetWindowFullscreen() override;
 

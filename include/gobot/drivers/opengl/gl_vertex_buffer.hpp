@@ -6,11 +6,11 @@
 */
 
 #pragma once
-#include "gobot/graphics/vertex_buffer.hpp"
+#include "gobot/render/vertex_buffer.hpp"
 
 namespace gobot {
 
-class GLVertexBuffer : public VertexBuffer
+class GOBOT_EXPORT GLVertexBuffer : public VertexBuffer
 {
 private:
     uint32_t m_Handle {};

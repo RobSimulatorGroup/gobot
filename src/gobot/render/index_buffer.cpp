@@ -5,7 +5,7 @@
  * This file is created by Qiqi Wu, 23-2-20
 */
 
-#include "gobot/graphics/index_buffer.hpp"
+#include "gobot/render/index_buffer.hpp"
 #include "gobot/log.hpp"
 #include "gobot/error_macros.hpp"
 

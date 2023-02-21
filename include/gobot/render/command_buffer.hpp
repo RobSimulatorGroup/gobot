@@ -8,6 +8,7 @@
 #pragma once
 
 #include <cstdint>
+#include "gobot_export.h"
 
 namespace gobot {
 
@@ -15,7 +16,7 @@ class RenderPass;
 class Framebuffer;
 class Pipeline;
 
-class CommandBuffer
+class GOBOT_EXPORT CommandBuffer
 {
 public:
     virtual ~CommandBuffer() = default;

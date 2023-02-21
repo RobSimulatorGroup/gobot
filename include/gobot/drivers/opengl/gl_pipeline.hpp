@@ -7,10 +7,9 @@
 
 #pragma once
 
-
-#include "gobot/graphics/pipeline.hpp"
-#include "gobot/graphics/frame_buffer.hpp"
-#include "gobot/graphics/BufferLayout.h"
+#include "gobot/render/pipeline.hpp"
+#include "gobot/render/frame_buffer.hpp"
+#include "gobot/render/BufferLayout.h"
 
 namespace gobot {
 
@@ -18,7 +17,7 @@ class GLRenderPass;
 class CommandBuffer;
 class RenderPass;
 
-class GLPipeline : public Pipeline
+class GOBOT_EXPORT GLPipeline : public Pipeline
 {
 public:
     GLPipeline(const PipelineDesc& pipelineDesc);

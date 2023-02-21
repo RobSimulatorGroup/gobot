@@ -7,12 +7,12 @@
 
 #pragma once
 
-#include "gobot/graphics/command_buffer.hpp"
+#include "gobot/render/command_buffer.hpp"
 
 namespace gobot {
 
 
-class GLCommandBuffer : public CommandBuffer
+class GOBOT_EXPORT GLCommandBuffer : public CommandBuffer
 {
 public:
     GLCommandBuffer();

@@ -10,7 +10,7 @@
 #include "gobot/scene/node.hpp"
 #include "gobot/core/events/window_event.hpp"
 #include "gobot/core/events/event.hpp"
-#include "gobot/graphics/graphics_context.hpp"
+#include "gobot/render/graphics_context.hpp"
 #include "gobot/core/os/window.hpp"
 
 namespace gobot {

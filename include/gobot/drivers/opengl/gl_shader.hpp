@@ -8,12 +8,9 @@
 #pragma once
 
 #include "gl_uniform_buffer.hpp"
-#include "gobot/graphics/shader.hpp"
-#include "gobot/graphics/buffer_layout.hpp"
+#include "gobot/render/shader.hpp"
+#include "gobot/render/buffer_layout.hpp"
 #include "gl.hpp"
-
-
-#include <Eigen/Dense>
 
 namespace gobot {
 
@@ -26,7 +23,7 @@ struct GLShaderErrorInfo
     uint32_t line[6];
 };
 
-class GLShader : public Shader
+class GOBOT_EXPORT GLShader : public Shader
 {
 private:
     friend class Shader;
@@ -103,12 +100,12 @@ public:
     static void SetUniform1i(uint32_t location, int32_t value);
     static void SetUniform1ui(uint32_t location, uint32_t value);
     static void SetUniform1iv(uint32_t location, int32_t* value, int32_t count);
-    static void SetUniform2f(uint32_t location, const Eigen::Vector2f& vector);
-    static void SetUniform3f(uint32_t location, const Eigen::Vector3f& vector);
-    static void SetUniform4f(uint32_t location, const Eigen::Vector4f& vector);
-    static void SetUniformMat3(uint32_t location, const Eigen::Matrix3f& matrix);
-    static void SetUniformMat4(uint32_t location, const Eigen::Matrix4f& matrix);
-    static void SetUniformMat4Array(uint32_t location, uint32_t count, const Eigen::Matrix4f& matrix);
+    static void SetUniform2f(uint32_t location, const Vector2f& vector);
+    static void SetUniform3f(uint32_t location, const Vector3f& vector);
+    static void SetUniform4f(uint32_t location, const Vector4f& vector);
+    static void SetUniformMat3(uint32_t location, const Matrix3f& matrix);
+    static void SetUniformMat4(uint32_t location, const Matrix4f& matrix);
+    static void SetUniformMat4Array(uint32_t location, uint32_t count, const Matrix4f& matrix);
 
     static void MakeDefault();
 

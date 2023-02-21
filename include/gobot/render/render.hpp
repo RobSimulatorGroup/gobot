@@ -10,8 +10,7 @@
 #include "gobot/core/types.hpp"
 #include "gobot_export.h"
 
-#include "gobot/graphics/definitions.hpp"
-#include <Eigen/Dense>
+#include "gobot/render/definitions.hpp"
 
 namespace gobot {
 

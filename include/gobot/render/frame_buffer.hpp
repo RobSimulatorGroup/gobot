@@ -9,7 +9,6 @@
 
 #include "gobot_export.h"
 #include "definitions.hpp"
-#include <Eigen/Dense>
 #include "gobot/core/ref_counted.hpp"
 
 namespace gobot {

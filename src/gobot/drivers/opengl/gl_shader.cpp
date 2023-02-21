@@ -669,32 +669,32 @@ void GLShader::SetUniform1iv(uint32_t location, int32_t* value, int32_t count)
     glUniform1iv(location, count, value);
 }
 
-void GLShader::SetUniform2f(uint32_t location, const Eigen::Vector2f& vector)
+void GLShader::SetUniform2f(uint32_t location, const Vector2f& vector)
 {
     glUniform2f(location, vector.x(), vector.y());
 }
 
-void GLShader::SetUniform3f(uint32_t location, const Eigen::Vector3f & vector)
+void GLShader::SetUniform3f(uint32_t location, const Vector3f & vector)
 {
     glUniform3f(location, vector.x(), vector.y(), vector.z());
 }
 
-void GLShader::SetUniform4f(uint32_t location, const Eigen::Vector4f & vector)
+void GLShader::SetUniform4f(uint32_t location, const Vector4f & vector)
 {
     glUniform4f(location, vector.x(), vector.y(), vector.z(), vector.w());
 }
 
-void GLShader::SetUniformMat3(uint32_t location, const Eigen::Matrix3f& matrix)
+void GLShader::SetUniformMat3(uint32_t location, const Matrix3f& matrix)
 {
     glUniformMatrix3fv(location, 1, GL_FALSE /*GLTRUE*/, matrix.data()); // &matrix.values[0]));
 }
 
-void GLShader::SetUniformMat4(uint32_t location, const Eigen::Matrix4f& matrix)
+void GLShader::SetUniformMat4(uint32_t location, const Matrix4f& matrix)
 {
     glUniformMatrix4fv(location, 1, GL_FALSE /*GLTRUE*/, matrix.data());
 }
 
-void GLShader::SetUniformMat4Array(uint32_t location, uint32_t count, const Eigen::Matrix4f& matrix)
+void GLShader::SetUniformMat4Array(uint32_t location, uint32_t count, const Matrix4f& matrix)
 {
     glUniformMatrix4fv(location, count, GL_FALSE /*GLTRUE*/, matrix.data());
 }

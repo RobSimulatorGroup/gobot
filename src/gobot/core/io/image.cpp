@@ -28,7 +28,7 @@ int Image::GetHeight() const {
     return 0;
 }
 
-Eigen::Vector2i Image::GetSize() const {
+Vector2i Image::GetSize() const {
     if (sdl_image_)
         return {sdl_image_->w , sdl_image_->h};
     return {0, 0};

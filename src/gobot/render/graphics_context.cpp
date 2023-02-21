@@ -5,7 +5,7 @@
  * This file is created by Qiqi Wu, 23-2-8
 */
 
-#include "gobot/graphics/graphics_context.hpp"
+#include "gobot/render/graphics_context.hpp"
 #include "gobot/error_macros.hpp"
 
 #include "gobot/drivers/opengl/gl_functions.hpp"

@@ -6,7 +6,7 @@
 */
 
 #include "gobot/drivers/opengl/gl_command_buffer.hpp"
-#include "gobot/graphics/pipeline.hpp"
+#include "gobot/render/pipeline.hpp"
 
 namespace gobot {
 

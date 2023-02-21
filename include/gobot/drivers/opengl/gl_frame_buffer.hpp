@@ -7,10 +7,9 @@
 
 #pragma once
 
-#include "gobot/graphics/frame_buffer.hpp"
-#include "gobot/graphics/definitions.hpp"
+#include "gobot/render/frame_buffer.hpp"
+#include "gobot/render/definitions.hpp"
 #include "gobot/drivers/opengl/gl.hpp"
-#include <Eigen/Dense>
 #include "gobot_export.h"
 
 namespace gobot {

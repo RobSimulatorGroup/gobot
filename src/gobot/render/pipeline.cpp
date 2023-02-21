@@ -5,10 +5,10 @@
  * This file is created by Qiqi Wu, 23-2-20
 */
 
-#include "gobot/graphics/pipeline.hpp"
+#include "gobot/render/pipeline.hpp"
 #include "gobot/log.hpp"
 #include "gobot/error_macros.hpp"
-#include "gobot/graphics/texture.hpp"
+#include "gobot/render/texture.hpp"
 
 namespace gobot {
 

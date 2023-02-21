@@ -7,11 +7,11 @@
 
 #pragma once
 
-#include "gobot/graphics/index_buffer.hpp"
+#include "gobot/render/index_buffer.hpp"
 
 namespace gobot {
 
-class GLIndexBuffer : public IndexBuffer
+class GOBOT_EXPORT GLIndexBuffer : public IndexBuffer
 {
 private:
     uint32_t m_Handle;

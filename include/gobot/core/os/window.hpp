@@ -9,7 +9,7 @@
 
 #include "gobot/core/io/image.hpp"
 #include "gobot/core/events/event.hpp"
-#include <Eigen/Dense>
+#include "gobot/core/math/matrix.hpp"
 
 namespace gobot {
 
@@ -27,17 +27,17 @@ public:
 
     [[nodiscard]] virtual std::uint32_t GetHeight() const = 0;
 
-    [[nodiscard]]  virtual Eigen::Vector2i GetWindowSize() const = 0;
+    [[nodiscard]]  virtual Vector2i GetWindowSize() const = 0;
 
-    virtual void SetWindowSize(const Eigen::Vector2i& size) = 0;
+    virtual void SetWindowSize(const Vector2i& size) = 0;
 
     [[nodiscard]] virtual String GetWindowTitle() const = 0;
 
     virtual void SetWindowTitle(const String& title) = 0;
 
-    virtual void SetWindowPosition(const Eigen::Vector2i& position) = 0;
+    virtual void SetWindowPosition(const Vector2i& position) = 0;
 
-    [[nodiscard]] virtual Eigen::Vector2i GetWindowPosition() const = 0;
+    [[nodiscard]] virtual Vector2i GetWindowPosition() const = 0;
 
     [[nodiscard]] virtual bool SetWindowFullscreen() = 0;
 

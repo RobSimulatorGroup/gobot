@@ -6,7 +6,7 @@
 */
 
 
-#include "gobot/graphics/uniform_buffer.hpp"
+#include "gobot/render/uniform_buffer.hpp"
 #include "gobot/error_macros.hpp"
 
 namespace gobot {

@@ -7,7 +7,7 @@
 
 #pragma once
 
-#include "gobot/graphics/render.hpp"
+#include "gobot/render/render.hpp"
 #include "gobot_export.h"
 
 namespace gobot {

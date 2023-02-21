@@ -8,6 +8,7 @@
 #pragma once
 
 #include "gobot/core/types.hpp"
+#include "gobot_export.h"
 
 namespace gobot {
 
@@ -19,7 +20,7 @@ enum class RenderAPI : std::uint8_t
     Metal     // Unsupported right now
 };
 
-class GraphicsContext
+class GOBOT_EXPORT GraphicsContext
 {
 public:
     virtual ~GraphicsContext() = default;

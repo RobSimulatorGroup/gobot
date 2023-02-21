@@ -8,6 +8,7 @@
 #pragma once
 
 #include "definitions.hpp"
+#include "gobot_export.h"
 
 namespace gobot {
 
@@ -16,7 +17,7 @@ struct DescriptorSetInfo
     std::vector<Descriptor> descriptors;
 };
 
-class DescriptorSet
+class GOBOT_EXPORT DescriptorSet
 {
 public:
     virtual ~DescriptorSet() = default;

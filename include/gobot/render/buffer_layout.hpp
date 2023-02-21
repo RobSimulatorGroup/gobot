@@ -9,8 +9,8 @@
 
 #include "gobot_export.h"
 #include "gobot/core/types.hpp"
+#include "gobot/core/math/matrix.hpp"
 #include "definitions.hpp"
-#include <Eigen/Dense>
 #include <type_traits>
 
 namespace gobot {
@@ -22,7 +22,7 @@ struct BufferElement {
     bool Normalised  = false;
 };
 
-class BufferLayout {
+class GOBOT_EXPORT BufferLayout {
 private:
     uint32_t m_Size;
     std::vector<BufferElement> m_Layout;
@@ -58,13 +58,13 @@ template <>
 void BufferLayout::Push<uint8_t>(const String& name, bool Normalised);
 
 template <>
-void BufferLayout::Push<Eigen::Vector2f>(const String& name, bool Normalised);
+void BufferLayout::Push<Vector2f>(const String& name, bool Normalised);
 
 template <>
-void BufferLayout::Push<Eigen::Vector3f>(const String& name, bool Normalised);
+void BufferLayout::Push<Vector3f>(const String& name, bool Normalised);
 
 template <>
-void BufferLayout::Push<Eigen::Vector4f>(const String& name, bool Normalised);
+void BufferLayout::Push<Vector4f>(const String& name, bool Normalised);
 
 
 }

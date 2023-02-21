@@ -6,7 +6,7 @@
 */
 
 
-#include "gobot/graphics/buffer_layout.hpp"
+#include "gobot/render/buffer_layout.hpp"
 
 namespace gobot {
 
@@ -40,21 +40,21 @@ void BufferLayout::Push<float>(const String& name, bool Normalised)
 }
 
 template <>
-void BufferLayout::Push<Eigen::Vector2f>(const String& name, bool Normalised)
+void BufferLayout::Push<Vector2f>(const String& name, bool Normalised)
 {
-    Push(name, RHIFormat::R32G32_Float, sizeof(Eigen::Vector2f), Normalised);
+    Push(name, RHIFormat::R32G32_Float, sizeof(float) * 2, Normalised);
 }
 
 template <>
-void BufferLayout::Push<Eigen::Vector3f>(const String& name, bool Normalised)
+void BufferLayout::Push<Vector3f>(const String& name, bool Normalised)
 {
-    Push(name, RHIFormat::R32G32B32_Float, sizeof(Eigen::Vector3f), Normalised);
+    Push(name, RHIFormat::R32G32B32_Float, sizeof(float) * 3, Normalised);
 }
 
 template <>
-void BufferLayout::Push<Eigen::Vector4f>(const String& name, bool Normalised)
+void BufferLayout::Push<Vector4f>(const String& name, bool Normalised)
 {
-    Push(name, RHIFormat::R32G32B32A32_Float, sizeof(Eigen::Vector4f), Normalised);
+    Push(name, RHIFormat::R32G32B32A32_Float, sizeof(float) * 4, Normalised);
 }
 
 

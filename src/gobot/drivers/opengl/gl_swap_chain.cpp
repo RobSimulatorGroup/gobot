@@ -7,6 +7,7 @@
 
 #include "gobot/drivers/opengl/gl_swap_chain.hpp"
 #include "gobot/drivers/opengl/gl_command_buffer.hpp"
+#include "gobot/drivers/opengl/gl_texture.hpp"
 #include "gobot/drivers/opengl/gl.hpp"
 #include "gobot/log.hpp"
 

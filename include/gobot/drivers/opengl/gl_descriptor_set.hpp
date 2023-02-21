@@ -8,14 +8,14 @@
 #pragma once
 
 #include "gobot_export.h"
-#include "gobot/graphics/descriptor_set.hpp"
-#include "gobot/graphics/uniform_buffer.hpp"
+#include "gobot/render/descriptor_set.hpp"
+#include "gobot/render/uniform_buffer.hpp"
 
 namespace gobot {
 
 class GLShader;
 
-class GLDescriptorSet : public DescriptorSet
+class GOBOT_EXPORT GLDescriptorSet : public DescriptorSet
 {
 public:
     GLDescriptorSet(const DescriptorDesc& descriptorDesc);

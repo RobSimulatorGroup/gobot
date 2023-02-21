@@ -5,7 +5,7 @@
  * This file is created by Qiqi Wu, 23-2-20
 */
 
-#include "gobot/graphics/render_pass.hpp"
+#include "gobot/render/render_pass.hpp"
 #include "gobot/log.hpp"
 #include "gobot/error_macros.hpp"
 

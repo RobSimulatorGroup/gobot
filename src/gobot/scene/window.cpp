@@ -9,7 +9,7 @@
 #include "gobot/scene/window.hpp"
 #include "gobot/drivers/sdl/sdl_window.hpp"
 #include "gobot/core/os/input.hpp"
-#include "gobot/graphics/graphics_context.hpp"
+#include "gobot/render/graphics_context.hpp"
 #include "gobot/log.hpp"
 #include "gobot/error_macros.hpp"
 

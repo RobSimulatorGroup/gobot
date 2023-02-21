@@ -5,7 +5,7 @@
  * This file is created by Qiqi Wu, 23-2-20
 */
 
-#include "gobot/graphics/vertex_buffer.hpp"
+#include "gobot/render/vertex_buffer.hpp"
 #include "gobot/error_macros.hpp"
 
 namespace gobot {

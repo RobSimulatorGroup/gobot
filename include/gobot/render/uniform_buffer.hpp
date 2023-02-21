@@ -12,7 +12,7 @@
 
 namespace gobot {
 
-class UniformBuffer : public RefCounted
+class GOBOT_EXPORT UniformBuffer : public RefCounted
 {
 public:
     virtual ~UniformBuffer() = default;

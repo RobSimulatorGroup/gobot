@@ -15,7 +15,7 @@ class Texture;
 class Framebuffer;
 class RenderPass;
 class CommandBuffer;
-class SwapChain
+class GOBOT_EXPORT SwapChain
 {
 public:
     virtual ~SwapChain() = default;

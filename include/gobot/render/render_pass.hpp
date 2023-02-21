@@ -13,7 +13,7 @@
 
 namespace gobot {
 
-class RenderPass : public RefCounted {
+class GOBOT_EXPORT RenderPass : public RefCounted {
 public:
     virtual ~RenderPass();
     static RenderPass* Create(const RenderPassDesc& renderPassDesc);

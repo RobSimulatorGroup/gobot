@@ -7,13 +7,13 @@
 
 #pragma once
 
-#include "gobot/graphics/uniform_buffer.hpp"
+#include "gobot/render/uniform_buffer.hpp"
 
 namespace gobot {
 
 class GLShader;
 
-class GLUniformBuffer : public UniformBuffer
+class GOBOT_EXPORT GLUniformBuffer : public UniformBuffer
 {
 public:
     GLUniformBuffer();

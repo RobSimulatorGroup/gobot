@@ -7,11 +7,11 @@
 
 #pragma once
 
-#include "gobot/graphics/render_pass.hpp"
+#include "gobot/render/render_pass.hpp"
 
 namespace gobot {
 
-class GLRenderPass : public RenderPass
+class GOBOT_EXPORT GLRenderPass : public RenderPass
 {
 public:
     GLRenderPass(const RenderPassDesc& renderPassDesc);

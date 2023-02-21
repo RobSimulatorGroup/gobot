@@ -7,11 +7,12 @@
 
 #pragma once
 
-#include "gobot/graphics/definitions.hpp"
+#include "gobot_export.h"
+#include "gobot/render/definitions.hpp"
 
 namespace gobot {
 
-class GLUtilities {
+class GOBOT_EXPORT GLUtilities {
 public:
     static uint32_t FormatToGL(RHIFormat format, bool srgb = true);
     static uint32_t TextureWrapToGL(TextureWrap wrap);

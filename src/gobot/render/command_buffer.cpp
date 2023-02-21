@@ -6,7 +6,7 @@
 */
 
 
-#include "gobot/graphics/command_buffer.hpp"
+#include "gobot/render/command_buffer.hpp"
 #include "gobot/error_macros.hpp"
 
 namespace gobot {
