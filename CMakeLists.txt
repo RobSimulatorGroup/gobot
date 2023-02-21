@@ -4,6 +4,8 @@ project (gobot)
 set(CMAKE_CXX_STANDARD 20)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 
+set(CMAKE_POSITION_INDEPENDENT_CODE ON)
+
 set(CMAKE_PREFIX_PATH ${CMAKE_BINARY_DIR})
 set(CMAKE_MODULE_PATH ${CMAKE_BINARY_DIR})
 
@@ -92,10 +94,11 @@ file(GLOB_RECURSE HEADER_FILES CONFIGURE_DEPENDS "include/*hpp")
 # https://github.com/bincrafters/community/issues/466#issuecomment-426265654
 add_library(gobot SHARED ${SOURCE_DRIVERS} ${SOURCE_MAIN} ${SOURCE_CORE} ${SOURCE_SCENE} ${SOURCE_EDITOR} ${SOURCE_GRAPHICS} ${HEADER_FILES})
 if (CMAKE_CXX_COMPILER_ID STREQUAL "MSVC")
-    target_compile_options(gobot PUBLIC "/Zc:preprocessor")
+    set(GOBOT_COMPILE_OPTIONS "/Zc:preprocessor,__cplusplus" "/bigobj")
 elseif (CMAKE_CXX_COMPILER_ID STREQUAL "GNU")
-    target_compile_options(gobot PUBLIC "-fno-gnu-unique")
+    set(GOBOT_COMPILE_OPTIONS "-fno-gnu-unique")
 endif ()
+target_compile_options(gobot PUBLIC "${GOBOT_COMPILE_OPTIONS}")
 
 # https://forum.qt.io/topic/97296/export-qobject-based-class-from-dll/2
 GENERATE_EXPORT_HEADER(gobot)
@@ -135,7 +138,7 @@ set_target_properties(gobot
 
 
 if (MSVC)
-    file(GLOB_RECURSE SOURCE_PLATFORM CONFIGURE_DEPENDS "src/gobot/platform/windows/ *.cpp")
+    file(GLOB_RECURSE SOURCE_PLATFORM CONFIGURE_DEPENDS "src/gobot/platform/windows/*.cpp")
     add_executable(gobot_editor ${SOURCE_PLATFORM})
     target_compile_options(gobot_editor PUBLIC "/Zc:preprocessor")
 elseif(LINUX)
