@@ -45,7 +45,7 @@ public:
 
     ResourceFormatLoaderScene();
 
-    ~ResourceFormatLoaderScene();
+    ~ResourceFormatLoaderScene() override;
 
     static ResourceFormatLoaderScene* GetInstance();
 
@@ -57,7 +57,7 @@ public:
 
     void GetRecognizedExtensions(std::vector<String> *extensions) const override;
 
-    bool HandlesType(const String& type) const override;
+    [[nodiscard]] bool HandlesType(const String& type) const override;
 };
 
 class GOBOT_EXPORT ResourceFormatSaverSceneInstance {
@@ -84,7 +84,7 @@ public:
 
     ResourceFormatSaverScene();
 
-    ~ResourceFormatSaverScene();
+    ~ResourceFormatSaverScene() override;
 
     static ResourceFormatSaverScene* GetInstance();
 
@@ -92,7 +92,7 @@ public:
 
     void GetRecognizedExtensions(const Ref<Resource> &resource, std::vector<String>* extensions) const override;
 
-    bool Recognize(const Ref<Resource> &resource) const override;
+    [[nodiscard]] bool Recognize(const Ref<Resource> &resource) const override;
 };
 
 }

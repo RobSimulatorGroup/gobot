@@ -8,34 +8,92 @@
 
 
 #include "gobot/scene/scene_tree.hpp"
+#include "gobot/scene/window.hpp"
+#include "gobot/error_macros.hpp"
 
 namespace gobot {
 
-SceneTree *SceneTree::singleton = nullptr;
+SceneTree *SceneTree::s_singleton = nullptr;
+
+void SceneTree::Initialize()
+{
+    ERR_FAIL_COND(!root_);
+    root_->SetTree(this);
+    MainLoop::Initialize();
+}
+
+SceneTree* SceneTree::GetInstance() {
+    ERR_FAIL_COND_V_MSG(s_singleton == nullptr, nullptr, "Must call this after initialize SceneTree");
+    return s_singleton;
+}
+
+void SceneTree::Finalize()
+{
+    MainLoop::Finalize();
+
+    if (root_) {
+        root_->SetTree(nullptr);
+        root_->PropagateAfterExitTree();
+        Node::Delete(root_);
+        root_ = nullptr;
+    }
+}
 
 int SceneTree::GetNodeCount() const {
-    return node_count;
+    return node_count_;
 }
 
 SceneTree::SceneTree() {
-    if (singleton == nullptr) {
-        singleton = this;
+    if (s_singleton == nullptr) {
+        s_singleton = this;
     }
 
-    root = Node::New<Node>();
-    root->SetName("root");
-    root->SetTree(this);
+    root_ = Node::New<Window>();
+    root_->SetName("root");
+
+    Object::connect(root_, &Window::windowCloseRequested, this, &SceneTree::OnWindowClose);
+    Object::connect(root_, &Window::windowResizeRequested, this, &SceneTree::OnWindowResize);
 }
 
+void SceneTree::OnWindowResize(WindowResizeEvent& e)
+{
+    if (e.GetWidth() == 0 || e.GetHeight() == 0) {
+        return;
+    }
+//    Renderer::OnWindowResize(e.GetWidth(), e.GetHeight());
+}
+
+void SceneTree::OnWindowClose() {
+    quit_ = true;
+}
+
+
+bool SceneTree::PhysicsProcess(double time) {
+
+    return quit_;
+}
+
+bool SceneTree::Process(double time) {
+
+    return quit_;
+}
+
+
+void SceneTree::PullEvent() {
+    root_->PullEvent();
+}
+
+
 SceneTree::~SceneTree() {
-    if (root) {
-        root->SetTree(nullptr);
-        root->PropagateAfterExitTree();
-        Node::Delete(root);
+    if (root_) {
+        root_->SetTree(nullptr);
+        root_->PropagateAfterExitTree();
+        Node::Delete(root_);
+        root_ = nullptr;
     }
 
-    if (singleton == this) {
-        singleton = nullptr;
+    if (s_singleton == this) {
+        s_singleton = nullptr;
     }
 }
 

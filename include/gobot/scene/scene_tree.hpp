@@ -10,29 +10,39 @@
 
 #include "gobot/core/object.hpp"
 #include "gobot/scene/node.hpp"
+#include "gobot/core/os/main_loop.hpp"
+#include "gobot/core/events/window_event.hpp"
 
 namespace gobot {
 
+class Window;
 class Node;
 
-class GOBOT_EXPORT SceneTree : public Object {
+class GOBOT_EXPORT SceneTree : public MainLoop {
     Q_OBJECT
-    GOBCLASS(SceneTree, Object)
+    GOBCLASS(SceneTree, MainLoop)
 
 public:
     SceneTree();
+
     ~SceneTree() override;
 
-//    virtual void Initialize();
-//    virtual void Finalize();
-
-    FORCE_INLINE Node* GetRoot() const { return root; }
+    [[nodiscard]] FORCE_INLINE Window* GetRoot() const { return root_; }
 
     [[nodiscard]] int GetNodeCount() const;
 
-    static SceneTree *GetInstance() {
-        return singleton;
-    }
+    static SceneTree* GetInstance();
+
+    void Initialize() override;
+
+    void Finalize() override;
+
+    bool PhysicsProcess(double time) override;
+
+    bool Process(double time) override;
+
+    void PullEvent() override;
+
 
 Q_SIGNALS:
     void treeChanged();
@@ -41,12 +51,18 @@ Q_SIGNALS:
     void nodeRenamed(Node *node);
 
 private:
-    Node *root = nullptr;
-    int node_count = 0;
+    void OnWindowClose();
 
-    static SceneTree *singleton;
+    void OnWindowResize(WindowResizeEvent& e);
 
+private:
     friend class Node;
+    static SceneTree *s_singleton;
+
+    bool quit_ = false;
+
+    Window *root_ = nullptr;
+    int node_count_ = 0;
 };
 
 }
