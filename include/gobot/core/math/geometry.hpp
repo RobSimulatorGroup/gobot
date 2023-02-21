@@ -99,18 +99,36 @@ public:
                 return this->rotation().eulerAngles(0, 2, 0);
             case EulerOrder::RYXZ:
                 return this->rotation().eulerAngles(1, 0, 2);
-            case EulerOrder::SXYZ:
-                return this->rotation().eulerAngles(2, 1, 0);
-            case EulerOrder::SYZX:
-                return this->rotation().eulerAngles(0, 2, 1);
-            case EulerOrder::SZYX:
-                return this->rotation().eulerAngles(0, 1, 2);
-            case EulerOrder::SXZY:
-                return this->rotation().eulerAngles(1, 2, 0);
-            case EulerOrder::SXZX:
-                return this->rotation().eulerAngles(0, 2, 0);
-            case EulerOrder::SYXZ:
-                return this->rotation().eulerAngles(2, 0, 1);
+            case EulerOrder::SXYZ: {
+                auto euler_angle = this->rotation().eulerAngles(2, 1, 0);
+                std::swap(euler_angle[0], euler_angle[2]);
+                return euler_angle;
+            }
+            case EulerOrder::SYZX: {
+                auto euler_angle = this->rotation().eulerAngles(0, 2, 1);
+                std::swap(euler_angle[0], euler_angle[2]);
+                return euler_angle;
+            }
+            case EulerOrder::SZYX: {
+                auto euler_angle = this->rotation().eulerAngles(0, 1, 2);
+                std::swap(euler_angle[0], euler_angle[2]);
+                return euler_angle;
+            }
+            case EulerOrder::SXZY: {
+                auto euler_angle = this->rotation().eulerAngles(1, 2, 0);
+                std::swap(euler_angle[0], euler_angle[2]);
+                return euler_angle;
+            }
+            case EulerOrder::SXZX: {
+                auto euler_angle = this->rotation().eulerAngles(0, 2, 0);
+                std::swap(euler_angle[0], euler_angle[2]);
+                return euler_angle;
+            }
+            case EulerOrder::SYXZ: {
+                auto euler_angle = this->rotation().eulerAngles(2, 0, 1);
+                std::swap(euler_angle[0], euler_angle[2]);
+                return euler_angle;
+            }
         }
         // never go here
         return {};

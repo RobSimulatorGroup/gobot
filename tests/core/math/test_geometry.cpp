@@ -77,4 +77,22 @@ TEST(TestGeometry, test_isometry) {
     ASSERT_FLOAT_EQ(euler_angle.x(), Math_PI * 0.25);
     ASSERT_FLOAT_EQ(euler_angle.y(), Math_PI * 0.25);
     ASSERT_FLOAT_EQ(euler_angle.z(), Math_PI * 0.25);
+
+    isometry.SetEulerAngle(Vector3{Math_PI * 0.25, -Math_PI * 0.25, Math_PI * 0.1}, EulerOrder::RZYX);
+    euler_angle = isometry.GetEulerAngle(EulerOrder::RZYX);
+    ASSERT_FLOAT_EQ(euler_angle.x(), Math_PI * 0.25);
+    ASSERT_FLOAT_EQ(euler_angle.y(), -Math_PI * 0.25);
+    ASSERT_FLOAT_EQ(euler_angle.z(), Math_PI * 0.1);
+
+    isometry.SetEulerAngle(Vector3{Math_PI * 0.25, -Math_PI * 0.25, Math_PI * 0.1}, EulerOrder::SXYZ);
+    euler_angle = isometry.GetEulerAngle(EulerOrder::SXYZ);
+    ASSERT_FLOAT_EQ(euler_angle.x(), Math_PI * 0.25);
+    ASSERT_FLOAT_EQ(euler_angle.y(), -Math_PI * 0.25);
+    ASSERT_FLOAT_EQ(euler_angle.z(), Math_PI * 0.1);
+
+    isometry.SetEulerAngle(Vector3{Math_PI * 0.25, -Math_PI * 0.25, Math_PI * 0.1}, EulerOrder::SZYX);
+    euler_angle = isometry.GetEulerAngle(EulerOrder::SZYXgit);
+    ASSERT_FLOAT_EQ(euler_angle.x(), Math_PI * 0.25);
+    ASSERT_FLOAT_EQ(euler_angle.y(), -Math_PI * 0.25);
+    ASSERT_FLOAT_EQ(euler_angle.z(), Math_PI * 0.1);
 }
