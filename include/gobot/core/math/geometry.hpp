@@ -65,27 +65,27 @@ public:
     }
 
     Quaternion<Scalar> GetQuaternion() const {
-        static_assert(Dim == 3 && Mode != Eigen::Projective, "GetQuaternion can only called when Dim is 3");
+        static_assert(Dim == 3 && Mode == Eigen::Isometry, "GetQuaternion can only called when Dim is 3");
         return Quaternion<Scalar>(this->rotation());
     }
 
     void SetQuaternion(const Quaternion<Scalar>& quaternion) {
-        static_assert(Dim == 3 && Mode != Eigen::Projective, "SetQuaternion can only called when Dim is 3");
-        this->linear() = quaternion.toRotationMatrix();
+        static_assert(Dim == 3 && Mode == Eigen::Isometry, "SetQuaternion can only called when Dim is 3");
+        this->linear() = quaternion.normalized().toRotationMatrix();
     }
 
     Scalar GetAngle() const {
-        static_assert(Dim == 2 && Mode != Eigen::Projective, "GetAngle can only called when Dim is 2");
+        static_assert(Dim == 2 && Mode == Eigen::Isometry, "GetAngle can only called when Dim is 2");
         return Eigen::Rotation2D(this->linear()).angle();
     }
 
     void SetAngle(const Scalar& angle) {
-        static_assert(Dim == 2 && Mode != Eigen::Projective, "SetAngle can only called when Dim is 2");
+        static_assert(Dim == 2 && Mode == Eigen::Isometry, "SetAngle can only called when Dim is 2");
         this->linear() = Eigen::Rotation2D(angle).toRotationMatrix();
     }
 
     EulerAngle<Scalar> GetEulerAngle(EulerOrder euler_order) const {
-        static_assert(Dim == 3 && Mode != Eigen::Projective, "GetEulerAngle can only called when Dim is 3");
+        static_assert(Dim == 3 && Mode == Eigen::Isometry, "GetEulerAngle can only called when Dim is 3");
         switch (euler_order) {
             case EulerOrder::RXYZ:
                 return this->rotation().eulerAngles(0, 1, 2);
@@ -117,7 +117,7 @@ public:
     }
 
     void SetEulerAngle(const EulerAngle<Scalar>& angles , EulerOrder euler_order) {
-        static_assert(Dim == 3 && Mode != Eigen::Projective, "SetEulerAngle can only called when Dim is 3");
+        static_assert(Dim == 3 && Mode == Eigen::Isometry, "SetEulerAngle can only called when Dim is 3");
         static auto unit_x = Matrix<Scalar, 3, 1>::UnitX();
         static auto unit_y = Matrix<Scalar, 3, 1>::UnitY();
         static auto unit_z = Matrix<Scalar, 3, 1>::UnitZ();
