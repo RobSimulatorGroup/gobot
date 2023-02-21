@@ -4,6 +4,8 @@ project (gobot)
 set(CMAKE_CXX_STANDARD 20)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 
+set(CMAKE_POSITION_INDEPENDENT_CODE ON)
+
 set(CMAKE_PREFIX_PATH ${CMAKE_BINARY_DIR})
 set(CMAKE_MODULE_PATH ${CMAKE_BINARY_DIR})
 
@@ -134,7 +136,7 @@ set_target_properties(gobot
 
 
 if (MSVC)
-    file(GLOB_RECURSE SOURCE_PLATFORM CONFIGURE_DEPENDS "src/gobot/platform/windows/ *.cpp")
+    file(GLOB_RECURSE SOURCE_PLATFORM CONFIGURE_DEPENDS "src/gobot/platform/windows/*.cpp")
     add_executable(gobot_editor ${SOURCE_PLATFORM})
     target_compile_options(gobot_editor PUBLIC "/Zc:preprocessor")
 elseif(LINUX)
