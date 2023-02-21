@@ -13,20 +13,21 @@
 #include <gobot/core/io/variant_serializer.hpp>
 
 TEST(TestMatrix, test_setter_getter) {
-  using namespace gobot;
-  Matrix3 matrix{Eigen::Matrix3<real_t>::Random()};
-  auto data = matrix.GetMatrixData();
-  Matrix3 test;
-  test.SetMatrixData(data);
-  ASSERT_EQ(matrix, test);
+    using namespace gobot;
+    Matrix3 matrix2{Eigen::Matrix3<real_t>::Random()};
+    Matrix3 matrix{Matrix3::Random()};
+    auto data = matrix.GetMatrixData();
+    Matrix3 test;
+    test.SetMatrixData(data);
+    ASSERT_EQ(matrix, test);
 }
 
 TEST(TestMatrix, test_matrix_data_registration) {
-  using namespace gobot;
-  Matrix3 matrix{Eigen::Matrix3<real_t>::Random()};
-  auto json = gobot::VariantSerializer::VariantToJson(matrix);
+    using namespace gobot;
+    Matrix3 matrix{Eigen::Matrix3<real_t>::Random()};
+    auto json = gobot::VariantSerializer::VariantToJson(matrix);
 
-  Variant test_variant((Matrix3()));
-  ASSERT_TRUE(gobot::VariantSerializer::JsonToVariant(test_variant, json));
-  ASSERT_EQ(test_variant.get_value<Matrix3>(), matrix);
+    Variant test_variant((Matrix3()));
+    ASSERT_TRUE(gobot::VariantSerializer::JsonToVariant(test_variant, json));
+    ASSERT_EQ(test_variant.get_value<Matrix3>(), matrix);
 }

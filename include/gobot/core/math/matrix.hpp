@@ -17,13 +17,6 @@
 
 namespace gobot {
 
-template <typename _Scalar = real_t>
-struct MatrixData {
-  Eigen::Index rows;
-  Eigen::Index cols;
-  std::vector<_Scalar> storage;
-};
-
 namespace internal {
 
 template <typename _Scalar, int _Rows, int _Cols,
@@ -40,6 +33,7 @@ class Matrix : public Eigen::Matrix<_Scalar, _Rows, _Cols> {
   using BaseType::BaseType;
 
   MatrixData<_Scalar> GetMatrixData() const {
+      // https://stackoverflow.com/questions/22881768/eigen-convert-matrix-to-vector
     auto self_view = this->reshaped();
     if constexpr (_Rows != Eigen::Dynamic && _Cols != Eigen::Dynamic) {
       return {_Rows, _Cols, std::vector(self_view.begin(), self_view.end())};
@@ -132,16 +126,52 @@ GOBOT_MATRIX_MAKE_FIXED_DEFAULT(7)
 
 namespace rttr::detail {
 
-template <typename _Scalar, int _Rows, int _Cols, int _Options, int _MaxRows,
-          int _MaxCols>
-struct template_type_trait<gobot::internal::Matrix<
-    _Scalar, _Rows, _Cols, _Options, _MaxRows, _MaxCols>> : std::true_type {
-  static std::vector<::rttr::type> get_template_arguments() {
-    return {::rttr::type::get<_Scalar>(), ::rttr::type::get<int>(),
-            ::rttr::type::get<int>(),  ::rttr::type::get<int>(),
-            ::rttr::type::get<int>(),  ::rttr::type::get<int>()};
-  }
+// Remark: If we didn't explict list all types, the clion will raise a error, but the build(gcc-10) is fine.
+#define GOBOT_MATRIX_MAKE_RTTR(Type, TypeSuffix, Size, SizeSuffix)                                    \
+template<>                                                                                            \
+struct template_type_trait<gobot::Matrix##SizeSuffix##TypeSuffix> : std::true_type {                  \
+    static std::vector<::rttr::type> get_template_arguments() {                                       \
+        return {::rttr::type::get<Type>(), ::rttr::type::get<int>(), ::rttr::type::get<int>() }; }    \
+};                                                                                                    \
+template<>                                                                                            \
+struct template_type_trait<gobot::Vector##SizeSuffix##TypeSuffix> : std::true_type {                  \
+    static std::vector<::rttr::type> get_template_arguments() {                                       \
+        return {::rttr::type::get<Type>(), ::rttr::type::get<int>(), ::rttr::type::get<int>() }; }    \
+};                                                                                                    \
+template<>                                                                                            \
+struct template_type_trait<gobot::RowVector##SizeSuffix##TypeSuffix> : std::true_type {               \
+    static std::vector<::rttr::type> get_template_arguments() {                                       \
+        return {::rttr::type::get<Type>(), ::rttr::type::get<int>(), ::rttr::type::get<int>() }; }    \
 };
+
+
+#define GOBOT_MATRIX_MAKE_FIXED_RTTR(Type, TypeSuffix, Size)                                          \
+template<>                                                                                            \
+struct template_type_trait<gobot::Matrix##Size##X##TypeSuffix> : std::true_type {                     \
+    static std::vector<::rttr::type> get_template_arguments() {                                       \
+        return {::rttr::type::get<Type>(), ::rttr::type::get<int>(), ::rttr::type::get<int>() }; }    \
+};                                                                                                    \
+template<>                                                                                            \
+struct template_type_trait<gobot::Matrix##X##Size##TypeSuffix> : std::true_type {                     \
+    static std::vector<::rttr::type> get_template_arguments() {                                       \
+        return {::rttr::type::get<Type>(), ::rttr::type::get<int>(), ::rttr::type::get<int>() }; }    \
+};
+
+#define GOBOT_MAKE_RTTR_ALL_SIZES(Type, TypeSuffix)             \
+GOBOT_MATRIX_MAKE_RTTR(Type, TypeSuffix, 2, 2)                  \
+GOBOT_MATRIX_MAKE_RTTR(Type, TypeSuffix, 3, 3)                  \
+GOBOT_MATRIX_MAKE_RTTR(Type, TypeSuffix, 4, 4)                  \
+GOBOT_MATRIX_MAKE_RTTR(Type, TypeSuffix, Eigen::Dynamic, X)     \
+GOBOT_MATRIX_MAKE_FIXED_RTTR(Type, TypeSuffix, 2)               \
+GOBOT_MATRIX_MAKE_FIXED_RTTR(Type, TypeSuffix, 3)               \
+GOBOT_MATRIX_MAKE_FIXED_RTTR(Type, TypeSuffix, 4)               \
+GOBOT_MATRIX_MAKE_FIXED_RTTR(Type, TypeSuffix, 5)               \
+GOBOT_MATRIX_MAKE_FIXED_RTTR(Type, TypeSuffix, 6)               \
+GOBOT_MATRIX_MAKE_FIXED_RTTR(Type, TypeSuffix, 7)
+
+GOBOT_MAKE_RTTR_ALL_SIZES(int,    i)
+GOBOT_MAKE_RTTR_ALL_SIZES(float,  f)
+GOBOT_MAKE_RTTR_ALL_SIZES(double, d)
 
 }  // end of namespace rttr::detail
 

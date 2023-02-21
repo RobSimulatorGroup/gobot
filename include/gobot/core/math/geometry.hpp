@@ -19,58 +19,97 @@ namespace gobot {
 namespace internal {
 template <typename _Scalar>
 class Quaternion : public Eigen::Quaternion<_Scalar> {
- public:
-  using Base = Eigen::Quaternion<_Scalar>;
+public:
+    using Base = Eigen::Quaternion<_Scalar>;
+    using Base::Base;
 
-  using Base::Base;
+    _Scalar GetX() const { return this->x(); }
+    _Scalar GetY() const { return this->y(); }
+    _Scalar GetZ() const { return this->z(); }
+    _Scalar GetW() const { return this->w(); }
 
-  _Scalar GetX() const { return this->x(); }
+    void SetX(_Scalar x) { this->x() = x; }
+    void SetY(_Scalar y) { this->y() = y; }
+    void SetZ(_Scalar z) { this->z() = z; }
+    void SetW(_Scalar w) { this->w() = w; }
+};
 
-  _Scalar GetY() const { return this->y(); }
+template <typename _Scalar, int _Dim, int _Mode, int _Options = Eigen::AutoAlign>
+class Transform: public Eigen::Transform<_Scalar, _Dim, _Mode, _Options> {
+public:
+    using Base = Eigen::Transform<_Scalar, _Dim, _Mode, _Options>;
+    using Base::Base;
 
-  _Scalar GetZ() const { return this->z(); }
+    Transform(const Eigen::Transform<_Scalar, _Dim, _Mode, _Options>& transform)
+        : Eigen::Transform<_Scalar, _Dim, _Mode, _Options>(transform)
+    {
+    }
 
-  _Scalar GetW() const { return this->w(); }
+    MatrixData<_Scalar> GetMatrixData() const {
+        auto self_view = this->matrix().reshaped();
+        return {this->rows(), this->cols(),
+                std::vector(self_view.begin(), self_view.end())};
+    }
 
-  void SetX(_Scalar x) { this->x() = x; }
+    void SetMatrixData(const MatrixData<_Scalar> &data) {
+        if (data.rows != _Dim || data.cols != _Dim) [[unlikely]] {
+            return;
+        }
 
-  void SetY(_Scalar y) { this->y() = y; }
+        if (data.rows * data.cols != data.storage.size()) [[unlikely]] {
+            return;
+        }
 
-  void SetZ(_Scalar z) { this->z() = z; }
+        auto self_view = this->matrix().reshaped();
+        std::copy(data.storage.cbegin(), data.storage.cend(), self_view.begin());
+    }
 
-  void SetW(_Scalar w) { this->w() = w; }
+    Quaternion<_Scalar> GetQuaternion() const {
+        return Quaternion<_Scalar>(this->rotation());
+    }
+
+    void SetQuaternion(const Quaternion<_Scalar>& quaternion) const {
+        this->linear() = quaternion.toRotationMatrix();
+    }
+
 };
 
 }  // end of namespace internal
 
-using Quaterniond = internal::Quaternion<double>;
-using Quaternionf = internal::Quaternion<float>;
 
 using AngleAxisd = Eigen::AngleAxisd;
 using AngleAxisf = Eigen::AngleAxisf;
 
-using Isometry2d = Eigen::Isometry2d;
-using Isometry2f = Eigen::Isometry2f;
-using Isometry3d = Eigen::Isometry3d;
-using Isometry3f = Eigen::Isometry3f;
+using Quaterniond = internal::Quaternion<double>;
+using Quaternionf = internal::Quaternion<float>;
 
-using Affine2d = Eigen::Affine2d;
-using Affine2f = Eigen::Affine2f;
-using Affine3d = Eigen::Affine3d;
-using Affine3f = Eigen::Affine3f;
+using Isometry2d = internal::Transform<double, 2, Eigen::Isometry>;
+using Isometry2f = internal::Transform<float, 2, Eigen::Isometry>;
+using Isometry3d = internal::Transform<double, 3, Eigen::Isometry>;
+using Isometry3f = internal::Transform<float, 3, Eigen::Isometry>;
 
-using Projective2d = Eigen::Projective2d;
-using Projective2f = Eigen::Projective2f;
-using Projective3d = Eigen::Projective3d;
-using Projective3f = Eigen::Projective3f;
+using Affine2d = internal::Transform<double, 2, Eigen::Affine>;
+using Affine2f = internal::Transform<float, 2, Eigen::Affine>;
+using Affine3d = internal::Transform<double, 3, Eigen::Affine>;
+using Affine3f = internal::Transform<float, 3, Eigen::Affine>;
+
+using Projective2d = internal::Transform<double, 2, Eigen::Projective>;
+using Projective2f = internal::Transform<float, 2, Eigen::Projective>;
+using Projective3d = internal::Transform<double, 3, Eigen::Projective>;
+using Projective3f = internal::Transform<float, 3, Eigen::Projective>;
+
+
+using AngleAxis = Eigen::AngleAxis<real_t>;
 
 using Quaternion = internal::Quaternion<real_t>;
-using AngleAxis = Eigen::AngleAxis<real_t>;
-using Isometry2 = Eigen::Transform<real_t, 2, Eigen::Isometry>;
-using Isometry3 = Eigen::Transform<real_t, 3, Eigen::Isometry>;
-using Affine2 = Eigen::Transform<real_t,2,Eigen::Affine>;
-using Affine3 = Eigen::Transform<real_t,3,Eigen::Affine>;
-using Projective2 = Eigen::Transform<real_t,2,Eigen::Projective>;
-using Projective3 = Eigen::Transform<real_t,3,Eigen::Projective>;
+
+using Isometry2 = internal::Transform<real_t, 2, Eigen::Isometry>;
+using Isometry3 = internal::Transform<real_t, 3, Eigen::Isometry>;
+
+using Affine2 = internal::Transform<real_t,2,Eigen::Affine>;
+using Affine3 = internal::Transform<real_t,3,Eigen::Affine>;
+
+using Projective2 = internal::Transform<real_t,2,Eigen::Projective>;
+using Projective3 = internal::Transform<real_t,3,Eigen::Projective>;
 
 }  // namespace gobot

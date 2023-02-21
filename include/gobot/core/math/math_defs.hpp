@@ -93,4 +93,12 @@ using real_t = double;
 #else
 using real_t = float;
 #endif
+
+template <typename _Scalar = real_t>
+struct MatrixData {
+    Eigen::Index rows;
+    Eigen::Index cols;
+    std::vector<_Scalar> storage;
+};
+
 };  // namespace gobot
