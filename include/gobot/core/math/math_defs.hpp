@@ -119,4 +119,9 @@ struct MatrixData {
     std::vector<_Scalar> storage;
 };
 
+template <typename T>
+constexpr int Sign(const T val) {
+    return (static_cast<T>(0) < val) - (val < static_cast<T>(0));
+}
+
 };  // namespace gobot

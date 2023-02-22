@@ -9,58 +9,35 @@
 
 #include "gobot/scene/node.hpp"
 
-#include <Eigen/Dense>
-#include <Eigen/Geometry>
+#include "gobot/core/math/geometry.hpp"
 
 namespace gobot {
 
-//using Matrix3d = Eigen::Matrix3d;
-//using Vector3d = Eigen::Vector3d;
-//using Transform3d = Eigen::Affine3d;
-//using Quaternion = Eigen::Quaterniond;
-
-using Quaterniond = Eigen::Quaterniond;
-using Quaternionf = Eigen::Quaternionf;
-
-using Isometry3d = Eigen::Isometry3d;
-using Isometry3f = Eigen::Isometry3f;
-using Isometry2d = Eigen::Isometry2d;
-using Isometry2f = Eigen::Isometry2f;
-
-using Affine3d = Eigen::Affine3d;
-using Affine3f = Eigen::Affine3f;
-using Affine2d = Eigen::Affine2d;
-using Affine2f = Eigen::Affine2f;
-
-using AngleAxis = Eigen::AngleAxis<double>;
-
 class ViewPort;
 
-enum class EulerOrder { XYZ, XZY, YXZ, YZX, ZXY, ZYX };
+USING_ENUM_BITWISE_OPERATORS;
 
 class GOBOT_EXPORT Node3D : public Node {
     GOBCLASS(Node3D, Node)
 
 public:
-//    enum class RotationEditMode {
-//        Euler,
-//        Quaternion,
-//    };
-//
-//    enum class EulerOrder {
-//        XYZ,
-//        ZYX
-//    };
-//
+    enum class RotationEditMode {
+        Euler,
+        Quaternion,
+        RotationMatrix
+    };
+
     Node3D() = default;
-//
-//    Node3D *GetParentNode3D() const;
-//
-////    Ref<World3D> GetWorld3D() const;
-//
-//    void SetPosition(const Vector3d &position);
-//
-//    void SetRotationEditMode(RotationEditMode mode);
+
+    Node3D *GetParentNode3D() const;
+
+    // todo:
+    // Ref<World3D> GetWorld3D() const;
+
+    void SetPosition(const Vector3 &position);
+    Vector3 GetPosition() const;
+
+    void SetRotationEditMode(RotationEditMode mode);
 //    RotationEditMode GetRotationEditMode() const;
 //
 //    void SetRotationOrder(EulerOrder order);
@@ -75,9 +52,9 @@ public:
 //    void SetTransform(const Transform3d &transform);
 //    void SetQuaternion(const Quaternion &quaternion);
 //    void SetGlobalTransform(const Transform3d &transform);
-//
-//    Vector3d GetPosition() const;
-//
+
+
+
 //    EulerOrder GetRotationOrder() const;
 //    Vector3d GetRotation() const;
 //    Vector3d GetRotationDeg() const;
@@ -128,23 +105,23 @@ public:
 //    void SetVisibilityParent(const NodePath &path);
 //    NodePath GetVisibilityParent() const;
 //
-//protected:
+protected:
 //    FORCE_INLINE void UpdateLocalTransform() const;
 //    FORCE_INLINE void UpdateRotationAndScale() const;
-//
-//    void NotificationCallBack(NotificationType notification);
-//
-//private:
-//    enum TransformDirty {
-//        DIRTY_NONE = 0,
-//        DIRTY_EULER_AND_SCALE = 1,
-//        DIRTY_LOCAL_TRANSFORM = 2,
-//        DIRTY_GLOBAL_TRANSFORM = 4,
-//    };
-//
-//    void NotifyDirty();
-//    void PropagateTransformChanged(Node3D *origin);
-//
+
+    void NotificationCallBack(NotificationType notification);
+
+private:
+    enum class TransformDirty {
+        None = 0,
+        EulerAndScale = 1,
+        LocalTransform = 2,
+        GlobalTransform = 4
+    };
+
+    void NotifyDirty();
+    void PropagateTransformChanged(Node3D *node);
+
 ////    void UpdateVisibilityParent(bool update_root);
 //
 //    static FORCE_INLINE double Deg2Rad(double deg) { return deg * (M_PI / 180.0); };
@@ -158,25 +135,20 @@ public:
 //    static FORCE_INLINE Quaternion GetQuaternionFromTransform(const Transform3d &transform);
 //
 //    mutable Transform3d global_transform_ = Transform3d::Identity();
-//    mutable Transform3d local_transform_ = Transform3d::Identity();
+    mutable Affine3 local_transform_ = Affine3::Identity();
 //    mutable EulerOrder euler_rotation_order_ = EulerOrder::XYZ;
 //    mutable Vector3d euler_rotation_ = Vector3d::Zero();
 //    mutable Vector3d scale_ = Vector3d{1, 1, 1};
-//    mutable RotationEditMode rotation_edit_mode_ = RotationEditMode::Euler;
-//
-//    mutable int dirty_ = DIRTY_NONE;
-//
+    mutable RotationEditMode rotation_edit_mode_ = RotationEditMode::Euler;
+    mutable TransformDirty dirty = TransformDirty::None;
+
 //    NodePath visibility_parent_path_;
-//
-//    ViewPort *viewport_ = nullptr;
-//
-//    bool inside_world_ = false;
-//
-//    Node3D *parent_ = nullptr;
-//    std::vector<Node3D *> children_;
-//
+
+    Node3D *parent_ = nullptr;
+    std::vector<Node3D *> children_;
+
 //    bool ignore_notification_ = false;
-//    bool notify_local_transform_ = false;
+    bool notify_local_transform_ = false;
 //    bool notify_transform_ = false;
 //
 //    bool visible_ = false;

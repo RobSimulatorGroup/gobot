@@ -201,6 +201,89 @@ public:
                 break;
         }
     }
+
+    /**
+     * @brief Assuming for an Affine transform, M = R.S (R is rotation and S is scaling).
+     *  The method is used to extract the scaling factors with their signs as a vector, e.g <s1, s2, s3>,
+     *  which resembles the scaling S,
+     *                      [ s1,  0,  0 ]
+     *                      [  0, s2,  0 ]
+     *                      [  0,  0, s3 ]
+     *  Note:
+     *  With a transformation matrix M (Isometry/Affine),
+     *                      [ a, b, c, d ]
+     *                      [ e, f, g, h ]
+     *                      [ i, j, k, l ]
+     *                      [ 0, 0, 0, 1 ]
+     *  The scaling vector s becomes,
+     *                      s1 = || <a, e, i> ||
+     *                      s2 = || <b, f, j> ||
+     *                      s3 = || <c, g, k> ||
+     *
+     * @return a scaling vector depending on the dimension.
+     */
+    [[nodiscard]] Matrix<real_t, Dim, 1> GetScale() const {
+        static_assert(Mode == Eigen::Isometry || Mode == Eigen::Affine,
+                "GetScaleAbs works for Isometry and Affine");
+
+        int sign = Sign(this->linear().determinant());
+        if (Mode == Eigen::Isometry) {
+            return sign * Matrix<real_t, Dim, 1>::Ones();
+        }
+
+        Matrix<real_t, Dim, 1> v;
+        for (auto col = 0; col < Dim; ++ col) {
+            v[col] = this->linear().template block<Dim, 1>(0, col).norm();
+        }
+
+        return sign * v;
+    }
+
+    /**
+     * @brief Gram-Schmidt Process. The linear part is changed.
+     *  Note:
+     *  With a 3x3 matrix, the process could be as follows,
+     *              x = col(0), y = col(1), z = col(2)
+     *              step1. x.normalize()
+     *              step2. y = y - x * (x.dot(y)), y.normalize()
+     *              step3. z = z - (x * (x.dot(z))) - (y * (y.dot(z))), z.normalize()
+     */
+    void Orthonormalize() {
+        this->linear().col(0).normalize();
+        for (auto i = 1; i < Dim; ++ i) {
+            for (int j = 0; j < i; ++ j) {
+                this->linear().col(i) -=
+                        this->linear().col(j) * (this->linear().col(j)).dot(this->linear().col(i));
+            }
+            this->linear().col(i).normalize();
+        }
+    }
+
+    /**
+     * @brief See Orthonormalize. The original transform is reserved.
+     *
+     * @return an orthonormalized transform depending on the dimension.
+     */
+    Transform Orthonormalized() const {
+        Transform tf = *this;
+        tf.Orthonormalize();
+        return tf;
+    }
+
+    void Orthogonalize() {
+        static_assert(Mode == Eigen::Isometry || Mode == Eigen::Affine,
+                      "Orthogonalize works for Isometry and Affine");
+
+        Matrix<real_t, Dim, 1> s = GetScale();
+        Orthonormalize();
+        this->scale(s);
+    }
+
+    Transform Orthogonalized() const {
+        Transform tf = *this;
+        tf.Orthogonalize();
+        return tf;
+    }
 };
 
 }  // end of namespace internal

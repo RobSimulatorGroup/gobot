@@ -95,4 +95,21 @@ TEST(TestGeometry, test_isometry) {
     ASSERT_FLOAT_EQ(euler_angle.x(), Math_PI * 0.25);
     ASSERT_FLOAT_EQ(euler_angle.y(), -Math_PI * 0.25);
     ASSERT_FLOAT_EQ(euler_angle.z(), Math_PI * 0.1);
+
+    ASSERT_EQ(isometry.GetScale(), Vector3::Ones());
+}
+
+TEST(TestGeometry, test_affine) {
+    using namespace gobot;
+    Affine3 affine{Affine3::Identity()};
+
+    ASSERT_TRUE(affine.GetScale().isApprox(Vector3::Ones(), CMP_EPSILON));
+
+    Vector3 ratio{1.0, 2.0, 3.0};
+    affine.scale(ratio);
+    ASSERT_TRUE(affine.GetScale().isApprox(ratio, CMP_EPSILON));
+
+    ASSERT_TRUE(affine.Orthonormalized().linear().isApprox(Matrix3::Identity(), CMP_EPSILON));
+    // The original transform is already orthogonal
+    ASSERT_TRUE(affine.Orthogonalized().isApprox(affine, CMP_EPSILON));
 }

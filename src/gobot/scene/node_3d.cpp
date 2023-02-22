@@ -9,47 +9,62 @@
 
 namespace gobot {
 
-//void Node3D::NotifyDirty() {
-//
-//}
-//
-//void Node3D::NotificationCallBack(NotificationType notification) {
-//    switch (notification) {
-//        case NotificationType::EnterTree: {
-//            ERR_FAIL_COND(!GetTree());
-//
-//            Node *p = GetParent();
-//            if (p) {
-//                parent_ = dynamic_cast<Node3D *>(p);
-//                parent_->children_.push_back(this);
-//            }
-//
-//            dirty_ |= DIRTY_GLOBAL_TRANSFORM; // Global is always dirty upon entering a scene
-//            NotifyDirty();
-//
-//            Notification(NotificationType::EnterWorld);
-//            // todo: update visibility parent
-//
-//        } break;
-//
-//        case NotificationType::ExitTree: {
-//
-//        } break;
-//
-//        case NotificationType::EnterWorld: {
-//
-//        } break;
-//
-//        case NotificationType::ExitWorld: {
-//
-//        } break;
-//
-//        case NotificationType::TransformChanged: {
-//            // todo: tools_enabled
-//        } break;
-//    }
-//}
-//
+void Node3D::NotifyDirty() {
+    // todo: add to transform change list
+}
+
+void Node3D::PropagateTransformChanged(Node3D *node) {
+    if (!IsInsideTree()) return;
+
+    for (Node3D *c : children_) {
+        c->PropagateTransformChanged(node);
+    }
+
+    // todo: add to transform change list
+    dirty |= TransformDirty::GlobalTransform;
+}
+
+void Node3D::NotificationCallBack(NotificationType notification) {
+    switch (notification) {
+        case NotificationType::EnterTree: {
+            ERR_FAIL_COND(!GetTree());
+
+            Node *p = GetParent();
+            if (p) {
+                parent_ = dynamic_cast<Node3D *>(p);
+            }
+
+            dirty |= TransformDirty::GlobalTransform; // Global is always dirty upon entering a scene
+            NotifyDirty();
+
+            Notification(NotificationType::EnterWorld);
+            // todo: update visibility
+        } break;
+
+        case NotificationType::ExitTree: {
+            Notification(NotificationType::ExitWorld, true);
+            // todo: remove from transform change list
+            parent_ = nullptr;
+            // todo: update visibility
+        } break;
+
+        case NotificationType::EnterWorld: {
+            // todo: reset inside_world_ to update gizmo
+            // todo: iteratively get parent as viewport
+        } break;
+
+        case NotificationType::ExitWorld: {
+            // todo: clear gizmo
+            // todo: reset viewport
+            // todo: reset inside_world_
+        } break;
+
+        case NotificationType::TransformChanged: {
+            // todo: update gizmo transform
+        } break;
+    }
+}
+
 //Matrix3d Node3D::Euler2Matrix(const Vector3d &euler, EulerOrder order) {
 //    Matrix3d m;
 //    switch (order) {
@@ -117,25 +132,31 @@ namespace gobot {
 //
 //    dirty_ &= ~DIRTY_EULER_AND_SCALE;
 //}
-//
-//Node3D *Node3D::GetParentNode3D() const {
-//    return dynamic_cast<Node3D *>(GetParent());
-//}
-//
-//void Node3D::SetPosition(const Vector3d &position) {
-//    local_transform_.translation() = position;
-//    PropagateTransformChanged(this);
-//
-//    if (notify_local_transform_) {
-//        Notification(NotificationType::LocalTransformChanged);
-//    }
-//}
-//
-//void Node3D::SetRotationEditMode(RotationEditMode mode) {
-//    if (rotation_edit_mode_ == mode) return;
-//
-//    rotation_edit_mode_ = mode;
-//
+
+Node3D *Node3D::GetParentNode3D() const {
+    return dynamic_cast<Node3D *>(GetParent());
+}
+
+void Node3D::SetPosition(const Vector3 &position) {
+    local_transform_.translation() = position;
+    PropagateTransformChanged(this);
+
+    if (notify_local_transform_) {
+        Notification(NotificationType::LocalTransformChanged);
+    }
+}
+
+Vector3 Node3D::GetPosition() const {
+    return local_transform_.translation();
+}
+
+void Node3D::SetRotationEditMode(RotationEditMode mode) {
+    if (rotation_edit_mode_ == mode) {
+        return;
+    }
+
+    rotation_edit_mode_ = mode;
+
 //    if (mode == RotationEditMode::Euler && (dirty_ & DIRTY_EULER_AND_SCALE)) {
 //        // If going to Euler mode, ensure that vectors are _not_ dirty, else the retrieved value may be wrong.
 //        // Otherwise keep what is there, so switching back and forth between modes does not break the vectors.
@@ -144,8 +165,8 @@ namespace gobot {
 //    }
 //
 //    // todo: notify property list change
-//}
-//
+}
+
 //Node3D::RotationEditMode Node3D::GetRotationEditMode() const {
 //    return rotation_edit_mode_;
 //}
@@ -269,11 +290,7 @@ namespace gobot {
 //
 //    SetTransform(local);
 //}
-//
-//Vector3d Node3D::GetPosition() const {
-//    return local_transform_.translation();
-//}
-//
+
 //Node3D::EulerOrder Node3D::GetRotationOrder() const {
 //    return euler_rotation_order_;
 //}
@@ -506,15 +523,6 @@ namespace gobot {
 //NodePath Node3D::GetVisibilityParent() const {
 //    return visibility_parent_path_;
 //}
-//
-//void Node3D::PropagateTransformChanged(Node3D *origin) {
-//    if (!IsInsideTree()) return;
-//
-//    for (Node3D *c : children_) {
-//        c->PropagateTransformChanged(origin);
-//    }
-//
-//    // todo: do transform
-//}
+
 
 } // End of namespace gobot
