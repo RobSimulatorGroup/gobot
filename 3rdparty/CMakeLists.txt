@@ -29,4 +29,6 @@ add_executable(imgui_sdl2_opengl3_example imgui/examples/example_sdl2_opengl3/ma
 target_link_libraries(imgui_sdl2_opengl3_example imgui ${CONAN_LIBS} OpenGL::GL)
 
 
+message(STATUS "Using prebuilt third-party library Filament")
 add_subdirectory(filament)
+
