@@ -112,4 +112,10 @@ TEST(TestGeometry, test_affine) {
     ASSERT_TRUE(affine.Orthonormalized().linear().isApprox(Matrix3::Identity(), CMP_EPSILON));
     // The original transform is already orthogonal
     ASSERT_TRUE(affine.Orthogonalized().isApprox(affine, CMP_EPSILON));
+
+    affine.SetEulerAngle(Vector3{Math_PI * 0.25, -Math_PI * 0.25, Math_PI * 0.1}, EulerOrder::SZYX);
+    auto euler_angle = affine.GetEulerAngleNormalized(EulerOrder::SZYX);
+    ASSERT_FLOAT_EQ(euler_angle.x(), Math_PI * 0.25);
+    ASSERT_FLOAT_EQ(euler_angle.y(), -Math_PI * 0.25);
+    ASSERT_FLOAT_EQ(euler_angle.z(), Math_PI * 0.1);
 }

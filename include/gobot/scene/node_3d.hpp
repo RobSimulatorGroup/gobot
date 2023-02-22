@@ -15,8 +15,6 @@ namespace gobot {
 
 class ViewPort;
 
-USING_ENUM_BITWISE_OPERATORS;
-
 class GOBOT_EXPORT Node3D : public Node {
     GOBCLASS(Node3D, Node)
 
@@ -107,16 +105,16 @@ public:
 //
 protected:
 //    FORCE_INLINE void UpdateLocalTransform() const;
-//    FORCE_INLINE void UpdateRotationAndScale() const;
+    FORCE_INLINE void UpdateEulerAndScale() const;
 
     void NotificationCallBack(NotificationType notification);
 
 private:
-    enum class TransformDirty {
-        None = 0,
-        EulerAndScale = 1,
-        LocalTransform = 2,
-        GlobalTransform = 4
+    enum TransformDirty {
+        DIRTY_NONE = 0,
+        DIRTY_EULER_AND_SCALE = 1,
+        DIRTY_LOCAL_TRANSFORM = 2,
+        DIRTY_GLOBAL_TRANSFORM = 4
     };
 
     void NotifyDirty();
@@ -135,12 +133,12 @@ private:
 //    static FORCE_INLINE Quaternion GetQuaternionFromTransform(const Transform3d &transform);
 //
 //    mutable Transform3d global_transform_ = Transform3d::Identity();
-    mutable Affine3 local_transform_ = Affine3::Identity();
-//    mutable EulerOrder euler_rotation_order_ = EulerOrder::XYZ;
-//    mutable Vector3d euler_rotation_ = Vector3d::Zero();
-//    mutable Vector3d scale_ = Vector3d{1, 1, 1};
+    mutable Affine3 local_transform_;
+    mutable EulerOrder euler_order_ = EulerOrder::SXYZ;
+    mutable Vector3 euler_ = Vector3::Zero();
+    mutable Vector3 scale_ = Vector3{1, 1, 1};
     mutable RotationEditMode rotation_edit_mode_ = RotationEditMode::Euler;
-    mutable TransformDirty dirty = TransformDirty::None;
+    mutable int dirty_ = DIRTY_NONE;
 
 //    NodePath visibility_parent_path_;
 

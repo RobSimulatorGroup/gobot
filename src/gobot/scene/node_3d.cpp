@@ -13,6 +13,29 @@ void Node3D::NotifyDirty() {
     // todo: add to transform change list
 }
 
+//
+//void Node3D::UpdateLocalTransform() const {
+//    // This function is called when the local transform (data.local_transform) is dirty
+//    // and the right value is contained in the Euler rotation and scale.
+//
+//    local_transform_.linear() = Euler2Matrix(euler_rotation_, euler_rotation_order_);
+//    local_transform_ *= Eigen::Scaling(scale_[0], scale_[1], scale_[2]);
+//
+//    dirty_ &= ~DIRTY_LOCAL_TRANSFORM;
+//}
+
+void Node3D::UpdateEulerAndScale() const {
+    // This function is called when the Euler rotation (euler_rotation_) is dirty
+    // and the right value is contained in the local transform.
+
+    scale_ = local_transform_.GetScale();
+//    euler_ = local_transform_.GetEulerAngle()
+//    scale_ = GetScaleFromTransform(local_transform_);
+//    euler_rotation_ = GetEulerFromTransform(local_transform_, euler_rotation_order_);
+//
+//    dirty_ &= ~DIRTY_EULER_AND_SCALE;
+}
+
 void Node3D::PropagateTransformChanged(Node3D *node) {
     if (!IsInsideTree()) return;
 
@@ -21,7 +44,7 @@ void Node3D::PropagateTransformChanged(Node3D *node) {
     }
 
     // todo: add to transform change list
-    dirty |= TransformDirty::GlobalTransform;
+    dirty_ |= DIRTY_GLOBAL_TRANSFORM;
 }
 
 void Node3D::NotificationCallBack(NotificationType notification) {
@@ -34,7 +57,7 @@ void Node3D::NotificationCallBack(NotificationType notification) {
                 parent_ = dynamic_cast<Node3D *>(p);
             }
 
-            dirty |= TransformDirty::GlobalTransform; // Global is always dirty upon entering a scene
+            dirty_ |= DIRTY_GLOBAL_TRANSFORM; // Global is always dirty upon entering a scene
             NotifyDirty();
 
             Notification(NotificationType::EnterWorld);
@@ -112,26 +135,7 @@ void Node3D::NotificationCallBack(NotificationType notification) {
 //Quaternion Node3D::GetQuaternionFromTransform(const Transform3d &transform) {
 //    return Quaternion(transform.linear());
 //}
-//
-//void Node3D::UpdateLocalTransform() const {
-//    // This function is called when the local transform (data.local_transform) is dirty
-//    // and the right value is contained in the Euler rotation and scale.
-//
-//    local_transform_.linear() = Euler2Matrix(euler_rotation_, euler_rotation_order_);
-//    local_transform_ *= Eigen::Scaling(scale_[0], scale_[1], scale_[2]);
-//
-//    dirty_ &= ~DIRTY_LOCAL_TRANSFORM;
-//}
-//
-//void Node3D::UpdateRotationAndScale() const {
-//    // This function is called when the Euler rotation (euler_rotation_) is dirty
-//    // and the right value is contained in the local transform.
-//
-//    scale_ = GetScaleFromTransform(local_transform_);
-//    euler_rotation_ = GetEulerFromTransform(local_transform_, euler_rotation_order_);
-//
-//    dirty_ &= ~DIRTY_EULER_AND_SCALE;
-//}
+
 
 Node3D *Node3D::GetParentNode3D() const {
     return dynamic_cast<Node3D *>(GetParent());
@@ -155,16 +159,27 @@ void Node3D::SetRotationEditMode(RotationEditMode mode) {
         return;
     }
 
+    bool transform_changed = false;
+    if (rotation_edit_mode_ == RotationEditMode::RotationMatrix && !(dirty_ & DIRTY_LOCAL_TRANSFORM)) {
+        local_transform_.Orthogonalize();
+        transform_changed = true;
+    }
+
     rotation_edit_mode_ = mode;
 
-//    if (mode == RotationEditMode::Euler && (dirty_ & DIRTY_EULER_AND_SCALE)) {
-//        // If going to Euler mode, ensure that vectors are _not_ dirty, else the retrieved value may be wrong.
-//        // Otherwise keep what is there, so switching back and forth between modes does not break the vectors.
-//
-//        UpdateRotationAndScale();
-//    }
-//
-//    // todo: notify property list change
+    if (mode == RotationEditMode::Euler && (dirty_ & DIRTY_EULER_AND_SCALE)) {
+        // If going to Euler mode, ensure that vectors are _not_ dirty, else the retrieved value may be wrong.
+        // Otherwise, keep what is there, so switching back and forth between modes does not break the vectors.
+
+        // todo: Update Rotation and scale
+    }
+
+    if (transform_changed) {
+        PropagateTransformChanged(this);
+        if (notify_local_transform_) {
+            Notification(NotificationType::LocalTransformChanged);
+        }
+    }
 }
 
 //Node3D::RotationEditMode Node3D::GetRotationEditMode() const {

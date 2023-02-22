@@ -134,8 +134,24 @@ public:
         return {};
     }
 
+    EulerAngle<Scalar> GetEulerAngleNormalized(EulerOrder euler_order) const {
+        Transform<Scalar, Dim, Eigen::Isometry> tfm;
+        tfm.linear() = this->linear().normalized();
+        tfm.translation() = this->translation();
+
+        Scalar det = tfm.rotation().determinant();
+        if (det < 0) {
+            // Ensure that the determinant is 1, such that rotation() is SO(3)
+            tfm.linear() *= -1;
+        }
+
+        return tfm.GetEulerAngle(euler_order);
+    }
+
     void SetEulerAngle(const EulerAngle<Scalar>& angles , EulerOrder euler_order) {
-        static_assert(Dim == 3 && Mode == Eigen::Isometry, "SetEulerAngle can only called when Dim is 3");
+        static_assert(Dim == 3 && (Mode == Eigen::Isometry || Mode == Eigen::Affine),
+                "SetEulerAngle can only called when Dim is 3");
+
         static auto unit_x = Matrix<Scalar, 3, 1>::UnitX();
         static auto unit_y = Matrix<Scalar, 3, 1>::UnitY();
         static auto unit_z = Matrix<Scalar, 3, 1>::UnitZ();
@@ -222,16 +238,16 @@ public:
      *
      * @return a scaling vector depending on the dimension.
      */
-    [[nodiscard]] Matrix<real_t, Dim, 1> GetScale() const {
+    [[nodiscard]] Matrix<Scalar, Dim, 1> GetScale() const {
         static_assert(Mode == Eigen::Isometry || Mode == Eigen::Affine,
                 "GetScaleAbs works for Isometry and Affine");
 
         int sign = Sign(this->linear().determinant());
         if (Mode == Eigen::Isometry) {
-            return sign * Matrix<real_t, Dim, 1>::Ones();
+            return sign * Matrix<Scalar, Dim, 1>::Ones();
         }
 
-        Matrix<real_t, Dim, 1> v;
+        Matrix<Scalar, Dim, 1> v;
         for (auto col = 0; col < Dim; ++ col) {
             v[col] = this->linear().template block<Dim, 1>(0, col).norm();
         }
@@ -274,7 +290,7 @@ public:
         static_assert(Mode == Eigen::Isometry || Mode == Eigen::Affine,
                       "Orthogonalize works for Isometry and Affine");
 
-        Matrix<real_t, Dim, 1> s = GetScale();
+        Matrix<Scalar, Dim, 1> s = GetScale();
         Orthonormalize();
         this->scale(s);
     }
