@@ -17,7 +17,8 @@ class GobotConan(ConanFile):
         self.requires("sdl/2.26.1")
         self.requires("sdl_image/2.0.5")
         self.requires("cxxopts/3.0.0")
-        self.requires("xz_utils/5.4.0")  # libtiff/4.4.0' requires 'xz_utils/5.2.5' while 'libunwind/1.6.2' requires 'xz_utils/5.4.0'.
+        self.requires("stb/cci.20220909")
+
 
     def imports(self):
         self.copy("*.dll", dst="bin", src="bin") # From bin to bin

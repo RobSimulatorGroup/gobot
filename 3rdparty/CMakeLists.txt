@@ -27,3 +27,6 @@ target_include_directories(imgui PUBLIC imgui imgui/backends)
 find_package(OpenGL REQUIRED)
 add_executable(imgui_sdl2_opengl3_example imgui/examples/example_sdl2_opengl3/main.cpp)
 target_link_libraries(imgui_sdl2_opengl3_example imgui ${CONAN_LIBS} OpenGL::GL)
+
+
+add_subdirectory(filament)

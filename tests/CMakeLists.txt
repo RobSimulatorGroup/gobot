@@ -51,3 +51,6 @@ package_add_test(test_box_mesh scene/test_primitive_mesh.cpp)
 package_add_test(test_node scene/test_node.cpp)
 package_add_test(test_node_complex scene/test_node_complex.cpp)
 
+add_executable(test_filament_basic  filament/test_filament_basic.cpp)
+target_link_libraries(test_filament_basic PUBLIC Filament gobot)
+
