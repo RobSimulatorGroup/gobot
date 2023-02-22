@@ -36,8 +36,8 @@ public:
     Vector3 GetPosition() const;
 
     void SetRotationEditMode(RotationEditMode mode);
-//    RotationEditMode GetRotationEditMode() const;
-//
+    RotationEditMode GetRotationEditMode() const;
+
 //    void SetRotationOrder(EulerOrder order);
 //    void SetRotation(const Vector3d &euler_rad);
 //    void SetRotationDeg(const Vector3d &euler_deg);
@@ -104,7 +104,7 @@ public:
 //    NodePath GetVisibilityParent() const;
 //
 protected:
-//    FORCE_INLINE void UpdateLocalTransform() const;
+    FORCE_INLINE void UpdateLocalTransform() const;
     FORCE_INLINE void UpdateEulerAndScale() const;
 
     void NotificationCallBack(NotificationType notification);

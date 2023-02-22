@@ -13,27 +13,24 @@ void Node3D::NotifyDirty() {
     // todo: add to transform change list
 }
 
-//
-//void Node3D::UpdateLocalTransform() const {
-//    // This function is called when the local transform (data.local_transform) is dirty
-//    // and the right value is contained in the Euler rotation and scale.
-//
-//    local_transform_.linear() = Euler2Matrix(euler_rotation_, euler_rotation_order_);
-//    local_transform_ *= Eigen::Scaling(scale_[0], scale_[1], scale_[2]);
-//
-//    dirty_ &= ~DIRTY_LOCAL_TRANSFORM;
-//}
+void Node3D::UpdateLocalTransform() const {
+    // This function is called when the local transform (data.local_transform) is dirty
+    // and the right value is contained in the Euler rotation and scale.
+
+    local_transform_.SetEulerAngle(euler_, euler_order_);
+    local_transform_.scale(scale_);
+
+    dirty_ &= ~DIRTY_LOCAL_TRANSFORM;
+}
 
 void Node3D::UpdateEulerAndScale() const {
     // This function is called when the Euler rotation (euler_rotation_) is dirty
     // and the right value is contained in the local transform.
 
     scale_ = local_transform_.GetScale();
-//    euler_ = local_transform_.GetEulerAngle()
-//    scale_ = GetScaleFromTransform(local_transform_);
-//    euler_rotation_ = GetEulerFromTransform(local_transform_, euler_rotation_order_);
-//
-//    dirty_ &= ~DIRTY_EULER_AND_SCALE;
+    euler_ = local_transform_.GetEulerAngleNormalized(euler_order_);
+
+    dirty_ &= ~DIRTY_EULER_AND_SCALE;
 }
 
 void Node3D::PropagateTransformChanged(Node3D *node) {
@@ -182,10 +179,10 @@ void Node3D::SetRotationEditMode(RotationEditMode mode) {
     }
 }
 
-//Node3D::RotationEditMode Node3D::GetRotationEditMode() const {
-//    return rotation_edit_mode_;
-//}
-//
+Node3D::RotationEditMode Node3D::GetRotationEditMode() const {
+    return rotation_edit_mode_;
+}
+
 //void Node3D::SetRotationOrder(EulerOrder order) {
 //    if (euler_rotation_order_ == order)
 //        return;

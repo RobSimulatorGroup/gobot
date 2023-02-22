@@ -27,20 +27,25 @@ protected:
     gobot::Node3D *node_3d{};
 };
 
+// todo: UpdateLocalTransform
+// todo: UpdateEulerAndScale
+
 TEST_F(TestNode3D, simple_operations) {
+    using namespace gobot;
 //    ASSERT_EQ(gobot::SceneTree::GetInstance()->GetRoot()->GetChildCount(), 0);
 //    ASSERT_EQ(gobot::SceneTree::GetInstance()->GetNodeCount(), 1);
 
-    gobot::SceneTree::GetInstance()->GetRoot()->AddChild(node_3d);
+    SceneTree::GetInstance()->GetRoot()->AddChild(node_3d);
 
 //    ASSERT_EQ(gobot::SceneTree::GetInstance()->GetRoot()->GetChildCount(), 1);
 //    ASSERT_EQ(gobot::SceneTree::GetInstance()->GetNodeCount(), 2);
 //
 //    ASSERT_EQ(node_3d->GetParentNode3D(), nullptr);
 
-    gobot::Vector3 p = {0.0, 0.0, 0.0};
+    Vector3 p = {0.0, 0.0, 0.0};
     node_3d->SetPosition(p);
     ASSERT_EQ(node_3d->GetPosition(), p);
 
-
+    node_3d->SetRotationEditMode(Node3D::RotationEditMode::Euler);
+    ASSERT_EQ(node_3d->GetRotationEditMode(), Node3D::RotationEditMode::Euler);
 }
