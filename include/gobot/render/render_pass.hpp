@@ -21,6 +21,7 @@ public:
     static Ref<RenderPass> Get(const RenderPassDesc& renderPassDesc);
 
     static void ClearCache();
+
     static void DeleteUnusedCache();
 
     virtual void BeginRenderpass(CommandBuffer* commandBuffer,
@@ -31,6 +32,7 @@ public:
                                  uint32_t height) const = 0;
 
     virtual void EndRenderpass(CommandBuffer* commandBuffer) = 0;
+
     virtual int GetAttachmentCount() const = 0;
 
     protected:

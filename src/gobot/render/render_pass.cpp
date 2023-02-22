@@ -8,6 +8,7 @@
 #include "gobot/render/render_pass.hpp"
 #include "gobot/log.hpp"
 #include "gobot/error_macros.hpp"
+#include "gobot/core/hash_combine.hpp"
 
 namespace gobot {
 
@@ -25,18 +26,18 @@ RenderPass* RenderPass::Create(const RenderPassDesc& renderPassDesc)
 Ref<RenderPass> RenderPass::Get(const RenderPassDesc& renderPassDesc)
 {
     size_t hash = 0;
-//    HashCombine(hash, renderPassDesc.attachmentCount, renderPassDesc.clear);
-//
-//    for(uint32_t i = 0; i < renderPassDesc.attachmentCount; i++)
-//    {
-//        HashCombine(hash, renderPassDesc.attachmentTypes[i], renderPassDesc.attachments[i], renderPassDesc.cubeMapIndex, renderPassDesc.mipIndex);
-//    }
-//
-//    auto found = m_RenderPassCache.find(hash);
-//    if(found != m_RenderPassCache.end() && found->second)
-//    {
-//        return found->second;
-//    }
+    HashCombine(hash, renderPassDesc.attachmentCount, renderPassDesc.clear);
+
+    for(uint32_t i = 0; i < renderPassDesc.attachmentCount; i++)
+    {
+        HashCombine(hash, renderPassDesc.attachmentTypes[i], renderPassDesc.attachments[i], renderPassDesc.cubeMapIndex, renderPassDesc.mipIndex);
+    }
+
+    auto found = m_RenderPassCache.find(hash);
+    if(found != m_RenderPassCache.end() && found->second)
+    {
+        return found->second;
+    }
 
     auto renderPass         = Ref<RenderPass>(Create(renderPassDesc));
     m_RenderPassCache[hash] = renderPass;
