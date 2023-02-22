@@ -1,7 +1,36 @@
 
+if (NOT CLANG_LIBDIR)
+    set(ubuntu_default_llvm_lib_dirs
+            /usr/lib/llvm-15/lib
+            /usr/lib/llvm-14/lib
+            /usr/lib/llvm-13/lib
+            /usr/lib/llvm-12/lib
+            /usr/lib/llvm-11/lib
+            /usr/lib/llvm-10/lib
+            /usr/lib/llvm-9/lib
+            /usr/lib/llvm-8/lib
+            /usr/lib/llvm-7/lib
+            )
+    foreach(llvm_lib_dir in ${ubuntu_default_llvm_lib_dirs})
+        message(STATUS "Searching ${llvm_lib_dir} for libc++ and libc++abi")
+        find_library(CPP_LIBRARY    c++    PATHS ${llvm_lib_dir} NO_DEFAULT_PATH)
+        find_library(CPPABI_LIBRARY c++abi PATHS ${llvm_lib_dir} NO_DEFAULT_PATH)
+        if (CPP_LIBRARY AND CPPABI_LIBRARY)
+            set(CLANG_LIBDIR ${llvm_lib_dir})
+            message(STATUS "CLANG_LIBDIR found in ubuntu-default: ${CLANG_LIBDIR}")
+            break()
+        endif()
+    endforeach()
+endif()
+
+
+find_library(CPP_LIBRARY    c++    PATHS ${CLANG_LIBDIR} REQUIRED NO_DEFAULT_PATH)
+find_library(CPPABI_LIBRARY c++abi PATHS ${CLANG_LIBDIR} REQUIRED NO_DEFAULT_PATH)
+
 add_library(filament STATIC IMPORTED)
 set_target_properties(filament PROPERTIES IMPORTED_LOCATION
         ${CMAKE_CURRENT_SOURCE_DIR}/lib/x86_64/libfilament.a)
+target_link_libraries(filament INTERFACE -lstdc++ ${CPP_LIBRARY} ${CPPABI_LIBRARY})
 
 #add_library(backend STATIC IMPORTED)
 #set_target_properties(backend PROPERTIES IMPORTED_LOCATION
@@ -30,6 +59,7 @@ set_target_properties(filament PROPERTIES IMPORTED_LOCATION
 add_library(geometry STATIC IMPORTED)
 set_target_properties(geometry PROPERTIES IMPORTED_LOCATION
         ${CMAKE_CURRENT_SOURCE_DIR}/lib/x86_64/libgeometry.a)
+target_link_libraries(geometry INTERFACE -lstdc++ ${CPP_LIBRARY} ${CPPABI_LIBRARY})
 
 #add_library(filabridge STATIC IMPORTED)
 #set_target_properties(filabridge PROPERTIES IMPORTED_LOCATION
@@ -50,6 +80,7 @@ set_target_properties(geometry PROPERTIES IMPORTED_LOCATION
 add_library(Filament INTERFACE )
 target_link_libraries(Filament INTERFACE  filament geometry )
 target_include_directories(Filament INTERFACE ${CMAKE_CURRENT_SOURCE_DIR}/include)
+
 
 
 add_executable(matc IMPORTED)

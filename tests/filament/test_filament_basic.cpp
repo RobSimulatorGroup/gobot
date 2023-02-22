@@ -20,7 +20,6 @@
 #include <ktxreader/Ktx1Reader.h>
 
 #include <utils/EntityManager.h>
-#include "gobot/drivers/sdl/sdl_window.hpp"
 
 #include <cmath>
 
