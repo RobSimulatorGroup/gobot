@@ -321,166 +321,152 @@ EulerAngle Node3D::GetGlobalRotation(EulerOrder order) const {
     return GetGlobalTransform().GetEulerAngle(order);
 }
 
+void Node3D::SetGlobalRotationDegree(const Vector3 &euler_deg, EulerOrder order) {
+    Vector3 radians{DEG_TO_RAD(euler_deg.x()), DEG_TO_RAD(euler_deg.y()), DEG_TO_RAD((euler_deg.z()))};
+    SetGlobalRotation(radians, order);
+}
 
-//void Node3D::SetGlobalRotationDeg(const Vector3d &euler_deg) {
-//    Vector3d radians(Deg2Rad(euler_deg[0]), Deg2Rad(euler_deg[1]), Deg2Rad(euler_deg[2]));
-//    SetGlobalRotation(radians);
-//}
+Vector3 Node3D::GetGlobalRotationDegree(EulerOrder order) const {
+    Vector3 radians = GetGlobalRotation(order);
+    return {RAD_TO_DEG(radians.x()), RAD_TO_DEG(radians.y()), RAD_TO_DEG(radians.z())};
+}
 
+Matrix3 Node3D::GetRotationMatrix() const {
+    return GetTransform().linear();
+}
 
+Affine3 Node3D::GetRelativeTransform(const Node *parent) const {
+    if (parent == this) {
+        return {};
+    }
 
+    ERR_FAIL_COND_V(!parent, Affine3());
 
+    if (parent == parent_) {
+        return GetTransform();
+    } else {
+        return parent_->GetRelativeTransform(parent) * GetTransform();
+    }
+}
 
+void Node3D::Rotate(const Vector3 &axis, real_t angle) {
+    Affine3 t = GetGlobalTransform();
+    t.prerotate(AngleAxis(angle, axis.normalized()));
+    SetTransform(t);
+}
 
+void Node3D::RotateX(real_t angle) {
+    Affine3 t = GetGlobalTransform();
+    t.prerotate(AngleAxis(angle, Vector3::UnitX()));
+    SetTransform(t);
+}
 
+void Node3D::RotateY(real_t angle) {
+    Affine3 t = GetGlobalTransform();
+    t.prerotate(AngleAxis(angle, Vector3::UnitY()));
+    SetTransform(t);
+}
 
+void Node3D::RotateZ(real_t angle) {
+    Affine3 t = GetGlobalTransform();
+    t.prerotate(AngleAxis(angle, Vector3::UnitZ()));
+    SetTransform(t);
+}
 
+void Node3D::Translate(const Vector3 &offset) {
+    Affine3 t = GetGlobalTransform();
+    t.pretranslate(offset);
+    SetTransform(t);
+}
 
+void Node3D::Scale(const Vector3 &ratio) {
+    Affine3 t = GetGlobalTransform();
+    t.prescale(ratio);
+    SetTransform(t);
+}
 
-//Vector3d Node3D::GetGlobalRotationDeg() const {
-//    Vector3d radians = GetGlobalRotation();
-//    return {Rad2Deg(radians[0]), Rad2Deg(radians[1]), Rad2Deg(radians[2])};
-//}
-//
+void Node3D::RotateLocal(const Vector3 &axis, real_t angle) {
+    Affine3 t = GetGlobalTransform();
+    t.rotate(AngleAxis(angle, axis));
+    SetTransform(t);
+}
 
-//Matrix3d Node3D::GetRotationMatrix() const {
-//    return GetTransform().linear();
-//}
-//
+void Node3D::ScaleLocal(const Vector3 &ratio) {
+    Affine3 t = GetGlobalTransform();
+    t.scale(ratio);
+    SetTransform(t);
+}
 
+void Node3D::TranslateLocal(const Vector3 &offset) {
+    Affine3 t = GetGlobalTransform();
+    t.translate(offset);
+    SetTransform(t);
+}
 
-//Transform3d Node3D::GetRelativeTransform(const Node *parent) const {
-//    if (parent == this) {
-//        return {};
-//    }
-//
-//    ERR_FAIL_COND_V(!parent, Transform3d());
-//
-//    if (parent == parent_) {
-//        return GetTransform();
-//    } else {
-//        return parent_->GetRelativeTransform(parent) * GetTransform();
-//    }
-//}
-//
-//void Node3D::Rotate(const Vector3d &axis, double angle) {
-//    Transform3d t = GetGlobalTransform();
-//    t.prerotate(Eigen::AngleAxisd(angle, axis.normalized()));
-//    SetTransform(t);
-//}
-//
-//void Node3D::RotateX(double angle) {
-//    Transform3d t = GetGlobalTransform();
-//    t.prerotate(Eigen::AngleAxisd(angle, Vector3d::UnitX()));
-//    SetTransform(t);
-//}
-//
-//void Node3D::RotateY(double angle) {
-//    Transform3d t = GetGlobalTransform();
-//    t.prerotate(Eigen::AngleAxisd(angle, Vector3d::UnitY()));
-//    SetTransform(t);
-//}
-//
-//void Node3D::RotateZ(double angle) {
-//    Transform3d t = GetGlobalTransform();
-//    t.prerotate(Eigen::AngleAxisd(angle, Vector3d::UnitZ()));
-//    SetTransform(t);
-//}
-//
-//void Node3D::Translate(const Vector3d &offset) {
-//    Transform3d t = GetGlobalTransform();
-//    t.pretranslate(offset);
-//    SetTransform(t);
-//}
-//
-//void Node3D::Scale(const Vector3d &ratio) {
-//    Transform3d t = GetGlobalTransform();
-//    t.prescale(ratio);
-//    SetTransform(t);
-//}
-//
-//void Node3D::RotateObjectLocal(const Vector3d &axis, double angle) {
-//    Transform3d t = GetGlobalTransform();
-//    t.rotate(Eigen::AngleAxisd(angle, Vector3d::UnitZ()));
-//    SetTransform(t);
-//}
-//
-//void Node3D::ScaleObjectLocal(const Vector3d &ratio) {
-//    Transform3d t = GetGlobalTransform();
-//    t.scale(ratio);
-//    SetTransform(t);
-//}
-//
-//void Node3D::TranslateObjectLocal(const Vector3d &offset) {
-//    Transform3d t = GetGlobalTransform();
-//    t.translate(offset);
-//    SetTransform(t);
-//}
-//
-//Vector3d Node3D::ToLocal(const Vector3d &global) const {
-//    return GetGlobalTransform().inverse() * global;
-//}
-//
-//Vector3d Node3D::ToGlobal(const Vector3d &local) const {
-//    return GetGlobalTransform() * local;
-//}
-//
-//void Node3D::SetNotifyTransform(bool enabled) {
-//    notify_transform_ = enabled;
-//}
-//
-//bool Node3D::IsTransformNotificationEnabled() const {
-//    return notify_transform_;
-//}
-//
-//void Node3D::SetNotifyLocalTransform(bool enabled) {
-//    notify_local_transform_ = enabled;
-//}
-//
-//bool Node3D::IsLocalTransformNotificationEnabled() const {
-//    return notify_local_transform_;
-//}
-//
-//void Node3D::SetIdentity() {
-//    SetTransform(Transform3d::Identity());
-//}
-//
-//void Node3D::SetVisible(bool visible) {
-//    if (visible_ == visible)
-//        return;
-//
-//    visible_ = visible;
-//
-//    if (!IsInsideTree())
-//        return;
-//    // todo: PropagateVisibilityChange();
-//}
-//
-//void Node3D::Show() {
-//    SetVisible(true);
-//}
-//
-//void Node3D::Hide() {
-//    SetVisible(false);
-//}
-//
-//bool Node3D::IsVisible() const {
-//    return visible_;
-//}
-//
-//bool Node3D::IsVisibleInTree() const {
-//    const Node3D *s = this;
-//
-//    while (s) {
-//        if (!s->visible_) {
-//            return false;
-//        }
-//        s = s->parent_;
-//    }
-//
-//    return true;
-//}
-//
+Vector3 Node3D::ToLocal(const Vector3 &global) const {
+    return GetGlobalTransform().inverse().linear() * global;
+}
+
+Vector3 Node3D::ToGlobal(const Vector3 &local) const {
+    return GetGlobalTransform().linear() * local;
+}
+
+void Node3D::SetNotifyTransform(bool enabled) {
+    notify_transform_ = enabled;
+}
+
+bool Node3D::IsTransformNotificationEnabled() const {
+    return notify_transform_;
+}
+
+void Node3D::SetNotifyLocalTransform(bool enabled) {
+    notify_local_transform_ = enabled;
+}
+
+bool Node3D::IsLocalTransformNotificationEnabled() const {
+    return notify_local_transform_;
+}
+
+void Node3D::SetIdentity() {
+    SetTransform(Affine3::Identity());
+}
+
+void Node3D::SetVisible(bool visible) {
+    if (visible_ == visible)
+        return;
+
+    visible_ = visible;
+
+    if (!IsInsideTree())
+        return;
+    // todo: PropagateVisibilityChange();
+}
+
+void Node3D::Show() {
+    SetVisible(true);
+}
+
+void Node3D::Hide() {
+    SetVisible(false);
+}
+
+bool Node3D::IsVisible() const {
+    return visible_;
+}
+
+bool Node3D::IsVisibleInTree() const {
+    const Node3D *s = this;
+
+    while (s) {
+        if (!s->visible_) {
+            return false;
+        }
+        s = s->parent_;
+    }
+
+    return true;
+}
+
 //void Node3D::ForceUpdateTransform() {
 //    ERR_FAIL_COND(!IsInsideTree());
 //
@@ -488,18 +474,18 @@ EulerAngle Node3D::GetGlobalRotation(EulerOrder order) const {
 //
 //    Notification(NotificationType::TransformChanged);
 //}
-//
-//void Node3D::SetVisibilityParent(const NodePath &path) {
-//    visibility_parent_path_ = path;
-//
-//    if (IsInsideTree()) {
-//        // todo: update visibility parent
-//    }
-//}
-//
-//NodePath Node3D::GetVisibilityParent() const {
-//    return visibility_parent_path_;
-//}
+
+void Node3D::SetVisibilityParent(const NodePath &path) {
+    visibility_parent_path_ = path;
+
+    if (IsInsideTree()) {
+        // todo: update visibility parent
+    }
+}
+
+NodePath Node3D::GetVisibilityParent() const {
+    return visibility_parent_path_;
+}
 
 
 } // End of namespace gobot

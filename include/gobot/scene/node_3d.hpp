@@ -29,8 +29,7 @@ public:
 
     Node3D *GetParentNode3D() const;
 
-    // todo:
-    // Ref<World3D> GetWorld3D() const;
+    // todo: Ref<World3D> GetWorld3D() const;
 
     void SetPosition(const Vector3 &position);
     Vector3 GetPosition() const;
@@ -65,50 +64,46 @@ public:
     void SetGlobalRotation(const EulerAngle &euler_rad, EulerOrder order);
     EulerAngle GetGlobalRotation(EulerOrder order) const;
 
-//    void SetGlobalRotationDeg(const Vector3d &euler_deg);
-//    Vector3d GetGlobalRotationDeg() const;
-//
+    void SetGlobalRotationDegree(const Vector3 &euler_deg, EulerOrder order);
+    Vector3 GetGlobalRotationDegree(EulerOrder order) const;
 
-//    Matrix3d GetRotationMatrix() const;
+    Matrix3 GetRotationMatrix() const;
 
+    Affine3 GetRelativeTransform(const Node *parent) const;
 
-//
-//    Transform3d GetRelativeTransform(const Node *parent) const;
-//
-//    void Rotate(const Vector3d &axis, double angle);
-//    void RotateX(double angle);
-//    void RotateY(double angle);
-//    void RotateZ(double angle);
-//    void Translate(const Vector3d &offset);
-//    void Scale(const Vector3d &ratio);
-//
-//    void RotateObjectLocal(const Vector3d &axis, double angle);
-//    void ScaleObjectLocal(const Vector3d &ratio);
-//    void TranslateObjectLocal(const Vector3d &offset);
-//
-//    Vector3d ToLocal(const Vector3d &global) const;
-//    Vector3d ToGlobal(const Vector3d &local) const;
-//
-//    void SetNotifyTransform(bool enabled);
-//    bool IsTransformNotificationEnabled() const;
-//
-//    void SetNotifyLocalTransform(bool enabled);
-//    bool IsLocalTransformNotificationEnabled() const;
-//
-////    void Orthonormalize();
-//    void SetIdentity();
-//
-//    void SetVisible(bool visible);
-//    void Show();
-//    void Hide();
-//    bool IsVisible() const;
-//    bool IsVisibleInTree() const;
-//
-//    void ForceUpdateTransform();
-//
-//    void SetVisibilityParent(const NodePath &path);
-//    NodePath GetVisibilityParent() const;
-//
+    void Rotate(const Vector3 &axis, real_t angle);
+    void RotateX(real_t angle);
+    void RotateY(real_t angle);
+    void RotateZ(real_t angle);
+    void Translate(const Vector3 &offset);
+    void Scale(const Vector3 &ratio);
+
+    void RotateLocal(const Vector3 &axis, real_t angle);
+    void ScaleLocal(const Vector3 &ratio);
+    void TranslateLocal(const Vector3 &offset);
+
+    Vector3 ToLocal(const Vector3 &global) const;
+    Vector3 ToGlobal(const Vector3 &local) const;
+
+    void SetNotifyTransform(bool enabled);
+    bool IsTransformNotificationEnabled() const;
+
+    void SetNotifyLocalTransform(bool enabled);
+    bool IsLocalTransformNotificationEnabled() const;
+
+    void SetIdentity();
+
+    void SetVisible(bool visible);
+    void Show();
+    void Hide();
+    bool IsVisible() const;
+    bool IsVisibleInTree() const;
+
+    // todo: void ForceUpdateTransform()
+
+    void SetVisibilityParent(const NodePath &path);
+    NodePath GetVisibilityParent() const;
+
 protected:
     FORCE_INLINE void UpdateLocalTransform() const;
     FORCE_INLINE void UpdateEulerAndScale() const;
@@ -126,15 +121,8 @@ private:
     void NotifyDirty();
     void PropagateTransformChanged(Node3D *node);
 
-////    void UpdateVisibilityParent(bool update_root);
+//    void UpdateVisibilityParent(bool update_root);
 
-//    static FORCE_INLINE Matrix3d Euler2Matrix(const Vector3d &euler, EulerOrder order);
-//    static FORCE_INLINE Vector3d Matrix2Euler(const Matrix3d &m, EulerOrder order);
-//
-//    static FORCE_INLINE Vector3d GetScaleFromTransform(const Transform3d &transform);
-//    static FORCE_INLINE Vector3d GetEulerFromTransform(const Transform3d &transform, EulerOrder order);
-//    static FORCE_INLINE Quaternion GetQuaternionFromTransform(const Transform3d &transform);
-//
     mutable Affine3 global_transform_;
     mutable Affine3 local_transform_;
     mutable EulerOrder euler_order_ = EulerOrder::SXYZ;
@@ -143,16 +131,15 @@ private:
     mutable RotationEditMode rotation_edit_mode_ = RotationEditMode::Euler;
     mutable int dirty_ = DIRTY_NONE;
 
-//    NodePath visibility_parent_path_;
+    NodePath visibility_parent_path_;
 
     Node3D *parent_ = nullptr;
     std::vector<Node3D *> children_;
 
-//    bool ignore_notification_ = false;
     bool notify_local_transform_ = false;
-//    bool notify_transform_ = false;
-//
-//    bool visible_ = false;
+    bool notify_transform_ = false;
+
+    bool visible_ = false;
     bool disable_scale_ = false;
 };
 
