@@ -75,7 +75,7 @@ if(PROJECT_SOURCE_DIR STREQUAL PROJECT_BINARY_DIR)
     )
 endif()
 
-find_package(Qt5 5.15 COMPONENTS Core Gui CONFIG REQUIRED)
+find_package(Qt5 5.15 COMPONENTS Core CONFIG REQUIRED)
 find_package (Eigen3 3.4 CONFIG REQUIRED)
 find_package(OpenGL REQUIRED)
 
@@ -86,12 +86,13 @@ add_subdirectory(3rdparty)
 file(GLOB_RECURSE SOURCE_CORE CONFIGURE_DEPENDS "src/gobot/core/*.cpp")
 file(GLOB_RECURSE SOURCE_SCENE CONFIGURE_DEPENDS "src/gobot/scene/*.cpp")
 file(GLOB_RECURSE SOURCE_DRIVERS CONFIGURE_DEPENDS "src/gobot/drivers/*.cpp")
+file(GLOB_RECURSE SOURCE_RENDERING CONFIGURE_DEPENDS "src/gobot/rendering/*.cpp")
 file(GLOB_RECURSE SOURCE_EDITOR CONFIGURE_DEPENDS "src/gobot/editor/*.cpp")
 file(GLOB_RECURSE SOURCE_MAIN CONFIGURE_DEPENDS "src/gobot/main/*.cpp")
 file(GLOB_RECURSE HEADER_FILES CONFIGURE_DEPENDS "include/*hpp")
 
 # https://github.com/bincrafters/community/issues/466#issuecomment-426265654
-add_library(gobot SHARED ${SOURCE_DRIVERS} ${SOURCE_MAIN} ${SOURCE_CORE} ${SOURCE_SCENE} ${SOURCE_EDITOR} ${HEADER_FILES})
+add_library(gobot SHARED ${SOURCE_DRIVERS} ${SOURCE_MAIN} ${SOURCE_CORE} ${SOURCE_RENDERING} ${SOURCE_SCENE} ${SOURCE_EDITOR} ${HEADER_FILES})
 if (CMAKE_CXX_COMPILER_ID STREQUAL "MSVC")
     set(GOBOT_COMPILE_OPTIONS "/Zc:preprocessor,__cplusplus" "/bigobj")
 elseif (CMAKE_CXX_COMPILER_ID STREQUAL "GNU")
@@ -113,7 +114,6 @@ target_link_libraries(gobot
     RTTR::Core
     OpenGL::GL
     Qt5::Core
-    Qt5::Gui
     imgui
     bgfx
     ${CONAN_LIBS}

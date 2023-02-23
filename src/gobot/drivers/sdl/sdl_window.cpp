@@ -31,7 +31,6 @@ static const int s_default_height = 720;
 static const char* s_default_window_title = "Gobot";
 
 SDLWindow::SDLWindow()
-    : render_api_(RenderAPI::OpenGL)
 {
     if (SDL_WasInit(SDL_INIT_VIDEO) != SDL_INIT_VIDEO) {
         CRASH_COND_MSG(SDL_Init(SDL_INIT_VIDEO) < 0, "Could not initialize SDL2!");

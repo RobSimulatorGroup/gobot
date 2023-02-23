@@ -9,7 +9,6 @@
 
 #include "gobot/core/io/image.hpp"
 #include "gobot/core/events/event.hpp"
-#include "gobot/graphics/RHI/graphics_context.hpp"
 #include <Eigen/Dense>
 
 namespace gobot {

@@ -8,6 +8,7 @@
 #pragma once
 
 #include "gobot/core/io/resource.hpp"
+#include "gobot/core/color.hpp"
 
 namespace gobot {
 

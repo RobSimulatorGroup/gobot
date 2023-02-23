@@ -77,7 +77,6 @@ public:
 
 
 private:
-    RenderAPI render_api_;
     SDL_Window* sdl2_window_{nullptr};
 
     EventCallbackFn event_callback_{nullptr};

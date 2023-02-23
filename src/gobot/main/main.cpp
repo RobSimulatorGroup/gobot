@@ -11,6 +11,7 @@
 #include "gobot/core/config/engine.hpp"
 #include "gobot/core/os/input.hpp"
 #include "gobot/scene/scene_initializer.hpp"
+#include "gobot/rendering/render_server.hpp"
 #include "gobot/core/os/os.hpp"
 #include <cxxopts.hpp>
 #include <bgfx/bgfx.h>
@@ -21,6 +22,7 @@ namespace gobot {
 static Engine *s_engine = nullptr;
 static ProjectSettings* s_project_settings = nullptr;
 static Input* s_input = nullptr;
+static RenderingServer* s_render_server = nullptr;
 
 Main::TimePoint Main::s_last_ticks = std::chrono::high_resolution_clock::now();
 
@@ -63,6 +65,9 @@ Copyright(c) 2021-2023, RobSimulatorGroup)");
 }
 
 bool Main::Setup2() {
+    s_render_server = Object::New<RenderingServer>();
+
+
     SceneInitializer::Init();
 
     return true;
@@ -73,28 +78,7 @@ bool Main::Start() {
     auto* main_loop = Object::New<SceneTree>();
     OS::GetInstance()->SetMainLoop(main_loop);
 
-    bgfx::Init init;
-    init.type     = bgfx::RendererType::Count; // auto select
-    init.vendorId = BGFX_PCI_ID_NONE; // auto select
-    init.platformData.nwh  = main_loop->GetRoot()->GetWindowsInterface()->GetNativeWindowHandle();
-    init.platformData.ndt  = main_loop->GetRoot()->GetWindowsInterface()->GetNativeDisplayHandle();
-    init.resolution.width  = main_loop->GetRoot()->GetWindowsInterface()->GetHeight();
-    init.resolution.height = main_loop->GetRoot()->GetWindowsInterface()->GetWidth();
-    init.resolution.reset  = BGFX_RESET_VSYNC; //  Enable V-Sync.
-
-    bgfx::init(init);
-
-    bgfx::setDebug(BGFX_DEBUG_TEXT);
-    bgfx::setViewClear(0
-            , BGFX_CLEAR_COLOR|BGFX_CLEAR_DEPTH
-            , 0x303030ff
-            , 1.0f
-            , 0
-    );
-
-
-
-    bgfx::frame();
+    s_render_server->InitWindow();
 
     return true;
 }
