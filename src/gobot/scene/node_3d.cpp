@@ -28,7 +28,7 @@ void Node3D::UpdateEulerAndScale() const {
     // and the right value is contained in the local transform.
 
     scale_ = local_transform_.GetScale();
-    euler_ = local_transform_.GetEulerAngleNormalized(euler_order_);
+    euler_ = local_transform_.GetEulerAngle(euler_order_);
 
     dirty_ &= ~DIRTY_EULER_AND_SCALE;
 }
@@ -85,54 +85,29 @@ void Node3D::NotificationCallBack(NotificationType notification) {
     }
 }
 
-//Matrix3d Node3D::Euler2Matrix(const Vector3d &euler, EulerOrder order) {
-//    Matrix3d m;
-//    switch (order) {
-//        case EulerOrder::XYZ: {
-//            m = Eigen::AngleAxisd(euler[0], Vector3d::UnitX())
-//              * Eigen::AngleAxisd(euler[1], Vector3d::UnitY())
-//              * Eigen::AngleAxisd(euler[2], Vector3d::UnitZ());
-//        } break;
-//        case EulerOrder::ZYX: {
-//            m = Eigen::AngleAxisd(euler[2], Vector3d::UnitZ())
-//              * Eigen::AngleAxisd(euler[1], Vector3d::UnitY())
-//              * Eigen::AngleAxisd(euler[0], Vector3d::UnitX());
-//        }
-//    }
-//
-//    return m;
-//}
-//
-//Vector3d Node3D::Matrix2Euler(const Matrix3d &m, EulerOrder order) {
-//    Vector3d euler;
-//    switch (order) {
-//        case EulerOrder::XYZ: {
-//            euler = m.eulerAngles(0, 1, 2);
-//        } break;
-//        case EulerOrder::ZYX: {
-//            euler = m.eulerAngles(2, 1, 0);
-//        }
-//    }
-//
-//    return euler;
-//}
-//
-//Vector3d Node3D::GetScaleFromTransform(const Transform3d &transform) {
-//    double sx = transform.linear().block<3, 1>(0, 0).norm();
-//    double sy = transform.linear().block<3, 1>(0, 1).norm();
-//    double sz = transform.linear().block<3, 1>(0, 2).norm();
-//
-//    return {sx, sy, sz};
-//}
-//
-//Vector3d Node3D::GetEulerFromTransform(const Transform3d &transform, EulerOrder order) {
-//    return Matrix2Euler(transform.linear(), order);
-//}
-//
-//Quaternion Node3D::GetQuaternionFromTransform(const Transform3d &transform) {
-//    return Quaternion(transform.linear());
-//}
+Affine3 Node3D::GetGlobalTransform() const {
+    ERR_FAIL_COND_V(!IsInsideTree(), Affine3());
 
+    if (dirty_ & DIRTY_GLOBAL_TRANSFORM) {
+        if (dirty_ & DIRTY_LOCAL_TRANSFORM) {
+            UpdateLocalTransform();
+        }
+
+        if (parent_) {
+            global_transform_ = parent_->GetGlobalTransform() * local_transform_;
+        } else {
+            global_transform_ = local_transform_;
+        }
+
+        if (disable_scale_) {
+            global_transform_.Orthonormalize();
+        }
+
+        dirty_ &= ~DIRTY_GLOBAL_TRANSFORM;
+    }
+
+    return global_transform_;
+}
 
 Node3D *Node3D::GetParentNode3D() const {
     return dynamic_cast<Node3D *>(GetParent());
@@ -168,7 +143,7 @@ void Node3D::SetRotationEditMode(RotationEditMode mode) {
         // If going to Euler mode, ensure that vectors are _not_ dirty, else the retrieved value may be wrong.
         // Otherwise, keep what is there, so switching back and forth between modes does not break the vectors.
 
-        // todo: Update Rotation and scale
+        UpdateEulerAndScale();
     }
 
     if (transform_changed) {
@@ -183,77 +158,143 @@ Node3D::RotationEditMode Node3D::GetRotationEditMode() const {
     return rotation_edit_mode_;
 }
 
-//void Node3D::SetRotationOrder(EulerOrder order) {
-//    if (euler_rotation_order_ == order)
-//        return;
-//
-//    ERR_FAIL_INDEX(static_cast<int32_t>(order), 6);
-//    bool transform_changed = false;
-//
-//    if (dirty_ & DIRTY_EULER_AND_SCALE) {
-//        UpdateRotationAndScale();
-//    } else if (dirty_ & DIRTY_LOCAL_TRANSFORM) {
-//        Matrix3d m = Euler2Matrix(euler_rotation_, euler_rotation_order_);
-//        euler_rotation_ = Matrix2Euler(m, order);
-//        transform_changed = true;
-//    } else {
-//        dirty_ |= DIRTY_LOCAL_TRANSFORM;
-//        transform_changed = true;
+void Node3D::SetEulerOrder(EulerOrder order) {
+    if (euler_order_ == order) {
+        return;
+    }
+
+    bool transform_changed = false;
+    if (dirty_ & DIRTY_EULER_AND_SCALE) {
+        UpdateEulerAndScale();
+    } else if (dirty_ & DIRTY_LOCAL_TRANSFORM) {
+        UpdateLocalTransform();
+        transform_changed = true;
+    } else {
+        dirty_ |= DIRTY_LOCAL_TRANSFORM;
+        transform_changed = true;
+    }
+
+    euler_order_ = order;
+
+    if (transform_changed) {
+        PropagateTransformChanged(this);
+        if (notify_local_transform_) {
+            Notification(NotificationType::LocalTransformChanged);
+        }
+    }
+}
+
+EulerOrder Node3D::GetEulerOrder() const {
+    return euler_order_;
+}
+
+void Node3D::SetEuler(const EulerAngle &euler_rad) {
+    if (dirty_ & DIRTY_EULER_AND_SCALE) {
+        // Update scale only if rotation and scale are dirty, as rotation will be overridden.
+        scale_ = local_transform_.GetScale();
+        dirty_ &= ~DIRTY_EULER_AND_SCALE;
+    }
+
+    euler_ = euler_rad;
+    dirty_ = DIRTY_LOCAL_TRANSFORM;
+    PropagateTransformChanged(this);
+    if (notify_local_transform_) {
+        Notification(NotificationType::LocalTransformChanged);
+    }
+}
+
+EulerAngle Node3D::GetEuler() const {
+    if (dirty_ & DIRTY_EULER_AND_SCALE) {
+        UpdateEulerAndScale();
+    }
+
+    return euler_;
+}
+
+void Node3D::SetEulerDegree(const EulerAngle &euler_deg) {
+    EulerAngle radians{DEG_TO_RAD(euler_deg[0]), DEG_TO_RAD(euler_deg[1]), DEG_TO_RAD(euler_deg[2])};
+    SetEuler(radians);
+}
+
+EulerAngle Node3D::GetEulerDegree() const {
+    EulerAngle radians = GetEuler();
+    return {RAD_TO_DEG(radians[0]), RAD_TO_DEG(radians[1]), RAD_TO_DEG(radians[2])};
+}
+
+void Node3D::SetScale(const Vector3 &scale) {
+    if (dirty_ & DIRTY_EULER_AND_SCALE) {
+        // Update rotation only if rotation and scale are dirty, as scale will be overridden.
+        euler_ = local_transform_.GetEulerAngle(euler_order_);
+        dirty_ &= ~DIRTY_EULER_AND_SCALE;
+    }
+
+    scale_ = scale;
+    dirty_ = DIRTY_LOCAL_TRANSFORM;
+    PropagateTransformChanged(this);
+    if (notify_local_transform_) {
+        Notification(NotificationType::LocalTransformChanged);
+    }
+}
+
+Vector3 Node3D::GetScale() const {
+    if (dirty_ & DIRTY_EULER_AND_SCALE) {
+        UpdateEulerAndScale();
+    }
+
+    return scale_;
+}
+
+void Node3D::SetQuaternion(const Quaternion &quaternion) {
+    if (dirty_ & DIRTY_EULER_AND_SCALE) {
+        // We need the scale part, so update it if dirty
+        scale_ = local_transform_.GetScale();
+        dirty_ &= ~DIRTY_EULER_AND_SCALE;
+    }
+
+    local_transform_ = Affine3(quaternion).scale(scale_);
+    // Rotate/scale should not be marked dirty because that would cause precision loss issues with the scale.
+    // Instead, reconstruct rotation now.
+    euler_ = local_transform_.GetEulerAngle(euler_order_);
+    dirty_ = DIRTY_NONE;
+
+    PropagateTransformChanged(this);
+    if (notify_local_transform_) {
+        Notification(NotificationType::LocalTransformChanged);
+    }
+}
+
+//Quaternion Node3D::GetQuaternion() const {
+//    if (dirty_ & DIRTY_LOCAL_TRANSFORM) {
+//        UpdateLocalTransform();
 //    }
 //
-//    euler_rotation_order_ = order;
-//
-//    if (transform_changed) {
-//        PropagateTransformChanged(this);
-//        if (notify_local_transform_) {
-//            Notification(NotificationType::LocalTransformChanged);
-//        }
-//    }
+//    return local_transform_.GetQuaternion();
 //}
-//
-//void Node3D::SetRotation(const Vector3d &euler_rad) {
-//    if (dirty_ & DIRTY_EULER_AND_SCALE) {
-//        // Update scale only if rotation and scale are dirty, as rotation will be overridden.
-//        scale_ = GetScaleFromTransform(local_transform_);
-//        dirty_ &= ~DIRTY_EULER_AND_SCALE;
-//    }
-//
-//    euler_rotation_ = euler_rad;
-//    dirty_ = DIRTY_LOCAL_TRANSFORM;
-//    PropagateTransformChanged(this);
-//
-//    if (notify_local_transform_) {
-//        Notification(NotificationType::LocalTransformChanged);
-//    }
-//}
-//
-//void Node3D::SetRotationDeg(const Vector3d &euler_deg) {
-//    Vector3d radians{Deg2Rad(euler_deg[0]), Deg2Rad(euler_deg[1]), Deg2Rad(euler_deg[2])};
-//    SetRotation(radians);
-//}
-//
-//void Node3D::SetScale(const Vector3d &scale) {
-//    if (dirty_ & DIRTY_EULER_AND_SCALE) {
-//        // Update rotation only if rotation and scale are dirty, as scale will be overridden.
-//        euler_rotation_ = Matrix2Euler(local_transform_.linear(), euler_rotation_order_);
-//        dirty_ &= ~DIRTY_EULER_AND_SCALE;
-//    }
-//
-//    scale_ = scale;
-//    dirty_ = DIRTY_LOCAL_TRANSFORM;
-//    PropagateTransformChanged(this);
-//
-//    if (notify_local_transform_) {
-//        Notification(NotificationType::LocalTransformChanged);
-//    }
-//}
-//
-//void Node3D::SetGlobalPosition(const Vector3d &position) {
+
+void Node3D::SetTransform(const Affine3 &transform) {
+    local_transform_ = transform;
+    dirty_ = DIRTY_EULER_AND_SCALE;
+
+    PropagateTransformChanged(this);
+    if (notify_local_transform_) {
+        Notification(NotificationType::LocalTransformChanged);
+    }
+}
+
+Affine3 Node3D::GetTransform() const {
+    if (dirty_ & DIRTY_LOCAL_TRANSFORM) {
+        UpdateLocalTransform();
+    }
+
+    return local_transform_;
+}
+
+void Node3D::SetGlobalPosition(const Vector3 &position) {
 //    Transform3d transform = GetGlobalTransform();
 //    transform.translation() = position;
 //    SetGlobalTransform(transform);
-//}
-//
+}
+
 //void Node3D::SetGlobalRotation(const Vector3d &euler_rad) {
 //    Transform3d transform = GetGlobalTransform();
 //    transform.linear() = Euler2Matrix(euler_rad, euler_rotation_order_);
@@ -265,36 +306,8 @@ Node3D::RotationEditMode Node3D::GetRotationEditMode() const {
 //    SetGlobalRotation(radians);
 //}
 //
-//void Node3D::SetTransform(const Transform3d &transform) {
-//    local_transform_ = transform;
-//    dirty_ = DIRTY_EULER_AND_SCALE;
-//
-//    PropagateTransformChanged(this);
-//
-//    if (notify_local_transform_) {
-//        Notification(NotificationType::LocalTransformChanged);
-//    }
-//}
-//
-//void Node3D::SetQuaternion(const Quaternion &quaternion) {
-//    if (dirty_ & DIRTY_EULER_AND_SCALE) {
-//        // We need the scale part, so update it if dirty
-//        scale_ = GetScaleFromTransform(local_transform_);
-//        dirty_ &= ~DIRTY_EULER_AND_SCALE;
-//    }
-//    local_transform_.linear() = Matrix3d(quaternion) * Eigen::Scaling(scale_);
-//    // Rotate should not be marked dirty because that would cause precision loss issues with the scale.
-//    // Instead reconstruct rotation now.
-//    euler_rotation_ = GetEulerFromTransform(local_transform_, euler_rotation_order_);
-//
-//    dirty_ = DIRTY_NONE;
-//
-//    PropagateTransformChanged(this);
-//    if (notify_local_transform_) {
-//        Notification(NotificationType::LocalTransformChanged);
-//    }
-//}
-//
+
+
 //void Node3D::SetGlobalTransform(const Transform3d &transform) {
 //    Transform3d local = parent_
 //            ? parent_->GetGlobalTransform().inverse() * transform
@@ -303,31 +316,10 @@ Node3D::RotationEditMode Node3D::GetRotationEditMode() const {
 //    SetTransform(local);
 //}
 
-//Node3D::EulerOrder Node3D::GetRotationOrder() const {
-//    return euler_rotation_order_;
-//}
-//
-//Vector3d Node3D::GetRotation() const {
-//    if (dirty_ & DIRTY_EULER_AND_SCALE) {
-//        UpdateRotationAndScale();
-//    }
-//
-//    return euler_rotation_;
-//}
-//
-//Vector3d Node3D::GetRotationDeg() const {
-//    Vector3d radians = GetRotation();
-//    return {Rad2Deg(radians[0]), Rad2Deg(radians[1]), Rad2Deg(radians[2])};
-//}
-//
-//Vector3d Node3D::GetScale() const {
-//    if (dirty_ & DIRTY_EULER_AND_SCALE) {
-//        UpdateRotationAndScale();
-//    }
-//
-//    return scale_;
-//}
-//
+
+
+
+
 //Vector3d Node3D::GetGlobalPosition() const {
 //    return GetGlobalTransform().translation();
 //}
@@ -341,49 +333,13 @@ Node3D::RotationEditMode Node3D::GetRotationEditMode() const {
 //    return {Rad2Deg(radians[0]), Rad2Deg(radians[1]), Rad2Deg(radians[2])};
 //}
 //
-//Transform3d Node3D::GetTransform() const {
-//    if (dirty_ & DIRTY_LOCAL_TRANSFORM) {
-//        UpdateLocalTransform();
-//    }
-//
-//    return local_transform_;
-//}
-//
+
 //Matrix3d Node3D::GetRotationMatrix() const {
 //    return GetTransform().linear();
 //}
 //
-//Quaternion Node3D::GetQuaternion() const {
-//    if (dirty_ & DIRTY_LOCAL_TRANSFORM) {
-//        UpdateLocalTransform();
-//    }
-//
-//    return GetQuaternionFromTransform(local_transform_);
-//}
-//
-//Transform3d Node3D::GetGlobalTransform() const {
-//    ERR_FAIL_COND_V(!IsInsideTree(), Transform3d());
-//
-//    // todo: update local transform if dirty
-//    if (dirty_ & DIRTY_GLOBAL_TRANSFORM) {
-//        UpdateLocalTransform();
-//
-//        if (parent_) {
-//            global_transform_ = parent_->global_transform_ * local_transform_;
-//        } else {
-//            global_transform_ = local_transform_;
-//        }
-//
-//        if (disable_scale_) {
-//            global_transform_.linear().normalize();
-//        }
-//
-//        dirty_ &= ~DIRTY_GLOBAL_TRANSFORM;
-//    }
-//
-//    return global_transform_;
-//}
-//
+
+
 //Transform3d Node3D::GetRelativeTransform(const Node *parent) const {
 //    if (parent == this) {
 //        return {};

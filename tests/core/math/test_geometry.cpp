@@ -8,7 +8,6 @@
 
 #include <gtest/gtest.h>
 
-#include <gobot/log.hpp>
 #include <gobot/core/math/geometry.hpp>
 #include <gobot/core/io/variant_serializer.hpp>
 
@@ -113,8 +112,8 @@ TEST(TestGeometry, test_affine) {
     // The original transform is already orthogonal
     ASSERT_TRUE(affine.Orthogonalized().isApprox(affine, CMP_EPSILON));
 
-    affine.SetEulerAngle(Vector3{Math_PI * 0.25, -Math_PI * 0.25, Math_PI * 0.1}, EulerOrder::SZYX);
-    auto euler_angle = affine.GetEulerAngleNormalized(EulerOrder::SZYX);
+    auto euler_angle = Vector3{Math_PI * 0.25, -Math_PI * 0.25, Math_PI * 0.1};
+    affine.SetEulerAngleScaled(euler_angle, ratio, EulerOrder::SZYX);
     ASSERT_FLOAT_EQ(euler_angle.x(), Math_PI * 0.25);
     ASSERT_FLOAT_EQ(euler_angle.y(), -Math_PI * 0.25);
     ASSERT_FLOAT_EQ(euler_angle.z(), Math_PI * 0.1);

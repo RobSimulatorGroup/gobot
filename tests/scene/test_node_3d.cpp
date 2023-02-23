@@ -42,10 +42,45 @@ TEST_F(TestNode3D, simple_operations) {
 //
 //    ASSERT_EQ(node_3d->GetParentNode3D(), nullptr);
 
-    Vector3 p = {0.0, 0.0, 0.0};
+    Vector3 p = {1.0, 1.0, 1.0};
     node_3d->SetPosition(p);
     ASSERT_EQ(node_3d->GetPosition(), p);
 
     node_3d->SetRotationEditMode(Node3D::RotationEditMode::Euler);
     ASSERT_EQ(node_3d->GetRotationEditMode(), Node3D::RotationEditMode::Euler);
+
+    node_3d->SetEulerOrder(EulerOrder::SZYX);
+    ASSERT_EQ(node_3d->GetEulerOrder(), EulerOrder::SZYX);
+
+    auto euler_radian = EulerAngle{Math_PI * 0.25, -Math_PI * 0.15, Math_PI * 0.1};
+    node_3d->SetEuler(euler_radian);
+    ASSERT_FLOAT_EQ(node_3d->GetEuler().x(), Math_PI * 0.25);
+    ASSERT_FLOAT_EQ(node_3d->GetEuler().y(), -Math_PI * 0.15);
+    ASSERT_FLOAT_EQ(node_3d->GetEuler().z(), Math_PI * 0.1);
+
+    auto euler_degree = EulerAngle{30.0, 60.0, 90.0};
+    node_3d->SetEulerDegree(euler_degree);
+    ASSERT_FLOAT_EQ(node_3d->GetEulerDegree().x(), 30.0);
+    ASSERT_FLOAT_EQ(node_3d->GetEulerDegree().y(), 60.0);
+    ASSERT_FLOAT_EQ(node_3d->GetEulerDegree().z(), 90.0);
+
+    // todo: transform change is propagated (not implemented) and not updated at once
+    auto scale = Vector3{1.0, 2.0, 3.0};
+    node_3d->SetScale(scale);
+    ASSERT_FLOAT_EQ(node_3d->GetScale().x(), 1.0);
+    ASSERT_FLOAT_EQ(node_3d->GetScale().y(), 2.0);
+    ASSERT_FLOAT_EQ(node_3d->GetScale().z(), 3.0);
+
+//    std::cout << node_3d->GetGlobalTransform().matrix() << std::endl;
+
+    auto local_transform = Affine3::Identity();
+    node_3d->SetTransform(local_transform);
+    ASSERT_TRUE(node_3d->GetTransform().isApprox(local_transform, CMP_EPSILON));
+
+    Affine3 tfm{Affine3::Identity()};
+    tfm.scale(scale);
+    std::cout << tfm.matrix() << std::endl;
+
+    EulerAngle euler = tfm.linear().eulerAngles(2, 1, 0);
+    std::cout << euler.x() << " " << euler.y() << " " << euler.z() << std::endl;
 }

@@ -38,34 +38,49 @@ public:
     void SetRotationEditMode(RotationEditMode mode);
     RotationEditMode GetRotationEditMode() const;
 
-//    void SetRotationOrder(EulerOrder order);
-//    void SetRotation(const Vector3d &euler_rad);
-//    void SetRotationDeg(const Vector3d &euler_deg);
-//    void SetScale(const Vector3d &scale);
-//
-//    void SetGlobalPosition(const Vector3d &position);
+    void SetEulerOrder(EulerOrder order);
+    EulerOrder GetEulerOrder() const;
+
+    void SetEuler(const EulerAngle &euler_rad);
+    EulerAngle GetEuler() const;
+
+    void SetEulerDegree(const EulerAngle &euler_deg);
+    EulerAngle GetEulerDegree() const;
+
+    void SetScale(const Vector3 &scale);
+    Vector3 GetScale() const;
+
+    void SetQuaternion(const Quaternion &quaternion);
+//    Quaternion GetQuaternion() const;
+
+    void SetTransform(const Affine3 &transform);
+    Affine3 GetTransform() const;
+
+    Affine3 GetGlobalTransform() const;
+
+    void SetGlobalPosition(const Vector3 &position);
 //    void SetGlobalRotation(const Vector3d &euler_rad);
 //    void SetGlobalRotationDeg(const Vector3d &euler_deg);
 //
-//    void SetTransform(const Transform3d &transform);
-//    void SetQuaternion(const Quaternion &quaternion);
+
+
 //    void SetGlobalTransform(const Transform3d &transform);
 
 
 
-//    EulerOrder GetRotationOrder() const;
-//    Vector3d GetRotation() const;
-//    Vector3d GetRotationDeg() const;
-//    Vector3d GetScale() const;
+
+
+
+
 //
 //    Vector3d GetGlobalPosition() const;
 //    Vector3d GetGlobalRotation() const;
 //    Vector3d GetGlobalRotationDeg() const;
 //
-//    Transform3d GetTransform() const;
+
 //    Matrix3d GetRotationMatrix() const;
-//    Quaternion GetQuaternion() const;
-//    Transform3d GetGlobalTransform() const;
+
+
 //
 //    Transform3d GetRelativeTransform(const Node *parent) const;
 //
@@ -121,10 +136,7 @@ private:
     void PropagateTransformChanged(Node3D *node);
 
 ////    void UpdateVisibilityParent(bool update_root);
-//
-//    static FORCE_INLINE double Deg2Rad(double deg) { return deg * (M_PI / 180.0); };
-//    static FORCE_INLINE double Rad2Deg(double rad) { return rad * (180.0 / M_PI); };
-//
+
 //    static FORCE_INLINE Matrix3d Euler2Matrix(const Vector3d &euler, EulerOrder order);
 //    static FORCE_INLINE Vector3d Matrix2Euler(const Matrix3d &m, EulerOrder order);
 //
@@ -132,10 +144,10 @@ private:
 //    static FORCE_INLINE Vector3d GetEulerFromTransform(const Transform3d &transform, EulerOrder order);
 //    static FORCE_INLINE Quaternion GetQuaternionFromTransform(const Transform3d &transform);
 //
-//    mutable Transform3d global_transform_ = Transform3d::Identity();
+    mutable Affine3 global_transform_;
     mutable Affine3 local_transform_;
     mutable EulerOrder euler_order_ = EulerOrder::SXYZ;
-    mutable Vector3 euler_ = Vector3::Zero();
+    mutable EulerAngle euler_ = EulerAngle::Zero();
     mutable Vector3 scale_ = Vector3{1, 1, 1};
     mutable RotationEditMode rotation_edit_mode_ = RotationEditMode::Euler;
     mutable int dirty_ = DIRTY_NONE;
@@ -150,7 +162,7 @@ private:
 //    bool notify_transform_ = false;
 //
 //    bool visible_ = false;
-//    bool disable_scale_ = false;
+    bool disable_scale_ = false;
 };
 
 } // End of namespace gobot

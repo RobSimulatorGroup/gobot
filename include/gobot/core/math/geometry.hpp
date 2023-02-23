@@ -85,47 +85,49 @@ public:
     }
 
     EulerAngle<Scalar> GetEulerAngle(EulerOrder euler_order) const {
-        static_assert(Dim == 3 && Mode == Eigen::Isometry, "GetEulerAngle can only called when Dim is 3");
+        static_assert(Dim == 3 && (Mode == Eigen::Isometry || Mode == Eigen::Affine),
+                "GetEulerAngle can only called when Dim is 3");
+
         switch (euler_order) {
             case EulerOrder::RXYZ:
-                return this->rotation().eulerAngles(0, 1, 2);
+                return this->linear().eulerAngles(0, 1, 2);
             case EulerOrder::RYZX:
-                return this->rotation().eulerAngles(1, 2, 0);
+                return this->linear().eulerAngles(1, 2, 0);
             case EulerOrder::RZYX:
-                return this->rotation().eulerAngles(2, 1, 0);
+                return this->linear().eulerAngles(2, 1, 0);
             case EulerOrder::RXZY:
-                return this->rotation().eulerAngles(0, 2, 1);
+                return this->linear().eulerAngles(0, 2, 1);
             case EulerOrder::RXZX:
-                return this->rotation().eulerAngles(0, 2, 0);
+                return this->linear().eulerAngles(0, 2, 0);
             case EulerOrder::RYXZ:
-                return this->rotation().eulerAngles(1, 0, 2);
+                return this->linear().eulerAngles(1, 0, 2);
             case EulerOrder::SXYZ: {
-                auto euler_angle = this->rotation().eulerAngles(2, 1, 0);
+                auto euler_angle = this->linear().eulerAngles(2, 1, 0);
                 std::swap(euler_angle[0], euler_angle[2]);
                 return euler_angle;
             }
             case EulerOrder::SYZX: {
-                auto euler_angle = this->rotation().eulerAngles(0, 2, 1);
+                auto euler_angle = this->linear().eulerAngles(0, 2, 1);
                 std::swap(euler_angle[0], euler_angle[2]);
                 return euler_angle;
             }
             case EulerOrder::SZYX: {
-                auto euler_angle = this->rotation().eulerAngles(0, 1, 2);
+                auto euler_angle = this->linear().eulerAngles(0, 1, 2);
                 std::swap(euler_angle[0], euler_angle[2]);
                 return euler_angle;
             }
             case EulerOrder::SXZY: {
-                auto euler_angle = this->rotation().eulerAngles(1, 2, 0);
+                auto euler_angle = this->linear().eulerAngles(1, 2, 0);
                 std::swap(euler_angle[0], euler_angle[2]);
                 return euler_angle;
             }
             case EulerOrder::SXZX: {
-                auto euler_angle = this->rotation().eulerAngles(0, 2, 0);
+                auto euler_angle = this->linear().eulerAngles(0, 2, 0);
                 std::swap(euler_angle[0], euler_angle[2]);
                 return euler_angle;
             }
             case EulerOrder::SYXZ: {
-                auto euler_angle = this->rotation().eulerAngles(2, 0, 1);
+                auto euler_angle = this->linear().eulerAngles(2, 0, 1);
                 std::swap(euler_angle[0], euler_angle[2]);
                 return euler_angle;
             }
@@ -134,22 +136,8 @@ public:
         return {};
     }
 
-    EulerAngle<Scalar> GetEulerAngleNormalized(EulerOrder euler_order) const {
-        Transform<Scalar, Dim, Eigen::Isometry> tfm;
-        tfm.linear() = this->linear().normalized();
-        tfm.translation() = this->translation();
-
-        Scalar det = tfm.rotation().determinant();
-        if (det < 0) {
-            // Ensure that the determinant is 1, such that rotation() is SO(3)
-            tfm.linear() *= -1;
-        }
-
-        return tfm.GetEulerAngle(euler_order);
-    }
-
-    void SetEulerAngle(const EulerAngle<Scalar>& angles , EulerOrder euler_order) {
-        static_assert(Dim == 3 && (Mode == Eigen::Isometry || Mode == Eigen::Affine),
+    void SetEulerAngle(const EulerAngle<Scalar>& angles, EulerOrder euler_order) {
+        static_assert(Dim == 3 && (Mode == Eigen::Isometry || Eigen::Affine),
                 "SetEulerAngle can only called when Dim is 3");
 
         static auto unit_x = Matrix<Scalar, 3, 1>::UnitX();
@@ -216,6 +204,13 @@ public:
                         Eigen::AngleAxis<Scalar>(angles.x(), unit_y).toRotationMatrix();
                 break;
         }
+    }
+
+    void SetEulerAngleScaled(const EulerAngle<Scalar> &angles, const Vector3 &scale, EulerOrder euler_order) {
+        static_assert(Dim == 3 && Mode == Eigen::Affine, "GetEulerAngleNormalized can only called when Dim is 3");
+
+        this->SetEulerAngle(angles, euler_order);
+        this->linear() *= Eigen::Scaling(scale.x(), scale.y(), scale.z());
     }
 
     /**
