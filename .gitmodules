@@ -4,3 +4,6 @@
 [submodule "3rdparty/imgui"]
 	path = 3rdparty/imgui
 	url = https://github.com/RobSimulatorGroup/imgui.git
+[submodule "3rdparty/bgfx"]
+	path = 3rdparty/bgfx
+	url = https://github.com/RobSimulatorGroup/bgfx.git
