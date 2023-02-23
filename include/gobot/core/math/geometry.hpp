@@ -65,13 +65,24 @@ public:
     }
 
     Quaternion<Scalar> GetQuaternion() const {
-        static_assert(Dim == 3 && Mode == Eigen::Isometry, "GetQuaternion can only called when Dim is 3");
-        return Quaternion<Scalar>(this->rotation());
+        static_assert(Dim == 3 && (Mode == Eigen::Isometry | Mode == Eigen::Affine),
+                "GetQuaternion can only called when Dim is 3");
+
+        return Quaternion<Scalar>(this->linear());
     }
 
     void SetQuaternion(const Quaternion<Scalar>& quaternion) {
-        static_assert(Dim == 3 && Mode == Eigen::Isometry, "SetQuaternion can only called when Dim is 3");
+        static_assert(Dim == 3 && (Mode == Eigen::Isometry || Mode == Eigen::Affine),
+                "SetQuaternion can only called when Dim is 3");
+
         this->linear() = quaternion.normalized().toRotationMatrix();
+    }
+
+    void SetQuaternionScaled(const Quaternion<Scalar> &quaternion, const Vector3 &scale) {
+        static_assert(Dim == 3 && Mode == Eigen::Affine, "GetEulerAngleNormalized can only called when Dim is 3");
+
+        this->SetQuaternion(quaternion);
+        this->linear() *= Eigen::Scaling(scale.x(), scale.y(), scale.z());
     }
 
     Scalar GetAngle() const {

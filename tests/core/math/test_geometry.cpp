@@ -104,7 +104,7 @@ TEST(TestGeometry, test_affine) {
 
     ASSERT_TRUE(affine.GetScale().isApprox(Vector3::Ones(), CMP_EPSILON));
 
-    Vector3 ratio{1.0, 2.0, 3.0};
+    Vector3 ratio{2.0, 2.0, 2.0};
     affine.scale(ratio);
     ASSERT_TRUE(affine.GetScale().isApprox(ratio, CMP_EPSILON));
 
@@ -112,9 +112,10 @@ TEST(TestGeometry, test_affine) {
     // The original transform is already orthogonal
     ASSERT_TRUE(affine.Orthogonalized().isApprox(affine, CMP_EPSILON));
 
+    // Uniformly scale should not change the orientation.
     auto euler_angle = Vector3{Math_PI * 0.25, -Math_PI * 0.25, Math_PI * 0.1};
     affine.SetEulerAngleScaled(euler_angle, ratio, EulerOrder::SZYX);
-    ASSERT_FLOAT_EQ(euler_angle.x(), Math_PI * 0.25);
-    ASSERT_FLOAT_EQ(euler_angle.y(), -Math_PI * 0.25);
-    ASSERT_FLOAT_EQ(euler_angle.z(), Math_PI * 0.1);
+    ASSERT_FLOAT_EQ(affine.GetEulerAngle(EulerOrder::SZYX).x(), euler_angle.x());
+    ASSERT_FLOAT_EQ(affine.GetEulerAngle(EulerOrder::SZYX).y(), euler_angle.y());
+    ASSERT_FLOAT_EQ(affine.GetEulerAngle(EulerOrder::SZYX).z(), euler_angle.z());
 }

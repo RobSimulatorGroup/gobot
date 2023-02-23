@@ -71,16 +71,15 @@ TEST_F(TestNode3D, simple_operations) {
     ASSERT_FLOAT_EQ(node_3d->GetScale().y(), 2.0);
     ASSERT_FLOAT_EQ(node_3d->GetScale().z(), 3.0);
 
-//    std::cout << node_3d->GetGlobalTransform().matrix() << std::endl;
+    node_3d->SetTransform(Affine3::Identity());
+    ASSERT_TRUE(node_3d->GetTransform().isApprox(Affine3::Identity(), CMP_EPSILON));
 
-    auto local_transform = Affine3::Identity();
-    node_3d->SetTransform(local_transform);
-    ASSERT_TRUE(node_3d->GetTransform().isApprox(local_transform, CMP_EPSILON));
+    node_3d->SetQuaternion(Quaternion::Identity());
+    ASSERT_TRUE(node_3d->GetQuaternion().isApprox(Quaternion::Identity(), CMP_EPSILON));
 
-    Affine3 tfm{Affine3::Identity()};
-    tfm.scale(scale);
-    std::cout << tfm.matrix() << std::endl;
+    node_3d->SetGlobalTransform(Affine3::Identity());
+    ASSERT_TRUE(node_3d->GetGlobalTransform().isApprox(Affine3::Identity(), CMP_EPSILON));
 
-    EulerAngle euler = tfm.linear().eulerAngles(2, 1, 0);
-    std::cout << euler.x() << " " << euler.y() << " " << euler.z() << std::endl;
+    node_3d->SetGlobalPosition(p * 2);
+    ASSERT_TRUE(node_3d->GetGlobalPosition().isApprox(p * 2, CMP_EPSILON));
 }

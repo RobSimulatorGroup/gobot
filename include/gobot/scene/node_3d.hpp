@@ -51,30 +51,21 @@ public:
     Vector3 GetScale() const;
 
     void SetQuaternion(const Quaternion &quaternion);
-//    Quaternion GetQuaternion() const;
+    Quaternion GetQuaternion() const;
 
     void SetTransform(const Affine3 &transform);
     Affine3 GetTransform() const;
 
+    void SetGlobalTransform(const Affine3 &transform);
     Affine3 GetGlobalTransform() const;
 
     void SetGlobalPosition(const Vector3 &position);
-//    void SetGlobalRotation(const Vector3d &euler_rad);
+    Vector3 GetGlobalPosition() const;
+
+    void SetGlobalRotation(const EulerAngle &euler_rad, EulerOrder order);
+    EulerAngle GetGlobalRotation(EulerOrder order) const;
+
 //    void SetGlobalRotationDeg(const Vector3d &euler_deg);
-//
-
-
-//    void SetGlobalTransform(const Transform3d &transform);
-
-
-
-
-
-
-
-//
-//    Vector3d GetGlobalPosition() const;
-//    Vector3d GetGlobalRotation() const;
 //    Vector3d GetGlobalRotationDeg() const;
 //
 
