@@ -23,7 +23,7 @@ Window::Window() {
             window_interface_ = std::make_unique<SDLWindow>();
     }
 
-    window_interface_->Maximize();
+//    window_interface_->Maximize();
 
     RegisterWindowCallbacks();
 }

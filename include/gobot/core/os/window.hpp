@@ -16,7 +16,8 @@ namespace gobot {
 
 class WindowInterface {
 public:
-    using WindowHandle = void*;
+    using NativeWindowHandle = void*;
+
     using EventCallbackFn = std::function<void(Event&)>;
 
     WindowInterface() = default;
@@ -45,7 +46,9 @@ public:
 
     virtual bool IsWindowHide() = 0;
 
-    [[nodiscard]] virtual WindowHandle GetNativeWindowHandle() const = 0;
+    [[nodiscard]] virtual NativeWindowHandle GetNativeWindowHandle() const = 0;
+
+    [[nodiscard]] virtual void* GetNativeDisplayHandle() const = 0;
 
     [[nodiscard]] virtual bool IsMaximized() = 0;
 

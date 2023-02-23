@@ -67,7 +67,9 @@ public:
 
     void ProcessEvents() override;
 
-    [[nodiscard]] WindowHandle GetNativeWindowHandle() const override;
+    [[nodiscard]] NativeWindowHandle GetNativeWindowHandle() const override;
+
+    [[nodiscard]] void* GetNativeDisplayHandle() const override;
 
     void SetEventCallback(const EventCallbackFn& callback) override { event_callback_ = callback; }
 
@@ -76,7 +78,7 @@ public:
 
 private:
     RenderAPI render_api_;
-    SDL_Window* native_window_{nullptr};
+    SDL_Window* sdl2_window_{nullptr};
 
     EventCallbackFn event_callback_{nullptr};
     std::uint32_t windows_id_; // cache of sdl windows id

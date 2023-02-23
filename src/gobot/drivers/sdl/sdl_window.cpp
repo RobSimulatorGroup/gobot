@@ -10,11 +10,19 @@
 #include "gobot/core/events/window_event.hpp"
 #include "gobot/core/events/mouse_event.hpp"
 #include "gobot/core/events/key_event.hpp"
+#include "gobot/platfom.hpp"
 #include "gobot/log.hpp"
 #include "gobot/error_macros.hpp"
 
 #include <imgui_impl_sdl2.h>
 #include <SDL.h>
+#include <SDL2/SDL_syswm.h>
+
+#include <bgfx/platform.h>
+
+#ifndef ENTRY_CONFIG_USE_WAYLAND
+#	define ENTRY_CONFIG_USE_WAYLAND 0
+#endif // ENTRY_CONFIG_USE_WAYLAND
 
 namespace gobot {
 
@@ -29,117 +37,148 @@ SDLWindow::SDLWindow()
         CRASH_COND_MSG(SDL_Init(SDL_INIT_VIDEO) < 0, "Could not initialize SDL2!");
     }
 
-    native_window_ = SDL_CreateWindow(s_default_window_title,
-                                      SDL_WINDOWPOS_CENTERED,
-                                      SDL_WINDOWPOS_CENTERED,
-                                      s_default_width,
-                                      s_default_height,
+    sdl2_window_ = SDL_CreateWindow(s_default_window_title,
+                                    SDL_WINDOWPOS_CENTERED,
+                                    SDL_WINDOWPOS_CENTERED,
+                                    s_default_width,
+                                    s_default_height,
                                       SDL_WINDOW_SHOWN | SDL_WINDOW_OPENGL | SDL_WINDOW_RESIZABLE);
 
-    CRASH_COND_MSG(native_window_ == nullptr, fmt::format("Error creating window: {}", SDL_GetError()));
+    CRASH_COND_MSG(sdl2_window_ == nullptr, fmt::format("Error creating window: {}", SDL_GetError()));
 
-    windows_id_ = SDL_GetWindowID(native_window_);
+    windows_id_ = SDL_GetWindowID(sdl2_window_);
+
+
+    bgfx::renderFrame();
 }
 
 SDLWindow::~SDLWindow()
 {
-    SDL_DestroyWindow(native_window_);
+    SDL_DestroyWindow(sdl2_window_);
 }
 
 std::uint32_t SDLWindow::GetWidth() const
 {
     int width;
-    SDL_GetWindowSize(native_window_, &width, nullptr);
+    SDL_GetWindowSize(sdl2_window_, &width, nullptr);
     return width;
 }
 
 std::uint32_t SDLWindow::GetHeight() const
 {
     int height;
-    SDL_GetWindowSize(native_window_, nullptr, &height);
+    SDL_GetWindowSize(sdl2_window_, nullptr, &height);
     return height;
 }
 
 Eigen::Vector2i SDLWindow::GetWindowSize() const
 {
     int width, height;
-    SDL_GetWindowSize(native_window_, &width, &height);
+    SDL_GetWindowSize(sdl2_window_, &width, &height);
     return {width, height};
 }
 
 bool SDLWindow::SetWindowFullscreen()
 {
-    auto ret = SDL_SetWindowFullscreen(native_window_, SDL_WINDOW_FULLSCREEN_DESKTOP);
+    auto ret = SDL_SetWindowFullscreen(sdl2_window_, SDL_WINDOW_FULLSCREEN_DESKTOP);
     ERR_FAIL_COND_V_MSG(ret != 0, false, fmt::format("Error creating window: {}", SDL_GetError()));
     return true;
 }
 
 String SDLWindow::GetTitle() const {
-    return SDL_GetWindowTitle(native_window_);
+    return SDL_GetWindowTitle(sdl2_window_);
 }
 
 void SDLWindow::SetTitle(const String& title)
 {
-    SDL_SetWindowTitle(native_window_, title.toStdString().c_str());
+    SDL_SetWindowTitle(sdl2_window_, title.toStdString().c_str());
 }
 
-WindowInterface::WindowHandle SDLWindow::GetNativeWindowHandle() const {
-    return native_window_;
+WindowInterface::NativeWindowHandle SDLWindow::GetNativeWindowHandle() const {
+    SDL_SysWMinfo wmi;
+    SDL_VERSION(&wmi.version);
+    if (!SDL_GetWindowWMInfo(sdl2_window_, &wmi)) {
+        return nullptr;
+    }
+
+#if GOB_PLATFORM_LINUX || GOB_PLATFORM_BSD
+		return (void*)wmi.info.x11.window;
+#elif GOB_PLATFORM_OSX || GOB_PLATFORM_IOS
+        return wmi.info.cocoa.window;
+#elif GOB_PLATFORM_WINDOWS
+        return wmi.info.win.window;
+#elif GOB_PLATFORM_ANDROID
+        return wmi.info.android.window;
+#endif
+}
+
+void* SDLWindow::GetNativeDisplayHandle() const
+{
+    SDL_SysWMinfo wmi;
+    SDL_VERSION(&wmi.version);
+    if (!SDL_GetWindowWMInfo(sdl2_window_, &wmi)) {
+        return nullptr;
+    }
+#if GOB_PLATFORM_LINUX || GOB_PLATFORM_BSD
+    return wmi.info.x11.display;
+#else
+    return nullptr;
+#endif
 }
 
 bool SDLWindow::IsMaximized()
 {
-    auto flag = SDL_GetWindowFlags(native_window_);
+    auto flag = SDL_GetWindowFlags(sdl2_window_);
     return flag & SDL_WINDOW_MAXIMIZED;
 }
 
 bool SDLWindow::IsMinimized()
 {
-    auto flag = SDL_GetWindowFlags(native_window_);
+    auto flag = SDL_GetWindowFlags(sdl2_window_);
     return flag & SDL_WINDOW_MINIMIZED;
 }
 
 bool SDLWindow::IsFullscreen()
 {
-    auto flag = SDL_GetWindowFlags(native_window_);
+    auto flag = SDL_GetWindowFlags(sdl2_window_);
     return flag & SDL_WINDOW_FULLSCREEN_DESKTOP;
 }
 
 void SDLWindow::SetWindowBordered(bool bordered)
 {
-    SDL_SetWindowBordered(native_window_, bordered ? SDL_TRUE : SDL_FALSE);
+    SDL_SetWindowBordered(sdl2_window_, bordered ? SDL_TRUE : SDL_FALSE);
 }
 
 bool SDLWindow::IsWindowBordered()
 {
-    auto flag = SDL_GetWindowFlags(native_window_);
+    auto flag = SDL_GetWindowFlags(sdl2_window_);
     return flag & SDL_WINDOW_BORDERLESS;
 }
 
 void SDLWindow::Maximize()
 {
-    SDL_MaximizeWindow(native_window_);
+    SDL_MaximizeWindow(sdl2_window_);
 }
 
 void SDLWindow::Minimize()
 {
-    SDL_MinimizeWindow(native_window_);
+    SDL_MinimizeWindow(sdl2_window_);
 }
 
 void SDLWindow::Restore()
 {
-    SDL_RestoreWindow(native_window_);
+    SDL_RestoreWindow(sdl2_window_);
 }
 
 void SDLWindow::RaiseWindow()
 {
-    SDL_RaiseWindow(native_window_);
+    SDL_RaiseWindow(sdl2_window_);
 }
 
 void SDLWindow::SetIcon(const Ref<Image>& image)
 {
     if (image && image->IsSDLImage()) {
-        SDL_SetWindowIcon(native_window_, image->GetSDLImage());
+        SDL_SetWindowIcon(sdl2_window_, image->GetSDLImage());
     } else {
         LOG_ERROR("Input image is not sdl image");
     }
@@ -147,17 +186,17 @@ void SDLWindow::SetIcon(const Ref<Image>& image)
 
 void SDLWindow::ShowWindow()
 {
-    SDL_ShowWindow(native_window_);
+    SDL_ShowWindow(sdl2_window_);
 }
 
 void  SDLWindow::HideWindow()
 {
-    SDL_HideWindow(native_window_);
+    SDL_HideWindow(sdl2_window_);
 }
 
 bool SDLWindow::IsWindowHide()
 {
-    auto flag = SDL_GetWindowFlags(native_window_);
+    auto flag = SDL_GetWindowFlags(sdl2_window_);
     return flag & SDL_WINDOW_HIDDEN;
 }
 
@@ -173,6 +212,8 @@ void SDLWindow::ProcessEvents() {
             // this should only run if there's imgui on
             ImGui_ImplSDL2_ProcessEvent(&event);
         }
+
+        bgfx::renderFrame();
 
         switch (event.type) {
             case SDL_WINDOWEVENT: {

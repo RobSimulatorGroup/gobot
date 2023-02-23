@@ -38,6 +38,8 @@ public:
 
     void PullEvent();
 
+    WindowInterface* GetWindowsInterface() { return window_interface_.get(); }
+
 Q_SIGNALS:
     void windowCloseRequested();
     void windowResizeRequested(WindowResizeEvent& event);
