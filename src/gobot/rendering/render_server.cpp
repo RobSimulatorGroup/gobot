@@ -14,44 +14,79 @@
 
 namespace gobot {
 
-RenderingServer* RenderingServer::s_singleton = nullptr;
+RenderServer* RenderServer::s_singleton = nullptr;
 
-RenderingServer::RenderingServer() {
+RenderServer::RenderServer() {
     s_singleton =  this;
 }
 
-RenderingServer::~RenderingServer() {
+RenderServer::~RenderServer() {
     s_singleton = nullptr;
 }
 
-RenderingServer* RenderingServer::GetInstance() {
+RenderServer* RenderServer::GetInstance() {
     ERR_FAIL_COND_V_MSG(s_singleton == nullptr, nullptr, "Must call this after initialize RenderingServer");
     return s_singleton;
 }
 
-void RenderingServer::InitWindow() {
+void RenderServer::InitWindow() {
     auto window = SceneTree::GetInstance()->GetRoot()->GetWindowsInterface();
-    bgfx::Init init;
+    RenderInitProps init;
     init.type     = bgfx::RendererType::Count; // auto select
-    init.vendorId = BGFX_PCI_ID_NONE; // auto select
+    init.vendorId = ENUM_UINT_CAST(VendorID::None); // auto select
     init.platformData.nwh  = window->GetNativeWindowHandle();
     init.platformData.ndt  = window->GetNativeDisplayHandle();
     init.resolution.width  = window->GetHeight();
     init.resolution.height = window->GetWidth();
-    init.resolution.reset  = BGFX_RESET_VSYNC; //  Enable V-Sync.
+    init.resolution.reset  = ENUM_UINT_CAST(RenderResetFlags::Vsync); //  Enable V-Sync.
 
     bgfx::init(init);
-
-    bgfx::setDebug(BGFX_DEBUG_TEXT);
-
-    USING_ENUM_BITWISE_OPERATORS;
-    SetViewClear(0, ClearFlags::Color|ClearFlags::Depth);
-
 };
 
-void RenderingServer::SetViewClear(ViewId view_id, ClearFlags clear_flags, const Color& color, float depth, uint8_t stencil) {
-    bgfx::setViewClear(view_id, std::underlying_type_t<ClearFlags>(clear_flags), color.PackedRgbA());
+void RenderServer::SetViewClear(ViewId view_id, ClearFlags clear_flags, const Color& color, float depth, uint8_t stencil) {
+    bgfx::setViewClear(view_id, std::underlying_type_t<ClearFlags>(clear_flags), color.GetPackedRgbA());
 };
+
+void RenderServer::SetViewRect(ViewId id, uint16_t x, uint16_t y, uint16_t width, uint16_t height) {
+    bgfx::setViewRect(id, x, y, width, height);
+}
+
+void RenderServer::SetDebug(RenderDebugFlags debug_flags) {
+    bgfx::setDebug(ENUM_UINT_CAST(debug_flags));
+}
+
+void RenderServer::DebugTextClear() {
+    bgfx::dbgTextClear();
+}
+
+void RenderServer::DebugTextImage(uint16_t x, uint16_t y, uint16_t width, uint16_t height, const void* data, uint16_t pitch) {
+    bgfx::dbgTextImage(x, y, width, height, data, pitch);
+}
+
+void RenderServer::DebugTextPrintf(uint16_t x, uint16_t y, uint8_t attr, const char* format, ...) {
+    va_list argList;
+    va_start(argList, format);
+    bgfx::dbgTextPrintfVargs(x, y, attr, format, argList);
+    va_end(argList);
+}
+
+
+uint32_t RenderServer::Frame(bool capture) {
+    return bgfx::frame(capture);
+}
+
+void RenderServer::Reset(uint32_t width, uint32_t height, RenderResetFlags reset_flags, TextureFormat format) {
+    bgfx::reset(width, height, ENUM_UINT_CAST(reset_flags), bgfx::TextureFormat::Enum(format));
+}
+
+void RenderServer::Touch(ViewId id) {
+    bgfx::touch(id);
+}
+
+
+const RenderStats* RenderServer::GetStats() {
+    return bgfx::getStats();
+}
 
 
 }

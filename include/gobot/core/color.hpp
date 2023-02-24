@@ -75,7 +75,7 @@ public:
     /// Return a reference to the alpha channel (const version)
     [[nodiscard]] const float& a() const { return a_; }
 
-    [[nodiscard]] FORCE_INLINE  std::uint32_t PackedRgbA() const {
+    [[nodiscard]] FORCE_INLINE  std::uint32_t GetPackedRgbA() const {
         return (std::uint8_t(r_ * 255) << 24) + (std::uint8_t(g_ * 255) << 16) + (std::uint8_t(b_ * 255) << 8) + (std::uint8_t(a_ * 255));
     }
 
