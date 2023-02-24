@@ -50,6 +50,7 @@ void Node3D::NotificationCallBack(NotificationType notification) {
 
             Node *p = GetParent();
             if (p) {
+                // dynamic_cast may fail such that parent_ remains nullptr
                 parent_ = dynamic_cast<Node3D *>(p);
             }
 

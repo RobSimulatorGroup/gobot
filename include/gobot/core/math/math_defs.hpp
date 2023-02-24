@@ -38,9 +38,6 @@ namespace gobot {
 
 #define USEC_TO_SEC(m_usec) ((m_usec) / 1000000.0)
 
-#define DEG_TO_RAD(deg) (deg * (Math_PI / 180.0))
-#define RAD_TO_DEG(rad) (rad * (180.0 / Math_PI))
-
 enum class ClockDirection { Clockwise, CounterClockwise };
 
 enum class Orientation { Horizontal, Vertical };
@@ -126,5 +123,8 @@ template <typename T>
 constexpr int Sign(const T val) {
     return (static_cast<T>(0) < val) - (val < static_cast<T>(0));
 }
+
+inline real_t DEG_TO_RAD(real_t deg) { return static_cast<real_t>(deg * (Math_PI / 180.0)); }
+inline real_t RAD_TO_DEG(real_t rad) { return static_cast<real_t>(rad * (180.0 / Math_PI)); }
 
 };  // namespace gobot
