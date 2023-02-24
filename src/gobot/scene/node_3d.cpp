@@ -127,6 +127,8 @@ void Node3D::SetRotationEditMode(RotationEditMode mode) {
             Notification(NotificationType::LocalTransformChanged);
         }
     }
+
+    // todo: notify property list changed
 }
 
 Node3D::RotationEditMode Node3D::GetRotationEditMode() const {
@@ -160,6 +162,8 @@ void Node3D::SetEulerOrder(EulerOrder order) {
             Notification(NotificationType::LocalTransformChanged);
         }
     }
+
+    // todo: notify property list changed
 }
 
 EulerOrder Node3D::GetEulerOrder() const {
@@ -310,7 +314,6 @@ Vector3 Node3D::GetGlobalPosition() const {
     return GetGlobalTransform().translation();
 }
 
-// todo: This is hardly ever used
 void Node3D::SetGlobalRotation(const EulerAngle &euler_rad, EulerOrder order) {
     Affine3 transform = GetGlobalTransform();
     transform.SetEulerAngle(euler_rad, order);
@@ -351,31 +354,43 @@ Affine3 Node3D::GetRelativeTransform(const Node *parent) const {
 
 void Node3D::Rotate(const Vector3 &axis, real_t angle) {
     Affine3 t = GetGlobalTransform();
-    t.prerotate(AngleAxis(angle, axis.normalized()));
+    t.linear() = AngleAxis(angle, axis.normalized()) * t.linear();
+    SetTransform(t);
+}
+
+void Node3D::RotateLocal(const Vector3 &axis, real_t angle) {
+    Affine3 t = GetGlobalTransform();
+    t.linear() = t.linear() * AngleAxis(angle, axis.normalized());
     SetTransform(t);
 }
 
 void Node3D::RotateX(real_t angle) {
     Affine3 t = GetGlobalTransform();
-    t.prerotate(AngleAxis(angle, Vector3::UnitX()));
+    t.linear() = AngleAxis(angle, Vector3::UnitX()) * t.linear();
     SetTransform(t);
 }
 
 void Node3D::RotateY(real_t angle) {
     Affine3 t = GetGlobalTransform();
-    t.prerotate(AngleAxis(angle, Vector3::UnitY()));
+    t.linear() = AngleAxis(angle, Vector3::UnitY()) * t.linear();
     SetTransform(t);
 }
 
 void Node3D::RotateZ(real_t angle) {
     Affine3 t = GetGlobalTransform();
-    t.prerotate(AngleAxis(angle, Vector3::UnitZ()));
+    t.linear() = AngleAxis(angle, Vector3::UnitZ()) * t.linear();
     SetTransform(t);
 }
 
 void Node3D::Translate(const Vector3 &offset) {
     Affine3 t = GetGlobalTransform();
-    t.pretranslate(offset);
+    t.translation() += t.linear() * offset;
+    SetTransform(t);
+}
+
+void Node3D::TranslateLocal(const Vector3 &offset) {
+    Affine3 t = GetGlobalTransform();
+    t.translation() += offset;
     SetTransform(t);
 }
 
@@ -385,21 +400,9 @@ void Node3D::Scale(const Vector3 &ratio) {
     SetTransform(t);
 }
 
-void Node3D::RotateLocal(const Vector3 &axis, real_t angle) {
-    Affine3 t = GetGlobalTransform();
-    t.rotate(AngleAxis(angle, axis));
-    SetTransform(t);
-}
-
 void Node3D::ScaleLocal(const Vector3 &ratio) {
     Affine3 t = GetGlobalTransform();
     t.scale(ratio);
-    SetTransform(t);
-}
-
-void Node3D::TranslateLocal(const Vector3 &offset) {
-    Affine3 t = GetGlobalTransform();
-    t.translate(offset);
     SetTransform(t);
 }
 

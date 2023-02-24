@@ -69,12 +69,11 @@ TEST_F(TestNode3D, simple_operations) {
 
     // todo: parent_ is not valid for Window which has no global transform
     node_3d->SetGlobalTransform(Affine3::Identity());
+    node_3d->GetGlobalTransform();
     ASSERT_TRUE(node_3d->GetGlobalTransform().isApprox(Affine3::Identity(), CMP_EPSILON));
 
-//    std::cout << (node_3d->GetParentNode3D() == SceneTree::GetInstance()->GetRoot()) << std::endl;
+    ASSERT_EQ(SceneTree::GetInstance()->GetRoot()->GetChild(0), node_3d);
 
-//    node_3d->SetGlobalPosition(p * 2);
-//    ASSERT_TRUE(node_3d->GetGlobalPosition().isApprox(p * 2, CMP_EPSILON));
-//
-//    ASSERT_EQ(node_3d->GetRotationMatrix(), Matrix3::Identity());
+    node_3d->SetGlobalPosition(p * 2);
+    ASSERT_TRUE(node_3d->GetGlobalPosition().isApprox(p * 2, CMP_EPSILON));
 }

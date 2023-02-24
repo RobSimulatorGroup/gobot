@@ -61,11 +61,11 @@ public:
     void SetGlobalPosition(const Vector3 &position);
     Vector3 GetGlobalPosition() const;
 
-    void SetGlobalRotation(const EulerAngle &euler_rad, EulerOrder order);
-    EulerAngle GetGlobalRotation(EulerOrder order) const;
+    void SetGlobalRotation(const EulerAngle &euler_rad, EulerOrder order = EulerOrder::SXYZ);
+    EulerAngle GetGlobalRotation(EulerOrder order = EulerOrder::SXYZ) const;
 
-    void SetGlobalRotationDegree(const Vector3 &euler_deg, EulerOrder order);
-    Vector3 GetGlobalRotationDegree(EulerOrder order) const;
+    void SetGlobalRotationDegree(const Vector3 &euler_deg, EulerOrder order = EulerOrder::SXYZ);
+    Vector3 GetGlobalRotationDegree(EulerOrder order = EulerOrder::SXYZ) const;
 
     Matrix3 GetRotationMatrix() const;
 
@@ -75,12 +75,13 @@ public:
     void RotateX(real_t angle);
     void RotateY(real_t angle);
     void RotateZ(real_t angle);
-    void Translate(const Vector3 &offset);
-    void Scale(const Vector3 &ratio);
-
     void RotateLocal(const Vector3 &axis, real_t angle);
-    void ScaleLocal(const Vector3 &ratio);
+
+    void Translate(const Vector3 &offset);
     void TranslateLocal(const Vector3 &offset);
+
+    void Scale(const Vector3 &ratio);
+    void ScaleLocal(const Vector3 &ratio);
 
     Vector3 ToLocal(const Vector3 &global) const;
     Vector3 ToGlobal(const Vector3 &local) const;
@@ -123,8 +124,8 @@ private:
 
 //    void UpdateVisibilityParent(bool update_root);
 
-    mutable Affine3 global_transform_;
-    mutable Affine3 local_transform_;
+    mutable Affine3 global_transform_ = Affine3::Identity();
+    mutable Affine3 local_transform_ = Affine3::Identity();
     mutable EulerOrder euler_order_ = EulerOrder::SXYZ;
     mutable EulerAngle euler_ = EulerAngle::Zero();
     mutable Vector3 scale_ = Vector3{1, 1, 1};
