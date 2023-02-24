@@ -31,3 +31,18 @@ TEST(TestMatrix, test_matrix_data_registration) {
     ASSERT_TRUE(gobot::VariantSerializer::JsonToVariant(test_variant, json));
     ASSERT_EQ(test_variant.get_value<Matrix3>(), matrix);
 }
+
+
+TEST(TestMatrix, test_look_at) {
+    using namespace gobot;
+    auto view = Matrix4::LookAt(Vector3(0, -2, -10),
+                    Vector3(0, 0, 0),
+                    Vector3(0, 1, 0));
+
+}
+
+TEST(TestMatrix, test_ortho) {
+    using namespace gobot;
+    auto view = Matrix4::Ortho(1.0, 1.0, 1.0, 1.0, 1.0, 1.0);
+
+}

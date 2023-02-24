@@ -9,6 +9,7 @@
 
 #include "gobot/core/object.hpp"
 #include "gobot/core/color.hpp"
+#include "gobot/core/math/matrix.hpp"
 #include "gobot/rendering/render_types.hpp"
 
 namespace gobot {
@@ -28,6 +29,16 @@ public:
 
     // Initialize the renderer.
     void InitWindow();
+
+    void ShutDown();
+
+    /// Set view's view matrix and projection matrix,
+    /// all draw primitives in this view will use these two matrices.
+    ///
+    /// @param[in] id View id.
+    /// @param[in] view View matrix(ColMajor).
+    /// @param[in] proj Projection matrix(ColMajor).
+    void SetViewTransform(ViewId id, const Matrix4f& view, const Matrix4f& proj);
 
     void SetViewClear(ViewId view_id,
                       ClearFlags clear_flags,

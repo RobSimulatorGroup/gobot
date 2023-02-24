@@ -67,6 +67,80 @@ class Matrix : public Eigen::Matrix<_Scalar, _Rows, _Cols> {
     auto self_view = this->reshaped();
     std::copy(data.storage.cbegin(), data.storage.cend(), self_view.begin());
   }
+
+    // eye is the position of the camera's viewpoint, and center is where you are looking at (a position)
+    static Matrix<_Scalar, 4, 4>
+            LookAt(const Matrix<_Scalar, 3, 1> &eye,
+                   const Matrix<_Scalar, 3, 1> &center,
+                   const Matrix<_Scalar, 3, 1> &up) {
+        static_assert(_Cols ==4 && _Rows ==4, "The Look at matrix must a 4*4 matrix");
+
+        Matrix<_Scalar, 3, 1> dir = center - eye;
+        dir.normalize();
+
+        Matrix<_Scalar, 3, 1> left = dir.cross(up);
+        left.normalize();
+
+        Matrix<_Scalar, 3, 1> new_up = left.cross(dir);
+        dir *= -1.0;
+
+        Matrix<_Scalar, 4, 4> result = Matrix<_Scalar, 4, 4>::Zero();
+        result(0, 0) = left.x();
+        result(0, 1) = left.y();
+        result(0, 2) = left.z();
+        result(1, 0) = new_up.x();
+        result(1, 1) = new_up.y();
+        result(1, 2) = new_up.z();
+        result(2, 0) = dir.x();
+        result(2, 1) = dir.y();
+        result(2, 2) = dir.z();
+        result(3, 0) = -left.dot(eye);
+        result(3, 1) = -new_up.dot(eye);
+        result(3, 2) = -dir.dot(eye);
+        result(3, 3) = 1.0;
+        return result;
+    }
+
+    static Matrix<_Scalar, 4, 4> Ortho(_Scalar left, _Scalar right,
+                                       _Scalar bottom, _Scalar top,
+                                       _Scalar near_, _Scalar far_) {
+        static_assert(_Cols ==4 && _Rows ==4, "The Look at matrix must a 4*4 matrix");
+
+        _Scalar rl = 1 / (right - left),
+                tb = 1 / (top - bottom),
+                fn = 1 / (far_ - near_);
+
+        Matrix<_Scalar, 4, 4> result = Matrix<_Scalar, 4, 4>::Zero();
+
+        result(0, 0) = 2 * rl;
+        result(1, 1) = 2 * tb;
+        result(2, 2) = -2 * fn;
+        result(3, 3) = 1;
+        result(3, 0) = -(right + left) * rl;
+        result(3, 1) = -(top + bottom) * tb;
+        result(3, 2) = -(far_ + near_) * fn;
+
+        return result;
+    }
+
+    static Matrix<_Scalar, 4, 4> Perspective(_Scalar fov, _Scalar aspect, _Scalar near, _Scalar far) {
+        static_assert(_Cols ==4 && _Rows ==4, "The Look at matrix must a 4*4 matrix");
+        _Scalar recip = 1 / (near - far);
+        _Scalar c     = 1 / std::tan(.5f * fov);
+
+        Matrix<_Scalar, 4, 4> trafo = Matrix<_Scalar, 4, 4>::Zero();
+        trafo(0, 0) = c / aspect;
+        trafo(1, 1) = c;
+        trafo(2, 2) = (near + far) * recip;
+        trafo(3, 3) = 0.0;
+
+        trafo(3, 2) = 2.f * near * far * recip;
+        trafo(2, 3) = -1.f;
+
+        return trafo;
+    }
+
+
 };
 
 };  // end of namespace internal

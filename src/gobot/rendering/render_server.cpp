@@ -29,6 +29,10 @@ RenderServer* RenderServer::GetInstance() {
     return s_singleton;
 }
 
+void RenderServer::ShutDown() {
+    bgfx::shutdown();
+}
+
 void RenderServer::InitWindow() {
     auto window = SceneTree::GetInstance()->GetRoot()->GetWindowsInterface();
     RenderInitProps init;
@@ -42,6 +46,10 @@ void RenderServer::InitWindow() {
 
     bgfx::init(init);
 };
+
+void RenderServer::SetViewTransform(ViewId view_id, const Matrix4f& view, const Matrix4f& proj) {
+    bgfx::setViewTransform(view_id, view.data(), proj.data());
+}
 
 void RenderServer::SetViewClear(ViewId view_id, ClearFlags clear_flags, const Color& color, float depth, uint8_t stencil) {
     bgfx::setViewClear(view_id, std::underlying_type_t<ClearFlags>(clear_flags), color.GetPackedRgbA());
