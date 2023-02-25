@@ -71,6 +71,8 @@ public:
 
 protected:
 
+    bool render_need_reset_{false};
+
 };
 
 

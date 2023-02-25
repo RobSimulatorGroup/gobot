@@ -18,6 +18,12 @@ RenderServer* RenderServer::s_singleton = nullptr;
 
 RenderServer::RenderServer() {
     s_singleton =  this;
+    debug_flags_ = RenderDebugFlags::None;
+    reset_flags_ = RenderResetFlags::Vsync;
+}
+
+bool RenderServer::HasInit() {
+    return s_singleton != nullptr;
 }
 
 RenderServer::~RenderServer() {
@@ -42,9 +48,11 @@ void RenderServer::InitWindow() {
     init.platformData.ndt  = window->GetNativeDisplayHandle();
     init.resolution.width  = window->GetHeight();
     init.resolution.height = window->GetWidth();
-    init.resolution.reset  = ENUM_UINT_CAST(RenderResetFlags::Vsync); //  Enable V-Sync.
+    init.resolution.reset  = ENUM_UINT_CAST(reset_flags_); //  Enable V-Sync.
 
     bgfx::init(init);
+
+    SetDebug(debug_flags_);
 };
 
 void RenderServer::SetViewTransform(ViewId view_id, const Matrix4f& view, const Matrix4f& proj) {
@@ -60,6 +68,7 @@ void RenderServer::SetViewRect(ViewId id, uint16_t x, uint16_t y, uint16_t width
 }
 
 void RenderServer::SetDebug(RenderDebugFlags debug_flags) {
+    debug_flags_ = debug_flags;
     bgfx::setDebug(ENUM_UINT_CAST(debug_flags));
 }
 

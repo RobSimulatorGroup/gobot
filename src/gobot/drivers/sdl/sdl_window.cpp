@@ -10,6 +10,7 @@
 #include "gobot/core/events/window_event.hpp"
 #include "gobot/core/events/mouse_event.hpp"
 #include "gobot/core/events/key_event.hpp"
+#include "gobot/rendering/render_server.hpp"
 #include "gobot/platfom.hpp"
 #include "gobot/log.hpp"
 #include "gobot/error_macros.hpp"
@@ -24,11 +25,20 @@
 #	define ENTRY_CONFIG_USE_WAYLAND 0
 #endif // ENTRY_CONFIG_USE_WAYLAND
 
+
 namespace gobot {
+
+// <X11/X.h>
+#ifdef None
+#undef None
+#endif
 
 static const int s_default_width = 1280;
 static const int s_default_height = 720;
 static const char* s_default_window_title = "Gobot";
+
+static RenderDebugFlags s_render_debug_flag = RenderDebugFlags::None;
+static RenderResetFlags s_render_reset_flag = RenderResetFlags::None;
 
 SDLWindow::SDLWindow()
 {
@@ -204,6 +214,12 @@ std::uint32_t SDLWindow::GetWindowID() const {
 }
 
 void SDLWindow::ProcessEvents() {
+    if (RenderServer::HasInit()) {
+        auto flags = GET_RENDER_SERVER()->GetResetFlags();
+        render_need_reset_ = s_render_reset_flag != flags;
+        s_render_reset_flag = flags;
+    }
+
     // Check if any events have been activated (key pressed, mouse moved etc.) and call corresponding response functions
     SDL_Event event;
     while (SDL_PollEvent(&event)) {
@@ -212,8 +228,6 @@ void SDLWindow::ProcessEvents() {
             ImGui_ImplSDL2_ProcessEvent(&event);
         }
 
-        bgfx::renderFrame();
-
         switch (event.type) {
             case SDL_WINDOWEVENT: {
                 if (event.window.windowID == windows_id_) {
@@ -221,6 +235,7 @@ void SDLWindow::ProcessEvents() {
                         case SDL_WINDOWEVENT_RESIZED: {
                             WindowResizeEvent resize_event(event.window.data1, event.window.data2);
                             RunEventCallback(resize_event);
+                            render_need_reset_ = true;
                             break;
                         }
                         case SDL_WINDOWEVENT_CLOSE: {
@@ -338,6 +353,17 @@ void SDLWindow::ProcessEvents() {
             }
         }
     }
+
+    if (RenderServer::HasInit()) {
+        auto flags = GET_RENDER_SERVER()->GetResetFlags();
+        render_need_reset_ |= s_render_reset_flag != flags;
+        s_render_reset_flag = flags;
+
+        if (render_need_reset_) {
+            GET_RENDER_SERVER()->Reset(GetWidth(), GetHeight(), s_render_reset_flag);
+        }
+    }
+
 }
 
 void SDLWindow::RunEventCallback(Event& event)

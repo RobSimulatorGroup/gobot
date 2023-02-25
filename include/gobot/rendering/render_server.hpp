@@ -25,6 +25,8 @@ public:
 
     ~RenderServer() override;
 
+    static bool HasInit();
+
     static RenderServer* GetInstance();
 
     // Initialize the renderer.
@@ -92,9 +94,6 @@ public:
     ///
     /// @attention This call doesn’t change the window size, it just resizes
     ///   the back-buffer. Your windowing code controls the window size.
-    ///
-    /// @attention C99's equivalent binding is `bgfx_reset`.
-    ///
     void Reset(uint32_t _width,
                uint32_t _height,
                RenderResetFlags reset_flags = RenderResetFlags::None,
@@ -110,9 +109,15 @@ public:
 
     const RenderStats* GetStats();
 
+    FORCE_INLINE const RenderDebugFlags GetDebugFlags() const { return debug_flags_; }
+
+    FORCE_INLINE const RenderResetFlags GetResetFlags() const { return reset_flags_; }
+
 private:
     static RenderServer* s_singleton;
 
+    RenderDebugFlags debug_flags_;
+    RenderResetFlags reset_flags_;
 };
 
 }
