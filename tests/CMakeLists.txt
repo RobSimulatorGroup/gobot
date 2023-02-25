@@ -20,9 +20,9 @@ macro(package_add_test TESTNAME FILES)
     target_compile_options(${TESTNAME} PUBLIC "${GOBOT_COMPILE_OPTIONS}")
     target_link_libraries(${TESTNAME} gtest gmock gtest_main)
     if (MSVC)
-        target_link_libraries(${TESTNAME} -Wl,--whole-archive gobot)
+        target_link_libraries(${TESTNAME} -Wl,--whole-archive gobot bx)
     else ()
-        target_link_libraries(${TESTNAME} -Wl,--no-as-needed gobot)
+        target_link_libraries(${TESTNAME} -Wl,--no-as-needed gobot bx)
     endif ()
     
     # gtest_discover_tests replaces gtest_add_tests,

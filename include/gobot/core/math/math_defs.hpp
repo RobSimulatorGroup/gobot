@@ -101,6 +101,13 @@ enum class EulerOrder {
     SYXZ
 };
 
+enum class Handedness
+{
+    Left,
+    Right,
+};
+
+
 /**
  * The "Real" type is an abstract type used for real numbers, such as 1.5,
  * in contrast to integer numbers. Precision can be controlled with the
@@ -118,5 +125,16 @@ struct MatrixData {
     Eigen::Index cols;
     std::vector<_Scalar> storage;
 };
+
+inline float DegreeToRad(float deg)
+{
+    return deg * Math_PI / 180.0f;
+}
+
+inline float RadtoDegree(float rad)
+{
+    return rad * 180.0f / Math_PI;
+}
+
 
 };  // namespace gobot
