@@ -52,7 +52,7 @@ enum class RendererType
 };
 
 
-enum class ClearFlags : std::uint16_t {
+enum class RenderClearFlags : std::uint16_t {
     None                         = 0,
     Color                        = 1 << 0,  // Clear color.
     Depth                        = 1 << 1,  // Clear depth.
@@ -232,6 +232,116 @@ enum class TextureFormat {
 /// @remarks All time values are high-resolution timestamps, while
 ///   time frequencies define timestamps-per-second for that hardware.
 using RenderStats = bgfx::Stats;
+
+using DynamicIndexBufferHandle = bgfx::DynamicIndexBufferHandle;
+using DynamicVertexBufferHandle = bgfx::DynamicVertexBufferHandle;
+using FrameBufferHandle = bgfx::FrameBufferHandle;
+using IndexBufferHandle = bgfx::IndexBufferHandle;
+using IndirectBufferHandle = bgfx::IndirectBufferHandle;
+using OcclusionQueryHandle = bgfx::OcclusionQueryHandle;
+using ProgramHandle = bgfx::ProgramHandle;
+using ShaderHandle = bgfx::ShaderHandle;
+using TextureHandle = bgfx::TextureHandle;
+using UniformHandle = bgfx::UniformHandle;
+using VertexBufferHandle = bgfx::VertexBufferHandle;
+using VertexLayoutHandle = bgfx::VertexLayoutHandle;
+
+
+enum class RenderEncoderDiscardFlags {
+    None         = 0,        //!< Preserve everything.
+    Bindings     = 0x01,     //!< Discard texture sampler and buffer bindings.
+    IndexBuffer  = 0x02,     //!< Discard index buffer.
+    InstanceData = 0x04,     //!< Discard index buffer.
+    State        = 0x08,     //!< Discard state and uniform bindings.
+    Transform    = 0x10,     //!< Discard transform.
+    VertexStreams = 0x20,    //!< Discard transform.
+    All           = 0xff     //!< Discard all states.
+};
+
+using ShaderMemory = bgfx::Memory;
+
+enum class RenderStateFlags : uint64_t {
+    // Color RGB/alpha/depth write. When it's not specified write will be disabled.
+    WriteRed                   = 0x0000000000000001,
+    WriteGreen                 = 0x0000000000000002,
+    WriteBlue                  = 0x0000000000000004,
+
+    /// Enable RGB write.
+    WriteRGB = WriteRed | WriteGreen | WriteBlue,
+
+    WriteAlpha                 = 0x0000000000000008,
+    WriteDepth                 = 0x0000004000000000,
+
+    WriteAllChannels = WriteRGB | WriteAlpha | WriteDepth,
+
+
+    // Depth test state. When `DepthXXX` is not specified depth test will be disabled.
+    DepthTestLess              = 0x0000000000000010,  //!< Enable depth test, less.
+    DepthTestLessOrEqual       = 0x0000000000000020,  //!< Enable depth test, less or equal.
+    DepthTestEqual             = 0x0000000000000030,  //!< Enable depth test, equal.
+    DepthTestGreaterOrEqual    = 0x0000000000000040,  //!< Enable depth test, greater or equal.
+    DepthTestGreater           = 0x0000000000000050,  //!< Enable depth test, greater.
+    DepthTestNotEqual          = 0x0000000000000060,  //!< Enable depth test, not equal.
+    DepthTestNever             = 0x0000000000000070,  //!< Enable depth test, never.
+    DepthTestAlways            = 0x0000000000000080,  //!< Enable depth test, always.
+
+    DepthTestMask =  DepthTestLess | DepthTestLessOrEqual | DepthTestEqual | DepthTestGreaterOrEqual |
+                     DepthTestGreater | DepthTestNotEqual | DepthTestNever | DepthTestAlways,
+
+
+    // Use BGFX_STATE_BLEND_FUNC(_src, _dst) or BGFX_STATE_BLEND_FUNC_SEPARATE(_srcRGB, _dstRGB, _srcA, _dstA) helper macros.
+    BlendZero                  = 0x0000000000001000,  //!< 0, 0, 0, 0
+    BlendOne                   = 0x0000000000002000,  //!< 1, 1, 1, 1
+    BlendSrcColor              = 0x0000000000003000,  //!< Rs, Gs, Bs, As
+    BlendInvSrcColor           = 0x0000000000004000,  //!< 1-Rs, 1-Gs, 1-Bs, 1-As
+    BlendSrcAlpha              = 0x0000000000005000,  //!< As, As, As, As
+    BlendInvSrcAlpha           = 0x0000000000006000,  //!< 1-As, 1-As, 1-As, 1-As
+    BlendDstAlpha              = 0x0000000000007000,  //!< Ad, Ad, Ad, Ad
+    BlendInvDetAlpha           = 0x0000000000008000,  //!< 1-Ad, 1-Ad, 1-Ad ,1-Ad
+    BlendDstColor              = 0x0000000000009000,  //!< Rd, Gd, Bd, Ad
+    BlendInvDstColor           = 0x000000000000a000,  //!< 1-Rd, 1-Gd, 1-Bd, 1-Ad
+    BlendSrcAlphaSAT           = 0x000000000000b000,  //!< f, f, f, 1; f = min(As, 1-Ad)
+    BlendFactor                = 0x000000000000c000,  //!< Blend factor
+    BlendInvFactor             = 0x000000000000d000,  //!< 1-Blend factor
+
+    BlendMask                  = 0x000000000ffff000,
+
+
+    // Use BGFX_STATE_BLEND_EQUATION(_equation) or BGFX_STATE_BLEND_EQUATION_SEPARATE(_equationRGB, _equationA) helper macros.
+    BlendEquationAdd           = 0x0000000000000000,  //!< Blend add: src + dst.
+    BlendEquationSub           = 0x0000000010000000,  //!< Blend subtract: src - dst.
+    BlendEquationRevSub        = 0x0000000020000000,  //!< Blend reverse subtract: dst - src.
+    BlendEquationMin           = 0x0000000030000000,  //!< Blend min: min(src, dst).
+    BlendEquationMax           = 0x0000000040000000,  //!< Blend max: max(src, dst).
+
+    BlendEquationMask          = 0x00000003f0000000,
+
+    // Cull state. When `BGFX_STATE_CULL_*` is not specified culling will be disabled.
+    CullCW                     = 0x0000001000000000,  //!< Cull clockwise triangles.
+    CullCCW                    = 0x0000002000000000,  //!< Cull counter-clockwise triangles.
+    CullMask                   = 0x0000003000000000,
+
+
+    PtTriStrip                 = 0x0001000000000000,  //!< Tristrip.
+    PtLines                    = 0x0002000000000000,  //!< Lines.
+    PtLineStrip                = 0x0003000000000000,  //!< Line strip.
+    PtPoints                   = 0x0004000000000000,  //!< Points.
+
+    PtMask                     = 0x0007000000000000,  //!< Primitive type bit mask
+
+    MSAA                       = 0x0100000000000000,  //!< Enable MSAA rasterization.
+    LineAA                     = 0x0200000000000000,  //!< Enable line AA rasterization.
+    ConservativeRaster         = 0x0400000000000000,  //!< Enable conservative rasterization.
+
+    None                       = 0x0000000000000000,  //!< No state.
+    FrontCCW                   = 0x0000008000000000,  //!< Front counter-clockwise (default is clockwise).
+    BlendIndependent           = 0x0000000400000000,  //!< Enable blend independent.
+    BlendAlphaToCoverage       = 0x0000000800000000,  //!< Enable alpha to coverage.
+
+    /// Default state is write to RGB, alpha, and depth with depth test less enabled, with clockwise
+    /// culling and MSAA (when writing into MSAA frame buffer, otherwise this flag is ignored).
+    Default = WriteRGB | WriteAlpha | WriteDepth | DepthTestLess | CullCW | MSAA
+};
 
 
 }

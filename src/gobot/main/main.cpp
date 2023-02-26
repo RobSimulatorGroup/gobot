@@ -13,9 +13,13 @@
 #include "gobot/scene/scene_initializer.hpp"
 #include "gobot/rendering/render_server.hpp"
 #include "gobot/core/os/os.hpp"
+#include "gobot/scene/window.hpp"
+#include "gobot/rendering/load_programs.hpp"
+#include "gobot/core/math/geometry.hpp"
 #include <cxxopts.hpp>
 #include <bgfx/bgfx.h>
-#include "gobot/scene/window.hpp"
+
+#include "bx/math.h"
 
 namespace gobot {
 
@@ -73,6 +77,121 @@ bool Main::Setup2() {
     return true;
 }
 
+struct PosColorVertex
+{
+    float m_x;
+    float m_y;
+    float m_z;
+    uint32_t m_abgr;
+
+    static void init()
+    {
+        ms_layout
+                .begin()
+                .add(bgfx::Attrib::Position, 3, bgfx::AttribType::Float)
+                .add(bgfx::Attrib::Color0,   4, bgfx::AttribType::Uint8, true)
+                .end();
+    };
+
+    static bgfx::VertexLayout ms_layout;
+};
+
+bgfx::VertexLayout PosColorVertex::ms_layout;
+
+static PosColorVertex s_cubeVertices[] =
+        {
+                {-5.0f,  5.0f,  5.0f, 0xff000000 },
+                { 5.0f,  5.0f,  5.0f, 0xff0000ff },
+                {-5.0f, -5.0f,  5.0f, 0xff00ff00 },
+                { 5.0f, -5.0f,  5.0f, 0xff00ffff },
+                {-5.0f,  5.0f, -5.0f, 0xffff0000 },
+                { 5.0f,  5.0f, -5.0f, 0xffff00ff },
+                {-5.0f, -5.0f, -5.0f, 0xffffff00 },
+                { 5.0f, -5.0f, -5.0f, 0xffffffff },
+        };
+
+static const uint16_t s_cubeTriList[] =
+        {
+                0, 1, 2, // 0
+                1, 3, 2,
+                4, 6, 5, // 2
+                5, 6, 7,
+                0, 2, 4, // 4
+                4, 2, 6,
+                1, 5, 3, // 6
+                5, 7, 3,
+                0, 4, 1, // 8
+                4, 5, 1,
+                2, 3, 6, // 10
+                6, 3, 7,
+        };
+
+static const uint16_t s_cubeTriStrip[] =
+        {
+                0, 1, 2,
+                3,
+                7,
+                1,
+                5,
+                0,
+                4,
+                2,
+                6,
+                7,
+                4,
+                5,
+        };
+
+static const uint16_t s_cubeLineList[] =
+        {
+                0, 1,
+                0, 2,
+                0, 4,
+                1, 3,
+                1, 5,
+                2, 3,
+                2, 6,
+                3, 7,
+                4, 5,
+                4, 6,
+                5, 7,
+                6, 7,
+        };
+
+static const uint16_t s_cubeLineStrip[] =
+        {
+                0, 2, 3, 1, 5, 7, 6, 4,
+                0, 2, 6, 4, 5, 7, 3, 1,
+                0,
+        };
+
+static const uint16_t s_cubePoints[] =
+        {
+                0, 1, 2, 3, 4, 5, 6, 7
+        };
+
+static const char* s_ptNames[]
+        {
+                "Triangle List",
+                "Triangle Strip",
+                "Lines",
+                "Line Strip",
+                "Points",
+        };
+
+static const uint64_t s_ptState[]
+        {
+                UINT64_C(0),
+                BGFX_STATE_PT_TRISTRIP,
+                BGFX_STATE_PT_LINES,
+                BGFX_STATE_PT_LINESTRIP,
+                BGFX_STATE_PT_POINTS,
+        };
+
+
+bgfx::VertexBufferHandle m_vbh;
+bgfx::IndexBufferHandle m_ibh[1];
+bgfx::ProgramHandle m_program;
 
 bool Main::Start() {
     auto* main_loop = Object::New<SceneTree>();
@@ -80,6 +199,28 @@ bool Main::Start() {
 
     s_render_server->InitWindow();
     s_render_server->SetDebug(RenderDebugFlags::DebugTextDisplay);
+    USING_ENUM_BITWISE_OPERATORS;
+    s_render_server->SetViewClear(0, RenderClearFlags::Depth | RenderClearFlags::Color);
+
+
+    PosColorVertex::init();
+    // Create static vertex buffer.
+    m_vbh = bgfx::createVertexBuffer(
+            // Static data can be passed with bgfx::makeRef
+            bgfx::makeRef(s_cubeVertices, sizeof(s_cubeVertices) )
+            , PosColorVertex::ms_layout
+    );
+
+    // Create static index buffer for triangle list rendering.
+    m_ibh[0] = bgfx::createIndexBuffer(
+            // Static data can be passed with bgfx::makeRef
+            bgfx::makeRef(s_cubeTriList, sizeof(s_cubeTriList) )
+    );
+
+    // Create program from shaders.
+    ShaderHandle vsh = LoadShader("vs_cubes");
+    ShaderHandle fsh = LoadShader("fs_cubes");
+    m_program = s_render_server->CreateProgram(vsh, fsh, true);
 
     return true;
 }
@@ -108,6 +249,9 @@ bool Main::Iteration()
     auto width = window->GetWidth();
     auto height = window->GetHeight();
 
+    auto view = Matrix4f::LookAt({0.0f, 0.0f, -35.0f}, {0.0f, 0.0f, 0.0f});
+    auto proj = Matrix4f::Perspective(60.0, float(width)/float(height), 0.1f, 100.0f);
+    GET_RENDER_SERVER()->SetViewTransform(0, view, proj);
     GET_RENDER_SERVER()->SetViewRect(0, 0, 0, uint16_t(width), uint16_t(height) );
 
     // This dummy draw call is here to make sure that view 0 is cleared
@@ -129,6 +273,23 @@ bool Main::Iteration()
             , stats->textWidth
             , stats->textHeight
     );
+
+    // Set vertex and index buffer.
+    GET_RENDER_SERVER()->SetVertexBuffer(0, m_vbh);
+    GET_RENDER_SERVER()->SetIndexBuffer(m_ibh[0]);
+
+    // Set render states.
+    GET_RENDER_SERVER()->SetState(RenderStateFlags::Default);
+
+    static int i = 0;
+    Isometry3f isometry_3_f = Isometry3f::Identity();
+    isometry_3_f.SetEulerAngle({0.01 * i++,
+                                -0.01 * i, 0}, EulerOrder::RXYZ);
+    isometry_3_f.SetPosition({0, 0, 0});
+    bgfx::setTransform(isometry_3_f.data());
+
+    // Submit primitive for rendering to view 0.
+    GET_RENDER_SERVER()->Submit(0, m_program);
 
     // Advance to next frame. Rendering thread will be kicked to
     // process submitted rendering primitives.

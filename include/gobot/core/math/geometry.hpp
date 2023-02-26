@@ -40,6 +40,9 @@ public:
 template <typename Scalar>
 using EulerAngle = Matrix<Scalar, 3, 1>;
 
+template <typename Scalar>
+using Position = Matrix<Scalar, 3, 1>;
+
 template <typename Scalar, int Dim, int Mode, int Options = Eigen::AutoAlign>
 class Transform: public Eigen::Transform<Scalar, Dim, Mode, Options> {
 public:
@@ -200,6 +203,17 @@ public:
                         Eigen::AngleAxis<Scalar>(angles.x(), unit_y).toRotationMatrix();
                 break;
         }
+    }
+
+    Position<Scalar> GetPosition() const {
+        return this->translation();
+    }
+
+    void SetPosition(const Position<Scalar>& position) {
+        auto translation = this->translation();
+        translation[0] = position[0];
+        translation[1] = position[1];
+        translation[2] = position[2];
     }
 };
 

@@ -26,6 +26,10 @@ bool RenderServer::HasInit() {
     return s_singleton != nullptr;
 }
 
+RendererType RenderServer::GetRendererType() {
+    return RendererType(bgfx::getRendererType());
+}
+
 RenderServer::~RenderServer() {
     s_singleton = nullptr;
 }
@@ -46,21 +50,19 @@ void RenderServer::InitWindow() {
     init.vendorId = ENUM_UINT_CAST(VendorID::None); // auto select
     init.platformData.nwh  = window->GetNativeWindowHandle();
     init.platformData.ndt  = window->GetNativeDisplayHandle();
-    init.resolution.width  = window->GetHeight();
-    init.resolution.height = window->GetWidth();
+    init.resolution.width  = window->GetWidth();
+    init.resolution.height = window->GetHeight();
     init.resolution.reset  = ENUM_UINT_CAST(reset_flags_); //  Enable V-Sync.
 
     bgfx::init(init);
-
-    SetDebug(debug_flags_);
 };
 
 void RenderServer::SetViewTransform(ViewId view_id, const Matrix4f& view, const Matrix4f& proj) {
     bgfx::setViewTransform(view_id, view.data(), proj.data());
 }
 
-void RenderServer::SetViewClear(ViewId view_id, ClearFlags clear_flags, const Color& color, float depth, uint8_t stencil) {
-    bgfx::setViewClear(view_id, std::underlying_type_t<ClearFlags>(clear_flags), color.GetPackedRgbA());
+void RenderServer::SetViewClear(ViewId view_id, RenderClearFlags clear_flags, const Color& color, float depth, uint8_t stencil) {
+    bgfx::setViewClear(view_id, std::underlying_type_t<RenderClearFlags>(clear_flags), color.GetPackedRgbA());
 };
 
 void RenderServer::SetViewRect(ViewId id, uint16_t x, uint16_t y, uint16_t width, uint16_t height) {
@@ -93,6 +95,7 @@ uint32_t RenderServer::Frame(bool capture) {
 }
 
 void RenderServer::Reset(uint32_t width, uint32_t height, RenderResetFlags reset_flags, TextureFormat format) {
+    reset_flags_ = reset_flags;
     bgfx::reset(width, height, ENUM_UINT_CAST(reset_flags), bgfx::TextureFormat::Enum(format));
 }
 
@@ -103,6 +106,39 @@ void RenderServer::Touch(ViewId id) {
 
 const RenderStats* RenderServer::GetStats() {
     return bgfx::getStats();
+}
+
+void RenderServer::RequestScreenShot(const String& file_path) {
+    bgfx::FrameBufferHandle fbh = BGFX_INVALID_HANDLE;
+    bgfx::requestScreenShot(fbh, file_path.toStdString().c_str());
+}
+
+void RenderServer::SetIndexBuffer(IndexBufferHandle buffer_handle) {
+    bgfx::setIndexBuffer(buffer_handle);
+}
+
+void RenderServer::SetVertexBuffer(uint8_t stream, VertexBufferHandle handle) {
+    bgfx::setVertexBuffer(stream, handle);
+}
+
+void RenderServer::SetUniform(UniformHandle handle, const void* value, uint16_t num) {
+    bgfx::setUniform(handle, value, num);
+}
+
+void RenderServer::SetState(RenderStateFlags state_flags, uint32_t rgba) {
+    bgfx::setState(ENUM_UINT_CAST(state_flags), rgba);
+}
+
+void RenderServer::Submit(ViewId id, ProgramHandle program, uint32_t depth, RenderEncoderDiscardFlags flags) {
+    bgfx::submit(id, program, depth, ENUM_UINT_CAST(flags));
+}
+
+ShaderHandle RenderServer::CreateShader(const ShaderMemory *mem) {
+    return bgfx::createShader(mem);
+}
+
+ProgramHandle RenderServer::CreateProgram(ShaderHandle vsh, ShaderHandle fsh, bool destroy_shaders) {
+    return bgfx::createProgram(vsh, fsh, destroy_shaders);
 }
 
 

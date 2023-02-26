@@ -72,7 +72,7 @@ class Matrix : public Eigen::Matrix<_Scalar, _Rows, _Cols> {
     static Matrix<_Scalar, 4, 4>
             LookAt(const Matrix<_Scalar, 3, 1> &eye,
                    const Matrix<_Scalar, 3, 1> &at,
-                   const Matrix<_Scalar, 3, 1> &up,
+                   const Matrix<_Scalar, 3, 1> &up = { 0.0f, 1.0f, 0.0f },
                    Handedness handedness = Handedness::Left) {
         static_assert(_Cols ==4 && _Rows ==4, "The Look at matrix must a 4*4 matrix");
 

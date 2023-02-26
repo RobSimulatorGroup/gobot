@@ -355,10 +355,6 @@ void SDLWindow::ProcessEvents() {
     }
 
     if (RenderServer::HasInit()) {
-        auto flags = GET_RENDER_SERVER()->GetResetFlags();
-        render_need_reset_ |= s_render_reset_flag != flags;
-        s_render_reset_flag = flags;
-
         if (render_need_reset_) {
             GET_RENDER_SERVER()->Reset(GetWidth(), GetHeight(), s_render_reset_flag);
         }

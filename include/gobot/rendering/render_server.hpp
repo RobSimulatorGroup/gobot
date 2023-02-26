@@ -27,6 +27,8 @@ public:
 
     static bool HasInit();
 
+    RendererType GetRendererType();
+
     static RenderServer* GetInstance();
 
     // Initialize the renderer.
@@ -43,7 +45,7 @@ public:
     void SetViewTransform(ViewId id, const Matrix4f& view, const Matrix4f& proj);
 
     void SetViewClear(ViewId view_id,
-                      ClearFlags clear_flags,
+                      RenderClearFlags clear_flags,
                       const Color& color = {0.f, 0.f, 0.f, 1.0},
                       float depth = 1.0f,
                       uint8_t stencil = 0);
@@ -52,6 +54,10 @@ public:
 
     // Debug related
     void SetDebug(RenderDebugFlags debug_flags);
+
+    /// Request screen shot of main window back buffer.
+    /// @param[in] file_path Will be passed to `bgfx::CallbackI::screenShot` callback.
+    void RequestScreenShot(const String& file_path);
 
     void DebugTextClear();
 
@@ -112,6 +118,65 @@ public:
     FORCE_INLINE const RenderDebugFlags GetDebugFlags() const { return debug_flags_; }
 
     FORCE_INLINE const RenderResetFlags GetResetFlags() const { return reset_flags_; }
+
+    FORCE_INLINE void SetResetFlags(RenderResetFlags reset_flags) { reset_flags_ = reset_flags; }
+
+    FORCE_INLINE void SetDebugFlags(RenderDebugFlags debug_flags) { debug_flags_ = debug_flags; }
+
+
+
+    // Render related
+    void SetIndexBuffer(IndexBufferHandle buffer_handle);
+
+
+    void SetVertexBuffer(uint8_t stream, VertexBufferHandle handle);
+
+    /// Set shader uniform parameter for draw primitive.
+    ///
+    /// @param[in] handle Uniform.
+    /// @param[in] value Pointer to uniform data.
+    /// @param[in] num Number of elements. Passing `UINT16_MAX` will use the num passed on uniform creation.
+    void SetUniform(UniformHandle handle, const void* value, uint16_t num = 1);
+
+    /// Set render states for draw primitive.
+    /// WriteRGB | WriteAlpha | WriteDepth | DepthTestLess | CullCW | MSAA
+    /// @param[in] state_flags State flags. Default state for primitive type is
+    ///   triangles. See: `BGFX_STATE_DEFAULT`.
+    ///   - `DepthTest*` - Depth test function.
+    ///   - `Blend*` - See remark 1 about BGFX_STATE_BLEND_FUNC.
+    ///   - `BGFX_STATE_BLEND_EQUATION_*` - See remark 2.
+    ///   - `BGFX_STATE_CULL_*` - Backface culling mode.
+    ///   - `BGFX_STATE_WRITE_*` - Enable R, G, B, A or Z write.
+    ///   - `BGFX_STATE_MSAA` - Enable MSAA.
+    ///   - `BGFX_STATE_PT_[TRISTRIP/LINES/POINTS]` - Primitive type.
+    ///
+    /// @param[in] rgba Sets blend factor used by `BGFX_STATE_BLEND_FACTOR` and
+    ///   `BGFX_STATE_BLEND_INV_FACTOR` blend modes.
+    ///
+    /// @remarks
+    ///   1. To set up more complex states use:
+    ///      `BGFX_STATE_ALPHA_REF(_ref)`,
+    ///      `BGFX_STATE_POINT_SIZE(_size)`,
+    ///      `BGFX_STATE_BLEND_FUNC(_src, _dst)`,
+    ///      `BGFX_STATE_BLEND_FUNC_SEPARATE(_srcRGB, _dstRGB, _srcA, _dstA)`
+    ///      `BGFX_STATE_BLEND_EQUATION(_equation)`
+    ///      `BGFX_STATE_BLEND_EQUATION_SEPARATE(_equationRGB, _equationA)`
+    ///   2. `BGFX_STATE_BLEND_EQUATION_ADD` is set when no other blend
+    ///      equation is specified.
+    void SetState(RenderStateFlags state_flags, uint32_t rgba = 0);
+
+    /// Submit primitive for rendering.
+    ///
+    /// @param[in] id View id.
+    /// @param[in] program Program.
+    /// @param[in] depth Depth for sorting.
+    /// @param[in] flags Discard or preserve states.
+    void Submit(ViewId id, ProgramHandle program, uint32_t depth = 0, RenderEncoderDiscardFlags flags = RenderEncoderDiscardFlags::All);
+
+
+    ShaderHandle  CreateShader(const ShaderMemory *mem);
+
+    ProgramHandle CreateProgram(ShaderHandle vsh, ShaderHandle fsh, bool destroy_shaders = false);
 
 private:
     static RenderServer* s_singleton;
