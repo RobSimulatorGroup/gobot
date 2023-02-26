@@ -116,7 +116,6 @@ target_link_libraries(gobot
     Qt5::Core
     imgui
     bgfx
-    bx
     ${CONAN_LIBS}
 )
 

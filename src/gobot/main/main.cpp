@@ -19,8 +19,6 @@
 #include <cxxopts.hpp>
 #include <bgfx/bgfx.h>
 
-#include "bx/math.h"
-
 namespace gobot {
 
 static Engine *s_engine = nullptr;
@@ -279,6 +277,7 @@ bool Main::Iteration()
     GET_RENDER_SERVER()->SetIndexBuffer(m_ibh[0]);
 
     // Set render states.
+    USING_ENUM_BITWISE_OPERATORS;
     GET_RENDER_SERVER()->SetState(RenderStateFlags::Default);
 
     static int i = 0;
