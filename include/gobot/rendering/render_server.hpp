@@ -124,12 +124,19 @@ public:
     FORCE_INLINE void SetDebugFlags(RenderDebugFlags debug_flags) { debug_flags_ = debug_flags; }
 
 
-
     // Render related
     void SetIndexBuffer(IndexBufferHandle buffer_handle);
 
 
     void SetVertexBuffer(uint8_t stream, VertexBufferHandle handle);
+
+    /// Set model matrix for draw primitive. If it is not called,
+    /// the model will be rendered with an identity model matrix.
+    ///
+    /// @param[in] matrix model transform matrix.
+    /// @returns index into matrix cache in case the same model matrix has
+    ///   to be used for other draw primitive call.
+    void SetTransform(const Matrix4f& matrix);
 
     /// Set shader uniform parameter for draw primitive.
     ///
@@ -172,7 +179,6 @@ public:
     /// @param[in] depth Depth for sorting.
     /// @param[in] flags Discard or preserve states.
     void Submit(ViewId id, ProgramHandle program, uint32_t depth = 0, RenderEncoderDiscardFlags flags = RenderEncoderDiscardFlags::All);
-
 
     ShaderHandle  CreateShader(const ShaderMemory *mem);
 

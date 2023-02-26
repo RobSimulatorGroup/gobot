@@ -286,7 +286,8 @@ bool Main::Iteration()
     isometry_3_f.SetEulerAngle({0.01 * i++,
                                 -0.01 * i, 0}, EulerOrder::RXYZ);
     isometry_3_f.SetPosition({0, 0, 0});
-    bgfx::setTransform(isometry_3_f.data());
+
+    GET_RENDER_SERVER()->SetTransform(isometry_3_f.matrix());
 
     // Submit primitive for rendering to view 0.
     GET_RENDER_SERVER()->Submit(0, m_program);

@@ -121,6 +121,10 @@ void RenderServer::SetVertexBuffer(uint8_t stream, VertexBufferHandle handle) {
     bgfx::setVertexBuffer(stream, handle);
 }
 
+void RenderServer::SetTransform(const Matrix4f& matrix) {
+    bgfx::setTransform(matrix.data());
+}
+
 void RenderServer::SetUniform(UniformHandle handle, const void* value, uint16_t num) {
     bgfx::setUniform(handle, value, num);
 }
