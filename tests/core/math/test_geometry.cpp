@@ -8,7 +8,6 @@
 
 #include <gtest/gtest.h>
 
-#include <gobot/log.hpp>
 #include <gobot/core/math/geometry.hpp>
 #include <gobot/core/io/variant_serializer.hpp>
 
@@ -95,4 +94,28 @@ TEST(TestGeometry, test_isometry) {
     ASSERT_FLOAT_EQ(euler_angle.x(), Math_PI * 0.25);
     ASSERT_FLOAT_EQ(euler_angle.y(), -Math_PI * 0.25);
     ASSERT_FLOAT_EQ(euler_angle.z(), Math_PI * 0.1);
+
+    ASSERT_EQ(isometry.GetScale(), Vector3::Ones());
+}
+
+TEST(TestGeometry, test_affine) {
+    using namespace gobot;
+    Affine3 affine{Affine3::Identity()};
+
+    ASSERT_TRUE(affine.GetScale().isApprox(Vector3::Ones(), CMP_EPSILON));
+
+    Vector3 ratio{2.0, 2.0, 2.0};
+    affine.scale(ratio);
+    ASSERT_TRUE(affine.GetScale().isApprox(ratio, CMP_EPSILON));
+
+    ASSERT_TRUE(affine.Orthonormalized().linear().isApprox(Matrix3::Identity(), CMP_EPSILON));
+    // The original transform is already orthogonal
+    ASSERT_TRUE(affine.Orthogonalized().isApprox(affine, CMP_EPSILON));
+
+    // Uniformly scale should not change the orientation.
+    auto euler_angle = Vector3{Math_PI * 0.25, -Math_PI * 0.25, Math_PI * 0.1};
+    affine.SetEulerAngleScaled(euler_angle, ratio, EulerOrder::SZYX);
+    ASSERT_FLOAT_EQ(affine.GetEulerAngle(EulerOrder::SZYX).x(), euler_angle.x());
+    ASSERT_FLOAT_EQ(affine.GetEulerAngle(EulerOrder::SZYX).y(), euler_angle.y());
+    ASSERT_FLOAT_EQ(affine.GetEulerAngle(EulerOrder::SZYX).z(), euler_angle.z());
 }

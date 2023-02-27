@@ -65,13 +65,24 @@ public:
     }
 
     Quaternion<Scalar> GetQuaternion() const {
-        static_assert(Dim == 3 && Mode == Eigen::Isometry, "GetQuaternion can only called when Dim is 3");
-        return Quaternion<Scalar>(this->rotation());
+        static_assert(Dim == 3 && (Mode == Eigen::Isometry | Mode == Eigen::Affine),
+                "GetQuaternion can only called when Dim is 3");
+
+        return Quaternion<Scalar>(this->linear());
     }
 
     void SetQuaternion(const Quaternion<Scalar>& quaternion) {
-        static_assert(Dim == 3 && Mode == Eigen::Isometry, "SetQuaternion can only called when Dim is 3");
+        static_assert(Dim == 3 && (Mode == Eigen::Isometry || Mode == Eigen::Affine),
+                "SetQuaternion can only called when Dim is 3");
+
         this->linear() = quaternion.normalized().toRotationMatrix();
+    }
+
+    void SetQuaternionScaled(const Quaternion<Scalar> &quaternion, const Vector3 &scale) {
+        static_assert(Dim == 3 && Mode == Eigen::Affine, "GetEulerAngleNormalized can only called when Dim is 3");
+
+        this->SetQuaternion(quaternion);
+        this->linear() *= Eigen::Scaling(scale.x(), scale.y(), scale.z());
     }
 
     Scalar GetAngle() const {
@@ -85,47 +96,49 @@ public:
     }
 
     EulerAngle<Scalar> GetEulerAngle(EulerOrder euler_order) const {
-        static_assert(Dim == 3 && Mode == Eigen::Isometry, "GetEulerAngle can only called when Dim is 3");
+        static_assert(Dim == 3 && (Mode == Eigen::Isometry || Mode == Eigen::Affine),
+                "GetEulerAngle can only called when Dim is 3");
+
         switch (euler_order) {
             case EulerOrder::RXYZ:
-                return this->rotation().eulerAngles(0, 1, 2);
+                return this->linear().eulerAngles(0, 1, 2);
             case EulerOrder::RYZX:
-                return this->rotation().eulerAngles(1, 2, 0);
+                return this->linear().eulerAngles(1, 2, 0);
             case EulerOrder::RZYX:
-                return this->rotation().eulerAngles(2, 1, 0);
+                return this->linear().eulerAngles(2, 1, 0);
             case EulerOrder::RXZY:
-                return this->rotation().eulerAngles(0, 2, 1);
+                return this->linear().eulerAngles(0, 2, 1);
             case EulerOrder::RXZX:
-                return this->rotation().eulerAngles(0, 2, 0);
+                return this->linear().eulerAngles(0, 2, 0);
             case EulerOrder::RYXZ:
-                return this->rotation().eulerAngles(1, 0, 2);
+                return this->linear().eulerAngles(1, 0, 2);
             case EulerOrder::SXYZ: {
-                auto euler_angle = this->rotation().eulerAngles(2, 1, 0);
+                auto euler_angle = this->linear().eulerAngles(2, 1, 0);
                 std::swap(euler_angle[0], euler_angle[2]);
                 return euler_angle;
             }
             case EulerOrder::SYZX: {
-                auto euler_angle = this->rotation().eulerAngles(0, 2, 1);
+                auto euler_angle = this->linear().eulerAngles(0, 2, 1);
                 std::swap(euler_angle[0], euler_angle[2]);
                 return euler_angle;
             }
             case EulerOrder::SZYX: {
-                auto euler_angle = this->rotation().eulerAngles(0, 1, 2);
+                auto euler_angle = this->linear().eulerAngles(0, 1, 2);
                 std::swap(euler_angle[0], euler_angle[2]);
                 return euler_angle;
             }
             case EulerOrder::SXZY: {
-                auto euler_angle = this->rotation().eulerAngles(1, 2, 0);
+                auto euler_angle = this->linear().eulerAngles(1, 2, 0);
                 std::swap(euler_angle[0], euler_angle[2]);
                 return euler_angle;
             }
             case EulerOrder::SXZX: {
-                auto euler_angle = this->rotation().eulerAngles(0, 2, 0);
+                auto euler_angle = this->linear().eulerAngles(0, 2, 0);
                 std::swap(euler_angle[0], euler_angle[2]);
                 return euler_angle;
             }
             case EulerOrder::SYXZ: {
-                auto euler_angle = this->rotation().eulerAngles(2, 0, 1);
+                auto euler_angle = this->linear().eulerAngles(2, 0, 1);
                 std::swap(euler_angle[0], euler_angle[2]);
                 return euler_angle;
             }
@@ -134,8 +147,10 @@ public:
         return {};
     }
 
-    void SetEulerAngle(const EulerAngle<Scalar>& angles , EulerOrder euler_order) {
-        static_assert(Dim == 3 && Mode == Eigen::Isometry, "SetEulerAngle can only called when Dim is 3");
+    void SetEulerAngle(const EulerAngle<Scalar>& angles, EulerOrder euler_order) {
+        static_assert(Dim == 3 && (Mode == Eigen::Isometry || Eigen::Affine),
+                "SetEulerAngle can only called when Dim is 3");
+
         static auto unit_x = Matrix<Scalar, 3, 1>::UnitX();
         static auto unit_y = Matrix<Scalar, 3, 1>::UnitY();
         static auto unit_z = Matrix<Scalar, 3, 1>::UnitZ();
@@ -200,6 +215,96 @@ public:
                         Eigen::AngleAxis<Scalar>(angles.x(), unit_y).toRotationMatrix();
                 break;
         }
+    }
+
+    void SetEulerAngleScaled(const EulerAngle<Scalar> &angles, const Vector3 &scale, EulerOrder euler_order) {
+        static_assert(Dim == 3 && Mode == Eigen::Affine, "GetEulerAngleNormalized can only called when Dim is 3");
+
+        this->SetEulerAngle(angles, euler_order);
+        this->linear() *= Eigen::Scaling(scale.x(), scale.y(), scale.z());
+    }
+
+    /**
+     * @brief Assuming for an Affine transform, M = R.S (R is rotation and S is scaling).
+     *  The method is used to extract the scaling factors with their signs as a vector, e.g <s1, s2, s3>,
+     *  which resembles the scaling S,
+     *                      [ s1,  0,  0 ]
+     *                      [  0, s2,  0 ]
+     *                      [  0,  0, s3 ]
+     *  Note:
+     *  With a transformation matrix M (Isometry/Affine),
+     *                      [ a, b, c, d ]
+     *                      [ e, f, g, h ]
+     *                      [ i, j, k, l ]
+     *                      [ 0, 0, 0, 1 ]
+     *  The scaling vector s becomes,
+     *                      s1 = || <a, e, i> ||
+     *                      s2 = || <b, f, j> ||
+     *                      s3 = || <c, g, k> ||
+     *
+     * @return a scaling vector depending on the dimension.
+     */
+    [[nodiscard]] Matrix<Scalar, Dim, 1> GetScale() const {
+        static_assert(Mode == Eigen::Isometry || Mode == Eigen::Affine,
+                "GetScaleAbs works for Isometry and Affine");
+
+        int sign = Sign(this->linear().determinant());
+        if (Mode == Eigen::Isometry) {
+            return sign * Matrix<Scalar, Dim, 1>::Ones();
+        }
+
+        Matrix<Scalar, Dim, 1> v;
+        for (auto col = 0; col < Dim; ++ col) {
+            v[col] = this->linear().template block<Dim, 1>(0, col).norm();
+        }
+
+        return sign * v;
+    }
+
+    /**
+     * @brief Gram-Schmidt Process. The linear part is changed.
+     *  Note:
+     *  With a 3x3 matrix, the process could be as follows,
+     *              x = col(0), y = col(1), z = col(2)
+     *              step1. x.normalize()
+     *              step2. y = y - x * (x.dot(y)), y.normalize()
+     *              step3. z = z - (x * (x.dot(z))) - (y * (y.dot(z))), z.normalize()
+     */
+    void Orthonormalize() {
+        this->linear().col(0).normalize();
+        for (auto i = 1; i < Dim; ++ i) {
+            for (int j = 0; j < i; ++ j) {
+                this->linear().col(i) -=
+                        this->linear().col(j) * (this->linear().col(j)).dot(this->linear().col(i));
+            }
+            this->linear().col(i).normalize();
+        }
+    }
+
+    /**
+     * @brief See Orthonormalize. The original transform is reserved.
+     *
+     * @return an orthonormalized transform depending on the dimension.
+     */
+    Transform Orthonormalized() const {
+        Transform tf = *this;
+        tf.Orthonormalize();
+        return tf;
+    }
+
+    void Orthogonalize() {
+        static_assert(Mode == Eigen::Isometry || Mode == Eigen::Affine,
+                      "Orthogonalize works for Isometry and Affine");
+
+        Matrix<Scalar, Dim, 1> s = GetScale();
+        Orthonormalize();
+        this->scale(s);
+    }
+
+    Transform Orthogonalized() const {
+        Transform tf = *this;
+        tf.Orthogonalize();
+        return tf;
     }
 };
 

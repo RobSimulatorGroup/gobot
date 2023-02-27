@@ -119,4 +119,12 @@ struct MatrixData {
     std::vector<_Scalar> storage;
 };
 
+template <typename T>
+constexpr int Sign(const T val) {
+    return (static_cast<T>(0) < val) - (val < static_cast<T>(0));
+}
+
+inline real_t DEG_TO_RAD(real_t deg) { return static_cast<real_t>(deg * (Math_PI / 180.0)); }
+inline real_t RAD_TO_DEG(real_t rad) { return static_cast<real_t>(rad * (180.0 / Math_PI)); }
+
 };  // namespace gobot
