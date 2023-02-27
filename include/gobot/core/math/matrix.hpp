@@ -131,7 +131,7 @@ class Matrix : public Eigen::Matrix<_Scalar, _Rows, _Cols> {
                                              Handedness handedness = Handedness::Left) {
         static_assert(_Cols ==4 && _Rows ==4, "The Look at matrix must a 4*4 matrix");
         _Scalar recip = 1 / (near - far);
-        _Scalar c     = 1 / std::tan(.5f * DegreeToRad(fovy));
+        _Scalar c     = 1 / std::tan(.5f * DEG_TO_RAD(fovy));
 
         Matrix<_Scalar, 4, 4> trafo = Matrix<_Scalar, 4, 4>::Zero();
         trafo(0, 0) = c / aspect;

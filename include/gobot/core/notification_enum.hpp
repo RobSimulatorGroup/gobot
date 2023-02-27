@@ -20,6 +20,11 @@ enum class NotificationType {
     Parented,
     Unparented,
     MovedInParent,
+
+    EnterWorld,
+    ExitWorld,
+    TransformChanged,
+    LocalTransformChanged,
 };
 
 }

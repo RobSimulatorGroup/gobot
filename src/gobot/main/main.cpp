@@ -284,7 +284,6 @@ bool Main::Iteration()
     Isometry3f isometry_3_f = Isometry3f::Identity();
     isometry_3_f.SetEulerAngle({0.01 * i++,
                                 -0.01 * i, 0}, EulerOrder::RXYZ);
-    isometry_3_f.SetPosition({0, 0, 0});
 
     GET_RENDER_SERVER()->SetTransform(isometry_3_f.matrix());
 

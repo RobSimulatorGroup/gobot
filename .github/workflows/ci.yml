@@ -39,6 +39,8 @@ jobs:
 
     - name: Get Conan
       uses: turtlebrowser/get-conan@v1.1
+      with:
+        version: 1.59.0
 
     - name: Get Ninja
       uses: seanmiddleditch/gha-setup-ninja@v3

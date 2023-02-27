@@ -117,8 +117,8 @@ static void Squircle(float* out, float angle)
 {
     float sa = std::sin(angle);
     float ca = std::cos(angle);
-    out[0] = std::sqrt(std::abs(sa) ) * GetSign(sa);
-    out[1] = std::sqrt(std::abs(ca) ) * GetSign(ca);
+    out[0] = std::sqrt(std::abs(sa) ) * Sign(sa);
+    out[1] = std::sqrt(std::abs(ca) ) * Sign(ca);
 }
 
 uint32_t GenSphere(uint8_t sub_div0,
