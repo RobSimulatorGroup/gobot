@@ -13,7 +13,6 @@
 namespace gobot {
 
 
-
 DebugDrawRenderer* DebugDrawRenderer::s_singleton = nullptr;
 
 DebugDrawRenderer::DebugDrawRenderer() {

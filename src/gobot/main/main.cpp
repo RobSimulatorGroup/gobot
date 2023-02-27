@@ -15,6 +15,7 @@
 #include "gobot/core/os/os.hpp"
 #include "gobot/scene/window.hpp"
 #include "gobot/rendering/load_shader.hpp"
+#include "gobot/rendering/debug_draw/debug_draw.hpp"
 #include "gobot/core/math/geometry.hpp"
 #include <cxxopts.hpp>
 #include <bgfx/bgfx.h>
@@ -220,6 +221,8 @@ bool Main::Start() {
     ShaderHandle fsh = LoadShader("fs_cubes");
     m_program = s_render_server->CreateProgram(vsh, fsh, true);
 
+    ddInit();
+
     return true;
 }
 
@@ -247,7 +250,7 @@ bool Main::Iteration()
     auto width = window->GetWidth();
     auto height = window->GetHeight();
 
-    auto view = Matrix4f::LookAt({0.0f, 0.0f, -35.0f}, {0.0f, 0.0f, 0.0f});
+    auto view = Matrix4f::LookAt({35.0f, 35.0f, -35.0f}, {0.0f, 0.0f, 0.0f});
     auto proj = Matrix4f::Perspective(60.0, float(width)/float(height), 0.1f, 100.0f);
     GET_RENDER_SERVER()->SetViewTransform(0, view, proj);
     GET_RENDER_SERVER()->SetViewRect(0, 0, 0, uint16_t(width), uint16_t(height) );
@@ -272,7 +275,7 @@ bool Main::Iteration()
             , stats->textHeight
     );
 
-    // Set vertex and index buffer.
+//     Set vertex and index buffer.
     GET_RENDER_SERVER()->SetVertexBuffer(0, m_vbh);
     GET_RENDER_SERVER()->SetIndexBuffer(m_ibh[0]);
 
@@ -292,6 +295,36 @@ bool Main::Iteration()
 
     // Advance to next frame. Rendering thread will be kicked to
     // process submitted rendering primitives.
+
+    DebugDrawEncoder dde;
+
+    dde.begin(0);
+    dde.drawAxis(0.0f, 0.0f, 0.0f, 1000000.0);
+
+    dde.push();
+    bx::Aabb aabb =
+            {
+                    {  5.0f, 1.0f, 1.0f },
+                    { 10.0f, 5.0f, 5.0f },
+            };
+    dde.setWireframe(true);
+//    dde.setColor(intersect(&dde, ray, aabb) ? kSelected : 0xff00ff00);
+    dde.draw(aabb);
+    dde.pop();
+
+
+    {
+        const bx::Vec3 normal = { 0.0f,  1.0f, 0.0f };
+        const bx::Vec3 pos    = { 0.0f, -2.0f, 0.0f };
+
+        bx::Plane plane(bx::init::None);
+        bx::calcPlane(plane, normal, pos);
+
+        dde.drawGrid(Axis::Y, pos, 128, 1.0f);
+    }
+
+    dde.end();
+
     GET_RENDER_SERVER()->Frame();
 
     return exit;

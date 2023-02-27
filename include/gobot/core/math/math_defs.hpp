@@ -136,14 +136,5 @@ inline real_t DEG_TO_RAD(real_t deg) { return static_cast<real_t>(deg * (Math_PI
 inline real_t RAD_TO_DEG(real_t rad) { return static_cast<real_t>(rad * (180.0 / Math_PI)); }
 
 
-enum class Axis
-{
-    X,
-    Y,
-    Z,
-
-    Count
-};
-
 
 };  // namespace gobot

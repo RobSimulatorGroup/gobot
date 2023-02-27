@@ -246,6 +246,8 @@ using UniformHandle = bgfx::UniformHandle;
 using VertexBufferHandle = bgfx::VertexBufferHandle;
 using VertexLayoutHandle = bgfx::VertexLayoutHandle;
 
+constexpr uint16_t InvalidHandle = UINT16_MAX;
+
 
 enum class RenderEncoderDiscardFlags {
     None         = 0,        //!< Preserve everything.
