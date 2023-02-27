@@ -16,6 +16,56 @@
 
 namespace gobot {
 
+struct DebugVertex
+{
+    float x;
+    float y;
+    float z;
+    float len;
+    uint32_t abgr;
+
+    static void Init();
+
+    static VertexLayout s_layout;
+};
+
+struct DebugUvVertex
+{
+    float x;
+    float y;
+    float z;
+    float u;
+    float v;
+    uint32_t abgr;
+
+    static void Init();
+
+    static VertexLayout s_layout;
+};
+
+struct DebugShapeVertex
+{
+    float x;
+    float y;
+    float z;
+    uint8_t indices[4];
+
+    static void Init();
+
+    static VertexLayout s_layout;
+};
+
+struct DebugMeshVertex
+{
+    float x;
+    float y;
+    float z;
+
+    static void Init();
+
+    static VertexLayout s_layout;
+};
+
 class DebugDrawEncoder
 {
 public:
@@ -33,7 +83,7 @@ public:
 
     void SetDepthTestLess(bool depth_test_less);
 
-    void SetState(bool depth_test, bool depth_write, bool clock_wise);
+    void SetRenderState(bool depth_test, bool depth_write, bool clock_wise);
 
     void SetColor(const Color& _abgr);
 
@@ -43,7 +93,7 @@ public:
 
     void SetStipple(bool stipple, float scale = 1.0f, float offset = 0.0f);
 
-    void SetSpin(float _spin);
+    void SetSpin(float spin);
 
     void SetTransform(const Matrix4f& matrix);
 
@@ -63,7 +113,6 @@ public:
 
     void Close();
 
-    // Draw math type
     void Draw(const AABB& aabb);
 
     void Draw(const Plane& plan);
@@ -72,99 +121,104 @@ public:
 
     void DrawFrustum(const Matrix4f& projection);
 
-//
-//    ///
-//    void draw(GeometryHandle _handle);
-//
-//    ///
-//    void drawLineList(uint32_t _numVertices, const DdVertex* _vertices, uint32_t _numIndices = 0, const uint16_t* _indices = NULL);
-//
-//    ///
-//    void drawTriList(uint32_t _numVertices, const DdVertex* _vertices, uint32_t _numIndices = 0, const uint16_t* _indices = NULL);
-//
-//    ///
-//    void drawFrustum(const void* _viewProj);
-//
-//    ///
-//    void drawArc(Axis::Enum _axis, float _x, float _y, float _z, float _radius, float _degrees);
-//
-//    ///
-//    void drawCircle(const bx::Vec3& _normal, const bx::Vec3& _center, float _radius, float _weight = 0.0f);
-//
-//    ///
-//    void drawCircle(Axis::Enum _axis, float _x, float _y, float _z, float _radius, float _weight = 0.0f);
-//
-//    ///
-//    void drawQuad(const bx::Vec3& _normal, const bx::Vec3& _center, float _size);
-//
-//    ///
-//    void drawQuad(SpriteHandle _handle, const bx::Vec3& _normal, const bx::Vec3& _center, float _size);
-//
-//    ///
-//    void drawQuad(bgfx::TextureHandle _handle, const bx::Vec3& _normal, const bx::Vec3& _center, float _size);
-//
-//    ///
-//    void drawCone(const bx::Vec3& _from, const bx::Vec3& _to, float _radius);
-//
-//    ///
-//    void drawCylinder(const bx::Vec3& _from, const bx::Vec3& _to, float _radius);
-//
-//    ///
-//    void drawCapsule(const bx::Vec3& _from, const bx::Vec3& _to, float _radius);
-//
-//    ///
-//    void drawAxis(float _x, float _y, float _z, float _len = 1.0f, Axis::Enum _highlight = Axis::Count, float _thickness = 0.0f);
-//
-//    ///
-//    void drawGrid(const bx::Vec3& _normal, const bx::Vec3& _center, uint32_t _size = 20, float _step = 1.0f);
-//
-//    ///
-//    void drawGrid(Axis::Enum _axis, const bx::Vec3& _center, uint32_t _size = 20, float _step = 1.0f);
-//
-//    ///
-//    void drawOrb(float _x, float _y, float _z, float _radius, Axis::Enum _highlight = Axis::Count);
-//
-//private:
-//    static const uint32_t kCacheSize = 1024;
-//    static const uint32_t kStackSize = 16;
-//    static const uint32_t kCacheQuadSize = 1024;
-//    BX_STATIC_ASSERT(kCacheSize >= 3, "Cache must be at least 3 elements.");
-//
-//    DebugVertex   m_cache[kCacheSize+1];
-//    DebugUvVertex m_cacheQuad[kCacheQuadSize];
-//    uint16_t m_indices[kCacheSize*2];
-//    uint16_t m_pos;
-//    uint16_t m_posQuad;
-//    uint16_t m_indexPos;
-//    uint16_t m_vertexPos;
-//    uint32_t m_mtxStackCurrent;
-//
-//    struct MatrixStack
-//    {
-//        void reset()
-//        {
-//            mtx  = 0;
-//            num  = 1;
-//            data = nullptr;
-//        }
-//
-//        uint32_t mtx;
-//        uint16_t num;
-//        float*   data;
-//    };
-//
-//    MatrixStack m_mtxStack[32];
-//
-//    ViewId m_viewId;
-//    uint8_t m_stack;
-//    bool    m_depthTestLess;
-//
-//    Attrib m_attrib[kStackSize];
-//
-//    State::Enum m_state;
+    void DrawLineList(const std::vector<Vector3>& vertices,
+                      const std::vector<uint16_t>& indices = {});
 
-    bgfx::Encoder* m_encoder;
-    bgfx::Encoder* m_defaultEncoder;
+    void DrawTriList(const std::vector<Vector3>& vertices,
+                     const std::vector<uint16_t>& indices = {});
+
+    void DrawArc(Axis axis, float x, float y, float z, float radius, float degrees);
+
+    void DrawCircle(const Vector3& normal, const Vector3& center, float radius, float weight = 0.0f);
+
+    void DrawCircle(Axis axis, float x, float y, float z, float radius, float weight = 0.0f);
+
+    void DrawQuad(const Vector3& normal, const Vector3& center, float size);
+
+    void DrawQuad(TextureHandle handle, const Vector3& normal, const Vector3& _center, float size);
+
+    void DrawCone(const Vector3& from, const Vector3& to, float radius);
+
+    void DrawCylinder(const Vector3& from, const Vector3& to, float radius);
+
+    void DrawCapsule(const Vector3& from, const Vector3& to, float radius);
+
+    void DrawAxis(float x, float y, float z, float len = 1.0f, Axis highlight = Axis::Count, float thickness = 0.0f);
+
+    void DrawGrid(const Vector3& normal, const Vector3& center, uint32_t size = 20, float step = 1.0f);
+
+    void DrawGrid(Axis axis, const Vector3& center, uint32_t size = 20, float step = 1.0f);
+
+    void DrawOrb(float x, float y, float z, float radius, Axis highlight = Axis::Count);
+
+private:
+    void Flush();
+
+    void SoftFlush();
+
+private:
+    static const uint32_t s_cache_size = 1024;
+    static const uint32_t s_stack_size = 16;
+    static const uint32_t s_cache_quad_size = 1024;
+
+    DebugVertex  cache_[s_cache_size + 1];
+    DebugUvVertex cache_quad_[s_cache_quad_size];
+    uint16_t indices_[s_cache_size * 2];
+
+    uint16_t pos_;
+    uint16_t pos_quad_;
+    uint16_t index_pos_;
+    uint16_t vertex_pos_;
+
+
+    struct MatrixStack
+    {
+        void reset()
+        {
+            mtx  = 0;
+            num  = 1;
+            data = nullptr;
+        }
+
+        uint32_t mtx;
+        uint16_t num;
+        float*   data;
+    };
+
+    MatrixStack matrix_stack_[32];
+    uint32_t matrix_stack_current_;
+
+    ViewId view_id_;
+    uint8_t stack_;
+    bool depth_test_less_;
+
+    struct DebugDrawAttrib
+    {
+        uint64_t state;
+        float    offset;
+        float    scale;
+        float    spin;
+        uint32_t abgr;
+        bool     stipple;
+        bool     wireframe;
+        uint8_t  lod;
+    };
+
+    DebugDrawAttrib attrib_[s_stack_size];
+
+    enum class DrawState
+    {
+        None,
+        MoveTo,
+        LineTo,
+        Count
+    };
+
+
+    DrawState draw_state_;
+
+    bgfx::Encoder* encoder_;
+    bgfx::Encoder* default_encoder_;
 };
 
 

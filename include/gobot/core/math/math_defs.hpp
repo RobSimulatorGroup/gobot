@@ -136,5 +136,19 @@ inline float RadtoDegree(float rad)
     return rad * 180.0f / Math_PI;
 }
 
+enum class Axis
+{
+    X,
+    Y,
+    Z,
+
+    Count
+};
+
+
+// compare
+template <typename T> int GetSign(T val) {
+    return (T(0) < val) - (val < T(0));
+}
 
 };  // namespace gobot

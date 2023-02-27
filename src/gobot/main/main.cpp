@@ -14,7 +14,7 @@
 #include "gobot/rendering/render_server.hpp"
 #include "gobot/core/os/os.hpp"
 #include "gobot/scene/window.hpp"
-#include "gobot/rendering/load_programs.hpp"
+#include "gobot/rendering/load_shader.hpp"
 #include "gobot/core/math/geometry.hpp"
 #include <cxxopts.hpp>
 #include <bgfx/bgfx.h>
@@ -196,8 +196,8 @@ bool Main::Start() {
     OS::GetInstance()->SetMainLoop(main_loop);
 
     s_render_server->InitWindow();
-    s_render_server->SetDebug(RenderDebugFlags::DebugTextDisplay);
     USING_ENUM_BITWISE_OPERATORS;
+    s_render_server->SetDebug(RenderDebugFlags::DebugTextDisplay);
     s_render_server->SetViewClear(0, RenderClearFlags::Depth | RenderClearFlags::Color);
 
 

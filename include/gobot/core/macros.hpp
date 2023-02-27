@@ -92,3 +92,7 @@ constexpr auto ToUnderlying(E e) noexcept
 
 #define ENUM_UINT_CAST(enum_value)          \
     ToUnderlying(enum_value)
+
+
+template<class T, size_t N>
+constexpr size_t GetArraySize(T (&)[N]) { return N; }
