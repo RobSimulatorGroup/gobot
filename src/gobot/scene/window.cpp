@@ -70,6 +70,8 @@ void Window::OnEvent(Event& e)
             Q_EMIT windowDropFileRequested();
         }
     }
+
+    Input::GetInstance()->OnEvent(e);
 }
 
 void Window::PullEvent()

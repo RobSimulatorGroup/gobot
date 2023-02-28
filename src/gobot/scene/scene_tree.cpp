@@ -52,15 +52,6 @@ SceneTree::SceneTree() {
     root_->SetName("root");
 
     Object::connect(root_, &Window::windowCloseRequested, this, &SceneTree::OnWindowClose);
-    Object::connect(root_, &Window::windowResizeRequested, this, &SceneTree::OnWindowResize);
-}
-
-void SceneTree::OnWindowResize(WindowResizeEvent& e)
-{
-    if (e.GetWidth() == 0 || e.GetHeight() == 0) {
-        return;
-    }
-//    Renderer::OnWindowResize(e.GetWidth(), e.GetHeight());
 }
 
 void SceneTree::OnWindowClose() {

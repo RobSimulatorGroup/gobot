@@ -46,6 +46,7 @@ void Input::OnEvent(Event& e) {
     dispatcher.Dispatch<MouseScrolledEvent>(BIND_EVENT_FN(Input::OnMouseScrolled));
     dispatcher.Dispatch<MouseMovedEvent>(BIND_EVENT_FN(Input::OnMouseMoved));
     dispatcher.Dispatch<MouseEnterEvent>(BIND_EVENT_FN(Input::OnMouseEnter));
+    dispatcher.Dispatch<MouseLeaveEvent>(BIND_EVENT_FN(Input::OnMouseLeave));
 }
 
 bool Input::OnKeyPressed(KeyPressedEvent& e)

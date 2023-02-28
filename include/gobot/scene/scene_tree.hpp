@@ -53,8 +53,6 @@ Q_SIGNALS:
 private:
     void OnWindowClose();
 
-    void OnWindowResize(WindowResizeEvent& e);
-
 private:
     friend class Node;
     static SceneTree *s_singleton;

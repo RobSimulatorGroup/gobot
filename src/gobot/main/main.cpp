@@ -229,11 +229,10 @@ bool Main::Start() {
 
 bool Main::Iteration()
 {
-
     auto window = dynamic_cast<SceneTree*>(OS::GetInstance()->GetMainLoop())->GetRoot()->GetWindowsInterface();
 
     auto time_now = std::chrono::high_resolution_clock::now();
-    auto duration = std::chrono::duration<double, std::ratio<1>>(time_now-s_last_ticks).count();
+    auto duration = std::chrono::duration<double, std::ratio<1>>(time_now - s_last_ticks).count();
 
     s_last_ticks = time_now;
 
