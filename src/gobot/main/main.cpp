@@ -6,6 +6,7 @@
 */
 
 #include "gobot/main/main.hpp"
+#include "gobot/editor/editor.hpp"
 #include "gobot/scene/scene_tree.hpp"
 #include "gobot/core/config/project_setting.hpp"
 #include "gobot/core/config/engine.hpp"
@@ -194,7 +195,9 @@ bgfx::ProgramHandle m_program;
 
 bool Main::Start() {
     auto* main_loop = Object::New<SceneTree>();
-    OS::GetInstance()->SetMainLoop(main_loop);
+
+    auto* editor = Object::New<Editor>();
+    main_loop->GetRoot()->AddChild(editor);
 
     s_render_server->InitWindow();
     USING_ENUM_BITWISE_OPERATORS;
@@ -222,6 +225,8 @@ bool Main::Start() {
     m_program = s_render_server->CreateProgram(vsh, fsh, true);
 
     ddInit();
+
+    OS::GetInstance()->SetMainLoop(main_loop);
 
     return true;
 }
@@ -335,6 +340,8 @@ void Main::Cleanup() {
 
     Object::Delete(s_input);
     Object::Delete(s_project_settings);
+
+    OS::GetInstance()->DeleteMainLoop();
 
     bgfx::shutdown();
 }
