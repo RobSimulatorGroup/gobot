@@ -25,6 +25,10 @@ enum class NotificationType {
     ExitWorld,
     TransformChanged,
     LocalTransformChanged,
+
+    PhysicsProcess,
+    Process,
+
 };
 
 }

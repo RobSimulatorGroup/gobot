@@ -24,7 +24,6 @@ void Input::Reset()
     memset(key_held_, 0, static_cast<KeyCodeUInt>(KeyCode::KeyCodeMaxNum));
 
     memset(mouse_clicked_, 0, static_cast<MouseButtonUInt>(MouseButton::ButtonMaxNum));
-    memset(mouse_held_, 0, static_cast<MouseButtonUInt>(MouseButton::ButtonMaxNum));
 
     mouse_on_screen_ = true;
     scroll_offset_  = 0.0f;
@@ -65,15 +64,15 @@ bool Input::OnKeyReleased(KeyReleasedEvent& e)
 
 bool Input::OnMousePressed(MouseButtonPressedEvent& e)
 {
-    SetMouseClicked(e.GetMouseButton(), true);
-    SetMouseHeld(e.GetMouseButton(), true);
+    SetMouseClicked(e.GetMouseButton(),
+                    e.GetMouseButtonClickMode() == MouseButtonClickMode::Single ? MouseClickedState::SingleClicked :
+                                                                                  MouseClickedState::DoubleClicked);
     return false;
 }
 
 bool Input::OnMouseReleased(MouseButtonReleasedEvent& e)
 {
-    SetMouseClicked(e.GetMouseButton(), false);
-    SetMouseHeld(e.GetMouseButton(), false);
+    SetMouseClicked(e.GetMouseButton(), MouseClickedState::None);
     return false;
 }
 
@@ -112,6 +111,22 @@ void Input::SetMouseMode(MouseMode p_mode) {
 
 MouseMode Input::GetMouseMode() const {
     return mouse_mode_;
+}
+
+void Input::SetKeyPressed(KeyCode key, bool pressed) {
+    key_pressed_[KeyCodeUInt(key)] = pressed;
+}
+
+void Input::SetKeyHeld(KeyCode key, bool held) {
+    key_held_[KeyCodeUInt(key)] = held;
+}
+
+void Input::SetMouseClicked(MouseButton key, MouseClickedState clicked) {
+    mouse_clicked_[MouseButtonUInt(key)] = clicked;
+}
+
+void Input::SetScrollOffset(float offset) {
+    scroll_offset_ = offset;
 }
 
 

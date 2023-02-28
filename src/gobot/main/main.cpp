@@ -234,8 +234,6 @@ bool Main::Start() {
 
 bool Main::Iteration()
 {
-    auto window = dynamic_cast<SceneTree*>(OS::GetInstance()->GetMainLoop())->GetRoot()->GetWindowsInterface();
-
     auto time_now = std::chrono::high_resolution_clock::now();
     auto duration = std::chrono::duration<double, std::ratio<1>>(time_now - s_last_ticks).count();
 
@@ -249,15 +247,6 @@ bool Main::Iteration()
     if (OS::GetInstance()->GetMainLoop()->Process(duration)) {
         exit = true;
     }
-
-    // Set view 0 default viewport.
-    auto width = window->GetWidth();
-    auto height = window->GetHeight();
-
-    auto view = Matrix4f::LookAt({35.0f, 35.0f, -35.0f}, {0.0f, 0.0f, 0.0f});
-    auto proj = Matrix4f::Perspective(60.0, float(width)/float(height), 0.1f, 100.0f);
-    GET_RENDER_SERVER()->SetViewTransform(0, view, proj);
-    GET_RENDER_SERVER()->SetViewRect(0, 0, 0, uint16_t(width), uint16_t(height) );
 
     // This dummy draw call is here to make sure that view 0 is cleared
     // if no other draw calls are submitted to view 0.

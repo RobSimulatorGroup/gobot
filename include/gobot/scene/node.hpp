@@ -247,6 +247,16 @@ public:
      */
     void PrintTree();
 
+
+    /* PROCESSING */
+    void SetProcess(bool process);
+    double GetProcessDeltaTime() const;
+    bool IsProcessing() const;
+
+    void SetPhysicsProcess(bool process);
+    double GetPhysicsProcessDeltaTime() const;
+    bool IsPhysicsProcessing() const;
+
 protected:
     void NotificationCallBack(NotificationType notification);
 

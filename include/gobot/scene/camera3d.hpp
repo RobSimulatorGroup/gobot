@@ -17,8 +17,6 @@ class Camera3D : public Node3D {
 public:
     Camera3D();
 
-
-
 private:
     real_t fovy_ = 75.0;
     real_t aspect_ = 1.0;

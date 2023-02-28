@@ -13,6 +13,7 @@
 #include "gobot/core/events/event.hpp"
 #include "gobot/core/events/key_event.hpp"
 #include "gobot/core/events/mouse_event.hpp"
+#include "gobot/core/math/matrix.hpp"
 #include <gobot_export.h>
 
 #include "Eigen/Dense"
@@ -28,6 +29,11 @@ enum class MouseMode
     Captured
 };
 
+enum class MouseClickedState {
+    None = 0,
+    SingleClicked,
+    DoubleClicked
+};
 
 class GOBOT_EXPORT Input : public Object {
     GOBCLASS(Input, Object);
@@ -42,35 +48,32 @@ public:
 
     void ResetPressed();
 
+    static Input* GetInstance();
+
     void OnEvent(Event& e);
 
-    FORCE_INLINE void SetKeyPressed(KeyCode key, bool pressed) { key_pressed_[KeyCodeUInt(key)] = pressed; }
+    const Eigen::Vector2i& GetMousePosition() const { return mouse_position_; }
 
-    FORCE_INLINE void SetKeyHeld(KeyCode key, bool held) { key_held_[KeyCodeUInt(key)] = held; }
-
-    void SetMouseClicked(MouseButton key, bool clicked) { mouse_clicked_[MouseButtonUInt(key)] = clicked; }
-
-    void SetMouseHeld(MouseButton key, bool held) { mouse_held_[MouseButtonUInt(key)] = held; }
-
-    void SetScrollOffset(float offset) { scroll_offset_ = offset; }
-
-    float GetScrollOffset() const { return scroll_offset_; }
-
-    void StoreMousePosition(Eigen::Vector2f pos) { mouse_position_ = std::move(pos); }
-
-    const Eigen::Vector2f& GetMousePosition() const { return mouse_position_; }
-
-    void SetMouseOnScreen(bool on_screen) { mouse_on_screen_ = on_screen; }
-
-    bool GetMouseOnScreen() const { return mouse_on_screen_; }
-
-    static Input* GetInstance();
+    MouseClickedState GetMouseClickedState(MouseButton mouse_button) const {
+        return mouse_clicked_[MouseButtonUInt(mouse_button)];
+    }
 
     void SetMouseMode(MouseMode mode);
 
     MouseMode GetMouseMode() const;
 
     bool GetKeyPressed(KeyCode key_code) const { return key_pressed_[KeyCodeUInt(key_code)]; }
+
+    float GetScrollOffset() const { return scroll_offset_; }
+
+private:
+    FORCE_INLINE void SetKeyPressed(KeyCode key, bool pressed);
+
+    FORCE_INLINE void SetKeyHeld(KeyCode key, bool held);
+
+    void SetMouseClicked(MouseButton key, MouseClickedState clicked);
+
+    void SetScrollOffset(float offset);
 
 private:
     bool OnKeyPressed(KeyPressedEvent& e);
@@ -90,6 +93,7 @@ private:
     bool OnMouseLeave(MouseLeaveEvent& e);
 
 private:
+
     static Input* s_singleton;
 
     mutable std::mutex mutex_;
@@ -97,15 +101,14 @@ private:
     bool key_pressed_[static_cast<KeyCodeUInt>(KeyCode::KeyCodeMaxNum)];
     bool key_held_[static_cast<KeyCodeUInt>(KeyCode::KeyCodeMaxNum)];
 
-    bool mouse_held_[static_cast<MouseButtonUInt>(MouseButton::ButtonMaxNum)];
-    bool mouse_clicked_[static_cast<MouseButtonUInt>(MouseButton::ButtonMaxNum)];
+    MouseClickedState mouse_clicked_[static_cast<MouseButtonUInt>(MouseButton::ButtonMaxNum)];
 
     float scroll_offset_{0.0f};
 
     bool mouse_on_screen_{true};
     MouseMode mouse_mode_{MouseMode::Visible};
 
-    Eigen::Vector2f mouse_position_{0.0, 0.0};
+    Vector2i mouse_position_{0.0, 0.0};
 };
 
 }

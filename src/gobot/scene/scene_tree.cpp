@@ -58,13 +58,19 @@ void SceneTree::OnWindowClose() {
     quit_ = true;
 }
 
-
 bool SceneTree::PhysicsProcess(double time) {
 
     return quit_;
 }
 
 bool SceneTree::Process(double time) {
+    process_time_ = time;
+
+    MainLoop::Process(time);
+
+    // TODO(wqq): Do we need group
+    root_->PropagateNotification(NotificationType::PhysicsProcess);
+    root_->PropagateNotification(NotificationType::Process);
 
     return quit_;
 }

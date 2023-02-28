@@ -15,21 +15,34 @@ namespace gobot {
 class Camera3D;
 
 class Node3DEditor : public Node {
+    GOBCLASS(Node3DEditor, Node)
 public:
     Node3DEditor();
 
-    ~Node3DEditor();
+    ~Node3DEditor() override;
 
     static Node3DEditor* GetInstance();
 
-    void UpdateCameraByInput();
+    void UpdateCamera(double interp_delta);
+
+protected:
+    void NotificationCallBack(NotificationType notification);
 
 private:
     static Node3DEditor* s_singleton;
 
-private:
     Camera3D* camera3d_;
 
+    Vector2i mouse_position_last_{0, 0};
+    Vector2i mouse_position_now_{0, 0};
+
+    // {horizontal, vertical}
+    Vector2 angle_{0.01f, 0.0f};
+
+    float mouse_speed_{0.0020f};
+    float move_speed_{30.0f};
+
+    bool mouse_down_{false};
 };
 
 }

@@ -6,6 +6,8 @@
 */
 
 #include "gobot/editor/editor.hpp"
+#include "gobot/editor/node3d_editor.hpp"
+#include "gobot/core/registration.hpp"
 
 namespace gobot {
 
@@ -13,6 +15,9 @@ Editor* Editor::s_singleton = nullptr;
 
 Editor::Editor() {
     s_singleton = this;
+
+    node3d_editor_ = Object::New<Node3DEditor>();
+    AddChild(node3d_editor_);
 }
 
 Editor::~Editor() {
@@ -25,3 +30,9 @@ Editor* Editor::GetInstance() {
 }
 
 }
+
+GOBOT_REGISTRATION {
+    Class_<Editor>("Editor")
+        .constructor()(CtorAsRawPtr);
+
+};

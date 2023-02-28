@@ -11,17 +11,21 @@
 
 namespace gobot {
 
+class Node3DEditor;
+
 class Editor : public Node {
     GOBCLASS(Editor, Node)
 public:
     Editor();
 
-    ~Editor();
+    ~Editor() override;
 
     static Editor* GetInstance();
 
 private:
     static Editor* s_singleton;
+
+    Node3DEditor* node3d_editor_{nullptr};
 };
 
 
