@@ -118,6 +118,7 @@ void Node3DEditor::UpdateCamera(double delta_time) {
     at_ = eye_ + direction;
     up_ = right.cross(direction);
     auto view = Matrix4::LookAt(eye_, at_, up_);
+    camera3d_->SetGlobalTransform(Affine3(Matrix4::LookAt(eye_, at_, up_, Handedness::Right).matrix()));
 
     auto proj = Matrix4f::Perspective(camera3d_->GetFovy(), float(width)/float(height), 0.1f, 1000.0f);
     GET_RENDER_SERVER()->SetViewTransform(0, view, proj);
