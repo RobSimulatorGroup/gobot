@@ -292,7 +292,7 @@ bool Main::Iteration()
     DebugDrawEncoder dde;
 
     dde.begin(0);
-    dde.drawAxis(0.0f, 0.0f, 0.0f, 1000000.0);
+    dde.drawAxis(0.0f, 0.0f, 0.0f, 1000.0);
 
     dde.push();
     bx::Aabb aabb =

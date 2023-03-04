@@ -52,9 +52,9 @@ public:
 
     void OnEvent(Event& e);
 
-    const Eigen::Vector2i& GetMousePosition() const { return mouse_position_; }
+    FORCE_INLINE const Eigen::Vector2i& GetMousePosition() const { return mouse_position_; }
 
-    MouseClickedState GetMouseClickedState(MouseButton mouse_button) const {
+    FORCE_INLINE MouseClickedState GetMouseClickedState(MouseButton mouse_button) const {
         return mouse_clicked_[MouseButtonUInt(mouse_button)];
     }
 
@@ -62,9 +62,11 @@ public:
 
     MouseMode GetMouseMode() const;
 
-    bool GetKeyPressed(KeyCode key_code) const { return key_pressed_[KeyCodeUInt(key_code)]; }
+    FORCE_INLINE bool GetKeyPressed(KeyCode key_code) const { return key_pressed_[KeyCodeUInt(key_code)]; }
 
-    float GetScrollOffset() const { return scroll_offset_; }
+    FORCE_INLINE float GetScrollOffset() const { return scroll_offset_; }
+
+    void SetScrollOffset(float offset);
 
 private:
     FORCE_INLINE void SetKeyPressed(KeyCode key, bool pressed);
@@ -72,8 +74,6 @@ private:
     FORCE_INLINE void SetKeyHeld(KeyCode key, bool held);
 
     void SetMouseClicked(MouseButton key, MouseClickedState clicked);
-
-    void SetScrollOffset(float offset);
 
 private:
     bool OnKeyPressed(KeyPressedEvent& e);

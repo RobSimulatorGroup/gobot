@@ -19,6 +19,8 @@ class Node3DEditor : public Node {
 public:
     Node3DEditor();
 
+    void ResetCamera();
+
     ~Node3DEditor() override;
 
     static Node3DEditor* GetInstance();
@@ -36,11 +38,15 @@ private:
     Vector2i mouse_position_last_{0, 0};
     Vector2i mouse_position_now_{0, 0};
 
-    // {horizontal, vertical}
-    Vector2 angle_{0.01f, 0.0f};
-
     float mouse_speed_{0.0020f};
-    float move_speed_{30.0f};
+    float scroll_move_speed_{30.0f};
+
+    float horizontal_angle_{0.01f};
+    float vertical_angle_{0.0};
+
+    Vector3 eye_;
+    Vector3 at_;
+    Vector3 up_;
 
     bool mouse_down_{false};
 };

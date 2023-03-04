@@ -312,7 +312,7 @@ void SDLWindow::ProcessEvents() {
                 }
                 break;
             }
-            case SDL_MOUSEBUTTONUP: {
+            case SDL_MOUSEBUTTONDOWN: {
                 if (event.button.windowID == windows_id_) {
                     MouseButtonPressedEvent mouse_button_pressed_event((MouseButton)event.button.button,
                                                                  event.button.x,
@@ -322,7 +322,7 @@ void SDLWindow::ProcessEvents() {
                 }
                 break;
             }
-            case SDL_MOUSEBUTTONDOWN:
+            case SDL_MOUSEBUTTONUP:
             {
                 if (event.button.windowID == windows_id_) {
                     MouseButtonReleasedEvent mouse_released_event((MouseButton)event.button.button,

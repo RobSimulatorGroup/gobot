@@ -6,11 +6,43 @@
 */
 
 #include "gobot/scene/camera3d.hpp"
+#include "gobot/rendering/render_server.hpp"
 
 namespace gobot {
 
 Camera3D::Camera3D() {
 
+}
+
+void Camera3D::SetFovy(const real_t& fovy) {
+    fovy_ = fovy;
+}
+
+void Camera3D::SetAspect(const real_t& aspect) {
+    aspect_ = aspect;
+}
+
+void Camera3D::SetNear(const real_t& near) {
+    near_ = near;
+}
+
+void Camera3D::SetFar(const real_t& far) {
+    far_ = far;
+}
+
+
+void Camera3D::SetPerspective(real_t fovy_degrees, real_t z_near, real_t z_far) {
+    if (!force_change_ && fovy_ == fovy_degrees && z_near == near_ && z_far == far_ && mode_ == ProjectionType::Perspective) {
+        return;
+    }
+
+    fovy_ = fovy_degrees;
+    near_ = z_near;
+    far_ = z_far;
+    mode_ = Perspective;
+
+//    RenderServer::GetInstance()->SetViewTransform(0, this->GetGlobalTransform().matrix(), fovy_, near_, far_);
+    force_change_ = false;
 }
 
 }

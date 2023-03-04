@@ -13,6 +13,29 @@ namespace gobot {
 
 class Camera3D : public Node3D {
     GOBCLASS(Camera3D, Node3D)
+public:
+    enum ProjectionType {
+        Perspective,
+        Orthogonal
+    };
+
+    void SetFovy(const real_t& fovy);
+
+    FORCE_INLINE real_t GetFovy() const { return fovy_; }
+
+    void SetAspect(const real_t& aspect);
+
+    FORCE_INLINE real_t GetAspect() const { return fovy_; }
+
+    void SetNear(const real_t& near);
+
+    FORCE_INLINE real_t GetNear() const { return fovy_; }
+
+    void SetFar(const real_t& far);
+
+    FORCE_INLINE real_t GetFar() const { return fovy_; }
+
+    void SetPerspective(real_t fovy_degrees, real_t z_near, real_t z_far);
 
 public:
     Camera3D();
@@ -22,6 +45,10 @@ private:
     real_t aspect_ = 1.0;
     real_t near_ = 0.05;
     real_t far_ = 4000.0;
+
+    ProjectionType mode_ = Perspective;
+
+    bool force_change_{false};
 };
 
 
