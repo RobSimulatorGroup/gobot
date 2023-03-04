@@ -8,24 +8,13 @@
 #pragma once
 
 #include "gobot/rendering/render_types.hpp"
+#include "gobot/scene/resources/shape_3d.hpp"
 #include "gobot/core/math/matrix.hpp"
 #include <bx/allocator.h>
 #include <bx/bounds.h>
 #include <bgfx/bgfx.h>
 
 namespace gobot {
-
-struct Axis
-{
-    enum Enum
-    {
-        X,
-        Y,
-        Z,
-
-        Count
-    };
-};
 
 struct DdVertex
 {
@@ -38,179 +27,126 @@ inline bool isValid(SpriteHandle _handle) { return _handle.idx != UINT16_MAX; }
 struct GeometryHandle { uint16_t idx; };
 inline bool isValid(GeometryHandle _handle) { return _handle.idx != UINT16_MAX; }
 
-///
-void ddInit(bx::AllocatorI* _allocator = NULL);
+void ddInit(bx::AllocatorI* _allocator = nullptr);
 
-///
 void ddShutdown();
 
-///
 SpriteHandle ddCreateSprite(uint16_t _width, uint16_t _height, const void* _data);
 
-///
 void ddDestroy(SpriteHandle _handle);
 
-///
-GeometryHandle ddCreateGeometry(uint32_t _numVertices, const DdVertex* _vertices, uint32_t _numIndices = 0, const void* _indices = NULL, bool _index32 = false);
+GeometryHandle ddCreateGeometry(uint32_t _numVertices, const DdVertex* _vertices, uint32_t _numIndices = 0, const void* _indices = nullptr, bool _index32 = false);
 
-///
 void ddDestroy(GeometryHandle _handle);
 
-///
 struct DebugDrawEncoder
 {
-    ///
     DebugDrawEncoder();
 
-    ///
     ~DebugDrawEncoder();
 
-    ///
-    void begin(uint16_t _viewId, bool _depthTestLess = true, bgfx::Encoder* _encoder = NULL);
+    void Begin(uint16_t viewId, bool depth_test_less = true, bgfx::Encoder* encoder = nullptr);
 
-    ///
-    void end();
+    void End();
 
-    ///
-    void push();
+    void Push();
 
-    ///
-    void pop();
+    void Pop();
 
-    ///
-    void setDepthTestLess(bool _depthTestLess);
+    void SetDepthTestLess(bool depth_test_less);
 
-    ///
-    void setState(bool _depthTest, bool _depthWrite, bool _clockwise);
+    void SetState(bool depth_test, bool depth_write, bool clockwise);
 
-    ///
-    void setColor(uint32_t _abgr);
+    void SetColor(uint32_t abgr);
 
-    ///
-    void setLod(uint8_t _lod);
+    void SetLod(uint8_t lod);
 
-    ///
-    void setWireframe(bool _wireframe);
+    void SetWireframe(bool wireframe);
 
-    ///
-    void setStipple(bool _stipple, float _scale = 1.0f, float _offset = 0.0f);
+    void SetStipple(bool stipple, float scale = 1.0f, float offset = 0.0f);
 
-    ///
-    void setSpin(float _spin);
+    void SetSpin(float spin);
 
-    ///
-    void setTransform(const void* _mtx);
+    void SetTransform(const void* mtx);
 
-    ///
-    void setTranslate(float _x, float _y, float _z);
+    void SetTranslate(float x, float y, float z);
 
-    ///
-    void pushTransform(const void* _mtx);
+    void PushTransform(const void* mtx);
 
-    ///
-    void popTransform();
+    void PopTransform();
 
-    ///
-    void moveTo(float _x, float _y, float _z = 0.0f);
+    void MoveTo(float _x, float _y, float _z = 0.0f);
 
-    ///
-    void moveTo(const bx::Vec3& _pos);
+    void MoveTo(const Vector3f & _pos);
 
-    ///
-    void lineTo(float _x, float _y, float _z = 0.0f);
+    void LineTo(float _x, float _y, float _z = 0.0f);
 
-    ///
-    void lineTo(const bx::Vec3& _pos);
+    void LineTo(const Vector3f& _pos);
 
-    ///
-    void close();
+    void Close();
 
-    ///
-    void draw(const bx::Aabb& _aabb);
+    void DrawShape3D(const Ref<Shape3D>& shape_3d);
 
-    ///
-    void draw(const bx::Cylinder& _cylinder);
+    void Draw(const bx::Aabb& _aabb);
 
-    ///
-    void draw(const bx::Capsule& _capsule);
+    void Draw(const bx::Cylinder& _cylinder);
 
-    ///
-    void draw(const bx::Disk& _disk);
+    void Draw(const bx::Capsule& _capsule);
 
-    ///
-    void draw(const bx::Obb& _obb);
+    void Draw(const bx::Disk& _disk);
 
-    ///
-    void draw(const bx::Sphere& _sphere);
+    void Draw(const bx::Obb& _obb);
 
-    ///
-    void draw(const bx::Triangle& _triangle);
+    void Draw(const bx::Sphere& _sphere);
 
-    ///
-    void draw(const bx::Cone& _cone);
+    void Draw(const bx::Triangle& _triangle);
 
-    ///
-    void draw(GeometryHandle _handle);
+    void Draw(const bx::Cone& _cone);
 
-    ///
-    void drawLineList(uint32_t _numVertices, const DdVertex* _vertices, uint32_t _numIndices = 0, const uint16_t* _indices = NULL);
+    void Draw(GeometryHandle _handle);
 
-    ///
-    void drawTriList(uint32_t _numVertices, const DdVertex* _vertices, uint32_t _numIndices = 0, const uint16_t* _indices = NULL);
+    void DrawLineList(uint32_t _numVertices, const DdVertex* _vertices, uint32_t _numIndices = 0, const uint16_t* _indices = nullptr);
 
-    ///
-    void drawFrustum(const void* _viewProj);
+    void DrawTriList(uint32_t _numVertices, const DdVertex* _vertices, uint32_t _numIndices = 0, const uint16_t* _indices = nullptr);
 
-    ///
-    void drawArc(Axis::Enum _axis, float _x, float _y, float _z, float _radius, float _degrees);
+    void DrawFrustum(const void* _viewProj);
 
-    ///
-    void drawCircle(const bx::Vec3& _normal, const bx::Vec3& _center, float _radius, float _weight = 0.0f);
+    void DrawArc(Axis _axis, float _x, float _y, float _z, float _radius, float _degrees);
 
-    ///
-    void drawCircle(Axis::Enum _axis, float _x, float _y, float _z, float _radius, float _weight = 0.0f);
+    void DrawCircle(const bx::Vec3& _normal, const bx::Vec3& _center, float _radius, float _weight = 0.0f);
 
-    ///
-    void drawQuad(const bx::Vec3& _normal, const bx::Vec3& _center, float _size);
+    void DrawCircle(Axis _axis, float _x, float _y, float _z, float _radius, float _weight = 0.0f);
 
-    ///
-    void drawQuad(SpriteHandle _handle, const bx::Vec3& _normal, const bx::Vec3& _center, float _size);
+    void DrawQuad(const bx::Vec3& _normal, const bx::Vec3& _center, float _size);
 
-    ///
-    void drawQuad(bgfx::TextureHandle _handle, const bx::Vec3& _normal, const bx::Vec3& _center, float _size);
+    void DrawQuad(SpriteHandle _handle, const bx::Vec3& _normal, const bx::Vec3& _center, float _size);
 
-    ///
-    void drawCone(const bx::Vec3& _from, const bx::Vec3& _to, float _radius);
+    void DrawQuad(bgfx::TextureHandle _handle, const bx::Vec3& _normal, const bx::Vec3& _center, float _size);
 
-    ///
-    void drawCylinder(const bx::Vec3& _from, const bx::Vec3& _to, float _radius);
+    void DrawCone(const bx::Vec3& _from, const bx::Vec3& _to, float _radius);
 
-    ///
-    void drawCapsule(const bx::Vec3& _from, const bx::Vec3& _to, float _radius);
+    void DrawCylinder(const bx::Vec3& _from, const bx::Vec3& _to, float _radius);
 
-    ///
-    void drawAxis(float _x, float _y, float _z, float _len = 1.0f, Axis::Enum _highlight = Axis::Count, float _thickness = 0.0f);
+    void DrawCapsule(const bx::Vec3& _from, const bx::Vec3& _to, float _radius);
 
-    ///
-    void drawGrid(const bx::Vec3& _normal, const bx::Vec3& _center, uint32_t _size = 20, float _step = 1.0f);
+    void DrawWorldAxis(float len = 1.0f, Axis highlight = Axis::Count);
 
-    ///
-    void drawGrid(Axis::Enum _axis, const bx::Vec3& _center, uint32_t _size = 20, float _step = 1.0f);
+    void DrawAxis(float _x, float _y, float _z, float _len = 1.0f, Axis _highlight = Axis::Count, float _thickness = 0.0f);
 
-    ///
-    void drawOrb(float _x, float _y, float _z, float _radius, Axis::Enum _highlight = Axis::Count);
+    void DrawGrid(const bx::Vec3& _normal, const bx::Vec3& _center, uint32_t _size = 20, float _step = 1.0f);
+
+    void DrawGrid(Axis _axis, const bx::Vec3& _center, uint32_t _size = 20, float _step = 1.0f);
+
+    void DrawOrb(float _x, float _y, float _z, float _radius, Axis _highlight = Axis::Count);
 
     BX_ALIGN_DECL_CACHE_LINE(uint8_t) m_internal[50<<10];
 };
 
-///
 class DebugDrawEncoderScopePush
 {
 public:
-    ///
     DebugDrawEncoderScopePush(DebugDrawEncoder& _dde);
 
-    ///
     ~DebugDrawEncoderScopePush();
 
 private:

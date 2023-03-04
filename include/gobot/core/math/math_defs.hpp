@@ -109,6 +109,15 @@ enum class Handedness
     Right,
 };
 
+enum class Axis
+{
+    X,
+    Y,
+    Z,
+
+    Count
+};
+
 
 /**
  * The "Real" type is an abstract type used for real numbers, such as 1.5,

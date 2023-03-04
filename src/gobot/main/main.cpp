@@ -291,19 +291,19 @@ bool Main::Iteration()
 
     DebugDrawEncoder dde;
 
-    dde.begin(0);
-    dde.drawAxis(0.0f, 0.0f, 0.0f, 1000.0);
+    dde.Begin(0);
+    dde.DrawWorldAxis(100.0);
 
-    dde.push();
+    dde.Push();
     bx::Aabb aabb =
             {
                     {  5.0f, 1.0f, 1.0f },
                     { 10.0f, 5.0f, 5.0f },
             };
-    dde.setWireframe(true);
+    dde.SetWireframe(true);
 //    dde.setColor(intersect(&dde, ray, aabb) ? kSelected : 0xff00ff00);
-    dde.draw(aabb);
-    dde.pop();
+    dde.Draw(aabb);
+    dde.Pop();
 
 
     {
@@ -313,10 +313,10 @@ bool Main::Iteration()
         bx::Plane plane(bx::init::None);
         bx::calcPlane(plane, normal, pos);
 
-        dde.drawGrid(Axis::Y, pos, 128, 1.0f);
+        dde.DrawGrid(Axis::Y, pos, 128, 1.0f);
     }
 
-    dde.end();
+    dde.End();
 
     GET_RENDER_SERVER()->Frame();
 

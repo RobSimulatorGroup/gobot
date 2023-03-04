@@ -287,7 +287,7 @@ uint32_t genSphere(uint8_t _subdiv0, void *_pos0 = NULL, uint16_t _posStride0 = 
     return numVertices;
 }
 
-bx::Vec3 getPoint(Axis::Enum _axis, float _x, float _y) {
+bx::Vec3 getPoint(Axis _axis, float _x, float _y) {
     switch (_axis) {
         case Axis::X:
             return {0.0f, _x, _y};
@@ -923,7 +923,7 @@ static DebugDrawShared s_dds;
 
 struct DebugDrawEncoderImpl {
     DebugDrawEncoderImpl()
-            : m_depthTestLess(true), m_state(State::Count), m_defaultEncoder(NULL) {
+            : m_depthTestLess(true), m_state(State::Count), m_defaultEncoder(nullptr) {
     }
 
     void init(bgfx::Encoder *_encoder) {
@@ -938,7 +938,7 @@ struct DebugDrawEncoderImpl {
         BX_ASSERT(State::Count == m_state, "");
 
         m_viewId = _viewId;
-        m_encoder = _encoder == NULL ? m_defaultEncoder : _encoder;
+        m_encoder = _encoder == nullptr ? m_defaultEncoder : _encoder;
         m_state = State::None;
         m_stack = 0;
         m_depthTestLess = _depthTestLess;
@@ -1169,7 +1169,7 @@ struct DebugDrawEncoderImpl {
         moveTo(_pos.x, _pos.y, _pos.z);
     }
 
-    void moveTo(Axis::Enum _axis, float _x, float _y) {
+    void moveTo(Axis _axis, float _x, float _y) {
         moveTo(getPoint(_axis, _x, _y));
     }
 
@@ -1224,7 +1224,7 @@ struct DebugDrawEncoderImpl {
         lineTo(_pos.x, _pos.y, _pos.z);
     }
 
-    void lineTo(Axis::Enum _axis, float _x, float _y) {
+    void lineTo(Axis _axis, float _x, float _y) {
         lineTo(getPoint(_axis, _x, _y));
     }
 
@@ -1498,7 +1498,7 @@ struct DebugDrawEncoderImpl {
         drawFrustum((const float *) _viewProj);
     }
 
-    void drawArc(Axis::Enum _axis, float _x, float _y, float _z, float _radius, float _degrees) {
+    void drawArc(Axis _axis, float _x, float _y, float _z, float _radius, float _degrees) {
         const Attrib &attrib = m_attrib[m_stack];
         const uint32_t num = getCircleLod(attrib.m_lod);
         const float step = bx::kPi * 2.0f / num;
@@ -1569,7 +1569,7 @@ struct DebugDrawEncoderImpl {
         close();
     }
 
-    void drawCircle(Axis::Enum _axis, float _x, float _y, float _z, float _radius, float _weight) {
+    void drawCircle(Axis _axis, float _x, float _y, float _z, float _radius, float _weight) {
         const Attrib &attrib = m_attrib[m_stack];
         const uint32_t num = getCircleLod(attrib.m_lod);
         const float step = bx::kPi * 2.0f / num;
@@ -1744,7 +1744,25 @@ struct DebugDrawEncoderImpl {
         }
     }
 
-    void drawAxis(float _x, float _y, float _z, float _len, Axis::Enum _highlight, float _thickness) {
+    void drawWorldAxis(float len, Axis highlight) {
+        push();
+
+        setColor(Axis::X == highlight ? 0xff00ffff : 0xff0000ff);
+        moveTo(0.0f - len, 0.0f, 0.0f);
+        lineTo(0.0f + len, 0.0f, 0.0f);
+
+        setColor(Axis::Y == highlight ? 0xff00ffff : 0xff00ff00);
+        moveTo(0.0f, 0.0f - len, 0.0f);
+        lineTo(0.0f, 0.0f + len, 0.0f);
+
+        setColor(Axis::Z == highlight ? 0xff00ffff : 0xffff0000);
+        moveTo(0.0f, 0.0f, 0.0f - len);
+        lineTo(0.0f, 0.0f, 0.0f + len);
+
+        pop();
+    }
+
+    void drawAxis(float _x, float _y, float _z, float _len, Axis _highlight, float _thickness) {
         push();
 
         if (_thickness > 0.0f) {
@@ -1822,7 +1840,7 @@ struct DebugDrawEncoderImpl {
         }
     }
 
-    void drawGrid(Axis::Enum _axis, const bx::Vec3 &_center, uint32_t _size, float _step) {
+    void drawGrid(Axis _axis, const bx::Vec3 &_center, uint32_t _size, float _step) {
         push();
         pushTranslate(_center);
 
@@ -1858,7 +1876,7 @@ struct DebugDrawEncoderImpl {
         pop();
     }
 
-    void drawOrb(float _x, float _y, float _z, float _radius, Axis::Enum _hightlight) {
+    void drawOrb(float _x, float _y, float _z, float _radius, Axis _hightlight) {
         push();
 
         setColor(Axis::X == _hightlight ? 0xff00ffff : 0xff0000ff);
@@ -2064,196 +2082,204 @@ DebugDrawEncoder::~DebugDrawEncoder() {
     DEBUG_DRAW_ENCODER(shutdown());
 }
 
-void DebugDrawEncoder::begin(uint16_t _viewId, bool _depthTestLess, bgfx::Encoder *_encoder) {
-    DEBUG_DRAW_ENCODER(begin(_viewId, _depthTestLess, _encoder));
+void DebugDrawEncoder::Begin(uint16_t viewId, bool depth_test_less, bgfx::Encoder *encoder) {
+    DEBUG_DRAW_ENCODER(begin(viewId, depth_test_less, encoder));
 }
 
-void DebugDrawEncoder::end() {
+void DebugDrawEncoder::End() {
     DEBUG_DRAW_ENCODER(end());
 }
 
-void DebugDrawEncoder::push() {
+void DebugDrawEncoder::Push() {
     DEBUG_DRAW_ENCODER(push());
 }
 
-void DebugDrawEncoder::pop() {
+void DebugDrawEncoder::Pop() {
     DEBUG_DRAW_ENCODER(pop());
 }
 
-void DebugDrawEncoder::setDepthTestLess(bool _depthTestLess) {
-    DEBUG_DRAW_ENCODER(setDepthTestLess(_depthTestLess));
+void DebugDrawEncoder::SetDepthTestLess(bool depth_test_less) {
+    DEBUG_DRAW_ENCODER(setDepthTestLess(depth_test_less));
 }
 
-void DebugDrawEncoder::setState(bool _depthTest, bool _depthWrite, bool _clockwise) {
-    DEBUG_DRAW_ENCODER(setState(_depthTest, _depthWrite, _clockwise));
+void DebugDrawEncoder::SetState(bool depth_test, bool depth_write, bool clockwise) {
+    DEBUG_DRAW_ENCODER(setState(depth_test, depth_write, clockwise));
 }
 
-void DebugDrawEncoder::setColor(uint32_t _abgr) {
-    DEBUG_DRAW_ENCODER(setColor(_abgr));
+void DebugDrawEncoder::SetColor(uint32_t abgr) {
+    DEBUG_DRAW_ENCODER(setColor(abgr));
 }
 
-void DebugDrawEncoder::setLod(uint8_t _lod) {
-    DEBUG_DRAW_ENCODER(setLod(_lod));
+void DebugDrawEncoder::SetLod(uint8_t lod) {
+    DEBUG_DRAW_ENCODER(setLod(lod));
 }
 
-void DebugDrawEncoder::setWireframe(bool _wireframe) {
-    DEBUG_DRAW_ENCODER(setWireframe(_wireframe));
+void DebugDrawEncoder::SetWireframe(bool wireframe) {
+    DEBUG_DRAW_ENCODER(setWireframe(wireframe));
 }
 
-void DebugDrawEncoder::setStipple(bool _stipple, float _scale, float _offset) {
-    DEBUG_DRAW_ENCODER(setStipple(_stipple, _scale, _offset));
+void DebugDrawEncoder::SetStipple(bool stipple, float scale, float offset) {
+    DEBUG_DRAW_ENCODER(setStipple(stipple, scale, offset));
 }
 
-void DebugDrawEncoder::setSpin(float _spin) {
-    DEBUG_DRAW_ENCODER(setSpin(_spin));
+void DebugDrawEncoder::SetSpin(float spin) {
+    DEBUG_DRAW_ENCODER(setSpin(spin));
 }
 
-void DebugDrawEncoder::setTransform(const void *_mtx) {
-    DEBUG_DRAW_ENCODER(setTransform(_mtx));
+void DebugDrawEncoder::SetTransform(const void *mtx) {
+    DEBUG_DRAW_ENCODER(setTransform(mtx));
 }
 
-void DebugDrawEncoder::setTranslate(float _x, float _y, float _z) {
-    DEBUG_DRAW_ENCODER(setTranslate(_x, _y, _z));
+void DebugDrawEncoder::SetTranslate(float x, float y, float z) {
+    DEBUG_DRAW_ENCODER(setTranslate(x, y, z));
 }
 
-void DebugDrawEncoder::pushTransform(const void *_mtx) {
-    DEBUG_DRAW_ENCODER(pushTransform(_mtx, 1));
+void DebugDrawEncoder::PushTransform(const void *mtx) {
+    DEBUG_DRAW_ENCODER(pushTransform(mtx, 1));
 }
 
-void DebugDrawEncoder::popTransform() {
+void DebugDrawEncoder::PopTransform() {
     DEBUG_DRAW_ENCODER(popTransform());
 }
 
-void DebugDrawEncoder::moveTo(float _x, float _y, float _z) {
+void DebugDrawEncoder::MoveTo(float _x, float _y, float _z) {
     DEBUG_DRAW_ENCODER(moveTo(_x, _y, _z));
 }
 
-void DebugDrawEncoder::moveTo(const bx::Vec3 &_pos) {
-    DEBUG_DRAW_ENCODER(moveTo(_pos));
+void DebugDrawEncoder::MoveTo(const Vector3f &_pos) {
+    DEBUG_DRAW_ENCODER(moveTo(_pos.x(), _pos.y(), _pos.z()));
 }
 
-void DebugDrawEncoder::lineTo(float _x, float _y, float _z) {
+void DebugDrawEncoder::LineTo(float _x, float _y, float _z) {
     DEBUG_DRAW_ENCODER(lineTo(_x, _y, _z));
 }
 
-void DebugDrawEncoder::lineTo(const bx::Vec3 &_pos) {
-    DEBUG_DRAW_ENCODER(lineTo(_pos));
+void DebugDrawEncoder::LineTo(const Vector3f &_pos) {
+    DEBUG_DRAW_ENCODER(lineTo(_pos.x(), _pos.y(), _pos.z()));
 }
 
-void DebugDrawEncoder::close() {
+void DebugDrawEncoder::Close() {
     DEBUG_DRAW_ENCODER(close());
 }
 
-void DebugDrawEncoder::draw(const bx::Aabb &_aabb) {
+void DebugDrawEncoder::DrawShape3D(const Ref<Shape3D>& shape_3d) {
+    // TODO(wqq);
+}
+
+void DebugDrawEncoder::Draw(const bx::Aabb &_aabb) {
     DEBUG_DRAW_ENCODER(draw(_aabb));
 }
 
-void DebugDrawEncoder::draw(const bx::Cylinder &_cylinder) {
+void DebugDrawEncoder::Draw(const bx::Cylinder &_cylinder) {
     DEBUG_DRAW_ENCODER(draw(_cylinder, false));
 }
 
-void DebugDrawEncoder::draw(const bx::Capsule &_capsule) {
+void DebugDrawEncoder::Draw(const bx::Capsule &_capsule) {
     DEBUG_DRAW_ENCODER(draw(*((const bx::Cylinder *) &_capsule), true));
 }
 
-void DebugDrawEncoder::draw(const bx::Disk &_disk) {
+void DebugDrawEncoder::Draw(const bx::Disk &_disk) {
     DEBUG_DRAW_ENCODER(draw(_disk));
 }
 
-void DebugDrawEncoder::draw(const bx::Obb &_obb) {
+void DebugDrawEncoder::Draw(const bx::Obb &_obb) {
     DEBUG_DRAW_ENCODER(draw(_obb));
 }
 
-void DebugDrawEncoder::draw(const bx::Sphere &_sphere) {
+void DebugDrawEncoder::Draw(const bx::Sphere &_sphere) {
     DEBUG_DRAW_ENCODER(draw(_sphere));
 }
 
-void DebugDrawEncoder::draw(const bx::Triangle &_triangle) {
+void DebugDrawEncoder::Draw(const bx::Triangle &_triangle) {
     DEBUG_DRAW_ENCODER(draw(_triangle));
 }
 
-void DebugDrawEncoder::draw(const bx::Cone &_cone) {
+void DebugDrawEncoder::Draw(const bx::Cone &_cone) {
     DEBUG_DRAW_ENCODER(drawCone(_cone.pos, _cone.end, _cone.radius));
 }
 
-void DebugDrawEncoder::draw(GeometryHandle _handle) {
+void DebugDrawEncoder::Draw(GeometryHandle _handle) {
     DEBUG_DRAW_ENCODER(draw(_handle));
 }
 
-void DebugDrawEncoder::drawLineList(uint32_t _numVertices, const DdVertex *_vertices, uint32_t _numIndices,
+void DebugDrawEncoder::DrawLineList(uint32_t _numVertices, const DdVertex *_vertices, uint32_t _numIndices,
                                     const uint16_t *_indices) {
     DEBUG_DRAW_ENCODER(draw(true, _numVertices, _vertices, _numIndices, _indices));
 }
 
-void DebugDrawEncoder::drawTriList(uint32_t _numVertices, const DdVertex *_vertices, uint32_t _numIndices,
+void DebugDrawEncoder::DrawTriList(uint32_t _numVertices, const DdVertex *_vertices, uint32_t _numIndices,
                                    const uint16_t *_indices) {
     DEBUG_DRAW_ENCODER(draw(false, _numVertices, _vertices, _numIndices, _indices));
 }
 
-void DebugDrawEncoder::drawFrustum(const void *_viewProj) {
+void DebugDrawEncoder::DrawFrustum(const void *_viewProj) {
     DEBUG_DRAW_ENCODER(drawFrustum(_viewProj));
 }
 
-void DebugDrawEncoder::drawArc(Axis::Enum _axis, float _x, float _y, float _z, float _radius, float _degrees) {
+void DebugDrawEncoder::DrawArc(Axis _axis, float _x, float _y, float _z, float _radius, float _degrees) {
     DEBUG_DRAW_ENCODER(drawArc(_axis, _x, _y, _z, _radius, _degrees));
 }
 
-void DebugDrawEncoder::drawCircle(const bx::Vec3 &_normal, const bx::Vec3 &_center, float _radius, float _weight) {
+void DebugDrawEncoder::DrawCircle(const bx::Vec3 &_normal, const bx::Vec3 &_center, float _radius, float _weight) {
     DEBUG_DRAW_ENCODER(drawCircle(_normal, _center, _radius, _weight));
 }
 
-void DebugDrawEncoder::drawCircle(Axis::Enum _axis, float _x, float _y, float _z, float _radius, float _weight) {
+void DebugDrawEncoder::DrawCircle(Axis _axis, float _x, float _y, float _z, float _radius, float _weight) {
     DEBUG_DRAW_ENCODER(drawCircle(_axis, _x, _y, _z, _radius, _weight));
 }
 
-void DebugDrawEncoder::drawQuad(const bx::Vec3 &_normal, const bx::Vec3 &_center, float _size) {
+void DebugDrawEncoder::DrawQuad(const bx::Vec3 &_normal, const bx::Vec3 &_center, float _size) {
     DEBUG_DRAW_ENCODER(drawQuad(_normal, _center, _size));
 }
 
-void DebugDrawEncoder::drawQuad(SpriteHandle _handle, const bx::Vec3 &_normal, const bx::Vec3 &_center, float _size) {
+void DebugDrawEncoder::DrawQuad(SpriteHandle _handle, const bx::Vec3 &_normal, const bx::Vec3 &_center, float _size) {
     DEBUG_DRAW_ENCODER(drawQuad(_handle, _normal, _center, _size));
 }
 
 void
-DebugDrawEncoder::drawQuad(bgfx::TextureHandle _handle, const bx::Vec3 &_normal, const bx::Vec3 &_center, float _size) {
+DebugDrawEncoder::DrawQuad(bgfx::TextureHandle _handle, const bx::Vec3 &_normal, const bx::Vec3 &_center, float _size) {
     DEBUG_DRAW_ENCODER(drawQuad(_handle, _normal, _center, _size));
 }
 
-void DebugDrawEncoder::drawCone(const bx::Vec3 &_from, const bx::Vec3 &_to, float _radius) {
+void DebugDrawEncoder::DrawCone(const bx::Vec3 &_from, const bx::Vec3 &_to, float _radius) {
     DEBUG_DRAW_ENCODER(drawCone(_from, _to, _radius));
 }
 
-void DebugDrawEncoder::drawCylinder(const bx::Vec3 &_from, const bx::Vec3 &_to, float _radius) {
+void DebugDrawEncoder::DrawCylinder(const bx::Vec3 &_from, const bx::Vec3 &_to, float _radius) {
     DEBUG_DRAW_ENCODER(drawCylinder(_from, _to, _radius, false));
 }
 
-void DebugDrawEncoder::drawCapsule(const bx::Vec3 &_from, const bx::Vec3 &_to, float _radius) {
+void DebugDrawEncoder::DrawCapsule(const bx::Vec3 &_from, const bx::Vec3 &_to, float _radius) {
     DEBUG_DRAW_ENCODER(drawCylinder(_from, _to, _radius, true));
 }
 
-void DebugDrawEncoder::drawAxis(float _x, float _y, float _z, float _len, Axis::Enum _highlight, float _thickness) {
+void DebugDrawEncoder::DrawWorldAxis(float len, Axis highlight) {
+    DEBUG_DRAW_ENCODER(drawWorldAxis(len, highlight));
+}
+
+void DebugDrawEncoder::DrawAxis(float _x, float _y, float _z, float _len, Axis _highlight, float _thickness) {
     DEBUG_DRAW_ENCODER(drawAxis(_x, _y, _z, _len, _highlight, _thickness));
 }
 
-void DebugDrawEncoder::drawGrid(const bx::Vec3 &_normal, const bx::Vec3 &_center, uint32_t _size, float _step) {
+void DebugDrawEncoder::DrawGrid(const bx::Vec3 &_normal, const bx::Vec3 &_center, uint32_t _size, float _step) {
     DEBUG_DRAW_ENCODER(drawGrid(_normal, _center, _size, _step));
 }
 
-void DebugDrawEncoder::drawGrid(Axis::Enum _axis, const bx::Vec3 &_center, uint32_t _size, float _step) {
+void DebugDrawEncoder::DrawGrid(Axis _axis, const bx::Vec3 &_center, uint32_t _size, float _step) {
     DEBUG_DRAW_ENCODER(drawGrid(_axis, _center, _size, _step));
 }
 
-void DebugDrawEncoder::drawOrb(float _x, float _y, float _z, float _radius, Axis::Enum _highlight) {
+void DebugDrawEncoder::DrawOrb(float _x, float _y, float _z, float _radius, Axis _highlight) {
     DEBUG_DRAW_ENCODER(drawOrb(_x, _y, _z, _radius, _highlight));
 }
 
 DebugDrawEncoderScopePush::DebugDrawEncoderScopePush(DebugDrawEncoder &_dde)
         : m_dde(_dde) {
-    m_dde.push();
+    m_dde.Push();
 }
 
 DebugDrawEncoderScopePush::~DebugDrawEncoderScopePush() {
-    m_dde.pop();
+    m_dde.Pop();
 }
 
 }
