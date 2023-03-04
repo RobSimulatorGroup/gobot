@@ -33,7 +33,7 @@ void Input::ResetPressed()
 {
     memset(key_pressed_, 0, static_cast<KeyCodeUInt>(KeyCode::KeyCodeMaxNum));
     memset(mouse_clicked_, 0, static_cast<MouseButtonUInt>(MouseButton::ButtonMaxNum));
-    scroll_offset_ = 0;
+    scroll_offset_ = 0.0f;
 }
 
 void Input::OnEvent(Event& e) {

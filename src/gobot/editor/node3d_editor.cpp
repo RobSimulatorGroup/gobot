@@ -48,6 +48,8 @@ void Node3DEditor::ResetCamera() {
 
     mouse_down_ = false;
     mouse_speed_ = 0.0020f;
+
+    distance_ = 10;
 }
 
 
@@ -79,8 +81,10 @@ void Node3DEditor::UpdateCamera(double delta_time) {
     }
 
     auto scroll_offset = Input::GetInstance()->GetScrollOffset();
+    Input::GetInstance()->SetScrollOffset(0.0);
 
-    mouse_down_ = Input::GetInstance()->GetMouseClickedState(MouseButton::Right) == MouseClickedState::SingleClicked;
+    mouse_down_ = (Input::GetInstance()->GetMouseClickedState(MouseButton::Right) == MouseClickedState::SingleClicked) ||
+                  (Input::GetInstance()->GetMouseClickedState(MouseButton::Middle) == MouseClickedState::SingleClicked);
 
     auto window = dynamic_cast<SceneTree*>(OS::GetInstance()->GetMainLoop())->GetRoot()->GetWindowsInterface();
     auto width = window->GetWidth();
@@ -89,16 +93,12 @@ void Node3DEditor::UpdateCamera(double delta_time) {
     if (mouse_down_)
     {
         mouse_position_now_ = Input::GetInstance()->GetMousePosition();
-        LOG_INFO("mouse_position_last_: {}, mouse_position_last_: {}", mouse_position_last_[0], mouse_position_last_[1]);
-
         const Vector2i delta = mouse_position_now_ - mouse_position_last_;
 
         horizontal_angle_ += mouse_speed_ * float(delta[0]);
         vertical_angle_   -= mouse_speed_ * float(delta[1]);
         mouse_position_last_ = mouse_position_now_;
-        LOG_INFO("horizontal_angle_: {}, vertical_angle_: {}", horizontal_angle_, vertical_angle_);
     };
-    LOG_INFO("11horizontal_angle_: {}, vertical_angle_: {}", horizontal_angle_, vertical_angle_);
 
     const Vector3 direction = {
         std::cos(vertical_angle_) * std::sin(horizontal_angle_),
@@ -113,9 +113,15 @@ void Node3DEditor::UpdateCamera(double delta_time) {
     };
 
     const Vector3 up = right.cross(direction);
-    eye_ = (direction * scroll_offset * delta_time * scroll_move_speed_) + eye_;
-
-    at_ = eye_ + direction;
+    if (Input::GetInstance()->GetMouseClickedState(MouseButton::Middle) == MouseClickedState::DoubleClicked) {
+        ResetCamera();
+    }
+    else if (Input::GetInstance()->GetMouseClickedState(MouseButton::Middle) == MouseClickedState::SingleClicked) {
+        eye_ = at_ - direction * distance_;
+    } else {
+        eye_ = (direction * -1.0 * scroll_offset * delta_time * scroll_move_speed_) + eye_;
+        at_ = eye_ + direction * distance_;
+    }
     up_ = right.cross(direction);
     auto view = Matrix4::LookAt(eye_, at_, up_);
     camera3d_->SetGlobalTransform(Affine3(Matrix4::LookAt(eye_, at_, up_, Handedness::Right).matrix()));

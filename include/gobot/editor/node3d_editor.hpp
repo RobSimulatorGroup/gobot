@@ -39,7 +39,7 @@ private:
     Vector2i mouse_position_now_{0, 0};
 
     float mouse_speed_{0.0020f};
-    float scroll_move_speed_{30.0f};
+    float scroll_move_speed_{50.0f};
 
     float horizontal_angle_{0.01f};
     float vertical_angle_{0.0};
@@ -47,6 +47,8 @@ private:
     Vector3 eye_;
     Vector3 at_;
     Vector3 up_;
+
+    float distance_;
 
     bool mouse_down_{false};
 };
