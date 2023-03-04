@@ -90,15 +90,12 @@ void Node3DEditor::UpdateCamera(double delta_time) {
     auto width = window->GetWidth();
     auto height = window->GetHeight();
 
-    if (mouse_down_)
-    {
+    Vector2i delta;
+    if (mouse_down_) {
         mouse_position_now_ = Input::GetInstance()->GetMousePosition();
-        const Vector2i delta = mouse_position_now_ - mouse_position_last_;
+        delta = mouse_position_now_ - mouse_position_last_;
 
-        if (Input::GetInstance()->GetKeyPressed(KeyCode::LeftShift)) {
-            eye_.x() += -translation_speed_ * delta[0];
-            eye_.y() += translation_speed_ * delta[1];
-        } else {
+        if (!Input::GetInstance()->GetKeyPressed(KeyCode::LeftShift)) {
             horizontal_angle_ += mouse_speed_ * float(delta[0]);
             vertical_angle_   -= mouse_speed_ * float(delta[1]);
         }
@@ -117,10 +114,12 @@ void Node3DEditor::UpdateCamera(double delta_time) {
         std::cos(horizontal_angle_ - Math_HALF_PI),
     };
 
-    const Vector3 up = right.cross(direction);
+    up_ = right.cross(direction);
     if (Input::GetInstance()->GetMouseClickedState(MouseButton::Middle) == MouseClickedState::DoubleClicked) {
         ResetCamera();
-    } else if (Input::GetInstance()->GetKeyPressed(KeyCode::LeftShift)) {
+    } else if (Input::GetInstance()->GetKeyPressed(KeyCode::LeftShift) &&
+               Input::GetInstance()->GetMouseClickedState(MouseButton::Middle) == MouseClickedState::SingleClicked) {
+        eye_ = eye_ + up_ * delta[1] * translation_speed_ + right * delta[0] * translation_speed_;
         at_ = eye_ + direction * distance_;
     } else if (Input::GetInstance()->GetMouseClickedState(MouseButton::Middle) == MouseClickedState::SingleClicked) {
         eye_ = at_ - direction * distance_;
@@ -128,7 +127,7 @@ void Node3DEditor::UpdateCamera(double delta_time) {
         eye_ = (direction * -1.0 * scroll_offset * delta_time * scroll_move_speed_) + eye_;
         at_ = eye_ + direction * distance_;
     }
-    up_ = right.cross(direction);
+
     auto view = Matrix4::LookAt(eye_, at_, up_);
     camera3d_->SetGlobalTransform(Affine3(Matrix4::LookAt(eye_, at_, up_, Handedness::Right).matrix()));
 
