@@ -95,8 +95,13 @@ void Node3DEditor::UpdateCamera(double delta_time) {
         mouse_position_now_ = Input::GetInstance()->GetMousePosition();
         const Vector2i delta = mouse_position_now_ - mouse_position_last_;
 
-        horizontal_angle_ += mouse_speed_ * float(delta[0]);
-        vertical_angle_   -= mouse_speed_ * float(delta[1]);
+        if (Input::GetInstance()->GetKeyPressed(KeyCode::LeftShift)) {
+            eye_.x() += -translation_speed_ * delta[0];
+            eye_.y() += translation_speed_ * delta[1];
+        } else {
+            horizontal_angle_ += mouse_speed_ * float(delta[0]);
+            vertical_angle_   -= mouse_speed_ * float(delta[1]);
+        }
         mouse_position_last_ = mouse_position_now_;
     };
 
@@ -115,8 +120,9 @@ void Node3DEditor::UpdateCamera(double delta_time) {
     const Vector3 up = right.cross(direction);
     if (Input::GetInstance()->GetMouseClickedState(MouseButton::Middle) == MouseClickedState::DoubleClicked) {
         ResetCamera();
-    }
-    else if (Input::GetInstance()->GetMouseClickedState(MouseButton::Middle) == MouseClickedState::SingleClicked) {
+    } else if (Input::GetInstance()->GetKeyPressed(KeyCode::LeftShift)) {
+        at_ = eye_ + direction * distance_;
+    } else if (Input::GetInstance()->GetMouseClickedState(MouseButton::Middle) == MouseClickedState::SingleClicked) {
         eye_ = at_ - direction * distance_;
     } else {
         eye_ = (direction * -1.0 * scroll_offset * delta_time * scroll_move_speed_) + eye_;

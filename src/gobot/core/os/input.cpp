@@ -37,7 +37,6 @@ void Input::ResetPressed()
 }
 
 void Input::OnEvent(Event& e) {
-    ResetPressed();
     EventDispatcher dispatcher(e);
     dispatcher.Dispatch<KeyPressedEvent>(BIND_EVENT_FN(Input::OnKeyPressed));
     dispatcher.Dispatch<KeyReleasedEvent>(BIND_EVENT_FN(Input::OnKeyReleased));

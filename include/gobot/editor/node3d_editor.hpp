@@ -40,6 +40,7 @@ private:
 
     float mouse_speed_{0.0020f};
     float scroll_move_speed_{50.0f};
+    float translation_speed_{0.02f};
 
     float horizontal_angle_{0.01f};
     float vertical_angle_{0.0};
