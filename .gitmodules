@@ -10,3 +10,6 @@
 [submodule "3rdparty/bgfx/bx"]
 	path = 3rdparty/bgfx/bx
 	url = https://github.com/RobSimulatorGroup/bx.git
+[submodule "3rdparty/bgfx/bgfx"]
+	path = 3rdparty/bgfx/bgfx
+	url = https://github.com/RobSimulatorGroup/bgfx.git
