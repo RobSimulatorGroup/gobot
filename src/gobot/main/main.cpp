@@ -292,7 +292,7 @@ bool Main::Iteration()
     DebugDrawEncoder dde;
 
     dde.Begin(0);
-    dde.DrawWorldAxis(100.0);
+    dde.DrawWorldAxis(65.0);
 
     dde.Push();
     bx::Aabb aabb =
@@ -300,7 +300,7 @@ bool Main::Iteration()
                     {  5.0f, 1.0f, 1.0f },
                     { 10.0f, 5.0f, 5.0f },
             };
-    dde.SetWireframe(true);
+//    dde.SetWireframe(true);
 //    dde.setColor(intersect(&dde, ray, aabb) ? kSelected : 0xff00ff00);
     dde.Draw(aabb);
     dde.Pop();
@@ -332,6 +332,7 @@ void Main::Cleanup() {
 
     OS::GetInstance()->DeleteMainLoop();
 
+    ddShutdown();
     bgfx::shutdown();
 }
 
