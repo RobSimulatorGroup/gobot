@@ -2044,35 +2044,35 @@ struct DebugDrawEncoderImpl {
 static DebugDrawEncoderImpl s_dde;
 BX_STATIC_ASSERT(sizeof(DebugDrawEncoderImpl) <= sizeof(DebugDrawEncoder), "Size must match");
 
-void ddInit(bx::AllocatorI *_allocator) {
-    s_dds.init(_allocator);
-    s_dde.init(bgfx::begin());
-}
-
-void ddShutdown() {
-    s_dde.shutdown();
-    s_dds.shutdown();
-}
-
-SpriteHandle ddCreateSprite(uint16_t _width, uint16_t _height, const void *_data) {
+SpriteHandle DebugDrawCreateSprite(uint16_t _width, uint16_t _height, const void *_data) {
     return s_dds.createSprite(_width, _height, _data);
 }
 
-void ddDestroy(SpriteHandle _handle) {
+void DebugDrawDestroy(SpriteHandle _handle) {
     s_dds.destroy(_handle);
 }
 
 GeometryHandle
-ddCreateGeometry(uint32_t _numVertices, const DdVertex *_vertices, uint32_t _numIndices, const void *_indices,
+DebugDrawCreateGeometry(uint32_t _numVertices, const DdVertex *_vertices, uint32_t _numIndices, const void *_indices,
                  bool _index32) {
     return s_dds.createGeometry(_numVertices, _vertices, _numIndices, _indices, _index32);
 }
 
-void ddDestroy(GeometryHandle _handle) {
+void DebugDrawDestroy(GeometryHandle _handle) {
     s_dds.destroy(_handle);
 }
 
 #define DEBUG_DRAW_ENCODER(_func) reinterpret_cast<DebugDrawEncoderImpl*>(this)->_func
+
+void DebugDrawEncoder::Initialize(bx::AllocatorI* allocator) {
+    s_dds.init(allocator);
+    s_dde.init(bgfx::begin());
+}
+
+void DebugDrawEncoder::Finalize() {
+    s_dde.shutdown();
+    s_dds.shutdown();
+}
 
 DebugDrawEncoder::DebugDrawEncoder() {
     DEBUG_DRAW_ENCODER(init(s_dde.m_defaultEncoder));

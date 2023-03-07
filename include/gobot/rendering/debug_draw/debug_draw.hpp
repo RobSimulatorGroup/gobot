@@ -21,26 +21,27 @@ struct DdVertex
     float x, y, z;
 };
 
+
 struct SpriteHandle { uint16_t idx; };
 inline bool isValid(SpriteHandle _handle) { return _handle.idx != UINT16_MAX; }
 
 struct GeometryHandle { uint16_t idx; };
 inline bool isValid(GeometryHandle _handle) { return _handle.idx != UINT16_MAX; }
 
-void ddInit(bx::AllocatorI* _allocator = nullptr);
+SpriteHandle DebugDrawCreateSprite(uint16_t _width, uint16_t _height, const void* _data);
 
-void ddShutdown();
+void DebugDrawDestroy(SpriteHandle _handle);
 
-SpriteHandle ddCreateSprite(uint16_t _width, uint16_t _height, const void* _data);
+GeometryHandle DebugDrawCreateGeometry(uint32_t _numVertices, const DdVertex* _vertices, uint32_t _numIndices = 0, const void* _indices = nullptr, bool _index32 = false);
 
-void ddDestroy(SpriteHandle _handle);
-
-GeometryHandle ddCreateGeometry(uint32_t _numVertices, const DdVertex* _vertices, uint32_t _numIndices = 0, const void* _indices = nullptr, bool _index32 = false);
-
-void ddDestroy(GeometryHandle _handle);
+void DebugDrawDestroy(GeometryHandle _handle);
 
 struct DebugDrawEncoder
 {
+    static void Initialize(bx::AllocatorI* allocator = nullptr);
+
+    static void Finalize();
+
     DebugDrawEncoder();
 
     ~DebugDrawEncoder();

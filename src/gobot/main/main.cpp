@@ -224,7 +224,7 @@ bool Main::Start() {
     ShaderHandle fsh = LoadShader("fs_cubes");
     m_program = s_render_server->CreateProgram(vsh, fsh, true);
 
-    ddInit();
+    DebugDrawEncoder::Initialize();
 
     OS::GetInstance()->SetMainLoop(main_loop);
 
@@ -332,7 +332,7 @@ void Main::Cleanup() {
 
     OS::GetInstance()->DeleteMainLoop();
 
-    ddShutdown();
+    DebugDrawEncoder::Finalize();
     bgfx::shutdown();
 }
 

@@ -1,7 +1,5 @@
 add_subdirectory(rttr)
 
-add_subdirectory(glad)
-
 add_library(imgui
         imgui/imgui.cpp
         imgui/imgui.h
@@ -18,9 +16,6 @@ add_library(imgui
         imgui/backends/imgui_impl_sdl2.h
         imgui/backends/imgui_impl_sdl2.cpp
         )
-
-
-target_link_libraries(imgui INTERFACE glad)
 
 target_include_directories(imgui PUBLIC imgui imgui/backends)
 
