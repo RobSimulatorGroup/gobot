@@ -11,9 +11,9 @@
 GOBOT_REGISTRATION {
     Class_<Color>("Color")
         .constructor()(CtorAsObject)
-        .property("r", &Color::r_)
-        .property("g", &Color::g_)
-        .property("b", &Color::b_)
-        .property("a", &Color::a_);
+        .property("red", &Color::r_)
+        .property("green", &Color::g_)
+        .property("blue", &Color::b_)
+        .property("alpha", &Color::a_);
 
 };

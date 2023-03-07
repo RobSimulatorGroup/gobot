@@ -52,28 +52,28 @@ public:
     }
 
     /// Return a reference to the red channel
-    float& r() { return r_; }
+    float& red() { return r_; }
 
     /// Return a reference to the red channel (const version)
-    [[nodiscard]] const float& r() const { return r_; }
+    [[nodiscard]] const float& red() const { return r_; }
 
     /// Return a reference to the green channel
-    float& g() { return g_; }
+    float& green() { return g_; }
 
     /// Return a reference to the green channel (const version)
-    [[nodiscard]] const float& g() const { return g_; }
+    [[nodiscard]] const float& green() const { return g_; }
 
     /// Return a reference to the blue channel
-    float& b() { return b_; }
+    float& blue() { return b_; }
 
     /// Return a reference to the blue channel (const version)
-    [[nodiscard]] const float& b() const { return b_; }
+    [[nodiscard]] const float& blue() const { return b_; }
 
     /// Return a reference to the alpha channel
-    float& a() { return a_; }
+    float& alpha() { return a_; }
 
     /// Return a reference to the alpha channel (const version)
-    [[nodiscard]] const float& a() const { return a_; }
+    [[nodiscard]] const float& alpha() const { return a_; }
 
     [[nodiscard]] FORCE_INLINE  std::uint32_t GetPackedRgbA() const {
         return (std::uint8_t(r_ * 255) << 24) + (std::uint8_t(g_ * 255) << 16) + (std::uint8_t(b_ * 255) << 8) + (std::uint8_t(a_ * 255));

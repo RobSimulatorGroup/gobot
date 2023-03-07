@@ -62,7 +62,7 @@ TEST_F(TestResourceFormatScene, test_subresource) {
     gobot::Ref<gobot::BoxMesh> box_mesh = gobot::MakeRef<gobot::BoxMesh>();
     box_mesh->SetWidth(1.1);
     auto material_3d = gobot::MakeRef<gobot::Material3D>();
-    material_3d->SetAlbedo(gobot::Color::fromRgb(255, 255, 100));
+    material_3d->SetAlbedo(gobot::Color(0.5f, 0.5f, 0.1f));
     box_mesh->SetMaterial(material_3d);
 
 
@@ -77,14 +77,14 @@ TEST_F(TestResourceFormatScene, test_subresource) {
     ASSERT_TRUE(box_load->GetWidth() ==  1.1f);
     auto material3d = gobot::dynamic_pointer_cast<gobot::Material3D>(box_load->GetMaterial());
     ASSERT_TRUE(material3d.IsValid());
-    ASSERT_TRUE(material3d->GetAlbedo().blue() == 100);
+    ASSERT_TRUE(material3d->GetAlbedo().blue() == 0.1f);
 }
 
 TEST_F(TestResourceFormatScene, test_extresource) {
     gobot::Ref<gobot::BoxMesh> box_mesh = gobot::MakeRef<gobot::BoxMesh>();
     box_mesh->SetWidth(1.1);
     auto material_3d = gobot::MakeRef<gobot::Material3D>();
-    material_3d->SetAlbedo(gobot::Color::fromRgb(255, 255, 100));
+    material_3d->SetAlbedo(gobot::Color(0.5f, 0.5f, 0.1f));
     material_3d->SetPath("res://meterial.jres");
     USING_ENUM_BITWISE_OPERATORS;
     gobot::ResourceSaver::Save(material_3d, "res://meterial.jres",
@@ -102,5 +102,5 @@ TEST_F(TestResourceFormatScene, test_extresource) {
     ASSERT_TRUE(box_load->GetWidth() ==  1.1f);
     auto material3d = gobot::dynamic_pointer_cast<gobot::Material3D>(box_load->GetMaterial());
     ASSERT_TRUE(material3d.IsValid());
-    ASSERT_TRUE(material3d->GetAlbedo().blue() == 100);
+    ASSERT_TRUE(material3d->GetAlbedo().blue() == 0.1f);
 }
