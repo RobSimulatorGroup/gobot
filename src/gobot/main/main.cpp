@@ -276,10 +276,10 @@ bool Main::Iteration()
     USING_ENUM_BITWISE_OPERATORS;
     GET_RENDER_SERVER()->SetState(RenderStateFlags::Default);
 
-    static int i = 0;
+    static float i = 0.f;
     Isometry3f isometry_3_f = Isometry3f::Identity();
-    isometry_3_f.SetEulerAngle({0.01 * i++,
-                                -0.01 * i, 0}, EulerOrder::RXYZ);
+    isometry_3_f.SetEulerAngle({0.01f * i++,
+                                -0.01f * i, 0}, EulerOrder::RXYZ);
 
     GET_RENDER_SERVER()->SetTransform(isometry_3_f.matrix());
 

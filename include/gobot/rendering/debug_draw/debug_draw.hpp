@@ -16,6 +16,9 @@
 
 namespace gobot {
 
+// This file is copied from bgfx's example(debug draw)
+// TODO(wqq) Remove bx dependency(bx::Shape) here.
+
 struct DdVertex
 {
     float x, y, z;
