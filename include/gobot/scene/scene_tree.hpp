@@ -43,6 +43,9 @@ public:
 
     void PullEvent() override;
 
+    [[nodiscard]] FORCE_INLINE double GetPhysicsProcessTime() const { return physics_process_time_; }
+
+    [[nodiscard]] FORCE_INLINE double GetProcessTime() const { return process_time_; }
 
 Q_SIGNALS:
     void treeChanged();
@@ -53,8 +56,6 @@ Q_SIGNALS:
 private:
     void OnWindowClose();
 
-    void OnWindowResize(WindowResizeEvent& e);
-
 private:
     friend class Node;
     static SceneTree *s_singleton;
@@ -63,6 +64,9 @@ private:
 
     Window *root_ = nullptr;
     int node_count_ = 0;
+
+    double physics_process_time_ = 0.0;
+    double process_time_ = 0.0;
 };
 
 }

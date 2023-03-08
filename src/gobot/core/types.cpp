@@ -29,12 +29,4 @@ GOBOT_REGISTRATION {
         return value.toString().toStdString();
     });
 
-
-    Class_<Color>("Color")
-            .constructor()(CtorAsObject)
-            .property("red", &Color::redF, &Color::setRedF)
-            .property("green", &Color::greenF, &Color::setGreenF)
-            .property("blue", &Color::blueF, &Color::setBlueF)
-            .property("alpha", &Color::alphaF, &Color::setAlphaF);
-
 };

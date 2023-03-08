@@ -83,3 +83,16 @@ friend struct rttr::detail::constructor_invoker;
 // out-of-the-box bitwise operators for enums.
 #define USING_ENUM_BITWISE_OPERATORS  using namespace magic_enum::bitwise_operators
 
+
+template <typename E>
+constexpr auto ToUnderlying(E e) noexcept
+{
+    return static_cast<std::underlying_type_t<E>>(e);
+}
+
+#define ENUM_UINT_CAST(enum_value)          \
+    ToUnderlying(enum_value)
+
+
+template<class T, size_t N>
+constexpr size_t GetArraySize(T (&)[N]) { return N; }

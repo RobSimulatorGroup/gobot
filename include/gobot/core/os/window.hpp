@@ -9,14 +9,14 @@
 
 #include "gobot/core/io/image.hpp"
 #include "gobot/core/events/event.hpp"
-#include "gobot/graphics/RHI/graphics_context.hpp"
 #include <Eigen/Dense>
 
 namespace gobot {
 
 class WindowInterface {
 public:
-    using WindowHandle = void*;
+    using NativeWindowHandle = void*;
+
     using EventCallbackFn = std::function<void(Event&)>;
 
     WindowInterface() = default;
@@ -45,7 +45,9 @@ public:
 
     virtual bool IsWindowHide() = 0;
 
-    [[nodiscard]] virtual WindowHandle GetNativeWindowHandle() const = 0;
+    [[nodiscard]] virtual NativeWindowHandle GetNativeWindowHandle() const = 0;
+
+    [[nodiscard]] virtual void* GetNativeDisplayHandle() const = 0;
 
     [[nodiscard]] virtual bool IsMaximized() = 0;
 
@@ -68,6 +70,8 @@ public:
     virtual void SetEventCallback(const EventCallbackFn& callback) = 0;
 
 protected:
+
+    bool render_need_reset_{false};
 
 };
 

@@ -22,6 +22,8 @@ namespace gobot {
 #define Math_LN2 0.6931471805599453094172321215
 #define Math_TAU 6.2831853071795864769252867666
 #define Math_PI 3.1415926535897932384626433833
+/// Pi divided by two. pi/2
+#define Math_HALF_PI 1.5707963267948966192313216916398f
 #define Math_E 2.7182818284590452353602874714
 
 #ifdef DEBUG_ENABLED
@@ -101,6 +103,22 @@ enum class EulerOrder {
     SYXZ
 };
 
+enum class Handedness
+{
+    Left,
+    Right,
+};
+
+enum class Axis
+{
+    X,
+    Y,
+    Z,
+
+    Count
+};
+
+
 /**
  * The "Real" type is an abstract type used for real numbers, such as 1.5,
  * in contrast to integer numbers. Precision can be controlled with the
@@ -119,6 +137,7 @@ struct MatrixData {
     std::vector<_Scalar> storage;
 };
 
+
 template <typename T>
 constexpr int Sign(const T val) {
     return (static_cast<T>(0) < val) - (val < static_cast<T>(0));
@@ -126,5 +145,7 @@ constexpr int Sign(const T val) {
 
 inline real_t DEG_TO_RAD(real_t deg) { return static_cast<real_t>(deg * (Math_PI / 180.0)); }
 inline real_t RAD_TO_DEG(real_t rad) { return static_cast<real_t>(rad * (180.0 / Math_PI)); }
+
+
 
 };  // namespace gobot

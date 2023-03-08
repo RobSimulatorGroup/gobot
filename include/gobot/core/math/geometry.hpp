@@ -40,6 +40,9 @@ public:
 template <typename Scalar>
 using EulerAngle = Matrix<Scalar, 3, 1>;
 
+template <typename Scalar>
+using Position = Matrix<Scalar, 3, 1>;
+
 template <typename Scalar, int Dim, int Mode, int Options = Eigen::AutoAlign>
 class Transform: public Eigen::Transform<Scalar, Dim, Mode, Options> {
 public:
@@ -216,7 +219,7 @@ public:
                 break;
         }
     }
-
+    
     void SetEulerAngleScaled(const EulerAngle<Scalar> &angles, const Vector3 &scale, EulerOrder euler_order) {
         static_assert(Dim == 3 && Mode == Eigen::Affine, "GetEulerAngleNormalized can only called when Dim is 3");
 

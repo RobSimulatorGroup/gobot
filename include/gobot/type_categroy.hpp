@@ -8,6 +8,7 @@
 #pragma once
 
 #include "gobot/core/types.hpp"
+#include "gobot/core/color.hpp"
 #include "gobot/scene/node_path.hpp"
 #include "gobot/log.hpp"
 

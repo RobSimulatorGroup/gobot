@@ -10,7 +10,6 @@
 #include <rttr/variant.h>
 #include <QString>
 #include <QUuid>
-#include <QColor>
 #include <nlohmann/json.hpp>
 
 namespace gobot {
@@ -30,7 +29,6 @@ using WrapperHolderType = rttr::wrapper_holder_type;
 
 using String = QString;
 using Uuid = QUuid;
-using Color = QColor;
 
 using Json = nlohmann::json;
 

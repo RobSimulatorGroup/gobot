@@ -646,6 +646,40 @@ Node::~Node() {
     ERR_FAIL_COND(!children_.empty());
 }
 
+void Node::SetProcess(bool process) {
+    // TODO
+}
+
+double Node::GetProcessDeltaTime() const {
+    if (tree_) {
+        return tree_->GetProcessTime();
+    } else {
+        return 0;
+    }
+}
+
+bool Node::IsProcessing() const {
+    // TODO
+    return false;
+}
+
+void Node::SetPhysicsProcess(bool process) {
+    // TODO
+}
+
+double Node::GetPhysicsProcessDeltaTime() const {
+    if (tree_) {
+        return tree_->GetPhysicsProcessTime();
+    } else {
+        return 0;
+    }
+}
+
+bool Node::IsPhysicsProcessing() const {
+    // TODO
+    return false;
+}
+
 } // End of namespace gobot
 
 GOBOT_REGISTRATION {

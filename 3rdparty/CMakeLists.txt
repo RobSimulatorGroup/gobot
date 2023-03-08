@@ -1,7 +1,5 @@
 add_subdirectory(rttr)
 
-add_subdirectory(glad)
-
 add_library(imgui
         imgui/imgui.cpp
         imgui/imgui.h
@@ -19,11 +17,12 @@ add_library(imgui
         imgui/backends/imgui_impl_sdl2.cpp
         )
 
-
-target_link_libraries(imgui INTERFACE glad)
-
 target_include_directories(imgui PUBLIC imgui imgui/backends)
 
 find_package(OpenGL REQUIRED)
 add_executable(imgui_sdl2_opengl3_example imgui/examples/example_sdl2_opengl3/main.cpp)
 target_link_libraries(imgui_sdl2_opengl3_example imgui ${CONAN_LIBS} OpenGL::GL)
+
+
+set(BGFX_WITH_SDL On)
+add_subdirectory(bgfx)
