@@ -44,7 +44,7 @@ void RenderServer::ShutDown() {
 }
 
 void RenderServer::InitWindow() {
-    auto window = SceneTree::GetInstance()->GetRoot()->GetWindowsInterface();
+    auto window = SceneTree::GetInstance()->GetRoot()->GetWindow();
     RenderInitProps init;
     init.type     = bgfx::RendererType::Count; // auto select
     init.vendorId = ENUM_UINT_CAST(VendorID::None); // auto select

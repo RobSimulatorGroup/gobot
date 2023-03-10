@@ -15,10 +15,10 @@
 #include "gobot/rendering/render_server.hpp"
 #include "gobot/core/os/os.hpp"
 #include "gobot/scene/window.hpp"
-#include "gobot/rendering/load_shader.hpp"
 #include "gobot/rendering/debug_draw/debug_draw.hpp"
 #include "gobot/core/math/geometry.hpp"
 #include <cxxopts.hpp>
+#include "imgui.h"
 #include <bgfx/bgfx.h>
 
 namespace gobot {
@@ -77,22 +77,30 @@ bool Main::Setup2() {
     return true;
 }
 
+bgfx::FrameBufferHandle m_fbh;
+bgfx::TextureHandle m_fbtextures;
+
+void* Main::GetFF() {
+    return (void*)m_fbtextures.idx;
+}
 
 bool Main::Start() {
     auto* main_loop = Object::New<SceneTree>();
-
-    auto* editor = Object::New<Editor>();
-    main_loop->GetRoot()->AddChild(editor);
 
     s_render_server->InitWindow();
     USING_ENUM_BITWISE_OPERATORS;
     s_render_server->SetDebug(RenderDebugFlags::DebugTextDisplay);
     s_render_server->SetViewClear(0, RenderClearFlags::Depth | RenderClearFlags::Color);
 
+    auto* editor = Object::New<Editor>();
+    main_loop->GetRoot()->AddChild(editor);
 
     DebugDrawEncoder::Initialize();
 
     OS::GetInstance()->SetMainLoop(main_loop);
+
+    m_fbtextures = bgfx::createTexture2D(1000, 800, false, 1, bgfx::TextureFormat::RGBA16F, BGFX_TEXTURE_RT);
+    m_fbh = bgfx::createFrameBuffer(1, &m_fbtextures);
 
     return true;
 }
@@ -114,25 +122,14 @@ bool Main::Iteration()
         exit = true;
     }
 
-    // This dummy draw call is here to make sure that view 0 is cleared
-    // if no other draw calls are submitted to view 0.
+    LOG_INFO("1111");
+    LOG_ERROR("2222");
+
+//    // This dummy draw call is here to make sure that view 0 is cleared
+//    // if no other draw calls are submitted to view 0.
     GET_RENDER_SERVER()->Touch(0);
 
-    // Use debug font to print information about this example.
-    GET_RENDER_SERVER()->DebugTextClear();
-
-    GET_RENDER_SERVER()->DebugTextPrintf(0, 1, 0x0f, "Color can be changed with ANSI \x1b[9;me\x1b[10;ms\x1b[11;mc\x1b[12;ma\x1b[13;mp\x1b[14;me\x1b[0m code too.");
-
-    GET_RENDER_SERVER()->DebugTextPrintf(80, 1, 0x0f, "\x1b[;0m    \x1b[;1m    \x1b[; 2m    \x1b[; 3m    \x1b[; 4m    \x1b[; 5m    \x1b[; 6m    \x1b[; 7m    \x1b[0m");
-    GET_RENDER_SERVER()->DebugTextPrintf(80, 2, 0x0f, "\x1b[;8m    \x1b[;9m    \x1b[;10m    \x1b[;11m    \x1b[;12m    \x1b[;13m    \x1b[;14m    \x1b[;15m    \x1b[0m");
-
-    const RenderStats* stats = GET_RENDER_SERVER()->GetStats();
-    GET_RENDER_SERVER()->DebugTextPrintf(0, 2, 0x0f, "Backbuffer %dW x %dH in pixels, debug text %dW x %dH in characters."
-            , stats->width
-            , stats->height
-            , stats->textWidth
-            , stats->textHeight
-    );
+    bgfx::setViewFrameBuffer(0, m_fbh);
 
 
     DebugDrawEncoder dde;

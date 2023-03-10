@@ -86,7 +86,7 @@ void Node3DEditor::UpdateCamera(double delta_time) {
     mouse_down_ = (Input::GetInstance()->GetMouseClickedState(MouseButton::Right) == MouseClickedState::SingleClicked) ||
                   (Input::GetInstance()->GetMouseClickedState(MouseButton::Middle) == MouseClickedState::SingleClicked);
 
-    auto window = dynamic_cast<SceneTree*>(OS::GetInstance()->GetMainLoop())->GetRoot()->GetWindowsInterface();
+    auto window = dynamic_cast<SceneTree*>(OS::GetInstance()->GetMainLoop())->GetRoot()->GetWindow();
     auto width = window->GetWidth();
     auto height = window->GetHeight();
 

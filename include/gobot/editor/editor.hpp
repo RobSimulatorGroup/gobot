@@ -8,10 +8,12 @@
 #pragma once
 
 #include "gobot/scene/node.hpp"
+#include "gobot/editor/imgui/editor_panel.hpp"
 
 namespace gobot {
 
 class Node3DEditor;
+class ImGuiManager;
 
 class Editor : public Node {
     GOBCLASS(Editor, Node)
@@ -20,12 +22,17 @@ public:
 
     ~Editor() override;
 
+    void NotificationCallBack(NotificationType notification);
+
     static Editor* GetInstance();
 
 private:
     static Editor* s_singleton;
 
     Node3DEditor* node3d_editor_{nullptr};
+    ImGuiManager* imgui_manager_{nullptr};
+
+    std::vector<std::shared_ptr<EditorPanel>> panels_;
 };
 
 

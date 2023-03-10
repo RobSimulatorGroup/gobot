@@ -139,8 +139,8 @@ class Matrix : public Eigen::Matrix<_Scalar, _Rows, _Cols> {
         trafo(2, 2) = (Handedness::Right == handedness) ? (near + far) * recip :
                                                           -(near + far) * recip;
 
-        trafo(2, 3) = 2.f * near * far * recip; // a[14]
-        trafo(3, 2) = (Handedness::Right == handedness) ? -1.f : 1.0f;   // a[11]                  //
+        trafo(2, 3) = 2.f * near * far * recip;                           // a[14]
+        trafo(3, 2) = (Handedness::Right == handedness) ? -1.f : 1.0f;   // a[11]
 
         return trafo;
     }
