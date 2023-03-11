@@ -8,10 +8,35 @@
 #pragma once
 
 #include "imgui.h"
+#include "gobot/core/color.hpp"
 
 namespace gobot {
 
+class ImGuiUtilities {
+public:
+    enum Theme
+    {
+        Black = 0,
+        Dark,
+        Dracula,
+        Grey,
+        Light,
+        Blue,
+        ClassicLight,
+        ClassicDark,
+        Classic,
+        Cherry,
+        Cinder
+    };
 
+    static void SetTheme(Theme theme);
+
+public:
+    static Color s_selected_color;
+    static Color s_icon_color;
+    static char* s_multiline_buffer;
+
+};
 
 }
 

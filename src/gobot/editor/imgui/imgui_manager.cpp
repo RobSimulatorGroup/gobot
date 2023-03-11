@@ -6,6 +6,7 @@
 */
 
 #include "gobot/editor/imgui/imgui_manager.hpp"
+#include "gobot/editor/imgui/imgui_utilities.hpp"
 #include "gobot/rendering/imgui/imgui_impl_bgfx.hpp"
 #include "gobot/rendering/default_view_id.hpp"
 #include "gobot/drivers/sdl/sdl_window.hpp"
@@ -19,7 +20,7 @@
 #include "imgui_extension/fonts/RobotoRegular.inl"
 #include "imgui_extension/fonts/RobotoBold.inl"
 #include "imgui_extension/fonts/MaterialDesign.inl"
-#include "imgui_extension/fonts/IconsMaterialDesignIcons.hpp"
+#include "imgui_extension/icon_fonts/icons_material_design_icons.h"
 
 namespace gobot {
 
@@ -34,6 +35,8 @@ ImGuiManager::ImGuiManager()
     LOG_INFO("ImGui Version : {0}", IMGUI_VERSION);
 
     ImGui::CreateContext();
+    ImGui::StyleColorsDark();
+
     ImGuiIO& io = ImGui::GetIO();
     io.ConfigFlags |= ImGuiConfigFlags_NavEnableKeyboard;       // Enable Keyboard Controls
     //io.ConfigFlags |= ImGuiConfigFlags_NavEnableGamepad;      // Enable Gamepad Controls
@@ -41,6 +44,8 @@ ImGuiManager::ImGuiManager()
     io.ConfigFlags |= ImGuiConfigFlags_ViewportsEnable;         // Enable Multi-Viewport / Platform Windows
     //io.ConfigViewportsNoAutoMerge = true;
     //io.ConfigViewportsNoTaskBarIcon = true;
+
+    SetImGuiStyle();
 
 
     auto window = SceneTree::GetInstance()->GetRoot()->GetWindow();
@@ -54,7 +59,6 @@ ImGuiManager::ImGuiManager()
     ImGui_ImplSDL2_InitForOpenGL(window->GetSDL2Window(), nullptr);
 #endif
 
-    SetImGuiStyle();
 }
 
 ImGuiManager::~ImGuiManager()
@@ -113,8 +117,7 @@ void ImGuiManager::SetImGuiStyle() {
     AddIconFont();
 
     io.Fonts->TexGlyphPadding = 1;
-    for(int n = 0; n < io.Fonts->ConfigData.Size; n++)
-    {
+    for(int n = 0; n < io.Fonts->ConfigData.Size; n++) {
         ImFontConfig* font_config       = (ImFontConfig*)&io.Fonts->ConfigData[n];
         font_config->RasterizerMultiply = 1.0f;
     }
@@ -143,6 +146,19 @@ void ImGuiManager::SetImGuiStyle() {
     style.ScrollbarRounding  = roundingAmount;
     style.GrabRounding       = roundingAmount;
     style.WindowMinSize      = ImVec2(200.0f, 200.0f);
+
+#ifdef IMGUI_HAS_DOCK
+    style.TabBorderSize = 1.0f;
+    style.TabRounding   = roundingAmount; // + 4;
+
+    if(ImGui::GetIO().ConfigFlags & ImGuiConfigFlags_ViewportsEnable)
+    {
+        style.WindowRounding              = roundingAmount;
+        style.Colors[ImGuiCol_WindowBg].w = 1.0f;
+    }
+#endif
+
+    ImGuiUtilities::SetTheme(ImGuiUtilities::Theme::Dark);
 }
 
 void ImGuiManager::AddIconFont() {

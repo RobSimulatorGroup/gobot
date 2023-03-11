@@ -54,8 +54,7 @@ void Editor::NotificationCallBack(NotificationType notification) {
             // We are using the ImGuiWindowFlags_NoDocking flag to make the parent window not dockable into,
             // because it would be confusing to have two docking targets within each others.
             ImGuiWindowFlags window_flags = ImGuiWindowFlags_MenuBar | ImGuiWindowFlags_NoDocking;
-            if (opt_fullscreen)
-            {
+            if (opt_fullscreen) {
                 const ImGuiViewport* viewport = ImGui::GetMainViewport();
                 ImGui::SetNextWindowPos(viewport->WorkPos);
                 ImGui::SetNextWindowSize(viewport->WorkSize);
@@ -64,9 +63,7 @@ void Editor::NotificationCallBack(NotificationType notification) {
                 ImGui::PushStyleVar(ImGuiStyleVar_WindowBorderSize, 0.0f);
                 window_flags |= ImGuiWindowFlags_NoTitleBar | ImGuiWindowFlags_NoCollapse | ImGuiWindowFlags_NoResize | ImGuiWindowFlags_NoMove;
                 window_flags |= ImGuiWindowFlags_NoBringToFrontOnFocus | ImGuiWindowFlags_NoNavFocus;
-            }
-            else
-            {
+            } else {
                 dockspace_flags &= ~ImGuiDockNodeFlags_PassthruCentralNode;
             }
 
@@ -99,10 +96,8 @@ void Editor::NotificationCallBack(NotificationType notification) {
             }
 
 
-            if (ImGui::BeginMenuBar())
-            {
-                if (ImGui::BeginMenu("Options"))
-                {
+            if (ImGui::BeginMenuBar()) {
+                if (ImGui::BeginMenu("Options")) {
                     // Disabling fullscreen would allow the window to be moved to the front of other windows,
                     // which we can't undo at the moment without finer window depth/z control.
                     ImGui::MenuItem("Fullscreen", NULL, &opt_fullscreen);
@@ -125,8 +120,6 @@ void Editor::NotificationCallBack(NotificationType notification) {
             }
 
             ImGui::ShowDemoWindow(); // your drawing here
-
-
 
             ImGui::End();
 
