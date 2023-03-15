@@ -40,7 +40,7 @@ public:
 
     static const char* GetLevelIcon(Level level);
 
-    static Color GetRenderColour(Level level);
+    static Color GetRenderColor(Level level);
 
 public:
     const String message_;

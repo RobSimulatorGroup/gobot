@@ -80,7 +80,7 @@ void Editor::NotificationCallBack(NotificationType notification) {
             if (!opt_padding)
                 ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, ImVec2(0.0f, 0.0f));
 
-            bool p_open = false;
+            static bool p_open = true;
             ImGui::Begin("DockSpace Demo", &p_open, window_flags);
             if (!opt_padding)
                 ImGui::PopStyleVar();

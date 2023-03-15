@@ -28,10 +28,10 @@ void ConsoleMessage::OnImGUIRender()
     if(ConsolePanel::s_message_buffer_render_filter & level_)
     {
 //        ImGuiUtilities::ScopedID((int)message_id_);
-//        ImGui::PushStyleColor(ImGuiCol_Text, GetRenderColour(level_));
+        ImGui::PushStyleColor(ImGuiCol_Text, GetRenderColor(level_));
         auto levelIcon = GetLevelIcon(level_);
         ImGui::TextUnformatted(levelIcon);
-//        ImGui::PopStyleColor();
+        ImGui::PopStyleColor();
         ImGui::SameLine();
         ImGui::TextUnformatted(message_.toStdString().c_str());
         if(ImGui::BeginPopupContextItem(message_.toStdString().c_str()))
@@ -99,7 +99,7 @@ const char* ConsoleMessage::GetLevelName(Level level)
     }
 }
 
-Color ConsoleMessage::GetRenderColour(Level level)
+Color ConsoleMessage::GetRenderColor(Level level)
 {
     switch(level)
     {

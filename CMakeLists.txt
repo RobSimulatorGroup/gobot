@@ -114,7 +114,7 @@ target_link_libraries(gobot
     RTTR::Core
     OpenGL::GL
     Qt5::Core
-    imgui
+    imgui-gobot
     bgfx
     bx
     ${CONAN_LIBS}
