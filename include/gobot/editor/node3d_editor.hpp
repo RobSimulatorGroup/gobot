@@ -27,6 +27,15 @@ public:
 
     void UpdateCamera(double interp_delta);
 
+    void OnImGuizmo();
+
+    FORCE_INLINE Camera3D* GetCamera3D() { return camera3d_; }
+
+    FORCE_INLINE uint32_t GetImGuizmoOperation() const { return imGuizmo_operation_; }
+
+    FORCE_INLINE void SetImGuizmoOperation(uint32_t imGuizmo_operation) { imGuizmo_operation_ = imGuizmo_operation; }
+
+
 protected:
     void NotificationCallBack(NotificationType notification);
 
@@ -52,6 +61,8 @@ private:
     float distance_;
 
     bool mouse_down_{false};
+
+    uint32_t imGuizmo_operation_ = 14463;
 };
 
 }

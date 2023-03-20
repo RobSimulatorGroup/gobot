@@ -15,6 +15,9 @@
 #include "gobot/scene/window.hpp"
 #include "gobot/rendering/render_server.hpp"
 #include "gobot/log.hpp"
+#include "imgui.h"
+#include "imgui_internal.h"
+#include "imgui_extension/gizmos/ImGuizmo.h"
 
 namespace gobot {
 
@@ -135,6 +138,53 @@ void Node3DEditor::UpdateCamera(double delta_time) {
     GET_RENDER_SERVER()->SetViewTransform(0, view, proj);
     GET_RENDER_SERVER()->SetViewRect(0, 0, 0, uint16_t(width), uint16_t(height));
 }
+
+static float identityMatrix[16] =
+        { 1.f, 0.f, 0.f, 0.f,
+          0.f, 1.f, 0.f, 0.f,
+          0.f, 0.f, 1.f, 0.f,
+          0.f, 0.f, 0.f, 1.f };
+
+float objectMatrix[4][16] = {
+        { 1.f, 0.f, 0.f, 0.f,
+                0.f, 1.f, 0.f, 0.f,
+                0.f, 0.f, 1.f, 0.f,
+                0.f, 0.f, 0.f, 1.f },
+
+        { 1.f, 0.f, 0.f, 0.f,
+                0.f, 1.f, 0.f, 0.f,
+                0.f, 0.f, 1.f, 0.f,
+                2.f, 0.f, 0.f, 1.f },
+
+        { 1.f, 0.f, 0.f, 0.f,
+                0.f, 1.f, 0.f, 0.f,
+                0.f, 0.f, 1.f, 0.f,
+                2.f, 0.f, 2.f, 1.f },
+
+        { 1.f, 0.f, 0.f, 0.f,
+                0.f, 1.f, 0.f, 0.f,
+                0.f, 0.f, 1.f, 0.f,
+                0.f, 0.f, 2.f, 1.f }
+};
+
+void Node3DEditor::OnImGuizmo() {
+    auto view = Matrix4::LookAt(eye_, at_, up_, Handedness::Right);
+
+
+    ImGuizmo::SetDrawlist();
+    ImGuizmo::SetOrthographic(false);
+    ImGuizmo::BeginFrame();
+
+    ImGuiIO& io = ImGui::GetIO();
+    auto proj = Matrix4f::Perspective(45.0, io.DisplaySize.x / io.DisplaySize.y, 0.1f, 1000.0f, Handedness::Right);
+
+    ImGuizmo::SetRect(0, 0, io.DisplaySize.x, io.DisplaySize.y);
+
+    ImGuizmo::DrawCubes(view.data(), proj.data(), &objectMatrix[0][0], 1);
+    ImGuizmo::Manipulate(view.data(), proj.data(), ImGuizmo::OPERATION::TRANSLATE, ImGuizmo::LOCAL, identityMatrix);
+
+}
+
 
 }
 

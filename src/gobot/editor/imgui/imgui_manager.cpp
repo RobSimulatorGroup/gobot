@@ -21,6 +21,7 @@
 #include "imgui_extension/fonts/RobotoBold.inl"
 #include "imgui_extension/fonts/MaterialDesign.inl"
 #include "imgui_extension/icon_fonts/icons_material_design_icons.h"
+#include "imgui_extension/gizmos/ImGuizmo.h"
 
 namespace gobot {
 
@@ -79,6 +80,7 @@ void ImGuiManager::BeginFrame() {
     ImGui_Implbgfx_NewFrame();
     ImGui_ImplSDL2_NewFrame();
     ImGui::NewFrame();
+    ImGuizmo::BeginFrame();
 }
 
 void ImGuiManager::EndFrame() {
@@ -158,7 +160,7 @@ void ImGuiManager::SetImGuiStyle() {
     }
 #endif
 
-    ImGuiUtilities::SetTheme(ImGuiUtilities::Theme::Dark);
+    ImGuiUtilities::SetTheme(ImGuiUtilities::Theme::Black);
 }
 
 void ImGuiManager::AddIconFont() {

@@ -11,6 +11,7 @@
 
 namespace gobot {
 
+class Editor;
 
 class EditorPanel : public Object {
     GOBCLASS(EditorPanel, Object)

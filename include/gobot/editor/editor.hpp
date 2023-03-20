@@ -26,6 +26,17 @@ public:
 
     static Editor* GetInstance();
 
+    FORCE_INLINE Node3DEditor* GetNode3dEditor() { return node3d_editor_; }
+
+    void OnImGUI();
+
+private:
+    void DrawMenuBar();
+
+    void BeginDockSpace();
+
+    void EndDockSpace();
+
 private:
     static Editor* s_singleton;
 

@@ -51,6 +51,8 @@ enum class RendererType
     Count
 };
 
+using Attachment = bgfx::Attachment;
+
 
 enum class RenderClearFlags : std::uint16_t {
     None                         = 0,
@@ -78,14 +80,6 @@ enum class RenderClearFlags : std::uint16_t {
 
     ClearAll = FrameBufferColorAttachmentMask | Color | Depth | Stencil
 };
-
-#define BGFX_RESET_FLIP_AFTER_RENDER              UINT32_C(0x00004000)
-#define BGFX_RESET_SRGB_BACKBUFFER                UINT32_C(0x00008000) //!< Enable sRGB backbuffer.
-#define BGFX_RESET_HDR10                          UINT32_C(0x00010000) //!< Enable HDR10 rendering.
-#define BGFX_RESET_HIDPI                          UINT32_C(0x00020000) //!< Enable HiDPI rendering.
-#define BGFX_RESET_DEPTH_CLAMP                    UINT32_C(0x00040000) //!< Enable depth clamp.
-#define BGFX_RESET_SUSPEND                        UINT32_C(0x00080000) //!< Suspend rendering.
-#define BGFX_RESET_TRANSPARENT_BACKBUFFER         UINT32_C(0x00100000) //!< Transparent backbuffer. Availability depends on: `BGFX_CAPS_TRANSPARENT_BACKBUFFER`.
 
 enum class RenderResetFlags : std::uint32_t {
     None                  = 0x00000000,   //!< No reset flags.
@@ -246,8 +240,20 @@ using UniformHandle = bgfx::UniformHandle;
 using VertexBufferHandle = bgfx::VertexBufferHandle;
 using VertexLayoutHandle = bgfx::VertexLayoutHandle;
 
+using RenderMemoryView = bgfx::Memory;
+
 constexpr uint16_t InvalidHandle = UINT16_MAX;
 
+enum class BackbufferRatio {
+    Equal,     //!< Equal to backbuffer.
+    Half,      //!< One half size of backbuffer.
+    Quarter,   //!< One quarter size of backbuffer.
+    Eighth,    //!< One eighth size of backbuffer.
+    Sixteenth, //!< One sixteenth size of backbuffer.
+    Double,    //!< Double size of backbuffer.
+
+    Count
+};
 
 enum class RenderEncoderDiscardFlags {
     None         = 0,        //!< Preserve everything.
@@ -381,5 +387,82 @@ enum class VertexAttributeType {
     Count
 };
 
+
+#define BGFX_SAMPLER_BORDER_COLOR_SHIFT           24
+
+#define BGFX_SAMPLER_BORDER_COLOR_MASK            UINT32_C(0x0f000000)
+#define BGFX_SAMPLER_BORDER_COLOR(v) ( ( (uint32_t)(v)<<BGFX_SAMPLER_BORDER_COLOR_SHIFT )&BGFX_SAMPLER_BORDER_COLOR_MASK)
+
+
+enum class TextureFlags : uint64_t {
+    None                = 0x0000000000000000,
+
+    // sampler
+    Sampler_U_Mirror    = 0x00000001, //!< Wrap U mode: Mirror
+    Sampler_U_Clamp  = 0x00000002, //!< Wrap U mode: Clamp
+    Sampler_U_Border = 0x00000003, //!< Wrap U mode: Border // TODO(wqq): Is this right
+    Sampler_U_Mask   = 0x00000003,
+
+
+    Sampler_V_Mirror = 0x00000004, //!< Wrap U mode: Mirror
+    Sampler_V_Clamp  = 0x00000008, //!< Wrap U mode: Clamp
+    Sampler_V_Border = 0x0000000c, //!< Wrap U mode: Border
+    Sampler_V_Mask   = 0x0000000c,
+
+    Sampler_W_Mirror = 0x00000010, //!< Wrap U mode: Mirror
+    Sampler_W_Clamp  = 0x00000020, //!< Wrap U mode: Clamp
+    Sampler_W_Border = 0x00000030, //!< Wrap U mode: Border
+    Sampler_W_Mask   = 0x00000030,
+
+    SamplerMinPoint  = 0x00000040, //!< Min sampling mode: Point
+    SamplerMinAnisotropy = 0x00000080, //!< Mag sampling mode: Anisotropic
+    SamplerMinMask  = 0x000000c0,
+
+    SamplerMagPoint  = 0x00000100,      //!< Mag sampling mode: Point
+    SamplerMagAnisotropy = 0x00000200, //!< Mag sampling mode: Anisotropic
+    SamplerMagMask  = 0x00000300,
+
+    SamplerMipPoint = 0x00000400,  //!< Mip sampling mode: Point
+    SamplerMipMask  = 0x00000400,
+
+    SamplerCompareLess = 0x00010000, //!< Compare when sampling depth texture: less.
+    SamplerCompareLessEqual = 0x00020000, //!< Compare when sampling depth texture: less or equal.
+    SamplerCompareEqual = 0x00030000,  //!< Compare when sampling depth texture: equal.
+    SamplerCompareGreaterEqual = 0x00040000, //!< Compare when sampling depth texture: greater or equal.
+    SamplerCompareNotEqual = 0x00060000, //!< Compare when sampling depth texture: not equal.
+    SamplerCompareNever = 0x00070000, //!< Compare when sampling depth texture: never.
+    SamplerCompareAlways = 0x00080000, //!< Compare when sampling depth texture: always.
+    SamplerCompareMask = 0x000f0000,
+
+    SamplerStencil = 0x00100000,  //!< Sample stencil instead of depth.
+
+    SamplerPoint = SamplerMinPoint | SamplerMagPoint | SamplerMipPoint,
+
+    Sampler_UVW_Mirror = Sampler_U_Mirror | Sampler_V_Mirror | Sampler_W_Mirror,
+    Sampler_UVW_Clamp = Sampler_U_Clamp | Sampler_V_Clamp | Sampler_W_Clamp,
+    Sampler_UVW_Border = Sampler_U_Border | Sampler_V_Border | Sampler_W_Border,
+
+    SamplerBitsMask = Sampler_U_Mask | Sampler_V_Mask | Sampler_W_Mask |
+                      SamplerMinMask | SamplerMagMask | SamplerMipMask | SamplerCompareMask,
+
+    MSAASample   = 0x0000000800000000,  //!< Texture will be used for MSAA sampling.
+    RT           = 0x0000001000000000,  //!< Render target no MSAA.
+    ComputeWrite = 0x0000100000000000,  //!< Texture will be used for compute write.
+    SRGB         = 0x0000200000000000,  //!< Sample texture as sRGB.
+    BlitDst      = 0x0000400000000000,  //!< Texture will be used as blit destination.
+    ReadBack     = 0x0000800000000000,  //!< Texture will be used for read back from GPU.
+    RT_MSAA_X2   = 0x0000002000000000,  //!< Render target MSAAx2 mode.
+    RT_MSAA_X4   = 0x0000003000000000,  //!< Render target MSAAx4 mode.
+    RT_MSAA_X8   = 0x0000004000000000,  //!< Render target MSAAx8 mode.
+    RT_MSAA_X16  = 0x0000005000000000,  //!< Render target MSAAx16 mode.
+    RT_MSAA_MASK = 0x0000007000000000,
+
+    RT_WriteOnly = 0x0000008000000000,  //!< Render target will be used for writing
+    RT_MASK      = 0x000000f000000000
+
+};
+
+
+using TextureInfo = bgfx::TextureInfo;
 
 }

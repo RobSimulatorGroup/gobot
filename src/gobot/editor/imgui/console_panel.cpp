@@ -7,6 +7,8 @@
 
 
 #include "gobot/editor/imgui/console_panel.hpp"
+
+#include <utility>
 #include "gobot/editor/imgui/imgui_utilities.hpp"
 #include "imgui_extension/icon_fonts/icons_material_design_icons.h"
 
@@ -14,10 +16,10 @@
 
 namespace gobot {
 
-ConsoleMessage::ConsoleMessage(const String& message, Level level, const String& source, int thread_id)
+ConsoleMessage::ConsoleMessage(const String& message, Level level, String  source, int thread_id)
         : message_(message)
         , level_(level)
-        , source_(source)
+        , source_(std::move(source))
         , thread_id_(thread_id)
         , message_id_(std::hash<String>()(message))
 {
@@ -25,9 +27,8 @@ ConsoleMessage::ConsoleMessage(const String& message, Level level, const String&
 
 void ConsoleMessage::OnImGUIRender()
 {
-    if(ConsolePanel::s_message_buffer_render_filter & level_)
-    {
-//        ImGuiUtilities::ScopedID((int)message_id_);
+    if(ConsolePanel::s_message_buffer_render_filter & level_) {
+        ImGuiUtilities::ScopedID((int)message_id_);
         ImGui::PushStyleColor(ImGuiCol_Text, GetRenderColor(level_));
         auto levelIcon = GetLevelIcon(level_);
         ImGui::TextUnformatted(levelIcon);
@@ -59,8 +60,7 @@ void ConsoleMessage::OnImGUIRender()
 
 const char* ConsoleMessage::GetLevelIcon(Level level)
 {
-    switch(level)
-    {
+    switch(level) {
         case ConsoleMessage::Level::Trace:
             return ICON_MDI_MESSAGE_TEXT;
         case ConsoleMessage::Level::Info:
@@ -80,8 +80,7 @@ const char* ConsoleMessage::GetLevelIcon(Level level)
 
 const char* ConsoleMessage::GetLevelName(Level level)
 {
-    switch(level)
-    {
+    switch(level) {
         case ConsoleMessage::Level::Trace:
             return ICON_MDI_MESSAGE_TEXT " Trace";
         case ConsoleMessage::Level::Info:
@@ -101,8 +100,7 @@ const char* ConsoleMessage::GetLevelName(Level level)
 
 Color ConsoleMessage::GetRenderColor(Level level)
 {
-    switch(level)
-    {
+    switch(level) {
         case ConsoleMessage::Level::Trace:
             return { 0.75f, 0.75f, 0.75f, 1.00f }; // Gray
         case ConsoleMessage::Level::Info:
@@ -191,7 +189,7 @@ void ConsolePanel::Flush()
 
 void ConsolePanel::OnImGui()
 {
-    auto flags = ImGuiWindowFlags_NoCollapse;
+    auto flags = ImGuiWindowFlags_NoCollapse | ImGuiWindowFlags_NoTitleBar;
     ImGui::SetNextWindowSize(ImVec2(640, 480), ImGuiCond_FirstUseEver);
     ImGui::Begin(name_.toStdString().c_str(), &active_, flags);
     {
@@ -205,10 +203,9 @@ void ConsolePanel::OnImGui()
 void ConsolePanel::ImGuiRenderHeader()
 {
     ImGuiStyle& style = ImGui::GetStyle();
-    ImGui::AlignTextToFramePadding();
     // Button for advanced settings
     {
-//        ImGuiUtilities::ScopedColour buttonColour(ImGuiCol_Button, ImVec4(0.0f, 0.0f, 0.0f, 0.0f));
+        ImGuiUtilities::ScopedColor button_color(ImGuiCol_Button, ImVec4(0.0f, 0.0f, 0.0f, 0.0f));
         if(ImGui::Button(ICON_MDI_COGS))
             ImGui::OpenPopup("SettingsPopup");
     }
@@ -234,24 +231,24 @@ void ConsolePanel::ImGuiRenderHeader()
     float levelButtonWidths         = (levelButtonWidth + ImGui::GetStyle().ItemSpacing.x) * 6;
 
     {
-//        ImGuiUtilities::ScopedFont boldFont(ImGui::GetIO().Fonts->Fonts[1]);
-//        ImGuiUtilities::ScopedStyle frameBorder(ImGuiStyleVar_FrameBorderSize, 0.0f);
-//        ImGuiUtilities::ScopedColour frameColour(ImGuiCol_FrameBg, IM_COL32(0, 0, 0, 0));
+        ImGuiUtilities::ScopedFont boldFont(ImGui::GetIO().Fonts->Fonts[1]);
+        ImGuiUtilities::ScopedStyle frameBorder(ImGuiStyleVar_FrameBorderSize, 0.0f);
+        ImGuiUtilities::ScopedColor frameColor(ImGuiCol_FrameBg, IM_COL32(0, 0, 0, 0));
         filter_.Draw("###ConsoleFilter", ImGui::GetContentRegionAvail().x - (levelButtonWidths));
-//        ImGuiUtilities::DrawItemActivityOutline(2.0f, false);
+        ImGuiUtilities::DrawItemActivityOutline(2.0f, false);
     }
 
     ImGui::SameLine(); // ImGui::GetWindowWidth() - levelButtonWidths);
 
     for(int i = 0; i < 6; i++)
     {
-//        ImGuiUtilities::ScopedColour buttonColour(ImGuiCol_Button, ImVec4(0.0f, 0.0f, 0.0f, 0.0f));
+        ImGuiUtilities::ScopedColor buttonColor(ImGuiCol_Button, ImVec4(0.0f, 0.0f, 0.0f, 0.0f));
         ImGui::SameLine();
         auto level = ConsoleMessage::Level(std::pow(2, i));
 
-        bool levelEnabled = s_message_buffer_render_filter & level;
-        if(levelEnabled)
-            ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(0.5f, 0.5, 0.5f, 0.5f));
+        bool level_enabled = s_message_buffer_render_filter & level;
+        if(level_enabled)
+            ImGui::PushStyleColor(ImGuiCol_Text, ConsoleMessage::GetRenderColor(level));
         else
             ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(0.5f, 0.5, 0.5f, 0.5f));
 
@@ -272,9 +269,9 @@ void ConsolePanel::ImGuiRenderHeader()
     if(!filter_.IsActive())
     {
         ImGui::SameLine();
-//        ImGuiUtilities::ScopedFont boldFont(ImGui::GetIO().Fonts->Fonts[1]);
+        ImGuiUtilities::ScopedFont boldFont(ImGui::GetIO().Fonts->Fonts[1]);
         ImGui::SetCursorPosX(ImGui::GetFontSize() * 4.0f);
-//        ImGuiUtilities::ScopedStyle padding(ImGuiStyleVar_FramePadding, ImVec2(0.0f, ImGui::GetStyle().FramePadding.y));
+        ImGuiUtilities::ScopedStyle padding(ImGuiStyleVar_FramePadding, ImVec2(0.0f, ImGui::GetStyle().FramePadding.y));
         ImGui::TextUnformatted("Search...");
     }
 }
@@ -283,7 +280,6 @@ void ConsolePanel::ImGuiRenderMessages()
 {
     ImGui::BeginChild("ScrollRegion", ImVec2(0, 0), false, ImGuiWindowFlags_HorizontalScrollbar);
     {
-        // ImGuiUtilities::AlternatingRowsBackground();
 
         auto messageStart = s_message_buffer.begin() + s_message_buffer_begin;
         if(*messageStart) // If contains old message here

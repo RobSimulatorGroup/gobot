@@ -34,6 +34,10 @@ target_sources(imgui-gobot INTERFACE
         imgui/backends/imgui_impl_opengl3.h
         imgui/backends/imgui_impl_sdl2.h
         imgui/backends/imgui_impl_sdl2.cpp
+
+        imgui_extension/imgui_extension/gizmos/ImGuizmo.h
+        imgui_extension/imgui_extension/gizmos/ImGuizmo.cpp
+
         )
 
 get_filename_component(IMGUI_USER_CONFIG "imgui_config.hpp" REALPATH BASE_DIR "${PROJECT_SOURCE_DIR}/include/gobot/editor/imgui/")

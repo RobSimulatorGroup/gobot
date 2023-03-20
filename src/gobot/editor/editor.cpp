@@ -11,8 +11,16 @@
 #include "gobot/log.hpp"
 #include "gobot/editor/imgui/console_sink.hpp"
 #include "gobot/editor/imgui/imgui_manager.hpp"
+#include "gobot/editor/imgui/scene_view_panel.hpp"
+#include "gobot/editor/imgui/scene_editor_panel.hpp"
+#include "gobot/editor/imgui/inspector_panel.hpp"
+#include "gobot/editor/imgui/resource_panel.hpp"
 #include "gobot/main/main.hpp"
+#include "gobot/core/config/engine.hpp"
+#include "gobot/core/config/project_setting.hpp"
+#include "gobot/editor/imgui/imgui_utilities.hpp"
 #include "imgui.h"
+#include "imgui_internal.h"
 
 namespace gobot {
 
@@ -30,6 +38,10 @@ Editor::Editor() {
     Logger::GetInstance().AddSink(sink);
 
     panels_.emplace_back(std::make_shared<ConsolePanel>());
+    panels_.emplace_back(std::make_shared<SceneViewPanel>());
+    panels_.emplace_back(std::make_shared<SceneEditorPanel>());
+    panels_.emplace_back(std::make_shared<InspectorPanel>());
+    panels_.emplace_back(std::make_shared<ResourcePanel>());
 }
 
 Editor::~Editor() {
@@ -46,98 +58,135 @@ void Editor::NotificationCallBack(NotificationType notification) {
     switch (notification) {
         case NotificationType::Process: {
             imgui_manager_->BeginFrame();
-
-            static bool opt_fullscreen = true;
-            static bool opt_padding = false;
-            static ImGuiDockNodeFlags dockspace_flags = ImGuiDockNodeFlags_None;
-
-            // We are using the ImGuiWindowFlags_NoDocking flag to make the parent window not dockable into,
-            // because it would be confusing to have two docking targets within each others.
-            ImGuiWindowFlags window_flags = ImGuiWindowFlags_MenuBar | ImGuiWindowFlags_NoDocking;
-            if (opt_fullscreen) {
-                const ImGuiViewport* viewport = ImGui::GetMainViewport();
-                ImGui::SetNextWindowPos(viewport->WorkPos);
-                ImGui::SetNextWindowSize(viewport->WorkSize);
-                ImGui::SetNextWindowViewport(viewport->ID);
-                ImGui::PushStyleVar(ImGuiStyleVar_WindowRounding, 0.0f);
-                ImGui::PushStyleVar(ImGuiStyleVar_WindowBorderSize, 0.0f);
-                window_flags |= ImGuiWindowFlags_NoTitleBar | ImGuiWindowFlags_NoCollapse | ImGuiWindowFlags_NoResize | ImGuiWindowFlags_NoMove;
-                window_flags |= ImGuiWindowFlags_NoBringToFrontOnFocus | ImGuiWindowFlags_NoNavFocus;
-            } else {
-                dockspace_flags &= ~ImGuiDockNodeFlags_PassthruCentralNode;
-            }
-
-            // When using ImGuiDockNodeFlags_PassthruCentralNode, DockSpace() will render our background
-            // and handle the pass-thru hole, so we ask Begin() to not render a background.
-            if (dockspace_flags & ImGuiDockNodeFlags_PassthruCentralNode)
-                window_flags |= ImGuiWindowFlags_NoBackground;
-
-            // Important: note that we proceed even if Begin() returns false (aka window is collapsed).
-            // This is because we want to keep our DockSpace() active. If a DockSpace() is inactive,
-            // all active windows docked into it will lose their parent and become undocked.
-            // We cannot preserve the docking relationship between an active window and an inactive docking, otherwise
-            // any change of dockspace/settings would lead to windows being stuck in limbo and never being visible.
-            if (!opt_padding)
-                ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, ImVec2(0.0f, 0.0f));
-
-            static bool p_open = true;
-            ImGui::Begin("DockSpace Demo", &p_open, window_flags);
-            if (!opt_padding)
-                ImGui::PopStyleVar();
-
-            if (opt_fullscreen)
-                ImGui::PopStyleVar(2);
-
-            // Submit the DockSpace
-            ImGuiIO& io = ImGui::GetIO();
-            if (io.ConfigFlags & ImGuiConfigFlags_DockingEnable) {
-                ImGuiID dockspace_id = ImGui::GetID("MyDockSpace");
-                ImGui::DockSpace(dockspace_id, ImVec2(0.0f, 0.0f), dockspace_flags);
-            }
-
-
-            if (ImGui::BeginMenuBar()) {
-                if (ImGui::BeginMenu("Options")) {
-                    // Disabling fullscreen would allow the window to be moved to the front of other windows,
-                    // which we can't undo at the moment without finer window depth/z control.
-                    ImGui::MenuItem("Fullscreen", NULL, &opt_fullscreen);
-                    ImGui::MenuItem("Padding", NULL, &opt_padding);
-                    ImGui::Separator();
-
-                    if (ImGui::MenuItem("Flag: NoSplit",                "", (dockspace_flags & ImGuiDockNodeFlags_NoSplit) != 0))                 { dockspace_flags ^= ImGuiDockNodeFlags_NoSplit; }
-                    if (ImGui::MenuItem("Flag: NoResize",               "", (dockspace_flags & ImGuiDockNodeFlags_NoResize) != 0))                { dockspace_flags ^= ImGuiDockNodeFlags_NoResize; }
-                    if (ImGui::MenuItem("Flag: NoDockingInCentralNode", "", (dockspace_flags & ImGuiDockNodeFlags_NoDockingInCentralNode) != 0))  { dockspace_flags ^= ImGuiDockNodeFlags_NoDockingInCentralNode; }
-                    if (ImGui::MenuItem("Flag: AutoHideTabBar",         "", (dockspace_flags & ImGuiDockNodeFlags_AutoHideTabBar) != 0))          { dockspace_flags ^= ImGuiDockNodeFlags_AutoHideTabBar; }
-                    if (ImGui::MenuItem("Flag: PassthruCentralNode",    "", (dockspace_flags & ImGuiDockNodeFlags_PassthruCentralNode) != 0, opt_fullscreen)) { dockspace_flags ^= ImGuiDockNodeFlags_PassthruCentralNode; }
-                    ImGui::Separator();
-
-                    if (ImGui::MenuItem("Close", NULL, false, p_open != NULL))
-                        p_open = false;
-                    ImGui::EndMenu();
-                }
-
-                ImGui::EndMenuBar();
-            }
-
-            ImGui::ShowDemoWindow(); // your drawing here
-
-            ImGui::End();
-
-            for(auto& panel : panels_)
-            {
-//                if(panel->Active())
-                    panel->OnImGui();
-            }
-
-            ImGui::Begin("Viewport");
-            ImGui::Image(Main::GetFF(), {1000, 800});
-            ImGui::End();
-
+            OnImGUI();
             imgui_manager_->EndFrame();
         }
     }
 }
 
+
+void Editor::OnImGUI() {
+    DrawMenuBar();
+    BeginDockSpace();
+
+    for(auto& panel : panels_)
+    {
+//                if(panel->Active())
+        panel->OnImGui();
+    }
+
+//    ImGui::Begin("Viewport");
+////            ImGui::Image(Main::GetFF(), {1000, 800});
+//    ImGui::End();
+
+    ImGui::ShowDemoWindow(); // your drawing here
+
+    EndDockSpace();
+}
+
+void Editor::DrawMenuBar() {
+    if (ImGui::BeginMainMenuBar()) {
+        if (ImGui::BeginMenu("File")) {
+            ImGui::EndMenu();
+        }
+        if (ImGui::BeginMenu("Edit")) {
+            if (ImGui::MenuItem("Undo", "CTRL+Z")) {}
+            if (ImGui::MenuItem("Redo", "CTRL+Y", false, false)) {}  // Disabled item
+            ImGui::Separator();
+            if (ImGui::MenuItem("Cut", "CTRL+X")) {}
+            if (ImGui::MenuItem("Copy", "CTRL+C")) {}
+            if (ImGui::MenuItem("Paste", "CTRL+V")) {}
+            ImGui::EndMenu();
+        }
+        ImGui::EndMainMenuBar();
+    }
+}
+
+void Editor::BeginDockSpace() {
+    static bool p_open                    = true;
+    static bool opt_fullscreen_persistant = true;
+    static ImGuiDockNodeFlags opt_flags   = ImGuiDockNodeFlags_NoWindowMenuButton | ImGuiDockNodeFlags_NoCloseButton;
+    bool opt_fullscreen                   = opt_fullscreen_persistant;
+
+    ImGuiWindowFlags window_flags = ImGuiWindowFlags_NoDocking;
+    if(opt_fullscreen) {
+        ImGuiViewport* viewport = ImGui::GetMainViewport();
+        auto pos     = viewport->Pos;
+        auto size    = viewport->Size;
+        bool menuBar = true;
+        if(menuBar) {
+            const float infoBarSize = ImGui::GetFrameHeight();
+            pos.y += infoBarSize;
+            size.y -= infoBarSize;
+        }
+
+        ImGui::SetNextWindowPos(pos);
+        ImGui::SetNextWindowSize(size);
+        ImGui::SetNextWindowViewport(viewport->ID);
+        ImGui::PushStyleVar(ImGuiStyleVar_WindowRounding, 0.0f);
+        ImGui::PushStyleVar(ImGuiStyleVar_WindowBorderSize, 0.0f);
+        window_flags |= ImGuiWindowFlags_NoTitleBar | ImGuiWindowFlags_NoCollapse | ImGuiWindowFlags_NoResize | ImGuiWindowFlags_NoMove;
+        window_flags |= ImGuiWindowFlags_NoBringToFrontOnFocus | ImGuiWindowFlags_NoNavFocus;
+    }
+
+    // When using ImGuiDockNodeFlags_PassthruDockspace, DockSpace() will render our background and handle the
+    // pass-thru hole, so we ask Begin() to not render a background.
+    if(opt_flags & ImGuiDockNodeFlags_DockSpace)
+        window_flags |= ImGuiWindowFlags_NoBackground;
+
+    ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, ImVec2(0.0f, 0.0f));
+    ImGui::Begin("MyDockspace", &p_open, window_flags);
+    ImGui::PopStyleVar();
+
+    if(opt_fullscreen)
+        ImGui::PopStyleVar(2);
+
+    ImGuiID DockspaceID = ImGui::GetID("MyDockspace");
+
+    if(!ImGui::DockBuilderGetNode(DockspaceID))
+    {
+        ImGui::DockBuilderRemoveNode(DockspaceID); // Clear out existing layout
+        ImGui::DockBuilderAddNode(DockspaceID);    // Add empty node
+        ImGui::DockBuilderSetNodeSize(DockspaceID, ImGui::GetIO().DisplaySize * ImGui::GetIO().DisplayFramebufferScale);
+
+        ImGuiID dock_main_id = DockspaceID;
+        ImGuiID DockBottom   = ImGui::DockBuilderSplitNode(dock_main_id, ImGuiDir_Down, 0.3f, nullptr, &dock_main_id);
+        ImGuiID DockLeft     = ImGui::DockBuilderSplitNode(dock_main_id, ImGuiDir_Left, 0.2f, nullptr, &dock_main_id);
+        ImGuiID DockRight    = ImGui::DockBuilderSplitNode(dock_main_id, ImGuiDir_Right, 0.20f, nullptr, &dock_main_id);
+
+        ImGuiID DockLeftChild         = ImGui::DockBuilderSplitNode(DockLeft, ImGuiDir_Down, 0.875f, nullptr, &DockLeft);
+        ImGuiID DockRightChild        = ImGui::DockBuilderSplitNode(DockRight, ImGuiDir_Down, 0.875f, nullptr, &DockRight);
+        ImGuiID DockingLeftDownChild  = ImGui::DockBuilderSplitNode(DockLeftChild, ImGuiDir_Down, 0.06f, nullptr, &DockLeftChild);
+        ImGuiID DockingRightDownChild = ImGui::DockBuilderSplitNode(DockRightChild, ImGuiDir_Down, 0.06f, nullptr, &DockRightChild);
+
+        ImGuiID DockBottomChild         = ImGui::DockBuilderSplitNode(DockBottom, ImGuiDir_Down, 0.2f, nullptr, &DockBottom);
+        ImGuiID DockingBottomLeftChild  = ImGui::DockBuilderSplitNode(DockLeft, ImGuiDir_Down, 0.4f, nullptr, &DockLeft);
+        ImGuiID DockingBottomRightChild = ImGui::DockBuilderSplitNode(DockRight, ImGuiDir_Down, 0.4f, nullptr, &DockRight);
+
+        ImGuiID DockMiddle       = ImGui::DockBuilderSplitNode(dock_main_id, ImGuiDir_Right, 0.8f, nullptr, &dock_main_id);
+        ImGuiID DockBottomMiddle = ImGui::DockBuilderSplitNode(DockMiddle, ImGuiDir_Down, 0.3f, nullptr, &DockMiddle);
+        ImGuiID DockMiddleLeft   = ImGui::DockBuilderSplitNode(DockMiddle, ImGuiDir_Left, 0.5f, nullptr, &DockMiddle);
+
+        ImGui::DockBuilderDockWindow("###scene_view", DockMiddleLeft);
+        ImGui::DockBuilderDockWindow("Dear ImGui Demo", DockLeft);
+        ImGui::DockBuilderDockWindow("###inspector", DockRight);
+        ImGui::DockBuilderDockWindow("###console", DockBottomMiddle);
+        ImGui::DockBuilderDockWindow("###resources", DockingBottomLeftChild);
+        ImGui::DockBuilderDockWindow("###scene_editor", DockLeft);
+
+        ImGui::DockBuilderFinish(DockspaceID);
+    }
+
+    // Submit the DockSpace
+    ImGuiIO& io = ImGui::GetIO();
+    if(io.ConfigFlags & ImGuiConfigFlags_DockingEnable) {
+        ImGui::DockSpace(DockspaceID, ImVec2(0.0f, 0.0f), opt_flags);
+    }
+}
+
+void Editor::EndDockSpace() {
+    ImGui::End();
+}
 
 }
 

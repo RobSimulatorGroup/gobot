@@ -5,6 +5,7 @@
  * This file is created by Qiqi Wu, 23-3-10
 */
 
+#include "imgui_internal.h"
 #include "gobot/editor/imgui/imgui_utilities.hpp"
 
 namespace gobot {
@@ -12,6 +13,45 @@ namespace gobot {
 Color ImGuiUtilities::s_selected_color = {0.28f, 0.56f, 0.9f, 1.0f};
 Color ImGuiUtilities::s_icon_color = {0.2f, 0.2f, 0.2f, 1.0f};
 char* ImGuiUtilities::s_multiline_buffer = nullptr;
+
+
+Color ImGuiUtilities::GetSelectedColor() {
+    return s_selected_color;
+}
+
+void ImGuiUtilities::Tooltip(const String& text) {
+    ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, ImVec2(5, 5));
+    Tooltip(text.toStdString().c_str());
+    ImGui::PopStyleVar();
+}
+
+void ImGuiUtilities::Tooltip(const char* text) {
+    ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, ImVec2(5, 5));
+
+    if(ImGui::IsItemHovered())
+    {
+        ImGui::BeginTooltip();
+        ImGui::TextUnformatted(text);
+        ImGui::EndTooltip();
+    }
+
+    ImGui::PopStyleVar();
+}
+
+void ImGuiUtilities::Image(const Texture* texture, const Vector2f& size, const Vector2f& uv0,
+                           const Vector2f& uv1, const Color& tintCol,
+                           const Color& borderCol) {
+    ImVec2 _uv0 = uv0;
+    ImVec2 _uv1 = uv1;
+
+    if(texture->IsRenderTarget() && texture->IsOriginBottomLeft()) {
+        _uv0 = {0.0f, 1.0f};
+        _uv1 = {1.0f, 0.0f};
+    }
+
+    ImGui::Image(texture->GetHandleID(), size, _uv1, _uv1, tintCol, borderCol);
+}
+
 
 void ImGuiUtilities::SetTheme(Theme theme)
 {
@@ -471,6 +511,29 @@ void ImGuiUtilities::SetTheme(Theme theme)
 
     colors[ImGuiCol_Border]       = ImVec4(0.08f, 0.10f, 0.12f, 0.00f);
     colors[ImGuiCol_BorderShadow] = ImVec4(0.00f, 0.00f, 0.00f, 0.00f);
+}
+
+void ImGuiUtilities::DrawItemActivityOutline(float rounding, bool draw_when_inactive, ImColor color_when_active) {
+    auto* draw_list = ImGui::GetWindowDrawList();
+
+    ImRect expanded_rect = ImRect(ImGui::GetItemRectMin(), ImGui::GetItemRectMax());
+    expanded_rect.Min.x -= 1.0f;
+    expanded_rect.Min.y -= 1.0f;
+    expanded_rect.Max.x += 1.0f;
+    expanded_rect.Max.y += 1.0f;
+
+    const ImRect rect = expanded_rect;
+    if(ImGui::IsItemHovered() && !ImGui::IsItemActive()) {
+        draw_list->AddRect(rect.Min, rect.Max,
+                           ImColor(60, 60, 60), rounding, 0, 1.5f);
+    }
+    if(ImGui::IsItemActive()) {
+        draw_list->AddRect(rect.Min, rect.Max,
+                           color_when_active, rounding, 0, 1.0f);
+    } else if(!ImGui::IsItemHovered() && draw_when_inactive) {
+        draw_list->AddRect(rect.Min, rect.Max,
+                           ImColor(50, 50, 50), rounding, 0, 1.0f);
+    }
 }
 
 }

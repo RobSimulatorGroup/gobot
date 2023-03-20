@@ -28,7 +28,7 @@ public:
     };
 
 public:
-    ConsoleMessage(const String& message = "", Level level = Level::Trace, const String& source = "", int thread_id = 0);
+    ConsoleMessage(const String& message = "", Level level = Level::Trace, String  source = "", int thread_id = 0);
 
     void OnImGUIRender();
 

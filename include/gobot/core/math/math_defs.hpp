@@ -146,6 +146,9 @@ constexpr int Sign(const T val) {
 inline real_t DEG_TO_RAD(real_t deg) { return static_cast<real_t>(deg * (Math_PI / 180.0)); }
 inline real_t RAD_TO_DEG(real_t rad) { return static_cast<real_t>(rad * (180.0 / Math_PI)); }
 
+inline bool FloatEquals(real_t a, real_t b) {
+    return std::abs(a - b) < CMP_EPSILON;
+}
 
 
 };  // namespace gobot

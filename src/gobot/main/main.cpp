@@ -71,18 +71,11 @@ Copyright(c) 2021-2023, RobSimulatorGroup)");
 bool Main::Setup2() {
     s_render_server = Object::New<RenderServer>();
 
-
     SceneInitializer::Init();
 
     return true;
 }
 
-bgfx::FrameBufferHandle m_fbh;
-bgfx::TextureHandle m_fbtextures;
-
-void* Main::GetFF() {
-    return (void*)m_fbtextures.idx;
-}
 
 bool Main::Start() {
     auto* main_loop = Object::New<SceneTree>();
@@ -98,9 +91,6 @@ bool Main::Start() {
     DebugDrawEncoder::Initialize();
 
     OS::GetInstance()->SetMainLoop(main_loop);
-
-    m_fbtextures = bgfx::createTexture2D(1000, 800, false, 1, bgfx::TextureFormat::RGBA16F, BGFX_TEXTURE_RT);
-    m_fbh = bgfx::createFrameBuffer(1, &m_fbtextures);
 
     return true;
 }
@@ -122,48 +112,15 @@ bool Main::Iteration()
         exit = true;
     }
 
+
     LOG_INFO("1111");
     LOG_ERROR("2222");
 
-//    // This dummy draw call is here to make sure that view 0 is cleared
-//    // if no other draw calls are submitted to view 0.
-    GET_RENDER_SERVER()->Touch(0);
-
-    bgfx::setViewFrameBuffer(0, m_fbh);
-
-
-    DebugDrawEncoder dde;
-
-    dde.Begin(0);
-    dde.DrawWorldAxis(65.0);
-
-    dde.Push();
-    bx::Aabb aabb =
-            {
-                    {  5.0f, 1.0f, 1.0f },
-                    { 10.0f, 5.0f, 5.0f },
-            };
-    dde.SetWireframe(true);
-//    dde.setColor(intersect(&dde, ray, aabb) ? kSelected : 0xff00ff00);
-    dde.Draw(aabb);
-    dde.Pop();
-
-
-    {
-        const bx::Vec3 normal = { 0.0f,  1.0f, 0.0f };
-        const bx::Vec3 pos    = { 0.0f, -2.0f, 0.0f };
-
-        bx::Plane plane(bx::init::None);
-        bx::calcPlane(plane, normal, pos);
-
-        dde.DrawGrid(Axis::Y, pos, 128, 1.0f);
-    }
-
-    dde.End();
 
     // Advance to next frame. Rendering thread will be kicked to
     // process submitted rendering primitives.
     GET_RENDER_SERVER()->Frame();
+
 
     return exit;
 
