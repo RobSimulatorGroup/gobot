@@ -36,6 +36,17 @@ public:
     virtual ~RID_AllocBase() = default;
 };
 
+/**
+ * @brief Manage memory allocations to a template class T. Upon an RID generated, a new chunk of data will be
+ *  allocated with a validator chunk and a free_list chunk for validating ID (and initialization) and recording
+ *  free index to the memory chunk separately. In this way, a 64-bit RID should be composed of an upper 32-bit ID
+ *  and a lower 32-bit memory chunk index.
+ *
+ *  Note that Allocation and Initialization are processed separately, where allocation grows memory chunks and
+ *  initialize validator and free list while initialization set a flag to indicate the memory is initialized by
+ *  some type T. To free an object of type T, not only memory chunk will be freed, validators and free list should
+ *  also be initialized for the next allocation.
+ */
 template <class T, bool THREAD_SAFE = false>
 class RID_Alloc : public RID_AllocBase {
 public:
