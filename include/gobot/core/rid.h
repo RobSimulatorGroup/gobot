@@ -41,11 +41,11 @@ public:
         return id_ != rid.id_;
     }
 
-    ALWAYS_INLINE bool IsValid() const { return id_ != 0; }
+    [[nodiscard]] ALWAYS_INLINE bool IsValid() const { return id_ != 0; }
 
-    ALWAYS_INLINE bool IsNull() const { return id_ == 0; }
+    [[nodiscard]] ALWAYS_INLINE bool IsNull() const { return id_ == 0; }
 
-    ALWAYS_INLINE uint32_t GetLocalIndex() const { return id_ & 0xFFFFFFFF; }
+    [[nodiscard]] ALWAYS_INLINE uint32_t GetLocalIndex() const { return id_ & 0xFFFFFFFF; }
 
     static ALWAYS_INLINE RID FromUint64(uint64_t id) {
         RID rid;
@@ -53,7 +53,7 @@ public:
         return rid;
     }
 
-    ALWAYS_INLINE uint64_t GetID() const { return id_; }
+    [[nodiscard]] ALWAYS_INLINE uint64_t GetID() const { return id_; }
 
     ALWAYS_INLINE RID() = default;
 };

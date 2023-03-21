@@ -61,7 +61,7 @@ public:
         }
 
         uint64_t id = rid.GetID();
-        uint32_t idx = uint32_t(id & 0xFFFFFFFF);
+        uint32_t idx = id & 0xFFFFFFFF;
         if (idx >= max_alloc_) [[unlikely]] {
             if (THREAD_SAFE) {
                 spin_lock_.unlock();
@@ -72,21 +72,21 @@ public:
         uint32_t idx_chunk = idx / elements_in_chunk_;
         uint32_t idx_element = idx % elements_in_chunk_;
 
-        uint32_t validator = uint32_t(id >> 32);
+        uint32_t validator = id >> 32;
 
         if (initialize) [[unlikely]] {
             if (!(validator_chunks_[idx_chunk][idx_element] & 0x80000000)) [[unlikely]] {
                 if (THREAD_SAFE) {
                     spin_lock_.unlock();
                 }
-                ERR_FAIL_V_MSG(nullptr, "Initializing already initialized RID");
+                ERR_FAIL_V_MSG(nullptr, "Initializing already initialized RID")
             }
 
             if ((validator_chunks_[idx_chunk][idx_element] & 0x7FFFFFFF) != validator) [[unlikely]] {
                 if (THREAD_SAFE) {
                     spin_lock_.unlock();
                 }
-                ERR_FAIL_V_MSG(nullptr, "Attempting to initialize the wrong RID");
+                ERR_FAIL_V_MSG(nullptr, "Attempting to initialize the wrong RID")
             }
 
             validator_chunks_[idx_chunk][idx_element] &= 0x7FFFFFFF; // initialized
@@ -97,7 +97,7 @@ public:
             }
             if ((validator_chunks_[idx_chunk][idx_element] & 0x80000000) &&
                 validator_chunks_[idx_chunk][idx_element] != 0xFFFFFFFF) {
-                ERR_FAIL_V_MSG(nullptr, "Attempting to use an uninitialized RID");
+                ERR_FAIL_V_MSG(nullptr, "Attempting to use an uninitialized RID")
             }
             return nullptr;
         }
@@ -147,7 +147,7 @@ public:
         uint32_t free_chunk = free_index / elements_in_chunk_;
         uint32_t free_element = free_index % elements_in_chunk_;
 
-        uint32_t validator = (uint32_t)(GenID() & 0x7FFFFFFF);
+        uint32_t validator = GenID() & 0x7FFFFFFF;
         uint64_t id = validator;
         id <<= 32;
         id |= free_index;
@@ -183,7 +183,7 @@ public:
         }
 
         uint64_t id = rid.GetID();
-        uint32_t idx = uint32_t(id & 0xFFFFFFFF);
+        uint32_t idx = id & 0xFFFFFFFF;
         if (idx >= max_alloc_) [[unlikely]] {
             if (THREAD_SAFE) {
                 spin_lock_.unlock();
@@ -194,7 +194,7 @@ public:
         uint32_t idx_chunk = idx / elements_in_chunk_;
         uint32_t idx_element = idx % elements_in_chunk_;
 
-        uint32_t validator = uint32_t(id >> 32);
+        uint32_t validator = id >> 32;
 
         bool owned = (validator_chunks_[idx_chunk][idx_element] & 0x7FFFFFFF) == validator;
 
@@ -211,28 +211,28 @@ public:
         }
 
         uint64_t id = rid.GetID();
-        uint32_t idx = uint32_t(id & 0xFFFFFFFF);
+        uint32_t idx = id & 0xFFFFFFFF;
         if (idx >= max_alloc_) [[unlikely]] {
             if (THREAD_SAFE) {
                 spin_lock_.unlock();
             }
-            ERR_FAIL();
+            ERR_FAIL()
         }
 
         uint32_t idx_chunk = idx / elements_in_chunk_;
         uint32_t idx_element = idx % elements_in_chunk_;
 
-        uint32_t validator = uint32_t(id >> 32);
+        uint32_t validator = id >> 32;
         if (validator_chunks_[idx_chunk][idx_element] & 0x80000000) [[unlikely]] {
             if (THREAD_SAFE) {
                 spin_lock_.unlock();
             }
-            ERR_FAIL_MSG("Attempted to free an uninitialized or invalid RID");
+            ERR_FAIL_MSG("Attempted to free an uninitialized or invalid RID")
         } else if (validator_chunks_[idx_chunk][idx_element] != validator) [[unlikely]] {
             if (THREAD_SAFE) {
                 spin_lock_.unlock();
             }
-            ERR_FAIL();
+            ERR_FAIL()
         }
 
         chunks_[idx_chunk][idx_element].~T();
@@ -254,11 +254,11 @@ public:
         description_ = description;
     }
 
-    RID_Alloc(uint32_t target_chunk_byte_size = 65536) {
+    explicit RID_Alloc(uint32_t target_chunk_byte_size = 65536) {
         elements_in_chunk_ = sizeof(T) > target_chunk_byte_size ? 1 : (target_chunk_byte_size / sizeof(T));
     }
 
-    ~RID_Alloc() {
+    ~RID_Alloc() override {
         if (alloc_count_) {
             LOG_ERROR("ERROR: {} RID allocations of type '{}' were leaked at exit.",
                       alloc_count_, description_ ? description_ : typeid(T).name());
@@ -300,6 +300,106 @@ private:
     const char *description_ = nullptr;
 
     mutable SpinLock spin_lock_;
+};
+
+template <class T, bool THREAD_SAFE = false>
+class RID_PtrOwner {
+    RID_Alloc<T *, THREAD_SAFE> alloc;
+
+public:
+    FORCE_INLINE RID MakeRID(T *ptr) {
+        return alloc.MakeRID(ptr);
+    }
+
+    FORCE_INLINE RID AllocateRID() {
+        return alloc.AllocateRID();
+    }
+
+    FORCE_INLINE void InitializeRID(RID rid, T *ptr) {
+        alloc.InitializeRID(rid, ptr);
+    }
+
+    FORCE_INLINE T *GetOrNull(const RID &rid) {
+        T **ptr = alloc.GetOrNull(rid);
+        if (!ptr) [[unlikely]] {
+            return nullptr;
+        }
+        return *ptr;
+    }
+
+    FORCE_INLINE void Replace(const RID &rid, T *new_ptr) {
+        T **ptr = alloc.GetOrNull(rid);
+        ERR_FAIL_COND(!ptr);
+        *ptr = new_ptr;
+    }
+
+    FORCE_INLINE bool Owns(const RID &rid) {
+        return alloc.Owns(rid);
+    }
+
+    FORCE_INLINE void Free(const RID &rid) {
+        return alloc.Free(rid);
+    }
+
+    [[nodiscard]] FORCE_INLINE uint32_t GetRidCount() const {
+        return alloc.GetRidCount();
+    }
+
+    void SetDescription(const char *description) {
+        alloc.SetDescription(description);
+    }
+
+    explicit RID_PtrOwner(uint32_t target_chunk_byte_size = 65535) :
+        alloc(target_chunk_byte_size) {}
+};
+
+template <class T, bool THREAD_SAFE = false>
+class RID_Owner {
+    RID_Alloc<T, THREAD_SAFE> alloc;
+
+public:
+    FORCE_INLINE RID MakeRID() {
+        return alloc.MakeRID();
+    }
+
+    FORCE_INLINE RID MakeRID(const T &ptr) {
+        return alloc.MakeRID(ptr);
+    }
+
+    FORCE_INLINE RID AllocateRID() {
+        return alloc.AllocateRID();
+    }
+
+    FORCE_INLINE void InitializeRID(RID rid) {
+        alloc.InitializeRID(rid);
+    }
+
+    FORCE_INLINE void InitializeRID(RID rid, const T &ptr) {
+        alloc.InitializeRID(rid, ptr);
+    }
+
+    FORCE_INLINE T *GetOrNull(const RID &rid) {
+        return alloc.GetOrNull(rid);
+    }
+
+    [[nodiscard]] FORCE_INLINE bool Owns(const RID &rid) const {
+        return alloc.Owns(rid);
+    }
+
+    FORCE_INLINE void Free(const RID &rid) {
+        alloc.Free(rid);
+    }
+
+    [[nodiscard]] FORCE_INLINE uint32_t GetRidCount() const {
+        return alloc.GetRidCount();
+    }
+
+    void SetDescription(const char *description) {
+        alloc.SetDescription(description);
+    }
+
+    explicit RID_Owner(uint32_t target_chunk_byte_size = 65536) :
+            alloc(target_chunk_byte_size) {}
 };
 
 } // End of namespace gobot
