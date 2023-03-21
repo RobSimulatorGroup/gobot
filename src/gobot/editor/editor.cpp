@@ -69,15 +69,10 @@ void Editor::OnImGUI() {
     DrawMenuBar();
     BeginDockSpace();
 
-    for(auto& panel : panels_)
-    {
+    for(auto& panel : panels_) {
 //                if(panel->Active())
         panel->OnImGui();
     }
-
-//    ImGui::Begin("Viewport");
-////            ImGui::Image(Main::GetFF(), {1000, 800});
-//    ImGui::End();
 
     ImGui::ShowDemoWindow(); // your drawing here
 
@@ -143,32 +138,21 @@ void Editor::BeginDockSpace() {
 
     ImGuiID DockspaceID = ImGui::GetID("MyDockspace");
 
-    if(!ImGui::DockBuilderGetNode(DockspaceID))
-    {
+    if(!ImGui::DockBuilderGetNode(DockspaceID)) {
         ImGui::DockBuilderRemoveNode(DockspaceID); // Clear out existing layout
         ImGui::DockBuilderAddNode(DockspaceID);    // Add empty node
         ImGui::DockBuilderSetNodeSize(DockspaceID, ImGui::GetIO().DisplaySize * ImGui::GetIO().DisplayFramebufferScale);
 
         ImGuiID dock_main_id = DockspaceID;
-        ImGuiID DockBottom   = ImGui::DockBuilderSplitNode(dock_main_id, ImGuiDir_Down, 0.3f, nullptr, &dock_main_id);
         ImGuiID DockLeft     = ImGui::DockBuilderSplitNode(dock_main_id, ImGuiDir_Left, 0.2f, nullptr, &dock_main_id);
         ImGuiID DockRight    = ImGui::DockBuilderSplitNode(dock_main_id, ImGuiDir_Right, 0.20f, nullptr, &dock_main_id);
 
-        ImGuiID DockLeftChild         = ImGui::DockBuilderSplitNode(DockLeft, ImGuiDir_Down, 0.875f, nullptr, &DockLeft);
-        ImGuiID DockRightChild        = ImGui::DockBuilderSplitNode(DockRight, ImGuiDir_Down, 0.875f, nullptr, &DockRight);
-        ImGuiID DockingLeftDownChild  = ImGui::DockBuilderSplitNode(DockLeftChild, ImGuiDir_Down, 0.06f, nullptr, &DockLeftChild);
-        ImGuiID DockingRightDownChild = ImGui::DockBuilderSplitNode(DockRightChild, ImGuiDir_Down, 0.06f, nullptr, &DockRightChild);
-
-        ImGuiID DockBottomChild         = ImGui::DockBuilderSplitNode(DockBottom, ImGuiDir_Down, 0.2f, nullptr, &DockBottom);
         ImGuiID DockingBottomLeftChild  = ImGui::DockBuilderSplitNode(DockLeft, ImGuiDir_Down, 0.4f, nullptr, &DockLeft);
-        ImGuiID DockingBottomRightChild = ImGui::DockBuilderSplitNode(DockRight, ImGuiDir_Down, 0.4f, nullptr, &DockRight);
 
         ImGuiID DockMiddle       = ImGui::DockBuilderSplitNode(dock_main_id, ImGuiDir_Right, 0.8f, nullptr, &dock_main_id);
         ImGuiID DockBottomMiddle = ImGui::DockBuilderSplitNode(DockMiddle, ImGuiDir_Down, 0.3f, nullptr, &DockMiddle);
-        ImGuiID DockMiddleLeft   = ImGui::DockBuilderSplitNode(DockMiddle, ImGuiDir_Left, 0.5f, nullptr, &DockMiddle);
 
-        ImGui::DockBuilderDockWindow("###scene_view", DockMiddleLeft);
-        ImGui::DockBuilderDockWindow("Dear ImGui Demo", DockLeft);
+        ImGui::DockBuilderDockWindow("###scene_view", DockMiddle);
         ImGui::DockBuilderDockWindow("###inspector", DockRight);
         ImGui::DockBuilderDockWindow("###console", DockBottomMiddle);
         ImGui::DockBuilderDockWindow("###resources", DockingBottomLeftChild);
