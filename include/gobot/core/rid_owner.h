@@ -72,7 +72,7 @@ public:
         }
 
         uint64_t id = rid.GetID();
-        uint32_t idx = id & 0xFFFFFFFF;
+        uint32_t idx = (id & 0xFFFFFFFF);
         if (idx >= max_alloc_) [[unlikely]] {
             if (THREAD_SAFE) {
                 spin_lock_.unlock();
@@ -83,7 +83,7 @@ public:
         uint32_t idx_chunk = idx / elements_in_chunk_;
         uint32_t idx_element = idx % elements_in_chunk_;
 
-        uint32_t validator = id >> 32;
+        uint32_t validator = (id >> 32);
 
         if (initialize) [[unlikely]] {
             if (!(validator_chunks_[idx_chunk][idx_element] & 0x80000000)) [[unlikely]] {
@@ -132,7 +132,7 @@ public:
             uint32_t chunk_count = alloc_count_ == 0 ? 0 : (max_alloc_ / elements_in_chunk_);
 
             // grow chunks
-            chunks_ = (T **)memrealloc(chunks_, sizeof(T *) * (chunk_count + 1));
+            chunks_ = (T **)realloc(chunks_, sizeof(T *) * (chunk_count + 1));
             chunks_[chunk_count] = (T *)malloc(sizeof(T) * elements_in_chunk_); //but don't initialize
 
             // grow validators
@@ -158,7 +158,7 @@ public:
         uint32_t free_chunk = free_index / elements_in_chunk_;
         uint32_t free_element = free_index % elements_in_chunk_;
 
-        uint32_t validator = GenID() & 0x7FFFFFFF;
+        uint32_t validator = (GenID() & 0x7FFFFFFF);
         uint64_t id = validator;
         id <<= 32;
         id |= free_index;
@@ -194,7 +194,7 @@ public:
         }
 
         uint64_t id = rid.GetID();
-        uint32_t idx = id & 0xFFFFFFFF;
+        uint32_t idx = (id & 0xFFFFFFFF);
         if (idx >= max_alloc_) [[unlikely]] {
             if (THREAD_SAFE) {
                 spin_lock_.unlock();
@@ -205,7 +205,7 @@ public:
         uint32_t idx_chunk = idx / elements_in_chunk_;
         uint32_t idx_element = idx % elements_in_chunk_;
 
-        uint32_t validator = id >> 32;
+        uint32_t validator = (id >> 32);
 
         bool owned = (validator_chunks_[idx_chunk][idx_element] & 0x7FFFFFFF) == validator;
 
@@ -222,7 +222,7 @@ public:
         }
 
         uint64_t id = rid.GetID();
-        uint32_t idx = id & 0xFFFFFFFF;
+        uint32_t idx = (id & 0xFFFFFFFF);
         if (idx >= max_alloc_) [[unlikely]] {
             if (THREAD_SAFE) {
                 spin_lock_.unlock();
@@ -233,7 +233,7 @@ public:
         uint32_t idx_chunk = idx / elements_in_chunk_;
         uint32_t idx_element = idx % elements_in_chunk_;
 
-        uint32_t validator = id >> 32;
+        uint32_t validator = (id >> 32);
         if (validator_chunks_[idx_chunk][idx_element] & 0x80000000) [[unlikely]] {
             if (THREAD_SAFE) {
                 spin_lock_.unlock();
@@ -287,7 +287,7 @@ public:
 
         uint32_t chunk_count = max_alloc_ / elements_in_chunk_;
         for (uint32_t i = 0; i < chunk_count; i++) {
-            memfree(chunks_[i]);
+            free(chunks_[i]);
             free(validator_chunks_[i]);
             free(free_list_chunks_[i]);
         }
