@@ -27,6 +27,8 @@ SceneViewPanel::SceneViewPanel()
 
     width_  = 1280;
     height_ = 800;
+
+    scene_renderer_ = std::make_unique<SceneRenderer>(width_, height_);
 }
 
 void SceneViewPanel::OnImGui()
@@ -144,12 +146,12 @@ void SceneViewPanel::Resize(uint32_t width, uint32_t height) {
         height_ = height;
     }
 
-    if(!view_texture_) {
-        view_texture_ = MakeRef<Texture2D>(width_, height_, false, 1, TextureFormat::RGBA8, TextureFlags::RT);
-    }
-
     if(resize) {
-        view_texture_->Resize(width_, height_);
+        if(!view_texture_) {
+            view_texture_ = MakeRef<Texture2D>(width_, height_, false, 1, TextureFormat::RGBA8, TextureFlags::RT);
+        } else {
+            view_texture_->Resize(width_, height_);
+        }
         scene_renderer_->SetRenderTarget(view_texture_.Get());
         scene_renderer_->Resize(width, height);
     }

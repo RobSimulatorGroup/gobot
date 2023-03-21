@@ -16,9 +16,9 @@ namespace gobot {
 public:                                                 \
     HandleType GetHandle() const { return handle_; }    \
                                                         \
-    void* GetHandleID() const                           \
+    auto GetHandleID() const                            \
     {                                                   \
-        return (void*)handle_.idx;                      \
+        return reinterpret_cast<void*>(handle_.idx);    \
     }                                                   \
                                                         \
     static HandleType InvalidHandle()                   \

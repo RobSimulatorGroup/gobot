@@ -18,8 +18,8 @@ SceneRenderer::SceneRenderer(uint32_t width, uint32_t height)
 SceneRenderer::~SceneRenderer() {
 }
 
-void SceneRenderer::SetRenderTarget(const Texture* texture) {
-
+void SceneRenderer::SetRenderTarget(Texture* texture) {
+    render_texture_ = texture;
 }
 
 void SceneRenderer::Resize(uint32_t width, uint32_t height) {
@@ -31,7 +31,6 @@ void SceneRenderer::OnRenderer(const SceneTree* scene_tree) {
 }
 
 void SceneRenderer::DebugPass() {
-    RenderPass pass("DebugPass");
 
     DebugDrawEncoder dde;
 
@@ -60,14 +59,13 @@ void SceneRenderer::DebugPass() {
 
     dde.End();
 
-//    bgfx::setViewFrameBuffer(0, m_fbh);
 }
 
 
 void SceneRenderer::FinalPass() {
     RenderPass pass("FinalPass");
     pass.Clear();
-//    pass.SetViewTransform(view, proj);
+    pass.Bind();
 }
 
 

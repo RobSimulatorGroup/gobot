@@ -108,8 +108,8 @@ void Editor::BeginDockSpace() {
         ImGuiViewport* viewport = ImGui::GetMainViewport();
         auto pos     = viewport->Pos;
         auto size    = viewport->Size;
-        bool menuBar = true;
-        if(menuBar) {
+        bool menu_bar = true;
+        if(menu_bar) {
             const float infoBarSize = ImGui::GetFrameHeight();
             pos.y += infoBarSize;
             size.y -= infoBarSize;

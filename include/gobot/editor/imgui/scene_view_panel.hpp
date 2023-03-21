@@ -29,7 +29,6 @@ public:
 
     void Resize(uint32_t width, uint32_t height);
 
-    bool show_stats_                                 = false;
     SceneTree* current_scene_                            = nullptr;
     std::uint32_t width_{0};
     std::uint32_t height_{0};

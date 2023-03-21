@@ -9,6 +9,7 @@
 
 #include "gobot/rendering/render_handle.hpp"
 #include "gobot/scene/resources/texture.hpp"
+#include "gobot_export.h"
 
 namespace gobot {
 
@@ -22,8 +23,9 @@ struct FBOAttachment {
     std::uint16_t layer = 0;
 };
 
-class FrameBuffer {
+class FrameBuffer: public Object {
     HANDLE_IMPL(FrameBufferHandle)
+    GOBCLASS(FrameBuffer, Object)
 public:
     FrameBuffer() = default;
 
@@ -44,6 +46,8 @@ public:
     Vector2i GetSize() const;
 
 private:
+    friend class FrameBufferCache;
+
     /// Back buffer ratio if any.
     BackbufferRatio bbratio_ = BackbufferRatio::Equal;
 
@@ -54,5 +58,21 @@ private:
     std::vector<FBOAttachment> textures_;
 };
 
+
+class FrameBufferCache {
+public:
+
+
+private:
+    struct FrameBufferCacheKey {
+        /// User id
+        std::string id;
+        std::vector<Ref<Texture>> textures;
+    };
+
+    // [path, resource]
+    static std::unordered_map<String, Resource*> s_resources;
+
+};
 
 }

@@ -22,7 +22,7 @@ public:
 
     ~SceneRenderer();
 
-    void SetRenderTarget(const Texture* texture);
+    void SetRenderTarget(Texture* texture);
 
     void Resize(uint32_t width, uint32_t height);
 
@@ -34,6 +34,8 @@ public:
 
 private:
     Camera3D* camera_ = nullptr;
+
+    Texture* render_texture_{nullptr};
 
 };
 

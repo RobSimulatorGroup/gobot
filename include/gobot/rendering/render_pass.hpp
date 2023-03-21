@@ -14,6 +14,19 @@
 
 namespace gobot {
 
+/*
+ * Views are the primary sorting mechanism in bgfx. They represent buckets of draw and compute calls, or what are often known as ‘passes’.
+   When compute calls and draw calls occupy the same bucket, the compute calls will be sorted to execute first.
+   Compute calls are always executed in order of submission, while draw calls are sorted by internal state if the View is not in sequential mode.
+   In most cases where the z-buffer is used, this change in order does not affect the desired output.
+   When draw call order needs to be preserved (e.g. when rendering GUIs), Views can be set to use sequential mode with bgfx::setViewMode.
+   Sequential order is less efficient, because it doesn’t allow state change optimization, and should be avoided when possible.
+
+   By default, Views are sorted by their View ID, in ascending order.
+   For dynamic renderers where the right order might not be known until the last moment,
+   View IDs can be changed to use arbitrary ordering with bgfx::setViewOrder.
+ */
+
 class RenderPass
 {
 public:
