@@ -23,7 +23,7 @@ target_link_libraries(imgui PUBLIC SDL2::SDL2)
 
 find_package(OpenGL REQUIRED)
 add_executable(imgui_sdl2_opengl3_example imgui/examples/example_sdl2_opengl3/main.cpp)
-target_link_libraries(imgui_sdl2_opengl3_example PUBLIC imgui ${CONAN_LIBS} OpenGL::GL)
+target_link_libraries(imgui_sdl2_opengl3_example imgui ${CONAN_LIBS} OpenGL::GL)
 
 
 set(BGFX_WITH_SDL On)
