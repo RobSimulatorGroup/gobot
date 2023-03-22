@@ -15,22 +15,19 @@ CPMAddPackage(
         "SDL_WERROR OFF"
         "SDL_TEST_ENABLED_BY_DEFAULT OFF"
 )
+
 if (SDL2_ADDED)
 
-    find_package(SDL2 REQUIRED)
     # Create a target that copies headers at build time, when they change
     string(TOLOWER "${CMAKE_BUILD_TYPE}" lower_build_type)
     add_custom_target(sdl_copy_headers_in_build_dir
             COMMAND ${CMAKE_COMMAND} -E copy_directory "${SDL2_BINARY_DIR}/include" "${CMAKE_BINARY_DIR}/SDLHeaders/SDL2"
-            COMMAND ${CMAKE_COMMAND} -E copy "${SDL2_BINARY_DIR}/include-config-${lower_build_type}/SDL_config.h" "${CMAKE_BINARY_DIR}/SDLHeaders/SDL2/")
+            COMMAND ${CMAKE_COMMAND} -E copy "${SDL2_BINARY_DIR}/include-config-${lower_build_type}/SDL_config.h" "${CMAKE_BINARY_DIR}/SDLHeaders/SDL2/"
+            DEPENDS ${SDL2_HEADERS})
 
 
     # Make SDL depend from it
-    add_dependencies(SDL2-static sdl_copy_headers_in_build_dir )
-
-    ## For using of #include <SDL2/SDL.h>
-    # And add the directory where headers have been copied as an interface include dir
-    target_include_directories(SDL2-static PUBLIC "${CMAKE_BINARY_DIR}/SDLHeaders")
+    add_dependencies(SDL2-static sdl_copy_headers_in_build_dir)
 
     ## For using of #include <SDL.h>
     # And add the directory where headers have been copied as an interface include dir
@@ -38,6 +35,8 @@ if (SDL2_ADDED)
 
     add_library(SDL2::SDL2 ALIAS SDL2-static)
 
+    set (SDL2_INCLUDE_DIR ${SDL2_SOURCE_DIR}/include)
+    include_directories(${SDL2_INCLUDE_DIR})
 endif()
 
 
