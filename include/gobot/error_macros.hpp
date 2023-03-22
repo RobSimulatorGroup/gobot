@@ -10,12 +10,19 @@
 #include "gobot/log.hpp"
 #include "gobot/core/macros.hpp"
 
+#define ERR_FAIL()                                                                              \
+    LOG_ERROR("Method/function failed.");                                                       \
+    return;
 
-#define ERR_FAIL_COND(cond)                                                                    \
-	if (cond) [[unlikely]] {                                                                   \
-        LOG_ERROR("Failed condition {}.", GOB_STRINGIFY(cond));                                \
-		return;                                                                                \
-	} else                                                                                     \
+#define ERR_FAIL_MSG(msg)                                                                       \
+    LOG_ERROR("Method/function failed. {}", msg);                                               \
+    return;
+
+#define ERR_FAIL_COND(cond)                                                                     \
+	if (cond) [[unlikely]] {                                                                    \
+        LOG_ERROR("Failed condition {}.", GOB_STRINGIFY(cond));                                 \
+		return;                                                                                 \
+	} else                                                                                      \
 		((void)0)
 
 #define ERR_FAIL_COND_V(cond, ret)                                                              \
