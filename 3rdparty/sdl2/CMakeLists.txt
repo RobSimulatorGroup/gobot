@@ -18,9 +18,21 @@ if (SDL2_ADDED)
     add_library(SDL2::SDL2 ALIAS SDL2-static)
     file(GLOB SDL2_HEADERS "${SDL2_SOURCE_DIR}/include/*.h")
 
+    # Create a target that copies headers at build time, when they change
+    add_custom_target(sdl_copy_headers_in_build_dir
+            COMMAND ${CMAKE_COMMAND} -E copy_directory "${SDL_SOURCE_DIR}/include" "${CMAKE_BINARY_DIR}/SDLHeaders/SDL2"
+            DEPENDS ${SDL_HEADERS})
+
+    # Make SDL depend from it
+    add_dependencies(SDL2-static sdl_copy_headers_in_build_dir)
+
+    ## For using of #include <SDL2/SDL.h>
+    # And add the directory where headers have been copied as an interface include dir
+    target_include_directories(SDL2-static INTERFACE "${CMAKE_BINARY_DIR}/SDLHeaders")
+
+    ## For using of #include <SDL.h>
     # And add the directory where headers have been copied as an interface include dir
     target_include_directories(SDL2-static INTERFACE "${SDL2_SOURCE_DIR}/include")
-    set_property(TARGET SDL2-static PROPERTY C_STANDARD 99)
 
     set (SDL2_INCLUDE_DIR ${SDL2_SOURCE_DIR}/include)
     include_directories(${SDL2_INCLUDE_DIR})
