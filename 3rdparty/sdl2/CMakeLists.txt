@@ -36,10 +36,12 @@ if (SDL2_ADDED)
     # And add the directory where headers have been copied as an interface include dir
     target_include_directories(SDL2-static INTERFACE "${CMAKE_BINARY_DIR}/SDLHeaders")
 
-    ## For using of #include <SDL.h>
-    # And add the directory where headers have been copied as an interface include dir
-    target_include_directories(SDL2-static INTERFACE "${CMAKE_BINARY_DIR}/SDLHeaders/SDL2")
+#    ## For using of #include <SDL.h>
+#    # And add the directory where headers have been copied as an interface include dir
+#    target_include_directories(SDL2-static INTERFACE "${CMAKE_BINARY_DIR}/SDLHeaders/SDL2")
 
+    set(SDL2_INCLUDE_DIR ${SDL2_SOURCE_DIR}/include)
+    include_directories(${SDL2_INCLUDE_DIR})
 endif()
 
 
