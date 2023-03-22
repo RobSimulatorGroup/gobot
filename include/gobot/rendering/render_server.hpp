@@ -18,7 +18,7 @@ namespace gobot {
     RenderServer::GetInstance()
 
 
-class RenderServer : public Object {
+class GOBOT_EXPORT RenderServer : public Object {
     GOBCLASS(RenderServer, Object)
 public:
     RenderServer();

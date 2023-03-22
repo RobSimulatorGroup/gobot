@@ -10,6 +10,7 @@
 #include "gobot/rendering/render_types.hpp"
 #include "gobot/scene/resources/shape_3d.hpp"
 #include "gobot/core/math/matrix.hpp"
+#include "gobot_export.h"
 #include <bx/allocator.h>
 #include <bx/bounds.h>
 #include <bgfx/bgfx.h>
@@ -31,15 +32,15 @@ inline bool isValid(SpriteHandle _handle) { return _handle.idx != UINT16_MAX; }
 struct GeometryHandle { uint16_t idx; };
 inline bool isValid(GeometryHandle _handle) { return _handle.idx != UINT16_MAX; }
 
-SpriteHandle DebugDrawCreateSprite(uint16_t _width, uint16_t _height, const void* _data);
+GOBOT_EXPORT SpriteHandle DebugDrawCreateSprite(uint16_t _width, uint16_t _height, const void* _data);
 
-void DebugDrawDestroy(SpriteHandle _handle);
+GOBOT_EXPORT void DebugDrawDestroy(SpriteHandle _handle);
 
-GeometryHandle DebugDrawCreateGeometry(uint32_t _numVertices, const DdVertex* _vertices, uint32_t _numIndices = 0, const void* _indices = nullptr, bool _index32 = false);
+GOBOT_EXPORT GeometryHandle DebugDrawCreateGeometry(uint32_t _numVertices, const DdVertex* _vertices, uint32_t _numIndices = 0, const void* _indices = nullptr, bool _index32 = false);
 
-void DebugDrawDestroy(GeometryHandle _handle);
+GOBOT_EXPORT void DebugDrawDestroy(GeometryHandle _handle);
 
-struct DebugDrawEncoder
+struct GOBOT_EXPORT DebugDrawEncoder
 {
     static void Initialize(bx::AllocatorI* allocator = nullptr);
 
@@ -146,7 +147,7 @@ struct DebugDrawEncoder
     BX_ALIGN_DECL_CACHE_LINE(uint8_t) m_internal[50<<10];
 };
 
-class DebugDrawEncoderScopePush
+class GOBOT_EXPORT DebugDrawEncoderScopePush
 {
 public:
     DebugDrawEncoderScopePush(DebugDrawEncoder& _dde);
