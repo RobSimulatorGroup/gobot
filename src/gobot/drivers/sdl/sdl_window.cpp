@@ -17,7 +17,7 @@
 
 #include <imgui_impl_sdl2.h>
 #include <SDL.h>
-#include <SDL2/SDL_syswm.h>
+#include <SDL_syswm.h>
 
 #include <bgfx/platform.h>
 

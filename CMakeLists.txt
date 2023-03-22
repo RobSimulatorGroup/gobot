@@ -16,6 +16,8 @@ if(UNIX AND NOT APPLE)
     set(LINUX TRUE)
 endif()
 
+include(cmake/CPM.cmake)
+
 # ---------------------------------------- START OF CONAN SETUP ----------------------------------------
 if (NOT EXISTS ${CMAKE_BINARY_DIR}/conanbuildinfo.cmake)
     if (NOT EXISTS "${CMAKE_BINARY_DIR}/conan.cmake")
@@ -117,6 +119,8 @@ target_link_libraries(gobot
     imgui
     bgfx
     bx
+    SDL2::SDL2
+    SDL2_image
     ${CONAN_LIBS}
 )
 

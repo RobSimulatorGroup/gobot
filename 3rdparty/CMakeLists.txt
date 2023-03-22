@@ -1,4 +1,5 @@
 add_subdirectory(rttr)
+add_subdirectory(sdl2)
 
 add_library(imgui
         imgui/imgui.cpp
@@ -18,6 +19,7 @@ add_library(imgui
         )
 
 target_include_directories(imgui PUBLIC imgui imgui/backends)
+target_link_libraries(imgui PUBLIC SDL2::SDL2)
 
 find_package(OpenGL REQUIRED)
 add_executable(imgui_sdl2_opengl3_example imgui/examples/example_sdl2_opengl3/main.cpp)
