@@ -11,7 +11,7 @@
 
 namespace gobot {
 
-class Camera3D : public Node3D {
+class GOBOT_EXPORT Camera3D : public Node3D {
     GOBCLASS(Camera3D, Node3D)
 public:
     enum ProjectionType {

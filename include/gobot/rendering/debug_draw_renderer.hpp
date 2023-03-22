@@ -11,7 +11,7 @@
 
 namespace gobot {
 
-class DebugDrawRenderer {
+class GOBOT_EXPORT DebugDrawRenderer {
 public:
     DebugDrawRenderer();
 
