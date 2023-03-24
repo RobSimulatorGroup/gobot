@@ -9,6 +9,9 @@
 #include "gobot/scene/scene_tree.hpp"
 #include "gobot/scene/window.hpp"
 #include "gobot/error_macros.hpp"
+#include "gobot/rendering/rendering_server_globals.hpp"
+#include "gobot/rendering/renderer_compositor.hpp"
+#include "gobot/rendering/texture_storage.hpp"
 
 #include <bgfx/bgfx.h>
 
@@ -20,6 +23,10 @@ RenderServer::RenderServer() {
     s_singleton =  this;
     debug_flags_ = RenderDebugFlags::None;
     reset_flags_ = RenderResetFlags::Vsync;
+
+    RSG::compositor = new RendererCompositor();
+
+    RSG::texture_storage = RSG::compositor->GetTextureStorage();
 }
 
 bool RenderServer::HasInit() {
@@ -32,6 +39,8 @@ RendererType RenderServer::GetRendererType() {
 
 RenderServer::~RenderServer() {
     s_singleton = nullptr;
+
+    delete RSG::compositor;
 }
 
 RenderServer* RenderServer::GetInstance() {
@@ -57,17 +66,6 @@ void RenderServer::InitWindow() {
     bgfx::init(init);
 };
 
-void RenderServer::SetViewTransform(ViewId view_id, const Matrix4f& view, const Matrix4f& proj) {
-    bgfx::setViewTransform(view_id, view.data(), proj.data());
-}
-
-void RenderServer::SetViewClear(ViewId view_id, RenderClearFlags clear_flags, const Color& color, float depth, uint8_t stencil) {
-    bgfx::setViewClear(view_id, std::underlying_type_t<RenderClearFlags>(clear_flags), color.GetPackedRgbA());
-};
-
-void RenderServer::SetViewRect(ViewId id, uint16_t x, uint16_t y, uint16_t width, uint16_t height) {
-    bgfx::setViewRect(id, x, y, width, height);
-}
 
 void RenderServer::SetDebug(RenderDebugFlags debug_flags) {
     debug_flags_ = debug_flags;
@@ -89,7 +87,6 @@ void RenderServer::DebugTextPrintf(uint16_t x, uint16_t y, uint8_t attr, const c
     va_end(argList);
 }
 
-
 uint32_t RenderServer::Frame(bool capture) {
     return bgfx::frame(capture);
 }
@@ -103,46 +100,44 @@ void RenderServer::Touch(ViewId id) {
     bgfx::touch(id);
 }
 
-
 const RenderStats* RenderServer::GetStats() {
     return bgfx::getStats();
 }
 
-void RenderServer::RequestScreenShot(const String& file_path) {
-    bgfx::FrameBufferHandle fbh = BGFX_INVALID_HANDLE;
-    bgfx::requestScreenShot(fbh, file_path.toStdString().c_str());
+RenderRID RenderServer::CreateTexture2D(uint16_t width,
+                                        uint16_t height,
+                                        bool has_mips,
+                                        uint16_t num_layers,
+                                        TextureFormat format,
+                                        TextureFlags flags,
+                                        const MemoryView* mem) {
+    return RSG::texture_storage->CreateTexture2D(width, height, has_mips, num_layers, format, flags, mem);
 }
 
-void RenderServer::SetIndexBuffer(IndexBufferHandle buffer_handle) {
-    bgfx::setIndexBuffer(buffer_handle);
+RenderRID RenderServer::CreateTexture3D(uint16_t width,
+                                        uint16_t height,
+                                        uint16_t depth,
+                                        bool has_mips,
+                                        TextureFormat format,
+                                        TextureFlags flags,
+                                        const MemoryView* mem) {
+    return RSG::texture_storage->CreateTexture3D(width, height, depth, has_mips, format, flags, mem);
 }
 
-void RenderServer::SetVertexBuffer(uint8_t stream, VertexBufferHandle handle) {
-    bgfx::setVertexBuffer(stream, handle);
+RenderRID RenderServer::CreateTextureCube(uint16_t size,
+                                          bool has_mips,
+                                          uint16_t num_layers,
+                                          TextureFormat format,
+                                          TextureFlags flags,
+                                          const MemoryView* mem) {
+    bgfx::TextureHandle handle = bgfx::createTextureCube(size, has_mips, num_layers,
+                                                       bgfx::TextureFormat::Enum(format),
+                                                       ENUM_UINT_CAST(flags), mem);
+    return RenderRID::FromUint16(handle.idx);
 }
 
-void RenderServer::SetTransform(const Matrix4f& matrix) {
-    bgfx::setTransform(matrix.data());
-}
-
-void RenderServer::SetUniform(UniformHandle handle, const void* value, uint16_t num) {
-    bgfx::setUniform(handle, value, num);
-}
-
-void RenderServer::SetState(RenderStateFlags state_flags, uint32_t rgba) {
-    bgfx::setState(ENUM_UINT_CAST(state_flags), rgba);
-}
-
-void RenderServer::Submit(ViewId id, ProgramHandle program, uint32_t depth, RenderEncoderDiscardFlags flags) {
-    bgfx::submit(id, program, depth, ENUM_UINT_CAST(flags));
-}
-
-ShaderHandle RenderServer::CreateShader(const ShaderMemory *mem) {
-    return bgfx::createShader(mem);
-}
-
-ProgramHandle RenderServer::CreateProgram(ShaderHandle vsh, ShaderHandle fsh, bool destroy_shaders) {
-    return bgfx::createProgram(vsh, fsh, destroy_shaders);
+bool RenderServer::FreeTexture(const RenderRID& rid) {
+    return RSG::texture_storage->Free(rid);
 }
 
 

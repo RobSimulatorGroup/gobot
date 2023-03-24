@@ -83,7 +83,6 @@ bool Main::Start() {
     s_render_server->InitWindow();
     USING_ENUM_BITWISE_OPERATORS;
     s_render_server->SetDebug(RenderDebugFlags::DebugTextDisplay);
-    s_render_server->SetViewClear(0, RenderClearFlags::Depth | RenderClearFlags::Color);
 
     auto* editor = Object::New<Editor>();
     main_loop->GetRoot()->AddChild(editor);
@@ -119,7 +118,7 @@ bool Main::Iteration()
 
     // Advance to next frame. Rendering thread will be kicked to
     // process submitted rendering primitives.
-    GET_RENDER_SERVER()->Frame();
+    GET_RS()->Frame();
 
 
     return exit;

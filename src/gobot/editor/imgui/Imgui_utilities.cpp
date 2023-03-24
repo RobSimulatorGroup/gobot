@@ -7,6 +7,9 @@
 
 #include "imgui_internal.h"
 #include "gobot/editor/imgui/imgui_utilities.hpp"
+#include "gobot/error_macros.hpp"
+#include "gobot/rendering/rendering_server_globals.hpp"
+#include "gobot/rendering/texture_storage.hpp"
 
 namespace gobot {
 
@@ -28,8 +31,7 @@ void ImGuiUtilities::Tooltip(const String& text) {
 void ImGuiUtilities::Tooltip(const char* text) {
     ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, ImVec2(5, 5));
 
-    if(ImGui::IsItemHovered())
-    {
+    if(ImGui::IsItemHovered()) {
         ImGui::BeginTooltip();
         ImGui::TextUnformatted(text);
         ImGui::EndTooltip();
@@ -38,18 +40,19 @@ void ImGuiUtilities::Tooltip(const char* text) {
     ImGui::PopStyleVar();
 }
 
-void ImGuiUtilities::Image(const Texture* texture, const Vector2f& size, const Vector2f& uv0,
-                           const Vector2f& uv1, const Color& tintCol,
-                           const Color& borderCol) {
+void ImGuiUtilities::Image(const RenderRID& texture_id, const Vector2f& size, const Vector2f& uv0,
+                           const Vector2f& uv1, const Color& tintCol, const Color& borderCol) {
     ImVec2 _uv0 = uv0;
     ImVec2 _uv1 = uv1;
 
-    if(texture->IsRenderTarget() && texture->IsOriginBottomLeft()) {
+    ERR_FAIL_COND_MSG(texture_id.IsNull(), "Input texture_id is invalid");
+
+    if(RSG::texture_storage->IsRenderTarget(texture_id) && RSG::texture_storage->IsOriginBottomLeft()) {
         _uv0 = {0.0f, 1.0f};
         _uv1 = {1.0f, 0.0f};
     }
 
-    ImGui::Image(texture->GetHandleID(), size, _uv1, _uv1, tintCol, borderCol);
+    ImGui::Image(texture_id, size, _uv1, _uv1, tintCol, borderCol);
 }
 
 

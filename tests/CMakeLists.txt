@@ -43,6 +43,7 @@ package_add_test(test_geometry core/math/test_geometry.cpp)
 package_add_test(test_string_utils core/test_string_utils.cpp)
 package_add_test(test_variant_serializer core/io/test_variant_serializer.cpp)
 package_add_test(test_resource_format_scene core/io/test_resource_format_scene.cpp)
+package_add_test(test_rid core/test_rid.cpp)
 
 package_add_test(test_sdl_window core/window/test_sdl_window.cpp)
 

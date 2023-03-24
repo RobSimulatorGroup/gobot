@@ -14,7 +14,7 @@ namespace gobot {
 
 class Camera3D;
 
-class Node3DEditor : public Node {
+class GOBOT_EXPORT Node3DEditor : public Node {
     GOBCLASS(Node3DEditor, Node)
 public:
     Node3DEditor();

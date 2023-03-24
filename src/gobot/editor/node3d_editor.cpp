@@ -135,8 +135,7 @@ void Node3DEditor::UpdateCamera(double delta_time) {
     camera3d_->SetGlobalTransform(Affine3(Matrix4::LookAt(eye_, at_, up_, Handedness::Right).matrix()));
 
     auto proj = Matrix4f::Perspective(camera3d_->GetFovy(), float(width)/float(height), 0.1f, 1000.0f);
-    GET_RENDER_SERVER()->SetViewTransform(0, view, proj);
-    GET_RENDER_SERVER()->SetViewRect(0, 0, 0, uint16_t(width), uint16_t(height));
+
 }
 
 static float identityMatrix[16] =

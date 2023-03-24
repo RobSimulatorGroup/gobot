@@ -53,6 +53,15 @@ enum class RendererType
 
 using Attachment = bgfx::Attachment;
 
+enum class AttachmentAccess
+{
+    Read,      //!< Read
+    Write,     //!< Write
+    ReadWrite, //!< Read and write
+
+    Count
+};
+
 
 enum class RenderClearFlags : std::uint16_t {
     None                         = 0,
@@ -240,9 +249,7 @@ using UniformHandle = bgfx::UniformHandle;
 using VertexBufferHandle = bgfx::VertexBufferHandle;
 using VertexLayoutHandle = bgfx::VertexLayoutHandle;
 
-using RenderMemoryView = bgfx::Memory;
-
-constexpr uint16_t InvalidHandle = UINT16_MAX;
+using MemoryView = bgfx::Memory;
 
 enum class BackbufferRatio {
     Equal,     //!< Equal to backbuffer.
@@ -386,12 +393,6 @@ enum class VertexAttributeType {
 
     Count
 };
-
-
-#define BGFX_SAMPLER_BORDER_COLOR_SHIFT           24
-
-#define BGFX_SAMPLER_BORDER_COLOR_MASK            UINT32_C(0x0f000000)
-#define BGFX_SAMPLER_BORDER_COLOR(v) ( ( (uint32_t)(v)<<BGFX_SAMPLER_BORDER_COLOR_SHIFT )&BGFX_SAMPLER_BORDER_COLOR_MASK)
 
 
 enum class TextureFlags : uint64_t {

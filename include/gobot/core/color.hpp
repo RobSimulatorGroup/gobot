@@ -8,10 +8,11 @@
 #pragma once
 
 #include "gobot/core/macros.hpp"
+#include "gobot_export.h"
 
 namespace gobot {
 
-class Color {
+class GOBOT_EXPORT Color {
 public:
 
     Color() = default;

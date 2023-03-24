@@ -1,4 +1,5 @@
 add_subdirectory(rttr)
+add_subdirectory(sdl2)
 
 add_library(imgui
         imgui/imgui.cpp
@@ -17,6 +18,7 @@ add_library(imgui
         imgui/backends/imgui_impl_sdl2.cpp )
 
 target_include_directories(imgui PUBLIC imgui imgui/backends imgui_extension )
+target_link_libraries(imgui PUBLIC SDL2::SDL2)
 
 add_library(imgui-gobot INTERFACE)
 target_sources(imgui-gobot INTERFACE
@@ -44,6 +46,7 @@ get_filename_component(IMGUI_USER_CONFIG "imgui_config.hpp" REALPATH BASE_DIR "$
 target_compile_definitions(imgui-gobot INTERFACE IMGUI_USER_CONFIG="${IMGUI_USER_CONFIG}")
 
 target_include_directories(imgui-gobot INTERFACE imgui imgui/backends imgui_extension )
+
 
 find_package(OpenGL REQUIRED)
 add_executable(imgui_sdl2_opengl3_example imgui/examples/example_sdl2_opengl3/main.cpp)

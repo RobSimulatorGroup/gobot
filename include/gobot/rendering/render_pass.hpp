@@ -9,7 +9,7 @@
 
 #include "gobot/core/types.hpp"
 #include "gobot/rendering/render_types.hpp"
-#include "gobot/rendering/frame_buffer.hpp"
+#include "gobot/rendering/frame_buffer_cache.hpp"
 #include "gobot/core/color.hpp"
 
 namespace gobot {
@@ -32,7 +32,7 @@ class RenderPass
 public:
     explicit RenderPass(const String& name);
 
-    void Bind(const FrameBuffer* fb = nullptr) const;
+    void Bind(const RenderRID& frame_buffer_rid) const;
 
     void Touch() const;
 
@@ -46,6 +46,8 @@ public:
     void SetViewTransform(const Matrix4f& view, const Matrix4f& proj) const;
 
     static void Reset();
+
+    FORCE_INLINE ViewId GetViewId() const { return view_id_; }
 
     static ViewId GetPass();
 

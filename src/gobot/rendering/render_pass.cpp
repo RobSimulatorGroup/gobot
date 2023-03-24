@@ -6,6 +6,7 @@
 */
 
 #include "gobot/rendering/render_pass.hpp"
+#include "gobot/rendering/frame_buffer_cache.hpp"
 
 #define MAX_RENDER_PASSES 1024
 
@@ -35,18 +36,18 @@ RenderPass::RenderPass(const String& name)
     bgfx::setViewName(view_id_, name.toStdString().c_str());
 }
 
-void RenderPass::Bind(const FrameBuffer* fb) const {
+void RenderPass::Bind(const RenderRID& frame_buffer_rid) const {
     bgfx::setViewMode(view_id_, bgfx::ViewMode::Sequential);
-    if(fb != nullptr) {
-        const auto size = fb->GetSize();
+    if(frame_buffer_rid.IsValid()) {
+        const auto size = FrameBufferCache::GetInstance()->GetSize(frame_buffer_rid);
         const auto width = size[0];
         const auto height = size[1];
         bgfx::setViewRect(view_id_, std::uint16_t(0), std::uint16_t(0), std::uint16_t(width), std::uint16_t(height));
         bgfx::setViewScissor(view_id_, std::uint16_t(0), std::uint16_t(0), std::uint16_t(width), std::uint16_t(height));
 
-        bgfx::setViewFrameBuffer(view_id_, fb->GetHandle());
+        bgfx::setViewFrameBuffer(view_id_, FrameBufferHandle{frame_buffer_rid.GetID()});
     } else {
-        bgfx::setViewFrameBuffer(view_id_, FrameBuffer::InvalidHandle());
+        bgfx::setViewFrameBuffer(view_id_, FrameBufferHandle{bgfx::kInvalidHandle});
     }
     Touch();
 }

@@ -8,25 +8,28 @@
 #include "gobot/rendering/scene_renderer.hpp"
 #include "gobot/scene/resources/texture.hpp"
 #include "gobot/rendering/debug_draw/debug_draw.hpp"
+#include "gobot/rendering/frame_buffer_cache.hpp"
 
 namespace gobot {
 
-SceneRenderer::SceneRenderer(uint32_t width, uint32_t height)
+SceneRenderer::SceneRenderer()
 {
 }
 
 SceneRenderer::~SceneRenderer() {
 }
 
-void SceneRenderer::SetRenderTarget(Texture* texture) {
-    render_texture_ = texture;
-}
-
-void SceneRenderer::Resize(uint32_t width, uint32_t height) {
-
+void SceneRenderer::SetRenderTarget(const RenderRID& texture_rid) {
+    view_texture_ = texture_rid;
+    auto view_frame_buffer = FrameBufferCache::GetInstance()->GetCacheFromTextures({view_texture_});
+    if (view_frame_buffer_.IsValid() && view_frame_buffer_ != view_frame_buffer) {
+        FrameBufferCache::GetInstance()->Free(view_frame_buffer_);
+        view_frame_buffer_ = view_frame_buffer;
+    }
 }
 
 void SceneRenderer::OnRenderer(const SceneTree* scene_tree) {
+    DebugPass();
     FinalPass();
 }
 
@@ -65,7 +68,7 @@ void SceneRenderer::DebugPass() {
 void SceneRenderer::FinalPass() {
     RenderPass pass("FinalPass");
     pass.Clear();
-    pass.Bind();
+    pass.Bind(view_frame_buffer_);
 }
 
 

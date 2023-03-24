@@ -10,7 +10,7 @@
 #include "imgui.h"
 #include "gobot/core/color.hpp"
 #include "gobot/core/types.hpp"
-#include "gobot/scene/resources/texture.hpp"
+#include "gobot/rendering/render_rid.hpp"
 
 namespace gobot {
 
@@ -64,7 +64,7 @@ public:
         ScopedID(const ScopedID&)           = delete;
         ScopedID operator=(const ScopedID&) = delete;
         template <typename T>
-        ScopedID(T id) { ImGui::PushID(id); }
+        explicit ScopedID(T id) { ImGui::PushID(id); }
         ~ScopedID() { ImGui::PopID(); }
     };
 
@@ -79,7 +79,7 @@ public:
     static void Tooltip(const char* text);
 
     // Helper function for passing Texture to ImGui::Image.
-    static void Image(const Texture* texture, const Vector2f & size, const Vector2f& uv0 = {0.0f, 0.0f},
+    static void Image(const RenderRID& texture_rid, const Vector2f & size, const Vector2f& uv0 = {0.0f, 0.0f},
                       const Vector2f& uv1 = {1.0f, 1.0f}, const Color& tintCol = {1.0f, 1.0f, 1.0f, 1.0f},
                       const Color& borderCol = {0.0f, 0.0f, 0.0f, 0.0f});
 

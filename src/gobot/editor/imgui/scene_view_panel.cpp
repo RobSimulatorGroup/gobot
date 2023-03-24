@@ -11,6 +11,8 @@
 #include "gobot/editor/editor.hpp"
 #include "gobot/scene/camera3d.hpp"
 #include "gobot/error_macros.hpp"
+#include "gobot/rendering/rendering_server_globals.hpp"
+#include "gobot/rendering/texture_storage.hpp"
 #include "gobot/editor/imgui/imgui_utilities.hpp"
 #include "imgui_extension/fonts/MaterialDesign.inl"
 #include "imgui_extension/icon_fonts/icons_material_design_icons.h"
@@ -27,8 +29,6 @@ SceneViewPanel::SceneViewPanel()
 
     width_  = 1280;
     height_ = 800;
-
-    scene_renderer_ = std::make_unique<SceneRenderer>(width_, height_);
 }
 
 void SceneViewPanel::OnImGui()
@@ -79,7 +79,7 @@ void SceneViewPanel::OnImGui()
 
     Resize(static_cast<uint32_t>(scene_view_size.x), static_cast<uint32_t>(scene_view_size.y));
 
-    ImGuiUtilities::Image(view_texture_.Get(), {scene_view_size.x, scene_view_size.y});
+    ImGuiUtilities::Image(view_rid_, {scene_view_size.x, scene_view_size.y});
 
 //    auto windowSize = ImGui::GetWindowSize();
 //    ImVec2 minBound = scene_view_position;
@@ -147,13 +147,14 @@ void SceneViewPanel::Resize(uint32_t width, uint32_t height) {
     }
 
     if(resize) {
-        if(!view_texture_) {
-            view_texture_ = MakeRef<Texture2D>(width_, height_, false, 1, TextureFormat::RGBA8, TextureFlags::RT);
+        if(!view_rid_.IsValid()) {
+            view_rid_ = RSG().texture_storage->CreateTexture2D(width_, height_, false, 1, TextureFormat::RGBA8, TextureFlags::RT);
         } else {
-            view_texture_->Resize(width_, height_);
+            RSG().texture_storage->Free(view_rid_);
+            view_rid_ = RSG().texture_storage->CreateTexture2D(width_, height_, false, 1, TextureFormat::RGBA8, TextureFlags::RT);
         }
-        scene_renderer_->SetRenderTarget(view_texture_.Get());
-        scene_renderer_->Resize(width, height);
+//        scene_renderer_->SetRenderTarget(view_rid_);
+//        scene_renderer_->Resize(width, height);
     }
 }
 

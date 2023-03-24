@@ -29,13 +29,11 @@ public:
 
     void Resize(uint32_t width, uint32_t height);
 
-    SceneTree* current_scene_                            = nullptr;
+    SceneTree* current_scene_ = nullptr;
     std::uint32_t width_{0};
     std::uint32_t height_{0};
 
-    Ref<Texture2D> view_texture_{nullptr};
-
-    std::unique_ptr<SceneRenderer> scene_renderer_;
+    RenderRID view_rid_{};
 };
 
 

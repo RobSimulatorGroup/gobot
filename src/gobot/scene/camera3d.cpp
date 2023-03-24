@@ -41,7 +41,6 @@ void Camera3D::SetPerspective(real_t fovy_degrees, real_t z_near, real_t z_far) 
     far_ = z_far;
     mode_ = Perspective;
 
-//    RenderServer::GetInstance()->SetViewTransform(0, this->GetGlobalTransform().matrix(), fovy_, near_, far_);
     force_change_ = false;
 }
 

@@ -18,13 +18,11 @@ class SceneTree;
 
 class SceneRenderer {
 public:
-    SceneRenderer(uint32_t width, uint32_t height);
+    SceneRenderer();
 
     ~SceneRenderer();
 
-    void SetRenderTarget(Texture* texture);
-
-    void Resize(uint32_t width, uint32_t height);
+    void SetRenderTarget(const RenderRID& texture_rid);
 
     void OnRenderer(const SceneTree* scene_tree);
 
@@ -35,8 +33,8 @@ public:
 private:
     Camera3D* camera_ = nullptr;
 
-    Texture* render_texture_{nullptr};
-
+    RenderRID view_texture_{};
+    RenderRID view_frame_buffer_{};
 };
 
 

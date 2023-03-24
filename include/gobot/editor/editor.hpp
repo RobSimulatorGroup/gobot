@@ -15,7 +15,7 @@ namespace gobot {
 class Node3DEditor;
 class ImGuiManager;
 
-class Editor : public Node {
+class GOBOT_EXPORT Editor : public Node {
     GOBCLASS(Editor, Node)
 public:
     Editor();
