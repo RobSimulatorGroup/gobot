@@ -126,47 +126,21 @@ void Node3DEditor::UpdateCamera(double delta_time) {
     camera3d_->SetViewMatrix(eye, at, up);
 }
 
-static float identityMatrix[16] =
-        { 1.f, 0.f, 0.f, 0.f,
-          0.f, 1.f, 0.f, 0.f,
-          0.f, 0.f, 1.f, 0.f,
-          0.f, 0.f, 0.f, 1.f };
 
-float objectMatrix[4][16] = {
-        { 1.f, 0.f, 0.f, 0.f,
+float objectMatrix[16] = {
+                1.f, 0.f, 0.f, 0.f,
                 0.f, 1.f, 0.f, 0.f,
                 0.f, 0.f, 1.f, 0.f,
-                0.f, 0.f, 0.f, 1.f },
-
-        { 1.f, 0.f, 0.f, 0.f,
-                0.f, 1.f, 0.f, 0.f,
-                0.f, 0.f, 1.f, 0.f,
-                2.f, 0.f, 0.f, 1.f },
-
-        { 1.f, 0.f, 0.f, 0.f,
-                0.f, 1.f, 0.f, 0.f,
-                0.f, 0.f, 1.f, 0.f,
-                2.f, 0.f, 2.f, 1.f },
-
-        { 1.f, 0.f, 0.f, 0.f,
-                0.f, 1.f, 0.f, 0.f,
-                0.f, 0.f, 1.f, 0.f,
-                0.f, 0.f, 2.f, 1.f }
-};
+                0.f, 0.f, 0.f, 1.f };
 
 void Node3DEditor::OnImGuizmo() {
 
     ImGuizmo::SetDrawlist();
-    ImGuizmo::SetOrthographic(false);
 
-    ImGuiIO& io = ImGui::GetIO();
-    auto proj = Matrix4f::Perspective(45.0, io.DisplaySize.x / io.DisplaySize.y, 0.1f, 1000.0f, Handedness::Right);
+    ImGuizmo::SetOrthographic(camera3d_->GetProjectionType() == Camera3D::ProjectionType::Orthogonal);
 
-    ImGuizmo::SetRect(0, 0, io.DisplaySize.x, io.DisplaySize.y);
-
-
-    ImGuizmo::DrawCubes(camera3d_->GetViewMatrix().data(), proj.data(), &objectMatrix[0][0], 1);
-//    ImGuizmo::Manipulate(camera3d_->GetViewMatrix().data(), proj.data(), ImGuizmo::OPERATION::TRANSLATE, ImGuizmo::LOCAL, identityMatrix);
+    ImGuizmo::Manipulate(camera3d_->GetViewMatrix().data(), camera3d_->GetProjectionMatrix().data(), ImGuizmo::UNIVERSAL, ImGuizmo::LOCAL, objectMatrix);
+//    ImGuizmo::ViewManipulate(camera3d_->GetViewMatrix().data(), 10, ImVec2(600, 0), ImVec2(128, 128), 0x10101010);
 
 }
 

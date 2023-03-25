@@ -80,6 +80,11 @@ void SceneViewPanel::OnImGui()
 
     bool mouse_inside_rect = ImGui::IsMouseHoveringRect(min_bound, max_bound);
 
+    ImGuizmo::SetRect(scene_view_position.x, scene_view_position.y, scene_view_size.x, scene_view_size.y);
+
+
+    Node3DEditor::GetInstance()->OnImGuizmo();
+
     ImGui::End();
 }
 

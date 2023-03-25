@@ -37,6 +37,8 @@ public:
 
     FORCE_INLINE real_t GetFar() const { return far_; }
 
+    FORCE_INLINE ProjectionType GetProjectionType() const { return mode_; }
+
     void SetPerspective(real_t fovy_degrees, real_t z_near, real_t z_far);
 
     void SetViewMatrix(const Vector3& eye, const Vector3& at, const Vector3& up);
@@ -47,10 +49,9 @@ public:
 
     FORCE_INLINE Vector3 GetViewMatrixUp() const { return up_; };
 
-    Matrix4 GetViewMatrix() const;
+    Matrix4 GetViewMatrix(Handedness handedness = Handedness::Left) const;
 
-    Matrix4 GetProjectionMatrix() const;
-
+    Matrix4 GetProjectionMatrix(Handedness handedness = Handedness::Left) const;
 
 private:
     real_t fovy_ = 75.0;

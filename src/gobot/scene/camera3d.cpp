@@ -44,15 +44,15 @@ void Camera3D::SetViewMatrix(const Vector3& eye, const Vector3& at, const Vector
     SetGlobalTransform(Affine3(Matrix4::LookAt(eye_, at_, up_, Handedness::Right)));
 }
 
-Matrix4 Camera3D::GetViewMatrix() const {
+Matrix4 Camera3D::GetViewMatrix(Handedness handedness) const {
     // TODO(wqq): Add cache
-    return Matrix4::LookAt(eye_, at_, up_);
+    return Matrix4::LookAt(eye_, at_, up_, handedness);
 }
 
-Matrix4 Camera3D::GetProjectionMatrix() const {
+Matrix4 Camera3D::GetProjectionMatrix(Handedness handedness) const {
     // TODO(wqq): Add cache
     // TODO(wqq): add Ortho projection
-    return Matrix4f::Perspective(fovy_, aspect_, near_, far_);
+    return Matrix4f::Perspective(fovy_, aspect_, near_, far_, handedness);
 }
 
 }
