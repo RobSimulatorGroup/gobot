@@ -114,7 +114,7 @@ void SceneViewPanel::Resize(uint32_t width, uint32_t height) {
 
 void SceneViewPanel::ToolBar()
 {
-    auto node3d_editor = Editor::GetInstance()->GetNode3dEditor();
+    auto node3d_editor = Node3DEditor::GetInstance();
     ImGui::Indent();
     ImGui::PushStyleColor(ImGuiCol_Button, ImVec4(0.0f, 0.0f, 0.0f, 0.0f));
     bool selected = false;
@@ -125,7 +125,7 @@ void SceneViewPanel::ToolBar()
             ImGui::PushStyleColor(ImGuiCol_Text, ImGuiUtilities::GetSelectedColor());
         ImGui::SameLine();
         if(ImGui::Button(ICON_MDI_CURSOR_DEFAULT))
-            node3d_editor->SetImGuizmoOperation(4);
+            node3d_editor->SetImGuizmoOperation(Node3DEditor::InvalidGuizmoOperation());
 
         if(selected)
             ImGui::PopStyleColor();

@@ -139,7 +139,12 @@ void Node3DEditor::OnImGuizmo() {
 
     ImGuizmo::SetOrthographic(camera3d_->GetProjectionType() == Camera3D::ProjectionType::Orthogonal);
 
-    ImGuizmo::Manipulate(camera3d_->GetViewMatrix().data(), camera3d_->GetProjectionMatrix().data(), ImGuizmo::UNIVERSAL, ImGuizmo::LOCAL, objectMatrix);
+    if (imguizmo_operation_ == InvalidGuizmoOperation()) {
+        return;
+    }
+
+    ImGuizmo::Manipulate(camera3d_->GetViewMatrix().data(), camera3d_->GetProjectionMatrix().data(),
+                         static_cast<ImGuizmo::OPERATION>(imguizmo_operation_), ImGuizmo::LOCAL, objectMatrix);
 //    ImGuizmo::ViewManipulate(camera3d_->GetViewMatrix().data(), 10, ImVec2(600, 0), ImVec2(128, 128), 0x10101010);
 
 }

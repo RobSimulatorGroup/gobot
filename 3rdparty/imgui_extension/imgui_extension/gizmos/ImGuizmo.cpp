@@ -637,22 +637,22 @@ namespace IMGUIZMO_NAMESPACE
    Style::Style()
    {
       // default values
-      TranslationLineThickness   = 3.0f;
-      TranslationLineArrowSize   = 6.0f;
-      RotationLineThickness      = 2.0f;
-      RotationOuterLineThickness = 3.0f;
-      ScaleLineThickness         = 3.0f;
-      ScaleLineCircleSize        = 6.0f;
-      HatchedAxisLineThickness   = 6.0f;
-      CenterCircleSize           = 6.0f;
+      TranslationLineThickness   = 5.0f;
+      TranslationLineArrowSize   = 9.0f;
+      RotationLineThickness      = 4.0f;
+      RotationOuterLineThickness = 5.0f;
+      ScaleLineThickness         = 5.0f;
+      ScaleLineCircleSize        = 10.0f;
+      HatchedAxisLineThickness   = 5.0f;
+      CenterCircleSize           = 10.0f;
 
       // initialize default colors
-      Colors[DIRECTION_X]           = ImVec4(0.666f, 0.000f, 0.000f, 1.000f);
-      Colors[DIRECTION_Y]           = ImVec4(0.000f, 0.666f, 0.000f, 1.000f);
-      Colors[DIRECTION_Z]           = ImVec4(0.000f, 0.000f, 0.666f, 1.000f);
-      Colors[PLANE_X]               = ImVec4(0.666f, 0.000f, 0.000f, 0.380f);
-      Colors[PLANE_Y]               = ImVec4(0.000f, 0.666f, 0.000f, 0.380f);
-      Colors[PLANE_Z]               = ImVec4(0.000f, 0.000f, 0.666f, 0.380f);
+      Colors[DIRECTION_X]           = ImVec4(0.9f, 0.000f, 0.000f, 1.000f);
+      Colors[DIRECTION_Y]           = ImVec4(0.000f, 0.9f, 0.000f, 1.000f);
+      Colors[DIRECTION_Z]           = ImVec4(0.000f, 0.000f, 0.9f, 1.000f);
+      Colors[PLANE_X]               = ImVec4(0.9f, 0.000f, 0.000f, 0.380f);
+      Colors[PLANE_Y]               = ImVec4(0.000f, 0.9f, 0.000f, 0.380f);
+      Colors[PLANE_Z]               = ImVec4(0.000f, 0.000f, 0.9f, 0.380f);
       Colors[SELECTION]             = ImVec4(1.000f, 0.500f, 0.062f, 0.541f);
       Colors[INACTIVE]              = ImVec4(0.600f, 0.600f, 0.600f, 0.600f);
       Colors[TRANSLATION_LINE]      = ImVec4(0.666f, 0.666f, 0.666f, 0.666f);
@@ -1073,6 +1073,9 @@ namespace IMGUIZMO_NAMESPACE
       rightViewInverse.TransformVector(gContext.mModelInverse);
       float rightLength = GetSegmentLengthClipSpace(makeVect(0.f, 0.f), rightViewInverse);
       gContext.mScreenFactor = gContext.mGizmoSizeClipSpace / rightLength;
+
+      // Add by wqq
+      gContext.mScreenFactor *= 1.3;
 
       ImVec2 centerSSpace = worldToPos(makeVect(0.f, 0.f), gContext.mMVP);
       gContext.mScreenSquareCenter = centerSSpace;

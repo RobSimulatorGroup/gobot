@@ -31,9 +31,11 @@ public:
 
     FORCE_INLINE Camera3D* GetCamera3D() { return camera3d_; }
 
-    FORCE_INLINE uint32_t GetImGuizmoOperation() const { return imGuizmo_operation_; }
+    FORCE_INLINE static uint32_t InvalidGuizmoOperation() { return UINT32_MAX; }
 
-    FORCE_INLINE void SetImGuizmoOperation(uint32_t imGuizmo_operation) { imGuizmo_operation_ = imGuizmo_operation; }
+    FORCE_INLINE uint32_t GetImGuizmoOperation() const { return imguizmo_operation_; }
+
+    FORCE_INLINE void SetImGuizmoOperation(uint32_t imGuizmo_operation) { imguizmo_operation_ = imGuizmo_operation; }
 
     bool& SnapGuizmo();
 
@@ -59,7 +61,7 @@ private:
 
     bool mouse_down_{false};
 
-    uint32_t imGuizmo_operation_ = 14463;
+    uint32_t imguizmo_operation_ = UINT32_MAX;
 
     bool snap_guizmo_{false};
 
