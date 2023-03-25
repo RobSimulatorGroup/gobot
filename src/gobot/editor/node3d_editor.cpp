@@ -13,7 +13,6 @@
 #include "gobot/core/os/os.hpp"
 #include "gobot/scene/scene_tree.hpp"
 #include "gobot/scene/window.hpp"
-#include "gobot/rendering/render_server.hpp"
 #include "gobot/log.hpp"
 #include "imgui.h"
 #include "imgui_internal.h"
@@ -159,16 +158,20 @@ void Node3DEditor::OnImGuizmo() {
 
     ImGuizmo::SetDrawlist();
     ImGuizmo::SetOrthographic(false);
-    ImGuizmo::BeginFrame();
 
     ImGuiIO& io = ImGui::GetIO();
     auto proj = Matrix4f::Perspective(45.0, io.DisplaySize.x / io.DisplaySize.y, 0.1f, 1000.0f, Handedness::Right);
 
     ImGuizmo::SetRect(0, 0, io.DisplaySize.x, io.DisplaySize.y);
 
-//    ImGuizmo::DrawCubes(view.data(), proj.data(), &objectMatrix[0][0], 1);
-//    ImGuizmo::Manipulate(view.data(), proj.data(), ImGuizmo::OPERATION::TRANSLATE, ImGuizmo::LOCAL, identityMatrix);
 
+    ImGuizmo::DrawCubes(camera3d_->GetViewMatrix().data(), proj.data(), &objectMatrix[0][0], 1);
+//    ImGuizmo::Manipulate(camera3d_->GetViewMatrix().data(), proj.data(), ImGuizmo::OPERATION::TRANSLATE, ImGuizmo::LOCAL, identityMatrix);
+
+}
+
+bool& Node3DEditor::SnapGuizmo() {
+    return snap_guizmo_;
 }
 
 

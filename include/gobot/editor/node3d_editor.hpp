@@ -35,6 +35,7 @@ public:
 
     FORCE_INLINE void SetImGuizmoOperation(uint32_t imGuizmo_operation) { imGuizmo_operation_ = imGuizmo_operation; }
 
+    bool& SnapGuizmo();
 
 protected:
     void NotificationCallBack(NotificationType notification);
@@ -59,6 +60,9 @@ private:
     bool mouse_down_{false};
 
     uint32_t imGuizmo_operation_ = 14463;
+
+    bool snap_guizmo_{false};
+
 };
 
 }
