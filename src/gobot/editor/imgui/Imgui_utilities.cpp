@@ -42,10 +42,11 @@ void ImGuiUtilities::Tooltip(const char* text) {
 
 void ImGuiUtilities::Image(const RenderRID& texture_id, const Vector2f& size, const Vector2f& uv0,
                            const Vector2f& uv1, const Color& tintCol, const Color& borderCol) {
-    ImVec2 _uv0 = uv0;
-    ImVec2 _uv1 = uv1;
 
     ERR_FAIL_COND_MSG(texture_id.IsNull(), "Input texture_id is invalid");
+
+    ImVec2 _uv0 = uv0;
+    ImVec2 _uv1 = uv1;
 
     if(RSG::texture_storage->IsRenderTarget(texture_id) && RSG::texture_storage->IsOriginBottomLeft()) {
         _uv0 = {0.0f, 1.0f};

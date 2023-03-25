@@ -12,7 +12,6 @@
 #include "gobot/scene/camera3d.hpp"
 #include "gobot/error_macros.hpp"
 #include "gobot/rendering/rendering_server_globals.hpp"
-#include "gobot/rendering/scene_renderer.hpp"
 #include "gobot/rendering/renderer_compositor.hpp"
 #include "gobot/rendering/texture_storage.hpp"
 #include "gobot/editor/imgui/imgui_utilities.hpp"

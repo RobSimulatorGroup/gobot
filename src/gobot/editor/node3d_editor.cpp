@@ -39,15 +39,8 @@ void Node3DEditor::ResetCamera() {
     horizontal_angle_ = 0.01f;
     vertical_angle_ = 0.0f;
 
-    eye_.x()  =   0.0f;
-    eye_.y()  =   0.0f;
-    eye_.z()  = -35.0f;
-    at_.x()   =   0.0f;
-    at_.y()   =   0.0f;
-    at_.z()   =  -1.0f;
-    up_.x()   =   0.0f;
-    up_.y()   =   1.0f;
-    up_.z()   =   0.0f;
+    // Set camera default position
+    camera3d_->SetViewMatrix({0.0f, 0.0f, -20.0f}, {0.0f, 0.0f, -1.0f}, {0.0f, 1.0f, 0.0f});
 
     mouse_down_ = false;
     mouse_speed_ = 0.0020f;
@@ -113,24 +106,25 @@ void Node3DEditor::UpdateCamera(double delta_time) {
         std::cos(horizontal_angle_ - Math_HALF_PI),
     };
 
-    up_ = right.cross(direction);
+    auto up = camera3d_->GetViewMatrixUp();
+    auto eye = camera3d_->GetViewMatrixEye();
+    auto at = camera3d_->GetViewMatrixAt();
+
+    up = right.cross(direction);
     if (Input::GetInstance()->GetMouseClickedState(MouseButton::Middle) == MouseClickedState::DoubleClicked) {
         ResetCamera();
     } else if (Input::GetInstance()->GetKeyPressed(KeyCode::LeftShift) &&
                Input::GetInstance()->GetMouseClickedState(MouseButton::Middle) == MouseClickedState::SingleClicked) {
-        eye_ = eye_ + up_ * delta[1] * translation_speed_ + right * delta[0] * translation_speed_;
-        at_ = eye_ + direction * distance_;
+        eye = eye + up * delta[1] * translation_speed_ + right * delta[0] * translation_speed_;
+        at = eye + direction * distance_;
     } else if (Input::GetInstance()->GetMouseClickedState(MouseButton::Middle) == MouseClickedState::SingleClicked) {
-        eye_ = at_ - direction * distance_;
+        eye = at - direction * distance_;
     } else {
-        eye_ = (direction * -1.0 * scroll_offset * delta_time * scroll_move_speed_) + eye_;
-        at_ = eye_ + direction * distance_;
+        eye = (direction * -1.0 * scroll_offset * delta_time * scroll_move_speed_) + eye;
+        at = eye + direction * distance_;
     }
 
-    camera3d_->SetGlobalTransform(Affine3(Matrix4::LookAt(eye_, at_, up_, Handedness::Right).matrix()));
-
-//    auto view = Matrix4::LookAt(eye_, at_, up_);
-//    auto proj = Matrix4f::Perspective(camera3d_->GetFovy(), float(width)/float(height), 0.1f, 1000.0f);
+    camera3d_->SetViewMatrix(eye, at, up);
 }
 
 static float identityMatrix[16] =
@@ -162,8 +156,6 @@ float objectMatrix[4][16] = {
 };
 
 void Node3DEditor::OnImGuizmo() {
-    auto view = Matrix4::LookAt(eye_, at_, up_, Handedness::Right);
-
 
     ImGuizmo::SetDrawlist();
     ImGuizmo::SetOrthographic(false);
@@ -174,8 +166,8 @@ void Node3DEditor::OnImGuizmo() {
 
     ImGuizmo::SetRect(0, 0, io.DisplaySize.x, io.DisplaySize.y);
 
-    ImGuizmo::DrawCubes(view.data(), proj.data(), &objectMatrix[0][0], 1);
-    ImGuizmo::Manipulate(view.data(), proj.data(), ImGuizmo::OPERATION::TRANSLATE, ImGuizmo::LOCAL, identityMatrix);
+//    ImGuizmo::DrawCubes(view.data(), proj.data(), &objectMatrix[0][0], 1);
+//    ImGuizmo::Manipulate(view.data(), proj.data(), ImGuizmo::OPERATION::TRANSLATE, ImGuizmo::LOCAL, identityMatrix);
 
 }
 
