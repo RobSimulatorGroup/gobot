@@ -30,7 +30,7 @@ namespace gobot {
 class RenderPass
 {
 public:
-    explicit RenderPass(const String& name);
+    RenderPass(const String& name, ViewId view_id);
 
     void Bind(const RenderRID& frame_buffer_rid) const;
 
@@ -45,11 +45,7 @@ public:
 
     void SetViewTransform(const Matrix4f& view, const Matrix4f& proj) const;
 
-    static void Reset();
-
     FORCE_INLINE ViewId GetViewId() const { return view_id_; }
-
-    static ViewId GetPass();
 
 private:
     ViewId view_id_;

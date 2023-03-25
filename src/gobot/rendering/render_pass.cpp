@@ -7,30 +7,13 @@
 
 #include "gobot/rendering/render_pass.hpp"
 #include "gobot/rendering/frame_buffer_cache.hpp"
-
-#define MAX_RENDER_PASSES 1024
+#include "gobot/rendering/default_view_id.hpp"
 
 namespace gobot {
 
-static ViewId& GetCounter()
-{
-    static ViewId id = 0;
-    return id;
-}
 
-static ViewId GenerateId()
-{
-    auto& counter = GetCounter();
-    if(counter == MAX_RENDER_PASSES - 1) {
-        bgfx::frame();
-        counter = 0;
-    }
-    ViewId idx = counter++;
-    return idx;
-}
-
-RenderPass::RenderPass(const String& name)
-    : view_id_(GenerateId())
+RenderPass::RenderPass(const String& name, ViewId view_id)
+    : view_id_(view_id)
 {
     bgfx::resetView(view_id_);
     bgfx::setViewName(view_id_, name.toStdString().c_str());
@@ -73,17 +56,5 @@ void RenderPass::SetViewTransform(const Matrix4f& view, const Matrix4f& proj) co
     bgfx::setViewTransform(view_id_, view.data(), proj.data());
 }
 
-void RenderPass::Reset() {
-    auto& count = GetCounter();
-    count = 0;
-}
-
-ViewId RenderPass::GetPass() {
-    auto counter = GetCounter();
-    if(counter == 0) {
-        counter = MAX_RENDER_PASSES;
-    }
-    return counter - 1;
-}
 
 }

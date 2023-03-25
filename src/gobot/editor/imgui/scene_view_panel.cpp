@@ -12,6 +12,8 @@
 #include "gobot/scene/camera3d.hpp"
 #include "gobot/error_macros.hpp"
 #include "gobot/rendering/rendering_server_globals.hpp"
+#include "gobot/rendering/scene_renderer.hpp"
+#include "gobot/rendering/renderer_compositor.hpp"
 #include "gobot/rendering/texture_storage.hpp"
 #include "gobot/editor/imgui/imgui_utilities.hpp"
 #include "imgui_extension/fonts/MaterialDesign.inl"
@@ -149,12 +151,14 @@ void SceneViewPanel::Resize(uint32_t width, uint32_t height) {
     if(resize) {
         if(!view_rid_.IsValid()) {
             view_rid_ = RSG().texture_storage->CreateTexture2D(width_, height_, false, 1, TextureFormat::RGBA8, TextureFlags::RT);
+            RSG::compositor->GetInstance()->GetSceneRenderer()->SetRenderTarget(view_rid_);
         } else {
+            auto new_rid = RSG().texture_storage->CreateTexture2D(width_, height_, false, 1, TextureFormat::RGBA8, TextureFlags::RT);
             RSG().texture_storage->Free(view_rid_);
-            view_rid_ = RSG().texture_storage->CreateTexture2D(width_, height_, false, 1, TextureFormat::RGBA8, TextureFlags::RT);
+            view_rid_ = new_rid;
+            RSG::compositor->GetInstance()->GetSceneRenderer()->SetRenderTarget(view_rid_);
         }
-//        scene_renderer_->SetRenderTarget(view_rid_);
-//        scene_renderer_->Resize(width, height);
+
     }
 }
 

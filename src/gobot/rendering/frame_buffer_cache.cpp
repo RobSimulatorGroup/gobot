@@ -23,7 +23,7 @@ FrameBufferCache::~FrameBufferCache() {
     s_singleton = nullptr;
 
     for (const auto& rid: frame_buffer_owner_.GetOwnedList()) {
-        frame_buffer_owner_.Free(rid);
+        Free(rid);
     }
 }
 
@@ -44,7 +44,12 @@ RenderRID FrameBufferCache::GetCacheFromAttachment(const std::vector<Attachment>
     ERR_FAIL_COND_V_MSG(attachments.empty(), {}, "Input attachments is empty");
 
     size_t hash = 0;
+    std::vector<Vector2i> sizes;
     for (const auto& attachment : attachments ) {
+        auto* texture = RSG::texture_storage->GetTexture(RenderRID::FromUint16(attachments[0].handle.idx));
+        ERR_FAIL_COND_V_MSG(texture == nullptr, {}, "attachment's texture is invalid");
+        sizes.emplace_back(texture->texture_info.width, texture->texture_info.height);
+        HashCombine(hash, texture->texture_info);
         HashCombine(hash, attachment);
     }
 
@@ -58,22 +63,25 @@ RenderRID FrameBufferCache::GetCacheFromAttachment(const std::vector<Attachment>
     auto rid = RenderRID::FromUint16(handle.idx);
     frame_buffer_cache_.insert({hash, rid});
 
-    auto* texture = RSG::texture_storage->GetTexture(RenderRID::FromUint16(attachments[0].handle.idx));
-    frame_buffer_owner_.InitializeRID(rid, {attachments, {texture->texture_info.width, texture->texture_info.height}});
+    frame_buffer_owner_.InitializeRID(rid, {attachments, sizes, hash});
     return rid;
 }
 
-Vector2i FrameBufferCache::GetSize(const RenderRID& frame_buffer_rid) {
+Vector2i FrameBufferCache::GetSize(const RenderRID& frame_buffer_rid, std::size_t attachment_index) {
     auto* cache = frame_buffer_owner_.GetOrNull(frame_buffer_rid);
     ERR_FAIL_COND_V_MSG(cache == nullptr, {}, "The frame_buffer is not in frame_buffer_owner");
-    return cache->size;
+    ERR_FAIL_INDEX_V(attachment_index, cache->texture_sizes.size(), {});
+    return cache->texture_sizes[attachment_index];
 }
 
 
 bool FrameBufferCache::Free(const RenderRID& frame_buffer_rid) {
-    if (frame_buffer_owner_.Owns(frame_buffer_rid)) {
-        frame_buffer_owner_.Free(frame_buffer_rid);
-        bgfx::destroy(bgfx::TextureHandle{frame_buffer_rid.GetID()});
+    auto* cache = frame_buffer_owner_.GetOrNull(frame_buffer_rid);
+    if (cache) {
+        frame_buffer_cache_.erase(cache->hash);
+        frame_buffer_owner_.Erase(frame_buffer_rid);
+        bgfx::destroy(bgfx::FrameBufferHandle{frame_buffer_rid.GetID()});
+        return true;
     }
 
     return false;

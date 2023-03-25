@@ -69,9 +69,9 @@ public:
         return &(it->second);
     }
 
-    FORCE_INLINE void Free(const RenderRID& rid) {
+    FORCE_INLINE void Erase(const RenderRID& rid) {
         if (!rid.IsValid()) {
-            ERR_FAIL_MSG("Cannot Free because T");
+            ERR_FAIL_MSG("Cannot Free because input rid is invalid");
         }
 
         if (THREAD_SAFE) {

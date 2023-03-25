@@ -21,7 +21,7 @@ TextureStorage::~TextureStorage() {
     s_singleton = nullptr;
 
     for (const auto& rid: texture_owner_.GetOwnedList()) {
-        texture_owner_.Free(rid);
+        Free(rid);
     }
 }
 
@@ -103,14 +103,15 @@ RenderRID TextureStorage::CreateTextureCube(uint16_t size,
     auto rid = RenderRID::FromUint16(handle.idx);
     TextureInfo texture_info;
     CalculateTextureSize(texture_info, size, size, size, false, has_mips, num_layers, format);
-    texture_owner_.InitializeRID(rid, {flags, Texture3D, texture_info});
+    texture_owner_.InitializeRID(rid, {flags, TextureCube, texture_info});
     return rid;
 }
 
 bool TextureStorage::Free(RenderRID rid) {
     if (texture_owner_.Owns(rid)) {
-        texture_owner_.Free(rid);
+        texture_owner_.Erase(rid);
         bgfx::destroy(bgfx::TextureHandle{rid.GetID()});
+        return true;
     }
 
     return false;

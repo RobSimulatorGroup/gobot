@@ -13,6 +13,9 @@
 #include "gobot/core/os/input.hpp"
 #include "gobot/scene/scene_initializer.hpp"
 #include "gobot/rendering/render_server.hpp"
+#include "gobot/rendering/rendering_server_globals.hpp"
+#include "gobot/rendering/renderer_compositor.hpp"
+#include "gobot/rendering/scene_renderer.hpp"
 #include "gobot/core/os/os.hpp"
 #include "gobot/scene/window.hpp"
 #include "gobot/rendering/debug_draw/debug_draw.hpp"
@@ -76,13 +79,13 @@ bool Main::Setup2() {
     return true;
 }
 
-
 bool Main::Start() {
     auto* main_loop = Object::New<SceneTree>();
 
     s_render_server->InitWindow();
     USING_ENUM_BITWISE_OPERATORS;
     s_render_server->SetDebug(RenderDebugFlags::DebugTextDisplay);
+    bgfx::setViewClear(0, BGFX_CLEAR_COLOR | BGFX_CLEAR_DEPTH);
 
     auto* editor = Object::New<Editor>();
     main_loop->GetRoot()->AddChild(editor);
@@ -106,6 +109,8 @@ bool Main::Iteration()
     if (OS::GetInstance()->GetMainLoop()->PhysicsProcess(duration)) {
         exit = true;
     }
+
+    RSG::compositor->GetInstance()->GetSceneRenderer()->OnRenderer(nullptr);
 
     if (OS::GetInstance()->GetMainLoop()->Process(duration)) {
         exit = true;

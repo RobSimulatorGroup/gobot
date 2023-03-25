@@ -10,6 +10,7 @@
 #include "gobot/rendering/render_rid.hpp"
 #include "gobot/rendering/render_types.hpp"
 #include "gobot/rendering/render_rid_owner.hpp"
+#include "gobot/core/hash_combine.hpp"
 
 namespace gobot {
 
@@ -18,7 +19,7 @@ public:
     enum TextureType {
         Texture2D,
         Texture3D,
-        Texture2DCube
+        TextureCube
     };
 
     struct Texture {
@@ -89,5 +90,20 @@ private:
     RenderRID_Owner<Texture, true> texture_owner_{};
 };
 
+}
 
+namespace std
+{
+template <>
+struct hash<gobot::TextureInfo>
+{
+    std::size_t operator()(const gobot::TextureInfo& texture_info) const
+    {
+        size_t hash = 0;
+        gobot::HashCombine(hash, texture_info.format, texture_info.storageSize,
+                           texture_info.width, texture_info.height, texture_info.depth,
+                           texture_info.numLayers, texture_info.numMips, texture_info.bitsPerPixel, texture_info.cubeMap);
+        return hash;
+    }
+};
 }

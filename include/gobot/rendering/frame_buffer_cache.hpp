@@ -19,7 +19,8 @@ class GOBOT_EXPORT FrameBufferCache {
 public:
     struct Cache {
         std::vector<Attachment> attachments;
-        Vector2i size;
+        std::vector<Vector2i> texture_sizes;
+        std::uint64_t hash;
     };
 
     FrameBufferCache();
@@ -34,7 +35,7 @@ public:
 
     bool Free(const RenderRID& frame_buffer_rid);
 
-    Vector2i GetSize(const RenderRID& frame_buffer_rid);
+    Vector2i GetSize(const RenderRID& frame_buffer_rid, std::size_t attachment_index = 0);
 
 private:
     static FrameBufferCache* s_singleton;

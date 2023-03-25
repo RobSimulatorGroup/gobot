@@ -9,7 +9,8 @@
 
 namespace gobot {
 
-#define IMGUI_VIEW_ID 255
+#define IMGUI_VIEW_ID 254
 
+#define DEBUG_VIEW_ID 253
 
 }

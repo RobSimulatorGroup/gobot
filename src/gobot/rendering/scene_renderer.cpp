@@ -8,6 +8,7 @@
 #include "gobot/rendering/scene_renderer.hpp"
 #include "gobot/scene/resources/texture.hpp"
 #include "gobot/rendering/debug_draw/debug_draw.hpp"
+#include "gobot/rendering/default_view_id.hpp"
 #include "gobot/rendering/frame_buffer_cache.hpp"
 
 namespace gobot {
@@ -24,8 +25,8 @@ void SceneRenderer::SetRenderTarget(const RenderRID& texture_rid) {
     auto view_frame_buffer = FrameBufferCache::GetInstance()->GetCacheFromTextures({view_texture_});
     if (view_frame_buffer_.IsValid() && view_frame_buffer_ != view_frame_buffer) {
         FrameBufferCache::GetInstance()->Free(view_frame_buffer_);
-        view_frame_buffer_ = view_frame_buffer;
     }
+    view_frame_buffer_ = view_frame_buffer;
 }
 
 void SceneRenderer::OnRenderer(const SceneTree* scene_tree) {
@@ -35,9 +36,13 @@ void SceneRenderer::OnRenderer(const SceneTree* scene_tree) {
 
 void SceneRenderer::DebugPass() {
 
+    RenderPass debug_pass("debug_pass", DEBUG_VIEW_ID);
+    debug_pass.Bind(view_frame_buffer_);
+    debug_pass.Clear();
+
     DebugDrawEncoder dde;
 
-    dde.Begin(0);
+    dde.Begin(debug_pass.GetViewId());
     dde.DrawWorldAxis(65.0);
 
     dde.Push();
@@ -66,9 +71,7 @@ void SceneRenderer::DebugPass() {
 
 
 void SceneRenderer::FinalPass() {
-    RenderPass pass("FinalPass");
-    pass.Clear();
-    pass.Bind(view_frame_buffer_);
+
 }
 
 

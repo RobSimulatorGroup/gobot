@@ -15,6 +15,7 @@
 namespace gobot {
 
 class SceneTree;
+class SceneRenderer;
 
 class SceneViewPanel : public EditorPanel
 {
