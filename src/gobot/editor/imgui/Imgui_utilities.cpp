@@ -52,7 +52,7 @@ void ImGuiUtilities::Image(const RenderRID& texture_id, const Vector2f& size, co
         _uv1 = {1.0f, 0.0f};
     }
 
-    ImGui::Image(texture_id, size, _uv1, _uv1, tintCol, borderCol);
+    ImGui::Image(texture_id, size, _uv0, _uv1, tintCol, borderCol);
 }
 
 

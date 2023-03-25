@@ -10,6 +10,7 @@
 #include "gobot/rendering/debug_draw/debug_draw.hpp"
 #include "gobot/rendering/default_view_id.hpp"
 #include "gobot/rendering/frame_buffer_cache.hpp"
+#include "gobot/editor/node3d_editor.hpp"
 
 namespace gobot {
 
@@ -36,9 +37,15 @@ void SceneRenderer::OnRenderer(const SceneTree* scene_tree) {
 
 void SceneRenderer::DebugPass() {
 
+
     RenderPass debug_pass("debug_pass", DEBUG_VIEW_ID);
-    debug_pass.Bind(view_frame_buffer_);
     debug_pass.Clear();
+
+    auto camera3d = Node3DEditor::GetInstance()->GetCamera3D();
+    auto proj = Matrix4f::Perspective(camera3d->GetFovy(), 1.0, camera3d->GetNear(), camera3d->GetFar());
+
+    debug_pass.SetViewTransform(camera3d->GetGlobalTransform().matrix(), proj);
+    debug_pass.Bind(view_frame_buffer_);
 
     DebugDrawEncoder dde;
 

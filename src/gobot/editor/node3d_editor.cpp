@@ -89,10 +89,6 @@ void Node3DEditor::UpdateCamera(double delta_time) {
     mouse_down_ = (Input::GetInstance()->GetMouseClickedState(MouseButton::Right) == MouseClickedState::SingleClicked) ||
                   (Input::GetInstance()->GetMouseClickedState(MouseButton::Middle) == MouseClickedState::SingleClicked);
 
-    auto window = dynamic_cast<SceneTree*>(OS::GetInstance()->GetMainLoop())->GetRoot()->GetWindow();
-    auto width = window->GetWidth();
-    auto height = window->GetHeight();
-
     Vector2i delta;
     if (mouse_down_) {
         mouse_position_now_ = Input::GetInstance()->GetMousePosition();
@@ -131,10 +127,10 @@ void Node3DEditor::UpdateCamera(double delta_time) {
         at_ = eye_ + direction * distance_;
     }
 
-    auto view = Matrix4::LookAt(eye_, at_, up_);
     camera3d_->SetGlobalTransform(Affine3(Matrix4::LookAt(eye_, at_, up_, Handedness::Right).matrix()));
 
-    auto proj = Matrix4f::Perspective(camera3d_->GetFovy(), float(width)/float(height), 0.1f, 1000.0f);
+//    auto view = Matrix4::LookAt(eye_, at_, up_);
+//    auto proj = Matrix4f::Perspective(camera3d_->GetFovy(), float(width)/float(height), 0.1f, 1000.0f);
 }
 
 static float identityMatrix[16] =

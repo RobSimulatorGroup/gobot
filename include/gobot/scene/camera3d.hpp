@@ -25,15 +25,15 @@ public:
 
     void SetAspect(const real_t& aspect);
 
-    FORCE_INLINE real_t GetAspect() const { return fovy_; }
+    FORCE_INLINE real_t GetAspect() const { return aspect_; }
 
     void SetNear(const real_t& near);
 
-    FORCE_INLINE real_t GetNear() const { return fovy_; }
+    FORCE_INLINE real_t GetNear() const { return near_; }
 
     void SetFar(const real_t& far);
 
-    FORCE_INLINE real_t GetFar() const { return fovy_; }
+    FORCE_INLINE real_t GetFar() const { return far_; }
 
     void SetPerspective(real_t fovy_degrees, real_t z_near, real_t z_far);
 
