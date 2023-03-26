@@ -141,7 +141,7 @@ void Node3DEditor::OnImGuizmo() {
 
     ImGuizmo::SetOrthographic(camera3d_->GetProjectionType() == Camera3D::ProjectionType::Orthogonal);
 
-    float window_width = (float)ImGui::GetWindowWidth();
+    auto window_width = (float)ImGui::GetWindowWidth();
     float view_manipulate_right = ImGui::GetWindowPos().x + window_width;
     float view_manipulate_top = ImGui::GetWindowPos().y;
 
