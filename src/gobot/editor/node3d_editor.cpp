@@ -86,10 +86,10 @@ void Node3DEditor::UpdateCamera(double delta_time) {
         mouse_position_now_ = Input::GetInstance()->GetMousePosition();
         delta = mouse_position_now_ - mouse_position_last_;
 
-
         // TODO(wqq): Right hand or left hand
+        delta[0] *= -1.0f;
         if (!Input::GetInstance()->GetKeyPressed(KeyCode::LeftShift)) {
-            horizontal_angle_ -= mouse_speed_ * float(delta[0]);
+            horizontal_angle_ += mouse_speed_ * float(delta[0]);
             vertical_angle_   -= mouse_speed_ * float(delta[1]);
         }
         mouse_position_last_ = mouse_position_now_;
@@ -116,7 +116,7 @@ void Node3DEditor::UpdateCamera(double delta_time) {
         ResetCamera();
     } else if (Input::GetInstance()->GetKeyPressed(KeyCode::LeftShift) &&
                Input::GetInstance()->GetMouseClickedState(MouseButton::Middle) == MouseClickedState::SingleClicked) {
-        eye = eye + up * delta[1] * translation_speed_ - right * delta[0] * translation_speed_;
+        eye = eye + up * delta[1] * translation_speed_ + right * delta[0] * translation_speed_;
         at = eye + direction * distance_;
     } else if (Input::GetInstance()->GetMouseClickedState(MouseButton::Middle) == MouseClickedState::SingleClicked) {
         eye = at - direction * distance_;
@@ -141,8 +141,13 @@ void Node3DEditor::OnImGuizmo() {
 
     ImGuizmo::SetOrthographic(camera3d_->GetProjectionType() == Camera3D::ProjectionType::Orthogonal);
 
+    float window_width = (float)ImGui::GetWindowWidth();
+    float view_manipulate_right = ImGui::GetWindowPos().x + window_width;
+    float view_manipulate_top = ImGui::GetWindowPos().y;
+
     ImGuizmo::ViewManipulate(camera3d_->GetViewMatrix().data(), camera3d_->GetViewMatrixEye().norm(),
-                             ImVec2(1000, 50), ImVec2(128, 128), 0x10101010);
+                             ImVec2{view_manipulate_right - 128, view_manipulate_top + 50},
+                             ImVec2(128, 128), 0x10101010);
 
     if (imguizmo_operation_ == InvalidGuizmoOperation()) {
         return;
