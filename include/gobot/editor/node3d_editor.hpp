@@ -57,7 +57,7 @@ private:
     float horizontal_angle_{0.01f};
     float vertical_angle_{0.0};
 
-    float distance_;
+    float distance_{0.0};
 
     bool mouse_down_{false};
 

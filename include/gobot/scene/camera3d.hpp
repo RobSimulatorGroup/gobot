@@ -49,9 +49,9 @@ public:
 
     FORCE_INLINE Vector3 GetViewMatrixUp() const { return up_; };
 
-    Matrix4 GetViewMatrix(Handedness handedness = Handedness::Left) const;
+    Matrix4 GetViewMatrix() const;
 
-    Matrix4 GetProjectionMatrix(Handedness handedness = Handedness::Left) const;
+    Matrix4 GetProjectionMatrix() const;
 
 private:
     real_t fovy_ = 75.0;
