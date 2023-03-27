@@ -16,6 +16,8 @@
 #include "gobot/core/spin_lock.hpp"
 #include "gobot/core/object_id.hpp"
 
+#include "gobot/error_macros.hpp"
+
 
 // Do nothing for 1
 #define GOBOT_CLASS_1(...)    \
@@ -220,8 +222,6 @@ class GOBOT_EXPORT ObjectDB {
 #define OBJECTDB_SLOT_MAX_COUNT_MASK ((uint64_t(1) << OBJECTDB_SLOT_MAX_COUNT_BITS) - 1)
 #define OBJECTDB_REFERENCE_BIT (uint64_t(1) << (OBJECTDB_SLOT_MAX_COUNT_BITS + OBJECTDB_VALIDATOR_BITS))
 
-public:
-
     struct ObjectSlot { // 128 bits per slot.
         uint64_t validator : OBJECTDB_VALIDATOR_BITS;
         uint64_t next_free : OBJECTDB_SLOT_MAX_COUNT_BITS;
@@ -229,13 +229,10 @@ public:
         Object *object = nullptr;
     };
 
-
-private:
     static ObjectID AddInstance(Object *object);
 
     static void RemoveInstance(Object *object);
 
-private:
     friend class Object;
 
     static SpinLock s_spin_lock;
@@ -243,6 +240,29 @@ private:
     static uint32_t s_slot_max;
     static ObjectSlot* s_object_slots;
     static uint64_t s_validator_counter;
+
+public:
+    ALWAYS_INLINE static Object *GetInstance(ObjectID instance_id) {
+        uint64_t id = instance_id;
+        uint32_t slot = id & OBJECTDB_SLOT_MAX_COUNT_MASK;
+
+        ERR_FAIL_COND_V(slot >= s_slot_max, nullptr); // This should never happen unless RID is corrupted.
+
+        s_spin_lock.lock();
+
+        uint64_t validator = (id >> OBJECTDB_SLOT_MAX_COUNT_BITS) & OBJECTDB_VALIDATOR_MASK;
+
+        if (s_object_slots[slot].validator != validator) [[unlikely]] {
+            s_spin_lock.unlock();
+            return nullptr;
+        }
+
+        Object *object = s_object_slots[slot].object;
+
+        s_spin_lock.unlock();
+
+        return object;
+    }
 
 };
 
