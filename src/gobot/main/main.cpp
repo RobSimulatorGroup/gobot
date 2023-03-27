@@ -13,12 +13,15 @@
 #include "gobot/core/os/input.hpp"
 #include "gobot/scene/scene_initializer.hpp"
 #include "gobot/rendering/render_server.hpp"
+#include "gobot/rendering/rendering_server_globals.hpp"
+#include "gobot/rendering/renderer_compositor.hpp"
+#include "gobot/rendering/scene_renderer.hpp"
 #include "gobot/core/os/os.hpp"
 #include "gobot/scene/window.hpp"
-#include "gobot/rendering/load_shader.hpp"
 #include "gobot/rendering/debug_draw/debug_draw.hpp"
 #include "gobot/core/math/geometry.hpp"
 #include <cxxopts.hpp>
+#include "imgui.h"
 #include <bgfx/bgfx.h>
 
 namespace gobot {
@@ -71,24 +74,21 @@ Copyright(c) 2021-2023, RobSimulatorGroup)");
 bool Main::Setup2() {
     s_render_server = Object::New<RenderServer>();
 
-
     SceneInitializer::Init();
 
     return true;
 }
 
-
 bool Main::Start() {
     auto* main_loop = Object::New<SceneTree>();
-
-    auto* editor = Object::New<Editor>();
-    main_loop->GetRoot()->AddChild(editor);
 
     s_render_server->InitWindow();
     USING_ENUM_BITWISE_OPERATORS;
     s_render_server->SetDebug(RenderDebugFlags::DebugTextDisplay);
-    s_render_server->SetViewClear(0, RenderClearFlags::Depth | RenderClearFlags::Color);
+    bgfx::setViewClear(0, BGFX_CLEAR_COLOR | BGFX_CLEAR_DEPTH);
 
+    auto* editor = Object::New<Editor>();
+    main_loop->GetRoot()->AddChild(editor);
 
     DebugDrawEncoder::Initialize();
 
@@ -110,63 +110,21 @@ bool Main::Iteration()
         exit = true;
     }
 
+    RSG::compositor->GetInstance()->GetSceneRenderer()->OnRenderer(nullptr);
+
     if (OS::GetInstance()->GetMainLoop()->Process(duration)) {
         exit = true;
     }
 
-    // This dummy draw call is here to make sure that view 0 is cleared
-    // if no other draw calls are submitted to view 0.
-    GET_RENDER_SERVER()->Touch(0);
 
-    // Use debug font to print information about this example.
-    GET_RENDER_SERVER()->DebugTextClear();
+    LOG_INFO("1111");
+    LOG_ERROR("2222");
 
-    GET_RENDER_SERVER()->DebugTextPrintf(0, 1, 0x0f, "Color can be changed with ANSI \x1b[9;me\x1b[10;ms\x1b[11;mc\x1b[12;ma\x1b[13;mp\x1b[14;me\x1b[0m code too.");
-
-    GET_RENDER_SERVER()->DebugTextPrintf(80, 1, 0x0f, "\x1b[;0m    \x1b[;1m    \x1b[; 2m    \x1b[; 3m    \x1b[; 4m    \x1b[; 5m    \x1b[; 6m    \x1b[; 7m    \x1b[0m");
-    GET_RENDER_SERVER()->DebugTextPrintf(80, 2, 0x0f, "\x1b[;8m    \x1b[;9m    \x1b[;10m    \x1b[;11m    \x1b[;12m    \x1b[;13m    \x1b[;14m    \x1b[;15m    \x1b[0m");
-
-    const RenderStats* stats = GET_RENDER_SERVER()->GetStats();
-    GET_RENDER_SERVER()->DebugTextPrintf(0, 2, 0x0f, "Backbuffer %dW x %dH in pixels, debug text %dW x %dH in characters."
-            , stats->width
-            , stats->height
-            , stats->textWidth
-            , stats->textHeight
-    );
-
-
-    DebugDrawEncoder dde;
-
-    dde.Begin(0);
-    dde.DrawWorldAxis(65.0);
-
-    dde.Push();
-    bx::Aabb aabb =
-            {
-                    {  5.0f, 1.0f, 1.0f },
-                    { 10.0f, 5.0f, 5.0f },
-            };
-    dde.SetWireframe(true);
-//    dde.setColor(intersect(&dde, ray, aabb) ? kSelected : 0xff00ff00);
-    dde.Draw(aabb);
-    dde.Pop();
-
-
-    {
-        const bx::Vec3 normal = { 0.0f,  1.0f, 0.0f };
-        const bx::Vec3 pos    = { 0.0f, -2.0f, 0.0f };
-
-        bx::Plane plane(bx::init::None);
-        bx::calcPlane(plane, normal, pos);
-
-        dde.DrawGrid(Axis::Y, pos, 128, 1.0f);
-    }
-
-    dde.End();
 
     // Advance to next frame. Rendering thread will be kicked to
     // process submitted rendering primitives.
-    GET_RENDER_SERVER()->Frame();
+    GET_RS()->Frame();
+
 
     return exit;
 

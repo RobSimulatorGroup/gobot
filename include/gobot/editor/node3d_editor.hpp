@@ -8,7 +8,7 @@
 #pragma once
 
 #include "gobot/core/object.hpp"
-#include "gobot/scene/camera3d.hpp"
+#include "gobot/scene/camera_3d.hpp"
 
 namespace gobot {
 
@@ -26,6 +26,18 @@ public:
     static Node3DEditor* GetInstance();
 
     void UpdateCamera(double interp_delta);
+
+    void OnImGuizmo();
+
+    FORCE_INLINE Camera3D* GetCamera3D() { return camera3d_; }
+
+    FORCE_INLINE static uint32_t InvalidGuizmoOperation() { return UINT32_MAX; }
+
+    FORCE_INLINE uint32_t GetImGuizmoOperation() const { return imguizmo_operation_; }
+
+    FORCE_INLINE void SetImGuizmoOperation(uint32_t imGuizmo_operation) { imguizmo_operation_ = imGuizmo_operation; }
+
+    bool& SnapGuizmo();
 
 protected:
     void NotificationCallBack(NotificationType notification);
@@ -45,13 +57,14 @@ private:
     float horizontal_angle_{0.01f};
     float vertical_angle_{0.0};
 
-    Vector3 eye_;
-    Vector3 at_;
-    Vector3 up_;
-
-    float distance_;
+    float distance_{0.0};
 
     bool mouse_down_{false};
+
+    uint32_t imguizmo_operation_ = UINT32_MAX;
+
+    bool snap_guizmo_{false};
+
 };
 
 }

@@ -10,15 +10,9 @@
 #include "gobot/scene/node.hpp"
 #include "gobot/core/events/window_event.hpp"
 #include "gobot/core/events/event.hpp"
-#include "gobot/core/os/window.hpp"
+#include "gobot/drivers/sdl/sdl_window.hpp"
 
 namespace gobot {
-
-enum class WindowDriver {
-    SDL,            // Default(already cross-platform for all platforms)
-    Win32,     // not implemented
-    IOSWindow       // not implemented
-};
 
 
 class GOBOT_EXPORT Window : public Node {
@@ -37,7 +31,7 @@ public:
 
     void PullEvent();
 
-    WindowInterface* GetWindowsInterface() { return window_interface_.get(); }
+    SDLWindow* GetWindow() { return window_.get(); }
 
 Q_SIGNALS:
     void windowCloseRequested();
@@ -53,8 +47,7 @@ private:
 
 private:
 
-    WindowDriver window_driver_{WindowDriver::SDL};
-    std::unique_ptr<WindowInterface> window_interface_{nullptr};
+    std::unique_ptr<SDLWindow> window_{nullptr};
 };
 
 }

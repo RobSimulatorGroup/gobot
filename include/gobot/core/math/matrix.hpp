@@ -73,7 +73,7 @@ class Matrix : public Eigen::Matrix<_Scalar, _Rows, _Cols> {
             LookAt(const Matrix<_Scalar, 3, 1> &eye,
                    const Matrix<_Scalar, 3, 1> &at,
                    const Matrix<_Scalar, 3, 1> &up = { 0.0f, 1.0f, 0.0f },
-                   Handedness handedness = Handedness::Left) {
+                   Handedness handedness = Handedness::Right) {
         static_assert(_Cols ==4 && _Rows ==4, "The Look at matrix must a 4*4 matrix");
 
         Matrix<_Scalar, 3, 1> dir = Handedness::Right == handedness
@@ -105,7 +105,7 @@ class Matrix : public Eigen::Matrix<_Scalar, _Rows, _Cols> {
     static Matrix<_Scalar, 4, 4> Ortho(_Scalar left, _Scalar right,
                                        _Scalar bottom, _Scalar top,
                                        _Scalar near, _Scalar far,
-                                       Handedness handedness = Handedness::Left) {
+                                       Handedness handedness = Handedness::Right) {
         static_assert(_Cols ==4 && _Rows ==4, "The Look at matrix must a 4*4 matrix");
 
         _Scalar rl = 1 / (right - left),
@@ -128,7 +128,7 @@ class Matrix : public Eigen::Matrix<_Scalar, _Rows, _Cols> {
 
     // fovy is degree
     static Matrix<_Scalar, 4, 4> Perspective(_Scalar fovy, _Scalar aspect, _Scalar near, _Scalar far,
-                                             Handedness handedness = Handedness::Left) {
+                                             Handedness handedness = Handedness::Right) {
         static_assert(_Cols ==4 && _Rows ==4, "The Look at matrix must a 4*4 matrix");
         _Scalar recip = 1 / (near - far);
         _Scalar c     = 1 / std::tan(.5f * DEG_TO_RAD(fovy));
@@ -139,8 +139,8 @@ class Matrix : public Eigen::Matrix<_Scalar, _Rows, _Cols> {
         trafo(2, 2) = (Handedness::Right == handedness) ? (near + far) * recip :
                                                           -(near + far) * recip;
 
-        trafo(2, 3) = 2.f * near * far * recip; // a[14]
-        trafo(3, 2) = (Handedness::Right == handedness) ? -1.f : 1.0f;   // a[11]                  //
+        trafo(2, 3) = 2.f * near * far * recip;                           // a[14]
+        trafo(3, 2) = (Handedness::Right == handedness) ? -1.f : 1.0f;   // a[11]
 
         return trafo;
     }

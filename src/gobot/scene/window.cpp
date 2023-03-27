@@ -15,14 +15,8 @@
 namespace gobot {
 
 Window::Window() {
-    switch (window_driver_) {
-        case WindowDriver::SDL:
-        case WindowDriver::Win32:
-        case WindowDriver::IOSWindow:
-            window_interface_ = std::make_unique<SDLWindow>();
-    }
-
-    window_interface_->Maximize();
+    window_ = std::make_unique<SDLWindow>();
+    window_->Maximize();
 
     RegisterWindowCallbacks();
 }
@@ -35,14 +29,14 @@ Window::~Window() {
 void Window::SetVisible(bool visible)
 {
     if (visible)
-        window_interface_->ShowWindow();
+        window_->ShowWindow();
     else
-        window_interface_->HideWindow();
+        window_->HideWindow();
 }
 
 bool Window::IsVisible() const
 {
-    return !window_interface_->IsWindowHide();
+    return !window_->IsWindowHide();
 }
 
 void Window::OnEvent(Event& e)
@@ -76,12 +70,12 @@ void Window::OnEvent(Event& e)
 
 void Window::PullEvent()
 {
-    window_interface_->ProcessEvents();
+    window_->ProcessEvents();
 }
 
 void Window::RegisterWindowCallbacks()
 {
-    window_interface_->SetEventCallback(BIND_EVENT_FN(Window::OnEvent));
+    window_->SetEventCallback(BIND_EVENT_FN(Window::OnEvent));
 }
 
 

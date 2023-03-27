@@ -41,7 +41,7 @@ TEST(TestMatrix, test_look_at) {
                                 Vector3f(0.0, 0.0, 1.0));
 
     float data[16];
-    bx::mtxLookAt(reinterpret_cast<float *>(&data), {1.0f, 2.0f, 3.0f}, {0.0, 0.0, 0.0}, {0.0, 0.0, 1.0});
+    bx::mtxLookAt(reinterpret_cast<float *>(&data), {1.0f, 2.0f, 3.0f}, {0.0, 0.0, 0.0}, {0.0, 0.0, 1.0}, bx::Handedness::Enum::Right);
 
     for (int i = 0; i < 16 ; i++) {
         ASSERT_FLOAT_EQ(data[i], view.data()[i]);
@@ -53,7 +53,7 @@ TEST(TestMatrix, test_ortho) {
     auto ortho = Matrix4::Ortho(-1.0, 1.0, -1.0, 1.0, 0.1, 1.0);
 
     float data[16];
-    bx::mtxOrtho(reinterpret_cast<float *>(&data), -1.0, 1.0, -1.0, 1.0, 0.1, 1.0, 0.0, true);
+    bx::mtxOrtho(reinterpret_cast<float *>(&data), -1.0, 1.0, -1.0, 1.0, 0.1, 1.0, 0.0, true, bx::Handedness::Enum::Right);
     for (int i = 0; i < 16 ; i++) {
         ASSERT_FLOAT_EQ(data[i], ortho.data()[i]);
     }
@@ -64,7 +64,7 @@ TEST(TestMatrix, test_perspective) {
     auto perspective = Matrix4::Perspective(45, 1.0, 0.1, 1.0);
 
     float data[16];
-    bx::mtxProj(reinterpret_cast<float *>(&data), 45, 1.0, 0.1, 1.0, true);
+    bx::mtxProj(reinterpret_cast<float *>(&data), 45, 1.0, 0.1, 1.0, true,bx::Handedness::Enum::Right);
     for (int i = 0; i < 16 ; i++) {
         ASSERT_FLOAT_EQ(data[i], perspective.data()[i]);
     }

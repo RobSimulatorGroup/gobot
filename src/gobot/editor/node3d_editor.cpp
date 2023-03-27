@@ -13,8 +13,10 @@
 #include "gobot/core/os/os.hpp"
 #include "gobot/scene/scene_tree.hpp"
 #include "gobot/scene/window.hpp"
-#include "gobot/rendering/render_server.hpp"
 #include "gobot/log.hpp"
+#include "imgui.h"
+#include "imgui_internal.h"
+#include "imgui_extension/gizmos/ImGuizmo.h"
 
 namespace gobot {
 
@@ -36,15 +38,8 @@ void Node3DEditor::ResetCamera() {
     horizontal_angle_ = 0.01f;
     vertical_angle_ = 0.0f;
 
-    eye_.x()  =   0.0f;
-    eye_.y()  =   0.0f;
-    eye_.z()  = -35.0f;
-    at_.x()   =   0.0f;
-    at_.y()   =   0.0f;
-    at_.z()   =  -1.0f;
-    up_.x()   =   0.0f;
-    up_.y()   =   1.0f;
-    up_.z()   =   0.0f;
+    // Set camera default position
+    camera3d_->SetViewMatrix({0.0f, 0.0f, -20.0f}, {0.0f, 0.0f, -1.0f}, {0.0f, 1.0f, 0.0f});
 
     mouse_down_ = false;
     mouse_speed_ = 0.0020f;
@@ -86,15 +81,13 @@ void Node3DEditor::UpdateCamera(double delta_time) {
     mouse_down_ = (Input::GetInstance()->GetMouseClickedState(MouseButton::Right) == MouseClickedState::SingleClicked) ||
                   (Input::GetInstance()->GetMouseClickedState(MouseButton::Middle) == MouseClickedState::SingleClicked);
 
-    auto window = dynamic_cast<SceneTree*>(OS::GetInstance()->GetMainLoop())->GetRoot()->GetWindowsInterface();
-    auto width = window->GetWidth();
-    auto height = window->GetHeight();
-
     Vector2i delta;
     if (mouse_down_) {
         mouse_position_now_ = Input::GetInstance()->GetMousePosition();
         delta = mouse_position_now_ - mouse_position_last_;
 
+        // TODO(wqq): Right hand or left hand
+        delta[0] *= -1.0f;
         if (!Input::GetInstance()->GetKeyPressed(KeyCode::LeftShift)) {
             horizontal_angle_ += mouse_speed_ * float(delta[0]);
             vertical_angle_   -= mouse_speed_ * float(delta[1]);
@@ -114,27 +107,61 @@ void Node3DEditor::UpdateCamera(double delta_time) {
         std::cos(horizontal_angle_ - Math_HALF_PI),
     };
 
-    up_ = right.cross(direction);
+    auto up = camera3d_->GetViewMatrixUp();
+    auto eye = camera3d_->GetViewMatrixEye();
+    auto at = camera3d_->GetViewMatrixAt();
+
+    up = right.cross(direction);
     if (Input::GetInstance()->GetMouseClickedState(MouseButton::Middle) == MouseClickedState::DoubleClicked) {
         ResetCamera();
     } else if (Input::GetInstance()->GetKeyPressed(KeyCode::LeftShift) &&
                Input::GetInstance()->GetMouseClickedState(MouseButton::Middle) == MouseClickedState::SingleClicked) {
-        eye_ = eye_ + up_ * delta[1] * translation_speed_ + right * delta[0] * translation_speed_;
-        at_ = eye_ + direction * distance_;
+        eye = eye + up * delta[1] * translation_speed_ + right * delta[0] * translation_speed_;
+        at = eye + direction * distance_;
     } else if (Input::GetInstance()->GetMouseClickedState(MouseButton::Middle) == MouseClickedState::SingleClicked) {
-        eye_ = at_ - direction * distance_;
+        eye = at - direction * distance_;
     } else {
-        eye_ = (direction * -1.0 * scroll_offset * delta_time * scroll_move_speed_) + eye_;
-        at_ = eye_ + direction * distance_;
+        eye = (direction * -1.0 * scroll_offset * delta_time * scroll_move_speed_) + eye;
+        at = eye + direction * distance_;
     }
 
-    auto view = Matrix4::LookAt(eye_, at_, up_);
-    camera3d_->SetGlobalTransform(Affine3(Matrix4::LookAt(eye_, at_, up_, Handedness::Right).matrix()));
-
-    auto proj = Matrix4f::Perspective(camera3d_->GetFovy(), float(width)/float(height), 0.1f, 1000.0f);
-    GET_RENDER_SERVER()->SetViewTransform(0, view, proj);
-    GET_RENDER_SERVER()->SetViewRect(0, 0, 0, uint16_t(width), uint16_t(height));
+    camera3d_->SetViewMatrix(eye, at, up);
 }
+
+
+float objectMatrix[16] = {
+                1.f, 0.f, 0.f, 0.f,
+                0.f, 1.f, 0.f, 0.f,
+                0.f, 0.f, 1.f, 0.f,
+                0.f, 0.f, 0.f, 1.f };
+
+void Node3DEditor::OnImGuizmo() {
+
+    ImGuizmo::SetDrawlist();
+
+    ImGuizmo::SetOrthographic(camera3d_->GetProjectionType() == Camera3D::ProjectionType::Orthogonal);
+
+    auto window_width = (float)ImGui::GetWindowWidth();
+    float view_manipulate_right = ImGui::GetWindowPos().x + window_width;
+    float view_manipulate_top = ImGui::GetWindowPos().y;
+
+    ImGuizmo::ViewManipulate(camera3d_->GetViewMatrix().data(), camera3d_->GetViewMatrixEye().norm(),
+                             ImVec2{view_manipulate_right - 128, view_manipulate_top + 50},
+                             ImVec2(128, 128), 0x10101010);
+
+    if (imguizmo_operation_ == InvalidGuizmoOperation()) {
+        return;
+    }
+
+    ImGuizmo::Manipulate(camera3d_->GetViewMatrix().data(), camera3d_->GetProjectionMatrix().data(),
+                         static_cast<ImGuizmo::OPERATION>(imguizmo_operation_), ImGuizmo::LOCAL, objectMatrix);
+
+}
+
+bool& Node3DEditor::SnapGuizmo() {
+    return snap_guizmo_;
+}
+
 
 }
 

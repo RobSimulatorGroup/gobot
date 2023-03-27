@@ -116,7 +116,7 @@ target_link_libraries(gobot
     RTTR::Core
     OpenGL::GL
     Qt5::Core
-    imgui
+    imgui-gobot
     bgfx
     bx
     SDL2::SDL2

@@ -41,9 +41,9 @@ public:
         return id_ != rid.id_;
     }
 
-    [[nodiscard]] ALWAYS_INLINE bool IsValid() const { return id_ != 0; }
+    [[nodiscard]] virtual ALWAYS_INLINE bool IsValid() const { return id_ != 0; }
 
-    [[nodiscard]] ALWAYS_INLINE bool IsNull() const { return id_ == 0; }
+    [[nodiscard]] virtual ALWAYS_INLINE bool IsNull() const { return id_ == 0; }
 
     [[nodiscard]] ALWAYS_INLINE uint32_t GetLocalIndex() const { return id_ & 0xFFFFFFFF; }
 

@@ -5,7 +5,7 @@
  * This file is created by Qiqi Wu, 23-2-28
 */
 
-#include "gobot/scene/camera3d.hpp"
+#include "gobot/scene/camera_3d.hpp"
 #include "gobot/rendering/render_server.hpp"
 
 namespace gobot {
@@ -32,17 +32,27 @@ void Camera3D::SetFar(const real_t& far) {
 
 
 void Camera3D::SetPerspective(real_t fovy_degrees, real_t z_near, real_t z_far) {
-    if (!force_change_ && fovy_ == fovy_degrees && z_near == near_ && z_far == far_ && mode_ == ProjectionType::Perspective) {
-        return;
-    }
-
     fovy_ = fovy_degrees;
     near_ = z_near;
     far_ = z_far;
-    mode_ = Perspective;
+}
 
-//    RenderServer::GetInstance()->SetViewTransform(0, this->GetGlobalTransform().matrix(), fovy_, near_, far_);
-    force_change_ = false;
+void Camera3D::SetViewMatrix(const Vector3& eye, const Vector3& at, const Vector3& up) {
+    eye_ = eye;
+    at_ = at;
+    up_ = up;
+    SetGlobalTransform(Affine3(Matrix4::LookAt(eye_, at_, up_)));
+}
+
+Matrix4 Camera3D::GetViewMatrix() const {
+    // TODO(wqq): Add cache
+    return Matrix4::LookAt(eye_, at_, up_);
+}
+
+Matrix4 Camera3D::GetProjectionMatrix() const {
+    // TODO(wqq): Add cache
+    // TODO(wqq): add Ortho projection
+    return Matrix4f::Perspective(fovy_, aspect_, near_, far_);
 }
 
 }

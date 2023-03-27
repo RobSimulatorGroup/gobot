@@ -19,26 +19,39 @@ public:
         Orthogonal
     };
 
+    Camera3D();
+
     void SetFovy(const real_t& fovy);
 
     FORCE_INLINE real_t GetFovy() const { return fovy_; }
 
     void SetAspect(const real_t& aspect);
 
-    FORCE_INLINE real_t GetAspect() const { return fovy_; }
+    FORCE_INLINE real_t GetAspect() const { return aspect_; }
 
     void SetNear(const real_t& near);
 
-    FORCE_INLINE real_t GetNear() const { return fovy_; }
+    FORCE_INLINE real_t GetNear() const { return near_; }
 
     void SetFar(const real_t& far);
 
-    FORCE_INLINE real_t GetFar() const { return fovy_; }
+    FORCE_INLINE real_t GetFar() const { return far_; }
+
+    FORCE_INLINE ProjectionType GetProjectionType() const { return mode_; }
 
     void SetPerspective(real_t fovy_degrees, real_t z_near, real_t z_far);
 
-public:
-    Camera3D();
+    void SetViewMatrix(const Vector3& eye, const Vector3& at, const Vector3& up);
+
+    FORCE_INLINE Vector3 GetViewMatrixEye() const { return eye_; };
+
+    FORCE_INLINE Vector3 GetViewMatrixAt() const { return at_; };
+
+    FORCE_INLINE Vector3 GetViewMatrixUp() const { return up_; };
+
+    Matrix4 GetViewMatrix() const;
+
+    Matrix4 GetProjectionMatrix() const;
 
 private:
     real_t fovy_ = 75.0;
@@ -48,7 +61,10 @@ private:
 
     ProjectionType mode_ = Perspective;
 
-    bool force_change_{false};
+    // redundant info for ViewMatrix
+    Vector3 eye_{};
+    Vector3 at_{};
+    Vector3 up_{};
 };
 
 
