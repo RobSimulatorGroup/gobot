@@ -9,7 +9,7 @@
 #include "gobot/editor/imgui/scene_view_panel.hpp"
 #include "gobot/editor/node3d_editor.hpp"
 #include "gobot/editor/editor.hpp"
-#include "gobot/scene/camera3d.hpp"
+#include "gobot/scene/camera_3d.hpp"
 #include "gobot/error_macros.hpp"
 #include "gobot/rendering/rendering_server_globals.hpp"
 #include "gobot/rendering/renderer_compositor.hpp"
@@ -63,7 +63,7 @@ void SceneViewPanel::OnImGui()
 
     real_t aspect = static_cast<real_t>(scene_view_size.x) / static_cast<real_t>(scene_view_size.y);
 
-    if(!FloatEquals(aspect, camera_3d->GetAspect())) {
+    if(!AlmostEqual(aspect, camera_3d->GetAspect())) {
         camera_3d->SetAspect(aspect);
     }
 

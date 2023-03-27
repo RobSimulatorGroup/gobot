@@ -5,7 +5,7 @@
  * This file is created by Qiqi Wu, 23-2-28
 */
 
-#include "gobot/scene/camera3d.hpp"
+#include "gobot/scene/camera_3d.hpp"
 #include "gobot/rendering/render_server.hpp"
 
 namespace gobot {

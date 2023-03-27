@@ -8,7 +8,7 @@
 #pragma once
 
 #include "gobot/core/object.hpp"
-#include "gobot/scene/camera3d.hpp"
+#include "gobot/scene/camera_3d.hpp"
 
 namespace gobot {
 
