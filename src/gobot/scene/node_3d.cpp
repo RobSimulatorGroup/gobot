@@ -6,6 +6,7 @@
 */
 
 #include "gobot/scene/node_3d.hpp"
+#include "gobot/core/registration.hpp"
 
 namespace gobot {
 
@@ -493,3 +494,10 @@ NodePath Node3D::GetVisibilityParent() const {
 
 
 } // End of namespace gobot
+
+GOBOT_REGISTRATION {
+
+    Class_<Node3D>("Node3D")
+            .constructor()(CtorAsRawPtr);
+
+};

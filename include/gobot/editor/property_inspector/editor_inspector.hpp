@@ -48,13 +48,13 @@ private:
 
     // cache for variant
     struct Cache {
-        String name;
+        Instance instance;
         Type type;
+        Object* object;
+        String name;
+        char* imgui_name;
 
-        Cache(Type _type)
-            : type(std::move(_type))
-        {
-        }
+        Cache(Instance _instance);
     };
 
     Cache cache_;
