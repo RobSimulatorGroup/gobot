@@ -25,7 +25,7 @@ EditorInspector::Cache::Cache(Instance _instance)
 {
     auto name_property = type.get_property("name");
     if (name_property.is_valid()) {
-        name = String::fromStdString(name_property.get_value(instance).to_string());
+        name = name_property.get_value(instance).to_string();
     }
 }
 
@@ -79,7 +79,13 @@ void EditorInspector::CleanupPlugins() {
 void EditorInspector::OnImGui() {
     ImGui::TextUnformatted(GetTypeIcon(cache_.type));
     ImGui::SameLine();
-    ImGui::InputText("##name", cache_.name.toStdString().data(), cache_.name.toStdString().size() + 1);
+    static char str0[128] = "Hello, world!";
+    if (ImGui::InputText("##name", str0, IM_ARRAYSIZE(str0))) {
+        auto name_property = cache_.type.get_property("name");
+        String str = str0;
+        cache_.name = str0;
+        name_property.set_value(cache_.instance, str);
+    }
 
 }
 

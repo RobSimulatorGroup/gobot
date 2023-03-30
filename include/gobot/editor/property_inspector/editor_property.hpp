@@ -8,16 +8,51 @@
 #pragma once
 
 #include "gobot/core/object.hpp"
+#include "gobot/core/types.hpp"
+#include "gobot/editor/imgui/imgui_utilities.hpp"
 
 namespace gobot {
 
-class EditorProperty : public Object {
-    GOBCLASS(EditorProperty, Object)
+class EditorProperty {
 public:
-    EditorProperty() {}
+    EditorProperty(Variant& variant, const Property& property)
+    : variant_(variant),
+    property_(property),
+    property_cache_(variant_)
+    {
+        property_cache_.property_name = property_.get_name().data();
+        property_cache_.read_only = property_.is_readonly();
+    }
 
-    virtual void OnImGui() = 0;
+    virtual void OnDataImGui() = 0;
 
+    void OnImGui() {
+        ImGuiUtilities::BeginPropertyGrid(property_cache_.property_name.data());
+        OnDataImGui();
+        ImGuiUtilities::EndPropertyGrid();
+    };
+
+
+protected:
+    struct PropertyCache {
+        Instance instance;
+        Type type;
+        Object* object{nullptr};
+        std::string property_name{};
+        bool read_only{false};
+
+        explicit PropertyCache(Instance _instance)
+                : instance(_instance.get_type().get_raw_type().is_wrapper() ? _instance.get_wrapped_instance() : _instance),
+                  type(_instance.get_type().get_raw_type()),
+                  object(instance.try_convert<Object>())
+        {
+        }
+    };
+
+    Property property_;
+    Variant& variant_;
+
+    PropertyCache property_cache_;
 };
 
 }

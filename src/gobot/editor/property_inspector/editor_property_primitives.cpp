@@ -5,15 +5,18 @@
  * This file is created by Qiqi Wu, 23-3-28
 */
 
-#include "gobot/editor/property_inspector/editor_properties.hpp"
+#include "gobot/editor/property_inspector/editor_property_primitives.hpp"
 
 namespace gobot {
 
-EditorPropertyNil::EditorPropertyNil() {
+void EditorPropertyNil::OnDataImGui() {
 
 }
 
-void EditorPropertyNil::OnImGui() {
+/////////////////////////////////////////////
+
+
+void EditorPropertyText::OnDataImGui() {
 
 }
 

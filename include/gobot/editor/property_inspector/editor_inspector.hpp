@@ -51,13 +51,23 @@ private:
         Instance instance;
         Type type;
         Object* object;
-        String name;
-        char* imgui_name;
+        std::string name;
 
         Cache(Instance _instance);
     };
 
     Cache cache_;
+};
+
+
+/////////////////////////////////////////////////////////////////////////////
+class EditorInspectorDefaultPlugin : public EditorInspectorPlugin {
+GOBCLASS(EditorInspectorDefaultPlugin, EditorInspectorPlugin);
+public:
+    bool CanHandle(Instance instance) override;
+
+    bool ParseProperty(Instance instance) override;
+
 };
 
 
