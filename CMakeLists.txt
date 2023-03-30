@@ -80,6 +80,7 @@ endif()
 find_package(Qt5 5.15 COMPONENTS Core CONFIG REQUIRED)
 find_package (Eigen3 3.4 CONFIG REQUIRED)
 find_package(OpenGL REQUIRED)
+find_package(DART 6.13 CONFIG REQUIRED)
 
 INCLUDE(GenerateExportHeader)
 
@@ -131,6 +132,7 @@ target_link_libraries(gobot
     bx
     SDL2::SDL2
     SDL2_image
+    dart
     ${CONAN_LIBS}
 )
 

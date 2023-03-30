@@ -13,6 +13,3 @@
 [submodule "3rdparty/bgfx/bgfx"]
 	path = 3rdparty/bgfx/bgfx
 	url = https://github.com/RobSimulatorGroup/bgfx.git
-[submodule "3rdparty/dart"]
-	path = 3rdparty/dart
- 	url = https://github.com/RobSimulatorGroup/dart.git

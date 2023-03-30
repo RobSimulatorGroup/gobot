@@ -16,6 +16,10 @@ class GobotConan(ConanFile):
         self.requires("magic_enum/0.8.1")
         self.requires("cxxopts/3.0.0")
 
+    def configure(self):
+        self.options["fmt"].header_only = True
+        self.options["spdlog"].header_only = True
+
     def imports(self):
         self.copy("*.dll", dst="bin", src="bin") # From bin to bin
         self.copy("*.dylib*", dst="bin", src="lib") # From lib to bin
