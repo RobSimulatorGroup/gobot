@@ -7,21 +7,22 @@
 
 #include "gobot/editor/property_inspector/variant_data_model.hpp"
 
+#include <utility>
+
 namespace gobot {
 
 PropertyDataModel::PropertyDataModel(VariantCache& variant, const Property& property)
     : VariantDataModel(variant),
       property_(property),
-      property_cache_(property_.get_type(), property_.get_name().data(), property_.is_readonly())
+      property_cache_(property_.get_type(),
+                      property_.get_name().data(),
+                      property_.is_readonly(),
+                      property_.get_metadata(PROPERTY_INFO_KEY))
 {
 }
 
 const Type& PropertyDataModel::GetValueType() const {
     return property_cache_.property_type;
-}
-
-[[nodiscard]] const String& PropertyDataModel::GetPropertyToolTip() const {
-    return property_cache_.tooltip;
 }
 
 const String& PropertyDataModel::GetPropertyName() const {
@@ -30,6 +31,18 @@ const String& PropertyDataModel::GetPropertyName() const {
 
 bool PropertyDataModel::IsPropertyReadOnly() const {
    return property_cache_.property_readonly;
+}
+
+const PropertyInfo& PropertyDataModel::GetPropertyInfo() const {
+    return property_cache_.property_info;
+}
+
+bool PropertyDataModel::SetValue(Argument argument) {
+    return property_.set_value(variant_cache_.instance, argument);
+}
+
+Variant PropertyDataModel::GetValue() const {
+    return property_.get_value(variant_cache_.instance);
 }
 
 ///////////////////////////////////////////////////////////////////////////////////
@@ -53,7 +66,7 @@ Variant SequenceContainerDataModel::GetValue(std::size_t index) const {
 }
 
 void SequenceContainerDataModel::SetValue(std::size_t index, Argument argument) {
-    sc_cache_.variant_list_view.set_value(index, argument);
+    sc_cache_.variant_list_view.set_value(index, std::move(argument));
 }
 
 ///////////////////////////////////////////////////////////////////////////////////

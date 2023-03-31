@@ -23,22 +23,26 @@ public:
           property_data_model_(dynamic_cast<PropertyDataModel*>(data_model_.get()))
     {
         CRASH_COND_MSG(property_data_model_ == nullptr, "Input data_model must be PropertyDataModel");
+        SaveDataToProperty();
     }
 
 
     virtual void OnDataImGui() = 0;
 
 
-    void SaveDataToProperty() {
-
+    bool SaveDataToProperty() {
+        return property_data_model_->SetValue(data_);
     }
 
-    void LoadDataFromProperty() {
+    bool LoadDataFromProperty() {
+        return property_data_model_->GetValue().template convert(data_);
     }
 
     virtual void OnImGui() {
         if (ImGuiUtilities::BeginPropertyGrid(property_data_model_->GetPropertyName().toLocal8Bit().data(),
-                                          "tooltip")) {
+                                              property_data_model_->GetPropertyInfo().tool_tip.toLocal8Bit().data())) {
+            // TODO(wqq): Do we need load every time?
+            LoadDataFromProperty();
             OnDataImGui();
             ImGuiUtilities::EndPropertyGrid();
         };

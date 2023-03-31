@@ -20,7 +20,9 @@ struct VariantCache {
 
     explicit VariantCache(Variant& p_variant)
             : variant(p_variant),
-              instance(Instance(p_variant).get_type().get_raw_type().is_wrapper() ? Instance(p_variant).get_wrapped_instance() : Instance(p_variant)),
+              instance(Instance(p_variant).get_type().get_raw_type().is_wrapper() ?
+                                           Instance(p_variant).get_wrapped_instance() :
+                                           Instance(p_variant)),
               type(instance.get_type().get_raw_type()),
               object(instance.try_convert<Object>())
     {

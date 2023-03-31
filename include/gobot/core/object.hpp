@@ -56,13 +56,13 @@ namespace gobot {
 
 
 enum class PropertyHint {
-    None, ///< no hint provided.
-    Range, ///< hint_text = "min,max[,step][,or_greater][,or_less][,hide_slider][,radians][,degrees][,exp][,suffix:<keyword>] range.
-    Flags, ///< hint_text= "flag1,flag2,etc" (as bit flags)
-    File, ///< a file path must be passed, hint_text (optionally) is a filter "*.png,*.wav,*.doc,"
-    Dir, ///< a directory path must be passed
+    None,       ///< no hint provided.
+    Range,      ///< hint_text = "min,max[,step][,or_greater][,or_less][,hide_slider][,radians][,degrees][,exp][,suffix:<keyword>] range.
+    Flags,      ///< hint_text= "flag1,flag2,etc" (as bit flags)
+    File,       ///< a file path must be passed, hint_text (optionally) is a filter "*.png,*.wav,*.doc,"
+    Dir,        ///< a directory path must be passed
     GlobalFile, ///< a file path must be passed, hint_text (optionally) is a filter "*.png,*.wav,*.doc,"
-    GlobalDir, ///< a directory path must be passed
+    GlobalDir,  ///< a directory path must be passed
 };
 
 enum class PropertyUsageFlags {
@@ -80,6 +80,7 @@ struct PropertyInfo {
     PropertyHint hint = PropertyHint::None;
     String hint_string;
     PropertyUsageFlags usage = PropertyUsageFlags::Default;
+    String tool_tip;
 
     PropertyInfo& SetName(const String& _name) {
         name = _name;
@@ -98,6 +99,11 @@ struct PropertyInfo {
 
     PropertyInfo& SetUsageFlags(const PropertyUsageFlags& property_usage_flags) {
         usage = property_usage_flags;
+        return *this;
+    }
+
+    PropertyInfo& SetToolTip(const String& _tool_tip) {
+        tool_tip = _tool_tip;
         return *this;
     }
 

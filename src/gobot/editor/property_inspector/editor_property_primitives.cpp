@@ -24,10 +24,9 @@ void EditorPropertyText::OnDataImGui() {
     }
 
     std::string str = data_.toStdString();
-    LOG_ERROR("{}", str);
     if (ImGui::InputText(fmt::format("##{}", property_data_model_->GetPropertyName()).c_str(), &str)) {
         data_ = str.c_str();
-        LOG_ERROR("{}", str);
+        SaveDataToProperty();
     }
 
     if (property_data_model_->IsPropertyReadOnly()) {

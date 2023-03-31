@@ -48,22 +48,29 @@ public:
 
     [[nodiscard]] const Type& GetValueType() const override;
 
-    [[nodiscard]] const String& GetPropertyToolTip() const;
-
     [[nodiscard]] const String& GetPropertyName() const;
 
     [[nodiscard]] bool IsPropertyReadOnly() const;
+
+    [[nodiscard]] const PropertyInfo& GetPropertyInfo() const;
+
+    bool SetValue(Argument argument);
+
+    Variant GetValue() const;
 
 private:
     struct PropertyCache {
         Type property_type;
         String property_name;
         bool property_readonly;
-        String tooltip;
-        PropertyCache(const Type& type, String  string, bool readonly)
+        PropertyInfo property_info;
+        PropertyCache(const Type& type, String string, bool readonly, const Variant& info)
             : property_type(type),
               property_name(std::move(string)),
-              property_readonly(readonly) {}
+              property_readonly(readonly),
+              property_info(info.is_valid() ? info.get_value<PropertyInfo>() : PropertyInfo())
+        {
+        }
     };
 
     Property property_;

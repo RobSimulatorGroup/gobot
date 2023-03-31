@@ -691,7 +691,10 @@ GOBOT_REGISTRATION {
             .property_readonly("inside_tree", &Node::IsInsideTree)
             .property_readonly("index", &Node::GetIndex)
 
-            .property("name", &Node::GetName, &Node::SetName)
+            .property("name", &Node::GetName, &Node::SetName)(
+                    AddMetaPropertyInfo(
+                            PropertyInfo()
+                                .SetToolTip("The name of Node.")))
 
             .method("has_node", &Node::HasNode)
             .method("add_child", &Node::AddChild)
