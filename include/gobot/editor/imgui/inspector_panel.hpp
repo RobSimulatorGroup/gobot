@@ -12,6 +12,7 @@
 namespace gobot {
 
 class Node3D;
+class EditorInspector;
 
 class InspectorPanel : public EditorPanel {
 public:
@@ -20,7 +21,9 @@ public:
     void OnImGui() override;
 
 private:
-    Node3D* node_3d;
+    Node3D* node_3d_{nullptr};
+
+    EditorInspector* editor_inspector_{nullptr};
 
 };
 

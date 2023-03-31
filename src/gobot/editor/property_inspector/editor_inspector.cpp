@@ -6,7 +6,9 @@
 */
 
 #include "gobot/editor/property_inspector/editor_inspector.hpp"
+#include "gobot/editor/property_inspector/editor_property.hpp"
 #include "gobot/error_macros.hpp"
+#include "gobot/editor/property_inspector/editor_property_primitives.hpp"
 #include "gobot/editor/imgui/type_icons.hpp"
 #include "imgui.h"
 
@@ -17,24 +19,19 @@ namespace gobot {
 Ref<EditorInspectorPlugin> EditorInspector::s_inspector_plugins[MAX_PLUGINS];
 int EditorInspector::s_inspector_plugin_count = 0;
 
-
-EditorInspector::Cache::Cache(Instance _instance)
-    : instance(_instance.get_type().get_raw_type().is_wrapper() ? _instance.get_wrapped_instance() : _instance),
-      type(_instance.get_type().get_raw_type()),
-      object(instance.try_convert<Object>())
+EditorInspector::EditorInspector(Variant& variant)
+    : cache_(variant)
 {
-    auto name_property = type.get_property("name");
+    // check variant has name
+    auto name_property = cache_.type.get_property("name");
     if (name_property.is_valid()) {
-        name = name_property.get_value(instance).to_string();
+        name_editor_ = new EditorPropertyText(std::make_unique<PropertyDataModel>(cache_, name_property));
     }
 }
 
-EditorInspector::EditorInspector(Variant& variant)
-    : variant_(variant),
-      cache_(variant_)
-{
-    // check variant has name
-
+EditorInspector::~EditorInspector() {
+    if (name_editor_)
+        delete name_editor_;
 }
 
 
@@ -78,13 +75,9 @@ void EditorInspector::CleanupPlugins() {
 
 void EditorInspector::OnImGui() {
     ImGui::TextUnformatted(GetTypeIcon(cache_.type));
-    ImGui::SameLine();
-    static char str0[128] = "Hello, world!";
-    if (ImGui::InputText("##name", str0, IM_ARRAYSIZE(str0))) {
-        auto name_property = cache_.type.get_property("name");
-        String str = str0;
-        cache_.name = str0;
-        name_property.set_value(cache_.instance, str);
+    if (name_editor_) {
+        ImGui::SameLine();
+        name_editor_->OnImGui();
     }
 
 }

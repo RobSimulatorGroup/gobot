@@ -6,6 +6,8 @@
 */
 
 #include "gobot/editor/property_inspector/editor_property_primitives.hpp"
+#include "imgui_stdlib.h"
+#include "gobot/log.hpp"
 
 namespace gobot {
 
@@ -17,7 +19,20 @@ void EditorPropertyNil::OnDataImGui() {
 
 
 void EditorPropertyText::OnDataImGui() {
+    if (property_data_model_->IsPropertyReadOnly()) {
+        ImGui::BeginDisabled();
+    }
 
+    std::string str = data_.toStdString();
+    LOG_ERROR("{}", str);
+    if (ImGui::InputText(fmt::format("##{}", property_data_model_->GetPropertyName()).c_str(), &str)) {
+        data_ = str.c_str();
+        LOG_ERROR("{}", str);
+    }
+
+    if (property_data_model_->IsPropertyReadOnly()) {
+        ImGui::EndDisabled();
+    }
 }
 
 }

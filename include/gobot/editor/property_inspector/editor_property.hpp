@@ -9,50 +9,23 @@
 
 #include "gobot/core/object.hpp"
 #include "gobot/core/types.hpp"
-#include "gobot/editor/imgui/imgui_utilities.hpp"
+#include "gobot/editor/property_inspector/variant_data_model.hpp"
 
 namespace gobot {
 
 class EditorProperty {
 public:
-    EditorProperty(Variant& variant, const Property& property)
-    : variant_(variant),
-    property_(property),
-    property_cache_(variant_)
+    EditorProperty(std::unique_ptr<VariantDataModel> variant_data_model)
+      : data_model_(std::move(variant_data_model))
     {
-        property_cache_.property_name = property_.get_name().data();
-        property_cache_.read_only = property_.is_readonly();
     }
 
-    virtual void OnDataImGui() = 0;
+    virtual void OnImGui() = 0;
 
-    void OnImGui() {
-        ImGuiUtilities::BeginPropertyGrid(property_cache_.property_name.data());
-        OnDataImGui();
-        ImGuiUtilities::EndPropertyGrid();
-    };
-
+    virtual ~EditorProperty() {}
 
 protected:
-    struct PropertyCache {
-        Instance instance;
-        Type type;
-        Object* object{nullptr};
-        std::string property_name{};
-        bool read_only{false};
-
-        explicit PropertyCache(Instance _instance)
-                : instance(_instance.get_type().get_raw_type().is_wrapper() ? _instance.get_wrapped_instance() : _instance),
-                  type(_instance.get_type().get_raw_type()),
-                  object(instance.try_convert<Object>())
-        {
-        }
-    };
-
-    Property property_;
-    Variant& variant_;
-
-    PropertyCache property_cache_;
+    std::unique_ptr<VariantDataModel> data_model_;
 };
 
 }

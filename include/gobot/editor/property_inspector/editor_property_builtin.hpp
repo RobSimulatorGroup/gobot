@@ -8,6 +8,8 @@
 #pragma once
 
 #include "gobot/editor/property_inspector/editor_property.hpp"
+#include "gobot/editor/imgui/imgui_utilities.hpp"
+#include "gobot/error_macros.hpp"
 
 namespace gobot {
 
@@ -16,12 +18,36 @@ class EditorBuiltInProperty : public EditorProperty {
 public:
     using BaseClass = EditorBuiltInProperty<T>;
 
-    using EditorProperty::EditorProperty;
+    explicit EditorBuiltInProperty(std::unique_ptr<VariantDataModel> variant_data_model)
+        : EditorProperty(std::move(variant_data_model)),
+          property_data_model_(dynamic_cast<PropertyDataModel*>(data_model_.get()))
+    {
+        CRASH_COND_MSG(property_data_model_ == nullptr, "Input data_model must be PropertyDataModel");
+    }
 
+
+    virtual void OnDataImGui() = 0;
+
+
+    void SaveDataToProperty() {
+
+    }
+
+    void LoadDataFromProperty() {
+    }
+
+    virtual void OnImGui() {
+        if (ImGuiUtilities::BeginPropertyGrid(property_data_model_->GetPropertyName().toLocal8Bit().data(),
+                                          "tooltip")) {
+            OnDataImGui();
+            ImGuiUtilities::EndPropertyGrid();
+        };
+
+    }
 
 
 protected:
-
+    PropertyDataModel* property_data_model_{nullptr};
     T data_;
 };
 

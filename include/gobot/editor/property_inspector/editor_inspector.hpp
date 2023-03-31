@@ -9,6 +9,7 @@
 #pragma once
 
 #include "gobot/editor/property_inspector/editor_inspector.hpp"
+#include "gobot/editor/property_inspector/variant_cache.hpp"
 #include "gobot/core/ref_counted.hpp"
 
 namespace gobot {
@@ -23,10 +24,14 @@ public:
 };
 
 
+class EditorProperty;
+
 class EditorInspector : public Object {
     GOBCLASS(EditorInspector, Object)
 public:
     EditorInspector(Variant& variant);
+
+    virtual ~EditorInspector();
 
     static void AddInspectorPlugin(const Ref<EditorInspectorPlugin> &plugin);
 
@@ -44,19 +49,8 @@ private:
     static Ref<EditorInspectorPlugin> s_inspector_plugins[MAX_PLUGINS];
     static int s_inspector_plugin_count;
 
-    Variant& variant_;
-
-    // cache for variant
-    struct Cache {
-        Instance instance;
-        Type type;
-        Object* object;
-        std::string name;
-
-        Cache(Instance _instance);
-    };
-
-    Cache cache_;
+    VariantCache cache_;
+    EditorProperty* name_editor_{nullptr};
 };
 
 

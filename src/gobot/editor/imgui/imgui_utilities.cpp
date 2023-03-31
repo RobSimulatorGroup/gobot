@@ -56,30 +56,40 @@ void ImGuiUtilities::Image(const RenderRID& texture_id, const Vector2f& size, co
     ImGui::Image(texture_id, size, _uv0, _uv1, tintCol, borderCol);
 }
 
-void ImGuiUtilities::BeginPropertyGrid(const char* label, const char* tooltip, bool rightAlignNextColumn) {
+bool ImGuiUtilities::BeginPropertyGrid(const char* label, const char* tooltip, bool rightAlignNextColumn) {
+    bool success = ImGui::BeginTable(label, 2, ImGuiTableFlags_Resizable | ImGuiTableFlags_SizingStretchProp |
+                                         ImGuiTableFlags_BordersInner | ImGuiTableFlags_BordersOuterH |
+                                         ImGuiTableFlags_PadOuterX);
+    if (success) {
+        ImGui::TableSetupColumn("PropertyName", 0, 0.5f);
+        ImGui::TableSetupColumn("Property", ImGuiTableColumnFlags_WidthStretch);
 
-    ImGui::TableNextRow();
-    ImGui::TableNextColumn();
+        ImGui::TableNextRow();
+        ImGui::TableNextColumn();
 
-    ImGui::PushID(label);
-    ImGui::SetCursorPosY(ImGui::GetCursorPosY() + ImGui::GetStyle().FramePadding.y * 0.5f);
-    ImGui::TextUnformatted(label);
-    if (tooltip && ImGui::IsItemHovered(ImGuiHoveredFlags_DelayNormal | ImGuiHoveredFlags_NoSharedDelay))
-    {
-        ImGui::BeginTooltip();
-        ImGui::TextUnformatted(tooltip);
-        ImGui::EndTooltip();
+        ImGui::PushID(label);
+        ImGui::SetCursorPosY(ImGui::GetCursorPosY() + ImGui::GetStyle().FramePadding.y * 0.5f);
+        ImGui::TextUnformatted(label);
+        if (tooltip && ImGui::IsItemHovered(ImGuiHoveredFlags_DelayNormal | ImGuiHoveredFlags_NoSharedDelay))
+        {
+            ImGui::BeginTooltip();
+            ImGui::TextUnformatted(tooltip);
+            ImGui::EndTooltip();
+        }
+
+        ImGui::TableNextColumn();
+
+        if (rightAlignNextColumn)
+            ImGui::SetNextItemWidth(-FLT_MIN);
+
     }
 
-    ImGui::TableNextColumn();
-
-    if (rightAlignNextColumn)
-        ImGui::SetNextItemWidth(-FLT_MIN);
-
+    return success;
 }
 
 void ImGuiUtilities::EndPropertyGrid() {
     ImGui::PopID();
+    ImGui::EndTable();
 }
 
 

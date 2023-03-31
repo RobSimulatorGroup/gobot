@@ -83,7 +83,7 @@ public:
                       const Vector2f& uv1 = {1.0f, 1.0f}, const Color& tintCol = {1.0f, 1.0f, 1.0f, 1.0f},
                       const Color& borderCol = {0.0f, 0.0f, 0.0f, 0.0f});
 
-    static void BeginPropertyGrid(const char* label, const char* tooltip = nullptr, bool rightAlignNextColumn = true);
+    static bool BeginPropertyGrid(const char* label, const char* tooltip = nullptr, bool rightAlignNextColumn = true);
 
     static void EndPropertyGrid();
 

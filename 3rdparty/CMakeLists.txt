@@ -12,6 +12,9 @@ add_library(imgui
         imgui/imstb_rectpack.h
         imgui/imstb_textedit.h
         imgui/imstb_truetype.h
+        imgui/misc/cpp/imgui_stdlib.h
+        imgui/misc/cpp/imgui_stdlib.cpp
+
         imgui/backends/imgui_impl_opengl3.cpp
         imgui/backends/imgui_impl_opengl3.h
         imgui/backends/imgui_impl_sdl2.h
@@ -37,6 +40,9 @@ target_sources(imgui-gobot INTERFACE
         imgui/backends/imgui_impl_sdl2.h
         imgui/backends/imgui_impl_sdl2.cpp
 
+        imgui/misc/cpp/imgui_stdlib.h
+        imgui/misc/cpp/imgui_stdlib.cpp
+
         imgui_extension/imgui_extension/gizmos/ImGuizmo.h
         imgui_extension/imgui_extension/gizmos/ImGuizmo.cpp
 
@@ -45,7 +51,7 @@ target_sources(imgui-gobot INTERFACE
 get_filename_component(IMGUI_USER_CONFIG "imgui_config.hpp" REALPATH BASE_DIR "${PROJECT_SOURCE_DIR}/include/gobot/editor/imgui/")
 target_compile_definitions(imgui-gobot INTERFACE IMGUI_USER_CONFIG="${IMGUI_USER_CONFIG}")
 
-target_include_directories(imgui-gobot INTERFACE imgui imgui/backends imgui_extension )
+target_include_directories(imgui-gobot INTERFACE imgui imgui/backends imgui_extension imgui/misc/cpp/)
 
 
 find_package(OpenGL REQUIRED)

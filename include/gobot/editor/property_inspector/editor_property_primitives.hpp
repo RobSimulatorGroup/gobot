@@ -46,13 +46,6 @@ public:
 
     void OnDataImGui() override;
 
-private:
-    struct ContextCache {
-        String context;
-        char data[128];
-    };
-
-    ContextCache cache_{};
 };
 
 class EditorPropertyMultilineText : public EditorBuiltInProperty<String> {

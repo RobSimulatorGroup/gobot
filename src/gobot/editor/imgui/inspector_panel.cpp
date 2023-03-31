@@ -16,16 +16,16 @@ namespace gobot {
 
 InspectorPanel::InspectorPanel() {
     name_ = ICON_MDI_INFORMATION " Inspector###inspector";
-    node_3d  = Node3D::New<Node3D>();
-    node_3d->SetName("node3d");
+    node_3d_  = Node3D::New<Node3D>();
+    node_3d_->SetName("node3d");
+    Variant variant(node_3d_);
+    editor_inspector_ = EditorInspector::New<EditorInspector>(variant);
 }
 
 void InspectorPanel::OnImGui() {
     ImGui::Begin(name_.toStdString().c_str());
 
-    Variant variant(node_3d);
-    auto a = new EditorInspector(variant);
-    a->OnImGui();
+    editor_inspector_->OnImGui();
 
     ImGui::End();
 }
