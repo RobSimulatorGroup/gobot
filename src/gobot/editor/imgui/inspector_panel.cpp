@@ -19,13 +19,47 @@ InspectorPanel::InspectorPanel() {
     node_3d_  = Node3D::New<Node3D>();
     node_3d_->SetName("node3d");
     Variant variant(node_3d_);
-    editor_inspector_ = EditorInspector::New<EditorInspector>(variant);
+    editor_inspectors_.emplace_back(EditorInspector::New<EditorInspector>(variant));
+    current_inspector_index_ = 0;
 }
 
 void InspectorPanel::OnImGui() {
     ImGui::Begin(name_.toStdString().c_str());
 
-    editor_inspector_->OnImGui();
+    if (ImGui::Button(ICON_MDI_FILE_PLUS)) {
+        // TODO(wqq): new
+    }
+
+    ImGui::SameLine();
+    if (ImGui::Button(ICON_MDI_ARROW_UP_BOX)) {
+        // TODO(wqq): load
+    }
+
+    ImGui::SameLine();
+    if (ImGui::Button(ICON_MDI_CONTENT_SAVE)) {
+        // TODO(wqq): save
+    }
+
+    auto button_size = ImGui::GetItemRectSize();
+
+    ImGui::SameLine(ImGui::GetWindowWidth() - 3 * button_size.x - 20);
+    if (ImGui::ArrowButton("##left", ImGuiDir_Left)) {
+
+    }
+    ImGui::SameLine(0.0f, ImGui::GetStyle().ItemInnerSpacing.x);
+
+    if (ImGui::ArrowButton("##right", ImGuiDir_Right)) {
+
+    }
+
+    ImGui::SameLine(ImGui::GetWindowWidth() - 30);
+    if (ImGui::Button(ICON_MDI_HISTORY)) {
+        // TODO(wqq): select current_inspector_index_
+    }
+
+
+
+    editor_inspectors_.at(current_inspector_index_)->OnImGui();
 
     ImGui::End();
 }

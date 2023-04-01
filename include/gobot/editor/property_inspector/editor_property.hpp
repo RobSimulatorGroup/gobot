@@ -15,8 +15,9 @@ namespace gobot {
 
 class EditorProperty {
 public:
-    EditorProperty(std::unique_ptr<VariantDataModel> variant_data_model)
-      : data_model_(std::move(variant_data_model))
+    EditorProperty(std::unique_ptr<VariantDataModel> variant_data_model, bool using_grid = true)
+      : data_model_(std::move(variant_data_model)),
+        using_grid_(using_grid)
     {
     }
 
@@ -26,6 +27,7 @@ public:
 
 protected:
     std::unique_ptr<VariantDataModel> data_model_;
+    bool using_grid_;
 };
 
 }

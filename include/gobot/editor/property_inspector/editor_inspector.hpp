@@ -24,7 +24,7 @@ public:
 };
 
 
-class EditorProperty;
+class PropertyDataModel;
 
 class EditorInspector : public Object {
     GOBCLASS(EditorInspector, Object)
@@ -50,7 +50,7 @@ private:
     static int s_inspector_plugin_count;
 
     VariantCache cache_;
-    EditorProperty* name_editor_{nullptr};
+    PropertyDataModel* property_name_{nullptr};
 };
 
 

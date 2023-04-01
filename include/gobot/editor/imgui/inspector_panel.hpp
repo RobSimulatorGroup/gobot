@@ -23,8 +23,8 @@ public:
 private:
     Node3D* node_3d_{nullptr};
 
-    EditorInspector* editor_inspector_{nullptr};
-
+    std::vector<EditorInspector*> editor_inspectors_{};
+    int current_inspector_index_{-1};
 };
 
 

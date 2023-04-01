@@ -18,12 +18,12 @@ class EditorBuiltInProperty : public EditorProperty {
 public:
     using BaseClass = EditorBuiltInProperty<T>;
 
-    explicit EditorBuiltInProperty(std::unique_ptr<VariantDataModel> variant_data_model)
-        : EditorProperty(std::move(variant_data_model)),
+    explicit EditorBuiltInProperty(std::unique_ptr<VariantDataModel> variant_data_model, bool using_grid = true)
+        : EditorProperty(std::move(variant_data_model), using_grid),
           property_data_model_(dynamic_cast<PropertyDataModel*>(data_model_.get()))
     {
         CRASH_COND_MSG(property_data_model_ == nullptr, "Input data_model must be PropertyDataModel");
-        SaveDataToProperty();
+        ERR_FAIL_COND_MSG(SaveDataToProperty(), "Cannot save data to property");
     }
 
 

@@ -10,7 +10,10 @@
 #include "gobot/error_macros.hpp"
 #include "gobot/editor/property_inspector/editor_property_primitives.hpp"
 #include "gobot/editor/imgui/type_icons.hpp"
+#include "imgui_stdlib.h"
+#include "imgui_extension/icon_fonts/icons_material_design_icons.h"
 #include "imgui.h"
+#include "imgui_internal.h"
 
 
 namespace gobot {
@@ -25,13 +28,13 @@ EditorInspector::EditorInspector(Variant& variant)
     // check variant has name
     auto name_property = cache_.type.get_property("name");
     if (name_property.is_valid()) {
-        name_editor_ = new EditorPropertyText(std::make_unique<PropertyDataModel>(cache_, name_property));
+        property_name_ = new PropertyDataModel(cache_, name_property);
     }
 }
 
 EditorInspector::~EditorInspector() {
-    if (name_editor_)
-        delete name_editor_;
+    if (property_name_)
+        delete property_name_;
 }
 
 
@@ -75,10 +78,45 @@ void EditorInspector::CleanupPlugins() {
 
 void EditorInspector::OnImGui() {
     ImGui::TextUnformatted(GetTypeIcon(cache_.type));
-    if (name_editor_) {
+
+    if (property_name_) {
         ImGui::SameLine();
-        name_editor_->OnImGui();
+
+        auto name_data = property_name_->GetValue().get_value<String>();
+        auto str = name_data.toStdString();
+        ImGui::SetNextItemWidth(ImGui::GetWindowWidth() - 60);
+        if (ImGui::InputText(fmt::format("##{}", property_name_->GetPropertyName()).c_str(), &str)) {
+            property_name_->SetValue(String::fromStdString(str));
+        }
+
+        ImGui::SameLine(ImGui::GetWindowWidth() - 30);
+        if (ImGui::Button(ICON_MDI_COGS)) {
+            ImGui::OpenPopup("Inspector setting");
+        }
+        if (ImGui::BeginPopup("Inspector setting"))
+        {
+            if (ImGui::Button("Expand All")) {
+                // TODO(wqq)
+            }
+            if (ImGui::Button("Collapse All")) {
+                // TODO(wqq)
+            }
+            ImGui::Spacing();
+            ImGui::Separator();
+            ImGui::Spacing();
+            if (ImGui::Button("Copy Properties")) {
+                // TODO(wqq)
+            }
+            if (ImGui::Button("Paste Properties")) {
+                // TODO(wqq)
+            }
+
+            ImGui::EndPopup();
+        }
     }
+
+    static ImGuiTextFilter filter;
+    filter.Draw(ICON_MDI_MAGNIFY "Filter", ImGui::GetWindowWidth() - 60);
 
 }
 
