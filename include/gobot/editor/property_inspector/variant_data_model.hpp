@@ -50,9 +50,13 @@ public:
 
     [[nodiscard]] const String& GetPropertyName() const;
 
+    [[nodiscard]] const char* GetPropertyNameCStr() const;
+
     [[nodiscard]] bool IsPropertyReadOnly() const;
 
     [[nodiscard]] const PropertyInfo& GetPropertyInfo() const;
+
+    [[nodiscard]] const char* GetPropertyToolTipCStr() const;
 
     bool SetValue(Argument argument);
 
@@ -62,13 +66,17 @@ private:
     struct PropertyCache {
         Type property_type;
         String property_name;
+        const char* property_name_c_str; // cache
         bool property_readonly;
         PropertyInfo property_info;
+        const char* tool_tip_c_str; // cache
         PropertyCache(const Type& type, String string, bool readonly, const Variant& info)
                 : property_type(type),
                   property_name(std::move(string)),
+                  property_name_c_str(property_name.toStdString().c_str()),
                   property_readonly(readonly),
-                  property_info(info.is_valid() ? info.get_value<PropertyInfo>() : PropertyInfo())
+                  property_info(info.is_valid() ? info.get_value<PropertyInfo>() : PropertyInfo()),
+                  tool_tip_c_str(property_info.tool_tip.toStdString().c_str())
         {
         }
     };

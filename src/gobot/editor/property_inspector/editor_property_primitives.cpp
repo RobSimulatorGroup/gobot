@@ -7,31 +7,28 @@
 
 #include "gobot/editor/property_inspector/editor_property_primitives.hpp"
 #include "imgui_stdlib.h"
+#include "imgui.h"
 #include "gobot/log.hpp"
 
 namespace gobot {
 
-void EditorPropertyNil::OnDataImGui() {
+void EditorPropertyBool::OnImGuiContent() {
+    auto value = property_data_model_->GetValue().to_bool();
+    if (ImGui::Checkbox(fmt::format("##{}", fmt::ptr(this)).c_str(), &value)) {
+        property_data_model_->SetValue(value);
+    }
 
 }
 
 /////////////////////////////////////////////
 
 
-void EditorPropertyText::OnDataImGui() {
-    if (property_data_model_->IsPropertyReadOnly()) {
-        ImGui::BeginDisabled();
+void EditorPropertyText::OnImGuiContent() {
+    auto value = property_data_model_->GetValue().to_string();
+    if (ImGui::InputText(fmt::format("##{}", fmt::ptr(this)).c_str(), &value)) {
+        property_data_model_->SetValue(value);
     }
 
-    std::string str = data_.toStdString();
-    if (ImGui::InputText(fmt::format("##{}", property_data_model_->GetPropertyName()).c_str(), &str)) {
-        data_ = str.c_str();
-        SaveDataToProperty();
-    }
-
-    if (property_data_model_->IsPropertyReadOnly()) {
-        ImGui::EndDisabled();
-    }
 }
 
 }

@@ -153,8 +153,7 @@ GOBOT_REGISTRATION {
             .property("PropertyUsageFlags", &gobot::PropertyInfo::usage);
 
     Class_<Object>("Object")
-            .constructor()(CtorAsRawPtr)
-            .property_readonly("class_name", &Object::GetClassStringName);
+            .constructor()(CtorAsRawPtr);
 
 
     QuickEnumeration_<NotificationType>("NotificationType");

@@ -45,6 +45,8 @@ public:
 
     virtual ~EditorInspector();
 
+    void PrintAllProperties();
+
     static void AddInspectorPlugin(const Ref<EditorInspectorPlugin> &plugin);
 
     static void RemoveInspectorPlugin(const Ref<EditorInspectorPlugin> &plugin);
@@ -65,6 +67,10 @@ private:
 
     VariantCache cache_;
     PropertyDataModel* property_name_{nullptr};
+
+    // base class --> derived class
+    std::vector<Type> inheritance_chain_{};
+    std::map<Type, std::vector<Property>> properties_map_{};
 };
 
 

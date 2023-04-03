@@ -32,11 +32,44 @@ EditorInspector::EditorInspector(Variant& variant)
         property_name_ = new PropertyDataModel(cache_, name_property);
     }
 
+
+    // collect all properties
+    for (const auto& base: cache_.type.get_base_classes()) {
+        inheritance_chain_.emplace_back(base);
+    }
+    inheritance_chain_.emplace_back(cache_.type);
+
+    for (const auto& type :  inheritance_chain_) {
+        properties_map_.insert({type, {}});
+        for (const auto& property : type.get_properties(rttr::filter_item::public_access |
+                                                        rttr::filter_item::declared_only |
+                                                        rttr::filter_item::static_item |
+                                                        rttr::filter_item::instance_item)) {
+            if (property == name_property) {
+                continue;
+            }
+            properties_map_.at(type).emplace_back(property);
+        }
+    }
+
+#ifdef GOBOT_DEBUG
+    PrintAllProperties();
+#endif
+
 }
 
 EditorInspector::~EditorInspector() {
-    if (property_name_)
-        delete property_name_;
+    delete property_name_;
+}
+
+void EditorInspector::PrintAllProperties() {
+    for (const auto& type : inheritance_chain_) {
+        LOG_INFO("Type: {}", type.get_name().data());
+        for (const auto& prop : properties_map_.at(type)) {
+            LOG_ERROR("-- {}", prop.get_name().data());
+        }
+
+    }
 }
 
 

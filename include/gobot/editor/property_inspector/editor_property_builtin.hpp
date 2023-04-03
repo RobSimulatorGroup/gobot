@@ -13,46 +13,36 @@
 
 namespace gobot {
 
-template<typename T>
 class EditorBuiltInProperty : public EditorProperty {
+    GOBCLASS(EditorBuiltInProperty, EditorProperty)
 public:
-    using BaseClass = EditorBuiltInProperty<T>;
-
     explicit EditorBuiltInProperty(std::unique_ptr<VariantDataModel> variant_data_model, bool using_grid = true)
         : EditorProperty(std::move(variant_data_model), using_grid),
           property_data_model_(dynamic_cast<PropertyDataModel*>(data_model_.get()))
     {
         CRASH_COND_MSG(property_data_model_ == nullptr, "Input data_model must be PropertyDataModel");
-        ERR_FAIL_COND_MSG(SaveDataToProperty(), "Cannot save data to property");
+
     }
 
 
-    virtual void OnDataImGui() = 0;
-
-
-    bool SaveDataToProperty() {
-        return property_data_model_->SetValue(data_);
+    bool Begin() override {
+        if (property_data_model_->IsPropertyReadOnly()) {
+            ImGui::BeginDisabled();
+        }
+        return ImGuiUtilities::BeginPropertyGrid(property_data_model_->GetPropertyNameCStr(),
+                                                 property_data_model_->GetPropertyToolTipCStr());
     }
 
-    bool LoadDataFromProperty() {
-        return property_data_model_->GetValue().template convert(data_);
-    }
-
-    virtual void OnImGuiContent() {
-        if (ImGuiUtilities::BeginPropertyGrid(property_data_model_->GetPropertyName().toLocal8Bit().data(),
-                                              property_data_model_->GetPropertyInfo().tool_tip.toLocal8Bit().data())) {
-            // TODO(wqq): Do we need load every time?
-            LoadDataFromProperty();
-            OnDataImGui();
-            ImGuiUtilities::EndPropertyGrid();
-        };
-
+    void End() override {
+        ImGuiUtilities::EndPropertyGrid();
+        if (property_data_model_->IsPropertyReadOnly()) {
+            ImGui::EndDisabled();
+        }
     }
 
 
 protected:
     PropertyDataModel* property_data_model_{nullptr};
-    T data_;
 };
 
 }

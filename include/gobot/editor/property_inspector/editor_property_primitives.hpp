@@ -12,78 +12,68 @@
 
 namespace gobot {
 
-class EditorPropertyNil : public EditorBuiltInProperty<nullptr_t> {
+
+class EditorPropertyBool : public EditorBuiltInProperty {
+    GOBCLASS(EditorPropertyBool, EditorBuiltInProperty)
 public:
 
-    using BaseClass::BaseClass;
-
-    void OnDataImGui() override;
+    void OnImGuiContent() override;
 
 };
 
-class EditorPropertyBool : public EditorBuiltInProperty<bool> {
+class EditorPropertyFlags : public EditorBuiltInProperty {
+    GOBCLASS(EditorPropertyFlags, EditorBuiltInProperty)
 public:
-    using BaseClass::BaseClass;
 
-    void OnDataImGui() override;
-
-};
-
-template<typename Flags>
-class EditorPropertyFlags : public EditorBuiltInProperty<Flags> {
-public:
-    using Base = EditorBuiltInProperty<Flags>;
-    using Base::Base;
-
-    void OnDataImGui() override;
+    void OnImGuiContent() override;
 
 };
 
 
-class EditorPropertyText : public EditorBuiltInProperty<String> {
+class EditorPropertyText : public EditorBuiltInProperty {
+    GOBCLASS(EditorPropertyText, EditorBuiltInProperty)
 public:
-    using BaseClass::BaseClass;
 
-    void OnDataImGui() override;
+    void OnImGuiContent() override;
 
 };
 
-class EditorPropertyMultilineText : public EditorBuiltInProperty<String> {
+class EditorPropertyMultilineText : public EditorBuiltInProperty {
+    GOBCLASS(EditorPropertyMultilineText, EditorBuiltInProperty)
 public:
-    using BaseClass::BaseClass;
 
-    void OnDataImGui() override;
+    void OnImGuiContent() override;
 
 };
 
-class EditorPropertyPath : public EditorBuiltInProperty<String> {
+class EditorPropertyPath : public EditorBuiltInProperty {
+    GOBCLASS(EditorPropertyPath, EditorBuiltInProperty)
 public:
-    using BaseClass::BaseClass;
-
-    void OnDataImGui() override;
+    void OnImGuiContent() override;
 };
 
-template<typename Integer>
-class EditorPropertyInteger : public EditorBuiltInProperty<Integer> {
+class EditorPropertyInteger : public EditorBuiltInProperty {
+    GOBCLASS(EditorPropertyInteger, EditorBuiltInProperty)
 public:
     EditorPropertyInteger();
 
-    void OnDataImGui() override;
+    void OnImGuiContent() override;
 };
 
-template<typename Float>
-class EditorPropertyFloat : public EditorBuiltInProperty<Float> {
+class EditorPropertyFloat : public EditorBuiltInProperty {
+    GOBCLASS(EditorPropertyFloat, EditorBuiltInProperty)
 public:
     EditorPropertyFloat();
 
-    void OnDataImGui() override;
+    void OnImGuiContent() override;
 };
 
-class EditorPropertyRID : public EditorBuiltInProperty<RID> {
+class EditorPropertyRID : public EditorBuiltInProperty {
+    GOBCLASS(EditorPropertyRID, EditorBuiltInProperty)
 public:
     EditorPropertyRID();
 
-    void OnDataImGui() override;
+    void OnImGuiContent() override;
 };
 
 
