@@ -29,8 +29,8 @@ public:
         if (property_data_model_->IsPropertyReadOnly()) {
             ImGui::BeginDisabled();
         }
-        return ImGuiUtilities::BeginPropertyGrid(property_data_model_->GetPropertyNameCStr(),
-                                                 property_data_model_->GetPropertyToolTipCStr());
+        return ImGuiUtilities::BeginPropertyGrid(property_data_model_->GetPropertyNameStr().c_str(),
+                                                 property_data_model_->GetPropertyToolTipStr().c_str());
     }
 
     void End() override {

@@ -29,8 +29,8 @@ const String& PropertyDataModel::GetPropertyName() const {
     return property_cache_.property_name;
 }
 
-const char* PropertyDataModel::GetPropertyNameCStr() const {
-    return property_cache_.property_name_c_str;
+const std::string& PropertyDataModel::GetPropertyNameStr() const {
+    return property_cache_.property_name_str;
 }
 
 bool PropertyDataModel::IsPropertyReadOnly() const {
@@ -41,8 +41,8 @@ const PropertyInfo& PropertyDataModel::GetPropertyInfo() const {
     return property_cache_.property_info;
 }
 
-const char* PropertyDataModel::GetPropertyToolTipCStr() const {
-    return property_cache_.tool_tip_c_str;
+const std::string& PropertyDataModel::GetPropertyToolTipStr() const {
+    return property_cache_.tool_tip_str;
 }
 
 bool PropertyDataModel::SetValue(Argument argument) {
