@@ -19,8 +19,6 @@ class InspectorPanel : public ImGuiWindow {
 public:
     InspectorPanel();
 
-    virtual ~InspectorPanel();
-
     void OnImGuiContent() override;
 
 private:

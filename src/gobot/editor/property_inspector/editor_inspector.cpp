@@ -31,6 +31,7 @@ EditorInspector::EditorInspector(Variant& variant)
     if (name_property.is_valid()) {
         property_name_ = new PropertyDataModel(cache_, name_property);
     }
+
 }
 
 EditorInspector::~EditorInspector() {
@@ -125,8 +126,16 @@ void EditorInspector::OnImGuiContent() {
     }
 
     static ImGuiTextFilter filter;
-    filter.Draw(ICON_MDI_MAGNIFY "Filter", ImGui::GetWindowWidth() - 60);
+    filter.Draw("###PropertyFilter", ImGui::GetWindowWidth() - 10);
 
+    if(!filter.IsActive()) {
+        ImGui::SameLine();
+        ImGui::SetCursorPosX(ImGui::GetFontSize() * 0.5f);
+        ImGui::TextUnformatted("Filter Properties");
+        ImGui::SameLine();
+        ImGui::SetCursorPosX(ImGui::GetWindowWidth() - 30);
+        ImGui::TextUnformatted(ICON_MDI_MAGNIFY);
+    }
 
 }
 

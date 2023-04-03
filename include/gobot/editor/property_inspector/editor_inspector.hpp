@@ -76,7 +76,7 @@ class EditorInspectorDefaultPlugin : public EditorInspectorPlugin {
 public:
     bool CanHandle(VariantCache& variant_cache) override;
 
-//    bool ParseProperty(std::unique_ptr<VariantDataModel> data_model) override;
+    bool ParseProperty(std::unique_ptr<VariantDataModel> data_model);
 
     static std::unique_ptr<EditorProperty> GetEditorForProperty(VariantCache& variant_cache);
 

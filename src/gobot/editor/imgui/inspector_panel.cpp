@@ -24,10 +24,6 @@ InspectorPanel::InspectorPanel() {
     AddChild(editor_inspectors_.at(current_inspector_index_));
 }
 
-InspectorPanel::~InspectorPanel() {
-    LOG_ERROR("111111111111111111111");
-}
-
 void InspectorPanel::OnImGuiContent() {
     ImGui::Begin(GetName().toStdString().c_str());
 

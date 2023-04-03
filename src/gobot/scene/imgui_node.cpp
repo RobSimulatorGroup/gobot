@@ -80,6 +80,7 @@ bool ImGuiNode::Begin() {
 
 void ImGuiNode::End() {
     ImGui::PopStyleVar(imgui_style_var_stack_.size());
+    ImGui::PopStyleColor(imgui_style_color_stack_.size());
 }
 
 
