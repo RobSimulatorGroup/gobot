@@ -11,6 +11,8 @@
 #include "gobot/core/rid.h"
 #include "gobot/core/math/geometry.hpp"
 
+//#include <dart/dart.hpp>
+
 namespace gobot {
 
 class PhysicsServer3D : public Object {
@@ -27,17 +29,20 @@ public:
 //        Capsule,
 //        ConvexPolygon,
 //        HeightMap,
+        Custom,
     };
 
     RID ShapeCreate(ShapeType shape);
 
     virtual RID BoxShapeCreate() = 0;
-    // todo: virtual RID ...ShapeCreate() = 0
 
-    virtual ShapeType ShapeGetType(RID shape) = 0;
+    virtual void ShapeSetData(RID shape, const Variant &data) = 0;
 
-    // todo: Space API
-    // todo: Area API
+    [[nodiscard]] virtual ShapeType ShapeGetType(RID shape) const = 0;
+    [[nodiscard]] virtual Variant ShapeGetData(RID shape) const = 0;
+
+    /***** Space API *****/
+    /***** Area API *****/
 
     /* BODY API */
     enum class BodyMode {
@@ -46,46 +51,46 @@ public:
         Rigid,
     };
 
-    virtual RID BodyCreate() = 0;
+    // todo: virtual RID BodyCreate() = 0;
 
-    virtual void BodySetMode(RID body, BodyMode mode) = 0;
-    virtual BodyMode BodyGetMode(RID body) = 0;
+    // todo: virtual void BodySetMode(RID body, BodyMode mode) = 0;
+    // todo: virtual BodyMode BodyGetMode(RID body) = 0;
 
-    virtual void BodyAddShape(RID body, RID shape, const Affine3 &tfm = Affine3::Identity(), bool disabled = false) = 0;
-    virtual void BodySetShape(RID body, std::size_t shape_idx, RID shape) = 0;
-    virtual void BodySetShapeTransform(RID body, std::size_t shape_idx, const Affine3 &tfm) = 0;
+    // todo: virtual void BodyAddShape(RID body, RID shape, const Affine3 &tfm = Affine3::Identity(), bool disabled = false) = 0;
+    // todo: virtual void BodySetShape(RID body, std::size_t shape_idx, RID shape) = 0;
+    // todo: virtual void BodySetShapeTransform(RID body, std::size_t shape_idx, const Affine3 &tfm) = 0;
 
-    virtual std::size_t BodyGetShapeCount(RID body) const = 0;
-    virtual RID BodyGetShape(RID body, std::size_t shape_idx) const = 0;
-    virtual Affine3 BodyGetShapeTransform(RID body, std::size_t shape_idx) const = 0;
+    // todo: virtual std::size_t BodyGetShapeCount(RID body) const = 0;
+    // todo: virtual RID BodyGetShape(RID body, std::size_t shape_idx) const = 0;
+    // todo: virtual Affine3 BodyGetShapeTransform(RID body, std::size_t shape_idx) const = 0;
 
-    virtual void BodyRemoveShape(RID body, std::size_t shape_idx) = 0;
-    virtual void BodyClearShapes(RID body) = 0;
+    // todo: virtual void BodyRemoveShape(RID body, std::size_t shape_idx) = 0;
+    // todo: virtual void BodyClearShapes(RID body) = 0;
 
     /* COMMON BODY VARS */
-    enum class BodyParameter {
-        Mass,
-        Inertia,
-        CenterOfMass,
-        LinearDamp,
-        AngularDamp,
-        Friction,
-        Restitution,
-    };
+//    enum class BodyParameter {
+//        Mass,
+//        Inertia,
+//        CenterOfMass,
+//        LinearDamp,
+//        AngularDamp,
+//        Friction,
+//        Restitution,
+//    };
 
-    virtual void BodySetParam(RID body, BodyParameter param, const Variant &value) = 0;
-    virtual Variant BodyGetParam(RID body, BodyParameter param) const = 0;
+//    virtual void BodySetParam(RID body, BodyParameter param, const Variant &value) = 0;
+//    virtual Variant BodyGetParam(RID body, BodyParameter param) const = 0;
 
-    // todo: MotionParameters
-    // todo: MotionCollision
-    // todo: MotionResult
+    /***** MotionParameters *****/
+    /***** MotionCollision *****/
+    /***** MotionResult *****/
 
     /* JOINT API */
-    enum class JointType {
-        Revolute,
-        Prismatic,
-        Universal,
-    };
+//    enum class JointType {
+//        Revolute,
+//        Prismatic,
+//        Universal,
+//    };
 
     // todo: virtual RID JointCreate() = 0;
 
@@ -93,17 +98,28 @@ public:
 
     // todo: virtual JointType JointGetType(RID joint) = 0;
 
-    enum class RevoluteJointParam {
-        UpperLimit,
-        LowerLimit,
-        DampingLimit,
-        RestitutionLimit,
-        Damping,
-        Restitution,
-    };
+//    enum class RevoluteJointParam {
+//        UpperLimit,
+//        LowerLimit,
+//        DampingLimit,
+//        RestitutionLimit,
+//        Damping,
+//        Restitution,
+//    };
 
     // todo: JointMakeRevolute
     // todo: Set/GetParam
+
+    /* MISC */
+    virtual void Free(RID rid) = 0;
+
+    // todo: virtual void SetActive(bool active) = 0;
+    // todo: virtual void Init() = 0;
+    // todo: virtual void Step() = 0;
+    // todo: virtual void Sync() = 0;
+    // todo: virtual void FlushQueries() = 0;
+    // todo: virtual void EndSync() = 0;
+    // todo: virtual void Finish() = 0;
 
 protected:
 

@@ -12,7 +12,7 @@ namespace gobot {
 RID PhysicsServer3D::ShapeCreate(ShapeType shape) {
     switch (shape) {
         case ShapeType::Box:
-//            return ShapeBoxCreate
+            return BoxShapeCreate();
         default:
             return {};
     }
