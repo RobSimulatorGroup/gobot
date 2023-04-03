@@ -38,7 +38,7 @@ public:
         return property_data_model_->GetValue().template convert(data_);
     }
 
-    virtual void OnImGui() {
+    virtual void OnImGuiContent() {
         if (ImGuiUtilities::BeginPropertyGrid(property_data_model_->GetPropertyName().toLocal8Bit().data(),
                                               property_data_model_->GetPropertyInfo().tool_tip.toLocal8Bit().data())) {
             // TODO(wqq): Do we need load every time?

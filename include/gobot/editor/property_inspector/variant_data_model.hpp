@@ -24,8 +24,8 @@ enum class DataModelType {
 
 class VariantDataModel {
 public:
-    explicit VariantDataModel(VariantCache& variant_cache)
-        : variant_cache_(variant_cache)
+    explicit VariantDataModel(VariantDataModel* parent = nullptr)
+        : parent_(parent)
     {
     }
 
@@ -33,16 +33,16 @@ public:
 
     [[nodiscard]] virtual const Type& GetValueType() const = 0;
 
-    [[nodiscard]] const Type& GetHolderType() const { return variant_cache_.type; }
+    VariantDataModel* GetParent() { return parent_; }
 
 protected:
 
-    VariantCache& variant_cache_;
+    VariantDataModel* parent_;
 };
 
 class PropertyDataModel : public VariantDataModel {
 public:
-    PropertyDataModel(VariantCache& variant, const Property& property);
+    PropertyDataModel(VariantCache& holder, const Property& property, VariantDataModel* parent = nullptr);
 
     [[nodiscard]] DataModelType GetDataModelType() const override { return DataModelType::Property; };
 
@@ -73,14 +73,15 @@ private:
         }
     };
 
-    Property property_;
+    VariantCache& holder_;
+    const Property& property_;
     PropertyCache property_cache_;
 };
 
 
 class SequenceContainerDataModel : public VariantDataModel {
 public:
-    explicit SequenceContainerDataModel(VariantCache& variant);
+    explicit SequenceContainerDataModel(Variant& variant_array, VariantDataModel* parent);
 
     [[nodiscard]] DataModelType GetDataModelType() const override { return DataModelType::SequenceContainer; };
 
@@ -94,10 +95,12 @@ public:
 
 private:
     struct SequenceContainerCache {
+        Variant& array;
         VariantListView variant_list_view;
         Type value_type;
-        explicit SequenceContainerCache(const VariantListView& view)
-            : variant_list_view(view),
+        explicit SequenceContainerCache(Variant& variant_array)
+            : array(variant_array),
+              variant_list_view(variant_array.create_sequential_view()),
               value_type(variant_list_view.get_value_type()) {}
     };
 
@@ -107,7 +110,7 @@ private:
 
 class AssociativeContainerDataModel : public VariantDataModel {
 public:
-    explicit AssociativeContainerDataModel(VariantCache& variant);
+    explicit AssociativeContainerDataModel(Variant& variant_map, VariantDataModel* holder);
 
     [[nodiscard]] DataModelType GetDataModelType() const override { return DataModelType::AssociativeContainer; };
 
@@ -119,12 +122,14 @@ public:
 
 private:
     struct AssociativeContainerCache {
+        Variant& map;
         VariantMapView variant_map_view;
         bool is_key_only_type;
         Type key_type;
         Type value_type;
-        explicit AssociativeContainerCache(const VariantMapView& view)
-                : variant_map_view(view),
+        explicit AssociativeContainerCache(Variant& variant_map)
+                : map(variant_map),
+                  variant_map_view(variant_map.create_associative_view()),
                   is_key_only_type(variant_map_view.is_key_only_type()),
                   key_type(variant_map_view.get_key_type()),
                   value_type(variant_map_view.get_value_type())
@@ -139,7 +144,7 @@ private:
 
 class FunctionDataModel : public VariantDataModel {
 public:
-    FunctionDataModel(VariantCache& variant, const Method& method);
+    FunctionDataModel(VariantCache& holder, const Method& method);
 
     [[nodiscard]] DataModelType GetDataModelType() const override { return DataModelType::Function; };
 
@@ -156,7 +161,8 @@ private:
         Type return_type;
     };
 
-    Method method_;
+    VariantCache& holder_;
+    const Method method_;
     MethodCache method_cache_;
 };
 

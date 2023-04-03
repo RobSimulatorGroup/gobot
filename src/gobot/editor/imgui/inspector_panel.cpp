@@ -15,16 +15,21 @@
 namespace gobot {
 
 InspectorPanel::InspectorPanel() {
-    name_ = ICON_MDI_INFORMATION " Inspector###inspector";
-    node_3d_  = Node3D::New<Node3D>();
+    SetName(ICON_MDI_INFORMATION " Inspector###inspector");
+    node_3d_ = Node3D::New<Node3D>();
     node_3d_->SetName("node3d");
     Variant variant(node_3d_);
     editor_inspectors_.emplace_back(EditorInspector::New<EditorInspector>(variant));
     current_inspector_index_ = 0;
+    AddChild(editor_inspectors_.at(current_inspector_index_));
 }
 
-void InspectorPanel::OnImGui() {
-    ImGui::Begin(name_.toStdString().c_str());
+InspectorPanel::~InspectorPanel() {
+    LOG_ERROR("111111111111111111111");
+}
+
+void InspectorPanel::OnImGuiContent() {
+    ImGui::Begin(GetName().toStdString().c_str());
 
     if (ImGui::Button(ICON_MDI_FILE_PLUS)) {
         // TODO(wqq): new
@@ -59,7 +64,7 @@ void InspectorPanel::OnImGui() {
 
 
 
-    editor_inspectors_.at(current_inspector_index_)->OnImGui();
+//    editor_inspectors_.at(current_inspector_index_)->OnImGui();
 
     ImGui::End();
 }

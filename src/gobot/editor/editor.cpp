@@ -37,11 +37,11 @@ Editor::Editor() {
     spdlog::sink_ptr sink = std::make_shared<ImGuiConsoleSinkMultiThreaded>();
     Logger::GetInstance().AddSink(sink);
 
-    panels_.emplace_back(std::make_shared<ConsolePanel>());
-    panels_.emplace_back(std::make_shared<SceneViewPanel>());
-    panels_.emplace_back(std::make_shared<SceneEditorPanel>());
-    panels_.emplace_back(std::make_shared<InspectorPanel>());
-    panels_.emplace_back(std::make_shared<ResourcePanel>());
+    AddChild(Object::New<ConsolePanel>());
+    AddChild(Object::New<SceneViewPanel>());
+    AddChild(Object::New<SceneEditorPanel>());
+    AddChild(Object::New<InspectorPanel>());
+    AddChild(Object::New<ResourcePanel>());
 }
 
 Editor::~Editor() {
@@ -57,27 +57,38 @@ Editor* Editor::GetInstance() {
 void Editor::NotificationCallBack(NotificationType notification) {
     switch (notification) {
         case NotificationType::Process: {
-            imgui_manager_->BeginFrame();
-            OnImGUI();
-            imgui_manager_->EndFrame();
+            OnImGui();
         }
     }
 }
 
 
-void Editor::OnImGUI() {
+bool Editor::Begin() {
+    imgui_manager_->BeginFrame();
+
     DrawMenuBar();
     BeginDockSpace();
 
-    for(auto& panel : panels_) {
-//                if(panel->Active())
-        panel->OnImGui();
-    }
-
-    ImGui::ShowDemoWindow(); // your drawing here
-
-    EndDockSpace();
+    return true;
 }
+
+void Editor::End() {
+    EndDockSpace();
+
+    imgui_manager_->EndFrame();
+}
+
+void Editor::OnImGuiContent() {
+    // your drawing here
+    ImGui::ShowDemoWindow();
+}
+
+//void Editor::OnImGui() {
+//    for(auto& panel : panels_) {
+////                if(panel->Active())
+//        panel->OnImGui();
+//    }
+//}
 
 void Editor::DrawMenuBar() {
     if (ImGui::BeginMainMenuBar()) {

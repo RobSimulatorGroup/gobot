@@ -11,8 +11,9 @@
 
 namespace gobot {
 
-PropertyDataModel::PropertyDataModel(VariantCache& variant, const Property& property)
-    : VariantDataModel(variant),
+PropertyDataModel::PropertyDataModel(VariantCache& holder, const Property& property, VariantDataModel* parent)
+    : VariantDataModel(parent),
+      holder_(holder),
       property_(property),
       property_cache_(property_.get_type(),
                       property_.get_name().data(),
@@ -38,18 +39,18 @@ const PropertyInfo& PropertyDataModel::GetPropertyInfo() const {
 }
 
 bool PropertyDataModel::SetValue(Argument argument) {
-    return property_.set_value(variant_cache_.instance, argument);
+    return property_.set_value(holder_.instance, std::move(argument));
 }
 
 Variant PropertyDataModel::GetValue() const {
-    return property_.get_value(variant_cache_.instance);
+    return property_.get_value(holder_.instance);
 }
 
 ///////////////////////////////////////////////////////////////////////////////////
 
-SequenceContainerDataModel::SequenceContainerDataModel(VariantCache& variant)
-    : VariantDataModel(variant),
-      sc_cache_(variant_cache_.variant.create_sequential_view())
+SequenceContainerDataModel::SequenceContainerDataModel(Variant& variant_array, VariantDataModel* parent)
+    : VariantDataModel(parent),
+      sc_cache_(variant_array)
 {
 }
 
@@ -71,9 +72,9 @@ void SequenceContainerDataModel::SetValue(std::size_t index, Argument argument) 
 
 ///////////////////////////////////////////////////////////////////////////////////
 
-AssociativeContainerDataModel::AssociativeContainerDataModel(VariantCache& variant)
-    : VariantDataModel(variant),
-      ac_cache_(variant_cache_.variant.create_associative_view())
+AssociativeContainerDataModel::AssociativeContainerDataModel(Variant& variant_map, VariantDataModel* holder)
+    : VariantDataModel(holder),
+      ac_cache_(variant_map)
 {
 }
 
@@ -91,8 +92,9 @@ const Type& AssociativeContainerDataModel::GetKeyType() const {
 
 ///////////////////////////////////////////////////////////////////////////////////
 
-FunctionDataModel::FunctionDataModel(VariantCache& variant, const Method& method)
-    : VariantDataModel(variant),
+FunctionDataModel::FunctionDataModel(VariantCache& holder, const Method& method)
+    : VariantDataModel(),
+      holder_(holder),
       method_(method),
       method_cache_{method.get_name().data(),
                     method.get_declaring_type(),
@@ -109,7 +111,7 @@ const String& FunctionDataModel::GetMethodName() const {
 }
 
 void FunctionDataModel::DoMethodCall() {
-    method_.invoke(variant_cache_.instance);
+    method_.invoke(holder_.instance);
 }
 
 }

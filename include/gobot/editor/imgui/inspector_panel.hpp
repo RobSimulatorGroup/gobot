@@ -7,22 +7,26 @@
 
 #pragma once
 
-#include "gobot/editor/imgui/editor_panel.hpp"
+#include "gobot/scene/imgui_window.hpp"
 
 namespace gobot {
 
 class Node3D;
 class EditorInspector;
 
-class InspectorPanel : public EditorPanel {
+class InspectorPanel : public ImGuiWindow {
+    GOBCLASS(InspectorPanel, ImGuiWindow)
 public:
     InspectorPanel();
 
-    void OnImGui() override;
+    virtual ~InspectorPanel();
+
+    void OnImGuiContent() override;
 
 private:
     Node3D* node_3d_{nullptr};
 
+    // edit history of inspector
     std::vector<EditorInspector*> editor_inspectors_{};
     int current_inspector_index_{-1};
 };

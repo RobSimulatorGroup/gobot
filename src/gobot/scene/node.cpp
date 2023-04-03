@@ -69,7 +69,7 @@ void Node::MoveChildNotify(Node *child) {
 
 }
 
-String Node::GetName() const {
+const String& Node::GetName() const {
     return name_;
 }
 

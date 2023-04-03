@@ -15,7 +15,7 @@ namespace gobot {
 
 FileBrowserPanel::FileBrowserPanel()
 {
-    name_ = "FileBrowser";
+    SetName("FileBrowser");
 
     file_browser_ = new ImGui::FileBrowser(ImGuiFileBrowserFlags_CreateNewDir | ImGuiFileBrowserFlags_EnterNewFilename | ImGuiFileBrowserFlags_HideHiddenFiles);
 
@@ -29,7 +29,7 @@ FileBrowserPanel::~FileBrowserPanel()
     delete file_browser_;
 }
 
-void FileBrowserPanel::OnImGui()
+void FileBrowserPanel::OnImGuiContent()
 {
     file_browser_->Display();
 
@@ -78,7 +78,7 @@ void FileBrowserPanel::ClearFileTypeFilters()
     file_browser_->ClearFilters();
 }
 
-String FileBrowserPanel::GetPath() const
+String FileBrowserPanel::GetFilePath() const
 {
     return file_browser_->GetPath().c_str();
 }

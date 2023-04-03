@@ -9,13 +9,14 @@
 
 #include "gobot/core/object.hpp"
 #include "gobot/scene/camera_3d.hpp"
+#include "gobot/scene/imgui_node.hpp"
 
 namespace gobot {
 
 class Camera3D;
 
-class GOBOT_EXPORT Node3DEditor : public Node {
-    GOBCLASS(Node3DEditor, Node)
+class GOBOT_EXPORT Node3DEditor : public ImGuiNode {
+    GOBCLASS(Node3DEditor, ImGuiNode)
 public:
     Node3DEditor();
 
@@ -27,7 +28,7 @@ public:
 
     void UpdateCamera(double interp_delta);
 
-    void OnImGuizmo();
+    void OnImGui();
 
     FORCE_INLINE Camera3D* GetCamera3D() { return camera3d_; }
 

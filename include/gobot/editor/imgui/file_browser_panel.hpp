@@ -7,7 +7,7 @@
 
 #pragma once
 
-#include "gobot/editor/imgui/editor_panel.hpp"
+#include "gobot/scene/imgui_window.hpp"
 
 namespace ImGui {
 class FileBrowser;
@@ -15,8 +15,8 @@ class FileBrowser;
 
 namespace gobot {
 
-class FileBrowserPanel : public EditorPanel {
-    GOBCLASS(FileBrowserPanel, EditorPanel)
+class FileBrowserPanel : public ImGuiWindow {
+    GOBCLASS(FileBrowserPanel, ImGuiWindow)
 public:
 public:
     FileBrowserPanel();
@@ -25,7 +25,7 @@ public:
 
     void Open();
 
-    void OnImGui() override;
+    void OnImGuiContent() override;
 
     void SetCurrentPath(const String& path);
 
@@ -39,7 +39,7 @@ public:
 
     void ClearFileTypeFilters();
 
-    String GetPath() const;
+    String GetFilePath() const;
 
 private:
     std::function<void(const String&)> callback_;

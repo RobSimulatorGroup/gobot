@@ -10,6 +10,8 @@
 
 #include "gobot/editor/property_inspector/editor_inspector.hpp"
 #include "gobot/editor/property_inspector/variant_cache.hpp"
+#include "gobot/editor/property_inspector/editor_property.hpp"
+#include "gobot/scene/imgui_node.hpp"
 #include "gobot/core/ref_counted.hpp"
 
 namespace gobot {
@@ -17,17 +19,27 @@ namespace gobot {
 class EditorInspectorPlugin : public RefCounted {
     GOBCLASS(EditorInspectorPlugin, RefCounted)
 public:
-    virtual bool CanHandle(Instance instance) = 0;
+    virtual bool CanHandle(VariantCache& variant_cache) = 0;
 
-    virtual bool ParseProperty(Instance instance) = 0;
+    virtual bool ParseProperty(VariantCache& variant_cache, PropertyDataModel* parent_data) = 0;
 
+//    void AddPropertyEditorRoot(std::unique_ptr<EditorProperty> root) {
+//        if (root == nullptr) {
+//            root = std::make_unique<AddEditorNode>(std::move(editor_property));
+//        } else {
+//
+//        }
+//    }
+
+private:
+    std::unique_ptr<EditorProperty> root{nullptr};
 };
 
 
 class PropertyDataModel;
 
-class EditorInspector : public Object {
-    GOBCLASS(EditorInspector, Object)
+class EditorInspector : public ImGuiNode {
+    GOBCLASS(EditorInspector, ImGuiNode)
 public:
     EditorInspector(Variant& variant);
 
@@ -39,7 +51,9 @@ public:
 
     static void CleanupPlugins();
 
-    void OnImGui();
+    bool GeneraPropertyInspector();
+
+    void OnImGuiContent();
 
 private:
     enum {
@@ -55,12 +69,16 @@ private:
 
 
 /////////////////////////////////////////////////////////////////////////////
-class EditorInspectorDefaultPlugin : public EditorInspectorPlugin {
-GOBCLASS(EditorInspectorDefaultPlugin, EditorInspectorPlugin);
-public:
-    bool CanHandle(Instance instance) override;
 
-    bool ParseProperty(Instance instance) override;
+
+class EditorInspectorDefaultPlugin : public EditorInspectorPlugin {
+    GOBCLASS(EditorInspectorDefaultPlugin, EditorInspectorPlugin);
+public:
+    bool CanHandle(VariantCache& variant_cache) override;
+
+//    bool ParseProperty(std::unique_ptr<VariantDataModel> data_model) override;
+
+    static std::unique_ptr<EditorProperty> GetEditorForProperty(VariantCache& variant_cache);
 
 };
 

@@ -13,17 +13,17 @@
 namespace gobot {
 
 struct VariantCache {
-    Variant& variant;
+    Variant variant;
     Instance instance;
     Type type;
     Object* object{nullptr};
 
-    explicit VariantCache(Variant& p_variant)
+    explicit VariantCache(Variant p_variant, Instance p_instance)
             : variant(p_variant),
-              instance(Instance(p_variant).get_type().get_raw_type().is_wrapper() ?
-                                           Instance(p_variant).get_wrapped_instance() :
-                                           Instance(p_variant)),
-              type(instance.get_type().get_raw_type()),
+              instance(p_instance.get_type().get_raw_type().is_wrapper() ?
+                       p_instance.get_wrapped_instance() :
+                       p_instance),
+              type(instance.get_derived_type().get_raw_type()),
               object(instance.try_convert<Object>())
     {
     }

@@ -7,15 +7,13 @@
 
 #pragma once
 
-#include "gobot/editor/imgui/editor_panel.hpp"
+#include "gobot/scene/imgui_window.hpp"
 
 namespace gobot {
 
-class SceneEditorPanel : public EditorPanel {
+class SceneEditorPanel : public ImGuiWindow {
 public:
     SceneEditorPanel();
-
-    void OnImGui() override;
 
 };
 

@@ -10,6 +10,7 @@
 #include "gobot/error_macros.hpp"
 #include "gobot/editor/property_inspector/editor_property_primitives.hpp"
 #include "gobot/editor/imgui/type_icons.hpp"
+#include "gobot/type_categroy.hpp"
 #include "imgui_stdlib.h"
 #include "imgui_extension/icon_fonts/icons_material_design_icons.h"
 #include "imgui.h"
@@ -23,7 +24,7 @@ Ref<EditorInspectorPlugin> EditorInspector::s_inspector_plugins[MAX_PLUGINS];
 int EditorInspector::s_inspector_plugin_count = 0;
 
 EditorInspector::EditorInspector(Variant& variant)
-    : cache_(variant)
+    : cache_(variant, variant)
 {
     // check variant has name
     auto name_property = cache_.type.get_property("name");
@@ -76,17 +77,27 @@ void EditorInspector::CleanupPlugins() {
     s_inspector_plugin_count = 0;
 }
 
-void EditorInspector::OnImGui() {
+bool EditorInspector::GeneraPropertyInspector() {
+    if (s_inspector_plugin_count == 0) {
+        return false;
+    }
+
+    return false;
+}
+
+void EditorInspector::OnImGuiContent() {
     ImGui::TextUnformatted(GetTypeIcon(cache_.type));
+
 
     if (property_name_) {
         ImGui::SameLine();
 
-        auto name_data = property_name_->GetValue().get_value<String>();
-        auto str = name_data.toStdString();
+//        auto str = property_name_->GetValue().to_string();
+//        LOG_ERROR("1111111111 {}", str);
+        std::string aaa = "111";
         ImGui::SetNextItemWidth(ImGui::GetWindowWidth() - 60);
-        if (ImGui::InputText(fmt::format("##{}", property_name_->GetPropertyName()).c_str(), &str)) {
-            property_name_->SetValue(String::fromStdString(str));
+        if (ImGui::InputText(fmt::format("##{}", property_name_->GetPropertyName()).c_str(), &aaa)) {
+            property_name_->SetValue(String::fromStdString(aaa));
         }
 
         ImGui::SameLine(ImGui::GetWindowWidth() - 30);
@@ -118,7 +129,102 @@ void EditorInspector::OnImGui() {
     static ImGuiTextFilter filter;
     filter.Draw(ICON_MDI_MAGNIFY "Filter", ImGui::GetWindowWidth() - 60);
 
+
 }
 
+
+//////////////////////////////////////////////////////////////////////////////
+
+bool EditorInspectorDefaultPlugin::CanHandle(VariantCache& variant_cache) {
+    return true; // Can handle everything.
+}
+
+//bool EditorInspectorDefaultPlugin::ParseProperty(VariantCache& variant_cache, PropertyDataModel* parent_data) {
+//    auto editor = GetEditorForProperty(std::move(data_model));
+//    if (editor) {
+//        AddPropertyEditor(std::move(editor));
+//    }
+//    return false;
+//}
+//
+//std::unique_ptr<EditorProperty> EditorInspectorDefaultPlugin::GetEditorForProperty(VariantCache& variant_cache,
+//                                                                                   const Type& type) {
+//    switch (GetTypeCategory(variant_cache.type)) {
+//        case TypeCategory::Bool: {
+//            auto* editor = new EditorPropertyBool(std::move(data_model));
+//            return editor;
+//        } break;
+//        case TypeCategory::UInt8:
+//            break;
+//        case TypeCategory::UInt16:
+//            break;
+//        case TypeCategory::UInt32:
+//            break;
+//        case TypeCategory::UInt64:
+//            break;
+//        case TypeCategory::Int8:
+//            break;
+//        case TypeCategory::Int16:
+//            break;
+//        case TypeCategory::Int32:
+//            break;
+//        case TypeCategory::Int64:
+//            break;
+//        case TypeCategory::Float:
+//            break;
+//        case TypeCategory::Double:
+//            break;
+//        case TypeCategory::Enum:
+//            break;
+//        case TypeCategory::String:
+//            break;
+//        case TypeCategory::NodePath:
+//            break;
+//        case TypeCategory::Color:
+//            break;
+//        case TypeCategory::Vector2f:
+//            break;
+//        case TypeCategory::Vector2d:
+//            break;
+//        case TypeCategory::Vector3f:
+//            break;
+//        case TypeCategory::Vector3d:
+//            break;
+//        case TypeCategory::Vector4f:
+//            break;
+//        case TypeCategory::Vector4d:
+//            break;
+//        case TypeCategory::Quaternionf:
+//            break;
+//        case TypeCategory::Quaterniond:
+//            break;
+//        case TypeCategory::VectorXf:
+//            break;
+//        case TypeCategory::VectorXd:
+//            break;
+//        case TypeCategory::Matrix2f:
+//            break;
+//        case TypeCategory::Matrix2d:
+//            break;
+//        case TypeCategory::Matrix3f:
+//            break;
+//        case TypeCategory::Matrix3d:
+//            break;
+//        case TypeCategory::MatrixXf:
+//            break;
+//        case TypeCategory::MatrixXd:
+//            break;
+//        case TypeCategory::Ref:
+//            break;
+//        case TypeCategory::Array:
+//            break;
+//        case TypeCategory::Dictionary:
+//            break;
+//        case TypeCategory::Compound:
+//            break;
+//        case TypeCategory::Unsupported:
+//            break;
+//    }
+//}
 
 }

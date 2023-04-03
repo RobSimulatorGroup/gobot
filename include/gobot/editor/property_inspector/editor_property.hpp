@@ -7,26 +7,23 @@
 
 #pragma once
 
-#include "gobot/core/object.hpp"
+#include "gobot/scene/imgui_node.hpp"
 #include "gobot/core/types.hpp"
 #include "gobot/editor/property_inspector/variant_data_model.hpp"
 
+
 namespace gobot {
 
-class EditorProperty {
+class EditorProperty : public ImGuiNode {
 public:
-    EditorProperty(std::unique_ptr<VariantDataModel> variant_data_model, bool using_grid = true)
+    explicit EditorProperty(std::unique_ptr<VariantDataModel> variant_data_model, bool using_grid = true)
       : data_model_(std::move(variant_data_model)),
         using_grid_(using_grid)
     {
     }
 
-    virtual void OnImGui() = 0;
-
-    virtual ~EditorProperty() {}
-
 protected:
-    std::unique_ptr<VariantDataModel> data_model_;
+    std::unique_ptr<VariantDataModel> data_model_{nullptr};
     bool using_grid_;
 };
 

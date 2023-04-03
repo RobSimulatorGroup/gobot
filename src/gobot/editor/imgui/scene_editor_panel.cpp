@@ -12,14 +12,7 @@
 namespace gobot {
 
 SceneEditorPanel::SceneEditorPanel() {
-    name_ = ICON_MDI_FILE_TREE " SceneTree###scene_editor";
-}
-
-void SceneEditorPanel::OnImGui() {
-
-    ImGui::Begin(name_.toStdString().c_str());
-    ImGui::End();
-
+    SetName(ICON_MDI_FILE_TREE " SceneTree###scene_editor");
 }
 
 

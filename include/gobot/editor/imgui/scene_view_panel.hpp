@@ -7,24 +7,24 @@
 
 #pragma once
 
-#include "gobot/editor/imgui/editor_panel.hpp"
 #include "gobot/rendering/render_types.hpp"
 #include "gobot/scene/resources/texture.hpp"
 #include "gobot/rendering/scene_renderer.hpp"
+#include "gobot/scene/imgui_window.hpp"
 
 namespace gobot {
 
 class SceneTree;
 class SceneRenderer;
 
-class SceneViewPanel : public EditorPanel
-{
+class SceneViewPanel : public ImGuiWindow {
+    GOBCLASS(SceneViewPanel, ImGuiWindow)
 public:
     SceneViewPanel();
 
     ~SceneViewPanel() = default;
 
-    void OnImGui() override;
+    void OnImGuiContent() override;
 
     void ToolBar();
 
@@ -35,6 +35,7 @@ public:
     std::uint32_t height_{0};
 
     RenderRID view_rid_{};
+
 };
 
 

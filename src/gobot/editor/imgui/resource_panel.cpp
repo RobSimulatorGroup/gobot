@@ -12,12 +12,7 @@
 namespace gobot {
 
 ResourcePanel::ResourcePanel() {
-    name_ = ICON_MDI_FOLDER_STAR " Resources###resources";
-}
-
-void ResourcePanel::OnImGui() {
-    ImGui::Begin(name_.toStdString().c_str());
-    ImGui::End();
+    SetName(ICON_MDI_FOLDER_STAR " Resources###resources");
 }
 
 }
