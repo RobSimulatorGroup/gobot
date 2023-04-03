@@ -24,7 +24,7 @@ Ref<EditorInspectorPlugin> EditorInspector::s_inspector_plugins[MAX_PLUGINS];
 int EditorInspector::s_inspector_plugin_count = 0;
 
 EditorInspector::EditorInspector(Variant& variant)
-    : cache_(variant, variant)
+    : cache_(variant)
 {
     // check variant has name
     auto name_property = cache_.type.get_property("name");
@@ -92,12 +92,10 @@ void EditorInspector::OnImGuiContent() {
     if (property_name_) {
         ImGui::SameLine();
 
-//        auto str = property_name_->GetValue().to_string();
-//        LOG_ERROR("1111111111 {}", str);
-        std::string aaa = "111";
+        auto str = property_name_->GetValue().to_string();
         ImGui::SetNextItemWidth(ImGui::GetWindowWidth() - 60);
-        if (ImGui::InputText(fmt::format("##{}", property_name_->GetPropertyName()).c_str(), &aaa)) {
-            property_name_->SetValue(String::fromStdString(aaa));
+        if (ImGui::InputText(fmt::format("##{}", property_name_->GetPropertyName()).c_str(), &str)) {
+            property_name_->SetValue(String::fromStdString(str));
         }
 
         ImGui::SameLine(ImGui::GetWindowWidth() - 30);

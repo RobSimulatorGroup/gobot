@@ -1,4 +1,4 @@
-/* The gobot is a robot simulation platform. 
+/* The gobot is a robot simulation platform.
  * Copyright(c) 2021-2023, RobSimulatorGroup, Qiqi Wu<1258552199@qq.com>.
  * Everyone is permitted to copy and distribute verbatim copies of this license document, but changing it is not allowed.
  * This version of the GNU Lesser General Public License incorporates the terms and conditions of version 3 of the GNU General Public License.
@@ -11,14 +11,13 @@
 
 namespace gobot {
 
-PropertyDataModel::PropertyDataModel(VariantCache& holder, const Property& property, VariantDataModel* parent)
-    : VariantDataModel(parent),
-      holder_(holder),
-      property_(property),
-      property_cache_(property_.get_type(),
-                      property_.get_name().data(),
-                      property_.is_readonly(),
-                      property_.get_metadata(PROPERTY_INFO_KEY))
+PropertyDataModel::PropertyDataModel(VariantCache& variant, const Property& property)
+        : VariantDataModel(variant),
+          property_(property),
+          property_cache_(property_.get_type(),
+                          property_.get_name().data(),
+                          property_.is_readonly(),
+                          property_.get_metadata(PROPERTY_INFO_KEY))
 {
 }
 
@@ -31,7 +30,7 @@ const String& PropertyDataModel::GetPropertyName() const {
 }
 
 bool PropertyDataModel::IsPropertyReadOnly() const {
-   return property_cache_.property_readonly;
+    return property_cache_.property_readonly;
 }
 
 const PropertyInfo& PropertyDataModel::GetPropertyInfo() const {
@@ -39,18 +38,18 @@ const PropertyInfo& PropertyDataModel::GetPropertyInfo() const {
 }
 
 bool PropertyDataModel::SetValue(Argument argument) {
-    return property_.set_value(holder_.instance, std::move(argument));
+    return property_.set_value(variant_cache_.instance, argument);
 }
 
 Variant PropertyDataModel::GetValue() const {
-    return property_.get_value(holder_.instance);
+    return property_.get_value(variant_cache_.instance);
 }
 
 ///////////////////////////////////////////////////////////////////////////////////
 
-SequenceContainerDataModel::SequenceContainerDataModel(Variant& variant_array, VariantDataModel* parent)
-    : VariantDataModel(parent),
-      sc_cache_(variant_array)
+SequenceContainerDataModel::SequenceContainerDataModel(VariantCache& variant)
+        : VariantDataModel(variant),
+          sc_cache_(variant_cache_.variant.create_sequential_view())
 {
 }
 
@@ -72,9 +71,9 @@ void SequenceContainerDataModel::SetValue(std::size_t index, Argument argument) 
 
 ///////////////////////////////////////////////////////////////////////////////////
 
-AssociativeContainerDataModel::AssociativeContainerDataModel(Variant& variant_map, VariantDataModel* holder)
-    : VariantDataModel(holder),
-      ac_cache_(variant_map)
+AssociativeContainerDataModel::AssociativeContainerDataModel(VariantCache& variant)
+        : VariantDataModel(variant),
+          ac_cache_(variant_cache_.variant.create_associative_view())
 {
 }
 
@@ -92,13 +91,12 @@ const Type& AssociativeContainerDataModel::GetKeyType() const {
 
 ///////////////////////////////////////////////////////////////////////////////////
 
-FunctionDataModel::FunctionDataModel(VariantCache& holder, const Method& method)
-    : VariantDataModel(),
-      holder_(holder),
-      method_(method),
-      method_cache_{method.get_name().data(),
-                    method.get_declaring_type(),
-                    method.get_return_type()}
+FunctionDataModel::FunctionDataModel(VariantCache& variant, const Method& method)
+        : VariantDataModel(variant),
+          method_(method),
+          method_cache_{method.get_name().data(),
+                        method.get_declaring_type(),
+                        method.get_return_type()}
 {
 }
 
@@ -111,7 +109,7 @@ const String& FunctionDataModel::GetMethodName() const {
 }
 
 void FunctionDataModel::DoMethodCall() {
-    method_.invoke(holder_.instance);
+    method_.invoke(variant_cache_.instance);
 }
 
 }
