@@ -50,6 +50,17 @@ private:
 class EditorPropertyFlags : public EditorBuiltInProperty {
     GOBCLASS(EditorPropertyFlags, EditorBuiltInProperty)
 public:
+    using EditorBuiltInProperty::EditorBuiltInProperty;
+
+    void OnImGuiContent() override;
+
+};
+
+
+class EditorPropertyEnum : public EditorBuiltInProperty {
+    GOBCLASS(EditorPropertyEnum, EditorBuiltInProperty)
+public:
+    using EditorBuiltInProperty::EditorBuiltInProperty;
 
     void OnImGuiContent() override;
 
@@ -82,8 +93,6 @@ public:
 
     void OnImGuiContent() override;
 };
-
-
 
 
 class EditorPropertyNodePath : public EditorBuiltInProperty {

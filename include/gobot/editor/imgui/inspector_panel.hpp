@@ -13,7 +13,7 @@ class ImGuiTextFilter;
 
 namespace gobot {
 
-class Node3D;
+class TestPropertyNode;
 class EditorInspector;
 
 class InspectorPanel : public ImGuiWindow {
@@ -26,7 +26,7 @@ public:
     void OnImGuiContent() override;
 
 private:
-    Node3D* node_3d_{nullptr};
+    TestPropertyNode* test_node_{nullptr};
 
     ImGuiTextFilter* filter_;
 

@@ -9,7 +9,7 @@
 #include "gobot/editor/property_inspector/editor_inspector.hpp"
 #include "gobot/editor/imgui/type_icons.hpp"
 #include "imgui_extension/icon_fonts/icons_material_design_icons.h"
-#include "gobot/scene/node_3d.hpp"
+#include "gobot/scene/test_property_node.hpp"
 
 #include "imgui.h"
 #include "imgui_stdlib.h"
@@ -18,9 +18,9 @@ namespace gobot {
 
 InspectorPanel::InspectorPanel() {
     SetName(ICON_MDI_INFORMATION " Inspector###inspector");
-    node_3d_ = Node3D::New<Node3D>();
-    node_3d_->SetName("node3d");
-    Variant variant(node_3d_);
+    test_node_ = Object::New<TestPropertyNode>();
+    test_node_->SetName("test");
+    Variant variant(test_node_);
     editor_inspectors_.emplace_back(EditorInspector::New<EditorInspector>(variant));
     current_inspector_index_ = 0;
     AddChild(editor_inspectors_.at(current_inspector_index_));

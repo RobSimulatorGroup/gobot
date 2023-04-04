@@ -7,7 +7,7 @@
 
 #include "gobot/editor/property_inspector/editor_inspector.hpp"
 #include "gobot/editor/property_inspector/editor_property.hpp"
-#include "gobot/scene/imgui_node_callback.hpp"
+#include "gobot/scene/imgui_custom_node.hpp"
 #include "gobot/error_macros.hpp"
 #include "gobot/editor/property_inspector/editor_property_primitives.hpp"
 #include "gobot/editor/imgui/type_icons.hpp"

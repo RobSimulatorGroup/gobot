@@ -7,6 +7,8 @@
 
 #pragma once
 
+#include <utility>
+
 #include "gobot/scene/imgui_node.hpp"
 
 namespace gobot {
@@ -14,23 +16,23 @@ namespace gobot {
 class ImGuiCustomNode : public ImGuiNode {
     GOBCLASS(ImGuiCustomNode, ImGuiNode)
 public:
-    ImGuiCustomNode(const std::function<void(void)>& callback)
-        : callback_(callback)
+    ImGuiCustomNode(std::function<void(void)> callback)
+        : content_callback_(std::move(callback))
     {
     }
 
-    void SetCallBack(const std::function<void(void)>& callback) {
-        callback_ = callback;
+    void SetCallBack(std::function<void(void)> callback) {
+        content_callback_ = std::move(callback);
     }
 
     void OnImGuiContent() override {
-        if (callback_) {
-            callback_();
+        if (content_callback_) {
+            content_callback_();
         }
     }
 
 private:
-    std::function<void(void)> callback_{};
+    std::function<void(void)> content_callback_{};
 };
 
 

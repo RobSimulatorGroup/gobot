@@ -14,6 +14,9 @@
 
 namespace gobot {
 
+#define GetPtrImGuiID() fmt::format("##{}", fmt::ptr(this)).c_str()
+
+
 class EditorProperty : public ImGuiNode {
 public:
     explicit EditorProperty(TypeCategory type_category,

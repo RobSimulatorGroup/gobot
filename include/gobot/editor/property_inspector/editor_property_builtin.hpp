@@ -22,7 +22,6 @@ public:
           property_data_model_(dynamic_cast<PropertyDataModel*>(data_model_.get()))
     {
         CRASH_COND_MSG(property_data_model_ == nullptr, "Input data_model must be PropertyDataModel");
-
     }
 
 
