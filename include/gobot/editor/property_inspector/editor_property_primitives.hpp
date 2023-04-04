@@ -16,9 +16,35 @@ namespace gobot {
 class EditorPropertyBool : public EditorBuiltInProperty {
     GOBCLASS(EditorPropertyBool, EditorBuiltInProperty)
 public:
+    using EditorBuiltInProperty::EditorBuiltInProperty;
 
     void OnImGuiContent() override;
 
+};
+
+class EditorPropertyInteger : public EditorBuiltInProperty {
+GOBCLASS(EditorPropertyInteger, EditorBuiltInProperty)
+public:
+    using EditorBuiltInProperty::EditorBuiltInProperty;
+
+    void OnImGuiContent() override;
+
+private:
+    const float drag_speed_{0.2f};
+    bool drag_clamp_{false};
+};
+
+
+class EditorPropertyFloat : public EditorBuiltInProperty {
+GOBCLASS(EditorPropertyFloat, EditorBuiltInProperty)
+public:
+    using EditorBuiltInProperty::EditorBuiltInProperty;
+
+    void OnImGuiContent() override;
+
+private:
+    const float drag_speed_{0.005f};
+    bool drag_clamp_{false};
 };
 
 class EditorPropertyFlags : public EditorBuiltInProperty {
@@ -33,14 +59,17 @@ public:
 class EditorPropertyText : public EditorBuiltInProperty {
     GOBCLASS(EditorPropertyText, EditorBuiltInProperty)
 public:
+    using EditorBuiltInProperty::EditorBuiltInProperty;
 
     void OnImGuiContent() override;
 
 };
 
+
 class EditorPropertyMultilineText : public EditorBuiltInProperty {
     GOBCLASS(EditorPropertyMultilineText, EditorBuiltInProperty)
 public:
+    using EditorBuiltInProperty::EditorBuiltInProperty;
 
     void OnImGuiContent() override;
 
@@ -49,29 +78,35 @@ public:
 class EditorPropertyPath : public EditorBuiltInProperty {
     GOBCLASS(EditorPropertyPath, EditorBuiltInProperty)
 public:
-    void OnImGuiContent() override;
-};
-
-class EditorPropertyInteger : public EditorBuiltInProperty {
-    GOBCLASS(EditorPropertyInteger, EditorBuiltInProperty)
-public:
-    EditorPropertyInteger();
+    using EditorBuiltInProperty::EditorBuiltInProperty;
 
     void OnImGuiContent() override;
 };
 
-class EditorPropertyFloat : public EditorBuiltInProperty {
-    GOBCLASS(EditorPropertyFloat, EditorBuiltInProperty)
+
+
+
+class EditorPropertyNodePath : public EditorBuiltInProperty {
+    GOBCLASS(EditorPropertyNodePath, EditorBuiltInProperty)
 public:
-    EditorPropertyFloat();
+    using EditorBuiltInProperty::EditorBuiltInProperty;
 
     void OnImGuiContent() override;
+
 };
 
 class EditorPropertyRID : public EditorBuiltInProperty {
     GOBCLASS(EditorPropertyRID, EditorBuiltInProperty)
 public:
-    EditorPropertyRID();
+    using EditorBuiltInProperty::EditorBuiltInProperty;
+
+    void OnImGuiContent() override;
+};
+
+class EditorPropertyRenderRID : public EditorBuiltInProperty {
+    GOBCLASS(EditorPropertyRenderRID, EditorBuiltInProperty)
+public:
+    using EditorBuiltInProperty::EditorBuiltInProperty;
 
     void OnImGuiContent() override;
 };

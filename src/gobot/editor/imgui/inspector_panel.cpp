@@ -7,10 +7,12 @@
 
 #include "gobot/editor/imgui/inspector_panel.hpp"
 #include "gobot/editor/property_inspector/editor_inspector.hpp"
+#include "gobot/editor/imgui/type_icons.hpp"
 #include "imgui_extension/icon_fonts/icons_material_design_icons.h"
 #include "gobot/scene/node_3d.hpp"
 
 #include "imgui.h"
+#include "imgui_stdlib.h"
 
 namespace gobot {
 
@@ -22,11 +24,15 @@ InspectorPanel::InspectorPanel() {
     editor_inspectors_.emplace_back(EditorInspector::New<EditorInspector>(variant));
     current_inspector_index_ = 0;
     AddChild(editor_inspectors_.at(current_inspector_index_));
+
+    filter_ = new ImGuiTextFilter();
+}
+
+InspectorPanel::~InspectorPanel() {
+    delete filter_;
 }
 
 void InspectorPanel::OnImGuiContent() {
-    ImGui::Begin(GetName().toStdString().c_str());
-
     if (ImGui::Button(ICON_MDI_FILE_PLUS)) {
         // TODO(wqq): new
     }
@@ -58,11 +64,58 @@ void InspectorPanel::OnImGuiContent() {
         // TODO(wqq): select current_inspector_index_
     }
 
+    auto& cache = editor_inspectors_.at(current_inspector_index_)->GetVariantCache();
+    auto* property_name = editor_inspectors_.at(current_inspector_index_)->GetNameProperty();
+
+    ImGui::TextUnformatted(GetTypeIcon(cache.type));
 
 
-//    editor_inspectors_.at(current_inspector_index_)->OnImGui();
+    if (property_name) {
+        ImGui::SameLine();
+        auto str = property_name->GetValue().to_string();
+        ImGui::SetNextItemWidth(ImGui::GetWindowWidth() - 60);
+        if (ImGui::InputText(fmt::format("##{}", property_name->GetPropertyName()).c_str(), &str)) {
+            property_name->SetValue(String::fromStdString(str));
+        }
 
-    ImGui::End();
+        ImGui::SameLine(ImGui::GetWindowWidth() - 30);
+        if (ImGui::Button(ICON_MDI_COGS)) {
+            ImGui::OpenPopup("Inspector setting");
+        }
+        if (ImGui::BeginPopup("Inspector setting"))
+        {
+            if (ImGui::Button("Expand All")) {
+                // TODO(wqq)
+            }
+            if (ImGui::Button("Collapse All")) {
+                // TODO(wqq)
+            }
+            ImGui::Spacing();
+            ImGui::Separator();
+            ImGui::Spacing();
+            if (ImGui::Button("Copy Properties")) {
+                // TODO(wqq)
+            }
+            if (ImGui::Button("Paste Properties")) {
+                // TODO(wqq)
+            }
+
+            ImGui::EndPopup();
+        }
+    }
+
+
+    filter_->Draw("###PropertyFilter", ImGui::GetWindowWidth() - 10);
+
+    if(!filter_->IsActive()) {
+        ImGui::SameLine();
+        ImGui::SetCursorPosX(ImGui::GetFontSize() * 0.5f);
+        ImGui::TextUnformatted("Filter Properties");
+        ImGui::SameLine();
+        ImGui::SetCursorPosX(ImGui::GetWindowWidth() - 30);
+        ImGui::TextUnformatted(ICON_MDI_MAGNIFY);
+    }
+
 }
 
 }

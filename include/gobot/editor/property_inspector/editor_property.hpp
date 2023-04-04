@@ -10,19 +10,23 @@
 #include "gobot/scene/imgui_node.hpp"
 #include "gobot/core/types.hpp"
 #include "gobot/editor/property_inspector/variant_data_model.hpp"
-
+#include "gobot/type_categroy.hpp"
 
 namespace gobot {
 
 class EditorProperty : public ImGuiNode {
 public:
-    explicit EditorProperty(std::unique_ptr<VariantDataModel> variant_data_model, bool using_grid = true)
-      : data_model_(std::move(variant_data_model)),
+    explicit EditorProperty(TypeCategory type_category,
+                            std::unique_ptr<VariantDataModel> variant_data_model,
+                            bool using_grid = true)
+      : type_category_(type_category),
+        data_model_(std::move(variant_data_model)),
         using_grid_(using_grid)
     {
     }
 
 protected:
+    TypeCategory type_category_;
     std::unique_ptr<VariantDataModel> data_model_{nullptr};
     bool using_grid_;
 };

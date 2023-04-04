@@ -9,6 +9,8 @@
 
 #include "gobot/scene/imgui_window.hpp"
 
+class ImGuiTextFilter;
+
 namespace gobot {
 
 class Node3D;
@@ -19,10 +21,14 @@ class InspectorPanel : public ImGuiWindow {
 public:
     InspectorPanel();
 
+    ~InspectorPanel();
+
     void OnImGuiContent() override;
 
 private:
     Node3D* node_3d_{nullptr};
+
+    ImGuiTextFilter* filter_;
 
     // edit history of inspector
     std::vector<EditorInspector*> editor_inspectors_{};

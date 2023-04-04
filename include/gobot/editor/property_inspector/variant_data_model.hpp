@@ -29,6 +29,8 @@ public:
     {
     }
 
+    virtual ~VariantDataModel() {}
+
     [[nodiscard]] virtual DataModelType GetDataModelType() const = 0;
 
     [[nodiscard]] virtual const Type& GetValueType() const = 0;

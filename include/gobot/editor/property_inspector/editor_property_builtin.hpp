@@ -16,8 +16,9 @@ namespace gobot {
 class EditorBuiltInProperty : public EditorProperty {
     GOBCLASS(EditorBuiltInProperty, EditorProperty)
 public:
-    explicit EditorBuiltInProperty(std::unique_ptr<VariantDataModel> variant_data_model, bool using_grid = true)
-        : EditorProperty(std::move(variant_data_model), using_grid),
+    explicit EditorBuiltInProperty(TypeCategory type_category,
+                                   std::unique_ptr<VariantDataModel> variant_data_model)
+        : EditorProperty(type_category, std::move(variant_data_model)),
           property_data_model_(dynamic_cast<PropertyDataModel*>(data_model_.get()))
     {
         CRASH_COND_MSG(property_data_model_ == nullptr, "Input data_model must be PropertyDataModel");

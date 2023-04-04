@@ -689,7 +689,6 @@ GOBOT_REGISTRATION {
 
             .property_readonly("child_count", &Node::GetChildCount)
             .property_readonly("inside_tree", &Node::IsInsideTree)
-            .property_readonly("index", &Node::GetIndex)
 
             .property("name", &Node::GetName, &Node::SetName)(
                     AddMetaPropertyInfo(

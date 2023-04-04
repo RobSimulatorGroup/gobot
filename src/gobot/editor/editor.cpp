@@ -15,6 +15,7 @@
 #include "gobot/editor/imgui/scene_editor_panel.hpp"
 #include "gobot/editor/imgui/inspector_panel.hpp"
 #include "gobot/editor/imgui/resource_panel.hpp"
+#include "gobot/editor/property_inspector/editor_inspector.hpp"
 #include "gobot/main/main.hpp"
 #include "gobot/core/config/engine.hpp"
 #include "gobot/core/config/project_setting.hpp"
@@ -36,6 +37,8 @@ Editor::Editor() {
 
     spdlog::sink_ptr sink = std::make_shared<ImGuiConsoleSinkMultiThreaded>();
     Logger::GetInstance().AddSink(sink);
+
+    EditorInspector::AddInspectorPlugin(MakeRef<EditorInspectorDefaultPlugin>());
 
     AddChild(Object::New<ConsolePanel>());
     AddChild(Object::New<SceneViewPanel>());

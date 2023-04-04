@@ -21,18 +21,23 @@ class EditorInspectorPlugin : public RefCounted {
 public:
     virtual bool CanHandle(VariantCache& variant_cache) = 0;
 
-    virtual bool ParseProperty(VariantCache& variant_cache, PropertyDataModel* parent_data) = 0;
+    virtual bool ParseProperty(std::unique_ptr<VariantDataModel> variant_data) = 0;
 
-//    void AddPropertyEditorRoot(std::unique_ptr<EditorProperty> root) {
-//        if (root == nullptr) {
-//            root = std::make_unique<AddEditorNode>(std::move(editor_property));
-//        } else {
-//
-//        }
-//    }
+    void AddEditor(ImGuiNode* editor) {
+        added_editors_.emplace_back(editor);
+    }
 
-private:
-    std::unique_ptr<EditorProperty> root{nullptr};
+    const std::vector<ImGuiNode*>& GetAddEditors() const {
+        return added_editors_;
+    }
+
+    std::vector<ImGuiNode*>& GetAddEditors() {
+        return added_editors_;
+    }
+
+
+public:
+    std::vector<ImGuiNode*> added_editors_{};
 };
 
 
@@ -47,15 +52,23 @@ public:
 
     void PrintAllProperties();
 
+    void InitializeEditors();
+
     static void AddInspectorPlugin(const Ref<EditorInspectorPlugin> &plugin);
 
     static void RemoveInspectorPlugin(const Ref<EditorInspectorPlugin> &plugin);
 
     static void CleanupPlugins();
 
-    bool GeneraPropertyInspector();
+    bool Begin() override;
 
-    void OnImGuiContent();
+    void OnImGuiContent() override;
+
+    void End() override;
+
+    VariantCache& GetVariantCache();
+
+    PropertyDataModel* GetNameProperty();
 
 private:
     enum {
@@ -80,11 +93,13 @@ private:
 class EditorInspectorDefaultPlugin : public EditorInspectorPlugin {
     GOBCLASS(EditorInspectorDefaultPlugin, EditorInspectorPlugin);
 public:
+    EditorInspectorDefaultPlugin() = default;
+
     bool CanHandle(VariantCache& variant_cache) override;
 
-    bool ParseProperty(std::unique_ptr<VariantDataModel> data_model);
+    bool ParseProperty(std::unique_ptr<VariantDataModel> variant_data) override;
 
-    static std::unique_ptr<EditorProperty> GetEditorForProperty(VariantCache& variant_cache);
+    static ImGuiNode* GetEditorForProperty(std::unique_ptr<VariantDataModel> variant_data);
 
 };
 
