@@ -50,20 +50,39 @@ private:
 class EditorPropertyFlags : public EditorBuiltInProperty {
     GOBCLASS(EditorPropertyFlags, EditorBuiltInProperty)
 public:
-    using EditorBuiltInProperty::EditorBuiltInProperty;
+    EditorPropertyFlags(TypeCategory type_category, std::unique_ptr<VariantDataModel> variant_data_model);
 
     void OnImGuiContent() override;
 
+private:
+    enum FlagsUnderlyingType {
+        UInt8,
+        UInt16,
+        UInt32,
+        Int8,
+        Int16,
+        Int32,
+    };
+
+    Enumeration enumeration_;
+    FlagsUnderlyingType underlying_type_;
+    int int_data_{0};
+    unsigned int uint_data_{0};
+    std::vector<std::pair<std::string_view, Variant>> names_;
 };
 
 
 class EditorPropertyEnum : public EditorBuiltInProperty {
     GOBCLASS(EditorPropertyEnum, EditorBuiltInProperty)
 public:
-    using EditorBuiltInProperty::EditorBuiltInProperty;
+    EditorPropertyEnum(TypeCategory type_category, std::unique_ptr<VariantDataModel> variant_data_model);
 
     void OnImGuiContent() override;
 
+private:
+    Enumeration enumeration_;
+    std::vector<const char*> names_;
+    std::unordered_map<std::string, int> names_map_;
 };
 
 

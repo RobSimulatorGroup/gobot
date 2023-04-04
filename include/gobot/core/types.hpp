@@ -8,6 +8,7 @@
 #pragma once
 
 #include <rttr/variant.h>
+#include <rttr/enumeration.h>
 #include <QString>
 #include <QUuid>
 #include <nlohmann/json.hpp>

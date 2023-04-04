@@ -11,12 +11,24 @@
 
 namespace gobot {
 
+void TestPropertyNode::SetPropertyUsageFlags(PropertyUsageFlags flags) {
+    property_usage_flags_ = flags;
+}
+
+PropertyUsageFlags TestPropertyNode::GetPropertyUsageFlags() {
+    return property_usage_flags_;
+}
 
 }
 
 GOBOT_REGISTRATION {
     Class_<TestPropertyNode>("TestPropertyNode")
             .constructor()(CtorAsRawPtr)
+            .property("property_usage_flags",
+                      &TestPropertyNode::GetPropertyUsageFlags,
+                      &TestPropertyNode::SetPropertyUsageFlags)(
+                    AddMetaPropertyInfo(PropertyInfo().SetEnumAsFlags(true)) )
+            .property("property_hint", &TestPropertyNode::property_hint)
             .property("uint8", &TestPropertyNode::uint8_);
 
 

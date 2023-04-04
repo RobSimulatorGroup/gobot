@@ -46,7 +46,7 @@ const std::string& PropertyDataModel::GetPropertyToolTipStr() const {
 }
 
 bool PropertyDataModel::SetValue(Argument argument) {
-    return property_.set_value(variant_cache_.instance, argument);
+    return property_.set_value(variant_cache_.instance, std::move(argument));
 }
 
 Variant PropertyDataModel::GetValue() const {

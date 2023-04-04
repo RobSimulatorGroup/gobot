@@ -17,11 +17,19 @@ public:
 
     TestPropertyNode() = default;
 
+    void SetPropertyUsageFlags(PropertyUsageFlags flags);
+
+    PropertyUsageFlags GetPropertyUsageFlags();
+
 private:
     GOBOT_REGISTRATION_FRIEND
 
-    uint8_t uint8_;
-    std::int64_t int64_;
+    uint8_t uint8_{10};
+    std::int64_t int64_{10};
+
+    PropertyUsageFlags property_usage_flags_{PropertyUsageFlags::Default};
+
+    PropertyHint property_hint{PropertyHint::Dir};
 
 };
 

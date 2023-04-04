@@ -191,7 +191,6 @@ ImGuiNode* EditorInspectorDefaultPlugin::GetEditorForProperty(std::unique_ptr<Va
         case TypeCategory::Bool: {
             auto* editor = EditorPropertyBool::New<EditorPropertyBool>(type_category, std::move(variant_data));
             return editor;
-            break;
         }
         case TypeCategory::UInt8:
         case TypeCategory::UInt16:
@@ -203,25 +202,28 @@ ImGuiNode* EditorInspectorDefaultPlugin::GetEditorForProperty(std::unique_ptr<Va
         case TypeCategory::Int64: {
             auto* editor = Object::New<EditorPropertyInteger>(type_category, std::move(variant_data));
             return editor;
-            break;
         }
         case TypeCategory::Float:
         case TypeCategory::Double: {
             auto* editor = Object::New<EditorPropertyFloat>(type_category, std::move(variant_data));
             return editor;
-            break;
         }
-        case TypeCategory::Enum:
-            break;
+        case TypeCategory::Enum: {
+            if ((dynamic_cast<PropertyDataModel*>(variant_data.get())->GetPropertyInfo().enum_as_flags_)) {
+                auto* editor = Object::New<EditorPropertyFlags>(type_category, std::move(variant_data));
+                return editor;
+            } else {
+                auto* editor = Object::New<EditorPropertyEnum>(type_category, std::move(variant_data));
+                return editor;
+            }
+        }
         case TypeCategory::String: {
             auto* editor = Object::New<EditorPropertyText>(type_category, std::move(variant_data));
             return editor;
-            break;
         }
         case TypeCategory::NodePath: {
             auto* editor = Object::New<EditorPropertyNodePath>(type_category, std::move(variant_data));
             return editor;
-            break;
         }
         case TypeCategory::Color:
             break;

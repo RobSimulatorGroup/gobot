@@ -35,6 +35,7 @@ enum class TypeCategory {
     String,
     NodePath,
     Color,
+    ObjectID,
     RID,
     RenderRID,
 
@@ -122,6 +123,8 @@ inline TypeCategory GetTypeCategory(const Type& type) {
         return TypeCategory::NodePath;
     } else if (type == Type::get<Color>()) {
         return TypeCategory::Color;
+    } else if (type == Type::get<ObjectID>()) {
+        return TypeCategory::ObjectID;
     } else if (type == Type::get<RID>()) {
         return TypeCategory::RID;
     } else if (type == Type::get<RenderRID>()) {

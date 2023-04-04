@@ -89,6 +89,166 @@ void EditorPropertyFloat::OnImGuiContent() {
 
 /////////////////////////////////////////////
 
+// https://stackoverflow.com/questions/108318/how-can-i-test-whether-a-number-is-a-power-of-2
+inline bool IsPowerOf2(int x) {
+    return x > 0 && !(x & (x - 1));
+}
+
+EditorPropertyFlags::EditorPropertyFlags(TypeCategory type_category,
+                                         std::unique_ptr<VariantDataModel> variant_data_model)
+    : EditorBuiltInProperty(type_category, std::move(variant_data_model)),
+      enumeration_(data_model_->GetValueType().get_enumeration())
+{
+    auto type = enumeration_.get_underlying_type();
+    if (type == Type::get<std::uint8_t>()) {
+        underlying_type_ = UInt8;
+    } else if (type == Type::get<std::uint16_t>()) {
+        underlying_type_ = UInt16;
+    } else if (type == Type::get<std::uint32_t>()) {
+        underlying_type_ = UInt32;
+    } else if (type == Type::get<std::int8_t>()) {
+        underlying_type_ = Int8;
+    } else if (type == Type::get<std::int16_t>()) {
+        underlying_type_ = Int16;
+    } else if (type == Type::get<std::int32_t>()) {
+        underlying_type_ = Int32;
+    }
+
+    for (const auto& name: enumeration_.get_names()) {
+        auto value = enumeration_.name_to_value(name);
+        // remove the data that are not inside {0, 2^n}
+        switch (underlying_type_) {
+            case UInt8: {
+                if (IsPowerOf2(value.to_uint8())) {
+                    names_.emplace_back(name.data(), value);
+                }
+            } break;
+            case UInt16: {
+                if (IsPowerOf2(value.to_uint16())) {
+                    names_.emplace_back(name.data(), value);
+                }
+            } break;
+            case UInt32: {
+                if (IsPowerOf2(value.to_uint32())) {
+                    names_.emplace_back(name.data(), value);
+                }
+            } break;
+            case Int8: {
+                if (IsPowerOf2(value.to_int8())) {
+                    names_.emplace_back(name.data(), value);
+                }
+            } break;
+            case Int16: {
+                if (IsPowerOf2(value.to_int16())) {
+                    names_.emplace_back(name.data(), value);
+                }
+            } break;
+            case Int32: {
+                if (IsPowerOf2(value.to_int32())) {
+                    names_.emplace_back(name.data(), value);
+                }
+            } break;
+        }
+    }
+}
+
+void EditorPropertyFlags::OnImGuiContent() {
+    switch (underlying_type_) {
+        case UInt8: {
+            uint_data_ = property_data_model_->GetValue().to_uint8();
+            for (const auto& [name, value] : names_) {
+                if (ImGui::CheckboxFlags(name.data(), &uint_data_, value.to_uint8())) {
+                    Variant data(int_data_);
+                    if (!(data.convert(data_model_->GetValueType()) && property_data_model_->SetValue(data))) {
+                        LOG_ERROR("Set flags: {0:#b} to {} failed", uint_data_, property_data_model_->GetPropertyName());
+                    }
+                }
+            }
+        } break;
+        case UInt16: {
+            uint_data_ = property_data_model_->GetValue().to_uint16();
+            for (const auto& [name, value] : names_) {
+                if (ImGui::CheckboxFlags(name.data(), &uint_data_, value.to_uint16())) {
+                    Variant data(int_data_);
+                    if (!(data.convert(data_model_->GetValueType()) && property_data_model_->SetValue(data))) {
+                        LOG_ERROR("Set flags: {0:#b} to {} failed", uint_data_, property_data_model_->GetPropertyName());
+                    }
+                }
+            }
+        } break;
+        case UInt32: {
+            uint_data_ = property_data_model_->GetValue().to_uint32();
+            for (const auto& [name, value] : names_) {
+                if (ImGui::CheckboxFlags(name.data(), &uint_data_, value.to_uint32())) {
+                    Variant data(int_data_);
+                    if (!(data.convert(data_model_->GetValueType()) && property_data_model_->SetValue(data))) {
+                        LOG_ERROR("Set flags: {0:#b} to {} failed", uint_data_, property_data_model_->GetPropertyName());
+                    }
+                }
+            }
+        } break;
+        case Int8: {
+            int_data_ = property_data_model_->GetValue().to_int8();
+            for (const auto& [name, value] : names_) {
+                if (ImGui::CheckboxFlags(name.data(), &int_data_, value.to_int8())) {
+                    Variant data(int_data_);
+                    if (!(data.convert(data_model_->GetValueType()) && property_data_model_->SetValue(data))) {
+                        LOG_ERROR("Set flags: {0:#b} to {} failed", int_data_, property_data_model_->GetPropertyName());
+                    }
+                }
+            }
+        } break;
+        case Int16: {
+            int_data_ = property_data_model_->GetValue().to_int16();
+            for (const auto& [name, value] : names_) {
+                if (ImGui::CheckboxFlags(name.data(), &int_data_, value.to_int16())) {
+                    Variant data(int_data_);
+                    if (!(data.convert(data_model_->GetValueType()) && property_data_model_->SetValue(data))) {
+                        LOG_ERROR("Set flags: {0:#b} to {} failed", int_data_, property_data_model_->GetPropertyName());
+                    }
+                }
+            }
+        } break;
+        case Int32: {
+            int_data_ = property_data_model_->GetValue().to_int32();
+            for (const auto& [name, value] : names_) {
+                if (ImGui::CheckboxFlags(name.data(), &int_data_, value.to_int32())) {
+                    Variant data(int_data_);
+                    if (!(data.convert(data_model_->GetValueType()) && property_data_model_->SetValue(data))) {
+                        LOG_ERROR("Set flags: {0:#b} to {} failed", int_data_, property_data_model_->GetPropertyName());
+                    }
+                }
+            }
+        } break;
+    }
+}
+
+/////////////////////////////////////////////
+
+EditorPropertyEnum::EditorPropertyEnum(TypeCategory type_category,
+                                       std::unique_ptr<VariantDataModel> variant_data_model)
+    : EditorBuiltInProperty(type_category, std::move(variant_data_model)),
+      enumeration_(data_model_->GetValueType().get_enumeration())
+{
+    int i = 0;
+    for (const auto& name: enumeration_.get_names()) {
+        names_.emplace_back(name.data());
+        names_map_.emplace(name.data(), i++);
+    }
+}
+
+void EditorPropertyEnum::OnImGuiContent() {
+    auto index = names_map_.at(property_data_model_->GetValue().to_string());
+    if (ImGui::Combo("combo", &index, &names_[0], names_.size())) {
+        std::string changed_name = names_.at(index);
+        Variant data(changed_name);
+        if (!(data.convert(data_model_->GetValueType()) && property_data_model_->SetValue(data))) {
+            LOG_ERROR("Set enum {} to {} failed", changed_name, property_data_model_->GetPropertyName());
+        }
+    }
+}
+
+/////////////////////////////////////////////
 
 void EditorPropertyText::OnImGuiContent() {
     auto value = property_data_model_->GetValue().to_string();
@@ -104,17 +264,6 @@ void EditorPropertyMultilineText::OnImGuiContent() {
     if (ImGui::InputTextMultiline(GetPtrImGuiID(), &value)) {
         property_data_model_->SetValue(value);
     }
-}
-
-///////////////////////////////////////////////////////
-
-void EditorPropertyFlags::OnImGuiContent() {
-    auto value = property_data_model_->GetValue().to_string();
-//    auto changed = ImGui::CheckboxFlags("io.ConfigFlags: NavEnableKeyboard",    &io.ConfigFlags, ImGuiConfigFlags_NavEnableKeyboard);
-//
-//    if (ImGui::InputTextMultiline(fmt::format("##{}", fmt::ptr(this)).c_str(), &value)) {
-//        property_data_model_->SetValue(value);
-//    }
 }
 
 
