@@ -23,7 +23,7 @@ public:
 };
 
 class EditorPropertyInteger : public EditorBuiltInProperty {
-GOBCLASS(EditorPropertyInteger, EditorBuiltInProperty)
+    GOBCLASS(EditorPropertyInteger, EditorBuiltInProperty)
 public:
     using EditorBuiltInProperty::EditorBuiltInProperty;
 
@@ -36,7 +36,7 @@ private:
 
 
 class EditorPropertyFloat : public EditorBuiltInProperty {
-GOBCLASS(EditorPropertyFloat, EditorBuiltInProperty)
+    GOBCLASS(EditorPropertyFloat, EditorBuiltInProperty)
 public:
     using EditorBuiltInProperty::EditorBuiltInProperty;
 

@@ -10,6 +10,9 @@
 #include "gobot/core/types.hpp"
 #include "gobot/core/color.hpp"
 #include "gobot/scene/node_path.hpp"
+#include "gobot/core/rid.h"
+#include "gobot/rendering/render_rid.hpp"
+#include "gobot/core/math/geometry.hpp"
 #include "gobot/log.hpp"
 
 namespace gobot {
@@ -32,24 +35,47 @@ enum class TypeCategory {
     String,
     NodePath,
     Color,
+    RID,
+    RenderRID,
 
     // math type
+    Vector2i,
     Vector2f,
     Vector2d,
+    Vector3i,
     Vector3f,
     Vector3d,
+    Vector4i,
     Vector4f,
     Vector4d,
-    Quaternionf,
-    Quaterniond,
+    VectorXi,
     VectorXf,
     VectorXd,
+    Matrix2i,
     Matrix2f,
     Matrix2d,
+    Matrix3i,
     Matrix3f,
     Matrix3d,
+    MatrixXi,
     MatrixXf,
     MatrixXd,
+    Quaternionf,
+    Quaterniond,
+    EulerAnglef,
+    EulerAngled,
+    Isometry2f,
+    Isometry2d,
+    Isometry3f,
+    Isometry3d,
+    Affine2f,
+    Affine2d,
+    Affine3f,
+    Affine3d,
+    Projective2f,
+    Projective2d,
+    Projective3f,
+    Projective3d,
 
     // complex type
     Ref,
@@ -96,9 +122,90 @@ inline TypeCategory GetTypeCategory(const Type& type) {
         return TypeCategory::NodePath;
     } else if (type == Type::get<Color>()) {
         return TypeCategory::Color;
+    } else if (type == Type::get<RID>()) {
+        return TypeCategory::RID;
+    } else if (type == Type::get<RenderRID>()) {
+        return TypeCategory::RenderRID;
     }
-    // TODO(wqq): math types
 
+    // math related
+    else if (type == Type::get<Vector2i>()) {
+        return TypeCategory::Vector2i;
+    } else if (type == Type::get<Vector2f>()) {
+        return TypeCategory::Vector2f;
+    } else if (type == Type::get<Vector2d>()) {
+        return TypeCategory::Vector2d;
+    } else if (type == Type::get<Vector3i>()) {
+        return TypeCategory::Vector3i;
+    } else if (type == Type::get<Vector3f>()) {
+        return TypeCategory::Vector3f;
+    } else if (type == Type::get<Vector3d>()) {
+        return TypeCategory::Vector3d;
+    } else if (type == Type::get<Vector4i>()) {
+        return TypeCategory::Vector4i;
+    } else if (type == Type::get<Vector4f>()) {
+        return TypeCategory::Vector4f;
+    } else if (type == Type::get<Vector4d>()) {
+        return TypeCategory::Vector4d;
+    } else if (type == Type::get<VectorXi>()) {
+        return TypeCategory::VectorXi;
+    } else if (type == Type::get<VectorXf>()) {
+        return TypeCategory::VectorXf;
+    } else if (type == Type::get<VectorXd>()) {
+        return TypeCategory::VectorXd;
+    } else if (type == Type::get<Matrix2i>()) {
+        return TypeCategory::Matrix2i;
+    } else if (type == Type::get<Matrix2f>()) {
+        return TypeCategory::Matrix2f;
+    } else if (type == Type::get<Matrix2d>()) {
+        return TypeCategory::Matrix2d;
+    } else if (type == Type::get<Matrix3i>()) {
+        return TypeCategory::Matrix3i;
+    } else if (type == Type::get<Matrix3f>()) {
+        return TypeCategory::Matrix3f;
+    } else if (type == Type::get<Matrix3d>()) {
+        return TypeCategory::Matrix3d;
+    } else if (type == Type::get<MatrixXi>()) {
+        return TypeCategory::MatrixXi;
+    } else if (type == Type::get<MatrixXf>()) {
+        return TypeCategory::MatrixXf;
+    } else if (type == Type::get<MatrixXd>()) {
+        return TypeCategory::MatrixXd;
+    } else if (type == Type::get<Quaternionf>()) {
+        return TypeCategory::Quaternionf;
+    } else if (type == Type::get<Quaterniond>()) {
+        return TypeCategory::Quaterniond;
+    } else if (type == Type::get<EulerAnglef>()) {
+        return TypeCategory::EulerAnglef;
+    } else if (type == Type::get<EulerAngled>()) {
+        return TypeCategory::EulerAngled;
+    } else if (type == Type::get<Isometry2f>()) {
+        return TypeCategory::Isometry2f;
+    } else if (type == Type::get<Isometry2d>()) {
+        return TypeCategory::Isometry2d;
+    } else if (type == Type::get<Isometry3f>()) {
+        return TypeCategory::Isometry3f;
+    } else if (type == Type::get<Isometry3d>()) {
+        return TypeCategory::Isometry3d;
+    } else if (type == Type::get<Affine2f>()) {
+        return TypeCategory::Affine2f;
+    } else if (type == Type::get<Affine2d>()) {
+        return TypeCategory::Affine2d;
+    } else if (type == Type::get<Affine3f>()) {
+        return TypeCategory::Affine3f;
+    } else if (type == Type::get<Affine3d>()) {
+        return TypeCategory::Affine3d;
+    } else if (type == Type::get<Projective2f>()) {
+        return TypeCategory::Projective2f;
+    } else if (type == Type::get<Projective2d>()) {
+        return TypeCategory::Projective2d;
+    } else if (type == Type::get<Projective3f>()) {
+        return TypeCategory::Projective3f;
+    } else if (type == Type::get<Projective3d>()) {
+        return TypeCategory::Projective3d;
+    }
+
+        // complex type
     else if (type.is_wrapper()) {
         if (type.get_wrapper_holder_type() == WrapperHolderType::Ref) {
             return TypeCategory::Ref;
