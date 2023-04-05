@@ -209,7 +209,7 @@ ImGuiNode* EditorInspectorDefaultPlugin::GetEditorForProperty(std::unique_ptr<Va
             return editor;
         }
         case TypeCategory::Enum: {
-            if ((dynamic_cast<PropertyDataModel*>(variant_data.get())->GetPropertyInfo().enum_as_flags_)) {
+            if ((dynamic_cast<PropertyDataModel*>(variant_data.get())->GetPropertyInfo().enum_as_flags)) {
                 auto* editor = Object::New<EditorPropertyFlags>(type_category, std::move(variant_data));
                 return editor;
             } else {

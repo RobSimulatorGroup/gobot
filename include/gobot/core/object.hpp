@@ -65,7 +65,7 @@ enum class PropertyHint {
     GlobalDir,  ///< a directory path must be passed
 };
 
-enum class PropertyUsageFlags : uint16_t {
+enum class PropertyUsageFlags {
     None = 0,
     Storage = 1 << 1,
     Editor = 1 << 2,
@@ -81,7 +81,7 @@ struct PropertyInfo {
     String hint_string;
     PropertyUsageFlags usage = PropertyUsageFlags::Default;
     String tool_tip;
-    bool enum_as_flags_{false};
+    bool enum_as_flags{false};
 
     PropertyInfo& SetName(const String& _name) {
         name = _name;
@@ -109,8 +109,8 @@ struct PropertyInfo {
     }
 
 
-    PropertyInfo& SetEnumAsFlags(bool enum_as_flags) {
-        enum_as_flags_ = enum_as_flags;
+    PropertyInfo& SetEnumAsFlags(bool _enum_as_flags) {
+        enum_as_flags = _enum_as_flags;
         return *this;
     }
 

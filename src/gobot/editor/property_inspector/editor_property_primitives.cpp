@@ -158,9 +158,9 @@ void EditorPropertyFlags::OnImGuiContent() {
             uint_data_ = property_data_model_->GetValue().to_uint8();
             for (const auto& [name, value] : names_) {
                 if (ImGui::CheckboxFlags(name.data(), &uint_data_, value.to_uint8())) {
-                    Variant data(int_data_);
-                    if (!(data.convert(data_model_->GetValueType()) && property_data_model_->SetValue(data))) {
-                        LOG_ERROR("Set flags: {0:#b} to {} failed", uint_data_, property_data_model_->GetPropertyName());
+                    auto new_flags = enumeration_.value_to_enum(static_cast<uint8_t>(int_data_));
+                    if (!(property_data_model_->SetValue(new_flags))) {
+                        LOG_ERROR("Set flags: {:b} to {} failed", int_data_, property_data_model_->GetPropertyName());
                     }
                 }
             }
@@ -169,9 +169,9 @@ void EditorPropertyFlags::OnImGuiContent() {
             uint_data_ = property_data_model_->GetValue().to_uint16();
             for (const auto& [name, value] : names_) {
                 if (ImGui::CheckboxFlags(name.data(), &uint_data_, value.to_uint16())) {
-                    Variant data(int_data_);
-                    if (!(data.convert(data_model_->GetValueType()) && property_data_model_->SetValue(data))) {
-                        LOG_ERROR("Set flags: {0:#b} to {} failed", uint_data_, property_data_model_->GetPropertyName());
+                    auto new_flags = enumeration_.value_to_enum(static_cast<uint16_t>(int_data_));
+                    if (!(property_data_model_->SetValue(new_flags))) {
+                        LOG_ERROR("Set flags: {:b} to {} failed", int_data_, property_data_model_->GetPropertyName());
                     }
                 }
             }
@@ -180,9 +180,9 @@ void EditorPropertyFlags::OnImGuiContent() {
             uint_data_ = property_data_model_->GetValue().to_uint32();
             for (const auto& [name, value] : names_) {
                 if (ImGui::CheckboxFlags(name.data(), &uint_data_, value.to_uint32())) {
-                    Variant data(int_data_);
-                    if (!(data.convert(data_model_->GetValueType()) && property_data_model_->SetValue(data))) {
-                        LOG_ERROR("Set flags: {0:#b} to {} failed", uint_data_, property_data_model_->GetPropertyName());
+                    auto new_flags = enumeration_.value_to_enum(static_cast<uint32_t>(int_data_));
+                    if (!(property_data_model_->SetValue(new_flags))) {
+                        LOG_ERROR("Set flags: {:b} to {} failed", int_data_, property_data_model_->GetPropertyName());
                     }
                 }
             }
@@ -191,9 +191,9 @@ void EditorPropertyFlags::OnImGuiContent() {
             int_data_ = property_data_model_->GetValue().to_int8();
             for (const auto& [name, value] : names_) {
                 if (ImGui::CheckboxFlags(name.data(), &int_data_, value.to_int8())) {
-                    Variant data(int_data_);
-                    if (!(data.convert(data_model_->GetValueType()) && property_data_model_->SetValue(data))) {
-                        LOG_ERROR("Set flags: {0:#b} to {} failed", int_data_, property_data_model_->GetPropertyName());
+                    auto new_flags = enumeration_.value_to_enum(static_cast<int8_t>(int_data_));
+                    if (!(property_data_model_->SetValue(new_flags))) {
+                        LOG_ERROR("Set flags: {:b} to {} failed", int_data_, property_data_model_->GetPropertyName());
                     }
                 }
             }
@@ -202,9 +202,9 @@ void EditorPropertyFlags::OnImGuiContent() {
             int_data_ = property_data_model_->GetValue().to_int16();
             for (const auto& [name, value] : names_) {
                 if (ImGui::CheckboxFlags(name.data(), &int_data_, value.to_int16())) {
-                    Variant data(int_data_);
-                    if (!(data.convert(data_model_->GetValueType()) && property_data_model_->SetValue(data))) {
-                        LOG_ERROR("Set flags: {0:#b} to {} failed", int_data_, property_data_model_->GetPropertyName());
+                    auto new_flags = enumeration_.value_to_enum(static_cast<int16_t>(int_data_));
+                    if (!(property_data_model_->SetValue(new_flags))) {
+                        LOG_ERROR("Set flags: {:b} to {} failed", int_data_, property_data_model_->GetPropertyName());
                     }
                 }
             }
@@ -213,9 +213,9 @@ void EditorPropertyFlags::OnImGuiContent() {
             int_data_ = property_data_model_->GetValue().to_int32();
             for (const auto& [name, value] : names_) {
                 if (ImGui::CheckboxFlags(name.data(), &int_data_, value.to_int32())) {
-                    Variant data(int_data_);
-                    if (!(data.convert(data_model_->GetValueType()) && property_data_model_->SetValue(data))) {
-                        LOG_ERROR("Set flags: {0:#b} to {} failed", int_data_, property_data_model_->GetPropertyName());
+                    auto new_flags = enumeration_.value_to_enum(static_cast<int32_t>(int_data_));
+                    if (!(property_data_model_->SetValue(new_flags))) {
+                        LOG_ERROR("Set flags: {:b} to {} failed", int_data_, property_data_model_->GetPropertyName());
                     }
                 }
             }
