@@ -167,15 +167,16 @@ void EditorPropertyFlags::OnImGuiContent() {
         } break;
         case UInt16: {
             uint_data_ = property_data_model_->GetValue().to_uint16();
-            for (const auto& [name, value] : names_) {
+            for (const auto &[name, value]: names_) {
                 if (ImGui::CheckboxFlags(name.data(), &uint_data_, value.to_uint16())) {
                     auto new_flags = enumeration_.value_to_enum(static_cast<uint16_t>(int_data_));
                     if (!(property_data_model_->SetValue(new_flags))) {
                         LOG_ERROR("Set flags: {:b} to {} failed", int_data_, property_data_model_->GetPropertyName());
                     }
-
+                }
             }
-        } break;
+            break;
+        }
         case UInt32: {
             uint_data_ = property_data_model_->GetValue().to_uint32();
             for (const auto& [name, value] : names_) {
