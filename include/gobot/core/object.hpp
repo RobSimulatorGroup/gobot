@@ -63,6 +63,8 @@ enum class PropertyHint {
     Dir,        ///< a directory path must be passed
     GlobalFile, ///< a file path must be passed, hint_text (optionally) is a filter "*.png,*.wav,*.doc,"
     GlobalDir,  ///< a directory path must be passed
+
+    MultilineText
 };
 
 enum class PropertyUsageFlags {

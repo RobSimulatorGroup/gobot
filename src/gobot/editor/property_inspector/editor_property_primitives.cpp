@@ -254,7 +254,7 @@ void EditorPropertyEnum::OnImGuiContent() {
 void EditorPropertyText::OnImGuiContent() {
     auto value = property_data_model_->GetValue().to_string();
     if (ImGui::InputText(GetPtrImGuiID(), &value)) {
-        property_data_model_->SetValue(value);
+        property_data_model_->SetValue(String::fromStdString(value));
     }
 }
 
@@ -262,8 +262,9 @@ void EditorPropertyText::OnImGuiContent() {
 
 void EditorPropertyMultilineText::OnImGuiContent() {
     auto value = property_data_model_->GetValue().to_string();
-    if (ImGui::InputTextMultiline(GetPtrImGuiID(), &value)) {
-        property_data_model_->SetValue(value);
+    if (ImGui::InputTextMultiline(GetPtrImGuiID(), &value, ImVec2(-FLT_MIN, ImGui::GetTextLineHeight() * 6),
+                                  ImGuiInputTextFlags_AllowTabInput | ImGuiInputTextFlags_CtrlEnterForNewLine)) {
+        property_data_model_->SetValue(String::fromStdString(value));
     }
 }
 
@@ -279,6 +280,25 @@ void EditorPropertyPath::OnImGuiContent() {
 
 void EditorPropertyNodePath::OnImGuiContent() {
     // TODO
+}
+
+////////////////////////////////////////////////////////
+
+void EditorPropertyColor::OnImGuiContent() {
+    auto color = property_data_model_->GetValue().convert<Color>();
+    color_[0] = color.red();
+    color_[1] = color.green();
+    color_[2] = color.blue();
+    color_[3] = color.alpha();
+    if (ImGui::ColorEdit4(GetPtrImGuiID(), (float*)&color_, ImGuiColorEditFlags_Float)) {
+        color.red() = color_[0];
+        color.green() = color_[1];
+        color.blue() = color_[2];
+        color.alpha() = color_[3];
+        if (!property_data_model_->SetValue(color)) {
+            LOG_ERROR("Set color to {} failed", property_data_model_->GetPropertyName());
+        }
+    }
 }
 
 ////////////////////////////////////////////////////////

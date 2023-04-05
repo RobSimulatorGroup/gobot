@@ -8,6 +8,7 @@
 #pragma once
 
 #include "gobot/scene/node_3d.hpp"
+#include "gobot/core/color.hpp"
 
 namespace gobot {
 
@@ -21,6 +22,10 @@ public:
 
     PropertyUsageFlags GetPropertyUsageFlags();
 
+    void SetColor(const Color& p_color);
+
+    const Color& GetColor() const;
+
 private:
     GOBOT_REGISTRATION_FRIEND
 
@@ -30,7 +35,10 @@ private:
     PropertyUsageFlags property_usage_flags_{PropertyUsageFlags::Default};
 
     PropertyHint property_hint{PropertyHint::Dir};
+    String string{};
+    String multiline_text{};
 
+    Color color{1.0f, 0.0f, 0.0f, 1.0f};
 };
 
 }

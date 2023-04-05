@@ -19,6 +19,14 @@ PropertyUsageFlags TestPropertyNode::GetPropertyUsageFlags() {
     return property_usage_flags_;
 }
 
+void TestPropertyNode::SetColor(const Color& p_color) {
+    color = p_color;
+}
+
+const Color& TestPropertyNode::GetColor() const {
+    return color;
+}
+
 }
 
 GOBOT_REGISTRATION {
@@ -29,6 +37,10 @@ GOBOT_REGISTRATION {
                       &TestPropertyNode::SetPropertyUsageFlags)(
                     AddMetaPropertyInfo(PropertyInfo().SetEnumAsFlags(true)) )
             .property("property_hint", &TestPropertyNode::property_hint)
+            .property("string", &TestPropertyNode::string)
+            .property("color", &TestPropertyNode::GetColor, &TestPropertyNode::SetColor)
+            .property("multiline_text", &TestPropertyNode::multiline_text)(
+                    AddMetaPropertyInfo(PropertyInfo().SetHint(PropertyHint::MultilineText)) )
             .property("uint8", &TestPropertyNode::uint8_);
 
 

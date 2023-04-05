@@ -123,6 +123,17 @@ public:
 
 };
 
+class EditorPropertyColor : public EditorBuiltInProperty {
+    GOBCLASS(EditorPropertyColor, EditorBuiltInProperty)
+public:
+    using EditorBuiltInProperty::EditorBuiltInProperty;
+
+    void OnImGuiContent() override;
+
+private:
+    float color_[4];
+};
+
 class EditorPropertyRID : public EditorBuiltInProperty {
     GOBCLASS(EditorPropertyRID, EditorBuiltInProperty)
 public:
