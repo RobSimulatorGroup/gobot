@@ -173,7 +173,7 @@ void EditorPropertyFlags::OnImGuiContent() {
                     if (!(property_data_model_->SetValue(new_flags))) {
                         LOG_ERROR("Set flags: {:b} to {} failed", int_data_, property_data_model_->GetPropertyName());
                     }
-                }
+
             }
         } break;
         case UInt32: {
