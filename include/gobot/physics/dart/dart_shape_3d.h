@@ -13,72 +13,61 @@
 
 namespace gobot {
 
-using Shape3D = dart::dynamics::Shape;
-using BoxShape3D = dart::dynamics::BoxShape;
+using DartShape = dart::dynamics::Shape;
+using DartBoxShape = dart::dynamics::BoxShape;
+using DartShapeNode = dart::dynamics::ShapeNode;
 
 class DartShape3D;
 
-//class DartShapeOwner3D {
-//public:
-//    virtual void ShapeChanged() = 0;
-//    virtual void RemoveShape(DartShape3D *shape) = 0;
-//
-//    virtual ~DartShapeOwner3D() = default;
-//};
+class DartShapeOwner3D {
+public:
+    virtual void ShapeChanged() = 0;
+    virtual void RemoveShape(DartShape3D *shape) = 0;
+
+    virtual ~DartShapeOwner3D() = default;
+};
 
 class DartShape3D {
+
+friend class DartBody3D;
+
 public:
     DartShape3D() = default;
-    virtual ~DartShape3D() = default;
-
-    [[nodiscard]] virtual double GetVolume() const = 0;
-    [[nodiscard]] virtual Matrix3d GetInertia(real_t mass) const = 0;
+    virtual ~DartShape3D() {
+        ERR_FAIL_COND(shape_node_);
+    }
 
     FORCE_INLINE void SetSelf(const RID &self) { self_ = self; }
     [[nodiscard]] FORCE_INLINE RID GetSelf() const { return self_; }
 
     [[nodiscard]] virtual PhysicsServer3D::ShapeType GetType() const = 0;
 
-    // todo: GetAABB/GetBoundingBox
-
-//    FORCE_INLINE bool IsConfigured() const { return configured_; }
-
     virtual void SetData(const Variant &data) = 0;
     [[nodiscard]] virtual Variant GetData() const = 0;
 
-    // todo: void AddOwner(DartShapeOwner3D *owner);
-    // todo: void RemoveOwner(DartShapeOwner3D *owner);
-    // todo: bool IsOwner(DartShapeOwner3D *owner) const;
-    // todo: const std::unordered_map<std::size_t, DartShapeOwner3D *> &GetOwners() const;
-
 protected:
-//    void Configure(std::shared_ptr<Shape3D> *shape);
-//    std::shared_ptr<Shape3D> shape_;
+    std::shared_ptr<DartShape> shape_;
+    DartShapeNode *shape_node_ = nullptr;
 
 private:
     RID self_;
-//    bool configured_ = false;
-//    std::unordered_map<std::size_t, DartShapeOwner3D *> owners_;
 };
 
 class DartBoxShape3D : public DartShape3D {
 public:
-    explicit DartBoxShape3D(const Vector3d &extents = Vector3d::Identity());
-    ~DartBoxShape3D() override = default;
-
-    [[nodiscard]] FORCE_INLINE Vector3d GetExtents() const { return extents_; }
-
-    [[nodiscard]] double GetVolume() const override;
-    [[nodiscard]] Matrix3d GetInertia(real_t mass) const override;
+    DartBoxShape3D() = default;
 
     [[nodiscard]] PhysicsServer3D::ShapeType GetType() const override { return PhysicsServer3D::ShapeType::Box; }
 
-    void SetData(const Variant &data) override;
-    [[nodiscard]] Variant GetData() const override;
+    void SetData(const Variant &data) override {
+        const auto& extents = data.get_value<Vector3d>();
+        dynamic_pointer_cast<DartBoxShape>(shape_)->setSize(extents);
+    }
 
-private:
-    std::shared_ptr<BoxShape3D> shape_;
-    Vector3d extents_;
+    [[nodiscard]] Variant GetData() const override {
+        Vector3d extents = dynamic_pointer_cast<DartBoxShape>(shape_)->getSize();
+        return extents;
+    }
 };
 
 } // End of namespace gobot

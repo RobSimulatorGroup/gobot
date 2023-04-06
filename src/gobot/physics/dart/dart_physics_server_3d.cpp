@@ -35,6 +35,22 @@ Variant DartPhysicsServer3D::ShapeGetData(RID shape) const {
     return dart_shape->GetData();
 }
 
+RID DartPhysicsServer3D::WorldCreate() {
+    auto *world = new DartWorld3D;
+    RID id = world_owner_.MakeRID(world);
+    world->SetSelf(id);
+    return id;
+}
+
+/* BODY API */
+
+RID DartPhysicsServer3D::BodyCreate() {
+    DartBody3D *body = new DartBody3D();
+    RID rid = body_owner_.MakeRID(body);
+    body->SetSelf(rid);
+    return rid;
+}
+
 void DartPhysicsServer3D::Free(RID rid) {
     // todo: update shapes
 

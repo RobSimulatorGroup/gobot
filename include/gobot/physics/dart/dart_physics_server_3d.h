@@ -9,7 +9,9 @@
 
 #include "gobot/physics/physics_server_3d.h"
 
+#include "gobot/physics/dart/dart_world_3d.h"
 #include "gobot/physics/dart/dart_shape_3d.h"
+#include "gobot/physics/dart/dart_body_3d.h"
 #include "gobot/core/rid_owner.h"
 
 #include <dart/dart.hpp>
@@ -27,14 +29,18 @@ public:
     ShapeType ShapeGetType(RID shape) const override;
     Variant ShapeGetData(RID shape) const override;
 
-    /* BODY API */
+    /* WORLD API */
+    RID WorldCreate() override;
 
+    /* BODY API */
+    RID BodyCreate() override;
 
     void Free(RID rid) override;
 
 private:
     mutable RID_PtrOwner<DartShape3D, true> shape_owner_;
-    // todo: mutable RID_PtrOwner<DartBody3D, true> body_owner_;
+    mutable RID_PtrOwner<DartWorld3D, true> world_owner_;
+    mutable RID_PtrOwner<DartBody3D, true> body_owner_;
 };
 
 } // End of namespace gobot

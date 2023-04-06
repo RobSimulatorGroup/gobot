@@ -41,7 +41,10 @@ public:
     [[nodiscard]] virtual ShapeType ShapeGetType(RID shape) const = 0;
     [[nodiscard]] virtual Variant ShapeGetData(RID shape) const = 0;
 
-    /***** Space API *****/
+    /***** World API *****/
+    virtual RID WorldCreate() = 0;
+    // todo: WorldSetParam/WorldGetParam
+
     /***** Area API *****/
 
     /* BODY API */
@@ -51,7 +54,7 @@ public:
         Rigid,
     };
 
-    // todo: virtual RID BodyCreate() = 0;
+    virtual RID BodyCreate() = 0;
 
     // todo: virtual void BodySetMode(RID body, BodyMode mode) = 0;
     // todo: virtual BodyMode BodyGetMode(RID body) = 0;
