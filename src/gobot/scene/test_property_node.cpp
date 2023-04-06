@@ -38,6 +38,10 @@ GOBOT_REGISTRATION {
                     AddMetaPropertyInfo(PropertyInfo().SetEnumAsFlags(true)) )
             .property("property_hint", &TestPropertyNode::property_hint)
             .property("string", &TestPropertyNode::string)
+            .property("boolean", &TestPropertyNode::boolean_)
+            .property("vector2f", &TestPropertyNode::vector2f)
+            .property("vector3f", &TestPropertyNode::vector3f)
+            .property("vector4f", &TestPropertyNode::vector4f)
             .property("color", &TestPropertyNode::GetColor, &TestPropertyNode::SetColor)
             .property("multiline_text", &TestPropertyNode::multiline_text)(
                     AddMetaPropertyInfo(PropertyInfo().SetHint(PropertyHint::MultilineText)) )

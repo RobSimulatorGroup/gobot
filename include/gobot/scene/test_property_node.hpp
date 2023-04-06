@@ -9,6 +9,7 @@
 
 #include "gobot/scene/node_3d.hpp"
 #include "gobot/core/color.hpp"
+#include "gobot/core/math/matrix.hpp"
 
 namespace gobot {
 
@@ -29,6 +30,8 @@ public:
 private:
     GOBOT_REGISTRATION_FRIEND
 
+    bool boolean_{false};
+
     uint8_t uint8_{10};
     std::int64_t int64_{10};
 
@@ -39,6 +42,12 @@ private:
     String multiline_text{};
 
     Color color{1.0f, 0.0f, 0.0f, 1.0f};
+
+    Vector2f vector2f{0.0f, 0.0f};
+
+    Vector3f vector3f{0.0f, 0.0f, 0.0f};
+
+    Vector4f vector4f{0.0f, 0.0f, 0.0f, 0.0f};
 };
 
 }

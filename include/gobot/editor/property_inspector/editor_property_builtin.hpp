@@ -30,7 +30,8 @@ public:
             ImGui::BeginDisabled();
         }
         return ImGuiUtilities::BeginPropertyGrid(property_data_model_->GetPropertyNameStr().c_str(),
-                                                 property_data_model_->GetPropertyToolTipStr().c_str());
+                                                 property_data_model_->GetPropertyToolTipStr().c_str(),
+                                                 right_align_next_column_);
     }
 
     void End() override {

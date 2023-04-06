@@ -10,6 +10,7 @@
 #include "gobot/scene/imgui_custom_node.hpp"
 #include "gobot/error_macros.hpp"
 #include "gobot/editor/property_inspector/editor_property_primitives.hpp"
+#include "gobot/editor/property_inspector/editor_property_math.hpp"
 #include "gobot/editor/imgui/type_icons.hpp"
 #include "gobot/type_categroy.hpp"
 #include "imgui_stdlib.h"
@@ -234,18 +235,24 @@ ImGuiNode* EditorInspectorDefaultPlugin::GetEditorForProperty(std::unique_ptr<Va
             auto* editor = Object::New<EditorPropertyColor>(type_category, std::move(variant_data));
             return editor;
         } break;
+        case TypeCategory::Vector2i:
         case TypeCategory::Vector2f:
-            break;
-        case TypeCategory::Vector2d:
-            break;
+        case TypeCategory::Vector2d: {
+            auto* editor = Object::New<EditorPropertyVector2>(type_category, std::move(variant_data));
+            return editor;
+        } break;
+        case TypeCategory::Vector3i:
         case TypeCategory::Vector3f:
-            break;
-        case TypeCategory::Vector3d:
-            break;
+        case TypeCategory::Vector3d: {
+            auto* editor = Object::New<EditorPropertyVector3>(type_category, std::move(variant_data));
+            return editor;
+        } break;
+        case TypeCategory::Vector4i:
         case TypeCategory::Vector4f:
-            break;
-        case TypeCategory::Vector4d:
-            break;
+        case TypeCategory::Vector4d: {
+            auto* editor = Object::New<EditorPropertyVector4>(type_category, std::move(variant_data));
+            return editor;
+        } break;
         case TypeCategory::Quaternionf:
             break;
         case TypeCategory::Quaterniond:

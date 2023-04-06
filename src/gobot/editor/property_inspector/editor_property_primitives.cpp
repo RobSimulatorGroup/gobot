@@ -240,7 +240,7 @@ EditorPropertyEnum::EditorPropertyEnum(TypeCategory type_category,
 
 void EditorPropertyEnum::OnImGuiContent() {
     auto index = names_map_.at(property_data_model_->GetValue().to_string());
-    if (ImGui::Combo("combo", &index, &names_[0], names_.size())) {
+    if (ImGui::Combo(GetPtrImGuiID(), &index, &names_[0], names_.size())) {
         std::string changed_name = names_.at(index);
         Variant data(changed_name);
         if (!(data.convert(data_model_->GetValueType()) && property_data_model_->SetValue(data))) {

@@ -21,17 +21,21 @@ class EditorProperty : public ImGuiNode {
 public:
     explicit EditorProperty(TypeCategory type_category,
                             std::unique_ptr<VariantDataModel> variant_data_model,
-                            bool using_grid = true)
+                            bool right_align_next_column = true)
       : type_category_(type_category),
         data_model_(std::move(variant_data_model)),
-        using_grid_(using_grid)
+        right_align_next_column_(right_align_next_column)
     {
+    }
+
+    void SetRightAlignNextColumn(bool right_align_next_column)  {
+        right_align_next_column_ = right_align_next_column;
     }
 
 protected:
     TypeCategory type_category_;
     std::unique_ptr<VariantDataModel> data_model_{nullptr};
-    bool using_grid_;
+    bool right_align_next_column_;
 };
 
 }
