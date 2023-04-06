@@ -86,7 +86,6 @@ void EditorPropertyVector2::OnImGuiContent() {
         ImGui::PopStyleVar();
     }
 
-
     ImGui::PopStyleVar();
 
 }
@@ -186,12 +185,12 @@ void EditorPropertyVector3::OnImGuiContent() {
             if(ImGui::DragInt("##Z", &vector3i.z(), 0.1f, 0.0f, 0.0f, "%.2f")) {
                 property_data_model_->SetValue(vector3i);
             }
-        } else if (type_category_ == TypeCategory::Vector2f) {
+        } else if (type_category_ == TypeCategory::Vector3f) {
             auto vector3f = property_data_model_->GetValue().convert<Vector3f>();
             if(ImGui::DragFloat("##Z", &vector3f.z(), 0.1f, 0.0f, 0.0f, "%.2f")) {
                 property_data_model_->SetValue(vector3f);
             }
-        } else if (type_category_ == TypeCategory::Vector2d) {
+        } else if (type_category_ == TypeCategory::Vector3d) {
             auto vector3d = property_data_model_->GetValue().convert<Vector3d>();
             float z = vector3d.z();
             if(ImGui::DragFloat("##Z", &z, 0.1f, 0.0f, 0.0f, "%.2f")) {
@@ -201,7 +200,6 @@ void EditorPropertyVector3::OnImGuiContent() {
         }
         ImGui::PopStyleVar();
     }
-
 
     ImGui::PopStyleVar();
 
@@ -310,7 +308,7 @@ void EditorPropertyVector4::OnImGuiContent() {
         } else if (type_category_ == TypeCategory::Vector4d) {
             auto vector4d = property_data_model_->GetValue().convert<Vector4d>();
             float z = vector4d.z();
-            if(ImGui::DragFloat("##Y", &z, 0.1f, 0.0f, 0.0f, "%.2f")) {
+            if(ImGui::DragFloat("##Z", &z, 0.1f, 0.0f, 0.0f, "%.2f")) {
                 vector4d.z() = z;
                 property_data_model_->SetValue(vector4d);
             }
@@ -352,9 +350,140 @@ void EditorPropertyVector4::OnImGuiContent() {
         ImGui::PopStyleVar();
     }
 
-
     ImGui::PopStyleVar();
 
+}
+
+///////////////////////////////////////////////////////////////////
+
+void EditorPropertyQuaternion::OnImGuiContent() {
+    auto divided_width = ImGui::GetContentRegionAvail().x / 4.0f;
+
+    float frame_height = ImGui::GetFrameHeight();
+    ImVec2 button_size = { frame_height + 3.0f, frame_height };
+
+    ImVec2 innerItemSpacing = ImGui::GetStyle().ItemInnerSpacing;
+    ImGui::PushStyleVar(ImGuiStyleVar_ItemSpacing, innerItemSpacing);
+
+    // [0]
+    {
+        ImGui::PushStyleVar(ImGuiStyleVar_ItemSpacing, ImVec2{0, 0});
+        ImGui::PushStyleColor(ImGuiCol_Text, ImVec4{1.0f, 1.0f, 1.0f, 1.0f});
+        ImGui::PushStyleColor(ImGuiCol_Button, ImVec4{0.8f, 0.1f, 0.15f, 1.0f});
+        ImGui::PushStyleColor(ImGuiCol_ButtonHovered, ImVec4{0.9f, 0.2f, 0.2f, 1.0f});
+        ImGui::PushStyleColor(ImGuiCol_ButtonActive, ImVec4{0.8f, 0.1f, 0.15f, 1.0f});
+        if (ImGui::Button("qx", button_size)) {
+            ImGui::OpenPopup("Edit Mode");
+        }
+        if (ImGui::BeginPopup("Edit Mode")) {
+            if (ImGui::Checkbox("Edit Free ", &free_edit_mode_)) {
+            }
+            ImGui::EndPopup();
+        }
+
+        ImGui::PopStyleColor(4);
+        ImGui::SameLine();
+        ImGui::SetNextItemWidth(divided_width - button_size.x);
+        if (type_category_ == TypeCategory::Quaternionf) {
+            auto q = property_data_model_->GetValue().convert<Quaternionf>();
+            if(ImGui::DragFloat("##qx", &q.x(), 0.1f, 0.0f, 0.0f, "%.2f")) {
+                property_data_model_->SetValue(q);
+            }
+        } else if (type_category_ == TypeCategory::Quaterniond) {
+            auto q = property_data_model_->GetValue().convert<Quaterniond>();
+            float x = q.x();
+            if(ImGui::DragFloat("##qx", &x, 0.1f, 0.0f, 0.0f, "%.2f")) {
+                property_data_model_->SetValue(q);
+            }
+        }
+        ImGui::PopStyleVar();
+    }
+
+    ImGui::SameLine();
+
+    // [1]
+    {
+        ImGui::PushStyleVar(ImGuiStyleVar_ItemSpacing, ImVec2{0, 0});
+        ImGui::PushStyleColor(ImGuiCol_Text, ImVec4{ 1.0f, 1.0f, 1.0f, 1.0f });
+        ImGui::PushStyleColor(ImGuiCol_Button, ImVec4{ 0.2f, 0.7f, 0.2f, 1.0f });
+        ImGui::PushStyleColor(ImGuiCol_ButtonHovered, ImVec4{ 0.3f, 0.8f, 0.3f, 1.0f });
+        ImGui::PushStyleColor(ImGuiCol_ButtonActive, ImVec4{ 0.2f, 0.7f, 0.2f, 1.0f });
+        ImGui::Button("qy", button_size);
+        ImGui::PopStyleColor(4);
+        ImGui::SameLine();
+        ImGui::SetNextItemWidth(divided_width - button_size.x);
+        if (type_category_ == TypeCategory::Quaternionf) {
+            auto q = property_data_model_->GetValue().convert<Quaternionf>();
+            if(ImGui::DragFloat("##qy", &q.y(), 0.1f, 0.0f, 0.0f, "%.2f")) {
+                property_data_model_->SetValue(q);
+            }
+        } else if (type_category_ == TypeCategory::Quaterniond) {
+            auto q = property_data_model_->GetValue().convert<Quaterniond>();
+            float y = q.y();
+            if(ImGui::DragFloat("##qy", &y, 0.1f, 0.0f, 0.0f, "%.2f")) {
+                property_data_model_->SetValue(q);
+            }
+        }
+        ImGui::PopStyleVar();
+    }
+
+    ImGui::SameLine();
+
+    // [2]
+    {
+        ImGui::PushStyleVar(ImGuiStyleVar_ItemSpacing, ImVec2{0, 0});
+        ImGui::PushStyleColor(ImGuiCol_Text, ImVec4{ 1.0f, 1.0f, 1.0f, 1.0f });
+        ImGui::PushStyleColor(ImGuiCol_Button, ImVec4{ 0.1f, 0.25f, 0.8f, 1.0f });
+        ImGui::PushStyleColor(ImGuiCol_ButtonHovered, ImVec4{ 0.2f, 0.35f, 0.9f, 1.0f });
+        ImGui::PushStyleColor(ImGuiCol_ButtonActive, ImVec4{ 0.1f, 0.25f, 0.8f, 1.0f });
+        ImGui::Button("qz", button_size);
+        ImGui::PopStyleColor(4);
+        ImGui::SameLine();
+        ImGui::SetNextItemWidth(divided_width - button_size.x);
+        if (type_category_ == TypeCategory::Quaternionf) {
+            auto q = property_data_model_->GetValue().convert<Quaternionf>();
+            if(ImGui::DragFloat("##qz", &q.z(), 0.1f, 0.0f, 0.0f, "%.2f")) {
+                property_data_model_->SetValue(q);
+            }
+        } else if (type_category_ == TypeCategory::Quaterniond) {
+            auto q = property_data_model_->GetValue().convert<Quaterniond>();
+            float z = q.z();
+            if(ImGui::DragFloat("##qz", &z, 0.1f, 0.0f, 0.0f, "%.2f")) {
+                property_data_model_->SetValue(q);
+            }
+        }
+        ImGui::PopStyleVar();
+    }
+
+    ImGui::SameLine();
+
+    // [3]
+    {
+        ImGui::PushStyleVar(ImGuiStyleVar_ItemSpacing, ImVec2{0, 0});
+        ImGui::PushStyleColor(ImGuiCol_Text, ImVec4{ 1.0f, 1.0f, 1.0f, 1.0f });
+        ImGui::PushStyleColor(ImGuiCol_Button, ImVec4{ 0.54f, 0.17f, 0.89f, 1.0f });
+        ImGui::PushStyleColor(ImGuiCol_ButtonHovered, ImVec4{ 0.9f, 0.9f, 0.9f, 1.0f });
+        ImGui::PushStyleColor(ImGuiCol_ButtonActive, ImVec4{ 1.0f, 1.0f, 1.0f, 1.0f });
+        ImGui::Button("qw", button_size);
+        ImGui::PopStyleColor(4);
+        ImGui::SameLine();
+        ImGui::SetNextItemWidth(divided_width - button_size.x);
+        if (type_category_ == TypeCategory::Quaternionf) {
+            auto q = property_data_model_->GetValue().convert<Quaternionf>();
+            if(ImGui::DragFloat("##qw", &q.w(), 0.1f, 0.0f, 0.0f, "%.2f")) {
+                property_data_model_->SetValue(q);
+            }
+        } else if (type_category_ == TypeCategory::Quaterniond) {
+            auto q = property_data_model_->GetValue().convert<Quaterniond>();
+            float w = q.w();
+            if(ImGui::DragFloat("##qw", &w, 0.1f, 0.0f, 0.0f, "%.2f")) {
+                property_data_model_->SetValue(q);
+            }
+        }
+        ImGui::PopStyleVar();
+    }
+
+    ImGui::PopStyleVar();
 }
 
 

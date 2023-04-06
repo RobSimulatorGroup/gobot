@@ -35,13 +35,14 @@ GOBOT_REGISTRATION {
             .property("property_usage_flags",
                       &TestPropertyNode::GetPropertyUsageFlags,
                       &TestPropertyNode::SetPropertyUsageFlags)(
-                    AddMetaPropertyInfo(PropertyInfo().SetEnumAsFlags(true)) )
+                    AddMetaPropertyInfo(PropertyInfo().SetHint(PropertyHint::Flags)) )
             .property("property_hint", &TestPropertyNode::property_hint)
             .property("string", &TestPropertyNode::string)
             .property("boolean", &TestPropertyNode::boolean_)
             .property("vector2f", &TestPropertyNode::vector2f)
             .property("vector3f", &TestPropertyNode::vector3f)
             .property("vector4f", &TestPropertyNode::vector4f)
+            .property("quaternionf", &TestPropertyNode::quaternionf)
             .property("color", &TestPropertyNode::GetColor, &TestPropertyNode::SetColor)
             .property("multiline_text", &TestPropertyNode::multiline_text)(
                     AddMetaPropertyInfo(PropertyInfo().SetHint(PropertyHint::MultilineText)) )

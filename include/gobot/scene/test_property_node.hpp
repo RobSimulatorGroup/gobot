@@ -48,6 +48,8 @@ private:
     Vector3f vector3f{0.0f, 0.0f, 0.0f};
 
     Vector4f vector4f{0.0f, 0.0f, 0.0f, 0.0f};
+
+    Quaternionf quaternionf{0.0f, 0.0f, 0.0f, 1.0f};
 };
 
 }

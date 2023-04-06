@@ -48,5 +48,18 @@ public:
 private:
 };
 
+//////////////////////////////////////////////////////////////////////
+
+class EditorPropertyQuaternion : public EditorBuiltInProperty {
+    GOBCLASS(EditorPropertyQuaternion, EditorBuiltInProperty)
+public:
+    using EditorBuiltInProperty::EditorBuiltInProperty;
+
+    void OnImGuiContent() override;
+
+private:
+    bool free_edit_mode_{false};
+};
+
 
 }

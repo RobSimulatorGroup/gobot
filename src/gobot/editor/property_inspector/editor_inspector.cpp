@@ -210,7 +210,7 @@ ImGuiNode* EditorInspectorDefaultPlugin::GetEditorForProperty(std::unique_ptr<Va
             return editor;
         } break;
         case TypeCategory::Enum: {
-            if ((dynamic_cast<PropertyDataModel*>(variant_data.get())->GetPropertyInfo().enum_as_flags)) {
+            if ((dynamic_cast<PropertyDataModel*>(variant_data.get())->GetPropertyInfo().hint == PropertyHint::Flags)) {
                 auto* editor = Object::New<EditorPropertyFlags>(type_category, std::move(variant_data));
                 return editor;
             } else {
@@ -254,9 +254,10 @@ ImGuiNode* EditorInspectorDefaultPlugin::GetEditorForProperty(std::unique_ptr<Va
             return editor;
         } break;
         case TypeCategory::Quaternionf:
-            break;
-        case TypeCategory::Quaterniond:
-            break;
+        case TypeCategory::Quaterniond: {
+            auto* editor = Object::New<EditorPropertyQuaternion>(type_category, std::move(variant_data));
+            return editor;
+        } break;
         case TypeCategory::VectorXf:
             break;
         case TypeCategory::VectorXd:

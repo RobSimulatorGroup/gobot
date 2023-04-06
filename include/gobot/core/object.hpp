@@ -64,7 +64,7 @@ enum class PropertyHint {
     GlobalFile, ///< a file path must be passed, hint_text (optionally) is a filter "*.png,*.wav,*.doc,"
     GlobalDir,  ///< a directory path must be passed
 
-    MultilineText
+    MultilineText,
 };
 
 enum class PropertyUsageFlags {
@@ -83,7 +83,6 @@ struct PropertyInfo {
     String hint_string;
     PropertyUsageFlags usage = PropertyUsageFlags::Default;
     String tool_tip;
-    bool enum_as_flags{false};
 
     PropertyInfo& SetName(const String& _name) {
         name = _name;
@@ -107,12 +106,6 @@ struct PropertyInfo {
 
     PropertyInfo& SetToolTip(const String& _tool_tip) {
         tool_tip = _tool_tip;
-        return *this;
-    }
-
-
-    PropertyInfo& SetEnumAsFlags(bool _enum_as_flags) {
-        enum_as_flags = _enum_as_flags;
         return *this;
     }
 
