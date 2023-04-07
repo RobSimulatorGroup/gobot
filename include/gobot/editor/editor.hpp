@@ -10,6 +10,10 @@
 #include "gobot/scene/node.hpp"
 #include "gobot/scene/imgui_node.hpp"
 
+namespace ImGui {
+class FileBrowser;
+}
+
 namespace gobot {
 
 class Node3DEditor;
@@ -27,6 +31,8 @@ public:
     static Editor* GetInstance();
 
     FORCE_INLINE Node3DEditor* GetNode3dEditor() { return node3d_editor_; }
+
+    FORCE_INLINE ImGui::FileBrowser* GetFileBrowser() { return file_browser_; }
 
     bool Begin() override;
 
@@ -46,6 +52,7 @@ private:
 
     Node3DEditor* node3d_editor_{nullptr};
     ImGuiManager* imgui_manager_{nullptr};
+    ImGui::FileBrowser* file_browser_{nullptr};
 
 };
 

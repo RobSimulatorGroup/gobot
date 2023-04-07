@@ -42,6 +42,7 @@ private:
     PropertyHint property_hint{PropertyHint::Dir};
     String string{};
     String multiline_text{};
+    String path{"/home/user/"};
 
     ObjectID objectID{};
 

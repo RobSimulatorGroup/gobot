@@ -60,6 +60,8 @@ GOBOT_REGISTRATION {
             .property("color", &TestPropertyNode::GetColor, &TestPropertyNode::SetColor)
             .property("multiline_text", &TestPropertyNode::multiline_text)(
                     AddMetaPropertyInfo(PropertyInfo().SetHint(PropertyHint::MultilineText)) )
+            .property("path", &TestPropertyNode::path)(
+                    AddMetaPropertyInfo(PropertyInfo().SetHint(PropertyHint::Dir)) )
             .property("uint8", &TestPropertyNode::uint8_);
 
 

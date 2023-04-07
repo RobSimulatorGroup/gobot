@@ -6,9 +6,11 @@
 */
 
 #include "gobot/editor/property_inspector/editor_property_primitives.hpp"
+#include "gobot/editor/editor.hpp"
 #include "imgui_stdlib.h"
 #include "imgui.h"
 #include "gobot/log.hpp"
+#include "imgui_extension/file_browser/ImFileBrowser.h"
 
 namespace gobot {
 
@@ -272,7 +274,15 @@ void EditorPropertyMultilineText::OnImGuiContent() {
 //////////////////////////////////////////////////////
 
 void EditorPropertyPath::OnImGuiContent() {
-    // TODO
+    auto file_browser = Editor::GetInstance()->GetFileBrowser();
+    auto path = property_data_model_->GetValue().to_string();
+    if (ImGui::Button(path.c_str())) {
+        file_browser->Open();
+    }
+    if (file_browser->HasSelected()) {
+        property_data_model_->SetValue(String::fromStdString(file_browser->GetPath().string()));
+        file_browser->ClearSelected();
+    }
 }
 
 /////////////////////////////////////////////////////

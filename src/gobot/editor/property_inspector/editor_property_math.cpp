@@ -1141,37 +1141,37 @@ void EditorPropertyTransform2::OnImGuiContent() {
             using T = std::decay_t<decltype(arg)>;
             if constexpr (std::is_same_v<T, Isometry2f>) {
                 float xx = arg(0, 0);
-                if(ImGui::DragFloat("##XX", &xx, 0.01f, 0.0f, 0.0f, "%.2f")) {
+                if(ImGui::DragFloat("##XX", &xx, 0.01f, -1.0f, 1.0f, "%.2f", ImGuiSliderFlags_AlwaysClamp)) {
                     arg(0, 0) = xx;
                     property_data_model_->SetValue(arg);
                 }
             } else if constexpr (std::is_same_v<T, Isometry2d>) {
                 float xx = arg(0, 0);
-                if(ImGui::DragFloat("##XX", &xx, 0.01f, 0.0f, 0.0f, "%.2f")) {
+                if(ImGui::DragFloat("##XX", &xx, 0.01f, -1.0f, 1.0f, "%.2f", ImGuiSliderFlags_AlwaysClamp)) {
                     arg(0, 0) = xx;
                     property_data_model_->SetValue(arg);
                 }
             } else if constexpr (std::is_same_v<T, Affine2f>) {
                 float xx = arg(0, 0);
-                if(ImGui::DragFloat("##XX", &xx, 0.01f, 0.0f, 0.0f, "%.2f")) {
+                if(ImGui::DragFloat("##XX", &xx, 0.01f, -1.0f, 1.0f, "%.2f", ImGuiSliderFlags_AlwaysClamp)) {
                     arg(0, 0) = xx;
                     property_data_model_->SetValue(arg);
                 }
             } else if constexpr (std::is_same_v<T, Affine2d>) {
                 float xx = arg(0, 0);
-                if(ImGui::DragFloat("##XX", &xx, 0.01f, 0.0f, 0.0f, "%.2f")) {
+                if(ImGui::DragFloat("##XX", &xx, 0.01f, -1.0f, 1.0f, "%.2f", ImGuiSliderFlags_AlwaysClamp)) {
                     arg(0, 0) = xx;
                     property_data_model_->SetValue(arg);
                 }
             } else if constexpr (std::is_same_v<T, Projective2f>) {
                 float xx = arg(0, 0);
-                if(ImGui::DragFloat("##XX", &xx, 0.01f, 0.0f, 0.0f, "%.2f")) {
+                if(ImGui::DragFloat("##XX", &xx, 0.01f, -1.0f, 1.0f, "%.2f", ImGuiSliderFlags_AlwaysClamp)) {
                     arg(0, 0) = xx;
                     property_data_model_->SetValue(arg);
                 }
             } else if constexpr (std::is_same_v<T, Projective2d>) {
                 float xx = arg(0, 0);
-                if(ImGui::DragFloat("##XX", &xx, 0.01f, 0.0f, 0.0f, "%.2f")) {
+                if(ImGui::DragFloat("##XX", &xx, 0.01f, -1.0f, 1.0f, "%.2f", ImGuiSliderFlags_AlwaysClamp)) {
                     arg(0, 0) = xx;
                     property_data_model_->SetValue(arg);
                 }
@@ -1198,37 +1198,37 @@ void EditorPropertyTransform2::OnImGuiContent() {
             using T = std::decay_t<decltype(arg)>;
             if constexpr (std::is_same_v<T, Isometry2f>) {
                 float xy = arg(0, 1);
-                if(ImGui::DragFloat("##XY", &xy, 0.01f, 0.0f, 0.0f, "%.2f")) {
+                if(ImGui::DragFloat("##XY", &xy, 0.01f, -1.0f, 1.0f, "%.2f", ImGuiSliderFlags_AlwaysClamp)) {
                     arg(0, 1) = xy;
                     property_data_model_->SetValue(arg);
                 }
             } else if constexpr (std::is_same_v<T, Isometry2d>) {
                 float xy = arg(0, 1);
-                if(ImGui::DragFloat("##XY", &xy, 0.01f, 0.0f, 0.0f, "%.2f")) {
+                if(ImGui::DragFloat("##XY", &xy, 0.01f, -1.0f, 1.0f, "%.2f", ImGuiSliderFlags_AlwaysClamp)) {
                     arg(0, 1) = xy;
                     property_data_model_->SetValue(arg);
                 }
             } else if constexpr (std::is_same_v<T, Affine2f>) {
                 float xy = arg(0, 1);
-                if(ImGui::DragFloat("##XY", &xy, 0.01f, 0.0f, 0.0f, "%.2f")) {
+                if(ImGui::DragFloat("##XY", &xy, 0.01f, -1.0f, 1.0f, "%.2f", ImGuiSliderFlags_AlwaysClamp)) {
                     arg(0, 1) = xy;
                     property_data_model_->SetValue(arg);
                 }
             } else if constexpr (std::is_same_v<T, Affine2d>) {
                 float xy = arg(0, 1);
-                if(ImGui::DragFloat("##XY", &xy, 0.01f, 0.0f, 0.0f, "%.2f")) {
+                if(ImGui::DragFloat("##XY", &xy, 0.01f, -1.0f, 1.0f, "%.2f", ImGuiSliderFlags_AlwaysClamp)) {
                     arg(0, 1) = xy;
                     property_data_model_->SetValue(arg);
                 }
             } else if constexpr (std::is_same_v<T, Projective2f>) {
                 float xy = arg(0, 1);
-                if(ImGui::DragFloat("##XY", &xy, 0.01f, 0.0f, 0.0f, "%.2f")) {
+                if(ImGui::DragFloat("##XY", &xy, 0.01f, -1.0f, 1.0f, "%.2f", ImGuiSliderFlags_AlwaysClamp)) {
                     arg(0, 1) = xy;
                     property_data_model_->SetValue(arg);
                 }
             } else if constexpr (std::is_same_v<T, Projective2d>) {
                 float xy = arg(0, 1);
-                if(ImGui::DragFloat("##XY", &xy, 0.01f, 0.0f, 0.0f, "%.2f")) {
+                if(ImGui::DragFloat("##XY", &xy, 0.01f, -1.0f, 1.0f, "%.2f", ImGuiSliderFlags_AlwaysClamp)) {
                     arg(0, 1) = xy;
                     property_data_model_->SetValue(arg);
                 }
@@ -1253,37 +1253,37 @@ void EditorPropertyTransform2::OnImGuiContent() {
             using T = std::decay_t<decltype(arg)>;
             if constexpr (std::is_same_v<T, Isometry2f>) {
                 float yz = arg(1, 0);
-                if(ImGui::DragFloat("##YX", &yz, 0.01f, 0.0f, 0.0f, "%.2f")) {
+                if(ImGui::DragFloat("##YX", &yz, 0.01f, -1.0f, 1.0f, "%.2f", ImGuiSliderFlags_AlwaysClamp)) {
                     arg(1, 0) = yz;
                     property_data_model_->SetValue(arg);
                 }
             } else if constexpr (std::is_same_v<T, Isometry2d>) {
                 float yz = arg(1, 0);
-                if(ImGui::DragFloat("##YX", &yz, 0.01f, 0.0f, 0.0f, "%.2f")) {
+                if(ImGui::DragFloat("##YX", &yz, 0.01f, -1.0f, 1.0f, "%.2f", ImGuiSliderFlags_AlwaysClamp)) {
                     arg(1, 0) = yz;
                     property_data_model_->SetValue(arg);
                 }
             } else if constexpr (std::is_same_v<T, Affine2f>) {
                 float yz = arg(1, 0);
-                if(ImGui::DragFloat("##XY", &yz, 0.01f, 0.0f, 0.0f, "%.2f")) {
+                if(ImGui::DragFloat("##XY", &yz, 0.01f, -1.0f, 1.0f, "%.2f", ImGuiSliderFlags_AlwaysClamp)) {
                     arg(1, 0) = yz;
                     property_data_model_->SetValue(arg);
                 }
             } else if constexpr (std::is_same_v<T, Affine2d>) {
                 float yz = arg(1, 0);
-                if(ImGui::DragFloat("##XY", &yz, 0.01f, 0.0f, 0.0f, "%.2f")) {
+                if(ImGui::DragFloat("##XY", &yz, 0.01f, -1.0f, 1.0f, "%.2f", ImGuiSliderFlags_AlwaysClamp)) {
                     arg(1, 0) = yz;
                     property_data_model_->SetValue(arg);
                 }
             } else if constexpr (std::is_same_v<T, Projective2f>) {
                 float yz = arg(1, 0);
-                if(ImGui::DragFloat("##XY", &yz, 0.01f, 0.0f, 0.0f, "%.2f")) {
+                if(ImGui::DragFloat("##XY", &yz, 0.01f, -1.0f, 1.0f, "%.2f", ImGuiSliderFlags_AlwaysClamp)) {
                     arg(1, 0) = yz;
                     property_data_model_->SetValue(arg);
                 }
             } else if constexpr (std::is_same_v<T, Projective2d>) {
                 float yz = arg(1, 0);
-                if(ImGui::DragFloat("##XY", &yz, 0.01f, 0.0f, 0.0f, "%.2f")) {
+                if(ImGui::DragFloat("##XY", &yz, 0.01f, -1.0f, 1.0f, "%.2f", ImGuiSliderFlags_AlwaysClamp)) {
                     arg(1, 0) = yz;
                     property_data_model_->SetValue(arg);
                 }
@@ -1310,37 +1310,37 @@ void EditorPropertyTransform2::OnImGuiContent() {
             using T = std::decay_t<decltype(arg)>;
             if constexpr (std::is_same_v<T, Isometry2f>) {
                 float yy = arg(1, 1);
-                if(ImGui::DragFloat("##YY", &yy, 0.01f, 0.0f, 0.0f, "%.2f")) {
+                if(ImGui::DragFloat("##YY", &yy, 0.01f, -1.0f, 1.0f, "%.2f", ImGuiSliderFlags_AlwaysClamp)) {
                     arg(1, 1) = yy;
                     property_data_model_->SetValue(arg);
                 }
             } else if constexpr (std::is_same_v<T, Isometry2d>) {
                 float yy = arg(1, 1);
-                if(ImGui::DragFloat("##YY", &yy, 0.01f, 0.0f, 0.0f, "%.2f")) {
+                if(ImGui::DragFloat("##YY", &yy, 0.01f, -1.0f, 1.0f, "%.2f", ImGuiSliderFlags_AlwaysClamp)) {
                     arg(1, 1) = yy;
                     property_data_model_->SetValue(arg);
                 }
             } else if constexpr (std::is_same_v<T, Affine2f>) {
                 float yy = arg(1, 1);
-                if(ImGui::DragFloat("##YY", &yy, 0.01f, 0.0f, 0.0f, "%.2f")) {
+                if(ImGui::DragFloat("##YY", &yy, 0.01f, -1.0f, 1.0f, "%.2f", ImGuiSliderFlags_AlwaysClamp)) {
                     arg(1, 1) = yy;
                     property_data_model_->SetValue(arg);
                 }
             } else if constexpr (std::is_same_v<T, Affine2d>) {
                 float yy = arg(1, 1);
-                if(ImGui::DragFloat("##YY", &yy, 0.01f, 0.0f, 0.0f, "%.2f")) {
+                if(ImGui::DragFloat("##YY", &yy, 0.01f, -1.0f, 1.0f, "%.2f", ImGuiSliderFlags_AlwaysClamp)) {
                     arg(1, 1) = yy;
                     property_data_model_->SetValue(arg);
                 }
             } else if constexpr (std::is_same_v<T, Projective2f>) {
                 float yy = arg(1, 1);
-                if(ImGui::DragFloat("##YY", &yy, 0.01f, 0.0f, 0.0f, "%.2f")) {
+                if(ImGui::DragFloat("##YY", &yy, 0.01f, -1.0f, 1.0f, "%.2f", ImGuiSliderFlags_AlwaysClamp)) {
                     arg(1, 1) = yy;
                     property_data_model_->SetValue(arg);
                 }
             } else if constexpr (std::is_same_v<T, Projective2d>) {
                 float yy = arg(1, 1);
-                if(ImGui::DragFloat("##YY", &yy, 0.01f, 0.0f, 0.0f, "%.2f")) {
+                if(ImGui::DragFloat("##YY", &yy, 0.01f, -1.0f, 1.0f, "%.2f", ImGuiSliderFlags_AlwaysClamp)) {
                     arg(1, 1) = yy;
                     property_data_model_->SetValue(arg);
                 }

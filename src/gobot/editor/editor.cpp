@@ -22,6 +22,7 @@
 #include "gobot/editor/imgui/imgui_utilities.hpp"
 #include "imgui.h"
 #include "imgui_internal.h"
+#include "imgui_extension/file_browser/ImFileBrowser.h"
 
 namespace gobot {
 
@@ -45,10 +46,15 @@ Editor::Editor() {
     AddChild(Object::New<SceneEditorPanel>());
     AddChild(Object::New<InspectorPanel>());
     AddChild(Object::New<ResourcePanel>());
+
+    file_browser_ = new ImGui::FileBrowser();
+    file_browser_->SetTitle("File Browser");
 }
 
 Editor::~Editor() {
     s_singleton = nullptr;
+
+    delete file_browser_;
     delete imgui_manager_;
 }
 
@@ -84,14 +90,9 @@ void Editor::End() {
 void Editor::OnImGuiContent() {
     // your drawing here
     ImGui::ShowDemoWindow();
-}
 
-//void Editor::OnImGui() {
-//    for(auto& panel : panels_) {
-////                if(panel->Active())
-//        panel->OnImGui();
-//    }
-//}
+    file_browser_->Display();
+}
 
 void Editor::DrawMenuBar() {
     if (ImGui::BeginMainMenuBar()) {
