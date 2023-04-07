@@ -73,6 +73,10 @@ void Node3DEditor::NotificationCallBack(NotificationType notification) {
 void Node3DEditor::SetNeedUpdateCamera(bool update_camera) {
     // If we are editing camera, let the editing finish itself.
     if (!editing_) {
+        // Reset mouse scroll offset if we prepare to update camera
+        if (!update_camera_ && update_camera) {
+            Input::GetInstance()->SetScrollOffset(0.0);
+        }
         update_camera_ = update_camera;
     }
 }
@@ -157,16 +161,14 @@ void Node3DEditor::OnImGuizmo() {
     float view_manipulate_right = ImGui::GetWindowPos().x + window_width;
     float view_manipulate_top = ImGui::GetWindowPos().y;
 
+    if (imguizmo_operation_ != InvalidGuizmoOperation()) {
+        ImGuizmo::Manipulate(camera3d_->GetViewMatrix().data(), camera3d_->GetProjectionMatrix().data(),
+                             static_cast<ImGuizmo::OPERATION>(imguizmo_operation_), ImGuizmo::LOCAL, objectMatrix);
+    }
+
     ImGuizmo::ViewManipulate(camera3d_->GetViewMatrix().data(), camera3d_->GetViewMatrixEye().norm(),
                              ImVec2{view_manipulate_right - 128, view_manipulate_top + 50},
                              ImVec2(128, 128), 0x10101010);
-
-    if (imguizmo_operation_ == InvalidGuizmoOperation()) {
-        return;
-    }
-
-    ImGuizmo::Manipulate(camera3d_->GetViewMatrix().data(), camera3d_->GetProjectionMatrix().data(),
-                         static_cast<ImGuizmo::OPERATION>(imguizmo_operation_), ImGuizmo::LOCAL, objectMatrix);
 
 }
 
