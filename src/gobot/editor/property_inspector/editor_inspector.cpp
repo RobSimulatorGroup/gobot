@@ -219,8 +219,13 @@ ImGuiNode* EditorInspectorDefaultPlugin::GetEditorForProperty(std::unique_ptr<Va
             }
         } break;
         case TypeCategory::String: {
-            if ((dynamic_cast<PropertyDataModel*>(variant_data.get())->GetPropertyInfo().hint == PropertyHint::MultilineText)) {
+            auto hint = dynamic_cast<PropertyDataModel*>(variant_data.get())->GetPropertyInfo().hint;
+            if (hint == PropertyHint::MultilineText) {
                 auto* editor = Object::New<EditorPropertyMultilineText>(type_category, std::move(variant_data));
+                return editor;
+            } else if (hint == PropertyHint::File || hint == PropertyHint::Dir ||
+                       hint == PropertyHint::GlobalFile || hint == PropertyHint::GlobalDir) {
+                auto* editor = Object::New<EditorPropertyPath>(type_category, std::move(variant_data));
                 return editor;
             } else {
                 auto* editor = Object::New<EditorPropertyText>(type_category, std::move(variant_data));
@@ -235,12 +240,18 @@ ImGuiNode* EditorInspectorDefaultPlugin::GetEditorForProperty(std::unique_ptr<Va
             auto* editor = Object::New<EditorPropertyColor>(type_category, std::move(variant_data));
             return editor;
         } break;
-        case TypeCategory::ObjectID:
-            break;
-        case TypeCategory::RID:
-            break;
-        case TypeCategory::RenderRID:
-            break;
+        case TypeCategory::ObjectID: {
+            auto* editor = Object::New<EditorPropertyObjectID>(type_category, std::move(variant_data));
+            return editor;
+        } break;
+        case TypeCategory::RID: {
+            auto* editor = Object::New<EditorPropertyRID>(type_category, std::move(variant_data));
+            return editor;
+        } break;
+        case TypeCategory::RenderRID: {
+            auto* editor = Object::New<EditorPropertyRenderRID>(type_category, std::move(variant_data));
+            return editor;
+        } break;
         case TypeCategory::Vector2i:
         case TypeCategory::Vector2f:
         case TypeCategory::Vector2d: {
