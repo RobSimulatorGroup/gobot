@@ -60,6 +60,10 @@ private:
     Isometry2f isometry2f{Isometry2f::Identity()};
 
     Isometry3f isometry3f{Isometry3f::Identity()};
+
+    VectorXf vectorXf{VectorXf::Zero(6)};
+
+    MatrixXf matrixXf{MatrixXf::Zero(6, 6)};
 };
 
 }

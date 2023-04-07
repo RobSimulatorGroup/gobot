@@ -48,6 +48,8 @@ GOBOT_REGISTRATION {
             .property("matrix3f", &TestPropertyNode::matrix3f)
             .property("isometry2f", &TestPropertyNode::isometry2f)
             .property("isometry3f", &TestPropertyNode::isometry3f)
+            .property("vectorXf", &TestPropertyNode::vectorXf)
+            .property("matrixXf", &TestPropertyNode::matrixXf)
             .property("color", &TestPropertyNode::GetColor, &TestPropertyNode::SetColor)
             .property("multiline_text", &TestPropertyNode::multiline_text)(
                     AddMetaPropertyInfo(PropertyInfo().SetHint(PropertyHint::MultilineText)) )

@@ -274,11 +274,14 @@ ImGuiNode* EditorInspectorDefaultPlugin::GetEditorForProperty(std::unique_ptr<Va
         } break;
         case TypeCategory::VectorXi:
         case TypeCategory::VectorXf:
-        case TypeCategory::VectorXd:
+        case TypeCategory::VectorXd: {
+            auto* editor = Object::New<EditorPropertyVectorX>(type_category, std::move(variant_data));
+            return editor;
+        } break;
         case TypeCategory::MatrixXi:
         case TypeCategory::MatrixXf:
         case TypeCategory::MatrixXd: {
-            auto* editor = Object::New<EditorPropertyVector4>(type_category, std::move(variant_data));
+            auto* editor = Object::New<EditorPropertyMatrixX>(type_category, std::move(variant_data));
             return editor;
         } break;
         case TypeCategory::Quaternionf:

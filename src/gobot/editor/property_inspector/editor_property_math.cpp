@@ -1353,6 +1353,97 @@ void EditorPropertyTransform2::OnImGuiContent() {
 
 }
 
+//////////////////////////////////////////////////////////////
+
+void EditorPropertyVectorX::OnImGuiContent() {
+    if (type_category_ == TypeCategory::VectorXi) {
+        auto matrix = property_data_model_->GetValue().convert<VectorXi>();
+        rows_ = matrix.size();
+        data_ = matrix;
+    } else if (type_category_ == TypeCategory::VectorXf) {
+        auto matrix = property_data_model_->GetValue().convert<VectorXf>();
+        rows_ = matrix.size();
+        data_ = matrix;
+    } else if (type_category_ == TypeCategory::VectorXd) {
+        auto matrix = property_data_model_->GetValue().convert<VectorXd>();
+        rows_ = matrix.size();
+        data_ = matrix;
+    }
+
+    auto divided_width = ImGui::GetContentRegionAvail().x;
+
+    float frame_height = ImGui::GetFrameHeight();
+    ImVec2 button_size = { frame_height + 3.0f, frame_height };
+
+    ImVec2 innerItemSpacing = ImGui::GetStyle().ItemInnerSpacing;
+    ImGui::PushStyleVar(ImGuiStyleVar_ItemSpacing, innerItemSpacing);
+
+    for (int i = 0; i < rows_; i++ ) {
+        {
+            ImGui::PushStyleVar(ImGuiStyleVar_ItemSpacing, ImVec2{0, 0});
+            ImGui::PushStyleColor(ImGuiCol_Text, ImVec4{ 1.0f, 1.0f, 1.0f, 1.0f });
+            ImGui::PushStyleColor(ImGuiCol_Button, ImVec4{ 0.59f, 0.71f, 0.26f, 1.0f });
+            ImGui::PushStyleColor(ImGuiCol_ButtonHovered, ImVec4{ 0.5f, 0.9f, 0.5f, 1.0f });
+            ImGui::PushStyleColor(ImGuiCol_ButtonActive, ImVec4{ 0.6f, 0.7f, 0.5f, 1.0f });
+            ImGui::Button(std::to_string(i).c_str(), button_size);
+            ImGui::PopStyleColor(4);
+            ImGui::SameLine();
+            ImGui::SetNextItemWidth(divided_width - button_size.x);
+
+            std::visit([i, this](auto&& arg) {
+                using T = std::decay_t<decltype(arg)>;
+                if constexpr (std::is_same_v<T, VectorXi>) {
+                    int data = arg[i];
+                    if(ImGui::DragInt(fmt::format("##{}", i).c_str(), &data, 0.01f, 0.0f, 0.0f, "%.2f")) {
+                        arg[i] = data;
+                        property_data_model_->SetValue(arg);
+                    }
+                } else if constexpr (std::is_same_v<T, VectorXf>) {
+                    float data = arg[i];
+                    if(ImGui::DragFloat(fmt::format("##{}", i).c_str(), &data, 0.01f, 0.0f, 0.0f, "%.2f")) {
+                        arg[i] = data;
+                        property_data_model_->SetValue(arg);
+                    }
+                } else if constexpr (std::is_same_v<T, VectorXd>) {
+                    float data = arg[i];
+                    if(ImGui::DragFloat(fmt::format("##{}", i).c_str(), &data, 0.01f, 0.0f, 0.0f, "%.2f")) {
+                        arg[i] = data;
+                        property_data_model_->SetValue(arg);
+                    }
+                }
+            }, data_);
+            ImGui::PopStyleVar();
+        }
+    }
+
+    ImGui::PopStyleVar();
+}
+
+//////////////////////////////////////////////////////////////
+
+void EditorPropertyMatrixX::OnImGuiContent() {
+    if (type_category_ == TypeCategory::MatrixXi) {
+        auto matrix = property_data_model_->GetValue().convert<MatrixXi>();
+        rows_ = matrix.rows();
+        columns_ = matrix.cols();
+        data_ = matrix;
+    } else if (type_category_ == TypeCategory::MatrixXf) {
+        auto matrix = property_data_model_->GetValue().convert<MatrixXf>();
+        rows_ = matrix.rows();
+        columns_ = matrix.cols();
+        data_ = matrix;
+    } else if (type_category_ == TypeCategory::MatrixXd) {
+        auto matrix = property_data_model_->GetValue().convert<MatrixXd>();
+        rows_ = matrix.rows();
+        columns_ = matrix.cols();
+        data_ = matrix;
+    }
+
+
+}
+
+
+
 ///////////////////////////////////////////////////////////////////////////
 
 void EditorPropertyTransform3::OnImGuiContent() {

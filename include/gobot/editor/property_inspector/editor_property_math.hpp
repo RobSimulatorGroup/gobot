@@ -94,6 +94,37 @@ private:
 
 //////////////////////////////////////////////////////////////////////
 
+class EditorPropertyVectorX : public EditorBuiltInProperty {
+    GOBCLASS(EditorPropertyVectorX, EditorBuiltInProperty)
+public:
+    using EditorBuiltInProperty::EditorBuiltInProperty;
+
+    void OnImGuiContent() override;
+
+private:
+    std::variant<VectorXi, VectorXf, VectorXd> data_;
+    int rows_{0};
+};
+
+
+//////////////////////////////////////////////////////////////////////
+
+class EditorPropertyMatrixX : public EditorBuiltInProperty {
+    GOBCLASS(EditorPropertyMatrixX, EditorBuiltInProperty)
+public:
+    using EditorBuiltInProperty::EditorBuiltInProperty;
+
+    void OnImGuiContent() override;
+
+private:
+    std::variant<MatrixXi, MatrixXf, MatrixXd> data_;
+    int rows_{0};
+    int columns_{0};
+};
+
+
+//////////////////////////////////////////////////////////////////////
+
 class EditorPropertyTransform2 : public EditorBuiltInProperty {
     GOBCLASS(EditorPropertyTransform2, EditorBuiltInProperty)
 public:
