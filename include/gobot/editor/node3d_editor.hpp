@@ -15,8 +15,8 @@ namespace gobot {
 
 class Camera3D;
 
-class GOBOT_EXPORT Node3DEditor : public ImGuiNode {
-    GOBCLASS(Node3DEditor, ImGuiNode)
+class GOBOT_EXPORT Node3DEditor : public Node {
+    GOBCLASS(Node3DEditor, Node)
 public:
     Node3DEditor();
 
@@ -28,7 +28,7 @@ public:
 
     void UpdateCamera(double interp_delta);
 
-    void OnImGui();
+    void OnImGuizmo();
 
     FORCE_INLINE Camera3D* GetCamera3D() { return camera3d_; }
 
@@ -37,6 +37,8 @@ public:
     FORCE_INLINE uint32_t GetImGuizmoOperation() const { return imguizmo_operation_; }
 
     FORCE_INLINE void SetImGuizmoOperation(uint32_t imGuizmo_operation) { imguizmo_operation_ = imGuizmo_operation; }
+
+    FORCE_INLINE void SetNeedUpdateCamera(bool update_camera) { update_camera_ = update_camera; }
 
     bool& SnapGuizmo();
 
@@ -61,6 +63,8 @@ private:
     float distance_{0.0};
 
     bool mouse_down_{false};
+
+    bool update_camera_{false};
 
     uint32_t imguizmo_operation_ = UINT32_MAX;
 

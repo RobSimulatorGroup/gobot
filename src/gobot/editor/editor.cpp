@@ -31,10 +31,10 @@ Editor* Editor::s_singleton = nullptr;
 Editor::Editor() {
     s_singleton = this;
 
+    imgui_manager_ = Object::New<ImGuiManager>();
+
     node3d_editor_ = Object::New<Node3DEditor>();
     AddChild(node3d_editor_);
-
-    imgui_manager_ = Object::New<ImGuiManager>();
 
     spdlog::sink_ptr sink = std::make_shared<ImGuiConsoleSinkMultiThreaded>();
     Logger::GetInstance().AddSink(sink);

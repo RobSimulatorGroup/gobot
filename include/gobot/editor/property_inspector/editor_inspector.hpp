@@ -48,7 +48,7 @@ class EditorInspector : public ImGuiNode {
 public:
     EditorInspector(Variant& variant);
 
-    virtual ~EditorInspector();
+    ~EditorInspector() override;
 
     void PrintAllProperties();
 

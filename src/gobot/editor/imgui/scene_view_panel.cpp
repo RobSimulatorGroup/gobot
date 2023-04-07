@@ -74,10 +74,11 @@ void SceneViewPanel::OnImGuiContent()
 
     bool mouse_inside_rect = ImGui::IsMouseHoveringRect(min_bound, max_bound);
 
+    auto* node3d_editor = Node3DEditor::GetInstance();
+    node3d_editor->SetNeedUpdateCamera(mouse_inside_rect);
+
     ImGuizmo::SetRect(scene_view_position.x, scene_view_position.y, scene_view_size.x, scene_view_size.y);
-
-
-//    Node3DEditor::GetInstance()->OnImGuizmo();
+    node3d_editor->OnImGuizmo();
 
 }
 

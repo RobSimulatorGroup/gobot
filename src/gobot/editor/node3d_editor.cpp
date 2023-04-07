@@ -63,7 +63,9 @@ void Node3DEditor::NotificationCallBack(NotificationType notification) {
         case NotificationType::Process: {
             auto delta = GetProcessDeltaTime();
 
-            UpdateCamera(delta);
+            if (update_camera_) {
+                UpdateCamera(delta);
+            }
         }
     }
 }
@@ -135,7 +137,7 @@ float objectMatrix[16] = {
                 0.f, 0.f, 1.f, 0.f,
                 0.f, 0.f, 0.f, 1.f };
 
-void Node3DEditor::OnImGui() {
+void Node3DEditor::OnImGuizmo() {
 
     ImGuizmo::SetDrawlist();
 
