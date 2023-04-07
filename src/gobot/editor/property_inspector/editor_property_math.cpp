@@ -1464,21 +1464,21 @@ void EditorPropertyMatrixX::OnImGuiContent() {
                     std::visit([i, j, this](auto&& arg) {
                         using T = std::decay_t<decltype(arg)>;
                         if constexpr (std::is_same_v<T, MatrixXi>) {
-                            int data = arg(i, j);
-                            if(ImGui::DragInt(fmt::format("##{},{}", i, j).c_str(), &data, 0.01f, 0.0f, 0.0f)) {
-                                arg(i, j) = data;
+                            int data = arg(i, j-1);
+                            if(ImGui::DragInt(fmt::format("##{},{}", i, j-1).c_str(), &data, 0.01f, 0.0f, 0.0f)) {
+                                arg(i, j-1) = data;
                                 property_data_model_->SetValue(arg);
                             }
                         } else if constexpr (std::is_same_v<T, MatrixXf>) {
-                            float data = arg(i, j);
-                            if(ImGui::DragFloat(fmt::format("##{},{}", i, j).c_str(), &data, 0.01f, 0.0f, 0.0f, "%.2f")) {
-                                arg(i, j) = data;
+                            float data = arg(i, j-1);
+                            if(ImGui::DragFloat(fmt::format("##{},{}", i, j-1).c_str(), &data, 0.01f, 0.0f, 0.0f, "%.2f")) {
+                                arg(i, j-1) = data;
                                 property_data_model_->SetValue(arg);
                             }
                         } else if constexpr (std::is_same_v<T, MatrixXd>) {
-                            float data = arg(i, j);
-                            if(ImGui::DragFloat(fmt::format("##{},{}", i, j).c_str(), &data, 0.01f, 0.0f, 0.0f, "%.2f")) {
-                                arg(i, j) = data;
+                            float data = arg(i, j-1);
+                            if(ImGui::DragFloat(fmt::format("##{},{}", i, j-1).c_str(), &data, 0.01f, 0.0f, 0.0f, "%.2f")) {
+                                arg(i, j-1) = data;
                                 property_data_model_->SetValue(arg);
                             }
                         }
