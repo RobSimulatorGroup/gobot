@@ -40,7 +40,7 @@ void EditorPropertyVector2::OnImGuiContent() {
         std::visit([this](auto&& arg) {
             using T = std::decay_t<decltype(arg)>;
             if constexpr (std::is_same_v<T, Vector2i>) {
-                if(ImGui::DragInt("##X", &arg.x(), 0.1f, 0.0f, 0.0f, "%.2f")) {
+                if(ImGui::DragInt("##X", &arg.x(), 0.1f, 0.0f, 0.0f)) {
                     property_data_model_->SetValue(arg);
                 }
             } else if constexpr (std::is_same_v<T, Vector2f>) {
@@ -74,7 +74,7 @@ void EditorPropertyVector2::OnImGuiContent() {
         std::visit([this](auto&& arg) {
             using T = std::decay_t<decltype(arg)>;
             if constexpr (std::is_same_v<T, Vector2i>) {
-                if(ImGui::DragInt("##Y", &arg.y(), 0.1f, 0.0f, 0.0f, "%.2f")) {
+                if(ImGui::DragInt("##Y", &arg.y(), 0.1f, 0.0f, 0.0f)) {
                     property_data_model_->SetValue(arg);
                 }
             } else if constexpr (std::is_same_v<T, Vector2f>) {
@@ -129,7 +129,7 @@ void EditorPropertyVector3::OnImGuiContent() {
         std::visit([this](auto&& arg) {
             using T = std::decay_t<decltype(arg)>;
             if constexpr (std::is_same_v<T, Vector3i>) {
-                if(ImGui::DragInt("##X", &arg.x(), 0.1f, 0.0f, 0.0f, "%.2f")) {
+                if(ImGui::DragInt("##X", &arg.x(), 0.1f, 0.0f, 0.0f)) {
                     property_data_model_->SetValue(arg);
                 }
             } else if constexpr (std::is_same_v<T, Vector3f>) {
@@ -163,7 +163,7 @@ void EditorPropertyVector3::OnImGuiContent() {
         std::visit([this](auto&& arg) {
             using T = std::decay_t<decltype(arg)>;
             if constexpr (std::is_same_v<T, Vector3i>) {
-                if(ImGui::DragInt("##Y", &arg.y(), 0.1f, 0.0f, 0.0f, "%.2f")) {
+                if(ImGui::DragInt("##Y", &arg.y(), 0.1f, 0.0f, 0.0f)) {
                     property_data_model_->SetValue(arg);
                 }
             } else if constexpr (std::is_same_v<T, Vector3f>) {
@@ -197,7 +197,7 @@ void EditorPropertyVector3::OnImGuiContent() {
         std::visit([this](auto&& arg) {
             using T = std::decay_t<decltype(arg)>;
             if constexpr (std::is_same_v<T, Vector3i>) {
-                if(ImGui::DragInt("##Z", &arg.z(), 0.1f, 0.0f, 0.0f, "%.2f")) {
+                if(ImGui::DragInt("##Z", &arg.z(), 0.1f, 0.0f, 0.0f)) {
                     property_data_model_->SetValue(arg);
                 }
             } else if constexpr (std::is_same_v<T, Vector3f>) {
@@ -252,7 +252,7 @@ void EditorPropertyVector4::OnImGuiContent() {
         std::visit([this](auto&& arg) {
             using T = std::decay_t<decltype(arg)>;
             if constexpr (std::is_same_v<T, Vector4i>) {
-                if(ImGui::DragInt("##X", &arg.x(), 0.1f, 0.0f, 0.0f, "%.2f")) {
+                if(ImGui::DragInt("##X", &arg.x(), 0.1f, 0.0f, 0.0f)) {
                     property_data_model_->SetValue(arg);
                 }
             } else if constexpr (std::is_same_v<T, Vector4f>) {
@@ -286,7 +286,7 @@ void EditorPropertyVector4::OnImGuiContent() {
         std::visit([this](auto&& arg) {
             using T = std::decay_t<decltype(arg)>;
             if constexpr (std::is_same_v<T, Vector4i>) {
-                if(ImGui::DragInt("##Y", &arg.y(), 0.1f, 0.0f, 0.0f, "%.2f")) {
+                if(ImGui::DragInt("##Y", &arg.y(), 0.1f, 0.0f, 0.0f)) {
                     property_data_model_->SetValue(arg);
                 }
             } else if constexpr (std::is_same_v<T, Vector4f>) {
@@ -320,7 +320,7 @@ void EditorPropertyVector4::OnImGuiContent() {
         std::visit([this](auto&& arg) {
             using T = std::decay_t<decltype(arg)>;
             if constexpr (std::is_same_v<T, Vector4i>) {
-                if(ImGui::DragInt("##Z", &arg.z(), 0.1f, 0.0f, 0.0f, "%.2f")) {
+                if(ImGui::DragInt("##Z", &arg.z(), 0.1f, 0.0f, 0.0f)) {
                     property_data_model_->SetValue(arg);
                 }
             } else if constexpr (std::is_same_v<T, Vector4f>) {
@@ -354,7 +354,7 @@ void EditorPropertyVector4::OnImGuiContent() {
         std::visit([this](auto&& arg) {
             using T = std::decay_t<decltype(arg)>;
             if constexpr (std::is_same_v<T, Vector4i>) {
-                if(ImGui::DragInt("##W", &arg.w(), 0.1f, 0.0f, 0.0f, "%.2f")) {
+                if(ImGui::DragInt("##W", &arg.w(), 0.1f, 0.0f, 0.0f)) {
                     property_data_model_->SetValue(arg);
                 }
             } else if constexpr (std::is_same_v<T, Vector4f>) {
@@ -594,7 +594,7 @@ void EditorPropertyMatrix2::OnImGuiContent() {
             using T = std::decay_t<decltype(arg)>;
             if constexpr (std::is_same_v<T, Matrix2i>) {
                 int xx = arg(0, 0);
-                if(ImGui::DragInt("##XX", &xx, 0.1f, 0.0f, 0.0f, "%.2f")) {
+                if(ImGui::DragInt("##XX", &xx, 0.1f, 0.0f, 0.0f)) {
                     arg(0, 0) = xx;
                     property_data_model_->SetValue(arg);
                 }
@@ -633,7 +633,7 @@ void EditorPropertyMatrix2::OnImGuiContent() {
             using T = std::decay_t<decltype(arg)>;
             if constexpr (std::is_same_v<T, Matrix2i>) {
                 int xy = arg(0, 1);
-                if(ImGui::DragInt("##XY", &xy, 0.1f, 0.0f, 0.0f, "%.2f")) {
+                if(ImGui::DragInt("##XY", &xy, 0.1f, 0.0f, 0.0f)) {
                     arg(0, 1) = xy;
                     property_data_model_->SetValue(arg);
                 }
@@ -670,7 +670,7 @@ void EditorPropertyMatrix2::OnImGuiContent() {
             using T = std::decay_t<decltype(arg)>;
             if constexpr (std::is_same_v<T, Matrix2i>) {
                 int yz = arg(1, 0);
-                if(ImGui::DragInt("##YX", &yz, 0.1f, 0.0f, 0.0f, "%.2f")) {
+                if(ImGui::DragInt("##YX", &yz, 0.1f, 0.0f, 0.0f)) {
                     arg(1, 0) = yz;
                     property_data_model_->SetValue(arg);
                 }
@@ -709,7 +709,7 @@ void EditorPropertyMatrix2::OnImGuiContent() {
             using T = std::decay_t<decltype(arg)>;
             if constexpr (std::is_same_v<T, Matrix2i>) {
                 int yy = arg(1, 1);
-                if(ImGui::DragInt("##YY", &yy, 0.1f, 0.0f, 0.0f, "%.2f")) {
+                if(ImGui::DragInt("##YY", &yy, 0.1f, 0.0f, 0.0f)) {
                     arg(1, 1) = yy;
                     property_data_model_->SetValue(arg);
                 }
@@ -768,7 +768,7 @@ void EditorPropertyMatrix3::OnImGuiContent() {
             using T = std::decay_t<decltype(arg)>;
             if constexpr (std::is_same_v<T, Matrix3i>) {
                 int xx = arg(0, 0);
-                if(ImGui::DragInt("##XX", &xx, 0.1f, 0.0f, 0.0f, "%.2f")) {
+                if(ImGui::DragInt("##XX", &xx, 0.1f, 0.0f, 0.0f)) {
                     arg(0, 0) = xx;
                     property_data_model_->SetValue(arg);
                 }
@@ -807,7 +807,7 @@ void EditorPropertyMatrix3::OnImGuiContent() {
             using T = std::decay_t<decltype(arg)>;
             if constexpr (std::is_same_v<T, Matrix3i>) {
                 int xy = arg(0, 1);
-                if(ImGui::DragInt("##XY", &xy, 0.1f, 0.0f, 0.0f, "%.2f")) {
+                if(ImGui::DragInt("##XY", &xy, 0.1f, 0.0f, 0.0f)) {
                     arg(0, 1) = xy;
                     property_data_model_->SetValue(arg);
                 }
@@ -846,7 +846,7 @@ void EditorPropertyMatrix3::OnImGuiContent() {
             using T = std::decay_t<decltype(arg)>;
             if constexpr (std::is_same_v<T, Matrix3i>) {
                 int xz = arg(0, 2);
-                if(ImGui::DragInt("##XZ", &xz, 0.1f, 0.0f, 0.0f, "%.2f")) {
+                if(ImGui::DragInt("##XZ", &xz, 0.1f, 0.0f, 0.0f)) {
                     arg(0, 2) = xz;
                     property_data_model_->SetValue(arg);
                 }
@@ -883,7 +883,7 @@ void EditorPropertyMatrix3::OnImGuiContent() {
             using T = std::decay_t<decltype(arg)>;
             if constexpr (std::is_same_v<T, Matrix3i>) {
                 int yz = arg(1, 0);
-                if(ImGui::DragInt("##YX", &yz, 0.1f, 0.0f, 0.0f, "%.2f")) {
+                if(ImGui::DragInt("##YX", &yz, 0.1f, 0.0f, 0.0f)) {
                     arg(1, 0) = yz;
                     property_data_model_->SetValue(arg);
                 }
@@ -922,7 +922,7 @@ void EditorPropertyMatrix3::OnImGuiContent() {
             using T = std::decay_t<decltype(arg)>;
             if constexpr (std::is_same_v<T, Matrix3i>) {
                 int yy = arg(1, 1);
-                if(ImGui::DragInt("##YY", &yy, 0.1f, 0.0f, 0.0f, "%.2f")) {
+                if(ImGui::DragInt("##YY", &yy, 0.1f, 0.0f, 0.0f)) {
                     arg(1, 1) = yy;
                     property_data_model_->SetValue(arg);
                 }
@@ -961,7 +961,7 @@ void EditorPropertyMatrix3::OnImGuiContent() {
             using T = std::decay_t<decltype(arg)>;
             if constexpr (std::is_same_v<T, Matrix3i>) {
                 int yz = arg(1, 2);
-                if(ImGui::DragInt("##YZ", &yz, 0.1f, 0.0f, 0.0f, "%.2f")) {
+                if(ImGui::DragInt("##YZ", &yz, 0.1f, 0.0f, 0.0f)) {
                     arg(1, 2) = yz;
                     property_data_model_->SetValue(arg);
                 }
@@ -998,7 +998,7 @@ void EditorPropertyMatrix3::OnImGuiContent() {
             using T = std::decay_t<decltype(arg)>;
             if constexpr (std::is_same_v<T, Matrix3i>) {
                 int zx = arg(2, 0);
-                if(ImGui::DragInt("##ZX", &zx, 0.1f, 0.0f, 0.0f, "%.2f")) {
+                if(ImGui::DragInt("##ZX", &zx, 0.1f, 0.0f, 0.0f)) {
                     arg(2, 0) = zx;
                     property_data_model_->SetValue(arg);
                 }
@@ -1037,7 +1037,7 @@ void EditorPropertyMatrix3::OnImGuiContent() {
             using T = std::decay_t<decltype(arg)>;
             if constexpr (std::is_same_v<T, Matrix3i>) {
                 int zy = arg(2, 1);
-                if(ImGui::DragInt("##ZY", &zy, 0.1f, 0.0f, 0.0f, "%.2f")) {
+                if(ImGui::DragInt("##ZY", &zy, 0.1f, 0.0f, 0.0f)) {
                     arg(2, 1) = zy;
                     property_data_model_->SetValue(arg);
                 }
@@ -1076,7 +1076,7 @@ void EditorPropertyMatrix3::OnImGuiContent() {
             using T = std::decay_t<decltype(arg)>;
             if constexpr (std::is_same_v<T, Matrix3i>) {
                 int zz = arg(2, 2);
-                if(ImGui::DragInt("##ZZ", &zz, 0.1f, 0.0f, 0.0f, "%.2f")) {
+                if(ImGui::DragInt("##ZZ", &zz, 0.1f, 0.0f, 0.0f)) {
                     arg(2, 2) = zz;
                     property_data_model_->SetValue(arg);
                 }
@@ -1394,7 +1394,7 @@ void EditorPropertyVectorX::OnImGuiContent() {
                 using T = std::decay_t<decltype(arg)>;
                 if constexpr (std::is_same_v<T, VectorXi>) {
                     int data = arg[i];
-                    if(ImGui::DragInt(fmt::format("##{}", i).c_str(), &data, 0.01f, 0.0f, 0.0f, "%.2f")) {
+                    if(ImGui::DragInt(fmt::format("##{}", i).c_str(), &data, 0.01f, 0.0f, 0.0f)) {
                         arg[i] = data;
                         property_data_model_->SetValue(arg);
                     }
@@ -1439,7 +1439,58 @@ void EditorPropertyMatrixX::OnImGuiContent() {
         data_ = matrix;
     }
 
+    float column_0_width = 40.0f;
+    auto table_width = (ImGui::GetContentRegionAvail().x - column_0_width) / columns_;
 
+    ImVec2 innerItemSpacing = ImGui::GetStyle().ItemInnerSpacing;
+    ImGui::PushStyleVar(ImGuiStyleVar_ItemSpacing, innerItemSpacing);
+
+    if (ImGui::BeginTable("table_matrix", columns_ + 1, ImGuiTableFlags_BordersV | ImGuiTableFlags_BordersOuterH | ImGuiTableFlags_RowBg | ImGuiTableFlags_NoBordersInBody)) {
+        ImGui::TableSetupColumn("Index", ImGuiTableColumnFlags_NoHide | ImGuiTableColumnFlags_WidthStretch, column_0_width, 0);
+        for(int j = 0; j < columns_; j++) {
+            ImGui::TableSetupColumn(std::to_string(j).c_str(), ImGuiTableColumnFlags_NoHide | ImGuiTableColumnFlags_WidthStretch, table_width, j+1);
+        }
+        ImGui::TableSetupScrollFreeze(0, 1); // Make row always visible
+        ImGui::TableHeadersRow();
+
+        for (int i = 0; i < rows_; i++) {
+            ImGui::TableNextRow();
+            for (int j = 0; j < columns_ + 1; j++) {
+                ImGui::TableSetColumnIndex(j);
+                ImGui::SetNextItemWidth(-FLT_MIN);
+                if (j == 0) {
+                    ImGui::TextUnformatted(std::to_string(i).c_str());
+                } else {
+                    std::visit([i, j, this](auto&& arg) {
+                        using T = std::decay_t<decltype(arg)>;
+                        if constexpr (std::is_same_v<T, MatrixXi>) {
+                            int data = arg(i, j);
+                            if(ImGui::DragInt(fmt::format("##{},{}", i, j).c_str(), &data, 0.01f, 0.0f, 0.0f)) {
+                                arg(i, j) = data;
+                                property_data_model_->SetValue(arg);
+                            }
+                        } else if constexpr (std::is_same_v<T, MatrixXf>) {
+                            float data = arg(i, j);
+                            if(ImGui::DragFloat(fmt::format("##{},{}", i, j).c_str(), &data, 0.01f, 0.0f, 0.0f, "%.2f")) {
+                                arg(i, j) = data;
+                                property_data_model_->SetValue(arg);
+                            }
+                        } else if constexpr (std::is_same_v<T, MatrixXd>) {
+                            float data = arg(i, j);
+                            if(ImGui::DragFloat(fmt::format("##{},{}", i, j).c_str(), &data, 0.01f, 0.0f, 0.0f, "%.2f")) {
+                                arg(i, j) = data;
+                                property_data_model_->SetValue(arg);
+                            }
+                        }
+                    }, data_);
+                }
+            }
+        }
+
+        ImGui::EndTable();
+    }
+
+    ImGui::PopStyleVar();
 }
 
 
