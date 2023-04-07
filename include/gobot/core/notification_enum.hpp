@@ -29,7 +29,6 @@ enum class NotificationType {
     PhysicsProcess,
     Process,
 
-    ImGuiProcess
 };
 
 }
