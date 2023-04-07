@@ -235,6 +235,12 @@ ImGuiNode* EditorInspectorDefaultPlugin::GetEditorForProperty(std::unique_ptr<Va
             auto* editor = Object::New<EditorPropertyColor>(type_category, std::move(variant_data));
             return editor;
         } break;
+        case TypeCategory::ObjectID:
+            break;
+        case TypeCategory::RID:
+            break;
+        case TypeCategory::RenderRID:
+            break;
         case TypeCategory::Vector2i:
         case TypeCategory::Vector2f:
         case TypeCategory::Vector2d: {
@@ -253,26 +259,56 @@ ImGuiNode* EditorInspectorDefaultPlugin::GetEditorForProperty(std::unique_ptr<Va
             auto* editor = Object::New<EditorPropertyVector4>(type_category, std::move(variant_data));
             return editor;
         } break;
+
+        case TypeCategory::Matrix2i:
+        case TypeCategory::Matrix2f:
+        case TypeCategory::Matrix2d: {
+            auto* editor = Object::New<EditorPropertyMatrix2>(type_category, std::move(variant_data));
+            return editor;
+        } break;
+        case TypeCategory::Matrix3i:
+        case TypeCategory::Matrix3f:
+        case TypeCategory::Matrix3d: {
+            auto* editor = Object::New<EditorPropertyMatrix3>(type_category, std::move(variant_data));
+            return editor;
+        } break;
+        case TypeCategory::VectorXi:
+        case TypeCategory::VectorXf:
+        case TypeCategory::VectorXd:
+        case TypeCategory::MatrixXi:
+        case TypeCategory::MatrixXf:
+        case TypeCategory::MatrixXd: {
+            auto* editor = Object::New<EditorPropertyVector4>(type_category, std::move(variant_data));
+            return editor;
+        } break;
         case TypeCategory::Quaternionf:
         case TypeCategory::Quaterniond: {
             auto* editor = Object::New<EditorPropertyQuaternion>(type_category, std::move(variant_data));
             return editor;
         } break;
-        case TypeCategory::VectorXf:
+        case TypeCategory::Isometry2f:
             break;
-        case TypeCategory::VectorXd:
+        case TypeCategory::Isometry2d:
             break;
-        case TypeCategory::Matrix2f:
+        case TypeCategory::Isometry3f:
             break;
-        case TypeCategory::Matrix2d:
+        case TypeCategory::Isometry3d:
             break;
-        case TypeCategory::Matrix3f:
+        case TypeCategory::Affine2f:
             break;
-        case TypeCategory::Matrix3d:
+        case TypeCategory::Affine2d:
             break;
-        case TypeCategory::MatrixXf:
+        case TypeCategory::Affine3f:
             break;
-        case TypeCategory::MatrixXd:
+        case TypeCategory::Affine3d:
+            break;
+        case TypeCategory::Projective2f:
+            break;
+        case TypeCategory::Projective2d:
+            break;
+        case TypeCategory::Projective3f:
+            break;
+        case TypeCategory::Projective3d:
             break;
         case TypeCategory::Ref:
             break;

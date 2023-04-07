@@ -63,8 +63,6 @@ enum class TypeCategory {
     MatrixXd,
     Quaternionf,
     Quaterniond,
-    EulerAnglef,
-    EulerAngled,
     Isometry2f,
     Isometry2d,
     Isometry3f,
@@ -178,10 +176,6 @@ inline TypeCategory GetTypeCategory(const Type& type) {
         return TypeCategory::Quaternionf;
     } else if (type == Type::get<Quaterniond>()) {
         return TypeCategory::Quaterniond;
-    } else if (type == Type::get<EulerAnglef>()) {
-        return TypeCategory::EulerAnglef;
-    } else if (type == Type::get<EulerAngled>()) {
-        return TypeCategory::EulerAngled;
     } else if (type == Type::get<Isometry2f>()) {
         return TypeCategory::Isometry2f;
     } else if (type == Type::get<Isometry2d>()) {

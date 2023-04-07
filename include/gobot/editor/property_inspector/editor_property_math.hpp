@@ -66,5 +66,30 @@ private:
     std::variant<Quaternionf, Quaterniond> data_;
 };
 
+//////////////////////////////////////////////////////////////////////
+
+class EditorPropertyMatrix2 : public EditorBuiltInProperty {
+    GOBCLASS(EditorPropertyMatrix2, EditorBuiltInProperty)
+public:
+    using EditorBuiltInProperty::EditorBuiltInProperty;
+
+    void OnImGuiContent() override;
+
+private:
+    std::variant<Matrix2i, Matrix2f, Matrix2d> data_;
+};
+
+//////////////////////////////////////////////////////////////////////
+
+class EditorPropertyMatrix3 : public EditorBuiltInProperty {
+    GOBCLASS(EditorPropertyMatrix3, EditorBuiltInProperty)
+public:
+    using EditorBuiltInProperty::EditorBuiltInProperty;
+
+    void OnImGuiContent() override;
+
+private:
+    std::variant<Matrix3i, Matrix3f, Matrix3d> data_;
+};
 
 }

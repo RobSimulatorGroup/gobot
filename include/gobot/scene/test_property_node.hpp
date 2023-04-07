@@ -50,6 +50,12 @@ private:
     Vector4f vector4f{0.0f, 0.0f, 0.0f, 0.0f};
 
     Quaternionf quaternionf{0.0f, 0.0f, 0.0f, 1.0f};
+
+    EulerAngle euler_angle{0.0f, 90.0f, 0.0f};
+
+    Matrix2f matrix2f{Matrix2f::Zero()};
+
+    Matrix3f matrix3f{Matrix3f::Zero()};
 };
 
 }

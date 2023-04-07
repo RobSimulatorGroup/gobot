@@ -43,6 +43,9 @@ GOBOT_REGISTRATION {
             .property("vector3f", &TestPropertyNode::vector3f)
             .property("vector4f", &TestPropertyNode::vector4f)
             .property("quaternionf", &TestPropertyNode::quaternionf)
+            .property("euler_angle", &TestPropertyNode::euler_angle)
+            .property("matrix2f", &TestPropertyNode::matrix2f)
+            .property("matrix3f", &TestPropertyNode::matrix3f)
             .property("color", &TestPropertyNode::GetColor, &TestPropertyNode::SetColor)
             .property("multiline_text", &TestPropertyNode::multiline_text)(
                     AddMetaPropertyInfo(PropertyInfo().SetHint(PropertyHint::MultilineText)) )
