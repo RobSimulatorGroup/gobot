@@ -301,7 +301,7 @@ ImGuiNode* EditorInspectorDefaultPlugin::GetEditorForProperty(std::unique_ptr<Va
         case TypeCategory::Affine3d:
         case TypeCategory::Projective3f:
         case TypeCategory::Projective3d: {
-            auto* editor = Object::New<EditorPropertyQuaternion>(type_category, std::move(variant_data));
+            auto* editor = Object::New<EditorPropertyTransform3>(type_category, std::move(variant_data));
             return editor;
         } break;
         case TypeCategory::Ref:
