@@ -92,4 +92,30 @@ private:
     std::variant<Matrix3i, Matrix3f, Matrix3d> data_;
 };
 
+//////////////////////////////////////////////////////////////////////
+
+class EditorPropertyTransform2 : public EditorBuiltInProperty {
+    GOBCLASS(EditorPropertyTransform2, EditorBuiltInProperty)
+public:
+    using EditorBuiltInProperty::EditorBuiltInProperty;
+
+    void OnImGuiContent() override;
+
+private:
+    std::variant<Isometry2f, Isometry2d, Affine2f, Affine2d, Projective2f, Projective2d> data_;
+};
+
+//////////////////////////////////////////////////////////////////////
+
+class EditorPropertyTransform3 : public EditorBuiltInProperty {
+    GOBCLASS(EditorPropertyTransform3, EditorBuiltInProperty)
+public:
+    using EditorBuiltInProperty::EditorBuiltInProperty;
+
+    void OnImGuiContent() override;
+
+private:
+    std::variant<Isometry3f, Isometry3d, Affine3f, Affine3d, Projective3f, Projective3d> data_;
+};
+
 }

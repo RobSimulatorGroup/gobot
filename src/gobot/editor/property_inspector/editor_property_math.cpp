@@ -1101,4 +1101,790 @@ void EditorPropertyMatrix3::OnImGuiContent() {
 
 }
 
+//////////////////////////////////////////////////////////////////////////////
+
+void EditorPropertyTransform2::OnImGuiContent() {
+    if (type_category_ == TypeCategory::Isometry2f) {
+        data_ = property_data_model_->GetValue().convert<Isometry2f>();
+    } else if (type_category_ == TypeCategory::Isometry2d) {
+        data_ = property_data_model_->GetValue().convert<Isometry2d>();
+    } else if (type_category_ == TypeCategory::Affine2f) {
+        data_ = property_data_model_->GetValue().convert<Affine2f>();
+    } else if (type_category_ == TypeCategory::Affine2d) {
+        data_ = property_data_model_->GetValue().convert<Affine2d>();
+    } else if (type_category_ == TypeCategory::Projective2f) {
+        data_ = property_data_model_->GetValue().convert<Projective2f>();
+    } else if (type_category_ == TypeCategory::Projective2d) {
+        data_ = property_data_model_->GetValue().convert<Projective2d>();
+    }
+
+    auto divided_width = ImGui::GetContentRegionAvail().x / 2.0f;
+
+    float frame_height = ImGui::GetFrameHeight();
+    ImVec2 button_size = { frame_height + 3.0f, frame_height };
+
+    ImVec2 innerItemSpacing = ImGui::GetStyle().ItemInnerSpacing;
+    ImGui::PushStyleVar(ImGuiStyleVar_ItemSpacing, innerItemSpacing);
+
+    // XX
+    {
+        ImGui::PushStyleVar(ImGuiStyleVar_ItemSpacing, ImVec2{0, 0});
+        ImGui::PushStyleColor(ImGuiCol_Text, ImVec4{1.0f, 1.0f, 1.0f, 1.0f});
+        ImGui::PushStyleColor(ImGuiCol_Button, ImVec4{0.8f, 0.1f, 0.15f, 1.0f});
+        ImGui::PushStyleColor(ImGuiCol_ButtonHovered, ImVec4{0.9f, 0.2f, 0.2f, 1.0f});
+        ImGui::PushStyleColor(ImGuiCol_ButtonActive, ImVec4{0.8f, 0.1f, 0.15f, 1.0f});
+        ImGui::Button("xx", button_size);
+        ImGui::PopStyleColor(4);
+        ImGui::SameLine();
+        ImGui::SetNextItemWidth(divided_width - button_size.x);
+        std::visit([this](auto&& arg) {
+            using T = std::decay_t<decltype(arg)>;
+            if constexpr (std::is_same_v<T, Isometry2f>) {
+                float xx = arg(0, 0);
+                if(ImGui::DragFloat("##XX", &xx, 0.1f, 0.0f, 0.0f, "%.2f")) {
+                    arg(0, 0) = xx;
+                    property_data_model_->SetValue(arg);
+                }
+            } else if constexpr (std::is_same_v<T, Isometry2d>) {
+                float xx = arg(0, 0);
+                if(ImGui::DragFloat("##XX", &xx, 0.1f, 0.0f, 0.0f, "%.2f")) {
+                    arg(0, 0) = xx;
+                    property_data_model_->SetValue(arg);
+                }
+            } else if constexpr (std::is_same_v<T, Affine2f>) {
+                float xx = arg(0, 0);
+                if(ImGui::DragFloat("##XX", &xx, 0.1f, 0.0f, 0.0f, "%.2f")) {
+                    arg(0, 0) = xx;
+                    property_data_model_->SetValue(arg);
+                }
+            } else if constexpr (std::is_same_v<T, Affine2d>) {
+                float xx = arg(0, 0);
+                if(ImGui::DragFloat("##XX", &xx, 0.1f, 0.0f, 0.0f, "%.2f")) {
+                    arg(0, 0) = xx;
+                    property_data_model_->SetValue(arg);
+                }
+            } else if constexpr (std::is_same_v<T, Projective2f>) {
+                float xx = arg(0, 0);
+                if(ImGui::DragFloat("##XX", &xx, 0.1f, 0.0f, 0.0f, "%.2f")) {
+                    arg(0, 0) = xx;
+                    property_data_model_->SetValue(arg);
+                }
+            } else if constexpr (std::is_same_v<T, Projective2d>) {
+                float xx = arg(0, 0);
+                if(ImGui::DragFloat("##XX", &xx, 0.1f, 0.0f, 0.0f, "%.2f")) {
+                    arg(0, 0) = xx;
+                    property_data_model_->SetValue(arg);
+                }
+            }
+        }, data_);
+        ImGui::PopStyleVar();
+    }
+
+    ImGui::SameLine();
+
+    // XY
+    {
+        ImGui::PushStyleVar(ImGuiStyleVar_ItemSpacing, ImVec2{0, 0});
+        ImGui::PushStyleColor(ImGuiCol_Text, ImVec4{ 1.0f, 1.0f, 1.0f, 1.0f });
+        ImGui::PushStyleColor(ImGuiCol_Button, ImVec4{ 0.2f, 0.7f, 0.2f, 1.0f });
+        ImGui::PushStyleColor(ImGuiCol_ButtonHovered, ImVec4{ 0.3f, 0.8f, 0.3f, 1.0f });
+        ImGui::PushStyleColor(ImGuiCol_ButtonActive, ImVec4{ 0.2f, 0.7f, 0.2f, 1.0f });
+        ImGui::Button("xy", button_size);
+        ImGui::PopStyleColor(4);
+        ImGui::SameLine();
+        ImGui::SetNextItemWidth(divided_width - button_size.x);
+
+        std::visit([this](auto&& arg) {
+            using T = std::decay_t<decltype(arg)>;
+            if constexpr (std::is_same_v<T, Isometry2f>) {
+                float xy = arg(0, 1);
+                if(ImGui::DragFloat("##XY", &xy, 0.1f, 0.0f, 0.0f, "%.2f")) {
+                    arg(0, 1) = xy;
+                    property_data_model_->SetValue(arg);
+                }
+            } else if constexpr (std::is_same_v<T, Isometry2d>) {
+                float xy = arg(0, 1);
+                if(ImGui::DragFloat("##XY", &xy, 0.1f, 0.0f, 0.0f, "%.2f")) {
+                    arg(0, 1) = xy;
+                    property_data_model_->SetValue(arg);
+                }
+            } else if constexpr (std::is_same_v<T, Affine2f>) {
+                float xy = arg(0, 1);
+                if(ImGui::DragFloat("##XY", &xy, 0.1f, 0.0f, 0.0f, "%.2f")) {
+                    arg(0, 1) = xy;
+                    property_data_model_->SetValue(arg);
+                }
+            } else if constexpr (std::is_same_v<T, Affine2d>) {
+                float xy = arg(0, 1);
+                if(ImGui::DragFloat("##XY", &xy, 0.1f, 0.0f, 0.0f, "%.2f")) {
+                    arg(0, 1) = xy;
+                    property_data_model_->SetValue(arg);
+                }
+            } else if constexpr (std::is_same_v<T, Projective2f>) {
+                float xy = arg(0, 1);
+                if(ImGui::DragFloat("##XY", &xy, 0.1f, 0.0f, 0.0f, "%.2f")) {
+                    arg(0, 1) = xy;
+                    property_data_model_->SetValue(arg);
+                }
+            } else if constexpr (std::is_same_v<T, Projective2d>) {
+                float xy = arg(0, 1);
+                if(ImGui::DragFloat("##XY", &xy, 0.1f, 0.0f, 0.0f, "%.2f")) {
+                    arg(0, 1) = xy;
+                    property_data_model_->SetValue(arg);
+                }
+            }
+        }, data_);
+        ImGui::PopStyleVar();
+    }
+
+    // YX
+    {
+        ImGui::PushStyleVar(ImGuiStyleVar_ItemSpacing, ImVec2{0, 0});
+        ImGui::PushStyleColor(ImGuiCol_Text, ImVec4{1.0f, 1.0f, 1.0f, 1.0f});
+        ImGui::PushStyleColor(ImGuiCol_Button, ImVec4{0.8f, 0.1f, 0.15f, 1.0f});
+        ImGui::PushStyleColor(ImGuiCol_ButtonHovered, ImVec4{0.9f, 0.2f, 0.2f, 1.0f});
+        ImGui::PushStyleColor(ImGuiCol_ButtonActive, ImVec4{0.8f, 0.1f, 0.15f, 1.0f});
+        ImGui::Button("yx", button_size);
+        ImGui::PopStyleColor(4);
+        ImGui::SameLine();
+        ImGui::SetNextItemWidth(divided_width - button_size.x);
+
+        std::visit([this](auto&& arg) {
+            using T = std::decay_t<decltype(arg)>;
+            if constexpr (std::is_same_v<T, Isometry2f>) {
+                float yz = arg(1, 0);
+                if(ImGui::DragFloat("##YX", &yz, 0.1f, 0.0f, 0.0f, "%.2f")) {
+                    arg(1, 0) = yz;
+                    property_data_model_->SetValue(arg);
+                }
+            } else if constexpr (std::is_same_v<T, Isometry2d>) {
+                float yz = arg(1, 0);
+                if(ImGui::DragFloat("##YX", &yz, 0.1f, 0.0f, 0.0f, "%.2f")) {
+                    arg(1, 0) = yz;
+                    property_data_model_->SetValue(arg);
+                }
+            } else if constexpr (std::is_same_v<T, Affine2f>) {
+                float yz = arg(1, 0);
+                if(ImGui::DragFloat("##XY", &yz, 0.1f, 0.0f, 0.0f, "%.2f")) {
+                    arg(1, 0) = yz;
+                    property_data_model_->SetValue(arg);
+                }
+            } else if constexpr (std::is_same_v<T, Affine2d>) {
+                float yz = arg(1, 0);
+                if(ImGui::DragFloat("##XY", &yz, 0.1f, 0.0f, 0.0f, "%.2f")) {
+                    arg(1, 0) = yz;
+                    property_data_model_->SetValue(arg);
+                }
+            } else if constexpr (std::is_same_v<T, Projective2f>) {
+                float yz = arg(1, 0);
+                if(ImGui::DragFloat("##XY", &yz, 0.1f, 0.0f, 0.0f, "%.2f")) {
+                    arg(1, 0) = yz;
+                    property_data_model_->SetValue(arg);
+                }
+            } else if constexpr (std::is_same_v<T, Projective2d>) {
+                float yz = arg(1, 0);
+                if(ImGui::DragFloat("##XY", &yz, 0.1f, 0.0f, 0.0f, "%.2f")) {
+                    arg(1, 0) = yz;
+                    property_data_model_->SetValue(arg);
+                }
+            }
+        }, data_);
+        ImGui::PopStyleVar();
+    }
+
+    ImGui::SameLine();
+
+    // YY
+    {
+        ImGui::PushStyleVar(ImGuiStyleVar_ItemSpacing, ImVec2{0, 0});
+        ImGui::PushStyleColor(ImGuiCol_Text, ImVec4{ 1.0f, 1.0f, 1.0f, 1.0f });
+        ImGui::PushStyleColor(ImGuiCol_Button, ImVec4{ 0.2f, 0.7f, 0.2f, 1.0f });
+        ImGui::PushStyleColor(ImGuiCol_ButtonHovered, ImVec4{ 0.3f, 0.8f, 0.3f, 1.0f });
+        ImGui::PushStyleColor(ImGuiCol_ButtonActive, ImVec4{ 0.2f, 0.7f, 0.2f, 1.0f });
+        ImGui::Button("yy", button_size);
+        ImGui::PopStyleColor(4);
+        ImGui::SameLine();
+        ImGui::SetNextItemWidth(divided_width - button_size.x);
+
+        std::visit([this](auto&& arg) {
+            using T = std::decay_t<decltype(arg)>;
+            if constexpr (std::is_same_v<T, Isometry2f>) {
+                float yy = arg(1, 1);
+                if(ImGui::DragFloat("##YY", &yy, 0.1f, 0.0f, 0.0f, "%.2f")) {
+                    arg(1, 1) = yy;
+                    property_data_model_->SetValue(arg);
+                }
+            } else if constexpr (std::is_same_v<T, Isometry2d>) {
+                float yy = arg(1, 1);
+                if(ImGui::DragFloat("##YY", &yy, 0.1f, 0.0f, 0.0f, "%.2f")) {
+                    arg(1, 1) = yy;
+                    property_data_model_->SetValue(arg);
+                }
+            } else if constexpr (std::is_same_v<T, Affine2f>) {
+                float yy = arg(1, 1);
+                if(ImGui::DragFloat("##YY", &yy, 0.1f, 0.0f, 0.0f, "%.2f")) {
+                    arg(1, 1) = yy;
+                    property_data_model_->SetValue(arg);
+                }
+            } else if constexpr (std::is_same_v<T, Affine2d>) {
+                float yy = arg(1, 1);
+                if(ImGui::DragFloat("##YY", &yy, 0.1f, 0.0f, 0.0f, "%.2f")) {
+                    arg(1, 1) = yy;
+                    property_data_model_->SetValue(arg);
+                }
+            } else if constexpr (std::is_same_v<T, Projective2f>) {
+                float yy = arg(1, 1);
+                if(ImGui::DragFloat("##YY", &yy, 0.1f, 0.0f, 0.0f, "%.2f")) {
+                    arg(1, 1) = yy;
+                    property_data_model_->SetValue(arg);
+                }
+            } else if constexpr (std::is_same_v<T, Projective2d>) {
+                float yy = arg(1, 1);
+                if(ImGui::DragFloat("##YY", &yy, 0.1f, 0.0f, 0.0f, "%.2f")) {
+                    arg(1, 1) = yy;
+                    property_data_model_->SetValue(arg);
+                }
+            }
+        }, data_);
+        ImGui::PopStyleVar();
+    }
+
+    ImGui::PopStyleVar();
+
+}
+
+///////////////////////////////////////////////////////////////////////////
+
+void EditorPropertyTransform3::OnImGuiContent() {
+    if (type_category_ == TypeCategory::Isometry3f) {
+        data_ = property_data_model_->GetValue().convert<Isometry3f>();
+    } else if (type_category_ == TypeCategory::Isometry3d) {
+        data_ = property_data_model_->GetValue().convert<Isometry3d>();
+    } else if (type_category_ == TypeCategory::Affine3f) {
+        data_ = property_data_model_->GetValue().convert<Affine3f>();
+    } else if (type_category_ == TypeCategory::Affine3d) {
+        data_ = property_data_model_->GetValue().convert<Affine3d>();
+    } else if (type_category_ == TypeCategory::Projective3f) {
+        data_ = property_data_model_->GetValue().convert<Projective3f>();
+    } else if (type_category_ == TypeCategory::Projective3d) {
+        data_ = property_data_model_->GetValue().convert<Projective3d>();
+    }
+
+    auto divided_width = ImGui::GetContentRegionAvail().x / 3.0f;
+
+    float frame_height = ImGui::GetFrameHeight();
+    ImVec2 button_size = { frame_height + 3.0f, frame_height };
+
+    ImVec2 innerItemSpacing = ImGui::GetStyle().ItemInnerSpacing;
+    ImGui::PushStyleVar(ImGuiStyleVar_ItemSpacing, innerItemSpacing);
+
+    // XX
+    {
+        ImGui::PushStyleVar(ImGuiStyleVar_ItemSpacing, ImVec2{0, 0});
+        ImGui::PushStyleColor(ImGuiCol_Text, ImVec4{1.0f, 1.0f, 1.0f, 1.0f});
+        ImGui::PushStyleColor(ImGuiCol_Button, ImVec4{0.8f, 0.1f, 0.15f, 1.0f});
+        ImGui::PushStyleColor(ImGuiCol_ButtonHovered, ImVec4{0.9f, 0.2f, 0.2f, 1.0f});
+        ImGui::PushStyleColor(ImGuiCol_ButtonActive, ImVec4{0.8f, 0.1f, 0.15f, 1.0f});
+        ImGui::Button("xx", button_size);
+        ImGui::PopStyleColor(4);
+        ImGui::SameLine();
+        ImGui::SetNextItemWidth(divided_width - button_size.x);
+        std::visit([this](auto&& arg) {
+            using T = std::decay_t<decltype(arg)>;
+            if constexpr (std::is_same_v<T, Isometry3f>) {
+                float xx = arg(0, 0);
+                if(ImGui::DragFloat("##XX", &xx, 0.1f, -1.0f, 1.0f, "%.2f", ImGuiSliderFlags_AlwaysClamp)) {
+                    arg(0, 0) = xx;
+                    property_data_model_->SetValue(arg);
+                }
+            } else if constexpr (std::is_same_v<T, Isometry3d>) {
+                float xx = arg(0, 0);
+                if(ImGui::DragFloat("##XX", &xx, 0.1f, -1.0f, 1.0f, "%.2f", ImGuiSliderFlags_AlwaysClamp)) {
+                    arg(0, 0) = xx;
+                    property_data_model_->SetValue(arg);
+                }
+            } else if constexpr (std::is_same_v<T, Affine3f>) {
+                float xx = arg(0, 0);
+                if(ImGui::DragFloat("##XX", &xx, 0.1f, -1.0f, 1.0f, "%.2f", ImGuiSliderFlags_AlwaysClamp)) {
+                    arg(0, 0) = xx;
+                    property_data_model_->SetValue(arg);
+                }
+            } else if constexpr (std::is_same_v<T, Affine3d>) {
+                float xx = arg(0, 0);
+                if(ImGui::DragFloat("##XX", &xx, 0.1f, -1.0f, 1.0f, "%.2f", ImGuiSliderFlags_AlwaysClamp)) {
+                    arg(0, 0) = xx;
+                    property_data_model_->SetValue(arg);
+                }
+            } else if constexpr (std::is_same_v<T, Projective3f>) {
+                float xx = arg(0, 0);
+                if(ImGui::DragFloat("##XX", &xx, 0.1f, -1.0f, 1.0f, "%.2f", ImGuiSliderFlags_AlwaysClamp)) {
+                    arg(0, 0) = xx;
+                    property_data_model_->SetValue(arg);
+                }
+            } else if constexpr (std::is_same_v<T, Projective3d>) {
+                float xx = arg(0, 0);
+                if(ImGui::DragFloat("##XX", &xx, 0.1f, -1.0f, 1.0f, "%.2f", ImGuiSliderFlags_AlwaysClamp)) {
+                    arg(0, 0) = xx;
+                    property_data_model_->SetValue(arg);
+                }
+            }
+        }, data_);
+        ImGui::PopStyleVar();
+    }
+
+    ImGui::SameLine();
+
+    // XY
+    {
+        ImGui::PushStyleVar(ImGuiStyleVar_ItemSpacing, ImVec2{0, 0});
+        ImGui::PushStyleColor(ImGuiCol_Text, ImVec4{ 1.0f, 1.0f, 1.0f, 1.0f });
+        ImGui::PushStyleColor(ImGuiCol_Button, ImVec4{ 0.2f, 0.7f, 0.2f, 1.0f });
+        ImGui::PushStyleColor(ImGuiCol_ButtonHovered, ImVec4{ 0.3f, 0.8f, 0.3f, 1.0f });
+        ImGui::PushStyleColor(ImGuiCol_ButtonActive, ImVec4{ 0.2f, 0.7f, 0.2f, 1.0f });
+        ImGui::Button("xy", button_size);
+        ImGui::PopStyleColor(4);
+        ImGui::SameLine();
+        ImGui::SetNextItemWidth(divided_width - button_size.x);
+
+        std::visit([this](auto&& arg) {
+            using T = std::decay_t<decltype(arg)>;
+            if constexpr (std::is_same_v<T, Isometry3f>) {
+                float xy = arg(0, 1);
+                if(ImGui::DragFloat("##XY", &xy, 0.1f, -1.0f, 1.0f, "%.2f", ImGuiSliderFlags_AlwaysClamp)) {
+                    arg(0, 1) = xy;
+                    property_data_model_->SetValue(arg);
+                }
+            } else if constexpr (std::is_same_v<T, Isometry3d>) {
+                float xy = arg(0, 1);
+                if(ImGui::DragFloat("##XY", &xy, 0.1f, -1.0f, 1.0f, "%.2f", ImGuiSliderFlags_AlwaysClamp)) {
+                    arg(0, 1) = xy;
+                    property_data_model_->SetValue(arg);
+                }
+            } else if constexpr (std::is_same_v<T, Affine3f>) {
+                float xy = arg(0, 1);
+                if(ImGui::DragFloat("##XY", &xy, 0.1f, -1.0f, 1.0f, "%.2f", ImGuiSliderFlags_AlwaysClamp)) {
+                    arg(0, 1) = xy;
+                    property_data_model_->SetValue(arg);
+                }
+            } else if constexpr (std::is_same_v<T, Affine3d>) {
+                float xy = arg(0, 1);
+                if(ImGui::DragFloat("##XY", &xy, 0.1f, -1.0f, 1.0f, "%.2f", ImGuiSliderFlags_AlwaysClamp)) {
+                    arg(0, 1) = xy;
+                    property_data_model_->SetValue(arg);
+                }
+            } else if constexpr (std::is_same_v<T, Projective3f>) {
+                float xy = arg(0, 1);
+                if(ImGui::DragFloat("##XY", &xy, 0.1f, -1.0f, 1.0f, "%.2f", ImGuiSliderFlags_AlwaysClamp)) {
+                    arg(0, 1) = xy;
+                    property_data_model_->SetValue(arg);
+                }
+            } else if constexpr (std::is_same_v<T, Projective3d>) {
+                float xy = arg(0, 1);
+                if(ImGui::DragFloat("##XY", &xy, 0.1f, -1.0f, 1.0f, "%.2f", ImGuiSliderFlags_AlwaysClamp)) {
+                    arg(0, 1) = xy;
+                    property_data_model_->SetValue(arg);
+                }
+            }
+        }, data_);
+        ImGui::PopStyleVar();
+    }
+
+    ImGui::SameLine();
+
+    // XZ
+    {
+        ImGui::PushStyleVar(ImGuiStyleVar_ItemSpacing, ImVec2{0, 0});
+        ImGui::PushStyleColor(ImGuiCol_Text, ImVec4{ 1.0f, 1.0f, 1.0f, 1.0f });
+        ImGui::PushStyleColor(ImGuiCol_Button, ImVec4{ 0.1f, 0.25f, 0.8f, 1.0f });
+        ImGui::PushStyleColor(ImGuiCol_ButtonHovered, ImVec4{ 0.2f, 0.35f, 0.9f, 1.0f });
+        ImGui::PushStyleColor(ImGuiCol_ButtonActive, ImVec4{ 0.1f, 0.25f, 0.8f, 1.0f });
+        ImGui::Button("xz", button_size);
+        ImGui::PopStyleColor(4);
+        ImGui::SameLine();
+        ImGui::SetNextItemWidth(divided_width - button_size.x);
+
+        std::visit([this](auto&& arg) {
+            using T = std::decay_t<decltype(arg)>;
+            if constexpr (std::is_same_v<T, Isometry3f>) {
+                float xz = arg(0, 2);
+                if(ImGui::DragFloat("##XZ", &xz, 0.1f, -1.0f, 1.0f, "%.2f", ImGuiSliderFlags_AlwaysClamp)) {
+                    arg(0, 2) = xz;
+                    property_data_model_->SetValue(arg);
+                }
+            } else if constexpr (std::is_same_v<T, Isometry3d>) {
+                float xz = arg(0, 2);
+                if(ImGui::DragFloat("##XZ", &xz, 0.1f, -1.0f, 1.0f, "%.2f", ImGuiSliderFlags_AlwaysClamp)) {
+                    arg(0, 2) = xz;
+                    property_data_model_->SetValue(arg);
+                }
+            } else if constexpr (std::is_same_v<T, Affine3f>) {
+                float xz = arg(0, 2);
+                if(ImGui::DragFloat("##XZ", &xz, 0.1f, -1.0f, 1.0f, "%.2f", ImGuiSliderFlags_AlwaysClamp)) {
+                    arg(0, 2) = xz;
+                    property_data_model_->SetValue(arg);
+                }
+            } else if constexpr (std::is_same_v<T, Affine3d>) {
+                float xz = arg(0, 2);
+                if(ImGui::DragFloat("##XZ", &xz, 0.1f, -1.0f, 1.0f, "%.2f", ImGuiSliderFlags_AlwaysClamp)) {
+                    arg(0, 2) = xz;
+                    property_data_model_->SetValue(arg);
+                }
+            } else if constexpr (std::is_same_v<T, Projective3f>) {
+                float xz = arg(0, 2);
+                if(ImGui::DragFloat("##XZ", &xz, 0.1f, -1.0f, 1.0f, "%.2f", ImGuiSliderFlags_AlwaysClamp)) {
+                    arg(0, 2) = xz;
+                    property_data_model_->SetValue(arg);
+                }
+            } else if constexpr (std::is_same_v<T, Projective3d>) {
+                float xz = arg(0, 1);
+                if(ImGui::DragFloat("##XZ", &xz, 0.1f, -1.0f, 1.0f, "%.2f", ImGuiSliderFlags_AlwaysClamp)) {
+                    arg(0, 1) = xz;
+                    property_data_model_->SetValue(arg);
+                }
+            }
+        }, data_);
+        ImGui::PopStyleVar();
+    }
+
+    // YX
+    {
+        ImGui::PushStyleVar(ImGuiStyleVar_ItemSpacing, ImVec2{0, 0});
+        ImGui::PushStyleColor(ImGuiCol_Text, ImVec4{1.0f, 1.0f, 1.0f, 1.0f});
+        ImGui::PushStyleColor(ImGuiCol_Button, ImVec4{0.8f, 0.1f, 0.15f, 1.0f});
+        ImGui::PushStyleColor(ImGuiCol_ButtonHovered, ImVec4{0.9f, 0.2f, 0.2f, 1.0f});
+        ImGui::PushStyleColor(ImGuiCol_ButtonActive, ImVec4{0.8f, 0.1f, 0.15f, 1.0f});
+        ImGui::Button("yx", button_size);
+        ImGui::PopStyleColor(4);
+        ImGui::SameLine();
+        ImGui::SetNextItemWidth(divided_width - button_size.x);
+
+        std::visit([this](auto&& arg) {
+            using T = std::decay_t<decltype(arg)>;
+            if constexpr (std::is_same_v<T, Isometry3f>) {
+                float yx = arg(1, 0);
+                if(ImGui::DragFloat("##YX", &yx, 0.1f, -1.0f, 1.0f, "%.2f", ImGuiSliderFlags_AlwaysClamp)) {
+                    arg(1, 0) = yx;
+                    property_data_model_->SetValue(arg);
+                }
+            } else if constexpr (std::is_same_v<T, Isometry3d>) {
+                float yx = arg(1, 0);
+                if(ImGui::DragFloat("##YX", &yx, 0.1f, -1.0f, 1.0f, "%.2f", ImGuiSliderFlags_AlwaysClamp)) {
+                    arg(1, 0) = yx;
+                    property_data_model_->SetValue(arg);
+                }
+            } else if constexpr (std::is_same_v<T, Affine3f>) {
+                float yx = arg(1, 0);
+                if(ImGui::DragFloat("##YX", &yx, 0.1f, -1.0f, 1.0f, "%.2f", ImGuiSliderFlags_AlwaysClamp)) {
+                    arg(1, 0) = yx;
+                    property_data_model_->SetValue(arg);
+                }
+            } else if constexpr (std::is_same_v<T, Affine3d>) {
+                float yx = arg(1, 0);
+                if(ImGui::DragFloat("##YX", &yx, 0.1f, -1.0f, 1.0f, "%.2f", ImGuiSliderFlags_AlwaysClamp)) {
+                    arg(1, 0) = yx;
+                    property_data_model_->SetValue(arg);
+                }
+            } else if constexpr (std::is_same_v<T, Projective3f>) {
+                float yx = arg(1, 0);
+                if(ImGui::DragFloat("##YX", &yx, 0.1f, -1.0f, 1.0f, "%.2f", ImGuiSliderFlags_AlwaysClamp)) {
+                    arg(1, 0) = yx;
+                    property_data_model_->SetValue(arg);
+                }
+            } else if constexpr (std::is_same_v<T, Projective3d>) {
+                float yx = arg(1, 0);
+                if(ImGui::DragFloat("##YX", &yx, 0.1f, -1.0f, 1.0f, "%.2f", ImGuiSliderFlags_AlwaysClamp)) {
+                    arg(1, 0) = yx;
+                    property_data_model_->SetValue(arg);
+                }
+            }
+        }, data_);
+        ImGui::PopStyleVar();
+    }
+
+    ImGui::SameLine();
+
+    // YY
+    {
+        ImGui::PushStyleVar(ImGuiStyleVar_ItemSpacing, ImVec2{0, 0});
+        ImGui::PushStyleColor(ImGuiCol_Text, ImVec4{ 1.0f, 1.0f, 1.0f, 1.0f });
+        ImGui::PushStyleColor(ImGuiCol_Button, ImVec4{ 0.2f, 0.7f, 0.2f, 1.0f });
+        ImGui::PushStyleColor(ImGuiCol_ButtonHovered, ImVec4{ 0.3f, 0.8f, 0.3f, 1.0f });
+        ImGui::PushStyleColor(ImGuiCol_ButtonActive, ImVec4{ 0.2f, 0.7f, 0.2f, 1.0f });
+        ImGui::Button("yy", button_size);
+        ImGui::PopStyleColor(4);
+        ImGui::SameLine();
+        ImGui::SetNextItemWidth(divided_width - button_size.x);
+
+        std::visit([this](auto&& arg) {
+            using T = std::decay_t<decltype(arg)>;
+            if constexpr (std::is_same_v<T, Isometry3f>) {
+                float yy = arg(1, 1);
+                if(ImGui::DragFloat("##YY", &yy, 0.1f, -1.0f, 1.0f, "%.2f", ImGuiSliderFlags_AlwaysClamp)) {
+                    arg(1, 1) = yy;
+                    property_data_model_->SetValue(arg);
+                }
+            } else if constexpr (std::is_same_v<T, Isometry3d>) {
+                float yy = arg(1, 1);
+                if(ImGui::DragFloat("##YY", &yy, 0.1f, -1.0f, 1.0f, "%.2f", ImGuiSliderFlags_AlwaysClamp)) {
+                    arg(1, 0) = yy;
+                    property_data_model_->SetValue(arg);
+                }
+            } else if constexpr (std::is_same_v<T, Affine3f>) {
+                float yy = arg(1, 1);
+                if(ImGui::DragFloat("##YX", &yy, 0.1f, -1.0f, 1.0f, "%.2f", ImGuiSliderFlags_AlwaysClamp)) {
+                    arg(1, 1) = yy;
+                    property_data_model_->SetValue(arg);
+                }
+            } else if constexpr (std::is_same_v<T, Affine3d>) {
+                float yy = arg(1, 1);
+                if(ImGui::DragFloat("##YX", &yy, 0.1f, -1.0f, 1.0f, "%.2f", ImGuiSliderFlags_AlwaysClamp)) {
+                    arg(1, 1) = yy;
+                    property_data_model_->SetValue(arg);
+                }
+            } else if constexpr (std::is_same_v<T, Projective3f>) {
+                float yy = arg(1, 1);
+                if(ImGui::DragFloat("##YX", &yy, 0.1f, -1.0f, 1.0f, "%.2f", ImGuiSliderFlags_AlwaysClamp)) {
+                    arg(1, 1) = yy;
+                    property_data_model_->SetValue(arg);
+                }
+            } else if constexpr (std::is_same_v<T, Projective3d>) {
+                float yy = arg(1, 1);
+                if(ImGui::DragFloat("##YX", &yy, 0.1f, -1.0f, 1.0f, "%.2f", ImGuiSliderFlags_AlwaysClamp)) {
+                    arg(1, 1) = yy;
+                    property_data_model_->SetValue(arg);
+                }
+            }
+        }, data_);
+        ImGui::PopStyleVar();
+    }
+
+    ImGui::SameLine();
+
+    // YZ
+    {
+        ImGui::PushStyleVar(ImGuiStyleVar_ItemSpacing, ImVec2{0, 0});
+        ImGui::PushStyleColor(ImGuiCol_Text, ImVec4{ 1.0f, 1.0f, 1.0f, 1.0f });
+        ImGui::PushStyleColor(ImGuiCol_Button, ImVec4{ 0.1f, 0.25f, 0.8f, 1.0f });
+        ImGui::PushStyleColor(ImGuiCol_ButtonHovered, ImVec4{ 0.2f, 0.35f, 0.9f, 1.0f });
+        ImGui::PushStyleColor(ImGuiCol_ButtonActive, ImVec4{ 0.1f, 0.25f, 0.8f, 1.0f });
+        ImGui::Button("yz", button_size);
+        ImGui::PopStyleColor(4);
+        ImGui::SameLine();
+        ImGui::SetNextItemWidth(divided_width - button_size.x);
+
+        std::visit([this](auto&& arg) {
+            using T = std::decay_t<decltype(arg)>;
+            if constexpr (std::is_same_v<T, Isometry3f>) {
+                float yz = arg(1, 2);
+                if(ImGui::DragFloat("##YZ", &yz, 0.1f, -1.0f, 1.0f, "%.2f", ImGuiSliderFlags_AlwaysClamp)) {
+                    arg(1, 2) = yz;
+                    property_data_model_->SetValue(arg);
+                }
+            } else if constexpr (std::is_same_v<T, Isometry3d>) {
+                float yz = arg(1, 2);
+                if(ImGui::DragFloat("##YZ", &yz, 0.1f, -1.0f, 1.0f, "%.2f", ImGuiSliderFlags_AlwaysClamp)) {
+                    arg(1, 2) = yz;
+                    property_data_model_->SetValue(arg);
+                }
+            } else if constexpr (std::is_same_v<T, Affine3f>) {
+                float yz = arg(1, 2);
+                if(ImGui::DragFloat("##YZ", &yz, 0.1f, -1.0f, 1.0f, "%.2f", ImGuiSliderFlags_AlwaysClamp)) {
+                    arg(1, 2) = yz;
+                    property_data_model_->SetValue(arg);
+                }
+            } else if constexpr (std::is_same_v<T, Affine3d>) {
+                float yz = arg(1, 2);
+                if(ImGui::DragFloat("##YZ", &yz, 0.1f, -1.0f, 1.0f, "%.2f", ImGuiSliderFlags_AlwaysClamp)) {
+                    arg(1, 2) = yz;
+                    property_data_model_->SetValue(arg);
+                }
+            } else if constexpr (std::is_same_v<T, Projective3f>) {
+                float yz = arg(1, 2);
+                if(ImGui::DragFloat("##YZ", &yz, 0.1f, -1.0f, 1.0f, "%.2f", ImGuiSliderFlags_AlwaysClamp)) {
+                    arg(1, 2) = yz;
+                    property_data_model_->SetValue(arg);
+                }
+            } else if constexpr (std::is_same_v<T, Projective3d>) {
+                float yz = arg(1, 2);
+                if(ImGui::DragFloat("##YZ", &yz, 0.1f, -1.0f, 1.0f, "%.2f", ImGuiSliderFlags_AlwaysClamp)) {
+                    arg(1, 2) = yz;
+                    property_data_model_->SetValue(arg);
+                }
+            }
+        }, data_);
+        ImGui::PopStyleVar();
+    }
+
+    // ZX
+    {
+        ImGui::PushStyleVar(ImGuiStyleVar_ItemSpacing, ImVec2{0, 0});
+        ImGui::PushStyleColor(ImGuiCol_Text, ImVec4{1.0f, 1.0f, 1.0f, 1.0f});
+        ImGui::PushStyleColor(ImGuiCol_Button, ImVec4{0.8f, 0.1f, 0.15f, 1.0f});
+        ImGui::PushStyleColor(ImGuiCol_ButtonHovered, ImVec4{0.9f, 0.2f, 0.2f, 1.0f});
+        ImGui::PushStyleColor(ImGuiCol_ButtonActive, ImVec4{0.8f, 0.1f, 0.15f, 1.0f});
+        ImGui::Button("zx", button_size);
+        ImGui::PopStyleColor(4);
+        ImGui::SameLine();
+        ImGui::SetNextItemWidth(divided_width - button_size.x);
+
+        std::visit([this](auto&& arg) {
+            using T = std::decay_t<decltype(arg)>;
+            if constexpr (std::is_same_v<T, Isometry3f>) {
+                float zx = arg(2, 0);
+                if(ImGui::DragFloat("##ZX", &zx, 0.1f, -1.0f, 1.0f, "%.2f", ImGuiSliderFlags_AlwaysClamp)) {
+                    arg(2, 0) = zx;
+                    property_data_model_->SetValue(arg);
+                }
+            } else if constexpr (std::is_same_v<T, Isometry3d>) {
+                float zx = arg(2, 0);
+                if(ImGui::DragFloat("##ZX", &zx, 0.1f, -1.0f, 1.0f, "%.2f", ImGuiSliderFlags_AlwaysClamp)) {
+                    arg(2, 0) = zx;
+                    property_data_model_->SetValue(arg);
+                }
+            } else if constexpr (std::is_same_v<T, Affine3f>) {
+                float zx = arg(2, 0);
+                if(ImGui::DragFloat("##ZX", &zx, 0.1f, -1.0f, 1.0f, "%.2f", ImGuiSliderFlags_AlwaysClamp)) {
+                    arg(2, 0) = zx;
+                    property_data_model_->SetValue(arg);
+                }
+            } else if constexpr (std::is_same_v<T, Affine3d>) {
+                float zx = arg(2, 0);
+                if(ImGui::DragFloat("##ZX", &zx, 0.1f, -1.0f, 1.0f, "%.2f", ImGuiSliderFlags_AlwaysClamp)) {
+                    arg(2, 0) = zx;
+                    property_data_model_->SetValue(arg);
+                }
+            } else if constexpr (std::is_same_v<T, Projective3f>) {
+                float zx = arg(2, 0);
+                if(ImGui::DragFloat("##ZX", &zx, 0.1f, -1.0f, 1.0f, "%.2f", ImGuiSliderFlags_AlwaysClamp)) {
+                    arg(2, 0) = zx;
+                    property_data_model_->SetValue(arg);
+                }
+            } else if constexpr (std::is_same_v<T, Projective3d>) {
+                float zx = arg(2, 0);
+                if(ImGui::DragFloat("##ZX", &zx, 0.1f, -1.0f, 1.0f, "%.2f", ImGuiSliderFlags_AlwaysClamp)) {
+                    arg(2, 0) = zx;
+                    property_data_model_->SetValue(arg);
+                }
+            }
+        }, data_);
+        ImGui::PopStyleVar();
+    }
+
+    ImGui::SameLine();
+
+    // ZY
+    {
+        ImGui::PushStyleVar(ImGuiStyleVar_ItemSpacing, ImVec2{0, 0});
+        ImGui::PushStyleColor(ImGuiCol_Text, ImVec4{ 1.0f, 1.0f, 1.0f, 1.0f });
+        ImGui::PushStyleColor(ImGuiCol_Button, ImVec4{ 0.2f, 0.7f, 0.2f, 1.0f });
+        ImGui::PushStyleColor(ImGuiCol_ButtonHovered, ImVec4{ 0.3f, 0.8f, 0.3f, 1.0f });
+        ImGui::PushStyleColor(ImGuiCol_ButtonActive, ImVec4{ 0.2f, 0.7f, 0.2f, 1.0f });
+        ImGui::Button("zy", button_size);
+        ImGui::PopStyleColor(4);
+        ImGui::SameLine();
+        ImGui::SetNextItemWidth(divided_width - button_size.x);
+
+        std::visit([this](auto&& arg) {
+            using T = std::decay_t<decltype(arg)>;
+            if constexpr (std::is_same_v<T, Isometry3f>) {
+                float zy = arg(2, 1);
+                if(ImGui::DragFloat("##ZY", &zy, 0.1f, -1.0f, 1.0f, "%.2f", ImGuiSliderFlags_AlwaysClamp)) {
+                    arg(2, 1) = zy;
+                    property_data_model_->SetValue(arg);
+                }
+            } else if constexpr (std::is_same_v<T, Isometry3d>) {
+                float zy = arg(2, 1);
+                if(ImGui::DragFloat("##ZY", &zy, 0.1f, -1.0f, 1.0f, "%.2f", ImGuiSliderFlags_AlwaysClamp)) {
+                    arg(2, 1) = zy;
+                    property_data_model_->SetValue(arg);
+                }
+            } else if constexpr (std::is_same_v<T, Affine3f>) {
+                float zy = arg(2, 1);
+                if(ImGui::DragFloat("##ZY", &zy, 0.1f, -1.0f, 1.0f, "%.2f", ImGuiSliderFlags_AlwaysClamp)) {
+                    arg(2, 1) = zy;
+                    property_data_model_->SetValue(arg);
+                }
+            } else if constexpr (std::is_same_v<T, Affine3d>) {
+                float zy = arg(2, 1);
+                if(ImGui::DragFloat("##ZY", &zy, 0.1f, -1.0f, 1.0f, "%.2f", ImGuiSliderFlags_AlwaysClamp)) {
+                    arg(2, 1) = zy;
+                    property_data_model_->SetValue(arg);
+                }
+            } else if constexpr (std::is_same_v<T, Projective3f>) {
+                float zy = arg(2, 1);
+                if(ImGui::DragFloat("##ZY", &zy, 0.1f, -1.0f, 1.0f, "%.2f", ImGuiSliderFlags_AlwaysClamp)) {
+                    arg(2, 1) = zy;
+                    property_data_model_->SetValue(arg);
+                }
+            } else if constexpr (std::is_same_v<T, Projective3d>) {
+                float zy = arg(2, 1);
+                if(ImGui::DragFloat("##ZY", &zy, 0.1f, -1.0f, 1.0f, "%.2f", ImGuiSliderFlags_AlwaysClamp)) {
+                    arg(2, 1) = zy;
+                    property_data_model_->SetValue(arg);
+                }
+            }
+        }, data_);
+        ImGui::PopStyleVar();
+    }
+
+    ImGui::SameLine();
+
+    // ZZ
+    {
+        ImGui::PushStyleVar(ImGuiStyleVar_ItemSpacing, ImVec2{0, 0});
+        ImGui::PushStyleColor(ImGuiCol_Text, ImVec4{ 1.0f, 1.0f, 1.0f, 1.0f });
+        ImGui::PushStyleColor(ImGuiCol_Button, ImVec4{ 0.1f, 0.25f, 0.8f, 1.0f });
+        ImGui::PushStyleColor(ImGuiCol_ButtonHovered, ImVec4{ 0.2f, 0.35f, 0.9f, 1.0f });
+        ImGui::PushStyleColor(ImGuiCol_ButtonActive, ImVec4{ 0.1f, 0.25f, 0.8f, 1.0f });
+        ImGui::Button("zz", button_size);
+        ImGui::PopStyleColor(4);
+        ImGui::SameLine();
+        ImGui::SetNextItemWidth(divided_width - button_size.x);
+
+        std::visit([this](auto&& arg) {
+            using T = std::decay_t<decltype(arg)>;
+            if constexpr (std::is_same_v<T, Isometry3f>) {
+                float zz = arg(2, 2);
+                if(ImGui::DragFloat("##ZZ", &zz, 0.1f, -1.0f, 1.0f, "%.2f", ImGuiSliderFlags_AlwaysClamp)) {
+                    arg(2, 2) = zz;
+                    property_data_model_->SetValue(arg);
+                }
+            } else if constexpr (std::is_same_v<T, Isometry3d>) {
+                float zz = arg(2, 2);
+                if(ImGui::DragFloat("##ZZ", &zz, 0.1f, -1.0f, 1.0f, "%.2f", ImGuiSliderFlags_AlwaysClamp)) {
+                    arg(2, 2) = zz;
+                    property_data_model_->SetValue(arg);
+                }
+            } else if constexpr (std::is_same_v<T, Affine3f>) {
+                float zz = arg(2, 2);
+                if(ImGui::DragFloat("##ZZ", &zz, 0.1f, -1.0f, 1.0f, "%.2f", ImGuiSliderFlags_AlwaysClamp)) {
+                    arg(2, 2) = zz;
+                    property_data_model_->SetValue(arg);
+                }
+            } else if constexpr (std::is_same_v<T, Affine3d>) {
+                float zz = arg(2, 2);
+                if(ImGui::DragFloat("##ZZ", &zz, 0.1f, -1.0f, 1.0f, "%.2f", ImGuiSliderFlags_AlwaysClamp)) {
+                    arg(2, 2) = zz;
+                    property_data_model_->SetValue(arg);
+                }
+            } else if constexpr (std::is_same_v<T, Projective3f>) {
+                float zz = arg(2, 2);
+                if(ImGui::DragFloat("##ZZ", &zz, 0.1f, -1.0f, 1.0f, "%.2f", ImGuiSliderFlags_AlwaysClamp)) {
+                    arg(2, 2) = zz;
+                    property_data_model_->SetValue(arg);
+                }
+            } else if constexpr (std::is_same_v<T, Projective3d>) {
+                float zz = arg(2, 2);
+                if(ImGui::DragFloat("##ZZ", &zz, 0.1f, -1.0f, 1.0f, "%.2f", ImGuiSliderFlags_AlwaysClamp)) {
+                    arg(2, 2) = zz;
+                    property_data_model_->SetValue(arg);
+                }
+            }
+        }, data_);
+        ImGui::PopStyleVar();
+    }
+
+    ImGui::PopStyleVar();
+}
+
 }

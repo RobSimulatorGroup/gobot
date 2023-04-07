@@ -56,6 +56,10 @@ private:
     Matrix2f matrix2f{Matrix2f::Zero()};
 
     Matrix3f matrix3f{Matrix3f::Zero()};
+
+    Isometry2f isometry2f{Isometry2f::Identity()};
+
+    Isometry3f isometry3f{Isometry3f::Identity()};
 };
 
 }

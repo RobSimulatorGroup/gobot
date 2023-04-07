@@ -287,29 +287,23 @@ ImGuiNode* EditorInspectorDefaultPlugin::GetEditorForProperty(std::unique_ptr<Va
             return editor;
         } break;
         case TypeCategory::Isometry2f:
-            break;
         case TypeCategory::Isometry2d:
-            break;
-        case TypeCategory::Isometry3f:
-            break;
-        case TypeCategory::Isometry3d:
-            break;
         case TypeCategory::Affine2f:
-            break;
         case TypeCategory::Affine2d:
-            break;
-        case TypeCategory::Affine3f:
-            break;
-        case TypeCategory::Affine3d:
-            break;
         case TypeCategory::Projective2f:
-            break;
-        case TypeCategory::Projective2d:
-            break;
+        case TypeCategory::Projective2d: {
+            auto* editor = Object::New<EditorPropertyTransform2>(type_category, std::move(variant_data));
+            return editor;
+        } break;
+        case TypeCategory::Isometry3f:
+        case TypeCategory::Isometry3d:
+        case TypeCategory::Affine3f:
+        case TypeCategory::Affine3d:
         case TypeCategory::Projective3f:
-            break;
-        case TypeCategory::Projective3d:
-            break;
+        case TypeCategory::Projective3d: {
+            auto* editor = Object::New<EditorPropertyQuaternion>(type_category, std::move(variant_data));
+            return editor;
+        } break;
         case TypeCategory::Ref:
             break;
         case TypeCategory::Array:

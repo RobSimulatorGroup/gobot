@@ -46,6 +46,8 @@ GOBOT_REGISTRATION {
             .property("euler_angle", &TestPropertyNode::euler_angle)
             .property("matrix2f", &TestPropertyNode::matrix2f)
             .property("matrix3f", &TestPropertyNode::matrix3f)
+            .property("isometry2f", &TestPropertyNode::isometry2f)
+            .property("isometry3f", &TestPropertyNode::isometry3f)
             .property("color", &TestPropertyNode::GetColor, &TestPropertyNode::SetColor)
             .property("multiline_text", &TestPropertyNode::multiline_text)(
                     AddMetaPropertyInfo(PropertyInfo().SetHint(PropertyHint::MultilineText)) )
