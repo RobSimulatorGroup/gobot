@@ -38,7 +38,7 @@ public:
 
     FORCE_INLINE void SetImGuizmoOperation(uint32_t imGuizmo_operation) { imguizmo_operation_ = imGuizmo_operation; }
 
-    FORCE_INLINE void SetNeedUpdateCamera(bool update_camera) { update_camera_ = update_camera; }
+    void SetNeedUpdateCamera(bool update_camera);
 
     bool& SnapGuizmo();
 
@@ -65,6 +65,7 @@ private:
     bool mouse_down_{false};
 
     bool update_camera_{false};
+    bool editing_{false};
 
     uint32_t imguizmo_operation_ = UINT32_MAX;
 

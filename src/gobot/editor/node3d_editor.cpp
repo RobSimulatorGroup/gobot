@@ -70,9 +70,15 @@ void Node3DEditor::NotificationCallBack(NotificationType notification) {
     }
 }
 
+void Node3DEditor::SetNeedUpdateCamera(bool update_camera) {
+    // If we are editing camera, let the editing finish itself.
+    if (!editing_) {
+        update_camera_ = update_camera;
+    }
+}
+
 
 void Node3DEditor::UpdateCamera(double delta_time) {
-
     if (!mouse_down_) {
         mouse_position_last_ = Input::GetInstance()->GetMousePosition();
     }
@@ -95,7 +101,11 @@ void Node3DEditor::UpdateCamera(double delta_time) {
             vertical_angle_   -= mouse_speed_ * float(delta[1]);
         }
         mouse_position_last_ = mouse_position_now_;
-    };
+
+        editing_ = true;
+    } else {
+        editing_ = false;
+    }
 
     const Vector3 direction = {
         std::cos(vertical_angle_) * std::sin(horizontal_angle_),
