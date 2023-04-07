@@ -51,6 +51,9 @@ public:
     void RemoveShape(DartShape3D *shape) override;
     void RemoveShape(std::size_t index);
 
+    void SetParam(PhysicsServer3D::BodyParameter param, const Variant &value);
+    [[nodiscard]] Variant GetParam(PhysicsServer3D::BodyParameter param) const;
+
 private:
     RID self_;
     ObjectID instance_id_;

@@ -51,4 +51,45 @@ void DartBody3D::RemoveShape(std::size_t index) {
     shapes_.erase(std::remove(shapes_.begin(), shapes_.end(), shapes_[index]), shapes_.end());
 }
 
+void DartBody3D::SetParam(PhysicsServer3D::BodyParameter param, const Variant &value) {
+    switch (param) {
+        case PhysicsServer3D::BodyParameter::Mass: {
+            real_t mass = value.get_value<real_t>();
+            body_node_->setMass(mass);
+        } break;
+        case PhysicsServer3D::BodyParameter::Inertia: {
+            Matrix3 moment_of_inertia = value.get_value<Matrix3>();
+            body_node_->setMomentOfInertia(
+                    moment_of_inertia(0, 0), moment_of_inertia(1, 1), moment_of_inertia(2, 2),
+                    moment_of_inertia(0, 1), moment_of_inertia(0, 2), moment_of_inertia(1, 2));
+        } break;
+        case PhysicsServer3D::BodyParameter::CenterOfMass: {
+            Vector3d com = value.get_value<Vector3>().cast<double>();
+            body_node_->setLocalCOM(com);
+        }
+
+        default: {
+        }
+    }
+}
+
+Variant DartBody3D::GetParam(PhysicsServer3D::BodyParameter param) const {
+    switch (param) {
+        case PhysicsServer3D::BodyParameter::Mass: {
+            return body_node_->getMass();
+        } break;
+        case PhysicsServer3D::BodyParameter::Inertia: {
+            Matrix3 moment_of_inertia = body_node_->getInertia().getMoment().cast<real_t>();
+            return moment_of_inertia;
+        } break;
+        case PhysicsServer3D::BodyParameter::CenterOfMass: {
+            Vector3 com = body_node_->getLocalCOM().cast<real_t>();
+            return com;
+        } break;
+
+        default: {
+        }
+    }
+}
+
 } // End of namespace gobot

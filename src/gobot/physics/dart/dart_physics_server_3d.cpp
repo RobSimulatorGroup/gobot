@@ -45,11 +45,105 @@ RID DartPhysicsServer3D::WorldCreate() {
 /* BODY API */
 
 RID DartPhysicsServer3D::BodyCreate() {
-    DartBody3D *body = new DartBody3D();
+    auto *body = new DartBody3D();
     RID rid = body_owner_.MakeRID(body);
     body->SetSelf(rid);
     return rid;
 }
+
+void DartPhysicsServer3D::BodyAddShape(RID body, RID shape, const Affine3 &transform, bool disabled) {
+    auto *body_ptr = body_owner_.GetOrNull(body);
+    ERR_FAIL_COND(!body_ptr);
+
+    DartShape3D *shape_ptr = shape_owner_.GetOrNull(shape);
+    ERR_FAIL_COND(!shape_ptr);
+
+    body_ptr->AddShape(shape_ptr, transform);
+}
+
+void DartPhysicsServer3D::BodySetShapeTransform(RID body, std::size_t shape_idx, const Affine3 &transform) {
+    auto *body_ptr = body_owner_.GetOrNull(body);
+    ERR_FAIL_COND(!body_ptr);
+
+    body_ptr->SetShapeTransform(shape_idx, transform);
+}
+
+std::size_t DartPhysicsServer3D::BodyGetShapeCount(RID body) const {
+    auto body_ptr = body_owner_.GetOrNull(body);
+    ERR_FAIL_COND_V(!body_ptr, -1);
+
+    return body_ptr->GetShapeCount();
+}
+
+RID DartPhysicsServer3D::BodyGetShape(RID body, std::size_t shape_idx) const {
+    auto body_ptr = body_owner_.GetOrNull(body);
+    ERR_FAIL_COND_V(!body_ptr, RID());
+
+    auto *shape_ptr = body_ptr->GetShape(shape_idx);
+    ERR_FAIL_COND_V(!shape_ptr, RID());
+
+    return shape_ptr->GetSelf();
+}
+
+void DartPhysicsServer3D::BodyRemoveShape(RID body, std::size_t shape_idx) {
+    auto *body_ptr = body_owner_.GetOrNull(body);
+    ERR_FAIL_COND(!body_ptr);
+
+    body_ptr->RemoveShape(shape_idx);
+}
+
+void DartPhysicsServer3D::BodyClearShapes(RID body) {
+    auto *body_ptr = body_owner_.GetOrNull(body);
+    ERR_FAIL_COND(!body_ptr);
+
+    while (body_ptr->GetShapeCount()) {
+        body_ptr->RemoveShape(static_cast<std::size_t>(0));
+    }
+}
+
+void DartPhysicsServer3D::BodySetParam(RID body, BodyParameter param, const Variant &value) {
+    auto *body_ptr = body_owner_.GetOrNull(body);
+    ERR_FAIL_COND(!body_ptr);
+
+    body_ptr->SetParam(param, value);
+}
+
+Variant DartPhysicsServer3D::BodyGetParam(RID body, BodyParameter param) const {
+    auto *body_ptr = body_owner_.GetOrNull(body);
+    ERR_FAIL_COND_V(!body_ptr, 0);
+
+    return body_ptr->GetParam(param);
+}
+
+RID DartPhysicsServer3D::JointCreate() {
+    auto *joint = new DartJoint3D();
+    RID rid = joint_owner_.MakeRID(joint);
+    joint->SetSelf(rid);
+    return rid;
+}
+
+//void DartPhysicsServer3D::JointClear(RID joint) {
+//    DartJoint3D *joint_ptr = joint_owner_.GetOrNull(joint);
+//    ERR_FAIL_NULL(joint_ptr);
+//
+//    // todo: delete if internal dart joint pointer is nullptr
+//
+//
+//}
+
+PhysicsServer3D::JointType DartPhysicsServer3D::JointGetType(RID joint) {
+    DartJoint3D *joint_ptr = joint_owner_.GetOrNull(joint);
+    ERR_FAIL_COND_V(!joint_ptr, PhysicsServer3D::JointType::None);
+    return joint_ptr->GetType();
+}
+
+
+
+
+
+
+
+
 
 void DartPhysicsServer3D::Free(RID rid) {
     // todo: update shapes

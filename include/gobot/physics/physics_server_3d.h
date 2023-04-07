@@ -59,56 +59,66 @@ public:
     // todo: virtual void BodySetMode(RID body, BodyMode mode) = 0;
     // todo: virtual BodyMode BodyGetMode(RID body) = 0;
 
-    // todo: virtual void BodyAddShape(RID body, RID shape, const Affine3 &tfm = Affine3::Identity(), bool disabled = false) = 0;
+    virtual void BodyAddShape(
+            RID body,
+            RID shape,
+            const Affine3 &transform = Affine3::Identity(),
+            bool disabled = false) = 0;
     // todo: virtual void BodySetShape(RID body, std::size_t shape_idx, RID shape) = 0;
-    // todo: virtual void BodySetShapeTransform(RID body, std::size_t shape_idx, const Affine3 &tfm) = 0;
+    virtual void BodySetShapeTransform(RID body, std::size_t shape_idx, const Affine3 &transform) = 0;
 
-    // todo: virtual std::size_t BodyGetShapeCount(RID body) const = 0;
-    // todo: virtual RID BodyGetShape(RID body, std::size_t shape_idx) const = 0;
+    [[nodiscard]] virtual std::size_t BodyGetShapeCount(RID body) const = 0;
+    [[nodiscard]] virtual RID BodyGetShape(RID body, std::size_t shape_idx) const = 0;
     // todo: virtual Affine3 BodyGetShapeTransform(RID body, std::size_t shape_idx) const = 0;
 
-    // todo: virtual void BodyRemoveShape(RID body, std::size_t shape_idx) = 0;
-    // todo: virtual void BodyClearShapes(RID body) = 0;
+    virtual void BodyRemoveShape(RID body, std::size_t shape_idx) = 0;
+    virtual void BodyClearShapes(RID body) = 0;
 
     /* COMMON BODY VARS */
-//    enum class BodyParameter {
-//        Mass,
-//        Inertia,
-//        CenterOfMass,
+    enum class BodyParameter {
+        Mass,
+        Inertia,
+        CenterOfMass,
 //        LinearDamp,
 //        AngularDamp,
 //        Friction,
 //        Restitution,
-//    };
+    };
 
-//    virtual void BodySetParam(RID body, BodyParameter param, const Variant &value) = 0;
-//    virtual Variant BodyGetParam(RID body, BodyParameter param) const = 0;
+    virtual void BodySetParam(RID body, BodyParameter param, const Variant &value) = 0;
+    [[nodiscard]] virtual Variant BodyGetParam(RID body, BodyParameter param) const = 0;
 
     /***** MotionParameters *****/
     /***** MotionCollision *****/
     /***** MotionResult *****/
 
     /* JOINT API */
-//    enum class JointType {
-//        Revolute,
-//        Prismatic,
-//        Universal,
-//    };
+    enum class JointType {
+        Free,
+        Fixed,
+        Revolute,
+        Prismatic,
+        Universal,
+        None,
+    };
 
-    // todo: virtual RID JointCreate() = 0;
+     virtual RID JointCreate() = 0;
 
-    // todo: virtual void JointClear(RID Joint) = 0;
+     // todo: virtual void JointClear(RID joint) = 0;
 
-    // todo: virtual JointType JointGetType(RID joint) = 0;
+     virtual JointType JointGetType(RID joint) = 0;
 
-//    enum class RevoluteJointParam {
-//        UpperLimit,
-//        LowerLimit,
-//        DampingLimit,
-//        RestitutionLimit,
-//        Damping,
-//        Restitution,
-//    };
+    enum class RevoluteJointParam {
+        PositionUpperLimit,
+        PositionLowerLimit,
+        VelocityUpperLimit,
+        VelocityLowerLimit,
+        AccelerationUpperLimit,
+        AccelerationLowerLimit,
+        Stiffness,
+        Damping,
+        Friction,
+    };
 
     // todo: JointMakeRevolute
     // todo: Set/GetParam
