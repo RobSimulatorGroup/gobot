@@ -10,6 +10,8 @@
 #include "gobot/scene/node_3d.hpp"
 #include "gobot/core/color.hpp"
 #include "gobot/core/math/matrix.hpp"
+#include "gobot/core/rid.h"
+#include "gobot/rendering/render_rid.hpp"
 
 namespace gobot {
 
@@ -17,7 +19,7 @@ class TestPropertyNode : public Node3D {
     GOBCLASS(TestPropertyNode, Node3D)
 public:
 
-    TestPropertyNode() = default;
+    TestPropertyNode();
 
     void SetPropertyUsageFlags(PropertyUsageFlags flags);
 
@@ -40,6 +42,11 @@ private:
     PropertyHint property_hint{PropertyHint::Dir};
     String string{};
     String multiline_text{};
+
+    ObjectID objectID{};
+
+    RID rid{};
+    RenderRID render_rid{};
 
     Color color{1.0f, 0.0f, 0.0f, 1.0f};
 

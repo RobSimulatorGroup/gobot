@@ -303,14 +303,30 @@ void EditorPropertyColor::OnImGuiContent() {
 
 ////////////////////////////////////////////////////////
 
+void EditorPropertyObjectID::OnImGuiContent() {
+    auto object_id = property_data_model_->GetValue().convert<ObjectID>();
+    ImGui::TextUnformatted(object_id.IsValid() ?
+                                     fmt::format("Object id: {}", object_id.operator int64_t()).c_str() :
+                                     "Invalid id");
+}
+
+////////////////////////////////////////////////////////
 
 void EditorPropertyRID::OnImGuiContent() {
-
+    auto rid = property_data_model_->GetValue().convert<RID>();
+    ImGui::TextUnformatted(rid.IsValid() ?
+                           fmt::format("RID: {}", rid.GetID()).c_str() :
+                           "Invalid id");
 }
 
 
-void EditorPropertyRenderRID::OnImGuiContent() {
+//////////////////////////////////////////////////////
 
+void EditorPropertyRenderRID::OnImGuiContent() {
+    auto rid = property_data_model_->GetValue().convert<RenderRID>();
+    ImGui::TextUnformatted(rid.IsValid() ?
+                           fmt::format("RenderRID: {}", rid.GetID()).c_str() :
+                           "Invalid id");
 }
 
 }

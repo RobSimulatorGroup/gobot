@@ -11,6 +11,10 @@
 
 namespace gobot {
 
+TestPropertyNode::TestPropertyNode() {
+    rid = RID::FromUint64(1111);
+}
+
 void TestPropertyNode::SetPropertyUsageFlags(PropertyUsageFlags flags) {
     property_usage_flags_ = flags;
 }
@@ -39,6 +43,9 @@ GOBOT_REGISTRATION {
             .property("property_hint", &TestPropertyNode::property_hint)
             .property("string", &TestPropertyNode::string)
             .property("boolean", &TestPropertyNode::boolean_)
+            .property("objectID", &TestPropertyNode::objectID)
+            .property("rid", &TestPropertyNode::rid)
+            .property("render_rid", &TestPropertyNode::render_rid)
             .property("vector2f", &TestPropertyNode::vector2f)
             .property("vector3f", &TestPropertyNode::vector3f)
             .property("vector4f", &TestPropertyNode::vector4f)
