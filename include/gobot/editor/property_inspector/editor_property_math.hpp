@@ -19,6 +19,8 @@ public:
     void OnImGuiContent() override;
 
 private:
+
+    std::variant<Vector2i, Vector2f, Vector2d> data_;
 };
 
 
@@ -32,6 +34,7 @@ public:
     void OnImGuiContent() override;
 
 private:
+    std::variant<Vector3i, Vector3f, Vector3d> data_;
 };
 
 
@@ -46,6 +49,7 @@ public:
     void OnImGuiContent() override;
 
 private:
+    std::variant<Vector4i, Vector4f, Vector4d> data_;
 };
 
 //////////////////////////////////////////////////////////////////////
@@ -59,6 +63,7 @@ public:
 
 private:
     bool free_edit_mode_{false};
+    std::variant<Quaternionf, Quaterniond> data_;
 };
 
 

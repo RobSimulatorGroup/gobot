@@ -10,6 +10,13 @@
 namespace gobot {
 
 void EditorPropertyVector2::OnImGuiContent() {
+    if (type_category_ == TypeCategory::Vector2i) {
+        data_ = property_data_model_->GetValue().convert<Vector2i>();
+    } else if (type_category_ == TypeCategory::Vector2f) {
+        data_ = property_data_model_->GetValue().convert<Vector2f>();
+    } else if (type_category_ == TypeCategory::Vector2d) {
+        data_ = property_data_model_->GetValue().convert<Vector2d>();
+    }
 
     auto divided_width = ImGui::GetContentRegionAvail().x / 2.0f;
 
@@ -31,24 +38,24 @@ void EditorPropertyVector2::OnImGuiContent() {
         ImGui::SameLine();
         float kk = 0;
         ImGui::SetNextItemWidth(divided_width - button_size.x);
-        if (type_category_ == TypeCategory::Vector2i) {
-            auto vector2i = property_data_model_->GetValue().convert<Vector2i>();
-            if(ImGui::DragInt("##X", &vector2i.x(), 0.1f, 0.0f, 0.0f, "%.2f")) {
-                property_data_model_->SetValue(vector2i);
+        std::visit([this](auto&& arg) {
+            using T = std::decay_t<decltype(arg)>;
+            if constexpr (std::is_same_v<T, Vector2i>) {
+                if(ImGui::DragInt("##X", &arg.x(), 0.1f, 0.0f, 0.0f, "%.2f")) {
+                    property_data_model_->SetValue(arg);
+                }
+            } else if constexpr (std::is_same_v<T, Vector2f>) {
+                if(ImGui::DragFloat("##X", &arg.x(), 0.1f, 0.0f, 0.0f, "%.2f")) {
+                    property_data_model_->SetValue(arg);
+                }
+            } else if constexpr (std::is_same_v<T, Vector2d>) {
+                float x = arg.x();
+                if(ImGui::DragFloat("##X", &x, 0.1f, 0.0f, 0.0f, "%.2f")) {
+                    arg.x() = x;
+                    property_data_model_->SetValue(arg);
+                }
             }
-        } else if (type_category_ == TypeCategory::Vector2f) {
-            auto vector2f = property_data_model_->GetValue().convert<Vector2f>();
-            if(ImGui::DragFloat("##X", &vector2f.x(), 0.1f, 0.0f, 0.0f, "%.2f")) {
-                property_data_model_->SetValue(vector2f);
-            }
-        } else if (type_category_ == TypeCategory::Vector2d) {
-            auto vector2d = property_data_model_->GetValue().convert<Vector2d>();
-            float x = vector2d.x();
-            if(ImGui::DragFloat("##X", &x, 0.1f, 0.0f, 0.0f, "%.2f")) {
-                vector2d.x() = x;
-                property_data_model_->SetValue(vector2d);
-            }
-        }
+        }, data_);
         ImGui::PopStyleVar();
     }
 
@@ -65,24 +72,24 @@ void EditorPropertyVector2::OnImGuiContent() {
         ImGui::PopStyleColor(4);
         ImGui::SameLine();
         ImGui::SetNextItemWidth(divided_width - button_size.x);
-        if (type_category_ == TypeCategory::Vector2i) {
-            auto vector2i = property_data_model_->GetValue().convert<Vector2i>();
-            if(ImGui::DragInt("##Y", &vector2i.y(), 0.1f, 0.0f, 0.0f, "%.2f")) {
-                property_data_model_->SetValue(vector2i);
+        std::visit([this](auto&& arg) {
+            using T = std::decay_t<decltype(arg)>;
+            if constexpr (std::is_same_v<T, Vector2i>) {
+                if(ImGui::DragInt("##Y", &arg.y(), 0.1f, 0.0f, 0.0f, "%.2f")) {
+                    property_data_model_->SetValue(arg);
+                }
+            } else if constexpr (std::is_same_v<T, Vector2f>) {
+                if(ImGui::DragFloat("##Y", &arg.y(), 0.1f, 0.0f, 0.0f, "%.2f")) {
+                    property_data_model_->SetValue(arg);
+                }
+            } else if constexpr (std::is_same_v<T, Vector2d>) {
+                float y = arg.y();
+                if(ImGui::DragFloat("##Y", &y, 0.1f, 0.0f, 0.0f, "%.2f")) {
+                    arg.y() = y;
+                    property_data_model_->SetValue(arg);
+                }
             }
-        } else if (type_category_ == TypeCategory::Vector2f) {
-            auto vector2f = property_data_model_->GetValue().convert<Vector2f>();
-            if(ImGui::DragFloat("##Y", &vector2f.y(), 0.1f, 0.0f, 0.0f, "%.2f")) {
-                property_data_model_->SetValue(vector2f);
-            }
-        } else if (type_category_ == TypeCategory::Vector2d) {
-            auto vector2d = property_data_model_->GetValue().convert<Vector2d>();
-            float y = vector2d.y();
-            if(ImGui::DragFloat("##Y", &y, 0.1f, 0.0f, 0.0f, "%.2f")) {
-                vector2d.y() = y;
-                property_data_model_->SetValue(vector2d);
-            }
-        }
+        }, data_);
         ImGui::PopStyleVar();
     }
 
@@ -93,6 +100,14 @@ void EditorPropertyVector2::OnImGuiContent() {
 ///////////////////////////////////////////////////////////////////
 
 void EditorPropertyVector3::OnImGuiContent() {
+    if (type_category_ == TypeCategory::Vector3i) {
+        data_ = property_data_model_->GetValue().convert<Vector3i>();
+    } else if (type_category_ == TypeCategory::Vector3f) {
+        data_ = property_data_model_->GetValue().convert<Vector3f>();
+    } else if (type_category_ == TypeCategory::Vector3d) {
+        data_ = property_data_model_->GetValue().convert<Vector3d>();
+    }
+
     auto divided_width = ImGui::GetContentRegionAvail().x / 3.0f;
 
     float frame_height = ImGui::GetFrameHeight();
@@ -112,24 +127,24 @@ void EditorPropertyVector3::OnImGuiContent() {
         ImGui::PopStyleColor(4);
         ImGui::SameLine();
         ImGui::SetNextItemWidth(divided_width - button_size.x);
-        if (type_category_ == TypeCategory::Vector3i) {
-            auto vector3i = property_data_model_->GetValue().convert<Vector3i>();
-            if(ImGui::DragInt("##X", &vector3i.x(), 0.1f, 0.0f, 0.0f, "%.2f")) {
-                property_data_model_->SetValue(vector3i);
+        std::visit([this](auto&& arg) {
+            using T = std::decay_t<decltype(arg)>;
+            if constexpr (std::is_same_v<T, Vector3i>) {
+                if(ImGui::DragInt("##X", &arg.x(), 0.1f, 0.0f, 0.0f, "%.2f")) {
+                    property_data_model_->SetValue(arg);
+                }
+            } else if constexpr (std::is_same_v<T, Vector3f>) {
+                if(ImGui::DragFloat("##X", &arg.x(), 0.1f, 0.0f, 0.0f, "%.2f")) {
+                    property_data_model_->SetValue(arg);
+                }
+            } else if constexpr (std::is_same_v<T, Vector3d>) {
+                float x = arg.x();
+                if(ImGui::DragFloat("##X", &x, 0.1f, 0.0f, 0.0f, "%.2f")) {
+                    arg.x() = x;
+                    property_data_model_->SetValue(arg);
+                }
             }
-        } else if (type_category_ == TypeCategory::Vector3f) {
-            auto vector3f = property_data_model_->GetValue().convert<Vector3f>();
-            if(ImGui::DragFloat("##X", &vector3f.x(), 0.1f, 0.0f, 0.0f, "%.2f")) {
-                property_data_model_->SetValue(vector3f);
-            }
-        } else if (type_category_ == TypeCategory::Vector3d) {
-            auto vector3d = property_data_model_->GetValue().convert<Vector3d>();
-            float x = vector3d.x();
-            if(ImGui::DragFloat("##X", &x, 0.1f, 0.0f, 0.0f, "%.2f")) {
-                vector3d.x() = x;
-                property_data_model_->SetValue(vector3d);
-            }
-        }
+        }, data_);
         ImGui::PopStyleVar();
     }
 
@@ -146,24 +161,24 @@ void EditorPropertyVector3::OnImGuiContent() {
         ImGui::PopStyleColor(4);
         ImGui::SameLine();
         ImGui::SetNextItemWidth(divided_width - button_size.x);
-        if (type_category_ == TypeCategory::Vector3i) {
-            auto vector3i = property_data_model_->GetValue().convert<Vector3i>();
-            if(ImGui::DragInt("##Y", &vector3i.y(), 0.1f, 0.0f, 0.0f, "%.2f")) {
-                property_data_model_->SetValue(vector3i);
+        std::visit([this](auto&& arg) {
+            using T = std::decay_t<decltype(arg)>;
+            if constexpr (std::is_same_v<T, Vector3i>) {
+                if(ImGui::DragInt("##Y", &arg.y(), 0.1f, 0.0f, 0.0f, "%.2f")) {
+                    property_data_model_->SetValue(arg);
+                }
+            } else if constexpr (std::is_same_v<T, Vector3f>) {
+                if(ImGui::DragFloat("##Y", &arg.y(), 0.1f, 0.0f, 0.0f, "%.2f")) {
+                    property_data_model_->SetValue(arg);
+                }
+            } else if constexpr (std::is_same_v<T, Vector3d>) {
+                float y = arg.y();
+                if(ImGui::DragFloat("##Y", &y, 0.1f, 0.0f, 0.0f, "%.2f")) {
+                    arg.y() = y;
+                    property_data_model_->SetValue(arg);
+                }
             }
-        } else if (type_category_ == TypeCategory::Vector3f) {
-            auto vector3f = property_data_model_->GetValue().convert<Vector3f>();
-            if(ImGui::DragFloat("##Y", &vector3f.y(), 0.1f, 0.0f, 0.0f, "%.2f")) {
-                property_data_model_->SetValue(vector3f);
-            }
-        } else if (type_category_ == TypeCategory::Vector3d) {
-            auto vector3d = property_data_model_->GetValue().convert<Vector3d>();
-            float y = vector3d.y();
-            if(ImGui::DragFloat("##Y", &y, 0.1f, 0.0f, 0.0f, "%.2f")) {
-                vector3d.y() = y;
-                property_data_model_->SetValue(vector3d);
-            }
-        }
+        }, data_);
         ImGui::PopStyleVar();
     }
 
@@ -180,24 +195,24 @@ void EditorPropertyVector3::OnImGuiContent() {
         ImGui::PopStyleColor(4);
         ImGui::SameLine();
         ImGui::SetNextItemWidth(divided_width - button_size.x);
-        if (type_category_ == TypeCategory::Vector3i) {
-            auto vector3i = property_data_model_->GetValue().convert<Vector3i>();
-            if(ImGui::DragInt("##Z", &vector3i.z(), 0.1f, 0.0f, 0.0f, "%.2f")) {
-                property_data_model_->SetValue(vector3i);
+        std::visit([this](auto&& arg) {
+            using T = std::decay_t<decltype(arg)>;
+            if constexpr (std::is_same_v<T, Vector3i>) {
+                if(ImGui::DragInt("##Z", &arg.z(), 0.1f, 0.0f, 0.0f, "%.2f")) {
+                    property_data_model_->SetValue(arg);
+                }
+            } else if constexpr (std::is_same_v<T, Vector3f>) {
+                if(ImGui::DragFloat("##Z", &arg.z(), 0.1f, 0.0f, 0.0f, "%.2f")) {
+                    property_data_model_->SetValue(arg);
+                }
+            } else if constexpr (std::is_same_v<T, Vector3d>) {
+                float z = arg.z();
+                if(ImGui::DragFloat("##Z", &z, 0.1f, 0.0f, 0.0f, "%.2f")) {
+                    arg.z() = z;
+                    property_data_model_->SetValue(arg);
+                }
             }
-        } else if (type_category_ == TypeCategory::Vector3f) {
-            auto vector3f = property_data_model_->GetValue().convert<Vector3f>();
-            if(ImGui::DragFloat("##Z", &vector3f.z(), 0.1f, 0.0f, 0.0f, "%.2f")) {
-                property_data_model_->SetValue(vector3f);
-            }
-        } else if (type_category_ == TypeCategory::Vector3d) {
-            auto vector3d = property_data_model_->GetValue().convert<Vector3d>();
-            float z = vector3d.z();
-            if(ImGui::DragFloat("##Z", &z, 0.1f, 0.0f, 0.0f, "%.2f")) {
-                vector3d.z() = z;
-                property_data_model_->SetValue(vector3d);
-            }
-        }
+        }, data_);
         ImGui::PopStyleVar();
     }
 
@@ -208,6 +223,14 @@ void EditorPropertyVector3::OnImGuiContent() {
 ///////////////////////////////////////////////////////////////////
 
 void EditorPropertyVector4::OnImGuiContent() {
+    if (type_category_ == TypeCategory::Vector4i) {
+        data_ = property_data_model_->GetValue().convert<Vector4i>();
+    } else if (type_category_ == TypeCategory::Vector4f) {
+        data_ = property_data_model_->GetValue().convert<Vector4f>();
+    } else if (type_category_ == TypeCategory::Vector4d) {
+        data_ = property_data_model_->GetValue().convert<Vector4d>();
+    }
+
     auto divided_width = ImGui::GetContentRegionAvail().x / 4.0f;
 
     float frame_height = ImGui::GetFrameHeight();
@@ -227,24 +250,24 @@ void EditorPropertyVector4::OnImGuiContent() {
         ImGui::PopStyleColor(4);
         ImGui::SameLine();
         ImGui::SetNextItemWidth(divided_width - button_size.x);
-        if (type_category_ == TypeCategory::Vector4i) {
-            auto vector4i = property_data_model_->GetValue().convert<Vector4i>();
-            if(ImGui::DragInt("##X", &vector4i.x(), 0.1f, 0.0f, 0.0f, "%.2f")) {
-                property_data_model_->SetValue(vector4i);
+        std::visit([this](auto&& arg) {
+            using T = std::decay_t<decltype(arg)>;
+            if constexpr (std::is_same_v<T, Vector4i>) {
+                if(ImGui::DragInt("##X", &arg.x(), 0.1f, 0.0f, 0.0f, "%.2f")) {
+                    property_data_model_->SetValue(arg);
+                }
+            } else if constexpr (std::is_same_v<T, Vector4f>) {
+                if(ImGui::DragFloat("##X", &arg.x(), 0.1f, 0.0f, 0.0f, "%.2f")) {
+                    property_data_model_->SetValue(arg);
+                }
+            } else if constexpr (std::is_same_v<T, Vector4d>) {
+                float x = arg.x();
+                if(ImGui::DragFloat("##X", &x, 0.1f, 0.0f, 0.0f, "%.2f")) {
+                    arg.x() = x;
+                    property_data_model_->SetValue(arg);
+                }
             }
-        } else if (type_category_ == TypeCategory::Vector4f) {
-            auto vector4f = property_data_model_->GetValue().convert<Vector4f>();
-            if(ImGui::DragFloat("##X", &vector4f.x(), 0.1f, 0.0f, 0.0f, "%.2f")) {
-                property_data_model_->SetValue(vector4f);
-            }
-        } else if (type_category_ == TypeCategory::Vector4d) {
-            auto vector4d = property_data_model_->GetValue().convert<Vector4d>();
-            float x = vector4d.x();
-            if(ImGui::DragFloat("##X", &x, 0.1f, 0.0f, 0.0f, "%.2f")) {
-                vector4d.x() = x;
-                property_data_model_->SetValue(vector4d);
-            }
-        }
+        }, data_);
         ImGui::PopStyleVar();
     }
 
@@ -261,24 +284,24 @@ void EditorPropertyVector4::OnImGuiContent() {
         ImGui::PopStyleColor(4);
         ImGui::SameLine();
         ImGui::SetNextItemWidth(divided_width - button_size.x);
-        if (type_category_ == TypeCategory::Vector4i) {
-            auto vector4i = property_data_model_->GetValue().convert<Vector4i>();
-            if(ImGui::DragInt("##Y", &vector4i.y(), 0.1f, 0.0f, 0.0f, "%.2f")) {
-                property_data_model_->SetValue(vector4i);
+        std::visit([this](auto&& arg) {
+            using T = std::decay_t<decltype(arg)>;
+            if constexpr (std::is_same_v<T, Vector4i>) {
+                if(ImGui::DragInt("##Y", &arg.y(), 0.1f, 0.0f, 0.0f, "%.2f")) {
+                    property_data_model_->SetValue(arg);
+                }
+            } else if constexpr (std::is_same_v<T, Vector4f>) {
+                if(ImGui::DragFloat("##Y", &arg.y(), 0.1f, 0.0f, 0.0f, "%.2f")) {
+                    property_data_model_->SetValue(arg);
+                }
+            } else if constexpr (std::is_same_v<T, Vector4d>) {
+                float y = arg.y();
+                if(ImGui::DragFloat("##Y", &y, 0.1f, 0.0f, 0.0f, "%.2f")) {
+                    arg.y() = y;
+                    property_data_model_->SetValue(arg);
+                }
             }
-        } else if (type_category_ == TypeCategory::Vector4f) {
-            auto vector4f = property_data_model_->GetValue().convert<Vector4f>();
-            if(ImGui::DragFloat("##Y", &vector4f.y(), 0.1f, 0.0f, 0.0f, "%.2f")) {
-                property_data_model_->SetValue(vector4f);
-            }
-        } else if (type_category_ == TypeCategory::Vector4d) {
-            auto vector4d = property_data_model_->GetValue().convert<Vector4d>();
-            float y = vector4d.y();
-            if(ImGui::DragFloat("##Y", &y, 0.1f, 0.0f, 0.0f, "%.2f")) {
-                vector4d.y() = y;
-                property_data_model_->SetValue(vector4d);
-            }
-        }
+        }, data_);
         ImGui::PopStyleVar();
     }
 
@@ -295,24 +318,24 @@ void EditorPropertyVector4::OnImGuiContent() {
         ImGui::PopStyleColor(4);
         ImGui::SameLine();
         ImGui::SetNextItemWidth(divided_width - button_size.x);
-        if (type_category_ == TypeCategory::Vector4i) {
-            auto vector4i = property_data_model_->GetValue().convert<Vector4i>();
-            if(ImGui::DragInt("##Z", &vector4i.z(), 0.1f, 0.0f, 0.0f, "%.2f")) {
-                property_data_model_->SetValue(vector4i);
+        std::visit([this](auto&& arg) {
+            using T = std::decay_t<decltype(arg)>;
+            if constexpr (std::is_same_v<T, Vector4i>) {
+                if(ImGui::DragInt("##Z", &arg.z(), 0.1f, 0.0f, 0.0f, "%.2f")) {
+                    property_data_model_->SetValue(arg);
+                }
+            } else if constexpr (std::is_same_v<T, Vector4f>) {
+                if(ImGui::DragFloat("##Z", &arg.z(), 0.1f, 0.0f, 0.0f, "%.2f")) {
+                    property_data_model_->SetValue(arg);
+                }
+            } else if constexpr (std::is_same_v<T, Vector4d>) {
+                float z = arg.z();
+                if(ImGui::DragFloat("##Z", &z, 0.1f, 0.0f, 0.0f, "%.2f")) {
+                    arg.z() = z;
+                    property_data_model_->SetValue(arg);
+                }
             }
-        } else if (type_category_ == TypeCategory::Vector4f) {
-            auto vector4f = property_data_model_->GetValue().convert<Vector4f>();
-            if(ImGui::DragFloat("##Z", &vector4f.z(), 0.1f, 0.0f, 0.0f, "%.2f")) {
-                property_data_model_->SetValue(vector4f);
-            }
-        } else if (type_category_ == TypeCategory::Vector4d) {
-            auto vector4d = property_data_model_->GetValue().convert<Vector4d>();
-            float z = vector4d.z();
-            if(ImGui::DragFloat("##Z", &z, 0.1f, 0.0f, 0.0f, "%.2f")) {
-                vector4d.z() = z;
-                property_data_model_->SetValue(vector4d);
-            }
-        }
+        }, data_);
         ImGui::PopStyleVar();
     }
 
@@ -329,24 +352,24 @@ void EditorPropertyVector4::OnImGuiContent() {
         ImGui::PopStyleColor(4);
         ImGui::SameLine();
         ImGui::SetNextItemWidth(divided_width - button_size.x);
-        if (type_category_ == TypeCategory::Vector4i) {
-            auto vector4i = property_data_model_->GetValue().convert<Vector4i>();
-            if(ImGui::DragInt("##W", &vector4i.w(), 0.1f, 0.0f, 0.0f, "%.2f")) {
-                property_data_model_->SetValue(vector4i);
+        std::visit([this](auto&& arg) {
+            using T = std::decay_t<decltype(arg)>;
+            if constexpr (std::is_same_v<T, Vector4i>) {
+                if(ImGui::DragInt("##W", &arg.w(), 0.1f, 0.0f, 0.0f, "%.2f")) {
+                    property_data_model_->SetValue(arg);
+                }
+            } else if constexpr (std::is_same_v<T, Vector4f>) {
+                if(ImGui::DragFloat("##W", &arg.w(), 0.1f, 0.0f, 0.0f, "%.2f")) {
+                    property_data_model_->SetValue(arg);
+                }
+            } else if constexpr (std::is_same_v<T, Vector4d>) {
+                float w = arg.w();
+                if(ImGui::DragFloat("##W", &w, 0.1f, 0.0f, 0.0f, "%.2f")) {
+                    arg.w() = w;
+                    property_data_model_->SetValue(arg);
+                }
             }
-        } else if (type_category_ == TypeCategory::Vector4f) {
-            auto vector4f = property_data_model_->GetValue().convert<Vector4f>();
-            if(ImGui::DragFloat("##W", &vector4f.w(), 0.1f, 0.0f, 0.0f, "%.2f")) {
-                property_data_model_->SetValue(vector4f);
-            }
-        } else if (type_category_ == TypeCategory::Vector4d) {
-            auto vector4d = property_data_model_->GetValue().convert<Vector4d>();
-            float w = vector4d.w();
-            if(ImGui::DragFloat("##W", &w, 0.1f, 0.0f, 0.0f, "%.2f")) {
-                vector4d.w() = w;
-                property_data_model_->SetValue(vector4d);
-            }
-        }
+        }, data_);
         ImGui::PopStyleVar();
     }
 
@@ -357,6 +380,12 @@ void EditorPropertyVector4::OnImGuiContent() {
 ///////////////////////////////////////////////////////////////////
 
 void EditorPropertyQuaternion::OnImGuiContent() {
+    if (type_category_ == TypeCategory::Quaternionf) {
+        data_ = property_data_model_->GetValue().convert<Quaternionf>();
+    } else if (type_category_ == TypeCategory::Quaterniond) {
+        data_ = property_data_model_->GetValue().convert<Quaterniond>();
+    }
+
     auto divided_width = ImGui::GetContentRegionAvail().x / 4.0f;
 
     float frame_height = ImGui::GetFrameHeight();
@@ -376,7 +405,21 @@ void EditorPropertyQuaternion::OnImGuiContent() {
             ImGui::OpenPopup("Edit Mode");
         }
         if (ImGui::BeginPopup("Edit Mode")) {
-            if (ImGui::Checkbox("Edit Free ", &free_edit_mode_)) {
+            bool last_edit_mode = free_edit_mode_;
+            if (ImGui::Checkbox("Edit Free ", &free_edit_mode_) && free_edit_mode_ == true) {
+                LOG_INFO("Starting quaternion free edit mode, you can edit quaternion without normalized. You can make quaternion normalize when you close Free Edit Mode");
+            }
+            if (last_edit_mode == true && free_edit_mode_ == false) {
+                std::visit([this](auto&& arg) {
+                    using T = std::decay_t<decltype(arg)>;
+                    if constexpr (std::is_same_v<T, Quaternionf>) {
+                        arg.normalize();
+                        property_data_model_->SetValue(arg);
+                    } else if constexpr (std::is_same_v<T, Quaterniond>) {
+                        arg.normalize();
+                        property_data_model_->SetValue(arg);
+                    }
+                }, data_);
             }
             ImGui::EndPopup();
         }
@@ -384,18 +427,26 @@ void EditorPropertyQuaternion::OnImGuiContent() {
         ImGui::PopStyleColor(4);
         ImGui::SameLine();
         ImGui::SetNextItemWidth(divided_width - button_size.x);
-        if (type_category_ == TypeCategory::Quaternionf) {
-            auto q = property_data_model_->GetValue().convert<Quaternionf>();
-            if(ImGui::DragFloat("##qx", &q.x(), 0.1f, 0.0f, 0.0f, "%.2f")) {
-                property_data_model_->SetValue(q);
+        std::visit([this](auto&& arg) {
+            using T = std::decay_t<decltype(arg)>;
+            if constexpr (std::is_same_v<T, Quaternionf>) {
+                if(ImGui::DragFloat("##QX", &arg.x(), 0.1f, -1.0f, 1.0f, "%.2f", ImGuiSliderFlags_AlwaysClamp)) {
+                    if (!free_edit_mode_) {
+                        arg.normalize();
+                    }
+                    property_data_model_->SetValue(arg);
+                }
+            } else if constexpr (std::is_same_v<T, Quaterniond>) {
+                float x = arg.x();
+                if(ImGui::DragFloat("##QX", &x, 0.1f, -1.0f, 1.0f, "%.2f", ImGuiSliderFlags_AlwaysClamp)) {
+                    arg.x() = x;
+                    if (!free_edit_mode_) {
+                        arg.normalize();
+                    }
+                    property_data_model_->SetValue(arg);
+                }
             }
-        } else if (type_category_ == TypeCategory::Quaterniond) {
-            auto q = property_data_model_->GetValue().convert<Quaterniond>();
-            float x = q.x();
-            if(ImGui::DragFloat("##qx", &x, 0.1f, 0.0f, 0.0f, "%.2f")) {
-                property_data_model_->SetValue(q);
-            }
-        }
+        }, data_);
         ImGui::PopStyleVar();
     }
 
@@ -412,18 +463,26 @@ void EditorPropertyQuaternion::OnImGuiContent() {
         ImGui::PopStyleColor(4);
         ImGui::SameLine();
         ImGui::SetNextItemWidth(divided_width - button_size.x);
-        if (type_category_ == TypeCategory::Quaternionf) {
-            auto q = property_data_model_->GetValue().convert<Quaternionf>();
-            if(ImGui::DragFloat("##qy", &q.y(), 0.1f, 0.0f, 0.0f, "%.2f")) {
-                property_data_model_->SetValue(q);
+        std::visit([this](auto&& arg) {
+            using T = std::decay_t<decltype(arg)>;
+            if constexpr (std::is_same_v<T, Quaternionf>) {
+                if(ImGui::DragFloat("##QY", &arg.y(), 0.1f, -1.0f, 1.0f, "%.4f", ImGuiSliderFlags_AlwaysClamp)) {
+                    if (!free_edit_mode_) {
+                        arg.normalize();
+                    }
+                    property_data_model_->SetValue(arg);
+                }
+            } else if constexpr (std::is_same_v<T, Quaterniond>) {
+                float y = arg.y();
+                if(ImGui::DragFloat("##QY", &y, 0.1f, -1.0f, 1.0f, "%.4f", ImGuiSliderFlags_AlwaysClamp)) {
+                    arg.y() = y;
+                    if (!free_edit_mode_) {
+                        arg.normalize();
+                    }
+                    property_data_model_->SetValue(arg);
+                }
             }
-        } else if (type_category_ == TypeCategory::Quaterniond) {
-            auto q = property_data_model_->GetValue().convert<Quaterniond>();
-            float y = q.y();
-            if(ImGui::DragFloat("##qy", &y, 0.1f, 0.0f, 0.0f, "%.2f")) {
-                property_data_model_->SetValue(q);
-            }
-        }
+        }, data_);
         ImGui::PopStyleVar();
     }
 
@@ -440,18 +499,26 @@ void EditorPropertyQuaternion::OnImGuiContent() {
         ImGui::PopStyleColor(4);
         ImGui::SameLine();
         ImGui::SetNextItemWidth(divided_width - button_size.x);
-        if (type_category_ == TypeCategory::Quaternionf) {
-            auto q = property_data_model_->GetValue().convert<Quaternionf>();
-            if(ImGui::DragFloat("##qz", &q.z(), 0.1f, 0.0f, 0.0f, "%.2f")) {
-                property_data_model_->SetValue(q);
+        std::visit([this](auto&& arg) {
+            using T = std::decay_t<decltype(arg)>;
+            if constexpr (std::is_same_v<T, Quaternionf>) {
+                if(ImGui::DragFloat("##QZ", &arg.z(), 0.1f, -1.0f, 1.0f, "%.4f", ImGuiSliderFlags_AlwaysClamp)) {
+                    if (!free_edit_mode_) {
+                        arg.normalize();
+                    }
+                    property_data_model_->SetValue(arg);
+                }
+            } else if constexpr (std::is_same_v<T, Quaterniond>) {
+                float z = arg.z();
+                if(ImGui::DragFloat("##QZ", &z, 0.1f, -1.0f, 1.0f, "%.4f", ImGuiSliderFlags_AlwaysClamp)) {
+                    arg.z() = z;
+                    if (!free_edit_mode_) {
+                        arg.normalize();
+                    }
+                    property_data_model_->SetValue(arg);
+                }
             }
-        } else if (type_category_ == TypeCategory::Quaterniond) {
-            auto q = property_data_model_->GetValue().convert<Quaterniond>();
-            float z = q.z();
-            if(ImGui::DragFloat("##qz", &z, 0.1f, 0.0f, 0.0f, "%.2f")) {
-                property_data_model_->SetValue(q);
-            }
-        }
+        }, data_);
         ImGui::PopStyleVar();
     }
 
@@ -468,18 +535,26 @@ void EditorPropertyQuaternion::OnImGuiContent() {
         ImGui::PopStyleColor(4);
         ImGui::SameLine();
         ImGui::SetNextItemWidth(divided_width - button_size.x);
-        if (type_category_ == TypeCategory::Quaternionf) {
-            auto q = property_data_model_->GetValue().convert<Quaternionf>();
-            if(ImGui::DragFloat("##qw", &q.w(), 0.1f, 0.0f, 0.0f, "%.2f")) {
-                property_data_model_->SetValue(q);
+        std::visit([this](auto&& arg) {
+            using T = std::decay_t<decltype(arg)>;
+            if constexpr (std::is_same_v<T, Quaternionf>) {
+                if(ImGui::DragFloat("##QW", &arg.w(), -1.0f, -1.0f, 1.0f, "%.2f", ImGuiSliderFlags_AlwaysClamp)) {
+                    if (!free_edit_mode_) {
+                        arg.normalize();
+                    }
+                    property_data_model_->SetValue(arg);
+                }
+            } else if constexpr (std::is_same_v<T, Quaterniond>) {
+                float w = arg.w();
+                if(ImGui::DragFloat("##QW", &w, 0.1f, -1.0f, 1.0f, "%.2f", ImGuiSliderFlags_AlwaysClamp)) {
+                    arg.w() = w;
+                    if (!free_edit_mode_) {
+                        arg.normalize();
+                    }
+                    property_data_model_->SetValue(arg);
+                }
             }
-        } else if (type_category_ == TypeCategory::Quaterniond) {
-            auto q = property_data_model_->GetValue().convert<Quaterniond>();
-            float w = q.w();
-            if(ImGui::DragFloat("##qw", &w, 0.1f, 0.0f, 0.0f, "%.2f")) {
-                property_data_model_->SetValue(q);
-            }
-        }
+        }, data_);
         ImGui::PopStyleVar();
     }
 
