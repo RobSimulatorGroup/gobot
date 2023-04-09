@@ -13,6 +13,7 @@
 #include "gobot/physics/dart/dart_shape_3d.h"
 #include "gobot/physics/dart/dart_body_3d.h"
 #include "gobot/physics/dart/dart_joint_3d.h"
+#include "gobot/physics/dart/dart_skeleton_3d.h"
 #include "gobot/core/rid_owner.h"
 
 #include <dart/dart.hpp>
