@@ -22,6 +22,11 @@ Color ImGuiUtilities::GetSelectedColor() {
     return s_selected_color;
 }
 
+Color ImGuiUtilities::GetIconColor()
+{
+    return s_icon_color;
+}
+
 void ImGuiUtilities::Tooltip(const String& text) {
     ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, ImVec2(5, 5));
     Tooltip(text.toStdString().c_str());

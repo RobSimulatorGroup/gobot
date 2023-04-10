@@ -6,6 +6,7 @@
 */
 
 #include "gobot/editor/editor.hpp"
+#include "gobot/core/config/project_setting.hpp"
 #include "gobot/editor/node3d_editor.hpp"
 #include "gobot/core/registration.hpp"
 #include "gobot/log.hpp"
@@ -46,6 +47,8 @@ Editor::Editor() {
     AddChild(Object::New<SceneEditorPanel>());
     AddChild(Object::New<InspectorPanel>());
     AddChild(Object::New<ResourcePanel>());
+
+    ProjectSettings::GetInstance()->SetProjectPath("/home/wqq");
 
     file_browser_ = new ImGui::FileBrowser();
     file_browser_->SetTitle("File Browser");

@@ -74,6 +74,8 @@ public:
 
     static Color GetSelectedColor();
 
+    static Color GetIconColor();
+
     static void Tooltip(const String& text);
 
     static void Tooltip(const char* text);

@@ -30,4 +30,7 @@ String GOBOT_EXPORT GetBaseDir(const String& path);
 
 String GOBOT_EXPORT PathJoin(const String &base, const String &file);
 
+// hidden file is the file that name start with "."
+bool GOBOT_EXPORT IsHiddenFile(const String& path);
+
 }

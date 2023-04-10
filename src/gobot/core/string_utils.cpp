@@ -197,5 +197,12 @@ String PathJoin(const String &base, const String &file) {
     return base + "/" + file;
 }
 
+bool IsHiddenFile(const String& path) {
+    if(path != ".." && path != "." && path[0] == '.') {
+        return true;
+    }
+
+    return false;
+}
 
 }
