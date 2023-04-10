@@ -14,6 +14,7 @@ namespace gobot {
 
 class Editor;
 
+// This class wraps ImGui window.
 class ImGuiWindow : public ImGuiNode {
     GOBCLASS(ImGuiWindow, ImGuiNode)
 public:

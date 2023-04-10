@@ -13,6 +13,7 @@
 
 namespace gobot {
 
+// This class allow user add callback function when process imgui.
 class ImGuiCustomNode : public ImGuiNode {
     GOBCLASS(ImGuiCustomNode, ImGuiNode)
 public:
