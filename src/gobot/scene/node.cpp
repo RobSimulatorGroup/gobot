@@ -69,7 +69,7 @@ void Node::MoveChildNotify(Node *child) {
 
 }
 
-String Node::GetName() const {
+const String& Node::GetName() const {
     return name_;
 }
 
@@ -689,9 +689,11 @@ GOBOT_REGISTRATION {
 
             .property_readonly("child_count", &Node::GetChildCount)
             .property_readonly("inside_tree", &Node::IsInsideTree)
-            .property_readonly("index", &Node::GetIndex)
 
-            .property("name", &Node::GetName, &Node::SetName)
+            .property("name", &Node::GetName, &Node::SetName)(
+                    AddMetaPropertyInfo(
+                            PropertyInfo()
+                                .SetToolTip("The name of Node.")))
 
             .method("has_node", &Node::HasNode)
             .method("add_child", &Node::AddChild)

@@ -25,24 +25,18 @@ namespace gobot {
 
 SceneViewPanel::SceneViewPanel()
 {
-    name_ = ICON_MDI_EYE " Viewer###scene_view";
+    SetName(ICON_MDI_EYE " Viewer###scene_view");
+    SetImGuiWindowFlag(ImGuiWindowFlags_NoCollapse | ImGuiWindowFlags_NoScrollbar | ImGuiWindowFlags_NoScrollWithMouse);
+    SetImGuiStyleVar(ImGuiStyleVar_WindowPadding, {0, 0});
+
     current_scene_ = nullptr;
 
     width_  = 1280;
     height_ = 800;
 }
 
-void SceneViewPanel::OnImGui()
+void SceneViewPanel::OnImGuiContent()
 {
-    ImGuiUtilities::ScopedStyle window_padding(ImGuiStyleVar_WindowPadding, ImVec2(0, 0));
-
-    auto flags = ImGuiWindowFlags_NoCollapse | ImGuiWindowFlags_NoScrollbar | ImGuiWindowFlags_NoScrollWithMouse;
-
-    if(!ImGui::Begin(name_.toStdString().c_str(), &active_, flags) ) {
-        ImGui::End();
-        return;
-    }
-
     auto* camera_3d = Node3DEditor::GetInstance()->GetCamera3D();
 
     ToolBar();
@@ -80,12 +74,12 @@ void SceneViewPanel::OnImGui()
 
     bool mouse_inside_rect = ImGui::IsMouseHoveringRect(min_bound, max_bound);
 
+    auto* node3d_editor = Node3DEditor::GetInstance();
+    node3d_editor->SetNeedUpdateCamera(mouse_inside_rect);
+
     ImGuizmo::SetRect(scene_view_position.x, scene_view_position.y, scene_view_size.x, scene_view_size.y);
+    node3d_editor->OnImGuizmo();
 
-
-    Node3DEditor::GetInstance()->OnImGuizmo();
-
-    ImGui::End();
 }
 
 void SceneViewPanel::Resize(uint32_t width, uint32_t height) {

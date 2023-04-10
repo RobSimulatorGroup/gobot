@@ -6,17 +6,15 @@
 */
 
 #pragma once
-#include "gobot/editor/imgui/editor_panel.hpp"
+#include "gobot/scene/imgui_window.hpp"
 
 
 namespace gobot {
 
-class ResourcePanel : public EditorPanel {
+class ResourcePanel : public ImGuiWindow {
+    GOBCLASS(ResourcePanel, ImGuiWindow)
 public:
     ResourcePanel();
-
-    void OnImGui() override;
-
 
 };
 

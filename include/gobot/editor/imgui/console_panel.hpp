@@ -7,7 +7,7 @@
 
 #pragma once
 
-#include "gobot/editor/imgui/editor_panel.hpp"
+#include "gobot/scene/imgui_window.hpp"
 #include "gobot/core/ref_counted.hpp"
 #include "gobot/core/color.hpp"
 #include "imgui.h"
@@ -52,8 +52,8 @@ public:
 };
 
 
-class ConsolePanel : public EditorPanel
-{
+class ConsolePanel : public ImGuiWindow {
+    GOBCLASS(ConsolePanel, ImGuiWindow)
 public:
 
     ConsolePanel();
@@ -62,7 +62,7 @@ public:
 
     static void Flush();
 
-    void OnImGui() override;
+    void OnImGuiContent() override;
 
     static void AddMessage(const Ref<ConsoleMessage>& message);
 

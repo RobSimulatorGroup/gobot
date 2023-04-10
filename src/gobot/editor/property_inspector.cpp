@@ -6,4 +6,4 @@
 */
 
 
-#include "gobot/editor/property_inspector/property_inspector.hpp"
+#include "gobot/editor/property_inspector/editor_inspector.hpp"

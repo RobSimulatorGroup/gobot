@@ -40,7 +40,7 @@ public:
      *
      * @return the name of the node.
      */
-    String GetName() const;
+    const String& GetName() const;
 
     /**
      * @brief See GetName.

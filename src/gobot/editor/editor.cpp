@@ -15,12 +15,14 @@
 #include "gobot/editor/imgui/scene_editor_panel.hpp"
 #include "gobot/editor/imgui/inspector_panel.hpp"
 #include "gobot/editor/imgui/resource_panel.hpp"
+#include "gobot/editor/property_inspector/editor_inspector.hpp"
 #include "gobot/main/main.hpp"
 #include "gobot/core/config/engine.hpp"
 #include "gobot/core/config/project_setting.hpp"
 #include "gobot/editor/imgui/imgui_utilities.hpp"
 #include "imgui.h"
 #include "imgui_internal.h"
+#include "imgui_extension/file_browser/ImFileBrowser.h"
 
 namespace gobot {
 
@@ -29,23 +31,30 @@ Editor* Editor::s_singleton = nullptr;
 Editor::Editor() {
     s_singleton = this;
 
+    imgui_manager_ = Object::New<ImGuiManager>();
+
     node3d_editor_ = Object::New<Node3DEditor>();
     AddChild(node3d_editor_);
-
-    imgui_manager_ = Object::New<ImGuiManager>();
 
     spdlog::sink_ptr sink = std::make_shared<ImGuiConsoleSinkMultiThreaded>();
     Logger::GetInstance().AddSink(sink);
 
-    panels_.emplace_back(std::make_shared<ConsolePanel>());
-    panels_.emplace_back(std::make_shared<SceneViewPanel>());
-    panels_.emplace_back(std::make_shared<SceneEditorPanel>());
-    panels_.emplace_back(std::make_shared<InspectorPanel>());
-    panels_.emplace_back(std::make_shared<ResourcePanel>());
+    EditorInspector::AddInspectorPlugin(MakeRef<EditorInspectorDefaultPlugin>());
+
+    AddChild(Object::New<ConsolePanel>());
+    AddChild(Object::New<SceneViewPanel>());
+    AddChild(Object::New<SceneEditorPanel>());
+    AddChild(Object::New<InspectorPanel>());
+    AddChild(Object::New<ResourcePanel>());
+
+    file_browser_ = new ImGui::FileBrowser();
+    file_browser_->SetTitle("File Browser");
 }
 
 Editor::~Editor() {
     s_singleton = nullptr;
+
+    delete file_browser_;
     delete imgui_manager_;
 }
 
@@ -57,26 +66,32 @@ Editor* Editor::GetInstance() {
 void Editor::NotificationCallBack(NotificationType notification) {
     switch (notification) {
         case NotificationType::Process: {
-            imgui_manager_->BeginFrame();
-            OnImGUI();
-            imgui_manager_->EndFrame();
+            OnImGui();
         }
     }
 }
 
 
-void Editor::OnImGUI() {
+bool Editor::Begin() {
+    imgui_manager_->BeginFrame();
+
     DrawMenuBar();
     BeginDockSpace();
 
-    for(auto& panel : panels_) {
-//                if(panel->Active())
-        panel->OnImGui();
-    }
+    return true;
+}
 
-    ImGui::ShowDemoWindow(); // your drawing here
-
+void Editor::End() {
     EndDockSpace();
+
+    imgui_manager_->EndFrame();
+}
+
+void Editor::OnImGuiContent() {
+    // your drawing here
+    ImGui::ShowDemoWindow();
+
+    file_browser_->Display();
 }
 
 void Editor::DrawMenuBar() {

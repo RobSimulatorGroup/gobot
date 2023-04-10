@@ -30,7 +30,7 @@ ImGuiManager* ImGuiManager::s_singleton = nullptr;
 ImGuiManager::ImGuiManager()
 {
 
-    font_size_ = 14.0f;
+    font_size_ = 16.0f;
     s_singleton = this;
 
     LOG_INFO("ImGui Version : {0}", IMGUI_VERSION);
@@ -140,22 +140,22 @@ void ImGuiManager::SetImGuiStyle() {
     style.PopupBorderSize  = 3;
     style.FrameBorderSize  = 0.0f;
 
-    const int roundingAmount = 2;
-    style.PopupRounding      = roundingAmount;
-    style.WindowRounding     = roundingAmount;
+    const int rounding_amount = 2;
+    style.PopupRounding      = rounding_amount;
+    style.WindowRounding     = rounding_amount;
     style.ChildRounding      = 0;
-    style.FrameRounding      = roundingAmount;
-    style.ScrollbarRounding  = roundingAmount;
-    style.GrabRounding       = roundingAmount;
+    style.FrameRounding      = rounding_amount;
+    style.ScrollbarRounding  = rounding_amount;
+    style.GrabRounding       = rounding_amount;
     style.WindowMinSize      = ImVec2(200.0f, 200.0f);
 
 #ifdef IMGUI_HAS_DOCK
     style.TabBorderSize = 1.0f;
-    style.TabRounding   = roundingAmount; // + 4;
+    style.TabRounding   = rounding_amount; // + 4;
 
     if(ImGui::GetIO().ConfigFlags & ImGuiConfigFlags_ViewportsEnable)
     {
-        style.WindowRounding              = roundingAmount;
+        style.WindowRounding              = rounding_amount;
         style.Colors[ImGuiCol_WindowBg].w = 1.0f;
     }
 #endif

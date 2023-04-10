@@ -128,7 +128,10 @@ bool ConsolePanel::s_request_scroll_to_bottom = false;
 
 ConsolePanel::ConsolePanel()
 {
-    name_                      = ICON_MDI_VIEW_LIST " Console###console";
+    SetNameNoCheck(ICON_MDI_VIEW_LIST " Console###console");
+    SetImGuiWindowFlag(ImGuiWindowFlags_NoCollapse | ImGuiWindowFlags_NoTitleBar);
+    SetImGuiWindowSize(Vector2f(640, 480), ImGuiCond_FirstUseEver);
+
     s_message_buffer_render_filter = ConsoleMessage::Level::Trace |
                                      ConsoleMessage::Level::Info |
                                      ConsoleMessage::Level::Debug |
@@ -143,26 +146,21 @@ void ConsolePanel::AddMessage(const Ref<ConsoleMessage>& message)
         return;
 
     auto messageStart = s_message_buffer.begin() + s_message_buffer_begin;
-    if(*messageStart) // If contains old message here
-    {
-        for(auto messIt = messageStart; messIt != s_message_buffer.end(); messIt++)
-        {
-            if(message->GetMessageID() == (*messIt)->GetMessageID())
-            {
+    // If contains old message here
+    if(*messageStart) {
+        for(auto messIt = messageStart; messIt != s_message_buffer.end(); messIt++) {
+            if(message->GetMessageID() == (*messIt)->GetMessageID()) {
                 (*messIt)->IncreaseCount();
                 return;
             }
         }
     }
 
-    if(s_message_buffer_begin != 0) // Skipped first messages in vector
-    {
-        for(auto messIt = s_message_buffer.begin(); messIt != messageStart; messIt++)
-        {
-            if(*messIt)
-            {
-                if(message->GetMessageID() == (*messIt)->GetMessageID())
-                {
+    // Skipped first messages in vector
+    if(s_message_buffer_begin != 0) {
+        for(auto messIt = s_message_buffer.begin(); messIt != messageStart; messIt++) {
+            if(*messIt) {
+                if(message->GetMessageID() == (*messIt)->GetMessageID()) {
                     (*messIt)->IncreaseCount();
                     return;
                 }
@@ -187,17 +185,11 @@ void ConsolePanel::Flush()
     s_message_buffer_begin = 0;
 }
 
-void ConsolePanel::OnImGui()
+void ConsolePanel::OnImGuiContent()
 {
-    auto flags = ImGuiWindowFlags_NoCollapse | ImGuiWindowFlags_NoTitleBar;
-    ImGui::SetNextWindowSize(ImVec2(640, 480), ImGuiCond_FirstUseEver);
-    ImGui::Begin(name_.toStdString().c_str(), &active_, flags);
-    {
-        ImGuiRenderHeader();
-        ImGui::Separator();
-        ImGuiRenderMessages();
-    }
-    ImGui::End();
+    ImGuiRenderHeader();
+    ImGui::Separator();
+    ImGuiRenderMessages();
 }
 
 void ConsolePanel::ImGuiRenderHeader()
@@ -209,8 +201,7 @@ void ConsolePanel::ImGuiRenderHeader()
         if(ImGui::Button(ICON_MDI_COGS))
             ImGui::OpenPopup("SettingsPopup");
     }
-    if(ImGui::BeginPopup("SettingsPopup"))
-    {
+    if(ImGui::BeginPopup("SettingsPopup")) {
         // Checkbox for scrolling lock
         ImGui::Checkbox("Scroll to bottom", &s_allow_scrolling_to_bottom);
 
@@ -240,8 +231,7 @@ void ConsolePanel::ImGuiRenderHeader()
 
     ImGui::SameLine(); // ImGui::GetWindowWidth() - levelButtonWidths);
 
-    for(int i = 0; i < 6; i++)
-    {
+    for(int i = 0; i < 6; i++) {
         ImGuiUtilities::ScopedColor buttonColor(ImGuiCol_Button, ImVec4(0.0f, 0.0f, 0.0f, 0.0f));
         ImGui::SameLine();
         auto level = ConsoleMessage::Level(std::pow(2, i));
@@ -252,13 +242,11 @@ void ConsolePanel::ImGuiRenderHeader()
         else
             ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(0.5f, 0.5, 0.5f, 0.5f));
 
-        if(ImGui::Button(ConsoleMessage::GetLevelIcon(level)))
-        {
+        if(ImGui::Button(ConsoleMessage::GetLevelIcon(level))) {
             s_message_buffer_render_filter ^= level;
         }
 
-        if(ImGui::IsItemHovered())
-        {
+        if(ImGui::IsItemHovered()) {
             ImGui::SetTooltip("%s", ConsoleMessage::GetLevelName(level));
         }
         ImGui::PopStyleColor();
@@ -266,8 +254,7 @@ void ConsolePanel::ImGuiRenderHeader()
 
     ImGui::GetStyle().ItemSpacing.x = spacing;
 
-    if(!filter_.IsActive())
-    {
+    if(!filter_.IsActive()) {
         ImGui::SameLine();
         ImGuiUtilities::ScopedFont boldFont(ImGui::GetIO().Fonts->Fonts[1]);
         ImGui::SetCursorPosX(ImGui::GetFontSize() * 4.0f);
@@ -282,47 +269,35 @@ void ConsolePanel::ImGuiRenderMessages()
     {
 
         auto messageStart = s_message_buffer.begin() + s_message_buffer_begin;
-        if(*messageStart) // If contains old message here
-        {
-            for(auto message = messageStart; message != s_message_buffer.end(); message++)
-            {
-                if(filter_.IsActive())
-                {
-                    if(filter_.PassFilter((*message)->message_.toStdString().c_str()))
-                    {
+        // If contains old message here
+        if(*messageStart) {
+            for(auto message = messageStart; message != s_message_buffer.end(); message++) {
+                if(filter_.IsActive()) {
+                    if(filter_.PassFilter((*message)->message_.toStdString().c_str())) {
                         (*message)->OnImGUIRender();
                     }
-                }
-                else
-                {
+                } else {
                     (*message)->OnImGUIRender();
                 }
             }
         }
 
-        if(s_message_buffer_begin != 0) // Skipped first messages in vector
-        {
-            for(auto message = s_message_buffer.begin(); message != messageStart; message++)
-            {
-                if(*message)
-                {
-                    if(filter_.IsActive())
-                    {
-                        if(filter_.PassFilter((*message)->message_.toStdString().c_str()))
-                        {
+        // Skipped first messages in vector
+        if(s_message_buffer_begin != 0)  {
+            for(auto message = s_message_buffer.begin(); message != messageStart; message++) {
+                if(*message) {
+                    if(filter_.IsActive()) {
+                        if(filter_.PassFilter((*message)->message_.toStdString().c_str())) {
                             (*message)->OnImGUIRender();
                         }
-                    }
-                    else
-                    {
+                    } else {
                         (*message)->OnImGUIRender();
                     }
                 }
             }
         }
 
-        if(s_request_scroll_to_bottom && ImGui::GetScrollMaxY() > 0)
-        {
+        if(s_request_scroll_to_bottom && ImGui::GetScrollMaxY() > 0) {
             ImGui::SetScrollHereY(1.0f);
             s_request_scroll_to_bottom = false;
         }

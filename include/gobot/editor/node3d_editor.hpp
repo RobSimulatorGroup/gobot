@@ -9,6 +9,7 @@
 
 #include "gobot/core/object.hpp"
 #include "gobot/scene/camera_3d.hpp"
+#include "gobot/scene/imgui_node.hpp"
 
 namespace gobot {
 
@@ -37,6 +38,8 @@ public:
 
     FORCE_INLINE void SetImGuizmoOperation(uint32_t imGuizmo_operation) { imguizmo_operation_ = imGuizmo_operation; }
 
+    void SetNeedUpdateCamera(bool update_camera);
+
     bool& SnapGuizmo();
 
 protected:
@@ -60,6 +63,9 @@ private:
     float distance_{0.0};
 
     bool mouse_down_{false};
+
+    bool update_camera_{false};
+    bool editing_{false};
 
     uint32_t imguizmo_operation_ = UINT32_MAX;
 

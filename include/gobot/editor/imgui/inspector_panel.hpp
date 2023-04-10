@@ -7,16 +7,32 @@
 
 #pragma once
 
-#include "gobot/editor/imgui/editor_panel.hpp"
+#include "gobot/scene/imgui_window.hpp"
+
+class ImGuiTextFilter;
 
 namespace gobot {
 
-class InspectorPanel : public EditorPanel {
+class TestPropertyNode;
+class EditorInspector;
+
+class InspectorPanel : public ImGuiWindow {
+    GOBCLASS(InspectorPanel, ImGuiWindow)
 public:
     InspectorPanel();
 
-    void OnImGui() override;
+    ~InspectorPanel() override;
 
+    void OnImGuiContent() override;
+
+private:
+    TestPropertyNode* test_node_{nullptr};
+
+    ImGuiTextFilter* filter_;
+
+    // edit history of inspector
+    std::vector<EditorInspector*> editor_inspectors_{};
+    int current_inspector_index_{-1};
 };
 
 
