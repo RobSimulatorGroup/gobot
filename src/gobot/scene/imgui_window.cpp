@@ -31,11 +31,11 @@ bool ImGuiWindow::Begin() {
 
     collapsed_ = ImGui::Begin(GetName().toStdString().c_str(), &open_, imgui_window_flags_);
     return true;
-};
+}
 
 void ImGuiWindow::End() {
     ImGui::End();
-};
+}
 
 
 }

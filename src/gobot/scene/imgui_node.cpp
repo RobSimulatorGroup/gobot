@@ -53,14 +53,17 @@ void ImGuiNode::OnImGui() {
 
 void ImGuiNode::SetImGuiStyleVar(int var, const Vector2f& value) {
     ImGui::PushStyleVar(var, value);
+    imgui_style_var_stack_.emplace_back(var, value);
 }
 
 void ImGuiNode::SetImGuiStyleVar(int var, float value) {
     ImGui::PushStyleVar(var, value);
+    imgui_style_var_stack_.emplace_back(var, value);
 }
 
 void ImGuiNode::SetImGuiStyleColor(int col, const Color& color) {
     ImGui::PushStyleColor(col, color);
+    imgui_style_color_stack_.emplace_back(col, color);
 }
 
 
@@ -79,8 +82,8 @@ bool ImGuiNode::Begin() {
 }
 
 void ImGuiNode::End() {
-    ImGui::PopStyleVar(imgui_style_var_stack_.size());
-    ImGui::PopStyleColor(imgui_style_color_stack_.size());
+    ImGui::PopStyleVar(static_cast<int>(imgui_style_var_stack_.size()));
+    ImGui::PopStyleColor(static_cast<int>(imgui_style_color_stack_.size()));
 }
 
 
