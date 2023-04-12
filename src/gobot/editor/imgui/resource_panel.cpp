@@ -22,11 +22,13 @@ DirectoryInformation::DirectoryInformation(const String& _this_path, DirectoryIn
 {
     this_path = _this_path;
     if (parent) {
-        global_path = PathJoin(parent->global_path, this_path);
+        local_path = PathJoin(parent->local_path, this_path);
+        global_path = ProjectSettings::GetInstance()->GlobalizePath(local_path);
     } else {
-        global_path = this_path;
+        local_path = this_path;
+        global_path = ProjectSettings::GetInstance()->GlobalizePath(local_path);
     }
-    local_path = ProjectSettings::GetInstance()->LocalizePath(global_path);
+
     is_file = QFileInfo(global_path).isFile();
 }
 
@@ -44,9 +46,7 @@ ResourcePanel::ResourcePanel()
 
     project_path_ = ProjectSettings::GetInstance()->GetProjectPath();
 
-    auto base_directory_handle = ProcessDirectory(project_path_, nullptr);
-    base_project_dir_ = directories_[base_directory_handle].get();
-    current_dir_ = base_project_dir_;
+    base_project_dir_ = ProcessDirectory("res://", nullptr);
 
     ChangeDirectory(base_project_dir_);
 }
@@ -265,7 +265,7 @@ bool ResourcePanel::RenderFile(int dirIndex, bool folder, int shownIndex, bool g
             double_clicked = true;
         }
 
-        auto newFname = SimplifyPath(current_dir_->children[dirIndex]->global_path.toStdString().c_str());
+        auto newFname = SimplifyPath(current_dir_->children[dirIndex]->this_path.toStdString().c_str());
 
         ImGui::TextUnformatted(newFname.toStdString().c_str());
         ImGui::EndGroup();
@@ -275,7 +275,7 @@ bool ResourcePanel::RenderFile(int dirIndex, bool folder, int shownIndex, bool g
     } else {
         ImGui::TextUnformatted(folder ? ICON_MDI_FOLDER : ICON_MDI_FILE);
         ImGui::SameLine();
-        if(ImGui::Selectable(current_dir_->children[dirIndex]->global_path.toStdString().c_str(),
+        if(ImGui::Selectable(current_dir_->children[dirIndex]->this_path.toStdString().c_str(),
                              false, ImGuiSelectableFlags_AllowDoubleClick)) {
             if(ImGui::IsMouseDoubleClicked(ImGuiMouseButton_Left))
             {
@@ -326,7 +326,7 @@ void ResourcePanel::RenderBottom()
         ImGui::PushStyleColor(ImGuiCol_Button, ImVec4(0.1f, 0.2f, 0.7f, 0.0f));
 
         for(auto& directory : bread_crumb_data_) {
-            const std::string& directoryName = directory->global_path.toStdString();
+            const std::string& directoryName = directory->this_path.toStdString();
             if(ImGui::SmallButton(directoryName.c_str()))
                 ChangeDirectory(directory);
 
@@ -362,16 +362,16 @@ void ResourcePanel::RenderBottom()
     ImGui::EndChild();
 }
 
-String ResourcePanel::ProcessDirectory(const String& directory_path,
-                                       DirectoryInformation* parent)
+DirectoryInformation* ResourcePanel::ProcessDirectory(const String& directory_path,
+                                                      DirectoryInformation* parent)
 {
-    auto* directory = directories_[directory_path].get();
-    if(directory)
-        return directory->global_path;
+    auto it = directories_.find(directory_path);
+    if(it != directories_.end())
+        return it->second.get();
 
     auto directory_info = std::make_unique<DirectoryInformation>(directory_path, parent);
 
-    QDir dir(directory_path);
+    QDir dir(directory_info->global_path);
 
     if(!directory_info->is_file) {
         QStringList file_list;
@@ -383,11 +383,11 @@ String ResourcePanel::ProcessDirectory(const String& directory_path,
 
         for(auto file_info : file_list) {
             auto subdir = ProcessDirectory(file_info, directory_info.get());
-            directory_info->children.push_back(directories_[subdir].get());
+            directory_info->children.push_back(subdir);
         }
     }
 
-    String res = directory_info->global_path;
+    auto res = directory_info.get();
     directories_[directory_info->global_path] = std::move(directory_info);
     return res;
 }
@@ -429,7 +429,7 @@ void ResourcePanel::DrawFolder(DirectoryInformation* dir_info, bool default_open
         ImGui::Text("%s ", folder_icon);
         ImGui::PopStyleColor();
         ImGui::SameLine();
-        ImGui::TextUnformatted((const char*)dir_info->local_path.toStdString().c_str());
+        ImGui::TextUnformatted((const char*)dir_info->this_path.toStdString().c_str());
 
         ImVec2 vertical_line_start = ImGui::GetCursorScreenPos();
 
@@ -465,7 +465,9 @@ void ResourcePanel::DrawFolder(DirectoryInformation* dir_info, bool default_open
                     const ImRect child_rect = ImRect(current_pos, current_pos + ImVec2(0.0f, ImGui::GetFontSize()));
 
                     const float midpoint = (child_rect.Min.y + child_rect.Max.y) * 0.5f;
-                    draw_list->AddLine(ImVec2(vertical_line_start.x, midpoint), ImVec2(vertical_line_start.x + horizontal_tree_line_size, midpoint), tree_line_color);
+                    draw_list->AddLine(ImVec2(vertical_line_start.x, midpoint),
+                                       ImVec2(vertical_line_start.x + horizontal_tree_line_size, midpoint),
+                                       tree_line_color);
                     vertical_line_end.y = midpoint;
 
                     ImGui::Unindent(10.0f);
@@ -490,8 +492,7 @@ void ResourcePanel::Refresh()
 {
     project_path_ = ProjectSettings::GetInstance()->GetProjectPath();
 
-    auto base_directory_handle = ProcessDirectory(project_path_, nullptr);
-    base_project_dir_ = directories_[base_directory_handle].get();
+    base_project_dir_ = ProcessDirectory("res://", nullptr);
 
     auto current_path = current_dir_->global_path;
 

@@ -11,7 +11,7 @@
 
 namespace gobot {
 
-class ImGuiManager : public Object {
+class GOBOT_EXPORT ImGuiManager : public Object {
     GOBCLASS(ImGuiManager, Object)
 public:
     ImGuiManager();

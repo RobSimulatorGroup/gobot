@@ -14,7 +14,7 @@
 
 namespace gobot {
 
-class ConsoleMessage : public RefCounted {
+class GOBOT_EXPORT ConsoleMessage : public RefCounted {
     GOBCLASS(ConsoleMessage, RefCounted)
 public:
     enum Level : uint32_t
@@ -52,7 +52,7 @@ public:
 };
 
 
-class ConsolePanel : public ImGuiWindow {
+class GOBOT_EXPORT ConsolePanel : public ImGuiWindow {
     GOBCLASS(ConsolePanel, ImGuiWindow)
 public:
 

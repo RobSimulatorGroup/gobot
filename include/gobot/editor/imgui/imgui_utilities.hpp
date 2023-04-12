@@ -14,7 +14,7 @@
 
 namespace gobot {
 
-class ImGuiUtilities {
+class GOBOT_EXPORT ImGuiUtilities {
 public:
     enum Theme
     {

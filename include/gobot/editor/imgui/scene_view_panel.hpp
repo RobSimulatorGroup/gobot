@@ -17,7 +17,7 @@ namespace gobot {
 class SceneTree;
 class SceneRenderer;
 
-class SceneViewPanel : public ImGuiWindow {
+class GOBOT_EXPORT SceneViewPanel : public ImGuiWindow {
     GOBCLASS(SceneViewPanel, ImGuiWindow)
 public:
     SceneViewPanel();

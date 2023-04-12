@@ -16,7 +16,7 @@ namespace gobot {
 class TestPropertyNode;
 class EditorInspector;
 
-class InspectorPanel : public ImGuiWindow {
+class GOBOT_EXPORT InspectorPanel : public ImGuiWindow {
     GOBCLASS(InspectorPanel, ImGuiWindow)
 public:
     InspectorPanel();

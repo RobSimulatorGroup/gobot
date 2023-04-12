@@ -6,13 +6,15 @@
 */
 
 #pragma once
+
 #include "gobot/scene/imgui_window.hpp"
+#include "gobot_export.h"
 
 class ImGuiTextFilter;
 
 namespace gobot {
 
-struct DirectoryInformation
+struct GOBOT_EXPORT DirectoryInformation
 {
     DirectoryInformation* parent{nullptr};
     std::vector<DirectoryInformation*> children;
@@ -26,7 +28,7 @@ public:
     DirectoryInformation(const String& _this_path, DirectoryInformation* _parent);
 };
 
-class ResourcePanel : public ImGuiWindow {
+class GOBOT_EXPORT ResourcePanel : public ImGuiWindow {
     GOBCLASS(ResourcePanel, ImGuiWindow)
 public:
     ResourcePanel();
@@ -45,8 +47,8 @@ public:
 
     void DrawFolder(DirectoryInformation* dir_info, bool default_open = false);
 
-    String ProcessDirectory(const String& directory_path,
-                            DirectoryInformation* parent);
+    DirectoryInformation* ProcessDirectory(const String& directory_path,
+                                           DirectoryInformation* parent);
 
     void Refresh();
 
