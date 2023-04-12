@@ -172,11 +172,11 @@ void ResourcePanel::OnImGuiContent() {
         {
             ImGui::BeginChild("##Scrolling");
 
-            int shownIndex = 0;
+            int shown_index = 0;
 
-            float xAvail = ImGui::GetContentRegionAvail().x;
+            float x_avail = ImGui::GetContentRegionAvail().x;
 
-            grid_items_per_row_ = (int)floor(xAvail / (grid_size_ + ImGui::GetStyle().ItemSpacing.x));
+            grid_items_per_row_ = (int)floor(x_avail / (grid_size_ + ImGui::GetStyle().ItemSpacing.x));
             grid_items_per_row_ = std::max(1, grid_items_per_row_);
 
             if(is_in_list_view_) {
@@ -188,11 +188,11 @@ void ResourcePanel::OnImGuiContent() {
                             }
                         }
 
-                        bool doubleClicked = RenderFile(i, !current_dir_->children[i]->is_file, shownIndex, !is_in_list_view_);
+                        bool double_clicked = RenderFile(i, !current_dir_->children[i]->is_file, shown_index, !is_in_list_view_);
 
-                        if(doubleClicked)
+                        if(double_clicked)
                             break;
-                        shownIndex++;
+                        shown_index++;
                     }
                 }
             } else {
@@ -203,11 +203,11 @@ void ResourcePanel::OnImGuiContent() {
                         }
                     }
 
-                    bool doubleClicked = RenderFile(i, !current_dir_->children[i]->is_file, shownIndex, !is_in_list_view_);
+                    bool doubleClicked = RenderFile(i, !current_dir_->children[i]->is_file, shown_index, !is_in_list_view_);
 
                     if(doubleClicked)
                         break;
-                    shownIndex++;
+                    shown_index++;
                 }
             }
 
@@ -253,7 +253,7 @@ void ResourcePanel::OnImGuiContent() {
 
 bool ResourcePanel::RenderFile(int dirIndex, bool folder, int shownIndex, bool gridView)
 {
-    bool doubleClicked = false;
+    bool double_clicked = false;
 
     if(gridView) {
         ImGui::BeginGroup();
@@ -262,7 +262,7 @@ bool ResourcePanel::RenderFile(int dirIndex, bool folder, int shownIndex, bool g
         }
 
         if(ImGui::IsMouseDoubleClicked(ImGuiMouseButton_Left)) {
-            doubleClicked = true;
+            double_clicked = true;
         }
 
         auto newFname = SimplifyPath(current_dir_->children[dirIndex]->global_path.toStdString().c_str());
@@ -279,14 +279,14 @@ bool ResourcePanel::RenderFile(int dirIndex, bool folder, int shownIndex, bool g
                              false, ImGuiSelectableFlags_AllowDoubleClick)) {
             if(ImGui::IsMouseDoubleClicked(ImGuiMouseButton_Left))
             {
-                doubleClicked = true;
+                double_clicked = true;
             }
         }
     }
 
     ImGuiUtilities::Tooltip(current_dir_->children[dirIndex]->global_path.toStdString().c_str());
 
-    if(doubleClicked) {
+    if(double_clicked) {
         if(folder) {
             previous_directory_    = current_dir_;
             current_dir_           = current_dir_->children[dirIndex];
@@ -309,7 +309,7 @@ bool ResourcePanel::RenderFile(int dirIndex, bool folder, int shownIndex, bool g
         ImGui::EndDragDropSource();
     }
 
-    return doubleClicked;
+    return double_clicked;
 }
 
 void ResourcePanel::RenderBottom()
@@ -400,20 +400,20 @@ void ResourcePanel::DrawFolder(DirectoryInformation* dir_info, bool default_open
     if(dir_info->parent == nullptr)
         node_flags |= ImGuiTreeNodeFlags_Framed;
 
-    const ImColor TreeLineColor = ImColor(128, 128, 128, 128);
-    const float SmallOffsetX    = 6.0f * ImGui::GetWindowDpiScale();
-    ImDrawList* drawList        = ImGui::GetWindowDrawList();
+    const ImColor tree_line_color = ImColor(128, 128, 128, 128);
+    const float small_offset_x    = 6.0f * ImGui::GetWindowDpiScale();
+    ImDrawList* draw_list        = ImGui::GetWindowDrawList();
 
     if(!dir_info->is_file) {
-        bool containsFolder = false;
+        bool contains_folder = false;
 
         for(auto& file : dir_info->children) {
             if(!file->is_file) {
-                containsFolder = true;
+                contains_folder = true;
                 break;
             }
         }
-        if(!containsFolder)
+        if(!contains_folder)
             node_flags |= ImGuiTreeNodeFlags_Leaf;
 
         if(default_open)
@@ -421,17 +421,17 @@ void ResourcePanel::DrawFolder(DirectoryInformation* dir_info, bool default_open
 
         node_flags |= ImGuiTreeNodeFlags_OpenOnArrow | ImGuiTreeNodeFlags_AllowItemOverlap | ImGuiTreeNodeFlags_SpanAvailWidth;
 
-        bool isOpen = ImGui::TreeNodeEx((void*)(intptr_t)dir_info, node_flags, "");
+        bool is_open = ImGui::TreeNodeEx((void*)(intptr_t)dir_info, node_flags, "");
 
-        const char* folderIcon = ((isOpen && containsFolder) || current_dir_ == dir_info) ? ICON_MDI_FOLDER_OPEN : ICON_MDI_FOLDER;
+        const char* folder_icon = ((is_open && contains_folder) || current_dir_ == dir_info) ? ICON_MDI_FOLDER_OPEN : ICON_MDI_FOLDER;
         ImGui::SameLine();
         ImGui::PushStyleColor(ImGuiCol_Text, ImGuiUtilities::GetIconColor());
-        ImGui::Text("%s ", folderIcon);
+        ImGui::Text("%s ", folder_icon);
         ImGui::PopStyleColor();
         ImGui::SameLine();
         ImGui::TextUnformatted((const char*)dir_info->local_path.toStdString().c_str());
 
-        ImVec2 verticalLineStart = ImGui::GetCursorScreenPos();
+        ImVec2 vertical_line_start = ImGui::GetCursorScreenPos();
 
         if(ImGui::IsItemClicked()) {
             previous_directory_    = current_dir_;
@@ -439,45 +439,45 @@ void ResourcePanel::DrawFolder(DirectoryInformation* dir_info, bool default_open
             update_navigation_path_ = true;
         }
 
-        if(isOpen && containsFolder) {
-            verticalLineStart.x += SmallOffsetX; // to nicely line up with the arrow symbol
-            ImVec2 verticalLineEnd = verticalLineStart;
+        if(is_open && contains_folder) {
+            vertical_line_start.x += small_offset_x; // to nicely line up with the arrow symbol
+            ImVec2 vertical_line_end = vertical_line_start;
 
             for(auto i : dir_info->children) {
                 if(!i->is_file) {
-                    auto currentPos = ImGui::GetCursorScreenPos();
+                    auto current_pos = ImGui::GetCursorScreenPos();
 
                     ImGui::Indent(10.0f);
 
-                    bool containsFolderTemp = false;
+                    bool contains_folder_temp = false;
                     for(auto& file : i->children) {
                         if(!file->is_file) {
-                            containsFolderTemp = true;
+                            contains_folder_temp = true;
                             break;
                         }
                     }
-                    float HorizontalTreeLineSize = 16.0f * ImGui::GetWindowDpiScale(); // chosen arbitrarily
+                    float horizontal_tree_line_size = 16.0f * ImGui::GetWindowDpiScale(); // chosen arbitrarily
 
-                    if(containsFolderTemp)
-                        HorizontalTreeLineSize *= 0.5f;
+                    if(contains_folder_temp)
+                        horizontal_tree_line_size *= 0.5f;
                     DrawFolder(i);
 
-                    const ImRect childRect = ImRect(currentPos, currentPos + ImVec2(0.0f, ImGui::GetFontSize()));
+                    const ImRect child_rect = ImRect(current_pos, current_pos + ImVec2(0.0f, ImGui::GetFontSize()));
 
-                    const float midpoint = (childRect.Min.y + childRect.Max.y) * 0.5f;
-                    drawList->AddLine(ImVec2(verticalLineStart.x, midpoint), ImVec2(verticalLineStart.x + HorizontalTreeLineSize, midpoint), TreeLineColor);
-                    verticalLineEnd.y = midpoint;
+                    const float midpoint = (child_rect.Min.y + child_rect.Max.y) * 0.5f;
+                    draw_list->AddLine(ImVec2(vertical_line_start.x, midpoint), ImVec2(vertical_line_start.x + horizontal_tree_line_size, midpoint), tree_line_color);
+                    vertical_line_end.y = midpoint;
 
                     ImGui::Unindent(10.0f);
                 }
             }
 
-            drawList->AddLine(verticalLineStart, verticalLineEnd, TreeLineColor);
+            draw_list->AddLine(vertical_line_start, vertical_line_end, tree_line_color);
 
             ImGui::TreePop();
         }
 
-        if(isOpen && !containsFolder)
+        if(is_open && !contains_folder)
             ImGui::TreePop();
     }
 
