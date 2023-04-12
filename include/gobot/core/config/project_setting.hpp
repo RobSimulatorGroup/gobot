@@ -29,7 +29,7 @@ public:
 
     bool SetProjectPath(const String& project_path);
 
-    FORCE_INLINE String GetProjectPath() const { return project_path_; }
+    [[nodiscard]] FORCE_INLINE const String& GetProjectPath() const { return project_path_; }
 
 private:
     String project_path_;

@@ -17,14 +17,13 @@ struct DirectoryInformation
     DirectoryInformation* parent{nullptr};
     std::vector<DirectoryInformation*> children;
 
-    std::filesystem::path file_path;
-    bool is_file;
+    String local_path;
+    String global_path;
+    String this_path;
+    bool is_file{};
 
 public:
-    DirectoryInformation(const std::filesystem::path& fname, bool _is_file) {
-        file_path = fname;
-        is_file = _is_file;
-    }
+    DirectoryInformation(const String& _this_path, DirectoryInformation* _parent);
 };
 
 class ResourcePanel : public ImGuiWindow {
@@ -37,22 +36,21 @@ public:
     bool MoveFile(const String& file_path, const String& move_path);
     void OnImGuiContent() override;
 
-    void ChangeDirectory(const DirectoryInformation* directory);
+    void ChangeDirectory(DirectoryInformation* directory);
 
 
     bool RenderFile(int dirIndex, bool folder, int shownIndex, bool gridView);
 
     void RenderBottom();
 
-    void DrawFolder(const DirectoryInformation* dir_info, bool default_open = false);
+    void DrawFolder(DirectoryInformation* dir_info, bool default_open = false);
 
-    String ProcessDirectory(const std::filesystem::path& directory_path,
-                            const DirectoryInformation* parent);
+    String ProcessDirectory(const String& directory_path,
+                            DirectoryInformation* parent);
 
     void Refresh();
 
 private:
-
     String project_path_;
     String move_path_;
     String last_nav_path_;

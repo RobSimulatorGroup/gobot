@@ -42,13 +42,14 @@ Editor::Editor() {
 
     EditorInspector::AddInspectorPlugin(MakeRef<EditorInspectorDefaultPlugin>());
 
+    ProjectSettings::GetInstance()->SetProjectPath("/home/wqq/gobot/");
+
     AddChild(Object::New<ConsolePanel>());
     AddChild(Object::New<SceneViewPanel>());
     AddChild(Object::New<SceneEditorPanel>());
     AddChild(Object::New<InspectorPanel>());
     AddChild(Object::New<ResourcePanel>());
 
-    ProjectSettings::GetInstance()->SetProjectPath("/home/wqq");
 
     file_browser_ = new ImGui::FileBrowser();
     file_browser_->SetTitle("File Browser");
