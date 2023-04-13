@@ -9,9 +9,9 @@
 #include "gobot/core/config/project_setting.hpp"
 #include "gobot/core/string_utils.hpp"
 #include "gobot/editor/imgui/imgui_utilities.hpp"
-#include "imgui_extension/splitter/splitter.hpp"
 #include "imgui_extension/icon_fonts/icons_material_design_icons.h"
 #include "imgui.h"
+#include "imgui_internal.h"
 #include <QDir>
 #include <QFileInfo>
 
