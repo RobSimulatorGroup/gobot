@@ -42,7 +42,8 @@ Editor::Editor() {
 
     EditorInspector::AddInspectorPlugin(MakeRef<EditorInspectorDefaultPlugin>());
 
-    ProjectSettings::GetInstance()->SetProjectPath("/home/wqq/gobot/");
+    // for test
+    ProjectSettings::GetInstance()->SetProjectPath("/home");
 
     AddChild(Object::New<ConsolePanel>());
     AddChild(Object::New<SceneViewPanel>());
