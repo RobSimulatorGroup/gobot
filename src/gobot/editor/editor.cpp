@@ -6,6 +6,7 @@
 */
 
 #include "gobot/editor/editor.hpp"
+#include "gobot/core/config/project_setting.hpp"
 #include "gobot/editor/node3d_editor.hpp"
 #include "gobot/core/registration.hpp"
 #include "gobot/log.hpp"
@@ -41,11 +42,15 @@ Editor::Editor() {
 
     EditorInspector::AddInspectorPlugin(MakeRef<EditorInspectorDefaultPlugin>());
 
+    // for test
+    ProjectSettings::GetInstance()->SetProjectPath("/home");
+
     AddChild(Object::New<ConsolePanel>());
     AddChild(Object::New<SceneViewPanel>());
     AddChild(Object::New<SceneEditorPanel>());
     AddChild(Object::New<InspectorPanel>());
     AddChild(Object::New<ResourcePanel>());
+
 
     file_browser_ = new ImGui::FileBrowser();
     file_browser_->SetTitle("File Browser");

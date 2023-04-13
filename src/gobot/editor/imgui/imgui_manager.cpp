@@ -137,7 +137,7 @@ void ImGuiManager::SetImGuiStyle() {
 
     style.WindowBorderSize = 0;
     style.ChildBorderSize  = 1;
-    style.PopupBorderSize  = 3;
+    style.PopupBorderSize  = 1;
     style.FrameBorderSize  = 0.0f;
 
     const int rounding_amount = 2;

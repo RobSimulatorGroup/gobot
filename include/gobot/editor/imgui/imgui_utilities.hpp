@@ -14,7 +14,7 @@
 
 namespace gobot {
 
-class ImGuiUtilities {
+class GOBOT_EXPORT ImGuiUtilities {
 public:
     enum Theme
     {
@@ -73,6 +73,8 @@ public:
     static void DrawItemActivityOutline(float rounding, bool draw_when_inactive, ImColor color_when_active = ImColor(80, 80, 80));
 
     static Color GetSelectedColor();
+
+    static Color GetIconColor();
 
     static void Tooltip(const String& text);
 

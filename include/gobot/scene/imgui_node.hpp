@@ -15,7 +15,7 @@ namespace gobot {
 
 // Base wrapper of imgui.
 // OnImGui is the process that will call Begin() before OnImGuiContent() and call End() after.
-class ImGuiNode : public Node {
+class GOBOT_EXPORT ImGuiNode : public Node {
     GOBCLASS(ImGuiNode, Node)
 public:
 

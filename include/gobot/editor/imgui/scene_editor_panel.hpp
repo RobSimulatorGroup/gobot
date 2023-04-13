@@ -11,7 +11,7 @@
 
 namespace gobot {
 
-class SceneEditorPanel : public ImGuiWindow {
+class GOBOT_EXPORT SceneEditorPanel : public ImGuiWindow {
 public:
     SceneEditorPanel();
 

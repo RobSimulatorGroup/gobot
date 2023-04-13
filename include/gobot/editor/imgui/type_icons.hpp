@@ -12,7 +12,7 @@
 
 namespace gobot {
 
-const char* GetTypeIcon(const Type& type);
+GOBOT_EXPORT const char* GetTypeIcon(const Type& type);
 
 
 }
