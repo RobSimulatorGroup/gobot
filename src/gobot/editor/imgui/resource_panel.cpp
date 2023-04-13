@@ -9,9 +9,9 @@
 #include "gobot/core/config/project_setting.hpp"
 #include "gobot/core/string_utils.hpp"
 #include "gobot/editor/imgui/imgui_utilities.hpp"
+#include "imgui_extension/splitter/splitter.hpp"
 #include "imgui_extension/icon_fonts/icons_material_design_icons.h"
 #include "imgui.h"
-#include "imgui_internal.h"
 #include <QDir>
 #include <QFileInfo>
 
@@ -127,9 +127,7 @@ void ResourcePanel::OnImGuiContent() {
         }
         ImGui::SameLine();
         if(ImGui::Button(ICON_MDI_ARROW_RIGHT)) {
-            previous_directory_ = current_dir_;
-            // m_CurrentDir = m_LastNavPath;
-            update_navigation_path_ = true;
+            // TODO(wqq)
         }
         ImGui::SameLine();
 
@@ -277,8 +275,7 @@ bool ResourcePanel::RenderFile(int dirIndex, bool folder, int shownIndex, bool g
         ImGui::SameLine();
         if(ImGui::Selectable(current_dir_->children[dirIndex]->this_path.toStdString().c_str(),
                              false, ImGuiSelectableFlags_AllowDoubleClick)) {
-            if(ImGui::IsMouseDoubleClicked(ImGuiMouseButton_Left))
-            {
+            if(ImGui::IsMouseDoubleClicked(ImGuiMouseButton_Left)) {
                 double_clicked = true;
             }
         }
@@ -316,42 +313,17 @@ void ResourcePanel::RenderBottom()
 {
     ImGui::BeginChild("##nav", ImVec2(ImGui::GetColumnWidth(), ImGui::GetFontSize() * 1.8f), true, ImGuiWindowFlags_NoScrollbar | ImGuiWindowFlags_NoScrollWithMouse);
     {
-        int secIdx = 0, newPwdLastSecIdx = -1;
-
-        auto& AssetsDir = current_dir_->global_path;
-
-        size_t PhysicalPathCount = 0;
-
-        int dirIndex = 0;
         ImGui::PushStyleColor(ImGuiCol_Button, ImVec4(0.1f, 0.2f, 0.7f, 0.0f));
 
         for(auto& directory : bread_crumb_data_) {
-            const std::string& directoryName = directory->this_path.toStdString();
-            if(ImGui::SmallButton(directoryName.c_str()))
+            const std::string& directory_name = directory->this_path.toStdString();
+            if(ImGui::SmallButton(directory_name.c_str()))
                 ChangeDirectory(directory);
 
             ImGui::SameLine();
         }
 
         ImGui::PopStyleColor();
-
-        if(newPwdLastSecIdx >= 0) {
-            int i = 0;
-            std::filesystem::path newPwd;
-            for(auto& sec : AssetsDir) {
-                if(i++ > newPwdLastSecIdx)
-                    break;
-//                newPwd /= sec;
-            }
-//#ifdef _WIN32
-//            if(newPwdLastSecIdx == 0)
-//                    newPwd /= "\\";
-//#endif
-
-            previous_directory_    = current_dir_;
-            current_dir_           = directories_[newPwd.c_str()].get();
-            update_navigation_path_ = true;
-        }
 
         ImGui::SameLine();
     }
@@ -395,7 +367,7 @@ DirectoryInformation* ResourcePanel::ProcessDirectory(const String& directory_pa
 void ResourcePanel::DrawFolder(DirectoryInformation* dir_info, bool default_open)
 {
     ImGuiTreeNodeFlags node_flags = ((dir_info == current_dir_) ? ImGuiTreeNodeFlags_Selected : 0);
-    node_flags |= ImGuiTreeNodeFlags_OpenOnArrow | ImGuiTreeNodeFlags_OpenOnDoubleClick | ImGuiTreeNodeFlags_DefaultOpen;
+    node_flags |= ImGuiTreeNodeFlags_OpenOnArrow | ImGuiTreeNodeFlags_OpenOnDoubleClick;
 
     if(dir_info->parent == nullptr)
         node_flags |= ImGuiTreeNodeFlags_Framed;
@@ -435,7 +407,7 @@ void ResourcePanel::DrawFolder(DirectoryInformation* dir_info, bool default_open
 
         if(ImGui::IsItemClicked()) {
             previous_directory_    = current_dir_;
-            current_dir_           = const_cast<DirectoryInformation*>(dir_info);
+            current_dir_           = dir_info;
             update_navigation_path_ = true;
         }
 
@@ -492,13 +464,13 @@ void ResourcePanel::Refresh()
 {
     project_path_ = ProjectSettings::GetInstance()->GetProjectPath();
 
-    base_project_dir_ = ProcessDirectory("res://", nullptr);
-
     auto current_path = current_dir_->global_path;
 
     update_navigation_path_ = true;
 
     directories_.clear();
+
+    base_project_dir_ = ProcessDirectory("res://", nullptr);
     previous_directory_ = nullptr;
     current_dir_ = nullptr;
 
