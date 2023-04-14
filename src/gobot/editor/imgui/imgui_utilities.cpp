@@ -14,7 +14,7 @@
 namespace gobot {
 
 Color ImGuiUtilities::s_selected_color = {0.28f, 0.56f, 0.9f, 1.0f};
-Color ImGuiUtilities::s_icon_color = {0.2f, 0.2f, 0.2f, 1.0f};
+Color ImGuiUtilities::s_icon_color = {0.5f, 0.5f, 0.5f, 1.0f};
 char* ImGuiUtilities::s_multiline_buffer = nullptr;
 
 

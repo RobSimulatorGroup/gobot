@@ -40,6 +40,10 @@ public:
 
     void OnImGuiContent() override;
 
+    FORCE_INLINE Node* GetSelected() const { return selected_; }
+
+    FORCE_INLINE void SetSelected(Node* selected) { selected_ = selected; }
+
 private:
     void DrawMenuBar();
 
@@ -53,6 +57,8 @@ private:
     Node3DEditor* node3d_editor_{nullptr};
     ImGuiManager* imgui_manager_{nullptr};
     ImGui::FileBrowser* file_browser_{nullptr};
+
+    Node* selected_{nullptr};
 
 };
 
