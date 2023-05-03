@@ -62,3 +62,5 @@ add_executable(binary_to_compressed_c imgui/misc/fonts/binary_to_compressed_c.cp
 
 set(BGFX_WITH_SDL On)
 add_subdirectory(bgfx)
+
+add_subdirectory(meshoptimizer)

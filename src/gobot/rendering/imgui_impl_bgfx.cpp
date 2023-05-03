@@ -21,6 +21,9 @@
 #include "bx/math.h"
 #include "bx/timer.h"
 
+#include "bgfx/examples/common/imgui/fs_ocornut_imgui.bin.h"
+#include "bgfx/examples/common/imgui/vs_ocornut_imgui.bin.h"
+
 // Data
 static uint8_t g_View = 255;
 static bgfx::TextureHandle g_FontTexture = BGFX_INVALID_HANDLE;
@@ -135,9 +138,6 @@ bool ImGui_Implbgfx_CreateFontsTexture()
 
     return true;
 }
-
-#include "fs_ocornut_imgui.bin.h"
-#include "vs_ocornut_imgui.bin.h"
 
 static const bgfx::EmbeddedShader s_embeddedShaders[] = {
     BGFX_EMBEDDED_SHADER(vs_ocornut_imgui),

@@ -146,6 +146,10 @@ public:
 
     bool FreeTexture(const RenderRID& rid);
 
+    RenderRID CreateMesh();
+
+    bool FreeMesh(const RenderRID& rid);
+
 private:
     static RenderServer* s_singleton;
 

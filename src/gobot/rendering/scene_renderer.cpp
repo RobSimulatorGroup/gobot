@@ -74,6 +74,10 @@ void SceneRenderer::DebugPass() {
 
 }
 
+void SceneRenderer::GridPass() {
+
+}
+
 
 void SceneRenderer::FinalPass() {
 

@@ -19,18 +19,18 @@
 #	define DEBUG_DRAW_CONFIG_MAX_GEOMETRY 256
 #endif // DEBUG_DRAW_CONFIG_MAX_GEOMETRY
 
-#include "vs_debugdraw_lines.bin.h"
-#include "fs_debugdraw_lines.bin.h"
-#include "vs_debugdraw_lines_stipple.bin.h"
-#include "fs_debugdraw_lines_stipple.bin.h"
-#include "vs_debugdraw_fill.bin.h"
-#include "vs_debugdraw_fill_mesh.bin.h"
-#include "fs_debugdraw_fill.bin.h"
-#include "vs_debugdraw_fill_lit.bin.h"
-#include "vs_debugdraw_fill_lit_mesh.bin.h"
-#include "fs_debugdraw_fill_lit.bin.h"
-#include "vs_debugdraw_fill_texture.bin.h"
-#include "fs_debugdraw_fill_texture.bin.h"
+#include "bgfx/examples/common/debugdraw/vs_debugdraw_lines.bin.h"
+#include "bgfx/examples/common/debugdraw/fs_debugdraw_lines.bin.h"
+#include "bgfx/examples/common/debugdraw/vs_debugdraw_lines_stipple.bin.h"
+#include "bgfx/examples/common/debugdraw/fs_debugdraw_lines_stipple.bin.h"
+#include "bgfx/examples/common/debugdraw/vs_debugdraw_fill.bin.h"
+#include "bgfx/examples/common/debugdraw/vs_debugdraw_fill_mesh.bin.h"
+#include "bgfx/examples/common/debugdraw/fs_debugdraw_fill.bin.h"
+#include "bgfx/examples/common/debugdraw/vs_debugdraw_fill_lit.bin.h"
+#include "bgfx/examples/common/debugdraw/vs_debugdraw_fill_lit_mesh.bin.h"
+#include "bgfx/examples/common/debugdraw/fs_debugdraw_fill_lit.bin.h"
+#include "bgfx/examples/common/debugdraw/vs_debugdraw_fill_texture.bin.h"
+#include "bgfx/examples/common/debugdraw/fs_debugdraw_fill_texture.bin.h"
 
 namespace gobot {
 

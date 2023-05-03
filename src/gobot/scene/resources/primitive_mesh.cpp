@@ -7,12 +7,18 @@
 
 
 #include "gobot/scene/resources/primitive_mesh.hpp"
+#include "gobot/rendering/render_server.hpp"
 #include "gobot/core/registration.hpp"
 
 namespace gobot {
 
-PrimitiveMesh::PrimitiveMesh() {
+PrimitiveMesh::PrimitiveMesh()
+{
+    mesh_ = RenderServer::GetInstance()->CreateMesh();
+}
 
+PrimitiveMesh::~PrimitiveMesh() {
+    RenderServer::GetInstance()->FreeMesh(mesh_);
 }
 
 void PrimitiveMesh::SetMaterial(const Ref<Material>& material) {
@@ -30,12 +36,12 @@ BoxMesh::BoxMesh() {
 
 }
 
-void BoxMesh::SetWidth(float width) {
-    width_ = width;
+void BoxMesh::SetSize(Vector3 size) {
+    size_ = size;
 }
 
-float BoxMesh::GetWidth() const {
-    return width_;
+const Vector3& BoxMesh::GetSize() const {
+    return size_;
 }
 
 /////////////////////////////////
@@ -68,7 +74,7 @@ GOBOT_REGISTRATION {
 
     Class_<BoxMesh>("BoxMesh")
             .constructor()(CtorAsRawPtr)
-            .property("width", &BoxMesh::GetWidth, &BoxMesh::SetWidth);
+            .property("size", &BoxMesh::GetSize, &BoxMesh::SetSize);
 
     gobot::Type::register_wrapper_converter_for_base_classes<Ref<BoxMesh>, Ref<PrimitiveMesh>>();
 

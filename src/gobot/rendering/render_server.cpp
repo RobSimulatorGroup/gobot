@@ -140,5 +140,13 @@ bool RenderServer::FreeTexture(const RenderRID& rid) {
     return RSG::texture_storage->Free(rid);
 }
 
+RenderRID RenderServer::CreateMesh() {
+    return {};
+}
+
+bool RenderServer::FreeMesh(const RenderRID& rid) {
+    return false;
+}
+
 
 }

@@ -13,3 +13,6 @@
 [submodule "3rdparty/bgfx/bgfx"]
 	path = 3rdparty/bgfx/bgfx
 	url = https://github.com/RobSimulatorGroup/bgfx.git
+[submodule "3rdparty/meshoptimizer"]
+	path = 3rdparty/meshoptimizer
+	url = https://github.com/RobSimulatorGroup/meshoptimizer.git

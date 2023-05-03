@@ -109,6 +109,7 @@ target_include_directories(gobot
     PUBLIC
     ${CMAKE_CURRENT_SOURCE_DIR}/include
     ${PROJECT_BINARY_DIR}
+    ${CMAKE_CURRENT_SOURCE_DIR}/3rdparty/bgfx/
 )
 
 target_link_libraries(gobot

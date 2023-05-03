@@ -28,6 +28,8 @@ public:
 
     void FinalPass();
 
+    void GridPass();
+
     void DebugPass();
 
 private:
