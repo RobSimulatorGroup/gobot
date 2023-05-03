@@ -17,26 +17,16 @@ vec4 gridColorThick = vec4(0.0, 0.0, 0.0, 1.0);
 // minimum number of pixels between cell lines before LOD switch should occur.
 const float gridMinPixelsBetweenCells = 2.0;
 
-const vec3 pos[4] = vec3[4](
-		vec3(-1.0, 0.0, -1.0),
-		vec3( 1.0, 0.0, -1.0),
-		vec3( 1.0, 0.0,  1.0),
-		vec3(-1.0, 0.0,  1.0)
-);
-
-const int indices[6] = int[6](
-		0, 1, 2, 2, 3, 0
-);
 
 void main()
 {
-	int idx = indices[gl_VertexID];
-	vec3 position = pos[idx] * gridSize;
+//	int idx = indices[gl_VertexID];
+	vec3 position = vec3(0.0, 0.0, 0.0);
 
-	position.x += cameraPos.x;
-	position.z += cameraPos.z;
+//	position.x += cameraPos.x;
+//	position.z += cameraPos.z;
 
-	out_camPos = cameraPos.xz;
+	out_camPos = position.xz;
 
 	gl_Position = u_modelViewProj * vec4(position, 1.0);
 	uv = position.xz;
