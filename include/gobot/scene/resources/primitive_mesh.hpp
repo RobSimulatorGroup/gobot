@@ -9,7 +9,7 @@
 
 #include "gobot/scene/resources/mesh.hpp"
 #include "gobot/scene/resources/material.hpp"
-#include "gobot/rendering/render_rid.hpp"
+#include "gobot/core/rid.hpp"
 #include "gobot/core/math/matrix.hpp"
 
 namespace gobot {
@@ -26,7 +26,7 @@ public:
     const Ref<Material>& GetMaterial() const;
 
 private:
-    RenderRID mesh_;
+    RID mesh_;
     Ref<Material> material_{nullptr};
 };
 

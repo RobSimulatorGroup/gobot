@@ -16,3 +16,12 @@
 [submodule "3rdparty/meshoptimizer"]
 	path = 3rdparty/meshoptimizer
 	url = https://github.com/RobSimulatorGroup/meshoptimizer.git
+[submodule "3rdparty/gli"]
+	path = 3rdparty/gli
+	url = https://github.com/g-truc/gli
+[submodule "3rdparty/stb"]
+	path = 3rdparty/stb
+	url = git@github.com:RobSimulatorGroup/stb.git
+[submodule "3rdparty/basis_univesal"]
+	path = 3rdparty/basis_univesal
+	url = git@github.com:RobSimulatorGroup/basis_universal.git

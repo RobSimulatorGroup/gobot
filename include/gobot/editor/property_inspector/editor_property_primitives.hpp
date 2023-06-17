@@ -8,7 +8,7 @@
 #pragma once
 
 #include "gobot/editor/property_inspector/editor_property_builtin.hpp"
-#include "gobot/core/rid.h"
+#include "gobot/core/rid.hpp"
 
 namespace gobot {
 
@@ -145,14 +145,6 @@ public:
 
 class EditorPropertyRID : public EditorBuiltInProperty {
     GOBCLASS(EditorPropertyRID, EditorBuiltInProperty)
-public:
-    using EditorBuiltInProperty::EditorBuiltInProperty;
-
-    void OnImGuiContent() override;
-};
-
-class EditorPropertyRenderRID : public EditorBuiltInProperty {
-    GOBCLASS(EditorPropertyRenderRID, EditorBuiltInProperty)
 public:
     using EditorBuiltInProperty::EditorBuiltInProperty;
 

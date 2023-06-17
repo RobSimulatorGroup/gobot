@@ -19,10 +19,6 @@ TextureStorage::TextureStorage() {
 
 TextureStorage::~TextureStorage() {
     s_singleton = nullptr;
-
-    for (const auto& rid: texture_owner_.GetOwnedList()) {
-        Free(rid);
-    }
 }
 
 TextureStorage* TextureStorage::GetInstance() {
@@ -30,89 +26,49 @@ TextureStorage* TextureStorage::GetInstance() {
     return s_singleton;
 }
 
-void TextureStorage::CalculateTextureSize(TextureInfo& info,
-                                          uint16_t width,
-                                          uint16_t height,
-                                          uint16_t depth,
-                                          bool cube_map,
-                                          bool has_mips,
-                                          uint16_t num_layers,
-                                          TextureFormat format) {
-    bgfx::calcTextureSize(info, width, height, depth, cube_map, has_mips, num_layers, bgfx::TextureFormat::Enum(format));
-}
+//RID TextureStorage::CreateTexture2D(uint16_t width,
+//                                    uint16_t height,
+//                                    bool has_mips,
+//                                    uint16_t num_layers,
+//                                    TextureFormat format) {
+//    auto rid = RenderRID::FromUint16(handle.idx);
+//    TextureInfo texture_info;
+//    CalculateTextureSize(texture_info, width, height, 1, false, has_mips, num_layers, format);
+//    texture_owner_.InitializeRID(rid, {flags, Texture2D, texture_info});
+//    return rid;
+//}
+//
+//RID TextureStorage::CreateTexture3D(uint16_t width,
+//                                    uint16_t height,
+//                                    uint16_t depth,
+//                                    bool has_mips,
+//                                    TextureFormat format,
+//                                    TextureFlags flags) {
+//    auto rid = RenderRID::FromUint16(handle.idx);
+//    TextureInfo texture_info;
+//    CalculateTextureSize(texture_info, width, height, depth, false, has_mips, 1, format);
+//    texture_owner_.InitializeRID(rid, {flags, Texture3D, texture_info});
+//    return rid;
+//}
+//
+//RID TextureStorage::CreateTextureCube(uint16_t size,
+//                                            bool has_mips,
+//                                            uint16_t num_layers,
+//                                            TextureFormat format,
+//                                            TextureFlags flags,
+//                                            const MemoryView* mem) {
+//    auto rid = RenderRID::FromUint16(handle.idx);
+//    TextureInfo texture_info;
+//    CalculateTextureSize(texture_info, size, size, size, false, has_mips, num_layers, format);
+//    texture_owner_.InitializeRID(rid, {flags, TextureCube, texture_info});
+//    return rid;
+//}
 
-TextureStorage::Texture* TextureStorage::GetTexture(RenderRID rid) {
-    return texture_owner_.GetOrNull(rid);
-}
-
-bool TextureStorage::IsOriginBottomLeft() {
-    return bgfx::getCaps()->originBottomLeft;
-}
-
-bool TextureStorage::IsRenderTarget(RenderRID rid) {
-    USING_ENUM_BITWISE_OPERATORS;
-    auto* texture = texture_owner_.GetOrNull(rid);
-    ERR_FAIL_COND_V_MSG(texture == nullptr, false, "The input rid is not inside of owner");
-    return 0 != (bool) (texture->creation_flags & TextureFlags::RT_MASK);
-}
-
-
-RenderRID TextureStorage::CreateTexture2D(uint16_t width,
-                                          uint16_t height,
-                                          bool has_mips,
-                                          uint16_t num_layers,
-                                          TextureFormat format,
-                                          TextureFlags flags,
-                                          const MemoryView* mem) {
-    bgfx::TextureHandle handle = bgfx::createTexture2D(width, height, has_mips, num_layers,
-                                                       bgfx::TextureFormat::Enum(format),
-                                                       ENUM_UINT_CAST(flags), mem);
-    auto rid = RenderRID::FromUint16(handle.idx);
-    TextureInfo texture_info;
-    CalculateTextureSize(texture_info, width, height, 1, false, has_mips, num_layers, format);
-    texture_owner_.InitializeRID(rid, {flags, Texture2D, texture_info});
-    return rid;
-}
-
-RenderRID TextureStorage::CreateTexture3D(uint16_t width,
-                                          uint16_t height,
-                                          uint16_t depth,
-                                          bool has_mips,
-                                          TextureFormat format,
-                                          TextureFlags flags,
-                                          const MemoryView* mem) {
-    bgfx::TextureHandle handle = bgfx::createTexture3D(width, height, depth, has_mips,
-                                                       bgfx::TextureFormat::Enum(format),
-                                                       ENUM_UINT_CAST(flags), mem);
-    auto rid = RenderRID::FromUint16(handle.idx);
-    TextureInfo texture_info;
-    CalculateTextureSize(texture_info, width, height, depth, false, has_mips, 1, format);
-    texture_owner_.InitializeRID(rid, {flags, Texture3D, texture_info});
-    return rid;
-}
-
-RenderRID TextureStorage::CreateTextureCube(uint16_t size,
-                                            bool has_mips,
-                                            uint16_t num_layers,
-                                            TextureFormat format,
-                                            TextureFlags flags,
-                                            const MemoryView* mem) {
-    bgfx::TextureHandle handle = bgfx::createTextureCube(size, has_mips, num_layers,
-                                                       bgfx::TextureFormat::Enum(format),
-                                                       ENUM_UINT_CAST(flags), mem);
-    auto rid = RenderRID::FromUint16(handle.idx);
-    TextureInfo texture_info;
-    CalculateTextureSize(texture_info, size, size, size, false, has_mips, num_layers, format);
-    texture_owner_.InitializeRID(rid, {flags, TextureCube, texture_info});
-    return rid;
-}
-
-bool TextureStorage::Free(RenderRID rid) {
-    if (texture_owner_.Owns(rid)) {
-        texture_owner_.Erase(rid);
-        bgfx::destroy(bgfx::TextureHandle{rid.GetID()});
-        return true;
-    }
+bool TextureStorage::Free(RID rid) {
+//    if (texture_owner_.Owns(rid)) {
+//        texture_owner_.Free(rid);
+//        return true;
+//    }
 
     return false;
 }

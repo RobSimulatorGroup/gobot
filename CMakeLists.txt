@@ -109,7 +109,6 @@ target_include_directories(gobot
     PUBLIC
     ${CMAKE_CURRENT_SOURCE_DIR}/include
     ${PROJECT_BINARY_DIR}
-    ${CMAKE_CURRENT_SOURCE_DIR}/3rdparty/bgfx/
 )
 
 target_link_libraries(gobot
@@ -118,10 +117,9 @@ target_link_libraries(gobot
     OpenGL::GL
     Qt5::Core
     imgui-gobot
-    bgfx
-    bx
     SDL2::SDL2
-    SDL2_image
+    stb
+    gli
     ${CONAN_LIBS}
 )
 

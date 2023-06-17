@@ -22,6 +22,7 @@ public:
     };
 
     virtual Ref<Resource> Load(const String &local_path,
+                               const String &original_path,
                                CacheMode cache_mode = CacheMode::Reuse) = 0;
 
     [[nodiscard]] virtual bool HandlesType(const String &type) const = 0;

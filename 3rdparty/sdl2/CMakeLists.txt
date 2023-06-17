@@ -41,13 +41,13 @@ endif()
 
 
 # SDL_image
-CPMAddPackage(GITHUB_REPOSITORY libsdl-org/SDL_image
-        GIT_TAG release-2.6.2
-        OPTIONS
-        "SDL2IMAGE_INSTALL OFF"
-        "SDL2IMAGE_SAMPLES OFF"
-        "SDL2IMAGE_VENDORED ON"
-        "SDL2IMAGE_BUILD_SHARED_LIBS OFF"
-        )
-find_package(SDL_image REQUIRED)
-include_directories(${SDL_image_SOURCE_DIR})
+#CPMAddPackage(GITHUB_REPOSITORY libsdl-org/SDL_image
+#        GIT_TAG release-2.6.2
+#        OPTIONS
+#        "SDL2IMAGE_INSTALL OFF"
+#        "SDL2IMAGE_SAMPLES OFF"
+#        "SDL2IMAGE_VENDORED ON"
+#        "SDL2IMAGE_BUILD_SHARED_LIBS OFF"
+#        )
+#find_package(SDL_image REQUIRED)
+#include_directories(${SDL_image_SOURCE_DIR})

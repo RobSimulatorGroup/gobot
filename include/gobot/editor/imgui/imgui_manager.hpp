@@ -8,6 +8,7 @@
 #pragma once
 
 #include "gobot/core/object.hpp"
+#include "gobot/rendering/imgui_renderer.hpp"
 
 namespace gobot {
 
@@ -31,6 +32,8 @@ private:
 
 private:
     static ImGuiManager* s_singleton;
+
+    std::unique_ptr<ImGuiRenderer> imgui_renderer_{nullptr};
 
     float font_size_;
 };

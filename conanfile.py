@@ -16,6 +16,8 @@ class GobotConan(ConanFile):
         self.requires("magic_enum/0.8.1")
         self.requires("cxxopts/3.0.0")
         self.requires("assimp/5.2.2")
+        self.requires("libpng/1.6.39")
+        self.requires("jpeg-compressor/cci.20200507")
 
     def imports(self):
         self.copy("*.dll", dst="bin", src="bin") # From bin to bin

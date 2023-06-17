@@ -45,7 +45,7 @@ void ImGuiUtilities::Tooltip(const char* text) {
     ImGui::PopStyleVar();
 }
 
-void ImGuiUtilities::Image(const RenderRID& texture_id, const Vector2f& size, const Vector2f& uv0,
+void ImGuiUtilities::Image(const RID& texture_id, const Vector2f& size, const Vector2f& uv0,
                            const Vector2f& uv1, const Color& tintCol, const Color& borderCol) {
 
     ERR_FAIL_COND_MSG(texture_id.IsNull(), "Input texture_id is invalid");
@@ -53,12 +53,12 @@ void ImGuiUtilities::Image(const RenderRID& texture_id, const Vector2f& size, co
     ImVec2 _uv0 = uv0;
     ImVec2 _uv1 = uv1;
 
-    if(RSG::texture_storage->IsRenderTarget(texture_id) && RSG::texture_storage->IsOriginBottomLeft()) {
-        _uv0 = {0.0f, 1.0f};
-        _uv1 = {1.0f, 0.0f};
-    }
+//    if(RSG::texture_storage->IsRenderTarget(texture_id) && RSG::texture_storage->IsOriginBottomLeft()) {
+//        _uv0 = {0.0f, 1.0f};
+//        _uv1 = {1.0f, 0.0f};
+//    }
 
-    ImGui::Image(texture_id, size, _uv0, _uv1, tintCol, borderCol);
+//    ImGui::Image(texture_id, size, _uv0, _uv1, tintCol, borderCol);
 }
 
 bool ImGuiUtilities::BeginPropertyGrid(const char* label, const char* tooltip, bool rightAlignNextColumn) {

@@ -9,6 +9,8 @@
 
 #pragma once
 
+#include "Eigen/Eigen"
+
 namespace gobot {
 
 #define CMP_EPSILON 0.00001

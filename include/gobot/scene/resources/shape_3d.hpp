@@ -13,7 +13,6 @@ namespace gobot {
 // Shape3D is for collision checker
 class GOBOT_EXPORT Shape3D : public Resource {
     GOBCLASS(Shape3D, Resource)
-
 public:
     Shape3D();
 

@@ -7,26 +7,14 @@
 
 #pragma once
 
-#include "gobot/rendering/render_rid.hpp"
-#include "gobot/rendering/render_types.hpp"
-#include "gobot/rendering/render_rid_owner.hpp"
 #include "gobot/core/hash_combine.hpp"
+#include "gobot/core/rid.hpp"
+#include "gobot/core/rid_owner.hpp"
 
 namespace gobot {
 
 class TextureStorage {
 public:
-    enum TextureType {
-        Texture2D,
-        Texture3D,
-        TextureCube
-    };
-
-    struct Texture {
-        TextureFlags creation_flags;
-        TextureType texture_type;
-        TextureInfo texture_info;
-    };
 
     TextureStorage();
 
@@ -34,28 +22,25 @@ public:
 
     static TextureStorage* GetInstance();
 
-    RenderRID CreateTexture2D(uint16_t width,
-                              uint16_t height,
-                              bool has_mips,
-                              uint16_t num_layers,
-                              TextureFormat format,
-                              TextureFlags flags,
-                              const MemoryView* mem = nullptr);
-
-    RenderRID CreateTexture3D(uint16_t width,
-                              uint16_t height,
-                              uint16_t depth,
-                              bool has_mips,
-                              TextureFormat format,
-                              TextureFlags flags,
-                              const MemoryView* mem = nullptr);
-
-    RenderRID CreateTextureCube(uint16_t size,
-                                bool has_mips,
-                                uint16_t num_layers,
-                                TextureFormat format,
-                                TextureFlags flags,
-                                const MemoryView* mem = nullptr);
+//    RID CreateTexture2D(uint16_t width,
+//                        uint16_t height,
+//                        bool has_mips,
+//                        uint16_t num_layers,
+//                        TextureFormat format,
+//                        TextureFlags flags);
+//
+//    RID CreateTexture3D(uint16_t width,
+//                        uint16_t height,
+//                        uint16_t depth,
+//                        bool has_mips,
+//                        TextureFormat format,
+//                        TextureFlags flags);
+//
+//    RID CreateTextureCube(uint16_t size,
+//                          bool has_mips,
+//                          uint16_t num_layers,
+//                          TextureFormat format,
+//                          TextureFlags flags);
 
     /// Calculate amount of memory required for texture.
     ///
@@ -67,43 +52,39 @@ public:
     /// @param[in] has_mips Indicates that texture contains full mip-map chain.
     /// @param[in] num_layers Number of layers in texture array.
     /// @param[in] format Texture format.
-    void CalculateTextureSize(TextureInfo& info,
-                              uint16_t width,
-                              uint16_t height,
-                              uint16_t depth,
-                              bool cube_map,
-                              bool has_mips,
-                              uint16_t num_layers,
-                              TextureFormat format);
+//    void CalculateTextureSize(TextureInfo& info,
+//                              uint16_t width,
+//                              uint16_t height,
+//                              uint16_t depth,
+//                              bool cube_map,
+//                              bool has_mips,
+//                              uint16_t num_layers,
+//                              TextureFormat format);
 
-    Texture* GetTexture(RenderRID rid);
+//    Texture* GetTexture(RID rid);
 
-    static bool IsOriginBottomLeft();
-
-    bool IsRenderTarget(RenderRID rid);
-
-    bool Free(RenderRID rid);
+    bool Free(RID rid);
 
 private:
     static TextureStorage *s_singleton;
 
-    RenderRID_Owner<Texture, true> texture_owner_{};
+//    RID_Owner<Texture, true> texture_owner_{};
 };
 
 }
 
-namespace std
-{
-template <>
-struct hash<gobot::TextureInfo>
-{
-    std::size_t operator()(const gobot::TextureInfo& texture_info) const
-    {
-        size_t hash = 0;
-        gobot::HashCombine(hash, texture_info.format, texture_info.storageSize,
-                           texture_info.width, texture_info.height, texture_info.depth,
-                           texture_info.numLayers, texture_info.numMips, texture_info.bitsPerPixel, texture_info.cubeMap);
-        return hash;
-    }
-};
-}
+//namespace std
+//{
+//template <>
+//struct hash<gobot::TextureInfo>
+//{
+//    std::size_t operator()(const gobot::TextureInfo& texture_info) const
+//    {
+//        size_t hash = 0;
+//        gobot::HashCombine(hash, texture_info.format, texture_info.storageSize,
+//                           texture_info.width, texture_info.height, texture_info.depth,
+//                           texture_info.numLayers, texture_info.numMips, texture_info.bitsPerPixel, texture_info.cubeMap);
+//        return hash;
+//    }
+//};
+//}

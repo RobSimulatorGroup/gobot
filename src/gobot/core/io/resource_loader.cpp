@@ -59,7 +59,7 @@ Ref<Resource> ResourceLoader::LoadImpl(const String &path,
             continue;
         }
         found = true;
-        Ref<Resource> res = loader->Load(path, cache_mode);
+        Ref<Resource> res = loader->Load(path, path, cache_mode);
         if (!res) {
             continue;
         }

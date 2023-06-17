@@ -18,11 +18,9 @@
 #include "gobot/rendering/scene_renderer.hpp"
 #include "gobot/core/os/os.hpp"
 #include "gobot/scene/window.hpp"
-#include "gobot/rendering/debug_draw/debug_draw.hpp"
 #include "gobot/core/math/geometry.hpp"
 #include <cxxopts.hpp>
 #include "imgui.h"
-#include <bgfx/bgfx.h>
 
 namespace gobot {
 
@@ -84,13 +82,9 @@ bool Main::Start() {
 
     s_render_server->InitWindow();
     USING_ENUM_BITWISE_OPERATORS;
-    s_render_server->SetDebug(RenderDebugFlags::DebugTextDisplay);
-    bgfx::setViewClear(0, BGFX_CLEAR_COLOR | BGFX_CLEAR_DEPTH);
 
     auto* editor = Object::New<Editor>();
     main_loop->GetRoot()->AddChild(editor);
-
-    DebugDrawEncoder::Initialize();
 
     OS::GetInstance()->SetMainLoop(main_loop);
 
@@ -121,11 +115,6 @@ bool Main::Iteration()
     LOG_ERROR("2222");
 
 
-    // Advance to next frame. Rendering thread will be kicked to
-    // process submitted rendering primitives.
-    GET_RS()->Frame();
-
-
     return exit;
 
 }
@@ -137,9 +126,6 @@ void Main::Cleanup() {
     Object::Delete(s_project_settings);
 
     OS::GetInstance()->DeleteMainLoop();
-
-    DebugDrawEncoder::Finalize();
-    bgfx::shutdown();
 }
 
 }

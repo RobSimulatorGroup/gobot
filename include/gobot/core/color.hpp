@@ -54,6 +54,10 @@ public:
         : Color(intensity, intensity, intensity, alpha) {
     }
 
+    static Color FromRGBE9995(uint32_t rgbe);
+
+    uint32_t ToRGBE9995() const;
+
     /// Return a reference to the red channel
     float& red() { return r_; }
 
@@ -82,6 +86,102 @@ public:
         return (std::uint8_t(r_ * 255) << 24) + (std::uint8_t(g_ * 255) << 16) + (std::uint8_t(b_ * 255) << 8) + (std::uint8_t(a_ * 255));
     }
 
+    float hue() const;
+
+    float saturation() const;
+
+    float val() const;
+
+    Color operator*(const Color &color) const {
+        return {r_ * color.red(),
+                g_ * color.green(),
+                b_ * color.blue(),
+                a_ * color.alpha()};
+    }
+
+    Color operator*(float scalar) const {
+        return {r_ * scalar,
+                g_ * scalar,
+                b_ * scalar,
+                a_ * scalar};
+    }
+
+    void operator*=(const Color &color) {
+        r_ = r_ * color.red();
+        g_ = g_ * color.green();
+        b_ = b_ * color.blue();
+        a_ = a_ * color.alpha();
+    }
+
+    void operator*=(float scalar) {
+        r_ = r_ * scalar;
+        g_ = g_ * scalar;
+        b_ = b_ * scalar;
+        a_ = a_ * scalar;
+    }
+
+    Color operator/(const Color &color) const {
+        return {r_ / color.red(),
+                g_ / color.green(),
+                b_ / color.blue(),
+                a_ / color.alpha()};
+    }
+
+    Color operator/(float scalar) const {
+        return {r_ / scalar,
+                g_ / scalar,
+                b_ / scalar,
+                a_ / scalar};
+    }
+
+    void operator/=(const Color &color) {
+        r_ = r_ / color.red();
+        g_ = g_ / color.green();
+        b_ = b_ / color.blue();
+        a_ = a_ / color.alpha();
+    }
+
+    void operator/=(float scalar) {
+        r_ = r_ / scalar;
+        g_ = g_ / scalar;
+        b_ = b_ / scalar;
+        a_ = a_ / scalar;
+    }
+
+    Color operator+(const Color &color) const {
+        return {r_ + color.red(),
+                g_ + color.green(),
+                b_ + color.blue(),
+                a_ + color.alpha()};
+    }
+
+    void operator+=(const Color &color) {
+        r_ = r_ + color.red();
+        g_ = g_ + color.green();
+        b_ = b_ + color.blue();
+        a_ = a_ + color.alpha();
+    }
+
+    Color operator-() const {
+        return {1.0f - r_,
+                1.0f - g_,
+                1.0f - b_,
+                1.0f - a_};
+    }
+
+    Color operator-(const Color &color) const {
+        return {r_ - color.red(),
+                g_ - color.green(),
+                b_ - color.blue(),
+                a_ - color.alpha()};
+    }
+
+    void operator-=(const Color &color) {
+        r_ = r_ - color.red();
+        g_ = g_ - color.green();
+        b_ = b_ - color.blue();
+        a_ = a_ - color.alpha();
+    }
 
 private:
     GOBOT_REGISTRATION_FRIEND

@@ -19,7 +19,6 @@
 #include <SDL.h>
 #include <SDL_syswm.h>
 
-#include <bgfx/platform.h>
 
 #ifndef ENTRY_CONFIG_USE_WAYLAND
 #	define ENTRY_CONFIG_USE_WAYLAND 0
@@ -37,9 +36,6 @@ static const int s_default_width = 1280;
 static const int s_default_height = 720;
 static const char* s_default_window_title = "Gobot";
 
-static RenderDebugFlags s_render_debug_flag = RenderDebugFlags::None;
-static RenderResetFlags s_render_reset_flag = RenderResetFlags::None;
-
 SDLWindow::SDLWindow()
 {
     if (SDL_WasInit(SDL_INIT_VIDEO) != SDL_INIT_VIDEO) {
@@ -56,9 +52,6 @@ SDLWindow::SDLWindow()
     CRASH_COND_MSG(sdl2_window_ == nullptr, fmt::format("Error creating window: {}", SDL_GetError()));
 
     windows_id_ = SDL_GetWindowID(sdl2_window_);
-
-
-    bgfx::renderFrame();
 }
 
 SDLWindow::~SDLWindow()
@@ -186,11 +179,11 @@ void SDLWindow::RaiseWindow()
 
 void SDLWindow::SetIcon(const Ref<Image>& image)
 {
-    if (image && image->IsSDLImage()) {
-        SDL_SetWindowIcon(sdl2_window_, image->GetSDLImage());
-    } else {
-        LOG_ERROR("Input image is not sdl image");
-    }
+//    if (image && image->IsSDLImage()) {
+//        SDL_SetWindowIcon(sdl2_window_, image->GetSDLImage());
+//    } else {
+//        LOG_ERROR("Input image is not sdl image");
+//    }
 }
 
 void SDLWindow::ShowWindow()
@@ -214,11 +207,11 @@ std::uint32_t SDLWindow::GetWindowID() const {
 }
 
 void SDLWindow::ProcessEvents() {
-    if (RenderServer::HasInit()) {
-        auto flags = GET_RS()->GetResetFlags();
-        render_need_reset_ = s_render_reset_flag != flags;
-        s_render_reset_flag = flags;
-    }
+//    if (RenderServer::HasInit()) {
+//        auto flags = GET_RS()->GetResetFlags();
+//        render_need_reset_ = s_render_reset_flag != flags;
+//        s_render_reset_flag = flags;
+//    }
 
     // Check if any events have been activated (key pressed, mouse moved etc.) and call corresponding response functions
     SDL_Event event;
@@ -354,11 +347,11 @@ void SDLWindow::ProcessEvents() {
         }
     }
 
-    if (RenderServer::HasInit()) {
-        if (render_need_reset_) {
-            GET_RS()->Reset(GetWidth(), GetHeight(), s_render_reset_flag);
-        }
-    }
+//    if (RenderServer::HasInit()) {
+//        if (render_need_reset_) {
+//            GET_RS()->Reset(GetWidth(), GetHeight(), s_render_reset_flag);
+//        }
+//    }
 
 }
 
@@ -366,6 +359,12 @@ void SDLWindow::RunEventCallback(Event& event)
 {
     if (event_callback_) {
         event_callback_(event);
+    }
+}
+
+void SDLWindow::SwapBuffers() {
+    if (GET_RS()->GetRendererType() == RendererType::OpenGL) {
+        SDL_GL_SwapWindow(sdl2_window_);
     }
 }
 

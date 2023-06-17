@@ -75,7 +75,9 @@ public:
 
     void RunEventCallback(Event& event);
 
-    SDL_Window* GetSDL2Window() const { return sdl2_window_; }
+    [[nodiscard]] SDL_Window* GetSDL2Window() const { return sdl2_window_; }
+
+    void SwapBuffers();
 
 
 private:

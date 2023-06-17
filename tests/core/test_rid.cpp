@@ -7,7 +7,7 @@
 
 #include <gtest/gtest.h>
 
-#include "gobot/core/rid.h"
+#include "gobot/core/rid.hpp"
 
 TEST(TestRID, constructor) {
     gobot::RID rid;

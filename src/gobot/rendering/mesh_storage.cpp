@@ -25,19 +25,19 @@ MeshStorage* MeshStorage::GetInstance() {
     return s_singleton;
 }
 
-void MeshStorage::MeshInitialize(const RenderRID& mesh_rid) {
+void MeshStorage::MeshInitialize(const RID& mesh_rid) {
     mesh_owner_.InitializeRID(mesh_rid, Mesh());
 }
 
-void MeshStorage::MeshClear(const RenderRID& mesh_rid) {
+void MeshStorage::MeshClear(const RID& mesh_rid) {
     Mesh* mesh = mesh_owner_.GetOrNull(mesh_rid);
     ERR_FAIL_COND(!mesh);
 }
 
-void MeshStorage::MeshFree(const RenderRID& rid) {
+void MeshStorage::MeshFree(const RID& rid) {
     Mesh* mesh = mesh_owner_.GetOrNull(rid);
     ERR_FAIL_COND(mesh == nullptr);
-    mesh_owner_.Erase(rid);
+    mesh_owner_.Free(rid);
 }
 
 }

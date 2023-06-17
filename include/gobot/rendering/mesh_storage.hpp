@@ -7,7 +7,8 @@
 
 #pragma once
 
-#include "gobot/rendering/render_rid_owner.hpp"
+#include "gobot/core/rid.hpp"
+#include "gobot/core/rid_owner.hpp"
 
 namespace gobot {
 
@@ -19,22 +20,22 @@ public:
 
     static MeshStorage* GetInstance();
 
-    void MeshInitialize(const RenderRID& mesh_rid);
+    void MeshInitialize(const RID& mesh_rid);
 
-    void MeshClear(const RenderRID& mesh_rid);
+    void MeshClear(const RID& mesh_rid);
 
-    void MeshFree(const RenderRID& rid);
+    void MeshFree(const RID& rid);
 
 private:
     static MeshStorage* s_singleton;
 
     struct Mesh {
-        RenderRID vertex_buffer{};
-        RenderRID index_buffer{};
-        RenderRID material{};
+        RID vertex_buffer{};
+        RID index_buffer{};
+        RID material{};
     };
 
-    mutable RenderRID_Owner<Mesh> mesh_owner_;
+    mutable RID_Owner<Mesh> mesh_owner_;
 };
 
 }

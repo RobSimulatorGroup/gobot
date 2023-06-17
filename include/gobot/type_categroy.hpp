@@ -10,8 +10,7 @@
 #include "gobot/core/types.hpp"
 #include "gobot/core/color.hpp"
 #include "gobot/scene/node_path.hpp"
-#include "gobot/core/rid.h"
-#include "gobot/rendering/render_rid.hpp"
+#include "gobot/core/rid.hpp"
 #include "gobot/core/math/geometry.hpp"
 #include "gobot/log.hpp"
 
@@ -125,8 +124,6 @@ inline TypeCategory GetTypeCategory(const Type& type) {
         return TypeCategory::ObjectID;
     } else if (type == Type::get<RID>()) {
         return TypeCategory::RID;
-    } else if (type == Type::get<RenderRID>()) {
-        return TypeCategory::RenderRID;
     }
 
     // math related

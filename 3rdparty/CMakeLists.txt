@@ -1,6 +1,22 @@
 add_subdirectory(rttr)
 add_subdirectory(sdl2)
 
+set(GLI_TEST_ENABLE OFF)
+add_subdirectory(gli)
+
+
+add_subdirectory(basis_univesal)
+
+add_library(stb INTERFACE)
+target_include_directories(stb INTERFACE stb/)
+
+set(GLAD_SOURCES glad/src/gl.c glad/src/vulkan.c)
+if(WIN32)
+    set(GLAD_SOURCES ${GLAD_SOURCES} glad/src/wgl.c)
+endif()
+add_library(glad ${GLAD_SOURCES})
+target_include_directories(glad PUBLIC glad/include)
+
 add_library(imgui
         imgui/imgui.cpp
         imgui/imgui.h
@@ -52,15 +68,14 @@ get_filename_component(IMGUI_USER_CONFIG "imgui_config.hpp" REALPATH BASE_DIR "$
 target_compile_definitions(imgui-gobot INTERFACE IMGUI_USER_CONFIG="${IMGUI_USER_CONFIG}")
 
 target_include_directories(imgui-gobot INTERFACE imgui imgui/backends imgui_extension imgui/misc/cpp/)
+target_link_libraries(imgui-gobot INTERFACE glad)
 
 
 find_package(OpenGL REQUIRED)
 add_executable(imgui_sdl2_opengl3_example imgui/examples/example_sdl2_opengl3/main.cpp)
-target_link_libraries(imgui_sdl2_opengl3_example imgui ${CONAN_LIBS} OpenGL::GL)
+target_link_libraries(imgui_sdl2_opengl3_example imgui ${CONAN_LIBS} glad OpenGL::GL)
 
 add_executable(binary_to_compressed_c imgui/misc/fonts/binary_to_compressed_c.cpp)
 
-set(BGFX_WITH_SDL On)
-add_subdirectory(bgfx)
 
 add_subdirectory(meshoptimizer)
