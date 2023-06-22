@@ -10,7 +10,7 @@
 #include <memory>
 
 #include <glad/gl.h>
-#include "gl_texture.hpp"
+#include "gl_texture_storage.hpp"
 
 namespace gobot::opengl {
 

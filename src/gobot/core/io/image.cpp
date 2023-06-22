@@ -384,12 +384,26 @@ void Image::SetPixel(int x, int y, const Color& color) {
 
 Ref<Image> Image::LoadFromFile(const String &path)
 {
+    // TODO(wqq)
 //    return gobot::dynamic_pointer_cast<Image>( ResourceFormatLoaderSDLImage::GetInstance()->Load(path));
+}
+
+int Image::GetImageDataSize(int width, int height, ImageFormat format, bool mipmaps) {
+    int mm;
+    return GetDstImageSize(width, height, format, mm, mipmaps ? -1 : 0);
 }
 
 String Image::GetFormatName(ImageFormat format) {
     ERR_FAIL_INDEX_V((unsigned int)format, (unsigned int)ImageFormat::MAX, String());
     return s_format_names[(unsigned int)format];
+}
+
+std::vector<uint8_t> Image::GetData() const {
+    return data_;
+}
+
+void Image::Fill(const Color &color) {
+    // TODO(wqq)
 }
 
 

@@ -120,6 +120,8 @@ public:
 
     static Ref<Image> LoadFromFile(const String &path);
 
+    static int GetImageDataSize(int width, int height, ImageFormat format, bool mipmaps = false);
+
     static ImageMemLoadFunc s_png_mem_loader_func;
 
     static ImageMemLoadFunc s_jpg_mem_loader_func;
@@ -140,6 +142,8 @@ public:
     static const char* s_format_names[(unsigned int)ImageFormat::MAX];
 
 public:
+    void Fill(const Color &color);
+
     void Rotate90();
 
     void Rotate180();
@@ -151,6 +155,8 @@ public:
     Color GetPixel(int x, int y) const;
 
     void SetPixel(int x, int y,  const Color& color);
+
+
 
 public:
     /*

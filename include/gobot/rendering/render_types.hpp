@@ -11,8 +11,8 @@ namespace gobot {
 
 enum class RendererType {
     None,
-    OpenGL,
-    OpenGLES,
+    OpenGL46,
+    OpenGLES32,
     Vulkan
 };
 
