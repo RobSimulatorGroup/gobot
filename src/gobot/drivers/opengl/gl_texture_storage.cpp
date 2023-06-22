@@ -57,8 +57,43 @@ RID TextureStorage::RenderTargetCreate() {
     return render_target_owner_.MakeRID(render_target);
 }
 
-void TextureStorage::RenderTargetFree(RID rid) {
+void TextureStorage::RenderTargetFree(RID p_rid) {
+    RenderTarget *rt = render_target_owner_.GetOrNull(p_rid);
+    ClearRenderTarget(rt);
 
+    Texture *t = GetTexture(rt->texture);
+    if (t) {
+        t->is_render_target = false;
+    }
+    render_target_owner_.Free(p_rid);
+}
+
+void TextureStorage::ClearRenderTarget(RenderTarget *rt) {
+    // there is nothing to clear when DIRECT_TO_SCREEN is used
+    if (rt->direct_to_screen) {
+        return;
+    }
+
+    if (rt->fbo) {
+        glDeleteFramebuffers(1, &rt->fbo);
+        rt->fbo = 0;
+    }
+
+    if (rt->texture.IsValid()) {
+        Texture *tex = GetTexture(rt->texture);
+        tex->width = 0;
+        tex->height = 0;
+        tex->active = false;
+        tex->render_target = nullptr;
+        tex->is_render_target = false;
+        tex->tex_id = 0;
+    }
+
+    glDeleteTextures(1, &rt->color);
+    rt->color = 0;
+
+    glDeleteTextures(1, &rt->depth);
+    rt->depth = 0;
 }
 
 void TextureStorage::Texture2DPlaceholderInitialize(RID texture) {
@@ -347,7 +382,8 @@ void TextureStorage::UpdateRenderTarget(RenderTarget* rt) {
 
         texture->is_render_target = true;
         texture->render_target = rt;
-
+        texture->tex_id = rt->color;
+        texture->active = true;
     }
 
     // TODO(wqq): Do we need this.

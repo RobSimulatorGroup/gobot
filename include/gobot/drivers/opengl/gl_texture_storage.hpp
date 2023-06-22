@@ -87,8 +87,9 @@ public:
 
     RID RenderTargetCreate();
 
-    void RenderTargetFree(RID rid);
+    void RenderTargetFree(RID p_rid);
 
+    void ClearRenderTarget(RenderTarget *rt);
 
     inline Texture* GetTexture(RID rid) {
         Texture *texture = texture_owner_.GetOrNull(rid);
