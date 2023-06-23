@@ -11,7 +11,7 @@
 namespace gobot {
 
 Texture::~Texture() {
-    RS::GetInstance()->FreeTexture(texture_rid_);
+    RS::GetInstance()->Free(texture_rid_);
     texture_rid_ = RID();
 }
 

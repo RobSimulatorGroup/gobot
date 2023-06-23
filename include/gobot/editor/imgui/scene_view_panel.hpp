@@ -21,7 +21,7 @@ class GOBOT_EXPORT SceneViewPanel : public ImGuiWindow {
 public:
     SceneViewPanel();
 
-    ~SceneViewPanel() = default;
+    ~SceneViewPanel() override;
 
     void OnImGuiContent() override;
 
@@ -33,7 +33,7 @@ public:
     std::uint32_t width_{0};
     std::uint32_t height_{0};
 
-    RID view_rid_{};
+    RID view_port_{};
 
 };
 

@@ -12,6 +12,8 @@
 #include "gobot/core/math/matrix.hpp"
 #include "gobot/core/rid.hpp"
 #include "render_types.hpp"
+#include "rendering_server_globals.hpp"
+#include "renderer_viewport.hpp"
 
 namespace gobot {
 
@@ -25,20 +27,26 @@ public:
 
     ~RenderServer() override;
 
-    static bool HasInit();
-
     RendererType GetRendererType();
 
     static RenderServer* GetInstance();
 
-    // Initialize the renderer.
-    void InitWindow();
+    // viewport
+    RID ViewportCreate() {
+        RID viewport = RSG::viewport->ViewportAllocate();
+        RSG::viewport->ViewportInitialize(viewport);
+        return viewport;
+    }
 
-    bool FreeTexture(const RID& rid);
+    void ViewportSetSize(const RID& p_rid, int width, int height) {
+        RSG::viewport->ViewportSetSize(p_rid, width, height);
+    }
+
+    void* GetRenderTargetColorTextureNativeHandle(const RID& p_render_target);
+
+    void Free(const RID& rid);
 
     RID CreateMesh();
-
-    bool FreeMesh(const RID& rid);
 
     void Draw();
 

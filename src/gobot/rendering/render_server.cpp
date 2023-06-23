@@ -12,7 +12,7 @@
 #include "gobot/rendering/rendering_server_globals.hpp"
 #include "gobot/rendering/renderer_compositor.hpp"
 #include "gobot/rendering/texture_storage.hpp"
-#include "gobot/rendering/scene_viewport.hpp"
+#include "gobot/rendering/renderer_viewport.hpp"
 #include "gobot/drivers/opengl/rasterizer_gles3.hpp"
 
 
@@ -25,10 +25,12 @@ RenderServer::RenderServer() {
     renderer_type_ = RendererType::OpenGL46;
 
     RSG::viewport = new RendererViewport();
-}
+    if (renderer_type_ == RendererType::OpenGL46) {
+        opengl::RasterizerGLES3::MakeCurrent();
+    }
+    RSG::rasterizer = RendererCompositor::Create();
 
-bool RenderServer::HasInit() {
-    return s_singleton != nullptr;
+    RSG::texture_storage = RSG::rasterizer->GetTextureStorage();
 }
 
 RendererType RenderServer::GetRendererType() {
@@ -37,8 +39,7 @@ RendererType RenderServer::GetRendererType() {
 
 RenderServer::~RenderServer() {
     s_singleton = nullptr;
-
-    delete RSG::compositor;
+    delete RSG::rasterizer;
     delete RSG::viewport;
 }
 
@@ -47,54 +48,28 @@ RenderServer* RenderServer::GetInstance() {
     return s_singleton;
 }
 
-void RenderServer::InitWindow() {
-    if (renderer_type_ == RendererType::OpenGL46) {
-        opengl::RasterizerGLES3::MakeCurrent();
-    }
-};
-
 void RenderServer::Draw() {
     SceneTree::GetInstance()->GetRoot()->GetWindow()->SwapBuffers();
 }
 
-
-//RID RenderServer::CreateTexture2D(uint16_t width,
-//                                  uint16_t height,
-//                                  bool has_mips,
-//                                  uint16_t num_layers,
-//                                  TextureFormat format,
-//                                  TextureFlags flags) {
-//    return RSG::texture_storage->CreateTexture2D(width, height, has_mips, num_layers, format, flags);
-//}
-//
-//RID RenderServer::CreateTexture3D(uint16_t width,
-//                                  uint16_t height,
-//                                  uint16_t depth,
-//                                  bool has_mips,
-//                                  TextureFormat format,
-//                                  TextureFlags flags) {
-//    return RSG::texture_storage->CreateTexture3D(width, height, depth, has_mips, format, flags);
-//}
-//
-//RID RenderServer::CreateTextureCube(uint16_t size,
-//                                    bool has_mips,
-//                                    uint16_t num_layers,
-//                                    TextureFormat format,
-//                                    TextureFlags flags) {
-//    return RSG::texture_storage->CreateTextureCube(width, height, depth, has_mips, format, flags);
-//}
-
-bool RenderServer::FreeTexture(const RID& rid) {
-//    return RSG::texture_storage->Free(rid);
+void RenderServer::Free(const RID& p_rid) {
+    if (p_rid.IsNull()) [[unlikely]] {
+        return;
+    }
+    if (RSG::viewport->Free(p_rid)) {
+        return;
+    }
 }
+
+void* RenderServer::GetRenderTargetColorTextureNativeHandle(const RID& p_render_target) {
+    RSG::viewport->GetRenderTargetColorTextureNativeHandle(p_render_target);
+}
+
 
 RID RenderServer::CreateMesh() {
     return {};
 }
 
-bool RenderServer::FreeMesh(const RID& rid) {
-    return false;
-}
 
 
 }

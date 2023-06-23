@@ -7,14 +7,13 @@
 
 #include "gobot/rendering/rendering_server_globals.hpp"
 
-
 namespace gobot {
 
 bool RenderingServerGlobals::threaded = false;
 
-RendererCompositor* RenderingServerGlobals::compositor = nullptr;
+RendererCompositor* RenderingServerGlobals::rasterizer = nullptr;
 
-TextureStorage* RenderingServerGlobals::texture_storage = nullptr;
+RendererTextureStorage* RenderingServerGlobals::texture_storage = nullptr;
 
 RendererViewport* RenderingServerGlobals::viewport = nullptr;
 

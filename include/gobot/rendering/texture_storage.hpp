@@ -15,13 +15,15 @@ namespace gobot {
 
 class RendererTextureStorage {
 public:
-
     virtual ~RendererTextureStorage(){};
 
     virtual RID RenderTargetCreate() = 0;
 
     virtual void RenderTargetFree(RID p_rid) = 0;
 
+    virtual void RenderTargetSetSize(RID p_render_target, int p_width, int p_height, uint32_t p_view_count) = 0;
+
+    virtual void* GetRenderTargetColorTextureNativeHandle(RID p_texture) = 0;
 };
 
 }

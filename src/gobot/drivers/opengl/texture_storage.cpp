@@ -96,6 +96,22 @@ void TextureStorage::ClearRenderTarget(RenderTarget *rt) {
     rt->depth = 0;
 }
 
+void TextureStorage::RenderTargetSetSize(RID p_render_target, int p_width, int p_height, uint32_t p_view_count) {
+    RenderTarget *rt = render_target_owner_.GetOrNull(p_render_target);
+    ERR_FAIL_COND(!rt);
+
+    if (p_width == rt->size.x() && p_height == rt->size.y() && p_view_count == rt->view_count) {
+        return;
+    }
+
+    ClearRenderTarget(rt);
+
+    rt->size = Vector2i(p_width, p_height);
+    rt->view_count = p_view_count;
+
+    UpdateRenderTarget(rt);
+}
+
 void TextureStorage::Texture2DPlaceholderInitialize(RID texture) {
     //this could be better optimized to reuse an existing image , done this way
     //for now to get it working
@@ -178,8 +194,11 @@ void TextureStorage::TextureSetData(RID p_texture, const Ref<Image> &p_image, in
     texture->mipmaps = mipmaps;
 }
 
-
-
+void* TextureStorage::GetRenderTargetColorTextureNativeHandle(RID p_render_target){
+    auto* rt = GetRenderTarget(p_render_target);
+    ERR_FAIL_COND_V_MSG(!rt, nullptr, "Render target cannot be null");
+    return reinterpret_cast<void*>(rt->color);
+}
 
 void TextureStorage::Texture2DInitialize(RID texture_id, const Ref<Image> &image) {
     ERR_FAIL_COND(!image.IsValid());

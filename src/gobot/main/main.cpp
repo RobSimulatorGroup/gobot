@@ -80,7 +80,6 @@ bool Main::Setup2() {
 bool Main::Start() {
     auto* main_loop = Object::New<SceneTree>();
 
-    s_render_server->InitWindow();
     USING_ENUM_BITWISE_OPERATORS;
 
     auto* editor = Object::New<Editor>();

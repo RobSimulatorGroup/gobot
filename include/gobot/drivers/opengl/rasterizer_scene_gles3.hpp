@@ -12,6 +12,8 @@
 namespace gobot::opengl {
 
 class RasterizerSceneGLES3 : public RendererSceneRender {
+public:
+
 
 
 };

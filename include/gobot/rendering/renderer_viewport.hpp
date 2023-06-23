@@ -7,21 +7,42 @@
 
 #pragma once
 
-#include "gobot/core/rid.hpp"
+#include "gobot/core/rid_owner.hpp"
+#include "gobot/core/math/matrix.hpp"
 
 namespace gobot {
 
 class RendererViewport {
 
     struct Viewport {
+        RID self;
         RID render_target;
-        RID render_target_texture;
+
+        Vector2i size;
+        uint32_t view_count;
+        bool viewport_render_direct_to_screen;
     };
 
 public:
     RendererViewport();
 
     virtual ~RendererViewport() {}
+
+    RID ViewportAllocate();
+
+    void ViewportInitialize(RID p_rid);
+
+    void ViewportSetSize(RID p_viewport, int p_width, int p_height);
+
+    bool Free(const RID& p_rid);
+
+    void* GetRenderTargetColorTextureNativeHandle(RID p_viewport);
+
+private:
+    void ViewportSetSize(Viewport *p_viewport, int p_width, int p_height, uint32_t p_view_count);
+
+private:
+    mutable RID_Owner<Viewport, true> viewport_owner_;
 };
 
 

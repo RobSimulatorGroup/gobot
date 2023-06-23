@@ -7,21 +7,21 @@
 
 #pragma once
 
+#include "gobot/rendering/renderer_compositor.hpp"
+#include "gobot/rendering/texture_storage.hpp"
+#include "gobot/rendering/renderer_viewport.hpp"
+
 namespace gobot {
 
 #define RSG RenderingServerGlobals
-
-class RendererCompositor;
-class TextureStorage;
-class RendererViewport;
 
 class RenderingServerGlobals {
 public:
     static bool threaded;
 
-    static RendererCompositor *compositor;
+    static RendererCompositor *rasterizer;
 
-    static TextureStorage* texture_storage;
+    static RendererTextureStorage* texture_storage;
 
     static RendererViewport* viewport;
 

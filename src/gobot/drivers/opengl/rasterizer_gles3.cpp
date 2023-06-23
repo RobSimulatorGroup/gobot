@@ -13,10 +13,13 @@ RasterizerGLES3 *RasterizerGLES3::s_singleton = nullptr;
 
 RasterizerGLES3::RasterizerGLES3() {
     s_singleton = this;
+
+    texture_storage_ = new opengl::TextureStorage();
 }
 
 RasterizerGLES3::~RasterizerGLES3() {
     s_singleton = nullptr;
+    delete texture_storage_;
 }
 
 void RasterizerGLES3::Initialize() {

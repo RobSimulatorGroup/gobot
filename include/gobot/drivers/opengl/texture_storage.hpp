@@ -83,18 +83,28 @@ public:
 
     virtual ~TextureStorage();
 
-    RID TextureAllocate();
-
+    // render target related
     RID RenderTargetCreate() override;
 
     void RenderTargetFree(RID p_rid) override;
 
     void ClearRenderTarget(RenderTarget *rt);
 
+    void RenderTargetSetSize(RID p_render_target, int p_width, int p_height, uint32_t p_view_count) override;
+
+    RenderTarget* GetRenderTarget(RID p_rid) { return render_target_owner_.GetOrNull(p_rid); };
+
+    void* GetRenderTargetColorTextureNativeHandle(RID p_render_target) override;
+
+    // texture related
+
+    RID TextureAllocate();
+
     inline Texture* GetTexture(RID rid) {
         Texture *texture = texture_owner_.GetOrNull(rid);
         return texture;
     }
+
 
     void Texture2DInitialize(RID texture_id, const Ref<Image> &image);
 

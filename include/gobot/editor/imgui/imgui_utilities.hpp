@@ -81,7 +81,7 @@ public:
     static void Tooltip(const char* text);
 
     // Helper function for passing Texture to ImGui::Image.
-    static void Image(const RID& texture_rid, const Vector2f & size, const Vector2f& uv0 = {0.0f, 0.0f},
+    static void Image(ImTextureID texture, const Vector2f & size, const Vector2f& uv0 = {0.0f, 0.0f},
                       const Vector2f& uv1 = {1.0f, 1.0f}, const Color& tintCol = {1.0f, 1.0f, 1.0f, 1.0f},
                       const Color& borderCol = {0.0f, 0.0f, 0.0f, 0.0f});
 

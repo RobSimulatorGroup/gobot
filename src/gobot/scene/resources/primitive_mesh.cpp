@@ -18,7 +18,7 @@ PrimitiveMesh::PrimitiveMesh()
 }
 
 PrimitiveMesh::~PrimitiveMesh() {
-    RenderServer::GetInstance()->FreeMesh(mesh_);
+    RS::GetInstance()->Free(mesh_);
 }
 
 void PrimitiveMesh::SetMaterial(const Ref<Material>& material) {

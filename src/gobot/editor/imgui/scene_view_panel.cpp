@@ -11,6 +11,7 @@
 #include "gobot/editor/editor.hpp"
 #include "gobot/scene/camera_3d.hpp"
 #include "gobot/error_macros.hpp"
+#include "gobot/rendering/render_server.hpp"
 #include "gobot/rendering/rendering_server_globals.hpp"
 #include "gobot/rendering/renderer_compositor.hpp"
 #include "gobot/rendering/texture_storage.hpp"
@@ -33,6 +34,12 @@ SceneViewPanel::SceneViewPanel()
 
     width_  = 1280;
     height_ = 800;
+
+    view_port_ = RS::GetInstance()->ViewportCreate();
+}
+
+SceneViewPanel::~SceneViewPanel() {
+    RS::GetInstance()->Free(view_port_);
 }
 
 void SceneViewPanel::OnImGuiContent()
@@ -66,7 +73,8 @@ void SceneViewPanel::OnImGuiContent()
 
     Resize(static_cast<uint32_t>(scene_view_size.x), static_cast<uint32_t>(scene_view_size.y));
 
-//    ImGuiUtilities::Image(view_rid_, {scene_view_size.x, scene_view_size.y});
+    ImGuiUtilities::Image(RS::GetInstance()->GetRenderTargetColorTextureNativeHandle(view_port_),
+                          {scene_view_size.x, scene_view_size.y});
 
     auto window_size = ImGui::GetWindowSize();
     ImVec2 min_bound = scene_view_position;
@@ -92,18 +100,9 @@ void SceneViewPanel::Resize(uint32_t width, uint32_t height) {
         height_ = height;
     }
 
-//    if(resize) {
-//        if(!view_rid_.IsValid()) {
-////            view_rid_ = RSG().texture_storage->CreateTexture2D(width_, height_, false, 1, TextureFormat::RGBA8);
-//            RSG::compositor->GetInstance()->GetSceneRenderer()->SetRenderTarget(view_rid_);
-//        } else {
-////            auto new_rid = RSG().texture_storage->CreateTexture2D(width_, height_, false, 1, TextureFormat::RGBA8);
-//            RSG().texture_storage->Free(view_rid_);
-////            view_rid_ = new_rid;
-//            RSG::compositor->GetInstance()->GetSceneRenderer()->SetRenderTarget(view_rid_);
-//        }
-//
-//    }
+    if(resize) {
+        RS::GetInstance()->ViewportCreate();
+    }
 }
 
 void SceneViewPanel::ToolBar()

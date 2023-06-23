@@ -21,6 +21,10 @@ RendererCompositor::RendererCompositor() {
     s_singleton = this;
 }
 
+RendererCompositor* RendererCompositor::Create() {
+    return CreateFunc();
+}
+
 RendererCompositor::~RendererCompositor() {
     s_singleton = nullptr;
 }

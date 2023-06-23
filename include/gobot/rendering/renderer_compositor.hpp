@@ -9,7 +9,6 @@
 
 namespace gobot {
 
-class TextureStorage;
 class FrameBufferCache;
 class RendererSceneRender;
 class RendererTextureStorage;
@@ -23,6 +22,8 @@ public:
     RendererCompositor();
 
     virtual ~RendererCompositor();
+
+    static RendererCompositor* Create();
 
     static RendererCompositor* GetInstance();
 
