@@ -11,7 +11,7 @@
 #include "gobot/core/io/image.hpp"
 #include "gobot/core/rid.hpp"
 #include "gobot/core/rid_owner.hpp"
-
+#include "gobot/rendering/texture_storage.hpp"
 
 namespace gobot::opengl {
 
@@ -77,7 +77,7 @@ struct RenderTarget {
 };
 
 
-class TextureStorage final {
+class TextureStorage : public RendererTextureStorage {
 public:
     TextureStorage();
 
@@ -85,9 +85,9 @@ public:
 
     RID TextureAllocate();
 
-    RID RenderTargetCreate();
+    RID RenderTargetCreate() override;
 
-    void RenderTargetFree(RID p_rid);
+    void RenderTargetFree(RID p_rid) override;
 
     void ClearRenderTarget(RenderTarget *rt);
 
@@ -101,16 +101,6 @@ public:
     void Texture2DPlaceholderInitialize(RID texture);
 
     void TextureSetData(RID texture_id, const Ref<Image> &image, int layer = 0);
-
-    TextureStorage(GLenum type, const char* file_name);
-
-    TextureStorage(GLenum type, const char* file_name, GLenum clamp);
-
-    TextureStorage(GLenum type, int width, int height, GLenum internal_format);
-
-    TextureStorage(int w, int h, const void* img);
-
-
 
     GLuint64 GetHandleBindless() const { return handle_bindless_; }
 

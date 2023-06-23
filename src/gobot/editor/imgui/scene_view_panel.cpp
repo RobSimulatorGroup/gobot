@@ -92,18 +92,18 @@ void SceneViewPanel::Resize(uint32_t width, uint32_t height) {
         height_ = height;
     }
 
-    if(resize) {
-        if(!view_rid_.IsValid()) {
-//            view_rid_ = RSG().texture_storage->CreateTexture2D(width_, height_, false, 1, TextureFormat::RGBA8);
-            RSG::compositor->GetInstance()->GetSceneRenderer()->SetRenderTarget(view_rid_);
-        } else {
-//            auto new_rid = RSG().texture_storage->CreateTexture2D(width_, height_, false, 1, TextureFormat::RGBA8);
-            RSG().texture_storage->Free(view_rid_);
-//            view_rid_ = new_rid;
-            RSG::compositor->GetInstance()->GetSceneRenderer()->SetRenderTarget(view_rid_);
-        }
-
-    }
+//    if(resize) {
+//        if(!view_rid_.IsValid()) {
+////            view_rid_ = RSG().texture_storage->CreateTexture2D(width_, height_, false, 1, TextureFormat::RGBA8);
+//            RSG::compositor->GetInstance()->GetSceneRenderer()->SetRenderTarget(view_rid_);
+//        } else {
+////            auto new_rid = RSG().texture_storage->CreateTexture2D(width_, height_, false, 1, TextureFormat::RGBA8);
+//            RSG().texture_storage->Free(view_rid_);
+////            view_rid_ = new_rid;
+//            RSG::compositor->GetInstance()->GetSceneRenderer()->SetRenderTarget(view_rid_);
+//        }
+//
+//    }
 }
 
 void SceneViewPanel::ToolBar()

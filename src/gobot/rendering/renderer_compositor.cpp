@@ -15,20 +15,14 @@ namespace gobot {
 
 RendererCompositor* RendererCompositor::s_singleton = nullptr;
 
+RendererCompositor *(*RendererCompositor::CreateFunc)() = nullptr;
+
 RendererCompositor::RendererCompositor() {
     s_singleton = this;
-
-    frame_buffer_cache_ = new FrameBufferCache();
-    texture_storage_ = new TextureStorage();
-    scene_ = new SceneRenderer();
 }
 
 RendererCompositor::~RendererCompositor() {
     s_singleton = nullptr;
-
-    delete frame_buffer_cache_;
-    delete texture_storage_;
-    delete scene_;
 }
 
 RendererCompositor* RendererCompositor::GetInstance() {
@@ -36,14 +30,6 @@ RendererCompositor* RendererCompositor::GetInstance() {
     return s_singleton;
 }
 
-
-TextureStorage* RendererCompositor::GetTextureStorage() {
-    return texture_storage_;
-}
-
-SceneRenderer* RendererCompositor::GetSceneRenderer() {
-    return scene_;
-}
 
 
 }

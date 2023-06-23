@@ -35,28 +35,6 @@ public:
     // Initialize the renderer.
     void InitWindow();
 
-
-    // render texture
-//    RID CreateTexture2D(uint16_t width,
-//                              uint16_t height,
-//                              bool has_mips,
-//                              uint16_t num_layers,
-//                              TextureFormat format,
-//                              TextureFlags flags);
-//
-//    RID CreateTexture3D(uint16_t width,
-//                              uint16_t height,
-//                              uint16_t depth,
-//                              bool has_mips,
-//                              TextureFormat format,
-//                              TextureFlags flags);
-//
-//    RID CreateTextureCube(uint16_t size,
-//                                bool has_mips,
-//                                uint16_t num_layers,
-//                                TextureFormat format,
-//                                TextureFlags flags);
-
     bool FreeTexture(const RID& rid);
 
     RID CreateMesh();
@@ -65,6 +43,8 @@ public:
 
 private:
     static RenderServer* s_singleton;
+
+    RendererType renderer_type_;
 
 };
 

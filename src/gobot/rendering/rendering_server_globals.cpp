@@ -16,4 +16,6 @@ RendererCompositor* RenderingServerGlobals::compositor = nullptr;
 
 TextureStorage* RenderingServerGlobals::texture_storage = nullptr;
 
+RendererViewport* RenderingServerGlobals::viewport = nullptr;
+
 }

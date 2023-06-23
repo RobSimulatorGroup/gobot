@@ -5,7 +5,7 @@
  * This file is created by Qiqi Wu, 23-6-13
 */
 
-#include "gobot/drivers/opengl/gl_texture_storage.hpp"
+#include "gobot/drivers/opengl/texture_storage.hpp"
 #include "gobot/scene/resources/texture.hpp"
 
 #include <stb_image.h>

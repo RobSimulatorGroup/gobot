@@ -11,10 +11,14 @@ namespace gobot {
 
 class TextureStorage;
 class FrameBufferCache;
-class SceneRenderer;
+class RendererSceneRender;
+class RendererTextureStorage;
 
 
 class RendererCompositor {
+protected:
+    static RendererCompositor*(*CreateFunc)();
+
 public:
     RendererCompositor();
 
@@ -22,14 +26,19 @@ public:
 
     static RendererCompositor* GetInstance();
 
-    TextureStorage* GetTextureStorage();
+    virtual RendererSceneRender* GetScene() = 0;
 
-    SceneRenderer* GetSceneRenderer();
+    virtual RendererTextureStorage* GetTextureStorage() = 0;
+
+    virtual void Initialize() = 0;
+
+    virtual void BeginFrame(double frame_step) = 0;
+
+    virtual void EndFrame(bool p_swap_buffers) = 0;
+
+    virtual void Finalize() = 0;
 
 private:
-    TextureStorage* texture_storage_ = nullptr;
-    FrameBufferCache* frame_buffer_cache_ = nullptr;
-    SceneRenderer* scene_ = nullptr;
 
     static RendererCompositor* s_singleton;
 

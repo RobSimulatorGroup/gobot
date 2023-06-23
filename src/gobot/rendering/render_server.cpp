@@ -12,6 +12,8 @@
 #include "gobot/rendering/rendering_server_globals.hpp"
 #include "gobot/rendering/renderer_compositor.hpp"
 #include "gobot/rendering/texture_storage.hpp"
+#include "gobot/rendering/scene_viewport.hpp"
+#include "gobot/drivers/opengl/rasterizer_gles3.hpp"
 
 
 namespace gobot {
@@ -20,10 +22,9 @@ RenderServer* RenderServer::s_singleton = nullptr;
 
 RenderServer::RenderServer() {
     s_singleton =  this;
+    renderer_type_ = RendererType::OpenGL46;
 
-    RSG::compositor = new RendererCompositor();
-
-    RSG::texture_storage = RSG::compositor->GetTextureStorage();
+    RSG::viewport = new RendererViewport();
 }
 
 bool RenderServer::HasInit() {
@@ -38,6 +39,7 @@ RenderServer::~RenderServer() {
     s_singleton = nullptr;
 
     delete RSG::compositor;
+    delete RSG::viewport;
 }
 
 RenderServer* RenderServer::GetInstance() {
@@ -46,15 +48,9 @@ RenderServer* RenderServer::GetInstance() {
 }
 
 void RenderServer::InitWindow() {
-    auto window = SceneTree::GetInstance()->GetRoot()->GetWindow();
-//    RenderInitProps init;
-//    init.type     = bgfx::RendererType::Count; // auto select
-//    init.vendorId = ENUM_UINT_CAST(VendorID::None); // auto select
-//    init.platformData.nwh  = window->GetNativeWindowHandle();
-//    init.platformData.ndt  = window->GetNativeDisplayHandle();
-//    init.resolution.width  = window->GetWidth();
-//    init.resolution.height = window->GetHeight();
-//    init.resolution.reset  = ENUM_UINT_CAST(reset_flags_); //  Enable V-Sync.
+    if (renderer_type_ == RendererType::OpenGL46) {
+        opengl::RasterizerGLES3::MakeCurrent();
+    }
 };
 
 
@@ -85,7 +81,7 @@ void RenderServer::InitWindow() {
 //}
 
 bool RenderServer::FreeTexture(const RID& rid) {
-    return RSG::texture_storage->Free(rid);
+//    return RSG::texture_storage->Free(rid);
 }
 
 RID RenderServer::CreateMesh() {
