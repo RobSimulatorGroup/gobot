@@ -15,8 +15,7 @@
 
 namespace gobot {
 
-#define GET_RS()     \
-    RenderServer::GetInstance()
+#define RS RenderServer
 
 
 class GOBOT_EXPORT RenderServer : public Object {
@@ -40,6 +39,8 @@ public:
     RID CreateMesh();
 
     bool FreeMesh(const RID& rid);
+
+    void Draw();
 
 private:
     static RenderServer* s_singleton;

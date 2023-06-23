@@ -33,6 +33,8 @@ public:
 
     SDLWindow* GetWindow() { return window_.get(); }
 
+    void SwapBuffers();
+
 Q_SIGNALS:
     void windowCloseRequested();
     void windowResizeRequested(WindowResizeEvent& event);

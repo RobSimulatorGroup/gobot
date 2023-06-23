@@ -78,6 +78,9 @@ void Window::RegisterWindowCallbacks()
     window_->SetEventCallback(BIND_EVENT_FN(Window::OnEvent));
 }
 
+void Window::SwapBuffers() {
+    window_->SwapBuffers();
+}
 
 
 }

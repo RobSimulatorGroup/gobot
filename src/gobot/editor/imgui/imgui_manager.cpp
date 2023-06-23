@@ -28,18 +28,12 @@ ImGuiManager* ImGuiManager::s_singleton = nullptr;
 
 ImGuiManager::ImGuiManager()
 {
-    imgui_renderer_ = std::make_unique<opengl::ImGuiRenderer>();
-
-    auto window = SceneTree::GetInstance()->GetRoot()->GetWindow();
-    imgui_renderer_->Init(window->GetSDL2Window());
-
+    ImGui::CreateContext();
     font_size_ = 16.0f;
     s_singleton = this;
 
-    LOG_INFO("ImGui Version : {0}", IMGUI_VERSION);
-
-    ImGui::CreateContext();
     ImGui::StyleColorsDark();
+    SetImGuiStyle();
 
     ImGuiIO& io = ImGui::GetIO();
     io.ConfigFlags |= ImGuiConfigFlags_NavEnableKeyboard;       // Enable Keyboard Controls
@@ -49,8 +43,12 @@ ImGuiManager::ImGuiManager()
     //io.ConfigViewportsNoAutoMerge = true;
     //io.ConfigViewportsNoTaskBarIcon = true;
 
-    SetImGuiStyle();
+    imgui_renderer_ = std::make_unique<opengl::ImGuiRenderer>();
 
+    auto window = SceneTree::GetInstance()->GetRoot()->GetWindow();
+    imgui_renderer_->Init(window->GetSDL2Window());
+
+    LOG_INFO("ImGui Version : {0}", IMGUI_VERSION);
 }
 
 ImGuiManager::~ImGuiManager()
@@ -68,13 +66,12 @@ ImGuiManager* ImGuiManager::GetInstance()
 }
 
 void ImGuiManager::BeginFrame() {
-
+    imgui_renderer_->NewFrame();
     ImGui::NewFrame();
     ImGuizmo::BeginFrame();
 }
 
 void ImGuiManager::EndFrame() {
-    ImGui::Render();
     imgui_renderer_->Render();
 }
 

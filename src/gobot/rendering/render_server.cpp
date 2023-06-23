@@ -32,7 +32,7 @@ bool RenderServer::HasInit() {
 }
 
 RendererType RenderServer::GetRendererType() {
-    return RendererType();
+    return renderer_type_;
 }
 
 RenderServer::~RenderServer() {
@@ -52,6 +52,10 @@ void RenderServer::InitWindow() {
         opengl::RasterizerGLES3::MakeCurrent();
     }
 };
+
+void RenderServer::Draw() {
+    SceneTree::GetInstance()->GetRoot()->GetWindow()->SwapBuffers();
+}
 
 
 //RID RenderServer::CreateTexture2D(uint16_t width,

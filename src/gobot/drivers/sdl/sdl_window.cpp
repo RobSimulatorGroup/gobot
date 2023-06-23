@@ -363,7 +363,7 @@ void SDLWindow::RunEventCallback(Event& event)
 }
 
 void SDLWindow::SwapBuffers() {
-    if (GET_RS()->GetRendererType() == RendererType::OpenGL46) {
+    if (RS::GetInstance()->GetRendererType() == RendererType::OpenGL46) {
         SDL_GL_SwapWindow(sdl2_window_);
     }
 }

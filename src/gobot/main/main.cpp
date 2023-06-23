@@ -104,11 +104,11 @@ bool Main::Iteration()
         exit = true;
     }
 
-//    RSG::compositor->GetInstance()->GetSceneRenderer()->OnRenderer(nullptr);
-
     if (OS::GetInstance()->GetMainLoop()->Process(duration)) {
         exit = true;
     }
+
+    RS::GetInstance()->Draw();
 
 
     LOG_INFO("1111");

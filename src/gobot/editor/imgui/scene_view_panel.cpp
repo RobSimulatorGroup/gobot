@@ -66,7 +66,7 @@ void SceneViewPanel::OnImGuiContent()
 
     Resize(static_cast<uint32_t>(scene_view_size.x), static_cast<uint32_t>(scene_view_size.y));
 
-    ImGuiUtilities::Image(view_rid_, {scene_view_size.x, scene_view_size.y});
+//    ImGuiUtilities::Image(view_rid_, {scene_view_size.x, scene_view_size.y});
 
     auto window_size = ImGui::GetWindowSize();
     ImVec2 min_bound = scene_view_position;
