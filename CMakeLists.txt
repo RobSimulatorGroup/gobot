@@ -79,7 +79,7 @@ endif()
 
 find_package(Qt5 5.15 COMPONENTS Core CONFIG REQUIRED)
 find_package (Eigen3 3.4 CONFIG REQUIRED)
-find_package(OpenGL REQUIRED)
+#find_package(OpenGL REQUIRED)
 
 INCLUDE(GenerateExportHeader)
 
@@ -114,9 +114,10 @@ target_include_directories(gobot
 target_link_libraries(gobot
     PUBLIC
     RTTR::Core
-    OpenGL::GL
+#    OpenGL::GL
     Qt5::Core
     imgui-gobot
+        glad
     SDL2::SDL2
     stb
     gli

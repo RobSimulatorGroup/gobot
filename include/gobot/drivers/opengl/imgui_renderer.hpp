@@ -11,7 +11,7 @@
 
 namespace gobot::opengl {
 
-class ImGuiRenderer : public gobot::ImGuiRenderer {
+class ImGuiGLRenderer : public gobot::ImGuiRenderer {
 public:
     void Init(SDL_Window* window) override;
 

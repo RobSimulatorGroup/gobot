@@ -32,9 +32,6 @@ SceneViewPanel::SceneViewPanel()
 
     current_scene_ = nullptr;
 
-    width_  = 1280;
-    height_ = 800;
-
     view_port_ = RS::GetInstance()->ViewportCreate();
 }
 
@@ -56,7 +53,7 @@ void SceneViewPanel::OnImGuiContent()
         return;
     }
 
-    auto scene_view_size     = ImGui::GetWindowContentRegionMax() - ImGui::GetWindowContentRegionMin() - offset * 0.5f;
+    auto scene_view_size = ImGui::GetWindowContentRegionMax() - ImGui::GetWindowContentRegionMin() - offset * 0.5f;
     auto scene_view_position = ImGui::GetWindowPos() + offset;
 
     scene_view_size.x -= static_cast<int>(scene_view_size.x) % 2 != 0 ? 1.0f : 0.0f;
@@ -78,7 +75,7 @@ void SceneViewPanel::OnImGuiContent()
 
     auto window_size = ImGui::GetWindowSize();
     ImVec2 min_bound = scene_view_position;
-    ImVec2 max_bound   = { min_bound.x + window_size.x, min_bound.y + window_size.y };
+    ImVec2 max_bound = { min_bound.x + window_size.x, min_bound.y + window_size.y };
 
     bool mouse_inside_rect = ImGui::IsMouseHoveringRect(min_bound, max_bound);
 
@@ -92,7 +89,7 @@ void SceneViewPanel::OnImGuiContent()
 
 void SceneViewPanel::Resize(uint32_t width, uint32_t height) {
     bool resize = false;
-    ERR_FAIL_COND_MSG(width == 0 || height == 0, "Game View Dimensions 0");
+    ERR_FAIL_COND_MSG(width == 0 || height == 0, "Scene3D View Dimensions 0");
 
     if(width_ != width || height_ != height) {
         resize   = true;
@@ -101,7 +98,7 @@ void SceneViewPanel::Resize(uint32_t width, uint32_t height) {
     }
 
     if(resize) {
-        RS::GetInstance()->ViewportCreate();
+        RS::GetInstance()->ViewportSetSize(view_port_, width_, height_);
     }
 }
 

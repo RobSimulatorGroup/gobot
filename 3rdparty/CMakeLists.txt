@@ -10,10 +10,7 @@ add_subdirectory(basis_univesal)
 add_library(stb INTERFACE)
 target_include_directories(stb INTERFACE stb/)
 
-set(GLAD_SOURCES glad/src/gl.c glad/src/vulkan.c)
-if(WIN32)
-    set(GLAD_SOURCES ${GLAD_SOURCES} glad/src/wgl.c)
-endif()
+set(GLAD_SOURCES glad/src/glad.c)
 add_library(glad ${GLAD_SOURCES})
 target_include_directories(glad PUBLIC glad/include)
 

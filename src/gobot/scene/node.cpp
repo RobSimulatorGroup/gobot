@@ -50,7 +50,8 @@ void Node::NotificationCallBack(NotificationType notification) {
             }
 
             // Kill children as cleanly as possible
-            for (auto & child : children_) {
+            while (children_.size()) {
+                auto* child = children_.back(); // begin from the end because its faster and more consistent with creation
                 Delete(child);
             }
         } break;

@@ -14,10 +14,12 @@
 #include "gobot/platfom.hpp"
 #include "gobot/log.hpp"
 #include "gobot/error_macros.hpp"
+#include "gobot/rendering/render_server.hpp"
 
 #include <imgui_impl_sdl2.h>
 #include <SDL.h>
 #include <SDL_syswm.h>
+#include "glad/glad.h"
 
 
 #ifndef ENTRY_CONFIG_USE_WAYLAND
@@ -42,6 +44,23 @@ SDLWindow::SDLWindow()
         CRASH_COND_MSG(SDL_Init(SDL_INIT_VIDEO) < 0, "Could not initialize SDL2!");
     }
 
+    if (RS::GetInstance()->GetRendererType() == RendererType::OpenGL46) {
+        SDL_GL_SetAttribute(SDL_GL_CONTEXT_FLAGS, 0);
+        SDL_GL_SetAttribute(SDL_GL_CONTEXT_PROFILE_MASK, SDL_GL_CONTEXT_PROFILE_CORE);
+        SDL_GL_SetAttribute(SDL_GL_CONTEXT_MAJOR_VERSION, 4);
+        SDL_GL_SetAttribute(SDL_GL_CONTEXT_MINOR_VERSION, 6);
+
+        // From 2.0.18: Enable native IME.
+#ifdef SDL_HINT_IME_SHOW_UI
+        SDL_SetHint(SDL_HINT_IME_SHOW_UI, "1");
+#endif
+
+        SDL_GL_SetAttribute(SDL_GL_DOUBLEBUFFER, 1);
+        SDL_GL_SetAttribute(SDL_GL_DEPTH_SIZE, 24);
+        SDL_GL_SetAttribute(SDL_GL_STENCIL_SIZE, 8);
+    }
+
+
     sdl2_window_ = SDL_CreateWindow(s_default_window_title,
                                     SDL_WINDOWPOS_CENTERED,
                                     SDL_WINDOWPOS_CENTERED,
@@ -50,6 +69,20 @@ SDLWindow::SDLWindow()
                                       SDL_WINDOW_SHOWN | SDL_WINDOW_OPENGL | SDL_WINDOW_RESIZABLE);
 
     CRASH_COND_MSG(sdl2_window_ == nullptr, fmt::format("Error creating window: {}", SDL_GetError()));
+
+
+    if (RS::GetInstance()->GetRendererType() == RendererType::OpenGL46) {
+        SDL_GLContext gl_context = SDL_GL_CreateContext(sdl2_window_);
+        SDL_GL_MakeCurrent(sdl2_window_, gl_context);
+        SDL_GL_SetSwapInterval(1); // Enable vsync
+
+        // Check OpenGL properties
+        printf("OpenGL loaded\n");
+        gladLoadGLLoader(SDL_GL_GetProcAddress);
+        printf("Vendor:   %s\n", glGetString(GL_VENDOR));
+        printf("Renderer: %s\n", glGetString(GL_RENDERER));
+        printf("Version:  %s\n", glGetString(GL_VERSION));
+    }
 
     windows_id_ = SDL_GetWindowID(sdl2_window_);
 }

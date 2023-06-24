@@ -7,7 +7,7 @@
 
 #pragma once
 
-#include <glad/gl.h>
+#include "glad/glad.h"
 #include "gobot/core/io/image.hpp"
 #include "gobot/core/rid.hpp"
 #include "gobot/core/rid_owner.hpp"

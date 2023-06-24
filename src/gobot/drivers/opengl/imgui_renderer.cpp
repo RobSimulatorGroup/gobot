@@ -13,39 +13,23 @@
 
 namespace gobot::opengl {
 
-void ImGuiRenderer::Init(SDL_Window* window) {
+void ImGuiGLRenderer::Init(SDL_Window* window) {
     // Setup Platform/Renderer backends
-    // GL 3.0 + GLSL 130
     const char* glsl_version = "#version 460";
-    SDL_GL_SetAttribute(SDL_GL_CONTEXT_FLAGS, 0);
-    SDL_GL_SetAttribute(SDL_GL_CONTEXT_PROFILE_MASK, SDL_GL_CONTEXT_PROFILE_CORE);
-    SDL_GL_SetAttribute(SDL_GL_CONTEXT_MAJOR_VERSION, 4);
-    SDL_GL_SetAttribute(SDL_GL_CONTEXT_MINOR_VERSION, 6);
 
-    // From 2.0.18: Enable native IME.
-#ifdef SDL_HINT_IME_SHOW_UI
-    SDL_SetHint(SDL_HINT_IME_SHOW_UI, "1");
-#endif
-
-    SDL_GL_SetAttribute(SDL_GL_DOUBLEBUFFER, 1);
-    SDL_GL_SetAttribute(SDL_GL_DEPTH_SIZE, 24);
-    SDL_GL_SetAttribute(SDL_GL_STENCIL_SIZE, 8);
-
-    SDL_GLContext gl_context = SDL_GL_CreateContext(window);
-    SDL_GL_MakeCurrent(window, gl_context);
-    SDL_GL_SetSwapInterval(1); // Enable vsync
+    SDL_GLContext gl_context = SDL_GL_GetCurrentContext();
 
     ImGui_ImplSDL2_InitForOpenGL(window, gl_context);
     ImGui_ImplOpenGL3_Init(glsl_version);
 }
 
-void ImGuiRenderer::NewFrame() {
+void ImGuiGLRenderer::NewFrame() {
     // Start the Dear ImGui frame
     ImGui_ImplOpenGL3_NewFrame();
     ImGui_ImplSDL2_NewFrame();
 }
 
-void ImGuiRenderer::Render() {
+void ImGuiGLRenderer::Render() {
     ImGui::Render();
     ImGui_ImplOpenGL3_RenderDrawData(ImGui::GetDrawData());
 
@@ -62,7 +46,7 @@ void ImGuiRenderer::Render() {
     }
 }
 
-void ImGuiRenderer::RebuildFontTexture() {
+void ImGuiGLRenderer::RebuildFontTexture() {
     ImGui_ImplOpenGL3_DestroyFontsTexture();
     ImGui_ImplOpenGL3_CreateFontsTexture();
 }

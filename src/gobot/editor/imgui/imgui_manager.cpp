@@ -13,6 +13,7 @@
 #include "gobot/platfom.hpp"
 #include "gobot/error_macros.hpp"
 #include "gobot/log.hpp"
+#include "gobot/rendering/render_server.hpp"
 #include "imgui.h"
 #include "imgui_impl_sdl2.h"
 #include "imgui_extension/fonts/RobotoRegular.inl"
@@ -43,7 +44,11 @@ ImGuiManager::ImGuiManager()
     //io.ConfigViewportsNoAutoMerge = true;
     //io.ConfigViewportsNoTaskBarIcon = true;
 
-    imgui_renderer_ = std::make_unique<opengl::ImGuiRenderer>();
+    if (RS::GetInstance()->GetRendererType() == RendererType::OpenGL46) {
+        imgui_renderer_ = std::make_unique<opengl::ImGuiGLRenderer>();
+    } else {
+        // TODO(wqq)
+    }
 
     auto window = SceneTree::GetInstance()->GetRoot()->GetWindow();
     imgui_renderer_->Init(window->GetSDL2Window());

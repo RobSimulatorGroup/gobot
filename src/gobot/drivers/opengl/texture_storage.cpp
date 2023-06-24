@@ -89,10 +89,14 @@ void TextureStorage::ClearRenderTarget(RenderTarget *rt) {
         tex->tex_id = 0;
     }
 
-    glDeleteTextures(1, &rt->color);
+    if (rt->color) {
+        glDeleteTextures(1, &rt->color);
+    }
     rt->color = 0;
 
-    glDeleteTextures(1, &rt->depth);
+    if (rt->depth) {
+        glDeleteTextures(1, &rt->depth);
+    }
     rt->depth = 0;
 }
 
@@ -346,9 +350,9 @@ void TextureStorage::UpdateRenderTarget(RenderTarget* rt) {
     rt->image_format = ImageFormat::RGBA8;
 
     // TODO(wqq): Do we need this.
-    glDisable(GL_SCISSOR_TEST);
-    glColorMask(1, 1, 1, 1);
-    glDepthMask(GL_FALSE);
+//    glDisable(GL_SCISSOR_TEST);
+//    glColorMask(1, 1, 1, 1);
+//    glDepthMask(GL_FALSE);
 
     {
         // TODO(wqq) support use_multiview
