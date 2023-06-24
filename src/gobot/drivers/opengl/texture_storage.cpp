@@ -399,7 +399,7 @@ void TextureStorage::UpdateRenderTarget(RenderTarget* rt) {
             rt->size.y() = 0;
             rt->color = 0;
             rt->depth = 0;
-            LOG_WARN("Could not create render target, status: " + GetFramebufferError(status));
+            LOG_WARN("Could not create render target, status: {}", GetFramebufferError(status));
             return;
         }
 

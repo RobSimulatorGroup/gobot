@@ -126,7 +126,7 @@ public:
 		return "GL_FRAMEBUFFER_INCOMPLETE_READ_BUFFER";
 	}
 #endif
-        return {p_status};
+        return {std::to_string(p_status).c_str()};
     }
 
 
