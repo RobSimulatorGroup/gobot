@@ -74,30 +74,21 @@ Ref<Resource> ResourceLoader::LoadImpl(const String &path,
     return {};
 }
 
-
+// TODO(wqq): Add multi-thread loader
 Ref<Resource> ResourceLoader::Load(const String &path,
                                    const String &type_hint,
                                    ResourceFormatLoader::CacheMode cache_mode) {
     String local_path = ValidateLocalPath(path);
 
-    if (cache_mode != ResourceFormatLoader::CacheMode::Ignore) {
-        Ref<Resource> existing = ResourceCache::GetRef(local_path);
+    Ref<Resource> res = LoadImpl(path, type_hint, cache_mode);
+    ERR_FAIL_COND_V_MSG(!res, {}, fmt::format("Loading resource: {} failed.", path));
 
-        if (existing.IsValid()) {
-            return existing; //use cached
+    if (res.IsValid()) {
+        if (cache_mode != ResourceFormatLoader::CacheMode::Ignore) {
+            res->SetPath(local_path);
         }
-
-        // TODO(wqq): Add multi-thread loader
-        Ref<Resource> res = LoadImpl(path, type_hint, cache_mode);
-        ERR_FAIL_COND_V_MSG(!res, {}, fmt::format("Loading resource: {} failed.", path));
-
-        return res;
-    } else {
-        Ref<Resource> res = LoadImpl(path, type_hint, cache_mode);
-        ERR_FAIL_COND_V_MSG(!res, {}, fmt::format("Loading resource: {} failed.", path));
-
-        return res;
     }
+    return res;
 }
 
 bool ResourceLoader::Exists(const String &path, const String &type_hint) {

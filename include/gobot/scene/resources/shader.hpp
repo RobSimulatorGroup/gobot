@@ -8,16 +8,50 @@
 #pragma once
 
 #include "gobot/core/io/resource.hpp"
+#include "gobot/core/rid.hpp"
+#include "gobot/core/io/resource_loader.hpp"
 
 namespace gobot {
 
-class Shader : public Resource {
+enum class ShaderType {
+    None,
+    VertexShader,
+    FragmentShader,
+    GeometryShader,
+    ComputeShader,
+    TessControlShader,
+    TessEvaluationShader,
+};
+
+class GOBOT_EXPORT Shader : public Resource {
     GOBCLASS(Shader, Resource)
 public:
+    Shader();
 
+    ~Shader() override;
+
+    void SetCode(const String &p_code);
+
+    String GetCode() const;
+
+    ShaderType GetShaderType() const;
+
+    RID GetRid() const override;
 
 private:
+    RID shader_;
+    ShaderType shader_type_{ShaderType::None};
+    String code_;
+};
 
+class GOBOT_EXPORT ResourceFormatLoaderShader : public ResourceFormatLoader {
+    GOBCLASS(ResourceFormatLoaderShader, ResourceFormatLoader)
+public:
+    Ref<Resource> Load(const String &p_path, const String &p_original_path = "", CacheMode p_cache_mode = CacheMode::Reuse) override;
+
+    void GetRecognizedExtensions(std::vector<String> *extensions) const override;
+
+    [[nodiscard]] bool HandlesType(const String &type) const override;
 };
 
 }

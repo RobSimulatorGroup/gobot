@@ -7,11 +7,13 @@
 
 #include "gobot/scene/scene_initializer.hpp"
 #include "gobot/core/io/resource_format_scene.hpp"
+#include "gobot/scene/resources/shader.hpp"
 
 namespace gobot {
 
 static Ref<ResourceFormatSaverScene> s_resource_saver_scene = nullptr;
 static Ref<ResourceFormatLoaderScene> s_resource_loader_scene = nullptr;
+static Ref<ResourceFormatLoaderShader> s_resource_loader_shader = nullptr;
 
 
 void SceneInitializer::Init() {
@@ -20,6 +22,9 @@ void SceneInitializer::Init() {
 
     s_resource_loader_scene = MakeRef<ResourceFormatLoaderScene>();
     ResourceLoader::AddResourceFormatLoader(s_resource_loader_scene, true);
+
+    s_resource_loader_shader = MakeRef<ResourceFormatLoaderShader>();
+    ResourceLoader::AddResourceFormatLoader(s_resource_loader_shader, true);
 }
 
 void SceneInitializer::Destroy() {
@@ -28,6 +33,9 @@ void SceneInitializer::Destroy() {
 
     ResourceLoader::RemoveResourceFormatLoader(s_resource_loader_scene);
     s_resource_loader_scene.Reset();
+
+    ResourceLoader::RemoveResourceFormatLoader(s_resource_loader_shader);
+    s_resource_loader_shader.Reset();
 }
 
 }

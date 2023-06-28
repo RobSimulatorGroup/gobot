@@ -12,6 +12,7 @@ namespace gobot {
 class FrameBufferCache;
 class RendererSceneRender;
 class RendererTextureStorage;
+class ShaderStorage;
 
 
 class RendererCompositor {
@@ -30,6 +31,8 @@ public:
     virtual RendererSceneRender* GetScene() = 0;
 
     virtual RendererTextureStorage* GetTextureStorage() = 0;
+
+    virtual ShaderStorage* GetShaderStorage() = 0;
 
     virtual void Initialize() = 0;
 

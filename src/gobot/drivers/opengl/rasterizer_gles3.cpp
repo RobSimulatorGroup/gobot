@@ -15,6 +15,7 @@ RasterizerGLES3::RasterizerGLES3() {
     s_singleton = this;
 
     texture_storage_ = new opengl::TextureStorage();
+    shader_storage_ = new opengl::GLShaderStorage;
 }
 
 RasterizerGLES3::~RasterizerGLES3() {

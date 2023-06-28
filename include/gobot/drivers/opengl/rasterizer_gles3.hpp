@@ -10,6 +10,7 @@
 #include "gobot/rendering/renderer_compositor.hpp"
 #include "gobot/drivers/opengl/texture_storage.hpp"
 #include "gobot/drivers/opengl/rasterizer_gles3.hpp"
+#include "gobot/drivers/opengl/shader_storage.hpp"
 #include "gobot/drivers/opengl/rasterizer_scene_gles3.hpp"
 
 namespace gobot::opengl {
@@ -26,6 +27,10 @@ public:
 
     RendererTextureStorage* GetTextureStorage() override {
         return texture_storage_;
+    }
+
+    ShaderStorage* GetShaderStorage() override {
+        return shader_storage_;
     }
 
     void Initialize() override;
@@ -52,6 +57,7 @@ private:
 
     TextureStorage* texture_storage_ = nullptr;
     RasterizerSceneGLES3* scene_ = nullptr;
+    ShaderStorage* shader_storage_ = nullptr;
 };
 
 }

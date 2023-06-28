@@ -31,6 +31,7 @@ RenderServer::RenderServer() {
     RSG::rasterizer = RendererCompositor::Create();
 
     RSG::texture_storage = RSG::rasterizer->GetTextureStorage();
+    RSG::shader_storage = RSG::rasterizer->GetShaderStorage();
 }
 
 RendererType RenderServer::GetRendererType() {

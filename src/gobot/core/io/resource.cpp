@@ -258,6 +258,10 @@ bool Resource::CopyFrom(const Ref<Resource> &resource) {
     return true;
 }
 
+RID Resource::GetRid() const {
+    return {};
+}
+
 
 std::unordered_map<String, Resource*> ResourceCache::s_resources;
 std::recursive_mutex ResourceCache::s_lock;

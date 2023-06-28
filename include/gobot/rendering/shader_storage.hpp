@@ -2,21 +2,27 @@
  * Copyright(c) 2021-2023, RobSimulatorGroup, Qiqi Wu<1258552199@qq.com>.
  * Everyone is permitted to copy and distribute verbatim copies of this license document, but changing it is not allowed.
  * This version of the GNU Lesser General Public License incorporates the terms and conditions of version 3 of the GNU General Public License.
- * This file is created by Qiqi Wu, 23-3-23
+ * This file is created by Qiqi Wu, 23-6-27
 */
 
-#include "gobot/rendering/rendering_server_globals.hpp"
+#pragma once
 
 namespace gobot {
 
-bool RenderingServerGlobals::threaded = false;
+class ShaderStorage {
+public:
+    virtual ~ShaderStorage() {};
 
-RendererCompositor* RenderingServerGlobals::rasterizer = nullptr;
+    virtual RID ShaderAllocate() = 0;
 
-RendererTextureStorage* RenderingServerGlobals::texture_storage = nullptr;
+    virtual void Initialize(RID shader) = 0;
 
-RendererViewport* RenderingServerGlobals::viewport = nullptr;
+    virtual void ShaderSetCode(RID shader, String code) = 0;
 
-ShaderStorage* RenderingServerGlobals::shader_storage = nullptr;
+    virtual String ShaderGetCode(RID shader) = 0;
+
+    virtual void ShaderFree(RID shader) = 0;
+};
+
 
 }

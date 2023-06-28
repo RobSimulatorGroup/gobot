@@ -42,6 +42,25 @@ public:
         RSG::viewport->ViewportSetSize(p_rid, width, height);
     }
 
+    // shader
+    RID ShaderCreate() {
+        RID shader = RSG::shader_storage->ShaderAllocate();
+        RSG::shader_storage->Initialize(shader);
+        return shader;
+    }
+
+    void ShaderSetCode(RID shader, const String& code) {
+        RSG::shader_storage->ShaderSetCode(shader, code);
+    }
+
+    String ShaderGetCode(RID shader) {
+        return RSG::shader_storage->ShaderGetCode(shader);
+    }
+
+    void ShaderFree(RID shader) {
+        return RSG::shader_storage->ShaderFree(shader);
+    }
+
     void* GetRenderTargetColorTextureNativeHandle(const RID& p_render_target);
 
     void Free(const RID& rid);
