@@ -13,7 +13,8 @@ class FrameBufferCache;
 class RendererSceneRender;
 class RendererTextureStorage;
 class ShaderStorage;
-
+class ShaderProgramStorage;
+class RendererUtilities;
 
 class RendererCompositor {
 protected:
@@ -32,7 +33,11 @@ public:
 
     virtual RendererTextureStorage* GetTextureStorage() = 0;
 
+    virtual ShaderProgramStorage* GetShaderProgramStorage() = 0;
+
     virtual ShaderStorage* GetShaderStorage() = 0;
+
+    virtual RendererUtilities* GetUtilities() = 0;
 
     virtual void Initialize() = 0;
 

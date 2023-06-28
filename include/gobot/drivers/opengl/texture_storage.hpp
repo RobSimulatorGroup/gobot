@@ -88,6 +88,8 @@ public:
 
     void RenderTargetFree(RID p_rid) override;
 
+    inline bool OwnsRenderTarget(RID p_rid) { return render_target_owner_.Owns(p_rid); };
+
     void ClearRenderTarget(RenderTarget *rt);
 
     void RenderTargetSetSize(RID p_render_target, int p_width, int p_height, uint32_t p_view_count) override;
@@ -98,13 +100,16 @@ public:
 
     // texture related
 
-    RID TextureAllocate();
+    RID TextureAllocate() override;
+
+    void TextureFree(RID p_rid) override;
+
+    bool OwnsTexture(RID p_rid) { return texture_owner_.Owns(p_rid); };
 
     inline Texture* GetTexture(RID rid) {
         Texture *texture = texture_owner_.GetOrNull(rid);
         return texture;
     }
-
 
     void Texture2DInitialize(RID texture_id, const Ref<Image> &image);
 

@@ -11,6 +11,7 @@
 #include "gobot/rendering/texture_storage.hpp"
 #include "gobot/rendering/shader_storage.hpp"
 #include "gobot/rendering/renderer_viewport.hpp"
+#include "gobot/rendering/render_utilities.hpp"
 
 namespace gobot {
 
@@ -20,6 +21,8 @@ class RenderingServerGlobals {
 public:
     static bool threaded;
 
+    static RendererUtilities *utilities;
+
     static RendererCompositor *rasterizer;
 
     static RendererTextureStorage* texture_storage;
@@ -27,6 +30,8 @@ public:
     static RendererViewport* viewport;
 
     static ShaderStorage* shader_storage;
+
+    static ShaderProgramStorage* shader_program_storage;
 
 };
 

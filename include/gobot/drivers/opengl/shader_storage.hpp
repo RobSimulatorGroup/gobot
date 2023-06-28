@@ -14,7 +14,7 @@
 
 namespace gobot::opengl {
 
-class GLShaderStorage : public ShaderStorage {
+class GOBOT_EXPORT GLShaderStorage : public ShaderStorage {
 public:
     GLShaderStorage();
 
@@ -22,13 +22,15 @@ public:
 
     RID ShaderAllocate() override;
 
-    void Initialize(RID shader_rid) override;
-
-    void ShaderSetCode(RID shader_rid, String code) override;
-
-    String ShaderGetCode(RID shader_rid) override;
-
     void ShaderFree(RID p_rid) override;
+
+    bool OwnsShader(RID p_rid) { return shader_owner_.Owns(p_rid); }
+
+    void ShaderInitialize(RID p_shader, ShaderType p_type) override;
+
+    void ShaderSetCode(RID p_shader, const String &p_code) override;
+
+    String ShaderGetCode(RID p_shader) override;
 
     static GLShaderStorage* GetInstance();
 
@@ -37,7 +39,7 @@ private:
 
 
     struct Shader {
-        GLuint shader_id;
+        GLuint gl_id;
         String code;
         ShaderType shader_type;
     };
@@ -45,5 +47,33 @@ private:
     mutable RID_Owner<Shader, true> shader_owner_;
 };
 
+///////////////////////////////////////////////////////
+
+class GOBOT_EXPORT GLShaderProgramStorage : public ShaderProgramStorage {
+public:
+    GLShaderProgramStorage();
+
+    ~GLShaderProgramStorage() override;
+
+    RID ShaderProgramAllocate() override;
+
+    void ShaderProgramFree(RID p_rid) override;
+
+    bool OwnsShaderProgram(RID p_rid) { return program_owner_.Owns(p_rid); }
+
+    void ShaderProgramInitialize(RID p_shader_program, const std::vector<RID>& shaders) override;
+
+    static GLShaderProgramStorage* GetInstance();
+
+private:
+    static GLShaderProgramStorage *s_singleton;
+
+    struct ShaderProgram {
+        GLuint gl_program_id;
+        std::vector<RID> shaders;
+    };
+
+    mutable RID_Owner<ShaderProgram, true> program_owner_;
+};
 
 }

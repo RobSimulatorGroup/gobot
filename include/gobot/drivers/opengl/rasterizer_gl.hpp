@@ -9,17 +9,17 @@
 
 #include "gobot/rendering/renderer_compositor.hpp"
 #include "gobot/drivers/opengl/texture_storage.hpp"
-#include "gobot/drivers/opengl/rasterizer_gles3.hpp"
+#include "gobot/drivers/opengl/rasterizer_gl.hpp"
 #include "gobot/drivers/opengl/shader_storage.hpp"
-#include "gobot/drivers/opengl/rasterizer_scene_gles3.hpp"
+#include "gobot/drivers/opengl/rasterizer_scene_gl.hpp"
 
 namespace gobot::opengl {
 
-class RasterizerGLES3 : public RendererCompositor {
+class GLRasterizer : public RendererCompositor {
 public:
-    RasterizerGLES3();
+    GLRasterizer();
 
-    ~RasterizerGLES3() override;
+    ~GLRasterizer() override;
 
     RendererSceneRender* GetScene() override {
         return scene_;
@@ -33,6 +33,14 @@ public:
         return shader_storage_;
     }
 
+    ShaderProgramStorage* GetShaderProgramStorage() override {
+        return shader_program_storage_;
+    }
+
+    RendererUtilities* GetUtilities() override {
+        return utilities_;
+    }
+
     void Initialize() override;
 
     void BeginFrame(double frame_step) override;
@@ -43,21 +51,23 @@ public:
 
 public:
     static RendererCompositor* CreateCurrent() {
-        return new RasterizerGLES3();
+        return new GLRasterizer();
     }
 
     static void MakeCurrent() {
         CreateFunc = CreateCurrent;
     }
 
-    static RasterizerGLES3* GetInstance() { return s_singleton; }
+    static GLRasterizer* GetInstance() { return s_singleton; }
 
 private:
-    static RasterizerGLES3* s_singleton;
+    static GLRasterizer* s_singleton;
 
     TextureStorage* texture_storage_ = nullptr;
-    RasterizerSceneGLES3* scene_ = nullptr;
+    GLRasterizerScene* scene_ = nullptr;
     ShaderStorage* shader_storage_ = nullptr;
+    ShaderProgramStorage* shader_program_storage_ = nullptr;
+    RendererUtilities*  utilities_ = nullptr;
 };
 
 }

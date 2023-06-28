@@ -23,19 +23,23 @@ RID GLShaderStorage::ShaderAllocate() {
     return shader_owner_.AllocateRID();
 }
 
-void GLShaderStorage::Initialize(RID shader_rid) {
+void GLShaderStorage::ShaderFree(RID p_rid) {
+    shader_owner_.Free(p_rid);
+}
+
+void GLShaderStorage::ShaderInitialize(RID shader_rid, ShaderType p_type) {
     Shader shader;
-    shader.shader_id = 0; // invalid
+    // TODO(wqq)
+    shader.gl_id = 0; // invalid
     shader.shader_type = ShaderType::None;
 
     shader_owner_.InitializeRID(shader_rid, shader);
 }
 
-void GLShaderStorage::ShaderSetCode(RID shader_id, String code) {
+void GLShaderStorage::ShaderSetCode(RID shader_id, const String &p_code) {
     Shader *shader = shader_owner_.GetOrNull(shader_id);
     ERR_FAIL_COND(!shader);
-
-    shader->code = code;
+    shader->code = p_code;
 }
 
 
@@ -49,11 +53,34 @@ GLShaderStorage *GLShaderStorage::GetInstance() {
     return s_singleton;
 }
 
-void GLShaderStorage::ShaderFree(RID p_rid) {
-    Shader *shader = shader_owner_.GetOrNull(p_rid);
-    ERR_FAIL_COND(!shader);
+//////////////////////////////////////////////////////////////////////
 
-    shader_owner_.Free(p_rid);
+GLShaderProgramStorage* GLShaderProgramStorage::s_singleton = nullptr;
+
+GLShaderProgramStorage::GLShaderProgramStorage() {
+    s_singleton = this;
 }
+
+GLShaderProgramStorage::~GLShaderProgramStorage() {
+    s_singleton = nullptr;
+}
+
+RID GLShaderProgramStorage::ShaderProgramAllocate() {
+    return program_owner_.AllocateRID();
+}
+
+void GLShaderProgramStorage::ShaderProgramFree(RID p_rid) {
+    program_owner_.Free(p_rid);
+}
+
+void GLShaderProgramStorage::ShaderProgramInitialize(RID p_shader_program, const std::vector<RID>& shaders) {
+
+}
+
+
+GLShaderProgramStorage* GLShaderProgramStorage::GetInstance() {
+    return s_singleton;
+}
+
 
 }

@@ -7,6 +7,8 @@
 
 #pragma once
 
+#include "gobot/scene/resources/shader.hpp"
+
 namespace gobot {
 
 class ShaderStorage {
@@ -15,13 +17,24 @@ public:
 
     virtual RID ShaderAllocate() = 0;
 
-    virtual void Initialize(RID shader) = 0;
+    virtual void ShaderFree(RID p_rid) = 0;
 
-    virtual void ShaderSetCode(RID shader, String code) = 0;
+    virtual void ShaderInitialize(RID p_shader, ShaderType p_type) = 0;
 
-    virtual String ShaderGetCode(RID shader) = 0;
+    virtual void ShaderSetCode(RID p_shader, const String &p_code) = 0;
 
-    virtual void ShaderFree(RID shader) = 0;
+    virtual String ShaderGetCode(RID p_shader) = 0;
+};
+
+class ShaderProgramStorage {
+public:
+    virtual ~ShaderProgramStorage() {};
+
+    virtual RID ShaderProgramAllocate() = 0;
+
+    virtual void ShaderProgramFree(RID p_rid) = 0;
+
+    virtual void ShaderProgramInitialize(RID p_shader_program, const std::vector<RID>& shaders) = 0;
 };
 
 

@@ -44,6 +44,19 @@ RID TextureStorage::TextureAllocate() {
     return texture_owner_.AllocateRID();
 }
 
+void TextureStorage::TextureFree(RID p_rid) {
+    Texture *t = texture_owner_.GetOrNull(p_rid);
+    ERR_FAIL_COND(!t);
+    ERR_FAIL_COND(t->is_render_target);
+
+    if (t->tex_id != 0) {
+        glDeleteTextures(1, &t->tex_id);
+        t->tex_id = 0;
+    }
+
+    texture_owner_.Free(p_rid);
+}
+
 RID TextureStorage::RenderTargetCreate() {
     RenderTarget render_target;
 
@@ -394,6 +407,7 @@ void TextureStorage::UpdateRenderTarget(RenderTarget* rt) {
             glBindFramebuffer(GL_FRAMEBUFFER, 0);
             glDeleteFramebuffers(1, &rt->fbo);
             glDeleteTextures(1, &rt->color);
+            glDeleteTextures(1, &rt->depth);
             rt->fbo = 0;
             rt->size.x() = 0;
             rt->size.y() = 0;

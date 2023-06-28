@@ -5,37 +5,43 @@
  * This file is created by Qiqi Wu, 23-6-23
 */
 
-#include "gobot/drivers/opengl/rasterizer_gles3.hpp"
+#include "gobot/drivers/opengl/rasterizer_gl.hpp"
+#include "gobot/drivers/opengl/render_utilities_gl.hpp"
 
 namespace gobot::opengl {
 
-RasterizerGLES3 *RasterizerGLES3::s_singleton = nullptr;
+GLRasterizer *GLRasterizer::s_singleton = nullptr;
 
-RasterizerGLES3::RasterizerGLES3() {
+GLRasterizer::GLRasterizer() {
     s_singleton = this;
 
     texture_storage_ = new opengl::TextureStorage();
-    shader_storage_ = new opengl::GLShaderStorage;
+    shader_storage_ = new opengl::GLShaderStorage();
+    shader_program_storage_ = new opengl::GLShaderProgramStorage();
+    utilities_ = new opengl::GLRendererUtilities();
 }
 
-RasterizerGLES3::~RasterizerGLES3() {
+GLRasterizer::~GLRasterizer() {
     s_singleton = nullptr;
     delete texture_storage_;
+    delete shader_storage_;
+    delete shader_program_storage_;
+    delete utilities_;
 }
 
-void RasterizerGLES3::Initialize() {
-
-}
-
-void RasterizerGLES3::BeginFrame(double frame_step) {
-
-}
-
-void RasterizerGLES3::EndFrame(bool p_swap_buffers) {
+void GLRasterizer::Initialize() {
 
 }
 
-void RasterizerGLES3::Finalize() {
+void GLRasterizer::BeginFrame(double frame_step) {
+
+}
+
+void GLRasterizer::EndFrame(bool p_swap_buffers) {
+
+}
+
+void GLRasterizer::Finalize() {
 
 }
 

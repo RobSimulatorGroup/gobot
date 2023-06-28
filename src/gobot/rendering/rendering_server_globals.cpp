@@ -19,4 +19,8 @@ RendererViewport* RenderingServerGlobals::viewport = nullptr;
 
 ShaderStorage* RenderingServerGlobals::shader_storage = nullptr;
 
+ShaderProgramStorage* RenderingServerGlobals::shader_program_storage = nullptr;
+
+RendererUtilities* RenderingServerGlobals::utilities = nullptr;
+
 }

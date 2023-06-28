@@ -24,6 +24,11 @@ public:
     virtual void RenderTargetSetSize(RID p_render_target, int p_width, int p_height, uint32_t p_view_count) = 0;
 
     virtual void* GetRenderTargetColorTextureNativeHandle(RID p_texture) = 0;
+
+    // texture
+    virtual RID TextureAllocate() = 0;
+
+    virtual void TextureFree(RID p_rid) = 0;
 };
 
 }

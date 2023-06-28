@@ -13,19 +13,31 @@
 namespace gobot {
 
 Shader::Shader() {
-    shader_ = RS::GetInstance()->ShaderCreate();
 }
 
 Shader::~Shader() {
-    RS::GetInstance()->ShaderFree(shader_);
+    RS::GetInstance()->Free(shader_);
 }
 
 void Shader::SetCode(const String &p_code) {
+    ERR_FAIL_COND_MSG(shader_.IsNull(), "The shader must valid before set code.");
+    code_ = p_code;
     RS::GetInstance()->ShaderSetCode(shader_, p_code);
 }
 
 String Shader::GetCode() const {
-    return RS::GetInstance()->ShaderGetCode(shader_);
+    return code_;
+}
+
+void Shader::SetShaderType(ShaderType p_shader_type) {
+    if (shader_.IsNull()) {
+        shader_ = RS::GetInstance()->ShaderCreate(p_shader_type);
+    } else {
+        RS::GetInstance()->Free(shader_);
+        shader_ = RS::GetInstance()->ShaderCreate(p_shader_type);
+        code_.clear();
+    }
+    shader_type_ = p_shader_type;
 }
 
 ShaderType Shader::GetShaderType() const {
@@ -34,6 +46,29 @@ ShaderType Shader::GetShaderType() const {
 
 RID Shader::GetRid() const {
     return shader_;
+}
+
+/////////////////////////////////////
+
+ShaderProgram::ShaderProgram() {
+}
+
+ShaderProgram::~ShaderProgram() {
+    RS::GetInstance()->Free(shader_program_);
+}
+
+void ShaderProgram::SetAttachShaders(const std::vector<RID>& p_shaders) {
+    if (shader_program_.IsNull()) {
+        shader_program_ = RS::GetInstance()->ShaderProgramCreate(p_shaders);
+    } else {
+        RS::GetInstance()->Free(shader_program_);
+        shader_program_ = RS::GetInstance()->ShaderProgramCreate(p_shaders);
+    }
+    shaders_ = p_shaders;
+}
+
+RID ShaderProgram::GetRid() const {
+    return shader_program_;
 }
 
 /////////////////////////////////////
@@ -50,8 +85,27 @@ Ref<Resource> ResourceFormatLoaderShader::Load(const String &p_path,
 
     String extension = GetFileExtension(global_path);
     Ref<Shader> shader = MakeRef<Shader>();
+    shader->SetShaderType(ExtensionsToShaderType(extension));
     shader->SetCode(file.readAll().data());
     return shader;
+}
+
+ShaderType ResourceFormatLoaderShader::ExtensionsToShaderType(const String& extension) {
+    if(extension == ".vert") {
+        return ShaderType::VertexShader;
+    } else if (extension == ".frag") {
+        return ShaderType::FragmentShader;
+    } else if (extension == ".geom") {
+        return ShaderType::GeometryShader;
+    } else if (extension == "tesc") {
+        return ShaderType::TessControlShader;
+    } else if (extension == "tese") {
+        return ShaderType::TessEvaluationShader;
+    } else if (extension == ".comp") {
+        return ShaderType::ComputeShader;
+    } else {
+        return ShaderType::None;
+    }
 }
 
 void ResourceFormatLoaderShader::GetRecognizedExtensions(std::vector<String> *extensions) const {

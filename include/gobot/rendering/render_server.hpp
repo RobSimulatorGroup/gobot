@@ -43,22 +43,25 @@ public:
     }
 
     // shader
-    RID ShaderCreate() {
+    RID ShaderCreate(ShaderType p_shader_type) {
         RID shader = RSG::shader_storage->ShaderAllocate();
-        RSG::shader_storage->Initialize(shader);
+        RSG::shader_storage->ShaderInitialize(shader, p_shader_type);
         return shader;
     }
 
-    void ShaderSetCode(RID shader, const String& code) {
-        RSG::shader_storage->ShaderSetCode(shader, code);
+    void ShaderSetCode(RID p_shader, const String &p_code) {
+        RSG::shader_storage->ShaderSetCode(p_shader, p_code);
     }
 
-    String ShaderGetCode(RID shader) {
-        return RSG::shader_storage->ShaderGetCode(shader);
+    String ShaderGetCode(RID p_shader) {
+        return RSG::shader_storage->ShaderGetCode(p_shader);
     }
 
-    void ShaderFree(RID shader) {
-        return RSG::shader_storage->ShaderFree(shader);
+    // shader program
+    RID ShaderProgramCreate(const std::vector<RID>& p_shaders) {
+        RID shader = RSG::shader_program_storage->ShaderProgramAllocate();
+        RSG::shader_program_storage->ShaderProgramInitialize(shader, p_shaders);
+        return shader;
     }
 
     void* GetRenderTargetColorTextureNativeHandle(const RID& p_render_target);

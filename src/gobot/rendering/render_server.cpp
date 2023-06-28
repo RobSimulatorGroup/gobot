@@ -13,7 +13,7 @@
 #include "gobot/rendering/renderer_compositor.hpp"
 #include "gobot/rendering/texture_storage.hpp"
 #include "gobot/rendering/renderer_viewport.hpp"
-#include "gobot/drivers/opengl/rasterizer_gles3.hpp"
+#include "gobot/drivers/opengl/rasterizer_gl.hpp"
 
 
 namespace gobot {
@@ -26,12 +26,13 @@ RenderServer::RenderServer() {
 
     RSG::viewport = new RendererViewport();
     if (renderer_type_ == RendererType::OpenGL46) {
-        opengl::RasterizerGLES3::MakeCurrent();
+        opengl::GLRasterizer::MakeCurrent();
     }
     RSG::rasterizer = RendererCompositor::Create();
 
     RSG::texture_storage = RSG::rasterizer->GetTextureStorage();
     RSG::shader_storage = RSG::rasterizer->GetShaderStorage();
+    RSG::shader_program_storage = RSG::rasterizer->GetShaderProgramStorage();
 }
 
 RendererType RenderServer::GetRendererType() {
@@ -58,6 +59,9 @@ void RenderServer::Free(const RID& p_rid) {
         return;
     }
     if (RSG::viewport->Free(p_rid)) {
+        return;
+    }
+    if (RSG::utilities->Free(p_rid)) {
         return;
     }
 }
