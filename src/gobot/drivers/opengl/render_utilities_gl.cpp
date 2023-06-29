@@ -6,8 +6,8 @@
 */
 
 #include "gobot/drivers/opengl/render_utilities_gl.hpp"
-#include "gobot/drivers/opengl/shader_storage.hpp"
 #include "gobot/drivers/opengl/texture_storage.hpp"
+#include "gobot/drivers/opengl/material_storage_gl.hpp"
 
 namespace gobot::opengl {
 
@@ -28,11 +28,11 @@ bool GLRendererUtilities::Free(gobot::RID p_rid) {
     } else if (opengl::TextureStorage::GetInstance()->OwnsTexture(p_rid)) {
         opengl::TextureStorage::GetInstance()->TextureFree(p_rid);
         return true;
-    } else if (opengl::GLShaderStorage::GetInstance()->OwnsShader(p_rid)) {
-        opengl::GLShaderStorage::GetInstance()->ShaderFree(p_rid);
+    } else if (opengl::GLMaterialStorage::GetInstance()->OwnsShader(p_rid)) {
+        opengl::GLMaterialStorage::GetInstance()->ShaderFree(p_rid);
         return true;
-    } else if (opengl::GLShaderProgramStorage::GetInstance()->OwnsShaderProgram(p_rid)) {
-        opengl::GLShaderProgramStorage::GetInstance()->ShaderProgramFree(p_rid);
+    } else if (opengl::GLMaterialStorage::GetInstance()->OwnsShaderProgram(p_rid)) {
+        opengl::GLMaterialStorage::GetInstance()->ShaderProgramFree(p_rid);
         return true;
     } else {
         return false;

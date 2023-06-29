@@ -7,6 +7,7 @@
 
 #include "gobot/drivers/opengl/rasterizer_gl.hpp"
 #include "gobot/drivers/opengl/render_utilities_gl.hpp"
+#include "gobot/drivers/opengl/material_storage_gl.hpp"
 
 namespace gobot::opengl {
 
@@ -16,16 +17,14 @@ GLRasterizer::GLRasterizer() {
     s_singleton = this;
 
     texture_storage_ = new opengl::TextureStorage();
-    shader_storage_ = new opengl::GLShaderStorage();
-    shader_program_storage_ = new opengl::GLShaderProgramStorage();
+    material_storage_ = new opengl::GLMaterialStorage();
     utilities_ = new opengl::GLRendererUtilities();
 }
 
 GLRasterizer::~GLRasterizer() {
     s_singleton = nullptr;
     delete texture_storage_;
-    delete shader_storage_;
-    delete shader_program_storage_;
+    delete material_storage_;
     delete utilities_;
 }
 

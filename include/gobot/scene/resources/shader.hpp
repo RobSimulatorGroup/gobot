@@ -48,8 +48,23 @@ private:
     String code_;
 };
 
-class GOBOT_EXPORT RasterizerShaderProgram : public Resource {
-    GOBCLASS(RasterizerShaderProgram, Resource)
+class GOBOT_EXPORT ShaderProgram : public Resource {
+    GOBCLASS(ShaderProgram, Resource)
+public:
+    ShaderProgram();
+
+    ~ShaderProgram() override;
+
+    RID GetRid() const override;
+
+    virtual bool IsComplete() { return false; };
+
+private:
+    RID shader_program_;
+};
+
+class GOBOT_EXPORT RasterizerShaderProgram : public ShaderProgram {
+    GOBCLASS(RasterizerShaderProgram, ShaderProgram)
 public:
     RasterizerShaderProgram();
 
@@ -61,15 +76,8 @@ public:
                              const Ref<Shader>& p_tess_control_shader = nullptr,
                              const Ref<Shader>& p_tess_evaluation_shader = nullptr);
 
-    void SetComputeShader(const Ref<Shader>& p_comp_shader);
 
-    RID GetRid() const override;
-
-    bool IsComplete();
-
-private:
-
-    RID shader_program_;
+    bool IsComplete() override;
 
     Ref<Shader> vertex_shaders_;
     Ref<Shader> fragment_shader_;
@@ -78,8 +86,8 @@ private:
     Ref<Shader> geometry_shader_;
 };
 
-class GOBOT_EXPORT ComputeShaderProgram : public Resource {
-    GOBCLASS(ComputeShaderProgram, Resource)
+class GOBOT_EXPORT ComputeShaderProgram : public ShaderProgram {
+    GOBCLASS(ComputeShaderProgram, ShaderProgram)
 public:
     ComputeShaderProgram();
 
@@ -87,11 +95,8 @@ public:
 
     void SetComputeShader(const Ref<Shader>& p_comp_shader);
 
-    RID GetRid() const override;
-
+    bool IsComplete() override;
 private:
-
-    RID shader_program_;
 
     Ref<Shader> compute_shader_;
 };

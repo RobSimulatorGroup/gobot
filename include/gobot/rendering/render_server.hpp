@@ -46,38 +46,48 @@ public:
 
     // shader
     RID ShaderCreate(ShaderType p_shader_type) {
-        RID shader = RSG::shader_storage->ShaderAllocate();
-        RSG::shader_storage->ShaderInitialize(shader, p_shader_type);
+        RID shader = RSG::material_storage->ShaderAllocate();
+        RSG::material_storage->ShaderInitialize(shader, p_shader_type);
         return shader;
     }
 
     void ShaderSetCode(RID p_shader, const String &p_code) {
-        RSG::shader_storage->ShaderSetCode(p_shader, p_code);
+        RSG::material_storage->ShaderSetCode(p_shader, p_code);
     }
 
     String ShaderGetCode(RID p_shader) {
-        return RSG::shader_storage->ShaderGetCode(p_shader);
+        return RSG::material_storage->ShaderGetCode(p_shader);
     }
 
     // shader program
-    RID ShaderProgramCreate(const Ref<Shader>& p_vs_shader,
-                            const Ref<Shader>& p_fs_shader,
-                            const Ref<Shader>& p_geometry_shader = nullptr,
-                            const Ref<Shader>& p_tess_control_shader = nullptr,
-                            const Ref<Shader>& p_tess_evaluation_shader = nullptr) {
-        RID shader = RSG::shader_program_storage->ShaderProgramAllocate();
-        RSG::shader_program_storage->ShaderProgramInitialize(shader,
-                                                             p_vs_shader,
-                                                             p_fs_shader,
-                                                             p_geometry_shader,
-                                                             p_tess_control_shader,
-                                                             p_tess_evaluation_shader);
+    RID ShaderProgramCreate() {
+        RID shader = RSG::material_storage->ShaderProgramAllocate();
+        RSG::material_storage->ShaderProgramInitialize(shader);
         return shader;
     }
 
-    RID ShaderProgramCreate(const Ref<Shader>& p_compute_shader) {
-        RID shader = RSG::shader_program_storage->ShaderProgramAllocate();
-        RSG::shader_program_storage->ShaderProgramInitialize(shader, p_compute_shader);
+    void ShaderProgramSetRasterizerShader(RID p_shader_program,
+                                          RID p_vs_shader,
+                                          RID p_fs_shader,
+                                          RID p_geometry_shader = {},
+                                          RID p_tess_control_shader = {},
+                                          RID p_tess_evaluation_shader = {}) {
+        RSG::material_storage->ShaderProgramSetRasterizerShader(p_shader_program,
+                                                                p_vs_shader,
+                                                                p_fs_shader,
+                                                                p_geometry_shader,
+                                                                p_tess_control_shader,
+                                                                p_tess_evaluation_shader);
+    }
+
+    void ShaderProgramSetComputeShader(RID p_shader_program, RID p_comp_shader) {
+        RSG::material_storage->ShaderProgramSetComputeShader(p_shader_program,
+                                                             p_comp_shader);
+    }
+
+    RID ShaderProgramCreate(RID p_compute_shader) {
+        RID shader = RSG::material_storage->ShaderProgramAllocate();
+        RSG::material_storage->ShaderProgramInitialize(shader);
         return shader;
     }
 

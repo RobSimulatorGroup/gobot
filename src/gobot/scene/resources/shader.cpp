@@ -49,14 +49,25 @@ RID Shader::GetRid() const {
     return shader_;
 }
 
+////////////////////////////////
+
+ShaderProgram::ShaderProgram() {
+
+}
+
+ShaderProgram::~ShaderProgram()  {
+
+}
+
+RID ShaderProgram::GetRid() const {
+    return shader_program_;
+}
+
 /////////////////////////////////////
 
-RasterizerShaderProgram::RasterizerShaderProgram() {
-}
+RasterizerShaderProgram::RasterizerShaderProgram() = default;
 
-RasterizerShaderProgram::~RasterizerShaderProgram() {
-    RS::GetInstance()->Free(shader_program_);
-}
+RasterizerShaderProgram::~RasterizerShaderProgram() = default;
 
 void RasterizerShaderProgram::SetRasterizerShader(const Ref<Shader>& p_vs_shader,
                                                   const Ref<Shader>& p_fs_shader,
@@ -72,20 +83,13 @@ void RasterizerShaderProgram::SetRasterizerShader(const Ref<Shader>& p_vs_shader
     tess_control_shader_ = p_tess_control_shader;
     tess_evaluation_shader_ = p_tess_evaluation_shader;
 
-    if (shader_program_.IsNull()) {
-        shader_program_ = RS::GetInstance()->ShaderProgramCreate(vertex_shaders_,
-                                                                 fragment_shader_,
-                                                                 geometry_shader_,
-                                                                 tess_control_shader_,
-                                                                 tess_evaluation_shader_);
-    } else {
-        RS::GetInstance()->Free(shader_program_);
-        shader_program_ = RS::GetInstance()->ShaderProgramCreate(vertex_shaders_,
-                                                                 fragment_shader_,
-                                                                 geometry_shader_,
-                                                                 tess_control_shader_,
-                                                                 tess_evaluation_shader_);
-    }
+
+    RS::GetInstance()->ShaderProgramSetRasterizerShader(GetRid(),
+                                                        vertex_shaders_->GetRid(),
+                                                        fragment_shader_->GetRid(),
+                                                        geometry_shader_ ? geometry_shader_->GetRid() : RID{},
+                                                        tess_control_shader_ ? tess_control_shader_->GetRid() : RID{},
+                                                        tess_evaluation_shader_ ? tess_evaluation_shader_->GetRid() : RID{});
 }
 
 bool RasterizerShaderProgram::IsComplete() {
@@ -93,31 +97,20 @@ bool RasterizerShaderProgram::IsComplete() {
 }
 
 
-RID RasterizerShaderProgram::GetRid() const {
-    return shader_program_;
-}
-
 /////////////////////////////////////////////////////////
 
-ComputeShaderProgram::ComputeShaderProgram() {
-}
+ComputeShaderProgram::ComputeShaderProgram() = default;
 
-ComputeShaderProgram::~ComputeShaderProgram() {
-    RS::GetInstance()->Free(shader_program_);
-}
+ComputeShaderProgram::~ComputeShaderProgram() = default;
 
 void ComputeShaderProgram::SetComputeShader(const Ref<Shader>& p_comp_shader) {
-    if (shader_program_.IsNull()) {
-        shader_program_ = RS::GetInstance()->ShaderProgramCreate(p_comp_shader);
-    } else {
-        RS::GetInstance()->Free(shader_program_);
-        shader_program_ = RS::GetInstance()->ShaderProgramCreate(p_comp_shader);
-    }
+    ERR_FAIL_COND_MSG(!p_comp_shader.IsValid(), "p_comp_shader must be valid");
+    compute_shader_ = p_comp_shader;
+    RS::GetInstance()->ShaderProgramSetComputeShader(GetRid(), p_comp_shader->GetRid());
 }
 
-
-RID ComputeShaderProgram::GetRid() const {
-    return shader_program_;
+bool ComputeShaderProgram::IsComplete() {
+    return compute_shader_.IsValid();
 }
 
 /////////////////////////////////////

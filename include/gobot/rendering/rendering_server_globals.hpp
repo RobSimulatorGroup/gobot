@@ -9,9 +9,9 @@
 
 #include "gobot/rendering/renderer_compositor.hpp"
 #include "gobot/rendering/texture_storage.hpp"
-#include "gobot/rendering/shader_storage.hpp"
 #include "gobot/rendering/renderer_viewport.hpp"
 #include "gobot/rendering/render_utilities.hpp"
+#include "gobot/rendering/material_storage.hpp"
 
 namespace gobot {
 
@@ -29,9 +29,7 @@ public:
 
     static RendererViewport* viewport;
 
-    static ShaderStorage* shader_storage;
-
-    static ShaderProgramStorage* shader_program_storage;
+    static MaterialStorage* material_storage;
 
 };
 
