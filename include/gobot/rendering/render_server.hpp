@@ -42,6 +42,8 @@ public:
         RSG::viewport->ViewportSetSize(p_rid, width, height);
     }
 
+    void* GetRenderTargetColorTextureNativeHandle(const RID& p_view_port);
+
     // shader
     RID ShaderCreate(ShaderType p_shader_type) {
         RID shader = RSG::shader_storage->ShaderAllocate();
@@ -58,13 +60,26 @@ public:
     }
 
     // shader program
-    RID ShaderProgramCreate(const std::vector<RID>& p_shaders) {
+    RID ShaderProgramCreate(const Ref<Shader>& p_vs_shader,
+                            const Ref<Shader>& p_fs_shader,
+                            const Ref<Shader>& p_geometry_shader = nullptr,
+                            const Ref<Shader>& p_tess_control_shader = nullptr,
+                            const Ref<Shader>& p_tess_evaluation_shader = nullptr) {
         RID shader = RSG::shader_program_storage->ShaderProgramAllocate();
-        RSG::shader_program_storage->ShaderProgramInitialize(shader, p_shaders);
+        RSG::shader_program_storage->ShaderProgramInitialize(shader,
+                                                             p_vs_shader,
+                                                             p_fs_shader,
+                                                             p_geometry_shader,
+                                                             p_tess_control_shader,
+                                                             p_tess_evaluation_shader);
         return shader;
     }
 
-    void* GetRenderTargetColorTextureNativeHandle(const RID& p_render_target);
+    RID ShaderProgramCreate(const Ref<Shader>& p_compute_shader) {
+        RID shader = RSG::shader_program_storage->ShaderProgramAllocate();
+        RSG::shader_program_storage->ShaderProgramInitialize(shader, p_compute_shader);
+        return shader;
+    }
 
     void Free(const RID& rid);
 

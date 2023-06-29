@@ -34,7 +34,14 @@ public:
 
     virtual void ShaderProgramFree(RID p_rid) = 0;
 
-    virtual void ShaderProgramInitialize(RID p_shader_program, const std::vector<RID>& shaders) = 0;
+    virtual void ShaderProgramInitialize(RID p_shader_program,
+                                         const Ref<Shader>& p_vs_shader,
+                                         const Ref<Shader>& p_fs_shader,
+                                         const Ref<Shader>& p_geometry_shader,
+                                         const Ref<Shader>& p_tess_control_shader,
+                                         const Ref<Shader>& p_tess_evaluation_shader) = 0;
+
+    virtual void ShaderProgramInitialize(RID p_shader_program, const Ref<Shader>& p_comp_shader) = 0;
 };
 
 

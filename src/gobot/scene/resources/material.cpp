@@ -15,17 +15,25 @@ Material::Material() {
 
 }
 
+RID Material::GetRid() const {
+    return material_;
+}
+
+RID Material::GetShaderRid() const {
+    return {};
+}
+
 ///////////////////////////////
 
-Material3D::Material3D() {
+PBRMaterial3D::PBRMaterial3D() {
 
 }
 
-void Material3D::SetAlbedo(const Color &albedo) {
+void PBRMaterial3D::SetAlbedo(const Color &albedo) {
     albedo_ = albedo;
 }
 
-Color Material3D::GetAlbedo() const {
+Color PBRMaterial3D::GetAlbedo() const {
     return albedo_;
 }
 
@@ -37,10 +45,10 @@ GOBOT_REGISTRATION {
 
     gobot::Type::register_wrapper_converter_for_base_classes<Ref<Material>, Ref<Resource>>();
 
-    Class_<Material3D>("Material3D")
+    Class_<PBRMaterial3D>("PBRMaterial3D")
         .constructor()(CtorAsRawPtr)
-        .property("albedo", &Material3D::GetAlbedo, &Material3D::SetAlbedo);
+        .property("albedo", &PBRMaterial3D::GetAlbedo, &PBRMaterial3D::SetAlbedo);
 
-    gobot::Type::register_wrapper_converter_for_base_classes<Ref<Material3D>, Ref<Material>>();
+    gobot::Type::register_wrapper_converter_for_base_classes<Ref<PBRMaterial3D>, Ref<Material>>();
 
 };

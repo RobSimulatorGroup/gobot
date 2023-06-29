@@ -73,7 +73,16 @@ void GLShaderProgramStorage::ShaderProgramFree(RID p_rid) {
     program_owner_.Free(p_rid);
 }
 
-void GLShaderProgramStorage::ShaderProgramInitialize(RID p_shader_program, const std::vector<RID>& shaders) {
+void GLShaderProgramStorage::ShaderProgramInitialize(RID p_shader_program,
+                                                     const Ref<Shader>& p_vs_shader,
+                                                     const Ref<Shader>& p_fs_shader,
+                                                     const Ref<Shader>& p_geometry_shader,
+                                                     const Ref<Shader>& p_tess_control_shader,
+                                                     const Ref<Shader>& p_tess_evaluation_shader) {
+
+}
+
+void GLShaderProgramStorage::ShaderProgramInitialize(RID p_shader_program, const Ref<Shader>& p_comp_shader) {
 
 }
 

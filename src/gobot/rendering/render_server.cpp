@@ -66,8 +66,8 @@ void RenderServer::Free(const RID& p_rid) {
     }
 }
 
-void* RenderServer::GetRenderTargetColorTextureNativeHandle(const RID& p_render_target) {
-    return RSG::viewport->GetRenderTargetColorTextureNativeHandle(p_render_target);
+void* RenderServer::GetRenderTargetColorTextureNativeHandle(const RID& p_view_port) {
+    return RSG::viewport->GetRenderTargetColorTextureNativeHandle(p_view_port);
 }
 
 

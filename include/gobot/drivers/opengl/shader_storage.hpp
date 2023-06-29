@@ -61,7 +61,14 @@ public:
 
     bool OwnsShaderProgram(RID p_rid) { return program_owner_.Owns(p_rid); }
 
-    void ShaderProgramInitialize(RID p_shader_program, const std::vector<RID>& shaders) override;
+    void ShaderProgramInitialize(RID p_shader_program,
+                                 const Ref<Shader>& p_vs_shader,
+                                 const Ref<Shader>& p_fs_shader,
+                                 const Ref<Shader>& p_geometry_shader,
+                                 const Ref<Shader>& p_tess_control_shader,
+                                 const Ref<Shader>& p_tess_evaluation_shader) override;
+
+    void ShaderProgramInitialize(RID p_shader_program, const Ref<Shader>& p_comp_shader) override;
 
     static GLShaderProgramStorage* GetInstance();
 

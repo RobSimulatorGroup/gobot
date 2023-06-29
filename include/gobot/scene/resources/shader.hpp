@@ -14,13 +14,13 @@
 namespace gobot {
 
 enum class ShaderType {
-    None,
-    VertexShader,
-    FragmentShader,
-    GeometryShader,
-    ComputeShader,
+    VertexShader = 0,
     TessControlShader,
     TessEvaluationShader,
+    GeometryShader,
+    FragmentShader,
+    ComputeShader,
+    None,
     Max
 };
 
@@ -48,20 +48,52 @@ private:
     String code_;
 };
 
-class GOBOT_EXPORT ShaderProgram : public Resource {
-    GOBCLASS(ShaderProgram, Resource)
+class GOBOT_EXPORT RasterizerShaderProgram : public Resource {
+    GOBCLASS(RasterizerShaderProgram, Resource)
 public:
-    ShaderProgram();
+    RasterizerShaderProgram();
 
-    ~ShaderProgram() override;
+    ~RasterizerShaderProgram() override;
 
-    void SetAttachShaders(const std::vector<RID>& p_shaders);
+    void SetRasterizerShader(const Ref<Shader>& p_vs_shader,
+                             const Ref<Shader>& p_fs_shader,
+                             const Ref<Shader>& p_geometry_shader = nullptr,
+                             const Ref<Shader>& p_tess_control_shader = nullptr,
+                             const Ref<Shader>& p_tess_evaluation_shader = nullptr);
+
+    void SetComputeShader(const Ref<Shader>& p_comp_shader);
+
+    RID GetRid() const override;
+
+    bool IsComplete();
+
+private:
+
+    RID shader_program_;
+
+    Ref<Shader> vertex_shaders_;
+    Ref<Shader> fragment_shader_;
+    Ref<Shader> tess_control_shader_;
+    Ref<Shader> tess_evaluation_shader_;
+    Ref<Shader> geometry_shader_;
+};
+
+class GOBOT_EXPORT ComputeShaderProgram : public Resource {
+    GOBCLASS(ComputeShaderProgram, Resource)
+public:
+    ComputeShaderProgram();
+
+    ~ComputeShaderProgram() override;
+
+    void SetComputeShader(const Ref<Shader>& p_comp_shader);
 
     RID GetRid() const override;
 
 private:
+
     RID shader_program_;
-    std::vector<RID> shaders_;
+
+    Ref<Shader> compute_shader_;
 };
 
 class GOBOT_EXPORT ResourceFormatLoaderShader : public ResourceFormatLoader {

@@ -9,6 +9,7 @@
 #include "gobot/rendering/render_server.hpp"
 #include "gobot/core/config/project_setting.hpp"
 #include "gobot/core/string_utils.hpp"
+#include "gobot/error_macros.hpp"
 
 namespace gobot {
 
@@ -50,24 +51,72 @@ RID Shader::GetRid() const {
 
 /////////////////////////////////////
 
-ShaderProgram::ShaderProgram() {
+RasterizerShaderProgram::RasterizerShaderProgram() {
 }
 
-ShaderProgram::~ShaderProgram() {
+RasterizerShaderProgram::~RasterizerShaderProgram() {
     RS::GetInstance()->Free(shader_program_);
 }
 
-void ShaderProgram::SetAttachShaders(const std::vector<RID>& p_shaders) {
+void RasterizerShaderProgram::SetRasterizerShader(const Ref<Shader>& p_vs_shader,
+                                                  const Ref<Shader>& p_fs_shader,
+                                                  const Ref<Shader>& p_geometry_shader,
+                                                  const Ref<Shader>& p_tess_control_shader,
+                                                  const Ref<Shader>& p_tess_evaluation_shader) {
+    ERR_FAIL_COND_MSG(!p_vs_shader.IsValid(), "p_vs_shader must be valid");
+    ERR_FAIL_COND_MSG(!p_fs_shader.IsValid(), "p_fs_shader must be valid");
+
+    vertex_shaders_ = p_vs_shader;
+    fragment_shader_ = p_fs_shader;
+    geometry_shader_ = p_geometry_shader;
+    tess_control_shader_ = p_tess_control_shader;
+    tess_evaluation_shader_ = p_tess_evaluation_shader;
+
     if (shader_program_.IsNull()) {
-        shader_program_ = RS::GetInstance()->ShaderProgramCreate(p_shaders);
+        shader_program_ = RS::GetInstance()->ShaderProgramCreate(vertex_shaders_,
+                                                                 fragment_shader_,
+                                                                 geometry_shader_,
+                                                                 tess_control_shader_,
+                                                                 tess_evaluation_shader_);
     } else {
         RS::GetInstance()->Free(shader_program_);
-        shader_program_ = RS::GetInstance()->ShaderProgramCreate(p_shaders);
+        shader_program_ = RS::GetInstance()->ShaderProgramCreate(vertex_shaders_,
+                                                                 fragment_shader_,
+                                                                 geometry_shader_,
+                                                                 tess_control_shader_,
+                                                                 tess_evaluation_shader_);
     }
-    shaders_ = p_shaders;
 }
 
-RID ShaderProgram::GetRid() const {
+bool RasterizerShaderProgram::IsComplete() {
+    return vertex_shaders_.IsValid() && fragment_shader_.IsValid();
+}
+
+
+RID RasterizerShaderProgram::GetRid() const {
+    return shader_program_;
+}
+
+/////////////////////////////////////////////////////////
+
+ComputeShaderProgram::ComputeShaderProgram() {
+}
+
+ComputeShaderProgram::~ComputeShaderProgram() {
+    RS::GetInstance()->Free(shader_program_);
+}
+
+void ComputeShaderProgram::SetComputeShader(const Ref<Shader>& p_comp_shader) {
+    if (shader_program_.IsNull()) {
+        shader_program_ = RS::GetInstance()->ShaderProgramCreate(p_comp_shader);
+    } else {
+        RS::GetInstance()->Free(shader_program_);
+        shader_program_ = RS::GetInstance()->ShaderProgramCreate(p_comp_shader);
+    }
+}
+
+
+RID ComputeShaderProgram::GetRid() const {
     return shader_program_;
 }
 
