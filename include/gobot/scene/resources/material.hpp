@@ -19,13 +19,38 @@ class GOBOT_EXPORT Material : public Resource {
 public:
     Material();
 
+    ~Material() override;
+
     RID GetRid() const override;
 
     virtual RID GetShaderRid() const;
 
+    FORCE_INLINE RID GetMaterial() const { return material_; }
+
 private:
     RID material_;
 };
+
+///////////////////////////////////////////////
+
+class ShaderMaterial : public Material {
+    GOBCLASS(ShaderMaterial, Material);
+public:
+    ShaderMaterial();
+
+    ~ShaderMaterial();
+
+    void SetShader(const Ref<Shader> &p_shader);
+
+    Ref<Shader> GetShader() const;
+
+    virtual RID GetShaderRid() const override;
+
+private:
+    Ref<Shader> shader_;
+};
+
+/////////////////////////////////////////////////////////////////
 
 
 class GOBOT_EXPORT PBRMaterial3D: public Material {

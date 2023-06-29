@@ -8,11 +8,16 @@
 
 #include "gobot/scene/resources/material.hpp"
 #include "gobot/core/registration.hpp"
+#include "gobot/rendering/render_server.hpp"
 
 namespace gobot {
 
 Material::Material() {
+    material_ = RS::GetInstance()->MaterialCreate();
+}
 
+Material::~Material() {
+    RS::GetInstance()->Free(material_);
 }
 
 RID Material::GetRid() const {
@@ -22,6 +27,34 @@ RID Material::GetRid() const {
 RID Material::GetShaderRid() const {
     return {};
 }
+
+/////////////////////
+
+ShaderMaterial::ShaderMaterial() {
+
+}
+
+ShaderMaterial::~ShaderMaterial() {
+
+}
+
+void ShaderMaterial::SetShader(const Ref<Shader> &p_shader) {
+    shader_ = p_shader;
+}
+
+Ref<Shader> ShaderMaterial::GetShader() const {
+    return shader_;
+}
+
+RID ShaderMaterial::GetShaderRid() const {
+    if (shader_.IsValid()) {
+        return shader_->GetRid();
+    } else {
+        return RID();
+    }
+}
+
+
 
 ///////////////////////////////
 

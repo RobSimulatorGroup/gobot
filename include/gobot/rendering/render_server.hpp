@@ -81,6 +81,10 @@ public:
         return shader;
     }
 
+    RID MaterialCreate() {
+        return RID();
+    }
+
     void Free(const RID& rid);
 
     RID CreateMesh();
