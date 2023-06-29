@@ -69,7 +69,7 @@ void GLMaterialStorage::ShaderProgramFree(RID p_rid) {
 
 }
 
-void GLMaterialStorage::ShaderProgramSetComputeShader(RID p_shader_program,  RID p_comp_shader) {
+void GLMaterialStorage::ShaderProgramSetComputeShader(RID p_shader_program, RID p_comp_shader) {
 
 }
 

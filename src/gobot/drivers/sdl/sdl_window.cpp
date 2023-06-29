@@ -241,12 +241,6 @@ std::uint32_t SDLWindow::GetWindowID() const {
 }
 
 void SDLWindow::ProcessEvents() {
-//    if (RenderServer::HasInit()) {
-//        auto flags = GET_RS()->GetResetFlags();
-//        render_need_reset_ = s_render_reset_flag != flags;
-//        s_render_reset_flag = flags;
-//    }
-
     // Check if any events have been activated (key pressed, mouse moved etc.) and call corresponding response functions
     SDL_Event event;
     while (SDL_PollEvent(&event)) {
@@ -380,12 +374,6 @@ void SDLWindow::ProcessEvents() {
             }
         }
     }
-
-//    if (RenderServer::HasInit()) {
-//        if (render_need_reset_) {
-//            GET_RS()->Reset(GetWidth(), GetHeight(), s_render_reset_flag);
-//        }
-//    }
 
 }
 
