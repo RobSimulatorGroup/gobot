@@ -21,7 +21,7 @@ Shader::~Shader() {
 }
 
 void Shader::SetCode(const String &p_code) {
-    ERR_FAIL_COND_MSG(shader_.IsNull(), "The shader must valid before set code.");
+    ERR_FAIL_COND_MSG(shader_.IsNull(), "The shader must be valid before set code to it.");
     code_ = p_code;
     RS::GetInstance()->ShaderSetCode(shader_, p_code, GetName(), GetPath());
 }
