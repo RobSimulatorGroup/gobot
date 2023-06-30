@@ -16,12 +16,12 @@ namespace gobot {
 class SceneTree;
 class SceneRenderer;
 
-class GOBOT_EXPORT SceneViewPanel : public ImGuiWindow {
-    GOBCLASS(SceneViewPanel, ImGuiWindow)
+class GOBOT_EXPORT SceneView3DPanel : public ImGuiWindow {
+    GOBCLASS(SceneView3DPanel, ImGuiWindow)
 public:
-    SceneViewPanel();
+    SceneView3DPanel();
 
-    ~SceneViewPanel() override;
+    ~SceneView3DPanel() override;
 
     void OnImGuiContent() override;
 

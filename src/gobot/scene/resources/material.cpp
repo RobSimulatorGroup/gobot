@@ -38,17 +38,17 @@ ShaderMaterial::~ShaderMaterial() {
 
 }
 
-void ShaderMaterial::SetShader(const Ref<Shader> &p_shader) {
-    shader_ = p_shader;
+void ShaderMaterial::SetShaderProgram(const Ref<ShaderProgram> &p_shader_program_) {
+    shader_program_ = p_shader_program_;
 }
 
-Ref<Shader> ShaderMaterial::GetShader() const {
-    return shader_;
+Ref<ShaderProgram> ShaderMaterial::GetShaderProgram() const {
+    return shader_program_;
 }
 
 RID ShaderMaterial::GetShaderRid() const {
-    if (shader_.IsValid()) {
-        return shader_->GetRid();
+    if (shader_program_.IsValid()) {
+        return shader_program_->GetRid();
     } else {
         return RID();
     }

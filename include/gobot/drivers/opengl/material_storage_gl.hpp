@@ -27,7 +27,7 @@ public:
 
     bool OwnsShader(RID p_rid) { return shader_owner_.Owns(p_rid); }
 
-    void ShaderSetCode(RID p_shader, const String &p_code) override;
+    void ShaderSetCode(RID p_shader, const String &p_code, const String& p_name, const String& p_path) override;
 
     String ShaderGetCode(RID p_shader) const override;
 
@@ -47,9 +47,10 @@ public:
                                           RID p_fs_shader,
                                           RID p_geometry_shader,
                                           RID p_tess_control_shader,
-                                          RID p_tess_evaluation_shader) override;
+                                          RID p_tess_evaluation_shader,
+                                          const String& p_name) override;
 
-    void ShaderProgramSetComputeShader(RID p_shader_program, RID p_comp_shader) override;
+    void ShaderProgramSetComputeShader(RID p_shader_program, RID p_comp_shader, const String& p_name) override;
 
     // material
     RID MaterialAllocate() override;

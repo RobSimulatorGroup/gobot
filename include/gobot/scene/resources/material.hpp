@@ -40,14 +40,14 @@ public:
 
     ~ShaderMaterial();
 
-    void SetShader(const Ref<Shader> &p_shader);
+    void SetShaderProgram(const Ref<ShaderProgram> &p_shader);
 
-    Ref<Shader> GetShader() const;
+    Ref<ShaderProgram> GetShaderProgram() const;
 
     virtual RID GetShaderRid() const override;
 
 private:
-    Ref<Shader> shader_;
+    Ref<ShaderProgram> shader_program_;
 };
 
 /////////////////////////////////////////////////////////////////

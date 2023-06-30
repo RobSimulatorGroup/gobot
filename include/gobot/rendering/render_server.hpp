@@ -51,8 +51,9 @@ public:
         return shader;
     }
 
-    void ShaderSetCode(RID p_shader, const String &p_code) {
-        RSG::material_storage->ShaderSetCode(p_shader, p_code);
+    // p_name and p_path is for error debug print.
+    void ShaderSetCode(RID p_shader, const String &p_code, const String& p_name = "", const String& p_path = "") {
+        RSG::material_storage->ShaderSetCode(p_shader, p_code, p_name, p_path);
     }
 
     String ShaderGetCode(RID p_shader) {
@@ -71,18 +72,21 @@ public:
                                           RID p_fs_shader,
                                           RID p_geometry_shader = {},
                                           RID p_tess_control_shader = {},
-                                          RID p_tess_evaluation_shader = {}) {
+                                          RID p_tess_evaluation_shader = {},
+                                          const String& p_name = "") {
         RSG::material_storage->ShaderProgramSetRasterizerShader(p_shader_program,
                                                                 p_vs_shader,
                                                                 p_fs_shader,
                                                                 p_geometry_shader,
                                                                 p_tess_control_shader,
-                                                                p_tess_evaluation_shader);
+                                                                p_tess_evaluation_shader,
+                                                                p_name);
     }
 
-    void ShaderProgramSetComputeShader(RID p_shader_program, RID p_comp_shader) {
+    void ShaderProgramSetComputeShader(RID p_shader_program, RID p_comp_shader, const String& p_name = "") {
         RSG::material_storage->ShaderProgramSetComputeShader(p_shader_program,
-                                                             p_comp_shader);
+                                                             p_comp_shader,
+                                                             p_name);
     }
 
     RID ShaderProgramCreate(RID p_compute_shader) {

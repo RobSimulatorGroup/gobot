@@ -32,6 +32,7 @@ RenderServer::RenderServer() {
 
     RSG::texture_storage = RSG::rasterizer->GetTextureStorage();
     RSG::material_storage = RSG::rasterizer->GetMaterialStorage();
+    RSG::utilities = RSG::rasterizer->GetUtilities();
 }
 
 RendererType RenderServer::GetRendererType() {

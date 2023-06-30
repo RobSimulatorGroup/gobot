@@ -7,6 +7,7 @@
 
 
 #include "gobot/editor/node3d_editor.hpp"
+#include "gobot/editor/imgui/scene_view_3d_panel.hpp"
 #include "gobot/error_macros.hpp"
 #include "gobot/core/registration.hpp"
 #include "gobot/core/os/input.hpp"
@@ -27,6 +28,21 @@ Node3DEditor::Node3DEditor() {
     camera3d_ = Object::New<Camera3D>();
     AddChild(camera3d_);
     ResetCamera();
+    scene_view3d_panel_ = Object::New<SceneView3DPanel>();
+    AddChild(scene_view3d_panel_);
+
+    shader_material_ = MakeRef<ShaderMaterial>();
+
+    auto vs_shader = MakeRef<Shader>();
+    vs_shader->SetShaderType(ShaderType::VertexShader);
+    vs_shader->SetCode("111");
+    auto fs_shader = MakeRef<Shader>();
+    fs_shader->SetShaderType(ShaderType::FragmentShader);
+    fs_shader->SetCode("111");
+    auto shader_program = MakeRef<RasterizerShaderProgram>();
+    shader_program->SetRasterizerShader(vs_shader, fs_shader);
+
+    shader_material_->SetShaderProgram(shader_program);
 }
 
 void Node3DEditor::ResetCamera() {

@@ -6,7 +6,7 @@
 */
 
 
-#include "gobot/editor/imgui/scene_view_panel.hpp"
+#include "gobot/editor/imgui/scene_view_3d_panel.hpp"
 #include "gobot/editor/node3d_editor.hpp"
 #include "gobot/editor/editor.hpp"
 #include "gobot/scene/camera_3d.hpp"
@@ -24,9 +24,9 @@
 
 namespace gobot {
 
-SceneViewPanel::SceneViewPanel()
+SceneView3DPanel::SceneView3DPanel()
 {
-    SetName(ICON_MDI_EYE " Viewer###scene_view");
+    SetName(ICON_MDI_EYE " Viewer###scene_view3d");
     SetImGuiWindowFlag(ImGuiWindowFlags_NoCollapse | ImGuiWindowFlags_NoScrollbar | ImGuiWindowFlags_NoScrollWithMouse);
     SetImGuiStyleVar(ImGuiStyleVar_WindowPadding, {0, 0});
 
@@ -35,11 +35,11 @@ SceneViewPanel::SceneViewPanel()
     view_port_ = RS::GetInstance()->ViewportCreate();
 }
 
-SceneViewPanel::~SceneViewPanel() {
+SceneView3DPanel::~SceneView3DPanel() {
     RS::GetInstance()->Free(view_port_);
 }
 
-void SceneViewPanel::OnImGuiContent()
+void SceneView3DPanel::OnImGuiContent()
 {
     auto* camera_3d = Node3DEditor::GetInstance()->GetCamera3D();
 
@@ -87,7 +87,7 @@ void SceneViewPanel::OnImGuiContent()
 
 }
 
-void SceneViewPanel::Resize(uint32_t width, uint32_t height) {
+void SceneView3DPanel::Resize(uint32_t width, uint32_t height) {
     bool resize = false;
     ERR_FAIL_COND_MSG(width == 0 || height == 0, "Scene3D View Dimensions 0");
 
@@ -102,7 +102,7 @@ void SceneViewPanel::Resize(uint32_t width, uint32_t height) {
     }
 }
 
-void SceneViewPanel::ToolBar()
+void SceneView3DPanel::ToolBar()
 {
     auto node3d_editor = Node3DEditor::GetInstance();
     ImGui::Indent();

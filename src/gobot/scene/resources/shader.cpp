@@ -23,7 +23,7 @@ Shader::~Shader() {
 void Shader::SetCode(const String &p_code) {
     ERR_FAIL_COND_MSG(shader_.IsNull(), "The shader must valid before set code.");
     code_ = p_code;
-    RS::GetInstance()->ShaderSetCode(shader_, p_code);
+    RS::GetInstance()->ShaderSetCode(shader_, p_code, GetName(), GetPath());
 }
 
 String Shader::GetCode() const {
@@ -52,11 +52,11 @@ RID Shader::GetRid() const {
 ////////////////////////////////
 
 ShaderProgram::ShaderProgram() {
-
+    shader_program_ = RS::GetInstance()->ShaderProgramCreate();
 }
 
 ShaderProgram::~ShaderProgram()  {
-
+    RS::GetInstance()->Free(shader_program_);
 }
 
 RID ShaderProgram::GetRid() const {
@@ -89,7 +89,8 @@ void RasterizerShaderProgram::SetRasterizerShader(const Ref<Shader>& p_vs_shader
                                                         fragment_shader_->GetRid(),
                                                         geometry_shader_ ? geometry_shader_->GetRid() : RID{},
                                                         tess_control_shader_ ? tess_control_shader_->GetRid() : RID{},
-                                                        tess_evaluation_shader_ ? tess_evaluation_shader_->GetRid() : RID{});
+                                                        tess_evaluation_shader_ ? tess_evaluation_shader_->GetRid() : RID{},
+                                                        GetName());
 }
 
 bool RasterizerShaderProgram::IsComplete() {
