@@ -9,6 +9,8 @@ set(CMAKE_POSITION_INDEPENDENT_CODE ON)
 set(CMAKE_PREFIX_PATH ${CMAKE_BINARY_DIR})
 set(CMAKE_MODULE_PATH ${CMAKE_BINARY_DIR})
 
+set(GOBOT_ROOT_DIR "${CMAKE_CURRENT_SOURCE_DIR}")
+
 option(BUILD_EXPERIMENT "using imgui and glfw" OFF)
 option(BUILD_TESTS "build tests" OFF)
 
@@ -85,6 +87,7 @@ INCLUDE(GenerateExportHeader)
 
 add_subdirectory(3rdparty)
 
+
 file(GLOB_RECURSE SOURCE_CORE CONFIGURE_DEPENDS "src/gobot/core/*.cpp")
 file(GLOB_RECURSE SOURCE_SCENE CONFIGURE_DEPENDS "src/gobot/scene/*.cpp")
 file(GLOB_RECURSE SOURCE_DRIVERS CONFIGURE_DEPENDS "src/gobot/drivers/*.cpp")
@@ -114,10 +117,9 @@ target_include_directories(gobot
 target_link_libraries(gobot
     PUBLIC
     RTTR::Core
-#    OpenGL::GL
     Qt5::Core
     imgui-gobot
-        glad
+    glad
     SDL2::SDL2
     stb
     gli
@@ -140,6 +142,16 @@ set_target_properties(gobot
     AUTORCC ON
     AUTOUIC ON
 )
+
+set(SHADER_COMPILE_TARGET GobotShaderCompile)
+add_subdirectory(shader)
+# Why doesn't work for include
+add_dependencies(gobot ${SHADER_COMPILE_TARGET})
+target_include_directories(gobot
+        PUBLIC
+        shader/generated
+        )
+
 
 
 if (MSVC)

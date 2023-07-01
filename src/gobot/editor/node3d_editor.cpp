@@ -18,6 +18,8 @@
 #include "imgui.h"
 #include "imgui_internal.h"
 #include "imgui_extension/gizmos/ImGuizmo.h"
+#include "glsl_shader_hpp/grid_frag.hpp"
+#include "glsl_shader_hpp/grid_vert.hpp"
 
 namespace gobot {
 
@@ -35,10 +37,10 @@ Node3DEditor::Node3DEditor() {
 
     auto vs_shader = MakeRef<Shader>();
     vs_shader->SetShaderType(ShaderType::VertexShader);
-    vs_shader->SetCode("111");
+    vs_shader->SetCode(GRID_VERT);
     auto fs_shader = MakeRef<Shader>();
     fs_shader->SetShaderType(ShaderType::FragmentShader);
-    fs_shader->SetCode("111");
+    fs_shader->SetCode(GRID_FRAG);
     auto shader_program = MakeRef<RasterizerShaderProgram>();
     shader_program->SetRasterizerShader(vs_shader, fs_shader);
 

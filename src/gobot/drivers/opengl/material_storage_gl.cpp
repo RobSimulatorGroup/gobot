@@ -59,7 +59,8 @@ void GLMaterialStorage::ShaderInitialize(RID p_rid, ShaderType shader_type) {
 void GLMaterialStorage::ShaderSetCode(RID p_shader, const String &p_code, const String& p_name, const String& p_path) {
     auto* shader = shader_owner_.GetOrNull(p_shader);
     ERR_FAIL_COND(!shader);
-    const char* data = p_code.toLocal8Bit().constData();
+    auto str = p_code.toStdString();
+    const char* data = str.data();
     glShaderSource(shader->gl_shader, 1, &data, nullptr);
     glCompileShader(shader->gl_shader);
     GLint status;
@@ -74,7 +75,6 @@ void GLMaterialStorage::ShaderSetCode(RID p_shader, const String &p_code, const 
             if (iloglen == 0) {
                 iloglen = 4096;
             }
-
 
             char *ilogmem = (char *)malloc(iloglen + 1);
             ilogmem[iloglen] = '\0';
