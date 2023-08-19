@@ -32,6 +32,7 @@ RenderServer::RenderServer() {
 
     RSG::texture_storage = RSG::rasterizer->GetTextureStorage();
     RSG::material_storage = RSG::rasterizer->GetMaterialStorage();
+    RSG::mesh_storage = RSG::rasterizer->GetMeshStorage();
     RSG::utilities = RSG::rasterizer->GetUtilities();
 }
 
@@ -70,9 +71,10 @@ void* RenderServer::GetRenderTargetColorTextureNativeHandle(const RID& p_view_po
     return RSG::viewport->GetRenderTargetColorTextureNativeHandle(p_view_port);
 }
 
-
-RID RenderServer::CreateMesh() {
-    return {};
+RID RenderServer::MeshCreate() {
+    auto rid = RSG::mesh_storage->MeshAllocate();
+    RSG::mesh_storage->MeshInitialize(rid);
+    return rid;
 }
 
 

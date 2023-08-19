@@ -14,7 +14,7 @@ namespace gobot {
 
 PrimitiveMesh::PrimitiveMesh()
 {
-    mesh_ = RenderServer::GetInstance()->CreateMesh();
+    mesh_ = RenderServer::GetInstance()->MeshCreate();
 }
 
 PrimitiveMesh::~PrimitiveMesh() {

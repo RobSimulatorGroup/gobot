@@ -14,28 +14,13 @@ namespace gobot {
 
 class MeshStorage {
 public:
-    MeshStorage();
+    virtual ~MeshStorage() {}
 
-    virtual ~MeshStorage();
+    virtual RID MeshAllocate() = 0;
 
-    static MeshStorage* GetInstance();
+    virtual void MeshInitialize(const RID& p_rid) = 0;
 
-    void MeshInitialize(const RID& mesh_rid);
-
-    void MeshClear(const RID& mesh_rid);
-
-    void MeshFree(const RID& rid);
-
-private:
-    static MeshStorage* s_singleton;
-
-    struct Mesh {
-        RID vertex_buffer{};
-        RID index_buffer{};
-        RID material{};
-    };
-
-    mutable RID_Owner<Mesh> mesh_owner_;
+    virtual void MeshFree(const RID& p_rid) = 0;
 };
 
 }

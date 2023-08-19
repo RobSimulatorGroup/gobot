@@ -12,6 +12,7 @@
 #include "gobot/rendering/renderer_viewport.hpp"
 #include "gobot/rendering/render_utilities.hpp"
 #include "gobot/rendering/material_storage.hpp"
+#include "gobot/rendering/mesh_storage.hpp"
 
 namespace gobot {
 
@@ -30,6 +31,8 @@ public:
     static RendererViewport* viewport;
 
     static MaterialStorage* material_storage;
+
+    static MeshStorage* mesh_storage;
 
 };
 

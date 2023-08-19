@@ -18,6 +18,7 @@ GLRasterizer::GLRasterizer() {
 
     texture_storage_ = new opengl::TextureStorage();
     material_storage_ = new opengl::GLMaterialStorage();
+    mesh_storage_ =  new opengl::GLMeshStorage();
     utilities_ = new opengl::GLRendererUtilities();
 }
 
@@ -25,6 +26,7 @@ GLRasterizer::~GLRasterizer() {
     s_singleton = nullptr;
     delete texture_storage_;
     delete material_storage_;
+    delete mesh_storage_;
     delete utilities_;
 }
 

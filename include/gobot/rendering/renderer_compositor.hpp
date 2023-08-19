@@ -13,6 +13,7 @@ class FrameBufferCache;
 class RendererSceneRender;
 class RendererTextureStorage;
 class MaterialStorage;
+class MeshStorage;
 class RendererUtilities;
 
 class RendererCompositor {
@@ -33,6 +34,8 @@ public:
     virtual RendererTextureStorage* GetTextureStorage() = 0;
 
     virtual MaterialStorage* GetMaterialStorage() = 0;
+
+    virtual MeshStorage* GetMeshStorage() = 0;
 
     virtual RendererUtilities* GetUtilities() = 0;
 

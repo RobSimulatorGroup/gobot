@@ -99,9 +99,9 @@ public:
         return RID();
     }
 
-    void Free(const RID& rid);
+    RID MeshCreate();
 
-    RID CreateMesh();
+    void Free(const RID& rid);
 
     void Draw();
 

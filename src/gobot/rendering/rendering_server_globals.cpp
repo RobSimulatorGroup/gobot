@@ -21,4 +21,6 @@ MaterialStorage* RenderingServerGlobals::material_storage = nullptr;
 
 RendererUtilities* RenderingServerGlobals::utilities = nullptr;
 
+MeshStorage* RenderingServerGlobals::mesh_storage = nullptr;
+
 }
