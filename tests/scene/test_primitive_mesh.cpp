@@ -11,21 +11,24 @@
 #include <gobot/scene/resources/material.hpp>
 #include <gobot/scene/resources/mesh.hpp>
 #include <gobot/scene/resources/primitive_mesh.hpp>
+#include "gobot/rendering/render_server.hpp"
 
 TEST(TestBoxMesh, test_create) {
+    auto render_server = std::make_unique<gobot::RenderServer>();
+
     gobot::Variant variant = new gobot::BoxMesh();
     auto *r = variant.convert<gobot::Resource*>();
     gobot::Ref<gobot::Resource> a = gobot::Ref<gobot::Resource>(r);
     auto box_mesh = a.DynamicPointerCast<gobot::BoxMesh>();
 
-    box_mesh->SetMaterial(new gobot::Material3D());
+    box_mesh->SetMaterial(new gobot::PBRMaterial3D());
     auto material = box_mesh->Get("material");
     gobot::Instance instance(material);
     ASSERT_TRUE(material.is_valid());
 }
 
 TEST(TestBoxMesh, test_cast) {
-    gobot::Variant variant =  gobot::Ref<gobot::Resource>(new gobot::Material3D());
+    gobot::Variant variant =  gobot::Ref<gobot::Resource>(new gobot::PBRMaterial3D());
     ASSERT_TRUE(variant.can_convert<gobot::Ref<gobot::Material>>());
     ASSERT_TRUE(variant.can_convert<gobot::Ref<gobot::Resource>>());
 }

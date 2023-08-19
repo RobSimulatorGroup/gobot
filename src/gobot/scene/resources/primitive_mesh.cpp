@@ -36,6 +36,15 @@ BoxMesh::BoxMesh() {
 
 }
 
+void BoxMesh::SetWidth(RealType p_width) {
+    size_[1] = p_width;
+}
+
+RealType BoxMesh::GetWidth() const {
+    return size_[1];
+}
+
+
 void BoxMesh::SetSize(Vector3 size) {
     size_ = size;
 }

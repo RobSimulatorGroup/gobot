@@ -354,31 +354,31 @@ Affine3 Node3D::GetRelativeTransform(const Node *parent) const {
     }
 }
 
-void Node3D::Rotate(const Vector3 &axis, real_t angle) {
+void Node3D::Rotate(const Vector3 &axis, RealType angle) {
     Affine3 t = GetGlobalTransform();
     t.linear() = AngleAxis(angle, axis.normalized()) * t.linear();
     SetTransform(t);
 }
 
-void Node3D::RotateLocal(const Vector3 &axis, real_t angle) {
+void Node3D::RotateLocal(const Vector3 &axis, RealType angle) {
     Affine3 t = GetGlobalTransform();
     t.linear() = t.linear() * AngleAxis(angle, axis.normalized());
     SetTransform(t);
 }
 
-void Node3D::RotateX(real_t angle) {
+void Node3D::RotateX(RealType angle) {
     Affine3 t = GetGlobalTransform();
     t.linear() = AngleAxis(angle, Vector3::UnitX()) * t.linear();
     SetTransform(t);
 }
 
-void Node3D::RotateY(real_t angle) {
+void Node3D::RotateY(RealType angle) {
     Affine3 t = GetGlobalTransform();
     t.linear() = AngleAxis(angle, Vector3::UnitY()) * t.linear();
     SetTransform(t);
 }
 
-void Node3D::RotateZ(real_t angle) {
+void Node3D::RotateZ(RealType angle) {
     Affine3 t = GetGlobalTransform();
     t.linear() = AngleAxis(angle, Vector3::UnitZ()) * t.linear();
     SetTransform(t);

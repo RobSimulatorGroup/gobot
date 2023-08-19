@@ -12,6 +12,7 @@
 #include <gobot/core/config/project_setting.hpp>
 #include <gobot/scene/resources/cylinder_shape_3d.hpp>
 #include <gobot/scene/resources/primitive_mesh.hpp>
+#include <gobot/rendering/render_server.hpp>
 #include <gobot/core/types.hpp>
 #include <gobot/log.hpp>
 
@@ -35,12 +36,15 @@ protected:
     void SetUp() override {
         auto* project_setting = gobot::ProjectSettings::GetInstance();
         project_setting->SetProjectPath("/tmp/test_project");
+
+        render_server = std::make_unique<gobot::RenderServer>();
     }
 
     void TearDown() override {
     }
 
     gobot::ProjectSettings project_settings;
+    std::unique_ptr<gobot::RenderServer> render_server;
 };
 
 TEST_F(TestResourceFormatScene, test_save_load) {
@@ -61,7 +65,7 @@ TEST_F(TestResourceFormatScene, test_save_load) {
 TEST_F(TestResourceFormatScene, test_subresource) {
     gobot::Ref<gobot::BoxMesh> box_mesh = gobot::MakeRef<gobot::BoxMesh>();
     box_mesh->SetWidth(1.1);
-    auto material_3d = gobot::MakeRef<gobot::Material3D>();
+    auto material_3d = gobot::MakeRef<gobot::PBRMaterial3D>();
     material_3d->SetAlbedo(gobot::Color(0.5f, 0.5f, 0.1f));
     box_mesh->SetMaterial(material_3d);
 
@@ -75,7 +79,7 @@ TEST_F(TestResourceFormatScene, test_subresource) {
     ASSERT_TRUE(box->get_type().get_name() == "BoxMesh");
     auto box_load = gobot::dynamic_pointer_cast<gobot::BoxMesh>(box);
     ASSERT_TRUE(box_load->GetWidth() ==  1.1f);
-    auto material3d = gobot::dynamic_pointer_cast<gobot::Material3D>(box_load->GetMaterial());
+    auto material3d = gobot::dynamic_pointer_cast<gobot::PBRMaterial3D>(box_load->GetMaterial());
     ASSERT_TRUE(material3d.IsValid());
     ASSERT_TRUE(material3d->GetAlbedo().blue() == 0.1f);
 }
@@ -83,7 +87,7 @@ TEST_F(TestResourceFormatScene, test_subresource) {
 TEST_F(TestResourceFormatScene, test_extresource) {
     gobot::Ref<gobot::BoxMesh> box_mesh = gobot::MakeRef<gobot::BoxMesh>();
     box_mesh->SetWidth(1.1);
-    auto material_3d = gobot::MakeRef<gobot::Material3D>();
+    auto material_3d = gobot::MakeRef<gobot::PBRMaterial3D>();
     material_3d->SetAlbedo(gobot::Color(0.5f, 0.5f, 0.1f));
     material_3d->SetPath("res://meterial.jres");
     USING_ENUM_BITWISE_OPERATORS;
@@ -100,7 +104,7 @@ TEST_F(TestResourceFormatScene, test_extresource) {
     ASSERT_TRUE(box->get_type().get_name() == "BoxMesh");
     auto box_load = gobot::dynamic_pointer_cast<gobot::BoxMesh>(box);
     ASSERT_TRUE(box_load->GetWidth() ==  1.1f);
-    auto material3d = gobot::dynamic_pointer_cast<gobot::Material3D>(box_load->GetMaterial());
+    auto material3d = gobot::dynamic_pointer_cast<gobot::PBRMaterial3D>(box_load->GetMaterial());
     ASSERT_TRUE(material3d.IsValid());
     ASSERT_TRUE(material3d->GetAlbedo().blue() == 0.1f);
 }

@@ -127,12 +127,12 @@ enum class Axis
  * presence or absence of the REAL_T_IS_DOUBLE define.
  */
 #ifdef REAL_T_IS_DOUBLE
-using real_t = double;
+using RealType = double;
 #else
-using real_t = float;
+using RealType = float;
 #endif
 
-template <typename _Scalar = real_t>
+template <typename _Scalar = RealType>
 struct MatrixData {
     Eigen::Index rows;
     Eigen::Index cols;
@@ -145,8 +145,8 @@ constexpr int Sign(const T val) {
     return (static_cast<T>(0) < val) - (val < static_cast<T>(0));
 }
 
-inline real_t DEG_TO_RAD(real_t deg) { return static_cast<real_t>(deg * (Math_PI / 180.0)); }
-inline real_t RAD_TO_DEG(real_t rad) { return static_cast<real_t>(rad * (180.0 / Math_PI)); }
+inline RealType DEG_TO_RAD(RealType deg) { return static_cast<RealType>(deg * (Math_PI / 180.0)); }
+inline RealType RAD_TO_DEG(RealType rad) { return static_cast<RealType>(rad * (180.0 / Math_PI)); }
 
 template<class T>
 typename std::enable_if<!std::numeric_limits<T>::is_integer, bool>::type

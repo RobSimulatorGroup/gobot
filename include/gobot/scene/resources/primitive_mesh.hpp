@@ -34,8 +34,11 @@ private:
 class GOBOT_EXPORT BoxMesh : public PrimitiveMesh {
     GOBCLASS(BoxMesh, PrimitiveMesh)
 public:
-
     BoxMesh();
+
+    void SetWidth(RealType p_width);
+
+    RealType GetWidth() const;
 
     void SetSize(Vector3 size);
 

@@ -21,25 +21,25 @@ public:
 
     Camera3D();
 
-    void SetFovy(const real_t& fovy);
+    void SetFovy(const RealType& fovy);
 
-    FORCE_INLINE real_t GetFovy() const { return fovy_; }
+    FORCE_INLINE RealType GetFovy() const { return fovy_; }
 
-    void SetAspect(const real_t& aspect);
+    void SetAspect(const RealType& aspect);
 
-    FORCE_INLINE real_t GetAspect() const { return aspect_; }
+    FORCE_INLINE RealType GetAspect() const { return aspect_; }
 
-    void SetNear(const real_t& near);
+    void SetNear(const RealType& near);
 
-    FORCE_INLINE real_t GetNear() const { return near_; }
+    FORCE_INLINE RealType GetNear() const { return near_; }
 
-    void SetFar(const real_t& far);
+    void SetFar(const RealType& far);
 
-    FORCE_INLINE real_t GetFar() const { return far_; }
+    FORCE_INLINE RealType GetFar() const { return far_; }
 
     FORCE_INLINE ProjectionType GetProjectionType() const { return mode_; }
 
-    void SetPerspective(real_t fovy_degrees, real_t z_near, real_t z_far);
+    void SetPerspective(RealType fovy_degrees, RealType z_near, RealType z_far);
 
     void SetViewMatrix(const Vector3& eye, const Vector3& at, const Vector3& up);
 
@@ -54,10 +54,10 @@ public:
     Matrix4 GetProjectionMatrix() const;
 
 private:
-    real_t fovy_ = 75.0;
-    real_t aspect_ = 1.0;
-    real_t near_ = 0.05;
-    real_t far_ = 4000.0;
+    RealType fovy_ = 75.0;
+    RealType aspect_ = 1.0;
+    RealType near_ = 0.05;
+    RealType far_ = 4000.0;
 
     ProjectionType mode_ = Perspective;
 

@@ -59,7 +59,7 @@ void SceneView3DPanel::OnImGuiContent()
     scene_view_size.x -= static_cast<int>(scene_view_size.x) % 2 != 0 ? 1.0f : 0.0f;
     scene_view_size.y -= static_cast<int>(scene_view_size.y) % 2 != 0 ? 1.0f : 0.0f;
 
-    real_t aspect = static_cast<real_t>(scene_view_size.x) / static_cast<real_t>(scene_view_size.y);
+    RealType aspect = static_cast<RealType>(scene_view_size.x) / static_cast<RealType>(scene_view_size.y);
 
     if(!AlmostEqual(aspect, camera_3d->GetAspect())) {
         camera_3d->SetAspect(aspect);

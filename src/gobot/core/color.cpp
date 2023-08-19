@@ -40,7 +40,7 @@ uint32_t Color::ToRGBE9995() const {
 
     float cMax = std::max(cRed, std::max(cGreen, cBlue));
 
-    float expp = std::max(-B - 1.0f, std::floor(std::log(cMax) / (real_t)Math_LN2)) + 1.0f + B;
+    float expp = std::max(-B - 1.0f, std::floor(std::log(cMax) / (RealType)Math_LN2)) + 1.0f + B;
 
     float sMax = (float)floor((cMax / std::pow(2.0f, expp - B - N)) + 0.5f);
 

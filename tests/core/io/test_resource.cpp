@@ -11,9 +11,12 @@
 #include "gobot/core/io/resource.hpp"
 #include "gobot/core/types.hpp"
 #include "gobot/scene/resources/primitive_mesh.hpp"
+#include "gobot/rendering/render_server.hpp"
 #include "gobot/log.hpp"
 
 TEST(TestResource, test_cast) {
+    auto render_server = std::make_unique<gobot::RenderServer>();
+
     gobot::Ref<gobot::Resource> res(gobot::MakeRef<gobot::Resource>());
     gobot::Instance instance(res);
     gobot::Variant var(res);
@@ -28,25 +31,28 @@ TEST(TestResource, test_cast) {
 }
 
 TEST(TestResource, test_clone) {
+    auto render_server = std::make_unique<gobot::RenderServer>();
     auto box_mesh = gobot::MakeRef<gobot::BoxMesh>();
-    box_mesh->SetWidth(10.0);
+    box_mesh->SetSize({1.0, 2.0, 10.0});
     auto copy_box = gobot::dynamic_pointer_cast<gobot::BoxMesh>(box_mesh->Clone());
-    ASSERT_TRUE(copy_box->GetWidth() == box_mesh->GetWidth());
+    ASSERT_TRUE(copy_box->GetSize() == box_mesh->GetSize());
 }
 
 TEST(TestResource, test_resource_cache) {
+    auto render_server = std::make_unique<gobot::RenderServer>();
     auto box_mesh = gobot::MakeRef<gobot::BoxMesh>();
     box_mesh->SetPath("res://box_mesh.jres");
     ASSERT_TRUE(gobot::ResourceCache::GetRef("res://box_mesh.jres").Get() == box_mesh.Get());
 }
 
 TEST(TestResource, test_copy_from) {
+    auto render_server = std::make_unique<gobot::RenderServer>();
     auto box_mesh = gobot::MakeRef<gobot::BoxMesh>();
     auto box_mesh2 = gobot::MakeRef<gobot::BoxMesh>();
-    box_mesh2->SetWidth(10.0);
+    box_mesh2->SetSize({1.0, 2.0, 10.0});
 
     box_mesh->CopyFrom(box_mesh2);
-    ASSERT_TRUE(box_mesh->GetWidth() == box_mesh2->GetWidth());
+    ASSERT_TRUE(box_mesh->GetSize() == box_mesh2->GetSize());
 }
 
 TEST(TestResource, test_generate_unique_id) {

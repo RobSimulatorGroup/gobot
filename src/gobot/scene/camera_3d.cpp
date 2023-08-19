@@ -14,24 +14,24 @@ Camera3D::Camera3D() {
 
 }
 
-void Camera3D::SetFovy(const real_t& fovy) {
+void Camera3D::SetFovy(const RealType& fovy) {
     fovy_ = fovy;
 }
 
-void Camera3D::SetAspect(const real_t& aspect) {
+void Camera3D::SetAspect(const RealType& aspect) {
     aspect_ = aspect;
 }
 
-void Camera3D::SetNear(const real_t& near) {
+void Camera3D::SetNear(const RealType& near) {
     near_ = near;
 }
 
-void Camera3D::SetFar(const real_t& far) {
+void Camera3D::SetFar(const RealType& far) {
     far_ = far;
 }
 
 
-void Camera3D::SetPerspective(real_t fovy_degrees, real_t z_near, real_t z_far) {
+void Camera3D::SetPerspective(RealType fovy_degrees, RealType z_near, RealType z_far) {
     fovy_ = fovy_degrees;
     near_ = z_near;
     far_ = z_far;
