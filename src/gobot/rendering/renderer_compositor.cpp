@@ -13,24 +13,24 @@
 
 namespace gobot {
 
-RendererCompositor* RendererCompositor::s_singleton = nullptr;
+Rasterizer* Rasterizer::s_singleton = nullptr;
 
-RendererCompositor *(*RendererCompositor::CreateFunc)() = nullptr;
+Rasterizer *(*Rasterizer::CreateFunc)() = nullptr;
 
-RendererCompositor::RendererCompositor() {
+Rasterizer::Rasterizer() {
     s_singleton = this;
 }
 
-RendererCompositor* RendererCompositor::Create() {
+Rasterizer* Rasterizer::Create() {
     return CreateFunc();
 }
 
-RendererCompositor::~RendererCompositor() {
+Rasterizer::~Rasterizer() {
     s_singleton = nullptr;
 }
 
-RendererCompositor* RendererCompositor::GetInstance() {
-    ERR_FAIL_COND_V_MSG(s_singleton == nullptr, nullptr, "Must call this after initialize RendererCompositor");
+Rasterizer* Rasterizer::GetInstance() {
+    ERR_FAIL_COND_V_MSG(s_singleton == nullptr, nullptr, "Must call this after initialize Rasterizer");
     return s_singleton;
 }
 

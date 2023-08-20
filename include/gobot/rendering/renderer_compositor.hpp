@@ -16,18 +16,18 @@ class MaterialStorage;
 class MeshStorage;
 class RendererUtilities;
 
-class RendererCompositor {
+class Rasterizer {
 protected:
-    static RendererCompositor*(*CreateFunc)();
+    static Rasterizer*(*CreateFunc)();
 
 public:
-    RendererCompositor();
+    Rasterizer();
 
-    virtual ~RendererCompositor();
+    virtual ~Rasterizer();
 
-    static RendererCompositor* Create();
+    static Rasterizer* Create();
 
-    static RendererCompositor* GetInstance();
+    static Rasterizer* GetInstance();
 
     virtual RendererSceneRender* GetScene() = 0;
 
@@ -49,7 +49,7 @@ public:
 
 private:
 
-    static RendererCompositor* s_singleton;
+    static Rasterizer* s_singleton;
 
 };
 

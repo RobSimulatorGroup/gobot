@@ -16,7 +16,7 @@ protected:
     void SetUp() override {
         render_server = std::make_unique<gobot::RenderServer>();
 
-        tree = gobot::SceneTree::New<gobot::SceneTree>();
+        tree = gobot::SceneTree::New<gobot::SceneTree>(false);
         tree->Initialize();
         node1 = gobot::Node3D::New<gobot::Node3D>();
         node1_1 = gobot::Node3D::New<gobot::Node3D>();

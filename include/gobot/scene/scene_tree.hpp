@@ -23,7 +23,7 @@ class GOBOT_EXPORT SceneTree : public MainLoop {
     GOBCLASS(SceneTree, MainLoop)
 
 public:
-    SceneTree();
+    SceneTree(bool p_init_window = true);
 
     ~SceneTree() override;
 

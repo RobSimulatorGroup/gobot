@@ -90,6 +90,7 @@ SDLWindow::SDLWindow()
 
 SDLWindow::~SDLWindow()
 {
+    SDL_GL_DeleteContext(SDL_GL_GetCurrentContext());
     SDL_DestroyWindow(sdl2_window_);
 }
 

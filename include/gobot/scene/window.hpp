@@ -19,7 +19,7 @@ class GOBOT_EXPORT Window : public Node {
     Q_OBJECT
     GOBCLASS(Window, Node);
 public:
-    Window();
+    Window(bool p_init_sdl_window = true);
 
     ~Window() override;
 

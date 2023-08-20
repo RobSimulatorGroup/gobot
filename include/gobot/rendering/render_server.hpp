@@ -23,7 +23,7 @@ namespace gobot {
 class GOBOT_EXPORT RenderServer : public Object {
     GOBCLASS(RenderServer, Object)
 public:
-    RenderServer();
+    RenderServer(RendererType p_renderer_type = RendererType::OpenGL46);
 
     ~RenderServer() override;
 

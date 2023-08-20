@@ -43,12 +43,12 @@ int SceneTree::GetNodeCount() const {
     return node_count_;
 }
 
-SceneTree::SceneTree() {
+SceneTree::SceneTree(bool p_init_window) {
     if (s_singleton == nullptr) {
         s_singleton = this;
     }
 
-    root_ = Node::New<Window>();
+    root_ = Node::New<Window>(p_init_window);
     root_->SetName("root");
 
     Object::connect(root_, &Window::windowCloseRequested, this, &SceneTree::OnWindowClose);

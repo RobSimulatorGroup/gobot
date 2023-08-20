@@ -16,7 +16,7 @@
 
 namespace gobot::opengl {
 
-class GLRasterizer : public RendererCompositor {
+class GLRasterizer : public Rasterizer {
 public:
     GLRasterizer();
 
@@ -51,7 +51,7 @@ public:
     void Finalize() override;
 
 public:
-    static RendererCompositor* CreateCurrent() {
+    static Rasterizer* CreateCurrent() {
         return new GLRasterizer();
     }
 

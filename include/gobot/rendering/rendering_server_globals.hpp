@@ -24,7 +24,7 @@ public:
 
     static RendererUtilities *utilities;
 
-    static RendererCompositor *rasterizer;
+    static Rasterizer *rasterizer;
 
     static RendererTextureStorage* texture_storage;
 

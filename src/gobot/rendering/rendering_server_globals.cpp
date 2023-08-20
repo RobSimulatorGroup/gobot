@@ -11,7 +11,7 @@ namespace gobot {
 
 bool RenderingServerGlobals::threaded = false;
 
-RendererCompositor* RenderingServerGlobals::rasterizer = nullptr;
+Rasterizer* RenderingServerGlobals::rasterizer = nullptr;
 
 RendererTextureStorage* RenderingServerGlobals::texture_storage = nullptr;
 

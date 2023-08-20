@@ -20,20 +20,23 @@ namespace gobot {
 
 RenderServer* RenderServer::s_singleton = nullptr;
 
-RenderServer::RenderServer() {
+RenderServer::RenderServer(RendererType p_renderer_type)
+    : renderer_type_(p_renderer_type)
+{
     s_singleton =  this;
-    renderer_type_ = RendererType::OpenGL46;
 
     RSG::viewport = new RendererViewport();
     if (renderer_type_ == RendererType::OpenGL46) {
         opengl::GLRasterizer::MakeCurrent();
     }
-    RSG::rasterizer = RendererCompositor::Create();
+
+    RSG::rasterizer = Rasterizer::Create();
 
     RSG::texture_storage = RSG::rasterizer->GetTextureStorage();
     RSG::material_storage = RSG::rasterizer->GetMaterialStorage();
     RSG::mesh_storage = RSG::rasterizer->GetMeshStorage();
     RSG::utilities = RSG::rasterizer->GetUtilities();
+
 }
 
 RendererType RenderServer::GetRendererType() {
