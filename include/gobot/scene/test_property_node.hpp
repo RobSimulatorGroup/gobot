@@ -10,8 +10,7 @@
 #include "gobot/scene/node_3d.hpp"
 #include "gobot/core/color.hpp"
 #include "gobot/core/math/matrix.hpp"
-#include "gobot/core/rid.h"
-#include "gobot/rendering/render_rid.hpp"
+#include "gobot/core/rid.hpp"
 
 namespace gobot {
 
@@ -47,7 +46,6 @@ private:
     ObjectID objectID{};
 
     RID rid{};
-    RenderRID render_rid{};
 
     Color color{1.0f, 0.0f, 0.0f, 1.0f};
 

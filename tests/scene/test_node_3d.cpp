@@ -9,11 +9,14 @@
 
 #include <gobot/scene/node_3d.hpp>
 #include <gobot/scene/window.hpp>
+#include <gobot/rendering/render_server.hpp>
 
 class TestNode3D : public testing::Test {
 protected:
     void SetUp() override {
-        tree = gobot::SceneTree::New<gobot::SceneTree>();
+        render_server = std::make_unique<gobot::RenderServer>();
+
+        tree = gobot::SceneTree::New<gobot::SceneTree>(false);
         tree->Initialize();
         node1 = gobot::Node3D::New<gobot::Node3D>();
         node1_1 = gobot::Node3D::New<gobot::Node3D>();
@@ -27,6 +30,7 @@ protected:
     gobot::SceneTree *tree{};
     gobot::Node3D *node1{};
     gobot::Node3D *node1_1{};
+    std::unique_ptr<gobot::RenderServer> render_server;
 };
 
 TEST_F(TestNode3D, simple_operations) {

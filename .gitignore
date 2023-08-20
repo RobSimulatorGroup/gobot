@@ -33,8 +33,11 @@
 
 build/
 cmake-build-debug/
+cmake-build-release/
 out/
 
 .idea
 .vs
 CMakeSettings.json
+
+shader/generated/*

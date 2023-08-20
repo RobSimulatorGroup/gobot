@@ -13,37 +13,27 @@
 
 namespace gobot {
 
-RendererCompositor* RendererCompositor::s_singleton = nullptr;
+Rasterizer* Rasterizer::s_singleton = nullptr;
 
-RendererCompositor::RendererCompositor() {
+Rasterizer *(*Rasterizer::CreateFunc)() = nullptr;
+
+Rasterizer::Rasterizer() {
     s_singleton = this;
-
-    frame_buffer_cache_ = new FrameBufferCache();
-    texture_storage_ = new TextureStorage();
-    scene_ = new SceneRenderer();
 }
 
-RendererCompositor::~RendererCompositor() {
+Rasterizer* Rasterizer::Create() {
+    return CreateFunc();
+}
+
+Rasterizer::~Rasterizer() {
     s_singleton = nullptr;
-
-    delete frame_buffer_cache_;
-    delete texture_storage_;
-    delete scene_;
 }
 
-RendererCompositor* RendererCompositor::GetInstance() {
-    ERR_FAIL_COND_V_MSG(s_singleton == nullptr, nullptr, "Must call this after initialize RendererCompositor");
+Rasterizer* Rasterizer::GetInstance() {
+    ERR_FAIL_COND_V_MSG(s_singleton == nullptr, nullptr, "Must call this after initialize Rasterizer");
     return s_singleton;
 }
 
-
-TextureStorage* RendererCompositor::GetTextureStorage() {
-    return texture_storage_;
-}
-
-SceneRenderer* RendererCompositor::GetSceneRenderer() {
-    return scene_;
-}
 
 
 }

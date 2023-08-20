@@ -7,58 +7,57 @@
 
 #pragma once
 
-#include "gobot/rendering/render_rid.hpp"
+#include "gobot/core/rid.hpp"
+#include "gobot/core/rid_owner.hpp"
 #include "gobot/scene/resources/texture.hpp"
 #include "gobot/core/hash_combine.hpp"
-#include "gobot/rendering/render_rid_owner.hpp"
 #include "gobot_export.h"
 
 namespace gobot {
 
 class GOBOT_EXPORT FrameBufferCache {
 public:
-    struct Cache {
-        std::vector<Attachment> attachments;
-        std::vector<Vector2i> texture_sizes;
-        std::uint64_t hash;
-    };
-
     FrameBufferCache();
 
     virtual ~FrameBufferCache();
 
-    RenderRID GetCacheFromTextures(const std::vector<RenderRID>& textures);
-
-    RenderRID GetCacheFromAttachment(const std::vector<Attachment>& attachments);
+//    RID GetCache(const FramebufferDesc& framebuffer_desc);
 
     static FrameBufferCache* GetInstance();
 
-    bool Free(const RenderRID& frame_buffer_rid);
+    bool Free(const RID& frame_buffer_rid);
 
-    Vector2i GetSize(const RenderRID& frame_buffer_rid, std::size_t attachment_index = 0);
+    Vector2i GetSize(const RID& frame_buffer_rid, std::size_t attachment_index = 0);
 
 private:
+    struct Cache {
+//        FramebufferDesc framebuffer_desc;
+        std::vector<Vector2i> texture_sizes;
+        std::uint64_t hash;
+    };
+
     static FrameBufferCache* s_singleton;
 
     // [hash_id, frame_buffer_id]
-    std::unordered_map<std::uint64_t, RenderRID> frame_buffer_cache_{};
-    RenderRID_Owner<Cache, true> frame_buffer_owner_{};
+    std::unordered_map<std::uint64_t, RID> frame_buffer_cache_{};
+
+    RID_Owner<Cache, true> frame_buffer_owner_{};
 
 };
 
 }
 
-namespace std
-{
-template <>
-struct hash<gobot::Attachment>
-{
-    std::size_t operator()(const gobot::Attachment& attachment) const
-    {
-        size_t hash = 0;
-        gobot::HashCombine(hash, attachment.access, attachment.handle.idx, attachment.mip,
-                           attachment.layer, attachment.numLayers, attachment.resolve);
-        return hash;
-    }
-};
-}
+//namespace std
+//{
+//template <>
+//struct hash<gobot::FramebufferDesc>
+//{
+//    std::size_t operator()(const gobot::rendering::FramebufferDesc& framebuffer_desc) const
+//    {
+//        size_t hash = 0;
+//        gobot::HashCombine(hash, framebuffer_desc.width, framebuffer_desc.height, framebuffer_desc.layer,
+//                           framebuffer_desc.attachment_count, framebuffer_desc.msaa_level, framebuffer_desc.screen_fbo);
+//        return hash;
+//    }
+//};
+//}

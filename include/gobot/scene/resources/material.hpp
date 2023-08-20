@@ -8,6 +8,7 @@
 #pragma once
 
 #include "gobot/core/io/resource.hpp"
+#include "gobot/scene/resources/shader.hpp"
 #include "gobot/core/color.hpp"
 
 namespace gobot {
@@ -18,16 +19,44 @@ class GOBOT_EXPORT Material : public Resource {
 public:
     Material();
 
+    ~Material() override;
+
+    RID GetRid() const override;
+
+    virtual RID GetShaderRid() const;
+
+    FORCE_INLINE RID GetMaterial() const { return material_; }
+
 private:
-
-
+    RID material_;
 };
 
+///////////////////////////////////////////////
 
-class GOBOT_EXPORT Material3D: public Material {
-    GOBCLASS(Material3D, Material)
+class ShaderMaterial : public Material {
+    GOBCLASS(ShaderMaterial, Material);
 public:
-    Material3D();
+    ShaderMaterial();
+
+    ~ShaderMaterial();
+
+    void SetShaderProgram(const Ref<ShaderProgram> &p_shader);
+
+    Ref<ShaderProgram> GetShaderProgram() const;
+
+    virtual RID GetShaderRid() const override;
+
+private:
+    Ref<ShaderProgram> shader_program_;
+};
+
+/////////////////////////////////////////////////////////////////
+
+
+class GOBOT_EXPORT PBRMaterial3D: public Material {
+    GOBCLASS(PBRMaterial3D, Material)
+public:
+    PBRMaterial3D();
 
     void SetAlbedo(const Color &albedo);
 
@@ -35,6 +64,8 @@ public:
 
 private:
     Color albedo_;
+
+    Ref<RasterizerShaderProgram> shader_program_;
 };
 
 }

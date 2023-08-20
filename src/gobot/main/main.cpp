@@ -18,11 +18,9 @@
 #include "gobot/rendering/scene_renderer.hpp"
 #include "gobot/core/os/os.hpp"
 #include "gobot/scene/window.hpp"
-#include "gobot/rendering/debug_draw/debug_draw.hpp"
 #include "gobot/core/math/geometry.hpp"
 #include <cxxopts.hpp>
 #include "imgui.h"
-#include <bgfx/bgfx.h>
 
 namespace gobot {
 
@@ -82,15 +80,10 @@ bool Main::Setup2() {
 bool Main::Start() {
     auto* main_loop = Object::New<SceneTree>();
 
-    s_render_server->InitWindow();
     USING_ENUM_BITWISE_OPERATORS;
-    s_render_server->SetDebug(RenderDebugFlags::DebugTextDisplay);
-    bgfx::setViewClear(0, BGFX_CLEAR_COLOR | BGFX_CLEAR_DEPTH);
 
     auto* editor = Object::New<Editor>();
     main_loop->GetRoot()->AddChild(editor);
-
-    DebugDrawEncoder::Initialize();
 
     OS::GetInstance()->SetMainLoop(main_loop);
 
@@ -110,20 +103,15 @@ bool Main::Iteration()
         exit = true;
     }
 
-    RSG::compositor->GetInstance()->GetSceneRenderer()->OnRenderer(nullptr);
-
     if (OS::GetInstance()->GetMainLoop()->Process(duration)) {
         exit = true;
     }
 
+    RS::GetInstance()->Draw();
+
 
     LOG_INFO("1111");
     LOG_ERROR("2222");
-
-
-    // Advance to next frame. Rendering thread will be kicked to
-    // process submitted rendering primitives.
-    GET_RS()->Frame();
 
 
     return exit;
@@ -137,9 +125,6 @@ void Main::Cleanup() {
     Object::Delete(s_project_settings);
 
     OS::GetInstance()->DeleteMainLoop();
-
-    DebugDrawEncoder::Finalize();
-    bgfx::shutdown();
 }
 
 }

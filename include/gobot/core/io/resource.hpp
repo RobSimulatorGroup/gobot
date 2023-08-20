@@ -11,6 +11,7 @@
 #include <mutex>
 #include "gobot/core/ref_counted.hpp"
 #include "gobot/core/object_id.hpp"
+#include "gobot/core/rid.hpp"
 
 namespace gobot {
 
@@ -62,6 +63,8 @@ public:
     // If copy_subresource is false, a shallow copy is returned. Nested resources within subresources are not duplicated and are shared from the original resource.
     // This behavior can be overridden by the PropertyUsageFlags::NotSharedOnClone flag
     virtual Ref<Resource> Clone(bool copy_subresource = false) const;
+
+    virtual RID GetRid() const; // some resources may offer conversion to RID
 
 protected:
     void SetPathNotTakeOver(const String &path);

@@ -10,13 +10,15 @@
 #include "gobot/core/object.hpp"
 #include "gobot/scene/camera_3d.hpp"
 #include "gobot/scene/imgui_node.hpp"
+#include "gobot/scene/resources/material.hpp"
 
 namespace gobot {
 
 class Camera3D;
+class SceneView3DPanel;
 
-class GOBOT_EXPORT Node3DEditor : public Node {
-    GOBCLASS(Node3DEditor, Node)
+class GOBOT_EXPORT Node3DEditor : public ImGuiNode {
+    GOBCLASS(Node3DEditor, ImGuiNode)
 public:
     Node3DEditor();
 
@@ -70,6 +72,10 @@ private:
     uint32_t imguizmo_operation_ = UINT32_MAX;
 
     bool snap_guizmo_{false};
+
+    Ref<ShaderMaterial> shader_material_;
+
+    SceneView3DPanel* scene_view3d_panel_;
 
 };
 

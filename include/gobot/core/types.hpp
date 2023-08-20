@@ -11,6 +11,8 @@
 #include <rttr/enumeration.h>
 #include <QString>
 #include <QUuid>
+#include <QFile>
+#include <QByteArray>
 #include <nlohmann/json.hpp>
 
 namespace gobot {
@@ -30,6 +32,8 @@ using WrapperHolderType = rttr::wrapper_holder_type;
 
 using String = QString;
 using Uuid = QUuid;
+using FileIODevice = QFile;
+using ByteArray = QByteArray;
 
 using Json = nlohmann::json;
 

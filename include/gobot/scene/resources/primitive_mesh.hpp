@@ -9,6 +9,8 @@
 
 #include "gobot/scene/resources/mesh.hpp"
 #include "gobot/scene/resources/material.hpp"
+#include "gobot/core/rid.hpp"
+#include "gobot/core/math/matrix.hpp"
 
 namespace gobot {
 
@@ -17,11 +19,14 @@ class GOBOT_EXPORT PrimitiveMesh : public Mesh {
 public:
     PrimitiveMesh();
 
+    ~PrimitiveMesh();
+
     void SetMaterial(const Ref<Material>& material);
 
     const Ref<Material>& GetMaterial() const;
 
 private:
+    RID mesh_;
     Ref<Material> material_{nullptr};
 };
 
@@ -29,15 +34,18 @@ private:
 class GOBOT_EXPORT BoxMesh : public PrimitiveMesh {
     GOBCLASS(BoxMesh, PrimitiveMesh)
 public:
-
     BoxMesh();
 
-    void SetWidth(float width);
+    void SetWidth(RealType p_width);
 
-    float GetWidth() const;
+    RealType GetWidth() const;
+
+    void SetSize(Vector3 size);
+
+    const Vector3& GetSize() const;
 
 private:
-    float width_{0.5};
+    Vector3 size_ = Vector3::Ones();
 };
 
 class GOBOT_EXPORT CylinderMesh : public PrimitiveMesh {

@@ -12,7 +12,7 @@
 #include "gobot/log.hpp"
 #include "gobot/editor/imgui/console_sink.hpp"
 #include "gobot/editor/imgui/imgui_manager.hpp"
-#include "gobot/editor/imgui/scene_view_panel.hpp"
+#include "gobot/editor/imgui/scene_view_3d_panel.hpp"
 #include "gobot/editor/imgui/scene_editor_panel.hpp"
 #include "gobot/editor/imgui/inspector_panel.hpp"
 #include "gobot/editor/imgui/resource_panel.hpp"
@@ -46,7 +46,6 @@ Editor::Editor() {
     ProjectSettings::GetInstance()->SetProjectPath("/home");
 
     AddChild(Object::New<ConsolePanel>());
-    AddChild(Object::New<SceneViewPanel>());
     AddChild(Object::New<SceneEditorPanel>());
     AddChild(Object::New<InspectorPanel>());
     AddChild(Object::New<ResourcePanel>());
@@ -172,7 +171,7 @@ void Editor::BeginDockSpace() {
         ImGuiID DockMiddle       = ImGui::DockBuilderSplitNode(dock_main_id, ImGuiDir_Right, 0.8f, nullptr, &dock_main_id);
         ImGuiID DockBottomMiddle = ImGui::DockBuilderSplitNode(DockMiddle, ImGuiDir_Down, 0.3f, nullptr, &DockMiddle);
 
-        ImGui::DockBuilderDockWindow("###scene_view", DockMiddle);
+        ImGui::DockBuilderDockWindow("###scene_view3d", DockMiddle);
         ImGui::DockBuilderDockWindow("###inspector", DockRight);
         ImGui::DockBuilderDockWindow("###console", DockBottomMiddle);
         ImGui::DockBuilderDockWindow("###resources", DockingBottomLeftChild);

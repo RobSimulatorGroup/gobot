@@ -6,6 +6,8 @@
  * This file is created by Qiqi Wu, 22-11-20
 */
 
+#pragma once
+
 #include "gobot/core/ref_counted.hpp"
 
 namespace gobot {
@@ -22,6 +24,7 @@ public:
     };
 
     virtual Ref<Resource> Load(const String &local_path,
+                               const String &original_path = "",
                                CacheMode cache_mode = CacheMode::Reuse) = 0;
 
     [[nodiscard]] virtual bool HandlesType(const String &type) const = 0;

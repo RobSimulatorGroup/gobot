@@ -51,6 +51,7 @@ public:
 
 
     Ref<Resource> Load(const String &path,
+                       const String &original_path = "",
                        CacheMode cache_mode = CacheMode::Reuse) override;
 
     void GetRecognizedExtensionsForType(const String& type, std::vector<String>* extensions) const override;

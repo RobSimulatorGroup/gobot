@@ -9,6 +9,8 @@ set(CMAKE_POSITION_INDEPENDENT_CODE ON)
 set(CMAKE_PREFIX_PATH ${CMAKE_BINARY_DIR})
 set(CMAKE_MODULE_PATH ${CMAKE_BINARY_DIR})
 
+set(GOBOT_ROOT_DIR "${CMAKE_CURRENT_SOURCE_DIR}")
+
 option(BUILD_EXPERIMENT "using imgui and glfw" OFF)
 option(BUILD_TESTS "build tests" OFF)
 
@@ -79,11 +81,12 @@ endif()
 
 find_package(Qt5 5.15 COMPONENTS Core CONFIG REQUIRED)
 find_package (Eigen3 3.4 CONFIG REQUIRED)
-find_package(OpenGL REQUIRED)
+#find_package(OpenGL REQUIRED)
 
 INCLUDE(GenerateExportHeader)
 
 add_subdirectory(3rdparty)
+
 
 file(GLOB_RECURSE SOURCE_CORE CONFIGURE_DEPENDS "src/gobot/core/*.cpp")
 file(GLOB_RECURSE SOURCE_SCENE CONFIGURE_DEPENDS "src/gobot/scene/*.cpp")
@@ -114,13 +117,12 @@ target_include_directories(gobot
 target_link_libraries(gobot
     PUBLIC
     RTTR::Core
-    OpenGL::GL
     Qt5::Core
     imgui-gobot
-    bgfx
-    bx
+    glad
     SDL2::SDL2
-    SDL2_image
+    stb
+    gli
     ${CONAN_LIBS}
 )
 
@@ -133,13 +135,23 @@ add_custom_command(
 
 set_target_properties(gobot
     PROPERTIES
-    ARCHIVE_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/lib"
-    LIBRARY_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/lib"
-    RUNTIME_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/bin"
+        CMAKE_ARCHIVE_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/lib"
+        CMAKE_LIBRARY_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/lib"
+        CMAKE_RUNTIME_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/bin"
     AUTOMOC ON
     AUTORCC ON
     AUTOUIC ON
 )
+
+set(SHADER_COMPILE_TARGET GobotShaderCompile)
+add_subdirectory(shader)
+# Why doesn't work for include
+add_dependencies(gobot ${SHADER_COMPILE_TARGET})
+target_include_directories(gobot
+        PUBLIC
+        shader/generated
+        )
+
 
 
 if (MSVC)

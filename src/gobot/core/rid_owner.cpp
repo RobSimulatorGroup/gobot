@@ -5,6 +5,6 @@
  * This file is created by Zikun Yu, 23-3-20
 */
 
-#include "gobot/core/rid_owner.h"
+#include "gobot/core/rid_owner.hpp"
 
 std::atomic<uint64_t> gobot::RID_AllocBase::base_id_{1};

@@ -14,12 +14,13 @@
 #include "gobot/platfom.hpp"
 #include "gobot/log.hpp"
 #include "gobot/error_macros.hpp"
+#include "gobot/rendering/render_server.hpp"
 
 #include <imgui_impl_sdl2.h>
 #include <SDL.h>
 #include <SDL_syswm.h>
+#include "glad/glad.h"
 
-#include <bgfx/platform.h>
 
 #ifndef ENTRY_CONFIG_USE_WAYLAND
 #	define ENTRY_CONFIG_USE_WAYLAND 0
@@ -37,14 +38,28 @@ static const int s_default_width = 1280;
 static const int s_default_height = 720;
 static const char* s_default_window_title = "Gobot";
 
-static RenderDebugFlags s_render_debug_flag = RenderDebugFlags::None;
-static RenderResetFlags s_render_reset_flag = RenderResetFlags::None;
-
 SDLWindow::SDLWindow()
 {
     if (SDL_WasInit(SDL_INIT_VIDEO) != SDL_INIT_VIDEO) {
         CRASH_COND_MSG(SDL_Init(SDL_INIT_VIDEO) < 0, "Could not initialize SDL2!");
     }
+
+    if (RS::GetInstance()->GetRendererType() == RendererType::OpenGL46) {
+        SDL_GL_SetAttribute(SDL_GL_CONTEXT_FLAGS, 0);
+        SDL_GL_SetAttribute(SDL_GL_CONTEXT_PROFILE_MASK, SDL_GL_CONTEXT_PROFILE_CORE);
+        SDL_GL_SetAttribute(SDL_GL_CONTEXT_MAJOR_VERSION, 4);
+        SDL_GL_SetAttribute(SDL_GL_CONTEXT_MINOR_VERSION, 6);
+
+        // From 2.0.18: Enable native IME.
+#ifdef SDL_HINT_IME_SHOW_UI
+        SDL_SetHint(SDL_HINT_IME_SHOW_UI, "1");
+#endif
+
+        SDL_GL_SetAttribute(SDL_GL_DOUBLEBUFFER, 1);
+        SDL_GL_SetAttribute(SDL_GL_DEPTH_SIZE, 24);
+        SDL_GL_SetAttribute(SDL_GL_STENCIL_SIZE, 8);
+    }
+
 
     sdl2_window_ = SDL_CreateWindow(s_default_window_title,
                                     SDL_WINDOWPOS_CENTERED,
@@ -55,14 +70,27 @@ SDLWindow::SDLWindow()
 
     CRASH_COND_MSG(sdl2_window_ == nullptr, fmt::format("Error creating window: {}", SDL_GetError()));
 
+
+    if (RS::GetInstance()->GetRendererType() == RendererType::OpenGL46) {
+        SDL_GLContext gl_context = SDL_GL_CreateContext(sdl2_window_);
+        SDL_GL_MakeCurrent(sdl2_window_, gl_context);
+        SDL_GL_SetSwapInterval(1); // Enable vsync
+
+        // Check OpenGL properties
+        LOG_INFO("OpenGL loaded...");
+        CRASH_COND_MSG(!gladLoadGLLoader(SDL_GL_GetProcAddress), "Failed to initialize GLAD");
+
+        printf("Vendor: %s\n", glGetString(GL_VENDOR));
+        printf("Renderer: %s\n", glGetString(GL_RENDERER));
+        printf("Version: %s\n", glGetString(GL_VERSION));
+    }
+
     windows_id_ = SDL_GetWindowID(sdl2_window_);
-
-
-    bgfx::renderFrame();
 }
 
 SDLWindow::~SDLWindow()
 {
+    SDL_GL_DeleteContext(SDL_GL_GetCurrentContext());
     SDL_DestroyWindow(sdl2_window_);
 }
 
@@ -186,11 +214,11 @@ void SDLWindow::RaiseWindow()
 
 void SDLWindow::SetIcon(const Ref<Image>& image)
 {
-    if (image && image->IsSDLImage()) {
-        SDL_SetWindowIcon(sdl2_window_, image->GetSDLImage());
-    } else {
-        LOG_ERROR("Input image is not sdl image");
-    }
+//    if (image && image->IsSDLImage()) {
+//        SDL_SetWindowIcon(sdl2_window_, image->GetSDLImage());
+//    } else {
+//        LOG_ERROR("Input image is not sdl image");
+//    }
 }
 
 void SDLWindow::ShowWindow()
@@ -214,12 +242,6 @@ std::uint32_t SDLWindow::GetWindowID() const {
 }
 
 void SDLWindow::ProcessEvents() {
-    if (RenderServer::HasInit()) {
-        auto flags = GET_RS()->GetResetFlags();
-        render_need_reset_ = s_render_reset_flag != flags;
-        s_render_reset_flag = flags;
-    }
-
     // Check if any events have been activated (key pressed, mouse moved etc.) and call corresponding response functions
     SDL_Event event;
     while (SDL_PollEvent(&event)) {
@@ -354,18 +376,18 @@ void SDLWindow::ProcessEvents() {
         }
     }
 
-    if (RenderServer::HasInit()) {
-        if (render_need_reset_) {
-            GET_RS()->Reset(GetWidth(), GetHeight(), s_render_reset_flag);
-        }
-    }
-
 }
 
 void SDLWindow::RunEventCallback(Event& event)
 {
     if (event_callback_) {
         event_callback_(event);
+    }
+}
+
+void SDLWindow::SwapBuffers() {
+    if (RS::GetInstance()->GetRendererType() == RendererType::OpenGL46) {
+        SDL_GL_SwapWindow(sdl2_window_);
     }
 }
 

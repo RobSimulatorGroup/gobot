@@ -45,7 +45,6 @@ GOBOT_REGISTRATION {
             .property("boolean", &TestPropertyNode::boolean_)
             .property("objectID", &TestPropertyNode::objectID)
             .property("rid", &TestPropertyNode::rid)
-            .property("render_rid", &TestPropertyNode::render_rid)
             .property("vector2f", &TestPropertyNode::vector2f)
             .property("vector3f", &TestPropertyNode::vector3f)
             .property("vector4f", &TestPropertyNode::vector4f)

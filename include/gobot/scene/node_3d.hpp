@@ -163,36 +163,36 @@ public:
      * @param axis[Vector3]: Axis of this rotation.
      * @param angle[real_t]: Rotation angle in radians.
      */
-    void Rotate(const Vector3 &axis, real_t angle);
+    void Rotate(const Vector3 &axis, RealType angle);
 
     /**
      * @brief Rotates the local transformation around the X axis by angle in radians.
      *
-     * @param angle[real_t]: Rotation angle in radians.
+     * @param angle[RealType]: Rotation angle in radians.
      */
-    void RotateX(real_t angle);
+    void RotateX(RealType angle);
 
     /**
      * @brief Rotates the local transformation around the Y axis by angle in radians.
      *
-     * @param angle[real_t]: Rotation angle in radians.
+     * @param angle[RealType]: Rotation angle in radians.
      */
-    void RotateY(real_t angle);
+    void RotateY(RealType angle);
 
     /**
      * @brief Rotates the local transformation around the Z axis by angle in radians.
      *
      * @param angle[real_t]: Rotation angle in radians.
      */
-    void RotateZ(real_t angle);
+    void RotateZ(RealType angle);
 
     /**
      * @brief Rotates the local transformation by angle in radians around an axis in object-local
      *  coordinate system.
      *
-     * @param angle[real_t]: Rotation angle in radians.
+     * @param angle[RealType]: Rotation angle in radians.
      */
-    void RotateLocal(const Vector3 &axis, real_t angle);
+    void RotateLocal(const Vector3 &axis, RealType angle);
 
     /**
      * @brief Changes the node's position by the given offset Vector3.

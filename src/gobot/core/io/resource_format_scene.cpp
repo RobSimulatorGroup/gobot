@@ -286,14 +286,13 @@ ResourceFormatLoaderScene::~ResourceFormatLoaderScene() {
 }
 
 Ref<Resource> ResourceFormatLoaderScene::Load(const String &path,
+                                              const String &original_path,
                                               CacheMode cache_mode) {
-
+    // Ignore original_path because path and original_path are same for scene.
     auto global_path = ProjectSettings::GetInstance()->GlobalizePath(path);
     QFile file(global_path);
-    QDir dir;
-    auto base_dir = GetBaseDir(global_path);
-    if (!dir.exists(base_dir))
-        dir.mkpath(base_dir); // You can check the success if needed
+
+    ERR_FAIL_COND_V_MSG(!file.exists(), {}, fmt::format("Cannot open file: {}.", path));
 
     ERR_FAIL_COND_V_MSG(!file.open(QIODevice::ReadOnly), {}, fmt::format("Cannot open file: {}.", path));
 

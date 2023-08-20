@@ -10,147 +10,106 @@
 #include "gobot/core/object.hpp"
 #include "gobot/core/color.hpp"
 #include "gobot/core/math/matrix.hpp"
-#include "gobot/rendering/render_types.hpp"
-#include "gobot/rendering/render_rid.hpp"
+#include "gobot/core/rid.hpp"
+#include "render_types.hpp"
+#include "rendering_server_globals.hpp"
+#include "renderer_viewport.hpp"
 
 namespace gobot {
 
-#define GET_RS()     \
-    RenderServer::GetInstance()
+#define RS RenderServer
+
 
 class GOBOT_EXPORT RenderServer : public Object {
     GOBCLASS(RenderServer, Object)
 public:
-    RenderServer();
+    RenderServer(RendererType p_renderer_type = RendererType::OpenGL46);
 
     ~RenderServer() override;
-
-    static bool HasInit();
 
     RendererType GetRendererType();
 
     static RenderServer* GetInstance();
 
-    // Initialize the renderer.
-    void InitWindow();
+    // viewport
+    RID ViewportCreate() {
+        RID viewport = RSG::viewport->ViewportAllocate();
+        RSG::viewport->ViewportInitialize(viewport);
+        return viewport;
+    }
 
-    void ShutDown();
+    void ViewportSetSize(const RID& p_rid, int width, int height) {
+        RSG::viewport->ViewportSetSize(p_rid, width, height);
+    }
 
-    // Debug related
-    void SetDebug(RenderDebugFlags debug_flags);
+    void* GetRenderTargetColorTextureNativeHandle(const RID& p_view_port);
 
-    void DebugTextClear();
+    // shader
+    RID ShaderCreate(ShaderType p_shader_type) {
+        RID shader = RSG::material_storage->ShaderAllocate();
+        RSG::material_storage->ShaderInitialize(shader, p_shader_type);
+        return shader;
+    }
 
-    /// @param[in] x, y 2D position from top-left.
-    /// @param[in] width, height  Image width and height.
-    /// @param[in] data  Raw image data (character/attribute raw encoding).
-    /// @param[in] pitch Image pitch in bytes.
-    void DebugTextImage(uint16_t x, uint16_t y, uint16_t width, uint16_t height, const void* data, uint16_t pitch);
+    // p_name and p_path is for error debug print.
+    void ShaderSetCode(RID p_shader, const String &p_code, const String& p_name = "", const String& p_path = "") {
+        RSG::material_storage->ShaderSetCode(p_shader, p_code, p_name, p_path);
+    }
 
-    void DebugTextPrintf(uint16_t x, uint16_t y, uint8_t attr, const char* format, ...);
+    String ShaderGetCode(RID p_shader) {
+        return RSG::material_storage->ShaderGetCode(p_shader);
+    }
 
-    /// Advance to next frame. When using multithreaded renderer, this call
-    /// just swaps internal buffers, kicks render thread, and returns. In
-    /// singlethreaded renderer this call does frame rendering.
-    ///
-    /// @param[in] capture Capture frame with graphics debugger.
-    ///
-    /// @returns Current frame number. This might be used in conjunction with
-    ///   double/multi buffering data outside the library and passing it to
-    ///   library via `bgfx::makeRef` calls.
-    uint32_t Frame(bool capture = false);
+    // shader program
+    RID ShaderProgramCreate() {
+        RID shader = RSG::material_storage->ShaderProgramAllocate();
+        RSG::material_storage->ShaderProgramInitialize(shader);
+        return shader;
+    }
 
-    /// Reset graphic settings and back-buffer size.
-    ///
-    /// @param[in] width Back-buffer width.
-    /// @param[in] height Back-buffer height.
-    /// @param[in] flags See: `RenderResetFlags` for more info.
-    ///   - `None` - No reset flags.
-    ///   - `FullScreen` - Not supported yet.
-    ///   - `MSAA_X[2/4/8/16]` - Enable 2, 4, 8 or 16 x MSAA.
-    ///   - `Vsync` - Enable V-Sync.
-    ///   - `MaxAnisotropy` - Turn on/off max anisotropy.
-    ///   - `Capture` - Begin screen capture.
-    ///   - `FlushAfterRender` - Flush rendering after submitting to GPU.
-    ///   - `FlapAfterRender` - This flag  specifies where flip
-    ///     occurs. Default behavior is that flip occurs before rendering new
-    ///     frame. This flag only has effect when `BGFX_CONFIG_MULTITHREADED=0`.
-    ///   - `BGFX_RESET_SRGB_BACKBUFFER` - Enable sRGB back-buffer.
-    /// @param[in] _format Texture format. See: `TextureFormat::Enum`.
-    ///
-    /// @attention This call doesn’t change the window size, it just resizes
-    ///   the back-buffer. Your windowing code controls the window size.
-    void Reset(uint32_t _width,
-               uint32_t _height,
-               RenderResetFlags reset_flags = RenderResetFlags::None,
-               TextureFormat format = TextureFormat::Count);
+    void ShaderProgramSetRasterizerShader(RID p_shader_program,
+                                          RID p_vs_shader,
+                                          RID p_fs_shader,
+                                          RID p_geometry_shader = {},
+                                          RID p_tess_control_shader = {},
+                                          RID p_tess_evaluation_shader = {},
+                                          const String& p_name = "") {
+        RSG::material_storage->ShaderProgramSetRasterizerShader(p_shader_program,
+                                                                p_vs_shader,
+                                                                p_fs_shader,
+                                                                p_geometry_shader,
+                                                                p_tess_control_shader,
+                                                                p_tess_evaluation_shader,
+                                                                p_name);
+    }
 
-    /// Submit an empty primitive for rendering. Uniforms and draw state
-    /// will be applied but no geometry will be submitted.
-    ///
-    /// These empty draw calls will sort before ordinary draw calls.
-    ///
-    /// @param[in] id View id.
-    void Touch(ViewId id);
+    void ShaderProgramSetComputeShader(RID p_shader_program, RID p_comp_shader, const String& p_name = "") {
+        RSG::material_storage->ShaderProgramSetComputeShader(p_shader_program,
+                                                             p_comp_shader,
+                                                             p_name);
+    }
 
-    const RenderStats* GetStats();
+    RID ShaderProgramCreate(RID p_compute_shader) {
+        RID shader = RSG::material_storage->ShaderProgramAllocate();
+        RSG::material_storage->ShaderProgramInitialize(shader);
+        return shader;
+    }
 
-    FORCE_INLINE const RenderDebugFlags GetDebugFlags() const { return debug_flags_; }
+    RID MaterialCreate() {
+        return RID();
+    }
 
-    FORCE_INLINE const RenderResetFlags GetResetFlags() const { return reset_flags_; }
+    RID MeshCreate();
 
-    FORCE_INLINE void SetResetFlags(RenderResetFlags reset_flags) { reset_flags_ = reset_flags; }
+    void Free(const RID& rid);
 
-    FORCE_INLINE void SetDebugFlags(RenderDebugFlags debug_flags) { debug_flags_ = debug_flags; }
-
-    // render texture
-
-    /// Create 2D texture.
-    ///
-    /// @param[in] width Width.
-    /// @param[in] height Height.
-    /// @param[in] has_mips Indicates that texture contains full mip-map chain.
-    /// @param[in] num_layers Number of layers in texture array. Must be 1 if caps
-    ///   `BGFX_CAPS_TEXTURE_2D_ARRAY` flag is not set.
-    /// @param[in] format Texture format. See: `TextureFormat`.
-    /// @param[in] flags Texture creation
-    ///   flags. Default texture sampling mode is linear, and wrap mode is repeat.
-    ///   - `Sampler_[U/V/W]_[Mirror/Clamp]` - Mirror or clamp to edge wrap mode.
-    ///   - `Sampler_[Min/Mag/Mip]_[Point/Anisotropy]` - Point or anisotropic sampling.
-    ///
-    /// @param[in] mem Texture data. If `mem` is non-NULL, created texture will be immutable. If
-    ///   `mem` is NULL content of the texture is uninitialized. When `num_layers` is more than 1,
-    /// expected memory layout is texture and all mips together for each array element.
-    RenderRID CreateTexture2D(uint16_t width,
-                              uint16_t height,
-                              bool has_mips,
-                              uint16_t num_layers,
-                              TextureFormat format,
-                              TextureFlags flags,
-                              const MemoryView* mem = nullptr);
-
-    RenderRID CreateTexture3D(uint16_t width,
-                              uint16_t height,
-                              uint16_t depth,
-                              bool has_mips,
-                              TextureFormat format,
-                              TextureFlags flags,
-                              const MemoryView* mem = nullptr);
-
-    RenderRID CreateTextureCube(uint16_t size,
-                                bool has_mips,
-                                uint16_t num_layers,
-                                TextureFormat format,
-                                TextureFlags flags,
-                                const MemoryView* mem = nullptr);
-
-    bool FreeTexture(const RenderRID& rid);
+    void Draw();
 
 private:
     static RenderServer* s_singleton;
 
-    RenderDebugFlags debug_flags_;
-    RenderResetFlags reset_flags_;
+    RendererType renderer_type_;
+
 };
 
 }

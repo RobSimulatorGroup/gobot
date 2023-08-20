@@ -19,7 +19,7 @@ class GOBOT_EXPORT Window : public Node {
     Q_OBJECT
     GOBCLASS(Window, Node);
 public:
-    Window();
+    Window(bool p_init_sdl_window = true);
 
     ~Window() override;
 
@@ -32,6 +32,8 @@ public:
     void PullEvent();
 
     SDLWindow* GetWindow() { return window_.get(); }
+
+    void SwapBuffers();
 
 Q_SIGNALS:
     void windowCloseRequested();

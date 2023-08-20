@@ -7,8 +7,7 @@
 
 #pragma once
 
-#include "gobot/rendering/render_types.hpp"
-#include "gobot/rendering/render_pass.hpp"
+#include "gobot/core/rid.hpp"
 
 namespace gobot {
 
@@ -22,19 +21,21 @@ public:
 
     ~SceneRenderer();
 
-    void SetRenderTarget(const RenderRID& texture_rid);
+    void SetRenderTarget(const RID& texture_rid);
 
     void OnRenderer(const SceneTree* scene_tree);
 
     void FinalPass();
+
+    void GridPass();
 
     void DebugPass();
 
 private:
     Camera3D* camera_ = nullptr;
 
-    RenderRID view_texture_{};
-    RenderRID view_frame_buffer_{};
+    RID view_texture_{};
+    RID view_frame_buffer_{};
 };
 
 

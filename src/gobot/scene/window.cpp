@@ -14,11 +14,13 @@
 
 namespace gobot {
 
-Window::Window() {
-    window_ = std::make_unique<SDLWindow>();
-    window_->Maximize();
+Window::Window(bool p_init_sdl_window) {
+    if (p_init_sdl_window) {
+        window_ = std::make_unique<SDLWindow>();
+        window_->Maximize();
 
-    RegisterWindowCallbacks();
+        RegisterWindowCallbacks();
+    }
 }
 
 
@@ -78,6 +80,9 @@ void Window::RegisterWindowCallbacks()
     window_->SetEventCallback(BIND_EVENT_FN(Window::OnEvent));
 }
 
+void Window::SwapBuffers() {
+    window_->SwapBuffers();
+}
 
 
 }

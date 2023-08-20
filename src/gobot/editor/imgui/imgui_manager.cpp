@@ -7,14 +7,13 @@
 
 #include "gobot/editor/imgui/imgui_manager.hpp"
 #include "gobot/editor/imgui/imgui_utilities.hpp"
-#include "gobot/rendering/imgui/imgui_impl_bgfx.hpp"
-#include "gobot/rendering/default_view_id.hpp"
 #include "gobot/drivers/sdl/sdl_window.hpp"
 #include "gobot/scene/scene_tree.hpp"
 #include "gobot/scene/window.hpp"
 #include "gobot/platfom.hpp"
 #include "gobot/error_macros.hpp"
 #include "gobot/log.hpp"
+#include "gobot/rendering/render_server.hpp"
 #include "imgui.h"
 #include "imgui_impl_sdl2.h"
 #include "imgui_extension/fonts/RobotoRegular.inl"
@@ -22,6 +21,7 @@
 #include "imgui_extension/fonts/MaterialDesign.inl"
 #include "imgui_extension/icon_fonts/icons_material_design_icons.h"
 #include "imgui_extension/gizmos/ImGuizmo.h"
+#include "gobot/drivers/opengl/imgui_renderer.hpp"
 
 namespace gobot {
 
@@ -29,14 +29,12 @@ ImGuiManager* ImGuiManager::s_singleton = nullptr;
 
 ImGuiManager::ImGuiManager()
 {
-
+    ImGui::CreateContext();
     font_size_ = 16.0f;
     s_singleton = this;
 
-    LOG_INFO("ImGui Version : {0}", IMGUI_VERSION);
-
-    ImGui::CreateContext();
     ImGui::StyleColorsDark();
+    SetImGuiStyle();
 
     ImGuiIO& io = ImGui::GetIO();
     io.ConfigFlags |= ImGuiConfigFlags_NavEnableKeyboard;       // Enable Keyboard Controls
@@ -46,27 +44,23 @@ ImGuiManager::ImGuiManager()
     //io.ConfigViewportsNoAutoMerge = true;
     //io.ConfigViewportsNoTaskBarIcon = true;
 
-    SetImGuiStyle();
-
+    if (RS::GetInstance()->GetRendererType() == RendererType::OpenGL46) {
+        imgui_renderer_ = std::make_unique<opengl::ImGuiGLRenderer>();
+    } else {
+        // TODO(wqq)
+    }
 
     auto window = SceneTree::GetInstance()->GetRoot()->GetWindow();
+    imgui_renderer_->Init(window->GetSDL2Window());
 
-    ImGui_Implbgfx_Init(IMGUI_VIEW_ID);
-#if GOB_PLATFORM_WINDOWS
-    ImGui_ImplSDL2_InitForD3D(window->GetSDL2Window());
-#elif GOB_PLATFORM_OSX
-    ImGui_ImplSDL2_InitForMetal(window->GetSDL2Window());
-#elif GOB_PLATFORM_LINUX || GOB_PLATFORM_EMSCRIPTEN
-    ImGui_ImplSDL2_InitForOpenGL(window->GetSDL2Window(), nullptr);
-#endif
-
+    LOG_INFO("ImGui Version : {0}", IMGUI_VERSION);
 }
 
 ImGuiManager::~ImGuiManager()
 {
     s_singleton = nullptr;
+    imgui_renderer_.reset();
     ImGui_ImplSDL2_Shutdown();
-    ImGui_Implbgfx_Shutdown();
     ImGui::DestroyContext();
 }
 
@@ -77,15 +71,13 @@ ImGuiManager* ImGuiManager::GetInstance()
 }
 
 void ImGuiManager::BeginFrame() {
-    ImGui_Implbgfx_NewFrame();
-    ImGui_ImplSDL2_NewFrame();
+    imgui_renderer_->NewFrame();
     ImGui::NewFrame();
     ImGuizmo::BeginFrame();
 }
 
 void ImGuiManager::EndFrame() {
-    ImGui::Render();
-    ImGui_Implbgfx_RenderDrawLists(ImGui::GetDrawData());
+    imgui_renderer_->Render();
 }
 
 void ImGuiManager::SetImGuiStyle() {

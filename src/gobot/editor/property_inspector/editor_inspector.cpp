@@ -248,10 +248,6 @@ ImGuiNode* EditorInspectorDefaultPlugin::GetEditorForProperty(std::unique_ptr<Va
             auto* editor = Object::New<EditorPropertyRID>(type_category, std::move(variant_data));
             return editor;
         } break;
-        case TypeCategory::RenderRID: {
-            auto* editor = Object::New<EditorPropertyRenderRID>(type_category, std::move(variant_data));
-            return editor;
-        } break;
         case TypeCategory::Vector2i:
         case TypeCategory::Vector2f:
         case TypeCategory::Vector2d: {

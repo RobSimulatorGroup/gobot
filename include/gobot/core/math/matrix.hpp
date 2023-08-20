@@ -182,13 +182,13 @@ GOBOT_MAKE_TYPEDEFS_ALL_SIZES(double, d)
 #undef GOBOT_MAKE_TYPEDEFS_ALL_SIZES
 
 #define GOBOT_MATRIX_MAKE_DEFAULT(Size, SizeSuffix)                \
-  using Matrix##SizeSuffix = internal::Matrix<real_t, Size, Size>; \
-  using Vector##SizeSuffix = internal::Matrix<real_t, Size, 1>;    \
-  using RowVector##SizeSuffix = internal::Matrix<real_t, 1, Size>;
+  using Matrix##SizeSuffix = internal::Matrix<RealType, Size, Size>; \
+  using Vector##SizeSuffix = internal::Matrix<RealType, Size, 1>;    \
+  using RowVector##SizeSuffix = internal::Matrix<RealType, 1, Size>;
 
 #define GOBOT_MATRIX_MAKE_FIXED_DEFAULT(Size)                             \
-  using Matrix##Size##X = internal::Matrix<real_t, Size, Eigen::Dynamic>; \
-  using Matrix##X##Size = internal::Matrix<real_t, Eigen::Dynamic, Size>;
+  using Matrix##Size##X = internal::Matrix<RealType, Size, Eigen::Dynamic>; \
+  using Matrix##X##Size = internal::Matrix<RealType, Eigen::Dynamic, Size>;
 
 GOBOT_MATRIX_MAKE_DEFAULT(2, 2)
 GOBOT_MATRIX_MAKE_DEFAULT(3, 3)

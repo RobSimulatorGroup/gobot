@@ -7,43 +7,41 @@
 
 #include "gobot/scene/resources/texture.hpp"
 #include "gobot/rendering/render_server.hpp"
-#include "bgfx/bgfx.h"
 
 namespace gobot {
 
 Texture::~Texture() {
-    GET_RS()->FreeTexture(texture_rid_);
-    texture_rid_ = RenderRID();
+    RS::GetInstance()->Free(texture_rid_);
+    texture_rid_ = RID();
 }
 
-RenderRID Texture::GetRID() const {
+RID Texture::GetRID() const {
     return texture_rid_;
 }
 
 
-Texture2D::Texture2D(uint16_t width,
-                     uint16_t height,
-                     bool has_mips,
-                     uint16_t num_layers,
-                     TextureFormat format,
-                     TextureFlags flags,
-                     const MemoryView* mem)
-{
-    texture_rid_ = GET_RS()->CreateTexture2D(width, height, has_mips, num_layers, format, flags, mem);
-}
+//Texture2D::Texture2D(uint16_t width,
+//                     uint16_t height,
+//                     bool has_mips,
+//                     uint16_t num_layers,
+//                     TextureFormat format)
+//{
+////    texture_rid_ = GET_RS()->CreateTexture2D(width, height, has_mips, num_layers, format, flags);
+//}
 
 Texture3D::Texture3D(uint16_t width, uint16_t height, std::uint16_t depth, bool has_mips,
-                     TextureFormat format, TextureFlags flags, const MemoryView *mem)
+                     TextureFormat format)
 {
-    texture_rid_ = GET_RS()->CreateTexture3D(width, height, depth, has_mips, format, flags, mem);
+//    texture_rid_ = GET_RS()->CreateTexture3D(width, height, depth, has_mips, format, flags);
 }
 
 TextureCube::TextureCube(std::uint16_t size, bool has_mips, std::uint16_t num_layers,
-                         TextureFormat format, TextureFlags flags, const MemoryView *mem)
+                         TextureFormat format)
 
 {
-    texture_rid_ = GET_RS()->CreateTextureCube(size, has_mips, num_layers, format, flags, mem);
+//    texture_rid_ = GET_RS()->CreateTextureCube(size, has_mips, num_layers, format, flags);
 }
+
 
 
 };

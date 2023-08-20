@@ -339,20 +339,20 @@ using Projective3d = internal::Transform<double, 3, Eigen::Projective>;
 using Projective3f = internal::Transform<float, 3, Eigen::Projective>;
 
 
-using AngleAxis = Eigen::AngleAxis<real_t>;
+using AngleAxis = Eigen::AngleAxis<RealType>;
 
-using Quaternion = internal::Quaternion<real_t>;
+using Quaternion = internal::Quaternion<RealType>;
 
-using EulerAngle = internal::EulerAngle<real_t>;
+using EulerAngle = internal::EulerAngle<RealType>;
 
-using Isometry2 = internal::Transform<real_t, 2, Eigen::Isometry>;
-using Isometry3 = internal::Transform<real_t, 3, Eigen::Isometry>;
+using Isometry2 = internal::Transform<RealType, 2, Eigen::Isometry>;
+using Isometry3 = internal::Transform<RealType, 3, Eigen::Isometry>;
 
-using Affine2 = internal::Transform<real_t, 2, Eigen::Affine>;
-using Affine3 = internal::Transform<real_t, 3, Eigen::Affine>;
+using Affine2 = internal::Transform<RealType, 2, Eigen::Affine>;
+using Affine3 = internal::Transform<RealType, 3, Eigen::Affine>;
 
-using Projective2 = internal::Transform<real_t, 2, Eigen::Projective>;
-using Projective3 = internal::Transform<real_t, 3, Eigen::Projective>;
+using Projective2 = internal::Transform<RealType, 2, Eigen::Projective>;
+using Projective3 = internal::Transform<RealType, 3, Eigen::Projective>;
 
 }  // namespace gobot
 
