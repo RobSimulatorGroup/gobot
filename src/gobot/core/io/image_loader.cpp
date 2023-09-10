@@ -7,19 +7,19 @@
 
 
 #include "gobot/core/io/image_loader.hpp"
+#include <fstream>
 #include "gobot/core/config/project_setting.hpp"
 #include "gobot/error_macros.hpp"
 #include "gobot/core/string_utils.hpp"
 
-#include <QDir>
 
 namespace gobot {
 
-bool ImageFormatLoader::Recognize(const String& extension) const {
-    std::vector<String> extensions;
+bool ImageFormatLoader::Recognize(const std::string& extension) const {
+    std::vector<std::string> extensions;
     GetRecognizedExtensions(&extensions);
 
-    if (std::ranges::any_of(extensions, [&](auto const& ext){ return ext.toLower() == extension.toLower(); })) {
+    if (std::ranges::any_of(extensions, [&](auto const& ext){ return ToLower(ext) == ToLower(extension); })) {
         return true;
     }
 
@@ -28,18 +28,17 @@ bool ImageFormatLoader::Recognize(const String& extension) const {
 
 std::vector<Ref<ImageFormatLoader>> ImageLoader::s_loaders;
 
-Ref<Image> ImageLoader::LoadImage(const String& path,
+Ref<Image> ImageLoader::LoadImage(const std::string& path,
                                   LoaderFlags flags,
                                   float scale) {
 
-    String global_path = ProjectSettings::GetInstance()->GlobalizePath(ValidateLocalPath(path));
-    QFile file(global_path);
+    std::string global_path = ProjectSettings::GetInstance()->GlobalizePath(ValidateLocalPath(path));
 
-    ERR_FAIL_COND_V_MSG(!file.exists(), {}, fmt::format("Cannot open file: {}.", path));
-    ERR_FAIL_COND_V_MSG(!file.open(QIODevice::ReadOnly), {}, fmt::format("Cannot open file: {}.", path));
-    auto byte_array = file.readAll();
+    ERR_FAIL_COND_V_MSG(!std::filesystem::exists(global_path), {}, fmt::format("Cannot open file: {}.", path));
+    std::ifstream instream(global_path, std::ios::in | std::ios::binary);
+    std::vector<uint8_t> byte_array((std::istreambuf_iterator<char>(instream)), std::istreambuf_iterator<char>());
 
-    String extension = GetFileExtension(global_path);
+    std::string extension = GetFileExtension(global_path);
 
     for (int i = 0; i < s_loaders.size(); i++) {
         if (!s_loaders[i]->Recognize(extension)) {
@@ -55,13 +54,13 @@ Ref<Image> ImageLoader::LoadImage(const String& path,
     return {};
 }
 
-void ImageLoader::GetRecognizedExtensions(std::vector<String>* extensions) {
+void ImageLoader::GetRecognizedExtensions(std::vector<std::string>* extensions) {
     for (int i = 0; i < s_loaders.size(); i++) {
         s_loaders[i]->GetRecognizedExtensions(extensions);
     }
 }
 
-Ref<ImageFormatLoader> ImageLoader::Recognize(const String& extension) {
+Ref<ImageFormatLoader> ImageLoader::Recognize(const std::string& extension) {
     for (int i = 0; i < s_loaders.size(); i++) {
         if (s_loaders[i]->Recognize(extension)) {
             return s_loaders[i];

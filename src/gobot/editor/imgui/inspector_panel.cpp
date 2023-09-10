@@ -75,7 +75,7 @@ void InspectorPanel::OnImGuiContent() {
         auto str = property_name->GetValue().to_string();
         ImGui::SetNextItemWidth(ImGui::GetWindowWidth() - 60);
         if (ImGui::InputText(fmt::format("##{}", property_name->GetPropertyName()).c_str(), &str)) {
-            property_name->SetValue(String::fromStdString(str));
+            property_name->SetValue(str);
         }
 
         ImGui::SameLine(ImGui::GetWindowWidth() - 30);

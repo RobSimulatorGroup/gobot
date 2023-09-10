@@ -18,7 +18,6 @@ namespace gobot {
 class Node;
 
 class GOBOT_EXPORT Resource: public RefCounted {
-    Q_OBJECT
     GOBCLASS(Resource, RefCounted)
 public:
     Resource();
@@ -27,24 +26,24 @@ public:
 
     // Take over will delete old resource cache, further attempts to load an overridden resource by path will instead return this resource
     // If the take_over is false and same path resource cache already existed, this operation will fail.
-    virtual void SetPath(const String &path, bool take_over = false);
+    virtual void SetPath(const std::string &path, bool take_over = false);
 
-    String GetPath() const;
+    std::string GetPath() const;
 
-    void SetName(const String &p_name);
+    void SetName(const std::string &p_name);
 
-    String GetName() const;
+    std::string GetName() const;
 
     // Generate 5 characters string made up with 0-9|a-z|A-Z
-    static String GenerateResourceUniqueId();
+    static std::string GenerateResourceUniqueId();
 
-    void SetUniqueId(const String &unique_id);
+    void SetUniqueId(const std::string &unique_id);
 
-    String GetUniqueId() const;
+    std::string GetUniqueId() const;
 
     virtual void ReloadFromFile();
 
-    static bool IsResourceFile(const String& path);
+    static bool IsResourceFile(std::string_view path);
 
     // for resources that use various amount of properties, either via _validate_property or _get_property_list, this function needs to be implemented to correctly clear state
     virtual void ResetState();
@@ -55,7 +54,7 @@ public:
 
     void UnregisterOwner(Object *owner);
 
-    FORCE_INLINE bool IsBuiltIn() const { return path_cache_.isEmpty() || path_cache_.contains("::"); }
+    FORCE_INLINE bool IsBuiltIn() const { return path_cache_.empty() || path_cache_.find("::") != std::string::npos; }
 
     Ref<Resource> CloneForLocalScene(Node* for_scene);
 
@@ -67,23 +66,20 @@ public:
     virtual RID GetRid() const; // some resources may offer conversion to RID
 
 protected:
-    void SetPathNotTakeOver(const String &path);
+    void SetPathNotTakeOver(const std::string &path);
 
-    void SetPathTakeOver(const String &path);
-
-Q_SIGNALS:
-    void resourceChanged();
+    void SetPathTakeOver(const std::string &path);
 
 private:
     friend class ResourceCache;
 
     std::unordered_set<ObjectID> owners_;
 
-    String name_;
-    String path_cache_;
+    std::string name_;
+    std::string path_cache_;
     Node *local_scene_ = nullptr;
     bool local_to_scene_{false};
-    String unique_id_;
+    std::string unique_id_;
 
     GOBOT_REGISTRATION_FRIEND
 };
@@ -91,9 +87,9 @@ private:
 
 class GOBOT_EXPORT ResourceCache {
 public:
-    static bool Has(const String &path);
+    static bool Has(const std::string &path);
 
-    static Ref<Resource> GetRef(const String &path);
+    static Ref<Resource> GetRef(const std::string &path);
 
 private:
     friend class Resource;
@@ -102,9 +98,9 @@ private:
     static std::recursive_mutex s_lock;
 
     // [path, resource]
-    static std::unordered_map<String, Resource*> s_resources;
+    static std::unordered_map<std::string, Resource*> s_resources;
 
-    static std::unordered_map<String, std::unordered_map<String, String>> s_resource_path_cache;
+    static std::unordered_map<std::string, std::unordered_map<std::string, std::string>> s_resource_path_cache;
 
     static void Clear();
 

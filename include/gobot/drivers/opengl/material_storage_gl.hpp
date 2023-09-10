@@ -27,9 +27,9 @@ public:
 
     bool OwnsShader(RID p_rid) { return shader_owner_.Owns(p_rid); }
 
-    void ShaderSetCode(RID p_shader, const String &p_code, const String& p_name, const String& p_path) override;
+    void ShaderSetCode(RID p_shader, const std::string &p_code, const std::string& p_name, const std::string& p_path) override;
 
-    String ShaderGetCode(RID p_shader) const override;
+    std::string ShaderGetCode(RID p_shader) const override;
 
     void ShaderFree(RID p_rid) override;
 
@@ -48,9 +48,9 @@ public:
                                           RID p_geometry_shader,
                                           RID p_tess_control_shader,
                                           RID p_tess_evaluation_shader,
-                                          const String& p_name) override;
+                                          const std::string& p_name) override;
 
-    void ShaderProgramSetComputeShader(RID p_shader_program, RID p_comp_shader, const String& p_name) override;
+    void ShaderProgramSetComputeShader(RID p_shader_program, RID p_comp_shader, const std::string& p_name) override;
 
     // material
     RID MaterialAllocate() override;
@@ -68,7 +68,7 @@ private:
 
     struct ShaderData {
         GLuint gl_shader;
-        String code;
+        std::string code;
         ShaderType shader_type;
     };
 

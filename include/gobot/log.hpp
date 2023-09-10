@@ -45,15 +45,15 @@ public:
         auto rotating_sink = std::make_shared<spdlog::sinks::rotating_file_sink_mt>("gobot.log", 1024 * 1024,
                                                                                5, false);
         rotating_sink->set_pattern("[%T] [%@] [%l]: %v");
-        logger_ = std::make_shared<spdlog::logger>("GOBOT", begin(sink_list), end(sink_list));
         sink_list.push_back(rotating_sink);
+        logger_ = std::make_shared<spdlog::logger>("GOBOT", begin(sink_list), end(sink_list));
 
         //register it if you need to access it globally
         spdlog::register_logger(logger_);
 
         // set log level
         logger_->set_level(spdlog::level::trace);
-//        logger_->flush_on(spdlog::level::err);
+        // logger_->flush_on(spdlog::level::err);
     }
 
     Logger(const Logger &) = delete;
@@ -74,15 +74,6 @@ private:
 
 } // end of namespace gobot
 
-template<>
-struct fmt::formatter<gobot::String> : fmt::formatter<std::string>
-{
-    static auto format(const gobot::String& str, format_context &ctx) -> decltype(ctx.out())
-    {
-        return fmt::format_to(ctx.out(), "{}", str.toStdString());
-    }
-};
-
 #define GOB_LOG_LEVEL_TRACE 0
 #define GOB_LOG_LEVEL_DEBUG 1
 #define GOB_LOG_LEVEL_INFO 2
@@ -92,7 +83,7 @@ struct fmt::formatter<gobot::String> : fmt::formatter<std::string>
 #define GOB_LOG_LEVEL_OFF 6
 
 #if !defined(GOB_LOG_ACTIVE_LEVEL)
-#    define GOB_LOG_ACTIVE_LEVEL GOB_LOG_LEVEL_INFO
+#    define GOB_LOG_ACTIVE_LEVEL GOB_LOG_LEVEL_DEBUG
 #endif
 
 
@@ -105,40 +96,40 @@ struct fmt::formatter<gobot::String> : fmt::formatter<std::string>
 #endif
 
 #if GOB_LOG_ACTIVE_LEVEL <= GOB_LOG_LEVEL_DEBUG
-#    define SPDLOG_LOGGER_DEBUG(logger, ...) SPDLOG_LOGGER_CALL(logger, spdlog::level::debug, __VA_ARGS__)
-#    define LOG_DEBUG(...) SPDLOG_LOGGER_DEBUG(gobot::Logger::GetInstance().GetLogger(), __VA_ARGS__)
+#    define GOB_LOGGER_DEBUG(logger, ...) SPDLOG_LOGGER_CALL(logger, spdlog::level::debug, __VA_ARGS__)
+#    define LOG_DEBUG(...) GOB_LOGGER_DEBUG(gobot::Logger::GetInstance().GetLogger(), __VA_ARGS__)
 #else
 #    define SPDLOG_LOGGER_DEBUG(logger, ...) (void)0
 #    define LOG_DEBUG(...) (void)0
 #endif
 
 #if GOB_LOG_ACTIVE_LEVEL <= GOB_LOG_LEVEL_INFO
-#    define SPDLOG_LOGGER_INFO(logger, ...) SPDLOG_LOGGER_CALL(logger, spdlog::level::info, __VA_ARGS__)
-#    define LOG_INFO(...) SPDLOG_LOGGER_INFO(gobot::Logger::GetInstance().GetLogger(), __VA_ARGS__)
+#    define GOB_LOGGER_INFO(logger, ...) SPDLOG_LOGGER_CALL(logger, spdlog::level::info, __VA_ARGS__)
+#    define LOG_INFO(...) GOB_LOGGER_INFO(gobot::Logger::GetInstance().GetLogger(), __VA_ARGS__)
 #else
 #    define SPDLOG_LOGGER_INFO(logger, ...) (void)0
 #    define LOG_INFO(...) (void)0
 #endif
 
 #if GOB_LOG_ACTIVE_LEVEL <= GOB_LOG_LEVEL_WARN
-#    define SPDLOG_LOGGER_WARN(logger, ...) SPDLOG_LOGGER_CALL(logger, spdlog::level::warn, __VA_ARGS__)
-#    define LOG_WARN(...) SPDLOG_LOGGER_WARN(gobot::Logger::GetInstance().GetLogger(), __VA_ARGS__)
+#    define GOB_LOGGER_WARN(logger, ...) SPDLOG_LOGGER_CALL(logger, spdlog::level::warn, __VA_ARGS__)
+#    define LOG_WARN(...) GOB_LOGGER_WARN(gobot::Logger::GetInstance().GetLogger(), __VA_ARGS__)
 #else
 #    define SPDLOG_LOGGER_WARN(logger, ...) (void)0
 #    define LOG_WARN(...) (void)0
 #endif
 
 #if GOB_LOG_ACTIVE_LEVEL <= GOB_LOG_LEVEL_ERROR
-#    define SPDLOG_LOGGER_ERROR(logger, ...) SPDLOG_LOGGER_CALL(logger, spdlog::level::err, __VA_ARGS__)
-#    define LOG_ERROR(...) SPDLOG_LOGGER_ERROR(gobot::Logger::GetInstance().GetLogger(), __VA_ARGS__)
+#    define GOB_LOGGER_ERROR(logger, ...) SPDLOG_LOGGER_CALL(logger, spdlog::level::err, __VA_ARGS__)
+#    define LOG_ERROR(...) GOB_LOGGER_ERROR(gobot::Logger::GetInstance().GetLogger(), __VA_ARGS__)
 #else
 #    define SPDLOG_LOGGER_ERROR(logger, ...) (void)0
 #    define LOG_ERROR(...) (void)0
 #endif
 
 #if GOB_LOG_ACTIVE_LEVEL <= GOB_LOG_LEVEL_CRITICAL
-#    define SPDLOG_LOGGER_CRITICAL(logger, ...) SPDLOG_LOGGER_CALL(logger, spdlog::level::critical, __VA_ARGS__)
-#    define LOG_FATAL(...) SPDLOG_LOGGER_CRITICAL(gobot::Logger::GetInstance().GetLogger(), __VA_ARGS__)
+#    define GOB_LOGGER_CRITICAL(logger, ...) SPDLOG_LOGGER_CALL(logger, spdlog::level::critical, __VA_ARGS__)
+#    define LOG_FATAL(...) GOB_LOGGER_CRITICAL(gobot::Logger::GetInstance().GetLogger(), __VA_ARGS__)
 #else
 #    define SPDLOG_LOGGER_CRITICAL(logger, ...) (void)0
 #    define LOG_FATAL(...) (void)0

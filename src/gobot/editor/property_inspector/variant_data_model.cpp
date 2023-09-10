@@ -25,7 +25,7 @@ const Type& PropertyDataModel::GetValueType() const {
     return property_cache_.property_type;
 }
 
-const String& PropertyDataModel::GetPropertyName() const {
+const std::string& PropertyDataModel::GetPropertyName() const {
     return property_cache_.property_name;
 }
 
@@ -112,7 +112,7 @@ const Type& FunctionDataModel::GetValueType() const {
     return method_cache_.declaring_type;
 }
 
-const String& FunctionDataModel::GetMethodName() const {
+const std::string& FunctionDataModel::GetMethodName() const {
     return method_cache_.method_name;
 }
 

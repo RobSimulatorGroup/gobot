@@ -41,9 +41,9 @@ public:
 
     bool IsWindowHide() override;
 
-    [[nodiscard]] String GetTitle() const override;
+    [[nodiscard]] std::string GetTitle() const override;
 
-    void SetTitle(const String& title) override;
+    void SetTitle(const std::string& title) override;
 
     [[nodiscard]] bool IsMaximized() override;
 
@@ -71,10 +71,6 @@ public:
 
     [[nodiscard]] void* GetNativeDisplayHandle() const override;
 
-    void SetEventCallback(const EventCallbackFn& callback) override { event_callback_ = callback; }
-
-    void RunEventCallback(Event& event);
-
     [[nodiscard]] SDL_Window* GetSDL2Window() const { return sdl2_window_; }
 
     void SwapBuffers();
@@ -83,7 +79,6 @@ public:
 private:
     SDL_Window* sdl2_window_{nullptr};
 
-    EventCallbackFn event_callback_{nullptr};
     std::uint32_t windows_id_; // cache of sdl windows id
 };
 

@@ -10,10 +10,9 @@
 #include <gobot/core/config/project_setting.hpp>
 #include <gobot/log.hpp>
 #include <gobot/core/string_utils.hpp>
-#include <QDir>
 
 TEST(TestDir, test_dir) {
-    ASSERT_TRUE(QDir::cleanPath("/bin/") == QDir::cleanPath("/bin"));
+    ASSERT_TRUE(std::filesystem::weakly_canonical("/bin/") == std::filesystem::weakly_canonical("/bin"));
 }
 
 TEST(TestProjectSetting, test_localize_path) {
@@ -42,9 +41,8 @@ TEST(TestProjectSetting, test_localize_path) {
     ASSERT_TRUE(project_setting->LocalizePath("test/tt") == "res://test/tt");
 
 #else
-    QDir dir("/tmp/test_project");
-    if (!dir.exists()){
-        dir.mkpath("/tmp/test_project");
+    if (!std::filesystem::exists("/tmp/test_project")){
+        std::filesystem::create_directories("/tmp/test_project");
     }
     gobot::ProjectSettings project_settings;
 

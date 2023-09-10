@@ -54,7 +54,7 @@ bool VariantSerializer::WriteAtomicTypesToJson(const Type& t, const Variant& var
         } else {
             return false;
         }
-    } else if (t == Type::get<std::string>() || t == Type::get<String>()) {
+    } else if (t == Type::get<std::string>()) {
         writer = var.to_string();
         return true;
     }
@@ -118,7 +118,7 @@ bool VariantSerializer::WriteVariant(const Variant& var, Json& writer)
     auto wrapped_type = value_type.is_wrapper() ? value_type.get_wrapped_type() : value_type;
     bool is_wrapper = wrapped_type != value_type;
 
-    if (wrapped_type.is_arithmetic() || wrapped_type.is_enumeration() || wrapped_type == Type::get<String>()) {
+    if (wrapped_type.is_arithmetic() || wrapped_type.is_enumeration() || wrapped_type == Type::get<std::string>()) {
         return WriteAtomicTypesToJson(is_wrapper ? wrapped_type : value_type,
                                       is_wrapper ? var.extract_wrapped_value() : var, writer);
     } else if (var.is_sequential_container()) {
@@ -217,8 +217,7 @@ Json VariantSerializer::VariantToJson(const Variant& variant,
     Json json;
 
     auto type = variant.get_type();
-    if (type.is_arithmetic() || type.is_enumeration() ||
-        type == Type::get<String>() || type == Type::get<std::string>()) {
+    if (type.is_arithmetic() || type.is_enumeration() || type == Type::get<std::string>()) {
         WriteAtomicTypesToJson(type, variant, json);
     } else if (type.is_sequential_container()) {
         WriteArray(variant.create_sequential_view(), json);
@@ -275,8 +274,6 @@ Variant VariantSerializer::ExtractPrimitiveTypes(const Type& type, const Json& j
     } else if (json_value.is_string()) {
         if (type == Type::get<std::string>()) {
             return json_value.get<std::string>();
-        } else if (type == Type::get<String>()) {
-            return String(json_value.get<std::string>().c_str());
         } else if (type.is_enumeration()) {
             auto enum_class = type.get_enumeration();
             return enum_class.name_to_value(json_value.get<std::string>());
@@ -379,7 +376,7 @@ bool VariantSerializer::WriteAssociativeViewRecursively(VariantMapView& view, co
 }
 
 
-bool VariantSerializer::LoadSubResource(Variant& variant, const String& id) {
+bool VariantSerializer::LoadSubResource(Variant& variant, const std::string& id) {
     if (s_resource_format_loader_) {
         auto it = s_resource_format_loader_->sub_resources_.find(id);
         if (it == s_resource_format_loader_->sub_resources_.end()) {
@@ -392,7 +389,7 @@ bool VariantSerializer::LoadSubResource(Variant& variant, const String& id) {
     return false;
 }
 
-bool VariantSerializer::LoadExtResource(Variant& variant, const String& id) {
+bool VariantSerializer::LoadExtResource(Variant& variant, const std::string& id) {
     if (s_resource_format_loader_) {
         auto it = s_resource_format_loader_->ext_resources_.find(id);
         if (it == s_resource_format_loader_->ext_resources_.end()) {
@@ -407,11 +404,11 @@ bool VariantSerializer::LoadExtResource(Variant& variant, const String& id) {
 
 bool VariantSerializer::LoadResource(Variant& variant, const Json& json) {
     if (json.is_string()) {
-        auto str = String::fromStdString(json.get<std::string>());
-        auto left_bracket = str.indexOf("(");
-        auto right_bracket = str.indexOf(")");
-        auto key_word = str.left(left_bracket);
-        auto id = str.mid(left_bracket + 1, right_bracket - left_bracket - 1);
+        auto str = json.get<std::string>();
+        auto left_bracket = str.find("(");
+        auto right_bracket = str.find(")");
+        auto key_word = str.substr(0, left_bracket);
+        auto id = str.substr(left_bracket + 1, right_bracket - left_bracket - 1);
         if (key_word == "SubResource") {
             return LoadSubResource(variant, id);
         } else if (key_word == "ExtResource") {
@@ -499,8 +496,7 @@ bool VariantSerializer::JsonToVariant(Variant& variant,
     s_resource_format_loader_ = s_resource_format_loader;
 
     auto type = variant.get_type();
-    if (type.is_enumeration() || type.is_arithmetic() ||
-        type == Type::get<std::string>() || type == Type::get<String>()) {
+    if (type.is_enumeration() || type.is_arithmetic() || type == Type::get<std::string>()) {
         auto var = ExtractPrimitiveTypes(type, json);
         if (var.is_valid()) {
             variant = var;

@@ -40,14 +40,14 @@ public:
      *
      * @return the name of the node.
      */
-    const String& GetName() const;
+    const std::string& GetName() const;
 
     /**
      * @brief See GetName.
      *
      * @param p_name[String]: Given name.
      */
-    void SetName(const String &p_name);
+    void SetName(const std::string &p_name);
 
     /**
      * @brief Adds a child node. Nodes can have any number of children, but every child
@@ -264,22 +264,22 @@ protected:
     virtual void RemoveChildNotify(Node *child);
     virtual void MoveChildNotify(Node *child);
 
-    void AddChildNoCheck(Node *child, const String& name);
-    void SetNameNoCheck(const String& name);
+    void AddChildNoCheck(Node *child, const std::string& name);
+    void SetNameNoCheck(const std::string& name);
 
 private:
     Node *parent_ = nullptr;
     std::vector<Node *> children_;
 
-    String name_;
+    std::string name_;
     SceneTree *tree_ = nullptr;
     bool inside_tree_ = false;
     mutable NodePath path_cache_;
 
-    void PrintTreePretty(const String &prefix, bool last);
+    void PrintTreePretty(const std::string &prefix, bool last);
     void PrintTree(const Node *node);
 
-    Node *GetChildByName(const String& name) const;
+    Node *GetChildByName(const std::string& name) const;
 
     friend class SceneTree;
 
@@ -287,11 +287,11 @@ private:
 
     void ValidateChildName(Node* child, bool force_human_readable);
 
-    String ValidateNodeName(const String &p_name) const;
+    std::string ValidateNodeName(const std::string &p_name) const;
 
-    const String invalid_node_name_characters = ". : @ / \" ";
+    const std::vector<std::string> invalid_node_name_characters{".", ":", "@", "/", "\\", " "};
 
-    void GenerateSerialChildName(const Node* child, String &name) const;
+    void GenerateSerialChildName(const Node* child, std::string &name) const;
 
     void PropagateNotification(NotificationType p_notification);
     void PropagateReverseNotification(NotificationType p_notification);

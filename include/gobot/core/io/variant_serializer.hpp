@@ -49,9 +49,9 @@ private:
 
     ///////////////////////////////////////////
 
-    static bool LoadSubResource(Variant& variant, const String& id);
+    static bool LoadSubResource(Variant& variant, const std::string& id);
 
-    static bool LoadExtResource(Variant& variant, const String& id);
+    static bool LoadExtResource(Variant& variant, const std::string& id);
 
     static bool FromJsonRecursively(Variant& variant, const Json& json);
 

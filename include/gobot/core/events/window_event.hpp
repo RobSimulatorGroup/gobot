@@ -20,7 +20,7 @@ public:
 
     [[nodiscard]] FORCE_INLINE unsigned int GetHeight() const { return height_; }
 
-    [[nodiscard]] String ToString() const override;
+    [[nodiscard]] std::string ToString() const override;
 
     EVENT_CLASS_TYPE(WindowResize)
     EVENT_CLASS_CATEGORY(EventCategoryWindow)
@@ -62,7 +62,7 @@ class WindowMovedEvent : public Event {
 public:
     WindowMovedEvent(std::uint32_t x, std::uint32_t y);
 
-    [[nodiscard]] String ToString() const override;
+    [[nodiscard]] std::string ToString() const override;
 
     EVENT_CLASS_TYPE(WindowMoved)
     EVENT_CLASS_CATEGORY(EventCategoryWindow)
@@ -83,16 +83,16 @@ public:
 class GOBOT_EXPORT WindowDropFileEvent : public Event {
     GOBCLASS(WindowDropFileEvent, Event)
 public:
-    explicit WindowDropFileEvent(String file_path);
+    explicit WindowDropFileEvent(std::string file_path);
 
-    [[nodiscard]] FORCE_INLINE const String& GetFilePath() const { return file_path_; }
+    [[nodiscard]] FORCE_INLINE const std::string& GetFilePath() const { return file_path_; }
 
-    [[nodiscard]] String ToString() const override;
+    [[nodiscard]] std::string ToString() const override;
 
     EVENT_CLASS_TYPE(WindowDropFile)
     EVENT_CLASS_CATEGORY(EventCategoryWindow)
 private:
-    String file_path_;
+    std::string file_path_;
 };
 
 }

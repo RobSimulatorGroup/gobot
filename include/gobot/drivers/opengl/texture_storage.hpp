@@ -119,7 +119,7 @@ public:
 
     GLuint64 GetHandleBindless() const { return handle_bindless_; }
 
-    String GetFramebufferError(GLenum p_status) {
+    std::string GetFramebufferError(GLenum p_status) {
 #if defined(DEBUG_ENABLED)
         if (p_status == GL_FRAMEBUFFER_INCOMPLETE_ATTACHMENT) {
 		return "GL_FRAMEBUFFER_INCOMPLETE_ATTACHMENT";

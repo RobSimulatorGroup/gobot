@@ -382,10 +382,11 @@ void Image::SetPixel(int x, int y, const Color& color) {
     return SetColorAtOfs(data_.data(), ofs, color);
 }
 
-Ref<Image> Image::LoadFromFile(const String &path)
+Ref<Image> Image::LoadFromFile(const std::string &path)
 {
     // TODO(wqq)
 //    return gobot::dynamic_pointer_cast<Image>( ResourceFormatLoaderSDLImage::GetInstance()->Load(path));
+    return {};
 }
 
 int Image::GetImageDataSize(int width, int height, ImageFormat format, bool mipmaps) {
@@ -393,8 +394,8 @@ int Image::GetImageDataSize(int width, int height, ImageFormat format, bool mipm
     return GetDstImageSize(width, height, format, mm, mipmaps ? -1 : 0);
 }
 
-String Image::GetFormatName(ImageFormat format) {
-    ERR_FAIL_INDEX_V((unsigned int)format, (unsigned int)ImageFormat::MAX, String());
+std::string Image::GetFormatName(ImageFormat format) {
+    ERR_FAIL_INDEX_V((unsigned int)format, (unsigned int)ImageFormat::MAX, std::string());
     return s_format_names[(unsigned int)format];
 }
 
@@ -714,18 +715,18 @@ void Image::InitializeData(int width, int height, bool use_mipmaps, ImageFormat 
     int size = GetDstImageSize(width, height, format, mm, use_mipmaps ? -1 : 0);
 
     if (data.size() != size) [[unlikely]] {
-        String description_mipmaps = GetFormatName(format) + " ";
+        std::string description_mipmaps = GetFormatName(format) + " ";
         if (use_mipmaps) {
             const int num_mipmaps = GetImageRequiredMipmaps(width, height, format);
             if (num_mipmaps != 1) {
-                description_mipmaps += fmt::format("with %d mipmaps", num_mipmaps).c_str();
+                description_mipmaps += fmt::format("with %d mipmaps", num_mipmaps);
             } else {
                 description_mipmaps += "with 1 mipmap";
             }
         } else {
             description_mipmaps += "without mipmaps";
         }
-        const String description = fmt::format("%dx%dx%d (%s)", width, height, GetFormatPixelSize(format), description_mipmaps).c_str();
+        const std::string description = fmt::format("%dx%dx%d (%s)", width, height, GetFormatPixelSize(format), description_mipmaps);
         ERR_FAIL_MSG(fmt::format("Expected Image data size of %s = %d bytes, got %d bytes instead.", description, size, data.size()));
     }
 

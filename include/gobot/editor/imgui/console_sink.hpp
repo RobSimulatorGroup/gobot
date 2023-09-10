@@ -29,9 +29,9 @@ public:
         spdlog::memory_buf_t formatted;
         spdlog::sinks::base_sink<Mutex>::formatter_->format(msg, formatted);
         std::string source = fmt::format("File : {0} | Function : {1} | Line : {2}", msg.source.filename, msg.source.funcname, msg.source.line);
-        auto message = MakeRef<ConsoleMessage>(String::fromStdString(fmt::to_string(formatted)),
+        auto message = MakeRef<ConsoleMessage>(fmt::to_string(formatted),
                                                GetMessageLevel(msg.level),
-                                               String::fromStdString(source),
+                                               source,
                                                static_cast<int>(msg.thread_id));
         ConsolePanel::AddMessage(message);
     }

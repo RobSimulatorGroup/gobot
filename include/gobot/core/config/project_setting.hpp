@@ -23,16 +23,16 @@ public:
 
     static ProjectSettings* GetInstance();
 
-    [[nodiscard]] String LocalizePath(const String &path) const;
+    [[nodiscard]] std::string LocalizePath(std::string_view path) const;
 
-    [[nodiscard]] String GlobalizePath(const String &path) const;
+    [[nodiscard]] std::string GlobalizePath(std::string_view path) const;
 
-    bool SetProjectPath(const String& project_path);
+    bool SetProjectPath(const std::string& project_path);
 
-    [[nodiscard]] FORCE_INLINE const String& GetProjectPath() const { return project_path_; }
+    [[nodiscard]] FORCE_INLINE const std::string& GetProjectPath() const { return project_path_; }
 
 private:
-    String project_path_;
+    std::string project_path_;
 };
 
 }

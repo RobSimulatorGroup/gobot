@@ -110,7 +110,7 @@ Ref<Resource> Resource::Clone(bool copy_subresource) const {
 }
 
 Resource::~Resource() {
-    if (!path_cache_.isEmpty()) {
+    if (!path_cache_.empty()) {
         ResourceCache::s_lock.lock();
         ResourceCache::s_resources.erase(path_cache_);
         ResourceCache::s_lock.unlock();
@@ -120,26 +120,26 @@ Resource::~Resource() {
     }
 }
 
-void Resource::SetPathNotTakeOver(const String &path) {
+void Resource::SetPathNotTakeOver(const std::string &path) {
     SetPath(path, false);
 }
 
-void Resource::SetPathTakeOver(const String &path) {
+void Resource::SetPathTakeOver(const std::string &path) {
     SetPath(path, true);
 }
 
-void Resource::SetPath(const String &path, bool take_over) {
+void Resource::SetPath(const std::string &path, bool take_over) {
     if (path_cache_ == path) {
         return;
     }
 
-    if (path.isEmpty()) {
+    if (path.empty()) {
         take_over = false; // Can't take over an empty path
     }
 
     ResourceCache::s_lock.lock();
 
-    if (!path_cache_.isEmpty()) {
+    if (!path_cache_.empty()) {
         ResourceCache::s_resources.erase(path_cache_);
     }
 
@@ -149,7 +149,7 @@ void Resource::SetPath(const String &path, bool take_over) {
 
     if (existing.UseCount()) {
         if (take_over) {
-            existing->path_cache_ = String();
+            existing->path_cache_ = "";
             ResourceCache::s_resources.erase(path);
         } else {
             ResourceCache::s_lock.unlock();
@@ -160,35 +160,35 @@ void Resource::SetPath(const String &path, bool take_over) {
 
     path_cache_ = path;
 
-    if (!path_cache_.isEmpty()) {
+    if (!path_cache_.empty()) {
         ResourceCache::s_resources[path_cache_] = this;
     }
     ResourceCache::s_lock.unlock();
 
 }
 
-String Resource::GetPath() const {
+std::string Resource::GetPath() const {
     return path_cache_;
 }
 
-void Resource::SetName(const String &name) {
+void Resource::SetName(const std::string &name) {
     name_ = name;
-    Q_EMIT resourceChanged();
+    // TODO(notify resource changed)
 }
 
-String Resource::GetName() const {
+std::string Resource::GetName() const {
     return name_;
 }
 
-void Resource::SetUniqueId(const String &unique_id) {
+void Resource::SetUniqueId(const std::string &unique_id) {
     unique_id_ = unique_id;
 }
 
-String Resource::GetUniqueId() const {
+std::string Resource::GetUniqueId() const {
     return unique_id_;
 }
 
-String Resource::GenerateResourceUniqueId() {
+std::string Resource::GenerateResourceUniqueId() {
     int length = 5;
 
     static auto& chrs = "0123456789"
@@ -198,7 +198,7 @@ String Resource::GenerateResourceUniqueId() {
     thread_local static std::mt19937 rg{std::random_device{}()};
     thread_local static std::uniform_int_distribution<> pick(0, sizeof(chrs) - 2);
 
-    String s;
+    std::string s;
     s.reserve(length);
 
     while(length--)
@@ -207,9 +207,9 @@ String Resource::GenerateResourceUniqueId() {
 }
 
 
-bool Resource::IsResourceFile(const String& path) {
+bool Resource::IsResourceFile(std::string_view path) {
     // "::" means property name
-    return path.startsWith("res://") && !path.contains("::");
+    return path.starts_with("res://") && path.find("::") == std::string_view::npos;
 }
 
 void Resource::ReloadFromFile() {
@@ -249,7 +249,7 @@ bool Resource::CopyFrom(const Ref<Resource> &resource) {
         if (!(bool)(property_info.usage & PropertyUsageFlags::Storage)) {
             continue;
         }
-        String prop_name = prop.get_name().data();
+        std::string prop_name = prop.get_name().data();
         if (prop_name == "resource_path") {
             continue; //do not change path
         }
@@ -263,17 +263,17 @@ RID Resource::GetRid() const {
 }
 
 
-std::unordered_map<String, Resource*> ResourceCache::s_resources;
+std::unordered_map<std::string, Resource*> ResourceCache::s_resources;
 std::recursive_mutex ResourceCache::s_lock;
 
-bool ResourceCache::Has(const String &path) {
+bool ResourceCache::Has(const std::string &path) {
     s_lock.lock();
 
     auto it = s_resources.find(path);
 
     if (it != s_resources.end() && it->second->GetReferenceCount() == 0) {
         // This resource is in the process of being deleted, ignore its existence.
-        it->second->path_cache_ = String();
+        it->second->path_cache_ = std::string();
         it->second = nullptr;
         s_resources.erase(path);
     }
@@ -287,7 +287,7 @@ bool ResourceCache::Has(const String &path) {
     return true;
 }
 
-Ref<Resource> ResourceCache::GetRef(const String &path) {
+Ref<Resource> ResourceCache::GetRef(const std::string &path) {
     Ref<Resource> ref;
     s_lock.lock();
 
@@ -299,7 +299,7 @@ Ref<Resource> ResourceCache::GetRef(const String &path) {
 
     if (it != s_resources.end() && it->second->GetReferenceCount() == 0) {
         // This resource is in the process of being deleted, ignore its existence
-        it->second->path_cache_ = String();
+        it->second->path_cache_ = std::string();
         it->second = nullptr;
         s_resources.erase(path);
     }

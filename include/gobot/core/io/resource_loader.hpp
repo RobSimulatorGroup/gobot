@@ -23,19 +23,19 @@ public:
         Replace // Resource and subresource use path cache, but replace existing loaded resources when available with information from disk.
     };
 
-    virtual Ref<Resource> Load(const String &local_path,
-                               const String &original_path = "",
+    virtual Ref<Resource> Load(const std::string &local_path,
+                               const std::string &original_path = "",
                                CacheMode cache_mode = CacheMode::Reuse) = 0;
 
-    [[nodiscard]] virtual bool HandlesType(const String &type) const = 0;
+    [[nodiscard]] virtual bool HandlesType(const std::string &type) const = 0;
 
-    [[nodiscard]] virtual bool RecognizePath(const String &path, const String &type_hint = String()) const;
+    [[nodiscard]] virtual bool RecognizePath(const std::string &path, const std::string &type_hint = "") const;
 
-    virtual void GetRecognizedExtensions(std::vector<String> *extensions) const = 0;
+    virtual void GetRecognizedExtensions(std::vector<std::string> *extensions) const = 0;
 
-    virtual void GetRecognizedExtensionsForType(const String &type, std::vector<String> *extensions) const;
+    virtual void GetRecognizedExtensionsForType(const std::string &type, std::vector<std::string> *extensions) const;
 
-    [[nodiscard]] virtual bool Exists(const String &path) const;
+    [[nodiscard]] virtual bool Exists(const std::string &path) const;
 
 };
 
@@ -43,11 +43,11 @@ public:
 class GOBOT_EXPORT ResourceLoader {
 
 public:
-    static Ref<Resource> Load(const String &path,
-                              const String &type_hint = "",
+    static Ref<Resource> Load(const std::string &path,
+                              const std::string &type_hint = "",
                               ResourceFormatLoader::CacheMode cache_mode = ResourceFormatLoader::CacheMode::Reuse);
 
-    static bool Exists(const String &path, const String &type_hint = "");
+    static bool Exists(const std::string &path, const std::string &type_hint = "");
 
     static void AddResourceFormatLoader(const Ref<ResourceFormatLoader>& format_loader, bool at_front = false);
 
@@ -59,8 +59,8 @@ public:
 
 private:
 
-    static Ref<Resource> LoadImpl(const String &path,
-                                  const String &type_hint,
+    static Ref<Resource> LoadImpl(const std::string &path,
+                                  const std::string &type_hint,
                                   ResourceFormatLoader::CacheMode cache_mode);
 
     static std::deque<Ref<ResourceFormatLoader>> s_loaders;

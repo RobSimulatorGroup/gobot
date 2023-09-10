@@ -7,27 +7,40 @@
 
 #pragma once
 
-#include <QFileInfo>
 #include <gobot_export.h>
-
-#include "gobot/core/types.hpp"
+#include <string>
+#include <vector>
 
 namespace gobot {
 
-String GOBOT_EXPORT GetFileExtension(const String& path);
+enum class StringSplitBehavior {
+    KeepEmptyParts,
+    SkipEmptyParts
+};
 
-bool GOBOT_EXPORT IsNetworkSharePath(const String& path);
+std::vector<std::string> Split(std::string s, std::string delimiter,
+                               StringSplitBehavior split_behavior = StringSplitBehavior::KeepEmptyParts);
 
-bool GOBOT_EXPORT IsAbsolutePath(const String& path);
+std::string GOBOT_EXPORT ToLower(std::string_view str);
 
-bool GOBOT_EXPORT IsRelativePath(const String& path);
+std::string GOBOT_EXPORT ToUpper(std::string_view str);
 
-String GOBOT_EXPORT SimplifyPath(const String& path);
+std::string GOBOT_EXPORT ReplaceAll(std::string str, const std::string& from, const std::string& to);
 
-String GOBOT_EXPORT ValidateLocalPath(const String& path);
+std::string GOBOT_EXPORT GetFileExtension(std::string_view path);
 
-String GOBOT_EXPORT GetBaseDir(const String& path);
+bool GOBOT_EXPORT IsNetworkSharePath(std::string_view path);
 
-String GOBOT_EXPORT PathJoin(const String &base, const String &file);
+bool GOBOT_EXPORT IsAbsolutePath(std::string_view path);
+
+bool GOBOT_EXPORT IsRelativePath(std::string_view path);
+
+std::string GOBOT_EXPORT SimplifyPath(std::string_view path);
+
+std::string GOBOT_EXPORT ValidateLocalPath(const std::string& path);
+
+std::string GOBOT_EXPORT GetBaseDir(std::string_view path);
+
+std::string GOBOT_EXPORT PathJoin(std::string_view base, std::string_view file);
 
 }

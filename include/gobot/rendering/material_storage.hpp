@@ -22,9 +22,9 @@ public:
 
     virtual void ShaderInitialize(RID p_rid, ShaderType shader_type) = 0;
 
-    virtual void ShaderSetCode(RID p_shader, const String &p_code, const String& p_name, const String& p_path) = 0;
+    virtual void ShaderSetCode(RID p_shader, const std::string &p_code, const std::string& p_name, const std::string& p_path) = 0;
 
-    virtual String ShaderGetCode(RID p_shader) const = 0;
+    virtual std::string ShaderGetCode(RID p_shader) const = 0;
 
     virtual void ShaderFree(RID p_rid) = 0;
 
@@ -41,9 +41,9 @@ public:
                                                   RID p_geometry_shader,
                                                   RID p_tess_control_shader,
                                                   RID p_tess_evaluation_shader,
-                                                  const String& p_name) = 0;
+                                                  const std::string& p_name) = 0;
 
-    virtual void ShaderProgramSetComputeShader(RID p_shader_program, RID p_comp_shader, const String& p_name) = 0;
+    virtual void ShaderProgramSetComputeShader(RID p_shader_program, RID p_comp_shader, const std::string& p_name) = 0;
 
     // material
     virtual RID MaterialAllocate() = 0;

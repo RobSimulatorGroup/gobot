@@ -11,8 +11,8 @@ set(CMAKE_MODULE_PATH ${CMAKE_BINARY_DIR})
 
 set(GOBOT_ROOT_DIR "${CMAKE_CURRENT_SOURCE_DIR}")
 
-option(BUILD_EXPERIMENT "using imgui and glfw" OFF)
-option(BUILD_TESTS "build tests" OFF)
+option(GOB_BUILD_EXPERIMENT "using imgui and glfw" OFF)
+option(GOB_BUILD_TESTS "build tests" OFF)
 
 if(UNIX AND NOT APPLE)
     set(LINUX TRUE)
@@ -79,9 +79,7 @@ if(PROJECT_SOURCE_DIR STREQUAL PROJECT_BINARY_DIR)
     )
 endif()
 
-find_package(Qt5 5.15 COMPONENTS Core CONFIG REQUIRED)
 find_package (Eigen3 3.4 CONFIG REQUIRED)
-#find_package(OpenGL REQUIRED)
 
 INCLUDE(GenerateExportHeader)
 
@@ -94,10 +92,9 @@ file(GLOB_RECURSE SOURCE_DRIVERS CONFIGURE_DEPENDS "src/gobot/drivers/*.cpp")
 file(GLOB_RECURSE SOURCE_RENDERING CONFIGURE_DEPENDS "src/gobot/rendering/*.cpp")
 file(GLOB_RECURSE SOURCE_EDITOR CONFIGURE_DEPENDS "src/gobot/editor/*.cpp")
 file(GLOB_RECURSE SOURCE_MAIN CONFIGURE_DEPENDS "src/gobot/main/*.cpp")
-file(GLOB_RECURSE HEADER_FILES CONFIGURE_DEPENDS "include/*hpp")
 
 # https://github.com/bincrafters/community/issues/466#issuecomment-426265654
-add_library(gobot SHARED ${SOURCE_DRIVERS} ${SOURCE_MAIN} ${SOURCE_CORE} ${SOURCE_RENDERING} ${SOURCE_SCENE} ${SOURCE_EDITOR} ${HEADER_FILES})
+add_library(gobot SHARED ${SOURCE_DRIVERS} ${SOURCE_MAIN} ${SOURCE_CORE} ${SOURCE_RENDERING} ${SOURCE_SCENE} ${SOURCE_EDITOR})
 if (CMAKE_CXX_COMPILER_ID STREQUAL "MSVC")
     set(GOBOT_COMPILE_OPTIONS "/Zc:preprocessor,__cplusplus" "/bigobj")
 elseif (CMAKE_CXX_COMPILER_ID STREQUAL "GNU")
@@ -117,7 +114,6 @@ target_include_directories(gobot
 target_link_libraries(gobot
     PUBLIC
     RTTR::Core
-    Qt5::Core
     imgui-gobot
     glad
     SDL2::SDL2
@@ -138,9 +134,6 @@ set_target_properties(gobot
         CMAKE_ARCHIVE_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/lib"
         CMAKE_LIBRARY_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/lib"
         CMAKE_RUNTIME_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/bin"
-    AUTOMOC ON
-    AUTORCC ON
-    AUTOUIC ON
 )
 
 set(SHADER_COMPILE_TARGET GobotShaderCompile)
@@ -167,12 +160,13 @@ target_link_libraries(gobot_editor
     gobot
 )
 
-if (BUILD_EXPERIMENT)
+if (GOB_BUILD_EXPERIMENT)
     add_subdirectory(experiment)
 endif ()
 
-if (BUILD_TESTS)
+if (GOB_BUILD_TESTS)
     enable_testing()
+    include(GoogleTest)
     add_subdirectory(tests)
 endif ()
 

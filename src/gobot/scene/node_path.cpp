@@ -8,56 +8,54 @@
 
 #include "gobot/scene/node_path.hpp"
 #include "gobot/core/registration.hpp"
+#include "gobot/core/string_utils.hpp"
 
 namespace gobot {
 
-template <typename T>
-using Vector = QVector<T>;
-
-NodePath::NodePath(const std::vector<String> &path, bool absolute) {
+NodePath::NodePath(const std::vector<std::string> &path, bool absolute) {
     data_.path = path;
     data_.absolute = absolute;
 }
 
-NodePath::NodePath(const std::vector<String> &path, const std::vector<String> &subpath, bool absolute) {
+NodePath::NodePath(const std::vector<std::string> &path, const std::vector<std::string> &subpath, bool absolute) {
     data_.path = path;
     data_.subpath = subpath;
     data_.absolute = absolute;
 }
 
-NodePath::NodePath(const String &path) {
+NodePath::NodePath(const std::string &path) {
     if (!path.length()) return;
 
-    String raw_path = path;
-    bool is_absolute = (raw_path.front() == u'/');
-    Vector<String> path_list;
-    Vector<String> subpath_list;
-    int subpath_pos = path.indexOf(u':');
+    std::string raw_path = path;
+    bool is_absolute = (raw_path.front() == '/');
+    std::vector<std::string> path_list;
+    std::vector<std::string> subpath_list;
+    int subpath_pos = path.find(':');
 
     if (subpath_pos >= 0) {
-        subpath_list = raw_path.split(u':', s_split_behavior_flags).toVector();
+        subpath_list = Split(raw_path, ":", StringSplitBehavior::SkipEmptyParts);
         if (subpath_pos > 0) {
             raw_path = subpath_list.front();
-            subpath_list.pop_front();
+            subpath_list.erase(subpath_list.begin());
         } else {
-            raw_path = String("");
+            raw_path = "";
         }
     } else {
-        subpath_list = Vector<String>();
+        subpath_list = std::vector<std::string>();
     }
 
-    if (raw_path.isEmpty()) {
-        path_list = Vector<String>();
+    if (raw_path.empty()) {
+        path_list = std::vector<std::string>();
     } else {
-        if (is_absolute) raw_path.remove(0, 1);
-        path_list = raw_path.split(u'/', s_split_behavior_flags).toVector();
-        if (path_list.isEmpty())
-            path_list = Vector<String>(raw_path.size(), raw_path);
+        if (is_absolute) raw_path.erase(0, 1);
+        path_list = Split(raw_path, "/", StringSplitBehavior::SkipEmptyParts);
+        if (path_list.empty())
+            path_list = std::vector<std::string>(raw_path.size(), raw_path);
     }
 
     data_.absolute = is_absolute;
-    data_.path = std::move(std::vector<String>(path_list.begin(), path_list.end()));
-    data_.subpath = std::move(std::vector<String>(subpath_list.begin(), subpath_list.end()));
+    data_.path = std::move(std::vector<std::string>(path_list.begin(), path_list.end()));
+    data_.subpath = std::move(std::vector<std::string>(subpath_list.begin(), subpath_list.end()));
 }
 
 bool NodePath::IsAbsolute() const {
@@ -68,9 +66,9 @@ std::size_t NodePath::GetNameCount() const {
     return data_.path.size();
 }
 
-String NodePath::GetName(int idx) const {
-    ERR_FAIL_COND_V(data_.path.empty(), String());
-    ERR_FAIL_INDEX_V(idx, data_.path.size(), String());
+std::string NodePath::GetName(int idx) const {
+    ERR_FAIL_COND_V(data_.path.empty(), std::string());
+    ERR_FAIL_INDEX_V(idx, data_.path.size(), std::string());
     return data_.path[idx];
 }
 
@@ -78,26 +76,26 @@ std::size_t NodePath::GetSubNameCount() const {
     return data_.subpath.size();
 }
 
-String NodePath::GetSubName(int idx) const {
-    ERR_FAIL_COND_V(data_.subpath.empty(), String());
-    ERR_FAIL_INDEX_V(idx, data_.subpath.size(), String());
+std::string NodePath::GetSubName(int idx) const {
+    ERR_FAIL_COND_V(data_.subpath.empty(), std::string());
+    ERR_FAIL_INDEX_V(idx, data_.subpath.size(), std::string());
     return data_.subpath[idx];
 }
 
-std::vector<String> NodePath::GetNames() const {
+std::vector<std::string> NodePath::GetNames() const {
     return data_.path;
 }
 
-std::vector<String> NodePath::GetSubNames() const {
+std::vector<std::string> NodePath::GetSubNames() const {
     return data_.subpath;
 }
 
-String NodePath::GetConcatenatedNames() const {
-    ERR_FAIL_COND_V(IsEmpty(), String());
+std::string NodePath::GetConcatenatedNames() const {
+    ERR_FAIL_COND_V(IsEmpty(), std::string());
 
-    if (data_.concatenated_path.isEmpty()) {
-        String concatenated;
-        std::vector<String> path = data_.path;
+    if (data_.concatenated_path.empty()) {
+        std::string concatenated;
+        std::vector<std::string> path = data_.path;
 
         if (data_.absolute) concatenated += "/";
         for (int i = 0; i < path.size(); ++i) {
@@ -109,12 +107,12 @@ String NodePath::GetConcatenatedNames() const {
     return data_.concatenated_path;
 }
 
-String NodePath::GetConcatenatedSubNames() const {
-    ERR_FAIL_COND_V(IsEmpty(), String());
+std::string NodePath::GetConcatenatedSubNames() const {
+    ERR_FAIL_COND_V(IsEmpty(), std::string());
 
-    if (data_.concatenated_subpath.isEmpty()) {
-        String concatenated;
-        std::vector<String> subpath = data_.subpath;
+    if (data_.concatenated_subpath.empty()) {
+        std::string concatenated;
+        std::vector<std::string> subpath = data_.subpath;
         for (int i = 0; i < subpath.size(); ++i) {
             concatenated += i == 0 ? subpath[i] : ":" + subpath[i];
         }
@@ -127,20 +125,20 @@ String NodePath::GetConcatenatedSubNames() const {
 NodePath NodePath::GetAsPropertyPath() const {
     if (IsEmpty() || data_.path.empty()) return *this;
 
-    std::vector<String> new_path = data_.subpath;
-    String initial_subname = data_.path[0];
+    std::vector<std::string> new_path = data_.subpath;
+    std::string initial_subname = data_.path[0];
     for (int i = 1; i < data_.path.size(); ++i) {
         initial_subname += "/" + data_.path[i];
     }
     new_path.insert(new_path.begin(), initial_subname);
 
-    return {std::vector<String>(), new_path, false};
+    return {std::vector<std::string>(), new_path, false};
 }
 
-NodePath::operator String() const {
+NodePath::operator std::string() const {
     if (IsEmpty()) return {};
 
-    String ret;
+    std::string ret;
     if (data_.absolute) ret = "/";
 
     for (int i = 0; i < data_.path.size(); ++i) {
@@ -191,12 +189,12 @@ NodePath NodePath::Simplified() const {
     return np;
 }
 
-void NodePath::SetStrData(const String& str) {
+void NodePath::SetStrData(const std::string& str) {
     *this = NodePath(str);
 }
 
-String NodePath::GetStrData() const {
-    return this->operator String();
+std::string NodePath::GetStrData() const {
+    return this->operator std::string();
 }
 
 
@@ -217,7 +215,7 @@ GOBOT_REGISTRATION {
             .property_readonly("subname_path", &NodePath::GetConcatenatedSubNames)
             .property_readonly("to_property_path", &NodePath::GetAsPropertyPath)
             .property_readonly("simplified", &NodePath::Simplified)
-            .property_readonly("to_string", &NodePath::operator String)
+            .property_readonly("to_string", &NodePath::operator std::string)
 
             .property("str_data", &NodePath::GetStrData, &NodePath::SetStrData)
 

@@ -19,9 +19,9 @@ WindowResizeEvent::WindowResizeEvent(std::uint32_t width, std::uint32_t height)
 {
 }
 
-String WindowResizeEvent::ToString() const
+std::string WindowResizeEvent::ToString() const
 {
-    return fmt::format("WindowResizeEvent: {}, {}", width_, height_).c_str();
+    return fmt::format("WindowResizeEvent: {}, {}", width_, height_);
 }
 
 ////////////////////////////////////////////////////
@@ -32,19 +32,19 @@ WindowMovedEvent::WindowMovedEvent(std::uint32_t x, std::uint32_t y)
 {
 }
 
-String WindowMovedEvent::ToString() const {
-    return fmt::format("WindowMovedEvent: ({}, {})", x_, y_).c_str();
+std::string WindowMovedEvent::ToString() const {
+    return fmt::format("WindowMovedEvent: ({}, {})", x_, y_);
 }
 
 ////////////////////////////////////////////
 
-WindowDropFileEvent::WindowDropFileEvent(String file_path)
+WindowDropFileEvent::WindowDropFileEvent(std::string file_path)
     : file_path_(std::move(file_path))
 {
 }
 
-String WindowDropFileEvent::ToString() const {
-    return fmt::format("WindowFileEvent: {}", file_path_).c_str();
+std::string WindowDropFileEvent::ToString() const {
+    return fmt::format("WindowFileEvent: {}", file_path_);
 }
 
 

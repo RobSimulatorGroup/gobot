@@ -56,10 +56,10 @@ void GLMaterialStorage::ShaderInitialize(RID p_rid, ShaderType shader_type) {
     shader_owner_.InitializeRID(p_rid, shader);
 }
 
-void GLMaterialStorage::ShaderSetCode(RID p_shader, const String &p_code, const String& p_name, const String& p_path) {
+void GLMaterialStorage::ShaderSetCode(RID p_shader, const std::string &p_code, const std::string& p_name, const std::string& p_path) {
     auto* shader = shader_owner_.GetOrNull(p_shader);
     ERR_FAIL_COND(!shader);
-    auto str = p_code.toStdString();
+    auto str = p_code;
     const char* data = str.data();
     glShaderSource(shader->gl_shader, 1, &data, nullptr);
     glCompileShader(shader->gl_shader);
@@ -80,8 +80,8 @@ void GLMaterialStorage::ShaderSetCode(RID p_shader, const String &p_code, const 
             ilogmem[iloglen] = '\0';
             glGetShaderInfoLog(shader->gl_shader, iloglen, &iloglen, ilogmem);
 
-            String err_string = fmt::format("{} Shader name: {}, path: {}  compilation failed:\n",
-                                            magic_enum::enum_name(shader->shader_type), p_name, p_path).data();
+            std::string err_string = fmt::format("{} Shader name: {}, path: {}  compilation failed:\n",
+                                            magic_enum::enum_name(shader->shader_type), p_name, p_path);
 
             err_string += ilogmem;
             free(ilogmem);
@@ -120,7 +120,7 @@ void GLMaterialStorage::ShaderProgramSetRasterizerShader(RID p_shader_program,
                                                          RID p_geometry_shader,
                                                          RID p_tess_control_shader,
                                                          RID p_tess_evaluation_shader,
-                                                         const String& p_name) {
+                                                         const std::string& p_name) {
     auto* program = program_owner_.GetOrNull(p_shader_program);
     ERR_FAIL_COND(!program);
     ERR_FAIL_COND(!p_vs_shader.IsValid());
@@ -168,7 +168,7 @@ void GLMaterialStorage::ShaderProgramSetRasterizerShader(RID p_shader_program,
         glGetProgramInfoLog(program->gl_program, iloglen, &iloglen, ilogmem);
         ilogmem[iloglen] = '\0';
 
-        String err_string = p_name + ": Program linking failed:\n";
+        std::string err_string = p_name + ": Program linking failed:\n";
         err_string += ilogmem;
 
         LOG_ERROR(err_string);
@@ -177,7 +177,7 @@ void GLMaterialStorage::ShaderProgramSetRasterizerShader(RID p_shader_program,
     }
 }
 
-void GLMaterialStorage::ShaderProgramSetComputeShader(RID p_shader_program, RID p_comp_shader, const String& p_name) {
+void GLMaterialStorage::ShaderProgramSetComputeShader(RID p_shader_program, RID p_comp_shader, const std::string& p_name) {
     auto* program = program_owner_.GetOrNull(p_shader_program);
     ERR_FAIL_COND(!program);
     ERR_FAIL_COND(!p_comp_shader.IsValid());
@@ -208,7 +208,7 @@ void GLMaterialStorage::ShaderProgramSetComputeShader(RID p_shader_program, RID 
         glGetProgramInfoLog(program->gl_program, iloglen, &iloglen, ilogmem);
         ilogmem[iloglen] = '\0';
 
-        String err_string = p_name + ": Program linking failed:\n";
+        std::string err_string = p_name + ": Program linking failed:\n";
         err_string += ilogmem;
 
         LOG_ERROR(err_string);
@@ -230,7 +230,7 @@ void GLMaterialStorage::MaterialFree(RID p_rid) {
 
 }
 
-String GLMaterialStorage::ShaderGetCode(RID p_shader) const {
+std::string GLMaterialStorage::ShaderGetCode(RID p_shader) const {
     return {};
 }
 

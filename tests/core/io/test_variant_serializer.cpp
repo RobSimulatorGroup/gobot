@@ -91,12 +91,12 @@ TEST(TestVariantSerializer, test_primitive_type) {
 
   // test gobot::String
   {
-    gobot::String str{"111"};
+    std::string str{"111"};
     auto json = gobot::VariantSerializer::VariantToJson(str);
-    gobot::String str_2;
+      std::string str_2;
     gobot::Variant variant(str_2);
     ASSERT_TRUE(gobot::VariantSerializer::JsonToVariant(variant, json));
-    ASSERT_TRUE(variant.get_value<gobot::String>() == str);
+    ASSERT_TRUE(variant.get_value<std::string>() == str);
   }
 
   // test enum
@@ -143,25 +143,25 @@ TEST(TestVariantSerializer, test_vector_struct) {
 }
 
 TEST(TestVariantSerializer, test_simple_map) {
-  std::map<gobot::String, gobot::String> map{{"111", "222"}, {"2222", "22"}};
+  std::map<std::string, std::string> map{{"111", "222"}, {"2222", "22"}};
   auto json = gobot::VariantSerializer::VariantToJson(map);
-  std::map<gobot::String, gobot::String> map_2;
+  std::map<std::string, std::string> map_2;
   gobot::Variant variant(map_2);
   ASSERT_TRUE(gobot::VariantSerializer::JsonToVariant(variant, json));
   auto equal =
-      variant.get_value<std::map<gobot::String, gobot::String>>() == map;
+      variant.get_value<std::map<std::string, std::string>>() == map;
   ASSERT_TRUE(equal);
 }
 
 TEST(TestVariantSerializer, test_struct_map) {
-  std::map<gobot::String, gobot::PropertyInfo> property_info_map{
+  std::map<std::string, gobot::PropertyInfo> property_info_map{
       {"111", {"name1"}}, {"2222", {"name2"}}};
   auto json = gobot::VariantSerializer::VariantToJson(property_info_map);
-  std::map<gobot::String, gobot::PropertyInfo> map_2;
+  std::map<std::string, gobot::PropertyInfo> map_2;
   gobot::Variant variant(map_2);
   ASSERT_TRUE(gobot::VariantSerializer::JsonToVariant(variant, json));
   auto equal =
-      variant.get_value<std::map<gobot::String, gobot::PropertyInfo>>() ==
+      variant.get_value<std::map<std::string, gobot::PropertyInfo>>() ==
       property_info_map;
   ASSERT_TRUE(equal);
 }

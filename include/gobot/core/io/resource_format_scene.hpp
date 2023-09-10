@@ -10,7 +10,6 @@
 #include "gobot/core/io/resource_loader.hpp"
 #include "gobot/core/io/resource_saver.hpp"
 #include "gobot/scene/resources/packed_scene.hpp"
-#include <QFile>
 
 namespace gobot {
 
@@ -27,14 +26,14 @@ private:
     friend class VariantSerializer;
 
     Ref<Resource> resource_{nullptr};
-    String file_context_;
-    String local_path_;
+    std::string file_context_;
+    std::string local_path_;
     bool is_scene_{false};
-    String res_type_;
+    std::string res_type_;
     ResourceFormatLoader::CacheMode cache_mode_{ResourceFormatLoader::CacheMode::Reuse};
 
-    std::unordered_map<String, Ref<Resource>> ext_resources_;
-    std::unordered_map<String, Ref<Resource>> sub_resources_;
+    std::unordered_map<std::string, Ref<Resource>> ext_resources_;
+    std::unordered_map<std::string, Ref<Resource>> sub_resources_;
 };
 
 
@@ -50,20 +49,20 @@ public:
     static ResourceFormatLoaderScene* GetInstance();
 
 
-    Ref<Resource> Load(const String &path,
-                       const String &original_path = "",
+    Ref<Resource> Load(const std::string &path,
+                       const std::string &original_path = "",
                        CacheMode cache_mode = CacheMode::Reuse) override;
 
-    void GetRecognizedExtensionsForType(const String& type, std::vector<String>* extensions) const override;
+    void GetRecognizedExtensionsForType(const std::string& type, std::vector<std::string>* extensions) const override;
 
-    void GetRecognizedExtensions(std::vector<String> *extensions) const override;
+    void GetRecognizedExtensions(std::vector<std::string> *extensions) const override;
 
-    [[nodiscard]] bool HandlesType(const String& type) const override;
+    [[nodiscard]] bool HandlesType(const std::string& type) const override;
 };
 
 class GOBOT_EXPORT ResourceFormatSaverSceneInstance {
 public:
-    bool Save(const String &path, const Ref<Resource> &resource, ResourceSaverFlags flags = ResourceSaverFlags::None);
+    bool Save(const std::string &path, const Ref<Resource> &resource, ResourceSaverFlags flags = ResourceSaverFlags::None);
 
 private:
     friend class VariantSerializer;
@@ -72,9 +71,9 @@ private:
 
     bool takeover_paths_ = false;
     Ref<PackedScene> packed_scene_;
-    String local_path_;
-    std::unordered_map<Ref<Resource>, String> external_resources_;
-    std::unordered_map<Ref<Resource>, String> internal_resources_;
+    std::string local_path_;
+    std::unordered_map<Ref<Resource>, std::string> external_resources_;
+    std::unordered_map<Ref<Resource>, std::string> internal_resources_;
     std::vector<Ref<Resource>> saved_resources_;
     std::unordered_set<Ref<Resource>> resource_set_;
 };
@@ -89,9 +88,9 @@ public:
 
     static ResourceFormatSaverScene* GetInstance();
 
-    bool Save(const Ref<Resource> &resource, const String &path, ResourceSaverFlags flags = ResourceSaverFlags::None) override;
+    bool Save(const Ref<Resource> &resource, const std::string &path, ResourceSaverFlags flags = ResourceSaverFlags::None) override;
 
-    void GetRecognizedExtensions(const Ref<Resource> &resource, std::vector<String>* extensions) const override;
+    void GetRecognizedExtensions(const Ref<Resource> &resource, std::vector<std::string>* extensions) const override;
 
     [[nodiscard]] bool Recognize(const Ref<Resource> &resource) const override;
 };

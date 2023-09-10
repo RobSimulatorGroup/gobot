@@ -12,12 +12,10 @@
 #include "imgui_extension/icon_fonts/icons_material_design_icons.h"
 #include "imgui.h"
 #include "imgui_internal.h"
-#include <QDir>
-#include <QFileInfo>
 
 namespace gobot {
 
-DirectoryInformation::DirectoryInformation(const String& _this_path, DirectoryInformation* _parent)
+DirectoryInformation::DirectoryInformation(const std::string& _this_path, DirectoryInformation* _parent)
     : parent(_parent)
 {
     this_path = _this_path;
@@ -29,7 +27,7 @@ DirectoryInformation::DirectoryInformation(const String& _this_path, DirectoryIn
         global_path = ProjectSettings::GetInstance()->GlobalizePath(local_path);
     }
 
-    is_file = QFileInfo(global_path).isFile();
+    is_directory = std::filesystem::is_directory(global_path);
 }
 
 
@@ -65,11 +63,10 @@ ResourcePanel::~ResourcePanel() {
     delete filter_;
 }
 
-bool ResourcePanel::MoveFile(const String& file_path, const String& move_path)
+bool ResourcePanel::MoveFile(const std::string& file_path, const std::string& move_path)
 {
     auto moved_path = PathJoin(file_path, move_path);
-    QDir dir;
-    return dir.exists(moved_path);
+    return std::filesystem::exists(moved_path);
 }
 
 void ResourcePanel::OnImGuiContent() {
@@ -98,7 +95,7 @@ void ResourcePanel::OnImGuiContent() {
     if(ImGui::BeginDragDropTarget()) {
         auto data = ImGui::AcceptDragDropPayload("selectable", ImGuiDragDropFlags_AcceptNoDrawDefaultRect);
         if(data) {
-            String file = (char*)data->Data;
+            std::string file = (char*)data->Data;
             if(MoveFile(file, move_path_)) {
                 LOG_INFO("Moved File: " + file + " to " + move_path_);
             }
@@ -181,12 +178,12 @@ void ResourcePanel::OnImGuiContent() {
                 for(int i = 0; i < current_dir_->children.size(); i++) {
                     if(current_dir_->children.size() > 0) {
                         if(filter_->IsActive()) {
-                            if(!filter_->PassFilter(current_dir_->children[i]->global_path.toStdString().c_str())) {
+                            if(!filter_->PassFilter(current_dir_->children[i]->global_path.c_str())) {
                                 continue;
                             }
                         }
 
-                        bool double_clicked = RenderFile(i, !current_dir_->children[i]->is_file, shown_index, !is_in_list_view_);
+                        bool double_clicked = RenderFile(i, current_dir_->children[i]->is_directory, shown_index, !is_in_list_view_);
 
                         if(double_clicked)
                             break;
@@ -196,12 +193,12 @@ void ResourcePanel::OnImGuiContent() {
             } else {
                 for(int i = 0; i < current_dir_->children.size(); i++) {
                     if(filter_->IsActive()) {
-                        if(!filter_->PassFilter(current_dir_->children[i]->global_path.toStdString().c_str())) {
+                        if(!filter_->PassFilter(current_dir_->children[i]->global_path.c_str())) {
                             continue;
                         }
                     }
 
-                    bool doubleClicked = RenderFile(i, !current_dir_->children[i]->is_file, shown_index, !is_in_list_view_);
+                    bool doubleClicked = RenderFile(i, current_dir_->children[i]->is_directory, shown_index, !is_in_list_view_);
 
                     if(doubleClicked)
                         break;
@@ -239,7 +236,7 @@ void ResourcePanel::OnImGuiContent() {
     if(ImGui::BeginDragDropTarget()) {
         auto data = ImGui::AcceptDragDropPayload("selectable", ImGuiDragDropFlags_AcceptNoDrawDefaultRect);
         if(data) {
-            String a = (char*)data->Data;
+            std::string a = (char*)data->Data;
             if(MoveFile(a, move_path_)) {
                 LOG_INFO("Moved File: " + a + " to " + move_path_);
             }
@@ -263,9 +260,9 @@ bool ResourcePanel::RenderFile(int dirIndex, bool folder, int shownIndex, bool g
             double_clicked = true;
         }
 
-        auto newFname = SimplifyPath(current_dir_->children[dirIndex]->this_path.toStdString().c_str());
+        auto newFname = SimplifyPath(current_dir_->children[dirIndex]->this_path.c_str());
 
-        ImGui::TextUnformatted(newFname.toStdString().c_str());
+        ImGui::TextUnformatted(newFname.c_str());
         ImGui::EndGroup();
 
         if((shownIndex + 1) % grid_items_per_row_ != 0)
@@ -273,7 +270,7 @@ bool ResourcePanel::RenderFile(int dirIndex, bool folder, int shownIndex, bool g
     } else {
         ImGui::TextUnformatted(folder ? ICON_MDI_FOLDER : ICON_MDI_FILE);
         ImGui::SameLine();
-        if(ImGui::Selectable(current_dir_->children[dirIndex]->this_path.toStdString().c_str(),
+        if(ImGui::Selectable(current_dir_->children[dirIndex]->this_path.c_str(),
                              false, ImGuiSelectableFlags_AllowDoubleClick)) {
             if(ImGui::IsMouseDoubleClicked(ImGuiMouseButton_Left)) {
                 double_clicked = true;
@@ -281,7 +278,7 @@ bool ResourcePanel::RenderFile(int dirIndex, bool folder, int shownIndex, bool g
         }
     }
 
-    ImGuiUtilities::Tooltip(current_dir_->children[dirIndex]->global_path.toStdString().c_str());
+    ImGuiUtilities::Tooltip(current_dir_->children[dirIndex]->global_path.c_str());
 
     if(double_clicked) {
         if(folder) {
@@ -299,9 +296,9 @@ bool ResourcePanel::RenderFile(int dirIndex, bool folder, int shownIndex, bool g
 
         ImGui::SameLine();
         move_path_ = project_path_ + "/" + current_dir_->children[dirIndex]->global_path;
-        ImGui::TextUnformatted(move_path_.toStdString().c_str());
-        size_t size = sizeof(const char*) + strlen(move_path_.toStdString().c_str());
-        ImGui::SetDragDropPayload("AssetFile", move_path_.toStdString().c_str(), size);
+        ImGui::TextUnformatted(move_path_.c_str());
+        size_t size = sizeof(const char*) + strlen(move_path_.c_str());
+        ImGui::SetDragDropPayload("AssetFile", move_path_.c_str(), size);
         is_dragging_ = true;
         ImGui::EndDragDropSource();
     }
@@ -316,7 +313,7 @@ void ResourcePanel::RenderBottom()
         ImGui::PushStyleColor(ImGuiCol_Button, ImVec4(0.1f, 0.2f, 0.7f, 0.0f));
 
         for(auto& directory : bread_crumb_data_) {
-            const std::string& directory_name = directory->this_path.toStdString();
+            const std::string& directory_name = directory->this_path;
             if(ImGui::SmallButton(directory_name.c_str()))
                 ChangeDirectory(directory);
 
@@ -334,7 +331,7 @@ void ResourcePanel::RenderBottom()
     ImGui::EndChild();
 }
 
-DirectoryInformation* ResourcePanel::ProcessDirectory(const String& directory_path,
+DirectoryInformation* ResourcePanel::ProcessDirectory(const std::string& directory_path,
                                                       DirectoryInformation* parent)
 {
     auto it = directories_.find(directory_path);
@@ -343,18 +340,9 @@ DirectoryInformation* ResourcePanel::ProcessDirectory(const String& directory_pa
 
     auto directory_info = std::make_unique<DirectoryInformation>(directory_path, parent);
 
-    QDir dir(directory_info->global_path);
-
-    if(!directory_info->is_file) {
-        QStringList file_list;
-        if (show_hidden_files_) {
-            file_list = dir.entryList(QDir::AllEntries | QDir::Hidden | QDir::NoDotAndDotDot);
-        } else  {
-            file_list = dir.entryList(QDir::AllEntries | QDir::NoDotAndDotDot);
-        }
-
-        for(auto file_info : file_list) {
-            auto subdir = ProcessDirectory(file_info, directory_info.get());
+    if(directory_info->is_directory) {
+        for(const auto& file_info : std::filesystem::directory_iterator{directory_info->global_path}) {
+            auto subdir = ProcessDirectory(file_info.path().filename(), directory_info.get());
             directory_info->children.push_back(subdir);
         }
     }
@@ -376,11 +364,11 @@ void ResourcePanel::DrawFolder(DirectoryInformation* dir_info, bool default_open
     const float small_offset_x    = 6.0f * ImGui::GetWindowDpiScale();
     ImDrawList* draw_list        = ImGui::GetWindowDrawList();
 
-    if(!dir_info->is_file) {
+    if(dir_info->is_directory) {
         bool contains_folder = false;
 
         for(auto& file : dir_info->children) {
-            if(!file->is_file) {
+            if(file->is_directory) {
                 contains_folder = true;
                 break;
             }
@@ -401,7 +389,7 @@ void ResourcePanel::DrawFolder(DirectoryInformation* dir_info, bool default_open
         ImGui::Text("%s ", folder_icon);
         ImGui::PopStyleColor();
         ImGui::SameLine();
-        ImGui::TextUnformatted((const char*)dir_info->this_path.toStdString().c_str());
+        ImGui::TextUnformatted((const char*)dir_info->this_path.c_str());
 
         ImVec2 vertical_line_start = ImGui::GetCursorScreenPos();
 
@@ -416,14 +404,14 @@ void ResourcePanel::DrawFolder(DirectoryInformation* dir_info, bool default_open
             ImVec2 vertical_line_end = vertical_line_start;
 
             for(auto i : dir_info->children) {
-                if(!i->is_file) {
+                if(i->is_directory) {
                     auto current_pos = ImGui::GetCursorScreenPos();
 
                     ImGui::Indent(10.0f);
 
                     bool contains_folder_temp = false;
                     for(auto& file : i->children) {
-                        if(!file->is_file) {
+                        if(file->is_directory) {
                             contains_folder_temp = true;
                             break;
                         }

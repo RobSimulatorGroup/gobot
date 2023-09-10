@@ -10,6 +10,7 @@
 #include "gobot/scene/scene_tree.hpp"
 #include "gobot/scene/window.hpp"
 #include "gobot/error_macros.hpp"
+#include "gobot/core/events/event.hpp"
 
 namespace gobot {
 
@@ -51,7 +52,9 @@ SceneTree::SceneTree(bool p_init_window) {
     root_ = Node::New<Window>(p_init_window);
     root_->SetName("root");
 
-    Object::connect(root_, &Window::windowCloseRequested, this, &SceneTree::OnWindowClose);
+    Event::Subscribe(EventType::WindowClose, [this](const Event& event){
+        this->quit_ = true;
+    });
 }
 
 void SceneTree::OnWindowClose() {

@@ -5,8 +5,8 @@
  * This file is created by Qiqi Wu, 22-12-11
 */
 
-
 #include "gobot/core/io/resource_format_scene.hpp"
+#include <fstream>
 #include "gobot/scene/resources/packed_scene.hpp"
 #include "gobot/core/config/project_setting.hpp"
 #include "gobot/log.hpp"
@@ -16,10 +16,6 @@
 #include "gobot/scene/resources/packed_scene.hpp"
 #include "gobot/core/string_utils.hpp"
 #include "gobot/error_macros.hpp"
-
-#include <QTextStream>
-#include <QFile>
-#include <QDir>
 
 #define FORMAT_VERSION 1
 
@@ -31,7 +27,7 @@ ResourceFormatLoaderSceneInstance::ResourceFormatLoaderSceneInstance() {
 }
 
 bool ResourceFormatLoaderSceneInstance::LoadResource() {
-    Json json = Json::parse(file_context_.toStdString());
+    Json json = Json::parse(file_context_);
     if (json.contains("__VERSION__")) {
         float version = json["__VERSION__"];
         if (version > FORMAT_VERSION) {
@@ -54,7 +50,7 @@ bool ResourceFormatLoaderSceneInstance::LoadResource() {
         return false;
     }
     if (json.contains("__TYPE__")) {
-        res_type_ = String::fromStdString(json["__TYPE__"]);
+        res_type_ = json["__TYPE__"];
     } else {
         LOG_ERROR("The json: {} must contains __META_TYPE__", json);
         return false;
@@ -79,11 +75,11 @@ bool ResourceFormatLoaderSceneInstance::LoadResource() {
                     return false;
                 }
 
-                auto path = String::fromStdString(ext_res["__PATH__"]);
-                auto type = String::fromStdString(ext_res["__TYPE__"]);
-                auto id = String::fromStdString(ext_res["__ID__"]);
+                std::string path = ext_res["__PATH__"];
+                std::string type = ext_res["__TYPE__"];
+                std::string id = ext_res["__ID__"];
 
-                if (!path.contains("://") && IsRelativePath(path)) {
+                if (path.find("://") == std::string::npos && IsRelativePath(path)) {
                     // path is relative to file being loaded, so convert to a resource path
                     path = ProjectSettings::GetInstance()->LocalizePath(PathJoin(GetBaseDir(local_path_), path));
                 }
@@ -115,11 +111,11 @@ bool ResourceFormatLoaderSceneInstance::LoadResource() {
                     return false;
                 }
 
-                String type = String::fromStdString(std::string(sub_res["__TYPE__"]));
-                String id = String::fromStdString(std::string(sub_res["__ID__"]));
+                std::string type = std::string(sub_res["__TYPE__"]);
+                std::string id = std::string(sub_res["__ID__"]);
 
                 // local resource's id is local_path + "::" + id
-                String path = local_path_ + "::" + id;
+                std::string path = local_path_ + "::" + id;
 
                 Ref<Resource> res;
                 bool do_assign = false;
@@ -140,7 +136,7 @@ bool ResourceFormatLoaderSceneInstance::LoadResource() {
                         res = cache;
                     } else {
                         //create
-                        Variant new_obj = Type::get_by_name(type.toStdString()).create();
+                        Variant new_obj = Type::get_by_name(type).create();
                         bool success{false};
                         auto* r = new_obj.convert<Resource*>(&success);
 
@@ -213,7 +209,7 @@ bool ResourceFormatLoaderSceneInstance::LoadResource() {
 
         if (!resource_.IsValid()) {
 
-            Variant new_obj = Type::get_by_name(res_type_.toStdString()).create();
+            Variant new_obj = Type::get_by_name(res_type_).create();
             bool success{false};
             auto *r = new_obj.convert<Resource*>(&success);
             if (!success) {
@@ -285,19 +281,20 @@ ResourceFormatLoaderScene::~ResourceFormatLoaderScene() {
     s_singleton = nullptr;
 }
 
-Ref<Resource> ResourceFormatLoaderScene::Load(const String &path,
-                                              const String &original_path,
+Ref<Resource> ResourceFormatLoaderScene::Load(const std::string &path,
+                                              const std::string &original_path,
                                               CacheMode cache_mode) {
     // Ignore original_path because path and original_path are same for scene.
     auto global_path = ProjectSettings::GetInstance()->GlobalizePath(path);
-    QFile file(global_path);
 
-    ERR_FAIL_COND_V_MSG(!file.exists(), {}, fmt::format("Cannot open file: {}.", path));
+    ERR_FAIL_COND_V_MSG(!std::filesystem::exists(global_path), {}, fmt::format("Cannot open file: {}.", path));
 
-    ERR_FAIL_COND_V_MSG(!file.open(QIODevice::ReadOnly), {}, fmt::format("Cannot open file: {}.", path));
+    std::ifstream ifstream(global_path);
+    std::string str((std::istreambuf_iterator<char>(ifstream)),
+                    std::istreambuf_iterator<char>());
 
     ResourceFormatLoaderSceneInstance loader;
-    loader.file_context_ = file.readAll();
+    loader.file_context_ = str;
     loader.cache_mode_ = cache_mode;
     loader.local_path_ = ProjectSettings::GetInstance()->LocalizePath(path);
 
@@ -313,13 +310,13 @@ ResourceFormatLoaderScene* ResourceFormatLoaderScene::GetInstance() {
     return s_singleton;
 }
 
-void ResourceFormatLoaderScene::GetRecognizedExtensionsForType(const String& type, std::vector<String>* extensions) const {
-    if (type.isEmpty()) {
+void ResourceFormatLoaderScene::GetRecognizedExtensionsForType(const std::string& type, std::vector<std::string>* extensions) const {
+    if (type.empty()) {
         GetRecognizedExtensions(extensions);
         return;
     }
 
-    auto type_class = Type::get_by_name(type.toStdString());
+    auto type_class = Type::get_by_name(type);
     auto packed_scene_type = Type::get<PackedScene>();
     if (packed_scene_type == type_class) {
         extensions->push_back("jscn");
@@ -331,34 +328,29 @@ void ResourceFormatLoaderScene::GetRecognizedExtensionsForType(const String& typ
 }
 
 
-void ResourceFormatLoaderScene::GetRecognizedExtensions(std::vector<String> *extensions) const {
+void ResourceFormatLoaderScene::GetRecognizedExtensions(std::vector<std::string> *extensions) const {
     extensions->push_back("jscn");
     extensions->push_back("jres");
 }
 
-bool ResourceFormatLoaderScene::HandlesType(const String& type) const {
+bool ResourceFormatLoaderScene::HandlesType(const std::string& type) const {
     return true;
 }
 
 
 ///////////////////////////////////////////////////////////////////
 
-bool ResourceFormatSaverSceneInstance::Save(const String &path, const Ref<Resource> &resource, ResourceSaverFlags flags)
+bool ResourceFormatSaverSceneInstance::Save(const std::string &path, const Ref<Resource> &resource, ResourceSaverFlags flags)
 {
-    if (path.endsWith(".jscn")) {
+    if (path.ends_with(".jscn")) {
         packed_scene_ = gobot::dynamic_pointer_cast<PackedScene>(resource);
     }
 
     auto global_path = ProjectSettings::GetInstance()->GlobalizePath(path);
-    QFile file(global_path);
-    QDir dir;
     auto base_dir = GetBaseDir(global_path);
-    if (!dir.exists(base_dir))
-        dir.mkpath(base_dir); // You can check the success if needed
+    if (!std::filesystem::exists(base_dir))
+        std::filesystem::create_directories(base_dir); // You can check the success if needed
 
-    if (!file.open(QIODevice::WriteOnly)) {
-        return false;
-    }
 
     USING_ENUM_BITWISE_OPERATORS;
     takeover_paths_ = static_cast<bool>(flags & ResourceSaverFlags::ReplaceSubResourcePaths);
@@ -386,16 +378,16 @@ bool ResourceFormatSaverSceneInstance::Save(const String &path, const Ref<Resour
     for (const auto& [res, id]: external_resources_) {
         Json ext_res;
         ext_res["__TYPE__"] = res->GetClassStringName();
-        ext_res["__PATH__"] = res->GetPath().toStdString();
-        ext_res["__ID__"] = id.toStdString();
+        ext_res["__PATH__"] = res->GetPath();
+        ext_res["__ID__"] = id;
         root["__EXT_RESOURCES__"].push_back(ext_res);
     }
 
-    std::unordered_set<String> used_unique_ids;
+    std::unordered_set<std::string> used_unique_ids;
 
     for (auto& res : saved_resources_) {
         if (res != saved_resources_.back()  && res->IsBuiltIn()) {
-            if (!res->GetUniqueId().isEmpty()) {
+            if (!res->GetUniqueId().empty()) {
                 if (used_unique_ids.contains(res->GetUniqueId())) {
                     res->SetUniqueId(""); // Repeated.
                 } else {
@@ -441,10 +433,10 @@ bool ResourceFormatSaverSceneInstance::Save(const String &path, const Ref<Resour
             }
             auto class_name = type.get_name();
             resource_data_json["__TYPE__"] = class_name;
-            if (saved_resource->GetUniqueId().isEmpty()) {
-                String new_id;
+            if (saved_resource->GetUniqueId().empty()) {
+                std::string new_id;
                 while (true) {
-                    new_id = String(class_name.data()) + "_" + Resource::GenerateResourceUniqueId();
+                    new_id = std::string(class_name.data()) + "_" + Resource::GenerateResourceUniqueId();
 
                     if (!used_unique_ids.contains(new_id)) {
                         break;
@@ -459,12 +451,14 @@ bool ResourceFormatSaverSceneInstance::Save(const String &path, const Ref<Resour
             }
             internal_resources_[saved_resource] = saved_resource->GetUniqueId();
 
-            resource_data_json["__ID__"] = saved_resource->GetUniqueId().toStdString();
+            resource_data_json["__ID__"] = saved_resource->GetUniqueId();
             root["__SUB_RESOURCES__"].emplace_back(resource_data_json);
         }
     }
 
-    file.write(root.dump(4).c_str());
+    std::ofstream out_file(global_path);
+    out_file << root.dump(4);
+    out_file.close();
     return true;
 }
 
@@ -489,7 +483,7 @@ void ResourceFormatSaverSceneInstance::FindResources(const Variant &variant, boo
                 return;
             }
 
-            external_resources_[res] = String::number(external_resources_.size() + 1) + "_" + Resource::GenerateResourceUniqueId();
+            external_resources_[res] = std::to_string(external_resources_.size() + 1) + "_" + Resource::GenerateResourceUniqueId();
             return;
         }
 
@@ -564,8 +558,8 @@ ResourceFormatSaverScene* ResourceFormatSaverScene::GetInstance() {
     return s_singleton;
 }
 
-bool ResourceFormatSaverScene::Save(const Ref<Resource> &resource, const String &path, ResourceSaverFlags flags) {
-    if (path.endsWith(".jscn") && !gobot::dynamic_pointer_cast<PackedScene>(resource)) {
+bool ResourceFormatSaverScene::Save(const Ref<Resource> &resource, const std::string &path, ResourceSaverFlags flags) {
+    if (path.ends_with(".jscn") && !gobot::dynamic_pointer_cast<PackedScene>(resource)) {
         return false;
     }
 
@@ -574,7 +568,7 @@ bool ResourceFormatSaverScene::Save(const Ref<Resource> &resource, const String 
 }
 
 void ResourceFormatSaverScene::GetRecognizedExtensions(const Ref<Resource> &resource,
-                                                       std::vector<String>* extensions) const {
+                                                       std::vector<std::string>* extensions) const {
     if (gobot::dynamic_pointer_cast<PackedScene>(resource)) {
         extensions->push_back("jscn"); // scene.
     } else {

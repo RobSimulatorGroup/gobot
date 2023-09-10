@@ -16,28 +16,28 @@
 namespace gobot {
 
 
-bool ResourceFormatLoader::Exists(const String &path) const {
-    return QFile::exists(path);
+bool ResourceFormatLoader::Exists(const std::string &path) const {
+    return std::filesystem::exists(path);
 }
 
-void ResourceFormatLoader::GetRecognizedExtensionsForType(const String &type, std::vector<String> *extensions) const {
-    if (type.isEmpty() || HandlesType(type)) {
+void ResourceFormatLoader::GetRecognizedExtensionsForType(const std::string &type, std::vector<std::string> *extensions) const {
+    if (type.empty() || HandlesType(type)) {
         GetRecognizedExtensions(extensions);
     }
 }
 
-bool ResourceFormatLoader::RecognizePath(const String &path, const String &type_hint) const {
+bool ResourceFormatLoader::RecognizePath(const std::string &path, const std::string &type_hint) const {
 
-    String extension = GetFileExtension(path);
+    std::string extension = GetFileExtension(path);
 
-    std::vector<String> extensions;
-    if (type_hint.isEmpty()) {
+    std::vector<std::string> extensions;
+    if (type_hint.empty()) {
         GetRecognizedExtensions(&extensions);
     } else {
         GetRecognizedExtensionsForType(type_hint, &extensions);
     }
 
-    if (std::ranges::any_of(extensions, [&](auto const& ext){ return ext.toLower() == extension.toLower(); })) {
+    if (std::ranges::any_of(extensions, [&](auto const& ext){ return ToLower(ext) == ToLower(extension); })) {
         return true;
     }
 
@@ -49,8 +49,8 @@ std::deque<Ref<ResourceFormatLoader>> ResourceLoader::s_loaders;
 
 bool ResourceLoader::s_timestamp_on_load = false;
 
-Ref<Resource> ResourceLoader::LoadImpl(const String &path,
-                                       const String &type_hint,
+Ref<Resource> ResourceLoader::LoadImpl(const std::string &path,
+                                       const std::string &type_hint,
                                        ResourceFormatLoader::CacheMode cache_mode) {
     // Try all loaders and pick the first match for the type hint
     bool found = false;
@@ -69,16 +69,16 @@ Ref<Resource> ResourceLoader::LoadImpl(const String &path,
     ERR_FAIL_COND_V_MSG(!found, {},
                         fmt::format("Failed loading resource: {}. Make sure resources have been imported by opening the project in the editor at least once.", path));
 
-    ERR_FAIL_COND_V_MSG(!QFile::exists(path), {}, fmt::format("Resource file not found: {}.", path));
+    ERR_FAIL_COND_V_MSG(!std::filesystem::exists(path), {}, fmt::format("Resource file not found: {}.", path));
     LOG_ERROR("No loader found for resource: {}.", path);
     return {};
 }
 
 // TODO(wqq): Add multi-thread loader
-Ref<Resource> ResourceLoader::Load(const String &path,
-                                   const String &type_hint,
+Ref<Resource> ResourceLoader::Load(const std::string &path,
+                                   const std::string &type_hint,
                                    ResourceFormatLoader::CacheMode cache_mode) {
-    String local_path = ValidateLocalPath(path);
+    std::string local_path = ValidateLocalPath(path);
 
     Ref<Resource> res = LoadImpl(path, type_hint, cache_mode);
     ERR_FAIL_COND_V_MSG(!res, {}, fmt::format("Loading resource: {} failed.", path));
@@ -91,8 +91,8 @@ Ref<Resource> ResourceLoader::Load(const String &path,
     return res;
 }
 
-bool ResourceLoader::Exists(const String &path, const String &type_hint) {
-    String local_path = ValidateLocalPath(path);
+bool ResourceLoader::Exists(const std::string &path, const std::string &type_hint) {
+    std::string local_path = ValidateLocalPath(path);
 
     if (ResourceCache::Has(local_path)) {
         return true; // If cached, it probably exists

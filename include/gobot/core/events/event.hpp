@@ -62,8 +62,8 @@ virtual int GetCategoryFlags() const override { return category; }
 
 class GOBOT_EXPORT Event : public Object {
     GOBCLASS(Event, Object)
-    friend class EventDispatcher;
 public:
+    using Subscriber = std::function<void(const Event&)>;
 
     [[nodiscard]] virtual EventType GetEventType() const = 0;
 
@@ -71,7 +71,7 @@ public:
 
     [[nodiscard]] virtual int GetCategoryFlags() const = 0;
 
-    [[nodiscard]] virtual String ToString() const { return GetName(); }
+    [[nodiscard]] virtual std::string ToString() const { return GetName(); }
 
     [[nodiscard]] FORCE_INLINE bool IsInCategory(EventCategory category) const
     {
@@ -82,33 +82,17 @@ public:
 
     friend std::ostream& operator<<(std::ostream& os, const Event& e)
     {
-        return os << e.ToString().toStdString();
+        return os << e.ToString();
     }
+
+    static void Shutdown();
+
+    static void Subscribe(const EventType event_type, Subscriber&& function);
+
+    static void Fire(const Event& event);
 
 protected:
     bool handled_ = false;
-};
-
-class EventDispatcher
-{
-public:
-    explicit EventDispatcher(Event& event)
-        : event_(event)
-    {
-    }
-
-    template<typename T, typename F>
-    bool Dispatch(const F& func)
-    {
-        if(event_.GetEventType() == T::GetStaticType()) {
-            event_.handled_ |= func(static_cast<T&>(event_));
-            return true;
-        }
-        return false;
-    }
-
-private:
-    Event& event_;
 };
 
 

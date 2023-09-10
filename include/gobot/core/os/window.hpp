@@ -29,9 +29,9 @@ public:
 
     [[nodiscard]]  virtual Eigen::Vector2i GetWindowSize() const = 0;
 
-    [[nodiscard]] virtual String GetTitle() const = 0;
+    [[nodiscard]] virtual std::string GetTitle() const = 0;
 
-    virtual void SetTitle(const String& title) = 0;
+    virtual void SetTitle(const std::string& title) = 0;
 
     [[nodiscard]] virtual bool SetWindowFullscreen() = 0;
 
@@ -66,8 +66,6 @@ public:
     virtual void SetIcon(const Ref<Image>& image) = 0;
 
     virtual void ProcessEvents() = 0;
-
-    virtual void SetEventCallback(const EventCallbackFn& callback) = 0;
 
 protected:
 

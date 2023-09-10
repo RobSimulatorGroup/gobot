@@ -18,8 +18,7 @@ TEST(TestNodePath, relative_path) {
     ASSERT_TRUE(
             gobot::NodePath(node_path_relative.GetNames(),
                             node_path_relative.GetSubNames(),
-                            false) ==
-            node_path_relative);
+                            false) == node_path_relative);
     // The returned property path should match the expected value.
     ASSERT_TRUE(node_path_relative.GetAsPropertyPath() ==
         gobot::NodePath(":Path2D/PathFollow2D/Sprite2D:position:x"));
@@ -137,17 +136,16 @@ TEST(TestNodePath, complex_path) {
 TEST(TestNodePath, test_type) {
     gobot::Variant var = gobot::NodePath("/home/gobot");
     auto node_path = var.convert<gobot::NodePath>();
-    ASSERT_TRUE(node_path.operator gobot::
-    String() == gobot::String("/home/gobot"));
+    ASSERT_TRUE(node_path.operator std::string() == std::string("/home/gobot"));
 
     auto prop = var.get_type().get_property("str_data");
     ASSERT_TRUE(prop.get_value(var).to_string() == "/home/gobot");
 
     auto type = gobot::Type::get_by_name("NodePath");
     auto var2 = type.create();
-    prop.set_value(var2, gobot::String("/home/gobot"));
+    prop.set_value(var2, std::string("/home/gobot"));
     ASSERT_TRUE(prop.get_value(var2).to_string() == "/home/gobot");
 
     auto node_path2 = var2.convert<gobot::NodePath>();
-    ASSERT_TRUE(node_path2.operator gobot::String() == gobot::String("/home/gobot"));
+    ASSERT_TRUE(node_path2.operator std::string() == std::string("/home/gobot"));
 }

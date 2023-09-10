@@ -32,7 +32,7 @@ public:
 
     [[nodiscard]] FORCE_INLINE MouseButtonMask GetButtonMask() const { return state_; }
 
-    [[nodiscard]] String ToString() const override;
+    [[nodiscard]] std::string ToString() const override;
 
     EVENT_CLASS_TYPE(MouseMoved)
     EVENT_CLASS_CATEGORY(EventCategoryMouse | EventCategoryInput)
@@ -54,7 +54,7 @@ public:
 
     [[nodiscard]] FORCE_INLINE float GetYOffset() const { return y_offset_; }
 
-    [[nodiscard]] String ToString() const override;
+    [[nodiscard]] std::string ToString() const override;
 
     EVENT_CLASS_TYPE(MouseScrolled)
     EVENT_CLASS_CATEGORY(EventCategoryMouse | EventCategoryInput)
@@ -97,7 +97,7 @@ public:
                                      std::int32_t y_coordinate,
                                      MouseButtonClickMode click_mode);
 
-    [[nodiscard]] String ToString() const override;
+    [[nodiscard]] std::string ToString() const override;
 
     EVENT_CLASS_TYPE(MouseButtonPressed)
 };
@@ -110,7 +110,7 @@ public:
                                       std::int32_t y_coordinate,
                                       MouseButtonClickMode click_mode);
 
-    [[nodiscard]] String ToString() const override;
+    [[nodiscard]] std::string ToString() const override;
 
     EVENT_CLASS_TYPE(MouseButtonReleased)
 };

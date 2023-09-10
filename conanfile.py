@@ -12,7 +12,6 @@ class GobotConan(ConanFile):
         self.requires("spdlog/1.11.0")
         self.requires("nlohmann_json/3.11.2")
         self.requires("pybind11/2.10.0")
-        self.requires("gtest/1.12.1")
         self.requires("magic_enum/0.8.1")
         self.requires("cxxopts/3.0.0")
         self.requires("assimp/5.2.2")

@@ -18,13 +18,13 @@ ImageLoaderPNG::ImageLoaderPNG() {
     Image::s_png_mem_loader_func = LoadMemPng;
 }
 
-Ref<Image> ImageLoaderPNG::LoadImage(const ByteArray& byte_array, LoaderFlags flags, float scale) {
+Ref<Image> ImageLoaderPNG::LoadImage(const std::vector<uint8_t>& byte_array, LoaderFlags flags, float scale) {
     std::vector<uint8_t> file_buffer(byte_array.begin(), byte_array.end());
     USING_ENUM_BITWISE_OPERATORS;
     return PngToImage(file_buffer.data(), byte_array.size(), (bool)(flags & LoaderFlags::ForceLinear));
 }
 
-void ImageLoaderPNG::GetRecognizedExtensions(std::vector<String>* extensions) const {
+void ImageLoaderPNG::GetRecognizedExtensions(std::vector<std::string>* extensions) const {
     extensions->push_back("png");
 }
 

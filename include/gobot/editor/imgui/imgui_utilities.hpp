@@ -76,7 +76,7 @@ public:
 
     static Color GetIconColor();
 
-    static void Tooltip(const String& text);
+    static void Tooltip(const std::string& text);
 
     static void Tooltip(const char* text);
 
