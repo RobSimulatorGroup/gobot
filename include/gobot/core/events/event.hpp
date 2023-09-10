@@ -87,7 +87,7 @@ public:
 
     static void Shutdown();
 
-    static void Subscribe(const EventType event_type, Subscriber&& function);
+    static void Subscribe(const EventType& event_type, Subscriber&& function);
 
     static void Fire(const Event& event);
 
