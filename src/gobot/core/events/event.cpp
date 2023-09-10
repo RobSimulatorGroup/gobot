@@ -22,7 +22,7 @@ void Event::Shutdown()
     }
 }
 
-void Event::Subscribe(const EventType event_type, Subscriber&& function)
+void Event::Subscribe(const EventType& event_type, Subscriber&& function)
 {
     s_event_subscribers[static_cast<uint32_t>(event_type)].push_back(std::forward<Subscriber>(function));
 }
