@@ -52,7 +52,7 @@ public:
 
     [[nodiscard]] const Type& GetValueType() const override;
 
-    [[nodiscard]] const String& GetPropertyName() const;
+    [[nodiscard]] const std::string& GetPropertyName() const;
 
     [[nodiscard]] const std::string& GetPropertyNameStr() const;
 
@@ -69,18 +69,18 @@ public:
 private:
     struct PropertyCache {
         Type property_type;
-        String property_name;
+        std::string property_name;
         std::string property_name_str; // cache
         bool property_readonly;
         PropertyInfo property_info;
         std::string tool_tip_str; // cache
-        PropertyCache(const Type& type, String string, bool readonly, const Variant& info)
+        PropertyCache(const Type& type, std::string string, bool readonly, const Variant& info)
                 : property_type(type),
                   property_name(std::move(string)),
-                  property_name_str(property_name.toStdString()),
+                  property_name_str(property_name),
                   property_readonly(readonly),
                   property_info(info.is_valid() ? info.get_value<PropertyInfo>() : PropertyInfo()),
-                  tool_tip_str(property_info.tool_tip.toStdString())
+                  tool_tip_str(property_info.tool_tip)
         {
         }
     };
@@ -157,13 +157,13 @@ public:
 
     [[nodiscard]] const Type& GetValueType() const override;
 
-    [[nodiscard]] const String& GetMethodName() const;
+    [[nodiscard]] const std::string& GetMethodName() const;
 
     void DoMethodCall();
 
 private:
     struct MethodCache {
-        String method_name;
+        std::string method_name;
         Type declaring_type;
         Type return_type;
     };

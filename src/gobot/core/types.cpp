@@ -10,23 +10,5 @@
 
 GOBOT_REGISTRATION {
 
-    Class_<String>("String")
-            .constructor()(CtorAsObject)
-            .constructor<const String&>();
-
-    Class_<Uuid>("Uuid")
-            .constructor()(CtorAsObject)
-            .method("isNull", &Uuid::isNull)
-            .method("toString", overload_cast<>(&Uuid::toString, detail::const_));
-
-    Type::register_converter_func([](const String& value, bool& ok) {
-        ok = true;
-        return value.toStdString();
-    });
-
-    Type::register_converter_func([](const Uuid& value, bool& ok) {
-        ok = true;
-        return value.toString().toStdString();
-    });
 
 };

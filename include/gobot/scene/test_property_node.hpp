@@ -39,9 +39,9 @@ private:
     PropertyUsageFlags property_usage_flags_{PropertyUsageFlags::Default};
 
     PropertyHint property_hint{PropertyHint::Dir};
-    String string{};
-    String multiline_text{};
-    String path{"/home/user/"};
+    std::string string{};
+    std::string multiline_text{};
+    std::string path{"/home/user/"};
 
     ObjectID objectID{};
 

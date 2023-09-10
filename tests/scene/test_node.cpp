@@ -39,7 +39,7 @@ TEST_F(TestNode, add_child) {
     ASSERT_EQ(gobot::SceneTree::GetInstance()->GetNodeCount(), 1);
 
     // Check initial node setup
-    ASSERT_TRUE(node->GetName() == gobot::String());
+    ASSERT_TRUE(node->GetName().empty());
     ASSERT_FALSE(node->IsInsideTree());
     ASSERT_EQ(node->GetParent(), nullptr);
 LOG_OFF;
@@ -52,7 +52,7 @@ LOG_ON;
     ASSERT_EQ(gobot::SceneTree::GetInstance()->GetRoot()->GetChildCount(), 1);
     ASSERT_EQ(gobot::SceneTree::GetInstance()->GetNodeCount(), 2);
 
-    ASSERT_TRUE(node->GetName() != gobot::String());
+    ASSERT_TRUE(!node->GetName().empty());
     ASSERT_TRUE(node->IsInsideTree());
     ASSERT_EQ(gobot::SceneTree::GetInstance()->GetRoot(), node->GetParent());
     ASSERT_FALSE(node->GetPath().IsEmpty());

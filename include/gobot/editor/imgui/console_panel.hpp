@@ -28,7 +28,7 @@ public:
     };
 
 public:
-    ConsoleMessage(const String& message = "", Level level = Level::Trace, String  source = "", int thread_id = 0);
+    ConsoleMessage(const std::string& message = "", Level level = Level::Trace, std::string  source = "", int thread_id = 0);
 
     void OnImGUIRender();
 
@@ -43,9 +43,9 @@ public:
     static Color GetRenderColor(Level level);
 
 public:
-    const String message_;
+    const std::string message_;
     const Level level_;
-    const String source_;
+    const std::string source_;
     const int thread_id_;
     int count_ = 1;
     size_t message_id_;

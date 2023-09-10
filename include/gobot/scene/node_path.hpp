@@ -13,7 +13,6 @@
 #include "gobot/core/macros.hpp"
 #include "gobot/log.hpp"
 #include <vector>
-#include <QStringList>
 
 
 namespace gobot {
@@ -30,10 +29,10 @@ class GOBOT_EXPORT NodePath {
  *  an optional colon-separated list of "subnames" which can be resources or properties.
  */
 public:
-    NodePath(const std::vector<String> &path, bool absolute);
-    NodePath(const std::vector<String> &path, const std::vector<String> &subpath, bool absolute);
+    NodePath(const std::vector<std::string> &path, bool absolute);
+    NodePath(const std::vector<std::string> &path, const std::vector<std::string> &subpath, bool absolute);
     NodePath(const NodePath &path) = default;
-    explicit NodePath(const String &path);
+    explicit NodePath(const std::string &path);
     NodePath() = default;
     ~NodePath() = default;
 
@@ -61,7 +60,7 @@ public:
      *
      * @returns a String of indexed name or an empty String for an invalid index.
      */
-    [[nodiscard]] String GetName(int idx) const;
+    [[nodiscard]] std::string GetName(int idx) const;
 
     /**
      * @brief Gets the number of resource or property names ("subnames") in the path. Each subname is listed
@@ -78,28 +77,28 @@ public:
      *
      * @returns a String of indexed subname or an empty String for an invalid index.
      */
-    [[nodiscard]] String GetSubName(int idx) const;
+    [[nodiscard]] std::string GetSubName(int idx) const;
 
     /**
      * @brief Gets the list of node names which make up the path.
      *
      * @returns a list (std::vector<String>) of node names.
      */
-    [[nodiscard]] std::vector<String> GetNames() const;
+    [[nodiscard]] std::vector<std::string> GetNames() const;
 
     /**
      * @brief Gets the list of resource or property names in the path.
      *
      * @returns a list (std::vector<String>) of subnames.
      */
-    [[nodiscard]] std::vector<String> GetSubNames() const;
+    [[nodiscard]] std::vector<std::string> GetSubNames() const;
 
     /**
      * @brief Gets all paths concatenated with a slash character (/) as separator without subnames.
      *
      * @returns a String of path.
      */
-    [[nodiscard]] String GetConcatenatedNames() const;
+    [[nodiscard]] std::string GetConcatenatedNames() const;
 
     /**
     * @brief Gets all subnames concatenated with a colon character (:) as separator,
@@ -107,7 +106,7 @@ public:
     *
     * @returns a String of resource or property path.
     */
-    [[nodiscard]] String GetConcatenatedSubNames() const;
+    [[nodiscard]] std::string GetConcatenatedSubNames() const;
 
     /**
      * @brief Gets a node path with a colon character (:) prepended,
@@ -117,7 +116,7 @@ public:
      */
     [[nodiscard]] NodePath GetAsPropertyPath() const;
 
-    explicit operator String() const;
+    explicit operator std::string() const;
 
     /**
      * @brief The node path is empty if both node names and subnames are empty.
@@ -145,23 +144,21 @@ public:
 
 private:
     // For rttr
-    void SetStrData(const String& str);
+    void SetStrData(const std::string& str);
 
-    String GetStrData() const;
+    std::string GetStrData() const;
 
     struct Data {
-        std::vector<String> path = std::vector<String>();
-        std::vector<String> subpath = std::vector<String>();
-        String concatenated_path = String();
-        String concatenated_subpath = String();
+        std::vector<std::string> path = std::vector<std::string>();
+        std::vector<std::string> subpath = std::vector<std::string>();
+        std::string concatenated_path = std::string();
+        std::string concatenated_subpath = std::string();
         bool absolute = false;
 
         bool operator==(const Data &data) const = default;
     };
 
     mutable Data data_;
-
-    static constexpr Qt::SplitBehaviorFlags s_split_behavior_flags = Qt::SkipEmptyParts;
 
     GOBOT_REGISTRATION_FRIEND
 };
@@ -171,8 +168,8 @@ private:
 template<>
 struct fmt::formatter<gobot::NodePath> : fmt::formatter<std::string>
 {
-    static auto format(const gobot::NodePath& node_path, format_context &ctx) -> decltype(ctx.out())
+    auto format(const gobot::NodePath& node_path, format_context &ctx) -> decltype(ctx.out())
     {
-        return fmt::formatter<gobot::String>::format(node_path.operator gobot::String(), ctx);
+        return fmt::formatter<std::string>::format(node_path.operator std::string(), ctx);
     }
 };

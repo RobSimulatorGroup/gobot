@@ -6,6 +6,7 @@
 */
 
 #include "gobot/scene/resources/shader.hpp"
+#include <fstream>
 #include "gobot/rendering/render_server.hpp"
 #include "gobot/core/config/project_setting.hpp"
 #include "gobot/core/string_utils.hpp"
@@ -20,13 +21,13 @@ Shader::~Shader() {
     RS::GetInstance()->Free(shader_);
 }
 
-void Shader::SetCode(const String &p_code) {
+void Shader::SetCode(const std::string &p_code) {
     ERR_FAIL_COND_MSG(shader_.IsNull(), "The shader must be valid before set code to it.");
     code_ = p_code;
     RS::GetInstance()->ShaderSetCode(shader_, p_code, GetName(), GetPath());
 }
 
-String Shader::GetCode() const {
+std::string Shader::GetCode() const {
     return code_;
 }
 
@@ -116,24 +117,23 @@ bool ComputeShaderProgram::IsComplete() {
 
 /////////////////////////////////////
 
-Ref<Resource> ResourceFormatLoaderShader::Load(const String &p_path,
-                                               const String &p_original_path,
+Ref<Resource> ResourceFormatLoaderShader::Load(const std::string &p_path,
+                                               const std::string &p_original_path,
                                                CacheMode p_cache_mode) {
-    String global_path = ProjectSettings::GetInstance()->GlobalizePath(ValidateLocalPath(p_path));
-    QFile file(global_path);
+    std::string global_path = ProjectSettings::GetInstance()->GlobalizePath(ValidateLocalPath(p_path));
+    std::filesystem::path file(global_path);
+    ERR_FAIL_COND_V_MSG(! std::filesystem::exists(global_path), {}, fmt::format("Cannot open file: {}.", p_path));
+    std::ifstream instream(global_path, std::ios::in);
+    std::string data((std::istreambuf_iterator<char>(instream)), std::istreambuf_iterator<char>());
 
-    ERR_FAIL_COND_V_MSG(!file.exists(), {}, fmt::format("Cannot open file: {}.", p_path));
-    ERR_FAIL_COND_V_MSG(!file.open(QIODevice::ReadOnly), {}, fmt::format("Cannot open file: {}.", p_path));
-    auto byte_array = file.readAll();
-
-    String extension = GetFileExtension(global_path);
+    std::string extension = GetFileExtension(global_path);
     Ref<Shader> shader = MakeRef<Shader>();
     shader->SetShaderType(ExtensionsToShaderType(extension));
-    shader->SetCode(file.readAll().data());
+    shader->SetCode(data);
     return shader;
 }
 
-ShaderType ResourceFormatLoaderShader::ExtensionsToShaderType(const String& extension) {
+ShaderType ResourceFormatLoaderShader::ExtensionsToShaderType(const std::string& extension) {
     if(extension == ".vert") {
         return ShaderType::VertexShader;
     } else if (extension == ".frag") {
@@ -151,7 +151,7 @@ ShaderType ResourceFormatLoaderShader::ExtensionsToShaderType(const String& exte
     }
 }
 
-void ResourceFormatLoaderShader::GetRecognizedExtensions(std::vector<String> *extensions) const {
+void ResourceFormatLoaderShader::GetRecognizedExtensions(std::vector<std::string> *extensions) const {
     extensions->push_back(".vert");
     extensions->push_back(".frag");
     extensions->push_back(".geom");
@@ -160,7 +160,7 @@ void ResourceFormatLoaderShader::GetRecognizedExtensions(std::vector<String> *ex
     extensions->push_back(".comp");
 }
 
-bool ResourceFormatLoaderShader::HandlesType(const String &type) const {
+bool ResourceFormatLoaderShader::HandlesType(const std::string &type) const {
     return type == "Shader";
 }
 

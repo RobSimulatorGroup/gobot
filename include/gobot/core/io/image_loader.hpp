@@ -29,13 +29,13 @@ class ImageFormatLoader : public RefCounted {
     friend class ImageLoader;
     friend class ResourceFormatLoaderImage;
 protected:
-    virtual Ref<Image> LoadImage(const ByteArray &byte_array,
+    virtual Ref<Image> LoadImage(const std::vector<uint8_t> &byte_array,
                                  LoaderFlags flags = LoaderFlags::None,
                                  float scale = 1.0) = 0;
 
-    virtual void GetRecognizedExtensions(std::vector<String>* extensions) const = 0;
+    virtual void GetRecognizedExtensions(std::vector<std::string>* extensions) const = 0;
 
-    bool Recognize(const String &extension) const;
+    bool Recognize(const std::string &extension) const;
 
 public:
     virtual ~ImageFormatLoader() {}
@@ -48,13 +48,13 @@ class ImageLoader {
 
 protected:
 public:
-    static Ref<Image> LoadImage(const String& path,
+    static Ref<Image> LoadImage(const std::string& path,
                                 LoaderFlags flags = LoaderFlags::None,
                                 float scale = 1.0);
 
-    static void GetRecognizedExtensions(std::vector<String>* extensions);
+    static void GetRecognizedExtensions(std::vector<std::string>* extensions);
 
-    static Ref<ImageFormatLoader> Recognize(const String& extension);
+    static Ref<ImageFormatLoader> Recognize(const std::string& extension);
 
     static void AddImageFormatLoader(Ref<ImageFormatLoader> loader);
 

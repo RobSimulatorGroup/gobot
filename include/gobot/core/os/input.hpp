@@ -50,8 +50,6 @@ public:
 
     static Input* GetInstance();
 
-    void OnEvent(Event& e);
-
     FORCE_INLINE const Eigen::Vector2i& GetMousePosition() const { return mouse_position_; }
 
     FORCE_INLINE MouseClickedState GetMouseClickedState(MouseButton mouse_button) const {
@@ -76,21 +74,21 @@ private:
     void SetMouseClicked(MouseButton key, MouseClickedState clicked);
 
 private:
-    bool OnKeyPressed(KeyPressedEvent& e);
+    bool OnKeyPressed(const KeyPressedEvent& e);
 
-    bool OnKeyReleased(KeyReleasedEvent& e);
+    bool OnKeyReleased(const KeyReleasedEvent& e);
 
-    bool OnMousePressed(MouseButtonPressedEvent& e);
+    bool OnMousePressed(const MouseButtonPressedEvent& e);
 
-    bool OnMouseReleased(MouseButtonReleasedEvent& e);
+    bool OnMouseReleased(const MouseButtonReleasedEvent& e);
 
-    bool OnMouseScrolled(MouseScrolledEvent& e);
+    bool OnMouseScrolled(const MouseScrolledEvent& e);
 
-    bool OnMouseMoved(MouseMovedEvent& e);
+    bool OnMouseMoved(const MouseMovedEvent& e);
 
-    bool OnMouseEnter(MouseEnterEvent& e);
+    bool OnMouseEnter(const MouseEnterEvent& e);
 
-    bool OnMouseLeave(MouseLeaveEvent& e);
+    bool OnMouseLeave(const MouseLeaveEvent& e);
 
 private:
 

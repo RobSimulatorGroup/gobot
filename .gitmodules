@@ -16,3 +16,6 @@
 [submodule "3rdparty/basis_univesal"]
 	path = 3rdparty/basis_univesal
 	url = git@github.com:RobSimulatorGroup/basis_universal.git
+[submodule "3rdparty/googletest"]
+	path = 3rdparty/googletest
+	url = https://github.com/google/googletest.git

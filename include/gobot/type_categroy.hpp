@@ -114,7 +114,7 @@ inline TypeCategory GetTypeCategory(const Type& type) {
         }
     } else if (type.is_enumeration()) {
         return TypeCategory::Enum;
-    } else if (type == Type::get<String>()) {
+    } else if (type == Type::get<std::string>()) {
         return TypeCategory::String;
     } else if (type == Type::get<NodePath>()) {
         return TypeCategory::NodePath;

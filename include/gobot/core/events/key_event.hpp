@@ -40,7 +40,7 @@ public:
 
     [[nodiscard]] FORCE_INLINE uint16_t GetRepeatCount() const { return repeat_count_; }
 
-    [[nodiscard]] String ToString() const override;
+    [[nodiscard]] std::string ToString() const override;
 
     EVENT_CLASS_TYPE(KeyPressed)
 
@@ -53,7 +53,7 @@ class GOBOT_EXPORT KeyReleasedEvent : public KeyEvent {
 public:
     KeyReleasedEvent(KeyCode key_code, KeyModifiers key_mod);
 
-    [[nodiscard]] String ToString() const override;
+    [[nodiscard]] std::string ToString() const override;
 
     EVENT_CLASS_TYPE(KeyReleased)
 };

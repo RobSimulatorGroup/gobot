@@ -17,9 +17,9 @@ class ImageLoaderPNG : public ImageFormatLoader {
 public:
     ImageLoaderPNG();
 
-    virtual Ref<Image> LoadImage(const ByteArray& byte_array, LoaderFlags flags, float scale);
+    virtual Ref<Image> LoadImage(const std::vector<uint8_t>& byte_array, LoaderFlags flags, float scale);
 
-    virtual void GetRecognizedExtensions(std::vector<String>* extensions) const;
+    virtual void GetRecognizedExtensions(std::vector<std::string>* extensions) const;
 
 private:
     static Ref<Image> LoadMemPng(const uint8_t* png, int size);

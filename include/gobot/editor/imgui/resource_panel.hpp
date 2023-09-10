@@ -19,13 +19,13 @@ struct GOBOT_EXPORT DirectoryInformation
     DirectoryInformation* parent{nullptr};
     std::vector<DirectoryInformation*> children;
 
-    String local_path;
-    String global_path;
-    String this_path;
-    bool is_file{};
+    std::string local_path;
+    std::string global_path;
+    std::string this_path;
+    bool is_directory{};
 
 public:
-    DirectoryInformation(const String& _this_path, DirectoryInformation* _parent);
+    DirectoryInformation(const std::string& _this_path, DirectoryInformation* _parent);
 };
 
 class GOBOT_EXPORT ResourcePanel : public ImGuiWindow {
@@ -35,7 +35,7 @@ public:
 
     ~ResourcePanel() override;
 
-    bool MoveFile(const String& file_path, const String& move_path);
+    bool MoveFile(const std::string& file_path, const std::string& move_path);
     void OnImGuiContent() override;
 
     void ChangeDirectory(DirectoryInformation* directory);
@@ -47,15 +47,15 @@ public:
 
     void DrawFolder(DirectoryInformation* dir_info, bool default_open = false);
 
-    DirectoryInformation* ProcessDirectory(const String& directory_path,
+    DirectoryInformation* ProcessDirectory(const std::string& directory_path,
                                            DirectoryInformation* parent);
 
     void Refresh();
 
 private:
-    String project_path_;
-    String move_path_;
-    String last_nav_path_;
+    std::string project_path_;
+    std::string move_path_;
+    std::string last_nav_path_;
 
 
     bool is_dragging_;
@@ -75,7 +75,7 @@ private:
     DirectoryInformation* previous_directory_{nullptr};
     std::vector<DirectoryInformation*> bread_crumb_data_;
 
-    std::unordered_map<String, std::unique_ptr<DirectoryInformation>> directories_;
+    std::unordered_map<std::string, std::unique_ptr<DirectoryInformation>> directories_;
 };
 
 }

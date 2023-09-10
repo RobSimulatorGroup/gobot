@@ -20,23 +20,23 @@ enum class ResourceSaverFlags {
 class GOBOT_EXPORT ResourceFormatSaver : public RefCounted {
     GOBCLASS(ResourceFormatSaver, RefCounted);
 public:
-    virtual bool Save(const Ref<Resource> &resource, const String &path, ResourceSaverFlags flags = ResourceSaverFlags::None) = 0;
+    virtual bool Save(const Ref<Resource> &resource, const std::string &path, ResourceSaverFlags flags = ResourceSaverFlags::None) = 0;
 
     virtual bool Recognize(const Ref<Resource> &p_resource) const = 0;
 
-    virtual void GetRecognizedExtensions(const Ref<Resource> &resource, std::vector<String>* extensions) const = 0;
+    virtual void GetRecognizedExtensions(const Ref<Resource> &resource, std::vector<std::string>* extensions) const = 0;
 
-    virtual bool RecognizePath(const Ref<Resource> &resource, const String &path) const;
+    virtual bool RecognizePath(const Ref<Resource> &resource, const std::string &path) const;
 };
 
 class GOBOT_EXPORT ResourceSaver {
 public:
 
-    using ResourceSavedCallback = std::function<void(Ref<Resource> resource, const String &path)>;
+    using ResourceSavedCallback = std::function<void(Ref<Resource> resource, const std::string &path)>;
 
-    static bool Save(const Ref<Resource> &resource, const String &target_path = "", ResourceSaverFlags flags = ResourceSaverFlags::None);
+    static bool Save(const Ref<Resource> &resource, const std::string &target_path = "", ResourceSaverFlags flags = ResourceSaverFlags::None);
 
-    static void GetRecognizedExtensions(const Ref<Resource> &resource, std::vector<String>* extensions);
+    static void GetRecognizedExtensions(const Ref<Resource> &resource, std::vector<std::string>* extensions);
 
     static void AddResourceFormatSaver(const Ref<ResourceFormatSaver>& format_saver, bool at_front = false);
 

@@ -118,7 +118,7 @@ public:
 public:
     std::vector<uint8_t> GetData() const;
 
-    static Ref<Image> LoadFromFile(const String &path);
+    static Ref<Image> LoadFromFile(const std::string &path);
 
     static int GetImageDataSize(int width, int height, ImageFormat format, bool mipmaps = false);
 
@@ -127,7 +127,7 @@ public:
     static ImageMemLoadFunc s_jpg_mem_loader_func;
 
 public:
-    static String GetFormatName(ImageFormat format);
+    static std::string GetFormatName(ImageFormat format);
 
     static int GetFormatPixelSize(ImageFormat format);
 

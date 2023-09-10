@@ -8,7 +8,6 @@
 #pragma once
 
 #include <rttr/rttr_enable.h>
-#include <QObject>
 
 #include "gobot/core/types.hpp"
 #include "gobot/core/macros.hpp"
@@ -78,13 +77,13 @@ enum class PropertyUsageFlags {
 
 
 struct PropertyInfo {
-    String name;
+    std::string name;
     PropertyHint hint = PropertyHint::None;
-    String hint_string;
+    std::string hint_string;
     PropertyUsageFlags usage = PropertyUsageFlags::Default;
-    String tool_tip;
+    std::string tool_tip;
 
-    PropertyInfo& SetName(const String& _name) {
+    PropertyInfo& SetName(const std::string& _name) {
         name = _name;
         return *this;
     }
@@ -94,7 +93,7 @@ struct PropertyInfo {
         return *this;
     }
 
-    PropertyInfo& SetHintString(const String& _hint_string) {
+    PropertyInfo& SetHintString(const std::string& _hint_string) {
         hint_string = _hint_string;
         return *this;
     }
@@ -104,7 +103,7 @@ struct PropertyInfo {
         return *this;
     }
 
-    PropertyInfo& SetToolTip(const String& _tool_tip) {
+    PropertyInfo& SetToolTip(const std::string& _tool_tip) {
         tool_tip = _tool_tip;
         return *this;
     }
@@ -123,13 +122,12 @@ static constexpr const char *PROPERTY_INFO_KEY  = "PROPERTY_INFO_KEY";
 MetaData AddMetaPropertyInfo(const PropertyInfo& property_info);
 
 
-class GOBOT_EXPORT Object : public QObject {
+class GOBOT_EXPORT Object {
     GOBCLASS(Object)
 public:
-
     Object();
 
-    ~Object() override;
+    virtual ~Object();
 
     [[nodiscard]] FORCE_INLINE std::string_view GetClassStringName() const { return get_type().get_name().data(); }
 
@@ -160,7 +158,7 @@ public:
         return dynamic_cast<const T*>(object);
     }
 
-    bool Set(const String& name, Argument arg);
+    bool Set(const std::string& name, Argument arg);
 
     static Type GetDerivedTypeByInstance(Instance instance) {
         auto raw_type = instance.get_type().get_raw_type();
@@ -173,9 +171,9 @@ public:
         return raw_type.is_wrapper() ? instance.get_wrapped_instance() : instance;
     }
 
-    [[nodiscard]] Variant Get(const String& name) const;
+    [[nodiscard]] Variant Get(const std::string& name) const;
 
-    Type GetPropertyType(const String& name) const;
+    Type GetPropertyType(const std::string& name) const;
 
     [[nodiscard]] ALWAYS_INLINE bool IsRefCounted() const { return type_is_reference_; }
 

@@ -37,6 +37,7 @@ TEST(TestStringUtils, test_validate_local_path) {
 TEST(TestStringUtils, test_base_dir) {
     ASSERT_TRUE(gobot::GetBaseDir("font.json") == "");
     ASSERT_TRUE(gobot::GetBaseDir("C:\\font.json") == "C:\\");
+    LOG_INFO("{}", gobot::GetBaseDir("/usr/lib/font.json"));
     ASSERT_TRUE(gobot::GetBaseDir("/usr/lib/font.json") == "/usr/lib");
 }
 

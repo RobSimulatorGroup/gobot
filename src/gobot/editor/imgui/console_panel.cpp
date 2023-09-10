@@ -16,12 +16,12 @@
 
 namespace gobot {
 
-ConsoleMessage::ConsoleMessage(const String& message, Level level, String  source, int thread_id)
+ConsoleMessage::ConsoleMessage(const std::string& message, Level level, std::string  source, int thread_id)
         : message_(message)
         , level_(level)
         , source_(std::move(source))
         , thread_id_(thread_id)
-        , message_id_(std::hash<String>()(message))
+        , message_id_(std::hash<std::string>()(message))
 {
 }
 
@@ -34,12 +34,12 @@ void ConsoleMessage::OnImGUIRender()
         ImGui::TextUnformatted(levelIcon);
         ImGui::PopStyleColor();
         ImGui::SameLine();
-        ImGui::TextUnformatted(message_.toStdString().c_str());
-        if(ImGui::BeginPopupContextItem(message_.toStdString().c_str()))
+        ImGui::TextUnformatted(message_.c_str());
+        if(ImGui::BeginPopupContextItem(message_.c_str()))
         {
             if(ImGui::MenuItem("Copy"))
             {
-                ImGui::SetClipboardText(message_.toStdString().c_str());
+                ImGui::SetClipboardText(message_.c_str());
             }
 
             ImGui::EndPopup();
@@ -47,7 +47,7 @@ void ConsoleMessage::OnImGUIRender()
 
         if(ImGui::IsItemHovered())
         {
-            ImGui::SetTooltip("%s", source_.toStdString().c_str());
+            ImGui::SetTooltip("%s", source_.c_str());
         }
 
         if(count_ > 1)
@@ -273,7 +273,7 @@ void ConsolePanel::ImGuiRenderMessages()
         if(*messageStart) {
             for(auto message = messageStart; message != s_message_buffer.end(); message++) {
                 if(filter_.IsActive()) {
-                    if(filter_.PassFilter((*message)->message_.toStdString().c_str())) {
+                    if(filter_.PassFilter((*message)->message_.c_str())) {
                         (*message)->OnImGUIRender();
                     }
                 } else {
@@ -287,7 +287,7 @@ void ConsolePanel::ImGuiRenderMessages()
             for(auto message = s_message_buffer.begin(); message != messageStart; message++) {
                 if(*message) {
                     if(filter_.IsActive()) {
-                        if(filter_.PassFilter((*message)->message_.toStdString().c_str())) {
+                        if(filter_.PassFilter((*message)->message_.c_str())) {
                             (*message)->OnImGUIRender();
                         }
                     } else {

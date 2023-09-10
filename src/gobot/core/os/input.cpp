@@ -16,6 +16,31 @@ Input::Input()
 {
     s_singleton = this;
     Reset();
+
+    Event::Subscribe(EventType::KeyPressed, [this](const Event& event) {
+        this->OnKeyPressed(dynamic_cast<const KeyPressedEvent&>(event));
+    });
+    Event::Subscribe(EventType::KeyReleased, [this](const Event& event) {
+        this->OnKeyReleased(dynamic_cast<const KeyReleasedEvent&>(event));
+    });
+    Event::Subscribe(EventType::MouseButtonPressed, [this](const Event& event) {
+        this->OnMousePressed(dynamic_cast<const MouseButtonPressedEvent&>(event));
+    });
+    Event::Subscribe(EventType::MouseButtonReleased, [this](const Event& event) {
+        this->OnMouseReleased(dynamic_cast<const MouseButtonReleasedEvent&>(event));
+    });
+    Event::Subscribe(EventType::MouseScrolled, [this](const Event& event) {
+        this->OnMouseScrolled(dynamic_cast<const MouseScrolledEvent&>(event));
+    });
+    Event::Subscribe(EventType::MouseMoved, [this](const Event& event) {
+        this->OnMouseMoved(dynamic_cast<const MouseMovedEvent&>(event));
+    });
+    Event::Subscribe(EventType::MouseEnter, [this](const Event& event) {
+        this->OnMouseEnter(dynamic_cast<const MouseEnterEvent&>(event));
+    });
+    Event::Subscribe(EventType::MouseLeave, [this](const Event& event) {
+        this->OnMouseLeave(dynamic_cast<const MouseLeaveEvent&>(event));
+    });
 }
 
 void Input::Reset()
@@ -36,33 +61,21 @@ void Input::ResetPressed()
     scroll_offset_ = 0.0f;
 }
 
-void Input::OnEvent(Event& e) {
-    EventDispatcher dispatcher(e);
-    dispatcher.Dispatch<KeyPressedEvent>(BIND_EVENT_FN(Input::OnKeyPressed));
-    dispatcher.Dispatch<KeyReleasedEvent>(BIND_EVENT_FN(Input::OnKeyReleased));
-    dispatcher.Dispatch<MouseButtonPressedEvent>(BIND_EVENT_FN(Input::OnMousePressed));
-    dispatcher.Dispatch<MouseButtonReleasedEvent>(BIND_EVENT_FN(Input::OnMouseReleased));
-    dispatcher.Dispatch<MouseScrolledEvent>(BIND_EVENT_FN(Input::OnMouseScrolled));
-    dispatcher.Dispatch<MouseMovedEvent>(BIND_EVENT_FN(Input::OnMouseMoved));
-    dispatcher.Dispatch<MouseEnterEvent>(BIND_EVENT_FN(Input::OnMouseEnter));
-    dispatcher.Dispatch<MouseLeaveEvent>(BIND_EVENT_FN(Input::OnMouseLeave));
-}
-
-bool Input::OnKeyPressed(KeyPressedEvent& e)
+bool Input::OnKeyPressed(const KeyPressedEvent& e)
 {
     SetKeyPressed(e.GetKeyCode(), e.GetRepeatCount() < 1);
     SetKeyHeld(e.GetKeyCode(), true);
     return false;
 }
 
-bool Input::OnKeyReleased(KeyReleasedEvent& e)
+bool Input::OnKeyReleased(const KeyReleasedEvent& e)
 {
     SetKeyPressed(e.GetKeyCode(), false);
     SetKeyHeld(e.GetKeyCode(), false);
     return false;
 }
 
-bool Input::OnMousePressed(MouseButtonPressedEvent& e)
+bool Input::OnMousePressed(const MouseButtonPressedEvent& e)
 {
     SetMouseClicked(e.GetMouseButton(),
                     e.GetMouseButtonClickMode() == MouseButtonClickMode::Single ? MouseClickedState::SingleClicked :
@@ -70,31 +83,31 @@ bool Input::OnMousePressed(MouseButtonPressedEvent& e)
     return false;
 }
 
-bool Input::OnMouseReleased(MouseButtonReleasedEvent& e)
+bool Input::OnMouseReleased(const MouseButtonReleasedEvent& e)
 {
     SetMouseClicked(e.GetMouseButton(), MouseClickedState::None);
     return false;
 }
 
-bool Input::OnMouseScrolled(MouseScrolledEvent& e)
+bool Input::OnMouseScrolled(const MouseScrolledEvent& e)
 {
     SetScrollOffset(e.GetYOffset());
     return false;
 }
 
-bool Input::OnMouseMoved(MouseMovedEvent& e)
+bool Input::OnMouseMoved(const MouseMovedEvent& e)
 {
     mouse_position_.x() = e.GetX();
     mouse_position_.y() = e.GetY();
     return false;
 }
 
-bool Input::OnMouseEnter(MouseEnterEvent& e)
+bool Input::OnMouseEnter(const MouseEnterEvent& e)
 {
     return false;
 }
 
-bool Input::OnMouseLeave(MouseLeaveEvent& e)
+bool Input::OnMouseLeave(const MouseLeaveEvent& e)
 {
     return false;
 }

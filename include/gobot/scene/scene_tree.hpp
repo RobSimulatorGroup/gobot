@@ -19,9 +19,7 @@ class Window;
 class Node;
 
 class GOBOT_EXPORT SceneTree : public MainLoop {
-    Q_OBJECT
     GOBCLASS(SceneTree, MainLoop)
-
 public:
     SceneTree(bool p_init_window = true);
 
@@ -46,12 +44,6 @@ public:
     [[nodiscard]] FORCE_INLINE double GetPhysicsProcessTime() const { return physics_process_time_; }
 
     [[nodiscard]] FORCE_INLINE double GetProcessTime() const { return process_time_; }
-
-Q_SIGNALS:
-    void treeChanged();
-    void nodeAdded(Node *node);
-    void nodeRemoved(Node *node);
-    void nodeRenamed(Node *node);
 
 private:
     void OnWindowClose();

@@ -39,23 +39,23 @@ Object::~Object() {
     }
 }
 
-bool Object::Set(const String& name, Argument arg) {
+bool Object::Set(const std::string& name, Argument arg) {
     auto type = GetType();
-    return type.set_property_value(name.toStdString(), Instance(this), std::move(arg));
+    return type.set_property_value(name, Instance(this), std::move(arg));
 }
 
 
-Variant Object::Get(const String& name) const {
+Variant Object::Get(const std::string& name) const {
     Variant res;
 
     auto type = GetType();
-    res = type.get_property_value(name.toStdString(), Instance(this));
+    res = type.get_property_value(name, Instance(this));
 
     return res;
 }
 
-Type Object::GetPropertyType(const String& name) const {
-    auto property = GetType().get_property(name.toStdString());
+Type Object::GetPropertyType(const std::string& name) const {
+    auto property = GetType().get_property(name);
     return property.get_type();
 }
 

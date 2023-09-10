@@ -18,8 +18,6 @@ Window::Window(bool p_init_sdl_window) {
     if (p_init_sdl_window) {
         window_ = std::make_unique<SDLWindow>();
         window_->Maximize();
-
-        RegisterWindowCallbacks();
     }
 }
 
@@ -41,43 +39,9 @@ bool Window::IsVisible() const
     return !window_->IsWindowHide();
 }
 
-void Window::OnEvent(Event& e)
-{
-    if (e.GetCategoryFlags() == EventCategory::EventCategoryWindow) {
-        if (e.GetEventType() == EventType::WindowClose) {
-            Q_EMIT windowCloseRequested();
-        }
-        else if (e.GetEventType() == EventType::WindowResize) {
-            Q_EMIT windowResizeRequested(dynamic_cast<WindowResizeEvent&>(e));
-        }
-        else if (e.GetEventType() == EventType::WindowMaximized) {
-            Q_EMIT windowMaximizedRequested();
-        }
-        else if (e.GetEventType() == EventType::WindowMinimized) {
-            Q_EMIT windowMinimizedRequested();
-        }
-        else if (e.GetEventType() == EventType::WindowMoved) {
-            Q_EMIT windowMovedRequested();
-        }
-        else if (e.GetEventType() == EventType::WindowTakeFocus) {
-            Q_EMIT windowTakeFocusRequested();
-        }
-        else if (e.GetEventType() == EventType::WindowDropFile) {
-            Q_EMIT windowDropFileRequested();
-        }
-    }
-
-    Input::GetInstance()->OnEvent(e);
-}
-
 void Window::PullEvent()
 {
     window_->ProcessEvents();
-}
-
-void Window::RegisterWindowCallbacks()
-{
-    window_->SetEventCallback(BIND_EVENT_FN(Window::OnEvent));
 }
 
 void Window::SwapBuffers() {

@@ -10,6 +10,7 @@
 
 #include <ranges>
 #include "gobot/core/registration.hpp"
+#include "gobot/core/string_utils.hpp"
 
 namespace gobot {
 
@@ -70,17 +71,17 @@ void Node::MoveChildNotify(Node *child) {
 
 }
 
-const String& Node::GetName() const {
+const std::string& Node::GetName() const {
     return name_;
 }
 
-void Node::SetNameNoCheck(const String &name) {
+void Node::SetNameNoCheck(const std::string &name) {
     name_ = name;
 }
 
-void Node::SetName(const String &p_name) {
-    String name = ValidateNodeName(p_name);
-    ERR_FAIL_COND(name.isEmpty());
+void Node::SetName(const std::string &p_name) {
+    std::string name = ValidateNodeName(p_name);
+    ERR_FAIL_COND(name.empty());
 
     SetNameNoCheck(name);
     if (parent_) {
@@ -91,8 +92,6 @@ void Node::SetName(const String &p_name) {
 
     if (IsInsideTree()) {
         // TODO: Signal nodeRenamed to this node
-        Q_EMIT tree_->nodeRenamed(this);
-        Q_EMIT tree_->treeChanged();
     }
 }
 
@@ -102,7 +101,7 @@ void Node::ValidateChildName(Node* child, bool force_human_readable) {
     if (force_human_readable) {
         // This approach to autoset node names is human-readable but very slow
 
-        String name = child->name_;
+        std::string name = child->name_;
         GenerateSerialChildName(child, name);
         child->name_ = name;
     } else {
@@ -111,7 +110,7 @@ void Node::ValidateChildName(Node* child, bool force_human_readable) {
 
         bool unique = true;
 
-        if (child->name_ == String()) {
+        if (child->name_ == "") {
             // new unique name must be assigned
             unique = false;
         } else {
@@ -128,35 +127,34 @@ void Node::ValidateChildName(Node* child, bool force_human_readable) {
 
         if (!unique) {
             // Temporarily set as default
-            String name = "@" + String(child->GetName()) + "@" + String::number(children_.size());
+            std::string name = "@" + child->GetName() + "@" + std::to_string(children_.size());
             child->name_ = name;
         }
     }
 }
 
-String Node::ValidateNodeName(const String &p_name) const {
-    auto chars = invalid_node_name_characters.split(" ");
-    String name = p_name;
-    for (const auto & c : chars) {
-        name = name.replace(c, "");
+std::string Node::ValidateNodeName(const std::string &p_name) const {
+    std::string name = p_name;
+    for (const auto & c : invalid_node_name_characters) {
+        name = ReplaceAll(name, c, "");
     }
 
     return name;
 }
 
-String IncreaseNumericString(const String &s) {
-    String res = s;
+std::string IncreaseNumericString(const std::string &s) {
+    std::string res = s;
     bool carry = res.length() > 0;
 
     for (int i = res.length() - 1; i >= 0; i --) {
         if (!carry) {
             break;
         }
-        QChar n = s[i];
+        char n = s[i];
         if (n == '9') {
             res[i] = '0';
         } else {
-            res[i] = s[i].unicode() + 1;
+            res[i] = s[i] + 1;
             carry = false;
         }
     }
@@ -168,10 +166,10 @@ String IncreaseNumericString(const String &s) {
     return res;
 }
 
-void Node::GenerateSerialChildName(const Node *child, String &name) const {
-    if (name == String()) {
+void Node::GenerateSerialChildName(const Node *child, std::string &name) const {
+    if (name.empty()) {
         // No name and a new name is needed, create one.
-        name = String::fromStdString(child->GetClassStringName().data());
+        name = child->GetClassStringName().data();
     }
 
     // Quickly test if proposed name exists
@@ -190,10 +188,10 @@ void Node::GenerateSerialChildName(const Node *child, String &name) const {
     }
 
     // Extract trailing number
-    String name_string = name;
-    String nums;
+    std::string name_string = name;
+    std::string nums;
     for (const auto & i : std::ranges::reverse_view(name_string)) {
-        if (i.isDigit()) {
+        if (isdigit(i)) {
             nums = i + nums;
         } else {
             break;
@@ -201,10 +199,10 @@ void Node::GenerateSerialChildName(const Node *child, String &name) const {
     }
 
     // Extract base name
-    name_string = name_string.mid(0, name_string.length() - nums.length());
+    name_string = name_string.substr(0, name_string.length() - nums.length());
 
     for (;;) {
-        String attempt = name_string + nums;
+        std::string attempt = name_string + nums;
         exists = false;
 
         for (const auto & i : children_) {
@@ -229,7 +227,7 @@ void Node::GenerateSerialChildName(const Node *child, String &name) const {
     }
 }
 
-void Node::AddChildNoCheck(Node *child, const String &name) {
+void Node::AddChildNoCheck(Node *child, const std::string &name) {
     child->name_ = name;
     children_.push_back(child);
     child->parent_ = this;
@@ -290,7 +288,7 @@ Node* Node::GetChild(int index) const {
     return children_[index];
 }
 
-Node* Node::GetChildByName(const String &name) const {
+Node* Node::GetChildByName(const std::string &name) const {
     for (const auto & child : children_) {
         if (child->name_ == name)
             return child;
@@ -339,13 +337,13 @@ Node* Node::GetNode(const NodePath &path) const {
     Node *node = GetNodeOrNull(path);
 
     if (node == nullptr) [[unlikely]] {
-        String desc;
+        std::string desc;
         if (IsInsideTree()) {
-            desc = GetPath().operator String();
+            desc = GetPath().operator std::string();
         } else {
             desc = GetName();
-            if (desc.isEmpty()) {
-                desc = String::fromStdString(GetClassStringName().data());
+            if (desc.empty()) {
+                desc = GetClassStringName();
             }
         }
 
@@ -380,10 +378,10 @@ void Node::SetTree(SceneTree *tree) {
     }
 
     if (tree_changed_a) {
-        Q_EMIT tree_changed_a->treeChanged();
+//        Q_EMIT tree_changed_a->treeChanged();
     }
     if (tree_changed_b) {
-        Q_EMIT tree_changed_b->treeChanged();
+//        Q_EMIT tree_changed_b->treeChanged();
     }
 }
 
@@ -426,7 +424,7 @@ NodePath Node::GetPath() const {
     }
 
     const Node *n = this;
-    std::vector<String> path;
+    std::vector<std::string> path;
     while (n) {
         path.push_back(n->GetName());
         n = n->parent_;
@@ -445,8 +443,8 @@ NodePath Node::GetPathTo(const Node *node) const {
     const Node *common_parent = FindCommonParentWith(node);
     ERR_FAIL_COND_V(!common_parent, NodePath());
 
-    std::vector<String> path;
-    String up = String("..");
+    std::vector<std::string> path;
+    std::string up = std::string("..");
     const Node *n = node;
     while (n != common_parent) {
         path.push_back(n->GetName());
@@ -497,17 +495,17 @@ void Node::PrintTree() {
     PrintTree(this);
 }
 
-void Node::PrintTreePretty(const String &prefix, bool last) {
-    String new_prefix = last ? String(" ┖╴ ") : String(" ┠╴ ");
-    std::cout << prefix.toStdString() << new_prefix.toStdString() << GetName().toStdString() << std::endl;
+void Node::PrintTreePretty(const std::string &prefix, bool last) {
+    std::string new_prefix = last ? std::string(" ┖╴ ") : std::string(" ┠╴ ");
+    std::cout << prefix << new_prefix << GetName() << std::endl;
     for (const auto & child : children_) {
-        new_prefix = last ? String("   ") : String(" ┃ ");
+        new_prefix = last ? std::string("   ") : std::string(" ┃ ");
         child->PrintTreePretty(prefix + new_prefix, child == children_.back());
     }
 }
 
 void Node::PrintTree(const Node *node) {
-    std::cout << node->GetPathTo(this).operator String().toStdString() << std::endl;
+    std::cout << node->GetPathTo(this).operator std::string() << std::endl;
     for (const auto & child : children_) {
         child->PrintTree(node);
     }
@@ -553,7 +551,7 @@ void Node::PropagateEnterTree() {
     Notification(NotificationType::EnterTree);
 
     // TODO: Signal enter tree to SceneStringNames
-    Q_EMIT tree_->nodeAdded(this);
+//    Q_EMIT tree_->nodeAdded(this);
 
     for (const auto & child : children_) {
         if (!child->IsInsideTree()) {
@@ -571,7 +569,7 @@ void Node::PropagateExitTree() {
 
     Notification(NotificationType::ExitTree, true);
     if (tree_) {
-        Q_EMIT tree_->nodeRemoved(this);
+//        Q_EMIT tree_->nodeRemoved(this);
     }
 
     if (parent_) {
@@ -581,7 +579,7 @@ void Node::PropagateExitTree() {
     // TODO: clear viewport
 
     if (tree_) {
-        Q_EMIT tree_->treeChanged();
+//        Q_EMIT tree_->treeChanged();
     }
 
     inside_tree_ = false;
@@ -622,7 +620,7 @@ void Node::MoveChild(Node *child, int index) {
     }
 
     if (tree_)
-        Q_EMIT tree_->treeChanged();
+//        Q_EMIT tree_->treeChanged();
 
     MoveChildNotify(child);
 }

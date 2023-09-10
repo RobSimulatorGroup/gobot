@@ -25,10 +25,10 @@ MouseMovedEvent::MouseMovedEvent(std::int32_t x,
 {
 }
 
-String MouseMovedEvent::ToString() const
+std::string MouseMovedEvent::ToString() const
 {
     return fmt::format("MouseMovedEvent: x: {0}, y: {1}, rel_x: {2}, rel_y: {3}, state: {4:#b}",
-                       x_, y_, rel_x_, rel_y_, static_cast<std::uint32_t>(state_)).c_str();
+                       x_, y_, rel_x_, rel_y_, static_cast<std::uint32_t>(state_));
 }
 
 ///////////////////////////////////////////////////////////////////////
@@ -40,9 +40,9 @@ MouseScrolledEvent::MouseScrolledEvent(float x_offset, float y_offset)
 {
 }
 
-String MouseScrolledEvent::ToString() const
+std::string MouseScrolledEvent::ToString() const
 {
-    return fmt::format("MouseScrolledEvent: {}, {}", x_offset_, y_offset_).c_str();
+    return fmt::format("MouseScrolledEvent: {}, {}", x_offset_, y_offset_);
 }
 
 /////////////////////////////////////////////////////////////////////////
@@ -69,9 +69,9 @@ MouseButtonPressedEvent::MouseButtonPressedEvent(MouseButton button,
 {
 }
 
-String MouseButtonPressedEvent::ToString() const
+std::string MouseButtonPressedEvent::ToString() const
 {
-    return fmt::format("MouseButtonPressedEvent: {}", magic_enum::enum_name(button_)).c_str();
+    return fmt::format("MouseButtonPressedEvent: {}", magic_enum::enum_name(button_));
 }
 
 //////////////////////////////////////////////////////////////////////
@@ -84,9 +84,9 @@ MouseButtonReleasedEvent::MouseButtonReleasedEvent(MouseButton button,
 {
 }
 
-String MouseButtonReleasedEvent::ToString() const
+std::string MouseButtonReleasedEvent::ToString() const
 {
-    return fmt::format("MouseButtonReleasedEvent: {}", magic_enum::enum_name(button_)).c_str();
+    return fmt::format("MouseButtonReleasedEvent: {}", magic_enum::enum_name(button_));
 }
 
 ///////////////////////////////////////////////////////////////////////

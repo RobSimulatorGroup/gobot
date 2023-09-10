@@ -16,7 +16,6 @@ namespace gobot {
 
 
 class GOBOT_EXPORT Window : public Node {
-    Q_OBJECT
     GOBCLASS(Window, Node);
 public:
     Window(bool p_init_sdl_window = true);
@@ -34,18 +33,6 @@ public:
     SDLWindow* GetWindow() { return window_.get(); }
 
     void SwapBuffers();
-
-Q_SIGNALS:
-    void windowCloseRequested();
-    void windowResizeRequested(WindowResizeEvent& event);
-    void windowMaximizedRequested();
-    void windowMinimizedRequested();
-    void windowMovedRequested();
-    void windowTakeFocusRequested();
-    void windowDropFileRequested();
-
-private:
-    void RegisterWindowCallbacks();
 
 private:
 

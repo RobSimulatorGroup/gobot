@@ -28,9 +28,9 @@ KeyPressedEvent::KeyPressedEvent(KeyCode key_code,
 {
 }
 
-String KeyPressedEvent::ToString() const
+std::string KeyPressedEvent::ToString() const
 {
-    return fmt::format("KeyPressedEvent: {}({} repeats)", magic_enum::enum_name(key_code_), repeat_count_).c_str();
+    return fmt::format("KeyPressedEvent: {}({} repeats)", magic_enum::enum_name(key_code_), repeat_count_);
 }
 
 //////////////////////////////////////////////////////////////////
@@ -40,9 +40,9 @@ KeyReleasedEvent::KeyReleasedEvent(KeyCode key_code, KeyModifiers key_mod)
 {
 }
 
-String KeyReleasedEvent::ToString() const
+std::string KeyReleasedEvent::ToString() const
 {
-    return fmt::format("KeyReleasedEvent: {}", magic_enum::enum_name(key_code_)).c_str();
+    return fmt::format("KeyReleasedEvent: {}", magic_enum::enum_name(key_code_));
 }
 
 

@@ -20,9 +20,6 @@ TEST(TestSDLWindow, test_create) {
 //    auto* sdl_window = new gobot::SDLWindow();
 //
 //    sdl_window->SetIcon(image);
-//    sdl_window->SetEventCallback([](gobot::Event& event) -> void {
-//        LOG_INFO("{}", event.ToString());
-//    });
 //    sdl_window->ProcessEvents();
 
 //    sleep(10);

@@ -41,10 +41,10 @@ void SceneEditorPanel::DrawNode(Node* node)
     if(!node)
         return;
 
-    String name = node->GetName();
+    std::string name = node->GetName();
 
     if(filter_->IsActive()) {
-        if(!filter_->PassFilter(name.toStdString().c_str())) {
+        if(!filter_->PassFilter(name.c_str())) {
             show = false;
         }
     }
@@ -83,19 +83,19 @@ void SceneEditorPanel::DrawNode(Node* node)
         ImGui::PopStyleColor();
         ImGui::SameLine();
         if(!double_clicked)
-            ImGui::TextUnformatted(name.toStdString().c_str());
+            ImGui::TextUnformatted(name.c_str());
 
         if(double_clicked) {
-            auto value = name.toStdString();
+            auto value = name;
             ImGui::PushItemWidth(-1);
             if(ImGui::InputText("##Name", &value)) {
-                node->SetName(String::fromStdString(value));
+                node->SetName(value);
             }
             ImGui::PopStyleVar();
         }
 
         bool delete_node = false;
-        if(ImGui::BeginPopupContextItem(name.toStdString().c_str())) {
+        if(ImGui::BeginPopupContextItem(name.c_str())) {
 
             ImGui::EndPopup();
         }
@@ -118,7 +118,7 @@ void SceneEditorPanel::DrawNode(Node* node)
             return;
         }
 
-        if(node_open == false) {
+        if(!node_open) {
             ImGui::PopID();
             return;
         }

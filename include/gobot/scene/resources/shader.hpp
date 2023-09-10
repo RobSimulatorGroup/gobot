@@ -32,9 +32,9 @@ public:
 
     ~Shader() override;
 
-    void SetCode(const String &p_code);
+    void SetCode(const std::string &p_code);
 
-    String GetCode() const;
+    std::string GetCode() const;
 
     void SetShaderType(ShaderType p_shader_type);
 
@@ -45,7 +45,7 @@ public:
 private:
     RID shader_;
     ShaderType shader_type_;
-    String code_;
+    std::string code_;
 };
 
 class GOBOT_EXPORT ShaderProgram : public Resource {
@@ -104,13 +104,13 @@ private:
 class GOBOT_EXPORT ResourceFormatLoaderShader : public ResourceFormatLoader {
     GOBCLASS(ResourceFormatLoaderShader, ResourceFormatLoader)
 public:
-    Ref<Resource> Load(const String &p_path, const String &p_original_path = "", CacheMode p_cache_mode = CacheMode::Reuse) override;
+    Ref<Resource> Load(const std::string &p_path, const std::string &p_original_path = "", CacheMode p_cache_mode = CacheMode::Reuse) override;
 
-    static ShaderType ExtensionsToShaderType(const String& extension);
+    static ShaderType ExtensionsToShaderType(const std::string& extension);
 
-    void GetRecognizedExtensions(std::vector<String> *extensions) const override;
+    void GetRecognizedExtensions(std::vector<std::string> *extensions) const override;
 
-    [[nodiscard]] bool HandlesType(const String &type) const override;
+    [[nodiscard]] bool HandlesType(const std::string &type) const override;
 };
 
 }

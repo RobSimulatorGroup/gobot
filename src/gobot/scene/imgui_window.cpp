@@ -16,10 +16,6 @@ ImGuiWindow::ImGuiWindow() {
 }
 
 bool ImGuiWindow::Begin() {
-    //   [Important: due to legacy reason, this is inconsistent with most other functions such as BeginMenu/EndMenu,
-    //    BeginPopup/EndPopup, etc. where the EndXXX call should only be called if the corresponding BeginXXX function
-    //    returned true. Begin and BeginChild are the only odd ones out. Will be fixed in a future update.]
-
     if (window_size_.has_value()) {
         const auto& [size, cond] = window_size_.value();
         ImGui::SetNextWindowSize(size, cond);
@@ -29,7 +25,10 @@ bool ImGuiWindow::Begin() {
         ImGui::SetNextWindowPos(size, cond, pivot);
     }
 
-    collapsed_ = ImGui::Begin(GetName().toStdString().c_str(), &open_, imgui_window_flags_);
+    collapsed_ = ImGui::Begin(GetName().c_str(), &open_, imgui_window_flags_);
+    //   [Important: due to legacy reason, this is inconsistent with most other functions such as BeginMenu/EndMenu,
+    //    BeginPopup/EndPopup, etc. where the EndXXX call should only be called if the corresponding BeginXXX function
+    //    returned true. Begin and BeginChild are the only odd ones out. Will be fixed in a future update.]
     return true;
 }
 
