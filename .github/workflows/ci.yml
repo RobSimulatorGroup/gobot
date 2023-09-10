@@ -29,14 +29,6 @@ jobs:
       with:
         submodules: 'true'
 
-    - name: Install Qt
-      uses: jurplel/install-qt-action@v3
-      with:
-        version: '5.15.2'
-        dir: ${{ github.workspace }}/Qt
-        cache: 'true'
-        cache-key-prefix: 'qt5.15.2-cache-${{ matrix.os }}'
-
     - name: Get Conan
       uses: turtlebrowser/get-conan@v1.1
       with:

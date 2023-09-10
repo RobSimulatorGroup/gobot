@@ -33,21 +33,7 @@ Make sure **Conan** is installed to manage modules and packages when building by
 sudo pip install conan
 ```
 
-Install qt
-```shell
-sudo add-apt-repository ppa:beineri/opt-qt-5.15.4-focal
-sudo apt update
-sudo apt-get install qt515base
-```
-
 ### Windows
-
-Install qt
-```shell
-pip install aqtinstall
-aqt install-qt windows desktop 5.12.2 win64_msvc2019_64 --outputdir D:\Qt
-```
-
 
 ## Getting started
 ### Ubuntu
