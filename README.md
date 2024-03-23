@@ -1,7 +1,5 @@
 # gobot
-Go, robot go! 
-
-![overview](./doc/overview.png)
+Go, robot go!
 
 [![license](https://img.shields.io/github/license/RobSimulatorGroup/gobot.svg)](https://github.com/RobSimulatorGroup/gobot/blob/master/LICENSE)
 [![CI](https://github.com/RobSimulatorGroup/gobot/actions/workflows/ci.yml/badge.svg?branch=master&event=push)](https://github.com/RobSimulatorGroup/gobot/actions)
@@ -12,10 +10,8 @@ Ubuntu and Windows are supported.
 
 | runs-on       | supported |
 |---------------|:---------:|
-| Ubuntu-latest |    ✅️     |
 | Ubuntu-22.04  |    ✅️     |
 | Ubuntu-20.04  |    ✅️     |
-| Windows-10    |    ✅️     |
 
 
 ## Requirements
@@ -25,7 +21,8 @@ Make sure **CMake-3.23** is installed to build [RTTR](https://www.rttr.org/).
 
 Make sure following dependencies are installed.
 ```shell
-sudo apt update && sudo apt install -y libx11-xcb-dev libfontenc-dev libice-dev libsm-dev libxaw7-dev libxcomposite-dev libxcursor-dev libxdamage-dev libxext-dev libxfixes-dev libxi-dev libxinerama-dev libxkbfile-dev libxmu-dev libxmuu-dev libxpm-dev libxrandr-dev libxrender-dev libxres-dev libxss-dev libxt-dev libxtst-dev libxv-dev libxvmc-dev libxxf86vm-dev libxcb-render0-dev libxcb-render-util0-dev libxcb-xkb-dev libxcb-icccm4-dev libxcb-image0-dev libxcb-keysyms1-dev libxcb-randr0-dev libxcb-shape0-dev libxcb-sync-dev libxcb-xfixes0-dev libxcb-xinerama0-dev libxcb-dri3-dev uuid-dev libxcb-util-dev autoconf libgl-dev
+sudo apt update && sudo apt install -y libxcb-util-dev  libxcb-cursor0 libxcb-ewmh2 libx11-xcb-dev libvdpau-dev libva-dev libfontenc-dev pkg-config libice-dev libsm-dev libxaw7-dev libxcomposite-dev libxcursor-dev libxdamage-dev libxext-dev libxfixes-dev libxi-dev libxinerama-dev libxkbfile-dev libxmu-dev libxmuu-dev libxpm-dev libxrandr-dev libxrender-dev libxres-dev libxss-dev libxt-dev libxtst-dev libxv-dev libxvmc-dev libxxf86vm-dev libxcb-render0-dev libxcb-render-util0-dev libxcb-xkb-dev libxcb-icccm4-dev libxcb-image0-dev libxcb-keysyms1-dev libxcb-randr0-dev libxcb-shape0-dev libxcb-sync-dev libxcb-xfixes0-dev libxcb-xinerama0-dev libxcb-dri3-dev uuid-dev libxcb-util-dev autoconf libgl-dev
+sudo sudo apt-get -y install libsuitesparse-dev libcholmod3
 ```
 
 Make sure **Conan2** is installed to manage modules and packages when building by CMake.

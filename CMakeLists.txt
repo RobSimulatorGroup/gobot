@@ -29,6 +29,10 @@ if(PROJECT_SOURCE_DIR STREQUAL PROJECT_BINARY_DIR)
 endif()
 
 find_package(Eigen3 REQUIRED)
+find_package(Sophus REQUIRED)
+find_package(OpenCV REQUIRED)
+find_package(PCL REQUIRED)
+find_package(Ceres REQUIRED)
 find_package(spdlog REQUIRED)
 find_package(magic_enum REQUIRED)
 find_package(nlohmann_json REQUIRED)
@@ -45,9 +49,19 @@ file(GLOB_RECURSE SOURCE_DRIVERS CONFIGURE_DEPENDS "src/gobot/drivers/*.cpp")
 file(GLOB_RECURSE SOURCE_RENDERING CONFIGURE_DEPENDS "src/gobot/rendering/*.cpp")
 file(GLOB_RECURSE SOURCE_EDITOR CONFIGURE_DEPENDS "src/gobot/editor/*.cpp")
 file(GLOB_RECURSE SOURCE_MAIN CONFIGURE_DEPENDS "src/gobot/main/*.cpp")
+file(GLOB_RECURSE SOURCE_SLAM CONFIGURE_DEPENDS "src/gobot/slam/*cpp")
 
 # https://github.com/bincrafters/community/issues/466#issuecomment-426265654
-add_library(gobot SHARED ${SOURCE_DRIVERS} ${SOURCE_MAIN} ${SOURCE_CORE} ${SOURCE_RENDERING} ${SOURCE_SCENE} ${SOURCE_EDITOR})
+add_library(gobot SHARED
+        ${SOURCE_DRIVERS}
+        ${SOURCE_MAIN}
+        ${SOURCE_CORE}
+        ${SOURCE_RENDERING}
+        ${SOURCE_SCENE}
+        ${SOURCE_EDITOR}
+        ${SOURCE_SLAM}
+)
+
 if (CMAKE_CXX_COMPILER_ID STREQUAL "MSVC")
     set(GOBOT_COMPILE_OPTIONS "/Zc:preprocessor,__cplusplus" "/bigobj")
 elseif (CMAKE_CXX_COMPILER_ID STREQUAL "GNU")
@@ -62,6 +76,8 @@ target_include_directories(gobot
     PUBLIC
     ${CMAKE_CURRENT_SOURCE_DIR}/include
     ${PROJECT_BINARY_DIR}
+    ${OpenCV_INCLUDE_DIRS}
+    ${PCL_INCLUDE_DIRS}
 )
 
 target_link_libraries(gobot
@@ -78,6 +94,10 @@ target_link_libraries(gobot
         magic_enum::magic_enum
         nlohmann_json::nlohmann_json
         cxxopts::cxxopts
+        Sophus::Sophus
+        ${OpenCV_LIBS}
+        ${PCL_LIBRARY_DIRS}
+        Ceres::ceres
 )
 
 # copy icon to bin

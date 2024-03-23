@@ -380,8 +380,13 @@ void ResourcePanel::DrawFolder(DirectoryInformation* dir_info, bool default_open
             node_flags |= ImGuiTreeNodeFlags_DefaultOpen | ImGuiTreeNodeFlags_Leaf;
 
         node_flags |= ImGuiTreeNodeFlags_OpenOnArrow | ImGuiTreeNodeFlags_AllowItemOverlap | ImGuiTreeNodeFlags_SpanAvailWidth;
-
+#if defined(__GNUC__)
+#pragma GCC diagnostic ignored "-Wformat-zero-length"
+#endif
         bool is_open = ImGui::TreeNodeEx((void*)(intptr_t)dir_info, node_flags, "");
+#if defined(__GNUC__)
+#pragma GCC diagnostic warning "-Wformat-zero-length"
+#endif
 
         const char* folder_icon = ((is_open && contains_folder) || current_dir_ == dir_info) ? ICON_MDI_FOLDER_OPEN : ICON_MDI_FOLDER;
         ImGui::SameLine();
