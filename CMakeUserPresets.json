@@ -1,0 +1,10 @@
+{
+    "version": 4,
+    "vendor": {
+        "conan": {}
+    },
+    "include": [
+        "/home/wqq/gobot/cmake-build-debug/conan/build/Debug/generators/CMakePresets.json",
+        "/home/wqq/gobot/cmake-build-release/conan/build/Release/generators/CMakePresets.json"
+    ]
+}

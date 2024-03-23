@@ -8,6 +8,7 @@
 #include <iostream>
 #include <fstream>
 #include <filesystem>
+#include <algorithm>
 #include "fmt/format.h"
 
 bool LineHasInclude(const std::string& lineBuffer, std::string& include_file_path) {
@@ -35,7 +36,7 @@ bool LineHasInclude(const std::string& lineBuffer, std::string& include_file_pat
 // Return the source code of the complete shader
 std::string Load(std::string path)
 {
-    std::string full_source_code = "";
+    std::string full_source_code;
     std::ifstream file(path);
 
     if (!file.is_open())

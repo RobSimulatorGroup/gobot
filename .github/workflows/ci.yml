@@ -30,9 +30,9 @@ jobs:
         submodules: 'true'
 
     - name: Get Conan
-      uses: turtlebrowser/get-conan@v1.1
+      uses: turtlebrowser/get-conan@main
       with:
-        version: 1.59.0
+        version: 2.2.1
 
     - name: Get Ninja
       uses: seanmiddleditch/gha-setup-ninja@v3

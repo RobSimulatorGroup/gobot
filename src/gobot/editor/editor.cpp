@@ -43,7 +43,7 @@ Editor::Editor() {
     EditorInspector::AddInspectorPlugin(MakeRef<EditorInspectorDefaultPlugin>());
 
     // for test
-    ProjectSettings::GetInstance()->SetProjectPath("/home");
+    ProjectSettings::GetInstance()->SetProjectPath(".");
 
     AddChild(Object::New<ConsolePanel>());
     AddChild(Object::New<SceneEditorPanel>());

@@ -9,7 +9,7 @@
 
 #include <rttr/rttr_enable.h>
 #include <rttr/detail/base/core_prerequisites.h>
-#include <magic_enum.hpp>
+#include <magic_enum/magic_enum.hpp>
 #include <gobot_export.h>
 
 // Should always inline no matter what.

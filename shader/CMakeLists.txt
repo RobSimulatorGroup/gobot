@@ -20,7 +20,7 @@ endif()
 
 
 add_executable(GlslCppSaver glsl_hpp_generator.cpp)
-target_link_libraries(GlslCppSaver  PUBLIC   ${CONAN_LIBS})
+target_link_libraries(GlslCppSaver  PUBLIC spdlog::spdlog)
 
 set(working_dir "${CMAKE_CURRENT_SOURCE_DIR}")
 
