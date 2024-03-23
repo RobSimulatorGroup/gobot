@@ -20,57 +20,6 @@ endif()
 
 include(cmake/CPM.cmake)
 
-# ---------------------------------------- START OF CONAN SETUP ----------------------------------------
-if (NOT EXISTS ${CMAKE_BINARY_DIR}/conanbuildinfo.cmake)
-    if (NOT EXISTS "${CMAKE_BINARY_DIR}/conan.cmake")
-        message(STATUS "Try to copy conan.cmake to ${CMAKE_BINARY_DIR}")
-        file(COPY_FILE "${CMAKE_CURRENT_SOURCE_DIR}/cmake/conan.cmake" "${CMAKE_BINARY_DIR}/conan.cmake")
-    endif ()
-    include(${CMAKE_BINARY_DIR}/conan.cmake)
-    if (CONAN_PROFILE_BUILD AND CONAN_PROFILE_HOST)
-        conan_cmake_install(PATH_OR_REFERENCE ${PROJECT_SOURCE_DIR}
-                            BUILD missing
-                            REMOTE conancenter
-                            SETTINGS_HOST build_type=${CMAKE_BUILD_TYPE}
-                            SETTINGS_BUILD build_type=${CMAKE_BUILD_TYPE}
-                            PROFILE_BUILD ${CONAN_PROFILE_BUILD}
-                            PROFILE_HOST ${CONAN_PROFILE_HOST})
-                            # ENV_HOST CONAN_CMAKE_TOOLCHAIN_FILE=${CMAKE_TOOLCHAIN_FILE})
-    else ()
-        cmake_host_system_information(RESULT CMAKE_SYSTEM_NAME QUERY OS_NAME)
-
-        conan_cmake_autodetect(settings)
-
-        # This is hacky for detecting os. Wait cmake-conan to have a correct implementation.
-        if (MSVC)
-            set(settings ${settings} os=Windows)
-        else ()
-            set(settings ${settings} os=Linux)
-        endif ()
-
-        conan_cmake_profile(FILEPATH      "${CMAKE_BINARY_DIR}/profile"
-                            INCLUDE       default
-                            SETTINGS      ${settings}
-                            CONF          tools.system.package_manager:mode=install
-                                          tools.system.package_manager:sudo=True
-                                          tools.system.package_manager:sudo_askpass=True)
-
-        message(${settings})
-
-        conan_cmake_install(PATH_OR_REFERENCE ${PROJECT_SOURCE_DIR}
-                            BUILD missing
-                            REMOTE conancenter
-                            SETTINGS_HOST build_type=${CMAKE_BUILD_TYPE}
-                            SETTINGS_BUILD build_type=${CMAKE_BUILD_TYPE}
-                            PROFILE_HOST "${CMAKE_BINARY_DIR}/profile"
-                            PROFILE_BUILD "${CMAKE_BINARY_DIR}/profile")
-    endif ()
-endif ()
-
-include(${CMAKE_BINARY_DIR}/conanbuildinfo.cmake)
-include(${CMAKE_BINARY_DIR}/conan_paths.cmake)
-conan_basic_setup(${PROJECT_NAME} KEEP_RPATHS)
-# ---------------------------------------- END OF CONAN SETUP ----------------------------------------
 
 if(PROJECT_SOURCE_DIR STREQUAL PROJECT_BINARY_DIR)
     message(
@@ -79,12 +28,16 @@ if(PROJECT_SOURCE_DIR STREQUAL PROJECT_BINARY_DIR)
     )
 endif()
 
-find_package (Eigen3 3.4 CONFIG REQUIRED)
+find_package(Eigen3 REQUIRED)
+find_package(spdlog REQUIRED)
+find_package(magic_enum REQUIRED)
+find_package(nlohmann_json REQUIRED)
+find_package(PNG REQUIRED)
+find_package(cxxopts REQUIRED)
 
 INCLUDE(GenerateExportHeader)
 
 add_subdirectory(3rdparty)
-
 
 file(GLOB_RECURSE SOURCE_CORE CONFIGURE_DEPENDS "src/gobot/core/*.cpp")
 file(GLOB_RECURSE SOURCE_SCENE CONFIGURE_DEPENDS "src/gobot/scene/*.cpp")
@@ -113,13 +66,18 @@ target_include_directories(gobot
 
 target_link_libraries(gobot
     PUBLIC
-    RTTR::Core
-    imgui-gobot
-    glad
-    SDL2::SDL2
-    stb
-    gli
-    ${CONAN_LIBS}
+        RTTR::Core
+        imgui-gobot
+        glad
+        SDL2::SDL2
+        stb
+        gli
+        spdlog::spdlog
+        PNG::PNG
+        Eigen3::Eigen
+        magic_enum::magic_enum
+        nlohmann_json::nlohmann_json
+        cxxopts::cxxopts
 )
 
 # copy icon to bin

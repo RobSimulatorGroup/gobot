@@ -12,7 +12,7 @@
 
 #include <stb_image.h>
 #include <stb_image_write.h>
-#include <magic_enum.hpp>
+#include <magic_enum/magic_enum.hpp>
 
 namespace gobot {
 

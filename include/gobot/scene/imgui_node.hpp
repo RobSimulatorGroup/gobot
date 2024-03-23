@@ -10,6 +10,7 @@
 #include "gobot/scene/node.hpp"
 #include "gobot/core/math/matrix.hpp"
 #include "gobot/core/color.hpp"
+#include <variant>
 
 namespace gobot {
 

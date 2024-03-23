@@ -8,7 +8,7 @@
 #include "gobot/core/events/mouse_event.hpp"
 #include "gobot/log.hpp"
 #include "gobot/core/registration.hpp"
-#include <magic_enum.hpp>
+#include <magic_enum/magic_enum.hpp>
 
 namespace gobot {
 

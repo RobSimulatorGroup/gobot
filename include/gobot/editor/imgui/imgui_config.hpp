@@ -92,14 +92,14 @@
 #include "gobot/core/color.hpp"
 #include "gobot/core/math/matrix.hpp"
 
-#define IM_VEC2_CLASS_EXTRA                                                                                   \
-        constexpr ImVec2(const gobot::Vector2f& f) { x = f.x(); y = f.y(); }                                  \
+#define IM_VEC2_CLASS_EXTRA                                                                         \
+        ImVec2(const gobot::Vector2f& f) { x = f.x(); y = f.y(); }                                  \
         operator gobot::Vector2f() const { return gobot::Vector2f(x, y); }
 
-#define IM_VEC4_CLASS_EXTRA                                                                                   \
-        constexpr ImVec4(const gobot::Vector4f& f) { x = f.x(); y = f.y(); z = f.z(); w = f.w(); }            \
-        operator gobot::Vector4f() const { return gobot::Vector4f(x, y, z, w); }                              \
-        constexpr ImVec4(const gobot::Color& f) { x = f.red(); y = f.green(); z = f.blue(); w = f.alpha(); }  \
+#define IM_VEC4_CLASS_EXTRA                                                                         \
+        ImVec4(const gobot::Vector4f& f) { x = f.x(); y = f.y(); z = f.z(); w = f.w(); }            \
+        operator gobot::Vector4f() const { return gobot::Vector4f(x, y, z, w); }                    \
+        ImVec4(const gobot::Color& f) { x = f.red(); y = f.green(); z = f.blue(); w = f.alpha(); }  \
         operator gobot::Color() const { return gobot::Color(x, y, z, w); }
 
 //---- Use 32-bit vertex indices (default is 16-bit) is one way to allow large meshes with more than 64K vertices.

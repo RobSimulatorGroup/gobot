@@ -30,9 +30,9 @@ jobs:
         submodules: 'true'
 
     - name: Get Conan
-      uses: turtlebrowser/get-conan@v1.1
+      uses: turtlebrowser/get-conan@main
       with:
-        version: 1.59.0
+        version: 2.2.1
 
     - name: Get Ninja
       uses: seanmiddleditch/gha-setup-ninja@v3
@@ -45,7 +45,7 @@ jobs:
     - name: Configure CMake
       # Configure CMake in a 'build' subdirectory. `CMAKE_BUILD_TYPE` is only required if you are using a single-configuration generator such as make.
       # See https://cmake.org/cmake/help/latest/variable/CMAKE_BUILD_TYPE.html?highlight=cmake_build_type
-      run: cmake -B ${{ github.workspace }}/build -G Ninja -DCMAKE_BUILD_TYPE=${{ env.BUILD_TYPE }} -DBUILD_EXPERIMENT=OFF -DBUILD_TESTS=On -DBGFX_BUILD_EXAMPLES=OFF
+      run: cmake -B ${{ github.workspace }}/build  -DCMAKE_PROJECT_TOP_LEVEL_INCLUDES=${{ github.workspace }}/cmake/conan_provider.cmake -G Ninja -DCMAKE_BUILD_TYPE=${{ env.BUILD_TYPE }} -DBUILD_EXPERIMENT=OFF -DBUILD_TESTS=On -DBGFX_BUILD_EXAMPLES=OFF
 
     - name: Build
       run: cmake --build ${{ github.workspace }}/build --config ${{ env.BUILD_TYPE }}
