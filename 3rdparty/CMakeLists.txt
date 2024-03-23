@@ -5,7 +5,7 @@ set(GLI_TEST_ENABLE OFF)
 add_subdirectory(gli)
 
 
-add_subdirectory(basis_univesal)
+#add_subdirectory(basis_univesal)
 
 add_library(stb INTERFACE)
 target_include_directories(stb INTERFACE stb/)

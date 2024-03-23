@@ -29,7 +29,6 @@ if(PROJECT_SOURCE_DIR STREQUAL PROJECT_BINARY_DIR)
 endif()
 
 find_package(Eigen3 REQUIRED)
-find_package(fmt REQUIRED)
 find_package(spdlog REQUIRED)
 find_package(magic_enum REQUIRED)
 find_package(nlohmann_json REQUIRED)
