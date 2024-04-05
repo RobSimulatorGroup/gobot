@@ -157,3 +157,5 @@ if (MSVC)
     )
 
 endif ()
+
+add_subdirectory(apps)

@@ -20,9 +20,13 @@ struct NavState {
     NavState() = default;
 
     // from time, R, p, v, bg, ba
-    explicit NavState(double time, const SO3& R = SO3(), const Vec3& t = Vec3::Zero(), const Vec3& v = Vec3::Zero(),
-                      const Vec3& bg = Vec3::Zero(), const Vec3& ba = Vec3::Zero())
-            : timestamp_(time), R_(R), p_(t), v_(v), bg_(bg), ba_(ba) {}
+    explicit NavState(double time,
+                      const SO3& R = SO3(),
+                      const Vec3& t = Vec3::Zero(),
+                      const Vec3& v = Vec3::Zero(),
+                      const Vec3& bg = Vec3::Zero(),
+                      const Vec3& ba = Vec3::Zero())
+            : timestamp_(time), R_(R), p_(t), v_(v), bg_(bg), ba_(ba) { }
 
     // from pose and vel
     NavState(double time, const SE3& pose, const Vec3& vel = Vec3::Zero())
@@ -47,6 +51,5 @@ struct NavState {
 
 using NavStated = NavState<double>;
 using NavStatef = NavState<float>;
-
 
 }

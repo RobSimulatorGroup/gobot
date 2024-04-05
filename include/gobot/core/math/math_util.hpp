@@ -7,6 +7,7 @@
 
 #pragma once
 
+#include <numeric>
 
 namespace gobot {
 
@@ -106,6 +107,20 @@ inline uint16_t FloatToHalf(float f) {
 inline int fast_ftoi(float a) {
     // Assuming every supported compiler has `lrint()`.
     return lrintf(a);
+}
+
+template <typename C, typename D, typename Getter>
+void ComputeMeanAndCovDiag(const C& data, D& mean, D& cov_diag, Getter&& getter) {
+    size_t len = data.size();
+    assert(len > 1);
+    // clang-format off
+    mean = std::accumulate(data.begin(), data.end(), D::Zero().eval(),
+                           [&getter](const D& sum, const auto& data) -> D { return sum + getter(data); }) / len;
+    cov_diag = std::accumulate(data.begin(), data.end(), D::Zero().eval(),
+                               [&mean, &getter](const D& sum, const auto& data) -> D {
+                                   return sum + (getter(data) - mean).cwiseAbs2().eval();
+                               }) / (len - 1);
+    // clang-format on
 }
 
 

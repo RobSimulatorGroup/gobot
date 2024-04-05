@@ -148,6 +148,10 @@ constexpr int Sign(const T val) {
 inline RealType DEG_TO_RAD(RealType deg) { return static_cast<RealType>(deg * (Math_PI / 180.0)); }
 inline RealType RAD_TO_DEG(RealType rad) { return static_cast<RealType>(rad * (180.0 / Math_PI)); }
 
+constexpr double DEG2RAD = M_PI / 180.0;  // deg->rad
+constexpr double RAD2DEG = 180.0 / M_PI;  // rad -> deg
+constexpr double G_m_s2 = 9.81;            // g(m/s^2)
+
 template<class T>
 typename std::enable_if<!std::numeric_limits<T>::is_integer, bool>::type
 AlmostEqual(T x, T y, int ulp = 2)

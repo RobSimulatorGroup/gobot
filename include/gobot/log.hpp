@@ -14,6 +14,7 @@
 #include <string_view>
 #include <filesystem>
 
+#include <spdlog/fmt/ostr.h>
 #include <spdlog/spdlog.h>
 #include <spdlog/logger.h>
 #include <spdlog/sinks/stdout_sinks.h>

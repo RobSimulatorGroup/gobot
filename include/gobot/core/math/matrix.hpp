@@ -10,48 +10,50 @@
 #pragma once
 
 #include <rttr/type.h>
-
+#include <fmt/ostream.h>
+#include <iostream>
 #include <Eigen/Dense>
-
 #include "gobot/core/math/math_defs.hpp"
+
+template <typename T>
+requires std::is_base_of_v<Eigen::DenseBase<T>, T>
+struct fmt::formatter<T> : ostream_formatter {};
 
 namespace gobot {
 
 namespace internal {
 
-template <typename _Scalar, int _Rows, int _Cols,
-          int _Options = Eigen::AutoAlign |
-                         ((_Rows == 1 && _Cols != 1) ? Eigen::RowMajor
-                          : (_Cols == 1 && _Rows != 1)
+template <typename Scalar, int Rows, int Cols,
+          int Options = Eigen::AutoAlign | ((Rows == 1 && Cols != 1) ? Eigen::RowMajor : (Cols == 1 && Rows != 1)
                               ? Eigen::ColMajor
                               : EIGEN_DEFAULT_MATRIX_STORAGE_ORDER_OPTION),
-          int _MaxRows = _Rows, int _MaxCols = _Cols>
-class Matrix : public Eigen::Matrix<_Scalar, _Rows, _Cols> {
+          int MaxRows = Rows, int MaxCols = Cols>
+class Matrix : public Eigen::Matrix<Scalar, Rows, Cols> {
  public:
   using BaseType =
-      Eigen::Matrix<_Scalar, _Rows, _Cols, _Options, _MaxRows, _MaxCols>;
+      Eigen::Matrix<Scalar, Rows, Cols, Options, MaxRows, MaxCols>;
   using BaseType::BaseType;
 
-  MatrixData<_Scalar> GetMatrixData() const {
+  MatrixData<Scalar> GetMatrixData() const {
       // https://stackoverflow.com/questions/22881768/eigen-convert-matrix-to-vector
     auto self_view = this->reshaped();
-    if constexpr (_Rows != Eigen::Dynamic && _Cols != Eigen::Dynamic) {
-      return {_Rows, _Cols, std::vector(self_view.begin(), self_view.end())};
+    if constexpr (Rows != Eigen::Dynamic && Cols != Eigen::Dynamic) {
+      return {Rows, Cols, std::vector(self_view.begin(), self_view.end())};
     } else {
       return {this->rows(), this->cols(),
               std::vector(self_view.begin(), self_view.end())};
     };
   }
 
-  void SetMatrixData(const MatrixData<_Scalar> &data) {
-    if constexpr (_Rows != Eigen::Dynamic) {
-      if (data.rows != _Rows) [[unlikely]] {
+  void SetMatrixData(const MatrixData<Scalar> &data) {
+    if constexpr (Rows != Eigen::Dynamic) {
+      if (data.rows != Rows) [[unlikely]] {
         return;
       }
     }
 
-    if constexpr (_Cols != Eigen::Dynamic) {
-      if (data.cols != _Cols) [[unlikely]] {
+    if constexpr (Cols != Eigen::Dynamic) {
+      if (data.cols != Cols) [[unlikely]] {
         return;
       }
     }
@@ -60,7 +62,7 @@ class Matrix : public Eigen::Matrix<_Scalar, _Rows, _Cols> {
       return;
     }
 
-    if constexpr (_Rows == Eigen::Dynamic || _Cols == Eigen::Dynamic) {
+    if constexpr (Rows == Eigen::Dynamic || Cols == Eigen::Dynamic) {
       this->resize(data.rows, data.cols);
     }
 
@@ -69,23 +71,23 @@ class Matrix : public Eigen::Matrix<_Scalar, _Rows, _Cols> {
   }
 
     // eye is the position of the camera's viewpoint, and center is where you are looking at (a position)
-    static Matrix<_Scalar, 4, 4>
-            LookAt(const Matrix<_Scalar, 3, 1> &eye,
-                   const Matrix<_Scalar, 3, 1> &at,
-                   const Matrix<_Scalar, 3, 1> &up = { 0.0f, 1.0f, 0.0f },
+    static Matrix<Scalar, 4, 4>
+            LookAt(const Matrix<Scalar, 3, 1> &eye,
+                   const Matrix<Scalar, 3, 1> &at,
+                   const Matrix<Scalar, 3, 1> &up = {0.0f, 1.0f, 0.0f },
                    Handedness handedness = Handedness::Right) {
-        static_assert(_Cols ==4 && _Rows ==4, "The Look at matrix must a 4*4 matrix");
+        static_assert(Cols == 4 && Rows == 4, "The Look at matrix must a 4*4 matrix");
 
-        Matrix<_Scalar, 3, 1> dir = Handedness::Right == handedness
+        Matrix<Scalar, 3, 1> dir = Handedness::Right == handedness
                                     ? eye - at : at - eye;
         dir.normalize();
 
-        Matrix<_Scalar, 3, 1> right = up.cross(dir);
+        Matrix<Scalar, 3, 1> right = up.cross(dir);
         right.normalize();
 
-        Matrix<_Scalar, 3, 1> new_up = dir.cross(right);
+        Matrix<Scalar, 3, 1> new_up = dir.cross(right);
 
-        Matrix<_Scalar, 4, 4> result = Matrix<_Scalar, 4, 4>::Zero();
+        Matrix<Scalar, 4, 4> result = Matrix<Scalar, 4, 4>::Zero();
         result(0, 0) = right.x();
         result(1, 0) = new_up.x();
         result(2, 0) = dir.x();
@@ -102,17 +104,17 @@ class Matrix : public Eigen::Matrix<_Scalar, _Rows, _Cols> {
         return result;
     }
 
-    static Matrix<_Scalar, 4, 4> Ortho(_Scalar left, _Scalar right,
-                                       _Scalar bottom, _Scalar top,
-                                       _Scalar near, _Scalar far,
-                                       Handedness handedness = Handedness::Right) {
-        static_assert(_Cols ==4 && _Rows ==4, "The Look at matrix must a 4*4 matrix");
+    static Matrix<Scalar, 4, 4> Ortho(Scalar left, Scalar right,
+                                      Scalar bottom, Scalar top,
+                                      Scalar near, Scalar far,
+                                      Handedness handedness = Handedness::Right) {
+        static_assert(Cols == 4 && Rows == 4, "The Look at matrix must a 4*4 matrix");
 
-        _Scalar rl = 1 / (right - left),
+        Scalar rl = 1 / (right - left),
                 tb = 1 / (top - bottom),
                 fn = 1 / (far - near);
 
-        Matrix<_Scalar, 4, 4> result = Matrix<_Scalar, 4, 4>::Zero();
+        Matrix<Scalar, 4, 4> result = Matrix<Scalar, 4, 4>::Zero();
 
         result(0, 0) = 2 * rl;
         result(1, 1) = 2 * tb;
@@ -127,13 +129,13 @@ class Matrix : public Eigen::Matrix<_Scalar, _Rows, _Cols> {
     }
 
     // fovy is degree
-    static Matrix<_Scalar, 4, 4> Perspective(_Scalar fovy, _Scalar aspect, _Scalar near, _Scalar far,
-                                             Handedness handedness = Handedness::Right) {
-        static_assert(_Cols ==4 && _Rows ==4, "The Look at matrix must a 4*4 matrix");
-        _Scalar recip = 1 / (near - far);
-        _Scalar c     = 1 / std::tan(.5f * DEG_TO_RAD(fovy));
+    static Matrix<Scalar, 4, 4> Perspective(Scalar fovy, Scalar aspect, Scalar near, Scalar far,
+                                            Handedness handedness = Handedness::Right) {
+        static_assert(Cols == 4 && Rows == 4, "The Look at matrix must a 4*4 matrix");
+        Scalar recip = 1 / (near - far);
+        Scalar c     = 1 / std::tan(.5f * DEG_TO_RAD(fovy));
 
-        Matrix<_Scalar, 4, 4> trafo = Matrix<_Scalar, 4, 4>::Zero();
+        Matrix<Scalar, 4, 4> trafo = Matrix<Scalar, 4, 4>::Zero();
         trafo(0, 0) = c / aspect;
         trafo(1, 1) = c;
         trafo(2, 2) = (Handedness::Right == handedness) ? (near + far) * recip :
@@ -271,12 +273,9 @@ GOBOT_MAKE_RTTR_ALL_SIZES(double, d)
 
 namespace Eigen::internal {
 
-template <typename _Scalar, int _Rows, int _Cols, int _Options, int _MaxRows,
-          int _MaxCols>
-class traits<gobot::internal::Matrix<_Scalar, _Rows, _Cols, _Options, _MaxRows,
-                                     _MaxCols>>
-    : public Eigen::internal::traits<
-          Eigen::Matrix<_Scalar, _Rows, _Cols, _Options, _MaxRows, _MaxCols>> {
+template <typename Scalar, int Rows, int Cols, int Options, int MaxRows, int MaxCols>
+class traits<gobot::internal::Matrix<Scalar, Rows, Cols, Options, MaxRows, MaxCols>>
+    : public Eigen::internal::traits<Eigen::Matrix<Scalar, Rows, Cols, Options, MaxRows, MaxCols>> {
 };
 
 };  // namespace Eigen::internal

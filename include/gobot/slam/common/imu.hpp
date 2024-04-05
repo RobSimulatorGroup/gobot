@@ -7,14 +7,15 @@
 
 #pragma once
 
-#include "gobot/core/math/matrix.hpp"
+#include <utility>
 
+#include "gobot/core/math/matrix.hpp"
 
 namespace gobot::slam {
 
 struct IMU {
     IMU() = default;
-    IMU(double t, const Vector3d& gyro, const Vector3d& acce) : timestamp_(t), gyro_(gyro), acce_(acce) {}
+    IMU(double t, Vector3d gyro, Vector3d  acce) : timestamp_(t), gyro_(std::move(gyro)), acce_(std::move(acce)) {}
 
     double timestamp_ = 0.0;
     Vector3d gyro_ = Vector3d::Zero();
