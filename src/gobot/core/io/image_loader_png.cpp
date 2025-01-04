@@ -10,7 +10,7 @@
 #include "gobot/core/string_utils.hpp"
 #include "gobot/core/macros.hpp"
 
-#include <libpng/png.h>
+#include "png.h"
 
 namespace gobot {
 
