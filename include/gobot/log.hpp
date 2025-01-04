@@ -16,6 +16,7 @@
 
 #include <spdlog/spdlog.h>
 #include <spdlog/logger.h>
+#include <spdlog/fmt/ostr.h>
 #include <spdlog/sinks/stdout_sinks.h>
 #include <spdlog/sinks/stdout_color_sinks.h>
 #include <spdlog/sinks/rotating_file_sink.h>
@@ -26,35 +27,11 @@ namespace gobot {
 
 class Logger {
 public:
-    static Logger& GetInstance() {
-        static Logger instance;
-        return instance;
-    }
+    static Logger& GetInstance();
 
     auto GetLogger() { return logger_; }
 public:
-    void Init() {
-        // initialize spdlog
-        std::vector<spdlog::sink_ptr> sink_list;
-        //add stdout sink
-        auto console_sink = std::make_shared<spdlog::sinks::stdout_color_sink_mt>();
-        console_sink->set_pattern("%^[%T] [%@]: %v%$");
-        sink_list.push_back(console_sink);
-
-        // add rotate file sink
-        auto rotating_sink = std::make_shared<spdlog::sinks::rotating_file_sink_mt>("gobot.log", 1024 * 1024,
-                                                                               5, false);
-        rotating_sink->set_pattern("[%T] [%@] [%l]: %v");
-        sink_list.push_back(rotating_sink);
-        logger_ = std::make_shared<spdlog::logger>("GOBOT", begin(sink_list), end(sink_list));
-
-        //register it if you need to access it globally
-        spdlog::register_logger(logger_);
-
-        // set log level
-        logger_->set_level(spdlog::level::trace);
-        // logger_->flush_on(spdlog::level::err);
-    }
+    void Init();
 
     Logger(const Logger &) = delete;
     Logger &operator=(const Logger &) = delete;
@@ -66,8 +43,8 @@ public:
     }
 
 private:
-    Logger() { Init(); };
-    ~Logger() { spdlog::shutdown(); };
+    Logger();
+    ~Logger();
 
     std::shared_ptr<spdlog::logger> logger_;
 };

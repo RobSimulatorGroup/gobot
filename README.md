@@ -51,6 +51,6 @@ git submodule update --recursive --init
 Build from source under the git root directory.
 ```shell
 mkdir build $$ cd build
-cmake -DCMAKE_BUILD_TYPE=Release -DCMAKE_PROJECT_TOP_LEVEL_INCLUDES=cmake/conan_provider.cmake -DBUILD_EXPERIMENT=OFF -DBUILD_TESTS=On ..
-make -j$(nproc)
+cmake -DCMAKE_BUILD_TYPE=Release -DCMAKE_PROJECT_TOP_LEVEL_INCLUDES=../cmake/conan_provider.cmake -DBUILD_EXPERIMENT=OFF -DBUILD_TESTS=On ..
+make -j10
 ```

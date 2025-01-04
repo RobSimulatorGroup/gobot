@@ -462,7 +462,7 @@ void ResourcePanel::Refresh()
     previous_directory_ = nullptr;
     current_dir_ = nullptr;
 
-    if(directories_.find(current_path) != directories_.end())
+    if(directories_.contains(current_path))
         current_dir_ = directories_[current_path].get();
     else
         ChangeDirectory(base_project_dir_);

@@ -110,9 +110,7 @@ bool Main::Iteration()
     RS::GetInstance()->Draw();
 
 
-    LOG_INFO("1111");
-    LOG_ERROR("2222");
-
+    LOG_INFO("Run Once");
 
     return exit;
 

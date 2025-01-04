@@ -10,10 +10,15 @@
 #pragma once
 
 #include <rttr/type.h>
-
 #include <Eigen/Dense>
+#include <fmt/ostream.h>
+#include <iostream>
 
 #include "gobot/core/math/math_defs.hpp"
+
+template <typename T>
+    requires std::is_base_of_v<Eigen::DenseBase<T>, T>
+struct fmt::formatter<T> : ostream_formatter {};
 
 namespace gobot {
 

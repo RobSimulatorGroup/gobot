@@ -41,3 +41,5 @@ out/
 CMakeSettings.json
 
 shader/generated/*
+
+CMakeUserPresets.json
