@@ -20,7 +20,15 @@
 #include <spdlog/sinks/stdout_sinks.h>
 #include <spdlog/sinks/stdout_color_sinks.h>
 #include <spdlog/sinks/rotating_file_sink.h>
+#include <nlohmann/json.hpp>
 #include "gobot/core/types.hpp"
+
+template <>
+struct fmt::formatter<nlohmann::json> : fmt::formatter<std::string> {
+    auto format(const nlohmann::json& j, fmt::format_context& ctx) const {
+        return fmt::formatter<std::string>::format(j.dump(), ctx);
+    }
+};
 
 
 namespace gobot {

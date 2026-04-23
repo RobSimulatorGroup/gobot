@@ -64,8 +64,8 @@ target_sources(imgui-gobot INTERFACE
 get_filename_component(IMGUI_USER_CONFIG "imgui_config.hpp" REALPATH BASE_DIR "${PROJECT_SOURCE_DIR}/include/gobot/editor/imgui/")
 target_compile_definitions(imgui-gobot INTERFACE IMGUI_USER_CONFIG="${IMGUI_USER_CONFIG}")
 
-target_include_directories(imgui-gobot INTERFACE imgui imgui/backends imgui_extension imgui/misc/cpp/)
-target_link_libraries(imgui-gobot INTERFACE glad)
+target_include_directories(imgui-gobot INTERFACE imgui imgui/backends imgui_extension imgui/misc/cpp/ ${PROJECT_SOURCE_DIR}/include)
+target_link_libraries(imgui-gobot INTERFACE glad magic_enum::magic_enum)
 
 
 find_package(OpenGL REQUIRED)

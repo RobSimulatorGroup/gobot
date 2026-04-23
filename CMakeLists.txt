@@ -6,34 +6,39 @@ set(CMAKE_CXX_STANDARD_REQUIRED ON)
 
 set(CMAKE_POSITION_INDEPENDENT_CODE ON)
 
-set(CMAKE_PREFIX_PATH ${CMAKE_BINARY_DIR})
-set(CMAKE_MODULE_PATH ${CMAKE_BINARY_DIR})
-
 set(GOBOT_ROOT_DIR "${CMAKE_CURRENT_SOURCE_DIR}")
 
 option(GOB_BUILD_EXPERIMENT "using imgui and glfw" OFF)
 option(GOB_BUILD_TESTS "build tests" OFF)
 
-if(UNIX AND NOT APPLE)
-    set(LINUX TRUE)
+if(NOT UNIX OR APPLE)
+    message(FATAL_ERROR "Only Linux is supported.")
 endif()
 
 include(cmake/CPM.cmake)
 
-
 if(PROJECT_SOURCE_DIR STREQUAL PROJECT_BINARY_DIR)
-    message(
-            FATAL_ERROR
-            "In-source builds not allowed. Please make a new directory (called a build directory) and run CMake from there."
-    )
+    message(FATAL_ERROR "In-source builds not allowed. Please make a new directory (called a build directory) and run CMake from there.")
 endif()
 
 find_package(Eigen3 REQUIRED)
-find_package(spdlog REQUIRED)
-find_package(magic_enum REQUIRED)
 find_package(nlohmann_json REQUIRED)
 find_package(PNG REQUIRED)
-find_package(cxxopts REQUIRED)
+
+CPMAddPackage("gh:fmtlib/fmt#10.1.1")
+
+CPMAddPackage(
+    NAME spdlog
+    GITHUB_REPOSITORY gabime/spdlog
+    VERSION 1.13.0
+    OPTIONS "SPDLOG_FMT_EXTERNAL ON"
+)
+
+CPMAddPackage("gh:Neargye/magic_enum@0.9.5")
+if(magic_enum_SOURCE_DIR)
+    target_include_directories(magic_enum INTERFACE ${magic_enum_SOURCE_DIR}/include)
+endif()
+CPMAddPackage("gh:jarro2783/cxxopts@3.0.0")
 
 INCLUDE(GenerateExportHeader)
 
@@ -48,12 +53,7 @@ file(GLOB_RECURSE SOURCE_MAIN CONFIGURE_DEPENDS "src/gobot/main/*.cpp")
 
 # https://github.com/bincrafters/community/issues/466#issuecomment-426265654
 add_library(gobot SHARED ${SOURCE_DRIVERS} ${SOURCE_MAIN} ${SOURCE_CORE} ${SOURCE_RENDERING} ${SOURCE_SCENE} ${SOURCE_EDITOR})
-if (CMAKE_CXX_COMPILER_ID STREQUAL "MSVC")
-    set(GOBOT_COMPILE_OPTIONS "/Zc:preprocessor,__cplusplus" "/bigobj")
-elseif (CMAKE_CXX_COMPILER_ID STREQUAL "GNU")
-    set(GOBOT_COMPILE_OPTIONS "-fno-gnu-unique")
-endif ()
-target_compile_options(gobot PUBLIC "${GOBOT_COMPILE_OPTIONS}")
+target_compile_options(gobot PUBLIC "-fno-gnu-unique" "-Wno-volatile" "-Wno-deprecated-enum-enum-conversion")
 
 # https://forum.qt.io/topic/97296/export-qobject-based-class-from-dll/2
 GENERATE_EXPORT_HEADER(gobot)
@@ -73,6 +73,7 @@ target_link_libraries(gobot
         stb
         gli
         spdlog::spdlog
+        fmt::fmt
         PNG::PNG
         Eigen3::Eigen
         magic_enum::magic_enum
@@ -105,18 +106,9 @@ target_include_directories(gobot
 
 
 
-if (MSVC)
-    file(GLOB_RECURSE SOURCE_PLATFORM CONFIGURE_DEPENDS "src/gobot/platform/windows/*.cpp")
-    add_executable(gobot_editor ${SOURCE_PLATFORM})
-    target_compile_options(gobot_editor PUBLIC "/Zc:preprocessor")
-elseif(LINUX)
-    file(GLOB_RECURSE SOURCE_PLATFORM CONFIGURE_DEPENDS "src/gobot/platform/linux/*.cpp")
-    add_executable(gobot_editor ${SOURCE_PLATFORM})
-endif ()
-target_link_libraries(gobot_editor
-    PRIVATE
-    gobot
-)
+file(GLOB_RECURSE SOURCE_PLATFORM CONFIGURE_DEPENDS "src/gobot/platform/linux/*.cpp")
+add_executable(gobot_editor ${SOURCE_PLATFORM})
+target_link_libraries(gobot_editor PRIVATE gobot)
 
 if (GOB_BUILD_EXPERIMENT)
     add_subdirectory(experiment)
@@ -128,12 +120,3 @@ if (GOB_BUILD_TESTS)
     add_subdirectory(tests)
 endif ()
 
-if (MSVC)
-    add_custom_command(TARGET gobot POST_BUILD
-        COMMAND "${CMAKE_COMMAND}" -E copy_directory
-            "$<TARGET_FILE_DIR:RTTR::Core>"
-            "$<TARGET_FILE_DIR:gobot>"
-        COMMENT "Copying RTTR files..."
-    )
-
-endif ()
