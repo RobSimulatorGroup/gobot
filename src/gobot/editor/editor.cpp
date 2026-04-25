@@ -18,6 +18,7 @@
 #include "gobot/editor/imgui/resource_panel.hpp"
 #include "gobot/editor/property_inspector/editor_inspector.hpp"
 #include "gobot/main/main.hpp"
+#include "gobot/scene/node_3d.hpp"
 #include "gobot/core/config/engine.hpp"
 #include "gobot/core/config/project_setting.hpp"
 #include "gobot/editor/imgui/imgui_utilities.hpp"
@@ -31,10 +32,17 @@ Editor* Editor::s_singleton = nullptr;
 
 Editor::Editor() {
     s_singleton = this;
+    SetName("Editor");
 
     imgui_manager_ = Object::New<ImGuiManager>();
 
+    edited_scene_root_ = Object::New<Node3D>();
+    edited_scene_root_->SetName("Scene");
+    AddChild(edited_scene_root_, true);
+    selected_ = edited_scene_root_;
+
     node3d_editor_ = Object::New<Node3DEditor>();
+    node3d_editor_->SetName("Node3DEditor");
     AddChild(node3d_editor_);
 
     spdlog::sink_ptr sink = std::make_shared<ImGuiConsoleSinkMultiThreaded>();

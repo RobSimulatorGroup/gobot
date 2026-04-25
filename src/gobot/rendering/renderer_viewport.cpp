@@ -65,5 +65,12 @@ void* RendererViewport::GetRenderTargetColorTextureNativeHandle(RID p_viewport) 
     return RSG::texture_storage->GetRenderTargetColorTextureNativeHandle(viewport->render_target);
 }
 
+RID RendererViewport::GetViewportRenderTarget(RID p_viewport) const {
+    const Viewport *viewport = viewport_owner_.GetOrNull(p_viewport);
+    ERR_FAIL_COND_V(!viewport, RID());
+
+    return viewport->render_target;
+}
+
 
 }

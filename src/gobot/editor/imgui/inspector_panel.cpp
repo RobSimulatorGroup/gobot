@@ -17,7 +17,8 @@
 namespace gobot {
 
 InspectorPanel::InspectorPanel() {
-    SetName(ICON_MDI_INFORMATION " Inspector###inspector");
+    SetName("InspectorPanel");
+    SetImGuiWindow(ICON_MDI_INFORMATION " Inspector", "inspector");
 
     filter_ = new ImGuiTextFilter();
 }

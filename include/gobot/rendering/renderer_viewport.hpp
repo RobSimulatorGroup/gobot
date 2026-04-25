@@ -38,6 +38,8 @@ public:
 
     void* GetRenderTargetColorTextureNativeHandle(RID p_viewport);
 
+    RID GetViewportRenderTarget(RID p_viewport) const;
+
 private:
     void ViewportSetSize(Viewport *p_viewport, int p_width, int p_height, uint32_t p_view_count);
 

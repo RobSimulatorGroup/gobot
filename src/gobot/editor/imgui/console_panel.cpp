@@ -128,7 +128,8 @@ bool ConsolePanel::s_request_scroll_to_bottom = false;
 
 ConsolePanel::ConsolePanel()
 {
-    SetNameNoCheck(ICON_MDI_VIEW_LIST " Console###console");
+    SetName("ConsolePanel");
+    SetImGuiWindow(ICON_MDI_VIEW_LIST " Console", "console");
     SetImGuiWindowFlag(ImGuiWindowFlags_NoCollapse | ImGuiWindowFlags_NoTitleBar);
     SetImGuiWindowSize(Vector2f(640, 480), ImGuiCond_FirstUseEver);
 

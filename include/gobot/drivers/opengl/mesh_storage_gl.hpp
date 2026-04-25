@@ -30,7 +30,7 @@ public:
 
     void MeshSetBox(const RID& p_rid, const Vector3& size) override;
 
-    void RenderScene(const RID& render_target, const SceneTree* scene_tree, const Camera3D* camera) override;
+    void RenderScene(const RID& render_target, const Node* scene_root, const Camera3D* camera) override;
 
     bool OwnsMesh(const RID& p_rid) const override;
 
@@ -60,7 +60,7 @@ private:
 
     void UploadMesh(MeshData* mesh);
 
-    void DrawNode(Node* node, const Matrix4& view, const Matrix4& projection);
+    void DrawNode(const Node* node, const Matrix4& view, const Matrix4& projection);
 };
 
 

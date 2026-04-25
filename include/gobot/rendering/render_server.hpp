@@ -20,6 +20,7 @@ namespace gobot {
 #define RS RenderServer
 
 class Camera3D;
+class Node;
 class SceneTree;
 
 class GOBOT_EXPORT RenderServer : public Object {
@@ -105,7 +106,7 @@ public:
 
     void MeshSetBox(const RID& mesh, const Vector3& size);
 
-    void RenderSceneToViewport(const RID& viewport, const SceneTree* scene_tree, const Camera3D* camera);
+    void RenderSceneToViewport(const RID& viewport, const Node* scene_root, const Camera3D* camera);
 
     void Free(const RID& rid);
 

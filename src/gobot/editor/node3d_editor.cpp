@@ -28,7 +28,9 @@ Node3DEditor* Node3DEditor::s_singleton = nullptr;
 
 Node3DEditor::Node3DEditor() {
     s_singleton = this;
+    SetName("Node3DEditor");
     camera3d_ = Object::New<Camera3D>();
+    camera3d_->SetName("EditorCamera");
     AddChild(camera3d_);
     ResetCamera();
     scene_view3d_panel_ = Object::New<SceneView3DPanel>();

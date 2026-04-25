@@ -11,7 +11,6 @@
 #include "gobot/log.hpp"
 #include "gobot/scene/camera_3d.hpp"
 #include "gobot/scene/mesh_instance_3d.hpp"
-#include "gobot/scene/scene_tree.hpp"
 #include "gobot/scene/window.hpp"
 
 #include <array>
@@ -212,8 +211,8 @@ void GLMeshStorage::UploadMesh(MeshData* mesh) {
     mesh->dirty = false;
 }
 
-void GLMeshStorage::RenderScene(const RID& render_target, const SceneTree* scene_tree, const Camera3D* camera) {
-    ERR_FAIL_COND(scene_tree == nullptr);
+void GLMeshStorage::RenderScene(const RID& render_target, const Node* scene_root, const Camera3D* camera) {
+    ERR_FAIL_COND(scene_root == nullptr);
     ERR_FAIL_COND(camera == nullptr);
 
     auto* rt = TextureStorage::GetInstance()->GetRenderTarget(render_target);
@@ -241,18 +240,18 @@ void GLMeshStorage::RenderScene(const RID& render_target, const SceneTree* scene
     glUniformMatrix4fv(glGetUniformLocation(default_program_, "u_projection"), 1, GL_FALSE, projection.data());
     glUniform4f(glGetUniformLocation(default_program_, "u_color"), 0.66f, 0.78f, 0.95f, 1.0f);
 
-    DrawNode(scene_tree->GetRoot(), view, projection);
+    DrawNode(scene_root, view, projection);
 
     glBindVertexArray(0);
     glUseProgram(0);
     glBindFramebuffer(GL_FRAMEBUFFER, 0);
 }
 
-void GLMeshStorage::DrawNode(Node* node, const Matrix4& view, const Matrix4& projection) {
+void GLMeshStorage::DrawNode(const Node* node, const Matrix4& view, const Matrix4& projection) {
     (void)view;
     (void)projection;
 
-    auto* mesh_instance = Object::PointerCastTo<MeshInstance3D>(node);
+    const auto* mesh_instance = Object::PointerCastTo<MeshInstance3D>(node);
     if (mesh_instance && mesh_instance->IsInsideTree() && mesh_instance->IsVisibleInTree()) {
         Ref<Mesh> mesh_resource = mesh_instance->GetMesh();
         if (mesh_resource.IsValid()) {

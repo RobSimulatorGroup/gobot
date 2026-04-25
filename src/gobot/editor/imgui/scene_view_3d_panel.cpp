@@ -108,7 +108,8 @@ void DrawBoxWireframe(Node* node,
 
 SceneView3DPanel::SceneView3DPanel()
 {
-    SetName(ICON_MDI_EYE " Viewer###scene_view3d");
+    SetName("SceneView3D");
+    SetImGuiWindow(ICON_MDI_EYE " Viewer", "scene_view3d");
     SetImGuiWindowFlag(ImGuiWindowFlags_NoCollapse | ImGuiWindowFlags_NoScrollbar | ImGuiWindowFlags_NoScrollWithMouse);
     SetImGuiStyleVar(ImGuiStyleVar_WindowPadding, {0, 0});
 
@@ -135,8 +136,14 @@ void SceneView3DPanel::OnImGuiContent()
         return;
     }
 
-    auto scene_view_size = ImGui::GetWindowContentRegionMax() - ImGui::GetWindowContentRegionMin() - offset * 0.5f;
+    const ImVec2 content_min = ImGui::GetWindowContentRegionMin();
+    const ImVec2 content_max = ImGui::GetWindowContentRegionMax();
+    ImVec2 scene_view_size = {content_max.x - content_min.x, content_max.y - offset.y};
     auto scene_view_position = ImGui::GetWindowPos() + offset;
+
+    if (scene_view_size.x <= 0.0f || scene_view_size.y <= 0.0f) {
+        return;
+    }
 
     scene_view_size.x -= static_cast<int>(scene_view_size.x) % 2 != 0 ? 1.0f : 0.0f;
     scene_view_size.y -= static_cast<int>(scene_view_size.y) % 2 != 0 ? 1.0f : 0.0f;
@@ -152,21 +159,20 @@ void SceneView3DPanel::OnImGuiContent()
 
     Resize(static_cast<uint32_t>(scene_view_size.x), static_cast<uint32_t>(scene_view_size.y));
 
-    auto* scene_tree = Object::PointerCastTo<SceneTree>(OS::GetInstance()->GetMainLoop());
-    if (scene_tree && scene_tree->GetRoot()) {
-        RS::GetInstance()->RenderSceneToViewport(view_port_, scene_tree, camera_3d);
+    auto* scene_root = Editor::GetInstance()->GetEditedSceneRoot();
+    if (scene_root) {
+        RS::GetInstance()->RenderSceneToViewport(view_port_, scene_root, camera_3d);
     }
 
     ImGuiUtilities::Image(RS::GetInstance()->GetRenderTargetColorTextureNativeHandle(view_port_),
                           {scene_view_size.x, scene_view_size.y});
 
-    if (scene_tree && scene_tree->GetRoot()) {
-        DrawBoxWireframe(scene_tree->GetRoot(), camera_3d, scene_view_position, scene_view_size, ImGui::GetWindowDrawList());
+    if (scene_root) {
+        DrawBoxWireframe(scene_root, camera_3d, scene_view_position, scene_view_size, ImGui::GetWindowDrawList());
     }
 
-    auto window_size = ImGui::GetWindowSize();
     ImVec2 min_bound = scene_view_position;
-    ImVec2 max_bound = { min_bound.x + window_size.x, min_bound.y + window_size.y };
+    ImVec2 max_bound = { min_bound.x + scene_view_size.x, min_bound.y + scene_view_size.y };
 
     bool mouse_inside_rect = ImGui::IsMouseHoveringRect(min_bound, max_bound);
 

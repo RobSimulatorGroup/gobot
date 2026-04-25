@@ -6,6 +6,7 @@
 */
 
 #include "gobot/rendering/render_server.hpp"
+#include "gobot/scene/node.hpp"
 #include "gobot/scene/scene_tree.hpp"
 #include "gobot/scene/window.hpp"
 #include "gobot/error_macros.hpp"
@@ -88,8 +89,11 @@ void RenderServer::MeshSetBox(const RID& mesh, const Vector3& size) {
     RSG::mesh_storage->MeshSetBox(mesh, size);
 }
 
-void RenderServer::RenderSceneToViewport(const RID& viewport, const SceneTree* scene_tree, const Camera3D* camera) {
-    RSG::mesh_storage->RenderScene(viewport, scene_tree, camera);
+void RenderServer::RenderSceneToViewport(const RID& viewport, const Node* scene_root, const Camera3D* camera) {
+    const RID render_target = RSG::viewport->GetViewportRenderTarget(viewport);
+    ERR_FAIL_COND(render_target.IsNull());
+
+    RSG::mesh_storage->RenderScene(render_target, scene_root, camera);
 }
 
 

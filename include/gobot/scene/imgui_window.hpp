@@ -24,6 +24,8 @@ public:
 
     FORCE_INLINE void SetOpen(bool open) { open_ = open; }
 
+    void SetImGuiWindow(const std::string& title, const std::string& id);
+
     FORCE_INLINE void SetImGuiWindowFlag(int flags) { imgui_window_flags_ = flags; }
 
     FORCE_INLINE void SetImGuiWindowSize(const Vector2f& size, int imgui_cond) {
@@ -39,11 +41,18 @@ public:
     void End() override;
 
 protected:
+    const std::string& GetImGuiWindowLabel() const;
+
     bool collapsed_{false};
     bool open_ = true;
     int imgui_window_flags_{0};
     std::optional<std::pair<Vector2f, int>> window_size_;
     std::optional<std::tuple<Vector2f, int, Vector2f>> window_pos_;
+
+private:
+    std::string imgui_window_title_;
+    std::string imgui_window_id_;
+    mutable std::string imgui_window_label_cache_;
 };
 
 }

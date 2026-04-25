@@ -33,7 +33,8 @@ DirectoryInformation::DirectoryInformation(const std::string& _this_path, Direct
 
 ResourcePanel::ResourcePanel()
 {
-    SetName(ICON_MDI_FOLDER_STAR " Resources###resources");
+    SetName("ResourcePanel");
+    SetImGuiWindow(ICON_MDI_FOLDER_STAR " Resources", "resources");
 
     show_hidden_files_ = false;
     is_dragging_ = false;

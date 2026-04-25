@@ -10,10 +10,8 @@
 #include "gobot/core/os/main_loop.hpp"
 #include "gobot/editor/imgui/imgui_utilities.hpp"
 #include "gobot/editor/editor.hpp"
-#include "gobot/core/os/os.hpp"
 #include "gobot/scene/mesh_instance_3d.hpp"
 #include "gobot/scene/resources/primitive_mesh.hpp"
-#include "gobot/scene/window.hpp"
 #include "imgui_extension/icon_fonts/icons_material_design_icons.h"
 #include "imgui_stdlib.h"
 #include "imgui.h"
@@ -23,7 +21,8 @@ namespace gobot {
 
 SceneEditorPanel::SceneEditorPanel()
 {
-    SetName(ICON_MDI_FILE_TREE " SceneTree###scene_editor");
+    SetName("SceneTreePanel");
+    SetImGuiWindow(ICON_MDI_FILE_TREE " SceneTree", "scene_editor");
 
     filter_ = new ImGuiTextFilter();
 }
@@ -165,9 +164,8 @@ void SceneEditorPanel::OnImGuiContent()
     select_up_ = Input::GetInstance()->GetKeyPressed(KeyCode::Up);
     select_down_ = Input::GetInstance()->GetKeyPressed(KeyCode::Down);
 
-    auto* scene_tree = Object::PointerCastTo<SceneTree>(OS::GetInstance()->GetMainLoop());
-
-    if(!scene_tree) {
+    auto* scene_root = Editor::GetInstance()->GetEditedSceneRoot();
+    if(!scene_root) {
         return;
     }
 
@@ -183,7 +181,7 @@ void SceneEditorPanel::OnImGuiContent()
         if (ImGui::MenuItem("Node3D")) {
             auto* node = Object::New<Node3D>();
             node->SetName("Node3D");
-            scene_tree->GetRoot()->AddChild(node, true);
+            scene_root->AddChild(node, true);
             Editor::GetInstance()->SetSelected(node);
             ImGui::CloseCurrentPopup();
         }
@@ -192,7 +190,7 @@ void SceneEditorPanel::OnImGuiContent()
             auto* node = Object::New<MeshInstance3D>();
             node->SetName("Box");
             node->SetMesh(MakeRef<BoxMesh>());
-            scene_tree->GetRoot()->AddChild(node, true);
+            scene_root->AddChild(node, true);
             Editor::GetInstance()->SetSelected(node);
             ImGui::CloseCurrentPopup();
         }
@@ -229,7 +227,7 @@ void SceneEditorPanel::OnImGuiContent()
 
     {
         ImGui::Indent();
-        DrawNode(static_cast<Node*>(scene_tree->GetRoot()));
+        DrawNode(scene_root);
     }
 
     ImGui::EndChild();
