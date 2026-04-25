@@ -22,6 +22,9 @@
 #include "glsl_shader_hpp/grid_frag.hpp"
 #include "glsl_shader_hpp/grid_vert.hpp"
 
+#include <algorithm>
+#include <cmath>
+
 namespace gobot {
 
 Node3DEditor* Node3DEditor::s_singleton = nullptr;
@@ -56,16 +59,10 @@ void Node3DEditor::ResetCamera() {
     mouse_position_now_.x() = 0;
     mouse_position_now_.y() = 0;
 
-    horizontal_angle_ = 0.01f;
-    vertical_angle_ = 0.0f;
-
-    // Set camera default position
-    camera3d_->SetViewMatrix({0.0f, 0.0f, -20.0f}, {0.0f, 0.0f, -1.0f}, {0.0f, 1.0f, 0.0f});
-
     mouse_down_ = false;
     mouse_speed_ = 0.0020f;
 
-    distance_ = 10;
+    SetCameraOrbit({8.0f, 6.0f, -10.0f}, {0.0f, 0.0f, 0.0f}, {0.0f, 1.0f, 0.0f});
 }
 
 
@@ -144,27 +141,58 @@ void Node3DEditor::UpdateCamera(double delta_time) {
         std::cos(horizontal_angle_ - Math_HALF_PI),
     };
 
-    auto up = camera3d_->GetViewMatrixUp();
     auto eye = camera3d_->GetViewMatrixEye();
     auto at = camera3d_->GetViewMatrixAt();
 
-    up = right.cross(direction);
+    Vector3 up = right.cross(direction).normalized();
     if (Input::GetInstance()->GetMouseClickedState(MouseButton::Middle) == MouseClickedState::DoubleClicked) {
         ResetCamera();
+        return;
     } else if (Input::GetInstance()->GetKeyPressed(KeyCode::LeftShift) &&
                Input::GetInstance()->GetMouseClickedState(MouseButton::Middle) == MouseClickedState::SingleClicked) {
-        eye = eye + up * delta[1] * translation_speed_ + right * delta[0] * translation_speed_;
-        at = eye + direction * distance_;
+        const Vector3 offset = up * delta[1] * translation_speed_ + right * delta[0] * translation_speed_;
+        eye += offset;
+        at += offset;
     } else if (Input::GetInstance()->GetMouseClickedState(MouseButton::Middle) == MouseClickedState::SingleClicked) {
         eye = at - direction * distance_;
     } else {
-        eye = (direction * -1.0 * scroll_offset * delta_time * scroll_move_speed_) + eye;
-        at = eye + direction * distance_;
+        if (std::abs(scroll_offset) > CMP_EPSILON) {
+            distance_ *= std::pow(0.85f, scroll_offset);
+            distance_ = std::max(distance_, 0.1f);
+        }
+        eye = at - direction * distance_;
     }
 
+    SetCameraOrbit(eye, at, up);
+}
+
+void Node3DEditor::SetCameraOrbit(const Vector3& eye, const Vector3& at, const Vector3& up) {
+    const Vector3 direction = (at - eye).normalized();
+    distance_ = std::max(static_cast<float>((at - eye).norm()), 0.1f);
+    vertical_angle_ = static_cast<float>(std::asin(std::clamp(direction.y(), static_cast<RealType>(-1.0), static_cast<RealType>(1.0))));
+    horizontal_angle_ = static_cast<float>(std::atan2(direction.x(), direction.z()));
     camera3d_->SetViewMatrix(eye, at, up);
 }
 
+void Node3DEditor::ApplyCameraViewMatrix(const Matrix4& view_matrix) {
+    const Matrix4 inverse_view = view_matrix.inverse();
+    const Vector3 eye = inverse_view.block<3, 1>(0, 3);
+    const Vector3 forward = (-inverse_view.block<3, 1>(0, 2)).normalized();
+    const Vector3 up = inverse_view.block<3, 1>(0, 1).normalized();
+    const Vector3 at = eye + forward * distance_;
+
+    SetCameraOrbit(eye, at, up);
+}
+
+void Node3DEditor::DrawViewManipulator(const ImVec2& position, const ImVec2& size) {
+    Matrix4 view = camera3d_->GetViewMatrix();
+    const Matrix4 original_view = view;
+
+    ImGuizmo::ViewManipulate(view.data(), distance_, position, size, 0x10101010);
+    if (!view.isApprox(original_view, CMP_EPSILON)) {
+        ApplyCameraViewMatrix(view);
+    }
+}
 
 void Node3DEditor::OnImGuizmo() {
 
@@ -175,14 +203,14 @@ void Node3DEditor::OnImGuizmo() {
     auto window_width = (float)ImGui::GetWindowWidth();
     float view_manipulate_right = ImGui::GetWindowPos().x + window_width;
     float view_manipulate_top = ImGui::GetWindowPos().y;
+    const ImVec2 view_manipulate_position{view_manipulate_right - 128, view_manipulate_top + 50};
+    const ImVec2 view_manipulate_size{128, 128};
 
     if (imguizmo_operation_ != InvalidGuizmoOperation()) {
         auto* selected = Editor::GetInstance()->GetSelected();
         auto* selected_node_3d = Object::PointerCastTo<Node3D>(selected);
         if (!selected_node_3d || !selected_node_3d->IsInsideTree()) {
-            ImGuizmo::ViewManipulate(camera3d_->GetViewMatrix().data(), camera3d_->GetViewMatrixEye().norm(),
-                                     ImVec2{view_manipulate_right - 128, view_manipulate_top + 50},
-                                     ImVec2(128, 128), 0x10101010);
+            DrawViewManipulator(view_manipulate_position, view_manipulate_size);
             return;
         }
 
@@ -192,7 +220,9 @@ void Node3DEditor::OnImGuizmo() {
             object_matrix[i] = static_cast<float>(model_matrix.data()[i]);
         }
 
-        bool changed = ImGuizmo::Manipulate(camera3d_->GetViewMatrix().data(), camera3d_->GetProjectionMatrix().data(),
+        Matrix4 view = camera3d_->GetViewMatrix();
+        Matrix4 projection = camera3d_->GetProjectionMatrix();
+        bool changed = ImGuizmo::Manipulate(view.data(), projection.data(),
                                             static_cast<ImGuizmo::OPERATION>(imguizmo_operation_),
                                             ImGuizmo::LOCAL, object_matrix);
 
@@ -204,9 +234,7 @@ void Node3DEditor::OnImGuizmo() {
         }
     }
 
-    ImGuizmo::ViewManipulate(camera3d_->GetViewMatrix().data(), camera3d_->GetViewMatrixEye().norm(),
-                             ImVec2{view_manipulate_right - 128, view_manipulate_top + 50},
-                             ImVec2(128, 128), 0x10101010);
+    DrawViewManipulator(view_manipulate_position, view_manipulate_size);
 
 }
 

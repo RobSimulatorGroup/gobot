@@ -57,6 +57,14 @@ GLMeshStorage::~GLMeshStorage() {
         glDeleteProgram(default_program_);
         default_program_ = 0;
     }
+    if (editor_grid_.vao != 0) {
+        glDeleteVertexArrays(1, &editor_grid_.vao);
+        editor_grid_.vao = 0;
+    }
+    if (editor_grid_.vertex_buffer != 0) {
+        glDeleteBuffers(1, &editor_grid_.vertex_buffer);
+        editor_grid_.vertex_buffer = 0;
+    }
     s_singleton = nullptr;
 }
 
@@ -211,6 +219,51 @@ void GLMeshStorage::UploadMesh(MeshData* mesh) {
     mesh->dirty = false;
 }
 
+void GLMeshStorage::EnsureEditorGrid() {
+    if (editor_grid_.vao != 0) {
+        return;
+    }
+
+    constexpr int extent = 20;
+    std::vector<float> vertices;
+    vertices.reserve(static_cast<std::size_t>((extent * 2 + 1) * 4 * 3));
+
+    for (int i = -extent; i <= extent; ++i) {
+        const float p = static_cast<float>(i);
+        const float e = static_cast<float>(extent);
+
+        vertices.insert(vertices.end(), {-e, 0.0f, p, e, 0.0f, p});
+        vertices.insert(vertices.end(), {p, 0.0f, -e, p, 0.0f, e});
+    }
+
+    glCreateVertexArrays(1, &editor_grid_.vao);
+    glCreateBuffers(1, &editor_grid_.vertex_buffer);
+    glNamedBufferData(editor_grid_.vertex_buffer,
+                      static_cast<GLsizeiptr>(vertices.size() * sizeof(float)),
+                      vertices.data(),
+                      GL_STATIC_DRAW);
+
+    glVertexArrayVertexBuffer(editor_grid_.vao, 0, editor_grid_.vertex_buffer, 0, 3 * sizeof(float));
+    glEnableVertexArrayAttrib(editor_grid_.vao, 0);
+    glVertexArrayAttribFormat(editor_grid_.vao, 0, 3, GL_FLOAT, GL_FALSE, 0);
+    glVertexArrayAttribBinding(editor_grid_.vao, 0, 0);
+
+    editor_grid_.vertex_count = static_cast<GLsizei>(vertices.size() / 3);
+}
+
+void GLMeshStorage::DrawEditorGrid() {
+    EnsureEditorGrid();
+    if (editor_grid_.vao == 0 || editor_grid_.vertex_count == 0) {
+        return;
+    }
+
+    const Matrix4 model = Matrix4::Identity();
+    glUniformMatrix4fv(glGetUniformLocation(default_program_, "u_model"), 1, GL_FALSE, model.data());
+    glUniform4f(glGetUniformLocation(default_program_, "u_color"), 0.32f, 0.34f, 0.38f, 1.0f);
+    glBindVertexArray(editor_grid_.vao);
+    glDrawArrays(GL_LINES, 0, editor_grid_.vertex_count);
+}
+
 void GLMeshStorage::RenderScene(const RID& render_target, const Node* scene_root, const Camera3D* camera) {
     ERR_FAIL_COND(scene_root == nullptr);
     ERR_FAIL_COND(camera == nullptr);
@@ -230,7 +283,7 @@ void GLMeshStorage::RenderScene(const RID& render_target, const Node* scene_root
     glViewport(0, 0, rt->size.x(), rt->size.y());
     glEnable(GL_DEPTH_TEST);
     glDepthMask(GL_TRUE);
-    glClearColor(0.07f, 0.075f, 0.085f, 1.0f);
+    glClearColor(0.11f, 0.115f, 0.125f, 1.0f);
     glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
 
     glUseProgram(default_program_);
@@ -238,8 +291,10 @@ void GLMeshStorage::RenderScene(const RID& render_target, const Node* scene_root
     const Matrix4 projection = camera->GetProjectionMatrix();
     glUniformMatrix4fv(glGetUniformLocation(default_program_, "u_view"), 1, GL_FALSE, view.data());
     glUniformMatrix4fv(glGetUniformLocation(default_program_, "u_projection"), 1, GL_FALSE, projection.data());
-    glUniform4f(glGetUniformLocation(default_program_, "u_color"), 0.66f, 0.78f, 0.95f, 1.0f);
 
+    DrawEditorGrid();
+
+    glUniform4f(glGetUniformLocation(default_program_, "u_color"), 0.66f, 0.78f, 0.95f, 1.0f);
     DrawNode(scene_root, view, projection);
 
     glBindVertexArray(0);

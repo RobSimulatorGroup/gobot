@@ -331,7 +331,7 @@ private:
     bool notify_local_transform_ = false;
     bool notify_transform_ = false;
 
-    bool visible_ = false;
+    bool visible_ = true;
     bool disable_scale_ = false;
 };
 

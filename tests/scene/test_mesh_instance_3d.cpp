@@ -6,6 +6,8 @@
 #include <gtest/gtest.h>
 
 #include <gobot/rendering/render_server.hpp>
+#include <gobot/scene/scene_tree.hpp>
+#include <gobot/scene/window.hpp>
 #include <gobot/scene/mesh_instance_3d.hpp>
 #include <gobot/scene/resources/primitive_mesh.hpp>
 
@@ -25,6 +27,21 @@ TEST(TestMeshInstance3D, stores_mesh_resource_and_transform) {
     EXPECT_TRUE(mesh_instance->GetPosition().isApprox(gobot::Vector3(1.0f, 2.0f, 3.0f), CMP_EPSILON));
 
     gobot::Object::Delete(mesh_instance);
+}
+
+TEST(TestMeshInstance3D, is_visible_by_default_when_inside_tree) {
+    auto render_server = std::make_unique<gobot::RenderServer>();
+    auto* tree = gobot::Object::New<gobot::SceneTree>(false);
+    tree->Initialize();
+
+    auto* mesh_instance = gobot::Object::New<gobot::MeshInstance3D>();
+    mesh_instance->SetMesh(gobot::MakeRef<gobot::BoxMesh>());
+    tree->GetRoot()->AddChild(mesh_instance, true);
+
+    EXPECT_TRUE(mesh_instance->IsVisible());
+    EXPECT_TRUE(mesh_instance->IsVisibleInTree());
+
+    gobot::Object::Delete(tree);
 }
 
 TEST(TestMeshInstance3D, node3d_transform_properties_are_reflected) {

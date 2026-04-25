@@ -10,6 +10,8 @@
 #include "glad/glad.h"
 #include "gobot/rendering/mesh_storage.hpp"
 
+#include <vector>
+
 namespace gobot {
 
 class Node;
@@ -52,13 +54,24 @@ private:
         bool dirty = true;
     };
 
+    struct GridData {
+        GLuint vao = 0;
+        GLuint vertex_buffer = 0;
+        GLsizei vertex_count = 0;
+    };
+
     mutable RID_Owner<MeshData> mesh_owner_;
 
     GLuint default_program_ = 0;
+    GridData editor_grid_;
 
     void EnsureDefaultProgram();
 
+    void EnsureEditorGrid();
+
     void UploadMesh(MeshData* mesh);
+
+    void DrawEditorGrid();
 
     void DrawNode(const Node* node, const Matrix4& view, const Matrix4& projection);
 };

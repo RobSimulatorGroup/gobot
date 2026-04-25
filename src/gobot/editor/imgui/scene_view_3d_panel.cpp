@@ -132,7 +132,6 @@ void SceneView3DPanel::OnImGuiContent()
     ImVec2 offset = ImGui::GetCursorPos();
 
     if(!camera_3d) {
-        ImGui::End();
         return;
     }
 

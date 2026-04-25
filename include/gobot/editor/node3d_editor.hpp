@@ -12,6 +12,8 @@
 #include "gobot/scene/imgui_node.hpp"
 #include "gobot/scene/resources/material.hpp"
 
+struct ImVec2;
+
 namespace gobot {
 
 class Camera3D;
@@ -48,6 +50,12 @@ protected:
     void NotificationCallBack(NotificationType notification);
 
 private:
+    void ApplyCameraViewMatrix(const Matrix4& view_matrix);
+
+    void DrawViewManipulator(const ImVec2& position, const ImVec2& size);
+
+    void SetCameraOrbit(const Vector3& eye, const Vector3& at, const Vector3& up);
+
     static Node3DEditor* s_singleton;
 
     Camera3D* camera3d_;
