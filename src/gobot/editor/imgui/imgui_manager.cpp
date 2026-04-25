@@ -23,6 +23,10 @@
 #include "imgui_extension/gizmos/ImGuizmo.h"
 #include "gobot/drivers/opengl/imgui_renderer.hpp"
 
+#include <SDL.h>
+#include <algorithm>
+#include <cstdlib>
+
 namespace gobot {
 
 ImGuiManager* ImGuiManager::s_singleton = nullptr;
@@ -30,7 +34,8 @@ ImGuiManager* ImGuiManager::s_singleton = nullptr;
 ImGuiManager::ImGuiManager()
 {
     ImGui::CreateContext();
-    font_size_ = 16.0f;
+    ui_scale_ = DetectUIScale();
+    font_size_ = 18.0f * ui_scale_;
     s_singleton = this;
 
     ImGui::StyleColorsDark();
@@ -53,7 +58,7 @@ ImGuiManager::ImGuiManager()
     auto window = SceneTree::GetInstance()->GetRoot()->GetWindow();
     imgui_renderer_->Init(window->GetSDL2Window());
 
-    LOG_INFO("ImGui Version : {0}", IMGUI_VERSION);
+    LOG_INFO("ImGui Version : {0}, UI scale: {1}, font size: {2}", IMGUI_VERSION, ui_scale_, font_size_);
 }
 
 ImGuiManager::~ImGuiManager()
@@ -140,6 +145,7 @@ void ImGuiManager::SetImGuiStyle() {
     style.ScrollbarRounding  = rounding_amount;
     style.GrabRounding       = rounding_amount;
     style.WindowMinSize      = ImVec2(200.0f, 200.0f);
+    style.ScaleAllSizes(ui_scale_);
 
 #ifdef IMGUI_HAS_DOCK
     style.TabBorderSize = 1.0f;
@@ -169,6 +175,43 @@ void ImGuiManager::AddIconFont() {
     icons_config.SizePixels                             = 12.0f;
 
     io.Fonts->AddFontFromMemoryCompressedTTF(MaterialDesign_compressed_data, MaterialDesign_compressed_size, font_size_, &icons_config, icons_ranges);
+}
+
+float ImGuiManager::DetectUIScale() const {
+    if (const char* env_scale = std::getenv("GOBOT_UI_SCALE")) {
+        char* end = nullptr;
+        const float parsed = std::strtof(env_scale, &end);
+        if (end != env_scale && parsed > 0.0f) {
+            return std::clamp(parsed, 0.75f, 4.0f);
+        }
+    }
+
+    auto* window = SceneTree::GetInstance()->GetRoot()->GetWindow();
+    SDL_Window* sdl_window = window ? window->GetSDL2Window() : nullptr;
+    if (!sdl_window) {
+        return 1.0f;
+    }
+
+    float dpi_scale = 1.0f;
+    const int display_index = SDL_GetWindowDisplayIndex(sdl_window);
+    float ddpi = 0.0f;
+    if (display_index >= 0 && SDL_GetDisplayDPI(display_index, &ddpi, nullptr, nullptr) == 0 && ddpi > 0.0f) {
+        dpi_scale = ddpi / 96.0f;
+    }
+
+    int window_width = 0;
+    int window_height = 0;
+    int drawable_width = 0;
+    int drawable_height = 0;
+    SDL_GetWindowSize(sdl_window, &window_width, &window_height);
+    SDL_GL_GetDrawableSize(sdl_window, &drawable_width, &drawable_height);
+    float framebuffer_scale = 1.0f;
+    if (window_width > 0 && window_height > 0 && drawable_width > 0 && drawable_height > 0) {
+        framebuffer_scale = std::max(static_cast<float>(drawable_width) / static_cast<float>(window_width),
+                                     static_cast<float>(drawable_height) / static_cast<float>(window_height));
+    }
+
+    return std::clamp(std::max(dpi_scale, framebuffer_scale), 1.0f, 3.0f);
 }
 
 }

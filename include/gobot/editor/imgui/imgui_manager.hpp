@@ -30,12 +30,15 @@ private:
 
     void AddIconFont();
 
+    float DetectUIScale() const;
+
 private:
     static ImGuiManager* s_singleton;
 
     std::unique_ptr<ImGuiRenderer> imgui_renderer_{nullptr};
 
     float font_size_;
+    float ui_scale_ = 1.0f;
 };
 
 }
