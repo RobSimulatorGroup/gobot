@@ -65,6 +65,14 @@ GLMeshStorage::~GLMeshStorage() {
         glDeleteBuffers(1, &editor_grid_.vertex_buffer);
         editor_grid_.vertex_buffer = 0;
     }
+    if (world_axes_.vao != 0) {
+        glDeleteVertexArrays(1, &world_axes_.vao);
+        world_axes_.vao = 0;
+    }
+    if (world_axes_.vertex_buffer != 0) {
+        glDeleteBuffers(1, &world_axes_.vertex_buffer);
+        world_axes_.vertex_buffer = 0;
+    }
     s_singleton = nullptr;
 }
 
@@ -264,6 +272,55 @@ void GLMeshStorage::DrawEditorGrid() {
     glDrawArrays(GL_LINES, 0, editor_grid_.vertex_count);
 }
 
+void GLMeshStorage::EnsureWorldAxes() {
+    if (world_axes_.vao != 0) {
+        return;
+    }
+
+    constexpr float axis_length = 3.0f;
+    const std::array<float, 18> vertices = {
+            0.0f, 0.0f, 0.0f, axis_length, 0.0f, 0.0f,
+            0.0f, 0.0f, 0.0f, 0.0f, axis_length, 0.0f,
+            0.0f, 0.0f, 0.0f, 0.0f, 0.0f, axis_length,
+    };
+
+    glCreateVertexArrays(1, &world_axes_.vao);
+    glCreateBuffers(1, &world_axes_.vertex_buffer);
+    glNamedBufferData(world_axes_.vertex_buffer,
+                      static_cast<GLsizeiptr>(vertices.size() * sizeof(float)),
+                      vertices.data(),
+                      GL_STATIC_DRAW);
+
+    glVertexArrayVertexBuffer(world_axes_.vao, 0, world_axes_.vertex_buffer, 0, 3 * sizeof(float));
+    glEnableVertexArrayAttrib(world_axes_.vao, 0);
+    glVertexArrayAttribFormat(world_axes_.vao, 0, 3, GL_FLOAT, GL_FALSE, 0);
+    glVertexArrayAttribBinding(world_axes_.vao, 0, 0);
+
+    world_axes_.vertex_count = static_cast<GLsizei>(vertices.size() / 3);
+}
+
+void GLMeshStorage::DrawWorldAxes() {
+    EnsureWorldAxes();
+    if (world_axes_.vao == 0 || world_axes_.vertex_count == 0) {
+        return;
+    }
+
+    const Matrix4 model = Matrix4::Identity();
+    glUniformMatrix4fv(glGetUniformLocation(default_program_, "u_model"), 1, GL_FALSE, model.data());
+
+    glBindVertexArray(world_axes_.vao);
+    glLineWidth(2.0f);
+
+    glUniform4f(glGetUniformLocation(default_program_, "u_color"), 0.95f, 0.18f, 0.18f, 1.0f);
+    glDrawArrays(GL_LINES, 0, 2);
+    glUniform4f(glGetUniformLocation(default_program_, "u_color"), 0.20f, 0.85f, 0.28f, 1.0f);
+    glDrawArrays(GL_LINES, 2, 2);
+    glUniform4f(glGetUniformLocation(default_program_, "u_color"), 0.22f, 0.44f, 1.0f, 1.0f);
+    glDrawArrays(GL_LINES, 4, 2);
+
+    glLineWidth(1.0f);
+}
+
 void GLMeshStorage::RenderScene(const RID& render_target, const Node* scene_root, const Camera3D* camera) {
     ERR_FAIL_COND(scene_root == nullptr);
     ERR_FAIL_COND(camera == nullptr);
@@ -293,6 +350,7 @@ void GLMeshStorage::RenderScene(const RID& render_target, const Node* scene_root
     glUniformMatrix4fv(glGetUniformLocation(default_program_, "u_projection"), 1, GL_FALSE, projection.data());
 
     DrawEditorGrid();
+    DrawWorldAxes();
 
     glUniform4f(glGetUniformLocation(default_program_, "u_color"), 0.66f, 0.78f, 0.95f, 1.0f);
     DrawNode(scene_root, view, projection);

@@ -186,9 +186,12 @@ void Node3DEditor::ApplyCameraViewMatrix(const Matrix4& view_matrix) {
 
 void Node3DEditor::DrawViewManipulator(const ImVec2& position, const ImVec2& size) {
     Matrix4 view = camera3d_->GetViewMatrix();
+    Matrix4 projection = camera3d_->GetProjectionMatrix();
+    Matrix4 model = Matrix4::Identity();
     const Matrix4 original_view = view;
 
-    ImGuizmo::ViewManipulate(view.data(), distance_, position, size, 0x10101010);
+    ImGuizmo::ViewManipulate(view.data(), projection.data(), ImGuizmo::TRANSLATE, ImGuizmo::LOCAL,
+                             model.data(), distance_, position, size, 0x10101010);
     if (!view.isApprox(original_view, CMP_EPSILON)) {
         ApplyCameraViewMatrix(view);
     }

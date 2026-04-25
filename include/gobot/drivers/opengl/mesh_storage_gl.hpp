@@ -64,14 +64,19 @@ private:
 
     GLuint default_program_ = 0;
     GridData editor_grid_;
+    GridData world_axes_;
 
     void EnsureDefaultProgram();
 
     void EnsureEditorGrid();
 
+    void EnsureWorldAxes();
+
     void UploadMesh(MeshData* mesh);
 
     void DrawEditorGrid();
+
+    void DrawWorldAxes();
 
     void DrawNode(const Node* node, const Matrix4& view, const Matrix4& projection);
 };

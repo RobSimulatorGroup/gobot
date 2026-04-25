@@ -138,7 +138,6 @@ void SceneView3DPanel::OnImGuiContent()
     const ImVec2 content_min = ImGui::GetWindowContentRegionMin();
     const ImVec2 content_max = ImGui::GetWindowContentRegionMax();
     ImVec2 scene_view_size = {content_max.x - content_min.x, content_max.y - offset.y};
-    auto scene_view_position = ImGui::GetWindowPos() + offset;
 
     if (scene_view_size.x <= 0.0f || scene_view_size.y <= 0.0f) {
         return;
@@ -163,8 +162,11 @@ void SceneView3DPanel::OnImGuiContent()
         RS::GetInstance()->RenderSceneToViewport(view_port_, scene_root, camera_3d);
     }
 
+    const ImVec2 scene_view_position = ImGui::GetCursorScreenPos();
     ImGuiUtilities::Image(RS::GetInstance()->GetRenderTargetColorTextureNativeHandle(view_port_),
-                          {scene_view_size.x, scene_view_size.y});
+                          {scene_view_size.x, scene_view_size.y},
+                          {0.0f, 1.0f},
+                          {1.0f, 0.0f});
 
     if (scene_root) {
         DrawBoxWireframe(scene_root, camera_3d, scene_view_position, scene_view_size, ImGui::GetWindowDrawList());
