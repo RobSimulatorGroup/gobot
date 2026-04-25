@@ -36,6 +36,7 @@ RenderServer::RenderServer(RendererType p_renderer_type)
     RSG::texture_storage = RSG::rasterizer->GetTextureStorage();
     RSG::material_storage = RSG::rasterizer->GetMaterialStorage();
     RSG::mesh_storage = RSG::rasterizer->GetMeshStorage();
+    RSG::debug_draw = RSG::rasterizer->GetDebugDraw();
     RSG::utilities = RSG::rasterizer->GetUtilities();
 
 }
@@ -94,6 +95,13 @@ void RenderServer::RenderSceneToViewport(const RID& viewport, const Node* scene_
     ERR_FAIL_COND(render_target.IsNull());
 
     RSG::mesh_storage->RenderScene(render_target, scene_root, camera);
+}
+
+void RenderServer::RenderEditorDebugToViewport(const RID& viewport, const Camera3D* camera) {
+    const RID render_target = RSG::viewport->GetViewportRenderTarget(viewport);
+    ERR_FAIL_COND(render_target.IsNull());
+
+    RSG::debug_draw->RenderEditorDebug(render_target, camera);
 }
 
 

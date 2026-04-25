@@ -19,6 +19,7 @@ GLRasterizer::GLRasterizer() {
     texture_storage_ = new opengl::TextureStorage();
     material_storage_ = new opengl::GLMaterialStorage();
     mesh_storage_ =  new opengl::GLMeshStorage();
+    debug_draw_ = new opengl::GLRendererDebugDraw();
     utilities_ = new opengl::GLRendererUtilities();
 }
 
@@ -27,6 +28,7 @@ GLRasterizer::~GLRasterizer() {
     delete texture_storage_;
     delete material_storage_;
     delete mesh_storage_;
+    delete debug_draw_;
     delete utilities_;
 }
 

@@ -15,6 +15,7 @@ class RendererTextureStorage;
 class MaterialStorage;
 class MeshStorage;
 class RendererUtilities;
+class RendererDebugDraw;
 
 class Rasterizer {
 protected:
@@ -36,6 +37,8 @@ public:
     virtual MaterialStorage* GetMaterialStorage() = 0;
 
     virtual MeshStorage* GetMeshStorage() = 0;
+
+    virtual RendererDebugDraw* GetDebugDraw() = 0;
 
     virtual RendererUtilities* GetUtilities() = 0;
 

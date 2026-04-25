@@ -13,6 +13,7 @@
 #include "gobot/drivers/opengl/rasterizer_scene_gl.hpp"
 #include "gobot/drivers/opengl/material_storage_gl.hpp"
 #include "gobot/drivers/opengl/mesh_storage_gl.hpp"
+#include "gobot/drivers/opengl/debug_draw_gl.hpp"
 
 namespace gobot::opengl {
 
@@ -36,6 +37,10 @@ public:
 
     MeshStorage* GetMeshStorage() override {
         return mesh_storage_;
+    }
+
+    RendererDebugDraw* GetDebugDraw() override {
+        return debug_draw_;
     }
 
     RendererUtilities* GetUtilities() override {
@@ -68,6 +73,7 @@ private:
     GLRasterizerScene* scene_ = nullptr;
     GLMaterialStorage* material_storage_ = nullptr;
     GLMeshStorage* mesh_storage_ = nullptr;
+    GLRendererDebugDraw* debug_draw_ = nullptr;
     RendererUtilities*  utilities_ = nullptr;
 };
 

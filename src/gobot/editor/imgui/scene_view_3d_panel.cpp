@@ -161,6 +161,7 @@ void SceneView3DPanel::OnImGuiContent()
     if (scene_root) {
         RS::GetInstance()->RenderSceneToViewport(view_port_, scene_root, camera_3d);
     }
+    RS::GetInstance()->RenderEditorDebugToViewport(view_port_, camera_3d);
 
     const ImVec2 scene_view_position = ImGui::GetCursorScreenPos();
     ImGuiUtilities::Image(RS::GetInstance()->GetRenderTargetColorTextureNativeHandle(view_port_),

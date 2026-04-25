@@ -108,6 +108,8 @@ public:
 
     void RenderSceneToViewport(const RID& viewport, const Node* scene_root, const Camera3D* camera);
 
+    void RenderEditorDebugToViewport(const RID& viewport, const Camera3D* camera);
+
     void Free(const RID& rid);
 
     void Draw();
