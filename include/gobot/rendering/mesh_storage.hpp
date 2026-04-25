@@ -9,8 +9,12 @@
 
 #include "gobot/core/rid.hpp"
 #include "gobot/core/rid_owner.hpp"
+#include "gobot/core/math/matrix.hpp"
 
 namespace gobot {
+
+class Camera3D;
+class SceneTree;
 
 class MeshStorage {
 public:
@@ -19,6 +23,12 @@ public:
     virtual RID MeshAllocate() = 0;
 
     virtual void MeshInitialize(const RID& p_rid) = 0;
+
+    virtual void MeshSetBox(const RID& p_rid, const Vector3& size) = 0;
+
+    virtual void RenderScene(const RID& render_target, const SceneTree* scene_tree, const Camera3D* camera) = 0;
+
+    virtual bool OwnsMesh(const RID& p_rid) const = 0;
 
     virtual void MeshFree(const RID& p_rid) = 0;
 };

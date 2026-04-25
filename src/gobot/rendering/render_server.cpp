@@ -65,6 +65,10 @@ void RenderServer::Free(const RID& p_rid) {
     if (RSG::viewport->Free(p_rid)) {
         return;
     }
+    if (RSG::mesh_storage->OwnsMesh(p_rid)) {
+        RSG::mesh_storage->MeshFree(p_rid);
+        return;
+    }
     if (RSG::utilities->Free(p_rid)) {
         return;
     }
@@ -78,6 +82,14 @@ RID RenderServer::MeshCreate() {
     auto rid = RSG::mesh_storage->MeshAllocate();
     RSG::mesh_storage->MeshInitialize(rid);
     return rid;
+}
+
+void RenderServer::MeshSetBox(const RID& mesh, const Vector3& size) {
+    RSG::mesh_storage->MeshSetBox(mesh, size);
+}
+
+void RenderServer::RenderSceneToViewport(const RID& viewport, const SceneTree* scene_tree, const Camera3D* camera) {
+    RSG::mesh_storage->RenderScene(viewport, scene_tree, camera);
 }
 
 

@@ -13,8 +13,8 @@ class ImGuiTextFilter;
 
 namespace gobot {
 
-class TestPropertyNode;
 class EditorInspector;
+class Node;
 
 class GOBOT_EXPORT InspectorPanel : public ImGuiWindow {
     GOBCLASS(InspectorPanel, ImGuiWindow)
@@ -26,13 +26,13 @@ public:
     void OnImGuiContent() override;
 
 private:
-    TestPropertyNode* test_node_{nullptr};
+    void RebuildInspector(Node* selected);
+
+    Node* inspected_node_{nullptr};
 
     ImGuiTextFilter* filter_;
 
-    // edit history of inspector
-    std::vector<EditorInspector*> editor_inspectors_{};
-    int current_inspector_index_{-1};
+    EditorInspector* editor_inspector_{nullptr};
 };
 
 

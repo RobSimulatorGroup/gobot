@@ -533,7 +533,7 @@ void ResourceFormatSaverSceneInstance::FindResources(const Variant &variant, boo
                 property_info = meta_data.get_value<PropertyInfo>();
             }
             USING_ENUM_BITWISE_OPERATORS;
-            if (!(bool) (property_info.usage & PropertyUsageFlags::Storage)) {
+            if ((bool) (property_info.usage & PropertyUsageFlags::Storage)) {
                 Variant v = prop.get_value(variant);
                 FindResources(v);
             }

@@ -1,0 +1,30 @@
+[11:33:37] [/home/wqq/gobot/src/gobot/core/config/project_setting.cpp:32] [error]: Invalid project path specified: /tmp/test_project
+[11:33:37] [/home/wqq/gobot/src/gobot/core/io/variant_serializer.cpp:252] [error]: json_value:3 and type: longint is unmatched.
+[11:33:37] [/home/wqq/gobot/src/gobot/core/io/variant_serializer.cpp:252] [error]: json_value:1 and type: longint is unmatched.
+[11:33:37] [/home/wqq/gobot/include/gobot/core/rid_owner.hpp:274] [error]: ERROR: 2 RID allocations of type 'N5gobot6opengl13GLMeshStorage4MeshE' were leaked at exit.
+[11:33:37] [/home/wqq/gobot/src/gobot/core/io/resource.cpp:156] [error]: Another resource is loaded from path res://meterial.jres (possible cyclic resource inclusion).
+[11:33:37] [/home/wqq/gobot/src/gobot/core/io/resource.cpp:156] [error]: Another resource is loaded from path res://meterial.jres (possible cyclic resource inclusion).
+[11:33:37] [/home/wqq/gobot/src/gobot/core/io/variant_serializer.cpp:252] [error]: json_value:3 and type: longint is unmatched.
+[11:33:37] [/home/wqq/gobot/src/gobot/core/io/variant_serializer.cpp:252] [error]: json_value:1 and type: longint is unmatched.
+[11:33:37] [/home/wqq/gobot/include/gobot/core/rid_owner.hpp:274] [error]: ERROR: 2 RID allocations of type 'N5gobot6opengl13GLMeshStorage4MeshE' were leaked at exit.
+[11:44:48] [/home/wqq/gobot/src/gobot/core/io/resource_format_usd.cpp:40] [error]: OpenUSD support is disabled. Reconfigure with -DGOB_BUILD_OPENUSD=ON to load res://missing.usda.
+[11:45:17] [/home/wqq/gobot/src/gobot/core/io/variant_serializer.cpp:252] [error]: json_value:3 and type: longint is unmatched.
+[11:45:17] [/home/wqq/gobot/src/gobot/core/io/variant_serializer.cpp:252] [error]: json_value:1 and type: longint is unmatched.
+[11:45:17] [/home/wqq/gobot/include/gobot/core/rid_owner.hpp:274] [error]: ERROR: 2 RID allocations of type 'N5gobot6opengl13GLMeshStorage4MeshE' were leaked at exit.
+[11:45:17] [/home/wqq/gobot/src/gobot/core/io/resource.cpp:156] [error]: Another resource is loaded from path res://meterial.jres (possible cyclic resource inclusion).
+[11:45:17] [/home/wqq/gobot/src/gobot/core/io/resource.cpp:156] [error]: Another resource is loaded from path res://meterial.jres (possible cyclic resource inclusion).
+[11:45:17] [/home/wqq/gobot/src/gobot/core/io/variant_serializer.cpp:252] [error]: json_value:3 and type: longint is unmatched.
+[11:45:17] [/home/wqq/gobot/src/gobot/core/io/variant_serializer.cpp:252] [error]: json_value:1 and type: longint is unmatched.
+[11:45:17] [/home/wqq/gobot/include/gobot/core/rid_owner.hpp:274] [error]: ERROR: 2 RID allocations of type 'N5gobot6opengl13GLMeshStorage4MeshE' were leaked at exit.
+[12:11:25] [/home/wqq/gobot/src/gobot/core/io/variant_serializer.cpp:252] [error]: json_value:3 and type: longint is unmatched.
+[12:11:25] [/home/wqq/gobot/src/gobot/core/io/variant_serializer.cpp:252] [error]: json_value:1 and type: longint is unmatched.
+[12:11:25] [/home/wqq/gobot/src/gobot/core/io/resource.cpp:156] [error]: Another resource is loaded from path res://meterial.jres (possible cyclic resource inclusion).
+[12:11:25] [/home/wqq/gobot/src/gobot/core/io/resource.cpp:156] [error]: Another resource is loaded from path res://meterial.jres (possible cyclic resource inclusion).
+[12:11:25] [/home/wqq/gobot/src/gobot/core/io/variant_serializer.cpp:252] [error]: json_value:3 and type: longint is unmatched.
+[12:11:25] [/home/wqq/gobot/src/gobot/core/io/variant_serializer.cpp:252] [error]: json_value:1 and type: longint is unmatched.
+[12:24:28] [/home/wqq/gobot/src/gobot/core/io/variant_serializer.cpp:252] [error]: json_value:3 and type: longint is unmatched.
+[12:24:28] [/home/wqq/gobot/src/gobot/core/io/variant_serializer.cpp:252] [error]: json_value:1 and type: longint is unmatched.
+[12:24:28] [/home/wqq/gobot/src/gobot/core/io/resource.cpp:156] [error]: Another resource is loaded from path res://meterial.jres (possible cyclic resource inclusion).
+[12:24:28] [/home/wqq/gobot/src/gobot/core/io/resource.cpp:156] [error]: Another resource is loaded from path res://meterial.jres (possible cyclic resource inclusion).
+[12:24:28] [/home/wqq/gobot/src/gobot/core/io/variant_serializer.cpp:252] [error]: json_value:3 and type: longint is unmatched.
+[12:24:28] [/home/wqq/gobot/src/gobot/core/io/variant_serializer.cpp:252] [error]: json_value:1 and type: longint is unmatched.

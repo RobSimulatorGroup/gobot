@@ -11,18 +11,34 @@
 
 namespace gobot {
 
+class Node;
 class PackedScene;
 
 class GOBOT_EXPORT SceneState : public RefCounted {
     GOBCLASS(SceneState, RefCounted)
 public:
-    struct NodeData {
+    struct PropertyData {
+        std::string name;
+        Variant value;
+    };
 
+    struct NodeData {
+        std::string type;
+        std::string name;
+        int parent = -1;
+        Ref<PackedScene> instance;
+        std::vector<PropertyData> properties;
     };
 
     std::size_t GetNodeCount() const;
 
+    const NodeData* GetNodeData(std::size_t idx) const;
+
     Ref<PackedScene> GetNodeInstance(std::size_t idx) const;
+
+    int AddNode(const NodeData& node);
+
+    void Clear();
 
 private:
     std::vector<NodeData> nodes_;
@@ -35,6 +51,10 @@ public:
     PackedScene();
 
     Ref<SceneState> GetState() const;
+
+    bool Pack(Node* root);
+
+    Node* Instantiate() const;
 
 private:
     Ref<SceneState> state_;

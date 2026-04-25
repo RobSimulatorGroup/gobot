@@ -1,5 +1,14 @@
 # Scene Tree Serialization Refactor Plan
 
+## 紧急方向排序
+
+当前优先级按“能最快闭环、能测试、不会被外部 SDK 卡住”排序：
+
+1. **机器人 3D 场景树序列化**：先完成 `PackedScene` / `SceneState` / `.jscn` 的基础闭环，这是 OpenUSD、编辑器保存和物理场景交换的共同底座
+2. **OpenUSD 支持**：先做可选依赖和 importer 架构，再逐步落到 `PackedScene`、Mesh、Material、Physics schema
+3. **PBR 渲染最小可实现**：在 Mesh/Material 数据模型稳定后接 OpenGL shader 和 material storage
+4. **NVIDIA Newton 物理引擎**：外部依赖最重，先抽象物理接口和 USD Physics 映射，再接 SDK
+
 ## 现状问题
 
 1. `PackedScene` / `SceneState` 几乎是空壳 — `NodeData` 结构体是空的，`__NODES__` 的 load/save 逻辑都是 stub
@@ -129,3 +138,101 @@ Phase 5 (Editor + 测试)
 ```
 
 每个 Phase 结束后都能编译并跑测试。
+
+---
+
+# OpenUSD Support Plan
+
+## 目标
+
+让 Gobot 可以把 OpenUSD 文件作为机器人/仿真场景交换格式：
+
+- Import：`.usd` / `.usda` / `.usdc` → `PackedScene`
+- Export：`PackedScene` → `.usd` / `.usda` / `.usdc`
+- 中长期支持：几何、材质、层级变换、实例、物理 schema，并为 NVIDIA Newton 提供场景输入
+
+## 原则
+
+1. OpenUSD 必须是**可选依赖**：未安装 OpenUSD 时，工程仍可编译、测试和运行
+2. Import 先于 Export：先解决外部机器人资产进入 Gobot
+3. 先支持稳定核心 schema：`UsdGeomXform`、`UsdGeomMesh`、`UsdShadePreviewSurface`
+4. 不把 USD 细节泄漏进通用场景接口：USD loader 输出 `PackedScene` / `Resource`
+
+## Phase USD-1 — 可选依赖和 Loader 骨架
+
+**目标**：工程能识别 USD 文件，并在没有 OpenUSD SDK 时给出受控失败
+
+- CMake 新增 `GOB_BUILD_OPENUSD` 开关
+- 有 OpenUSD 时定义 `GOBOT_HAS_OPENUSD`
+- 新增 `ResourceFormatLoaderUSD`
+- 注册扩展名：`usd`、`usda`、`usdc`
+- 接入 `SceneInitializer`
+- 单元测试覆盖：
+  - loader recognized extensions
+  - loader handles `PackedScene`
+  - 未启用 OpenUSD 时 load 返回空资源，不崩溃
+
+## Phase USD-2 — USD 层级导入
+
+**目标**：把 USD stage 的层级转换为 `PackedScene`
+
+```
+UsdStage
+  → Traverse prims
+  → UsdGeomXformable 转 Node3D
+  → 记录 name/type/parent
+  → xform ops 转 Node3D transform 属性
+```
+
+测试：
+- 简单 usda：root + child xform
+- 导入后 `PackedScene::Instantiate()` 可还原父子关系
+
+## Phase USD-3 — Mesh Resource
+
+**目标**：新增真正可存储导入网格数据的 Mesh 资源
+
+新增资源建议：
+
+```cpp
+ArrayMesh / SurfaceMesh {
+    vector<Vector3> positions
+    vector<Vector3> normals
+    vector<Vector2> uvs
+    vector<uint32_t> indices
+    Ref<Material> material
+}
+```
+
+USD 映射：
+- `UsdGeomMesh.points` → positions
+- `faceVertexIndices` / `faceVertexCounts` → triangulated indices
+- `primvars:normals` / `primvars:st` → normals / uvs
+
+## Phase USD-4 — Material Import
+
+**目标**：把 `UsdShadePreviewSurface` 映射到 `PBRMaterial3D`
+
+最小字段：
+- `diffuseColor` / `baseColor` → albedo
+- `metallic`
+- `roughness`
+- texture path 先保留引用，后续接 Texture resource
+
+## Phase USD-5 — Export
+
+**目标**：把 Gobot 场景导出为 USD
+
+- `PackedScene` / `SceneState` → `UsdStage`
+- `Node3D` transform → `UsdGeomXformOp`
+- Mesh resource → `UsdGeomMesh`
+- `PBRMaterial3D` → `UsdShadePreviewSurface`
+
+## Phase USD-6 — Physics / Newton Bridge
+
+**目标**：让 USD Physics 成为 Newton 物理场景的输入之一
+
+- `UsdPhysicsRigidBodyAPI` → RigidBody node/resource
+- `UsdPhysicsCollisionAPI` → CollisionShape
+- mass / inertia / velocity / collision group 映射
+- Newton backend 从 Gobot 物理抽象读取，不直接依赖 USD

@@ -7,6 +7,7 @@
 
 
 #include "gobot/editor/node3d_editor.hpp"
+#include "gobot/editor/editor.hpp"
 #include "gobot/editor/imgui/scene_view_3d_panel.hpp"
 #include "gobot/error_macros.hpp"
 #include "gobot/core/registration.hpp"
@@ -163,12 +164,6 @@ void Node3DEditor::UpdateCamera(double delta_time) {
 }
 
 
-float objectMatrix[16] = {
-                1.f, 0.f, 0.f, 0.f,
-                0.f, 1.f, 0.f, 0.f,
-                0.f, 0.f, 1.f, 0.f,
-                0.f, 0.f, 0.f, 1.f };
-
 void Node3DEditor::OnImGuizmo() {
 
     ImGuizmo::SetDrawlist();
@@ -180,8 +175,31 @@ void Node3DEditor::OnImGuizmo() {
     float view_manipulate_top = ImGui::GetWindowPos().y;
 
     if (imguizmo_operation_ != InvalidGuizmoOperation()) {
-        ImGuizmo::Manipulate(camera3d_->GetViewMatrix().data(), camera3d_->GetProjectionMatrix().data(),
-                             static_cast<ImGuizmo::OPERATION>(imguizmo_operation_), ImGuizmo::LOCAL, objectMatrix);
+        auto* selected = Editor::GetInstance()->GetSelected();
+        auto* selected_node_3d = Object::PointerCastTo<Node3D>(selected);
+        if (!selected_node_3d || !selected_node_3d->IsInsideTree()) {
+            ImGuizmo::ViewManipulate(camera3d_->GetViewMatrix().data(), camera3d_->GetViewMatrixEye().norm(),
+                                     ImVec2{view_manipulate_right - 128, view_manipulate_top + 50},
+                                     ImVec2(128, 128), 0x10101010);
+            return;
+        }
+
+        Matrix4 model_matrix = selected_node_3d->GetGlobalTransform().matrix();
+        float object_matrix[16];
+        for (int i = 0; i < 16; ++i) {
+            object_matrix[i] = static_cast<float>(model_matrix.data()[i]);
+        }
+
+        bool changed = ImGuizmo::Manipulate(camera3d_->GetViewMatrix().data(), camera3d_->GetProjectionMatrix().data(),
+                                            static_cast<ImGuizmo::OPERATION>(imguizmo_operation_),
+                                            ImGuizmo::LOCAL, object_matrix);
+
+        if (changed) {
+            for (int i = 0; i < 16; ++i) {
+                model_matrix.data()[i] = static_cast<RealType>(object_matrix[i]);
+            }
+            selected_node_3d->SetGlobalTransform(Affine3(model_matrix));
+        }
     }
 
     ImGuizmo::ViewManipulate(camera3d_->GetViewMatrix().data(), camera3d_->GetViewMatrixEye().norm(),
@@ -202,4 +220,3 @@ GOBOT_REGISTRATION {
         .constructor()(CtorAsRawPtr);
 
 };
-

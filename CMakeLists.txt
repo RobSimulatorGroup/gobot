@@ -10,6 +10,7 @@ set(GOBOT_ROOT_DIR "${CMAKE_CURRENT_SOURCE_DIR}")
 
 option(GOB_BUILD_EXPERIMENT "using imgui and glfw" OFF)
 option(GOB_BUILD_TESTS "build tests" OFF)
+option(GOB_BUILD_OPENUSD "build OpenUSD scene importer/exporter support" OFF)
 
 if(NOT UNIX OR APPLE)
     message(FATAL_ERROR "Only Linux is supported.")
@@ -24,6 +25,10 @@ endif()
 find_package(Eigen3 REQUIRED)
 find_package(nlohmann_json REQUIRED)
 find_package(PNG REQUIRED)
+
+if(GOB_BUILD_OPENUSD)
+    find_package(pxr REQUIRED CONFIG)
+endif()
 
 CPMAddPackage("gh:fmtlib/fmt#10.1.1")
 
@@ -81,6 +86,11 @@ target_link_libraries(gobot
         cxxopts::cxxopts
 )
 
+if(GOB_BUILD_OPENUSD)
+    target_compile_definitions(gobot PUBLIC GOBOT_HAS_OPENUSD=1)
+    target_link_libraries(gobot PUBLIC usd usdGeom usdShade sdf tf vt gf)
+endif()
+
 # copy icon to bin
 add_custom_command(
         TARGET gobot POST_BUILD
@@ -119,4 +129,3 @@ if (GOB_BUILD_TESTS)
     include(GoogleTest)
     add_subdirectory(tests)
 endif ()
-

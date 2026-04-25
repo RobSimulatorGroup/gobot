@@ -11,6 +11,8 @@
 #include "gobot/editor/imgui/imgui_utilities.hpp"
 #include "gobot/editor/editor.hpp"
 #include "gobot/core/os/os.hpp"
+#include "gobot/scene/mesh_instance_3d.hpp"
+#include "gobot/scene/resources/primitive_mesh.hpp"
 #include "gobot/scene/window.hpp"
 #include "imgui_extension/icon_fonts/icons_material_design_icons.h"
 #include "imgui_stdlib.h"
@@ -177,12 +179,24 @@ void SceneEditorPanel::OnImGuiContent()
         ImGui::OpenPopup("Add New Node");
     }
 
-    bool open = true;
-    if(ImGui::BeginPopupModal("Add New Node", &open))
-    {
-        ImGui::Text("Hello dsjfhds fhjs hfj dshfj hds");
-        if (ImGui::Button("Close"))
+    if(ImGui::BeginPopup("Add New Node")) {
+        if (ImGui::MenuItem("Node3D")) {
+            auto* node = Object::New<Node3D>();
+            node->SetName("Node3D");
+            scene_tree->GetRoot()->AddChild(node, true);
+            Editor::GetInstance()->SetSelected(node);
             ImGui::CloseCurrentPopup();
+        }
+
+        if (ImGui::MenuItem("Box Mesh")) {
+            auto* node = Object::New<MeshInstance3D>();
+            node->SetName("Box");
+            node->SetMesh(MakeRef<BoxMesh>());
+            scene_tree->GetRoot()->AddChild(node, true);
+            Editor::GetInstance()->SetSelected(node);
+            ImGui::CloseCurrentPopup();
+        }
+
         ImGui::EndPopup();
     }
 

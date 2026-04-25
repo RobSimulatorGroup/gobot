@@ -6,10 +6,10 @@
 */
 
 #include "gobot/editor/imgui/inspector_panel.hpp"
+#include "gobot/editor/editor.hpp"
 #include "gobot/editor/property_inspector/editor_inspector.hpp"
 #include "gobot/editor/imgui/type_icons.hpp"
 #include "imgui_extension/icon_fonts/icons_material_design_icons.h"
-#include "gobot/scene/test_property_node.hpp"
 
 #include "imgui.h"
 #include "imgui_stdlib.h"
@@ -18,12 +18,6 @@ namespace gobot {
 
 InspectorPanel::InspectorPanel() {
     SetName(ICON_MDI_INFORMATION " Inspector###inspector");
-    test_node_ = Object::New<TestPropertyNode>();
-    test_node_->SetName("test");
-    Variant variant(test_node_);
-    editor_inspectors_.emplace_back(EditorInspector::New<EditorInspector>(variant));
-    current_inspector_index_ = 0;
-    AddChild(editor_inspectors_.at(current_inspector_index_));
 
     filter_ = new ImGuiTextFilter();
 }
@@ -32,7 +26,29 @@ InspectorPanel::~InspectorPanel() {
     delete filter_;
 }
 
+void InspectorPanel::RebuildInspector(Node* selected) {
+    if (selected == inspected_node_) {
+        return;
+    }
+
+    if (editor_inspector_) {
+        Object::Delete(editor_inspector_);
+        editor_inspector_ = nullptr;
+    }
+
+    inspected_node_ = selected;
+    if (!inspected_node_) {
+        return;
+    }
+
+    Variant variant(inspected_node_);
+    editor_inspector_ = Object::New<EditorInspector>(variant);
+    AddChild(editor_inspector_);
+}
+
 void InspectorPanel::OnImGuiContent() {
+    RebuildInspector(Editor::GetInstance()->GetSelected());
+
     if (ImGui::Button(ICON_MDI_FILE_PLUS)) {
         // TODO(wqq): new
     }
@@ -64,8 +80,13 @@ void InspectorPanel::OnImGuiContent() {
         // TODO(wqq): select current_inspector_index_
     }
 
-    auto& cache = editor_inspectors_.at(current_inspector_index_)->GetVariantCache();
-    auto* property_name = editor_inspectors_.at(current_inspector_index_)->GetNameProperty();
+    if (!editor_inspector_) {
+        ImGui::TextUnformatted("No node selected");
+        return;
+    }
+
+    auto& cache = editor_inspector_->GetVariantCache();
+    auto* property_name = editor_inspector_->GetNameProperty();
 
     ImGui::TextUnformatted(GetTypeIcon(cache.type));
 

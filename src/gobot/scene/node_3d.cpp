@@ -498,6 +498,10 @@ NodePath Node3D::GetVisibilityParent() const {
 GOBOT_REGISTRATION {
 
     Class_<Node3D>("Node3D")
-            .constructor()(CtorAsRawPtr);
+            .constructor()(CtorAsRawPtr)
+            .property("position", &Node3D::GetPosition, &Node3D::SetPosition)
+            .property("rotation_degrees", &Node3D::GetEulerDegree, &Node3D::SetEulerDegree)
+            .property("scale", &Node3D::GetScale, &Node3D::SetScale)
+            .property("visible", &Node3D::IsVisible, &Node3D::SetVisible);
 
 };

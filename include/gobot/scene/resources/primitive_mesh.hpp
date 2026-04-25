@@ -25,6 +25,8 @@ public:
 
     const Ref<Material>& GetMaterial() const;
 
+    RID GetRid() const override;
+
 private:
     RID mesh_;
     Ref<Material> material_{nullptr};

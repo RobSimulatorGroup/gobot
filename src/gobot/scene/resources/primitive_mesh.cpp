@@ -29,11 +29,15 @@ const Ref<Material>& PrimitiveMesh::GetMaterial() const {
     return material_;
 }
 
+RID PrimitiveMesh::GetRid() const {
+    return mesh_;
+}
+
 
 //////////////////////
 
 BoxMesh::BoxMesh() {
-
+    RS::GetInstance()->MeshSetBox(GetRid(), size_);
 }
 
 void BoxMesh::SetWidth(RealType p_width) {
@@ -47,6 +51,7 @@ RealType BoxMesh::GetWidth() const {
 
 void BoxMesh::SetSize(Vector3 size) {
     size_ = size;
+    RS::GetInstance()->MeshSetBox(GetRid(), size_);
 }
 
 const Vector3& BoxMesh::GetSize() const {
@@ -88,4 +93,3 @@ GOBOT_REGISTRATION {
     gobot::Type::register_wrapper_converter_for_base_classes<Ref<BoxMesh>, Ref<PrimitiveMesh>>();
 
 };
-
