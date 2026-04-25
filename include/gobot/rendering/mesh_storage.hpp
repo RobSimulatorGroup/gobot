@@ -13,9 +13,6 @@
 
 namespace gobot {
 
-class Camera3D;
-class Node;
-
 class MeshStorage {
 public:
     virtual ~MeshStorage() {}
@@ -25,8 +22,6 @@ public:
     virtual void MeshInitialize(const RID& p_rid) = 0;
 
     virtual void MeshSetBox(const RID& p_rid, const Vector3& size) = 0;
-
-    virtual void RenderScene(const RID& render_target, const Node* scene_root, const Camera3D* camera) = 0;
 
     virtual bool OwnsMesh(const RID& p_rid) const = 0;
 

@@ -14,6 +14,7 @@
 #include "gobot/rendering/material_storage.hpp"
 #include "gobot/rendering/mesh_storage.hpp"
 #include "gobot/rendering/renderer_debug_draw.hpp"
+#include "gobot/rendering/renderer_scene_render.hpp"
 
 namespace gobot {
 
@@ -34,6 +35,8 @@ public:
     static MaterialStorage* material_storage;
 
     static MeshStorage* mesh_storage;
+
+    static RendererSceneRender* scene;
 
     static RendererDebugDraw* debug_draw;
 

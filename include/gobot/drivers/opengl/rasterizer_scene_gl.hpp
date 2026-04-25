@@ -7,15 +7,31 @@
 
 #pragma once
 
+#include "glad/glad.h"
 #include "gobot/rendering/renderer_scene_render.hpp"
 
 namespace gobot::opengl {
 
+struct GLMeshData;
+class GLMeshStorage;
+
 class GLRasterizerScene : public RendererSceneRender {
 public:
+    explicit GLRasterizerScene(GLMeshStorage* mesh_storage);
 
+    ~GLRasterizerScene() override;
 
+    void RenderScene(const RID& render_target, const Node* scene_root, const Camera3D* camera) override;
 
+private:
+    GLMeshStorage* mesh_storage_{nullptr};
+    GLuint default_program_ = 0;
+
+    void EnsureDefaultProgram();
+
+    void UploadMesh(GLMeshData* mesh);
+
+    void DrawNode(const Node* node);
 };
 
 }

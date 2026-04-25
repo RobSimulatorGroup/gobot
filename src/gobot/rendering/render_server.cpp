@@ -36,6 +36,7 @@ RenderServer::RenderServer(RendererType p_renderer_type)
     RSG::texture_storage = RSG::rasterizer->GetTextureStorage();
     RSG::material_storage = RSG::rasterizer->GetMaterialStorage();
     RSG::mesh_storage = RSG::rasterizer->GetMeshStorage();
+    RSG::scene = RSG::rasterizer->GetScene();
     RSG::debug_draw = RSG::rasterizer->GetDebugDraw();
     RSG::utilities = RSG::rasterizer->GetUtilities();
 
@@ -49,6 +50,14 @@ RenderServer::~RenderServer() {
     s_singleton = nullptr;
     delete RSG::rasterizer;
     delete RSG::viewport;
+    RSG::rasterizer = nullptr;
+    RSG::viewport = nullptr;
+    RSG::texture_storage = nullptr;
+    RSG::material_storage = nullptr;
+    RSG::mesh_storage = nullptr;
+    RSG::scene = nullptr;
+    RSG::debug_draw = nullptr;
+    RSG::utilities = nullptr;
 }
 
 RenderServer* RenderServer::GetInstance() {
@@ -91,13 +100,15 @@ void RenderServer::MeshSetBox(const RID& mesh, const Vector3& size) {
 }
 
 void RenderServer::RenderSceneToViewport(const RID& viewport, const Node* scene_root, const Camera3D* camera) {
+    ERR_FAIL_COND(RSG::scene == nullptr);
     const RID render_target = RSG::viewport->GetViewportRenderTarget(viewport);
     ERR_FAIL_COND(render_target.IsNull());
 
-    RSG::mesh_storage->RenderScene(render_target, scene_root, camera);
+    RSG::scene->RenderScene(render_target, scene_root, camera);
 }
 
 void RenderServer::RenderEditorDebugToViewport(const RID& viewport, const Camera3D* camera) {
+    ERR_FAIL_COND(RSG::debug_draw == nullptr);
     const RID render_target = RSG::viewport->GetViewportRenderTarget(viewport);
     ERR_FAIL_COND(render_target.IsNull());
 

@@ -19,6 +19,7 @@ namespace gobot {
 class Node3DEditor;
 class ImGuiManager;
 class Node3D;
+class EditedScene;
 
 class GOBOT_EXPORT Editor : public ImGuiNode {
     GOBCLASS(Editor, Node)
@@ -45,7 +46,9 @@ public:
 
     FORCE_INLINE void SetSelected(Node* selected) { selected_ = selected; }
 
-    FORCE_INLINE Node3D* GetEditedSceneRoot() const { return edited_scene_root_; }
+    FORCE_INLINE EditedScene* GetEditedScene() const { return edited_scene_; }
+
+    Node3D* GetEditedSceneRoot() const;
 
 private:
     void DrawMenuBar();
@@ -60,7 +63,7 @@ private:
     Node3DEditor* node3d_editor_{nullptr};
     ImGuiManager* imgui_manager_{nullptr};
     ImGui::FileBrowser* file_browser_{nullptr};
-    Node3D* edited_scene_root_{nullptr};
+    EditedScene* edited_scene_{nullptr};
 
     Node* selected_{nullptr};
 

@@ -23,6 +23,8 @@ RendererUtilities* RenderingServerGlobals::utilities = nullptr;
 
 MeshStorage* RenderingServerGlobals::mesh_storage = nullptr;
 
+RendererSceneRender* RenderingServerGlobals::scene = nullptr;
+
 RendererDebugDraw* RenderingServerGlobals::debug_draw = nullptr;
 
 }

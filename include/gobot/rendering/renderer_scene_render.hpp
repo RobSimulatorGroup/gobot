@@ -7,12 +7,18 @@
 
 #pragma once
 
+#include "gobot/core/rid.hpp"
+
 namespace gobot {
 
+class Camera3D;
+class Node;
+
 class RendererSceneRender {
+public:
+    virtual ~RendererSceneRender() = default;
 
-
-
+    virtual void RenderScene(const RID& render_target, const Node* scene_root, const Camera3D* camera) = 0;
 };
 
 }

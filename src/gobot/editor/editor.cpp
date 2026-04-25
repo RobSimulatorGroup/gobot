@@ -7,6 +7,7 @@
 
 #include "gobot/editor/editor.hpp"
 #include "gobot/core/config/project_setting.hpp"
+#include "gobot/editor/edited_scene.hpp"
 #include "gobot/editor/node3d_editor.hpp"
 #include "gobot/core/registration.hpp"
 #include "gobot/log.hpp"
@@ -36,10 +37,9 @@ Editor::Editor() {
 
     imgui_manager_ = Object::New<ImGuiManager>();
 
-    edited_scene_root_ = Object::New<Node3D>();
-    edited_scene_root_->SetName("Scene");
-    AddChild(edited_scene_root_, true);
-    selected_ = edited_scene_root_;
+    edited_scene_ = Object::New<EditedScene>();
+    AddChild(edited_scene_, true);
+    selected_ = edited_scene_->GetRoot();
 
     node3d_editor_ = Object::New<Node3DEditor>();
     node3d_editor_->SetName("Node3DEditor");
@@ -73,6 +73,10 @@ Editor::~Editor() {
 Editor* Editor::GetInstance() {
     ERR_FAIL_COND_V_MSG(s_singleton == nullptr, nullptr, "Must call this after initialize Editor");
     return s_singleton;
+}
+
+Node3D* Editor::GetEditedSceneRoot() const {
+    return edited_scene_ ? edited_scene_->GetRoot() : nullptr;
 }
 
 void Editor::NotificationCallBack(NotificationType notification) {

@@ -8,13 +8,14 @@
 #pragma once
 
 #include "gobot/scene/resources/texture.hpp"
-#include "gobot/rendering/scene_renderer.hpp"
 #include "gobot/scene/imgui_window.hpp"
+
+#include <memory>
 
 namespace gobot {
 
 class SceneTree;
-class SceneRenderer;
+class EditorViewportRenderer;
 
 class GOBOT_EXPORT SceneView3DPanel : public ImGuiWindow {
     GOBCLASS(SceneView3DPanel, ImGuiWindow)
@@ -35,6 +36,8 @@ public:
 
     RID view_port_{};
 
+private:
+    std::unique_ptr<EditorViewportRenderer> viewport_renderer_;
 };
 
 
