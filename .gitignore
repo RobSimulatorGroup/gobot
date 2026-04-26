@@ -43,3 +43,5 @@ CMakeSettings.json
 shader/generated/*
 
 CMakeUserPresets.json
+
+gobot.log

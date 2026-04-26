@@ -8,6 +8,8 @@
 #include "gobot/scene/node_3d.hpp"
 #include "gobot/core/registration.hpp"
 
+#include <algorithm>
+
 namespace gobot {
 
 void Node3D::NotifyDirty() {
@@ -42,6 +44,30 @@ void Node3D::PropagateTransformChanged(Node3D *node) {
 
     // todo: add to transform change list
     dirty_ |= DIRTY_GLOBAL_TRANSFORM;
+}
+
+void Node3D::AddChildNotify(Node *child) {
+    auto* child_3d = Object::PointerCastTo<Node3D>(child);
+    if (child_3d == nullptr) {
+        return;
+    }
+
+    if (std::find(children_.begin(), children_.end(), child_3d) == children_.end()) {
+        children_.push_back(child_3d);
+    }
+    child_3d->parent_ = this;
+    child_3d->PropagateTransformChanged(child_3d);
+}
+
+void Node3D::RemoveChildNotify(Node *child) {
+    auto* child_3d = Object::PointerCastTo<Node3D>(child);
+    if (child_3d == nullptr) {
+        return;
+    }
+
+    children_.erase(std::remove(children_.begin(), children_.end(), child_3d), children_.end());
+    child_3d->parent_ = nullptr;
+    child_3d->PropagateTransformChanged(child_3d);
 }
 
 void Node3D::NotificationCallBack(NotificationType notification) {

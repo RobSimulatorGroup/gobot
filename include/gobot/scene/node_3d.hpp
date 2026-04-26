@@ -302,6 +302,9 @@ protected:
 
     void NotificationCallBack(NotificationType notification);
 
+    void AddChildNotify(Node *child) override;
+    void RemoveChildNotify(Node *child) override;
+
 private:
     enum TransformDirty {
         DIRTY_NONE = 0,

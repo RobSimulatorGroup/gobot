@@ -116,3 +116,21 @@ TEST_F(TestNode3D, complex_operations) {
     ASSERT_TRUE(node1_1->GetTransform().isApprox(Affine3::Identity(), CMP_EPSILON));
     ASSERT_TRUE(node1_1->GetGlobalTransform().isApprox(m, CMP_EPSILON));
 }
+
+TEST_F(TestNode3D, child_global_transform_follows_parent_local_transform) {
+    using namespace gobot;
+
+    SceneTree::GetInstance()->GetRoot()->AddChild(node1);
+    node1->SetName("parent");
+
+    node1_1->SetName("child");
+    node1->AddChild(node1_1);
+
+    node1->SetPosition({10.0f, 0.0f, 0.0f});
+    node1_1->SetPosition({1.0f, 2.0f, 3.0f});
+    ASSERT_TRUE(node1_1->GetGlobalPosition().isApprox(Vector3(11.0f, 2.0f, 3.0f), CMP_EPSILON));
+
+    node1->SetPosition({20.0f, 5.0f, -1.0f});
+    ASSERT_TRUE(node1_1->GetPosition().isApprox(Vector3(1.0f, 2.0f, 3.0f), CMP_EPSILON));
+    ASSERT_TRUE(node1_1->GetGlobalPosition().isApprox(Vector3(21.0f, 7.0f, 2.0f), CMP_EPSILON));
+}
