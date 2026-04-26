@@ -5,6 +5,8 @@
  * This file is created by Qiqi Wu, 23-1-13
 */
 
+#pragma once
+
 #include "gobot/core/io/resource.hpp"
 
 namespace gobot {
@@ -22,4 +24,3 @@ public:
 
 
 }
-

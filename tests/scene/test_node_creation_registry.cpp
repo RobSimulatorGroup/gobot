@@ -24,16 +24,19 @@ const gobot::NodeCreationEntry* FindEntry(const std::string& id) {
 TEST(TestNodeCreationRegistry, built_in_entries_keep_node_inheritance_shape) {
     const auto* node = FindEntry("Node");
     const auto* node_3d = FindEntry("Node3D");
+    const auto* collision_shape = FindEntry("CollisionShape3D");
     const auto* mesh_instance = FindEntry("MeshInstance3D");
     const auto* box_mesh = FindEntry("BoxMeshInstance3D");
 
     ASSERT_NE(node, nullptr);
     ASSERT_NE(node_3d, nullptr);
+    ASSERT_NE(collision_shape, nullptr);
     ASSERT_NE(mesh_instance, nullptr);
     ASSERT_NE(box_mesh, nullptr);
 
     EXPECT_TRUE(node->parent_id.empty());
     EXPECT_EQ(node_3d->parent_id, "Node");
+    EXPECT_EQ(collision_shape->parent_id, "Node3D");
     EXPECT_EQ(mesh_instance->parent_id, "Node3D");
     EXPECT_EQ(box_mesh->parent_id, "MeshInstance3D");
 }

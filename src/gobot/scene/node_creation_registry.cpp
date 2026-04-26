@@ -7,6 +7,7 @@
 
 #include <algorithm>
 
+#include "gobot/scene/collision_shape_3d.hpp"
 #include "gobot/scene/mesh_instance_3d.hpp"
 #include "gobot/scene/node_3d.hpp"
 #include "gobot/scene/resources/primitive_mesh.hpp"
@@ -99,6 +100,14 @@ void NodeCreationRegistry::EnsureBuiltInNodeTypesRegistered() {
         "Node3D",
         "3D node that renders a mesh resource.",
         []() -> Node* { return CreateNodeInstance<MeshInstance3D>(); }
+    });
+
+    RegisterNodeType({
+        "CollisionShape3D",
+        "CollisionShape3D",
+        "Node3D",
+        "3D node that provides collision geometry for physics and collision queries.",
+        []() -> Node* { return CreateNodeInstance<CollisionShape3D>(); }
     });
 
     RegisterNodeType({

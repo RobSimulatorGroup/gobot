@@ -48,4 +48,6 @@ GOBOT_REGISTRATION {
             .property("height", &CylinderShape3D::GetHeight, &CylinderShape3D::SetHeight)
             .property("radius", &CylinderShape3D::GetRadius, &CylinderShape3D::SetRadius);
 
+    gobot::Type::register_wrapper_converter_for_base_classes<Ref<CylinderShape3D>, Ref<Shape3D>>();
+
 };

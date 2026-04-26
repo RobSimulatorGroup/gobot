@@ -6,6 +6,8 @@
 */
 
 #include "gobot/scene/resources/shape_3d.hpp"
+
+#include "gobot/core/registration.hpp"
 #include "gobot/log.hpp"
 
 namespace gobot {
@@ -18,4 +20,13 @@ Shape3D::~Shape3D() {
 
 }
 
-}
+} // namespace gobot
+
+GOBOT_REGISTRATION {
+
+    Class_<Shape3D>("Shape3D")
+            .constructor()(CtorAsRawPtr);
+
+    gobot::Type::register_wrapper_converter_for_base_classes<Ref<Shape3D>, Ref<Resource>>();
+
+};

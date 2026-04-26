@@ -10,6 +10,7 @@
 #include <gobot/core/ref_counted.hpp>
 #include <gobot/core/io/resource_format_scene.hpp>
 #include <gobot/core/config/project_setting.hpp>
+#include <gobot/scene/collision_shape_3d.hpp>
 #include <gobot/scene/resources/cylinder_shape_3d.hpp>
 #include <gobot/scene/mesh_instance_3d.hpp>
 #include <gobot/scene/node.hpp>
@@ -161,6 +162,57 @@ TEST_F(TestResourceFormatScene, packed_scene_round_trips_nodes_transforms_and_me
     gobot::Ref<gobot::BoxMesh> instanced_mesh = gobot::dynamic_pointer_cast<gobot::BoxMesh>(instanced_box->GetMesh());
     ASSERT_TRUE(instanced_mesh.IsValid());
     EXPECT_TRUE(instanced_mesh->GetSize().isApprox(gobot::Vector3(2.0f, 3.0f, 4.0f), CMP_EPSILON));
+
+    gobot::Object::Delete(root);
+    gobot::Object::Delete(instance);
+}
+
+TEST_F(TestResourceFormatScene, packed_scene_round_trips_collision_shape_resource) {
+    auto* root = gobot::Object::New<gobot::Node3D>();
+    root->SetName("RobotRoot");
+
+    auto* collision_shape = gobot::Object::New<gobot::CollisionShape3D>();
+    collision_shape->SetName("Collision");
+    collision_shape->SetPosition({1.0f, 2.0f, 3.0f});
+
+    gobot::Ref<gobot::CylinderShape3D> cylinder_shape = gobot::MakeRef<gobot::CylinderShape3D>();
+    cylinder_shape->SetRadius(0.25f);
+    cylinder_shape->SetHeight(2.0f);
+    collision_shape->SetShape(cylinder_shape);
+    root->AddChild(collision_shape);
+
+    gobot::Ref<gobot::PackedScene> packed_scene = gobot::MakeRef<gobot::PackedScene>();
+    ASSERT_TRUE(packed_scene->Pack(root));
+
+    USING_ENUM_BITWISE_OPERATORS;
+    ASSERT_TRUE(gobot::ResourceSaver::Save(packed_scene, "res://collision_scene.jscn",
+                                           gobot::ResourceSaverFlags::ReplaceSubResourcePaths |
+                                           gobot::ResourceSaverFlags::ChangePath));
+
+    gobot::Ref<gobot::Resource> loaded_resource = gobot::ResourceLoader::Load(
+            "res://collision_scene.jscn", "PackedScene", gobot::ResourceFormatLoader::CacheMode::Ignore);
+    ASSERT_TRUE(loaded_resource.IsValid());
+
+    gobot::Ref<gobot::PackedScene> loaded_scene = gobot::dynamic_pointer_cast<gobot::PackedScene>(loaded_resource);
+    ASSERT_TRUE(loaded_scene.IsValid());
+
+    gobot::Node* instance = loaded_scene->Instantiate();
+    ASSERT_NE(instance, nullptr);
+
+    auto* instanced_root = gobot::Object::PointerCastTo<gobot::Node3D>(instance);
+    ASSERT_NE(instanced_root, nullptr);
+    ASSERT_EQ(instanced_root->GetChildCount(), 1);
+
+    auto* instanced_collision = gobot::Object::PointerCastTo<gobot::CollisionShape3D>(instanced_root->GetChild(0));
+    ASSERT_NE(instanced_collision, nullptr);
+    EXPECT_EQ(instanced_collision->GetName(), "Collision");
+    EXPECT_TRUE(instanced_collision->GetPosition().isApprox(gobot::Vector3(1.0f, 2.0f, 3.0f), CMP_EPSILON));
+
+    gobot::Ref<gobot::CylinderShape3D> instanced_shape =
+            gobot::dynamic_pointer_cast<gobot::CylinderShape3D>(instanced_collision->GetShape());
+    ASSERT_TRUE(instanced_shape.IsValid());
+    EXPECT_FLOAT_EQ(instanced_shape->GetRadius(), 0.25f);
+    EXPECT_FLOAT_EQ(instanced_shape->GetHeight(), 2.0f);
 
     gobot::Object::Delete(root);
     gobot::Object::Delete(instance);
