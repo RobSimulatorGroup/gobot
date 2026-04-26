@@ -7,9 +7,7 @@
 
 #pragma once
 
-#include <functional>
 #include <string>
-#include <vector>
 
 #include "gobot/scene/imgui_window.hpp"
 
@@ -28,13 +26,6 @@ public:
     void DrawNode(Node* node);
 
 private:
-    struct AddNodeEntry {
-        std::string label;
-        std::function<Node*()> create;
-    };
-
-    static std::vector<AddNodeEntry> BuildAddNodeEntries();
-
     Node* GetAddChildTarget(Node* scene_root) const;
 
     void RequestOpenAddChildDialog(Node* parent);
@@ -49,7 +40,7 @@ private:
     Node* add_child_parent_{nullptr};
     bool open_add_child_dialog_{false};
     std::string add_node_search_;
-    int selected_add_node_index_{-1};
+    std::string selected_add_node_id_;
     bool select_up_;
     bool select_down_;
 

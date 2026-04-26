@@ -9,16 +9,16 @@
 
 #include <algorithm>
 #include <cctype>
-#include <unordered_set>
+#include <functional>
+#include <unordered_map>
+#include <vector>
 
 #include "gobot/core/os/input.hpp"
 #include "gobot/core/os/main_loop.hpp"
-#include "gobot/core/types.hpp"
 #include "gobot/editor/imgui/imgui_utilities.hpp"
 #include "gobot/editor/editor.hpp"
-#include "gobot/scene/mesh_instance_3d.hpp"
 #include "gobot/scene/node_3d.hpp"
-#include "gobot/scene/resources/primitive_mesh.hpp"
+#include "gobot/scene/node_creation_registry.hpp"
 #include "imgui_extension/icon_fonts/icons_material_design_icons.h"
 #include "imgui_stdlib.h"
 #include "imgui.h"
@@ -43,20 +43,76 @@ bool ContainsCaseInsensitive(const std::string& text, const std::string& query) 
     return to_lower(text).find(to_lower(query)) != std::string::npos;
 }
 
-bool IsEditorOnlyNodeType(const std::string& type_name) {
-    std::string name = type_name;
-    const std::string namespace_prefix = "gobot::";
-    if (name.starts_with(namespace_prefix)) {
-        name = name.substr(namespace_prefix.size());
+struct AddNodeTreeItem {
+    const NodeCreationEntry* entry = nullptr;
+    std::vector<std::size_t> children;
+};
+
+struct AddNodeTree {
+    std::vector<AddNodeTreeItem> items;
+    std::vector<std::size_t> roots;
+};
+
+AddNodeTree BuildAddNodeTree(const std::vector<NodeCreationEntry>& entries) {
+    AddNodeTree tree;
+    std::unordered_map<std::string, std::size_t> index_by_id;
+
+    tree.items.reserve(entries.size());
+    for (const auto& entry : entries) {
+        index_by_id[entry.id] = tree.items.size();
+        tree.items.push_back({&entry, {}});
     }
 
-    return name == "Editor" ||
-           name == "EditedScene" ||
-           name == "Node3DEditor" ||
-           name == "ImGuiNode" ||
-           name == "ImGuiWindow" ||
-           name == "ImGuiCustomNode" ||
-           name == "TestPropertyNode";
+    for (std::size_t i = 0; i < tree.items.size(); ++i) {
+        const auto* entry = tree.items[i].entry;
+        const auto parent_iter = index_by_id.find(entry->parent_id);
+        if (entry->parent_id.empty() || parent_iter == index_by_id.end()) {
+            tree.roots.push_back(i);
+        } else {
+            tree.items[parent_iter->second].children.push_back(i);
+        }
+    }
+
+    auto sort_indices = [&tree](std::vector<std::size_t>& indices) {
+        std::sort(indices.begin(), indices.end(), [&tree](std::size_t lhs, std::size_t rhs) {
+            return tree.items[lhs].entry->display_name < tree.items[rhs].entry->display_name;
+        });
+    };
+
+    sort_indices(tree.roots);
+    for (auto& item : tree.items) {
+        sort_indices(item.children);
+    }
+
+    return tree;
+}
+
+bool AddNodeTreeItemMatches(const AddNodeTree& tree,
+                            std::size_t item_index,
+                            const std::string& search) {
+    const auto* entry = tree.items[item_index].entry;
+    if (ContainsCaseInsensitive(entry->display_name, search) ||
+        ContainsCaseInsensitive(entry->id, search)) {
+        return true;
+    }
+
+    for (const auto child_index : tree.items[item_index].children) {
+        if (AddNodeTreeItemMatches(tree, child_index, search)) {
+            return true;
+        }
+    }
+
+    return false;
+}
+
+const char* GetAddNodeIcon(const NodeCreationEntry& entry) {
+    if (entry.id == "Node") {
+        return ICON_MDI_CIRCLE_OUTLINE;
+    }
+    if (entry.id == "Node3D") {
+        return ICON_MDI_VECTOR_POINT;
+    }
+    return ICON_MDI_CUBE_OUTLINE;
 }
 
 } // namespace
@@ -73,67 +129,6 @@ SceneEditorPanel::SceneEditorPanel()
 SceneEditorPanel::~SceneEditorPanel()
 {
     delete filter_;
-}
-
-std::vector<SceneEditorPanel::AddNodeEntry> SceneEditorPanel::BuildAddNodeEntries() {
-    std::vector<AddNodeEntry> entries;
-    std::unordered_set<std::string> seen_labels;
-    Type node_type = Type::get<Node>();
-
-    for (const Type& type : Type::get_types()) {
-        if (!type.is_valid()) {
-            continue;
-        }
-
-        const std::string type_name = type.get_name().data();
-        if (type_name.empty() ||
-            type_name.find('*') != std::string::npos ||
-            type.is_pointer() ||
-            type.is_wrapper() ||
-            IsEditorOnlyNodeType(type_name)) {
-            continue;
-        }
-
-        if (type != node_type && !type.is_derived_from(node_type)) {
-            continue;
-        }
-
-        if (!type.get_constructor().is_valid() || seen_labels.contains(type_name)) {
-            continue;
-        }
-
-        seen_labels.insert(type_name);
-        entries.push_back({
-            type_name,
-            [type_name]() -> Node* {
-                Type current_type = Type::get_by_name(type_name);
-                if (!current_type.is_valid()) {
-                    return nullptr;
-                }
-
-                Variant new_obj = current_type.create();
-                bool success = false;
-                auto* node = new_obj.convert<Node*>(&success);
-                return success ? node : nullptr;
-            }
-        });
-    }
-
-    entries.push_back({
-        "Box Mesh",
-        []() -> Node* {
-            auto* node = Object::New<MeshInstance3D>();
-            node->SetName("Box");
-            node->SetMesh(MakeRef<BoxMesh>());
-            return node;
-        }
-    });
-
-    std::sort(entries.begin(), entries.end(), [](const AddNodeEntry& lhs, const AddNodeEntry& rhs) {
-        return lhs.label < rhs.label;
-    });
-
-    return entries;
 }
 
 Node* SceneEditorPanel::GetAddChildTarget(Node* scene_root) const {
@@ -153,18 +148,16 @@ void SceneEditorPanel::RequestOpenAddChildDialog(Node* parent) {
     add_child_parent_ = parent;
     open_add_child_dialog_ = true;
     add_node_search_.clear();
-    selected_add_node_index_ = -1;
+    selected_add_node_id_.clear();
 }
 
 bool SceneEditorPanel::CreateSelectedAddNode() {
-    static const std::vector<AddNodeEntry> entries = BuildAddNodeEntries();
     if (add_child_parent_ == nullptr ||
-        selected_add_node_index_ < 0 ||
-        static_cast<std::size_t>(selected_add_node_index_) >= entries.size()) {
+        selected_add_node_id_.empty()) {
         return false;
     }
 
-    Node* node = entries[static_cast<std::size_t>(selected_add_node_index_)].create();
+    Node* node = NodeCreationRegistry::CreateNode(selected_add_node_id_);
     if (node == nullptr) {
         return false;
     }
@@ -223,32 +216,74 @@ void SceneEditorPanel::DrawAddChildDialog() {
     ImGui::TextUnformatted("Matches");
     ImGui::Separator();
 
-    static const std::vector<AddNodeEntry> entries = BuildAddNodeEntries();
     ImGui::BeginChild("CreateNodeMatches", {0.0f, -110.0f}, true);
+    const AddNodeTree node_tree = BuildAddNodeTree(NodeCreationRegistry::GetNodeTypes());
     bool had_visible_entry = false;
-    for (std::size_t i = 0; i < entries.size(); ++i) {
-        const auto& entry = entries[i];
-        if (!ContainsCaseInsensitive(entry.label, add_node_search_)) {
-            continue;
+    bool create_requested = false;
+
+    std::function<void(std::size_t)> draw_tree_item = [&](std::size_t item_index) {
+        if (!AddNodeTreeItemMatches(node_tree, item_index, add_node_search_)) {
+            return;
         }
 
         had_visible_entry = true;
-        const bool selected = selected_add_node_index_ == static_cast<int>(i);
-        std::string label = entry.label;
-        if (entry.label == "Box Mesh") {
-            label = ICON_MDI_CUBE_OUTLINE "  " + label;
-        } else if (entry.label == "Node3D") {
-            label = ICON_MDI_VECTOR_POINT "  " + label;
-        } else {
-            label = ICON_MDI_CUBE_OUTLINE "  " + label;
-        }
 
-        if (ImGui::Selectable(label.c_str(), selected)) {
-            selected_add_node_index_ = static_cast<int>(i);
-            if (ImGui::IsMouseDoubleClicked(ImGuiMouseButton_Left) && CreateSelectedAddNode()) {
-                ImGui::CloseCurrentPopup();
+        const auto& item = node_tree.items[item_index];
+        const auto* entry = item.entry;
+        std::vector<std::size_t> visible_children;
+        visible_children.reserve(item.children.size());
+        for (const auto child_index : item.children) {
+            if (AddNodeTreeItemMatches(node_tree, child_index, add_node_search_)) {
+                visible_children.push_back(child_index);
             }
         }
+
+        ImGuiTreeNodeFlags flags = ImGuiTreeNodeFlags_OpenOnArrow |
+                                   ImGuiTreeNodeFlags_SpanAvailWidth |
+                                   ImGuiTreeNodeFlags_FramePadding;
+        if (selected_add_node_id_ == entry->id) {
+            flags |= ImGuiTreeNodeFlags_Selected;
+        }
+        if (visible_children.empty()) {
+            flags |= ImGuiTreeNodeFlags_Leaf | ImGuiTreeNodeFlags_NoTreePushOnOpen;
+        }
+        if (!add_node_search_.empty()) {
+            ImGui::SetNextItemOpen(true, ImGuiCond_Always);
+        }
+
+        const bool open = ImGui::TreeNodeEx(entry->id.c_str(),
+                                           flags,
+                                           "%s  %s",
+                                           GetAddNodeIcon(*entry),
+                                           entry->display_name.c_str());
+        if (ImGui::IsItemClicked() && !ImGui::IsItemToggledOpen()) {
+            selected_add_node_id_ = entry->id;
+        }
+        if (ImGui::IsItemHovered() && ImGui::IsMouseDoubleClicked(ImGuiMouseButton_Left)) {
+            selected_add_node_id_ = entry->id;
+            create_requested = CreateSelectedAddNode();
+        }
+
+        if (open && !visible_children.empty()) {
+            for (const auto child_index : visible_children) {
+                draw_tree_item(child_index);
+                if (create_requested) {
+                    break;
+                }
+            }
+            ImGui::TreePop();
+        }
+    };
+
+    for (const auto root_index : node_tree.roots) {
+        draw_tree_item(root_index);
+        if (create_requested) {
+            break;
+        }
+    }
+
+    if (create_requested) {
+        ImGui::CloseCurrentPopup();
     }
 
     if (!had_visible_entry) {
@@ -258,17 +293,20 @@ void SceneEditorPanel::DrawAddChildDialog() {
 
     ImGui::TextUnformatted("Description");
     ImGui::Separator();
-    if (selected_add_node_index_ >= 0 && static_cast<std::size_t>(selected_add_node_index_) < entries.size()) {
-        const auto& selected_entry = entries[static_cast<std::size_t>(selected_add_node_index_)];
-        if (selected_entry.label == "Box Mesh") {
-            ImGui::TextWrapped("Creates a MeshInstance3D with a default BoxMesh resource.");
-        } else {
-            ImGui::TextWrapped("Creates a %s node as a child of %s.",
-                               selected_entry.label.c_str(),
-                               add_child_parent_->GetName().c_str());
-        }
+    const NodeCreationEntry* selected_entry = nullptr;
+    if (!selected_add_node_id_.empty()) {
+        selected_entry = NodeCreationRegistry::FindNodeType(selected_add_node_id_);
+    }
+    if (selected_entry != nullptr) {
+        ImGui::TextWrapped("%s", selected_entry->description.c_str());
     } else {
         ImGui::TextDisabled("Select a node type to see details.");
+    }
+
+    if (selected_entry != nullptr && ImGui::IsKeyPressed(ImGuiKey_Enter)) {
+        if (CreateSelectedAddNode()) {
+            ImGui::CloseCurrentPopup();
+        }
     }
 
     ImGui::EndChild();
@@ -280,7 +318,7 @@ void SceneEditorPanel::DrawAddChildDialog() {
         ImGui::CloseCurrentPopup();
     }
     ImGui::SameLine(ImGui::GetWindowWidth() - button_width - ImGui::GetStyle().WindowPadding.x);
-    const bool can_create = selected_add_node_index_ >= 0;
+    const bool can_create = selected_entry != nullptr;
     if (!can_create) {
         ImGui::BeginDisabled();
     }
