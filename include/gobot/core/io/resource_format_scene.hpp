@@ -25,6 +25,8 @@ private:
     friend class ResourceFormatLoaderScene;
     friend class VariantSerializer;
 
+    bool LoadSceneNodes(const Json& nodes_json);
+
     Ref<Resource> resource_{nullptr};
     std::string file_context_;
     std::string local_path_;
@@ -68,6 +70,8 @@ private:
     friend class VariantSerializer;
 
     void FindResources(const Variant &variant, bool main = false);
+    void FindSceneResources(const Ref<PackedScene>& packed_scene);
+    Json SaveSceneNodes();
 
     bool takeover_paths_ = false;
     Ref<PackedScene> packed_scene_;

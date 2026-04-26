@@ -14,10 +14,11 @@
 #include "gobot/type_categroy.hpp"
 #include "gobot/core/io/variant_serializer.hpp"
 #include "gobot/scene/resources/packed_scene.hpp"
+#include "gobot/scene/node.hpp"
 #include "gobot/core/string_utils.hpp"
 #include "gobot/error_macros.hpp"
 
-#define FORMAT_VERSION 1
+#define FORMAT_VERSION 2
 
 namespace gobot {
 
@@ -254,16 +255,119 @@ bool ResourceFormatLoaderSceneInstance::LoadResource() {
     }
 
     if (json.contains("__NODES__")) {
-        if (is_scene_) {
-            LOG_ERROR("");
+        if (!is_scene_) {
+            LOG_ERROR("__NODES__ requires __META_TYPE__: SCENE");
             return false;
         }
 
+        resource_ = MakeRef<PackedScene>();
+        if (!LoadSceneNodes(json["__NODES__"])) {
+            resource_ = {};
+            return false;
+        }
+
+        if (cache_mode_ != ResourceFormatLoader::CacheMode::Ignore && !ResourceCache::Has(local_path_)) {
+            resource_->SetPath(local_path_);
+        }
 
         return true;
     }
 
     return false;
+}
+
+bool ResourceFormatLoaderSceneInstance::LoadSceneNodes(const Json& nodes_json) {
+    if (!nodes_json.is_array()) {
+        LOG_ERROR("__NODES__ must be an array");
+        return false;
+    }
+
+    Ref<PackedScene> packed_scene = dynamic_pointer_cast<PackedScene>(resource_);
+    if (!packed_scene.IsValid()) {
+        LOG_ERROR("Cannot load scene nodes without a PackedScene resource");
+        return false;
+    }
+
+    Ref<SceneState> state = packed_scene->GetState();
+    state->Clear();
+
+    for (const auto& node_json : nodes_json) {
+        if (!node_json.is_object()) {
+            LOG_ERROR("Scene node entry must be an object: {}", node_json.dump(4));
+            return false;
+        }
+
+        SceneState::NodeData node_data;
+        if (node_json.contains("type")) {
+            node_data.type = node_json["type"].get<std::string>();
+        } else if (node_json.contains("__TYPE__")) {
+            node_data.type = node_json["__TYPE__"].get<std::string>();
+        } else {
+            LOG_ERROR("Scene node is missing type: {}", node_json.dump(4));
+            return false;
+        }
+
+        if (node_json.contains("name")) {
+            node_data.name = node_json["name"].get<std::string>();
+        }
+
+        if (node_json.contains("parent")) {
+            node_data.parent = node_json["parent"].is_null() ? -1 : node_json["parent"].get<int>();
+        } else if (node_json.contains("__PARENT__")) {
+            node_data.parent = node_json["__PARENT__"].is_null() ? -1 : node_json["__PARENT__"].get<int>();
+        }
+
+        Type node_type = Type::get_by_name(node_data.type);
+        if (!node_type.is_valid()) {
+            LOG_ERROR("Unknown scene node type: {}", node_data.type);
+            return false;
+        }
+
+        Variant new_obj = node_type.create();
+        bool success{false};
+        auto* node = new_obj.convert<Node*>(&success);
+        if (!success || node == nullptr) {
+            LOG_ERROR("Scene node type is not a Node: {}", node_data.type);
+            return false;
+        }
+
+        if (node_json.contains("properties")) {
+            const Json& properties_json = node_json["properties"];
+            if (!properties_json.is_object()) {
+                Object::Delete(node);
+                LOG_ERROR("Scene node properties must be an object: {}", node_json.dump(4));
+                return false;
+            }
+
+            for (const auto& [property_name, property_json] : properties_json.items()) {
+                Variant property_value = node->Get(property_name);
+                if (!property_value.is_valid()) {
+                    LOG_ERROR("Unknown property '{}' on scene node type '{}'", property_name, node_data.type);
+                    continue;
+                }
+
+                if (!VariantSerializer::JsonToVariant(property_value, property_json, this)) {
+                    Object::Delete(node);
+                    LOG_ERROR("Cannot load property '{}' for scene node type '{}'", property_name, node_data.type);
+                    return false;
+                }
+
+                const Type property_type = node->GetPropertyType(property_name);
+                if (!property_value.convert(property_type)) {
+                    Object::Delete(node);
+                    LOG_ERROR("Cannot convert property '{}' to type '{}'", property_name, property_type.get_name().data());
+                    return false;
+                }
+
+                node_data.properties.push_back({property_name, property_value});
+            }
+        }
+
+        Object::Delete(node);
+        state->AddNode(node_data);
+    }
+
+    return true;
 }
 
 
@@ -358,7 +462,11 @@ bool ResourceFormatSaverSceneInstance::Save(const std::string &path, const Ref<R
     local_path_ = ProjectSettings::GetInstance()->LocalizePath(path);
 
     // Save resources.
-    FindResources(resource, true);
+    if (packed_scene_.IsValid()) {
+        FindSceneResources(packed_scene_);
+    } else {
+        FindResources(resource, true);
+    }
 
     if (packed_scene_.IsValid()) {
         // Add instances to external resources if saving a packed scene.
@@ -401,7 +509,7 @@ bool ResourceFormatSaverSceneInstance::Save(const std::string &path, const Ref<R
         if (!resource_set_.contains(saved_resource)) {
             continue;
         }
-        bool main = (saved_resource == saved_resources_.back());
+        bool main = !packed_scene_.IsValid() && (saved_resource == saved_resources_.back());
         if (main && packed_scene_.IsValid()) {
             break; // Save as a scene.
         }
@@ -456,10 +564,67 @@ bool ResourceFormatSaverSceneInstance::Save(const std::string &path, const Ref<R
         }
     }
 
+    if (packed_scene_.IsValid()) {
+        root["__TYPE__"] = "PackedScene";
+        root["__NODES__"] = SaveSceneNodes();
+    }
+
     std::ofstream out_file(global_path);
     out_file << root.dump(4);
     out_file.close();
     return true;
+}
+
+void ResourceFormatSaverSceneInstance::FindSceneResources(const Ref<PackedScene>& packed_scene) {
+    if (!packed_scene.IsValid() || !packed_scene->GetState().IsValid()) {
+        return;
+    }
+
+    Ref<SceneState> state = packed_scene->GetState();
+    for (std::size_t i = 0; i < state->GetNodeCount(); ++i) {
+        const SceneState::NodeData* node_data = state->GetNodeData(i);
+        if (node_data == nullptr) {
+            continue;
+        }
+
+        if (node_data->instance.IsValid()) {
+            FindResources(node_data->instance);
+        }
+
+        for (const auto& property : node_data->properties) {
+            FindResources(property.value);
+        }
+    }
+}
+
+Json ResourceFormatSaverSceneInstance::SaveSceneNodes() {
+    Json nodes_json = Json::array();
+    if (!packed_scene_.IsValid() || !packed_scene_->GetState().IsValid()) {
+        return nodes_json;
+    }
+
+    Ref<SceneState> state = packed_scene_->GetState();
+    for (std::size_t i = 0; i < state->GetNodeCount(); ++i) {
+        const SceneState::NodeData* node_data = state->GetNodeData(i);
+        if (node_data == nullptr) {
+            continue;
+        }
+
+        Json node_json;
+        node_json["type"] = node_data->type;
+        node_json["name"] = node_data->name;
+        node_json["parent"] = node_data->parent;
+
+        Json properties_json = Json::object();
+        for (const auto& property : node_data->properties) {
+            properties_json[property.name] = VariantSerializer::VariantToJson(property.value, this);
+        }
+        node_json["properties"] = properties_json;
+
+        nodes_json.push_back(node_json);
+    }
+
+    return nodes_json;
 }
 
 void ResourceFormatSaverSceneInstance::FindResources(const Variant &variant, bool main) {

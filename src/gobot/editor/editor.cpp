@@ -6,6 +6,9 @@
 */
 
 #include "gobot/editor/editor.hpp"
+
+#include <filesystem>
+
 #include "gobot/core/config/project_setting.hpp"
 #include "gobot/editor/edited_scene.hpp"
 #include "gobot/editor/node3d_editor.hpp"
@@ -79,6 +82,19 @@ Node3D* Editor::GetEditedSceneRoot() const {
     return edited_scene_ ? edited_scene_->GetRoot() : nullptr;
 }
 
+bool Editor::SaveEditedScene(const std::string& path) const {
+    return edited_scene_ != nullptr && edited_scene_->SaveToPath(path);
+}
+
+bool Editor::LoadEditedScene(const std::string& path) {
+    if (edited_scene_ == nullptr || !edited_scene_->LoadFromPath(path)) {
+        return false;
+    }
+
+    selected_ = edited_scene_->GetRoot();
+    return true;
+}
+
 void Editor::NotificationCallBack(NotificationType notification) {
     switch (notification) {
         case NotificationType::Process: {
@@ -108,11 +124,26 @@ void Editor::OnImGuiContent() {
     ImGui::ShowDemoWindow();
 
     file_browser_->Display();
+    HandleSceneFileDialogSelection();
 }
 
 void Editor::DrawMenuBar() {
     if (ImGui::BeginMainMenuBar()) {
         if (ImGui::BeginMenu("File")) {
+            if (ImGui::MenuItem("Save Scene", "Ctrl+S")) {
+                if (SaveEditedScene(current_scene_path_)) {
+                    LOG_INFO("Saved scene: {}", current_scene_path_);
+                } else {
+                    LOG_ERROR("Failed to save scene: {}", current_scene_path_);
+                }
+            }
+            if (ImGui::MenuItem("Save Scene As...")) {
+                OpenSceneFileDialog(SceneFileDialogMode::SaveAs);
+            }
+            ImGui::Separator();
+            if (ImGui::MenuItem("Load Scene...")) {
+                OpenSceneFileDialog(SceneFileDialogMode::Load);
+            }
             ImGui::EndMenu();
         }
         if (ImGui::BeginMenu("Edit")) {
@@ -126,6 +157,80 @@ void Editor::DrawMenuBar() {
         }
         ImGui::EndMainMenuBar();
     }
+}
+
+void Editor::OpenSceneFileDialog(SceneFileDialogMode mode) {
+    if (file_browser_ == nullptr) {
+        return;
+    }
+
+    scene_file_dialog_mode_ = mode;
+    file_browser_->SetFlags(mode == SceneFileDialogMode::SaveAs
+                            ? ImGuiFileBrowserFlags_EnterNewFilename
+                            : 0);
+    file_browser_->SetTitle(mode == SceneFileDialogMode::SaveAs ? "Save Scene" : "Load Scene");
+    file_browser_->SetOkText(mode == SceneFileDialogMode::SaveAs ? "Save" : "Load");
+    file_browser_->SetFileFilters({".jscn"});
+
+    const std::string& project_path = ProjectSettings::GetInstance()->GetProjectPath();
+    if (!project_path.empty()) {
+        file_browser_->SetPwd(project_path);
+    }
+
+    file_browser_->Open();
+}
+
+void Editor::HandleSceneFileDialogSelection() {
+    if (scene_file_dialog_mode_ == SceneFileDialogMode::None || file_browser_ == nullptr) {
+        return;
+    }
+
+    if (!file_browser_->IsOpened() && !file_browser_->HasSelected()) {
+        scene_file_dialog_mode_ = SceneFileDialogMode::None;
+        ResetFileDialogDefaults();
+        return;
+    }
+
+    if (!file_browser_->HasSelected()) {
+        return;
+    }
+
+    std::filesystem::path selected_path = file_browser_->GetSelected();
+    if (scene_file_dialog_mode_ == SceneFileDialogMode::SaveAs && selected_path.extension() != ".jscn") {
+        selected_path += ".jscn";
+    }
+
+    const std::string scene_path = ProjectSettings::GetInstance()->LocalizePath(selected_path.string());
+    if (scene_file_dialog_mode_ == SceneFileDialogMode::SaveAs) {
+        if (SaveEditedScene(scene_path)) {
+            current_scene_path_ = scene_path;
+            LOG_INFO("Saved scene: {}", current_scene_path_);
+        } else {
+            LOG_ERROR("Failed to save scene: {}", scene_path);
+        }
+    } else if (scene_file_dialog_mode_ == SceneFileDialogMode::Load) {
+        if (LoadEditedScene(scene_path)) {
+            current_scene_path_ = scene_path;
+            LOG_INFO("Loaded scene: {}", current_scene_path_);
+        } else {
+            LOG_ERROR("Failed to load scene: {}", scene_path);
+        }
+    }
+
+    file_browser_->ClearSelected();
+    scene_file_dialog_mode_ = SceneFileDialogMode::None;
+    ResetFileDialogDefaults();
+}
+
+void Editor::ResetFileDialogDefaults() {
+    if (file_browser_ == nullptr) {
+        return;
+    }
+
+    file_browser_->SetFlags(0);
+    file_browser_->SetTitle("File Browser");
+    file_browser_->SetOkText("OK");
+    file_browser_->ClearFilters();
 }
 
 void Editor::BeginDockSpace() {

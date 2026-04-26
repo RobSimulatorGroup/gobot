@@ -7,6 +7,8 @@
 
 #include <gtest/gtest.h>
 
+#include <fstream>
+
 #include <gobot/core/config/project_setting.hpp>
 #include <gobot/log.hpp>
 #include <gobot/core/string_utils.hpp>
@@ -52,6 +54,11 @@ TEST(TestProjectSetting, test_localize_path) {
     ASSERT_TRUE(project_setting->LocalizePath("/tmp/test_project/") == "res://");
     ASSERT_TRUE(project_setting->LocalizePath("/tmp/test_project") == "res://");
     ASSERT_TRUE(project_setting->LocalizePath("/tmp/test_project/test") == "res://test");
+    {
+        std::ofstream file("/tmp/test_project/scene.jscn");
+        file << "{}";
+    }
+    ASSERT_TRUE(project_setting->LocalizePath("/tmp/test_project/scene.jscn") == "res://scene.jscn");
 
     ASSERT_TRUE(project_setting->LocalizePath("res://test") == "res://test");
     ASSERT_TRUE(project_setting->LocalizePath("res://test/..") == "res://");

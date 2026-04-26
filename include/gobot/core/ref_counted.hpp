@@ -311,6 +311,11 @@ struct wrapper_mapper<gobot::Ref<T>> {
 
     template<typename U>
     static gobot::Ref<U> convert(const type &source, bool &ok) {
+        if (!source) {
+            ok = true;
+            return {};
+        }
+
         auto cast = source.template DynamicPointerCast<U>();
         if (cast) {
             ok = true;
@@ -334,5 +339,4 @@ size_t operator()(const gobot::Ref<T>& ptr) const noexcept {
 };
 
 }
-
 

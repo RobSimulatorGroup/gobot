@@ -7,6 +7,8 @@
 
 #include <gtest/gtest.h>
 
+#include <limits>
+
 #include <gobot/core/io/resource.hpp>
 #include <gobot/core/io/variant_serializer.hpp>
 #include <gobot/core/registration.hpp>
@@ -108,6 +110,19 @@ TEST(TestVariantSerializer, test_primitive_type) {
     ASSERT_TRUE(gobot::VariantSerializer::JsonToVariant(variant, json));
     ASSERT_TRUE(variant.get_value<gobot::PropertyUsageFlags>() == flags);
   }
+}
+
+TEST(TestVariantSerializer, rejects_out_of_range_integer_conversion) {
+  gobot::Variant int8_variant(int8_t{});
+  EXPECT_FALSE(gobot::VariantSerializer::JsonToVariant(int8_variant, 128));
+
+  gobot::Variant uint8_variant(uint8_t{});
+  EXPECT_FALSE(gobot::VariantSerializer::JsonToVariant(uint8_variant, -1));
+
+  gobot::Variant int64_variant(int64_t{});
+  EXPECT_FALSE(gobot::VariantSerializer::JsonToVariant(
+      int64_variant,
+      static_cast<uint64_t>(std::numeric_limits<int64_t>::max()) + 1));
 }
 
 TEST(TestVariantSerializer, test_vector_int) {

@@ -7,6 +7,8 @@
 
 #include <gtest/gtest.h>
 
+#include <unordered_set>
+
 #include "gobot/core/ref_counted.hpp"
 #include "gobot/core/io/resource.hpp"
 #include "gobot/core/types.hpp"
@@ -56,7 +58,10 @@ TEST(TestResource, test_copy_from) {
 }
 
 TEST(TestResource, test_generate_unique_id) {
-    for(int i= 0 ; i< 5; i++) {
-        LOG_INFO("{}", gobot::Resource::GenerateResourceUniqueId());
+    std::unordered_set<std::string> ids;
+    for (int i = 0; i < 32; i++) {
+        std::string id = gobot::Resource::GenerateResourceUniqueId();
+        EXPECT_FALSE(id.empty());
+        EXPECT_TRUE(ids.insert(id).second);
     }
 }

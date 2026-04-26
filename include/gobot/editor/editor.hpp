@@ -7,6 +7,8 @@
 
 #pragma once
 
+#include <string>
+
 #include "gobot/scene/node.hpp"
 #include "gobot/scene/imgui_node.hpp"
 
@@ -50,8 +52,24 @@ public:
 
     Node3D* GetEditedSceneRoot() const;
 
+    bool SaveEditedScene(const std::string& path) const;
+
+    bool LoadEditedScene(const std::string& path);
+
 private:
+    enum class SceneFileDialogMode {
+        None,
+        Load,
+        SaveAs,
+    };
+
     void DrawMenuBar();
+
+    void OpenSceneFileDialog(SceneFileDialogMode mode);
+
+    void HandleSceneFileDialogSelection();
+
+    void ResetFileDialogDefaults();
 
     void BeginDockSpace();
 
@@ -64,6 +82,9 @@ private:
     ImGuiManager* imgui_manager_{nullptr};
     ImGui::FileBrowser* file_browser_{nullptr};
     EditedScene* edited_scene_{nullptr};
+
+    SceneFileDialogMode scene_file_dialog_mode_{SceneFileDialogMode::None};
+    std::string current_scene_path_{"res://scene.jscn"};
 
     Node* selected_{nullptr};
 

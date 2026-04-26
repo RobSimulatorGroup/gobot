@@ -37,10 +37,6 @@ bool ProjectSettings::SetProjectPath(const std::string& project_path) {
 }
 
 std::string ProjectSettings::LocalizePath(std::string_view path) const {
-    if (project_path_.empty() || ( IsAbsolutePath(path) && !path.starts_with(project_path_))) {
-        return SimplifyPath(path);
-    }
-
     // Check if we have a special path (like res://) or a protocol identifier.
     auto p = path.find("://");
     bool found = false;
@@ -54,36 +50,33 @@ std::string ProjectSettings::LocalizePath(std::string_view path) const {
         }
     }
     if (found) {
-        return std::string(path.substr(0, p + 3)) + std::filesystem::weakly_canonical(path.substr(p + 3)).string();
+        return SimplifyPath(path);
     }
 
     auto simplify_path = SimplifyPath(ReplaceAll(path.data(), "\\", "/"));
-    if (std::filesystem::exists(simplify_path)) {
-        std::filesystem::current_path(simplify_path);
-        auto cwd = std::filesystem::current_path().string();
-        cwd.append("/");
-        auto temp_project_path = project_path_ + "/";
-        if (!cwd.starts_with(temp_project_path)) {
-            return std::string(path);
-        }
-        return ReplaceAll(cwd, temp_project_path, "res://");
-    } else {
-        auto sep = simplify_path.find_last_of("/");
-        if (sep == -1) {
-            return "res://" + simplify_path;
+    if (project_path_.empty()) {
+        return simplify_path;
+    }
+
+    std::string project_path = SimplifyPath(ReplaceAll(project_path_, "\\", "/"));
+    if (IsAbsolutePath(simplify_path)) {
+        if (simplify_path == project_path) {
+            return "res://";
         }
 
-        std::string parent = simplify_path.substr(0, sep);
-        std::string plocal = LocalizePath(parent);
-        if (plocal.empty()) {
-            return "";
+        const std::string project_prefix = project_path + "/";
+        if (!simplify_path.starts_with(project_prefix)) {
+            return simplify_path;
         }
-        // Only strip the starting '/' from 'path' if its parent ('plocal') ends with '/'
-        if (plocal[plocal.length() - 1] == '/') {
-            sep += 1;
-        }
-        return plocal + std::string(path.substr(sep, path.size() - sep));
+
+        return "res://" + simplify_path.substr(project_prefix.size());
     }
+
+    if (simplify_path.empty()) {
+        return "res://";
+    }
+
+    return "res://" + simplify_path;
 }
 
 std::string ProjectSettings::GlobalizePath(std::string_view path) const {

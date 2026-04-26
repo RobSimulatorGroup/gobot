@@ -7,6 +7,10 @@
 */
 
 #include "gobot/core/io/variant_serializer.hpp"
+
+#include <limits>
+#include <type_traits>
+
 #include "gobot/core/object.hpp"
 #include "gobot/log.hpp"
 #include "gobot/core/io/resource_format_scene.hpp"
@@ -18,6 +22,43 @@ const char* CLASS_TAG = "__CLASS__";
 
 ResourceFormatSaverSceneInstance* VariantSerializer::s_resource_format_saver_ = nullptr;
 ResourceFormatLoaderSceneInstance* VariantSerializer::s_resource_format_loader_ = nullptr;
+
+namespace {
+
+template<typename Target, typename Source>
+bool IntegerInRange(Source value) {
+    using TargetLimits = std::numeric_limits<Target>;
+
+    if constexpr (std::is_signed_v<Source> == std::is_signed_v<Target>) {
+        return value >= static_cast<Source>(TargetLimits::min()) &&
+               value <= static_cast<Source>(TargetLimits::max());
+    } else if constexpr (std::is_signed_v<Source>) {
+        if (value < 0) {
+            return false;
+        }
+        using UnsignedSource = std::make_unsigned_t<Source>;
+        return static_cast<UnsignedSource>(value) <= static_cast<UnsignedSource>(TargetLimits::max());
+    } else {
+        if constexpr (std::is_signed_v<Target>) {
+            using UnsignedTarget = std::make_unsigned_t<Target>;
+            return value <= static_cast<UnsignedTarget>(TargetLimits::max());
+        } else {
+            return value <= static_cast<Source>(TargetLimits::max());
+        }
+    }
+}
+
+template<typename Target, typename Source>
+Variant ExtractCheckedInteger(Source value, const Type& type, const Json& json_value) {
+    if (!IntegerInRange<Target>(value)) {
+        LOG_ERROR("json_value:{} is out of range for type: {}", json_value, type.get_name().data());
+        return {};
+    }
+
+    return static_cast<Target>(value);
+}
+
+} // namespace
 
 bool VariantSerializer::WriteAtomicTypesToJson(const Type& t, const Variant& var, Json& writer)
 {
@@ -240,26 +281,44 @@ Variant VariantSerializer::ExtractPrimitiveTypes(const Type& type, const Json& j
             LOG_ERROR("json_value:{} and type: {} is unmatched.", json_value, type.get_name().data());
         }
     } else if (json_value.is_number_unsigned()) {
+        auto value = json_value.get<uint64_t>();
         if (type == Type::get<uint8_t>()) {
-            return json_value.get<uint8_t>();
+            return ExtractCheckedInteger<uint8_t>(value, type, json_value);
         } else if (type == Type::get<uint16_t>()) {
-            return json_value.get<uint16_t>();
+            return ExtractCheckedInteger<uint16_t>(value, type, json_value);
         } else if (type == Type::get<uint32_t>()) {
-            return json_value.get<uint32_t>();
+            return ExtractCheckedInteger<uint32_t>(value, type, json_value);
         } else if (type == Type::get<uint64_t>()) {
-            return json_value.get<uint64_t>();
+            return value;
+        } else if (type == Type::get<int8_t>()) {
+            return ExtractCheckedInteger<int8_t>(value, type, json_value);
+        } else if (type == Type::get<int16_t>()) {
+            return ExtractCheckedInteger<int16_t>(value, type, json_value);
+        } else if (type == Type::get<int32_t>()) {
+            return ExtractCheckedInteger<int32_t>(value, type, json_value);
+        } else if (type == Type::get<int64_t>()) {
+            return ExtractCheckedInteger<int64_t>(value, type, json_value);
         } else {
             LOG_ERROR("json_value:{} and type: {} is unmatched.", json_value, type.get_name().data());
         }
     } else if (json_value.is_number_integer()) {
+        auto value = json_value.get<int64_t>();
         if (type == Type::get<int8_t>()) {
-            return json_value.get<int8_t>();
+            return ExtractCheckedInteger<int8_t>(value, type, json_value);
         } else if (type == Type::get<int16_t>()) {
-            return json_value.get<int16_t>();
+            return ExtractCheckedInteger<int16_t>(value, type, json_value);
         } else if (type == Type::get<int32_t>()) {
-            return json_value.get<int32_t>();
+            return ExtractCheckedInteger<int32_t>(value, type, json_value);
         } else if (type == Type::get<int64_t>()) {
-            return json_value.get<int64_t>();
+            return value;
+        } else if (type == Type::get<uint8_t>()) {
+            return ExtractCheckedInteger<uint8_t>(value, type, json_value);
+        } else if (type == Type::get<uint16_t>()) {
+            return ExtractCheckedInteger<uint16_t>(value, type, json_value);
+        } else if (type == Type::get<uint32_t>()) {
+            return ExtractCheckedInteger<uint32_t>(value, type, json_value);
+        } else if (type == Type::get<uint64_t>()) {
+            return ExtractCheckedInteger<uint64_t>(value, type, json_value);
         } else {
             LOG_ERROR("json_value:{} and type: {} is unmatched.", json_value, type.get_name().data());
         }
@@ -485,6 +544,11 @@ bool VariantSerializer::JsonToVariant(Variant& variant,
                                       const Json& json,
                                       ResourceFormatLoaderSceneInstance* s_resource_format_loader) {
     if (json.is_null()) {
+        auto raw_type = variant.get_type().get_raw_type();
+        if (raw_type.is_wrapper() && raw_type.get_wrapper_holder_type() == WrapperHolderType::Ref) {
+            return true;
+        }
+
         LOG_ERROR("Input json is null");
         return {};
     }
