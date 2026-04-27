@@ -36,6 +36,10 @@ public:
 
     void MeshSetBox(const RID& p_rid, const Vector3& size) override;
 
+    void MeshSetCylinder(const RID& p_rid, RealType radius, RealType height, int radial_segments) override;
+
+    void MeshSetSphere(const RID& p_rid, RealType radius, int radial_segments, int rings) override;
+
     bool OwnsMesh(const RID& p_rid) const override;
 
     void MeshFree(const RID& p_rid) override;

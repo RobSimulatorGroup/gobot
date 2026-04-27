@@ -74,6 +74,12 @@ Variant ResourceRefToPropertyVariant(const Ref<Resource>& resource, const Type& 
     if (expected_type == Type::get<BoxMesh>()) {
         return resource.DynamicPointerCast<BoxMesh>();
     }
+    if (expected_type == Type::get<CylinderMesh>()) {
+        return resource.DynamicPointerCast<CylinderMesh>();
+    }
+    if (expected_type == Type::get<SphereMesh>()) {
+        return resource.DynamicPointerCast<SphereMesh>();
+    }
     if (expected_type == Type::get<Material>()) {
         return resource.DynamicPointerCast<Material>();
     }
@@ -183,6 +189,24 @@ void ResourceCreationRegistry::EnsureBuiltInResourceTypesRegistered() {
         "Box mesh resource.",
         Type::get<BoxMesh>(),
         []() -> Ref<Resource> { return CreateResourceRef<BoxMesh>(); }
+    });
+
+    RegisterResourceType({
+        "CylinderMesh",
+        "CylinderMesh",
+        "PrimitiveMesh",
+        "Cylinder mesh resource.",
+        Type::get<CylinderMesh>(),
+        []() -> Ref<Resource> { return CreateResourceRef<CylinderMesh>(); }
+    });
+
+    RegisterResourceType({
+        "SphereMesh",
+        "SphereMesh",
+        "PrimitiveMesh",
+        "Sphere mesh resource.",
+        Type::get<SphereMesh>(),
+        []() -> Ref<Resource> { return CreateResourceRef<SphereMesh>(); }
     });
 
     RegisterResourceType({

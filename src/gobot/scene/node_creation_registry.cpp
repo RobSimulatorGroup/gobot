@@ -6,10 +6,12 @@
 #include "gobot/scene/node_creation_registry.hpp"
 
 #include <algorithm>
+#include <utility>
 
 #include "gobot/scene/collision_shape_3d.hpp"
 #include "gobot/scene/mesh_instance_3d.hpp"
 #include "gobot/scene/node_3d.hpp"
+#include "gobot/scene/resources/primitive_mesh.hpp"
 
 namespace gobot {
 
@@ -28,6 +30,14 @@ bool& BuiltInsRegistered() {
 template <typename T>
 Node* CreateNodeInstance() {
     return Object::New<T>();
+}
+
+template <typename T>
+Node* CreateMeshInstanceWithMesh(std::string name) {
+    auto* node = Object::New<MeshInstance3D>();
+    node->SetName(std::move(name));
+    node->SetMesh(MakeRef<T>());
+    return node;
 }
 
 } // namespace
@@ -107,6 +117,30 @@ void NodeCreationRegistry::EnsureBuiltInNodeTypesRegistered() {
         "Node3D",
         "3D node that provides collision geometry for physics and collision queries.",
         []() -> Node* { return CreateNodeInstance<CollisionShape3D>(); }
+    });
+
+    RegisterNodeType({
+        "BoxMeshInstance3D",
+        "Box Mesh",
+        "MeshInstance3D",
+        "MeshInstance3D preset with a BoxMesh resource assigned.",
+        []() -> Node* { return CreateMeshInstanceWithMesh<BoxMesh>("Box"); }
+    });
+
+    RegisterNodeType({
+        "CylinderMeshInstance3D",
+        "Cylinder Mesh",
+        "MeshInstance3D",
+        "MeshInstance3D preset with a CylinderMesh resource assigned.",
+        []() -> Node* { return CreateMeshInstanceWithMesh<CylinderMesh>("Cylinder"); }
+    });
+
+    RegisterNodeType({
+        "SphereMeshInstance3D",
+        "Sphere Mesh",
+        "MeshInstance3D",
+        "MeshInstance3D preset with a SphereMesh resource assigned.",
+        []() -> Node* { return CreateMeshInstanceWithMesh<SphereMesh>("Sphere"); }
     });
 
 }

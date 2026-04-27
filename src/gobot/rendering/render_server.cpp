@@ -99,6 +99,14 @@ void RenderServer::MeshSetBox(const RID& mesh, const Vector3& size) {
     RSG::mesh_storage->MeshSetBox(mesh, size);
 }
 
+void RenderServer::MeshSetCylinder(const RID& mesh, RealType radius, RealType height, int radial_segments) {
+    RSG::mesh_storage->MeshSetCylinder(mesh, radius, height, radial_segments);
+}
+
+void RenderServer::MeshSetSphere(const RID& mesh, RealType radius, int radial_segments, int rings) {
+    RSG::mesh_storage->MeshSetSphere(mesh, radius, radial_segments, rings);
+}
+
 void RenderServer::RenderSceneToViewport(const RID& viewport, const Node* scene_root, const Camera3D* camera) {
     ERR_FAIL_COND(RSG::scene == nullptr);
     const RID render_target = RSG::viewport->GetViewportRenderTarget(viewport);

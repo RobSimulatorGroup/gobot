@@ -106,6 +106,10 @@ public:
 
     void MeshSetBox(const RID& mesh, const Vector3& size);
 
+    void MeshSetCylinder(const RID& mesh, RealType radius, RealType height, int radial_segments);
+
+    void MeshSetSphere(const RID& mesh, RealType radius, int radial_segments, int rings);
+
     void RenderSceneToViewport(const RID& viewport, const Node* scene_root, const Camera3D* camera);
 
     void RenderEditorDebugToViewport(const RID& viewport, const Camera3D* camera);

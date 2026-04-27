@@ -25,6 +25,8 @@ TEST(TestResourceCreationRegistry, filters_resource_types_by_ref_property_type) 
     const auto mesh_types = gobot::ResourceCreationRegistry::GetCreatableTypesForProperty(
             gobot::Type::get<gobot::Ref<gobot::Mesh>>());
     EXPECT_TRUE(ContainsResourceType(mesh_types, "BoxMesh"));
+    EXPECT_TRUE(ContainsResourceType(mesh_types, "CylinderMesh"));
+    EXPECT_TRUE(ContainsResourceType(mesh_types, "SphereMesh"));
     EXPECT_FALSE(ContainsResourceType(mesh_types, "PBRMaterial3D"));
 
     const auto material_types = gobot::ResourceCreationRegistry::GetCreatableTypesForProperty(
@@ -46,6 +48,18 @@ TEST(TestResourceCreationRegistry, created_variant_converts_to_requested_ref_bas
             gobot::Type::get<gobot::Ref<gobot::Mesh>>());
     ASSERT_TRUE(box_mesh.is_valid());
     EXPECT_EQ(box_mesh.get_type(), gobot::Type::get<gobot::Ref<gobot::Mesh>>());
+
+    gobot::Variant cylinder_mesh = gobot::ResourceCreationRegistry::CreateResourceVariant(
+            "CylinderMesh",
+            gobot::Type::get<gobot::Ref<gobot::Mesh>>());
+    ASSERT_TRUE(cylinder_mesh.is_valid());
+    EXPECT_EQ(cylinder_mesh.get_type(), gobot::Type::get<gobot::Ref<gobot::Mesh>>());
+
+    gobot::Variant sphere_mesh = gobot::ResourceCreationRegistry::CreateResourceVariant(
+            "SphereMesh",
+            gobot::Type::get<gobot::Ref<gobot::Mesh>>());
+    ASSERT_TRUE(sphere_mesh.is_valid());
+    EXPECT_EQ(sphere_mesh.get_type(), gobot::Type::get<gobot::Ref<gobot::Mesh>>());
 
     gobot::Variant material = gobot::ResourceCreationRegistry::CreateResourceVariant(
             "PBRMaterial3D",

@@ -8,10 +8,30 @@
 #include "gobot/drivers/opengl/mesh_storage_gl.hpp"
 
 #include "gobot/error_macros.hpp"
+#include "gobot/core/math/math_defs.hpp"
 
 #include <array>
+#include <algorithm>
+#include <cmath>
 
 namespace gobot::opengl {
+
+namespace {
+
+void SetMeshData(GLMeshData* mesh, std::vector<float> vertices, std::vector<uint32_t> indices) {
+    mesh->vertices = std::move(vertices);
+    mesh->indices = std::move(indices);
+    mesh->index_count = static_cast<GLsizei>(mesh->indices.size());
+    mesh->dirty = true;
+}
+
+void PushVertex(std::vector<float>& vertices, RealType x, RealType y, RealType z) {
+    vertices.push_back(static_cast<float>(x));
+    vertices.push_back(static_cast<float>(y));
+    vertices.push_back(static_cast<float>(z));
+}
+
+} // namespace
 
 GLMeshStorage* GLMeshStorage::s_singleton = nullptr;
 
@@ -62,16 +82,114 @@ void GLMeshStorage::MeshSetBox(const RID& p_rid, const Vector3& size) {
             0, 4, 7, 0, 7, 3,
     };
 
-    mesh->vertices.clear();
-    mesh->vertices.reserve(p.size() * 3);
+    std::vector<float> vertices;
+    vertices.reserve(p.size() * 3);
     for (const Vector3& point : p) {
-        mesh->vertices.push_back(point.x());
-        mesh->vertices.push_back(point.y());
-        mesh->vertices.push_back(point.z());
+        PushVertex(vertices, point.x(), point.y(), point.z());
     }
-    mesh->indices.assign(indices.begin(), indices.end());
-    mesh->index_count = static_cast<GLsizei>(mesh->indices.size());
-    mesh->dirty = true;
+    SetMeshData(mesh, std::move(vertices), {indices.begin(), indices.end()});
+}
+
+void GLMeshStorage::MeshSetCylinder(const RID& p_rid, RealType radius, RealType height, int radial_segments) {
+    GLMeshData* mesh = mesh_owner_.GetOrNull(p_rid);
+    ERR_FAIL_COND(mesh == nullptr);
+
+    radius = std::max(radius, static_cast<RealType>(0.0));
+    height = std::max(height, static_cast<RealType>(0.0));
+    radial_segments = std::max(radial_segments, 3);
+
+    std::vector<float> vertices;
+    std::vector<uint32_t> indices;
+    vertices.reserve(static_cast<std::size_t>(2 + radial_segments * 2) * 3);
+    indices.reserve(static_cast<std::size_t>(radial_segments) * 12);
+
+    const RealType half_height = height * static_cast<RealType>(0.5);
+    PushVertex(vertices, 0.0, half_height, 0.0);
+    PushVertex(vertices, 0.0, -half_height, 0.0);
+
+    for (int i = 0; i < radial_segments; ++i) {
+        const RealType angle = static_cast<RealType>(2.0 * Math_PI * i / radial_segments);
+        const RealType x = std::cos(angle) * radius;
+        const RealType z = std::sin(angle) * radius;
+        PushVertex(vertices, x, half_height, z);
+        PushVertex(vertices, x, -half_height, z);
+    }
+
+    constexpr uint32_t top_center = 0;
+    constexpr uint32_t bottom_center = 1;
+    for (int i = 0; i < radial_segments; ++i) {
+        const int next = (i + 1) % radial_segments;
+        const uint32_t top = static_cast<uint32_t>(2 + i * 2);
+        const uint32_t bottom = top + 1;
+        const uint32_t next_top = static_cast<uint32_t>(2 + next * 2);
+        const uint32_t next_bottom = next_top + 1;
+
+        indices.insert(indices.end(), {top_center, next_top, top});
+        indices.insert(indices.end(), {bottom_center, bottom, next_bottom});
+        indices.insert(indices.end(), {top, next_top, next_bottom});
+        indices.insert(indices.end(), {top, next_bottom, bottom});
+    }
+
+    SetMeshData(mesh, std::move(vertices), std::move(indices));
+}
+
+void GLMeshStorage::MeshSetSphere(const RID& p_rid, RealType radius, int radial_segments, int rings) {
+    GLMeshData* mesh = mesh_owner_.GetOrNull(p_rid);
+    ERR_FAIL_COND(mesh == nullptr);
+
+    radius = std::max(radius, static_cast<RealType>(0.0));
+    radial_segments = std::max(radial_segments, 3);
+    rings = std::max(rings, 2);
+
+    std::vector<float> vertices;
+    std::vector<uint32_t> indices;
+    vertices.reserve(static_cast<std::size_t>(2 + (rings - 1) * radial_segments) * 3);
+    indices.reserve(static_cast<std::size_t>(radial_segments * rings) * 6);
+
+    const uint32_t top_index = 0;
+    PushVertex(vertices, 0.0, radius, 0.0);
+
+    for (int ring = 1; ring < rings; ++ring) {
+        const RealType theta = static_cast<RealType>(Math_PI * ring / rings);
+        const RealType y = std::cos(theta) * radius;
+        const RealType ring_radius = std::sin(theta) * radius;
+        for (int segment = 0; segment < radial_segments; ++segment) {
+            const RealType phi = static_cast<RealType>(2.0 * Math_PI * segment / radial_segments);
+            PushVertex(vertices, std::cos(phi) * ring_radius, y, std::sin(phi) * ring_radius);
+        }
+    }
+
+    const uint32_t bottom_index = static_cast<uint32_t>(vertices.size() / 3);
+    PushVertex(vertices, 0.0, -radius, 0.0);
+
+    auto ring_vertex = [radial_segments](int ring, int segment) -> uint32_t {
+        return static_cast<uint32_t>(1 + (ring - 1) * radial_segments + (segment % radial_segments));
+    };
+
+    for (int segment = 0; segment < radial_segments; ++segment) {
+        const uint32_t current = ring_vertex(1, segment);
+        const uint32_t next = ring_vertex(1, segment + 1);
+        indices.insert(indices.end(), {top_index, current, next});
+    }
+
+    for (int ring = 1; ring < rings - 1; ++ring) {
+        for (int segment = 0; segment < radial_segments; ++segment) {
+            const uint32_t a = ring_vertex(ring, segment);
+            const uint32_t b = ring_vertex(ring, segment + 1);
+            const uint32_t c = ring_vertex(ring + 1, segment);
+            const uint32_t d = ring_vertex(ring + 1, segment + 1);
+            indices.insert(indices.end(), {a, c, b});
+            indices.insert(indices.end(), {b, c, d});
+        }
+    }
+
+    for (int segment = 0; segment < radial_segments; ++segment) {
+        const uint32_t current = ring_vertex(rings - 1, segment);
+        const uint32_t next = ring_vertex(rings - 1, segment + 1);
+        indices.insert(indices.end(), {bottom_index, next, current});
+    }
+
+    SetMeshData(mesh, std::move(vertices), std::move(indices));
 }
 
 bool GLMeshStorage::OwnsMesh(const RID& p_rid) const {

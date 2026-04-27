@@ -23,6 +23,10 @@ public:
 
     virtual void MeshSetBox(const RID& p_rid, const Vector3& size) = 0;
 
+    virtual void MeshSetCylinder(const RID& p_rid, RealType radius, RealType height, int radial_segments) = 0;
+
+    virtual void MeshSetSphere(const RID& p_rid, RealType radius, int radial_segments, int rings) = 0;
+
     virtual bool OwnsMesh(const RID& p_rid) const = 0;
 
     virtual void MeshFree(const RID& p_rid) = 0;

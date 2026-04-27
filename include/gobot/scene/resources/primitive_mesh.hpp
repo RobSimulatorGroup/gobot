@@ -55,8 +55,24 @@ class GOBOT_EXPORT CylinderMesh : public PrimitiveMesh {
 public:
     CylinderMesh();
 
-private:
+    void SetRadius(RealType radius);
 
+    RealType GetRadius() const;
+
+    void SetHeight(RealType height);
+
+    RealType GetHeight() const;
+
+    void SetRadialSegments(int radial_segments);
+
+    int GetRadialSegments() const;
+
+private:
+    void UpdateMesh();
+
+    RealType radius_{0.5};
+    RealType height_{1.0};
+    int radial_segments_{32};
 };
 
 class GOBOT_EXPORT PlaneMesh : public PrimitiveMesh {
@@ -70,6 +86,24 @@ class GOBOT_EXPORT SphereMesh : public PrimitiveMesh {
 public:
     SphereMesh();
 
+    void SetRadius(RealType radius);
+
+    RealType GetRadius() const;
+
+    void SetRadialSegments(int radial_segments);
+
+    int GetRadialSegments() const;
+
+    void SetRings(int rings);
+
+    int GetRings() const;
+
+private:
+    void UpdateMesh();
+
+    RealType radius_{0.5};
+    int radial_segments_{32};
+    int rings_{16};
 };
 
 

@@ -69,6 +69,43 @@ std::vector<Property> GetDeclaredEditableProperties(Type type) {
     return properties;
 }
 
+ImU32 GetResourceGroupBgColor(int depth) {
+    const ImVec4 base = ImGui::GetStyleColorVec4(ImGuiCol_FrameBg);
+    const float tint = depth % 2 == 0 ? 0.10f : 0.15f;
+    return ImGui::ColorConvertFloat4ToU32({
+            std::min(base.x + tint, 1.0f),
+            std::min(base.y + tint * 0.75f, 1.0f),
+            std::min(base.z + tint * 0.35f, 1.0f),
+            0.92f
+    });
+}
+
+void DrawResourceMenu(PropertyDataModel* property_data_model) {
+    if (!ImGui::BeginPopup("ResourceMenu")) {
+        return;
+    }
+
+    const auto creatable_types = ResourceCreationRegistry::GetCreatableTypesForProperty(
+            property_data_model->GetValueType());
+    if (creatable_types.empty()) {
+        ImGui::TextDisabled("No compatible resource types.");
+    } else {
+        ImGui::TextDisabled("New");
+        ImGui::Separator();
+    }
+
+    for (const auto* entry : creatable_types) {
+        if (ImGui::MenuItem(entry->display_name.c_str())) {
+            AssignResourceVariant(property_data_model,
+                                  ResourceCreationRegistry::CreateResourceVariant(
+                                          entry->id,
+                                          property_data_model->GetValueType()));
+        }
+    }
+
+    ImGui::EndPopup();
+}
+
 void DrawResourceInspector(Resource* resource,
                            ResourceInspectorContext& context) {
     if (resource == nullptr) {
@@ -135,42 +172,33 @@ void DrawResourceInspector(Resource* resource,
 
 void EditorPropertyResource::OnImGuiContent() {
     Ref<Resource> resource = GetResourceRef(property_data_model_->GetValue());
+    const float dropdown_width = ImGui::GetFrameHeight();
+    const float slot_width = std::max(1.0f,
+                                      ImGui::GetContentRegionAvail().x -
+                                      dropdown_width -
+                                      ImGui::GetStyle().ItemSpacing.x);
+
+    std::string slot_label;
     if (!resource.IsValid()) {
-        ImGui::TextDisabled("<empty>");
+        slot_label = "<empty>";
     } else {
-        ImGui::TextUnformatted(GetTypeIcon(resource->GetType()));
-        ImGui::SameLine();
-        ImGui::TextUnformatted(resource->GetType().get_name().data());
+        slot_label = std::string(GetTypeIcon(resource->GetType())) + "  " +
+                     resource->GetType().get_name().data();
 
         const std::string path = resource->GetPath();
         if (!path.empty()) {
-            ImGui::SameLine();
-            ImGui::TextDisabled("%s", path.c_str());
+            slot_label += "  ";
+            slot_label += path;
         }
     }
 
+    ImGui::Selectable(slot_label.c_str(), false, ImGuiSelectableFlags_None,
+                      {slot_width, ImGui::GetFrameHeight()});
     ImGui::SameLine();
-    if (ImGui::SmallButton(ICON_MDI_PLUS)) {
-        ImGui::OpenPopup("CreateResource");
+    if (ImGui::Button(ICON_MDI_MENU_DOWN, {dropdown_width, ImGui::GetFrameHeight()})) {
+        ImGui::OpenPopup("ResourceMenu");
     }
-
-    if (ImGui::BeginPopup("CreateResource")) {
-        const auto creatable_types = ResourceCreationRegistry::GetCreatableTypesForProperty(
-                property_data_model_->GetValueType());
-        if (creatable_types.empty()) {
-            ImGui::TextDisabled("No compatible resource types.");
-        }
-
-        for (const auto* entry : creatable_types) {
-            if (ImGui::MenuItem(entry->display_name.c_str())) {
-                AssignResourceVariant(property_data_model_,
-                                      ResourceCreationRegistry::CreateResourceVariant(
-                                              entry->id,
-                                              property_data_model_->GetValueType()));
-            }
-        }
-        ImGui::EndPopup();
-    }
+    DrawResourceMenu(property_data_model_);
 }
 
 void EditorPropertyResource::End() {
@@ -183,15 +211,34 @@ void EditorPropertyResource::End() {
     }
 
     ImGui::PushID(this);
+    auto& context = GetResourceInspectorContext();
+    ImDrawList* draw_list = ImGui::GetWindowDrawList();
+    const ImVec2 bg_min = ImGui::GetCursorScreenPos();
+    const float bg_max_x = ImGui::GetWindowPos().x + ImGui::GetWindowContentRegionMax().x;
+
+    draw_list->ChannelsSplit(2);
+    draw_list->ChannelsSetCurrent(1);
+    ImGui::BeginGroup();
+
     const bool open = ImGui::TreeNodeEx("ResourceProperties",
                                         ImGuiTreeNodeFlags_DefaultOpen |
                                         ImGuiTreeNodeFlags_SpanAvailWidth,
                                         "%s properties",
                                         resource->GetType().get_name().data());
     if (open) {
-        DrawResourceInspector(resource.Get(), GetResourceInspectorContext());
+        ImGui::Indent(ImGui::GetStyle().IndentSpacing);
+        DrawResourceInspector(resource.Get(), context);
+        ImGui::Unindent(ImGui::GetStyle().IndentSpacing);
         ImGui::TreePop();
     }
+
+    ImGui::EndGroup();
+    const ImVec2 bg_max = {bg_max_x,
+                           ImGui::GetItemRectMax().y + ImGui::GetStyle().ItemSpacing.y * 0.5f};
+    draw_list->ChannelsSetCurrent(0);
+    draw_list->AddRectFilled(bg_min, bg_max, GetResourceGroupBgColor(context.depth), 4.0f);
+    draw_list->AddRect(bg_min, bg_max, ImGui::GetColorU32(ImGuiCol_Border), 4.0f);
+    draw_list->ChannelsMerge();
     ImGui::PopID();
 }
 
