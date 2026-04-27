@@ -197,7 +197,7 @@ void SceneEditorPanel::DrawAddChildDialog() {
     ImGui::TextUnformatted("Favorites");
     ImGui::Separator();
     ImGui::TextDisabled("Node3D");
-    ImGui::TextDisabled("Box Mesh");
+    ImGui::TextDisabled("MeshInstance3D");
     ImGui::Spacing();
     ImGui::TextUnformatted("Recent");
     ImGui::Separator();

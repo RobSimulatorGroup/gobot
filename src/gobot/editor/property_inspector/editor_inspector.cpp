@@ -11,6 +11,7 @@
 #include "gobot/error_macros.hpp"
 #include "gobot/editor/property_inspector/editor_property_primitives.hpp"
 #include "gobot/editor/property_inspector/editor_property_math.hpp"
+#include "gobot/editor/property_inspector/editor_property_resource.hpp"
 #include "gobot/editor/imgui/type_icons.hpp"
 #include "gobot/type_categroy.hpp"
 #include "imgui_stdlib.h"
@@ -315,7 +316,7 @@ ImGuiNode* EditorInspectorDefaultPlugin::GetEditorForProperty(std::unique_ptr<Va
             return editor;
         } break;
         case TypeCategory::Ref:
-            break;
+            return Object::New<EditorPropertyResource>(type_category, std::move(variant_data));
         case TypeCategory::Array:
             break;
         case TypeCategory::Dictionary:

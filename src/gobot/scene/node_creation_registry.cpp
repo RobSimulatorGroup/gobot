@@ -10,7 +10,6 @@
 #include "gobot/scene/collision_shape_3d.hpp"
 #include "gobot/scene/mesh_instance_3d.hpp"
 #include "gobot/scene/node_3d.hpp"
-#include "gobot/scene/resources/primitive_mesh.hpp"
 
 namespace gobot {
 
@@ -110,18 +109,6 @@ void NodeCreationRegistry::EnsureBuiltInNodeTypesRegistered() {
         []() -> Node* { return CreateNodeInstance<CollisionShape3D>(); }
     });
 
-    RegisterNodeType({
-        "BoxMeshInstance3D",
-        "Box Mesh",
-        "MeshInstance3D",
-        "Creates a MeshInstance3D with a default BoxMesh resource.",
-        []() -> Node* {
-            auto* node = Object::New<MeshInstance3D>();
-            node->SetName("Box");
-            node->SetMesh(MakeRef<BoxMesh>());
-            return node;
-        }
-    });
 }
 
 } // namespace gobot
