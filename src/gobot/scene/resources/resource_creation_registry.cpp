@@ -7,11 +7,13 @@
 
 #include <algorithm>
 
+#include "gobot/scene/resources/box_shape_3d.hpp"
 #include "gobot/scene/resources/cylinder_shape_3d.hpp"
 #include "gobot/scene/resources/material.hpp"
 #include "gobot/scene/resources/mesh.hpp"
 #include "gobot/scene/resources/primitive_mesh.hpp"
 #include "gobot/scene/resources/shape_3d.hpp"
+#include "gobot/scene/resources/sphere_shape_3d.hpp"
 
 namespace gobot {
 
@@ -89,8 +91,14 @@ Variant ResourceRefToPropertyVariant(const Ref<Resource>& resource, const Type& 
     if (expected_type == Type::get<Shape3D>()) {
         return resource.DynamicPointerCast<Shape3D>();
     }
+    if (expected_type == Type::get<BoxShape3D>()) {
+        return resource.DynamicPointerCast<BoxShape3D>();
+    }
     if (expected_type == Type::get<CylinderShape3D>()) {
         return resource.DynamicPointerCast<CylinderShape3D>();
+    }
+    if (expected_type == Type::get<SphereShape3D>()) {
+        return resource.DynamicPointerCast<SphereShape3D>();
     }
 
     return {};
@@ -210,12 +218,30 @@ void ResourceCreationRegistry::EnsureBuiltInResourceTypesRegistered() {
     });
 
     RegisterResourceType({
+        "BoxShape3D",
+        "BoxShape3D",
+        "Shape3D",
+        "Box collision shape resource.",
+        Type::get<BoxShape3D>(),
+        []() -> Ref<Resource> { return CreateResourceRef<BoxShape3D>(); }
+    });
+
+    RegisterResourceType({
         "CylinderShape3D",
         "CylinderShape3D",
         "Shape3D",
         "Cylinder collision shape resource.",
         Type::get<CylinderShape3D>(),
         []() -> Ref<Resource> { return CreateResourceRef<CylinderShape3D>(); }
+    });
+
+    RegisterResourceType({
+        "SphereShape3D",
+        "SphereShape3D",
+        "Shape3D",
+        "Sphere collision shape resource.",
+        Type::get<SphereShape3D>(),
+        []() -> Ref<Resource> { return CreateResourceRef<SphereShape3D>(); }
     });
 }
 

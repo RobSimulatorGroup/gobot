@@ -4,10 +4,13 @@
 #include <memory>
 
 #include <gobot/rendering/render_server.hpp>
+#include <gobot/scene/resources/box_shape_3d.hpp>
+#include <gobot/scene/resources/cylinder_shape_3d.hpp>
 #include <gobot/scene/resources/material.hpp>
 #include <gobot/scene/resources/primitive_mesh.hpp>
 #include <gobot/scene/resources/resource_creation_registry.hpp>
 #include <gobot/scene/resources/shape_3d.hpp>
+#include <gobot/scene/resources/sphere_shape_3d.hpp>
 
 namespace {
 
@@ -36,7 +39,9 @@ TEST(TestResourceCreationRegistry, filters_resource_types_by_ref_property_type) 
 
     const auto shape_types = gobot::ResourceCreationRegistry::GetCreatableTypesForProperty(
             gobot::Type::get<gobot::Ref<gobot::Shape3D>>());
+    EXPECT_TRUE(ContainsResourceType(shape_types, "BoxShape3D"));
     EXPECT_TRUE(ContainsResourceType(shape_types, "CylinderShape3D"));
+    EXPECT_TRUE(ContainsResourceType(shape_types, "SphereShape3D"));
     EXPECT_FALSE(ContainsResourceType(shape_types, "BoxMesh"));
 }
 
@@ -66,4 +71,22 @@ TEST(TestResourceCreationRegistry, created_variant_converts_to_requested_ref_bas
             gobot::Type::get<gobot::Ref<gobot::Material>>());
     ASSERT_TRUE(material.is_valid());
     EXPECT_EQ(material.get_type(), gobot::Type::get<gobot::Ref<gobot::Material>>());
+
+    gobot::Variant box_shape = gobot::ResourceCreationRegistry::CreateResourceVariant(
+            "BoxShape3D",
+            gobot::Type::get<gobot::Ref<gobot::Shape3D>>());
+    ASSERT_TRUE(box_shape.is_valid());
+    EXPECT_EQ(box_shape.get_type(), gobot::Type::get<gobot::Ref<gobot::Shape3D>>());
+
+    gobot::Variant cylinder_shape = gobot::ResourceCreationRegistry::CreateResourceVariant(
+            "CylinderShape3D",
+            gobot::Type::get<gobot::Ref<gobot::Shape3D>>());
+    ASSERT_TRUE(cylinder_shape.is_valid());
+    EXPECT_EQ(cylinder_shape.get_type(), gobot::Type::get<gobot::Ref<gobot::Shape3D>>());
+
+    gobot::Variant sphere_shape = gobot::ResourceCreationRegistry::CreateResourceVariant(
+            "SphereShape3D",
+            gobot::Type::get<gobot::Ref<gobot::Shape3D>>());
+    ASSERT_TRUE(sphere_shape.is_valid());
+    EXPECT_EQ(sphere_shape.get_type(), gobot::Type::get<gobot::Ref<gobot::Shape3D>>());
 }

@@ -9,9 +9,12 @@
 #include <utility>
 
 #include "gobot/scene/collision_shape_3d.hpp"
+#include "gobot/scene/joint_3d.hpp"
+#include "gobot/scene/link_3d.hpp"
 #include "gobot/scene/mesh_instance_3d.hpp"
 #include "gobot/scene/node_3d.hpp"
 #include "gobot/scene/resources/primitive_mesh.hpp"
+#include "gobot/scene/robot_3d.hpp"
 
 namespace gobot {
 
@@ -117,6 +120,30 @@ void NodeCreationRegistry::EnsureBuiltInNodeTypesRegistered() {
         "Node3D",
         "3D node that provides collision geometry for physics and collision queries.",
         []() -> Node* { return CreateNodeInstance<CollisionShape3D>(); }
+    });
+
+    RegisterNodeType({
+        "Robot3D",
+        "Robot3D",
+        "Node3D",
+        "Root node for an imported or authored robot model.",
+        []() -> Node* { return CreateNodeInstance<Robot3D>(); }
+    });
+
+    RegisterNodeType({
+        "Link3D",
+        "Link3D",
+        "Node3D",
+        "Robot link node with inertial metadata and visual/collision children.",
+        []() -> Node* { return CreateNodeInstance<Link3D>(); }
+    });
+
+    RegisterNodeType({
+        "Joint3D",
+        "Joint3D",
+        "Node3D",
+        "Robot joint node that connects parent and child links.",
+        []() -> Node* { return CreateNodeInstance<Joint3D>(); }
     });
 
     RegisterNodeType({
