@@ -5,6 +5,8 @@
 
 #pragma once
 
+#include <string>
+
 #include "gobot/core/math/geometry.hpp"
 #include "gobot/scene/node_3d.hpp"
 
@@ -32,11 +34,21 @@ public:
 
     const Vector3& GetInertiaOffDiagonal() const;
 
+    void SetVisualMeshPath(std::string visual_mesh_path);
+
+    const std::string& GetVisualMeshPath() const;
+
+    void SetCollisionMeshPath(std::string collision_mesh_path);
+
+    const std::string& GetCollisionMeshPath() const;
+
 private:
     RealType mass_{0.0};
     Vector3 center_of_mass_{Vector3::Zero()};
     Vector3 inertia_diagonal_{Vector3::Zero()};
     Vector3 inertia_off_diagonal_{Vector3::Zero()};
+    std::string visual_mesh_path_;
+    std::string collision_mesh_path_;
 };
 
 }

@@ -1,0 +1,28 @@
+<?xml version="1.0"?>
+<robot name="test_bot">
+  <link name="base_link">
+    <inertial>
+      <origin xyz="0.1 0.2 0.3" rpy="0 0 0"/>
+      <mass value="12.5"/>
+      <inertia ixx="1.0" ixy="0.01" ixz="0.02" iyy="2.0" iyz="0.03" izz="3.0"/>
+    </inertial>
+    <visual>
+      <geometry>
+        <mesh filename="meshes/base_visual.dae"/>
+      </geometry>
+    </visual>
+    <collision>
+      <geometry>
+        <mesh filename="package://gobot_test_robot/meshes/base_collision.dae"/>
+      </geometry>
+    </collision>
+  </link>
+  <link name="upper_arm_link"/>
+  <joint name="shoulder_pan_joint" type="revolute">
+    <parent link="base_link"/>
+    <child link="upper_arm_link"/>
+    <origin xyz="0 0 1" rpy="0 0 1.57079632679"/>
+    <axis xyz="0 0 1"/>
+    <limit lower="-1.57" upper="1.57" effort="80" velocity="2"/>
+  </joint>
+</robot>

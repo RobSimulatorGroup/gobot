@@ -5,6 +5,7 @@
 
 #include "gobot/core/io/resource_format_urdf.hpp"
 
+#include <filesystem>
 #include <fstream>
 #include <regex>
 #include <sstream>
@@ -29,6 +30,8 @@ struct LinkImportData {
     Vector3 center_of_mass{Vector3::Zero()};
     Vector3 inertia_diagonal{Vector3::Zero()};
     Vector3 inertia_off_diagonal{Vector3::Zero()};
+    std::string visual_mesh_path;
+    std::string collision_mesh_path;
 };
 
 struct JointImportData {
@@ -47,7 +50,7 @@ struct JointImportData {
 
 std::string ResolveInputPath(const std::string& path) {
     if (path.starts_with("res://")) {
-        ProjectSettings* settings = ProjectSettings::GetInstance();
+        ProjectSettings* settings = ProjectSettings::s_singleton;
         return settings != nullptr ? settings->GlobalizePath(path) : path.substr(6);
     }
     return path;
@@ -120,6 +123,87 @@ std::string FindTagBody(const std::string& body, const std::string& tag_name) {
     return match[1].str();
 }
 
+std::string ReadPackageName(const std::filesystem::path& package_xml_path) {
+    const std::string package_xml = ReadTextFile(package_xml_path.string());
+    std::smatch match;
+    if (!std::regex_search(package_xml, match, std::regex(R"(<\s*name\s*>\s*([^<]+?)\s*<\s*/\s*name\s*>)",
+                                                          std::regex::icase))) {
+        return {};
+    }
+    return match[1].str();
+}
+
+std::filesystem::path FindPackageRoot(const std::filesystem::path& source_file_path,
+                                      const std::string& package_name) {
+    std::filesystem::path current = source_file_path.parent_path();
+    while (!current.empty() && current != current.root_path()) {
+        const std::filesystem::path package_xml = current / "package.xml";
+        if (std::filesystem::exists(package_xml) && ReadPackageName(package_xml) == package_name) {
+            return current;
+        }
+        current = current.parent_path();
+    }
+
+    return {};
+}
+
+std::string LocalizeImportedAssetPath(const std::filesystem::path& asset_path) {
+    const std::filesystem::path normalized_path = asset_path.lexically_normal();
+    ProjectSettings* settings = ProjectSettings::s_singleton;
+    return settings != nullptr ? settings->LocalizePath(normalized_path.string()) : normalized_path.string();
+}
+
+std::string ResolvePackageUri(const std::string& filename, const std::string& source_file_path) {
+    constexpr std::string_view prefix = "package://";
+    if (!filename.starts_with(prefix)) {
+        return {};
+    }
+
+    const std::string package_relative = filename.substr(prefix.size());
+    const std::size_t slash = package_relative.find('/');
+    if (slash == std::string::npos || slash == 0 || slash + 1 >= package_relative.size()) {
+        return filename;
+    }
+
+    const std::string package_name = package_relative.substr(0, slash);
+    const std::string relative_asset_path = package_relative.substr(slash + 1);
+    const std::filesystem::path package_root = FindPackageRoot(source_file_path, package_name);
+    if (package_root.empty()) {
+        return filename;
+    }
+
+    return LocalizeImportedAssetPath(package_root / relative_asset_path);
+}
+
+std::string NormalizeImportedAssetPath(const std::string& filename, const std::string& source_file_path) {
+    if (filename.empty() || filename.starts_with("model://") || filename.starts_with("res://")) {
+        return filename;
+    }
+
+    if (filename.starts_with("package://")) {
+        return ResolvePackageUri(filename, source_file_path);
+    }
+
+    std::filesystem::path mesh_path(filename);
+    if (mesh_path.is_relative()) {
+        mesh_path = std::filesystem::path(source_file_path).parent_path() / mesh_path;
+    }
+
+    return LocalizeImportedAssetPath(mesh_path);
+}
+
+std::string FindFirstMeshPath(const std::string& body,
+                              const std::string& geometry_owner_tag,
+                              const std::string& source_file_path) {
+    const std::string owner_body = FindTagBody(body, geometry_owner_tag);
+    if (owner_body.empty()) {
+        return {};
+    }
+
+    const std::string mesh_attrs = FindTagAttributes(owner_body, "mesh");
+    return NormalizeImportedAssetPath(GetAttribute(mesh_attrs, "filename"), source_file_path);
+}
+
 JointType ParseJointType(const std::string& value) {
     if (value == "revolute") {
         return JointType::Revolute;
@@ -139,7 +223,7 @@ JointType ParseJointType(const std::string& value) {
     return JointType::Fixed;
 }
 
-std::vector<LinkImportData> ParseLinks(const std::string& xml) {
+std::vector<LinkImportData> ParseLinks(const std::string& xml, const std::string& source_file_path) {
     std::vector<LinkImportData> links;
     const std::regex link_regex(R"(<\s*link\b([^>]*)>([\s\S]*?)<\s*/\s*link\s*>|<\s*link\b([^>]*)/\s*>)",
                                 std::regex::icase);
@@ -173,6 +257,9 @@ std::vector<LinkImportData> ParseLinks(const std::string& xml) {
                     ParseReal(GetAttribute(inertia_attrs, "iyz"))};
         }
 
+        link.visual_mesh_path = FindFirstMeshPath(body, "visual", source_file_path);
+        link.collision_mesh_path = FindFirstMeshPath(body, "collision", source_file_path);
+
         links.push_back(link);
     }
 
@@ -197,6 +284,9 @@ std::vector<JointImportData> ParseJoints(const std::string& xml) {
         joint.parent_link = GetAttribute(FindTagAttributes(body, "parent"), "link");
         joint.child_link = GetAttribute(FindTagAttributes(body, "child"), "link");
         joint.axis = ParseVector3(GetAttribute(FindTagAttributes(body, "axis"), "xyz"), Vector3::UnitX());
+        if (joint.axis.squaredNorm() <= CMP_EPSILON2) {
+            joint.axis = Vector3::UnitX();
+        }
 
         const std::string origin_attrs = FindTagAttributes(body, "origin");
         joint.origin_xyz = ParseVector3(GetAttribute(origin_attrs, "xyz"));
@@ -238,6 +328,8 @@ SceneState::NodeData MakeLinkNode(const LinkImportData& link, int parent) {
     AddProperty(node_data, "center_of_mass", link.center_of_mass);
     AddProperty(node_data, "inertia_diagonal", link.inertia_diagonal);
     AddProperty(node_data, "inertia_off_diagonal", link.inertia_off_diagonal);
+    AddProperty(node_data, "visual_mesh_path", link.visual_mesh_path);
+    AddProperty(node_data, "collision_mesh_path", link.collision_mesh_path);
     return node_data;
 }
 
@@ -284,7 +376,7 @@ Ref<Resource> ResourceFormatLoaderURDF::Load(const std::string& path,
         }
     }
 
-    const std::vector<LinkImportData> links = ParseLinks(xml);
+    const std::vector<LinkImportData> links = ParseLinks(xml, input_path);
     const std::vector<JointImportData> joints = ParseJoints(xml);
     if (links.empty()) {
         LOG_ERROR("URDF file {} contains no links.", path);
@@ -354,6 +446,7 @@ void ResourceFormatLoaderURDF::GetRecognizedExtensionsForType(const std::string&
 
 void ResourceFormatLoaderURDF::GetRecognizedExtensions(std::vector<std::string>* extensions) const {
     extensions->push_back("urdf");
+    extensions->push_back("xml");
 }
 
 bool ResourceFormatLoaderURDF::HandlesType(const std::string& type) const {

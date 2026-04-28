@@ -7,7 +7,10 @@
 
 #include "gobot/editor/editor.hpp"
 
+#include <algorithm>
+#include <cctype>
 #include <filesystem>
+#include <string>
 
 #include "gobot/core/config/project_setting.hpp"
 #include "gobot/editor/edited_scene.hpp"
@@ -31,6 +34,22 @@
 #include "imgui_extension/file_browser/ImFileBrowser.h"
 
 namespace gobot {
+namespace {
+
+std::string ToLower(std::string value) {
+    std::ranges::transform(value, value.begin(), [](unsigned char c) {
+        return static_cast<char>(std::tolower(c));
+    });
+    return value;
+}
+
+std::string NativeScenePathForImport(const std::filesystem::path& selected_path) {
+    std::filesystem::path native_path = selected_path;
+    native_path.replace_extension(".jscn");
+    return ProjectSettings::GetInstance()->LocalizePath(native_path.string());
+}
+
+} // namespace
 
 Editor* Editor::s_singleton = nullptr;
 
@@ -144,6 +163,9 @@ void Editor::DrawMenuBar() {
             if (ImGui::MenuItem("Load Scene...")) {
                 OpenSceneFileDialog(SceneFileDialogMode::Load);
             }
+            if (ImGui::MenuItem("Import URDF...")) {
+                OpenSceneFileDialog(SceneFileDialogMode::Import);
+            }
             ImGui::EndMenu();
         }
         if (ImGui::BeginMenu("Edit")) {
@@ -168,9 +190,19 @@ void Editor::OpenSceneFileDialog(SceneFileDialogMode mode) {
     file_browser_->SetFlags(mode == SceneFileDialogMode::SaveAs
                             ? ImGuiFileBrowserFlags_EnterNewFilename
                             : 0);
-    file_browser_->SetTitle(mode == SceneFileDialogMode::SaveAs ? "Save Scene" : "Load Scene");
-    file_browser_->SetOkText(mode == SceneFileDialogMode::SaveAs ? "Save" : "Load");
-    file_browser_->SetFileFilters({".jscn"});
+    if (mode == SceneFileDialogMode::SaveAs) {
+        file_browser_->SetTitle("Save Scene");
+        file_browser_->SetOkText("Save");
+        file_browser_->SetFileFilters({".jscn"});
+    } else if (mode == SceneFileDialogMode::Import) {
+        file_browser_->SetTitle("Import URDF");
+        file_browser_->SetOkText("Import");
+        file_browser_->SetFileFilters({".urdf", ".xml"});
+    } else {
+        file_browser_->SetTitle("Load Scene");
+        file_browser_->SetOkText("Load");
+        file_browser_->SetFileFilters({".jscn", ".urdf", ".xml"});
+    }
 
     const std::string& project_path = ProjectSettings::GetInstance()->GetProjectPath();
     if (!project_path.empty()) {
@@ -210,10 +242,21 @@ void Editor::HandleSceneFileDialogSelection() {
         }
     } else if (scene_file_dialog_mode_ == SceneFileDialogMode::Load) {
         if (LoadEditedScene(scene_path)) {
-            current_scene_path_ = scene_path;
+            if (IsNativeScenePath(scene_path)) {
+                current_scene_path_ = scene_path;
+            } else {
+                current_scene_path_ = NativeScenePathForImport(selected_path);
+            }
             LOG_INFO("Loaded scene: {}", current_scene_path_);
         } else {
             LOG_ERROR("Failed to load scene: {}", scene_path);
+        }
+    } else if (scene_file_dialog_mode_ == SceneFileDialogMode::Import) {
+        if (LoadEditedScene(scene_path)) {
+            current_scene_path_ = NativeScenePathForImport(selected_path);
+            LOG_INFO("Imported scene: {}. Native save target: {}", scene_path, current_scene_path_);
+        } else {
+            LOG_ERROR("Failed to import scene: {}", scene_path);
         }
     }
 
@@ -231,6 +274,10 @@ void Editor::ResetFileDialogDefaults() {
     file_browser_->SetTitle("File Browser");
     file_browser_->SetOkText("OK");
     file_browser_->ClearFilters();
+}
+
+bool Editor::IsNativeScenePath(const std::string& path) {
+    return ToLower(std::filesystem::path(path).extension().string()) == ".jscn";
 }
 
 void Editor::BeginDockSpace() {

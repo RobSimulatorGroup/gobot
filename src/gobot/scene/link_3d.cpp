@@ -5,6 +5,8 @@
 
 #include "gobot/scene/link_3d.hpp"
 
+#include <utility>
+
 #include "gobot/core/registration.hpp"
 #include "gobot/log.hpp"
 
@@ -50,6 +52,22 @@ const Vector3& Link3D::GetInertiaOffDiagonal() const {
     return inertia_off_diagonal_;
 }
 
+void Link3D::SetVisualMeshPath(std::string visual_mesh_path) {
+    visual_mesh_path_ = std::move(visual_mesh_path);
+}
+
+const std::string& Link3D::GetVisualMeshPath() const {
+    return visual_mesh_path_;
+}
+
+void Link3D::SetCollisionMeshPath(std::string collision_mesh_path) {
+    collision_mesh_path_ = std::move(collision_mesh_path);
+}
+
+const std::string& Link3D::GetCollisionMeshPath() const {
+    return collision_mesh_path_;
+}
+
 } // namespace gobot
 
 GOBOT_REGISTRATION {
@@ -59,6 +77,8 @@ GOBOT_REGISTRATION {
             .property("mass", &Link3D::GetMass, &Link3D::SetMass)
             .property("center_of_mass", &Link3D::GetCenterOfMass, &Link3D::SetCenterOfMass)
             .property("inertia_diagonal", &Link3D::GetInertiaDiagonal, &Link3D::SetInertiaDiagonal)
-            .property("inertia_off_diagonal", &Link3D::GetInertiaOffDiagonal, &Link3D::SetInertiaOffDiagonal);
+            .property("inertia_off_diagonal", &Link3D::GetInertiaOffDiagonal, &Link3D::SetInertiaOffDiagonal)
+            .property("visual_mesh_path", &Link3D::GetVisualMeshPath, &Link3D::SetVisualMeshPath)
+            .property("collision_mesh_path", &Link3D::GetCollisionMeshPath, &Link3D::SetCollisionMeshPath);
 
 };

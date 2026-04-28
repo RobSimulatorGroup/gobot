@@ -60,6 +60,7 @@ private:
     enum class SceneFileDialogMode {
         None,
         Load,
+        Import,
         SaveAs,
     };
 
@@ -70,6 +71,8 @@ private:
     void HandleSceneFileDialogSelection();
 
     void ResetFileDialogDefaults();
+
+    static bool IsNativeScenePath(const std::string& path);
 
     void BeginDockSpace();
 

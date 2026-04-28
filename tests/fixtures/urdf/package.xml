@@ -1,0 +1,8 @@
+<?xml version="1.0"?>
+<package format="3">
+  <name>gobot_test_robot</name>
+  <version>0.1.0</version>
+  <description>Minimal URDF fixture for Gobot importer tests.</description>
+  <maintainer email="test@example.com">Gobot Tests</maintainer>
+  <license>LGPL-3.0</license>
+</package>

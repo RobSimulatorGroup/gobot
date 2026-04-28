@@ -1,7 +1,8 @@
 #include <gtest/gtest.h>
 
 #include <algorithm>
-#include <fstream>
+#include <cstdlib>
+#include <filesystem>
 
 #include <gobot/core/io/resource_format_urdf.hpp>
 #include <gobot/scene/joint_3d.hpp>
@@ -16,33 +17,14 @@ TEST(TestResourceFormatURDF, recognizes_urdf_extension_for_packed_scene) {
     loader->GetRecognizedExtensionsForType("PackedScene", &extensions);
 
     EXPECT_NE(std::find(extensions.begin(), extensions.end(), "urdf"), extensions.end());
+    EXPECT_NE(std::find(extensions.begin(), extensions.end(), "xml"), extensions.end());
     EXPECT_TRUE(loader->HandlesType("PackedScene"));
 }
 
 TEST(TestResourceFormatURDF, imports_robot_links_joints_and_inertial_metadata) {
-    const std::string path = "/tmp/gobot_test_robot.urdf";
-    {
-        std::ofstream file(path);
-        file << R"(
-<robot name="test_bot">
-  <link name="base_link">
-    <inertial>
-      <origin xyz="0.1 0.2 0.3" rpy="0 0 0"/>
-      <mass value="12.5"/>
-      <inertia ixx="1.0" ixy="0.01" ixz="0.02" iyy="2.0" iyz="0.03" izz="3.0"/>
-    </inertial>
-  </link>
-  <link name="upper_arm_link"/>
-  <joint name="shoulder_pan_joint" type="revolute">
-    <parent link="base_link"/>
-    <child link="upper_arm_link"/>
-    <origin xyz="0 0 1" rpy="0 0 1.57079632679"/>
-    <axis xyz="0 0 1"/>
-    <limit lower="-1.57" upper="1.57" effort="80" velocity="2"/>
-  </joint>
-</robot>
-)";
-    }
+    const std::filesystem::path fixture_path =
+            std::filesystem::current_path() / "tests/fixtures/urdf/simple_robot.urdf";
+    const std::string path = fixture_path.string();
 
     gobot::Ref<gobot::ResourceFormatLoaderURDF> loader = gobot::MakeRef<gobot::ResourceFormatLoaderURDF>();
     gobot::Ref<gobot::Resource> resource = loader->Load(path);
@@ -67,6 +49,10 @@ TEST(TestResourceFormatURDF, imports_robot_links_joints_and_inertial_metadata) {
     EXPECT_TRUE(base->GetCenterOfMass().isApprox(gobot::Vector3(0.1, 0.2, 0.3), CMP_EPSILON));
     EXPECT_TRUE(base->GetInertiaDiagonal().isApprox(gobot::Vector3(1.0, 2.0, 3.0), CMP_EPSILON));
     EXPECT_TRUE(base->GetInertiaOffDiagonal().isApprox(gobot::Vector3(0.01, 0.02, 0.03), CMP_EPSILON));
+    EXPECT_EQ(base->GetVisualMeshPath(),
+              (fixture_path.parent_path() / "meshes/base_visual.dae").lexically_normal().string());
+    EXPECT_EQ(base->GetCollisionMeshPath(),
+              (fixture_path.parent_path() / "meshes/base_collision.dae").lexically_normal().string());
 
     ASSERT_EQ(base->GetChildCount(), 1);
     auto* joint = gobot::Object::PointerCastTo<gobot::Joint3D>(base->GetChild(0));
@@ -86,6 +72,47 @@ TEST(TestResourceFormatURDF, imports_robot_links_joints_and_inertial_metadata) {
     auto* child_link = gobot::Object::PointerCastTo<gobot::Link3D>(joint->GetChild(0));
     ASSERT_NE(child_link, nullptr);
     EXPECT_EQ(child_link->GetName(), "upper_arm_link");
+
+    gobot::Object::Delete(root_node);
+}
+
+TEST(TestResourceFormatURDF, imports_external_robot_urdf_when_requested) {
+    const char* test_urdf_path = std::getenv("GOBOT_TEST_URDF");
+    if (test_urdf_path == nullptr || std::string(test_urdf_path).empty()) {
+        GTEST_SKIP() << "Set GOBOT_TEST_URDF to run this test with a real robot URDF.";
+    }
+
+    const std::string path = test_urdf_path;
+    if (!std::filesystem::exists(path)) {
+        GTEST_SKIP() << "GOBOT_TEST_URDF does not point to an existing file: " << path;
+    }
+
+    gobot::Ref<gobot::ResourceFormatLoaderURDF> loader = gobot::MakeRef<gobot::ResourceFormatLoaderURDF>();
+    gobot::Ref<gobot::Resource> resource = loader->Load(path);
+    ASSERT_TRUE(resource.IsValid());
+
+    gobot::Ref<gobot::PackedScene> packed_scene = gobot::dynamic_pointer_cast<gobot::PackedScene>(resource);
+    ASSERT_TRUE(packed_scene.IsValid());
+    ASSERT_TRUE(packed_scene->GetState().IsValid());
+
+    EXPECT_GT(packed_scene->GetState()->GetNodeCount(), 1);
+
+    gobot::Node* root_node = packed_scene->Instantiate();
+    ASSERT_NE(root_node, nullptr);
+
+    auto* robot = gobot::Object::PointerCastTo<gobot::Robot3D>(root_node);
+    ASSERT_NE(robot, nullptr);
+    EXPECT_FALSE(robot->GetName().empty());
+    ASSERT_GT(robot->GetChildCount(), 0);
+
+    auto* base = gobot::Object::PointerCastTo<gobot::Link3D>(robot->GetChild(0));
+    ASSERT_NE(base, nullptr);
+    EXPECT_FALSE(base->GetName().empty());
+    if (!base->GetVisualMeshPath().empty()) {
+        EXPECT_NE(base->GetVisualMeshPath().find("package://"), 0);
+        EXPECT_TRUE(std::filesystem::path(base->GetVisualMeshPath()).is_absolute() ||
+                    base->GetVisualMeshPath().starts_with("res://"));
+    }
 
     gobot::Object::Delete(root_node);
 }
