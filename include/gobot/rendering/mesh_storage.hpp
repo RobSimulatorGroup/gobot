@@ -11,6 +11,8 @@
 #include "gobot/core/rid_owner.hpp"
 #include "gobot/core/math/matrix.hpp"
 
+#include <vector>
+
 namespace gobot {
 
 class MeshStorage {
@@ -22,6 +24,10 @@ public:
     virtual void MeshInitialize(const RID& p_rid) = 0;
 
     virtual void MeshSetBox(const RID& p_rid, const Vector3& size) = 0;
+
+    virtual void MeshSetSurface(const RID& p_rid,
+                                const std::vector<Vector3>& vertices,
+                                const std::vector<uint32_t>& indices) = 0;
 
     virtual void MeshSetCylinder(const RID& p_rid, RealType radius, RealType height, int radial_segments) = 0;
 

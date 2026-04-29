@@ -15,6 +15,8 @@
 #include "rendering_server_globals.hpp"
 #include "renderer_viewport.hpp"
 
+#include <vector>
+
 namespace gobot {
 
 #define RS RenderServer
@@ -104,7 +106,13 @@ public:
 
     RID MeshCreate();
 
+    static bool HasInstance();
+
     void MeshSetBox(const RID& mesh, const Vector3& size);
+
+    void MeshSetSurface(const RID& mesh,
+                        const std::vector<Vector3>& vertices,
+                        const std::vector<uint32_t>& indices);
 
     void MeshSetCylinder(const RID& mesh, RealType radius, RealType height, int radial_segments);
 

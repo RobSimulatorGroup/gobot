@@ -36,6 +36,10 @@ public:
 
     void MeshSetBox(const RID& p_rid, const Vector3& size) override;
 
+    void MeshSetSurface(const RID& p_rid,
+                        const std::vector<Vector3>& vertices,
+                        const std::vector<uint32_t>& indices) override;
+
     void MeshSetCylinder(const RID& p_rid, RealType radius, RealType height, int radial_segments) override;
 
     void MeshSetSphere(const RID& p_rid, RealType radius, int radial_segments, int rings) override;

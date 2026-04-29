@@ -9,16 +9,13 @@
 
 namespace gobot {
 
-class GOBOT_EXPORT ResourceFormatLoaderURDF : public ResourceFormatLoader {
-    GOBCLASS(ResourceFormatLoaderURDF, ResourceFormatLoader)
+class GOBOT_EXPORT ResourceFormatLoaderMesh : public ResourceFormatLoader {
+    GOBCLASS(ResourceFormatLoaderMesh, ResourceFormatLoader)
 
 public:
     Ref<Resource> Load(const std::string& path,
                        const std::string& original_path = "",
                        CacheMode cache_mode = CacheMode::Reuse) override;
-
-    [[nodiscard]] bool RecognizePath(const std::string& path,
-                                     const std::string& type_hint = "") const override;
 
     void GetRecognizedExtensionsForType(const std::string& type,
                                         std::vector<std::string>* extensions) const override;
@@ -26,6 +23,8 @@ public:
     void GetRecognizedExtensions(std::vector<std::string>* extensions) const override;
 
     [[nodiscard]] bool HandlesType(const std::string& type) const override;
+
+    [[nodiscard]] bool Exists(const std::string& path) const override;
 };
 
-}
+} // namespace gobot

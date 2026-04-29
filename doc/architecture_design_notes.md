@@ -21,13 +21,30 @@ Python-facing APIs should target stable engine concepts such as `Scene`, `Node`,
 
 ## Current Refactor Priorities
 
-1. `MeshStorage` only keeps mesh CRUD:
-   `MeshAllocate`, `MeshInitialize`, `MeshSetBox`, `OwnsMesh`, `MeshFree`.
+1. `MeshStorage` should stay a low-level mesh allocation/upload/free boundary.
+   It should not parse asset files, traverse scenes, or know about editor selection.
+   The current transitional API includes `MeshAllocate`, `MeshInitialize`, `MeshSetBox`, `MeshSetSurface`, primitive setters, `OwnsMesh`, and `MeshFree`.
 2. `RendererSceneRender` owns the scene render pass:
    `RenderScene(root, camera, target)`.
 3. `RendererDebugDraw` stays independent for editor and simulation debug rendering. Future operations should include `DrawAABB`, `DrawLine`, `DrawFrustum`, contact points, trajectories, and robot joint/debug overlays.
 4. `EditorViewportRenderer` is the editor-layer coordinator. It composes scene pass, debug pass, and later overlay/pass tools without moving editor decisions into `RenderBackend`.
 5. The editor keeps a fixed edited-scene boundary. SceneTree should display the user scene root, not the full engine tree with editor UI nodes.
+
+## URDF Import Direction
+
+URDF import should create normal scene nodes, not store robot structure as opaque strings on one node.
+
+Current scene shape:
+
+- `Robot3D` is the imported robot root and stores the source URDF path.
+- `Link3D` is a robot link container and owns inertial metadata such as mass, center of mass, and inertia.
+- Visual geometry is represented by `MeshInstance3D` children under the owning `Link3D`.
+- Collision geometry is represented by `CollisionShape3D` children under the owning `Link3D`.
+- `Joint3D` keeps joint metadata and connects the parent link to the child link subtree.
+
+This matches the intended robotics model: `Link3D` carries robot semantics, while rendering and collision are authored through explicit child nodes/resources that the editor, renderer, physics, and later Python APIs can all inspect.
+
+Mesh asset import is optional through Assimp. When Assimp and a `RenderServer` are available, URDF visual mesh references can load into `ArrayMesh`. Without Assimp or render initialization, the importer should keep a `Mesh` resource path placeholder so scene parsing and tests remain usable without a rendering backend.
 
 ## Python Binding Direction
 

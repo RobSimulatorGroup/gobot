@@ -14,15 +14,48 @@
 #include <utility>
 
 #include "gobot/core/config/project_setting.hpp"
+#include "gobot/core/io/resource_loader.hpp"
 #include "gobot/core/registration.hpp"
+#include "gobot/core/string_utils.hpp"
 #include "gobot/log.hpp"
+#include "gobot/rendering/render_server.hpp"
+#include "gobot/scene/collision_shape_3d.hpp"
 #include "gobot/scene/joint_3d.hpp"
 #include "gobot/scene/link_3d.hpp"
+#include "gobot/scene/mesh_instance_3d.hpp"
+#include "gobot/scene/resources/box_shape_3d.hpp"
+#include "gobot/scene/resources/cylinder_shape_3d.hpp"
+#include "gobot/scene/resources/mesh.hpp"
 #include "gobot/scene/resources/packed_scene.hpp"
+#include "gobot/scene/resources/sphere_shape_3d.hpp"
 #include "gobot/scene/robot_3d.hpp"
 
 namespace gobot {
 namespace {
+
+struct VisualImportData {
+    Vector3 origin_xyz{Vector3::Zero()};
+    Vector3 origin_rpy{Vector3::Zero()};
+    std::string mesh_path;
+};
+
+enum class CollisionGeometryType {
+    None,
+    Mesh,
+    Box,
+    Sphere,
+    Cylinder,
+};
+
+struct CollisionImportData {
+    Vector3 origin_xyz{Vector3::Zero()};
+    Vector3 origin_rpy{Vector3::Zero()};
+    CollisionGeometryType geometry_type{CollisionGeometryType::None};
+    std::string mesh_path;
+    Vector3 box_size{Vector3::Ones()};
+    RealType radius{0.5};
+    RealType height{1.0};
+};
 
 struct LinkImportData {
     std::string name;
@@ -30,8 +63,8 @@ struct LinkImportData {
     Vector3 center_of_mass{Vector3::Zero()};
     Vector3 inertia_diagonal{Vector3::Zero()};
     Vector3 inertia_off_diagonal{Vector3::Zero()};
-    std::string visual_mesh_path;
-    std::string collision_mesh_path;
+    std::vector<VisualImportData> visuals;
+    std::vector<CollisionImportData> collisions;
 };
 
 struct JointImportData {
@@ -123,6 +156,20 @@ std::string FindTagBody(const std::string& body, const std::string& tag_name) {
     return match[1].str();
 }
 
+std::vector<std::string> FindTagBodies(const std::string& body, const std::string& tag_name) {
+    std::vector<std::string> bodies;
+    const std::regex tag_regex("<\\s*" + tag_name + R"(\b[^>]*>([\s\S]*?)<\s*/\s*)" + tag_name + R"(\s*>)",
+                               std::regex::icase);
+
+    for (auto iter = std::sregex_iterator(body.begin(), body.end(), tag_regex);
+         iter != std::sregex_iterator();
+         ++iter) {
+        bodies.push_back((*iter)[1].str());
+    }
+
+    return bodies;
+}
+
 std::string ReadPackageName(const std::filesystem::path& package_xml_path) {
     const std::string package_xml = ReadTextFile(package_xml_path.string());
     std::smatch match;
@@ -192,18 +239,6 @@ std::string NormalizeImportedAssetPath(const std::string& filename, const std::s
     return LocalizeImportedAssetPath(mesh_path);
 }
 
-std::string FindFirstMeshPath(const std::string& body,
-                              const std::string& geometry_owner_tag,
-                              const std::string& source_file_path) {
-    const std::string owner_body = FindTagBody(body, geometry_owner_tag);
-    if (owner_body.empty()) {
-        return {};
-    }
-
-    const std::string mesh_attrs = FindTagAttributes(owner_body, "mesh");
-    return NormalizeImportedAssetPath(GetAttribute(mesh_attrs, "filename"), source_file_path);
-}
-
 JointType ParseJointType(const std::string& value) {
     if (value == "revolute") {
         return JointType::Revolute;
@@ -221,6 +256,62 @@ JointType ParseJointType(const std::string& value) {
         return JointType::Planar;
     }
     return JointType::Fixed;
+}
+
+void ParseOrigin(const std::string& body, Vector3& origin_xyz, Vector3& origin_rpy) {
+    const std::string origin_attrs = FindTagAttributes(body, "origin");
+    origin_xyz = ParseVector3(GetAttribute(origin_attrs, "xyz"));
+    origin_rpy = ParseVector3(GetAttribute(origin_attrs, "rpy"));
+}
+
+std::vector<VisualImportData> ParseVisuals(const std::string& link_body, const std::string& source_file_path) {
+    std::vector<VisualImportData> visuals;
+    for (const std::string& visual_body : FindTagBodies(link_body, "visual")) {
+        VisualImportData visual;
+        ParseOrigin(visual_body, visual.origin_xyz, visual.origin_rpy);
+
+        const std::string mesh_attrs = FindTagAttributes(visual_body, "mesh");
+        visual.mesh_path = NormalizeImportedAssetPath(GetAttribute(mesh_attrs, "filename"), source_file_path);
+        if (!visual.mesh_path.empty()) {
+            visuals.push_back(std::move(visual));
+        }
+    }
+
+    return visuals;
+}
+
+std::vector<CollisionImportData> ParseCollisions(const std::string& link_body, const std::string& source_file_path) {
+    std::vector<CollisionImportData> collisions;
+    for (const std::string& collision_body : FindTagBodies(link_body, "collision")) {
+        CollisionImportData collision;
+        ParseOrigin(collision_body, collision.origin_xyz, collision.origin_rpy);
+
+        const std::string mesh_attrs = FindTagAttributes(collision_body, "mesh");
+        const std::string box_attrs = FindTagAttributes(collision_body, "box");
+        const std::string sphere_attrs = FindTagAttributes(collision_body, "sphere");
+        const std::string cylinder_attrs = FindTagAttributes(collision_body, "cylinder");
+
+        if (!mesh_attrs.empty()) {
+            collision.geometry_type = CollisionGeometryType::Mesh;
+            collision.mesh_path = NormalizeImportedAssetPath(GetAttribute(mesh_attrs, "filename"), source_file_path);
+        } else if (!box_attrs.empty()) {
+            collision.geometry_type = CollisionGeometryType::Box;
+            collision.box_size = ParseVector3(GetAttribute(box_attrs, "size"), Vector3::Ones());
+        } else if (!sphere_attrs.empty()) {
+            collision.geometry_type = CollisionGeometryType::Sphere;
+            collision.radius = ParseReal(GetAttribute(sphere_attrs, "radius"), 0.5);
+        } else if (!cylinder_attrs.empty()) {
+            collision.geometry_type = CollisionGeometryType::Cylinder;
+            collision.radius = ParseReal(GetAttribute(cylinder_attrs, "radius"), 0.5);
+            collision.height = ParseReal(GetAttribute(cylinder_attrs, "length"), 1.0);
+        }
+
+        if (collision.geometry_type != CollisionGeometryType::None) {
+            collisions.push_back(std::move(collision));
+        }
+    }
+
+    return collisions;
 }
 
 std::vector<LinkImportData> ParseLinks(const std::string& xml, const std::string& source_file_path) {
@@ -257,8 +348,8 @@ std::vector<LinkImportData> ParseLinks(const std::string& xml, const std::string
                     ParseReal(GetAttribute(inertia_attrs, "iyz"))};
         }
 
-        link.visual_mesh_path = FindFirstMeshPath(body, "visual", source_file_path);
-        link.collision_mesh_path = FindFirstMeshPath(body, "collision", source_file_path);
+        link.visuals = ParseVisuals(body, source_file_path);
+        link.collisions = ParseCollisions(body, source_file_path);
 
         links.push_back(link);
     }
@@ -311,6 +402,39 @@ void AddProperty(SceneState::NodeData& node_data, std::string name, T value) {
     node_data.properties.push_back({std::move(name), Variant(std::move(value))});
 }
 
+void AddTransformProperties(SceneState::NodeData& node_data, const Vector3& origin_xyz, const Vector3& origin_rpy) {
+    AddProperty(node_data, "position", origin_xyz);
+    AddProperty(node_data, "rotation_degrees", Vector3{
+            RAD_TO_DEG(origin_rpy.x()),
+            RAD_TO_DEG(origin_rpy.y()),
+            RAD_TO_DEG(origin_rpy.z())});
+}
+
+Ref<Mesh> MakeMeshReference(const std::string& mesh_path) {
+    if (mesh_path.empty()) {
+        return {};
+    }
+
+    if (ResourceCache::Has(mesh_path)) {
+        Ref<Mesh> cached_mesh = dynamic_pointer_cast<Mesh>(ResourceCache::GetRef(mesh_path));
+        if (cached_mesh.IsValid()) {
+            return cached_mesh;
+        }
+    }
+
+    if (RenderServer::HasInstance() && ResourceLoader::Exists(mesh_path, "Mesh")) {
+        Ref<Resource> loaded_resource = ResourceLoader::Load(mesh_path, "Mesh", ResourceFormatLoader::CacheMode::Reuse);
+        Ref<Mesh> loaded_mesh = dynamic_pointer_cast<Mesh>(loaded_resource);
+        if (loaded_mesh.IsValid()) {
+            return loaded_mesh;
+        }
+    }
+
+    Ref<Mesh> mesh = MakeRef<Mesh>();
+    mesh->SetPath(mesh_path);
+    return mesh;
+}
+
 SceneState::NodeData MakeRobotNode(const std::string& name, const std::string& source_path) {
     SceneState::NodeData node_data;
     node_data.type = "Robot3D";
@@ -328,8 +452,51 @@ SceneState::NodeData MakeLinkNode(const LinkImportData& link, int parent) {
     AddProperty(node_data, "center_of_mass", link.center_of_mass);
     AddProperty(node_data, "inertia_diagonal", link.inertia_diagonal);
     AddProperty(node_data, "inertia_off_diagonal", link.inertia_off_diagonal);
-    AddProperty(node_data, "visual_mesh_path", link.visual_mesh_path);
-    AddProperty(node_data, "collision_mesh_path", link.collision_mesh_path);
+    return node_data;
+}
+
+SceneState::NodeData MakeVisualNode(const LinkImportData& link,
+                                    const VisualImportData& visual,
+                                    int visual_index,
+                                    int parent) {
+    SceneState::NodeData node_data;
+    node_data.type = "MeshInstance3D";
+    node_data.name = visual_index == 0
+                     ? link.name + "_visual"
+                     : link.name + "_visual_" + std::to_string(visual_index + 1);
+    node_data.parent = parent;
+    AddTransformProperties(node_data, visual.origin_xyz, visual.origin_rpy);
+    AddProperty(node_data, "mesh", MakeMeshReference(visual.mesh_path));
+    return node_data;
+}
+
+SceneState::NodeData MakeCollisionNode(const LinkImportData& link,
+                                       const CollisionImportData& collision,
+                                       int collision_index,
+                                       int parent) {
+    SceneState::NodeData node_data;
+    node_data.type = "CollisionShape3D";
+    node_data.name = collision_index == 0
+                     ? link.name + "_collision"
+                     : link.name + "_collision_" + std::to_string(collision_index + 1);
+    node_data.parent = parent;
+    AddTransformProperties(node_data, collision.origin_xyz, collision.origin_rpy);
+
+    if (collision.geometry_type == CollisionGeometryType::Box) {
+        Ref<BoxShape3D> shape = MakeRef<BoxShape3D>();
+        shape->SetSize(collision.box_size);
+        AddProperty(node_data, "shape", dynamic_pointer_cast<Shape3D>(shape));
+    } else if (collision.geometry_type == CollisionGeometryType::Sphere) {
+        Ref<SphereShape3D> shape = MakeRef<SphereShape3D>();
+        shape->SetRadius(static_cast<float>(collision.radius));
+        AddProperty(node_data, "shape", dynamic_pointer_cast<Shape3D>(shape));
+    } else if (collision.geometry_type == CollisionGeometryType::Cylinder) {
+        Ref<CylinderShape3D> shape = MakeRef<CylinderShape3D>();
+        shape->SetRadius(static_cast<float>(collision.radius));
+        shape->SetHeight(static_cast<float>(collision.height));
+        AddProperty(node_data, "shape", dynamic_pointer_cast<Shape3D>(shape));
+    }
+
     return node_data;
 }
 
@@ -338,11 +505,7 @@ SceneState::NodeData MakeJointNode(const JointImportData& joint, int parent) {
     node_data.type = "Joint3D";
     node_data.name = joint.name;
     node_data.parent = parent;
-    AddProperty(node_data, "position", joint.origin_xyz);
-    AddProperty(node_data, "rotation_degrees", Vector3{
-            RAD_TO_DEG(joint.origin_rpy.x()),
-            RAD_TO_DEG(joint.origin_rpy.y()),
-            RAD_TO_DEG(joint.origin_rpy.z())});
+    AddTransformProperties(node_data, joint.origin_xyz, joint.origin_rpy);
     AddProperty(node_data, "joint_type", joint.type);
     AddProperty(node_data, "parent_link", joint.parent_link);
     AddProperty(node_data, "child_link", joint.child_link);
@@ -411,8 +574,16 @@ Ref<Resource> ResourceFormatLoaderURDF::Load(const std::string& path,
             return -1;
         }
 
-        const int link_index = state->AddNode(MakeLinkNode(link_iter->second, parent));
+        const LinkImportData& link = link_iter->second;
+        const int link_index = state->AddNode(MakeLinkNode(link, parent));
         emitted_links[link_name] = link_index;
+
+        for (std::size_t i = 0; i < link.visuals.size(); ++i) {
+            state->AddNode(MakeVisualNode(link, link.visuals[i], static_cast<int>(i), link_index));
+        }
+        for (std::size_t i = 0; i < link.collisions.size(); ++i) {
+            state->AddNode(MakeCollisionNode(link, link.collisions[i], static_cast<int>(i), link_index));
+        }
 
         auto range = joints_by_parent.equal_range(link_name);
         for (auto joint_iter = range.first; joint_iter != range.second; ++joint_iter) {
@@ -442,6 +613,15 @@ void ResourceFormatLoaderURDF::GetRecognizedExtensionsForType(const std::string&
     if (type.empty() || HandlesType(type)) {
         GetRecognizedExtensions(extensions);
     }
+}
+
+bool ResourceFormatLoaderURDF::RecognizePath(const std::string& path, const std::string& type_hint) const {
+    if (!type_hint.empty() && type_hint != "PackedScene") {
+        return false;
+    }
+
+    const std::string normalized_path = ToLower(path);
+    return normalized_path.ends_with(".urdf") || normalized_path.ends_with(".xml");
 }
 
 void ResourceFormatLoaderURDF::GetRecognizedExtensions(std::vector<std::string>* extensions) const {

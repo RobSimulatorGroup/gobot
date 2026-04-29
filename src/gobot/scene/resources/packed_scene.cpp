@@ -9,6 +9,7 @@
 
 #include "gobot/core/object.hpp"
 #include "gobot/core/registration.hpp"
+#include "gobot/log.hpp"
 #include "gobot/scene/node.hpp"
 
 namespace gobot {
@@ -143,6 +144,10 @@ Node* PackedScene::Instantiate() const {
 
         for (const auto& property : node_data->properties) {
             if (!node->Set(property.name, property.value)) {
+                LOG_ERROR("Failed to restore property '{}' on node '{}' of type '{}'.",
+                          property.name,
+                          node_data->name,
+                          node_data->type);
                 cleanup();
                 Object::Delete(node);
                 return nullptr;

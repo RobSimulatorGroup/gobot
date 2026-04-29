@@ -90,6 +90,21 @@ void GLMeshStorage::MeshSetBox(const RID& p_rid, const Vector3& size) {
     SetMeshData(mesh, std::move(vertices), {indices.begin(), indices.end()});
 }
 
+void GLMeshStorage::MeshSetSurface(const RID& p_rid,
+                                   const std::vector<Vector3>& surface_vertices,
+                                   const std::vector<uint32_t>& surface_indices) {
+    GLMeshData* mesh = mesh_owner_.GetOrNull(p_rid);
+    ERR_FAIL_COND(mesh == nullptr);
+
+    std::vector<float> vertices;
+    vertices.reserve(surface_vertices.size() * 3);
+    for (const Vector3& vertex : surface_vertices) {
+        PushVertex(vertices, vertex.x(), vertex.y(), vertex.z());
+    }
+
+    SetMeshData(mesh, std::move(vertices), surface_indices);
+}
+
 void GLMeshStorage::MeshSetCylinder(const RID& p_rid, RealType radius, RealType height, int radial_segments) {
     GLMeshData* mesh = mesh_owner_.GetOrNull(p_rid);
     ERR_FAIL_COND(mesh == nullptr);

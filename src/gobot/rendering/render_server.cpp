@@ -65,6 +65,10 @@ RenderServer* RenderServer::GetInstance() {
     return s_singleton;
 }
 
+bool RenderServer::HasInstance() {
+    return s_singleton != nullptr;
+}
+
 void RenderServer::Draw() {
     SceneTree::GetInstance()->GetRoot()->GetWindow()->SwapBuffers();
 }
@@ -97,6 +101,12 @@ RID RenderServer::MeshCreate() {
 
 void RenderServer::MeshSetBox(const RID& mesh, const Vector3& size) {
     RSG::mesh_storage->MeshSetBox(mesh, size);
+}
+
+void RenderServer::MeshSetSurface(const RID& mesh,
+                                  const std::vector<Vector3>& vertices,
+                                  const std::vector<uint32_t>& indices) {
+    RSG::mesh_storage->MeshSetSurface(mesh, vertices, indices);
 }
 
 void RenderServer::MeshSetCylinder(const RID& mesh, RealType radius, RealType height, int radial_segments) {

@@ -11,6 +11,7 @@ set(GOBOT_ROOT_DIR "${CMAKE_CURRENT_SOURCE_DIR}")
 option(GOB_BUILD_EXPERIMENT "using imgui and glfw" OFF)
 option(GOB_BUILD_TESTS "build tests" OFF)
 option(GOB_BUILD_OPENUSD "build OpenUSD scene importer/exporter support" OFF)
+option(GOB_BUILD_ASSIMP "build mesh import support through Assimp" ON)
 
 if(NOT UNIX OR APPLE)
     message(FATAL_ERROR "Only Linux is supported.")
@@ -28,6 +29,10 @@ find_package(PNG REQUIRED)
 
 if(GOB_BUILD_OPENUSD)
     find_package(pxr REQUIRED CONFIG)
+endif()
+
+if(GOB_BUILD_ASSIMP)
+    find_package(assimp QUIET)
 endif()
 
 CPMAddPackage("gh:fmtlib/fmt#10.1.1")
@@ -89,6 +94,15 @@ target_link_libraries(gobot
 if(GOB_BUILD_OPENUSD)
     target_compile_definitions(gobot PUBLIC GOBOT_HAS_OPENUSD=1)
     target_link_libraries(gobot PUBLIC usd usdGeom usdShade sdf tf vt gf)
+endif()
+
+if(GOB_BUILD_ASSIMP AND assimp_FOUND)
+    target_compile_definitions(gobot PUBLIC GOBOT_HAS_ASSIMP=1)
+    if(TARGET assimp::assimp)
+        target_link_libraries(gobot PUBLIC assimp::assimp)
+    else()
+        target_link_libraries(gobot PUBLIC assimp)
+    endif()
 endif()
 
 # copy icon to bin

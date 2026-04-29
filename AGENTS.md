@@ -32,8 +32,9 @@ Do not let backend implementation details leak upward into scene or Python APIs.
 
 Current rendering/editor boundary shape:
 
-- `MeshStorage` should only own mesh CRUD:
-  `MeshAllocate`, `MeshInitialize`, `MeshSetBox`, `OwnsMesh`, `MeshFree`.
+- `MeshStorage` should stay a low-level mesh allocation/upload/free boundary.
+  It must not parse asset files, traverse scene nodes, or know about editor selection.
+  Current transitional APIs include `MeshAllocate`, `MeshInitialize`, `MeshSetBox`, `MeshSetSurface`, primitive setters, `OwnsMesh`, and `MeshFree`.
 - `RendererSceneRender` owns the scene render pass:
   `RenderScene(render_target, scene_root, camera)`.
 - `RendererDebugDraw` stays independent for editor and simulation debug rendering.
@@ -199,4 +200,3 @@ Robotics algorithms can later live as plugins, Python packages, C++ services wit
 - Do not expose OpenGL RIDs, ImGui IDs, or editor panel internals through scene or Python-facing APIs.
 - Do not let `###` ImGui internal IDs appear as user-visible names in editor panels.
 - Preserve user scene data as the editor-facing source of truth; editor UI nodes are implementation details.
-

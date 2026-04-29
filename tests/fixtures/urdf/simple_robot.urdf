@@ -8,12 +8,12 @@
     </inertial>
     <visual>
       <geometry>
-        <mesh filename="meshes/base_visual.dae"/>
+        <mesh filename="package://gobot_test_robot/meshes/base_visual.dae"/>
       </geometry>
     </visual>
     <collision>
       <geometry>
-        <mesh filename="package://gobot_test_robot/meshes/base_collision.dae"/>
+        <box size="0.4 0.2 0.1"/>
       </geometry>
     </collision>
   </link>

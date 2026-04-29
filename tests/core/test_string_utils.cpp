@@ -14,6 +14,11 @@ TEST(TestStringUtils, test_get_file_extension) {
     ASSERT_TRUE(gobot::GetFileExtension("res://1111.json") == "json");
 }
 
+TEST(TestStringUtils, test_case_conversion) {
+    ASSERT_EQ(gobot::ToLower("AbC.JSON"), "abc.json");
+    ASSERT_EQ(gobot::ToUpper("AbC.json"), "ABC.JSON");
+}
+
 TEST(TestStringUtils, test_is_absolute_path) {
     ASSERT_FALSE(gobot::IsAbsolutePath(""));
     ASSERT_TRUE(gobot::IsAbsolutePath("/"));

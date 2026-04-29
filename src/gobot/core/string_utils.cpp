@@ -7,6 +7,8 @@
 
 #include "gobot/core/string_utils.hpp"
 
+#include <algorithm>
+#include <cctype>
 #include <filesystem>
 #include "gobot/log.hpp"
 #include "gobot/core/config/project_setting.hpp"
@@ -35,14 +37,18 @@ std::vector<std::string> Split(std::string s, std::string delimiter, StringSplit
 }
 
 std::string ToLower(std::string_view str) {
-    std::string res;
-    std::transform(str.begin(), str.end(), res.begin(), ::toupper);
+    std::string res(str);
+    std::transform(res.begin(), res.end(), res.begin(), [](unsigned char c) {
+        return static_cast<char>(std::tolower(c));
+    });
     return res;
 }
 
 std::string ToUpper(std::string_view str) {
-    std::string res;
-    std::transform(str.begin(), str.end(), res.begin(), ::tolower);
+    std::string res(str);
+    std::transform(res.begin(), res.end(), res.begin(), [](unsigned char c) {
+        return static_cast<char>(std::toupper(c));
+    });
     return res;
 }
 

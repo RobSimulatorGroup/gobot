@@ -10,13 +10,19 @@
 
 #include <gobot/core/config/project_setting.hpp>
 #include <gobot/core/io/resource_format_scene.hpp>
+#include <gobot/core/io/resource_format_urdf.hpp>
 #include <gobot/editor/edited_scene.hpp>
+#include <gobot/scene/collision_shape_3d.hpp>
+#include <gobot/scene/link_3d.hpp>
+#include <gobot/scene/mesh_instance_3d.hpp>
 #include <gobot/scene/node_3d.hpp>
+#include <gobot/scene/robot_3d.hpp>
 
 class TestEditedScene : public testing::Test {
 protected:
     static void SetUpTestSuite() {
         static gobot::Ref<gobot::ResourceFormatLoaderScene> resource_loader_scene;
+        static gobot::Ref<gobot::ResourceFormatLoaderURDF> resource_loader_urdf;
         static gobot::Ref<gobot::ResourceFormatSaverScene> resource_saver_scene;
 
         resource_saver_scene = gobot::MakeRef<gobot::ResourceFormatSaverScene>();
@@ -24,6 +30,9 @@ protected:
 
         resource_loader_scene = gobot::MakeRef<gobot::ResourceFormatLoaderScene>();
         gobot::ResourceLoader::AddResourceFormatLoader(resource_loader_scene, true);
+
+        resource_loader_urdf = gobot::MakeRef<gobot::ResourceFormatLoaderURDF>();
+        gobot::ResourceLoader::AddResourceFormatLoader(resource_loader_urdf, true);
     }
 
     void SetUp() override {
@@ -62,4 +71,27 @@ TEST_F(TestEditedScene, saves_and_loads_user_scene_root) {
 
     gobot::Object::Delete(edited_scene);
     gobot::Object::Delete(loaded_scene);
+}
+
+TEST_F(TestEditedScene, loads_urdf_as_editable_robot_scene_tree) {
+    const std::filesystem::path fixture_path =
+            std::filesystem::current_path() / "tests/fixtures/urdf/simple_robot.urdf";
+
+    auto* edited_scene = gobot::Object::New<gobot::EditedScene>();
+    ASSERT_TRUE(edited_scene->LoadFromPath(fixture_path.string()));
+
+    auto* robot = gobot::Object::PointerCastTo<gobot::Robot3D>(edited_scene->GetRoot());
+    ASSERT_NE(robot, nullptr);
+    EXPECT_EQ(robot->GetName(), "test_bot");
+    ASSERT_EQ(robot->GetChildCount(), 1);
+
+    auto* base = gobot::Object::PointerCastTo<gobot::Link3D>(robot->GetChild(0));
+    ASSERT_NE(base, nullptr);
+    EXPECT_EQ(base->GetName(), "base_link");
+    ASSERT_EQ(base->GetChildCount(), 3);
+
+    EXPECT_NE(gobot::Object::PointerCastTo<gobot::MeshInstance3D>(base->GetChild(0)), nullptr);
+    EXPECT_NE(gobot::Object::PointerCastTo<gobot::CollisionShape3D>(base->GetChild(1)), nullptr);
+
+    gobot::Object::Delete(edited_scene);
 }
