@@ -7,6 +7,7 @@
 
 #include <filesystem>
 #include <fstream>
+#include <functional>
 #include <regex>
 #include <sstream>
 #include <unordered_map>
@@ -14,6 +15,7 @@
 #include <utility>
 
 #include "gobot/core/config/project_setting.hpp"
+#include "gobot/core/color.hpp"
 #include "gobot/core/io/resource_loader.hpp"
 #include "gobot/core/registration.hpp"
 #include "gobot/core/string_utils.hpp"
@@ -36,6 +38,7 @@ namespace {
 struct VisualImportData {
     Vector3 origin_xyz{Vector3::Zero()};
     Vector3 origin_rpy{Vector3::Zero()};
+    Vector3 mesh_scale{Vector3::Ones()};
     std::string mesh_path;
 };
 
@@ -135,6 +138,21 @@ Vector3 ParseVector3(const std::string& value, const Vector3& fallback = Vector3
         return fallback;
     }
     return {x, y, z};
+}
+
+Color StableVisualColor(const std::string& key) {
+    static const Color kPalette[] = {
+            Color{0.84f, 0.42f, 0.34f, 1.0f},
+            Color{0.40f, 0.70f, 0.92f, 1.0f},
+            Color{0.50f, 0.78f, 0.46f, 1.0f},
+            Color{0.92f, 0.72f, 0.36f, 1.0f},
+            Color{0.70f, 0.55f, 0.86f, 1.0f},
+            Color{0.42f, 0.78f, 0.74f, 1.0f},
+            Color{0.86f, 0.52f, 0.72f, 1.0f},
+            Color{0.78f, 0.78f, 0.48f, 1.0f},
+    };
+
+    return kPalette[std::hash<std::string>{}(key) % (sizeof(kPalette) / sizeof(kPalette[0]))];
 }
 
 std::string FindTagAttributes(const std::string& body, const std::string& tag_name) {
@@ -272,6 +290,7 @@ std::vector<VisualImportData> ParseVisuals(const std::string& link_body, const s
 
         const std::string mesh_attrs = FindTagAttributes(visual_body, "mesh");
         visual.mesh_path = NormalizeImportedAssetPath(GetAttribute(mesh_attrs, "filename"), source_file_path);
+        visual.mesh_scale = ParseVector3(GetAttribute(mesh_attrs, "scale"), Vector3::Ones());
         if (!visual.mesh_path.empty()) {
             visuals.push_back(std::move(visual));
         }
@@ -410,6 +429,14 @@ void AddTransformProperties(SceneState::NodeData& node_data, const Vector3& orig
             RAD_TO_DEG(origin_rpy.z())});
 }
 
+void AddTransformProperties(SceneState::NodeData& node_data,
+                            const Vector3& origin_xyz,
+                            const Vector3& origin_rpy,
+                            const Vector3& scale) {
+    AddTransformProperties(node_data, origin_xyz, origin_rpy);
+    AddProperty(node_data, "scale", scale);
+}
+
 Ref<Mesh> MakeMeshReference(const std::string& mesh_path) {
     if (mesh_path.empty()) {
         return {};
@@ -465,8 +492,9 @@ SceneState::NodeData MakeVisualNode(const LinkImportData& link,
                      ? link.name + "_visual"
                      : link.name + "_visual_" + std::to_string(visual_index + 1);
     node_data.parent = parent;
-    AddTransformProperties(node_data, visual.origin_xyz, visual.origin_rpy);
+    AddTransformProperties(node_data, visual.origin_xyz, visual.origin_rpy, visual.mesh_scale);
     AddProperty(node_data, "mesh", MakeMeshReference(visual.mesh_path));
+    AddProperty(node_data, "surface_color", StableVisualColor(link.name + ":" + std::to_string(visual_index)));
     return node_data;
 }
 

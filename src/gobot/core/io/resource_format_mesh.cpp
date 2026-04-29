@@ -11,6 +11,8 @@
 #include "gobot/scene/resources/array_mesh.hpp"
 
 #ifdef GOBOT_HAS_ASSIMP
+#include <assimp/matrix4x4.h>
+#include <assimp/config.h>
 #include <assimp/Importer.hpp>
 #include <assimp/postprocess.h>
 #include <assimp/scene.h>
@@ -23,17 +25,20 @@ namespace {
 #ifdef GOBOT_HAS_ASSIMP
 void AddMeshRecursive(const aiScene* scene,
                       const aiNode* node,
+                      const aiMatrix4x4& parent_transform,
                       std::vector<Vector3>& vertices,
                       std::vector<uint32_t>& indices) {
     if (scene == nullptr || node == nullptr) {
         return;
     }
 
+    const aiMatrix4x4 node_transform = parent_transform * node->mTransformation;
+
     for (unsigned int mesh_index = 0; mesh_index < node->mNumMeshes; ++mesh_index) {
         const aiMesh* mesh = scene->mMeshes[node->mMeshes[mesh_index]];
         const uint32_t base_vertex = static_cast<uint32_t>(vertices.size());
         for (unsigned int vertex_index = 0; vertex_index < mesh->mNumVertices; ++vertex_index) {
-            const aiVector3D& vertex = mesh->mVertices[vertex_index];
+            const aiVector3D vertex = node_transform * mesh->mVertices[vertex_index];
             vertices.emplace_back(vertex.x, vertex.y, vertex.z);
         }
 
@@ -49,7 +54,7 @@ void AddMeshRecursive(const aiScene* scene,
     }
 
     for (unsigned int child_index = 0; child_index < node->mNumChildren; ++child_index) {
-        AddMeshRecursive(scene, node->mChildren[child_index], vertices, indices);
+        AddMeshRecursive(scene, node->mChildren[child_index], node_transform, vertices, indices);
     }
 }
 #endif
@@ -72,6 +77,9 @@ Ref<Resource> ResourceFormatLoaderMesh::Load(const std::string& path,
     return {};
 #else
     Assimp::Importer importer;
+    // Robotics assets authored for URDF are already in the URDF/world up-axis convention.
+    // Assimp's default Collada root-axis conversion would cancel Blender-exported node transforms.
+    importer.SetPropertyInteger(AI_CONFIG_IMPORT_COLLADA_IGNORE_UP_DIRECTION, 1);
     const aiScene* scene = importer.ReadFile(path,
                                              aiProcess_Triangulate |
                                              aiProcess_JoinIdenticalVertices |
@@ -84,7 +92,7 @@ Ref<Resource> ResourceFormatLoaderMesh::Load(const std::string& path,
 
     std::vector<Vector3> vertices;
     std::vector<uint32_t> indices;
-    AddMeshRecursive(scene, scene->mRootNode, vertices, indices);
+    AddMeshRecursive(scene, scene->mRootNode, aiMatrix4x4(), vertices, indices);
     if (vertices.empty() || indices.empty()) {
         LOG_ERROR("Mesh '{}' did not contain renderable triangle geometry.", path);
         return {};

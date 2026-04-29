@@ -17,6 +17,8 @@
 #include <gobot/scene/resources/box_shape_3d.hpp>
 #include <gobot/scene/resources/packed_scene.hpp>
 #include <gobot/scene/robot_3d.hpp>
+#include <gobot/scene/scene_tree.hpp>
+#include <gobot/scene/window.hpp>
 
 namespace {
 
@@ -62,6 +64,32 @@ int CountArrayMeshVisuals(const gobot::Node* node) {
     }
 
     return count;
+}
+
+gobot::Node* FindNodeByName(gobot::Node* node, const std::string& name) {
+    if (node == nullptr) {
+        return nullptr;
+    }
+    if (node->GetName() == name) {
+        return node;
+    }
+
+    for (std::size_t i = 0; i < node->GetChildCount(); ++i) {
+        if (auto* found = FindNodeByName(node->GetChild(static_cast<int>(i)), name)) {
+            return found;
+        }
+    }
+    return nullptr;
+}
+
+void ExpectNode3DGlobalPosition(gobot::Node* root, const std::string& name, const gobot::Vector3& expected) {
+    auto* node = gobot::Object::PointerCastTo<gobot::Node3D>(FindNodeByName(root, name));
+    ASSERT_NE(node, nullptr) << name;
+    EXPECT_TRUE(node->GetGlobalPosition().isApprox(expected, 1e-5)) << name
+                                                                    << " actual="
+                                                                    << node->GetGlobalPosition().transpose()
+                                                                    << " expected="
+                                                                    << expected.transpose();
 }
 
 } // namespace
@@ -111,6 +139,8 @@ TEST(TestResourceFormatURDF, imports_robot_links_joints_and_inertial_metadata) {
     ASSERT_TRUE(visual->GetMesh().IsValid());
     EXPECT_EQ(visual->GetMesh()->GetPath(),
               (fixture_path.parent_path() / "meshes/base_visual.dae").lexically_normal().string());
+    EXPECT_TRUE(visual->GetScale().isApprox(gobot::Vector3(0.1, 0.2, 0.3), CMP_EPSILON));
+    EXPECT_GT(visual->GetSurfaceColor().alpha(), 0.0f);
 
     auto* collision = gobot::Object::PointerCastTo<gobot::CollisionShape3D>(base->GetChild(1));
     ASSERT_NE(collision, nullptr);
@@ -214,4 +244,45 @@ TEST(TestResourceFormatURDF, imports_external_robot_visual_meshes_when_rendering
 
     gobot::Object::Delete(root_node);
 #endif
+}
+
+TEST(TestResourceFormatURDF, external_robot_link_global_transforms_follow_urdf_joint_chain) {
+    const char* test_urdf_path = std::getenv("GOBOT_TEST_URDF");
+    if (test_urdf_path == nullptr || std::string(test_urdf_path).empty()) {
+        GTEST_SKIP() << "Set GOBOT_TEST_URDF to run this test with a real robot URDF.";
+    }
+
+    const std::string path = test_urdf_path;
+    if (!std::filesystem::exists(path)) {
+        GTEST_SKIP() << "GOBOT_TEST_URDF does not point to an existing file: " << path;
+    }
+
+    ScopedProjectSettings project_settings;
+    auto render_server = std::make_unique<gobot::RenderServer>();
+    auto* tree = gobot::Object::New<gobot::SceneTree>(false);
+    tree->Initialize();
+
+    gobot::Ref<gobot::ResourceFormatLoaderURDF> loader = gobot::MakeRef<gobot::ResourceFormatLoaderURDF>();
+    gobot::Ref<gobot::Resource> resource = loader->Load(path);
+    gobot::Ref<gobot::PackedScene> packed_scene = gobot::dynamic_pointer_cast<gobot::PackedScene>(resource);
+    ASSERT_TRUE(packed_scene.IsValid());
+
+    gobot::Node* root_node = packed_scene->Instantiate();
+    ASSERT_NE(root_node, nullptr);
+    tree->GetRoot()->AddChild(root_node);
+
+    ExpectNode3DGlobalPosition(root_node, "base", {0.0, 0.0, 0.0});
+    ExpectNode3DGlobalPosition(root_node, "FL_hip", {0.1934, 0.0465, 0.0});
+    ExpectNode3DGlobalPosition(root_node, "FL_thigh", {0.1934, 0.142, 0.0});
+    ExpectNode3DGlobalPosition(root_node, "FL_calf", {0.1934, 0.142, -0.213});
+    ExpectNode3DGlobalPosition(root_node, "FL_foot", {0.1934, 0.142, -0.426});
+    ExpectNode3DGlobalPosition(root_node, "RR_hip", {-0.1934, -0.0465, 0.0});
+    ExpectNode3DGlobalPosition(root_node, "RR_thigh", {-0.1934, -0.142, 0.0});
+    ExpectNode3DGlobalPosition(root_node, "RR_calf", {-0.1934, -0.142, -0.213});
+    ExpectNode3DGlobalPosition(root_node, "RR_foot", {-0.1934, -0.142, -0.426});
+
+    tree->GetRoot()->RemoveChild(root_node);
+    gobot::Object::Delete(root_node);
+    tree->Finalize();
+    gobot::Object::Delete(tree);
 }

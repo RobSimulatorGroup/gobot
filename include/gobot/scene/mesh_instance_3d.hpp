@@ -5,6 +5,7 @@
 
 #pragma once
 
+#include "gobot/core/color.hpp"
 #include "gobot/scene/node_3d.hpp"
 #include "gobot/scene/resources/mesh.hpp"
 
@@ -20,8 +21,13 @@ public:
 
     const Ref<Mesh>& GetMesh() const;
 
+    void SetSurfaceColor(const Color& color);
+
+    Color GetSurfaceColor() const;
+
 private:
     Ref<Mesh> mesh_{nullptr};
+    Color surface_color_{0.66f, 0.78f, 0.95f, 1.0f};
 };
 
 }

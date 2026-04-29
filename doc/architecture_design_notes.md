@@ -44,7 +44,9 @@ Current scene shape:
 
 This matches the intended robotics model: `Link3D` carries robot semantics, while rendering and collision are authored through explicit child nodes/resources that the editor, renderer, physics, and later Python APIs can all inspect.
 
-Mesh asset import is optional through Assimp. When Assimp and a `RenderServer` are available, URDF visual mesh references can load into `ArrayMesh`. Without Assimp or render initialization, the importer should keep a `Mesh` resource path placeholder so scene parsing and tests remain usable without a rendering backend.
+Mesh asset import is optional through Assimp. Gobot should prefer the `3rdparty/assimp` git submodule when `GOB_BUILD_ASSIMP` is enabled, and may fall back to a system `assimp` package if the submodule is unavailable. The default submodule build is import-only and enables only common robot asset formats: `COLLADA`, `OBJ`, `STL`, `PLY`, and `GLTF`. Add more formats through `GOB_ASSIMP_IMPORTERS` when there is a concrete need.
+
+When Assimp and a `RenderServer` are available, URDF visual mesh references can load into `ArrayMesh`. Without Assimp or render initialization, the importer should keep a `Mesh` resource path placeholder so scene parsing and tests remain usable without a rendering backend.
 
 ## Python Binding Direction
 

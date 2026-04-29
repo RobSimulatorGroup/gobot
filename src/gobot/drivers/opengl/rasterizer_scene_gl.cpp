@@ -83,7 +83,6 @@ void GLRasterizerScene::RenderScene(const RID& render_target, const Node* scene_
     glUniformMatrix4fv(glGetUniformLocation(default_program_, "u_view"), 1, GL_FALSE, view.data());
     glUniformMatrix4fv(glGetUniformLocation(default_program_, "u_projection"), 1, GL_FALSE, projection.data());
 
-    glUniform4f(glGetUniformLocation(default_program_, "u_color"), 0.66f, 0.78f, 0.95f, 1.0f);
     DrawNode(scene_root);
 
     glBindVertexArray(0);
@@ -187,7 +186,13 @@ void GLRasterizerScene::DrawNode(const Node* node) {
             if (mesh && mesh->index_count > 0) {
                 UploadMesh(mesh);
                 Matrix4 model = mesh_instance->GetGlobalTransform().matrix();
+                const Color color = mesh_instance->GetSurfaceColor();
                 glUniformMatrix4fv(glGetUniformLocation(default_program_, "u_model"), 1, GL_FALSE, model.data());
+                glUniform4f(glGetUniformLocation(default_program_, "u_color"),
+                            color.red(),
+                            color.green(),
+                            color.blue(),
+                            color.alpha());
                 glBindVertexArray(mesh->vao);
                 glDrawElements(GL_TRIANGLES, mesh->index_count, GL_UNSIGNED_INT, nullptr);
             }
