@@ -16,9 +16,11 @@ namespace gobot::opengl {
 
 struct GLMeshData {
     std::vector<float> vertices;
+    std::vector<float> normals;
     std::vector<uint32_t> indices;
     GLuint vao = 0;
     GLuint vertex_buffer = 0;
+    GLuint normal_buffer = 0;
     GLuint index_buffer = 0;
     GLsizei index_count = 0;
     bool dirty = true;

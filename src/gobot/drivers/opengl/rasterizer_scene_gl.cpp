@@ -81,8 +81,13 @@ void GLRasterizerScene::RenderScene(const RID& render_target, const Node* scene_
     glUseProgram(default_program_);
     const Matrix4 view = camera->GetViewMatrix();
     const Matrix4 projection = camera->GetProjectionMatrix();
+    const Vector3 camera_position = camera->GetViewMatrixEye();
     glUniformMatrix4fv(glGetUniformLocation(default_program_, "u_view"), 1, GL_FALSE, view.data());
     glUniformMatrix4fv(glGetUniformLocation(default_program_, "u_projection"), 1, GL_FALSE, projection.data());
+    glUniform3f(glGetUniformLocation(default_program_, "u_camera_position"),
+                static_cast<float>(camera_position.x()),
+                static_cast<float>(camera_position.y()),
+                static_cast<float>(camera_position.z()));
 
     const SceneRenderItems render_items = CollectSceneRenderItems(scene_root);
     for (const VisualMeshRenderItem& item : render_items.visual_meshes) {
@@ -102,20 +107,38 @@ void GLRasterizerScene::EnsureDefaultProgram() {
     static constexpr const char* vertex_shader = R"(
 #version 460 core
 layout(location = 0) in vec3 a_position;
+layout(location = 1) in vec3 a_normal;
 uniform mat4 u_model;
 uniform mat4 u_view;
 uniform mat4 u_projection;
+out vec3 v_world_position;
+out vec3 v_world_normal;
 void main() {
-    gl_Position = u_projection * u_view * u_model * vec4(a_position, 1.0);
+    vec4 world_position = u_model * vec4(a_position, 1.0);
+    v_world_position = world_position.xyz;
+    v_world_normal = normalize(transpose(inverse(mat3(u_model))) * a_normal);
+    gl_Position = u_projection * u_view * world_position;
 }
 )";
 
     static constexpr const char* fragment_shader = R"(
 #version 460 core
+in vec3 v_world_position;
+in vec3 v_world_normal;
 out vec4 frag_color;
 uniform vec4 u_color;
+uniform vec3 u_camera_position;
 void main() {
-    frag_color = u_color;
+    vec3 normal = normalize(v_world_normal);
+    vec3 light_dir = normalize(vec3(0.35, 0.45, 0.82));
+    vec3 view_dir = normalize(u_camera_position - v_world_position);
+    vec3 half_dir = normalize(light_dir + view_dir);
+
+    float diffuse = max(dot(normal, light_dir), 0.0);
+    float specular = pow(max(dot(normal, half_dir), 0.0), 48.0) * 0.22;
+    vec3 ambient = u_color.rgb * 0.22;
+    vec3 lit = ambient + u_color.rgb * diffuse * 0.78 + vec3(specular);
+    frag_color = vec4(lit, u_color.a);
 }
 )";
 
@@ -158,6 +181,9 @@ void GLRasterizerScene::UploadMesh(GLMeshData* mesh) {
     if (mesh->vertex_buffer == 0) {
         glCreateBuffers(1, &mesh->vertex_buffer);
     }
+    if (mesh->normal_buffer == 0) {
+        glCreateBuffers(1, &mesh->normal_buffer);
+    }
     if (mesh->index_buffer == 0) {
         glCreateBuffers(1, &mesh->index_buffer);
     }
@@ -165,6 +191,10 @@ void GLRasterizerScene::UploadMesh(GLMeshData* mesh) {
     glNamedBufferData(mesh->vertex_buffer,
                       static_cast<GLsizeiptr>(mesh->vertices.size() * sizeof(float)),
                       mesh->vertices.data(),
+                      GL_STATIC_DRAW);
+    glNamedBufferData(mesh->normal_buffer,
+                      static_cast<GLsizeiptr>(mesh->normals.size() * sizeof(float)),
+                      mesh->normals.data(),
                       GL_STATIC_DRAW);
     glNamedBufferData(mesh->index_buffer,
                       static_cast<GLsizeiptr>(mesh->indices.size() * sizeof(uint32_t)),
@@ -175,6 +205,10 @@ void GLRasterizerScene::UploadMesh(GLMeshData* mesh) {
     glEnableVertexArrayAttrib(mesh->vao, 0);
     glVertexArrayAttribFormat(mesh->vao, 0, 3, GL_FLOAT, GL_FALSE, 0);
     glVertexArrayAttribBinding(mesh->vao, 0, 0);
+    glVertexArrayVertexBuffer(mesh->vao, 1, mesh->normal_buffer, 0, 3 * sizeof(float));
+    glEnableVertexArrayAttrib(mesh->vao, 1);
+    glVertexArrayAttribFormat(mesh->vao, 1, 3, GL_FLOAT, GL_FALSE, 0);
+    glVertexArrayAttribBinding(mesh->vao, 1, 1);
     glVertexArrayElementBuffer(mesh->vao, mesh->index_buffer);
 
     mesh->dirty = false;

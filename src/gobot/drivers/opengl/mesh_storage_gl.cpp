@@ -18,17 +18,64 @@ namespace gobot::opengl {
 
 namespace {
 
-void SetMeshData(GLMeshData* mesh, std::vector<float> vertices, std::vector<uint32_t> indices) {
-    mesh->vertices = std::move(vertices);
-    mesh->indices = std::move(indices);
-    mesh->index_count = static_cast<GLsizei>(mesh->indices.size());
-    mesh->dirty = true;
-}
-
 void PushVertex(std::vector<float>& vertices, RealType x, RealType y, RealType z) {
     vertices.push_back(static_cast<float>(x));
     vertices.push_back(static_cast<float>(y));
     vertices.push_back(static_cast<float>(z));
+}
+
+Vector3 ReadVertex(const std::vector<float>& vertices, uint32_t index) {
+    const std::size_t offset = static_cast<std::size_t>(index) * 3;
+    return {vertices[offset], vertices[offset + 1], vertices[offset + 2]};
+}
+
+std::vector<float> GenerateSmoothNormals(const std::vector<float>& vertices, const std::vector<uint32_t>& indices) {
+    std::vector<Vector3> normals(vertices.size() / 3, Vector3::Zero());
+
+    for (std::size_t i = 0; i + 2 < indices.size(); i += 3) {
+        const uint32_t ia = indices[i];
+        const uint32_t ib = indices[i + 1];
+        const uint32_t ic = indices[i + 2];
+        if (static_cast<std::size_t>(std::max({ia, ib, ic})) >= normals.size()) {
+            continue;
+        }
+
+        const Vector3 a = ReadVertex(vertices, ia);
+        const Vector3 b = ReadVertex(vertices, ib);
+        const Vector3 c = ReadVertex(vertices, ic);
+        Vector3 normal = (b - a).cross(c - a);
+        const RealType length = normal.norm();
+        if (length <= CMP_EPSILON) {
+            continue;
+        }
+
+        normal /= length;
+        normals[ia] += normal;
+        normals[ib] += normal;
+        normals[ic] += normal;
+    }
+
+    std::vector<float> packed_normals;
+    packed_normals.reserve(vertices.size());
+    for (Vector3 normal : normals) {
+        const RealType length = normal.norm();
+        if (length <= CMP_EPSILON) {
+            normal = Vector3::UnitZ();
+        } else {
+            normal /= length;
+        }
+        PushVertex(packed_normals, normal.x(), normal.y(), normal.z());
+    }
+
+    return packed_normals;
+}
+
+void SetMeshData(GLMeshData* mesh, std::vector<float> vertices, std::vector<uint32_t> indices) {
+    mesh->vertices = std::move(vertices);
+    mesh->normals = GenerateSmoothNormals(mesh->vertices, indices);
+    mesh->indices = std::move(indices);
+    mesh->index_count = static_cast<GLsizei>(mesh->indices.size());
+    mesh->dirty = true;
 }
 
 } // namespace
@@ -219,6 +266,9 @@ void GLMeshStorage::MeshFree(const RID& p_rid) {
     }
     if (mesh->vertex_buffer != 0) {
         glDeleteBuffers(1, &mesh->vertex_buffer);
+    }
+    if (mesh->normal_buffer != 0) {
+        glDeleteBuffers(1, &mesh->normal_buffer);
     }
     if (mesh->index_buffer != 0) {
         glDeleteBuffers(1, &mesh->index_buffer);
