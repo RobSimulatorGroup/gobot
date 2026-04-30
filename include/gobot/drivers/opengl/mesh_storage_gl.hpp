@@ -40,7 +40,8 @@ public:
 
     void MeshSetSurface(const RID& p_rid,
                         const std::vector<Vector3>& vertices,
-                        const std::vector<uint32_t>& indices) override;
+                        const std::vector<uint32_t>& indices,
+                        const std::vector<Vector3>& normals) override;
 
     void MeshSetCylinder(const RID& p_rid, RealType radius, RealType height, int radial_segments) override;
 

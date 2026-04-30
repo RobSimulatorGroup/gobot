@@ -20,11 +20,15 @@ public:
 
     ~ArrayMesh() override;
 
-    void SetSurface(std::vector<Vector3> vertices, std::vector<uint32_t> indices);
+    void SetSurface(std::vector<Vector3> vertices,
+                    std::vector<uint32_t> indices,
+                    std::vector<Vector3> normals = {});
 
     const std::vector<Vector3>& GetVertices() const;
 
     const std::vector<uint32_t>& GetIndices() const;
+
+    const std::vector<Vector3>& GetNormals() const;
 
     RID GetRid() const override;
 
@@ -34,6 +38,7 @@ private:
     RID mesh_;
     std::vector<Vector3> vertices_;
     std::vector<uint32_t> indices_;
+    std::vector<Vector3> normals_;
 };
 
 } // namespace gobot

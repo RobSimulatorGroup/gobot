@@ -70,9 +70,14 @@ std::vector<float> GenerateSmoothNormals(const std::vector<float>& vertices, con
     return packed_normals;
 }
 
-void SetMeshData(GLMeshData* mesh, std::vector<float> vertices, std::vector<uint32_t> indices) {
+void SetMeshData(GLMeshData* mesh,
+                 std::vector<float> vertices,
+                 std::vector<uint32_t> indices,
+                 std::vector<float> normals = {}) {
     mesh->vertices = std::move(vertices);
-    mesh->normals = GenerateSmoothNormals(mesh->vertices, indices);
+    mesh->normals = normals.size() == mesh->vertices.size()
+            ? std::move(normals)
+            : GenerateSmoothNormals(mesh->vertices, indices);
     mesh->indices = std::move(indices);
     mesh->index_count = static_cast<GLsizei>(mesh->indices.size());
     mesh->dirty = true;
@@ -139,7 +144,8 @@ void GLMeshStorage::MeshSetBox(const RID& p_rid, const Vector3& size) {
 
 void GLMeshStorage::MeshSetSurface(const RID& p_rid,
                                    const std::vector<Vector3>& surface_vertices,
-                                   const std::vector<uint32_t>& surface_indices) {
+                                   const std::vector<uint32_t>& surface_indices,
+                                   const std::vector<Vector3>& surface_normals) {
     GLMeshData* mesh = mesh_owner_.GetOrNull(p_rid);
     ERR_FAIL_COND(mesh == nullptr);
 
@@ -149,7 +155,13 @@ void GLMeshStorage::MeshSetSurface(const RID& p_rid,
         PushVertex(vertices, vertex.x(), vertex.y(), vertex.z());
     }
 
-    SetMeshData(mesh, std::move(vertices), surface_indices);
+    std::vector<float> normals;
+    normals.reserve(surface_normals.size() * 3);
+    for (const Vector3& normal : surface_normals) {
+        PushVertex(normals, normal.x(), normal.y(), normal.z());
+    }
+
+    SetMeshData(mesh, std::move(vertices), surface_indices, std::move(normals));
 }
 
 void GLMeshStorage::MeshSetCylinder(const RID& p_rid, RealType radius, RealType height, int radial_segments) {

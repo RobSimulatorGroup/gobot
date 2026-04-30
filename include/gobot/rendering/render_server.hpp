@@ -114,7 +114,8 @@ public:
 
     void MeshSetSurface(const RID& mesh,
                         const std::vector<Vector3>& vertices,
-                        const std::vector<uint32_t>& indices);
+                        const std::vector<uint32_t>& indices,
+                        const std::vector<Vector3>& normals);
 
     void MeshSetCylinder(const RID& mesh, RealType radius, RealType height, int radial_segments);
 

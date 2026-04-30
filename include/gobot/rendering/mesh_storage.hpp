@@ -27,7 +27,8 @@ public:
 
     virtual void MeshSetSurface(const RID& p_rid,
                                 const std::vector<Vector3>& vertices,
-                                const std::vector<uint32_t>& indices) = 0;
+                                const std::vector<uint32_t>& indices,
+                                const std::vector<Vector3>& normals) = 0;
 
     virtual void MeshSetCylinder(const RID& p_rid, RealType radius, RealType height, int radial_segments) = 0;
 

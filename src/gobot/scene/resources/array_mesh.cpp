@@ -20,9 +20,15 @@ ArrayMesh::~ArrayMesh() {
     }
 }
 
-void ArrayMesh::SetSurface(std::vector<Vector3> vertices, std::vector<uint32_t> indices) {
+void ArrayMesh::SetSurface(std::vector<Vector3> vertices,
+                           std::vector<uint32_t> indices,
+                           std::vector<Vector3> normals) {
     vertices_ = std::move(vertices);
     indices_ = std::move(indices);
+    normals_ = std::move(normals);
+    if (normals_.size() != vertices_.size()) {
+        normals_.clear();
+    }
     UploadSurface();
 }
 
@@ -34,12 +40,16 @@ const std::vector<uint32_t>& ArrayMesh::GetIndices() const {
     return indices_;
 }
 
+const std::vector<Vector3>& ArrayMesh::GetNormals() const {
+    return normals_;
+}
+
 RID ArrayMesh::GetRid() const {
     return mesh_;
 }
 
 void ArrayMesh::UploadSurface() {
-    RS::GetInstance()->MeshSetSurface(mesh_, vertices_, indices_);
+    RS::GetInstance()->MeshSetSurface(mesh_, vertices_, indices_, normals_);
 }
 
 } // namespace gobot

@@ -5,6 +5,7 @@
 
 #include "gobot/core/io/resource_format_mesh.hpp"
 
+#include "gobot/core/math/math_defs.hpp"
 #include "gobot/core/registration.hpp"
 #include "gobot/log.hpp"
 #include "gobot/rendering/render_server.hpp"
@@ -18,16 +19,36 @@
 #include <assimp/scene.h>
 #endif
 
+#include <cmath>
+
 namespace gobot {
 
 namespace {
 
 #ifdef GOBOT_HAS_ASSIMP
+Vector3 TransformNormal(const aiMatrix4x4& transform, const aiVector3D& normal) {
+    aiMatrix3x3 normal_transform(transform);
+    normal_transform.Inverse().Transpose();
+
+    const aiVector3D transformed = normal_transform * normal;
+    Vector3 result(transformed.x, transformed.y, transformed.z);
+    const RealType length = result.norm();
+    if (length <= CMP_EPSILON ||
+        !std::isfinite(result.x()) ||
+        !std::isfinite(result.y()) ||
+        !std::isfinite(result.z())) {
+        return Vector3::UnitZ();
+    }
+
+    return result / length;
+}
+
 void AddMeshRecursive(const aiScene* scene,
                       const aiNode* node,
                       const aiMatrix4x4& parent_transform,
                       std::vector<Vector3>& vertices,
-                      std::vector<uint32_t>& indices) {
+                      std::vector<uint32_t>& indices,
+                      std::vector<Vector3>& normals) {
     if (scene == nullptr || node == nullptr) {
         return;
     }
@@ -37,9 +58,13 @@ void AddMeshRecursive(const aiScene* scene,
     for (unsigned int mesh_index = 0; mesh_index < node->mNumMeshes; ++mesh_index) {
         const aiMesh* mesh = scene->mMeshes[node->mMeshes[mesh_index]];
         const uint32_t base_vertex = static_cast<uint32_t>(vertices.size());
+        const bool has_normals = mesh->HasNormals();
         for (unsigned int vertex_index = 0; vertex_index < mesh->mNumVertices; ++vertex_index) {
             const aiVector3D vertex = node_transform * mesh->mVertices[vertex_index];
             vertices.emplace_back(vertex.x, vertex.y, vertex.z);
+            if (has_normals) {
+                normals.push_back(TransformNormal(node_transform, mesh->mNormals[vertex_index]));
+            }
         }
 
         for (unsigned int face_index = 0; face_index < mesh->mNumFaces; ++face_index) {
@@ -54,7 +79,7 @@ void AddMeshRecursive(const aiScene* scene,
     }
 
     for (unsigned int child_index = 0; child_index < node->mNumChildren; ++child_index) {
-        AddMeshRecursive(scene, node->mChildren[child_index], node_transform, vertices, indices);
+        AddMeshRecursive(scene, node->mChildren[child_index], node_transform, vertices, indices, normals);
     }
 }
 #endif
@@ -83,7 +108,7 @@ Ref<Resource> ResourceFormatLoaderMesh::Load(const std::string& path,
     const aiScene* scene = importer.ReadFile(path,
                                              aiProcess_Triangulate |
                                              aiProcess_JoinIdenticalVertices |
-                                             aiProcess_GenSmoothNormals |
+                                             aiProcess_GenNormals |
                                              aiProcess_ImproveCacheLocality);
     if (scene == nullptr || scene->mRootNode == nullptr) {
         LOG_ERROR("Assimp failed to load mesh '{}': {}", path, importer.GetErrorString());
@@ -92,14 +117,18 @@ Ref<Resource> ResourceFormatLoaderMesh::Load(const std::string& path,
 
     std::vector<Vector3> vertices;
     std::vector<uint32_t> indices;
-    AddMeshRecursive(scene, scene->mRootNode, aiMatrix4x4(), vertices, indices);
+    std::vector<Vector3> normals;
+    AddMeshRecursive(scene, scene->mRootNode, aiMatrix4x4(), vertices, indices, normals);
     if (vertices.empty() || indices.empty()) {
         LOG_ERROR("Mesh '{}' did not contain renderable triangle geometry.", path);
         return {};
     }
+    if (normals.size() != vertices.size()) {
+        normals.clear();
+    }
 
     Ref<ArrayMesh> mesh = MakeRef<ArrayMesh>();
-    mesh->SetSurface(std::move(vertices), std::move(indices));
+    mesh->SetSurface(std::move(vertices), std::move(indices), std::move(normals));
     return mesh;
 #endif
 }
