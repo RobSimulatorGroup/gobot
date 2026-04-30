@@ -25,8 +25,14 @@ if(PROJECT_SOURCE_DIR STREQUAL PROJECT_BINARY_DIR)
 endif()
 
 find_package(Eigen3 REQUIRED)
-find_package(nlohmann_json REQUIRED)
 find_package(PNG REQUIRED)
+
+CPMFindPackage(
+    NAME nlohmann_json
+    VERSION 3.11.3
+    GITHUB_REPOSITORY nlohmann/json
+    OPTIONS "JSON_BuildTests OFF"
+)
 
 if(GOB_BUILD_OPENUSD)
     find_package(pxr REQUIRED CONFIG)

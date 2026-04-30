@@ -128,8 +128,8 @@ void GLRendererDebugDraw::EnsureEditorGrid() {
         const float p = static_cast<float>(i);
         const float e = static_cast<float>(extent);
 
-        vertices.insert(vertices.end(), {-e, 0.0f, p, e, 0.0f, p});
-        vertices.insert(vertices.end(), {p, 0.0f, -e, p, 0.0f, e});
+        vertices.insert(vertices.end(), {-e, p, 0.0f, e, p, 0.0f});
+        vertices.insert(vertices.end(), {p, -e, 0.0f, p, e, 0.0f});
     }
 
     glCreateVertexArrays(1, &editor_grid_.vao);

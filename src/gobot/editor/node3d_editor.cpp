@@ -31,6 +31,7 @@ Node3DEditor* Node3DEditor::s_singleton = nullptr;
 
 Node3DEditor::Node3DEditor() {
     s_singleton = this;
+    imguizmo_operation_ = ImGuizmo::TRANSLATE;
     SetName("Node3DEditor");
     camera3d_ = Object::New<Camera3D>();
     camera3d_->SetName("EditorCamera");
@@ -62,7 +63,7 @@ void Node3DEditor::ResetCamera() {
     mouse_down_ = false;
     mouse_speed_ = 0.0020f;
 
-    SetCameraOrbit({8.0f, 6.0f, -10.0f}, {0.0f, 0.0f, 0.0f}, {0.0f, 1.0f, 0.0f});
+    SetCameraOrbit({8.0f, 8.0f, 6.0f}, {0.0f, 0.0f, 0.0f}, Vector3::UnitZ());
 }
 
 
@@ -108,8 +109,14 @@ void Node3DEditor::UpdateCamera(double delta_time) {
     auto scroll_offset = Input::GetInstance()->GetScrollOffset();
     Input::GetInstance()->SetScrollOffset(0.0);
 
-    mouse_down_ = (Input::GetInstance()->GetMouseClickedState(MouseButton::Right) == MouseClickedState::SingleClicked) ||
-                  (Input::GetInstance()->GetMouseClickedState(MouseButton::Middle) == MouseClickedState::SingleClicked);
+    const bool left_mouse_down = Input::GetInstance()->GetMouseClickedState(MouseButton::Left) == MouseClickedState::SingleClicked;
+    const bool middle_mouse_down = Input::GetInstance()->GetMouseClickedState(MouseButton::Middle) == MouseClickedState::SingleClicked;
+    const bool shift_down = Input::GetInstance()->GetKeyPressed(KeyCode::LeftShift);
+    const bool gizmo_captures_mouse = ImGuizmo::IsUsing() || ImGuizmo::IsOver();
+    const bool orbit_mouse_down = left_mouse_down && !shift_down && !gizmo_captures_mouse;
+    const bool pan_mouse_down = middle_mouse_down || (left_mouse_down && shift_down && !gizmo_captures_mouse);
+
+    mouse_down_ = orbit_mouse_down || pan_mouse_down;
 
     Vector2i delta;
     if (mouse_down_) {
@@ -118,7 +125,7 @@ void Node3DEditor::UpdateCamera(double delta_time) {
 
         // TODO(wqq): Right hand or left hand
         delta[0] *= -1.0f;
-        if (!Input::GetInstance()->GetKeyPressed(KeyCode::LeftShift)) {
+        if (orbit_mouse_down) {
             horizontal_angle_ += mouse_speed_ * float(delta[0]);
             vertical_angle_   -= mouse_speed_ * float(delta[1]);
         }
@@ -130,16 +137,17 @@ void Node3DEditor::UpdateCamera(double delta_time) {
     }
 
     const Vector3 direction = {
+        std::cos(vertical_angle_) * std::cos(horizontal_angle_),
         std::cos(vertical_angle_) * std::sin(horizontal_angle_),
-        std::sin(vertical_angle_),
-        std::cos(vertical_angle_) * std::cos(horizontal_angle_)
+        std::sin(vertical_angle_)
     };
 
-    const Vector3 right = {
-        std::sin(horizontal_angle_ - Math_HALF_PI),
-        0.0f,
-        std::cos(horizontal_angle_ - Math_HALF_PI),
-    };
+    Vector3 right = direction.cross(Vector3::UnitZ());
+    if (right.isZero(CMP_EPSILON)) {
+        right = Vector3::UnitX();
+    } else {
+        right.normalize();
+    }
 
     auto eye = camera3d_->GetViewMatrixEye();
     auto at = camera3d_->GetViewMatrixAt();
@@ -148,12 +156,11 @@ void Node3DEditor::UpdateCamera(double delta_time) {
     if (Input::GetInstance()->GetMouseClickedState(MouseButton::Middle) == MouseClickedState::DoubleClicked) {
         ResetCamera();
         return;
-    } else if (Input::GetInstance()->GetKeyPressed(KeyCode::LeftShift) &&
-               Input::GetInstance()->GetMouseClickedState(MouseButton::Middle) == MouseClickedState::SingleClicked) {
+    } else if (pan_mouse_down) {
         const Vector3 offset = up * delta[1] * translation_speed_ + right * delta[0] * translation_speed_;
         eye += offset;
         at += offset;
-    } else if (Input::GetInstance()->GetMouseClickedState(MouseButton::Middle) == MouseClickedState::SingleClicked) {
+    } else if (orbit_mouse_down) {
         eye = at - direction * distance_;
     } else {
         if (std::abs(scroll_offset) > CMP_EPSILON) {
@@ -169,8 +176,8 @@ void Node3DEditor::UpdateCamera(double delta_time) {
 void Node3DEditor::SetCameraOrbit(const Vector3& eye, const Vector3& at, const Vector3& up) {
     const Vector3 direction = (at - eye).normalized();
     distance_ = std::max(static_cast<float>((at - eye).norm()), 0.1f);
-    vertical_angle_ = static_cast<float>(std::asin(std::clamp(direction.y(), static_cast<RealType>(-1.0), static_cast<RealType>(1.0))));
-    horizontal_angle_ = static_cast<float>(std::atan2(direction.x(), direction.z()));
+    vertical_angle_ = static_cast<float>(std::asin(std::clamp(direction.z(), static_cast<RealType>(-1.0), static_cast<RealType>(1.0))));
+    horizontal_angle_ = static_cast<float>(std::atan2(direction.y(), direction.x()));
     camera3d_->SetViewMatrix(eye, at, up);
 }
 
@@ -225,9 +232,21 @@ void Node3DEditor::OnImGuizmo() {
 
         Matrix4 view = camera3d_->GetViewMatrix();
         Matrix4 projection = camera3d_->GetProjectionMatrix();
+        float snap[3] = {1.0f, 1.0f, 1.0f};
+        if (imguizmo_operation_ == ImGuizmo::ROTATE) {
+            snap[0] = 15.0f;
+            snap[1] = 15.0f;
+            snap[2] = 15.0f;
+        } else if (imguizmo_operation_ == ImGuizmo::SCALE) {
+            snap[0] = 0.1f;
+            snap[1] = 0.1f;
+            snap[2] = 0.1f;
+        }
+
         bool changed = ImGuizmo::Manipulate(view.data(), projection.data(),
                                             static_cast<ImGuizmo::OPERATION>(imguizmo_operation_),
-                                            ImGuizmo::LOCAL, object_matrix);
+                                            ImGuizmo::LOCAL, object_matrix, nullptr,
+                                            snap_guizmo_ ? snap : nullptr);
 
         if (changed) {
             for (int i = 0; i < 16; ++i) {
@@ -235,6 +254,8 @@ void Node3DEditor::OnImGuizmo() {
             }
             selected_node_3d->SetGlobalTransform(Affine3(model_matrix));
         }
+
+        editing_ = ImGuizmo::IsUsing();
     }
 
     DrawViewManipulator(view_manipulate_position, view_manipulate_size);

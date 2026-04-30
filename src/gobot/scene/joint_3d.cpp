@@ -5,6 +5,8 @@
 
 #include "gobot/scene/joint_3d.hpp"
 
+#include <algorithm>
+#include <cmath>
 #include <utility>
 
 #include "gobot/core/registration.hpp"
@@ -88,6 +90,39 @@ RealType Joint3D::GetVelocityLimit() const {
     return velocity_limit_;
 }
 
+RealType Joint3D::ClampJointPosition(RealType joint_position) const {
+    if (joint_type_ == JointType::Revolute && lower_limit_ < upper_limit_) {
+        return std::clamp(joint_position, lower_limit_, upper_limit_);
+    }
+
+    return joint_position;
+}
+
+void Joint3D::SetJointPosition(RealType joint_position) {
+    const RealType clamped_position = ClampJointPosition(joint_position);
+    const RealType delta = clamped_position - joint_position_;
+    if (std::abs(delta) <= CMP_EPSILON) {
+        joint_position_ = clamped_position;
+        return;
+    }
+
+    if (joint_type_ == JointType::Revolute || joint_type_ == JointType::Continuous) {
+        Affine3 transform = GetTransform();
+        transform.linear() = transform.linear() * AngleAxis(delta, axis_);
+        SetTransform(transform);
+    } else if (joint_type_ == JointType::Prismatic) {
+        Affine3 transform = GetTransform();
+        transform.translation() += axis_ * delta;
+        SetTransform(transform);
+    }
+
+    joint_position_ = clamped_position;
+}
+
+RealType Joint3D::GetJointPosition() const {
+    return joint_position_;
+}
+
 } // namespace gobot
 
 GOBOT_REGISTRATION {
@@ -100,6 +135,7 @@ GOBOT_REGISTRATION {
             .property("parent_link", &Joint3D::GetParentLink, &Joint3D::SetParentLink)
             .property("child_link", &Joint3D::GetChildLink, &Joint3D::SetChildLink)
             .property("axis", &Joint3D::GetAxis, &Joint3D::SetAxis)
+            .property("joint_position", &Joint3D::GetJointPosition, &Joint3D::SetJointPosition)
             .property("lower_limit", &Joint3D::GetLowerLimit, &Joint3D::SetLowerLimit)
             .property("upper_limit", &Joint3D::GetUpperLimit, &Joint3D::SetUpperLimit)
             .property("effort_limit", &Joint3D::GetEffortLimit, &Joint3D::SetEffortLimit)

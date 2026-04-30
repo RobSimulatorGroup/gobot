@@ -59,7 +59,13 @@ public:
 
     RealType GetVelocityLimit() const;
 
+    void SetJointPosition(RealType joint_position);
+
+    RealType GetJointPosition() const;
+
 private:
+    RealType ClampJointPosition(RealType joint_position) const;
+
     JointType joint_type_{JointType::Fixed};
     std::string parent_link_;
     std::string child_link_;
@@ -68,6 +74,7 @@ private:
     RealType upper_limit_{0.0};
     RealType effort_limit_{0.0};
     RealType velocity_limit_{0.0};
+    RealType joint_position_{0.0};
 };
 
 }

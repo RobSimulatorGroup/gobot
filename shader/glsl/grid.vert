@@ -15,10 +15,10 @@ void main()
     vec3 position = pos[idx] * gridSize;
 
     position.x += cameraPos.x;
-    position.z += cameraPos.z;
+    position.y += cameraPos.y;
 
-    out_camPos = cameraPos.xz;
+    out_camPos = cameraPos.xy;
 
     gl_Position = MVP * vec4(position, 1.0);
-    uv = position.xz;
+    uv = position.xy;
 }
