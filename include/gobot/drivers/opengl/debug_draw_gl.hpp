@@ -8,6 +8,7 @@
 
 #include "glad/glad.h"
 #include "gobot/rendering/renderer_debug_draw.hpp"
+#include "gobot/rendering/scene_render_items.hpp"
 #include "gobot/core/math/matrix.hpp"
 
 namespace gobot::opengl {
@@ -42,7 +43,7 @@ private:
 
     void DrawWorldAxes();
 
-    void DrawCollisionDebug(const Node* scene_root);
+    void DrawCollisionDebug(const SceneRenderItems& render_items);
 };
 
 }

@@ -25,6 +25,14 @@ Color MeshInstance3D::GetSurfaceColor() const {
     return surface_color_;
 }
 
+void MeshInstance3D::SetMaterial(const Ref<Material>& material) {
+    material_ = material;
+}
+
+const Ref<Material>& MeshInstance3D::GetMaterial() const {
+    return material_;
+}
+
 }
 
 GOBOT_REGISTRATION {
@@ -32,6 +40,7 @@ GOBOT_REGISTRATION {
     Class_<MeshInstance3D>("MeshInstance3D")
             .constructor()(CtorAsRawPtr)
             .property("mesh", &MeshInstance3D::GetMesh, &MeshInstance3D::SetMesh)
+            .property("material", &MeshInstance3D::GetMaterial, &MeshInstance3D::SetMaterial)
             .property("surface_color", &MeshInstance3D::GetSurfaceColor, &MeshInstance3D::SetSurfaceColor);
 
 };

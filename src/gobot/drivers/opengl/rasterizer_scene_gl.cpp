@@ -11,8 +11,9 @@
 #include "gobot/drivers/opengl/texture_storage.hpp"
 #include "gobot/error_macros.hpp"
 #include "gobot/log.hpp"
+#include "gobot/rendering/scene_render_items.hpp"
 #include "gobot/scene/camera_3d.hpp"
-#include "gobot/scene/mesh_instance_3d.hpp"
+#include "gobot/scene/resources/material.hpp"
 
 #include <algorithm>
 #include <string>
@@ -83,7 +84,10 @@ void GLRasterizerScene::RenderScene(const RID& render_target, const Node* scene_
     glUniformMatrix4fv(glGetUniformLocation(default_program_, "u_view"), 1, GL_FALSE, view.data());
     glUniformMatrix4fv(glGetUniformLocation(default_program_, "u_projection"), 1, GL_FALSE, projection.data());
 
-    DrawNode(scene_root);
+    const SceneRenderItems render_items = CollectSceneRenderItems(scene_root);
+    for (const VisualMeshRenderItem& item : render_items.visual_meshes) {
+        DrawVisualItem(item);
+    }
 
     glBindVertexArray(0);
     glUseProgram(0);
@@ -176,32 +180,27 @@ void GLRasterizerScene::UploadMesh(GLMeshData* mesh) {
     mesh->dirty = false;
 }
 
-void GLRasterizerScene::DrawNode(const Node* node) {
-    const auto* mesh_instance = Object::PointerCastTo<MeshInstance3D>(node);
-    if (mesh_instance && mesh_instance->IsInsideTree() && mesh_instance->IsVisibleInTree()) {
-        Ref<Mesh> mesh_resource = mesh_instance->GetMesh();
-        if (mesh_resource.IsValid()) {
-            RID mesh_rid = mesh_resource->GetRid();
-            GLMeshData* mesh = mesh_storage_->mesh_owner_.GetOrNull(mesh_rid);
-            if (mesh && mesh->index_count > 0) {
-                UploadMesh(mesh);
-                Matrix4 model = mesh_instance->GetGlobalTransform().matrix();
-                const Color color = mesh_instance->GetSurfaceColor();
-                glUniformMatrix4fv(glGetUniformLocation(default_program_, "u_model"), 1, GL_FALSE, model.data());
-                glUniform4f(glGetUniformLocation(default_program_, "u_color"),
-                            color.red(),
-                            color.green(),
-                            color.blue(),
-                            color.alpha());
-                glBindVertexArray(mesh->vao);
-                glDrawElements(GL_TRIANGLES, mesh->index_count, GL_UNSIGNED_INT, nullptr);
-            }
-        }
+void GLRasterizerScene::DrawVisualItem(const VisualMeshRenderItem& item) {
+    GLMeshData* mesh = mesh_storage_->mesh_owner_.GetOrNull(item.mesh);
+    if (mesh == nullptr || mesh->index_count <= 0) {
+        return;
     }
 
-    for (std::size_t i = 0; i < node->GetChildCount(); ++i) {
-        DrawNode(node->GetChild(static_cast<int>(i)));
+    UploadMesh(mesh);
+    Color color = item.surface_color;
+    if (Ref<PBRMaterial3D> pbr_material = dynamic_pointer_cast<PBRMaterial3D>(item.material);
+        pbr_material.IsValid()) {
+        color = pbr_material->GetAlbedo();
     }
+
+    glUniformMatrix4fv(glGetUniformLocation(default_program_, "u_model"), 1, GL_FALSE, item.model.data());
+    glUniform4f(glGetUniformLocation(default_program_, "u_color"),
+                color.red(),
+                color.green(),
+                color.blue(),
+                color.alpha());
+    glBindVertexArray(mesh->vao);
+    glDrawElements(GL_TRIANGLES, mesh->index_count, GL_UNSIGNED_INT, nullptr);
 }
 
 }

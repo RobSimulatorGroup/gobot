@@ -9,9 +9,8 @@
 #include "gobot/drivers/opengl/texture_storage.hpp"
 #include "gobot/error_macros.hpp"
 #include "gobot/log.hpp"
+#include "gobot/rendering/scene_render_items.hpp"
 #include "gobot/scene/camera_3d.hpp"
-#include "gobot/scene/collision_shape_3d.hpp"
-#include "gobot/scene/node.hpp"
 #include "gobot/scene/resources/box_shape_3d.hpp"
 #include "gobot/scene/resources/cylinder_shape_3d.hpp"
 #include "gobot/scene/resources/sphere_shape_3d.hpp"
@@ -148,27 +147,18 @@ void AppendCylinderLines(std::vector<float>& vertices, const Affine3& transform,
     }
 }
 
-void CollectCollisionLines(const Node* node, std::vector<float>& vertices) {
-    const auto* collision_shape = Object::PointerCastTo<CollisionShape3D>(node);
-    if (collision_shape && collision_shape->IsInsideTree() && collision_shape->IsVisibleInTree() &&
-        !collision_shape->IsDisabled()) {
-        const Ref<Shape3D>& shape = collision_shape->GetShape();
-        const Affine3 transform = collision_shape->GetGlobalTransform();
-
-        if (Ref<BoxShape3D> box = dynamic_pointer_cast<BoxShape3D>(shape); box.IsValid()) {
-            AppendBoxLines(vertices, transform, box->GetSize());
-        } else if (Ref<SphereShape3D> sphere = dynamic_pointer_cast<SphereShape3D>(shape); sphere.IsValid()) {
-            AppendSphereLines(vertices, transform, static_cast<RealType>(sphere->GetRadius()));
-        } else if (Ref<CylinderShape3D> cylinder = dynamic_pointer_cast<CylinderShape3D>(shape); cylinder.IsValid()) {
+void CollectCollisionLines(const SceneRenderItems& render_items, std::vector<float>& vertices) {
+    for (const CollisionDebugRenderItem& item : render_items.collision_shapes) {
+        if (Ref<BoxShape3D> box = dynamic_pointer_cast<BoxShape3D>(item.shape); box.IsValid()) {
+            AppendBoxLines(vertices, item.transform, box->GetSize());
+        } else if (Ref<SphereShape3D> sphere = dynamic_pointer_cast<SphereShape3D>(item.shape); sphere.IsValid()) {
+            AppendSphereLines(vertices, item.transform, static_cast<RealType>(sphere->GetRadius()));
+        } else if (Ref<CylinderShape3D> cylinder = dynamic_pointer_cast<CylinderShape3D>(item.shape); cylinder.IsValid()) {
             AppendCylinderLines(vertices,
-                                transform,
+                                item.transform,
                                 static_cast<RealType>(cylinder->GetRadius()),
                                 static_cast<RealType>(cylinder->GetHeight()));
         }
-    }
-
-    for (std::size_t i = 0; i < node->GetChildCount(); ++i) {
-        CollectCollisionLines(node->GetChild(static_cast<int>(i)), vertices);
     }
 }
 
@@ -330,13 +320,9 @@ void GLRendererDebugDraw::DrawWorldAxes() {
     glLineWidth(1.0f);
 }
 
-void GLRendererDebugDraw::DrawCollisionDebug(const Node* scene_root) {
-    if (scene_root == nullptr) {
-        return;
-    }
-
+void GLRendererDebugDraw::DrawCollisionDebug(const SceneRenderItems& render_items) {
     std::vector<float> vertices;
-    CollectCollisionLines(scene_root, vertices);
+    CollectCollisionLines(render_items, vertices);
     if (vertices.empty()) {
         collision_lines_.vertex_count = 0;
         return;
@@ -393,9 +379,10 @@ void GLRendererDebugDraw::RenderEditorDebug(const RID& render_target, const Came
     glUniformMatrix4fv(glGetUniformLocation(program_, "u_view"), 1, GL_FALSE, view.data());
     glUniformMatrix4fv(glGetUniformLocation(program_, "u_projection"), 1, GL_FALSE, projection.data());
 
+    const SceneRenderItems render_items = CollectSceneRenderItems(scene_root);
     DrawEditorGrid();
     DrawWorldAxes();
-    DrawCollisionDebug(scene_root);
+    DrawCollisionDebug(render_items);
 
     glDisable(GL_BLEND);
     glDepthMask(GL_TRUE);

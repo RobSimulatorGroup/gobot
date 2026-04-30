@@ -101,7 +101,9 @@ public:
     }
 
     RID MaterialCreate() {
-        return RID();
+        RID material = RSG::material_storage->MaterialAllocate();
+        RSG::material_storage->MaterialInitialize(material);
+        return material;
     }
 
     RID MeshCreate();

@@ -34,6 +34,9 @@ bool GLRendererUtilities::Free(gobot::RID p_rid) {
     } else if (opengl::GLMaterialStorage::GetInstance()->OwnsShaderProgram(p_rid)) {
         opengl::GLMaterialStorage::GetInstance()->ShaderProgramFree(p_rid);
         return true;
+    } else if (opengl::GLMaterialStorage::GetInstance()->OwnsMaterial(p_rid)) {
+        opengl::GLMaterialStorage::GetInstance()->MaterialFree(p_rid);
+        return true;
     } else {
         return false;
     }

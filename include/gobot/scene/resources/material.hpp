@@ -63,7 +63,7 @@ public:
     Color GetAlbedo() const;
 
 private:
-    Color albedo_;
+    Color albedo_{0.8f, 0.8f, 0.8f, 1.0f};
 
     Ref<RasterizerShaderProgram> shader_program_;
 };

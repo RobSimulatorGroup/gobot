@@ -9,6 +9,7 @@
 
 #include "glad/glad.h"
 #include "gobot/rendering/renderer_scene_render.hpp"
+#include "gobot/rendering/scene_render_items.hpp"
 
 namespace gobot::opengl {
 
@@ -31,7 +32,7 @@ private:
 
     void UploadMesh(GLMeshData* mesh);
 
-    void DrawNode(const Node* node);
+    void DrawVisualItem(const VisualMeshRenderItem& item);
 };
 
 }

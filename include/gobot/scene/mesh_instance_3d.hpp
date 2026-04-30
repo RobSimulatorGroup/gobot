@@ -7,6 +7,7 @@
 
 #include "gobot/core/color.hpp"
 #include "gobot/scene/node_3d.hpp"
+#include "gobot/scene/resources/material.hpp"
 #include "gobot/scene/resources/mesh.hpp"
 
 namespace gobot {
@@ -25,8 +26,13 @@ public:
 
     Color GetSurfaceColor() const;
 
+    void SetMaterial(const Ref<Material>& material);
+
+    const Ref<Material>& GetMaterial() const;
+
 private:
     Ref<Mesh> mesh_{nullptr};
+    Ref<Material> material_{nullptr};
     Color surface_color_{0.66f, 0.78f, 0.95f, 1.0f};
 };
 

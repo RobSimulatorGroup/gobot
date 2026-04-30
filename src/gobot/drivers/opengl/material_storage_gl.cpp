@@ -219,15 +219,15 @@ void GLMaterialStorage::ShaderProgramSetComputeShader(RID p_shader_program, RID 
 
 
 RID GLMaterialStorage::MaterialAllocate() {
-    return RID();
+    return material_owner_.AllocateRID();
 }
 
 void GLMaterialStorage::MaterialInitialize(RID p_rid) {
-
+    material_owner_.InitializeRID(p_rid, MaterialData());
 }
 
 void GLMaterialStorage::MaterialFree(RID p_rid) {
-
+    material_owner_.Free(p_rid);
 }
 
 std::string GLMaterialStorage::ShaderGetCode(RID p_shader) const {
