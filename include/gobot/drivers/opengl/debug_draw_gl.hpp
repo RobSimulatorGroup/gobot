@@ -24,12 +24,13 @@ public:
 
     ~GLRendererDebugDraw() override;
 
-    void RenderEditorDebug(const RID& render_target, const Camera3D* camera) override;
+    void RenderEditorDebug(const RID& render_target, const Camera3D* camera, const Node* scene_root) override;
 
 private:
     GLuint program_ = 0;
     LineBuffer editor_grid_;
     LineBuffer world_axes_;
+    LineBuffer collision_lines_;
 
     void EnsureProgram();
 
@@ -40,6 +41,8 @@ private:
     void DrawEditorGrid();
 
     void DrawWorldAxes();
+
+    void DrawCollisionDebug(const Node* scene_root);
 };
 
 }

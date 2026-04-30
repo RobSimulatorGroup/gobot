@@ -92,7 +92,7 @@ void EditorViewportRenderer::Render(const RID& viewport, const Node* scene_root,
     if (scene_root) {
         RS::GetInstance()->RenderSceneToViewport(viewport, scene_root, camera);
     }
-    RS::GetInstance()->RenderEditorDebugToViewport(viewport, camera);
+    RS::GetInstance()->RenderEditorDebugToViewport(viewport, camera, scene_root);
 }
 
 void EditorViewportRenderer::RenderOverlay(const Node* scene_root,

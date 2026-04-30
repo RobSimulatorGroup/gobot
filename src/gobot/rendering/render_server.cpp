@@ -125,12 +125,12 @@ void RenderServer::RenderSceneToViewport(const RID& viewport, const Node* scene_
     RSG::scene->RenderScene(render_target, scene_root, camera);
 }
 
-void RenderServer::RenderEditorDebugToViewport(const RID& viewport, const Camera3D* camera) {
+void RenderServer::RenderEditorDebugToViewport(const RID& viewport, const Camera3D* camera, const Node* scene_root) {
     ERR_FAIL_COND(RSG::debug_draw == nullptr);
     const RID render_target = RSG::viewport->GetViewportRenderTarget(viewport);
     ERR_FAIL_COND(render_target.IsNull());
 
-    RSG::debug_draw->RenderEditorDebug(render_target, camera);
+    RSG::debug_draw->RenderEditorDebug(render_target, camera, scene_root);
 }
 
 

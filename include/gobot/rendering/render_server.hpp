@@ -120,7 +120,7 @@ public:
 
     void RenderSceneToViewport(const RID& viewport, const Node* scene_root, const Camera3D* camera);
 
-    void RenderEditorDebugToViewport(const RID& viewport, const Camera3D* camera);
+    void RenderEditorDebugToViewport(const RID& viewport, const Camera3D* camera, const Node* scene_root);
 
     void Free(const RID& rid);
 

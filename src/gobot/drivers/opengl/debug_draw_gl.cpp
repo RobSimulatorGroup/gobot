@@ -10,9 +10,15 @@
 #include "gobot/error_macros.hpp"
 #include "gobot/log.hpp"
 #include "gobot/scene/camera_3d.hpp"
+#include "gobot/scene/collision_shape_3d.hpp"
+#include "gobot/scene/node.hpp"
+#include "gobot/scene/resources/box_shape_3d.hpp"
+#include "gobot/scene/resources/cylinder_shape_3d.hpp"
+#include "gobot/scene/resources/sphere_shape_3d.hpp"
 
 #include <algorithm>
 #include <array>
+#include <cmath>
 #include <string>
 #include <vector>
 
@@ -52,6 +58,120 @@ void FreeLineBuffer(GLRendererDebugDraw::LineBuffer& buffer) {
     buffer.vertex_count = 0;
 }
 
+void PushWorldVertex(std::vector<float>& vertices, const Vector3& point) {
+    vertices.push_back(static_cast<float>(point.x()));
+    vertices.push_back(static_cast<float>(point.y()));
+    vertices.push_back(static_cast<float>(point.z()));
+}
+
+void AppendLine(std::vector<float>& vertices,
+                const Affine3& transform,
+                const Vector3& from,
+                const Vector3& to) {
+    PushWorldVertex(vertices, transform * from);
+    PushWorldVertex(vertices, transform * to);
+}
+
+void AppendBoxLines(std::vector<float>& vertices, const Affine3& transform, const Vector3& size) {
+    const Vector3 half = size * 0.5f;
+    const std::array<Vector3, 8> corners = {
+            Vector3{-half.x(), -half.y(), -half.z()},
+            Vector3{ half.x(), -half.y(), -half.z()},
+            Vector3{ half.x(),  half.y(), -half.z()},
+            Vector3{-half.x(),  half.y(), -half.z()},
+            Vector3{-half.x(), -half.y(),  half.z()},
+            Vector3{ half.x(), -half.y(),  half.z()},
+            Vector3{ half.x(),  half.y(),  half.z()},
+            Vector3{-half.x(),  half.y(),  half.z()},
+    };
+    constexpr std::array<std::pair<int, int>, 12> edges = {
+            std::pair{0, 1}, std::pair{1, 2}, std::pair{2, 3}, std::pair{3, 0},
+            std::pair{4, 5}, std::pair{5, 6}, std::pair{6, 7}, std::pair{7, 4},
+            std::pair{0, 4}, std::pair{1, 5}, std::pair{2, 6}, std::pair{3, 7},
+    };
+
+    for (const auto& [from, to] : edges) {
+        AppendLine(vertices, transform, corners[from], corners[to]);
+    }
+}
+
+void AppendCircleLines(std::vector<float>& vertices,
+                       const Affine3& transform,
+                       RealType radius,
+                       int segments,
+                       int axis) {
+    for (int i = 0; i < segments; ++i) {
+        const RealType a = static_cast<RealType>(2.0 * Math_PI * i / segments);
+        const RealType b = static_cast<RealType>(2.0 * Math_PI * ((i + 1) % segments) / segments);
+
+        Vector3 from = Vector3::Zero();
+        Vector3 to = Vector3::Zero();
+        if (axis == 0) {
+            from = Vector3{0.0, std::cos(a) * radius, std::sin(a) * radius};
+            to = Vector3{0.0, std::cos(b) * radius, std::sin(b) * radius};
+        } else if (axis == 1) {
+            from = Vector3{std::cos(a) * radius, 0.0, std::sin(a) * radius};
+            to = Vector3{std::cos(b) * radius, 0.0, std::sin(b) * radius};
+        } else {
+            from = Vector3{std::cos(a) * radius, std::sin(a) * radius, 0.0};
+            to = Vector3{std::cos(b) * radius, std::sin(b) * radius, 0.0};
+        }
+        AppendLine(vertices, transform, from, to);
+    }
+}
+
+void AppendSphereLines(std::vector<float>& vertices, const Affine3& transform, RealType radius) {
+    constexpr int segments = 48;
+    AppendCircleLines(vertices, transform, radius, segments, 0);
+    AppendCircleLines(vertices, transform, radius, segments, 1);
+    AppendCircleLines(vertices, transform, radius, segments, 2);
+}
+
+void AppendCylinderLines(std::vector<float>& vertices, const Affine3& transform, RealType radius, RealType height) {
+    constexpr int segments = 48;
+    const RealType half_height = height * static_cast<RealType>(0.5);
+
+    for (int i = 0; i < segments; ++i) {
+        const RealType a = static_cast<RealType>(2.0 * Math_PI * i / segments);
+        const RealType b = static_cast<RealType>(2.0 * Math_PI * ((i + 1) % segments) / segments);
+        const Vector3 top_from{std::cos(a) * radius, std::sin(a) * radius, half_height};
+        const Vector3 top_to{std::cos(b) * radius, std::sin(b) * radius, half_height};
+        const Vector3 bottom_from{std::cos(a) * radius, std::sin(a) * radius, -half_height};
+        const Vector3 bottom_to{std::cos(b) * radius, std::sin(b) * radius, -half_height};
+
+        AppendLine(vertices, transform, top_from, top_to);
+        AppendLine(vertices, transform, bottom_from, bottom_to);
+
+        if (i % 12 == 0) {
+            AppendLine(vertices, transform, bottom_from, top_from);
+        }
+    }
+}
+
+void CollectCollisionLines(const Node* node, std::vector<float>& vertices) {
+    const auto* collision_shape = Object::PointerCastTo<CollisionShape3D>(node);
+    if (collision_shape && collision_shape->IsInsideTree() && collision_shape->IsVisibleInTree() &&
+        !collision_shape->IsDisabled()) {
+        const Ref<Shape3D>& shape = collision_shape->GetShape();
+        const Affine3 transform = collision_shape->GetGlobalTransform();
+
+        if (Ref<BoxShape3D> box = dynamic_pointer_cast<BoxShape3D>(shape); box.IsValid()) {
+            AppendBoxLines(vertices, transform, box->GetSize());
+        } else if (Ref<SphereShape3D> sphere = dynamic_pointer_cast<SphereShape3D>(shape); sphere.IsValid()) {
+            AppendSphereLines(vertices, transform, static_cast<RealType>(sphere->GetRadius()));
+        } else if (Ref<CylinderShape3D> cylinder = dynamic_pointer_cast<CylinderShape3D>(shape); cylinder.IsValid()) {
+            AppendCylinderLines(vertices,
+                                transform,
+                                static_cast<RealType>(cylinder->GetRadius()),
+                                static_cast<RealType>(cylinder->GetHeight()));
+        }
+    }
+
+    for (std::size_t i = 0; i < node->GetChildCount(); ++i) {
+        CollectCollisionLines(node->GetChild(static_cast<int>(i)), vertices);
+    }
+}
+
 }
 
 GLRendererDebugDraw::~GLRendererDebugDraw() {
@@ -61,6 +181,7 @@ GLRendererDebugDraw::~GLRendererDebugDraw() {
     }
     FreeLineBuffer(editor_grid_);
     FreeLineBuffer(world_axes_);
+    FreeLineBuffer(collision_lines_);
 }
 
 void GLRendererDebugDraw::EnsureProgram() {
@@ -209,7 +330,43 @@ void GLRendererDebugDraw::DrawWorldAxes() {
     glLineWidth(1.0f);
 }
 
-void GLRendererDebugDraw::RenderEditorDebug(const RID& render_target, const Camera3D* camera) {
+void GLRendererDebugDraw::DrawCollisionDebug(const Node* scene_root) {
+    if (scene_root == nullptr) {
+        return;
+    }
+
+    std::vector<float> vertices;
+    CollectCollisionLines(scene_root, vertices);
+    if (vertices.empty()) {
+        collision_lines_.vertex_count = 0;
+        return;
+    }
+
+    if (collision_lines_.vao == 0) {
+        glCreateVertexArrays(1, &collision_lines_.vao);
+        glCreateBuffers(1, &collision_lines_.vertex_buffer);
+        glVertexArrayVertexBuffer(collision_lines_.vao, 0, collision_lines_.vertex_buffer, 0, 3 * sizeof(float));
+        glEnableVertexArrayAttrib(collision_lines_.vao, 0);
+        glVertexArrayAttribFormat(collision_lines_.vao, 0, 3, GL_FLOAT, GL_FALSE, 0);
+        glVertexArrayAttribBinding(collision_lines_.vao, 0, 0);
+    }
+
+    glNamedBufferData(collision_lines_.vertex_buffer,
+                      static_cast<GLsizeiptr>(vertices.size() * sizeof(float)),
+                      vertices.data(),
+                      GL_STREAM_DRAW);
+    collision_lines_.vertex_count = static_cast<GLsizei>(vertices.size() / 3);
+
+    const Matrix4 model = Matrix4::Identity();
+    glUniformMatrix4fv(glGetUniformLocation(program_, "u_model"), 1, GL_FALSE, model.data());
+    glUniform4f(glGetUniformLocation(program_, "u_color"), 0.15f, 0.95f, 0.72f, 0.85f);
+    glBindVertexArray(collision_lines_.vao);
+    glLineWidth(1.5f);
+    glDrawArrays(GL_LINES, 0, collision_lines_.vertex_count);
+    glLineWidth(1.0f);
+}
+
+void GLRendererDebugDraw::RenderEditorDebug(const RID& render_target, const Camera3D* camera, const Node* scene_root) {
     ERR_FAIL_COND(camera == nullptr);
 
     auto* rt = TextureStorage::GetInstance()->GetRenderTarget(render_target);
@@ -227,6 +384,8 @@ void GLRendererDebugDraw::RenderEditorDebug(const RID& render_target, const Came
     glViewport(0, 0, rt->size.x(), rt->size.y());
     glEnable(GL_DEPTH_TEST);
     glDepthMask(GL_FALSE);
+    glEnable(GL_BLEND);
+    glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
 
     glUseProgram(program_);
     const Matrix4 view = camera->GetViewMatrix();
@@ -236,7 +395,9 @@ void GLRendererDebugDraw::RenderEditorDebug(const RID& render_target, const Came
 
     DrawEditorGrid();
     DrawWorldAxes();
+    DrawCollisionDebug(scene_root);
 
+    glDisable(GL_BLEND);
     glDepthMask(GL_TRUE);
     glBindVertexArray(0);
     glUseProgram(0);
