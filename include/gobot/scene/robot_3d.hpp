@@ -11,6 +11,11 @@
 
 namespace gobot {
 
+enum class RobotMode {
+    Assembly,
+    Motion
+};
+
 class GOBOT_EXPORT Robot3D : public Node3D {
     GOBCLASS(Robot3D, Node3D)
 
@@ -21,8 +26,15 @@ public:
 
     const std::string& GetSourcePath() const;
 
+    void SetMode(RobotMode mode);
+
+    RobotMode GetMode() const;
+
 private:
+    void SetJointMotionModeRecursive(Node* node, bool enabled);
+
     std::string source_path_;
+    RobotMode mode_{RobotMode::Assembly};
 };
 
 }

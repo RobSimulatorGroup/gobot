@@ -11,6 +11,9 @@
 #include "gobot/editor/editor.hpp"
 #include "gobot/editor/editor_viewport_renderer.hpp"
 #include "gobot/scene/camera_3d.hpp"
+#include "gobot/scene/joint_3d.hpp"
+#include "gobot/scene/node.hpp"
+#include "gobot/scene/robot_3d.hpp"
 #include "gobot/error_macros.hpp"
 #include "gobot/rendering/render_server.hpp"
 #include "gobot/editor/imgui/imgui_utilities.hpp"
@@ -23,6 +26,59 @@
 #include <memory>
 
 namespace gobot {
+
+namespace {
+
+Robot3D* FindRobotAncestor(Node* node) {
+    Node* current = node;
+    while (current) {
+        if (auto* robot = Object::PointerCastTo<Robot3D>(current)) {
+            return robot;
+        }
+        current = current->GetParent();
+    }
+    return nullptr;
+}
+
+bool IsJointMotionEditable(Joint3D* joint) {
+    if (!joint) {
+        return false;
+    }
+
+    auto* robot = FindRobotAncestor(joint);
+    return !robot || robot->GetMode() == RobotMode::Motion;
+}
+
+Joint3D* FindNearestAncestorJoint(Node* node) {
+    Node* current = node;
+    while (current) {
+        if (auto* joint = Object::PointerCastTo<Joint3D>(current)) {
+            return joint;
+        }
+        current = current->GetParent();
+    }
+    return nullptr;
+}
+
+Joint3D* FindMotionJointForViewportTarget(Node* target) {
+    if (!target) {
+        return nullptr;
+    }
+
+    if (auto* joint = Object::PointerCastTo<Joint3D>(target)) {
+        return IsJointMotionEditable(joint) ? joint : nullptr;
+    }
+
+    auto* robot = FindRobotAncestor(target);
+    if (!robot || robot->GetMode() != RobotMode::Motion) {
+        return nullptr;
+    }
+
+    auto* parent_joint = FindNearestAncestorJoint(target->GetParent());
+    return IsJointMotionEditable(parent_joint) ? parent_joint : nullptr;
+}
+
+}
 
 SceneView3DPanel::SceneView3DPanel()
 {
@@ -85,19 +141,85 @@ void SceneView3DPanel::OnImGuiContent()
                           {0.0f, 1.0f},
                           {1.0f, 0.0f});
 
-    viewport_renderer_->RenderOverlay(scene_root, camera_3d, scene_view_position, scene_view_size, ImGui::GetWindowDrawList());
-
     ImVec2 min_bound = scene_view_position;
     ImVec2 max_bound = { min_bound.x + scene_view_size.x, min_bound.y + scene_view_size.y };
 
     bool mouse_inside_rect = ImGui::IsMouseHoveringRect(min_bound, max_bound);
 
     auto* node3d_editor = Node3DEditor::GetInstance();
-    node3d_editor->SetNeedUpdateCamera(mouse_inside_rect);
+    ProcessViewportInput(scene_root, scene_view_position, scene_view_size, mouse_inside_rect);
+    node3d_editor->SetNeedUpdateCamera(mouse_inside_rect && !dragged_joint_);
+
+    viewport_renderer_->RenderOverlay(scene_root, camera_3d, scene_view_position, scene_view_size,
+                                      ImGui::GetWindowDrawList(), hovered_node_,
+                                      dragged_joint_ ? dragged_joint_ : motion_target_joint_);
 
     ImGuizmo::SetRect(scene_view_position.x, scene_view_position.y, scene_view_size.x, scene_view_size.y);
     node3d_editor->OnImGuizmo();
 
+}
+
+void SceneView3DPanel::ProcessViewportInput(Node* scene_root,
+                                            const ImVec2& viewport_position,
+                                            const ImVec2& viewport_size,
+                                            bool mouse_inside_rect) {
+    auto* node3d_editor = Node3DEditor::GetInstance();
+    if (!scene_root || !mouse_inside_rect || ImGuizmo::IsUsing()) {
+        hovered_node_ = nullptr;
+        motion_target_joint_ = nullptr;
+    } else {
+        hovered_node_ = viewport_renderer_->PickNode(scene_root, node3d_editor->GetCamera3D(),
+                                                     viewport_position, viewport_size, ImGui::GetMousePos());
+    }
+
+    const bool left_down = ImGui::IsMouseDown(ImGuiMouseButton_Left);
+    const bool camera_modifier_down = ImGui::GetIO().KeyCtrl || ImGui::GetIO().KeyShift;
+    auto* motion_joint = FindMotionJointForViewportTarget(hovered_node_);
+    motion_target_joint_ = motion_joint;
+
+    if (!left_down) {
+        pressed_joint_ = nullptr;
+        dragged_joint_ = nullptr;
+        node3d_editor->SetBlockCameraInput(false);
+        return;
+    }
+
+    if (mouse_inside_rect && ImGui::IsMouseClicked(ImGuiMouseButton_Left) &&
+        !camera_modifier_down && !ImGuizmo::IsOver()) {
+        if (hovered_node_) {
+            Editor::GetInstance()->SetSelected(hovered_node_);
+        }
+
+        if (motion_joint) {
+            pressed_joint_ = motion_joint;
+            dragged_joint_ = motion_joint;
+            drag_start_joint_position_ = static_cast<float>(dragged_joint_->GetJointPosition());
+            drag_start_mouse_ = ImGui::GetIO().MouseClickedPos[ImGuiMouseButton_Left];
+        }
+    }
+
+    const bool can_capture_joint = mouse_inside_rect && IsJointMotionEditable(pressed_joint_) && !camera_modifier_down &&
+                                   !ImGuizmo::IsUsing() && !ImGuizmo::IsOver();
+
+    if (!dragged_joint_ && can_capture_joint && ImGui::IsMouseDragging(ImGuiMouseButton_Left, 1.0f)) {
+        dragged_joint_ = pressed_joint_;
+        drag_start_joint_position_ = static_cast<float>(dragged_joint_->GetJointPosition());
+        drag_start_mouse_ = ImGui::GetIO().MouseClickedPos[ImGuiMouseButton_Left];
+    }
+
+    if (dragged_joint_) {
+        const ImVec2 mouse_delta{ImGui::GetMousePos().x - drag_start_mouse_.x,
+                                 ImGui::GetMousePos().y - drag_start_mouse_.y};
+        constexpr float joint_drag_sensitivity = 0.01f;
+        const float signed_delta = mouse_delta.x - mouse_delta.y;
+        const JointType joint_type = dragged_joint_->GetJointType();
+        if (joint_type == JointType::Revolute || joint_type == JointType::Continuous ||
+            joint_type == JointType::Prismatic) {
+            dragged_joint_->SetJointPosition(drag_start_joint_position_ + signed_delta * joint_drag_sensitivity);
+        }
+    }
+
+    node3d_editor->SetBlockCameraInput(can_capture_joint || dragged_joint_);
 }
 
 void SceneView3DPanel::Resize(uint32_t width, uint32_t height) {

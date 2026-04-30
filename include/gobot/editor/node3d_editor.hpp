@@ -44,6 +44,8 @@ public:
 
     void SetNeedUpdateCamera(bool update_camera);
 
+    void SetBlockCameraInput(bool block_camera_input);
+
     bool& SnapGuizmo();
 
 protected:
@@ -76,6 +78,7 @@ private:
 
     bool update_camera_{false};
     bool editing_{false};
+    bool block_camera_input_{false};
 
     uint32_t imguizmo_operation_ = UINT32_MAX;
 

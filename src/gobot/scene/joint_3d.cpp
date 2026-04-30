@@ -98,29 +98,91 @@ RealType Joint3D::ClampJointPosition(RealType joint_position) const {
     return joint_position;
 }
 
-void Joint3D::SetJointPosition(RealType joint_position) {
-    const RealType clamped_position = ClampJointPosition(joint_position);
-    const RealType delta = clamped_position - joint_position_;
-    if (std::abs(delta) <= CMP_EPSILON) {
-        joint_position_ = clamped_position;
+Affine3 Joint3D::GetJointMotionTransform() const {
+    Affine3 motion = Affine3::Identity();
+    if (joint_type_ == JointType::Revolute || joint_type_ == JointType::Continuous) {
+        motion.linear() = AngleAxis(joint_position_, axis_).toRotationMatrix();
+    } else if (joint_type_ == JointType::Prismatic) {
+        motion.translation() = axis_ * joint_position_;
+    }
+
+    return motion;
+}
+
+void Joint3D::ApplyJointMotion() {
+    if (!motion_mode_enabled_) {
         return;
     }
 
-    if (joint_type_ == JointType::Revolute || joint_type_ == JointType::Continuous) {
-        Affine3 transform = GetTransform();
-        transform.linear() = transform.linear() * AngleAxis(delta, axis_);
-        SetTransform(transform);
-    } else if (joint_type_ == JointType::Prismatic) {
-        Affine3 transform = GetTransform();
-        transform.translation() += axis_ * delta;
-        SetTransform(transform);
+    if (!assembly_pose_valid_) {
+        CaptureAssemblyPose();
     }
 
+    SetTransform(assembly_transform_);
+
+    const Affine3 motion = GetJointMotionTransform();
+    for (const auto& [child, child_assembly_transform] : child_assembly_transforms_) {
+        if (child) {
+            child->SetTransform(motion * child_assembly_transform);
+        }
+    }
+}
+
+void Joint3D::SetJointPosition(RealType joint_position) {
+    const RealType clamped_position = ClampJointPosition(joint_position);
     joint_position_ = clamped_position;
+    ApplyJointMotion();
 }
 
 RealType Joint3D::GetJointPosition() const {
     return joint_position_;
+}
+
+void Joint3D::CaptureAssemblyPose() {
+    assembly_transform_ = GetTransform();
+    child_assembly_transforms_.clear();
+    child_assembly_transforms_.reserve(GetChildCount());
+
+    for (std::size_t i = 0; i < GetChildCount(); ++i) {
+        auto* child_node_3d = Object::PointerCastTo<Node3D>(GetChild(static_cast<int>(i)));
+        if (child_node_3d) {
+            child_assembly_transforms_.emplace_back(child_node_3d, child_node_3d->GetTransform());
+        }
+    }
+
+    assembly_pose_valid_ = true;
+}
+
+void Joint3D::RestoreAssemblyPose() {
+    if (!assembly_pose_valid_) {
+        return;
+    }
+
+    SetTransform(assembly_transform_);
+    for (const auto& [child, child_assembly_transform] : child_assembly_transforms_) {
+        if (child) {
+            child->SetTransform(child_assembly_transform);
+        }
+    }
+}
+
+void Joint3D::SetMotionModeEnabled(bool enabled) {
+    if (motion_mode_enabled_ == enabled) {
+        return;
+    }
+
+    if (enabled) {
+        CaptureAssemblyPose();
+        motion_mode_enabled_ = true;
+        ApplyJointMotion();
+    } else {
+        RestoreAssemblyPose();
+        motion_mode_enabled_ = false;
+    }
+}
+
+bool Joint3D::IsMotionModeEnabled() const {
+    return motion_mode_enabled_;
 }
 
 } // namespace gobot

@@ -6,6 +6,8 @@
 #pragma once
 
 #include <string>
+#include <utility>
+#include <vector>
 
 #include "gobot/core/math/geometry.hpp"
 #include "gobot/scene/node_3d.hpp"
@@ -63,8 +65,20 @@ public:
 
     RealType GetJointPosition() const;
 
+    void CaptureAssemblyPose();
+
+    void RestoreAssemblyPose();
+
+    void SetMotionModeEnabled(bool enabled);
+
+    bool IsMotionModeEnabled() const;
+
 private:
     RealType ClampJointPosition(RealType joint_position) const;
+
+    Affine3 GetJointMotionTransform() const;
+
+    void ApplyJointMotion();
 
     JointType joint_type_{JointType::Fixed};
     std::string parent_link_;
@@ -75,6 +89,10 @@ private:
     RealType effort_limit_{0.0};
     RealType velocity_limit_{0.0};
     RealType joint_position_{0.0};
+    Affine3 assembly_transform_{Affine3::Identity()};
+    std::vector<std::pair<Node3D*, Affine3>> child_assembly_transforms_;
+    bool assembly_pose_valid_{false};
+    bool motion_mode_enabled_{false};
 };
 
 }

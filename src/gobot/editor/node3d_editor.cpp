@@ -15,6 +15,8 @@
 #include "gobot/core/os/os.hpp"
 #include "gobot/scene/scene_tree.hpp"
 #include "gobot/scene/window.hpp"
+#include "gobot/scene/joint_3d.hpp"
+#include "gobot/scene/robot_3d.hpp"
 #include "gobot/log.hpp"
 #include "imgui.h"
 #include "imgui_internal.h"
@@ -28,6 +30,26 @@
 namespace gobot {
 
 Node3DEditor* Node3DEditor::s_singleton = nullptr;
+
+namespace {
+
+Robot3D* FindRobotAncestor(Node* node) {
+    Node* current = node;
+    while (current) {
+        if (auto* robot = Object::PointerCastTo<Robot3D>(current)) {
+            return robot;
+        }
+        current = current->GetParent();
+    }
+    return nullptr;
+}
+
+bool IsLockedByRobotMotionMode(Node* selected) {
+    auto* robot = FindRobotAncestor(selected);
+    return robot && robot != selected && robot->GetMode() == RobotMode::Motion;
+}
+
+}
 
 Node3DEditor::Node3DEditor() {
     s_singleton = this;
@@ -100,8 +122,19 @@ void Node3DEditor::SetNeedUpdateCamera(bool update_camera) {
     }
 }
 
+void Node3DEditor::SetBlockCameraInput(bool block_camera_input) {
+    block_camera_input_ = block_camera_input;
+}
 
 void Node3DEditor::UpdateCamera(double delta_time) {
+    if (block_camera_input_) {
+        mouse_down_ = false;
+        editing_ = false;
+        mouse_position_last_ = Input::GetInstance()->GetMousePosition();
+        Input::GetInstance()->SetScrollOffset(0.0);
+        return;
+    }
+
     if (!mouse_down_) {
         mouse_position_last_ = Input::GetInstance()->GetMousePosition();
     }
@@ -111,10 +144,14 @@ void Node3DEditor::UpdateCamera(double delta_time) {
 
     const bool left_mouse_down = Input::GetInstance()->GetMouseClickedState(MouseButton::Left) == MouseClickedState::SingleClicked;
     const bool middle_mouse_down = Input::GetInstance()->GetMouseClickedState(MouseButton::Middle) == MouseClickedState::SingleClicked;
-    const bool shift_down = Input::GetInstance()->GetKeyPressed(KeyCode::LeftShift);
+    const bool right_mouse_down = Input::GetInstance()->GetMouseClickedState(MouseButton::Right) == MouseClickedState::SingleClicked;
+    const bool shift_down = Input::GetInstance()->GetKeyPressed(KeyCode::LeftShift) ||
+                            Input::GetInstance()->GetKeyPressed(KeyCode::RightShift);
+    const bool ctrl_down = Input::GetInstance()->GetKeyPressed(KeyCode::LeftCtrl) ||
+                           Input::GetInstance()->GetKeyPressed(KeyCode::RightCtrl);
     const bool gizmo_captures_mouse = ImGuizmo::IsUsing() || ImGuizmo::IsOver();
-    const bool orbit_mouse_down = left_mouse_down && !shift_down && !gizmo_captures_mouse;
-    const bool pan_mouse_down = middle_mouse_down || (left_mouse_down && shift_down && !gizmo_captures_mouse);
+    const bool orbit_mouse_down = (right_mouse_down || (left_mouse_down && ctrl_down)) && !gizmo_captures_mouse;
+    const bool pan_mouse_down = middle_mouse_down || (left_mouse_down && shift_down && !ctrl_down && !gizmo_captures_mouse);
 
     mouse_down_ = orbit_mouse_down || pan_mouse_down;
 
@@ -220,6 +257,11 @@ void Node3DEditor::OnImGuizmo() {
         auto* selected = Editor::GetInstance()->GetSelected();
         auto* selected_node_3d = Object::PointerCastTo<Node3D>(selected);
         if (!selected_node_3d || !selected_node_3d->IsInsideTree()) {
+            DrawViewManipulator(view_manipulate_position, view_manipulate_size);
+            return;
+        }
+        if (IsLockedByRobotMotionMode(selected_node_3d)) {
+            editing_ = false;
             DrawViewManipulator(view_manipulate_position, view_manipulate_size);
             return;
         }
