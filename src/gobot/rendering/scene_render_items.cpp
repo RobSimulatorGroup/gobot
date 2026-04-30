@@ -3,6 +3,8 @@
 #include "gobot/scene/collision_shape_3d.hpp"
 #include "gobot/scene/mesh_instance_3d.hpp"
 #include "gobot/scene/node.hpp"
+#include "gobot/scene/resources/array_mesh.hpp"
+#include "gobot/scene/resources/material.hpp"
 #include "gobot/scene/resources/mesh.hpp"
 
 namespace gobot {
@@ -21,8 +23,20 @@ void CollectNodeRenderItems(const Node* node, SceneRenderItems& items) {
             VisualMeshRenderItem item;
             item.mesh = mesh_resource->GetRid();
             item.material = mesh_instance->GetMaterial();
+            if (!item.material.IsValid()) {
+                if (Ref<ArrayMesh> array_mesh = dynamic_pointer_cast<ArrayMesh>(mesh_resource); array_mesh.IsValid()) {
+                    item.material = array_mesh->GetMaterial();
+                }
+            }
             item.model = mesh_instance->GetGlobalTransform().matrix();
             item.surface_color = mesh_instance->GetSurfaceColor();
+            if (Ref<PBRMaterial3D> pbr_material = dynamic_pointer_cast<PBRMaterial3D>(item.material);
+                pbr_material.IsValid()) {
+                item.surface_color = pbr_material->GetAlbedo();
+                item.metallic = pbr_material->GetMetallic();
+                item.roughness = pbr_material->GetRoughness();
+                item.specular = pbr_material->GetSpecular();
+            }
             items.visual_meshes.push_back(item);
         }
     }

@@ -6,6 +6,9 @@
 #include "gobot/editor/property_inspector/editor_property_resource.hpp"
 
 #include <algorithm>
+#include <array>
+#include <functional>
+#include <string>
 #include <unordered_set>
 #include <vector>
 
@@ -14,6 +17,7 @@
 #include "gobot/editor/property_inspector/editor_inspector.hpp"
 #include "gobot/scene/resources/resource_creation_registry.hpp"
 #include "imgui.h"
+#include "imgui_internal.h"
 #include "imgui_extension/icon_fonts/icons_material_design_icons.h"
 
 namespace gobot {
@@ -69,15 +73,68 @@ std::vector<Property> GetDeclaredEditableProperties(Type type) {
     return properties;
 }
 
-ImU32 GetResourceGroupBgColor(int depth) {
-    const ImVec4 base = ImGui::GetStyleColorVec4(ImGuiCol_FrameBg);
-    const float tint = depth % 2 == 0 ? 0.10f : 0.15f;
-    return ImGui::ColorConvertFloat4ToU32({
-            std::min(base.x + tint, 1.0f),
-            std::min(base.y + tint * 0.75f, 1.0f),
-            std::min(base.z + tint * 0.35f, 1.0f),
-            0.92f
-    });
+std::vector<Property> GetEditableResourceProperties(Type type) {
+    std::vector<Property> properties;
+    for (const Type& inherited_type : BuildInheritanceChain(type)) {
+        auto declared_properties = GetDeclaredEditableProperties(inherited_type);
+        properties.insert(properties.end(), declared_properties.begin(), declared_properties.end());
+    }
+    return properties;
+}
+
+ImVec4 WithAlpha(ImVec4 color, float alpha) {
+    color.w = alpha;
+    return color;
+}
+
+ImVec4 ScaleColor(ImVec4 color, float scale) {
+    return {
+            std::clamp(color.x * scale, 0.0f, 1.0f),
+            std::clamp(color.y * scale, 0.0f, 1.0f),
+            std::clamp(color.z * scale, 0.0f, 1.0f),
+            color.w
+    };
+}
+
+ImVec4 GetResourceTypeColor(Type type) {
+    static constexpr std::array<ImVec4, 8> palette = {
+            ImVec4{0.27f, 0.42f, 0.67f, 1.0f},
+            ImVec4{0.55f, 0.35f, 0.72f, 1.0f},
+            ImVec4{0.28f, 0.56f, 0.45f, 1.0f},
+            ImVec4{0.68f, 0.43f, 0.24f, 1.0f},
+            ImVec4{0.65f, 0.32f, 0.38f, 1.0f},
+            ImVec4{0.42f, 0.50f, 0.25f, 1.0f},
+            ImVec4{0.24f, 0.52f, 0.62f, 1.0f},
+            ImVec4{0.48f, 0.42f, 0.70f, 1.0f},
+    };
+
+    const std::string type_name = type.get_name().data();
+    const std::size_t index = std::hash<std::string>{}(type_name) % palette.size();
+    return palette[index];
+}
+
+void PushResourceHeaderStyle(Type type) {
+    const ImVec4 color = GetResourceTypeColor(type);
+    ImGui::PushStyleColor(ImGuiCol_Header, WithAlpha(color, 0.78f));
+    ImGui::PushStyleColor(ImGuiCol_HeaderHovered, WithAlpha(ScaleColor(color, 1.12f), 0.88f));
+    ImGui::PushStyleColor(ImGuiCol_HeaderActive, WithAlpha(ScaleColor(color, 1.22f), 0.96f));
+}
+
+void PopResourceHeaderStyle() {
+    ImGui::PopStyleColor(3);
+}
+
+void DrawResourceBodyAccent(const ImVec2& min, const ImVec2& max, Type type) {
+    if (max.y <= min.y) {
+        return;
+    }
+
+    const ImVec4 color = GetResourceTypeColor(type);
+    ImGui::GetWindowDrawList()->AddRectFilled(
+            min,
+            {min.x + 3.0f, max.y},
+            ImGui::ColorConvertFloat4ToU32(WithAlpha(color, 0.95f)),
+            1.0f);
 }
 
 void DrawResourceMenu(PropertyDataModel* property_data_model) {
@@ -106,6 +163,36 @@ void DrawResourceMenu(PropertyDataModel* property_data_model) {
     ImGui::EndPopup();
 }
 
+void DrawClippedResourceSlot(const char* text, const ImVec2& size) {
+    ImGui::Selectable("##ResourceSlot", false, ImGuiSelectableFlags_None, size);
+
+    const ImVec2 min = ImGui::GetItemRectMin();
+    const ImVec2 max = ImGui::GetItemRectMax();
+    const ImVec2 padding = ImGui::GetStyle().FramePadding;
+    ImGui::RenderTextClipped({min.x + padding.x, min.y},
+                             {max.x - padding.x, max.y},
+                             text,
+                             nullptr,
+                             nullptr,
+                             {0.0f, 0.5f});
+}
+
+float GetAvailableResourceSlotWidth() {
+    float available_width = ImGui::GetContentRegionAvail().x;
+    if (ImGuiTable* table = ImGui::GetCurrentTable()) {
+        const int column_index = ImGui::TableGetColumnIndex();
+        if (column_index >= 0) {
+            const ImRect cell_rect = ImGui::TableGetCellBgRect(table, column_index);
+            const float cell_available_width = cell_rect.Max.x -
+                                               ImGui::GetCursorScreenPos().x -
+                                               ImGui::GetStyle().CellPadding.x;
+            available_width = std::min(available_width, cell_available_width);
+        }
+    }
+
+    return std::max(1.0f, available_width);
+}
+
 void DrawResourceInspector(Resource* resource,
                            ResourceInspectorContext& context) {
     if (resource == nullptr) {
@@ -127,39 +214,43 @@ void DrawResourceInspector(Resource* resource,
 
     Variant resource_variant(resource);
     VariantCache cache(resource_variant);
-    const auto inheritance_chain = BuildInheritanceChain(cache.type);
+    const auto properties = GetEditableResourceProperties(cache.type);
 
     ImGui::PushID(resource);
-    for (const auto& type : inheritance_chain) {
-        auto properties = GetDeclaredEditableProperties(type);
+    ImGuiTreeNodeFlags flags = ImGuiTreeNodeFlags_DefaultOpen |
+                               ImGuiTreeNodeFlags_Framed |
+                               ImGuiTreeNodeFlags_SpanAvailWidth |
+                               ImGuiTreeNodeFlags_FramePadding;
+    PushResourceHeaderStyle(cache.type);
+    const bool open = ImGui::TreeNodeEx(cache.type.get_name().data(),
+                                        flags,
+                                        "%s %s",
+                                        GetTypeIcon(cache.type),
+                                        cache.type.get_name().data());
+    PopResourceHeaderStyle();
+    if (open) {
         if (properties.empty()) {
-            continue;
-        }
+            ImGui::TextDisabled("No editable properties.");
+        } else {
+            const ImVec2 body_min = ImGui::GetCursorScreenPos();
+            ImGui::Indent(ImGui::GetStyle().IndentSpacing * 0.75f);
+            for (const auto& property : properties) {
+                auto editor = EditorInspectorDefaultPlugin::GetEditorForProperty(
+                        std::make_unique<PropertyDataModel>(cache, property));
+                if (editor == nullptr) {
+                    continue;
+                }
 
-        ImGuiTreeNodeFlags flags = ImGuiTreeNodeFlags_DefaultOpen |
-                                   ImGuiTreeNodeFlags_Framed |
-                                   ImGuiTreeNodeFlags_SpanAvailWidth |
-                                   ImGuiTreeNodeFlags_FramePadding;
-        const bool open = ImGui::TreeNodeEx(type.get_name().data(),
-                                            flags,
-                                            "%s %s",
-                                            GetTypeIcon(type),
-                                            type.get_name().data());
-        if (!open) {
-            continue;
-        }
-
-        for (const auto& property : properties) {
-            auto editor = EditorInspectorDefaultPlugin::GetEditorForProperty(
-                    std::make_unique<PropertyDataModel>(cache, property));
-            if (editor == nullptr) {
-                continue;
+                editor->OnImGui();
+                Object::Delete(editor);
             }
-
-            editor->OnImGui();
-            Object::Delete(editor);
+            ImGui::Unindent(ImGui::GetStyle().IndentSpacing * 0.75f);
+            const ImVec2 body_max = {
+                    ImGui::GetWindowPos().x + ImGui::GetWindowContentRegionMax().x,
+                    ImGui::GetItemRectMax().y + ImGui::GetStyle().ItemSpacing.y * 0.25f
+            };
+            DrawResourceBodyAccent(body_min, body_max, cache.type);
         }
-
         ImGui::TreePop();
     }
     ImGui::PopID();
@@ -173,8 +264,9 @@ void DrawResourceInspector(Resource* resource,
 void EditorPropertyResource::OnImGuiContent() {
     Ref<Resource> resource = GetResourceRef(property_data_model_->GetValue());
     const float dropdown_width = ImGui::GetFrameHeight();
+    const float available_width = GetAvailableResourceSlotWidth();
     const float slot_width = std::max(1.0f,
-                                      ImGui::GetContentRegionAvail().x -
+                                      available_width -
                                       dropdown_width -
                                       ImGui::GetStyle().ItemSpacing.x);
 
@@ -192,8 +284,12 @@ void EditorPropertyResource::OnImGuiContent() {
         }
     }
 
-    ImGui::Selectable(slot_label.c_str(), false, ImGuiSelectableFlags_None,
-                      {slot_width, ImGui::GetFrameHeight()});
+    DrawClippedResourceSlot(slot_label.c_str(), {slot_width, ImGui::GetFrameHeight()});
+    if (resource.IsValid() && ImGui::IsItemHovered(ImGuiHoveredFlags_DelayNormal | ImGuiHoveredFlags_NoSharedDelay)) {
+        ImGui::BeginTooltip();
+        ImGui::TextUnformatted(slot_label.c_str());
+        ImGui::EndTooltip();
+    }
     ImGui::SameLine();
     if (ImGui::Button(ICON_MDI_MENU_DOWN, {dropdown_width, ImGui::GetFrameHeight()})) {
         ImGui::OpenPopup("ResourceMenu");
@@ -212,33 +308,9 @@ void EditorPropertyResource::End() {
 
     ImGui::PushID(this);
     auto& context = GetResourceInspectorContext();
-    ImDrawList* draw_list = ImGui::GetWindowDrawList();
-    const ImVec2 bg_min = ImGui::GetCursorScreenPos();
-    const float bg_max_x = ImGui::GetWindowPos().x + ImGui::GetWindowContentRegionMax().x;
 
-    draw_list->ChannelsSplit(2);
-    draw_list->ChannelsSetCurrent(1);
-    ImGui::BeginGroup();
+    DrawResourceInspector(resource.Get(), context);
 
-    const bool open = ImGui::TreeNodeEx("ResourceProperties",
-                                        ImGuiTreeNodeFlags_DefaultOpen |
-                                        ImGuiTreeNodeFlags_SpanAvailWidth,
-                                        "%s properties",
-                                        resource->GetType().get_name().data());
-    if (open) {
-        ImGui::Indent(ImGui::GetStyle().IndentSpacing);
-        DrawResourceInspector(resource.Get(), context);
-        ImGui::Unindent(ImGui::GetStyle().IndentSpacing);
-        ImGui::TreePop();
-    }
-
-    ImGui::EndGroup();
-    const ImVec2 bg_max = {bg_max_x,
-                           ImGui::GetItemRectMax().y + ImGui::GetStyle().ItemSpacing.y * 0.5f};
-    draw_list->ChannelsSetCurrent(0);
-    draw_list->AddRectFilled(bg_min, bg_max, GetResourceGroupBgColor(context.depth), 4.0f);
-    draw_list->AddRect(bg_min, bg_max, ImGui::GetColorU32(ImGuiCol_Border), 4.0f);
-    draw_list->ChannelsMerge();
     ImGui::PopID();
 }
 

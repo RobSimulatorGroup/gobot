@@ -125,21 +125,36 @@ void GLMeshStorage::MeshSetBox(const RID& p_rid, const Vector3& size) {
             Vector3{-half.x(),  half.y(),  half.z()},
     };
 
-    constexpr std::array<uint32_t, 36> indices = {
-            0, 2, 1, 0, 3, 2,
-            4, 5, 6, 4, 6, 7,
-            0, 1, 5, 0, 5, 4,
-            3, 6, 2, 3, 7, 6,
-            1, 2, 6, 1, 6, 5,
-            0, 4, 7, 0, 7, 3,
+    struct BoxFace {
+        std::array<uint32_t, 4> corners;
+        Vector3 normal;
+    };
+
+    const std::array<BoxFace, 6> faces = {
+            BoxFace{{0, 1, 2, 3}, Vector3{0.0f, 0.0f, -1.0f}},
+            BoxFace{{4, 5, 6, 7}, Vector3{0.0f, 0.0f, 1.0f}},
+            BoxFace{{0, 1, 5, 4}, Vector3{0.0f, -1.0f, 0.0f}},
+            BoxFace{{3, 2, 6, 7}, Vector3{0.0f, 1.0f, 0.0f}},
+            BoxFace{{1, 2, 6, 5}, Vector3{1.0f, 0.0f, 0.0f}},
+            BoxFace{{0, 3, 7, 4}, Vector3{-1.0f, 0.0f, 0.0f}},
     };
 
     std::vector<float> vertices;
-    vertices.reserve(p.size() * 3);
-    for (const Vector3& point : p) {
-        PushVertex(vertices, point.x(), point.y(), point.z());
+    std::vector<float> normals;
+    std::vector<uint32_t> indices;
+    vertices.reserve(faces.size() * 4 * 3);
+    normals.reserve(faces.size() * 4 * 3);
+    indices.reserve(faces.size() * 6);
+    for (const BoxFace& face : faces) {
+        const uint32_t base = static_cast<uint32_t>(vertices.size() / 3);
+        for (uint32_t corner : face.corners) {
+            const Vector3& point = p[corner];
+            PushVertex(vertices, point.x(), point.y(), point.z());
+            PushVertex(normals, face.normal.x(), face.normal.y(), face.normal.z());
+        }
+        indices.insert(indices.end(), {base, base + 2, base + 1, base, base + 3, base + 2});
     }
-    SetMeshData(mesh, std::move(vertices), {indices.begin(), indices.end()});
+    SetMeshData(mesh, std::move(vertices), std::move(indices), std::move(normals));
 }
 
 void GLMeshStorage::MeshSetSurface(const RID& p_rid,

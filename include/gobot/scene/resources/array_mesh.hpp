@@ -6,6 +6,7 @@
 #pragma once
 
 #include "gobot/scene/resources/mesh.hpp"
+#include "gobot/scene/resources/material.hpp"
 #include "gobot/core/math/matrix.hpp"
 #include "gobot/core/rid.hpp"
 
@@ -30,6 +31,10 @@ public:
 
     const std::vector<Vector3>& GetNormals() const;
 
+    void SetMaterial(const Ref<Material>& material);
+
+    const Ref<Material>& GetMaterial() const;
+
     RID GetRid() const override;
 
 private:
@@ -39,6 +44,7 @@ private:
     std::vector<Vector3> vertices_;
     std::vector<uint32_t> indices_;
     std::vector<Vector3> normals_;
+    Ref<Material> material_{nullptr};
 };
 
 } // namespace gobot

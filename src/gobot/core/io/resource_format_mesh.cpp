@@ -15,6 +15,7 @@
 #include <assimp/matrix4x4.h>
 #include <assimp/config.h>
 #include <assimp/Importer.hpp>
+#include <assimp/material.h>
 #include <assimp/postprocess.h>
 #include <assimp/scene.h>
 #endif
@@ -26,6 +27,58 @@ namespace gobot {
 namespace {
 
 #ifdef GOBOT_HAS_ASSIMP
+bool ReadMaterialColor(const aiMaterial* assimp_material, const char* key, unsigned int type, unsigned int index, Color& out) {
+    aiColor4D color;
+    if (assimp_material->Get(key, type, index, color) != AI_SUCCESS) {
+        return false;
+    }
+
+    out = Color(color.r, color.g, color.b, color.a);
+    return true;
+}
+
+bool ReadMaterialFloat(const aiMaterial* assimp_material, const char* key, unsigned int type, unsigned int index, RealType& out) {
+    ai_real value = 0.0f;
+    if (assimp_material->Get(key, type, index, value) != AI_SUCCESS) {
+        return false;
+    }
+
+    out = static_cast<RealType>(value);
+    return true;
+}
+
+Ref<PBRMaterial3D> ExtractPBRMaterial(const aiMaterial* assimp_material) {
+    if (assimp_material == nullptr) {
+        return {};
+    }
+
+    bool has_material_property = false;
+    Ref<PBRMaterial3D> material = MakeRef<PBRMaterial3D>();
+
+    Color albedo;
+    if (ReadMaterialColor(assimp_material, AI_MATKEY_BASE_COLOR, albedo) ||
+        ReadMaterialColor(assimp_material, AI_MATKEY_COLOR_DIFFUSE, albedo)) {
+        material->SetAlbedo(albedo);
+        has_material_property = true;
+    }
+
+    RealType scalar = 0.0f;
+    if (ReadMaterialFloat(assimp_material, AI_MATKEY_METALLIC_FACTOR, scalar)) {
+        material->SetMetallic(scalar);
+        has_material_property = true;
+    }
+    if (ReadMaterialFloat(assimp_material, AI_MATKEY_ROUGHNESS_FACTOR, scalar)) {
+        material->SetRoughness(scalar);
+        has_material_property = true;
+    }
+    if (ReadMaterialFloat(assimp_material, AI_MATKEY_SPECULAR_FACTOR, scalar)) {
+        material->SetSpecular(scalar);
+        has_material_property = true;
+    }
+
+    return has_material_property ? material : Ref<PBRMaterial3D>{};
+}
+
 Vector3 TransformNormal(const aiMatrix4x4& transform, const aiVector3D& normal) {
     aiMatrix3x3 normal_transform(transform);
     normal_transform.Inverse().Transpose();
@@ -48,7 +101,8 @@ void AddMeshRecursive(const aiScene* scene,
                       const aiMatrix4x4& parent_transform,
                       std::vector<Vector3>& vertices,
                       std::vector<uint32_t>& indices,
-                      std::vector<Vector3>& normals) {
+                      std::vector<Vector3>& normals,
+                      Ref<PBRMaterial3D>& imported_material) {
     if (scene == nullptr || node == nullptr) {
         return;
     }
@@ -57,6 +111,10 @@ void AddMeshRecursive(const aiScene* scene,
 
     for (unsigned int mesh_index = 0; mesh_index < node->mNumMeshes; ++mesh_index) {
         const aiMesh* mesh = scene->mMeshes[node->mMeshes[mesh_index]];
+        if (!imported_material.IsValid() && mesh->mMaterialIndex < scene->mNumMaterials) {
+            imported_material = ExtractPBRMaterial(scene->mMaterials[mesh->mMaterialIndex]);
+        }
+
         const uint32_t base_vertex = static_cast<uint32_t>(vertices.size());
         const bool has_normals = mesh->HasNormals();
         for (unsigned int vertex_index = 0; vertex_index < mesh->mNumVertices; ++vertex_index) {
@@ -79,7 +137,13 @@ void AddMeshRecursive(const aiScene* scene,
     }
 
     for (unsigned int child_index = 0; child_index < node->mNumChildren; ++child_index) {
-        AddMeshRecursive(scene, node->mChildren[child_index], node_transform, vertices, indices, normals);
+        AddMeshRecursive(scene,
+                         node->mChildren[child_index],
+                         node_transform,
+                         vertices,
+                         indices,
+                         normals,
+                         imported_material);
     }
 }
 #endif
@@ -118,7 +182,8 @@ Ref<Resource> ResourceFormatLoaderMesh::Load(const std::string& path,
     std::vector<Vector3> vertices;
     std::vector<uint32_t> indices;
     std::vector<Vector3> normals;
-    AddMeshRecursive(scene, scene->mRootNode, aiMatrix4x4(), vertices, indices, normals);
+    Ref<PBRMaterial3D> material;
+    AddMeshRecursive(scene, scene->mRootNode, aiMatrix4x4(), vertices, indices, normals, material);
     if (vertices.empty() || indices.empty()) {
         LOG_ERROR("Mesh '{}' did not contain renderable triangle geometry.", path);
         return {};
@@ -129,6 +194,7 @@ Ref<Resource> ResourceFormatLoaderMesh::Load(const std::string& path,
 
     Ref<ArrayMesh> mesh = MakeRef<ArrayMesh>();
     mesh->SetSurface(std::move(vertices), std::move(indices), std::move(normals));
+    mesh->SetMaterial(material);
     return mesh;
 #endif
 }

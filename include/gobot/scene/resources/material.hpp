@@ -10,6 +10,7 @@
 #include "gobot/core/io/resource.hpp"
 #include "gobot/scene/resources/shader.hpp"
 #include "gobot/core/color.hpp"
+#include "gobot/core/math/math_defs.hpp"
 
 namespace gobot {
 
@@ -62,8 +63,23 @@ public:
 
     Color GetAlbedo() const;
 
+    void SetMetallic(RealType metallic);
+
+    RealType GetMetallic() const;
+
+    void SetRoughness(RealType roughness);
+
+    RealType GetRoughness() const;
+
+    void SetSpecular(RealType specular);
+
+    RealType GetSpecular() const;
+
 private:
     Color albedo_{0.8f, 0.8f, 0.8f, 1.0f};
+    RealType metallic_ = 0.0f;
+    RealType roughness_ = 0.5f;
+    RealType specular_ = 0.5f;
 
     Ref<RasterizerShaderProgram> shader_program_;
 };

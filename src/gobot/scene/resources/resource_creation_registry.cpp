@@ -7,6 +7,7 @@
 
 #include <algorithm>
 
+#include "gobot/scene/resources/array_mesh.hpp"
 #include "gobot/scene/resources/box_shape_3d.hpp"
 #include "gobot/scene/resources/cylinder_shape_3d.hpp"
 #include "gobot/scene/resources/material.hpp"
@@ -69,6 +70,9 @@ Variant ResourceRefToPropertyVariant(const Ref<Resource>& resource, const Type& 
     }
     if (expected_type == Type::get<Mesh>()) {
         return resource.DynamicPointerCast<Mesh>();
+    }
+    if (expected_type == Type::get<ArrayMesh>()) {
+        return resource.DynamicPointerCast<ArrayMesh>();
     }
     if (expected_type == Type::get<PrimitiveMesh>()) {
         return resource.DynamicPointerCast<PrimitiveMesh>();
@@ -188,6 +192,15 @@ void ResourceCreationRegistry::EnsureBuiltInResourceTypesRegistered() {
         "Physically based 3D material.",
         Type::get<PBRMaterial3D>(),
         []() -> Ref<Resource> { return CreateResourceRef<PBRMaterial3D>(); }
+    });
+
+    RegisterResourceType({
+        "ArrayMesh",
+        "ArrayMesh",
+        "Mesh",
+        "General mesh resource backed by vertex, index, and normal arrays.",
+        Type::get<ArrayMesh>(),
+        []() -> Ref<Resource> { return CreateResourceRef<ArrayMesh>(); }
     });
 
     RegisterResourceType({

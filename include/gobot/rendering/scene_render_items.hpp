@@ -25,6 +25,9 @@ struct VisualMeshRenderItem {
     Ref<Material> material;
     Matrix4 model = Matrix4::Identity();
     Color surface_color{0.66f, 0.78f, 0.95f, 1.0f};
+    RealType metallic = 0.0f;
+    RealType roughness = 0.5f;
+    RealType specular = 0.5f;
 };
 
 struct CollisionDebugRenderItem {

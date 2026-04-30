@@ -44,6 +44,14 @@ const std::vector<Vector3>& ArrayMesh::GetNormals() const {
     return normals_;
 }
 
+void ArrayMesh::SetMaterial(const Ref<Material>& material) {
+    material_ = material;
+}
+
+const Ref<Material>& ArrayMesh::GetMaterial() const {
+    return material_;
+}
+
 RID ArrayMesh::GetRid() const {
     return mesh_;
 }
@@ -56,7 +64,8 @@ void ArrayMesh::UploadSurface() {
 
 GOBOT_REGISTRATION {
     Class_<gobot::ArrayMesh>("ArrayMesh")
-            .constructor()(CtorAsRawPtr);
+            .constructor()(CtorAsRawPtr)
+            .property("material", &gobot::ArrayMesh::GetMaterial, &gobot::ArrayMesh::SetMaterial);
 
     gobot::Type::register_wrapper_converter_for_base_classes<gobot::Ref<gobot::ArrayMesh>, gobot::Ref<gobot::Mesh>>();
 };
