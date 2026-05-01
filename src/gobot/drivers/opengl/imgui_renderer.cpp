@@ -13,7 +13,13 @@
 
 namespace gobot::opengl {
 
+ImGuiGLRenderer::~ImGuiGLRenderer() {
+    Shutdown();
+}
+
 void ImGuiGLRenderer::Init(SDL_Window* window) {
+    Shutdown();
+
     // Setup Platform/Renderer backends
     const char* glsl_version = "#version 460";
 
@@ -21,6 +27,17 @@ void ImGuiGLRenderer::Init(SDL_Window* window) {
 
     ImGui_ImplSDL2_InitForOpenGL(window, gl_context);
     ImGui_ImplOpenGL3_Init(glsl_version);
+    initialized_ = true;
+}
+
+void ImGuiGLRenderer::Shutdown() {
+    if (!initialized_) {
+        return;
+    }
+
+    ImGui_ImplOpenGL3_Shutdown();
+    ImGui_ImplSDL2_Shutdown();
+    initialized_ = false;
 }
 
 void ImGuiGLRenderer::NewFrame() {
@@ -47,8 +64,8 @@ void ImGuiGLRenderer::Render() {
 }
 
 void ImGuiGLRenderer::RebuildFontTexture() {
-    ImGui_ImplOpenGL3_DestroyFontsTexture();
-    ImGui_ImplOpenGL3_CreateFontsTexture();
+    ImGui_ImplOpenGL3_DestroyDeviceObjects();
+    ImGui_ImplOpenGL3_CreateDeviceObjects();
 }
 
 }

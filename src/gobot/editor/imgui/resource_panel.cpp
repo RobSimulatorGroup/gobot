@@ -380,7 +380,7 @@ void ResourcePanel::DrawFolder(DirectoryInformation* dir_info, bool default_open
         if(default_open)
             node_flags |= ImGuiTreeNodeFlags_DefaultOpen | ImGuiTreeNodeFlags_Leaf;
 
-        node_flags |= ImGuiTreeNodeFlags_OpenOnArrow | ImGuiTreeNodeFlags_AllowItemOverlap | ImGuiTreeNodeFlags_SpanAvailWidth;
+        node_flags |= ImGuiTreeNodeFlags_OpenOnArrow | ImGuiTreeNodeFlags_AllowOverlap | ImGuiTreeNodeFlags_SpanAvailWidth;
 
         bool is_open = ImGui::TreeNodeEx((void*)(intptr_t)dir_info, node_flags, "");
 

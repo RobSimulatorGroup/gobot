@@ -24,6 +24,8 @@
 #include "imgui_internal.h"
 
 #include <cmath>
+#include <cstdint>
+#include <limits>
 #include <memory>
 
 namespace gobot {
@@ -192,7 +194,9 @@ void SceneView3DPanel::OnImGuiContent()
     viewport_renderer_->Render(view_port_, scene_root, camera_3d);
 
     const ImVec2 scene_view_position = ImGui::GetCursorScreenPos();
-    ImGuiUtilities::Image(RS::GetInstance()->GetRenderTargetColorTextureNativeHandle(view_port_),
+    const auto render_texture = static_cast<ImTextureID>(
+            reinterpret_cast<std::uintptr_t>(RS::GetInstance()->GetRenderTargetColorTextureNativeHandle(view_port_)));
+    ImGuiUtilities::Image(render_texture,
                           {scene_view_size.x, scene_view_size.y},
                           {0.0f, 1.0f},
                           {1.0f, 0.0f});
@@ -314,58 +318,94 @@ void SceneView3DPanel::ToolBar(const ImVec2& screen_position)
     auto node3d_editor = Node3DEditor::GetInstance();
     auto* active_robot = FindActiveRobot(hovered_node_);
     const ImVec2 button_size{42.0f, 42.0f};
+    const float icon_font_size = 28.0f;
 
     ImGui::SetCursorScreenPos(screen_position);
-    ImGui::SetWindowFontScale(1.45f);
-    ImGui::PushStyleColor(ImGuiCol_Button, ImVec4(0.0f, 0.0f, 0.0f, 0.0f));
-    ImGui::PushStyleVar(ImGuiStyleVar_FramePadding, {2.0f, 2.0f});
     ImGui::PushStyleVar(ImGuiStyleVar_ItemSpacing, {4.0f, 4.0f});
 
-    auto draw_operation_button = [&](const char* icon, const char* tooltip, uint32_t operation) {
-        const bool selected = node3d_editor->GetImGuizmoOperation() == operation;
-        if (selected) {
-            ImGui::PushStyleColor(ImGuiCol_Text, ImGuiUtilities::GetSelectedColor());
+    auto draw_toolbar_button = [&](const char* id, const char* icon, const char* tooltip,
+                                   bool selected, bool enabled, const auto& on_pressed) {
+        if (!enabled) {
+            ImGui::BeginDisabled();
         }
-        if (ImGui::Button(icon, button_size)) {
+
+        ImGui::PushID(id);
+        const bool pressed = ImGui::InvisibleButton("button", button_size);
+        const bool hovered = ImGui::IsItemHovered(ImGuiHoveredFlags_AllowWhenDisabled);
+        const ImVec2 item_min = ImGui::GetItemRectMin();
+        const ImVec2 item_max = ImGui::GetItemRectMax();
+        auto* draw_list = ImGui::GetWindowDrawList();
+
+        if (selected || hovered) {
+            const ImGuiCol bg_color = selected ? ImGuiCol_ButtonActive : ImGuiCol_ButtonHovered;
+            draw_list->AddRectFilled(item_min, item_max, ImGui::GetColorU32(bg_color), 4.0f);
+        }
+
+        const ImVec4 text_color = !enabled
+                                  ? ImGui::GetStyleColorVec4(ImGuiCol_TextDisabled)
+                                  : (selected ? ImVec4(ImGuiUtilities::GetSelectedColor())
+                                              : ImGui::GetStyleColorVec4(ImGuiCol_Text));
+        ImFont* font = ImGui::GetFont();
+        const ImVec2 text_size = font->CalcTextSizeA(icon_font_size,
+                                                     std::numeric_limits<float>::max(),
+                                                     0.0f,
+                                                     icon);
+        const ImVec2 text_position{
+                item_min.x + (button_size.x - text_size.x) * 0.5f,
+                item_min.y + (button_size.y - text_size.y) * 0.5f
+        };
+        draw_list->AddText(font, icon_font_size, text_position, ImGui::GetColorU32(text_color), icon);
+
+        if (hovered) {
+            ImGui::BeginTooltip();
+            ImGui::TextUnformatted(tooltip);
+            ImGui::EndTooltip();
+        }
+        if (pressed && enabled) {
+            on_pressed();
+        }
+
+        ImGui::PopID();
+        if (!enabled) {
+            ImGui::EndDisabled();
+        }
+        ImGui::SameLine();
+    };
+
+    auto draw_operation_button = [&](const char* id, const char* icon, const char* tooltip, uint32_t operation) {
+        draw_toolbar_button(id, icon, tooltip, node3d_editor->GetImGuizmoOperation() == operation, true, [&]() {
             node3d_editor->SetImGuizmoOperation(operation);
-        }
-        if (selected) {
-            ImGui::PopStyleColor();
-        }
-        ImGuiUtilities::Tooltip(tooltip);
+        });
+    };
+
+    auto draw_separator = [&]() {
+        const ImVec2 cursor = ImGui::GetCursorScreenPos();
+        auto* draw_list = ImGui::GetWindowDrawList();
+        const float x = cursor.x + 4.0f;
+        draw_list->AddLine({x, cursor.y + 8.0f},
+                           {x, cursor.y + button_size.y - 8.0f},
+                           ImGui::GetColorU32(ImGuiCol_Separator),
+                           1.0f);
+        ImGui::Dummy({9.0f, button_size.y});
         ImGui::SameLine();
     };
 
-    auto draw_separator = []() {
-        ImGui::SameLine();
-        ImGui::SeparatorEx(ImGuiSeparatorFlags_Vertical);
-        ImGui::SameLine();
-    };
-
-    draw_operation_button(ICON_MDI_CURSOR_DEFAULT, "Select", Node3DEditor::InvalidGuizmoOperation());
+    draw_operation_button("select", ICON_MDI_CURSOR_DEFAULT, "Select", Node3DEditor::InvalidGuizmoOperation());
     draw_separator();
-    draw_operation_button(ICON_MDI_ARROW_ALL, "Translate", ImGuizmo::TRANSLATE);
-    draw_operation_button(ICON_MDI_ROTATE_3D, "Rotate", ImGuizmo::ROTATE);
-    draw_operation_button(ICON_MDI_ARROW_EXPAND_ALL, "Scale", ImGuizmo::SCALE);
+    draw_operation_button("translate", ICON_MDI_ARROW_ALL, "Translate", ImGuizmo::TRANSLATE);
+    draw_operation_button("rotate", ICON_MDI_ROTATE_3D, "Rotate", ImGuizmo::ROTATE);
+    draw_operation_button("scale", ICON_MDI_ARROW_EXPAND_ALL, "Scale", ImGuizmo::SCALE);
     draw_separator();
-    draw_operation_button(ICON_MDI_CROP_ROTATE, "Universal", ImGuizmo::UNIVERSAL);
+    draw_operation_button("universal", ICON_MDI_CROP_ROTATE, "Universal", ImGuizmo::UNIVERSAL);
     draw_separator();
-    draw_operation_button(ICON_MDI_BORDER_NONE, "Bounds", ImGuizmo::BOUNDS);
+    draw_operation_button("bounds", ICON_MDI_BORDER_NONE, "Bounds", ImGuizmo::BOUNDS);
     draw_separator();
 
     {
         const bool selected = node3d_editor->SnapGuizmo();
-        if (selected) {
-            ImGui::PushStyleColor(ImGuiCol_Text, ImGuiUtilities::GetSelectedColor());
-        }
-        if (ImGui::Button(ICON_MDI_MAGNET, button_size)) {
+        draw_toolbar_button("snap", ICON_MDI_MAGNET, "Snap", selected, true, [&]() {
             node3d_editor->SnapGuizmo() = !selected;
-        }
-        if (selected) {
-            ImGui::PopStyleColor();
-        }
-        ImGuiUtilities::Tooltip("Snap");
-        ImGui::SameLine();
+        });
     }
 
     draw_separator();
@@ -375,41 +415,15 @@ void SceneView3DPanel::ToolBar(const ImVec2& screen_position)
         const bool assembly_mode = robot_available && active_robot->GetMode() == RobotMode::Assembly;
         const bool motion_mode = robot_available && active_robot->GetMode() == RobotMode::Motion;
 
-        if (!robot_available) {
-            ImGui::BeginDisabled();
-        }
-
-        if (assembly_mode) {
-            ImGui::PushStyleColor(ImGuiCol_Text, ImGuiUtilities::GetSelectedColor());
-        }
-        if (ImGui::Button(ICON_MDI_COGS, button_size) && active_robot) {
+        draw_toolbar_button("assembly_mode", ICON_MDI_COGS, "Assembly Mode", assembly_mode, robot_available, [&]() {
             active_robot->SetMode(RobotMode::Assembly);
-        }
-        if (assembly_mode) {
-            ImGui::PopStyleColor();
-        }
-        ImGuiUtilities::Tooltip("Assembly Mode");
-        ImGui::SameLine();
-
-        if (motion_mode) {
-            ImGui::PushStyleColor(ImGuiCol_Text, ImGuiUtilities::GetSelectedColor());
-        }
-        if (ImGui::Button(ICON_MDI_AXIS_ARROW, button_size) && active_robot) {
+        });
+        draw_toolbar_button("motion_mode", ICON_MDI_AXIS_ARROW, "Motion Mode", motion_mode, robot_available, [&]() {
             active_robot->SetMode(RobotMode::Motion);
-        }
-        if (motion_mode) {
-            ImGui::PopStyleColor();
-        }
-        ImGuiUtilities::Tooltip("Motion Mode");
-
-        if (!robot_available) {
-            ImGui::EndDisabled();
-        }
+        });
     }
 
-    ImGui::PopStyleVar(2);
-    ImGui::PopStyleColor();
-    ImGui::SetWindowFontScale(1.0f);
+    ImGui::PopStyleVar();
 }
 
 }

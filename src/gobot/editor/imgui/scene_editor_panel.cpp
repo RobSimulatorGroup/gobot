@@ -359,7 +359,7 @@ void SceneEditorPanel::DrawNode(Node* node)
 
         ImGuiTreeNodeFlags node_flags = ((editor->GetSelected() == node) ? ImGuiTreeNodeFlags_Selected : 0);
         node_flags |=  ImGuiTreeNodeFlags_DefaultOpen | ImGuiTreeNodeFlags_OpenOnArrow |
-                       ImGuiTreeNodeFlags_FramePadding | ImGuiTreeNodeFlags_AllowItemOverlap | ImGuiTreeNodeFlags_SpanAvailWidth;
+                       ImGuiTreeNodeFlags_FramePadding | ImGuiTreeNodeFlags_AllowOverlap | ImGuiTreeNodeFlags_SpanAvailWidth;
 
         if(node->GetChildCount() == 0) {
             node_flags |= ImGuiTreeNodeFlags_Leaf;

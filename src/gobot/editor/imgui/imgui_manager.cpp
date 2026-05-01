@@ -15,7 +15,6 @@
 #include "gobot/log.hpp"
 #include "gobot/rendering/render_server.hpp"
 #include "imgui.h"
-#include "imgui_impl_sdl2.h"
 #include "imgui_extension/fonts/RobotoRegular.inl"
 #include "imgui_extension/fonts/RobotoBold.inl"
 #include "imgui_extension/fonts/MaterialDesign.inl"
@@ -65,7 +64,6 @@ ImGuiManager::~ImGuiManager()
 {
     s_singleton = nullptr;
     imgui_renderer_.reset();
-    ImGui_ImplSDL2_Shutdown();
     ImGui::DestroyContext();
 }
 
@@ -116,10 +114,6 @@ void ImGuiManager::SetImGuiStyle() {
     AddIconFont();
 
     io.Fonts->TexGlyphPadding = 1;
-    for(int n = 0; n < io.Fonts->ConfigData.Size; n++) {
-        ImFontConfig* font_config       = (ImFontConfig*)&io.Fonts->ConfigData[n];
-        font_config->RasterizerMultiply = 1.0f;
-    }
 
     ImGuiStyle& style = ImGui::GetStyle();
 

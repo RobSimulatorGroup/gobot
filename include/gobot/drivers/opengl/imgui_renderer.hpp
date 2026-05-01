@@ -13,13 +13,20 @@ namespace gobot::opengl {
 
 class ImGuiGLRenderer : public gobot::ImGuiRenderer {
 public:
+    ~ImGuiGLRenderer() override;
+
     void Init(SDL_Window* window) override;
+
+    void Shutdown() override;
 
     void NewFrame() override;
 
     void Render() override;
 
     void RebuildFontTexture() override;
+
+private:
+    bool initialized_ = false;
 };
 
 }

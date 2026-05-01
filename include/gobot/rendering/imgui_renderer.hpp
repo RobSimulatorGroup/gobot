@@ -17,6 +17,8 @@ public:
 
     virtual void Init(SDL_Window* window) = 0;
 
+    virtual void Shutdown() { }
+
     virtual void NewFrame() = 0;
 
     virtual void Render() = 0;
