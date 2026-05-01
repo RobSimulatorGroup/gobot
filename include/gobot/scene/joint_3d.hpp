@@ -65,6 +65,10 @@ public:
 
     RealType GetJointPosition() const;
 
+    void ResetJointPosition();
+
+    bool HasJointPositionLimits() const;
+
     void CaptureAssemblyPose();
 
     void RestoreAssemblyPose();

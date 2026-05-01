@@ -542,6 +542,12 @@ SceneState::NodeData MakeJointNode(const JointImportData& joint, int parent) {
     AddProperty(node_data, "upper_limit", joint.upper_limit);
     AddProperty(node_data, "effort_limit", joint.effort_limit);
     AddProperty(node_data, "velocity_limit", joint.velocity_limit);
+    if ((joint.type == JointType::Revolute || joint.type == JointType::Prismatic) &&
+        joint.lower_limit < joint.upper_limit) {
+        AddProperty(node_data, "joint_position", static_cast<RealType>((joint.lower_limit + joint.upper_limit) * 0.5));
+    } else {
+        AddProperty(node_data, "joint_position", static_cast<RealType>(0.0));
+    }
     return node_data;
 }
 
@@ -573,6 +579,8 @@ Ref<Resource> ResourceFormatLoaderURDF::Load(const std::string& path,
         LOG_ERROR("URDF file {} contains no links.", path);
         return {};
     }
+    LOG_INFO("Importing URDF '{}': robot='{}', links={}, joints={}.",
+             path, robot_name, links.size(), joints.size());
 
     Ref<PackedScene> packed_scene = MakeRef<PackedScene>();
     Ref<SceneState> state = packed_scene->GetState();
@@ -599,6 +607,8 @@ Ref<Resource> ResourceFormatLoaderURDF::Load(const std::string& path,
 
         auto link_iter = link_by_name.find(link_name);
         if (link_iter == link_by_name.end()) {
+            LOG_ERROR("URDF import skipped missing child link '{}' under parent node index {}.",
+                      link_name, parent);
             return -1;
         }
 
@@ -617,7 +627,10 @@ Ref<Resource> ResourceFormatLoaderURDF::Load(const std::string& path,
         for (auto joint_iter = range.first; joint_iter != range.second; ++joint_iter) {
             const JointImportData& joint = joint_iter->second;
             const int joint_index = state->AddNode(MakeJointNode(joint, link_index));
-            emit_link_ref(joint.child_link, joint_index, emit_link_ref);
+            if (emit_link_ref(joint.child_link, joint_index, emit_link_ref) == -1) {
+                LOG_ERROR("URDF import failed to attach child link '{}' for joint '{}'.",
+                          joint.child_link, joint.name);
+            }
         }
 
         return link_index;
@@ -632,6 +645,9 @@ Ref<Resource> ResourceFormatLoaderURDF::Load(const std::string& path,
     for (const LinkImportData& link : links) {
         emit_link(link.name, robot_index, emit_link);
     }
+
+    LOG_INFO("URDF '{}' generated PackedScene with {} nodes.",
+             path, state->GetNodeCount());
 
     return packed_scene;
 }

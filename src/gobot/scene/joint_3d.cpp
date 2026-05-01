@@ -52,6 +52,7 @@ const Vector3& Joint3D::GetAxis() const {
 
 void Joint3D::SetLowerLimit(RealType lower_limit) {
     lower_limit_ = lower_limit;
+    SetJointPosition(joint_position_);
 }
 
 RealType Joint3D::GetLowerLimit() const {
@@ -60,6 +61,7 @@ RealType Joint3D::GetLowerLimit() const {
 
 void Joint3D::SetUpperLimit(RealType upper_limit) {
     upper_limit_ = upper_limit;
+    SetJointPosition(joint_position_);
 }
 
 RealType Joint3D::GetUpperLimit() const {
@@ -91,7 +93,7 @@ RealType Joint3D::GetVelocityLimit() const {
 }
 
 RealType Joint3D::ClampJointPosition(RealType joint_position) const {
-    if (joint_type_ == JointType::Revolute && lower_limit_ < upper_limit_) {
+    if (HasJointPositionLimits()) {
         return std::clamp(joint_position, lower_limit_, upper_limit_);
     }
 
@@ -138,6 +140,15 @@ RealType Joint3D::GetJointPosition() const {
     return joint_position_;
 }
 
+void Joint3D::ResetJointPosition() {
+    joint_position_ = 0.0;
+}
+
+bool Joint3D::HasJointPositionLimits() const {
+    return (joint_type_ == JointType::Revolute || joint_type_ == JointType::Prismatic) &&
+           lower_limit_ < upper_limit_;
+}
+
 void Joint3D::CaptureAssemblyPose() {
     assembly_transform_ = GetTransform();
     child_assembly_transforms_.clear();
@@ -177,6 +188,7 @@ void Joint3D::SetMotionModeEnabled(bool enabled) {
         ApplyJointMotion();
     } else {
         RestoreAssemblyPose();
+        ResetJointPosition();
         motion_mode_enabled_ = false;
     }
 }

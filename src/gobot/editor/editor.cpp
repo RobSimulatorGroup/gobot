@@ -106,7 +106,9 @@ bool Editor::SaveEditedScene(const std::string& path) const {
 }
 
 bool Editor::LoadEditedScene(const std::string& path) {
-    if (edited_scene_ == nullptr || !edited_scene_->LoadFromPath(path)) {
+    const std::string extension = ToLower(std::filesystem::path(path).extension().string());
+    const bool default_robot_motion_mode = extension == ".urdf" || extension == ".xml";
+    if (edited_scene_ == nullptr || !edited_scene_->LoadFromPath(path, default_robot_motion_mode)) {
         return false;
     }
 

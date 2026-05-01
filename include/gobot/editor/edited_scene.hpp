@@ -21,6 +21,8 @@ public:
 
     bool LoadFromPath(const std::string& path);
 
+    bool LoadFromPath(const std::string& path, bool default_robot_motion_mode);
+
 private:
     bool SetRoot(Node3D* root);
 

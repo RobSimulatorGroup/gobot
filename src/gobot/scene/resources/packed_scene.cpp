@@ -102,11 +102,13 @@ bool PackedScene::Pack(Node* root) {
 
 Node* PackedScene::Instantiate() const {
     if (!state_.IsValid() || state_->GetNodeCount() == 0) {
+        LOG_ERROR("PackedScene instantiate failed: empty or invalid SceneState.");
         return nullptr;
     }
 
     std::vector<Node*> nodes;
     nodes.reserve(state_->GetNodeCount());
+    std::vector<std::pair<Node*, SceneState::PropertyData>> deferred_properties;
 
     auto cleanup = [&nodes]() {
         for (Node* node : nodes) {
@@ -120,12 +122,15 @@ Node* PackedScene::Instantiate() const {
     for (std::size_t i = 0; i < state_->GetNodeCount(); ++i) {
         const SceneState::NodeData* node_data = state_->GetNodeData(i);
         if (node_data == nullptr) {
+            LOG_ERROR("PackedScene instantiate failed: missing node data at index {}.", i);
             cleanup();
             return nullptr;
         }
 
         Type node_type = Type::get_by_name(node_data->type);
         if (!node_type.is_valid()) {
+            LOG_ERROR("PackedScene instantiate failed: unknown node type '{}' at index {}.",
+                      node_data->type, i);
             cleanup();
             return nullptr;
         }
@@ -134,6 +139,8 @@ Node* PackedScene::Instantiate() const {
         bool success = false;
         auto* node = new_obj.convert<Node*>(&success);
         if (!success || node == nullptr) {
+            LOG_ERROR("PackedScene instantiate failed: cannot create node '{}' of type '{}' at index {}.",
+                      node_data->name, node_data->type, i);
             cleanup();
             return nullptr;
         }
@@ -143,11 +150,19 @@ Node* PackedScene::Instantiate() const {
         }
 
         for (const auto& property : node_data->properties) {
+            if (node_data->type == "Robot3D" && property.name == "mode") {
+                deferred_properties.emplace_back(node, property);
+                continue;
+            }
+
             if (!node->Set(property.name, property.value)) {
                 LOG_ERROR("Failed to restore property '{}' on node '{}' of type '{}'.",
                           property.name,
                           node_data->name,
                           node_data->type);
+                LOG_ERROR("PackedScene instantiate aborted at node index {} while restoring property '{}'.",
+                          i,
+                          property.name);
                 cleanup();
                 Object::Delete(node);
                 return nullptr;
@@ -156,6 +171,8 @@ Node* PackedScene::Instantiate() const {
 
         if (node_data->parent == -1) {
             if (root_index != -1) {
+                LOG_ERROR("PackedScene instantiate failed: multiple root nodes, existing root index {}, duplicate index {}.",
+                          root_index, i);
                 cleanup();
                 Object::Delete(node);
                 return nullptr;
@@ -167,6 +184,7 @@ Node* PackedScene::Instantiate() const {
     }
 
     if (root_index == -1) {
+        LOG_ERROR("PackedScene instantiate failed: no root node.");
         cleanup();
         return nullptr;
     }
@@ -178,11 +196,22 @@ Node* PackedScene::Instantiate() const {
         }
 
         if (node_data->parent < 0 || static_cast<std::size_t>(node_data->parent) >= nodes.size()) {
+            LOG_ERROR("PackedScene instantiate failed: node index {} has invalid parent index {}.",
+                      i, node_data->parent);
             cleanup();
             return nullptr;
         }
 
         nodes[static_cast<std::size_t>(node_data->parent)]->AddChild(nodes[i]);
+    }
+
+    for (const auto& [node, property] : deferred_properties) {
+        if (!node->Set(property.name, property.value)) {
+            LOG_ERROR("Failed to restore deferred property '{}' on node '{}' of type '{}'.",
+                      property.name,
+                      node->GetName(),
+                      node->GetClassStringName());
+        }
     }
 
     return nodes[static_cast<std::size_t>(root_index)];

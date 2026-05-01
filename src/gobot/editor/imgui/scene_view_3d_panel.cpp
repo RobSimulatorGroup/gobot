@@ -25,11 +25,13 @@
 
 #include <fmt/format.h>
 
+#include <algorithm>
 #include <cmath>
 #include <cstdint>
 #include <limits>
 #include <memory>
 #include <string>
+#include <vector>
 
 namespace gobot {
 
@@ -171,6 +173,36 @@ const char* JointTypeName(JointType joint_type) {
     }
 }
 
+bool IsJointAtLowerLimit(const Joint3D* joint) {
+    return joint && joint->HasJointPositionLimits() &&
+           std::abs(joint->GetJointPosition() - joint->GetLowerLimit()) <= 0.0001;
+}
+
+bool IsJointAtUpperLimit(const Joint3D* joint) {
+    return joint && joint->HasJointPositionLimits() &&
+           std::abs(joint->GetJointPosition() - joint->GetUpperLimit()) <= 0.0001;
+}
+
+double DisplayJointPosition(JointType joint_type, RealType value) {
+    if (joint_type == JointType::Revolute || joint_type == JointType::Continuous) {
+        return static_cast<double>(value * 180.0 / M_PI);
+    }
+
+    return static_cast<double>(value);
+}
+
+const char* JointPositionUnit(JointType joint_type) {
+    if (joint_type == JointType::Revolute || joint_type == JointType::Continuous) {
+        return "deg";
+    }
+
+    if (joint_type == JointType::Prismatic) {
+        return "m";
+    }
+
+    return "";
+}
+
 }
 
 void DrawJointMotionHint(Joint3D* joint,
@@ -250,10 +282,12 @@ void SceneView3DPanel::OnImGuiContent()
     ProcessViewportInput(scene_root, scene_view_position, scene_view_size, mouse_inside_rect);
     node3d_editor->SetNeedUpdateCamera(mouse_inside_rect && !dragged_joint_);
 
+    auto* selected_motion_joint = FindMotionJointForViewportTarget(Editor::GetInstance()->GetSelected());
+    auto* active_motion_joint = dragged_joint_ ? dragged_joint_
+                                               : (motion_target_joint_ ? motion_target_joint_ : selected_motion_joint);
     viewport_renderer_->RenderOverlay(scene_root, camera_3d, scene_view_position, scene_view_size,
-                                      ImGui::GetWindowDrawList(), hovered_node_,
-                                      dragged_joint_ ? dragged_joint_ : motion_target_joint_);
-    DrawJointMotionHint(dragged_joint_ ? dragged_joint_ : motion_target_joint_,
+                                      ImGui::GetWindowDrawList(), hovered_node_, active_motion_joint);
+    DrawJointMotionHint(active_motion_joint,
                         camera_3d,
                         scene_view_position,
                         scene_view_size,
@@ -290,6 +324,7 @@ void SceneView3DPanel::ProcessViewportInput(Node* scene_root,
         dragged_joint_ = nullptr;
         drag_joint_screen_center_valid_ = false;
         drag_joint_screen_axis_valid_ = false;
+        drag_last_angle_valid_ = false;
         node3d_editor->SetBlockCameraInput(false);
         return;
     }
@@ -303,8 +338,7 @@ void SceneView3DPanel::ProcessViewportInput(Node* scene_root,
         if (motion_joint) {
             pressed_joint_ = motion_joint;
             dragged_joint_ = motion_joint;
-            drag_start_joint_position_ = static_cast<float>(dragged_joint_->GetJointPosition());
-            drag_start_mouse_ = ImGui::GetIO().MouseClickedPos[ImGuiMouseButton_Left];
+            drag_last_mouse_ = ImGui::GetIO().MouseClickedPos[ImGuiMouseButton_Left];
             drag_joint_screen_center_valid_ = ProjectWorldPoint(node3d_editor->GetCamera3D(),
                                                                 viewport_position,
                                                                 viewport_size,
@@ -313,6 +347,10 @@ void SceneView3DPanel::ProcessViewportInput(Node* scene_root,
             drag_joint_screen_axis_valid_ = GetJointScreenAxis(dragged_joint_, node3d_editor->GetCamera3D(),
                                                                viewport_position, viewport_size,
                                                                drag_joint_screen_axis_);
+            drag_last_angle_valid_ = drag_joint_screen_center_valid_;
+            if (drag_last_angle_valid_) {
+                drag_last_angle_ = AngleAroundScreenPoint(drag_joint_screen_center_, drag_last_mouse_);
+            }
         }
     }
 
@@ -321,8 +359,7 @@ void SceneView3DPanel::ProcessViewportInput(Node* scene_root,
 
     if (!dragged_joint_ && can_capture_joint && ImGui::IsMouseDragging(ImGuiMouseButton_Left, 1.0f)) {
         dragged_joint_ = pressed_joint_;
-        drag_start_joint_position_ = static_cast<float>(dragged_joint_->GetJointPosition());
-        drag_start_mouse_ = ImGui::GetIO().MouseClickedPos[ImGuiMouseButton_Left];
+        drag_last_mouse_ = ImGui::GetIO().MouseClickedPos[ImGuiMouseButton_Left];
         drag_joint_screen_center_valid_ = ProjectWorldPoint(node3d_editor->GetCamera3D(),
                                                             viewport_position,
                                                             viewport_size,
@@ -331,23 +368,30 @@ void SceneView3DPanel::ProcessViewportInput(Node* scene_root,
         drag_joint_screen_axis_valid_ = GetJointScreenAxis(dragged_joint_, node3d_editor->GetCamera3D(),
                                                            viewport_position, viewport_size,
                                                            drag_joint_screen_axis_);
+        drag_last_angle_valid_ = drag_joint_screen_center_valid_;
+        if (drag_last_angle_valid_) {
+            drag_last_angle_ = AngleAroundScreenPoint(drag_joint_screen_center_, drag_last_mouse_);
+        }
     }
 
     if (dragged_joint_) {
-        const ImVec2 mouse_delta{ImGui::GetMousePos().x - drag_start_mouse_.x,
-                                 ImGui::GetMousePos().y - drag_start_mouse_.y};
+        const ImVec2 mouse_position = ImGui::GetMousePos();
+        const ImVec2 mouse_delta{mouse_position.x - drag_last_mouse_.x,
+                                 mouse_position.y - drag_last_mouse_.y};
         const JointType joint_type = dragged_joint_->GetJointType();
         if ((joint_type == JointType::Revolute || joint_type == JointType::Continuous) &&
-            drag_joint_screen_center_valid_) {
-            const float start_angle = AngleAroundScreenPoint(drag_joint_screen_center_, drag_start_mouse_);
-            const float current_angle = AngleAroundScreenPoint(drag_joint_screen_center_, ImGui::GetMousePos());
-            dragged_joint_->SetJointPosition(drag_start_joint_position_ - WrappedAngleDelta(start_angle, current_angle));
+            drag_joint_screen_center_valid_ && drag_last_angle_valid_) {
+            const float current_angle = AngleAroundScreenPoint(drag_joint_screen_center_, mouse_position);
+            const float delta_angle = WrappedAngleDelta(drag_last_angle_, current_angle);
+            dragged_joint_->SetJointPosition(dragged_joint_->GetJointPosition() - delta_angle);
+            drag_last_angle_ = current_angle;
         } else if (joint_type == JointType::Prismatic) {
             const float signed_pixels = drag_joint_screen_axis_valid_
                     ? mouse_delta.x * drag_joint_screen_axis_.x + mouse_delta.y * drag_joint_screen_axis_.y
                     : mouse_delta.x - mouse_delta.y;
-            dragged_joint_->SetJointPosition(drag_start_joint_position_ + signed_pixels * 0.005f);
+            dragged_joint_->SetJointPosition(dragged_joint_->GetJointPosition() + signed_pixels * 0.005f);
         }
+        drag_last_mouse_ = mouse_position;
     }
 
     node3d_editor->SetBlockCameraInput(can_capture_joint || dragged_joint_);
@@ -370,31 +414,99 @@ void DrawJointMotionHint(Joint3D* joint,
     }
 
     const JointType joint_type = joint->GetJointType();
-    std::string value_text;
+    std::vector<std::string> lines;
     if (joint_type == JointType::Revolute || joint_type == JointType::Continuous) {
-        value_text = fmt::format("{}  {:.1f} deg", JointTypeName(joint_type),
-                                 static_cast<double>(joint->GetJointPosition() * 180.0 / M_PI));
+        lines.emplace_back(fmt::format("{}  {:.1f} {}", JointTypeName(joint_type),
+                                       DisplayJointPosition(joint_type, joint->GetJointPosition()),
+                                       JointPositionUnit(joint_type)));
     } else if (joint_type == JointType::Prismatic) {
-        value_text = fmt::format("{}  {:.3f} m", JointTypeName(joint_type),
-                                 static_cast<double>(joint->GetJointPosition()));
+        lines.emplace_back(fmt::format("{}  {:.3f} {}", JointTypeName(joint_type),
+                                       DisplayJointPosition(joint_type, joint->GetJointPosition()),
+                                       JointPositionUnit(joint_type)));
     } else {
-        value_text = JointTypeName(joint_type);
+        lines.emplace_back(JointTypeName(joint_type));
+    }
+
+    const bool has_limits = joint->HasJointPositionLimits();
+    const bool at_lower_limit = IsJointAtLowerLimit(joint);
+    const bool at_upper_limit = IsJointAtUpperLimit(joint);
+    if (has_limits) {
+        if (joint_type == JointType::Revolute) {
+            lines.emplace_back(fmt::format("limit  {:.1f} .. {:.1f} deg",
+                                           DisplayJointPosition(joint_type, joint->GetLowerLimit()),
+                                           DisplayJointPosition(joint_type, joint->GetUpperLimit())));
+        } else {
+            lines.emplace_back(fmt::format("limit  {:.3f} .. {:.3f} m",
+                                           DisplayJointPosition(joint_type, joint->GetLowerLimit()),
+                                           DisplayJointPosition(joint_type, joint->GetUpperLimit())));
+        }
+
+        if (at_lower_limit) {
+            lines.emplace_back("lower limit");
+        } else if (at_upper_limit) {
+            lines.emplace_back("upper limit");
+        }
+    }
+
+    ImVec2 text_size{0.0f, 0.0f};
+    const float line_gap = 2.0f;
+    for (const auto& line : lines) {
+        const ImVec2 line_size = ImGui::CalcTextSize(line.c_str());
+        text_size.x = std::max(text_size.x, line_size.x);
+        text_size.y += line_size.y;
+    }
+    if (lines.size() > 1) {
+        text_size.y += line_gap * static_cast<float>(lines.size() - 1);
     }
 
     const ImVec2 padding{8.0f, 5.0f};
-    const ImVec2 text_size = ImGui::CalcTextSize(value_text.c_str());
+    const float limit_bar_height = has_limits ? 4.0f : 0.0f;
     ImVec2 box_min{joint_screen.x + 14.0f, joint_screen.y - text_size.y - 18.0f};
     ImVec2 box_max{box_min.x + text_size.x + padding.x * 2.0f,
-                   box_min.y + text_size.y + padding.y * 2.0f};
+                   box_min.y + text_size.y + padding.y * 2.0f + limit_bar_height};
+    const ImVec2 viewport_min = viewport_position;
+    const ImVec2 viewport_max{viewport_position.x + viewport_size.x, viewport_position.y + viewport_size.y};
+    if (box_max.x > viewport_max.x - 4.0f) {
+        const float shift = box_max.x - (viewport_max.x - 4.0f);
+        box_min.x -= shift;
+        box_max.x -= shift;
+    }
+    if (box_min.y < viewport_min.y + 4.0f) {
+        const float shift = (viewport_min.y + 4.0f) - box_min.y;
+        box_min.y += shift;
+        box_max.y += shift;
+    }
+
+    const ImU32 box_fill = dragging ? IM_COL32(36, 96, 142, 235)
+                                    : IM_COL32(28, 28, 28, 220);
+    const ImU32 border_color = (at_lower_limit || at_upper_limit)
+            ? IM_COL32(255, 172, 64, 255)
+            : (dragging ? IM_COL32(120, 205, 255, 255) : IM_COL32(96, 184, 255, 220));
     draw_list->AddRectFilled(box_min, box_max,
-                             dragging ? IM_COL32(36, 96, 142, 235) : IM_COL32(28, 28, 28, 220),
+                             box_fill,
                              4.0f);
-    draw_list->AddRect(box_min, box_max,
-                       dragging ? IM_COL32(120, 205, 255, 255) : IM_COL32(96, 184, 255, 220),
-                       4.0f);
-    draw_list->AddText({box_min.x + padding.x, box_min.y + padding.y},
-                       IM_COL32(245, 245, 245, 255),
-                       value_text.c_str());
+    draw_list->AddRect(box_min, box_max, border_color, 4.0f);
+
+    float text_y = box_min.y + padding.y;
+    for (const auto& line : lines) {
+        draw_list->AddText({box_min.x + padding.x, text_y},
+                           IM_COL32(245, 245, 245, 255),
+                           line.c_str());
+        text_y += ImGui::CalcTextSize(line.c_str()).y + line_gap;
+    }
+
+    if (has_limits) {
+        const float bar_min_x = box_min.x + padding.x;
+        const float bar_max_x = box_max.x - padding.x;
+        const float bar_y = box_max.y - padding.y - limit_bar_height;
+        draw_list->AddRectFilled({bar_min_x, bar_y}, {bar_max_x, bar_y + limit_bar_height},
+                                 IM_COL32(70, 70, 70, 255), 2.0f);
+        const float t = static_cast<float>((joint->GetJointPosition() - joint->GetLowerLimit()) /
+                                           (joint->GetUpperLimit() - joint->GetLowerLimit()));
+        const float marker_x = bar_min_x + std::clamp(t, 0.0f, 1.0f) * (bar_max_x - bar_min_x);
+        draw_list->AddRectFilled({bar_min_x, bar_y}, {marker_x, bar_y + limit_bar_height},
+                                 border_color, 2.0f);
+    }
 }
 
 void SceneView3DPanel::Resize(uint32_t width, uint32_t height) {
@@ -421,9 +533,11 @@ void SceneView3DPanel::ToolBar(const ImVec2& screen_position)
 {
     auto node3d_editor = Node3DEditor::GetInstance();
     auto* active_robot = FindActiveRobot(hovered_node_);
-    const ImVec2 button_size{42.0f, 42.0f};
-    const float icon_font_size = 28.0f;
-    const float separator_height = 28.0f;
+    const float base_font_size = ImGui::GetFontSize();
+    const float button_extent = std::max(30.0f, base_font_size * 1.32f);
+    const ImVec2 button_size{button_extent, button_extent};
+    const float icon_font_size = std::max(18.0f, base_font_size * 1.08f);
+    const float separator_height = button_extent * 0.68f;
     const float rounding = 4.0f;
     const float right_limit = ImGui::GetWindowPos().x + ImGui::GetWindowContentRegionMax().x - 8.0f;
     const float row_start_x = screen_position.x;
