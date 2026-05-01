@@ -22,6 +22,7 @@
 #include "gobot/editor/imgui/scene_view_3d_panel.hpp"
 #include "gobot/editor/imgui/scene_editor_panel.hpp"
 #include "gobot/editor/imgui/inspector_panel.hpp"
+#include "gobot/editor/imgui/physics_panel.hpp"
 #include "gobot/editor/imgui/resource_panel.hpp"
 #include "gobot/editor/property_inspector/editor_inspector.hpp"
 #include "gobot/main/main.hpp"
@@ -78,6 +79,7 @@ Editor::Editor() {
     AddChild(Object::New<ConsolePanel>());
     AddChild(Object::New<SceneEditorPanel>());
     AddChild(Object::New<InspectorPanel>());
+    AddChild(Object::New<PhysicsPanel>());
     AddChild(Object::New<ResourcePanel>());
 
 
@@ -340,6 +342,7 @@ void Editor::BeginDockSpace() {
         ImGui::DockBuilderDockWindow("###scene_view3d", DockMiddle);
         ImGui::DockBuilderDockWindow("###inspector", DockRight);
         ImGui::DockBuilderDockWindow("###console", DockBottomMiddle);
+        ImGui::DockBuilderDockWindow("###physics", DockBottomMiddle);
         ImGui::DockBuilderDockWindow("###resources", DockingBottomLeftChild);
         ImGui::DockBuilderDockWindow("###scene_editor", DockLeft);
 

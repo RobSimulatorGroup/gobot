@@ -405,16 +405,17 @@ void MuJoCoPhysicsWorld::SyncStateFromMuJoCo() {
         transform.translation() = Vector3(data->xpos[3 * binding.body_id + 0],
                                           data->xpos[3 * binding.body_id + 1],
                                           data->xpos[3 * binding.body_id + 2]);
-        transform.linear() = Matrix3(
-                data->xmat[9 * binding.body_id + 0],
-                data->xmat[9 * binding.body_id + 1],
-                data->xmat[9 * binding.body_id + 2],
-                data->xmat[9 * binding.body_id + 3],
-                data->xmat[9 * binding.body_id + 4],
-                data->xmat[9 * binding.body_id + 5],
-                data->xmat[9 * binding.body_id + 6],
-                data->xmat[9 * binding.body_id + 7],
-                data->xmat[9 * binding.body_id + 8]);
+        Matrix3 rotation;
+        rotation << data->xmat[9 * binding.body_id + 0],
+                    data->xmat[9 * binding.body_id + 1],
+                    data->xmat[9 * binding.body_id + 2],
+                    data->xmat[9 * binding.body_id + 3],
+                    data->xmat[9 * binding.body_id + 4],
+                    data->xmat[9 * binding.body_id + 5],
+                    data->xmat[9 * binding.body_id + 6],
+                    data->xmat[9 * binding.body_id + 7],
+                    data->xmat[9 * binding.body_id + 8];
+        transform.linear() = rotation;
         link_state.global_transform = transform;
         link_state.angular_velocity = Vector3(data->cvel[6 * binding.body_id + 0],
                                               data->cvel[6 * binding.body_id + 1],
