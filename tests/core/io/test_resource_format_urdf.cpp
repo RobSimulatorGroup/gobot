@@ -2,6 +2,7 @@
 
 #include <algorithm>
 #include <cstdlib>
+#include <fstream>
 #include <filesystem>
 
 #include <gobot/core/io/resource_format_mesh.hpp>
@@ -92,6 +93,16 @@ void ExpectNode3DGlobalPosition(gobot::Node* root, const std::string& name, cons
                                                                     << expected.transpose();
 }
 
+const gobot::SceneState::PropertyData* FindNodeProperty(const gobot::SceneState::NodeData& node_data,
+                                                        const std::string& property_name) {
+    auto it = std::find_if(node_data.properties.begin(),
+                           node_data.properties.end(),
+                           [&property_name](const gobot::SceneState::PropertyData& property) {
+                               return property.name == property_name;
+                           });
+    return it == node_data.properties.end() ? nullptr : &(*it);
+}
+
 } // namespace
 
 TEST(TestResourceFormatURDF, recognizes_urdf_extension_for_packed_scene) {
@@ -161,12 +172,65 @@ TEST(TestResourceFormatURDF, imports_robot_links_joints_and_inertial_metadata) {
     EXPECT_FLOAT_EQ(joint->GetUpperLimit(), 1.57);
     EXPECT_FLOAT_EQ(joint->GetEffortLimit(), 80.0);
     EXPECT_FLOAT_EQ(joint->GetVelocityLimit(), 2.0);
+    EXPECT_FLOAT_EQ(joint->GetJointPosition(), 0.0);
 
     ASSERT_EQ(joint->GetChildCount(), 1);
     auto* child_link = gobot::Object::PointerCastTo<gobot::Link3D>(joint->GetChild(0));
     ASSERT_NE(child_link, nullptr);
     EXPECT_EQ(child_link->GetName(), "upper_arm_link");
 
+    gobot::Object::Delete(root_node);
+}
+
+TEST(TestResourceFormatURDF, stores_limited_joint_position_at_limit_midpoint) {
+    const std::filesystem::path fixture_path =
+            std::filesystem::temp_directory_path() / "gobot_midpoint_joint.urdf";
+    {
+        std::ofstream file(fixture_path);
+        file << R"(<?xml version="1.0"?>
+<robot name="midpoint_bot">
+  <link name="base_link"/>
+  <link name="upper_arm_link"/>
+  <joint name="offset_joint" type="revolute">
+    <parent link="base_link"/>
+    <child link="upper_arm_link"/>
+    <origin xyz="0 0 0" rpy="0 0 0"/>
+    <axis xyz="0 0 1"/>
+    <limit lower="1.0" upper="3.0" effort="80" velocity="2"/>
+  </joint>
+</robot>
+)";
+    }
+
+    gobot::Ref<gobot::ResourceFormatLoaderURDF> loader = gobot::MakeRef<gobot::ResourceFormatLoaderURDF>();
+    gobot::Ref<gobot::Resource> resource = loader->Load(fixture_path.string());
+    gobot::Ref<gobot::PackedScene> packed_scene = gobot::dynamic_pointer_cast<gobot::PackedScene>(resource);
+    ASSERT_TRUE(packed_scene.IsValid());
+    ASSERT_TRUE(packed_scene->GetState().IsValid());
+
+    const gobot::SceneState::NodeData* joint_node = nullptr;
+    for (std::size_t i = 0; i < packed_scene->GetState()->GetNodeCount(); ++i) {
+        const gobot::SceneState::NodeData* node_data = packed_scene->GetState()->GetNodeData(i);
+        if (node_data != nullptr && node_data->type == "Joint3D" && node_data->name == "offset_joint") {
+            joint_node = node_data;
+            break;
+        }
+    }
+    ASSERT_NE(joint_node, nullptr);
+
+    const gobot::SceneState::PropertyData* joint_position = FindNodeProperty(*joint_node, "joint_position");
+    ASSERT_NE(joint_position, nullptr);
+
+    bool success = false;
+    const gobot::RealType value = joint_position->value.convert<gobot::RealType>(&success);
+    ASSERT_TRUE(success);
+    EXPECT_FLOAT_EQ(value, 2.0);
+
+    gobot::Node* root_node = packed_scene->Instantiate();
+    ASSERT_NE(root_node, nullptr);
+    auto* joint = gobot::Object::PointerCastTo<gobot::Joint3D>(FindNodeByName(root_node, "offset_joint"));
+    ASSERT_NE(joint, nullptr);
+    EXPECT_FLOAT_EQ(joint->GetJointPosition(), 2.0);
     gobot::Object::Delete(root_node);
 }
 

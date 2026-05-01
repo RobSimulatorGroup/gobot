@@ -7,16 +7,41 @@
 #include <gtest/gtest.h>
 
 #include <filesystem>
+#include <memory>
 
 #include <gobot/core/config/project_setting.hpp>
 #include <gobot/core/io/resource_format_scene.hpp>
 #include <gobot/core/io/resource_format_urdf.hpp>
 #include <gobot/editor/edited_scene.hpp>
+#include <gobot/rendering/render_server.hpp>
 #include <gobot/scene/collision_shape_3d.hpp>
 #include <gobot/scene/link_3d.hpp>
+#include <gobot/scene/joint_3d.hpp>
 #include <gobot/scene/mesh_instance_3d.hpp>
 #include <gobot/scene/node_3d.hpp>
+#include <gobot/scene/resources/primitive_mesh.hpp>
+#include <gobot/scene/resources/material.hpp>
 #include <gobot/scene/robot_3d.hpp>
+
+namespace {
+
+gobot::Node* FindNodeByName(gobot::Node* node, const std::string& name) {
+    if (node == nullptr) {
+        return nullptr;
+    }
+    if (node->GetName() == name) {
+        return node;
+    }
+
+    for (std::size_t i = 0; i < node->GetChildCount(); ++i) {
+        if (auto* found = FindNodeByName(node->GetChild(static_cast<int>(i)), name)) {
+            return found;
+        }
+    }
+    return nullptr;
+}
+
+} // namespace
 
 class TestEditedScene : public testing::Test {
 protected:
@@ -38,9 +63,15 @@ protected:
     void SetUp() override {
         std::filesystem::create_directories("/tmp/test_project");
         gobot::ProjectSettings::GetInstance()->SetProjectPath("/tmp/test_project");
+        render_server = std::make_unique<gobot::RenderServer>();
+    }
+
+    void TearDown() override {
+        render_server.reset();
     }
 
     gobot::ProjectSettings project_settings;
+    std::unique_ptr<gobot::RenderServer> render_server;
 };
 
 TEST_F(TestEditedScene, saves_and_loads_user_scene_root) {
@@ -94,4 +125,105 @@ TEST_F(TestEditedScene, loads_urdf_as_editable_robot_scene_tree) {
     EXPECT_NE(gobot::Object::PointerCastTo<gobot::CollisionShape3D>(base->GetChild(1)), nullptr);
 
     gobot::Object::Delete(edited_scene);
+}
+
+TEST_F(TestEditedScene, loads_urdf_with_default_motion_mode_when_requested) {
+    const std::filesystem::path fixture_path =
+            std::filesystem::current_path() / "tests/fixtures/urdf/simple_robot.urdf";
+
+    auto* edited_scene = gobot::Object::New<gobot::EditedScene>();
+    ASSERT_TRUE(edited_scene->LoadFromPath(fixture_path.string(), true));
+
+    auto* robot = gobot::Object::PointerCastTo<gobot::Robot3D>(edited_scene->GetRoot());
+    ASSERT_NE(robot, nullptr);
+    EXPECT_EQ(robot->GetMode(), gobot::RobotMode::Motion);
+
+    auto* joint = gobot::Object::PointerCastTo<gobot::Joint3D>(
+            FindNodeByName(robot, "shoulder_pan_joint"));
+    ASSERT_NE(joint, nullptr);
+    EXPECT_TRUE(joint->IsMotionModeEnabled());
+
+    gobot::Object::Delete(edited_scene);
+}
+
+TEST_F(TestEditedScene, robot_scene_round_trips_motion_state_and_materials) {
+    auto* edited_scene = gobot::Object::New<gobot::EditedScene>();
+    auto* robot = gobot::Object::New<gobot::Robot3D>();
+    robot->SetName("Robot");
+    robot->SetSourcePath("res://robot.urdf");
+
+    auto* base = gobot::Object::New<gobot::Link3D>();
+    base->SetName("base");
+    robot->AddChild(base);
+
+    auto* joint = gobot::Object::New<gobot::Joint3D>();
+    joint->SetName("joint");
+    joint->SetJointType(gobot::JointType::Revolute);
+    joint->SetParentLink("base");
+    joint->SetChildLink("body");
+    joint->SetAxis(gobot::Vector3::UnitZ());
+    joint->SetLowerLimit(1.0f);
+    joint->SetUpperLimit(3.0f);
+    joint->SetJointPosition(2.25f);
+    base->AddChild(joint);
+
+    auto* body = gobot::Object::New<gobot::Link3D>();
+    body->SetName("body");
+    joint->AddChild(body);
+
+    auto* visual = gobot::Object::New<gobot::MeshInstance3D>();
+    visual->SetName("visual");
+    auto box_mesh = gobot::MakeRef<gobot::BoxMesh>();
+    box_mesh->SetSize({0.5f, 0.6f, 0.7f});
+    auto material = gobot::MakeRef<gobot::PBRMaterial3D>();
+    material->SetAlbedo({0.25f, 0.5f, 0.75f, 1.0f});
+    material->SetMetallic(0.4f);
+    material->SetRoughness(0.65f);
+    box_mesh->SetMaterial(material);
+    visual->SetMesh(box_mesh);
+    body->AddChild(visual);
+
+    robot->SetMode(gobot::RobotMode::Motion);
+    edited_scene->GetRoot()->AddChild(robot);
+    ASSERT_TRUE(edited_scene->SaveToPath("res://robot_motion_roundtrip.jscn"));
+
+    auto* loaded_scene = gobot::Object::New<gobot::EditedScene>();
+    ASSERT_TRUE(loaded_scene->LoadFromPath("res://robot_motion_roundtrip.jscn"));
+
+    auto* loaded_robot = gobot::Object::PointerCastTo<gobot::Robot3D>(
+            FindNodeByName(loaded_scene->GetRoot(), "Robot"));
+    ASSERT_NE(loaded_robot, nullptr);
+    EXPECT_EQ(loaded_robot->GetMode(), gobot::RobotMode::Motion);
+    EXPECT_EQ(loaded_robot->GetSourcePath(), "res://robot.urdf");
+
+    auto* loaded_joint = gobot::Object::PointerCastTo<gobot::Joint3D>(
+            FindNodeByName(loaded_robot, "joint"));
+    ASSERT_NE(loaded_joint, nullptr);
+    EXPECT_EQ(loaded_joint->GetJointType(), gobot::JointType::Revolute);
+    EXPECT_FLOAT_EQ(loaded_joint->GetLowerLimit(), 1.0f);
+    EXPECT_FLOAT_EQ(loaded_joint->GetUpperLimit(), 3.0f);
+    EXPECT_FLOAT_EQ(loaded_joint->GetJointPosition(), 2.25f);
+    EXPECT_TRUE(loaded_joint->IsMotionModeEnabled());
+
+    auto* loaded_visual = gobot::Object::PointerCastTo<gobot::MeshInstance3D>(
+            FindNodeByName(loaded_robot, "visual"));
+    ASSERT_NE(loaded_visual, nullptr);
+    gobot::Ref<gobot::BoxMesh> loaded_mesh =
+            gobot::dynamic_pointer_cast<gobot::BoxMesh>(loaded_visual->GetMesh());
+    ASSERT_TRUE(loaded_mesh.IsValid());
+    EXPECT_TRUE(loaded_mesh->GetSize().isApprox(gobot::Vector3(0.5f, 0.6f, 0.7f), CMP_EPSILON));
+
+    gobot::Ref<gobot::PBRMaterial3D> loaded_material =
+            gobot::dynamic_pointer_cast<gobot::PBRMaterial3D>(loaded_mesh->GetMaterial());
+    ASSERT_TRUE(loaded_material.IsValid());
+    const gobot::Color loaded_albedo = loaded_material->GetAlbedo();
+    EXPECT_FLOAT_EQ(loaded_albedo.red(), 0.25f);
+    EXPECT_FLOAT_EQ(loaded_albedo.green(), 0.5f);
+    EXPECT_FLOAT_EQ(loaded_albedo.blue(), 0.75f);
+    EXPECT_FLOAT_EQ(loaded_albedo.alpha(), 1.0f);
+    EXPECT_FLOAT_EQ(loaded_material->GetMetallic(), 0.4f);
+    EXPECT_FLOAT_EQ(loaded_material->GetRoughness(), 0.65f);
+
+    gobot::Object::Delete(edited_scene);
+    gobot::Object::Delete(loaded_scene);
 }

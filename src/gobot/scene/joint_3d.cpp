@@ -188,7 +188,6 @@ void Joint3D::SetMotionModeEnabled(bool enabled) {
         ApplyJointMotion();
     } else {
         RestoreAssemblyPose();
-        ResetJointPosition();
         motion_mode_enabled_ = false;
     }
 }

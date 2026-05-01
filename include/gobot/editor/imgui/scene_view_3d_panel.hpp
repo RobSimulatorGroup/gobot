@@ -55,6 +55,7 @@ private:
     ImVec2 drag_joint_screen_center_{0.0f, 0.0f};
     ImVec2 drag_joint_screen_axis_{1.0f, 0.0f};
     float drag_last_angle_{0.0f};
+    float drag_joint_rotation_sign_{1.0f};
     bool drag_joint_screen_center_valid_{false};
     bool drag_joint_screen_axis_valid_{false};
     bool drag_last_angle_valid_{false};

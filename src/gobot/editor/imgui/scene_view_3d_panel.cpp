@@ -143,6 +143,20 @@ bool GetJointScreenAxis(Joint3D* joint,
     return true;
 }
 
+float GetJointScreenRotationSign(Joint3D* joint, const Camera3D* camera) {
+    if (!joint || !camera) {
+        return 1.0f;
+    }
+
+    const Vector3 world_axis = joint->GetGlobalTransform().linear() * joint->GetAxis().normalized();
+    const Vector3 joint_to_camera = camera->GetViewMatrixEye() - joint->GetGlobalPosition();
+    if (joint_to_camera.isZero(CMP_EPSILON)) {
+        return 1.0f;
+    }
+
+    return world_axis.dot(joint_to_camera.normalized()) >= 0.0 ? -1.0f : 1.0f;
+}
+
 float AngleAroundScreenPoint(const ImVec2& center, const ImVec2& point) {
     return std::atan2(point.y - center.y, point.x - center.x);
 }
@@ -325,6 +339,7 @@ void SceneView3DPanel::ProcessViewportInput(Node* scene_root,
         drag_joint_screen_center_valid_ = false;
         drag_joint_screen_axis_valid_ = false;
         drag_last_angle_valid_ = false;
+        drag_joint_rotation_sign_ = 1.0f;
         node3d_editor->SetBlockCameraInput(false);
         return;
     }
@@ -347,6 +362,7 @@ void SceneView3DPanel::ProcessViewportInput(Node* scene_root,
             drag_joint_screen_axis_valid_ = GetJointScreenAxis(dragged_joint_, node3d_editor->GetCamera3D(),
                                                                viewport_position, viewport_size,
                                                                drag_joint_screen_axis_);
+            drag_joint_rotation_sign_ = GetJointScreenRotationSign(dragged_joint_, node3d_editor->GetCamera3D());
             drag_last_angle_valid_ = drag_joint_screen_center_valid_;
             if (drag_last_angle_valid_) {
                 drag_last_angle_ = AngleAroundScreenPoint(drag_joint_screen_center_, drag_last_mouse_);
@@ -368,6 +384,7 @@ void SceneView3DPanel::ProcessViewportInput(Node* scene_root,
         drag_joint_screen_axis_valid_ = GetJointScreenAxis(dragged_joint_, node3d_editor->GetCamera3D(),
                                                            viewport_position, viewport_size,
                                                            drag_joint_screen_axis_);
+        drag_joint_rotation_sign_ = GetJointScreenRotationSign(dragged_joint_, node3d_editor->GetCamera3D());
         drag_last_angle_valid_ = drag_joint_screen_center_valid_;
         if (drag_last_angle_valid_) {
             drag_last_angle_ = AngleAroundScreenPoint(drag_joint_screen_center_, drag_last_mouse_);
@@ -383,7 +400,8 @@ void SceneView3DPanel::ProcessViewportInput(Node* scene_root,
             drag_joint_screen_center_valid_ && drag_last_angle_valid_) {
             const float current_angle = AngleAroundScreenPoint(drag_joint_screen_center_, mouse_position);
             const float delta_angle = WrappedAngleDelta(drag_last_angle_, current_angle);
-            dragged_joint_->SetJointPosition(dragged_joint_->GetJointPosition() - delta_angle);
+            dragged_joint_->SetJointPosition(dragged_joint_->GetJointPosition() +
+                                             drag_joint_rotation_sign_ * delta_angle);
             drag_last_angle_ = current_angle;
         } else if (joint_type == JointType::Prismatic) {
             const float signed_pixels = drag_joint_screen_axis_valid_
