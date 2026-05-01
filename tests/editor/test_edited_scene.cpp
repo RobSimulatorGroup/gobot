@@ -169,6 +169,7 @@ TEST_F(TestEditedScene, robot_scene_round_trips_motion_state_and_materials) {
 
     auto* body = gobot::Object::New<gobot::Link3D>();
     body->SetName("body");
+    body->SetPosition({1.0f, 0.0f, 0.0f});
     joint->AddChild(body);
 
     auto* visual = gobot::Object::New<gobot::MeshInstance3D>();
@@ -184,6 +185,7 @@ TEST_F(TestEditedScene, robot_scene_round_trips_motion_state_and_materials) {
     body->AddChild(visual);
 
     robot->SetMode(gobot::RobotMode::Motion);
+    const gobot::Vector3 expected_motion_body_position = body->GetPosition();
     edited_scene->GetRoot()->AddChild(robot);
     ASSERT_TRUE(edited_scene->SaveToPath("res://robot_motion_roundtrip.jscn"));
 
@@ -205,6 +207,11 @@ TEST_F(TestEditedScene, robot_scene_round_trips_motion_state_and_materials) {
     EXPECT_FLOAT_EQ(loaded_joint->GetJointPosition(), 2.25f);
     EXPECT_TRUE(loaded_joint->IsMotionModeEnabled());
 
+    auto* loaded_body = gobot::Object::PointerCastTo<gobot::Link3D>(
+            FindNodeByName(loaded_robot, "body"));
+    ASSERT_NE(loaded_body, nullptr);
+    EXPECT_TRUE(loaded_body->GetPosition().isApprox(expected_motion_body_position, CMP_EPSILON));
+
     auto* loaded_visual = gobot::Object::PointerCastTo<gobot::MeshInstance3D>(
             FindNodeByName(loaded_robot, "visual"));
     ASSERT_NE(loaded_visual, nullptr);
@@ -223,6 +230,55 @@ TEST_F(TestEditedScene, robot_scene_round_trips_motion_state_and_materials) {
     EXPECT_FLOAT_EQ(loaded_albedo.alpha(), 1.0f);
     EXPECT_FLOAT_EQ(loaded_material->GetMetallic(), 0.4f);
     EXPECT_FLOAT_EQ(loaded_material->GetRoughness(), 0.65f);
+
+    gobot::Object::Delete(edited_scene);
+    gobot::Object::Delete(loaded_scene);
+}
+
+TEST_F(TestEditedScene, robot_scene_restores_joint_position_after_joint_limits_from_json_order) {
+    auto* edited_scene = gobot::Object::New<gobot::EditedScene>();
+    auto* robot = gobot::Object::New<gobot::Robot3D>();
+    robot->SetName("Robot");
+
+    auto* base = gobot::Object::New<gobot::Link3D>();
+    base->SetName("base");
+    robot->AddChild(base);
+
+    auto* joint = gobot::Object::New<gobot::Joint3D>();
+    joint->SetName("joint");
+    joint->SetJointType(gobot::JointType::Revolute);
+    joint->SetAxis(gobot::Vector3::UnitZ());
+    joint->SetLowerLimit(1.0f);
+    joint->SetUpperLimit(3.0f);
+    joint->SetJointPosition(2.0f);
+    base->AddChild(joint);
+
+    auto* body = gobot::Object::New<gobot::Link3D>();
+    body->SetName("body");
+    body->SetPosition({1.0f, 0.0f, 0.0f});
+    joint->AddChild(body);
+
+    robot->SetMode(gobot::RobotMode::Motion);
+    const gobot::Vector3 expected_motion_body_position = body->GetPosition();
+    edited_scene->GetRoot()->AddChild(robot);
+    ASSERT_TRUE(edited_scene->SaveToPath("res://robot_joint_order_roundtrip.jscn"));
+
+    auto* loaded_scene = gobot::Object::New<gobot::EditedScene>();
+    ASSERT_TRUE(loaded_scene->LoadFromPath("res://robot_joint_order_roundtrip.jscn"));
+
+    auto* loaded_joint = gobot::Object::PointerCastTo<gobot::Joint3D>(
+            FindNodeByName(loaded_scene->GetRoot(), "joint"));
+    ASSERT_NE(loaded_joint, nullptr);
+    EXPECT_EQ(loaded_joint->GetJointType(), gobot::JointType::Revolute);
+    EXPECT_FLOAT_EQ(loaded_joint->GetLowerLimit(), 1.0f);
+    EXPECT_FLOAT_EQ(loaded_joint->GetUpperLimit(), 3.0f);
+    EXPECT_FLOAT_EQ(loaded_joint->GetJointPosition(), 2.0f);
+    EXPECT_TRUE(loaded_joint->IsMotionModeEnabled());
+
+    auto* loaded_body = gobot::Object::PointerCastTo<gobot::Link3D>(
+            FindNodeByName(loaded_scene->GetRoot(), "body"));
+    ASSERT_NE(loaded_body, nullptr);
+    EXPECT_TRUE(loaded_body->GetPosition().isApprox(expected_motion_body_position, CMP_EPSILON));
 
     gobot::Object::Delete(edited_scene);
     gobot::Object::Delete(loaded_scene);

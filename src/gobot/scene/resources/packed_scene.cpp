@@ -11,8 +11,46 @@
 #include "gobot/core/registration.hpp"
 #include "gobot/log.hpp"
 #include "gobot/scene/node.hpp"
+#include "gobot/scene/robot_3d.hpp"
 
 namespace gobot {
+namespace {
+
+int GetPropertyRestorePriority(const std::string& node_type, const std::string& property_name) {
+    if (node_type == "Joint3D") {
+        if (property_name == "position" || property_name == "rotation_degrees" || property_name == "scale") {
+            return 0;
+        }
+        if (property_name == "joint_type") {
+            return 10;
+        }
+        if (property_name == "parent_link" || property_name == "child_link" || property_name == "axis") {
+            return 20;
+        }
+        if (property_name == "lower_limit" || property_name == "upper_limit" ||
+            property_name == "effort_limit" || property_name == "velocity_limit") {
+            return 30;
+        }
+        if (property_name == "joint_position") {
+            return 40;
+        }
+    }
+
+    return 20;
+}
+
+std::vector<SceneState::PropertyData> GetPropertiesInRestoreOrder(const SceneState::NodeData* node_data) {
+    std::vector<SceneState::PropertyData> properties = node_data->properties;
+    std::stable_sort(properties.begin(),
+                     properties.end(),
+                     [node_data](const SceneState::PropertyData& lhs, const SceneState::PropertyData& rhs) {
+                         return GetPropertyRestorePriority(node_data->type, lhs.name) <
+                                GetPropertyRestorePriority(node_data->type, rhs.name);
+                     });
+    return properties;
+}
+
+} // namespace
 
 std::size_t SceneState::GetNodeCount() const {
     return nodes_.size();
@@ -59,7 +97,50 @@ bool PackedScene::Pack(Node* root) {
 
     state_->Clear();
 
-    auto pack_node = [this](Node* node, int parent, auto&& pack_node_ref) -> int {
+    std::vector<std::pair<Robot3D*, RobotMode>> original_robot_modes;
+    auto prepare_robot_assembly_pose = [&original_robot_modes](Node* node, auto&& self) -> void {
+        if (node == nullptr) {
+            return;
+        }
+
+        if (auto* robot = Object::PointerCastTo<Robot3D>(node)) {
+            const RobotMode mode = robot->GetMode();
+            original_robot_modes.emplace_back(robot, mode);
+            if (mode == RobotMode::Motion) {
+                robot->SetMode(RobotMode::Assembly);
+            }
+        }
+
+        for (std::size_t i = 0; i < node->GetChildCount(); ++i) {
+            self(node->GetChild(static_cast<int>(i)), self);
+        }
+    };
+
+    auto restore_robot_modes = [&original_robot_modes]() {
+        for (auto it = original_robot_modes.rbegin(); it != original_robot_modes.rend(); ++it) {
+            it->first->SetMode(it->second);
+        }
+    };
+
+    auto get_original_robot_mode = [&original_robot_modes](Node* node, RobotMode* mode) -> bool {
+        auto* robot = Object::PointerCastTo<Robot3D>(node);
+        if (robot == nullptr) {
+            return false;
+        }
+
+        for (const auto& [stored_robot, stored_mode] : original_robot_modes) {
+            if (stored_robot == robot) {
+                *mode = stored_mode;
+                return true;
+            }
+        }
+
+        return false;
+    };
+
+    prepare_robot_assembly_pose(root, prepare_robot_assembly_pose);
+
+    auto pack_node = [this, &get_original_robot_mode](Node* node, int parent, auto&& pack_node_ref) -> int {
         SceneState::NodeData node_data;
         node_data.type = node->GetClassStringName();
         node_data.name = node->GetName();
@@ -84,7 +165,12 @@ bool PackedScene::Pack(Node* root) {
 
             USING_ENUM_BITWISE_OPERATORS;
             if (static_cast<bool>(property_info.usage & PropertyUsageFlags::Storage)) {
-                node_data.properties.push_back({property_name, node->Get(property_name)});
+                RobotMode original_mode{};
+                if (property_name == "mode" && get_original_robot_mode(node, &original_mode)) {
+                    node_data.properties.push_back({property_name, Variant(original_mode)});
+                } else {
+                    node_data.properties.push_back({property_name, node->Get(property_name)});
+                }
             }
         }
 
@@ -97,6 +183,7 @@ bool PackedScene::Pack(Node* root) {
     };
 
     pack_node(root, -1, pack_node);
+    restore_robot_modes();
     return true;
 }
 
@@ -149,7 +236,8 @@ Node* PackedScene::Instantiate() const {
             node->SetName(node_data->name);
         }
 
-        for (const auto& property : node_data->properties) {
+        const std::vector<SceneState::PropertyData> properties = GetPropertiesInRestoreOrder(node_data);
+        for (const auto& property : properties) {
             if (node_data->type == "Robot3D" && property.name == "mode") {
                 deferred_properties.emplace_back(node, property);
                 continue;

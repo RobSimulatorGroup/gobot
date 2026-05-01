@@ -12,6 +12,7 @@ option(GOB_BUILD_EXPERIMENT "using imgui and glfw" OFF)
 option(GOB_BUILD_TESTS "build tests" OFF)
 option(GOB_BUILD_OPENUSD "build OpenUSD scene importer/exporter support" OFF)
 option(GOB_BUILD_ASSIMP "build mesh import support through Assimp" ON)
+option(GOB_BUILD_MUJOCO "build MuJoCo CPU physics backend support" OFF)
 set(GOB_ASSIMP_IMPORTERS "COLLADA;OBJ;STL;PLY;GLTF" CACHE STRING "Assimp importers enabled for Gobot mesh import")
 
 if(NOT UNIX OR APPLE)
@@ -36,6 +37,17 @@ CPMFindPackage(
 
 if(GOB_BUILD_OPENUSD)
     find_package(pxr REQUIRED CONFIG)
+endif()
+
+if(GOB_BUILD_MUJOCO)
+    find_package(mujoco REQUIRED CONFIG)
+    if(TARGET mujoco::mujoco)
+        set(GOBOT_MUJOCO_TARGET mujoco::mujoco)
+    elseif(TARGET mujoco)
+        set(GOBOT_MUJOCO_TARGET mujoco)
+    else()
+        message(FATAL_ERROR "GOB_BUILD_MUJOCO is ON, but no MuJoCo CMake target was exported.")
+    endif()
 endif()
 
 set(GOBOT_ASSIMP_TARGET "")
@@ -111,13 +123,14 @@ add_subdirectory(3rdparty)
 
 file(GLOB_RECURSE SOURCE_CORE CONFIGURE_DEPENDS "src/gobot/core/*.cpp")
 file(GLOB_RECURSE SOURCE_SCENE CONFIGURE_DEPENDS "src/gobot/scene/*.cpp")
+file(GLOB_RECURSE SOURCE_PHYSICS CONFIGURE_DEPENDS "src/gobot/physics/*.cpp")
 file(GLOB_RECURSE SOURCE_DRIVERS CONFIGURE_DEPENDS "src/gobot/drivers/*.cpp")
 file(GLOB_RECURSE SOURCE_RENDERING CONFIGURE_DEPENDS "src/gobot/rendering/*.cpp")
 file(GLOB_RECURSE SOURCE_EDITOR CONFIGURE_DEPENDS "src/gobot/editor/*.cpp")
 file(GLOB_RECURSE SOURCE_MAIN CONFIGURE_DEPENDS "src/gobot/main/*.cpp")
 
 # https://github.com/bincrafters/community/issues/466#issuecomment-426265654
-add_library(gobot SHARED ${SOURCE_DRIVERS} ${SOURCE_MAIN} ${SOURCE_CORE} ${SOURCE_RENDERING} ${SOURCE_SCENE} ${SOURCE_EDITOR})
+add_library(gobot SHARED ${SOURCE_DRIVERS} ${SOURCE_MAIN} ${SOURCE_CORE} ${SOURCE_RENDERING} ${SOURCE_SCENE} ${SOURCE_PHYSICS} ${SOURCE_EDITOR})
 target_compile_options(gobot PUBLIC "-fno-gnu-unique" "-Wno-volatile" "-Wno-deprecated-enum-enum-conversion")
 
 # https://forum.qt.io/topic/97296/export-qobject-based-class-from-dll/2
@@ -154,6 +167,11 @@ endif()
 if(GOB_BUILD_ASSIMP AND GOBOT_ASSIMP_TARGET)
     target_compile_definitions(gobot PUBLIC GOBOT_HAS_ASSIMP=1)
     target_link_libraries(gobot PUBLIC ${GOBOT_ASSIMP_TARGET})
+endif()
+
+if(GOB_BUILD_MUJOCO)
+    target_compile_definitions(gobot PUBLIC GOBOT_HAS_MUJOCO=1)
+    target_link_libraries(gobot PUBLIC ${GOBOT_MUJOCO_TARGET})
 endif()
 
 # copy icon to bin
