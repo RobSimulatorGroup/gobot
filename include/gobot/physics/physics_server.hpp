@@ -37,10 +37,14 @@ public:
 
     Ref<PhysicsWorld> CreateWorld(const PhysicsWorldSettings& settings = {});
 
-private:
-    Ref<PhysicsWorld> CreateWorldForBackend(PhysicsBackendType backend_type,
-                                            const PhysicsWorldSettings& settings) const;
+    static PhysicsBackendInfo GetBackendInfoForBackend(PhysicsBackendType backend_type);
 
+    static std::vector<PhysicsBackendInfo> GetBackendInfosForAllBackends();
+
+    static Ref<PhysicsWorld> CreateWorldForBackend(PhysicsBackendType backend_type,
+                                                   const PhysicsWorldSettings& settings = {});
+
+private:
     static PhysicsServer* s_singleton;
 
     PhysicsBackendType backend_type_{PhysicsBackendType::Null};

@@ -33,15 +33,28 @@ public:
 
     virtual void Step(RealType delta_time);
 
+    bool SetJointControl(const std::string& robot_name,
+                         const std::string& joint_name,
+                         PhysicsJointControlMode control_mode,
+                         RealType target);
+
     const PhysicsSceneSnapshot& GetSceneSnapshot() const;
+
+    const PhysicsSceneState& GetSceneState() const;
 
 protected:
     bool CaptureSceneSnapshot(const Node* scene_root);
+
+    PhysicsJointState* FindJointState(const std::string& robot_name,
+                                      const std::string& joint_name);
+
+    void ResetSceneStateFromSnapshot();
 
     void SetLastError(std::string error);
 
     PhysicsWorldSettings settings_;
     PhysicsSceneSnapshot scene_snapshot_;
+    PhysicsSceneState scene_state_;
     std::string last_error_;
 };
 

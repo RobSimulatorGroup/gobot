@@ -13,6 +13,9 @@ option(GOB_BUILD_TESTS "build tests" OFF)
 option(GOB_BUILD_OPENUSD "build OpenUSD scene importer/exporter support" OFF)
 option(GOB_BUILD_ASSIMP "build mesh import support through Assimp" ON)
 option(GOB_BUILD_MUJOCO "build MuJoCo CPU physics backend support" OFF)
+option(GOB_FETCH_MUJOCO "download MuJoCo from the official GitHub repository when GOB_BUILD_MUJOCO is ON and no local SDK/package is found" OFF)
+set(GOB_MUJOCO_ROOT "" CACHE PATH "MuJoCo SDK or install prefix. Supports either a CMake package install or an extracted SDK with include/ and lib/.")
+set(GOB_MUJOCO_GIT_TAG "3.8.0" CACHE STRING "MuJoCo release tag used when GOB_FETCH_MUJOCO is ON")
 set(GOB_ASSIMP_IMPORTERS "COLLADA;OBJ;STL;PLY;GLTF" CACHE STRING "Assimp importers enabled for Gobot mesh import")
 
 if(NOT UNIX OR APPLE)
@@ -39,15 +42,92 @@ if(GOB_BUILD_OPENUSD)
     find_package(pxr REQUIRED CONFIG)
 endif()
 
+set(GOBOT_MUJOCO_TARGET "")
 if(GOB_BUILD_MUJOCO)
-    find_package(mujoco REQUIRED CONFIG)
+    if(GOB_MUJOCO_ROOT)
+        find_package(mujoco CONFIG QUIET
+            PATHS
+                "${GOB_MUJOCO_ROOT}"
+                "${GOB_MUJOCO_ROOT}/lib/cmake/mujoco"
+                "${GOB_MUJOCO_ROOT}/lib64/cmake/mujoco"
+            NO_DEFAULT_PATH
+        )
+    endif()
+
+    if(NOT mujoco_FOUND)
+        find_package(mujoco CONFIG QUIET)
+    endif()
+
     if(TARGET mujoco::mujoco)
         set(GOBOT_MUJOCO_TARGET mujoco::mujoco)
     elseif(TARGET mujoco)
         set(GOBOT_MUJOCO_TARGET mujoco)
-    else()
-        message(FATAL_ERROR "GOB_BUILD_MUJOCO is ON, but no MuJoCo CMake target was exported.")
     endif()
+
+    if(NOT GOBOT_MUJOCO_TARGET)
+        find_path(GOBOT_MUJOCO_INCLUDE_DIR
+            NAMES mujoco/mujoco.h
+            HINTS
+                "${GOB_MUJOCO_ROOT}/include"
+                "${GOB_MUJOCO_ROOT}"
+        )
+        find_library(GOBOT_MUJOCO_LIBRARY
+            NAMES mujoco
+            HINTS
+                "${GOB_MUJOCO_ROOT}/lib"
+                "${GOB_MUJOCO_ROOT}/lib64"
+                "${GOB_MUJOCO_ROOT}/bin"
+                "${GOB_MUJOCO_ROOT}"
+        )
+
+        if(GOBOT_MUJOCO_INCLUDE_DIR AND GOBOT_MUJOCO_LIBRARY)
+            add_library(gobot_mujoco_sdk SHARED IMPORTED GLOBAL)
+            set_target_properties(gobot_mujoco_sdk
+                PROPERTIES
+                    IMPORTED_LOCATION "${GOBOT_MUJOCO_LIBRARY}"
+                    INTERFACE_INCLUDE_DIRECTORIES "${GOBOT_MUJOCO_INCLUDE_DIR}"
+            )
+            set(GOBOT_MUJOCO_TARGET gobot_mujoco_sdk)
+            message(STATUS "Gobot MuJoCo backend enabled with SDK library: ${GOBOT_MUJOCO_LIBRARY}")
+        endif()
+    endif()
+
+    if(NOT GOBOT_MUJOCO_TARGET AND GOB_FETCH_MUJOCO)
+        include(FetchContent)
+        set(MUJOCO_BUILD_EXAMPLES OFF CACHE BOOL "" FORCE)
+        set(MUJOCO_BUILD_SIMULATE OFF CACHE BOOL "" FORCE)
+        set(MUJOCO_BUILD_STUDIO OFF CACHE BOOL "" FORCE)
+        set(MUJOCO_BUILD_TESTS OFF CACHE BOOL "" FORCE)
+        set(MUJOCO_TEST_PYTHON_UTIL OFF CACHE BOOL "" FORCE)
+        set(MUJOCO_WITH_USD OFF CACHE BOOL "" FORCE)
+        set(MUJOCO_USE_FILAMENT OFF CACHE BOOL "" FORCE)
+
+        FetchContent_Declare(
+            mujoco
+            GIT_REPOSITORY https://github.com/google-deepmind/mujoco.git
+            GIT_TAG "${GOB_MUJOCO_GIT_TAG}"
+            GIT_SHALLOW TRUE
+        )
+        FetchContent_MakeAvailable(mujoco)
+
+        if(TARGET mujoco::mujoco)
+            set(GOBOT_MUJOCO_TARGET mujoco::mujoco)
+        elseif(TARGET mujoco)
+            set(GOBOT_MUJOCO_TARGET mujoco)
+        endif()
+    endif()
+
+    if(GOBOT_MUJOCO_TARGET)
+        message(STATUS "Gobot MuJoCo backend enabled with target: ${GOBOT_MUJOCO_TARGET}")
+    else()
+        message(FATAL_ERROR
+            "GOB_BUILD_MUJOCO is ON, but MuJoCo was not found.\n"
+            "Provide a local SDK/package with -DGOB_MUJOCO_ROOT=/path/to/mujoco or -DCMAKE_PREFIX_PATH=/path/to/mujoco,\n"
+            "or allow CMake to fetch the pinned official release with -DGOB_FETCH_MUJOCO=ON."
+        )
+    endif()
+elseif(GOB_FETCH_MUJOCO)
+    message(WARNING "GOB_FETCH_MUJOCO is ON but GOB_BUILD_MUJOCO is OFF; MuJoCo download is skipped.")
 endif()
 
 set(GOBOT_ASSIMP_TARGET "")
@@ -124,13 +204,14 @@ add_subdirectory(3rdparty)
 file(GLOB_RECURSE SOURCE_CORE CONFIGURE_DEPENDS "src/gobot/core/*.cpp")
 file(GLOB_RECURSE SOURCE_SCENE CONFIGURE_DEPENDS "src/gobot/scene/*.cpp")
 file(GLOB_RECURSE SOURCE_PHYSICS CONFIGURE_DEPENDS "src/gobot/physics/*.cpp")
+file(GLOB_RECURSE SOURCE_SIMULATION CONFIGURE_DEPENDS "src/gobot/simulation/*.cpp")
 file(GLOB_RECURSE SOURCE_DRIVERS CONFIGURE_DEPENDS "src/gobot/drivers/*.cpp")
 file(GLOB_RECURSE SOURCE_RENDERING CONFIGURE_DEPENDS "src/gobot/rendering/*.cpp")
 file(GLOB_RECURSE SOURCE_EDITOR CONFIGURE_DEPENDS "src/gobot/editor/*.cpp")
 file(GLOB_RECURSE SOURCE_MAIN CONFIGURE_DEPENDS "src/gobot/main/*.cpp")
 
 # https://github.com/bincrafters/community/issues/466#issuecomment-426265654
-add_library(gobot SHARED ${SOURCE_DRIVERS} ${SOURCE_MAIN} ${SOURCE_CORE} ${SOURCE_RENDERING} ${SOURCE_SCENE} ${SOURCE_PHYSICS} ${SOURCE_EDITOR})
+add_library(gobot SHARED ${SOURCE_DRIVERS} ${SOURCE_MAIN} ${SOURCE_CORE} ${SOURCE_RENDERING} ${SOURCE_SCENE} ${SOURCE_PHYSICS} ${SOURCE_SIMULATION} ${SOURCE_EDITOR})
 target_compile_options(gobot PUBLIC "-fno-gnu-unique" "-Wno-volatile" "-Wno-deprecated-enum-enum-conversion")
 
 # https://forum.qt.io/topic/97296/export-qobject-based-class-from-dll/2

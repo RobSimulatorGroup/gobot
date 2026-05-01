@@ -45,6 +45,10 @@ bool PhysicsServer::IsBackendAvailable(PhysicsBackendType backend_type) const {
 }
 
 PhysicsBackendInfo PhysicsServer::GetBackendInfo(PhysicsBackendType backend_type) const {
+    return GetBackendInfoForBackend(backend_type);
+}
+
+PhysicsBackendInfo PhysicsServer::GetBackendInfoForBackend(PhysicsBackendType backend_type) {
     switch (backend_type) {
         case PhysicsBackendType::Null:
             return {
@@ -98,18 +102,33 @@ PhysicsBackendInfo PhysicsServer::GetBackendInfo(PhysicsBackendType backend_type
                     true,
                     "Newton backend is reserved but not implemented yet."
             };
+        case PhysicsBackendType::RigidIpcCpu:
+            return {
+                    PhysicsBackendType::RigidIpcCpu,
+                    "Rigid IPC CPU",
+                    false,
+                    true,
+                    false,
+                    false,
+                    "Rigid IPC backend is reserved for robust intersection-free contact validation, but not implemented yet."
+            };
     }
 
     return {};
 }
 
 std::vector<PhysicsBackendInfo> PhysicsServer::GetBackendInfos() const {
+    return GetBackendInfosForAllBackends();
+}
+
+std::vector<PhysicsBackendInfo> PhysicsServer::GetBackendInfosForAllBackends() {
     return {
-            GetBackendInfo(PhysicsBackendType::Null),
-            GetBackendInfo(PhysicsBackendType::MuJoCoCpu),
-            GetBackendInfo(PhysicsBackendType::PhysXCpu),
-            GetBackendInfo(PhysicsBackendType::PhysXGpu),
-            GetBackendInfo(PhysicsBackendType::NewtonGpu),
+            GetBackendInfoForBackend(PhysicsBackendType::Null),
+            GetBackendInfoForBackend(PhysicsBackendType::MuJoCoCpu),
+            GetBackendInfoForBackend(PhysicsBackendType::PhysXCpu),
+            GetBackendInfoForBackend(PhysicsBackendType::PhysXGpu),
+            GetBackendInfoForBackend(PhysicsBackendType::NewtonGpu),
+            GetBackendInfoForBackend(PhysicsBackendType::RigidIpcCpu),
     };
 }
 
@@ -118,7 +137,7 @@ Ref<PhysicsWorld> PhysicsServer::CreateWorld(const PhysicsWorldSettings& setting
 }
 
 Ref<PhysicsWorld> PhysicsServer::CreateWorldForBackend(PhysicsBackendType backend_type,
-                                                       const PhysicsWorldSettings& settings) const {
+                                                       const PhysicsWorldSettings& settings) {
     Ref<PhysicsWorld> world;
     switch (backend_type) {
         case PhysicsBackendType::MuJoCoCpu:
@@ -128,6 +147,7 @@ Ref<PhysicsWorld> PhysicsServer::CreateWorldForBackend(PhysicsBackendType backen
         case PhysicsBackendType::PhysXCpu:
         case PhysicsBackendType::PhysXGpu:
         case PhysicsBackendType::NewtonGpu:
+        case PhysicsBackendType::RigidIpcCpu:
             world = MakeRef<NullPhysicsWorld>();
             break;
     }

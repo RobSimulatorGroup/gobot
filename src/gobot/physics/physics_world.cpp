@@ -135,22 +135,65 @@ void PhysicsWorld::SetSettings(const PhysicsWorldSettings& settings) {
 }
 
 bool PhysicsWorld::BuildFromScene(const Node* scene_root) {
-    return CaptureSceneSnapshot(scene_root);
+    if (!CaptureSceneSnapshot(scene_root)) {
+        return false;
+    }
+
+    ResetSceneStateFromSnapshot();
+    return true;
 }
 
 void PhysicsWorld::Reset() {
+    ResetSceneStateFromSnapshot();
 }
 
 void PhysicsWorld::Step(RealType delta_time) {
     GOB_UNUSED(delta_time);
 }
 
+bool PhysicsWorld::SetJointControl(const std::string& robot_name,
+                                   const std::string& joint_name,
+                                   PhysicsJointControlMode control_mode,
+                                   RealType target) {
+    PhysicsJointState* joint_state = FindJointState(robot_name, joint_name);
+    if (!joint_state) {
+        SetLastError(fmt::format("Cannot set control for missing joint '{}::{}'.", robot_name, joint_name));
+        return false;
+    }
+
+    joint_state->control_mode = control_mode;
+    switch (control_mode) {
+        case PhysicsJointControlMode::Passive:
+            joint_state->target_position = joint_state->position;
+            joint_state->target_velocity = 0.0;
+            joint_state->target_effort = 0.0;
+            break;
+        case PhysicsJointControlMode::Position:
+            joint_state->target_position = target;
+            break;
+        case PhysicsJointControlMode::Velocity:
+            joint_state->target_velocity = target;
+            break;
+        case PhysicsJointControlMode::Effort:
+            joint_state->target_effort = target;
+            break;
+    }
+
+    last_error_.clear();
+    return true;
+}
+
 const PhysicsSceneSnapshot& PhysicsWorld::GetSceneSnapshot() const {
     return scene_snapshot_;
 }
 
+const PhysicsSceneState& PhysicsWorld::GetSceneState() const {
+    return scene_state_;
+}
+
 bool PhysicsWorld::CaptureSceneSnapshot(const Node* scene_root) {
     scene_snapshot_ = {};
+    scene_state_ = {};
     if (!scene_root) {
         SetLastError("Cannot build a physics world from a null scene root.");
         return false;
@@ -159,6 +202,59 @@ bool PhysicsWorld::CaptureSceneSnapshot(const Node* scene_root) {
     CollectSceneNodes(scene_root, &scene_snapshot_);
     last_error_.clear();
     return true;
+}
+
+PhysicsJointState* PhysicsWorld::FindJointState(const std::string& robot_name,
+                                                const std::string& joint_name) {
+    for (PhysicsRobotState& robot_state : scene_state_.robots) {
+        if (robot_state.name != robot_name) {
+            continue;
+        }
+
+        for (PhysicsJointState& joint_state : robot_state.joints) {
+            if (joint_state.joint_name == joint_name) {
+                return &joint_state;
+            }
+        }
+    }
+
+    return nullptr;
+}
+
+void PhysicsWorld::ResetSceneStateFromSnapshot() {
+    scene_state_ = {};
+    scene_state_.robots.reserve(scene_snapshot_.robots.size());
+
+    for (const PhysicsRobotSnapshot& robot_snapshot : scene_snapshot_.robots) {
+        PhysicsRobotState robot_state;
+        robot_state.node = robot_snapshot.node;
+        robot_state.name = robot_snapshot.name;
+        robot_state.links.reserve(robot_snapshot.links.size());
+        robot_state.joints.reserve(robot_snapshot.joints.size());
+
+        for (const PhysicsLinkSnapshot& link_snapshot : robot_snapshot.links) {
+            PhysicsLinkState link_state;
+            link_state.node = link_snapshot.node;
+            link_state.robot_name = robot_snapshot.name;
+            link_state.link_name = link_snapshot.name;
+            link_state.global_transform = link_snapshot.global_transform;
+            robot_state.links.emplace_back(std::move(link_state));
+            ++scene_state_.total_link_count;
+        }
+
+        for (const PhysicsJointSnapshot& joint_snapshot : robot_snapshot.joints) {
+            PhysicsJointState joint_state;
+            joint_state.node = joint_snapshot.node;
+            joint_state.robot_name = robot_snapshot.name;
+            joint_state.joint_name = joint_snapshot.name;
+            joint_state.position = joint_snapshot.joint_position;
+            joint_state.target_position = joint_snapshot.joint_position;
+            robot_state.joints.emplace_back(std::move(joint_state));
+            ++scene_state_.total_joint_count;
+        }
+
+        scene_state_.robots.emplace_back(std::move(robot_state));
+    }
 }
 
 void PhysicsWorld::SetLastError(std::string error) {
@@ -171,12 +267,14 @@ GOBOT_REGISTRATION {
 
     QuickEnumeration_<PhysicsBackendType>("PhysicsBackendType");
     QuickEnumeration_<PhysicsShapeType>("PhysicsShapeType");
+    QuickEnumeration_<PhysicsJointControlMode>("PhysicsJointControlMode");
 
     Class_<PhysicsWorld>("PhysicsWorld")
             .method("is_available", &PhysicsWorld::IsAvailable)
             .method("get_last_error", &PhysicsWorld::GetLastError)
             .method("reset", &PhysicsWorld::Reset)
-            .method("step", &PhysicsWorld::Step);
+            .method("step", &PhysicsWorld::Step)
+            .method("set_joint_control", &PhysicsWorld::SetJointControl);
 
     gobot::Type::register_wrapper_converter_for_base_classes<Ref<PhysicsWorld>, Ref<RefCounted>>();
 

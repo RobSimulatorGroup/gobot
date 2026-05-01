@@ -16,6 +16,8 @@
 #include "gobot/rendering/rendering_server_globals.hpp"
 #include "gobot/rendering/renderer_compositor.hpp"
 #include "gobot/rendering/scene_renderer.hpp"
+#include "gobot/physics/physics_server.hpp"
+#include "gobot/simulation/simulation_server.hpp"
 #include "gobot/core/os/os.hpp"
 #include "gobot/scene/window.hpp"
 #include "gobot/core/math/geometry.hpp"
@@ -28,6 +30,8 @@ static Engine *s_engine = nullptr;
 static ProjectSettings* s_project_settings = nullptr;
 static Input* s_input = nullptr;
 static RenderServer* s_render_server = nullptr;
+static PhysicsServer* s_physics_server = nullptr;
+static SimulationServer* s_simulation_server = nullptr;
 
 Main::TimePoint Main::s_last_ticks = std::chrono::high_resolution_clock::now();
 
@@ -58,6 +62,8 @@ Copyright(c) 2021-2023, RobSimulatorGroup)");
     s_engine = Object::New<Engine>();
     s_project_settings = Object::New<ProjectSettings>();
     s_input = Object::New<Input>();
+    s_physics_server = Object::New<PhysicsServer>();
+    s_simulation_server = Object::New<SimulationServer>();
 
     if (result.count("path")) {
         if (s_project_settings->SetProjectPath(result["path"].as<std::string>().c_str())) {
@@ -119,6 +125,8 @@ bool Main::Iteration()
 void Main::Cleanup() {
     SceneInitializer::Destroy();
 
+    Object::Delete(s_simulation_server);
+    Object::Delete(s_physics_server);
     Object::Delete(s_input);
     Object::Delete(s_project_settings);
 

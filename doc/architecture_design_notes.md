@@ -109,6 +109,98 @@ The implementation order should be:
 
 The first milestone should be conservative: keep the current scene visible, render visual meshes through the normal scene pass, render collisions through debug draw as wireframes, and expose editor toggles for collision and joint overlays. PBR, transparent sorting, shadows, and advanced robot diagnostics can build on that separation.
 
+## Physics Engine Integration Plan
+
+Gobot should support more than one physics implementation. The engine-facing API must stay stable while CPU and GPU physics backends can be selected, tested, and replaced independently. Robotics workflows should drive the design: articulated robots, joint limits, collision queries, sensors, deterministic stepping, and later reinforcement-learning loops matter more than generic rigid-body demos.
+
+The intended dependency boundary is:
+
+1. `Scene` owns authored robot data:
+   - `Robot3D`, `Link3D`, `Joint3D`, `CollisionShape3D`, transforms, limits, inertial data, and material/mesh resources.
+   - Scene nodes do not expose MuJoCo, PhysX, Newton, CUDA, or backend object handles.
+2. `PhysicsServer` owns backend selection and backend capability reporting:
+   - available backends, CPU/GPU flags, robotics focus, and human-readable status.
+   - creation of backend-specific `PhysicsWorld` instances.
+3. `PhysicsWorld` owns one runtime simulation world:
+   - build from a scene snapshot.
+   - reset, step, query, and eventually sync results back to scene nodes.
+   - keep backend implementation details below this interface.
+4. `SimulationServer` should become the high-level simulation entry point:
+   - fixed-step accumulation, pause/play/single-step, reset, time scale, deterministic mode.
+   - owns or references the active `PhysicsWorld`.
+   - is the API that editor tools and future Python bindings should call.
+5. `Editor` only coordinates simulation controls and debug visualization:
+   - play/pause, single-step, backend selection UI, collision/joint/contact overlays.
+   - it should not call MuJoCo/PhysX/Newton APIs directly.
+
+Backend direction:
+
+- `NullPhysicsWorld` remains the always-available no-op backend for editor startup, tests, and systems without optional SDKs.
+- `MuJoCoCpu` should be the first real backend because it is robotics-focused and strong at articulated bodies, URDF-style robots, contacts, and deterministic CPU simulation.
+- `PhysXCpu` / `PhysXGpu` should be reserved for scalable rigid-body scenes and GPU collision/parallel simulation once the core interface is stable.
+- `NewtonGpu` should stay reserved for GPU robotics experiments, but it should not shape the public Gobot API before a small prototype proves the needed concepts.
+- `RigidIpcCpu` should be reserved as a research/validation backend based on intersection-free rigid body dynamics. Its role is robust contact, tight-fit geometry, and offline verification, not first-pass real-time robot control or RL throughput.
+- The backend list should be explicit rather than implicit: users should be able to see which backends are compiled in, available at runtime, CPU/GPU capable, and suitable for robotics.
+
+The scene-to-physics data model should be backend-neutral:
+
+- `PhysicsSceneSnapshot`: robots, loose collision shapes, total object counts.
+- `PhysicsRobotSnapshot`: robot source path, links, joints.
+- `PhysicsLinkSnapshot`: transform, mass, center of mass, inertia, collision shapes.
+- `PhysicsJointSnapshot`: parent/child links, joint type, axis, limits, velocity/effort limits, current joint position.
+- `PhysicsShapeSnapshot`: shape type, transform, box/sphere/cylinder/mesh dimensions, disabled state.
+
+Implementation phases:
+
+1. Stabilize the abstraction layer:
+   - keep `PhysicsBackendType`, `PhysicsBackendInfo`, `PhysicsWorldSettings`, `PhysicsWorld`, and `PhysicsServer` backend-neutral.
+   - add focused tests for backend capability reporting and scene snapshot capture.
+2. Add `SimulationServer`:
+   - fixed time step, accumulated stepping, pause/play, single-step, reset.
+   - build the active physics world from a scene root.
+   - expose current simulation time, frame count, active backend, and last error.
+3. Add result synchronization:
+   - define how simulated body poses and joint states flow back into `Robot3D`/`Joint3D`.
+   - avoid overwriting authored assembly transforms while in editor assembly mode.
+   - keep robot motion mode and physics simulation mode behavior explicit.
+4. Implement the first MuJoCo backend slice:
+   - optional `GOB_BUILD_MUJOCO`.
+   - prefer a local MuJoCo SDK/package through `GOB_MUJOCO_ROOT` or `CMAKE_PREFIX_PATH`.
+   - allow opt-in source fetching through `GOB_FETCH_MUJOCO` and a pinned `GOB_MUJOCO_GIT_TAG`.
+   - do not make MuJoCo a default submodule unless Gobot later needs a fully vendored offline dependency set.
+   - create a MuJoCo model from the neutral robot snapshot or from the source URDF when that is the most reliable path.
+   - map joint limits, axes, inertial data, and primitive collision shapes first.
+   - support reset and fixed-step simulation before adding advanced controls.
+5. Add physics debug visualization:
+   - contacts, collision shapes, link frames, joint frames, center of mass, and broadphase AABBs.
+   - use `RendererDebugDraw`; do not route debug drawing through normal mesh rendering.
+6. Add queries and controls:
+   - ray cast, shape cast, overlap tests, closest points.
+   - joint position/velocity/torque state.
+   - position/velocity/torque drives for robot control.
+7. Add GPU backend prototypes only after the high-level contract is tested:
+   - `PhysXGpu` for large rigid-body and collision workloads.
+   - `NewtonGpu` for robotics/GPU articulation experiments if it proves useful.
+   - keep CPU/GPU backend differences behind capability flags and shared query/step APIs.
+8. Add a Rigid IPC prototype only after MuJoCo stepping and the shared synchronization path are usable:
+   - keep it optional and CPU-first.
+   - expose it as a robust-contact/offline validation backend.
+   - do not require it to support high-throughput RL or full articulated robot controls in the first slice.
+   - start from the published implementation or a small isolated solver prototype instead of rewriting the full method inside core engine code immediately.
+9. Bind Python only after the C++ simulation service is stable:
+   - `gobot.sim.create_world`, `gobot.sim.step`, `gobot.sim.reset`, joint state/control, collision queries.
+   - no backend handles in Python unless intentionally exposed as advanced plugin APIs.
+
+Testing requirements:
+
+- Unit tests for backend capability reporting and unavailable optional dependencies.
+- Snapshot tests for robot/link/joint/collision data captured from normal scene nodes.
+- Round-trip tests that save/load robot scenes without changing initial joint positions.
+- Simulation service tests for pause, fixed-step accumulation, reset, and backend switching.
+- Backend-specific tests should be skipped cleanly when the optional SDK is not compiled in.
+
+The first useful milestone is not full dynamics. It is a reliable simulation shell: load or import a robot, build a backend-neutral physics snapshot, select a backend, step a world deterministically through `SimulationServer`, and expose enough state for editor visualization and future Python control.
+
 ## Python Binding Direction
 
 The Python layer should be added after the C++ API boundaries are stable enough to bind cleanly.
@@ -126,7 +218,7 @@ The binding should call stable C++ services. It should not duplicate editor logi
 
 ## Open Design Questions
 
-- Whether the simulation world should be a scene subsystem, a separate `SimulationServer`, or both.
+- Whether the simulation world should live only behind `SimulationServer`, or also have a scene subsystem object for multi-world editing.
 - Whether robotics algorithms live as engine plugins, Python packages, or C++ services with Python wrappers.
-- How to represent robot articulations, sensors, and collision geometry in the scene model.
+- How to represent sensors and advanced robot articulations once the basic `Robot3D`/`Link3D`/`Joint3D` model is stable.
 - How command/undo should work across C++, editor UI, and Python.

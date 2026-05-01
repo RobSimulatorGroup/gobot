@@ -5,6 +5,11 @@
 
 #pragma once
 
+#ifdef GOBOT_HAS_MUJOCO
+#include <cstddef>
+#include <vector>
+#endif
+
 #include "gobot/physics/physics_world.hpp"
 
 namespace gobot {
@@ -34,7 +39,45 @@ public:
     void Step(RealType delta_time) override;
 
 private:
+#ifdef GOBOT_HAS_MUJOCO
+    bool LoadModelFromRobotSource();
+
+    void BuildJointBindings();
+
+    void BuildLinkBindings();
+
+    void ApplyControlsToMuJoCo();
+
+    void FreeModel();
+
+    void SyncStateFromMuJoCo();
+
+    void SyncStateToMuJoCo();
+
+    struct MuJoCoJointBinding {
+        std::size_t robot_index{0};
+        std::size_t joint_index{0};
+        int mujoco_joint_id{-1};
+        int actuator_id{-1};
+        int qpos_address{-1};
+        int dof_address{-1};
+    };
+
+    struct MuJoCoLinkBinding {
+        std::size_t robot_index{0};
+        std::size_t link_index{0};
+        int body_id{-1};
+    };
+#endif
+
     bool available_{false};
+
+#ifdef GOBOT_HAS_MUJOCO
+    void* model_{nullptr};
+    void* data_{nullptr};
+    std::vector<MuJoCoJointBinding> joint_bindings_;
+    std::vector<MuJoCoLinkBinding> link_bindings_;
+#endif
 };
 
 } // namespace gobot

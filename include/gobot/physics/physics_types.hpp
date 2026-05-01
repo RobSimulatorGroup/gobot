@@ -26,7 +26,8 @@ enum class PhysicsBackendType {
     MuJoCoCpu,
     PhysXCpu,
     PhysXGpu,
-    NewtonGpu
+    NewtonGpu,
+    RigidIpcCpu
 };
 
 enum class PhysicsShapeType {
@@ -35,6 +36,13 @@ enum class PhysicsShapeType {
     Sphere,
     Cylinder,
     Mesh
+};
+
+enum class PhysicsJointControlMode {
+    Passive,
+    Position,
+    Velocity,
+    Effort
 };
 
 struct PhysicsBackendInfo {
@@ -50,6 +58,8 @@ struct PhysicsBackendInfo {
 struct PhysicsWorldSettings {
     Vector3 gravity{0.0, 0.0, -9.81};
     RealType fixed_time_step{1.0 / 240.0};
+    RealType default_position_stiffness{100.0};
+    RealType default_velocity_damping{10.0};
 };
 
 struct PhysicsShapeSnapshot {
@@ -102,6 +112,41 @@ struct PhysicsSceneSnapshot {
     std::size_t total_link_count{0};
     std::size_t total_joint_count{0};
     std::size_t total_collision_shape_count{0};
+};
+
+struct PhysicsJointState {
+    const Joint3D* node{nullptr};
+    std::string robot_name;
+    std::string joint_name;
+    RealType position{0.0};
+    RealType velocity{0.0};
+    RealType effort{0.0};
+    PhysicsJointControlMode control_mode{PhysicsJointControlMode::Passive};
+    RealType target_position{0.0};
+    RealType target_velocity{0.0};
+    RealType target_effort{0.0};
+};
+
+struct PhysicsLinkState {
+    const Link3D* node{nullptr};
+    std::string robot_name;
+    std::string link_name;
+    Affine3 global_transform{Affine3::Identity()};
+    Vector3 linear_velocity{Vector3::Zero()};
+    Vector3 angular_velocity{Vector3::Zero()};
+};
+
+struct PhysicsRobotState {
+    const Robot3D* node{nullptr};
+    std::string name;
+    std::vector<PhysicsLinkState> links;
+    std::vector<PhysicsJointState> joints;
+};
+
+struct PhysicsSceneState {
+    std::vector<PhysicsRobotState> robots;
+    std::size_t total_link_count{0};
+    std::size_t total_joint_count{0};
 };
 
 } // namespace gobot

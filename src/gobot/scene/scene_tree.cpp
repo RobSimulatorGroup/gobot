@@ -11,6 +11,7 @@
 #include "gobot/scene/window.hpp"
 #include "gobot/error_macros.hpp"
 #include "gobot/core/events/event.hpp"
+#include "gobot/simulation/simulation_server.hpp"
 
 namespace gobot {
 
@@ -62,6 +63,11 @@ void SceneTree::OnWindowClose() {
 }
 
 bool SceneTree::PhysicsProcess(double time) {
+    physics_process_time_ = time;
+
+    if (SimulationServer::HasInstance()) {
+        SimulationServer::GetInstance()->Step(static_cast<RealType>(time));
+    }
 
     return quit_;
 }

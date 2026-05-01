@@ -27,7 +27,14 @@ TEST(TestPhysicsServer, exposes_backend_capabilities_without_optional_dependenci
     EXPECT_FALSE(mujoco_info.status.empty());
 #endif
 
-    EXPECT_EQ(physics_server.GetBackendInfos().size(), 5);
+    const gobot::PhysicsBackendInfo rigid_ipc_info =
+            physics_server.GetBackendInfo(gobot::PhysicsBackendType::RigidIpcCpu);
+    EXPECT_FALSE(rigid_ipc_info.available);
+    EXPECT_TRUE(rigid_ipc_info.cpu);
+    EXPECT_FALSE(rigid_ipc_info.gpu);
+    EXPECT_FALSE(rigid_ipc_info.status.empty());
+
+    EXPECT_EQ(physics_server.GetBackendInfos().size(), 6);
 }
 
 TEST(TestPhysicsServer, creates_world_for_selected_backend) {
@@ -37,6 +44,8 @@ TEST(TestPhysicsServer, creates_world_for_selected_backend) {
     gobot::PhysicsWorldSettings settings;
     settings.fixed_time_step = 1.0 / 120.0;
     settings.gravity = {0.0, 0.0, -1.0};
+    settings.default_position_stiffness = 25.0;
+    settings.default_velocity_damping = 5.0;
 
     gobot::Ref<gobot::PhysicsWorld> world = physics_server.CreateWorld(settings);
     ASSERT_TRUE(world.IsValid());
@@ -44,6 +53,8 @@ TEST(TestPhysicsServer, creates_world_for_selected_backend) {
     EXPECT_TRUE(world->IsAvailable());
     EXPECT_DOUBLE_EQ(world->GetSettings().fixed_time_step, settings.fixed_time_step);
     EXPECT_TRUE(world->GetSettings().gravity.isApprox(settings.gravity, CMP_EPSILON));
+    EXPECT_DOUBLE_EQ(world->GetSettings().default_position_stiffness, 25.0);
+    EXPECT_DOUBLE_EQ(world->GetSettings().default_velocity_damping, 5.0);
 }
 
 TEST(TestPhysicsServer, captures_robot_scene_snapshot) {
@@ -99,6 +110,110 @@ TEST(TestPhysicsServer, captures_robot_scene_snapshot) {
     EXPECT_EQ(snapshot.total_link_count, 1);
     EXPECT_EQ(snapshot.total_joint_count, 1);
     EXPECT_EQ(snapshot.total_collision_shape_count, 1);
+
+    gobot::Object::Delete(robot);
+}
+
+TEST(TestPhysicsServer, initializes_scene_state_from_robot_snapshot) {
+    auto* robot = gobot::Object::New<gobot::Robot3D>();
+    robot->SetName("robot");
+
+    auto* joint = gobot::Object::New<gobot::Joint3D>();
+    joint->SetName("joint1");
+    joint->SetJointType(gobot::JointType::Revolute);
+    joint->SetLowerLimit(-1.0);
+    joint->SetUpperLimit(1.0);
+    joint->SetJointPosition(0.5);
+
+    robot->AddChild(joint);
+
+    gobot::PhysicsServer physics_server;
+    gobot::Ref<gobot::PhysicsWorld> world = physics_server.CreateWorld();
+    ASSERT_TRUE(world->BuildFromScene(robot));
+
+    const gobot::PhysicsSceneState& state = world->GetSceneState();
+    ASSERT_EQ(state.robots.size(), 1);
+    EXPECT_EQ(state.robots[0].name, "robot");
+    EXPECT_EQ(state.total_link_count, 0);
+    ASSERT_EQ(state.robots[0].joints.size(), 1);
+    EXPECT_EQ(state.robots[0].joints[0].joint_name, "joint1");
+    EXPECT_EQ(state.robots[0].joints[0].robot_name, "robot");
+    EXPECT_DOUBLE_EQ(state.robots[0].joints[0].position, 0.5);
+    EXPECT_EQ(state.total_joint_count, 1);
+
+    joint->SetJointPosition(-0.5);
+    world->Reset();
+    EXPECT_DOUBLE_EQ(world->GetSceneState().robots[0].joints[0].position, 0.5);
+
+    gobot::Object::Delete(robot);
+}
+
+TEST(TestPhysicsServer, initializes_link_state_from_robot_snapshot) {
+    auto* robot = gobot::Object::New<gobot::Robot3D>();
+    robot->SetName("robot");
+
+    auto* base_link = gobot::Object::New<gobot::Link3D>();
+    base_link->SetName("base");
+    base_link->SetPosition({1.0, 2.0, 3.0});
+
+    robot->AddChild(base_link);
+
+    gobot::PhysicsServer physics_server;
+    gobot::Ref<gobot::PhysicsWorld> world = physics_server.CreateWorld();
+    ASSERT_TRUE(world->BuildFromScene(robot));
+
+    const gobot::PhysicsSceneState& state = world->GetSceneState();
+    ASSERT_EQ(state.robots.size(), 1);
+    ASSERT_EQ(state.robots[0].links.size(), 1);
+    EXPECT_EQ(state.robots[0].links[0].link_name, "base");
+    EXPECT_EQ(state.robots[0].links[0].robot_name, "robot");
+    EXPECT_TRUE(state.robots[0].links[0].global_transform.translation().isApprox(
+            gobot::Vector3(1.0, 2.0, 3.0), CMP_EPSILON));
+    EXPECT_EQ(state.total_link_count, 1);
+
+    gobot::Object::Delete(robot);
+}
+
+TEST(TestPhysicsServer, stores_joint_control_targets_in_scene_state) {
+    auto* robot = gobot::Object::New<gobot::Robot3D>();
+    robot->SetName("robot");
+
+    auto* joint = gobot::Object::New<gobot::Joint3D>();
+    joint->SetName("joint1");
+    joint->SetJointType(gobot::JointType::Revolute);
+    joint->SetLowerLimit(-1.0);
+    joint->SetUpperLimit(1.0);
+    joint->SetJointPosition(0.25);
+    robot->AddChild(joint);
+
+    gobot::PhysicsServer physics_server;
+    gobot::Ref<gobot::PhysicsWorld> world = physics_server.CreateWorld();
+    ASSERT_TRUE(world->BuildFromScene(robot));
+
+    ASSERT_TRUE(world->SetJointControl("robot", "joint1", gobot::PhysicsJointControlMode::Position, 0.5));
+    const gobot::PhysicsJointState& position_state = world->GetSceneState().robots[0].joints[0];
+    EXPECT_EQ(position_state.control_mode, gobot::PhysicsJointControlMode::Position);
+    EXPECT_DOUBLE_EQ(position_state.target_position, 0.5);
+
+    ASSERT_TRUE(world->SetJointControl("robot", "joint1", gobot::PhysicsJointControlMode::Velocity, 1.25));
+    const gobot::PhysicsJointState& velocity_state = world->GetSceneState().robots[0].joints[0];
+    EXPECT_EQ(velocity_state.control_mode, gobot::PhysicsJointControlMode::Velocity);
+    EXPECT_DOUBLE_EQ(velocity_state.target_velocity, 1.25);
+
+    ASSERT_TRUE(world->SetJointControl("robot", "joint1", gobot::PhysicsJointControlMode::Effort, 2.5));
+    const gobot::PhysicsJointState& effort_state = world->GetSceneState().robots[0].joints[0];
+    EXPECT_EQ(effort_state.control_mode, gobot::PhysicsJointControlMode::Effort);
+    EXPECT_DOUBLE_EQ(effort_state.target_effort, 2.5);
+
+    ASSERT_TRUE(world->SetJointControl("robot", "joint1", gobot::PhysicsJointControlMode::Passive, 0.0));
+    const gobot::PhysicsJointState& passive_state = world->GetSceneState().robots[0].joints[0];
+    EXPECT_EQ(passive_state.control_mode, gobot::PhysicsJointControlMode::Passive);
+    EXPECT_DOUBLE_EQ(passive_state.target_position, passive_state.position);
+    EXPECT_DOUBLE_EQ(passive_state.target_velocity, 0.0);
+    EXPECT_DOUBLE_EQ(passive_state.target_effort, 0.0);
+
+    EXPECT_FALSE(world->SetJointControl("robot", "missing", gobot::PhysicsJointControlMode::Position, 0.0));
+    EXPECT_FALSE(world->GetLastError().empty());
 
     gobot::Object::Delete(robot);
 }
