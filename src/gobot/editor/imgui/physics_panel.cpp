@@ -58,6 +58,20 @@ void DrawStatusText(bool ok, const char* available_text, const char* unavailable
     ImGui::TextColored(color, "%s", ok ? available_text : unavailable_text);
 }
 
+const char* JointControlModeLabel(PhysicsJointControlMode mode) {
+    switch (mode) {
+        case PhysicsJointControlMode::Passive:
+            return "Passive";
+        case PhysicsJointControlMode::Position:
+            return "Position";
+        case PhysicsJointControlMode::Velocity:
+            return "Velocity";
+        case PhysicsJointControlMode::Effort:
+            return "Effort";
+    }
+    return "Unknown";
+}
+
 } // namespace
 
 PhysicsPanel::PhysicsPanel() {
@@ -155,6 +169,63 @@ void PhysicsPanel::OnImGuiContent() {
 
     if (scene_root == nullptr) {
         ImGui::TextColored(ImVec4(0.95f, 0.65f, 0.25f, 1.0f), "No edited scene root.");
+    }
+
+    if (has_world && simulation->GetWorld().IsValid()) {
+        const PhysicsSceneState& scene_state = simulation->GetWorld()->GetSceneState();
+        ImGui::Separator();
+        ImGui::Text("Robots: %zu", scene_state.robots.size());
+        ImGui::Text("Links: %zu", scene_state.total_link_count);
+        ImGui::Text("Joints: %zu", scene_state.total_joint_count);
+
+        if (ImGui::BeginTable("PhysicsJointStateTable",
+                              6,
+                              ImGuiTableFlags_Borders |
+                                      ImGuiTableFlags_RowBg |
+                                      ImGuiTableFlags_Resizable |
+                                      ImGuiTableFlags_ScrollY,
+                              ImVec2(0.0f, 220.0f))) {
+            ImGui::TableSetupColumn("Robot");
+            ImGui::TableSetupColumn("Joint");
+            ImGui::TableSetupColumn("Position");
+            ImGui::TableSetupColumn("Velocity");
+            ImGui::TableSetupColumn("Control");
+            ImGui::TableSetupColumn("Target");
+            ImGui::TableHeadersRow();
+
+            for (const PhysicsRobotState& robot_state : scene_state.robots) {
+                for (const PhysicsJointState& joint_state : robot_state.joints) {
+                    ImGui::TableNextRow();
+                    ImGui::TableSetColumnIndex(0);
+                    ImGui::TextUnformatted(robot_state.name.c_str());
+                    ImGui::TableSetColumnIndex(1);
+                    ImGui::TextUnformatted(joint_state.joint_name.c_str());
+                    ImGui::TableSetColumnIndex(2);
+                    ImGui::Text("%.6f", static_cast<double>(joint_state.position));
+                    ImGui::TableSetColumnIndex(3);
+                    ImGui::Text("%.6f", static_cast<double>(joint_state.velocity));
+                    ImGui::TableSetColumnIndex(4);
+                    ImGui::TextUnformatted(JointControlModeLabel(joint_state.control_mode));
+                    ImGui::TableSetColumnIndex(5);
+                    switch (joint_state.control_mode) {
+                        case PhysicsJointControlMode::Position:
+                            ImGui::Text("%.6f", static_cast<double>(joint_state.target_position));
+                            break;
+                        case PhysicsJointControlMode::Velocity:
+                            ImGui::Text("%.6f", static_cast<double>(joint_state.target_velocity));
+                            break;
+                        case PhysicsJointControlMode::Effort:
+                            ImGui::Text("%.6f", static_cast<double>(joint_state.target_effort));
+                            break;
+                        case PhysicsJointControlMode::Passive:
+                            ImGui::TextUnformatted("-");
+                            break;
+                    }
+                }
+            }
+
+            ImGui::EndTable();
+        }
     }
 
     const std::string& last_error = simulation->GetLastError();

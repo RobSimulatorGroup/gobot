@@ -66,3 +66,24 @@ export LD_LIBRARY_PATH=/path/to/mujoco/lib:$LD_LIBRARY_PATH
 The Gobot MuJoCo backend currently loads the first `Robot3D.source_path` as a
 MuJoCo XML model through `mj_loadXML`. URDF support therefore follows MuJoCo's
 compiler behavior, and advanced Gobot scene-to-MJCF export remains a later step.
+
+## Editor Smoke Test
+
+The first editor-level check is that MuJoCo is actually selected and stepping:
+
+1. Load or import a robot scene.
+2. Open the `Physics` panel.
+3. Select `MuJoCo CPU`.
+4. Check that the backend reports `Available`.
+5. Click `Build World`.
+6. Click `Step` and watch the frame counter and joint state table.
+
+If the frame counter advances and joint positions/velocities are populated, the
+Gobot editor is creating a MuJoCo world and calling `mj_step`.
+
+Visible falling/contact behavior needs extra scene conditions:
+
+- The MuJoCo model must contain a ground plane or floor geom.
+- The robot root must be free/floating if gravity should move the base.
+- A fixed-base robot with no control targets may look unchanged even while
+  MuJoCo is stepping correctly.

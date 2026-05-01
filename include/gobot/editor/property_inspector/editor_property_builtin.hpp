@@ -26,24 +26,28 @@ public:
 
 
     bool Begin() override {
-        if (property_data_model_->IsPropertyReadOnly()) {
+        const bool grid_open = ImGuiUtilities::BeginPropertyGrid(property_data_model_->GetPropertyNameStr().c_str(),
+                                                                 property_data_model_->GetPropertyToolTipStr().c_str(),
+                                                                 right_align_next_column_);
+        disabled_open_ = grid_open && property_data_model_->IsPropertyReadOnly();
+        if (disabled_open_) {
             ImGui::BeginDisabled();
         }
-        return ImGuiUtilities::BeginPropertyGrid(property_data_model_->GetPropertyNameStr().c_str(),
-                                                 property_data_model_->GetPropertyToolTipStr().c_str(),
-                                                 right_align_next_column_);
+        return grid_open;
     }
 
     void End() override {
-        ImGuiUtilities::EndPropertyGrid();
-        if (property_data_model_->IsPropertyReadOnly()) {
+        if (disabled_open_) {
             ImGui::EndDisabled();
+            disabled_open_ = false;
         }
+        ImGuiUtilities::EndPropertyGrid();
     }
 
 
 protected:
     PropertyDataModel* property_data_model_{nullptr};
+    bool disabled_open_{false};
 };
 
 }
