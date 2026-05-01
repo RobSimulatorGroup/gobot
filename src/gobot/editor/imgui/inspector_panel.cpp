@@ -14,6 +14,8 @@
 #include "imgui.h"
 #include "imgui_stdlib.h"
 
+#include <algorithm>
+
 namespace gobot {
 
 InspectorPanel::InspectorPanel() {
@@ -50,6 +52,11 @@ void InspectorPanel::RebuildInspector(Node* selected) {
 void InspectorPanel::OnImGuiContent() {
     RebuildInspector(Editor::GetInstance()->GetSelected());
 
+    const float frame_height = ImGui::GetFrameHeight();
+    const float item_spacing = ImGui::GetStyle().ItemSpacing.x;
+    const float content_right = ImGui::GetCursorScreenPos().x + ImGui::GetContentRegionAvail().x;
+    const float icon_button_width = frame_height;
+
     if (ImGui::Button(ICON_MDI_FILE_PLUS)) {
         // TODO(wqq): new
     }
@@ -66,7 +73,8 @@ void InspectorPanel::OnImGuiContent() {
 
     auto button_size = ImGui::GetItemRectSize();
 
-    ImGui::SameLine(ImGui::GetWindowWidth() - 3 * button_size.x - 20);
+    ImGui::SameLine(std::max(ImGui::GetCursorPosX() + item_spacing,
+                             ImGui::GetContentRegionMax().x - 3.0f * button_size.x - item_spacing * 2.0f));
     if (ImGui::ArrowButton("##left", ImGuiDir_Left)) {
 
     }
@@ -76,7 +84,8 @@ void InspectorPanel::OnImGuiContent() {
 
     }
 
-    ImGui::SameLine(ImGui::GetWindowWidth() - 30);
+    ImGui::SameLine(std::max(ImGui::GetCursorPosX() + item_spacing,
+                             ImGui::GetContentRegionMax().x - icon_button_width));
     if (ImGui::Button(ICON_MDI_HISTORY)) {
         // TODO(wqq): select current_inspector_index_
     }
@@ -95,12 +104,16 @@ void InspectorPanel::OnImGuiContent() {
     if (property_name) {
         ImGui::SameLine();
         auto str = property_name->GetValue().to_string();
-        ImGui::SetNextItemWidth(ImGui::GetWindowWidth() - 60);
+        const float settings_button_width = frame_height;
+        const float name_input_width = std::max(48.0f,
+                                                content_right - ImGui::GetCursorScreenPos().x -
+                                                settings_button_width - item_spacing);
+        ImGui::SetNextItemWidth(name_input_width);
         if (ImGui::InputText(fmt::format("##{}", property_name->GetPropertyName()).c_str(), &str)) {
             property_name->SetValue(str);
         }
 
-        ImGui::SameLine(ImGui::GetWindowWidth() - 30);
+        ImGui::SameLine();
         if (ImGui::Button(ICON_MDI_COGS)) {
             ImGui::OpenPopup("Inspector setting");
         }
@@ -127,14 +140,14 @@ void InspectorPanel::OnImGuiContent() {
     }
 
 
-    filter_->Draw("###PropertyFilter", ImGui::GetWindowWidth() - 10);
+    filter_->Draw("###PropertyFilter", ImGui::GetContentRegionAvail().x);
 
     if(!filter_->IsActive()) {
         ImGui::SameLine();
         ImGui::SetCursorPosX(ImGui::GetFontSize() * 0.5f);
         ImGui::TextUnformatted("Filter Properties");
         ImGui::SameLine();
-        ImGui::SetCursorPosX(ImGui::GetWindowWidth() - 30);
+        ImGui::SetCursorPosX(ImGui::GetContentRegionMax().x - icon_button_width);
         ImGui::TextUnformatted(ICON_MDI_MAGNIFY);
     }
 

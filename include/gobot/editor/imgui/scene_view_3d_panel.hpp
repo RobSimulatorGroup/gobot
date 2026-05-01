@@ -53,7 +53,9 @@ private:
     Joint3D* dragged_joint_{nullptr};
     float drag_start_joint_position_{0.0f};
     ImVec2 drag_start_mouse_{0.0f, 0.0f};
+    ImVec2 drag_joint_screen_center_{0.0f, 0.0f};
     ImVec2 drag_joint_screen_axis_{1.0f, 0.0f};
+    bool drag_joint_screen_center_valid_{false};
     bool drag_joint_screen_axis_valid_{false};
 };
 

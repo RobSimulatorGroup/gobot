@@ -23,10 +23,13 @@
 #include "imgui.h"
 #include "imgui_internal.h"
 
+#include <fmt/format.h>
+
 #include <cmath>
 #include <cstdint>
 #include <limits>
 #include <memory>
+#include <string>
 
 namespace gobot {
 
@@ -138,7 +141,44 @@ bool GetJointScreenAxis(Joint3D* joint,
     return true;
 }
 
+float AngleAroundScreenPoint(const ImVec2& center, const ImVec2& point) {
+    return std::atan2(point.y - center.y, point.x - center.x);
 }
+
+float WrappedAngleDelta(float from, float to) {
+    float delta = to - from;
+    while (delta > static_cast<float>(M_PI)) {
+        delta -= static_cast<float>(M_PI * 2.0);
+    }
+    while (delta < static_cast<float>(-M_PI)) {
+        delta += static_cast<float>(M_PI * 2.0);
+    }
+    return delta;
+}
+
+const char* JointTypeName(JointType joint_type) {
+    switch (joint_type) {
+        case JointType::Fixed:
+            return "Fixed";
+        case JointType::Revolute:
+            return "Revolute";
+        case JointType::Continuous:
+            return "Continuous";
+        case JointType::Prismatic:
+            return "Prismatic";
+        default:
+            return "Joint";
+    }
+}
+
+}
+
+void DrawJointMotionHint(Joint3D* joint,
+                         const Camera3D* camera,
+                         const ImVec2& viewport_position,
+                         const ImVec2& viewport_size,
+                         ImDrawList* draw_list,
+                         bool dragging);
 
 SceneView3DPanel::SceneView3DPanel()
 {
@@ -213,6 +253,12 @@ void SceneView3DPanel::OnImGuiContent()
     viewport_renderer_->RenderOverlay(scene_root, camera_3d, scene_view_position, scene_view_size,
                                       ImGui::GetWindowDrawList(), hovered_node_,
                                       dragged_joint_ ? dragged_joint_ : motion_target_joint_);
+    DrawJointMotionHint(dragged_joint_ ? dragged_joint_ : motion_target_joint_,
+                        camera_3d,
+                        scene_view_position,
+                        scene_view_size,
+                        ImGui::GetWindowDrawList(),
+                        dragged_joint_ != nullptr);
 
     ToolBar({scene_view_position.x + 8.0f, scene_view_position.y + 8.0f});
 
@@ -242,6 +288,7 @@ void SceneView3DPanel::ProcessViewportInput(Node* scene_root,
     if (!left_down) {
         pressed_joint_ = nullptr;
         dragged_joint_ = nullptr;
+        drag_joint_screen_center_valid_ = false;
         drag_joint_screen_axis_valid_ = false;
         node3d_editor->SetBlockCameraInput(false);
         return;
@@ -258,6 +305,11 @@ void SceneView3DPanel::ProcessViewportInput(Node* scene_root,
             dragged_joint_ = motion_joint;
             drag_start_joint_position_ = static_cast<float>(dragged_joint_->GetJointPosition());
             drag_start_mouse_ = ImGui::GetIO().MouseClickedPos[ImGuiMouseButton_Left];
+            drag_joint_screen_center_valid_ = ProjectWorldPoint(node3d_editor->GetCamera3D(),
+                                                                viewport_position,
+                                                                viewport_size,
+                                                                dragged_joint_->GetGlobalPosition(),
+                                                                drag_joint_screen_center_);
             drag_joint_screen_axis_valid_ = GetJointScreenAxis(dragged_joint_, node3d_editor->GetCamera3D(),
                                                                viewport_position, viewport_size,
                                                                drag_joint_screen_axis_);
@@ -271,6 +323,11 @@ void SceneView3DPanel::ProcessViewportInput(Node* scene_root,
         dragged_joint_ = pressed_joint_;
         drag_start_joint_position_ = static_cast<float>(dragged_joint_->GetJointPosition());
         drag_start_mouse_ = ImGui::GetIO().MouseClickedPos[ImGuiMouseButton_Left];
+        drag_joint_screen_center_valid_ = ProjectWorldPoint(node3d_editor->GetCamera3D(),
+                                                            viewport_position,
+                                                            viewport_size,
+                                                            dragged_joint_->GetGlobalPosition(),
+                                                            drag_joint_screen_center_);
         drag_joint_screen_axis_valid_ = GetJointScreenAxis(dragged_joint_, node3d_editor->GetCamera3D(),
                                                            viewport_position, viewport_size,
                                                            drag_joint_screen_axis_);
@@ -280,17 +337,64 @@ void SceneView3DPanel::ProcessViewportInput(Node* scene_root,
         const ImVec2 mouse_delta{ImGui::GetMousePos().x - drag_start_mouse_.x,
                                  ImGui::GetMousePos().y - drag_start_mouse_.y};
         const JointType joint_type = dragged_joint_->GetJointType();
-        if (joint_type == JointType::Revolute || joint_type == JointType::Continuous ||
-            joint_type == JointType::Prismatic) {
+        if ((joint_type == JointType::Revolute || joint_type == JointType::Continuous) &&
+            drag_joint_screen_center_valid_) {
+            const float start_angle = AngleAroundScreenPoint(drag_joint_screen_center_, drag_start_mouse_);
+            const float current_angle = AngleAroundScreenPoint(drag_joint_screen_center_, ImGui::GetMousePos());
+            dragged_joint_->SetJointPosition(drag_start_joint_position_ - WrappedAngleDelta(start_angle, current_angle));
+        } else if (joint_type == JointType::Prismatic) {
             const float signed_pixels = drag_joint_screen_axis_valid_
                     ? mouse_delta.x * drag_joint_screen_axis_.x + mouse_delta.y * drag_joint_screen_axis_.y
                     : mouse_delta.x - mouse_delta.y;
-            const float sensitivity = joint_type == JointType::Prismatic ? 0.005f : 0.01f;
-            dragged_joint_->SetJointPosition(drag_start_joint_position_ + signed_pixels * sensitivity);
+            dragged_joint_->SetJointPosition(drag_start_joint_position_ + signed_pixels * 0.005f);
         }
     }
 
     node3d_editor->SetBlockCameraInput(can_capture_joint || dragged_joint_);
+}
+
+void DrawJointMotionHint(Joint3D* joint,
+                         const Camera3D* camera,
+                         const ImVec2& viewport_position,
+                         const ImVec2& viewport_size,
+                         ImDrawList* draw_list,
+                         bool dragging) {
+    if (!joint || !camera || !draw_list) {
+        return;
+    }
+
+    ImVec2 joint_screen;
+    if (!ProjectWorldPoint(camera, viewport_position, viewport_size,
+                           joint->GetGlobalPosition(), joint_screen)) {
+        return;
+    }
+
+    const JointType joint_type = joint->GetJointType();
+    std::string value_text;
+    if (joint_type == JointType::Revolute || joint_type == JointType::Continuous) {
+        value_text = fmt::format("{}  {:.1f} deg", JointTypeName(joint_type),
+                                 static_cast<double>(joint->GetJointPosition() * 180.0 / M_PI));
+    } else if (joint_type == JointType::Prismatic) {
+        value_text = fmt::format("{}  {:.3f} m", JointTypeName(joint_type),
+                                 static_cast<double>(joint->GetJointPosition()));
+    } else {
+        value_text = JointTypeName(joint_type);
+    }
+
+    const ImVec2 padding{8.0f, 5.0f};
+    const ImVec2 text_size = ImGui::CalcTextSize(value_text.c_str());
+    ImVec2 box_min{joint_screen.x + 14.0f, joint_screen.y - text_size.y - 18.0f};
+    ImVec2 box_max{box_min.x + text_size.x + padding.x * 2.0f,
+                   box_min.y + text_size.y + padding.y * 2.0f};
+    draw_list->AddRectFilled(box_min, box_max,
+                             dragging ? IM_COL32(36, 96, 142, 235) : IM_COL32(28, 28, 28, 220),
+                             4.0f);
+    draw_list->AddRect(box_min, box_max,
+                       dragging ? IM_COL32(120, 205, 255, 255) : IM_COL32(96, 184, 255, 220),
+                       4.0f);
+    draw_list->AddText({box_min.x + padding.x, box_min.y + padding.y},
+                       IM_COL32(245, 245, 245, 255),
+                       value_text.c_str());
 }
 
 void SceneView3DPanel::Resize(uint32_t width, uint32_t height) {
@@ -319,18 +423,38 @@ void SceneView3DPanel::ToolBar(const ImVec2& screen_position)
     auto* active_robot = FindActiveRobot(hovered_node_);
     const ImVec2 button_size{42.0f, 42.0f};
     const float icon_font_size = 28.0f;
+    const float separator_height = 28.0f;
+    const float rounding = 4.0f;
+    const float right_limit = ImGui::GetWindowPos().x + ImGui::GetWindowContentRegionMax().x - 8.0f;
+    const float row_start_x = screen_position.x;
 
     ImGui::SetCursorScreenPos(screen_position);
     ImGui::PushStyleVar(ImGuiStyleVar_ItemSpacing, {4.0f, 4.0f});
 
+    struct ToolbarButtonStyle {
+        ImVec2 size;
+        float icon_size;
+        float rounding;
+    };
+    const ToolbarButtonStyle toolbar_style{button_size, icon_font_size, rounding};
+
+    auto wrap_toolbar_item = [&](float item_width) {
+        const ImVec2 cursor = ImGui::GetCursorScreenPos();
+        if (cursor.x > row_start_x && cursor.x + item_width > right_limit) {
+            ImGui::NewLine();
+            ImGui::SetCursorScreenPos({row_start_x, cursor.y + button_size.y + 4.0f});
+        }
+    };
+
     auto draw_toolbar_button = [&](const char* id, const char* icon, const char* tooltip,
                                    bool selected, bool enabled, const auto& on_pressed) {
+        wrap_toolbar_item(toolbar_style.size.x);
         if (!enabled) {
             ImGui::BeginDisabled();
         }
 
         ImGui::PushID(id);
-        const bool pressed = ImGui::InvisibleButton("button", button_size);
+        const bool pressed = ImGui::InvisibleButton("button", toolbar_style.size);
         const bool hovered = ImGui::IsItemHovered(ImGuiHoveredFlags_AllowWhenDisabled);
         const ImVec2 item_min = ImGui::GetItemRectMin();
         const ImVec2 item_max = ImGui::GetItemRectMax();
@@ -338,7 +462,7 @@ void SceneView3DPanel::ToolBar(const ImVec2& screen_position)
 
         if (selected || hovered) {
             const ImGuiCol bg_color = selected ? ImGuiCol_ButtonActive : ImGuiCol_ButtonHovered;
-            draw_list->AddRectFilled(item_min, item_max, ImGui::GetColorU32(bg_color), 4.0f);
+            draw_list->AddRectFilled(item_min, item_max, ImGui::GetColorU32(bg_color), toolbar_style.rounding);
         }
 
         const ImVec4 text_color = !enabled
@@ -346,15 +470,15 @@ void SceneView3DPanel::ToolBar(const ImVec2& screen_position)
                                   : (selected ? ImVec4(ImGuiUtilities::GetSelectedColor())
                                               : ImGui::GetStyleColorVec4(ImGuiCol_Text));
         ImFont* font = ImGui::GetFont();
-        const ImVec2 text_size = font->CalcTextSizeA(icon_font_size,
+        const ImVec2 text_size = font->CalcTextSizeA(toolbar_style.icon_size,
                                                      std::numeric_limits<float>::max(),
                                                      0.0f,
                                                      icon);
         const ImVec2 text_position{
-                item_min.x + (button_size.x - text_size.x) * 0.5f,
-                item_min.y + (button_size.y - text_size.y) * 0.5f
+                item_min.x + (toolbar_style.size.x - text_size.x) * 0.5f,
+                item_min.y + (toolbar_style.size.y - text_size.y) * 0.5f
         };
-        draw_list->AddText(font, icon_font_size, text_position, ImGui::GetColorU32(text_color), icon);
+        draw_list->AddText(font, toolbar_style.icon_size, text_position, ImGui::GetColorU32(text_color), icon);
 
         if (hovered) {
             ImGui::BeginTooltip();
@@ -379,11 +503,13 @@ void SceneView3DPanel::ToolBar(const ImVec2& screen_position)
     };
 
     auto draw_separator = [&]() {
+        wrap_toolbar_item(9.0f);
         const ImVec2 cursor = ImGui::GetCursorScreenPos();
         auto* draw_list = ImGui::GetWindowDrawList();
         const float x = cursor.x + 4.0f;
-        draw_list->AddLine({x, cursor.y + 8.0f},
-                           {x, cursor.y + button_size.y - 8.0f},
+        const float y = cursor.y + (button_size.y - separator_height) * 0.5f;
+        draw_list->AddLine({x, y},
+                           {x, y + separator_height},
                            ImGui::GetColorU32(ImGuiCol_Separator),
                            1.0f);
         ImGui::Dummy({9.0f, button_size.y});

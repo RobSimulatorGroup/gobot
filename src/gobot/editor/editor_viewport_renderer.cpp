@@ -247,7 +247,7 @@ void DrawEditorOverlay(Node* node,
                                  selected || hovered || motion_target ? 2.0f : 1.0f);
 
             const Vector3 axis_end = joint->GetGlobalPosition()
-                    + joint->GetGlobalTransform().linear() * joint->GetAxis().normalized() * 0.35;
+                    + joint->GetGlobalTransform().linear() * joint->GetAxis().normalized() * 0.22;
             ImVec2 axis_screen;
             if (ProjectPoint(camera, axis_end, viewport_position, viewport_size, axis_screen)) {
                 draw_list->AddLine(joint_screen, axis_screen, color,
