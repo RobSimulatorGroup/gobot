@@ -5,7 +5,10 @@
 
 #include "gobot/physics/backends/mujoco_physics_world.hpp"
 
+#include <cctype>
 #include <filesystem>
+#include <memory>
+#include <set>
 #include <string_view>
 
 #include "gobot/core/config/project_setting.hpp"
@@ -69,16 +72,6 @@ std::string ResolvePhysicsSourcePath(const std::string& source_path) {
     return source_path;
 }
 
-const PhysicsRobotSnapshot* FindFirstRobotWithSourcePath(const PhysicsSceneSnapshot& scene_snapshot) {
-    for (const PhysicsRobotSnapshot& robot : scene_snapshot.robots) {
-        if (!robot.source_path.empty()) {
-            return &robot;
-        }
-    }
-
-    return nullptr;
-}
-
 const PhysicsLinkSnapshot* FindLinkSnapshot(const PhysicsRobotSnapshot& robot, const std::string& link_name) {
     for (const PhysicsLinkSnapshot& link : robot.links) {
         if (link.name == link_name) {
@@ -88,6 +81,126 @@ const PhysicsLinkSnapshot* FindLinkSnapshot(const PhysicsRobotSnapshot& robot, c
 
     return nullptr;
 }
+
+std::string SanitizeMuJoCoName(std::string name) {
+    for (char& c : name) {
+        const bool valid = std::isalnum(static_cast<unsigned char>(c)) || c == '_';
+        if (!valid) {
+            c = '_';
+        }
+    }
+
+    if (name.empty()) {
+        return "robot";
+    }
+
+    return name;
+}
+
+std::string GetMuJoCoString(const mjString* value) {
+    return value ? mjs_getString(value) : "";
+}
+
+std::string ResolveMuJoCoAssetPath(const std::filesystem::path& model_dir,
+                                   const std::string& asset_dir,
+                                   const std::string& file_path) {
+    if (file_path.empty()) {
+        return {};
+    }
+
+    const std::filesystem::path file(file_path);
+    if (file.is_absolute()) {
+        return file.lexically_normal().string();
+    }
+
+    const std::filesystem::path direct_path = (model_dir / file).lexically_normal();
+    if (std::filesystem::exists(direct_path)) {
+        return direct_path.string();
+    }
+
+    if (!asset_dir.empty()) {
+        const std::filesystem::path asset_path = (model_dir / asset_dir / file).lexically_normal();
+        if (std::filesystem::exists(asset_path)) {
+            return asset_path.string();
+        }
+
+        return asset_path.string();
+    }
+
+    return direct_path.string();
+}
+
+void NormalizeMuJoCoFileString(mjString* file,
+                               const std::filesystem::path& model_dir,
+                               const std::string& asset_dir) {
+    const std::string existing_path = GetMuJoCoString(file);
+    if (existing_path.empty()) {
+        return;
+    }
+
+    const std::string resolved_path = ResolveMuJoCoAssetPath(model_dir, asset_dir, existing_path);
+    if (!resolved_path.empty()) {
+        mjs_setString(file, resolved_path.c_str());
+    }
+}
+
+void NormalizeMuJoCoAssetPaths(mjSpec* spec, const std::filesystem::path& model_path) {
+    if (!spec) {
+        return;
+    }
+
+    const std::filesystem::path model_dir = model_path.parent_path();
+    const std::string mesh_dir = GetMuJoCoString(spec->compiler.meshdir);
+    const std::string texture_dir = GetMuJoCoString(spec->compiler.texturedir);
+
+    for (mjsElement* element = mjs_firstElement(spec, mjOBJ_MESH);
+         element;
+         element = mjs_nextElement(spec, element)) {
+        mjsMesh* mesh = mjs_asMesh(element);
+        if (mesh) {
+            NormalizeMuJoCoFileString(mesh->file, model_dir, mesh_dir);
+        }
+    }
+
+    for (mjsElement* element = mjs_firstElement(spec, mjOBJ_HFIELD);
+         element;
+         element = mjs_nextElement(spec, element)) {
+        mjsHField* hfield = mjs_asHField(element);
+        if (hfield) {
+            NormalizeMuJoCoFileString(hfield->file, model_dir, mesh_dir);
+        }
+    }
+
+    for (mjsElement* element = mjs_firstElement(spec, mjOBJ_TEXTURE);
+         element;
+         element = mjs_nextElement(spec, element)) {
+        mjsTexture* texture = mjs_asTexture(element);
+        if (texture) {
+            NormalizeMuJoCoFileString(texture->file, model_dir, texture_dir);
+            if (texture->cubefiles) {
+                for (std::string& cube_file : *texture->cubefiles) {
+                    if (!cube_file.empty()) {
+                        cube_file = ResolveMuJoCoAssetPath(model_dir, texture_dir, cube_file);
+                    }
+                }
+            }
+        }
+    }
+
+    for (mjsElement* element = mjs_firstElement(spec, mjOBJ_SKIN);
+         element;
+         element = mjs_nextElement(spec, element)) {
+        mjsSkin* skin = mjs_asSkin(element);
+        if (skin) {
+            NormalizeMuJoCoFileString(skin->file, model_dir, mesh_dir);
+        }
+    }
+
+    mjs_setString(spec->compiler.meshdir, "");
+    mjs_setString(spec->compiler.texturedir, "");
+    mjs_setString(spec->modelfiledir, "");
+}
+
 #endif
 
 } // namespace
@@ -145,7 +258,7 @@ bool MuJoCoPhysicsWorld::BuildFromScene(const Node* scene_root) {
     }
 
 #ifdef GOBOT_HAS_MUJOCO
-    if (!LoadModelFromRobotSource()) {
+    if (!LoadModelFromRobotSources()) {
         return false;
     }
 
@@ -195,57 +308,60 @@ void MuJoCoPhysicsWorld::Step(RealType delta_time) {
 }
 
 #ifdef GOBOT_HAS_MUJOCO
-bool MuJoCoPhysicsWorld::LoadModelFromRobotSource() {
+bool MuJoCoPhysicsWorld::LoadModelFromRobotSources() {
     FreeModel();
 
-    const PhysicsRobotSnapshot* robot = FindFirstRobotWithSourcePath(scene_snapshot_);
-    if (!robot) {
+    std::vector<std::size_t> robot_indices;
+    for (std::size_t robot_index = 0; robot_index < scene_snapshot_.robots.size(); ++robot_index) {
+        if (!scene_snapshot_.robots[robot_index].source_path.empty()) {
+            robot_indices.push_back(robot_index);
+        }
+    }
+
+    if (robot_indices.empty()) {
         SetLastError("MuJoCo backend currently requires a Robot3D source_path pointing to a URDF or MJCF XML file.");
         return false;
     }
 
-    const std::string model_path = ResolvePhysicsSourcePath(robot->source_path);
-    if (model_path.empty()) {
-        SetLastError("MuJoCo robot source path is empty after path resolution.");
+    mjSpec* parent_spec = mj_makeSpec();
+    if (!parent_spec) {
+        SetLastError("MuJoCo failed to allocate a parent spec.");
         return false;
     }
+    std::unique_ptr<mjSpec, decltype(&mj_deleteSpec)> parent_spec_guard(parent_spec, mj_deleteSpec);
 
-    if (!std::filesystem::exists(model_path)) {
-        SetLastError(fmt::format("MuJoCo robot source file does not exist: {}", model_path));
-        return false;
-    }
+    AddLooseSceneGeomsToSpec(parent_spec);
 
-    char error[kMuJoCoErrorBufferSize] = {};
-    mjModel* model = nullptr;
-    mjSpec* spec = mj_parseXML(model_path.c_str(), nullptr, error, sizeof(error));
-    if (spec) {
-        AddLooseSceneGeomsToSpec(spec);
-        AddFloatingBaseJointsToSpec(spec);
-        model = mj_compile(spec, nullptr);
-        if (!model) {
-            const std::string compile_error = mjs_getError(spec) ? mjs_getError(spec) : "unknown error";
-            mj_deleteSpec(spec);
-            SetLastError(fmt::format("MuJoCo failed to compile '{}': {}", model_path, compile_error));
+    std::set<std::string> used_prefixes;
+    robot_bindings_.clear();
+    for (const std::size_t robot_index : robot_indices) {
+        const PhysicsRobotSnapshot& robot = scene_snapshot_.robots[robot_index];
+        std::string base_prefix = SanitizeMuJoCoName(robot.name);
+        std::string prefix = base_prefix + "_";
+        int duplicate_index = 2;
+        while (used_prefixes.contains(prefix)) {
+            prefix = fmt::format("{}{}_", base_prefix, duplicate_index++);
+        }
+        used_prefixes.insert(prefix);
+
+        if (!AttachRobotModelToSpec(parent_spec, robot, robot_index, prefix)) {
             return false;
         }
-        mj_deleteSpec(spec);
-    } else {
-        LOG_WARN("MuJoCo spec parse failed for '{}': {}. Falling back to mj_loadXML without Gobot scene geoms.",
-                 model_path,
-                 error);
-        error[0] = '\0';
-        model = mj_loadXML(model_path.c_str(), nullptr, error, sizeof(error));
+
+        robot_bindings_.push_back({robot_index, prefix});
     }
 
+    mjModel* model = mj_compile(parent_spec, nullptr);
     if (!model) {
-        SetLastError(fmt::format("MuJoCo failed to load '{}': {}", model_path, error));
+        const std::string compile_error = mjs_getError(parent_spec) ? mjs_getError(parent_spec) : "unknown error";
+        SetLastError(fmt::format("MuJoCo failed to compile merged scene model: {}", compile_error));
         return false;
     }
 
     auto* data = mj_makeData(model);
     if (!data) {
         mj_deleteModel(model);
-        SetLastError(fmt::format("MuJoCo failed to allocate runtime data for '{}'.", model_path));
+        SetLastError("MuJoCo failed to allocate runtime data for merged scene model.");
         return false;
     }
 
@@ -254,11 +370,70 @@ bool MuJoCoPhysicsWorld::LoadModelFromRobotSource() {
     BuildLinkBindings();
     BuildJointBindings();
 
-    LOG_INFO("MuJoCo physics model loaded from '{}': nq={}, nv={}, joints={}",
-             model_path,
+    LOG_INFO("MuJoCo merged physics model loaded: robots={}, nq={}, nv={}, joints={}",
+             robot_bindings_.size(),
              model->nq,
              model->nv,
              model->njnt);
+    return true;
+}
+
+bool MuJoCoPhysicsWorld::AttachRobotModelToSpec(void* parent_spec_ptr,
+                                                const PhysicsRobotSnapshot& robot,
+                                                std::size_t robot_index,
+                                                const std::string& prefix) {
+    auto* parent_spec = static_cast<mjSpec*>(parent_spec_ptr);
+    if (!parent_spec) {
+        SetLastError("Cannot attach robot to a null MuJoCo parent spec.");
+        return false;
+    }
+
+    const std::string model_path = ResolvePhysicsSourcePath(robot.source_path);
+    if (model_path.empty()) {
+        SetLastError(fmt::format("MuJoCo robot '{}' source path is empty after path resolution.", robot.name));
+        return false;
+    }
+
+    if (!std::filesystem::exists(model_path)) {
+        SetLastError(fmt::format("MuJoCo robot '{}' source file does not exist: {}", robot.name, model_path));
+        return false;
+    }
+
+    char error[kMuJoCoErrorBufferSize] = {};
+    mjSpec* child_spec = mj_parseXML(model_path.c_str(), nullptr, error, sizeof(error));
+    if (!child_spec) {
+        SetLastError(fmt::format("MuJoCo failed to parse robot '{}' source '{}': {}",
+                                 robot.name,
+                                 model_path,
+                                 error));
+        return false;
+    }
+    std::unique_ptr<mjSpec, decltype(&mj_deleteSpec)> child_spec_guard(child_spec, mj_deleteSpec);
+
+    NormalizeMuJoCoAssetPaths(child_spec, model_path);
+    AddFloatingBaseJointsToSpec(child_spec, robot);
+
+    mjsBody* world = mjs_findBody(parent_spec, "world");
+    if (!world) {
+        SetLastError("MuJoCo parent spec has no world body.");
+        return false;
+    }
+
+    mjsElement* attached = mjs_attach(world->element, child_spec->element, prefix.c_str(), "");
+    if (!attached) {
+        const std::string attach_error = mjs_getError(parent_spec) ? mjs_getError(parent_spec) : "unknown error";
+        SetLastError(fmt::format("MuJoCo failed to attach robot '{}' from '{}': {}",
+                                 robot.name,
+                                 model_path,
+                                 attach_error));
+        return false;
+    }
+
+    LOG_INFO("Attached MuJoCo robot '{}' from '{}' with prefix '{}'.",
+             robot.name,
+             model_path,
+             prefix);
+    GOB_UNUSED(robot_index);
     return true;
 }
 
@@ -317,43 +492,41 @@ void MuJoCoPhysicsWorld::AddLooseSceneGeomsToSpec(void* spec_ptr) {
     }
 }
 
-void MuJoCoPhysicsWorld::AddFloatingBaseJointsToSpec(void* spec_ptr) {
+void MuJoCoPhysicsWorld::AddFloatingBaseJointsToSpec(void* spec_ptr, const PhysicsRobotSnapshot& robot) {
     auto* spec = static_cast<mjSpec*>(spec_ptr);
     if (!spec) {
         return;
     }
 
     int added_count = 0;
-    for (const PhysicsRobotSnapshot& robot : scene_snapshot_.robots) {
-        for (const PhysicsJointSnapshot& joint : robot.joints) {
-            if (static_cast<JointType>(joint.joint_type) != JointType::Floating || joint.child_link.empty()) {
-                continue;
-            }
-
-            mjsBody* child_body = mjs_findBody(spec, joint.child_link.c_str());
-            if (!child_body) {
-                LOG_WARN("MuJoCo spec has no body '{}' for Gobot floating joint '{}'.",
-                         joint.child_link,
-                         joint.name);
-                continue;
-            }
-
-            mjsJoint* free_joint = mjs_addFreeJoint(child_body);
-            if (!free_joint) {
-                LOG_WARN("Failed to add MuJoCo free joint for Gobot floating joint '{}'.", joint.name);
-                continue;
-            }
-
-            const std::string free_joint_name = joint.name.empty()
-                                                        ? fmt::format("{}_freejoint", joint.child_link)
-                                                        : joint.name;
-            mjs_setName(free_joint->element, free_joint_name.c_str());
-            ++added_count;
+    for (const PhysicsJointSnapshot& joint : robot.joints) {
+        if (static_cast<JointType>(joint.joint_type) != JointType::Floating || joint.child_link.empty()) {
+            continue;
         }
+
+        mjsBody* child_body = mjs_findBody(spec, joint.child_link.c_str());
+        if (!child_body) {
+            LOG_WARN("MuJoCo spec has no body '{}' for Gobot floating joint '{}'.",
+                     joint.child_link,
+                     joint.name);
+            continue;
+        }
+
+        mjsJoint* free_joint = mjs_addFreeJoint(child_body);
+        if (!free_joint) {
+            LOG_WARN("Failed to add MuJoCo free joint for Gobot floating joint '{}'.", joint.name);
+            continue;
+        }
+
+        const std::string free_joint_name = joint.name.empty()
+                                                    ? fmt::format("{}_freejoint", joint.child_link)
+                                                    : joint.name;
+        mjs_setName(free_joint->element, free_joint_name.c_str());
+        ++added_count;
     }
 
     if (added_count > 0) {
-        LOG_INFO("Added {} Gobot floating joint(s) to the MuJoCo model as free joints.", added_count);
+        LOG_INFO("Added {} Gobot floating joint(s) to MuJoCo robot '{}'.", added_count, robot.name);
     }
 }
 
@@ -367,11 +540,21 @@ void MuJoCoPhysicsWorld::BuildLinkBindings() {
 
     for (std::size_t robot_index = 0; robot_index < scene_state_.robots.size(); ++robot_index) {
         PhysicsRobotState& robot_state = scene_state_.robots[robot_index];
+        const std::string prefix = GetRobotPrefix(robot_index);
+        if (prefix.empty()) {
+            LOG_WARN("MuJoCo has no loaded model prefix for Gobot robot '{}'. Its links will not be synchronized.",
+                     robot_state.name);
+            continue;
+        }
+
         for (std::size_t link_index = 0; link_index < robot_state.links.size(); ++link_index) {
             PhysicsLinkState& link_state = robot_state.links[link_index];
-            const int body_id = mj_name2id(model, mjOBJ_BODY, link_state.link_name.c_str());
+            const std::string body_name = prefix + link_state.link_name;
+            const int body_id = mj_name2id(model, mjOBJ_BODY, body_name.c_str());
             if (body_id < 0) {
-                LOG_WARN("MuJoCo model does not contain body '{}'. It will not be synchronized.",
+                LOG_WARN("MuJoCo model does not contain body '{}' for Gobot link '{}::{}'. It will not be synchronized.",
+                         body_name,
+                         robot_state.name,
                          link_state.link_name);
                 continue;
             }
@@ -399,11 +582,21 @@ void MuJoCoPhysicsWorld::BuildJointBindings() {
 
     for (std::size_t robot_index = 0; robot_index < scene_state_.robots.size(); ++robot_index) {
         PhysicsRobotState& robot_state = scene_state_.robots[robot_index];
+        const std::string prefix = GetRobotPrefix(robot_index);
+        if (prefix.empty()) {
+            LOG_WARN("MuJoCo has no loaded model prefix for Gobot robot '{}'. Its joints will not be synchronized.",
+                     robot_state.name);
+            continue;
+        }
+
         for (std::size_t joint_index = 0; joint_index < robot_state.joints.size(); ++joint_index) {
             PhysicsJointState& joint_state = robot_state.joints[joint_index];
-            const int joint_id = mj_name2id(model, mjOBJ_JOINT, joint_state.joint_name.c_str());
+            const std::string joint_name = prefix + joint_state.joint_name;
+            const int joint_id = mj_name2id(model, mjOBJ_JOINT, joint_name.c_str());
             if (joint_id < 0) {
-                LOG_WARN("MuJoCo model does not contain joint '{}'. It will not be synchronized.",
+                LOG_WARN("MuJoCo model does not contain joint '{}' for Gobot joint '{}::{}'. It will not be synchronized.",
+                         joint_name,
+                         robot_state.name,
                          joint_state.joint_name);
                 continue;
             }
@@ -412,7 +605,7 @@ void MuJoCoPhysicsWorld::BuildJointBindings() {
             binding.robot_index = robot_index;
             binding.joint_index = joint_index;
             binding.mujoco_joint_id = joint_id;
-            binding.actuator_id = FindActuatorForJoint(model, joint_id, joint_state.joint_name);
+            binding.actuator_id = FindActuatorForJoint(model, joint_id, joint_name);
             binding.qpos_address = model->jnt_qposadr[joint_id];
             binding.dof_address = model->jnt_dofadr[joint_id];
             binding.joint_type = model->jnt_type[joint_id];
@@ -423,6 +616,16 @@ void MuJoCoPhysicsWorld::BuildJointBindings() {
     LOG_INFO("MuJoCo joint bindings built: {} of {} Gobot joints.",
              joint_bindings_.size(),
              scene_state_.total_joint_count);
+}
+
+std::string MuJoCoPhysicsWorld::GetRobotPrefix(std::size_t robot_index) const {
+    for (const MuJoCoRobotBinding& binding : robot_bindings_) {
+        if (binding.robot_index == robot_index) {
+            return binding.prefix;
+        }
+    }
+
+    return {};
 }
 
 void MuJoCoPhysicsWorld::ApplyControlsToMuJoCo() {

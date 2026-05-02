@@ -7,6 +7,7 @@
 
 #ifdef GOBOT_HAS_MUJOCO
 #include <cstddef>
+#include <string>
 #include <vector>
 #endif
 
@@ -40,15 +41,22 @@ public:
 
 private:
 #ifdef GOBOT_HAS_MUJOCO
-    bool LoadModelFromRobotSource();
+    bool LoadModelFromRobotSources();
+
+    bool AttachRobotModelToSpec(void* parent_spec,
+                                const PhysicsRobotSnapshot& robot,
+                                std::size_t robot_index,
+                                const std::string& prefix);
 
     void AddLooseSceneGeomsToSpec(void* spec);
 
-    void AddFloatingBaseJointsToSpec(void* spec);
+    void AddFloatingBaseJointsToSpec(void* spec, const PhysicsRobotSnapshot& robot);
 
     void BuildJointBindings();
 
     void BuildLinkBindings();
+
+    std::string GetRobotPrefix(std::size_t robot_index) const;
 
     void ApplyControlsToMuJoCo();
 
@@ -73,6 +81,11 @@ private:
         std::size_t link_index{0};
         int body_id{-1};
     };
+
+    struct MuJoCoRobotBinding {
+        std::size_t robot_index{0};
+        std::string prefix;
+    };
 #endif
 
     bool available_{false};
@@ -80,6 +93,7 @@ private:
 #ifdef GOBOT_HAS_MUJOCO
     void* model_{nullptr};
     void* data_{nullptr};
+    std::vector<MuJoCoRobotBinding> robot_bindings_;
     std::vector<MuJoCoJointBinding> joint_bindings_;
     std::vector<MuJoCoLinkBinding> link_bindings_;
 #endif
