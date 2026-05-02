@@ -62,6 +62,15 @@ std::string NativeScenePathForImport(const std::filesystem::path& selected_path)
     return settings != nullptr ? settings->LocalizePath(native_path.string()) : native_path.string();
 }
 
+std::string FileStemOrFilename(const std::string& path) {
+    const std::filesystem::path fs_path(path);
+    std::string name = fs_path.stem().string();
+    if (name.empty()) {
+        name = fs_path.filename().string();
+    }
+    return name.empty() ? "[unsaved]" : name;
+}
+
 } // namespace
 
 Editor* Editor::s_singleton = nullptr;
@@ -124,6 +133,22 @@ bool Editor::SaveEditedScene(const std::string& path) const {
     return true;
 }
 
+bool Editor::SaveCurrentScene() {
+    if (!HasCurrentScenePath()) {
+        OpenSceneFileDialog(SceneFileDialogMode::SaveAs);
+        return false;
+    }
+
+    if (SaveEditedScene(current_scene_path_)) {
+        ClearSceneDirty();
+        LOG_INFO("Saved scene: {}", current_scene_path_);
+        return true;
+    }
+
+    LOG_ERROR("Failed to save scene: {}", current_scene_path_);
+    return false;
+}
+
 bool Editor::LoadEditedScene(const std::string& path) {
     const std::string extension = ToLower(std::filesystem::path(path).extension().string());
     const bool default_robot_motion_mode = extension == ".urdf" || extension == ".xml";
@@ -142,6 +167,7 @@ bool Editor::OpenSceneFromPath(const std::string& path) {
     }
 
     current_scene_path_ = path;
+    ClearSceneDirty();
     LOG_INFO("Opened scene: {}", current_scene_path_);
     return true;
 }
@@ -153,7 +179,8 @@ bool Editor::NewEditedScene() {
     }
 
     selected_ = edited_scene_->GetRoot();
-    current_scene_path_ = "res://scene.jscn";
+    current_scene_path_.clear();
+    MarkSceneDirty();
     LOG_INFO("Created a new scene.");
     return true;
 }
@@ -170,6 +197,7 @@ bool Editor::AddSceneToEditedScene(const std::string& path) {
     }
 
     selected_ = added;
+    MarkSceneDirty();
     return true;
 }
 
@@ -203,6 +231,7 @@ bool Editor::AddGroundToEditedScene() {
     root->AddChild(collision, true);
 
     selected_ = visual;
+    MarkSceneDirty();
     LOG_INFO("Added ground to scene root '{}'.", root->GetName());
     return true;
 }
@@ -211,6 +240,26 @@ void Editor::RefreshResourcePanel() {
     if (resource_panel_ != nullptr) {
         resource_panel_->Refresh();
     }
+}
+
+void Editor::MarkSceneDirty() {
+    scene_dirty_ = true;
+}
+
+void Editor::ClearSceneDirty() {
+    scene_dirty_ = false;
+}
+
+std::string Editor::GetSceneDisplayName() const {
+    return HasCurrentScenePath() ? FileStemOrFilename(current_scene_path_) : "[unsaved]";
+}
+
+std::string Editor::GetSceneViewTitle() const {
+    std::string title = GetSceneDisplayName();
+    if (scene_dirty_) {
+        title += "(*)";
+    }
+    return title;
 }
 
 void Editor::NotificationCallBack(NotificationType notification) {
@@ -225,6 +274,7 @@ void Editor::NotificationCallBack(NotificationType notification) {
 bool Editor::Begin() {
     imgui_manager_->BeginFrame();
 
+    HandleGlobalShortcuts();
     DrawMenuBar();
     BeginDockSpace();
 
@@ -253,11 +303,7 @@ void Editor::DrawMenuBar() {
             }
             ImGui::Separator();
             if (ImGui::MenuItem("Save Scene", "Ctrl+S")) {
-                if (SaveEditedScene(current_scene_path_)) {
-                    LOG_INFO("Saved scene: {}", current_scene_path_);
-                } else {
-                    LOG_ERROR("Failed to save scene: {}", current_scene_path_);
-                }
+                SaveCurrentScene();
             }
             if (ImGui::MenuItem("Save Scene As...")) {
                 OpenSceneFileDialog(SceneFileDialogMode::SaveAs);
@@ -288,6 +334,17 @@ void Editor::DrawMenuBar() {
             ImGui::EndMenu();
         }
         ImGui::EndMainMenuBar();
+    }
+}
+
+void Editor::HandleGlobalShortcuts() {
+    ImGuiIO& io = ImGui::GetIO();
+    if (!io.KeyCtrl || io.WantCaptureKeyboard) {
+        return;
+    }
+
+    if (ImGui::IsKeyPressed(ImGuiKey_S, false)) {
+        SaveCurrentScene();
     }
 }
 
@@ -353,6 +410,7 @@ void Editor::HandleSceneFileDialogSelection() {
     if (scene_file_dialog_mode_ == SceneFileDialogMode::SaveAs) {
         if (SaveEditedScene(scene_path)) {
             current_scene_path_ = scene_path;
+            ClearSceneDirty();
             LOG_INFO("Saved scene: {}", current_scene_path_);
         } else {
             LOG_ERROR("Failed to save scene: {}", scene_path);
@@ -361,8 +419,10 @@ void Editor::HandleSceneFileDialogSelection() {
         if (OpenSceneFromPath(scene_path)) {
             if (IsNativeScenePath(scene_path)) {
                 current_scene_path_ = scene_path;
+                ClearSceneDirty();
             } else {
                 current_scene_path_ = NativeScenePathForImport(selected_path);
+                MarkSceneDirty();
             }
             LOG_INFO("Loaded scene: {}", current_scene_path_);
         } else {
@@ -377,6 +437,7 @@ void Editor::HandleSceneFileDialogSelection() {
     } else if (scene_file_dialog_mode_ == SceneFileDialogMode::Import) {
         if (LoadEditedScene(scene_path)) {
             current_scene_path_ = NativeScenePathForImport(selected_path);
+            MarkSceneDirty();
             LOG_INFO("Imported scene: {}. Native save target: {}", scene_path, current_scene_path_);
         } else {
             LOG_ERROR("Failed to import scene: {}", scene_path);

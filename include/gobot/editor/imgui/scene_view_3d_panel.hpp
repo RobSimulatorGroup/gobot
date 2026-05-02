@@ -27,6 +27,8 @@ public:
 
     ~SceneView3DPanel() override;
 
+    bool Begin() override;
+
     void OnImGuiContent() override;
 
     void ToolBar();

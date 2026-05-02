@@ -9,6 +9,8 @@
 
 #include <utility>
 
+#include "gobot/editor/editor.hpp"
+
 namespace gobot {
 
 PropertyDataModel::PropertyDataModel(VariantCache& variant, const Property& property)
@@ -46,7 +48,13 @@ const std::string& PropertyDataModel::GetPropertyToolTipStr() const {
 }
 
 bool PropertyDataModel::SetValue(Argument argument) {
-    return property_.set_value(variant_cache_.instance, argument);
+    const bool changed = property_.set_value(variant_cache_.instance, argument);
+    if (changed) {
+        if (auto* editor = Editor::GetInstanceOrNull()) {
+            editor->MarkSceneDirty();
+        }
+    }
+    return changed;
 }
 
 Variant PropertyDataModel::GetValue() const {
@@ -75,6 +83,9 @@ Variant SequenceContainerDataModel::GetValue(std::size_t index) const {
 
 void SequenceContainerDataModel::SetValue(std::size_t index, Argument argument) {
     sc_cache_.variant_list_view.set_value(index, argument);
+    if (auto* editor = Editor::GetInstanceOrNull()) {
+        editor->MarkSceneDirty();
+    }
 }
 
 ///////////////////////////////////////////////////////////////////////////////////

@@ -252,6 +252,13 @@ SceneView3DPanel::~SceneView3DPanel() {
     RS::GetInstance()->Free(view_port_);
 }
 
+bool SceneView3DPanel::Begin() {
+    if (auto* editor = Editor::GetInstanceOrNull()) {
+        SetImGuiWindow(std::string(ICON_MDI_EYE " ") + editor->GetSceneViewTitle(), "scene_view3d");
+    }
+    return ImGuiWindow::Begin();
+}
+
 void SceneView3DPanel::OnImGuiContent()
 {
     auto* camera_3d = Node3DEditor::GetInstance()->GetCamera3D();
@@ -412,12 +419,14 @@ void SceneView3DPanel::ProcessViewportInput(Node* scene_root,
             const float delta_angle = WrappedAngleDelta(drag_last_angle_, current_angle);
             dragged_joint_->SetJointPosition(dragged_joint_->GetJointPosition() +
                                              drag_joint_rotation_sign_ * delta_angle);
+            Editor::GetInstance()->MarkSceneDirty();
             drag_last_angle_ = current_angle;
         } else if (joint_type == JointType::Prismatic) {
             const float signed_pixels = drag_joint_screen_axis_valid_
                     ? mouse_delta.x * drag_joint_screen_axis_.x + mouse_delta.y * drag_joint_screen_axis_.y
                     : mouse_delta.x - mouse_delta.y;
             dragged_joint_->SetJointPosition(dragged_joint_->GetJointPosition() + signed_pixels * 0.005f);
+            Editor::GetInstance()->MarkSceneDirty();
         }
         drag_last_mouse_ = mouse_position;
     }

@@ -35,6 +35,8 @@ public:
 
     static Editor* GetInstance();
 
+    static Editor* GetInstanceOrNull() { return s_singleton; }
+
     FORCE_INLINE Node3DEditor* GetNode3dEditor() { return node3d_editor_; }
 
     FORCE_INLINE ImGui::FileBrowser* GetFileBrowser() { return file_browser_; }
@@ -55,6 +57,8 @@ public:
 
     bool SaveEditedScene(const std::string& path) const;
 
+    bool SaveCurrentScene();
+
     bool LoadEditedScene(const std::string& path);
 
     bool OpenSceneFromPath(const std::string& path);
@@ -67,6 +71,20 @@ public:
 
     void RefreshResourcePanel();
 
+    void MarkSceneDirty();
+
+    void ClearSceneDirty();
+
+    [[nodiscard]] bool IsSceneDirty() const { return scene_dirty_; }
+
+    [[nodiscard]] bool HasCurrentScenePath() const { return !current_scene_path_.empty(); }
+
+    [[nodiscard]] const std::string& GetCurrentScenePath() const { return current_scene_path_; }
+
+    [[nodiscard]] std::string GetSceneDisplayName() const;
+
+    [[nodiscard]] std::string GetSceneViewTitle() const;
+
 private:
     enum class SceneFileDialogMode {
         None,
@@ -77,6 +95,8 @@ private:
     };
 
     void DrawMenuBar();
+
+    void HandleGlobalShortcuts();
 
     void OpenSceneFileDialog(SceneFileDialogMode mode);
 
@@ -100,7 +120,8 @@ private:
     ResourcePanel* resource_panel_{nullptr};
 
     SceneFileDialogMode scene_file_dialog_mode_{SceneFileDialogMode::None};
-    std::string current_scene_path_{"res://scene.jscn"};
+    std::string current_scene_path_;
+    bool scene_dirty_{true};
 
     Node* selected_{nullptr};
 

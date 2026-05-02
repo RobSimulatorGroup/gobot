@@ -304,6 +304,7 @@ void Node3DEditor::OnImGuizmo() {
                 model_matrix.data()[i] = static_cast<RealType>(object_matrix[i]);
             }
             selected_node_3d->SetGlobalTransform(Affine3(model_matrix));
+            Editor::GetInstance()->MarkSceneDirty();
         }
 
         editing_ = ImGuizmo::IsUsing();
