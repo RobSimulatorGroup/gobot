@@ -13,6 +13,7 @@
 #include <string>
 
 #include "gobot/core/config/project_setting.hpp"
+#include "gobot/core/os/input.hpp"
 #include "gobot/editor/edited_scene.hpp"
 #include "gobot/editor/node3d_editor.hpp"
 #include "gobot/core/registration.hpp"
@@ -172,6 +173,12 @@ bool Editor::OpenSceneFromPath(const std::string& path) {
     return true;
 }
 
+void Editor::RequestOpenSceneFromPath(const std::string& path) {
+    RequestSceneSwitch([this, path]() {
+        OpenSceneFromPath(path);
+    });
+}
+
 bool Editor::NewEditedScene() {
     if (edited_scene_ == nullptr || !edited_scene_->NewScene()) {
         LOG_ERROR("Failed to create a new scene.");
@@ -180,9 +187,27 @@ bool Editor::NewEditedScene() {
 
     selected_ = edited_scene_->GetRoot();
     current_scene_path_.clear();
-    MarkSceneDirty();
+    ClearSceneDirty();
     LOG_INFO("Created a new scene.");
     return true;
+}
+
+void Editor::RequestNewEditedScene() {
+    RequestSceneSwitch([this]() {
+        NewEditedScene();
+    });
+}
+
+void Editor::RequestImportSceneFromPath(const std::string& path) {
+    RequestSceneSwitch([this, path]() {
+        if (LoadEditedScene(path)) {
+            current_scene_path_ = NativeScenePathForImport(std::filesystem::path(path));
+            MarkSceneDirty();
+            LOG_INFO("Imported scene: {}. Native save target: {}", path, current_scene_path_);
+        } else {
+            LOG_ERROR("Failed to import scene: {}", path);
+        }
+    });
 }
 
 bool Editor::AddSceneToEditedScene(const std::string& path) {
@@ -293,13 +318,14 @@ void Editor::OnImGuiContent() {
 
     file_browser_->Display();
     HandleSceneFileDialogSelection();
+    DrawUnsavedSceneDialog();
 }
 
 void Editor::DrawMenuBar() {
     if (ImGui::BeginMainMenuBar()) {
         if (ImGui::BeginMenu("File")) {
             if (ImGui::MenuItem("New Scene")) {
-                NewEditedScene();
+                RequestNewEditedScene();
             }
             ImGui::Separator();
             if (ImGui::MenuItem("Save Scene", "Ctrl+S")) {
@@ -338,14 +364,81 @@ void Editor::DrawMenuBar() {
 }
 
 void Editor::HandleGlobalShortcuts() {
-    ImGuiIO& io = ImGui::GetIO();
-    if (!io.KeyCtrl || io.WantCaptureKeyboard) {
+    if (scene_file_dialog_mode_ != SceneFileDialogMode::None ||
+        ImGui::IsPopupOpen(nullptr, ImGuiPopupFlags_AnyPopupId)) {
         return;
     }
 
-    if (ImGui::IsKeyPressed(ImGuiKey_S, false)) {
+    const bool ctrl_down = Input::GetInstance()->GetKeyPressed(KeyCode::LeftCtrl) ||
+                           Input::GetInstance()->GetKeyPressed(KeyCode::RightCtrl) ||
+                           ImGui::GetIO().KeyCtrl;
+    const bool s_pressed = Input::GetInstance()->GetKeyPressed(KeyCode::S) ||
+                           ImGui::IsKeyPressed(ImGuiKey_S, false);
+    if (ctrl_down && s_pressed) {
         SaveCurrentScene();
     }
+}
+
+void Editor::DrawUnsavedSceneDialog() {
+    if (request_unsaved_scene_dialog_) {
+        ImGui::OpenPopup("Unsaved Scene");
+        request_unsaved_scene_dialog_ = false;
+    }
+
+    if (!ImGui::BeginPopupModal("Unsaved Scene", nullptr, ImGuiWindowFlags_AlwaysAutoResize)) {
+        return;
+    }
+
+    ImGui::TextUnformatted("The current scene has unsaved changes.");
+    ImGui::TextUnformatted("Save before switching scenes?");
+    ImGui::Separator();
+
+    if (ImGui::Button("Save")) {
+        if (!HasCurrentScenePath()) {
+            OpenSceneFileDialog(SceneFileDialogMode::SaveAs);
+            ImGui::CloseCurrentPopup();
+        } else if (SaveCurrentScene()) {
+            ContinuePendingSceneSwitch();
+            ImGui::CloseCurrentPopup();
+        }
+    }
+    ImGui::SameLine();
+    if (ImGui::Button("Don't Save")) {
+        ClearSceneDirty();
+        ContinuePendingSceneSwitch();
+        ImGui::CloseCurrentPopup();
+    }
+    ImGui::SameLine();
+    if (ImGui::Button("Cancel")) {
+        pending_scene_switch_action_ = nullptr;
+        ImGui::CloseCurrentPopup();
+    }
+
+    ImGui::EndPopup();
+}
+
+void Editor::RequestSceneSwitch(std::function<void()> action) {
+    if (!action) {
+        return;
+    }
+
+    if (scene_dirty_) {
+        pending_scene_switch_action_ = std::move(action);
+        request_unsaved_scene_dialog_ = true;
+        return;
+    }
+
+    action();
+}
+
+void Editor::ContinuePendingSceneSwitch() {
+    if (!pending_scene_switch_action_) {
+        return;
+    }
+
+    auto action = std::move(pending_scene_switch_action_);
+    pending_scene_switch_action_ = nullptr;
+    action();
 }
 
 void Editor::OpenSceneFileDialog(SceneFileDialogMode mode) {
@@ -412,21 +505,15 @@ void Editor::HandleSceneFileDialogSelection() {
             current_scene_path_ = scene_path;
             ClearSceneDirty();
             LOG_INFO("Saved scene: {}", current_scene_path_);
+            ContinuePendingSceneSwitch();
         } else {
             LOG_ERROR("Failed to save scene: {}", scene_path);
         }
     } else if (scene_file_dialog_mode_ == SceneFileDialogMode::Load) {
-        if (OpenSceneFromPath(scene_path)) {
-            if (IsNativeScenePath(scene_path)) {
-                current_scene_path_ = scene_path;
-                ClearSceneDirty();
-            } else {
-                current_scene_path_ = NativeScenePathForImport(selected_path);
-                MarkSceneDirty();
-            }
-            LOG_INFO("Loaded scene: {}", current_scene_path_);
+        if (IsNativeScenePath(scene_path)) {
+            RequestOpenSceneFromPath(scene_path);
         } else {
-            LOG_ERROR("Failed to load scene: {}", scene_path);
+            RequestImportSceneFromPath(scene_path);
         }
     } else if (scene_file_dialog_mode_ == SceneFileDialogMode::AddScene) {
         if (AddSceneToEditedScene(scene_path)) {
@@ -435,13 +522,7 @@ void Editor::HandleSceneFileDialogSelection() {
             LOG_ERROR("Failed to add scene: {}", scene_path);
         }
     } else if (scene_file_dialog_mode_ == SceneFileDialogMode::Import) {
-        if (LoadEditedScene(scene_path)) {
-            current_scene_path_ = NativeScenePathForImport(selected_path);
-            MarkSceneDirty();
-            LOG_INFO("Imported scene: {}. Native save target: {}", scene_path, current_scene_path_);
-        } else {
-            LOG_ERROR("Failed to import scene: {}", scene_path);
-        }
+        RequestImportSceneFromPath(scene_path);
     }
 
     file_browser_->ClearSelected();

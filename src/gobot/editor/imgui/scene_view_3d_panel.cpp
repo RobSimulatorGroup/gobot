@@ -413,20 +413,28 @@ void SceneView3DPanel::ProcessViewportInput(Node* scene_root,
         const ImVec2 mouse_delta{mouse_position.x - drag_last_mouse_.x,
                                  mouse_position.y - drag_last_mouse_.y};
         const JointType joint_type = dragged_joint_->GetJointType();
+        const RealType old_joint_position = dragged_joint_->GetJointPosition();
         if ((joint_type == JointType::Revolute || joint_type == JointType::Continuous) &&
             drag_joint_screen_center_valid_ && drag_last_angle_valid_) {
             const float current_angle = AngleAroundScreenPoint(drag_joint_screen_center_, mouse_position);
             const float delta_angle = WrappedAngleDelta(drag_last_angle_, current_angle);
-            dragged_joint_->SetJointPosition(dragged_joint_->GetJointPosition() +
-                                             drag_joint_rotation_sign_ * delta_angle);
-            Editor::GetInstance()->MarkSceneDirty();
+            if (std::abs(delta_angle) > CMP_EPSILON) {
+                dragged_joint_->SetJointPosition(old_joint_position + drag_joint_rotation_sign_ * delta_angle);
+                if (std::abs(dragged_joint_->GetJointPosition() - old_joint_position) > CMP_EPSILON) {
+                    Editor::GetInstance()->MarkSceneDirty();
+                }
+            }
             drag_last_angle_ = current_angle;
         } else if (joint_type == JointType::Prismatic) {
             const float signed_pixels = drag_joint_screen_axis_valid_
                     ? mouse_delta.x * drag_joint_screen_axis_.x + mouse_delta.y * drag_joint_screen_axis_.y
                     : mouse_delta.x - mouse_delta.y;
-            dragged_joint_->SetJointPosition(dragged_joint_->GetJointPosition() + signed_pixels * 0.005f);
-            Editor::GetInstance()->MarkSceneDirty();
+            if (std::abs(signed_pixels) > CMP_EPSILON) {
+                dragged_joint_->SetJointPosition(old_joint_position + signed_pixels * 0.005f);
+                if (std::abs(dragged_joint_->GetJointPosition() - old_joint_position) > CMP_EPSILON) {
+                    Editor::GetInstance()->MarkSceneDirty();
+                }
+            }
         }
         drag_last_mouse_ = mouse_position;
     }

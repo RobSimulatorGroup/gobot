@@ -7,6 +7,7 @@
 
 #pragma once
 
+#include <functional>
 #include <string>
 
 #include "gobot/scene/node.hpp"
@@ -63,7 +64,13 @@ public:
 
     bool OpenSceneFromPath(const std::string& path);
 
+    void RequestOpenSceneFromPath(const std::string& path);
+
     bool NewEditedScene();
+
+    void RequestNewEditedScene();
+
+    void RequestImportSceneFromPath(const std::string& path);
 
     bool AddSceneToEditedScene(const std::string& path);
 
@@ -98,6 +105,12 @@ private:
 
     void HandleGlobalShortcuts();
 
+    void DrawUnsavedSceneDialog();
+
+    void RequestSceneSwitch(std::function<void()> action);
+
+    void ContinuePendingSceneSwitch();
+
     void OpenSceneFileDialog(SceneFileDialogMode mode);
 
     void HandleSceneFileDialogSelection();
@@ -121,7 +134,9 @@ private:
 
     SceneFileDialogMode scene_file_dialog_mode_{SceneFileDialogMode::None};
     std::string current_scene_path_;
-    bool scene_dirty_{true};
+    bool scene_dirty_{false};
+    bool request_unsaved_scene_dialog_{false};
+    std::function<void()> pending_scene_switch_action_;
 
     Node* selected_{nullptr};
 

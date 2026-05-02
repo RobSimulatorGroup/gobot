@@ -12,6 +12,22 @@
 #include "gobot/editor/editor.hpp"
 
 namespace gobot {
+namespace {
+
+bool VariantValuesEqual(const Variant& left, const Variant& right) {
+    if (!left.is_valid() || !right.is_valid()) {
+        return left.is_valid() == right.is_valid();
+    }
+
+    Variant converted_right = right;
+    if (left.get_type() != converted_right.get_type() && !converted_right.convert(left.get_type())) {
+        return false;
+    }
+
+    return left == converted_right;
+}
+
+} // namespace
 
 PropertyDataModel::PropertyDataModel(VariantCache& variant, const Property& property)
         : VariantDataModel(variant),
@@ -48,13 +64,19 @@ const std::string& PropertyDataModel::GetPropertyToolTipStr() const {
 }
 
 bool PropertyDataModel::SetValue(Argument argument) {
-    const bool changed = property_.set_value(variant_cache_.instance, argument);
-    if (changed) {
+    Variant old_value = GetValue();
+    Variant new_value = argument;
+    if (VariantValuesEqual(old_value, new_value)) {
+        return true;
+    }
+
+    const bool set = property_.set_value(variant_cache_.instance, argument);
+    if (set) {
         if (auto* editor = Editor::GetInstanceOrNull()) {
             editor->MarkSceneDirty();
         }
     }
-    return changed;
+    return set;
 }
 
 Variant PropertyDataModel::GetValue() const {

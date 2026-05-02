@@ -347,7 +347,7 @@ void ResourcePanel::DrawResourceTree(DirectoryInformation* dir_info, bool root)
         if (dir_info->is_directory) {
             ChangeDirectory(dir_info);
         } else if (IsNativeSceneFile(dir_info)) {
-            Editor::GetInstance()->OpenSceneFromPath(dir_info->local_path);
+            Editor::GetInstance()->RequestOpenSceneFromPath(dir_info->local_path);
         }
     }
 
