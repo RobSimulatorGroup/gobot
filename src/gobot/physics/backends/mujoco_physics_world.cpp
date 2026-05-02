@@ -205,7 +205,26 @@ bool MuJoCoPhysicsWorld::LoadModelFromRobotSource() {
     }
 
     char error[kMuJoCoErrorBufferSize] = {};
-    auto* model = mj_loadXML(model_path.c_str(), nullptr, error, sizeof(error));
+    mjModel* model = nullptr;
+    mjSpec* spec = mj_parseXML(model_path.c_str(), nullptr, error, sizeof(error));
+    if (spec) {
+        AddLooseSceneGeomsToSpec(spec);
+        model = mj_compile(spec, nullptr);
+        if (!model) {
+            const std::string compile_error = mjs_getError(spec) ? mjs_getError(spec) : "unknown error";
+            mj_deleteSpec(spec);
+            SetLastError(fmt::format("MuJoCo failed to compile '{}': {}", model_path, compile_error));
+            return false;
+        }
+        mj_deleteSpec(spec);
+    } else {
+        LOG_WARN("MuJoCo spec parse failed for '{}': {}. Falling back to mj_loadXML without Gobot scene geoms.",
+                 model_path,
+                 error);
+        error[0] = '\0';
+        model = mj_loadXML(model_path.c_str(), nullptr, error, sizeof(error));
+    }
+
     if (!model) {
         SetLastError(fmt::format("MuJoCo failed to load '{}': {}", model_path, error));
         return false;
@@ -229,6 +248,60 @@ bool MuJoCoPhysicsWorld::LoadModelFromRobotSource() {
              model->nv,
              model->njnt);
     return true;
+}
+
+void MuJoCoPhysicsWorld::AddLooseSceneGeomsToSpec(void* spec_ptr) {
+    auto* spec = static_cast<mjSpec*>(spec_ptr);
+    if (!spec || scene_snapshot_.loose_collision_shapes.empty()) {
+        return;
+    }
+
+    mjsBody* world = mjs_findBody(spec, "world");
+    if (!world) {
+        LOG_WARN("MuJoCo spec has no world body; Gobot loose scene geoms were not added.");
+        return;
+    }
+
+    int added_count = 0;
+    for (std::size_t shape_index = 0; shape_index < scene_snapshot_.loose_collision_shapes.size(); ++shape_index) {
+        const PhysicsShapeSnapshot& shape = scene_snapshot_.loose_collision_shapes[shape_index];
+        if (shape.disabled || shape.type != PhysicsShapeType::Box) {
+            continue;
+        }
+
+        mjsGeom* geom = mjs_addGeom(world, nullptr);
+        if (!geom) {
+            continue;
+        }
+
+        const std::string name = fmt::format("gobot_loose_box_{}", shape_index);
+        mjs_setName(geom->element, name.c_str());
+        geom->type = mjGEOM_BOX;
+        geom->pos[0] = shape.global_transform.translation().x();
+        geom->pos[1] = shape.global_transform.translation().y();
+        geom->pos[2] = shape.global_transform.translation().z();
+        geom->quat[0] = 1.0;
+        geom->quat[1] = 0.0;
+        geom->quat[2] = 0.0;
+        geom->quat[3] = 0.0;
+        geom->size[0] = shape.box_size.x() * 0.5;
+        geom->size[1] = shape.box_size.y() * 0.5;
+        geom->size[2] = shape.box_size.z() * 0.5;
+        geom->contype = 1;
+        geom->conaffinity = 1;
+        geom->friction[0] = 1.0;
+        geom->friction[1] = 0.005;
+        geom->friction[2] = 0.0001;
+        geom->rgba[0] = 0.28f;
+        geom->rgba[1] = 0.30f;
+        geom->rgba[2] = 0.32f;
+        geom->rgba[3] = 1.0f;
+        ++added_count;
+    }
+
+    if (added_count > 0) {
+        LOG_INFO("Added {} loose Gobot box collision geoms to the MuJoCo world.", added_count);
+    }
 }
 
 void MuJoCoPhysicsWorld::BuildLinkBindings() {

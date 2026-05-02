@@ -364,8 +364,20 @@ inline void ImGui::FileBrowser::Display()
             if(Button("OK") && (*newDirNameBuf_)[0] != '\0')
             {
                 ScopeGuard closeNewDirPopup([] { CloseCurrentPopup(); });
-                if(create_directory(pwd_ / newDirNameBuf_->data()))
-                    SetPwd(pwd_);
+                const auto newDirPath = pwd_ / newDirNameBuf_->data();
+                if(create_directory(newDirPath))
+                {
+                    if(flags_ & ImGuiFileBrowserFlags_SelectDirectory)
+                    {
+                        selectedFilename_ = newDirPath.filename();
+                        ok_ = true;
+                        closeFlag_ = true;
+                    }
+                    else
+                    {
+                        SetPwd(newDirPath);
+                    }
+                }
                 else
                     statusStr_ = "failed to create " + std::string(newDirNameBuf_->data());
             }

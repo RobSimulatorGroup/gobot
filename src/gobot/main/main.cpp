@@ -66,7 +66,7 @@ Copyright(c) 2021-2023, RobSimulatorGroup)");
     s_simulation_server = Object::New<SimulationServer>();
 
     if (result.count("path")) {
-        if (s_project_settings->SetProjectPath(result["path"].as<std::string>().c_str())) {
+        if (!s_project_settings->SetProjectPath(result["path"].as<std::string>().c_str())) {
             return false;
         }
     }

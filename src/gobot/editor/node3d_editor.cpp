@@ -49,6 +49,15 @@ bool IsLockedByRobotMotionMode(Node* selected) {
     return robot && robot != selected && robot->GetMode() == RobotMode::Motion;
 }
 
+bool ImGuiBlocksViewportInput() {
+    ImGuiContext* context = ImGui::GetCurrentContext();
+    if (context == nullptr) {
+        return false;
+    }
+
+    return ImGui::IsPopupOpen(nullptr, ImGuiPopupFlags_AnyPopupId);
+}
+
 }
 
 Node3DEditor::Node3DEditor() {
@@ -127,7 +136,7 @@ void Node3DEditor::SetBlockCameraInput(bool block_camera_input) {
 }
 
 void Node3DEditor::UpdateCamera(double delta_time) {
-    if (block_camera_input_) {
+    if (block_camera_input_ || ImGuiBlocksViewportInput()) {
         mouse_down_ = false;
         editing_ = false;
         mouse_position_last_ = Input::GetInstance()->GetMousePosition();

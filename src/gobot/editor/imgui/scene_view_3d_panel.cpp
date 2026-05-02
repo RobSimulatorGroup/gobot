@@ -217,6 +217,15 @@ const char* JointPositionUnit(JointType joint_type) {
     return "";
 }
 
+bool ImGuiBlocksViewportInput() {
+    ImGuiContext* context = ImGui::GetCurrentContext();
+    if (context == nullptr) {
+        return false;
+    }
+
+    return ImGui::IsPopupOpen(nullptr, ImGuiPopupFlags_AnyPopupId);
+}
+
 }
 
 void DrawJointMotionHint(Joint3D* joint,
@@ -290,7 +299,8 @@ void SceneView3DPanel::OnImGuiContent()
     ImVec2 min_bound = scene_view_position;
     ImVec2 max_bound = { min_bound.x + scene_view_size.x, min_bound.y + scene_view_size.y };
 
-    bool mouse_inside_rect = ImGui::IsMouseHoveringRect(min_bound, max_bound);
+    const bool imgui_blocks_viewport_input = ImGuiBlocksViewportInput();
+    bool mouse_inside_rect = ImGui::IsMouseHoveringRect(min_bound, max_bound) && !imgui_blocks_viewport_input;
 
     auto* node3d_editor = Node3DEditor::GetInstance();
     ProcessViewportInput(scene_root, scene_view_position, scene_view_size, mouse_inside_rect);

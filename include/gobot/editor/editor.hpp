@@ -56,11 +56,18 @@ public:
 
     bool LoadEditedScene(const std::string& path);
 
+    bool NewEditedScene();
+
+    bool AddSceneToEditedScene(const std::string& path);
+
+    bool AddGroundToEditedScene();
+
 private:
     enum class SceneFileDialogMode {
         None,
         Load,
         Import,
+        AddScene,
         SaveAs,
     };
 

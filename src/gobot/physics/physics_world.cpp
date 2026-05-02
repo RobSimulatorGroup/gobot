@@ -87,6 +87,10 @@ void CollectRobotNodes(const Node* node,
         joint_snapshot.joint_position = joint->GetJointPosition();
         joint_snapshot.joint_type = static_cast<int>(joint->GetJointType());
         robot_snapshot->joints.emplace_back(std::move(joint_snapshot));
+    } else if (auto collision_shape = Object::PointerCastTo<CollisionShape3D>(node)) {
+        if (!Object::PointerCastTo<Link3D>(node->GetParent())) {
+            loose_collision_shapes->emplace_back(CaptureShapeSnapshot(collision_shape));
+        }
     }
 
     for (std::size_t i = 0; i < node->GetChildCount(); ++i) {

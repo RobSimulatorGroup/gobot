@@ -42,6 +42,8 @@ private:
 #ifdef GOBOT_HAS_MUJOCO
     bool LoadModelFromRobotSource();
 
+    void AddLooseSceneGeomsToSpec(void* spec);
+
     void BuildJointBindings();
 
     void BuildLinkBindings();

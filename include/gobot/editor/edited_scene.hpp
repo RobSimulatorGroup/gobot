@@ -15,6 +15,8 @@ public:
 
     Node3D* GetRoot() const { return root_; }
 
+    bool NewScene();
+
     Ref<PackedScene> Pack() const;
 
     bool SaveToPath(const std::string& path) const;
@@ -22,6 +24,8 @@ public:
     bool LoadFromPath(const std::string& path);
 
     bool LoadFromPath(const std::string& path, bool default_robot_motion_mode);
+
+    Node3D* AddSceneFromPath(const std::string& path);
 
 private:
     bool SetRoot(Node3D* root);

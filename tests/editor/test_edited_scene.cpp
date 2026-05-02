@@ -283,3 +283,26 @@ TEST_F(TestEditedScene, robot_scene_restores_joint_position_after_joint_limits_f
     gobot::Object::Delete(edited_scene);
     gobot::Object::Delete(loaded_scene);
 }
+
+TEST_F(TestEditedScene, creates_new_scene_and_adds_saved_robot_scene_as_child) {
+    auto* robot_scene = gobot::Object::New<gobot::EditedScene>();
+    auto* robot = gobot::Object::New<gobot::Robot3D>();
+    robot->SetName("RobotAsset");
+    robot_scene->GetRoot()->AddChild(robot);
+    ASSERT_TRUE(robot_scene->SaveToPath("res://robot_asset.jscn"));
+
+    auto* world_scene = gobot::Object::New<gobot::EditedScene>();
+    ASSERT_TRUE(world_scene->NewScene());
+    ASSERT_NE(world_scene->GetRoot(), nullptr);
+    EXPECT_EQ(world_scene->GetRoot()->GetName(), "Scene");
+    ASSERT_EQ(world_scene->GetRoot()->GetChildCount(), 0);
+
+    gobot::Node3D* added_scene = world_scene->AddSceneFromPath("res://robot_asset.jscn");
+    ASSERT_NE(added_scene, nullptr);
+    EXPECT_EQ(added_scene->GetParent(), world_scene->GetRoot());
+    ASSERT_EQ(world_scene->GetRoot()->GetChildCount(), 1);
+    EXPECT_NE(FindNodeByName(world_scene->GetRoot(), "RobotAsset"), nullptr);
+
+    gobot::Object::Delete(robot_scene);
+    gobot::Object::Delete(world_scene);
+}

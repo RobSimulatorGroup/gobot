@@ -11,6 +11,9 @@
 #include "gobot_export.h"
 
 class ImGuiTextFilter;
+namespace ImGui {
+class FileBrowser;
+}
 
 namespace gobot {
 
@@ -43,9 +46,27 @@ public:
 
     bool RenderFile(int dirIndex, bool folder, int shownIndex, bool gridView);
 
+    void DrawResourceTree(DirectoryInformation* dir_info, bool root = false);
+
     void RenderBottom();
 
-    void DrawFolder(DirectoryInformation* dir_info, bool default_open = false);
+    void DrawNewFolderPopup();
+
+    bool CreateFolderInCurrentDirectory(const std::string& folder_name);
+
+    bool SetProjectPath(const std::string& project_path);
+
+    void LoadProjectHistory();
+
+    void SaveProjectHistory() const;
+
+    void AddProjectHistory(const std::string& project_path);
+
+    void DrawProjectSelector();
+
+    void OpenProjectBrowser();
+
+    void HandleProjectBrowser();
 
     DirectoryInformation* ProcessDirectory(const std::string& directory_path,
                                            DirectoryInformation* parent);
@@ -55,7 +76,8 @@ public:
 private:
     std::string project_path_;
     std::string move_path_;
-    std::string last_nav_path_;
+    std::vector<std::string> project_history_;
+    std::string project_history_file_;
 
 
     bool is_dragging_;
@@ -63,8 +85,11 @@ private:
     bool show_hidden_files_;
     int grid_items_per_row_;
     float grid_size_ = 50.0f;
+    char new_folder_name_[128]{"resources"};
 
     ImGuiTextFilter* filter_{nullptr};
+    ImGui::FileBrowser* project_browser_{nullptr};
+    bool requested_initial_project_browser_{false};
 
 
     bool update_navigation_path_;

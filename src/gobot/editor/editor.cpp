@@ -26,7 +26,11 @@
 #include "gobot/editor/imgui/resource_panel.hpp"
 #include "gobot/editor/property_inspector/editor_inspector.hpp"
 #include "gobot/main/main.hpp"
+#include "gobot/scene/collision_shape_3d.hpp"
+#include "gobot/scene/mesh_instance_3d.hpp"
 #include "gobot/scene/node_3d.hpp"
+#include "gobot/scene/resources/box_shape_3d.hpp"
+#include "gobot/scene/resources/primitive_mesh.hpp"
 #include "gobot/core/config/engine.hpp"
 #include "gobot/core/config/project_setting.hpp"
 #include "gobot/editor/imgui/imgui_utilities.hpp"
@@ -73,9 +77,6 @@ Editor::Editor() {
 
     EditorInspector::AddInspectorPlugin(MakeRef<EditorInspectorDefaultPlugin>());
 
-    // for test
-    ProjectSettings::GetInstance()->SetProjectPath(".");
-
     AddChild(Object::New<ConsolePanel>());
     AddChild(Object::New<SceneEditorPanel>());
     AddChild(Object::New<InspectorPanel>());
@@ -118,6 +119,67 @@ bool Editor::LoadEditedScene(const std::string& path) {
     return true;
 }
 
+bool Editor::NewEditedScene() {
+    if (edited_scene_ == nullptr || !edited_scene_->NewScene()) {
+        LOG_ERROR("Failed to create a new scene.");
+        return false;
+    }
+
+    selected_ = edited_scene_->GetRoot();
+    current_scene_path_ = "res://scene.jscn";
+    LOG_INFO("Created a new scene.");
+    return true;
+}
+
+bool Editor::AddSceneToEditedScene(const std::string& path) {
+    if (edited_scene_ == nullptr) {
+        LOG_ERROR("Cannot add scene '{}': no edited scene.", path);
+        return false;
+    }
+
+    Node3D* added = edited_scene_->AddSceneFromPath(path);
+    if (added == nullptr) {
+        return false;
+    }
+
+    selected_ = added;
+    return true;
+}
+
+bool Editor::AddGroundToEditedScene() {
+    Node3D* root = GetEditedSceneRoot();
+    if (root == nullptr) {
+        LOG_ERROR("Cannot add ground: edited scene root is null.");
+        return false;
+    }
+
+    constexpr RealType kGroundSize = 8.0;
+    constexpr RealType kGroundThickness = 0.05;
+    const Vector3 ground_size{kGroundSize, kGroundSize, kGroundThickness};
+    const Vector3 ground_position{0.0, 0.0, -kGroundThickness * 0.5};
+
+    auto* visual = Object::New<MeshInstance3D>();
+    visual->SetName("ground_visual");
+    auto ground_mesh = MakeRef<BoxMesh>();
+    ground_mesh->SetSize(ground_size);
+    visual->SetMesh(ground_mesh);
+    visual->SetSurfaceColor({0.28f, 0.30f, 0.32f, 1.0f});
+    visual->SetPosition(ground_position);
+    root->AddChild(visual, true);
+
+    auto* collision = Object::New<CollisionShape3D>();
+    collision->SetName("ground_collision");
+    auto ground_shape = MakeRef<BoxShape3D>();
+    ground_shape->SetSize(ground_size);
+    collision->SetShape(ground_shape);
+    collision->SetPosition(ground_position);
+    root->AddChild(collision, true);
+
+    selected_ = visual;
+    LOG_INFO("Added ground to scene root '{}'.", root->GetName());
+    return true;
+}
+
 void Editor::NotificationCallBack(NotificationType notification) {
     switch (notification) {
         case NotificationType::Process: {
@@ -153,6 +215,10 @@ void Editor::OnImGuiContent() {
 void Editor::DrawMenuBar() {
     if (ImGui::BeginMainMenuBar()) {
         if (ImGui::BeginMenu("File")) {
+            if (ImGui::MenuItem("New Scene")) {
+                NewEditedScene();
+            }
+            ImGui::Separator();
             if (ImGui::MenuItem("Save Scene", "Ctrl+S")) {
                 if (SaveEditedScene(current_scene_path_)) {
                     LOG_INFO("Saved scene: {}", current_scene_path_);
@@ -167,6 +233,9 @@ void Editor::DrawMenuBar() {
             if (ImGui::MenuItem("Load Scene...")) {
                 OpenSceneFileDialog(SceneFileDialogMode::Load);
             }
+            if (ImGui::MenuItem("Add Scene...")) {
+                OpenSceneFileDialog(SceneFileDialogMode::AddScene);
+            }
             if (ImGui::MenuItem("Import URDF...")) {
                 OpenSceneFileDialog(SceneFileDialogMode::Import);
             }
@@ -179,6 +248,10 @@ void Editor::DrawMenuBar() {
             if (ImGui::MenuItem("Cut", "CTRL+X")) {}
             if (ImGui::MenuItem("Copy", "CTRL+C")) {}
             if (ImGui::MenuItem("Paste", "CTRL+V")) {}
+            ImGui::Separator();
+            if (ImGui::MenuItem("Add Ground")) {
+                AddGroundToEditedScene();
+            }
             ImGui::EndMenu();
         }
         ImGui::EndMainMenuBar();
@@ -191,12 +264,19 @@ void Editor::OpenSceneFileDialog(SceneFileDialogMode mode) {
     }
 
     scene_file_dialog_mode_ = mode;
-    file_browser_->SetFlags(mode == SceneFileDialogMode::SaveAs
-                            ? ImGuiFileBrowserFlags_EnterNewFilename
-                            : 0);
+    if (mode == SceneFileDialogMode::SaveAs) {
+        file_browser_->SetFlags(ImGuiFileBrowserFlags_EnterNewFilename);
+    } else {
+        file_browser_->SetFlags(0);
+    }
+
     if (mode == SceneFileDialogMode::SaveAs) {
         file_browser_->SetTitle("Save Scene");
         file_browser_->SetOkText("Save");
+        file_browser_->SetFileFilters({".jscn"});
+    } else if (mode == SceneFileDialogMode::AddScene) {
+        file_browser_->SetTitle("Add Scene");
+        file_browser_->SetOkText("Add");
         file_browser_->SetFileFilters({".jscn"});
     } else if (mode == SceneFileDialogMode::Import) {
         file_browser_->SetTitle("Import URDF");
@@ -208,9 +288,9 @@ void Editor::OpenSceneFileDialog(SceneFileDialogMode mode) {
         file_browser_->SetFileFilters({".jscn", ".urdf", ".xml"});
     }
 
-    const std::string& project_path = ProjectSettings::GetInstance()->GetProjectPath();
-    if (!project_path.empty()) {
-        file_browser_->SetPwd(project_path);
+    std::string browser_path = ProjectSettings::GetInstance()->GetProjectPath();
+    if (!browser_path.empty()) {
+        file_browser_->SetPwd(browser_path);
     }
 
     file_browser_->Open();
@@ -254,6 +334,12 @@ void Editor::HandleSceneFileDialogSelection() {
             LOG_INFO("Loaded scene: {}", current_scene_path_);
         } else {
             LOG_ERROR("Failed to load scene: {}", scene_path);
+        }
+    } else if (scene_file_dialog_mode_ == SceneFileDialogMode::AddScene) {
+        if (AddSceneToEditedScene(scene_path)) {
+            LOG_INFO("Added scene: {}", scene_path);
+        } else {
+            LOG_ERROR("Failed to add scene: {}", scene_path);
         }
     } else if (scene_file_dialog_mode_ == SceneFileDialogMode::Import) {
         if (LoadEditedScene(scene_path)) {

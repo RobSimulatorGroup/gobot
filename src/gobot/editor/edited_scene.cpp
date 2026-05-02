@@ -13,9 +13,13 @@ namespace gobot {
 EditedScene::EditedScene() {
     SetName("EditedScene");
 
-    root_ = Object::New<Node3D>();
-    root_->SetName("Scene");
-    AddChild(root_, true);
+    NewScene();
+}
+
+bool EditedScene::NewScene() {
+    auto* root = Object::New<Node3D>();
+    root->SetName("Scene");
+    return SetRoot(root);
 }
 
 Ref<PackedScene> EditedScene::Pack() const {
@@ -83,6 +87,34 @@ bool EditedScene::LoadFromPath(const std::string& path, bool default_robot_motio
     }
 
     return true;
+}
+
+Node3D* EditedScene::AddSceneFromPath(const std::string& path) {
+    if (root_ == nullptr) {
+        LOG_ERROR("EditedScene cannot add '{}': scene root is null.", path);
+        return nullptr;
+    }
+
+    Ref<Resource> resource = ResourceLoader::Load(path, "PackedScene", ResourceFormatLoader::CacheMode::Ignore);
+    Ref<PackedScene> packed_scene = dynamic_pointer_cast<PackedScene>(resource);
+    if (!packed_scene.IsValid()) {
+        LOG_ERROR("EditedScene cannot add '{}': ResourceLoader did not return a PackedScene.", path);
+        return nullptr;
+    }
+
+    Node* instance = packed_scene->Instantiate();
+    auto* node_3d = Object::PointerCastTo<Node3D>(instance);
+    if (node_3d == nullptr) {
+        LOG_ERROR("EditedScene cannot add '{}': PackedScene instantiate did not return a Node3D root.", path);
+        if (instance != nullptr) {
+            Object::Delete(instance);
+        }
+        return nullptr;
+    }
+
+    root_->AddChild(node_3d, true);
+    LOG_INFO("Added scene '{}' as child '{}' under '{}'.", path, node_3d->GetName(), root_->GetName());
+    return node_3d;
 }
 
 bool EditedScene::SetRoot(Node3D* root) {
