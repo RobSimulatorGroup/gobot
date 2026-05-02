@@ -22,6 +22,7 @@ class Node3DEditor;
 class ImGuiManager;
 class Node3D;
 class EditedScene;
+class ResourcePanel;
 
 class GOBOT_EXPORT Editor : public ImGuiNode {
     GOBCLASS(Editor, Node)
@@ -56,11 +57,15 @@ public:
 
     bool LoadEditedScene(const std::string& path);
 
+    bool OpenSceneFromPath(const std::string& path);
+
     bool NewEditedScene();
 
     bool AddSceneToEditedScene(const std::string& path);
 
     bool AddGroundToEditedScene();
+
+    void RefreshResourcePanel();
 
 private:
     enum class SceneFileDialogMode {
@@ -92,6 +97,7 @@ private:
     ImGuiManager* imgui_manager_{nullptr};
     ImGui::FileBrowser* file_browser_{nullptr};
     EditedScene* edited_scene_{nullptr};
+    ResourcePanel* resource_panel_{nullptr};
 
     SceneFileDialogMode scene_file_dialog_mode_{SceneFileDialogMode::None};
     std::string current_scene_path_{"res://scene.jscn"};

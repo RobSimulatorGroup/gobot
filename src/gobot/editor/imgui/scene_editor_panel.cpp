@@ -115,6 +115,27 @@ const char* GetAddNodeIcon(const NodeCreationEntry& entry) {
     return ICON_MDI_CUBE_OUTLINE;
 }
 
+bool AcceptSceneResourceDrop() {
+    if (!ImGui::BeginDragDropTarget()) {
+        return false;
+    }
+
+    bool accepted = false;
+    const ImGuiPayload* payload = ImGui::AcceptDragDropPayload("GobotSceneResource");
+    if (payload != nullptr && payload->Data != nullptr && payload->DataSize > 0) {
+        const std::string scene_path(static_cast<const char*>(payload->Data));
+        accepted = Editor::GetInstance()->AddSceneToEditedScene(scene_path);
+        if (accepted) {
+            LOG_INFO("Added scene from Resources drop: {}", scene_path);
+        } else {
+            LOG_ERROR("Failed to add scene from Resources drop: {}", scene_path);
+        }
+    }
+
+    ImGui::EndDragDropTarget();
+    return accepted;
+}
+
 } // namespace
 
 SceneEditorPanel::SceneEditorPanel()
@@ -386,9 +407,13 @@ void SceneEditorPanel::DrawNode(Node* node)
                 double_clicked_ = nullptr;
         }
         ImGui::PopStyleColor();
+        const bool dropped_scene_on_row = AcceptSceneResourceDrop();
         ImGui::SameLine();
         if(!double_clicked)
             ImGui::TextUnformatted(name.c_str());
+        if (!dropped_scene_on_row) {
+            AcceptSceneResourceDrop();
+        }
 
         if(double_clicked) {
             auto value = name;
@@ -513,6 +538,8 @@ void SceneEditorPanel::OnImGuiContent()
         ImGui::Indent();
         DrawNode(scene_root);
     }
+
+    AcceptSceneResourceDrop();
 
     ImGui::EndChild();
 

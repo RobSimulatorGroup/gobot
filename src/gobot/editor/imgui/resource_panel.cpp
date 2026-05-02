@@ -8,12 +8,14 @@
 #include "gobot/editor/imgui/resource_panel.hpp"
 #include "gobot/core/config/project_setting.hpp"
 #include "gobot/core/string_utils.hpp"
+#include "gobot/editor/editor.hpp"
 #include "gobot/editor/imgui/imgui_utilities.hpp"
 #include "imgui_extension/icon_fonts/icons_material_design_icons.h"
 #include "imgui_extension/file_browser/ImFileBrowser.h"
 #include "imgui.h"
 #include "imgui_internal.h"
 
+#include <algorithm>
 #include <cstring>
 #include <fstream>
 
@@ -32,6 +34,21 @@ std::string ProjectDisplayName(const std::string& project_path) {
     std::filesystem::path path(project_path);
     std::string name = path.filename().string();
     return name.empty() ? project_path : name;
+}
+
+std::string ToLower(std::string value) {
+    std::ranges::transform(value, value.begin(), [](unsigned char c) {
+        return static_cast<char>(std::tolower(c));
+    });
+    return value;
+}
+
+bool IsNativeSceneFile(const DirectoryInformation* dir_info) {
+    if (dir_info == nullptr || dir_info->is_directory) {
+        return false;
+    }
+
+    return ToLower(std::filesystem::path(dir_info->global_path).extension().string()) == ".jscn";
 }
 
 } // namespace
@@ -295,8 +312,22 @@ void ResourcePanel::DrawResourceTree(DirectoryInformation* dir_info, bool root)
         ImGui::SetTooltip("%s", dir_info->local_path.c_str());
     }
 
-    if (dir_info->is_directory && ImGui::IsMouseDoubleClicked(ImGuiMouseButton_Left) && ImGui::IsItemHovered()) {
-        ChangeDirectory(dir_info);
+    if (IsNativeSceneFile(dir_info) && ImGui::BeginDragDropSource(ImGuiDragDropFlags_SourceAllowNullID)) {
+        ImGui::TextUnformatted(ICON_MDI_FILE);
+        ImGui::SameLine();
+        ImGui::TextUnformatted(dir_info->local_path.c_str());
+        ImGui::SetDragDropPayload("GobotSceneResource",
+                                  dir_info->local_path.c_str(),
+                                  dir_info->local_path.size() + 1);
+        ImGui::EndDragDropSource();
+    }
+
+    if (ImGui::IsMouseDoubleClicked(ImGuiMouseButton_Left) && ImGui::IsItemHovered()) {
+        if (dir_info->is_directory) {
+            ChangeDirectory(dir_info);
+        } else if (IsNativeSceneFile(dir_info)) {
+            Editor::GetInstance()->OpenSceneFromPath(dir_info->local_path);
+        }
     }
 
     if (open && dir_info->is_directory && !dir_info->children.empty()) {

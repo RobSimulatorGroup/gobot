@@ -81,7 +81,8 @@ Editor::Editor() {
     AddChild(Object::New<SceneEditorPanel>());
     AddChild(Object::New<InspectorPanel>());
     AddChild(Object::New<PhysicsPanel>());
-    AddChild(Object::New<ResourcePanel>());
+    resource_panel_ = Object::New<ResourcePanel>();
+    AddChild(resource_panel_);
 
 
     file_browser_ = new ImGui::FileBrowser();
@@ -105,7 +106,14 @@ Node3D* Editor::GetEditedSceneRoot() const {
 }
 
 bool Editor::SaveEditedScene(const std::string& path) const {
-    return edited_scene_ != nullptr && edited_scene_->SaveToPath(path);
+    if (edited_scene_ == nullptr || !edited_scene_->SaveToPath(path)) {
+        return false;
+    }
+
+    if (resource_panel_ != nullptr) {
+        resource_panel_->Refresh();
+    }
+    return true;
 }
 
 bool Editor::LoadEditedScene(const std::string& path) {
@@ -116,6 +124,17 @@ bool Editor::LoadEditedScene(const std::string& path) {
     }
 
     selected_ = edited_scene_->GetRoot();
+    return true;
+}
+
+bool Editor::OpenSceneFromPath(const std::string& path) {
+    if (!LoadEditedScene(path)) {
+        LOG_ERROR("Failed to open scene: {}", path);
+        return false;
+    }
+
+    current_scene_path_ = path;
+    LOG_INFO("Opened scene: {}", current_scene_path_);
     return true;
 }
 
@@ -178,6 +197,12 @@ bool Editor::AddGroundToEditedScene() {
     selected_ = visual;
     LOG_INFO("Added ground to scene root '{}'.", root->GetName());
     return true;
+}
+
+void Editor::RefreshResourcePanel() {
+    if (resource_panel_ != nullptr) {
+        resource_panel_->Refresh();
+    }
 }
 
 void Editor::NotificationCallBack(NotificationType notification) {
@@ -325,7 +350,7 @@ void Editor::HandleSceneFileDialogSelection() {
             LOG_ERROR("Failed to save scene: {}", scene_path);
         }
     } else if (scene_file_dialog_mode_ == SceneFileDialogMode::Load) {
-        if (LoadEditedScene(scene_path)) {
+        if (OpenSceneFromPath(scene_path)) {
             if (IsNativeScenePath(scene_path)) {
                 current_scene_path_ = scene_path;
             } else {

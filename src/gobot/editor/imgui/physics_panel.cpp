@@ -130,11 +130,6 @@ void PhysicsPanel::OnImGuiContent() {
     ImGui::Text("Frame: %llu", static_cast<unsigned long long>(simulation->GetFrameCount()));
     ImGui::Text("Fixed dt: %.6f", static_cast<double>(simulation->GetFixedTimeStep()));
 
-    bool paused = simulation->IsPaused();
-    if (ImGui::Checkbox("Paused", &paused)) {
-        simulation->SetPaused(paused);
-    }
-
     Node* scene_root = Editor::GetInstance() ? Editor::GetInstance()->GetEditedSceneRoot() : nullptr;
     const bool can_build = scene_root != nullptr && selected_info.available;
     if (!can_build) {
@@ -149,13 +144,33 @@ void PhysicsPanel::OnImGuiContent() {
     }
 
     ImGui::SameLine();
+    const bool can_play = selected_info.available && scene_root != nullptr;
+    if (!can_play) {
+        ImGui::BeginDisabled();
+    }
+    if (simulation->IsPaused()) {
+        if (ImGui::Button(ICON_MDI_PLAY " Play")) {
+            if (!simulation->HasWorld()) {
+                simulation->SetBackendType(selected_backend_);
+                simulation->BuildWorldFromScene(scene_root);
+            }
+            if (simulation->HasWorld()) {
+                simulation->SetPaused(false);
+            }
+        }
+    } else {
+        if (ImGui::Button(ICON_MDI_STOP " Stop")) {
+            simulation->SetPaused(true);
+        }
+    }
+    if (!can_play) {
+        ImGui::EndDisabled();
+    }
+
+    ImGui::SameLine();
     if (!has_world) {
         ImGui::BeginDisabled();
     }
-    if (ImGui::Button("Step")) {
-        simulation->StepOnce();
-    }
-    ImGui::SameLine();
     if (ImGui::Button("Reset")) {
         simulation->Reset();
     }
@@ -178,13 +193,14 @@ void PhysicsPanel::OnImGuiContent() {
         ImGui::Text("Links: %zu", scene_state.total_link_count);
         ImGui::Text("Joints: %zu", scene_state.total_joint_count);
 
+        const float table_height = std::max(260.0f, ImGui::GetContentRegionAvail().y);
         if (ImGui::BeginTable("PhysicsJointStateTable",
                               6,
                               ImGuiTableFlags_Borders |
                                       ImGuiTableFlags_RowBg |
                                       ImGuiTableFlags_Resizable |
                                       ImGuiTableFlags_ScrollY,
-                              ImVec2(0.0f, 220.0f))) {
+                              ImVec2(0.0f, table_height))) {
             ImGui::TableSetupColumn("Robot");
             ImGui::TableSetupColumn("Joint");
             ImGui::TableSetupColumn("Position");

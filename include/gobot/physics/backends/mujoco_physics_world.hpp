@@ -44,6 +44,8 @@ private:
 
     void AddLooseSceneGeomsToSpec(void* spec);
 
+    void AddFloatingBaseJointsToSpec(void* spec);
+
     void BuildJointBindings();
 
     void BuildLinkBindings();
@@ -63,6 +65,7 @@ private:
         int actuator_id{-1};
         int qpos_address{-1};
         int dof_address{-1};
+        int joint_type{-1};
     };
 
     struct MuJoCoLinkBinding {

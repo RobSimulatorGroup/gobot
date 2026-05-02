@@ -123,6 +123,38 @@ TEST(TestSimulationServer, syncs_world_joint_state_to_motion_mode_robot) {
     gobot::Object::Delete(robot);
 }
 
+TEST(TestSimulationServer, syncs_world_link_transform_to_motion_mode_robot) {
+    gobot::SimulationServer simulation_server;
+
+    auto* robot = gobot::Object::New<gobot::Robot3D>();
+    robot->SetName("robot");
+
+    auto* floating_joint = gobot::Object::New<gobot::Joint3D>();
+    floating_joint->SetName("floating_base_joint");
+    floating_joint->SetJointType(gobot::JointType::Floating);
+    floating_joint->SetChildLink("base");
+
+    auto* base_link = gobot::Object::New<gobot::Link3D>();
+    base_link->SetName("base");
+    base_link->SetPosition({9.0, 9.0, 9.0});
+
+    robot->AddChild(floating_joint);
+    floating_joint->AddChild(base_link);
+    ASSERT_NE(base_link, nullptr);
+
+    robot->SetMode(gobot::RobotMode::Motion);
+
+    ASSERT_TRUE(simulation_server.BuildWorldFromScene(robot));
+    ASSERT_TRUE(simulation_server.SyncSceneFromWorld());
+    EXPECT_TRUE(base_link->GetTransform().translation().isApprox(gobot::Vector3(9.0, 9.0, 9.0), CMP_EPSILON));
+
+    base_link->SetPosition({0.0, 0.0, 0.0});
+    ASSERT_TRUE(simulation_server.Reset());
+    EXPECT_TRUE(base_link->GetTransform().translation().isApprox(gobot::Vector3(9.0, 9.0, 9.0), CMP_EPSILON));
+
+    gobot::Object::Delete(robot);
+}
+
 TEST(TestSimulationServer, does_not_sync_world_joint_state_to_assembly_mode_robot) {
     gobot::SimulationServer simulation_server;
 

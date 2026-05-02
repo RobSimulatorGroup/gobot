@@ -10,10 +10,53 @@
 #include "gobot/core/registration.hpp"
 #include "gobot/error_macros.hpp"
 #include "gobot/scene/joint_3d.hpp"
+#include "gobot/scene/link_3d.hpp"
 #include "gobot/scene/node.hpp"
 #include "gobot/scene/robot_3d.hpp"
 
 namespace gobot {
+namespace {
+
+const PhysicsRobotSnapshot* FindRobotSnapshot(const PhysicsSceneSnapshot& snapshot,
+                                              std::size_t robot_index,
+                                              const std::string& robot_name) {
+    if (robot_index < snapshot.robots.size()) {
+        return &snapshot.robots[robot_index];
+    }
+
+    for (const PhysicsRobotSnapshot& robot_snapshot : snapshot.robots) {
+        if (robot_snapshot.name == robot_name) {
+            return &robot_snapshot;
+        }
+    }
+
+    return nullptr;
+}
+
+const PhysicsLinkState* FindLinkState(const PhysicsRobotState& robot_state,
+                                      const std::string& link_name) {
+    for (const PhysicsLinkState& link_state : robot_state.links) {
+        if (link_state.link_name == link_name) {
+            return &link_state;
+        }
+    }
+
+    return nullptr;
+}
+
+void ApplyLinkGlobalTransform(Link3D* link, const Affine3& global_transform) {
+    if (link == nullptr) {
+        return;
+    }
+
+    if (link->IsInsideTree()) {
+        link->SetGlobalTransform(global_transform);
+    } else {
+        link->SetTransform(global_transform);
+    }
+}
+
+} // namespace
 
 SimulationServer* SimulationServer::s_singleton = nullptr;
 
@@ -316,15 +359,36 @@ bool SimulationServer::ApplyWorldStateToScene() {
     }
 
     const PhysicsSceneState& scene_state = world_->GetSceneState();
-    for (const PhysicsRobotState& robot_state : scene_state.robots) {
+    const PhysicsSceneSnapshot& scene_snapshot = world_->GetSceneSnapshot();
+    for (std::size_t robot_index = 0; robot_index < scene_state.robots.size(); ++robot_index) {
+        const PhysicsRobotState& robot_state = scene_state.robots[robot_index];
         auto* robot = const_cast<Robot3D*>(robot_state.node);
         if (!robot || robot->GetMode() != RobotMode::Motion) {
             continue;
         }
 
+        const PhysicsRobotSnapshot* robot_snapshot =
+                FindRobotSnapshot(scene_snapshot, robot_index, robot_state.name);
+        if (robot_snapshot != nullptr) {
+            for (const PhysicsJointSnapshot& joint_snapshot : robot_snapshot->joints) {
+                if (static_cast<JointType>(joint_snapshot.joint_type) != JointType::Floating) {
+                    continue;
+                }
+
+                const PhysicsLinkState* floating_link_state =
+                        FindLinkState(robot_state, joint_snapshot.child_link);
+                if (floating_link_state == nullptr) {
+                    continue;
+                }
+
+                ApplyLinkGlobalTransform(const_cast<Link3D*>(floating_link_state->node),
+                                         floating_link_state->global_transform);
+            }
+        }
+
         for (const PhysicsJointState& joint_state : robot_state.joints) {
             auto* joint = const_cast<Joint3D*>(joint_state.node);
-            if (joint && joint->IsMotionModeEnabled()) {
+            if (joint && joint->IsMotionModeEnabled() && joint->GetJointType() != JointType::Floating) {
                 joint->SetJointPosition(joint_state.position);
             }
         }

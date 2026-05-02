@@ -11,6 +11,7 @@
 #include "gobot/core/config/project_setting.hpp"
 #include "gobot/core/registration.hpp"
 #include "gobot/log.hpp"
+#include "gobot/scene/joint_3d.hpp"
 
 #ifdef GOBOT_HAS_MUJOCO
 #include <mujoco/mujoco.h>
@@ -72,6 +73,16 @@ const PhysicsRobotSnapshot* FindFirstRobotWithSourcePath(const PhysicsSceneSnaps
     for (const PhysicsRobotSnapshot& robot : scene_snapshot.robots) {
         if (!robot.source_path.empty()) {
             return &robot;
+        }
+    }
+
+    return nullptr;
+}
+
+const PhysicsLinkSnapshot* FindLinkSnapshot(const PhysicsRobotSnapshot& robot, const std::string& link_name) {
+    for (const PhysicsLinkSnapshot& link : robot.links) {
+        if (link.name == link_name) {
+            return &link;
         }
     }
 
@@ -209,6 +220,7 @@ bool MuJoCoPhysicsWorld::LoadModelFromRobotSource() {
     mjSpec* spec = mj_parseXML(model_path.c_str(), nullptr, error, sizeof(error));
     if (spec) {
         AddLooseSceneGeomsToSpec(spec);
+        AddFloatingBaseJointsToSpec(spec);
         model = mj_compile(spec, nullptr);
         if (!model) {
             const std::string compile_error = mjs_getError(spec) ? mjs_getError(spec) : "unknown error";
@@ -280,10 +292,11 @@ void MuJoCoPhysicsWorld::AddLooseSceneGeomsToSpec(void* spec_ptr) {
         geom->pos[0] = shape.global_transform.translation().x();
         geom->pos[1] = shape.global_transform.translation().y();
         geom->pos[2] = shape.global_transform.translation().z();
-        geom->quat[0] = 1.0;
-        geom->quat[1] = 0.0;
-        geom->quat[2] = 0.0;
-        geom->quat[3] = 0.0;
+        const Quaternion rotation(shape.global_transform.linear());
+        geom->quat[0] = rotation.w();
+        geom->quat[1] = rotation.x();
+        geom->quat[2] = rotation.y();
+        geom->quat[3] = rotation.z();
         geom->size[0] = shape.box_size.x() * 0.5;
         geom->size[1] = shape.box_size.y() * 0.5;
         geom->size[2] = shape.box_size.z() * 0.5;
@@ -301,6 +314,46 @@ void MuJoCoPhysicsWorld::AddLooseSceneGeomsToSpec(void* spec_ptr) {
 
     if (added_count > 0) {
         LOG_INFO("Added {} loose Gobot box collision geoms to the MuJoCo world.", added_count);
+    }
+}
+
+void MuJoCoPhysicsWorld::AddFloatingBaseJointsToSpec(void* spec_ptr) {
+    auto* spec = static_cast<mjSpec*>(spec_ptr);
+    if (!spec) {
+        return;
+    }
+
+    int added_count = 0;
+    for (const PhysicsRobotSnapshot& robot : scene_snapshot_.robots) {
+        for (const PhysicsJointSnapshot& joint : robot.joints) {
+            if (static_cast<JointType>(joint.joint_type) != JointType::Floating || joint.child_link.empty()) {
+                continue;
+            }
+
+            mjsBody* child_body = mjs_findBody(spec, joint.child_link.c_str());
+            if (!child_body) {
+                LOG_WARN("MuJoCo spec has no body '{}' for Gobot floating joint '{}'.",
+                         joint.child_link,
+                         joint.name);
+                continue;
+            }
+
+            mjsJoint* free_joint = mjs_addFreeJoint(child_body);
+            if (!free_joint) {
+                LOG_WARN("Failed to add MuJoCo free joint for Gobot floating joint '{}'.", joint.name);
+                continue;
+            }
+
+            const std::string free_joint_name = joint.name.empty()
+                                                        ? fmt::format("{}_freejoint", joint.child_link)
+                                                        : joint.name;
+            mjs_setName(free_joint->element, free_joint_name.c_str());
+            ++added_count;
+        }
+    }
+
+    if (added_count > 0) {
+        LOG_INFO("Added {} Gobot floating joint(s) to the MuJoCo model as free joints.", added_count);
     }
 }
 
@@ -362,6 +415,7 @@ void MuJoCoPhysicsWorld::BuildJointBindings() {
             binding.actuator_id = FindActuatorForJoint(model, joint_id, joint_state.joint_name);
             binding.qpos_address = model->jnt_qposadr[joint_id];
             binding.dof_address = model->jnt_dofadr[joint_id];
+            binding.joint_type = model->jnt_type[joint_id];
             joint_bindings_.emplace_back(binding);
         }
     }
@@ -393,6 +447,10 @@ void MuJoCoPhysicsWorld::ApplyControlsToMuJoCo() {
         }
 
         const PhysicsJointState& joint_state = robot_state.joints[binding.joint_index];
+        if (binding.joint_type == mjJNT_FREE || binding.joint_type == mjJNT_BALL) {
+            continue;
+        }
+
         RealType control_value = 0.0;
         switch (joint_state.control_mode) {
             case PhysicsJointControlMode::Passive:
@@ -509,6 +567,21 @@ void MuJoCoPhysicsWorld::SyncStateFromMuJoCo() {
         }
 
         PhysicsJointState& joint_state = robot_state.joints[binding.joint_index];
+        if (binding.joint_type == mjJNT_FREE) {
+            if (binding.qpos_address >= 0 && binding.qpos_address + 6 < model->nq) {
+                joint_state.position = static_cast<RealType>(data->qpos[binding.qpos_address + 2]);
+            }
+            if (binding.dof_address >= 0 && binding.dof_address + 5 < model->nv) {
+                joint_state.velocity = Vector3(data->qvel[binding.dof_address + 0],
+                                               data->qvel[binding.dof_address + 1],
+                                               data->qvel[binding.dof_address + 2]).norm();
+            }
+            continue;
+        }
+        if (binding.joint_type == mjJNT_BALL) {
+            continue;
+        }
+
         if (binding.qpos_address >= 0 && binding.qpos_address < model->nq) {
             joint_state.position = static_cast<RealType>(data->qpos[binding.qpos_address]);
         }
@@ -536,6 +609,36 @@ void MuJoCoPhysicsWorld::SyncStateToMuJoCo() {
         }
 
         const PhysicsJointState& joint_state = robot_state.joints[binding.joint_index];
+        if (binding.joint_type == mjJNT_FREE) {
+            const PhysicsJointSnapshot* joint_snapshot = nullptr;
+            const PhysicsLinkSnapshot* child_link_snapshot = nullptr;
+            if (binding.robot_index < scene_snapshot_.robots.size() &&
+                binding.joint_index < scene_snapshot_.robots[binding.robot_index].joints.size()) {
+                joint_snapshot = &scene_snapshot_.robots[binding.robot_index].joints[binding.joint_index];
+                child_link_snapshot = FindLinkSnapshot(scene_snapshot_.robots[binding.robot_index],
+                                                       joint_snapshot->child_link);
+            }
+
+            if (joint_snapshot != nullptr && binding.qpos_address >= 0 && binding.qpos_address + 6 < model->nq) {
+                const Affine3 initial_transform = child_link_snapshot != nullptr
+                                                          ? child_link_snapshot->global_transform
+                                                          : joint_snapshot->global_transform;
+                const Vector3 position = initial_transform.translation();
+                const Quaternion orientation(initial_transform.linear());
+                data->qpos[binding.qpos_address + 0] = position.x();
+                data->qpos[binding.qpos_address + 1] = position.y();
+                data->qpos[binding.qpos_address + 2] = position.z();
+                data->qpos[binding.qpos_address + 3] = orientation.w();
+                data->qpos[binding.qpos_address + 4] = orientation.x();
+                data->qpos[binding.qpos_address + 5] = orientation.y();
+                data->qpos[binding.qpos_address + 6] = orientation.z();
+            }
+            continue;
+        }
+        if (binding.joint_type == mjJNT_BALL) {
+            continue;
+        }
+
         if (binding.qpos_address >= 0 && binding.qpos_address < model->nq) {
             data->qpos[binding.qpos_address] = joint_state.position;
         }
