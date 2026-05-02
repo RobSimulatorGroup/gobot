@@ -40,7 +40,11 @@ GOBOT_REGISTRATION {
     Class_<MeshInstance3D>("MeshInstance3D")
             .constructor()(CtorAsRawPtr)
             .property("mesh", &MeshInstance3D::GetMesh, &MeshInstance3D::SetMesh)
-            .property("material", &MeshInstance3D::GetMaterial, &MeshInstance3D::SetMaterial)
+            .property("material", &MeshInstance3D::GetMaterial, &MeshInstance3D::SetMaterial)(
+                    AddMetaPropertyInfo(
+                            PropertyInfo()
+                                .SetUsageFlags(PropertyUsageFlags::None)))
+            .property("material_override", &MeshInstance3D::GetMaterial, &MeshInstance3D::SetMaterial)
             .property("surface_color", &MeshInstance3D::GetSurfaceColor, &MeshInstance3D::SetSurfaceColor);
 
 };

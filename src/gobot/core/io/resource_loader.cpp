@@ -80,13 +80,31 @@ Ref<Resource> ResourceLoader::Load(const std::string &path,
                                    ResourceFormatLoader::CacheMode cache_mode) {
     std::string local_path = ValidateLocalPath(path);
 
+    if (cache_mode == ResourceFormatLoader::CacheMode::Reuse) {
+        Ref<Resource> cached_resource = ResourceCache::GetRef(local_path);
+        if (cached_resource.IsValid()) {
+            LOG_TRACE("ResourceLoader reused cached resource '{}' type '{}'.",
+                      local_path,
+                      cached_resource->GetClassStringName());
+            return cached_resource;
+        }
+    }
+
+    LOG_TRACE("ResourceLoader loading '{}' type_hint '{}' cache_mode {}.",
+              local_path,
+              type_hint,
+              static_cast<int>(cache_mode));
     Ref<Resource> res = LoadImpl(path, type_hint, cache_mode);
     ERR_FAIL_COND_V_MSG(!res, {}, fmt::format("Loading resource: {} failed.", path));
 
     if (res.IsValid()) {
         if (cache_mode != ResourceFormatLoader::CacheMode::Ignore) {
-            res->SetPath(local_path);
+            res->SetPath(local_path, cache_mode == ResourceFormatLoader::CacheMode::Replace);
         }
+        LOG_TRACE("ResourceLoader loaded '{}' as type '{}' path '{}'.",
+                  local_path,
+                  res->GetClassStringName(),
+                  res->GetPath());
     }
     return res;
 }

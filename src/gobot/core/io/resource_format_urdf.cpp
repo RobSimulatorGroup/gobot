@@ -218,6 +218,83 @@ std::string LocalizeImportedAssetPath(const std::filesystem::path& asset_path) {
     return settings != nullptr ? settings->LocalizePath(normalized_path.string()) : normalized_path.string();
 }
 
+std::string SanitizeResourcePathPart(std::string value) {
+    for (char& c : value) {
+        const bool valid = std::isalnum(static_cast<unsigned char>(c)) || c == '_' || c == '-' || c == '.';
+        if (!valid) {
+            c = '_';
+        }
+    }
+    return value.empty() ? "asset" : value;
+}
+
+bool IsInsideProject(const std::filesystem::path& path, const ProjectSettings& settings) {
+    const std::string project_path = settings.GetProjectPath();
+    if (project_path.empty()) {
+        return false;
+    }
+
+    const std::string localized_path = settings.LocalizePath(path.lexically_normal().string());
+    return localized_path.starts_with("res://");
+}
+
+std::string ImportAssetIntoProject(const std::filesystem::path& asset_path,
+                                   const std::filesystem::path& source_root,
+                                   const std::string& namespace_hint) {
+    const std::filesystem::path normalized_asset_path = asset_path.lexically_normal();
+    ProjectSettings* settings = ProjectSettings::s_singleton;
+    if (settings == nullptr || settings->GetProjectPath().empty()) {
+        return normalized_asset_path.string();
+    }
+
+    if (IsInsideProject(normalized_asset_path, *settings)) {
+        return settings->LocalizePath(normalized_asset_path.string());
+    }
+
+    if (!std::filesystem::exists(normalized_asset_path)) {
+        LOG_ERROR("URDF referenced asset does not exist: {}.", normalized_asset_path.string());
+        return normalized_asset_path.string();
+    }
+
+    std::filesystem::path relative_asset_path;
+    const std::filesystem::path normalized_source_root = source_root.lexically_normal();
+    std::error_code relative_error;
+    if (!normalized_source_root.empty() && std::filesystem::exists(normalized_source_root)) {
+        relative_asset_path = std::filesystem::relative(normalized_asset_path, normalized_source_root, relative_error);
+    }
+
+    if (relative_error || relative_asset_path.empty() || relative_asset_path.native().starts_with("..")) {
+        relative_asset_path = normalized_asset_path.filename();
+    }
+
+    const std::string namespace_name = SanitizeResourcePathPart(namespace_hint);
+    const std::filesystem::path project_asset_path =
+            std::filesystem::path(settings->GetProjectPath()) / "assets" / namespace_name / relative_asset_path;
+
+    std::error_code create_error;
+    std::filesystem::create_directories(project_asset_path.parent_path(), create_error);
+    if (create_error) {
+        LOG_ERROR("Failed to create project asset directory '{}': {}.",
+                  project_asset_path.parent_path().string(), create_error.message());
+        return normalized_asset_path.string();
+    }
+
+    std::error_code copy_error;
+    std::filesystem::copy_file(normalized_asset_path,
+                               project_asset_path,
+                               std::filesystem::copy_options::overwrite_existing,
+                               copy_error);
+    if (copy_error) {
+        LOG_ERROR("Failed to copy URDF asset '{}' to '{}': {}.",
+                  normalized_asset_path.string(), project_asset_path.string(), copy_error.message());
+        return normalized_asset_path.string();
+    }
+
+    const std::string localized_path = settings->LocalizePath(project_asset_path.string());
+    LOG_INFO("Imported URDF asset '{}' as '{}'.", normalized_asset_path.string(), localized_path);
+    return localized_path;
+}
+
 std::string ResolvePackageUri(const std::string& filename, const std::string& source_file_path) {
     constexpr std::string_view prefix = "package://";
     if (!filename.starts_with(prefix)) {
@@ -237,7 +314,7 @@ std::string ResolvePackageUri(const std::string& filename, const std::string& so
         return filename;
     }
 
-    return LocalizeImportedAssetPath(package_root / relative_asset_path);
+    return ImportAssetIntoProject(package_root / relative_asset_path, package_root, package_name);
 }
 
 std::string NormalizeImportedAssetPath(const std::string& filename, const std::string& source_file_path) {
@@ -254,7 +331,9 @@ std::string NormalizeImportedAssetPath(const std::string& filename, const std::s
         mesh_path = std::filesystem::path(source_file_path).parent_path() / mesh_path;
     }
 
-    return LocalizeImportedAssetPath(mesh_path);
+    return ImportAssetIntoProject(mesh_path,
+                                  std::filesystem::path(source_file_path).parent_path(),
+                                  std::filesystem::path(source_file_path).stem().string());
 }
 
 JointType ParseJointType(const std::string& value) {

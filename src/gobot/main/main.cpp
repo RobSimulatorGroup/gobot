@@ -116,8 +116,6 @@ bool Main::Iteration()
     RS::GetInstance()->Draw();
 
 
-    LOG_INFO("Run Once");
-
     return exit;
 
 }

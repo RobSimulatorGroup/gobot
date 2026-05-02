@@ -199,6 +199,14 @@ bool VariantSerializer::SaveResource(const Variant& variant, const Type& type, J
             writer = fmt::format("ExtResource({})", s_resource_format_saver_->external_resources_[res]);
         } else if (s_resource_format_saver_->internal_resources_.contains(res)) {
             writer = fmt::format("SubResource({})", res->GetUniqueId());
+        } else if (!res.IsValid()) {
+            writer = nullptr;
+        } else {
+            LOG_ERROR("Resource reference was not collected for serialization. type: {}, path: '{}', built_in: {}",
+                      res->GetClassStringName(),
+                      res->GetPath(),
+                      res->IsBuiltIn());
+            return false;
         }
     } else {
         LOG_ERROR("Unsupported wrapper type: {}", type.get_name().data());
@@ -464,8 +472,15 @@ bool VariantSerializer::LoadExtResource(Variant& variant, const std::string& id)
 bool VariantSerializer::LoadResource(Variant& variant, const Json& json) {
     if (json.is_string()) {
         auto str = json.get<std::string>();
-        auto left_bracket = str.find("(");
-        auto right_bracket = str.find(")");
+        auto left_bracket = str.find('(');
+        auto right_bracket = str.rfind(')');
+        if (str.empty() || left_bracket == std::string::npos || right_bracket == std::string::npos ||
+            right_bracket <= left_bracket + 1) {
+            LOG_ERROR("Cannot load Resource of type: {}, malformed resource reference: {}",
+                      variant.get_type().get_name().data(), json.dump(4));
+            return false;
+        }
+
         auto key_word = str.substr(0, left_bracket);
         auto id = str.substr(left_bracket + 1, right_bracket - left_bracket - 1);
         if (key_word == "SubResource") {

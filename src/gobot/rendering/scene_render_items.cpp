@@ -6,10 +6,38 @@
 #include "gobot/scene/resources/array_mesh.hpp"
 #include "gobot/scene/resources/material.hpp"
 #include "gobot/scene/resources/mesh.hpp"
+#include "gobot/scene/resources/primitive_mesh.hpp"
+
+#include "gobot/log.hpp"
+
+#if GOB_LOG_ACTIVE_LEVEL <= GOB_LOG_LEVEL_TRACE
+#include <unordered_map>
+#endif
 
 namespace gobot {
 
 namespace {
+
+#if GOB_LOG_ACTIVE_LEVEL <= GOB_LOG_LEVEL_TRACE
+std::string BuildMaterialDebugSignature(const std::string& material_source,
+                                        const Ref<Material>& material,
+                                        const Color& color,
+                                        RealType metallic,
+                                        RealType roughness,
+                                        RealType specular) {
+    return fmt::format("{}|{}|{}|{}|{}|{}|{}|{}|{}|{}",
+                       material_source,
+                       material.IsValid() ? material->GetClassStringName() : std::string("<none>"),
+                       material.IsValid() ? material->GetPath() : std::string(),
+                       color.red(),
+                       color.green(),
+                       color.blue(),
+                       color.alpha(),
+                       metallic,
+                       roughness,
+                       specular);
+}
+#endif
 
 void CollectNodeRenderItems(const Node* node, SceneRenderItems& items) {
     if (node == nullptr) {
@@ -23,9 +51,25 @@ void CollectNodeRenderItems(const Node* node, SceneRenderItems& items) {
             VisualMeshRenderItem item;
             item.mesh = mesh_resource->GetRid();
             item.material = mesh_instance->GetMaterial();
+#if GOB_LOG_ACTIVE_LEVEL <= GOB_LOG_LEVEL_TRACE
+            std::string material_source = item.material.IsValid() ? "material_override" : "surface_color";
+#endif
             if (!item.material.IsValid()) {
                 if (Ref<ArrayMesh> array_mesh = dynamic_pointer_cast<ArrayMesh>(mesh_resource); array_mesh.IsValid()) {
                     item.material = array_mesh->GetMaterial();
+#if GOB_LOG_ACTIVE_LEVEL <= GOB_LOG_LEVEL_TRACE
+                    if (item.material.IsValid()) {
+                        material_source = "mesh:ArrayMesh.material";
+                    }
+#endif
+                } else if (Ref<PrimitiveMesh> primitive_mesh = dynamic_pointer_cast<PrimitiveMesh>(mesh_resource);
+                           primitive_mesh.IsValid()) {
+                    item.material = primitive_mesh->GetMaterial();
+#if GOB_LOG_ACTIVE_LEVEL <= GOB_LOG_LEVEL_TRACE
+                    if (item.material.IsValid()) {
+                        material_source = "mesh:PrimitiveMesh.material";
+                    }
+#endif
                 }
             }
             item.model = mesh_instance->GetGlobalTransform().matrix();
@@ -37,6 +81,31 @@ void CollectNodeRenderItems(const Node* node, SceneRenderItems& items) {
                 item.roughness = pbr_material->GetRoughness();
                 item.specular = pbr_material->GetSpecular();
             }
+#if GOB_LOG_ACTIVE_LEVEL <= GOB_LOG_LEVEL_TRACE
+            static std::unordered_map<const MeshInstance3D*, std::string> logged_material_signatures;
+            const std::string signature = BuildMaterialDebugSignature(material_source,
+                                                                      item.material,
+                                                                      item.surface_color,
+                                                                      item.metallic,
+                                                                      item.roughness,
+                                                                      item.specular);
+            auto [it, inserted] = logged_material_signatures.emplace(mesh_instance, signature);
+            if (inserted || it->second != signature) {
+                it->second = signature;
+                LOG_TRACE("Viewer material node '{}' source '{}' material '{}' path '{}' albedo=({}, {}, {}, {}) metallic={} roughness={} specular={}.",
+                          mesh_instance->GetName(),
+                          material_source,
+                          item.material.IsValid() ? item.material->GetClassStringName() : std::string("<none>"),
+                          item.material.IsValid() ? item.material->GetPath() : std::string(),
+                          item.surface_color.red(),
+                          item.surface_color.green(),
+                          item.surface_color.blue(),
+                          item.surface_color.alpha(),
+                          item.metallic,
+                          item.roughness,
+                          item.specular);
+            }
+#endif
             items.visual_meshes.push_back(item);
         }
     }

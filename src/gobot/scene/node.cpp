@@ -11,6 +11,7 @@
 #include <ranges>
 #include "gobot/core/registration.hpp"
 #include "gobot/core/string_utils.hpp"
+#include "gobot/scene/resources/packed_scene.hpp"
 
 namespace gobot {
 
@@ -679,6 +680,14 @@ bool Node::IsPhysicsProcessing() const {
     return false;
 }
 
+void Node::SetSceneInstance(const Ref<PackedScene>& scene) {
+    scene_instance_ = scene;
+}
+
+Ref<PackedScene> Node::GetSceneInstance() const {
+    return scene_instance_;
+}
+
 } // End of namespace gobot
 
 GOBOT_REGISTRATION {
@@ -688,6 +697,10 @@ GOBOT_REGISTRATION {
 
             .property_readonly("child_count", &Node::GetChildCount)
             .property_readonly("inside_tree", &Node::IsInsideTree)
+            .property("scene_instance", &Node::GetSceneInstance, &Node::SetSceneInstance)(
+                    AddMetaPropertyInfo(
+                            PropertyInfo()
+                                .SetUsageFlags(PropertyUsageFlags::None)))
 
             .property("name", &Node::GetName, &Node::SetName)(
                     AddMetaPropertyInfo(

@@ -95,11 +95,14 @@ Node3D* EditedScene::AddSceneFromPath(const std::string& path) {
         return nullptr;
     }
 
-    Ref<Resource> resource = ResourceLoader::Load(path, "PackedScene", ResourceFormatLoader::CacheMode::Ignore);
+    Ref<Resource> resource = ResourceLoader::Load(path, "PackedScene", ResourceFormatLoader::CacheMode::Reuse);
     Ref<PackedScene> packed_scene = dynamic_pointer_cast<PackedScene>(resource);
     if (!packed_scene.IsValid()) {
         LOG_ERROR("EditedScene cannot add '{}': ResourceLoader did not return a PackedScene.", path);
         return nullptr;
+    }
+    if (packed_scene->GetPath().empty()) {
+        packed_scene->SetPath(path, false);
     }
 
     Node* instance = packed_scene->Instantiate();
@@ -112,8 +115,9 @@ Node3D* EditedScene::AddSceneFromPath(const std::string& path) {
         return nullptr;
     }
 
+    node_3d->SetSceneInstance(packed_scene);
     root_->AddChild(node_3d, true);
-    LOG_INFO("Added scene '{}' as child '{}' under '{}'.", path, node_3d->GetName(), root_->GetName());
+    LOG_INFO("Added scene instance '{}' as child '{}' under '{}'.", path, node_3d->GetName(), root_->GetName());
     return node_3d;
 }
 

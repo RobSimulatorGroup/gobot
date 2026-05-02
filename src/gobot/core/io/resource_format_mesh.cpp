@@ -5,6 +5,7 @@
 
 #include "gobot/core/io/resource_format_mesh.hpp"
 
+#include "gobot/core/config/project_setting.hpp"
 #include "gobot/core/math/math_defs.hpp"
 #include "gobot/core/registration.hpp"
 #include "gobot/log.hpp"
@@ -165,11 +166,12 @@ Ref<Resource> ResourceFormatLoaderMesh::Load(const std::string& path,
     LOG_ERROR("Cannot load mesh '{}': Gobot was built without Assimp support.", path);
     return {};
 #else
+    const std::string global_path = ProjectSettings::GetInstance()->GlobalizePath(path);
     Assimp::Importer importer;
     // Robotics assets authored for URDF are already in the URDF/world up-axis convention.
     // Assimp's default Collada root-axis conversion would cancel Blender-exported node transforms.
     importer.SetPropertyInteger(AI_CONFIG_IMPORT_COLLADA_IGNORE_UP_DIRECTION, 1);
-    const aiScene* scene = importer.ReadFile(path,
+    const aiScene* scene = importer.ReadFile(global_path,
                                              aiProcess_Triangulate |
                                              aiProcess_JoinIdenticalVertices |
                                              aiProcess_GenNormals |
@@ -225,7 +227,7 @@ bool ResourceFormatLoaderMesh::Exists(const std::string& path) const {
     (void)path;
     return false;
 #else
-    return ResourceFormatLoader::Exists(path);
+    return std::filesystem::exists(ProjectSettings::GetInstance()->GlobalizePath(path));
 #endif
 }
 

@@ -9,9 +9,13 @@
 
 #include "gobot/core/object.hpp"
 #include "gobot/core/registration.hpp"
+#include "gobot/core/string_utils.hpp"
 #include "gobot/log.hpp"
+#include "gobot/scene/mesh_instance_3d.hpp"
 #include "gobot/scene/node.hpp"
 #include "gobot/scene/robot_3d.hpp"
+#include "gobot/scene/resources/array_mesh.hpp"
+#include "gobot/scene/resources/primitive_mesh.hpp"
 
 namespace gobot {
 namespace {
@@ -48,6 +52,44 @@ std::vector<SceneState::PropertyData> GetPropertiesInRestoreOrder(const SceneSta
                                 GetPropertyRestorePriority(node_data->type, rhs.name);
                      });
     return properties;
+}
+
+bool IsImportedMeshSourcePath(const std::string& path) {
+    const std::string extension = ToLower(GetFileExtension(path));
+    return extension == "stl" ||
+           extension == "dae" ||
+           extension == "obj" ||
+           extension == "fbx" ||
+           extension == "ply" ||
+           extension == "glb" ||
+           extension == "gltf";
+}
+
+Ref<Material> GetImportedMeshMaterialForSceneOverride(Node* node) {
+    auto* mesh_instance = Object::PointerCastTo<MeshInstance3D>(node);
+    if (mesh_instance == nullptr || mesh_instance->GetMaterial().IsValid()) {
+        return {};
+    }
+
+    Ref<Mesh> mesh = mesh_instance->GetMesh();
+    if (!mesh.IsValid() || mesh->IsBuiltIn() || !IsImportedMeshSourcePath(mesh->GetPath())) {
+        return {};
+    }
+
+    Ref<Material> mesh_material;
+    if (Ref<ArrayMesh> array_mesh = dynamic_pointer_cast<ArrayMesh>(mesh); array_mesh.IsValid()) {
+        mesh_material = array_mesh->GetMaterial();
+    } else if (Ref<PrimitiveMesh> primitive_mesh = dynamic_pointer_cast<PrimitiveMesh>(mesh); primitive_mesh.IsValid()) {
+        mesh_material = primitive_mesh->GetMaterial();
+    }
+
+    if (mesh_material.IsValid()) {
+        LOG_TRACE("PackedScene stores MeshInstance3D '{}' imported mesh material from '{}' as material_override.",
+                  mesh_instance->GetName(),
+                  mesh->GetPath());
+    }
+
+    return mesh_material;
 }
 
 } // namespace
@@ -145,6 +187,7 @@ bool PackedScene::Pack(Node* root) {
         node_data.type = node->GetClassStringName();
         node_data.name = node->GetName();
         node_data.parent = parent;
+        node_data.instance = node->GetSceneInstance();
 
         auto type = Object::GetDerivedTypeByInstance(Instance(node));
         for (auto& prop : type.get_properties()) {
@@ -168,6 +211,14 @@ bool PackedScene::Pack(Node* root) {
                 RobotMode original_mode{};
                 if (property_name == "mode" && get_original_robot_mode(node, &original_mode)) {
                     node_data.properties.push_back({property_name, Variant(original_mode)});
+                } else if (property_name == "material_override") {
+                    Variant property_value = node->Get(property_name);
+                    Ref<Material> imported_mesh_material = GetImportedMeshMaterialForSceneOverride(node);
+                    if (imported_mesh_material.IsValid()) {
+                        node_data.properties.push_back({property_name, Variant(imported_mesh_material)});
+                    } else {
+                        node_data.properties.push_back({property_name, property_value});
+                    }
                 } else {
                     node_data.properties.push_back({property_name, node->Get(property_name)});
                 }
@@ -175,6 +226,10 @@ bool PackedScene::Pack(Node* root) {
         }
 
         const int node_index = state_->AddNode(node_data);
+        if (node_data.instance.IsValid()) {
+            return node_index;
+        }
+
         for (std::size_t i = 0; i < node->GetChildCount(); ++i) {
             pack_node_ref(node->GetChild(static_cast<int>(i)), node_index, pack_node_ref);
         }
@@ -214,22 +269,34 @@ Node* PackedScene::Instantiate() const {
             return nullptr;
         }
 
-        Type node_type = Type::get_by_name(node_data->type);
-        if (!node_type.is_valid()) {
-            LOG_ERROR("PackedScene instantiate failed: unknown node type '{}' at index {}.",
-                      node_data->type, i);
-            cleanup();
-            return nullptr;
-        }
+        Node* node = nullptr;
+        if (node_data->instance.IsValid()) {
+            node = node_data->instance->Instantiate();
+            if (node == nullptr) {
+                LOG_ERROR("PackedScene instantiate failed: cannot instantiate node '{}' from scene instance at index {}.",
+                          node_data->name, i);
+                cleanup();
+                return nullptr;
+            }
+            node->SetSceneInstance(node_data->instance);
+        } else {
+            Type node_type = Type::get_by_name(node_data->type);
+            if (!node_type.is_valid()) {
+                LOG_ERROR("PackedScene instantiate failed: unknown node type '{}' at index {}.",
+                          node_data->type, i);
+                cleanup();
+                return nullptr;
+            }
 
-        Variant new_obj = node_type.create();
-        bool success = false;
-        auto* node = new_obj.convert<Node*>(&success);
-        if (!success || node == nullptr) {
-            LOG_ERROR("PackedScene instantiate failed: cannot create node '{}' of type '{}' at index {}.",
-                      node_data->name, node_data->type, i);
-            cleanup();
-            return nullptr;
+            Variant new_obj = node_type.create();
+            bool success = false;
+            node = new_obj.convert<Node*>(&success);
+            if (!success || node == nullptr) {
+                LOG_ERROR("PackedScene instantiate failed: cannot create node '{}' of type '{}' at index {}.",
+                          node_data->name, node_data->type, i);
+                cleanup();
+                return nullptr;
+            }
         }
 
         if (!node_data->name.empty()) {

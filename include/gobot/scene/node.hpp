@@ -11,6 +11,7 @@
 #include "gobot/core/object.hpp"
 #include "gobot/scene/scene_tree.hpp"
 #include "gobot/scene/node_path.hpp"
+#include "gobot/scene/resources/packed_scene.hpp"
 #include "gobot/error_macros.hpp"
 
 namespace gobot {
@@ -257,6 +258,9 @@ public:
     double GetPhysicsProcessDeltaTime() const;
     bool IsPhysicsProcessing() const;
 
+    void SetSceneInstance(const Ref<PackedScene>& scene);
+    Ref<PackedScene> GetSceneInstance() const;
+
 protected:
     void NotificationCallBack(NotificationType notification);
 
@@ -275,6 +279,7 @@ private:
     SceneTree *tree_ = nullptr;
     bool inside_tree_ = false;
     mutable NodePath path_cache_;
+    Ref<PackedScene> scene_instance_;
 
     void PrintTreePretty(const std::string &prefix, bool last);
     void PrintTree(const Node *node);

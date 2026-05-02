@@ -22,6 +22,20 @@
 
 namespace gobot {
 
+namespace {
+
+bool IsEditorVisibleProperty(const Property& property) {
+    PropertyInfo property_info;
+    auto property_metadata = property.get_metadata(PROPERTY_INFO_KEY);
+    if (property_metadata.is_valid()) {
+        property_info = property_metadata.get_value<PropertyInfo>();
+    }
+
+    USING_ENUM_BITWISE_OPERATORS;
+    return static_cast<bool>(property_info.usage & PropertyUsageFlags::Editor);
+}
+
+} // namespace
 
 Ref<EditorInspectorPlugin> EditorInspector::s_inspector_plugins[MAX_PLUGINS];
 int EditorInspector::s_inspector_plugin_count = 0;
@@ -50,6 +64,9 @@ EditorInspector::EditorInspector(Variant& variant)
                                                         rttr::filter_item::static_item |
                                                         rttr::filter_item::instance_item)) {
             if (property == name_property) {
+                continue;
+            }
+            if (!IsEditorVisibleProperty(property)) {
                 continue;
             }
             properties_map_.at(type).emplace_back(property);

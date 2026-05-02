@@ -62,7 +62,13 @@ public:
 
     void AddProjectHistory(const std::string& project_path);
 
+    void RemoveProjectHistory(const std::string& project_path);
+
     void DrawProjectSelector();
+
+    void DrawDeleteProjectPopup();
+
+    void DrawDeleteResourceFilePopup();
 
     void OpenProjectBrowser();
 
@@ -78,6 +84,11 @@ private:
     std::string move_path_;
     std::vector<std::string> project_history_;
     std::string project_history_file_;
+    std::string pending_delete_project_path_;
+    std::string pending_delete_resource_file_global_path_;
+    std::string pending_delete_resource_file_local_path_;
+    bool request_delete_project_popup_{false};
+    bool request_delete_resource_file_popup_{false};
 
 
     bool is_dragging_;

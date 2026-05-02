@@ -79,13 +79,31 @@ bool ResourceFormatLoaderSceneInstance::LoadResource() {
                 std::string path = ext_res["__PATH__"];
                 std::string type = ext_res["__TYPE__"];
                 std::string id = ext_res["__ID__"];
+                if (path.empty()) {
+                    LOG_ERROR("External resource '{}' of type '{}' has an empty path in '{}'.",
+                              id, type, local_path_);
+                    return false;
+                }
 
                 if (path.find("://") == std::string::npos && IsRelativePath(path)) {
                     // path is relative to file being loaded, so convert to a resource path
                     path = ProjectSettings::GetInstance()->LocalizePath(PathJoin(GetBaseDir(local_path_), path));
                 }
 
-                Ref<Resource> res = ResourceLoader::Load(path, type);
+                ResourceFormatLoader::CacheMode external_cache_mode = ResourceFormatLoader::CacheMode::Reuse;
+                if (type == "PackedScene" &&
+                    (cache_mode_ == ResourceFormatLoader::CacheMode::Ignore ||
+                     cache_mode_ == ResourceFormatLoader::CacheMode::Replace)) {
+                    external_cache_mode = ResourceFormatLoader::CacheMode::Replace;
+                }
+
+                LOG_TRACE("Scene '{}' loading ExtResource id '{}' type '{}' path '{}' cache_mode {}.",
+                          local_path_,
+                          id,
+                          type,
+                          path,
+                          static_cast<int>(external_cache_mode));
+                Ref<Resource> res = ResourceLoader::Load(path, type, external_cache_mode);
                 if (!res) {
                     LOG_ERROR("Cannot load type:{} from path:{}", type, path);
                     return false;
@@ -114,6 +132,16 @@ bool ResourceFormatLoaderSceneInstance::LoadResource() {
 
                 std::string type = std::string(sub_res["__TYPE__"]);
                 std::string id = std::string(sub_res["__ID__"]);
+                if (type == "PBRMaterial3D") {
+                    auto albedo_it = sub_res.find("albedo");
+                    if (albedo_it != sub_res.end()) {
+                        LOG_TRACE("Scene '{}' loading SubResource id '{}' type '{}' albedo {}.",
+                                  local_path_,
+                                  id,
+                                  type,
+                                  albedo_it->dump());
+                    }
+                }
 
                 // local resource's id is local_path + "::" + id
                 std::string path = local_path_ + "::" + id;
@@ -180,11 +208,9 @@ bool ResourceFormatLoaderSceneInstance::LoadResource() {
 
                 sub_resources_[id] = res; //always assign int resources
                 if (do_assign) {
-                    if (cache_mode_ == ResourceFormatLoader::CacheMode::Ignore) {
-                        res->SetPath(path);
-                    } else {
+                    res->SetUniqueId(id);
+                    if (cache_mode_ != ResourceFormatLoader::CacheMode::Ignore) {
                         res->SetPath(path, cache_mode_ == ResourceFormatLoader::CacheMode::Replace);
-                        res->SetUniqueId(id);
                     }
                 }
 
@@ -317,6 +343,22 @@ bool ResourceFormatLoaderSceneInstance::LoadSceneNodes(const Json& nodes_json) {
             node_data.parent = node_json["__PARENT__"].is_null() ? -1 : node_json["__PARENT__"].get<int>();
         }
 
+        if (node_json.contains("instance")) {
+            Variant instance_variant{Ref<Resource>()};
+            if (!VariantSerializer::JsonToVariant(instance_variant, node_json["instance"], this)) {
+                LOG_ERROR("Cannot load scene instance for node '{}'", node_data.name);
+                return false;
+            }
+
+            bool success{false};
+            Ref<Resource> instance_resource = instance_variant.convert<Ref<Resource>>(&success);
+            node_data.instance = success ? dynamic_pointer_cast<PackedScene>(instance_resource) : Ref<PackedScene>();
+            if (!node_data.instance.IsValid()) {
+                LOG_ERROR("Scene instance for node '{}' is not a valid PackedScene.", node_data.name);
+                return false;
+            }
+        }
+
         Type node_type = Type::get_by_name(node_data.type);
         if (!node_type.is_valid()) {
             LOG_ERROR("Unknown scene node type: {}", node_data.type);
@@ -346,13 +388,18 @@ bool ResourceFormatLoaderSceneInstance::LoadSceneNodes(const Json& nodes_json) {
                     continue;
                 }
 
+                const Type property_type = node->GetPropertyType(property_name);
+                if (property_json.is_null()) {
+                    node_data.properties.push_back({property_name, property_value});
+                    continue;
+                }
+
                 if (!VariantSerializer::JsonToVariant(property_value, property_json, this)) {
                     Object::Delete(node);
                     LOG_ERROR("Cannot load property '{}' for scene node type '{}'", property_name, node_data.type);
                     return false;
                 }
 
-                const Type property_type = node->GetPropertyType(property_name);
                 if (!property_value.convert(property_type)) {
                     Object::Delete(node);
                     LOG_ERROR("Cannot convert property '{}' to type '{}'", property_name, property_type.get_name().data());
@@ -473,6 +520,13 @@ bool ResourceFormatSaverSceneInstance::Save(const std::string &path, const Ref<R
         for (std::size_t i = 0; i < packed_scene_->GetState()->GetNodeCount(); i++) {
             Ref<PackedScene> instance = packed_scene_->GetState()->GetNodeInstance(i);
             if (instance.IsValid() && !external_resources_.contains(instance)) {
+                if (instance->GetPath().empty()) {
+                    const SceneState::NodeData* node_data = packed_scene_->GetState()->GetNodeData(i);
+                    const std::string node_name = node_data != nullptr ? node_data->name : std::string();
+                    LOG_ERROR("Cannot save scene instance node '{}': referenced PackedScene has no resource path.",
+                              node_name);
+                    return false;
+                }
                 external_resources_[instance] = Resource::GenerateResourceUniqueId();
             }
         }
@@ -588,7 +642,8 @@ void ResourceFormatSaverSceneInstance::FindSceneResources(const Ref<PackedScene>
         }
 
         if (node_data->instance.IsValid()) {
-            FindResources(node_data->instance);
+            Ref<Resource> instance_resource = node_data->instance;
+            FindResources(Variant(instance_resource));
         }
 
         for (const auto& property : node_data->properties) {
@@ -614,10 +669,25 @@ Json ResourceFormatSaverSceneInstance::SaveSceneNodes() {
         node_json["type"] = node_data->type;
         node_json["name"] = node_data->name;
         node_json["parent"] = node_data->parent;
+        if (node_data->instance.IsValid()) {
+            Ref<Resource> instance_resource = node_data->instance;
+            node_json["instance"] = VariantSerializer::VariantToJson(Variant(instance_resource), this);
+        }
 
         Json properties_json = Json::object();
         for (const auto& property : node_data->properties) {
-            properties_json[property.name] = VariantSerializer::VariantToJson(property.value, this);
+            Json property_json = VariantSerializer::VariantToJson(property.value, this);
+            if ((node_data->type == "MeshInstance3D" &&
+                 (property.name == "mesh" || property.name == "material_override" || property.name == "material")) ||
+                (node_data->type == "ArrayMesh" && property.name == "material")) {
+                LOG_TRACE("Saving scene '{}' node '{}' type '{}' property '{}' as {}.",
+                          local_path_,
+                          node_data->name,
+                          node_data->type,
+                          property.name,
+                          property_json.dump());
+            }
+            properties_json[property.name] = property_json;
         }
         node_json["properties"] = properties_json;
 

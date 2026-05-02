@@ -49,9 +49,17 @@ std::string ToLower(std::string value) {
 }
 
 std::string NativeScenePathForImport(const std::filesystem::path& selected_path) {
+    std::filesystem::path native_filename = selected_path.filename();
+    native_filename.replace_extension(".jscn");
+
+    ProjectSettings* settings = ProjectSettings::GetInstance();
+    if (settings != nullptr && !settings->GetProjectPath().empty()) {
+        return "res://" + native_filename.string();
+    }
+
     std::filesystem::path native_path = selected_path;
     native_path.replace_extension(".jscn");
-    return ProjectSettings::GetInstance()->LocalizePath(native_path.string());
+    return settings != nullptr ? settings->LocalizePath(native_path.string()) : native_path.string();
 }
 
 } // namespace

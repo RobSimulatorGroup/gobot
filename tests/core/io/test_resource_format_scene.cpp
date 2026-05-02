@@ -21,6 +21,7 @@
 #include <gobot/core/types.hpp>
 #include <gobot/log.hpp>
 
+#include <fstream>
 
 class TestResourceFormatScene : public testing::Test {
 protected:
@@ -216,4 +217,289 @@ TEST_F(TestResourceFormatScene, packed_scene_round_trips_collision_shape_resourc
 
     gobot::Object::Delete(root);
     gobot::Object::Delete(instance);
+}
+
+TEST_F(TestResourceFormatScene, packed_scene_saves_child_scene_as_external_instance) {
+    auto* child_root = gobot::Object::New<gobot::Node3D>();
+    child_root->SetName("RobotAsset");
+
+    auto* child_mesh = gobot::Object::New<gobot::MeshInstance3D>();
+    child_mesh->SetName("AssetMesh");
+    child_mesh->SetPosition({1.0f, 2.0f, 3.0f});
+    child_root->AddChild(child_mesh);
+
+    gobot::Ref<gobot::PackedScene> child_scene = gobot::MakeRef<gobot::PackedScene>();
+    ASSERT_TRUE(child_scene->Pack(child_root));
+
+    USING_ENUM_BITWISE_OPERATORS;
+    ASSERT_TRUE(gobot::ResourceSaver::Save(child_scene, "res://robot_asset.jscn",
+                                           gobot::ResourceSaverFlags::ReplaceSubResourcePaths |
+                                           gobot::ResourceSaverFlags::ChangePath));
+    child_scene = gobot::dynamic_pointer_cast<gobot::PackedScene>(
+            gobot::ResourceLoader::Load("res://robot_asset.jscn", "PackedScene"));
+    ASSERT_TRUE(child_scene.IsValid());
+    EXPECT_EQ(child_scene->GetPath(), "res://robot_asset.jscn");
+
+    auto* parent_root = gobot::Object::New<gobot::Node3D>();
+    parent_root->SetName("World");
+
+    gobot::Node* child_instance_node = child_scene->Instantiate();
+    ASSERT_NE(child_instance_node, nullptr);
+    auto* child_instance_root = gobot::Object::PointerCastTo<gobot::Node3D>(child_instance_node);
+    ASSERT_NE(child_instance_root, nullptr);
+    child_instance_root->SetName("robot");
+    child_instance_root->SetPosition({4.0f, 5.0f, 6.0f});
+    child_instance_root->SetSceneInstance(child_scene);
+    parent_root->AddChild(child_instance_root);
+
+    gobot::Ref<gobot::PackedScene> parent_scene = gobot::MakeRef<gobot::PackedScene>();
+    ASSERT_TRUE(parent_scene->Pack(parent_root));
+    ASSERT_EQ(parent_scene->GetState()->GetNodeCount(), 2);
+    ASSERT_TRUE(parent_scene->GetState()->GetNodeInstance(1).IsValid());
+
+    ASSERT_TRUE(gobot::ResourceSaver::Save(parent_scene, "res://world_with_instance.jscn",
+                                           gobot::ResourceSaverFlags::ReplaceSubResourcePaths |
+                                           gobot::ResourceSaverFlags::ChangePath));
+
+    std::ifstream input("/tmp/test_project/world_with_instance.jscn");
+    ASSERT_TRUE(input.is_open());
+    gobot::Json saved_json;
+    input >> saved_json;
+    ASSERT_EQ(saved_json["__EXT_RESOURCES__"].size(), 1);
+    EXPECT_EQ(saved_json["__EXT_RESOURCES__"][0]["__PATH__"], "res://robot_asset.jscn");
+    ASSERT_EQ(saved_json["__NODES__"].size(), 2);
+    EXPECT_TRUE(saved_json["__NODES__"][1].contains("instance"));
+    EXPECT_EQ(saved_json["__NODES__"][1]["name"], "robot");
+
+    gobot::Ref<gobot::Resource> loaded_resource = gobot::ResourceLoader::Load(
+            "res://world_with_instance.jscn", "PackedScene", gobot::ResourceFormatLoader::CacheMode::Ignore);
+    ASSERT_TRUE(loaded_resource.IsValid());
+
+    gobot::Ref<gobot::PackedScene> loaded_scene = gobot::dynamic_pointer_cast<gobot::PackedScene>(loaded_resource);
+    ASSERT_TRUE(loaded_scene.IsValid());
+    ASSERT_EQ(loaded_scene->GetState()->GetNodeCount(), 2);
+    ASSERT_TRUE(loaded_scene->GetState()->GetNodeInstance(1).IsValid());
+
+    gobot::Node* loaded_instance = loaded_scene->Instantiate();
+    ASSERT_NE(loaded_instance, nullptr);
+    auto* loaded_root = gobot::Object::PointerCastTo<gobot::Node3D>(loaded_instance);
+    ASSERT_NE(loaded_root, nullptr);
+    ASSERT_EQ(loaded_root->GetChildCount(), 1);
+
+    auto* loaded_robot = gobot::Object::PointerCastTo<gobot::Node3D>(loaded_root->GetChild(0));
+    ASSERT_NE(loaded_robot, nullptr);
+    EXPECT_EQ(loaded_robot->GetName(), "robot");
+    EXPECT_TRUE(loaded_robot->GetPosition().isApprox(gobot::Vector3(4.0f, 5.0f, 6.0f), CMP_EPSILON));
+    ASSERT_EQ(loaded_robot->GetChildCount(), 1);
+    EXPECT_EQ(loaded_robot->GetChild(0)->GetName(), "AssetMesh");
+    EXPECT_TRUE(loaded_robot->GetSceneInstance().IsValid());
+
+    gobot::Object::Delete(child_root);
+    gobot::Object::Delete(parent_root);
+    gobot::Object::Delete(loaded_instance);
+}
+
+TEST_F(TestResourceFormatScene, packed_scene_rejects_instance_without_resource_path) {
+    auto* child_root = gobot::Object::New<gobot::Node3D>();
+    child_root->SetName("UnsavedAsset");
+    gobot::Ref<gobot::PackedScene> child_scene = gobot::MakeRef<gobot::PackedScene>();
+    ASSERT_TRUE(child_scene->Pack(child_root));
+    ASSERT_TRUE(child_scene->GetPath().empty());
+
+    auto* parent_root = gobot::Object::New<gobot::Node3D>();
+    parent_root->SetName("World");
+    auto* child_instance = gobot::Object::New<gobot::Node3D>();
+    child_instance->SetName("UnsavedAssetInstance");
+    child_instance->SetSceneInstance(child_scene);
+    parent_root->AddChild(child_instance);
+
+    gobot::Ref<gobot::PackedScene> parent_scene = gobot::MakeRef<gobot::PackedScene>();
+    ASSERT_TRUE(parent_scene->Pack(parent_root));
+
+    USING_ENUM_BITWISE_OPERATORS;
+    EXPECT_FALSE(gobot::ResourceSaver::Save(parent_scene, "res://invalid_world_with_instance.jscn",
+                                            gobot::ResourceSaverFlags::ReplaceSubResourcePaths |
+                                            gobot::ResourceSaverFlags::ChangePath));
+
+    gobot::Object::Delete(child_root);
+    gobot::Object::Delete(parent_root);
+}
+
+TEST_F(TestResourceFormatScene, malformed_external_resource_path_fails_without_throwing) {
+    const std::string malformed_path = "/tmp/test_project/malformed_instance.jscn";
+    std::ofstream output(malformed_path);
+    ASSERT_TRUE(output.is_open());
+    output << R"json({
+        "__EXT_RESOURCES__": [
+            {
+                "__ID__": "MissingPath",
+                "__PATH__": "",
+                "__TYPE__": "PackedScene"
+            }
+        ],
+        "__META_TYPE__": "SCENE",
+        "__NODES__": [
+            {
+                "instance": "ExtResource(MissingPath)",
+                "name": "Broken",
+                "parent": -1,
+                "properties": {},
+                "type": "Node3D"
+            }
+        ],
+        "__TYPE__": "PackedScene",
+        "__VERSION__": 2
+    })json";
+    output.close();
+
+    EXPECT_NO_THROW({
+        gobot::Ref<gobot::Resource> loaded = gobot::ResourceLoader::Load(
+                "res://malformed_instance.jscn", "PackedScene", gobot::ResourceFormatLoader::CacheMode::Ignore);
+        EXPECT_FALSE(loaded.IsValid());
+    });
+}
+
+TEST_F(TestResourceFormatScene, packed_scene_round_trips_mesh_with_null_material_and_surface_color) {
+    gobot::Ref<gobot::BoxMesh> mesh = gobot::MakeRef<gobot::BoxMesh>();
+    mesh->SetSize({1.0f, 2.0f, 3.0f});
+    mesh->SetPath("res://external_visual_mesh.jres", true);
+
+    USING_ENUM_BITWISE_OPERATORS;
+    ASSERT_TRUE(gobot::ResourceSaver::Save(mesh, "res://external_visual_mesh.jres",
+                                           gobot::ResourceSaverFlags::ReplaceSubResourcePaths));
+
+    auto* root = gobot::Object::New<gobot::Node3D>();
+    root->SetName("Robot");
+
+    auto* visual = gobot::Object::New<gobot::MeshInstance3D>();
+    visual->SetName("visual");
+    visual->SetMesh(mesh);
+    visual->SetMaterial({});
+    visual->SetSurfaceColor({0.9f, 0.2f, 0.3f, 1.0f});
+    root->AddChild(visual);
+
+    gobot::Ref<gobot::PackedScene> packed_scene = gobot::MakeRef<gobot::PackedScene>();
+    ASSERT_TRUE(packed_scene->Pack(root));
+    ASSERT_TRUE(gobot::ResourceSaver::Save(packed_scene, "res://visual_null_material.jscn",
+                                           gobot::ResourceSaverFlags::ReplaceSubResourcePaths |
+                                           gobot::ResourceSaverFlags::ChangePath));
+
+    gobot::Ref<gobot::Resource> loaded_resource = gobot::ResourceLoader::Load(
+            "res://visual_null_material.jscn", "PackedScene", gobot::ResourceFormatLoader::CacheMode::Ignore);
+    ASSERT_TRUE(loaded_resource.IsValid());
+
+    gobot::Ref<gobot::PackedScene> loaded_scene = gobot::dynamic_pointer_cast<gobot::PackedScene>(loaded_resource);
+    ASSERT_TRUE(loaded_scene.IsValid());
+
+    gobot::Node* instance = loaded_scene->Instantiate();
+    ASSERT_NE(instance, nullptr);
+    ASSERT_EQ(instance->GetChildCount(), 1);
+
+    auto* loaded_visual = gobot::Object::PointerCastTo<gobot::MeshInstance3D>(instance->GetChild(0));
+    ASSERT_NE(loaded_visual, nullptr);
+    EXPECT_TRUE(loaded_visual->GetMesh().IsValid());
+    EXPECT_FALSE(loaded_visual->GetMaterial().IsValid());
+    EXPECT_FLOAT_EQ(loaded_visual->GetSurfaceColor().red(), 0.9f);
+    EXPECT_FLOAT_EQ(loaded_visual->GetSurfaceColor().green(), 0.2f);
+    EXPECT_FLOAT_EQ(loaded_visual->GetSurfaceColor().blue(), 0.3f);
+
+    gobot::Object::Delete(root);
+    gobot::Object::Delete(instance);
+}
+
+TEST_F(TestResourceFormatScene, external_mesh_material_round_trips_as_shared_mesh_material) {
+    gobot::Ref<gobot::ArrayMesh> mesh = gobot::MakeRef<gobot::ArrayMesh>();
+
+    gobot::Ref<gobot::PBRMaterial3D> material = gobot::MakeRef<gobot::PBRMaterial3D>();
+    material->SetAlbedo({0.15f, 0.35f, 0.85f, 1.0f});
+    material->SetRoughness(0.25f);
+    mesh->SetMaterial(material);
+    mesh->SetPath("res://external_array_mesh.jres", true);
+
+    USING_ENUM_BITWISE_OPERATORS;
+    ASSERT_TRUE(gobot::ResourceSaver::Save(mesh, "res://external_array_mesh.jres",
+                                           gobot::ResourceSaverFlags::ReplaceSubResourcePaths));
+
+    auto* root = gobot::Object::New<gobot::Node3D>();
+    root->SetName("Scene");
+
+    auto* visual = gobot::Object::New<gobot::MeshInstance3D>();
+    visual->SetName("visual");
+    visual->SetMesh(mesh);
+    root->AddChild(visual);
+
+    gobot::Ref<gobot::PackedScene> packed_scene = gobot::MakeRef<gobot::PackedScene>();
+    ASSERT_TRUE(packed_scene->Pack(root));
+    ASSERT_TRUE(gobot::ResourceSaver::Save(packed_scene, "res://external_mesh_material_override.jscn",
+                                           gobot::ResourceSaverFlags::ReplaceSubResourcePaths |
+                                           gobot::ResourceSaverFlags::ChangePath));
+
+    gobot::Ref<gobot::Resource> loaded_resource = gobot::ResourceLoader::Load(
+            "res://external_mesh_material_override.jscn", "PackedScene", gobot::ResourceFormatLoader::CacheMode::Ignore);
+    ASSERT_TRUE(loaded_resource.IsValid());
+
+    gobot::Ref<gobot::PackedScene> loaded_scene = gobot::dynamic_pointer_cast<gobot::PackedScene>(loaded_resource);
+    ASSERT_TRUE(loaded_scene.IsValid());
+
+    gobot::Node* instance = loaded_scene->Instantiate();
+    ASSERT_NE(instance, nullptr);
+
+    auto* loaded_visual = gobot::Object::PointerCastTo<gobot::MeshInstance3D>(instance->GetChild(0));
+    ASSERT_NE(loaded_visual, nullptr);
+    EXPECT_TRUE(loaded_visual->GetMesh().IsValid());
+    EXPECT_FALSE(loaded_visual->GetMaterial().IsValid());
+
+    gobot::Ref<gobot::ArrayMesh> loaded_mesh =
+            gobot::dynamic_pointer_cast<gobot::ArrayMesh>(loaded_visual->GetMesh());
+    ASSERT_TRUE(loaded_mesh.IsValid());
+    gobot::Ref<gobot::PBRMaterial3D> loaded_material =
+            gobot::dynamic_pointer_cast<gobot::PBRMaterial3D>(loaded_mesh->GetMaterial());
+    ASSERT_TRUE(loaded_material.IsValid());
+    EXPECT_FLOAT_EQ(loaded_material->GetAlbedo().red(), 0.15f);
+    EXPECT_FLOAT_EQ(loaded_material->GetAlbedo().green(), 0.35f);
+    EXPECT_FLOAT_EQ(loaded_material->GetAlbedo().blue(), 0.85f);
+    EXPECT_FLOAT_EQ(loaded_material->GetRoughness(), 0.25f);
+
+    gobot::Object::Delete(root);
+    gobot::Object::Delete(instance);
+}
+
+TEST_F(TestResourceFormatScene, imported_mesh_material_is_saved_as_instance_override) {
+    gobot::Ref<gobot::ArrayMesh> mesh = gobot::MakeRef<gobot::ArrayMesh>();
+    mesh->SetPath("res://assets/H2/meshes/torso_link.stl", true);
+
+    gobot::Ref<gobot::PBRMaterial3D> material = gobot::MakeRef<gobot::PBRMaterial3D>();
+    material->SetAlbedo({0.7f, 0.16f, 0.16f, 1.0f});
+    mesh->SetMaterial(material);
+
+    auto* root = gobot::Object::New<gobot::Node3D>();
+    root->SetName("Scene");
+
+    auto* visual = gobot::Object::New<gobot::MeshInstance3D>();
+    visual->SetName("torso_link_visual");
+    visual->SetMesh(mesh);
+    root->AddChild(visual);
+
+    gobot::Ref<gobot::PackedScene> packed_scene = gobot::MakeRef<gobot::PackedScene>();
+    ASSERT_TRUE(packed_scene->Pack(root));
+    ASSERT_EQ(packed_scene->GetState()->GetNodeCount(), 2);
+
+    const gobot::SceneState::NodeData* visual_data = packed_scene->GetState()->GetNodeData(1);
+    ASSERT_NE(visual_data, nullptr);
+
+    gobot::Ref<gobot::PBRMaterial3D> saved_override;
+    for (const auto& property : visual_data->properties) {
+        if (property.name == "material_override") {
+            saved_override = gobot::dynamic_pointer_cast<gobot::PBRMaterial3D>(
+                    property.value.convert<gobot::Ref<gobot::Resource>>());
+            break;
+        }
+    }
+
+    ASSERT_TRUE(saved_override.IsValid());
+    EXPECT_FLOAT_EQ(saved_override->GetAlbedo().red(), 0.7f);
+    EXPECT_FLOAT_EQ(saved_override->GetAlbedo().green(), 0.16f);
+    EXPECT_FLOAT_EQ(saved_override->GetAlbedo().blue(), 0.16f);
+
+    gobot::Object::Delete(root);
 }

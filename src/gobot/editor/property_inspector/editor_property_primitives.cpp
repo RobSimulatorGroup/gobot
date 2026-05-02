@@ -307,6 +307,14 @@ void EditorPropertyColor::OnImGuiContent() {
         color.alpha() = color_[3];
         if (!property_data_model_->SetValue(color)) {
             LOG_ERROR("Set color to {} failed", property_data_model_->GetPropertyName());
+        } else {
+            LOG_TRACE("Inspector set Color property '{}' on '{}' to ({}, {}, {}, {}).",
+                      property_data_model_->GetPropertyName(),
+                      property_data_model_->GetHolderType().get_name().data(),
+                      color.red(),
+                      color.green(),
+                      color.blue(),
+                      color.alpha());
         }
     }
 }

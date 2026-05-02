@@ -119,8 +119,20 @@ bool ResourcePanel::MoveFile(const std::string& file_path, const std::string& mo
 void ResourcePanel::OnImGuiContent() {
     HandleProjectBrowser();
 
+    if (request_delete_project_popup_) {
+        ImGui::OpenPopup("Delete Project");
+        request_delete_project_popup_ = false;
+    }
+    if (request_delete_resource_file_popup_) {
+        ImGui::OpenPopup("Delete Resource File");
+        request_delete_resource_file_popup_ = false;
+    }
+
     if (project_path_.empty() || base_project_dir_ == nullptr || current_dir_ == nullptr) {
         DrawProjectSelector();
+        if (ImGui::BeginPopupModal("Delete Project", nullptr, ImGuiWindowFlags_AlwaysAutoResize)) {
+            DrawDeleteProjectPopup();
+        }
         return;
     }
 
@@ -177,7 +189,9 @@ void ResourcePanel::OnImGuiContent() {
             ImGui::BeginChild("##Scrolling");
             DrawResourceTree(base_project_dir_, true);
 
-            if(ImGui::BeginPopupContextWindow()) {
+            if (ImGui::BeginPopupContextWindow("##ResourceWindowContext",
+                                               ImGuiPopupFlags_MouseButtonRight |
+                                               ImGuiPopupFlags_NoOpenOverItems)) {
                 if(ImGui::Selectable("Import New")) {
                     // TODO(wqq)
                 }
@@ -215,6 +229,13 @@ void ResourcePanel::OnImGuiContent() {
             is_dragging_ = false;
         }
         ImGui::EndDragDropTarget();
+    }
+
+    if (ImGui::BeginPopupModal("Delete Project", nullptr, ImGuiWindowFlags_AlwaysAutoResize)) {
+        DrawDeleteProjectPopup();
+    }
+    if (ImGui::BeginPopupModal("Delete Resource File", nullptr, ImGuiWindowFlags_AlwaysAutoResize)) {
+        DrawDeleteResourceFilePopup();
     }
 }
 
@@ -328,6 +349,19 @@ void ResourcePanel::DrawResourceTree(DirectoryInformation* dir_info, bool root)
         } else if (IsNativeSceneFile(dir_info)) {
             Editor::GetInstance()->OpenSceneFromPath(dir_info->local_path);
         }
+    }
+
+    const std::string popup_id = "##ResourceFileContext_" + dir_info->global_path;
+    if (!dir_info->is_directory && ImGui::BeginPopupContextItem(popup_id.c_str())) {
+        const char* delete_label = IsNativeSceneFile(dir_info) ?
+                ICON_MDI_DELETE " Delete Scene File" :
+                ICON_MDI_DELETE " Delete File";
+        if (ImGui::MenuItem(delete_label)) {
+            pending_delete_resource_file_global_path_ = dir_info->global_path;
+            pending_delete_resource_file_local_path_ = dir_info->local_path;
+            request_delete_resource_file_popup_ = true;
+        }
+        ImGui::EndPopup();
     }
 
     if (open && dir_info->is_directory && !dir_info->children.empty()) {
@@ -457,6 +491,13 @@ void ResourcePanel::AddProjectHistory(const std::string& project_path)
     SaveProjectHistory();
 }
 
+void ResourcePanel::RemoveProjectHistory(const std::string& project_path)
+{
+    project_history_.erase(std::remove(project_history_.begin(), project_history_.end(), project_path),
+                           project_history_.end());
+    SaveProjectHistory();
+}
+
 void ResourcePanel::DrawProjectSelector()
 {
     ImGui::BeginChild("##project_selector", ImVec2(0, 0), true);
@@ -480,6 +521,7 @@ void ResourcePanel::DrawProjectSelector()
     if (project_history_.empty()) {
         ImGui::TextDisabled("No projects yet. Create or import a project directory.");
     } else {
+        std::string remove_project_path;
         for (const std::string& project_path : project_history_) {
             if (filter_->IsActive() && !filter_->PassFilter(project_path.c_str())) {
                 continue;
@@ -509,10 +551,89 @@ void ResourcePanel::DrawProjectSelector()
             if (ImGui::IsItemHovered()) {
                 ImGui::SetTooltip("%s", project_path.c_str());
             }
+            if (ImGui::BeginPopupContextItem("##ProjectContext")) {
+                if (ImGui::MenuItem(ICON_MDI_CLOSE " Remove From List")) {
+                    remove_project_path = project_path;
+                }
+                if (ImGui::MenuItem(ICON_MDI_DELETE " Delete Project Folder")) {
+                    pending_delete_project_path_ = project_path;
+                    request_delete_project_popup_ = true;
+                }
+                ImGui::EndPopup();
+            }
             ImGui::PopID();
+        }
+        if (!remove_project_path.empty()) {
+            RemoveProjectHistory(remove_project_path);
         }
     }
     ImGui::EndChild();
+}
+
+void ResourcePanel::DrawDeleteProjectPopup()
+{
+    ImGui::TextUnformatted("Delete project folder?");
+    ImGui::Spacing();
+    ImGui::TextWrapped("%s", pending_delete_project_path_.c_str());
+    ImGui::Spacing();
+    ImGui::TextColored(ImVec4(1.0f, 0.35f, 0.35f, 1.0f),
+                       "This removes the folder and all files inside it.");
+    ImGui::Separator();
+
+    if (ImGui::Button("Delete")) {
+        std::error_code error;
+        std::filesystem::remove_all(pending_delete_project_path_, error);
+        if (error) {
+            LOG_ERROR("Failed to delete project '{}': {}", pending_delete_project_path_, error.message());
+        } else {
+            LOG_INFO("Deleted project folder: {}", pending_delete_project_path_);
+            const bool deleting_current_project = pending_delete_project_path_ == project_path_;
+            RemoveProjectHistory(pending_delete_project_path_);
+            if (deleting_current_project) {
+                ProjectSettings::GetInstance()->ClearProjectPath();
+                project_path_.clear();
+                Refresh();
+            }
+            pending_delete_project_path_.clear();
+            ImGui::CloseCurrentPopup();
+        }
+    }
+    ImGui::SameLine();
+    if (ImGui::Button("Cancel")) {
+        pending_delete_project_path_.clear();
+        ImGui::CloseCurrentPopup();
+    }
+    ImGui::EndPopup();
+}
+
+void ResourcePanel::DrawDeleteResourceFilePopup()
+{
+    ImGui::TextUnformatted("Delete resource file?");
+    ImGui::Spacing();
+    ImGui::TextWrapped("%s", pending_delete_resource_file_local_path_.c_str());
+    ImGui::Separator();
+
+    if (ImGui::Button("Delete")) {
+        std::error_code error;
+        std::filesystem::remove(pending_delete_resource_file_global_path_, error);
+        if (error) {
+            LOG_ERROR("Failed to delete resource file '{}': {}",
+                      pending_delete_resource_file_local_path_, error.message());
+        } else {
+            LOG_INFO("Deleted resource file: {}", pending_delete_resource_file_local_path_);
+            pending_delete_resource_file_global_path_.clear();
+            pending_delete_resource_file_local_path_.clear();
+            Refresh();
+            ImGui::CloseCurrentPopup();
+        }
+    }
+    ImGui::SameLine();
+    if (ImGui::Button("Cancel")) {
+        pending_delete_resource_file_global_path_.clear();
+        pending_delete_resource_file_local_path_.clear();
+        ImGui::CloseCurrentPopup();
+    }
+    ImGui::EndPopup();
 }
 
 void ResourcePanel::OpenProjectBrowser()

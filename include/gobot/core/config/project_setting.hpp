@@ -29,6 +29,8 @@ public:
 
     bool SetProjectPath(const std::string& project_path);
 
+    void ClearProjectPath();
+
     [[nodiscard]] FORCE_INLINE const std::string& GetProjectPath() const { return project_path_; }
 
 private:

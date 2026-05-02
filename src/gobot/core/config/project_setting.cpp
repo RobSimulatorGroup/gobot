@@ -36,6 +36,10 @@ bool ProjectSettings::SetProjectPath(const std::string& project_path) {
     return true;
 }
 
+void ProjectSettings::ClearProjectPath() {
+    project_path_.clear();
+}
+
 std::string ProjectSettings::LocalizePath(std::string_view path) const {
     // Check if we have a special path (like res://) or a protocol identifier.
     auto p = path.find("://");

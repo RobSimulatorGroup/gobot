@@ -234,6 +234,62 @@ TEST(TestResourceFormatURDF, stores_limited_joint_position_at_limit_midpoint) {
     gobot::Object::Delete(root_node);
 }
 
+TEST(TestResourceFormatURDF, copies_external_package_meshes_into_project_assets) {
+    const std::filesystem::path temp_root =
+            std::filesystem::temp_directory_path() / "gobot_urdf_import_project_assets_test";
+    const std::filesystem::path project_path = temp_root / "project";
+    const std::filesystem::path package_path = temp_root / "robot_pkg";
+    const std::filesystem::path mesh_path = package_path / "meshes" / "base_visual.stl";
+    const std::filesystem::path urdf_path = package_path / "robot.urdf";
+
+    std::filesystem::remove_all(temp_root);
+    std::filesystem::create_directories(project_path);
+    std::filesystem::create_directories(mesh_path.parent_path());
+
+    {
+        std::ofstream package_file(package_path / "package.xml");
+        package_file << R"(<package><name>robot_pkg</name></package>)";
+    }
+    {
+        std::ofstream mesh_file(mesh_path);
+        mesh_file << "solid base_visual\nendsolid base_visual\n";
+    }
+    {
+        std::ofstream urdf_file(urdf_path);
+        urdf_file << R"(<?xml version="1.0"?>
+<robot name="asset_bot">
+  <link name="base_link">
+    <visual>
+      <geometry>
+        <mesh filename="package://robot_pkg/meshes/base_visual.stl"/>
+      </geometry>
+    </visual>
+  </link>
+</robot>
+)";
+    }
+
+    ScopedProjectSettings project_settings;
+    ASSERT_TRUE(gobot::ProjectSettings::GetInstance()->SetProjectPath(project_path.string()));
+
+    gobot::Ref<gobot::ResourceFormatLoaderURDF> loader = gobot::MakeRef<gobot::ResourceFormatLoaderURDF>();
+    gobot::Ref<gobot::PackedScene> packed_scene =
+            gobot::dynamic_pointer_cast<gobot::PackedScene>(loader->Load(urdf_path.string()));
+    ASSERT_TRUE(packed_scene.IsValid());
+
+    gobot::Node* root_node = packed_scene->Instantiate();
+    ASSERT_NE(root_node, nullptr);
+    auto* visual = gobot::Object::PointerCastTo<gobot::MeshInstance3D>(
+            FindNodeByName(root_node, "base_link_visual"));
+    ASSERT_NE(visual, nullptr);
+    ASSERT_TRUE(visual->GetMesh().IsValid());
+    EXPECT_EQ(visual->GetMesh()->GetPath(), "res://assets/robot_pkg/meshes/base_visual.stl");
+    EXPECT_TRUE(std::filesystem::exists(project_path / "assets" / "robot_pkg" / "meshes" / "base_visual.stl"));
+
+    gobot::Object::Delete(root_node);
+    std::filesystem::remove_all(temp_root);
+}
+
 TEST(TestResourceFormatURDF, imports_external_robot_urdf_when_requested) {
     const char* test_urdf_path = std::getenv("GOBOT_TEST_URDF");
     if (test_urdf_path == nullptr || std::string(test_urdf_path).empty()) {
