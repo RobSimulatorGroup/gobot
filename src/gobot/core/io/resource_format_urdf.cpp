@@ -562,6 +562,7 @@ SceneState::NodeData MakeLinkNode(const LinkImportData& link, int parent) {
     node_data.type = "Link3D";
     node_data.name = link.name;
     node_data.parent = parent;
+    AddProperty(node_data, "has_inertial", link.has_inertial);
     AddProperty(node_data, "mass", link.mass);
     AddProperty(node_data, "center_of_mass", link.center_of_mass);
     AddProperty(node_data, "inertia_diagonal", link.inertia_diagonal);

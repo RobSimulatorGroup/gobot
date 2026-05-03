@@ -11,6 +11,7 @@
 #include "gobot/scene/collision_shape_3d.hpp"
 #include "gobot/scene/joint_3d.hpp"
 #include "gobot/scene/link_3d.hpp"
+#include "gobot/scene/mesh_instance_3d.hpp"
 #include "gobot/scene/node.hpp"
 #include "gobot/scene/resources/box_shape_3d.hpp"
 #include "gobot/scene/resources/cylinder_shape_3d.hpp"
@@ -20,12 +21,89 @@
 namespace gobot {
 namespace {
 
-PhysicsShapeSnapshot CaptureShapeSnapshot(const CollisionShape3D* collision_shape) {
+Affine3 ResolveNodeGlobalTransform(const Node3D* node, const Affine3& parent_global_transform) {
+    if (node == nullptr) {
+        return parent_global_transform;
+    }
+
+    return node->IsInsideTree() ? node->GetGlobalTransform() : parent_global_transform * node->GetTransform();
+}
+
+bool HasVisualMeshDescendant(const Node* node, const Node* root_node) {
+    if (!node) {
+        return false;
+    }
+
+    if (node != root_node && Object::PointerCastTo<Link3D>(node)) {
+        return false;
+    }
+
+    if (auto mesh_instance = Object::PointerCastTo<MeshInstance3D>(node)) {
+        return mesh_instance->GetMesh().IsValid();
+    }
+
+    for (std::size_t i = 0; i < node->GetChildCount(); ++i) {
+        if (HasVisualMeshDescendant(node->GetChild(static_cast<int>(i)), root_node)) {
+            return true;
+        }
+    }
+
+    return false;
+}
+
+bool HasCollisionShapeDescendant(const Node* node, const Node* root_node) {
+    if (!node) {
+        return false;
+    }
+
+    if (node != root_node && Object::PointerCastTo<Link3D>(node)) {
+        return false;
+    }
+
+    if (Object::PointerCastTo<CollisionShape3D>(node)) {
+        return true;
+    }
+
+    for (std::size_t i = 0; i < node->GetChildCount(); ++i) {
+        if (HasCollisionShapeDescendant(node->GetChild(static_cast<int>(i)), root_node)) {
+            return true;
+        }
+    }
+
+    return false;
+}
+
+bool IsImplicitVirtualRootLink(const Link3D* link, const PhysicsRobotSnapshot& robot_snapshot) {
+    if (link == nullptr || link->GetRole() == LinkRole::VirtualRoot) {
+        return link != nullptr;
+    }
+
+    const bool has_inertial = link->HasInertial() ||
+                              link->GetMass() > 0.0 ||
+                              !link->GetInertiaDiagonal().isZero(CMP_EPSILON) ||
+                              !link->GetInertiaOffDiagonal().isZero(CMP_EPSILON);
+    if (has_inertial) {
+        return false;
+    }
+
+    for (const PhysicsJointSnapshot& joint : robot_snapshot.joints) {
+        if (joint.child_link == link->GetName()) {
+            return false;
+        }
+    }
+
+    if (HasCollisionShapeDescendant(link, link)) {
+        return false;
+    }
+
+    return !HasVisualMeshDescendant(link, link);
+}
+
+PhysicsShapeSnapshot CaptureShapeSnapshot(const CollisionShape3D* collision_shape,
+                                          const Affine3& global_transform) {
     PhysicsShapeSnapshot snapshot;
     snapshot.node = collision_shape;
-    snapshot.global_transform = collision_shape->IsInsideTree()
-            ? collision_shape->GetGlobalTransform()
-            : collision_shape->GetTransform();
+    snapshot.global_transform = global_transform;
     snapshot.disabled = collision_shape->IsDisabled();
 
     const Ref<Shape3D>& shape = collision_shape->GetShape();
@@ -50,10 +128,14 @@ PhysicsShapeSnapshot CaptureShapeSnapshot(const CollisionShape3D* collision_shap
 
 void CollectRobotNodes(const Node* node,
                        PhysicsRobotSnapshot* robot_snapshot,
-                       std::vector<PhysicsShapeSnapshot>* loose_collision_shapes) {
+                       std::vector<PhysicsShapeSnapshot>* loose_collision_shapes,
+                       const Affine3& parent_global_transform) {
     if (!node) {
         return;
     }
+
+    const Node3D* node_3d = Object::PointerCastTo<Node3D>(node);
+    const Affine3 node_global_transform = ResolveNodeGlobalTransform(node_3d, parent_global_transform);
 
     if (auto link = Object::PointerCastTo<Link3D>(node)) {
         PhysicsLinkSnapshot link_snapshot;
@@ -62,7 +144,7 @@ void CollectRobotNodes(const Node* node,
         link_snapshot.role = link->GetRole() == LinkRole::VirtualRoot
                                      ? PhysicsLinkRole::VirtualRoot
                                      : PhysicsLinkRole::Physical;
-        link_snapshot.global_transform = link->IsInsideTree() ? link->GetGlobalTransform() : link->GetTransform();
+        link_snapshot.global_transform = node_global_transform;
         link_snapshot.mass = link->GetMass();
         link_snapshot.center_of_mass = link->GetCenterOfMass();
         link_snapshot.inertia_diagonal = link->GetInertiaDiagonal();
@@ -70,7 +152,9 @@ void CollectRobotNodes(const Node* node,
 
         for (std::size_t i = 0; i < node->GetChildCount(); ++i) {
             if (auto collision_shape = Object::PointerCastTo<CollisionShape3D>(node->GetChild(static_cast<int>(i)))) {
-                link_snapshot.collision_shapes.emplace_back(CaptureShapeSnapshot(collision_shape));
+                link_snapshot.collision_shapes.emplace_back(CaptureShapeSnapshot(
+                        collision_shape,
+                        ResolveNodeGlobalTransform(collision_shape, node_global_transform)));
             }
         }
 
@@ -81,7 +165,7 @@ void CollectRobotNodes(const Node* node,
         joint_snapshot.name = joint->GetName();
         joint_snapshot.parent_link = joint->GetParentLink();
         joint_snapshot.child_link = joint->GetChildLink();
-        joint_snapshot.global_transform = joint->IsInsideTree() ? joint->GetGlobalTransform() : joint->GetTransform();
+        joint_snapshot.global_transform = node_global_transform;
         joint_snapshot.axis = joint->GetAxis();
         joint_snapshot.lower_limit = joint->GetLowerLimit();
         joint_snapshot.upper_limit = joint->GetUpperLimit();
@@ -92,26 +176,39 @@ void CollectRobotNodes(const Node* node,
         robot_snapshot->joints.emplace_back(std::move(joint_snapshot));
     } else if (auto collision_shape = Object::PointerCastTo<CollisionShape3D>(node)) {
         if (!Object::PointerCastTo<Link3D>(node->GetParent())) {
-            loose_collision_shapes->emplace_back(CaptureShapeSnapshot(collision_shape));
+            loose_collision_shapes->emplace_back(CaptureShapeSnapshot(collision_shape, node_global_transform));
         }
     }
 
     for (std::size_t i = 0; i < node->GetChildCount(); ++i) {
-        CollectRobotNodes(node->GetChild(static_cast<int>(i)), robot_snapshot, loose_collision_shapes);
+        CollectRobotNodes(node->GetChild(static_cast<int>(i)),
+                          robot_snapshot,
+                          loose_collision_shapes,
+                          node_global_transform);
     }
 }
 
-void CollectSceneNodes(const Node* node, PhysicsSceneSnapshot* snapshot) {
+void CollectSceneNodes(const Node* node,
+                       PhysicsSceneSnapshot* snapshot,
+                       const Affine3& parent_global_transform) {
     if (!node) {
         return;
     }
+
+    const Node3D* node_3d = Object::PointerCastTo<Node3D>(node);
+    const Affine3 node_global_transform = ResolveNodeGlobalTransform(node_3d, parent_global_transform);
 
     if (auto robot = Object::PointerCastTo<Robot3D>(node)) {
         PhysicsRobotSnapshot robot_snapshot;
         robot_snapshot.node = robot;
         robot_snapshot.name = robot->GetName();
         robot_snapshot.source_path = robot->GetSourcePath();
-        CollectRobotNodes(node, &robot_snapshot, &snapshot->loose_collision_shapes);
+        CollectRobotNodes(node, &robot_snapshot, &snapshot->loose_collision_shapes, parent_global_transform);
+        for (PhysicsLinkSnapshot& link : robot_snapshot.links) {
+            if (IsImplicitVirtualRootLink(link.node, robot_snapshot)) {
+                link.role = PhysicsLinkRole::VirtualRoot;
+            }
+        }
         snapshot->total_link_count += robot_snapshot.links.size();
         snapshot->total_joint_count += robot_snapshot.joints.size();
         for (const PhysicsLinkSnapshot& link : robot_snapshot.links) {
@@ -122,12 +219,12 @@ void CollectSceneNodes(const Node* node, PhysicsSceneSnapshot* snapshot) {
     }
 
     if (auto collision_shape = Object::PointerCastTo<CollisionShape3D>(node)) {
-        snapshot->loose_collision_shapes.emplace_back(CaptureShapeSnapshot(collision_shape));
+        snapshot->loose_collision_shapes.emplace_back(CaptureShapeSnapshot(collision_shape, node_global_transform));
         ++snapshot->total_collision_shape_count;
     }
 
     for (std::size_t i = 0; i < node->GetChildCount(); ++i) {
-        CollectSceneNodes(node->GetChild(static_cast<int>(i)), snapshot);
+        CollectSceneNodes(node->GetChild(static_cast<int>(i)), snapshot, node_global_transform);
     }
 }
 
@@ -275,7 +372,7 @@ bool PhysicsWorld::CaptureSceneSnapshot(const Node* scene_root) {
         return false;
     }
 
-    CollectSceneNodes(scene_root, &scene_snapshot_);
+    CollectSceneNodes(scene_root, &scene_snapshot_, Affine3::Identity());
     last_error_.clear();
     return true;
 }

@@ -37,11 +37,16 @@ public:
 
     const Vector3& GetInertiaOffDiagonal() const;
 
+    void SetHasInertial(bool has_inertial);
+
+    bool HasInertial() const;
+
     void SetRole(LinkRole role);
 
     LinkRole GetRole() const;
 
 private:
+    bool has_inertial_{false};
     RealType mass_{0.0};
     Vector3 center_of_mass_{Vector3::Zero()};
     Vector3 inertia_diagonal_{Vector3::Zero()};

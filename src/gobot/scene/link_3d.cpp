@@ -50,6 +50,14 @@ const Vector3& Link3D::GetInertiaOffDiagonal() const {
     return inertia_off_diagonal_;
 }
 
+void Link3D::SetHasInertial(bool has_inertial) {
+    has_inertial_ = has_inertial;
+}
+
+bool Link3D::HasInertial() const {
+    return has_inertial_;
+}
+
 void Link3D::SetRole(LinkRole role) {
     role_ = role;
 }
@@ -66,6 +74,7 @@ GOBOT_REGISTRATION {
 
     Class_<Link3D>("Link3D")
             .constructor()(CtorAsRawPtr)
+            .property("has_inertial", &Link3D::HasInertial, &Link3D::SetHasInertial)
             .property("mass", &Link3D::GetMass, &Link3D::SetMass)
             .property("center_of_mass", &Link3D::GetCenterOfMass, &Link3D::SetCenterOfMass)
             .property("inertia_diagonal", &Link3D::GetInertiaDiagonal, &Link3D::SetInertiaDiagonal)

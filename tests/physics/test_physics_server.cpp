@@ -4,7 +4,9 @@
 #include <gobot/scene/collision_shape_3d.hpp>
 #include <gobot/scene/joint_3d.hpp>
 #include <gobot/scene/link_3d.hpp>
+#include <gobot/scene/mesh_instance_3d.hpp>
 #include <gobot/scene/resources/box_shape_3d.hpp>
+#include <gobot/scene/resources/mesh.hpp>
 #include <gobot/scene/robot_3d.hpp>
 
 TEST(TestPhysicsServer, exposes_backend_capabilities_without_optional_dependencies) {
@@ -198,6 +200,76 @@ TEST(TestPhysicsServer, preserves_virtual_root_link_role_in_snapshot_and_state) 
     ASSERT_EQ(state.robots.size(), 1);
     ASSERT_EQ(state.robots[0].links.size(), 1);
     EXPECT_EQ(state.robots[0].links[0].role, gobot::PhysicsLinkRole::VirtualRoot);
+
+    gobot::Object::Delete(robot);
+}
+
+TEST(TestPhysicsServer, infers_implicit_virtual_root_link_from_structure) {
+    auto* robot = gobot::Object::New<gobot::Robot3D>();
+    robot->SetName("robot");
+
+    auto* root_link = gobot::Object::New<gobot::Link3D>();
+    root_link->SetName("world");
+
+    auto* joint = gobot::Object::New<gobot::Joint3D>();
+    joint->SetName("world_to_base");
+    joint->SetJointType(gobot::JointType::Fixed);
+    joint->SetParentLink("world");
+    joint->SetChildLink("base_link");
+
+    auto* base_link = gobot::Object::New<gobot::Link3D>();
+    base_link->SetName("base_link");
+    auto* visual = gobot::Object::New<gobot::MeshInstance3D>();
+    visual->SetName("base_visual");
+    visual->SetMesh(gobot::MakeRef<gobot::Mesh>());
+
+    robot->AddChild(root_link);
+    root_link->AddChild(joint);
+    joint->AddChild(base_link);
+    base_link->AddChild(visual);
+
+    gobot::PhysicsServer physics_server;
+    gobot::Ref<gobot::PhysicsWorld> world = physics_server.CreateWorld();
+    ASSERT_TRUE(world->BuildFromScene(robot));
+
+    const gobot::PhysicsSceneSnapshot& snapshot = world->GetSceneSnapshot();
+    ASSERT_EQ(snapshot.robots.size(), 1);
+    ASSERT_EQ(snapshot.robots[0].links.size(), 2);
+    EXPECT_EQ(snapshot.robots[0].links[0].name, "world");
+    EXPECT_EQ(snapshot.robots[0].links[0].role, gobot::PhysicsLinkRole::VirtualRoot);
+    EXPECT_EQ(snapshot.robots[0].links[1].name, "base_link");
+    EXPECT_EQ(snapshot.robots[0].links[1].role, gobot::PhysicsLinkRole::Physical);
+
+    const gobot::PhysicsSceneState& state = world->GetSceneState();
+    ASSERT_EQ(state.robots.size(), 1);
+    ASSERT_EQ(state.robots[0].links.size(), 2);
+    EXPECT_EQ(state.robots[0].links[0].role, gobot::PhysicsLinkRole::VirtualRoot);
+    EXPECT_EQ(state.robots[0].links[1].role, gobot::PhysicsLinkRole::Physical);
+
+    gobot::Object::Delete(robot);
+}
+
+TEST(TestPhysicsServer, keeps_root_link_with_own_visual_physical) {
+    auto* robot = gobot::Object::New<gobot::Robot3D>();
+    robot->SetName("robot");
+
+    auto* root_link = gobot::Object::New<gobot::Link3D>();
+    root_link->SetName("base_link");
+    auto* visual = gobot::Object::New<gobot::MeshInstance3D>();
+    visual->SetName("base_visual");
+    visual->SetMesh(gobot::MakeRef<gobot::Mesh>());
+
+    robot->AddChild(root_link);
+    root_link->AddChild(visual);
+
+    gobot::PhysicsServer physics_server;
+    gobot::Ref<gobot::PhysicsWorld> world = physics_server.CreateWorld();
+    ASSERT_TRUE(world->BuildFromScene(robot));
+
+    const gobot::PhysicsSceneSnapshot& snapshot = world->GetSceneSnapshot();
+    ASSERT_EQ(snapshot.robots.size(), 1);
+    ASSERT_EQ(snapshot.robots[0].links.size(), 1);
+    EXPECT_EQ(snapshot.robots[0].links[0].role, gobot::PhysicsLinkRole::Physical);
 
     gobot::Object::Delete(robot);
 }

@@ -44,6 +44,17 @@ const PhysicsLinkState* FindLinkState(const PhysicsRobotState& robot_state,
     return nullptr;
 }
 
+const PhysicsLinkSnapshot* FindLinkSnapshot(const PhysicsRobotSnapshot& robot_snapshot,
+                                            const std::string& link_name) {
+    for (const PhysicsLinkSnapshot& link_snapshot : robot_snapshot.links) {
+        if (link_snapshot.name == link_name) {
+            return &link_snapshot;
+        }
+    }
+
+    return nullptr;
+}
+
 void ApplyLinkGlobalTransform(Link3D* link, const Affine3& global_transform) {
     if (link == nullptr) {
         return;
@@ -53,6 +64,18 @@ void ApplyLinkGlobalTransform(Link3D* link, const Affine3& global_transform) {
         link->SetGlobalTransform(global_transform);
     } else {
         link->SetTransform(global_transform);
+    }
+}
+
+void ApplyNodeGlobalTransform(Node3D* node, const Affine3& global_transform) {
+    if (node == nullptr) {
+        return;
+    }
+
+    if (node->IsInsideTree()) {
+        node->SetGlobalTransform(global_transform);
+    } else {
+        node->SetTransform(global_transform);
     }
 }
 
@@ -412,8 +435,18 @@ bool SimulationServer::ApplyWorldStateToScene() {
                     continue;
                 }
 
-                ApplyLinkGlobalTransform(const_cast<Link3D*>(floating_link_state->node),
-                                         floating_link_state->global_transform);
+                auto* joint = const_cast<Joint3D*>(joint_snapshot.node);
+                auto* floating_link = const_cast<Link3D*>(floating_link_state->node);
+                const PhysicsLinkSnapshot* floating_link_snapshot =
+                        FindLinkSnapshot(*robot_snapshot, joint_snapshot.child_link);
+                if (joint != nullptr && floating_link != nullptr && floating_link_snapshot != nullptr) {
+                    const Affine3 joint_to_child =
+                            joint_snapshot.global_transform.inverse() * floating_link_snapshot->global_transform;
+                    ApplyNodeGlobalTransform(joint, floating_link_state->global_transform * joint_to_child.inverse());
+                    floating_link->SetTransform(joint_to_child);
+                } else {
+                    ApplyLinkGlobalTransform(floating_link, floating_link_state->global_transform);
+                }
             }
         }
 
