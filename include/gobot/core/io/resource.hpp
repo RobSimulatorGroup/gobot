@@ -30,6 +30,8 @@ public:
 
     std::string GetPath() const;
 
+    void SetPathWithoutCache(const std::string& path);
+
     void SetName(const std::string &p_name);
 
     std::string GetName() const;
@@ -77,6 +79,7 @@ private:
 
     std::string name_;
     std::string path_cache_;
+    bool path_cache_registered_{false};
     Node *local_scene_ = nullptr;
     bool local_to_scene_{false};
     std::string unique_id_;

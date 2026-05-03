@@ -62,6 +62,8 @@ public:
 
     FORCE_INLINE bool GetKeyPressed(KeyCode key_code) const { return key_pressed_[KeyCodeUInt(key_code)]; }
 
+    FORCE_INLINE bool GetKeyHeld(KeyCode key_code) const { return key_held_[KeyCodeUInt(key_code)]; }
+
     FORCE_INLINE float GetScrollOffset() const { return scroll_offset_; }
 
     void SetScrollOffset(float offset);

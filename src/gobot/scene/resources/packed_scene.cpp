@@ -21,6 +21,15 @@ namespace gobot {
 namespace {
 
 int GetPropertyRestorePriority(const std::string& node_type, const std::string& property_name) {
+    if (node_type == "MeshInstance3D") {
+        if (property_name == "mesh") {
+            return 0;
+        }
+        if (property_name == "mesh_material") {
+            return 10;
+        }
+    }
+
     if (node_type == "Joint3D") {
         if (property_name == "position" || property_name == "rotation_degrees" || property_name == "scale") {
             return 0;
@@ -65,9 +74,9 @@ bool IsImportedMeshSourcePath(const std::string& path) {
            extension == "gltf";
 }
 
-Ref<Material> GetImportedMeshMaterialForSceneOverride(Node* node) {
+Ref<Material> GetImportedMeshMaterial(Node* node) {
     auto* mesh_instance = Object::PointerCastTo<MeshInstance3D>(node);
-    if (mesh_instance == nullptr || mesh_instance->GetMaterial().IsValid()) {
+    if (mesh_instance == nullptr) {
         return {};
     }
 
@@ -84,7 +93,7 @@ Ref<Material> GetImportedMeshMaterialForSceneOverride(Node* node) {
     }
 
     if (mesh_material.IsValid()) {
-        LOG_TRACE("PackedScene stores MeshInstance3D '{}' imported mesh material from '{}' as material_override.",
+        LOG_TRACE("PackedScene stores MeshInstance3D '{}' imported mesh material from '{}' as mesh_material.",
                   mesh_instance->GetName(),
                   mesh->GetPath());
     }
@@ -211,13 +220,10 @@ bool PackedScene::Pack(Node* root) {
                 RobotMode original_mode{};
                 if (property_name == "mode" && get_original_robot_mode(node, &original_mode)) {
                     node_data.properties.push_back({property_name, Variant(original_mode)});
-                } else if (property_name == "material_override") {
-                    Variant property_value = node->Get(property_name);
-                    Ref<Material> imported_mesh_material = GetImportedMeshMaterialForSceneOverride(node);
+                } else if (property_name == "mesh_material") {
+                    Ref<Material> imported_mesh_material = GetImportedMeshMaterial(node);
                     if (imported_mesh_material.IsValid()) {
                         node_data.properties.push_back({property_name, Variant(imported_mesh_material)});
-                    } else {
-                        node_data.properties.push_back({property_name, property_value});
                     }
                 } else {
                     node_data.properties.push_back({property_name, node->Get(property_name)});

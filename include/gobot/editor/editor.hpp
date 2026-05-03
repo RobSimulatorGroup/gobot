@@ -135,6 +135,7 @@ private:
     SceneFileDialogMode scene_file_dialog_mode_{SceneFileDialogMode::None};
     std::string current_scene_path_;
     bool scene_dirty_{false};
+    bool save_shortcut_down_{false};
     bool request_unsaved_scene_dialog_{false};
     std::function<void()> pending_scene_switch_action_;
 

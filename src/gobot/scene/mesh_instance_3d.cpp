@@ -6,6 +6,8 @@
 #include "gobot/scene/mesh_instance_3d.hpp"
 
 #include "gobot/core/registration.hpp"
+#include "gobot/scene/resources/array_mesh.hpp"
+#include "gobot/scene/resources/primitive_mesh.hpp"
 
 namespace gobot {
 
@@ -33,6 +35,29 @@ const Ref<Material>& MeshInstance3D::GetMaterial() const {
     return material_;
 }
 
+void MeshInstance3D::SetMeshMaterial(const Ref<Material>& material) {
+    if (Ref<ArrayMesh> array_mesh = dynamic_pointer_cast<ArrayMesh>(mesh_); array_mesh.IsValid()) {
+        array_mesh->SetMaterial(material);
+        return;
+    }
+
+    if (Ref<PrimitiveMesh> primitive_mesh = dynamic_pointer_cast<PrimitiveMesh>(mesh_); primitive_mesh.IsValid()) {
+        primitive_mesh->SetMaterial(material);
+    }
+}
+
+Ref<Material> MeshInstance3D::GetMeshMaterial() const {
+    if (Ref<ArrayMesh> array_mesh = dynamic_pointer_cast<ArrayMesh>(mesh_); array_mesh.IsValid()) {
+        return array_mesh->GetMaterial();
+    }
+
+    if (Ref<PrimitiveMesh> primitive_mesh = dynamic_pointer_cast<PrimitiveMesh>(mesh_); primitive_mesh.IsValid()) {
+        return primitive_mesh->GetMaterial();
+    }
+
+    return {};
+}
+
 }
 
 GOBOT_REGISTRATION {
@@ -44,7 +69,14 @@ GOBOT_REGISTRATION {
                     AddMetaPropertyInfo(
                             PropertyInfo()
                                 .SetUsageFlags(PropertyUsageFlags::None)))
-            .property("material_override", &MeshInstance3D::GetMaterial, &MeshInstance3D::SetMaterial)
+            .property("material_override", &MeshInstance3D::GetMaterial, &MeshInstance3D::SetMaterial)(
+                    AddMetaPropertyInfo(
+                            PropertyInfo()
+                                .SetUsageFlags(PropertyUsageFlags::Storage)))
+            .property("mesh_material", &MeshInstance3D::GetMeshMaterial, &MeshInstance3D::SetMeshMaterial)(
+                    AddMetaPropertyInfo(
+                            PropertyInfo()
+                                .SetUsageFlags(PropertyUsageFlags::Storage)))
             .property("surface_color", &MeshInstance3D::GetSurfaceColor, &MeshInstance3D::SetSurfaceColor);
 
 };

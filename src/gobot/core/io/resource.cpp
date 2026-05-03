@@ -110,7 +110,7 @@ Ref<Resource> Resource::Clone(bool copy_subresource) const {
 }
 
 Resource::~Resource() {
-    if (!path_cache_.empty()) {
+    if (path_cache_registered_) {
         ResourceCache::s_lock.lock();
         ResourceCache::s_resources.erase(path_cache_);
         ResourceCache::s_lock.unlock();
@@ -139,17 +139,19 @@ void Resource::SetPath(const std::string &path, bool take_over) {
 
     ResourceCache::s_lock.lock();
 
-    if (!path_cache_.empty()) {
+    if (path_cache_registered_) {
         ResourceCache::s_resources.erase(path_cache_);
     }
 
     path_cache_.clear();
+    path_cache_registered_ = false;
 
     Ref<Resource> existing = ResourceCache::GetRef(path);
 
     if (existing.UseCount()) {
         if (take_over) {
             existing->path_cache_ = "";
+            existing->path_cache_registered_ = false;
             ResourceCache::s_resources.erase(path);
         } else {
             ResourceCache::s_lock.unlock();
@@ -162,6 +164,7 @@ void Resource::SetPath(const std::string &path, bool take_over) {
 
     if (!path_cache_.empty()) {
         ResourceCache::s_resources[path_cache_] = this;
+        path_cache_registered_ = true;
     }
     ResourceCache::s_lock.unlock();
 
@@ -169,6 +172,21 @@ void Resource::SetPath(const std::string &path, bool take_over) {
 
 std::string Resource::GetPath() const {
     return path_cache_;
+}
+
+void Resource::SetPathWithoutCache(const std::string& path) {
+    if (path_cache_ == path) {
+        return;
+    }
+
+    if (path_cache_registered_) {
+        ResourceCache::s_lock.lock();
+        ResourceCache::s_resources.erase(path_cache_);
+        ResourceCache::s_lock.unlock();
+    }
+
+    path_cache_ = path;
+    path_cache_registered_ = false;
 }
 
 void Resource::SetName(const std::string &name) {
@@ -274,6 +292,7 @@ bool ResourceCache::Has(const std::string &path) {
     if (it != s_resources.end() && it->second->GetReferenceCount() == 0) {
         // This resource is in the process of being deleted, ignore its existence.
         it->second->path_cache_ = std::string();
+        it->second->path_cache_registered_ = false;
         it->second = nullptr;
         s_resources.erase(path);
     }
@@ -300,6 +319,7 @@ Ref<Resource> ResourceCache::GetRef(const std::string &path) {
     if (it != s_resources.end() && it->second->GetReferenceCount() == 0) {
         // This resource is in the process of being deleted, ignore its existence
         it->second->path_cache_ = std::string();
+        it->second->path_cache_registered_ = false;
         it->second = nullptr;
         s_resources.erase(path);
     }
