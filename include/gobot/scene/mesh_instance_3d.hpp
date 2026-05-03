@@ -30,6 +30,10 @@ public:
 
     const Ref<Material>& GetMaterial() const;
 
+    void SetMeshMaterial(const Ref<Material>& material);
+
+    Ref<Material> GetMeshMaterial() const;
+
 private:
     Ref<Mesh> mesh_{nullptr};
     Ref<Material> material_{nullptr};

@@ -394,14 +394,16 @@ void Editor::HandleGlobalShortcuts() {
         return;
     }
 
-    const bool ctrl_down = Input::GetInstance()->GetKeyPressed(KeyCode::LeftCtrl) ||
-                           Input::GetInstance()->GetKeyPressed(KeyCode::RightCtrl) ||
+    const bool ctrl_down = Input::GetInstance()->GetKeyHeld(KeyCode::LeftCtrl) ||
+                           Input::GetInstance()->GetKeyHeld(KeyCode::RightCtrl) ||
                            ImGui::GetIO().KeyCtrl;
-    const bool s_pressed = Input::GetInstance()->GetKeyPressed(KeyCode::S) ||
-                           ImGui::IsKeyPressed(ImGuiKey_S, false);
-    if (ctrl_down && s_pressed) {
+    const bool s_down = Input::GetInstance()->GetKeyHeld(KeyCode::S) ||
+                        ImGui::IsKeyDown(ImGuiKey_S);
+    const bool save_shortcut_down = ctrl_down && s_down;
+    if (save_shortcut_down && !save_shortcut_down_) {
         SaveCurrentScene();
     }
+    save_shortcut_down_ = save_shortcut_down;
 }
 
 void Editor::DrawUnsavedSceneDialog() {

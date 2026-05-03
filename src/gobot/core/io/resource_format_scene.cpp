@@ -211,6 +211,8 @@ bool ResourceFormatLoaderSceneInstance::LoadResource() {
                     res->SetUniqueId(id);
                     if (cache_mode_ != ResourceFormatLoader::CacheMode::Ignore) {
                         res->SetPath(path, cache_mode_ == ResourceFormatLoader::CacheMode::Replace);
+                    } else {
+                        res->SetPathWithoutCache(path);
                     }
                 }
 
@@ -609,7 +611,7 @@ bool ResourceFormatSaverSceneInstance::Save(const std::string &path, const Ref<R
                 used_unique_ids.insert(new_id);
             }
             if (takeover_paths_) {
-                saved_resource->SetPath(path + "::" + saved_resource->GetUniqueId(), true);
+                saved_resource->SetPathWithoutCache(path + "::" + saved_resource->GetUniqueId());
             }
             internal_resources_[saved_resource] = saved_resource->GetUniqueId();
 

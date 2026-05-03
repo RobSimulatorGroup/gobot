@@ -15,10 +15,8 @@
 #include "gobot/core/io/resource.hpp"
 #include "gobot/editor/imgui/type_icons.hpp"
 #include "gobot/editor/property_inspector/editor_inspector.hpp"
-#include "gobot/scene/mesh_instance_3d.hpp"
 #include "gobot/scene/resources/array_mesh.hpp"
 #include "gobot/scene/resources/material.hpp"
-#include "gobot/scene/resources/primitive_mesh.hpp"
 #include "gobot/scene/resources/resource_creation_registry.hpp"
 #include "imgui.h"
 #include "imgui_internal.h"
@@ -54,101 +52,6 @@ bool AssignResourceVariant(PropertyDataModel* property_data_model, Variant resou
     }
 
     return property_data_model->SetValue(resource_variant);
-}
-
-bool AssignMaterialOverride(PropertyDataModel* property_data_model, const Ref<Material>& material) {
-    if (!material.IsValid()) {
-        return false;
-    }
-
-    Variant material_variant(material);
-    return AssignResourceVariant(property_data_model, material_variant);
-}
-
-MeshInstance3D* GetEditedMeshInstanceMaterial(PropertyDataModel* property_data_model) {
-    if (property_data_model == nullptr ||
-        (property_data_model->GetPropertyName() != "material" &&
-         property_data_model->GetPropertyName() != "material_override")) {
-        return nullptr;
-    }
-
-    return Object::PointerCastTo<MeshInstance3D>(property_data_model->GetVariantCache().object);
-}
-
-Ref<Material> GetMeshDefaultMaterial(MeshInstance3D* mesh_instance) {
-    if (mesh_instance == nullptr || !mesh_instance->GetMesh().IsValid()) {
-        return {};
-    }
-
-    Ref<Mesh> mesh = mesh_instance->GetMesh();
-    if (Ref<ArrayMesh> array_mesh = dynamic_pointer_cast<ArrayMesh>(mesh); array_mesh.IsValid()) {
-        return array_mesh->GetMaterial();
-    }
-    if (Ref<PrimitiveMesh> primitive_mesh = dynamic_pointer_cast<PrimitiveMesh>(mesh); primitive_mesh.IsValid()) {
-        return primitive_mesh->GetMaterial();
-    }
-
-    return {};
-}
-
-bool IsMeshPropertyHiddenByMaterialOverride(PropertyDataModel* property_data_model) {
-    if (property_data_model == nullptr || property_data_model->GetPropertyName() != "mesh") {
-        return false;
-    }
-
-    auto* mesh_instance = Object::PointerCastTo<MeshInstance3D>(property_data_model->GetVariantCache().object);
-    return mesh_instance != nullptr && mesh_instance->GetMaterial().IsValid();
-}
-
-Ref<Material> CloneMaterialForOverride(const Ref<Material>& material) {
-    if (!material.IsValid()) {
-        return {};
-    }
-
-    Ref<Resource> cloned_resource = material->Clone(true);
-    return dynamic_pointer_cast<Material>(cloned_resource);
-}
-
-Ref<PBRMaterial3D> CreatePBRMaterialOverride(MeshInstance3D* mesh_instance) {
-    Ref<PBRMaterial3D> material = MakeRef<PBRMaterial3D>();
-    if (mesh_instance != nullptr) {
-        material->SetAlbedo(mesh_instance->GetSurfaceColor());
-    }
-    return material;
-}
-
-void DrawMeshInstanceMaterialOverrideTools(PropertyDataModel* property_data_model, const Ref<Resource>& resource) {
-    MeshInstance3D* mesh_instance = GetEditedMeshInstanceMaterial(property_data_model);
-    if (mesh_instance == nullptr) {
-        return;
-    }
-
-    if (!resource.IsValid()) {
-        Ref<Material> mesh_material = GetMeshDefaultMaterial(mesh_instance);
-        if (mesh_material.IsValid()) {
-            if (ImGui::Button("Use Mesh Material")) {
-                AssignMaterialOverride(property_data_model, CloneMaterialForOverride(mesh_material));
-            }
-            ImGui::SameLine();
-        }
-
-        if (ImGui::Button("New PBRMaterial3D")) {
-            AssignMaterialOverride(property_data_model, CreatePBRMaterialOverride(mesh_instance));
-        }
-        return;
-    }
-
-    if (ImGui::Button("Clear")) {
-        Variant empty_material{Ref<Material>()};
-        AssignResourceVariant(property_data_model, empty_material);
-    }
-    ImGui::SameLine();
-    if (!resource->IsBuiltIn()) {
-        if (ImGui::Button("Make Unique")) {
-            AssignMaterialOverride(property_data_model,
-                                   CloneMaterialForOverride(dynamic_pointer_cast<Material>(resource)));
-        }
-    }
 }
 
 std::vector<Type> BuildInheritanceChain(Type type) {
@@ -394,7 +297,6 @@ void EditorPropertyResource::OnImGuiContent() {
         ImGui::OpenPopup("ResourceMenu");
     }
     DrawResourceMenu(property_data_model_);
-    DrawMeshInstanceMaterialOverrideTools(property_data_model_, resource);
 }
 
 void EditorPropertyResource::End() {
@@ -403,10 +305,6 @@ void EditorPropertyResource::End() {
     EditorBuiltInProperty::End();
 
     if (!resource.IsValid()) {
-        return;
-    }
-
-    if (IsMeshPropertyHiddenByMaterialOverride(property_data_model_)) {
         return;
     }
 
