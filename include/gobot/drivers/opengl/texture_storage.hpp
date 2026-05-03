@@ -58,7 +58,7 @@ struct RenderTarget {
     bool is_transparent = false;
     uint32_t view_count = 1;
 
-    Vector2i size;
+    Vector2i size{0, 0};
 
     GLuint fbo = 0; // frame buffer object
 

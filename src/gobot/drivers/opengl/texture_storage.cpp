@@ -65,7 +65,6 @@ RID TextureStorage::RenderTargetCreate() {
     t.is_render_target = true;
 
     render_target.texture = texture_owner_.MakeRID(t);
-    UpdateRenderTarget(&render_target);
     RID render_target_rid = render_target_owner_.MakeRID(render_target);
     if (Texture* texture = GetTexture(render_target.texture)) {
         texture->render_target = render_target_owner_.GetOrNull(render_target_rid);

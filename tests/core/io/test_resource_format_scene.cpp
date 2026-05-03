@@ -504,3 +504,129 @@ TEST_F(TestResourceFormatScene, imported_mesh_material_is_saved_as_mesh_material
 
     gobot::Object::Delete(root);
 }
+
+TEST_F(TestResourceFormatScene, imported_mesh_material_and_instance_override_are_distinct) {
+    gobot::Ref<gobot::ArrayMesh> mesh = gobot::MakeRef<gobot::ArrayMesh>();
+    mesh->SetPath("res://assets/H2/meshes/torso_link.stl", true);
+
+    gobot::Ref<gobot::PBRMaterial3D> mesh_material = gobot::MakeRef<gobot::PBRMaterial3D>();
+    mesh_material->SetAlbedo({0.7f, 0.16f, 0.16f, 1.0f});
+    mesh->SetMaterial(mesh_material);
+
+    gobot::Ref<gobot::PBRMaterial3D> override_material = gobot::MakeRef<gobot::PBRMaterial3D>();
+    override_material->SetAlbedo({0.1f, 0.8f, 0.2f, 1.0f});
+
+    auto* root = gobot::Object::New<gobot::Node3D>();
+    root->SetName("Scene");
+
+    auto* visual = gobot::Object::New<gobot::MeshInstance3D>();
+    visual->SetName("torso_link_visual");
+    visual->SetMesh(mesh);
+    visual->SetMaterial(override_material);
+    root->AddChild(visual);
+
+    gobot::Ref<gobot::PackedScene> packed_scene = gobot::MakeRef<gobot::PackedScene>();
+    ASSERT_TRUE(packed_scene->Pack(root));
+    ASSERT_EQ(packed_scene->GetState()->GetNodeCount(), 2);
+
+    const gobot::SceneState::NodeData* visual_data = packed_scene->GetState()->GetNodeData(1);
+    ASSERT_NE(visual_data, nullptr);
+
+    gobot::Ref<gobot::PBRMaterial3D> saved_mesh_material;
+    gobot::Ref<gobot::PBRMaterial3D> saved_override_material;
+    for (const auto& property : visual_data->properties) {
+        if (property.name == "mesh_material") {
+            saved_mesh_material = gobot::dynamic_pointer_cast<gobot::PBRMaterial3D>(
+                    property.value.convert<gobot::Ref<gobot::Resource>>());
+        } else if (property.name == "material_override") {
+            saved_override_material = gobot::dynamic_pointer_cast<gobot::PBRMaterial3D>(
+                    property.value.convert<gobot::Ref<gobot::Resource>>());
+        }
+    }
+
+    ASSERT_TRUE(saved_mesh_material.IsValid());
+    ASSERT_TRUE(saved_override_material.IsValid());
+    EXPECT_FLOAT_EQ(saved_mesh_material->GetAlbedo().red(), 0.7f);
+    EXPECT_FLOAT_EQ(saved_mesh_material->GetAlbedo().green(), 0.16f);
+    EXPECT_FLOAT_EQ(saved_mesh_material->GetAlbedo().blue(), 0.16f);
+    EXPECT_FLOAT_EQ(saved_override_material->GetAlbedo().red(), 0.1f);
+    EXPECT_FLOAT_EQ(saved_override_material->GetAlbedo().green(), 0.8f);
+    EXPECT_FLOAT_EQ(saved_override_material->GetAlbedo().blue(), 0.2f);
+
+    gobot::Node* instance = packed_scene->Instantiate();
+    ASSERT_NE(instance, nullptr);
+
+    auto* loaded_visual = gobot::Object::PointerCastTo<gobot::MeshInstance3D>(instance->GetChild(0));
+    ASSERT_NE(loaded_visual, nullptr);
+    auto loaded_mesh_material = gobot::dynamic_pointer_cast<gobot::PBRMaterial3D>(loaded_visual->GetMeshMaterial());
+    auto loaded_override_material = gobot::dynamic_pointer_cast<gobot::PBRMaterial3D>(loaded_visual->GetMaterial());
+    ASSERT_TRUE(loaded_mesh_material.IsValid());
+    ASSERT_TRUE(loaded_override_material.IsValid());
+    EXPECT_FLOAT_EQ(loaded_mesh_material->GetAlbedo().red(), 0.7f);
+    EXPECT_FLOAT_EQ(loaded_override_material->GetAlbedo().green(), 0.8f);
+
+    gobot::Object::Delete(root);
+    gobot::Object::Delete(instance);
+}
+
+TEST_F(TestResourceFormatScene, built_in_mesh_material_and_instance_override_round_trip) {
+    gobot::Ref<gobot::BoxMesh> mesh = gobot::MakeRef<gobot::BoxMesh>();
+    mesh->SetSize({1.0f, 2.0f, 3.0f});
+
+    gobot::Ref<gobot::PBRMaterial3D> mesh_material = gobot::MakeRef<gobot::PBRMaterial3D>();
+    mesh_material->SetAlbedo({0.2f, 0.3f, 0.9f, 1.0f});
+    mesh->SetMaterial(mesh_material);
+
+    gobot::Ref<gobot::PBRMaterial3D> override_material = gobot::MakeRef<gobot::PBRMaterial3D>();
+    override_material->SetAlbedo({0.9f, 0.5f, 0.1f, 1.0f});
+    override_material->SetRoughness(0.4f);
+
+    auto* root = gobot::Object::New<gobot::Node3D>();
+    root->SetName("Scene");
+
+    auto* visual = gobot::Object::New<gobot::MeshInstance3D>();
+    visual->SetName("box_visual");
+    visual->SetMesh(mesh);
+    visual->SetMaterial(override_material);
+    root->AddChild(visual);
+
+    gobot::Ref<gobot::PackedScene> packed_scene = gobot::MakeRef<gobot::PackedScene>();
+    ASSERT_TRUE(packed_scene->Pack(root));
+
+    USING_ENUM_BITWISE_OPERATORS;
+    ASSERT_TRUE(gobot::ResourceSaver::Save(packed_scene, "res://built_in_mesh_material_override.jscn",
+                                           gobot::ResourceSaverFlags::ReplaceSubResourcePaths |
+                                           gobot::ResourceSaverFlags::ChangePath));
+
+    gobot::Ref<gobot::Resource> loaded_resource = gobot::ResourceLoader::Load(
+            "res://built_in_mesh_material_override.jscn", "PackedScene", gobot::ResourceFormatLoader::CacheMode::Ignore);
+    ASSERT_TRUE(loaded_resource.IsValid());
+
+    gobot::Ref<gobot::PackedScene> loaded_scene = gobot::dynamic_pointer_cast<gobot::PackedScene>(loaded_resource);
+    ASSERT_TRUE(loaded_scene.IsValid());
+
+    gobot::Node* instance = loaded_scene->Instantiate();
+    ASSERT_NE(instance, nullptr);
+    ASSERT_EQ(instance->GetChildCount(), 1);
+
+    auto* loaded_visual = gobot::Object::PointerCastTo<gobot::MeshInstance3D>(instance->GetChild(0));
+    ASSERT_NE(loaded_visual, nullptr);
+
+    gobot::Ref<gobot::BoxMesh> loaded_mesh = gobot::dynamic_pointer_cast<gobot::BoxMesh>(loaded_visual->GetMesh());
+    ASSERT_TRUE(loaded_mesh.IsValid());
+
+    auto loaded_mesh_material = gobot::dynamic_pointer_cast<gobot::PBRMaterial3D>(loaded_mesh->GetMaterial());
+    auto loaded_override_material = gobot::dynamic_pointer_cast<gobot::PBRMaterial3D>(loaded_visual->GetMaterial());
+    ASSERT_TRUE(loaded_mesh_material.IsValid());
+    ASSERT_TRUE(loaded_override_material.IsValid());
+    EXPECT_FLOAT_EQ(loaded_mesh_material->GetAlbedo().red(), 0.2f);
+    EXPECT_FLOAT_EQ(loaded_mesh_material->GetAlbedo().green(), 0.3f);
+    EXPECT_FLOAT_EQ(loaded_mesh_material->GetAlbedo().blue(), 0.9f);
+    EXPECT_FLOAT_EQ(loaded_override_material->GetAlbedo().red(), 0.9f);
+    EXPECT_FLOAT_EQ(loaded_override_material->GetAlbedo().green(), 0.5f);
+    EXPECT_FLOAT_EQ(loaded_override_material->GetAlbedo().blue(), 0.1f);
+    EXPECT_FLOAT_EQ(loaded_override_material->GetRoughness(), 0.4f);
+
+    gobot::Object::Delete(root);
+    gobot::Object::Delete(instance);
+}

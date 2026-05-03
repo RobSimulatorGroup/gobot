@@ -267,9 +267,16 @@ void SceneView3DPanel::OnImGuiContent()
     }
 
     const float viewport_top_offset = 56.0f;
-    const ImVec2 content_min = ImGui::GetWindowContentRegionMin();
-    const ImVec2 content_max = ImGui::GetWindowContentRegionMax();
-    ImVec2 scene_view_size = {content_max.x - content_min.x, content_max.y - viewport_top_offset};
+    const ImVec2 window_size = ImGui::GetWindowSize();
+    const ImVec2 main_viewport_size = ImGui::GetMainViewport()->Size;
+    ImVec2 scene_view_size = {window_size.x, window_size.y - viewport_top_offset};
+
+    if (scene_view_size.x <= 0.0f || scene_view_size.y <= 0.0f) {
+        return;
+    }
+
+    scene_view_size.x = std::min(scene_view_size.x, main_viewport_size.x);
+    scene_view_size.y = std::min(scene_view_size.y, main_viewport_size.y);
 
     if (scene_view_size.x <= 0.0f || scene_view_size.y <= 0.0f) {
         return;
@@ -292,7 +299,7 @@ void SceneView3DPanel::OnImGuiContent()
     auto* scene_root = Editor::GetInstance()->GetEditedSceneRoot();
     viewport_renderer_->Render(view_port_, scene_root, camera_3d);
 
-    ImGui::SetCursorPos({content_min.x, viewport_top_offset});
+    ImGui::SetCursorPos({0.0f, viewport_top_offset});
     const ImVec2 scene_view_position = ImGui::GetCursorScreenPos();
     const auto render_texture = static_cast<ImTextureID>(
             reinterpret_cast<std::uintptr_t>(RS::GetInstance()->GetRenderTargetColorTextureNativeHandle(view_port_)));
