@@ -62,12 +62,15 @@ RID TextureStorage::RenderTargetCreate() {
 
     Texture t;
     t.active = true;
-    t.render_target = &render_target;
     t.is_render_target = true;
 
     render_target.texture = texture_owner_.MakeRID(t);
     UpdateRenderTarget(&render_target);
-    return render_target_owner_.MakeRID(render_target);
+    RID render_target_rid = render_target_owner_.MakeRID(render_target);
+    if (Texture* texture = GetTexture(render_target.texture)) {
+        texture->render_target = render_target_owner_.GetOrNull(render_target_rid);
+    }
+    return render_target_rid;
 }
 
 void TextureStorage::RenderTargetFree(RID p_rid) {
@@ -403,6 +406,10 @@ void TextureStorage::UpdateRenderTarget(RenderTarget* rt) {
 
         GLenum status = glCheckNamedFramebufferStatus(rt->fbo, GL_FRAMEBUFFER);
         if (status != GL_FRAMEBUFFER_COMPLETE) {
+            const int width = rt->size.x();
+            const int height = rt->size.y();
+            const GLuint color_internal_format = rt->color_internal_format;
+            const GLuint depth_internal_format = GL_DEPTH_COMPONENT24;
             // bind to default frame buffer
             glBindFramebuffer(GL_FRAMEBUFFER, 0);
             glDeleteFramebuffers(1, &rt->fbo);
@@ -413,7 +420,12 @@ void TextureStorage::UpdateRenderTarget(RenderTarget* rt) {
             rt->size.y() = 0;
             rt->color = 0;
             rt->depth = 0;
-            LOG_WARN("Could not create render target, status: {}", GetFramebufferError(status));
+            LOG_WARN("Could not create render target, status: {}, size: {}x{}, color format: 0x{:X}, depth format: 0x{:X}",
+                     GetFramebufferError(status),
+                     width,
+                     height,
+                     color_internal_format,
+                     depth_internal_format);
             return;
         }
 

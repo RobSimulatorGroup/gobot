@@ -28,6 +28,7 @@
 #include "gobot/editor/property_inspector/editor_inspector.hpp"
 #include "gobot/main/main.hpp"
 #include "gobot/scene/collision_shape_3d.hpp"
+#include "gobot/scene/imgui_window.hpp"
 #include "gobot/scene/mesh_instance_3d.hpp"
 #include "gobot/scene/node_3d.hpp"
 #include "gobot/scene/resources/box_shape_3d.hpp"
@@ -313,9 +314,6 @@ void Editor::End() {
 }
 
 void Editor::OnImGuiContent() {
-    // your drawing here
-    ImGui::ShowDemoWindow();
-
     file_browser_->Display();
     HandleSceneFileDialogSelection();
     DrawUnsavedSceneDialog();
@@ -359,7 +357,34 @@ void Editor::DrawMenuBar() {
             }
             ImGui::EndMenu();
         }
+        DrawViewMenu();
         ImGui::EndMainMenuBar();
+    }
+}
+
+void Editor::DrawViewMenu() {
+    if (!ImGui::BeginMenu("View")) {
+        return;
+    }
+
+    DrawPanelViewMenuItems(this);
+    ImGui::EndMenu();
+}
+
+void Editor::DrawPanelViewMenuItems(Node* node) {
+    if (node == nullptr) {
+        return;
+    }
+
+    if (auto* window = Object::PointerCastTo<ImGuiWindow>(node)) {
+        bool open = window->IsOpened();
+        if (ImGui::MenuItem(window->GetImGuiWindowTitle().c_str(), nullptr, &open)) {
+            window->SetOpen(open);
+        }
+    }
+
+    for (std::size_t i = 0; i < node->GetChildCount(); ++i) {
+        DrawPanelViewMenuItems(node->GetChild(static_cast<int>(i)));
     }
 }
 
@@ -578,18 +603,18 @@ void Editor::BeginDockSpace() {
         window_flags |= ImGuiWindowFlags_NoBackground;
 
     ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, ImVec2(0.0f, 0.0f));
-    ImGui::Begin("MyDockspace", &p_open, window_flags);
+    ImGui::Begin("GobotDockspace###gobot_dockspace_v2", &p_open, window_flags);
     ImGui::PopStyleVar();
 
     if(opt_fullscreen)
         ImGui::PopStyleVar(2);
 
-    ImGuiID DockspaceID = ImGui::GetID("MyDockspace");
+    ImGuiID DockspaceID = ImGui::GetID("gobot_dockspace_v2");
 
     if(!ImGui::DockBuilderGetNode(DockspaceID)) {
         ImGui::DockBuilderRemoveNode(DockspaceID); // Clear out existing layout
         ImGui::DockBuilderAddNode(DockspaceID);    // Add empty node
-        ImGui::DockBuilderSetNodeSize(DockspaceID, ImGui::GetIO().DisplaySize * ImGui::GetIO().DisplayFramebufferScale);
+        ImGui::DockBuilderSetNodeSize(DockspaceID, ImGui::GetIO().DisplaySize);
 
         ImGuiID dock_main_id = DockspaceID;
         ImGuiID DockLeft     = ImGui::DockBuilderSplitNode(dock_main_id, ImGuiDir_Left, 0.2f, nullptr, &dock_main_id);
@@ -602,8 +627,8 @@ void Editor::BeginDockSpace() {
 
         ImGui::DockBuilderDockWindow("###scene_view3d", DockMiddle);
         ImGui::DockBuilderDockWindow("###inspector", DockRight);
+        ImGui::DockBuilderDockWindow("###physics", DockRight);
         ImGui::DockBuilderDockWindow("###console", DockBottomMiddle);
-        ImGui::DockBuilderDockWindow("###physics", DockBottomMiddle);
         ImGui::DockBuilderDockWindow("###resources", DockingBottomLeftChild);
         ImGui::DockBuilderDockWindow("###scene_editor", DockLeft);
 

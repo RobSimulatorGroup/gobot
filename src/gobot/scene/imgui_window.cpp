@@ -21,6 +21,10 @@ void ImGuiWindow::SetImGuiWindow(const std::string& title, const std::string& id
     imgui_window_label_cache_.clear();
 }
 
+const std::string& ImGuiWindow::GetImGuiWindowTitle() const {
+    return imgui_window_title_.empty() ? GetName() : imgui_window_title_;
+}
+
 const std::string& ImGuiWindow::GetImGuiWindowLabel() const {
     if (imgui_window_title_.empty() && imgui_window_id_.empty()) {
         return GetName();
@@ -38,6 +42,10 @@ const std::string& ImGuiWindow::GetImGuiWindowLabel() const {
 }
 
 bool ImGuiWindow::Begin() {
+    if (!open_) {
+        return false;
+    }
+
     ImGuiNode::Begin();
 
     if (window_size_.has_value()) {

@@ -103,6 +103,10 @@ private:
 
     void DrawMenuBar();
 
+    void DrawViewMenu();
+
+    void DrawPanelViewMenuItems(Node* node);
+
     void HandleGlobalShortcuts();
 
     void DrawUnsavedSceneDialog();

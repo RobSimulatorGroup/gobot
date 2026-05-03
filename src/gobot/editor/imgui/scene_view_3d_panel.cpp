@@ -262,17 +262,14 @@ bool SceneView3DPanel::Begin() {
 void SceneView3DPanel::OnImGuiContent()
 {
     auto* camera_3d = Node3DEditor::GetInstance()->GetCamera3D();
-
-    ImGui::SetCursorPos({0.0, 56.0});
-    ImVec2 offset = ImGui::GetCursorPos();
-
     if(!camera_3d) {
         return;
     }
 
+    const float viewport_top_offset = 56.0f;
     const ImVec2 content_min = ImGui::GetWindowContentRegionMin();
     const ImVec2 content_max = ImGui::GetWindowContentRegionMax();
-    ImVec2 scene_view_size = {content_max.x - content_min.x, content_max.y - offset.y};
+    ImVec2 scene_view_size = {content_max.x - content_min.x, content_max.y - viewport_top_offset};
 
     if (scene_view_size.x <= 0.0f || scene_view_size.y <= 0.0f) {
         return;
@@ -295,6 +292,7 @@ void SceneView3DPanel::OnImGuiContent()
     auto* scene_root = Editor::GetInstance()->GetEditedSceneRoot();
     viewport_renderer_->Render(view_port_, scene_root, camera_3d);
 
+    ImGui::SetCursorPos({content_min.x, viewport_top_offset});
     const ImVec2 scene_view_position = ImGui::GetCursorScreenPos();
     const auto render_texture = static_cast<ImTextureID>(
             reinterpret_cast<std::uintptr_t>(RS::GetInstance()->GetRenderTargetColorTextureNativeHandle(view_port_)));
@@ -326,6 +324,8 @@ void SceneView3DPanel::OnImGuiContent()
                         dragged_joint_ != nullptr);
 
     ToolBar({scene_view_position.x + 8.0f, scene_view_position.y + 8.0f});
+    ImGui::SetCursorScreenPos({scene_view_position.x, scene_view_position.y + scene_view_size.y});
+    ImGui::Dummy({1.0f, 1.0f});
 
     ImGuizmo::SetRect(scene_view_position.x, scene_view_position.y, scene_view_size.x, scene_view_size.y);
     node3d_editor->OnImGuizmo();

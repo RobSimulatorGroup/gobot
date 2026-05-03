@@ -26,6 +26,8 @@ public:
 
     void SetImGuiWindow(const std::string& title, const std::string& id);
 
+    const std::string& GetImGuiWindowTitle() const;
+
     FORCE_INLINE void SetImGuiWindowFlag(int flags) { imgui_window_flags_ = flags; }
 
     FORCE_INLINE void SetImGuiWindowSize(const Vector2f& size, int imgui_cond) {
