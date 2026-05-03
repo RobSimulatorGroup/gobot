@@ -10,6 +10,11 @@
 
 namespace gobot {
 
+enum class LinkRole {
+    Physical,
+    VirtualRoot,
+};
+
 class GOBOT_EXPORT Link3D : public Node3D {
     GOBCLASS(Link3D, Node3D)
 
@@ -32,11 +37,16 @@ public:
 
     const Vector3& GetInertiaOffDiagonal() const;
 
+    void SetRole(LinkRole role);
+
+    LinkRole GetRole() const;
+
 private:
     RealType mass_{0.0};
     Vector3 center_of_mass_{Vector3::Zero()};
     Vector3 inertia_diagonal_{Vector3::Zero()};
     Vector3 inertia_off_diagonal_{Vector3::Zero()};
+    LinkRole role_{LinkRole::Physical};
 };
 
 }

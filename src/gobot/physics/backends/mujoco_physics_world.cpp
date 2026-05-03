@@ -564,6 +564,14 @@ void MuJoCoPhysicsWorld::BuildLinkBindings() {
 
         for (std::size_t link_index = 0; link_index < robot_state.links.size(); ++link_index) {
             PhysicsLinkState& link_state = robot_state.links[link_index];
+            const PhysicsLinkSnapshot* link_snapshot = robot_index < scene_snapshot_.robots.size()
+                                                               ? FindLinkSnapshot(scene_snapshot_.robots[robot_index],
+                                                                                  link_state.link_name)
+                                                               : nullptr;
+            if (link_snapshot != nullptr && link_snapshot->role == PhysicsLinkRole::VirtualRoot) {
+                continue;
+            }
+
             const std::string body_name = prefix + link_state.link_name;
             const int body_id = mj_name2id(model, mjOBJ_BODY, body_name.c_str());
             if (body_id < 0) {

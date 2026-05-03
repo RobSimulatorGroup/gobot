@@ -213,6 +213,8 @@ The authoritative data flow should remain scene-first:
 5. Runtime stepping applies controls, calls `mj_step`, reads MuJoCo state, and updates `PhysicsSceneState`.
 6. `SimulationServer::ApplyWorldStateToScene()` writes simulation-owned state back to Gobot scene nodes.
 
+URDF imports should mark a root link with no visual, no collision, and no inertial data as `LinkRole::VirtualRoot`. The scene snapshot carries this as `PhysicsLinkRole::VirtualRoot`, and physics backends should ignore it for body synchronization instead of warning about a missing backend body. This keeps virtual wrapper links semantic and avoids name-based filters such as `world` / `<robot>_world`.
+
 Scene edits must use two different paths:
 
 - Runtime state edits, such as joint position targets, velocities, efforts, reset poses, floating base pose, and control mode, should update `PhysicsSceneState` / `mjData` and call `mj_forward` without rebuilding `mjModel`.

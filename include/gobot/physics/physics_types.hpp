@@ -45,6 +45,11 @@ enum class PhysicsJointControlMode {
     Effort
 };
 
+enum class PhysicsLinkRole {
+    Physical,
+    VirtualRoot
+};
+
 struct PhysicsBackendInfo {
     PhysicsBackendType type{PhysicsBackendType::Null};
     std::string name;
@@ -75,6 +80,7 @@ struct PhysicsShapeSnapshot {
 struct PhysicsLinkSnapshot {
     const Link3D* node{nullptr};
     std::string name;
+    PhysicsLinkRole role{PhysicsLinkRole::Physical};
     Affine3 global_transform{Affine3::Identity()};
     RealType mass{0.0};
     Vector3 center_of_mass{Vector3::Zero()};
@@ -132,6 +138,7 @@ struct PhysicsLinkState {
     const Link3D* node{nullptr};
     std::string robot_name;
     std::string link_name;
+    PhysicsLinkRole role{PhysicsLinkRole::Physical};
     Affine3 global_transform{Affine3::Identity()};
     Vector3 linear_velocity{Vector3::Zero()};
     Vector3 angular_velocity{Vector3::Zero()};

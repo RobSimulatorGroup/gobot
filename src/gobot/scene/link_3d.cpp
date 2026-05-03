@@ -50,15 +50,26 @@ const Vector3& Link3D::GetInertiaOffDiagonal() const {
     return inertia_off_diagonal_;
 }
 
+void Link3D::SetRole(LinkRole role) {
+    role_ = role;
+}
+
+LinkRole Link3D::GetRole() const {
+    return role_;
+}
+
 } // namespace gobot
 
 GOBOT_REGISTRATION {
+
+    QuickEnumeration_<LinkRole>("LinkRole");
 
     Class_<Link3D>("Link3D")
             .constructor()(CtorAsRawPtr)
             .property("mass", &Link3D::GetMass, &Link3D::SetMass)
             .property("center_of_mass", &Link3D::GetCenterOfMass, &Link3D::SetCenterOfMass)
             .property("inertia_diagonal", &Link3D::GetInertiaDiagonal, &Link3D::SetInertiaDiagonal)
-            .property("inertia_off_diagonal", &Link3D::GetInertiaOffDiagonal, &Link3D::SetInertiaOffDiagonal);
+            .property("inertia_off_diagonal", &Link3D::GetInertiaOffDiagonal, &Link3D::SetInertiaOffDiagonal)
+            .property("role", &Link3D::GetRole, &Link3D::SetRole);
 
 };

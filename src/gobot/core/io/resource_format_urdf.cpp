@@ -62,6 +62,8 @@ struct CollisionImportData {
 
 struct LinkImportData {
     std::string name;
+    LinkRole role{LinkRole::Physical};
+    bool has_inertial{false};
     RealType mass{0.0};
     Vector3 center_of_mass{Vector3::Zero()};
     Vector3 inertia_diagonal{Vector3::Zero()};
@@ -162,6 +164,11 @@ std::string FindTagAttributes(const std::string& body, const std::string& tag_na
         return {};
     }
     return match[1].str();
+}
+
+bool HasTag(const std::string& body, const std::string& tag_name) {
+    const std::regex tag_regex("<\\s*" + tag_name + R"(\b)", std::regex::icase);
+    return std::regex_search(body, tag_regex);
 }
 
 std::string FindTagBody(const std::string& body, const std::string& tag_name) {
@@ -430,8 +437,9 @@ std::vector<LinkImportData> ParseLinks(const std::string& xml, const std::string
             continue;
         }
 
-        const std::string inertial_body = FindTagBody(body, "inertial");
-        if (!inertial_body.empty()) {
+        if (HasTag(body, "inertial")) {
+            const std::string inertial_body = FindTagBody(body, "inertial");
+            link.has_inertial = true;
             link.center_of_mass = ParseVector3(GetAttribute(FindTagAttributes(inertial_body, "origin"), "xyz"));
             link.mass = ParseReal(GetAttribute(FindTagAttributes(inertial_body, "mass"), "value"));
 
@@ -558,6 +566,7 @@ SceneState::NodeData MakeLinkNode(const LinkImportData& link, int parent) {
     AddProperty(node_data, "center_of_mass", link.center_of_mass);
     AddProperty(node_data, "inertia_diagonal", link.inertia_diagonal);
     AddProperty(node_data, "inertia_off_diagonal", link.inertia_off_diagonal);
+    AddProperty(node_data, "role", link.role);
     return node_data;
 }
 
@@ -652,7 +661,7 @@ Ref<Resource> ResourceFormatLoaderURDF::Load(const std::string& path,
         }
     }
 
-    const std::vector<LinkImportData> links = ParseLinks(xml, input_path);
+    std::vector<LinkImportData> links = ParseLinks(xml, input_path);
     const std::vector<JointImportData> joints = ParseJoints(xml);
     if (links.empty()) {
         LOG_ERROR("URDF file {} contains no links.", path);
@@ -665,16 +674,25 @@ Ref<Resource> ResourceFormatLoaderURDF::Load(const std::string& path,
     Ref<SceneState> state = packed_scene->GetState();
     const int robot_index = state->AddNode(MakeRobotNode(robot_name, original_path.empty() ? path : original_path));
 
-    std::unordered_map<std::string, LinkImportData> link_by_name;
-    for (const LinkImportData& link : links) {
-        link_by_name.emplace(link.name, link);
-    }
-
     std::unordered_multimap<std::string, JointImportData> joints_by_parent;
     std::unordered_set<std::string> child_links;
     for (const JointImportData& joint : joints) {
         joints_by_parent.emplace(joint.parent_link, joint);
         child_links.insert(joint.child_link);
+    }
+
+    for (LinkImportData& link : links) {
+        const bool is_root_link = !child_links.contains(link.name);
+        const bool has_visual = !link.visuals.empty();
+        const bool has_collision = !link.collisions.empty();
+        if (is_root_link && !has_visual && !has_collision && !link.has_inertial) {
+            link.role = LinkRole::VirtualRoot;
+        }
+    }
+
+    std::unordered_map<std::string, LinkImportData> link_by_name;
+    for (const LinkImportData& link : links) {
+        link_by_name.emplace(link.name, link);
     }
 
     std::unordered_map<std::string, int> emitted_links;

@@ -59,6 +59,9 @@ void CollectRobotNodes(const Node* node,
         PhysicsLinkSnapshot link_snapshot;
         link_snapshot.node = link;
         link_snapshot.name = link->GetName();
+        link_snapshot.role = link->GetRole() == LinkRole::VirtualRoot
+                                     ? PhysicsLinkRole::VirtualRoot
+                                     : PhysicsLinkRole::Physical;
         link_snapshot.global_transform = link->IsInsideTree() ? link->GetGlobalTransform() : link->GetTransform();
         link_snapshot.mass = link->GetMass();
         link_snapshot.center_of_mass = link->GetCenterOfMass();
@@ -186,7 +189,7 @@ bool PhysicsWorld::RestoreCompatibleState(const PhysicsSceneState& previous_stat
 
         for (PhysicsLinkState& link_state : robot_state.links) {
             const PhysicsLinkState* previous_link_state = FindLinkState(*previous_robot_state, link_state.link_name);
-            if (previous_link_state == nullptr) {
+            if (previous_link_state == nullptr || previous_link_state->role != link_state.role) {
                 continue;
             }
 
@@ -310,6 +313,7 @@ void PhysicsWorld::ResetSceneStateFromSnapshot() {
             link_state.node = link_snapshot.node;
             link_state.robot_name = robot_snapshot.name;
             link_state.link_name = link_snapshot.name;
+            link_state.role = link_snapshot.role;
             link_state.global_transform = link_snapshot.global_transform;
             robot_state.links.emplace_back(std::move(link_state));
             ++scene_state_.total_link_count;

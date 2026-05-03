@@ -234,6 +234,146 @@ TEST(TestResourceFormatURDF, stores_limited_joint_position_at_limit_midpoint) {
     gobot::Object::Delete(root_node);
 }
 
+TEST(TestResourceFormatURDF, marks_empty_root_link_as_virtual_root) {
+    const std::filesystem::path fixture_path =
+            std::filesystem::temp_directory_path() / "gobot_virtual_root.urdf";
+    {
+        std::ofstream file(fixture_path);
+        file << R"(<?xml version="1.0"?>
+<robot name="virtual_root_bot">
+  <link name="world"/>
+  <link name="base_link"/>
+  <joint name="world_to_base" type="fixed">
+    <parent link="world"/>
+    <child link="base_link"/>
+  </joint>
+</robot>)";
+    }
+
+    gobot::Ref<gobot::ResourceFormatLoaderURDF> loader = gobot::MakeRef<gobot::ResourceFormatLoaderURDF>();
+    gobot::Ref<gobot::Resource> resource = loader->Load(fixture_path.string());
+    ASSERT_TRUE(resource.IsValid());
+
+    auto packed_scene = gobot::dynamic_pointer_cast<gobot::PackedScene>(resource);
+    ASSERT_TRUE(packed_scene.IsValid());
+
+    gobot::Node* root_node = packed_scene->Instantiate();
+    ASSERT_NE(root_node, nullptr);
+
+    const auto* world_data = packed_scene->GetState()->GetNodeData(1);
+    ASSERT_NE(world_data, nullptr);
+    ASSERT_EQ(world_data->name, "world");
+    const auto* world_role_property = FindNodeProperty(*world_data, "role");
+    ASSERT_NE(world_role_property, nullptr);
+    EXPECT_EQ(world_role_property->value.convert<gobot::LinkRole>(), gobot::LinkRole::VirtualRoot);
+
+    auto* world_link = gobot::Object::PointerCastTo<gobot::Link3D>(FindNodeByName(root_node, "world"));
+    ASSERT_NE(world_link, nullptr);
+    EXPECT_EQ(world_link->GetRole(), gobot::LinkRole::VirtualRoot);
+
+    auto* base_link = gobot::Object::PointerCastTo<gobot::Link3D>(FindNodeByName(root_node, "base_link"));
+    ASSERT_NE(base_link, nullptr);
+    EXPECT_EQ(base_link->GetRole(), gobot::LinkRole::Physical);
+
+    gobot::Object::Delete(root_node);
+}
+
+TEST(TestResourceFormatURDF, keeps_root_link_with_physical_content_physical) {
+    const std::filesystem::path fixture_path =
+            std::filesystem::temp_directory_path() / "gobot_physical_root.urdf";
+    {
+        std::ofstream file(fixture_path);
+        file << R"(<?xml version="1.0"?>
+<robot name="physical_root_bot">
+  <link name="base_link">
+    <inertial>
+      <mass value="1.0"/>
+      <inertia ixx="1" iyy="1" izz="1" ixy="0" ixz="0" iyz="0"/>
+    </inertial>
+  </link>
+</robot>)";
+    }
+
+    gobot::Ref<gobot::ResourceFormatLoaderURDF> loader = gobot::MakeRef<gobot::ResourceFormatLoaderURDF>();
+    gobot::Ref<gobot::Resource> resource = loader->Load(fixture_path.string());
+    ASSERT_TRUE(resource.IsValid());
+
+    auto packed_scene = gobot::dynamic_pointer_cast<gobot::PackedScene>(resource);
+    ASSERT_TRUE(packed_scene.IsValid());
+
+    gobot::Node* root_node = packed_scene->Instantiate();
+    ASSERT_NE(root_node, nullptr);
+
+    auto* base_link = gobot::Object::PointerCastTo<gobot::Link3D>(FindNodeByName(root_node, "base_link"));
+    ASSERT_NE(base_link, nullptr);
+    EXPECT_EQ(base_link->GetRole(), gobot::LinkRole::Physical);
+
+    gobot::Object::Delete(root_node);
+}
+
+TEST(TestResourceFormatURDF, keeps_root_link_with_zero_mass_inertial_physical) {
+    const std::filesystem::path fixture_path =
+            std::filesystem::temp_directory_path() / "gobot_zero_mass_root.urdf";
+    {
+        std::ofstream file(fixture_path);
+        file << R"(<?xml version="1.0"?>
+<robot name="zero_mass_root_bot">
+  <link name="base_link">
+    <inertial>
+      <mass value="0.0"/>
+      <inertia ixx="0" iyy="0" izz="0" ixy="0" ixz="0" iyz="0"/>
+    </inertial>
+  </link>
+</robot>)";
+    }
+
+    gobot::Ref<gobot::ResourceFormatLoaderURDF> loader = gobot::MakeRef<gobot::ResourceFormatLoaderURDF>();
+    gobot::Ref<gobot::Resource> resource = loader->Load(fixture_path.string());
+    ASSERT_TRUE(resource.IsValid());
+
+    auto packed_scene = gobot::dynamic_pointer_cast<gobot::PackedScene>(resource);
+    ASSERT_TRUE(packed_scene.IsValid());
+
+    gobot::Node* root_node = packed_scene->Instantiate();
+    ASSERT_NE(root_node, nullptr);
+
+    auto* base_link = gobot::Object::PointerCastTo<gobot::Link3D>(FindNodeByName(root_node, "base_link"));
+    ASSERT_NE(base_link, nullptr);
+    EXPECT_EQ(base_link->GetRole(), gobot::LinkRole::Physical);
+
+    gobot::Object::Delete(root_node);
+}
+
+TEST(TestResourceFormatURDF, keeps_root_link_with_empty_inertial_tag_physical) {
+    const std::filesystem::path fixture_path =
+            std::filesystem::temp_directory_path() / "gobot_empty_inertial_root.urdf";
+    {
+        std::ofstream file(fixture_path);
+        file << R"(<?xml version="1.0"?>
+<robot name="empty_inertial_root_bot">
+  <link name="base_link">
+    <inertial></inertial>
+  </link>
+</robot>)";
+    }
+
+    gobot::Ref<gobot::ResourceFormatLoaderURDF> loader = gobot::MakeRef<gobot::ResourceFormatLoaderURDF>();
+    gobot::Ref<gobot::Resource> resource = loader->Load(fixture_path.string());
+    ASSERT_TRUE(resource.IsValid());
+
+    auto packed_scene = gobot::dynamic_pointer_cast<gobot::PackedScene>(resource);
+    ASSERT_TRUE(packed_scene.IsValid());
+
+    gobot::Node* root_node = packed_scene->Instantiate();
+    ASSERT_NE(root_node, nullptr);
+
+    auto* base_link = gobot::Object::PointerCastTo<gobot::Link3D>(FindNodeByName(root_node, "base_link"));
+    ASSERT_NE(base_link, nullptr);
+    EXPECT_EQ(base_link->GetRole(), gobot::LinkRole::Physical);
+
+    gobot::Object::Delete(root_node);
+}
+
 TEST(TestResourceFormatURDF, copies_external_package_meshes_into_project_assets) {
     const std::filesystem::path temp_root =
             std::filesystem::temp_directory_path() / "gobot_urdf_import_project_assets_test";

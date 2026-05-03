@@ -97,6 +97,7 @@ TEST(TestPhysicsServer, captures_robot_scene_snapshot) {
     EXPECT_EQ(snapshot.robots[0].source_path, "res://robot.urdf");
     ASSERT_EQ(snapshot.robots[0].links.size(), 1);
     EXPECT_EQ(snapshot.robots[0].links[0].name, "base_link");
+    EXPECT_EQ(snapshot.robots[0].links[0].role, gobot::PhysicsLinkRole::Physical);
     EXPECT_DOUBLE_EQ(snapshot.robots[0].links[0].mass, 2.5);
     ASSERT_EQ(snapshot.robots[0].links[0].collision_shapes.size(), 1);
     EXPECT_EQ(snapshot.robots[0].links[0].collision_shapes[0].type, gobot::PhysicsShapeType::Box);
@@ -170,6 +171,33 @@ TEST(TestPhysicsServer, initializes_link_state_from_robot_snapshot) {
     EXPECT_TRUE(state.robots[0].links[0].global_transform.translation().isApprox(
             gobot::Vector3(1.0, 2.0, 3.0), CMP_EPSILON));
     EXPECT_EQ(state.total_link_count, 1);
+
+    gobot::Object::Delete(robot);
+}
+
+TEST(TestPhysicsServer, preserves_virtual_root_link_role_in_snapshot_and_state) {
+    auto* robot = gobot::Object::New<gobot::Robot3D>();
+    robot->SetName("robot");
+
+    auto* root_link = gobot::Object::New<gobot::Link3D>();
+    root_link->SetName("world");
+    root_link->SetRole(gobot::LinkRole::VirtualRoot);
+
+    robot->AddChild(root_link);
+
+    gobot::PhysicsServer physics_server;
+    gobot::Ref<gobot::PhysicsWorld> world = physics_server.CreateWorld();
+    ASSERT_TRUE(world->BuildFromScene(robot));
+
+    const gobot::PhysicsSceneSnapshot& snapshot = world->GetSceneSnapshot();
+    ASSERT_EQ(snapshot.robots.size(), 1);
+    ASSERT_EQ(snapshot.robots[0].links.size(), 1);
+    EXPECT_EQ(snapshot.robots[0].links[0].role, gobot::PhysicsLinkRole::VirtualRoot);
+
+    const gobot::PhysicsSceneState& state = world->GetSceneState();
+    ASSERT_EQ(state.robots.size(), 1);
+    ASSERT_EQ(state.robots[0].links.size(), 1);
+    EXPECT_EQ(state.robots[0].links[0].role, gobot::PhysicsLinkRole::VirtualRoot);
 
     gobot::Object::Delete(robot);
 }
