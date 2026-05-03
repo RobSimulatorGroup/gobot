@@ -465,7 +465,7 @@ TEST_F(TestResourceFormatScene, external_mesh_material_round_trips_as_shared_mes
     gobot::Object::Delete(instance);
 }
 
-TEST_F(TestResourceFormatScene, imported_mesh_material_is_saved_as_instance_override) {
+TEST_F(TestResourceFormatScene, imported_mesh_material_is_saved_as_mesh_material) {
     gobot::Ref<gobot::ArrayMesh> mesh = gobot::MakeRef<gobot::ArrayMesh>();
     mesh->SetPath("res://assets/H2/meshes/torso_link.stl", true);
 
@@ -488,19 +488,19 @@ TEST_F(TestResourceFormatScene, imported_mesh_material_is_saved_as_instance_over
     const gobot::SceneState::NodeData* visual_data = packed_scene->GetState()->GetNodeData(1);
     ASSERT_NE(visual_data, nullptr);
 
-    gobot::Ref<gobot::PBRMaterial3D> saved_override;
+    gobot::Ref<gobot::PBRMaterial3D> saved_mesh_material;
     for (const auto& property : visual_data->properties) {
-        if (property.name == "material_override") {
-            saved_override = gobot::dynamic_pointer_cast<gobot::PBRMaterial3D>(
+        if (property.name == "mesh_material") {
+            saved_mesh_material = gobot::dynamic_pointer_cast<gobot::PBRMaterial3D>(
                     property.value.convert<gobot::Ref<gobot::Resource>>());
             break;
         }
     }
 
-    ASSERT_TRUE(saved_override.IsValid());
-    EXPECT_FLOAT_EQ(saved_override->GetAlbedo().red(), 0.7f);
-    EXPECT_FLOAT_EQ(saved_override->GetAlbedo().green(), 0.16f);
-    EXPECT_FLOAT_EQ(saved_override->GetAlbedo().blue(), 0.16f);
+    ASSERT_TRUE(saved_mesh_material.IsValid());
+    EXPECT_FLOAT_EQ(saved_mesh_material->GetAlbedo().red(), 0.7f);
+    EXPECT_FLOAT_EQ(saved_mesh_material->GetAlbedo().green(), 0.16f);
+    EXPECT_FLOAT_EQ(saved_mesh_material->GetAlbedo().blue(), 0.16f);
 
     gobot::Object::Delete(root);
 }
