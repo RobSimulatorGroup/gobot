@@ -286,6 +286,21 @@ void MuJoCoPhysicsWorld::Reset() {
 #endif
 }
 
+bool MuJoCoPhysicsWorld::RestoreCompatibleState(const PhysicsSceneState& previous_state) {
+    if (!PhysicsWorld::RestoreCompatibleState(previous_state)) {
+        return false;
+    }
+
+#ifdef GOBOT_HAS_MUJOCO
+    if (model_ && data_) {
+        SyncStateToMuJoCo();
+        SyncStateFromMuJoCo();
+    }
+#endif
+
+    return true;
+}
+
 void MuJoCoPhysicsWorld::Step(RealType delta_time) {
     if (!available_) {
         return;
@@ -815,17 +830,26 @@ void MuJoCoPhysicsWorld::SyncStateToMuJoCo() {
         if (binding.joint_type == mjJNT_FREE) {
             const PhysicsJointSnapshot* joint_snapshot = nullptr;
             const PhysicsLinkSnapshot* child_link_snapshot = nullptr;
+            const PhysicsLinkState* child_link_state = nullptr;
             if (binding.robot_index < scene_snapshot_.robots.size() &&
                 binding.joint_index < scene_snapshot_.robots[binding.robot_index].joints.size()) {
                 joint_snapshot = &scene_snapshot_.robots[binding.robot_index].joints[binding.joint_index];
                 child_link_snapshot = FindLinkSnapshot(scene_snapshot_.robots[binding.robot_index],
                                                        joint_snapshot->child_link);
+                for (const PhysicsLinkState& link_state : robot_state.links) {
+                    if (link_state.link_name == joint_snapshot->child_link) {
+                        child_link_state = &link_state;
+                        break;
+                    }
+                }
             }
 
             if (joint_snapshot != nullptr && binding.qpos_address >= 0 && binding.qpos_address + 6 < model->nq) {
-                const Affine3 initial_transform = child_link_snapshot != nullptr
-                                                          ? child_link_snapshot->global_transform
-                                                          : joint_snapshot->global_transform;
+                const Affine3 initial_transform = child_link_state != nullptr
+                                                          ? child_link_state->global_transform
+                                                          : (child_link_snapshot != nullptr
+                                                                     ? child_link_snapshot->global_transform
+                                                                     : joint_snapshot->global_transform);
                 const Vector3 position = initial_transform.translation();
                 const Quaternion orientation(initial_transform.linear());
                 data->qpos[binding.qpos_address + 0] = position.x();
@@ -844,6 +868,9 @@ void MuJoCoPhysicsWorld::SyncStateToMuJoCo() {
 
         if (binding.qpos_address >= 0 && binding.qpos_address < model->nq) {
             data->qpos[binding.qpos_address] = joint_state.position;
+        }
+        if (binding.dof_address >= 0 && binding.dof_address < model->nv) {
+            data->qvel[binding.dof_address] = joint_state.velocity;
         }
     }
 

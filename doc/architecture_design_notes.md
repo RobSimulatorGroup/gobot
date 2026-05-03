@@ -163,6 +163,7 @@ Implementation phases:
    - define how simulated body poses and joint states flow back into `Robot3D`/`Joint3D`.
    - avoid overwriting authored assembly transforms while in editor assembly mode.
    - keep robot motion mode and physics simulation mode behavior explicit.
+   - preserve compatible simulation state when a physics world is rebuilt after structural edits.
 4. Implement the first MuJoCo backend slice:
    - optional `GOB_BUILD_MUJOCO`.
    - prefer a local MuJoCo SDK/package through `GOB_MUJOCO_ROOT` or `CMAKE_PREFIX_PATH`.
@@ -200,6 +201,39 @@ Testing requirements:
 - Backend-specific tests should be skipped cleanly when the optional SDK is not compiled in.
 
 The first useful milestone is not full dynamics. It is a reliable simulation shell: load or import a robot, build a backend-neutral physics snapshot, select a backend, step a world deterministically through `SimulationServer`, and expose enough state for editor visualization and future Python control.
+
+### Scene To MuJoCo Runtime Pipeline
+
+The authoritative data flow should remain scene-first:
+
+1. `Robot3D`, `Link3D`, `Joint3D`, and `CollisionShape3D` live in the Gobot scene tree.
+2. `PhysicsWorld::BuildFromScene(scene_root)` captures a backend-neutral `PhysicsSceneSnapshot`.
+3. `MuJoCoPhysicsWorld` reads `Robot3D::source_path` and builds a MuJoCo model from URDF/MJCF XML or an equivalent generated `mjSpec`.
+4. Link, joint, and actuator bindings map Gobot names to MuJoCo body, joint, and actuator ids.
+5. Runtime stepping applies controls, calls `mj_step`, reads MuJoCo state, and updates `PhysicsSceneState`.
+6. `SimulationServer::ApplyWorldStateToScene()` writes simulation-owned state back to Gobot scene nodes.
+
+Scene edits must use two different paths:
+
+- Runtime state edits, such as joint position targets, velocities, efforts, reset poses, floating base pose, and control mode, should update `PhysicsSceneState` / `mjData` and call `mj_forward` without rebuilding `mjModel`.
+- Model/topology edits, such as changing `Robot3D::source_path`, adding/removing links or joints, changing joint type/axis/limits, changing collision shapes, or changing actuators, require rebuilding the physics world.
+
+The rebuild path is:
+
+1. Pause stepping.
+2. Save the previous `PhysicsSceneState`.
+3. Capture a fresh scene snapshot.
+4. Destroy old backend runtime data (`mjData`) and model data (`mjModel`).
+5. Parse/load/generate MuJoCo XML or `mjSpec`, compile with `mj_compile`, and allocate `mjData`.
+6. Rebuild link, joint, and actuator bindings by name.
+7. Restore compatible previous state by robot/link/joint name, preserving only matching joint types.
+8. Sync the restored scene state into `mjData`.
+9. Call `mj_forward`.
+10. Sync MuJoCo state back into `PhysicsSceneState` and then into scene nodes where motion mode permits it.
+
+`SimulationServer::RebuildWorldFromScene(scene_root, preserve_state)` owns this high-level operation. Backend implementations should keep details such as `mjModel`, `mjData`, MuJoCo ids, and `mjSpec` below `PhysicsWorld`; editor and future Python APIs should call the simulation service rather than backend-specific APIs.
+
+Exporting a temporary URDF or MJCF file is acceptable as a transition step, but it should not become the long-term source of truth. The preferred direction is `Gobot Scene -> PhysicsSceneSnapshot -> mjSpec -> mj_compile`, so backend-specific concepts do not leak upward into scene or Python-facing APIs.
 
 ## Python Binding Direction
 

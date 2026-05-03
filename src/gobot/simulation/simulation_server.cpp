@@ -173,6 +173,37 @@ bool SimulationServer::BuildWorldFromScene(const Node* scene_root) {
     return true;
 }
 
+bool SimulationServer::RebuildWorldFromScene(const Node* scene_root, bool preserve_state) {
+    PhysicsSceneState previous_state;
+    if (preserve_state && world_.IsValid()) {
+        previous_state = world_->GetSceneState();
+    }
+
+    scene_root_ = scene_root;
+    world_ = PhysicsServer::CreateWorldForBackend(backend_type_, physics_world_settings_);
+    if (!world_.IsValid()) {
+        SetLastError("Failed to create physics world.");
+        return false;
+    }
+
+    if (!world_->BuildFromScene(scene_root)) {
+        SetLastError(world_->GetLastError());
+        world_.Reset();
+        return false;
+    }
+
+    if (preserve_state && !world_->RestoreCompatibleState(previous_state)) {
+        SetLastError(world_->GetLastError());
+        world_.Reset();
+        return false;
+    }
+
+    ResetClock();
+    ApplyWorldStateToScene();
+    last_error_.clear();
+    return true;
+}
+
 void SimulationServer::ClearWorld() {
     world_.Reset();
     scene_root_ = nullptr;
@@ -419,6 +450,7 @@ GOBOT_REGISTRATION {
             .property("max_sub_steps", &SimulationServer::GetMaxSubSteps, &SimulationServer::SetMaxSubSteps)
             .property("paused", &SimulationServer::IsPaused, &SimulationServer::SetPaused)
             .method("build_world_from_scene", &SimulationServer::BuildWorldFromScene)
+            .method("rebuild_world_from_scene", &SimulationServer::RebuildWorldFromScene)
             .method("clear_world", &SimulationServer::ClearWorld)
             .method("has_world", &SimulationServer::HasWorld)
             .method("reset", &SimulationServer::Reset)

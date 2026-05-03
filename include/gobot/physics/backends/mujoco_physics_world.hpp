@@ -35,6 +35,8 @@ public:
 
     bool BuildFromScene(const Node* scene_root) override;
 
+    bool RestoreCompatibleState(const PhysicsSceneState& previous_state) override;
+
     void Reset() override;
 
     void Step(RealType delta_time) override;

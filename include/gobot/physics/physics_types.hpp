@@ -118,6 +118,7 @@ struct PhysicsJointState {
     const Joint3D* node{nullptr};
     std::string robot_name;
     std::string joint_name;
+    int joint_type{0};
     RealType position{0.0};
     RealType velocity{0.0};
     RealType effort{0.0};

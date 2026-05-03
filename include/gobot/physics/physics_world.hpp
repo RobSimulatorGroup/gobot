@@ -29,6 +29,8 @@ public:
 
     virtual bool BuildFromScene(const Node* scene_root);
 
+    virtual bool RestoreCompatibleState(const PhysicsSceneState& previous_state);
+
     virtual void Reset();
 
     virtual void Step(RealType delta_time);

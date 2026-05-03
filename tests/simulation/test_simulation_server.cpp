@@ -209,6 +209,63 @@ TEST(TestSimulationServer, sets_joint_control_targets_on_world) {
     gobot::Object::Delete(robot);
 }
 
+TEST(TestSimulationServer, rebuild_world_preserves_compatible_joint_state_by_name) {
+    gobot::SimulationServer simulation_server;
+
+    gobot::Robot3D* robot = CreateRobotScene();
+    ASSERT_TRUE(simulation_server.BuildWorldFromScene(robot));
+    ASSERT_TRUE(simulation_server.SetJointPositionTarget("robot", "joint", 0.5));
+
+    gobot::PhysicsJointState preserved_state =
+            simulation_server.GetWorld()->GetSceneState().robots[0].joints[0];
+    preserved_state.position = 0.42;
+    preserved_state.velocity = 1.25;
+    preserved_state.effort = 2.5;
+
+    gobot::PhysicsSceneState previous_state = simulation_server.GetWorld()->GetSceneState();
+    previous_state.robots[0].joints[0] = preserved_state;
+    ASSERT_TRUE(simulation_server.GetWorld()->RestoreCompatibleState(previous_state));
+
+    auto* joint = gobot::Object::PointerCastTo<gobot::Joint3D>(robot->GetChild(1));
+    ASSERT_NE(joint, nullptr);
+    joint->SetJointPosition(-0.25);
+
+    ASSERT_TRUE(simulation_server.RebuildWorldFromScene(robot, true));
+    const gobot::PhysicsJointState& rebuilt_state =
+            simulation_server.GetWorld()->GetSceneState().robots[0].joints[0];
+    EXPECT_NEAR(rebuilt_state.position, 0.42, CMP_EPSILON);
+    EXPECT_DOUBLE_EQ(rebuilt_state.velocity, 1.25);
+    EXPECT_DOUBLE_EQ(rebuilt_state.effort, 2.5);
+    EXPECT_EQ(rebuilt_state.control_mode, gobot::PhysicsJointControlMode::Position);
+    EXPECT_DOUBLE_EQ(rebuilt_state.target_position, 0.5);
+
+    gobot::Object::Delete(robot);
+}
+
+TEST(TestSimulationServer, rebuild_world_does_not_preserve_incompatible_joint_type) {
+    gobot::SimulationServer simulation_server;
+
+    gobot::Robot3D* robot = CreateRobotScene();
+    ASSERT_TRUE(simulation_server.BuildWorldFromScene(robot));
+
+    gobot::PhysicsSceneState previous_state = simulation_server.GetWorld()->GetSceneState();
+    previous_state.robots[0].joints[0].position = 0.75;
+    ASSERT_TRUE(simulation_server.GetWorld()->RestoreCompatibleState(previous_state));
+
+    auto* joint = gobot::Object::PointerCastTo<gobot::Joint3D>(robot->GetChild(1));
+    ASSERT_NE(joint, nullptr);
+    joint->SetJointType(gobot::JointType::Prismatic);
+    joint->SetJointPosition(-0.25);
+
+    ASSERT_TRUE(simulation_server.RebuildWorldFromScene(robot, true));
+    const gobot::PhysicsJointState& rebuilt_state =
+            simulation_server.GetWorld()->GetSceneState().robots[0].joints[0];
+    EXPECT_DOUBLE_EQ(rebuilt_state.position, -0.25);
+    EXPECT_EQ(rebuilt_state.joint_type, static_cast<int>(gobot::JointType::Prismatic));
+
+    gobot::Object::Delete(robot);
+}
+
 TEST(TestSimulationServer, reports_error_when_stepping_without_world) {
     gobot::SimulationServer simulation_server;
     simulation_server.SetPaused(false);

@@ -128,6 +128,36 @@ void CollectSceneNodes(const Node* node, PhysicsSceneSnapshot* snapshot) {
     }
 }
 
+const PhysicsRobotState* FindRobotState(const PhysicsSceneState& state, const std::string& robot_name) {
+    for (const PhysicsRobotState& robot_state : state.robots) {
+        if (robot_state.name == robot_name) {
+            return &robot_state;
+        }
+    }
+
+    return nullptr;
+}
+
+const PhysicsLinkState* FindLinkState(const PhysicsRobotState& robot_state, const std::string& link_name) {
+    for (const PhysicsLinkState& link_state : robot_state.links) {
+        if (link_state.link_name == link_name) {
+            return &link_state;
+        }
+    }
+
+    return nullptr;
+}
+
+const PhysicsJointState* FindPreviousJointState(const PhysicsRobotState& robot_state, const std::string& joint_name) {
+    for (const PhysicsJointState& joint_state : robot_state.joints) {
+        if (joint_state.joint_name == joint_name) {
+            return &joint_state;
+        }
+    }
+
+    return nullptr;
+}
+
 } // namespace
 
 const PhysicsWorldSettings& PhysicsWorld::GetSettings() const {
@@ -144,6 +174,45 @@ bool PhysicsWorld::BuildFromScene(const Node* scene_root) {
     }
 
     ResetSceneStateFromSnapshot();
+    return true;
+}
+
+bool PhysicsWorld::RestoreCompatibleState(const PhysicsSceneState& previous_state) {
+    for (PhysicsRobotState& robot_state : scene_state_.robots) {
+        const PhysicsRobotState* previous_robot_state = FindRobotState(previous_state, robot_state.name);
+        if (previous_robot_state == nullptr) {
+            continue;
+        }
+
+        for (PhysicsLinkState& link_state : robot_state.links) {
+            const PhysicsLinkState* previous_link_state = FindLinkState(*previous_robot_state, link_state.link_name);
+            if (previous_link_state == nullptr) {
+                continue;
+            }
+
+            link_state.global_transform = previous_link_state->global_transform;
+            link_state.linear_velocity = previous_link_state->linear_velocity;
+            link_state.angular_velocity = previous_link_state->angular_velocity;
+        }
+
+        for (PhysicsJointState& joint_state : robot_state.joints) {
+            const PhysicsJointState* previous_joint_state =
+                    FindPreviousJointState(*previous_robot_state, joint_state.joint_name);
+            if (previous_joint_state == nullptr || previous_joint_state->joint_type != joint_state.joint_type) {
+                continue;
+            }
+
+            joint_state.position = previous_joint_state->position;
+            joint_state.velocity = previous_joint_state->velocity;
+            joint_state.effort = previous_joint_state->effort;
+            joint_state.control_mode = previous_joint_state->control_mode;
+            joint_state.target_position = previous_joint_state->target_position;
+            joint_state.target_velocity = previous_joint_state->target_velocity;
+            joint_state.target_effort = previous_joint_state->target_effort;
+        }
+    }
+
+    last_error_.clear();
     return true;
 }
 
@@ -251,6 +320,7 @@ void PhysicsWorld::ResetSceneStateFromSnapshot() {
             joint_state.node = joint_snapshot.node;
             joint_state.robot_name = robot_snapshot.name;
             joint_state.joint_name = joint_snapshot.name;
+            joint_state.joint_type = joint_snapshot.joint_type;
             joint_state.position = joint_snapshot.joint_position;
             joint_state.target_position = joint_snapshot.joint_position;
             robot_state.joints.emplace_back(std::move(joint_state));
