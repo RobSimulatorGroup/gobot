@@ -15,6 +15,7 @@
 #include <gobot/scene/mesh_instance_3d.hpp>
 #include <gobot/scene/node.hpp>
 #include <gobot/scene/node_3d.hpp>
+#include <gobot/scene/resources/array_mesh.hpp>
 #include <gobot/scene/resources/packed_scene.hpp>
 #include <gobot/scene/resources/primitive_mesh.hpp>
 #include <gobot/rendering/render_server.hpp>
