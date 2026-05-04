@@ -372,6 +372,8 @@ void SceneView3DPanel::ProcessViewportInput(Node* scene_root,
         !camera_modifier_down && !ImGuizmo::IsOver()) {
         if (hovered_node_) {
             Editor::GetInstance()->SetSelected(hovered_node_);
+        } else {
+            Editor::GetInstance()->SetSelected(nullptr);
         }
 
         if (motion_joint) {
