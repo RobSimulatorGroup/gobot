@@ -54,9 +54,17 @@ public:
 
     std::vector<RealType> GetObservation() const;
 
+    std::size_t GetActionSize() const;
+
+    std::size_t GetObservationSize() const;
+
+    std::vector<std::string> GetControlledJointNames() const;
+
     const std::string& GetLastError() const;
 
 private:
+    bool RefreshControlledJointNames();
+
     bool EnsureReady();
 
     void SetLastError(std::string error);
@@ -67,6 +75,7 @@ private:
     std::uint64_t episode_step_count_{0};
     std::uint64_t max_episode_steps_{0};
     std::uint32_t last_seed_{0};
+    std::vector<std::string> controlled_joint_names_;
     std::string last_error_;
 };
 

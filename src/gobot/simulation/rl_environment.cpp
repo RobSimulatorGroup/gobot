@@ -5,9 +5,12 @@
 
 #include "gobot/simulation/rl_environment.hpp"
 
+#include <algorithm>
 #include <utility>
 
 #include "gobot/core/registration.hpp"
+#include "gobot/log.hpp"
+#include "gobot/scene/joint_3d.hpp"
 #include "gobot/simulation/simulation_server.hpp"
 
 namespace gobot {
@@ -22,6 +25,24 @@ const PhysicsRobotState* FindRobotState(const PhysicsSceneState& scene_state,
     }
 
     return nullptr;
+}
+
+const PhysicsRobotSnapshot* FindRobotSnapshot(const PhysicsSceneSnapshot& scene_snapshot,
+                                              const std::string& robot_name) {
+    for (const PhysicsRobotSnapshot& robot_snapshot : scene_snapshot.robots) {
+        if (robot_snapshot.name == robot_name) {
+            return &robot_snapshot;
+        }
+    }
+
+    return nullptr;
+}
+
+bool IsControllableJointType(int joint_type) {
+    const auto type = static_cast<JointType>(joint_type);
+    return type == JointType::Revolute ||
+           type == JointType::Continuous ||
+           type == JointType::Prismatic;
 }
 
 } // namespace
@@ -79,6 +100,10 @@ bool RLEnvironment::Reset(std::uint32_t seed) {
         return false;
     }
 
+    if (!RefreshControlledJointNames()) {
+        return false;
+    }
+
     last_error_.clear();
     return true;
 }
@@ -86,6 +111,14 @@ bool RLEnvironment::Reset(std::uint32_t seed) {
 RLEnvironmentStepResult RLEnvironment::Step(const std::vector<RealType>& action) {
     RLEnvironmentStepResult result;
     if (!EnsureReady()) {
+        return result;
+    }
+
+    if (action.size() != controlled_joint_names_.size()) {
+        SetLastError(fmt::format("RL action size mismatch for robot '{}': expected {}, got {}.",
+                                 robot_name_,
+                                 controlled_joint_names_.size(),
+                                 action.size()));
         return result;
     }
 
@@ -123,8 +156,14 @@ std::vector<RealType> RLEnvironment::GetObservation() const {
         return observation;
     }
 
-    observation.reserve(robot_state->joints.size() * 2);
+    observation.reserve(controlled_joint_names_.size() * 2);
     for (const PhysicsJointState& joint_state : robot_state->joints) {
+        if (std::find(controlled_joint_names_.begin(),
+                      controlled_joint_names_.end(),
+                      joint_state.joint_name) == controlled_joint_names_.end()) {
+            continue;
+        }
+
         observation.push_back(joint_state.position);
         observation.push_back(joint_state.velocity);
     }
@@ -132,8 +171,52 @@ std::vector<RealType> RLEnvironment::GetObservation() const {
     return observation;
 }
 
+std::size_t RLEnvironment::GetActionSize() const {
+    return controlled_joint_names_.size();
+}
+
+std::size_t RLEnvironment::GetObservationSize() const {
+    return controlled_joint_names_.size() * 2;
+}
+
+std::vector<std::string> RLEnvironment::GetControlledJointNames() const {
+    return controlled_joint_names_;
+}
+
 const std::string& RLEnvironment::GetLastError() const {
     return last_error_;
+}
+
+bool RLEnvironment::RefreshControlledJointNames() {
+    controlled_joint_names_.clear();
+
+    if (simulation_ == nullptr || !simulation_->HasWorld()) {
+        SetLastError("RL environment simulation world has not been reset.");
+        return false;
+    }
+
+    if (robot_name_.empty()) {
+        SetLastError("RL environment robot name is empty.");
+        return false;
+    }
+
+    const PhysicsSceneSnapshot& scene_snapshot = simulation_->GetWorld()->GetSceneSnapshot();
+    const PhysicsRobotSnapshot* robot_snapshot = FindRobotSnapshot(scene_snapshot, robot_name_);
+    if (robot_snapshot == nullptr) {
+        SetLastError(fmt::format("RL environment robot '{}' was not found in the physics scene.", robot_name_));
+        return false;
+    }
+
+    for (const PhysicsJointSnapshot& joint_snapshot : robot_snapshot->joints) {
+        if (!IsControllableJointType(joint_snapshot.joint_type)) {
+            continue;
+        }
+
+        controlled_joint_names_.push_back(joint_snapshot.name);
+    }
+
+    last_error_.clear();
+    return true;
 }
 
 bool RLEnvironment::EnsureReady() {
@@ -149,6 +232,10 @@ bool RLEnvironment::EnsureReady() {
 
     if (robot_name_.empty()) {
         SetLastError("RL environment robot name is empty.");
+        return false;
+    }
+
+    if (controlled_joint_names_.empty() && !RefreshControlledJointNames()) {
         return false;
     }
 
@@ -170,6 +257,9 @@ GOBOT_REGISTRATION {
             .method("reset", &RLEnvironment::Reset)
             .method("step", &RLEnvironment::Step)
             .method("get_observation", &RLEnvironment::GetObservation)
+            .method("get_action_size", &RLEnvironment::GetActionSize)
+            .method("get_observation_size", &RLEnvironment::GetObservationSize)
+            .method("get_controlled_joint_names", &RLEnvironment::GetControlledJointNames)
             .method("get_last_error", &RLEnvironment::GetLastError);
 
 };
