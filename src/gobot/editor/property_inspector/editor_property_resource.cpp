@@ -17,6 +17,7 @@
 #include "gobot/editor/property_inspector/editor_inspector.hpp"
 #include "gobot/scene/resources/array_mesh.hpp"
 #include "gobot/scene/resources/material.hpp"
+#include "gobot/scene/resources/mesh.hpp"
 #include "gobot/scene/resources/resource_creation_registry.hpp"
 #include "imgui.h"
 #include "imgui_internal.h"
@@ -82,6 +83,32 @@ std::vector<Property> GetEditableResourceProperties(Type type) {
         properties.insert(properties.end(), declared_properties.begin(), declared_properties.end());
     }
     return properties;
+}
+
+bool ShouldShowNestedResourceProperty(const Resource* resource, const Property& property) {
+    if (resource == nullptr) {
+        return false;
+    }
+
+    PropertyInfo property_info;
+    const Variant property_metadata = property.get_metadata(PROPERTY_INFO_KEY);
+    if (property_metadata.is_valid()) {
+        property_info = property_metadata.get_value<PropertyInfo>();
+    }
+
+    USING_ENUM_BITWISE_OPERATORS;
+    if (!static_cast<bool>(property_info.usage & PropertyUsageFlags::Editor)) {
+        return false;
+    }
+
+    // Mesh material is an asset-level default. MeshInstance3D.material is the
+    // scene instance override users edit from the node Inspector.
+    if (Object::PointerCastTo<Mesh>(const_cast<Resource*>(resource)) != nullptr &&
+        property.get_name() == "material") {
+        return false;
+    }
+
+    return true;
 }
 
 ImVec4 WithAlpha(ImVec4 color, float alpha) {
@@ -237,6 +264,10 @@ void DrawResourceInspector(Resource* resource,
             const ImVec2 body_min = ImGui::GetCursorScreenPos();
             ImGui::Indent(ImGui::GetStyle().IndentSpacing * 0.75f);
             for (const auto& property : properties) {
+                if (!ShouldShowNestedResourceProperty(resource, property)) {
+                    continue;
+                }
+
                 auto editor = EditorInspectorDefaultPlugin::GetEditorForProperty(
                         std::make_unique<PropertyDataModel>(cache, property));
                 if (editor == nullptr) {

@@ -59,3 +59,25 @@ TEST(TestMeshInstance3D, node3d_transform_properties_are_reflected) {
     EXPECT_TRUE(material.is_valid());
     EXPECT_FALSE(material_override.is_valid());
 }
+
+TEST(TestMeshInstance3D, active_material_prefers_instance_material_over_mesh_material) {
+    auto render_server = std::make_unique<gobot::RenderServer>();
+
+    auto* mesh_instance = gobot::Object::New<gobot::MeshInstance3D>();
+    gobot::Ref<gobot::BoxMesh> mesh = gobot::MakeRef<gobot::BoxMesh>();
+    gobot::Ref<gobot::PBRMaterial3D> mesh_material = gobot::MakeRef<gobot::PBRMaterial3D>();
+    gobot::Ref<gobot::PBRMaterial3D> instance_material = gobot::MakeRef<gobot::PBRMaterial3D>();
+
+    mesh->SetMaterial(mesh_material);
+    mesh_instance->SetMesh(mesh);
+
+    EXPECT_EQ(mesh_instance->GetActiveMaterial().Get(), mesh_material.Get());
+
+    mesh_instance->SetMaterial(instance_material);
+    EXPECT_EQ(mesh_instance->GetActiveMaterial().Get(), instance_material.Get());
+
+    mesh_instance->SetMaterial({});
+    EXPECT_EQ(mesh_instance->GetActiveMaterial().Get(), mesh_material.Get());
+
+    gobot::Object::Delete(mesh_instance);
+}

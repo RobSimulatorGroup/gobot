@@ -34,6 +34,8 @@ public:
 
     Ref<Material> GetMeshMaterial() const;
 
+    Ref<Material> GetActiveMaterial() const;
+
 private:
     Ref<Mesh> mesh_{nullptr};
     Ref<Material> material_{nullptr};

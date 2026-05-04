@@ -191,6 +191,104 @@ Likely services:
 
 Robotics algorithms can later live as plugins, Python packages, C++ services with Python wrappers, or a mix of those. Keep engine data ownership clear before choosing.
 
+## Reinforcement Learning Locomotion Plan
+
+Goal: make Gobot able to train and run policies that control robots walking or running inside Gobot scenes. The first target should be a single articulated robot, such as a humanoid or quadruped, running on a flat ground plane with deterministic reset and repeatable stepping. Do not start with a large distributed RL stack; first make one environment reliable.
+
+Python is the intended top-level RL workflow. Users should eventually train and evaluate policies from Python, while Gobot's C++ layer owns deterministic simulation, robot state extraction, joint controllers, reset, reward, and termination. Do not implement Python bindings first; design the C++ API in a shape that can be bound cleanly, then expose it to Python after the C++ environment API is covered by tests.
+
+Target Python workflow:
+
+```python
+import gobot
+
+env = gobot.rl.LocomotionEnv("res://world.jscn", robot="H2")
+obs, info = env.reset(seed=1)
+
+for _ in range(1000):
+    action = policy(obs)
+    obs, reward, terminated, truncated, info = env.step(action)
+    if terminated or truncated:
+        obs, info = env.reset()
+```
+
+Core engine requirements:
+
+1. Simulation must expose a deterministic fixed-step API:
+   `Reset(seed)`, `Step(dt or fixed_ticks)`, `GetTime()`, `SetPaused()`, and `SetRealtime(false)`.
+   RL training should not depend on editor frame rate or viewport rendering.
+2. `Robot3D` and the simulation layer need a stable articulation interface:
+   enumerate joints by stable name, read joint position/velocity/effort, read base pose and velocity, read contact state, and apply actions.
+3. Action APIs should be backend-neutral:
+   support target position, target velocity, torque/effort, PD gains, and actuator limits without exposing MuJoCo-specific fields upward.
+4. Observation APIs should be explicit and versioned:
+   base orientation, base angular/linear velocity, projected gravity, command velocity, joint position/velocity, previous action, foot contact, and optional terrain or sensor data.
+5. Reset must restore the scene and physics world consistently:
+   robot root transform, joint state, velocities, actuator state, random seed, contact cache, and any scene objects changed during the episode.
+6. Termination and reward should be engine-facing services, not ImGui code:
+   height/orientation failure checks, timeout, fallen state, forward velocity tracking, energy penalty, action smoothness, foot slip, and collision penalties.
+7. Simulation snapshots should separate authoring state from runtime state:
+   `.jscn` / `PackedScene` describes the environment; runtime episode state is reset from that scene plus an explicit randomized initial state.
+8. Debug visualization should be optional:
+   draw contacts, center of mass, support polygon, target velocity, trajectories, and reward components through debug draw commands, not scene nodes.
+
+Control direction:
+
+- Reinforcement learning should not be the only control layer. For locomotion, the normal path should be:
+  `policy action -> target joint command -> PID/PD joint controller -> backend actuator command`.
+- Provide a backend-neutral joint controller API before exposing control to Python:
+  per-joint mode, target position, target velocity, feed-forward torque, `kp`, `ki`, `kd`, effort limit, velocity limit, integral clamp, and action smoothing.
+- Start with PD position control for locomotion:
+  policy outputs normalized target joint offsets or target joint positions; the controller converts them to actuator commands each physics tick.
+- Add PID only where useful:
+  integral terms should be optional and clamped because they can destabilize reset-heavy RL episodes.
+- Controller gains must be part of robot/environment configuration, not hardcoded in the MuJoCo backend or policy script.
+- The controller must expose both commanded and measured state:
+  previous action, target position/velocity, tracking error, applied effort, and saturation flags can be used in observations and reward terms.
+- Keep torque control available for advanced policies, but make PD/PID joint control the first stable path for robot walking/running.
+- Add tests for controller behavior:
+  zero error produces bounded output, command saturation works, integral clamp works, reset clears controller state, and repeated fixed-step runs are deterministic.
+
+Recommended C++ service shape:
+
+- `SimulationServer`: owns stepping, reset, deterministic mode, and scene/world synchronization.
+- `RobotController`: backend-neutral action input for a robot articulation.
+- `JointController`: per-joint PID/PD control, limits, state reset, and command saturation.
+- `RobotState`: compact read-only state for base, joints, contacts, and actuators.
+- `RLEnvironment`: `Reset(seed) -> Observation`, `Step(action) -> StepResult`.
+- `ObservationSpec` and `ActionSpec`: names, shapes, units, bounds, and version strings.
+- `RewardTerm` / `TerminationCondition`: composable C++ terms with optional Python configuration later.
+- `VectorizedEnvironment`: later, owns many independent environments for batched training.
+
+Minimal locomotion environment phases:
+
+1. Build one headless deterministic environment:
+   load scene, build physics world, reset robot pose, step without rendering, and verify repeated seeds produce identical observations.
+2. Add robot action/state plumbing:
+   map policy action vectors to named joints, clamp to limits, apply PD or torque control, and read back joint/base/contact state.
+3. Add the first PD joint controller:
+   configure per-joint gains and limits, convert normalized policy actions into target joint positions, and reset controller state at episode reset.
+4. Define a first observation and action spec:
+   keep it stable and documented so Python/RL code can depend on it.
+5. Implement simple reward and termination:
+   alive bonus, forward velocity tracking, upright penalty, energy penalty, action rate penalty, timeout, and fallen termination.
+6. Add a C++ smoke test:
+   reset an environment, apply zero action and random action, step several ticks, verify finite observations and deterministic replay.
+7. Add Python bindings only after the C++ environment API is stable:
+   expose `env.reset(seed)`, `env.step(action)`, `env.observation_space`, `env.action_space`, and scene loading.
+8. Add compatibility with Gymnasium-style wrappers:
+   keep this in Python or a thin adapter layer; do not make core engine APIs depend on Gymnasium.
+9. Add vectorized/headless training support:
+   multiple worlds, no editor windows, optional render capture for evaluation, and deterministic seeding per environment.
+
+Important boundaries:
+
+- RL code must not depend on ImGui panels, editor selection, viewport picking, OpenGL RIDs, or MuJoCo raw pointers.
+- Backend-specific details may live below the physics backend interface, but observations/actions must use Gobot names and engine units.
+- Do not write policy logic into `Robot3D`; keep robot assets separate from controllers and training tasks.
+- Do not make imported URDF/MJCF files the only source of truth for runtime control. Gobot scene data should own the editable robot/environment composition, while physics backends compile the runtime model from that state.
+- Prefer headless tests before editor features. The editor can later inspect, debug, and launch RL environments, but training must work without the editor.
+
 ## Development Rules
 
 - Prefer existing project patterns and local helper APIs.

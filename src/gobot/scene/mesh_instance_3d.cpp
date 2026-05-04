@@ -58,6 +58,14 @@ Ref<Material> MeshInstance3D::GetMeshMaterial() const {
     return {};
 }
 
+Ref<Material> MeshInstance3D::GetActiveMaterial() const {
+    if (material_.IsValid()) {
+        return material_;
+    }
+
+    return GetMeshMaterial();
+}
+
 }
 
 GOBOT_REGISTRATION {

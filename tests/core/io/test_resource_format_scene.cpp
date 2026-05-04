@@ -300,6 +300,69 @@ TEST_F(TestResourceFormatScene, packed_scene_saves_child_scene_as_external_insta
     gobot::Object::Delete(loaded_instance);
 }
 
+TEST_F(TestResourceFormatScene, packed_scene_instance_node_is_serialized_as_black_box_boundary) {
+    auto* child_root = gobot::Object::New<gobot::Node3D>();
+    child_root->SetName("RobotAsset");
+
+    auto* child_mesh = gobot::Object::New<gobot::MeshInstance3D>();
+    child_mesh->SetName("InternalAssetMesh");
+    child_root->AddChild(child_mesh);
+
+    gobot::Ref<gobot::PackedScene> child_scene = gobot::MakeRef<gobot::PackedScene>();
+    ASSERT_TRUE(child_scene->Pack(child_root));
+
+    USING_ENUM_BITWISE_OPERATORS;
+    ASSERT_TRUE(gobot::ResourceSaver::Save(child_scene, "res://black_box_robot_asset.jscn",
+                                           gobot::ResourceSaverFlags::ReplaceSubResourcePaths |
+                                           gobot::ResourceSaverFlags::ChangePath));
+
+    child_scene = gobot::dynamic_pointer_cast<gobot::PackedScene>(
+            gobot::ResourceLoader::Load("res://black_box_robot_asset.jscn", "PackedScene",
+                                        gobot::ResourceFormatLoader::CacheMode::Ignore));
+    ASSERT_TRUE(child_scene.IsValid());
+    ASSERT_EQ(child_scene->GetState()->GetNodeCount(), 2);
+
+    auto* world_root = gobot::Object::New<gobot::Node3D>();
+    world_root->SetName("World");
+
+    gobot::Node* instance_node = child_scene->Instantiate();
+    ASSERT_NE(instance_node, nullptr);
+    auto* instance_root = gobot::Object::PointerCastTo<gobot::Node3D>(instance_node);
+    ASSERT_NE(instance_root, nullptr);
+    instance_root->SetName("RobotInWorld");
+    instance_root->SetPosition({7.0f, 8.0f, 9.0f});
+    instance_root->SetSceneInstance(child_scene);
+    world_root->AddChild(instance_root);
+
+    gobot::Ref<gobot::PackedScene> world_scene = gobot::MakeRef<gobot::PackedScene>();
+    ASSERT_TRUE(world_scene->Pack(world_root));
+
+    ASSERT_EQ(world_scene->GetState()->GetNodeCount(), 2);
+    const gobot::SceneState::NodeData* instance_data = world_scene->GetState()->GetNodeData(1);
+    ASSERT_NE(instance_data, nullptr);
+    EXPECT_EQ(instance_data->name, "RobotInWorld");
+    EXPECT_TRUE(instance_data->instance.IsValid());
+
+    for (std::size_t i = 0; i < world_scene->GetState()->GetNodeCount(); ++i) {
+        const gobot::SceneState::NodeData* node_data = world_scene->GetState()->GetNodeData(i);
+        ASSERT_NE(node_data, nullptr);
+        EXPECT_NE(node_data->name, "InternalAssetMesh");
+    }
+
+    bool stored_position = false;
+    for (const auto& property : instance_data->properties) {
+        if (property.name == "position") {
+            gobot::Vector3 position = property.value.convert<gobot::Vector3>();
+            EXPECT_TRUE(position.isApprox(gobot::Vector3(7.0f, 8.0f, 9.0f), CMP_EPSILON));
+            stored_position = true;
+        }
+    }
+    EXPECT_TRUE(stored_position);
+
+    gobot::Object::Delete(child_root);
+    gobot::Object::Delete(world_root);
+}
+
 TEST_F(TestResourceFormatScene, packed_scene_rejects_instance_without_resource_path) {
     auto* child_root = gobot::Object::New<gobot::Node3D>();
     child_root->SetName("UnsavedAsset");
