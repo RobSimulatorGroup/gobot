@@ -22,7 +22,6 @@
 
 namespace gobot {
 
-
 ResourceFormatLoaderSceneInstance::ResourceFormatLoaderSceneInstance() {
 
 }
@@ -679,16 +678,6 @@ Json ResourceFormatSaverSceneInstance::SaveSceneNodes() {
         Json properties_json = Json::object();
         for (const auto& property : node_data->properties) {
             Json property_json = VariantSerializer::VariantToJson(property.value, this);
-            if ((node_data->type == "MeshInstance3D" &&
-                 (property.name == "mesh" || property.name == "material_override" || property.name == "material")) ||
-                (node_data->type == "ArrayMesh" && property.name == "material")) {
-                LOG_TRACE("Saving scene '{}' node '{}' type '{}' property '{}' as {}.",
-                          local_path_,
-                          node_data->name,
-                          node_data->type,
-                          property.name,
-                          property_json.dump());
-            }
             properties_json[property.name] = property_json;
         }
         node_json["properties"] = properties_json;

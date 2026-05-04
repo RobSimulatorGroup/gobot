@@ -62,17 +62,16 @@ Ref<Material> MeshInstance3D::GetMeshMaterial() const {
 
 GOBOT_REGISTRATION {
 
+    USING_ENUM_BITWISE_OPERATORS;
+
     Class_<MeshInstance3D>("MeshInstance3D")
             .constructor()(CtorAsRawPtr)
             .property("mesh", &MeshInstance3D::GetMesh, &MeshInstance3D::SetMesh)
             .property("material", &MeshInstance3D::GetMaterial, &MeshInstance3D::SetMaterial)(
                     AddMetaPropertyInfo(
                             PropertyInfo()
-                                .SetUsageFlags(PropertyUsageFlags::None)))
-            .property("material_override", &MeshInstance3D::GetMaterial, &MeshInstance3D::SetMaterial)(
-                    AddMetaPropertyInfo(
-                            PropertyInfo()
-                                .SetUsageFlags(PropertyUsageFlags::Storage)))
+                                .SetName("Material")
+                                .SetUsageFlags(PropertyUsageFlags::Storage | PropertyUsageFlags::Editor)))
             .property("mesh_material", &MeshInstance3D::GetMeshMaterial, &MeshInstance3D::SetMeshMaterial)(
                     AddMetaPropertyInfo(
                             PropertyInfo()

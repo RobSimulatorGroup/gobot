@@ -23,7 +23,7 @@ public:
 
     void OnImGuiContent() override;
 
-    void DrawNode(Node* node);
+    bool DrawNode(Node* node);
 
 private:
     Node* GetAddChildTarget(Node* scene_root) const;
@@ -33,6 +33,10 @@ private:
     void DrawAddChildDialog();
 
     bool CreateSelectedAddNode();
+
+    bool CanDeleteNode(Node* node) const;
+
+    bool DeleteNode(Node* node);
 
     ImGuiTextFilter* filter_{nullptr};
     Node* double_clicked_{nullptr};

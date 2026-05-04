@@ -163,9 +163,15 @@ CapsuleMesh::CapsuleMesh() {
 
 
 GOBOT_REGISTRATION {
+    USING_ENUM_BITWISE_OPERATORS;
+
     Class_<PrimitiveMesh>("PrimitiveMesh")
             .constructor()(CtorAsRawPtr)
-            .property("material", &PrimitiveMesh::GetMaterial, &PrimitiveMesh::SetMaterial);
+            .property("material", &PrimitiveMesh::GetMaterial, &PrimitiveMesh::SetMaterial)(
+                    AddMetaPropertyInfo(
+                            PropertyInfo()
+                                .SetName("Mesh Material")
+                                .SetUsageFlags(PropertyUsageFlags::Storage | PropertyUsageFlags::Editor)));
 
     gobot::Type::register_wrapper_converter_for_base_classes<Ref<PrimitiveMesh>, Ref<Mesh>>();
 

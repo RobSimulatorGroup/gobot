@@ -52,7 +52,7 @@ void CollectNodeRenderItems(const Node* node, SceneRenderItems& items) {
             item.mesh = mesh_resource->GetRid();
             item.material = mesh_instance->GetMaterial();
 #if GOB_LOG_ACTIVE_LEVEL <= GOB_LOG_LEVEL_TRACE
-            std::string material_source = item.material.IsValid() ? "material_override" : "surface_color";
+            std::string material_source = item.material.IsValid() ? "material" : "surface_color";
 #endif
             if (!item.material.IsValid()) {
                 if (Ref<ArrayMesh> array_mesh = dynamic_pointer_cast<ArrayMesh>(mesh_resource); array_mesh.IsValid()) {

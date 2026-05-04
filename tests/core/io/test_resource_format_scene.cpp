@@ -538,7 +538,7 @@ TEST_F(TestResourceFormatScene, imported_mesh_material_and_instance_override_are
         if (property.name == "mesh_material") {
             saved_mesh_material = gobot::dynamic_pointer_cast<gobot::PBRMaterial3D>(
                     property.value.convert<gobot::Ref<gobot::Resource>>());
-        } else if (property.name == "material_override") {
+        } else if (property.name == "material") {
             saved_override_material = gobot::dynamic_pointer_cast<gobot::PBRMaterial3D>(
                     property.value.convert<gobot::Ref<gobot::Resource>>());
         }

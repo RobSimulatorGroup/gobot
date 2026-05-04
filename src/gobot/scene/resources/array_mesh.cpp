@@ -5,6 +5,7 @@
 
 #include "gobot/scene/resources/array_mesh.hpp"
 
+#include "gobot/core/object.hpp"
 #include "gobot/core/registration.hpp"
 #include "gobot/rendering/render_server.hpp"
 
@@ -63,9 +64,15 @@ void ArrayMesh::UploadSurface() {
 } // namespace gobot
 
 GOBOT_REGISTRATION {
+    USING_ENUM_BITWISE_OPERATORS;
+
     Class_<gobot::ArrayMesh>("ArrayMesh")
             .constructor()(CtorAsRawPtr)
-            .property("material", &gobot::ArrayMesh::GetMaterial, &gobot::ArrayMesh::SetMaterial);
+            .property("material", &gobot::ArrayMesh::GetMaterial, &gobot::ArrayMesh::SetMaterial)(
+                    AddMetaPropertyInfo(
+                            gobot::PropertyInfo()
+                                .SetName("Mesh Material")
+                                .SetUsageFlags(gobot::PropertyUsageFlags::Storage | gobot::PropertyUsageFlags::Editor)));
 
     gobot::Type::register_wrapper_converter_for_base_classes<gobot::Ref<gobot::ArrayMesh>, gobot::Ref<gobot::Mesh>>();
 };

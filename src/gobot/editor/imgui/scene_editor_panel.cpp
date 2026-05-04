@@ -188,6 +188,30 @@ bool SceneEditorPanel::CreateSelectedAddNode() {
     return true;
 }
 
+bool SceneEditorPanel::CanDeleteNode(Node* node) const {
+    auto* editor = Editor::GetInstance();
+    return node != nullptr &&
+           node != editor->GetEditedSceneRoot() &&
+           node->GetParent() != nullptr;
+}
+
+bool SceneEditorPanel::DeleteNode(Node* node) {
+    if (!CanDeleteNode(node)) {
+        return false;
+    }
+
+    auto* editor = Editor::GetInstance();
+    Node* parent = node->GetParent();
+    editor->SetSelected(parent);
+    if (double_clicked_ == node) {
+        double_clicked_ = nullptr;
+    }
+
+    Node::Delete(node);
+    editor->MarkSceneDirty();
+    return true;
+}
+
 void SceneEditorPanel::DrawAddChildDialog() {
     if (open_add_child_dialog_) {
         ImGui::OpenPopup("Create New Node");
@@ -358,14 +382,14 @@ void SceneEditorPanel::DrawAddChildDialog() {
     ImGui::EndPopup();
 }
 
-void SceneEditorPanel::DrawNode(Node* node)
+bool SceneEditorPanel::DrawNode(Node* node)
 {
     bool show = true;
 
     auto* editor = Editor::GetInstance();
 
     if(!node)
-        return;
+        return false;
 
     std::string name = node->GetName();
 
@@ -376,6 +400,8 @@ void SceneEditorPanel::DrawNode(Node* node)
     }
 
     if (show) {
+        const bool can_delete = CanDeleteNode(node);
+
         ImGui::PushID(node);
 
         ImGuiTreeNodeFlags node_flags = ((editor->GetSelected() == node) ? ImGuiTreeNodeFlags_Selected : 0);
@@ -430,6 +456,15 @@ void SceneEditorPanel::DrawNode(Node* node)
             if (ImGui::MenuItem("Add Child")) {
                 RequestOpenAddChildDialog(node);
             }
+            if (!can_delete) {
+                ImGui::BeginDisabled();
+            }
+            if (ImGui::MenuItem(ICON_MDI_DELETE " Delete Node")) {
+                delete_node = can_delete;
+            }
+            if (!can_delete) {
+                ImGui::EndDisabled();
+            }
             ImGui::EndPopup();
         }
 
@@ -443,17 +478,17 @@ void SceneEditorPanel::DrawNode(Node* node)
         }
 
         if(delete_node) {
-            node->GetParent()->RemoveChild(node);
+            DeleteNode(node);
             if(node_open)
                 ImGui::TreePop();
 
             ImGui::PopID();
-            return;
+            return true;
         }
 
         if(!node_open) {
             ImGui::PopID();
-            return;
+            return false;
         }
 
         const ImColor TreeLineColor = ImColor(128, 128, 128, 128);
@@ -464,15 +499,17 @@ void SceneEditorPanel::DrawNode(Node* node)
         verticalLineStart.x += SmallOffsetX; // to nicely line up with the arrow symbol
         ImVec2 verticalLineEnd = verticalLineStart;
 
-        auto child_count = node->GetChildCount();
-        for (int i = 0; i < child_count; i++) {
+        for (int i = 0; i < static_cast<int>(node->GetChildCount()); i++) {
             auto* child = node->GetChild(i);
             float HorizontalTreeLineSize = 16.0f * ImGui::GetWindowDpiScale(); // chosen arbitrarily
             auto currentPos              = ImGui::GetCursorScreenPos();
             ImGui::Indent(10.0f);
 
-            DrawNode(child);
+            const bool child_deleted = DrawNode(child);
             ImGui::Unindent(10.0f);
+            if (child_deleted) {
+                i--;
+            }
 
             const ImRect childRect = ImRect(currentPos, currentPos + ImVec2(0.0f, ImGui::GetFontSize() + ImGui::GetStyle().FramePadding.y));
 
@@ -486,6 +523,8 @@ void SceneEditorPanel::DrawNode(Node* node)
         ImGui::TreePop();
         ImGui::PopID();
     }
+
+    return false;
 }
 
 void SceneEditorPanel::OnImGuiContent()
@@ -505,6 +544,19 @@ void SceneEditorPanel::OnImGuiContent()
 
     if(ImGui::Button(ICON_MDI_PLUS)) {
         RequestOpenAddChildDialog(GetAddChildTarget(scene_root));
+    }
+
+    ImGui::SameLine();
+    Node* selected = Editor::GetInstance()->GetSelected();
+    const bool can_delete_selected = CanDeleteNode(selected);
+    if (!can_delete_selected) {
+        ImGui::BeginDisabled();
+    }
+    if (ImGui::Button(ICON_MDI_DELETE)) {
+        DeleteNode(selected);
+    }
+    if (!can_delete_selected) {
+        ImGui::EndDisabled();
     }
 
     ImGui::SameLine();

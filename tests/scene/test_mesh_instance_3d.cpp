@@ -49,9 +49,13 @@ TEST(TestMeshInstance3D, node3d_transform_properties_are_reflected) {
     auto rotation = gobot::Type::get<gobot::Node3D>().get_property("rotation_degrees");
     auto scale = gobot::Type::get<gobot::Node3D>().get_property("scale");
     auto mesh = gobot::Type::get<gobot::MeshInstance3D>().get_property("mesh");
+    auto material = gobot::Type::get<gobot::MeshInstance3D>().get_property("material");
+    auto material_override = gobot::Type::get<gobot::MeshInstance3D>().get_property("material_override");
 
     EXPECT_TRUE(position.is_valid());
     EXPECT_TRUE(rotation.is_valid());
     EXPECT_TRUE(scale.is_valid());
     EXPECT_TRUE(mesh.is_valid());
+    EXPECT_TRUE(material.is_valid());
+    EXPECT_FALSE(material_override.is_valid());
 }

@@ -70,16 +70,16 @@ private:
     struct PropertyCache {
         Type property_type;
         std::string property_name;
-        std::string property_name_str; // cache
         bool property_readonly;
         PropertyInfo property_info;
+        std::string property_name_str; // cache
         std::string tool_tip_str; // cache
         PropertyCache(const Type& type, std::string string, bool readonly, const Variant& info)
                 : property_type(type),
                   property_name(std::move(string)),
-                  property_name_str(property_name),
                   property_readonly(readonly),
                   property_info(info.is_valid() ? info.get_value<PropertyInfo>() : PropertyInfo()),
+                  property_name_str(property_info.name.empty() ? property_name : property_info.name),
                   tool_tip_str(property_info.tool_tip)
         {
         }
