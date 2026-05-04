@@ -248,6 +248,26 @@ TEST(TestSimulationServer, sets_joint_control_targets_on_world) {
     gobot::Object::Delete(robot);
 }
 
+TEST(TestSimulationServer, maps_normalized_robot_action_to_joint_position_targets) {
+    gobot::SimulationServer simulation_server;
+
+    gobot::Robot3D* robot = CreateRobotScene();
+    ASSERT_TRUE(simulation_server.BuildWorldFromScene(robot));
+
+    ASSERT_TRUE(simulation_server.SetRobotJointPositionTargetsFromNormalizedAction("robot", {-0.5}));
+    const gobot::PhysicsJointState& joint_state =
+            simulation_server.GetWorld()->GetSceneState().robots[0].joints[0];
+    EXPECT_EQ(joint_state.control_mode, gobot::PhysicsJointControlMode::Position);
+    EXPECT_DOUBLE_EQ(joint_state.target_position, -0.5);
+
+    EXPECT_FALSE(simulation_server.SetRobotJointPositionTargetsFromNormalizedAction("robot", {}));
+    EXPECT_FALSE(simulation_server.GetLastError().empty());
+    EXPECT_FALSE(simulation_server.SetRobotJointPositionTargetsFromNormalizedAction("robot", {0.0, 1.0}));
+    EXPECT_FALSE(simulation_server.GetLastError().empty());
+
+    gobot::Object::Delete(robot);
+}
+
 TEST(TestSimulationServer, rebuild_world_preserves_compatible_joint_state_by_name) {
     gobot::SimulationServer simulation_server;
 

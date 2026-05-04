@@ -7,6 +7,7 @@
 
 #include <cstdint>
 #include <string>
+#include <vector>
 
 #include "gobot/core/object.hpp"
 #include "gobot/physics/physics_server.hpp"
@@ -84,6 +85,9 @@ public:
 
     bool SetJointPassive(const std::string& robot_name,
                          const std::string& joint_name);
+
+    bool SetRobotJointPositionTargetsFromNormalizedAction(const std::string& robot_name,
+                                                          const std::vector<RealType>& action);
 
     RealType GetSimulationTime() const;
 

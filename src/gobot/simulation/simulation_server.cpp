@@ -9,6 +9,7 @@
 
 #include "gobot/core/registration.hpp"
 #include "gobot/error_macros.hpp"
+#include "gobot/physics/joint_controller.hpp"
 #include "gobot/scene/joint_3d.hpp"
 #include "gobot/scene/link_3d.hpp"
 #include "gobot/scene/node.hpp"
@@ -365,6 +366,90 @@ bool SimulationServer::SetJointPassive(const std::string& robot_name,
     return true;
 }
 
+bool SimulationServer::SetRobotJointPositionTargetsFromNormalizedAction(const std::string& robot_name,
+                                                                        const std::vector<RealType>& action) {
+    if (!EnsureWorldReady()) {
+        return false;
+    }
+
+    const PhysicsSceneSnapshot& snapshot = world_->GetSceneSnapshot();
+    const PhysicsSceneState& state = world_->GetSceneState();
+
+    const PhysicsRobotSnapshot* robot_snapshot = nullptr;
+    const PhysicsRobotState* robot_state = nullptr;
+    for (std::size_t robot_index = 0; robot_index < snapshot.robots.size(); ++robot_index) {
+        if (snapshot.robots[robot_index].name != robot_name) {
+            continue;
+        }
+
+        robot_snapshot = &snapshot.robots[robot_index];
+        if (robot_index < state.robots.size()) {
+            robot_state = &state.robots[robot_index];
+        }
+        break;
+    }
+
+    if (robot_snapshot == nullptr || robot_state == nullptr) {
+        SetLastError(fmt::format("Cannot set normalized action for missing robot '{}'.", robot_name));
+        return false;
+    }
+
+    std::size_t action_index = 0;
+    for (std::size_t joint_index = 0; joint_index < robot_snapshot->joints.size(); ++joint_index) {
+        if (joint_index >= robot_state->joints.size()) {
+            continue;
+        }
+
+        const PhysicsJointSnapshot& joint_snapshot = robot_snapshot->joints[joint_index];
+        const PhysicsJointState& joint_state = robot_state->joints[joint_index];
+        const auto joint_type = static_cast<JointType>(joint_snapshot.joint_type);
+        if (joint_type != JointType::Revolute &&
+            joint_type != JointType::Continuous &&
+            joint_type != JointType::Prismatic) {
+            continue;
+        }
+
+        if (action_index >= action.size()) {
+            SetLastError(fmt::format("Robot '{}' expected at least {} joint action value(s), got {}.",
+                                     robot_name,
+                                     action_index + 1,
+                                     action.size()));
+            return false;
+        }
+
+        JointControllerLimits limits = MakeJointControllerLimits(joint_snapshot);
+        if (joint_type == JointType::Continuous) {
+            limits.has_position_limits = false;
+        }
+
+        const RealType target_position =
+                JointController::MapNormalizedActionToTargetPosition(action[action_index],
+                                                                     limits,
+                                                                     joint_state.position,
+                                                                     1.0);
+        if (!world_->SetJointControl(robot_name,
+                                     joint_state.joint_name,
+                                     PhysicsJointControlMode::Position,
+                                     target_position)) {
+            SetLastError(world_->GetLastError());
+            return false;
+        }
+
+        ++action_index;
+    }
+
+    if (action_index < action.size()) {
+        SetLastError(fmt::format("Robot '{}' expected {} joint action value(s), got {}.",
+                                 robot_name,
+                                 action_index,
+                                 action.size()));
+        return false;
+    }
+
+    last_error_.clear();
+    return true;
+}
+
 RealType SimulationServer::GetSimulationTime() const {
     return simulation_time_;
 }
@@ -494,6 +579,8 @@ GOBOT_REGISTRATION {
             .method("set_joint_velocity_target", &SimulationServer::SetJointVelocityTarget)
             .method("set_joint_effort_target", &SimulationServer::SetJointEffortTarget)
             .method("set_joint_passive", &SimulationServer::SetJointPassive)
+            .method("set_robot_joint_position_targets_from_normalized_action",
+                    &SimulationServer::SetRobotJointPositionTargetsFromNormalizedAction)
             .method("get_simulation_time", &SimulationServer::GetSimulationTime)
             .method("get_frame_count", &SimulationServer::GetFrameCount)
             .method("get_last_error", &SimulationServer::GetLastError);

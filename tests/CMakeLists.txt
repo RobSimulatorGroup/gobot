@@ -58,4 +58,6 @@ package_add_test(test_resource_creation_registry scene/test_resource_creation_re
 package_add_test(test_packed_scene scene/test_packed_scene.cpp)
 package_add_test(test_edited_scene editor/test_edited_scene.cpp)
 package_add_test(test_physics_server physics/test_physics_server.cpp)
+package_add_test(test_joint_controller physics/test_joint_controller.cpp)
 package_add_test(test_simulation_server simulation/test_simulation_server.cpp)
+package_add_test(test_rl_environment simulation/test_rl_environment.cpp)

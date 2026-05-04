@@ -14,6 +14,7 @@
 #include "gobot/core/config/project_setting.hpp"
 #include "gobot/core/registration.hpp"
 #include "gobot/log.hpp"
+#include "gobot/physics/joint_controller.hpp"
 #include "gobot/scene/joint_3d.hpp"
 
 #ifdef GOBOT_HAS_MUJOCO
@@ -702,22 +703,24 @@ void MuJoCoPhysicsWorld::ApplyControlsToMuJoCo() {
             continue;
         }
 
-        switch (joint_state.control_mode) {
-            case PhysicsJointControlMode::Passive:
-                break;
-            case PhysicsJointControlMode::Position:
-                data->qfrc_applied[binding.dof_address] =
-                        settings_.default_position_stiffness * (joint_state.target_position - joint_state.position) -
-                        settings_.default_velocity_damping * joint_state.velocity;
-                break;
-            case PhysicsJointControlMode::Velocity:
-                data->qfrc_applied[binding.dof_address] =
-                        settings_.default_velocity_damping * (joint_state.target_velocity - joint_state.velocity);
-                break;
-            case PhysicsJointControlMode::Effort:
-                data->qfrc_applied[binding.dof_address] = joint_state.target_effort;
-                break;
+        JointController controller({
+                settings_.default_position_stiffness,
+                settings_.default_velocity_damping,
+                0.0,
+                0.0
+        });
+
+        JointControllerLimits limits;
+        if (binding.robot_index < scene_snapshot_.robots.size() &&
+            binding.joint_index < scene_snapshot_.robots[binding.robot_index].joints.size()) {
+            limits = MakeJointControllerLimits(scene_snapshot_.robots[binding.robot_index].joints[binding.joint_index]);
         }
+
+        data->qfrc_applied[binding.dof_address] =
+                controller.ComputeEffort(MakeJointControllerState(joint_state),
+                                         MakeJointControllerCommand(joint_state),
+                                         limits,
+                                         settings_.fixed_time_step);
     }
 }
 
