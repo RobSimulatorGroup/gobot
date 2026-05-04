@@ -26,6 +26,14 @@ struct RLEnvironmentStepResult {
     RealType simulation_time{0.0};
 };
 
+struct RLVectorSpec {
+    std::string version{"rl_vector_spec_v1"};
+    std::vector<std::string> names;
+    std::vector<RealType> lower_bounds;
+    std::vector<RealType> upper_bounds;
+    std::vector<std::string> units;
+};
+
 class GOBOT_EXPORT RLEnvironment : public Object {
     GOBCLASS(RLEnvironment, Object)
 
@@ -60,10 +68,16 @@ public:
 
     std::vector<std::string> GetControlledJointNames() const;
 
+    RLVectorSpec GetActionSpec() const;
+
+    RLVectorSpec GetObservationSpec() const;
+
     const std::string& GetLastError() const;
 
 private:
     bool RefreshControlledJointNames();
+
+    bool RefreshBaseLinkName();
 
     bool EnsureReady();
 
@@ -75,6 +89,7 @@ private:
     std::uint64_t episode_step_count_{0};
     std::uint64_t max_episode_steps_{0};
     std::uint32_t last_seed_{0};
+    std::string base_link_name_;
     std::vector<std::string> controlled_joint_names_;
     std::string last_error_;
 };

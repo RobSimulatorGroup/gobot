@@ -6,6 +6,7 @@
 #include "gobot/simulation/rl_environment.hpp"
 
 #include <algorithm>
+#include <limits>
 #include <utility>
 
 #include "gobot/core/registration.hpp"
@@ -38,11 +39,57 @@ const PhysicsRobotSnapshot* FindRobotSnapshot(const PhysicsSceneSnapshot& scene_
     return nullptr;
 }
 
+const PhysicsLinkState* FindLinkState(const PhysicsRobotState& robot_state,
+                                      const std::string& link_name) {
+    for (const PhysicsLinkState& link_state : robot_state.links) {
+        if (link_state.link_name == link_name) {
+            return &link_state;
+        }
+    }
+
+    return nullptr;
+}
+
+const PhysicsJointState* FindJointState(const PhysicsRobotState& robot_state,
+                                        const std::string& joint_name) {
+    for (const PhysicsJointState& joint_state : robot_state.joints) {
+        if (joint_state.joint_name == joint_name) {
+            return &joint_state;
+        }
+    }
+
+    return nullptr;
+}
+
 bool IsControllableJointType(int joint_type) {
     const auto type = static_cast<JointType>(joint_type);
     return type == JointType::Revolute ||
            type == JointType::Continuous ||
            type == JointType::Prismatic;
+}
+
+void PushVector3(std::vector<RealType>* values, const Vector3& vector) {
+    values->push_back(vector.x());
+    values->push_back(vector.y());
+    values->push_back(vector.z());
+}
+
+void PushInfiniteBounds(RLVectorSpec* spec, std::size_t count) {
+    for (std::size_t i = 0; i < count; ++i) {
+        spec->lower_bounds.push_back(-std::numeric_limits<RealType>::infinity());
+        spec->upper_bounds.push_back(std::numeric_limits<RealType>::infinity());
+    }
+}
+
+void AddSpecEntry(RLVectorSpec* spec,
+                  std::string name,
+                  RealType lower_bound,
+                  RealType upper_bound,
+                  std::string unit) {
+    spec->names.emplace_back(std::move(name));
+    spec->lower_bounds.push_back(lower_bound);
+    spec->upper_bounds.push_back(upper_bound);
+    spec->units.emplace_back(std::move(unit));
 }
 
 } // namespace
@@ -100,7 +147,7 @@ bool RLEnvironment::Reset(std::uint32_t seed) {
         return false;
     }
 
-    if (!RefreshControlledJointNames()) {
+    if (!RefreshBaseLinkName() || !RefreshControlledJointNames()) {
         return false;
     }
 
@@ -156,16 +203,30 @@ std::vector<RealType> RLEnvironment::GetObservation() const {
         return observation;
     }
 
-    observation.reserve(controlled_joint_names_.size() * 2);
-    for (const PhysicsJointState& joint_state : robot_state->joints) {
-        if (std::find(controlled_joint_names_.begin(),
-                      controlled_joint_names_.end(),
-                      joint_state.joint_name) == controlled_joint_names_.end()) {
-            continue;
-        }
+    const PhysicsLinkState* base_link_state = FindLinkState(*robot_state, base_link_name_);
+    if (base_link_state == nullptr) {
+        return observation;
+    }
 
-        observation.push_back(joint_state.position);
-        observation.push_back(joint_state.velocity);
+    observation.reserve(GetObservationSize());
+    PushVector3(&observation, base_link_state->global_transform.translation());
+
+    const Quaternion base_orientation(base_link_state->global_transform.linear());
+    observation.push_back(base_orientation.x());
+    observation.push_back(base_orientation.y());
+    observation.push_back(base_orientation.z());
+    observation.push_back(base_orientation.w());
+
+    PushVector3(&observation, base_link_state->linear_velocity);
+    PushVector3(&observation, base_link_state->angular_velocity);
+
+    for (const std::string& joint_name : controlled_joint_names_) {
+        const PhysicsJointState* joint_state = FindJointState(*robot_state, joint_name);
+        if (joint_state == nullptr) {
+            return {};
+        }
+        observation.push_back(joint_state->position);
+        observation.push_back(joint_state->velocity);
     }
 
     return observation;
@@ -176,11 +237,85 @@ std::size_t RLEnvironment::GetActionSize() const {
 }
 
 std::size_t RLEnvironment::GetObservationSize() const {
-    return controlled_joint_names_.size() * 2;
+    return base_link_name_.empty() ? 0 : 13 + controlled_joint_names_.size() * 2;
 }
 
 std::vector<std::string> RLEnvironment::GetControlledJointNames() const {
     return controlled_joint_names_;
+}
+
+RLVectorSpec RLEnvironment::GetActionSpec() const {
+    RLVectorSpec spec;
+    spec.names.reserve(controlled_joint_names_.size());
+    spec.lower_bounds.reserve(controlled_joint_names_.size());
+    spec.upper_bounds.reserve(controlled_joint_names_.size());
+    spec.units.reserve(controlled_joint_names_.size());
+
+    for (const std::string& joint_name : controlled_joint_names_) {
+        spec.names.push_back(joint_name + "/target_position_normalized");
+        spec.lower_bounds.push_back(-1.0);
+        spec.upper_bounds.push_back(1.0);
+        spec.units.emplace_back("normalized");
+    }
+
+    return spec;
+}
+
+RLVectorSpec RLEnvironment::GetObservationSpec() const {
+    RLVectorSpec spec;
+    spec.names.reserve(GetObservationSize());
+    spec.lower_bounds.reserve(GetObservationSize());
+    spec.upper_bounds.reserve(GetObservationSize());
+    spec.units.reserve(GetObservationSize());
+
+    if (!base_link_name_.empty()) {
+        for (const char* axis : {"x", "y", "z"}) {
+            AddSpecEntry(&spec,
+                         "base/position/" + std::string(axis),
+                         -std::numeric_limits<RealType>::infinity(),
+                         std::numeric_limits<RealType>::infinity(),
+                         "meter");
+        }
+
+        for (const char* component : {"x", "y", "z", "w"}) {
+            AddSpecEntry(&spec,
+                         "base/orientation/" + std::string(component),
+                         -1.0,
+                         1.0,
+                         "quaternion");
+        }
+
+        for (const char* axis : {"x", "y", "z"}) {
+            AddSpecEntry(&spec,
+                         "base/linear_velocity/" + std::string(axis),
+                         -std::numeric_limits<RealType>::infinity(),
+                         std::numeric_limits<RealType>::infinity(),
+                         "meter_per_second");
+        }
+
+        for (const char* axis : {"x", "y", "z"}) {
+            AddSpecEntry(&spec,
+                         "base/angular_velocity/" + std::string(axis),
+                         -std::numeric_limits<RealType>::infinity(),
+                         std::numeric_limits<RealType>::infinity(),
+                         "radian_per_second");
+        }
+    }
+
+    for (const std::string& joint_name : controlled_joint_names_) {
+        AddSpecEntry(&spec,
+                     joint_name + "/position",
+                     -std::numeric_limits<RealType>::infinity(),
+                     std::numeric_limits<RealType>::infinity(),
+                     "radian_or_meter");
+        AddSpecEntry(&spec,
+                     joint_name + "/velocity",
+                     -std::numeric_limits<RealType>::infinity(),
+                     std::numeric_limits<RealType>::infinity(),
+                     "radian_per_second_or_meter_per_second");
+    }
+
+    return spec;
 }
 
 const std::string& RLEnvironment::GetLastError() const {
@@ -219,6 +354,47 @@ bool RLEnvironment::RefreshControlledJointNames() {
     return true;
 }
 
+bool RLEnvironment::RefreshBaseLinkName() {
+    base_link_name_.clear();
+
+    if (simulation_ == nullptr || !simulation_->HasWorld()) {
+        SetLastError("RL environment simulation world has not been reset.");
+        return false;
+    }
+
+    if (robot_name_.empty()) {
+        SetLastError("RL environment robot name is empty.");
+        return false;
+    }
+
+    const PhysicsSceneSnapshot& scene_snapshot = simulation_->GetWorld()->GetSceneSnapshot();
+    const PhysicsRobotSnapshot* robot_snapshot = FindRobotSnapshot(scene_snapshot, robot_name_);
+    if (robot_snapshot == nullptr) {
+        SetLastError(fmt::format("RL environment robot '{}' was not found in the physics scene.", robot_name_));
+        return false;
+    }
+
+    for (const PhysicsJointSnapshot& joint_snapshot : robot_snapshot->joints) {
+        if (static_cast<JointType>(joint_snapshot.joint_type) == JointType::Floating &&
+            !joint_snapshot.child_link.empty()) {
+            base_link_name_ = joint_snapshot.child_link;
+            last_error_.clear();
+            return true;
+        }
+    }
+
+    for (const PhysicsLinkSnapshot& link_snapshot : robot_snapshot->links) {
+        if (link_snapshot.role == PhysicsLinkRole::Physical) {
+            base_link_name_ = link_snapshot.name;
+            last_error_.clear();
+            return true;
+        }
+    }
+
+    SetLastError(fmt::format("RL environment robot '{}' has no physical base link.", robot_name_));
+    return false;
+}
+
 bool RLEnvironment::EnsureReady() {
     if (simulation_ == nullptr) {
         SetLastError("RL environment has no SimulationServer.");
@@ -235,7 +411,8 @@ bool RLEnvironment::EnsureReady() {
         return false;
     }
 
-    if (controlled_joint_names_.empty() && !RefreshControlledJointNames()) {
+    if ((base_link_name_.empty() && !RefreshBaseLinkName()) ||
+        (controlled_joint_names_.empty() && !RefreshControlledJointNames())) {
         return false;
     }
 
@@ -250,6 +427,14 @@ void RLEnvironment::SetLastError(std::string error) {
 
 GOBOT_REGISTRATION {
 
+    Class_<RLVectorSpec>("RLVectorSpec")
+            .constructor()
+            .property("version", &RLVectorSpec::version)
+            .property("names", &RLVectorSpec::names)
+            .property("lower_bounds", &RLVectorSpec::lower_bounds)
+            .property("upper_bounds", &RLVectorSpec::upper_bounds)
+            .property("units", &RLVectorSpec::units);
+
     Class_<RLEnvironment>("RLEnvironment")
             .constructor()(CtorAsRawPtr)
             .property("robot_name", &RLEnvironment::GetRobotName, &RLEnvironment::SetRobotName)
@@ -260,6 +445,8 @@ GOBOT_REGISTRATION {
             .method("get_action_size", &RLEnvironment::GetActionSize)
             .method("get_observation_size", &RLEnvironment::GetObservationSize)
             .method("get_controlled_joint_names", &RLEnvironment::GetControlledJointNames)
+            .method("get_action_spec", &RLEnvironment::GetActionSpec)
+            .method("get_observation_spec", &RLEnvironment::GetObservationSpec)
             .method("get_last_error", &RLEnvironment::GetLastError);
 
 };
