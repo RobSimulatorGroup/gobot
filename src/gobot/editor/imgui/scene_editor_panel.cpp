@@ -159,6 +159,9 @@ Node* SceneEditorPanel::GetAddChildTarget(Node* scene_root) const {
     }
 
     if (selected == scene_root || scene_root->IsAncestorOf(selected)) {
+        if (IsSceneInstanceNode(selected)) {
+            return scene_root;
+        }
         return selected;
     }
 
@@ -186,6 +189,10 @@ bool SceneEditorPanel::CreateSelectedAddNode() {
     add_child_parent_->AddChild(node, true);
     Editor::GetInstance()->SetSelected(node);
     return true;
+}
+
+bool SceneEditorPanel::IsSceneInstanceNode(Node* node) const {
+    return node != nullptr && node->GetSceneInstance().IsValid();
 }
 
 bool SceneEditorPanel::CanDeleteNode(Node* node) const {
@@ -401,6 +408,9 @@ bool SceneEditorPanel::DrawNode(Node* node)
 
     if (show) {
         const bool can_delete = CanDeleteNode(node);
+        const Ref<PackedScene> scene_instance = node->GetSceneInstance();
+        const bool is_scene_instance = IsSceneInstanceNode(node);
+        const bool can_open_scene_instance = is_scene_instance && !scene_instance->GetPath().empty();
 
         ImGui::PushID(node);
 
@@ -408,8 +418,9 @@ bool SceneEditorPanel::DrawNode(Node* node)
         node_flags |=  ImGuiTreeNodeFlags_DefaultOpen | ImGuiTreeNodeFlags_OpenOnArrow |
                        ImGuiTreeNodeFlags_FramePadding | ImGuiTreeNodeFlags_AllowOverlap | ImGuiTreeNodeFlags_SpanAvailWidth;
 
-        if(node->GetChildCount() == 0) {
-            node_flags |= ImGuiTreeNodeFlags_Leaf;
+        const bool suppress_tree_push = node->GetChildCount() == 0 || is_scene_instance;
+        if(suppress_tree_push) {
+            node_flags |= ImGuiTreeNodeFlags_Leaf | ImGuiTreeNodeFlags_NoTreePushOnOpen;
         }
 
         bool double_clicked = false;
@@ -423,7 +434,10 @@ bool SceneEditorPanel::DrawNode(Node* node)
 
         ImGui::PushStyleColor(ImGuiCol_Text, ImGuiUtilities::GetIconColor());
 
-        bool node_open = ImGui::TreeNodeEx(node, node_flags, "%s", ICON_MDI_CUBE_OUTLINE);
+        bool node_open = ImGui::TreeNodeEx(node,
+                                           node_flags,
+                                           "%s",
+                                           is_scene_instance ? ICON_MDI_LINK_BOX_OUTLINE : ICON_MDI_CUBE_OUTLINE);
         {
             // Allow clicking of icon and text. Need twice as they are separated
             if(ImGui::IsItemClicked())
@@ -441,6 +455,37 @@ bool SceneEditorPanel::DrawNode(Node* node)
             AcceptSceneResourceDrop();
         }
 
+        if (is_scene_instance) {
+            ImGui::SameLine();
+            ImGui::TextDisabled("%s", ICON_MDI_LINK_VARIANT);
+            if (ImGui::IsItemHovered()) {
+                ImGui::SetTooltip("%s",
+                                  can_open_scene_instance ? scene_instance->GetPath().c_str()
+                                                          : "Scene instance has no resource path");
+            }
+
+            const float open_button_width = ImGui::GetFrameHeight();
+            const float row_end_x = ImGui::GetWindowContentRegionMax().x;
+            if (ImGui::GetCursorPosX() + open_button_width < row_end_x) {
+                ImGui::SameLine(row_end_x - open_button_width);
+            } else {
+                ImGui::SameLine();
+            }
+
+            if (!can_open_scene_instance) {
+                ImGui::BeginDisabled();
+            }
+            if (ImGui::SmallButton(ICON_MDI_OPEN_IN_NEW "##OpenSceneInstance")) {
+                editor->RequestOpenSceneFromPath(scene_instance->GetPath());
+            }
+            if (ImGui::IsItemHovered()) {
+                ImGui::SetTooltip("Open scene instance");
+            }
+            if (!can_open_scene_instance) {
+                ImGui::EndDisabled();
+            }
+        }
+
         if(double_clicked) {
             auto value = name;
             ImGui::PushItemWidth(-1);
@@ -453,8 +498,23 @@ bool SceneEditorPanel::DrawNode(Node* node)
         bool delete_node = false;
         if(ImGui::BeginPopupContextItem("NodeContext")) {
             editor->SetSelected(node);
+            if (is_scene_instance) {
+                ImGui::BeginDisabled();
+            }
             if (ImGui::MenuItem("Add Child")) {
                 RequestOpenAddChildDialog(node);
+            }
+            if (is_scene_instance) {
+                ImGui::EndDisabled();
+            }
+            if (!can_open_scene_instance) {
+                ImGui::BeginDisabled();
+            }
+            if (ImGui::MenuItem(ICON_MDI_OPEN_IN_NEW " Open Scene Instance")) {
+                editor->RequestOpenSceneFromPath(scene_instance->GetPath());
+            }
+            if (!can_open_scene_instance) {
+                ImGui::EndDisabled();
             }
             if (!can_delete) {
                 ImGui::BeginDisabled();
@@ -479,14 +539,14 @@ bool SceneEditorPanel::DrawNode(Node* node)
 
         if(delete_node) {
             DeleteNode(node);
-            if(node_open)
+            if(node_open && !suppress_tree_push)
                 ImGui::TreePop();
 
             ImGui::PopID();
             return true;
         }
 
-        if(!node_open) {
+        if(!node_open || suppress_tree_push) {
             ImGui::PopID();
             return false;
         }

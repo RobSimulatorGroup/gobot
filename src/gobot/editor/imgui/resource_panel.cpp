@@ -51,6 +51,24 @@ bool IsNativeSceneFile(const DirectoryInformation* dir_info) {
     return ToLower(std::filesystem::path(dir_info->global_path).extension().string()) == ".jscn";
 }
 
+bool ResourceEntryLess(const DirectoryInformation* left, const DirectoryInformation* right) {
+    if (left == nullptr || right == nullptr) {
+        return left != nullptr;
+    }
+
+    if (left->is_directory != right->is_directory) {
+        return left->is_directory;
+    }
+
+    const std::string left_name = ToLower(left->this_path);
+    const std::string right_name = ToLower(right->this_path);
+    if (left_name != right_name) {
+        return left_name < right_name;
+    }
+
+    return left->this_path < right->this_path;
+}
+
 } // namespace
 
 DirectoryInformation::DirectoryInformation(const std::string& _this_path, DirectoryInformation* _parent)
@@ -726,6 +744,7 @@ DirectoryInformation* ResourcePanel::ProcessDirectory(const std::string& directo
             auto subdir = ProcessDirectory(file_info.path().filename(), directory_info.get());
             directory_info->children.push_back(subdir);
         }
+        std::ranges::sort(directory_info->children, ResourceEntryLess);
     }
 
     auto res = directory_info.get();

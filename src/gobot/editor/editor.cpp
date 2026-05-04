@@ -124,6 +124,24 @@ Node3D* Editor::GetEditedSceneRoot() const {
     return edited_scene_ ? edited_scene_->GetRoot() : nullptr;
 }
 
+void Editor::SetSelected(Node* selected) {
+    Node* scene_root = GetEditedSceneRoot();
+    if (selected != nullptr && scene_root != nullptr) {
+        Node* instance_root = nullptr;
+        for (Node* node = selected; node != nullptr && node != scene_root; node = node->GetParent()) {
+            if (node->GetSceneInstance().IsValid()) {
+                instance_root = node;
+            }
+        }
+
+        if (instance_root != nullptr) {
+            selected = instance_root;
+        }
+    }
+
+    selected_ = selected;
+}
+
 bool Editor::SaveEditedScene(const std::string& path) const {
     if (edited_scene_ == nullptr || !edited_scene_->SaveToPath(path)) {
         return false;

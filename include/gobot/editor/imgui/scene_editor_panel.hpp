@@ -34,6 +34,8 @@ private:
 
     bool CreateSelectedAddNode();
 
+    bool IsSceneInstanceNode(Node* node) const;
+
     bool CanDeleteNode(Node* node) const;
 
     bool DeleteNode(Node* node);

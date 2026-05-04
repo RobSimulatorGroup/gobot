@@ -50,7 +50,7 @@ public:
 
     FORCE_INLINE Node* GetSelected() const { return selected_; }
 
-    FORCE_INLINE void SetSelected(Node* selected) { selected_ = selected; }
+    void SetSelected(Node* selected);
 
     FORCE_INLINE EditedScene* GetEditedScene() const { return edited_scene_; }
 

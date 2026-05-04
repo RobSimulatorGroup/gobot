@@ -311,12 +311,15 @@ void SceneView3DPanel::OnImGuiContent()
     ImVec2 min_bound = scene_view_position;
     ImVec2 max_bound = { min_bound.x + scene_view_size.x, min_bound.y + scene_view_size.y };
 
+    auto* node3d_editor = Node3DEditor::GetInstance();
+    ImGuizmo::SetRect(scene_view_position.x, scene_view_position.y, scene_view_size.x, scene_view_size.y);
+    node3d_editor->OnImGuizmo();
+
     const bool imgui_blocks_viewport_input = ImGuiBlocksViewportInput();
     bool mouse_inside_rect = ImGui::IsMouseHoveringRect(min_bound, max_bound) && !imgui_blocks_viewport_input;
-
-    auto* node3d_editor = Node3DEditor::GetInstance();
     ProcessViewportInput(scene_root, scene_view_position, scene_view_size, mouse_inside_rect);
-    node3d_editor->SetNeedUpdateCamera(mouse_inside_rect && !dragged_joint_);
+    node3d_editor->SetNeedUpdateCamera(mouse_inside_rect && !dragged_joint_ &&
+                                       !ImGuizmo::IsUsing() && !ImGuizmo::IsOver());
 
     auto* selected_motion_joint = FindMotionJointForViewportTarget(Editor::GetInstance()->GetSelected());
     auto* active_motion_joint = dragged_joint_ ? dragged_joint_
@@ -334,9 +337,6 @@ void SceneView3DPanel::OnImGuiContent()
     ImGui::SetCursorScreenPos({scene_view_position.x, scene_view_position.y + scene_view_size.y});
     ImGui::Dummy({1.0f, 1.0f});
 
-    ImGuizmo::SetRect(scene_view_position.x, scene_view_position.y, scene_view_size.x, scene_view_size.y);
-    node3d_editor->OnImGuizmo();
-
 }
 
 void SceneView3DPanel::ProcessViewportInput(Node* scene_root,
@@ -344,7 +344,8 @@ void SceneView3DPanel::ProcessViewportInput(Node* scene_root,
                                             const ImVec2& viewport_size,
                                             bool mouse_inside_rect) {
     auto* node3d_editor = Node3DEditor::GetInstance();
-    if (!scene_root || !mouse_inside_rect || ImGuizmo::IsUsing()) {
+    const bool gizmo_captures_mouse = ImGuizmo::IsUsing() || ImGuizmo::IsOver();
+    if (!scene_root || !mouse_inside_rect || gizmo_captures_mouse) {
         hovered_node_ = nullptr;
         motion_target_joint_ = nullptr;
     } else {
@@ -369,7 +370,7 @@ void SceneView3DPanel::ProcessViewportInput(Node* scene_root,
     }
 
     if (mouse_inside_rect && ImGui::IsMouseClicked(ImGuiMouseButton_Left) &&
-        !camera_modifier_down && !ImGuizmo::IsOver()) {
+        !camera_modifier_down && !gizmo_captures_mouse) {
         if (hovered_node_) {
             Editor::GetInstance()->SetSelected(hovered_node_);
         } else {
@@ -397,7 +398,7 @@ void SceneView3DPanel::ProcessViewportInput(Node* scene_root,
     }
 
     const bool can_capture_joint = mouse_inside_rect && IsJointMotionEditable(pressed_joint_) && !camera_modifier_down &&
-                                   !ImGuizmo::IsUsing() && !ImGuizmo::IsOver();
+                                   !gizmo_captures_mouse;
 
     if (!dragged_joint_ && can_capture_joint && ImGui::IsMouseDragging(ImGuiMouseButton_Left, 1.0f)) {
         dragged_joint_ = pressed_joint_;
