@@ -3,6 +3,7 @@
 #include <cstdlib>
 #include <fstream>
 #include <sstream>
+#include <utility>
 
 #include <pybind11/embed.h>
 
@@ -14,6 +15,81 @@ namespace gobot::python {
 namespace {
 
 namespace py = pybind11;
+
+class SourceLocationWriter {
+public:
+    explicit SourceLocationWriter(std::string default_filename) :
+            default_filename_(std::move(default_filename)) {}
+
+    void Write(const std::string& text) {
+        for (char character : text) {
+            pending_line_.push_back(character);
+            if (character == '\n') {
+                FlushPendingLine();
+            }
+        }
+    }
+
+    void Flush() {
+        FlushPendingLine();
+    }
+
+    std::string GetValue() const {
+        return buffer_.str();
+    }
+
+private:
+    std::pair<std::string, int> CurrentSourceLocation() const {
+        PyFrameObject* frame = PyEval_GetFrame();
+        if (frame == nullptr) {
+            return {default_filename_, 0};
+        }
+
+        PyCodeObject* code = PyFrame_GetCode(frame);
+        if (code == nullptr) {
+            return {default_filename_, PyFrame_GetLineNumber(frame)};
+        }
+
+        py::object filename_object = py::reinterpret_borrow<py::object>(code->co_filename);
+        std::string filename = py::cast<std::string>(filename_object);
+        Py_DECREF(code);
+        if (filename.empty()) {
+            filename = default_filename_;
+        }
+
+        return {filename, PyFrame_GetLineNumber(frame)};
+    }
+
+    void FlushPendingLine() {
+        if (pending_line_.empty()) {
+            return;
+        }
+
+        const bool only_newline = pending_line_ == "\n";
+        if (!only_newline) {
+            auto [filename, line] = CurrentSourceLocation();
+            buffer_ << "[" << filename;
+            if (line > 0) {
+                buffer_ << ":" << line;
+            }
+            buffer_ << "] ";
+        }
+        buffer_ << pending_line_;
+        pending_line_.clear();
+    }
+
+    std::string default_filename_;
+    std::string pending_line_;
+    std::stringstream buffer_;
+};
+
+PYBIND11_EMBEDDED_MODULE(gobot_python_runner_internal, module) {
+    py::class_<SourceLocationWriter>(module, "SourceLocationWriter")
+            .def(py::init<std::string>())
+            .def("write", &SourceLocationWriter::Write)
+            .def("flush", &SourceLocationWriter::Flush)
+            .def("getvalue", &SourceLocationWriter::GetValue);
+}
 
 bool& InterpreterStartedByRunner() {
     static bool started = false;
@@ -65,10 +141,10 @@ PythonExecutionResult ExecuteCompiledCode(const std::string& source,
         modules.attr("pop")("gobot", py::none());
         py::module_::import("gobot");
 
-        py::module_ io = py::module_::import("io");
         py::module_ contextlib = py::module_::import("contextlib");
-        py::object stdout_buffer = io.attr("StringIO")();
-        py::object stderr_buffer = io.attr("StringIO")();
+        py::module_ runner_internal = py::module_::import("gobot_python_runner_internal");
+        py::object stdout_buffer = runner_internal.attr("SourceLocationWriter")(filename);
+        py::object stderr_buffer = runner_internal.attr("SourceLocationWriter")(filename);
         py::dict globals;
         globals["__name__"] = "__main__";
         globals["__file__"] = filename;
@@ -78,7 +154,9 @@ PythonExecutionResult ExecuteCompiledCode(const std::string& source,
         stdout_redirect.attr("__enter__")();
         stderr_redirect.attr("__enter__")();
         try {
-            py::exec(source, globals);
+            py::module_ builtins = py::module_::import("builtins");
+            py::object code = builtins.attr("compile")(source, filename, "exec");
+            builtins.attr("exec")(code, globals);
             result.ok = true;
         } catch (...) {
             stderr_redirect.attr("__exit__")(py::none(), py::none(), py::none());
@@ -87,6 +165,8 @@ PythonExecutionResult ExecuteCompiledCode(const std::string& source,
         }
         stderr_redirect.attr("__exit__")(py::none(), py::none(), py::none());
         stdout_redirect.attr("__exit__")(py::none(), py::none(), py::none());
+        stdout_buffer.attr("flush")();
+        stderr_buffer.attr("flush")();
 
         result.output = py::cast<std::string>(stdout_buffer.attr("getvalue")());
         result.error = py::cast<std::string>(stderr_buffer.attr("getvalue")());
