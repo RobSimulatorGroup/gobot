@@ -2,6 +2,7 @@
 
 #include <cstdlib>
 #include <fstream>
+#include <memory>
 #include <sstream>
 #include <utility>
 
@@ -83,12 +84,15 @@ private:
     std::stringstream buffer_;
 };
 
-PYBIND11_EMBEDDED_MODULE(gobot_python_runner_internal, module) {
-    py::class_<SourceLocationWriter>(module, "SourceLocationWriter")
-            .def(py::init<std::string>())
-            .def("write", &SourceLocationWriter::Write)
-            .def("flush", &SourceLocationWriter::Flush)
-            .def("getvalue", &SourceLocationWriter::GetValue);
+py::object MakeWriterObject(const std::shared_ptr<SourceLocationWriter>& writer) {
+    py::object object = py::module_::import("types").attr("SimpleNamespace")();
+    object.attr("write") = py::cpp_function([writer](const std::string& text) {
+        writer->Write(text);
+    });
+    object.attr("flush") = py::cpp_function([writer]() {
+        writer->Flush();
+    });
+    return object;
 }
 
 bool& InterpreterStartedByRunner() {
@@ -142,9 +146,12 @@ PythonExecutionResult ExecuteCompiledCode(const std::string& source,
         py::module_::import("gobot");
 
         py::module_ contextlib = py::module_::import("contextlib");
-        py::module_ runner_internal = py::module_::import("gobot_python_runner_internal");
-        py::object stdout_buffer = runner_internal.attr("SourceLocationWriter")(filename);
-        py::object stderr_buffer = runner_internal.attr("SourceLocationWriter")(filename);
+        std::shared_ptr<SourceLocationWriter> stdout_writer =
+                std::make_shared<SourceLocationWriter>(filename);
+        std::shared_ptr<SourceLocationWriter> stderr_writer =
+                std::make_shared<SourceLocationWriter>(filename);
+        py::object stdout_buffer = MakeWriterObject(stdout_writer);
+        py::object stderr_buffer = MakeWriterObject(stderr_writer);
         py::dict globals;
         globals["__name__"] = "__main__";
         globals["__file__"] = filename;
@@ -165,11 +172,11 @@ PythonExecutionResult ExecuteCompiledCode(const std::string& source,
         }
         stderr_redirect.attr("__exit__")(py::none(), py::none(), py::none());
         stdout_redirect.attr("__exit__")(py::none(), py::none(), py::none());
-        stdout_buffer.attr("flush")();
-        stderr_buffer.attr("flush")();
+        stdout_writer->Flush();
+        stderr_writer->Flush();
 
-        result.output = py::cast<std::string>(stdout_buffer.attr("getvalue")());
-        result.error = py::cast<std::string>(stderr_buffer.attr("getvalue")());
+        result.output = stdout_writer->GetValue();
+        result.error = stderr_writer->GetValue();
     } catch (const py::error_already_set& error) {
         result.ok = false;
         result.error = error.what();

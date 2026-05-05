@@ -201,22 +201,23 @@ int main(int argc, char* argv[]) {
                 }
                 exit_code = script_result.ok ? 0 : 1;
             } else if (!headless_options.robot.empty()) {
-                gobot::RLEnvironment environment(simulation_server);
-                environment.SetSceneRoot(context.GetSceneRoot());
-                environment.SetRobotName(headless_options.robot);
+                gobot::RLEnvironment* environment =
+                        gobot::Object::New<gobot::RLEnvironment>(simulation_server);
+                environment->SetSceneRoot(context.GetSceneRoot());
+                environment->SetRobotName(headless_options.robot);
                 gobot::RLEnvironmentResetResult reset_result =
-                        environment.Reset(headless_options.seed);
+                        environment->Reset(headless_options.seed);
                 if (!reset_result.ok) {
                     std::cerr << reset_result.error << std::endl;
                     exit_code = 1;
                 } else {
                     std::cout << "reset ok=true observation_size="
                               << reset_result.observation.size()
-                              << " action_size=" << environment.GetActionSize()
+                              << " action_size=" << environment->GetActionSize()
                               << std::endl;
-                    std::vector<gobot::RealType> action(environment.GetActionSize(), 0.0);
+                    std::vector<gobot::RealType> action(environment->GetActionSize(), 0.0);
                     for (std::uint64_t step = 0; step < headless_options.steps; ++step) {
-                        gobot::RLEnvironmentStepResult step_result = environment.Step(action);
+                        gobot::RLEnvironmentStepResult step_result = environment->Step(action);
                         if (!step_result.error.empty()) {
                             std::cerr << step_result.error << std::endl;
                             exit_code = 1;
@@ -233,6 +234,7 @@ int main(int argc, char* argv[]) {
                         }
                     }
                 }
+                gobot::Object::Delete(environment);
             } else if (!context.BuildWorld()) {
                 std::cerr << context.GetLastError() << std::endl;
                 exit_code = 1;

@@ -166,18 +166,19 @@ TEST(TestRLEnvironment, reset_builds_world_and_returns_observation) {
     EXPECT_EQ(reset_result.frame_count, 0);
     EXPECT_NEAR(reset_result.simulation_time, 0.0, CMP_EPSILON);
     EXPECT_TRUE(reset_result.error.empty());
-    ASSERT_EQ(reset_result.observation.size(), 15);
+    ASSERT_EQ(reset_result.observation.size(), 16);
     ASSERT_TRUE(simulation_server.HasWorld());
     EXPECT_EQ(environment.GetActionSize(), 1);
-    EXPECT_EQ(environment.GetObservationSize(), 15);
+    EXPECT_EQ(environment.GetObservationSize(), 16);
     EXPECT_EQ(environment.GetControlledJointNames(), std::vector<std::string>{"joint"});
     EXPECT_TRUE(environment.GetContactLinkNames().empty());
 
     const std::vector<gobot::RealType> observation = environment.GetObservation();
-    ASSERT_EQ(observation.size(), 15);
+    ASSERT_EQ(observation.size(), 16);
     ExpectBaseObservationPrefix(observation, {1.0, 2.0, 3.0});
     EXPECT_NEAR(observation[13], 0.25, CMP_EPSILON);
     EXPECT_NEAR(observation[14], 0.0, CMP_EPSILON);
+    EXPECT_NEAR(observation[15], 0.0, CMP_EPSILON);
 
     gobot::Object::Delete(robot);
 }
@@ -217,9 +218,10 @@ TEST(TestRLEnvironment, exposes_action_and_observation_specs) {
                       "base/angular_velocity/z",
                       "joint/position",
                       "joint/velocity",
+                      "joint/previous_action",
               }));
-    ASSERT_EQ(observation_spec.lower_bounds.size(), 15);
-    ASSERT_EQ(observation_spec.upper_bounds.size(), 15);
+    ASSERT_EQ(observation_spec.lower_bounds.size(), 16);
+    ASSERT_EQ(observation_spec.upper_bounds.size(), 16);
     EXPECT_TRUE(std::isinf(observation_spec.lower_bounds[0]));
     EXPECT_LT(observation_spec.lower_bounds[0], 0.0);
     EXPECT_TRUE(std::isinf(observation_spec.upper_bounds[0]));
@@ -243,6 +245,7 @@ TEST(TestRLEnvironment, exposes_action_and_observation_specs) {
                       "radian_per_second",
                       "radian_or_meter",
                       "radian_per_second_or_meter_per_second",
+                      "normalized",
               }));
 
     gobot::Object::Delete(robot);
@@ -258,22 +261,23 @@ TEST(TestRLEnvironment, exposes_contact_links_for_physical_links_with_collision_
     ASSERT_TRUE(environment.Reset().ok);
 
     EXPECT_EQ(environment.GetContactLinkNames(), std::vector<std::string>{"base"});
-    EXPECT_EQ(environment.GetObservationSize(), 16);
+    EXPECT_EQ(environment.GetObservationSize(), 17);
 
     const std::vector<gobot::RealType> observation = environment.GetObservation();
-    ASSERT_EQ(observation.size(), 16);
+    ASSERT_EQ(observation.size(), 17);
     EXPECT_DOUBLE_EQ(observation[15], 0.0);
+    EXPECT_DOUBLE_EQ(observation[16], 0.0);
 
     const gobot::RLVectorSpec observation_spec = environment.GetObservationSpec();
-    ASSERT_EQ(observation_spec.names.size(), 16);
+    ASSERT_EQ(observation_spec.names.size(), 17);
     EXPECT_EQ(observation_spec.names.back(), "base/contact");
     EXPECT_DOUBLE_EQ(observation_spec.lower_bounds.back(), 0.0);
     EXPECT_DOUBLE_EQ(observation_spec.upper_bounds.back(), 1.0);
     EXPECT_EQ(observation_spec.units.back(), "boolean");
 
     const gobot::RLEnvironmentStepResult result = environment.Step({0.0});
-    ASSERT_EQ(result.observation.size(), 16);
-    EXPECT_DOUBLE_EQ(result.observation[15], 0.0);
+    ASSERT_EQ(result.observation.size(), 17);
+    EXPECT_DOUBLE_EQ(result.observation[16], 0.0);
 
     gobot::Object::Delete(robot);
 }
@@ -288,7 +292,7 @@ TEST(TestRLEnvironment, floating_joint_child_link_is_used_as_base_observation) {
 
     ASSERT_TRUE(environment.Reset().ok);
     EXPECT_EQ(environment.GetActionSize(), 1);
-    EXPECT_EQ(environment.GetObservationSize(), 15);
+    EXPECT_EQ(environment.GetObservationSize(), 16);
     ExpectBaseObservationPrefix(environment.GetObservation(), {9.0, 9.0, 9.75});
     EXPECT_EQ(environment.GetControlledJointNames(), std::vector<std::string>{"hip"});
 
@@ -306,11 +310,11 @@ TEST(TestRLEnvironment, ignores_fixed_joints_for_actions_and_observations) {
     ASSERT_TRUE(environment.Reset().ok);
     ASSERT_EQ(simulation_server.GetWorld()->GetSceneState().robots[0].joints.size(), 2);
     EXPECT_EQ(environment.GetActionSize(), 1);
-    EXPECT_EQ(environment.GetObservationSize(), 15);
+    EXPECT_EQ(environment.GetObservationSize(), 16);
     EXPECT_EQ(environment.GetControlledJointNames(), std::vector<std::string>{"joint"});
 
     const gobot::RLEnvironmentStepResult result = environment.Step({0.0});
-    EXPECT_EQ(result.observation.size(), 15);
+    EXPECT_EQ(result.observation.size(), 16);
     EXPECT_TRUE(environment.GetLastError().empty());
 
     gobot::Object::Delete(robot);
@@ -328,13 +332,13 @@ TEST(TestRLEnvironment, configured_controlled_joints_define_action_order_and_siz
     ASSERT_TRUE(environment.Reset().ok);
     EXPECT_EQ(environment.GetControlledJointNames(), std::vector<std::string>{"second_joint"});
     EXPECT_EQ(environment.GetActionSize(), 1);
-    EXPECT_EQ(environment.GetObservationSize(), 15);
+    EXPECT_EQ(environment.GetObservationSize(), 16);
     EXPECT_EQ(environment.GetActionSpec().names,
               std::vector<std::string>{"second_joint/target_position_normalized"});
 
     const gobot::RLEnvironmentStepResult result = environment.Step({0.5});
     EXPECT_TRUE(result.error.empty());
-    ASSERT_EQ(result.observation.size(), 15);
+    ASSERT_EQ(result.observation.size(), 16);
 
     const auto& joint_states = simulation_server.GetWorld()->GetSceneState().robots[0].joints;
     ASSERT_EQ(joint_states.size(), 2);
@@ -453,12 +457,34 @@ TEST(TestRLEnvironment, step_applies_normalized_action_and_advances_once) {
     EXPECT_TRUE(result.truncated);
     EXPECT_FALSE(result.terminated);
     EXPECT_DOUBLE_EQ(result.reward, 1.0);
-    ASSERT_EQ(result.observation.size(), 15);
+    ASSERT_EQ(result.observation.size(), 16);
+    EXPECT_DOUBLE_EQ(result.observation[15], 1.0);
 
     const gobot::PhysicsJointState& joint_state =
             simulation_server.GetWorld()->GetSceneState().robots[0].joints[0];
     EXPECT_EQ(joint_state.control_mode, gobot::PhysicsJointControlMode::Position);
     EXPECT_DOUBLE_EQ(joint_state.target_position, 1.0);
+
+    gobot::Object::Delete(robot);
+}
+
+TEST(TestRLEnvironment, reward_can_penalize_action_rate) {
+    gobot::SimulationServer simulation_server;
+    auto* robot = CreateRobotScene();
+
+    gobot::RLEnvironment environment(&simulation_server);
+    environment.SetSceneRoot(robot);
+    environment.SetRobotName("robot");
+
+    gobot::RLEnvironmentRewardSettings settings;
+    settings.action_rate_penalty_scale = 0.25;
+    environment.SetRewardSettings(settings);
+
+    ASSERT_TRUE(environment.Reset().ok);
+
+    const gobot::RLEnvironmentStepResult result = environment.Step({1.0});
+    ASSERT_TRUE(result.error.empty());
+    EXPECT_DOUBLE_EQ(result.reward, 0.75);
 
     gobot::Object::Delete(robot);
 }

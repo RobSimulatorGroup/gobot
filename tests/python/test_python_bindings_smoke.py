@@ -1,5 +1,6 @@
 import gobot
-from gobot_gym_adapter import GobotGymEnv
+from gobot_gym_adapter import GobotBox, GobotGymEnv, space_from_spec
+import gobot_ppo
 
 
 def assert_close_tuple(actual, expected):
@@ -38,10 +39,17 @@ def main():
     assert reflected_gains_from_dict.velocity_damping == 2.5
 
     reward_settings = gobot.RLEnvironmentRewardSettings.from_dict(
-        {"alive_reward": 2.0, "terminate_on_fall": False}
+        {
+            "alive_reward": 2.0,
+            "terminate_on_fall": False,
+            "target_forward_velocity": 1.0,
+            "action_rate_penalty_scale": 0.1,
+        }
     )
     assert reward_settings.to_dict()["alive_reward"] == 2.0
     assert reward_settings.terminate_on_fall is False
+    assert reward_settings.target_forward_velocity == 1.0
+    assert abs(reward_settings.action_rate_penalty_scale - 0.1) < 1e-6
 
     spec = gobot.RLVectorSpec()
     spec.names = ["joint"]
@@ -49,6 +57,11 @@ def main():
     spec.upper_bounds = [1.0]
     spec.units = ["normalized"]
     assert spec.to_dict()["names"] == ["joint"]
+    box = GobotBox(spec.lower_bounds, spec.upper_bounds, names=spec.names, units=spec.units)
+    assert box.shape == (1,)
+    assert len(box.sample()) == 1
+    converted_space = space_from_spec(spec.to_dict())
+    assert converted_space.shape == (1,)
 
     scene = gobot.create_test_scene()
     root = scene.root
@@ -77,6 +90,7 @@ def main():
     assert info["seed"] == 7
     assert len(observation) == env.get_observation_size()
     assert env.get_action_size() == 1
+    assert env.get_observation_size() == 17
 
     observation, reward, terminated, truncated, info = env.step([0.0])
     assert len(observation) == env.get_observation_size()
@@ -116,6 +130,7 @@ def main():
     assert env.get_action_size() == 1
     assert env.get_controller_config().default_action == [0.0]
     assert env.get_action_spec()["names"] == ["joint/target_position_normalized"]
+    assert "joint/previous_action" in env.get_observation_spec()["names"]
     assert env.step_result([0.0])["error"] == ""
 
     env.apply_controller_config({"controlled_joints": ["missing"], "default_action": [0.0]})
@@ -130,6 +145,16 @@ def main():
     assert reward == 1.0
     assert terminated is False
     assert truncated is False
+
+    config = gobot_ppo.PPOConfig(total_steps=8, rollout_steps=4, seed=1)
+    assert config.total_steps == 8
+    try:
+        gobot_ppo._require_torch()
+    except RuntimeError:
+        pass
+    else:
+        result = gobot_ppo.train(config=config)
+        assert result["steps"] >= 8
 
 
 if __name__ == "__main__":

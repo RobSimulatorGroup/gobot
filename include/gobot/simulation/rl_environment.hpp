@@ -47,6 +47,10 @@ struct RLVectorSpec {
 struct RLEnvironmentRewardSettings {
     RealType alive_reward{1.0};
     RealType fallen_reward{0.0};
+    RealType target_forward_velocity{0.0};
+    RealType forward_velocity_reward_scale{0.0};
+    RealType action_rate_penalty_scale{0.0};
+    RealType effort_penalty_scale{0.0};
     RealType minimum_base_height{0.25};
     RealType maximum_base_tilt_radians{1.0};
     bool terminate_on_fall{true};
@@ -117,7 +121,7 @@ private:
 
     bool IsBaseFallen() const;
 
-    RealType ComputeReward(bool fallen) const;
+    RealType ComputeReward(bool fallen, RealType action_rate_penalty) const;
 
     void SetLastError(std::string error);
 
@@ -131,6 +135,7 @@ private:
     std::vector<std::string> configured_controlled_joint_names_;
     std::vector<std::string> controlled_joint_names_;
     std::vector<RealType> default_action_;
+    std::vector<RealType> previous_action_;
     std::vector<std::string> contact_link_names_;
     RLEnvironmentRewardSettings reward_settings_;
     std::string last_error_;

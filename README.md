@@ -95,6 +95,44 @@ env = gobot.RLEnvironment("res://world.jscn", robot="H2", backend="mujoco")
 observation, info = env.reset(seed=1)
 ```
 
+### RL And PPO Smoke
+
+The Python layer includes a small Gymnasium-style adapter and a minimal
+single-environment PPO runner. The adapter works without Gymnasium; if
+Gymnasium is installed it returns `spaces.Box` objects, otherwise it falls back
+to a lightweight `GobotBox`.
+
+Check the environment spaces:
+
+```bash
+PYTHONPATH="$PWD/build/python" python3 - <<'PY'
+import gobot
+from gobot_gym_adapter import GobotGymEnv
+
+gobot.set_project_path("/home/wqq/test_godot")
+env = GobotGymEnv("res://world.jscn", robot="H2", backend="mujoco")
+obs, info = env.reset(seed=1)
+print(info)
+print(env.observation_space.shape, env.action_space.shape)
+PY
+```
+
+Run the minimal PPO loop when PyTorch is installed:
+
+```bash
+PYTHONPATH="$PWD/build/python" python3 -m gobot_ppo \
+  --project /home/wqq/test_godot \
+  --scene res://world.jscn \
+  --robot H2 \
+  --backend mujoco \
+  --total-steps 4096 \
+  --rollout-steps 256
+```
+
+The current PPO path is intentionally small: C++ owns deterministic reset,
+fixed-step simulation, normalized joint-position actions, previous-action
+observations, and configurable reward terms; Python owns the training loop.
+
 ### Editable Install
 
 The repository includes a minimal `pyproject.toml` for local Python installs:
@@ -117,8 +155,9 @@ python -m pip install -e .
 
 The install rules place `gobot.cpython-*.so`, `libgobot.so`,
 `librttr_core.so.*`, optional MuJoCo runtime libraries, and
-`gobot_gym_adapter.py` together with `$ORIGIN` rpath, so an installed module
-does not need `LD_LIBRARY_PATH` for these local Gobot libraries.
+`gobot_gym_adapter.py` / `gobot_ppo.py` together with `$ORIGIN` rpath, so an
+installed module does not need `LD_LIBRARY_PATH` for these local Gobot
+libraries.
 
 Do not add a `python/gobot/__init__.py` package around the current extension
 module unless the extension is renamed to something like `gobot._gobot`; a

@@ -172,6 +172,8 @@ RLEnvironmentResetResult RLEnvironment::Reset(std::uint32_t seed) {
         return result;
     }
 
+    previous_action_.assign(controlled_joint_names_.size(), 0.0);
+
     if (!default_action_.empty()) {
         if (default_action_.size() != controlled_joint_names_.size()) {
             SetLastError(fmt::format("RL default action size mismatch for robot '{}': expected {}, got {}.",
@@ -188,6 +190,7 @@ RLEnvironmentResetResult RLEnvironment::Reset(std::uint32_t seed) {
             result.error = last_error_;
             return result;
         }
+        previous_action_ = default_action_;
     }
 
     result.ok = true;
@@ -214,11 +217,20 @@ RLEnvironmentStepResult RLEnvironment::Step(const std::vector<RealType>& action)
         return result;
     }
 
+    RealType action_rate_penalty = 0.0;
+    if (previous_action_.size() == action.size()) {
+        for (std::size_t index = 0; index < action.size(); ++index) {
+            const RealType delta = action[index] - previous_action_[index];
+            action_rate_penalty += delta * delta;
+        }
+    }
+
     if (!simulation_->SetRobotJointPositionTargetsFromNormalizedAction(robot_name_, controlled_joint_names_, action)) {
         SetLastError(simulation_->GetLastError());
         result.error = last_error_;
         return result;
     }
+    previous_action_ = action;
 
     if (!simulation_->StepOnce()) {
         SetLastError(simulation_->GetLastError());
@@ -233,7 +245,7 @@ RLEnvironmentStepResult RLEnvironment::Step(const std::vector<RealType>& action)
     result.simulation_time = simulation_->GetSimulationTime();
     const bool fallen = IsBaseFallen();
     result.truncated = max_episode_steps_ > 0 && episode_step_count_ >= max_episode_steps_;
-    result.reward = ComputeReward(fallen);
+    result.reward = ComputeReward(fallen, action_rate_penalty);
     result.terminated = reward_settings_.terminate_on_fall && fallen;
     result.error.clear();
     last_error_.clear();
@@ -278,6 +290,12 @@ std::vector<RealType> RLEnvironment::GetObservation() const {
         observation.push_back(joint_state->velocity);
     }
 
+    if (previous_action_.size() == controlled_joint_names_.size()) {
+        observation.insert(observation.end(), previous_action_.begin(), previous_action_.end());
+    } else {
+        observation.insert(observation.end(), controlled_joint_names_.size(), 0.0);
+    }
+
     for (const std::string& link_name : contact_link_names_) {
         observation.push_back(HasContactForLink(scene_state, robot_name_, link_name) ? 1.0 : 0.0);
     }
@@ -290,7 +308,7 @@ std::size_t RLEnvironment::GetActionSize() const {
 }
 
 std::size_t RLEnvironment::GetObservationSize() const {
-    return base_link_name_.empty() ? 0 : 13 + controlled_joint_names_.size() * 2 + contact_link_names_.size();
+    return base_link_name_.empty() ? 0 : 13 + controlled_joint_names_.size() * 3 + contact_link_names_.size();
 }
 
 std::vector<std::string> RLEnvironment::GetControlledJointNames() const {
@@ -387,6 +405,14 @@ RLVectorSpec RLEnvironment::GetObservationSpec() const {
                      -std::numeric_limits<RealType>::infinity(),
                      std::numeric_limits<RealType>::infinity(),
                      "radian_per_second_or_meter_per_second");
+    }
+
+    for (const std::string& joint_name : controlled_joint_names_) {
+        AddSpecEntry(&spec,
+                     joint_name + "/previous_action",
+                     -1.0,
+                     1.0,
+                     "normalized");
     }
 
     for (const std::string& link_name : contact_link_names_) {
@@ -626,8 +652,50 @@ bool RLEnvironment::IsBaseFallen() const {
     return tilt > reward_settings_.maximum_base_tilt_radians;
 }
 
-RealType RLEnvironment::ComputeReward(bool fallen) const {
-    return fallen ? reward_settings_.fallen_reward : reward_settings_.alive_reward;
+RealType RLEnvironment::ComputeReward(bool fallen, RealType action_rate_penalty) const {
+    if (fallen) {
+        return reward_settings_.fallen_reward;
+    }
+
+    RealType reward = reward_settings_.alive_reward;
+    if (reward_settings_.forward_velocity_reward_scale != 0.0 &&
+        simulation_ != nullptr &&
+        simulation_->HasWorld() &&
+        !base_link_name_.empty()) {
+        const PhysicsSceneState& scene_state = simulation_->GetWorld()->GetSceneState();
+        const PhysicsRobotState* robot_state = FindRobotState(scene_state, robot_name_);
+        const PhysicsLinkState* base_link_state =
+                robot_state == nullptr ? nullptr : FindLinkState(*robot_state, base_link_name_);
+        if (base_link_state != nullptr) {
+            const RealType error =
+                    base_link_state->linear_velocity.x() - reward_settings_.target_forward_velocity;
+            reward -= reward_settings_.forward_velocity_reward_scale * error * error;
+        }
+    }
+
+    if (reward_settings_.action_rate_penalty_scale != 0.0) {
+        reward -= reward_settings_.action_rate_penalty_scale * action_rate_penalty;
+    }
+
+    if (reward_settings_.effort_penalty_scale != 0.0 &&
+        simulation_ != nullptr &&
+        simulation_->HasWorld()) {
+        const PhysicsSceneState& scene_state = simulation_->GetWorld()->GetSceneState();
+        const PhysicsRobotState* robot_state = FindRobotState(scene_state, robot_name_);
+        if (robot_state != nullptr) {
+            RealType effort_penalty = 0.0;
+            for (const std::string& joint_name : controlled_joint_names_) {
+                const PhysicsJointState* joint_state = FindJointState(*robot_state, joint_name);
+                if (joint_state == nullptr) {
+                    continue;
+                }
+                effort_penalty += joint_state->effort * joint_state->effort;
+            }
+            reward -= reward_settings_.effort_penalty_scale * effort_penalty;
+        }
+    }
+
+    return reward;
 }
 
 void RLEnvironment::SetLastError(std::string error) {
@@ -669,6 +737,10 @@ GOBOT_REGISTRATION {
             .constructor()
             .property("alive_reward", &RLEnvironmentRewardSettings::alive_reward)
             .property("fallen_reward", &RLEnvironmentRewardSettings::fallen_reward)
+            .property("target_forward_velocity", &RLEnvironmentRewardSettings::target_forward_velocity)
+            .property("forward_velocity_reward_scale", &RLEnvironmentRewardSettings::forward_velocity_reward_scale)
+            .property("action_rate_penalty_scale", &RLEnvironmentRewardSettings::action_rate_penalty_scale)
+            .property("effort_penalty_scale", &RLEnvironmentRewardSettings::effort_penalty_scale)
             .property("minimum_base_height", &RLEnvironmentRewardSettings::minimum_base_height)
             .property("maximum_base_tilt_radians", &RLEnvironmentRewardSettings::maximum_base_tilt_radians)
             .property("terminate_on_fall", &RLEnvironmentRewardSettings::terminate_on_fall);

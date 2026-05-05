@@ -318,9 +318,15 @@ if(GOB_BUILD_PYTHON_BINDINGS)
             COMMAND ${CMAKE_COMMAND} -E copy_if_different
                     "${CMAKE_CURRENT_SOURCE_DIR}/python/gobot_gym_adapter.py"
                     "${CMAKE_BINARY_DIR}/python/gobot_gym_adapter.py"
+            COMMAND ${CMAKE_COMMAND} -E copy_if_different
+                    "${CMAKE_CURRENT_SOURCE_DIR}/python/gobot_ppo.py"
+                    "${CMAKE_BINARY_DIR}/python/gobot_ppo.py"
     )
     install(TARGETS gobot_python gobot LIBRARY DESTINATION "." COMPONENT python)
-    install(FILES "${CMAKE_CURRENT_SOURCE_DIR}/python/gobot_gym_adapter.py" DESTINATION "." COMPONENT python)
+    install(FILES
+            "${CMAKE_CURRENT_SOURCE_DIR}/python/gobot_gym_adapter.py"
+            "${CMAKE_CURRENT_SOURCE_DIR}/python/gobot_ppo.py"
+            DESTINATION "." COMPONENT python)
     if(TARGET spdlog)
         get_target_property(GOBOT_SPDLOG_TARGET_TYPE spdlog TYPE)
         if(GOBOT_SPDLOG_TARGET_TYPE STREQUAL "SHARED_LIBRARY")
