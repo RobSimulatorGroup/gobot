@@ -21,6 +21,8 @@
 #include <SDL_syswm.h>
 #include "glad/glad.h"
 
+#include <algorithm>
+#include <cmath>
 
 #ifndef ENTRY_CONFIG_USE_WAYLAND
 #	define ENTRY_CONFIG_USE_WAYLAND 0
@@ -37,6 +39,137 @@ namespace gobot {
 static const int s_default_width = 1280;
 static const int s_default_height = 720;
 static const char* s_default_window_title = "Gobot";
+
+float RoundedRectCoverage(float x,
+                          float y,
+                          float left,
+                          float top,
+                          float right,
+                          float bottom,
+                          float radius) {
+    const float center_x = std::clamp(x, left + radius, right - radius);
+    const float center_y = std::clamp(y, top + radius, bottom - radius);
+    const float dx = x - center_x;
+    const float dy = y - center_y;
+    const float distance = std::sqrt(dx * dx + dy * dy) - radius;
+    return std::clamp(0.5f - distance, 0.0f, 1.0f);
+}
+
+float CircleCoverage(float x, float y, float center_x, float center_y, float radius) {
+    const float dx = x - center_x;
+    const float dy = y - center_y;
+    const float distance = std::sqrt(dx * dx + dy * dy) - radius;
+    return std::clamp(0.5f - distance, 0.0f, 1.0f);
+}
+
+float CapsuleCoverage(float x, float y, float x0, float y0, float x1, float y1, float radius) {
+    const float vx = x1 - x0;
+    const float vy = y1 - y0;
+    const float wx = x - x0;
+    const float wy = y - y0;
+    const float len_sq = vx * vx + vy * vy;
+    const float t = len_sq > 0.0f ? std::clamp((wx * vx + wy * vy) / len_sq, 0.0f, 1.0f) : 0.0f;
+    const float px = x0 + vx * t;
+    const float py = y0 + vy * t;
+    const float dx = x - px;
+    const float dy = y - py;
+    const float distance = std::sqrt(dx * dx + dy * dy) - radius;
+    return std::clamp(0.5f - distance, 0.0f, 1.0f);
+}
+
+float SegmentCoverage(float x, float y, float x0, float y0, float x1, float y1, float width) {
+    return CapsuleCoverage(x, y, x0, y0, x1, y1, width * 0.5f);
+}
+
+void BlendPixel(SDL_Surface* surface, int x, int y, SDL_Color color, float alpha) {
+    if (alpha <= 0.0f) {
+        return;
+    }
+
+    auto* pixels = static_cast<std::uint32_t*>(surface->pixels);
+    const int index = y * surface->w + x;
+
+    std::uint8_t dst_r = 0;
+    std::uint8_t dst_g = 0;
+    std::uint8_t dst_b = 0;
+    std::uint8_t dst_a = 0;
+    SDL_GetRGBA(pixels[index], surface->format, &dst_r, &dst_g, &dst_b, &dst_a);
+
+    const float source_alpha = std::clamp(alpha * (static_cast<float>(color.a) / 255.0f), 0.0f, 1.0f);
+    const float inverse_alpha = 1.0f - source_alpha;
+    const auto blend_channel = [&](std::uint8_t src, std::uint8_t dst) {
+        return static_cast<std::uint8_t>(std::round(static_cast<float>(src) * source_alpha +
+                                                    static_cast<float>(dst) * inverse_alpha));
+    };
+
+    const std::uint8_t out_r = blend_channel(color.r, dst_r);
+    const std::uint8_t out_g = blend_channel(color.g, dst_g);
+    const std::uint8_t out_b = blend_channel(color.b, dst_b);
+    const std::uint8_t out_a = static_cast<std::uint8_t>(std::round(255.0f * (source_alpha +
+                                                                              (static_cast<float>(dst_a) / 255.0f) *
+                                                                                      inverse_alpha)));
+    pixels[index] = SDL_MapRGBA(surface->format, out_r, out_g, out_b, out_a);
+}
+
+void SetGobotWindowIcon(SDL_Window* window) {
+    constexpr int icon_size = 64;
+    SDL_Surface* surface = SDL_CreateRGBSurfaceWithFormat(0,
+                                                          icon_size,
+                                                          icon_size,
+                                                          32,
+                                                          SDL_PIXELFORMAT_RGBA32);
+    if (surface == nullptr) {
+        LOG_WARN("Failed to create Gobot window icon surface: {}", SDL_GetError());
+        return;
+    }
+
+    SDL_LockSurface(surface);
+    auto* pixels = static_cast<std::uint32_t*>(surface->pixels);
+    std::fill(pixels, pixels + icon_size * icon_size, SDL_MapRGBA(surface->format, 0, 0, 0, 0));
+
+    for (int y = 0; y < icon_size; ++y) {
+        for (int x = 0; x < icon_size; ++x) {
+            const float fx = static_cast<float>(x) + 0.5f;
+            const float fy = static_cast<float>(y) + 0.5f;
+
+            const float bg = RoundedRectCoverage(fx, fy, 2.0f, 2.0f, 62.0f, 62.0f, 14.0f);
+            if (bg > 0.0f) {
+                BlendPixel(surface, x, y, {47, 52, 56, 255}, bg);
+            }
+
+            const SDL_Color outline_color{52, 213, 255, 255};
+            const float left = 12.0f;
+            const float top = 14.0f;
+            const float right = 52.0f;
+            const float bottom = 52.0f;
+            BlendPixel(surface, x, y, outline_color, SegmentCoverage(fx, fy, left, top, left + 7.0f, top, 4.6f));
+            BlendPixel(surface, x, y, outline_color, SegmentCoverage(fx, fy, left, top, left, top + 7.0f, 4.6f));
+            BlendPixel(surface, x, y, outline_color, SegmentCoverage(fx, fy, right - 7.0f, top, right, top, 4.6f));
+            BlendPixel(surface, x, y, outline_color, SegmentCoverage(fx, fy, right, top, right, top + 7.0f, 4.6f));
+            BlendPixel(surface, x, y, outline_color, SegmentCoverage(fx, fy, right, bottom - 7.0f, right, bottom, 4.6f));
+            BlendPixel(surface, x, y, outline_color, SegmentCoverage(fx, fy, right - 7.0f, bottom, right, bottom, 4.6f));
+            BlendPixel(surface, x, y, outline_color, SegmentCoverage(fx, fy, left, bottom - 7.0f, left, bottom, 4.6f));
+            BlendPixel(surface, x, y, outline_color, SegmentCoverage(fx, fy, left, bottom, left + 7.0f, bottom, 4.6f));
+            BlendPixel(surface, x, y, outline_color, RoundedRectCoverage(fx, fy, left, top, right, bottom, 1.0f) * 0.16f);
+            BlendPixel(surface, x, y, {52, 213, 255, 95}, RoundedRectCoverage(fx, fy, left - 1.8f, top - 1.8f, right + 1.8f, bottom + 1.8f, 2.0f) * 0.18f);
+
+            const SDL_Color body_color{243, 245, 247, 255};
+            BlendPixel(surface, x, y, body_color, SegmentCoverage(fx, fy, 32.0f, 21.5f, 32.0f, 17.0f, 2.7f));
+            BlendPixel(surface, x, y, body_color, CircleCoverage(fx, fy, 32.0f, 15.0f, 2.2f));
+            BlendPixel(surface, x, y, body_color, RoundedRectCoverage(fx, fy, 18.5f, 24.0f, 45.5f, 48.5f, 7.4f));
+            BlendPixel(surface, x, y, body_color, RoundedRectCoverage(fx, fy, 13.5f, 34.0f, 21.0f, 43.5f, 2.3f));
+            BlendPixel(surface, x, y, body_color, RoundedRectCoverage(fx, fy, 43.0f, 34.0f, 50.5f, 43.5f, 2.3f));
+            BlendPixel(surface, x, y, {48, 54, 58, 255}, RoundedRectCoverage(fx, fy, 22.0f, 29.0f, 42.0f, 41.5f, 4.5f));
+            BlendPixel(surface, x, y, outline_color, CircleCoverage(fx, fy, 27.0f, 35.0f, 2.3f));
+            BlendPixel(surface, x, y, outline_color, CircleCoverage(fx, fy, 37.0f, 35.0f, 2.3f));
+            BlendPixel(surface, x, y, outline_color, SegmentCoverage(fx, fy, 28.0f, 40.0f, 36.0f, 40.0f, 1.6f));
+        }
+    }
+
+    SDL_UnlockSurface(surface);
+    SDL_SetWindowIcon(window, surface);
+    SDL_FreeSurface(surface);
+}
 
 SDLWindow::SDLWindow()
 {
@@ -70,6 +203,7 @@ SDLWindow::SDLWindow()
 
     CRASH_COND_MSG(sdl2_window_ == nullptr, fmt::format("Error creating window: {}", SDL_GetError()));
 
+    SetGobotWindowIcon(sdl2_window_);
 
     if (RS::GetInstance()->GetRendererType() == RendererType::OpenGL46) {
         SDL_GLContext gl_context = SDL_GL_CreateContext(sdl2_window_);

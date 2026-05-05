@@ -22,6 +22,27 @@
 namespace gobot {
 namespace {
 
+TextEditor::Palette PythonPalette() {
+    TextEditor::Palette palette = TextEditor::GetDarkPalette();
+    palette[static_cast<unsigned>(TextEditor::PaletteIndex::Default)] = IM_COL32(212, 212, 212, 255);
+    palette[static_cast<unsigned>(TextEditor::PaletteIndex::Keyword)] = IM_COL32(86, 156, 214, 255);
+    palette[static_cast<unsigned>(TextEditor::PaletteIndex::Number)] = IM_COL32(181, 206, 168, 255);
+    palette[static_cast<unsigned>(TextEditor::PaletteIndex::String)] = IM_COL32(206, 145, 120, 255);
+    palette[static_cast<unsigned>(TextEditor::PaletteIndex::CharLiteral)] = IM_COL32(206, 145, 120, 255);
+    palette[static_cast<unsigned>(TextEditor::PaletteIndex::Punctuation)] = IM_COL32(220, 220, 220, 255);
+    palette[static_cast<unsigned>(TextEditor::PaletteIndex::Identifier)] = IM_COL32(212, 212, 212, 255);
+    palette[static_cast<unsigned>(TextEditor::PaletteIndex::KnownIdentifier)] = IM_COL32(78, 201, 176, 255);
+    palette[static_cast<unsigned>(TextEditor::PaletteIndex::PreprocIdentifier)] = IM_COL32(197, 134, 192, 255);
+    palette[static_cast<unsigned>(TextEditor::PaletteIndex::Comment)] = IM_COL32(106, 153, 85, 255);
+    palette[static_cast<unsigned>(TextEditor::PaletteIndex::MultiLineComment)] = IM_COL32(106, 153, 85, 255);
+    palette[static_cast<unsigned>(TextEditor::PaletteIndex::Background)] = IM_COL32(20, 20, 20, 255);
+    palette[static_cast<unsigned>(TextEditor::PaletteIndex::LineNumber)] = IM_COL32(43, 145, 175, 255);
+    palette[static_cast<unsigned>(TextEditor::PaletteIndex::CurrentLineFill)] = IM_COL32(255, 255, 255, 12);
+    palette[static_cast<unsigned>(TextEditor::PaletteIndex::CurrentLineFillInactive)] = IM_COL32(255, 255, 255, 8);
+    palette[static_cast<unsigned>(TextEditor::PaletteIndex::CurrentLineEdge)] = IM_COL32(60, 60, 60, 255);
+    return palette;
+}
+
 TextEditor::LanguageDefinition PythonLanguageDefinition() {
     TextEditor::LanguageDefinition language;
 
@@ -36,9 +57,11 @@ TextEditor::LanguageDefinition PythonLanguageDefinition() {
     }
 
     static const char* const identifiers[] = {
-            "abs", "all", "any", "bool", "dict", "enumerate", "float", "int",
-            "len", "list", "max", "min", "open", "print", "range", "set", "str",
-            "sum", "tuple", "type", "zip", "gobot"};
+            "abs", "all", "any", "bool", "bytes", "callable", "chr", "dict", "dir",
+            "enumerate", "Exception", "float", "getattr", "hasattr", "int", "isinstance",
+            "len", "list", "max", "min", "object", "open", "print", "property", "range",
+            "repr", "set", "setattr", "str", "sum", "super", "tuple", "type", "zip",
+            "gobot"};
     for (const char* identifier_name : identifiers) {
         TextEditor::Identifier identifier;
         identifier.mDeclaration = "Python built-in";
@@ -46,10 +69,20 @@ TextEditor::LanguageDefinition PythonLanguageDefinition() {
     }
 
     language.mTokenRegexStrings.push_back(
-            std::make_pair<std::string, TextEditor::PaletteIndex>("\\\"\\\"\\\"(\\\\.|.|\\n)*?\\\"\\\"\\\"",
+            std::make_pair<std::string, TextEditor::PaletteIndex>("0[xX][0-9a-fA-F]+",
+                                                                  TextEditor::PaletteIndex::Number));
+    language.mTokenRegexStrings.push_back(
+            std::make_pair<std::string, TextEditor::PaletteIndex>("0[bB][01]+",
+                                                                  TextEditor::PaletteIndex::Number));
+    language.mTokenRegexStrings.push_back(
+            std::make_pair<std::string, TextEditor::PaletteIndex>(
+                    "[+-]?(([0-9]+([.][0-9]*)?)|([.][0-9]+))([eE][+-]?[0-9]+)?",
+                    TextEditor::PaletteIndex::Number));
+    language.mTokenRegexStrings.push_back(
+            std::make_pair<std::string, TextEditor::PaletteIndex>("[rRuUbBfF]*\\\"\\\"\\\".*\\\"\\\"\\\"",
                                                                   TextEditor::PaletteIndex::String));
     language.mTokenRegexStrings.push_back(
-            std::make_pair<std::string, TextEditor::PaletteIndex>("\\'\\'\\'(\\\\.|.|\\n)*?\\'\\'\\'",
+            std::make_pair<std::string, TextEditor::PaletteIndex>("[rRuUbBfF]*\\'\\'\\'.*\\'\\'\\'",
                                                                   TextEditor::PaletteIndex::String));
     language.mTokenRegexStrings.push_back(
             std::make_pair<std::string, TextEditor::PaletteIndex>("[rRuUbBfF]*\\\"(\\\\.|[^\\\"])*\\\"",
@@ -58,12 +91,6 @@ TextEditor::LanguageDefinition PythonLanguageDefinition() {
             std::make_pair<std::string, TextEditor::PaletteIndex>("[rRuUbBfF]*\\'([^\\\\\\']|\\\\.)*\\'",
                                                                   TextEditor::PaletteIndex::String));
     language.mTokenRegexStrings.push_back(
-            std::make_pair<std::string, TextEditor::PaletteIndex>("[+-]?([0-9]+([.][0-9]*)?|[.][0-9]+)([eE][+-]?[0-9]+)?",
-                                                                  TextEditor::PaletteIndex::Number));
-    language.mTokenRegexStrings.push_back(
-            std::make_pair<std::string, TextEditor::PaletteIndex>("0[xX][0-9a-fA-F]+",
-                                                                  TextEditor::PaletteIndex::Number));
-    language.mTokenRegexStrings.push_back(
             std::make_pair<std::string, TextEditor::PaletteIndex>("[a-zA-Z_][a-zA-Z0-9_]*",
                                                                   TextEditor::PaletteIndex::Identifier));
     language.mTokenRegexStrings.push_back(
@@ -71,6 +98,8 @@ TextEditor::LanguageDefinition PythonLanguageDefinition() {
                                                                   TextEditor::PaletteIndex::Punctuation));
 
     language.mSingleLineComment = "#";
+    language.mCommentStart = "\001";
+    language.mCommentEnd = "\002";
     language.mPreprocChar = 0;
     language.mCaseSensitive = true;
     language.mAutoIndentation = true;
@@ -112,6 +141,7 @@ PythonPanel::PythonPanel() {
     SetImGuiWindowSize(Vector2f(760, 520), ImGuiCond_FirstUseEver);
 
     editor_.SetLanguageDefinition(PythonLanguageDefinition());
+    editor_.SetPalette(PythonPalette());
     editor_.SetTabSize(4);
     editor_.SetShowWhitespaces(false);
     editor_.SetText(DefaultPythonScript());

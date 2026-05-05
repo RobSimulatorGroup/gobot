@@ -411,6 +411,7 @@ bool SceneEditorPanel::DrawNode(Node* node)
         const Ref<PackedScene> scene_instance = node->GetSceneInstance();
         const bool is_scene_instance = IsSceneInstanceNode(node);
         const bool can_open_scene_instance = is_scene_instance && !scene_instance->GetPath().empty();
+        bool delete_node = false;
 
         ImGui::PushID(node);
 
@@ -438,6 +439,8 @@ bool SceneEditorPanel::DrawNode(Node* node)
                                            node_flags,
                                            "%s",
                                            is_scene_instance ? ICON_MDI_LINK_BOX_OUTLINE : ICON_MDI_CUBE_OUTLINE);
+        ImRect node_row_rect(ImGui::GetItemRectMin(), ImGui::GetItemRectMax());
+        node_row_rect.Max.x = ImGui::GetWindowPos().x + ImGui::GetWindowContentRegionMax().x;
         {
             // Allow clicking of icon and text. Need twice as they are separated
             if(ImGui::IsItemClicked())
@@ -451,6 +454,7 @@ bool SceneEditorPanel::DrawNode(Node* node)
         ImGui::SameLine();
         if(!double_clicked)
             ImGui::TextUnformatted(name.c_str());
+        node_row_rect.Add(ImRect(ImGui::GetItemRectMin(), ImGui::GetItemRectMax()));
         if (!dropped_scene_on_row) {
             AcceptSceneResourceDrop();
         }
@@ -464,10 +468,15 @@ bool SceneEditorPanel::DrawNode(Node* node)
                                                           : "Scene instance has no resource path");
             }
 
-            const float open_button_width = ImGui::GetFrameHeight();
+            const float icon_button_width = ImGui::GetFrameHeight();
+            const float button_spacing = ImGui::GetStyle().ItemInnerSpacing.x;
+            const int right_button_count = (can_delete ? 2 : 1);
+            const float right_buttons_width =
+                    icon_button_width * static_cast<float>(right_button_count) +
+                    button_spacing * static_cast<float>(right_button_count - 1);
             const float row_end_x = ImGui::GetWindowContentRegionMax().x;
-            if (ImGui::GetCursorPosX() + open_button_width < row_end_x) {
-                ImGui::SameLine(row_end_x - open_button_width);
+            if (ImGui::GetCursorPosX() + right_buttons_width < row_end_x) {
+                ImGui::SameLine(row_end_x - right_buttons_width);
             } else {
                 ImGui::SameLine();
             }
@@ -484,6 +493,24 @@ bool SceneEditorPanel::DrawNode(Node* node)
             if (!can_open_scene_instance) {
                 ImGui::EndDisabled();
             }
+
+            if (can_delete) {
+                ImGui::SameLine();
+                if (ImGui::SmallButton(ICON_MDI_DELETE "##DeleteSceneInstance")) {
+                    delete_node = true;
+                }
+                if (ImGui::IsItemHovered()) {
+                    ImGui::SetTooltip("Remove scene instance from the current scene");
+                }
+            }
+        }
+
+        const bool node_row_hovered =
+                ImGui::IsMouseHoveringRect(node_row_rect.Min, node_row_rect.Max, false) &&
+                ImGui::IsWindowHovered(ImGuiHoveredFlags_AllowWhenBlockedByPopup);
+        if (node_row_hovered && ImGui::IsMouseReleased(ImGuiMouseButton_Right)) {
+            editor->SetSelected(node);
+            ImGui::OpenPopup("NodeContext");
         }
 
         if(double_clicked) {
@@ -495,8 +522,7 @@ bool SceneEditorPanel::DrawNode(Node* node)
             ImGui::PopStyleVar();
         }
 
-        bool delete_node = false;
-        if(ImGui::BeginPopupContextItem("NodeContext")) {
+        if(ImGui::BeginPopup("NodeContext")) {
             editor->SetSelected(node);
             if (is_scene_instance) {
                 ImGui::BeginDisabled();
@@ -519,7 +545,10 @@ bool SceneEditorPanel::DrawNode(Node* node)
             if (!can_delete) {
                 ImGui::BeginDisabled();
             }
-            if (ImGui::MenuItem(ICON_MDI_DELETE " Delete Node")) {
+            const char* delete_label = is_scene_instance
+                                       ? ICON_MDI_DELETE " Remove Scene Instance"
+                                       : ICON_MDI_DELETE " Delete Node";
+            if (ImGui::MenuItem(delete_label)) {
                 delete_node = can_delete;
             }
             if (!can_delete) {
@@ -528,12 +557,12 @@ bool SceneEditorPanel::DrawNode(Node* node)
             ImGui::EndPopup();
         }
 
-        if(ImGui::IsItemClicked() && !delete_node)
+        if(node_row_hovered && ImGui::IsMouseReleased(ImGuiMouseButton_Left) && !delete_node)
             editor->SetSelected(node);
-        else if(double_clicked_ == node && ImGui::IsMouseClicked(ImGuiMouseButton_Left) && !ImGui::IsItemHovered(ImGuiHoveredFlags_None))
+        else if(double_clicked_ == node && ImGui::IsMouseClicked(ImGuiMouseButton_Left) && !node_row_hovered)
             double_clicked_ = nullptr;
 
-        if(ImGui::IsMouseDoubleClicked(ImGuiMouseButton_Left) && ImGui::IsItemHovered(ImGuiHoveredFlags_None)) {
+        if(ImGui::IsMouseDoubleClicked(ImGuiMouseButton_Left) && node_row_hovered) {
             double_clicked_ = node;
         }
 

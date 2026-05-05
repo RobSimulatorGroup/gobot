@@ -6,12 +6,15 @@
 */
 
 #include "gobot/main/main.hpp"
+#include "gobot/platform/editor_embedded_resources.hpp"
 #include "gobot/scene/window.hpp"
 #include "gobot/platform/linux/os_linux.hpp"
 
 using namespace gobot;
 
 int main(int argc, char *argv[]) {
+    (void)GetEmbeddedEditorIconSvgSize();
+
     if (!Main::Setup(argc, argv)) {
         return -1;
     }

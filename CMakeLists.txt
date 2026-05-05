@@ -216,6 +216,19 @@ INCLUDE(GenerateExportHeader)
 
 add_subdirectory(3rdparty)
 
+set(GOBOT_GENERATED_DIR "${PROJECT_BINARY_DIR}/generated/gobot/generated")
+set(GOBOT_EDITOR_ICON_HEADER "${GOBOT_GENERATED_DIR}/editor_icon_svg.hpp")
+add_custom_command(
+        OUTPUT "${GOBOT_EDITOR_ICON_HEADER}"
+        COMMAND ${CMAKE_COMMAND} -E make_directory "${GOBOT_GENERATED_DIR}"
+        COMMAND xxd -i
+                "icon.svg"
+                "${GOBOT_EDITOR_ICON_HEADER}"
+        WORKING_DIRECTORY "${CMAKE_CURRENT_SOURCE_DIR}"
+        DEPENDS "${CMAKE_CURRENT_SOURCE_DIR}/icon.svg"
+        VERBATIM)
+add_custom_target(gobot_editor_resources DEPENDS "${GOBOT_EDITOR_ICON_HEADER}")
+
 file(GLOB_RECURSE SOURCE_CORE CONFIGURE_DEPENDS "src/gobot/core/*.cpp")
 file(GLOB_RECURSE SOURCE_SCENE CONFIGURE_DEPENDS "src/gobot/scene/*.cpp")
 file(GLOB_RECURSE SOURCE_PHYSICS CONFIGURE_DEPENDS "src/gobot/physics/*.cpp")
@@ -228,7 +241,9 @@ file(GLOB_RECURSE SOURCE_MAIN CONFIGURE_DEPENDS "src/gobot/main/*.cpp")
 # https://github.com/bincrafters/community/issues/466#issuecomment-426265654
 add_library(gobot SHARED ${SOURCE_DRIVERS} ${SOURCE_MAIN} ${SOURCE_CORE} ${SOURCE_RENDERING} ${SOURCE_SCENE} ${SOURCE_PHYSICS} ${SOURCE_SIMULATION} ${SOURCE_EDITOR})
 target_compile_options(gobot PUBLIC "-fno-gnu-unique" "-Wno-volatile" "-Wno-deprecated-enum-enum-conversion")
-target_sources(gobot PRIVATE 3rdparty/ImGuiColorTextEdit/TextEditor.cpp)
+target_sources(gobot
+        PRIVATE
+        3rdparty/ImGuiColorTextEdit/TextEditor.cpp)
 
 # https://forum.qt.io/topic/97296/export-qobject-based-class-from-dll/2
 GENERATE_EXPORT_HEADER(gobot)
@@ -237,6 +252,7 @@ target_include_directories(gobot
     PUBLIC
     ${CMAKE_CURRENT_SOURCE_DIR}/include
     ${PROJECT_BINARY_DIR}
+    ${PROJECT_BINARY_DIR}/generated
     ${CMAKE_CURRENT_SOURCE_DIR}/3rdparty/ImGuiColorTextEdit
 )
 
@@ -325,13 +341,6 @@ if(GOB_BUILD_PYTHON_BINDINGS)
     endif()
 endif()
 
-# copy icon to bin
-add_custom_command(
-        TARGET gobot POST_BUILD
-        COMMAND ${CMAKE_COMMAND} -E copy
-        ${CMAKE_CURRENT_SOURCE_DIR}/icon.svg
-        ${CMAKE_BINARY_DIR}/bin/icon.svg)
-
 set_target_properties(gobot
     PROPERTIES
         CMAKE_ARCHIVE_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/lib"
@@ -363,8 +372,10 @@ list(REMOVE_ITEM SOURCE_PLATFORM
 add_executable(gobot_editor
         ${SOURCE_PLATFORM}
         ${GOBOT_PYTHON_EMBED_SOURCE}
+        src/gobot/platform/editor_embedded_resources.cpp
         src/gobot/platform/linux/gobot_linux.cpp
 )
+add_dependencies(gobot_editor gobot_editor_resources)
 target_link_libraries(gobot_editor PRIVATE gobot)
 
 add_executable(gobot_headless
