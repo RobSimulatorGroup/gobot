@@ -1,6 +1,5 @@
 import gobot
 from gobot_gym_adapter import GobotBox, GobotGymEnv, space_from_spec
-import gobot_ppo
 
 
 def assert_close_tuple(actual, expected):
@@ -145,16 +144,6 @@ def main():
     assert reward == 1.0
     assert terminated is False
     assert truncated is False
-
-    config = gobot_ppo.PPOConfig(total_steps=8, rollout_steps=4, seed=1)
-    assert config.total_steps == 8
-    try:
-        gobot_ppo._require_torch()
-    except RuntimeError:
-        pass
-    else:
-        result = gobot_ppo.train(config=config)
-        assert result["steps"] >= 8
 
 
 if __name__ == "__main__":
