@@ -5,9 +5,16 @@
 
 #pragma once
 
-#include "gobot/physics/physics_types.hpp"
+#include "gobot/core/math/geometry.hpp"
 
 namespace gobot {
+
+enum class PhysicsJointControlMode {
+    Passive,
+    Position,
+    Velocity,
+    Effort
+};
 
 struct JointControllerGains {
     RealType position_stiffness{0.0};
@@ -34,6 +41,9 @@ struct JointControllerState {
     RealType position{0.0};
     RealType velocity{0.0};
 };
+
+struct PhysicsJointSnapshot;
+struct PhysicsJointState;
 
 class GOBOT_EXPORT JointController {
 public:

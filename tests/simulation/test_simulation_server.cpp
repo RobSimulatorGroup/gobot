@@ -268,6 +268,35 @@ TEST(TestSimulationServer, maps_normalized_robot_action_to_joint_position_target
     gobot::Object::Delete(robot);
 }
 
+TEST(TestSimulationServer, default_joint_gains_update_existing_world_settings) {
+    gobot::SimulationServer simulation_server;
+
+    gobot::Robot3D* robot = CreateRobotScene();
+    ASSERT_TRUE(simulation_server.BuildWorldFromScene(robot));
+
+    gobot::JointControllerGains gains;
+    gains.position_stiffness = 40.0;
+    gains.velocity_damping = 4.0;
+    gains.integral_gain = 1.5;
+    gains.integral_limit = 0.25;
+    simulation_server.SetDefaultJointGains(gains);
+
+    const gobot::JointControllerGains& server_gains = simulation_server.GetDefaultJointGains();
+    EXPECT_DOUBLE_EQ(server_gains.position_stiffness, 40.0);
+    EXPECT_DOUBLE_EQ(server_gains.velocity_damping, 4.0);
+    EXPECT_DOUBLE_EQ(server_gains.integral_gain, 1.5);
+    EXPECT_DOUBLE_EQ(server_gains.integral_limit, 0.25);
+
+    const gobot::JointControllerGains& world_gains =
+            simulation_server.GetWorld()->GetSettings().default_joint_gains;
+    EXPECT_DOUBLE_EQ(world_gains.position_stiffness, 40.0);
+    EXPECT_DOUBLE_EQ(world_gains.velocity_damping, 4.0);
+    EXPECT_DOUBLE_EQ(world_gains.integral_gain, 1.5);
+    EXPECT_DOUBLE_EQ(world_gains.integral_limit, 0.25);
+
+    gobot::Object::Delete(robot);
+}
+
 TEST(TestSimulationServer, rebuild_world_preserves_compatible_joint_state_by_name) {
     gobot::SimulationServer simulation_server;
 

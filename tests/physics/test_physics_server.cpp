@@ -46,8 +46,10 @@ TEST(TestPhysicsServer, creates_world_for_selected_backend) {
     gobot::PhysicsWorldSettings settings;
     settings.fixed_time_step = 1.0 / 120.0;
     settings.gravity = {0.0, 0.0, -1.0};
-    settings.default_position_stiffness = 25.0;
-    settings.default_velocity_damping = 5.0;
+    settings.default_joint_gains.position_stiffness = 25.0;
+    settings.default_joint_gains.velocity_damping = 5.0;
+    settings.default_joint_gains.integral_gain = 1.5;
+    settings.default_joint_gains.integral_limit = 0.25;
 
     gobot::Ref<gobot::PhysicsWorld> world = physics_server.CreateWorld(settings);
     ASSERT_TRUE(world.IsValid());
@@ -55,8 +57,10 @@ TEST(TestPhysicsServer, creates_world_for_selected_backend) {
     EXPECT_TRUE(world->IsAvailable());
     EXPECT_DOUBLE_EQ(world->GetSettings().fixed_time_step, settings.fixed_time_step);
     EXPECT_TRUE(world->GetSettings().gravity.isApprox(settings.gravity, CMP_EPSILON));
-    EXPECT_DOUBLE_EQ(world->GetSettings().default_position_stiffness, 25.0);
-    EXPECT_DOUBLE_EQ(world->GetSettings().default_velocity_damping, 5.0);
+    EXPECT_DOUBLE_EQ(world->GetSettings().default_joint_gains.position_stiffness, 25.0);
+    EXPECT_DOUBLE_EQ(world->GetSettings().default_joint_gains.velocity_damping, 5.0);
+    EXPECT_DOUBLE_EQ(world->GetSettings().default_joint_gains.integral_gain, 1.5);
+    EXPECT_DOUBLE_EQ(world->GetSettings().default_joint_gains.integral_limit, 0.25);
 }
 
 TEST(TestPhysicsServer, captures_robot_scene_snapshot) {

@@ -37,6 +37,10 @@ public:
 
     void SetPhysicsWorldSettings(const PhysicsWorldSettings& settings);
 
+    const JointControllerGains& GetDefaultJointGains() const;
+
+    void SetDefaultJointGains(const JointControllerGains& gains);
+
     RealType GetFixedTimeStep() const;
 
     void SetFixedTimeStep(RealType fixed_time_step);

@@ -12,6 +12,7 @@
 
 #include "gobot/core/math/geometry.hpp"
 #include "gobot/core/ref_counted.hpp"
+#include "gobot/physics/joint_controller.hpp"
 
 namespace gobot {
 
@@ -38,13 +39,6 @@ enum class PhysicsShapeType {
     Mesh
 };
 
-enum class PhysicsJointControlMode {
-    Passive,
-    Position,
-    Velocity,
-    Effort
-};
-
 enum class PhysicsLinkRole {
     Physical,
     VirtualRoot
@@ -63,8 +57,7 @@ struct PhysicsBackendInfo {
 struct PhysicsWorldSettings {
     Vector3 gravity{0.0, 0.0, -9.81};
     RealType fixed_time_step{1.0 / 240.0};
-    RealType default_position_stiffness{100.0};
-    RealType default_velocity_damping{10.0};
+    JointControllerGains default_joint_gains{100.0, 10.0, 0.0, 0.0};
 };
 
 struct PhysicsShapeSnapshot {

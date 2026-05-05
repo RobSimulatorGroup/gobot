@@ -12,6 +12,7 @@
 #endif
 
 #include "gobot/physics/physics_world.hpp"
+#include "gobot/physics/joint_controller.hpp"
 
 namespace gobot {
 
@@ -78,6 +79,7 @@ private:
         int qpos_address{-1};
         int dof_address{-1};
         int joint_type{-1};
+        JointController controller;
     };
 
     struct MuJoCoLinkBinding {

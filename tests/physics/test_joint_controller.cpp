@@ -1,6 +1,7 @@
 #include <gtest/gtest.h>
 
 #include <gobot/physics/joint_controller.hpp>
+#include <gobot/physics/physics_types.hpp>
 
 TEST(TestJointController, position_control_computes_pd_effort) {
     gobot::JointController controller({10.0, 2.0, 0.0, 0.0});

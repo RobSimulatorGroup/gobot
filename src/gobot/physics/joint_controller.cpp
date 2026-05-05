@@ -8,6 +8,9 @@
 #include <algorithm>
 #include <cmath>
 
+#include "gobot/physics/physics_types.hpp"
+#include "gobot/core/registration.hpp"
+
 namespace gobot {
 namespace {
 
@@ -128,3 +131,14 @@ JointControllerCommand MakeJointControllerCommand(const PhysicsJointState& joint
 }
 
 } // namespace gobot
+
+GOBOT_REGISTRATION {
+
+    Class_<JointControllerGains>("JointControllerGains")
+            .constructor()
+            .property("position_stiffness", &JointControllerGains::position_stiffness)
+            .property("velocity_damping", &JointControllerGains::velocity_damping)
+            .property("integral_gain", &JointControllerGains::integral_gain)
+            .property("integral_limit", &JointControllerGains::integral_limit);
+
+};

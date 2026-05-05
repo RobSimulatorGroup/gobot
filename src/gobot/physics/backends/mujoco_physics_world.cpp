@@ -633,6 +633,7 @@ void MuJoCoPhysicsWorld::BuildJointBindings() {
             binding.qpos_address = model->jnt_qposadr[joint_id];
             binding.dof_address = model->jnt_dofadr[joint_id];
             binding.joint_type = model->jnt_type[joint_id];
+            binding.controller.SetGains(settings_.default_joint_gains);
             joint_bindings_.emplace_back(binding);
         }
     }
@@ -663,7 +664,7 @@ void MuJoCoPhysicsWorld::ApplyControlsToMuJoCo() {
         data->qfrc_applied[velocity_index] = 0.0;
     }
 
-    for (const MuJoCoJointBinding& binding : joint_bindings_) {
+    for (MuJoCoJointBinding& binding : joint_bindings_) {
         if (binding.robot_index >= scene_state_.robots.size()) {
             continue;
         }
@@ -703,12 +704,7 @@ void MuJoCoPhysicsWorld::ApplyControlsToMuJoCo() {
             continue;
         }
 
-        JointController controller({
-                settings_.default_position_stiffness,
-                settings_.default_velocity_damping,
-                0.0,
-                0.0
-        });
+        binding.controller.SetGains(settings_.default_joint_gains);
 
         JointControllerLimits limits;
         if (binding.robot_index < scene_snapshot_.robots.size() &&
@@ -717,10 +713,10 @@ void MuJoCoPhysicsWorld::ApplyControlsToMuJoCo() {
         }
 
         data->qfrc_applied[binding.dof_address] =
-                controller.ComputeEffort(MakeJointControllerState(joint_state),
-                                         MakeJointControllerCommand(joint_state),
-                                         limits,
-                                         settings_.fixed_time_step);
+                binding.controller.ComputeEffort(MakeJointControllerState(joint_state),
+                                                 MakeJointControllerCommand(joint_state),
+                                                 limits,
+                                                 settings_.fixed_time_step);
     }
 }
 

@@ -128,6 +128,17 @@ void SimulationServer::SetPhysicsWorldSettings(const PhysicsWorldSettings& setti
     }
 }
 
+const JointControllerGains& SimulationServer::GetDefaultJointGains() const {
+    return physics_world_settings_.default_joint_gains;
+}
+
+void SimulationServer::SetDefaultJointGains(const JointControllerGains& gains) {
+    physics_world_settings_.default_joint_gains = gains;
+    if (world_.IsValid()) {
+        world_->SetSettings(physics_world_settings_);
+    }
+}
+
 RealType SimulationServer::GetFixedTimeStep() const {
     return physics_world_settings_.fixed_time_step;
 }
@@ -564,6 +575,7 @@ GOBOT_REGISTRATION {
             .constructor()(CtorAsRawPtr)
             .property("backend_type", &SimulationServer::GetBackendType, &SimulationServer::SetBackendType)
             .property("fixed_time_step", &SimulationServer::GetFixedTimeStep, &SimulationServer::SetFixedTimeStep)
+            .property("default_joint_gains", &SimulationServer::GetDefaultJointGains, &SimulationServer::SetDefaultJointGains)
             .property("time_scale", &SimulationServer::GetTimeScale, &SimulationServer::SetTimeScale)
             .property("max_sub_steps", &SimulationServer::GetMaxSubSteps, &SimulationServer::SetMaxSubSteps)
             .property("paused", &SimulationServer::IsPaused, &SimulationServer::SetPaused)
