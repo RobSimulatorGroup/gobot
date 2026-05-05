@@ -144,6 +144,16 @@ struct PhysicsLinkState {
     Vector3 angular_velocity{Vector3::Zero()};
 };
 
+struct PhysicsContactState {
+    std::string robot_name;
+    std::string link_name;
+    std::string other_robot_name;
+    std::string other_link_name;
+    Vector3 position{Vector3::Zero()};
+    Vector3 normal{Vector3::UnitZ()};
+    RealType distance{0.0};
+};
+
 struct PhysicsRobotState {
     const Robot3D* node{nullptr};
     std::string name;
@@ -153,6 +163,7 @@ struct PhysicsRobotState {
 
 struct PhysicsSceneState {
     std::vector<PhysicsRobotState> robots;
+    std::vector<PhysicsContactState> contacts;
     std::size_t total_link_count{0};
     std::size_t total_joint_count{0};
 };

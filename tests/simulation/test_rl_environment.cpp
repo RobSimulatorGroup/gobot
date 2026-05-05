@@ -2,9 +2,11 @@
 
 #include <cmath>
 
+#include <gobot/scene/collision_shape_3d.hpp>
 #include <gobot/scene/joint_3d.hpp>
 #include <gobot/scene/link_3d.hpp>
 #include <gobot/scene/robot_3d.hpp>
+#include <gobot/scene/resources/box_shape_3d.hpp>
 #include <gobot/simulation/rl_environment.hpp>
 #include <gobot/simulation/simulation_server.hpp>
 
@@ -93,6 +95,22 @@ gobot::Robot3D* CreateRobotSceneWithFixedJoint() {
     return robot;
 }
 
+gobot::Robot3D* CreateRobotSceneWithBaseCollision() {
+    auto* robot = CreateRobotScene();
+    auto* base_link = gobot::Object::PointerCastTo<gobot::Link3D>(robot->GetChild(0));
+    if (base_link == nullptr) {
+        return robot;
+    }
+
+    auto* collision_shape = gobot::Object::New<gobot::CollisionShape3D>();
+    collision_shape->SetName("base_collision");
+    auto shape = gobot::MakeRef<gobot::BoxShape3D>();
+    shape->SetSize({0.5, 0.5, 0.5});
+    collision_shape->SetShape(shape);
+    base_link->AddChild(collision_shape);
+    return robot;
+}
+
 void ExpectBaseObservationPrefix(const std::vector<gobot::RealType>& observation,
                                  const gobot::Vector3& position) {
     ASSERT_GE(observation.size(), 13);
@@ -123,6 +141,7 @@ TEST(TestRLEnvironment, reset_builds_world_and_returns_observation) {
     EXPECT_EQ(environment.GetActionSize(), 1);
     EXPECT_EQ(environment.GetObservationSize(), 15);
     EXPECT_EQ(environment.GetControlledJointNames(), std::vector<std::string>{"joint"});
+    EXPECT_TRUE(environment.GetContactLinkNames().empty());
 
     const std::vector<gobot::RealType> observation = environment.GetObservation();
     ASSERT_EQ(observation.size(), 15);
@@ -195,6 +214,36 @@ TEST(TestRLEnvironment, exposes_action_and_observation_specs) {
                       "radian_or_meter",
                       "radian_per_second_or_meter_per_second",
               }));
+
+    gobot::Object::Delete(robot);
+}
+
+TEST(TestRLEnvironment, exposes_contact_links_for_physical_links_with_collision_shapes) {
+    gobot::SimulationServer simulation_server;
+    auto* robot = CreateRobotSceneWithBaseCollision();
+
+    gobot::RLEnvironment environment(&simulation_server);
+    environment.SetSceneRoot(robot);
+    environment.SetRobotName("robot");
+    ASSERT_TRUE(environment.Reset());
+
+    EXPECT_EQ(environment.GetContactLinkNames(), std::vector<std::string>{"base"});
+    EXPECT_EQ(environment.GetObservationSize(), 16);
+
+    const std::vector<gobot::RealType> observation = environment.GetObservation();
+    ASSERT_EQ(observation.size(), 16);
+    EXPECT_DOUBLE_EQ(observation[15], 0.0);
+
+    const gobot::RLVectorSpec observation_spec = environment.GetObservationSpec();
+    ASSERT_EQ(observation_spec.names.size(), 16);
+    EXPECT_EQ(observation_spec.names.back(), "base/contact");
+    EXPECT_DOUBLE_EQ(observation_spec.lower_bounds.back(), 0.0);
+    EXPECT_DOUBLE_EQ(observation_spec.upper_bounds.back(), 1.0);
+    EXPECT_EQ(observation_spec.units.back(), "boolean");
+
+    const gobot::RLEnvironmentStepResult result = environment.Step({0.0});
+    ASSERT_EQ(result.observation.size(), 16);
+    EXPECT_DOUBLE_EQ(result.observation[15], 0.0);
 
     gobot::Object::Delete(robot);
 }

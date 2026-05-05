@@ -80,6 +80,8 @@ public:
 
     std::vector<std::string> GetControlledJointNames() const;
 
+    std::vector<std::string> GetContactLinkNames() const;
+
     RLVectorSpec GetActionSpec() const;
 
     RLVectorSpec GetObservationSpec() const;
@@ -88,6 +90,8 @@ public:
 
 private:
     bool RefreshControlledJointNames();
+
+    bool RefreshContactLinkNames();
 
     bool RefreshBaseLinkName();
 
@@ -107,6 +111,7 @@ private:
     std::uint32_t last_seed_{0};
     std::string base_link_name_;
     std::vector<std::string> controlled_joint_names_;
+    std::vector<std::string> contact_link_names_;
     RLEnvironmentRewardSettings reward_settings_;
     std::string last_error_;
 };

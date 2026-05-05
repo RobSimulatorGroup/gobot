@@ -818,6 +818,8 @@ void MuJoCoPhysicsWorld::SyncStateFromMuJoCo() {
             joint_state.velocity = static_cast<RealType>(data->qvel[binding.dof_address]);
         }
     }
+
+    SyncContactsFromMuJoCo();
 }
 
 void MuJoCoPhysicsWorld::SyncStateToMuJoCo() {
@@ -886,6 +888,77 @@ void MuJoCoPhysicsWorld::SyncStateToMuJoCo() {
     }
 
     mj_forward(model, data);
+}
+
+void MuJoCoPhysicsWorld::SyncContactsFromMuJoCo() {
+    auto* model = static_cast<mjModel*>(model_);
+    auto* data = static_cast<mjData*>(data_);
+    scene_state_.contacts.clear();
+    if (!model || !data) {
+        return;
+    }
+
+    auto find_link_binding_for_body = [this](int body_id) -> const MuJoCoLinkBinding* {
+        for (const MuJoCoLinkBinding& binding : link_bindings_) {
+            if (binding.body_id == body_id) {
+                return &binding;
+            }
+        }
+
+        return nullptr;
+    };
+
+    for (int contact_index = 0; contact_index < data->ncon; ++contact_index) {
+        const mjContact& contact = data->contact[contact_index];
+        const int geom_id_a = contact.geom[0];
+        const int geom_id_b = contact.geom[1];
+        if (geom_id_a < 0 || geom_id_a >= model->ngeom || geom_id_b < 0 || geom_id_b >= model->ngeom) {
+            continue;
+        }
+
+        const int body_id_a = model->geom_bodyid[geom_id_a];
+        const int body_id_b = model->geom_bodyid[geom_id_b];
+        const MuJoCoLinkBinding* binding_a = find_link_binding_for_body(body_id_a);
+        const MuJoCoLinkBinding* binding_b = find_link_binding_for_body(body_id_b);
+        if (binding_a == nullptr && binding_b == nullptr) {
+            continue;
+        }
+
+        auto add_contact = [&](const MuJoCoLinkBinding& link_binding,
+                               const MuJoCoLinkBinding* other_binding,
+                               RealType normal_sign) {
+            if (link_binding.robot_index >= scene_state_.robots.size()) {
+                return;
+            }
+
+            const PhysicsRobotState& robot_state = scene_state_.robots[link_binding.robot_index];
+            if (link_binding.link_index >= robot_state.links.size()) {
+                return;
+            }
+
+            PhysicsContactState contact_state;
+            contact_state.robot_name = robot_state.name;
+            contact_state.link_name = robot_state.links[link_binding.link_index].link_name;
+            if (other_binding != nullptr &&
+                other_binding->robot_index < scene_state_.robots.size() &&
+                other_binding->link_index < scene_state_.robots[other_binding->robot_index].links.size()) {
+                const PhysicsRobotState& other_robot_state = scene_state_.robots[other_binding->robot_index];
+                contact_state.other_robot_name = other_robot_state.name;
+                contact_state.other_link_name = other_robot_state.links[other_binding->link_index].link_name;
+            }
+            contact_state.position = Vector3(contact.pos[0], contact.pos[1], contact.pos[2]);
+            contact_state.normal = normal_sign * Vector3(contact.frame[0], contact.frame[1], contact.frame[2]);
+            contact_state.distance = contact.dist;
+            scene_state_.contacts.emplace_back(std::move(contact_state));
+        };
+
+        if (binding_a != nullptr) {
+            add_contact(*binding_a, binding_b, 1.0);
+        }
+        if (binding_b != nullptr) {
+            add_contact(*binding_b, binding_a, -1.0);
+        }
+    }
 }
 #endif
 

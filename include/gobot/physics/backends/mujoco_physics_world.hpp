@@ -68,6 +68,8 @@ private:
 
     void SyncStateToMuJoCo();
 
+    void SyncContactsFromMuJoCo();
+
     struct MuJoCoJointBinding {
         std::size_t robot_index{0};
         std::size_t joint_index{0};

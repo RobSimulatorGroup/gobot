@@ -8,6 +8,7 @@
 #include <algorithm>
 #include <cmath>
 #include <limits>
+#include <set>
 #include <utility>
 
 #include "gobot/core/registration.hpp"
@@ -67,6 +68,18 @@ bool IsControllableJointType(int joint_type) {
     return type == JointType::Revolute ||
            type == JointType::Continuous ||
            type == JointType::Prismatic;
+}
+
+bool HasContactForLink(const PhysicsSceneState& scene_state,
+                       const std::string& robot_name,
+                       const std::string& link_name) {
+    for (const PhysicsContactState& contact_state : scene_state.contacts) {
+        if (contact_state.robot_name == robot_name && contact_state.link_name == link_name) {
+            return true;
+        }
+    }
+
+    return false;
 }
 
 void PushVector3(std::vector<RealType>* values, const Vector3& vector) {
@@ -149,7 +162,7 @@ bool RLEnvironment::Reset(std::uint32_t seed) {
         return false;
     }
 
-    if (!RefreshBaseLinkName() || !RefreshControlledJointNames()) {
+    if (!RefreshBaseLinkName() || !RefreshControlledJointNames() || !RefreshContactLinkNames()) {
         return false;
     }
 
@@ -232,6 +245,10 @@ std::vector<RealType> RLEnvironment::GetObservation() const {
         observation.push_back(joint_state->velocity);
     }
 
+    for (const std::string& link_name : contact_link_names_) {
+        observation.push_back(HasContactForLink(scene_state, robot_name_, link_name) ? 1.0 : 0.0);
+    }
+
     return observation;
 }
 
@@ -240,11 +257,15 @@ std::size_t RLEnvironment::GetActionSize() const {
 }
 
 std::size_t RLEnvironment::GetObservationSize() const {
-    return base_link_name_.empty() ? 0 : 13 + controlled_joint_names_.size() * 2;
+    return base_link_name_.empty() ? 0 : 13 + controlled_joint_names_.size() * 2 + contact_link_names_.size();
 }
 
 std::vector<std::string> RLEnvironment::GetControlledJointNames() const {
     return controlled_joint_names_;
+}
+
+std::vector<std::string> RLEnvironment::GetContactLinkNames() const {
+    return contact_link_names_;
 }
 
 RLVectorSpec RLEnvironment::GetActionSpec() const {
@@ -316,6 +337,14 @@ RLVectorSpec RLEnvironment::GetObservationSpec() const {
                      -std::numeric_limits<RealType>::infinity(),
                      std::numeric_limits<RealType>::infinity(),
                      "radian_per_second_or_meter_per_second");
+    }
+
+    for (const std::string& link_name : contact_link_names_) {
+        AddSpecEntry(&spec,
+                     link_name + "/contact",
+                     0.0,
+                     1.0,
+                     "boolean");
     }
 
     return spec;
@@ -398,6 +427,40 @@ bool RLEnvironment::RefreshBaseLinkName() {
     return false;
 }
 
+bool RLEnvironment::RefreshContactLinkNames() {
+    contact_link_names_.clear();
+
+    if (simulation_ == nullptr || !simulation_->HasWorld()) {
+        SetLastError("RL environment simulation world has not been reset.");
+        return false;
+    }
+
+    if (robot_name_.empty()) {
+        SetLastError("RL environment robot name is empty.");
+        return false;
+    }
+
+    const PhysicsSceneSnapshot& scene_snapshot = simulation_->GetWorld()->GetSceneSnapshot();
+    const PhysicsRobotSnapshot* robot_snapshot = FindRobotSnapshot(scene_snapshot, robot_name_);
+    if (robot_snapshot == nullptr) {
+        SetLastError(fmt::format("RL environment robot '{}' was not found in the physics scene.", robot_name_));
+        return false;
+    }
+
+    std::set<std::string> contact_link_names;
+    for (const PhysicsLinkSnapshot& link_snapshot : robot_snapshot->links) {
+        if (link_snapshot.role != PhysicsLinkRole::Physical || link_snapshot.collision_shapes.empty()) {
+            continue;
+        }
+
+        contact_link_names.insert(link_snapshot.name);
+    }
+
+    contact_link_names_.assign(contact_link_names.begin(), contact_link_names.end());
+    last_error_.clear();
+    return true;
+}
+
 bool RLEnvironment::EnsureReady() {
     if (simulation_ == nullptr) {
         SetLastError("RL environment has no SimulationServer.");
@@ -415,7 +478,8 @@ bool RLEnvironment::EnsureReady() {
     }
 
     if ((base_link_name_.empty() && !RefreshBaseLinkName()) ||
-        (controlled_joint_names_.empty() && !RefreshControlledJointNames())) {
+        (controlled_joint_names_.empty() && !RefreshControlledJointNames()) ||
+        (contact_link_names_.empty() && !RefreshContactLinkNames())) {
         return false;
     }
 
@@ -495,6 +559,7 @@ GOBOT_REGISTRATION {
             .method("get_action_size", &RLEnvironment::GetActionSize)
             .method("get_observation_size", &RLEnvironment::GetObservationSize)
             .method("get_controlled_joint_names", &RLEnvironment::GetControlledJointNames)
+            .method("get_contact_link_names", &RLEnvironment::GetContactLinkNames)
             .method("get_action_spec", &RLEnvironment::GetActionSpec)
             .method("get_observation_spec", &RLEnvironment::GetObservationSpec)
             .method("get_last_error", &RLEnvironment::GetLastError);
