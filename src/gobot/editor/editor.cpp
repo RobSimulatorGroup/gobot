@@ -24,6 +24,7 @@
 #include "gobot/editor/imgui/scene_editor_panel.hpp"
 #include "gobot/editor/imgui/inspector_panel.hpp"
 #include "gobot/editor/imgui/physics_panel.hpp"
+#include "gobot/editor/imgui/python_panel.hpp"
 #include "gobot/editor/imgui/resource_panel.hpp"
 #include "gobot/editor/property_inspector/editor_inspector.hpp"
 #include "gobot/main/engine_context.hpp"
@@ -112,6 +113,8 @@ Editor::Editor() {
     EditorInspector::AddInspectorPlugin(MakeRef<EditorInspectorDefaultPlugin>());
 
     AddChild(Object::New<ConsolePanel>());
+    python_panel_ = Object::New<PythonPanel>();
+    AddChild(python_panel_);
     AddChild(Object::New<SceneEditorPanel>());
     AddChild(Object::New<InspectorPanel>());
     AddChild(Object::New<PhysicsPanel>());
@@ -318,6 +321,14 @@ void Editor::RefreshResourcePanel() {
     if (resource_panel_ != nullptr) {
         resource_panel_->Refresh();
     }
+}
+
+bool Editor::OpenPythonScriptFromPath(const std::string& path) {
+    if (python_panel_ == nullptr) {
+        return false;
+    }
+    python_panel_->SetOpen(true);
+    return python_panel_->OpenScript(path);
 }
 
 void Editor::MarkSceneDirty() {

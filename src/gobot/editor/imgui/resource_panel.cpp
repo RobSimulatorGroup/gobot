@@ -17,9 +17,9 @@
 #include "imgui_internal.h"
 
 #include <algorithm>
+#include <cstdlib>
 #include <cstring>
 #include <fstream>
-#include <cstdlib>
 
 namespace gobot {
 namespace {
@@ -69,6 +69,28 @@ void OpenInExternalCodeEditor(const std::string& global_path) {
     }
 }
 
+std::string PythonScriptTemplate() {
+    return "import gobot\n\n"
+           "\n"
+           "def main():\n"
+           "    ctx = gobot.app.context()\n"
+           "    print(ctx.root.name if ctx.root else 'no scene')\n"
+           "\n"
+           "\n"
+           "if __name__ == '__main__':\n"
+           "    main()\n";
+}
+
+std::string EnsurePythonScriptExtension(std::string file_name) {
+    if (file_name.empty()) {
+        return file_name;
+    }
+    if (ToLower(std::filesystem::path(file_name).extension().string()) != ".py") {
+        file_name += ".py";
+    }
+    return file_name;
+}
+
 bool ResourceEntryLess(const DirectoryInformation* left, const DirectoryInformation* right) {
     if (left == nullptr || right == nullptr) {
         return left != nullptr;
@@ -85,6 +107,19 @@ bool ResourceEntryLess(const DirectoryInformation* left, const DirectoryInformat
     }
 
     return left->this_path < right->this_path;
+}
+
+const char* ResourceIcon(const DirectoryInformation* dir_info) {
+    if (dir_info == nullptr) {
+        return ICON_MDI_FILE;
+    }
+    if (dir_info->is_directory) {
+        return ICON_MDI_FOLDER;
+    }
+    if (IsPythonScriptFile(dir_info)) {
+        return ICON_MDI_LANGUAGE_PYTHON;
+    }
+    return ICON_MDI_FILE;
 }
 
 } // namespace
@@ -196,6 +231,13 @@ void ResourcePanel::OnImGuiContent() {
             ImGui::OpenPopup("NewResourceFolderPopup");
         }
         ImGui::SameLine();
+        if (ImGui::Button(ICON_MDI_LANGUAGE_PYTHON)) {
+            ImGui::OpenPopup("NewPythonScriptPopup");
+        }
+        if (ImGui::IsItemHovered()) {
+            ImGui::SetTooltip("New Python script");
+        }
+        ImGui::SameLine();
 
         if(update_navigation_path_) {
             bread_crumb_data_.clear();
@@ -240,11 +282,18 @@ void ResourcePanel::OnImGuiContent() {
                     ImGui::OpenPopup("NewResourceFolderPopup");
                 }
 
+                if (ImGui::Selectable(ICON_MDI_LANGUAGE_PYTHON " New Python Script")) {
+                    ImGui::OpenPopup("NewPythonScriptPopup");
+                }
+
                 ImGui::EndPopup();
             }
 
             if (ImGui::BeginPopup("NewResourceFolderPopup")) {
                 DrawNewFolderPopup();
+            }
+            if (ImGui::BeginPopup("NewPythonScriptPopup")) {
+                DrawNewPythonScriptPopup();
             }
             ImGui::EndChild();
         }
@@ -357,7 +406,7 @@ void ResourcePanel::DrawResourceTree(DirectoryInformation* dir_info, bool root)
         node_flags |= ImGuiTreeNodeFlags_DefaultOpen;
     }
 
-    const char* icon = dir_info->is_directory ? ICON_MDI_FOLDER : ICON_MDI_FILE;
+    const char* icon = ResourceIcon(dir_info);
     const std::string label = std::string(icon) + " " + dir_info->this_path + "##" + dir_info->global_path;
     const bool open = ImGui::TreeNodeEx(label.c_str(), node_flags);
     if (ImGui::IsItemClicked()) {
@@ -385,7 +434,7 @@ void ResourcePanel::DrawResourceTree(DirectoryInformation* dir_info, bool root)
         } else if (IsNativeSceneFile(dir_info)) {
             Editor::GetInstance()->RequestOpenSceneFromPath(dir_info->local_path);
         } else if (IsPythonScriptFile(dir_info)) {
-            OpenInExternalCodeEditor(dir_info->global_path);
+            Editor::GetInstance()->OpenPythonScriptFromPath(dir_info->local_path);
         }
     }
 
@@ -398,6 +447,9 @@ void ResourcePanel::DrawResourceTree(DirectoryInformation* dir_info, bool root)
             pending_delete_resource_file_global_path_ = dir_info->global_path;
             pending_delete_resource_file_local_path_ = dir_info->local_path;
             request_delete_resource_file_popup_ = true;
+        }
+        if (IsPythonScriptFile(dir_info) && ImGui::MenuItem(ICON_MDI_PENCIL " Edit Script")) {
+            Editor::GetInstance()->OpenPythonScriptFromPath(dir_info->local_path);
         }
         if (IsPythonScriptFile(dir_info) && ImGui::MenuItem(ICON_MDI_OPEN_IN_NEW " Open in VS Code")) {
             OpenInExternalCodeEditor(dir_info->global_path);
@@ -722,6 +774,21 @@ void ResourcePanel::DrawNewFolderPopup()
     ImGui::EndPopup();
 }
 
+void ResourcePanel::DrawNewPythonScriptPopup()
+{
+    ImGui::InputText("Name", new_python_script_name_, sizeof(new_python_script_name_));
+    if (ImGui::Button("Create")) {
+        if (CreatePythonScriptInCurrentDirectory(new_python_script_name_)) {
+            ImGui::CloseCurrentPopup();
+        }
+    }
+    ImGui::SameLine();
+    if (ImGui::Button("Cancel")) {
+        ImGui::CloseCurrentPopup();
+    }
+    ImGui::EndPopup();
+}
+
 bool ResourcePanel::CreateFolderInCurrentDirectory(const std::string& folder_name)
 {
     if (current_dir_ == nullptr || !current_dir_->is_directory) {
@@ -750,6 +817,54 @@ bool ResourcePanel::CreateFolderInCurrentDirectory(const std::string& folder_nam
 
     std::strncpy(new_folder_name_, "resources", sizeof(new_folder_name_) - 1);
     new_folder_name_[sizeof(new_folder_name_) - 1] = '\0';
+    return true;
+}
+
+bool ResourcePanel::CreatePythonScriptInCurrentDirectory(const std::string& file_name)
+{
+    if (current_dir_ == nullptr || !current_dir_->is_directory) {
+        LOG_ERROR("Cannot create Python script: no current directory.");
+        return false;
+    }
+
+    const std::string normalized_file_name = EnsurePythonScriptExtension(file_name);
+    if (normalized_file_name.empty() ||
+            normalized_file_name.find('/') != std::string::npos ||
+            normalized_file_name.find('\\') != std::string::npos) {
+        LOG_ERROR("Invalid Python script name: '{}'.", file_name);
+        return false;
+    }
+
+    const std::string local_path = PathJoin(current_dir_->local_path, normalized_file_name);
+    const std::string global_path = ProjectSettings::GetInstance()->GlobalizePath(local_path);
+    if (std::filesystem::exists(global_path)) {
+        LOG_ERROR("Python script already exists: {}.", local_path);
+        return false;
+    }
+
+    std::error_code error;
+    std::filesystem::create_directories(std::filesystem::path(global_path).parent_path(), error);
+    if (error) {
+        LOG_ERROR("Failed to create Python script directory '{}': {}",
+                  std::filesystem::path(global_path).parent_path().string(),
+                  error.message());
+        return false;
+    }
+
+    std::ofstream output(global_path, std::ios::out | std::ios::trunc);
+    if (!output.is_open()) {
+        LOG_ERROR("Failed to create Python script '{}'.", local_path);
+        return false;
+    }
+    output << PythonScriptTemplate();
+    output.close();
+
+    LOG_INFO("Created Python script: {}", local_path);
+    Refresh();
+    Editor::GetInstance()->OpenPythonScriptFromPath(local_path);
+
+    std::strncpy(new_python_script_name_, "script.py", sizeof(new_python_script_name_) - 1);
+    new_python_script_name_[sizeof(new_python_script_name_) - 1] = '\0';
     return true;
 }
 

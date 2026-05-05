@@ -52,7 +52,11 @@ public:
 
     void DrawNewFolderPopup();
 
+    void DrawNewPythonScriptPopup();
+
     bool CreateFolderInCurrentDirectory(const std::string& folder_name);
+
+    bool CreatePythonScriptInCurrentDirectory(const std::string& file_name);
 
     bool SetProjectPath(const std::string& project_path);
 
@@ -97,6 +101,7 @@ private:
     int grid_items_per_row_;
     float grid_size_ = 50.0f;
     char new_folder_name_[128]{"resources"};
+    char new_python_script_name_[128]{"script.py"};
 
     ImGuiTextFilter* filter_{nullptr};
     ImGui::FileBrowser* project_browser_{nullptr};

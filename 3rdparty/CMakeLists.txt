@@ -36,8 +36,7 @@ add_library(imgui
 target_include_directories(imgui PUBLIC imgui imgui/backends imgui_extension )
 target_link_libraries(imgui PUBLIC SDL2::SDL2)
 
-add_library(imgui-gobot INTERFACE)
-target_sources(imgui-gobot INTERFACE
+add_library(imgui-gobot STATIC
         imgui/imgui.cpp
         imgui/imgui.h
         imgui/imgui_demo.cpp
@@ -62,10 +61,10 @@ target_sources(imgui-gobot INTERFACE
         )
 
 get_filename_component(IMGUI_USER_CONFIG "imgui_config.hpp" REALPATH BASE_DIR "${PROJECT_SOURCE_DIR}/include/gobot/editor/imgui/")
-target_compile_definitions(imgui-gobot INTERFACE IMGUI_USER_CONFIG="${IMGUI_USER_CONFIG}")
+target_compile_definitions(imgui-gobot PUBLIC IMGUI_USER_CONFIG="${IMGUI_USER_CONFIG}")
 
-target_include_directories(imgui-gobot INTERFACE imgui imgui/backends imgui_extension imgui/misc/cpp/ ${PROJECT_SOURCE_DIR}/include)
-target_link_libraries(imgui-gobot INTERFACE glad magic_enum::magic_enum)
+target_include_directories(imgui-gobot PUBLIC imgui imgui/backends imgui_extension imgui/misc/cpp/ ${PROJECT_SOURCE_DIR}/include ${PROJECT_BINARY_DIR})
+target_link_libraries(imgui-gobot PUBLIC SDL2::SDL2 RTTR::Core Eigen3::Eigen fmt::fmt glad magic_enum::magic_enum)
 
 
 find_package(OpenGL REQUIRED)

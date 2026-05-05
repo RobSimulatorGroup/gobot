@@ -228,6 +228,7 @@ file(GLOB_RECURSE SOURCE_MAIN CONFIGURE_DEPENDS "src/gobot/main/*.cpp")
 # https://github.com/bincrafters/community/issues/466#issuecomment-426265654
 add_library(gobot SHARED ${SOURCE_DRIVERS} ${SOURCE_MAIN} ${SOURCE_CORE} ${SOURCE_RENDERING} ${SOURCE_SCENE} ${SOURCE_PHYSICS} ${SOURCE_SIMULATION} ${SOURCE_EDITOR})
 target_compile_options(gobot PUBLIC "-fno-gnu-unique" "-Wno-volatile" "-Wno-deprecated-enum-enum-conversion")
+target_sources(gobot PRIVATE 3rdparty/ImGuiColorTextEdit/TextEditor.cpp)
 
 # https://forum.qt.io/topic/97296/export-qobject-based-class-from-dll/2
 GENERATE_EXPORT_HEADER(gobot)
@@ -236,6 +237,7 @@ target_include_directories(gobot
     PUBLIC
     ${CMAKE_CURRENT_SOURCE_DIR}/include
     ${PROJECT_BINARY_DIR}
+    ${CMAKE_CURRENT_SOURCE_DIR}/3rdparty/ImGuiColorTextEdit
 )
 
 target_link_libraries(gobot

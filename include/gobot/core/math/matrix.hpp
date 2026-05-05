@@ -18,7 +18,7 @@
 
 template <typename T>
     requires std::is_base_of_v<Eigen::DenseBase<T>, T>
-struct fmt::formatter<T> : ostream_formatter {};
+struct fmt::formatter<T> : fmt::ostream_formatter {};
 
 namespace gobot {
 

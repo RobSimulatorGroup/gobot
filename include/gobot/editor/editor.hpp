@@ -25,6 +25,7 @@ class Node3D;
 class EditedScene;
 class EngineContext;
 class ResourcePanel;
+class PythonPanel;
 
 class GOBOT_EXPORT Editor : public ImGuiNode {
     GOBCLASS(Editor, Node)
@@ -80,6 +81,8 @@ public:
     bool AddGroundToEditedScene();
 
     void RefreshResourcePanel();
+
+    bool OpenPythonScriptFromPath(const std::string& path);
 
     void MarkSceneDirty();
 
@@ -143,6 +146,7 @@ private:
     EditedScene* edited_scene_{nullptr};
     EngineContext* engine_context_{nullptr};
     ResourcePanel* resource_panel_{nullptr};
+    PythonPanel* python_panel_{nullptr};
 
     SceneFileDialogMode scene_file_dialog_mode_{SceneFileDialogMode::None};
     std::string current_scene_path_;
