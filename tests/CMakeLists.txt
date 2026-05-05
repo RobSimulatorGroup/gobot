@@ -61,3 +61,15 @@ package_add_test(test_physics_server physics/test_physics_server.cpp)
 package_add_test(test_joint_controller physics/test_joint_controller.cpp)
 package_add_test(test_simulation_server simulation/test_simulation_server.cpp)
 package_add_test(test_rl_environment simulation/test_rl_environment.cpp)
+
+if (GOB_BUILD_PYTHON_BINDINGS)
+    add_test(
+            NAME test_python_bindings_smoke
+            COMMAND ${Python3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/python/test_python_bindings_smoke.py
+    )
+    set_tests_properties(test_python_bindings_smoke
+            PROPERTIES
+                ENVIRONMENT "PYTHONPATH=${CMAKE_BINARY_DIR}/python"
+                WORKING_DIRECTORY "${CMAKE_SOURCE_DIR}"
+    )
+endif()

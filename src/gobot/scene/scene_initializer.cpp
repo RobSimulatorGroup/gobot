@@ -7,6 +7,7 @@
 
 #include "gobot/scene/scene_initializer.hpp"
 #include "gobot/core/io/resource_format_mesh.hpp"
+#include "gobot/core/io/python_script.hpp"
 #include "gobot/core/io/resource_format_scene.hpp"
 #include "gobot/core/io/resource_format_urdf.hpp"
 #include "gobot/core/io/resource_format_usd.hpp"
@@ -20,6 +21,7 @@ static Ref<ResourceFormatLoaderMesh> s_resource_loader_mesh = nullptr;
 static Ref<ResourceFormatLoaderShader> s_resource_loader_shader = nullptr;
 static Ref<ResourceFormatLoaderURDF> s_resource_loader_urdf = nullptr;
 static Ref<ResourceFormatLoaderUSD> s_resource_loader_usd = nullptr;
+static Ref<ResourceFormatLoaderPythonScript> s_resource_loader_python_script = nullptr;
 
 
 void SceneInitializer::Init() {
@@ -40,6 +42,9 @@ void SceneInitializer::Init() {
 
     s_resource_loader_shader = MakeRef<ResourceFormatLoaderShader>();
     ResourceLoader::AddResourceFormatLoader(s_resource_loader_shader, true);
+
+    s_resource_loader_python_script = MakeRef<ResourceFormatLoaderPythonScript>();
+    ResourceLoader::AddResourceFormatLoader(s_resource_loader_python_script, true);
 }
 
 void SceneInitializer::Destroy() {
@@ -60,6 +65,9 @@ void SceneInitializer::Destroy() {
 
     ResourceLoader::RemoveResourceFormatLoader(s_resource_loader_shader);
     s_resource_loader_shader.Reset();
+
+    ResourceLoader::RemoveResourceFormatLoader(s_resource_loader_python_script);
+    s_resource_loader_python_script.Reset();
 }
 
 }

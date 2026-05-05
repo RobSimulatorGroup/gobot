@@ -12,7 +12,9 @@
 namespace gobot {
 
 ArrayMesh::ArrayMesh() {
-    mesh_ = RenderServer::GetInstance()->MeshCreate();
+    if (RenderServer::HasInstance()) {
+        mesh_ = RenderServer::GetInstance()->MeshCreate();
+    }
 }
 
 ArrayMesh::~ArrayMesh() {
@@ -58,6 +60,12 @@ RID ArrayMesh::GetRid() const {
 }
 
 void ArrayMesh::UploadSurface() {
+    if (!RenderServer::HasInstance()) {
+        return;
+    }
+    if (mesh_.IsNull()) {
+        mesh_ = RenderServer::GetInstance()->MeshCreate();
+    }
     RS::GetInstance()->MeshSetSurface(mesh_, vertices_, indices_, normals_);
 }
 

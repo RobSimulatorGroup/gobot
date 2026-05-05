@@ -688,6 +688,14 @@ Ref<PackedScene> Node::GetSceneInstance() const {
     return scene_instance_;
 }
 
+void Node::SetScript(const Ref<Resource>& script) {
+    script_ = script;
+}
+
+Ref<Resource> Node::GetScript() const {
+    return script_;
+}
+
 } // End of namespace gobot
 
 GOBOT_REGISTRATION {
@@ -701,6 +709,10 @@ GOBOT_REGISTRATION {
                     AddMetaPropertyInfo(
                             PropertyInfo()
                                 .SetUsageFlags(PropertyUsageFlags::None)))
+            .property("script", &Node::GetScript, &Node::SetScript)(
+                    AddMetaPropertyInfo(
+                            PropertyInfo()
+                                .SetUsageFlags(PropertyUsageFlags::Storage)))
 
             .property("name", &Node::GetName, &Node::SetName)(
                     AddMetaPropertyInfo(

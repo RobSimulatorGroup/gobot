@@ -157,11 +157,6 @@ Ref<Resource> ResourceFormatLoaderMesh::Load(const std::string& path,
     (void)original_path;
     (void)cache_mode;
 
-    if (!RenderServer::HasInstance()) {
-        LOG_ERROR("Cannot load mesh '{}' before RenderServer is initialized.", path);
-        return {};
-    }
-
 #ifndef GOBOT_HAS_ASSIMP
     LOG_ERROR("Cannot load mesh '{}': Gobot was built without Assimp support.", path);
     return {};

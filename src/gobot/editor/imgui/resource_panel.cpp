@@ -10,6 +10,7 @@
 #include "gobot/core/string_utils.hpp"
 #include "gobot/editor/editor.hpp"
 #include "gobot/editor/imgui/imgui_utilities.hpp"
+#include "gobot/log.hpp"
 #include "imgui_extension/icon_fonts/icons_material_design_icons.h"
 #include "imgui_extension/file_browser/ImFileBrowser.h"
 #include "imgui.h"
@@ -18,6 +19,7 @@
 #include <algorithm>
 #include <cstring>
 #include <fstream>
+#include <cstdlib>
 
 namespace gobot {
 namespace {
@@ -49,6 +51,22 @@ bool IsNativeSceneFile(const DirectoryInformation* dir_info) {
     }
 
     return ToLower(std::filesystem::path(dir_info->global_path).extension().string()) == ".jscn";
+}
+
+bool IsPythonScriptFile(const DirectoryInformation* dir_info) {
+    if (dir_info == nullptr || dir_info->is_directory) {
+        return false;
+    }
+
+    return ToLower(std::filesystem::path(dir_info->global_path).extension().string()) == ".py";
+}
+
+void OpenInExternalCodeEditor(const std::string& global_path) {
+    const std::string command = "code --reuse-window \"" + global_path + "\"";
+    const int result = std::system(command.c_str());
+    if (result != 0) {
+        LOG_ERROR("Failed to open '{}' in VS Code with command '{}'.", global_path, command);
+    }
 }
 
 bool ResourceEntryLess(const DirectoryInformation* left, const DirectoryInformation* right) {
@@ -366,6 +384,8 @@ void ResourcePanel::DrawResourceTree(DirectoryInformation* dir_info, bool root)
             ChangeDirectory(dir_info);
         } else if (IsNativeSceneFile(dir_info)) {
             Editor::GetInstance()->RequestOpenSceneFromPath(dir_info->local_path);
+        } else if (IsPythonScriptFile(dir_info)) {
+            OpenInExternalCodeEditor(dir_info->global_path);
         }
     }
 
@@ -378,6 +398,9 @@ void ResourcePanel::DrawResourceTree(DirectoryInformation* dir_info, bool root)
             pending_delete_resource_file_global_path_ = dir_info->global_path;
             pending_delete_resource_file_local_path_ = dir_info->local_path;
             request_delete_resource_file_popup_ = true;
+        }
+        if (IsPythonScriptFile(dir_info) && ImGui::MenuItem(ICON_MDI_OPEN_IN_NEW " Open in VS Code")) {
+            OpenInExternalCodeEditor(dir_info->global_path);
         }
         ImGui::EndPopup();
     }

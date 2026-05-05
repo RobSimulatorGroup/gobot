@@ -278,6 +278,12 @@ if(GOB_BUILD_PYTHON_BINDINGS)
             OUTPUT_NAME "gobot"
             LIBRARY_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/python"
     )
+    add_custom_command(
+            TARGET gobot_python POST_BUILD
+            COMMAND ${CMAKE_COMMAND} -E copy_if_different
+                    "${CMAKE_CURRENT_SOURCE_DIR}/python/gobot_gym_adapter.py"
+                    "${CMAKE_BINARY_DIR}/python/gobot_gym_adapter.py"
+    )
 endif()
 
 # copy icon to bin

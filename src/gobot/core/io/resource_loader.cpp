@@ -7,6 +7,7 @@
 */
 
 #include "gobot/core/io/resource_loader.hpp"
+#include "gobot/core/config/project_setting.hpp"
 #include "gobot/core/io/resource.hpp"
 #include "gobot/core/registration.hpp"
 #include "gobot/core/string_utils.hpp"
@@ -79,6 +80,7 @@ Ref<Resource> ResourceLoader::Load(const std::string &path,
                                    const std::string &type_hint,
                                    ResourceFormatLoader::CacheMode cache_mode) {
     std::string local_path = ValidateLocalPath(path);
+    std::string global_path = ProjectSettings::GetInstance()->GlobalizePath(local_path);
 
     if (cache_mode == ResourceFormatLoader::CacheMode::Reuse) {
         Ref<Resource> cached_resource = ResourceCache::GetRef(local_path);
@@ -94,8 +96,8 @@ Ref<Resource> ResourceLoader::Load(const std::string &path,
               local_path,
               type_hint,
               static_cast<int>(cache_mode));
-    Ref<Resource> res = LoadImpl(path, type_hint, cache_mode);
-    ERR_FAIL_COND_V_MSG(!res, {}, fmt::format("Loading resource: {} failed.", path));
+    Ref<Resource> res = LoadImpl(global_path, type_hint, cache_mode);
+    ERR_FAIL_COND_V_MSG(!res, {}, fmt::format("Loading resource: {} failed.", local_path));
 
     if (res.IsValid()) {
         if (cache_mode != ResourceFormatLoader::CacheMode::Ignore) {
@@ -111,6 +113,7 @@ Ref<Resource> ResourceLoader::Load(const std::string &path,
 
 bool ResourceLoader::Exists(const std::string &path, const std::string &type_hint) {
     std::string local_path = ValidateLocalPath(path);
+    std::string global_path = ProjectSettings::GetInstance()->GlobalizePath(local_path);
 
     if (ResourceCache::Has(local_path)) {
         return true; // If cached, it probably exists
@@ -118,11 +121,11 @@ bool ResourceLoader::Exists(const std::string &path, const std::string &type_hin
 
     // Try all loaders and pick the first match for the type hint
     for(const auto& loader: s_loaders) {
-        if (!loader->RecognizePath(path, type_hint)) {
+        if (!loader->RecognizePath(global_path, type_hint)) {
             continue;
         }
 
-        if (loader->Exists(path)) {
+        if (loader->Exists(global_path)) {
             return true;
         }
     }

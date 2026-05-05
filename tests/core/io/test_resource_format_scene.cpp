@@ -9,6 +9,7 @@
 
 #include <gobot/core/ref_counted.hpp>
 #include <gobot/core/io/resource_format_scene.hpp>
+#include <gobot/core/io/python_script.hpp>
 #include <gobot/core/config/project_setting.hpp>
 #include <gobot/scene/collision_shape_3d.hpp>
 #include <gobot/scene/resources/cylinder_shape_3d.hpp>
@@ -215,6 +216,41 @@ TEST_F(TestResourceFormatScene, packed_scene_round_trips_collision_shape_resourc
     ASSERT_TRUE(instanced_shape.IsValid());
     EXPECT_FLOAT_EQ(instanced_shape->GetRadius(), 0.25f);
     EXPECT_FLOAT_EQ(instanced_shape->GetHeight(), 2.0f);
+
+    gobot::Object::Delete(root);
+    gobot::Object::Delete(instance);
+}
+
+TEST_F(TestResourceFormatScene, packed_scene_round_trips_node_python_script_resource) {
+    auto* root = gobot::Object::New<gobot::Node3D>();
+    root->SetName("ScriptedRobot");
+
+    gobot::Ref<gobot::PythonScript> script = gobot::MakeRef<gobot::PythonScript>();
+    script->SetSourceCode("def reset(env):\n    return None\n");
+    root->SetScript(script);
+
+    gobot::Ref<gobot::PackedScene> packed_scene = gobot::MakeRef<gobot::PackedScene>();
+    ASSERT_TRUE(packed_scene->Pack(root));
+
+    USING_ENUM_BITWISE_OPERATORS;
+    ASSERT_TRUE(gobot::ResourceSaver::Save(packed_scene, "res://scripted_robot.jscn",
+                                           gobot::ResourceSaverFlags::ReplaceSubResourcePaths |
+                                           gobot::ResourceSaverFlags::ChangePath));
+
+    gobot::Ref<gobot::Resource> loaded_resource = gobot::ResourceLoader::Load(
+            "res://scripted_robot.jscn", "PackedScene", gobot::ResourceFormatLoader::CacheMode::Ignore);
+    ASSERT_TRUE(loaded_resource.IsValid());
+
+    gobot::Ref<gobot::PackedScene> loaded_scene = gobot::dynamic_pointer_cast<gobot::PackedScene>(loaded_resource);
+    ASSERT_TRUE(loaded_scene.IsValid());
+
+    gobot::Node* instance = loaded_scene->Instantiate();
+    ASSERT_NE(instance, nullptr);
+
+    gobot::Ref<gobot::PythonScript> loaded_script =
+            gobot::dynamic_pointer_cast<gobot::PythonScript>(instance->GetScript());
+    ASSERT_TRUE(loaded_script.IsValid());
+    EXPECT_EQ(loaded_script->GetSourceCode(), "def reset(env):\n    return None\n");
 
     gobot::Object::Delete(root);
     gobot::Object::Delete(instance);

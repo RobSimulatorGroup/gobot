@@ -17,11 +17,15 @@ namespace gobot {
 
 PrimitiveMesh::PrimitiveMesh()
 {
-    mesh_ = RenderServer::GetInstance()->MeshCreate();
+    if (RenderServer::HasInstance()) {
+        mesh_ = RenderServer::GetInstance()->MeshCreate();
+    }
 }
 
 PrimitiveMesh::~PrimitiveMesh() {
-    RS::GetInstance()->Free(mesh_);
+    if (RenderServer::HasInstance() && mesh_.IsValid()) {
+        RS::GetInstance()->Free(mesh_);
+    }
 }
 
 void PrimitiveMesh::SetMaterial(const Ref<Material>& material) {
@@ -40,7 +44,9 @@ RID PrimitiveMesh::GetRid() const {
 //////////////////////
 
 BoxMesh::BoxMesh() {
-    RS::GetInstance()->MeshSetBox(GetRid(), size_);
+    if (RenderServer::HasInstance()) {
+        RS::GetInstance()->MeshSetBox(GetRid(), size_);
+    }
 }
 
 void BoxMesh::SetWidth(RealType p_width) {
@@ -54,7 +60,9 @@ RealType BoxMesh::GetWidth() const {
 
 void BoxMesh::SetSize(Vector3 size) {
     size_ = size;
-    RS::GetInstance()->MeshSetBox(GetRid(), size_);
+    if (RenderServer::HasInstance()) {
+        RS::GetInstance()->MeshSetBox(GetRid(), size_);
+    }
 }
 
 const Vector3& BoxMesh::GetSize() const {
@@ -103,6 +111,9 @@ int CylinderMesh::GetRadialSegments() const {
 }
 
 void CylinderMesh::UpdateMesh() {
+    if (!RenderServer::HasInstance()) {
+        return;
+    }
     RS::GetInstance()->MeshSetCylinder(GetRid(), radius_, height_, radial_segments_);
 }
 
@@ -150,6 +161,9 @@ int SphereMesh::GetRings() const {
 }
 
 void SphereMesh::UpdateMesh() {
+    if (!RenderServer::HasInstance()) {
+        return;
+    }
     RS::GetInstance()->MeshSetSphere(GetRid(), radius_, radial_segments_, rings_);
 }
 

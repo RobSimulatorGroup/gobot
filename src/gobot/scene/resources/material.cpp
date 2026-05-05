@@ -15,11 +15,15 @@
 namespace gobot {
 
 Material::Material() {
-    material_ = RS::GetInstance()->MaterialCreate();
+    if (RenderServer::HasInstance()) {
+        material_ = RS::GetInstance()->MaterialCreate();
+    }
 }
 
 Material::~Material() {
-    RS::GetInstance()->Free(material_);
+    if (RenderServer::HasInstance() && material_.IsValid()) {
+        RS::GetInstance()->Free(material_);
+    }
 }
 
 RID Material::GetRid() const {
