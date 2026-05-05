@@ -6,6 +6,7 @@
 #include "gobot/simulation/rl_environment.hpp"
 
 #include <algorithm>
+#include <cmath>
 #include <limits>
 #include <utility>
 
@@ -74,13 +75,6 @@ void PushVector3(std::vector<RealType>* values, const Vector3& vector) {
     values->push_back(vector.z());
 }
 
-void PushInfiniteBounds(RLVectorSpec* spec, std::size_t count) {
-    for (std::size_t i = 0; i < count; ++i) {
-        spec->lower_bounds.push_back(-std::numeric_limits<RealType>::infinity());
-        spec->upper_bounds.push_back(std::numeric_limits<RealType>::infinity());
-    }
-}
-
 void AddSpecEntry(RLVectorSpec* spec,
                   std::string name,
                   RealType lower_bound,
@@ -128,6 +122,14 @@ void RLEnvironment::SetMaxEpisodeSteps(std::uint64_t max_episode_steps) {
 
 std::uint64_t RLEnvironment::GetMaxEpisodeSteps() const {
     return max_episode_steps_;
+}
+
+void RLEnvironment::SetRewardSettings(const RLEnvironmentRewardSettings& settings) {
+    reward_settings_ = settings;
+}
+
+const RLEnvironmentRewardSettings& RLEnvironment::GetRewardSettings() const {
+    return reward_settings_;
 }
 
 bool RLEnvironment::Reset(std::uint32_t seed) {
@@ -184,9 +186,10 @@ RLEnvironmentStepResult RLEnvironment::Step(const std::vector<RealType>& action)
     result.observation = GetObservation();
     result.frame_count = simulation_->GetFrameCount();
     result.simulation_time = simulation_->GetSimulationTime();
+    const bool fallen = IsBaseFallen();
     result.truncated = max_episode_steps_ > 0 && episode_step_count_ >= max_episode_steps_;
-    result.reward = 0.0;
-    result.terminated = false;
+    result.reward = ComputeReward(fallen);
+    result.terminated = reward_settings_.terminate_on_fall && fallen;
     last_error_.clear();
     return result;
 }
@@ -419,6 +422,44 @@ bool RLEnvironment::EnsureReady() {
     return true;
 }
 
+bool RLEnvironment::IsBaseFallen() const {
+    if (simulation_ == nullptr || !simulation_->HasWorld() || base_link_name_.empty()) {
+        return false;
+    }
+
+    const PhysicsSceneState& scene_state = simulation_->GetWorld()->GetSceneState();
+    const PhysicsRobotState* robot_state = FindRobotState(scene_state, robot_name_);
+    if (robot_state == nullptr) {
+        return false;
+    }
+
+    const PhysicsLinkState* base_link_state = FindLinkState(*robot_state, base_link_name_);
+    if (base_link_state == nullptr) {
+        return false;
+    }
+
+    const Vector3 base_position = base_link_state->global_transform.translation();
+    if (base_position.z() < reward_settings_.minimum_base_height) {
+        return true;
+    }
+
+    Vector3 base_up = base_link_state->global_transform.linear() * Vector3::UnitZ();
+    if (base_up.squaredNorm() <= CMP_EPSILON2) {
+        return true;
+    }
+
+    base_up.normalize();
+    const RealType cosine_tilt = std::clamp(base_up.dot(Vector3::UnitZ()),
+                                           static_cast<RealType>(-1.0),
+                                           static_cast<RealType>(1.0));
+    const RealType tilt = std::acos(cosine_tilt);
+    return tilt > reward_settings_.maximum_base_tilt_radians;
+}
+
+RealType RLEnvironment::ComputeReward(bool fallen) const {
+    return fallen ? reward_settings_.fallen_reward : reward_settings_.alive_reward;
+}
+
 void RLEnvironment::SetLastError(std::string error) {
     last_error_ = std::move(error);
 }
@@ -435,10 +476,19 @@ GOBOT_REGISTRATION {
             .property("upper_bounds", &RLVectorSpec::upper_bounds)
             .property("units", &RLVectorSpec::units);
 
+    Class_<RLEnvironmentRewardSettings>("RLEnvironmentRewardSettings")
+            .constructor()
+            .property("alive_reward", &RLEnvironmentRewardSettings::alive_reward)
+            .property("fallen_reward", &RLEnvironmentRewardSettings::fallen_reward)
+            .property("minimum_base_height", &RLEnvironmentRewardSettings::minimum_base_height)
+            .property("maximum_base_tilt_radians", &RLEnvironmentRewardSettings::maximum_base_tilt_radians)
+            .property("terminate_on_fall", &RLEnvironmentRewardSettings::terminate_on_fall);
+
     Class_<RLEnvironment>("RLEnvironment")
             .constructor()(CtorAsRawPtr)
             .property("robot_name", &RLEnvironment::GetRobotName, &RLEnvironment::SetRobotName)
             .property("max_episode_steps", &RLEnvironment::GetMaxEpisodeSteps, &RLEnvironment::SetMaxEpisodeSteps)
+            .property("reward_settings", &RLEnvironment::GetRewardSettings, &RLEnvironment::SetRewardSettings)
             .method("reset", &RLEnvironment::Reset)
             .method("step", &RLEnvironment::Step)
             .method("get_observation", &RLEnvironment::GetObservation)

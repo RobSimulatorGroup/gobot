@@ -290,12 +290,85 @@ TEST(TestRLEnvironment, step_applies_normalized_action_and_advances_once) {
     EXPECT_NEAR(result.simulation_time, 0.02, CMP_EPSILON);
     EXPECT_TRUE(result.truncated);
     EXPECT_FALSE(result.terminated);
+    EXPECT_DOUBLE_EQ(result.reward, 1.0);
     ASSERT_EQ(result.observation.size(), 15);
 
     const gobot::PhysicsJointState& joint_state =
             simulation_server.GetWorld()->GetSceneState().robots[0].joints[0];
     EXPECT_EQ(joint_state.control_mode, gobot::PhysicsJointControlMode::Position);
     EXPECT_DOUBLE_EQ(joint_state.target_position, 1.0);
+
+    gobot::Object::Delete(robot);
+}
+
+TEST(TestRLEnvironment, terminates_when_base_height_is_too_low) {
+    gobot::SimulationServer simulation_server;
+    auto* robot = CreateRobotScene();
+
+    gobot::RLEnvironment environment(&simulation_server);
+    environment.SetSceneRoot(robot);
+    environment.SetRobotName("robot");
+
+    gobot::RLEnvironmentRewardSettings settings;
+    settings.minimum_base_height = 3.5;
+    environment.SetRewardSettings(settings);
+
+    ASSERT_TRUE(environment.Reset());
+
+    const gobot::RLEnvironmentStepResult result = environment.Step({0.0});
+    EXPECT_TRUE(result.terminated);
+    EXPECT_FALSE(result.truncated);
+    EXPECT_DOUBLE_EQ(result.reward, settings.fallen_reward);
+    EXPECT_TRUE(environment.GetLastError().empty());
+
+    gobot::Object::Delete(robot);
+}
+
+TEST(TestRLEnvironment, terminates_when_base_tilt_is_too_large) {
+    gobot::SimulationServer simulation_server;
+    auto* robot = CreateRobotScene();
+    auto* base_link = dynamic_cast<gobot::Link3D*>(robot->GetChild(0));
+    ASSERT_NE(base_link, nullptr);
+    base_link->SetEuler({2.0, 0.0, 0.0});
+
+    gobot::RLEnvironment environment(&simulation_server);
+    environment.SetSceneRoot(robot);
+    environment.SetRobotName("robot");
+
+    gobot::RLEnvironmentRewardSettings settings;
+    settings.maximum_base_tilt_radians = 1.0;
+    environment.SetRewardSettings(settings);
+
+    ASSERT_TRUE(environment.Reset());
+
+    const gobot::RLEnvironmentStepResult result = environment.Step({0.0});
+    EXPECT_TRUE(result.terminated);
+    EXPECT_FALSE(result.truncated);
+    EXPECT_DOUBLE_EQ(result.reward, settings.fallen_reward);
+    EXPECT_TRUE(environment.GetLastError().empty());
+
+    gobot::Object::Delete(robot);
+}
+
+TEST(TestRLEnvironment, can_report_fallen_reward_without_terminating) {
+    gobot::SimulationServer simulation_server;
+    auto* robot = CreateRobotScene();
+
+    gobot::RLEnvironment environment(&simulation_server);
+    environment.SetSceneRoot(robot);
+    environment.SetRobotName("robot");
+
+    gobot::RLEnvironmentRewardSettings settings;
+    settings.minimum_base_height = 3.5;
+    settings.terminate_on_fall = false;
+    settings.fallen_reward = -2.0;
+    environment.SetRewardSettings(settings);
+
+    ASSERT_TRUE(environment.Reset());
+
+    const gobot::RLEnvironmentStepResult result = environment.Step({0.0});
+    EXPECT_FALSE(result.terminated);
+    EXPECT_DOUBLE_EQ(result.reward, -2.0);
 
     gobot::Object::Delete(robot);
 }

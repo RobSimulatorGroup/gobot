@@ -34,6 +34,14 @@ struct RLVectorSpec {
     std::vector<std::string> units;
 };
 
+struct RLEnvironmentRewardSettings {
+    RealType alive_reward{1.0};
+    RealType fallen_reward{0.0};
+    RealType minimum_base_height{0.25};
+    RealType maximum_base_tilt_radians{1.0};
+    bool terminate_on_fall{true};
+};
+
 class GOBOT_EXPORT RLEnvironment : public Object {
     GOBCLASS(RLEnvironment, Object)
 
@@ -55,6 +63,10 @@ public:
     void SetMaxEpisodeSteps(std::uint64_t max_episode_steps);
 
     std::uint64_t GetMaxEpisodeSteps() const;
+
+    void SetRewardSettings(const RLEnvironmentRewardSettings& settings);
+
+    const RLEnvironmentRewardSettings& GetRewardSettings() const;
 
     bool Reset(std::uint32_t seed = 0);
 
@@ -81,6 +93,10 @@ private:
 
     bool EnsureReady();
 
+    bool IsBaseFallen() const;
+
+    RealType ComputeReward(bool fallen) const;
+
     void SetLastError(std::string error);
 
     SimulationServer* simulation_{nullptr};
@@ -91,6 +107,7 @@ private:
     std::uint32_t last_seed_{0};
     std::string base_link_name_;
     std::vector<std::string> controlled_joint_names_;
+    RLEnvironmentRewardSettings reward_settings_;
     std::string last_error_;
 };
 
