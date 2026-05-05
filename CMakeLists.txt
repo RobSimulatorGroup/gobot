@@ -13,6 +13,7 @@ option(GOB_BUILD_TESTS "build tests" OFF)
 option(GOB_BUILD_OPENUSD "build OpenUSD scene importer/exporter support" OFF)
 option(GOB_BUILD_ASSIMP "build mesh import support through Assimp" ON)
 option(GOB_BUILD_MUJOCO "build MuJoCo CPU physics backend support" OFF)
+option(GOB_BUILD_PYTHON_BINDINGS "build Python bindings through pybind11" OFF)
 option(GOB_FETCH_MUJOCO "download MuJoCo from the official GitHub repository when GOB_BUILD_MUJOCO is ON and no local SDK/package is found" OFF)
 set(GOB_MUJOCO_ROOT "" CACHE PATH "MuJoCo SDK or install prefix. Supports either a CMake package install or an extracted SDK with include/ and lib/.")
 set(GOB_MUJOCO_GIT_TAG "3.8.0" CACHE STRING "MuJoCo release tag used when GOB_FETCH_MUJOCO is ON")
@@ -197,6 +198,20 @@ if(magic_enum_SOURCE_DIR)
 endif()
 CPMAddPackage("gh:jarro2783/cxxopts@3.0.0")
 
+if(GOB_BUILD_PYTHON_BINDINGS)
+    find_package(Python3 REQUIRED COMPONENTS Interpreter Development.Module)
+    if(EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/3rdparty/pybind11/CMakeLists.txt")
+        add_subdirectory(3rdparty/pybind11)
+    else()
+        CPMAddPackage(
+            NAME pybind11
+            GITHUB_REPOSITORY pybind/pybind11
+            VERSION 2.13.6
+            OPTIONS "PYBIND11_TEST OFF"
+        )
+    endif()
+endif()
+
 INCLUDE(GenerateExportHeader)
 
 add_subdirectory(3rdparty)
@@ -253,6 +268,16 @@ endif()
 if(GOB_BUILD_MUJOCO)
     target_compile_definitions(gobot PUBLIC GOBOT_HAS_MUJOCO=1)
     target_link_libraries(gobot PUBLIC ${GOBOT_MUJOCO_TARGET})
+endif()
+
+if(GOB_BUILD_PYTHON_BINDINGS)
+    pybind11_add_module(gobot_python MODULE src/gobot/python/python_module.cpp)
+    target_link_libraries(gobot_python PRIVATE gobot)
+    set_target_properties(gobot_python
+        PROPERTIES
+            OUTPUT_NAME "gobot"
+            LIBRARY_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/python"
+    )
 endif()
 
 # copy icon to bin

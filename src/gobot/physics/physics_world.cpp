@@ -444,6 +444,22 @@ GOBOT_REGISTRATION {
     QuickEnumeration_<PhysicsShapeType>("PhysicsShapeType");
     QuickEnumeration_<PhysicsJointControlMode>("PhysicsJointControlMode");
 
+    Class_<PhysicsBackendInfo>("PhysicsBackendInfo")
+            .constructor()
+            .property("type", &PhysicsBackendInfo::type)
+            .property("name", &PhysicsBackendInfo::name)
+            .property("available", &PhysicsBackendInfo::available)
+            .property("cpu", &PhysicsBackendInfo::cpu)
+            .property("gpu", &PhysicsBackendInfo::gpu)
+            .property("robotics_focused", &PhysicsBackendInfo::robotics_focused)
+            .property("status", &PhysicsBackendInfo::status);
+
+    Class_<PhysicsWorldSettings>("PhysicsWorldSettings")
+            .constructor()
+            .property("gravity", &PhysicsWorldSettings::gravity)
+            .property("fixed_time_step", &PhysicsWorldSettings::fixed_time_step)
+            .property("default_joint_gains", &PhysicsWorldSettings::default_joint_gains);
+
     Class_<PhysicsWorld>("PhysicsWorld")
             .method("is_available", &PhysicsWorld::IsAvailable)
             .method("get_last_error", &PhysicsWorld::GetLastError)
