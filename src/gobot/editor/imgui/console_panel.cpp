@@ -9,10 +9,13 @@
 #include "gobot/editor/imgui/console_panel.hpp"
 
 #include <utility>
+#include "gobot/editor/editor.hpp"
 #include "gobot/editor/imgui/imgui_utilities.hpp"
+#include "gobot/python/python_script_runner.hpp"
 #include "imgui_extension/icon_fonts/icons_material_design_icons.h"
 
 #include "imgui.h"
+#include "imgui_stdlib.h"
 
 namespace gobot {
 
@@ -190,6 +193,8 @@ void ConsolePanel::OnImGuiContent()
 {
     ImGuiRenderHeader();
     ImGui::Separator();
+    ImGuiRenderPythonRunner();
+    ImGui::Separator();
     ImGuiRenderMessages();
 }
 
@@ -304,6 +309,46 @@ void ConsolePanel::ImGuiRenderMessages()
         }
     }
     ImGui::EndChild();
+}
+
+void ConsolePanel::ImGuiRenderPythonRunner() {
+    if (python_script_.empty()) {
+        python_script_ = "import gobot\nctx = gobot.app.context()\nprint(ctx.root.name if ctx.root else 'no scene')\n";
+    }
+
+    ImGui::TextUnformatted(ICON_MDI_LANGUAGE_PYTHON " Python");
+    ImGui::SameLine();
+    if (ImGui::Button(ICON_MDI_PLAY " Run")) {
+        RunPythonScript();
+    }
+    if (ImGui::IsItemHovered()) {
+        ImGui::SetTooltip("Run Python against the active editor scene");
+    }
+
+    const float editor_height = ImGui::GetTextLineHeightWithSpacing() * 6.0f;
+    ImGui::InputTextMultiline("##PythonScriptRunner",
+                              &python_script_,
+                              ImVec2(-FLT_MIN, editor_height),
+                              ImGuiInputTextFlags_AllowTabInput);
+}
+
+void ConsolePanel::RunPythonScript() {
+    auto* editor = Editor::GetInstanceOrNull();
+    auto* context = editor != nullptr ? editor->GetEngineContext() : nullptr;
+    python::PythonExecutionResult result =
+            python::PythonScriptRunner::ExecuteString(python_script_, context, "<editor-console>");
+
+    if (!result.output.empty()) {
+        AddMessage(MakeRef<ConsoleMessage>(result.output, ConsoleMessage::Info, "Python stdout"));
+    }
+    if (!result.error.empty()) {
+        AddMessage(MakeRef<ConsoleMessage>(result.error,
+                                           result.ok ? ConsoleMessage::Warn : ConsoleMessage::Error,
+                                           "Python stderr"));
+    }
+    if (result.ok && result.output.empty() && result.error.empty()) {
+        AddMessage(MakeRef<ConsoleMessage>("Python script executed.", ConsoleMessage::Info, "Python"));
+    }
 }
 
 }

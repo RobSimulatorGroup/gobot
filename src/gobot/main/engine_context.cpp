@@ -44,6 +44,15 @@ const std::string& EngineContext::GetProjectPath() const {
 }
 
 bool EngineContext::LoadScene(const std::string& scene_path) {
+    if (load_scene_callback_) {
+        if (!load_scene_callback_(scene_path)) {
+            SetLastError("Failed to load scene through active runtime context from '" + scene_path + "'.");
+            return false;
+        }
+        last_error_.clear();
+        return true;
+    }
+
     Ref<Resource> resource =
             ResourceLoader::Load(scene_path, "PackedScene", ResourceFormatLoader::CacheMode::Ignore);
     Ref<PackedScene> packed_scene = dynamic_pointer_cast<PackedScene>(resource);
@@ -209,6 +218,20 @@ SimulationServer* EngineContext::GetSimulationServer() const {
 
 const std::string& EngineContext::GetLastError() const {
     return last_error_;
+}
+
+void EngineContext::SetSceneChangedCallback(SceneChangedCallback callback) {
+    scene_changed_callback_ = std::move(callback);
+}
+
+void EngineContext::SetLoadSceneCallback(LoadSceneCallback callback) {
+    load_scene_callback_ = std::move(callback);
+}
+
+void EngineContext::NotifySceneChanged() {
+    if (scene_changed_callback_) {
+        scene_changed_callback_();
+    }
 }
 
 void EngineContext::ClearOwnedScene() {

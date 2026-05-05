@@ -29,6 +29,7 @@ private:
     void RebuildInspector(Node* selected);
 
     Node* inspected_node_{nullptr};
+    std::uint64_t inspected_scene_change_version_{0};
 
     ImGuiTextFilter* filter_;
 

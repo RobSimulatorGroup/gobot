@@ -26,13 +26,17 @@
 #include "gobot/editor/imgui/physics_panel.hpp"
 #include "gobot/editor/imgui/resource_panel.hpp"
 #include "gobot/editor/property_inspector/editor_inspector.hpp"
+#include "gobot/main/engine_context.hpp"
 #include "gobot/main/main.hpp"
+#include "gobot/physics/physics_server.hpp"
+#include "gobot/python/python_binding_registry.hpp"
 #include "gobot/scene/collision_shape_3d.hpp"
 #include "gobot/scene/imgui_window.hpp"
 #include "gobot/scene/mesh_instance_3d.hpp"
 #include "gobot/scene/node_3d.hpp"
 #include "gobot/scene/resources/box_shape_3d.hpp"
 #include "gobot/scene/resources/primitive_mesh.hpp"
+#include "gobot/simulation/simulation_server.hpp"
 #include "gobot/core/config/engine.hpp"
 #include "gobot/core/config/project_setting.hpp"
 #include "gobot/editor/imgui/imgui_utilities.hpp"
@@ -86,6 +90,17 @@ Editor::Editor() {
     edited_scene_ = Object::New<EditedScene>();
     AddChild(edited_scene_, true);
     selected_ = edited_scene_->GetRoot();
+    engine_context_ = new EngineContext(ProjectSettings::GetInstance(),
+                                        PhysicsServer::GetInstance(),
+                                        SimulationServer::GetInstance());
+    engine_context_->SetSceneChangedCallback([this]() {
+        MarkSceneDirty();
+    });
+    engine_context_->SetLoadSceneCallback([this](const std::string& path) {
+        return OpenSceneFromPath(path);
+    });
+    BindEngineContextToEditedScene();
+    python::SetActiveAppContext(engine_context_);
 
     node3d_editor_ = Object::New<Node3DEditor>();
     node3d_editor_->SetName("Node3DEditor");
@@ -109,6 +124,11 @@ Editor::Editor() {
 }
 
 Editor::~Editor() {
+    if (python::GetActiveAppContextOrNull() == engine_context_) {
+        python::SetActiveAppContext(nullptr);
+    }
+    delete engine_context_;
+    engine_context_ = nullptr;
     s_singleton = nullptr;
 
     delete file_browser_;
@@ -122,6 +142,16 @@ Editor* Editor::GetInstance() {
 
 Node3D* Editor::GetEditedSceneRoot() const {
     return edited_scene_ ? edited_scene_->GetRoot() : nullptr;
+}
+
+void Editor::BindEngineContextToEditedScene() {
+    if (engine_context_ == nullptr) {
+        return;
+    }
+
+    engine_context_->SetSceneRoot(GetEditedSceneRoot(),
+                                  false,
+                                  current_scene_path_);
 }
 
 void Editor::SetSelected(Node* selected) {
@@ -177,6 +207,7 @@ bool Editor::LoadEditedScene(const std::string& path) {
     }
 
     selected_ = edited_scene_->GetRoot();
+    BindEngineContextToEditedScene();
     return true;
 }
 
@@ -187,6 +218,7 @@ bool Editor::OpenSceneFromPath(const std::string& path) {
     }
 
     current_scene_path_ = path;
+    BindEngineContextToEditedScene();
     ClearSceneDirty();
     LOG_INFO("Opened scene: {}", current_scene_path_);
     return true;
@@ -206,6 +238,7 @@ bool Editor::NewEditedScene() {
 
     selected_ = edited_scene_->GetRoot();
     current_scene_path_.clear();
+    BindEngineContextToEditedScene();
     ClearSceneDirty();
     LOG_INFO("Created a new scene.");
     return true;
@@ -221,6 +254,7 @@ void Editor::RequestImportSceneFromPath(const std::string& path) {
     RequestSceneSwitch([this, path]() {
         if (LoadEditedScene(path)) {
             current_scene_path_ = NativeScenePathForImport(std::filesystem::path(path));
+            BindEngineContextToEditedScene();
             MarkSceneDirty();
             LOG_INFO("Imported scene: {}. Native save target: {}", path, current_scene_path_);
         } else {
@@ -288,6 +322,7 @@ void Editor::RefreshResourcePanel() {
 
 void Editor::MarkSceneDirty() {
     scene_dirty_ = true;
+    ++scene_change_version_;
 }
 
 void Editor::ClearSceneDirty() {

@@ -1,6 +1,7 @@
 #include "gobot/python/python_binding_registry.hpp"
 
 #include <cstdint>
+#include <filesystem>
 #include <memory>
 #include <stdexcept>
 #include <string>
@@ -25,6 +26,8 @@
 
 namespace gobot::python {
 namespace {
+
+EngineContext* s_active_app_context = nullptr;
 
 struct GobotRuntime {
     ProjectSettings* project_settings{nullptr};
@@ -142,7 +145,9 @@ struct PyRLEnvironment {
     PyRLEnvironment(const std::string& scene_path,
                     const std::string& robot,
                     const std::string& backend) {
-        Runtime();
+        if (s_active_app_context == nullptr) {
+            Runtime();
+        }
         simulation = Object::New<SimulationServer>(ParseBackend(backend));
         environment = Object::New<RLEnvironment>(simulation);
         scene_root = scene_path.empty() ? static_cast<Node*>(CreateTestRobotScene()) : LoadSceneRoot(scene_path);
@@ -292,6 +297,7 @@ void NodeSetProperty(Node& node, const std::string& name, const py::handle& valu
     if (!node.Set(name, PythonToVariantForType(value, property.get_type()))) {
         throw std::runtime_error("failed to set Gobot property '" + name + "'");
     }
+    GetActiveAppContext().NotifySceneChanged();
 }
 
 py::list NodeGetPropertyNames(const Node& node) {
@@ -338,8 +344,22 @@ py::dict StepInfoFromResult(const py::dict& result) {
 
 } // namespace
 
+void SetActiveAppContext(EngineContext* context) {
+    s_active_app_context = context;
+}
+
+EngineContext& GetActiveAppContext() {
+    if (s_active_app_context != nullptr) {
+        return *s_active_app_context;
+    }
+    return Runtime().GetAppContext();
+}
+
+EngineContext* GetActiveAppContextOrNull() {
+    return s_active_app_context;
+}
+
 void RegisterRuntime(py::module_& module) {
-    Runtime();
     module.doc() = "Gobot robotics scene, simulation, and rendering engine bindings.";
 }
 
@@ -368,6 +388,7 @@ void RegisterManualApis(py::module_& module) {
                 return context.GetSceneRoot();
             }, py::arg("scene_path"), py::return_value_policy::reference_internal)
             .def("clear_scene", &EngineContext::ClearScene)
+            .def("notify_scene_changed", &EngineContext::NotifySceneChanged)
             .def("build_world", [](EngineContext& context, PhysicsBackendType backend_type) {
                 context.SetBackendType(backend_type);
                 if (!context.BuildWorld()) {
@@ -416,14 +437,28 @@ void RegisterManualApis(py::module_& module) {
     py::class_<Node3D, Node>(module, "Node3D")
             .def_property("position",
                           [](const Node3D& node) { return Vector3ToPython(node.GetPosition()); },
-                          [](Node3D& node, const py::handle& value) { node.SetPosition(PythonToVector3(value)); })
+                          [](Node3D& node, const py::handle& value) {
+                              node.SetPosition(PythonToVector3(value));
+                              GetActiveAppContext().NotifySceneChanged();
+                          })
             .def_property("rotation_degrees",
                           [](const Node3D& node) { return Vector3ToPython(node.GetEulerDegree()); },
-                          [](Node3D& node, const py::handle& value) { node.SetEulerDegree(PythonToVector3(value)); })
+                          [](Node3D& node, const py::handle& value) {
+                              node.SetEulerDegree(PythonToVector3(value));
+                              GetActiveAppContext().NotifySceneChanged();
+                          })
             .def_property("scale",
                           [](const Node3D& node) { return Vector3ToPython(node.GetScale()); },
-                          [](Node3D& node, const py::handle& value) { node.SetScale(PythonToVector3(value)); })
-            .def_property("visible", &Node3D::IsVisible, &Node3D::SetVisible);
+                          [](Node3D& node, const py::handle& value) {
+                              node.SetScale(PythonToVector3(value));
+                              GetActiveAppContext().NotifySceneChanged();
+                          })
+            .def_property("visible",
+                          &Node3D::IsVisible,
+                          [](Node3D& node, bool visible) {
+                              node.SetVisible(visible);
+                              GetActiveAppContext().NotifySceneChanged();
+                          });
 
     py::class_<PyRLControllerConfig>(module, "RLControllerConfig")
             .def(py::init<>())
@@ -505,40 +540,54 @@ void RegisterManualApis(py::module_& module) {
             });
 
     module.def("set_project_path", [](const std::string& project_path) {
-        Runtime();
-        if (!ProjectSettings::GetInstance()->SetProjectPath(project_path)) {
+        EngineContext& context = GetActiveAppContext();
+        if (!context.SetProjectPath(project_path)) {
             throw std::runtime_error("failed to set Gobot project path '" + project_path + "'");
         }
     });
 
     py::module_ app_module = module.def_submodule("app", "Gobot application runtime context.");
     app_module.def("context", []() -> EngineContext& {
-        return Runtime().GetAppContext();
+        return GetActiveAppContext();
     }, py::return_value_policy::reference);
 
     module.def("load_scene", [](const std::string& scene_path) {
-        Runtime();
+        if (s_active_app_context == nullptr) {
+            Runtime();
+        }
         return std::make_unique<PyScene>(LoadSceneRoot(scene_path));
     }, py::arg("scene_path"));
 
     module.def("load_resource", [](const std::string& path, const std::string& type_hint) {
-        Runtime();
+        if (s_active_app_context == nullptr) {
+            Runtime();
+        }
         return ResourceToPythonDict(ResourceLoader::Load(path, type_hint));
     }, py::arg("path"), py::arg("type_hint") = "");
 
     module.def("create_test_scene", []() {
-        Runtime();
+        if (s_active_app_context == nullptr) {
+            Runtime();
+        }
         return std::make_unique<PyScene>(CreateTestRobotScene());
     });
 
     module.def("backend_infos", []() {
-        Runtime();
+        if (s_active_app_context == nullptr) {
+            Runtime();
+        }
         py::list infos;
         for (const PhysicsBackendInfo& info : PhysicsServer::GetBackendInfosForAllBackends()) {
             infos.append(ReflectedToPythonDict(info));
         }
         return infos;
     });
+}
+
+void RegisterModule(py::module_& module) {
+    RegisterRuntime(module);
+    RegisterReflectedTypes(module);
+    RegisterManualApis(module);
 }
 
 } // namespace gobot::python

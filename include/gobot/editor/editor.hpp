@@ -23,6 +23,7 @@ class Node3DEditor;
 class ImGuiManager;
 class Node3D;
 class EditedScene;
+class EngineContext;
 class ResourcePanel;
 
 class GOBOT_EXPORT Editor : public ImGuiNode {
@@ -56,6 +57,8 @@ public:
 
     Node3D* GetEditedSceneRoot() const;
 
+    EngineContext* GetEngineContext() const { return engine_context_; }
+
     bool SaveEditedScene(const std::string& path) const;
 
     bool SaveCurrentScene();
@@ -83,6 +86,8 @@ public:
     void ClearSceneDirty();
 
     [[nodiscard]] bool IsSceneDirty() const { return scene_dirty_; }
+
+    [[nodiscard]] std::uint64_t GetSceneChangeVersion() const { return scene_change_version_; }
 
     [[nodiscard]] bool HasCurrentScenePath() const { return !current_scene_path_.empty(); }
 
@@ -121,6 +126,8 @@ private:
 
     void ResetFileDialogDefaults();
 
+    void BindEngineContextToEditedScene();
+
     static bool IsNativeScenePath(const std::string& path);
 
     void BeginDockSpace();
@@ -134,11 +141,13 @@ private:
     ImGuiManager* imgui_manager_{nullptr};
     ImGui::FileBrowser* file_browser_{nullptr};
     EditedScene* edited_scene_{nullptr};
+    EngineContext* engine_context_{nullptr};
     ResourcePanel* resource_panel_{nullptr};
 
     SceneFileDialogMode scene_file_dialog_mode_{SceneFileDialogMode::None};
     std::string current_scene_path_;
     bool scene_dirty_{false};
+    std::uint64_t scene_change_version_{0};
     bool save_shortcut_down_{false};
     bool request_unsaved_scene_dialog_{false};
     std::function<void()> pending_scene_switch_action_;

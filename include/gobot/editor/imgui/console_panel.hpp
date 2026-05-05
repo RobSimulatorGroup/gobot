@@ -7,6 +7,8 @@
 
 #pragma once
 
+#include <string>
+
 #include "gobot/scene/imgui_window.hpp"
 #include "gobot/core/ref_counted.hpp"
 #include "gobot/core/color.hpp"
@@ -71,6 +73,10 @@ private:
 
     void ImGuiRenderMessages();
 
+    void ImGuiRenderPythonRunner();
+
+    void RunPythonScript();
+
 private:
     friend class ConsoleMessage;
 
@@ -82,6 +88,7 @@ private:
     static bool s_request_scroll_to_bottom;
     static uint32_t s_message_buffer_render_filter;
     ImGuiTextFilter filter_;
+    std::string python_script_;
 };
 
 }

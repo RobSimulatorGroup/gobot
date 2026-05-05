@@ -199,7 +199,7 @@ endif()
 CPMAddPackage("gh:jarro2783/cxxopts@3.0.0")
 
 if(GOB_BUILD_PYTHON_BINDINGS)
-    find_package(Python3 REQUIRED COMPONENTS Interpreter Development.Module)
+    find_package(Python3 REQUIRED COMPONENTS Interpreter Development.Module Development.Embed)
     if(EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/3rdparty/pybind11/CMakeLists.txt")
         add_subdirectory(3rdparty/pybind11)
     else()
@@ -271,11 +271,18 @@ if(GOB_BUILD_MUJOCO)
 endif()
 
 if(GOB_BUILD_PYTHON_BINDINGS)
-    pybind11_add_module(gobot_python MODULE
-            src/gobot/python/python_module.cpp
+    target_compile_definitions(gobot PUBLIC GOBOT_HAS_PYTHON=1)
+    target_sources(gobot
+        PRIVATE
             src/gobot/python/python_manual_bindings.cpp
             src/gobot/python/python_reflected_bindings.cpp
             src/gobot/python/python_variant_bridge.cpp
+            src/gobot/python/python_script_runner.cpp
+    )
+    target_link_libraries(gobot PUBLIC pybind11::embed)
+
+    pybind11_add_module(gobot_python MODULE
+            src/gobot/python/python_module.cpp
     )
     target_link_libraries(gobot_python PRIVATE gobot)
     set_target_properties(gobot_python
@@ -341,6 +348,11 @@ target_include_directories(gobot
 
 
 
+set(GOBOT_PYTHON_EMBED_SOURCE "")
+if(GOB_BUILD_PYTHON_BINDINGS)
+    set(GOBOT_PYTHON_EMBED_SOURCE src/gobot/python/python_embed_module.cpp)
+endif()
+
 file(GLOB_RECURSE SOURCE_PLATFORM CONFIGURE_DEPENDS "src/gobot/platform/linux/*.cpp")
 list(REMOVE_ITEM SOURCE_PLATFORM
         "${CMAKE_CURRENT_SOURCE_DIR}/src/gobot/platform/linux/gobot_linux.cpp"
@@ -348,11 +360,15 @@ list(REMOVE_ITEM SOURCE_PLATFORM
 )
 add_executable(gobot_editor
         ${SOURCE_PLATFORM}
+        ${GOBOT_PYTHON_EMBED_SOURCE}
         src/gobot/platform/linux/gobot_linux.cpp
 )
 target_link_libraries(gobot_editor PRIVATE gobot)
 
-add_executable(gobot_headless src/gobot/platform/linux/gobot_headless.cpp)
+add_executable(gobot_headless
+        ${GOBOT_PYTHON_EMBED_SOURCE}
+        src/gobot/platform/linux/gobot_headless.cpp
+)
 target_link_libraries(gobot_headless PRIVATE gobot)
 
 if (GOB_BUILD_EXPERIMENT)

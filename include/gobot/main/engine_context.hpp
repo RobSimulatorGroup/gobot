@@ -1,6 +1,7 @@
 #pragma once
 
 #include <cstdint>
+#include <functional>
 #include <string>
 
 #include "gobot/core/object.hpp"
@@ -15,6 +16,9 @@ class SimulationServer;
 
 class GOBOT_EXPORT EngineContext {
 public:
+    using SceneChangedCallback = std::function<void()>;
+    using LoadSceneCallback = std::function<bool(const std::string& path)>;
+
     EngineContext(ProjectSettings* project_settings,
                   PhysicsServer* physics_server,
                   SimulationServer* simulation_server);
@@ -54,6 +58,10 @@ public:
     SimulationServer* GetSimulationServer() const;
     const std::string& GetLastError() const;
 
+    void SetSceneChangedCallback(SceneChangedCallback callback);
+    void SetLoadSceneCallback(LoadSceneCallback callback);
+    void NotifySceneChanged();
+
 private:
     void ClearOwnedScene();
     void SetLastError(std::string error);
@@ -65,6 +73,8 @@ private:
     bool owns_scene_root_{false};
     std::string scene_path_;
     std::string last_error_;
+    SceneChangedCallback scene_changed_callback_;
+    LoadSceneCallback load_scene_callback_;
 };
 
 } // namespace gobot

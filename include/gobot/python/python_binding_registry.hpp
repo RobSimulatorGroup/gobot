@@ -11,32 +11,45 @@
 
 #include "gobot/core/math/geometry.hpp"
 #include "gobot/core/types.hpp"
+#include "gobot_export.h"
+
+namespace gobot {
+class EngineContext;
+}
 
 namespace gobot::python {
 
 namespace py = pybind11;
 
-void RegisterRuntime(py::module_& module);
+GOBOT_EXPORT void RegisterRuntime(py::module_& module);
 
-void RegisterReflectedTypes(py::module_& module);
+GOBOT_EXPORT void RegisterReflectedTypes(py::module_& module);
 
-void RegisterManualApis(py::module_& module);
+GOBOT_EXPORT void RegisterManualApis(py::module_& module);
 
-py::object VariantToPython(const Variant& variant);
+GOBOT_EXPORT void RegisterModule(py::module_& module);
 
-Variant PythonToVariant(const py::handle& object);
+GOBOT_EXPORT void SetActiveAppContext(EngineContext* context);
 
-Variant PythonToVariantForType(const py::handle& object, const Type& type);
+GOBOT_EXPORT EngineContext* GetActiveAppContextOrNull();
 
-bool SetReflectedPropertyFromPython(Instance instance, const Property& property, const py::handle& value);
+GOBOT_EXPORT EngineContext& GetActiveAppContext();
 
-Vector3 PythonToVector3(const py::handle& object);
+GOBOT_EXPORT py::object VariantToPython(const Variant& variant);
 
-py::tuple Vector3ToPython(const Vector3& vector);
+GOBOT_EXPORT Variant PythonToVariant(const py::handle& object);
 
-py::dict ReflectedToPythonDict(const Variant& value);
+GOBOT_EXPORT Variant PythonToVariantForType(const py::handle& object, const Type& type);
 
-Variant DictToReflected(py::dict dict, const Type& type);
+GOBOT_EXPORT bool SetReflectedPropertyFromPython(Instance instance, const Property& property, const py::handle& value);
+
+GOBOT_EXPORT Vector3 PythonToVector3(const py::handle& object);
+
+GOBOT_EXPORT py::tuple Vector3ToPython(const Vector3& vector);
+
+GOBOT_EXPORT py::dict ReflectedToPythonDict(const Variant& value);
+
+GOBOT_EXPORT Variant DictToReflected(py::dict dict, const Type& type);
 
 template <typename T>
 py::dict ReflectedToPythonDict(const T& value) {

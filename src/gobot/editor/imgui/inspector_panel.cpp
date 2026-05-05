@@ -30,7 +30,9 @@ InspectorPanel::~InspectorPanel() {
 }
 
 void InspectorPanel::RebuildInspector(Node* selected) {
-    if (selected == inspected_node_) {
+    const std::uint64_t scene_change_version = Editor::GetInstance()->GetSceneChangeVersion();
+    if (selected == inspected_node_ &&
+        scene_change_version == inspected_scene_change_version_) {
         return;
     }
 
@@ -40,6 +42,7 @@ void InspectorPanel::RebuildInspector(Node* selected) {
     }
 
     inspected_node_ = selected;
+    inspected_scene_change_version_ = scene_change_version;
     if (!inspected_node_) {
         return;
     }
