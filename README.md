@@ -42,6 +42,88 @@ cmake -DCMAKE_BUILD_TYPE=Release ..
 make -j$(nproc)
 ```
 
+## Python Bindings
+
+Gobot builds a `gobot` CPython extension with pybind11 when
+`GOB_BUILD_PYTHON_BINDINGS` is enabled. The default CMake configuration enables
+it.
+
+Build the module:
+
+```bash
+cmake -S . -B build -DCMAKE_BUILD_TYPE=Release
+cmake --build build --target gobot_python -j$(nproc)
+```
+
+Use the build tree directly:
+
+```bash
+PYTHONPATH="$PWD/build/python" python3 - <<'PY'
+import gobot
+
+print(gobot.__file__)
+print(gobot.backend_infos())
+PY
+```
+
+Run the Python smoke test:
+
+```bash
+PYTHONPATH="$PWD/build/python" python3 tests/python/test_python_bindings_smoke.py
+```
+
+Run a real-scene smoke test when you have a Gobot project containing
+`world.jscn` and robot assets:
+
+```bash
+PYTHONPATH="$PWD/build/python" python3 tests/python/smoke_real_scene.py \
+  --project /path/to/project \
+  --scene res://world.jscn \
+  --robot H2 \
+  --backend mujoco \
+  --steps 4
+```
+
+The Python API uses the same `res://` project root as the editor:
+
+```python
+import gobot
+
+gobot.set_project_path("/path/to/project")
+scene = gobot.load_scene("res://world.jscn")
+env = gobot.RLEnvironment("res://world.jscn", robot="H2", backend="mujoco")
+observation, info = env.reset(seed=1)
+```
+
+### Editable Install
+
+The repository includes a minimal `pyproject.toml` for local Python installs:
+
+```bash
+python3 -m pip install -e .
+```
+
+This requires `scikit-build-core` in the Python build environment. On Ubuntu,
+install `python3-venv` first if you want to test in a clean virtual
+environment:
+
+```bash
+sudo apt install python3-venv
+python3 -m venv .venv
+. .venv/bin/activate
+python -m pip install -U pip scikit-build-core
+python -m pip install -e .
+```
+
+The install rules place `gobot.cpython-*.so`, `libgobot.so`,
+`librttr_core.so.*`, optional MuJoCo runtime libraries, and
+`gobot_gym_adapter.py` together with `$ORIGIN` rpath, so an installed module
+does not need `LD_LIBRARY_PATH` for these local Gobot libraries.
+
+Do not add a `python/gobot/__init__.py` package around the current extension
+module unless the extension is renamed to something like `gobot._gobot`; a
+package directory named `gobot` can shadow `gobot.cpython-*.so`.
+
 ## MuJoCo Backend Setup
 
 Gobot keeps MuJoCo optional. The default build does not download or link MuJoCo,

@@ -12,6 +12,32 @@ def main():
     infos = gobot.backend_infos()
     assert infos
     assert any(info["name"] == "Null" and info["available"] for info in infos)
+    assert gobot.PhysicsBackendType.Null == gobot.physics.PhysicsBackendType.Null
+    assert any(info["type"] == gobot.PhysicsBackendType.Null for info in infos)
+
+    reflected_gains = gobot.JointControllerGains()
+    reflected_gains.position_stiffness = 12.0
+    reflected_gains.velocity_damping = 1.5
+    gains_dict = reflected_gains.to_dict()
+    assert gains_dict["position_stiffness"] == 12.0
+    reflected_gains_from_dict = gobot.JointControllerGains.from_dict(
+        {"position_stiffness": 13.0, "velocity_damping": 2.5}
+    )
+    assert reflected_gains_from_dict.position_stiffness == 13.0
+    assert reflected_gains_from_dict.velocity_damping == 2.5
+
+    reward_settings = gobot.RLEnvironmentRewardSettings.from_dict(
+        {"alive_reward": 2.0, "terminate_on_fall": False}
+    )
+    assert reward_settings.to_dict()["alive_reward"] == 2.0
+    assert reward_settings.terminate_on_fall is False
+
+    spec = gobot.RLVectorSpec()
+    spec.names = ["joint"]
+    spec.lower_bounds = [-1.0]
+    spec.upper_bounds = [1.0]
+    spec.units = ["normalized"]
+    assert spec.to_dict()["names"] == ["joint"]
 
     scene = gobot.create_test_scene()
     root = scene.root

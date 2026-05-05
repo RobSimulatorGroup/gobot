@@ -1,0 +1,25 @@
+[build-system]
+requires = [
+    "scikit-build-core>=0.10",
+]
+build-backend = "scikit_build_core.build"
+
+[project]
+name = "gobot"
+version = "0.1.0"
+description = "Python bindings for the Gobot robotics scene, simulation, and rendering engine."
+readme = "README.md"
+requires-python = ">=3.10"
+license = { text = "LGPL-3.0-or-later" }
+authors = [
+    { name = "RobSimulatorGroup" },
+]
+
+[tool.scikit-build]
+cmake.build-type = "Release"
+build-dir = "build/{wheel_tag}"
+wheel.packages = []
+
+[tool.scikit-build.cmake.define]
+GOB_BUILD_PYTHON_BINDINGS = "ON"
+GOB_BUILD_TESTS = "OFF"

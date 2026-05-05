@@ -271,12 +271,22 @@ if(GOB_BUILD_MUJOCO)
 endif()
 
 if(GOB_BUILD_PYTHON_BINDINGS)
-    pybind11_add_module(gobot_python MODULE src/gobot/python/python_module.cpp)
+    pybind11_add_module(gobot_python MODULE
+            src/gobot/python/python_module.cpp
+            src/gobot/python/python_manual_bindings.cpp
+            src/gobot/python/python_reflected_bindings.cpp
+            src/gobot/python/python_variant_bridge.cpp
+    )
     target_link_libraries(gobot_python PRIVATE gobot)
     set_target_properties(gobot_python
         PROPERTIES
             OUTPUT_NAME "gobot"
             LIBRARY_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/python"
+            INSTALL_RPATH "$ORIGIN"
+    )
+    set_target_properties(gobot
+        PROPERTIES
+            INSTALL_RPATH "$ORIGIN"
     )
     add_custom_command(
             TARGET gobot_python POST_BUILD
@@ -284,6 +294,14 @@ if(GOB_BUILD_PYTHON_BINDINGS)
                     "${CMAKE_CURRENT_SOURCE_DIR}/python/gobot_gym_adapter.py"
                     "${CMAKE_BINARY_DIR}/python/gobot_gym_adapter.py"
     )
+    install(TARGETS gobot_python gobot LIBRARY DESTINATION "." COMPONENT python)
+    install(FILES "${CMAKE_CURRENT_SOURCE_DIR}/python/gobot_gym_adapter.py" DESTINATION "." COMPONENT python)
+    if(TARGET RTTR::Core)
+        install(FILES "$<TARGET_FILE:RTTR::Core>" DESTINATION "." COMPONENT python)
+    endif()
+    if(GOB_BUILD_MUJOCO AND GOBOT_MUJOCO_TARGET)
+        install(FILES "$<TARGET_FILE:${GOBOT_MUJOCO_TARGET}>" DESTINATION "." COMPONENT python)
+    endif()
 endif()
 
 # copy icon to bin
