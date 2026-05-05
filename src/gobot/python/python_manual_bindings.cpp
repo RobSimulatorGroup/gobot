@@ -10,6 +10,7 @@
 
 #include "gobot/core/config/project_setting.hpp"
 #include "gobot/core/io/resource_loader.hpp"
+#include "gobot/main/engine_context.hpp"
 #include "gobot/physics/physics_server.hpp"
 #include "gobot/scene/collision_shape_3d.hpp"
 #include "gobot/scene/joint_3d.hpp"
@@ -28,16 +29,27 @@ namespace {
 struct GobotRuntime {
     ProjectSettings* project_settings{nullptr};
     PhysicsServer* physics_server{nullptr};
+    SimulationServer* app_simulation_server{nullptr};
+    std::unique_ptr<EngineContext> app_context;
     bool scene_initializer_ready{false};
 
     GobotRuntime() {
         project_settings = Object::New<ProjectSettings>();
         physics_server = Object::New<PhysicsServer>();
+        app_simulation_server = Object::New<SimulationServer>();
+        app_context = std::make_unique<EngineContext>(project_settings,
+                                                      physics_server,
+                                                      app_simulation_server);
         SceneInitializer::Init();
         scene_initializer_ready = true;
     }
 
     ~GobotRuntime() {
+        app_context.reset();
+        if (app_simulation_server != nullptr) {
+            Object::Delete(app_simulation_server);
+            app_simulation_server = nullptr;
+        }
         if (scene_initializer_ready) {
             SceneInitializer::Destroy();
             scene_initializer_ready = false;
@@ -50,6 +62,10 @@ struct GobotRuntime {
             Object::Delete(project_settings);
             project_settings = nullptr;
         }
+    }
+
+    EngineContext& GetAppContext() {
+        return *app_context;
     }
 };
 
@@ -256,6 +272,10 @@ Node* GetNodeChild(Node& node, int index) {
     return child;
 }
 
+Node* FindNode(Node& node, const std::string& path) {
+    return node.GetNodeOrNull(NodePath(path));
+}
+
 py::object NodeGetProperty(const Node& node, const std::string& name) {
     Variant value = node.Get(name);
     if (!value.is_valid()) {
@@ -324,6 +344,59 @@ void RegisterRuntime(py::module_& module) {
 }
 
 void RegisterManualApis(py::module_& module) {
+    py::class_<EngineContext>(module, "AppContext")
+            .def_property_readonly("project_path", &EngineContext::GetProjectPath)
+            .def_property_readonly("scene_path", &EngineContext::GetScenePath)
+            .def_property_readonly("root", &EngineContext::GetSceneRoot,
+                                   py::return_value_policy::reference_internal)
+            .def_property("backend_type",
+                          &EngineContext::GetBackendType,
+                          &EngineContext::SetBackendType)
+            .def_property_readonly("has_scene", &EngineContext::HasScene)
+            .def_property_readonly("has_world", &EngineContext::HasWorld)
+            .def_property_readonly("simulation_time", &EngineContext::GetSimulationTime)
+            .def_property_readonly("frame_count", &EngineContext::GetFrameCount)
+            .def("set_project_path", [](EngineContext& context, const std::string& project_path) {
+                if (!context.SetProjectPath(project_path)) {
+                    throw std::runtime_error(context.GetLastError());
+                }
+            }, py::arg("project_path"))
+            .def("load_scene", [](EngineContext& context, const std::string& scene_path) {
+                if (!context.LoadScene(scene_path)) {
+                    throw std::runtime_error(context.GetLastError());
+                }
+                return context.GetSceneRoot();
+            }, py::arg("scene_path"), py::return_value_policy::reference_internal)
+            .def("clear_scene", &EngineContext::ClearScene)
+            .def("build_world", [](EngineContext& context, PhysicsBackendType backend_type) {
+                context.SetBackendType(backend_type);
+                if (!context.BuildWorld()) {
+                    throw std::runtime_error(context.GetLastError());
+                }
+            }, py::arg("backend_type") = PhysicsBackendType::Null)
+            .def("rebuild_world", [](EngineContext& context, bool preserve_state) {
+                if (!context.RebuildWorld(preserve_state)) {
+                    throw std::runtime_error(context.GetLastError());
+                }
+            }, py::arg("preserve_state") = true)
+            .def("clear_world", &EngineContext::ClearWorld)
+            .def("reset_simulation", [](EngineContext& context) {
+                if (!context.ResetSimulation()) {
+                    throw std::runtime_error(context.GetLastError());
+                }
+            })
+            .def("step_once", [](EngineContext& context) {
+                if (!context.StepOnce()) {
+                    throw std::runtime_error(context.GetLastError());
+                }
+            })
+            .def("step", [](EngineContext& context, std::uint64_t ticks) {
+                if (!context.StepTicks(ticks)) {
+                    throw std::runtime_error(context.GetLastError());
+                }
+            }, py::arg("ticks") = 1)
+            .def("get_last_error", &EngineContext::GetLastError);
+
     py::class_<PyScene, std::unique_ptr<PyScene>>(module, "Scene")
             .def_property_readonly("root", [](PyScene& scene) {
                 return scene.root;
@@ -335,6 +408,7 @@ void RegisterManualApis(py::module_& module) {
             .def_property_readonly("child_count", &Node::GetChildCount)
             .def_property_readonly("children", &GetNodeChildren, py::return_value_policy::reference_internal)
             .def("child", &GetNodeChild, py::arg("index"), py::return_value_policy::reference_internal)
+            .def("find", &FindNode, py::arg("path"), py::return_value_policy::reference_internal)
             .def("get", &NodeGetProperty, py::arg("property"))
             .def("set", &NodeSetProperty, py::arg("property"), py::arg("value"))
             .def("property_names", &NodeGetPropertyNames);
@@ -436,6 +510,11 @@ void RegisterManualApis(py::module_& module) {
             throw std::runtime_error("failed to set Gobot project path '" + project_path + "'");
         }
     });
+
+    py::module_ app_module = module.def_submodule("app", "Gobot application runtime context.");
+    app_module.def("context", []() -> EngineContext& {
+        return Runtime().GetAppContext();
+    }, py::return_value_policy::reference);
 
     module.def("load_scene", [](const std::string& scene_path) {
         Runtime();

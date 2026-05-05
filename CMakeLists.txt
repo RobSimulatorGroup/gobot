@@ -296,6 +296,18 @@ if(GOB_BUILD_PYTHON_BINDINGS)
     )
     install(TARGETS gobot_python gobot LIBRARY DESTINATION "." COMPONENT python)
     install(FILES "${CMAKE_CURRENT_SOURCE_DIR}/python/gobot_gym_adapter.py" DESTINATION "." COMPONENT python)
+    if(TARGET spdlog)
+        get_target_property(GOBOT_SPDLOG_TARGET_TYPE spdlog TYPE)
+        if(GOBOT_SPDLOG_TARGET_TYPE STREQUAL "SHARED_LIBRARY")
+            install(FILES "$<TARGET_FILE:spdlog>" "$<TARGET_SONAME_FILE:spdlog>" DESTINATION "." COMPONENT python)
+        endif()
+    endif()
+    if(TARGET fmt)
+        get_target_property(GOBOT_FMT_TARGET_TYPE fmt TYPE)
+        if(GOBOT_FMT_TARGET_TYPE STREQUAL "SHARED_LIBRARY")
+            install(FILES "$<TARGET_FILE:fmt>" "$<TARGET_SONAME_FILE:fmt>" DESTINATION "." COMPONENT python)
+        endif()
+    endif()
     if(TARGET RTTR::Core)
         install(FILES "$<TARGET_FILE:RTTR::Core>" DESTINATION "." COMPONENT python)
     endif()
@@ -330,8 +342,18 @@ target_include_directories(gobot
 
 
 file(GLOB_RECURSE SOURCE_PLATFORM CONFIGURE_DEPENDS "src/gobot/platform/linux/*.cpp")
-add_executable(gobot_editor ${SOURCE_PLATFORM})
+list(REMOVE_ITEM SOURCE_PLATFORM
+        "${CMAKE_CURRENT_SOURCE_DIR}/src/gobot/platform/linux/gobot_linux.cpp"
+        "${CMAKE_CURRENT_SOURCE_DIR}/src/gobot/platform/linux/gobot_headless.cpp"
+)
+add_executable(gobot_editor
+        ${SOURCE_PLATFORM}
+        src/gobot/platform/linux/gobot_linux.cpp
+)
 target_link_libraries(gobot_editor PRIVATE gobot)
+
+add_executable(gobot_headless src/gobot/platform/linux/gobot_headless.cpp)
+target_link_libraries(gobot_headless PRIVATE gobot)
 
 if (GOB_BUILD_EXPERIMENT)
     add_subdirectory(experiment)

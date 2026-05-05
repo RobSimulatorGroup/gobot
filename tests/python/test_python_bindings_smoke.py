@@ -15,6 +15,17 @@ def main():
     assert gobot.PhysicsBackendType.Null == gobot.physics.PhysicsBackendType.Null
     assert any(info["type"] == gobot.PhysicsBackendType.Null for info in infos)
 
+    context = gobot.app.context()
+    assert context.backend_type == gobot.PhysicsBackendType.Null
+    assert context.has_scene is False
+    assert context.has_world is False
+    assert context.frame_count == 0
+    try:
+        context.build_world()
+        raise AssertionError("build_world should fail without a loaded scene")
+    except RuntimeError as error:
+        assert "loaded scene" in str(error)
+
     reflected_gains = gobot.JointControllerGains()
     reflected_gains.position_stiffness = 12.0
     reflected_gains.velocity_damping = 1.5

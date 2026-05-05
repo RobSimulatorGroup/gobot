@@ -69,7 +69,7 @@ if (GOB_BUILD_PYTHON_BINDINGS)
     )
     set_tests_properties(test_python_bindings_smoke
             PROPERTIES
-                ENVIRONMENT "PYTHONPATH=${CMAKE_BINARY_DIR}/python"
+                ENVIRONMENT "PYTHONNOUSERSITE=1;PYTHONPATH=${CMAKE_BINARY_DIR}/python"
                 WORKING_DIRECTORY "${CMAKE_SOURCE_DIR}"
     )
 endif()
