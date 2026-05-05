@@ -172,6 +172,24 @@ RLEnvironmentResetResult RLEnvironment::Reset(std::uint32_t seed) {
         return result;
     }
 
+    if (!default_action_.empty()) {
+        if (default_action_.size() != controlled_joint_names_.size()) {
+            SetLastError(fmt::format("RL default action size mismatch for robot '{}': expected {}, got {}.",
+                                     robot_name_,
+                                     controlled_joint_names_.size(),
+                                     default_action_.size()));
+            result.error = last_error_;
+            return result;
+        }
+
+        if (!simulation_->SetRobotJointPositionTargetsFromNormalizedAction(
+                    robot_name_, controlled_joint_names_, default_action_)) {
+            SetLastError(simulation_->GetLastError());
+            result.error = last_error_;
+            return result;
+        }
+    }
+
     result.ok = true;
     result.observation = GetObservation();
     result.frame_count = simulation_->GetFrameCount();
@@ -196,7 +214,7 @@ RLEnvironmentStepResult RLEnvironment::Step(const std::vector<RealType>& action)
         return result;
     }
 
-    if (!simulation_->SetRobotJointPositionTargetsFromNormalizedAction(robot_name_, action)) {
+    if (!simulation_->SetRobotJointPositionTargetsFromNormalizedAction(robot_name_, controlled_joint_names_, action)) {
         SetLastError(simulation_->GetLastError());
         result.error = last_error_;
         return result;
@@ -277,6 +295,23 @@ std::size_t RLEnvironment::GetObservationSize() const {
 
 std::vector<std::string> RLEnvironment::GetControlledJointNames() const {
     return controlled_joint_names_;
+}
+
+void RLEnvironment::SetConfiguredControlledJointNames(std::vector<std::string> joint_names) {
+    configured_controlled_joint_names_ = std::move(joint_names);
+    controlled_joint_names_.clear();
+}
+
+const std::vector<std::string>& RLEnvironment::GetConfiguredControlledJointNames() const {
+    return configured_controlled_joint_names_;
+}
+
+void RLEnvironment::SetDefaultAction(std::vector<RealType> default_action) {
+    default_action_ = std::move(default_action);
+}
+
+const std::vector<RealType>& RLEnvironment::GetDefaultAction() const {
+    return default_action_;
 }
 
 std::vector<std::string> RLEnvironment::GetContactLinkNames() const {
@@ -389,12 +424,68 @@ bool RLEnvironment::RefreshControlledJointNames() {
         return false;
     }
 
-    for (const PhysicsJointSnapshot& joint_snapshot : robot_snapshot->joints) {
-        if (!IsControllableJointType(joint_snapshot.joint_type)) {
-            continue;
+    if (configured_controlled_joint_names_.empty()) {
+        for (const PhysicsJointSnapshot& joint_snapshot : robot_snapshot->joints) {
+            if (!IsControllableJointType(joint_snapshot.joint_type)) {
+                continue;
+            }
+
+            controlled_joint_names_.push_back(joint_snapshot.name);
         }
 
-        controlled_joint_names_.push_back(joint_snapshot.name);
+        last_error_.clear();
+        return true;
+    }
+
+    for (const std::string& configured_joint_name : configured_controlled_joint_names_) {
+        const auto joint_iter = std::find_if(robot_snapshot->joints.begin(),
+                                             robot_snapshot->joints.end(),
+                                             [&configured_joint_name](const PhysicsJointSnapshot& joint_snapshot) {
+                                                 return joint_snapshot.name == configured_joint_name;
+                                             });
+        if (joint_iter == robot_snapshot->joints.end()) {
+            SetLastError(fmt::format("RL environment robot '{}' has no configured controlled joint '{}'.",
+                                     robot_name_,
+                                     configured_joint_name));
+            return false;
+        }
+
+        if (!IsControllableJointType(joint_iter->joint_type)) {
+            SetLastError(fmt::format("RL environment configured joint '{}' is not controllable.",
+                                     configured_joint_name));
+            return false;
+        }
+
+        if (std::find(controlled_joint_names_.begin(),
+                      controlled_joint_names_.end(),
+                      configured_joint_name) != controlled_joint_names_.end()) {
+            SetLastError(fmt::format("RL environment configured joint '{}' appears more than once.",
+                                     configured_joint_name));
+            return false;
+        }
+
+        controlled_joint_names_.push_back(configured_joint_name);
+    }
+
+    if (controlled_joint_names_.empty()) {
+        SetLastError(fmt::format("RL environment robot '{}' has no controlled joints.", robot_name_));
+        return false;
+    }
+
+    const PhysicsSceneState& scene_state = simulation_->GetWorld()->GetSceneState();
+    const PhysicsRobotState* robot_state = FindRobotState(scene_state, robot_name_);
+    if (robot_state == nullptr) {
+        SetLastError(fmt::format("RL environment robot '{}' has no physics state.", robot_name_));
+        return false;
+    }
+
+    for (const std::string& controlled_joint_name : controlled_joint_names_) {
+        if (FindJointState(*robot_state, controlled_joint_name) == nullptr) {
+            SetLastError(fmt::format("RL environment robot '{}' has no state for controlled joint '{}'.",
+                                     robot_name_,
+                                     controlled_joint_name));
+            return false;
+        }
     }
 
     last_error_.clear();
@@ -587,6 +678,10 @@ GOBOT_REGISTRATION {
             .property("robot_name", &RLEnvironment::GetRobotName, &RLEnvironment::SetRobotName)
             .property("max_episode_steps", &RLEnvironment::GetMaxEpisodeSteps, &RLEnvironment::SetMaxEpisodeSteps)
             .property("reward_settings", &RLEnvironment::GetRewardSettings, &RLEnvironment::SetRewardSettings)
+            .property("configured_controlled_joint_names",
+                      &RLEnvironment::GetConfiguredControlledJointNames,
+                      &RLEnvironment::SetConfiguredControlledJointNames)
+            .property("default_action", &RLEnvironment::GetDefaultAction, &RLEnvironment::SetDefaultAction)
             .method("reset", &RLEnvironment::Reset)
             .method("step", &RLEnvironment::Step)
             .method("get_observation", &RLEnvironment::GetObservation)

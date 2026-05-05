@@ -5,6 +5,7 @@
 
 #include "gobot/simulation/simulation_server.hpp"
 
+#include <algorithm>
 #include <utility>
 
 #include "gobot/core/registration.hpp"
@@ -461,6 +462,94 @@ bool SimulationServer::SetRobotJointPositionTargetsFromNormalizedAction(const st
     return true;
 }
 
+bool SimulationServer::SetRobotJointPositionTargetsFromNormalizedAction(
+        const std::string& robot_name,
+        const std::vector<std::string>& joint_names,
+        const std::vector<RealType>& action) {
+    if (!EnsureWorldReady()) {
+        return false;
+    }
+
+    if (joint_names.size() != action.size()) {
+        SetLastError(fmt::format("Robot '{}' expected {} named joint action value(s), got {}.",
+                                 robot_name,
+                                 joint_names.size(),
+                                 action.size()));
+        return false;
+    }
+
+    const PhysicsSceneSnapshot& snapshot = world_->GetSceneSnapshot();
+    const PhysicsSceneState& state = world_->GetSceneState();
+
+    const PhysicsRobotSnapshot* robot_snapshot = nullptr;
+    const PhysicsRobotState* robot_state = nullptr;
+    for (std::size_t robot_index = 0; robot_index < snapshot.robots.size(); ++robot_index) {
+        if (snapshot.robots[robot_index].name != robot_name) {
+            continue;
+        }
+
+        robot_snapshot = &snapshot.robots[robot_index];
+        if (robot_index < state.robots.size()) {
+            robot_state = &state.robots[robot_index];
+        }
+        break;
+    }
+
+    if (robot_snapshot == nullptr || robot_state == nullptr) {
+        SetLastError(fmt::format("Cannot set normalized action for missing robot '{}'.", robot_name));
+        return false;
+    }
+
+    for (std::size_t action_index = 0; action_index < joint_names.size(); ++action_index) {
+        const std::string& joint_name = joint_names[action_index];
+        const auto snapshot_iter = std::find_if(robot_snapshot->joints.begin(),
+                                                robot_snapshot->joints.end(),
+                                                [&joint_name](const PhysicsJointSnapshot& joint_snapshot) {
+                                                    return joint_snapshot.name == joint_name;
+                                                });
+        const auto state_iter = std::find_if(robot_state->joints.begin(),
+                                             robot_state->joints.end(),
+                                             [&joint_name](const PhysicsJointState& joint_state) {
+                                                 return joint_state.joint_name == joint_name;
+                                             });
+        if (snapshot_iter == robot_snapshot->joints.end() || state_iter == robot_state->joints.end()) {
+            SetLastError(fmt::format("Robot '{}' has no joint named '{}'.", robot_name, joint_name));
+            return false;
+        }
+
+        const auto joint_type = static_cast<JointType>(snapshot_iter->joint_type);
+        if (joint_type != JointType::Revolute &&
+            joint_type != JointType::Continuous &&
+            joint_type != JointType::Prismatic) {
+            SetLastError(fmt::format("Robot '{}' joint '{}' is not controllable by normalized position action.",
+                                     robot_name,
+                                     joint_name));
+            return false;
+        }
+
+        JointControllerLimits limits = MakeJointControllerLimits(*snapshot_iter);
+        if (joint_type == JointType::Continuous) {
+            limits.has_position_limits = false;
+        }
+
+        const RealType target_position =
+                JointController::MapNormalizedActionToTargetPosition(action[action_index],
+                                                                     limits,
+                                                                     state_iter->position,
+                                                                     1.0);
+        if (!world_->SetJointControl(robot_name,
+                                     state_iter->joint_name,
+                                     PhysicsJointControlMode::Position,
+                                     target_position)) {
+            SetLastError(world_->GetLastError());
+            return false;
+        }
+    }
+
+    last_error_.clear();
+    return true;
+}
+
 RealType SimulationServer::GetSimulationTime() const {
     return simulation_time_;
 }
@@ -570,6 +659,9 @@ void SimulationServer::SetLastError(std::string error) {
 } // namespace gobot
 
 GOBOT_REGISTRATION {
+    auto set_robot_normalized_action =
+            static_cast<bool (SimulationServer::*)(const std::string&, const std::vector<RealType>&)>(
+                    &SimulationServer::SetRobotJointPositionTargetsFromNormalizedAction);
 
     Class_<SimulationServer>("SimulationServer")
             .constructor()(CtorAsRawPtr)
@@ -592,7 +684,7 @@ GOBOT_REGISTRATION {
             .method("set_joint_effort_target", &SimulationServer::SetJointEffortTarget)
             .method("set_joint_passive", &SimulationServer::SetJointPassive)
             .method("set_robot_joint_position_targets_from_normalized_action",
-                    &SimulationServer::SetRobotJointPositionTargetsFromNormalizedAction)
+                    set_robot_normalized_action)
             .method("get_simulation_time", &SimulationServer::GetSimulationTime)
             .method("get_frame_count", &SimulationServer::GetFrameCount)
             .method("get_last_error", &SimulationServer::GetLastError);

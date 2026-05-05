@@ -93,6 +93,10 @@ public:
     bool SetRobotJointPositionTargetsFromNormalizedAction(const std::string& robot_name,
                                                           const std::vector<RealType>& action);
 
+    bool SetRobotJointPositionTargetsFromNormalizedAction(const std::string& robot_name,
+                                                          const std::vector<std::string>& joint_names,
+                                                          const std::vector<RealType>& action);
+
     RealType GetSimulationTime() const;
 
     std::uint64_t GetFrameCount() const;

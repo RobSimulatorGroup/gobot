@@ -358,17 +358,22 @@ PyRLControllerConfig ControllerConfigFromDict(py::dict dict) {
 PyRLControllerConfig MakeControllerConfigFromEnv(PyRLEnvironment& env) {
     PyRLControllerConfig config;
     config.controlled_joints = env.environment->GetControlledJointNames();
-    config.default_action.assign(config.controlled_joints.size(), 0.0);
+    config.default_action = env.environment->GetDefaultAction();
+    if (config.default_action.empty()) {
+        config.default_action.assign(config.controlled_joints.size(), 0.0);
+    }
     config.joint_gains = env.GetDefaultJointGains();
     return config;
 }
 
 void ApplyControllerConfigToEnv(PyRLEnvironment& env, py::dict dict) {
     const PyRLControllerConfig config = ControllerConfigFromDict(dict);
+    env.environment->SetConfiguredControlledJointNames(config.controlled_joints);
+    env.environment->SetDefaultAction(config.default_action);
     env.SetDefaultJointGains(config.joint_gains);
     if (!config.default_action.empty() &&
-        config.default_action.size() != env.environment->GetActionSize()) {
-        throw std::invalid_argument("default_action size must match the current RL environment action size");
+        config.default_action.size() != config.controlled_joints.size()) {
+        throw std::invalid_argument("default_action size must match controlled_joints size");
     }
 }
 

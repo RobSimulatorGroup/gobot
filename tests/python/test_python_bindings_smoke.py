@@ -73,6 +73,19 @@ def main():
     )
     assert config_from_dict.to_dict()["joint_gains"]["position_stiffness"] == 40.0
 
+    env.apply_controller_config({"controlled_joints": ["joint"], "default_action": [0.0]})
+    observation, info = env.reset(seed=8)
+    assert info["ok"] is True
+    assert env.get_action_size() == 1
+    assert env.get_controller_config().default_action == [0.0]
+    assert env.get_action_spec()["names"] == ["joint/target_position_normalized"]
+    assert env.step_result([0.0])["error"] == ""
+
+    env.apply_controller_config({"controlled_joints": ["missing"], "default_action": [0.0]})
+    reset_result = env.reset_result(seed=9)
+    assert reset_result["ok"] is False
+    assert "missing" in reset_result["error"]
+
     gym_env = GobotGymEnv()
     observation, info = gym_env.reset(seed=3)
     assert info["ok"] is True

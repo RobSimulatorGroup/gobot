@@ -33,6 +33,31 @@ gobot::Robot3D* CreateRobotScene() {
     return robot;
 }
 
+gobot::Robot3D* CreateTwoJointRobotScene() {
+    auto* robot = CreateRobotScene();
+    auto* first_joint = gobot::Object::PointerCastTo<gobot::Joint3D>(robot->GetChild(1));
+    auto* tip_link = first_joint == nullptr ? nullptr : gobot::Object::PointerCastTo<gobot::Link3D>(first_joint->GetChild(0));
+    if (tip_link == nullptr) {
+        return robot;
+    }
+
+    auto* second_joint = gobot::Object::New<gobot::Joint3D>();
+    second_joint->SetName("second_joint");
+    second_joint->SetJointType(gobot::JointType::Revolute);
+    second_joint->SetParentLink("tip");
+    second_joint->SetChildLink("foot");
+    second_joint->SetAxis({0.0, 1.0, 0.0});
+    second_joint->SetLowerLimit(-2.0);
+    second_joint->SetUpperLimit(2.0);
+
+    auto* foot_link = gobot::Object::New<gobot::Link3D>();
+    foot_link->SetName("foot");
+
+    tip_link->AddChild(second_joint);
+    second_joint->AddChild(foot_link);
+    return robot;
+}
+
 } // namespace
 
 TEST(TestSimulationServer, builds_world_from_scene_and_steps_with_fixed_time_step) {
@@ -263,6 +288,28 @@ TEST(TestSimulationServer, maps_normalized_robot_action_to_joint_position_target
     EXPECT_FALSE(simulation_server.SetRobotJointPositionTargetsFromNormalizedAction("robot", {}));
     EXPECT_FALSE(simulation_server.GetLastError().empty());
     EXPECT_FALSE(simulation_server.SetRobotJointPositionTargetsFromNormalizedAction("robot", {0.0, 1.0}));
+    EXPECT_FALSE(simulation_server.GetLastError().empty());
+
+    gobot::Object::Delete(robot);
+}
+
+TEST(TestSimulationServer, maps_named_normalized_robot_action_to_selected_joints) {
+    gobot::SimulationServer simulation_server;
+
+    gobot::Robot3D* robot = CreateTwoJointRobotScene();
+    ASSERT_TRUE(simulation_server.BuildWorldFromScene(robot));
+
+    ASSERT_TRUE(simulation_server.SetRobotJointPositionTargetsFromNormalizedAction(
+            "robot", std::vector<std::string>{"second_joint"}, std::vector<gobot::RealType>{0.5}));
+
+    const auto& joint_states = simulation_server.GetWorld()->GetSceneState().robots[0].joints;
+    ASSERT_EQ(joint_states.size(), 2);
+    EXPECT_EQ(joint_states[0].control_mode, gobot::PhysicsJointControlMode::Passive);
+    EXPECT_EQ(joint_states[1].control_mode, gobot::PhysicsJointControlMode::Position);
+    EXPECT_DOUBLE_EQ(joint_states[1].target_position, 1.0);
+
+    EXPECT_FALSE(simulation_server.SetRobotJointPositionTargetsFromNormalizedAction(
+            "robot", std::vector<std::string>{"missing"}, std::vector<gobot::RealType>{0.0}));
     EXPECT_FALSE(simulation_server.GetLastError().empty());
 
     gobot::Object::Delete(robot);

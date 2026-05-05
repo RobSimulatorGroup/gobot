@@ -95,6 +95,30 @@ gobot::Robot3D* CreateRobotSceneWithFixedJoint() {
     return robot;
 }
 
+gobot::Robot3D* CreateTwoJointRobotScene() {
+    auto* robot = CreateRobotScene();
+    auto* joint = gobot::Object::PointerCastTo<gobot::Joint3D>(robot->GetChild(1));
+    auto* tip_link = joint == nullptr ? nullptr : gobot::Object::PointerCastTo<gobot::Link3D>(joint->GetChild(0));
+    if (tip_link == nullptr) {
+        return robot;
+    }
+
+    auto* second_joint = gobot::Object::New<gobot::Joint3D>();
+    second_joint->SetName("second_joint");
+    second_joint->SetJointType(gobot::JointType::Revolute);
+    second_joint->SetParentLink("tip");
+    second_joint->SetChildLink("foot");
+    second_joint->SetLowerLimit(-2.0);
+    second_joint->SetUpperLimit(2.0);
+
+    auto* foot_link = gobot::Object::New<gobot::Link3D>();
+    foot_link->SetName("foot");
+
+    tip_link->AddChild(second_joint);
+    second_joint->AddChild(foot_link);
+    return robot;
+}
+
 gobot::Robot3D* CreateRobotSceneWithBaseCollision() {
     auto* robot = CreateRobotScene();
     auto* base_link = gobot::Object::PointerCastTo<gobot::Link3D>(robot->GetChild(0));
@@ -288,6 +312,89 @@ TEST(TestRLEnvironment, ignores_fixed_joints_for_actions_and_observations) {
     const gobot::RLEnvironmentStepResult result = environment.Step({0.0});
     EXPECT_EQ(result.observation.size(), 15);
     EXPECT_TRUE(environment.GetLastError().empty());
+
+    gobot::Object::Delete(robot);
+}
+
+TEST(TestRLEnvironment, configured_controlled_joints_define_action_order_and_size) {
+    gobot::SimulationServer simulation_server;
+    auto* robot = CreateTwoJointRobotScene();
+
+    gobot::RLEnvironment environment(&simulation_server);
+    environment.SetSceneRoot(robot);
+    environment.SetRobotName("robot");
+    environment.SetConfiguredControlledJointNames({"second_joint"});
+
+    ASSERT_TRUE(environment.Reset().ok);
+    EXPECT_EQ(environment.GetControlledJointNames(), std::vector<std::string>{"second_joint"});
+    EXPECT_EQ(environment.GetActionSize(), 1);
+    EXPECT_EQ(environment.GetObservationSize(), 15);
+    EXPECT_EQ(environment.GetActionSpec().names,
+              std::vector<std::string>{"second_joint/target_position_normalized"});
+
+    const gobot::RLEnvironmentStepResult result = environment.Step({0.5});
+    EXPECT_TRUE(result.error.empty());
+    ASSERT_EQ(result.observation.size(), 15);
+
+    const auto& joint_states = simulation_server.GetWorld()->GetSceneState().robots[0].joints;
+    ASSERT_EQ(joint_states.size(), 2);
+    EXPECT_EQ(joint_states[0].control_mode, gobot::PhysicsJointControlMode::Passive);
+    EXPECT_EQ(joint_states[1].control_mode, gobot::PhysicsJointControlMode::Position);
+    EXPECT_DOUBLE_EQ(joint_states[1].target_position, 1.0);
+
+    gobot::Object::Delete(robot);
+}
+
+TEST(TestRLEnvironment, default_action_is_applied_on_reset) {
+    gobot::SimulationServer simulation_server;
+    auto* robot = CreateTwoJointRobotScene();
+
+    gobot::RLEnvironment environment(&simulation_server);
+    environment.SetSceneRoot(robot);
+    environment.SetRobotName("robot");
+    environment.SetConfiguredControlledJointNames({"second_joint"});
+    environment.SetDefaultAction({-0.5});
+
+    ASSERT_TRUE(environment.Reset().ok);
+    EXPECT_EQ(environment.GetDefaultAction(), std::vector<gobot::RealType>{-0.5});
+
+    const auto& joint_states = simulation_server.GetWorld()->GetSceneState().robots[0].joints;
+    ASSERT_EQ(joint_states.size(), 2);
+    EXPECT_EQ(joint_states[0].control_mode, gobot::PhysicsJointControlMode::Passive);
+    EXPECT_EQ(joint_states[1].control_mode, gobot::PhysicsJointControlMode::Position);
+    EXPECT_DOUBLE_EQ(joint_states[1].target_position, -1.0);
+
+    gobot::Object::Delete(robot);
+}
+
+TEST(TestRLEnvironment, invalid_default_action_size_fails_reset) {
+    gobot::SimulationServer simulation_server;
+    auto* robot = CreateRobotScene();
+
+    gobot::RLEnvironment environment(&simulation_server);
+    environment.SetSceneRoot(robot);
+    environment.SetRobotName("robot");
+    environment.SetDefaultAction({0.0, 0.0});
+
+    const gobot::RLEnvironmentResetResult result = environment.Reset();
+    EXPECT_FALSE(result.ok);
+    EXPECT_FALSE(result.error.empty());
+
+    gobot::Object::Delete(robot);
+}
+
+TEST(TestRLEnvironment, invalid_configured_controlled_joint_fails_reset) {
+    gobot::SimulationServer simulation_server;
+    auto* robot = CreateRobotSceneWithFixedJoint();
+
+    gobot::RLEnvironment environment(&simulation_server);
+    environment.SetSceneRoot(robot);
+    environment.SetRobotName("robot");
+    environment.SetConfiguredControlledJointNames({"fixed_joint"});
+
+    const gobot::RLEnvironmentResetResult result = environment.Reset();
+    EXPECT_FALSE(result.ok);
+    EXPECT_FALSE(result.error.empty());
 
     gobot::Object::Delete(robot);
 }

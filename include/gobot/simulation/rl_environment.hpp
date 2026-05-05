@@ -90,6 +90,14 @@ public:
 
     std::vector<std::string> GetControlledJointNames() const;
 
+    void SetConfiguredControlledJointNames(std::vector<std::string> joint_names);
+
+    const std::vector<std::string>& GetConfiguredControlledJointNames() const;
+
+    void SetDefaultAction(std::vector<RealType> default_action);
+
+    const std::vector<RealType>& GetDefaultAction() const;
+
     std::vector<std::string> GetContactLinkNames() const;
 
     RLVectorSpec GetActionSpec() const;
@@ -120,7 +128,9 @@ private:
     std::uint64_t max_episode_steps_{0};
     std::uint32_t last_seed_{0};
     std::string base_link_name_;
+    std::vector<std::string> configured_controlled_joint_names_;
     std::vector<std::string> controlled_joint_names_;
+    std::vector<RealType> default_action_;
     std::vector<std::string> contact_link_names_;
     RLEnvironmentRewardSettings reward_settings_;
     std::string last_error_;
