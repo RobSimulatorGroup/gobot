@@ -136,7 +136,13 @@ TEST(TestRLEnvironment, reset_builds_world_and_returns_observation) {
     environment.SetSceneRoot(robot);
     environment.SetRobotName("robot");
 
-    ASSERT_TRUE(environment.Reset(123));
+    const gobot::RLEnvironmentResetResult reset_result = environment.Reset(123);
+    ASSERT_TRUE(reset_result.ok);
+    EXPECT_EQ(reset_result.seed, 123);
+    EXPECT_EQ(reset_result.frame_count, 0);
+    EXPECT_NEAR(reset_result.simulation_time, 0.0, CMP_EPSILON);
+    EXPECT_TRUE(reset_result.error.empty());
+    ASSERT_EQ(reset_result.observation.size(), 15);
     ASSERT_TRUE(simulation_server.HasWorld());
     EXPECT_EQ(environment.GetActionSize(), 1);
     EXPECT_EQ(environment.GetObservationSize(), 15);
@@ -159,7 +165,7 @@ TEST(TestRLEnvironment, exposes_action_and_observation_specs) {
     gobot::RLEnvironment environment(&simulation_server);
     environment.SetSceneRoot(robot);
     environment.SetRobotName("robot");
-    ASSERT_TRUE(environment.Reset());
+    ASSERT_TRUE(environment.Reset().ok);
 
     const gobot::RLVectorSpec action_spec = environment.GetActionSpec();
     EXPECT_EQ(action_spec.version, "rl_vector_spec_v1");
@@ -225,7 +231,7 @@ TEST(TestRLEnvironment, exposes_contact_links_for_physical_links_with_collision_
     gobot::RLEnvironment environment(&simulation_server);
     environment.SetSceneRoot(robot);
     environment.SetRobotName("robot");
-    ASSERT_TRUE(environment.Reset());
+    ASSERT_TRUE(environment.Reset().ok);
 
     EXPECT_EQ(environment.GetContactLinkNames(), std::vector<std::string>{"base"});
     EXPECT_EQ(environment.GetObservationSize(), 16);
@@ -256,7 +262,7 @@ TEST(TestRLEnvironment, floating_joint_child_link_is_used_as_base_observation) {
     environment.SetSceneRoot(robot);
     environment.SetRobotName("robot");
 
-    ASSERT_TRUE(environment.Reset());
+    ASSERT_TRUE(environment.Reset().ok);
     EXPECT_EQ(environment.GetActionSize(), 1);
     EXPECT_EQ(environment.GetObservationSize(), 15);
     ExpectBaseObservationPrefix(environment.GetObservation(), {9.0, 9.0, 9.75});
@@ -273,7 +279,7 @@ TEST(TestRLEnvironment, ignores_fixed_joints_for_actions_and_observations) {
     environment.SetSceneRoot(robot);
     environment.SetRobotName("robot");
 
-    ASSERT_TRUE(environment.Reset());
+    ASSERT_TRUE(environment.Reset().ok);
     ASSERT_EQ(simulation_server.GetWorld()->GetSceneState().robots[0].joints.size(), 2);
     EXPECT_EQ(environment.GetActionSize(), 1);
     EXPECT_EQ(environment.GetObservationSize(), 15);
@@ -295,7 +301,7 @@ TEST(TestRLEnvironment, reset_replays_deterministically_for_same_seed_and_action
     environment.SetSceneRoot(robot);
     environment.SetRobotName("robot");
 
-    ASSERT_TRUE(environment.Reset(7));
+    ASSERT_TRUE(environment.Reset(7).ok);
     const std::vector<gobot::RealType> initial_observation = environment.GetObservation();
     std::vector<std::vector<gobot::RealType>> first_observations;
     for (const gobot::RealType action : {-1.0, 0.25, 1.0}) {
@@ -303,7 +309,7 @@ TEST(TestRLEnvironment, reset_replays_deterministically_for_same_seed_and_action
         first_observations.push_back(result.observation);
     }
 
-    ASSERT_TRUE(environment.Reset(7));
+    ASSERT_TRUE(environment.Reset(7).ok);
     EXPECT_EQ(simulation_server.GetFrameCount(), 0);
     EXPECT_NEAR(simulation_server.GetSimulationTime(), 0.0, CMP_EPSILON);
     EXPECT_EQ(environment.GetObservation(), initial_observation);
@@ -332,7 +338,7 @@ TEST(TestRLEnvironment, step_applies_normalized_action_and_advances_once) {
     environment.SetRobotName("robot");
     environment.SetMaxEpisodeSteps(1);
 
-    ASSERT_TRUE(environment.Reset());
+    ASSERT_TRUE(environment.Reset().ok);
 
     const gobot::RLEnvironmentStepResult result = environment.Step({1.0});
     EXPECT_EQ(result.frame_count, 1);
@@ -362,7 +368,7 @@ TEST(TestRLEnvironment, terminates_when_base_height_is_too_low) {
     settings.minimum_base_height = 3.5;
     environment.SetRewardSettings(settings);
 
-    ASSERT_TRUE(environment.Reset());
+    ASSERT_TRUE(environment.Reset().ok);
 
     const gobot::RLEnvironmentStepResult result = environment.Step({0.0});
     EXPECT_TRUE(result.terminated);
@@ -388,7 +394,7 @@ TEST(TestRLEnvironment, terminates_when_base_tilt_is_too_large) {
     settings.maximum_base_tilt_radians = 1.0;
     environment.SetRewardSettings(settings);
 
-    ASSERT_TRUE(environment.Reset());
+    ASSERT_TRUE(environment.Reset().ok);
 
     const gobot::RLEnvironmentStepResult result = environment.Step({0.0});
     EXPECT_TRUE(result.terminated);
@@ -413,7 +419,7 @@ TEST(TestRLEnvironment, can_report_fallen_reward_without_terminating) {
     settings.fallen_reward = -2.0;
     environment.SetRewardSettings(settings);
 
-    ASSERT_TRUE(environment.Reset());
+    ASSERT_TRUE(environment.Reset().ok);
 
     const gobot::RLEnvironmentStepResult result = environment.Step({0.0});
     EXPECT_FALSE(result.terminated);
@@ -429,10 +435,11 @@ TEST(TestRLEnvironment, rejects_wrong_action_size_before_stepping) {
     gobot::RLEnvironment environment(&simulation_server);
     environment.SetSceneRoot(robot);
     environment.SetRobotName("robot");
-    ASSERT_TRUE(environment.Reset());
+    ASSERT_TRUE(environment.Reset().ok);
 
     const gobot::RLEnvironmentStepResult result = environment.Step({0.0, 1.0});
     EXPECT_TRUE(result.observation.empty());
+    EXPECT_FALSE(result.error.empty());
     EXPECT_EQ(simulation_server.GetFrameCount(), 0);
     EXPECT_FALSE(environment.GetLastError().empty());
 
@@ -447,7 +454,10 @@ TEST(TestRLEnvironment, reset_fails_when_robot_name_is_missing) {
     environment.SetSceneRoot(robot);
     environment.SetRobotName("missing");
 
-    EXPECT_FALSE(environment.Reset());
+    const gobot::RLEnvironmentResetResult reset_result = environment.Reset();
+    EXPECT_FALSE(reset_result.ok);
+    EXPECT_TRUE(reset_result.observation.empty());
+    EXPECT_FALSE(reset_result.error.empty());
     EXPECT_FALSE(environment.GetLastError().empty());
 
     gobot::Object::Delete(robot);
@@ -460,5 +470,6 @@ TEST(TestRLEnvironment, reports_error_when_stepping_before_reset) {
 
     const gobot::RLEnvironmentStepResult result = environment.Step({0.0});
     EXPECT_TRUE(result.observation.empty());
+    EXPECT_FALSE(result.error.empty());
     EXPECT_FALSE(environment.GetLastError().empty());
 }

@@ -24,6 +24,16 @@ struct RLEnvironmentStepResult {
     bool truncated{false};
     std::uint64_t frame_count{0};
     RealType simulation_time{0.0};
+    std::string error;
+};
+
+struct RLEnvironmentResetResult {
+    std::vector<RealType> observation;
+    bool ok{false};
+    std::uint64_t frame_count{0};
+    RealType simulation_time{0.0};
+    std::uint32_t seed{0};
+    std::string error;
 };
 
 struct RLVectorSpec {
@@ -68,7 +78,7 @@ public:
 
     const RLEnvironmentRewardSettings& GetRewardSettings() const;
 
-    bool Reset(std::uint32_t seed = 0);
+    RLEnvironmentResetResult Reset(std::uint32_t seed = 0);
 
     RLEnvironmentStepResult Step(const std::vector<RealType>& action);
 

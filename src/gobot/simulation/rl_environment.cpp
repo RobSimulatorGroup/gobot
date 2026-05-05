@@ -145,10 +145,14 @@ const RLEnvironmentRewardSettings& RLEnvironment::GetRewardSettings() const {
     return reward_settings_;
 }
 
-bool RLEnvironment::Reset(std::uint32_t seed) {
+RLEnvironmentResetResult RLEnvironment::Reset(std::uint32_t seed) {
+    RLEnvironmentResetResult result;
+    result.seed = seed;
+
     if (simulation_ == nullptr) {
         SetLastError("RL environment has no SimulationServer.");
-        return false;
+        result.error = last_error_;
+        return result;
     }
 
     last_seed_ = seed;
@@ -159,20 +163,27 @@ bool RLEnvironment::Reset(std::uint32_t seed) {
                             : simulation_->BuildWorldFromScene(scene_root_);
     if (!ok) {
         SetLastError(simulation_->GetLastError());
-        return false;
+        result.error = last_error_;
+        return result;
     }
 
     if (!RefreshBaseLinkName() || !RefreshControlledJointNames() || !RefreshContactLinkNames()) {
-        return false;
+        result.error = last_error_;
+        return result;
     }
 
+    result.ok = true;
+    result.observation = GetObservation();
+    result.frame_count = simulation_->GetFrameCount();
+    result.simulation_time = simulation_->GetSimulationTime();
     last_error_.clear();
-    return true;
+    return result;
 }
 
 RLEnvironmentStepResult RLEnvironment::Step(const std::vector<RealType>& action) {
     RLEnvironmentStepResult result;
     if (!EnsureReady()) {
+        result.error = last_error_;
         return result;
     }
 
@@ -181,16 +192,19 @@ RLEnvironmentStepResult RLEnvironment::Step(const std::vector<RealType>& action)
                                  robot_name_,
                                  controlled_joint_names_.size(),
                                  action.size()));
+        result.error = last_error_;
         return result;
     }
 
     if (!simulation_->SetRobotJointPositionTargetsFromNormalizedAction(robot_name_, action)) {
         SetLastError(simulation_->GetLastError());
+        result.error = last_error_;
         return result;
     }
 
     if (!simulation_->StepOnce()) {
         SetLastError(simulation_->GetLastError());
+        result.error = last_error_;
         return result;
     }
 
@@ -203,6 +217,7 @@ RLEnvironmentStepResult RLEnvironment::Step(const std::vector<RealType>& action)
     result.truncated = max_episode_steps_ > 0 && episode_step_count_ >= max_episode_steps_;
     result.reward = ComputeReward(fallen);
     result.terminated = reward_settings_.terminate_on_fall && fallen;
+    result.error.clear();
     last_error_.clear();
     return result;
 }
@@ -531,6 +546,25 @@ void RLEnvironment::SetLastError(std::string error) {
 } // namespace gobot
 
 GOBOT_REGISTRATION {
+
+    Class_<RLEnvironmentStepResult>("RLEnvironmentStepResult")
+            .constructor()
+            .property("observation", &RLEnvironmentStepResult::observation)
+            .property("reward", &RLEnvironmentStepResult::reward)
+            .property("terminated", &RLEnvironmentStepResult::terminated)
+            .property("truncated", &RLEnvironmentStepResult::truncated)
+            .property("frame_count", &RLEnvironmentStepResult::frame_count)
+            .property("simulation_time", &RLEnvironmentStepResult::simulation_time)
+            .property("error", &RLEnvironmentStepResult::error);
+
+    Class_<RLEnvironmentResetResult>("RLEnvironmentResetResult")
+            .constructor()
+            .property("observation", &RLEnvironmentResetResult::observation)
+            .property("ok", &RLEnvironmentResetResult::ok)
+            .property("frame_count", &RLEnvironmentResetResult::frame_count)
+            .property("simulation_time", &RLEnvironmentResetResult::simulation_time)
+            .property("seed", &RLEnvironmentResetResult::seed)
+            .property("error", &RLEnvironmentResetResult::error);
 
     Class_<RLVectorSpec>("RLVectorSpec")
             .constructor()
