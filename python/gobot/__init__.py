@@ -4,6 +4,8 @@ import importlib as _importlib
 
 from . import _core
 from ._core import *  # noqa: F401,F403
+from .cartpole_env import CartPoleEnv
+from .scene_helpers import create_cartpole_scene, save_cartpole_scene
 
 app = _importlib.import_module(__name__ + ".app")
 physics = _importlib.import_module(__name__ + ".physics")

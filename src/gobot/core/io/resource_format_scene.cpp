@@ -650,7 +650,15 @@ bool ResourceFormatSaverSceneInstance::Save(const std::string &path, const Ref<R
     }
 
     std::ofstream out_file(global_path);
+    if (!out_file.is_open()) {
+        LOG_ERROR("Cannot save scene resource to '{}'.", global_path);
+        return false;
+    }
     out_file << root.dump(4);
+    if (!out_file.good()) {
+        LOG_ERROR("Failed to write scene resource to '{}'.", global_path);
+        return false;
+    }
     out_file.close();
     return true;
 }

@@ -73,6 +73,26 @@ def main():
     assert root.child_count == 2
     assert [child.name for child in root.children] == ["base", "joint"]
 
+    authored = gobot.create_node("Robot3D", "authored")
+    assert authored.name == "authored"
+    link = gobot.create_node("Link3D", "link")
+    authored.add_child(link)
+    assert authored.child_count == 1
+    assert link.parent is authored
+    collision = gobot.create_box_collision("collision", (0.2, 0.3, 0.4))
+    link.add_child(collision)
+    assert collision.type == "CollisionShape3D"
+    visual = gobot.create_box_visual("visual", (0.2, 0.3, 0.4))
+    link.add_child(visual)
+    assert visual.type == "MeshInstance3D"
+    assert authored.find("link/collision").name == "collision"
+    link.remove_child(visual, delete=True)
+    assert link.child_count == 1
+
+    cartpole_root = gobot.scene.create_cartpole_scene()
+    assert cartpole_root.name == "cartpole"
+    assert cartpole_root.find("rail/slider/cart/hinge/pole").name == "pole"
+
     base = root.child(0)
     assert base.type == "Link3D"
     assert_close_tuple(base.get("position"), (0.0, 0.0, 1.0))

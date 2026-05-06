@@ -6,10 +6,12 @@
 #include "gobot/physics/backends/mujoco_physics_world.hpp"
 
 #include <cctype>
+#include <cmath>
 #include <filesystem>
 #include <memory>
 #include <set>
 #include <string_view>
+#include <unordered_map>
 
 #include "gobot/core/config/project_setting.hpp"
 #include "gobot/core/registration.hpp"
@@ -83,6 +85,15 @@ const PhysicsLinkSnapshot* FindLinkSnapshot(const PhysicsRobotSnapshot& robot, c
     return nullptr;
 }
 
+const PhysicsJointSnapshot* FindParentJointForLink(const PhysicsRobotSnapshot& robot, const std::string& link_name) {
+    for (const PhysicsJointSnapshot& joint : robot.joints) {
+        if (joint.child_link == link_name) {
+            return &joint;
+        }
+    }
+    return nullptr;
+}
+
 std::string SanitizeMuJoCoName(std::string name) {
     for (char& c : name) {
         const bool valid = std::isalnum(static_cast<unsigned char>(c)) || c == '_';
@@ -96,6 +107,171 @@ std::string SanitizeMuJoCoName(std::string name) {
     }
 
     return name;
+}
+
+void SetMuJoCoVector3(double* target, const Vector3& value) {
+    target[0] = value.x();
+    target[1] = value.y();
+    target[2] = value.z();
+}
+
+void SetMuJoCoQuaternion(double* target, const Matrix3& rotation) {
+    const Quaternion quaternion(rotation);
+    target[0] = quaternion.w();
+    target[1] = quaternion.x();
+    target[2] = quaternion.y();
+    target[3] = quaternion.z();
+}
+
+void SetMuJoCoPose(mjsBody* body, const Affine3& local_transform) {
+    if (!body) {
+        return;
+    }
+    SetMuJoCoVector3(body->pos, local_transform.translation());
+    SetMuJoCoQuaternion(body->quat, local_transform.linear());
+}
+
+void SetMuJoCoGeomPose(mjsGeom* geom, const Affine3& local_transform) {
+    if (!geom) {
+        return;
+    }
+    SetMuJoCoVector3(geom->pos, local_transform.translation());
+    SetMuJoCoQuaternion(geom->quat, local_transform.linear());
+}
+
+Affine3 RelativeTransform(const Affine3& parent, const Affine3& child) {
+    return parent.inverse() * child;
+}
+
+bool IsControllableMuJoCoJoint(const PhysicsJointSnapshot& joint) {
+    const auto type = static_cast<JointType>(joint.joint_type);
+    return type == JointType::Revolute ||
+           type == JointType::Continuous ||
+           type == JointType::Prismatic;
+}
+
+bool IsFixedMuJoCoJoint(const PhysicsJointSnapshot& joint) {
+    return static_cast<JointType>(joint.joint_type) == JointType::Fixed;
+}
+
+bool HasBodyJoint(const PhysicsLinkSnapshot& link, const PhysicsRobotSnapshot& robot) {
+    const PhysicsJointSnapshot* parent_joint = FindParentJointForLink(robot, link.name);
+    return parent_joint != nullptr && !IsFixedMuJoCoJoint(*parent_joint);
+}
+
+double PositiveOrDefault(RealType value, double fallback) {
+    return value > 0.0 ? static_cast<double>(value) : fallback;
+}
+
+void AddShapeGeomToBody(mjsBody* body,
+                        const PhysicsShapeSnapshot& shape,
+                        const PhysicsLinkSnapshot& link,
+                        const std::string& name) {
+    if (!body || shape.disabled || shape.type != PhysicsShapeType::Box) {
+        return;
+    }
+
+    mjsGeom* geom = mjs_addGeom(body, nullptr);
+    if (!geom) {
+        return;
+    }
+
+    mjs_setName(geom->element, name.c_str());
+    geom->type = mjGEOM_BOX;
+    SetMuJoCoGeomPose(geom, RelativeTransform(link.global_transform, shape.global_transform));
+    geom->size[0] = shape.box_size.x() * 0.5;
+    geom->size[1] = shape.box_size.y() * 0.5;
+    geom->size[2] = shape.box_size.z() * 0.5;
+    geom->contype = 1;
+    geom->conaffinity = 1;
+    geom->friction[0] = 1.0;
+    geom->friction[1] = 0.005;
+    geom->friction[2] = 0.0001;
+    geom->rgba[0] = 0.72f;
+    geom->rgba[1] = 0.78f;
+    geom->rgba[2] = 0.84f;
+    geom->rgba[3] = 1.0f;
+}
+
+void ConfigureBodyInertial(mjsBody* body, const PhysicsLinkSnapshot& link) {
+    if (!body || link.role == PhysicsLinkRole::VirtualRoot) {
+        return;
+    }
+
+    const double mass = PositiveOrDefault(link.mass, 1.0);
+    body->mass = mass;
+    SetMuJoCoVector3(body->ipos, link.center_of_mass);
+    body->iquat[0] = 1.0;
+    body->iquat[1] = 0.0;
+    body->iquat[2] = 0.0;
+    body->iquat[3] = 0.0;
+    body->inertia[0] = PositiveOrDefault(link.inertia_diagonal.x(), mass * 0.01);
+    body->inertia[1] = PositiveOrDefault(link.inertia_diagonal.y(), mass * 0.01);
+    body->inertia[2] = PositiveOrDefault(link.inertia_diagonal.z(), mass * 0.01);
+    body->explicitinertial = true;
+}
+
+void AddJointToBody(mjsBody* body, const PhysicsJointSnapshot& joint, const std::string& prefixed_name) {
+    if (!body || IsFixedMuJoCoJoint(joint)) {
+        return;
+    }
+
+    if (static_cast<JointType>(joint.joint_type) == JointType::Floating) {
+        mjsJoint* free_joint = mjs_addFreeJoint(body);
+        if (free_joint) {
+            mjs_setName(free_joint->element, prefixed_name.c_str());
+        }
+        return;
+    }
+
+    mjsJoint* mujoco_joint = mjs_addJoint(body, nullptr);
+    if (!mujoco_joint) {
+        return;
+    }
+
+    mjs_setName(mujoco_joint->element, prefixed_name.c_str());
+    const auto type = static_cast<JointType>(joint.joint_type);
+    mujoco_joint->type = type == JointType::Prismatic ? mjJNT_SLIDE : mjJNT_HINGE;
+    SetMuJoCoVector3(mujoco_joint->axis, joint.axis);
+    mujoco_joint->ref = joint.joint_position;
+    if (type == JointType::Revolute || type == JointType::Prismatic) {
+        mujoco_joint->limited = joint.upper_limit > joint.lower_limit;
+        mujoco_joint->range[0] = joint.lower_limit;
+        mujoco_joint->range[1] = joint.upper_limit;
+    }
+    if (joint.effort_limit > 0.0) {
+        mujoco_joint->actfrclimited = true;
+        mujoco_joint->actfrcrange[0] = -joint.effort_limit;
+        mujoco_joint->actfrcrange[1] = joint.effort_limit;
+    }
+}
+
+void AddMotorActuator(mjSpec* spec, const PhysicsJointSnapshot& joint, const std::string& prefixed_name) {
+    if (!spec || !IsControllableMuJoCoJoint(joint)) {
+        return;
+    }
+
+    mjsActuator* actuator = mjs_addActuator(spec, nullptr);
+    if (!actuator) {
+        return;
+    }
+
+    const std::string actuator_name = prefixed_name + "_motor";
+    mjs_setName(actuator->element, actuator_name.c_str());
+    actuator->dyntype = mjDYN_NONE;
+    actuator->gaintype = mjGAIN_FIXED;
+    actuator->gainprm[0] = 1.0;
+    actuator->biastype = mjBIAS_NONE;
+    actuator->trntype = mjTRN_JOINT;
+    mjs_setString(actuator->target, prefixed_name.c_str());
+    actuator->ctrllimited = joint.effort_limit > 0.0;
+    if (joint.effort_limit > 0.0) {
+        actuator->ctrlrange[0] = -joint.effort_limit;
+        actuator->ctrlrange[1] = joint.effort_limit;
+        actuator->forcelimited = true;
+        actuator->forcerange[0] = -joint.effort_limit;
+        actuator->forcerange[1] = joint.effort_limit;
+    }
 }
 
 std::string GetMuJoCoString(const mjString* value) {
@@ -329,13 +505,11 @@ bool MuJoCoPhysicsWorld::LoadModelFromRobotSources() {
 
     std::vector<std::size_t> robot_indices;
     for (std::size_t robot_index = 0; robot_index < scene_snapshot_.robots.size(); ++robot_index) {
-        if (!scene_snapshot_.robots[robot_index].source_path.empty()) {
-            robot_indices.push_back(robot_index);
-        }
+        robot_indices.push_back(robot_index);
     }
 
     if (robot_indices.empty()) {
-        SetLastError("MuJoCo backend currently requires a Robot3D source_path pointing to a URDF or MJCF XML file.");
+        SetLastError("MuJoCo backend requires at least one Robot3D in the scene.");
         return false;
     }
 
@@ -360,7 +534,10 @@ bool MuJoCoPhysicsWorld::LoadModelFromRobotSources() {
         }
         used_prefixes.insert(prefix);
 
-        if (!AttachRobotModelToSpec(parent_spec, robot, robot_index, prefix)) {
+        const bool attached = robot.source_path.empty()
+                                      ? AddAuthoredRobotToSpec(parent_spec, robot, robot_index, prefix)
+                                      : AttachRobotModelToSpec(parent_spec, robot, robot_index, prefix);
+        if (!attached) {
             return false;
         }
 
@@ -449,6 +626,77 @@ bool MuJoCoPhysicsWorld::AttachRobotModelToSpec(void* parent_spec_ptr,
              robot.name,
              model_path,
              prefix);
+    GOB_UNUSED(robot_index);
+    return true;
+}
+
+bool MuJoCoPhysicsWorld::AddAuthoredRobotToSpec(void* parent_spec_ptr,
+                                                const PhysicsRobotSnapshot& robot,
+                                                std::size_t robot_index,
+                                                const std::string& prefix) {
+    auto* parent_spec = static_cast<mjSpec*>(parent_spec_ptr);
+    if (!parent_spec) {
+        SetLastError("Cannot add authored robot to a null MuJoCo parent spec.");
+        return false;
+    }
+
+    mjsBody* world = mjs_findBody(parent_spec, "world");
+    if (!world) {
+        SetLastError("MuJoCo parent spec has no world body.");
+        return false;
+    }
+
+    std::unordered_map<std::string, mjsBody*> bodies;
+    std::unordered_map<std::string, Affine3> body_global_transforms;
+    for (const PhysicsLinkSnapshot& link : robot.links) {
+        if (link.name.empty() || link.role == PhysicsLinkRole::VirtualRoot) {
+            continue;
+        }
+
+        const PhysicsJointSnapshot* parent_joint = FindParentJointForLink(robot, link.name);
+        mjsBody* parent_body = world;
+        Affine3 parent_global_transform = Affine3::Identity();
+        if (parent_joint != nullptr && !parent_joint->parent_link.empty()) {
+            const auto parent_iter = bodies.find(parent_joint->parent_link);
+            if (parent_iter != bodies.end()) {
+                parent_body = parent_iter->second;
+                parent_global_transform = body_global_transforms[parent_joint->parent_link];
+            }
+        }
+
+        mjsBody* body = mjs_addBody(parent_body, nullptr);
+        if (!body) {
+            SetLastError(fmt::format("MuJoCo failed to create body for Gobot link '{}::{}'.",
+                                     robot.name,
+                                     link.name));
+            return false;
+        }
+
+        const std::string body_name = prefix + link.name;
+        mjs_setName(body->element, body_name.c_str());
+        SetMuJoCoPose(body, RelativeTransform(parent_global_transform, link.global_transform));
+        ConfigureBodyInertial(body, link);
+
+        if (parent_joint != nullptr) {
+            AddJointToBody(body, *parent_joint, prefix + parent_joint->name);
+        }
+
+        for (std::size_t shape_index = 0; shape_index < link.collision_shapes.size(); ++shape_index) {
+            AddShapeGeomToBody(body,
+                               link.collision_shapes[shape_index],
+                               link,
+                               fmt::format("{}{}_geom_{}", prefix, link.name, shape_index));
+        }
+
+        bodies[link.name] = body;
+        body_global_transforms[link.name] = link.global_transform;
+    }
+
+    for (const PhysicsJointSnapshot& joint : robot.joints) {
+        AddMotorActuator(parent_spec, joint, prefix + joint.name);
+    }
+
+    LOG_INFO("Added authored Gobot robot '{}' to MuJoCo spec with prefix '{}'.", robot.name, prefix);
     GOB_UNUSED(robot_index);
     return true;
 }

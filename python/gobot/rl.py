@@ -6,8 +6,10 @@ from ._core import (
     RLEnvironmentRewardSettings,
     RLVectorSpec,
 )
+from .cartpole_env import CartPoleEnv
 
 __all__ = [
+    "CartPoleEnv",
     "RLControllerConfig",
     "RLEnvironment",
     "RLEnvironmentRewardSettings",

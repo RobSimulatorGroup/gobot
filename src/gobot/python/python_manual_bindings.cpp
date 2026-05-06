@@ -11,14 +11,18 @@
 
 #include "gobot/core/config/project_setting.hpp"
 #include "gobot/core/io/resource_loader.hpp"
+#include "gobot/core/io/resource_saver.hpp"
 #include "gobot/main/engine_context.hpp"
 #include "gobot/physics/physics_server.hpp"
 #include "gobot/scene/collision_shape_3d.hpp"
 #include "gobot/scene/joint_3d.hpp"
 #include "gobot/scene/link_3d.hpp"
+#include "gobot/scene/mesh_instance_3d.hpp"
 #include "gobot/scene/node_3d.hpp"
+#include "gobot/scene/node_creation_registry.hpp"
 #include "gobot/scene/resources/box_shape_3d.hpp"
 #include "gobot/scene/resources/packed_scene.hpp"
+#include "gobot/scene/resources/primitive_mesh.hpp"
 #include "gobot/scene/robot_3d.hpp"
 #include "gobot/scene/scene_initializer.hpp"
 #include "gobot/simulation/rl_environment.hpp"
@@ -111,6 +115,30 @@ Robot3D* CreateTestRobotScene() {
     return robot;
 }
 
+CollisionShape3D* CreateBoxCollision(const std::string& name,
+                                      const Vector3& size,
+                                      const Vector3& position = Vector3::Zero()) {
+    auto* collision_shape = Object::New<CollisionShape3D>();
+    collision_shape->SetName(name);
+    collision_shape->SetPosition(position);
+    auto box = MakeRef<BoxShape3D>();
+    box->SetSize(size);
+    collision_shape->SetShape(box);
+    return collision_shape;
+}
+
+MeshInstance3D* CreateBoxVisual(const std::string& name,
+                                const Vector3& size,
+                                const Vector3& position = Vector3::Zero()) {
+    auto* mesh_instance = Object::New<MeshInstance3D>();
+    mesh_instance->SetName(name);
+    mesh_instance->SetPosition(position);
+    auto box = MakeRef<BoxMesh>();
+    box->SetSize(size);
+    mesh_instance->SetMesh(box);
+    return mesh_instance;
+}
+
 Node* LoadSceneRoot(const std::string& scene_path) {
     Ref<Resource> resource =
             ResourceLoader::Load(scene_path, "PackedScene", ResourceFormatLoader::CacheMode::Ignore);
@@ -125,6 +153,22 @@ Node* LoadSceneRoot(const std::string& scene_path) {
     }
 
     return scene_root;
+}
+
+bool SaveSceneRoot(Node* root, const std::string& path) {
+    if (root == nullptr) {
+        throw std::invalid_argument("cannot save a null Gobot scene root");
+    }
+    Ref<PackedScene> packed_scene = MakeRef<PackedScene>();
+    if (!packed_scene->Pack(root)) {
+        return false;
+    }
+    USING_ENUM_BITWISE_OPERATORS;
+    const std::string global_path = ProjectSettings::GetInstance()->GlobalizePath(path);
+    return ResourceSaver::Save(packed_scene,
+                               global_path,
+                               ResourceSaverFlags::ReplaceSubResourcePaths |
+                                       ResourceSaverFlags::ChangePath);
 }
 
 PhysicsBackendType ParseBackend(const std::string& backend) {
@@ -300,12 +344,45 @@ void NodeSetProperty(Node& node, const std::string& name, const py::handle& valu
     GetActiveAppContext().NotifySceneChanged();
 }
 
+void NodeAddChild(Node& node, Node& child, bool force_readable_name) {
+    node.AddChild(&child, force_readable_name);
+    GetActiveAppContext().NotifySceneChanged();
+}
+
+void NodeRemoveChild(Node& node, Node& child, bool delete_child) {
+    node.RemoveChild(&child);
+    if (delete_child) {
+        Object::Delete(&child);
+    }
+    GetActiveAppContext().NotifySceneChanged();
+}
+
+void NodeReparent(Node& node, Node& parent) {
+    node.Reparent(&parent);
+    GetActiveAppContext().NotifySceneChanged();
+}
+
+Node* NodeGetParent(Node& node) {
+    return node.GetParent();
+}
+
 py::list NodeGetPropertyNames(const Node& node) {
     py::list names;
     for (const Property& property : node.GetType().get_properties()) {
         names.append(py::str(property.get_name().data()));
     }
     return names;
+}
+
+Node* CreateNode(const std::string& type_name, const std::string& name) {
+    Node* node = NodeCreationRegistry::CreateNode(type_name);
+    if (node == nullptr) {
+        throw std::invalid_argument("unknown Gobot node type '" + type_name + "'");
+    }
+    if (!name.empty()) {
+        node->SetName(name);
+    }
+    return node;
 }
 
 py::dict ResourceToPythonDict(const Ref<Resource>& resource) {
@@ -364,6 +441,25 @@ void RegisterRuntime(py::module_& module) {
 }
 
 void RegisterManualApis(py::module_& module) {
+    py::enum_<JointType>(module, "JointType")
+            .value("Fixed", JointType::Fixed)
+            .value("Revolute", JointType::Revolute)
+            .value("Continuous", JointType::Continuous)
+            .value("Prismatic", JointType::Prismatic)
+            .value("Floating", JointType::Floating)
+            .value("Planar", JointType::Planar)
+            .export_values();
+
+    py::enum_<RobotMode>(module, "RobotMode")
+            .value("Assembly", RobotMode::Assembly)
+            .value("Motion", RobotMode::Motion)
+            .export_values();
+
+    py::enum_<LinkRole>(module, "LinkRole")
+            .value("Physical", LinkRole::Physical)
+            .value("VirtualRoot", LinkRole::VirtualRoot)
+            .export_values();
+
     py::class_<EngineContext>(module, "AppContext")
             .def_property_readonly("project_path", &EngineContext::GetProjectPath)
             .def_property_readonly("scene_path", &EngineContext::GetScenePath)
@@ -428,8 +524,12 @@ void RegisterManualApis(py::module_& module) {
             .def_property_readonly("type", &NodeTypeName)
             .def_property_readonly("child_count", &Node::GetChildCount)
             .def_property_readonly("children", &GetNodeChildren, py::return_value_policy::reference_internal)
+            .def_property_readonly("parent", &NodeGetParent, py::return_value_policy::reference_internal)
             .def("child", &GetNodeChild, py::arg("index"), py::return_value_policy::reference_internal)
             .def("find", &FindNode, py::arg("path"), py::return_value_policy::reference_internal)
+            .def("add_child", &NodeAddChild, py::arg("child"), py::arg("force_readable_name") = false)
+            .def("remove_child", &NodeRemoveChild, py::arg("child"), py::arg("delete") = false)
+            .def("reparent", &NodeReparent, py::arg("parent"))
             .def("get", &NodeGetProperty, py::arg("property"))
             .def("set", &NodeSetProperty, py::arg("property"), py::arg("value"))
             .def("property_names", &NodeGetPropertyNames);
@@ -457,6 +557,76 @@ void RegisterManualApis(py::module_& module) {
                           &Node3D::IsVisible,
                           [](Node3D& node, bool visible) {
                               node.SetVisible(visible);
+                              GetActiveAppContext().NotifySceneChanged();
+                          });
+
+    py::class_<Robot3D, Node3D>(module, "Robot3D")
+            .def_property("source_path",
+                          &Robot3D::GetSourcePath,
+                          [](Robot3D& robot, const std::string& source_path) {
+                              robot.SetSourcePath(source_path);
+                              GetActiveAppContext().NotifySceneChanged();
+                          })
+            .def_property("mode",
+                          &Robot3D::GetMode,
+                          [](Robot3D& robot, RobotMode mode) {
+                              robot.SetMode(mode);
+                              GetActiveAppContext().NotifySceneChanged();
+                          });
+
+    py::class_<Link3D, Node3D>(module, "Link3D")
+            .def_property("has_inertial", &Link3D::HasInertial, &Link3D::SetHasInertial)
+            .def_property("mass", &Link3D::GetMass, &Link3D::SetMass)
+            .def_property("center_of_mass",
+                          [](const Link3D& link) { return Vector3ToPython(link.GetCenterOfMass()); },
+                          [](Link3D& link, const py::handle& value) {
+                              link.SetCenterOfMass(PythonToVector3(value));
+                              GetActiveAppContext().NotifySceneChanged();
+                          })
+            .def_property("inertia_diagonal",
+                          [](const Link3D& link) { return Vector3ToPython(link.GetInertiaDiagonal()); },
+                          [](Link3D& link, const py::handle& value) {
+                              link.SetInertiaDiagonal(PythonToVector3(value));
+                              GetActiveAppContext().NotifySceneChanged();
+                          })
+            .def_property("role", &Link3D::GetRole, &Link3D::SetRole);
+
+    py::class_<Joint3D, Node3D>(module, "Joint3D")
+            .def_property("joint_type", &Joint3D::GetJointType, &Joint3D::SetJointType)
+            .def_property("parent_link", &Joint3D::GetParentLink, &Joint3D::SetParentLink)
+            .def_property("child_link", &Joint3D::GetChildLink, &Joint3D::SetChildLink)
+            .def_property("axis",
+                          [](const Joint3D& joint) { return Vector3ToPython(joint.GetAxis()); },
+                          [](Joint3D& joint, const py::handle& value) {
+                              joint.SetAxis(PythonToVector3(value));
+                              GetActiveAppContext().NotifySceneChanged();
+                          })
+            .def_property("lower_limit", &Joint3D::GetLowerLimit, &Joint3D::SetLowerLimit)
+            .def_property("upper_limit", &Joint3D::GetUpperLimit, &Joint3D::SetUpperLimit)
+            .def_property("effort_limit", &Joint3D::GetEffortLimit, &Joint3D::SetEffortLimit)
+            .def_property("velocity_limit", &Joint3D::GetVelocityLimit, &Joint3D::SetVelocityLimit)
+            .def_property("joint_position", &Joint3D::GetJointPosition, &Joint3D::SetJointPosition);
+
+    py::class_<CollisionShape3D, Node3D>(module, "CollisionShape3D")
+            .def_property("disabled", &CollisionShape3D::IsDisabled, &CollisionShape3D::SetDisabled);
+
+    py::class_<MeshInstance3D, Node3D>(module, "MeshInstance3D")
+            .def_property("surface_color",
+                          [](const MeshInstance3D& mesh_instance) {
+                              const Color color = mesh_instance.GetSurfaceColor();
+                              return py::make_tuple(color.red(), color.green(), color.blue(), color.alpha());
+                          },
+                          [](MeshInstance3D& mesh_instance, const py::handle& value) {
+                              py::sequence sequence = py::reinterpret_borrow<py::sequence>(value);
+                              if (sequence.size() != 4) {
+                                  throw std::invalid_argument("expected a 4-element RGBA color");
+                              }
+                              mesh_instance.SetSurfaceColor({
+                                      py::cast<float>(sequence[0]),
+                                      py::cast<float>(sequence[1]),
+                                      py::cast<float>(sequence[2]),
+                                      py::cast<float>(sequence[3])
+                              });
                               GetActiveAppContext().NotifySceneChanged();
                           });
 
@@ -557,6 +727,42 @@ void RegisterManualApis(py::module_& module) {
         }
         return std::make_unique<PyScene>(LoadSceneRoot(scene_path));
     }, py::arg("scene_path"));
+
+    module.def("create_node", [](const std::string& type_name, const std::string& name) {
+        if (s_active_app_context == nullptr) {
+            Runtime();
+        }
+        return CreateNode(type_name, name);
+    }, py::arg("type_name"), py::arg("name") = "", py::return_value_policy::reference);
+
+    module.def("create_box_collision", [](const std::string& name,
+                                          const py::handle& size,
+                                          const py::handle& position) {
+        if (s_active_app_context == nullptr) {
+            Runtime();
+        }
+        return CreateBoxCollision(name, PythonToVector3(size), PythonToVector3(position));
+    }, py::arg("name"), py::arg("size"), py::arg("position") = py::make_tuple(0.0, 0.0, 0.0),
+       py::return_value_policy::reference);
+
+    module.def("create_box_visual", [](const std::string& name,
+                                       const py::handle& size,
+                                       const py::handle& position) {
+        if (s_active_app_context == nullptr) {
+            Runtime();
+        }
+        return CreateBoxVisual(name, PythonToVector3(size), PythonToVector3(position));
+    }, py::arg("name"), py::arg("size"), py::arg("position") = py::make_tuple(0.0, 0.0, 0.0),
+       py::return_value_policy::reference);
+
+    module.def("save_scene", [](Node& root, const std::string& path) {
+        if (s_active_app_context == nullptr) {
+            Runtime();
+        }
+        if (!SaveSceneRoot(&root, path)) {
+            throw std::runtime_error("failed to save Gobot scene to '" + path + "'");
+        }
+    }, py::arg("root"), py::arg("path"));
 
     module.def("load_resource", [](const std::string& path, const std::string& type_hint) {
         if (s_active_app_context == nullptr) {

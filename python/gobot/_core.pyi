@@ -16,6 +16,25 @@ class PhysicsBackendType(Enum):
     RigidIpcCpu: ClassVar[PhysicsBackendType]
 
 
+class JointType(Enum):
+    Fixed: ClassVar[JointType]
+    Revolute: ClassVar[JointType]
+    Continuous: ClassVar[JointType]
+    Prismatic: ClassVar[JointType]
+    Floating: ClassVar[JointType]
+    Planar: ClassVar[JointType]
+
+
+class RobotMode(Enum):
+    Assembly: ClassVar[RobotMode]
+    Motion: ClassVar[RobotMode]
+
+
+class LinkRole(Enum):
+    Physical: ClassVar[LinkRole]
+    VirtualRoot: ClassVar[LinkRole]
+
+
 class JointControllerGains:
     position_stiffness: float
     velocity_damping: float
@@ -105,9 +124,13 @@ class Node:
     type: str
     child_count: int
     children: list[Node]
+    parent: Node | None
 
     def child(self, index: int) -> Node: ...
     def find(self, path: str) -> Node | None: ...
+    def add_child(self, child: Node, force_readable_name: bool = False) -> None: ...
+    def remove_child(self, child: Node, delete: bool = False) -> None: ...
+    def reparent(self, parent: Node) -> None: ...
     def get(self, property: str) -> Any: ...
     def set(self, property: str, value: Any) -> None: ...
     def property_names(self) -> list[str]: ...
@@ -118,6 +141,39 @@ class Node3D(Node):
     rotation_degrees: Vector3
     scale: Vector3
     visible: bool
+
+
+class Robot3D(Node3D):
+    source_path: str
+    mode: RobotMode
+
+
+class Link3D(Node3D):
+    has_inertial: bool
+    mass: float
+    center_of_mass: Vector3
+    inertia_diagonal: Vector3
+    role: LinkRole
+
+
+class Joint3D(Node3D):
+    joint_type: JointType
+    parent_link: str
+    child_link: str
+    axis: Vector3
+    lower_limit: float
+    upper_limit: float
+    effort_limit: float
+    velocity_limit: float
+    joint_position: float
+
+
+class CollisionShape3D(Node3D):
+    disabled: bool
+
+
+class MeshInstance3D(Node3D):
+    surface_color: tuple[float, float, float, float]
 
 
 class RLControllerConfig:
@@ -155,6 +211,10 @@ class RLEnvironment:
 
 def set_project_path(project_path: str) -> None: ...
 def load_scene(scene_path: str) -> Scene: ...
+def create_node(type_name: str, name: str = "") -> Node: ...
+def create_box_collision(name: str, size: Vector3, position: Vector3 = (0.0, 0.0, 0.0)) -> CollisionShape3D: ...
+def create_box_visual(name: str, size: Vector3, position: Vector3 = (0.0, 0.0, 0.0)) -> Node3D: ...
+def save_scene(root: Node, path: str) -> None: ...
 def load_resource(path: str, type_hint: str = "") -> dict[str, Any]: ...
 def create_test_scene() -> Scene: ...
 def backend_infos() -> list[dict[str, Any]]: ...

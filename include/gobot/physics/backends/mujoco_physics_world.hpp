@@ -51,6 +51,11 @@ private:
                                 std::size_t robot_index,
                                 const std::string& prefix);
 
+    bool AddAuthoredRobotToSpec(void* parent_spec,
+                                const PhysicsRobotSnapshot& robot,
+                                std::size_t robot_index,
+                                const std::string& prefix);
+
     void AddLooseSceneGeomsToSpec(void* spec);
 
     void AddFloatingBaseJointsToSpec(void* spec, const PhysicsRobotSnapshot& robot);
