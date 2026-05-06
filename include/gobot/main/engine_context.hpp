@@ -38,6 +38,7 @@ public:
                       const std::string& scene_path = "");
     Node* GetSceneRoot() const;
     const std::string& GetScenePath() const;
+    std::uint64_t GetSceneEpoch() const;
     bool HasScene() const;
     void ClearScene();
 
@@ -63,9 +64,11 @@ public:
     void SetSceneChangedCallback(SceneChangedCallback callback);
     void SetLoadSceneCallback(LoadSceneCallback callback);
     void NotifySceneChanged();
+    void NotifySceneMutated();
 
 private:
     void ClearOwnedScene();
+    void AdvanceSceneEpoch();
     void SetLastError(std::string error);
 
     ProjectSettings* project_settings_{nullptr};
@@ -73,6 +76,10 @@ private:
     SimulationServer* simulation_server_{nullptr};
     Node* scene_root_{nullptr};
     bool owns_scene_root_{false};
+    // Monotonically changes when the active scene root is replaced or cleared.
+    // Python node handles capture this value so handles from an old scene fail
+    // with ReferenceError instead of accidentally resolving into a new scene.
+    std::uint64_t scene_epoch_{1};
     std::string scene_path_;
     std::string last_error_;
     SceneChangedCallback scene_changed_callback_;

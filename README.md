@@ -69,24 +69,6 @@ print(gobot.backend_infos())
 PY
 ```
 
-Run the Python smoke test:
-
-```bash
-PYTHONPATH="$PWD/build/python" python3 tests/python/test_python_bindings_smoke.py
-```
-
-Run a real-scene smoke test when you have a Gobot project containing
-`world.jscn` and robot assets:
-
-```bash
-PYTHONPATH="$PWD/build/python" python3 tests/python/smoke_real_scene.py \
-  --project /path/to/project \
-  --scene res://world.jscn \
-  --robot H2 \
-  --backend mujoco \
-  --steps 4
-```
-
 The Python API uses the same `res://` project root as the editor:
 
 ```python
@@ -98,32 +80,25 @@ env = gobot.RLEnvironment("res://world.jscn", robot="H2", backend="mujoco")
 observation, info = env.reset(seed=1)
 ```
 
-### RL And PPO Smoke
+Python scene objects are handles, not owned C++ node pointers. A handle stores
+the engine `ObjectID` and scene epoch, resolves the live node for every access,
+and raises `ReferenceError` after the node is deleted or the active scene is
+replaced. Detached nodes returned by `gobot.create_node()` are owned by Python
+until they are transferred into a scene with `add_child()`. Python mutations go
+through the binding's scene mutation gateway so the editor path can later route
+them through a command stack instead of relying on scattered dirty flags.
+
+### RL And PPO
 
 The Python layer includes a small Gymnasium-style adapter. The PPO trainer lives
 in the separate `RobSimulatorGroup/ppo` repository so Gobot can stay focused on
 engine, scene, simulation, and bindings.
 
-Check the environment spaces:
-
-```bash
-PYTHONPATH="$PWD/build/python" python3 - <<'PY'
-import gobot
-from gobot.gym_adapter import GobotGymEnv
-
-gobot.set_project_path("/home/wqq/test_godot")
-env = GobotGymEnv("res://world.jscn", robot="H2", backend="mujoco")
-obs, info = env.reset(seed=1)
-print(info)
-print(env.observation_space.shape, env.action_space.shape)
-PY
-```
-
 Run PPO from the trainer repository:
 
 ```bash
 cd /home/wqq/ppo
-GOBOT_PYTHONPATH=/home/wqq/gobot/build_ppo/python uv run gobot-ppo \
+GOBOT_PYTHONPATH=/home/wqq/gobot/build/python uv run gobot-ppo \
   --project /home/wqq/test_godot \
   --scene res://world.jscn \
   --robot H2 \
@@ -145,8 +120,7 @@ python3 -m pip install -e .
 ```
 
 This requires `scikit-build-core` in the Python build environment. On Ubuntu,
-install `python3-venv` first if you want to test in a clean virtual
-environment:
+install `python3-venv` first if you want to use a clean virtual environment:
 
 ```bash
 sudo apt install python3-venv
@@ -166,7 +140,7 @@ code should import `gobot.gym_adapter`.
 ## MuJoCo Backend Setup
 
 Gobot keeps MuJoCo optional. The default build does not download or link MuJoCo,
-so editor and tests can still build on machines without the SDK.
+so the editor can still build on machines without the SDK.
 
 ### Recommended: Local MuJoCo SDK
 
@@ -231,20 +205,6 @@ export LD_LIBRARY_PATH=/path/to/mujoco/lib:$LD_LIBRARY_PATH
 The Gobot MuJoCo backend currently loads the first `Robot3D.source_path` as a
 MuJoCo XML model through `mj_loadXML`. URDF support therefore follows MuJoCo's
 compiler behavior, and advanced Gobot scene-to-MJCF export remains a later step.
-
-### Editor Smoke Test
-
-The first editor-level check is that MuJoCo is actually selected and stepping:
-
-1. Load or import a robot scene.
-2. Open the `Physics` panel.
-3. Select `MuJoCo CPU`.
-4. Check that the backend reports `Available`.
-5. Click `Build World`.
-6. Click `Step` and watch the frame counter and joint state table.
-
-If the frame counter advances and joint positions/velocities are populated, the
-Gobot editor is creating a MuJoCo world and calling `mj_step`.
 
 Visible falling/contact behavior needs extra scene conditions:
 

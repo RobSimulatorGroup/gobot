@@ -66,6 +66,32 @@ uint32_t ObjectDB::s_slot_max;
 ObjectDB::ObjectSlot* ObjectDB::s_object_slots = nullptr;
 uint64_t ObjectDB::s_validator_counter = 0;
 
+Object* ObjectDB::GetInstance(ObjectID object_id) {
+    const uint64_t id = object_id;
+    if (id == 0) {
+        return nullptr;
+    }
+
+    const uint32_t slot = id & OBJECTDB_SLOT_MAX_COUNT_MASK;
+    const uint64_t validator = (id >> OBJECTDB_SLOT_MAX_COUNT_BITS) & OBJECTDB_VALIDATOR_MASK;
+    const bool is_ref_counted = (id & OBJECTDB_REFERENCE_BIT) != 0;
+
+    s_spin_lock.lock();
+
+    Object* object = nullptr;
+    if (slot < s_slot_max) {
+        const ObjectSlot& object_slot = s_object_slots[slot];
+        if (object_slot.object != nullptr &&
+            object_slot.validator == validator &&
+            object_slot.is_ref_counted == is_ref_counted) {
+            object = object_slot.object;
+        }
+    }
+
+    s_spin_lock.unlock();
+    return object;
+}
+
 ObjectID ObjectDB::AddInstance(Object *object) {
     s_spin_lock.lock();
 

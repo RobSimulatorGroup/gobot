@@ -70,15 +70,24 @@ def main():
     root = scene.root
     assert root.name == "robot"
     assert root.type == "Robot3D"
+    assert root.type_name == "Robot3D"
+    assert root.valid is True
+    assert isinstance(root.id, int)
     assert root.child_count == 2
     assert [child.name for child in root.children] == ["base", "joint"]
+    base = root.child(0)
+    assert base.type == "Link3D"
+    assert_close_tuple(base.get("position"), (0.0, 0.0, 1.0))
+    base.set("position", (1.0, 2.0, 3.0))
+    assert_close_tuple(base.get("position"), (1.0, 2.0, 3.0))
+    assert "position" in base.property_names()
 
     authored = gobot.create_node("Robot3D", "authored")
     assert authored.name == "authored"
     link = gobot.create_node("Link3D", "link")
     authored.add_child(link)
     assert authored.child_count == 1
-    assert link.parent is authored
+    assert link.parent.id == authored.id
     collision = gobot.create_box_collision("collision", (0.2, 0.3, 0.4))
     link.add_child(collision)
     assert collision.type == "CollisionShape3D"
@@ -86,19 +95,31 @@ def main():
     link.add_child(visual)
     assert visual.type == "MeshInstance3D"
     assert authored.find("link/collision").name == "collision"
+    detached_visual = link.remove_child(visual, delete=False)
+    assert detached_visual.valid is True
+    link.add_child(detached_visual)
     link.remove_child(visual, delete=True)
     assert link.child_count == 1
+    assert visual.valid is False
+    try:
+        _ = visual.name
+        raise AssertionError("deleted Gobot node handle should raise ReferenceError")
+    except ReferenceError as error:
+        assert "no longer resolves" in str(error) or "invalid" in str(error)
+
+    context.clear_scene()
+    assert context.scene_epoch > 0
+    assert context.root is None
+    assert base.valid is False
+    try:
+        _ = base.name
+        raise AssertionError("old scene handle should raise ReferenceError after scene clear")
+    except ReferenceError as error:
+        assert "inactive scene epoch" in str(error)
 
     cartpole_root = gobot.scene.create_cartpole_scene()
     assert cartpole_root.name == "cartpole"
     assert cartpole_root.find("rail/slider/cart/hinge/pole").name == "pole"
-
-    base = root.child(0)
-    assert base.type == "Link3D"
-    assert_close_tuple(base.get("position"), (0.0, 0.0, 1.0))
-    base.set("position", (1.0, 2.0, 3.0))
-    assert_close_tuple(base.get("position"), (1.0, 2.0, 3.0))
-    assert "position" in base.property_names()
 
     script_path = "/tmp/gobot_python_binding_smoke.py"
     with open(script_path, "w", encoding="utf-8") as script_file:

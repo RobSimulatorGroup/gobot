@@ -2,6 +2,7 @@
 
 #include <cstdint>
 #include <filesystem>
+#include <functional>
 #include <memory>
 #include <stdexcept>
 #include <string>
@@ -32,6 +33,156 @@ namespace gobot::python {
 namespace {
 
 EngineContext* s_active_app_context = nullptr;
+
+enum class PyNodeOwnership {
+    Borrowed,
+    DetachedOwned,
+    TreeOwned
+};
+
+struct PyNodeHandleState {
+    ObjectID id;
+    std::uint64_t scene_epoch{0};
+    std::string name_snapshot;
+    PyNodeOwnership ownership{PyNodeOwnership::Borrowed};
+};
+
+struct PyNodeHandle {
+    std::shared_ptr<PyNodeHandleState> state;
+    std::string expected_type;
+
+    static std::shared_ptr<PyNodeHandleState> MakeState(Node* node,
+                                                        std::uint64_t epoch,
+                                                        PyNodeOwnership node_ownership) {
+        auto state = std::make_shared<PyNodeHandleState>();
+        state->id = node != nullptr ? node->GetInstanceId() : ObjectID();
+        state->scene_epoch = epoch;
+        state->name_snapshot = node != nullptr ? node->GetName() : std::string();
+        state->ownership = node_ownership;
+        return state;
+    }
+
+    PyNodeHandle() = default;
+
+    PyNodeHandle(Node* node,
+                 std::string expected_type_name,
+                 std::uint64_t epoch,
+                 PyNodeOwnership node_ownership)
+        : state(MakeState(node, epoch, node_ownership)),
+          expected_type(std::move(expected_type_name)) {
+    }
+
+    PyNodeHandle(std::shared_ptr<PyNodeHandleState> handle_state,
+                 std::string expected_type_name)
+        : state(std::move(handle_state)),
+          expected_type(std::move(expected_type_name)) {
+    }
+
+    ~PyNodeHandle() {
+        ReleaseDetached();
+    }
+
+    void ReleaseDetached() {
+        if (!state || state.use_count() != 1 || state->ownership != PyNodeOwnership::DetachedOwned) {
+            return;
+        }
+
+        auto* node = Object::PointerCastTo<Node>(ObjectDB::GetInstance(state->id));
+        if (node != nullptr && node->GetParent() == nullptr) {
+            Object::Delete(node);
+        }
+        state->ownership = PyNodeOwnership::Borrowed;
+        state->id = ObjectID();
+    }
+
+    Node* TryResolve() const {
+        if (!state) {
+            return nullptr;
+        }
+        auto* object = ObjectDB::GetInstance(state->id);
+        auto* node = Object::PointerCastTo<Node>(object);
+        if (node == nullptr) {
+            return nullptr;
+        }
+        if (!expected_type.empty()) {
+            const Type type = Type::get_by_name(expected_type);
+            if (type.is_valid() && node->GetType() != type && !node->GetType().is_derived_from(type)) {
+                return nullptr;
+            }
+        }
+        return node;
+    }
+
+    Node* Resolve() const;
+
+    template <typename T>
+    T* ResolveAs() const {
+        Node* node = Resolve();
+        auto* typed = Object::PointerCastTo<T>(node);
+        if (typed == nullptr) {
+            throw py::type_error("Gobot node handle expected type '" + std::string(Type::get<T>().get_name().data()) +
+                                 "' but resolved '" + std::string(node->GetClassStringName()) + "'");
+        }
+        return typed;
+    }
+
+    void RefreshSnapshot(Node* node) {
+        if (state && node != nullptr) {
+            state->name_snapshot = node->GetName();
+        }
+    }
+
+    void TransferToTree() {
+        if (state) {
+            state->ownership = PyNodeOwnership::TreeOwned;
+        }
+    }
+
+    void TransferToDetachedOwned(Node* node);
+
+    void Invalidate() {
+        if (state) {
+            state->ownership = PyNodeOwnership::Borrowed;
+            state->id = ObjectID();
+        }
+    }
+};
+
+struct PyNode3DHandle : public PyNodeHandle {
+    using PyNodeHandle::PyNodeHandle;
+};
+
+struct PyRobot3DHandle : public PyNode3DHandle {
+    using PyNode3DHandle::PyNode3DHandle;
+};
+
+struct PyLink3DHandle : public PyNode3DHandle {
+    using PyNode3DHandle::PyNode3DHandle;
+};
+
+struct PyJoint3DHandle : public PyNode3DHandle {
+    using PyNode3DHandle::PyNode3DHandle;
+};
+
+struct PyCollisionShape3DHandle : public PyNode3DHandle {
+    using PyNode3DHandle::PyNode3DHandle;
+};
+
+struct PyMeshInstance3DHandle : public PyNode3DHandle {
+    using PyNode3DHandle::PyNode3DHandle;
+};
+
+std::string ExpectedTypeForNode(Node* node);
+PyNodeHandle MakeTypedNodeHandle(Node* node, PyNodeOwnership ownership = PyNodeOwnership::Borrowed);
+py::object MakeTypedNodeObject(Node* node, PyNodeOwnership ownership = PyNodeOwnership::Borrowed);
+
+template <typename Func>
+void ExecuteSceneMutation(const std::string&, Func&& func);
+
+[[noreturn]] void ThrowReferenceError(const std::string& message) {
+    PyErr_SetString(PyExc_ReferenceError, message.c_str());
+    throw py::error_already_set();
+}
 
 struct GobotRuntime {
     ProjectSettings* project_settings{nullptr};
@@ -284,9 +435,11 @@ void ApplyControllerConfigToEnv(PyRLEnvironment& env, py::dict dict) {
 
 struct PyScene {
     Node* root{nullptr};
+    std::uint64_t scene_epoch{0};
 
     explicit PyScene(Node* root_node)
-        : root(root_node) {
+        : root(root_node),
+          scene_epoch(GetActiveAppContext().GetSceneEpoch()) {
     }
 
     ~PyScene() {
@@ -300,78 +453,171 @@ struct PyScene {
     PyScene& operator=(const PyScene&) = delete;
 };
 
-std::string NodeTypeName(const Node& node) {
-    return node.GetClassStringName().data();
+std::string NodeTypeName(const PyNodeHandle& handle) {
+    return std::string(handle.Resolve()->GetClassStringName());
 }
 
-std::vector<Node*> GetNodeChildren(Node& node) {
-    std::vector<Node*> children;
-    children.reserve(node.GetChildCount());
-    for (std::size_t index = 0; index < node.GetChildCount(); ++index) {
-        children.push_back(node.GetChild(static_cast<int>(index)));
+py::list GetNodeChildren(PyNodeHandle& handle) {
+    Node* node = handle.Resolve();
+    py::list children;
+    for (std::size_t index = 0; index < node->GetChildCount(); ++index) {
+        children.append(MakeTypedNodeObject(node->GetChild(static_cast<int>(index))));
     }
     return children;
 }
 
-Node* GetNodeChild(Node& node, int index) {
-    Node* child = node.GetChild(index);
+py::object GetNodeChild(PyNodeHandle& handle, int index) {
+    Node* child = handle.Resolve()->GetChild(index);
     if (child == nullptr) {
         throw py::index_error("Gobot node child index is out of range");
     }
-    return child;
+    return MakeTypedNodeObject(child);
 }
 
-Node* FindNode(Node& node, const std::string& path) {
-    return node.GetNodeOrNull(NodePath(path));
+py::object FindNode(PyNodeHandle& handle, const std::string& path) {
+    Node* node = handle.Resolve()->GetNodeOrNull(NodePath(path));
+    if (node == nullptr) {
+        return py::none();
+    }
+    return MakeTypedNodeObject(node);
 }
 
-py::object NodeGetProperty(const Node& node, const std::string& name) {
-    Variant value = node.Get(name);
+py::object NodeGetProperty(const PyNodeHandle& handle, const std::string& name) {
+    const Node* node = handle.Resolve();
+    Variant value = node->Get(name);
     if (!value.is_valid()) {
         throw py::key_error("unknown Gobot property '" + name + "'");
     }
     return VariantToPython(value);
 }
 
-void NodeSetProperty(Node& node, const std::string& name, const py::handle& value) {
-    const Property property = node.GetType().get_property(name);
+void NodeSetProperty(PyNodeHandle& handle, const std::string& name, const py::handle& value) {
+    Node* node = handle.Resolve();
+    const Property property = node->GetType().get_property(name);
     if (!property.is_valid()) {
         throw py::key_error("unknown Gobot property '" + name + "'");
     }
-    if (!node.Set(name, PythonToVariantForType(value, property.get_type()))) {
-        throw std::runtime_error("failed to set Gobot property '" + name + "'");
+    ExecuteSceneMutation("set_property", [&]() {
+        if (!node->Set(name, PythonToVariantForType(value, property.get_type()))) {
+            throw std::runtime_error("failed to set Gobot property '" + name + "'");
+        }
+        handle.RefreshSnapshot(node);
+    });
+}
+
+py::object NodeAddChild(PyNodeHandle& handle, PyNodeHandle& child_handle, bool force_readable_name) {
+    Node* node = handle.Resolve();
+    Node* child = child_handle.Resolve();
+    ExecuteSceneMutation("add_child", [&]() {
+        node->AddChild(child, force_readable_name);
+        child_handle.TransferToTree();
+        child_handle.RefreshSnapshot(child);
+    });
+    return MakeTypedNodeObject(child);
+}
+
+py::object NodeRemoveChild(PyNodeHandle& handle, PyNodeHandle& child_handle, bool delete_child) {
+    Node* node = handle.Resolve();
+    Node* child = child_handle.Resolve();
+    if (child->GetParent() != node) {
+        throw std::invalid_argument("Gobot node '" + child->GetName() + "' is not a child of '" +
+                                    node->GetName() + "'");
     }
-    GetActiveAppContext().NotifySceneChanged();
-}
 
-void NodeAddChild(Node& node, Node& child, bool force_readable_name) {
-    node.AddChild(&child, force_readable_name);
-    GetActiveAppContext().NotifySceneChanged();
-}
-
-void NodeRemoveChild(Node& node, Node& child, bool delete_child) {
-    node.RemoveChild(&child);
     if (delete_child) {
-        Object::Delete(&child);
+        ExecuteSceneMutation("remove_child_delete", [&]() {
+            node->RemoveChild(child);
+            Object::Delete(child);
+            child_handle.Invalidate();
+        });
+        return py::none();
     }
-    GetActiveAppContext().NotifySceneChanged();
+
+    std::shared_ptr<PyNodeHandleState> detached_state = child_handle.state;
+    ExecuteSceneMutation("remove_child_detach", [&]() {
+        node->RemoveChild(child);
+        child_handle.TransferToDetachedOwned(child);
+    });
+    return py::cast(PyNodeHandle(detached_state, ExpectedTypeForNode(child)));
 }
 
-void NodeReparent(Node& node, Node& parent) {
-    node.Reparent(&parent);
-    GetActiveAppContext().NotifySceneChanged();
+void NodeReparent(PyNodeHandle& handle, PyNodeHandle& parent_handle) {
+    Node* node = handle.Resolve();
+    Node* parent = parent_handle.Resolve();
+    ExecuteSceneMutation("reparent", [&]() {
+        node->Reparent(parent);
+        handle.TransferToTree();
+        handle.RefreshSnapshot(node);
+    });
 }
 
-Node* NodeGetParent(Node& node) {
-    return node.GetParent();
+py::object NodeGetParent(PyNodeHandle& handle) {
+    Node* parent = handle.Resolve()->GetParent();
+    if (parent == nullptr) {
+        return py::none();
+    }
+    return MakeTypedNodeObject(parent);
 }
 
-py::list NodeGetPropertyNames(const Node& node) {
+py::list NodeGetPropertyNames(const PyNodeHandle& handle) {
+    const Node* node = handle.Resolve();
     py::list names;
-    for (const Property& property : node.GetType().get_properties()) {
+    for (const Property& property : node->GetType().get_properties()) {
         names.append(py::str(property.get_name().data()));
     }
     return names;
+}
+
+std::string NodeGetName(const PyNodeHandle& handle) {
+    return handle.Resolve()->GetName();
+}
+
+void NodeSetName(PyNodeHandle& handle, const std::string& name) {
+    Node* node = handle.Resolve();
+    ExecuteSceneMutation("rename_node", [&]() {
+        node->SetName(name);
+        handle.RefreshSnapshot(node);
+    });
+}
+
+std::string NodeGetPath(const PyNodeHandle& handle) {
+    Node* node = handle.Resolve();
+    if (node->IsInsideTree()) {
+        return node->GetPath().operator std::string();
+    }
+    return node->GetName();
+}
+
+std::uint64_t NodeGetId(const PyNodeHandle& handle) {
+    return handle.state ? static_cast<std::uint64_t>(handle.state->id) : 0;
+}
+
+bool NodeIsValid(const PyNodeHandle& handle) {
+    try {
+        return handle.TryResolve() != nullptr &&
+               (!handle.state || handle.state->ownership == PyNodeOwnership::DetachedOwned ||
+                handle.state->scene_epoch == GetActiveAppContext().GetSceneEpoch());
+    } catch (...) {
+        return false;
+    }
+}
+
+py::dict NodeToDict(const PyNodeHandle& handle) {
+    const Node* node = handle.Resolve();
+    py::dict result;
+    result["id"] = NodeGetId(handle);
+    result["name"] = node->GetName();
+    result["path"] = NodeGetPath(handle);
+    result["type"] = std::string(node->GetClassStringName());
+    py::dict properties;
+    for (const Property& property : node->GetType().get_properties()) {
+        Variant value = property.get_value(node);
+        if (value.is_valid()) {
+            properties[py::str(property.get_name().data())] = VariantToPython(value);
+        }
+    }
+    result["properties"] = properties;
+    return result;
 }
 
 Node* CreateNode(const std::string& type_name, const std::string& name) {
@@ -436,6 +682,134 @@ EngineContext* GetActiveAppContextOrNull() {
     return s_active_app_context;
 }
 
+namespace {
+
+EngineContext& EnsureRuntimeContext() {
+    if (s_active_app_context == nullptr) {
+        Runtime();
+    }
+    return GetActiveAppContext();
+}
+
+Node* PyNodeHandle::Resolve() const {
+    if (!state || state->id.IsNull()) {
+        ThrowReferenceError("Gobot node handle is invalid");
+    }
+
+    EngineContext& context = GetActiveAppContext();
+    if (state->ownership != PyNodeOwnership::DetachedOwned &&
+        state->scene_epoch != 0 &&
+        state->scene_epoch != context.GetSceneEpoch()) {
+        ThrowReferenceError("Gobot node handle '" + state->name_snapshot +
+                            "' is from an inactive scene epoch");
+    }
+
+    Node* node = TryResolve();
+    if (node == nullptr) {
+        ThrowReferenceError("Gobot node handle '" + state->name_snapshot +
+                            "' id=" + std::to_string(static_cast<std::uint64_t>(state->id)) +
+                            " no longer resolves to a live node");
+    }
+    return node;
+}
+
+void PyNodeHandle::TransferToDetachedOwned(Node* node) {
+    if (!state) {
+        state = MakeState(node, GetActiveAppContext().GetSceneEpoch(), PyNodeOwnership::DetachedOwned);
+        return;
+    }
+    state->id = node != nullptr ? node->GetInstanceId() : ObjectID();
+    state->scene_epoch = GetActiveAppContext().GetSceneEpoch();
+    state->ownership = PyNodeOwnership::DetachedOwned;
+    RefreshSnapshot(node);
+}
+
+std::string ExpectedTypeForNode(Node* node) {
+    return node == nullptr ? "Node" : std::string(node->GetClassStringName());
+}
+
+PyNodeHandle MakeNodeHandle(Node* node, PyNodeOwnership ownership = PyNodeOwnership::Borrowed) {
+    return PyNodeHandle(node, ExpectedTypeForNode(node), GetActiveAppContext().GetSceneEpoch(), ownership);
+}
+
+PyNode3DHandle MakeNode3DHandle(Node3D* node, PyNodeOwnership ownership = PyNodeOwnership::Borrowed) {
+    return PyNode3DHandle(node, ExpectedTypeForNode(node), GetActiveAppContext().GetSceneEpoch(), ownership);
+}
+
+PyRobot3DHandle MakeRobot3DHandle(Robot3D* node, PyNodeOwnership ownership = PyNodeOwnership::Borrowed) {
+    return PyRobot3DHandle(node, "Robot3D", GetActiveAppContext().GetSceneEpoch(), ownership);
+}
+
+PyLink3DHandle MakeLink3DHandle(Link3D* node, PyNodeOwnership ownership = PyNodeOwnership::Borrowed) {
+    return PyLink3DHandle(node, "Link3D", GetActiveAppContext().GetSceneEpoch(), ownership);
+}
+
+PyJoint3DHandle MakeJoint3DHandle(Joint3D* node, PyNodeOwnership ownership = PyNodeOwnership::Borrowed) {
+    return PyJoint3DHandle(node, "Joint3D", GetActiveAppContext().GetSceneEpoch(), ownership);
+}
+
+PyCollisionShape3DHandle MakeCollisionShape3DHandle(CollisionShape3D* node,
+                                                    PyNodeOwnership ownership = PyNodeOwnership::Borrowed) {
+    return PyCollisionShape3DHandle(node, "CollisionShape3D", GetActiveAppContext().GetSceneEpoch(), ownership);
+}
+
+PyMeshInstance3DHandle MakeMeshInstance3DHandle(MeshInstance3D* node,
+                                                PyNodeOwnership ownership = PyNodeOwnership::Borrowed) {
+    return PyMeshInstance3DHandle(node, "MeshInstance3D", GetActiveAppContext().GetSceneEpoch(), ownership);
+}
+
+PyNodeHandle MakeTypedNodeHandle(Node* node, PyNodeOwnership ownership) {
+    if (auto* mesh_instance = Object::PointerCastTo<MeshInstance3D>(node)) {
+        return MakeMeshInstance3DHandle(mesh_instance, ownership);
+    }
+    if (auto* collision_shape = Object::PointerCastTo<CollisionShape3D>(node)) {
+        return MakeCollisionShape3DHandle(collision_shape, ownership);
+    }
+    if (auto* joint = Object::PointerCastTo<Joint3D>(node)) {
+        return MakeJoint3DHandle(joint, ownership);
+    }
+    if (auto* link = Object::PointerCastTo<Link3D>(node)) {
+        return MakeLink3DHandle(link, ownership);
+    }
+    if (auto* robot = Object::PointerCastTo<Robot3D>(node)) {
+        return MakeRobot3DHandle(robot, ownership);
+    }
+    if (auto* node_3d = Object::PointerCastTo<Node3D>(node)) {
+        return MakeNode3DHandle(node_3d, ownership);
+    }
+    return MakeNodeHandle(node, ownership);
+}
+
+py::object MakeTypedNodeObject(Node* node, PyNodeOwnership ownership) {
+    if (auto* mesh_instance = Object::PointerCastTo<MeshInstance3D>(node)) {
+        return py::cast(MakeMeshInstance3DHandle(mesh_instance, ownership));
+    }
+    if (auto* collision_shape = Object::PointerCastTo<CollisionShape3D>(node)) {
+        return py::cast(MakeCollisionShape3DHandle(collision_shape, ownership));
+    }
+    if (auto* joint = Object::PointerCastTo<Joint3D>(node)) {
+        return py::cast(MakeJoint3DHandle(joint, ownership));
+    }
+    if (auto* link = Object::PointerCastTo<Link3D>(node)) {
+        return py::cast(MakeLink3DHandle(link, ownership));
+    }
+    if (auto* robot = Object::PointerCastTo<Robot3D>(node)) {
+        return py::cast(MakeRobot3DHandle(robot, ownership));
+    }
+    if (auto* node_3d = Object::PointerCastTo<Node3D>(node)) {
+        return py::cast(MakeNode3DHandle(node_3d, ownership));
+    }
+    return py::cast(MakeNodeHandle(node, ownership));
+}
+
+template <typename Func>
+void ExecuteSceneMutation(const std::string&, Func&& func) {
+    std::forward<Func>(func)();
+    GetActiveAppContext().NotifySceneMutated();
+}
+
+} // namespace
+
 void RegisterRuntime(py::module_& module) {
     module.doc() = "Gobot robotics scene, simulation, and rendering engine bindings.";
 }
@@ -460,11 +834,33 @@ void RegisterManualApis(py::module_& module) {
             .value("VirtualRoot", LinkRole::VirtualRoot)
             .export_values();
 
+    auto node_class = py::class_<PyNodeHandle>(module, "Node");
+    auto node3d_class = py::class_<PyNode3DHandle, PyNodeHandle>(module, "Node3D");
+    auto robot3d_class = py::class_<PyRobot3DHandle, PyNode3DHandle>(module, "Robot3D");
+    auto link3d_class = py::class_<PyLink3DHandle, PyNode3DHandle>(module, "Link3D");
+    auto joint3d_class = py::class_<PyJoint3DHandle, PyNode3DHandle>(module, "Joint3D");
+    auto collision_shape_class =
+            py::class_<PyCollisionShape3DHandle, PyNode3DHandle>(module, "CollisionShape3D");
+    auto mesh_instance_class =
+            py::class_<PyMeshInstance3DHandle, PyNode3DHandle>(module, "MeshInstance3D");
+
+    py::implicitly_convertible<PyRobot3DHandle, PyNodeHandle>();
+    py::implicitly_convertible<PyLink3DHandle, PyNodeHandle>();
+    py::implicitly_convertible<PyJoint3DHandle, PyNodeHandle>();
+    py::implicitly_convertible<PyCollisionShape3DHandle, PyNodeHandle>();
+    py::implicitly_convertible<PyMeshInstance3DHandle, PyNodeHandle>();
+
     py::class_<EngineContext>(module, "AppContext")
             .def_property_readonly("project_path", &EngineContext::GetProjectPath)
             .def_property_readonly("scene_path", &EngineContext::GetScenePath)
-            .def_property_readonly("root", &EngineContext::GetSceneRoot,
-                                   py::return_value_policy::reference_internal)
+            .def_property_readonly("scene_epoch", &EngineContext::GetSceneEpoch)
+            .def_property_readonly("root", [](EngineContext& context) -> py::object {
+                Node* root = context.GetSceneRoot();
+                if (root == nullptr) {
+                    return py::none();
+                }
+                return MakeTypedNodeObject(root);
+            })
             .def_property("backend_type",
                           &EngineContext::GetBackendType,
                           &EngineContext::SetBackendType)
@@ -484,8 +880,8 @@ void RegisterManualApis(py::module_& module) {
                 if (!context.LoadScene(scene_path)) {
                     throw std::runtime_error(context.GetLastError());
                 }
-                return context.GetSceneRoot();
-            }, py::arg("scene_path"), py::return_value_policy::reference_internal)
+                return MakeTypedNodeObject(context.GetSceneRoot());
+            }, py::arg("scene_path"))
             .def("clear_scene", &EngineContext::ClearScene)
             .def("notify_scene_changed", &EngineContext::NotifySceneChanged)
             .def("build_world", [](EngineContext& context, PhysicsBackendType backend_type) {
@@ -519,118 +915,297 @@ void RegisterManualApis(py::module_& module) {
 
     py::class_<PyScene, std::unique_ptr<PyScene>>(module, "Scene")
             .def_property_readonly("root", [](PyScene& scene) {
-                return scene.root;
-            }, py::return_value_policy::reference_internal);
+                return MakeTypedNodeObject(scene.root);
+            })
+            .def_property_readonly("scene_epoch", [](const PyScene& scene) {
+                return scene.scene_epoch;
+            });
 
-    py::class_<Node>(module, "Node")
-            .def_property("name", &Node::GetName, &Node::SetName)
+    node_class
+            .def_property_readonly("id", &NodeGetId)
+            .def_property("name", &NodeGetName, &NodeSetName)
             .def_property_readonly("type", &NodeTypeName)
-            .def_property_readonly("child_count", &Node::GetChildCount)
-            .def_property_readonly("children", &GetNodeChildren, py::return_value_policy::reference_internal)
-            .def_property_readonly("parent", &NodeGetParent, py::return_value_policy::reference_internal)
-            .def("child", &GetNodeChild, py::arg("index"), py::return_value_policy::reference_internal)
-            .def("find", &FindNode, py::arg("path"), py::return_value_policy::reference_internal)
+            .def_property_readonly("type_name", &NodeTypeName)
+            .def_property_readonly("path", &NodeGetPath)
+            .def_property_readonly("valid", &NodeIsValid)
+            .def_property_readonly("child_count", [](const PyNodeHandle& handle) {
+                return handle.Resolve()->GetChildCount();
+            })
+            .def_property_readonly("children", &GetNodeChildren)
+            .def_property_readonly("parent", &NodeGetParent)
+            .def("child", &GetNodeChild, py::arg("index"))
+            .def("find", &FindNode, py::arg("path"))
             .def("add_child", &NodeAddChild, py::arg("child"), py::arg("force_readable_name") = false)
             .def("remove_child", &NodeRemoveChild, py::arg("child"), py::arg("delete") = false)
+            .def("remove", [](PyNodeHandle& handle, bool delete_node) -> py::object {
+                Node* node = handle.Resolve();
+                Node* parent = node->GetParent();
+                if (parent == nullptr) {
+                    if (delete_node) {
+                        ExecuteSceneMutation("remove_root_delete", [&]() {
+                            Object::Delete(node);
+                            handle.Invalidate();
+                        });
+                    }
+                    return py::none();
+                }
+                PyNodeHandle parent_handle = MakeTypedNodeHandle(parent);
+                return NodeRemoveChild(parent_handle, handle, delete_node);
+            }, py::arg("delete") = true)
             .def("reparent", &NodeReparent, py::arg("parent"))
             .def("get", &NodeGetProperty, py::arg("property"))
+            .def("get_property", &NodeGetProperty, py::arg("property"))
             .def("set", &NodeSetProperty, py::arg("property"), py::arg("value"))
-            .def("property_names", &NodeGetPropertyNames);
+            .def("set_property", &NodeSetProperty, py::arg("property"), py::arg("value"))
+            .def("property_names", &NodeGetPropertyNames)
+            .def("to_dict", &NodeToDict)
+            .def("__repr__", [](const PyNodeHandle& handle) {
+                if (!NodeIsValid(handle)) {
+                    return std::string("<gobot.Node invalid>");
+                }
+                return "<gobot." + NodeTypeName(handle) + " name='" + NodeGetName(handle) + "'>";
+            });
 
-    py::class_<Node3D, Node>(module, "Node3D")
+    node3d_class
             .def_property("position",
-                          [](const Node3D& node) { return Vector3ToPython(node.GetPosition()); },
-                          [](Node3D& node, const py::handle& value) {
-                              node.SetPosition(PythonToVector3(value));
-                              GetActiveAppContext().NotifySceneChanged();
+                          [](const PyNode3DHandle& handle) {
+                              return Vector3ToPython(handle.ResolveAs<Node3D>()->GetPosition());
+                          },
+                          [](PyNode3DHandle& handle, const py::handle& value) {
+                              Node3D* node = handle.ResolveAs<Node3D>();
+                              ExecuteSceneMutation("set_position", [&]() {
+                                  node->SetPosition(PythonToVector3(value));
+                              });
                           })
             .def_property("rotation_degrees",
-                          [](const Node3D& node) { return Vector3ToPython(node.GetEulerDegree()); },
-                          [](Node3D& node, const py::handle& value) {
-                              node.SetEulerDegree(PythonToVector3(value));
-                              GetActiveAppContext().NotifySceneChanged();
+                          [](const PyNode3DHandle& handle) {
+                              return Vector3ToPython(handle.ResolveAs<Node3D>()->GetEulerDegree());
+                          },
+                          [](PyNode3DHandle& handle, const py::handle& value) {
+                              Node3D* node = handle.ResolveAs<Node3D>();
+                              ExecuteSceneMutation("set_rotation_degrees", [&]() {
+                                  node->SetEulerDegree(PythonToVector3(value));
+                              });
                           })
             .def_property("scale",
-                          [](const Node3D& node) { return Vector3ToPython(node.GetScale()); },
-                          [](Node3D& node, const py::handle& value) {
-                              node.SetScale(PythonToVector3(value));
-                              GetActiveAppContext().NotifySceneChanged();
+                          [](const PyNode3DHandle& handle) {
+                              return Vector3ToPython(handle.ResolveAs<Node3D>()->GetScale());
+                          },
+                          [](PyNode3DHandle& handle, const py::handle& value) {
+                              Node3D* node = handle.ResolveAs<Node3D>();
+                              ExecuteSceneMutation("set_scale", [&]() {
+                                  node->SetScale(PythonToVector3(value));
+                              });
                           })
             .def_property("visible",
-                          &Node3D::IsVisible,
-                          [](Node3D& node, bool visible) {
-                              node.SetVisible(visible);
-                              GetActiveAppContext().NotifySceneChanged();
+                          [](const PyNode3DHandle& handle) {
+                              return handle.ResolveAs<Node3D>()->IsVisible();
+                          },
+                          [](PyNode3DHandle& handle, bool visible) {
+                              Node3D* node = handle.ResolveAs<Node3D>();
+                              ExecuteSceneMutation("set_visible", [&]() {
+                                  node->SetVisible(visible);
+                              });
                           });
 
-    py::class_<Robot3D, Node3D>(module, "Robot3D")
+    robot3d_class
             .def_property("source_path",
-                          &Robot3D::GetSourcePath,
-                          [](Robot3D& robot, const std::string& source_path) {
-                              robot.SetSourcePath(source_path);
-                              GetActiveAppContext().NotifySceneChanged();
+                          [](const PyRobot3DHandle& handle) {
+                              return handle.ResolveAs<Robot3D>()->GetSourcePath();
+                          },
+                          [](PyRobot3DHandle& handle, const std::string& source_path) {
+                              Robot3D* robot = handle.ResolveAs<Robot3D>();
+                              ExecuteSceneMutation("set_robot_source_path", [&]() {
+                                  robot->SetSourcePath(source_path);
+                              });
                           })
             .def_property("mode",
-                          &Robot3D::GetMode,
-                          [](Robot3D& robot, RobotMode mode) {
-                              robot.SetMode(mode);
-                              GetActiveAppContext().NotifySceneChanged();
+                          [](const PyRobot3DHandle& handle) {
+                              return handle.ResolveAs<Robot3D>()->GetMode();
+                          },
+                          [](PyRobot3DHandle& handle, RobotMode mode) {
+                              Robot3D* robot = handle.ResolveAs<Robot3D>();
+                              ExecuteSceneMutation("set_robot_mode", [&]() {
+                                  robot->SetMode(mode);
+                              });
                           });
 
-    py::class_<Link3D, Node3D>(module, "Link3D")
-            .def_property("has_inertial", &Link3D::HasInertial, &Link3D::SetHasInertial)
-            .def_property("mass", &Link3D::GetMass, &Link3D::SetMass)
+    link3d_class
+            .def_property("has_inertial",
+                          [](const PyLink3DHandle& handle) {
+                              return handle.ResolveAs<Link3D>()->HasInertial();
+                          },
+                          [](PyLink3DHandle& handle, bool has_inertial) {
+                              Link3D* link = handle.ResolveAs<Link3D>();
+                              ExecuteSceneMutation("set_link_has_inertial", [&]() {
+                                  link->SetHasInertial(has_inertial);
+                              });
+                          })
+            .def_property("mass",
+                          [](const PyLink3DHandle& handle) {
+                              return handle.ResolveAs<Link3D>()->GetMass();
+                          },
+                          [](PyLink3DHandle& handle, RealType mass) {
+                              Link3D* link = handle.ResolveAs<Link3D>();
+                              ExecuteSceneMutation("set_link_mass", [&]() {
+                                  link->SetMass(mass);
+                              });
+                          })
             .def_property("center_of_mass",
-                          [](const Link3D& link) { return Vector3ToPython(link.GetCenterOfMass()); },
-                          [](Link3D& link, const py::handle& value) {
-                              link.SetCenterOfMass(PythonToVector3(value));
-                              GetActiveAppContext().NotifySceneChanged();
+                          [](const PyLink3DHandle& handle) {
+                              return Vector3ToPython(handle.ResolveAs<Link3D>()->GetCenterOfMass());
+                          },
+                          [](PyLink3DHandle& handle, const py::handle& value) {
+                              Link3D* link = handle.ResolveAs<Link3D>();
+                              ExecuteSceneMutation("set_link_center_of_mass", [&]() {
+                                  link->SetCenterOfMass(PythonToVector3(value));
+                              });
                           })
             .def_property("inertia_diagonal",
-                          [](const Link3D& link) { return Vector3ToPython(link.GetInertiaDiagonal()); },
-                          [](Link3D& link, const py::handle& value) {
-                              link.SetInertiaDiagonal(PythonToVector3(value));
-                              GetActiveAppContext().NotifySceneChanged();
+                          [](const PyLink3DHandle& handle) {
+                              return Vector3ToPython(handle.ResolveAs<Link3D>()->GetInertiaDiagonal());
+                          },
+                          [](PyLink3DHandle& handle, const py::handle& value) {
+                              Link3D* link = handle.ResolveAs<Link3D>();
+                              ExecuteSceneMutation("set_link_inertia_diagonal", [&]() {
+                                  link->SetInertiaDiagonal(PythonToVector3(value));
+                              });
                           })
-            .def_property("role", &Link3D::GetRole, &Link3D::SetRole);
+            .def_property("role",
+                          [](const PyLink3DHandle& handle) {
+                              return handle.ResolveAs<Link3D>()->GetRole();
+                          },
+                          [](PyLink3DHandle& handle, LinkRole role) {
+                              Link3D* link = handle.ResolveAs<Link3D>();
+                              ExecuteSceneMutation("set_link_role", [&]() {
+                                  link->SetRole(role);
+                              });
+                          });
 
-    py::class_<Joint3D, Node3D>(module, "Joint3D")
-            .def_property("joint_type", &Joint3D::GetJointType, &Joint3D::SetJointType)
-            .def_property("parent_link", &Joint3D::GetParentLink, &Joint3D::SetParentLink)
-            .def_property("child_link", &Joint3D::GetChildLink, &Joint3D::SetChildLink)
+    joint3d_class
+            .def_property("joint_type",
+                          [](const PyJoint3DHandle& handle) {
+                              return handle.ResolveAs<Joint3D>()->GetJointType();
+                          },
+                          [](PyJoint3DHandle& handle, JointType joint_type) {
+                              Joint3D* joint = handle.ResolveAs<Joint3D>();
+                              ExecuteSceneMutation("set_joint_type", [&]() {
+                                  joint->SetJointType(joint_type);
+                              });
+                          })
+            .def_property("parent_link",
+                          [](const PyJoint3DHandle& handle) {
+                              return handle.ResolveAs<Joint3D>()->GetParentLink();
+                          },
+                          [](PyJoint3DHandle& handle, const std::string& parent_link) {
+                              Joint3D* joint = handle.ResolveAs<Joint3D>();
+                              ExecuteSceneMutation("set_joint_parent_link", [&]() {
+                                  joint->SetParentLink(parent_link);
+                              });
+                          })
+            .def_property("child_link",
+                          [](const PyJoint3DHandle& handle) {
+                              return handle.ResolveAs<Joint3D>()->GetChildLink();
+                          },
+                          [](PyJoint3DHandle& handle, const std::string& child_link) {
+                              Joint3D* joint = handle.ResolveAs<Joint3D>();
+                              ExecuteSceneMutation("set_joint_child_link", [&]() {
+                                  joint->SetChildLink(child_link);
+                              });
+                          })
             .def_property("axis",
-                          [](const Joint3D& joint) { return Vector3ToPython(joint.GetAxis()); },
-                          [](Joint3D& joint, const py::handle& value) {
-                              joint.SetAxis(PythonToVector3(value));
-                              GetActiveAppContext().NotifySceneChanged();
+                          [](const PyJoint3DHandle& handle) {
+                              return Vector3ToPython(handle.ResolveAs<Joint3D>()->GetAxis());
+                          },
+                          [](PyJoint3DHandle& handle, const py::handle& value) {
+                              Joint3D* joint = handle.ResolveAs<Joint3D>();
+                              ExecuteSceneMutation("set_joint_axis", [&]() {
+                                  joint->SetAxis(PythonToVector3(value));
+                              });
                           })
-            .def_property("lower_limit", &Joint3D::GetLowerLimit, &Joint3D::SetLowerLimit)
-            .def_property("upper_limit", &Joint3D::GetUpperLimit, &Joint3D::SetUpperLimit)
-            .def_property("effort_limit", &Joint3D::GetEffortLimit, &Joint3D::SetEffortLimit)
-            .def_property("velocity_limit", &Joint3D::GetVelocityLimit, &Joint3D::SetVelocityLimit)
-            .def_property("joint_position", &Joint3D::GetJointPosition, &Joint3D::SetJointPosition);
+            .def_property("lower_limit",
+                          [](const PyJoint3DHandle& handle) {
+                              return handle.ResolveAs<Joint3D>()->GetLowerLimit();
+                          },
+                          [](PyJoint3DHandle& handle, RealType lower_limit) {
+                              Joint3D* joint = handle.ResolveAs<Joint3D>();
+                              ExecuteSceneMutation("set_joint_lower_limit", [&]() {
+                                  joint->SetLowerLimit(lower_limit);
+                              });
+                          })
+            .def_property("upper_limit",
+                          [](const PyJoint3DHandle& handle) {
+                              return handle.ResolveAs<Joint3D>()->GetUpperLimit();
+                          },
+                          [](PyJoint3DHandle& handle, RealType upper_limit) {
+                              Joint3D* joint = handle.ResolveAs<Joint3D>();
+                              ExecuteSceneMutation("set_joint_upper_limit", [&]() {
+                                  joint->SetUpperLimit(upper_limit);
+                              });
+                          })
+            .def_property("effort_limit",
+                          [](const PyJoint3DHandle& handle) {
+                              return handle.ResolveAs<Joint3D>()->GetEffortLimit();
+                          },
+                          [](PyJoint3DHandle& handle, RealType effort_limit) {
+                              Joint3D* joint = handle.ResolveAs<Joint3D>();
+                              ExecuteSceneMutation("set_joint_effort_limit", [&]() {
+                                  joint->SetEffortLimit(effort_limit);
+                              });
+                          })
+            .def_property("velocity_limit",
+                          [](const PyJoint3DHandle& handle) {
+                              return handle.ResolveAs<Joint3D>()->GetVelocityLimit();
+                          },
+                          [](PyJoint3DHandle& handle, RealType velocity_limit) {
+                              Joint3D* joint = handle.ResolveAs<Joint3D>();
+                              ExecuteSceneMutation("set_joint_velocity_limit", [&]() {
+                                  joint->SetVelocityLimit(velocity_limit);
+                              });
+                          })
+            .def_property("joint_position",
+                          [](const PyJoint3DHandle& handle) {
+                              return handle.ResolveAs<Joint3D>()->GetJointPosition();
+                          },
+                          [](PyJoint3DHandle& handle, RealType joint_position) {
+                              Joint3D* joint = handle.ResolveAs<Joint3D>();
+                              ExecuteSceneMutation("set_joint_position", [&]() {
+                                  joint->SetJointPosition(joint_position);
+                              });
+                          });
 
-    py::class_<CollisionShape3D, Node3D>(module, "CollisionShape3D")
-            .def_property("disabled", &CollisionShape3D::IsDisabled, &CollisionShape3D::SetDisabled);
+    collision_shape_class
+            .def_property("disabled",
+                          [](const PyCollisionShape3DHandle& handle) {
+                              return handle.ResolveAs<CollisionShape3D>()->IsDisabled();
+                          },
+                          [](PyCollisionShape3DHandle& handle, bool disabled) {
+                              CollisionShape3D* collision_shape = handle.ResolveAs<CollisionShape3D>();
+                              ExecuteSceneMutation("set_collision_disabled", [&]() {
+                                  collision_shape->SetDisabled(disabled);
+                              });
+                          });
 
-    py::class_<MeshInstance3D, Node3D>(module, "MeshInstance3D")
+    mesh_instance_class
             .def_property("surface_color",
-                          [](const MeshInstance3D& mesh_instance) {
-                              const Color color = mesh_instance.GetSurfaceColor();
+                          [](const PyMeshInstance3DHandle& handle) {
+                              const Color color = handle.ResolveAs<MeshInstance3D>()->GetSurfaceColor();
                               return py::make_tuple(color.red(), color.green(), color.blue(), color.alpha());
                           },
-                          [](MeshInstance3D& mesh_instance, const py::handle& value) {
+                          [](PyMeshInstance3DHandle& handle, const py::handle& value) {
                               py::sequence sequence = py::reinterpret_borrow<py::sequence>(value);
                               if (sequence.size() != 4) {
                                   throw std::invalid_argument("expected a 4-element RGBA color");
                               }
-                              mesh_instance.SetSurfaceColor({
-                                      py::cast<float>(sequence[0]),
-                                      py::cast<float>(sequence[1]),
-                                      py::cast<float>(sequence[2]),
-                                      py::cast<float>(sequence[3])
+                              MeshInstance3D* mesh_instance = handle.ResolveAs<MeshInstance3D>();
+                              ExecuteSceneMutation("set_mesh_surface_color", [&]() {
+                                  mesh_instance->SetSurfaceColor({
+                                          py::cast<float>(sequence[0]),
+                                          py::cast<float>(sequence[1]),
+                                          py::cast<float>(sequence[2]),
+                                          py::cast<float>(sequence[3])
+                                  });
                               });
-                              GetActiveAppContext().NotifySceneChanged();
                           });
 
     py::class_<PyRLControllerConfig>(module, "RLControllerConfig")
@@ -725,66 +1300,52 @@ void RegisterManualApis(py::module_& module) {
     }, py::return_value_policy::reference);
 
     module.def("load_scene", [](const std::string& scene_path) {
-        if (s_active_app_context == nullptr) {
-            Runtime();
-        }
+        EnsureRuntimeContext();
         return std::make_unique<PyScene>(LoadSceneRoot(scene_path));
     }, py::arg("scene_path"));
 
     module.def("create_node", [](const std::string& type_name, const std::string& name) {
-        if (s_active_app_context == nullptr) {
-            Runtime();
-        }
-        return CreateNode(type_name, name);
-    }, py::arg("type_name"), py::arg("name") = "", py::return_value_policy::reference);
+        EnsureRuntimeContext();
+        return MakeTypedNodeObject(CreateNode(type_name, name), PyNodeOwnership::DetachedOwned);
+    }, py::arg("type_name"), py::arg("name") = "");
 
     module.def("create_box_collision", [](const std::string& name,
                                           const py::handle& size,
                                           const py::handle& position) {
-        if (s_active_app_context == nullptr) {
-            Runtime();
-        }
-        return CreateBoxCollision(name, PythonToVector3(size), PythonToVector3(position));
+        EnsureRuntimeContext();
+        return MakeCollisionShape3DHandle(CreateBoxCollision(name, PythonToVector3(size), PythonToVector3(position)),
+                                          PyNodeOwnership::DetachedOwned);
     }, py::arg("name"), py::arg("size"), py::arg("position") = py::make_tuple(0.0, 0.0, 0.0),
-       py::return_value_policy::reference);
+       py::return_value_policy::move);
 
     module.def("create_box_visual", [](const std::string& name,
                                        const py::handle& size,
                                        const py::handle& position) {
-        if (s_active_app_context == nullptr) {
-            Runtime();
-        }
-        return CreateBoxVisual(name, PythonToVector3(size), PythonToVector3(position));
+        EnsureRuntimeContext();
+        return MakeMeshInstance3DHandle(CreateBoxVisual(name, PythonToVector3(size), PythonToVector3(position)),
+                                        PyNodeOwnership::DetachedOwned);
     }, py::arg("name"), py::arg("size"), py::arg("position") = py::make_tuple(0.0, 0.0, 0.0),
-       py::return_value_policy::reference);
+       py::return_value_policy::move);
 
-    module.def("save_scene", [](Node& root, const std::string& path) {
-        if (s_active_app_context == nullptr) {
-            Runtime();
-        }
-        if (!SaveSceneRoot(&root, path)) {
+    module.def("save_scene", [](PyNodeHandle& root, const std::string& path) {
+        EnsureRuntimeContext();
+        if (!SaveSceneRoot(root.Resolve(), path)) {
             throw std::runtime_error("failed to save Gobot scene to '" + path + "'");
         }
     }, py::arg("root"), py::arg("path"));
 
     module.def("load_resource", [](const std::string& path, const std::string& type_hint) {
-        if (s_active_app_context == nullptr) {
-            Runtime();
-        }
+        EnsureRuntimeContext();
         return ResourceToPythonDict(ResourceLoader::Load(path, type_hint));
     }, py::arg("path"), py::arg("type_hint") = "");
 
     module.def("create_test_scene", []() {
-        if (s_active_app_context == nullptr) {
-            Runtime();
-        }
+        EnsureRuntimeContext();
         return std::make_unique<PyScene>(CreateTestRobotScene());
     });
 
     module.def("backend_infos", []() {
-        if (s_active_app_context == nullptr) {
-            Runtime();
-        }
+        EnsureRuntimeContext();
         py::list infos;
         for (const PhysicsBackendInfo& info : PhysicsServer::GetBackendInfosForAllBackends()) {
             infos.append(ReflectedToPythonDict(info));

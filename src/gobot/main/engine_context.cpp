@@ -82,6 +82,7 @@ void EngineContext::SetSceneRoot(Node* scene_root, bool take_ownership, const st
 
     ClearWorld();
     ClearOwnedScene();
+    AdvanceSceneEpoch();
     scene_root_ = scene_root;
     owns_scene_root_ = take_ownership;
     scene_path_ = scene_path;
@@ -95,6 +96,10 @@ const std::string& EngineContext::GetScenePath() const {
     return scene_path_;
 }
 
+std::uint64_t EngineContext::GetSceneEpoch() const {
+    return scene_epoch_;
+}
+
 bool EngineContext::HasScene() const {
     return scene_root_ != nullptr;
 }
@@ -102,6 +107,7 @@ bool EngineContext::HasScene() const {
 void EngineContext::ClearScene() {
     ClearWorld();
     ClearOwnedScene();
+    AdvanceSceneEpoch();
     scene_root_ = nullptr;
     owns_scene_root_ = false;
     scene_path_.clear();
@@ -234,6 +240,10 @@ void EngineContext::SetLoadSceneCallback(LoadSceneCallback callback) {
 }
 
 void EngineContext::NotifySceneChanged() {
+    NotifySceneMutated();
+}
+
+void EngineContext::NotifySceneMutated() {
     if (scene_changed_callback_) {
         scene_changed_callback_();
     }
@@ -245,6 +255,13 @@ void EngineContext::ClearOwnedScene() {
     }
     scene_root_ = nullptr;
     owns_scene_root_ = false;
+}
+
+void EngineContext::AdvanceSceneEpoch() {
+    ++scene_epoch_;
+    if (scene_epoch_ == 0) {
+        scene_epoch_ = 1;
+    }
 }
 
 void EngineContext::SetLastError(std::string error) {

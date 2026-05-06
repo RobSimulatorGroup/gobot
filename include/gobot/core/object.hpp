@@ -235,6 +235,7 @@ public:
         Object *object = nullptr;
     };
 
+    static Object* GetInstance(ObjectID id);
 
 private:
     static ObjectID AddInstance(Object *object);
