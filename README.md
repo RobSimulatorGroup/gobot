@@ -44,9 +44,11 @@ make -j$(nproc)
 
 ## Python Bindings
 
-Gobot builds a `gobot` CPython extension with pybind11 when
-`GOB_BUILD_PYTHON_BINDINGS` is enabled. The default CMake configuration enables
-it.
+Gobot builds a normal Python package named `gobot` when
+`GOB_BUILD_PYTHON_BINDINGS` is enabled. The package contains a pybind11
+extension module at `gobot._core`, typed Python facade modules, and `.pyi`
+stubs for editor and training code completion. The default CMake configuration
+enables it.
 
 Build the module:
 
@@ -62,6 +64,7 @@ PYTHONPATH="$PWD/build/python" python3 - <<'PY'
 import gobot
 
 print(gobot.__file__)
+print(gobot._core.__file__)
 print(gobot.backend_infos())
 PY
 ```
@@ -106,7 +109,7 @@ Check the environment spaces:
 ```bash
 PYTHONPATH="$PWD/build/python" python3 - <<'PY'
 import gobot
-from gobot_gym_adapter import GobotGymEnv
+from gobot.gym_adapter import GobotGymEnv
 
 gobot.set_project_path("/home/wqq/test_godot")
 env = GobotGymEnv("res://world.jscn", robot="H2", backend="mujoco")
@@ -153,14 +156,12 @@ python -m pip install -U pip scikit-build-core
 python -m pip install -e .
 ```
 
-The install rules place `gobot.cpython-*.so`, `libgobot.so`,
-`librttr_core.so.*`, optional MuJoCo runtime libraries, and
-`gobot_gym_adapter.py` together with `$ORIGIN` rpath, so an installed module
-does not need `LD_LIBRARY_PATH` for these local Gobot libraries.
-
-Do not add a `python/gobot/__init__.py` package around the current extension
-module unless the extension is renamed to something like `gobot._gobot`; a
-package directory named `gobot` can shadow `gobot.cpython-*.so`.
+The install rules place `gobot/_core.cpython-*.so`, `gobot/libgobot.so`,
+`gobot/librttr_core.so.*`, optional MuJoCo runtime libraries, Python facade
+modules, and `.pyi` files together with `$ORIGIN` rpath, so an installed module
+does not need `LD_LIBRARY_PATH` for these local Gobot libraries. The legacy
+top-level `gobot_gym_adapter.py` module remains as a compatibility shim; new
+code should import `gobot.gym_adapter`.
 
 ## MuJoCo Backend Setup
 

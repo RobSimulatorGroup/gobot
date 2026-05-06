@@ -19,7 +19,7 @@ authors = [
 [tool.scikit-build]
 cmake.build-type = "Release"
 build-dir = "build/{wheel_tag}"
-wheel.packages = []
+wheel.packages = ["python/gobot"]
 
 [tool.scikit-build.cmake.define]
 GOB_BUILD_PYTHON_BINDINGS = "ON"

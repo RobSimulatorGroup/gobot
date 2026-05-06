@@ -2,6 +2,6 @@
 
 #include "gobot/python/python_binding_registry.hpp"
 
-PYBIND11_MODULE(gobot, module) {
+PYBIND11_MODULE(_core, module) {
     gobot::python::RegisterModule(module);
 }

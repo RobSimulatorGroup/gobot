@@ -1,5 +1,6 @@
 import gobot
-from gobot_gym_adapter import GobotBox, GobotGymEnv, space_from_spec
+from gobot.gym_adapter import GobotBox, GobotGymEnv, space_from_spec
+from gobot_gym_adapter import GobotGymEnv as LegacyGobotGymEnv
 
 
 def assert_close_tuple(actual, expected):
@@ -16,6 +17,9 @@ def main():
     assert any(info["type"] == gobot.PhysicsBackendType.Null for info in infos)
 
     context = gobot.app.context()
+    assert gobot.rl.RLEnvironment is gobot.RLEnvironment
+    assert gobot.sim.JointControllerGains is gobot.JointControllerGains
+    assert gobot.scene.Node is gobot.Node
     assert context.backend_type == gobot.PhysicsBackendType.Null
     assert context.has_scene is False
     assert context.has_world is False
@@ -144,6 +148,7 @@ def main():
     assert reward == 1.0
     assert terminated is False
     assert truncated is False
+    assert LegacyGobotGymEnv is GobotGymEnv
 
 
 if __name__ == "__main__":

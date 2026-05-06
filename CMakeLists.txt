@@ -305,41 +305,54 @@ if(GOB_BUILD_PYTHON_BINDINGS)
     target_link_libraries(gobot_python PRIVATE gobot)
     set_target_properties(gobot_python
         PROPERTIES
-            OUTPUT_NAME "gobot"
-            LIBRARY_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/python"
+            OUTPUT_NAME "_core"
+            LIBRARY_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/python/gobot"
             INSTALL_RPATH "$ORIGIN"
     )
     set_target_properties(gobot
         PROPERTIES
             INSTALL_RPATH "$ORIGIN"
     )
-    add_custom_command(
-            TARGET gobot_python POST_BUILD
+    add_custom_target(gobot_python_package
+            COMMAND ${CMAKE_COMMAND} -E copy_directory
+                    "${CMAKE_CURRENT_SOURCE_DIR}/python/gobot"
+                    "${CMAKE_BINARY_DIR}/python/gobot"
             COMMAND ${CMAKE_COMMAND} -E copy_if_different
                     "${CMAKE_CURRENT_SOURCE_DIR}/python/gobot_gym_adapter.py"
                     "${CMAKE_BINARY_DIR}/python/gobot_gym_adapter.py"
+            COMMAND ${CMAKE_COMMAND} -E copy_if_different
+                    "${CMAKE_CURRENT_SOURCE_DIR}/python/gobot_gym_adapter.pyi"
+                    "${CMAKE_BINARY_DIR}/python/gobot_gym_adapter.pyi"
+            COMMENT "Copying Gobot Python package files"
     )
-    install(TARGETS gobot_python gobot LIBRARY DESTINATION "." COMPONENT python)
+    add_dependencies(gobot_python gobot_python_package)
+    install(TARGETS gobot_python gobot LIBRARY DESTINATION "gobot" COMPONENT python)
+    install(DIRECTORY "${CMAKE_CURRENT_SOURCE_DIR}/python/gobot/"
+            DESTINATION "gobot" COMPONENT python
+            FILES_MATCHING
+            PATTERN "*.py"
+            PATTERN "*.pyi"
+            PATTERN "py.typed")
     install(FILES
             "${CMAKE_CURRENT_SOURCE_DIR}/python/gobot_gym_adapter.py"
             DESTINATION "." COMPONENT python)
     if(TARGET spdlog)
         get_target_property(GOBOT_SPDLOG_TARGET_TYPE spdlog TYPE)
         if(GOBOT_SPDLOG_TARGET_TYPE STREQUAL "SHARED_LIBRARY")
-            install(FILES "$<TARGET_FILE:spdlog>" "$<TARGET_SONAME_FILE:spdlog>" DESTINATION "." COMPONENT python)
+            install(FILES "$<TARGET_FILE:spdlog>" "$<TARGET_SONAME_FILE:spdlog>" DESTINATION "gobot" COMPONENT python)
         endif()
     endif()
     if(TARGET fmt)
         get_target_property(GOBOT_FMT_TARGET_TYPE fmt TYPE)
         if(GOBOT_FMT_TARGET_TYPE STREQUAL "SHARED_LIBRARY")
-            install(FILES "$<TARGET_FILE:fmt>" "$<TARGET_SONAME_FILE:fmt>" DESTINATION "." COMPONENT python)
+            install(FILES "$<TARGET_FILE:fmt>" "$<TARGET_SONAME_FILE:fmt>" DESTINATION "gobot" COMPONENT python)
         endif()
     endif()
     if(TARGET RTTR::Core)
-        install(FILES "$<TARGET_FILE:RTTR::Core>" DESTINATION "." COMPONENT python)
+        install(FILES "$<TARGET_FILE:RTTR::Core>" DESTINATION "gobot" COMPONENT python)
     endif()
     if(GOB_BUILD_MUJOCO AND GOBOT_MUJOCO_TARGET)
-        install(FILES "$<TARGET_FILE:${GOBOT_MUJOCO_TARGET}>" DESTINATION "." COMPONENT python)
+        install(FILES "$<TARGET_FILE:${GOBOT_MUJOCO_TARGET}>" DESTINATION "gobot" COMPONENT python)
     endif()
 endif()
 
