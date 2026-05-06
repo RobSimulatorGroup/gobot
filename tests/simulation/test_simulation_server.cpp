@@ -1,8 +1,12 @@
 #include <gtest/gtest.h>
 
+#include <cmath>
+
+#include <gobot/scene/collision_shape_3d.hpp>
 #include <gobot/scene/joint_3d.hpp>
 #include <gobot/scene/link_3d.hpp>
 #include <gobot/scene/robot_3d.hpp>
+#include <gobot/scene/resources/box_shape_3d.hpp>
 #include <gobot/simulation/simulation_server.hpp>
 
 namespace {
@@ -55,6 +59,47 @@ gobot::Robot3D* CreateTwoJointRobotScene() {
 
     tip_link->AddChild(second_joint);
     second_joint->AddChild(foot_link);
+    return robot;
+}
+
+gobot::CollisionShape3D* CreateBoxCollision(const std::string& name,
+                                            const gobot::Vector3& size) {
+    auto* collision = gobot::Object::New<gobot::CollisionShape3D>();
+    collision->SetName(name);
+    auto shape = gobot::MakeRef<gobot::BoxShape3D>();
+    shape->SetSize(size);
+    collision->SetShape(shape);
+    return collision;
+}
+
+gobot::Robot3D* CreateOffsetHingePendulumScene() {
+    auto* robot = gobot::Object::New<gobot::Robot3D>();
+    robot->SetName("pendulum");
+
+    auto* base = gobot::Object::New<gobot::Link3D>();
+    base->SetName("base");
+    base->SetRole(gobot::LinkRole::VirtualRoot);
+
+    auto* joint = gobot::Object::New<gobot::Joint3D>();
+    joint->SetName("hinge");
+    joint->SetJointType(gobot::JointType::Continuous);
+    joint->SetParentLink("base");
+    joint->SetChildLink("pole");
+    joint->SetAxis({0.0, 1.0, 0.0});
+    joint->SetJointPosition(0.2);
+
+    auto* pole = gobot::Object::New<gobot::Link3D>();
+    pole->SetName("pole");
+    pole->SetPosition({0.0, 0.0, 0.5});
+    pole->SetHasInertial(true);
+    pole->SetMass(0.1);
+    pole->SetCenterOfMass({0.0, 0.0, 0.0});
+    pole->SetInertiaDiagonal({0.003, 0.003, 0.0002});
+    pole->AddChild(CreateBoxCollision("pole_collision", {0.05, 0.05, 1.0}));
+
+    robot->AddChild(base);
+    base->AddChild(joint);
+    joint->AddChild(pole);
     return robot;
 }
 
@@ -424,4 +469,30 @@ TEST(TestSimulationServer, unavailable_backend_build_failure_does_not_keep_world
 #endif
 
     gobot::Object::Delete(robot);
+}
+
+TEST(TestSimulationServer, mujoco_authored_offset_hinge_pendulum_falls_under_gravity) {
+#ifdef GOBOT_HAS_MUJOCO
+    gobot::SimulationServer simulation_server(gobot::PhysicsBackendType::MuJoCoCpu);
+    simulation_server.SetFixedTimeStep(1.0 / 240.0);
+    simulation_server.SetPaused(false);
+
+    gobot::Robot3D* robot = CreateOffsetHingePendulumScene();
+    ASSERT_TRUE(simulation_server.BuildWorldFromScene(robot)) << simulation_server.GetLastError();
+
+    const auto& initial_joints = simulation_server.GetWorld()->GetSceneState().robots[0].joints;
+    ASSERT_EQ(initial_joints.size(), 1);
+    const gobot::RealType initial_position = initial_joints[0].position;
+
+    for (int tick = 0; tick < 120; ++tick) {
+        ASSERT_TRUE(simulation_server.StepOnce());
+    }
+
+    const auto& stepped_joints = simulation_server.GetWorld()->GetSceneState().robots[0].joints;
+    ASSERT_EQ(stepped_joints.size(), 1);
+    EXPECT_TRUE(std::isfinite(stepped_joints[0].position));
+    EXPECT_GT(std::abs(stepped_joints[0].position - initial_position), 0.01);
+
+    gobot::Object::Delete(robot);
+#endif
 }

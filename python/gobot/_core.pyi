@@ -101,6 +101,7 @@ class AppContext:
     has_world: bool
     simulation_time: float
     frame_count: int
+    gravity: Vector3
 
     def set_project_path(self, project_path: str) -> None: ...
     def load_scene(self, scene_path: str) -> Node: ...

@@ -7,12 +7,174 @@
 
 #include "gobot/editor/property_inspector/editor_property_primitives.hpp"
 #include "gobot/editor/editor.hpp"
+#include "gobot/scene/joint_3d.hpp"
 #include "imgui_stdlib.h"
 #include "imgui.h"
 #include "gobot/log.hpp"
 #include "imgui_extension/file_browser/ImFileBrowser.h"
 
+#include <algorithm>
+#include <cstring>
+
 namespace gobot {
+namespace {
+
+bool InputScalarCommit(const char* id,
+                       ImGuiDataType data_type,
+                       void* value,
+                       const char* format = nullptr,
+                       ImGuiInputTextFlags flags = ImGuiInputTextFlags_EnterReturnsTrue) {
+    const bool enter_pressed = ImGui::InputScalar(id, data_type, value, nullptr, nullptr, format, flags);
+    return enter_pressed || ImGui::IsItemDeactivatedAfterEdit();
+}
+
+Joint3D* GetJoint3DPropertyHolder(PropertyDataModel* model) {
+    if (!model) {
+        return nullptr;
+    }
+
+    auto* object = model->GetVariantCache().object;
+    return Object::PointerCastTo<Joint3D>(object);
+}
+
+bool IsAngularJoint(JointType joint_type) {
+    return joint_type == JointType::Revolute || joint_type == JointType::Continuous;
+}
+
+bool IsJointPositionProperty(const std::string& property_name) {
+    return property_name == "joint_position" ||
+           property_name == "lower_limit" ||
+           property_name == "upper_limit";
+}
+
+double JointValueToDisplay(JointType joint_type,
+                           const std::string& property_name,
+                           double value) {
+    if ((IsJointPositionProperty(property_name) || property_name == "velocity_limit") &&
+        IsAngularJoint(joint_type)) {
+        return RAD_TO_DEG(static_cast<RealType>(value));
+    }
+
+    return value;
+}
+
+double JointValueFromDisplay(JointType joint_type,
+                             const std::string& property_name,
+                             double value) {
+    if ((IsJointPositionProperty(property_name) || property_name == "velocity_limit") &&
+        IsAngularJoint(joint_type)) {
+        return DEG_TO_RAD(static_cast<RealType>(value));
+    }
+
+    return value;
+}
+
+const char* JointPropertyUnit(JointType joint_type, const std::string& property_name) {
+    if (IsJointPositionProperty(property_name)) {
+        if (IsAngularJoint(joint_type)) {
+            return "deg";
+        }
+        if (joint_type == JointType::Prismatic) {
+            return "m";
+        }
+    }
+
+    if (property_name == "velocity_limit") {
+        if (IsAngularJoint(joint_type)) {
+            return "deg/s";
+        }
+        if (joint_type == JointType::Prismatic) {
+            return "m/s";
+        }
+    }
+
+    if (property_name == "effort_limit") {
+        if (IsAngularJoint(joint_type)) {
+            return "Nm";
+        }
+        if (joint_type == JointType::Prismatic) {
+            return "N";
+        }
+    }
+
+    return "";
+}
+
+bool JointPropertyHasUnlimitedDisplay(JointType joint_type, const std::string& property_name) {
+    return joint_type == JointType::Continuous &&
+           (property_name == "lower_limit" || property_name == "upper_limit");
+}
+
+bool DrawUnitInput(const char* id,
+                   ImGuiDataType data_type,
+                   void* value,
+                   const char* unit,
+                   const char* format = nullptr) {
+    const float spacing = ImGui::GetStyle().ItemInnerSpacing.x;
+    const float unit_width = (unit && unit[0] != '\0') ? ImGui::CalcTextSize(unit).x + spacing : 0.0f;
+    const float input_width = std::max(1.0f, ImGui::GetContentRegionAvail().x - unit_width);
+
+    ImGui::SetNextItemWidth(input_width);
+    const bool commit = InputScalarCommit(id, data_type, value, format);
+    if (unit && unit[0] != '\0') {
+        ImGui::SameLine(0.0f, spacing);
+        ImGui::TextDisabled("%s", unit);
+    }
+    return commit;
+}
+
+bool DrawReadonlyUnitText(const char* id, const char* text, const char* unit) {
+    const float spacing = ImGui::GetStyle().ItemInnerSpacing.x;
+    const float unit_width = (unit && unit[0] != '\0') ? ImGui::CalcTextSize(unit).x + spacing : 0.0f;
+    const float input_width = std::max(1.0f, ImGui::GetContentRegionAvail().x - unit_width);
+
+    ImGui::SetNextItemWidth(input_width);
+    ImGui::BeginDisabled();
+    ImGui::InputText(id, const_cast<char*>(text), std::strlen(text), ImGuiInputTextFlags_ReadOnly);
+    ImGui::EndDisabled();
+    if (unit && unit[0] != '\0') {
+        ImGui::SameLine(0.0f, spacing);
+        ImGui::TextDisabled("%s", unit);
+    }
+    return false;
+}
+
+bool DrawJointFloatProperty(PropertyDataModel* model, TypeCategory type_category) {
+    auto* joint = GetJoint3DPropertyHolder(model);
+    if (!joint) {
+        return false;
+    }
+
+    const std::string& property_name = model->GetPropertyName();
+    if (!IsJointPositionProperty(property_name) &&
+        property_name != "velocity_limit" &&
+        property_name != "effort_limit") {
+        return false;
+    }
+
+    const JointType joint_type = joint->GetJointType();
+    const char* unit = JointPropertyUnit(joint_type, property_name);
+    if (JointPropertyHasUnlimitedDisplay(joint_type, property_name)) {
+        DrawReadonlyUnitText("##joint_unlimited", "unlimited", unit);
+        return true;
+    }
+
+    if (type_category == TypeCategory::Float) {
+        float value = static_cast<float>(JointValueToDisplay(joint_type, property_name, model->GetValue().to_float()));
+        if (DrawUnitInput("##joint_float", ImGuiDataType_Float, &value, unit, "%.6g")) {
+            model->SetValue(static_cast<float>(JointValueFromDisplay(joint_type, property_name, value)));
+        }
+    } else if (type_category == TypeCategory::Double) {
+        double value = JointValueToDisplay(joint_type, property_name, model->GetValue().to_double());
+        if (DrawUnitInput("##joint_double", ImGuiDataType_Double, &value, unit, "%.6g")) {
+            model->SetValue(JointValueFromDisplay(joint_type, property_name, value));
+        }
+    }
+
+    return true;
+}
+
+} // namespace
 
 void EditorPropertyBool::OnImGuiContent() {
     auto value = property_data_model_->GetValue().to_bool();
@@ -27,47 +189,47 @@ void EditorPropertyBool::OnImGuiContent() {
 void EditorPropertyInteger::OnImGuiContent() {
     if (type_category_ == TypeCategory::UInt8) {
         auto value = property_data_model_->GetValue().to_uint8();
-        if (ImGui::DragScalar(GetPtrImGuiID(), ImGuiDataType_U8, &value,  drag_speed_)) {
+        if (InputScalarCommit(GetPtrImGuiID(), ImGuiDataType_U8, &value)) {
             property_data_model_->SetValue(value);
         }
     } else if (type_category_ == TypeCategory::UInt16) {
         auto value = property_data_model_->GetValue().to_uint16();
-        if (ImGui::DragScalar(GetPtrImGuiID(), ImGuiDataType_U16, &value,  drag_speed_)) {
+        if (InputScalarCommit(GetPtrImGuiID(), ImGuiDataType_U16, &value)) {
             property_data_model_->SetValue(value);
         }
     } else if (type_category_ == TypeCategory::UInt32) {
         auto value = property_data_model_->GetValue().to_uint32();
-        if (ImGui::DragScalar(GetPtrImGuiID(), ImGuiDataType_U32, &value,  drag_speed_)) {
+        if (InputScalarCommit(GetPtrImGuiID(), ImGuiDataType_U32, &value)) {
             property_data_model_->SetValue(value);
         }
     } else if (type_category_ == TypeCategory::UInt64) {
         auto value = property_data_model_->GetValue().to_uint64();
-        if (ImGui::DragScalar(GetPtrImGuiID(), ImGuiDataType_U64, &value,  drag_speed_)) {
+        if (InputScalarCommit(GetPtrImGuiID(), ImGuiDataType_U64, &value)) {
             property_data_model_->SetValue(value);
         }
     } else if (type_category_ == TypeCategory::Int8) {
         auto value = property_data_model_->GetValue().to_int8();
-        if (ImGui::DragScalar(GetPtrImGuiID(), ImGuiDataType_S8, &value,  drag_speed_)) {
+        if (InputScalarCommit(GetPtrImGuiID(), ImGuiDataType_S8, &value)) {
             property_data_model_->SetValue(value);
         }
     } else if (type_category_ == TypeCategory::Int8) {
         auto value = property_data_model_->GetValue().to_int8();
-        if (ImGui::DragScalar(GetPtrImGuiID(), ImGuiDataType_S8, &value,  drag_speed_)) {
+        if (InputScalarCommit(GetPtrImGuiID(), ImGuiDataType_S8, &value)) {
             property_data_model_->SetValue(value);
         }
     } else if (type_category_ == TypeCategory::Int16) {
         auto value = property_data_model_->GetValue().to_int16();
-        if (ImGui::DragScalar(GetPtrImGuiID(), ImGuiDataType_S16, &value,  drag_speed_)) {
+        if (InputScalarCommit(GetPtrImGuiID(), ImGuiDataType_S16, &value)) {
             property_data_model_->SetValue(value);
         }
     } else if (type_category_ == TypeCategory::Int32) {
         auto value = property_data_model_->GetValue().to_int32();
-        if (ImGui::DragScalar(GetPtrImGuiID(), ImGuiDataType_S32, &value,  drag_speed_)) {
+        if (InputScalarCommit(GetPtrImGuiID(), ImGuiDataType_S32, &value)) {
             property_data_model_->SetValue(value);
         }
     } else if (type_category_ == TypeCategory::Int64) {
         auto value = property_data_model_->GetValue().to_int64();
-        if (ImGui::DragScalar(GetPtrImGuiID(), ImGuiDataType_S64, &value,  drag_speed_)) {
+        if (InputScalarCommit(GetPtrImGuiID(), ImGuiDataType_S64, &value)) {
             property_data_model_->SetValue(value);
         }
     }
@@ -76,14 +238,18 @@ void EditorPropertyInteger::OnImGuiContent() {
 //////////////////////////////////////////////////////////////////////////////////////////////
 
 void EditorPropertyFloat::OnImGuiContent() {
+    if (DrawJointFloatProperty(property_data_model_, type_category_)) {
+        return;
+    }
+
     if (type_category_ == TypeCategory::Float) {
         auto value = property_data_model_->GetValue().to_float();
-        if (ImGui::DragScalar(GetPtrImGuiID(), ImGuiDataType_Float, &value,  drag_speed_)) {
+        if (InputScalarCommit(GetPtrImGuiID(), ImGuiDataType_Float, &value, "%.6g")) {
             property_data_model_->SetValue(value);
         }
     } else if (type_category_ == TypeCategory::Double) {
         auto value = property_data_model_->GetValue().to_double();
-        if (ImGui::DragScalar(GetPtrImGuiID(), ImGuiDataType_Double, &value,  drag_speed_)) {
+        if (InputScalarCommit(GetPtrImGuiID(), ImGuiDataType_Double, &value, "%.6g")) {
             property_data_model_->SetValue(value);
         }
     }

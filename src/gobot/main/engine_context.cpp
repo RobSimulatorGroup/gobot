@@ -212,6 +212,11 @@ std::uint64_t EngineContext::GetFrameCount() const {
     return simulation_server_ == nullptr ? 0 : simulation_server_->GetFrameCount();
 }
 
+Vector3 EngineContext::GetGravity() const {
+    return simulation_server_ == nullptr ? Vector3{0.0, 0.0, -9.81}
+                                         : simulation_server_->GetPhysicsWorldSettings().gravity;
+}
+
 SimulationServer* EngineContext::GetSimulationServer() const {
     return simulation_server_;
 }

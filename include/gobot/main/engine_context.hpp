@@ -5,6 +5,7 @@
 #include <string>
 
 #include "gobot/core/object.hpp"
+#include "gobot/physics/physics_types.hpp"
 #include "gobot/physics/physics_server.hpp"
 
 namespace gobot {
@@ -54,6 +55,7 @@ public:
 
     RealType GetSimulationTime() const;
     std::uint64_t GetFrameCount() const;
+    Vector3 GetGravity() const;
 
     SimulationServer* GetSimulationServer() const;
     const std::string& GetLastError() const;

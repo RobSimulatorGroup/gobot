@@ -211,7 +211,10 @@ void ConfigureBodyInertial(mjsBody* body, const PhysicsLinkSnapshot& link) {
     body->explicitinertial = true;
 }
 
-void AddJointToBody(mjsBody* body, const PhysicsJointSnapshot& joint, const std::string& prefixed_name) {
+void AddJointToBody(mjsBody* body,
+                    const PhysicsJointSnapshot& joint,
+                    const Affine3& child_link_global_transform,
+                    const std::string& prefixed_name) {
     if (!body || IsFixedMuJoCoJoint(joint)) {
         return;
     }
@@ -232,7 +235,10 @@ void AddJointToBody(mjsBody* body, const PhysicsJointSnapshot& joint, const std:
     mjs_setName(mujoco_joint->element, prefixed_name.c_str());
     const auto type = static_cast<JointType>(joint.joint_type);
     mujoco_joint->type = type == JointType::Prismatic ? mjJNT_SLIDE : mjJNT_HINGE;
-    SetMuJoCoVector3(mujoco_joint->axis, joint.axis);
+    SetMuJoCoVector3(mujoco_joint->pos,
+                     RelativeTransform(child_link_global_transform, joint.global_transform).translation());
+    const Vector3 world_axis = joint.global_transform.linear() * joint.axis;
+    SetMuJoCoVector3(mujoco_joint->axis, child_link_global_transform.linear().transpose() * world_axis);
     mujoco_joint->ref = joint.joint_position;
     if (type == JointType::Revolute || type == JointType::Prismatic) {
         mujoco_joint->limited = joint.upper_limit > joint.lower_limit;
@@ -558,6 +564,7 @@ bool MuJoCoPhysicsWorld::LoadModelFromRobotSources() {
         return false;
     }
 
+    SetMuJoCoVector3(model->opt.gravity, settings_.gravity);
     model_ = model;
     data_ = data;
     BuildLinkBindings();
@@ -678,7 +685,7 @@ bool MuJoCoPhysicsWorld::AddAuthoredRobotToSpec(void* parent_spec_ptr,
         ConfigureBodyInertial(body, link);
 
         if (parent_joint != nullptr) {
-            AddJointToBody(body, *parent_joint, prefix + parent_joint->name);
+            AddJointToBody(body, *parent_joint, link.global_transform, prefix + parent_joint->name);
         }
 
         for (std::size_t shape_index = 0; shape_index < link.collision_shapes.size(); ++shape_index) {

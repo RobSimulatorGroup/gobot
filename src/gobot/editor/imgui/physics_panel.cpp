@@ -129,6 +129,11 @@ void PhysicsPanel::OnImGuiContent() {
     ImGui::Text("Time: %.6f", static_cast<double>(simulation->GetSimulationTime()));
     ImGui::Text("Frame: %llu", static_cast<unsigned long long>(simulation->GetFrameCount()));
     ImGui::Text("Fixed dt: %.6f", static_cast<double>(simulation->GetFixedTimeStep()));
+    const Vector3& gravity = simulation->GetPhysicsWorldSettings().gravity;
+    ImGui::Text("Gravity: %.3f, %.3f, %.3f m/s^2",
+                static_cast<double>(gravity.x()),
+                static_cast<double>(gravity.y()),
+                static_cast<double>(gravity.z()));
 
     Node* scene_root = Editor::GetInstance() ? Editor::GetInstance()->GetEditedSceneRoot() : nullptr;
     const bool can_build = scene_root != nullptr && selected_info.available;

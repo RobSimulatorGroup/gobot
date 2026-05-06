@@ -472,6 +472,9 @@ void RegisterManualApis(py::module_& module) {
             .def_property_readonly("has_world", &EngineContext::HasWorld)
             .def_property_readonly("simulation_time", &EngineContext::GetSimulationTime)
             .def_property_readonly("frame_count", &EngineContext::GetFrameCount)
+            .def_property_readonly("gravity", [](const EngineContext& context) {
+                return Vector3ToPython(context.GetGravity());
+            })
             .def("set_project_path", [](EngineContext& context, const std::string& project_path) {
                 if (!context.SetProjectPath(project_path)) {
                     throw std::runtime_error(context.GetLastError());
