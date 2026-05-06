@@ -77,11 +77,18 @@ void EngineContext::SetSceneRoot(Node* scene_root, bool take_ownership, const st
         owns_scene_root_ = take_ownership;
         scene_path_ = scene_path;
         ClearWorld();
+        scene_command_stack_.Clear();
+        scene_command_stack_.MarkClean();
+        external_scene_dirty_ = false;
+        AdvanceSceneEpoch();
         return;
     }
 
     ClearWorld();
     ClearOwnedScene();
+    scene_command_stack_.Clear();
+    scene_command_stack_.MarkClean();
+    external_scene_dirty_ = false;
     AdvanceSceneEpoch();
     scene_root_ = scene_root;
     owns_scene_root_ = take_ownership;
@@ -107,6 +114,9 @@ bool EngineContext::HasScene() const {
 void EngineContext::ClearScene() {
     ClearWorld();
     ClearOwnedScene();
+    scene_command_stack_.Clear();
+    scene_command_stack_.MarkClean();
+    external_scene_dirty_ = false;
     AdvanceSceneEpoch();
     scene_root_ = nullptr;
     owns_scene_root_ = false;
@@ -247,6 +257,85 @@ void EngineContext::NotifySceneMutated() {
     if (scene_changed_callback_) {
         scene_changed_callback_();
     }
+}
+
+void EngineContext::MarkSceneDirty() {
+    external_scene_dirty_ = true;
+    NotifySceneMutated();
+}
+
+bool EngineContext::ExecuteSceneCommand(std::unique_ptr<SceneCommand> command) {
+    if (!scene_command_stack_.Execute(std::move(command))) {
+        return false;
+    }
+    NotifySceneMutated();
+    return true;
+}
+
+bool EngineContext::UndoSceneCommand() {
+    if (!scene_command_stack_.Undo()) {
+        return false;
+    }
+    NotifySceneMutated();
+    return true;
+}
+
+bool EngineContext::RedoSceneCommand() {
+    if (!scene_command_stack_.Redo()) {
+        return false;
+    }
+    NotifySceneMutated();
+    return true;
+}
+
+bool EngineContext::BeginSceneTransaction(const std::string& name) {
+    return scene_command_stack_.BeginTransaction(name);
+}
+
+bool EngineContext::CommitSceneTransaction() {
+    if (!scene_command_stack_.CommitTransaction()) {
+        return false;
+    }
+    NotifySceneMutated();
+    return true;
+}
+
+bool EngineContext::CancelSceneTransaction() {
+    if (!scene_command_stack_.CancelTransaction()) {
+        return false;
+    }
+    NotifySceneMutated();
+    return true;
+}
+
+bool EngineContext::CanUndoSceneCommand() const {
+    return scene_command_stack_.CanUndo();
+}
+
+bool EngineContext::CanRedoSceneCommand() const {
+    return scene_command_stack_.CanRedo();
+}
+
+bool EngineContext::IsSceneDirty() const {
+    return external_scene_dirty_ || scene_command_stack_.IsDirty();
+}
+
+std::size_t EngineContext::GetSceneCommandVersion() const {
+    return scene_command_stack_.GetVersion();
+}
+
+std::string EngineContext::GetUndoSceneCommandName() const {
+    return scene_command_stack_.GetUndoName();
+}
+
+std::string EngineContext::GetRedoSceneCommandName() const {
+    return scene_command_stack_.GetRedoName();
+}
+
+void EngineContext::MarkSceneClean() {
+    external_scene_dirty_ = false;
+    scene_command_stack_.MarkClean();
+    NotifySceneMutated();
 }
 
 void EngineContext::ClearOwnedScene() {

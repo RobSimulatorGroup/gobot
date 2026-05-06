@@ -80,7 +80,35 @@ def main():
     assert_close_tuple(base.get("position"), (0.0, 0.0, 1.0))
     base.set("position", (1.0, 2.0, 3.0))
     assert_close_tuple(base.get("position"), (1.0, 2.0, 3.0))
+    assert gobot.undo() is True
+    assert_close_tuple(base.get("position"), (0.0, 0.0, 1.0))
+    assert gobot.redo() is True
+    assert_close_tuple(base.get("position"), (1.0, 2.0, 3.0))
     assert "position" in base.property_names()
+
+    with gobot.transaction("Batch transform"):
+        base.name = "renamed_base"
+        base.position = (4.0, 5.0, 6.0)
+        base.scale = (2.0, 2.0, 2.0)
+    assert base.name == "renamed_base"
+    assert_close_tuple(base.position, (4.0, 5.0, 6.0))
+    assert_close_tuple(base.scale, (2.0, 2.0, 2.0))
+    assert gobot.undo() is True
+    assert base.name == "base"
+    assert_close_tuple(base.position, (1.0, 2.0, 3.0))
+    assert_close_tuple(base.scale, (1.0, 1.0, 1.0))
+    assert gobot.redo() is True
+    assert base.name == "renamed_base"
+    assert_close_tuple(base.position, (4.0, 5.0, 6.0))
+    assert_close_tuple(base.scale, (2.0, 2.0, 2.0))
+
+    try:
+        with gobot.transaction("Cancelled transform"):
+            base.name = "cancelled"
+            raise RuntimeError("cancel transaction")
+    except RuntimeError:
+        pass
+    assert base.name == "renamed_base"
 
     authored = gobot.create_node("Robot3D", "authored")
     assert authored.name == "authored"
@@ -106,6 +134,11 @@ def main():
         raise AssertionError("deleted Gobot node handle should raise ReferenceError")
     except ReferenceError as error:
         assert "no longer resolves" in str(error) or "invalid" in str(error)
+    assert gobot.undo() is True
+    restored_visual = link.find("visual")
+    assert restored_visual is not None
+    assert restored_visual.valid is True
+    assert visual.valid is False
 
     context.clear_scene()
     assert context.scene_epoch > 0

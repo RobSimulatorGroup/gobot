@@ -25,6 +25,7 @@
 #include "gobot/scene/resources/packed_scene.hpp"
 #include "gobot/scene/resources/primitive_mesh.hpp"
 #include "gobot/scene/robot_3d.hpp"
+#include "gobot/scene/scene_command.hpp"
 #include "gobot/scene/scene_initializer.hpp"
 #include "gobot/simulation/rl_environment.hpp"
 #include "gobot/simulation/simulation_server.hpp"
@@ -178,6 +179,8 @@ py::object MakeTypedNodeObject(Node* node, PyNodeOwnership ownership = PyNodeOwn
 
 template <typename Func>
 void ExecuteSceneMutation(const std::string&, Func&& func);
+
+void ExecuteSetNodeProperty(Node* node, const std::string& property_name, Variant value);
 
 [[noreturn]] void ThrowReferenceError(const std::string& message) {
     PyErr_SetString(PyExc_ReferenceError, message.c_str());
@@ -453,6 +456,39 @@ struct PyScene {
     PyScene& operator=(const PyScene&) = delete;
 };
 
+struct PySceneTransaction {
+    std::string name;
+    bool active{false};
+
+    explicit PySceneTransaction(std::string transaction_name)
+        : name(std::move(transaction_name)) {
+    }
+
+    PySceneTransaction& Enter() {
+        if (!GetActiveAppContext().BeginSceneTransaction(name)) {
+            throw std::runtime_error("failed to begin Gobot scene transaction '" + name + "'");
+        }
+        active = true;
+        return *this;
+    }
+
+    bool Exit(const py::object& exc_type, const py::object&, const py::object&) {
+        if (!active) {
+            return false;
+        }
+
+        active = false;
+        if (exc_type.is_none()) {
+            if (!GetActiveAppContext().CommitSceneTransaction()) {
+                throw std::runtime_error("failed to commit Gobot scene transaction '" + name + "'");
+            }
+        } else {
+            GetActiveAppContext().CancelSceneTransaction();
+        }
+        return false;
+    }
+};
+
 std::string NodeTypeName(const PyNodeHandle& handle) {
     return std::string(handle.Resolve()->GetClassStringName());
 }
@@ -497,22 +533,18 @@ void NodeSetProperty(PyNodeHandle& handle, const std::string& name, const py::ha
     if (!property.is_valid()) {
         throw py::key_error("unknown Gobot property '" + name + "'");
     }
-    ExecuteSceneMutation("set_property", [&]() {
-        if (!node->Set(name, PythonToVariantForType(value, property.get_type()))) {
-            throw std::runtime_error("failed to set Gobot property '" + name + "'");
-        }
-        handle.RefreshSnapshot(node);
-    });
+    ExecuteSetNodeProperty(node, name, PythonToVariantForType(value, property.get_type()));
+    handle.RefreshSnapshot(node);
 }
 
 py::object NodeAddChild(PyNodeHandle& handle, PyNodeHandle& child_handle, bool force_readable_name) {
     Node* node = handle.Resolve();
     Node* child = child_handle.Resolve();
     ExecuteSceneMutation("add_child", [&]() {
-        node->AddChild(child, force_readable_name);
-        child_handle.TransferToTree();
-        child_handle.RefreshSnapshot(child);
+        return std::make_unique<AddChildNodeCommand>(node->GetInstanceId(), child->GetInstanceId(), force_readable_name);
     });
+    child_handle.TransferToTree();
+    child_handle.RefreshSnapshot(child);
     return MakeTypedNodeObject(child);
 }
 
@@ -526,18 +558,17 @@ py::object NodeRemoveChild(PyNodeHandle& handle, PyNodeHandle& child_handle, boo
 
     if (delete_child) {
         ExecuteSceneMutation("remove_child_delete", [&]() {
-            node->RemoveChild(child);
-            Object::Delete(child);
-            child_handle.Invalidate();
+            return std::make_unique<RemoveChildNodeCommand>(node->GetInstanceId(), child->GetInstanceId(), true);
         });
+        child_handle.Invalidate();
         return py::none();
     }
 
     std::shared_ptr<PyNodeHandleState> detached_state = child_handle.state;
     ExecuteSceneMutation("remove_child_detach", [&]() {
-        node->RemoveChild(child);
-        child_handle.TransferToDetachedOwned(child);
+        return std::make_unique<RemoveChildNodeCommand>(node->GetInstanceId(), child->GetInstanceId(), false);
     });
+    child_handle.TransferToDetachedOwned(child);
     return py::cast(PyNodeHandle(detached_state, ExpectedTypeForNode(child)));
 }
 
@@ -545,10 +576,10 @@ void NodeReparent(PyNodeHandle& handle, PyNodeHandle& parent_handle) {
     Node* node = handle.Resolve();
     Node* parent = parent_handle.Resolve();
     ExecuteSceneMutation("reparent", [&]() {
-        node->Reparent(parent);
-        handle.TransferToTree();
-        handle.RefreshSnapshot(node);
+        return std::make_unique<ReparentNodeCommand>(node->GetInstanceId(), parent->GetInstanceId());
     });
+    handle.TransferToTree();
+    handle.RefreshSnapshot(node);
 }
 
 py::object NodeGetParent(PyNodeHandle& handle) {
@@ -575,9 +606,9 @@ std::string NodeGetName(const PyNodeHandle& handle) {
 void NodeSetName(PyNodeHandle& handle, const std::string& name) {
     Node* node = handle.Resolve();
     ExecuteSceneMutation("rename_node", [&]() {
-        node->SetName(name);
-        handle.RefreshSnapshot(node);
+        return std::make_unique<RenameNodeCommand>(node->GetInstanceId(), name);
     });
+    handle.RefreshSnapshot(node);
 }
 
 std::string NodeGetPath(const PyNodeHandle& handle) {
@@ -804,8 +835,19 @@ py::object MakeTypedNodeObject(Node* node, PyNodeOwnership ownership) {
 
 template <typename Func>
 void ExecuteSceneMutation(const std::string&, Func&& func) {
-    std::forward<Func>(func)();
-    GetActiveAppContext().NotifySceneMutated();
+    std::unique_ptr<SceneCommand> command = std::forward<Func>(func)();
+    if (!GetActiveAppContext().ExecuteSceneCommand(std::move(command))) {
+        throw std::runtime_error("failed to execute Gobot scene command");
+    }
+}
+
+void ExecuteSetNodeProperty(Node* node, const std::string& property_name, Variant value) {
+    if (node == nullptr) {
+        throw std::invalid_argument("cannot set property on a null Gobot node");
+    }
+    ExecuteSceneMutation("set_property", [&]() {
+        return std::make_unique<SetNodePropertyCommand>(node->GetInstanceId(), property_name, std::move(value));
+    });
 }
 
 } // namespace
@@ -854,6 +896,11 @@ void RegisterManualApis(py::module_& module) {
             .def_property_readonly("project_path", &EngineContext::GetProjectPath)
             .def_property_readonly("scene_path", &EngineContext::GetScenePath)
             .def_property_readonly("scene_epoch", &EngineContext::GetSceneEpoch)
+            .def_property_readonly("scene_dirty", &EngineContext::IsSceneDirty)
+            .def_property_readonly("can_undo", &EngineContext::CanUndoSceneCommand)
+            .def_property_readonly("can_redo", &EngineContext::CanRedoSceneCommand)
+            .def_property_readonly("undo_name", &EngineContext::GetUndoSceneCommandName)
+            .def_property_readonly("redo_name", &EngineContext::GetRedoSceneCommandName)
             .def_property_readonly("root", [](EngineContext& context) -> py::object {
                 Node* root = context.GetSceneRoot();
                 if (root == nullptr) {
@@ -884,6 +931,31 @@ void RegisterManualApis(py::module_& module) {
             }, py::arg("scene_path"))
             .def("clear_scene", &EngineContext::ClearScene)
             .def("notify_scene_changed", &EngineContext::NotifySceneChanged)
+            .def("mark_scene_clean", &EngineContext::MarkSceneClean)
+            .def("undo", [](EngineContext& context) {
+                return context.UndoSceneCommand();
+            })
+            .def("redo", [](EngineContext& context) {
+                return context.RedoSceneCommand();
+            })
+            .def("begin_transaction", [](EngineContext& context, const std::string& name) {
+                if (!context.BeginSceneTransaction(name)) {
+                    throw std::runtime_error("failed to begin Gobot scene transaction '" + name + "'");
+                }
+            }, py::arg("name") = "Scene Transaction")
+            .def("commit_transaction", [](EngineContext& context) {
+                if (!context.CommitSceneTransaction()) {
+                    throw std::runtime_error("failed to commit Gobot scene transaction");
+                }
+            })
+            .def("cancel_transaction", [](EngineContext& context) {
+                if (!context.CancelSceneTransaction()) {
+                    throw std::runtime_error("failed to cancel Gobot scene transaction");
+                }
+            })
+            .def("transaction", [](EngineContext&, const std::string& name) {
+                return PySceneTransaction(name);
+            }, py::arg("name") = "Scene Transaction")
             .def("build_world", [](EngineContext& context, PhysicsBackendType backend_type) {
                 context.SetBackendType(backend_type);
                 if (!context.BuildWorld()) {
@@ -921,6 +993,13 @@ void RegisterManualApis(py::module_& module) {
                 return scene.scene_epoch;
             });
 
+    py::class_<PySceneTransaction>(module, "SceneTransaction")
+            .def("__enter__", &PySceneTransaction::Enter, py::return_value_policy::reference_internal)
+            .def("__exit__", &PySceneTransaction::Exit,
+                 py::arg("exc_type"),
+                 py::arg("exc_value"),
+                 py::arg("traceback"));
+
     node_class
             .def_property_readonly("id", &NodeGetId)
             .def_property("name", &NodeGetName, &NodeSetName)
@@ -942,10 +1021,7 @@ void RegisterManualApis(py::module_& module) {
                 Node* parent = node->GetParent();
                 if (parent == nullptr) {
                     if (delete_node) {
-                        ExecuteSceneMutation("remove_root_delete", [&]() {
-                            Object::Delete(node);
-                            handle.Invalidate();
-                        });
+                        throw std::invalid_argument("cannot remove the root node through a node handle");
                     }
                     return py::none();
                 }
@@ -973,9 +1049,7 @@ void RegisterManualApis(py::module_& module) {
                           },
                           [](PyNode3DHandle& handle, const py::handle& value) {
                               Node3D* node = handle.ResolveAs<Node3D>();
-                              ExecuteSceneMutation("set_position", [&]() {
-                                  node->SetPosition(PythonToVector3(value));
-                              });
+                              ExecuteSetNodeProperty(node, "position", Variant(PythonToVector3(value)));
                           })
             .def_property("rotation_degrees",
                           [](const PyNode3DHandle& handle) {
@@ -983,9 +1057,7 @@ void RegisterManualApis(py::module_& module) {
                           },
                           [](PyNode3DHandle& handle, const py::handle& value) {
                               Node3D* node = handle.ResolveAs<Node3D>();
-                              ExecuteSceneMutation("set_rotation_degrees", [&]() {
-                                  node->SetEulerDegree(PythonToVector3(value));
-                              });
+                              ExecuteSetNodeProperty(node, "rotation_degrees", Variant(PythonToVector3(value)));
                           })
             .def_property("scale",
                           [](const PyNode3DHandle& handle) {
@@ -993,9 +1065,7 @@ void RegisterManualApis(py::module_& module) {
                           },
                           [](PyNode3DHandle& handle, const py::handle& value) {
                               Node3D* node = handle.ResolveAs<Node3D>();
-                              ExecuteSceneMutation("set_scale", [&]() {
-                                  node->SetScale(PythonToVector3(value));
-                              });
+                              ExecuteSetNodeProperty(node, "scale", Variant(PythonToVector3(value)));
                           })
             .def_property("visible",
                           [](const PyNode3DHandle& handle) {
@@ -1003,9 +1073,7 @@ void RegisterManualApis(py::module_& module) {
                           },
                           [](PyNode3DHandle& handle, bool visible) {
                               Node3D* node = handle.ResolveAs<Node3D>();
-                              ExecuteSceneMutation("set_visible", [&]() {
-                                  node->SetVisible(visible);
-                              });
+                              ExecuteSetNodeProperty(node, "visible", Variant(visible));
                           });
 
     robot3d_class
@@ -1015,9 +1083,7 @@ void RegisterManualApis(py::module_& module) {
                           },
                           [](PyRobot3DHandle& handle, const std::string& source_path) {
                               Robot3D* robot = handle.ResolveAs<Robot3D>();
-                              ExecuteSceneMutation("set_robot_source_path", [&]() {
-                                  robot->SetSourcePath(source_path);
-                              });
+                              ExecuteSetNodeProperty(robot, "source_path", Variant(source_path));
                           })
             .def_property("mode",
                           [](const PyRobot3DHandle& handle) {
@@ -1025,9 +1091,7 @@ void RegisterManualApis(py::module_& module) {
                           },
                           [](PyRobot3DHandle& handle, RobotMode mode) {
                               Robot3D* robot = handle.ResolveAs<Robot3D>();
-                              ExecuteSceneMutation("set_robot_mode", [&]() {
-                                  robot->SetMode(mode);
-                              });
+                              ExecuteSetNodeProperty(robot, "mode", Variant(mode));
                           });
 
     link3d_class
@@ -1037,9 +1101,7 @@ void RegisterManualApis(py::module_& module) {
                           },
                           [](PyLink3DHandle& handle, bool has_inertial) {
                               Link3D* link = handle.ResolveAs<Link3D>();
-                              ExecuteSceneMutation("set_link_has_inertial", [&]() {
-                                  link->SetHasInertial(has_inertial);
-                              });
+                              ExecuteSetNodeProperty(link, "has_inertial", Variant(has_inertial));
                           })
             .def_property("mass",
                           [](const PyLink3DHandle& handle) {
@@ -1047,9 +1109,7 @@ void RegisterManualApis(py::module_& module) {
                           },
                           [](PyLink3DHandle& handle, RealType mass) {
                               Link3D* link = handle.ResolveAs<Link3D>();
-                              ExecuteSceneMutation("set_link_mass", [&]() {
-                                  link->SetMass(mass);
-                              });
+                              ExecuteSetNodeProperty(link, "mass", Variant(mass));
                           })
             .def_property("center_of_mass",
                           [](const PyLink3DHandle& handle) {
@@ -1057,9 +1117,7 @@ void RegisterManualApis(py::module_& module) {
                           },
                           [](PyLink3DHandle& handle, const py::handle& value) {
                               Link3D* link = handle.ResolveAs<Link3D>();
-                              ExecuteSceneMutation("set_link_center_of_mass", [&]() {
-                                  link->SetCenterOfMass(PythonToVector3(value));
-                              });
+                              ExecuteSetNodeProperty(link, "center_of_mass", Variant(PythonToVector3(value)));
                           })
             .def_property("inertia_diagonal",
                           [](const PyLink3DHandle& handle) {
@@ -1067,9 +1125,7 @@ void RegisterManualApis(py::module_& module) {
                           },
                           [](PyLink3DHandle& handle, const py::handle& value) {
                               Link3D* link = handle.ResolveAs<Link3D>();
-                              ExecuteSceneMutation("set_link_inertia_diagonal", [&]() {
-                                  link->SetInertiaDiagonal(PythonToVector3(value));
-                              });
+                              ExecuteSetNodeProperty(link, "inertia_diagonal", Variant(PythonToVector3(value)));
                           })
             .def_property("role",
                           [](const PyLink3DHandle& handle) {
@@ -1077,9 +1133,7 @@ void RegisterManualApis(py::module_& module) {
                           },
                           [](PyLink3DHandle& handle, LinkRole role) {
                               Link3D* link = handle.ResolveAs<Link3D>();
-                              ExecuteSceneMutation("set_link_role", [&]() {
-                                  link->SetRole(role);
-                              });
+                              ExecuteSetNodeProperty(link, "role", Variant(role));
                           });
 
     joint3d_class
@@ -1089,9 +1143,7 @@ void RegisterManualApis(py::module_& module) {
                           },
                           [](PyJoint3DHandle& handle, JointType joint_type) {
                               Joint3D* joint = handle.ResolveAs<Joint3D>();
-                              ExecuteSceneMutation("set_joint_type", [&]() {
-                                  joint->SetJointType(joint_type);
-                              });
+                              ExecuteSetNodeProperty(joint, "joint_type", Variant(joint_type));
                           })
             .def_property("parent_link",
                           [](const PyJoint3DHandle& handle) {
@@ -1099,9 +1151,7 @@ void RegisterManualApis(py::module_& module) {
                           },
                           [](PyJoint3DHandle& handle, const std::string& parent_link) {
                               Joint3D* joint = handle.ResolveAs<Joint3D>();
-                              ExecuteSceneMutation("set_joint_parent_link", [&]() {
-                                  joint->SetParentLink(parent_link);
-                              });
+                              ExecuteSetNodeProperty(joint, "parent_link", Variant(parent_link));
                           })
             .def_property("child_link",
                           [](const PyJoint3DHandle& handle) {
@@ -1109,9 +1159,7 @@ void RegisterManualApis(py::module_& module) {
                           },
                           [](PyJoint3DHandle& handle, const std::string& child_link) {
                               Joint3D* joint = handle.ResolveAs<Joint3D>();
-                              ExecuteSceneMutation("set_joint_child_link", [&]() {
-                                  joint->SetChildLink(child_link);
-                              });
+                              ExecuteSetNodeProperty(joint, "child_link", Variant(child_link));
                           })
             .def_property("axis",
                           [](const PyJoint3DHandle& handle) {
@@ -1119,9 +1167,7 @@ void RegisterManualApis(py::module_& module) {
                           },
                           [](PyJoint3DHandle& handle, const py::handle& value) {
                               Joint3D* joint = handle.ResolveAs<Joint3D>();
-                              ExecuteSceneMutation("set_joint_axis", [&]() {
-                                  joint->SetAxis(PythonToVector3(value));
-                              });
+                              ExecuteSetNodeProperty(joint, "axis", Variant(PythonToVector3(value)));
                           })
             .def_property("lower_limit",
                           [](const PyJoint3DHandle& handle) {
@@ -1129,9 +1175,7 @@ void RegisterManualApis(py::module_& module) {
                           },
                           [](PyJoint3DHandle& handle, RealType lower_limit) {
                               Joint3D* joint = handle.ResolveAs<Joint3D>();
-                              ExecuteSceneMutation("set_joint_lower_limit", [&]() {
-                                  joint->SetLowerLimit(lower_limit);
-                              });
+                              ExecuteSetNodeProperty(joint, "lower_limit", Variant(lower_limit));
                           })
             .def_property("upper_limit",
                           [](const PyJoint3DHandle& handle) {
@@ -1139,9 +1183,7 @@ void RegisterManualApis(py::module_& module) {
                           },
                           [](PyJoint3DHandle& handle, RealType upper_limit) {
                               Joint3D* joint = handle.ResolveAs<Joint3D>();
-                              ExecuteSceneMutation("set_joint_upper_limit", [&]() {
-                                  joint->SetUpperLimit(upper_limit);
-                              });
+                              ExecuteSetNodeProperty(joint, "upper_limit", Variant(upper_limit));
                           })
             .def_property("effort_limit",
                           [](const PyJoint3DHandle& handle) {
@@ -1149,9 +1191,7 @@ void RegisterManualApis(py::module_& module) {
                           },
                           [](PyJoint3DHandle& handle, RealType effort_limit) {
                               Joint3D* joint = handle.ResolveAs<Joint3D>();
-                              ExecuteSceneMutation("set_joint_effort_limit", [&]() {
-                                  joint->SetEffortLimit(effort_limit);
-                              });
+                              ExecuteSetNodeProperty(joint, "effort_limit", Variant(effort_limit));
                           })
             .def_property("velocity_limit",
                           [](const PyJoint3DHandle& handle) {
@@ -1159,9 +1199,7 @@ void RegisterManualApis(py::module_& module) {
                           },
                           [](PyJoint3DHandle& handle, RealType velocity_limit) {
                               Joint3D* joint = handle.ResolveAs<Joint3D>();
-                              ExecuteSceneMutation("set_joint_velocity_limit", [&]() {
-                                  joint->SetVelocityLimit(velocity_limit);
-                              });
+                              ExecuteSetNodeProperty(joint, "velocity_limit", Variant(velocity_limit));
                           })
             .def_property("joint_position",
                           [](const PyJoint3DHandle& handle) {
@@ -1169,9 +1207,7 @@ void RegisterManualApis(py::module_& module) {
                           },
                           [](PyJoint3DHandle& handle, RealType joint_position) {
                               Joint3D* joint = handle.ResolveAs<Joint3D>();
-                              ExecuteSceneMutation("set_joint_position", [&]() {
-                                  joint->SetJointPosition(joint_position);
-                              });
+                              ExecuteSetNodeProperty(joint, "joint_position", Variant(joint_position));
                           });
 
     collision_shape_class
@@ -1181,9 +1217,7 @@ void RegisterManualApis(py::module_& module) {
                           },
                           [](PyCollisionShape3DHandle& handle, bool disabled) {
                               CollisionShape3D* collision_shape = handle.ResolveAs<CollisionShape3D>();
-                              ExecuteSceneMutation("set_collision_disabled", [&]() {
-                                  collision_shape->SetDisabled(disabled);
-                              });
+                              ExecuteSetNodeProperty(collision_shape, "disabled", Variant(disabled));
                           });
 
     mesh_instance_class
@@ -1198,14 +1232,12 @@ void RegisterManualApis(py::module_& module) {
                                   throw std::invalid_argument("expected a 4-element RGBA color");
                               }
                               MeshInstance3D* mesh_instance = handle.ResolveAs<MeshInstance3D>();
-                              ExecuteSceneMutation("set_mesh_surface_color", [&]() {
-                                  mesh_instance->SetSurfaceColor({
-                                          py::cast<float>(sequence[0]),
-                                          py::cast<float>(sequence[1]),
-                                          py::cast<float>(sequence[2]),
-                                          py::cast<float>(sequence[3])
-                                  });
-                              });
+                              ExecuteSetNodeProperty(mesh_instance, "surface_color", Variant(Color{
+                                      py::cast<float>(sequence[0]),
+                                      py::cast<float>(sequence[1]),
+                                      py::cast<float>(sequence[2]),
+                                      py::cast<float>(sequence[3])
+                              }));
                           });
 
     py::class_<PyRLControllerConfig>(module, "RLControllerConfig")
@@ -1308,6 +1340,21 @@ void RegisterManualApis(py::module_& module) {
         EnsureRuntimeContext();
         return MakeTypedNodeObject(CreateNode(type_name, name), PyNodeOwnership::DetachedOwned);
     }, py::arg("type_name"), py::arg("name") = "");
+
+    module.def("transaction", [](const std::string& name) {
+        EnsureRuntimeContext();
+        return PySceneTransaction(name);
+    }, py::arg("name") = "Scene Transaction");
+
+    module.def("undo", []() {
+        EnsureRuntimeContext();
+        return GetActiveAppContext().UndoSceneCommand();
+    });
+
+    module.def("redo", []() {
+        EnsureRuntimeContext();
+        return GetActiveAppContext().RedoSceneCommand();
+    });
 
     module.def("create_box_collision", [](const std::string& name,
                                           const py::handle& size,

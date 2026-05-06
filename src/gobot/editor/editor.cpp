@@ -95,7 +95,8 @@ Editor::Editor() {
                                         PhysicsServer::GetInstance(),
                                         SimulationServer::GetInstance());
     engine_context_->SetSceneChangedCallback([this]() {
-        MarkSceneDirty();
+        ++scene_change_version_;
+        scene_dirty_ = engine_context_ != nullptr && engine_context_->IsSceneDirty();
     });
     engine_context_->SetLoadSceneCallback([this](const std::string& path) {
         return OpenSceneFromPath(path);
@@ -332,12 +333,31 @@ bool Editor::OpenPythonScriptFromPath(const std::string& path) {
 }
 
 void Editor::MarkSceneDirty() {
-    scene_dirty_ = true;
+    if (engine_context_ != nullptr) {
+        engine_context_->MarkSceneDirty();
+        scene_dirty_ = engine_context_->IsSceneDirty();
+        return;
+    }
     ++scene_change_version_;
+    scene_dirty_ = true;
 }
 
 void Editor::ClearSceneDirty() {
+    if (engine_context_ != nullptr) {
+        engine_context_->MarkSceneClean();
+        scene_dirty_ = engine_context_->IsSceneDirty();
+        return;
+    }
+    ++scene_change_version_;
     scene_dirty_ = false;
+}
+
+bool Editor::IsSceneDirty() const {
+    return engine_context_ != nullptr ? engine_context_->IsSceneDirty() : scene_dirty_;
+}
+
+std::uint64_t Editor::GetSceneChangeVersion() const {
+    return engine_context_ != nullptr ? engine_context_->GetSceneCommandVersion() : scene_change_version_;
 }
 
 std::string Editor::GetSceneDisplayName() const {
@@ -346,7 +366,7 @@ std::string Editor::GetSceneDisplayName() const {
 
 std::string Editor::GetSceneViewTitle() const {
     std::string title = GetSceneDisplayName();
-    if (scene_dirty_) {
+    if (IsSceneDirty()) {
         title += "(*)";
     }
     return title;
@@ -409,8 +429,14 @@ void Editor::DrawMenuBar() {
             ImGui::EndMenu();
         }
         if (ImGui::BeginMenu("Edit")) {
-            if (ImGui::MenuItem("Undo", "CTRL+Z")) {}
-            if (ImGui::MenuItem("Redo", "CTRL+Y", false, false)) {}  // Disabled item
+            const bool can_undo = engine_context_ != nullptr && engine_context_->CanUndoSceneCommand();
+            const bool can_redo = engine_context_ != nullptr && engine_context_->CanRedoSceneCommand();
+            if (ImGui::MenuItem("Undo", "CTRL+Z", false, can_undo)) {
+                UndoSceneCommand();
+            }
+            if (ImGui::MenuItem("Redo", "CTRL+Y", false, can_redo)) {
+                RedoSceneCommand();
+            }
             ImGui::Separator();
             if (ImGui::MenuItem("Cut", "CTRL+X")) {}
             if (ImGui::MenuItem("Copy", "CTRL+C")) {}
@@ -463,11 +489,45 @@ void Editor::HandleGlobalShortcuts() {
                            ImGui::GetIO().KeyCtrl;
     const bool s_down = Input::GetInstance()->GetKeyHeld(KeyCode::S) ||
                         ImGui::IsKeyDown(ImGuiKey_S);
+    const bool z_down = Input::GetInstance()->GetKeyHeld(KeyCode::Z) ||
+                        ImGui::IsKeyDown(ImGuiKey_Z);
+    const bool y_down = Input::GetInstance()->GetKeyHeld(KeyCode::Y) ||
+                        ImGui::IsKeyDown(ImGuiKey_Y);
+
+    static bool undo_shortcut_down = false;
+    static bool redo_shortcut_down = false;
+
     const bool save_shortcut_down = ctrl_down && s_down;
     if (save_shortcut_down && !save_shortcut_down_) {
         SaveCurrentScene();
     }
     save_shortcut_down_ = save_shortcut_down;
+
+    const bool undo_down = ctrl_down && z_down;
+    if (undo_down && !undo_shortcut_down) {
+        UndoSceneCommand();
+    }
+    undo_shortcut_down = undo_down;
+
+    const bool redo_down = ctrl_down && y_down;
+    if (redo_down && !redo_shortcut_down) {
+        RedoSceneCommand();
+    }
+    redo_shortcut_down = redo_down;
+}
+
+void Editor::UndoSceneCommand() {
+    if (engine_context_ == nullptr || !engine_context_->UndoSceneCommand()) {
+        return;
+    }
+    selected_ = GetEditedSceneRoot();
+}
+
+void Editor::RedoSceneCommand() {
+    if (engine_context_ == nullptr || !engine_context_->RedoSceneCommand()) {
+        return;
+    }
+    selected_ = GetEditedSceneRoot();
 }
 
 void Editor::DrawUnsavedSceneDialog() {
@@ -513,7 +573,7 @@ void Editor::RequestSceneSwitch(std::function<void()> action) {
         return;
     }
 
-    if (scene_dirty_) {
+    if (IsSceneDirty()) {
         pending_scene_switch_action_ = std::move(action);
         request_unsaved_scene_dialog_ = true;
         return;

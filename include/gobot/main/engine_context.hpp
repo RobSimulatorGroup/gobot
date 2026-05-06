@@ -2,11 +2,13 @@
 
 #include <cstdint>
 #include <functional>
+#include <memory>
 #include <string>
 
 #include "gobot/core/object.hpp"
 #include "gobot/physics/physics_types.hpp"
 #include "gobot/physics/physics_server.hpp"
+#include "gobot/scene/scene_command.hpp"
 
 namespace gobot {
 
@@ -65,6 +67,20 @@ public:
     void SetLoadSceneCallback(LoadSceneCallback callback);
     void NotifySceneChanged();
     void NotifySceneMutated();
+    void MarkSceneDirty();
+    bool ExecuteSceneCommand(std::unique_ptr<SceneCommand> command);
+    bool UndoSceneCommand();
+    bool RedoSceneCommand();
+    bool BeginSceneTransaction(const std::string& name);
+    bool CommitSceneTransaction();
+    bool CancelSceneTransaction();
+    bool CanUndoSceneCommand() const;
+    bool CanRedoSceneCommand() const;
+    bool IsSceneDirty() const;
+    std::size_t GetSceneCommandVersion() const;
+    std::string GetUndoSceneCommandName() const;
+    std::string GetRedoSceneCommandName() const;
+    void MarkSceneClean();
 
 private:
     void ClearOwnedScene();
@@ -84,6 +100,10 @@ private:
     std::string last_error_;
     SceneChangedCallback scene_changed_callback_;
     LoadSceneCallback load_scene_callback_;
+    SceneCommandStack scene_command_stack_;
+    // Transitional bridge for editor code paths that still mutate nodes
+    // directly. Python and new editor operations should use scene commands.
+    bool external_scene_dirty_{false};
 };
 
 } // namespace gobot

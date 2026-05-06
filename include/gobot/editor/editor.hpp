@@ -88,9 +88,9 @@ public:
 
     void ClearSceneDirty();
 
-    [[nodiscard]] bool IsSceneDirty() const { return scene_dirty_; }
+    [[nodiscard]] bool IsSceneDirty() const;
 
-    [[nodiscard]] std::uint64_t GetSceneChangeVersion() const { return scene_change_version_; }
+    [[nodiscard]] std::uint64_t GetSceneChangeVersion() const;
 
     [[nodiscard]] bool HasCurrentScenePath() const { return !current_scene_path_.empty(); }
 
@@ -116,6 +116,10 @@ private:
     void DrawPanelViewMenuItems(Node* node);
 
     void HandleGlobalShortcuts();
+
+    void UndoSceneCommand();
+
+    void RedoSceneCommand();
 
     void DrawUnsavedSceneDialog();
 
