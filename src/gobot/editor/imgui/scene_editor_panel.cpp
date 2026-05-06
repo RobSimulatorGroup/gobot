@@ -485,7 +485,7 @@ bool SceneEditorPanel::DrawNode(Node* node)
                 ImGui::BeginDisabled();
             }
             if (ImGui::SmallButton(ICON_MDI_OPEN_IN_NEW "##OpenSceneInstance")) {
-                editor->RequestOpenSceneFromPath(scene_instance->GetPath());
+                RequestOpenSceneInstance(scene_instance->GetPath());
             }
             if (ImGui::IsItemHovered()) {
                 ImGui::SetTooltip("Open scene instance");
@@ -537,7 +537,7 @@ bool SceneEditorPanel::DrawNode(Node* node)
                 ImGui::BeginDisabled();
             }
             if (ImGui::MenuItem(ICON_MDI_OPEN_IN_NEW " Open Scene Instance")) {
-                editor->RequestOpenSceneFromPath(scene_instance->GetPath());
+                RequestOpenSceneInstance(scene_instance->GetPath());
             }
             if (!can_open_scene_instance) {
                 ImGui::EndDisabled();
@@ -616,6 +616,22 @@ bool SceneEditorPanel::DrawNode(Node* node)
     return false;
 }
 
+void SceneEditorPanel::RequestOpenSceneInstance(const std::string& path) {
+    pending_open_scene_instance_path_ = path;
+}
+
+void SceneEditorPanel::FlushPendingSceneInstanceOpen() {
+    if (pending_open_scene_instance_path_.empty()) {
+        return;
+    }
+
+    std::string path = std::move(pending_open_scene_instance_path_);
+    pending_open_scene_instance_path_.clear();
+    double_clicked_ = nullptr;
+    add_child_parent_ = nullptr;
+    Editor::GetInstance()->RequestOpenSceneFromPath(path);
+}
+
 void SceneEditorPanel::OnImGuiContent()
 {
     auto flags        = ImGuiWindowFlags_NoCollapse;
@@ -685,6 +701,8 @@ void SceneEditorPanel::OnImGuiContent()
     ImGui::EndChild();
 
     DrawAddChildDialog();
+
+    FlushPendingSceneInstanceOpen();
 }
 
 

@@ -22,6 +22,24 @@
 
 namespace gobot {
 
+namespace {
+
+constexpr std::string_view kResourcePathPropertyName = "resource_path";
+
+bool IsResourceIdentityProperty(std::string_view property_name) {
+    return property_name == kResourcePathPropertyName;
+}
+
+bool ShouldSerializeResourceProperty(std::string_view property_name, bool main_resource) {
+    return main_resource || !IsResourceIdentityProperty(property_name);
+}
+
+bool ShouldLoadSubResourceProperty(std::string_view property_name) {
+    return !IsResourceIdentityProperty(property_name);
+}
+
+} // namespace
+
 ResourceFormatLoaderSceneInstance::ResourceFormatLoaderSceneInstance() {
 
 }
@@ -178,6 +196,9 @@ bool ResourceFormatLoaderSceneInstance::LoadResource() {
 
                         for (const auto&[key, value] : sub_res.items()) {
                             if (key.starts_with("__")) {
+                                continue;
+                            }
+                            if (!ShouldLoadSubResourceProperty(key)) {
                                 continue;
                             }
                             auto property_value = res->Get(key.c_str());
@@ -582,8 +603,12 @@ bool ResourceFormatSaverSceneInstance::Save(const std::string &path, const Ref<R
             }
             USING_ENUM_BITWISE_OPERATORS;
             if ((bool)(property_info.usage & PropertyUsageFlags::Storage)) {
-                Variant value = saved_resource->Get(prop.get_name().data());
-                resource_data_json[prop.get_name().data()] = VariantSerializer::VariantToJson(value, this);;
+                const std::string prop_name = prop.get_name().data();
+                if (!ShouldSerializeResourceProperty(prop_name, main)) {
+                    continue;
+                }
+                Variant value = saved_resource->Get(prop_name.c_str());
+                resource_data_json[prop_name] = VariantSerializer::VariantToJson(value, this);
             }
         }
 

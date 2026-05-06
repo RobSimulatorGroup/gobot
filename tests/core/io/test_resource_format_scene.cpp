@@ -336,6 +336,37 @@ TEST_F(TestResourceFormatScene, packed_scene_saves_child_scene_as_external_insta
     gobot::Object::Delete(loaded_instance);
 }
 
+TEST_F(TestResourceFormatScene, packed_scene_subresources_do_not_serialize_resource_path) {
+    auto* root = gobot::Object::New<gobot::Node3D>();
+    root->SetName("World");
+
+    auto* visual = gobot::Object::New<gobot::MeshInstance3D>();
+    visual->SetName("Box");
+    visual->SetMesh(gobot::MakeRef<gobot::BoxMesh>());
+    root->AddChild(visual);
+
+    gobot::Ref<gobot::PackedScene> scene = gobot::MakeRef<gobot::PackedScene>();
+    ASSERT_TRUE(scene->Pack(root));
+
+    USING_ENUM_BITWISE_OPERATORS;
+    ASSERT_TRUE(gobot::ResourceSaver::Save(scene, "res://subresource_path_scene.jscn",
+                                           gobot::ResourceSaverFlags::ReplaceSubResourcePaths |
+                                           gobot::ResourceSaverFlags::ChangePath));
+
+    std::ifstream input("/tmp/test_project/subresource_path_scene.jscn");
+    ASSERT_TRUE(input.is_open());
+    gobot::Json saved_json;
+    input >> saved_json;
+
+    ASSERT_TRUE(saved_json.contains("__SUB_RESOURCES__"));
+    ASSERT_FALSE(saved_json["__SUB_RESOURCES__"].empty());
+    for (const auto& sub_resource : saved_json["__SUB_RESOURCES__"]) {
+        EXPECT_FALSE(sub_resource.contains("resource_path")) << sub_resource.dump(4);
+    }
+
+    gobot::Object::Delete(root);
+}
+
 TEST_F(TestResourceFormatScene, packed_scene_instance_node_is_serialized_as_black_box_boundary) {
     auto* child_root = gobot::Object::New<gobot::Node3D>();
     child_root->SetName("RobotAsset");
