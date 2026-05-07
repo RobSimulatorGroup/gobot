@@ -45,5 +45,5 @@ test-command = "python -c \"import gobot; print(gobot.backend_infos())\""
 [tool.cibuildwheel.linux]
 manylinux-x86_64-image = "manylinux_2_28"
 before-all = [
-    "dnf install -y eigen3-devel libpng-devel mesa-libGL-devel autoconf xorg-x11-server-devel libX11-devel libXcursor-devel libXext-devel libXi-devel libXinerama-devel libXrandr-devel libXrender-devel libXScrnSaver-devel libXxf86vm-devel libxcb-devel libXdamage-devel libXfixes-devel libuuid-devel",
+    "dnf install -y eigen3-devel libpng-devel mesa-libGL-devel autoconf vim-common xorg-x11-server-devel libX11-devel libXcursor-devel libXext-devel libXi-devel libXinerama-devel libXrandr-devel libXrender-devel libXScrnSaver-devel libXxf86vm-devel libxcb-devel libXdamage-devel libXfixes-devel libuuid-devel",
 ]
