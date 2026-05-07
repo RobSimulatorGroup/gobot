@@ -15,6 +15,7 @@
 #include "gobot/core/io/resource_saver.hpp"
 #include "gobot/main/engine_context.hpp"
 #include "gobot/physics/physics_server.hpp"
+#include "gobot/python/python_app_context.hpp"
 #include "gobot/scene/collision_shape_3d.hpp"
 #include "gobot/scene/joint_3d.hpp"
 #include "gobot/scene/link_3d.hpp"

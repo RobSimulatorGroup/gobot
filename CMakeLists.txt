@@ -305,7 +305,7 @@ if(GOB_BUILD_PYTHON_BINDINGS)
     else()
         message(WARNING "Python3 Development.Embed was not found. Editor/headless Python script execution will be disabled in this build.")
         target_sources(gobot PRIVATE src/gobot/python/python_script_runner_stub.cpp)
-        target_link_libraries(gobot PUBLIC pybind11::headers)
+        target_link_libraries(gobot PUBLIC pybind11::headers Python3::Module)
     endif()
 
     pybind11_add_module(gobot_python MODULE

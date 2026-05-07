@@ -11,7 +11,7 @@
 #include "gobot/core/config/project_setting.hpp"
 #include "gobot/main/engine_context.hpp"
 #include "gobot/physics/physics_server.hpp"
-#include "gobot/python/python_binding_registry.hpp"
+#include "gobot/python/python_app_context.hpp"
 #include "gobot/python/python_script_runner.hpp"
 #include "gobot/scene/node.hpp"
 #include "gobot/scene/scene_initializer.hpp"

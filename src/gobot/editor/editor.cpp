@@ -31,7 +31,7 @@
 #include "gobot/main/engine_context.hpp"
 #include "gobot/main/main.hpp"
 #include "gobot/physics/physics_server.hpp"
-#include "gobot/python/python_binding_registry.hpp"
+#include "gobot/python/python_app_context.hpp"
 #include "gobot/scene/collision_shape_3d.hpp"
 #include "gobot/scene/imgui_window.hpp"
 #include "gobot/scene/mesh_instance_3d.hpp"

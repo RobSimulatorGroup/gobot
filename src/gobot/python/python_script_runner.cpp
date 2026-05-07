@@ -10,6 +10,7 @@
 
 #include "gobot/core/config/project_setting.hpp"
 #include "gobot/main/engine_context.hpp"
+#include "gobot/python/python_app_context.hpp"
 #include "gobot/python/python_binding_registry.hpp"
 
 namespace gobot::python {

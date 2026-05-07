@@ -11,11 +11,8 @@
 
 #include "gobot/core/math/geometry.hpp"
 #include "gobot/core/types.hpp"
+#include "gobot/python/python_app_context.hpp"
 #include "gobot_export.h"
-
-namespace gobot {
-class EngineContext;
-}
 
 namespace gobot::python {
 
@@ -28,12 +25,6 @@ GOBOT_EXPORT void RegisterReflectedTypes(py::module_& module);
 GOBOT_EXPORT void RegisterManualApis(py::module_& module);
 
 GOBOT_EXPORT void RegisterModule(py::module_& module);
-
-GOBOT_EXPORT void SetActiveAppContext(EngineContext* context);
-
-GOBOT_EXPORT EngineContext* GetActiveAppContextOrNull();
-
-GOBOT_EXPORT EngineContext& GetActiveAppContext();
 
 GOBOT_EXPORT py::object VariantToPython(const Variant& variant);
 
