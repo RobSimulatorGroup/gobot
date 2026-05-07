@@ -1,5 +1,7 @@
 [build-system]
 requires = [
+    "cmake>=3.22",
+    "ninja>=1.11",
     "packaging>=23.2",
     "scikit-build-core>=0.10",
 ]
@@ -15,6 +17,14 @@ license = { text = "LGPL-3.0-or-later" }
 authors = [
     { name = "RobSimulatorGroup" },
 ]
+dependencies = [
+    "numpy>=1.24",
+]
+
+[project.urls]
+Homepage = "https://github.com/RobSimulatorGroup/gobot"
+Repository = "https://github.com/RobSimulatorGroup/gobot"
+Issues = "https://github.com/RobSimulatorGroup/gobot/issues"
 
 [tool.scikit-build]
 cmake.build-type = "Release"
@@ -24,3 +34,18 @@ wheel.packages = ["python/gobot"]
 [tool.scikit-build.cmake.define]
 GOB_BUILD_PYTHON_BINDINGS = "ON"
 GOB_BUILD_TESTS = "OFF"
+
+[tool.cibuildwheel]
+build = [
+    "cp310-manylinux_x86_64",
+    "cp311-manylinux_x86_64",
+    "cp312-manylinux_x86_64",
+]
+build-frontend = "build"
+test-command = "python -c \"import gobot; print(gobot.backend_infos())\""
+
+[tool.cibuildwheel.linux]
+manylinux-x86_64-image = "manylinux_2_28"
+before-all = [
+    "dnf install -y eigen3-devel libpng-devel mesa-libGL-devel autoconf xorg-x11-server-devel libX11-devel libXcursor-devel libXext-devel libXi-devel libXinerama-devel libXrandr-devel libXrender-devel libXScrnSaver-devel libXxf86vm-devel libxcb-devel libXdamage-devel libXfixes-devel libuuid-devel",
+]

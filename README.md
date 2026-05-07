@@ -137,6 +137,21 @@ does not need `LD_LIBRARY_PATH` for these local Gobot libraries. The legacy
 top-level `gobot_gym_adapter.py` module remains as a compatibility shim; new
 code should import `gobot.gym_adapter`.
 
+### PyPI Release
+
+Python releases are published by `.github/workflows/python-publish.yml` through
+PyPI Trusted Publishing. Configure PyPI once with:
+
+- PyPI project: `gobot`
+- Owner: `RobSimulatorGroup`
+- Repository: `gobot`
+- Workflow: `python-publish.yml`
+- Environment: `pypi`
+
+After that, publishing a GitHub release, or manually running the workflow, builds
+the source distribution and manylinux wheels and uploads them to PyPI without a
+stored PyPI token.
+
 ## MuJoCo Backend Setup
 
 Gobot keeps MuJoCo optional. The default build does not download or link MuJoCo,
