@@ -1,9 +1,17 @@
 name: Publish Python Package
 
 on:
+  push:
+    branches: [master]
   release:
     types: [published]
   workflow_dispatch:
+    inputs:
+      publish:
+        description: "Publish distributions to PyPI after the build succeeds."
+        required: false
+        type: boolean
+        default: false
 
 permissions:
   contents: read
@@ -48,6 +56,7 @@ jobs:
   publish:
     name: Publish to PyPI
     needs: build
+    if: github.event_name == 'release' || (github.event_name == 'workflow_dispatch' && inputs.publish)
     runs-on: ubuntu-latest
     environment:
       name: pypi
