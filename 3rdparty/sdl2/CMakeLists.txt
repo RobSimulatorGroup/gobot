@@ -6,7 +6,7 @@ SET(POSITION_INDEPENDENT_CODE ON CACHE BOOL "POSITION_INDEPENDENT_CODE" FORCE)
 CPMAddPackage(
         NAME SDL2
         GITHUB_REPOSITORY libsdl-org/SDL
-        GIT_TAG release-2.26.4
+        GIT_TAG release-2.32.10
         GIT_SHALLOW TRUE
         OPTIONS
         "SDL2_DISABLE_INSTALL ON"
@@ -21,9 +21,13 @@ if (SDL2_ADDED)
 
     # Create a target that copies headers at build time, when they change
     string(TOLOWER "${CMAKE_BUILD_TYPE}" lower_build_type)
+    set(SDL2_CONFIG_HEADER "${SDL2_BINARY_DIR}/include-config-${lower_build_type}/SDL_config.h")
+    if(NOT EXISTS "${SDL2_CONFIG_HEADER}")
+        set(SDL2_CONFIG_HEADER "${SDL2_BINARY_DIR}/include-config-${lower_build_type}/SDL2/SDL_config.h")
+    endif()
     add_custom_target(sdl_copy_headers_in_build_dir
             COMMAND ${CMAKE_COMMAND} -E copy_directory "${SDL2_BINARY_DIR}/include" "${CMAKE_BINARY_DIR}/SDLHeaders/SDL2"
-            COMMAND ${CMAKE_COMMAND} -E copy "${SDL2_BINARY_DIR}/include-config-${lower_build_type}/SDL_config.h" "${CMAKE_BINARY_DIR}/SDLHeaders/SDL2/"
+            COMMAND ${CMAKE_COMMAND} -E copy "${SDL2_CONFIG_HEADER}" "${CMAKE_BINARY_DIR}/SDLHeaders/SDL2/"
             DEPENDS ${SDL2_HEADERS})
 
 
