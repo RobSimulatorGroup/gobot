@@ -195,7 +195,7 @@ Robotics algorithms can later live as plugins, Python packages, C++ services wit
 
 Goal: make Gobot able to train and run policies that control robots walking or running inside Gobot scenes. The first target should be a single articulated robot, such as a humanoid or quadruped, running on a flat ground plane with deterministic reset and repeatable stepping. Do not start with a large distributed RL stack; first make one environment reliable.
 
-Python is the intended top-level RL workflow. Users should eventually train and evaluate policies from Python, while Gobot's C++ layer owns deterministic simulation, robot state extraction, joint controllers, reset, reward, and termination. Do not implement Python bindings first; design the C++ API in a shape that can be bound cleanly, then expose it to Python after the C++ environment API is covered by tests.
+Python is the intended top-level RL workflow. Users should train and evaluate policies through the `gobot` Python package and ordinary Python training scripts, while Gobot's C++ layer owns deterministic simulation, robot state extraction, joint controllers, reset, reward, and termination. Do not make a separate `gobot_headless` executable the primary training entry point; keep training orchestration in Python and expose stable C++ environment services through bindings. Do not implement Python bindings first; design the C++ API in a shape that can be bound cleanly, then expose it to Python after the C++ environment API is covered by tests.
 
 Target Python workflow:
 
@@ -262,8 +262,8 @@ Recommended C++ service shape:
 
 Minimal locomotion environment phases:
 
-1. Build one headless deterministic environment:
-   load scene, build physics world, reset robot pose, step without rendering, and verify repeated seeds produce identical observations.
+1. Build one Python-driven deterministic environment:
+   load scene through the Python API, build physics world, reset robot pose, step without rendering, and verify repeated seeds produce identical observations.
 2. Add robot action/state plumbing:
    map policy action vectors to named joints, clamp to limits, apply PD or torque control, and read back joint/base/contact state.
 3. Add the first PD joint controller:
@@ -278,8 +278,8 @@ Minimal locomotion environment phases:
    expose `env.reset(seed)`, `env.step(action)`, `env.observation_space`, `env.action_space`, and scene loading.
 8. Add compatibility with Gymnasium-style wrappers:
    keep this in Python or a thin adapter layer; do not make core engine APIs depend on Gymnasium.
-9. Add vectorized/headless training support:
-   multiple worlds, no editor windows, optional render capture for evaluation, and deterministic seeding per environment.
+9. Add vectorized Python training support:
+   multiple worlds from Python, no editor windows, optional render capture for evaluation, and deterministic seeding per environment.
 
 Important boundaries:
 
@@ -287,7 +287,7 @@ Important boundaries:
 - Backend-specific details may live below the physics backend interface, but observations/actions must use Gobot names and engine units.
 - Do not write policy logic into `Robot3D`; keep robot assets separate from controllers and training tasks.
 - Do not make imported URDF/MJCF files the only source of truth for runtime control. Gobot scene data should own the editable robot/environment composition, while physics backends compile the runtime model from that state.
-- Prefer headless tests before editor features. The editor can later inspect, debug, and launch RL environments, but training must work without the editor.
+- Prefer Python-level headless tests before editor features. The editor can later inspect, debug, and launch RL environments, but training must work as normal Python code without the editor or a separate headless executable.
 
 ## Development Rules
 

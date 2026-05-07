@@ -34,8 +34,6 @@
 namespace gobot::python {
 namespace {
 
-EngineContext* s_active_app_context = nullptr;
-
 enum class PyNodeOwnership {
     Borrowed,
     DetachedOwned,
@@ -188,54 +186,6 @@ void ExecuteSetNodeProperty(Node* node, const std::string& property_name, Varian
     throw py::error_already_set();
 }
 
-struct GobotRuntime {
-    ProjectSettings* project_settings{nullptr};
-    PhysicsServer* physics_server{nullptr};
-    SimulationServer* app_simulation_server{nullptr};
-    std::unique_ptr<EngineContext> app_context;
-    bool scene_initializer_ready{false};
-
-    GobotRuntime() {
-        project_settings = Object::New<ProjectSettings>();
-        physics_server = Object::New<PhysicsServer>();
-        app_simulation_server = Object::New<SimulationServer>();
-        app_context = std::make_unique<EngineContext>(project_settings,
-                                                      physics_server,
-                                                      app_simulation_server);
-        SceneInitializer::Init();
-        scene_initializer_ready = true;
-    }
-
-    ~GobotRuntime() {
-        app_context.reset();
-        if (app_simulation_server != nullptr) {
-            Object::Delete(app_simulation_server);
-            app_simulation_server = nullptr;
-        }
-        if (scene_initializer_ready) {
-            SceneInitializer::Destroy();
-            scene_initializer_ready = false;
-        }
-        if (physics_server != nullptr) {
-            Object::Delete(physics_server);
-            physics_server = nullptr;
-        }
-        if (project_settings != nullptr) {
-            Object::Delete(project_settings);
-            project_settings = nullptr;
-        }
-    }
-
-    EngineContext& GetAppContext() {
-        return *app_context;
-    }
-};
-
-GobotRuntime& Runtime() {
-    static GobotRuntime runtime;
-    return runtime;
-}
-
 Robot3D* CreateTestRobotScene() {
     auto* robot = Object::New<Robot3D>();
     robot->SetName("robot");
@@ -344,9 +294,7 @@ struct PyRLEnvironment {
     PyRLEnvironment(const std::string& scene_path,
                     const std::string& robot,
                     const std::string& backend) {
-        if (s_active_app_context == nullptr) {
-            Runtime();
-        }
+        GetActiveAppContext();
         simulation = Object::New<SimulationServer>(ParseBackend(backend));
         environment = Object::New<RLEnvironment>(simulation);
         scene_root = scene_path.empty() ? static_cast<Node*>(CreateTestRobotScene()) : LoadSceneRoot(scene_path);
@@ -699,27 +647,9 @@ py::dict StepInfoFromResult(const py::dict& result) {
 
 } // namespace
 
-void SetActiveAppContext(EngineContext* context) {
-    s_active_app_context = context;
-}
-
-EngineContext& GetActiveAppContext() {
-    if (s_active_app_context != nullptr) {
-        return *s_active_app_context;
-    }
-    return Runtime().GetAppContext();
-}
-
-EngineContext* GetActiveAppContextOrNull() {
-    return s_active_app_context;
-}
-
 namespace {
 
 EngineContext& EnsureRuntimeContext() {
-    if (s_active_app_context == nullptr) {
-        Runtime();
-    }
     return GetActiveAppContext();
 }
 

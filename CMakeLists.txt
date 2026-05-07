@@ -16,6 +16,7 @@ option(GOB_BUILD_OPENUSD "build OpenUSD scene importer/exporter support" OFF)
 option(GOB_BUILD_ASSIMP "build mesh import support through Assimp" ON)
 option(GOB_BUILD_MUJOCO "build MuJoCo CPU physics backend support" OFF)
 option(GOB_BUILD_PYTHON_BINDINGS "build Python bindings through pybind11" ON)
+option(GOB_ENABLE_PYTHON_EMBED "enable embedded Python runtime when a Python embed library is available" ON)
 option(GOB_FETCH_MUJOCO "download MuJoCo from the official GitHub repository when GOB_BUILD_MUJOCO is ON and no local SDK/package is found" OFF)
 set(GOB_MUJOCO_ROOT "" CACHE PATH "MuJoCo SDK or install prefix. Supports either a CMake package install or an extracted SDK with include/ and lib/.")
 set(GOB_MUJOCO_GIT_TAG "3.8.0" CACHE STRING "MuJoCo release tag used when GOB_FETCH_MUJOCO is ON")
@@ -239,9 +240,11 @@ file(GLOB_RECURSE SOURCE_DRIVERS CONFIGURE_DEPENDS "src/gobot/drivers/*.cpp")
 file(GLOB_RECURSE SOURCE_RENDERING CONFIGURE_DEPENDS "src/gobot/rendering/*.cpp")
 file(GLOB_RECURSE SOURCE_EDITOR CONFIGURE_DEPENDS "src/gobot/editor/*.cpp")
 file(GLOB_RECURSE SOURCE_MAIN CONFIGURE_DEPENDS "src/gobot/main/*.cpp")
+set(SOURCE_PYTHON_RUNTIME
+        src/gobot/python/python_app_context.cpp)
 
 # https://github.com/bincrafters/community/issues/466#issuecomment-426265654
-add_library(gobot SHARED ${SOURCE_DRIVERS} ${SOURCE_MAIN} ${SOURCE_CORE} ${SOURCE_RENDERING} ${SOURCE_SCENE} ${SOURCE_PHYSICS} ${SOURCE_SIMULATION} ${SOURCE_EDITOR})
+add_library(gobot SHARED ${SOURCE_DRIVERS} ${SOURCE_MAIN} ${SOURCE_CORE} ${SOURCE_RENDERING} ${SOURCE_SCENE} ${SOURCE_PHYSICS} ${SOURCE_SIMULATION} ${SOURCE_EDITOR} ${SOURCE_PYTHON_RUNTIME})
 target_compile_options(gobot PUBLIC "-fno-gnu-unique" "-Wno-volatile" "-Wno-deprecated-enum-enum-conversion")
 target_sources(gobot
         PRIVATE
@@ -292,24 +295,23 @@ endif()
 
 if(GOB_BUILD_PYTHON_BINDINGS)
     target_compile_definitions(gobot PUBLIC GOBOT_HAS_PYTHON=1)
-    target_sources(gobot
-        PRIVATE
+    set(GOBOT_PYTHON_BINDING_SOURCES
             src/gobot/python/python_manual_bindings.cpp
             src/gobot/python/python_reflected_bindings.cpp
-            src/gobot/python/python_variant_bridge.cpp
-    )
-    if(Python3_Development.Embed_FOUND)
+            src/gobot/python/python_variant_bridge.cpp)
+    if(GOB_ENABLE_PYTHON_EMBED AND Python3_Development.Embed_FOUND)
         target_compile_definitions(gobot PUBLIC GOBOT_HAS_PYTHON_EMBED=1)
         target_sources(gobot PRIVATE src/gobot/python/python_script_runner.cpp)
         target_link_libraries(gobot PUBLIC pybind11::embed)
     else()
-        message(WARNING "Python3 Development.Embed was not found. Editor/headless Python script execution will be disabled in this build.")
+        message(WARNING "Python3 Development.Embed was not found. Editor Python script execution will be disabled in this build.")
         target_sources(gobot PRIVATE src/gobot/python/python_script_runner_stub.cpp)
         target_link_libraries(gobot PUBLIC pybind11::headers Python3::Module)
     endif()
 
     pybind11_add_module(gobot_python MODULE
             src/gobot/python/python_module.cpp
+            ${GOBOT_PYTHON_BINDING_SOURCES}
     )
     target_link_libraries(gobot_python PRIVATE gobot)
     set_target_properties(gobot_python
@@ -335,7 +337,9 @@ if(GOB_BUILD_PYTHON_BINDINGS)
             COMMENT "Copying Gobot Python package files"
     )
     add_dependencies(gobot_python gobot_python_package)
-    install(TARGETS gobot_python gobot LIBRARY DESTINATION "gobot" COMPONENT python)
+    install(TARGETS gobot_python gobot
+            RUNTIME DESTINATION "gobot" COMPONENT python
+            LIBRARY DESTINATION "gobot" COMPONENT python)
     install(DIRECTORY "${CMAKE_CURRENT_SOURCE_DIR}/python/gobot/"
             DESTINATION "gobot" COMPONENT python
             FILES_MATCHING
@@ -384,29 +388,33 @@ target_include_directories(gobot
 
 
 set(GOBOT_PYTHON_EMBED_SOURCE "")
-if(GOB_BUILD_PYTHON_BINDINGS)
+if(GOB_BUILD_PYTHON_BINDINGS AND GOB_ENABLE_PYTHON_EMBED AND Python3_Development.Embed_FOUND)
     set(GOBOT_PYTHON_EMBED_SOURCE src/gobot/python/python_embed_module.cpp)
+    set(GOBOT_PYTHON_EMBED_BINDING_SOURCES ${GOBOT_PYTHON_BINDING_SOURCES})
 endif()
 
 file(GLOB_RECURSE SOURCE_PLATFORM CONFIGURE_DEPENDS "src/gobot/platform/linux/*.cpp")
 list(REMOVE_ITEM SOURCE_PLATFORM
         "${CMAKE_CURRENT_SOURCE_DIR}/src/gobot/platform/linux/gobot_linux.cpp"
-        "${CMAKE_CURRENT_SOURCE_DIR}/src/gobot/platform/linux/gobot_headless.cpp"
 )
 add_executable(gobot_editor
         ${SOURCE_PLATFORM}
         ${GOBOT_PYTHON_EMBED_SOURCE}
+        ${GOBOT_PYTHON_EMBED_BINDING_SOURCES}
         src/gobot/platform/editor_embedded_resources.cpp
         src/gobot/platform/linux/gobot_linux.cpp
 )
 add_dependencies(gobot_editor gobot_editor_resources)
 target_link_libraries(gobot_editor PRIVATE gobot)
-
-add_executable(gobot_headless
-        ${GOBOT_PYTHON_EMBED_SOURCE}
-        src/gobot/platform/linux/gobot_headless.cpp
+set_target_properties(gobot_editor
+    PROPERTIES
+        INSTALL_RPATH "$ORIGIN"
 )
-target_link_libraries(gobot_headless PRIVATE gobot)
+
+if(GOB_BUILD_PYTHON_BINDINGS)
+    install(TARGETS gobot_editor
+            RUNTIME DESTINATION "gobot" COMPONENT python)
+endif()
 
 if (GOB_BUILD_EXPERIMENT)
     add_subdirectory(experiment)

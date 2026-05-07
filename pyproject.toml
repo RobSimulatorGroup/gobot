@@ -24,6 +24,9 @@ Homepage = "https://github.com/RobSimulatorGroup/gobot"
 Repository = "https://github.com/RobSimulatorGroup/gobot"
 Issues = "https://github.com/RobSimulatorGroup/gobot/issues"
 
+[project.scripts]
+gobot-editor = "gobot.cli:editor"
+
 [tool.scikit-build]
 cmake.build-type = "Release"
 build-dir = "build/{wheel_tag}"
