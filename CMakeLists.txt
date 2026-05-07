@@ -199,7 +199,7 @@ endif()
 CPMAddPackage("gh:jarro2783/cxxopts@3.0.0")
 
 if(GOB_BUILD_PYTHON_BINDINGS)
-    find_package(Python3 REQUIRED COMPONENTS Interpreter Development.Module Development.Embed)
+    find_package(Python3 REQUIRED COMPONENTS Interpreter Development.Module OPTIONAL_COMPONENTS Development.Embed)
     if(EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/3rdparty/pybind11/CMakeLists.txt")
         add_subdirectory(3rdparty/pybind11)
     else()
@@ -295,9 +295,16 @@ if(GOB_BUILD_PYTHON_BINDINGS)
             src/gobot/python/python_manual_bindings.cpp
             src/gobot/python/python_reflected_bindings.cpp
             src/gobot/python/python_variant_bridge.cpp
-            src/gobot/python/python_script_runner.cpp
     )
-    target_link_libraries(gobot PUBLIC pybind11::embed)
+    if(Python3_Development.Embed_FOUND)
+        target_compile_definitions(gobot PUBLIC GOBOT_HAS_PYTHON_EMBED=1)
+        target_sources(gobot PRIVATE src/gobot/python/python_script_runner.cpp)
+        target_link_libraries(gobot PUBLIC pybind11::embed)
+    else()
+        message(WARNING "Python3 Development.Embed was not found. Editor/headless Python script execution will be disabled in this build.")
+        target_sources(gobot PRIVATE src/gobot/python/python_script_runner_stub.cpp)
+        target_link_libraries(gobot PUBLIC pybind11::headers)
+    endif()
 
     pybind11_add_module(gobot_python MODULE
             src/gobot/python/python_module.cpp
