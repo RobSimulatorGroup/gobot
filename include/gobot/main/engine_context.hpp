@@ -67,7 +67,6 @@ public:
     void SetLoadSceneCallback(LoadSceneCallback callback);
     void NotifySceneChanged();
     void NotifySceneMutated();
-    void MarkSceneDirty();
     bool ExecuteSceneCommand(std::unique_ptr<SceneCommand> command);
     bool UndoSceneCommand();
     bool RedoSceneCommand();
@@ -81,6 +80,7 @@ public:
     std::string GetUndoSceneCommandName() const;
     std::string GetRedoSceneCommandName() const;
     void MarkSceneClean();
+    void MarkSceneDirtyBaseline();
 
 private:
     void ClearOwnedScene();
@@ -101,9 +101,6 @@ private:
     SceneChangedCallback scene_changed_callback_;
     LoadSceneCallback load_scene_callback_;
     SceneCommandStack scene_command_stack_;
-    // Transitional bridge for editor code paths that still mutate nodes
-    // directly. Python and new editor operations should use scene commands.
-    bool external_scene_dirty_{false};
 };
 
 } // namespace gobot

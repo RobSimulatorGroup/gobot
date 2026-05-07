@@ -1,9 +1,12 @@
 import gobot
+import numpy as np
 from gobot.gym_adapter import GobotBox, GobotGymEnv, space_from_spec
 from gobot_gym_adapter import GobotGymEnv as LegacyGobotGymEnv
 
 
 def assert_close_tuple(actual, expected):
+    if hasattr(actual, "tolist"):
+        actual = actual.tolist()
     assert len(actual) == len(expected)
     for left, right in zip(actual, expected):
         assert abs(left - right) < 1e-9
@@ -77,8 +80,10 @@ def main():
     assert [child.name for child in root.children] == ["base", "joint"]
     base = root.child(0)
     assert base.type == "Link3D"
+    assert isinstance(base.position, np.ndarray)
+    assert base.position.shape == (3,)
     assert_close_tuple(base.get("position"), (0.0, 0.0, 1.0))
-    base.set("position", (1.0, 2.0, 3.0))
+    base.set("position", np.array([1.0, 2.0, 3.0]))
     assert_close_tuple(base.get("position"), (1.0, 2.0, 3.0))
     assert gobot.undo() is True
     assert_close_tuple(base.get("position"), (0.0, 0.0, 1.0))

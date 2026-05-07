@@ -4,6 +4,7 @@
 
 #include "gobot/log.hpp"
 #include "gobot/scene/node.hpp"
+#include "gobot/scene/node_3d.hpp"
 
 namespace gobot {
 namespace {
@@ -442,6 +443,64 @@ std::string RemoveChildNodeCommand::GetName() const {
     return delete_child_ ? "Delete Child Node" : "Detach Child Node";
 }
 
+AddPackedSceneChildCommand::AddPackedSceneChildCommand(ObjectID parent_id,
+                                                       Ref<PackedScene> packed_scene,
+                                                       bool force_readable_name,
+                                                       bool mark_scene_instance)
+    : parent_id_(parent_id),
+      packed_scene_(std::move(packed_scene)),
+      force_readable_name_(force_readable_name),
+      mark_scene_instance_(mark_scene_instance) {
+}
+
+bool AddPackedSceneChildCommand::Do() {
+    Node* parent = ResolveNode(parent_id_, GetName(), "parent");
+    if (parent == nullptr || !packed_scene_.IsValid()) {
+        return false;
+    }
+
+    Node* child = nullptr;
+    if (child_id_.IsValid()) {
+        child = ResolveNode(child_id_, GetName(), "child");
+    } else {
+        child = packed_scene_->Instantiate();
+        if (child == nullptr) {
+            LOG_ERROR("{} failed: cannot instantiate packed scene child.", GetName());
+            return false;
+        }
+        child_id_ = child->GetInstanceId();
+        if (mark_scene_instance_) {
+            child->SetSceneInstance(packed_scene_);
+        }
+    }
+
+    if (child == nullptr || child->GetParent() != nullptr) {
+        LOG_ERROR("{} failed: child is unavailable or already parented.", GetName());
+        return false;
+    }
+
+    parent->AddChild(child, force_readable_name_);
+    return true;
+}
+
+bool AddPackedSceneChildCommand::Undo() {
+    Node* parent = ResolveNode(parent_id_, GetName(), "parent");
+    Node* child = ResolveNode(child_id_, GetName(), "child");
+    if (parent == nullptr || child == nullptr || child->GetParent() != parent) {
+        return false;
+    }
+    parent->RemoveChild(child);
+    return true;
+}
+
+std::string AddPackedSceneChildCommand::GetName() const {
+    return "Add Packed Scene Child";
+}
+
+ObjectID AddPackedSceneChildCommand::GetChildId() const {
+    return child_id_;
+}
+
 ReparentNodeCommand::ReparentNodeCommand(ObjectID node_id, ObjectID new_parent_id)
     : node_id_(node_id),
       new_parent_id_(new_parent_id) {
@@ -486,6 +545,57 @@ bool ReparentNodeCommand::Undo() {
 
 std::string ReparentNodeCommand::GetName() const {
     return "Reparent Node";
+}
+
+SetNode3DTransformCommand::SetNode3DTransformCommand(ObjectID node_id, Affine3 new_transform, bool global)
+    : node_id_(node_id),
+      new_transform_(std::move(new_transform)),
+      global_(global) {
+}
+
+bool SetNode3DTransformCommand::Do() {
+    auto* node = Object::PointerCastTo<Node3D>(ResolveNode(node_id_, GetName(), "target"));
+    if (node == nullptr) {
+        return false;
+    }
+    if (!captured_old_transform_) {
+        old_transform_ = global_ ? node->GetGlobalTransform() : node->GetTransform();
+        captured_old_transform_ = true;
+    }
+    if (global_) {
+        node->SetGlobalTransform(new_transform_);
+    } else {
+        node->SetTransform(new_transform_);
+    }
+    return true;
+}
+
+bool SetNode3DTransformCommand::Undo() {
+    auto* node = Object::PointerCastTo<Node3D>(ResolveNode(node_id_, GetName(), "target"));
+    if (node == nullptr || !captured_old_transform_) {
+        return false;
+    }
+    if (global_) {
+        node->SetGlobalTransform(old_transform_);
+    } else {
+        node->SetTransform(old_transform_);
+    }
+    return true;
+}
+
+std::string SetNode3DTransformCommand::GetName() const {
+    return "Set Node3D Transform";
+}
+
+bool SetNode3DTransformCommand::MergeWith(const SceneCommand& next) {
+    const auto* set_transform = dynamic_cast<const SetNode3DTransformCommand*>(&next);
+    if (set_transform == nullptr ||
+        set_transform->node_id_ != node_id_ ||
+        set_transform->global_ != global_) {
+        return false;
+    }
+    new_transform_ = set_transform->new_transform_;
+    return true;
 }
 
 } // namespace gobot

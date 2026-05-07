@@ -17,8 +17,10 @@
 #include "gobot/core/os/main_loop.hpp"
 #include "gobot/editor/imgui/imgui_utilities.hpp"
 #include "gobot/editor/editor.hpp"
+#include "gobot/main/engine_context.hpp"
 #include "gobot/scene/node_3d.hpp"
 #include "gobot/scene/node_creation_registry.hpp"
+#include "gobot/scene/scene_command.hpp"
 #include "imgui_extension/icon_fonts/icons_material_design_icons.h"
 #include "imgui_stdlib.h"
 #include "imgui.h"
@@ -186,7 +188,16 @@ bool SceneEditorPanel::CreateSelectedAddNode() {
         return false;
     }
 
-    add_child_parent_->AddChild(node, true);
+    auto* editor = Editor::GetInstance();
+    auto* context = editor->GetEngineContext();
+    if (context == nullptr ||
+        !context->ExecuteSceneCommand(std::make_unique<AddChildNodeCommand>(
+                add_child_parent_->GetInstanceId(),
+                node->GetInstanceId(),
+                true))) {
+        Object::Delete(node);
+        return false;
+    }
     Editor::GetInstance()->SetSelected(node);
     return true;
 }
@@ -214,9 +225,12 @@ bool SceneEditorPanel::DeleteNode(Node* node) {
         double_clicked_ = nullptr;
     }
 
-    Node::Delete(node);
-    editor->MarkSceneDirty();
-    return true;
+    auto* context = editor->GetEngineContext();
+    return context != nullptr &&
+           context->ExecuteSceneCommand(std::make_unique<RemoveChildNodeCommand>(
+                   parent->GetInstanceId(),
+                   node->GetInstanceId(),
+                   true));
 }
 
 void SceneEditorPanel::DrawAddChildDialog() {
@@ -517,7 +531,9 @@ bool SceneEditorPanel::DrawNode(Node* node)
             auto value = name;
             ImGui::PushItemWidth(-1);
             if(ImGui::InputText("##Name", &value)) {
-                node->SetName(value);
+                if (auto* context = editor->GetEngineContext()) {
+                    context->ExecuteSceneCommand(std::make_unique<RenameNodeCommand>(node->GetInstanceId(), value));
+                }
             }
             ImGui::PopStyleVar();
         }

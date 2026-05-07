@@ -10,10 +10,12 @@
 #include "gobot/editor/node3d_editor.hpp"
 #include "gobot/editor/editor.hpp"
 #include "gobot/editor/editor_viewport_renderer.hpp"
+#include "gobot/main/engine_context.hpp"
 #include "gobot/scene/camera_3d.hpp"
 #include "gobot/scene/joint_3d.hpp"
 #include "gobot/scene/node.hpp"
 #include "gobot/scene/robot_3d.hpp"
+#include "gobot/scene/scene_command.hpp"
 #include "gobot/error_macros.hpp"
 #include "gobot/rendering/render_server.hpp"
 #include "gobot/editor/imgui/imgui_utilities.hpp"
@@ -429,9 +431,14 @@ void SceneView3DPanel::ProcessViewportInput(Node* scene_root,
             const float current_angle = AngleAroundScreenPoint(drag_joint_screen_center_, mouse_position);
             const float delta_angle = WrappedAngleDelta(drag_last_angle_, current_angle);
             if (std::abs(delta_angle) > CMP_EPSILON) {
-                dragged_joint_->SetJointPosition(old_joint_position + drag_joint_rotation_sign_ * delta_angle);
-                if (std::abs(dragged_joint_->GetJointPosition() - old_joint_position) > CMP_EPSILON) {
-                    Editor::GetInstance()->MarkSceneDirty();
+                const RealType new_joint_position = old_joint_position + drag_joint_rotation_sign_ * delta_angle;
+                if (std::abs(new_joint_position - old_joint_position) > CMP_EPSILON) {
+                    if (auto* context = Editor::GetInstance()->GetEngineContext()) {
+                        context->ExecuteSceneCommand(std::make_unique<SetNodePropertyCommand>(
+                                dragged_joint_->GetInstanceId(),
+                                "joint_position",
+                                Variant(new_joint_position)));
+                    }
                 }
             }
             drag_last_angle_ = current_angle;
@@ -440,9 +447,14 @@ void SceneView3DPanel::ProcessViewportInput(Node* scene_root,
                     ? mouse_delta.x * drag_joint_screen_axis_.x + mouse_delta.y * drag_joint_screen_axis_.y
                     : mouse_delta.x - mouse_delta.y;
             if (std::abs(signed_pixels) > CMP_EPSILON) {
-                dragged_joint_->SetJointPosition(old_joint_position + signed_pixels * 0.005f);
-                if (std::abs(dragged_joint_->GetJointPosition() - old_joint_position) > CMP_EPSILON) {
-                    Editor::GetInstance()->MarkSceneDirty();
+                const RealType new_joint_position = old_joint_position + signed_pixels * 0.005f;
+                if (std::abs(new_joint_position - old_joint_position) > CMP_EPSILON) {
+                    if (auto* context = Editor::GetInstance()->GetEngineContext()) {
+                        context->ExecuteSceneCommand(std::make_unique<SetNodePropertyCommand>(
+                                dragged_joint_->GetInstanceId(),
+                                "joint_position",
+                                Variant(new_joint_position)));
+                    }
                 }
             }
         }

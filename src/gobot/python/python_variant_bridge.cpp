@@ -4,6 +4,8 @@
 #include <stdexcept>
 #include <string>
 
+#include <pybind11/eigen.h>
+#include <pybind11/numpy.h>
 #include <pybind11/stl.h>
 
 namespace gobot::python {
@@ -119,11 +121,18 @@ Variant SequenceToVariantForType(const py::handle& object, const Type& type) {
 
 } // namespace
 
-py::tuple Vector3ToPython(const Vector3& vector) {
-    return py::make_tuple(vector.x(), vector.y(), vector.z());
+py::object Vector3ToPython(const Vector3& vector) {
+    return py::cast(vector);
 }
 
 Vector3 PythonToVector3(const py::handle& object) {
+    if (py::isinstance<py::array>(object)) {
+        py::array array = py::reinterpret_borrow<py::array>(object);
+        if (array.ndim() != 1 || array.shape(0) != 3) {
+            throw std::invalid_argument("expected a 1D numpy vector with shape (3,)");
+        }
+        return py::cast<Vector3>(object);
+    }
     py::sequence sequence = py::reinterpret_borrow<py::sequence>(object);
     if (sequence.size() != 3) {
         throw std::invalid_argument("expected a 3-element vector");

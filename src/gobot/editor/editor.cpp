@@ -13,6 +13,7 @@
 #include <string>
 
 #include "gobot/core/config/project_setting.hpp"
+#include "gobot/core/io/resource_loader.hpp"
 #include "gobot/core/os/input.hpp"
 #include "gobot/editor/edited_scene.hpp"
 #include "gobot/editor/node3d_editor.hpp"
@@ -36,11 +37,13 @@
 #include "gobot/scene/mesh_instance_3d.hpp"
 #include "gobot/scene/node_3d.hpp"
 #include "gobot/scene/resources/box_shape_3d.hpp"
+#include "gobot/scene/resources/packed_scene.hpp"
 #include "gobot/scene/resources/primitive_mesh.hpp"
 #include "gobot/simulation/simulation_server.hpp"
 #include "gobot/core/config/engine.hpp"
 #include "gobot/core/config/project_setting.hpp"
 #include "gobot/editor/imgui/imgui_utilities.hpp"
+#include "gobot/scene/scene_command.hpp"
 #include "imgui.h"
 #include "imgui_internal.h"
 #include "imgui_extension/file_browser/ImFileBrowser.h"
@@ -259,7 +262,9 @@ void Editor::RequestImportSceneFromPath(const std::string& path) {
         if (LoadEditedScene(path)) {
             current_scene_path_ = NativeScenePathForImport(std::filesystem::path(path));
             BindEngineContextToEditedScene();
-            MarkSceneDirty();
+            if (engine_context_ != nullptr) {
+                engine_context_->MarkSceneDirtyBaseline();
+            }
             LOG_INFO("Imported scene: {}. Native save target: {}", path, current_scene_path_);
         } else {
             LOG_ERROR("Failed to import scene: {}", path);
@@ -268,18 +273,34 @@ void Editor::RequestImportSceneFromPath(const std::string& path) {
 }
 
 bool Editor::AddSceneToEditedScene(const std::string& path) {
-    if (edited_scene_ == nullptr) {
+    Node3D* root = GetEditedSceneRoot();
+    if (root == nullptr || engine_context_ == nullptr) {
         LOG_ERROR("Cannot add scene '{}': no edited scene.", path);
         return false;
     }
 
-    Node3D* added = edited_scene_->AddSceneFromPath(path);
-    if (added == nullptr) {
+    Ref<Resource> resource = ResourceLoader::Load(path, "PackedScene", ResourceFormatLoader::CacheMode::Reuse);
+    Ref<PackedScene> packed_scene = dynamic_pointer_cast<PackedScene>(resource);
+    if (!packed_scene.IsValid()) {
+        LOG_ERROR("Cannot add scene '{}': ResourceLoader did not return a PackedScene.", path);
+        return false;
+    }
+    if (packed_scene->GetPath().empty()) {
+        packed_scene->SetPath(path, false);
+    }
+
+    auto command = std::make_unique<AddPackedSceneChildCommand>(
+            root->GetInstanceId(),
+            packed_scene,
+            true,
+            true);
+    AddPackedSceneChildCommand* command_ptr = command.get();
+    if (!engine_context_->ExecuteSceneCommand(std::move(command))) {
         return false;
     }
 
+    auto* added = Object::PointerCastTo<Node3D>(ObjectDB::GetInstance(command_ptr->GetChildId()));
     selected_ = added;
-    MarkSceneDirty();
     return true;
 }
 
@@ -302,7 +323,6 @@ bool Editor::AddGroundToEditedScene() {
     visual->SetMesh(ground_mesh);
     visual->SetSurfaceColor({0.28f, 0.30f, 0.32f, 1.0f});
     visual->SetPosition(ground_position);
-    root->AddChild(visual, true);
 
     auto* collision = Object::New<CollisionShape3D>();
     collision->SetName("ground_collision");
@@ -310,10 +330,41 @@ bool Editor::AddGroundToEditedScene() {
     ground_shape->SetSize(ground_size);
     collision->SetShape(ground_shape);
     collision->SetPosition(ground_position);
-    root->AddChild(collision, true);
+
+    if (engine_context_ != nullptr) {
+        if (!engine_context_->BeginSceneTransaction("Add Ground")) {
+            Object::Delete(visual);
+            Object::Delete(collision);
+            return false;
+        }
+        if (!engine_context_->ExecuteSceneCommand(std::make_unique<AddChildNodeCommand>(
+                root->GetInstanceId(),
+                visual->GetInstanceId(),
+                true))) {
+            engine_context_->CancelSceneTransaction();
+            Object::Delete(visual);
+            Object::Delete(collision);
+            return false;
+        }
+        if (!engine_context_->ExecuteSceneCommand(std::make_unique<AddChildNodeCommand>(
+                root->GetInstanceId(),
+                collision->GetInstanceId(),
+                true))) {
+            engine_context_->CancelSceneTransaction();
+            Object::Delete(collision);
+            return false;
+        }
+        if (!engine_context_->CommitSceneTransaction()) {
+            Object::Delete(collision);
+            return false;
+        }
+    } else {
+        Object::Delete(visual);
+        Object::Delete(collision);
+        return false;
+    }
 
     selected_ = visual;
-    MarkSceneDirty();
     LOG_INFO("Added ground to scene root '{}'.", root->GetName());
     return true;
 }
@@ -333,13 +384,7 @@ bool Editor::OpenPythonScriptFromPath(const std::string& path) {
 }
 
 void Editor::MarkSceneDirty() {
-    if (engine_context_ != nullptr) {
-        engine_context_->MarkSceneDirty();
-        scene_dirty_ = engine_context_->IsSceneDirty();
-        return;
-    }
-    ++scene_change_version_;
-    scene_dirty_ = true;
+    LOG_ERROR("Editor::MarkSceneDirty() is not a mutation API. Use SceneCommand through EngineContext.");
 }
 
 void Editor::ClearSceneDirty() {

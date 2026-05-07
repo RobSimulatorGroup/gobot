@@ -6,6 +6,7 @@
 #include <vector>
 
 #include "gobot/core/object.hpp"
+#include "gobot/core/math/geometry.hpp"
 #include "gobot/scene/resources/packed_scene.hpp"
 
 namespace gobot {
@@ -116,6 +117,26 @@ private:
     bool delete_child_{false};
 };
 
+class GOBOT_EXPORT AddPackedSceneChildCommand : public SceneCommand {
+public:
+    AddPackedSceneChildCommand(ObjectID parent_id,
+                               Ref<PackedScene> packed_scene,
+                               bool force_readable_name,
+                               bool mark_scene_instance);
+
+    bool Do() override;
+    bool Undo() override;
+    std::string GetName() const override;
+    [[nodiscard]] ObjectID GetChildId() const;
+
+private:
+    ObjectID parent_id_;
+    ObjectID child_id_;
+    Ref<PackedScene> packed_scene_;
+    bool force_readable_name_{false};
+    bool mark_scene_instance_{false};
+};
+
 class GOBOT_EXPORT ReparentNodeCommand : public SceneCommand {
 public:
     ReparentNodeCommand(ObjectID node_id, ObjectID new_parent_id);
@@ -129,6 +150,23 @@ private:
     ObjectID old_parent_id_;
     ObjectID new_parent_id_;
     bool captured_old_parent_{false};
+};
+
+class GOBOT_EXPORT SetNode3DTransformCommand : public SceneCommand {
+public:
+    SetNode3DTransformCommand(ObjectID node_id, Affine3 new_transform, bool global);
+
+    bool Do() override;
+    bool Undo() override;
+    std::string GetName() const override;
+    bool MergeWith(const SceneCommand& next) override;
+
+private:
+    ObjectID node_id_;
+    Affine3 old_transform_{Affine3::Identity()};
+    Affine3 new_transform_{Affine3::Identity()};
+    bool global_{false};
+    bool captured_old_transform_{false};
 };
 
 } // namespace gobot

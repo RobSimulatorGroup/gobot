@@ -10,6 +10,10 @@
 #include <utility>
 
 #include "gobot/editor/editor.hpp"
+#include "gobot/main/engine_context.hpp"
+#include "gobot/log.hpp"
+#include "gobot/scene/node.hpp"
+#include "gobot/scene/scene_command.hpp"
 
 namespace gobot {
 namespace {
@@ -70,13 +74,18 @@ bool PropertyDataModel::SetValue(Argument argument) {
         return true;
     }
 
-    const bool set = property_.set_value(variant_cache_.instance, argument);
-    if (set) {
+    if (auto* node = Object::PointerCastTo<Node>(variant_cache_.object)) {
         if (auto* editor = Editor::GetInstanceOrNull()) {
-            editor->MarkSceneDirty();
+            auto* context = editor->GetEngineContext();
+            return context != nullptr &&
+                   context->ExecuteSceneCommand(std::make_unique<SetNodePropertyCommand>(
+                           node->GetInstanceId(),
+                           property_cache_.property_name_str,
+                           new_value));
         }
     }
-    return set;
+
+    return false;
 }
 
 Variant PropertyDataModel::GetValue() const {
@@ -104,10 +113,9 @@ Variant SequenceContainerDataModel::GetValue(std::size_t index) const {
 }
 
 void SequenceContainerDataModel::SetValue(std::size_t index, Argument argument) {
-    sc_cache_.variant_list_view.set_value(index, argument);
-    if (auto* editor = Editor::GetInstanceOrNull()) {
-        editor->MarkSceneDirty();
-    }
+    GOB_UNUSED(index);
+    GOB_UNUSED(argument);
+    LOG_ERROR("Sequence property editing is not command-backed yet.");
 }
 
 ///////////////////////////////////////////////////////////////////////////////////

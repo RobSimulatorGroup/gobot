@@ -45,7 +45,7 @@ GOBOT_EXPORT bool SetReflectedPropertyFromPython(Instance instance, const Proper
 
 GOBOT_EXPORT Vector3 PythonToVector3(const py::handle& object);
 
-GOBOT_EXPORT py::tuple Vector3ToPython(const Vector3& vector);
+GOBOT_EXPORT py::object Vector3ToPython(const Vector3& vector);
 
 GOBOT_EXPORT py::dict ReflectedToPythonDict(const Variant& value);
 

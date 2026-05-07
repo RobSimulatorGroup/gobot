@@ -79,7 +79,6 @@ void EngineContext::SetSceneRoot(Node* scene_root, bool take_ownership, const st
         ClearWorld();
         scene_command_stack_.Clear();
         scene_command_stack_.MarkClean();
-        external_scene_dirty_ = false;
         AdvanceSceneEpoch();
         return;
     }
@@ -88,7 +87,6 @@ void EngineContext::SetSceneRoot(Node* scene_root, bool take_ownership, const st
     ClearOwnedScene();
     scene_command_stack_.Clear();
     scene_command_stack_.MarkClean();
-    external_scene_dirty_ = false;
     AdvanceSceneEpoch();
     scene_root_ = scene_root;
     owns_scene_root_ = take_ownership;
@@ -116,7 +114,6 @@ void EngineContext::ClearScene() {
     ClearOwnedScene();
     scene_command_stack_.Clear();
     scene_command_stack_.MarkClean();
-    external_scene_dirty_ = false;
     AdvanceSceneEpoch();
     scene_root_ = nullptr;
     owns_scene_root_ = false;
@@ -259,11 +256,6 @@ void EngineContext::NotifySceneMutated() {
     }
 }
 
-void EngineContext::MarkSceneDirty() {
-    external_scene_dirty_ = true;
-    NotifySceneMutated();
-}
-
 bool EngineContext::ExecuteSceneCommand(std::unique_ptr<SceneCommand> command) {
     if (!scene_command_stack_.Execute(std::move(command))) {
         return false;
@@ -317,7 +309,7 @@ bool EngineContext::CanRedoSceneCommand() const {
 }
 
 bool EngineContext::IsSceneDirty() const {
-    return external_scene_dirty_ || scene_command_stack_.IsDirty();
+    return scene_command_stack_.IsDirty();
 }
 
 std::size_t EngineContext::GetSceneCommandVersion() const {
@@ -333,8 +325,12 @@ std::string EngineContext::GetRedoSceneCommandName() const {
 }
 
 void EngineContext::MarkSceneClean() {
-    external_scene_dirty_ = false;
     scene_command_stack_.MarkClean();
+    NotifySceneMutated();
+}
+
+void EngineContext::MarkSceneDirtyBaseline() {
+    scene_command_stack_.Clear();
     NotifySceneMutated();
 }
 

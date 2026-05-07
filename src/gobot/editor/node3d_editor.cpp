@@ -10,10 +10,12 @@
 #include "gobot/editor/editor.hpp"
 #include "gobot/editor/imgui/scene_view_3d_panel.hpp"
 #include "gobot/error_macros.hpp"
+#include "gobot/main/engine_context.hpp"
 #include "gobot/core/registration.hpp"
 #include "gobot/core/os/input.hpp"
 #include "gobot/core/os/os.hpp"
 #include "gobot/scene/scene_tree.hpp"
+#include "gobot/scene/scene_command.hpp"
 #include "gobot/scene/window.hpp"
 #include "gobot/scene/joint_3d.hpp"
 #include "gobot/scene/robot_3d.hpp"
@@ -303,8 +305,13 @@ void Node3DEditor::OnImGuizmo() {
             for (int i = 0; i < 16; ++i) {
                 model_matrix.data()[i] = static_cast<RealType>(object_matrix[i]);
             }
-            selected_node_3d->SetGlobalTransform(Affine3(model_matrix));
-            Editor::GetInstance()->MarkSceneDirty();
+            auto* editor = Editor::GetInstance();
+            if (auto* context = editor->GetEngineContext()) {
+                context->ExecuteSceneCommand(std::make_unique<SetNode3DTransformCommand>(
+                        selected_node_3d->GetInstanceId(),
+                        Affine3(model_matrix),
+                        true));
+            }
         }
 
         editing_ = ImGuizmo::IsUsing();
