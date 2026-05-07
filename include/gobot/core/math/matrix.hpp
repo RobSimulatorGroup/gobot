@@ -9,6 +9,10 @@
 
 #pragma once
 
+#include <algorithm>
+#include <utility>
+#include <vector>
+
 #include <rttr/type.h>
 #include <Eigen/Dense>
 #include <fmt/ostream.h>
@@ -38,17 +42,21 @@ class Matrix : public Eigen::Matrix<_Scalar, _Rows, _Cols> {
   using BaseType::BaseType;
 
   MatrixData<_Scalar> GetMatrixData() const {
-      // https://stackoverflow.com/questions/22881768/eigen-convert-matrix-to-vector
-    auto self_view = this->reshaped();
+    std::vector<_Scalar> storage(this->size());
+    std::copy(this->data(), this->data() + this->size(), storage.begin());
+
     if constexpr (_Rows != Eigen::Dynamic && _Cols != Eigen::Dynamic) {
-      return {_Rows, _Cols, std::vector(self_view.begin(), self_view.end())};
+      return {_Rows, _Cols, std::move(storage)};
     } else {
-      return {this->rows(), this->cols(),
-              std::vector(self_view.begin(), self_view.end())};
+      return {this->rows(), this->cols(), std::move(storage)};
     };
   }
 
   void SetMatrixData(const MatrixData<_Scalar> &data) {
+    if (data.rows < 0 || data.cols < 0) [[unlikely]] {
+      return;
+    }
+
     if constexpr (_Rows != Eigen::Dynamic) {
       if (data.rows != _Rows) [[unlikely]] {
         return;
@@ -61,7 +69,9 @@ class Matrix : public Eigen::Matrix<_Scalar, _Rows, _Cols> {
       }
     }
 
-    if (data.rows * data.cols != data.storage.size()) [[unlikely]] {
+    const auto expected_size = static_cast<std::size_t>(data.rows) *
+                               static_cast<std::size_t>(data.cols);
+    if (expected_size != data.storage.size()) [[unlikely]] {
       return;
     }
 
@@ -69,8 +79,7 @@ class Matrix : public Eigen::Matrix<_Scalar, _Rows, _Cols> {
       this->resize(data.rows, data.cols);
     }
 
-    auto self_view = this->reshaped();
-    std::copy(data.storage.cbegin(), data.storage.cend(), self_view.begin());
+    std::copy(data.storage.cbegin(), data.storage.cend(), this->data());
   }
 
     // eye is the position of the camera's viewpoint, and center is where you are looking at (a position)

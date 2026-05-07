@@ -8,6 +8,9 @@
 
 #pragma once
 
+#include <algorithm>
+#include <vector>
+
 #include <rttr/type.h>
 
 #include <Eigen/Geometry>
@@ -55,16 +58,18 @@ public:
     }
 
     std::vector<Scalar> GetMatrixData() const {
-        auto self_view = this->matrix().reshaped();
-        return {std::vector(self_view.begin(), self_view.end())};
+        const auto& matrix = this->matrix();
+        std::vector<Scalar> data(matrix.size());
+        std::copy(matrix.data(), matrix.data() + matrix.size(), data.begin());
+        return data;
     }
 
     void SetMatrixData(const std::vector<Scalar> &data) {
-        auto self_view = this->matrix().reshaped();
-        if (self_view.size() != data.size()) [[unlikely]] {
+        auto& matrix = this->matrix();
+        if (matrix.size() != data.size()) [[unlikely]] {
             return;
         }
-        std::copy(data.cbegin(), data.cend(), self_view.begin());
+        std::copy(data.cbegin(), data.cend(), matrix.data());
     }
 
     Quaternion<Scalar> GetQuaternion() const {
