@@ -26,21 +26,31 @@ Issues = "https://github.com/RobSimulatorGroup/gobot/issues"
 
 [project.scripts]
 gobot-editor = "gobot.cli:editor"
+gobot_editor = "gobot.cli:editor"
 
 [tool.scikit-build]
 cmake.build-type = "Release"
 build-dir = "build/{wheel_tag}"
 wheel.packages = ["python/gobot"]
 
+[tool.scikit-build.install]
+components = ["python"]
+
 [tool.scikit-build.cmake.define]
 GOB_BUILD_PYTHON_BINDINGS = "ON"
 GOB_BUILD_TESTS = "OFF"
+
+[tool.cibuildwheel.config-settings]
+"cmake.define.GOB_BUILD_MUJOCO" = "ON"
+"cmake.define.GOB_FETCH_MUJOCO" = "ON"
 
 [tool.cibuildwheel]
 build = [
     "cp310-manylinux_x86_64",
     "cp311-manylinux_x86_64",
     "cp312-manylinux_x86_64",
+    "cp313-manylinux_x86_64",
+    "cp314-manylinux_x86_64",
 ]
 build-frontend = "build"
 test-command = "python -c \"import gobot; print(gobot.backend_infos())\""
@@ -48,5 +58,5 @@ test-command = "python -c \"import gobot; print(gobot.backend_infos())\""
 [tool.cibuildwheel.linux]
 manylinux-x86_64-image = "manylinux_2_28"
 before-all = [
-    "dnf install -y eigen3-devel libpng-devel mesa-libGL-devel autoconf vim-common xorg-x11-server-devel libX11-devel libXcursor-devel libXext-devel libXi-devel libXinerama-devel libXrandr-devel libXrender-devel libXScrnSaver-devel libXxf86vm-devel libxcb-devel libXdamage-devel libXfixes-devel libuuid-devel",
+    "dnf install -y eigen3-devel mesa-libGL-devel autoconf vim-common xorg-x11-server-devel libX11-devel libXcursor-devel libXext-devel libXi-devel libXinerama-devel libXrandr-devel libXrender-devel libXScrnSaver-devel libXxf86vm-devel libxcb-devel libXdamage-devel libXfixes-devel libuuid-devel",
 ]

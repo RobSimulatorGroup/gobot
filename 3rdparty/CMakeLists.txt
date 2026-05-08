@@ -1,4 +1,12 @@
+set(BUILD_RTTR_DYNAMIC OFF CACHE BOOL "Build the dynamic/shared version of RTTR library." FORCE)
+set(BUILD_STATIC ON CACHE BOOL "Build RTTR as static library." FORCE)
 add_subdirectory(rttr)
+if(NOT TARGET RTTR::Core AND TARGET rttr_core_lib)
+    add_library(RTTR::Core ALIAS rttr_core_lib)
+endif()
+
+set(SDL_X11_XINPUT OFF CACHE BOOL "Disable SDL XInput2 support to avoid XGenericEventCookie typedef conflicts with some system X11 headers." FORCE)
+set(HAVE_XGENERICEVENT TRUE CACHE INTERNAL "System Xlib provides XGenericEventCookie.")
 add_subdirectory(sdl2)
 
 set(GLI_TEST_ENABLE OFF)
@@ -65,11 +73,6 @@ target_compile_definitions(imgui-gobot PUBLIC IMGUI_USER_CONFIG="${IMGUI_USER_CO
 
 target_include_directories(imgui-gobot PUBLIC imgui imgui/backends imgui_extension imgui/misc/cpp/ ${PROJECT_SOURCE_DIR}/include ${PROJECT_BINARY_DIR})
 target_link_libraries(imgui-gobot PUBLIC SDL2::SDL2 RTTR::Core Eigen3::Eigen fmt::fmt glad magic_enum::magic_enum)
-
-
-find_package(OpenGL REQUIRED)
-add_executable(imgui_sdl2_opengl3_example imgui/examples/example_sdl2_opengl3/main.cpp)
-target_link_libraries(imgui_sdl2_opengl3_example imgui ${CONAN_LIBS} glad OpenGL::GL)
 
 add_executable(binary_to_compressed_c imgui/misc/fonts/binary_to_compressed_c.cpp)
 

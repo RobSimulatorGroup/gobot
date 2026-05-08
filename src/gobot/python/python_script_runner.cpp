@@ -107,8 +107,17 @@ void EnsureInterpreter() {
     }
 
     setenv("PYTHONNOUSERSITE", "1", 1);
+#if PY_VERSION_HEX >= PYBIND11_PYCONFIG_SUPPORT_PY_VERSION_HEX
+    PyConfig config;
+    PyConfig_InitPythonConfig(&config);
+    config.parse_argv = 0;
+    config.install_signal_handlers = 1;
+    config.user_site_directory = 0;
+    py::initialize_interpreter(&config);
+#else
     Py_NoUserSiteDirectory = 1;
     py::initialize_interpreter();
+#endif
     InterpreterStartedByRunner() = true;
 }
 

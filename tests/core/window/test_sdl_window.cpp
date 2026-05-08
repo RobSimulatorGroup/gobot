@@ -8,7 +8,7 @@
 #include <gtest/gtest.h>
 #include <gobot/drivers/sdl/sdl_window.hpp>
 #include <gobot/core/config/project_setting.hpp>
-#include <gobot/core/io/image_loader_png.hpp>
+#include <gobot/core/io/image_loader_stb.hpp>
 #include <gobot/log.hpp>
 
 

@@ -14,10 +14,10 @@ option(GOB_BUILD_EXPERIMENT "using imgui and glfw" OFF)
 option(GOB_BUILD_TESTS "build tests" OFF)
 option(GOB_BUILD_OPENUSD "build OpenUSD scene importer/exporter support" OFF)
 option(GOB_BUILD_ASSIMP "build mesh import support through Assimp" ON)
-option(GOB_BUILD_MUJOCO "build MuJoCo CPU physics backend support" OFF)
+option(GOB_BUILD_MUJOCO "build MuJoCo CPU physics backend support" ON)
 option(GOB_BUILD_PYTHON_BINDINGS "build Python bindings through pybind11" ON)
 option(GOB_ENABLE_PYTHON_EMBED "enable embedded Python runtime when a Python embed library is available" ON)
-option(GOB_FETCH_MUJOCO "download MuJoCo from the official GitHub repository when GOB_BUILD_MUJOCO is ON and no local SDK/package is found" OFF)
+option(GOB_FETCH_MUJOCO "download MuJoCo from the official GitHub repository when GOB_BUILD_MUJOCO is ON and no local SDK/package is found" ON)
 set(GOB_MUJOCO_ROOT "" CACHE PATH "MuJoCo SDK or install prefix. Supports either a CMake package install or an extracted SDK with include/ and lib/.")
 set(GOB_MUJOCO_GIT_TAG "3.8.0" CACHE STRING "MuJoCo release tag used when GOB_FETCH_MUJOCO is ON")
 set(GOB_ASSIMP_IMPORTERS "COLLADA;OBJ;STL;PLY;GLTF" CACHE STRING "Assimp importers enabled for Gobot mesh import")
@@ -33,7 +33,6 @@ if(PROJECT_SOURCE_DIR STREQUAL PROJECT_BINARY_DIR)
 endif()
 
 find_package(Eigen3 REQUIRED)
-find_package(PNG REQUIRED)
 
 CPMFindPackage(
     NAME nlohmann_json
@@ -130,8 +129,6 @@ if(GOB_BUILD_MUJOCO)
             "or allow CMake to fetch the pinned official release with -DGOB_FETCH_MUJOCO=ON."
         )
     endif()
-elseif(GOB_FETCH_MUJOCO)
-    message(WARNING "GOB_FETCH_MUJOCO is ON but GOB_BUILD_MUJOCO is OFF; MuJoCo download is skipped.")
 endif()
 
 set(GOBOT_ASSIMP_TARGET "")
@@ -197,6 +194,16 @@ if(GOB_BUILD_ASSIMP)
     endif()
 endif()
 
+set(GOBOT_RESTORE_BUILD_SHARED_LIBS OFF)
+if(DEFINED BUILD_SHARED_LIBS)
+    set(GOBOT_RESTORE_BUILD_SHARED_LIBS ON)
+    set(GOBOT_PRE_LOGGING_BUILD_SHARED_LIBS "${BUILD_SHARED_LIBS}")
+endif()
+set(BUILD_SHARED_LIBS OFF CACHE BOOL "Build package with shared libraries." FORCE)
+set(FMT_INSTALL OFF CACHE BOOL "" FORCE)
+set(SPDLOG_BUILD_SHARED OFF CACHE BOOL "Build spdlog as a static library." FORCE)
+set(SPDLOG_BUILD_PIC ON CACHE BOOL "Build spdlog with position independent code." FORCE)
+set(SPDLOG_INSTALL OFF CACHE BOOL "" FORCE)
 CPMAddPackage("gh:fmtlib/fmt#10.1.1")
 
 CPMAddPackage(
@@ -205,6 +212,11 @@ CPMAddPackage(
     VERSION 1.13.0
     OPTIONS "SPDLOG_FMT_EXTERNAL ON"
 )
+if(GOBOT_RESTORE_BUILD_SHARED_LIBS)
+    set(BUILD_SHARED_LIBS "${GOBOT_PRE_LOGGING_BUILD_SHARED_LIBS}" CACHE BOOL "Build package with shared libraries." FORCE)
+else()
+    unset(BUILD_SHARED_LIBS CACHE)
+endif()
 
 CPMAddPackage("gh:Neargye/magic_enum@0.9.5")
 if(magic_enum_SOURCE_DIR)
@@ -242,6 +254,36 @@ add_custom_command(
         DEPENDS "${CMAKE_CURRENT_SOURCE_DIR}/icon.svg"
         VERBATIM)
 add_custom_target(gobot_editor_resources DEPENDS "${GOBOT_EDITOR_ICON_HEADER}")
+
+function(gobot_install_license_files SOURCE_DIR LICENSE_DIR_NAME)
+    if(NOT EXISTS "${SOURCE_DIR}")
+        return()
+    endif()
+
+    set(GOBOT_LICENSE_FILES)
+    foreach(GOBOT_LICENSE_FILE
+            LICENSE
+            LICENSE.MIT
+            LICENSE.rst
+            LICENSE.txt
+            LICENSE.md
+            COPYING
+            COPYING.txt
+            COPYING.md
+            NOTICE
+            NOTICE.txt
+            NOTICE.md)
+        if(EXISTS "${SOURCE_DIR}/${GOBOT_LICENSE_FILE}")
+            list(APPEND GOBOT_LICENSE_FILES "${SOURCE_DIR}/${GOBOT_LICENSE_FILE}")
+        endif()
+    endforeach()
+
+    if(GOBOT_LICENSE_FILES)
+        install(FILES ${GOBOT_LICENSE_FILES}
+                DESTINATION "gobot/licenses/${LICENSE_DIR_NAME}"
+                COMPONENT python)
+    endif()
+endfunction()
 
 file(GLOB_RECURSE SOURCE_CORE CONFIGURE_DEPENDS "src/gobot/core/*.cpp")
 file(GLOB_RECURSE SOURCE_SCENE CONFIGURE_DEPENDS "src/gobot/scene/*.cpp")
@@ -282,7 +324,6 @@ target_link_libraries(gobot
         gli
         spdlog::spdlog
         fmt::fmt
-        PNG::PNG
         Eigen3::Eigen
         magic_enum::magic_enum
         nlohmann_json::nlohmann_json
@@ -334,48 +375,54 @@ if(GOB_BUILD_PYTHON_BINDINGS)
         PROPERTIES
             INSTALL_RPATH "$ORIGIN"
     )
+    set(GOBOT_PYTHON_PACKAGE_DIR "${CMAKE_CURRENT_SOURCE_DIR}/python/gobot")
     add_custom_target(gobot_python_package
             COMMAND ${CMAKE_COMMAND} -E copy_directory
-                    "${CMAKE_CURRENT_SOURCE_DIR}/python/gobot"
+                    "${GOBOT_PYTHON_PACKAGE_DIR}"
                     "${CMAKE_BINARY_DIR}/python/gobot"
-            COMMAND ${CMAKE_COMMAND} -E copy_if_different
-                    "${CMAKE_CURRENT_SOURCE_DIR}/python/gobot_gym_adapter.py"
-                    "${CMAKE_BINARY_DIR}/python/gobot_gym_adapter.py"
-            COMMAND ${CMAKE_COMMAND} -E copy_if_different
-                    "${CMAKE_CURRENT_SOURCE_DIR}/python/gobot_gym_adapter.pyi"
-                    "${CMAKE_BINARY_DIR}/python/gobot_gym_adapter.pyi"
             COMMENT "Copying Gobot Python package files"
     )
     add_dependencies(gobot_python gobot_python_package)
     install(TARGETS gobot_python gobot
             RUNTIME DESTINATION "gobot" COMPONENT python
             LIBRARY DESTINATION "gobot" COMPONENT python)
-    install(DIRECTORY "${CMAKE_CURRENT_SOURCE_DIR}/python/gobot/"
+    install(DIRECTORY "${GOBOT_PYTHON_PACKAGE_DIR}/"
             DESTINATION "gobot" COMPONENT python
             FILES_MATCHING
             PATTERN "*.py"
             PATTERN "*.pyi"
             PATTERN "py.typed")
-    install(FILES
-            "${CMAKE_CURRENT_SOURCE_DIR}/python/gobot_gym_adapter.py"
-            DESTINATION "." COMPONENT python)
-    if(TARGET spdlog)
-        get_target_property(GOBOT_SPDLOG_TARGET_TYPE spdlog TYPE)
-        if(GOBOT_SPDLOG_TARGET_TYPE STREQUAL "SHARED_LIBRARY")
-            install(FILES "$<TARGET_FILE:spdlog>" "$<TARGET_SONAME_FILE:spdlog>" DESTINATION "gobot" COMPONENT python)
-        endif()
-    endif()
-    if(TARGET fmt)
-        get_target_property(GOBOT_FMT_TARGET_TYPE fmt TYPE)
-        if(GOBOT_FMT_TARGET_TYPE STREQUAL "SHARED_LIBRARY")
-            install(FILES "$<TARGET_FILE:fmt>" "$<TARGET_SONAME_FILE:fmt>" DESTINATION "gobot" COMPONENT python)
-        endif()
-    endif()
-    if(TARGET RTTR::Core)
-        install(FILES "$<TARGET_FILE:RTTR::Core>" DESTINATION "gobot" COMPONENT python)
-    endif()
     if(GOB_BUILD_MUJOCO AND GOBOT_MUJOCO_TARGET)
         install(FILES "$<TARGET_FILE:${GOBOT_MUJOCO_TARGET}>" DESTINATION "gobot" COMPONENT python)
+    endif()
+    gobot_install_license_files("${CMAKE_CURRENT_SOURCE_DIR}" "gobot")
+    gobot_install_license_files("${CMAKE_CURRENT_SOURCE_DIR}/3rdparty/assimp" "assimp")
+    gobot_install_license_files("${CMAKE_CURRENT_SOURCE_DIR}/3rdparty/ImGuiColorTextEdit" "ImGuiColorTextEdit")
+    gobot_install_license_files("${CMAKE_CURRENT_SOURCE_DIR}/3rdparty/imgui" "imgui")
+    gobot_install_license_files("${CMAKE_CURRENT_SOURCE_DIR}/3rdparty/meshoptimizer" "meshoptimizer")
+    gobot_install_license_files("${CMAKE_CURRENT_SOURCE_DIR}/3rdparty/pybind11" "pybind11")
+    gobot_install_license_files("${CMAKE_CURRENT_SOURCE_DIR}/3rdparty/rttr" "rttr")
+    gobot_install_license_files("${CMAKE_CURRENT_SOURCE_DIR}/3rdparty/stb" "stb")
+    if(SDL2_SOURCE_DIR)
+        gobot_install_license_files("${SDL2_SOURCE_DIR}" "SDL2")
+    endif()
+    if(fmt_SOURCE_DIR)
+        gobot_install_license_files("${fmt_SOURCE_DIR}" "fmt")
+    endif()
+    if(spdlog_SOURCE_DIR)
+        gobot_install_license_files("${spdlog_SOURCE_DIR}" "spdlog")
+    endif()
+    if(nlohmann_json_SOURCE_DIR)
+        gobot_install_license_files("${nlohmann_json_SOURCE_DIR}" "nlohmann_json")
+    endif()
+    if(magic_enum_SOURCE_DIR)
+        gobot_install_license_files("${magic_enum_SOURCE_DIR}" "magic_enum")
+    endif()
+    if(cxxopts_SOURCE_DIR)
+        gobot_install_license_files("${cxxopts_SOURCE_DIR}" "cxxopts")
+    endif()
+    if(mujoco_SOURCE_DIR)
+        gobot_install_license_files("${mujoco_SOURCE_DIR}" "mujoco")
     endif()
 endif()
 
