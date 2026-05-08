@@ -67,6 +67,8 @@ public:
 
     virtual void ProcessEvents() = 0;
 
+    virtual void SwapBuffers() = 0;
+
 protected:
 
     bool render_need_reset_{false};

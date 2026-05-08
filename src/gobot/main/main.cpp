@@ -16,6 +16,8 @@
 #include "gobot/rendering/rendering_server_globals.hpp"
 #include "gobot/rendering/renderer_compositor.hpp"
 #include "gobot/rendering/scene_renderer.hpp"
+#include "gobot/drivers/opengl/rasterizer_gl.hpp"
+#include "gobot/drivers/sdl/sdl_window.hpp"
 #include "gobot/physics/physics_server.hpp"
 #include "gobot/simulation/simulation_server.hpp"
 #include "gobot/core/os/os.hpp"
@@ -76,6 +78,10 @@ Copyright(c) 2021-2023, RobSimulatorGroup)");
 }
 
 bool Main::Setup2() {
+    Window::SetWindowFactory([]() -> std::unique_ptr<WindowInterface> {
+        return std::make_unique<SDLWindow>();
+    });
+    opengl::GLRasterizer::MakeCurrent();
     s_render_server = Object::New<RenderServer>();
 
     SceneInitializer::Init();

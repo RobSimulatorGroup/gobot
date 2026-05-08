@@ -73,7 +73,7 @@ public:
 
     [[nodiscard]] SDL_Window* GetSDL2Window() const { return sdl2_window_; }
 
-    void SwapBuffers();
+    void SwapBuffers() override;
 
 
 private:

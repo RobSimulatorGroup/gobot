@@ -54,7 +54,8 @@ ImGuiManager::ImGuiManager()
         // TODO(wqq)
     }
 
-    auto window = SceneTree::GetInstance()->GetRoot()->GetWindow();
+    auto* window = dynamic_cast<SDLWindow*>(SceneTree::GetInstance()->GetRoot()->GetWindow());
+    ERR_FAIL_COND_MSG(window == nullptr, "ImGuiManager requires an SDL window.");
     imgui_renderer_->Init(window->GetSDL2Window());
 
     LOG_INFO("ImGui Version : {0}, UI scale: {1}, font size: {2}", IMGUI_VERSION, ui_scale_, font_size_);
@@ -180,8 +181,8 @@ float ImGuiManager::DetectUIScale() const {
         }
     }
 
-    auto* window = SceneTree::GetInstance()->GetRoot()->GetWindow();
-    SDL_Window* sdl_window = window ? window->GetSDL2Window() : nullptr;
+    auto* window = dynamic_cast<SDLWindow*>(SceneTree::GetInstance()->GetRoot()->GetWindow());
+    SDL_Window* sdl_window = window != nullptr ? window->GetSDL2Window() : nullptr;
     if (!sdl_window) {
         return 1.0f;
     }

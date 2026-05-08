@@ -22,6 +22,7 @@ Rasterizer::Rasterizer() {
 }
 
 Rasterizer* Rasterizer::Create() {
+    ERR_FAIL_COND_V_MSG(CreateFunc == nullptr, nullptr, "No rasterizer backend is registered.");
     return CreateFunc();
 }
 

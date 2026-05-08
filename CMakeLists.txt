@@ -251,15 +251,19 @@ file(GLOB_RECURSE SOURCE_DRIVERS CONFIGURE_DEPENDS "src/gobot/drivers/*.cpp")
 file(GLOB_RECURSE SOURCE_RENDERING CONFIGURE_DEPENDS "src/gobot/rendering/*.cpp")
 file(GLOB_RECURSE SOURCE_EDITOR CONFIGURE_DEPENDS "src/gobot/editor/*.cpp")
 file(GLOB_RECURSE SOURCE_MAIN CONFIGURE_DEPENDS "src/gobot/main/*.cpp")
+set(SOURCE_APP_RUNTIME
+        "${CMAKE_CURRENT_SOURCE_DIR}/src/gobot/main/engine_context.cpp")
+list(REMOVE_ITEM SOURCE_MAIN ${SOURCE_APP_RUNTIME})
 set(SOURCE_PYTHON_RUNTIME
         src/gobot/python/python_app_context.cpp)
+set(SOURCE_EDITOR_SCENE
+        "${CMAKE_CURRENT_SOURCE_DIR}/src/gobot/scene/imgui_node.cpp"
+        "${CMAKE_CURRENT_SOURCE_DIR}/src/gobot/scene/imgui_window.cpp")
+list(REMOVE_ITEM SOURCE_SCENE ${SOURCE_EDITOR_SCENE})
 
 # https://github.com/bincrafters/community/issues/466#issuecomment-426265654
-add_library(gobot SHARED ${SOURCE_DRIVERS} ${SOURCE_MAIN} ${SOURCE_CORE} ${SOURCE_RENDERING} ${SOURCE_SCENE} ${SOURCE_PHYSICS} ${SOURCE_SIMULATION} ${SOURCE_EDITOR} ${SOURCE_PYTHON_RUNTIME})
+add_library(gobot SHARED ${SOURCE_CORE} ${SOURCE_RENDERING} ${SOURCE_SCENE} ${SOURCE_PHYSICS} ${SOURCE_SIMULATION} ${SOURCE_APP_RUNTIME} ${SOURCE_PYTHON_RUNTIME})
 target_compile_options(gobot PUBLIC "-fno-gnu-unique" "-Wno-volatile" "-Wno-deprecated-enum-enum-conversion")
-target_sources(gobot
-        PRIVATE
-        3rdparty/ImGuiColorTextEdit/TextEditor.cpp)
 
 # https://forum.qt.io/topic/97296/export-qobject-based-class-from-dll/2
 GENERATE_EXPORT_HEADER(gobot)
@@ -269,15 +273,11 @@ target_include_directories(gobot
     ${CMAKE_CURRENT_SOURCE_DIR}/include
     ${PROJECT_BINARY_DIR}
     ${PROJECT_BINARY_DIR}/generated
-    ${CMAKE_CURRENT_SOURCE_DIR}/3rdparty/ImGuiColorTextEdit
 )
 
 target_link_libraries(gobot
     PUBLIC
         RTTR::Core
-        imgui-gobot
-        glad
-        SDL2::SDL2
         stb
         gli
         spdlog::spdlog
@@ -286,7 +286,6 @@ target_link_libraries(gobot
         Eigen3::Eigen
         magic_enum::magic_enum
         nlohmann_json::nlohmann_json
-        cxxopts::cxxopts
 )
 
 if(GOB_BUILD_OPENUSD)
@@ -409,14 +408,26 @@ list(REMOVE_ITEM SOURCE_PLATFORM
         "${CMAKE_CURRENT_SOURCE_DIR}/src/gobot/platform/linux/gobot_linux.cpp"
 )
 add_executable(gobot_editor
+        ${SOURCE_DRIVERS}
+        ${SOURCE_MAIN}
+        ${SOURCE_EDITOR}
+        ${SOURCE_EDITOR_SCENE}
         ${SOURCE_PLATFORM}
         ${GOBOT_PYTHON_EMBED_SOURCE}
         ${GOBOT_PYTHON_EMBED_BINDING_SOURCES}
+        3rdparty/ImGuiColorTextEdit/TextEditor.cpp
         src/gobot/platform/editor_embedded_resources.cpp
         src/gobot/platform/linux/gobot_linux.cpp
 )
 add_dependencies(gobot_editor gobot_editor_resources)
-target_link_libraries(gobot_editor PRIVATE gobot)
+target_include_directories(gobot_editor PRIVATE
+        ${CMAKE_CURRENT_SOURCE_DIR}/3rdparty/ImGuiColorTextEdit)
+target_link_libraries(gobot_editor PRIVATE
+        gobot
+        imgui-gobot
+        glad
+        SDL2::SDL2
+        cxxopts::cxxopts)
 set_target_properties(gobot_editor
     PROPERTIES
         INSTALL_RPATH "$ORIGIN"

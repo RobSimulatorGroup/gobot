@@ -14,7 +14,6 @@
 #include "gobot/rendering/renderer_compositor.hpp"
 #include "gobot/rendering/texture_storage.hpp"
 #include "gobot/rendering/renderer_viewport.hpp"
-#include "gobot/drivers/opengl/rasterizer_gl.hpp"
 
 
 namespace gobot {
@@ -27,10 +26,6 @@ RenderServer::RenderServer(RendererType p_renderer_type)
     s_singleton =  this;
 
     RSG::viewport = new RendererViewport();
-    if (renderer_type_ == RendererType::OpenGL46) {
-        opengl::GLRasterizer::MakeCurrent();
-    }
-
     RSG::rasterizer = Rasterizer::Create();
 
     RSG::texture_storage = RSG::rasterizer->GetTextureStorage();
