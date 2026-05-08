@@ -69,7 +69,13 @@ jobs:
         uses: actions/download-artifact@v4
         with:
           name: python-distributions
-          path: dist
+          path: downloaded-distributions
+
+      - name: Prepare distributions
+        run: |
+          mkdir -p dist
+          find downloaded-distributions -type f \( -name "*.whl" -o -name "*.tar.gz" \) -exec mv {} dist/ \;
+          ls -la dist
 
       - name: Publish distributions
         uses: pypa/gh-action-pypi-publish@release/v1
