@@ -11,7 +11,7 @@ message(STATUS "gtest configured correctly")
 
 
 macro(package_add_test TESTNAME FILES)
-    add_executable(${TESTNAME} ${FILES})
+    add_executable(${TESTNAME} ${FILES} ${ARGN})
     target_compile_options(${TESTNAME} PUBLIC "${GOBOT_COMPILE_OPTIONS}")
     target_link_libraries(${TESTNAME} gtest gmock gtest_main)
     if (MSVC)
@@ -58,7 +58,9 @@ package_add_test(test_node_creation_registry scene/test_node_creation_registry.c
 package_add_test(test_robot_nodes scene/test_robot_nodes.cpp)
 package_add_test(test_resource_creation_registry scene/test_resource_creation_registry.cpp)
 package_add_test(test_packed_scene scene/test_packed_scene.cpp)
-package_add_test(test_edited_scene editor/test_edited_scene.cpp)
+package_add_test(test_edited_scene
+        editor/test_edited_scene.cpp
+        ${PROJECT_SOURCE_DIR}/src/gobot/editor/edited_scene.cpp)
 package_add_test(test_physics_server physics/test_physics_server.cpp)
 package_add_test(test_joint_controller physics/test_joint_controller.cpp)
 package_add_test(test_simulation_server simulation/test_simulation_server.cpp)
