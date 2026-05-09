@@ -104,6 +104,7 @@ if(GOB_BUILD_MUJOCO)
         set(MUJOCO_TEST_PYTHON_UTIL OFF CACHE BOOL "" FORCE)
         set(MUJOCO_WITH_USD OFF CACHE BOOL "" FORCE)
         set(MUJOCO_USE_FILAMENT OFF CACHE BOOL "" FORCE)
+        set(SUPPORTS_GOLD FALSE CACHE BOOL "Disable gold for fetched MuJoCo; it does not support CMake linker dependency files." FORCE)
 
         FetchContent_Declare(
             mujoco

@@ -84,6 +84,10 @@ public:
 
     bool OpenPythonScriptFromPath(const std::string& path);
 
+    void FocusSceneViewerPanel();
+
+    void FocusPythonPanel();
+
     void MarkSceneDirty();
 
     void ClearSceneDirty();
@@ -158,6 +162,8 @@ private:
     std::uint64_t scene_change_version_{0};
     bool save_shortcut_down_{false};
     bool request_unsaved_scene_dialog_{false};
+    bool request_scene_viewer_focus_{true};
+    bool request_python_panel_focus_{false};
     std::function<void()> pending_scene_switch_action_;
 
     Node* selected_{nullptr};

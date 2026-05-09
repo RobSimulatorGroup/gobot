@@ -10,7 +10,18 @@
 #include "gobot/main/main.hpp"
 #include "gobot/log.hpp"
 
+#include <csignal>
+
 namespace gobot {
+namespace {
+
+volatile std::sig_atomic_t g_interrupt_requested = 0;
+
+void HandleInterruptSignal(int) {
+    g_interrupt_requested = 1;
+}
+
+} // namespace
 
 void LinuxOS::Run()
 {
@@ -18,9 +29,13 @@ void LinuxOS::Run()
         return;
     }
 
+    g_interrupt_requested = 0;
+    auto* previous_sigint_handler = std::signal(SIGINT, HandleInterruptSignal);
+    auto* previous_sigterm_handler = std::signal(SIGTERM, HandleInterruptSignal);
+
     main_loop_->Initialize();
 
-    while (true) {
+    while (!g_interrupt_requested) {
         OS::GetInstance()->GetMainLoop()->PullEvent();
         if (Main::Iteration()) {
             break;
@@ -28,6 +43,13 @@ void LinuxOS::Run()
     }
 
     main_loop_->Finalize();
+
+    if (previous_sigint_handler != SIG_ERR) {
+        std::signal(SIGINT, previous_sigint_handler);
+    }
+    if (previous_sigterm_handler != SIG_ERR) {
+        std::signal(SIGTERM, previous_sigterm_handler);
+    }
 }
 
 

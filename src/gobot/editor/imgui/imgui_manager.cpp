@@ -25,14 +25,40 @@
 #include <SDL.h>
 #include <algorithm>
 #include <cstdlib>
+#include <filesystem>
+#include <system_error>
 
 namespace gobot {
+namespace {
+
+const char* GetImGuiIniPath() {
+    static const std::string ini_path = []() {
+        const char* home = std::getenv("HOME");
+        if (home == nullptr || *home == '\0') {
+            return std::string("imgui.ini");
+        }
+
+        std::filesystem::path config_dir = std::filesystem::path(home) / ".gobot";
+        std::error_code error;
+        std::filesystem::create_directories(config_dir, error);
+        if (error) {
+            return std::string("imgui.ini");
+        }
+
+        return (config_dir / "imgui.ini").string();
+    }();
+
+    return ini_path.c_str();
+}
+
+} // namespace
 
 ImGuiManager* ImGuiManager::s_singleton = nullptr;
 
 ImGuiManager::ImGuiManager()
 {
     ImGui::CreateContext();
+    ImGui::GetIO().IniFilename = GetImGuiIniPath();
     ui_scale_ = DetectUIScale();
     font_size_ = 18.0f * ui_scale_;
     s_singleton = this;

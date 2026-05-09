@@ -7,7 +7,29 @@
 
 #include "gobot/log.hpp"
 
+#include <cstdlib>
+#include <system_error>
+
 namespace gobot {
+namespace {
+
+std::filesystem::path GetLogFilePath() {
+    const char* home = std::getenv("HOME");
+    if (home == nullptr || *home == '\0') {
+        return "gobot.log";
+    }
+
+    std::filesystem::path log_dir = std::filesystem::path(home) / ".gobot" / "log";
+    std::error_code error;
+    std::filesystem::create_directories(log_dir, error);
+    if (error) {
+        return "gobot.log";
+    }
+
+    return log_dir / "gobot.log";
+}
+
+} // namespace
 
 Logger::Logger() {
   Init();
@@ -31,7 +53,7 @@ void Logger::Init() {
     sink_list.push_back(console_sink);
 
     // add rotate file sink
-    auto rotating_sink = std::make_shared<spdlog::sinks::rotating_file_sink_mt>("gobot.log", 1024 * 1024,
+    auto rotating_sink = std::make_shared<spdlog::sinks::rotating_file_sink_mt>(GetLogFilePath().string(), 1024 * 1024,
                                                                            5, false);
     rotating_sink->set_pattern("[%T] [%@] [%l]: %v");
     sink_list.push_back(rotating_sink);
@@ -47,5 +69,4 @@ void Logger::Init() {
 
 
 }
-
 

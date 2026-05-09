@@ -359,10 +359,14 @@ bool ResourcePanel::RenderFile(int dirIndex, bool folder, int shownIndex, bool g
     ImGuiUtilities::Tooltip(current_dir_->children[dirIndex]->global_path.c_str());
 
     if(double_clicked) {
+        DirectoryInformation* child = current_dir_->children[dirIndex];
         if(folder) {
-            ChangeDirectory(current_dir_->children[dirIndex]);
-        } else {
-//            m_Editor->FileOpenCallback(m_BasePath + "/" + m_CurrentDir->Children[dirIndex]->FilePath.string());
+            ChangeDirectory(child);
+        } else if (IsNativeSceneFile(child)) {
+            Editor::GetInstance()->RequestOpenSceneFromPath(child->local_path);
+            Editor::GetInstance()->FocusSceneViewerPanel();
+        } else if (IsPythonScriptFile(child)) {
+            Editor::GetInstance()->OpenPythonScriptFromPath(child->local_path);
         }
     }
 
@@ -433,6 +437,7 @@ void ResourcePanel::DrawResourceTree(DirectoryInformation* dir_info, bool root)
             ChangeDirectory(dir_info);
         } else if (IsNativeSceneFile(dir_info)) {
             Editor::GetInstance()->RequestOpenSceneFromPath(dir_info->local_path);
+            Editor::GetInstance()->FocusSceneViewerPanel();
         } else if (IsPythonScriptFile(dir_info)) {
             Editor::GetInstance()->OpenPythonScriptFromPath(dir_info->local_path);
         }

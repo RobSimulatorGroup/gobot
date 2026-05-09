@@ -380,7 +380,21 @@ bool Editor::OpenPythonScriptFromPath(const std::string& path) {
         return false;
     }
     python_panel_->SetOpen(true);
-    return python_panel_->OpenScript(path);
+    const bool opened = python_panel_->OpenScript(path);
+    if (opened) {
+        FocusPythonPanel();
+    }
+    return opened;
+}
+
+void Editor::FocusSceneViewerPanel() {
+    request_scene_viewer_focus_ = true;
+    request_python_panel_focus_ = false;
+}
+
+void Editor::FocusPythonPanel() {
+    request_python_panel_focus_ = true;
+    request_scene_viewer_focus_ = false;
 }
 
 void Editor::MarkSceneDirty() {
@@ -432,6 +446,13 @@ bool Editor::Begin() {
     HandleGlobalShortcuts();
     DrawMenuBar();
     BeginDockSpace();
+    if (request_scene_viewer_focus_) {
+        ImGui::SetWindowFocus("###scene_view3d");
+        request_scene_viewer_focus_ = false;
+    } else if (request_python_panel_focus_) {
+        ImGui::SetWindowFocus("###python");
+        request_python_panel_focus_ = false;
+    }
 
     return true;
 }
@@ -797,6 +818,7 @@ void Editor::BeginDockSpace() {
         ImGuiID DockBottomMiddle = ImGui::DockBuilderSplitNode(DockMiddle, ImGuiDir_Down, 0.3f, nullptr, &DockMiddle);
 
         ImGui::DockBuilderDockWindow("###scene_view3d", DockMiddle);
+        ImGui::DockBuilderDockWindow("###python", DockMiddle);
         ImGui::DockBuilderDockWindow("###inspector", DockRight);
         ImGui::DockBuilderDockWindow("###physics", DockRight);
         ImGui::DockBuilderDockWindow("###console", DockBottomMiddle);

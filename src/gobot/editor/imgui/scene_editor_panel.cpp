@@ -580,6 +580,7 @@ bool SceneEditorPanel::DrawNode(Node* node)
 
         if(ImGui::IsMouseDoubleClicked(ImGuiMouseButton_Left) && node_row_hovered) {
             double_clicked_ = node;
+            editor->FocusSceneViewerPanel();
         }
 
         if(delete_node) {

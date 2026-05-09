@@ -49,3 +49,4 @@ shader/generated/*
 CMakeUserPresets.json
 
 gobot.log
+imgui.ini
