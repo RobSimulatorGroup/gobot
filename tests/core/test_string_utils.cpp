@@ -51,9 +51,3 @@ TEST(TestStringUtils, test_path_join) {
     ASSERT_TRUE(gobot::PathJoin("/usr/", "font.json") == "/usr/font.json");
 }
 
-
-int main(int argc, char **argv)
-{
-    ::testing::InitGoogleTest(&argc, argv);
-    return RUN_ALL_TESTS();
-}

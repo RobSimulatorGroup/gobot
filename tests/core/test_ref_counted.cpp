@@ -96,9 +96,3 @@ TEST(TestRefRegister, test_init_ref_with_ref) {
     gobot::Ref<gobot::TestResource> p2(p.Get());
     ASSERT_TRUE(p.UseCount() == 2);
 }
-
-int main(int argc, char **argv)
-{
-    ::testing::InitGoogleTest(&argc, argv);
-    return RUN_ALL_TESTS();
-}

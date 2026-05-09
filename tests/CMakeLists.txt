@@ -9,22 +9,28 @@ mark_as_advanced(
 )
 message(STATUS "gtest configured correctly")
 
+add_library(gobot_test_support
+        support/test_main.cpp
+        support/test_render_backend.cpp)
+target_compile_options(gobot_test_support PUBLIC "${GOBOT_COMPILE_OPTIONS}")
+target_include_directories(gobot_test_support PUBLIC "${CMAKE_CURRENT_SOURCE_DIR}/support")
+target_link_libraries(gobot_test_support PUBLIC gtest gmock gobot)
 
 macro(package_add_test TESTNAME FILES)
     add_executable(${TESTNAME} ${FILES} ${ARGN})
     target_compile_options(${TESTNAME} PUBLIC "${GOBOT_COMPILE_OPTIONS}")
-    target_link_libraries(${TESTNAME} gtest gmock gtest_main)
+    target_link_libraries(${TESTNAME} gtest gmock)
     if (MSVC)
-        target_link_libraries(${TESTNAME} -Wl,--whole-archive gobot)
+        target_link_libraries(${TESTNAME} -Wl,--whole-archive gobot_test_support)
     else ()
-        target_link_libraries(${TESTNAME} -Wl,--no-as-needed gobot)
+        target_link_libraries(${TESTNAME} -Wl,--no-as-needed gobot_test_support)
     endif ()
     
     # gtest_discover_tests replaces gtest_add_tests,
     # see https://cmake.org/cmake/help/v3.10/module/GoogleTest.html for more options to pass to it
     gtest_discover_tests(${TESTNAME}
             EXTRA_ARGS --gtest_color=yes
-            WORKING_DIRECTORY ${PROJECT_DIR}
+            WORKING_DIRECTORY "${PROJECT_SOURCE_DIR}"
             )
     set_target_properties(${TESTNAME} PROPERTIES FOLDER tests)
 endmacro()

@@ -63,9 +63,6 @@ TEST(TestRegistration, test_types) {
 //    ASSERT_TRUE(uuid.toString().toStdString() == var_uuid.to_string());
 }
 
-int main(int argc, char *argv[]) {
-    ::testing::InitGoogleTest(&argc, argv);
-    // gtest takes ownership of the ReflectionTestEnvironment ptr - we don't delete it.
-    ::testing::AddGlobalTestEnvironment(new ReflectionTestEnvironment);
-    return RUN_ALL_TESTS();
-}
+// gtest takes ownership of the ReflectionTestEnvironment ptr.
+testing::Environment* const reflection_test_environment =
+        testing::AddGlobalTestEnvironment(new ReflectionTestEnvironment);
