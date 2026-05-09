@@ -101,6 +101,31 @@ bool& InterpreterStartedByRunner() {
     return started;
 }
 
+PythonTickCallback& TickCallback() {
+    static PythonTickCallback callback = nullptr;
+    return callback;
+}
+
+PythonTickClearCallback& TickClearCallback() {
+    static PythonTickClearCallback callback = nullptr;
+    return callback;
+}
+
+PythonTickCallback& PhysicsTickCallback() {
+    static PythonTickCallback callback = nullptr;
+    return callback;
+}
+
+PythonTickClearCallback& PhysicsTickClearCallback() {
+    static PythonTickClearCallback callback = nullptr;
+    return callback;
+}
+
+py::dict& ScriptGlobals() {
+    static auto* globals = new py::dict();
+    return *globals;
+}
+
 void EnsureInterpreter() {
     if (Py_IsInitialized()) {
         return;
@@ -162,7 +187,7 @@ PythonExecutionResult ExecuteCompiledCode(const std::string& source,
                 std::make_shared<SourceLocationWriter>(filename);
         py::object stdout_buffer = MakeWriterObject(stdout_writer);
         py::object stderr_buffer = MakeWriterObject(stderr_writer);
-        py::dict globals;
+        py::dict& globals = ScriptGlobals();
         globals["__name__"] = "__main__";
         globals["__file__"] = filename;
 
@@ -199,6 +224,39 @@ PythonExecutionResult ExecuteCompiledCode(const std::string& source,
     return result;
 }
 
+PythonExecutionResult ExecuteCallback(EngineContext* context,
+                                      double delta_time,
+                                      PythonTickCallback callback,
+                                      const std::string& filename) {
+    PythonExecutionResult result;
+    EngineContext* previous_context = nullptr;
+
+    try {
+        EnsureInterpreter();
+        py::gil_scoped_acquire gil;
+        if (callback == nullptr) {
+            result.ok = true;
+            return result;
+        }
+
+        previous_context = GetActiveAppContextOrNull();
+        SetActiveAppContext(context);
+        AddProjectPathToSysPath(context);
+        callback(delta_time);
+        result.ok = true;
+    } catch (const py::error_already_set& error) {
+        result.ok = false;
+        result.error = error.what();
+    } catch (const std::exception& error) {
+        result.ok = false;
+        result.error = error.what();
+    }
+
+    SetActiveAppContext(previous_context);
+    (void)filename;
+    return result;
+}
+
 } // namespace
 
 bool PythonScriptRunner::IsAvailable() {
@@ -223,8 +281,62 @@ PythonExecutionResult PythonScriptRunner::ExecuteFile(const std::string& path,
     return ExecuteString(buffer.str(), context, path);
 }
 
+PythonExecutionResult PythonScriptRunner::ExecuteTick(EngineContext* context,
+                                                      double delta_time,
+                                                      const std::string& filename) {
+    return ExecuteCallback(context, delta_time, TickCallback(), filename);
+}
+
+PythonExecutionResult PythonScriptRunner::ExecutePhysicsTick(EngineContext* context,
+                                                             double delta_time,
+                                                             const std::string& filename) {
+    return ExecuteCallback(context, delta_time, PhysicsTickCallback(), filename);
+}
+
+void PythonScriptRunner::SetTickCallback(PythonTickCallback callback) {
+    TickCallback() = callback;
+}
+
+void PythonScriptRunner::SetTickClearCallback(PythonTickClearCallback callback) {
+    TickClearCallback() = callback;
+}
+
+bool PythonScriptRunner::HasTickCallback() {
+    return TickCallback() != nullptr;
+}
+
+void PythonScriptRunner::ClearTickCallback() {
+    TickCallback() = nullptr;
+    if (TickClearCallback() != nullptr && Py_IsInitialized()) {
+        py::gil_scoped_acquire gil;
+        TickClearCallback()();
+    }
+}
+
+void PythonScriptRunner::SetPhysicsTickCallback(PythonTickCallback callback) {
+    PhysicsTickCallback() = callback;
+}
+
+void PythonScriptRunner::SetPhysicsTickClearCallback(PythonTickClearCallback callback) {
+    PhysicsTickClearCallback() = callback;
+}
+
+bool PythonScriptRunner::HasPhysicsTickCallback() {
+    return PhysicsTickCallback() != nullptr;
+}
+
+void PythonScriptRunner::ClearPhysicsTickCallback() {
+    PhysicsTickCallback() = nullptr;
+    if (PhysicsTickClearCallback() != nullptr && Py_IsInitialized()) {
+        py::gil_scoped_acquire gil;
+        PhysicsTickClearCallback()();
+    }
+}
+
 void PythonScriptRunner::Shutdown() {
     if (InterpreterStartedByRunner() && Py_IsInitialized()) {
+        ClearTickCallback();
+        ClearPhysicsTickCallback();
         SetActiveAppContext(nullptr);
         py::finalize_interpreter();
         InterpreterStartedByRunner() = false;

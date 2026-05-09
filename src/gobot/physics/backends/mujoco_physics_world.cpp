@@ -28,35 +28,160 @@ namespace {
 
 #ifdef GOBOT_HAS_MUJOCO
 constexpr int kMuJoCoErrorBufferSize = 1024;
+constexpr RealType kMuJoCoActuatorEpsilon = 1.0e-9;
 
-int FindActuatorForJoint(const mjModel* model, int joint_id, const std::string& joint_name) {
+struct MuJoCoJointActuatorIds {
+    int motor{-1};
+    int position{-1};
+    int velocity{-1};
+};
+
+bool IsActuatorForJoint(const mjModel* model, int actuator_id, int joint_id) {
+    const int transmission_type = model->actuator_trntype[actuator_id];
+    const int transmission_id = model->actuator_trnid[2 * actuator_id];
+    return (transmission_type == mjTRN_JOINT || transmission_type == mjTRN_JOINTINPARENT) &&
+           transmission_id == joint_id;
+}
+
+std::string GetMuJoCoName(const mjModel* model, int object_type, int object_id) {
+    const char* name = mj_id2name(model, object_type, object_id);
+    return name != nullptr ? name : "";
+}
+
+bool EndsWith(const std::string& value, const std::string& suffix) {
+    return value.size() >= suffix.size() &&
+           value.compare(value.size() - suffix.size(), suffix.size(), suffix) == 0;
+}
+
+bool LooksLikeMotorActuator(const mjModel* model, int actuator_id) {
+    return model->actuator_gaintype[actuator_id] == mjGAIN_FIXED &&
+           model->actuator_biastype[actuator_id] == mjBIAS_NONE;
+}
+
+bool LooksLikePositionActuator(const mjModel* model, int actuator_id) {
+    const mjtNum* gain = model->actuator_gainprm + mjNGAIN * actuator_id;
+    const mjtNum* bias = model->actuator_biasprm + mjNBIAS * actuator_id;
+    return model->actuator_gaintype[actuator_id] == mjGAIN_FIXED &&
+           model->actuator_biastype[actuator_id] == mjBIAS_AFFINE &&
+           std::abs(bias[1]) > kMuJoCoActuatorEpsilon &&
+           std::abs(gain[0] + bias[1]) <= std::max<mjtNum>(1.0, std::abs(gain[0])) * 1.0e-6;
+}
+
+bool LooksLikeVelocityActuator(const mjModel* model, int actuator_id) {
+    const mjtNum* gain = model->actuator_gainprm + mjNGAIN * actuator_id;
+    const mjtNum* bias = model->actuator_biasprm + mjNBIAS * actuator_id;
+    return model->actuator_gaintype[actuator_id] == mjGAIN_FIXED &&
+           model->actuator_biastype[actuator_id] == mjBIAS_AFFINE &&
+           std::abs(bias[1]) <= kMuJoCoActuatorEpsilon &&
+           std::abs(bias[2]) > kMuJoCoActuatorEpsilon &&
+           std::abs(gain[0] + bias[2]) <= std::max<mjtNum>(1.0, std::abs(gain[0])) * 1.0e-6;
+}
+
+MuJoCoJointActuatorIds FindActuatorsForJoint(const mjModel* model, int joint_id, const std::string& joint_name) {
+    MuJoCoJointActuatorIds ids;
     if (!model || joint_id < 0) {
-        return -1;
+        return ids;
     }
 
-    const int joint_trnid = joint_id;
-    const int dof_trnid = model->jnt_dofadr[joint_id];
+    int fallback_actuator_id = -1;
     for (int actuator_id = 0; actuator_id < model->nu; ++actuator_id) {
-        const int transmission_type = model->actuator_trntype[actuator_id];
-        const int transmission_id = model->actuator_trnid[2 * actuator_id];
-        if (transmission_type == mjTRN_JOINT && transmission_id == joint_trnid) {
-            return actuator_id;
+        if (!IsActuatorForJoint(model, actuator_id, joint_id)) {
+            continue;
         }
-        if (transmission_type == mjTRN_JOINTINPARENT && transmission_id == joint_trnid) {
-            return actuator_id;
+
+        if (fallback_actuator_id < 0) {
+            fallback_actuator_id = actuator_id;
         }
-        if (transmission_type == mjTRN_SITE && transmission_id == dof_trnid) {
-            return actuator_id;
+
+        const std::string actuator_name = GetMuJoCoName(model, mjOBJ_ACTUATOR, actuator_id);
+        if (ids.motor < 0 && (EndsWith(actuator_name, "_motor") ||
+                              LooksLikeMotorActuator(model, actuator_id))) {
+            ids.motor = actuator_id;
+            continue;
+        }
+        if (ids.position < 0 && (EndsWith(actuator_name, "_position") ||
+                                 EndsWith(actuator_name, "_pos") ||
+                                 LooksLikePositionActuator(model, actuator_id))) {
+            ids.position = actuator_id;
+            continue;
+        }
+        if (ids.velocity < 0 && (EndsWith(actuator_name, "_velocity") ||
+                                 EndsWith(actuator_name, "_vel") ||
+                                 LooksLikeVelocityActuator(model, actuator_id))) {
+            ids.velocity = actuator_id;
         }
     }
 
-    const std::string motor_name = joint_name + "_motor";
-    const int named_motor_id = mj_name2id(model, mjOBJ_ACTUATOR, motor_name.c_str());
+    const int named_motor_id = mj_name2id(model, mjOBJ_ACTUATOR, (joint_name + "_motor").c_str());
     if (named_motor_id >= 0) {
-        return named_motor_id;
+        ids.motor = named_motor_id;
+    }
+    const int named_position_id = mj_name2id(model, mjOBJ_ACTUATOR, (joint_name + "_position").c_str());
+    if (named_position_id >= 0) {
+        ids.position = named_position_id;
+    }
+    const int named_velocity_id = mj_name2id(model, mjOBJ_ACTUATOR, (joint_name + "_velocity").c_str());
+    if (named_velocity_id >= 0) {
+        ids.velocity = named_velocity_id;
     }
 
-    return mj_name2id(model, mjOBJ_ACTUATOR, joint_name.c_str());
+    const int named_joint_id = mj_name2id(model, mjOBJ_ACTUATOR, joint_name.c_str());
+    if (ids.motor < 0 && named_joint_id >= 0) {
+        ids.motor = named_joint_id;
+    }
+    if (ids.motor < 0 && ids.position < 0 && ids.velocity < 0) {
+        ids.motor = fallback_actuator_id;
+    }
+    return ids;
+}
+
+void ZeroActuatorTerms(mjModel* model, int actuator_id) {
+    if (!model || actuator_id < 0 || actuator_id >= model->nu) {
+        return;
+    }
+    for (int index = 0; index < mjNGAIN; ++index) {
+        model->actuator_gainprm[mjNGAIN * actuator_id + index] = 0.0;
+    }
+    for (int index = 0; index < mjNBIAS; ++index) {
+        model->actuator_biasprm[mjNBIAS * actuator_id + index] = 0.0;
+    }
+}
+
+void DisableActuator(mjModel* model, mjData* data, int actuator_id) {
+    if (!model || !data || actuator_id < 0 || actuator_id >= model->nu) {
+        return;
+    }
+    data->ctrl[actuator_id] = 0.0;
+    ZeroActuatorTerms(model, actuator_id);
+}
+
+void SetMotorActuator(mjModel* model, mjData* data, int actuator_id, RealType effort) {
+    if (!model || !data || actuator_id < 0 || actuator_id >= model->nu) {
+        return;
+    }
+    ZeroActuatorTerms(model, actuator_id);
+    model->actuator_gainprm[mjNGAIN * actuator_id + 0] = 1.0;
+    data->ctrl[actuator_id] = effort;
+}
+
+void SetPositionActuator(mjModel* model, mjData* data, int actuator_id, RealType target, RealType stiffness) {
+    if (!model || !data || actuator_id < 0 || actuator_id >= model->nu) {
+        return;
+    }
+    ZeroActuatorTerms(model, actuator_id);
+    model->actuator_gainprm[mjNGAIN * actuator_id + 0] = stiffness;
+    model->actuator_biasprm[mjNBIAS * actuator_id + 1] = -stiffness;
+    data->ctrl[actuator_id] = target;
+}
+
+void SetVelocityActuator(mjModel* model, mjData* data, int actuator_id, RealType target, RealType damping) {
+    if (!model || !data || actuator_id < 0 || actuator_id >= model->nu) {
+        return;
+    }
+    ZeroActuatorTerms(model, actuator_id);
+    model->actuator_gainprm[mjNGAIN * actuator_id + 0] = damping;
+    model->actuator_biasprm[mjNBIAS * actuator_id + 2] = -damping;
+    data->ctrl[actuator_id] = target;
 }
 
 std::string ResolvePhysicsSourcePath(const std::string& source_path) {
@@ -252,31 +377,64 @@ void AddJointToBody(mjsBody* body,
     }
 }
 
-void AddMotorActuator(mjSpec* spec, const PhysicsJointSnapshot& joint, const std::string& prefixed_name) {
-    if (!spec || !IsControllableMuJoCoJoint(joint)) {
+void ConfigureActuatorLimits(mjsActuator* actuator, const PhysicsJointSnapshot& joint, bool control_is_position) {
+    if (!actuator) {
         return;
+    }
+    if (control_is_position && joint.upper_limit > joint.lower_limit) {
+        actuator->ctrllimited = true;
+        actuator->ctrlrange[0] = joint.lower_limit;
+        actuator->ctrlrange[1] = joint.upper_limit;
+    }
+    if (!control_is_position && joint.effort_limit > 0.0) {
+        actuator->ctrllimited = true;
+        actuator->ctrlrange[0] = -joint.effort_limit;
+        actuator->ctrlrange[1] = joint.effort_limit;
+    }
+    if (joint.effort_limit > 0.0) {
+        actuator->forcelimited = true;
+        actuator->forcerange[0] = -joint.effort_limit;
+        actuator->forcerange[1] = joint.effort_limit;
+    }
+}
+
+mjsActuator* AddJointActuator(mjSpec* spec,
+                              const PhysicsJointSnapshot& joint,
+                              const std::string& prefixed_name,
+                              const std::string& suffix,
+                              bool control_is_position) {
+    if (!spec || !IsControllableMuJoCoJoint(joint)) {
+        return nullptr;
     }
 
     mjsActuator* actuator = mjs_addActuator(spec, nullptr);
     if (!actuator) {
-        return;
+        return nullptr;
     }
 
-    const std::string actuator_name = prefixed_name + "_motor";
+    const std::string actuator_name = prefixed_name + suffix;
     mjs_setName(actuator->element, actuator_name.c_str());
-    actuator->dyntype = mjDYN_NONE;
-    actuator->gaintype = mjGAIN_FIXED;
-    actuator->gainprm[0] = 1.0;
-    actuator->biastype = mjBIAS_NONE;
     actuator->trntype = mjTRN_JOINT;
     mjs_setString(actuator->target, prefixed_name.c_str());
-    actuator->ctrllimited = joint.effort_limit > 0.0;
-    if (joint.effort_limit > 0.0) {
-        actuator->ctrlrange[0] = -joint.effort_limit;
-        actuator->ctrlrange[1] = joint.effort_limit;
-        actuator->forcelimited = true;
-        actuator->forcerange[0] = -joint.effort_limit;
-        actuator->forcerange[1] = joint.effort_limit;
+    ConfigureActuatorLimits(actuator, joint, control_is_position);
+    return actuator;
+}
+
+void AddJointActuators(mjSpec* spec, const PhysicsJointSnapshot& joint, const std::string& prefixed_name) {
+    mjsActuator* motor = AddJointActuator(spec, joint, prefixed_name, "_motor", false);
+    if (motor) {
+        mjs_setToMotor(motor);
+    }
+
+    mjsActuator* position = AddJointActuator(spec, joint, prefixed_name, "_position", true);
+    if (position) {
+        mjs_setToPosition(position, 0.0, nullptr, nullptr, nullptr, 0.0);
+    }
+
+    mjsActuator* velocity = AddJointActuator(spec, joint, prefixed_name, "_velocity", false);
+    if (velocity) {
+        mjs_setToVelocity(velocity, 0.0);
+        velocity->ctrllimited = false;
     }
 }
 
@@ -700,7 +858,7 @@ bool MuJoCoPhysicsWorld::AddAuthoredRobotToSpec(void* parent_spec_ptr,
     }
 
     for (const PhysicsJointSnapshot& joint : robot.joints) {
-        AddMotorActuator(parent_spec, joint, prefix + joint.name);
+        AddJointActuators(parent_spec, joint, prefix + joint.name);
     }
 
     LOG_INFO("Added authored Gobot robot '{}' to MuJoCo spec with prefix '{}'.", robot.name, prefix);
@@ -884,7 +1042,10 @@ void MuJoCoPhysicsWorld::BuildJointBindings() {
             binding.robot_index = robot_index;
             binding.joint_index = joint_index;
             binding.mujoco_joint_id = joint_id;
-            binding.actuator_id = FindActuatorForJoint(model, joint_id, joint_name);
+            const MuJoCoJointActuatorIds actuator_ids = FindActuatorsForJoint(model, joint_id, joint_name);
+            binding.motor_actuator_id = actuator_ids.motor;
+            binding.position_actuator_id = actuator_ids.position;
+            binding.velocity_actuator_id = actuator_ids.velocity;
             binding.qpos_address = model->jnt_qposadr[joint_id];
             binding.dof_address = model->jnt_dofadr[joint_id];
             binding.joint_type = model->jnt_type[joint_id];
@@ -934,32 +1095,14 @@ void MuJoCoPhysicsWorld::ApplyControlsToMuJoCo() {
             continue;
         }
 
-        RealType control_value = 0.0;
-        switch (joint_state.control_mode) {
-            case PhysicsJointControlMode::Passive:
-                control_value = 0.0;
-                break;
-            case PhysicsJointControlMode::Position:
-                control_value = joint_state.target_position;
-                break;
-            case PhysicsJointControlMode::Velocity:
-                control_value = joint_state.target_velocity;
-                break;
-            case PhysicsJointControlMode::Effort:
-                control_value = joint_state.target_effort;
-                break;
-        }
-
-        if (binding.actuator_id >= 0 && binding.actuator_id < model->nu) {
-            data->ctrl[binding.actuator_id] = control_value;
-            continue;
-        }
-
         if (binding.dof_address < 0 || binding.dof_address >= model->nv) {
             continue;
         }
 
         binding.controller.SetGains(settings_.default_joint_gains);
+        DisableActuator(model, data, binding.motor_actuator_id);
+        DisableActuator(model, data, binding.position_actuator_id);
+        DisableActuator(model, data, binding.velocity_actuator_id);
 
         JointControllerLimits limits;
         if (binding.robot_index < scene_snapshot_.robots.size() &&
@@ -967,11 +1110,78 @@ void MuJoCoPhysicsWorld::ApplyControlsToMuJoCo() {
             limits = MakeJointControllerLimits(scene_snapshot_.robots[binding.robot_index].joints[binding.joint_index]);
         }
 
-        data->qfrc_applied[binding.dof_address] =
-                binding.controller.ComputeEffort(MakeJointControllerState(joint_state),
-                                                 MakeJointControllerCommand(joint_state),
-                                                 limits,
-                                                 settings_.fixed_time_step);
+        const bool has_native_actuator =
+                binding.motor_actuator_id >= 0 ||
+                binding.position_actuator_id >= 0 ||
+                binding.velocity_actuator_id >= 0;
+
+        if (has_native_actuator) {
+            switch (joint_state.control_mode) {
+                case PhysicsJointControlMode::Passive:
+                    break;
+                case PhysicsJointControlMode::Effort:
+                    if (binding.motor_actuator_id >= 0) {
+                        SetMotorActuator(model, data, binding.motor_actuator_id, joint_state.target_effort);
+                    } else {
+                        data->qfrc_applied[binding.dof_address] = JointController::ClampEffort(
+                                joint_state.target_effort,
+                                limits.effort_limit);
+                    }
+                    break;
+                case PhysicsJointControlMode::Position:
+                    if (binding.position_actuator_id >= 0) {
+                        SetPositionActuator(model,
+                                            data,
+                                            binding.position_actuator_id,
+                                            JointController::ClampTargetPosition(joint_state.target_position, limits),
+                                            settings_.default_joint_gains.position_stiffness);
+                        if (binding.velocity_actuator_id >= 0 && settings_.default_joint_gains.velocity_damping > 0.0) {
+                            SetVelocityActuator(model,
+                                                data,
+                                                binding.velocity_actuator_id,
+                                                joint_state.target_velocity,
+                                                settings_.default_joint_gains.velocity_damping);
+                        }
+                    } else {
+                        const RealType effort = binding.controller.ComputeEffort(MakeJointControllerState(joint_state),
+                                                                                 MakeJointControllerCommand(joint_state),
+                                                                                 limits,
+                                                                                 settings_.fixed_time_step);
+                        if (binding.motor_actuator_id >= 0) {
+                            SetMotorActuator(model, data, binding.motor_actuator_id, effort);
+                        } else {
+                            data->qfrc_applied[binding.dof_address] = effort;
+                        }
+                    }
+                    break;
+                case PhysicsJointControlMode::Velocity:
+                    if (binding.velocity_actuator_id >= 0) {
+                        SetVelocityActuator(model,
+                                            data,
+                                            binding.velocity_actuator_id,
+                                            joint_state.target_velocity,
+                                            settings_.default_joint_gains.velocity_damping);
+                    } else {
+                        const RealType effort = binding.controller.ComputeEffort(MakeJointControllerState(joint_state),
+                                                                                 MakeJointControllerCommand(joint_state),
+                                                                                 limits,
+                                                                                 settings_.fixed_time_step);
+                        if (binding.motor_actuator_id >= 0) {
+                            SetMotorActuator(model, data, binding.motor_actuator_id, effort);
+                        } else {
+                            data->qfrc_applied[binding.dof_address] = effort;
+                        }
+                    }
+                    break;
+            }
+            continue;
+        }
+
+        const RealType effort = binding.controller.ComputeEffort(MakeJointControllerState(joint_state),
+                                                                 MakeJointControllerCommand(joint_state),
+                                                                 limits,
+                                                                 settings_.fixed_time_step);
+        data->qfrc_applied[binding.dof_address] = effort;
     }
 }
 

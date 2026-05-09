@@ -47,6 +47,7 @@ package_add_test(test_variant_serializer core/io/test_variant_serializer.cpp)
 package_add_test(test_resource_format_scene core/io/test_resource_format_scene.cpp)
 package_add_test(test_resource_format_mesh core/io/test_resource_format_mesh.cpp)
 package_add_test(test_resource_format_usd core/io/test_resource_format_usd.cpp)
+package_add_test(test_resource_format_mjcf core/io/test_resource_format_mjcf.cpp)
 package_add_test(test_resource_format_urdf core/io/test_resource_format_urdf.cpp)
 package_add_test(test_rid core/test_rid.cpp)
 

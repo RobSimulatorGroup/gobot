@@ -1,0 +1,15 @@
+<mujoco model="mjcf_test_bot">
+  <compiler angle="radian"/>
+  <worldbody>
+    <body name="cart" pos="0 0 0.5">
+      <geom name="cart_collision" type="box" size="0.2 0.1 0.05"/>
+      <body name="pole" pos="0 0 0.05">
+        <joint name="hinge" type="hinge" axis="0 1 0" range="-1.57 1.57" limited="true"/>
+        <geom name="pole_collision" type="cylinder" size="0.02 0.5" pos="0 0 0.5"/>
+      </body>
+    </body>
+  </worldbody>
+  <actuator>
+    <motor name="hinge_motor" joint="hinge" forcerange="-5 5"/>
+  </actuator>
+</mujoco>

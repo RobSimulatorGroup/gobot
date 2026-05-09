@@ -26,6 +26,14 @@ def main():
     assert context.has_scene is False
     assert context.has_world is False
     assert context.frame_count == 0
+    assert gobot.app.set_editor_tick_callback is gobot.set_editor_tick_callback
+    assert gobot.app.set_editor_physics_callback is gobot.set_editor_physics_callback
+    tick_calls = []
+    gobot.set_editor_tick_callback(lambda delta: tick_calls.append(delta))
+    gobot.clear_editor_tick_callback()
+    physics_calls = []
+    gobot.set_editor_physics_callback(lambda delta: physics_calls.append(delta))
+    gobot.clear_editor_physics_callback()
     try:
         context.build_world()
         raise AssertionError("build_world should fail without a loaded scene")

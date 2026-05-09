@@ -80,7 +80,9 @@ private:
         std::size_t robot_index{0};
         std::size_t joint_index{0};
         int mujoco_joint_id{-1};
-        int actuator_id{-1};
+        int motor_actuator_id{-1};
+        int position_actuator_id{-1};
+        int velocity_actuator_id{-1};
         int qpos_address{-1};
         int dof_address{-1};
         int joint_type{-1};

@@ -65,6 +65,9 @@ void SceneTree::OnWindowClose() {
 bool SceneTree::PhysicsProcess(double time) {
     physics_process_time_ = time;
 
+    // Physics notifications run before the world step so scripts can update controls for this tick.
+    root_->PropagateNotification(NotificationType::PhysicsProcess);
+
     if (SimulationServer::HasInstance()) {
         SimulationServer::GetInstance()->Step(static_cast<RealType>(time));
     }
@@ -78,7 +81,6 @@ bool SceneTree::Process(double time) {
     MainLoop::Process(time);
 
     // TODO(wqq): Do we need group
-    root_->PropagateNotification(NotificationType::PhysicsProcess);
     root_->PropagateNotification(NotificationType::Process);
 
     return quit_;

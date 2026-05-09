@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import math
-from typing import Any, Sequence
+from typing import Sequence
 
 from . import _core
 

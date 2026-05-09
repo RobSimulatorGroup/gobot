@@ -11,6 +11,28 @@
 #include <gobot/scene/window.hpp>
 #include <gobot/rendering/render_server.hpp>
 
+namespace gobot {
+
+class NotificationRecorderNode : public Node {
+    GOBCLASS(NotificationRecorderNode, Node)
+
+public:
+    explicit NotificationRecorderNode(std::vector<NotificationType>* notifications)
+        : notifications_(notifications) {}
+
+    void NotificationCallBack(NotificationType notification) {
+        if (notification == NotificationType::PhysicsProcess ||
+            notification == NotificationType::Process) {
+            notifications_->push_back(notification);
+        }
+    }
+
+private:
+    std::vector<NotificationType>* notifications_{nullptr};
+};
+
+} // namespace gobot
+
 class TestNode : public testing::Test {
 protected:
     void SetUp() override {
@@ -119,4 +141,18 @@ TEST_F(TestNode, reparent_node) {
     gobot::Node *child = gobot::SceneTree::GetInstance()->GetRoot()->GetChild(0);
     ASSERT_EQ(child, node);
     ASSERT_TRUE(node->IsInsideTree());
+}
+
+TEST_F(TestNode, physics_process_notification_runs_separately_from_process_notification) {
+    std::vector<gobot::NotificationType> notifications;
+    auto* recorder = gobot::Node::New<gobot::NotificationRecorderNode>(&notifications);
+    gobot::SceneTree::GetInstance()->GetRoot()->AddChild(recorder);
+
+    tree->PhysicsProcess(0.01);
+    ASSERT_EQ(notifications.size(), 1);
+    EXPECT_EQ(notifications[0], gobot::NotificationType::PhysicsProcess);
+
+    tree->Process(0.02);
+    ASSERT_EQ(notifications.size(), 2);
+    EXPECT_EQ(notifications[1], gobot::NotificationType::Process);
 }

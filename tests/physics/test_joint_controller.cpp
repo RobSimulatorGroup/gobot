@@ -19,6 +19,45 @@ TEST(TestJointController, position_control_computes_pd_effort) {
     EXPECT_NEAR(controller.ComputeEffort(state, command, limits, 0.01), 6.5, CMP_EPSILON);
 }
 
+TEST(TestJointController, velocity_control_computes_damping_effort) {
+    gobot::JointController controller({0.0, 4.0, 0.0, 0.0});
+
+    gobot::JointControllerState state;
+    state.velocity = -0.5;
+
+    gobot::JointControllerCommand command;
+    command.mode = gobot::PhysicsJointControlMode::Velocity;
+    command.target_velocity = 1.5;
+
+    EXPECT_NEAR(controller.ComputeEffort(state, command, {}, 0.01), 8.0, CMP_EPSILON);
+}
+
+TEST(TestJointController, effort_control_passes_through_target_effort) {
+    gobot::JointController controller({100.0, 10.0, 5.0, 1.0});
+
+    gobot::JointControllerState state;
+    state.position = 100.0;
+    state.velocity = 100.0;
+
+    gobot::JointControllerCommand command;
+    command.mode = gobot::PhysicsJointControlMode::Effort;
+    command.target_position = -100.0;
+    command.target_velocity = -100.0;
+    command.target_effort = 2.5;
+
+    EXPECT_DOUBLE_EQ(controller.ComputeEffort(state, command, {}, 0.01), 2.5);
+}
+
+TEST(TestJointController, passive_control_outputs_zero_effort) {
+    gobot::JointController controller({100.0, 10.0, 5.0, 1.0});
+
+    gobot::JointControllerCommand command;
+    command.mode = gobot::PhysicsJointControlMode::Passive;
+    command.target_effort = 10.0;
+
+    EXPECT_DOUBLE_EQ(controller.ComputeEffort({}, command, {}, 0.01), 0.0);
+}
+
 TEST(TestJointController, effort_is_saturated_when_limit_is_positive) {
     gobot::JointController controller({100.0, 0.0, 0.0, 0.0});
 

@@ -30,6 +30,7 @@
 #include "gobot/scene/scene_initializer.hpp"
 #include "gobot/simulation/rl_environment.hpp"
 #include "gobot/simulation/simulation_server.hpp"
+#include "gobot/python/python_script_runner.hpp"
 
 namespace gobot::python {
 namespace {
@@ -383,6 +384,40 @@ void ApplyControllerConfigToEnv(PyRLEnvironment& env, py::dict dict) {
         config.default_action.size() != config.controlled_joints.size()) {
         throw std::invalid_argument("default_action size must match controlled_joints size");
     }
+}
+
+py::object& PythonTickFunction() {
+    static auto* callback = new py::object(py::none());
+    return *callback;
+}
+
+py::object& PythonPhysicsTickFunction() {
+    static auto* callback = new py::object(py::none());
+    return *callback;
+}
+
+void InvokePythonTick(double delta_time) {
+    py::object& callback = PythonTickFunction();
+    if (callback.is_none()) {
+        return;
+    }
+    callback(delta_time);
+}
+
+void InvokePythonPhysicsTick(double delta_time) {
+    py::object& callback = PythonPhysicsTickFunction();
+    if (callback.is_none()) {
+        return;
+    }
+    callback(delta_time);
+}
+
+void ClearPythonTickFunction() {
+    PythonTickFunction() = py::none();
+}
+
+void ClearPythonPhysicsTickFunction() {
+    PythonPhysicsTickFunction() = py::none();
 }
 
 struct PyScene {
@@ -914,6 +949,90 @@ void RegisterManualApis(py::module_& module) {
                     throw std::runtime_error(context.GetLastError());
                 }
             }, py::arg("ticks") = 1)
+            .def("set_robot_action", [](EngineContext& context,
+                                        const std::string& robot,
+                                        const std::vector<RealType>& action) {
+                SimulationServer* simulation = context.GetSimulationServer();
+                if (simulation == nullptr) {
+                    throw std::runtime_error("active Gobot app context has no SimulationServer");
+                }
+                if (!simulation->SetRobotJointPositionTargetsFromNormalizedAction(robot, action)) {
+                    throw std::runtime_error(simulation->GetLastError());
+                }
+            }, py::arg("robot"), py::arg("action"))
+            .def("set_robot_named_action", [](EngineContext& context,
+                                              const std::string& robot,
+                                              const std::vector<std::string>& joint_names,
+                                              const std::vector<RealType>& action) {
+                SimulationServer* simulation = context.GetSimulationServer();
+                if (simulation == nullptr) {
+                    throw std::runtime_error("active Gobot app context has no SimulationServer");
+                }
+                if (!simulation->SetRobotJointPositionTargetsFromNormalizedAction(robot, joint_names, action)) {
+                    throw std::runtime_error(simulation->GetLastError());
+                }
+            }, py::arg("robot"), py::arg("joint_names"), py::arg("action"))
+            .def("set_default_joint_gains", [](EngineContext& context, py::dict gains) {
+                SimulationServer* simulation = context.GetSimulationServer();
+                if (simulation == nullptr) {
+                    throw std::runtime_error("active Gobot app context has no SimulationServer");
+                }
+                simulation->SetDefaultJointGains(DictToReflected<JointControllerGains>(gains));
+            }, py::arg("gains"))
+            .def("get_default_joint_gains", [](EngineContext& context) {
+                SimulationServer* simulation = context.GetSimulationServer();
+                if (simulation == nullptr) {
+                    throw std::runtime_error("active Gobot app context has no SimulationServer");
+                }
+                return ReflectedToPythonDict(simulation->GetDefaultJointGains());
+            })
+            .def("set_joint_position_target", [](EngineContext& context,
+                                                 const std::string& robot,
+                                                 const std::string& joint,
+                                                 RealType target_position) {
+                SimulationServer* simulation = context.GetSimulationServer();
+                if (simulation == nullptr) {
+                    throw std::runtime_error("active Gobot app context has no SimulationServer");
+                }
+                if (!simulation->SetJointPositionTarget(robot, joint, target_position)) {
+                    throw std::runtime_error(simulation->GetLastError());
+                }
+            }, py::arg("robot"), py::arg("joint"), py::arg("target_position"))
+            .def("set_joint_velocity_target", [](EngineContext& context,
+                                                 const std::string& robot,
+                                                 const std::string& joint,
+                                                 RealType target_velocity) {
+                SimulationServer* simulation = context.GetSimulationServer();
+                if (simulation == nullptr) {
+                    throw std::runtime_error("active Gobot app context has no SimulationServer");
+                }
+                if (!simulation->SetJointVelocityTarget(robot, joint, target_velocity)) {
+                    throw std::runtime_error(simulation->GetLastError());
+                }
+            }, py::arg("robot"), py::arg("joint"), py::arg("target_velocity"))
+            .def("set_joint_effort_target", [](EngineContext& context,
+                                               const std::string& robot,
+                                               const std::string& joint,
+                                               RealType target_effort) {
+                SimulationServer* simulation = context.GetSimulationServer();
+                if (simulation == nullptr) {
+                    throw std::runtime_error("active Gobot app context has no SimulationServer");
+                }
+                if (!simulation->SetJointEffortTarget(robot, joint, target_effort)) {
+                    throw std::runtime_error(simulation->GetLastError());
+                }
+            }, py::arg("robot"), py::arg("joint"), py::arg("target_effort"))
+            .def("set_joint_passive", [](EngineContext& context,
+                                         const std::string& robot,
+                                         const std::string& joint) {
+                SimulationServer* simulation = context.GetSimulationServer();
+                if (simulation == nullptr) {
+                    throw std::runtime_error("active Gobot app context has no SimulationServer");
+                }
+                if (!simulation->SetJointPassive(robot, joint)) {
+                    throw std::runtime_error(simulation->GetLastError());
+                }
+            }, py::arg("robot"), py::arg("joint"))
             .def("get_last_error", &EngineContext::GetLastError);
 
     py::class_<PyScene, std::unique_ptr<PyScene>>(module, "Scene")
@@ -1329,6 +1448,44 @@ void RegisterManualApis(py::module_& module) {
             infos.append(ReflectedToPythonDict(info));
         }
         return infos;
+    });
+
+    module.def("set_editor_tick_callback", [](py::object callback) {
+        if (callback.is_none()) {
+            PythonTickFunction() = py::none();
+            PythonScriptRunner::ClearTickCallback();
+            return;
+        }
+        if (!py::isinstance<py::function>(callback) && !py::hasattr(callback, "__call__")) {
+            throw std::invalid_argument("editor tick callback must be callable or None");
+        }
+        PythonTickFunction() = std::move(callback);
+        PythonScriptRunner::SetTickClearCallback(&ClearPythonTickFunction);
+        PythonScriptRunner::SetTickCallback(&InvokePythonTick);
+    }, py::arg("callback"));
+
+    module.def("clear_editor_tick_callback", []() {
+        PythonTickFunction() = py::none();
+        PythonScriptRunner::ClearTickCallback();
+    });
+
+    module.def("set_editor_physics_callback", [](py::object callback) {
+        if (callback.is_none()) {
+            PythonPhysicsTickFunction() = py::none();
+            PythonScriptRunner::ClearPhysicsTickCallback();
+            return;
+        }
+        if (!py::isinstance<py::function>(callback) && !py::hasattr(callback, "__call__")) {
+            throw std::invalid_argument("editor physics callback must be callable or None");
+        }
+        PythonPhysicsTickFunction() = std::move(callback);
+        PythonScriptRunner::SetPhysicsTickClearCallback(&ClearPythonPhysicsTickFunction);
+        PythonScriptRunner::SetPhysicsTickCallback(&InvokePythonPhysicsTick);
+    }, py::arg("callback"));
+
+    module.def("clear_editor_physics_callback", []() {
+        PythonPhysicsTickFunction() = py::none();
+        PythonScriptRunner::ClearPhysicsTickCallback();
     });
 }
 

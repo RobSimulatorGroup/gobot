@@ -32,6 +32,7 @@
 #include "gobot/main/main.hpp"
 #include "gobot/physics/physics_server.hpp"
 #include "gobot/python/python_app_context.hpp"
+#include "gobot/python/python_script_runner.hpp"
 #include "gobot/scene/collision_shape_3d.hpp"
 #include "gobot/scene/imgui_window.hpp"
 #include "gobot/scene/mesh_instance_3d.hpp"
@@ -433,8 +434,29 @@ std::string Editor::GetSceneViewTitle() const {
 
 void Editor::NotificationCallBack(NotificationType notification) {
     switch (notification) {
+        case NotificationType::PhysicsProcess: {
+            if (python::PythonScriptRunner::HasPhysicsTickCallback()) {
+                python::PythonExecutionResult result =
+                        python::PythonScriptRunner::ExecutePhysicsTick(engine_context_,
+                                                                       GetPhysicsProcessDeltaTime());
+                if (!result.ok) {
+                    LOG_ERROR("Python physics tick failed: {}", result.error);
+                    python::PythonScriptRunner::ClearPhysicsTickCallback();
+                }
+            }
+            break;
+        }
         case NotificationType::Process: {
+            if (python::PythonScriptRunner::HasTickCallback()) {
+                python::PythonExecutionResult result =
+                        python::PythonScriptRunner::ExecuteTick(engine_context_, GetProcessDeltaTime());
+                if (!result.ok) {
+                    LOG_ERROR("Python tick failed: {}", result.error);
+                    python::PythonScriptRunner::ClearTickCallback();
+                }
+            }
             OnImGui();
+            break;
         }
     }
 }
@@ -489,7 +511,7 @@ void Editor::DrawMenuBar() {
             if (ImGui::MenuItem("Add Scene...")) {
                 OpenSceneFileDialog(SceneFileDialogMode::AddScene);
             }
-            if (ImGui::MenuItem("Import URDF...")) {
+            if (ImGui::MenuItem("Import Robot...")) {
                 OpenSceneFileDialog(SceneFileDialogMode::Import);
             }
             ImGui::EndMenu();
@@ -679,13 +701,13 @@ void Editor::OpenSceneFileDialog(SceneFileDialogMode mode) {
         file_browser_->SetOkText("Add");
         file_browser_->SetFileFilters({".jscn"});
     } else if (mode == SceneFileDialogMode::Import) {
-        file_browser_->SetTitle("Import URDF");
+        file_browser_->SetTitle("Import Robot");
         file_browser_->SetOkText("Import");
-        file_browser_->SetFileFilters({".urdf", ".xml"});
+        file_browser_->SetFileFilters({".urdf", ".mjcf", ".xml"});
     } else {
         file_browser_->SetTitle("Load Scene");
         file_browser_->SetOkText("Load");
-        file_browser_->SetFileFilters({".jscn", ".urdf", ".xml"});
+        file_browser_->SetFileFilters({".jscn", ".urdf", ".mjcf", ".xml"});
     }
 
     std::string browser_path = ProjectSettings::GetInstance()->GetProjectPath();

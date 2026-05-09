@@ -171,6 +171,10 @@ bool HasTag(const std::string& body, const std::string& tag_name) {
     return std::regex_search(body, tag_regex);
 }
 
+bool LooksLikeURDF(const std::string& xml) {
+    return std::regex_search(xml, std::regex(R"(<\s*robot\b)", std::regex::icase));
+}
+
 std::string FindTagBody(const std::string& body, const std::string& tag_name) {
     const std::regex tag_regex("<\\s*" + tag_name + R"(\b[^>]*>([\s\S]*?)<\s*/\s*)" + tag_name + R"(\s*>)",
                                std::regex::icase);
@@ -763,7 +767,14 @@ bool ResourceFormatLoaderURDF::RecognizePath(const std::string& path, const std:
     }
 
     const std::string normalized_path = ToLower(path);
-    return normalized_path.ends_with(".urdf") || normalized_path.ends_with(".xml");
+    if (normalized_path.ends_with(".urdf")) {
+        return true;
+    }
+    if (!normalized_path.ends_with(".xml")) {
+        return false;
+    }
+
+    return LooksLikeURDF(ReadTextFile(ResolveInputPath(path)));
 }
 
 void ResourceFormatLoaderURDF::GetRecognizedExtensions(std::vector<std::string>* extensions) const {

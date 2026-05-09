@@ -7,6 +7,7 @@
 
 #include "gobot/scene/scene_initializer.hpp"
 #include "gobot/core/io/resource_format_mesh.hpp"
+#include "gobot/core/io/resource_format_mjcf.hpp"
 #include "gobot/core/io/python_script.hpp"
 #include "gobot/core/io/resource_format_scene.hpp"
 #include "gobot/core/io/resource_format_urdf.hpp"
@@ -18,6 +19,7 @@ namespace gobot {
 static Ref<ResourceFormatSaverScene> s_resource_saver_scene = nullptr;
 static Ref<ResourceFormatLoaderScene> s_resource_loader_scene = nullptr;
 static Ref<ResourceFormatLoaderMesh> s_resource_loader_mesh = nullptr;
+static Ref<ResourceFormatLoaderMJCF> s_resource_loader_mjcf = nullptr;
 static Ref<ResourceFormatLoaderShader> s_resource_loader_shader = nullptr;
 static Ref<ResourceFormatLoaderURDF> s_resource_loader_urdf = nullptr;
 static Ref<ResourceFormatLoaderUSD> s_resource_loader_usd = nullptr;
@@ -36,6 +38,9 @@ void SceneInitializer::Init() {
 
     s_resource_loader_mesh = MakeRef<ResourceFormatLoaderMesh>();
     ResourceLoader::AddResourceFormatLoader(s_resource_loader_mesh, true);
+
+    s_resource_loader_mjcf = MakeRef<ResourceFormatLoaderMJCF>();
+    ResourceLoader::AddResourceFormatLoader(s_resource_loader_mjcf, true);
 
     s_resource_loader_urdf = MakeRef<ResourceFormatLoaderURDF>();
     ResourceLoader::AddResourceFormatLoader(s_resource_loader_urdf, true);
@@ -59,6 +64,9 @@ void SceneInitializer::Destroy() {
 
     ResourceLoader::RemoveResourceFormatLoader(s_resource_loader_mesh);
     s_resource_loader_mesh.Reset();
+
+    ResourceLoader::RemoveResourceFormatLoader(s_resource_loader_mjcf);
+    s_resource_loader_mjcf.Reset();
 
     ResourceLoader::RemoveResourceFormatLoader(s_resource_loader_urdf);
     s_resource_loader_urdf.Reset();
