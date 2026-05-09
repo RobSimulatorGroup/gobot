@@ -67,9 +67,8 @@ const std::string& PropertyDataModel::GetPropertyToolTipStr() const {
     return property_cache_.tool_tip_str;
 }
 
-bool PropertyDataModel::SetValue(Argument argument) {
+bool PropertyDataModel::SetValue(Variant new_value) {
     Variant old_value = GetValue();
-    Variant new_value = argument;
     if (VariantValuesEqual(old_value, new_value)) {
         return true;
     }

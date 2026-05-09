@@ -158,7 +158,7 @@ public:
         return dynamic_cast<const T*>(object);
     }
 
-    bool Set(const std::string& name, Argument arg);
+    bool Set(const std::string& name, Variant value);
 
     static Type GetDerivedTypeByInstance(Instance instance) {
         auto raw_type = instance.get_type().get_raw_type();

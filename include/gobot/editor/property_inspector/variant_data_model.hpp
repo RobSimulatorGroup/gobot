@@ -62,7 +62,7 @@ public:
 
     [[nodiscard]] const std::string& GetPropertyToolTipStr() const;
 
-    bool SetValue(Argument argument);
+    bool SetValue(Variant value);
 
     Variant GetValue() const;
 

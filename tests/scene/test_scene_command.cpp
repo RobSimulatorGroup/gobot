@@ -1,6 +1,7 @@
 #include <gtest/gtest.h>
 
 #include "gobot/core/object.hpp"
+#include "gobot/scene/joint_3d.hpp"
 #include "gobot/scene/node.hpp"
 #include "gobot/scene/node_3d.hpp"
 #include "gobot/scene/scene_command.hpp"
@@ -115,4 +116,34 @@ TEST_F(TestSceneCommand, delete_undo_restores_new_node_without_reviving_old_id) 
     EXPECT_EQ(restored->GetName(), "child");
     EXPECT_NE(restored->GetInstanceId(), old_child_id);
     EXPECT_EQ(gobot::ObjectDB::GetInstance(old_child_id), nullptr);
+}
+
+TEST_F(TestSceneCommand, numeric_property_commands_convert_to_reflected_property_type) {
+    root = gobot::Object::New<gobot::Node3D>();
+    root->SetName("root");
+    auto* joint = gobot::Object::New<gobot::Joint3D>();
+    joint->SetName("slider");
+    joint->SetJointType(gobot::JointType::Prismatic);
+    root->AddChild(joint);
+
+    gobot::SceneCommandStack stack;
+    ASSERT_TRUE(stack.Execute(std::make_unique<gobot::SetNodePropertyCommand>(
+            joint->GetInstanceId(),
+            "lower_limit",
+            gobot::Variant(-2.0f))));
+    ASSERT_TRUE(stack.Execute(std::make_unique<gobot::SetNodePropertyCommand>(
+            joint->GetInstanceId(),
+            "upper_limit",
+            gobot::Variant(2.0f))));
+    ASSERT_TRUE(stack.Execute(std::make_unique<gobot::SetNodePropertyCommand>(
+            joint->GetInstanceId(),
+            "joint_position",
+            gobot::Variant(0.5f))));
+
+    EXPECT_NEAR(joint->GetLowerLimit(), -2.0, CMP_EPSILON);
+    EXPECT_NEAR(joint->GetUpperLimit(), 2.0, CMP_EPSILON);
+    EXPECT_NEAR(joint->GetJointPosition(), 0.5, CMP_EPSILON);
+
+    ASSERT_TRUE(stack.Undo());
+    EXPECT_NEAR(joint->GetJointPosition(), 0.0, CMP_EPSILON);
 }

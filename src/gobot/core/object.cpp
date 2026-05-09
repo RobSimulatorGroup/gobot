@@ -39,9 +39,29 @@ Object::~Object() {
     }
 }
 
-bool Object::Set(const std::string& name, Argument arg) {
+bool Object::Set(const std::string& name, Variant value) {
     auto type = GetType();
-    return type.set_property_value(name, Instance(this), std::move(arg));
+    auto property = type.get_property(name);
+    if (!property.is_valid()) {
+        return false;
+    }
+
+    Instance self(this);
+    if (property.set_value(self, value)) {
+        return true;
+    }
+
+    const Type property_type = property.get_type();
+    if (!property_type.is_valid() || !value.is_valid()) {
+        return false;
+    }
+
+    Variant converted_value = std::move(value);
+    if (converted_value.get_type() != property_type && !converted_value.convert(property_type)) {
+        return false;
+    }
+
+    return property.set_value(self, converted_value);
 }
 
 
