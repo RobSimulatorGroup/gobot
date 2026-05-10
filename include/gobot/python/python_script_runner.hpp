@@ -3,10 +3,14 @@
 #include <string>
 
 #include "gobot_export.h"
+#include "gobot/core/notification_enum.hpp"
+#include "gobot/core/ref_counted.hpp"
 
 namespace gobot {
 
 class EngineContext;
+class Node;
+class PythonScript;
 
 namespace python {
 
@@ -37,6 +41,23 @@ public:
     static PythonExecutionResult ExecutePhysicsTick(EngineContext* context,
                                                     double delta_time,
                                                     const std::string& filename = "<gobot-python-physics-tick>");
+
+    static void SetSceneScriptContext(EngineContext* context);
+
+    static void SetSceneScriptRoot(Node* root);
+
+    static void ClearSceneScriptContext(EngineContext* context);
+
+    static bool HasSceneScriptInstance(Node* node);
+
+    static PythonExecutionResult AttachSceneScript(Node* node,
+                                                   const Ref<PythonScript>& script);
+
+    static void DetachSceneScript(Node* node);
+
+    static PythonExecutionResult NotifySceneScript(Node* node,
+                                                   NotificationType notification,
+                                                   double delta_time);
 
     static void SetTickCallback(PythonTickCallback callback);
 

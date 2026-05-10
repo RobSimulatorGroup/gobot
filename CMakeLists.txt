@@ -425,6 +425,8 @@ if(GOB_BUILD_PYTHON_BINDINGS)
     if(mujoco_SOURCE_DIR)
         gobot_install_license_files("${mujoco_SOURCE_DIR}" "mujoco")
     endif()
+else()
+    target_sources(gobot PRIVATE src/gobot/python/python_script_runner_stub.cpp)
 endif()
 
 set_target_properties(gobot

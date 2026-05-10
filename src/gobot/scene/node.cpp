@@ -11,6 +11,8 @@
 #include <ranges>
 #include "gobot/core/registration.hpp"
 #include "gobot/core/string_utils.hpp"
+#include "gobot/log.hpp"
+#include "gobot/python/python_script_runner.hpp"
 #include "gobot/scene/resources/packed_scene.hpp"
 
 namespace gobot {
@@ -26,6 +28,17 @@ void Node::NotificationCallBack(NotificationType notification) {
         } break;
 
         case NotificationType::ExitTree: {
+            if (python::PythonScriptRunner::HasSceneScriptInstance(this)) {
+                python::PythonExecutionResult result =
+                        python::PythonScriptRunner::NotifySceneScript(this,
+                                                                      NotificationType::ExitTree,
+                                                                      0.0);
+                if (!result.ok) {
+                    LOG_ERROR("Python node script exit failed on '{}': {}", GetName(), result.error);
+                }
+                python::PythonScriptRunner::DetachSceneScript(this);
+            }
+
             // TODO: ERR_FAIL_COND(!ViewPort);
             ERR_FAIL_COND(!GetTree());
 
@@ -43,10 +56,50 @@ void Node::NotificationCallBack(NotificationType notification) {
         } break;
 
         case NotificationType::Ready: {
-            // TODO: Call ready
+            Ref<PythonScript> python_script = script_;
+            if (python_script.IsValid()) {
+                python::PythonExecutionResult attach_result =
+                        python::PythonScriptRunner::AttachSceneScript(this, python_script);
+                if (!attach_result.ok) {
+                    LOG_ERROR("Python node script attach failed on '{}': {}", GetName(), attach_result.error);
+                    break;
+                }
+
+                python::PythonExecutionResult ready_result =
+                        python::PythonScriptRunner::NotifySceneScript(this,
+                                                                      NotificationType::Ready,
+                                                                      0.0);
+                if (!ready_result.ok) {
+                    LOG_ERROR("Python node script ready failed on '{}': {}", GetName(), ready_result.error);
+                }
+            }
+        } break;
+
+        case NotificationType::Process: {
+            python::PythonExecutionResult result =
+                    python::PythonScriptRunner::NotifySceneScript(this,
+                                                                  NotificationType::Process,
+                                                                  GetProcessDeltaTime());
+            if (!result.ok) {
+                LOG_ERROR("Python node script process failed on '{}': {}", GetName(), result.error);
+            }
+        } break;
+
+        case NotificationType::PhysicsProcess: {
+            python::PythonExecutionResult result =
+                    python::PythonScriptRunner::NotifySceneScript(this,
+                                                                  NotificationType::PhysicsProcess,
+                                                                  GetPhysicsProcessDeltaTime());
+            if (!result.ok) {
+                LOG_ERROR("Python node script physics process failed on '{}': {}", GetName(), result.error);
+            }
         } break;
 
         case NotificationType::PreDelete: {
+            if (python::PythonScriptRunner::HasSceneScriptInstance(this)) {
+                python::PythonScriptRunner::DetachSceneScript(this);
+            }
+
             if (parent_) {
                 parent_->RemoveChild(this);
             }
@@ -688,11 +741,14 @@ Ref<PackedScene> Node::GetSceneInstance() const {
     return scene_instance_;
 }
 
-void Node::SetScript(const Ref<Resource>& script) {
+void Node::SetScript(const Ref<PythonScript>& script) {
+    if (python::PythonScriptRunner::HasSceneScriptInstance(this)) {
+        python::PythonScriptRunner::DetachSceneScript(this);
+    }
     script_ = script;
 }
 
-Ref<Resource> Node::GetScript() const {
+Ref<PythonScript> Node::GetScript() const {
     return script_;
 }
 

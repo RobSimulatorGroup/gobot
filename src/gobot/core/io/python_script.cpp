@@ -57,4 +57,5 @@ GOBOT_REGISTRATION {
     Class_<PythonScript>("PythonScript")
             .constructor()(CtorAsRawPtr)
             .property("source_code", &PythonScript::GetSourceCode, &PythonScript::SetSourceCode);
+    gobot::Type::register_wrapper_converter_for_base_classes<Ref<PythonScript>, Ref<Resource>>();
 }

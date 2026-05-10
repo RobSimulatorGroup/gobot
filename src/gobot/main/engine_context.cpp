@@ -4,6 +4,7 @@
 
 #include "gobot/core/config/project_setting.hpp"
 #include "gobot/core/io/resource_loader.hpp"
+#include "gobot/python/python_script_runner.hpp"
 #include "gobot/scene/node.hpp"
 #include "gobot/scene/resources/packed_scene.hpp"
 #include "gobot/simulation/simulation_server.hpp"
@@ -19,6 +20,7 @@ EngineContext::EngineContext(ProjectSettings* project_settings,
 }
 
 EngineContext::~EngineContext() {
+    python::PythonScriptRunner::ClearSceneScriptContext(this);
     ClearWorld();
     ClearOwnedScene();
 }
@@ -80,6 +82,8 @@ void EngineContext::SetSceneRoot(Node* scene_root, bool take_ownership, const st
         scene_command_stack_.Clear();
         scene_command_stack_.MarkClean();
         AdvanceSceneEpoch();
+        python::PythonScriptRunner::SetSceneScriptContext(this);
+        python::PythonScriptRunner::SetSceneScriptRoot(scene_root_);
         return;
     }
 
@@ -91,6 +95,8 @@ void EngineContext::SetSceneRoot(Node* scene_root, bool take_ownership, const st
     scene_root_ = scene_root;
     owns_scene_root_ = take_ownership;
     scene_path_ = scene_path;
+    python::PythonScriptRunner::SetSceneScriptContext(this);
+    python::PythonScriptRunner::SetSceneScriptRoot(scene_root_);
 }
 
 Node* EngineContext::GetSceneRoot() const {
@@ -118,6 +124,7 @@ void EngineContext::ClearScene() {
     scene_root_ = nullptr;
     owns_scene_root_ = false;
     scene_path_.clear();
+    python::PythonScriptRunner::ClearSceneScriptContext(this);
 }
 
 PhysicsBackendType EngineContext::GetBackendType() const {

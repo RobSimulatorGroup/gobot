@@ -8,6 +8,7 @@
 #include <string>
 #include <vector>
 
+#include <pybind11/eval.h>
 #include <pybind11/stl.h>
 
 #include "gobot/core/config/project_setting.hpp"
@@ -723,6 +724,39 @@ void RegisterRuntime(py::module_& module) {
 }
 
 void RegisterManualApis(py::module_& module) {
+    py::exec(R"(
+class NodeScript:
+    """Base class for Python scripts attached to Gobot scene nodes."""
+
+    def __init__(self):
+        self.node = None
+        self.root = None
+        self.context = None
+
+    def _attach(self, node, root, context):
+        self.node = node
+        self.root = root
+        self.context = context
+
+    def get_node(self, path: str):
+        if path == "":
+            return self.node
+        if path.startswith("/"):
+            if self.root is None:
+                return None
+            if path == "/":
+                return self.root
+            return self.root.find(path[1:])
+        if self.node is None:
+            return None
+        return self.node.find(path)
+
+    def get_root(self):
+        return self.root
+)",
+             module.attr("__dict__"),
+             module.attr("__dict__"));
+
     py::enum_<JointType>(module, "JointType")
             .value("Fixed", JointType::Fixed)
             .value("Revolute", JointType::Revolute)
@@ -1264,6 +1298,15 @@ void RegisterManualApis(py::module_& module) {
         EnsureRuntimeContext();
         return ResourceToPythonDict(ResourceLoader::Load(path, type_hint));
     }, py::arg("path"), py::arg("type_hint") = "");
+
+    module.def("_node_from_id", [](std::uint64_t id) -> py::object {
+        EnsureRuntimeContext();
+        auto* node = Object::PointerCastTo<Node>(ObjectDB::GetInstance(ObjectID(id)));
+        if (node == nullptr) {
+            return py::none();
+        }
+        return MakeTypedNodeObject(node);
+    }, py::arg("id"));
 
     module.def("create_test_scene", []() {
         EnsureRuntimeContext();

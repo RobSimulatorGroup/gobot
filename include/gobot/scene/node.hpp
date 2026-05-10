@@ -9,6 +9,7 @@
 #pragma once
 
 #include "gobot/core/object.hpp"
+#include "gobot/core/io/python_script.hpp"
 #include "gobot/scene/scene_tree.hpp"
 #include "gobot/scene/node_path.hpp"
 #include "gobot/scene/resources/packed_scene.hpp"
@@ -261,8 +262,8 @@ public:
     void SetSceneInstance(const Ref<PackedScene>& scene);
     Ref<PackedScene> GetSceneInstance() const;
 
-    void SetScript(const Ref<Resource>& script);
-    Ref<Resource> GetScript() const;
+    void SetScript(const Ref<PythonScript>& script);
+    Ref<PythonScript> GetScript() const;
 
 protected:
     void NotificationCallBack(NotificationType notification);
@@ -283,7 +284,7 @@ private:
     bool inside_tree_ = false;
     mutable NodePath path_cache_;
     Ref<PackedScene> scene_instance_;
-    Ref<Resource> script_;
+    Ref<PythonScript> script_;
 
     void PrintTreePretty(const std::string &prefix, bool last);
     void PrintTree(const Node *node);

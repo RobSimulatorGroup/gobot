@@ -24,6 +24,8 @@ public:
 
     FORCE_INLINE void SetOpen(bool open) { open_ = open; }
 
+    void RequestFocus();
+
     void SetImGuiWindow(const std::string& title, const std::string& id);
 
     const std::string& GetImGuiWindowTitle() const;
@@ -47,6 +49,7 @@ protected:
 
     bool collapsed_{false};
     bool open_ = true;
+    bool request_focus_{false};
     int imgui_window_flags_{0};
     std::optional<std::pair<Vector2f, int>> window_size_;
     std::optional<std::tuple<Vector2f, int, Vector2f>> window_pos_;

@@ -107,6 +107,8 @@ Editor::Editor() {
     });
     BindEngineContextToEditedScene();
     python::SetActiveAppContext(engine_context_);
+    python::PythonScriptRunner::SetSceneScriptContext(engine_context_);
+    python::PythonScriptRunner::SetSceneScriptRoot(edited_scene_->GetRoot());
 
     node3d_editor_ = Object::New<Node3DEditor>();
     node3d_editor_->SetName("Node3DEditor");
@@ -132,6 +134,7 @@ Editor::Editor() {
 }
 
 Editor::~Editor() {
+    python::PythonScriptRunner::ClearSceneScriptContext(engine_context_);
     if (python::GetActiveAppContextOrNull() == engine_context_) {
         python::SetActiveAppContext(nullptr);
     }
@@ -383,6 +386,9 @@ bool Editor::OpenPythonScriptFromPath(const std::string& path) {
     python_panel_->SetOpen(true);
     const bool opened = python_panel_->OpenScript(path);
     if (opened) {
+        if (resource_panel_ != nullptr) {
+            resource_panel_->SelectResource(path);
+        }
         FocusPythonPanel();
     }
     return opened;
@@ -396,6 +402,9 @@ void Editor::FocusSceneViewerPanel() {
 void Editor::FocusPythonPanel() {
     request_python_panel_focus_ = true;
     request_scene_viewer_focus_ = false;
+    if (python_panel_ != nullptr) {
+        python_panel_->RequestFocus();
+    }
 }
 
 void Editor::MarkSceneDirty() {
@@ -433,6 +442,9 @@ std::string Editor::GetSceneViewTitle() const {
 }
 
 void Editor::NotificationCallBack(NotificationType notification) {
+    python::PythonScriptRunner::SetSceneScriptContext(engine_context_);
+    python::PythonScriptRunner::SetSceneScriptRoot(GetEditedSceneRoot());
+
     switch (notification) {
         case NotificationType::PhysicsProcess: {
             if (python::PythonScriptRunner::HasPhysicsTickCallback()) {

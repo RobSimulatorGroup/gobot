@@ -6,6 +6,10 @@ from . import _core
 from ._core import *  # noqa: F401,F403
 from .scene_helpers import create_cartpole_scene, save_cartpole_scene
 
+_node_from_id = _core._node_from_id
+NodeScript = _core.NodeScript
+
+
 app = _importlib.import_module(__name__ + ".app")
 physics = _importlib.import_module(__name__ + ".physics")
 rl = _importlib.import_module(__name__ + ".rl")

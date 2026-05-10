@@ -40,15 +40,24 @@ private:
 
     bool DeleteNode(Node* node);
 
+    bool AttachScript(Node* node);
+
+    bool DetachScript(Node* node);
+
     void RequestOpenSceneInstance(const std::string& path);
 
+    void RequestOpenScript(const std::string& path);
+
     void FlushPendingSceneInstanceOpen();
+
+    void FlushPendingScriptOpen();
 
     ImGuiTextFilter* filter_{nullptr};
     Node* double_clicked_{nullptr};
     Node* current_{nullptr};
     Node* add_child_parent_{nullptr};
     std::string pending_open_scene_instance_path_;
+    std::string pending_open_script_path_;
     bool open_add_child_dialog_{false};
     std::string add_node_search_;
     std::string selected_add_node_id_;

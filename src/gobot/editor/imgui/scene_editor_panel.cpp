@@ -9,12 +9,18 @@
 
 #include <algorithm>
 #include <cctype>
+#include <filesystem>
 #include <functional>
+#include <fstream>
 #include <unordered_map>
 #include <vector>
 
+#include "gobot/core/io/python_script.hpp"
+#include "gobot/core/io/resource_loader.hpp"
 #include "gobot/core/os/input.hpp"
 #include "gobot/core/os/main_loop.hpp"
+#include "gobot/core/config/project_setting.hpp"
+#include "gobot/core/string_utils.hpp"
 #include "gobot/editor/imgui/imgui_utilities.hpp"
 #include "gobot/editor/editor.hpp"
 #include "gobot/main/engine_context.hpp"
@@ -138,6 +144,71 @@ bool AcceptSceneResourceDrop() {
     return accepted;
 }
 
+std::string PythonScriptTemplate() {
+    return "import gobot\n\n"
+           "\n"
+           "class Script(gobot.NodeScript):\n"
+           "    def _ready(self):\n"
+           "        pass\n"
+           "\n"
+           "    def _process(self, delta: float):\n"
+           "        pass\n"
+           "\n"
+           "    def _physics_process(self, delta: float):\n"
+           "        pass\n";
+}
+
+std::string SanitizeScriptBaseName(std::string value) {
+    if (value.empty()) {
+        value = "node";
+    }
+    std::ranges::transform(value, value.begin(), [](unsigned char character) {
+        if (std::isalnum(character)) {
+            return static_cast<char>(std::tolower(character));
+        }
+        return '_';
+    });
+    while (value.find("__") != std::string::npos) {
+        value = ReplaceAll(value, "__", "_");
+    }
+    while (!value.empty() && value.front() == '_') {
+        value.erase(value.begin());
+    }
+    while (!value.empty() && value.back() == '_') {
+        value.pop_back();
+    }
+    return value.empty() ? "node" : value;
+}
+
+std::string UniqueScriptPathForNode(const Node& node) {
+    const std::string base_name = SanitizeScriptBaseName(node.GetName()) + "_script";
+    std::string candidate = "res://scripts/" + base_name + ".py";
+    for (int index = 1; ResourceLoader::Exists(candidate, "PythonScript"); ++index) {
+        candidate = "res://scripts/" + base_name + "_" + std::to_string(index) + ".py";
+    }
+    return candidate;
+}
+
+bool CreateScriptFile(const std::string& local_path) {
+    const std::string global_path = ProjectSettings::GetInstance()->GlobalizePath(local_path);
+    std::error_code error;
+    std::filesystem::create_directories(std::filesystem::path(global_path).parent_path(), error);
+    if (error) {
+        LOG_ERROR("Failed to create Python script directory '{}': {}",
+                  std::filesystem::path(global_path).parent_path().string(),
+                  error.message());
+        return false;
+    }
+
+    std::ofstream output(global_path, std::ios::out | std::ios::trunc);
+    if (!output.is_open()) {
+        LOG_ERROR("Failed to create Python script '{}'.", local_path);
+        return false;
+    }
+    output << PythonScriptTemplate();
+    return true;
+}
+
 } // namespace
 
 SceneEditorPanel::SceneEditorPanel()
@@ -231,6 +302,66 @@ bool SceneEditorPanel::DeleteNode(Node* node) {
                    parent->GetInstanceId(),
                    node->GetInstanceId(),
                    true));
+}
+
+bool SceneEditorPanel::AttachScript(Node* node) {
+    if (node == nullptr) {
+        return false;
+    }
+
+    auto* editor = Editor::GetInstance();
+    auto* context = editor->GetEngineContext();
+    if (context == nullptr) {
+        return false;
+    }
+
+    Ref<PythonScript> script = node->GetScript();
+    bool created = false;
+    if (!script.IsValid()) {
+        const std::string local_path = UniqueScriptPathForNode(*node);
+        if (!CreateScriptFile(local_path)) {
+            return false;
+        }
+
+        Ref<Resource> resource = ResourceLoader::Load(local_path, "PythonScript", ResourceFormatLoader::CacheMode::Replace);
+        script = dynamic_pointer_cast<PythonScript>(resource);
+        if (!script.IsValid()) {
+            LOG_ERROR("Failed to load Python script '{}'.", local_path);
+            return false;
+        }
+        created = true;
+    }
+
+    if (!context->ExecuteSceneCommand(std::make_unique<SetNodePropertyCommand>(
+                node->GetInstanceId(),
+                "script",
+                Variant(script)))) {
+        return false;
+    }
+
+    if (created) {
+        LOG_INFO("Created and attached Python script '{}' to node '{}'.", script->GetPath(), node->GetName());
+    } else {
+        LOG_INFO("Attached Python script '{}' to node '{}'.", script->GetPath(), node->GetName());
+    }
+    editor->RefreshResourcePanel();
+    if (!script->GetPath().empty()) {
+        RequestOpenScript(script->GetPath());
+    }
+    return true;
+}
+
+bool SceneEditorPanel::DetachScript(Node* node) {
+    if (node == nullptr || !node->GetScript().IsValid()) {
+        return false;
+    }
+
+    auto* context = Editor::GetInstance()->GetEngineContext();
+    return context != nullptr &&
+           context->ExecuteSceneCommand(std::make_unique<SetNodePropertyCommand>(
+                   node->GetInstanceId(),
+                   "script",
+                   Variant(Ref<PythonScript>())));
 }
 
 void SceneEditorPanel::DrawAddChildDialog() {
@@ -423,9 +554,13 @@ bool SceneEditorPanel::DrawNode(Node* node)
     if (show) {
         const bool can_delete = CanDeleteNode(node);
         const Ref<PackedScene> scene_instance = node->GetSceneInstance();
+        const Ref<PythonScript> python_script = node->GetScript();
+        const bool has_script = python_script.IsValid();
         const bool is_scene_instance = IsSceneInstanceNode(node);
         const bool can_open_scene_instance = is_scene_instance && !scene_instance->GetPath().empty();
+        const bool can_open_script = has_script && !python_script->GetPath().empty();
         bool delete_node = false;
+        bool script_icon_clicked = false;
 
         ImGui::PushID(node);
 
@@ -471,6 +606,21 @@ bool SceneEditorPanel::DrawNode(Node* node)
         node_row_rect.Add(ImRect(ImGui::GetItemRectMin(), ImGui::GetItemRectMax()));
         if (!dropped_scene_on_row) {
             AcceptSceneResourceDrop();
+        }
+
+        if (has_script) {
+            ImGui::SameLine();
+            ImGui::TextDisabled("%s", ICON_MDI_LANGUAGE_PYTHON);
+            if (ImGui::IsItemHovered()) {
+                ImGui::SetTooltip("%s",
+                                  can_open_script ? python_script->GetPath().c_str()
+                                                  : "Python script has no resource path");
+            }
+            if (can_open_script && ImGui::IsItemClicked(ImGuiMouseButton_Left)) {
+                script_icon_clicked = true;
+                double_clicked_ = nullptr;
+                Editor::GetInstance()->OpenPythonScriptFromPath(python_script->GetPath());
+            }
         }
 
         if (is_scene_instance) {
@@ -558,6 +708,33 @@ bool SceneEditorPanel::DrawNode(Node* node)
             if (!can_open_scene_instance) {
                 ImGui::EndDisabled();
             }
+            if (!can_open_script) {
+                ImGui::BeginDisabled();
+            }
+            if (ImGui::MenuItem(ICON_MDI_LANGUAGE_PYTHON " Open Script")) {
+                RequestOpenScript(python_script->GetPath());
+            }
+            if (!can_open_script) {
+                ImGui::EndDisabled();
+            }
+            if (has_script) {
+                ImGui::BeginDisabled();
+            }
+            if (ImGui::MenuItem(ICON_MDI_LANGUAGE_PYTHON " Attach Script")) {
+                AttachScript(node);
+            }
+            if (has_script) {
+                ImGui::EndDisabled();
+            }
+            if (!has_script) {
+                ImGui::BeginDisabled();
+            }
+            if (ImGui::MenuItem(ICON_MDI_CLOSE " Detach Script")) {
+                DetachScript(node);
+            }
+            if (!has_script) {
+                ImGui::EndDisabled();
+            }
             if (!can_delete) {
                 ImGui::BeginDisabled();
             }
@@ -573,12 +750,12 @@ bool SceneEditorPanel::DrawNode(Node* node)
             ImGui::EndPopup();
         }
 
-        if(node_row_hovered && ImGui::IsMouseReleased(ImGuiMouseButton_Left) && !delete_node)
+        if(!script_icon_clicked && node_row_hovered && ImGui::IsMouseReleased(ImGuiMouseButton_Left) && !delete_node)
             editor->SetSelected(node);
         else if(double_clicked_ == node && ImGui::IsMouseClicked(ImGuiMouseButton_Left) && !node_row_hovered)
             double_clicked_ = nullptr;
 
-        if(ImGui::IsMouseDoubleClicked(ImGuiMouseButton_Left) && node_row_hovered) {
+        if(!script_icon_clicked && ImGui::IsMouseDoubleClicked(ImGuiMouseButton_Left) && node_row_hovered) {
             double_clicked_ = node;
             editor->FocusSceneViewerPanel();
         }
@@ -637,6 +814,10 @@ void SceneEditorPanel::RequestOpenSceneInstance(const std::string& path) {
     pending_open_scene_instance_path_ = path;
 }
 
+void SceneEditorPanel::RequestOpenScript(const std::string& path) {
+    pending_open_script_path_ = path;
+}
+
 void SceneEditorPanel::FlushPendingSceneInstanceOpen() {
     if (pending_open_scene_instance_path_.empty()) {
         return;
@@ -649,8 +830,21 @@ void SceneEditorPanel::FlushPendingSceneInstanceOpen() {
     Editor::GetInstance()->RequestOpenSceneFromPath(path);
 }
 
+void SceneEditorPanel::FlushPendingScriptOpen() {
+    if (pending_open_script_path_.empty()) {
+        return;
+    }
+
+    std::string path = std::move(pending_open_script_path_);
+    pending_open_script_path_.clear();
+    double_clicked_ = nullptr;
+    add_child_parent_ = nullptr;
+    Editor::GetInstance()->OpenPythonScriptFromPath(path);
+}
+
 void SceneEditorPanel::OnImGuiContent()
 {
+    FlushPendingScriptOpen();
     auto flags        = ImGuiWindowFlags_NoCollapse;
     current_ = nullptr;
 

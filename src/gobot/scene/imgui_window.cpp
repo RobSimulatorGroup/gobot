@@ -21,6 +21,11 @@ void ImGuiWindow::SetImGuiWindow(const std::string& title, const std::string& id
     imgui_window_label_cache_.clear();
 }
 
+void ImGuiWindow::RequestFocus() {
+    open_ = true;
+    request_focus_ = true;
+}
+
 const std::string& ImGuiWindow::GetImGuiWindowTitle() const {
     return imgui_window_title_.empty() ? GetName() : imgui_window_title_;
 }
@@ -55,6 +60,10 @@ bool ImGuiWindow::Begin() {
     if (window_pos_.has_value()) {
         const auto& [size, cond, pivot] = window_pos_.value();
         ImGui::SetNextWindowPos(size, cond, pivot);
+    }
+    if (request_focus_) {
+        ImGui::SetNextWindowFocus();
+        request_focus_ = false;
     }
 
     collapsed_ = ImGui::Begin(GetImGuiWindowLabel().c_str(), &open_, imgui_window_flags_);

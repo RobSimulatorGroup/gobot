@@ -72,13 +72,15 @@ void OpenInExternalCodeEditor(const std::string& global_path) {
 std::string PythonScriptTemplate() {
     return "import gobot\n\n"
            "\n"
-           "def main():\n"
-           "    ctx = gobot.app.context()\n"
-           "    print(ctx.root.name if ctx.root else 'no scene')\n"
+           "class Script(gobot.NodeScript):\n"
+           "    def _ready(self):\n"
+           "        pass\n"
            "\n"
+           "    def _process(self, delta: float):\n"
+           "        pass\n"
            "\n"
-           "if __name__ == '__main__':\n"
-           "    main()\n";
+           "    def _physics_process(self, delta: float):\n"
+           "        pass\n";
 }
 
 std::string EnsurePythonScriptExtension(std::string file_name) {
@@ -361,11 +363,14 @@ bool ResourcePanel::RenderFile(int dirIndex, bool folder, int shownIndex, bool g
     if(double_clicked) {
         DirectoryInformation* child = current_dir_->children[dirIndex];
         if(folder) {
+            selected_resource_ = child;
             ChangeDirectory(child);
         } else if (IsNativeSceneFile(child)) {
+            SelectResource(child->local_path);
             Editor::GetInstance()->RequestOpenSceneFromPath(child->local_path);
             Editor::GetInstance()->FocusSceneViewerPanel();
         } else if (IsPythonScriptFile(child)) {
+            SelectResource(child->local_path);
             Editor::GetInstance()->OpenPythonScriptFromPath(child->local_path);
         }
     }
@@ -399,7 +404,7 @@ void ResourcePanel::DrawResourceTree(DirectoryInformation* dir_info, bool root)
     ImGuiTreeNodeFlags node_flags = ImGuiTreeNodeFlags_OpenOnArrow |
                                     ImGuiTreeNodeFlags_OpenOnDoubleClick |
                                     ImGuiTreeNodeFlags_SpanAvailWidth;
-    if (dir_info == current_dir_) {
+    if (dir_info == current_dir_ || dir_info == selected_resource_) {
         node_flags |= ImGuiTreeNodeFlags_Selected;
     }
 
@@ -414,6 +419,7 @@ void ResourcePanel::DrawResourceTree(DirectoryInformation* dir_info, bool root)
     const std::string label = std::string(icon) + " " + dir_info->this_path + "##" + dir_info->global_path;
     const bool open = ImGui::TreeNodeEx(label.c_str(), node_flags);
     if (ImGui::IsItemClicked()) {
+        selected_resource_ = dir_info;
         if (dir_info->is_directory) {
             ChangeDirectory(dir_info);
         }
@@ -518,6 +524,33 @@ bool ResourcePanel::SetProjectPath(const std::string& project_path)
     Refresh();
     AddProjectHistory(project_path_);
     LOG_INFO("Opened project: {}", project_path_);
+    return true;
+}
+
+bool ResourcePanel::SelectResource(const std::string& local_path)
+{
+    if (local_path.empty()) {
+        selected_resource_ = nullptr;
+        return false;
+    }
+
+    const std::string global_path = ProjectSettings::GetInstance()->GlobalizePath(local_path);
+    auto resource_iter = directories_.find(global_path);
+    if (resource_iter == directories_.end()) {
+        Refresh();
+        resource_iter = directories_.find(global_path);
+        if (resource_iter == directories_.end()) {
+            return false;
+        }
+    }
+
+    selected_resource_ = resource_iter->second.get();
+    if (selected_resource_->parent != nullptr) {
+        ChangeDirectory(selected_resource_->parent);
+    } else if (selected_resource_->is_directory) {
+        ChangeDirectory(selected_resource_);
+    }
+
     return true;
 }
 
@@ -903,6 +936,7 @@ void ResourcePanel::Refresh()
         directories_.clear();
         previous_directory_ = nullptr;
         current_dir_ = nullptr;
+        selected_resource_ = nullptr;
         base_project_dir_ = nullptr;
         bread_crumb_data_.clear();
         return;
@@ -917,6 +951,7 @@ void ResourcePanel::Refresh()
     base_project_dir_ = ProcessDirectory("res://", nullptr);
     previous_directory_ = nullptr;
     current_dir_ = nullptr;
+    selected_resource_ = nullptr;
 
     if(!current_path.empty() && directories_.contains(current_path))
         current_dir_ = directories_[current_path].get();

@@ -9,6 +9,7 @@ from ._core import (
     MeshInstance3D,
     Node,
     Node3D,
+    NodeScript,
     PhysicsBackendInfo,
     PhysicsBackendType,
     Robot3D,
@@ -31,5 +32,6 @@ from ._core import (
 from .scene_helpers import create_cartpole_scene, save_cartpole_scene
 
 from . import app, physics, rl, scene, sim
+
 
 __all__: list[str]

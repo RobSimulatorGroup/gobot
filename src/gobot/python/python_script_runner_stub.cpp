@@ -29,6 +29,28 @@ PythonExecutionResult PythonScriptRunner::ExecutePhysicsTick(EngineContext*,
     return {true, "", ""};
 }
 
+void PythonScriptRunner::SetSceneScriptContext(EngineContext*) {}
+
+void PythonScriptRunner::SetSceneScriptRoot(Node*) {}
+
+void PythonScriptRunner::ClearSceneScriptContext(EngineContext*) {}
+
+bool PythonScriptRunner::HasSceneScriptInstance(Node*) {
+    return false;
+}
+
+PythonExecutionResult PythonScriptRunner::AttachSceneScript(Node*, const Ref<PythonScript>&) {
+    return {false, "", "Python scene scripts are not available in this build."};
+}
+
+void PythonScriptRunner::DetachSceneScript(Node*) {}
+
+PythonExecutionResult PythonScriptRunner::NotifySceneScript(Node*,
+                                                            NotificationType,
+                                                            double) {
+    return {true, "", ""};
+}
+
 void PythonScriptRunner::SetTickCallback(PythonTickCallback) {}
 
 void PythonScriptRunner::SetTickClearCallback(PythonTickClearCallback) {}

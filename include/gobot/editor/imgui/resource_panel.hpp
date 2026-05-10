@@ -60,6 +60,8 @@ public:
 
     bool SetProjectPath(const std::string& project_path);
 
+    bool SelectResource(const std::string& local_path);
+
     void LoadProjectHistory();
 
     void SaveProjectHistory() const;
@@ -110,6 +112,7 @@ private:
 
     bool update_navigation_path_;
     DirectoryInformation* current_dir_{nullptr};
+    DirectoryInformation* selected_resource_{nullptr};
     DirectoryInformation* base_project_dir_{nullptr};
 
     DirectoryInformation* next_directory_{nullptr};
