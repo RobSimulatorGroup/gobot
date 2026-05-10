@@ -113,6 +113,7 @@ private:
     bool update_navigation_path_;
     DirectoryInformation* current_dir_{nullptr};
     DirectoryInformation* selected_resource_{nullptr};
+    std::string pending_scroll_resource_path_;
     DirectoryInformation* base_project_dir_{nullptr};
 
     DirectoryInformation* next_directory_{nullptr};

@@ -108,10 +108,7 @@ TextEditor::LanguageDefinition PythonLanguageDefinition() {
 }
 
 std::string DefaultPythonScript() {
-    return "import gobot\n"
-           "\n"
-           "ctx = gobot.app.context()\n"
-           "print(ctx.root.name if ctx.root else 'no scene')\n";
+    return "import gobot\n\n";
 }
 
 void AddPythonMessage(const std::string& message,

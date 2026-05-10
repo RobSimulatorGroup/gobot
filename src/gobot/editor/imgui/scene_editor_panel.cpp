@@ -608,39 +608,45 @@ bool SceneEditorPanel::DrawNode(Node* node)
             AcceptSceneResourceDrop();
         }
 
+        const float icon_button_width = ImGui::GetFrameHeight();
+        const float button_spacing = ImGui::GetStyle().ItemInnerSpacing.x;
+        const int scene_instance_button_count = is_scene_instance ? (can_delete ? 2 : 1) : 0;
+        const float scene_instance_buttons_width =
+                icon_button_width * static_cast<float>(scene_instance_button_count) +
+                button_spacing * static_cast<float>(std::max(0, scene_instance_button_count - 1));
+        const float script_icon_right_padding = is_scene_instance && scene_instance_button_count > 0
+                                                ? scene_instance_buttons_width + button_spacing
+                                                : 0.0f;
+        const float row_end_x = ImGui::GetWindowContentRegionMax().x;
+
         if (has_script) {
-            ImGui::SameLine();
-            ImGui::TextDisabled("%s", ICON_MDI_LANGUAGE_PYTHON);
+            const float script_icon_x = row_end_x - script_icon_right_padding - icon_button_width;
+            if (ImGui::GetCursorPosX() + icon_button_width < script_icon_x) {
+                ImGui::SameLine(script_icon_x);
+            } else {
+                ImGui::SameLine();
+            }
+            ImGui::PushStyleColor(ImGuiCol_Button, ImVec4(0, 0, 0, 0));
+            ImGui::PushStyleColor(ImGuiCol_ButtonHovered, ImGui::GetStyleColorVec4(ImGuiCol_HeaderHovered));
+            ImGui::PushStyleColor(ImGuiCol_ButtonActive, ImGui::GetStyleColorVec4(ImGuiCol_HeaderActive));
+            if (ImGui::SmallButton(ICON_MDI_LANGUAGE_PYTHON "##OpenNodeScript")) {
+                if (can_open_script) {
+                    script_icon_clicked = true;
+                    double_clicked_ = nullptr;
+                    Editor::GetInstance()->OpenPythonScriptFromPath(python_script->GetPath());
+                }
+            }
+            ImGui::PopStyleColor(3);
             if (ImGui::IsItemHovered()) {
                 ImGui::SetTooltip("%s",
                                   can_open_script ? python_script->GetPath().c_str()
                                                   : "Python script has no resource path");
             }
-            if (can_open_script && ImGui::IsItemClicked(ImGuiMouseButton_Left)) {
-                script_icon_clicked = true;
-                double_clicked_ = nullptr;
-                Editor::GetInstance()->OpenPythonScriptFromPath(python_script->GetPath());
-            }
         }
 
         if (is_scene_instance) {
-            ImGui::SameLine();
-            ImGui::TextDisabled("%s", ICON_MDI_LINK_VARIANT);
-            if (ImGui::IsItemHovered()) {
-                ImGui::SetTooltip("%s",
-                                  can_open_scene_instance ? scene_instance->GetPath().c_str()
-                                                          : "Scene instance has no resource path");
-            }
-
-            const float icon_button_width = ImGui::GetFrameHeight();
-            const float button_spacing = ImGui::GetStyle().ItemInnerSpacing.x;
-            const int right_button_count = (can_delete ? 2 : 1);
-            const float right_buttons_width =
-                    icon_button_width * static_cast<float>(right_button_count) +
-                    button_spacing * static_cast<float>(right_button_count - 1);
-            const float row_end_x = ImGui::GetWindowContentRegionMax().x;
-            if (ImGui::GetCursorPosX() + right_buttons_width < row_end_x) {
-                ImGui::SameLine(row_end_x - right_buttons_width);
+            if (ImGui::GetCursorPosX() + scene_instance_buttons_width < row_end_x - scene_instance_buttons_width) {
+                ImGui::SameLine(row_end_x - scene_instance_buttons_width);
             } else {
                 ImGui::SameLine();
             }

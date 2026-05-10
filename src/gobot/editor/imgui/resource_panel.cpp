@@ -414,10 +414,18 @@ void ResourcePanel::DrawResourceTree(DirectoryInformation* dir_info, bool root)
     if (root) {
         node_flags |= ImGuiTreeNodeFlags_DefaultOpen;
     }
+    if (selected_resource_ != nullptr && dir_info->is_directory &&
+            pending_scroll_resource_path_.starts_with(dir_info->global_path)) {
+        ImGui::SetNextItemOpen(true);
+    }
 
     const char* icon = ResourceIcon(dir_info);
     const std::string label = std::string(icon) + " " + dir_info->this_path + "##" + dir_info->global_path;
     const bool open = ImGui::TreeNodeEx(label.c_str(), node_flags);
+    if (dir_info == selected_resource_ && pending_scroll_resource_path_ == dir_info->global_path) {
+        ImGui::SetScrollHereY(0.5f);
+        pending_scroll_resource_path_.clear();
+    }
     if (ImGui::IsItemClicked()) {
         selected_resource_ = dir_info;
         if (dir_info->is_directory) {
@@ -545,6 +553,7 @@ bool ResourcePanel::SelectResource(const std::string& local_path)
     }
 
     selected_resource_ = resource_iter->second.get();
+    pending_scroll_resource_path_ = selected_resource_->global_path;
     if (selected_resource_->parent != nullptr) {
         ChangeDirectory(selected_resource_->parent);
     } else if (selected_resource_->is_directory) {

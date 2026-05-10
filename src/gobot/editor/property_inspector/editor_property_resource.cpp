@@ -199,6 +199,15 @@ bool ShouldShowNestedResourceProperty(const Resource* resource, const Property& 
         return false;
     }
 
+    if (Object::PointerCastTo<PythonScript>(const_cast<Resource*>(resource)) != nullptr) {
+        const std::string property_name = property.get_name().to_string();
+        if (property_name == "source_code" ||
+            property_name == "resource_name" ||
+            property_name == "use_count") {
+            return false;
+        }
+    }
+
     PropertyInfo property_info;
     const Variant property_metadata = property.get_metadata(PROPERTY_INFO_KEY);
     if (property_metadata.is_valid()) {

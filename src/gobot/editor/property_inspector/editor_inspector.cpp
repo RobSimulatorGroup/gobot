@@ -13,6 +13,8 @@
 #include "gobot/editor/property_inspector/editor_property_math.hpp"
 #include "gobot/editor/property_inspector/editor_property_resource.hpp"
 #include "gobot/editor/imgui/type_icons.hpp"
+#include "gobot/core/io/python_script.hpp"
+#include "gobot/scene/node.hpp"
 #include "gobot/type_categroy.hpp"
 #include "imgui_stdlib.h"
 #include "imgui_extension/icon_fonts/icons_material_design_icons.h"
@@ -33,6 +35,18 @@ bool IsEditorVisibleProperty(const Property& property) {
 
     USING_ENUM_BITWISE_OPERATORS;
     return static_cast<bool>(property_info.usage & PropertyUsageFlags::Editor);
+}
+
+bool ShouldHidePropertyInInspector(const Type& owner_type, const Property& property) {
+    const std::string property_name = property.get_name().data();
+    if (owner_type == Type::get<PythonScript>() &&
+            (property_name == "source_code" || property_name == "resource_name")) {
+        return true;
+    }
+    if (owner_type == Type::get<Node>() && property_name == "scene_instance") {
+        return true;
+    }
+    return false;
 }
 
 } // namespace
@@ -67,6 +81,9 @@ EditorInspector::EditorInspector(Variant& variant)
                 continue;
             }
             if (!IsEditorVisibleProperty(property)) {
+                continue;
+            }
+            if (ShouldHidePropertyInInspector(type, property)) {
                 continue;
             }
             properties_map_.at(type).emplace_back(property);
