@@ -195,6 +195,7 @@ SceneState::NodeData MakeBodyJointNode(const mjModel* model,
 
     const int dof_address = model->jnt_dofadr[joint_id];
     AddProperty(node_data, "velocity_limit", static_cast<RealType>(0.0));
+    AddProperty(node_data, "damping", static_cast<RealType>(model->dof_damping[dof_address]));
     AddProperty(node_data, "joint_position",
                 model->jnt_type[joint_id] == mjJNT_HINGE || model->jnt_type[joint_id] == mjJNT_SLIDE
                         ? static_cast<RealType>(model->qpos0[model->jnt_qposadr[joint_id]])

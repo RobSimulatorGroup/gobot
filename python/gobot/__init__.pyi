@@ -11,10 +11,6 @@ from ._core import (
     Node3D,
     PhysicsBackendInfo,
     PhysicsBackendType,
-    RLControllerConfig,
-    RLEnvironment,
-    RLEnvironmentRewardSettings,
-    RLVectorSpec,
     Robot3D,
     RobotMode,
     Scene,
@@ -32,7 +28,6 @@ from ._core import (
     set_project_path,
     set_editor_tick_callback,
 )
-from .cartpole_env import CartPoleEnv
 from .scene_helpers import create_cartpole_scene, save_cartpole_scene
 
 from . import app, physics, rl, scene, sim

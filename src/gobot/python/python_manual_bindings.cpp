@@ -28,7 +28,6 @@
 #include "gobot/scene/robot_3d.hpp"
 #include "gobot/scene/scene_command.hpp"
 #include "gobot/scene/scene_initializer.hpp"
-#include "gobot/simulation/rl_environment.hpp"
 #include "gobot/simulation/simulation_server.hpp"
 #include "gobot/python/python_script_runner.hpp"
 
@@ -285,105 +284,6 @@ PhysicsBackendType ParseBackend(const std::string& backend) {
         return PhysicsBackendType::MuJoCoCpu;
     }
     throw std::invalid_argument("unknown Gobot physics backend '" + backend + "'");
-}
-
-struct PyRLEnvironment {
-    SimulationServer* simulation{nullptr};
-    RLEnvironment* environment{nullptr};
-    Node* scene_root{nullptr};
-
-    PyRLEnvironment(const std::string& scene_path,
-                    const std::string& robot,
-                    const std::string& backend) {
-        GetActiveAppContext();
-        simulation = Object::New<SimulationServer>(ParseBackend(backend));
-        environment = Object::New<RLEnvironment>(simulation);
-        scene_root = scene_path.empty() ? static_cast<Node*>(CreateTestRobotScene()) : LoadSceneRoot(scene_path);
-        environment->SetSceneRoot(scene_root);
-        environment->SetRobotName(robot);
-    }
-
-    ~PyRLEnvironment() {
-        if (environment != nullptr) {
-            Object::Delete(environment);
-            environment = nullptr;
-        }
-        if (simulation != nullptr) {
-            Object::Delete(simulation);
-            simulation = nullptr;
-        }
-        if (scene_root != nullptr) {
-            Object::Delete(scene_root);
-            scene_root = nullptr;
-        }
-    }
-
-    RLEnvironmentResetResult Reset(std::uint32_t seed) {
-        return environment->Reset(seed);
-    }
-
-    RLEnvironmentStepResult Step(const std::vector<RealType>& action) {
-        return environment->Step(action);
-    }
-
-    void SetDefaultJointGains(const JointControllerGains& gains) {
-        simulation->SetDefaultJointGains(gains);
-    }
-
-    const JointControllerGains& GetDefaultJointGains() const {
-        return simulation->GetDefaultJointGains();
-    }
-};
-
-struct PyRLControllerConfig {
-    std::vector<std::string> controlled_joints;
-    std::vector<RealType> default_action;
-    JointControllerGains joint_gains{100.0, 10.0, 0.0, 0.0};
-};
-
-py::dict ControllerConfigToDict(const PyRLControllerConfig& config) {
-    py::dict result;
-    result["controlled_joints"] = config.controlled_joints;
-    result["default_action"] = config.default_action;
-    result["joint_gains"] = ReflectedToPythonDict(config.joint_gains);
-    return result;
-}
-
-PyRLControllerConfig ControllerConfigFromDict(py::dict dict) {
-    PyRLControllerConfig config;
-    if (dict.contains("controlled_joints")) {
-        config.controlled_joints = py::cast<std::vector<std::string>>(dict["controlled_joints"]);
-    }
-    if (dict.contains("default_action")) {
-        config.default_action = py::cast<std::vector<RealType>>(dict["default_action"]);
-    }
-    if (dict.contains("joint_gains")) {
-        config.joint_gains = DictToReflected<JointControllerGains>(
-                py::reinterpret_borrow<py::dict>(dict["joint_gains"]));
-    }
-    return config;
-}
-
-PyRLControllerConfig MakeControllerConfigFromEnv(PyRLEnvironment& env) {
-    PyRLControllerConfig config;
-    config.controlled_joints = env.environment->GetControlledJointNames();
-    config.default_action = env.environment->GetDefaultAction();
-    if (config.default_action.empty()) {
-        config.default_action.assign(config.controlled_joints.size(), 0.0);
-    }
-    config.joint_gains = env.GetDefaultJointGains();
-    return config;
-}
-
-void ApplyControllerConfigToEnv(PyRLEnvironment& env, py::dict dict) {
-    const PyRLControllerConfig config = ControllerConfigFromDict(dict);
-    env.environment->SetConfiguredControlledJointNames(config.controlled_joints);
-    env.environment->SetDefaultAction(config.default_action);
-    env.SetDefaultJointGains(config.joint_gains);
-    if (!config.default_action.empty() &&
-        config.default_action.size() != config.controlled_joints.size()) {
-        throw std::invalid_argument("default_action size must match controlled_joints size");
-    }
 }
 
 py::object& PythonTickFunction() {
@@ -1251,6 +1151,14 @@ void RegisterManualApis(py::module_& module) {
                               Joint3D* joint = handle.ResolveAs<Joint3D>();
                               ExecuteSetNodeProperty(joint, "velocity_limit", Variant(velocity_limit));
                           })
+            .def_property("damping",
+                          [](const PyJoint3DHandle& handle) {
+                              return handle.ResolveAs<Joint3D>()->GetDamping();
+                          },
+                          [](PyJoint3DHandle& handle, RealType damping) {
+                              Joint3D* joint = handle.ResolveAs<Joint3D>();
+                              ExecuteSetNodeProperty(joint, "damping", Variant(damping));
+                          })
             .def_property("joint_position",
                           [](const PyJoint3DHandle& handle) {
                               return handle.ResolveAs<Joint3D>()->GetJointPosition();
@@ -1289,85 +1197,6 @@ void RegisterManualApis(py::module_& module) {
                                       py::cast<float>(sequence[3])
                               }));
                           });
-
-    py::class_<PyRLControllerConfig>(module, "RLControllerConfig")
-            .def(py::init<>())
-            .def_readwrite("controlled_joints", &PyRLControllerConfig::controlled_joints)
-            .def_readwrite("default_action", &PyRLControllerConfig::default_action)
-            .def_property("joint_gains",
-                          [](const PyRLControllerConfig& config) {
-                              return ReflectedToPythonDict(config.joint_gains);
-                          },
-                          [](PyRLControllerConfig& config, py::dict gains) {
-                              config.joint_gains = DictToReflected<JointControllerGains>(gains);
-                          })
-            .def("to_dict", &ControllerConfigToDict)
-            .def_static("from_dict", &ControllerConfigFromDict, py::arg("config"));
-
-    py::class_<PyRLEnvironment>(module, "RLEnvironment")
-            .def(py::init<const std::string&, const std::string&, const std::string&>(),
-                 py::arg("scene_path") = "",
-                 py::arg("robot") = "robot",
-                 py::arg("backend") = "null")
-            .def("reset", [](PyRLEnvironment& env, std::uint32_t seed) {
-                py::dict result = ReflectedToPythonDict(env.Reset(seed));
-                py::dict info = StepInfoFromResult(result);
-                info["ok"] = result["ok"];
-                info["seed"] = result["seed"];
-                return py::make_tuple(result["observation"], info);
-            }, py::arg("seed") = 0)
-            .def("step", [](PyRLEnvironment& env, const std::vector<RealType>& action) {
-                py::dict result = ReflectedToPythonDict(env.Step(action));
-                return py::make_tuple(result["observation"],
-                                      result["reward"],
-                                      result["terminated"],
-                                      result["truncated"],
-                                      StepInfoFromResult(result));
-            }, py::arg("action"))
-            .def("reset_result", [](PyRLEnvironment& env, std::uint32_t seed) {
-                return ReflectedToPythonDict(env.Reset(seed));
-            }, py::arg("seed") = 0)
-            .def("step_result", [](PyRLEnvironment& env, const std::vector<RealType>& action) {
-                return ReflectedToPythonDict(env.Step(action));
-            }, py::arg("action"))
-            .def("get_observation", [](const PyRLEnvironment& env) {
-                return env.environment->GetObservation();
-            })
-            .def("get_action_size", [](const PyRLEnvironment& env) {
-                return env.environment->GetActionSize();
-            })
-            .def("get_observation_size", [](const PyRLEnvironment& env) {
-                return env.environment->GetObservationSize();
-            })
-            .def("get_controlled_joint_names", [](const PyRLEnvironment& env) {
-                return env.environment->GetControlledJointNames();
-            })
-            .def("get_contact_link_names", [](const PyRLEnvironment& env) {
-                return env.environment->GetContactLinkNames();
-            })
-            .def("get_action_spec", [](const PyRLEnvironment& env) {
-                return ReflectedToPythonDict(env.environment->GetActionSpec());
-            })
-            .def("get_observation_spec", [](const PyRLEnvironment& env) {
-                return ReflectedToPythonDict(env.environment->GetObservationSpec());
-            })
-            .def("set_reward_settings", [](PyRLEnvironment& env, py::dict settings) {
-                env.environment->SetRewardSettings(DictToReflected<RLEnvironmentRewardSettings>(settings));
-            })
-            .def("get_reward_settings", [](const PyRLEnvironment& env) {
-                return ReflectedToPythonDict(env.environment->GetRewardSettings());
-            })
-            .def("set_default_joint_gains", [](PyRLEnvironment& env, py::dict gains) {
-                env.SetDefaultJointGains(DictToReflected<JointControllerGains>(gains));
-            })
-            .def("get_default_joint_gains", [](const PyRLEnvironment& env) {
-                return ReflectedToPythonDict(env.GetDefaultJointGains());
-            })
-            .def("get_controller_config", &MakeControllerConfigFromEnv)
-            .def("apply_controller_config", &ApplyControllerConfigToEnv, py::arg("config"))
-            .def("get_last_error", [](const PyRLEnvironment& env) {
-                return env.environment->GetLastError();
-            });
 
     module.def("set_project_path", [](const std::string& project_path) {
         EngineContext& context = GetActiveAppContext();

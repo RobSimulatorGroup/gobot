@@ -93,6 +93,7 @@ struct PhysicsJointSnapshot {
     RealType upper_limit{0.0};
     RealType effort_limit{0.0};
     RealType velocity_limit{0.0};
+    RealType damping{0.0};
     RealType joint_position{0.0};
     int joint_type{0};
 };

@@ -6,7 +6,6 @@
 
 #include "gobot/physics/physics_types.hpp"
 #include "gobot/python/python_binding_policy.hpp"
-#include "gobot/simulation/rl_environment.hpp"
 
 namespace gobot::python {
 namespace {
@@ -80,12 +79,9 @@ void RegisterReflectedTypes(py::module_& module) {
     EnsureSubmodule(module, "sim");
     EnsureSubmodule(module, "scene");
     EnsureSubmodule(module, "physics");
-    EnsureSubmodule(module, "rl");
 
     RegisterReflectedEnum<PhysicsBackendType>(module, "physics");
     RegisterReflectedValueType<JointControllerGains>(module, "sim");
-    RegisterReflectedValueType<RLEnvironmentRewardSettings>(module, "rl");
-    RegisterReflectedValueType<RLVectorSpec>(module, "rl");
     RegisterReflectedValueType<PhysicsBackendInfo>(module, "physics");
 }
 

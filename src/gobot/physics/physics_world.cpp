@@ -171,6 +171,7 @@ void CollectRobotNodes(const Node* node,
         joint_snapshot.upper_limit = joint->GetUpperLimit();
         joint_snapshot.effort_limit = joint->GetEffortLimit();
         joint_snapshot.velocity_limit = joint->GetVelocityLimit();
+        joint_snapshot.damping = joint->GetDamping();
         joint_snapshot.joint_position = joint->GetJointPosition();
         joint_snapshot.joint_type = static_cast<int>(joint->GetJointType());
         robot_snapshot->joints.emplace_back(std::move(joint_snapshot));

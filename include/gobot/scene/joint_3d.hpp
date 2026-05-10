@@ -61,6 +61,10 @@ public:
 
     RealType GetVelocityLimit() const;
 
+    void SetDamping(RealType damping);
+
+    RealType GetDamping() const;
+
     void SetJointPosition(RealType joint_position);
 
     RealType GetJointPosition() const;
@@ -92,6 +96,7 @@ private:
     RealType upper_limit_{0.0};
     RealType effort_limit_{0.0};
     RealType velocity_limit_{0.0};
+    RealType damping_{0.0};
     RealType joint_position_{0.0};
     Affine3 assembly_transform_{Affine3::Identity()};
     std::vector<std::pair<Node3D*, Affine3>> child_assembly_transforms_;

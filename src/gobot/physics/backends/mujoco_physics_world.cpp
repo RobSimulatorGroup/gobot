@@ -375,6 +375,7 @@ void AddJointToBody(mjsBody* body,
         mujoco_joint->actfrcrange[0] = -joint.effort_limit;
         mujoco_joint->actfrcrange[1] = joint.effort_limit;
     }
+    mujoco_joint->damping[0] = static_cast<double>(joint.damping);
 }
 
 void ConfigureActuatorLimits(mjsActuator* actuator, const PhysicsJointSnapshot& joint, bool control_is_position) {

@@ -71,7 +71,6 @@ package_add_test(test_edited_scene
 package_add_test(test_physics_server physics/test_physics_server.cpp)
 package_add_test(test_joint_controller physics/test_joint_controller.cpp)
 package_add_test(test_simulation_server simulation/test_simulation_server.cpp)
-package_add_test(test_rl_environment simulation/test_rl_environment.cpp)
 
 if (GOB_BUILD_PYTHON_BINDINGS)
     add_test(

@@ -92,6 +92,18 @@ RealType Joint3D::GetVelocityLimit() const {
     return velocity_limit_;
 }
 
+void Joint3D::SetDamping(RealType damping) {
+    if (damping < 0) {
+        LOG_ERROR("Joint3D damping cannot be negative.");
+        return;
+    }
+    damping_ = damping;
+}
+
+RealType Joint3D::GetDamping() const {
+    return damping_;
+}
+
 RealType Joint3D::ClampJointPosition(RealType joint_position) const {
     if (HasJointPositionLimits()) {
         return std::clamp(joint_position, lower_limit_, upper_limit_);
@@ -212,6 +224,7 @@ GOBOT_REGISTRATION {
             .property("lower_limit", &Joint3D::GetLowerLimit, &Joint3D::SetLowerLimit)
             .property("upper_limit", &Joint3D::GetUpperLimit, &Joint3D::SetUpperLimit)
             .property("effort_limit", &Joint3D::GetEffortLimit, &Joint3D::SetEffortLimit)
-            .property("velocity_limit", &Joint3D::GetVelocityLimit, &Joint3D::SetVelocityLimit);
+            .property("velocity_limit", &Joint3D::GetVelocityLimit, &Joint3D::SetVelocityLimit)
+            .property("damping", &Joint3D::GetDamping, &Joint3D::SetDamping);
 
 };
