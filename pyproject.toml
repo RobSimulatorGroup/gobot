@@ -25,7 +25,6 @@ Repository = "https://github.com/RobSimulatorGroup/gobot"
 Issues = "https://github.com/RobSimulatorGroup/gobot/issues"
 
 [project.scripts]
-gobot-editor = "gobot.cli:editor"
 gobot_editor = "gobot.cli:editor"
 
 [tool.scikit-build]
