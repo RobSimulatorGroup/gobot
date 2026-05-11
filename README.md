@@ -88,7 +88,7 @@ scene = gobot.load_scene("res://world.jscn")
 The wheel also installs the editor command:
 
 ```bash
-gobot-editor
+gobot_editor
 ```
 
 The executable and its local shared libraries are installed inside the Python
