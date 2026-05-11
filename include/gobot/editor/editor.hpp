@@ -8,6 +8,7 @@
 #pragma once
 
 #include <functional>
+#include <memory>
 #include <string>
 
 #include "gobot/scene/node.hpp"
@@ -26,6 +27,7 @@ class EditedScene;
 class EngineContext;
 class ResourcePanel;
 class PythonPanel;
+class ScenePlaySession;
 
 class GOBOT_EXPORT Editor : public ImGuiNode {
     GOBCLASS(Editor, Node)
@@ -104,6 +106,18 @@ public:
 
     [[nodiscard]] std::string GetSceneViewTitle() const;
 
+    bool StartScenePlaySession();
+
+    void StopScenePlaySession();
+
+    bool ResetScenePlaySession();
+
+    [[nodiscard]] bool IsScenePlaySessionRunning() const;
+
+    [[nodiscard]] std::size_t GetActiveSceneScriptCount() const;
+
+    [[nodiscard]] std::string GetScenePlaySessionLastError() const;
+
 private:
     enum class SceneFileDialogMode {
         None,
@@ -155,6 +169,7 @@ private:
     EngineContext* engine_context_{nullptr};
     ResourcePanel* resource_panel_{nullptr};
     PythonPanel* python_panel_{nullptr};
+    std::unique_ptr<ScenePlaySession> scene_play_session_;
 
     SceneFileDialogMode scene_file_dialog_mode_{SceneFileDialogMode::None};
     std::string current_scene_path_;

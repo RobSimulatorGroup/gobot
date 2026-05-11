@@ -4,6 +4,7 @@
 
 #include "gobot_export.h"
 #include "gobot/core/notification_enum.hpp"
+#include "gobot/core/object_id.hpp"
 #include "gobot/core/ref_counted.hpp"
 
 namespace gobot {
@@ -20,9 +21,6 @@ struct GOBOT_EXPORT PythonExecutionResult {
     std::string error;
 };
 
-using PythonTickCallback = void (*)(double delta_time);
-using PythonTickClearCallback = void (*)();
-
 class GOBOT_EXPORT PythonScriptRunner {
 public:
     static bool IsAvailable();
@@ -33,14 +31,6 @@ public:
 
     static PythonExecutionResult ExecuteFile(const std::string& path,
                                              EngineContext* context = nullptr);
-
-    static PythonExecutionResult ExecuteTick(EngineContext* context,
-                                             double delta_time,
-                                             const std::string& filename = "<gobot-python-tick>");
-
-    static PythonExecutionResult ExecutePhysicsTick(EngineContext* context,
-                                                    double delta_time,
-                                                    const std::string& filename = "<gobot-python-physics-tick>");
 
     static void SetSceneScriptContext(EngineContext* context);
 
@@ -55,25 +45,11 @@ public:
 
     static void DetachSceneScript(Node* node);
 
+    static void DetachSceneScript(ObjectID node_id);
+
     static PythonExecutionResult NotifySceneScript(Node* node,
                                                    NotificationType notification,
                                                    double delta_time);
-
-    static void SetTickCallback(PythonTickCallback callback);
-
-    static void SetTickClearCallback(PythonTickClearCallback callback);
-
-    static bool HasTickCallback();
-
-    static void ClearTickCallback();
-
-    static void SetPhysicsTickCallback(PythonTickCallback callback);
-
-    static void SetPhysicsTickClearCallback(PythonTickClearCallback callback);
-
-    static bool HasPhysicsTickCallback();
-
-    static void ClearPhysicsTickCallback();
 
     static void Shutdown();
 };

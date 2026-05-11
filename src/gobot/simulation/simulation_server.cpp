@@ -57,6 +57,23 @@ const PhysicsLinkSnapshot* FindLinkSnapshot(const PhysicsRobotSnapshot& robot_sn
     return nullptr;
 }
 
+const char* BackendName(PhysicsBackendType backend_type) {
+    switch (backend_type) {
+        case PhysicsBackendType::Null:
+            return "Null";
+        case PhysicsBackendType::MuJoCoCpu:
+            return "MuJoCo CPU";
+        case PhysicsBackendType::MuJoCoWarp:
+            return "MuJoCo Warp";
+        case PhysicsBackendType::NewtonGpu:
+            return "Newton GPU";
+        case PhysicsBackendType::RigidIpcCpu:
+            return "Rigid IPC CPU";
+    }
+
+    return "Unknown";
+}
+
 void ApplyLinkGlobalTransform(Link3D* link, const Affine3& global_transform) {
     if (link == nullptr) {
         return;
@@ -197,6 +214,12 @@ bool SimulationServer::BuildWorldFromScene(const Node* scene_root) {
         SetLastError("Failed to create physics world.");
         return false;
     }
+    if (world_->GetBackendType() != backend_type_) {
+        SetLastError(fmt::format("Requested physics backend '{}' is not available or implemented.",
+                                 BackendName(backend_type_)));
+        world_.Reset();
+        return false;
+    }
 
     if (!world_->BuildFromScene(scene_root)) {
         SetLastError(world_->GetLastError());
@@ -219,6 +242,12 @@ bool SimulationServer::RebuildWorldFromScene(const Node* scene_root, bool preser
     world_ = PhysicsServer::CreateWorldForBackend(backend_type_, physics_world_settings_);
     if (!world_.IsValid()) {
         SetLastError("Failed to create physics world.");
+        return false;
+    }
+    if (world_->GetBackendType() != backend_type_) {
+        SetLastError(fmt::format("Requested physics backend '{}' is not available or implemented.",
+                                 BackendName(backend_type_)));
+        world_.Reset();
         return false;
     }
 

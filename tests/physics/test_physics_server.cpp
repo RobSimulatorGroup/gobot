@@ -29,6 +29,14 @@ TEST(TestPhysicsServer, exposes_backend_capabilities_without_optional_dependenci
     EXPECT_FALSE(mujoco_info.status.empty());
 #endif
 
+    const gobot::PhysicsBackendInfo mujoco_warp_info =
+            physics_server.GetBackendInfo(gobot::PhysicsBackendType::MuJoCoWarp);
+    EXPECT_FALSE(mujoco_warp_info.available);
+    EXPECT_FALSE(mujoco_warp_info.cpu);
+    EXPECT_TRUE(mujoco_warp_info.gpu);
+    EXPECT_TRUE(mujoco_warp_info.robotics_focused);
+    EXPECT_FALSE(mujoco_warp_info.status.empty());
+
     const gobot::PhysicsBackendInfo rigid_ipc_info =
             physics_server.GetBackendInfo(gobot::PhysicsBackendType::RigidIpcCpu);
     EXPECT_FALSE(rigid_ipc_info.available);
@@ -36,7 +44,7 @@ TEST(TestPhysicsServer, exposes_backend_capabilities_without_optional_dependenci
     EXPECT_FALSE(rigid_ipc_info.gpu);
     EXPECT_FALSE(rigid_ipc_info.status.empty());
 
-    EXPECT_EQ(physics_server.GetBackendInfos().size(), 6);
+    EXPECT_EQ(physics_server.GetBackendInfos().size(), 5);
 }
 
 TEST(TestPhysicsServer, creates_world_for_selected_backend) {

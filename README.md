@@ -46,21 +46,30 @@ Run a minimal reinforcement-learning environment:
 ```python
 import gobot
 
-env = gobot.RLEnvironment()
+gobot.app.context().set_project_path("/tmp/gobot-demo")
+gobot.scene.save_cartpole_scene("res://cartpole.jscn")
+
+env = gobot.rl.ManagerBasedEnv(
+    {"scene": "res://cartpole.jscn", "backend": "null", "controlled_joints": ["slider"]}
+)
 obs, info = env.reset(seed=1)
 
 for _ in range(10):
-    obs, reward, terminated, truncated, info = env.step([0.0])
-    if terminated or truncated:
+    obs, reward, terminated, truncated, info = env.step([[0.0]])
+    if terminated[0] or truncated[0]:
         obs, info = env.reset()
 ```
 
 Use the Gymnasium-style adapter:
 
 ```python
-from gobot.gym_adapter import GobotGymEnv
+import gobot
 
-env = GobotGymEnv()
+env = gobot.rl.GymWrapper(
+    gobot.rl.ManagerBasedEnv(
+        {"scene": "res://cartpole.jscn", "backend": "null", "controlled_joints": ["slider"]}
+    )
+)
 obs, info = env.reset(seed=1)
 obs, reward, terminated, truncated, info = env.step([0.0])
 ```
@@ -108,6 +117,7 @@ python -m build --wheel -Ccmake.define.GOB_BUILD_MUJOCO=OFF
 
 - Supported platform: Linux.
 - Python package name: `gobot`.
-- Main RL entry point: `gobot.RLEnvironment`.
-- Gym-style helpers: `gobot.gym_adapter`.
+- Main RL entry point: `gobot.rl.ManagerBasedEnv`.
+- Gym-style helpers: `gobot.rl.GymWrapper`.
 - MuJoCo support is included in release wheels when available in the build.
+- MuJoCo RL roadmap: `doc/mujoco_rl_plan.md`.

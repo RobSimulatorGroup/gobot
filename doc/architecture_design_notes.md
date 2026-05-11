@@ -2,6 +2,9 @@
 
 This document records the current design direction from the editor/rendering cleanup work.
 
+For the current MuJoCo CPU, MuJoCo Warp, and `gobot.rl` roadmap, see
+`doc/mujoco_rl_plan.md`.
+
 ## Long-Term Goal
 
 Gobot should grow into a robot editing, simulation, and rendering engine in the same broad category as Isaac Sim. The engine should support robotics workflows such as reinforcement learning, motion planning, collision detection, robot asset editing, and simulation/debug visualization.
@@ -117,7 +120,7 @@ The intended dependency boundary is:
 
 1. `Scene` owns authored robot data:
    - `Robot3D`, `Link3D`, `Joint3D`, `CollisionShape3D`, transforms, limits, inertial data, and material/mesh resources.
-   - Scene nodes do not expose MuJoCo, PhysX, Newton, CUDA, or backend object handles.
+   - Scene nodes do not expose MuJoCo, Newton, CUDA, or backend object handles.
 2. `PhysicsServer` owns backend selection and backend capability reporting:
    - available backends, CPU/GPU flags, robotics focus, and human-readable status.
    - creation of backend-specific `PhysicsWorld` instances.
@@ -131,13 +134,13 @@ The intended dependency boundary is:
    - is the API that editor tools and future Python bindings should call.
 5. `Editor` only coordinates simulation controls and debug visualization:
    - play/pause, single-step, backend selection UI, collision/joint/contact overlays.
-   - it should not call MuJoCo/PhysX/Newton APIs directly.
+   - it should not call MuJoCo/Newton APIs directly.
 
 Backend direction:
 
 - `NullPhysicsWorld` remains the always-available no-op backend for editor startup, tests, and systems without optional SDKs.
 - `MuJoCoCpu` should be the first real backend because it is robotics-focused and strong at articulated bodies, URDF-style robots, contacts, and deterministic CPU simulation.
-- `PhysXCpu` / `PhysXGpu` should be reserved for scalable rigid-body scenes and GPU collision/parallel simulation once the core interface is stable.
+- `MuJoCoWarp` should be the high-throughput RL backend direction after the CPU semantics are tested. Its design should use persistent buffers, reset masks, and CUDA graph replay.
 - `NewtonGpu` should stay reserved for GPU robotics experiments, but it should not shape the public Gobot API before a small prototype proves the needed concepts.
 - `RigidIpcCpu` should be reserved as a research/validation backend based on intersection-free rigid body dynamics. Its role is robust contact, tight-fit geometry, and offline verification, not first-pass real-time robot control or RL throughput.
 - The backend list should be explicit rather than implicit: users should be able to see which backends are compiled in, available at runtime, CPU/GPU capable, and suitable for robotics.
@@ -180,7 +183,7 @@ Implementation phases:
    - joint position/velocity/torque state.
    - position/velocity/torque drives for robot control.
 7. Add GPU backend prototypes only after the high-level contract is tested:
-   - `PhysXGpu` for large rigid-body and collision workloads.
+   - `MuJoCoWarp` for CUDA graph vector simulation.
    - `NewtonGpu` for robotics/GPU articulation experiments if it proves useful.
    - keep CPU/GPU backend differences behind capability flags and shared query/step APIs.
 8. Add a Rigid IPC prototype only after MuJoCo stepping and the shared synchronization path are usable:

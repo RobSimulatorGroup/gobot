@@ -195,6 +195,18 @@ Robotics algorithms can later live as plugins, Python packages, C++ services wit
 
 Goal: make Gobot able to train and run policies that control robots walking or running inside Gobot scenes. The first target should be a single articulated robot, such as a humanoid or quadruped, running on a flat ground plane with deterministic reset and repeatable stepping. Do not start with a large distributed RL stack; first make one environment reliable.
 
+Current RL direction is documented in `doc/mujoco_rl_plan.md`. Treat that file as the detailed roadmap for MuJoCo CPU and MuJoCo Warp work.
+
+Key direction:
+
+- Focus future RL simulation work on `MuJoCoCpu` as the semantic baseline and `MuJoCoWarp` as the CUDA graph vectorization path.
+- Do not reintroduce PhysX as public backend types unless the project direction changes explicitly.
+- Gobot `SceneTree` / `.jscn` remains the authoring source of truth. MJCF, `mjModel`, MuJoCo data, and Warp arrays are runtime artifacts compiled below the scene/physics boundary.
+- RL training should use `gobot.rl.ManagerBasedEnv` / `VectorEnv` style APIs and normal Python scripts. Gymnasium and rsl_rl belong in compatibility wrappers, not core engine APIs.
+- `NodeScript` / `ScenePlaySession` are only for editor Play Mode, single-scene debugging, and policy playback. RL training must not run node scripts or depend on the editor viewport.
+- Python Panel `Run Once` is a tool-script action against the active editor context. It must not install per-frame callbacks, enter Play Mode, or participate in vectorized environments.
+- Do not add C++-specific environment variable hooks for Python package discovery. Use normal Python packaging, `PYTHONPATH` in tests, or explicit project paths.
+
 Python is the intended top-level RL workflow. Users should train and evaluate policies through the `gobot` Python package and ordinary Python training scripts, while Gobot's C++ layer owns deterministic simulation, robot state extraction, joint controllers, reset, reward, and termination. Do not make a separate `gobot_headless` executable the primary training entry point; keep training orchestration in Python and expose stable C++ environment services through bindings. Do not implement Python bindings first; design the C++ API in a shape that can be bound cleanly, then expose it to Python after the C++ environment API is covered by tests.
 
 Target Python workflow:
@@ -255,7 +267,7 @@ Recommended C++ service shape:
 - `RobotController`: backend-neutral action input for a robot articulation.
 - `JointController`: per-joint PID/PD control, limits, state reset, and command saturation.
 - `RobotState`: compact read-only state for base, joints, contacts, and actuators.
-- `RLEnvironment`: `Reset(seed) -> Observation`, `Step(action) -> StepResult`.
+- `ManagerBasedEnv` / `VectorizedEnvironment`: `reset(seed) -> observation`, `step(action) -> step result`.
 - `ObservationSpec` and `ActionSpec`: names, shapes, units, bounds, and version strings.
 - `RewardTerm` / `TerminationCondition`: composable C++ terms with optional Python configuration later.
 - `VectorizedEnvironment`: later, owns many independent environments for batched training.

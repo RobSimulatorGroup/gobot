@@ -15,7 +15,9 @@
 #include "gobot/core/io/resource_loader.hpp"
 #include "gobot/core/io/resource_saver.hpp"
 #include "gobot/main/engine_context.hpp"
+#include "gobot/physics/physics_types.hpp"
 #include "gobot/physics/physics_server.hpp"
+#include "gobot/physics/physics_world.hpp"
 #include "gobot/python/python_app_context.hpp"
 #include "gobot/scene/collision_shape_3d.hpp"
 #include "gobot/scene/joint_3d.hpp"
@@ -284,41 +286,10 @@ PhysicsBackendType ParseBackend(const std::string& backend) {
     if (backend == "mujoco") {
         return PhysicsBackendType::MuJoCoCpu;
     }
+    if (backend == "mujoco_warp") {
+        return PhysicsBackendType::MuJoCoWarp;
+    }
     throw std::invalid_argument("unknown Gobot physics backend '" + backend + "'");
-}
-
-py::object& PythonTickFunction() {
-    static auto* callback = new py::object(py::none());
-    return *callback;
-}
-
-py::object& PythonPhysicsTickFunction() {
-    static auto* callback = new py::object(py::none());
-    return *callback;
-}
-
-void InvokePythonTick(double delta_time) {
-    py::object& callback = PythonTickFunction();
-    if (callback.is_none()) {
-        return;
-    }
-    callback(delta_time);
-}
-
-void InvokePythonPhysicsTick(double delta_time) {
-    py::object& callback = PythonPhysicsTickFunction();
-    if (callback.is_none()) {
-        return;
-    }
-    callback(delta_time);
-}
-
-void ClearPythonTickFunction() {
-    PythonTickFunction() = py::none();
-}
-
-void ClearPythonPhysicsTickFunction() {
-    PythonPhysicsTickFunction() = py::none();
 }
 
 struct PyScene {
@@ -573,12 +544,177 @@ py::dict ResourceToPythonDict(const Ref<Resource>& resource) {
     return result;
 }
 
-py::dict StepInfoFromResult(const py::dict& result) {
-    py::dict info;
-    info["frame_count"] = result["frame_count"];
-    info["simulation_time"] = result["simulation_time"];
-    info["error"] = result["error"];
-    return info;
+py::dict TransformToPythonDict(const Affine3& transform) {
+    const Vector3 position = transform.translation();
+    const Quaternion rotation(transform.linear());
+
+    py::dict result;
+    result["position"] = py::make_tuple(position.x(), position.y(), position.z());
+    result["quaternion"] = py::make_tuple(rotation.w(), rotation.x(), rotation.y(), rotation.z());
+    return result;
+}
+
+std::string PhysicsJointControlModeName(PhysicsJointControlMode mode) {
+    switch (mode) {
+        case PhysicsJointControlMode::Passive:
+            return "passive";
+        case PhysicsJointControlMode::Position:
+            return "position";
+        case PhysicsJointControlMode::Velocity:
+            return "velocity";
+        case PhysicsJointControlMode::Effort:
+            return "effort";
+    }
+
+    return "unknown";
+}
+
+py::dict JointSnapshotToPythonDict(const PhysicsJointSnapshot& joint) {
+    py::dict result;
+    result["name"] = joint.name;
+    result["parent_link"] = joint.parent_link;
+    result["child_link"] = joint.child_link;
+    result["type"] = static_cast<JointType>(joint.joint_type);
+    result["axis"] = Vector3ToPython(joint.axis);
+    result["lower_limit"] = joint.lower_limit;
+    result["upper_limit"] = joint.upper_limit;
+    result["effort_limit"] = joint.effort_limit;
+    result["velocity_limit"] = joint.velocity_limit;
+    result["damping"] = joint.damping;
+    result["initial_position"] = joint.joint_position;
+    result["global_transform"] = TransformToPythonDict(joint.global_transform);
+    return result;
+}
+
+py::dict LinkSnapshotToPythonDict(const PhysicsLinkSnapshot& link) {
+    py::dict result;
+    result["name"] = link.name;
+    result["role"] = link.role == PhysicsLinkRole::VirtualRoot ? "virtual_root" : "physical";
+    result["mass"] = link.mass;
+    result["center_of_mass"] = Vector3ToPython(link.center_of_mass);
+    result["inertia_diagonal"] = Vector3ToPython(link.inertia_diagonal);
+    result["inertia_off_diagonal"] = Vector3ToPython(link.inertia_off_diagonal);
+    result["global_transform"] = TransformToPythonDict(link.global_transform);
+    result["collision_shape_count"] = link.collision_shapes.size();
+    return result;
+}
+
+py::dict RuntimeNameMapToPythonDict(const PhysicsSceneSnapshot& snapshot) {
+    py::dict result;
+    py::list robots;
+
+    for (const PhysicsRobotSnapshot& robot : snapshot.robots) {
+        py::dict robot_dict;
+        robot_dict["name"] = robot.name;
+        robot_dict["source_path"] = robot.source_path;
+
+        py::list links;
+        py::list link_names;
+        for (const PhysicsLinkSnapshot& link : robot.links) {
+            links.append(LinkSnapshotToPythonDict(link));
+            link_names.append(link.name);
+        }
+        robot_dict["links"] = links;
+        robot_dict["link_names"] = link_names;
+
+        py::list joints;
+        py::list joint_names;
+        py::list controllable_joint_names;
+        for (const PhysicsJointSnapshot& joint : robot.joints) {
+            joints.append(JointSnapshotToPythonDict(joint));
+            joint_names.append(joint.name);
+
+            const auto joint_type = static_cast<JointType>(joint.joint_type);
+            if (joint_type == JointType::Revolute ||
+                joint_type == JointType::Continuous ||
+                joint_type == JointType::Prismatic) {
+                controllable_joint_names.append(joint.name);
+            }
+        }
+        robot_dict["joints"] = joints;
+        robot_dict["joint_names"] = joint_names;
+        robot_dict["controllable_joint_names"] = controllable_joint_names;
+        robots.append(robot_dict);
+    }
+
+    result["robots"] = robots;
+    result["total_link_count"] = snapshot.total_link_count;
+    result["total_joint_count"] = snapshot.total_joint_count;
+    result["total_collision_shape_count"] = snapshot.total_collision_shape_count;
+    return result;
+}
+
+py::dict JointStateToPythonDict(const PhysicsJointState& joint) {
+    py::dict result;
+    result["robot_name"] = joint.robot_name;
+    result["name"] = joint.joint_name;
+    result["joint_name"] = joint.joint_name;
+    result["type"] = static_cast<JointType>(joint.joint_type);
+    result["position"] = joint.position;
+    result["velocity"] = joint.velocity;
+    result["effort"] = joint.effort;
+    result["control_mode"] = PhysicsJointControlModeName(joint.control_mode);
+    result["target_position"] = joint.target_position;
+    result["target_velocity"] = joint.target_velocity;
+    result["target_effort"] = joint.target_effort;
+    return result;
+}
+
+py::dict LinkStateToPythonDict(const PhysicsLinkState& link) {
+    py::dict result;
+    result["robot_name"] = link.robot_name;
+    result["name"] = link.link_name;
+    result["link_name"] = link.link_name;
+    result["role"] = link.role == PhysicsLinkRole::VirtualRoot ? "virtual_root" : "physical";
+    result["global_transform"] = TransformToPythonDict(link.global_transform);
+    result["linear_velocity"] = Vector3ToPython(link.linear_velocity);
+    result["angular_velocity"] = Vector3ToPython(link.angular_velocity);
+    return result;
+}
+
+py::dict ContactStateToPythonDict(const PhysicsContactState& contact) {
+    py::dict result;
+    result["robot_name"] = contact.robot_name;
+    result["link_name"] = contact.link_name;
+    result["other_robot_name"] = contact.other_robot_name;
+    result["other_link_name"] = contact.other_link_name;
+    result["position"] = Vector3ToPython(contact.position);
+    result["normal"] = Vector3ToPython(contact.normal);
+    result["distance"] = contact.distance;
+    return result;
+}
+
+py::dict RuntimeStateToPythonDict(const PhysicsSceneState& state) {
+    py::dict result;
+    py::list robots;
+    for (const PhysicsRobotState& robot : state.robots) {
+        py::dict robot_dict;
+        robot_dict["name"] = robot.name;
+
+        py::list links;
+        for (const PhysicsLinkState& link : robot.links) {
+            links.append(LinkStateToPythonDict(link));
+        }
+        robot_dict["links"] = links;
+
+        py::list joints;
+        for (const PhysicsJointState& joint : robot.joints) {
+            joints.append(JointStateToPythonDict(joint));
+        }
+        robot_dict["joints"] = joints;
+        robots.append(robot_dict);
+    }
+
+    py::list contacts;
+    for (const PhysicsContactState& contact : state.contacts) {
+        contacts.append(ContactStateToPythonDict(contact));
+    }
+
+    result["robots"] = robots;
+    result["contacts"] = contacts;
+    result["total_link_count"] = state.total_link_count;
+    result["total_joint_count"] = state.total_joint_count;
+    return result;
 }
 
 } // namespace
@@ -967,6 +1103,28 @@ class NodeScript:
                     throw std::runtime_error(simulation->GetLastError());
                 }
             }, py::arg("robot"), py::arg("joint"))
+            .def("get_runtime_name_map", [](EngineContext& context) {
+                SimulationServer* simulation = context.GetSimulationServer();
+                if (simulation == nullptr) {
+                    throw std::runtime_error("active Gobot app context has no SimulationServer");
+                }
+                Ref<PhysicsWorld> world = simulation->GetWorld();
+                if (!world.IsValid()) {
+                    throw std::runtime_error("simulation world has not been built from a scene");
+                }
+                return RuntimeNameMapToPythonDict(world->GetSceneSnapshot());
+            })
+            .def("get_runtime_state", [](EngineContext& context) {
+                SimulationServer* simulation = context.GetSimulationServer();
+                if (simulation == nullptr) {
+                    throw std::runtime_error("active Gobot app context has no SimulationServer");
+                }
+                Ref<PhysicsWorld> world = simulation->GetWorld();
+                if (!world.IsValid()) {
+                    throw std::runtime_error("simulation world has not been built from a scene");
+                }
+                return RuntimeStateToPythonDict(world->GetSceneState());
+            })
             .def("get_last_error", &EngineContext::GetLastError);
 
     py::class_<PyScene, std::unique_ptr<PyScene>>(module, "Scene")
@@ -1322,43 +1480,6 @@ class NodeScript:
         return infos;
     });
 
-    module.def("set_editor_tick_callback", [](py::object callback) {
-        if (callback.is_none()) {
-            PythonTickFunction() = py::none();
-            PythonScriptRunner::ClearTickCallback();
-            return;
-        }
-        if (!py::isinstance<py::function>(callback) && !py::hasattr(callback, "__call__")) {
-            throw std::invalid_argument("editor tick callback must be callable or None");
-        }
-        PythonTickFunction() = std::move(callback);
-        PythonScriptRunner::SetTickClearCallback(&ClearPythonTickFunction);
-        PythonScriptRunner::SetTickCallback(&InvokePythonTick);
-    }, py::arg("callback"));
-
-    module.def("clear_editor_tick_callback", []() {
-        PythonTickFunction() = py::none();
-        PythonScriptRunner::ClearTickCallback();
-    });
-
-    module.def("set_editor_physics_callback", [](py::object callback) {
-        if (callback.is_none()) {
-            PythonPhysicsTickFunction() = py::none();
-            PythonScriptRunner::ClearPhysicsTickCallback();
-            return;
-        }
-        if (!py::isinstance<py::function>(callback) && !py::hasattr(callback, "__call__")) {
-            throw std::invalid_argument("editor physics callback must be callable or None");
-        }
-        PythonPhysicsTickFunction() = std::move(callback);
-        PythonScriptRunner::SetPhysicsTickClearCallback(&ClearPythonPhysicsTickFunction);
-        PythonScriptRunner::SetPhysicsTickCallback(&InvokePythonPhysicsTick);
-    }, py::arg("callback"));
-
-    module.def("clear_editor_physics_callback", []() {
-        PythonPhysicsTickFunction() = py::none();
-        PythonScriptRunner::ClearPhysicsTickCallback();
-    });
 }
 
 void RegisterModule(py::module_& module) {

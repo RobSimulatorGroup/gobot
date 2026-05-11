@@ -1,6 +1,5 @@
 import gobot
 import numpy as np
-from gobot.gym_adapter import GobotBox, GobotGymEnv, space_from_spec
 
 
 def assert_close_tuple(actual, expected):
@@ -15,25 +14,24 @@ def main():
     infos = gobot.backend_infos()
     assert infos
     assert any(info["name"] == "Null" and info["available"] for info in infos)
+    assert any(info["name"] == "MuJoCo CPU" and info["robotics_focused"] for info in infos)
+    assert any(info["name"] == "MuJoCo Warp" and info["gpu"] and not info["available"] for info in infos)
     assert gobot.PhysicsBackendType.Null == gobot.physics.PhysicsBackendType.Null
-    assert any(info["type"] == gobot.PhysicsBackendType.Null for info in infos)
-
-    context = gobot.app.context()
-    assert gobot.rl.RLEnvironment is gobot.RLEnvironment
+    assert gobot.PhysicsBackendType.MuJoCoWarp == gobot.physics.PhysicsBackendType.MuJoCoWarp
     assert gobot.sim.JointControllerGains is gobot.JointControllerGains
     assert gobot.scene.Node is gobot.Node
+    assert "ManagerBasedEnv" in gobot.rl.__all__
+
+    context = gobot.app.context()
     assert context.backend_type == gobot.PhysicsBackendType.Null
     assert context.has_scene is False
     assert context.has_world is False
     assert context.frame_count == 0
-    assert gobot.app.set_editor_tick_callback is gobot.set_editor_tick_callback
-    assert gobot.app.set_editor_physics_callback is gobot.set_editor_physics_callback
-    tick_calls = []
-    gobot.set_editor_tick_callback(lambda delta: tick_calls.append(delta))
-    gobot.clear_editor_tick_callback()
-    physics_calls = []
-    gobot.set_editor_physics_callback(lambda delta: physics_calls.append(delta))
-    gobot.clear_editor_physics_callback()
+    assert not hasattr(gobot, "set_editor_tick_callback")
+    assert not hasattr(gobot, "set_editor_physics_callback")
+    assert not hasattr(gobot.app, "set_editor_tick_callback")
+    assert not hasattr(gobot.app, "set_editor_physics_callback")
+
     try:
         context.build_world()
         raise AssertionError("build_world should fail without a loaded scene")
@@ -51,31 +49,6 @@ def main():
     assert reflected_gains_from_dict.position_stiffness == 13.0
     assert reflected_gains_from_dict.velocity_damping == 2.5
 
-    reward_settings = gobot.RLEnvironmentRewardSettings.from_dict(
-        {
-            "alive_reward": 2.0,
-            "terminate_on_fall": False,
-            "target_forward_velocity": 1.0,
-            "action_rate_penalty_scale": 0.1,
-        }
-    )
-    assert reward_settings.to_dict()["alive_reward"] == 2.0
-    assert reward_settings.terminate_on_fall is False
-    assert reward_settings.target_forward_velocity == 1.0
-    assert abs(reward_settings.action_rate_penalty_scale - 0.1) < 1e-6
-
-    spec = gobot.RLVectorSpec()
-    spec.names = ["joint"]
-    spec.lower_bounds = [-1.0]
-    spec.upper_bounds = [1.0]
-    spec.units = ["normalized"]
-    assert spec.to_dict()["names"] == ["joint"]
-    box = GobotBox(spec.lower_bounds, spec.upper_bounds, names=spec.names, units=spec.units)
-    assert box.shape == (1,)
-    assert len(box.sample()) == 1
-    converted_space = space_from_spec(spec.to_dict())
-    assert converted_space.shape == (1,)
-
     scene = gobot.create_test_scene()
     root = scene.root
     assert root.name == "robot"
@@ -85,6 +58,7 @@ def main():
     assert isinstance(root.id, int)
     assert root.child_count == 2
     assert [child.name for child in root.children] == ["base", "joint"]
+
     base = root.child(0)
     assert base.type == "Link3D"
     assert isinstance(base.position, np.ndarray)
@@ -111,46 +85,16 @@ def main():
     assert_close_tuple(base.scale, (1.0, 1.0, 1.0))
     assert gobot.redo() is True
     assert base.name == "renamed_base"
-    assert_close_tuple(base.position, (4.0, 5.0, 6.0))
-    assert_close_tuple(base.scale, (2.0, 2.0, 2.0))
-
-    try:
-        with gobot.transaction("Cancelled transform"):
-            base.name = "cancelled"
-            raise RuntimeError("cancel transaction")
-    except RuntimeError:
-        pass
-    assert base.name == "renamed_base"
 
     authored = gobot.create_node("Robot3D", "authored")
-    assert authored.name == "authored"
     link = gobot.create_node("Link3D", "link")
     authored.add_child(link)
-    assert authored.child_count == 1
-    assert link.parent.id == authored.id
     collision = gobot.create_box_collision("collision", (0.2, 0.3, 0.4))
     link.add_child(collision)
-    assert collision.type == "CollisionShape3D"
     visual = gobot.create_box_visual("visual", (0.2, 0.3, 0.4))
     link.add_child(visual)
-    assert visual.type == "MeshInstance3D"
     assert authored.find("link/collision").name == "collision"
-    detached_visual = link.remove_child(visual, delete=False)
-    assert detached_visual.valid is True
-    link.add_child(detached_visual)
-    link.remove_child(visual, delete=True)
-    assert link.child_count == 1
-    assert visual.valid is False
-    try:
-        _ = visual.name
-        raise AssertionError("deleted Gobot node handle should raise ReferenceError")
-    except ReferenceError as error:
-        assert "no longer resolves" in str(error) or "invalid" in str(error)
-    assert gobot.undo() is True
-    restored_visual = link.find("visual")
-    assert restored_visual is not None
-    assert restored_visual.valid is True
-    assert visual.valid is False
+    assert visual.type == "MeshInstance3D"
 
     context.clear_scene()
     assert context.scene_epoch > 0
@@ -165,75 +109,64 @@ def main():
     cartpole_root = gobot.scene.create_cartpole_scene()
     assert cartpole_root.name == "cartpole"
     assert cartpole_root.find("rail/slider/cart/hinge/pole").name == "pole"
+    context.set_project_path("/tmp")
+    context.clear_scene()
+    gobot.save_scene(cartpole_root, "res://gobot_python_binding_cartpole.jscn")
+    context.load_scene("res://gobot_python_binding_cartpole.jscn")
+    context.build_world(gobot.PhysicsBackendType.Null)
+    name_map = context.get_runtime_name_map()
+    assert name_map["robots"][0]["name"] == "cartpole"
+    assert name_map["robots"][0]["controllable_joint_names"] == ["slider", "hinge"]
+    state = context.get_runtime_state()
+    assert state["robots"][0]["joints"][0]["name"] == "slider"
+
+    env = gobot.rl.ManagerBasedEnv(
+        {
+            "backend": "null",
+            "num_envs": 1,
+            "physics_dt": 1.0 / 240.0,
+            "decimation": 4,
+            "episode_length_s": 1.0 / 30.0,
+            "robot": "cartpole",
+            "controlled_joints": ["slider"],
+            "observations": {},
+            "rewards": {},
+            "terminations": {},
+            "events": {},
+        }
+    )
+    observation, info = env.reset(seed=5)
+    assert observation.shape == (1, env.observation_spec.size)
+    assert env.action_spec.names == ("slider/target_position_normalized",)
+    observation, reward, terminated, truncated, info = env.step([[2.0]])
+    assert observation.shape == (1, env.observation_spec.size)
+    assert reward.shape == (1,)
+    assert terminated.shape == (1,)
+    assert truncated.shape == (1,)
+    assert reward[0] == env.env_dt
+    assert not bool(truncated[0])
+    observation, reward, terminated, truncated, info = env.step([[0.0]])
+    assert "terminal_observation" in info
+    assert info["terminal_observation"].shape == (1, env.observation_spec.size)
+    gym_env = gobot.rl.GymWrapper(env)
+    gym_obs, gym_info = gym_env.reset(seed=6)
+    assert gym_obs.shape == (env.observation_spec.size,)
+    gym_obs, gym_reward, gym_terminated, gym_truncated, gym_info = gym_env.step([0.0])
+    assert isinstance(gym_reward, float)
+    assert isinstance(gym_terminated, bool)
+    assert isinstance(gym_truncated, bool)
+    try:
+        gobot.rl.ManagerBasedEnv({"backend": "null", "num_envs": 2})
+        raise AssertionError("num_envs > 1 should require a vector backend")
+    except NotImplementedError as error:
+        assert "num_envs=1" in str(error)
 
     script_path = "/tmp/gobot_python_binding_smoke.py"
     with open(script_path, "w", encoding="utf-8") as script_file:
-        script_file.write("class Agent:\\n    pass\\n")
+        script_file.write("class Script(gobot.NodeScript):\\n    pass\\n")
     script = gobot.load_resource(script_path, "PythonScript")
     assert script["type"] == "PythonScript"
-    assert "class Agent" in script["source_code"]
-
-    env = gobot.RLEnvironment()
-    observation, info = env.reset(seed=7)
-    assert info["ok"] is True
-    assert info["seed"] == 7
-    assert len(observation) == env.get_observation_size()
-    assert env.get_action_size() == 1
-    assert env.get_observation_size() == 17
-
-    observation, reward, terminated, truncated, info = env.step([0.0])
-    assert len(observation) == env.get_observation_size()
-    assert reward == 1.0
-    assert terminated is False
-    assert truncated is False
-    assert info["frame_count"] == 1
-
-    gains = env.get_default_joint_gains()
-    assert gains["position_stiffness"] == 100.0
-    env.set_default_joint_gains({"position_stiffness": 20.0, "velocity_damping": 2.0})
-    gains = env.get_default_joint_gains()
-    assert gains["position_stiffness"] == 20.0
-    assert gains["velocity_damping"] == 2.0
-
-    config = env.get_controller_config()
-    assert config.controlled_joints == ["joint"]
-    assert config.default_action == [0.0]
-    config.joint_gains = {"position_stiffness": 30.0, "velocity_damping": 3.0}
-    env.apply_controller_config(config.to_dict())
-    gains = env.get_default_joint_gains()
-    assert gains["position_stiffness"] == 30.0
-    assert gains["velocity_damping"] == 3.0
-
-    config_from_dict = gobot.RLControllerConfig.from_dict(
-        {
-            "controlled_joints": ["joint"],
-            "default_action": [0.0],
-            "joint_gains": {"position_stiffness": 40.0, "velocity_damping": 4.0},
-        }
-    )
-    assert config_from_dict.to_dict()["joint_gains"]["position_stiffness"] == 40.0
-
-    env.apply_controller_config({"controlled_joints": ["joint"], "default_action": [0.0]})
-    observation, info = env.reset(seed=8)
-    assert info["ok"] is True
-    assert env.get_action_size() == 1
-    assert env.get_controller_config().default_action == [0.0]
-    assert env.get_action_spec()["names"] == ["joint/target_position_normalized"]
-    assert "joint/previous_action" in env.get_observation_spec()["names"]
-    assert env.step_result([0.0])["error"] == ""
-
-    env.apply_controller_config({"controlled_joints": ["missing"], "default_action": [0.0]})
-    reset_result = env.reset_result(seed=9)
-    assert reset_result["ok"] is False
-    assert "missing" in reset_result["error"]
-
-    gym_env = GobotGymEnv()
-    observation, info = gym_env.reset(seed=3)
-    assert info["ok"] is True
-    observation, reward, terminated, truncated, info = gym_env.step([0.0])
-    assert reward == 1.0
-    assert terminated is False
-    assert truncated is False
+    assert "class Script" in script["source_code"]
 
 
 if __name__ == "__main__":

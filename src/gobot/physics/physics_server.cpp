@@ -72,25 +72,15 @@ PhysicsBackendInfo PhysicsServer::GetBackendInfoForBackend(PhysicsBackendType ba
                             ? "Available."
                             : MuJoCoPhysicsWorld::GetUnavailableReason()
             };
-        case PhysicsBackendType::PhysXCpu:
+        case PhysicsBackendType::MuJoCoWarp:
             return {
-                    PhysicsBackendType::PhysXCpu,
-                    "PhysX CPU",
-                    false,
-                    true,
-                    false,
-                    false,
-                    "PhysX backend is reserved but not implemented yet."
-            };
-        case PhysicsBackendType::PhysXGpu:
-            return {
-                    PhysicsBackendType::PhysXGpu,
-                    "PhysX GPU",
+                    PhysicsBackendType::MuJoCoWarp,
+                    "MuJoCo Warp",
                     false,
                     false,
                     true,
-                    false,
-                    "PhysX GPU backend is reserved but not implemented yet."
+                    true,
+                    "MuJoCo Warp backend is planned for CUDA graph vector simulation, but is not implemented yet."
             };
         case PhysicsBackendType::NewtonGpu:
             return {
@@ -125,8 +115,7 @@ std::vector<PhysicsBackendInfo> PhysicsServer::GetBackendInfosForAllBackends() {
     return {
             GetBackendInfoForBackend(PhysicsBackendType::Null),
             GetBackendInfoForBackend(PhysicsBackendType::MuJoCoCpu),
-            GetBackendInfoForBackend(PhysicsBackendType::PhysXCpu),
-            GetBackendInfoForBackend(PhysicsBackendType::PhysXGpu),
+            GetBackendInfoForBackend(PhysicsBackendType::MuJoCoWarp),
             GetBackendInfoForBackend(PhysicsBackendType::NewtonGpu),
             GetBackendInfoForBackend(PhysicsBackendType::RigidIpcCpu),
     };
@@ -144,8 +133,7 @@ Ref<PhysicsWorld> PhysicsServer::CreateWorldForBackend(PhysicsBackendType backen
             world = MakeRef<MuJoCoPhysicsWorld>();
             break;
         case PhysicsBackendType::Null:
-        case PhysicsBackendType::PhysXCpu:
-        case PhysicsBackendType::PhysXGpu:
+        case PhysicsBackendType::MuJoCoWarp:
         case PhysicsBackendType::NewtonGpu:
         case PhysicsBackendType::RigidIpcCpu:
             world = MakeRef<NullPhysicsWorld>();

@@ -25,10 +25,9 @@ class Robot3D;
 enum class PhysicsBackendType {
     Null,
     MuJoCoCpu,
-    PhysXCpu,
-    PhysXGpu,
     NewtonGpu,
-    RigidIpcCpu
+    RigidIpcCpu,
+    MuJoCoWarp
 };
 
 enum class PhysicsShapeType {

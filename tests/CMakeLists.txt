@@ -68,6 +68,26 @@ package_add_test(test_packed_scene scene/test_packed_scene.cpp)
 package_add_test(test_edited_scene
         editor/test_edited_scene.cpp
         ${PROJECT_SOURCE_DIR}/src/gobot/editor/edited_scene.cpp)
+if (GOB_BUILD_PYTHON_BINDINGS AND GOB_ENABLE_PYTHON_EMBED AND Python3_Development.Embed_FOUND)
+    add_executable(test_scene_play_session
+            editor/test_scene_play_session.cpp
+            ${PROJECT_SOURCE_DIR}/src/gobot/editor/scene_play_session.cpp)
+    target_compile_options(test_scene_play_session PUBLIC "${GOBOT_COMPILE_OPTIONS}")
+    target_compile_definitions(test_scene_play_session
+            PRIVATE
+                GOBOT_TEST_BUILD_PYTHON_DIR="${CMAKE_BINARY_DIR}/python")
+    target_link_libraries(test_scene_play_session gtest gmock)
+    if (MSVC)
+        target_link_libraries(test_scene_play_session -Wl,--whole-archive gobot_test_support)
+    else ()
+        target_link_libraries(test_scene_play_session -Wl,--no-as-needed gobot_test_support)
+    endif ()
+    add_dependencies(test_scene_play_session gobot_python)
+    gtest_discover_tests(test_scene_play_session
+            EXTRA_ARGS --gtest_color=yes
+            WORKING_DIRECTORY "${PROJECT_SOURCE_DIR}")
+    set_target_properties(test_scene_play_session PROPERTIES FOLDER tests)
+endif()
 package_add_test(test_physics_server physics/test_physics_server.cpp)
 package_add_test(test_joint_controller physics/test_joint_controller.cpp)
 package_add_test(test_simulation_server simulation/test_simulation_server.cpp)

@@ -165,11 +165,11 @@ bool PythonPanel::OpenScript(const std::string& path) {
 void PythonPanel::OnImGuiContent() {
     const bool has_resource_path = !script_global_path_.empty();
 
-    if (ImGui::Button(ICON_MDI_PLAY " Run")) {
+    if (ImGui::Button(ICON_MDI_PLAY " Run Once")) {
         RunPythonScript();
     }
     if (ImGui::IsItemHovered()) {
-        ImGui::SetTooltip("Run Python against the active editor scene");
+        ImGui::SetTooltip("Execute this Python script once against the active editor scene");
     }
 
     ImGui::SameLine();

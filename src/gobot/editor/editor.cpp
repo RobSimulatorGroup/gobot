@@ -28,6 +28,7 @@
 #include "gobot/editor/imgui/python_panel.hpp"
 #include "gobot/editor/imgui/resource_panel.hpp"
 #include "gobot/editor/property_inspector/editor_inspector.hpp"
+#include "gobot/editor/scene_play_session.hpp"
 #include "gobot/main/engine_context.hpp"
 #include "gobot/main/main.hpp"
 #include "gobot/physics/physics_server.hpp"
@@ -105,6 +106,7 @@ Editor::Editor() {
     engine_context_->SetLoadSceneCallback([this](const std::string& path) {
         return OpenSceneFromPath(path);
     });
+    scene_play_session_ = std::make_unique<ScenePlaySession>();
     BindEngineContextToEditedScene();
     python::SetActiveAppContext(engine_context_);
     python::PythonScriptRunner::SetSceneScriptContext(engine_context_);
@@ -134,6 +136,9 @@ Editor::Editor() {
 }
 
 Editor::~Editor() {
+    if (scene_play_session_ != nullptr) {
+        scene_play_session_->Stop();
+    }
     python::PythonScriptRunner::ClearSceneScriptContext(engine_context_);
     if (python::GetActiveAppContextOrNull() == engine_context_) {
         python::SetActiveAppContext(nullptr);
@@ -211,6 +216,7 @@ bool Editor::SaveCurrentScene() {
 }
 
 bool Editor::LoadEditedScene(const std::string& path) {
+    StopScenePlaySession();
     const std::string extension = ToLower(std::filesystem::path(path).extension().string());
     const bool default_robot_motion_mode = extension == ".urdf" || extension == ".xml";
     if (edited_scene_ == nullptr || !edited_scene_->LoadFromPath(path, default_robot_motion_mode)) {
@@ -242,6 +248,7 @@ void Editor::RequestOpenSceneFromPath(const std::string& path) {
 }
 
 bool Editor::NewEditedScene() {
+    StopScenePlaySession();
     if (edited_scene_ == nullptr || !edited_scene_->NewScene()) {
         LOG_ERROR("Failed to create a new scene.");
         return false;
@@ -441,31 +448,52 @@ std::string Editor::GetSceneViewTitle() const {
     return title;
 }
 
+bool Editor::StartScenePlaySession() {
+    if (scene_play_session_ == nullptr) {
+        return false;
+    }
+    return scene_play_session_->Start(GetEditedSceneRoot(), engine_context_);
+}
+
+void Editor::StopScenePlaySession() {
+    if (scene_play_session_ != nullptr) {
+        scene_play_session_->Stop();
+    }
+}
+
+bool Editor::ResetScenePlaySession() {
+    if (scene_play_session_ == nullptr) {
+        return false;
+    }
+    return scene_play_session_->Reset(GetEditedSceneRoot(), engine_context_);
+}
+
+bool Editor::IsScenePlaySessionRunning() const {
+    return scene_play_session_ != nullptr && scene_play_session_->IsRunning();
+}
+
+std::size_t Editor::GetActiveSceneScriptCount() const {
+    return scene_play_session_ != nullptr ? scene_play_session_->GetActiveScriptCount() : 0;
+}
+
+std::string Editor::GetScenePlaySessionLastError() const {
+    return scene_play_session_ != nullptr ? scene_play_session_->GetLastError() : std::string();
+}
+
 void Editor::NotificationCallBack(NotificationType notification) {
     python::PythonScriptRunner::SetSceneScriptContext(engine_context_);
     python::PythonScriptRunner::SetSceneScriptRoot(GetEditedSceneRoot());
 
     switch (notification) {
         case NotificationType::PhysicsProcess: {
-            if (python::PythonScriptRunner::HasPhysicsTickCallback()) {
-                python::PythonExecutionResult result =
-                        python::PythonScriptRunner::ExecutePhysicsTick(engine_context_,
-                                                                       GetPhysicsProcessDeltaTime());
-                if (!result.ok) {
-                    LOG_ERROR("Python physics tick failed: {}", result.error);
-                    python::PythonScriptRunner::ClearPhysicsTickCallback();
-                }
+            if (scene_play_session_ != nullptr) {
+                scene_play_session_->NotifyPhysicsProcess(GetPhysicsProcessDeltaTime());
             }
             break;
         }
         case NotificationType::Process: {
-            if (python::PythonScriptRunner::HasTickCallback()) {
-                python::PythonExecutionResult result =
-                        python::PythonScriptRunner::ExecuteTick(engine_context_, GetProcessDeltaTime());
-                if (!result.ok) {
-                    LOG_ERROR("Python tick failed: {}", result.error);
-                    python::PythonScriptRunner::ClearTickCallback();
-                }
+            if (scene_play_session_ != nullptr) {
+                scene_play_session_->NotifyProcess(GetProcessDeltaTime());
             }
             OnImGui();
             break;
