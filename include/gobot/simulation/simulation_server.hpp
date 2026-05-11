@@ -61,6 +61,8 @@ public:
 
     bool RebuildWorldFromScene(const Node* scene_root, bool preserve_state = true);
 
+    const Node* GetSceneRoot() const;
+
     void ClearWorld();
 
     bool HasWorld() const;

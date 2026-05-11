@@ -111,6 +111,10 @@ std::string DefaultPythonScript() {
     return "import gobot\n\n";
 }
 
+std::string NormalizePythonIndentation(std::string text) {
+    return ReplaceAll(std::move(text), "\t", "    ");
+}
+
 void AddPythonMessage(const std::string& message,
                       ConsoleMessage::Level level,
                       const std::string& source) {
@@ -154,8 +158,8 @@ bool PythonPanel::OpenScript(const std::string& path) {
         return false;
     }
 
-    editor_.SetText(std::string(std::istreambuf_iterator<char>(stream),
-                                std::istreambuf_iterator<char>()));
+    editor_.SetText(NormalizePythonIndentation(std::string(std::istreambuf_iterator<char>(stream),
+                                                           std::istreambuf_iterator<char>())));
     script_local_path_ = local_path;
     script_global_path_ = global_path;
     script_dirty_ = false;
@@ -164,6 +168,7 @@ bool PythonPanel::OpenScript(const std::string& path) {
 
 void PythonPanel::OnImGuiContent() {
     const bool has_resource_path = !script_global_path_.empty();
+    const bool panel_focused = ImGui::IsWindowFocused(ImGuiFocusedFlags_RootAndChildWindows);
 
     if (ImGui::Button(ICON_MDI_PLAY " Run Once")) {
         RunPythonScript();
@@ -207,6 +212,10 @@ void PythonPanel::OnImGuiContent() {
     if (editor_.IsTextChanged()) {
         script_dirty_ = true;
     }
+
+    if (panel_focused && ImGui::GetIO().KeyCtrl && ImGui::IsKeyPressed(ImGuiKey_S, false)) {
+        SavePythonScript();
+    }
 }
 
 bool PythonPanel::SavePythonScript() {
@@ -238,7 +247,11 @@ bool PythonPanel::SavePythonScript() {
         return false;
     }
 
-    output << editor_.GetText();
+    const std::string normalized_text = NormalizePythonIndentation(editor_.GetText());
+    output << normalized_text;
+    if (normalized_text != editor_.GetText()) {
+        editor_.SetText(normalized_text);
+    }
     script_dirty_ = false;
     AddPythonMessage("Saved Python script: " + script_local_path_, ConsoleMessage::Info, "Python");
 
@@ -269,7 +282,7 @@ void PythonPanel::RunPythonScript() {
     auto* editor = Editor::GetInstanceOrNull();
     auto* context = editor != nullptr ? editor->GetEngineContext() : nullptr;
     python::PythonExecutionResult result =
-            python::PythonScriptRunner::ExecuteString(editor_.GetText(),
+            python::PythonScriptRunner::ExecuteString(NormalizePythonIndentation(editor_.GetText()),
                                                       context,
                                                       script_local_path_.empty()
                                                               ? "<editor-python-panel>"

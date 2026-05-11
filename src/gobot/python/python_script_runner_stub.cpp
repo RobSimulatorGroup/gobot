@@ -19,9 +19,21 @@ PythonExecutionResult PythonScriptRunner::ExecuteFile(const std::string& path,
 
 void PythonScriptRunner::SetSceneScriptContext(EngineContext*) {}
 
-void PythonScriptRunner::SetSceneScriptRoot(Node*) {}
+void PythonScriptRunner::SetSceneScriptRoot(Node*, std::uint64_t) {}
 
 void PythonScriptRunner::ClearSceneScriptContext(EngineContext*) {}
+
+bool PythonScriptRunner::IsExecutingSceneScript() {
+    return false;
+}
+
+Node* PythonScriptRunner::GetExecutingSceneScriptRoot() {
+    return nullptr;
+}
+
+std::uint64_t PythonScriptRunner::GetExecutingSceneScriptEpoch() {
+    return 0;
+}
 
 bool PythonScriptRunner::HasSceneScriptInstance(Node*) {
     return false;

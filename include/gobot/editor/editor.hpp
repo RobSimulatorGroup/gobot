@@ -60,6 +60,8 @@ public:
 
     Node3D* GetEditedSceneRoot() const;
 
+    Node* GetActiveSceneRoot() const;
+
     EngineContext* GetEngineContext() const { return engine_context_; }
 
     bool SaveEditedScene(const std::string& path) const;
@@ -108,6 +110,14 @@ public:
 
     bool StartScenePlaySession();
 
+    bool PlayScene();
+
+    bool PauseScene();
+
+    bool StopScene();
+
+    bool StepScene();
+
     void StopScenePlaySession();
 
     bool ResetScenePlaySession();
@@ -128,6 +138,8 @@ private:
     };
 
     void DrawMenuBar();
+
+    void DrawPlayToolbar();
 
     void DrawViewMenu();
 

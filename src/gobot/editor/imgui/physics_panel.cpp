@@ -93,7 +93,12 @@ void PhysicsPanel::OnImGuiContent() {
 
     const std::vector<PhysicsBackendInfo> backend_infos = GetBackendInfos();
     const PhysicsBackendInfo selected_info = GetBackendInfo(selected_backend_);
+    Editor* editor = Editor::GetInstanceOrNull();
+    const bool script_session_running = editor != nullptr && editor->IsScenePlaySessionRunning();
 
+    if (script_session_running) {
+        ImGui::BeginDisabled();
+    }
     if (ImGui::BeginCombo("Backend", BackendTypeLabel(selected_backend_))) {
         for (const PhysicsBackendInfo& info : backend_infos) {
             const bool selected = info.type == selected_backend_;
@@ -117,6 +122,12 @@ void PhysicsPanel::OnImGuiContent() {
         }
         ImGui::EndCombo();
     }
+    if (script_session_running) {
+        ImGui::EndDisabled();
+        if (ImGui::IsItemHovered(ImGuiHoveredFlags_AllowWhenDisabled)) {
+            ImGui::SetTooltip("Stop scene playback before changing physics backend");
+        }
+    }
 
     ImGui::SameLine();
     DrawStatusText(selected_info.available, "Available", "Unavailable");
@@ -136,21 +147,23 @@ void PhysicsPanel::OnImGuiContent() {
                 static_cast<double>(gravity.y()),
                 static_cast<double>(gravity.z()));
 
-    Editor* editor = Editor::GetInstanceOrNull();
-    Node* scene_root = editor != nullptr ? editor->GetEditedSceneRoot() : nullptr;
+    Node* edited_scene_root = editor != nullptr ? editor->GetEditedSceneRoot() : nullptr;
+    Node* scene_root = editor != nullptr ? editor->GetActiveSceneRoot() : nullptr;
     const bool can_build = scene_root != nullptr && selected_info.available;
-    if (!can_build) {
+    if (!can_build || script_session_running) {
         ImGui::BeginDisabled();
     }
     if (ImGui::Button("Build World")) {
         if (editor != nullptr) {
-            editor->StopScenePlaySession();
+            editor->StopScene();
+            scene_root = editor->GetEditedSceneRoot();
+        } else {
+            simulation->SetPaused(true);
         }
-        simulation->SetPaused(true);
         simulation->SetBackendType(selected_backend_);
         simulation->BuildWorldFromScene(scene_root);
     }
-    if (!can_build) {
+    if (!can_build || script_session_running) {
         ImGui::EndDisabled();
     }
 
@@ -161,20 +174,22 @@ void PhysicsPanel::OnImGuiContent() {
     }
     if (simulation->IsPaused()) {
         if (ImGui::Button(ICON_MDI_PLAY " Play")) {
-            if (!simulation->HasWorld()) {
-                simulation->SetBackendType(selected_backend_);
-                simulation->BuildWorldFromScene(scene_root);
-            }
-            if (simulation->HasWorld()) {
-                const bool session_started = editor == nullptr || editor->StartScenePlaySession();
-                simulation->SetPaused(!session_started);
+            simulation->SetBackendType(selected_backend_);
+            if (editor != nullptr) {
+                editor->PlayScene();
+            } else if (scene_root != nullptr) {
+                if (!simulation->HasWorld()) {
+                    simulation->BuildWorldFromScene(scene_root);
+                }
+                simulation->SetPaused(!simulation->HasWorld());
             }
         }
     } else {
         if (ImGui::Button(ICON_MDI_STOP " Stop")) {
-            simulation->SetPaused(true);
             if (editor != nullptr) {
-                editor->StopScenePlaySession();
+                editor->StopScene();
+            } else {
+                simulation->SetPaused(true);
             }
         }
     }
@@ -187,23 +202,25 @@ void PhysicsPanel::OnImGuiContent() {
         ImGui::BeginDisabled();
     }
     if (ImGui::Button("Reset")) {
-        simulation->Reset();
         if (editor != nullptr && editor->IsScenePlaySessionRunning()) {
             editor->ResetScenePlaySession();
+        } else {
+            simulation->Reset();
         }
     }
     ImGui::SameLine();
     if (ImGui::Button("Clear")) {
         if (editor != nullptr) {
-            editor->StopScenePlaySession();
+            editor->StopScene();
+        } else {
+            simulation->ClearWorld();
         }
-        simulation->ClearWorld();
     }
     if (!has_world) {
         ImGui::EndDisabled();
     }
 
-    if (scene_root == nullptr) {
+    if (edited_scene_root == nullptr) {
         ImGui::TextColored(ImVec4(0.95f, 0.65f, 0.25f, 1.0f), "No edited scene root.");
     }
 
@@ -211,6 +228,9 @@ void PhysicsPanel::OnImGuiContent() {
         ImGui::Separator();
         DrawStatusText(editor->IsScenePlaySessionRunning(), "Scene session running", "Scene session stopped");
         ImGui::Text("Active scripts: %zu", editor->GetActiveSceneScriptCount());
+        if (editor->IsScenePlaySessionRunning()) {
+            ImGui::TextWrapped("Backend and world build controls are locked while scripts are driving the runtime scene.");
+        }
         const std::string session_error = editor->GetScenePlaySessionLastError();
         if (!session_error.empty()) {
             ImGui::TextColored(ImVec4(0.95f, 0.35f, 0.35f, 1.0f), "Script error:");

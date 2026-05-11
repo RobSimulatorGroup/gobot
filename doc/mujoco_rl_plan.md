@@ -26,6 +26,11 @@ Compatibility wrappers can live above the core API.
 
 - `NodeScript` and `ScenePlaySession` are for editor Play Mode, single-scene
   debugging, and policy playback.
+- Play Mode runs scripts on a runtime clone of the edited scene. The editor
+  viewport and physics world use that clone while playback is active, so script
+  motion is visible without mutating the edited scene.
+- Physics controls that switch backend or rebuild the world are disabled while
+  scripts are running.
 - RL training does not run node scripts and does not enter editor Play Mode.
 - Python Panel `Run Once` executes a tool script against the active editor
   context. It does not install tick callbacks, enter Play Mode, or participate

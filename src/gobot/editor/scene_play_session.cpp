@@ -10,6 +10,7 @@
 #include "gobot/log.hpp"
 #include "gobot/main/engine_context.hpp"
 #include "gobot/scene/node.hpp"
+#include "gobot/scene/resources/packed_scene.hpp"
 
 namespace gobot {
 
@@ -17,34 +18,110 @@ ScenePlaySession::~ScenePlaySession() {
     Stop();
 }
 
-bool ScenePlaySession::Start(Node* scene_root, EngineContext* context) {
+namespace {
+
+std::uint64_t NextRuntimeSceneEpoch() {
+    static std::uint64_t epoch = 1'000'000;
+    ++epoch;
+    if (epoch == 0) {
+        epoch = 1'000'000;
+    }
+    return epoch;
+}
+
+struct SceneInstanceBackup {
+    Node* node{nullptr};
+    Ref<PackedScene> scene_instance;
+};
+
+class ScopedExpandedSceneInstances {
+public:
+    explicit ScopedExpandedSceneInstances(Node* root) {
+        ClearSceneInstances(root);
+    }
+
+    ~ScopedExpandedSceneInstances() {
+        for (auto iter = backups_.rbegin(); iter != backups_.rend(); ++iter) {
+            if (iter->node != nullptr) {
+                iter->node->SetSceneInstance(iter->scene_instance);
+            }
+        }
+    }
+
+private:
+    void ClearSceneInstances(Node* node) {
+        if (node == nullptr) {
+            return;
+        }
+
+        Ref<PackedScene> scene_instance = node->GetSceneInstance();
+        if (scene_instance.IsValid()) {
+            backups_.push_back({node, scene_instance});
+            node->SetSceneInstance(Ref<PackedScene>());
+        }
+
+        const std::size_t child_count = node->GetChildCount();
+        for (std::size_t child_index = 0; child_index < child_count; ++child_index) {
+            ClearSceneInstances(node->GetChild(static_cast<int>(child_index)));
+        }
+    }
+
+    std::vector<SceneInstanceBackup> backups_;
+};
+
+void LogScriptOutput(const char* phase,
+                     const Node& node,
+                     const python::PythonExecutionResult& result) {
+    if (!result.output.empty()) {
+        LOG_INFO("Python node script {} on '{}':\n{}", phase, node.GetName(), result.output);
+    }
+    if (result.ok && !result.error.empty()) {
+        LOG_WARN("Python node script {} stderr on '{}':\n{}", phase, node.GetName(), result.error);
+    }
+}
+
+} // namespace
+
+bool ScenePlaySession::Start(Node* edited_scene_root, EngineContext* context) {
     if (running_) {
         return true;
     }
 
     last_error_.clear();
-    scene_root_ = scene_root;
+    edited_scene_root_ = edited_scene_root;
     context_ = context;
 
-    if (scene_root_ == nullptr) {
+    if (edited_scene_root_ == nullptr) {
         last_error_ = "Cannot start scene play session: scene root is null.";
         LOG_ERROR("{}", last_error_);
         return false;
     }
 
-    python::PythonScriptRunner::SetSceneScriptContext(context_);
-    python::PythonScriptRunner::SetSceneScriptRoot(scene_root_);
+    if (!CreateRuntimeScene(edited_scene_root_)) {
+        edited_scene_root_ = nullptr;
+        context_ = nullptr;
+        return false;
+    }
 
-    if (!AttachNodeScriptsRecursive(scene_root_)) {
+    python::PythonScriptRunner::SetSceneScriptContext(context_);
+    python::PythonScriptRunner::SetSceneScriptRoot(runtime_root_, runtime_scene_epoch_);
+
+    if (!AttachNodeScriptsRecursive(runtime_root_)) {
         ClearAttachedScripts(true);
-        scene_root_ = nullptr;
+        Object::Delete(runtime_root_);
+        runtime_root_ = nullptr;
+        runtime_scene_epoch_ = 0;
+        edited_scene_root_ = nullptr;
         context_ = nullptr;
         return false;
     }
 
     if (!NotifyScripts(NotificationType::Ready, 0.0)) {
         ClearAttachedScripts(true);
-        scene_root_ = nullptr;
+        Object::Delete(runtime_root_);
+        runtime_root_ = nullptr;
+        runtime_scene_epoch_ = 0;
+        edited_scene_root_ = nullptr;
         context_ = nullptr;
         return false;
     }
@@ -55,21 +132,31 @@ bool ScenePlaySession::Start(Node* scene_root, EngineContext* context) {
 
 void ScenePlaySession::Stop() {
     if (!running_ && script_nodes_.empty()) {
-        scene_root_ = nullptr;
+        if (runtime_root_ != nullptr) {
+            Object::Delete(runtime_root_);
+            runtime_root_ = nullptr;
+        }
+        edited_scene_root_ = nullptr;
         context_ = nullptr;
+        runtime_scene_epoch_ = 0;
         return;
     }
 
     ClearAttachedScripts(true);
     running_ = false;
-    scene_root_ = nullptr;
+    if (runtime_root_ != nullptr) {
+        Object::Delete(runtime_root_);
+        runtime_root_ = nullptr;
+    }
+    edited_scene_root_ = nullptr;
     context_ = nullptr;
+    runtime_scene_epoch_ = 0;
     LOG_INFO("Scene play session stopped.");
 }
 
-bool ScenePlaySession::Reset(Node* scene_root, EngineContext* context) {
+bool ScenePlaySession::Reset(Node* edited_scene_root, EngineContext* context) {
     Stop();
-    return Start(scene_root, context);
+    return Start(edited_scene_root, context);
 }
 
 void ScenePlaySession::NotifyProcess(double delta_time) {
@@ -86,6 +173,28 @@ void ScenePlaySession::NotifyPhysicsProcess(double delta_time) {
     NotifyScripts(NotificationType::PhysicsProcess, delta_time);
 }
 
+bool ScenePlaySession::CreateRuntimeScene(Node* edited_scene_root) {
+    Ref<PackedScene> packed_scene = MakeRef<PackedScene>();
+    {
+        ScopedExpandedSceneInstances expanded_scene_instances(edited_scene_root);
+        if (!packed_scene->Pack(edited_scene_root)) {
+            last_error_ = "Cannot start scene play session: failed to pack edited scene.";
+            LOG_ERROR("{}", last_error_);
+            return false;
+        }
+    }
+
+    runtime_root_ = packed_scene->Instantiate();
+    if (runtime_root_ == nullptr) {
+        last_error_ = "Cannot start scene play session: failed to instantiate runtime scene.";
+        LOG_ERROR("{}", last_error_);
+        return false;
+    }
+
+    runtime_scene_epoch_ = NextRuntimeSceneEpoch();
+    return true;
+}
+
 bool ScenePlaySession::AttachNodeScript(Node* node) {
     if (node == nullptr) {
         return true;
@@ -97,6 +206,7 @@ bool ScenePlaySession::AttachNodeScript(Node* node) {
     }
 
     python::PythonExecutionResult result = python::PythonScriptRunner::AttachSceneScript(node, script);
+    LogScriptOutput("attach", *node, result);
     if (!result.ok) {
         last_error_ = "Python node script attach failed on '" + node->GetName() + "': " + result.error;
         LOG_ERROR("{}", last_error_);
@@ -140,6 +250,7 @@ bool ScenePlaySession::NotifyScripts(NotificationType notification, double delta
 
         python::PythonExecutionResult result =
                 python::PythonScriptRunner::NotifySceneScript(node, notification, delta_time);
+        LogScriptOutput("notification", *node, result);
         if (!result.ok) {
             last_error_ = "Python node script failed on '" + node->GetName() + "': " + result.error;
             LOG_ERROR("{}", last_error_);
@@ -156,6 +267,7 @@ bool ScenePlaySession::NotifyScripts(NotificationType notification, double delta
 }
 
 void ScenePlaySession::ClearAttachedScripts(bool call_exit_tree) {
+    python::PythonScriptRunner::SetSceneScriptRoot(runtime_root_, runtime_scene_epoch_);
     for (ObjectID node_id : script_nodes_) {
         Node* node = Object::PointerCastTo<Node>(ObjectDB::GetInstance(node_id));
         if (node == nullptr) {
@@ -166,6 +278,7 @@ void ScenePlaySession::ClearAttachedScripts(bool call_exit_tree) {
         if (call_exit_tree) {
             python::PythonExecutionResult result =
                     python::PythonScriptRunner::NotifySceneScript(node, NotificationType::ExitTree, 0.0);
+            LogScriptOutput("exit", *node, result);
             if (!result.ok) {
                 LOG_ERROR("Python node script exit failed on '{}': {}", node->GetName(), result.error);
             }

@@ -351,6 +351,72 @@ bool SceneEditorPanel::AttachScript(Node* node) {
     return true;
 }
 
+bool SceneEditorPanel::AttachScript(Node* node, const std::string& script_path) {
+    if (node == nullptr || script_path.empty()) {
+        return false;
+    }
+
+    auto* editor = Editor::GetInstance();
+    auto* context = editor->GetEngineContext();
+    if (context == nullptr) {
+        return false;
+    }
+
+    Ref<Resource> resource = ResourceLoader::Load(script_path,
+                                                  "PythonScript",
+                                                  ResourceFormatLoader::CacheMode::Replace);
+    Ref<PythonScript> script = dynamic_pointer_cast<PythonScript>(resource);
+    if (!script.IsValid()) {
+        LOG_ERROR("Failed to load Python script '{}'.", script_path);
+        return false;
+    }
+
+    if (!context->ExecuteSceneCommand(std::make_unique<SetNodePropertyCommand>(
+                node->GetInstanceId(),
+                "script",
+                Variant(script)))) {
+        return false;
+    }
+
+    editor->SetSelected(node);
+    RequestOpenScript(script->GetPath().empty() ? script_path : script->GetPath());
+    return true;
+}
+
+bool SceneEditorPanel::AcceptResourceDropOnNode(Node* node) {
+    if (node == nullptr || !ImGui::BeginDragDropTarget()) {
+        return false;
+    }
+
+    bool accepted = false;
+    const ImGuiPayload* python_payload = ImGui::AcceptDragDropPayload("GobotPythonScriptResource");
+    if (python_payload != nullptr && python_payload->Data != nullptr && python_payload->DataSize > 0) {
+        const std::string script_path(static_cast<const char*>(python_payload->Data));
+        accepted = AttachScript(node, script_path);
+        if (accepted) {
+            LOG_INFO("Attached Python script from Resources drop: {} -> {}", script_path, node->GetName());
+        } else {
+            LOG_ERROR("Failed to attach Python script from Resources drop: {} -> {}", script_path, node->GetName());
+        }
+    }
+
+    if (!accepted) {
+        const ImGuiPayload* scene_payload = ImGui::AcceptDragDropPayload("GobotSceneResource");
+        if (scene_payload != nullptr && scene_payload->Data != nullptr && scene_payload->DataSize > 0) {
+            const std::string scene_path(static_cast<const char*>(scene_payload->Data));
+            accepted = Editor::GetInstance()->AddSceneToEditedScene(scene_path);
+            if (accepted) {
+                LOG_INFO("Added scene from Resources drop: {}", scene_path);
+            } else {
+                LOG_ERROR("Failed to add scene from Resources drop: {}", scene_path);
+            }
+        }
+    }
+
+    ImGui::EndDragDropTarget();
+    return accepted;
+}
+
 bool SceneEditorPanel::DetachScript(Node* node) {
     if (node == nullptr || !node->GetScript().IsValid()) {
         return false;
@@ -599,13 +665,13 @@ bool SceneEditorPanel::DrawNode(Node* node)
                 double_clicked_ = nullptr;
         }
         ImGui::PopStyleColor();
-        const bool dropped_scene_on_row = AcceptSceneResourceDrop();
+        const bool dropped_resource_on_row = AcceptResourceDropOnNode(node);
         ImGui::SameLine();
         if(!double_clicked)
             ImGui::TextUnformatted(name.c_str());
         node_row_rect.Add(ImRect(ImGui::GetItemRectMin(), ImGui::GetItemRectMax()));
-        if (!dropped_scene_on_row) {
-            AcceptSceneResourceDrop();
+        if (!dropped_resource_on_row) {
+            AcceptResourceDropOnNode(node);
         }
 
         const float icon_button_width = ImGui::GetFrameHeight();

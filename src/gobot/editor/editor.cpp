@@ -49,6 +49,7 @@
 #include "imgui.h"
 #include "imgui_internal.h"
 #include "imgui_extension/file_browser/ImFileBrowser.h"
+#include "imgui_extension/icon_fonts/icons_material_design_icons.h"
 
 namespace gobot {
 namespace {
@@ -110,7 +111,7 @@ Editor::Editor() {
     BindEngineContextToEditedScene();
     python::SetActiveAppContext(engine_context_);
     python::PythonScriptRunner::SetSceneScriptContext(engine_context_);
-    python::PythonScriptRunner::SetSceneScriptRoot(edited_scene_->GetRoot());
+    python::PythonScriptRunner::SetSceneScriptRoot(GetEditedSceneRoot(), engine_context_->GetSceneEpoch());
 
     node3d_editor_ = Object::New<Node3DEditor>();
     node3d_editor_->SetName("Node3DEditor");
@@ -158,6 +159,13 @@ Editor* Editor::GetInstance() {
 
 Node3D* Editor::GetEditedSceneRoot() const {
     return edited_scene_ ? edited_scene_->GetRoot() : nullptr;
+}
+
+Node* Editor::GetActiveSceneRoot() const {
+    if (scene_play_session_ != nullptr && scene_play_session_->IsRunning()) {
+        return scene_play_session_->GetRuntimeRoot();
+    }
+    return GetEditedSceneRoot();
 }
 
 void Editor::BindEngineContextToEditedScene() {
@@ -455,8 +463,82 @@ bool Editor::StartScenePlaySession() {
     return scene_play_session_->Start(GetEditedSceneRoot(), engine_context_);
 }
 
+bool Editor::PlayScene() {
+    SimulationServer* simulation = SimulationServer::HasInstance()
+                                           ? SimulationServer::GetInstance()
+                                           : nullptr;
+    if (simulation == nullptr || GetEditedSceneRoot() == nullptr) {
+        return false;
+    }
+
+    if (!IsScenePlaySessionRunning() && !StartScenePlaySession()) {
+        simulation->SetPaused(true);
+        return false;
+    }
+
+    Node* play_root = GetActiveSceneRoot();
+    if (play_root == nullptr) {
+        simulation->SetPaused(true);
+        return false;
+    }
+
+    if (!simulation->HasWorld() || simulation->GetSceneRoot() != play_root) {
+        simulation->ClearWorld();
+        if (!simulation->BuildWorldFromScene(play_root)) {
+            StopScenePlaySession();
+            simulation->SetPaused(true);
+            return false;
+        }
+    }
+
+    simulation->SetPaused(false);
+    return true;
+}
+
+bool Editor::PauseScene() {
+    if (!SimulationServer::HasInstance()) {
+        return false;
+    }
+    SimulationServer::GetInstance()->SetPaused(true);
+    return true;
+}
+
+bool Editor::StopScene() {
+    if (SimulationServer::HasInstance()) {
+        SimulationServer::GetInstance()->SetPaused(true);
+        SimulationServer::GetInstance()->ClearWorld();
+    }
+    StopScenePlaySession();
+    return true;
+}
+
+bool Editor::StepScene() {
+    SimulationServer* simulation = SimulationServer::HasInstance()
+                                           ? SimulationServer::GetInstance()
+                                           : nullptr;
+    if (simulation == nullptr) {
+        return false;
+    }
+    if (!IsScenePlaySessionRunning() && !PlayScene()) {
+        return false;
+    }
+    simulation->SetPaused(true);
+    return simulation->StepOnce();
+}
+
 void Editor::StopScenePlaySession() {
+    if (scene_play_session_ != nullptr && SimulationServer::HasInstance()) {
+        SimulationServer* simulation = SimulationServer::GetInstance();
+        if (simulation->GetSceneRoot() == scene_play_session_->GetRuntimeRoot()) {
+            simulation->SetPaused(true);
+            simulation->ClearWorld();
+        }
+    }
     if (scene_play_session_ != nullptr) {
+        Node* runtime_root = scene_play_session_->GetRuntimeRoot();
+        if (runtime_root != nullptr && (selected_ == runtime_root || runtime_root->IsAncestorOf(selected_))) {
+            selected_ = GetEditedSceneRoot();
+        }
         scene_play_session_->Stop();
     }
 }
@@ -465,7 +547,15 @@ bool Editor::ResetScenePlaySession() {
     if (scene_play_session_ == nullptr) {
         return false;
     }
-    return scene_play_session_->Reset(GetEditedSceneRoot(), engine_context_);
+    const bool running = scene_play_session_->Reset(GetEditedSceneRoot(), engine_context_);
+    if (running && SimulationServer::HasInstance()) {
+        SimulationServer::GetInstance()->ClearWorld();
+        if (!SimulationServer::GetInstance()->BuildWorldFromScene(scene_play_session_->GetRuntimeRoot())) {
+            scene_play_session_->Stop();
+            return false;
+        }
+    }
+    return running;
 }
 
 bool Editor::IsScenePlaySessionRunning() const {
@@ -481,8 +571,10 @@ std::string Editor::GetScenePlaySessionLastError() const {
 }
 
 void Editor::NotificationCallBack(NotificationType notification) {
-    python::PythonScriptRunner::SetSceneScriptContext(engine_context_);
-    python::PythonScriptRunner::SetSceneScriptRoot(GetEditedSceneRoot());
+    if (engine_context_ != nullptr) {
+        python::PythonScriptRunner::SetSceneScriptContext(engine_context_);
+        python::PythonScriptRunner::SetSceneScriptRoot(GetEditedSceneRoot(), engine_context_->GetSceneEpoch());
+    }
 
     switch (notification) {
         case NotificationType::PhysicsProcess: {
@@ -576,8 +668,60 @@ void Editor::DrawMenuBar() {
             ImGui::EndMenu();
         }
         DrawViewMenu();
+        DrawPlayToolbar();
         ImGui::EndMainMenuBar();
     }
+}
+
+void Editor::DrawPlayToolbar() {
+    SimulationServer* simulation = SimulationServer::HasInstance()
+                                           ? SimulationServer::GetInstance()
+                                           : nullptr;
+    const bool has_scene = GetEditedSceneRoot() != nullptr;
+    const bool playing = simulation != nullptr && !simulation->IsPaused();
+    const bool session_running = IsScenePlaySessionRunning();
+
+    const float group_width = ImGui::CalcTextSize(ICON_MDI_PLAY).x +
+                              ImGui::CalcTextSize(ICON_MDI_PAUSE).x +
+                              ImGui::CalcTextSize(ICON_MDI_STOP).x +
+                              ImGui::CalcTextSize(ICON_MDI_STEP_FORWARD).x +
+                              ImGui::GetStyle().ItemSpacing.x * 5.0f +
+                              ImGui::GetFrameHeight() * 4.0f;
+    const float start_x = std::max(ImGui::GetCursorPosX() + ImGui::GetStyle().ItemSpacing.x,
+                                   ImGui::GetWindowWidth() - group_width - 12.0f);
+    ImGui::SetCursorPosX(start_x);
+
+    auto draw_button = [](const char* id, const char* icon, const char* tooltip, bool enabled, auto&& on_pressed) {
+        if (!enabled) {
+            ImGui::BeginDisabled();
+        }
+        ImGui::PushID(id);
+        if (ImGui::SmallButton(icon)) {
+            on_pressed();
+        }
+        if (ImGui::IsItemHovered(ImGuiHoveredFlags_AllowWhenDisabled)) {
+            ImGui::SetTooltip("%s", tooltip);
+        }
+        ImGui::PopID();
+        if (!enabled) {
+            ImGui::EndDisabled();
+        }
+        ImGui::SameLine();
+    };
+
+    draw_button("play_scene", ICON_MDI_PLAY, "Play scene", has_scene && !playing, [this]() {
+        PlayScene();
+    });
+    draw_button("pause_scene", ICON_MDI_PAUSE, "Pause scene", playing, [this]() {
+        PauseScene();
+    });
+    draw_button("stop_scene", ICON_MDI_STOP, "Stop scene", session_running, [this]() {
+        StopScene();
+    });
+    draw_button("step_scene", ICON_MDI_STEP_FORWARD, "Step one physics tick", has_scene, [this]() {
+        StepScene();
+    });
+    ImGui::Dummy(ImVec2(1.0f, 1.0f));
 }
 
 void Editor::DrawViewMenu() {
@@ -612,6 +756,7 @@ void Editor::HandleGlobalShortcuts() {
         return;
     }
 
+    const bool imgui_captures_keyboard = ImGui::GetIO().WantCaptureKeyboard;
     const bool ctrl_down = Input::GetInstance()->GetKeyHeld(KeyCode::LeftCtrl) ||
                            Input::GetInstance()->GetKeyHeld(KeyCode::RightCtrl) ||
                            ImGui::GetIO().KeyCtrl;
@@ -626,7 +771,7 @@ void Editor::HandleGlobalShortcuts() {
     static bool redo_shortcut_down = false;
 
     const bool save_shortcut_down = ctrl_down && s_down;
-    if (save_shortcut_down && !save_shortcut_down_) {
+    if (save_shortcut_down && !save_shortcut_down_ && !imgui_captures_keyboard) {
         SaveCurrentScene();
     }
     save_shortcut_down_ = save_shortcut_down;

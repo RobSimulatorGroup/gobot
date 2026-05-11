@@ -61,6 +61,16 @@ bool IsPythonScriptFile(const DirectoryInformation* dir_info) {
     return ToLower(std::filesystem::path(dir_info->global_path).extension().string()) == ".py";
 }
 
+const char* DragDropPayloadType(const DirectoryInformation* dir_info) {
+    if (IsNativeSceneFile(dir_info)) {
+        return "GobotSceneResource";
+    }
+    if (IsPythonScriptFile(dir_info)) {
+        return "GobotPythonScriptResource";
+    }
+    return "AssetFile";
+}
+
 void OpenInExternalCodeEditor(const std::string& global_path) {
     const std::string command = "code --reuse-window \"" + global_path + "\"";
     const int result = std::system(command.c_str());
@@ -377,13 +387,19 @@ bool ResourcePanel::RenderFile(int dirIndex, bool folder, int shownIndex, bool g
 
     if(ImGui::BeginDragDropSource(ImGuiDragDropFlags_SourceAllowNullID))
     {
-        ImGui::TextUnformatted(ICON_MDI_FILE);
+        DirectoryInformation* child = current_dir_->children[dirIndex];
+        ImGui::TextUnformatted(ResourceIcon(child));
 
         ImGui::SameLine();
-        move_path_ = project_path_ + "/" + current_dir_->children[dirIndex]->global_path;
-        ImGui::TextUnformatted(move_path_.c_str());
-        size_t size = sizeof(const char*) + strlen(move_path_.c_str());
-        ImGui::SetDragDropPayload("AssetFile", move_path_.c_str(), size);
+        ImGui::TextUnformatted(child->local_path.c_str());
+        move_path_ = project_path_ + "/" + child->global_path;
+        const char* payload_type = DragDropPayloadType(child);
+        const std::string& payload_path = std::strcmp(payload_type, "AssetFile") == 0
+                                          ? move_path_
+                                          : child->local_path;
+        ImGui::SetDragDropPayload(payload_type,
+                                  payload_path.c_str(),
+                                  payload_path.size() + 1);
         is_dragging_ = true;
         ImGui::EndDragDropSource();
     }
@@ -436,11 +452,11 @@ void ResourcePanel::DrawResourceTree(DirectoryInformation* dir_info, bool root)
         ImGui::SetTooltip("%s", dir_info->local_path.c_str());
     }
 
-    if (IsNativeSceneFile(dir_info) && ImGui::BeginDragDropSource(ImGuiDragDropFlags_SourceAllowNullID)) {
-        ImGui::TextUnformatted(ICON_MDI_FILE);
+    if (!dir_info->is_directory && ImGui::BeginDragDropSource(ImGuiDragDropFlags_SourceAllowNullID)) {
+        ImGui::TextUnformatted(ResourceIcon(dir_info));
         ImGui::SameLine();
         ImGui::TextUnformatted(dir_info->local_path.c_str());
-        ImGui::SetDragDropPayload("GobotSceneResource",
+        ImGui::SetDragDropPayload(DragDropPayloadType(dir_info),
                                   dir_info->local_path.c_str(),
                                   dir_info->local_path.size() + 1);
         ImGui::EndDragDropSource();

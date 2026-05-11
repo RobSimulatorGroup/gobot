@@ -83,7 +83,7 @@ void EngineContext::SetSceneRoot(Node* scene_root, bool take_ownership, const st
         scene_command_stack_.MarkClean();
         AdvanceSceneEpoch();
         python::PythonScriptRunner::SetSceneScriptContext(this);
-        python::PythonScriptRunner::SetSceneScriptRoot(scene_root_);
+        python::PythonScriptRunner::SetSceneScriptRoot(scene_root_, scene_epoch_);
         return;
     }
 
@@ -96,7 +96,7 @@ void EngineContext::SetSceneRoot(Node* scene_root, bool take_ownership, const st
     owns_scene_root_ = take_ownership;
     scene_path_ = scene_path;
     python::PythonScriptRunner::SetSceneScriptContext(this);
-    python::PythonScriptRunner::SetSceneScriptRoot(scene_root_);
+    python::PythonScriptRunner::SetSceneScriptRoot(scene_root_, scene_epoch_);
 }
 
 Node* EngineContext::GetSceneRoot() const {

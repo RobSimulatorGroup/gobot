@@ -269,6 +269,10 @@ bool SimulationServer::RebuildWorldFromScene(const Node* scene_root, bool preser
     return true;
 }
 
+const Node* SimulationServer::GetSceneRoot() const {
+    return scene_root_;
+}
+
 void SimulationServer::ClearWorld() {
     world_.Reset();
     scene_root_ = nullptr;

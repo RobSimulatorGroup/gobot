@@ -9,7 +9,9 @@
 #include <gobot/editor/scene_play_session.hpp>
 #include <gobot/main/engine_context.hpp>
 #include <gobot/physics/physics_server.hpp>
+#include <gobot/scene/node_3d.hpp>
 #include <gobot/scene/node.hpp>
+#include <gobot/scene/resources/packed_scene.hpp>
 #include <gobot/scene/scene_initializer.hpp>
 #include <gobot/scene/scene_tree.hpp>
 #include <gobot/scene/window.hpp>
@@ -32,7 +34,9 @@ protected:
         ASSERT_TRUE(project_settings->SetProjectPath(project_path.string()));
         tree = gobot::SceneTree::New<gobot::SceneTree>(false);
         tree->Initialize();
-        root = tree->GetRoot();
+        root = gobot::Object::New<gobot::Node3D>();
+        root->SetName("EditedRoot");
+        tree->GetRoot()->AddChild(root);
         context->SetSceneRoot(root, false, "res://scene.jscn");
         gobot::SceneInitializer::Init();
     }
@@ -72,7 +76,7 @@ protected:
     gobot::SimulationServer* simulation_server{nullptr};
     std::unique_ptr<gobot::EngineContext> context;
     gobot::SceneTree* tree{nullptr};
-    gobot::Node* root{nullptr};
+    gobot::Node3D* root{nullptr};
     gobot::ScenePlaySession session;
     std::filesystem::path project_path;
 };
@@ -130,6 +134,8 @@ class Script(gobot.NodeScript):
     ASSERT_TRUE(session.Start(root, context.get()));
     EXPECT_TRUE(session.IsRunning());
     EXPECT_EQ(session.GetActiveScriptCount(), 1);
+    ASSERT_NE(session.GetRuntimeRoot(), nullptr);
+    EXPECT_NE(session.GetRuntimeRoot(), root);
     EXPECT_EQ(ReadText("scripts/counts.txt"), "1,0,0,0");
 
     session.NotifyProcess(0.016);
@@ -141,4 +147,97 @@ class Script(gobot.NodeScript):
     session.Stop();
     EXPECT_FALSE(session.IsRunning());
     EXPECT_EQ(ReadText("scripts/counts.txt"), "1,1,1,1");
+}
+
+TEST_F(TestScenePlaySession, node_scripts_mutate_runtime_clone_without_dirtying_edited_scene) {
+    auto script = MakeScript("scripts/runtime_clone.py", R"PY(
+import gobot
+
+class Script(gobot.NodeScript):
+    def _ready(self):
+        self.node.name = "runtime_scripted"
+        self.context.root.name = "runtime_root"
+)PY");
+
+    auto* child = gobot::Object::New<gobot::Node>();
+    child->SetName("edited_scripted");
+    child->SetScript(script);
+    root->AddChild(child);
+    const std::size_t command_version = context->GetSceneCommandVersion();
+
+    ASSERT_TRUE(session.Start(root, context.get()));
+    ASSERT_TRUE(session.IsRunning());
+    ASSERT_NE(session.GetRuntimeRoot(), nullptr);
+    EXPECT_NE(session.GetRuntimeRoot(), root);
+    EXPECT_EQ(session.GetRuntimeRoot()->GetName(), "runtime_root");
+    ASSERT_EQ(session.GetRuntimeRoot()->GetChildCount(), root->GetChildCount());
+    EXPECT_EQ(session.GetRuntimeRoot()->GetChild(0)->GetName(), "runtime_scripted");
+
+    EXPECT_EQ(root->GetName(), "EditedRoot");
+    EXPECT_EQ(child->GetName(), "edited_scripted");
+    EXPECT_FALSE(context->IsSceneDirty());
+    EXPECT_EQ(context->GetSceneCommandVersion(), command_version);
+
+    session.Stop();
+    EXPECT_EQ(session.GetRuntimeRoot(), nullptr);
+}
+
+TEST_F(TestScenePlaySession, runtime_clone_expands_scene_instance_children_for_playback) {
+    auto* prefab_root = gobot::Object::New<gobot::Node3D>();
+    prefab_root->SetName("RobotPrefab");
+    auto* prefab_link = gobot::Object::New<gobot::Node>();
+    prefab_link->SetName("RobotLink");
+    prefab_root->AddChild(prefab_link);
+
+    gobot::Ref<gobot::PackedScene> prefab = gobot::MakeRef<gobot::PackedScene>();
+    ASSERT_TRUE(prefab->Pack(prefab_root));
+    gobot::Object::Delete(prefab_root);
+
+    gobot::Node* robot_instance = prefab->Instantiate();
+    ASSERT_NE(robot_instance, nullptr);
+    robot_instance->SetName("RobotInstance");
+    robot_instance->SetSceneInstance(prefab);
+    ASSERT_EQ(robot_instance->GetChildCount(), 1);
+    root->AddChild(robot_instance);
+
+    ASSERT_TRUE(session.Start(root, context.get()));
+    ASSERT_NE(session.GetRuntimeRoot(), nullptr);
+    ASSERT_EQ(session.GetRuntimeRoot()->GetChildCount(), 1);
+
+    gobot::Node* runtime_robot = session.GetRuntimeRoot()->GetChild(0);
+    ASSERT_NE(runtime_robot, nullptr);
+    EXPECT_EQ(runtime_robot->GetName(), "RobotInstance");
+    ASSERT_EQ(runtime_robot->GetChildCount(), 1);
+    EXPECT_EQ(runtime_robot->GetChild(0)->GetName(), "RobotLink");
+    EXPECT_FALSE(runtime_robot->GetSceneInstance().IsValid());
+    EXPECT_TRUE(robot_instance->GetSceneInstance().IsValid());
+}
+
+TEST_F(TestScenePlaySession, node_script_stdout_is_returned_from_notifications) {
+    auto script = MakeScript("scripts/prints.py", R"PY(
+import gobot
+
+class Script(gobot.NodeScript):
+    def _ready(self):
+        print("_ready")
+)PY");
+
+    auto* child = gobot::Object::New<gobot::Node>();
+    child->SetName("scripted");
+    root->AddChild(child);
+
+    gobot::python::PythonScriptRunner::SetSceneScriptContext(context.get());
+    gobot::python::PythonScriptRunner::SetSceneScriptRoot(root, context->GetSceneEpoch());
+    gobot::python::PythonExecutionResult attach =
+            gobot::python::PythonScriptRunner::AttachSceneScript(child, script);
+    ASSERT_TRUE(attach.ok) << attach.error;
+
+    gobot::python::PythonExecutionResult ready =
+            gobot::python::PythonScriptRunner::NotifySceneScript(child,
+                                                                 gobot::NotificationType::Ready,
+                                                                 0.0);
+    EXPECT_TRUE(ready.ok) << ready.error;
+    EXPECT_NE(ready.output.find("_ready"), std::string::npos);
+
+    gobot::python::PythonScriptRunner::DetachSceneScript(child);
 }

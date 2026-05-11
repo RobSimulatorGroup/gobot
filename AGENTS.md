@@ -204,6 +204,10 @@ Key direction:
 - Gobot `SceneTree` / `.jscn` remains the authoring source of truth. MJCF, `mjModel`, MuJoCo data, and Warp arrays are runtime artifacts compiled below the scene/physics boundary.
 - RL training should use `gobot.rl.ManagerBasedEnv` / `VectorEnv` style APIs and normal Python scripts. Gymnasium and rsl_rl belong in compatibility wrappers, not core engine APIs.
 - `NodeScript` / `ScenePlaySession` are only for editor Play Mode, single-scene debugging, and policy playback. RL training must not run node scripts or depend on the editor viewport.
+- Play Mode runs node scripts on a runtime clone produced from the edited scene, not directly on the edited `SceneTree`. The viewport and physics world should use the runtime clone while playback is active, and stopping playback should destroy that clone without dirtying the edited scene.
+- While node scripts are running, editor physics controls that replace the backend or rebuild the world should be disabled. Keep Stop/Reset-style controls available so the user can leave playback cleanly.
+- Scene Play runtime cloning should expand current scene-instance contents for playback so rendered robots and script targets match the editor view; this is a runtime behavior and must not weaken `.jscn` scene-instance save semantics.
+- Node script stdout/stderr should be captured into the editor logging/Console path. Python Panel editing should preserve Python-friendly spaces and let focused script editing handle `Ctrl+S`; dragging `.py` resources onto SceneTree nodes should attach the script through scene commands.
 - Python Panel `Run Once` is a tool-script action against the active editor context. It must not install per-frame callbacks, enter Play Mode, or participate in vectorized environments.
 - Do not add C++-specific environment variable hooks for Python package discovery. Use normal Python packaging, `PYTHONPATH` in tests, or explicit project paths.
 

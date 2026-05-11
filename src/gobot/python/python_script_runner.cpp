@@ -100,6 +100,57 @@ py::object MakeWriterObject(const std::shared_ptr<SourceLocationWriter>& writer)
     return object;
 }
 
+class ScopedPythonOutputCapture {
+public:
+    explicit ScopedPythonOutputCapture(const std::string& filename) :
+            stdout_writer_(std::make_shared<SourceLocationWriter>(filename)),
+            stderr_writer_(std::make_shared<SourceLocationWriter>(filename)) {
+        py::module_ contextlib = py::module_::import("contextlib");
+        stdout_buffer_ = MakeWriterObject(stdout_writer_);
+        stderr_buffer_ = MakeWriterObject(stderr_writer_);
+        stdout_redirect_ = contextlib.attr("redirect_stdout")(stdout_buffer_);
+        stderr_redirect_ = contextlib.attr("redirect_stderr")(stderr_buffer_);
+        stdout_redirect_.attr("__enter__")();
+        stderr_redirect_.attr("__enter__")();
+        active_ = true;
+    }
+
+    ~ScopedPythonOutputCapture() {
+        try {
+            Close();
+        } catch (...) {
+        }
+    }
+
+    void Close() {
+        if (!active_) {
+            return;
+        }
+        stderr_redirect_.attr("__exit__")(py::none(), py::none(), py::none());
+        stdout_redirect_.attr("__exit__")(py::none(), py::none(), py::none());
+        stdout_writer_->Flush();
+        stderr_writer_->Flush();
+        active_ = false;
+    }
+
+    std::string GetOutput() const {
+        return stdout_writer_->GetValue();
+    }
+
+    std::string GetError() const {
+        return stderr_writer_->GetValue();
+    }
+
+private:
+    std::shared_ptr<SourceLocationWriter> stdout_writer_;
+    std::shared_ptr<SourceLocationWriter> stderr_writer_;
+    py::object stdout_buffer_;
+    py::object stderr_buffer_;
+    py::object stdout_redirect_;
+    py::object stderr_redirect_;
+    bool active_{false};
+};
+
 bool& InterpreterStartedByRunner() {
     static bool started = false;
     return started;
@@ -114,6 +165,31 @@ Node*& SceneScriptRoot() {
     static Node* root = nullptr;
     return root;
 }
+
+std::uint64_t& SceneScriptEpoch() {
+    static std::uint64_t epoch = 0;
+    return epoch;
+}
+
+bool& ExecutingSceneScript() {
+    static thread_local bool executing = false;
+    return executing;
+}
+
+class ScopedSceneScriptExecution {
+public:
+    ScopedSceneScriptExecution() {
+        previous_ = ExecutingSceneScript();
+        ExecutingSceneScript() = true;
+    }
+
+    ~ScopedSceneScriptExecution() {
+        ExecutingSceneScript() = previous_;
+    }
+
+private:
+    bool previous_{false};
+};
 
 struct SceneScriptInstance {
     py::object instance;
@@ -274,38 +350,21 @@ PythonExecutionResult ExecuteCompiledCode(const std::string& source,
         modules.attr("pop")("gobot", py::none());
         py::module_::import("gobot");
 
-        py::module_ contextlib = py::module_::import("contextlib");
-        std::shared_ptr<SourceLocationWriter> stdout_writer =
-                std::make_shared<SourceLocationWriter>(filename);
-        std::shared_ptr<SourceLocationWriter> stderr_writer =
-                std::make_shared<SourceLocationWriter>(filename);
-        py::object stdout_buffer = MakeWriterObject(stdout_writer);
-        py::object stderr_buffer = MakeWriterObject(stderr_writer);
         py::dict& globals = ScriptGlobals();
         globals["__name__"] = "__main__";
         globals["__file__"] = filename;
 
-        py::object stdout_redirect = contextlib.attr("redirect_stdout")(stdout_buffer);
-        py::object stderr_redirect = contextlib.attr("redirect_stderr")(stderr_buffer);
-        stdout_redirect.attr("__enter__")();
-        stderr_redirect.attr("__enter__")();
-        try {
+        ScopedPythonOutputCapture output_capture(filename);
+        {
             py::module_ builtins = py::module_::import("builtins");
             py::object code = builtins.attr("compile")(source, filename, "exec");
             builtins.attr("exec")(code, globals);
             result.ok = true;
-        } catch (...) {
-            stderr_redirect.attr("__exit__")(py::none(), py::none(), py::none());
-            stdout_redirect.attr("__exit__")(py::none(), py::none(), py::none());
-            throw;
         }
-        stderr_redirect.attr("__exit__")(py::none(), py::none(), py::none());
-        stdout_redirect.attr("__exit__")(py::none(), py::none(), py::none());
-        stdout_writer->Flush();
-        stderr_writer->Flush();
+        output_capture.Close();
 
-        result.output = stdout_writer->GetValue();
-        result.error = stderr_writer->GetValue();
+        result.output = output_capture.GetOutput();
+        result.error = output_capture.GetError();
     } catch (const py::error_already_set& error) {
         result.ok = false;
         result.error = error.what();
@@ -346,15 +405,29 @@ void PythonScriptRunner::SetSceneScriptContext(EngineContext* context) {
     SceneScriptContext() = context;
 }
 
-void PythonScriptRunner::SetSceneScriptRoot(Node* root) {
+void PythonScriptRunner::SetSceneScriptRoot(Node* root, std::uint64_t scene_epoch) {
     SceneScriptRoot() = root;
+    SceneScriptEpoch() = scene_epoch;
 }
 
 void PythonScriptRunner::ClearSceneScriptContext(EngineContext* context) {
     if (SceneScriptContext() == context) {
         SceneScriptContext() = nullptr;
         SceneScriptRoot() = nullptr;
+        SceneScriptEpoch() = 0;
     }
+}
+
+bool PythonScriptRunner::IsExecutingSceneScript() {
+    return ExecutingSceneScript();
+}
+
+Node* PythonScriptRunner::GetExecutingSceneScriptRoot() {
+    return IsExecutingSceneScript() ? SceneScriptRoot() : nullptr;
+}
+
+std::uint64_t PythonScriptRunner::GetExecutingSceneScriptEpoch() {
+    return IsExecutingSceneScript() ? SceneScriptEpoch() : 0;
 }
 
 bool PythonScriptRunner::HasSceneScriptInstance(Node* node) {
@@ -382,9 +455,14 @@ PythonExecutionResult PythonScriptRunner::AttachSceneScript(Node* node,
         AddProjectPathToSysPath(SceneScriptContext());
         py::module_::import("gobot");
 
+        ScopedPythonOutputCapture output_capture(script->GetPath().empty() ? "<gobot-node-script>" : script->GetPath());
         DetachSceneScript(node);
+        ScopedSceneScriptExecution scoped_execution;
         SceneScriptInstances()[node->GetInstanceId()] =
                 SceneScriptInstance{CreateNodeScriptInstance(node, script), script->GetPath(), false};
+        output_capture.Close();
+        result.output = output_capture.GetOutput();
+        result.error = output_capture.GetError();
         result.ok = true;
     } catch (const py::error_already_set& error) {
         result.ok = false;
@@ -441,6 +519,10 @@ PythonExecutionResult PythonScriptRunner::NotifySceneScript(Node* node,
         AddProjectPathToSysPath(SceneScriptContext());
 
         py::object& instance = instance_iter->second.instance;
+        ScopedPythonOutputCapture output_capture(instance_iter->second.path.empty()
+                                                 ? "<gobot-node-script>"
+                                                 : instance_iter->second.path);
+        ScopedSceneScriptExecution scoped_execution;
         switch (notification) {
             case NotificationType::Ready:
                 if (HasCallable(instance, "_ready")) {
@@ -465,6 +547,9 @@ PythonExecutionResult PythonScriptRunner::NotifySceneScript(Node* node,
             default:
                 break;
         }
+        output_capture.Close();
+        result.output = output_capture.GetOutput();
+        result.error = output_capture.GetError();
         result.ok = true;
     } catch (const py::error_already_set& error) {
         instance_iter->second.disabled = true;

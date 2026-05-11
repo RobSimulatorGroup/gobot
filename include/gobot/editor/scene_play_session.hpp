@@ -24,17 +24,23 @@ public:
 
     [[nodiscard]] const std::string& GetLastError() const { return last_error_; }
 
-    bool Start(Node* scene_root, EngineContext* context);
+    [[nodiscard]] Node* GetRuntimeRoot() const { return runtime_root_; }
+
+    [[nodiscard]] std::uint64_t GetRuntimeSceneEpoch() const { return runtime_scene_epoch_; }
+
+    bool Start(Node* edited_scene_root, EngineContext* context);
 
     void Stop();
 
-    bool Reset(Node* scene_root, EngineContext* context);
+    bool Reset(Node* edited_scene_root, EngineContext* context);
 
     void NotifyProcess(double delta_time);
 
     void NotifyPhysicsProcess(double delta_time);
 
 private:
+    bool CreateRuntimeScene(Node* edited_scene_root);
+
     bool AttachNodeScript(Node* node);
 
     bool AttachNodeScriptsRecursive(Node* node);
@@ -45,8 +51,10 @@ private:
 
 private:
     bool running_{false};
-    Node* scene_root_{nullptr};
+    Node* edited_scene_root_{nullptr};
+    Node* runtime_root_{nullptr};
     EngineContext* context_{nullptr};
+    std::uint64_t runtime_scene_epoch_{0};
     std::vector<ObjectID> script_nodes_;
     std::string last_error_;
 };

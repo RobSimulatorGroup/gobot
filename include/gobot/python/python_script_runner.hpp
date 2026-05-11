@@ -1,5 +1,6 @@
 #pragma once
 
+#include <cstdint>
 #include <string>
 
 #include "gobot_export.h"
@@ -34,9 +35,15 @@ public:
 
     static void SetSceneScriptContext(EngineContext* context);
 
-    static void SetSceneScriptRoot(Node* root);
+    static void SetSceneScriptRoot(Node* root, std::uint64_t scene_epoch = 0);
 
     static void ClearSceneScriptContext(EngineContext* context);
+
+    static bool IsExecutingSceneScript();
+
+    static Node* GetExecutingSceneScriptRoot();
+
+    static std::uint64_t GetExecutingSceneScriptEpoch();
 
     static bool HasSceneScriptInstance(Node* node);
 

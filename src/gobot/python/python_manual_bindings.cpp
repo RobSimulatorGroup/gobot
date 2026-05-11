@@ -19,6 +19,7 @@
 #include "gobot/physics/physics_server.hpp"
 #include "gobot/physics/physics_world.hpp"
 #include "gobot/python/python_app_context.hpp"
+#include "gobot/python/python_script_runner.hpp"
 #include "gobot/scene/collision_shape_3d.hpp"
 #include "gobot/scene/joint_3d.hpp"
 #include "gobot/scene/link_3d.hpp"
@@ -32,7 +33,6 @@
 #include "gobot/scene/scene_command.hpp"
 #include "gobot/scene/scene_initializer.hpp"
 #include "gobot/simulation/simulation_server.hpp"
-#include "gobot/python/python_script_runner.hpp"
 
 namespace gobot::python {
 namespace {
@@ -184,6 +184,25 @@ void ExecuteSceneMutation(const std::string&, Func&& func);
 
 void ExecuteSetNodeProperty(Node* node, const std::string& property_name, Variant value);
 
+std::uint64_t ActiveSceneEpoch() {
+    const std::uint64_t scene_script_epoch = PythonScriptRunner::GetExecutingSceneScriptEpoch();
+    if (scene_script_epoch != 0) {
+        return scene_script_epoch;
+    }
+    return GetActiveAppContext().GetSceneEpoch();
+}
+
+Node* ActiveSceneRoot() {
+    if (Node* scene_script_root = PythonScriptRunner::GetExecutingSceneScriptRoot()) {
+        return scene_script_root;
+    }
+    return GetActiveAppContext().GetSceneRoot();
+}
+
+bool IsSceneScriptRuntimeMutation() {
+    return PythonScriptRunner::IsExecutingSceneScript();
+}
+
 [[noreturn]] void ThrowReferenceError(const std::string& message) {
     PyErr_SetString(PyExc_ReferenceError, message.c_str());
     throw py::error_already_set();
@@ -298,7 +317,7 @@ struct PyScene {
 
     explicit PyScene(Node* root_node)
         : root(root_node),
-          scene_epoch(GetActiveAppContext().GetSceneEpoch()) {
+          scene_epoch(ActiveSceneEpoch()) {
     }
 
     ~PyScene() {
@@ -389,16 +408,29 @@ void NodeSetProperty(PyNodeHandle& handle, const std::string& name, const py::ha
     if (!property.is_valid()) {
         throw py::key_error("unknown Gobot property '" + name + "'");
     }
-    ExecuteSetNodeProperty(node, name, PythonToVariantForType(value, property.get_type()));
+    Variant variant_value = PythonToVariantForType(value, property.get_type());
+    if (IsSceneScriptRuntimeMutation()) {
+        if (!node->Set(name, variant_value)) {
+            throw std::runtime_error("failed to set Gobot runtime node property '" + name + "'");
+        }
+    } else {
+        ExecuteSetNodeProperty(node, name, std::move(variant_value));
+    }
     handle.RefreshSnapshot(node);
 }
 
 py::object NodeAddChild(PyNodeHandle& handle, PyNodeHandle& child_handle, bool force_readable_name) {
     Node* node = handle.Resolve();
     Node* child = child_handle.Resolve();
-    ExecuteSceneMutation("add_child", [&]() {
-        return std::make_unique<AddChildNodeCommand>(node->GetInstanceId(), child->GetInstanceId(), force_readable_name);
-    });
+    if (IsSceneScriptRuntimeMutation()) {
+        node->AddChild(child, force_readable_name);
+    } else {
+        ExecuteSceneMutation("add_child", [&]() {
+            return std::make_unique<AddChildNodeCommand>(node->GetInstanceId(),
+                                                        child->GetInstanceId(),
+                                                        force_readable_name);
+        });
+    }
     child_handle.TransferToTree();
     child_handle.RefreshSnapshot(child);
     return MakeTypedNodeObject(child);
@@ -413,17 +445,26 @@ py::object NodeRemoveChild(PyNodeHandle& handle, PyNodeHandle& child_handle, boo
     }
 
     if (delete_child) {
-        ExecuteSceneMutation("remove_child_delete", [&]() {
-            return std::make_unique<RemoveChildNodeCommand>(node->GetInstanceId(), child->GetInstanceId(), true);
-        });
+        if (IsSceneScriptRuntimeMutation()) {
+            node->RemoveChild(child);
+            Object::Delete(child);
+        } else {
+            ExecuteSceneMutation("remove_child_delete", [&]() {
+                return std::make_unique<RemoveChildNodeCommand>(node->GetInstanceId(), child->GetInstanceId(), true);
+            });
+        }
         child_handle.Invalidate();
         return py::none();
     }
 
     std::shared_ptr<PyNodeHandleState> detached_state = child_handle.state;
-    ExecuteSceneMutation("remove_child_detach", [&]() {
-        return std::make_unique<RemoveChildNodeCommand>(node->GetInstanceId(), child->GetInstanceId(), false);
-    });
+    if (IsSceneScriptRuntimeMutation()) {
+        node->RemoveChild(child);
+    } else {
+        ExecuteSceneMutation("remove_child_detach", [&]() {
+            return std::make_unique<RemoveChildNodeCommand>(node->GetInstanceId(), child->GetInstanceId(), false);
+        });
+    }
     child_handle.TransferToDetachedOwned(child);
     return py::cast(PyNodeHandle(detached_state, ExpectedTypeForNode(child)));
 }
@@ -431,9 +472,13 @@ py::object NodeRemoveChild(PyNodeHandle& handle, PyNodeHandle& child_handle, boo
 void NodeReparent(PyNodeHandle& handle, PyNodeHandle& parent_handle) {
     Node* node = handle.Resolve();
     Node* parent = parent_handle.Resolve();
-    ExecuteSceneMutation("reparent", [&]() {
-        return std::make_unique<ReparentNodeCommand>(node->GetInstanceId(), parent->GetInstanceId());
-    });
+    if (IsSceneScriptRuntimeMutation()) {
+        node->Reparent(parent);
+    } else {
+        ExecuteSceneMutation("reparent", [&]() {
+            return std::make_unique<ReparentNodeCommand>(node->GetInstanceId(), parent->GetInstanceId());
+        });
+    }
     handle.TransferToTree();
     handle.RefreshSnapshot(node);
 }
@@ -461,9 +506,13 @@ std::string NodeGetName(const PyNodeHandle& handle) {
 
 void NodeSetName(PyNodeHandle& handle, const std::string& name) {
     Node* node = handle.Resolve();
-    ExecuteSceneMutation("rename_node", [&]() {
-        return std::make_unique<RenameNodeCommand>(node->GetInstanceId(), name);
-    });
+    if (IsSceneScriptRuntimeMutation()) {
+        node->SetName(name);
+    } else {
+        ExecuteSceneMutation("rename_node", [&]() {
+            return std::make_unique<RenameNodeCommand>(node->GetInstanceId(), name);
+        });
+    }
     handle.RefreshSnapshot(node);
 }
 
@@ -483,7 +532,7 @@ bool NodeIsValid(const PyNodeHandle& handle) {
     try {
         return handle.TryResolve() != nullptr &&
                (!handle.state || handle.state->ownership == PyNodeOwnership::DetachedOwned ||
-                handle.state->scene_epoch == GetActiveAppContext().GetSceneEpoch());
+                handle.state->scene_epoch == ActiveSceneEpoch());
     } catch (...) {
         return false;
     }
@@ -730,10 +779,9 @@ Node* PyNodeHandle::Resolve() const {
         ThrowReferenceError("Gobot node handle is invalid");
     }
 
-    EngineContext& context = GetActiveAppContext();
     if (state->ownership != PyNodeOwnership::DetachedOwned &&
         state->scene_epoch != 0 &&
-        state->scene_epoch != context.GetSceneEpoch()) {
+        state->scene_epoch != ActiveSceneEpoch()) {
         ThrowReferenceError("Gobot node handle '" + state->name_snapshot +
                             "' is from an inactive scene epoch");
     }
@@ -749,11 +797,11 @@ Node* PyNodeHandle::Resolve() const {
 
 void PyNodeHandle::TransferToDetachedOwned(Node* node) {
     if (!state) {
-        state = MakeState(node, GetActiveAppContext().GetSceneEpoch(), PyNodeOwnership::DetachedOwned);
+        state = MakeState(node, ActiveSceneEpoch(), PyNodeOwnership::DetachedOwned);
         return;
     }
     state->id = node != nullptr ? node->GetInstanceId() : ObjectID();
-    state->scene_epoch = GetActiveAppContext().GetSceneEpoch();
+    state->scene_epoch = ActiveSceneEpoch();
     state->ownership = PyNodeOwnership::DetachedOwned;
     RefreshSnapshot(node);
 }
@@ -763,33 +811,33 @@ std::string ExpectedTypeForNode(Node* node) {
 }
 
 PyNodeHandle MakeNodeHandle(Node* node, PyNodeOwnership ownership = PyNodeOwnership::Borrowed) {
-    return PyNodeHandle(node, ExpectedTypeForNode(node), GetActiveAppContext().GetSceneEpoch(), ownership);
+    return PyNodeHandle(node, ExpectedTypeForNode(node), ActiveSceneEpoch(), ownership);
 }
 
 PyNode3DHandle MakeNode3DHandle(Node3D* node, PyNodeOwnership ownership = PyNodeOwnership::Borrowed) {
-    return PyNode3DHandle(node, ExpectedTypeForNode(node), GetActiveAppContext().GetSceneEpoch(), ownership);
+    return PyNode3DHandle(node, ExpectedTypeForNode(node), ActiveSceneEpoch(), ownership);
 }
 
 PyRobot3DHandle MakeRobot3DHandle(Robot3D* node, PyNodeOwnership ownership = PyNodeOwnership::Borrowed) {
-    return PyRobot3DHandle(node, "Robot3D", GetActiveAppContext().GetSceneEpoch(), ownership);
+    return PyRobot3DHandle(node, "Robot3D", ActiveSceneEpoch(), ownership);
 }
 
 PyLink3DHandle MakeLink3DHandle(Link3D* node, PyNodeOwnership ownership = PyNodeOwnership::Borrowed) {
-    return PyLink3DHandle(node, "Link3D", GetActiveAppContext().GetSceneEpoch(), ownership);
+    return PyLink3DHandle(node, "Link3D", ActiveSceneEpoch(), ownership);
 }
 
 PyJoint3DHandle MakeJoint3DHandle(Joint3D* node, PyNodeOwnership ownership = PyNodeOwnership::Borrowed) {
-    return PyJoint3DHandle(node, "Joint3D", GetActiveAppContext().GetSceneEpoch(), ownership);
+    return PyJoint3DHandle(node, "Joint3D", ActiveSceneEpoch(), ownership);
 }
 
 PyCollisionShape3DHandle MakeCollisionShape3DHandle(CollisionShape3D* node,
                                                     PyNodeOwnership ownership = PyNodeOwnership::Borrowed) {
-    return PyCollisionShape3DHandle(node, "CollisionShape3D", GetActiveAppContext().GetSceneEpoch(), ownership);
+    return PyCollisionShape3DHandle(node, "CollisionShape3D", ActiveSceneEpoch(), ownership);
 }
 
 PyMeshInstance3DHandle MakeMeshInstance3DHandle(MeshInstance3D* node,
                                                 PyNodeOwnership ownership = PyNodeOwnership::Borrowed) {
-    return PyMeshInstance3DHandle(node, "MeshInstance3D", GetActiveAppContext().GetSceneEpoch(), ownership);
+    return PyMeshInstance3DHandle(node, "MeshInstance3D", ActiveSceneEpoch(), ownership);
 }
 
 PyNodeHandle MakeTypedNodeHandle(Node* node, PyNodeOwnership ownership) {
@@ -847,6 +895,12 @@ void ExecuteSceneMutation(const std::string&, Func&& func) {
 void ExecuteSetNodeProperty(Node* node, const std::string& property_name, Variant value) {
     if (node == nullptr) {
         throw std::invalid_argument("cannot set property on a null Gobot node");
+    }
+    if (IsSceneScriptRuntimeMutation()) {
+        if (!node->Set(property_name, std::move(value))) {
+            throw std::runtime_error("failed to set Gobot runtime node property '" + property_name + "'");
+        }
+        return;
     }
     ExecuteSceneMutation("set_property", [&]() {
         return std::make_unique<SetNodePropertyCommand>(node->GetInstanceId(), property_name, std::move(value));
@@ -938,7 +992,7 @@ class NodeScript:
             .def_property_readonly("undo_name", &EngineContext::GetUndoSceneCommandName)
             .def_property_readonly("redo_name", &EngineContext::GetRedoSceneCommandName)
             .def_property_readonly("root", [](EngineContext& context) -> py::object {
-                Node* root = context.GetSceneRoot();
+                Node* root = ActiveSceneRoot();
                 if (root == nullptr) {
                     return py::none();
                 }

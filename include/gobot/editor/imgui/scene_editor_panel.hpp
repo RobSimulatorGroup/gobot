@@ -42,6 +42,10 @@ private:
 
     bool AttachScript(Node* node);
 
+    bool AttachScript(Node* node, const std::string& script_path);
+
+    bool AcceptResourceDropOnNode(Node* node);
+
     bool DetachScript(Node* node);
 
     void RequestOpenSceneInstance(const std::string& path);

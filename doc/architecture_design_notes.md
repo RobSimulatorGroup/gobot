@@ -22,6 +22,28 @@ The core dependency direction should be:
 
 Python-facing APIs should target stable engine concepts such as `Scene`, `Node`, `Node3D`, `Mesh`, simulation systems, and commands. They should not expose OpenGL RIDs or editor panel implementation details except through intentional high-level wrappers.
 
+## Script System
+
+Script support is Python-only for v1. `NodeScript` is the scene-node script
+mechanism and runs only inside `ScenePlaySession` for editor Play Mode,
+single-scene debugging, and policy playback. Starting Play Mode packs the
+edited scene and instantiates a runtime clone; scripts attach to that clone, the
+viewport renders that clone, and physics worlds are built from that clone. Stop
+destroys the runtime clone after `_exit_tree`, so script changes do not dirty or
+mutate the edited scene.
+
+The editor exposes scene playback through the top menu bar controls. While a
+script session is running, physics backend and world-build controls are locked
+to avoid replacing the world under script-driven runtime state. Node script
+stdout/stderr is captured and routed through the editor logging path so Play
+Mode prints appear in the Console.
+
+Python Panel `Run Once` remains a tool-script entry point against the edited
+scene and may modify it only through scene commands and undo/redo. The panel
+normalizes Python indentation to spaces on save/run, supports `Ctrl+S` for the
+script file while focused, and resource `.py` files can be dragged onto
+SceneTree nodes to attach them as `NodeScript` resources.
+
 ## Current Refactor Priorities
 
 1. `MeshStorage` should stay a low-level mesh allocation/upload/free boundary.
