@@ -19,6 +19,13 @@ ScenePlaySession::~ScenePlaySession() {
     Stop();
 }
 
+Node* ScenePlaySession::GetRuntimeRoot() const {
+    if (runtime_root_id_ == ObjectID{}) {
+        return nullptr;
+    }
+    return Object::PointerCastTo<Node>(ObjectDB::GetInstance(runtime_root_id_));
+}
+
 namespace {
 
 std::uint64_t NextRuntimeSceneEpoch() {
@@ -143,6 +150,11 @@ bool ScenePlaySession::Start(Node* edited_scene_root, EngineContext* context) {
 }
 
 void ScenePlaySession::Stop() {
+    runtime_root_ = GetRuntimeRoot();
+    runtime_holder_ = runtime_holder_id_ == ObjectID{}
+                              ? nullptr
+                              : Object::PointerCastTo<Node>(ObjectDB::GetInstance(runtime_holder_id_));
+
     if (!running_ && script_nodes_.empty()) {
         DestroyRuntimeScene();
         edited_scene_root_ = nullptr;
@@ -196,6 +208,7 @@ bool ScenePlaySession::CreateRuntimeScene(Node* edited_scene_root) {
         LOG_ERROR("{}", last_error_);
         return false;
     }
+    runtime_root_id_ = runtime_root_->GetInstanceId();
 
     if (!AttachRuntimeSceneToTree(edited_scene_root)) {
         DestroyRuntimeScene();
@@ -218,6 +231,7 @@ bool ScenePlaySession::AttachRuntimeSceneToTree(Node* edited_scene_root) {
     }
 
     runtime_holder_ = Object::New<Node>();
+    runtime_holder_id_ = runtime_holder_->GetInstanceId();
     runtime_holder_->SetName("__ScenePlaySessionRuntime");
     edited_scene_root->GetParent()->AddChild(runtime_holder_, false);
     runtime_holder_->AddChild(runtime_root_, false);
@@ -225,13 +239,22 @@ bool ScenePlaySession::AttachRuntimeSceneToTree(Node* edited_scene_root) {
 }
 
 void ScenePlaySession::DestroyRuntimeScene() {
+    runtime_holder_ = runtime_holder_id_ == ObjectID{}
+                              ? nullptr
+                              : Object::PointerCastTo<Node>(ObjectDB::GetInstance(runtime_holder_id_));
+    runtime_root_ = runtime_root_id_ == ObjectID{}
+                            ? nullptr
+                            : Object::PointerCastTo<Node>(ObjectDB::GetInstance(runtime_root_id_));
+
     if (runtime_holder_ != nullptr) {
         if (runtime_holder_->GetParent() != nullptr) {
             runtime_holder_->GetParent()->RemoveChild(runtime_holder_);
         }
         Object::Delete(runtime_holder_);
         runtime_holder_ = nullptr;
+        runtime_holder_id_ = ObjectID{};
         runtime_root_ = nullptr;
+        runtime_root_id_ = ObjectID{};
         return;
     }
 
@@ -240,8 +263,11 @@ void ScenePlaySession::DestroyRuntimeScene() {
             runtime_root_->GetParent()->RemoveChild(runtime_root_);
         }
         Object::Delete(runtime_root_);
-        runtime_root_ = nullptr;
     }
+    runtime_root_ = nullptr;
+    runtime_holder_ = nullptr;
+    runtime_root_id_ = ObjectID{};
+    runtime_holder_id_ = ObjectID{};
 }
 
 bool ScenePlaySession::AttachNodeScript(Node* node) {
@@ -316,6 +342,7 @@ bool ScenePlaySession::NotifyScripts(NotificationType notification, double delta
 }
 
 void ScenePlaySession::ClearAttachedScripts(bool call_exit_tree) {
+    runtime_root_ = GetRuntimeRoot();
     python::PythonScriptRunner::SetSceneScriptRoot(runtime_root_, runtime_scene_epoch_);
     for (ObjectID node_id : script_nodes_) {
         Node* node = Object::PointerCastTo<Node>(ObjectDB::GetInstance(node_id));

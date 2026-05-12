@@ -45,8 +45,10 @@ protected:
         session.Stop();
         context.reset();
         gobot::SceneInitializer::Destroy();
-        tree->Finalize();
-        gobot::SceneTree::Delete(tree);
+        if (tree != nullptr) {
+            tree->Finalize();
+            gobot::SceneTree::Delete(tree);
+        }
         gobot::Object::Delete(simulation_server);
         gobot::Object::Delete(physics_server);
         gobot::Object::Delete(project_settings);
@@ -150,6 +152,33 @@ class Script(gobot.NodeScript):
     EXPECT_FALSE(session.IsRunning());
     EXPECT_EQ(session.GetRuntimeRoot(), nullptr);
     EXPECT_EQ(ReadText("scripts/counts.txt"), "1,1,1,1");
+}
+
+TEST_F(TestScenePlaySession, stop_after_scene_tree_finalize_does_not_touch_deleted_runtime_scene) {
+    auto script = MakeScript("scripts/lifecycle.py", R"PY(
+import gobot
+
+class Script(gobot.NodeScript):
+    def _ready(self):
+        pass
+
+    def _exit_tree(self):
+        pass
+)PY");
+    root->SetScript(script);
+
+    ASSERT_TRUE(session.Start(root, context.get()));
+    ASSERT_NE(session.GetRuntimeRoot(), nullptr);
+
+    tree->Finalize();
+    EXPECT_EQ(session.GetRuntimeRoot(), nullptr);
+
+    session.Stop();
+    EXPECT_FALSE(session.IsRunning());
+
+    gobot::SceneTree::Delete(tree);
+    tree = nullptr;
+    root = nullptr;
 }
 
 TEST_F(TestScenePlaySession, node_scripts_mutate_runtime_clone_without_dirtying_edited_scene) {

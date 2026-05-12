@@ -597,6 +597,11 @@ void Editor::NotifyScenePlaySessionPhysicsProcess() {
 }
 
 void Editor::NotificationCallBack(NotificationType notification) {
+    if (notification == NotificationType::PreDelete) {
+        StopScene();
+        return;
+    }
+
     if (engine_context_ != nullptr) {
         python::PythonScriptRunner::SetSceneScriptContext(engine_context_);
         python::PythonScriptRunner::SetSceneScriptRoot(GetEditedSceneRoot(), engine_context_->GetSceneEpoch());

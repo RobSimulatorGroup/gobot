@@ -31,7 +31,7 @@ public:
 
     [[nodiscard]] const std::string& GetLastError() const { return last_error_; }
 
-    [[nodiscard]] Node* GetRuntimeRoot() const { return runtime_root_; }
+    [[nodiscard]] Node* GetRuntimeRoot() const;
 
     [[nodiscard]] std::uint64_t GetRuntimeSceneEpoch() const { return runtime_scene_epoch_; }
 
@@ -69,6 +69,8 @@ private:
     Node* edited_scene_root_{nullptr};
     Node* runtime_root_{nullptr};
     Node* runtime_holder_{nullptr};
+    ObjectID runtime_root_id_{};
+    ObjectID runtime_holder_id_{};
     EngineContext* context_{nullptr};
     std::uint64_t runtime_scene_epoch_{0};
     std::vector<ObjectID> script_nodes_;
