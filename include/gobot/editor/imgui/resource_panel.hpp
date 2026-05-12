@@ -17,6 +17,11 @@ class FileBrowser;
 
 namespace gobot {
 
+enum class PythonScriptTemplateKind {
+    Tool,
+    Node,
+};
+
 struct GOBOT_EXPORT DirectoryInformation
 {
     DirectoryInformation* parent{nullptr};
@@ -56,7 +61,8 @@ public:
 
     bool CreateFolderInCurrentDirectory(const std::string& folder_name);
 
-    bool CreatePythonScriptInCurrentDirectory(const std::string& file_name);
+    bool CreatePythonScriptInCurrentDirectory(const std::string& file_name,
+                                              PythonScriptTemplateKind template_kind);
 
     bool SetProjectPath(const std::string& project_path);
 
@@ -103,6 +109,8 @@ private:
     bool request_delete_project_popup_{false};
     bool request_delete_resource_file_popup_{false};
     bool request_rename_resource_file_popup_{false};
+    bool request_new_resource_folder_popup_{false};
+    bool request_new_python_script_popup_{false};
     bool rename_shortcut_down_{false};
 
 
@@ -113,6 +121,7 @@ private:
     float grid_size_ = 50.0f;
     char new_folder_name_[128]{"resources"};
     char new_python_script_name_[128]{"script.py"};
+    PythonScriptTemplateKind new_python_script_template_kind_{PythonScriptTemplateKind::Tool};
 
     ImGuiTextFilter* filter_{nullptr};
     ImGui::FileBrowser* project_browser_{nullptr};

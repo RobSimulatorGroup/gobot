@@ -41,6 +41,14 @@ public:
 
     void PullEvent() override;
 
+    void RequestQuit();
+
+    void ConfirmQuit();
+
+    void CancelQuit();
+
+    [[nodiscard]] FORCE_INLINE bool IsQuitRequested() const { return quit_requested_; }
+
     [[nodiscard]] FORCE_INLINE double GetPhysicsProcessTime() const { return physics_process_time_; }
 
     [[nodiscard]] FORCE_INLINE double GetProcessTime() const { return process_time_; }
@@ -53,6 +61,7 @@ private:
     static SceneTree *s_singleton;
 
     bool quit_ = false;
+    bool quit_requested_ = false;
 
     Window *root_ = nullptr;
     int node_count_ = 0;

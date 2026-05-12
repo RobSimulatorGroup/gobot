@@ -4,7 +4,7 @@ Gobot is a Linux robotics simulation package with a Python-first workflow.
 Use it from Python to create scenes, step simulation, inspect robot state, and
 drive reinforcement-learning experiments.
 
-![overview](./doc/overview.png)
+![overview](https://github.com/RobSimulatorGroup/gobot/blob/master/doc/overview.png)
 
 [![PyPI](https://img.shields.io/pypi/v/gobot)](https://pypi.org/project/gobot/)
 [![License](https://img.shields.io/badge/license-Apache--2.0-blue)](https://github.com/RobSimulatorGroup/gobot/blob/master/LICENSE)

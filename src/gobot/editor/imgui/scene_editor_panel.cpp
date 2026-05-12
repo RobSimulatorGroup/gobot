@@ -23,6 +23,7 @@
 #include "gobot/core/string_utils.hpp"
 #include "gobot/editor/imgui/imgui_utilities.hpp"
 #include "gobot/editor/editor.hpp"
+#include "gobot/editor/python_script_template.hpp"
 #include "gobot/main/engine_context.hpp"
 #include "gobot/scene/node_3d.hpp"
 #include "gobot/scene/node_creation_registry.hpp"
@@ -195,20 +196,6 @@ bool AcceptSceneResourceDrop() {
     return accepted;
 }
 
-std::string PythonScriptTemplate() {
-    return "import gobot\n\n"
-           "\n"
-           "class Script(gobot.NodeScript):\n"
-           "    def _ready(self):\n"
-           "        pass\n"
-           "\n"
-           "    def _process(self, delta: float):\n"
-           "        pass\n"
-           "\n"
-           "    def _physics_process(self, delta: float):\n"
-           "        pass\n";
-}
-
 std::string SanitizeScriptBaseName(std::string value) {
     if (value.empty()) {
         value = "node";
@@ -261,7 +248,7 @@ bool CreateScriptFileIfNeeded(const std::string& local_path, bool write_template
         return false;
     }
     if (write_template) {
-        output << PythonScriptTemplate();
+        output << NodeScriptTemplate();
     }
     return true;
 }

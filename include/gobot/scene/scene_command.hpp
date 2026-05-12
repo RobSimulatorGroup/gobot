@@ -21,6 +21,7 @@ public:
     virtual bool Undo() = 0;
     virtual std::string GetName() const = 0;
     virtual bool MergeWith(const SceneCommand& next);
+    virtual bool AffectsSceneDirtyState() const;
 };
 
 class GOBOT_EXPORT SceneCommandStack {
@@ -45,6 +46,7 @@ public:
 
 private:
     bool PushExecutedCommand(std::unique_ptr<SceneCommand> command);
+    [[nodiscard]] bool HasDirtyingCommandBetween(std::size_t first, std::size_t last) const;
 
     std::vector<std::unique_ptr<SceneCommand>> commands_;
     std::size_t index_{0};
@@ -172,16 +174,21 @@ private:
 class GOBOT_EXPORT RenameResourceFileCommand : public SceneCommand {
 public:
     RenameResourceFileCommand(std::string old_path, std::string new_path);
+    RenameResourceFileCommand(std::string old_path, std::string new_path, ObjectID scene_root_id);
 
     bool Do() override;
     bool Undo() override;
     std::string GetName() const override;
+    bool AffectsSceneDirtyState() const override;
 
 private:
-    bool Rename(const std::string& from_path, const std::string& to_path, const char* phase) const;
+    bool Rename(const std::string& from_path, const std::string& to_path, const char* phase);
+    void UpdateOpenSceneReferences(const std::string& from_path, const std::string& to_path) const;
+    void UpdateProjectSceneFileReferences(const std::string& from_path, const std::string& to_path) const;
 
     std::string old_path_;
     std::string new_path_;
+    ObjectID scene_root_id_{};
 };
 
 } // namespace gobot

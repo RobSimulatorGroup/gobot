@@ -54,12 +54,25 @@ SceneTree::SceneTree(bool p_init_window) {
     root_->SetName("root");
 
     Event::Subscribe(EventType::WindowClose, [this](const Event& event){
-        this->quit_ = true;
+        this->RequestQuit();
     });
 }
 
 void SceneTree::OnWindowClose() {
+    RequestQuit();
+}
+
+void SceneTree::RequestQuit() {
+    quit_requested_ = true;
+}
+
+void SceneTree::ConfirmQuit() {
+    quit_requested_ = false;
     quit_ = true;
+}
+
+void SceneTree::CancelQuit() {
+    quit_requested_ = false;
 }
 
 bool SceneTree::PhysicsProcess(double time) {

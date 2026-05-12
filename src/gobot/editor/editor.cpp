@@ -41,6 +41,7 @@
 #include "gobot/scene/resources/box_shape_3d.hpp"
 #include "gobot/scene/resources/packed_scene.hpp"
 #include "gobot/scene/resources/primitive_mesh.hpp"
+#include "gobot/scene/scene_tree.hpp"
 #include "gobot/simulation/simulation_server.hpp"
 #include "gobot/core/config/engine.hpp"
 #include "gobot/core/config/project_setting.hpp"
@@ -641,6 +642,7 @@ void Editor::End() {
 }
 
 void Editor::OnImGuiContent() {
+    HandleQuitRequest();
     file_browser_->Display();
     HandleSceneFileDialogSelection();
     DrawUnsavedSceneDialog();
@@ -844,23 +846,53 @@ void Editor::DrawUnsavedSceneDialog() {
             OpenSceneFileDialog(SceneFileDialogMode::SaveAs);
             ImGui::CloseCurrentPopup();
         } else if (SaveCurrentScene()) {
-            ContinuePendingSceneSwitch();
+            if (pending_quit_request_) {
+                pending_quit_request_ = false;
+                SceneTree::GetInstance()->ConfirmQuit();
+            } else {
+                ContinuePendingSceneSwitch();
+            }
             ImGui::CloseCurrentPopup();
         }
     }
     ImGui::SameLine();
     if (ImGui::Button("Don't Save")) {
         ClearSceneDirty();
-        ContinuePendingSceneSwitch();
+        if (pending_quit_request_) {
+            pending_quit_request_ = false;
+            SceneTree::GetInstance()->ConfirmQuit();
+        } else {
+            ContinuePendingSceneSwitch();
+        }
         ImGui::CloseCurrentPopup();
     }
     ImGui::SameLine();
     if (ImGui::Button("Cancel")) {
         pending_scene_switch_action_ = nullptr;
+        if (pending_quit_request_) {
+            pending_quit_request_ = false;
+            SceneTree::GetInstance()->CancelQuit();
+        }
         ImGui::CloseCurrentPopup();
     }
 
     ImGui::EndPopup();
+}
+
+void Editor::HandleQuitRequest() {
+    SceneTree* scene_tree = SceneTree::GetInstance();
+    if (scene_tree == nullptr || !scene_tree->IsQuitRequested() || pending_quit_request_) {
+        return;
+    }
+
+    if (IsSceneDirty()) {
+        pending_quit_request_ = true;
+        pending_scene_switch_action_ = nullptr;
+        request_unsaved_scene_dialog_ = true;
+        return;
+    }
+
+    scene_tree->ConfirmQuit();
 }
 
 void Editor::RequestSceneSwitch(std::function<void()> action) {
@@ -951,7 +983,12 @@ void Editor::HandleSceneFileDialogSelection() {
             current_scene_path_ = scene_path;
             ClearSceneDirty();
             LOG_INFO("Saved scene: {}", current_scene_path_);
-            ContinuePendingSceneSwitch();
+            if (pending_quit_request_) {
+                pending_quit_request_ = false;
+                SceneTree::GetInstance()->ConfirmQuit();
+            } else {
+                ContinuePendingSceneSwitch();
+            }
         } else {
             LOG_ERROR("Failed to save scene: {}", scene_path);
         }

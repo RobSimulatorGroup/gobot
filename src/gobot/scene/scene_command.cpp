@@ -1,10 +1,14 @@
 #include "gobot/scene/scene_command.hpp"
 
 #include <filesystem>
+#include <fstream>
 #include <utility>
 
 #include "gobot/core/config/project_setting.hpp"
 #include "gobot/core/io/resource.hpp"
+#include "gobot/core/io/resource_loader.hpp"
+#include "gobot/core/string_utils.hpp"
+#include "gobot/core/types.hpp"
 #include "gobot/log.hpp"
 #include "gobot/scene/node.hpp"
 #include "gobot/scene/node_3d.hpp"
@@ -59,6 +63,15 @@ public:
         return name_;
     }
 
+    bool AffectsSceneDirtyState() const override {
+        for (const auto& command : commands_) {
+            if (command != nullptr && command->AffectsSceneDirtyState()) {
+                return true;
+            }
+        }
+        return false;
+    }
+
 private:
     std::string name_;
     std::vector<std::unique_ptr<SceneCommand>> commands_;
@@ -66,6 +79,10 @@ private:
 
 bool SceneCommand::MergeWith(const SceneCommand&) {
     return false;
+}
+
+bool SceneCommand::AffectsSceneDirtyState() const {
+    return true;
 }
 
 bool SceneCommandStack::Execute(std::unique_ptr<SceneCommand> command) {
@@ -208,7 +225,23 @@ bool SceneCommandStack::CanRedo() const {
 }
 
 bool SceneCommandStack::IsDirty() const {
-    return IsInTransaction() || index_ != clean_index_;
+    if (IsInTransaction()) {
+        for (const auto& command : transaction_commands_) {
+            if (command != nullptr && command->AffectsSceneDirtyState()) {
+                return true;
+            }
+        }
+    }
+
+    if (index_ == clean_index_) {
+        return false;
+    }
+
+    if (index_ > clean_index_) {
+        return HasDirtyingCommandBetween(clean_index_, index_);
+    }
+
+    return HasDirtyingCommandBetween(index_, clean_index_);
 }
 
 std::size_t SceneCommandStack::GetVersion() const {
@@ -221,6 +254,16 @@ std::string SceneCommandStack::GetUndoName() const {
 
 std::string SceneCommandStack::GetRedoName() const {
     return CanRedo() ? commands_[index_]->GetName() : std::string();
+}
+
+bool SceneCommandStack::HasDirtyingCommandBetween(std::size_t first, std::size_t last) const {
+    last = std::min(last, commands_.size());
+    for (std::size_t i = first; i < last; ++i) {
+        if (commands_[i] != nullptr && commands_[i]->AffectsSceneDirtyState()) {
+            return true;
+        }
+    }
+    return false;
 }
 
 RenameNodeCommand::RenameNodeCommand(ObjectID node_id, std::string new_name)
@@ -606,6 +649,14 @@ RenameResourceFileCommand::RenameResourceFileCommand(std::string old_path, std::
       new_path_(std::move(new_path)) {
 }
 
+RenameResourceFileCommand::RenameResourceFileCommand(std::string old_path,
+                                                     std::string new_path,
+                                                     ObjectID scene_root_id)
+    : old_path_(std::move(old_path)),
+      new_path_(std::move(new_path)),
+      scene_root_id_(scene_root_id) {
+}
+
 bool RenameResourceFileCommand::Do() {
     return Rename(old_path_, new_path_, "Rename Resource File");
 }
@@ -618,9 +669,13 @@ std::string RenameResourceFileCommand::GetName() const {
     return "Rename Resource File";
 }
 
+bool RenameResourceFileCommand::AffectsSceneDirtyState() const {
+    return false;
+}
+
 bool RenameResourceFileCommand::Rename(const std::string& from_path,
                                        const std::string& to_path,
-                                       const char* phase) const {
+                                       const char* phase) {
     if (from_path.empty() || to_path.empty()) {
         LOG_ERROR("{} failed: empty resource path.", phase);
         return false;
@@ -657,7 +712,141 @@ bool RenameResourceFileCommand::Rename(const std::string& from_path,
         cached_resource->SetPath(to_path, true);
     }
 
+    UpdateOpenSceneReferences(from_path, to_path);
+    UpdateProjectSceneFileReferences(from_path, to_path);
+
     return true;
+}
+
+void RenameResourceFileCommand::UpdateOpenSceneReferences(const std::string& from_path,
+                                                          const std::string& to_path) const {
+    if (scene_root_id_ == ObjectID{}) {
+        return;
+    }
+
+    Node* root = ResolveNode(scene_root_id_, GetName(), "scene root");
+    if (root == nullptr) {
+        return;
+    }
+
+    Ref<Resource> replacement = ResourceCache::GetRef(to_path);
+    auto update_node = [&](Node* node, auto&& update_node_ref) -> void {
+        if (node == nullptr) {
+            return;
+        }
+
+        Ref<PythonScript> script = node->GetScript();
+        if (script.IsValid() && script->GetPath() == from_path) {
+            Ref<PythonScript> replacement_script = dynamic_pointer_cast<PythonScript>(replacement);
+            if (!replacement_script.IsValid()) {
+                replacement_script = dynamic_pointer_cast<PythonScript>(
+                        ResourceLoader::Load(to_path, "PythonScript", ResourceFormatLoader::CacheMode::Reuse));
+            }
+            if (replacement_script.IsValid()) {
+                node->SetScript(replacement_script);
+            }
+        }
+
+        Ref<PackedScene> scene_instance = node->GetSceneInstance();
+        if (scene_instance.IsValid() && scene_instance->GetPath() == from_path) {
+            Ref<PackedScene> replacement_scene = dynamic_pointer_cast<PackedScene>(replacement);
+            if (!replacement_scene.IsValid()) {
+                replacement_scene = dynamic_pointer_cast<PackedScene>(
+                        ResourceLoader::Load(to_path, "PackedScene", ResourceFormatLoader::CacheMode::Reuse));
+            }
+            if (replacement_scene.IsValid()) {
+                node->SetSceneInstance(replacement_scene);
+            }
+        }
+
+        for (std::size_t i = 0; i < node->GetChildCount(); ++i) {
+            update_node_ref(node->GetChild(static_cast<int>(i)), update_node_ref);
+        }
+    };
+
+    update_node(root, update_node);
+}
+
+void RenameResourceFileCommand::UpdateProjectSceneFileReferences(const std::string& from_path,
+                                                                 const std::string& to_path) const {
+    auto* settings = ProjectSettings::GetInstance();
+    if (settings == nullptr || settings->GetProjectPath().empty()) {
+        return;
+    }
+
+    const std::filesystem::path project_root = settings->GetProjectPath();
+    std::error_code error;
+    if (!std::filesystem::exists(project_root, error)) {
+        return;
+    }
+
+    for (std::filesystem::recursive_directory_iterator it(project_root, error), end; it != end; it.increment(error)) {
+        if (error) {
+            LOG_WARN("Skipping project resource reference scan entry: {}", error.message());
+            error.clear();
+            continue;
+        }
+        if (!it->is_regular_file(error) || ToLower(it->path().extension().string()) != ".jscn") {
+            continue;
+        }
+
+        std::ifstream input(it->path());
+        if (!input.is_open()) {
+            LOG_WARN("Cannot scan scene references in '{}': failed to open file.", it->path().string());
+            continue;
+        }
+
+        Json scene_json;
+        try {
+            input >> scene_json;
+        } catch (const std::exception& e) {
+            LOG_WARN("Cannot scan scene references in '{}': {}", it->path().string(), e.what());
+            continue;
+        }
+
+        Json* ext_resources = scene_json.contains("__EXT_RESOURCES__") ? &scene_json["__EXT_RESOURCES__"] : nullptr;
+        if (ext_resources == nullptr || !ext_resources->is_array()) {
+            continue;
+        }
+
+        bool changed = false;
+        const std::string scene_local_path = settings->LocalizePath(it->path().string());
+        for (auto& ext_resource : *ext_resources) {
+            if (!ext_resource.is_object() || !ext_resource.contains("__PATH__") || !ext_resource["__PATH__"].is_string()) {
+                continue;
+            }
+
+            std::string resource_path = ext_resource["__PATH__"];
+            std::string resolved_path = resource_path;
+            if (resolved_path.find("://") == std::string::npos && IsRelativePath(resolved_path)) {
+                resolved_path = settings->LocalizePath(PathJoin(GetBaseDir(scene_local_path), resolved_path));
+            }
+
+            if (resolved_path == from_path) {
+                ext_resource["__PATH__"] = to_path;
+                changed = true;
+            }
+        }
+
+        if (!changed) {
+            continue;
+        }
+
+        std::ofstream output(it->path(), std::ios::out | std::ios::trunc);
+        if (!output.is_open()) {
+            LOG_ERROR("Cannot update scene resource references in '{}'.", it->path().string());
+            continue;
+        }
+        output << scene_json.dump(4);
+        if (!output.good()) {
+            LOG_ERROR("Failed to write updated scene resource references in '{}'.", it->path().string());
+            continue;
+        }
+        LOG_INFO("Updated scene resource references in '{}': {} -> {}",
+                 scene_local_path,
+                 from_path,
+                 to_path);
+    }
 }
 
 } // namespace gobot

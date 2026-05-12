@@ -14,6 +14,8 @@
 #include "gobot/scene/resources/box_shape_3d.hpp"
 #include "gobot/scene/resources/cylinder_shape_3d.hpp"
 #include "gobot/scene/resources/sphere_shape_3d.hpp"
+#include "glsl_shader_hpp/debug_draw_frag.hpp"
+#include "glsl_shader_hpp/debug_draw_vert.hpp"
 
 #include <algorithm>
 #include <array>
@@ -179,28 +181,8 @@ void GLRendererDebugDraw::EnsureProgram() {
         return;
     }
 
-    static constexpr const char* vertex_shader = R"(
-#version 460 core
-layout(location = 0) in vec3 a_position;
-uniform mat4 u_model;
-uniform mat4 u_view;
-uniform mat4 u_projection;
-void main() {
-    gl_Position = u_projection * u_view * u_model * vec4(a_position, 1.0);
-}
-)";
-
-    static constexpr const char* fragment_shader = R"(
-#version 460 core
-out vec4 frag_color;
-uniform vec4 u_color;
-void main() {
-    frag_color = u_color;
-}
-)";
-
-    GLuint vs = CompileDebugShader(GL_VERTEX_SHADER, vertex_shader);
-    GLuint fs = CompileDebugShader(GL_FRAGMENT_SHADER, fragment_shader);
+    GLuint vs = CompileDebugShader(GL_VERTEX_SHADER, DEBUG_DRAW_VERT);
+    GLuint fs = CompileDebugShader(GL_FRAGMENT_SHADER, DEBUG_DRAW_FRAG);
     if (vs == 0 || fs == 0) {
         return;
     }

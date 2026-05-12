@@ -1,5 +1,6 @@
 #include <gtest/gtest.h>
 
+#include <cstdlib>
 #include <filesystem>
 #include <fstream>
 
@@ -16,6 +17,10 @@ namespace {
 
 class TestSceneCommand : public ::testing::Test {
 protected:
+    void SetUp() override {
+        setenv("HOME", "/tmp/gobot-test-home", 1);
+    }
+
     void TearDown() override {
         if (root != nullptr) {
             gobot::Object::Delete(root);
@@ -182,16 +187,19 @@ TEST_F(TestSceneCommand, resource_file_rename_can_undo_and_redo) {
     ASSERT_TRUE(stack.Execute(std::make_unique<gobot::RenameResourceFileCommand>(
             "res://old_name.py",
             "res://new_name.py")));
+    EXPECT_FALSE(stack.IsDirty());
     EXPECT_FALSE(std::filesystem::exists(old_path));
     EXPECT_TRUE(std::filesystem::exists(new_path));
     EXPECT_EQ(resource->GetPath(), "res://new_name.py");
 
     ASSERT_TRUE(stack.Undo());
+    EXPECT_FALSE(stack.IsDirty());
     EXPECT_TRUE(std::filesystem::exists(old_path));
     EXPECT_FALSE(std::filesystem::exists(new_path));
     EXPECT_EQ(resource->GetPath(), "res://old_name.py");
 
     ASSERT_TRUE(stack.Redo());
+    EXPECT_FALSE(stack.IsDirty());
     EXPECT_FALSE(std::filesystem::exists(old_path));
     EXPECT_TRUE(std::filesystem::exists(new_path));
     EXPECT_EQ(resource->GetPath(), "res://new_name.py");
@@ -199,6 +207,80 @@ TEST_F(TestSceneCommand, resource_file_rename_can_undo_and_redo) {
     resource.Reset();
     gobot::ResourceLoader::RemoveResourceFormatLoader(python_script_loader);
     python_script_loader.Reset();
+    std::filesystem::remove_all(temp_root, error);
+    gobot::Object::Delete(project_settings);
+}
+
+TEST_F(TestSceneCommand, resource_file_rename_updates_scene_external_resource_paths) {
+    auto* project_settings = gobot::Object::New<gobot::ProjectSettings>();
+    const std::filesystem::path temp_root =
+            std::filesystem::temp_directory_path() / "gobot_resource_rename_scene_reference_test";
+    std::error_code error;
+    std::filesystem::remove_all(temp_root, error);
+    ASSERT_TRUE(std::filesystem::create_directories(temp_root / "scripts", error));
+    ASSERT_FALSE(error);
+
+    ASSERT_TRUE(gobot::ProjectSettings::GetInstance()->SetProjectPath(temp_root.string()));
+
+    const std::filesystem::path old_path = temp_root / "scripts" / "cartpole.py";
+    const std::filesystem::path new_path = temp_root / "scripts" / "cartpole_controller.py";
+    {
+        std::ofstream output(old_path, std::ios::out | std::ios::trunc);
+        ASSERT_TRUE(output.is_open());
+        output << "print('rename scene reference test')\n";
+    }
+
+    const std::filesystem::path scene_path = temp_root / "cartpole.jscn";
+    {
+        std::ofstream output(scene_path, std::ios::out | std::ios::trunc);
+        ASSERT_TRUE(output.is_open());
+        output << R"({
+    "__EXT_RESOURCES__": [
+        {
+            "__ID__": "script_1",
+            "__PATH__": "res://scripts/cartpole.py",
+            "__TYPE__": "PythonScript"
+        },
+        {
+            "__ID__": "scene_1",
+            "__PATH__": "res://robot.jscn",
+            "__TYPE__": "PackedScene"
+        }
+    ],
+    "__META_TYPE__": "SCENE",
+    "__NODES__": [],
+    "__SUB_RESOURCES__": [],
+    "__TYPE__": "PackedScene",
+    "__VERSION__": 2
+})";
+    }
+
+    gobot::SceneCommandStack stack;
+    ASSERT_TRUE(stack.Execute(std::make_unique<gobot::RenameResourceFileCommand>(
+            "res://scripts/cartpole.py",
+            "res://scripts/cartpole_controller.py")));
+    EXPECT_FALSE(std::filesystem::exists(old_path));
+    EXPECT_TRUE(std::filesystem::exists(new_path));
+
+    std::ifstream renamed_scene(scene_path);
+    ASSERT_TRUE(renamed_scene.is_open());
+    std::string renamed_scene_text((std::istreambuf_iterator<char>(renamed_scene)),
+                                   std::istreambuf_iterator<char>());
+    EXPECT_NE(renamed_scene_text.find("res://scripts/cartpole_controller.py"), std::string::npos);
+    EXPECT_EQ(renamed_scene_text.find("res://scripts/cartpole.py"), std::string::npos);
+    EXPECT_NE(renamed_scene_text.find("res://robot.jscn"), std::string::npos);
+
+    ASSERT_TRUE(stack.Undo());
+    EXPECT_TRUE(std::filesystem::exists(old_path));
+    EXPECT_FALSE(std::filesystem::exists(new_path));
+
+    std::ifstream restored_scene(scene_path);
+    ASSERT_TRUE(restored_scene.is_open());
+    std::string restored_scene_text((std::istreambuf_iterator<char>(restored_scene)),
+                                    std::istreambuf_iterator<char>());
+    EXPECT_NE(restored_scene_text.find("res://scripts/cartpole.py"), std::string::npos);
+    EXPECT_EQ(restored_scene_text.find("res://scripts/cartpole_controller.py"), std::string::npos);
+
     std::filesystem::remove_all(temp_root, error);
     gobot::Object::Delete(project_settings);
 }

@@ -11,6 +11,7 @@
 #include "gobot/core/string_utils.hpp"
 #include "gobot/editor/editor.hpp"
 #include "gobot/editor/imgui/imgui_utilities.hpp"
+#include "gobot/editor/python_script_template.hpp"
 #include "gobot/main/engine_context.hpp"
 #include "gobot/scene/scene_command.hpp"
 #include "gobot/log.hpp"
@@ -94,20 +95,6 @@ bool IsPathWithinDirectory(const std::filesystem::path& path, const std::filesys
         }
     }
     return true;
-}
-
-std::string PythonScriptTemplate() {
-    return "import gobot\n\n"
-           "\n"
-           "class Script(gobot.NodeScript):\n"
-           "    def _ready(self):\n"
-           "        pass\n"
-           "\n"
-           "    def _process(self, delta: float):\n"
-           "        pass\n"
-           "\n"
-           "    def _physics_process(self, delta: float):\n"
-           "        pass\n";
 }
 
 std::string EnsurePythonScriptExtension(std::string file_name) {
@@ -231,6 +218,14 @@ void ResourcePanel::OnImGuiContent() {
         ImGui::OpenPopup("Rename Resource File");
         request_rename_resource_file_popup_ = false;
     }
+    if (request_new_resource_folder_popup_) {
+        ImGui::OpenPopup("NewResourceFolderPopup");
+        request_new_resource_folder_popup_ = false;
+    }
+    if (request_new_python_script_popup_) {
+        ImGui::OpenPopup("NewPythonScriptPopup");
+        request_new_python_script_popup_ = false;
+    }
 
     if (project_path_.empty() || base_project_dir_ == nullptr || current_dir_ == nullptr) {
         DrawProjectSelector();
@@ -261,11 +256,11 @@ void ResourcePanel::OnImGuiContent() {
         }
         ImGui::SameLine();
         if (ImGui::Button(ICON_MDI_FOLDER_PLUS)) {
-            ImGui::OpenPopup("NewResourceFolderPopup");
+            request_new_resource_folder_popup_ = true;
         }
         ImGui::SameLine();
         if (ImGui::Button(ICON_MDI_LANGUAGE_PYTHON)) {
-            ImGui::OpenPopup("NewPythonScriptPopup");
+            request_new_python_script_popup_ = true;
         }
         if (ImGui::IsItemHovered()) {
             ImGui::SetTooltip("New Python script");
@@ -312,22 +307,16 @@ void ResourcePanel::OnImGuiContent() {
                 }
 
                 if(ImGui::Selectable("New folder")) {
-                    ImGui::OpenPopup("NewResourceFolderPopup");
+                    request_new_resource_folder_popup_ = true;
                 }
 
                 if (ImGui::Selectable(ICON_MDI_LANGUAGE_PYTHON " New Python Script")) {
-                    ImGui::OpenPopup("NewPythonScriptPopup");
+                    request_new_python_script_popup_ = true;
                 }
 
                 ImGui::EndPopup();
             }
 
-            if (ImGui::BeginPopup("NewResourceFolderPopup")) {
-                DrawNewFolderPopup();
-            }
-            if (ImGui::BeginPopup("NewPythonScriptPopup")) {
-                DrawNewPythonScriptPopup();
-            }
             ImGui::EndChild();
         }
 
@@ -370,6 +359,12 @@ void ResourcePanel::OnImGuiContent() {
     }
     if (ImGui::BeginPopupModal("Rename Resource File", nullptr, ImGuiWindowFlags_AlwaysAutoResize)) {
         DrawRenameResourceFilePopup();
+    }
+    if (ImGui::BeginPopup("NewResourceFolderPopup")) {
+        DrawNewFolderPopup();
+    }
+    if (ImGui::BeginPopup("NewPythonScriptPopup")) {
+        DrawNewPythonScriptPopup();
     }
 }
 
@@ -900,10 +895,12 @@ bool ResourcePanel::RenameResourceFile(const std::string& new_file_name)
     const std::string new_local_path = ProjectSettings::GetInstance()->LocalizePath(new_global_path.string());
     auto* editor = Editor::GetInstance();
     auto* context = editor->GetEngineContext();
+    Node* scene_root = context != nullptr ? context->GetSceneRoot() : nullptr;
     if (context == nullptr ||
             !context->ExecuteSceneCommand(std::make_unique<RenameResourceFileCommand>(
                     pending_rename_resource_file_local_path_,
-                    new_local_path))) {
+                    new_local_path,
+                    scene_root != nullptr ? scene_root->GetInstanceId() : ObjectID{}))) {
         LOG_ERROR("Failed to rename resource file '{}' to '{}'.",
                   pending_rename_resource_file_local_path_,
                   new_local_path);
@@ -968,8 +965,22 @@ void ResourcePanel::DrawNewFolderPopup()
 void ResourcePanel::DrawNewPythonScriptPopup()
 {
     ImGui::InputText("Name", new_python_script_name_, sizeof(new_python_script_name_));
+    ImGui::TextUnformatted("Template");
+    ImGui::SameLine();
+    int template_index = new_python_script_template_kind_ == PythonScriptTemplateKind::Node ? 1 : 0;
+    if (ImGui::RadioButton("Tool Script", template_index == 0)) {
+        template_index = 0;
+    }
+    ImGui::SameLine();
+    if (ImGui::RadioButton("Node Script", template_index == 1)) {
+        template_index = 1;
+    }
+    new_python_script_template_kind_ =
+            template_index == 1 ? PythonScriptTemplateKind::Node : PythonScriptTemplateKind::Tool;
+
     if (ImGui::Button("Create")) {
-        if (CreatePythonScriptInCurrentDirectory(new_python_script_name_)) {
+        if (CreatePythonScriptInCurrentDirectory(new_python_script_name_,
+                                                 new_python_script_template_kind_)) {
             ImGui::CloseCurrentPopup();
         }
     }
@@ -1011,7 +1022,8 @@ bool ResourcePanel::CreateFolderInCurrentDirectory(const std::string& folder_nam
     return true;
 }
 
-bool ResourcePanel::CreatePythonScriptInCurrentDirectory(const std::string& file_name)
+bool ResourcePanel::CreatePythonScriptInCurrentDirectory(const std::string& file_name,
+                                                         PythonScriptTemplateKind template_kind)
 {
     if (current_dir_ == nullptr || !current_dir_->is_directory) {
         LOG_ERROR("Cannot create Python script: no current directory.");
@@ -1047,7 +1059,9 @@ bool ResourcePanel::CreatePythonScriptInCurrentDirectory(const std::string& file
         LOG_ERROR("Failed to create Python script '{}'.", local_path);
         return false;
     }
-    output << PythonScriptTemplate();
+    output << (template_kind == PythonScriptTemplateKind::Node
+                       ? NodeScriptTemplate()
+                       : ToolScriptTemplate());
     output.close();
 
     LOG_INFO("Created Python script: {}", local_path);
