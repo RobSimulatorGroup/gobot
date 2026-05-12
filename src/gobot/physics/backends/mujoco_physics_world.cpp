@@ -6,6 +6,7 @@
 
 #include "gobot/physics/backends/mujoco_physics_world.hpp"
 
+#include <algorithm>
 #include <cctype>
 #include <cmath>
 #include <filesystem>
@@ -629,6 +630,38 @@ void MuJoCoPhysicsWorld::Reset() {
 #endif
 }
 
+bool MuJoCoPhysicsWorld::SetLinkExternalForce(const std::string& robot_name,
+                                              const std::string& link_name,
+                                              const Vector3& point,
+                                              const Vector3& force) {
+    if (!PhysicsWorld::SetLinkExternalForce(robot_name, link_name, point, force)) {
+        return false;
+    }
+    return true;
+}
+
+bool MuJoCoPhysicsWorld::SetLinkSpringForce(const std::string& robot_name,
+                                            const std::string& link_name,
+                                            const Vector3& local_point,
+                                            const Vector3& target_point,
+                                            const Vector3& force_hint) {
+    if (!PhysicsWorld::SetLinkSpringForce(robot_name, link_name, local_point, target_point, force_hint)) {
+        return false;
+    }
+    return true;
+}
+
+void MuJoCoPhysicsWorld::ClearExternalForces() {
+    PhysicsWorld::ClearExternalForces();
+#ifdef GOBOT_HAS_MUJOCO
+    auto* model = static_cast<mjModel*>(model_);
+    auto* data = static_cast<mjData*>(data_);
+    if (model != nullptr && data != nullptr && model->nbody > 0) {
+        mju_zero(data->xfrc_applied, 6 * model->nbody);
+    }
+#endif
+}
+
 bool MuJoCoPhysicsWorld::RestoreCompatibleState(const PhysicsSceneState& previous_state) {
     if (!PhysicsWorld::RestoreCompatibleState(previous_state)) {
         return false;
@@ -658,6 +691,7 @@ void MuJoCoPhysicsWorld::Step(RealType delta_time) {
 
     model->opt.timestep = delta_time > 0.0 ? delta_time : settings_.fixed_time_step;
     ApplyControlsToMuJoCo();
+    ApplyExternalForcesToMuJoCo();
     mj_step(model, data);
     SyncStateFromMuJoCo();
 #else
@@ -1184,6 +1218,92 @@ void MuJoCoPhysicsWorld::ApplyControlsToMuJoCo() {
                                                                  limits,
                                                                  settings_.fixed_time_step);
         data->qfrc_applied[binding.dof_address] = effort;
+    }
+}
+
+void MuJoCoPhysicsWorld::ApplyExternalForcesToMuJoCo() {
+    auto* model = static_cast<mjModel*>(model_);
+    auto* data = static_cast<mjData*>(data_);
+    if (model == nullptr || data == nullptr || model->nbody <= 0) {
+        return;
+    }
+
+    mju_zero(data->xfrc_applied, 6 * model->nbody);
+    if (external_forces_.empty()) {
+        return;
+    }
+
+    for (const PhysicsExternalForce& external_force : external_forces_) {
+        auto binding_iter = std::find_if(link_bindings_.begin(),
+                                         link_bindings_.end(),
+                                         [&](const MuJoCoLinkBinding& binding) {
+                                             if (binding.robot_index >= scene_state_.robots.size()) {
+                                                 return false;
+                                             }
+                                             const PhysicsRobotState& robot = scene_state_.robots[binding.robot_index];
+                                             if (binding.link_index >= robot.links.size()) {
+                                                 return false;
+                                             }
+                                             return robot.name == external_force.robot_name &&
+                                                    robot.links[binding.link_index].link_name == external_force.link_name;
+                                         });
+        if (binding_iter == link_bindings_.end() ||
+            binding_iter->body_id <= 0 ||
+            binding_iter->body_id >= model->nbody) {
+            continue;
+        }
+
+        const int body_id = binding_iter->body_id;
+        const Vector3 body_position{static_cast<RealType>(data->xpos[3 * body_id + 0]),
+                                    static_cast<RealType>(data->xpos[3 * body_id + 1]),
+                                    static_cast<RealType>(data->xpos[3 * body_id + 2])};
+        Matrix3 body_rotation;
+        body_rotation << data->xmat[9 * body_id + 0],
+                         data->xmat[9 * body_id + 1],
+                         data->xmat[9 * body_id + 2],
+                         data->xmat[9 * body_id + 3],
+                         data->xmat[9 * body_id + 4],
+                         data->xmat[9 * body_id + 5],
+                         data->xmat[9 * body_id + 6],
+                         data->xmat[9 * body_id + 7],
+                         data->xmat[9 * body_id + 8];
+        const Vector3 body_com{static_cast<RealType>(data->xipos[3 * body_id + 0]),
+                               static_cast<RealType>(data->xipos[3 * body_id + 1]),
+                               static_cast<RealType>(data->xipos[3 * body_id + 2])};
+        const Vector3 world_point = external_force.use_spring
+                ? body_position + body_rotation * external_force.local_point
+                : external_force.point;
+
+        Vector3 force = external_force.force;
+        if (external_force.use_spring) {
+            const Vector3 moment_arm = world_point - body_com;
+            const Vector3 link_velocity{static_cast<RealType>(data->cvel[6 * body_id + 3]),
+                                        static_cast<RealType>(data->cvel[6 * body_id + 4]),
+                                        static_cast<RealType>(data->cvel[6 * body_id + 5])};
+            const Vector3 link_angular_velocity{static_cast<RealType>(data->cvel[6 * body_id + 0]),
+                                                static_cast<RealType>(data->cvel[6 * body_id + 1]),
+                                                static_cast<RealType>(data->cvel[6 * body_id + 2])};
+            const Vector3 point_velocity = link_velocity + link_angular_velocity.cross(moment_arm);
+            const RealType mass = model->body_mass[body_id] > mjMINVAL
+                    ? static_cast<RealType>(model->body_mass[body_id])
+                    : 1.0;
+            constexpr RealType stiffness = 100.0;
+            constexpr RealType damping = 10.0;
+            force = (external_force.target_point - world_point) * (stiffness * mass) -
+                    point_velocity * (damping * mass);
+            if (external_force.force.squaredNorm() > CMP_EPSILON2) {
+                const Vector3 axis = external_force.force.normalized();
+                force = axis * force.dot(axis);
+            }
+        }
+
+        const Vector3 torque = (world_point - body_com).cross(force);
+        data->xfrc_applied[6 * body_id + 0] += force.x();
+        data->xfrc_applied[6 * body_id + 1] += force.y();
+        data->xfrc_applied[6 * body_id + 2] += force.z();
+        data->xfrc_applied[6 * body_id + 3] += torque.x();
+        data->xfrc_applied[6 * body_id + 4] += torque.y();
+        data->xfrc_applied[6 * body_id + 5] += torque.z();
     }
 }
 

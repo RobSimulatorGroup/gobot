@@ -264,6 +264,12 @@ void Node3DEditor::OnImGuizmo() {
     const ImVec2 view_manipulate_position{view_manipulate_right - 128, view_manipulate_top + 50};
     const ImVec2 view_manipulate_size{128, 128};
 
+    if (Editor::GetInstance()->IsScenePlaySessionRunning()) {
+        editing_ = false;
+        DrawViewManipulator(view_manipulate_position, view_manipulate_size);
+        return;
+    }
+
     if (imguizmo_operation_ != InvalidGuizmoOperation()) {
         auto* selected = Editor::GetInstance()->GetSelected();
         auto* selected_node_3d = Object::PointerCastTo<Node3D>(selected);

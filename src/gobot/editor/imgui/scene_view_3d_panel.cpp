@@ -11,8 +11,10 @@
 #include "gobot/editor/editor.hpp"
 #include "gobot/editor/editor_viewport_renderer.hpp"
 #include "gobot/main/engine_context.hpp"
+#include "gobot/simulation/simulation_server.hpp"
 #include "gobot/scene/camera_3d.hpp"
 #include "gobot/scene/joint_3d.hpp"
+#include "gobot/scene/link_3d.hpp"
 #include "gobot/scene/node.hpp"
 #include "gobot/scene/robot_3d.hpp"
 #include "gobot/scene/scene_command.hpp"
@@ -116,6 +118,8 @@ bool ProjectWorldPoint(const Camera3D* camera,
     return true;
 }
 
+Vector3 GetJointInteractionPosition(const Joint3D* joint);
+
 bool GetJointScreenAxis(Joint3D* joint,
                         const Camera3D* camera,
                         const ImVec2& viewport_position,
@@ -125,7 +129,7 @@ bool GetJointScreenAxis(Joint3D* joint,
         return false;
     }
 
-    const Vector3 joint_position = joint->GetGlobalPosition();
+    const Vector3 joint_position = GetJointInteractionPosition(joint);
     const Vector3 world_axis = joint->GetGlobalTransform().linear() * joint->GetAxis().normalized();
     ImVec2 joint_screen;
     ImVec2 axis_screen;
@@ -145,13 +149,65 @@ bool GetJointScreenAxis(Joint3D* joint,
     return true;
 }
 
+Vector3 CameraPlaneDeltaToWorld(const Camera3D* camera, const ImVec2& mouse_delta, RealType scale) {
+    if (camera == nullptr) {
+        return Vector3::Zero();
+    }
+
+    const Vector3 view_direction = camera->GetViewMatrixAt() - camera->GetViewMatrixEye();
+    const Vector3 view_right = view_direction.squaredNorm() > CMP_EPSILON2
+            ? view_direction.cross(camera->GetViewMatrixUp()).normalized()
+            : Vector3::UnitX();
+    const Vector3 view_up = camera->GetViewMatrixUp().normalized();
+    return (view_right * static_cast<RealType>(mouse_delta.x) +
+            view_up * static_cast<RealType>(-mouse_delta.y)) * scale;
+}
+
+RealType MouseDepthScale(const Camera3D* camera,
+                         const Vector3& point,
+                         const ImVec2& viewport_size) {
+    if (camera == nullptr || viewport_size.y <= 0.0f) {
+        return 1.0;
+    }
+
+    const Vector3 view_direction = camera->GetViewMatrixAt() - camera->GetViewMatrixEye();
+    if (view_direction.squaredNorm() <= CMP_EPSILON2) {
+        return 1.0;
+    }
+
+    const RealType depth = std::max<RealType>(1.0, (point - camera->GetViewMatrixEye()).dot(view_direction.normalized()));
+    const RealType fovy_radians = camera->GetFovy() * M_PI / 180.0;
+    return 2.0 * depth * std::tan(fovy_radians * 0.5) / std::max<RealType>(1.0, viewport_size.y);
+}
+
+Vector3 LinkLocalPoint(Link3D* link, const Vector3& world_point) {
+    if (link == nullptr) {
+        return Vector3::Zero();
+    }
+    return link->GetGlobalTransform().inverse() * world_point;
+}
+
+Vector3 GetJointInteractionPosition(const Joint3D* joint) {
+    if (joint == nullptr) {
+        return Vector3::Zero();
+    }
+
+    if (joint->GetJointType() == JointType::Prismatic && joint->GetChildCount() > 0) {
+        if (auto* child_3d = Object::PointerCastTo<Node3D>(joint->GetChild(0))) {
+            return child_3d->GetGlobalPosition();
+        }
+    }
+
+    return joint->GetGlobalPosition();
+}
+
 float GetJointScreenRotationSign(Joint3D* joint, const Camera3D* camera) {
     if (!joint || !camera) {
         return 1.0f;
     }
 
     const Vector3 world_axis = joint->GetGlobalTransform().linear() * joint->GetAxis().normalized();
-    const Vector3 joint_to_camera = camera->GetViewMatrixEye() - joint->GetGlobalPosition();
+    const Vector3 joint_to_camera = camera->GetViewMatrixEye() - GetJointInteractionPosition(joint);
     if (joint_to_camera.isZero(CMP_EPSILON)) {
         return 1.0f;
     }
@@ -226,6 +282,52 @@ bool ImGuiBlocksViewportInput() {
     }
 
     return ImGui::IsPopupOpen(nullptr, ImGuiPopupFlags_AnyPopupId);
+}
+
+bool IsSceneRuntimePlaying() {
+    auto* editor = Editor::GetInstanceOrNull();
+    auto* simulation = SimulationServer::HasInstance() ? SimulationServer::GetInstance() : nullptr;
+    return editor != nullptr &&
+           editor->IsScenePlaySessionRunning() &&
+           simulation != nullptr &&
+           !simulation->IsPaused();
+}
+
+Link3D* FindNearestAncestorLink(Node* node) {
+    Node* current = node;
+    while (current != nullptr) {
+        if (auto* link = Object::PointerCastTo<Link3D>(current)) {
+            return link;
+        }
+        current = current->GetParent();
+    }
+    return nullptr;
+}
+
+bool ApplyRuntimeSpringForce(Link3D* link,
+                             const Vector3& local_point,
+                             const Vector3& target_point,
+                             const Vector3& force_hint) {
+    if (link == nullptr || !SimulationServer::HasInstance()) {
+        return false;
+    }
+
+    Robot3D* robot = FindRobotAncestor(link);
+    if (robot == nullptr) {
+        return false;
+    }
+
+    return SimulationServer::GetInstance()->SetLinkSpringForce(robot->GetName(),
+                                                              link->GetName(),
+                                                              local_point,
+                                                              target_point,
+                                                              force_hint);
+}
+
+void ClearRuntimeExternalForce() {
+    if (SimulationServer::HasInstance()) {
+        SimulationServer::GetInstance()->ClearExternalForces();
+    }
 }
 
 }
@@ -315,25 +417,60 @@ void SceneView3DPanel::OnImGuiContent()
 
     auto* node3d_editor = Node3DEditor::GetInstance();
     ImGuizmo::SetRect(scene_view_position.x, scene_view_position.y, scene_view_size.x, scene_view_size.y);
-    node3d_editor->OnImGuizmo();
+    if (!Editor::GetInstance()->IsScenePlaySessionRunning()) {
+        node3d_editor->OnImGuizmo();
+    }
 
     const bool imgui_blocks_viewport_input = ImGuiBlocksViewportInput();
     bool mouse_inside_rect = ImGui::IsMouseHoveringRect(min_bound, max_bound) && !imgui_blocks_viewport_input;
     ProcessViewportInput(scene_root, scene_view_position, scene_view_size, mouse_inside_rect);
-    node3d_editor->SetNeedUpdateCamera(mouse_inside_rect && !dragged_joint_ &&
+    node3d_editor->SetNeedUpdateCamera(mouse_inside_rect && !dragged_joint_ && !drag_force_active_ &&
                                        !ImGuizmo::IsUsing() && !ImGuizmo::IsOver());
 
-    auto* selected_motion_joint = FindMotionJointForViewportTarget(Editor::GetInstance()->GetSelected());
-    auto* active_motion_joint = dragged_joint_ ? dragged_joint_
-                                               : (motion_target_joint_ ? motion_target_joint_ : selected_motion_joint);
+    auto* selected_motion_joint = IsSceneRuntimePlaying()
+            ? nullptr
+            : FindMotionJointForViewportTarget(Editor::GetInstance()->GetSelected());
+    auto* active_motion_joint = IsSceneRuntimePlaying()
+            ? nullptr
+            : (dragged_joint_ ? dragged_joint_
+                              : (motion_target_joint_ ? motion_target_joint_ : selected_motion_joint));
     viewport_renderer_->RenderOverlay(scene_root, camera_3d, scene_view_position, scene_view_size,
-                                      ImGui::GetWindowDrawList(), hovered_node_, active_motion_joint);
+                                      ImGui::GetWindowDrawList(), hovered_node_, active_motion_joint,
+                                      !IsSceneRuntimePlaying());
     DrawJointMotionHint(active_motion_joint,
                         camera_3d,
                         scene_view_position,
                         scene_view_size,
                         ImGui::GetWindowDrawList(),
                         dragged_joint_ != nullptr);
+    if (drag_force_active_) {
+        ImVec2 start;
+        ImVec2 end;
+        const Vector3 force_start = dragged_force_link_ != nullptr
+                ? dragged_force_link_->GetGlobalTransform() * drag_force_local_point_
+                : drag_force_point_;
+        if (ProjectWorldPoint(camera_3d, scene_view_position, scene_view_size, force_start, start) &&
+            ProjectWorldPoint(camera_3d, scene_view_position, scene_view_size,
+                              drag_force_target_point_, end)) {
+            auto* draw_list = ImGui::GetWindowDrawList();
+            const ImU32 color = IM_COL32(255, 196, 64, 255);
+            draw_list->AddCircleFilled(start, 5.0f, color, 16);
+            draw_list->AddLine(start, end, color, 3.0f);
+            const ImVec2 direction{end.x - start.x, end.y - start.y};
+            const float length = std::sqrt(direction.x * direction.x + direction.y * direction.y);
+            if (length > 1.0f) {
+                const ImVec2 unit{direction.x / length, direction.y / length};
+                const ImVec2 normal{-unit.y, unit.x};
+                const ImVec2 tip = end;
+                draw_list->AddTriangleFilled(tip,
+                                             {tip.x - unit.x * 12.0f + normal.x * 5.0f,
+                                              tip.y - unit.y * 12.0f + normal.y * 5.0f},
+                                             {tip.x - unit.x * 12.0f - normal.x * 5.0f,
+                                              tip.y - unit.y * 12.0f - normal.y * 5.0f},
+                                             color);
+            }
+        }
+    }
 
     ToolBar({scene_view_position.x + 8.0f, scene_view_position.y + 8.0f});
     ImGui::SetCursorScreenPos({scene_view_position.x, scene_view_position.y + scene_view_size.y});
@@ -347,22 +484,42 @@ void SceneView3DPanel::ProcessViewportInput(Node* scene_root,
                                             bool mouse_inside_rect) {
     auto* node3d_editor = Node3DEditor::GetInstance();
     const bool gizmo_captures_mouse = ImGuizmo::IsUsing() || ImGuizmo::IsOver();
+    const bool runtime_playing = IsSceneRuntimePlaying();
     if (!scene_root || !mouse_inside_rect || gizmo_captures_mouse) {
         hovered_node_ = nullptr;
         motion_target_joint_ = nullptr;
     } else {
+        Vector3 hit_point = Vector3::Zero();
         hovered_node_ = viewport_renderer_->PickNode(scene_root, node3d_editor->GetCamera3D(),
-                                                     viewport_position, viewport_size, ImGui::GetMousePos());
+                                                     viewport_position, viewport_size, ImGui::GetMousePos(),
+                                                     &hit_point, runtime_playing, runtime_playing);
+        if (hovered_node_ != nullptr && !drag_force_point_locked_) {
+            drag_force_point_ = hit_point;
+        }
     }
 
     const bool left_down = ImGui::IsMouseDown(ImGuiMouseButton_Left);
     const bool camera_modifier_down = ImGui::GetIO().KeyCtrl || ImGui::GetIO().KeyShift;
-    auto* motion_joint = FindMotionJointForViewportTarget(hovered_node_);
+    auto* motion_joint = runtime_playing ? nullptr : FindMotionJointForViewportTarget(hovered_node_);
     motion_target_joint_ = motion_joint;
 
     if (!left_down) {
         pressed_joint_ = nullptr;
         dragged_joint_ = nullptr;
+        if (drag_force_active_) {
+            ClearRuntimeExternalForce();
+        }
+        dragged_force_link_ = nullptr;
+        drag_force_active_ = false;
+        drag_force_point_locked_ = false;
+        drag_force_joint_ = nullptr;
+        drag_force_point_ = Vector3::Zero();
+        drag_force_local_point_ = Vector3::Zero();
+        drag_force_target_point_ = Vector3::Zero();
+        drag_force_vector_ = Vector3::Zero();
+        drag_force_world_axis_ = Vector3::UnitX();
+        drag_force_scale_ = 1.0;
+        drag_force_axis_valid_ = false;
         drag_joint_screen_center_valid_ = false;
         drag_joint_screen_axis_valid_ = false;
         drag_last_angle_valid_ = false;
@@ -386,7 +543,7 @@ void SceneView3DPanel::ProcessViewportInput(Node* scene_root,
             drag_joint_screen_center_valid_ = ProjectWorldPoint(node3d_editor->GetCamera3D(),
                                                                 viewport_position,
                                                                 viewport_size,
-                                                                dragged_joint_->GetGlobalPosition(),
+                                                                GetJointInteractionPosition(dragged_joint_),
                                                                 drag_joint_screen_center_);
             drag_joint_screen_axis_valid_ = GetJointScreenAxis(dragged_joint_, node3d_editor->GetCamera3D(),
                                                                viewport_position, viewport_size,
@@ -396,11 +553,38 @@ void SceneView3DPanel::ProcessViewportInput(Node* scene_root,
             if (drag_last_angle_valid_) {
                 drag_last_angle_ = AngleAroundScreenPoint(drag_joint_screen_center_, drag_last_mouse_);
             }
+        } else if (runtime_playing) {
+            if (auto* link = FindNearestAncestorLink(hovered_node_)) {
+                dragged_force_link_ = link;
+                drag_force_joint_ = FindNearestAncestorJoint(link);
+                drag_force_local_point_ = LinkLocalPoint(link, drag_force_point_);
+                drag_force_target_point_ = drag_force_point_;
+                drag_force_scale_ = MouseDepthScale(node3d_editor->GetCamera3D(), drag_force_point_, viewport_size);
+                drag_force_axis_valid_ = false;
+                if (drag_force_joint_ != nullptr &&
+                    drag_force_joint_->GetJointType() == JointType::Prismatic &&
+                    drag_force_joint_->GetAxis().squaredNorm() > CMP_EPSILON2) {
+                    drag_force_world_axis_ = (drag_force_joint_->GetGlobalTransform().linear() *
+                                             drag_force_joint_->GetAxis().normalized()).normalized();
+                    drag_force_axis_valid_ = true;
+                } else {
+                    drag_force_joint_ = nullptr;
+                    drag_force_world_axis_ = Vector3::UnitX();
+                }
+                drag_last_mouse_ = ImGui::GetIO().MouseClickedPos[ImGuiMouseButton_Left];
+                drag_force_active_ = true;
+                drag_force_point_locked_ = true;
+                drag_force_vector_ = Vector3::Zero();
+                ApplyRuntimeSpringForce(dragged_force_link_,
+                                        drag_force_local_point_,
+                                        drag_force_target_point_,
+                                        drag_force_vector_);
+            }
         }
     }
 
     const bool can_capture_joint = mouse_inside_rect && IsJointMotionEditable(pressed_joint_) && !camera_modifier_down &&
-                                   !gizmo_captures_mouse;
+                                   !gizmo_captures_mouse && !runtime_playing;
 
     if (!dragged_joint_ && can_capture_joint && ImGui::IsMouseDragging(ImGuiMouseButton_Left, 1.0f)) {
         dragged_joint_ = pressed_joint_;
@@ -408,7 +592,7 @@ void SceneView3DPanel::ProcessViewportInput(Node* scene_root,
         drag_joint_screen_center_valid_ = ProjectWorldPoint(node3d_editor->GetCamera3D(),
                                                             viewport_position,
                                                             viewport_size,
-                                                            dragged_joint_->GetGlobalPosition(),
+                                                            GetJointInteractionPosition(dragged_joint_),
                                                             drag_joint_screen_center_);
         drag_joint_screen_axis_valid_ = GetJointScreenAxis(dragged_joint_, node3d_editor->GetCamera3D(),
                                                            viewport_position, viewport_size,
@@ -459,9 +643,28 @@ void SceneView3DPanel::ProcessViewportInput(Node* scene_root,
             }
         }
         drag_last_mouse_ = mouse_position;
+    } else if (drag_force_active_ && dragged_force_link_ != nullptr) {
+        const ImVec2 mouse_position = ImGui::GetMousePos();
+        const ImVec2 mouse_delta{mouse_position.x - drag_last_mouse_.x,
+                                 mouse_position.y - drag_last_mouse_.y};
+        const Vector3 world_delta = CameraPlaneDeltaToWorld(node3d_editor->GetCamera3D(),
+                                                            mouse_delta,
+                                                            drag_force_scale_);
+        if (drag_force_axis_valid_) {
+            drag_force_target_point_ += drag_force_world_axis_ * world_delta.dot(drag_force_world_axis_);
+        } else {
+            drag_force_target_point_ += world_delta;
+        }
+        drag_force_point_ = dragged_force_link_->GetGlobalTransform() * drag_force_local_point_;
+        drag_force_vector_ = drag_force_target_point_ - drag_force_point_;
+        ApplyRuntimeSpringForce(dragged_force_link_,
+                                drag_force_local_point_,
+                                drag_force_target_point_,
+                                drag_force_axis_valid_ ? drag_force_world_axis_ : Vector3::Zero());
+        drag_last_mouse_ = mouse_position;
     }
 
-    node3d_editor->SetBlockCameraInput(can_capture_joint || dragged_joint_);
+    node3d_editor->SetBlockCameraInput(can_capture_joint || dragged_joint_ || drag_force_active_);
 }
 
 void DrawJointMotionHint(Joint3D* joint,
@@ -476,7 +679,7 @@ void DrawJointMotionHint(Joint3D* joint,
 
     ImVec2 joint_screen;
     if (!ProjectWorldPoint(camera, viewport_position, viewport_size,
-                           joint->GetGlobalPosition(), joint_screen)) {
+                           GetJointInteractionPosition(joint), joint_screen)) {
         return;
     }
 

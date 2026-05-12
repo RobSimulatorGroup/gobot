@@ -422,6 +422,47 @@ bool SimulationServer::SetJointPassive(const std::string& robot_name,
     return true;
 }
 
+bool SimulationServer::SetLinkExternalForce(const std::string& robot_name,
+                                            const std::string& link_name,
+                                            const Vector3& point,
+                                            const Vector3& force) {
+    if (!EnsureWorldReady()) {
+        return false;
+    }
+
+    if (!world_->SetLinkExternalForce(robot_name, link_name, point, force)) {
+        SetLastError(world_->GetLastError());
+        return false;
+    }
+
+    last_error_.clear();
+    return true;
+}
+
+bool SimulationServer::SetLinkSpringForce(const std::string& robot_name,
+                                          const std::string& link_name,
+                                          const Vector3& local_point,
+                                          const Vector3& target_point,
+                                          const Vector3& force_hint) {
+    if (!EnsureWorldReady()) {
+        return false;
+    }
+
+    if (!world_->SetLinkSpringForce(robot_name, link_name, local_point, target_point, force_hint)) {
+        SetLastError(world_->GetLastError());
+        return false;
+    }
+
+    last_error_.clear();
+    return true;
+}
+
+void SimulationServer::ClearExternalForces() {
+    if (world_.IsValid()) {
+        world_->ClearExternalForces();
+    }
+}
+
 bool SimulationServer::SetRobotJointPositionTargetsFromNormalizedAction(const std::string& robot_name,
                                                                         const std::vector<RealType>& action) {
     if (!EnsureWorldReady()) {

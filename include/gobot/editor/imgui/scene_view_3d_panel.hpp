@@ -18,6 +18,7 @@ namespace gobot {
 class SceneTree;
 class EditorViewportRenderer;
 class Joint3D;
+class Link3D;
 class Node;
 
 class GOBOT_EXPORT SceneView3DPanel : public ImGuiWindow {
@@ -53,6 +54,17 @@ private:
     Joint3D* motion_target_joint_{nullptr};
     Joint3D* pressed_joint_{nullptr};
     Joint3D* dragged_joint_{nullptr};
+    Link3D* dragged_force_link_{nullptr};
+    Joint3D* drag_force_joint_{nullptr};
+    Vector3 drag_force_point_{Vector3::Zero()};
+    Vector3 drag_force_local_point_{Vector3::Zero()};
+    Vector3 drag_force_target_point_{Vector3::Zero()};
+    Vector3 drag_force_vector_{Vector3::Zero()};
+    Vector3 drag_force_world_axis_{Vector3::UnitX()};
+    RealType drag_force_scale_{1.0};
+    bool drag_force_active_{false};
+    bool drag_force_point_locked_{false};
+    bool drag_force_axis_valid_{false};
     ImVec2 drag_last_mouse_{0.0f, 0.0f};
     ImVec2 drag_joint_screen_center_{0.0f, 0.0f};
     ImVec2 drag_joint_screen_axis_{1.0f, 0.0f};

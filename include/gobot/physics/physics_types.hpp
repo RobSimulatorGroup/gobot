@@ -148,6 +148,16 @@ struct PhysicsContactState {
     RealType distance{0.0};
 };
 
+struct PhysicsExternalForce {
+    std::string robot_name;
+    std::string link_name;
+    Vector3 point{Vector3::Zero()};
+    Vector3 local_point{Vector3::Zero()};
+    Vector3 target_point{Vector3::Zero()};
+    Vector3 force{Vector3::Zero()};
+    bool use_spring{false};
+};
+
 struct PhysicsRobotState {
     const Robot3D* node{nullptr};
     std::string name;

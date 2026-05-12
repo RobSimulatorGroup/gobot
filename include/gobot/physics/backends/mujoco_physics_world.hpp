@@ -43,6 +43,19 @@ public:
 
     void Step(RealType delta_time) override;
 
+    bool SetLinkExternalForce(const std::string& robot_name,
+                              const std::string& link_name,
+                              const Vector3& point,
+                              const Vector3& force) override;
+
+    bool SetLinkSpringForce(const std::string& robot_name,
+                            const std::string& link_name,
+                            const Vector3& local_point,
+                            const Vector3& target_point,
+                            const Vector3& force_hint) override;
+
+    void ClearExternalForces() override;
+
 private:
 #ifdef GOBOT_HAS_MUJOCO
     bool LoadModelFromRobotSources();
@@ -68,6 +81,8 @@ private:
     std::string GetRobotPrefix(std::size_t robot_index) const;
 
     void ApplyControlsToMuJoCo();
+
+    void ApplyExternalForcesToMuJoCo();
 
     void FreeModel();
 

@@ -41,6 +41,19 @@ public:
                          PhysicsJointControlMode control_mode,
                          RealType target);
 
+    virtual bool SetLinkExternalForce(const std::string& robot_name,
+                                      const std::string& link_name,
+                                      const Vector3& point,
+                                      const Vector3& force);
+
+    virtual bool SetLinkSpringForce(const std::string& robot_name,
+                                    const std::string& link_name,
+                                    const Vector3& local_point,
+                                    const Vector3& target_point,
+                                    const Vector3& force_hint);
+
+    virtual void ClearExternalForces();
+
     const PhysicsSceneSnapshot& GetSceneSnapshot() const;
 
     const PhysicsSceneState& GetSceneState() const;
@@ -51,6 +64,9 @@ protected:
     PhysicsJointState* FindJointState(const std::string& robot_name,
                                       const std::string& joint_name);
 
+    PhysicsLinkState* FindMutableLinkState(const std::string& robot_name,
+                                           const std::string& link_name);
+
     void ResetSceneStateFromSnapshot();
 
     void SetLastError(std::string error);
@@ -58,6 +74,7 @@ protected:
     PhysicsWorldSettings settings_;
     PhysicsSceneSnapshot scene_snapshot_;
     PhysicsSceneState scene_state_;
+    std::vector<PhysicsExternalForce> external_forces_;
     std::string last_error_;
 };
 

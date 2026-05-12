@@ -320,6 +320,7 @@ bool PhysicsWorld::RestoreCompatibleState(const PhysicsSceneState& previous_stat
 
 void PhysicsWorld::Reset() {
     ResetSceneStateFromSnapshot();
+    ClearExternalForces();
 }
 
 void PhysicsWorld::Step(RealType delta_time) {
@@ -358,6 +359,85 @@ bool PhysicsWorld::SetJointControl(const std::string& robot_name,
     return true;
 }
 
+bool PhysicsWorld::SetLinkExternalForce(const std::string& robot_name,
+                                        const std::string& link_name,
+                                        const Vector3& point,
+                                        const Vector3& force) {
+    if (FindMutableLinkState(robot_name, link_name) == nullptr) {
+        SetLastError(fmt::format("Cannot apply external force to missing link '{}::{}'.",
+                                 robot_name,
+                                 link_name));
+        return false;
+    }
+
+    for (PhysicsExternalForce& external_force : external_forces_) {
+        if (external_force.robot_name == robot_name && external_force.link_name == link_name) {
+            external_force.point = point;
+            external_force.local_point = Vector3::Zero();
+            external_force.target_point = point;
+            external_force.force = force;
+            external_force.use_spring = false;
+            last_error_.clear();
+            return true;
+        }
+    }
+
+    PhysicsExternalForce external_force;
+    external_force.robot_name = robot_name;
+    external_force.link_name = link_name;
+    external_force.point = point;
+    external_force.local_point = Vector3::Zero();
+    external_force.target_point = point;
+    external_force.force = force;
+    external_force.use_spring = false;
+    external_forces_.push_back(external_force);
+    last_error_.clear();
+    return true;
+}
+
+bool PhysicsWorld::SetLinkSpringForce(const std::string& robot_name,
+                                      const std::string& link_name,
+                                      const Vector3& local_point,
+                                      const Vector3& target_point,
+                                      const Vector3& force_hint) {
+    PhysicsLinkState* link_state = FindMutableLinkState(robot_name, link_name);
+    if (link_state == nullptr) {
+        SetLastError(fmt::format("Cannot apply external force to missing link '{}::{}'.",
+                                 robot_name,
+                                 link_name));
+        return false;
+    }
+
+    const Vector3 point = link_state->global_transform * local_point;
+    for (PhysicsExternalForce& external_force : external_forces_) {
+        if (external_force.robot_name == robot_name && external_force.link_name == link_name) {
+            external_force.point = point;
+            external_force.local_point = local_point;
+            external_force.target_point = target_point;
+            external_force.force = force_hint;
+            external_force.use_spring = true;
+            last_error_.clear();
+            return true;
+        }
+    }
+
+    PhysicsExternalForce external_force;
+    external_force.robot_name = robot_name;
+    external_force.link_name = link_name;
+    external_force.point = point;
+    external_force.local_point = local_point;
+    external_force.target_point = target_point;
+    external_force.force = force_hint;
+    external_force.use_spring = true;
+    external_forces_.push_back(external_force);
+    last_error_.clear();
+    return true;
+}
+
+void PhysicsWorld::ClearExternalForces() {
+    external_forces_.clear();
+}
+
 const PhysicsSceneSnapshot& PhysicsWorld::GetSceneSnapshot() const {
     return scene_snapshot_;
 }
@@ -389,6 +469,23 @@ PhysicsJointState* PhysicsWorld::FindJointState(const std::string& robot_name,
         for (PhysicsJointState& joint_state : robot_state.joints) {
             if (joint_state.joint_name == joint_name) {
                 return &joint_state;
+            }
+        }
+    }
+
+    return nullptr;
+}
+
+PhysicsLinkState* PhysicsWorld::FindMutableLinkState(const std::string& robot_name,
+                                                     const std::string& link_name) {
+    for (PhysicsRobotState& robot_state : scene_state_.robots) {
+        if (robot_state.name != robot_name) {
+            continue;
+        }
+
+        for (PhysicsLinkState& link_state : robot_state.links) {
+            if (link_state.link_name == link_name) {
+                return &link_state;
             }
         }
     }
