@@ -6,7 +6,8 @@ drive reinforcement-learning experiments.
 
 ![overview](./doc/overview.png)
 
-[![license](https://img.shields.io/github/license/RobSimulatorGroup/gobot.svg)](https://github.com/RobSimulatorGroup/gobot/blob/master/LICENSE)
+[![PyPI](https://img.shields.io/pypi/v/gobot)](https://pypi.org/project/gobot/)
+[![License](https://img.shields.io/badge/license-Apache--2.0-blue)](https://github.com/RobSimulatorGroup/gobot/blob/master/LICENSE)
 [![CI](https://github.com/RobSimulatorGroup/gobot/actions/workflows/ci.yml/badge.svg?branch=master&event=push)](https://github.com/RobSimulatorGroup/gobot/actions)
 
 ## Install
