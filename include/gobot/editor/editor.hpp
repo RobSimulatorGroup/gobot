@@ -153,6 +153,10 @@ private:
 
     void DrawUnsavedSceneDialog();
 
+    void NotifyScenePlaySessionProcess();
+
+    void NotifyScenePlaySessionPhysicsProcess();
+
     void RequestSceneSwitch(std::function<void()> action);
 
     void ContinuePendingSceneSwitch();

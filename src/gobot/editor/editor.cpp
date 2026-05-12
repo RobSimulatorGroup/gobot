@@ -530,6 +530,7 @@ bool Editor::StepScene() {
         return false;
     }
     simulation->SetPaused(true);
+    NotifyScenePlaySessionPhysicsProcess();
     return simulation->StepOnce();
 }
 
@@ -577,6 +578,23 @@ std::string Editor::GetScenePlaySessionLastError() const {
     return scene_play_session_ != nullptr ? scene_play_session_->GetLastError() : std::string();
 }
 
+void Editor::NotifyScenePlaySessionProcess() {
+    if (scene_play_session_ == nullptr || !scene_play_session_->IsRunning()) {
+        return;
+    }
+    if (SimulationServer::HasInstance() && SimulationServer::GetInstance()->IsPaused()) {
+        return;
+    }
+    scene_play_session_->NotifyProcess(GetProcessDeltaTime());
+}
+
+void Editor::NotifyScenePlaySessionPhysicsProcess() {
+    if (scene_play_session_ == nullptr || !scene_play_session_->IsRunning()) {
+        return;
+    }
+    scene_play_session_->NotifyPhysicsProcess(GetPhysicsProcessDeltaTime());
+}
+
 void Editor::NotificationCallBack(NotificationType notification) {
     if (engine_context_ != nullptr) {
         python::PythonScriptRunner::SetSceneScriptContext(engine_context_);
@@ -585,15 +603,13 @@ void Editor::NotificationCallBack(NotificationType notification) {
 
     switch (notification) {
         case NotificationType::PhysicsProcess: {
-            if (scene_play_session_ != nullptr) {
-                scene_play_session_->NotifyPhysicsProcess(GetPhysicsProcessDeltaTime());
+            if (SimulationServer::HasInstance() && !SimulationServer::GetInstance()->IsPaused()) {
+                NotifyScenePlaySessionPhysicsProcess();
             }
             break;
         }
         case NotificationType::Process: {
-            if (scene_play_session_ != nullptr) {
-                scene_play_session_->NotifyProcess(GetProcessDeltaTime());
-            }
+            NotifyScenePlaySessionProcess();
             OnImGui();
             break;
         }
