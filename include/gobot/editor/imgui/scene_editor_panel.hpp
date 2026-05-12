@@ -8,6 +8,7 @@
 #pragma once
 
 #include <string>
+#include <vector>
 
 #include "gobot/scene/imgui_window.hpp"
 
@@ -33,6 +34,12 @@ private:
     void DrawAddChildDialog();
 
     bool CreateSelectedAddNode();
+
+    void RequestOpenAttachScriptDialog(Node* node);
+
+    void DrawAttachScriptDialog();
+
+    bool AttachSelectedScript();
 
     bool IsSceneInstanceNode(Node* node) const;
 
@@ -65,6 +72,14 @@ private:
     bool open_add_child_dialog_{false};
     std::string add_node_search_;
     std::string selected_add_node_id_;
+    Node* attach_script_node_{nullptr};
+    bool open_attach_script_dialog_{false};
+    bool attach_script_create_new_{true};
+    bool attach_script_template_enabled_{true};
+    std::string attach_script_path_;
+    std::string attach_script_search_;
+    std::string attach_selected_script_path_;
+    std::vector<std::string> attach_script_candidates_;
     bool select_up_;
     bool select_down_;
 

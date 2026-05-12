@@ -8,22 +8,17 @@
 #include <algorithm>
 #include <array>
 #include <functional>
-#include <filesystem>
-#include <fstream>
 #include <string>
 #include <unordered_set>
 #include <vector>
 
-#include "gobot/core/config/project_setting.hpp"
 #include "gobot/core/io/python_script.hpp"
 #include "gobot/core/io/resource.hpp"
-#include "gobot/core/io/resource_loader.hpp"
 #include "gobot/core/string_utils.hpp"
 #include "gobot/editor/editor.hpp"
 #include "gobot/editor/imgui/type_icons.hpp"
 #include "gobot/editor/property_inspector/editor_inspector.hpp"
 #include "gobot/log.hpp"
-#include "gobot/scene/node.hpp"
 #include "gobot/scene/resources/array_mesh.hpp"
 #include "gobot/scene/resources/material.hpp"
 #include "gobot/scene/resources/mesh.hpp"
@@ -62,100 +57,6 @@ bool AssignResourceVariant(PropertyDataModel* property_data_model, Variant resou
     }
 
     return property_data_model->SetValue(resource_variant);
-}
-
-std::string PythonScriptTemplate() {
-    return "import gobot\n\n"
-           "\n"
-           "class Script(gobot.NodeScript):\n"
-           "    def _ready(self):\n"
-           "        pass\n"
-           "\n"
-           "    def _process(self, delta: float):\n"
-           "        pass\n"
-           "\n"
-           "    def _physics_process(self, delta: float):\n"
-           "        pass\n";
-}
-
-std::string SanitizeScriptBaseName(std::string value) {
-    if (value.empty()) {
-        value = "node";
-    }
-    std::ranges::transform(value, value.begin(), [](unsigned char character) {
-        if (std::isalnum(character)) {
-            return static_cast<char>(std::tolower(character));
-        }
-        return '_';
-    });
-    while (value.find("__") != std::string::npos) {
-        value = ReplaceAll(value, "__", "_");
-    }
-    while (!value.empty() && value.front() == '_') {
-        value.erase(value.begin());
-    }
-    while (!value.empty() && value.back() == '_') {
-        value.pop_back();
-    }
-    return value.empty() ? "node" : value;
-}
-
-std::string UniqueScriptPathForNode(const Node& node) {
-    const std::string base_name = SanitizeScriptBaseName(node.GetName()) + "_script";
-    std::string candidate = "res://scripts/" + base_name + ".py";
-    for (int index = 1; ResourceLoader::Exists(candidate, "PythonScript"); ++index) {
-        candidate = "res://scripts/" + base_name + "_" + std::to_string(index) + ".py";
-    }
-    return candidate;
-}
-
-bool CreateScriptFile(const std::string& local_path) {
-    const std::string global_path = ProjectSettings::GetInstance()->GlobalizePath(local_path);
-    std::error_code error;
-    std::filesystem::create_directories(std::filesystem::path(global_path).parent_path(), error);
-    if (error) {
-        LOG_ERROR("Failed to create Python script directory '{}': {}",
-                  std::filesystem::path(global_path).parent_path().string(),
-                  error.message());
-        return false;
-    }
-
-    std::ofstream output(global_path, std::ios::out | std::ios::trunc);
-    if (!output.is_open()) {
-        LOG_ERROR("Failed to create Python script '{}'.", local_path);
-        return false;
-    }
-    output << PythonScriptTemplate();
-    return true;
-}
-
-bool AttachPythonScript(PropertyDataModel* property_data_model) {
-    auto* node = Object::PointerCastTo<Node>(property_data_model->GetVariantCache().object);
-    if (node == nullptr) {
-        return false;
-    }
-
-    const std::string local_path = UniqueScriptPathForNode(*node);
-    if (!CreateScriptFile(local_path)) {
-        return false;
-    }
-
-    Ref<Resource> resource = ResourceLoader::Load(local_path, "PythonScript", ResourceFormatLoader::CacheMode::Replace);
-    Ref<PythonScript> script = dynamic_pointer_cast<PythonScript>(resource);
-    if (!script.IsValid()) {
-        LOG_ERROR("Failed to load Python script '{}'.", local_path);
-        return false;
-    }
-
-    if (!AssignResourceVariant(property_data_model, Variant(script))) {
-        return false;
-    }
-
-    if (auto* editor = Editor::GetInstanceOrNull()) {
-        editor->RefreshResourcePanel();
-        editor->OpenPythonScriptFromPath(local_path);
-    }
-    return true;
 }
 
 bool IsNodeScriptProperty(PropertyDataModel* property_data_model) {
@@ -292,9 +193,7 @@ void DrawResourceMenu(PropertyDataModel* property_data_model) {
     if (IsNodeScriptProperty(property_data_model)) {
         Ref<Resource> current = GetResourceRef(property_data_model->GetValue());
         if (!current.IsValid()) {
-            if (ImGui::MenuItem(ICON_MDI_LANGUAGE_PYTHON " Attach Script")) {
-                AttachPythonScript(property_data_model);
-            }
+            ImGui::TextDisabled("Attach scripts from the SceneTree node context menu.");
         } else {
             ImGui::TextDisabled("Script is attached from SceneTree.");
         }

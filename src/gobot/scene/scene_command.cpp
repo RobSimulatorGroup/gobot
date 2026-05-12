@@ -1,7 +1,10 @@
 #include "gobot/scene/scene_command.hpp"
 
+#include <filesystem>
 #include <utility>
 
+#include "gobot/core/config/project_setting.hpp"
+#include "gobot/core/io/resource.hpp"
 #include "gobot/log.hpp"
 #include "gobot/scene/node.hpp"
 #include "gobot/scene/node_3d.hpp"
@@ -595,6 +598,65 @@ bool SetNode3DTransformCommand::MergeWith(const SceneCommand& next) {
         return false;
     }
     new_transform_ = set_transform->new_transform_;
+    return true;
+}
+
+RenameResourceFileCommand::RenameResourceFileCommand(std::string old_path, std::string new_path)
+    : old_path_(std::move(old_path)),
+      new_path_(std::move(new_path)) {
+}
+
+bool RenameResourceFileCommand::Do() {
+    return Rename(old_path_, new_path_, "Rename Resource File");
+}
+
+bool RenameResourceFileCommand::Undo() {
+    return Rename(new_path_, old_path_, "Undo Rename Resource File");
+}
+
+std::string RenameResourceFileCommand::GetName() const {
+    return "Rename Resource File";
+}
+
+bool RenameResourceFileCommand::Rename(const std::string& from_path,
+                                       const std::string& to_path,
+                                       const char* phase) const {
+    if (from_path.empty() || to_path.empty()) {
+        LOG_ERROR("{} failed: empty resource path.", phase);
+        return false;
+    }
+    if (from_path == to_path) {
+        return true;
+    }
+
+    auto* settings = ProjectSettings::GetInstance();
+    const std::filesystem::path from_global = settings->GlobalizePath(from_path);
+    const std::filesystem::path to_global = settings->GlobalizePath(to_path);
+    if (!std::filesystem::exists(from_global)) {
+        LOG_ERROR("{} failed: source resource does not exist '{}'.", phase, from_path);
+        return false;
+    }
+    if (std::filesystem::exists(to_global)) {
+        LOG_ERROR("{} failed: target resource already exists '{}'.", phase, to_path);
+        return false;
+    }
+
+    std::error_code error;
+    std::filesystem::rename(from_global, to_global, error);
+    if (error) {
+        LOG_ERROR("{} failed: cannot rename '{}' to '{}': {}",
+                  phase,
+                  from_path,
+                  to_path,
+                  error.message());
+        return false;
+    }
+
+    Ref<Resource> cached_resource = ResourceCache::GetRef(from_path);
+    if (cached_resource.IsValid()) {
+        cached_resource->SetPath(to_path, true);
+    }
+
     return true;
 }
 

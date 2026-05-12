@@ -1,5 +1,11 @@
 #include <gtest/gtest.h>
 
+#include <filesystem>
+#include <fstream>
+
+#include "gobot/core/config/project_setting.hpp"
+#include "gobot/core/io/python_script.hpp"
+#include "gobot/core/io/resource_loader.hpp"
 #include "gobot/core/object.hpp"
 #include "gobot/scene/joint_3d.hpp"
 #include "gobot/scene/node.hpp"
@@ -146,4 +152,53 @@ TEST_F(TestSceneCommand, numeric_property_commands_convert_to_reflected_property
 
     ASSERT_TRUE(stack.Undo());
     EXPECT_NEAR(joint->GetJointPosition(), 0.0, CMP_EPSILON);
+}
+
+TEST_F(TestSceneCommand, resource_file_rename_can_undo_and_redo) {
+    auto* project_settings = gobot::Object::New<gobot::ProjectSettings>();
+    const std::filesystem::path temp_root =
+            std::filesystem::temp_directory_path() / "gobot_resource_rename_command_test";
+    std::error_code error;
+    std::filesystem::remove_all(temp_root, error);
+    ASSERT_TRUE(std::filesystem::create_directories(temp_root, error));
+    ASSERT_FALSE(error);
+
+    ASSERT_TRUE(gobot::ProjectSettings::GetInstance()->SetProjectPath(temp_root.string()));
+
+    const std::filesystem::path old_path = temp_root / "old_name.py";
+    const std::filesystem::path new_path = temp_root / "new_name.py";
+    {
+        std::ofstream output(old_path, std::ios::out | std::ios::trunc);
+        ASSERT_TRUE(output.is_open());
+        output << "print('rename test')\n";
+    }
+    auto python_script_loader = gobot::MakeRef<gobot::ResourceFormatLoaderPythonScript>();
+    gobot::ResourceLoader::AddResourceFormatLoader(python_script_loader, true);
+    gobot::Ref<gobot::Resource> resource = gobot::ResourceLoader::Load("res://old_name.py", "PythonScript");
+    ASSERT_TRUE(resource.IsValid());
+    EXPECT_EQ(resource->GetPath(), "res://old_name.py");
+
+    gobot::SceneCommandStack stack;
+    ASSERT_TRUE(stack.Execute(std::make_unique<gobot::RenameResourceFileCommand>(
+            "res://old_name.py",
+            "res://new_name.py")));
+    EXPECT_FALSE(std::filesystem::exists(old_path));
+    EXPECT_TRUE(std::filesystem::exists(new_path));
+    EXPECT_EQ(resource->GetPath(), "res://new_name.py");
+
+    ASSERT_TRUE(stack.Undo());
+    EXPECT_TRUE(std::filesystem::exists(old_path));
+    EXPECT_FALSE(std::filesystem::exists(new_path));
+    EXPECT_EQ(resource->GetPath(), "res://old_name.py");
+
+    ASSERT_TRUE(stack.Redo());
+    EXPECT_FALSE(std::filesystem::exists(old_path));
+    EXPECT_TRUE(std::filesystem::exists(new_path));
+    EXPECT_EQ(resource->GetPath(), "res://new_name.py");
+
+    resource.Reset();
+    gobot::ResourceLoader::RemoveResourceFormatLoader(python_script_loader);
+    python_script_loader.Reset();
+    std::filesystem::remove_all(temp_root, error);
+    gobot::Object::Delete(project_settings);
 }

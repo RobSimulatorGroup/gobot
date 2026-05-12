@@ -169,4 +169,19 @@ private:
     bool captured_old_transform_{false};
 };
 
+class GOBOT_EXPORT RenameResourceFileCommand : public SceneCommand {
+public:
+    RenameResourceFileCommand(std::string old_path, std::string new_path);
+
+    bool Do() override;
+    bool Undo() override;
+    std::string GetName() const override;
+
+private:
+    bool Rename(const std::string& from_path, const std::string& to_path, const char* phase) const;
+
+    std::string old_path_;
+    std::string new_path_;
+};
+
 } // namespace gobot

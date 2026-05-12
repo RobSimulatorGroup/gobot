@@ -814,6 +814,7 @@ void Editor::UndoSceneCommand() {
         return;
     }
     selected_ = GetEditedSceneRoot();
+    RefreshResourcePanel();
 }
 
 void Editor::RedoSceneCommand() {
@@ -821,6 +822,7 @@ void Editor::RedoSceneCommand() {
         return;
     }
     selected_ = GetEditedSceneRoot();
+    RefreshResourcePanel();
 }
 
 void Editor::DrawUnsavedSceneDialog() {

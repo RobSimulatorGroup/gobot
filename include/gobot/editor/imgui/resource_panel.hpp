@@ -76,6 +76,10 @@ public:
 
     void DrawDeleteResourceFilePopup();
 
+    void DrawRenameResourceFilePopup();
+
+    bool RenameResourceFile(const std::string& new_file_name);
+
     void OpenProjectBrowser();
 
     void HandleProjectBrowser();
@@ -93,8 +97,13 @@ private:
     std::string pending_delete_project_path_;
     std::string pending_delete_resource_file_global_path_;
     std::string pending_delete_resource_file_local_path_;
+    std::string pending_rename_resource_file_global_path_;
+    std::string pending_rename_resource_file_local_path_;
+    std::string pending_rename_resource_file_name_;
     bool request_delete_project_popup_{false};
     bool request_delete_resource_file_popup_{false};
+    bool request_rename_resource_file_popup_{false};
+    bool rename_shortcut_down_{false};
 
 
     bool is_dragging_;

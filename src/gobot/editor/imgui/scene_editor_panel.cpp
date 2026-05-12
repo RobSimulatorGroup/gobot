@@ -113,6 +113,57 @@ bool AddNodeTreeItemMatches(const AddNodeTree& tree,
     return false;
 }
 
+bool IsPythonScriptPath(const std::filesystem::path& path) {
+    std::string extension = path.extension().string();
+    std::ranges::transform(extension, extension.begin(), [](unsigned char character) {
+        return static_cast<char>(std::tolower(character));
+    });
+    return extension == ".py";
+}
+
+std::string EnsurePythonScriptExtension(std::string path) {
+    if (path.empty() || IsPythonScriptPath(path)) {
+        return path;
+    }
+    return path + ".py";
+}
+
+bool IsProjectLocalScriptPath(const std::string& path) {
+    return path.starts_with("res://") && IsPythonScriptPath(path);
+}
+
+std::vector<std::string> FindProjectPythonScripts() {
+    std::vector<std::string> scripts;
+    const auto* settings = ProjectSettings::GetInstance();
+    if (settings->GetProjectPath().empty()) {
+        return scripts;
+    }
+
+    const std::filesystem::path project_path = settings->GetProjectPath();
+    std::error_code error;
+    if (!std::filesystem::exists(project_path, error)) {
+        return scripts;
+    }
+
+    for (std::filesystem::recursive_directory_iterator it(project_path,
+                                                         std::filesystem::directory_options::skip_permission_denied,
+                                                         error);
+         it != std::filesystem::recursive_directory_iterator();
+         it.increment(error)) {
+        if (error) {
+            error.clear();
+            continue;
+        }
+        if (!it->is_regular_file(error) || !IsPythonScriptPath(it->path())) {
+            continue;
+        }
+        scripts.push_back(settings->LocalizePath(it->path().string()));
+    }
+
+    std::ranges::sort(scripts);
+    return scripts;
+}
+
 const char* GetAddNodeIcon(const NodeCreationEntry& entry) {
     if (entry.id == "Node") {
         return ICON_MDI_CIRCLE_OUTLINE;
@@ -189,8 +240,12 @@ std::string UniqueScriptPathForNode(const Node& node) {
     return candidate;
 }
 
-bool CreateScriptFile(const std::string& local_path) {
+bool CreateScriptFileIfNeeded(const std::string& local_path, bool write_template) {
     const std::string global_path = ProjectSettings::GetInstance()->GlobalizePath(local_path);
+    if (std::filesystem::exists(global_path)) {
+        return true;
+    }
+
     std::error_code error;
     std::filesystem::create_directories(std::filesystem::path(global_path).parent_path(), error);
     if (error) {
@@ -205,7 +260,9 @@ bool CreateScriptFile(const std::string& local_path) {
         LOG_ERROR("Failed to create Python script '{}'.", local_path);
         return false;
     }
-    output << PythonScriptTemplate();
+    if (write_template) {
+        output << PythonScriptTemplate();
+    }
     return true;
 }
 
@@ -273,6 +330,60 @@ bool SceneEditorPanel::CreateSelectedAddNode() {
     return true;
 }
 
+void SceneEditorPanel::RequestOpenAttachScriptDialog(Node* node) {
+    if (node == nullptr) {
+        return;
+    }
+
+    attach_script_node_ = node;
+    open_attach_script_dialog_ = true;
+    attach_script_create_new_ = true;
+    attach_script_template_enabled_ = true;
+    attach_script_path_ = UniqueScriptPathForNode(*node);
+    attach_script_search_.clear();
+    attach_selected_script_path_.clear();
+    attach_script_candidates_ = FindProjectPythonScripts();
+}
+
+bool SceneEditorPanel::AttachSelectedScript() {
+    if (attach_script_node_ == nullptr) {
+        return false;
+    }
+
+    std::string local_path;
+    bool created = false;
+    if (attach_script_create_new_) {
+        local_path = EnsurePythonScriptExtension(attach_script_path_);
+        if (!IsProjectLocalScriptPath(local_path)) {
+            LOG_ERROR("Python node scripts must use a res:// path ending in .py: {}", local_path);
+            return false;
+        }
+        const std::string global_path = ProjectSettings::GetInstance()->GlobalizePath(local_path);
+        created = !std::filesystem::exists(global_path);
+        if (!CreateScriptFileIfNeeded(local_path, attach_script_template_enabled_)) {
+            return false;
+        }
+    } else {
+        local_path = attach_selected_script_path_;
+        if (local_path.empty()) {
+            LOG_ERROR("Select a Python script to attach.");
+            return false;
+        }
+    }
+
+    if (!AttachScript(attach_script_node_, local_path)) {
+        return false;
+    }
+
+    if (created) {
+        LOG_INFO("Created Python script: {}", local_path);
+    }
+    Editor::GetInstance()->RefreshResourcePanel();
+    attach_script_node_ = nullptr;
+    attach_script_candidates_.clear();
+    return true;
+}
+
 bool SceneEditorPanel::IsSceneInstanceNode(Node* node) const {
     return node != nullptr && node->GetSceneInstance().IsValid();
 }
@@ -305,50 +416,8 @@ bool SceneEditorPanel::DeleteNode(Node* node) {
 }
 
 bool SceneEditorPanel::AttachScript(Node* node) {
-    if (node == nullptr) {
-        return false;
-    }
-
-    auto* editor = Editor::GetInstance();
-    auto* context = editor->GetEngineContext();
-    if (context == nullptr) {
-        return false;
-    }
-
-    Ref<PythonScript> script = node->GetScript();
-    bool created = false;
-    if (!script.IsValid()) {
-        const std::string local_path = UniqueScriptPathForNode(*node);
-        if (!CreateScriptFile(local_path)) {
-            return false;
-        }
-
-        Ref<Resource> resource = ResourceLoader::Load(local_path, "PythonScript", ResourceFormatLoader::CacheMode::Replace);
-        script = dynamic_pointer_cast<PythonScript>(resource);
-        if (!script.IsValid()) {
-            LOG_ERROR("Failed to load Python script '{}'.", local_path);
-            return false;
-        }
-        created = true;
-    }
-
-    if (!context->ExecuteSceneCommand(std::make_unique<SetNodePropertyCommand>(
-                node->GetInstanceId(),
-                "script",
-                Variant(script)))) {
-        return false;
-    }
-
-    if (created) {
-        LOG_INFO("Created and attached Python script '{}' to node '{}'.", script->GetPath(), node->GetName());
-    } else {
-        LOG_INFO("Attached Python script '{}' to node '{}'.", script->GetPath(), node->GetName());
-    }
-    editor->RefreshResourcePanel();
-    if (!script->GetPath().empty()) {
-        RequestOpenScript(script->GetPath());
-    }
-    return true;
+    RequestOpenAttachScriptDialog(node);
+    return node != nullptr;
 }
 
 bool SceneEditorPanel::AttachScript(Node* node, const std::string& script_path) {
@@ -595,6 +664,169 @@ void SceneEditorPanel::DrawAddChildDialog() {
     }
     if (!can_create) {
         ImGui::EndDisabled();
+    }
+
+    ImGui::EndPopup();
+}
+
+void SceneEditorPanel::DrawAttachScriptDialog() {
+    if (open_attach_script_dialog_) {
+        ImGui::OpenPopup("Attach Node Script");
+        open_attach_script_dialog_ = false;
+    }
+
+    const ImGuiViewport* viewport = ImGui::GetMainViewport();
+    ImGui::SetNextWindowPos(viewport->GetCenter(), ImGuiCond_Appearing, {0.5f, 0.5f});
+    ImGui::SetNextWindowSize({720.0f, 520.0f}, ImGuiCond_Appearing);
+
+    if (!ImGui::BeginPopupModal("Attach Node Script", nullptr, ImGuiWindowFlags_NoCollapse)) {
+        return;
+    }
+
+    if (attach_script_node_ == nullptr) {
+        ImGui::TextUnformatted("No node selected.");
+        if (ImGui::Button("Close", {120.0f, 0.0f})) {
+            ImGui::CloseCurrentPopup();
+        }
+        ImGui::EndPopup();
+        return;
+    }
+
+    ImGui::Text("Node:");
+    ImGui::SameLine(150.0f);
+    ImGui::TextUnformatted(attach_script_node_->GetName().c_str());
+
+    ImGui::Text("Script:");
+    ImGui::SameLine(150.0f);
+    const float mode_button_width = 180.0f;
+    if (ImGui::Selectable("New Script",
+                          attach_script_create_new_,
+                          ImGuiSelectableFlags_DontClosePopups,
+                          {mode_button_width, ImGui::GetFrameHeight()})) {
+        attach_script_create_new_ = true;
+    }
+    ImGui::SameLine();
+    if (ImGui::Selectable("Existing Script",
+                          !attach_script_create_new_,
+                          ImGuiSelectableFlags_DontClosePopups,
+                          {mode_button_width, ImGui::GetFrameHeight()})) {
+        attach_script_create_new_ = false;
+    }
+
+    ImGui::Separator();
+
+    const float footer_height = ImGui::GetFrameHeightWithSpacing() + ImGui::GetStyle().ItemSpacing.y;
+    ImGui::BeginChild("AttachScriptBody", {0.0f, -footer_height}, false);
+
+    if (attach_script_create_new_) {
+        ImGui::TextUnformatted("Path:");
+        ImGui::SameLine(150.0f);
+        ImGui::SetNextItemWidth(-1.0f);
+        if (ImGui::IsWindowAppearing()) {
+            ImGui::SetKeyboardFocusHere();
+        }
+        ImGui::InputText("##AttachScriptPath", &attach_script_path_);
+
+        ImGui::TextUnformatted("Template:");
+        ImGui::SameLine(150.0f);
+        ImGui::Checkbox("Use default NodeScript template", &attach_script_template_enabled_);
+
+        const std::string normalized_path = EnsurePythonScriptExtension(attach_script_path_);
+        const bool valid_path = IsProjectLocalScriptPath(normalized_path);
+        const std::string global_path = ProjectSettings::GetInstance()->GlobalizePath(normalized_path);
+        const bool file_exists = valid_path && std::filesystem::exists(global_path);
+
+        ImGui::Spacing();
+        ImGui::BeginChild("AttachScriptStatus", {0.0f, 140.0f}, true);
+        if (!valid_path) {
+            ImGui::TextColored({1.0f, 0.35f, 0.35f, 1.0f},
+                               "%s Path must be a res:// .py file.",
+                               ICON_MDI_ALERT_CIRCLE);
+        } else if (file_exists) {
+            ImGui::TextColored({0.45f, 1.0f, 0.45f, 1.0f},
+                               "%s File exists; it will be reused.",
+                               ICON_MDI_CHECK_CIRCLE);
+            ImGui::TextColored({0.45f, 1.0f, 0.45f, 1.0f},
+                               "%s Existing script will be loaded and attached.",
+                               ICON_MDI_CHECK_CIRCLE);
+        } else {
+            ImGui::TextColored({0.45f, 1.0f, 0.45f, 1.0f},
+                               "%s New script file will be created.",
+                               ICON_MDI_CHECK_CIRCLE);
+            ImGui::TextColored({0.45f, 1.0f, 0.45f, 1.0f},
+                               "%s It will be attached to the selected node.",
+                               ICON_MDI_CHECK_CIRCLE);
+        }
+        ImGui::EndChild();
+    } else {
+        ImGui::TextUnformatted("Filter:");
+        ImGui::SameLine(150.0f);
+        ImGui::SetNextItemWidth(-1.0f);
+        if (ImGui::IsWindowAppearing()) {
+            ImGui::SetKeyboardFocusHere();
+        }
+        ImGui::InputTextWithHint("##AttachScriptSearch", "Search Python scripts...", &attach_script_search_);
+
+        if (ImGui::Button(ICON_MDI_REFRESH " Refresh")) {
+            attach_script_candidates_ = FindProjectPythonScripts();
+        }
+
+        ImGui::BeginChild("AttachScriptList", {0.0f, 0.0f}, true);
+        bool showed_any = false;
+        for (const std::string& script_path : attach_script_candidates_) {
+            if (!ContainsCaseInsensitive(script_path, attach_script_search_)) {
+                continue;
+            }
+            showed_any = true;
+            const bool selected = attach_selected_script_path_ == script_path;
+            const std::string item_label = std::string(ICON_MDI_LANGUAGE_PYTHON "  ") + script_path;
+            if (ImGui::Selectable(item_label.c_str(), selected)) {
+                attach_selected_script_path_ = script_path;
+            }
+            if (ImGui::IsItemHovered() && ImGui::IsMouseDoubleClicked(ImGuiMouseButton_Left)) {
+                attach_selected_script_path_ = script_path;
+                if (AttachSelectedScript()) {
+                    ImGui::CloseCurrentPopup();
+                }
+            }
+        }
+        if (!showed_any) {
+            ImGui::TextDisabled("No Python scripts found in the current project.");
+        }
+        ImGui::EndChild();
+    }
+
+    ImGui::EndChild();
+
+    ImGui::Separator();
+    const float button_width = 120.0f;
+    const char* action_label = attach_script_create_new_
+                               ? (std::filesystem::exists(ProjectSettings::GetInstance()->GlobalizePath(
+                                          EnsurePythonScriptExtension(attach_script_path_)))
+                                  ? "Load"
+                                  : "Create")
+                               : "Attach";
+    const bool can_attach = attach_script_create_new_
+                            ? IsProjectLocalScriptPath(EnsurePythonScriptExtension(attach_script_path_))
+                            : !attach_selected_script_path_.empty();
+
+    if (!can_attach) {
+        ImGui::BeginDisabled();
+    }
+    if (ImGui::Button(action_label, {button_width, 0.0f}) ||
+        (can_attach && ImGui::IsKeyPressed(ImGuiKey_Enter))) {
+        if (AttachSelectedScript()) {
+            ImGui::CloseCurrentPopup();
+        }
+    }
+    if (!can_attach) {
+        ImGui::EndDisabled();
+    }
+    ImGui::SameLine();
+    if (ImGui::Button("Cancel", {button_width, 0.0f})) {
+        attach_script_node_ = nullptr;
+        attach_script_candidates_.clear();
+        ImGui::CloseCurrentPopup();
     }
 
     ImGui::EndPopup();
@@ -984,6 +1216,7 @@ void SceneEditorPanel::OnImGuiContent()
     ImGui::EndChild();
 
     DrawAddChildDialog();
+    DrawAttachScriptDialog();
 
     FlushPendingSceneInstanceOpen();
 }

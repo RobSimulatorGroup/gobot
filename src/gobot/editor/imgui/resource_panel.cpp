@@ -7,14 +7,18 @@
 
 #include "gobot/editor/imgui/resource_panel.hpp"
 #include "gobot/core/config/project_setting.hpp"
+#include "gobot/core/os/input.hpp"
 #include "gobot/core/string_utils.hpp"
 #include "gobot/editor/editor.hpp"
 #include "gobot/editor/imgui/imgui_utilities.hpp"
+#include "gobot/main/engine_context.hpp"
+#include "gobot/scene/scene_command.hpp"
 #include "gobot/log.hpp"
 #include "imgui_extension/icon_fonts/icons_material_design_icons.h"
 #include "imgui_extension/file_browser/ImFileBrowser.h"
 #include "imgui.h"
 #include "imgui_internal.h"
+#include "imgui_stdlib.h"
 
 #include <algorithm>
 #include <cstdlib>
@@ -77,6 +81,19 @@ void OpenInExternalCodeEditor(const std::string& global_path) {
     if (result != 0) {
         LOG_ERROR("Failed to open '{}' in VS Code with command '{}'.", global_path, command);
     }
+}
+
+bool IsPathWithinDirectory(const std::filesystem::path& path, const std::filesystem::path& directory) {
+    const std::filesystem::path normalized_path = path.lexically_normal();
+    const std::filesystem::path normalized_directory = directory.lexically_normal();
+    auto path_it = normalized_path.begin();
+    auto directory_it = normalized_directory.begin();
+    for (; directory_it != normalized_directory.end(); ++directory_it, ++path_it) {
+        if (path_it == normalized_path.end() || *path_it != *directory_it) {
+            return false;
+        }
+    }
+    return true;
 }
 
 std::string PythonScriptTemplate() {
@@ -210,6 +227,10 @@ void ResourcePanel::OnImGuiContent() {
         ImGui::OpenPopup("Delete Resource File");
         request_delete_resource_file_popup_ = false;
     }
+    if (request_rename_resource_file_popup_) {
+        ImGui::OpenPopup("Rename Resource File");
+        request_rename_resource_file_popup_ = false;
+    }
 
     if (project_path_.empty() || base_project_dir_ == nullptr || current_dir_ == nullptr) {
         DrawProjectSelector();
@@ -328,11 +349,27 @@ void ResourcePanel::OnImGuiContent() {
         ImGui::EndDragDropTarget();
     }
 
+    const bool rename_down = ImGui::IsWindowFocused(ImGuiFocusedFlags_RootAndChildWindows) &&
+                             Input::GetInstance()->GetKeyPressed(KeyCode::F2);
+    if (selected_resource_ != nullptr &&
+            !selected_resource_->is_directory &&
+            rename_down &&
+            !rename_shortcut_down_) {
+        pending_rename_resource_file_global_path_ = selected_resource_->global_path;
+        pending_rename_resource_file_local_path_ = selected_resource_->local_path;
+        pending_rename_resource_file_name_ = selected_resource_->this_path;
+        request_rename_resource_file_popup_ = true;
+    }
+    rename_shortcut_down_ = rename_down;
+
     if (ImGui::BeginPopupModal("Delete Project", nullptr, ImGuiWindowFlags_AlwaysAutoResize)) {
         DrawDeleteProjectPopup();
     }
     if (ImGui::BeginPopupModal("Delete Resource File", nullptr, ImGuiWindowFlags_AlwaysAutoResize)) {
         DrawDeleteResourceFilePopup();
+    }
+    if (ImGui::BeginPopupModal("Rename Resource File", nullptr, ImGuiWindowFlags_AlwaysAutoResize)) {
+        DrawRenameResourceFilePopup();
     }
 }
 
@@ -475,6 +512,12 @@ void ResourcePanel::DrawResourceTree(DirectoryInformation* dir_info, bool root)
 
     const std::string popup_id = "##ResourceFileContext_" + dir_info->global_path;
     if (!dir_info->is_directory && ImGui::BeginPopupContextItem(popup_id.c_str())) {
+        if (ImGui::MenuItem(ICON_MDI_RENAME_BOX " Rename File")) {
+            pending_rename_resource_file_global_path_ = dir_info->global_path;
+            pending_rename_resource_file_local_path_ = dir_info->local_path;
+            pending_rename_resource_file_name_ = dir_info->this_path;
+            request_rename_resource_file_popup_ = true;
+        }
         const char* delete_label = IsNativeSceneFile(dir_info) ?
                 ICON_MDI_DELETE " Delete Scene File" :
                 ICON_MDI_DELETE " Delete File";
@@ -790,6 +833,91 @@ void ResourcePanel::DrawDeleteResourceFilePopup()
         ImGui::CloseCurrentPopup();
     }
     ImGui::EndPopup();
+}
+
+void ResourcePanel::DrawRenameResourceFilePopup()
+{
+    ImGui::TextUnformatted("Rename resource file");
+    ImGui::Spacing();
+    ImGui::TextWrapped("%s", pending_rename_resource_file_local_path_.c_str());
+    ImGui::Spacing();
+    ImGui::SetNextItemWidth(420.0f);
+    if (ImGui::IsWindowAppearing()) {
+        ImGui::SetKeyboardFocusHere();
+    }
+    ImGui::InputText("Name", &pending_rename_resource_file_name_);
+    ImGui::Separator();
+
+    if (ImGui::Button("Rename") || ImGui::IsKeyPressed(ImGuiKey_Enter)) {
+        if (RenameResourceFile(pending_rename_resource_file_name_)) {
+            ImGui::CloseCurrentPopup();
+        }
+    }
+    ImGui::SameLine();
+    if (ImGui::Button("Cancel")) {
+        pending_rename_resource_file_global_path_.clear();
+        pending_rename_resource_file_local_path_.clear();
+        pending_rename_resource_file_name_.clear();
+        ImGui::CloseCurrentPopup();
+    }
+    ImGui::EndPopup();
+}
+
+bool ResourcePanel::RenameResourceFile(const std::string& new_file_name)
+{
+    if (pending_rename_resource_file_global_path_.empty()) {
+        return false;
+    }
+    if (new_file_name.empty() ||
+            new_file_name.find('/') != std::string::npos ||
+            new_file_name.find('\\') != std::string::npos) {
+        LOG_ERROR("Invalid resource file name: '{}'.", new_file_name);
+        return false;
+    }
+
+    const std::filesystem::path old_global_path = pending_rename_resource_file_global_path_;
+    const std::filesystem::path new_global_path = old_global_path.parent_path() / new_file_name;
+    if (old_global_path == new_global_path) {
+        pending_rename_resource_file_global_path_.clear();
+        pending_rename_resource_file_local_path_.clear();
+        pending_rename_resource_file_name_.clear();
+        return true;
+    }
+
+    if (std::filesystem::exists(new_global_path)) {
+        LOG_ERROR("Cannot rename resource file: target already exists '{}'.",
+                  ProjectSettings::GetInstance()->LocalizePath(new_global_path.string()));
+        return false;
+    }
+
+    const std::filesystem::path project_path = ProjectSettings::GetInstance()->GetProjectPath();
+    if (!IsPathWithinDirectory(new_global_path, project_path)) {
+        LOG_ERROR("Cannot rename resource file outside the current project: '{}'.",
+                  new_global_path.string());
+        return false;
+    }
+
+    const std::string new_local_path = ProjectSettings::GetInstance()->LocalizePath(new_global_path.string());
+    auto* editor = Editor::GetInstance();
+    auto* context = editor->GetEngineContext();
+    if (context == nullptr ||
+            !context->ExecuteSceneCommand(std::make_unique<RenameResourceFileCommand>(
+                    pending_rename_resource_file_local_path_,
+                    new_local_path))) {
+        LOG_ERROR("Failed to rename resource file '{}' to '{}'.",
+                  pending_rename_resource_file_local_path_,
+                  new_local_path);
+        return false;
+    }
+
+    LOG_INFO("Renamed resource file: {} -> {}", pending_rename_resource_file_local_path_, new_local_path);
+
+    pending_rename_resource_file_global_path_.clear();
+    pending_rename_resource_file_local_path_.clear();
+    pending_rename_resource_file_name_.clear();
+    Refresh();
+    SelectResource(new_local_path);
+    return true;
 }
 
 void ResourcePanel::OpenProjectBrowser()
