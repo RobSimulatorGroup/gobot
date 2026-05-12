@@ -136,6 +136,8 @@ class Script(gobot.NodeScript):
     EXPECT_EQ(session.GetActiveScriptCount(), 1);
     ASSERT_NE(session.GetRuntimeRoot(), nullptr);
     EXPECT_NE(session.GetRuntimeRoot(), root);
+    EXPECT_TRUE(session.GetRuntimeRoot()->IsInsideTree());
+    EXPECT_EQ(session.GetRuntimeRoot()->GetName(), "EditedRoot");
     EXPECT_EQ(ReadText("scripts/counts.txt"), "1,0,0,0");
 
     session.NotifyProcess(0.016);
@@ -146,6 +148,7 @@ class Script(gobot.NodeScript):
 
     session.Stop();
     EXPECT_FALSE(session.IsRunning());
+    EXPECT_EQ(session.GetRuntimeRoot(), nullptr);
     EXPECT_EQ(ReadText("scripts/counts.txt"), "1,1,1,1");
 }
 

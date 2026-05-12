@@ -108,8 +108,7 @@ bool ScenePlaySession::Start(Node* edited_scene_root, EngineContext* context) {
 
     if (!AttachNodeScriptsRecursive(runtime_root_)) {
         ClearAttachedScripts(true);
-        Object::Delete(runtime_root_);
-        runtime_root_ = nullptr;
+        DestroyRuntimeScene();
         runtime_scene_epoch_ = 0;
         edited_scene_root_ = nullptr;
         context_ = nullptr;
@@ -118,8 +117,7 @@ bool ScenePlaySession::Start(Node* edited_scene_root, EngineContext* context) {
 
     if (!NotifyScripts(NotificationType::Ready, 0.0)) {
         ClearAttachedScripts(true);
-        Object::Delete(runtime_root_);
-        runtime_root_ = nullptr;
+        DestroyRuntimeScene();
         runtime_scene_epoch_ = 0;
         edited_scene_root_ = nullptr;
         context_ = nullptr;
@@ -132,10 +130,7 @@ bool ScenePlaySession::Start(Node* edited_scene_root, EngineContext* context) {
 
 void ScenePlaySession::Stop() {
     if (!running_ && script_nodes_.empty()) {
-        if (runtime_root_ != nullptr) {
-            Object::Delete(runtime_root_);
-            runtime_root_ = nullptr;
-        }
+        DestroyRuntimeScene();
         edited_scene_root_ = nullptr;
         context_ = nullptr;
         runtime_scene_epoch_ = 0;
@@ -144,10 +139,7 @@ void ScenePlaySession::Stop() {
 
     ClearAttachedScripts(true);
     running_ = false;
-    if (runtime_root_ != nullptr) {
-        Object::Delete(runtime_root_);
-        runtime_root_ = nullptr;
-    }
+    DestroyRuntimeScene();
     edited_scene_root_ = nullptr;
     context_ = nullptr;
     runtime_scene_epoch_ = 0;
@@ -191,8 +183,51 @@ bool ScenePlaySession::CreateRuntimeScene(Node* edited_scene_root) {
         return false;
     }
 
+    if (!AttachRuntimeSceneToTree(edited_scene_root)) {
+        DestroyRuntimeScene();
+        return false;
+    }
+
     runtime_scene_epoch_ = NextRuntimeSceneEpoch();
     return true;
+}
+
+bool ScenePlaySession::AttachRuntimeSceneToTree(Node* edited_scene_root) {
+    if (runtime_root_ == nullptr) {
+        last_error_ = "Cannot start scene play session: runtime scene is null.";
+        LOG_ERROR("{}", last_error_);
+        return false;
+    }
+
+    if (edited_scene_root == nullptr || edited_scene_root->GetParent() == nullptr) {
+        return true;
+    }
+
+    runtime_holder_ = Object::New<Node>();
+    runtime_holder_->SetName("__ScenePlaySessionRuntime");
+    edited_scene_root->GetParent()->AddChild(runtime_holder_, false);
+    runtime_holder_->AddChild(runtime_root_, false);
+    return runtime_root_->IsInsideTree();
+}
+
+void ScenePlaySession::DestroyRuntimeScene() {
+    if (runtime_holder_ != nullptr) {
+        if (runtime_holder_->GetParent() != nullptr) {
+            runtime_holder_->GetParent()->RemoveChild(runtime_holder_);
+        }
+        Object::Delete(runtime_holder_);
+        runtime_holder_ = nullptr;
+        runtime_root_ = nullptr;
+        return;
+    }
+
+    if (runtime_root_ != nullptr) {
+        if (runtime_root_->GetParent() != nullptr) {
+            runtime_root_->GetParent()->RemoveChild(runtime_root_);
+        }
+        Object::Delete(runtime_root_);
+        runtime_root_ = nullptr;
+    }
 }
 
 bool ScenePlaySession::AttachNodeScript(Node* node) {

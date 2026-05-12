@@ -41,6 +41,10 @@ public:
 private:
     bool CreateRuntimeScene(Node* edited_scene_root);
 
+    bool AttachRuntimeSceneToTree(Node* edited_scene_root);
+
+    void DestroyRuntimeScene();
+
     bool AttachNodeScript(Node* node);
 
     bool AttachNodeScriptsRecursive(Node* node);
@@ -53,6 +57,7 @@ private:
     bool running_{false};
     Node* edited_scene_root_{nullptr};
     Node* runtime_root_{nullptr};
+    Node* runtime_holder_{nullptr};
     EngineContext* context_{nullptr};
     std::uint64_t runtime_scene_epoch_{0};
     std::vector<ObjectID> script_nodes_;

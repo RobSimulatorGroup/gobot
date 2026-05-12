@@ -23,6 +23,7 @@
 #include <gobot/core/types.hpp>
 #include <gobot/log.hpp>
 
+#include <cstdlib>
 #include <fstream>
 
 class TestResourceFormatScene : public testing::Test {
@@ -30,18 +31,23 @@ protected:
     static void SetUpTestSuite() {
         static gobot::Ref<gobot::ResourceFormatLoaderScene> resource_loader_scene;
         static gobot::Ref<gobot::ResourceFormatSaverScene> resource_saver_scene;
+        static gobot::Ref<gobot::ResourceFormatLoaderPythonScript> resource_loader_python_script;
 
         resource_saver_scene = gobot::MakeRef<gobot::ResourceFormatSaverScene>();
         gobot::ResourceSaver::AddResourceFormatSaver(resource_saver_scene, true);
 
         resource_loader_scene = gobot::MakeRef<gobot::ResourceFormatLoaderScene>();
         gobot::ResourceLoader::AddResourceFormatLoader(resource_loader_scene, true);
+
+        resource_loader_python_script = gobot::MakeRef<gobot::ResourceFormatLoaderPythonScript>();
+        gobot::ResourceLoader::AddResourceFormatLoader(resource_loader_python_script, true);
     }
 
     static void TearDownTestSuite() {
     }
 
     void SetUp() override {
+        setenv("HOME", "/tmp/gobot-test-home", 1);
         auto* project_setting = gobot::ProjectSettings::GetInstance();
         project_setting->SetProjectPath("/tmp/test_project");
 
@@ -251,6 +257,58 @@ TEST_F(TestResourceFormatScene, packed_scene_round_trips_node_python_script_reso
             gobot::dynamic_pointer_cast<gobot::PythonScript>(instance->GetScript());
     ASSERT_TRUE(loaded_script.IsValid());
     EXPECT_EQ(loaded_script->GetSourceCode(), "def reset(env):\n    return None\n");
+
+    gobot::Object::Delete(root);
+    gobot::Object::Delete(instance);
+}
+
+TEST_F(TestResourceFormatScene, packed_scene_saves_external_node_python_script_reference) {
+    std::filesystem::create_directories("/tmp/test_project/scripts");
+    {
+        std::ofstream output("/tmp/test_project/scripts/controller.py", std::ios::out | std::ios::trunc);
+        output << "import gobot\n\nclass Script(gobot.NodeScript):\n    pass\n";
+    }
+
+    gobot::Ref<gobot::Resource> script_resource =
+            gobot::ResourceLoader::Load("res://scripts/controller.py",
+                                        "PythonScript",
+                                        gobot::ResourceFormatLoader::CacheMode::Replace);
+    gobot::Ref<gobot::PythonScript> script =
+            gobot::dynamic_pointer_cast<gobot::PythonScript>(script_resource);
+    ASSERT_TRUE(script.IsValid());
+    EXPECT_EQ(script->GetPath(), "res://scripts/controller.py");
+
+    auto* root = gobot::Object::New<gobot::Node3D>();
+    root->SetName("ScriptedRobot");
+    root->SetScript(script);
+
+    gobot::Ref<gobot::PackedScene> packed_scene = gobot::MakeRef<gobot::PackedScene>();
+    ASSERT_TRUE(packed_scene->Pack(root));
+
+    USING_ENUM_BITWISE_OPERATORS;
+    ASSERT_TRUE(gobot::ResourceSaver::Save(packed_scene, "res://scripted_robot_external.jscn",
+                                           gobot::ResourceSaverFlags::ReplaceSubResourcePaths |
+                                           gobot::ResourceSaverFlags::ChangePath));
+
+    std::ifstream saved_file("/tmp/test_project/scripted_robot_external.jscn");
+    ASSERT_TRUE(saved_file.is_open());
+    gobot::Json saved_json;
+    saved_file >> saved_json;
+    ASSERT_TRUE(saved_json.contains("__EXT_RESOURCES__"));
+    ASSERT_EQ(saved_json["__EXT_RESOURCES__"].size(), 1);
+    EXPECT_EQ(saved_json["__EXT_RESOURCES__"][0]["__PATH__"], "res://scripts/controller.py");
+
+    gobot::Ref<gobot::Resource> loaded_resource = gobot::ResourceLoader::Load(
+            "res://scripted_robot_external.jscn", "PackedScene", gobot::ResourceFormatLoader::CacheMode::Ignore);
+    gobot::Ref<gobot::PackedScene> loaded_scene = gobot::dynamic_pointer_cast<gobot::PackedScene>(loaded_resource);
+    ASSERT_TRUE(loaded_scene.IsValid());
+
+    gobot::Node* instance = loaded_scene->Instantiate();
+    ASSERT_NE(instance, nullptr);
+    gobot::Ref<gobot::PythonScript> loaded_script =
+            gobot::dynamic_pointer_cast<gobot::PythonScript>(instance->GetScript());
+    ASSERT_TRUE(loaded_script.IsValid());
+    EXPECT_EQ(loaded_script->GetPath(), "res://scripts/controller.py");
 
     gobot::Object::Delete(root);
     gobot::Object::Delete(instance);

@@ -213,9 +213,6 @@ void PythonPanel::OnImGuiContent() {
         script_dirty_ = true;
     }
 
-    if (panel_focused && ImGui::GetIO().KeyCtrl && ImGui::IsKeyPressed(ImGuiKey_S, false)) {
-        SavePythonScript();
-    }
 }
 
 bool PythonPanel::SavePythonScript() {

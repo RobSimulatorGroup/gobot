@@ -756,7 +756,6 @@ void Editor::HandleGlobalShortcuts() {
         return;
     }
 
-    const bool imgui_captures_keyboard = ImGui::GetIO().WantCaptureKeyboard;
     const bool ctrl_down = Input::GetInstance()->GetKeyHeld(KeyCode::LeftCtrl) ||
                            Input::GetInstance()->GetKeyHeld(KeyCode::RightCtrl) ||
                            ImGui::GetIO().KeyCtrl;
@@ -771,7 +770,7 @@ void Editor::HandleGlobalShortcuts() {
     static bool redo_shortcut_down = false;
 
     const bool save_shortcut_down = ctrl_down && s_down;
-    if (save_shortcut_down && !save_shortcut_down_ && !imgui_captures_keyboard) {
+    if (save_shortcut_down && !save_shortcut_down_) {
         SaveCurrentScene();
     }
     save_shortcut_down_ = save_shortcut_down;
