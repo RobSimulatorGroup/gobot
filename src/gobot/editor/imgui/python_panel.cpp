@@ -10,12 +10,15 @@
 #include <iterator>
 
 #include "gobot/core/config/project_setting.hpp"
+#include "gobot/core/io/python_script.hpp"
 #include "gobot/core/io/resource_loader.hpp"
+#include "gobot/core/io/resource.hpp"
 #include "gobot/core/string_utils.hpp"
 #include "gobot/editor/editor.hpp"
 #include "gobot/editor/imgui/console_panel.hpp"
 #include "gobot/log.hpp"
 #include "gobot/python/python_script_runner.hpp"
+#include "gobot/scene/node_3d.hpp"
 #include "imgui.h"
 #include "imgui_extension/icon_fonts/icons_material_design_icons.h"
 
@@ -121,6 +124,12 @@ void AddPythonMessage(const std::string& message,
     ConsolePanel::AddMessage(MakeRef<ConsoleMessage>(message, level, source));
 }
 
+bool IsSaveShortcutPressed() {
+    ImGuiIO& io = ImGui::GetIO();
+    const bool ctrl = io.ConfigMacOSXBehaviors ? io.KeySuper : io.KeyCtrl;
+    return ctrl && !io.KeyShift && !io.KeyAlt && ImGui::IsKeyPressed(ImGuiKey_S, false);
+}
+
 std::string ScratchScriptPath() {
     ProjectSettings* settings = ProjectSettings::GetInstance();
     if (settings == nullptr || settings->GetProjectPath().empty()) {
@@ -168,7 +177,6 @@ bool PythonPanel::OpenScript(const std::string& path) {
 
 void PythonPanel::OnImGuiContent() {
     const bool has_resource_path = !script_global_path_.empty();
-    const bool panel_focused = ImGui::IsWindowFocused(ImGuiFocusedFlags_RootAndChildWindows);
 
     if (ImGui::Button(ICON_MDI_PLAY " Run Once")) {
         RunPythonScript();
@@ -209,6 +217,10 @@ void PythonPanel::OnImGuiContent() {
     ImGui::Separator();
 
     editor_.Render("##PythonScriptEditor", ImGui::GetContentRegionAvail(), false);
+    const bool editor_focused = ImGui::IsWindowFocused(ImGuiFocusedFlags_RootAndChildWindows);
+    if (editor_focused && IsSaveShortcutPressed()) {
+        SavePythonScript();
+    }
     if (editor_.IsTextChanged()) {
         script_dirty_ = true;
     }
@@ -249,6 +261,12 @@ bool PythonPanel::SavePythonScript() {
     if (normalized_text != editor_.GetText()) {
         editor_.SetText(normalized_text);
     }
+    Ref<Resource> cached_resource = ResourceCache::GetRef(script_local_path_);
+    Ref<PythonScript> cached_script = dynamic_pointer_cast<PythonScript>(cached_resource);
+    if (cached_script.IsValid()) {
+        cached_script->SetSourceCode(normalized_text);
+    }
+    RefreshAttachedSceneScripts(script_local_path_, normalized_text);
     script_dirty_ = false;
     AddPythonMessage("Saved Python script: " + script_local_path_, ConsoleMessage::Info, "Python");
 
@@ -257,6 +275,32 @@ bool PythonPanel::SavePythonScript() {
         editor->RefreshResourcePanel();
     }
     return true;
+}
+
+void PythonPanel::RefreshAttachedSceneScripts(const std::string& local_path,
+                                              const std::string& source_code) {
+    auto* editor = Editor::GetInstanceOrNull();
+    Node* root = editor != nullptr ? editor->GetEditedSceneRoot() : nullptr;
+    if (root == nullptr || local_path.empty()) {
+        return;
+    }
+
+    auto refresh_node = [&](Node* node, const auto& self) -> void {
+        if (node == nullptr) {
+            return;
+        }
+
+        Ref<PythonScript> script = node->GetScript();
+        if (script.IsValid() && script->GetPath() == local_path) {
+            script->SetSourceCode(source_code);
+        }
+
+        const std::size_t child_count = node->GetChildCount();
+        for (std::size_t child_index = 0; child_index < child_count; ++child_index) {
+            self(node->GetChild(static_cast<int>(child_index)), self);
+        }
+    };
+    refresh_node(root, refresh_node);
 }
 
 bool PythonPanel::OpenInVSCode() {

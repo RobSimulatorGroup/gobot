@@ -31,6 +31,9 @@ private:
 
     void RunPythonScript();
 
+    void RefreshAttachedSceneScripts(const std::string& local_path,
+                                     const std::string& source_code);
+
     TextEditor editor_;
     std::string script_local_path_;
     std::string script_global_path_;

@@ -71,12 +71,23 @@ private:
 
 void LogScriptOutput(const char* phase,
                      const Node& node,
+                     const ScenePlaySession::ScriptOutputCallback& callback,
                      const python::PythonExecutionResult& result) {
     if (!result.output.empty()) {
         LOG_INFO("Python node script {} on '{}':\n{}", phase, node.GetName(), result.output);
+        if (callback) {
+            callback(result.output,
+                     false,
+                     "Python node script " + std::string(phase) + " on '" + node.GetName() + "'");
+        }
     }
     if (result.ok && !result.error.empty()) {
         LOG_WARN("Python node script {} stderr on '{}':\n{}", phase, node.GetName(), result.error);
+        if (callback) {
+            callback(result.error,
+                     true,
+                     "Python node script " + std::string(phase) + " stderr on '" + node.GetName() + "'");
+        }
     }
 }
 
@@ -241,7 +252,7 @@ bool ScenePlaySession::AttachNodeScript(Node* node) {
     }
 
     python::PythonExecutionResult result = python::PythonScriptRunner::AttachSceneScript(node, script);
-    LogScriptOutput("attach", *node, result);
+    LogScriptOutput("attach", *node, script_output_callback_, result);
     if (!result.ok) {
         last_error_ = "Python node script attach failed on '" + node->GetName() + "': " + result.error;
         LOG_ERROR("{}", last_error_);
@@ -285,7 +296,7 @@ bool ScenePlaySession::NotifyScripts(NotificationType notification, double delta
 
         python::PythonExecutionResult result =
                 python::PythonScriptRunner::NotifySceneScript(node, notification, delta_time);
-        LogScriptOutput("notification", *node, result);
+        LogScriptOutput("notification", *node, script_output_callback_, result);
         if (!result.ok) {
             last_error_ = "Python node script failed on '" + node->GetName() + "': " + result.error;
             LOG_ERROR("{}", last_error_);
@@ -313,7 +324,7 @@ void ScenePlaySession::ClearAttachedScripts(bool call_exit_tree) {
         if (call_exit_tree) {
             python::PythonExecutionResult result =
                     python::PythonScriptRunner::NotifySceneScript(node, NotificationType::ExitTree, 0.0);
-            LogScriptOutput("exit", *node, result);
+            LogScriptOutput("exit", *node, script_output_callback_, result);
             if (!result.ok) {
                 LOG_ERROR("Python node script exit failed on '{}': {}", node->GetName(), result.error);
             }

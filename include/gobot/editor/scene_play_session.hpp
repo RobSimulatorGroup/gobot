@@ -1,5 +1,8 @@
 #pragma once
 
+#include <functional>
+#include <string>
+#include <utility>
 #include <vector>
 
 #include "gobot/core/object_id.hpp"
@@ -14,6 +17,10 @@ class PythonScript;
 
 class GOBOT_EXPORT ScenePlaySession {
 public:
+    using ScriptOutputCallback = std::function<void(const std::string& message,
+                                                    bool is_stderr,
+                                                    const std::string& source)>;
+
     ScenePlaySession() = default;
 
     ~ScenePlaySession();
@@ -37,6 +44,10 @@ public:
     void NotifyProcess(double delta_time);
 
     void NotifyPhysicsProcess(double delta_time);
+
+    void SetScriptOutputCallback(ScriptOutputCallback callback) {
+        script_output_callback_ = std::move(callback);
+    }
 
 private:
     bool CreateRuntimeScene(Node* edited_scene_root);
@@ -62,6 +73,7 @@ private:
     std::uint64_t runtime_scene_epoch_{0};
     std::vector<ObjectID> script_nodes_;
     std::string last_error_;
+    ScriptOutputCallback script_output_callback_;
 };
 
 } // namespace gobot
