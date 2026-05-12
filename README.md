@@ -14,7 +14,7 @@ drive reinforcement-learning experiments.
 Gobot currently publishes Linux wheels.
 
 ```bash
-python -m pip install -U gobot
+pip install gobot -i https://pypi.org/simple
 ```
 
 Check the install:

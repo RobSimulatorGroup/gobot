@@ -50,3 +50,5 @@ CMakeUserPresets.json
 
 gobot.log
 imgui.ini
+
+dist/

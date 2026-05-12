@@ -19,7 +19,6 @@ Build outputs land in `build/bin/` and `build/lib/`.
 | Flag | Default | Purpose |
 |------|---------|---------|
 | `GOB_BUILD_TESTS` | OFF | Build unit tests |
-| `GOB_BUILD_EXPERIMENT` | OFF | Build experimental imgui/glfw sandbox |
 
 ### System dependencies required
 

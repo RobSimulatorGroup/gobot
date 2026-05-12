@@ -10,7 +10,6 @@ set(CMAKE_POSITION_INDEPENDENT_CODE ON)
 
 set(GOBOT_ROOT_DIR "${CMAKE_CURRENT_SOURCE_DIR}")
 
-option(GOB_BUILD_EXPERIMENT "using imgui and glfw" OFF)
 option(GOB_BUILD_TESTS "build tests" OFF)
 option(GOB_BUILD_OPENUSD "build OpenUSD scene importer/exporter support" OFF)
 option(GOB_BUILD_ASSIMP "build mesh import support through Assimp" ON)
@@ -97,7 +96,6 @@ if(GOB_BUILD_MUJOCO)
 
     if(NOT GOBOT_MUJOCO_TARGET AND GOB_FETCH_MUJOCO)
         include(FetchContent)
-        set(MUJOCO_BUILD_EXAMPLES OFF CACHE BOOL "" FORCE)
         set(MUJOCO_BUILD_SIMULATE OFF CACHE BOOL "" FORCE)
         set(MUJOCO_BUILD_STUDIO OFF CACHE BOOL "" FORCE)
         set(MUJOCO_BUILD_TESTS OFF CACHE BOOL "" FORCE)
@@ -487,10 +485,6 @@ if(GOB_BUILD_PYTHON_BINDINGS)
     install(TARGETS gobot_editor
             RUNTIME DESTINATION "gobot" COMPONENT python)
 endif()
-
-if (GOB_BUILD_EXPERIMENT)
-    add_subdirectory(experiment)
-endif ()
 
 if (GOB_BUILD_TESTS)
     enable_testing()
