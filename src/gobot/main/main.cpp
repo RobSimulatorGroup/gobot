@@ -21,6 +21,7 @@
 #include "gobot/physics/physics_server.hpp"
 #include "gobot/simulation/simulation_server.hpp"
 #include "gobot/core/os/os.hpp"
+#include "gobot/python/python_script_runner.hpp"
 #include "gobot/scene/window.hpp"
 #include "gobot/core/math/geometry.hpp"
 #include "cxxopts.hpp"
@@ -127,14 +128,15 @@ bool Main::Iteration()
 }
 
 void Main::Cleanup() {
-    SceneInitializer::Destroy();
+    OS::GetInstance()->DeleteMainLoop();
 
     Object::Delete(s_simulation_server);
     Object::Delete(s_physics_server);
     Object::Delete(s_input);
     Object::Delete(s_project_settings);
 
-    OS::GetInstance()->DeleteMainLoop();
+    python::PythonScriptRunner::Shutdown();
+    SceneInitializer::Destroy();
 }
 
 }

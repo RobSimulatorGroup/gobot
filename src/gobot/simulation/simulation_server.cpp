@@ -199,6 +199,10 @@ void SimulationServer::SetMaxSubSteps(int max_sub_steps) {
     max_sub_steps_ = max_sub_steps;
 }
 
+int SimulationServer::GetLastStepCount() const {
+    return last_step_count_;
+}
+
 bool SimulationServer::IsPaused() const {
     return paused_;
 }
@@ -301,20 +305,24 @@ bool SimulationServer::Reset() {
 
 bool SimulationServer::StepOnce() {
     if (!StepFixed()) {
+        last_step_count_ = 0;
         return false;
     }
 
     accumulator_ = 0.0;
+    last_step_count_ = 1;
     last_error_.clear();
     return true;
 }
 
 int SimulationServer::Step(RealType delta_time) {
     if (paused_ || delta_time <= 0.0 || time_scale_ <= 0.0) {
+        last_step_count_ = 0;
         return 0;
     }
 
     if (!EnsureWorldReady()) {
+        last_step_count_ = 0;
         return 0;
     }
 
@@ -323,6 +331,7 @@ int SimulationServer::Step(RealType delta_time) {
     int steps = 0;
     while (accumulator_ + CMP_EPSILON >= physics_world_settings_.fixed_time_step && steps < max_sub_steps_) {
         if (!StepFixed()) {
+            last_step_count_ = steps;
             return steps;
         }
         accumulator_ -= physics_world_settings_.fixed_time_step;
@@ -337,6 +346,7 @@ int SimulationServer::Step(RealType delta_time) {
         last_error_.clear();
     }
 
+    last_step_count_ = steps;
     return steps;
 }
 
@@ -683,6 +693,7 @@ void SimulationServer::ResetClock() {
     accumulator_ = 0.0;
     simulation_time_ = 0.0;
     frame_count_ = 0;
+    last_step_count_ = 0;
 }
 
 void SimulationServer::SetLastError(std::string error) {
@@ -703,6 +714,7 @@ GOBOT_REGISTRATION {
             .property("default_joint_gains", &SimulationServer::GetDefaultJointGains, &SimulationServer::SetDefaultJointGains)
             .property("time_scale", &SimulationServer::GetTimeScale, &SimulationServer::SetTimeScale)
             .property("max_sub_steps", &SimulationServer::GetMaxSubSteps, &SimulationServer::SetMaxSubSteps)
+            .property_readonly("last_step_count", &SimulationServer::GetLastStepCount)
             .property("paused", &SimulationServer::IsPaused, &SimulationServer::SetPaused)
             .method("build_world_from_scene", &SimulationServer::BuildWorldFromScene)
             .method("rebuild_world_from_scene", &SimulationServer::RebuildWorldFromScene)

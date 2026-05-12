@@ -704,14 +704,12 @@ void Editor::DrawPlayToolbar() {
     const bool playing = simulation != nullptr && !simulation->IsPaused();
     const bool session_running = IsScenePlaySessionRunning();
 
-    const float group_width = ImGui::CalcTextSize(ICON_MDI_PLAY).x +
-                              ImGui::CalcTextSize(ICON_MDI_PAUSE).x +
-                              ImGui::CalcTextSize(ICON_MDI_STOP).x +
-                              ImGui::CalcTextSize(ICON_MDI_STEP_FORWARD).x +
-                              ImGui::GetStyle().ItemSpacing.x * 5.0f +
-                              ImGui::GetFrameHeight() * 4.0f;
-    const float start_x = std::max(ImGui::GetCursorPosX() + ImGui::GetStyle().ItemSpacing.x,
-                                   ImGui::GetWindowWidth() - group_width - 12.0f);
+    const ImGuiStyle& style = ImGui::GetStyle();
+    const float button_width = ImGui::GetFrameHeight();
+    const float group_width = button_width * 4.0f + style.ItemSpacing.x * 3.0f;
+    const float min_x = ImGui::GetCursorPosX() + style.ItemSpacing.x;
+    const float max_x = ImGui::GetWindowWidth() - group_width - style.ItemSpacing.x;
+    const float start_x = std::clamp((ImGui::GetWindowWidth() - group_width) * 0.5f, min_x, max_x);
     ImGui::SetCursorPosX(start_x);
 
     auto draw_button = [](const char* id, const char* icon, const char* tooltip, bool enabled, auto&& on_pressed) {

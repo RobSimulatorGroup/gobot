@@ -119,11 +119,13 @@ TEST(TestSimulationServer, builds_world_from_scene_and_steps_with_fixed_time_ste
     EXPECT_DOUBLE_EQ(simulation_server.GetSimulationTime(), 0.0);
 
     EXPECT_EQ(simulation_server.Step(0.25), 2);
+    EXPECT_EQ(simulation_server.GetLastStepCount(), 2);
     EXPECT_EQ(simulation_server.GetFrameCount(), 2);
     EXPECT_NEAR(simulation_server.GetSimulationTime(), 0.2, CMP_EPSILON);
     EXPECT_NEAR(simulation_server.GetAccumulator(), 0.05, CMP_EPSILON);
 
     EXPECT_EQ(simulation_server.Step(0.05), 1);
+    EXPECT_EQ(simulation_server.GetLastStepCount(), 1);
     EXPECT_EQ(simulation_server.GetFrameCount(), 3);
     EXPECT_NEAR(simulation_server.GetSimulationTime(), 0.3, CMP_EPSILON);
     EXPECT_NEAR(simulation_server.GetAccumulator(), 0.0, CMP_EPSILON);
@@ -140,10 +142,12 @@ TEST(TestSimulationServer, paused_step_does_not_advance_but_step_once_does) {
     EXPECT_TRUE(simulation_server.IsPaused());
 
     EXPECT_EQ(simulation_server.Step(1.0), 0);
+    EXPECT_EQ(simulation_server.GetLastStepCount(), 0);
     EXPECT_EQ(simulation_server.GetFrameCount(), 0);
     EXPECT_DOUBLE_EQ(simulation_server.GetSimulationTime(), 0.0);
 
     ASSERT_TRUE(simulation_server.StepOnce());
+    EXPECT_EQ(simulation_server.GetLastStepCount(), 1);
     EXPECT_EQ(simulation_server.GetFrameCount(), 1);
     EXPECT_NEAR(simulation_server.GetSimulationTime(), 0.02, CMP_EPSILON);
     EXPECT_NEAR(simulation_server.GetAccumulator(), 0.0, CMP_EPSILON);
@@ -163,6 +167,7 @@ TEST(TestSimulationServer, reset_clears_clock_without_rebuilding_world) {
 
     ASSERT_TRUE(simulation_server.Reset());
     EXPECT_TRUE(simulation_server.HasWorld());
+    EXPECT_EQ(simulation_server.GetLastStepCount(), 0);
     EXPECT_EQ(simulation_server.GetFrameCount(), 0);
     EXPECT_DOUBLE_EQ(simulation_server.GetSimulationTime(), 0.0);
     EXPECT_DOUBLE_EQ(simulation_server.GetAccumulator(), 0.0);

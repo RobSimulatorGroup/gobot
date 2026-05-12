@@ -105,6 +105,8 @@ public:
 
     RealType GetAccumulator() const;
 
+    int GetLastStepCount() const;
+
     const std::string& GetLastError() const;
 
 private:
@@ -127,6 +129,7 @@ private:
     bool paused_{true};
     RealType time_scale_{1.0};
     int max_sub_steps_{8};
+    int last_step_count_{0};
     RealType accumulator_{0.0};
     RealType simulation_time_{0.0};
     std::uint64_t frame_count_{0};

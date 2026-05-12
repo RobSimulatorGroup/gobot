@@ -6,6 +6,7 @@
 #include "gobot/editor/imgui/physics_panel.hpp"
 
 #include <algorithm>
+#include <cmath>
 #include <string>
 #include <vector>
 
@@ -54,6 +55,57 @@ void DrawStatusText(bool ok, const char* available_text, const char* unavailable
     const ImVec4 color = ok ? ImVec4(0.35f, 0.85f, 0.35f, 1.0f)
                             : ImVec4(0.95f, 0.35f, 0.35f, 1.0f);
     ImGui::TextColored(color, "%s", ok ? available_text : unavailable_text);
+}
+
+void DrawTimingControls(SimulationServer* simulation) {
+    const RealType fixed_time_step = simulation->GetFixedTimeStep();
+    double physics_hz = fixed_time_step > 0.0 ? 1.0 / static_cast<double>(fixed_time_step) : 0.0;
+    physics_hz = std::clamp(physics_hz, 1.0, 2000.0);
+    if (ImGui::InputDouble("Physics Hz", &physics_hz, 1.0, 10.0, "%.3f")) {
+        if (physics_hz > 0.0 && std::isfinite(physics_hz)) {
+            simulation->SetFixedTimeStep(static_cast<RealType>(1.0 / physics_hz));
+        }
+    }
+    if (ImGui::IsItemHovered()) {
+        ImGui::SetTooltip("Fixed physics tick rate. Higher values run more simulation ticks per second.");
+    }
+
+    double fixed_dt = static_cast<double>(simulation->GetFixedTimeStep());
+    if (ImGui::InputDouble("Fixed dt", &fixed_dt, 0.0001, 0.001, "%.6f")) {
+        if (fixed_dt > 0.0 && std::isfinite(fixed_dt)) {
+            simulation->SetFixedTimeStep(static_cast<RealType>(fixed_dt));
+        }
+    }
+    if (ImGui::IsItemHovered()) {
+        ImGui::SetTooltip("Seconds per physics tick. This is the inverse of Physics Hz.");
+    }
+
+    double time_scale = static_cast<double>(simulation->GetTimeScale());
+    if (ImGui::InputDouble("Time scale", &time_scale, 0.05, 0.25, "%.3f")) {
+        if (time_scale >= 0.0 && std::isfinite(time_scale)) {
+            simulation->SetTimeScale(static_cast<RealType>(time_scale));
+        }
+    }
+
+    int max_sub_steps = simulation->GetMaxSubSteps();
+    if (ImGui::InputInt("Max substeps", &max_sub_steps, 1, 4)) {
+        simulation->SetMaxSubSteps(std::max(1, max_sub_steps));
+    }
+    if (ImGui::IsItemHovered()) {
+        ImGui::SetTooltip("Maximum physics ticks allowed during one editor frame.");
+    }
+
+    const float render_fps = ImGui::GetIO().Framerate;
+    const double expected_ticks_per_render =
+            render_fps > 0.0f && simulation->GetFixedTimeStep() > 0.0
+                    ? static_cast<double>(simulation->GetTimeScale()) /
+                              (static_cast<double>(render_fps) * static_cast<double>(simulation->GetFixedTimeStep()))
+                    : 0.0;
+    ImGui::Text("Render FPS: %.1f", static_cast<double>(render_fps));
+    ImGui::Text("Physics ticks / render: last %d, expected %.2f",
+                simulation->GetLastStepCount(),
+                expected_ticks_per_render);
+    ImGui::Text("Accumulator: %.6f", static_cast<double>(simulation->GetAccumulator()));
 }
 
 const char* JointControlModeLabel(PhysicsJointControlMode mode) {
@@ -140,7 +192,9 @@ void PhysicsPanel::OnImGuiContent() {
 
     ImGui::Text("Time: %.6f", static_cast<double>(simulation->GetSimulationTime()));
     ImGui::Text("Frame: %llu", static_cast<unsigned long long>(simulation->GetFrameCount()));
-    ImGui::Text("Fixed dt: %.6f", static_cast<double>(simulation->GetFixedTimeStep()));
+    if (ImGui::CollapsingHeader("Timing", ImGuiTreeNodeFlags_DefaultOpen)) {
+        DrawTimingControls(simulation);
+    }
     const Vector3& gravity = simulation->GetPhysicsWorldSettings().gravity;
     ImGui::Text("Gravity: %.3f, %.3f, %.3f m/s^2",
                 static_cast<double>(gravity.x()),
