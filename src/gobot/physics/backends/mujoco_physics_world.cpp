@@ -1,7 +1,8 @@
-/* The gobot is a robot simulation platform.
+/*
+ * The gobot is a robot simulation platform.
  * Copyright(c) 2021-2026, RobSimulatorGroup, Qiqi Wu<1258552199@qq.com>.
- * Everyone is permitted to copy and distribute verbatim copies of this license document, but changing it is not allowed.
-*/
+ * SPDX-License-Identifier: Apache-2.0
+ */
 
 #include "gobot/physics/backends/mujoco_physics_world.hpp"
 

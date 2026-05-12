@@ -1,9 +1,9 @@
-/* The gobot is a robot simulation platform. 
+/*
+ * The gobot is a robot simulation platform.
  * Copyright(c) 2021-2023, RobSimulatorGroup, Qiqi Wu<1258552199@qq.com>.
- * Everyone is permitted to copy and distribute verbatim copies of this license document, but changing it is not allowed.
- * This version of the GNU Lesser General Public License incorporates the terms and conditions of version 3 of the GNU General Public License.
  * This file is created by Qiqi Wu, 23-2-10
-*/
+ * SPDX-License-Identifier: Apache-2.0
+ */
 
 #include "gobot/main/main.hpp"
 #include "gobot/editor/editor.hpp"
@@ -42,7 +42,7 @@ bool Main::Setup(int argc, char** argv) {
     cxxopts::Options options("gobot_editor",
                              R"(
 The gobot is a robot simulation platform.
-Free and open source software under the terms of the LGPL3 license.
+Free and open source software under the terms of the Apache-2.0 license.
 Copyright(c) 2021-2023, RobSimulatorGroup)");
 
     options.add_options()

@@ -96,6 +96,9 @@ if(GOB_BUILD_MUJOCO)
 
     if(NOT GOBOT_MUJOCO_TARGET AND GOB_FETCH_MUJOCO)
         include(FetchContent)
+        # MuJoCo examples build sample apps through GLFW. Keep this disabled for
+        # wheel builds so manylinux does not need wayland-scanner/desktop deps.
+        set(MUJOCO_BUILD_EXAMPLES OFF CACHE BOOL "" FORCE)
         set(MUJOCO_BUILD_SIMULATE OFF CACHE BOOL "" FORCE)
         set(MUJOCO_BUILD_STUDIO OFF CACHE BOOL "" FORCE)
         set(MUJOCO_BUILD_TESTS OFF CACHE BOOL "" FORCE)
