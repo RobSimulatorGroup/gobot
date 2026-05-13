@@ -61,6 +61,11 @@ Copyright(c) 2021-2023, RobSimulatorGroup)");
         exit(0);
     }
 
+    if (result.count("version")) {
+        std::cout << "gobot " << GOBOT_VERSION << std::endl;
+        exit(0);
+    }
+
 
     s_engine = Object::New<Engine>();
     s_project_settings = Object::New<ProjectSettings>();

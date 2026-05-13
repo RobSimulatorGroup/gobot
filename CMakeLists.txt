@@ -1,5 +1,5 @@
 cmake_minimum_required (VERSION 3.16)
-project (gobot)
+project (gobot VERSION 0.1.4)
 
 set(CMAKE_POLICY_VERSION_MINIMUM 3.5)
 
@@ -9,6 +9,7 @@ set(CMAKE_CXX_STANDARD_REQUIRED ON)
 set(CMAKE_POSITION_INDEPENDENT_CODE ON)
 
 set(GOBOT_ROOT_DIR "${CMAKE_CURRENT_SOURCE_DIR}")
+set(GOBOT_VERSION "${PROJECT_VERSION}")
 
 option(GOB_BUILD_TESTS "build tests" OFF)
 option(GOB_BUILD_OPENUSD "build OpenUSD scene importer/exporter support" OFF)
@@ -330,6 +331,11 @@ target_link_libraries(gobot
         magic_enum::magic_enum
         nlohmann_json::nlohmann_json
 )
+target_compile_definitions(gobot PUBLIC
+        GOBOT_VERSION_MAJOR=${PROJECT_VERSION_MAJOR}
+        GOBOT_VERSION_MINOR=${PROJECT_VERSION_MINOR}
+        GOBOT_VERSION_PATCH=${PROJECT_VERSION_PATCH}
+        GOBOT_VERSION="${PROJECT_VERSION}")
 
 if(GOB_BUILD_OPENUSD)
     target_compile_definitions(gobot PUBLIC GOBOT_HAS_OPENUSD=1)
@@ -391,6 +397,8 @@ if(GOB_BUILD_PYTHON_BINDINGS)
     install(DIRECTORY "${GOBOT_PYTHON_PACKAGE_DIR}/"
             DESTINATION "gobot" COMPONENT python
             FILES_MATCHING
+            PATTERN "__pycache__" EXCLUDE
+            PATTERN "*.pyc" EXCLUDE
             PATTERN "*.py"
             PATTERN "*.pyi"
             PATTERN "py.typed")
@@ -473,6 +481,8 @@ add_executable(gobot_editor
 add_dependencies(gobot_editor gobot_editor_resources)
 target_include_directories(gobot_editor PRIVATE
         ${CMAKE_CURRENT_SOURCE_DIR}/3rdparty/ImGuiColorTextEdit)
+target_compile_definitions(gobot_editor PRIVATE
+        GOBOT_ROOT_DIR="${CMAKE_CURRENT_SOURCE_DIR}")
 target_link_libraries(gobot_editor PRIVATE
         gobot
         imgui-gobot
@@ -485,6 +495,13 @@ set_target_properties(gobot_editor
 )
 
 if(GOB_BUILD_PYTHON_BINDINGS)
+    install(DIRECTORY "${CMAKE_CURRENT_SOURCE_DIR}/examples/"
+            DESTINATION "gobot/examples" COMPONENT python
+            FILES_MATCHING
+            PATTERN "__pycache__" EXCLUDE
+            PATTERN "*.pyc" EXCLUDE
+            PATTERN "*.jscn"
+            PATTERN "*.py")
     install(TARGETS gobot_editor
             RUNTIME DESTINATION "gobot" COMPONENT python)
 endif()

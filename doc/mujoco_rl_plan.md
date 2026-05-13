@@ -26,6 +26,8 @@ Compatibility wrappers can live above the core API.
 
 - `NodeScript` and `ScenePlaySession` are for editor Play Mode, single-scene
   debugging, and policy playback.
+- Packaged editor examples live under `examples/` in the source tree and
+  `gobot/examples/` in wheels. See `doc/examples.md`.
 - Play Mode runs scripts on a runtime clone of the edited scene. The editor
   viewport and physics world use that clone while playback is active, so script
   motion is visible without mutating the edited scene.

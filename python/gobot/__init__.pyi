@@ -29,5 +29,6 @@ from .scene_helpers import create_cartpole_scene, save_cartpole_scene
 
 from . import app, physics, rl, scene, sim
 
+__version__: str
 
 __all__: list[str]

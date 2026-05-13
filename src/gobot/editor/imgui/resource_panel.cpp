@@ -29,6 +29,8 @@
 namespace gobot {
 namespace {
 
+std::string ToLower(std::string value);
+
 std::string DefaultProjectHistoryFile() {
     const char* home = std::getenv("HOME");
     if (home == nullptr || std::string(home).empty()) {
@@ -41,6 +43,64 @@ std::string ProjectDisplayName(const std::string& project_path) {
     std::filesystem::path path(project_path);
     std::string name = path.filename().string();
     return name.empty() ? project_path : name;
+}
+
+std::filesystem::path SourceExamplesDirectory() {
+    return std::filesystem::path(GOBOT_ROOT_DIR) / "examples";
+}
+
+void AppendExampleProjectDirectories(const std::filesystem::path& examples_dir,
+                                     std::vector<std::string>& projects) {
+    std::error_code error;
+    if (examples_dir.empty() || !std::filesystem::is_directory(examples_dir, error)) {
+        return;
+    }
+
+    for (const auto& entry : std::filesystem::directory_iterator(examples_dir, error)) {
+        if (error) {
+            LOG_WARN("Skipping examples directory '{}': {}.", examples_dir.string(), error.message());
+            return;
+        }
+        if (!entry.is_directory(error)) {
+            continue;
+        }
+
+        bool has_scene = false;
+        for (const auto& project_entry : std::filesystem::directory_iterator(entry.path(), error)) {
+            if (error) {
+                break;
+            }
+            if (project_entry.is_regular_file(error) &&
+                    ToLower(project_entry.path().extension().string()) == ".jscn") {
+                has_scene = true;
+                break;
+            }
+        }
+        if (!has_scene) {
+            continue;
+        }
+
+        const std::string project_path = std::filesystem::weakly_canonical(entry.path(), error).string();
+        if (error || project_path.empty()) {
+            continue;
+        }
+        const std::string project_name = ToLower(entry.path().filename().string());
+        const bool duplicate_name = std::ranges::any_of(projects, [&](const std::string& existing_project) {
+            return ToLower(std::filesystem::path(existing_project).filename().string()) == project_name;
+        });
+        if (!duplicate_name && std::ranges::find(projects, project_path) == projects.end()) {
+            projects.push_back(project_path);
+        }
+    }
+}
+
+std::string CanonicalExistingDirectory(const std::filesystem::path& directory) {
+    std::error_code error;
+    if (!std::filesystem::is_directory(directory, error)) {
+        return {};
+    }
+    const std::filesystem::path canonical_path = std::filesystem::weakly_canonical(directory, error);
+    return error ? std::string() : canonical_path.string();
 }
 
 std::string ToLower(std::string value) {
@@ -173,6 +233,7 @@ ResourcePanel::ResourcePanel()
     project_browser_->SetTitle("Open Gobot Project");
     project_browser_->SetOkText("Open Project");
     project_history_file_ = DefaultProjectHistoryFile();
+    LoadExampleProjects();
     LoadProjectHistory();
 
     project_path_ = ProjectSettings::GetInstance()->GetProjectPath();
@@ -584,7 +645,9 @@ bool ResourcePanel::SetProjectPath(const std::string& project_path)
     }
 
     Refresh();
-    AddProjectHistory(project_path_);
+    if (!IsExampleProjectPath(project_path_)) {
+        AddProjectHistory(project_path_);
+    }
     LOG_INFO("Opened project: {}", project_path_);
     return true;
 }
@@ -622,6 +685,8 @@ void ResourcePanel::LoadProjectHistory()
     project_history_.clear();
     std::ifstream input(project_history_file_);
     if (!input.is_open()) {
+        LoadExampleProjects();
+        SaveProjectHistory();
         return;
     }
 
@@ -630,22 +695,77 @@ void ResourcePanel::LoadProjectHistory()
         input >> json;
     } catch (const std::exception& error) {
         LOG_ERROR("Failed to read project history '{}': {}", project_history_file_, error.what());
+        LoadExampleProjects();
+        SaveProjectHistory();
         return;
     }
 
-    if (!json.is_object() || !json.contains("projects") || !json["projects"].is_array()) {
+    if (!json.is_object()) {
+        LoadExampleProjects();
+        SaveProjectHistory();
         return;
     }
 
-    for (const auto& project_json : json["projects"]) {
-        if (!project_json.is_string()) {
-            continue;
-        }
-        const std::string path = project_json.get<std::string>();
-        if (!path.empty() && std::filesystem::exists(path)) {
-            project_history_.push_back(path);
+    LoadExampleProjects(json);
+
+    if (json.contains("projects") && json["projects"].is_array()) {
+        for (const auto& project_json : json["projects"]) {
+            if (!project_json.is_string()) {
+                continue;
+            }
+            const std::string path = project_json.get<std::string>();
+            if (!path.empty() && std::filesystem::exists(path) && !IsExampleProjectPath(path)) {
+                project_history_.push_back(path);
+            }
         }
     }
+
+    SaveProjectHistory();
+}
+
+void ResourcePanel::LoadExampleProjects(const Json& history_json)
+{
+    example_roots_.clear();
+    example_projects_.clear();
+    if (history_json.contains("example_roots") && history_json["example_roots"].is_array()) {
+        for (const auto& root_json : history_json["example_roots"]) {
+            if (!root_json.is_string()) {
+                continue;
+            }
+            const std::string root_path = CanonicalExistingDirectory(root_json.get<std::string>());
+            if (root_path.empty()) {
+                continue;
+            }
+            if (std::ranges::find(example_roots_, root_path) == example_roots_.end()) {
+                example_roots_.push_back(root_path);
+            }
+            AppendExampleProjectDirectories(root_path, example_projects_);
+        }
+    }
+
+    if (example_projects_.empty()) {
+        const std::string source_examples = CanonicalExistingDirectory(SourceExamplesDirectory());
+        if (!source_examples.empty() &&
+                std::ranges::find(example_roots_, source_examples) == example_roots_.end()) {
+            example_roots_.push_back(source_examples);
+        }
+        AppendExampleProjectDirectories(source_examples, example_projects_);
+    }
+}
+
+bool ResourcePanel::IsExampleProjectPath(const std::string& project_path) const
+{
+    if (project_path.empty()) {
+        return false;
+    }
+
+    std::error_code error;
+    const std::string normalized_project_path =
+            std::filesystem::weakly_canonical(project_path, error).string();
+    if (error) {
+        return false;
+    }
+    return std::ranges::find(example_projects_, normalized_project_path) != example_projects_.end();
 }
 
 void ResourcePanel::SaveProjectHistory() const
@@ -660,6 +780,7 @@ void ResourcePanel::SaveProjectHistory() const
     }
 
     Json json;
+    json["example_roots"] = example_roots_;
     json["projects"] = project_history_;
     std::ofstream output(project_history_file_);
     if (!output.is_open()) {
@@ -712,9 +833,42 @@ void ResourcePanel::DrawProjectSelector()
 
     ImGui::Separator();
 
-    if (project_history_.empty()) {
-        ImGui::TextDisabled("No projects yet. Create or import a project directory.");
-    } else {
+    if (!example_projects_.empty()) {
+        ImGui::TextUnformatted("Examples");
+        for (const std::string& project_path : example_projects_) {
+            if (filter_->IsActive() && !filter_->PassFilter(project_path.c_str())) {
+                continue;
+            }
+
+            ImGui::PushID(project_path.c_str());
+            const float row_height = ImGui::GetTextLineHeightWithSpacing() * 2.2f;
+            const bool selected = ImGui::Selectable("##ExampleProjectRow", false,
+                                                    ImGuiSelectableFlags_AllowDoubleClick,
+                                                    ImVec2(0, row_height));
+            const ImVec2 row_min = ImGui::GetItemRectMin();
+            const ImVec2 text_pos = {row_min.x + ImGui::GetStyle().FramePadding.x,
+                                     row_min.y + ImGui::GetStyle().FramePadding.y};
+            ImDrawList* draw_list = ImGui::GetWindowDrawList();
+            draw_list->AddText(text_pos,
+                               ImGui::GetColorU32(ImGuiCol_Text),
+                               (std::string(ICON_MDI_FOLDER_STAR " ") + ProjectDisplayName(project_path)).c_str());
+            draw_list->AddText({text_pos.x + ImGui::GetFontSize() * 1.6f,
+                                text_pos.y + ImGui::GetTextLineHeightWithSpacing()},
+                               ImGui::GetColorU32(ImGuiCol_TextDisabled),
+                               project_path.c_str());
+            if (selected && ImGui::IsMouseDoubleClicked(ImGuiMouseButton_Left)) {
+                SetProjectPath(project_path);
+            }
+            if (ImGui::IsItemHovered()) {
+                ImGui::SetTooltip("%s", project_path.c_str());
+            }
+            ImGui::PopID();
+        }
+        ImGui::Separator();
+    }
+
+    if (!project_history_.empty()) {
+        ImGui::TextUnformatted("Recent Projects");
         std::string remove_project_path;
         for (const std::string& project_path : project_history_) {
             if (filter_->IsActive() && !filter_->PassFilter(project_path.c_str())) {
@@ -760,6 +914,10 @@ void ResourcePanel::DrawProjectSelector()
         if (!remove_project_path.empty()) {
             RemoveProjectHistory(remove_project_path);
         }
+    } else if (example_projects_.empty()) {
+        ImGui::TextDisabled("No projects yet. Create or import a project directory.");
+    } else {
+        ImGui::TextDisabled("No recent projects.");
     }
     ImGui::EndChild();
 }

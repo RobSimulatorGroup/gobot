@@ -1,0 +1,672 @@
+{
+    "__EXT_RESOURCES__": [
+        {
+            "__ID__": "1_Luexz",
+            "__PATH__": "res://scripts/cartpole.py",
+            "__TYPE__": "PythonScript"
+        }
+    ],
+    "__META_TYPE__": "SCENE",
+    "__NODES__": [
+        {
+            "name": "cartpole",
+            "parent": -1,
+            "properties": {
+                "mode": "Motion",
+                "position": {
+                    "matrix_data": {
+                        "cols": 1,
+                        "rows": 3,
+                        "storage": [
+                            0.0,
+                            0.0,
+                            0.0
+                        ]
+                    }
+                },
+                "rotation_degrees": {
+                    "matrix_data": {
+                        "cols": 1,
+                        "rows": 3,
+                        "storage": [
+                            0.0,
+                            0.0,
+                            0.0
+                        ]
+                    }
+                },
+                "scale": {
+                    "matrix_data": {
+                        "cols": 1,
+                        "rows": 3,
+                        "storage": [
+                            1.0,
+                            1.0,
+                            1.0
+                        ]
+                    }
+                },
+                "script": "ExtResource(1_Luexz)",
+                "source_path": "",
+                "visible": true
+            },
+            "type": "Robot3D"
+        },
+        {
+            "name": "rail",
+            "parent": 0,
+            "properties": {
+                "center_of_mass": {
+                    "matrix_data": {
+                        "cols": 1,
+                        "rows": 3,
+                        "storage": [
+                            0.0,
+                            0.0,
+                            0.0
+                        ]
+                    }
+                },
+                "has_inertial": false,
+                "inertia_diagonal": {
+                    "matrix_data": {
+                        "cols": 1,
+                        "rows": 3,
+                        "storage": [
+                            0.0,
+                            0.0,
+                            0.0
+                        ]
+                    }
+                },
+                "inertia_off_diagonal": {
+                    "matrix_data": {
+                        "cols": 1,
+                        "rows": 3,
+                        "storage": [
+                            0.0,
+                            0.0,
+                            0.0
+                        ]
+                    }
+                },
+                "mass": 0.0,
+                "position": {
+                    "matrix_data": {
+                        "cols": 1,
+                        "rows": 3,
+                        "storage": [
+                            0.0,
+                            0.0,
+                            0.0
+                        ]
+                    }
+                },
+                "role": "VirtualRoot",
+                "rotation_degrees": {
+                    "matrix_data": {
+                        "cols": 1,
+                        "rows": 3,
+                        "storage": [
+                            0.0,
+                            0.0,
+                            0.0
+                        ]
+                    }
+                },
+                "scale": {
+                    "matrix_data": {
+                        "cols": 1,
+                        "rows": 3,
+                        "storage": [
+                            1.0,
+                            1.0,
+                            1.0
+                        ]
+                    }
+                },
+                "script": null,
+                "visible": true
+            },
+            "type": "Link3D"
+        },
+        {
+            "name": "slider",
+            "parent": 1,
+            "properties": {
+                "axis": {
+                    "matrix_data": {
+                        "cols": 1,
+                        "rows": 3,
+                        "storage": [
+                            1.0,
+                            0.0,
+                            0.0
+                        ]
+                    }
+                },
+                "child_link": "cart",
+                "damping": 0.0,
+                "effort_limit": 20.0,
+                "joint_position": -0.00949954055249691,
+                "joint_type": "Prismatic",
+                "lower_limit": -2.4000000953674316,
+                "parent_link": "rail",
+                "position": {
+                    "matrix_data": {
+                        "cols": 1,
+                        "rows": 3,
+                        "storage": [
+                            0.0,
+                            0.0,
+                            0.0
+                        ]
+                    }
+                },
+                "rotation_degrees": {
+                    "matrix_data": {
+                        "cols": 1,
+                        "rows": 3,
+                        "storage": [
+                            0.0,
+                            -0.0,
+                            0.0
+                        ]
+                    }
+                },
+                "scale": {
+                    "matrix_data": {
+                        "cols": 1,
+                        "rows": 3,
+                        "storage": [
+                            1.0,
+                            1.0,
+                            1.0
+                        ]
+                    }
+                },
+                "script": null,
+                "upper_limit": 2.4000000953674316,
+                "velocity_limit": 20.0,
+                "visible": true
+            },
+            "type": "Joint3D"
+        },
+        {
+            "name": "cart",
+            "parent": 2,
+            "properties": {
+                "center_of_mass": {
+                    "matrix_data": {
+                        "cols": 1,
+                        "rows": 3,
+                        "storage": [
+                            0.0,
+                            0.0,
+                            0.0
+                        ]
+                    }
+                },
+                "has_inertial": true,
+                "inertia_diagonal": {
+                    "matrix_data": {
+                        "cols": 1,
+                        "rows": 3,
+                        "storage": [
+                            0.019999999552965164,
+                            0.019999999552965164,
+                            0.019999999552965164
+                        ]
+                    }
+                },
+                "inertia_off_diagonal": {
+                    "matrix_data": {
+                        "cols": 1,
+                        "rows": 3,
+                        "storage": [
+                            0.0,
+                            0.0,
+                            0.0
+                        ]
+                    }
+                },
+                "mass": 1.0,
+                "position": {
+                    "matrix_data": {
+                        "cols": 1,
+                        "rows": 3,
+                        "storage": [
+                            0.0,
+                            0.0,
+                            0.0
+                        ]
+                    }
+                },
+                "role": "Physical",
+                "rotation_degrees": {
+                    "matrix_data": {
+                        "cols": 1,
+                        "rows": 3,
+                        "storage": [
+                            0.0,
+                            -0.0,
+                            0.0
+                        ]
+                    }
+                },
+                "scale": {
+                    "matrix_data": {
+                        "cols": 1,
+                        "rows": 3,
+                        "storage": [
+                            1.0,
+                            1.0,
+                            1.0
+                        ]
+                    }
+                },
+                "script": null,
+                "visible": true
+            },
+            "type": "Link3D"
+        },
+        {
+            "name": "cart_visual",
+            "parent": 3,
+            "properties": {
+                "material": null,
+                "mesh": "SubResource(BoxMesh_Dx5FV)",
+                "position": {
+                    "matrix_data": {
+                        "cols": 1,
+                        "rows": 3,
+                        "storage": [
+                            0.0,
+                            0.0,
+                            0.0
+                        ]
+                    }
+                },
+                "rotation_degrees": {
+                    "matrix_data": {
+                        "cols": 1,
+                        "rows": 3,
+                        "storage": [
+                            0.0,
+                            0.0,
+                            0.0
+                        ]
+                    }
+                },
+                "scale": {
+                    "matrix_data": {
+                        "cols": 1,
+                        "rows": 3,
+                        "storage": [
+                            1.0,
+                            1.0,
+                            1.0
+                        ]
+                    }
+                },
+                "script": null,
+                "surface_color": {
+                    "alpha": 1.0,
+                    "blue": 0.949999988079071,
+                    "green": 0.7799999713897705,
+                    "red": 0.6600000262260437
+                },
+                "visible": true
+            },
+            "type": "MeshInstance3D"
+        },
+        {
+            "name": "cart_collision",
+            "parent": 3,
+            "properties": {
+                "disabled": false,
+                "position": {
+                    "matrix_data": {
+                        "cols": 1,
+                        "rows": 3,
+                        "storage": [
+                            0.0,
+                            0.0,
+                            0.0
+                        ]
+                    }
+                },
+                "rotation_degrees": {
+                    "matrix_data": {
+                        "cols": 1,
+                        "rows": 3,
+                        "storage": [
+                            0.0,
+                            0.0,
+                            0.0
+                        ]
+                    }
+                },
+                "scale": {
+                    "matrix_data": {
+                        "cols": 1,
+                        "rows": 3,
+                        "storage": [
+                            1.0,
+                            1.0,
+                            1.0
+                        ]
+                    }
+                },
+                "script": null,
+                "shape": "SubResource(BoxShape3D_s1STQ)",
+                "visible": true
+            },
+            "type": "CollisionShape3D"
+        },
+        {
+            "name": "hinge",
+            "parent": 3,
+            "properties": {
+                "axis": {
+                    "matrix_data": {
+                        "cols": 1,
+                        "rows": 3,
+                        "storage": [
+                            0.0,
+                            1.0,
+                            0.0
+                        ]
+                    }
+                },
+                "child_link": "pole",
+                "damping": 0.0,
+                "effort_limit": 0.0,
+                "joint_position": -0.3960922956466675,
+                "joint_type": "Continuous",
+                "lower_limit": 0.0,
+                "parent_link": "cart",
+                "position": {
+                    "matrix_data": {
+                        "cols": 1,
+                        "rows": 3,
+                        "storage": [
+                            0.0,
+                            0.0,
+                            0.11999999731779099
+                        ]
+                    }
+                },
+                "rotation_degrees": {
+                    "matrix_data": {
+                        "cols": 1,
+                        "rows": 3,
+                        "storage": [
+                            0.0,
+                            -0.0,
+                            0.0
+                        ]
+                    }
+                },
+                "scale": {
+                    "matrix_data": {
+                        "cols": 1,
+                        "rows": 3,
+                        "storage": [
+                            1.0,
+                            1.0,
+                            1.0
+                        ]
+                    }
+                },
+                "script": null,
+                "upper_limit": 0.0,
+                "velocity_limit": 20.0,
+                "visible": true
+            },
+            "type": "Joint3D"
+        },
+        {
+            "name": "pole",
+            "parent": 6,
+            "properties": {
+                "center_of_mass": {
+                    "matrix_data": {
+                        "cols": 1,
+                        "rows": 3,
+                        "storage": [
+                            0.0,
+                            0.0,
+                            0.0
+                        ]
+                    }
+                },
+                "has_inertial": true,
+                "inertia_diagonal": {
+                    "matrix_data": {
+                        "cols": 1,
+                        "rows": 3,
+                        "storage": [
+                            0.0022499999031424522,
+                            0.0022499999031424522,
+                            0.00013499999477062374
+                        ]
+                    }
+                },
+                "inertia_off_diagonal": {
+                    "matrix_data": {
+                        "cols": 1,
+                        "rows": 3,
+                        "storage": [
+                            0.0,
+                            0.0,
+                            0.0
+                        ]
+                    }
+                },
+                "mass": 0.30000001192092896,
+                "position": {
+                    "matrix_data": {
+                        "cols": 1,
+                        "rows": 3,
+                        "storage": [
+                            0.0,
+                            0.0,
+                            0.15000000596046448
+                        ]
+                    }
+                },
+                "role": "Physical",
+                "rotation_degrees": {
+                    "matrix_data": {
+                        "cols": 1,
+                        "rows": 3,
+                        "storage": [
+                            0.0,
+                            -0.0,
+                            0.0
+                        ]
+                    }
+                },
+                "scale": {
+                    "matrix_data": {
+                        "cols": 1,
+                        "rows": 3,
+                        "storage": [
+                            1.0,
+                            1.0,
+                            1.0
+                        ]
+                    }
+                },
+                "script": null,
+                "visible": true
+            },
+            "type": "Link3D"
+        },
+        {
+            "name": "pole_visual",
+            "parent": 7,
+            "properties": {
+                "material": null,
+                "mesh": "SubResource(BoxMesh_40ZHU)",
+                "position": {
+                    "matrix_data": {
+                        "cols": 1,
+                        "rows": 3,
+                        "storage": [
+                            0.0,
+                            0.0,
+                            0.0
+                        ]
+                    }
+                },
+                "rotation_degrees": {
+                    "matrix_data": {
+                        "cols": 1,
+                        "rows": 3,
+                        "storage": [
+                            0.0,
+                            0.0,
+                            0.0
+                        ]
+                    }
+                },
+                "scale": {
+                    "matrix_data": {
+                        "cols": 1,
+                        "rows": 3,
+                        "storage": [
+                            1.0,
+                            1.0,
+                            1.0
+                        ]
+                    }
+                },
+                "script": null,
+                "surface_color": {
+                    "alpha": 1.0,
+                    "blue": 0.949999988079071,
+                    "green": 0.7799999713897705,
+                    "red": 0.6600000262260437
+                },
+                "visible": true
+            },
+            "type": "MeshInstance3D"
+        },
+        {
+            "name": "pole_collision",
+            "parent": 7,
+            "properties": {
+                "disabled": false,
+                "position": {
+                    "matrix_data": {
+                        "cols": 1,
+                        "rows": 3,
+                        "storage": [
+                            0.0,
+                            0.0,
+                            0.0
+                        ]
+                    }
+                },
+                "rotation_degrees": {
+                    "matrix_data": {
+                        "cols": 1,
+                        "rows": 3,
+                        "storage": [
+                            0.0,
+                            0.0,
+                            0.0
+                        ]
+                    }
+                },
+                "scale": {
+                    "matrix_data": {
+                        "cols": 1,
+                        "rows": 3,
+                        "storage": [
+                            1.0,
+                            1.0,
+                            1.0
+                        ]
+                    }
+                },
+                "script": null,
+                "shape": "SubResource(BoxShape3D_ayuc4)",
+                "visible": true
+            },
+            "type": "CollisionShape3D"
+        }
+    ],
+    "__SUB_RESOURCES__": [
+        {
+            "__ID__": "BoxMesh_Dx5FV",
+            "__TYPE__": "BoxMesh",
+            "material": null,
+            "resource_name": "",
+            "size": {
+                "matrix_data": {
+                    "cols": 1,
+                    "rows": 3,
+                    "storage": [
+                        0.3499999940395355,
+                        0.2199999988079071,
+                        0.18000000715255737
+                    ]
+                }
+            }
+        },
+        {
+            "__ID__": "BoxShape3D_s1STQ",
+            "__TYPE__": "BoxShape3D",
+            "resource_name": "",
+            "size": {
+                "matrix_data": {
+                    "cols": 1,
+                    "rows": 3,
+                    "storage": [
+                        0.3499999940395355,
+                        0.2199999988079071,
+                        0.18000000715255737
+                    ]
+                }
+            }
+        },
+        {
+            "__ID__": "BoxMesh_40ZHU",
+            "__TYPE__": "BoxMesh",
+            "material": null,
+            "resource_name": "",
+            "size": {
+                "matrix_data": {
+                    "cols": 1,
+                    "rows": 3,
+                    "storage": [
+                        0.05999999865889549,
+                        0.05999999865889549,
+                        0.30000001192092896
+                    ]
+                }
+            }
+        },
+        {
+            "__ID__": "BoxShape3D_ayuc4",
+            "__TYPE__": "BoxShape3D",
+            "resource_name": "",
+            "size": {
+                "matrix_data": {
+                    "cols": 1,
+                    "rows": 3,
+                    "storage": [
+                        0.05999999865889549,
+                        0.05999999865889549,
+                        0.30000001192092896
+                    ]
+                }
+            }
+        }
+    ],
+    "__TYPE__": "PackedScene",
+    "__VERSION__": 2
+}

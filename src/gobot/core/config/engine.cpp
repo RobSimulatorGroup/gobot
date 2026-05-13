@@ -22,8 +22,12 @@ Engine::~Engine() {
 }
 
 VersionInfo Engine::GetVersionInfo() const {
-    // TODO(wqq)
-    return {};
+    return {
+            static_cast<uint8_t>(GOBOT_VERSION_MAJOR),
+            static_cast<uint8_t>(GOBOT_VERSION_MINOR),
+            static_cast<uint8_t>(GOBOT_VERSION_PATCH),
+            "",
+    };
 }
 
 

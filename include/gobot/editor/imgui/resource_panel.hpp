@@ -7,6 +7,7 @@
 
 #pragma once
 
+#include "gobot/core/types.hpp"
 #include "gobot/scene/imgui_window.hpp"
 #include "gobot_export.h"
 
@@ -96,9 +97,14 @@ public:
     void Refresh();
 
 private:
+    void LoadExampleProjects(const Json& history_json = Json::object());
+    bool IsExampleProjectPath(const std::string& project_path) const;
+
     std::string project_path_;
     std::string move_path_;
     std::vector<std::string> project_history_;
+    std::vector<std::string> example_roots_;
+    std::vector<std::string> example_projects_;
     std::string project_history_file_;
     std::string pending_delete_project_path_;
     std::string pending_delete_resource_file_global_path_;

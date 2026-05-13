@@ -4,7 +4,7 @@ Gobot is a Linux robotics simulation package with a Python-first workflow.
 Use it from Python to create scenes, step simulation, inspect robot state, and
 drive reinforcement-learning experiments.
 
-![overview](https://github.com/RobSimulatorGroup/gobot/blob/master/doc/overview.png)
+![overview](https://raw.githubusercontent.com/RobSimulatorGroup/gobot/master/doc/overview.png)
 
 [![PyPI](https://img.shields.io/pypi/v/gobot)](https://pypi.org/project/gobot/)
 [![License](https://img.shields.io/badge/license-Apache--2.0-blue)](https://github.com/RobSimulatorGroup/gobot/blob/master/LICENSE)
@@ -24,6 +24,7 @@ Check the install:
 import gobot
 
 print(gobot.__file__)
+print(gobot.__version__)
 print(gobot.backend_infos())
 ```
 
@@ -94,6 +95,26 @@ gobot_editor
 
 The executable and its local shared libraries are installed inside the Python
 package, so a normal `pip install gobot` is enough for the packaged runtime.
+Check the packaged editor version with `gobot_editor --version`.
+
+Packaged examples are available from the editor start screen under `Examples`.
+The same files are installed inside the Python package at `gobot/examples/`.
+The first bundled example is `cartpole`, a MuJoCo-backed inverted pendulum scene
+with a Python `NodeScript` controller.
+The Python launcher records packaged example roots in `~/.gobot/projects.json`
+under `example_roots`, and the GUI reads that list instead of guessing from the
+editor executable path. If both a source checkout and a pip install are present,
+same-name examples are de-duplicated and the pip-installed root is preferred
+when launched through the Python package.
+See `doc/examples.md` for the example project layout and packaging rules.
+
+To locate examples from Python:
+
+```python
+from importlib import resources
+
+print(resources.files("gobot").joinpath("examples"))
+```
 
 ## Local Wheel Build
 
@@ -105,7 +126,7 @@ cd gobot
 git submodule update --init --recursive
 python -m pip install -U build scikit-build-core
 python -m build --wheel
-python -m pip install --force-reinstall dist/gobot-0.1.0-*.whl
+python -m pip install --force-reinstall dist/gobot-0.1.4-*.whl
 ```
 
 For a faster local build without MuJoCo:
@@ -121,4 +142,5 @@ python -m build --wheel -Ccmake.define.GOB_BUILD_MUJOCO=OFF
 - Main RL entry point: `gobot.rl.ManagerBasedEnv`.
 - Gym-style helpers: `gobot.rl.GymWrapper`.
 - MuJoCo support is included in release wheels when available in the build.
+- Packaged examples: `gobot/examples/` in wheels and `examples/` in source.
 - MuJoCo RL roadmap: `doc/mujoco_rl_plan.md`.
