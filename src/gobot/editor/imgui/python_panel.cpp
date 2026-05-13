@@ -29,22 +29,24 @@ namespace {
 
 TextEditor::Palette PythonPalette() {
     TextEditor::Palette palette = TextEditor::GetDarkPalette();
-    palette[static_cast<unsigned>(TextEditor::PaletteIndex::Default)] = IM_COL32(212, 212, 212, 255);
-    palette[static_cast<unsigned>(TextEditor::PaletteIndex::Keyword)] = IM_COL32(86, 156, 214, 255);
-    palette[static_cast<unsigned>(TextEditor::PaletteIndex::Number)] = IM_COL32(181, 206, 168, 255);
-    palette[static_cast<unsigned>(TextEditor::PaletteIndex::String)] = IM_COL32(206, 145, 120, 255);
-    palette[static_cast<unsigned>(TextEditor::PaletteIndex::CharLiteral)] = IM_COL32(206, 145, 120, 255);
-    palette[static_cast<unsigned>(TextEditor::PaletteIndex::Punctuation)] = IM_COL32(220, 220, 220, 255);
-    palette[static_cast<unsigned>(TextEditor::PaletteIndex::Identifier)] = IM_COL32(212, 212, 212, 255);
-    palette[static_cast<unsigned>(TextEditor::PaletteIndex::KnownIdentifier)] = IM_COL32(78, 201, 176, 255);
-    palette[static_cast<unsigned>(TextEditor::PaletteIndex::PreprocIdentifier)] = IM_COL32(197, 134, 192, 255);
-    palette[static_cast<unsigned>(TextEditor::PaletteIndex::Comment)] = IM_COL32(106, 153, 85, 255);
-    palette[static_cast<unsigned>(TextEditor::PaletteIndex::MultiLineComment)] = IM_COL32(106, 153, 85, 255);
-    palette[static_cast<unsigned>(TextEditor::PaletteIndex::Background)] = IM_COL32(20, 20, 20, 255);
-    palette[static_cast<unsigned>(TextEditor::PaletteIndex::LineNumber)] = IM_COL32(43, 145, 175, 255);
-    palette[static_cast<unsigned>(TextEditor::PaletteIndex::CurrentLineFill)] = IM_COL32(255, 255, 255, 12);
-    palette[static_cast<unsigned>(TextEditor::PaletteIndex::CurrentLineFillInactive)] = IM_COL32(255, 255, 255, 8);
-    palette[static_cast<unsigned>(TextEditor::PaletteIndex::CurrentLineEdge)] = IM_COL32(60, 60, 60, 255);
+    palette[static_cast<unsigned>(TextEditor::PaletteIndex::Default)] = IM_COL32(221, 224, 228, 255);
+    palette[static_cast<unsigned>(TextEditor::PaletteIndex::Keyword)] = IM_COL32(125, 180, 255, 255);
+    palette[static_cast<unsigned>(TextEditor::PaletteIndex::Number)] = IM_COL32(196, 214, 170, 255);
+    palette[static_cast<unsigned>(TextEditor::PaletteIndex::String)] = IM_COL32(226, 169, 135, 255);
+    palette[static_cast<unsigned>(TextEditor::PaletteIndex::CharLiteral)] = IM_COL32(226, 169, 135, 255);
+    palette[static_cast<unsigned>(TextEditor::PaletteIndex::Punctuation)] = IM_COL32(205, 210, 218, 255);
+    palette[static_cast<unsigned>(TextEditor::PaletteIndex::Identifier)] = IM_COL32(221, 224, 228, 255);
+    palette[static_cast<unsigned>(TextEditor::PaletteIndex::KnownIdentifier)] = IM_COL32(113, 204, 183, 255);
+    palette[static_cast<unsigned>(TextEditor::PaletteIndex::PreprocIdentifier)] = IM_COL32(205, 156, 220, 255);
+    palette[static_cast<unsigned>(TextEditor::PaletteIndex::Comment)] = IM_COL32(135, 160, 130, 255);
+    palette[static_cast<unsigned>(TextEditor::PaletteIndex::MultiLineComment)] = IM_COL32(135, 160, 130, 255);
+    palette[static_cast<unsigned>(TextEditor::PaletteIndex::Background)] = IM_COL32(34, 36, 41, 255);
+    palette[static_cast<unsigned>(TextEditor::PaletteIndex::Cursor)] = IM_COL32(235, 238, 242, 255);
+    palette[static_cast<unsigned>(TextEditor::PaletteIndex::Selection)] = IM_COL32(75, 95, 125, 170);
+    palette[static_cast<unsigned>(TextEditor::PaletteIndex::LineNumber)] = IM_COL32(118, 126, 140, 255);
+    palette[static_cast<unsigned>(TextEditor::PaletteIndex::CurrentLineFill)] = IM_COL32(255, 255, 255, 18);
+    palette[static_cast<unsigned>(TextEditor::PaletteIndex::CurrentLineFillInactive)] = IM_COL32(255, 255, 255, 10);
+    palette[static_cast<unsigned>(TextEditor::PaletteIndex::CurrentLineEdge)] = IM_COL32(76, 83, 94, 255);
     return palette;
 }
 
