@@ -17,6 +17,7 @@
 #include "gobot/core/string_utils.hpp"
 #include "gobot/editor/editor.hpp"
 #include "gobot/editor/imgui/console_panel.hpp"
+#include "gobot/editor/python_script_sync.hpp"
 #include "gobot/log.hpp"
 #include "gobot/python/python_script_runner.hpp"
 #include "gobot/scene/node_3d.hpp"
@@ -159,6 +160,10 @@ PythonPanel::PythonPanel() {
 }
 
 bool PythonPanel::OpenScript(const std::string& path) {
+    return LoadScript(path);
+}
+
+bool PythonPanel::LoadScript(const std::string& path) {
     const std::string local_path = ValidateLocalPath(path);
     const std::string global_path = ProjectSettings::GetInstance()->GlobalizePath(local_path);
 
@@ -168,11 +173,18 @@ bool PythonPanel::OpenScript(const std::string& path) {
         return false;
     }
 
-    editor_.SetText(NormalizePythonIndentation(std::string(std::istreambuf_iterator<char>(stream),
-                                                           std::istreambuf_iterator<char>())));
+    const std::string source_code =
+            NormalizePythonIndentation(std::string(std::istreambuf_iterator<char>(stream),
+                                                   std::istreambuf_iterator<char>()));
+    editor_.SetText(source_code);
     script_local_path_ = local_path;
     script_global_path_ = global_path;
     script_dirty_ = false;
+
+    auto* editor = Editor::GetInstanceOrNull();
+    SyncPythonScriptResourceSource(script_local_path_,
+                                   source_code,
+                                   editor != nullptr ? editor->GetEditedSceneRoot() : nullptr);
     return true;
 }
 
@@ -262,46 +274,17 @@ bool PythonPanel::SavePythonScript() {
     if (normalized_text != editor_.GetText()) {
         editor_.SetText(normalized_text);
     }
-    Ref<Resource> cached_resource = ResourceCache::GetRef(script_local_path_);
-    Ref<PythonScript> cached_script = dynamic_pointer_cast<PythonScript>(cached_resource);
-    if (cached_script.IsValid()) {
-        cached_script->SetSourceCode(normalized_text);
-    }
-    RefreshAttachedSceneScripts(script_local_path_, normalized_text);
+    auto* editor = Editor::GetInstanceOrNull();
+    SyncPythonScriptResourceSource(script_local_path_,
+                                   normalized_text,
+                                   editor != nullptr ? editor->GetEditedSceneRoot() : nullptr);
     script_dirty_ = false;
     AddPythonMessage("Saved Python script: " + script_local_path_, ConsoleMessage::Info, "Python");
 
-    auto* editor = Editor::GetInstanceOrNull();
     if (editor != nullptr) {
         editor->RefreshResourcePanel();
     }
     return true;
-}
-
-void PythonPanel::RefreshAttachedSceneScripts(const std::string& local_path,
-                                              const std::string& source_code) {
-    auto* editor = Editor::GetInstanceOrNull();
-    Node* root = editor != nullptr ? editor->GetEditedSceneRoot() : nullptr;
-    if (root == nullptr || local_path.empty()) {
-        return;
-    }
-
-    auto refresh_node = [&](Node* node, const auto& self) -> void {
-        if (node == nullptr) {
-            return;
-        }
-
-        Ref<PythonScript> script = node->GetScript();
-        if (script.IsValid() && script->GetPath() == local_path) {
-            script->SetSourceCode(source_code);
-        }
-
-        const std::size_t child_count = node->GetChildCount();
-        for (std::size_t child_index = 0; child_index < child_count; ++child_index) {
-            self(node->GetChild(static_cast<int>(child_index)), self);
-        }
-    };
-    refresh_node(root, refresh_node);
 }
 
 bool PythonPanel::OpenInVSCode() {

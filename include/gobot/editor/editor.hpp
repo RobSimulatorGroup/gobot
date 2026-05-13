@@ -171,6 +171,8 @@ private:
 
     void BindEngineContextToEditedScene();
 
+    void UpdatePythonPanelFromSceneRootScript();
+
     static bool IsNativeScenePath(const std::string& path);
 
     void BeginDockSpace();

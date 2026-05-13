@@ -71,7 +71,8 @@ package_add_test(test_edited_scene
 if (GOB_BUILD_PYTHON_BINDINGS AND GOB_ENABLE_PYTHON_EMBED AND Python3_Development.Embed_FOUND)
     add_executable(test_scene_play_session
             editor/test_scene_play_session.cpp
-            ${PROJECT_SOURCE_DIR}/src/gobot/editor/scene_play_session.cpp)
+            ${PROJECT_SOURCE_DIR}/src/gobot/editor/scene_play_session.cpp
+            ${PROJECT_SOURCE_DIR}/src/gobot/editor/python_script_sync.cpp)
     target_compile_options(test_scene_play_session PUBLIC "${GOBOT_COMPILE_OPTIONS}")
     target_compile_definitions(test_scene_play_session
             PRIVATE

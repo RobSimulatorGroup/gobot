@@ -6,11 +6,15 @@
 
 #include <gobot/core/config/project_setting.hpp>
 #include <gobot/core/io/python_script.hpp>
+#include <gobot/editor/python_script_sync.hpp>
 #include <gobot/editor/scene_play_session.hpp>
 #include <gobot/main/engine_context.hpp>
 #include <gobot/physics/physics_server.hpp>
+#include <gobot/scene/joint_3d.hpp>
+#include <gobot/scene/link_3d.hpp>
 #include <gobot/scene/node_3d.hpp>
 #include <gobot/scene/node.hpp>
+#include <gobot/scene/robot_3d.hpp>
 #include <gobot/scene/resources/packed_scene.hpp>
 #include <gobot/scene/scene_initializer.hpp>
 #include <gobot/scene/scene_tree.hpp>
@@ -243,6 +247,71 @@ TEST_F(TestScenePlaySession, runtime_clone_expands_scene_instance_children_for_p
     EXPECT_EQ(runtime_robot->GetChild(0)->GetName(), "RobotLink");
     EXPECT_FALSE(runtime_robot->GetSceneInstance().IsValid());
     EXPECT_TRUE(robot_instance->GetSceneInstance().IsValid());
+}
+
+TEST_F(TestScenePlaySession, runtime_clone_preserves_motion_robot_joint_positions) {
+    auto* robot = gobot::Object::New<gobot::Robot3D>();
+    robot->SetName("cartpole");
+    auto* rail = gobot::Object::New<gobot::Link3D>();
+    rail->SetName("rail");
+    rail->SetRole(gobot::LinkRole::VirtualRoot);
+    auto* slider = gobot::Object::New<gobot::Joint3D>();
+    slider->SetName("slider");
+    slider->SetJointType(gobot::JointType::Prismatic);
+    slider->SetParentLink("rail");
+    slider->SetChildLink("cart");
+    slider->SetLowerLimit(-2.4);
+    slider->SetUpperLimit(2.4);
+    slider->SetJointPosition(0.75);
+
+    auto* cart = gobot::Object::New<gobot::Link3D>();
+    cart->SetName("cart");
+
+    root->AddChild(robot);
+    robot->AddChild(rail);
+    rail->AddChild(slider);
+    slider->AddChild(cart);
+    robot->SetMode(gobot::RobotMode::Motion);
+
+    ASSERT_TRUE(session.Start(root, context.get()));
+    ASSERT_NE(session.GetRuntimeRoot(), nullptr);
+    auto* runtime_robot = gobot::Object::PointerCastTo<gobot::Robot3D>(
+            session.GetRuntimeRoot()->GetChild(0));
+    ASSERT_NE(runtime_robot, nullptr);
+    ASSERT_EQ(runtime_robot->GetChildCount(), 1);
+    auto* runtime_rail = runtime_robot->GetChild(0);
+    ASSERT_NE(runtime_rail, nullptr);
+    ASSERT_EQ(runtime_rail->GetChildCount(), 1);
+    auto* runtime_slider = gobot::Object::PointerCastTo<gobot::Joint3D>(
+            runtime_rail->GetChild(0));
+    ASSERT_NE(runtime_slider, nullptr);
+    EXPECT_DOUBLE_EQ(runtime_slider->GetJointPosition(), 0.75);
+}
+
+TEST_F(TestScenePlaySession, python_script_sync_refreshes_attached_script_source) {
+    auto script = MakeScript("scripts/reload.py", R"PY(
+import gobot
+
+class Script(gobot.NodeScript):
+    def _ready(self):
+        self.node.name = "old"
+)PY");
+    root->SetScript(script);
+
+    const std::string updated_source = R"PY(
+import gobot
+
+class Script(gobot.NodeScript):
+    def _ready(self):
+        self.node.name = "new"
+)PY";
+    {
+        std::ofstream stream(project_path / "scripts" / "reload.py", std::ios::out | std::ios::trunc);
+        stream << updated_source;
+    }
+
+    gobot::SyncPythonScriptResourceSource("res://scripts/reload.py", updated_source, root);
+    EXPECT_EQ(script->GetSourceCode(), updated_source);
 }
 
 TEST_F(TestScenePlaySession, node_script_stdout_is_returned_from_notifications) {

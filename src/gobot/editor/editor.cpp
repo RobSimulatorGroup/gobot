@@ -13,6 +13,7 @@
 #include <string>
 
 #include "gobot/core/config/project_setting.hpp"
+#include "gobot/core/io/python_script.hpp"
 #include "gobot/core/io/resource_loader.hpp"
 #include "gobot/core/os/input.hpp"
 #include "gobot/editor/edited_scene.hpp"
@@ -253,6 +254,7 @@ bool Editor::OpenSceneFromPath(const std::string& path) {
     current_scene_path_ = path;
     BindEngineContextToEditedScene();
     ClearSceneDirty();
+    UpdatePythonPanelFromSceneRootScript();
     LOG_INFO("Opened scene: {}", current_scene_path_);
     return true;
 }
@@ -415,6 +417,25 @@ bool Editor::OpenPythonScriptFromPath(const std::string& path) {
         FocusPythonPanel();
     }
     return opened;
+}
+
+void Editor::UpdatePythonPanelFromSceneRootScript() {
+    if (python_panel_ == nullptr) {
+        return;
+    }
+
+    Node* root = GetEditedSceneRoot();
+    if (root == nullptr) {
+        return;
+    }
+
+    Ref<PythonScript> script = root->GetScript();
+    if (!script.IsValid() || script->GetPath().empty()) {
+        return;
+    }
+
+    python_panel_->SetOpen(true);
+    python_panel_->LoadScript(script->GetPath());
 }
 
 void Editor::FocusSceneViewerPanel() {
