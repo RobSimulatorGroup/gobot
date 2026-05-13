@@ -311,6 +311,9 @@ bool ScenePlaySession::AttachNodeScriptsRecursive(Node* node) {
 }
 
 bool ScenePlaySession::NotifyScripts(NotificationType notification, double delta_time) {
+    runtime_root_ = GetRuntimeRoot();
+    python::PythonScriptRunner::SetSceneScriptRoot(runtime_root_, runtime_scene_epoch_);
+
     std::vector<ObjectID> remaining_nodes;
     remaining_nodes.reserve(script_nodes_.size());
     bool ok = true;

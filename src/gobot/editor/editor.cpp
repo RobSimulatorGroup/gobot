@@ -545,7 +545,9 @@ void Editor::StopScenePlaySession() {
     }
     if (scene_play_session_ != nullptr) {
         Node* runtime_root = scene_play_session_->GetRuntimeRoot();
-        if (runtime_root != nullptr && (selected_ == runtime_root || runtime_root->IsAncestorOf(selected_))) {
+        if (selected_ == nullptr ||
+            (runtime_root != nullptr &&
+             (selected_ == runtime_root || runtime_root->IsAncestorOf(selected_)))) {
             selected_ = GetEditedSceneRoot();
         }
         scene_play_session_->Stop();

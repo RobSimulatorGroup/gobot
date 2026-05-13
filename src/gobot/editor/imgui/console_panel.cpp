@@ -8,12 +8,15 @@
 
 #include "gobot/editor/imgui/console_panel.hpp"
 
+#include <algorithm>
+#include <sstream>
 #include <utility>
 
 #include "gobot/editor/imgui/imgui_utilities.hpp"
 #include "imgui_extension/icon_fonts/icons_material_design_icons.h"
 
 #include "imgui.h"
+#include "imgui_stdlib.h"
 
 namespace gobot {
 
@@ -36,15 +39,6 @@ void ConsoleMessage::OnImGUIRender()
         ImGui::PopStyleColor();
         ImGui::SameLine();
         ImGui::TextUnformatted(message_.c_str());
-        if(ImGui::BeginPopupContextItem(message_.c_str()))
-        {
-            if(ImGui::MenuItem("Copy"))
-            {
-                ImGui::SetClipboardText(message_.c_str());
-            }
-
-            ImGui::EndPopup();
-        }
 
         if(ImGui::IsItemHovered())
         {
@@ -53,7 +47,8 @@ void ConsoleMessage::OnImGUIRender()
 
         if(count_ > 1)
         {
-            ImGui::SameLine(ImGui::GetContentRegionAvail().x - (count_ > 99 ? ImGui::GetFontSize() * 1.7f : ImGui::GetFontSize() * 1.5f));
+            ImGui::SameLine(ImGui::GetContentRegionAvail().x -
+                            (count_ > 99 ? ImGui::GetFontSize() * 1.7f : ImGui::GetFontSize() * 1.5f));
             ImGui::Text("%d", count_);
         }
     }
@@ -185,6 +180,8 @@ void ConsolePanel::Flush()
     for(auto message = s_message_buffer.begin(); message != s_message_buffer.end(); message++)
         (*message) = nullptr;
     s_message_buffer_begin = 0;
+    s_message_buffer_size = 0;
+    s_request_scroll_to_bottom = false;
 }
 
 void ConsolePanel::OnImGuiContent()
@@ -206,10 +203,6 @@ void ConsolePanel::ImGuiRenderHeader()
     if(ImGui::BeginPopup("SettingsPopup")) {
         // Checkbox for scrolling lock
         ImGui::Checkbox("Scroll to bottom", &s_allow_scrolling_to_bottom);
-
-        // Button to clear the console
-        if(ImGui::Button("Clear console"))
-            Flush();
 
         ImGui::EndPopup();
     }
@@ -267,44 +260,74 @@ void ConsolePanel::ImGuiRenderHeader()
 
 void ConsolePanel::ImGuiRenderMessages()
 {
-    ImGui::BeginChild("ScrollRegion", ImVec2(0, 0), false, ImGuiWindowFlags_HorizontalScrollbar);
-    {
+    visible_message_text_ = BuildVisibleMessagesText();
 
-        auto messageStart = s_message_buffer.begin() + s_message_buffer_begin;
-        // If contains old message here
-        if(*messageStart) {
-            for(auto message = messageStart; message != s_message_buffer.end(); message++) {
-                if(filter_.IsActive()) {
-                    if(filter_.PassFilter((*message)->message_.c_str())) {
-                        (*message)->OnImGUIRender();
-                    }
-                } else {
-                    (*message)->OnImGUIRender();
-                }
-            }
+    ImGuiUtilities::ScopedColor frame_color(ImGuiCol_FrameBg, ImGui::GetStyleColorVec4(ImGuiCol_ChildBg));
+    ImGuiUtilities::ScopedColor selection_color(ImGuiCol_TextSelectedBg, ImVec4(0.18f, 0.47f, 0.90f, 0.70f));
+    ImGuiUtilities::ScopedStyle frame_border(ImGuiStyleVar_FrameBorderSize, 0.0f);
+    ImGuiUtilities::ScopedStyle frame_padding(ImGuiStyleVar_FramePadding, ImVec2(0.0f, 0.0f));
+    ImGui::InputTextMultiline("##ConsoleMessagesText",
+                              &visible_message_text_,
+                              ImVec2(-FLT_MIN, -FLT_MIN),
+                              ImGuiInputTextFlags_ReadOnly |
+                              ImGuiInputTextFlags_NoUndoRedo);
+    if(s_request_scroll_to_bottom) {
+        s_request_scroll_to_bottom = false;
+    }
+
+    RenderMessagesContextMenu();
+}
+
+void ConsolePanel::RenderMessagesContextMenu()
+{
+    if(ImGui::BeginPopupContextItem("ConsoleMessagesContextMenu", ImGuiPopupFlags_MouseButtonRight)) {
+        if(ImGui::MenuItem("Copy visible messages")) {
+            ImGui::SetClipboardText(visible_message_text_.c_str());
         }
-
-        // Skipped first messages in vector
-        if(s_message_buffer_begin != 0)  {
-            for(auto message = s_message_buffer.begin(); message != messageStart; message++) {
-                if(*message) {
-                    if(filter_.IsActive()) {
-                        if(filter_.PassFilter((*message)->message_.c_str())) {
-                            (*message)->OnImGUIRender();
-                        }
-                    } else {
-                        (*message)->OnImGUIRender();
-                    }
-                }
-            }
+        ImGui::Separator();
+        if(ImGui::MenuItem("Clear console")) {
+            Flush();
+            visible_message_text_.clear();
         }
+        ImGui::EndPopup();
+    }
+}
 
-        if(s_request_scroll_to_bottom && ImGui::GetScrollMaxY() > 0) {
-            ImGui::SetScrollHereY(1.0f);
-            s_request_scroll_to_bottom = false;
+std::string ConsolePanel::BuildVisibleMessagesText() const
+{
+    std::ostringstream output;
+    auto append_message = [&](const Ref<ConsoleMessage>& message) {
+        if(!message || !(s_message_buffer_render_filter & message->level_)) {
+            return;
+        }
+        if(filter_.IsActive() && !filter_.PassFilter(message->message_.c_str())) {
+            return;
+        }
+        std::string message_text = message->message_;
+        while(!message_text.empty() && (message_text.back() == '\n' || message_text.back() == '\r')) {
+            message_text.pop_back();
+        }
+        output << message_text;
+        if(message->count_ > 1) {
+            output << " (" << message->count_ << ")";
+        }
+        output << '\n';
+    };
+
+    auto messageStart = s_message_buffer.begin() + s_message_buffer_begin;
+    if(*messageStart) {
+        for(auto message = messageStart; message != s_message_buffer.end(); message++) {
+            append_message(*message);
         }
     }
-    ImGui::EndChild();
+
+    if(s_message_buffer_begin != 0) {
+        for(auto message = s_message_buffer.begin(); message != messageStart; message++) {
+            append_message(*message);
+        }
+    }
+
+    return output.str();
 }
 
 }

@@ -73,6 +73,10 @@ private:
 
     void ImGuiRenderMessages();
 
+    void RenderMessagesContextMenu();
+
+    std::string BuildVisibleMessagesText() const;
+
 private:
     friend class ConsoleMessage;
 
@@ -84,6 +88,7 @@ private:
     static bool s_request_scroll_to_bottom;
     static uint32_t s_message_buffer_render_filter;
     ImGuiTextFilter filter_;
+    std::string visible_message_text_;
 };
 
 }
