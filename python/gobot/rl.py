@@ -1551,8 +1551,186 @@ class ManagerBasedEnv:
         pass
 
 
-class VectorEnv(ManagerBasedEnv):
-    """Alias for the batched manager environment API."""
+def _native_action_mode(mode: str) -> _core.NativeVectorActionMode:
+    normalized = str(mode).lower()
+    if normalized in {"normalized_position", "normalized_joint_position", "normalized"}:
+        return _core.NativeVectorActionMode.NormalizedPosition
+    if normalized in {"position", "target_position"}:
+        return _core.NativeVectorActionMode.Position
+    if normalized in {"velocity", "target_velocity"}:
+        return _core.NativeVectorActionMode.Velocity
+    if normalized in {"effort", "force", "torque", "target_effort"}:
+        return _core.NativeVectorActionMode.Effort
+    raise ValueError(f"unsupported native VectorEnv action mode: {mode!r}")
+
+
+def _native_action_configs(action_cfg: Mapping[str, Any], controlled_joints: Sequence[str] | None) -> list[Any]:
+    configs: list[Any] = []
+    terms = [term for term in _term_list(action_cfg) if term.enabled]
+    for term_config in terms:
+        term = ActionTerm.from_config(term_config)
+        config = _core.NativeVectorActionConfig()
+        config.name = term.name
+        config.joint = term.joint
+        config.mode = _native_action_mode(term.mode)
+        config.scale = float(term.scale)
+        config.offset = float(term.offset)
+        config.lower = float(term.lower)
+        config.upper = float(term.upper)
+        config.unit = term.unit
+        config.passive_joints = list(term.passive_joints)
+        configs.append(config)
+    if not configs and controlled_joints is not None:
+        for joint in controlled_joints:
+            config = _core.NativeVectorActionConfig()
+            config.name = f"{joint}/target_position_normalized"
+            config.joint = str(joint)
+            config.mode = _core.NativeVectorActionMode.NormalizedPosition
+            config.scale = 1.0
+            config.offset = 0.0
+            config.lower = -1.0
+            config.upper = 1.0
+            config.unit = "normalized"
+            config.passive_joints = []
+            configs.append(config)
+    return configs
+
+
+class VectorEnv:
+    """Native CPU vector environment with envpool-style batched APIs.
+
+    The current implementation is a C++ CPU baseline: one scene topology,
+    multiple independent physics worlds, batch-first reset/step, auto-reset,
+    and send/recv batching. Python stays as a thin wrapper around the native
+    rollout backend.
+    """
+
+    def __init__(self, cfg: Mapping[str, Any] | EnvConfig | TaskConfig | None = None) -> None:
+        if isinstance(cfg, TaskConfig):
+            self.task_config = cfg
+            self.cfg = cfg.env_config()
+        elif isinstance(cfg, EnvConfig):
+            self.task_config = None
+            self.cfg = cfg
+        elif isinstance(cfg, Mapping) and ("name" in cfg or "commands" in cfg or "metadata" in cfg):
+            self.task_config = TaskConfig.from_mapping(cfg)
+            self.cfg = self.task_config.env_config()
+        else:
+            self.task_config = None
+            self.cfg = EnvConfig.from_mapping(cfg)
+        if self.cfg.num_envs < 1:
+            raise ValueError("num_envs must be at least 1")
+        if not self.cfg.scene:
+            raise ValueError("VectorEnv requires cfg.scene so native worlds can be instantiated independently")
+        if self.cfg.decimation < 1:
+            raise ValueError("decimation must be at least 1")
+        if self.cfg.physics_dt <= 0.0:
+            raise ValueError("physics_dt must be greater than zero")
+
+        native_cfg = _core.NativeVectorEnvConfig()
+        native_cfg.scene = self.cfg.scene
+        native_cfg.robot = self.cfg.robot or ""
+        native_cfg.backend = _backend_type(self.cfg.backend)
+        native_cfg.num_envs = int(self.cfg.num_envs)
+        native_cfg.batch_size = int(self.cfg.simulation.get("batch_size", self.cfg.simulation.get("batch", self.cfg.num_envs)))
+        native_cfg.num_workers = int(self.cfg.simulation.get("num_workers", self.cfg.simulation.get("workers", 0)))
+        native_cfg.physics_dt = float(self.cfg.physics_dt)
+        native_cfg.decimation = int(self.cfg.decimation)
+        native_cfg.max_episode_steps = max(1, int(math.ceil(float(self.cfg.episode_length_s) / (float(self.cfg.physics_dt) * int(self.cfg.decimation)))))
+        native_cfg.auto_reset = bool(self.cfg.auto_reset)
+        native_cfg.controlled_joints = [] if self.cfg.controlled_joints is None else list(self.cfg.controlled_joints)
+
+        actions = _native_action_configs(self.cfg.actions, self.cfg.controlled_joints)
+        self._native = _core.NativeVectorEnv(native_cfg, actions)
+        self.num_envs = self._native.num_envs
+        self.batch_size = self._native.batch_size
+        self.num_workers = self._native.num_workers
+        self.physics_dt = float(self.cfg.physics_dt)
+        self.decimation = int(self.cfg.decimation)
+        self.env_dt = float(self._native.env_dt)
+        self.max_episode_steps = int(native_cfg.max_episode_steps)
+        self.auto_reset = bool(self.cfg.auto_reset)
+        self._last_observation: np.ndarray | None = None
+        self._last_info: dict[str, Any] = {}
+        self.observation_spec = VectorSpec.from_dict(dict(self._native.observation_spec))
+        self.action_spec = VectorSpec.from_dict(dict(self._native.action_spec))
+        self.episode_lengths = np.zeros((self.num_envs,), dtype=np.int64)
+        self.episode_returns = np.zeros((self.num_envs,), dtype=np.float64)
+
+    @property
+    def observation_space(self) -> VectorSpace:
+        return space_from_spec(self.observation_spec)
+
+    @property
+    def action_space(self) -> VectorSpace:
+        return space_from_spec(self.action_spec)
+
+    def reset(
+        self,
+        seed: int | None = None,
+        options: Mapping[str, Any] | None = None,
+        env_ids: Sequence[int] | np.ndarray | None = None,
+    ) -> tuple[np.ndarray, dict[str, Any]]:
+        if options:
+            raise NotImplementedError("native VectorEnv reset options are not implemented yet")
+        observation, info = self._native.reset(seed, env_ids)
+        observation = np.asarray(observation, dtype=np.float64)
+        info = dict(info)
+        self._update_episode_state(info)
+        self._last_observation = observation.copy()
+        self._last_info = info
+        return observation, info
+
+    def step(
+        self,
+        action: ArrayLike,
+        env_ids: Sequence[int] | np.ndarray | None = None,
+    ) -> tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray, dict[str, Any]]:
+        observation, reward, terminated, truncated, info = self._native.step(action, env_ids)
+        return self._convert_step(observation, reward, terminated, truncated, info)
+
+    def async_reset(self) -> None:
+        self._native.async_reset()
+
+    def send(self, action: ArrayLike, env_ids: Sequence[int] | np.ndarray | None = None) -> None:
+        self._native.send(action, env_ids)
+
+    def recv(self) -> tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray, dict[str, Any]]:
+        observation, reward, terminated, truncated, info = self._native.recv()
+        return self._convert_step(observation, reward, terminated, truncated, info)
+
+    def observation_group_spec(self, group: str) -> VectorSpec:
+        if group != "policy":
+            raise KeyError(group)
+        return self.observation_spec
+
+    def close(self) -> None:
+        pass
+
+    def _convert_step(self, observation: Any, reward: Any, terminated: Any, truncated: Any, info: Any):
+        obs = np.asarray(observation, dtype=np.float64)
+        rew = np.asarray(reward, dtype=np.float64)
+        term = np.asarray(terminated, dtype=bool)
+        trunc = np.asarray(truncated, dtype=bool)
+        step_info = dict(info)
+        self._update_episode_state(step_info)
+        self._last_observation = obs.copy()
+        self._last_info = step_info
+        return obs, rew, term, trunc, step_info
+
+    def _update_episode_state(self, info: Mapping[str, Any]) -> None:
+        env_ids = np.asarray(info.get("env_id", np.arange(self.num_envs)), dtype=np.int64)
+        if "episode_length" in info:
+            lengths = np.asarray(info["episode_length"], dtype=np.int64)
+            self.episode_lengths[env_ids] = lengths
+        if "episode_return" in info:
+            returns = np.asarray(info["episode_return"], dtype=np.float64)
+            self.episode_returns[env_ids] = returns
+        if "has_terminal_observation" in info:
+            reset_ids = env_ids[np.asarray(info["has_terminal_observation"], dtype=bool)]
+            if reset_ids.size:
+                self.episode_lengths[reset_ids] = 0
+                self.episode_returns[reset_ids] = 0.0
 
 
 class GymWrapper:
