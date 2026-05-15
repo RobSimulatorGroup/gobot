@@ -1,5 +1,5 @@
 cmake_minimum_required (VERSION 3.16)
-project (gobot VERSION 0.1.4)
+project (gobot VERSION 0.1.5)
 
 set(CMAKE_POLICY_VERSION_MINIMUM 3.5)
 
@@ -15,8 +15,6 @@ option(GOB_BUILD_TESTS "build tests" OFF)
 option(GOB_BUILD_OPENUSD "build OpenUSD scene importer/exporter support" OFF)
 option(GOB_BUILD_ASSIMP "build mesh import support through Assimp" ON)
 option(GOB_BUILD_MUJOCO "build MuJoCo CPU physics backend support" ON)
-option(GOB_BUILD_PYTHON_BINDINGS "build Python bindings through pybind11" ON)
-option(GOB_ENABLE_PYTHON_EMBED "enable embedded Python runtime when a Python embed library is available" ON)
 option(GOB_FETCH_MUJOCO "download MuJoCo from the official GitHub repository when GOB_BUILD_MUJOCO is ON and no local SDK/package is found" ON)
 set(GOB_MUJOCO_ROOT "" CACHE PATH "MuJoCo SDK or install prefix. Supports either a CMake package install or an extracted SDK with include/ and lib/.")
 set(GOB_MUJOCO_GIT_TAG "3.8.0" CACHE STRING "MuJoCo release tag used when GOB_FETCH_MUJOCO is ON")
@@ -227,18 +225,16 @@ if(magic_enum_SOURCE_DIR)
 endif()
 CPMAddPackage("gh:jarro2783/cxxopts@3.0.0")
 
-if(GOB_BUILD_PYTHON_BINDINGS)
-    find_package(Python3 REQUIRED COMPONENTS Interpreter Development.Module OPTIONAL_COMPONENTS Development.Embed)
-    if(EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/3rdparty/pybind11/CMakeLists.txt")
-        add_subdirectory(3rdparty/pybind11)
-    else()
-        CPMAddPackage(
-            NAME pybind11
-            GITHUB_REPOSITORY pybind/pybind11
-            VERSION 2.13.6
-            OPTIONS "PYBIND11_TEST OFF"
-        )
-    endif()
+find_package(Python3 REQUIRED COMPONENTS Interpreter Development.Module Development.Embed)
+if(EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/3rdparty/pybind11/CMakeLists.txt")
+    add_subdirectory(3rdparty/pybind11)
+else()
+    CPMAddPackage(
+        NAME pybind11
+        GITHUB_REPOSITORY pybind/pybind11
+        VERSION 2.13.6
+        OPTIONS "PYBIND11_TEST OFF"
+    )
 endif()
 
 INCLUDE(GenerateExportHeader)
@@ -352,90 +348,79 @@ if(GOB_BUILD_MUJOCO)
     target_link_libraries(gobot PUBLIC ${GOBOT_MUJOCO_TARGET})
 endif()
 
-if(GOB_BUILD_PYTHON_BINDINGS)
-    target_compile_definitions(gobot PUBLIC GOBOT_HAS_PYTHON=1)
-    set(GOBOT_PYTHON_BINDING_SOURCES
-            src/gobot/python/python_manual_bindings.cpp
-            src/gobot/python/python_reflected_bindings.cpp
-            src/gobot/python/python_variant_bridge.cpp)
-    if(GOB_ENABLE_PYTHON_EMBED AND Python3_Development.Embed_FOUND)
-        target_compile_definitions(gobot PUBLIC GOBOT_HAS_PYTHON_EMBED=1)
-        target_sources(gobot PRIVATE src/gobot/python/python_script_runner.cpp)
-        target_link_libraries(gobot PUBLIC pybind11::embed)
-    else()
-        message(WARNING "Python3 Development.Embed was not found. Editor Python script execution will be disabled in this build.")
-        target_sources(gobot PRIVATE src/gobot/python/python_script_runner_stub.cpp)
-        target_link_libraries(gobot PUBLIC pybind11::headers Python3::Module)
-    endif()
+target_compile_definitions(gobot PUBLIC GOBOT_HAS_PYTHON=1 GOBOT_HAS_PYTHON_EMBED=1)
+set(GOBOT_PYTHON_BINDING_SOURCES
+        src/gobot/python/python_manual_bindings.cpp
+        src/gobot/python/python_reflected_bindings.cpp
+        src/gobot/python/python_variant_bridge.cpp)
+target_sources(gobot PRIVATE src/gobot/python/python_script_runner.cpp)
+target_link_libraries(gobot PUBLIC pybind11::embed)
 
-    pybind11_add_module(gobot_python MODULE
-            src/gobot/python/python_module.cpp
-            ${GOBOT_PYTHON_BINDING_SOURCES}
-    )
-    target_link_libraries(gobot_python PRIVATE gobot)
-    set_target_properties(gobot_python
-        PROPERTIES
-            OUTPUT_NAME "_core"
-            LIBRARY_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/python/gobot"
-            INSTALL_RPATH "$ORIGIN"
-    )
-    set_target_properties(gobot
-        PROPERTIES
-            INSTALL_RPATH "$ORIGIN"
-    )
-    set(GOBOT_PYTHON_PACKAGE_DIR "${CMAKE_CURRENT_SOURCE_DIR}/python/gobot")
-    add_custom_target(gobot_python_package
-            COMMAND ${CMAKE_COMMAND} -E copy_directory
-                    "${GOBOT_PYTHON_PACKAGE_DIR}"
-                    "${CMAKE_BINARY_DIR}/python/gobot"
-            COMMENT "Copying Gobot Python package files"
-    )
-    add_dependencies(gobot_python gobot_python_package)
-    install(TARGETS gobot_python gobot
-            RUNTIME DESTINATION "gobot" COMPONENT python
-            LIBRARY DESTINATION "gobot" COMPONENT python)
-    install(DIRECTORY "${GOBOT_PYTHON_PACKAGE_DIR}/"
-            DESTINATION "gobot" COMPONENT python
-            FILES_MATCHING
-            PATTERN "__pycache__" EXCLUDE
-            PATTERN "*.pyc" EXCLUDE
-            PATTERN "*.py"
-            PATTERN "*.pyi"
-            PATTERN "py.typed")
-    if(GOB_BUILD_MUJOCO AND GOBOT_MUJOCO_TARGET)
-        install(FILES "$<TARGET_FILE:${GOBOT_MUJOCO_TARGET}>" DESTINATION "gobot" COMPONENT python)
-    endif()
-    gobot_install_license_files("${CMAKE_CURRENT_SOURCE_DIR}" "gobot")
-    gobot_install_license_files("${CMAKE_CURRENT_SOURCE_DIR}/3rdparty/assimp" "assimp")
-    gobot_install_license_files("${CMAKE_CURRENT_SOURCE_DIR}/3rdparty/ImGuiColorTextEdit" "ImGuiColorTextEdit")
-    gobot_install_license_files("${CMAKE_CURRENT_SOURCE_DIR}/3rdparty/imgui" "imgui")
-    gobot_install_license_files("${CMAKE_CURRENT_SOURCE_DIR}/3rdparty/meshoptimizer" "meshoptimizer")
-    gobot_install_license_files("${CMAKE_CURRENT_SOURCE_DIR}/3rdparty/pybind11" "pybind11")
-    gobot_install_license_files("${CMAKE_CURRENT_SOURCE_DIR}/3rdparty/rttr" "rttr")
-    gobot_install_license_files("${CMAKE_CURRENT_SOURCE_DIR}/3rdparty/stb" "stb")
-    if(SDL2_SOURCE_DIR)
-        gobot_install_license_files("${SDL2_SOURCE_DIR}" "SDL2")
-    endif()
-    if(fmt_SOURCE_DIR)
-        gobot_install_license_files("${fmt_SOURCE_DIR}" "fmt")
-    endif()
-    if(spdlog_SOURCE_DIR)
-        gobot_install_license_files("${spdlog_SOURCE_DIR}" "spdlog")
-    endif()
-    if(nlohmann_json_SOURCE_DIR)
-        gobot_install_license_files("${nlohmann_json_SOURCE_DIR}" "nlohmann_json")
-    endif()
-    if(magic_enum_SOURCE_DIR)
-        gobot_install_license_files("${magic_enum_SOURCE_DIR}" "magic_enum")
-    endif()
-    if(cxxopts_SOURCE_DIR)
-        gobot_install_license_files("${cxxopts_SOURCE_DIR}" "cxxopts")
-    endif()
-    if(mujoco_SOURCE_DIR)
-        gobot_install_license_files("${mujoco_SOURCE_DIR}" "mujoco")
-    endif()
-else()
-    target_sources(gobot PRIVATE src/gobot/python/python_script_runner_stub.cpp)
+pybind11_add_module(gobot_python MODULE
+        src/gobot/python/python_module.cpp
+        ${GOBOT_PYTHON_BINDING_SOURCES}
+)
+target_link_libraries(gobot_python PRIVATE gobot)
+set_target_properties(gobot_python
+    PROPERTIES
+        OUTPUT_NAME "_core"
+        LIBRARY_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/python/gobot"
+        INSTALL_RPATH "$ORIGIN"
+)
+set_target_properties(gobot
+    PROPERTIES
+        INSTALL_RPATH "$ORIGIN"
+)
+set(GOBOT_PYTHON_PACKAGE_DIR "${CMAKE_CURRENT_SOURCE_DIR}/python/gobot")
+add_custom_target(gobot_python_package
+        COMMAND ${CMAKE_COMMAND} -E copy_directory
+                "${GOBOT_PYTHON_PACKAGE_DIR}"
+                "${CMAKE_BINARY_DIR}/python/gobot"
+        COMMENT "Copying Gobot Python package files"
+)
+add_dependencies(gobot_python gobot_python_package)
+install(TARGETS gobot_python gobot
+        RUNTIME DESTINATION "gobot" COMPONENT python
+        LIBRARY DESTINATION "gobot" COMPONENT python)
+install(DIRECTORY "${GOBOT_PYTHON_PACKAGE_DIR}/"
+        DESTINATION "gobot" COMPONENT python
+        FILES_MATCHING
+        PATTERN "__pycache__" EXCLUDE
+        PATTERN "*.pyc" EXCLUDE
+        PATTERN "*.py"
+        PATTERN "*.pyi"
+        PATTERN "py.typed")
+if(GOB_BUILD_MUJOCO AND GOBOT_MUJOCO_TARGET)
+    install(FILES "$<TARGET_FILE:${GOBOT_MUJOCO_TARGET}>" DESTINATION "gobot" COMPONENT python)
+endif()
+gobot_install_license_files("${CMAKE_CURRENT_SOURCE_DIR}" "gobot")
+gobot_install_license_files("${CMAKE_CURRENT_SOURCE_DIR}/3rdparty/assimp" "assimp")
+gobot_install_license_files("${CMAKE_CURRENT_SOURCE_DIR}/3rdparty/ImGuiColorTextEdit" "ImGuiColorTextEdit")
+gobot_install_license_files("${CMAKE_CURRENT_SOURCE_DIR}/3rdparty/imgui" "imgui")
+gobot_install_license_files("${CMAKE_CURRENT_SOURCE_DIR}/3rdparty/meshoptimizer" "meshoptimizer")
+gobot_install_license_files("${CMAKE_CURRENT_SOURCE_DIR}/3rdparty/pybind11" "pybind11")
+gobot_install_license_files("${CMAKE_CURRENT_SOURCE_DIR}/3rdparty/rttr" "rttr")
+gobot_install_license_files("${CMAKE_CURRENT_SOURCE_DIR}/3rdparty/stb" "stb")
+if(SDL2_SOURCE_DIR)
+    gobot_install_license_files("${SDL2_SOURCE_DIR}" "SDL2")
+endif()
+if(fmt_SOURCE_DIR)
+    gobot_install_license_files("${fmt_SOURCE_DIR}" "fmt")
+endif()
+if(spdlog_SOURCE_DIR)
+    gobot_install_license_files("${spdlog_SOURCE_DIR}" "spdlog")
+endif()
+if(nlohmann_json_SOURCE_DIR)
+    gobot_install_license_files("${nlohmann_json_SOURCE_DIR}" "nlohmann_json")
+endif()
+if(magic_enum_SOURCE_DIR)
+    gobot_install_license_files("${magic_enum_SOURCE_DIR}" "magic_enum")
+endif()
+if(cxxopts_SOURCE_DIR)
+    gobot_install_license_files("${cxxopts_SOURCE_DIR}" "cxxopts")
+endif()
+if(mujoco_SOURCE_DIR)
+    gobot_install_license_files("${mujoco_SOURCE_DIR}" "mujoco")
 endif()
 
 set_target_properties(gobot
@@ -456,11 +441,8 @@ target_include_directories(gobot
 
 
 
-set(GOBOT_PYTHON_EMBED_SOURCE "")
-if(GOB_BUILD_PYTHON_BINDINGS AND GOB_ENABLE_PYTHON_EMBED AND Python3_Development.Embed_FOUND)
-    set(GOBOT_PYTHON_EMBED_SOURCE src/gobot/python/python_embed_module.cpp)
-    set(GOBOT_PYTHON_EMBED_BINDING_SOURCES ${GOBOT_PYTHON_BINDING_SOURCES})
-endif()
+set(GOBOT_PYTHON_EMBED_SOURCE src/gobot/python/python_embed_module.cpp)
+set(GOBOT_PYTHON_EMBED_BINDING_SOURCES ${GOBOT_PYTHON_BINDING_SOURCES})
 
 file(GLOB_RECURSE SOURCE_PLATFORM CONFIGURE_DEPENDS "src/gobot/platform/linux/*.cpp")
 list(REMOVE_ITEM SOURCE_PLATFORM
@@ -494,17 +476,15 @@ set_target_properties(gobot_editor
         INSTALL_RPATH "$ORIGIN"
 )
 
-if(GOB_BUILD_PYTHON_BINDINGS)
-    install(DIRECTORY "${CMAKE_CURRENT_SOURCE_DIR}/examples/"
-            DESTINATION "gobot/examples" COMPONENT python
-            FILES_MATCHING
-            PATTERN "__pycache__" EXCLUDE
-            PATTERN "*.pyc" EXCLUDE
-            PATTERN "*.jscn"
-            PATTERN "*.py")
-    install(TARGETS gobot_editor
-            RUNTIME DESTINATION "gobot" COMPONENT python)
-endif()
+install(DIRECTORY "${CMAKE_CURRENT_SOURCE_DIR}/examples/"
+        DESTINATION "gobot/examples" COMPONENT python
+        FILES_MATCHING
+        PATTERN "__pycache__" EXCLUDE
+        PATTERN "*.pyc" EXCLUDE
+        PATTERN "*.jscn"
+        PATTERN "*.py")
+install(TARGETS gobot_editor
+        RUNTIME DESTINATION "gobot" COMPONENT python)
 
 if (GOB_BUILD_TESTS)
     enable_testing()

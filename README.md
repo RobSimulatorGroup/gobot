@@ -126,7 +126,7 @@ cd gobot
 git submodule update --init --recursive
 python -m pip install -U build scikit-build-core
 python -m build --wheel
-python -m pip install --force-reinstall dist/gobot-0.1.4-*.whl
+python -m pip install --force-reinstall dist/gobot-0.1.5-*.whl
 ```
 
 For a faster local build without MuJoCo:
