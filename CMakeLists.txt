@@ -226,7 +226,8 @@ if(magic_enum_SOURCE_DIR)
 endif()
 CPMAddPackage("gh:jarro2783/cxxopts@3.0.0")
 
-find_package(Python3 REQUIRED COMPONENTS Interpreter Development.Module Development.Embed)
+find_package(Python3 REQUIRED COMPONENTS Interpreter Development.Module)
+set(PYBIND11_FINDPYTHON ON)
 if(EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/3rdparty/pybind11/CMakeLists.txt")
     add_subdirectory(3rdparty/pybind11)
 else()
@@ -355,7 +356,7 @@ set(GOBOT_PYTHON_BINDING_SOURCES
         src/gobot/python/python_reflected_bindings.cpp
         src/gobot/python/python_variant_bridge.cpp)
 target_sources(gobot PRIVATE src/gobot/python/python_script_runner.cpp)
-target_link_libraries(gobot PUBLIC pybind11::embed)
+target_link_libraries(gobot PUBLIC pybind11::pybind11)
 
 pybind11_add_module(gobot_python MODULE
         src/gobot/python/python_module.cpp
@@ -448,8 +449,11 @@ set(GOBOT_PYTHON_EMBED_BINDING_SOURCES ${GOBOT_PYTHON_BINDING_SOURCES})
 file(GLOB_RECURSE SOURCE_PLATFORM CONFIGURE_DEPENDS "src/gobot/platform/linux/*.cpp")
 list(REMOVE_ITEM SOURCE_PLATFORM
         "${CMAKE_CURRENT_SOURCE_DIR}/src/gobot/platform/linux/gobot_linux.cpp"
+        "${CMAKE_CURRENT_SOURCE_DIR}/src/gobot/platform/linux/gobot_editor_launcher.cpp"
+        "${CMAKE_CURRENT_SOURCE_DIR}/src/gobot/platform/linux/gobot_editor_runtime.cpp"
 )
-add_executable(gobot_editor
+
+add_library(gobot_editor_runtime SHARED
         ${SOURCE_DRIVERS}
         ${SOURCE_MAIN}
         ${SOURCE_EDITOR}
@@ -459,21 +463,38 @@ add_executable(gobot_editor
         ${GOBOT_PYTHON_EMBED_BINDING_SOURCES}
         3rdparty/ImGuiColorTextEdit/TextEditor.cpp
         src/gobot/platform/editor_embedded_resources.cpp
-        src/gobot/platform/linux/gobot_linux.cpp
+        src/gobot/platform/linux/gobot_editor_runtime.cpp
 )
-add_dependencies(gobot_editor gobot_editor_resources)
-target_include_directories(gobot_editor PRIVATE
+add_dependencies(gobot_editor_runtime gobot_editor_resources gobot_python_package)
+target_include_directories(gobot_editor_runtime PRIVATE
         ${CMAKE_CURRENT_SOURCE_DIR}/3rdparty/ImGuiColorTextEdit)
-target_compile_definitions(gobot_editor PRIVATE
+target_compile_definitions(gobot_editor_runtime PRIVATE
         GOBOT_ROOT_DIR="${CMAKE_CURRENT_SOURCE_DIR}")
-target_link_libraries(gobot_editor PRIVATE
+target_link_libraries(gobot_editor_runtime PRIVATE
         gobot
+        pybind11::pybind11
         imgui-gobot
         glad
         SDL2::SDL2
         cxxopts::cxxopts)
+set_target_properties(gobot_editor_runtime
+    PROPERTIES
+        OUTPUT_NAME "gobot_editor_runtime"
+        LIBRARY_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/python/gobot"
+        INSTALL_RPATH "$ORIGIN"
+)
+install(TARGETS gobot_editor_runtime
+        LIBRARY DESTINATION "gobot" COMPONENT python)
+
+add_executable(gobot_editor
+        src/gobot/platform/linux/gobot_editor_launcher.cpp
+)
+add_dependencies(gobot_editor gobot_editor_runtime)
+target_link_libraries(gobot_editor PRIVATE
+        ${CMAKE_DL_LIBS})
 set_target_properties(gobot_editor
     PROPERTIES
+        RUNTIME_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/python/gobot"
         INSTALL_RPATH "$ORIGIN"
 )
 

@@ -3,6 +3,7 @@
 #include <cstdlib>
 #include <fstream>
 #include <memory>
+#include <stdexcept>
 #include <sstream>
 #include <unordered_map>
 #include <utility>
@@ -219,6 +220,31 @@ void EnsureInterpreter() {
     config.parse_argv = 0;
     config.install_signal_handlers = 1;
     config.user_site_directory = 0;
+
+    if (const char* python_executable = std::getenv("GOBOT_PYTHON_EXECUTABLE");
+        python_executable != nullptr && python_executable[0] != '\0') {
+        PyStatus status = PyConfig_SetBytesString(&config, &config.program_name, python_executable);
+        if (PyStatus_Exception(status)) {
+            PyConfig_Clear(&config);
+            throw std::runtime_error("Failed to configure embedded Python program_name");
+        }
+
+        status = PyConfig_SetBytesString(&config, &config.executable, python_executable);
+        if (PyStatus_Exception(status)) {
+            PyConfig_Clear(&config);
+            throw std::runtime_error("Failed to configure embedded Python executable");
+        }
+    }
+
+    if (const char* python_home = std::getenv("GOBOT_PYTHON_HOME");
+        python_home != nullptr && python_home[0] != '\0') {
+        PyStatus status = PyConfig_SetBytesString(&config, &config.home, python_home);
+        if (PyStatus_Exception(status)) {
+            PyConfig_Clear(&config);
+            throw std::runtime_error("Failed to configure embedded Python home");
+        }
+    }
+
     py::initialize_interpreter(&config);
 #else
     Py_NoUserSiteDirectory = 1;

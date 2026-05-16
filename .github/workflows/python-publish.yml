@@ -47,7 +47,7 @@ jobs:
 
   build-wheels:
     name: Build wheel for Python ${{ matrix.python-version }}
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-22.04
     strategy:
       fail-fast: false
       matrix:
@@ -70,7 +70,7 @@ jobs:
           python-version: ${{ matrix.python-version }}
 
       - name: Install build tools
-        run: python -m pip install -U build
+        run: python -m pip install -U auditwheel build patchelf
 
       - name: Install native dependencies
         run: |
@@ -97,7 +97,10 @@ jobs:
             xorg-dev
 
       - name: Build wheel
-        run: python -m build --wheel --outdir wheelhouse
+        run: python -m build --wheel --outdir wheelhouse-unrepaired
+
+      - name: Repair wheel
+        run: python -m auditwheel repair --plat manylinux_2_35_x86_64 --wheel-dir wheelhouse wheelhouse-unrepaired/*.whl
 
       - name: Upload wheel
         uses: actions/upload-artifact@v4
