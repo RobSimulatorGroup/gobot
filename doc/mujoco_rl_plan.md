@@ -117,11 +117,10 @@ Default semantics:
 
 Current implementation status:
 
-- `gobot.rl.ManagerBasedEnv` and `VectorEnv` exist as Python manager scaffolding.
-- The current backend adapter uses one `AppContext`, so it supports
-  `num_envs == 1`.
-- `num_envs > 1` is reserved for future CPU and Warp vector backends and raises
-  an explicit error instead of silently running a slow per-env fallback.
+- `gobot.rl.ManagerBasedEnv` exists as the single-runtime Python manager
+  reference path.
+- `gobot.rl.VectorEnv` uses a native CPU vector backend with independent
+  physics worlds per environment and a batch-first Python API.
 - `GymWrapper` and `RslRlVecEnvWrapper` live above the core API.
 
 ## MuJoCo CPU VectorEnv Baseline
@@ -140,6 +139,38 @@ Required behavior:
 - Each environment owns independent seed, episode length, reset state, command,
   target, and runtime metrics.
 - CPU VectorEnv is the behavior reference for MuJoCo Warp.
+
+Current native CPU implementation:
+
+- `NativeVectorEnv` owns one instantiated Gobot scene and one physics world per
+  environment.
+- Public `reset`, `step`, `send`, and `recv` release the Python GIL while
+  stepping/resetting worlds.
+- A small C++ worker pool distributes rows of the active batch across threads.
+- Actions, observations, commands, events, rewards, and terminations are
+  configured by generic joint/command terms from Python task config.
+- C++ stays task-agnostic: CartPole is a Python task config that composes
+  generic terms, not a hardcoded C++ environment.
+
+EnvPool reference notes:
+
+- EnvPool uses an `ActionBufferQueue -> ThreadPool -> StateBufferQueue` model.
+  Workers pull single-env action slices and push finished state slices into
+  preallocated buffers.
+- Its fastest path avoids most locks: action dispatch uses atomic ring-buffer
+  allocation plus lightweight semaphores, and state writes use packed atomic
+  offsets to reserve non-overlapping output slices.
+- EnvPool also keeps a stock of preallocated state buffers so the hot path
+  usually avoids allocation, and async mode can return whichever environments
+  finish first instead of waiting for the slowest environment.
+- Gobot's first CPU VecEnv intentionally does not copy the full EnvPool queue
+  machinery. It keeps the engine-facing boundary simple while validating
+  deterministic reset, named joint control, observation/reward contracts, and
+  rsl_rl training.
+- Follow-up performance work can replace the row-parallel worker dispatch with
+  EnvPool-style fixed queues, preallocated output buffers, per-env ready queues,
+  optional CPU affinity, and true async "first completed batch" semantics once
+  the Gobot simulation contracts are stable.
 
 ## MuJoCo Warp Fast Path
 

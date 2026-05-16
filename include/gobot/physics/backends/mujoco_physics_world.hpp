@@ -43,6 +43,11 @@ public:
 
     void Step(RealType delta_time) override;
 
+    bool ResetJointState(const std::string& robot_name,
+                         const std::string& joint_name,
+                         RealType position,
+                         RealType velocity = 0.0) override;
+
     bool SetLinkExternalForce(const std::string& robot_name,
                               const std::string& link_name,
                               const Vector3& point,

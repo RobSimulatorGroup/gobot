@@ -36,6 +36,11 @@ public:
 
     virtual void Step(RealType delta_time);
 
+    virtual bool ResetJointState(const std::string& robot_name,
+                                 const std::string& joint_name,
+                                 RealType position,
+                                 RealType velocity = 0.0);
+
     bool SetJointControl(const std::string& robot_name,
                          const std::string& joint_name,
                          PhysicsJointControlMode control_mode,

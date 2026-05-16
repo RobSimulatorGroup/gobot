@@ -327,6 +327,27 @@ void PhysicsWorld::Step(RealType delta_time) {
     GOB_UNUSED(delta_time);
 }
 
+bool PhysicsWorld::ResetJointState(const std::string& robot_name,
+                                   const std::string& joint_name,
+                                   RealType position,
+                                   RealType velocity) {
+    PhysicsJointState* joint_state = FindJointState(robot_name, joint_name);
+    if (!joint_state) {
+        SetLastError(fmt::format("Cannot reset state for missing joint '{}::{}'.", robot_name, joint_name));
+        return false;
+    }
+
+    joint_state->position = position;
+    joint_state->velocity = velocity;
+    joint_state->effort = 0.0;
+    joint_state->control_mode = PhysicsJointControlMode::Passive;
+    joint_state->target_position = position;
+    joint_state->target_velocity = 0.0;
+    joint_state->target_effort = 0.0;
+    last_error_.clear();
+    return true;
+}
+
 bool PhysicsWorld::SetJointControl(const std::string& robot_name,
                                    const std::string& joint_name,
                                    PhysicsJointControlMode control_mode,

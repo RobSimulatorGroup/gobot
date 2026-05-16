@@ -226,7 +226,10 @@ if(magic_enum_SOURCE_DIR)
 endif()
 CPMAddPackage("gh:jarro2783/cxxopts@3.0.0")
 
-find_package(Python3 REQUIRED COMPONENTS Interpreter Development.Module)
+find_package(Python3 QUIET COMPONENTS Interpreter Development.Module)
+if(NOT Python3_FOUND)
+    find_package(Python3 REQUIRED COMPONENTS Interpreter Development)
+endif()
 set(PYBIND11_FINDPYTHON ON)
 if(EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/3rdparty/pybind11/CMakeLists.txt")
     add_subdirectory(3rdparty/pybind11)
@@ -352,6 +355,7 @@ endif()
 
 target_compile_definitions(gobot PUBLIC GOBOT_HAS_PYTHON=1 GOBOT_HAS_PYTHON_EMBED=1)
 set(GOBOT_PYTHON_BINDING_SOURCES
+        src/gobot/python/native_vector_env.cpp
         src/gobot/python/python_manual_bindings.cpp
         src/gobot/python/python_reflected_bindings.cpp
         src/gobot/python/python_variant_bridge.cpp)

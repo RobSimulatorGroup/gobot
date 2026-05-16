@@ -699,6 +699,24 @@ void MuJoCoPhysicsWorld::Step(RealType delta_time) {
 #endif
 }
 
+bool MuJoCoPhysicsWorld::ResetJointState(const std::string& robot_name,
+                                         const std::string& joint_name,
+                                         RealType position,
+                                         RealType velocity) {
+    if (!PhysicsWorld::ResetJointState(robot_name, joint_name, position, velocity)) {
+        return false;
+    }
+
+#ifdef GOBOT_HAS_MUJOCO
+    if (model_ && data_) {
+        SyncStateToMuJoCo();
+        SyncStateFromMuJoCo();
+    }
+#endif
+
+    return true;
+}
+
 #ifdef GOBOT_HAS_MUJOCO
 bool MuJoCoPhysicsWorld::LoadModelFromRobotSources() {
     FreeModel();

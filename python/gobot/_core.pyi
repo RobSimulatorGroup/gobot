@@ -128,6 +128,7 @@ class NativeVectorEnvConfig:
     auto_reset: bool
     controlled_joints: list[str]
     seed: int
+    task_json: str
 
     def __init__(self) -> None: ...
 
@@ -151,9 +152,11 @@ class NativeVectorEnv:
     batch_size: int
     num_workers: int
     observation_size: int
+    critic_observation_size: int
     action_size: int
     env_dt: float
     observation_spec: dict[str, Any]
+    critic_observation_spec: dict[str, Any]
     action_spec: dict[str, Any]
 
     def __init__(self, config: NativeVectorEnvConfig, actions: list[NativeVectorActionConfig] = ...) -> None: ...

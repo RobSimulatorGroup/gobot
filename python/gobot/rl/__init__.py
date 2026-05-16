@@ -17,7 +17,7 @@ from typing import Any, Callable, Iterable, Mapping, Sequence
 
 import numpy as np
 
-from . import _core
+from .. import _core
 
 
 ArrayLike = Sequence[float] | np.ndarray
@@ -210,6 +210,19 @@ def space_from_spec(spec: VectorSpec | Mapping[str, Any]) -> VectorSpace:
     if not isinstance(spec, VectorSpec):
         spec = VectorSpec.from_dict(spec)
     return VectorSpace(spec.lower_bounds, spec.upper_bounds, names=spec.names, units=spec.units)
+
+
+def _json_safe(value: Any) -> Any:
+    if isinstance(value, Mapping):
+        return {str(key): _json_safe(item) for key, item in value.items()}
+    if isinstance(value, (list, tuple)):
+        return [_json_safe(item) for item in value]
+    if isinstance(value, float):
+        if math.isinf(value):
+            return 1.0e30 if value > 0.0 else -1.0e30
+        if math.isnan(value):
+            return 0.0
+    return value
 
 
 @dataclass(frozen=True)
@@ -491,6 +504,7 @@ def make_cartpole_target_task(
     disturbance_impulse_probability: float = 0.0,
     disturbance_impulse_force: float = 0.0,
     disturbance_impulse_steps: int = 1,
+    num_envs: int = 1,
 ) -> TaskConfig:
     """Create the standard CartPole target-reaching task config.
 
@@ -504,7 +518,7 @@ def make_cartpole_target_task(
         name="cartpole_target",
         scene=scene,
         backend=backend,
-        num_envs=1,
+        num_envs=int(num_envs),
         physics_dt=float(physics_dt),
         decimation=int(decimation),
         episode_length_s=episode_length_s,
@@ -547,31 +561,33 @@ def make_cartpole_target_task(
                 {"name": "pole_angular_velocity", "type": "joint_velocity_l2", "weight": -8.0, "joint": hinge_joint},
                 {"name": "overshoot", "type": "overshoot_l2", "weight": -20.0, "joint": slider_joint, "command": "target_cart_position"},
                 {"name": "action_l2", "type": "action_l2", "weight": -0.02, "action": "slider_effort"},
-                {"name": "target_progress", "type": "target_progress", "weight": 4.0, "joint": slider_joint, "command": "target_cart_position", "clip": [-0.05, 0.05]},
+                {"name": "target_progress", "type": "command_error_progress", "weight": 4.0, "joint": slider_joint, "command": "target_cart_position", "clip": [-0.05, 0.05]},
                 {
                     "name": "settle_bonus",
-                    "type": "cartpole_settle_bonus",
+                    "type": "joint_command_settle_bonus",
                     "weight": 8.0,
-                    "slider_joint": slider_joint,
-                    "hinge_joint": hinge_joint,
+                    "joint": slider_joint,
+                    "condition_joint": hinge_joint,
                     "command": "target_cart_position",
                     "target_tolerance": target_tolerance,
                     "velocity_tolerance": target_velocity_tolerance,
-                    "angle_tolerance": 0.10,
+                    "condition_wrap": True,
+                    "condition_position_tolerance": 0.10,
                 },
                 {
                     "name": "fast_reach_bonus",
-                    "type": "first_reach_bonus",
+                    "type": "first_joint_command_reach_bonus",
                     "weight": float(fast_reach_bonus),
                     "joint": slider_joint,
-                    "hinge_joint": hinge_joint,
+                    "condition_joint": hinge_joint,
                     "command": "target_cart_position",
                     "target_tolerance": target_near_tolerance,
-                    "angle_tolerance": 0.20,
+                    "condition_wrap": True,
+                    "condition_position_tolerance": 0.20,
                 },
                 {
                     "name": "overspeed_penalty",
-                    "type": "target_overspeed",
+                    "type": "joint_command_overspeed",
                     "weight": -10.0,
                     "joint": slider_joint,
                     "command": "target_cart_position",
@@ -580,7 +596,7 @@ def make_cartpole_target_task(
                 },
                 {
                     "name": "fast_crossing_penalty",
-                    "type": "target_fast_crossing",
+                    "type": "joint_command_fast_crossing",
                     "weight": -10.0,
                     "joint": slider_joint,
                     "command": "target_cart_position",
@@ -970,7 +986,7 @@ class RewardTerm:
             command = abs(env.command_manager.value(str(params.get("command", "")))[0])
             value = abs(cache.joint_position(joint, wrap=wrap))
             return np.array([max(0.0, value - command) ** 2], dtype=np.float64)
-        if term_type == "target_progress":
+        if term_type in {"target_progress", "command_error_progress", "joint_command_progress"}:
             command_name = str(params.get("command", ""))
             command = env.command_manager.value(command_name)[0]
             current_error = command - cache.joint_position(joint, wrap=wrap)
@@ -981,35 +997,39 @@ class RewardTerm:
                 progress = float(np.clip(progress, float(clip[0]), float(clip[1])))
             env.metrics.next_target_errors[(joint, command_name)] = current_error
             return np.array([progress], dtype=np.float64)
-        if term_type == "cartpole_settle_bonus":
-            slider = str(params.get("slider_joint", params.get("joint", "")))
-            hinge = str(params.get("hinge_joint", ""))
+        if term_type in {"cartpole_settle_bonus", "joint_command_settle_bonus"}:
+            controlled_joint = str(params.get("slider_joint", params.get("joint", "")))
+            condition_joint = str(params.get("condition_joint", params.get("hinge_joint", "")))
             command = env.command_manager.value(str(params.get("command", "")))[0]
-            distance = abs(command - cache.joint_position(slider))
+            condition_tolerance = float(params.get("condition_position_tolerance", params.get("angle_tolerance", math.inf)))
+            condition_wrap = bool(params.get("condition_wrap", True))
+            distance = abs(command - cache.joint_position(controlled_joint, wrap=wrap))
             ok = (
                 distance <= float(params.get("target_tolerance", 0.05))
-                and abs(cache.joint_velocity(slider)) <= float(params.get("velocity_tolerance", 0.2))
-                and abs(cache.joint_position(hinge, wrap=True)) <= float(params.get("angle_tolerance", 0.1))
+                and abs(cache.joint_velocity(controlled_joint)) <= float(params.get("velocity_tolerance", 0.2))
+                and (not condition_joint or abs(cache.joint_position(condition_joint, wrap=condition_wrap)) <= condition_tolerance)
             )
             return np.array([1.0 if ok else 0.0], dtype=np.float64)
-        if term_type == "first_reach_bonus":
+        if term_type in {"first_reach_bonus", "first_joint_command_reach_bonus"}:
             command_name = str(params.get("command", ""))
             command = env.command_manager.value(command_name)[0]
             distance = abs(command - cache.joint_position(joint, wrap=wrap))
-            hinge = str(params.get("hinge_joint", ""))
+            condition_joint = str(params.get("condition_joint", params.get("hinge_joint", "")))
+            condition_tolerance = float(params.get("condition_position_tolerance", params.get("angle_tolerance", math.inf)))
+            condition_wrap = bool(params.get("condition_wrap", True))
             key = self.name
             reached = bool(env.metrics.flags.get(key, False))
             ok = (
                 not reached
                 and distance <= float(params.get("target_tolerance", 0.1))
-                and (not hinge or abs(cache.joint_position(hinge, wrap=True)) <= float(params.get("angle_tolerance", math.inf)))
+                and (not condition_joint or abs(cache.joint_position(condition_joint, wrap=condition_wrap)) <= condition_tolerance)
             )
             if ok:
                 env.metrics.flags[key] = True
                 time_left = 1.0 - min(env.episode_lengths[0] / max(env.max_episode_steps, 1), 1.0)
                 return np.array([time_left], dtype=np.float64)
             return np.zeros((env.num_envs,), dtype=np.float64)
-        if term_type == "target_overspeed":
+        if term_type in {"target_overspeed", "joint_command_overspeed"}:
             command = env.command_manager.value(str(params.get("command", "")))[0]
             distance = abs(command - cache.joint_position(joint, wrap=wrap))
             oversped = (
@@ -1017,7 +1037,7 @@ class RewardTerm:
                 and abs(cache.joint_velocity(joint)) > float(params.get("velocity_limit", math.inf))
             )
             return np.array([1.0 if oversped else 0.0], dtype=np.float64)
-        if term_type == "target_fast_crossing":
+        if term_type in {"target_fast_crossing", "joint_command_fast_crossing"}:
             command_name = str(params.get("command", ""))
             command = env.command_manager.value(command_name)[0]
             current_error = command - cache.joint_position(joint, wrap=wrap)
@@ -1629,6 +1649,8 @@ class VectorEnv:
 
         native_cfg = _core.NativeVectorEnvConfig()
         native_cfg.scene = self.cfg.scene
+        if self.cfg.project_path:
+            _core.set_project_path(self.cfg.project_path)
         native_cfg.robot = self.cfg.robot or ""
         native_cfg.backend = _backend_type(self.cfg.backend)
         native_cfg.num_envs = int(self.cfg.num_envs)
@@ -1639,6 +1661,7 @@ class VectorEnv:
         native_cfg.max_episode_steps = max(1, int(math.ceil(float(self.cfg.episode_length_s) / (float(self.cfg.physics_dt) * int(self.cfg.decimation)))))
         native_cfg.auto_reset = bool(self.cfg.auto_reset)
         native_cfg.controlled_joints = [] if self.cfg.controlled_joints is None else list(self.cfg.controlled_joints)
+        native_cfg.task_json = json.dumps(_json_safe(self._task_dict()), allow_nan=False)
 
         actions = _native_action_configs(self.cfg.actions, self.cfg.controlled_joints)
         self._native = _core.NativeVectorEnv(native_cfg, actions)
@@ -1653,6 +1676,7 @@ class VectorEnv:
         self._last_observation: np.ndarray | None = None
         self._last_info: dict[str, Any] = {}
         self.observation_spec = VectorSpec.from_dict(dict(self._native.observation_spec))
+        self.critic_observation_spec = VectorSpec.from_dict(dict(self._native.critic_observation_spec))
         self.action_spec = VectorSpec.from_dict(dict(self._native.action_spec))
         self.episode_lengths = np.zeros((self.num_envs,), dtype=np.int64)
         self.episode_returns = np.zeros((self.num_envs,), dtype=np.float64)
@@ -1700,8 +1724,10 @@ class VectorEnv:
         return self._convert_step(observation, reward, terminated, truncated, info)
 
     def observation_group_spec(self, group: str) -> VectorSpec:
-        if group != "policy":
-            raise KeyError(group)
+        if group in {"policy", "actor"}:
+            return self.observation_spec
+        if group == "critic":
+            return self.critic_observation_spec
         return self.observation_spec
 
     def close(self) -> None:
@@ -1731,6 +1757,18 @@ class VectorEnv:
             if reset_ids.size:
                 self.episode_lengths[reset_ids] = 0
                 self.episode_returns[reset_ids] = 0.0
+
+    def _task_dict(self) -> dict[str, Any]:
+        if self.task_config is not None:
+            return self.task_config.to_dict()
+        return {
+            "actions": dict(self.cfg.actions),
+            "observations": dict(self.cfg.observations),
+            "rewards": dict(self.cfg.rewards),
+            "terminations": dict(self.cfg.terminations),
+            "events": dict(self.cfg.events),
+            "commands": dict(self.cfg.commands),
+        }
 
 
 class GymWrapper:
@@ -1765,29 +1803,147 @@ class GymWrapper:
         return self.env
 
 
-class RslRlVecEnvWrapper:
+try:
+    from rsl_rl.env import VecEnv as _RslRlVecEnvBase
+except Exception:  # pragma: no cover - optional dependency at import time.
+    _RslRlVecEnvBase = object
+
+
+class RslRlVecEnvWrapper(_RslRlVecEnvBase):
     """Thin adapter exposing common rsl_rl vector-env attributes."""
 
-    def __init__(self, env: ManagerBasedEnv) -> None:
+    def __init__(self, env: ManagerBasedEnv | VectorEnv, clip_actions: float | None = None, device: str = "cpu") -> None:
         self.env = env
+        self.clip_actions = clip_actions
+        self.device = device
         self.num_envs = env.num_envs
         self.num_obs = env.observation_spec.size
+        self.num_privileged_obs = getattr(env, "critic_observation_spec", env.observation_spec).size
         self.num_actions = env.action_spec.size
+        self.max_episode_length = env.max_episode_steps
+        try:
+            import torch
+        except ImportError:
+            self.episode_length_buf = None
+        else:
+            self.episode_length_buf = torch.zeros(self.num_envs, dtype=torch.long, device=self.device)
+        # rsl_rl starts by calling get_observations(), not reset().
+        self.env.reset()
+
+    @property
+    def cfg(self):
+        return getattr(self.env, "cfg", {})
+
+    @property
+    def observation_space(self):
+        return self.env.observation_space
+
+    @property
+    def action_space(self):
+        return self.env.action_space
+
+    @property
+    def render_mode(self):
+        return getattr(self.env, "render_mode", None)
 
     def get_observations(self):
+        try:
+            import torch
+            from tensordict import TensorDict
+        except ImportError:
+            if self.env._last_observation is None:
+                observation, _ = self.env.reset()
+                return observation
+            return self.env._last_observation
         if self.env._last_observation is None:
-            observation, _ = self.env.reset()
-            return observation
-        return self.env._last_observation
+            self.env.reset()
+        actor = torch.as_tensor(self.env._last_observation, dtype=torch.float32, device=self.device)
+        critic = actor
+        info = self.env._last_info
+        if isinstance(info, Mapping):
+            observations = info.get("observations", {})
+            if isinstance(observations, Mapping) and "critic" in observations:
+                critic = torch.as_tensor(observations["critic"], dtype=torch.float32, device=self.device)
+        return TensorDict({"actor": actor, "critic": critic}, batch_size=[self.num_envs])
 
     def reset(self):
-        observation, _ = self.env.reset()
-        return observation
+        try:
+            import torch
+            from tensordict import TensorDict
+        except ImportError:
+            observation, info = self.env.reset()
+            return observation, info
+        observation, info = self.env.reset()
+        if self.episode_length_buf is not None:
+            self.episode_length_buf.zero_()
+        actor = torch.as_tensor(observation, dtype=torch.float32, device=self.device)
+        critic = actor
+        observations = self.env._last_info.get("observations", {})
+        if isinstance(observations, Mapping) and "critic" in observations:
+            critic = torch.as_tensor(observations["critic"], dtype=torch.float32, device=self.device)
+        return TensorDict({"actor": actor, "critic": critic}, batch_size=[self.num_envs]), info
 
     def step(self, actions):
-        observation, reward, terminated, truncated, info = self.env.step(actions)
-        done = terminated | truncated
-        return observation, reward, done, info
+        try:
+            import torch
+            from tensordict import TensorDict
+        except ImportError:
+            observation, reward, terminated, truncated, info = self.env.step(actions)
+            return observation, reward, terminated | truncated, info
+        if self.clip_actions is not None:
+            actions = torch.clamp(actions, -self.clip_actions, self.clip_actions)
+        np_actions = actions.detach().cpu().numpy() if hasattr(actions, "detach") else actions
+        observation, reward, terminated, truncated, info = self.env.step(np_actions)
+        if self.episode_length_buf is not None:
+            self.episode_length_buf = torch.as_tensor(self.env.episode_lengths, dtype=torch.long, device=self.device)
+        actor = torch.as_tensor(observation, dtype=torch.float32, device=self.device)
+        critic = actor
+        observations = info.get("observations", {})
+        if isinstance(observations, Mapping) and "critic" in observations:
+            critic = torch.as_tensor(observations["critic"], dtype=torch.float32, device=self.device)
+        rew = torch.as_tensor(reward, dtype=torch.float32, device=self.device)
+        done = torch.as_tensor(terminated | truncated, dtype=torch.long, device=self.device)
+        extras = dict(info)
+        extras["time_outs"] = torch.as_tensor(truncated, dtype=torch.bool, device=self.device)
+        return TensorDict({"actor": actor, "critic": critic}, batch_size=[self.num_envs]), rew, done, extras
+
+    @property
+    def unwrapped(self):
+        return self.env
+
+    @classmethod
+    def class_name(cls) -> str:
+        return cls.__name__
+
+    def close(self) -> None:
+        self.env.close()
+
+
+class GobotOnPolicyRunner:
+    def __init__(self, env: RslRlVecEnvWrapper, train_cfg: Mapping[str, Any], log_dir: str | None = None, device: str = "cpu") -> None:
+        try:
+            from rsl_rl.runners import OnPolicyRunner
+        except ImportError as error:
+            raise RuntimeError("GobotOnPolicyRunner requires rsl-rl-lib.") from error
+        cfg = dict(train_cfg)
+        for key in ("actor", "critic"):
+            if isinstance(cfg.get(key), dict):
+                for opt in ("cnn_cfg", "distribution_cfg", "rnn_type", "rnn_hidden_dim", "rnn_num_layers"):
+                    if cfg[key].get(opt) is None:
+                        cfg[key].pop(opt, None)
+        self._runner = OnPolicyRunner(env, cfg, log_dir, device)
+
+    def learn(self, *args, **kwargs):
+        return self._runner.learn(*args, **kwargs)
+
+    def save(self, *args, **kwargs):
+        return self._runner.save(*args, **kwargs)
+
+    def load(self, *args, **kwargs):
+        return self._runner.load(*args, **kwargs)
+
+    def __getattr__(self, name: str):
+        return getattr(self._runner, name)
 
 
 __all__ = [
@@ -1803,6 +1959,7 @@ __all__ = [
     "Recorder",
     "RewardManager",
     "RslRlVecEnvWrapper",
+    "GobotOnPolicyRunner",
     "TaskConfig",
     "TerminationManager",
     "VectorEnv",

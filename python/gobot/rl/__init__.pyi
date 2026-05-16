@@ -6,7 +6,7 @@ from typing import Any, Callable, Mapping, Sequence
 
 import numpy as np
 
-from ._core import AppContext, PhysicsBackendType
+from .._core import AppContext, PhysicsBackendType
 
 ArrayLike = Sequence[float] | np.ndarray
 
@@ -144,6 +144,7 @@ def make_cartpole_target_task(
     disturbance_impulse_probability: float = ...,
     disturbance_impulse_force: float = ...,
     disturbance_impulse_steps: int = ...,
+    num_envs: int = ...,
 ) -> TaskConfig: ...
 
 
@@ -252,6 +253,7 @@ class VectorEnv:
     max_episode_steps: int
     auto_reset: bool
     observation_spec: VectorSpec
+    critic_observation_spec: VectorSpec
     action_spec: VectorSpec
     episode_lengths: np.ndarray
     episode_returns: np.ndarray
@@ -291,14 +293,34 @@ class GymWrapper:
 
 
 class RslRlVecEnvWrapper:
-    env: ManagerBasedEnv
+    env: ManagerBasedEnv | VectorEnv
     num_envs: int
     num_obs: int
+    num_privileged_obs: int
     num_actions: int
-    def __init__(self, env: ManagerBasedEnv) -> None: ...
+    max_episode_length: int
+    def __init__(self, env: ManagerBasedEnv | VectorEnv, clip_actions: float | None = ..., device: str = ...) -> None: ...
+    @property
+    def cfg(self): ...
+    @property
+    def observation_space(self) -> VectorSpace: ...
+    @property
+    def action_space(self) -> VectorSpace: ...
+    @property
+    def render_mode(self): ...
     def get_observations(self): ...
     def reset(self): ...
     def step(self, actions): ...
+    @property
+    def unwrapped(self) -> ManagerBasedEnv | VectorEnv: ...
+    def close(self) -> None: ...
+
+
+class GobotOnPolicyRunner:
+    def __init__(self, env: RslRlVecEnvWrapper, train_cfg: Mapping[str, Any], log_dir: str | None = ..., device: str = ...) -> None: ...
+    def learn(self, *args: Any, **kwargs: Any): ...
+    def save(self, *args: Any, **kwargs: Any): ...
+    def load(self, *args: Any, **kwargs: Any): ...
 
 
 __all__: list[str]
