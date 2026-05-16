@@ -32,6 +32,7 @@ Issues = "https://github.com/RobSimulatorGroup/gobot/issues"
 [project.scripts]
 gobot_editor = "gobot.cli:editor"
 gobot_train = "gobot.rl.scripts.train:main"
+train = "gobot.rl.scripts.train:main"
 
 [tool.scikit-build]
 cmake.build-type = "Release"

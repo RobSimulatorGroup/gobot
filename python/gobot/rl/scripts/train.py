@@ -1,139 +1,174 @@
-"""Train Gobot RL tasks with RSL-RL."""
+"""Train registered Gobot RL tasks with RSL-RL."""
 
 from __future__ import annotations
 
-import argparse
-from dataclasses import asdict
+from dataclasses import asdict, dataclass, make_dataclass
 from datetime import datetime
 import json
 from pathlib import Path
-from typing import Sequence
+import sys
+from typing import Any, Sequence, Type
 
 import numpy as np
+import tyro
 
 from .. import VectorEnv
-from ..rsl_rl import GobotOnPolicyRunner, RslRlVecEnvWrapper, rsl_rl_cfg_to_dict
-from ..tasks.cartpole import CartPoleEnvCfg, make_agent_cfg, make_env_cfg
+from ..rsl_rl import GobotOnPolicyRunner, RslRlBaseRunnerCfg, RslRlVecEnvWrapper, rsl_rl_cfg_to_dict
+from ..tasks.registry import list_tasks, load_env_builder, load_env_cfg, load_rl_cfg, load_runner_cls
 
 
-def main(argv: Sequence[str] | None = None) -> None:
-    args = _parse_args(argv)
-    if args.task != "cartpole":
-        raise SystemExit(f"unsupported Gobot RL task: {args.task!r}")
-    run_cartpole(args)
+TYRO_FLAGS = (
+    tyro.conf.AvoidSubcommands,
+    tyro.conf.FlagConversionOff,
+    tyro.conf.UsePythonSyntaxForLiteralCollections,
+)
 
 
-def run_cartpole(args: argparse.Namespace) -> Path:
-    env_cfg = CartPoleEnvCfg(
-        project_path=args.env_project_path,
-        scene=args.env_scene,
-        backend=args.env_backend,
-        num_envs=args.env_num_envs,
-        batch_size=args.env_batch_size or args.env_num_envs,
-        num_workers=args.env_num_workers,
-        seed=args.seed,
-        max_episode_steps=args.env_max_episode_steps,
-        randomize_target_position=args.env_randomize_target,
-        target_cart_position_min=args.env_target_min,
-        target_cart_position_max=args.env_target_max,
-        randomize_initial_angle=args.env_randomize_initial_angle,
-    )
-    agent_cfg = make_agent_cfg()
-    agent_cfg.seed = args.seed
-    agent_cfg.max_iterations = args.agent_max_iterations
-    agent_cfg.num_steps_per_env = args.agent_num_steps_per_env
-    agent_cfg.save_interval = args.agent_save_interval
-    agent_cfg.experiment_name = args.agent_experiment_name
-    agent_cfg.run_name = args.agent_run_name
-    agent_cfg.logger = args.agent_logger
-    agent_cfg.clip_actions = args.agent_clip_actions
-    agent_cfg.algorithm.learning_rate = args.agent_learning_rate
-    agent_cfg.algorithm.num_learning_epochs = args.agent_num_learning_epochs
-    agent_cfg.algorithm.num_mini_batches = args.agent_num_mini_batches
+@dataclass
+class TrainConfig:
+    env: Any
+    agent: RslRlBaseRunnerCfg
+    device: str = "cpu"
+    log_root: str = "logs/rsl_rl"
 
-    if args.device != "cpu":
+    @staticmethod
+    def from_task(task_id: str) -> "TrainConfig":
+        return TrainConfig(env=load_env_cfg(task_id), agent=load_rl_cfg(task_id))
+
+
+def run_train(task_id: str, cfg: TrainConfig, log_dir: Path) -> None:
+    if cfg.device != "cpu":
         try:
             import torch
         except ImportError as error:
             raise RuntimeError("non-CPU training requires torch.") from error
-        if str(args.device).startswith("cuda") and not torch.cuda.is_available():
-            raise RuntimeError(f"requested {args.device}, but CUDA is not available")
+        if str(cfg.device).startswith("cuda") and not torch.cuda.is_available():
+            raise RuntimeError(f"requested {cfg.device}, but CUDA is not available")
 
-    np.random.seed(args.seed)
-    task_cfg = make_env_cfg(env_cfg)
-    task_cfg.metadata = {**dict(task_cfg.metadata), "seed": args.seed}
-    log_dir = _make_log_dir(Path(args.log_root), agent_cfg.experiment_name, agent_cfg.run_name)
+    cfg.agent.seed = int(cfg.agent.seed)
+    if hasattr(cfg.env, "seed"):
+        setattr(cfg.env, "seed", int(cfg.agent.seed))
+    np.random.seed(cfg.agent.seed)
+
+    env_builder = load_env_builder(task_id)
+    task_cfg = env_builder(cfg.env)
+    task_cfg.metadata = {**dict(task_cfg.metadata), "seed": int(cfg.agent.seed), "task_id": task_id}
+
     params_dir = log_dir / "params"
     params_dir.mkdir(parents=True, exist_ok=True)
     _write_json(params_dir / "env.json", task_cfg.to_dict())
-    _write_json(params_dir / "agent.json", asdict(agent_cfg))
+    _write_json(params_dir / "env_cfg.json", _to_jsonable(cfg.env))
+    _write_json(params_dir / "agent.json", asdict(cfg.agent))
 
+    if hasattr(cfg.env, "num_envs"):
+        num_envs = getattr(cfg.env, "num_envs")
+    else:
+        num_envs = task_cfg.num_envs
     print(
-        "[INFO] Gobot PPO training: task=cartpole "
-        f"device={args.device} num_envs={env_cfg.num_envs} "
-        f"workers={env_cfg.num_workers or 'auto'} iterations={agent_cfg.max_iterations}"
+        "[INFO] Gobot PPO training: "
+        f"task={task_id} device={cfg.device} num_envs={num_envs} "
+        f"iterations={cfg.agent.max_iterations}"
     )
     print(f"[INFO] Logging to: {log_dir}")
 
     env = VectorEnv(task_cfg)
-    wrapped_env = RslRlVecEnvWrapper(env, clip_actions=agent_cfg.clip_actions, device=args.device)
-    runner = GobotOnPolicyRunner(
-        wrapped_env,
-        rsl_rl_cfg_to_dict(agent_cfg),
-        log_dir=str(log_dir),
-        device=args.device,
-    )
-    runner.learn(num_learning_iterations=agent_cfg.max_iterations, init_at_random_ep_len=True)
-    env.close()
+    try:
+        wrapped_env = RslRlVecEnvWrapper(env, clip_actions=cfg.agent.clip_actions, device=cfg.device)
+        runner_cls = load_runner_cls(task_id) or GobotOnPolicyRunner
+        runner = runner_cls(
+            wrapped_env,
+            rsl_rl_cfg_to_dict(cfg.agent),
+            log_dir=str(log_dir),
+            device=cfg.device,
+        )
+        runner.learn(num_learning_iterations=cfg.agent.max_iterations, init_at_random_ep_len=True)
+    finally:
+        env.close()
+
+
+def launch_training(task_id: str, args: TrainConfig | None = None) -> Path:
+    args = args or TrainConfig.from_task(task_id)
+    log_root_path = (Path(args.log_root) / args.agent.experiment_name).resolve()
+    log_dir_name = datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
+    if args.agent.run_name:
+        log_dir_name += f"_{args.agent.run_name}"
+    log_dir = log_root_path / log_dir_name
+    run_train(task_id, args, log_dir)
     return log_dir
 
 
-def _parse_args(argv: Sequence[str] | None) -> argparse.Namespace:
-    parser = argparse.ArgumentParser(prog="gobot_train")
-    parser.add_argument("task", choices=["cartpole"])
-    parser.add_argument("--device", default="cpu")
-    parser.add_argument("--seed", type=int, default=42)
-    parser.add_argument("--log-root", default="logs/rsl_rl")
+def main(argv: Sequence[str] | None = None) -> None:
+    # Import built-in tasks to populate the registry.
+    import gobot.rl.tasks  # noqa: F401
 
-    parser.add_argument("--env.project-path", dest="env_project_path", default="/home/wqq/gobot/examples/cartpole")
-    parser.add_argument("--env.scene", dest="env_scene", default="res://cartpole.jscn")
-    parser.add_argument("--env.backend", dest="env_backend", default="mujoco")
-    parser.add_argument("--env.num-envs", dest="env_num_envs", type=int, default=64)
-    parser.add_argument("--env.batch-size", dest="env_batch_size", type=int, default=0)
-    parser.add_argument("--env.num-workers", dest="env_num_workers", type=int, default=0)
-    parser.add_argument("--env.max-episode-steps", dest="env_max_episode_steps", type=int, default=500)
-    parser.add_argument("--env.randomize-target", dest="env_randomize_target", action=argparse.BooleanOptionalAction, default=True)
-    parser.add_argument("--env.target-min", dest="env_target_min", type=float, default=-1.0)
-    parser.add_argument("--env.target-max", dest="env_target_max", type=float, default=1.0)
-    parser.add_argument(
-        "--env.randomize-initial-angle",
-        dest="env_randomize_initial_angle",
-        action=argparse.BooleanOptionalAction,
-        default=True,
+    prog = Path(sys.argv[0]).name if argv is None else "gobot_train"
+    all_tasks = list_tasks()
+    if not all_tasks:
+        raise SystemExit("no Gobot RL tasks are registered")
+    args = list(sys.argv[1:] if argv is None else argv)
+    if not args or args[0] in {"-h", "--help"}:
+        _print_top_level_help(all_tasks, prog)
+        return
+    chosen_task, remaining_args = tyro.cli(
+        tyro.extras.literal_type_from_choices(all_tasks),
+        args=args,
+        add_help=False,
+        return_unknown_args=True,
+        config=TYRO_FLAGS,
     )
-
-    parser.add_argument("--agent.max-iterations", dest="agent_max_iterations", type=int, default=300)
-    parser.add_argument("--agent.num-steps-per-env", dest="agent_num_steps_per_env", type=int, default=24)
-    parser.add_argument("--agent.save-interval", dest="agent_save_interval", type=int, default=50)
-    parser.add_argument("--agent.experiment-name", dest="agent_experiment_name", default="cartpole")
-    parser.add_argument("--agent.run-name", dest="agent_run_name", default="")
-    parser.add_argument("--agent.logger", dest="agent_logger", choices=["tensorboard", "wandb"], default="tensorboard")
-    parser.add_argument("--agent.clip-actions", dest="agent_clip_actions", type=float, default=1.0)
-    parser.add_argument("--agent.learning-rate", dest="agent_learning_rate", type=float, default=1.0e-3)
-    parser.add_argument("--agent.num-learning-epochs", dest="agent_num_learning_epochs", type=int, default=5)
-    parser.add_argument("--agent.num-mini-batches", dest="agent_num_mini_batches", type=int, default=4)
-    return parser.parse_args(argv)
-
-
-def _make_log_dir(log_root: Path, experiment_name: str, run_name: str) -> Path:
-    name = datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
-    if run_name:
-        name = f"{name}_{run_name}"
-    return (log_root / experiment_name / name).resolve()
+    default_cfg = TrainConfig.from_task(chosen_task)
+    cfg_type = _train_config_type(type(default_cfg.env), type(default_cfg.agent))
+    cfg = tyro.cli(
+        cfg_type,
+        args=remaining_args,
+        default=default_cfg,
+        prog=f"{prog} {chosen_task}",
+        config=TYRO_FLAGS,
+    )
+    launch_training(chosen_task, cfg)
 
 
 def _write_json(path: Path, value: object) -> None:
     path.write_text(json.dumps(value, indent=2, sort_keys=True), encoding="utf-8")
+
+
+def _to_jsonable(value: object) -> object:
+    if hasattr(value, "__dataclass_fields__"):
+        return asdict(value)
+    if isinstance(value, dict):
+        return {str(key): _to_jsonable(item) for key, item in value.items()}
+    if isinstance(value, (list, tuple)):
+        return [_to_jsonable(item) for item in value]
+    return value
+
+
+def _train_config_type(env_type: Type[Any], agent_type: Type[Any]) -> Type[TrainConfig]:
+    return make_dataclass(
+        "ResolvedTrainConfig",
+        [
+            ("env", env_type),
+            ("agent", agent_type),
+            ("device", str),
+            ("log_root", str),
+        ],
+        bases=(TrainConfig,),
+    )
+
+
+def _print_top_level_help(tasks: Sequence[str], prog: str) -> None:
+    print(f"usage: {prog} TASK [OPTIONS]\n")
+    print("Train a registered Gobot RL task with RSL-RL.\n")
+    print("tasks:")
+    for task_id in tasks:
+        print(f"  {task_id}")
+    print("\nexamples:")
+    example_task = tasks[0] if tasks else "TASK"
+    print(
+        f"  {prog} {example_task} "
+        "--env.project-path /path/to/gobot/project "
+        "--env.num-envs 64 --agent.max-iterations 200 --device cpu"
+    )
+    print(f"\nRun `{prog} TASK --help` for task-specific env and agent options.")
 
 
 if __name__ == "__main__":
