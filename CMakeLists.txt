@@ -226,7 +226,7 @@ if(magic_enum_SOURCE_DIR)
 endif()
 CPMAddPackage("gh:jarro2783/cxxopts@3.0.0")
 
-find_package(Python3 QUIET COMPONENTS Interpreter Development.Module)
+find_package(Python3 QUIET COMPONENTS Interpreter Development.Module Development.Embed)
 if(NOT Python3_FOUND)
     find_package(Python3 REQUIRED COMPONENTS Interpreter Development)
 endif()
@@ -360,7 +360,14 @@ set(GOBOT_PYTHON_BINDING_SOURCES
         src/gobot/python/python_reflected_bindings.cpp
         src/gobot/python/python_variant_bridge.cpp)
 target_sources(gobot PRIVATE src/gobot/python/python_script_runner.cpp)
-target_link_libraries(gobot PUBLIC pybind11::pybind11)
+if(TARGET pybind11::embed)
+    target_link_libraries(gobot PUBLIC pybind11::embed)
+else()
+    target_link_libraries(gobot PUBLIC pybind11::pybind11)
+    if(TARGET Python3::Python)
+        target_link_libraries(gobot PUBLIC Python3::Python)
+    endif()
+endif()
 
 pybind11_add_module(gobot_python MODULE
         src/gobot/python/python_module.cpp
