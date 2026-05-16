@@ -7,10 +7,10 @@ import gobot
 ROBOT = "cartpole"
 SLIDER_JOINT = "slider"
 HINGE_JOINT = "hinge"
-TARGET_CART_POSITION = 1.0
-FORCE_LIMIT = 20.0
+TARGET_CART_POSITION = 0.0
+FORCE_LIMIT = 10.0
 PRINT_EVERY_TICKS = 240
-DEFAULT_POLICY_PATH = "res://policies/cartpole.pt"
+DEFAULT_POLICY_PATH = "res://policies/cartpole.npz"
 
 
 class TorchPolicy:
@@ -29,6 +29,39 @@ class TorchPolicy:
             if isinstance(output, (tuple, list)):
                 output = output[0]
             return float(output.reshape(-1)[0].clamp(-1.0, 1.0).cpu().item())
+
+
+class NumpyMlpPolicy:
+    def __init__(self, path):
+        import numpy as np
+
+        self.np = np
+        data = np.load(path, allow_pickle=False)
+        self.activation = str(data["activation"]) if "activation" in data.files else "elu"
+        self.weights = []
+        self.biases = []
+        layer_count = int(data["layer_count"])
+        for index in range(layer_count):
+            self.weights.append(data[f"w{index}"].astype(np.float32, copy=False))
+            self.biases.append(data[f"b{index}"].astype(np.float32, copy=False))
+
+    def action(self, observation):
+        x = self.np.asarray([observation], dtype=self.np.float32)
+        last_layer = len(self.weights) - 1
+        for index, (weight, bias) in enumerate(zip(self.weights, self.biases)):
+            x = x @ weight.T + bias
+            if index != last_layer:
+                x = self._activate(x)
+        return float(self.np.clip(x.reshape(-1)[0], -1.0, 1.0))
+
+    def _activate(self, x):
+        if self.activation == "elu":
+            return self.np.where(x > 0.0, x, self.np.expm1(x))
+        if self.activation == "tanh":
+            return self.np.tanh(x)
+        if self.activation == "relu":
+            return self.np.maximum(x, 0.0)
+        return x
 
 
 def _wrap_angle(value):
@@ -129,10 +162,18 @@ class Script(gobot.NodeScript):
             project_path = self.context.project_path if self.context is not None else ""
             path = os.path.join(project_path, path.removeprefix("res://"))
         if not path or not os.path.exists(path):
-            print("CartPole RL policy not found; set GOBOT_CARTPOLE_POLICY to a TorchScript policy.")
+            print("CartPole RL policy not found; set GOBOT_CARTPOLE_POLICY to a .npz policy.")
             return None
         try:
-            return TorchPolicy(path)
+            if path.endswith(".npz"):
+                return NumpyMlpPolicy(path)
+            if path.endswith(".pt") or path.endswith(".jit"):
+                if os.environ.get("GOBOT_CARTPOLE_ALLOW_TORCH", "0") not in {"1", "true", "TRUE"}:
+                    print("CartPole TorchScript playback is disabled; use a .npz policy in the editor.")
+                    return None
+                return TorchPolicy(path)
+            print(f"CartPole RL policy format is not supported: {path}")
+            return None
         except Exception as error:
             print(f"CartPole RL policy load failed: {error}")
             return None
