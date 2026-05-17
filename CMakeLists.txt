@@ -230,6 +230,11 @@ find_package(Python3 QUIET COMPONENTS Interpreter Development.Module Development
 if(NOT Python3_FOUND)
     find_package(Python3 REQUIRED COMPONENTS Interpreter Development)
 endif()
+set(GOBOT_PYTHON_LIBRARY "" CACHE FILEPATH
+        "Optional default libpython path compiled into gobot_editor; runtime GOBOT_PYTHON_LIBRARY overrides it.")
+if(GOBOT_PYTHON_LIBRARY)
+    message(STATUS "Gobot editor default Python library: ${GOBOT_PYTHON_LIBRARY}")
+endif()
 set(PYBIND11_FINDPYTHON ON)
 if(EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/3rdparty/pybind11/CMakeLists.txt")
     add_subdirectory(3rdparty/pybind11)
@@ -500,6 +505,8 @@ add_executable(gobot_editor
         src/gobot/platform/linux/gobot_editor_launcher.cpp
 )
 add_dependencies(gobot_editor gobot_editor_runtime)
+target_compile_definitions(gobot_editor PRIVATE
+        GOBOT_DEFAULT_PYTHON_LIBRARY="${GOBOT_PYTHON_LIBRARY}")
 target_link_libraries(gobot_editor PRIVATE
         ${CMAKE_DL_LIBS})
 set_target_properties(gobot_editor

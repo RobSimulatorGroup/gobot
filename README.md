@@ -57,16 +57,21 @@ python -m pip install -e . -Cbuild-dir=build/editable
 gobot_editor
 ```
 
-The default install does not install PyTorch or RSL-RL, so it will not replace
-the `torch` already in your environment. If you want pip to install optional RL
-dependencies:
+For a direct CMake build, compile the current environment's libpython path into
+the launcher:
 
 ```bash
-python -m pip install -e ".[rl]" -Cbuild-dir=build/editable
+cmake -S . -B build/local \
+  -DGOBOT_PYTHON_LIBRARY="$CONDA_PREFIX/lib/libpython3.12.so"
+cmake --build build/local -j
+./build/local/python/gobot/gobot_editor
 ```
 
-The `.[rl]` extra may upgrade `torch` if your current version does not satisfy
-`rsl-rl-lib`.
+At runtime, `GOBOT_PYTHON_LIBRARY=/other/libpython.so` still overrides the
+compiled default.
+
+Gobot installs the Python RL dependencies used by the examples, including
+`rsl-rl-lib`, `tensordict`, and `tensorboard`.
 
 For verbose rebuild output:
 

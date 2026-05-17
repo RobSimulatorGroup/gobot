@@ -17,10 +17,6 @@ authors = [
 ]
 dependencies = [
     "numpy>=1.24",
-]
-
-[project.optional-dependencies]
-rl = [
     "rsl-rl-lib==5.2.0",
     "tensordict",
     "tensorboard",

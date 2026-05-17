@@ -12,6 +12,10 @@
 #include <iostream>
 #include <string>
 
+#ifndef GOBOT_DEFAULT_PYTHON_LIBRARY
+#define GOBOT_DEFAULT_PYTHON_LIBRARY ""
+#endif
+
 namespace {
 
 std::filesystem::path GetExecutablePath() {
@@ -34,14 +38,22 @@ bool ShouldPrintPythonLibrary() {
     return printed == nullptr || std::string(printed) != "1";
 }
 
+std::string ResolvePythonLibrary() {
+    const char* python_library = std::getenv("GOBOT_PYTHON_LIBRARY");
+    if (python_library != nullptr && !std::string(python_library).empty()) {
+        return python_library;
+    }
+    return GOBOT_DEFAULT_PYTHON_LIBRARY;
+}
+
 } // namespace
 
 int main(int argc, char* argv[]) {
-    const char* python_library = std::getenv("GOBOT_PYTHON_LIBRARY");
-    if (python_library == nullptr || std::string(python_library).empty()) {
+    const std::string python_library = ResolvePythonLibrary();
+    if (python_library.empty()) {
         std::cerr << "[gobot] GOBOT_PYTHON_LIBRARY is not set. "
                   << "Run gobot_editor through the Python package entry point "
-                  << "or set it to the current environment's libpython path." << std::endl;
+                  << "or configure with -DGOBOT_PYTHON_LIBRARY=/path/to/libpython.so." << std::endl;
         return 127;
     }
 
@@ -49,7 +61,7 @@ int main(int argc, char* argv[]) {
         std::cerr << "[gobot] Python library: " << python_library << std::endl;
     }
 
-    void* python_handle = dlopen(python_library, RTLD_NOW | RTLD_GLOBAL);
+    void* python_handle = dlopen(python_library.c_str(), RTLD_NOW | RTLD_GLOBAL);
     if (python_handle == nullptr) {
         std::cerr << "[gobot] Failed to load Python library '" << python_library
                   << "': " << DlErrorString() << std::endl;
