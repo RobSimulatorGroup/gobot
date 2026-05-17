@@ -1,7 +1,7 @@
 {
     "__EXT_RESOURCES__": [
         {
-            "__ID__": "1_Ztslc",
+            "__ID__": "1_1P6hT",
             "__PATH__": "res://scripts/cartpole.py",
             "__TYPE__": "PythonScript"
         }
@@ -46,7 +46,7 @@
                         ]
                     }
                 },
-                "script": "ExtResource(1_Ztslc)",
+                "script": "ExtResource(1_1P6hT)",
                 "source_path": "",
                 "visible": true
             },
@@ -722,7 +722,7 @@
             "height": 4.800000190734863,
             "material": null,
             "radial_segments": 24,
-            "radius": 0.02500000037252903,
+            "radius": 0.05000000074505806,
             "resource_name": ""
         }
     ],
