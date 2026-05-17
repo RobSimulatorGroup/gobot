@@ -1,5 +1,6 @@
 import math
 import os
+import random
 
 import gobot
 
@@ -8,11 +9,17 @@ ROBOT = "cartpole"
 SLIDER_JOINT = "slider"
 HINGE_JOINT = "hinge"
 TARGET_CART_POSITION = 0.0
-FORCE_LIMIT = 10.0
+FORCE_LIMIT = 3.0
 PRINT_EVERY_TICKS = 240
 DEFAULT_POLICY_PATH = "res://policies/cartpole.pt"
 INITIAL_CART_POSITION = 0.0
 INITIAL_POLE_ANGLE = 0.0
+DISTURBANCE_ENABLED = True
+DISTURBANCE_STD = 0.05
+DISTURBANCE_CLIP = 0.20
+DISTURBANCE_INTERVAL_TICKS = 480
+DISTURBANCE_DURATION_TICKS = 60
+DISTURBANCE_START_TICK = 240
 
 
 class TorchPolicy:
@@ -22,17 +29,21 @@ class TorchPolicy:
         self.torch = torch
         self.device = torch.device("cpu")
         checkpoint = torch.load(path, map_location=self.device, weights_only=False)
+        self.uses_normalized_action = False
         self.policy = self._load_policy_module(checkpoint)
         self.policy.to(self.device)
         self.policy.eval()
 
     def action(self, observation):
         with self.torch.no_grad():
+            observation = self._adapt_observation(observation)
             obs = self.torch.as_tensor(observation, dtype=self.torch.float32, device=self.device).reshape(1, -1)
             output = self.policy(obs)
             if isinstance(output, (tuple, list)):
                 output = output[0]
-            return float(output.reshape(-1)[0].clamp(-1.0, 1.0).cpu().item())
+            if self.uses_normalized_action:
+                return float(output.reshape(-1)[0].clamp(-1.0, 1.0).cpu().item()) * FORCE_LIMIT
+            return float(output.reshape(-1)[0].clamp(-FORCE_LIMIT, FORCE_LIMIT).cpu().item())
 
     def _load_policy_module(self, checkpoint):
         if isinstance(checkpoint, self.torch.nn.Module):
@@ -56,9 +67,10 @@ class TorchPolicy:
         policy_meta = checkpoint.get("gobot_policy")
         if activation is None and isinstance(policy_meta, dict):
             activation = policy_meta.get("activation")
-        return self._build_mlp(mlp_state, str(activation or "elu"))
+        self.uses_normalized_action = isinstance(policy_meta, dict)
+        return self._build_mlp(mlp_state, str(activation or "elu"), state)
 
-    def _build_mlp(self, state, activation):
+    def _build_mlp(self, state, activation, checkpoint_state):
         torch = self.torch
         linear_indices = sorted(
             int(key.split(".")[1])
@@ -89,6 +101,12 @@ class TorchPolicy:
 
         module = MlpPolicy(layers)
         module.load_state_dict(state, strict=False)
+        self.input_size = int(layers[0].in_features)
+        if "obs_normalizer._mean" in checkpoint_state:
+            mean = checkpoint_state["obs_normalizer._mean"].detach().to(dtype=self.torch.float32)
+            std = checkpoint_state.get("obs_normalizer._std", self.torch.ones_like(mean)).detach().to(dtype=self.torch.float32)
+            std = self.torch.clamp(std, min=1.0e-6)
+            module = self.torch.nn.Sequential(self._Normalizer(mean, std), module)
         return module
 
     def _activation_module(self, activation):
@@ -100,6 +118,30 @@ class TorchPolicy:
         if name == "tanh":
             return self.torch.nn.Tanh()
         raise ValueError(f"unsupported policy activation: {activation}")
+
+    class _Normalizer:
+        def __new__(cls, mean, std):
+            import torch
+
+            class Normalizer(torch.nn.Module):
+                def __init__(self):
+                    super().__init__()
+                    self.register_buffer("mean", mean)
+                    self.register_buffer("std", std)
+
+                def forward(self, x):
+                    return (x - self.mean) / self.std
+
+            return Normalizer()
+
+    def _adapt_observation(self, observation):
+        if len(observation) == self.input_size:
+            return observation
+        if self.input_size == 5 and len(observation) == 7:
+            cos_theta, sin_theta, x, x_dot, theta_dot, target, pos_error = observation
+            theta = math.atan2(sin_theta, cos_theta)
+            return [x, x_dot, theta, theta_dot, target - x]
+        raise ValueError(f"policy expects {self.input_size} observations, got {len(observation)}")
 
 
 
@@ -133,17 +175,19 @@ class Script(gobot.NodeScript):
         self.previous_theta = _wrap_angle(float(self.hinge.joint_position))
         self.observation = self._observation(0.0)
         self.policy = self._load_policy()
+        self.rng = random.Random(int(os.environ.get("GOBOT_CARTPOLE_DISTURBANCE_SEED", "42")))
         self.ticks = 0
         self.playing = True
         self.world_controls_ready = False
 
         self.slider.effort_limit = FORCE_LIMIT
         self.slider.velocity_limit = max(float(getattr(self.slider, "velocity_limit", 0.0)), 20.0)
-        self.hinge.effort_limit = 0.0
+        self.hinge.effort_limit = max(float(getattr(self.hinge, "effort_limit", 0.0)), DISTURBANCE_CLIP)
         print(
-            "CartPole RL policy playback started. policy={} force_limit={:.1f}N".format(
+            "CartPole RL policy playback started. policy={} force_limit={:.1f}N disturbance_std={:.3f}Nm".format(
                 "loaded" if self.policy is not None else "missing",
                 FORCE_LIMIT,
+                DISTURBANCE_STD if DISTURBANCE_ENABLED else 0.0,
             )
         )
 
@@ -160,13 +204,18 @@ class Script(gobot.NodeScript):
         action = 0.0
         if self.policy is not None:
             action = self.policy.action(self.observation)
-        action = _clamp(action, -1.0, 1.0)
-        effort = action * FORCE_LIMIT
+        action = _clamp(action, -FORCE_LIMIT, FORCE_LIMIT)
+        effort = action
         self.context.set_joint_effort_target(self.robot.name, SLIDER_JOINT, effort)
+        disturbance = self._sample_disturbance()
+        if disturbance != 0.0:
+            self.context.set_joint_effort_target(self.robot.name, HINGE_JOINT, disturbance)
+        else:
+            self.context.set_joint_passive(self.robot.name, HINGE_JOINT)
 
         self.ticks += 1
         if PRINT_EVERY_TICKS > 0 and self.ticks % PRINT_EVERY_TICKS == 0:
-            self._print_state("tick", action, effort)
+            self._print_state("tick", action, effort, disturbance)
 
     def reset(self):
         self.previous_x = float(self.slider.joint_position)
@@ -222,24 +271,44 @@ class Script(gobot.NodeScript):
         self.previous_x = INITIAL_CART_POSITION
         self.previous_theta = INITIAL_POLE_ANGLE
         self.observation = self._observation(0.0)
-        self._print_state("origin", 0.0, 0.0)
+        self._print_state("origin", 0.0, 0.0, 0.0)
         return True
 
-    def _print_state(self, label, action, effort):
-        x, x_dot, theta, theta_dot, target_error = self.observation
+    def _print_state(self, label, action, effort, disturbance):
+        cos_theta, sin_theta, x, x_dot, theta_dot, target, pos_error = self.observation
+        theta = math.atan2(sin_theta, cos_theta)
         print(
             "CartPole RL {} t={:.2f}s cart_position={:.3f}m x_dot={:.3f}m/s "
-            "theta={:.4f}rad theta_dot={:.3f}rad/s action={:.3f} applied_force={:.3f}N".format(
+            "theta={:.4f}rad theta_dot={:.3f}rad/s target={:.3f}m error={:.3f}m "
+            "action={:.3f} applied_force={:.3f}N "
+            "pole_noise={:.4f}Nm".format(
                 label,
                 self.context.simulation_time,
                 x,
                 x_dot,
                 theta,
                 theta_dot,
+                target,
+                pos_error,
                 action,
                 effort,
+                disturbance,
             )
         )
+
+    def _sample_disturbance(self):
+        if not DISTURBANCE_ENABLED or DISTURBANCE_STD <= 0.0:
+            return 0.0
+        if self.ticks < DISTURBANCE_START_TICK:
+            return 0.0
+        if DISTURBANCE_INTERVAL_TICKS > 0:
+            offset = (self.ticks - DISTURBANCE_START_TICK) % DISTURBANCE_INTERVAL_TICKS
+            if offset >= max(1, DISTURBANCE_DURATION_TICKS):
+                return 0.0
+        value = self.rng.gauss(0.0, DISTURBANCE_STD)
+        if DISTURBANCE_CLIP > 0.0:
+            value = _clamp(value, -DISTURBANCE_CLIP, DISTURBANCE_CLIP)
+        return value
 
     def _find_robot(self):
         root = self.get_root()
@@ -274,7 +343,15 @@ class Script(gobot.NodeScript):
                 theta_dot = float(hinge.get("velocity", 0.0))
                 self.previous_x = x
                 self.previous_theta = theta
-                return [x, x_dot, theta, theta_dot, self.target_cart_position - x]
+                return [
+                    math.cos(theta),
+                    math.sin(theta),
+                    x,
+                    x_dot,
+                    theta_dot,
+                    self.target_cart_position,
+                    x - self.target_cart_position,
+                ]
 
         x = float(self.slider.joint_position)
         theta = _wrap_angle(float(self.hinge.joint_position))
@@ -286,7 +363,15 @@ class Script(gobot.NodeScript):
             theta_dot = 0.0
         self.previous_x = x
         self.previous_theta = theta
-        return [x, x_dot, theta, theta_dot, self.target_cart_position - x]
+        return [
+            math.cos(theta),
+            math.sin(theta),
+            x,
+            x_dot,
+            theta_dot,
+            self.target_cart_position,
+            x - self.target_cart_position,
+        ]
 
     def _runtime_joint_states(self):
         if not self.context.has_world:

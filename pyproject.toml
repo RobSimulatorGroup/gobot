@@ -17,10 +17,12 @@ authors = [
 ]
 dependencies = [
     "numpy>=1.24",
-    "torch",
+]
+
+[project.optional-dependencies]
+rl = [
     "rsl-rl-lib==5.2.0",
     "tensordict",
-    "tyro",
     "tensorboard",
 ]
 
@@ -31,8 +33,6 @@ Issues = "https://github.com/RobSimulatorGroup/gobot/issues"
 
 [project.scripts]
 gobot_editor = "gobot.cli:editor"
-gobot_train = "gobot.rl.scripts.train:main"
-train = "gobot.rl.scripts.train:main"
 
 [tool.scikit-build]
 cmake.build-type = "Release"
