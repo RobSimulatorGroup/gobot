@@ -511,11 +511,8 @@ set_target_properties(gobot_editor
 
 install(DIRECTORY "${CMAKE_CURRENT_SOURCE_DIR}/examples/"
         DESTINATION "gobot/examples" COMPONENT python
-        FILES_MATCHING
         PATTERN "__pycache__" EXCLUDE
-        PATTERN "*.pyc" EXCLUDE
-        PATTERN "*.jscn"
-        PATTERN "*.py")
+        PATTERN "*.pyc" EXCLUDE)
 install(TARGETS gobot_editor
         RUNTIME DESTINATION "gobot" COMPONENT python)
 

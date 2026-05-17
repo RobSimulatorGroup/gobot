@@ -191,9 +191,14 @@ class Script(gobot.NodeScript):
             project_path = self.context.project_path if self.context is not None else ""
             path = os.path.join(project_path, path.removeprefix("res://"))
         if not path or not os.path.exists(path):
-            print("CartPole RL policy not found; set GOBOT_CARTPOLE_POLICY to a .pt policy.")
+            print(
+                "CartPole RL policy not found at '{}'; set GOBOT_CARTPOLE_POLICY to a .pt policy.".format(
+                    path or "<empty>"
+                )
+            )
             return None
         try:
+            print(f"CartPole RL loading policy: {path}")
             return TorchPolicy(path)
         except Exception as error:
             print(f"CartPole RL policy load failed: {error}")
