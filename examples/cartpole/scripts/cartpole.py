@@ -10,7 +10,9 @@ HINGE_JOINT = "hinge"
 TARGET_CART_POSITION = 0.0
 FORCE_LIMIT = 10.0
 PRINT_EVERY_TICKS = 240
-DEFAULT_POLICY_PATH = "res://policies/cartpole.npz"
+DEFAULT_POLICY_PATH = "res://policies/cartpole.pt"
+INITIAL_CART_POSITION = 0.0
+INITIAL_POLE_ANGLE = 0.0
 
 
 class TorchPolicy:
@@ -19,49 +21,86 @@ class TorchPolicy:
 
         self.torch = torch
         self.device = torch.device("cpu")
-        self.policy = torch.jit.load(path, map_location=self.device)
+        checkpoint = torch.load(path, map_location=self.device, weights_only=False)
+        self.policy = self._load_policy_module(checkpoint)
+        self.policy.to(self.device)
         self.policy.eval()
 
     def action(self, observation):
         with self.torch.no_grad():
-            obs = self.torch.as_tensor([observation], dtype=self.torch.float32, device=self.device)
+            obs = self.torch.as_tensor(observation, dtype=self.torch.float32, device=self.device).reshape(1, -1)
             output = self.policy(obs)
             if isinstance(output, (tuple, list)):
                 output = output[0]
             return float(output.reshape(-1)[0].clamp(-1.0, 1.0).cpu().item())
 
+    def _load_policy_module(self, checkpoint):
+        if isinstance(checkpoint, self.torch.nn.Module):
+            return checkpoint
+        if not isinstance(checkpoint, dict):
+            raise TypeError("expected a torch module or checkpoint dictionary")
 
-class NumpyMlpPolicy:
-    def __init__(self, path):
-        import numpy as np
+        state = checkpoint.get("actor_state_dict") or checkpoint.get("state_dict") or checkpoint
+        if not isinstance(state, dict):
+            raise TypeError("checkpoint has no actor_state_dict/state_dict")
 
-        self.np = np
-        data = np.load(path, allow_pickle=False)
-        self.activation = str(data["activation"]) if "activation" in data.files else "elu"
-        self.weights = []
-        self.biases = []
-        layer_count = int(data["layer_count"])
-        for index in range(layer_count):
-            self.weights.append(data[f"w{index}"].astype(np.float32, copy=False))
-            self.biases.append(data[f"b{index}"].astype(np.float32, copy=False))
+        mlp_state = {}
+        for key, value in state.items():
+            mlp_index = str(key).find("mlp.")
+            if mlp_index >= 0:
+                mlp_state[str(key)[mlp_index:]] = value
+        if not mlp_state:
+            raise ValueError("checkpoint has no rsl_rl MLP actor weights")
 
-    def action(self, observation):
-        x = self.np.asarray([observation], dtype=self.np.float32)
-        last_layer = len(self.weights) - 1
-        for index, (weight, bias) in enumerate(zip(self.weights, self.biases)):
-            x = x @ weight.T + bias
-            if index != last_layer:
-                x = self._activate(x)
-        return float(self.np.clip(x.reshape(-1)[0], -1.0, 1.0))
+        activation = checkpoint.get("activation")
+        policy_meta = checkpoint.get("gobot_policy")
+        if activation is None and isinstance(policy_meta, dict):
+            activation = policy_meta.get("activation")
+        return self._build_mlp(mlp_state, str(activation or "elu"))
 
-    def _activate(self, x):
-        if self.activation == "elu":
-            return self.np.where(x > 0.0, x, self.np.expm1(x))
-        if self.activation == "tanh":
-            return self.np.tanh(x)
-        if self.activation == "relu":
-            return self.np.maximum(x, 0.0)
-        return x
+    def _build_mlp(self, state, activation):
+        torch = self.torch
+        linear_indices = sorted(
+            int(key.split(".")[1])
+            for key in state
+            if key.startswith("mlp.") and key.endswith(".weight")
+        )
+        if not linear_indices:
+            raise ValueError("checkpoint has no linear layer weights")
+
+        layers = []
+        last_index = linear_indices[-1]
+        for layer_index in linear_indices:
+            weight = state[f"mlp.{layer_index}.weight"]
+            bias = state[f"mlp.{layer_index}.bias"]
+            layers.append(torch.nn.Linear(int(weight.shape[1]), int(weight.shape[0])))
+            if bias.shape[0] != weight.shape[0]:
+                raise ValueError(f"invalid bias shape for layer {layer_index}")
+            if layer_index != last_index:
+                layers.append(self._activation_module(activation))
+
+        class MlpPolicy(torch.nn.Module):
+            def __init__(self, modules):
+                super().__init__()
+                self.mlp = torch.nn.Sequential(*modules)
+
+            def forward(self, x):
+                return self.mlp(x)
+
+        module = MlpPolicy(layers)
+        module.load_state_dict(state, strict=False)
+        return module
+
+    def _activation_module(self, activation):
+        name = activation.lower()
+        if name == "elu":
+            return self.torch.nn.ELU()
+        if name == "relu":
+            return self.torch.nn.ReLU()
+        if name == "tanh":
+            return self.torch.nn.Tanh()
+        raise ValueError(f"unsupported policy activation: {activation}")
+
 
 
 def _wrap_angle(value):
@@ -127,17 +166,7 @@ class Script(gobot.NodeScript):
 
         self.ticks += 1
         if PRINT_EVERY_TICKS > 0 and self.ticks % PRINT_EVERY_TICKS == 0:
-            x, x_dot, theta, theta_dot, target_error = self.observation
-            print(
-                "CartPole RL t={:.2f}s x={:.3f} x_dot={:.3f} theta={:.4f} theta_dot={:.3f} action={:.3f}".format(
-                    self.context.simulation_time,
-                    x,
-                    x_dot,
-                    theta,
-                    theta_dot,
-                    action,
-                )
-            )
+            self._print_state("tick", action, effort)
 
     def reset(self):
         self.previous_x = float(self.slider.joint_position)
@@ -162,18 +191,10 @@ class Script(gobot.NodeScript):
             project_path = self.context.project_path if self.context is not None else ""
             path = os.path.join(project_path, path.removeprefix("res://"))
         if not path or not os.path.exists(path):
-            print("CartPole RL policy not found; set GOBOT_CARTPOLE_POLICY to a .npz policy.")
+            print("CartPole RL policy not found; set GOBOT_CARTPOLE_POLICY to a .pt policy.")
             return None
         try:
-            if path.endswith(".npz"):
-                return NumpyMlpPolicy(path)
-            if path.endswith(".pt") or path.endswith(".jit"):
-                if os.environ.get("GOBOT_CARTPOLE_ALLOW_TORCH", "0") not in {"1", "true", "TRUE"}:
-                    print("CartPole TorchScript playback is disabled; use a .npz policy in the editor.")
-                    return None
-                return TorchPolicy(path)
-            print(f"CartPole RL policy format is not supported: {path}")
-            return None
+            return TorchPolicy(path)
         except Exception as error:
             print(f"CartPole RL policy load failed: {error}")
             return None
@@ -183,9 +204,37 @@ class Script(gobot.NodeScript):
             return True
         if not self.context.has_world:
             return False
+        reset_joint_state = getattr(self.context, "reset_joint_state", None)
+        if reset_joint_state is not None:
+            reset_joint_state(self.robot.name, SLIDER_JOINT, INITIAL_CART_POSITION, 0.0)
+            reset_joint_state(self.robot.name, HINGE_JOINT, INITIAL_POLE_ANGLE, 0.0)
+        else:
+            self.slider.joint_position = INITIAL_CART_POSITION
+            self.hinge.joint_position = INITIAL_POLE_ANGLE
+            self.context.rebuild_world(False)
         self.context.set_joint_passive(self.robot.name, HINGE_JOINT)
         self.world_controls_ready = True
+        self.previous_x = INITIAL_CART_POSITION
+        self.previous_theta = INITIAL_POLE_ANGLE
+        self.observation = self._observation(0.0)
+        self._print_state("origin", 0.0, 0.0)
         return True
+
+    def _print_state(self, label, action, effort):
+        x, x_dot, theta, theta_dot, target_error = self.observation
+        print(
+            "CartPole RL {} t={:.2f}s cart_position={:.3f}m x_dot={:.3f}m/s "
+            "theta={:.4f}rad theta_dot={:.3f}rad/s action={:.3f} applied_force={:.3f}N".format(
+                label,
+                self.context.simulation_time,
+                x,
+                x_dot,
+                theta,
+                theta_dot,
+                action,
+                effort,
+            )
+        )
 
     def _find_robot(self):
         root = self.get_root()

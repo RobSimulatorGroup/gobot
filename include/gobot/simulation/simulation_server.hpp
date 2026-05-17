@@ -93,6 +93,11 @@ public:
     bool SetJointPassive(const std::string& robot_name,
                          const std::string& joint_name);
 
+    bool ResetJointState(const std::string& robot_name,
+                         const std::string& joint_name,
+                         RealType position,
+                         RealType velocity);
+
     bool SetLinkExternalForce(const std::string& robot_name,
                               const std::string& link_name,
                               const Vector3& point,

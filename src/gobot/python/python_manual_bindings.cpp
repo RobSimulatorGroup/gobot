@@ -1160,6 +1160,19 @@ class NodeScript:
                     throw std::runtime_error(simulation->GetLastError());
                 }
             }, py::arg("robot"), py::arg("joint"))
+            .def("reset_joint_state", [](EngineContext& context,
+                                         const std::string& robot,
+                                         const std::string& joint,
+                                         RealType position,
+                                         RealType velocity) {
+                SimulationServer* simulation = context.GetSimulationServer();
+                if (simulation == nullptr) {
+                    throw std::runtime_error("active Gobot app context has no SimulationServer");
+                }
+                if (!simulation->ResetJointState(robot, joint, position, velocity)) {
+                    throw std::runtime_error(simulation->GetLastError());
+                }
+            }, py::arg("robot"), py::arg("joint"), py::arg("position"), py::arg("velocity") = 0.0)
             .def("get_runtime_name_map", [](EngineContext& context) {
                 SimulationServer* simulation = context.GetSimulationServer();
                 if (simulation == nullptr) {

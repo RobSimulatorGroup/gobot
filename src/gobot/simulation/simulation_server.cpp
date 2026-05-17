@@ -422,6 +422,24 @@ bool SimulationServer::SetJointPassive(const std::string& robot_name,
     return true;
 }
 
+bool SimulationServer::ResetJointState(const std::string& robot_name,
+                                       const std::string& joint_name,
+                                       RealType position,
+                                       RealType velocity) {
+    if (!EnsureWorldReady()) {
+        return false;
+    }
+
+    if (!world_->ResetJointState(robot_name, joint_name, position, velocity)) {
+        SetLastError(world_->GetLastError());
+        return false;
+    }
+
+    ApplyWorldStateToScene();
+    last_error_.clear();
+    return true;
+}
+
 bool SimulationServer::SetLinkExternalForce(const std::string& robot_name,
                                             const std::string& link_name,
                                             const Vector3& point,
@@ -770,6 +788,7 @@ GOBOT_REGISTRATION {
             .method("set_joint_velocity_target", &SimulationServer::SetJointVelocityTarget)
             .method("set_joint_effort_target", &SimulationServer::SetJointEffortTarget)
             .method("set_joint_passive", &SimulationServer::SetJointPassive)
+            .method("reset_joint_state", &SimulationServer::ResetJointState)
             .method("set_robot_joint_position_targets_from_normalized_action",
                     set_robot_normalized_action)
             .method("get_simulation_time", &SimulationServer::GetSimulationTime)

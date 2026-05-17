@@ -115,37 +115,6 @@ class TaskConfig:
 
 
 def load_task_config(path: str | Path) -> TaskConfig: ...
-def make_cartpole_target_task(
-    *,
-    scene: str = ...,
-    backend: str | PhysicsBackendType = ...,
-    robot: str = ...,
-    project_path: str | None = ...,
-    slider_joint: str = ...,
-    hinge_joint: str = ...,
-    target_cart_position: float = ...,
-    randomize_target_position: bool = ...,
-    target_cart_position_range: tuple[float, float] = ...,
-    max_episode_steps: int = ...,
-    physics_dt: float = ...,
-    decimation: int = ...,
-    force_limit: float = ...,
-    pole_angle_limit: float = ...,
-    cart_position_limit: float = ...,
-    target_tolerance: float = ...,
-    target_near_tolerance: float = ...,
-    target_velocity_tolerance: float = ...,
-    target_overspeed_limit: float = ...,
-    fast_reach_bonus: float = ...,
-    initial_angle: float = ...,
-    initial_cart_position: float = ...,
-    randomize_initial_angle: bool = ...,
-    disturbance_force_std: float = ...,
-    disturbance_impulse_probability: float = ...,
-    disturbance_impulse_force: float = ...,
-    disturbance_impulse_steps: int = ...,
-    num_envs: int = ...,
-) -> TaskConfig: ...
 
 
 class ActionManager:

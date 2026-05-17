@@ -82,21 +82,19 @@ void LogScriptOutput(const char* phase,
                      const ScenePlaySession::ScriptOutputCallback& callback,
                      const python::PythonExecutionResult& result) {
     if (!result.output.empty()) {
+        LOG_INFO("Python node script {} on '{}':\n{}", phase, node.GetName(), result.output);
         if (callback) {
             callback(result.output,
                      false,
                      "Python node script " + std::string(phase) + " on '" + node.GetName() + "'");
-        } else {
-            LOG_INFO("Python node script {} on '{}':\n{}", phase, node.GetName(), result.output);
         }
     }
     if (result.ok && !result.error.empty()) {
+        LOG_WARN("Python node script {} stderr on '{}':\n{}", phase, node.GetName(), result.error);
         if (callback) {
             callback(result.error,
                      true,
                      "Python node script " + std::string(phase) + " stderr on '" + node.GetName() + "'");
-        } else {
-            LOG_WARN("Python node script {} stderr on '{}':\n{}", phase, node.GetName(), result.error);
         }
     }
 }
@@ -280,6 +278,7 @@ bool ScenePlaySession::AttachNodeScript(Node* node) {
         return true;
     }
 
+    LOG_INFO("Attaching Python node script '{}' to node '{}'.", script->GetPath(), node->GetName());
     python::PythonExecutionResult result = python::PythonScriptRunner::AttachSceneScript(node, script);
     LogScriptOutput("attach", *node, script_output_callback_, result);
     if (!result.ok) {

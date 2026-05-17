@@ -148,9 +148,9 @@
                 "child_link": "cart",
                 "damping": 0.0,
                 "effort_limit": 15.0,
-                "joint_position": -0.00949954055249691,
+                "joint_position": 0.0,
                 "joint_type": "Prismatic",
-                "lower_limit": -20.0,
+                "lower_limit": -2.4000000953674316,
                 "parent_link": "rail",
                 "position": {
                     "matrix_data": {
@@ -186,7 +186,7 @@
                     }
                 },
                 "script": null,
-                "upper_limit": 20.0,
+                "upper_limit": 2.4000000953674316,
                 "velocity_limit": 20.0,
                 "visible": true
             },
@@ -382,7 +382,7 @@
                 "child_link": "pole",
                 "damping": 0.0,
                 "effort_limit": 0.0,
-                "joint_position": -0.3960922956466675,
+                "joint_position": 0.0,
                 "joint_type": "Continuous",
                 "lower_limit": 0.0,
                 "parent_link": "cart",

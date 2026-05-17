@@ -14,7 +14,7 @@ import tyro
 
 from .. import VectorEnv
 from ..rsl_rl import GobotOnPolicyRunner, RslRlBaseRunnerCfg, RslRlVecEnvWrapper, rsl_rl_cfg_to_dict
-from ..tasks.registry import list_tasks, load_env_builder, load_env_cfg, load_rl_cfg, load_runner_cls
+from ..tasks.registry import list_tasks, load_env_cfg, load_rl_cfg, load_runner_cls
 
 
 TYRO_FLAGS = (
@@ -50,23 +50,17 @@ def run_train(task_id: str, cfg: TrainConfig, log_dir: Path) -> None:
         setattr(cfg.env, "seed", int(cfg.agent.seed))
     np.random.seed(cfg.agent.seed)
 
-    env_builder = load_env_builder(task_id)
-    task_cfg = env_builder(cfg.env)
+    task_cfg = cfg.env
     task_cfg.metadata = {**dict(task_cfg.metadata), "seed": int(cfg.agent.seed), "task_id": task_id}
 
     params_dir = log_dir / "params"
     params_dir.mkdir(parents=True, exist_ok=True)
-    _write_json(params_dir / "env.json", task_cfg.to_dict())
-    _write_json(params_dir / "env_cfg.json", _to_jsonable(cfg.env))
+    _write_json(params_dir / "env.json", cfg.env.to_dict())
     _write_json(params_dir / "agent.json", asdict(cfg.agent))
 
-    if hasattr(cfg.env, "num_envs"):
-        num_envs = getattr(cfg.env, "num_envs")
-    else:
-        num_envs = task_cfg.num_envs
     print(
         "[INFO] Gobot PPO training: "
-        f"task={task_id} device={cfg.device} num_envs={num_envs} "
+        f"task={task_id} device={cfg.device} num_envs={task_cfg.num_envs} "
         f"iterations={cfg.agent.max_iterations}"
     )
     print(f"[INFO] Logging to: {log_dir}")
@@ -130,16 +124,6 @@ def main(argv: Sequence[str] | None = None) -> None:
 
 def _write_json(path: Path, value: object) -> None:
     path.write_text(json.dumps(value, indent=2, sort_keys=True), encoding="utf-8")
-
-
-def _to_jsonable(value: object) -> object:
-    if hasattr(value, "__dataclass_fields__"):
-        return asdict(value)
-    if isinstance(value, dict):
-        return {str(key): _to_jsonable(item) for key, item in value.items()}
-    if isinstance(value, (list, tuple)):
-        return [_to_jsonable(item) for item in value]
-    return value
 
 
 def _train_config_type(env_type: Type[Any], agent_type: Type[Any]) -> Type[TrainConfig]:

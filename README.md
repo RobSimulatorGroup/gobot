@@ -97,6 +97,37 @@ The executable and its local shared libraries are installed inside the Python
 package, so a normal `pip install gobot` is enough for the packaged runtime.
 Check the packaged editor version with `gobot_editor --version`.
 
+For source checkout development, use an editable install in the Python
+environment you want Gobot to run with:
+
+```bash
+cd /path/to/gobot
+python -m pip install -e . --no-deps -Cbuild-dir=build/editable
+gobot_editor
+```
+
+For verbose rebuild output:
+
+```bash
+python -m pip install -v -e . --no-deps -Cbuild-dir=build/editable -Cbuild.verbose=true
+```
+
+For repeated C++ edit/build cycles, keep `build-dir` fixed so CMake and Ninja
+can reuse the previous build tree. If the build requirements are already
+installed in the active Python environment, `--no-build-isolation` avoids
+creating a temporary build environment on every reinstall:
+
+```bash
+python -m pip install -e . --no-deps --no-build-isolation -Cbuild-dir=build/editable
+```
+
+The `gobot_editor` command is the recommended development entry point. It
+selects the current Python environment, finds that environment's `libpython`,
+sets the runtime environment, and then launches the packaged editor executable.
+Do not run `build/.../gobot_editor` directly unless you also set
+`GOBOT_PYTHON_LIBRARY` to the exact `libpython` path for the Python environment
+you want to embed.
+
 Packaged examples are available from the editor start screen under `Examples`.
 The same files are installed inside the Python package at `gobot/examples/`.
 The first bundled example is `cartpole`, a MuJoCo-backed inverted pendulum scene
