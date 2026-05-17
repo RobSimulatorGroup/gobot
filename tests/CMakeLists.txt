@@ -109,12 +109,3 @@ set_tests_properties(test_python_rl_manager_config
             ENVIRONMENT "PYTHONNOUSERSITE=1;PYTHONPATH=${CMAKE_BINARY_DIR}/python"
             WORKING_DIRECTORY "${CMAKE_SOURCE_DIR}"
 )
-add_test(
-        NAME test_python_rl_vector_env
-        COMMAND ${Python3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/python/test_rl_vector_env.py
-)
-set_tests_properties(test_python_rl_vector_env
-        PROPERTIES
-            ENVIRONMENT "PYTHONNOUSERSITE=1;PYTHONPATH=${CMAKE_BINARY_DIR}/python"
-            WORKING_DIRECTORY "${CMAKE_SOURCE_DIR}"
-)

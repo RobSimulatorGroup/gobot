@@ -21,6 +21,8 @@ def main():
     assert gobot.sim.JointControllerGains is gobot.JointControllerGains
     assert gobot.scene.Node is gobot.Node
     assert "ManagerBasedEnv" in gobot.rl.__all__
+    assert "VectorEnv" not in gobot.rl.__all__
+    assert not hasattr(gobot._core, "NativeVectorEnv")
 
     context = gobot.app.context()
     assert context.backend_type == gobot.PhysicsBackendType.Null

@@ -1,0 +1,3414 @@
+{
+    "__EXT_RESOURCES__": [
+        {
+            "__ID__": "1_6FstW",
+            "__PATH__": "res://scripts/go1.py",
+            "__TYPE__": "PythonScript"
+        }
+    ],
+    "__META_TYPE__": "SCENE",
+    "__NODES__": [
+        {
+            "name": "go1",
+            "parent": -1,
+            "properties": {
+                "mode": "Assembly",
+                "position": {
+                    "matrix_data": {
+                        "cols": 1,
+                        "rows": 3,
+                        "storage": [
+                            0.0,
+                            0.0,
+                            0.0
+                        ]
+                    }
+                },
+                "rotation_degrees": {
+                    "matrix_data": {
+                        "cols": 1,
+                        "rows": 3,
+                        "storage": [
+                            0.0,
+                            0.0,
+                            0.0
+                        ]
+                    }
+                },
+                "scale": {
+                    "matrix_data": {
+                        "cols": 1,
+                        "rows": 3,
+                        "storage": [
+                            1.0,
+                            1.0,
+                            1.0
+                        ]
+                    }
+                },
+                "script": "ExtResource(1_6FstW)",
+                "source_path": "/home/wqq/gobot/examples/go1/go1_scene.xml",
+                "visible": true
+            },
+            "type": "Robot3D"
+        },
+        {
+            "name": "floating_base_joint",
+            "parent": 0,
+            "properties": {
+                "axis": {
+                    "matrix_data": {
+                        "cols": 1,
+                        "rows": 3,
+                        "storage": [
+                            0.0,
+                            0.0,
+                            1.0
+                        ]
+                    }
+                },
+                "child_link": "trunk",
+                "damping": 0.0,
+                "effort_limit": 0.0,
+                "joint_position": 0.0,
+                "joint_type": "Floating",
+                "lower_limit": 0.0,
+                "parent_link": "",
+                "position": {
+                    "matrix_data": {
+                        "cols": 1,
+                        "rows": 3,
+                        "storage": [
+                            0.0,
+                            0.0,
+                            0.0
+                        ]
+                    }
+                },
+                "rotation_degrees": {
+                    "matrix_data": {
+                        "cols": 1,
+                        "rows": 3,
+                        "storage": [
+                            -0.0,
+                            0.0,
+                            -0.0
+                        ]
+                    }
+                },
+                "scale": {
+                    "matrix_data": {
+                        "cols": 1,
+                        "rows": 3,
+                        "storage": [
+                            1.0,
+                            1.0,
+                            1.0
+                        ]
+                    }
+                },
+                "script": null,
+                "upper_limit": 0.0,
+                "velocity_limit": 0.0,
+                "visible": true
+            },
+            "type": "Joint3D"
+        },
+        {
+            "name": "trunk",
+            "parent": 1,
+            "properties": {
+                "center_of_mass": {
+                    "matrix_data": {
+                        "cols": 1,
+                        "rows": 3,
+                        "storage": [
+                            0.022299999371170998,
+                            0.0020000000949949026,
+                            -0.0005000000237487257
+                        ]
+                    }
+                },
+                "has_inertial": true,
+                "inertia_diagonal": {
+                    "matrix_data": {
+                        "cols": 1,
+                        "rows": 3,
+                        "storage": [
+                            0.07165650278329849,
+                            0.06301049888134003,
+                            0.0168101005256176
+                        ]
+                    }
+                },
+                "inertia_off_diagonal": {
+                    "matrix_data": {
+                        "cols": 1,
+                        "rows": 3,
+                        "storage": [
+                            0.0,
+                            0.0,
+                            0.0
+                        ]
+                    }
+                },
+                "mass": 5.203999996185303,
+                "position": {
+                    "matrix_data": {
+                        "cols": 1,
+                        "rows": 3,
+                        "storage": [
+                            0.0,
+                            0.0,
+                            0.4449999928474426
+                        ]
+                    }
+                },
+                "role": "Physical",
+                "rotation_degrees": {
+                    "matrix_data": {
+                        "cols": 1,
+                        "rows": 3,
+                        "storage": [
+                            -0.0,
+                            0.0,
+                            -0.0
+                        ]
+                    }
+                },
+                "scale": {
+                    "matrix_data": {
+                        "cols": 1,
+                        "rows": 3,
+                        "storage": [
+                            1.0,
+                            1.0,
+                            1.0
+                        ]
+                    }
+                },
+                "script": null,
+                "visible": true
+            },
+            "type": "Link3D"
+        },
+        {
+            "name": "trunk_collision",
+            "parent": 2,
+            "properties": {
+                "disabled": false,
+                "position": {
+                    "matrix_data": {
+                        "cols": 1,
+                        "rows": 3,
+                        "storage": [
+                            0.0,
+                            0.0,
+                            0.0
+                        ]
+                    }
+                },
+                "rotation_degrees": {
+                    "matrix_data": {
+                        "cols": 1,
+                        "rows": 3,
+                        "storage": [
+                            -0.0,
+                            0.0,
+                            -0.0
+                        ]
+                    }
+                },
+                "scale": {
+                    "matrix_data": {
+                        "cols": 1,
+                        "rows": 3,
+                        "storage": [
+                            1.0,
+                            1.0,
+                            1.0
+                        ]
+                    }
+                },
+                "script": null,
+                "shape": "SubResource(BoxShape3D_QYSip)",
+                "visible": true
+            },
+            "type": "CollisionShape3D"
+        },
+        {
+            "name": "head_collision",
+            "parent": 2,
+            "properties": {
+                "disabled": false,
+                "position": {
+                    "matrix_data": {
+                        "cols": 1,
+                        "rows": 3,
+                        "storage": [
+                            0.23999999463558197,
+                            0.0,
+                            0.0
+                        ]
+                    }
+                },
+                "rotation_degrees": {
+                    "matrix_data": {
+                        "cols": 1,
+                        "rows": 3,
+                        "storage": [
+                            -0.0,
+                            0.0,
+                            -0.0
+                        ]
+                    }
+                },
+                "scale": {
+                    "matrix_data": {
+                        "cols": 1,
+                        "rows": 3,
+                        "storage": [
+                            1.0,
+                            1.0,
+                            1.0
+                        ]
+                    }
+                },
+                "script": null,
+                "shape": "SubResource(SphereShape3D_A1StY)",
+                "visible": true
+            },
+            "type": "CollisionShape3D"
+        },
+        {
+            "name": "FR_hip_joint",
+            "parent": 2,
+            "properties": {
+                "axis": {
+                    "matrix_data": {
+                        "cols": 1,
+                        "rows": 3,
+                        "storage": [
+                            1.0,
+                            0.0,
+                            0.0
+                        ]
+                    }
+                },
+                "child_link": "FR_hip",
+                "damping": 0.0,
+                "effort_limit": 0.0,
+                "joint_position": 0.0,
+                "joint_type": "Revolute",
+                "lower_limit": -0.8629999756813049,
+                "parent_link": "trunk",
+                "position": {
+                    "matrix_data": {
+                        "cols": 1,
+                        "rows": 3,
+                        "storage": [
+                            0.0,
+                            0.0,
+                            0.0
+                        ]
+                    }
+                },
+                "rotation_degrees": {
+                    "matrix_data": {
+                        "cols": 1,
+                        "rows": 3,
+                        "storage": [
+                            -0.0,
+                            0.0,
+                            -0.0
+                        ]
+                    }
+                },
+                "scale": {
+                    "matrix_data": {
+                        "cols": 1,
+                        "rows": 3,
+                        "storage": [
+                            1.0,
+                            1.0,
+                            1.0
+                        ]
+                    }
+                },
+                "script": null,
+                "upper_limit": 0.8629999756813049,
+                "velocity_limit": 0.0,
+                "visible": true
+            },
+            "type": "Joint3D"
+        },
+        {
+            "name": "FR_hip",
+            "parent": 5,
+            "properties": {
+                "center_of_mass": {
+                    "matrix_data": {
+                        "cols": 1,
+                        "rows": 3,
+                        "storage": [
+                            -0.004916599951684475,
+                            0.00762614980340004,
+                            -8.864999836077914e-05
+                        ]
+                    }
+                },
+                "has_inertial": true,
+                "inertia_diagonal": {
+                    "matrix_data": {
+                        "cols": 1,
+                        "rows": 3,
+                        "storage": [
+                            0.0007340639713220298,
+                            0.00046843799646012485,
+                            0.0003987190139014274
+                        ]
+                    }
+                },
+                "inertia_off_diagonal": {
+                    "matrix_data": {
+                        "cols": 1,
+                        "rows": 3,
+                        "storage": [
+                            0.0,
+                            0.0,
+                            0.0
+                        ]
+                    }
+                },
+                "mass": 0.6800000071525574,
+                "position": {
+                    "matrix_data": {
+                        "cols": 1,
+                        "rows": 3,
+                        "storage": [
+                            0.18809999525547028,
+                            -0.04675000160932541,
+                            0.0
+                        ]
+                    }
+                },
+                "role": "Physical",
+                "rotation_degrees": {
+                    "matrix_data": {
+                        "cols": 1,
+                        "rows": 3,
+                        "storage": [
+                            -0.0,
+                            0.0,
+                            -0.0
+                        ]
+                    }
+                },
+                "scale": {
+                    "matrix_data": {
+                        "cols": 1,
+                        "rows": 3,
+                        "storage": [
+                            1.0,
+                            1.0,
+                            1.0
+                        ]
+                    }
+                },
+                "script": null,
+                "visible": true
+            },
+            "type": "Link3D"
+        },
+        {
+            "name": "FR_hip_collision",
+            "parent": 6,
+            "properties": {
+                "disabled": false,
+                "position": {
+                    "matrix_data": {
+                        "cols": 1,
+                        "rows": 3,
+                        "storage": [
+                            0.0,
+                            -0.029999999329447746,
+                            0.0
+                        ]
+                    }
+                },
+                "rotation_degrees": {
+                    "matrix_data": {
+                        "cols": 1,
+                        "rows": 3,
+                        "storage": [
+                            90.0,
+                            180.0,
+                            -180.0
+                        ]
+                    }
+                },
+                "scale": {
+                    "matrix_data": {
+                        "cols": 1,
+                        "rows": 3,
+                        "storage": [
+                            1.0,
+                            1.0,
+                            1.0
+                        ]
+                    }
+                },
+                "script": null,
+                "shape": "SubResource(CylinderShape3D_nshsm)",
+                "visible": true
+            },
+            "type": "CollisionShape3D"
+        },
+        {
+            "name": "FR_thigh_joint",
+            "parent": 6,
+            "properties": {
+                "axis": {
+                    "matrix_data": {
+                        "cols": 1,
+                        "rows": 3,
+                        "storage": [
+                            0.0,
+                            1.0,
+                            0.0
+                        ]
+                    }
+                },
+                "child_link": "FR_thigh",
+                "damping": 0.0,
+                "effort_limit": 0.0,
+                "joint_position": 0.0,
+                "joint_type": "Revolute",
+                "lower_limit": -0.6859999895095825,
+                "parent_link": "FR_hip",
+                "position": {
+                    "matrix_data": {
+                        "cols": 1,
+                        "rows": 3,
+                        "storage": [
+                            0.0,
+                            0.0,
+                            0.0
+                        ]
+                    }
+                },
+                "rotation_degrees": {
+                    "matrix_data": {
+                        "cols": 1,
+                        "rows": 3,
+                        "storage": [
+                            -0.0,
+                            0.0,
+                            -0.0
+                        ]
+                    }
+                },
+                "scale": {
+                    "matrix_data": {
+                        "cols": 1,
+                        "rows": 3,
+                        "storage": [
+                            1.0,
+                            1.0,
+                            1.0
+                        ]
+                    }
+                },
+                "script": null,
+                "upper_limit": 4.500999927520752,
+                "velocity_limit": 0.0,
+                "visible": true
+            },
+            "type": "Joint3D"
+        },
+        {
+            "name": "FR_thigh",
+            "parent": 8,
+            "properties": {
+                "center_of_mass": {
+                    "matrix_data": {
+                        "cols": 1,
+                        "rows": 3,
+                        "storage": [
+                            -0.003047219943255186,
+                            0.019315000623464584,
+                            -0.030500400811433792
+                        ]
+                    }
+                },
+                "has_inertial": true,
+                "inertia_diagonal": {
+                    "matrix_data": {
+                        "cols": 1,
+                        "rows": 3,
+                        "storage": [
+                            0.004787169862538576,
+                            0.004609030205756426,
+                            0.00070926797343418
+                        ]
+                    }
+                },
+                "inertia_off_diagonal": {
+                    "matrix_data": {
+                        "cols": 1,
+                        "rows": 3,
+                        "storage": [
+                            0.0,
+                            0.0,
+                            0.0
+                        ]
+                    }
+                },
+                "mass": 1.0089999437332153,
+                "position": {
+                    "matrix_data": {
+                        "cols": 1,
+                        "rows": 3,
+                        "storage": [
+                            0.0,
+                            -0.07999999821186066,
+                            0.0
+                        ]
+                    }
+                },
+                "role": "Physical",
+                "rotation_degrees": {
+                    "matrix_data": {
+                        "cols": 1,
+                        "rows": 3,
+                        "storage": [
+                            -0.0,
+                            0.0,
+                            -0.0
+                        ]
+                    }
+                },
+                "scale": {
+                    "matrix_data": {
+                        "cols": 1,
+                        "rows": 3,
+                        "storage": [
+                            1.0,
+                            1.0,
+                            1.0
+                        ]
+                    }
+                },
+                "script": null,
+                "visible": true
+            },
+            "type": "Link3D"
+        },
+        {
+            "name": "FR_thigh_collision1",
+            "parent": 9,
+            "properties": {
+                "disabled": false,
+                "position": {
+                    "matrix_data": {
+                        "cols": 1,
+                        "rows": 3,
+                        "storage": [
+                            -0.019999999552965164,
+                            0.0,
+                            -0.07999999821186066
+                        ]
+                    }
+                },
+                "rotation_degrees": {
+                    "matrix_data": {
+                        "cols": 1,
+                        "rows": 3,
+                        "storage": [
+                            -0.0,
+                            0.0,
+                            -0.0
+                        ]
+                    }
+                },
+                "scale": {
+                    "matrix_data": {
+                        "cols": 1,
+                        "rows": 3,
+                        "storage": [
+                            1.0,
+                            1.0,
+                            1.0
+                        ]
+                    }
+                },
+                "script": null,
+                "shape": "SubResource(CylinderShape3D_cP0Jy)",
+                "visible": true
+            },
+            "type": "CollisionShape3D"
+        },
+        {
+            "name": "FR_thigh_collision2",
+            "parent": 9,
+            "properties": {
+                "disabled": false,
+                "position": {
+                    "matrix_data": {
+                        "cols": 1,
+                        "rows": 3,
+                        "storage": [
+                            -0.009999999776482582,
+                            0.0,
+                            -0.05000000074505806
+                        ]
+                    }
+                },
+                "rotation_degrees": {
+                    "matrix_data": {
+                        "cols": 1,
+                        "rows": 3,
+                        "storage": [
+                            -0.0,
+                            11.309932708740234,
+                            0.0
+                        ]
+                    }
+                },
+                "scale": {
+                    "matrix_data": {
+                        "cols": 1,
+                        "rows": 3,
+                        "storage": [
+                            1.0,
+                            1.0,
+                            1.0
+                        ]
+                    }
+                },
+                "script": null,
+                "shape": "SubResource(CylinderShape3D_dLZNk)",
+                "visible": true
+            },
+            "type": "CollisionShape3D"
+        },
+        {
+            "name": "FR_thigh_collision3",
+            "parent": 9,
+            "properties": {
+                "disabled": false,
+                "position": {
+                    "matrix_data": {
+                        "cols": 1,
+                        "rows": 3,
+                        "storage": [
+                            -0.009999999776482582,
+                            0.0,
+                            -0.18000000715255737
+                        ]
+                    }
+                },
+                "rotation_degrees": {
+                    "matrix_data": {
+                        "cols": 1,
+                        "rows": 3,
+                        "storage": [
+                            0.0,
+                            -26.56505012512207,
+                            0.0
+                        ]
+                    }
+                },
+                "scale": {
+                    "matrix_data": {
+                        "cols": 1,
+                        "rows": 3,
+                        "storage": [
+                            1.0,
+                            1.0,
+                            1.0
+                        ]
+                    }
+                },
+                "script": null,
+                "shape": "SubResource(CylinderShape3D_mr8DE)",
+                "visible": true
+            },
+            "type": "CollisionShape3D"
+        },
+        {
+            "name": "FR_calf_joint",
+            "parent": 9,
+            "properties": {
+                "axis": {
+                    "matrix_data": {
+                        "cols": 1,
+                        "rows": 3,
+                        "storage": [
+                            0.0,
+                            1.0,
+                            0.0
+                        ]
+                    }
+                },
+                "child_link": "FR_calf",
+                "damping": 0.0,
+                "effort_limit": 0.0,
+                "joint_position": -0.8880000114440918,
+                "joint_type": "Revolute",
+                "lower_limit": -2.818000078201294,
+                "parent_link": "FR_thigh",
+                "position": {
+                    "matrix_data": {
+                        "cols": 1,
+                        "rows": 3,
+                        "storage": [
+                            0.0,
+                            0.0,
+                            0.0
+                        ]
+                    }
+                },
+                "rotation_degrees": {
+                    "matrix_data": {
+                        "cols": 1,
+                        "rows": 3,
+                        "storage": [
+                            -0.0,
+                            0.0,
+                            -0.0
+                        ]
+                    }
+                },
+                "scale": {
+                    "matrix_data": {
+                        "cols": 1,
+                        "rows": 3,
+                        "storage": [
+                            1.0,
+                            1.0,
+                            1.0
+                        ]
+                    }
+                },
+                "script": null,
+                "upper_limit": -0.8880000114440918,
+                "velocity_limit": 0.0,
+                "visible": true
+            },
+            "type": "Joint3D"
+        },
+        {
+            "name": "FR_calf",
+            "parent": 13,
+            "properties": {
+                "center_of_mass": {
+                    "matrix_data": {
+                        "cols": 1,
+                        "rows": 3,
+                        "storage": [
+                            0.0042986199259757996,
+                            0.0009766760049387813,
+                            -0.14619700610637665
+                        ]
+                    }
+                },
+                "has_inertial": true,
+                "inertia_diagonal": {
+                    "matrix_data": {
+                        "cols": 1,
+                        "rows": 3,
+                        "storage": [
+                            0.00149766996037215,
+                            0.001484679989516735,
+                            3.584269870771095e-05
+                        ]
+                    }
+                },
+                "inertia_off_diagonal": {
+                    "matrix_data": {
+                        "cols": 1,
+                        "rows": 3,
+                        "storage": [
+                            0.0,
+                            0.0,
+                            0.0
+                        ]
+                    }
+                },
+                "mass": 0.19586199522018433,
+                "position": {
+                    "matrix_data": {
+                        "cols": 1,
+                        "rows": 3,
+                        "storage": [
+                            0.0,
+                            0.0,
+                            -0.21299999952316284
+                        ]
+                    }
+                },
+                "role": "Physical",
+                "rotation_degrees": {
+                    "matrix_data": {
+                        "cols": 1,
+                        "rows": 3,
+                        "storage": [
+                            -0.0,
+                            0.0,
+                            -0.0
+                        ]
+                    }
+                },
+                "scale": {
+                    "matrix_data": {
+                        "cols": 1,
+                        "rows": 3,
+                        "storage": [
+                            1.0,
+                            1.0,
+                            1.0
+                        ]
+                    }
+                },
+                "script": null,
+                "visible": true
+            },
+            "type": "Link3D"
+        },
+        {
+            "name": "FR_calf_collision1",
+            "parent": 14,
+            "properties": {
+                "disabled": false,
+                "position": {
+                    "matrix_data": {
+                        "cols": 1,
+                        "rows": 3,
+                        "storage": [
+                            0.009999999776482582,
+                            0.0,
+                            -0.06499999761581421
+                        ]
+                    }
+                },
+                "rotation_degrees": {
+                    "matrix_data": {
+                        "cols": 1,
+                        "rows": 3,
+                        "storage": [
+                            0.0,
+                            -8.746162414550781,
+                            0.0
+                        ]
+                    }
+                },
+                "scale": {
+                    "matrix_data": {
+                        "cols": 1,
+                        "rows": 3,
+                        "storage": [
+                            1.0,
+                            1.0,
+                            1.0
+                        ]
+                    }
+                },
+                "script": null,
+                "shape": "SubResource(CylinderShape3D_mf0hm)",
+                "visible": true
+            },
+            "type": "CollisionShape3D"
+        },
+        {
+            "name": "FR_calf_collision2",
+            "parent": 14,
+            "properties": {
+                "disabled": false,
+                "position": {
+                    "matrix_data": {
+                        "cols": 1,
+                        "rows": 3,
+                        "storage": [
+                            0.009999999776482582,
+                            0.0,
+                            -0.16500000655651093
+                        ]
+                    }
+                },
+                "rotation_degrees": {
+                    "matrix_data": {
+                        "cols": 1,
+                        "rows": 3,
+                        "storage": [
+                            -0.0,
+                            15.945394515991211,
+                            0.0
+                        ]
+                    }
+                },
+                "scale": {
+                    "matrix_data": {
+                        "cols": 1,
+                        "rows": 3,
+                        "storage": [
+                            1.0,
+                            1.0,
+                            1.0
+                        ]
+                    }
+                },
+                "script": null,
+                "shape": "SubResource(CylinderShape3D_q7meU)",
+                "visible": true
+            },
+            "type": "CollisionShape3D"
+        },
+        {
+            "name": "FR_foot_collision",
+            "parent": 14,
+            "properties": {
+                "disabled": false,
+                "position": {
+                    "matrix_data": {
+                        "cols": 1,
+                        "rows": 3,
+                        "storage": [
+                            0.0,
+                            0.0,
+                            -0.21299999952316284
+                        ]
+                    }
+                },
+                "rotation_degrees": {
+                    "matrix_data": {
+                        "cols": 1,
+                        "rows": 3,
+                        "storage": [
+                            -0.0,
+                            0.0,
+                            -0.0
+                        ]
+                    }
+                },
+                "scale": {
+                    "matrix_data": {
+                        "cols": 1,
+                        "rows": 3,
+                        "storage": [
+                            1.0,
+                            1.0,
+                            1.0
+                        ]
+                    }
+                },
+                "script": null,
+                "shape": "SubResource(SphereShape3D_cd5dG)",
+                "visible": true
+            },
+            "type": "CollisionShape3D"
+        },
+        {
+            "name": "FL_hip_joint",
+            "parent": 2,
+            "properties": {
+                "axis": {
+                    "matrix_data": {
+                        "cols": 1,
+                        "rows": 3,
+                        "storage": [
+                            1.0,
+                            0.0,
+                            0.0
+                        ]
+                    }
+                },
+                "child_link": "FL_hip",
+                "damping": 0.0,
+                "effort_limit": 0.0,
+                "joint_position": 0.0,
+                "joint_type": "Revolute",
+                "lower_limit": -0.8629999756813049,
+                "parent_link": "trunk",
+                "position": {
+                    "matrix_data": {
+                        "cols": 1,
+                        "rows": 3,
+                        "storage": [
+                            0.0,
+                            0.0,
+                            0.0
+                        ]
+                    }
+                },
+                "rotation_degrees": {
+                    "matrix_data": {
+                        "cols": 1,
+                        "rows": 3,
+                        "storage": [
+                            -0.0,
+                            0.0,
+                            -0.0
+                        ]
+                    }
+                },
+                "scale": {
+                    "matrix_data": {
+                        "cols": 1,
+                        "rows": 3,
+                        "storage": [
+                            1.0,
+                            1.0,
+                            1.0
+                        ]
+                    }
+                },
+                "script": null,
+                "upper_limit": 0.8629999756813049,
+                "velocity_limit": 0.0,
+                "visible": true
+            },
+            "type": "Joint3D"
+        },
+        {
+            "name": "FL_hip",
+            "parent": 18,
+            "properties": {
+                "center_of_mass": {
+                    "matrix_data": {
+                        "cols": 1,
+                        "rows": 3,
+                        "storage": [
+                            -0.004916599951684475,
+                            -0.00762614980340004,
+                            -8.864999836077914e-05
+                        ]
+                    }
+                },
+                "has_inertial": true,
+                "inertia_diagonal": {
+                    "matrix_data": {
+                        "cols": 1,
+                        "rows": 3,
+                        "storage": [
+                            0.0007340639713220298,
+                            0.00046843799646012485,
+                            0.0003987190139014274
+                        ]
+                    }
+                },
+                "inertia_off_diagonal": {
+                    "matrix_data": {
+                        "cols": 1,
+                        "rows": 3,
+                        "storage": [
+                            0.0,
+                            0.0,
+                            0.0
+                        ]
+                    }
+                },
+                "mass": 0.6800000071525574,
+                "position": {
+                    "matrix_data": {
+                        "cols": 1,
+                        "rows": 3,
+                        "storage": [
+                            0.18809999525547028,
+                            0.04675000160932541,
+                            0.0
+                        ]
+                    }
+                },
+                "role": "Physical",
+                "rotation_degrees": {
+                    "matrix_data": {
+                        "cols": 1,
+                        "rows": 3,
+                        "storage": [
+                            -0.0,
+                            0.0,
+                            -0.0
+                        ]
+                    }
+                },
+                "scale": {
+                    "matrix_data": {
+                        "cols": 1,
+                        "rows": 3,
+                        "storage": [
+                            1.0,
+                            1.0,
+                            1.0
+                        ]
+                    }
+                },
+                "script": null,
+                "visible": true
+            },
+            "type": "Link3D"
+        },
+        {
+            "name": "FL_hip_collision",
+            "parent": 19,
+            "properties": {
+                "disabled": false,
+                "position": {
+                    "matrix_data": {
+                        "cols": 1,
+                        "rows": 3,
+                        "storage": [
+                            0.0,
+                            0.029999999329447746,
+                            0.0
+                        ]
+                    }
+                },
+                "rotation_degrees": {
+                    "matrix_data": {
+                        "cols": 1,
+                        "rows": 3,
+                        "storage": [
+                            90.0,
+                            0.0,
+                            -0.0
+                        ]
+                    }
+                },
+                "scale": {
+                    "matrix_data": {
+                        "cols": 1,
+                        "rows": 3,
+                        "storage": [
+                            1.0,
+                            1.0,
+                            1.0
+                        ]
+                    }
+                },
+                "script": null,
+                "shape": "SubResource(CylinderShape3D_qSGgL)",
+                "visible": true
+            },
+            "type": "CollisionShape3D"
+        },
+        {
+            "name": "FL_thigh_joint",
+            "parent": 19,
+            "properties": {
+                "axis": {
+                    "matrix_data": {
+                        "cols": 1,
+                        "rows": 3,
+                        "storage": [
+                            0.0,
+                            1.0,
+                            0.0
+                        ]
+                    }
+                },
+                "child_link": "FL_thigh",
+                "damping": 0.0,
+                "effort_limit": 0.0,
+                "joint_position": 0.0,
+                "joint_type": "Revolute",
+                "lower_limit": -0.6859999895095825,
+                "parent_link": "FL_hip",
+                "position": {
+                    "matrix_data": {
+                        "cols": 1,
+                        "rows": 3,
+                        "storage": [
+                            0.0,
+                            0.0,
+                            0.0
+                        ]
+                    }
+                },
+                "rotation_degrees": {
+                    "matrix_data": {
+                        "cols": 1,
+                        "rows": 3,
+                        "storage": [
+                            -0.0,
+                            0.0,
+                            -0.0
+                        ]
+                    }
+                },
+                "scale": {
+                    "matrix_data": {
+                        "cols": 1,
+                        "rows": 3,
+                        "storage": [
+                            1.0,
+                            1.0,
+                            1.0
+                        ]
+                    }
+                },
+                "script": null,
+                "upper_limit": 4.500999927520752,
+                "velocity_limit": 0.0,
+                "visible": true
+            },
+            "type": "Joint3D"
+        },
+        {
+            "name": "FL_thigh",
+            "parent": 21,
+            "properties": {
+                "center_of_mass": {
+                    "matrix_data": {
+                        "cols": 1,
+                        "rows": 3,
+                        "storage": [
+                            -0.003047219943255186,
+                            -0.019315000623464584,
+                            -0.030500400811433792
+                        ]
+                    }
+                },
+                "has_inertial": true,
+                "inertia_diagonal": {
+                    "matrix_data": {
+                        "cols": 1,
+                        "rows": 3,
+                        "storage": [
+                            0.004787169862538576,
+                            0.004609030205756426,
+                            0.00070926797343418
+                        ]
+                    }
+                },
+                "inertia_off_diagonal": {
+                    "matrix_data": {
+                        "cols": 1,
+                        "rows": 3,
+                        "storage": [
+                            0.0,
+                            0.0,
+                            0.0
+                        ]
+                    }
+                },
+                "mass": 1.0089999437332153,
+                "position": {
+                    "matrix_data": {
+                        "cols": 1,
+                        "rows": 3,
+                        "storage": [
+                            0.0,
+                            0.07999999821186066,
+                            0.0
+                        ]
+                    }
+                },
+                "role": "Physical",
+                "rotation_degrees": {
+                    "matrix_data": {
+                        "cols": 1,
+                        "rows": 3,
+                        "storage": [
+                            -0.0,
+                            0.0,
+                            -0.0
+                        ]
+                    }
+                },
+                "scale": {
+                    "matrix_data": {
+                        "cols": 1,
+                        "rows": 3,
+                        "storage": [
+                            1.0,
+                            1.0,
+                            1.0
+                        ]
+                    }
+                },
+                "script": null,
+                "visible": true
+            },
+            "type": "Link3D"
+        },
+        {
+            "name": "FL_thigh_collision1",
+            "parent": 22,
+            "properties": {
+                "disabled": false,
+                "position": {
+                    "matrix_data": {
+                        "cols": 1,
+                        "rows": 3,
+                        "storage": [
+                            -0.019999999552965164,
+                            0.0,
+                            -0.07999999821186066
+                        ]
+                    }
+                },
+                "rotation_degrees": {
+                    "matrix_data": {
+                        "cols": 1,
+                        "rows": 3,
+                        "storage": [
+                            -0.0,
+                            0.0,
+                            -0.0
+                        ]
+                    }
+                },
+                "scale": {
+                    "matrix_data": {
+                        "cols": 1,
+                        "rows": 3,
+                        "storage": [
+                            1.0,
+                            1.0,
+                            1.0
+                        ]
+                    }
+                },
+                "script": null,
+                "shape": "SubResource(CylinderShape3D_pGGFo)",
+                "visible": true
+            },
+            "type": "CollisionShape3D"
+        },
+        {
+            "name": "FL_thigh_collision2",
+            "parent": 22,
+            "properties": {
+                "disabled": false,
+                "position": {
+                    "matrix_data": {
+                        "cols": 1,
+                        "rows": 3,
+                        "storage": [
+                            -0.009999999776482582,
+                            0.0,
+                            -0.05000000074505806
+                        ]
+                    }
+                },
+                "rotation_degrees": {
+                    "matrix_data": {
+                        "cols": 1,
+                        "rows": 3,
+                        "storage": [
+                            -0.0,
+                            11.309932708740234,
+                            0.0
+                        ]
+                    }
+                },
+                "scale": {
+                    "matrix_data": {
+                        "cols": 1,
+                        "rows": 3,
+                        "storage": [
+                            1.0,
+                            1.0,
+                            1.0
+                        ]
+                    }
+                },
+                "script": null,
+                "shape": "SubResource(CylinderShape3D_cMt56)",
+                "visible": true
+            },
+            "type": "CollisionShape3D"
+        },
+        {
+            "name": "FL_thigh_collision3",
+            "parent": 22,
+            "properties": {
+                "disabled": false,
+                "position": {
+                    "matrix_data": {
+                        "cols": 1,
+                        "rows": 3,
+                        "storage": [
+                            -0.009999999776482582,
+                            0.0,
+                            -0.18000000715255737
+                        ]
+                    }
+                },
+                "rotation_degrees": {
+                    "matrix_data": {
+                        "cols": 1,
+                        "rows": 3,
+                        "storage": [
+                            0.0,
+                            -26.56505012512207,
+                            0.0
+                        ]
+                    }
+                },
+                "scale": {
+                    "matrix_data": {
+                        "cols": 1,
+                        "rows": 3,
+                        "storage": [
+                            1.0,
+                            1.0,
+                            1.0
+                        ]
+                    }
+                },
+                "script": null,
+                "shape": "SubResource(CylinderShape3D_6dMVc)",
+                "visible": true
+            },
+            "type": "CollisionShape3D"
+        },
+        {
+            "name": "FL_calf_joint",
+            "parent": 22,
+            "properties": {
+                "axis": {
+                    "matrix_data": {
+                        "cols": 1,
+                        "rows": 3,
+                        "storage": [
+                            0.0,
+                            1.0,
+                            0.0
+                        ]
+                    }
+                },
+                "child_link": "FL_calf",
+                "damping": 0.0,
+                "effort_limit": 0.0,
+                "joint_position": -0.8880000114440918,
+                "joint_type": "Revolute",
+                "lower_limit": -2.818000078201294,
+                "parent_link": "FL_thigh",
+                "position": {
+                    "matrix_data": {
+                        "cols": 1,
+                        "rows": 3,
+                        "storage": [
+                            0.0,
+                            0.0,
+                            0.0
+                        ]
+                    }
+                },
+                "rotation_degrees": {
+                    "matrix_data": {
+                        "cols": 1,
+                        "rows": 3,
+                        "storage": [
+                            -0.0,
+                            0.0,
+                            -0.0
+                        ]
+                    }
+                },
+                "scale": {
+                    "matrix_data": {
+                        "cols": 1,
+                        "rows": 3,
+                        "storage": [
+                            1.0,
+                            1.0,
+                            1.0
+                        ]
+                    }
+                },
+                "script": null,
+                "upper_limit": -0.8880000114440918,
+                "velocity_limit": 0.0,
+                "visible": true
+            },
+            "type": "Joint3D"
+        },
+        {
+            "name": "FL_calf",
+            "parent": 26,
+            "properties": {
+                "center_of_mass": {
+                    "matrix_data": {
+                        "cols": 1,
+                        "rows": 3,
+                        "storage": [
+                            0.0042986199259757996,
+                            0.0009766760049387813,
+                            -0.14619700610637665
+                        ]
+                    }
+                },
+                "has_inertial": true,
+                "inertia_diagonal": {
+                    "matrix_data": {
+                        "cols": 1,
+                        "rows": 3,
+                        "storage": [
+                            0.00149766996037215,
+                            0.001484679989516735,
+                            3.584269870771095e-05
+                        ]
+                    }
+                },
+                "inertia_off_diagonal": {
+                    "matrix_data": {
+                        "cols": 1,
+                        "rows": 3,
+                        "storage": [
+                            0.0,
+                            0.0,
+                            0.0
+                        ]
+                    }
+                },
+                "mass": 0.19586199522018433,
+                "position": {
+                    "matrix_data": {
+                        "cols": 1,
+                        "rows": 3,
+                        "storage": [
+                            0.0,
+                            0.0,
+                            -0.21299999952316284
+                        ]
+                    }
+                },
+                "role": "Physical",
+                "rotation_degrees": {
+                    "matrix_data": {
+                        "cols": 1,
+                        "rows": 3,
+                        "storage": [
+                            -0.0,
+                            0.0,
+                            -0.0
+                        ]
+                    }
+                },
+                "scale": {
+                    "matrix_data": {
+                        "cols": 1,
+                        "rows": 3,
+                        "storage": [
+                            1.0,
+                            1.0,
+                            1.0
+                        ]
+                    }
+                },
+                "script": null,
+                "visible": true
+            },
+            "type": "Link3D"
+        },
+        {
+            "name": "FL_calf_collision1",
+            "parent": 27,
+            "properties": {
+                "disabled": false,
+                "position": {
+                    "matrix_data": {
+                        "cols": 1,
+                        "rows": 3,
+                        "storage": [
+                            0.009999999776482582,
+                            0.0,
+                            -0.06499999761581421
+                        ]
+                    }
+                },
+                "rotation_degrees": {
+                    "matrix_data": {
+                        "cols": 1,
+                        "rows": 3,
+                        "storage": [
+                            0.0,
+                            -8.746162414550781,
+                            0.0
+                        ]
+                    }
+                },
+                "scale": {
+                    "matrix_data": {
+                        "cols": 1,
+                        "rows": 3,
+                        "storage": [
+                            1.0,
+                            1.0,
+                            1.0
+                        ]
+                    }
+                },
+                "script": null,
+                "shape": "SubResource(CylinderShape3D_LurGQ)",
+                "visible": true
+            },
+            "type": "CollisionShape3D"
+        },
+        {
+            "name": "FL_calf_collision2",
+            "parent": 27,
+            "properties": {
+                "disabled": false,
+                "position": {
+                    "matrix_data": {
+                        "cols": 1,
+                        "rows": 3,
+                        "storage": [
+                            0.009999999776482582,
+                            0.0,
+                            -0.16500000655651093
+                        ]
+                    }
+                },
+                "rotation_degrees": {
+                    "matrix_data": {
+                        "cols": 1,
+                        "rows": 3,
+                        "storage": [
+                            -0.0,
+                            15.945394515991211,
+                            0.0
+                        ]
+                    }
+                },
+                "scale": {
+                    "matrix_data": {
+                        "cols": 1,
+                        "rows": 3,
+                        "storage": [
+                            1.0,
+                            1.0,
+                            1.0
+                        ]
+                    }
+                },
+                "script": null,
+                "shape": "SubResource(CylinderShape3D_awsn7)",
+                "visible": true
+            },
+            "type": "CollisionShape3D"
+        },
+        {
+            "name": "FL_foot_collision",
+            "parent": 27,
+            "properties": {
+                "disabled": false,
+                "position": {
+                    "matrix_data": {
+                        "cols": 1,
+                        "rows": 3,
+                        "storage": [
+                            0.0,
+                            0.0,
+                            -0.21299999952316284
+                        ]
+                    }
+                },
+                "rotation_degrees": {
+                    "matrix_data": {
+                        "cols": 1,
+                        "rows": 3,
+                        "storage": [
+                            -0.0,
+                            0.0,
+                            -0.0
+                        ]
+                    }
+                },
+                "scale": {
+                    "matrix_data": {
+                        "cols": 1,
+                        "rows": 3,
+                        "storage": [
+                            1.0,
+                            1.0,
+                            1.0
+                        ]
+                    }
+                },
+                "script": null,
+                "shape": "SubResource(SphereShape3D_w40US)",
+                "visible": true
+            },
+            "type": "CollisionShape3D"
+        },
+        {
+            "name": "RR_hip_joint",
+            "parent": 2,
+            "properties": {
+                "axis": {
+                    "matrix_data": {
+                        "cols": 1,
+                        "rows": 3,
+                        "storage": [
+                            1.0,
+                            0.0,
+                            0.0
+                        ]
+                    }
+                },
+                "child_link": "RR_hip",
+                "damping": 0.0,
+                "effort_limit": 0.0,
+                "joint_position": 0.0,
+                "joint_type": "Revolute",
+                "lower_limit": -0.8629999756813049,
+                "parent_link": "trunk",
+                "position": {
+                    "matrix_data": {
+                        "cols": 1,
+                        "rows": 3,
+                        "storage": [
+                            0.0,
+                            0.0,
+                            0.0
+                        ]
+                    }
+                },
+                "rotation_degrees": {
+                    "matrix_data": {
+                        "cols": 1,
+                        "rows": 3,
+                        "storage": [
+                            -0.0,
+                            0.0,
+                            -0.0
+                        ]
+                    }
+                },
+                "scale": {
+                    "matrix_data": {
+                        "cols": 1,
+                        "rows": 3,
+                        "storage": [
+                            1.0,
+                            1.0,
+                            1.0
+                        ]
+                    }
+                },
+                "script": null,
+                "upper_limit": 0.8629999756813049,
+                "velocity_limit": 0.0,
+                "visible": true
+            },
+            "type": "Joint3D"
+        },
+        {
+            "name": "RR_hip",
+            "parent": 31,
+            "properties": {
+                "center_of_mass": {
+                    "matrix_data": {
+                        "cols": 1,
+                        "rows": 3,
+                        "storage": [
+                            0.004916599951684475,
+                            0.00762614980340004,
+                            -8.864999836077914e-05
+                        ]
+                    }
+                },
+                "has_inertial": true,
+                "inertia_diagonal": {
+                    "matrix_data": {
+                        "cols": 1,
+                        "rows": 3,
+                        "storage": [
+                            0.0007340639713220298,
+                            0.00046843799646012485,
+                            0.0003987190139014274
+                        ]
+                    }
+                },
+                "inertia_off_diagonal": {
+                    "matrix_data": {
+                        "cols": 1,
+                        "rows": 3,
+                        "storage": [
+                            0.0,
+                            0.0,
+                            0.0
+                        ]
+                    }
+                },
+                "mass": 0.6800000071525574,
+                "position": {
+                    "matrix_data": {
+                        "cols": 1,
+                        "rows": 3,
+                        "storage": [
+                            -0.18809999525547028,
+                            -0.04675000160932541,
+                            0.0
+                        ]
+                    }
+                },
+                "role": "Physical",
+                "rotation_degrees": {
+                    "matrix_data": {
+                        "cols": 1,
+                        "rows": 3,
+                        "storage": [
+                            -0.0,
+                            0.0,
+                            -0.0
+                        ]
+                    }
+                },
+                "scale": {
+                    "matrix_data": {
+                        "cols": 1,
+                        "rows": 3,
+                        "storage": [
+                            1.0,
+                            1.0,
+                            1.0
+                        ]
+                    }
+                },
+                "script": null,
+                "visible": true
+            },
+            "type": "Link3D"
+        },
+        {
+            "name": "RR_hip_collision",
+            "parent": 32,
+            "properties": {
+                "disabled": false,
+                "position": {
+                    "matrix_data": {
+                        "cols": 1,
+                        "rows": 3,
+                        "storage": [
+                            0.0,
+                            -0.029999999329447746,
+                            0.0
+                        ]
+                    }
+                },
+                "rotation_degrees": {
+                    "matrix_data": {
+                        "cols": 1,
+                        "rows": 3,
+                        "storage": [
+                            90.0,
+                            180.0,
+                            -180.0
+                        ]
+                    }
+                },
+                "scale": {
+                    "matrix_data": {
+                        "cols": 1,
+                        "rows": 3,
+                        "storage": [
+                            1.0,
+                            1.0,
+                            1.0
+                        ]
+                    }
+                },
+                "script": null,
+                "shape": "SubResource(CylinderShape3D_U3wcu)",
+                "visible": true
+            },
+            "type": "CollisionShape3D"
+        },
+        {
+            "name": "RR_thigh_joint",
+            "parent": 32,
+            "properties": {
+                "axis": {
+                    "matrix_data": {
+                        "cols": 1,
+                        "rows": 3,
+                        "storage": [
+                            0.0,
+                            1.0,
+                            0.0
+                        ]
+                    }
+                },
+                "child_link": "RR_thigh",
+                "damping": 0.0,
+                "effort_limit": 0.0,
+                "joint_position": 0.0,
+                "joint_type": "Revolute",
+                "lower_limit": -0.6859999895095825,
+                "parent_link": "RR_hip",
+                "position": {
+                    "matrix_data": {
+                        "cols": 1,
+                        "rows": 3,
+                        "storage": [
+                            0.0,
+                            0.0,
+                            0.0
+                        ]
+                    }
+                },
+                "rotation_degrees": {
+                    "matrix_data": {
+                        "cols": 1,
+                        "rows": 3,
+                        "storage": [
+                            -0.0,
+                            0.0,
+                            -0.0
+                        ]
+                    }
+                },
+                "scale": {
+                    "matrix_data": {
+                        "cols": 1,
+                        "rows": 3,
+                        "storage": [
+                            1.0,
+                            1.0,
+                            1.0
+                        ]
+                    }
+                },
+                "script": null,
+                "upper_limit": 4.500999927520752,
+                "velocity_limit": 0.0,
+                "visible": true
+            },
+            "type": "Joint3D"
+        },
+        {
+            "name": "RR_thigh",
+            "parent": 34,
+            "properties": {
+                "center_of_mass": {
+                    "matrix_data": {
+                        "cols": 1,
+                        "rows": 3,
+                        "storage": [
+                            -0.003047219943255186,
+                            0.019315000623464584,
+                            -0.030500400811433792
+                        ]
+                    }
+                },
+                "has_inertial": true,
+                "inertia_diagonal": {
+                    "matrix_data": {
+                        "cols": 1,
+                        "rows": 3,
+                        "storage": [
+                            0.004787169862538576,
+                            0.004609030205756426,
+                            0.00070926797343418
+                        ]
+                    }
+                },
+                "inertia_off_diagonal": {
+                    "matrix_data": {
+                        "cols": 1,
+                        "rows": 3,
+                        "storage": [
+                            0.0,
+                            0.0,
+                            0.0
+                        ]
+                    }
+                },
+                "mass": 1.0089999437332153,
+                "position": {
+                    "matrix_data": {
+                        "cols": 1,
+                        "rows": 3,
+                        "storage": [
+                            0.0,
+                            -0.07999999821186066,
+                            0.0
+                        ]
+                    }
+                },
+                "role": "Physical",
+                "rotation_degrees": {
+                    "matrix_data": {
+                        "cols": 1,
+                        "rows": 3,
+                        "storage": [
+                            -0.0,
+                            0.0,
+                            -0.0
+                        ]
+                    }
+                },
+                "scale": {
+                    "matrix_data": {
+                        "cols": 1,
+                        "rows": 3,
+                        "storage": [
+                            1.0,
+                            1.0,
+                            1.0
+                        ]
+                    }
+                },
+                "script": null,
+                "visible": true
+            },
+            "type": "Link3D"
+        },
+        {
+            "name": "RR_thigh_collision1",
+            "parent": 35,
+            "properties": {
+                "disabled": false,
+                "position": {
+                    "matrix_data": {
+                        "cols": 1,
+                        "rows": 3,
+                        "storage": [
+                            -0.019999999552965164,
+                            0.0,
+                            -0.07999999821186066
+                        ]
+                    }
+                },
+                "rotation_degrees": {
+                    "matrix_data": {
+                        "cols": 1,
+                        "rows": 3,
+                        "storage": [
+                            -0.0,
+                            0.0,
+                            -0.0
+                        ]
+                    }
+                },
+                "scale": {
+                    "matrix_data": {
+                        "cols": 1,
+                        "rows": 3,
+                        "storage": [
+                            1.0,
+                            1.0,
+                            1.0
+                        ]
+                    }
+                },
+                "script": null,
+                "shape": "SubResource(CylinderShape3D_S7nFE)",
+                "visible": true
+            },
+            "type": "CollisionShape3D"
+        },
+        {
+            "name": "RR_thigh_collision2",
+            "parent": 35,
+            "properties": {
+                "disabled": false,
+                "position": {
+                    "matrix_data": {
+                        "cols": 1,
+                        "rows": 3,
+                        "storage": [
+                            -0.009999999776482582,
+                            0.0,
+                            -0.05000000074505806
+                        ]
+                    }
+                },
+                "rotation_degrees": {
+                    "matrix_data": {
+                        "cols": 1,
+                        "rows": 3,
+                        "storage": [
+                            -0.0,
+                            11.309932708740234,
+                            0.0
+                        ]
+                    }
+                },
+                "scale": {
+                    "matrix_data": {
+                        "cols": 1,
+                        "rows": 3,
+                        "storage": [
+                            1.0,
+                            1.0,
+                            1.0
+                        ]
+                    }
+                },
+                "script": null,
+                "shape": "SubResource(CylinderShape3D_jw24x)",
+                "visible": true
+            },
+            "type": "CollisionShape3D"
+        },
+        {
+            "name": "RR_thigh_collision3",
+            "parent": 35,
+            "properties": {
+                "disabled": false,
+                "position": {
+                    "matrix_data": {
+                        "cols": 1,
+                        "rows": 3,
+                        "storage": [
+                            -0.009999999776482582,
+                            0.0,
+                            -0.18000000715255737
+                        ]
+                    }
+                },
+                "rotation_degrees": {
+                    "matrix_data": {
+                        "cols": 1,
+                        "rows": 3,
+                        "storage": [
+                            0.0,
+                            -26.56505012512207,
+                            0.0
+                        ]
+                    }
+                },
+                "scale": {
+                    "matrix_data": {
+                        "cols": 1,
+                        "rows": 3,
+                        "storage": [
+                            1.0,
+                            1.0,
+                            1.0
+                        ]
+                    }
+                },
+                "script": null,
+                "shape": "SubResource(CylinderShape3D_aCuFC)",
+                "visible": true
+            },
+            "type": "CollisionShape3D"
+        },
+        {
+            "name": "RR_calf_joint",
+            "parent": 35,
+            "properties": {
+                "axis": {
+                    "matrix_data": {
+                        "cols": 1,
+                        "rows": 3,
+                        "storage": [
+                            0.0,
+                            1.0,
+                            0.0
+                        ]
+                    }
+                },
+                "child_link": "RR_calf",
+                "damping": 0.0,
+                "effort_limit": 0.0,
+                "joint_position": -0.8880000114440918,
+                "joint_type": "Revolute",
+                "lower_limit": -2.818000078201294,
+                "parent_link": "RR_thigh",
+                "position": {
+                    "matrix_data": {
+                        "cols": 1,
+                        "rows": 3,
+                        "storage": [
+                            0.0,
+                            0.0,
+                            0.0
+                        ]
+                    }
+                },
+                "rotation_degrees": {
+                    "matrix_data": {
+                        "cols": 1,
+                        "rows": 3,
+                        "storage": [
+                            -0.0,
+                            0.0,
+                            -0.0
+                        ]
+                    }
+                },
+                "scale": {
+                    "matrix_data": {
+                        "cols": 1,
+                        "rows": 3,
+                        "storage": [
+                            1.0,
+                            1.0,
+                            1.0
+                        ]
+                    }
+                },
+                "script": null,
+                "upper_limit": -0.8880000114440918,
+                "velocity_limit": 0.0,
+                "visible": true
+            },
+            "type": "Joint3D"
+        },
+        {
+            "name": "RR_calf",
+            "parent": 39,
+            "properties": {
+                "center_of_mass": {
+                    "matrix_data": {
+                        "cols": 1,
+                        "rows": 3,
+                        "storage": [
+                            0.0042986199259757996,
+                            0.0009766760049387813,
+                            -0.14619700610637665
+                        ]
+                    }
+                },
+                "has_inertial": true,
+                "inertia_diagonal": {
+                    "matrix_data": {
+                        "cols": 1,
+                        "rows": 3,
+                        "storage": [
+                            0.00149766996037215,
+                            0.001484679989516735,
+                            3.584269870771095e-05
+                        ]
+                    }
+                },
+                "inertia_off_diagonal": {
+                    "matrix_data": {
+                        "cols": 1,
+                        "rows": 3,
+                        "storage": [
+                            0.0,
+                            0.0,
+                            0.0
+                        ]
+                    }
+                },
+                "mass": 0.19586199522018433,
+                "position": {
+                    "matrix_data": {
+                        "cols": 1,
+                        "rows": 3,
+                        "storage": [
+                            0.0,
+                            0.0,
+                            -0.21299999952316284
+                        ]
+                    }
+                },
+                "role": "Physical",
+                "rotation_degrees": {
+                    "matrix_data": {
+                        "cols": 1,
+                        "rows": 3,
+                        "storage": [
+                            -0.0,
+                            0.0,
+                            -0.0
+                        ]
+                    }
+                },
+                "scale": {
+                    "matrix_data": {
+                        "cols": 1,
+                        "rows": 3,
+                        "storage": [
+                            1.0,
+                            1.0,
+                            1.0
+                        ]
+                    }
+                },
+                "script": null,
+                "visible": true
+            },
+            "type": "Link3D"
+        },
+        {
+            "name": "RR_calf_collision1",
+            "parent": 40,
+            "properties": {
+                "disabled": false,
+                "position": {
+                    "matrix_data": {
+                        "cols": 1,
+                        "rows": 3,
+                        "storage": [
+                            0.009999999776482582,
+                            0.0,
+                            -0.06499999761581421
+                        ]
+                    }
+                },
+                "rotation_degrees": {
+                    "matrix_data": {
+                        "cols": 1,
+                        "rows": 3,
+                        "storage": [
+                            0.0,
+                            -8.746162414550781,
+                            0.0
+                        ]
+                    }
+                },
+                "scale": {
+                    "matrix_data": {
+                        "cols": 1,
+                        "rows": 3,
+                        "storage": [
+                            1.0,
+                            1.0,
+                            1.0
+                        ]
+                    }
+                },
+                "script": null,
+                "shape": "SubResource(CylinderShape3D_INJVC)",
+                "visible": true
+            },
+            "type": "CollisionShape3D"
+        },
+        {
+            "name": "RR_calf_collision2",
+            "parent": 40,
+            "properties": {
+                "disabled": false,
+                "position": {
+                    "matrix_data": {
+                        "cols": 1,
+                        "rows": 3,
+                        "storage": [
+                            0.009999999776482582,
+                            0.0,
+                            -0.16500000655651093
+                        ]
+                    }
+                },
+                "rotation_degrees": {
+                    "matrix_data": {
+                        "cols": 1,
+                        "rows": 3,
+                        "storage": [
+                            -0.0,
+                            15.945394515991211,
+                            0.0
+                        ]
+                    }
+                },
+                "scale": {
+                    "matrix_data": {
+                        "cols": 1,
+                        "rows": 3,
+                        "storage": [
+                            1.0,
+                            1.0,
+                            1.0
+                        ]
+                    }
+                },
+                "script": null,
+                "shape": "SubResource(CylinderShape3D_8XVkv)",
+                "visible": true
+            },
+            "type": "CollisionShape3D"
+        },
+        {
+            "name": "RR_foot_collision",
+            "parent": 40,
+            "properties": {
+                "disabled": false,
+                "position": {
+                    "matrix_data": {
+                        "cols": 1,
+                        "rows": 3,
+                        "storage": [
+                            0.0,
+                            0.0,
+                            -0.21299999952316284
+                        ]
+                    }
+                },
+                "rotation_degrees": {
+                    "matrix_data": {
+                        "cols": 1,
+                        "rows": 3,
+                        "storage": [
+                            -0.0,
+                            0.0,
+                            -0.0
+                        ]
+                    }
+                },
+                "scale": {
+                    "matrix_data": {
+                        "cols": 1,
+                        "rows": 3,
+                        "storage": [
+                            1.0,
+                            1.0,
+                            1.0
+                        ]
+                    }
+                },
+                "script": null,
+                "shape": "SubResource(SphereShape3D_yzr3u)",
+                "visible": true
+            },
+            "type": "CollisionShape3D"
+        },
+        {
+            "name": "RL_hip_joint",
+            "parent": 2,
+            "properties": {
+                "axis": {
+                    "matrix_data": {
+                        "cols": 1,
+                        "rows": 3,
+                        "storage": [
+                            1.0,
+                            0.0,
+                            0.0
+                        ]
+                    }
+                },
+                "child_link": "RL_hip",
+                "damping": 0.0,
+                "effort_limit": 0.0,
+                "joint_position": 0.0,
+                "joint_type": "Revolute",
+                "lower_limit": -0.8629999756813049,
+                "parent_link": "trunk",
+                "position": {
+                    "matrix_data": {
+                        "cols": 1,
+                        "rows": 3,
+                        "storage": [
+                            0.0,
+                            0.0,
+                            0.0
+                        ]
+                    }
+                },
+                "rotation_degrees": {
+                    "matrix_data": {
+                        "cols": 1,
+                        "rows": 3,
+                        "storage": [
+                            -0.0,
+                            0.0,
+                            -0.0
+                        ]
+                    }
+                },
+                "scale": {
+                    "matrix_data": {
+                        "cols": 1,
+                        "rows": 3,
+                        "storage": [
+                            1.0,
+                            1.0,
+                            1.0
+                        ]
+                    }
+                },
+                "script": null,
+                "upper_limit": 0.8629999756813049,
+                "velocity_limit": 0.0,
+                "visible": true
+            },
+            "type": "Joint3D"
+        },
+        {
+            "name": "RL_hip",
+            "parent": 44,
+            "properties": {
+                "center_of_mass": {
+                    "matrix_data": {
+                        "cols": 1,
+                        "rows": 3,
+                        "storage": [
+                            0.004916599951684475,
+                            -0.00762614980340004,
+                            -8.864999836077914e-05
+                        ]
+                    }
+                },
+                "has_inertial": true,
+                "inertia_diagonal": {
+                    "matrix_data": {
+                        "cols": 1,
+                        "rows": 3,
+                        "storage": [
+                            0.0007340639713220298,
+                            0.00046843799646012485,
+                            0.0003987190139014274
+                        ]
+                    }
+                },
+                "inertia_off_diagonal": {
+                    "matrix_data": {
+                        "cols": 1,
+                        "rows": 3,
+                        "storage": [
+                            0.0,
+                            0.0,
+                            0.0
+                        ]
+                    }
+                },
+                "mass": 0.6800000071525574,
+                "position": {
+                    "matrix_data": {
+                        "cols": 1,
+                        "rows": 3,
+                        "storage": [
+                            -0.18809999525547028,
+                            0.04675000160932541,
+                            0.0
+                        ]
+                    }
+                },
+                "role": "Physical",
+                "rotation_degrees": {
+                    "matrix_data": {
+                        "cols": 1,
+                        "rows": 3,
+                        "storage": [
+                            -0.0,
+                            0.0,
+                            -0.0
+                        ]
+                    }
+                },
+                "scale": {
+                    "matrix_data": {
+                        "cols": 1,
+                        "rows": 3,
+                        "storage": [
+                            1.0,
+                            1.0,
+                            1.0
+                        ]
+                    }
+                },
+                "script": null,
+                "visible": true
+            },
+            "type": "Link3D"
+        },
+        {
+            "name": "RL_hip_collision",
+            "parent": 45,
+            "properties": {
+                "disabled": false,
+                "position": {
+                    "matrix_data": {
+                        "cols": 1,
+                        "rows": 3,
+                        "storage": [
+                            0.0,
+                            0.029999999329447746,
+                            0.0
+                        ]
+                    }
+                },
+                "rotation_degrees": {
+                    "matrix_data": {
+                        "cols": 1,
+                        "rows": 3,
+                        "storage": [
+                            90.0,
+                            0.0,
+                            -0.0
+                        ]
+                    }
+                },
+                "scale": {
+                    "matrix_data": {
+                        "cols": 1,
+                        "rows": 3,
+                        "storage": [
+                            1.0,
+                            1.0,
+                            1.0
+                        ]
+                    }
+                },
+                "script": null,
+                "shape": "SubResource(CylinderShape3D_d4AEW)",
+                "visible": true
+            },
+            "type": "CollisionShape3D"
+        },
+        {
+            "name": "RL_thigh_joint",
+            "parent": 45,
+            "properties": {
+                "axis": {
+                    "matrix_data": {
+                        "cols": 1,
+                        "rows": 3,
+                        "storage": [
+                            0.0,
+                            1.0,
+                            0.0
+                        ]
+                    }
+                },
+                "child_link": "RL_thigh",
+                "damping": 0.0,
+                "effort_limit": 0.0,
+                "joint_position": 0.0,
+                "joint_type": "Revolute",
+                "lower_limit": -0.6859999895095825,
+                "parent_link": "RL_hip",
+                "position": {
+                    "matrix_data": {
+                        "cols": 1,
+                        "rows": 3,
+                        "storage": [
+                            0.0,
+                            0.0,
+                            0.0
+                        ]
+                    }
+                },
+                "rotation_degrees": {
+                    "matrix_data": {
+                        "cols": 1,
+                        "rows": 3,
+                        "storage": [
+                            -0.0,
+                            0.0,
+                            -0.0
+                        ]
+                    }
+                },
+                "scale": {
+                    "matrix_data": {
+                        "cols": 1,
+                        "rows": 3,
+                        "storage": [
+                            1.0,
+                            1.0,
+                            1.0
+                        ]
+                    }
+                },
+                "script": null,
+                "upper_limit": 4.500999927520752,
+                "velocity_limit": 0.0,
+                "visible": true
+            },
+            "type": "Joint3D"
+        },
+        {
+            "name": "RL_thigh",
+            "parent": 47,
+            "properties": {
+                "center_of_mass": {
+                    "matrix_data": {
+                        "cols": 1,
+                        "rows": 3,
+                        "storage": [
+                            -0.003047219943255186,
+                            -0.019315000623464584,
+                            -0.030500400811433792
+                        ]
+                    }
+                },
+                "has_inertial": true,
+                "inertia_diagonal": {
+                    "matrix_data": {
+                        "cols": 1,
+                        "rows": 3,
+                        "storage": [
+                            0.004787169862538576,
+                            0.004609030205756426,
+                            0.00070926797343418
+                        ]
+                    }
+                },
+                "inertia_off_diagonal": {
+                    "matrix_data": {
+                        "cols": 1,
+                        "rows": 3,
+                        "storage": [
+                            0.0,
+                            0.0,
+                            0.0
+                        ]
+                    }
+                },
+                "mass": 1.0089999437332153,
+                "position": {
+                    "matrix_data": {
+                        "cols": 1,
+                        "rows": 3,
+                        "storage": [
+                            0.0,
+                            0.07999999821186066,
+                            0.0
+                        ]
+                    }
+                },
+                "role": "Physical",
+                "rotation_degrees": {
+                    "matrix_data": {
+                        "cols": 1,
+                        "rows": 3,
+                        "storage": [
+                            -0.0,
+                            0.0,
+                            -0.0
+                        ]
+                    }
+                },
+                "scale": {
+                    "matrix_data": {
+                        "cols": 1,
+                        "rows": 3,
+                        "storage": [
+                            1.0,
+                            1.0,
+                            1.0
+                        ]
+                    }
+                },
+                "script": null,
+                "visible": true
+            },
+            "type": "Link3D"
+        },
+        {
+            "name": "RL_thigh_collision1",
+            "parent": 48,
+            "properties": {
+                "disabled": false,
+                "position": {
+                    "matrix_data": {
+                        "cols": 1,
+                        "rows": 3,
+                        "storage": [
+                            -0.019999999552965164,
+                            0.0,
+                            -0.07999999821186066
+                        ]
+                    }
+                },
+                "rotation_degrees": {
+                    "matrix_data": {
+                        "cols": 1,
+                        "rows": 3,
+                        "storage": [
+                            -0.0,
+                            0.0,
+                            -0.0
+                        ]
+                    }
+                },
+                "scale": {
+                    "matrix_data": {
+                        "cols": 1,
+                        "rows": 3,
+                        "storage": [
+                            1.0,
+                            1.0,
+                            1.0
+                        ]
+                    }
+                },
+                "script": null,
+                "shape": "SubResource(CylinderShape3D_CBJkX)",
+                "visible": true
+            },
+            "type": "CollisionShape3D"
+        },
+        {
+            "name": "RL_thigh_collision2",
+            "parent": 48,
+            "properties": {
+                "disabled": false,
+                "position": {
+                    "matrix_data": {
+                        "cols": 1,
+                        "rows": 3,
+                        "storage": [
+                            -0.009999999776482582,
+                            0.0,
+                            -0.05000000074505806
+                        ]
+                    }
+                },
+                "rotation_degrees": {
+                    "matrix_data": {
+                        "cols": 1,
+                        "rows": 3,
+                        "storage": [
+                            -0.0,
+                            11.309932708740234,
+                            0.0
+                        ]
+                    }
+                },
+                "scale": {
+                    "matrix_data": {
+                        "cols": 1,
+                        "rows": 3,
+                        "storage": [
+                            1.0,
+                            1.0,
+                            1.0
+                        ]
+                    }
+                },
+                "script": null,
+                "shape": "SubResource(CylinderShape3D_8fShh)",
+                "visible": true
+            },
+            "type": "CollisionShape3D"
+        },
+        {
+            "name": "RL_thigh_collision3",
+            "parent": 48,
+            "properties": {
+                "disabled": false,
+                "position": {
+                    "matrix_data": {
+                        "cols": 1,
+                        "rows": 3,
+                        "storage": [
+                            -0.009999999776482582,
+                            0.0,
+                            -0.18000000715255737
+                        ]
+                    }
+                },
+                "rotation_degrees": {
+                    "matrix_data": {
+                        "cols": 1,
+                        "rows": 3,
+                        "storage": [
+                            0.0,
+                            -26.56505012512207,
+                            0.0
+                        ]
+                    }
+                },
+                "scale": {
+                    "matrix_data": {
+                        "cols": 1,
+                        "rows": 3,
+                        "storage": [
+                            1.0,
+                            1.0,
+                            1.0
+                        ]
+                    }
+                },
+                "script": null,
+                "shape": "SubResource(CylinderShape3D_s47qh)",
+                "visible": true
+            },
+            "type": "CollisionShape3D"
+        },
+        {
+            "name": "RL_calf_joint",
+            "parent": 48,
+            "properties": {
+                "axis": {
+                    "matrix_data": {
+                        "cols": 1,
+                        "rows": 3,
+                        "storage": [
+                            0.0,
+                            1.0,
+                            0.0
+                        ]
+                    }
+                },
+                "child_link": "RL_calf",
+                "damping": 0.0,
+                "effort_limit": 0.0,
+                "joint_position": -0.8880000114440918,
+                "joint_type": "Revolute",
+                "lower_limit": -2.818000078201294,
+                "parent_link": "RL_thigh",
+                "position": {
+                    "matrix_data": {
+                        "cols": 1,
+                        "rows": 3,
+                        "storage": [
+                            0.0,
+                            0.0,
+                            0.0
+                        ]
+                    }
+                },
+                "rotation_degrees": {
+                    "matrix_data": {
+                        "cols": 1,
+                        "rows": 3,
+                        "storage": [
+                            -0.0,
+                            0.0,
+                            -0.0
+                        ]
+                    }
+                },
+                "scale": {
+                    "matrix_data": {
+                        "cols": 1,
+                        "rows": 3,
+                        "storage": [
+                            1.0,
+                            1.0,
+                            1.0
+                        ]
+                    }
+                },
+                "script": null,
+                "upper_limit": -0.8880000114440918,
+                "velocity_limit": 0.0,
+                "visible": true
+            },
+            "type": "Joint3D"
+        },
+        {
+            "name": "RL_calf",
+            "parent": 52,
+            "properties": {
+                "center_of_mass": {
+                    "matrix_data": {
+                        "cols": 1,
+                        "rows": 3,
+                        "storage": [
+                            0.0042986199259757996,
+                            0.0009766760049387813,
+                            -0.14619700610637665
+                        ]
+                    }
+                },
+                "has_inertial": true,
+                "inertia_diagonal": {
+                    "matrix_data": {
+                        "cols": 1,
+                        "rows": 3,
+                        "storage": [
+                            0.00149766996037215,
+                            0.001484679989516735,
+                            3.584269870771095e-05
+                        ]
+                    }
+                },
+                "inertia_off_diagonal": {
+                    "matrix_data": {
+                        "cols": 1,
+                        "rows": 3,
+                        "storage": [
+                            0.0,
+                            0.0,
+                            0.0
+                        ]
+                    }
+                },
+                "mass": 0.19586199522018433,
+                "position": {
+                    "matrix_data": {
+                        "cols": 1,
+                        "rows": 3,
+                        "storage": [
+                            0.0,
+                            0.0,
+                            -0.21299999952316284
+                        ]
+                    }
+                },
+                "role": "Physical",
+                "rotation_degrees": {
+                    "matrix_data": {
+                        "cols": 1,
+                        "rows": 3,
+                        "storage": [
+                            -0.0,
+                            0.0,
+                            -0.0
+                        ]
+                    }
+                },
+                "scale": {
+                    "matrix_data": {
+                        "cols": 1,
+                        "rows": 3,
+                        "storage": [
+                            1.0,
+                            1.0,
+                            1.0
+                        ]
+                    }
+                },
+                "script": null,
+                "visible": true
+            },
+            "type": "Link3D"
+        },
+        {
+            "name": "RL_calf_collision1",
+            "parent": 53,
+            "properties": {
+                "disabled": false,
+                "position": {
+                    "matrix_data": {
+                        "cols": 1,
+                        "rows": 3,
+                        "storage": [
+                            0.009999999776482582,
+                            0.0,
+                            -0.06499999761581421
+                        ]
+                    }
+                },
+                "rotation_degrees": {
+                    "matrix_data": {
+                        "cols": 1,
+                        "rows": 3,
+                        "storage": [
+                            0.0,
+                            -8.746162414550781,
+                            0.0
+                        ]
+                    }
+                },
+                "scale": {
+                    "matrix_data": {
+                        "cols": 1,
+                        "rows": 3,
+                        "storage": [
+                            1.0,
+                            1.0,
+                            1.0
+                        ]
+                    }
+                },
+                "script": null,
+                "shape": "SubResource(CylinderShape3D_9vATY)",
+                "visible": true
+            },
+            "type": "CollisionShape3D"
+        },
+        {
+            "name": "RL_calf_collision2",
+            "parent": 53,
+            "properties": {
+                "disabled": false,
+                "position": {
+                    "matrix_data": {
+                        "cols": 1,
+                        "rows": 3,
+                        "storage": [
+                            0.009999999776482582,
+                            0.0,
+                            -0.16500000655651093
+                        ]
+                    }
+                },
+                "rotation_degrees": {
+                    "matrix_data": {
+                        "cols": 1,
+                        "rows": 3,
+                        "storage": [
+                            -0.0,
+                            15.945394515991211,
+                            0.0
+                        ]
+                    }
+                },
+                "scale": {
+                    "matrix_data": {
+                        "cols": 1,
+                        "rows": 3,
+                        "storage": [
+                            1.0,
+                            1.0,
+                            1.0
+                        ]
+                    }
+                },
+                "script": null,
+                "shape": "SubResource(CylinderShape3D_0JSCG)",
+                "visible": true
+            },
+            "type": "CollisionShape3D"
+        },
+        {
+            "name": "RL_foot_collision",
+            "parent": 53,
+            "properties": {
+                "disabled": false,
+                "position": {
+                    "matrix_data": {
+                        "cols": 1,
+                        "rows": 3,
+                        "storage": [
+                            0.0,
+                            0.0,
+                            -0.21299999952316284
+                        ]
+                    }
+                },
+                "rotation_degrees": {
+                    "matrix_data": {
+                        "cols": 1,
+                        "rows": 3,
+                        "storage": [
+                            -0.0,
+                            0.0,
+                            -0.0
+                        ]
+                    }
+                },
+                "scale": {
+                    "matrix_data": {
+                        "cols": 1,
+                        "rows": 3,
+                        "storage": [
+                            1.0,
+                            1.0,
+                            1.0
+                        ]
+                    }
+                },
+                "script": null,
+                "shape": "SubResource(SphereShape3D_89xPV)",
+                "visible": true
+            },
+            "type": "CollisionShape3D"
+        }
+    ],
+    "__SUB_RESOURCES__": [
+        {
+            "__ID__": "BoxShape3D_QYSip",
+            "__TYPE__": "BoxShape3D",
+            "resource_name": "",
+            "size": {
+                "matrix_data": {
+                    "cols": 1,
+                    "rows": 3,
+                    "storage": [
+                        0.25999999046325684,
+                        0.18000000715255737,
+                        0.10000000149011612
+                    ]
+                }
+            }
+        },
+        {
+            "__ID__": "SphereShape3D_A1StY",
+            "__TYPE__": "SphereShape3D",
+            "radius": 0.05999999865889549,
+            "resource_name": ""
+        },
+        {
+            "__ID__": "CylinderShape3D_nshsm",
+            "__TYPE__": "CylinderShape3D",
+            "height": 0.019999999552965164,
+            "radius": 0.05000000074505806,
+            "resource_name": ""
+        },
+        {
+            "__ID__": "CylinderShape3D_cP0Jy",
+            "__TYPE__": "CylinderShape3D",
+            "height": 0.1599999964237213,
+            "radius": 0.014999999664723873,
+            "resource_name": ""
+        },
+        {
+            "__ID__": "CylinderShape3D_dLZNk",
+            "__TYPE__": "CylinderShape3D",
+            "height": 0.10198038816452026,
+            "radius": 0.014999999664723873,
+            "resource_name": ""
+        },
+        {
+            "__ID__": "CylinderShape3D_mr8DE",
+            "__TYPE__": "CylinderShape3D",
+            "height": 0.04472136124968529,
+            "radius": 0.014999999664723873,
+            "resource_name": ""
+        },
+        {
+            "__ID__": "CylinderShape3D_mf0hm",
+            "__TYPE__": "CylinderShape3D",
+            "height": 0.13152946531772614,
+            "radius": 0.009999999776482582,
+            "resource_name": ""
+        },
+        {
+            "__ID__": "CylinderShape3D_q7meU",
+            "__TYPE__": "CylinderShape3D",
+            "height": 0.07280109822750092,
+            "radius": 0.009999999776482582,
+            "resource_name": ""
+        },
+        {
+            "__ID__": "SphereShape3D_cd5dG",
+            "__TYPE__": "SphereShape3D",
+            "radius": 0.023000000044703484,
+            "resource_name": ""
+        },
+        {
+            "__ID__": "CylinderShape3D_qSGgL",
+            "__TYPE__": "CylinderShape3D",
+            "height": 0.019999999552965164,
+            "radius": 0.05000000074505806,
+            "resource_name": ""
+        },
+        {
+            "__ID__": "CylinderShape3D_pGGFo",
+            "__TYPE__": "CylinderShape3D",
+            "height": 0.1599999964237213,
+            "radius": 0.014999999664723873,
+            "resource_name": ""
+        },
+        {
+            "__ID__": "CylinderShape3D_cMt56",
+            "__TYPE__": "CylinderShape3D",
+            "height": 0.10198038816452026,
+            "radius": 0.014999999664723873,
+            "resource_name": ""
+        },
+        {
+            "__ID__": "CylinderShape3D_6dMVc",
+            "__TYPE__": "CylinderShape3D",
+            "height": 0.04472136124968529,
+            "radius": 0.014999999664723873,
+            "resource_name": ""
+        },
+        {
+            "__ID__": "CylinderShape3D_LurGQ",
+            "__TYPE__": "CylinderShape3D",
+            "height": 0.13152946531772614,
+            "radius": 0.009999999776482582,
+            "resource_name": ""
+        },
+        {
+            "__ID__": "CylinderShape3D_awsn7",
+            "__TYPE__": "CylinderShape3D",
+            "height": 0.07280109822750092,
+            "radius": 0.009999999776482582,
+            "resource_name": ""
+        },
+        {
+            "__ID__": "SphereShape3D_w40US",
+            "__TYPE__": "SphereShape3D",
+            "radius": 0.023000000044703484,
+            "resource_name": ""
+        },
+        {
+            "__ID__": "CylinderShape3D_U3wcu",
+            "__TYPE__": "CylinderShape3D",
+            "height": 0.019999999552965164,
+            "radius": 0.05000000074505806,
+            "resource_name": ""
+        },
+        {
+            "__ID__": "CylinderShape3D_S7nFE",
+            "__TYPE__": "CylinderShape3D",
+            "height": 0.1599999964237213,
+            "radius": 0.014999999664723873,
+            "resource_name": ""
+        },
+        {
+            "__ID__": "CylinderShape3D_jw24x",
+            "__TYPE__": "CylinderShape3D",
+            "height": 0.10198038816452026,
+            "radius": 0.014999999664723873,
+            "resource_name": ""
+        },
+        {
+            "__ID__": "CylinderShape3D_aCuFC",
+            "__TYPE__": "CylinderShape3D",
+            "height": 0.04472136124968529,
+            "radius": 0.014999999664723873,
+            "resource_name": ""
+        },
+        {
+            "__ID__": "CylinderShape3D_INJVC",
+            "__TYPE__": "CylinderShape3D",
+            "height": 0.13152946531772614,
+            "radius": 0.009999999776482582,
+            "resource_name": ""
+        },
+        {
+            "__ID__": "CylinderShape3D_8XVkv",
+            "__TYPE__": "CylinderShape3D",
+            "height": 0.07280109822750092,
+            "radius": 0.009999999776482582,
+            "resource_name": ""
+        },
+        {
+            "__ID__": "SphereShape3D_yzr3u",
+            "__TYPE__": "SphereShape3D",
+            "radius": 0.023000000044703484,
+            "resource_name": ""
+        },
+        {
+            "__ID__": "CylinderShape3D_d4AEW",
+            "__TYPE__": "CylinderShape3D",
+            "height": 0.019999999552965164,
+            "radius": 0.05000000074505806,
+            "resource_name": ""
+        },
+        {
+            "__ID__": "CylinderShape3D_CBJkX",
+            "__TYPE__": "CylinderShape3D",
+            "height": 0.1599999964237213,
+            "radius": 0.014999999664723873,
+            "resource_name": ""
+        },
+        {
+            "__ID__": "CylinderShape3D_8fShh",
+            "__TYPE__": "CylinderShape3D",
+            "height": 0.10198038816452026,
+            "radius": 0.014999999664723873,
+            "resource_name": ""
+        },
+        {
+            "__ID__": "CylinderShape3D_s47qh",
+            "__TYPE__": "CylinderShape3D",
+            "height": 0.04472136124968529,
+            "radius": 0.014999999664723873,
+            "resource_name": ""
+        },
+        {
+            "__ID__": "CylinderShape3D_9vATY",
+            "__TYPE__": "CylinderShape3D",
+            "height": 0.13152946531772614,
+            "radius": 0.009999999776482582,
+            "resource_name": ""
+        },
+        {
+            "__ID__": "CylinderShape3D_0JSCG",
+            "__TYPE__": "CylinderShape3D",
+            "height": 0.07280109822750092,
+            "radius": 0.009999999776482582,
+            "resource_name": ""
+        },
+        {
+            "__ID__": "SphereShape3D_89xPV",
+            "__TYPE__": "SphereShape3D",
+            "radius": 0.023000000044703484,
+            "resource_name": ""
+        }
+    ],
+    "__TYPE__": "PackedScene",
+    "__VERSION__": 2
+}

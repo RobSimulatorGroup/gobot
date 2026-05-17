@@ -12,7 +12,7 @@ The target pipeline is:
 ```text
 Gobot SceneTree / .jscn
   -> scene-to-physics compile layer
-  -> gobot.rl ManagerBasedEnv / VectorEnv
+  -> Python task envs / gobot.rl ManagerBasedEnv
   -> MuJoCo CPU semantic baseline
   -> MuJoCo Warp CUDA graph fast path
   -> editor debug / policy playback
@@ -70,7 +70,6 @@ gobot.sim
 
 gobot.rl
   ManagerBasedEnv
-  VectorEnv
   managers
   specs
   wrappers
@@ -119,8 +118,9 @@ Current implementation status:
 
 - `gobot.rl.ManagerBasedEnv` exists as the single-runtime Python manager
   reference path.
-- `gobot.rl.VectorEnv` uses a native CPU vector backend with independent
-  physics worlds per environment and a batch-first Python API.
+- Example vectorized training environments currently live as normal Python
+  task modules under `examples/` instead of a generic native C++ task-json
+  backend.
 - `GymWrapper` and `RslRlVecEnvWrapper` live above the core API.
 
 ## MuJoCo CPU VectorEnv Baseline
@@ -140,17 +140,13 @@ Required behavior:
   target, and runtime metrics.
 - CPU VectorEnv is the behavior reference for MuJoCo Warp.
 
-Current native CPU implementation:
+Current native CPU implementation status:
 
-- `NativeVectorEnv` owns one instantiated Gobot scene and one physics world per
-  environment.
-- Public `reset`, `step`, `send`, and `recv` release the Python GIL while
-  stepping/resetting worlds.
-- A small C++ worker pool distributes rows of the active batch across threads.
-- Actions, observations, commands, events, rewards, and terminations are
-  configured by generic joint/command terms from Python task config.
-- C++ stays task-agnostic: CartPole is a Python task config that composes
-  generic terms, not a hardcoded C++ environment.
+- The generic C++ `NativeVectorEnv` / task-json path has been removed.
+- CartPole and Go1 training use explicit Python MuJoCo `VecEnv` classes in the
+  example projects.
+- A future engine-backed vector env should expose a clean task API instead of
+  serializing reward/observation definitions through opaque JSON.
 
 EnvPool reference notes:
 

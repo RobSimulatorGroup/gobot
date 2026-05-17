@@ -7,6 +7,7 @@
 #include <filesystem>
 #include <functional>
 #include <memory>
+#include <optional>
 #include <stdexcept>
 #include <string>
 #include <unordered_map>
@@ -17,13 +18,13 @@
 #include <pybind11/stl.h>
 
 #include "gobot/core/config/project_setting.hpp"
+#include "gobot/core/io/python_script.hpp"
 #include "gobot/core/io/resource_loader.hpp"
 #include "gobot/core/io/resource_saver.hpp"
 #include "gobot/main/engine_context.hpp"
 #include "gobot/physics/physics_types.hpp"
 #include "gobot/physics/physics_server.hpp"
 #include "gobot/physics/physics_world.hpp"
-#include "gobot/python/native_vector_env.hpp"
 #include "gobot/python/python_app_context.hpp"
 #include "gobot/python/python_script_runner.hpp"
 #include "gobot/scene/collision_shape_3d.hpp"
@@ -307,6 +308,47 @@ bool SaveSceneRoot(Node* root, const std::string& path) {
                                global_path,
                                ResourceSaverFlags::ReplaceSubResourcePaths |
                                        ResourceSaverFlags::ChangePath);
+}
+
+void ImportMJCFScene(const std::string& xml_path,
+                     const std::string& scene_path,
+                     const std::optional<std::string>& name,
+                     const std::optional<std::string>& script_path) {
+    Ref<Resource> resource =
+            ResourceLoader::Load(xml_path, "PackedScene", ResourceFormatLoader::CacheMode::Ignore);
+    Ref<PackedScene> packed_scene = dynamic_pointer_cast<PackedScene>(resource);
+    if (!packed_scene.IsValid()) {
+        throw std::runtime_error("failed to import MJCF scene from '" + xml_path + "'");
+    }
+
+    Node* root = packed_scene->Instantiate();
+    if (root == nullptr) {
+        throw std::runtime_error("failed to instantiate MJCF scene from '" + xml_path + "'");
+    }
+
+    try {
+        if (name.has_value() && !name->empty()) {
+            root->SetName(*name);
+        }
+
+        if (script_path.has_value() && !script_path->empty()) {
+            Ref<PythonScript> script = dynamic_pointer_cast<PythonScript>(
+                    ResourceLoader::Load(*script_path, "PythonScript", ResourceFormatLoader::CacheMode::Reuse));
+            if (!script.IsValid()) {
+                throw std::runtime_error("failed to load Python script '" + *script_path + "'");
+            }
+            root->SetScript(script);
+        }
+
+        if (!SaveSceneRoot(root, scene_path)) {
+            throw std::runtime_error("failed to save Gobot scene to '" + scene_path + "'");
+        }
+    } catch (...) {
+        Object::Delete(root);
+        throw;
+    }
+
+    Object::Delete(root);
 }
 
 PhysicsBackendType ParseBackend(const std::string& backend) {
@@ -1212,8 +1254,6 @@ class NodeScript:
                  py::arg("exc_value"),
                  py::arg("traceback"));
 
-    RegisterNativeVectorEnv(module);
-
     node_class
             .def_property_readonly("id", &NodeGetId)
             .def_property("name", &NodeGetName, &NodeSetName)
@@ -1523,6 +1563,14 @@ class NodeScript:
             throw std::runtime_error("failed to save Gobot scene to '" + path + "'");
         }
     }, py::arg("root"), py::arg("path"));
+
+    module.def("import_mjcf_scene", [](const std::string& xml_path,
+                                       const std::string& scene_path,
+                                       const std::optional<std::string>& name,
+                                       const std::optional<std::string>& script) {
+        EnsureRuntimeContext();
+        ImportMJCFScene(xml_path, scene_path, name, script);
+    }, py::arg("xml_path"), py::arg("scene_path"), py::arg("name") = py::none(), py::arg("script") = py::none());
 
     module.def("load_resource", [](const std::string& path, const std::string& type_hint) {
         EnsureRuntimeContext();

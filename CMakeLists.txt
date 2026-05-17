@@ -355,7 +355,6 @@ endif()
 
 target_compile_definitions(gobot PUBLIC GOBOT_HAS_PYTHON=1 GOBOT_HAS_PYTHON_EMBED=1)
 set(GOBOT_PYTHON_BINDING_SOURCES
-        src/gobot/python/native_vector_env.cpp
         src/gobot/python/python_manual_bindings.cpp
         src/gobot/python/python_reflected_bindings.cpp
         src/gobot/python/python_variant_bridge.cpp)

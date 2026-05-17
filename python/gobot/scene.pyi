@@ -14,6 +14,7 @@ from ._core import (
     create_box_visual,
     create_node,
     create_test_scene,
+    import_mjcf_scene,
     load_resource,
     load_scene,
     save_scene,

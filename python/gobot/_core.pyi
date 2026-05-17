@@ -34,13 +34,6 @@ class LinkRole(Enum):
     VirtualRoot: ClassVar[LinkRole]
 
 
-class NativeVectorActionMode(Enum):
-    NormalizedPosition: ClassVar[NativeVectorActionMode]
-    Position: ClassVar[NativeVectorActionMode]
-    Velocity: ClassVar[NativeVectorActionMode]
-    Effort: ClassVar[NativeVectorActionMode]
-
-
 class JointControllerGains:
     position_stiffness: float
     velocity_damping: float
@@ -114,58 +107,6 @@ class AppContext:
     def get_runtime_name_map(self) -> dict[str, Any]: ...
     def get_runtime_state(self) -> dict[str, Any]: ...
     def get_last_error(self) -> str: ...
-
-
-class NativeVectorEnvConfig:
-    scene: str
-    robot: str
-    backend: PhysicsBackendType
-    num_envs: int
-    batch_size: int
-    num_workers: int
-    physics_dt: float
-    decimation: int
-    max_episode_steps: int
-    auto_reset: bool
-    controlled_joints: list[str]
-    seed: int
-    task_json: str
-
-    def __init__(self) -> None: ...
-
-
-class NativeVectorActionConfig:
-    name: str
-    joint: str
-    mode: NativeVectorActionMode
-    scale: float
-    offset: float
-    lower: float
-    upper: float
-    unit: str
-    passive_joints: list[str]
-
-    def __init__(self) -> None: ...
-
-
-class NativeVectorEnv:
-    num_envs: int
-    batch_size: int
-    num_workers: int
-    observation_size: int
-    critic_observation_size: int
-    action_size: int
-    env_dt: float
-    observation_spec: dict[str, Any]
-    critic_observation_spec: dict[str, Any]
-    action_spec: dict[str, Any]
-
-    def __init__(self, config: NativeVectorEnvConfig, actions: list[NativeVectorActionConfig] = ...) -> None: ...
-    def reset(self, seed: int | None = None, env_ids: Sequence[int] | None = None) -> tuple[Any, dict[str, Any]]: ...
-    def step(self, action: Any, env_ids: Sequence[int] | None = None) -> tuple[Any, Any, Any, Any, dict[str, Any]]: ...
-    def async_reset(self) -> None: ...
-    def send(self, action: Any, env_ids: Sequence[int] | None = None) -> None: ...
-    def recv(self) -> tuple[Any, Any, Any, Any, dict[str, Any]]: ...
 
 
 class Scene:
@@ -264,6 +205,7 @@ def redo() -> bool: ...
 def create_box_collision(name: str, size: Vector3, position: Vector3 = (0.0, 0.0, 0.0)) -> CollisionShape3D: ...
 def create_box_visual(name: str, size: Vector3, position: Vector3 = (0.0, 0.0, 0.0)) -> Node3D: ...
 def save_scene(root: Node, path: str) -> None: ...
+def import_mjcf_scene(xml_path: str, scene_path: str, name: str | None = None, script: str | None = None) -> None: ...
 def load_resource(path: str, type_hint: str = "") -> dict[str, Any]: ...
 def _node_from_id(id: int) -> Node | None: ...
 def create_test_scene() -> Scene: ...

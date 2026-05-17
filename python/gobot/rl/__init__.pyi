@@ -210,45 +210,6 @@ class ManagerBasedEnv:
     def step(self, action: ArrayLike) -> tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray, dict[str, Any]]: ...
     def close(self) -> None: ...
 
-class VectorEnv:
-    task_config: TaskConfig | None
-    cfg: EnvConfig
-    num_envs: int
-    batch_size: int
-    num_workers: int
-    physics_dt: float
-    decimation: int
-    env_dt: float
-    max_episode_steps: int
-    auto_reset: bool
-    observation_spec: VectorSpec
-    critic_observation_spec: VectorSpec
-    action_spec: VectorSpec
-    episode_lengths: np.ndarray
-    episode_returns: np.ndarray
-    def __init__(self, cfg: Mapping[str, Any] | EnvConfig | TaskConfig | None = None) -> None: ...
-    @property
-    def observation_space(self) -> VectorSpace: ...
-    @property
-    def action_space(self) -> VectorSpace: ...
-    def observation_group_spec(self, group: str) -> VectorSpec: ...
-    def reset(
-        self,
-        seed: int | None = None,
-        options: Mapping[str, Any] | None = None,
-        env_ids: Sequence[int] | np.ndarray | None = None,
-    ) -> tuple[np.ndarray, dict[str, Any]]: ...
-    def step(
-        self,
-        action: ArrayLike,
-        env_ids: Sequence[int] | np.ndarray | None = None,
-    ) -> tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray, dict[str, Any]]: ...
-    def async_reset(self) -> None: ...
-    def send(self, action: ArrayLike, env_ids: Sequence[int] | np.ndarray | None = None) -> None: ...
-    def recv(self) -> tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray, dict[str, Any]]: ...
-    def close(self) -> None: ...
-
-
 class GymWrapper:
     metadata: dict[str, Any]
     observation_space: VectorSpace
@@ -262,13 +223,13 @@ class GymWrapper:
 
 
 class RslRlVecEnvWrapper:
-    env: ManagerBasedEnv | VectorEnv
+    env: ManagerBasedEnv
     num_envs: int
     num_obs: int
     num_privileged_obs: int
     num_actions: int
     max_episode_length: int
-    def __init__(self, env: ManagerBasedEnv | VectorEnv, clip_actions: float | None = ..., device: str = ...) -> None: ...
+    def __init__(self, env: ManagerBasedEnv, clip_actions: float | None = ..., device: str = ...) -> None: ...
     @property
     def cfg(self): ...
     @property
@@ -281,7 +242,7 @@ class RslRlVecEnvWrapper:
     def reset(self): ...
     def step(self, actions): ...
     @property
-    def unwrapped(self) -> ManagerBasedEnv | VectorEnv: ...
+    def unwrapped(self) -> ManagerBasedEnv: ...
     def close(self) -> None: ...
 
 
