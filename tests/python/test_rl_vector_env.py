@@ -1,6 +1,7 @@
 import numpy as np
 
 import gobot
+from rl_test_helpers import make_cartpole_target_task
 
 
 def main():
@@ -9,7 +10,7 @@ def main():
     context.clear_scene()
     gobot.scene.save_cartpole_scene("res://gobot_rl_vector_cartpole.jscn")
 
-    task = gobot.rl.make_cartpole_target_task(
+    task = make_cartpole_target_task(
         scene="res://gobot_rl_vector_cartpole.jscn",
         backend="null",
         max_episode_steps=2,

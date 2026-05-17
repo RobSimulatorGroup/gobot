@@ -1,0 +1,26 @@
+<mujoco model="gobot_cartpole">
+  <compiler angle="radian" autolimits="true"/>
+  <option timestep="0.004166666666666667" integrator="RK4" gravity="0 0 -9.81"/>
+
+  <default>
+    <joint damping="0" armature="0"/>
+    <geom friction="0.8 0.1 0.1" density="1000"/>
+  </default>
+
+  <worldbody>
+    <geom name="floor" type="plane" size="4 1 0.05" rgba="0.25 0.25 0.25 1"/>
+    <body name="cart" pos="0 0 0.12">
+      <joint name="slider" type="slide" axis="1 0 0" range="-2.4 2.4" limited="true"/>
+      <geom name="cart_box" type="box" size="0.12 0.12 0.12" mass="1.0" rgba="0.66 0.78 0.95 1"/>
+      <body name="pole" pos="0 0 0.12">
+        <joint name="hinge" type="hinge" axis="0 1 0" limited="false"/>
+        <geom name="pole_capsule" type="capsule" fromto="0 0 0 0 0 1.0" size="0.025" mass="0.1" rgba="0.66 0.78 0.95 1"/>
+      </body>
+    </body>
+  </worldbody>
+
+  <actuator>
+    <motor name="cart_force" joint="slider" gear="1" ctrlrange="-3 3" ctrllimited="true"/>
+    <motor name="pole_disturbance" joint="hinge" gear="1" ctrlrange="-0.2 0.2" ctrllimited="true"/>
+  </actuator>
+</mujoco>

@@ -1,0 +1,31 @@
+<mujoco model="go1_scene">
+  <include file="go1.xml"/>
+
+  <option timestep="0.002" iterations="10" solver="Newton" tolerance="1e-10"/>
+
+  <worldbody>
+    <light directional="true" diffuse="0.8 0.8 0.8" specular="0.2 0.2 0.2" pos="0 0 5" dir="0 0 -1"/>
+    <geom name="ground" type="plane" size="50 50 0.1" rgba="0.8 0.8 0.8 1" friction="1.0 0.005 0.0001" contype="1" conaffinity="1"/>
+  </worldbody>
+
+  <actuator>
+    <position name="FR_hip" joint="FR_hip_joint" kp="40" ctrlrange="-0.863 0.863"/>
+    <position name="FR_thigh" joint="FR_thigh_joint" kp="40" ctrlrange="-0.686 4.501"/>
+    <position name="FR_calf" joint="FR_calf_joint" kp="40" ctrlrange="-2.818 -0.888"/>
+    <position name="FL_hip" joint="FL_hip_joint" kp="40" ctrlrange="-0.863 0.863"/>
+    <position name="FL_thigh" joint="FL_thigh_joint" kp="40" ctrlrange="-0.686 4.501"/>
+    <position name="FL_calf" joint="FL_calf_joint" kp="40" ctrlrange="-2.818 -0.888"/>
+    <position name="RR_hip" joint="RR_hip_joint" kp="40" ctrlrange="-0.863 0.863"/>
+    <position name="RR_thigh" joint="RR_thigh_joint" kp="40" ctrlrange="-0.686 4.501"/>
+    <position name="RR_calf" joint="RR_calf_joint" kp="40" ctrlrange="-2.818 -0.888"/>
+    <position name="RL_hip" joint="RL_hip_joint" kp="40" ctrlrange="-0.863 0.863"/>
+    <position name="RL_thigh" joint="RL_thigh_joint" kp="40" ctrlrange="-0.686 4.501"/>
+    <position name="RL_calf" joint="RL_calf_joint" kp="40" ctrlrange="-2.818 -0.888"/>
+  </actuator>
+
+  <keyframe>
+    <key name="stand"
+         qpos="0 0 0.27 1 0 0 0 0 0.9 -1.8 0 0.9 -1.8 0 0.9 -1.8 0 0.9 -1.8"
+         ctrl="0 0.9 -1.8 0 0.9 -1.8 0 0.9 -1.8 0 0.9 -1.8"/>
+  </keyframe>
+</mujoco>

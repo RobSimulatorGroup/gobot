@@ -84,7 +84,6 @@ def main() -> None:
         num_envs=args.num_envs,
         max_episode_length=1000,
         device=args.device,
-        project_path=project_path,
         target_range=args.target_range,
         disturbance_interval=args.disturbance_interval,
         disturbance_duration=args.disturbance_duration,

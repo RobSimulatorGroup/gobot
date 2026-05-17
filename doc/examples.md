@@ -47,15 +47,28 @@ first one from `example_roots` and hides the later duplicates.
 
 ## Cartpole
 
-`examples/cartpole` is a MuJoCo-backed inverted pendulum project. It contains:
+`examples/cartpole` is an inverted-pendulum project with two workflows:
 
 - `cartpole.jscn`: the editable Gobot scene.
 - `scripts/cartpole.py`: a Python `NodeScript` controller attached to the root
-  robot node.
+- `env.py` and `train.py`: a direct Python MuJoCo + rsl_rl training environment.
+- `inverted_pendulum.xml`: the MJCF model used by the training script.
 
-The script uses a hybrid cart controller: it first straightens the pole when the
-initial angle is too large, then switches to the cart-position controller once
-the state is near the target.
+The training environment is intentionally local to the example. It does not use
+Gobot task JSON or project-specific code inside the `gobot` Python package. The
+editor script loads the trained policy for playback in the Gobot scene.
+
+## Go1
+
+`examples/go1` is a direct Python MuJoCo + rsl_rl velocity-tracking example for
+the Unitree Go1. It contains:
+
+- `go1_env.py`: the vectorized MuJoCo environment.
+- `train.py`: the rsl_rl PPO training entry point.
+- `go1_scene.xml`: an MJCF reference scene with ground and position actuators.
+- `go1.xml` and `assets/`: the robot MJCF and meshes used by training.
+
+The default asset path can be overridden with `GOBOT_GO1_XML`.
 
 ## Packaging Rules
 
@@ -63,5 +76,7 @@ The Python package install step includes:
 
 - `.jscn` scene files.
 - `.py` scripts.
+- `.xml` MuJoCo scene files.
+- policy checkpoints and other example assets checked into `examples/`.
 
 Generated Python cache files and directories are excluded.

@@ -4,6 +4,7 @@ from pathlib import Path
 import numpy as np
 
 import gobot
+from rl_test_helpers import make_cartpole_target_task
 
 
 def main():
@@ -12,7 +13,7 @@ def main():
     context.clear_scene()
     gobot.scene.save_cartpole_scene("res://gobot_rl_manager_cartpole.jscn")
 
-    task = gobot.rl.make_cartpole_target_task(
+    task = make_cartpole_target_task(
         scene="res://gobot_rl_manager_cartpole.jscn",
         backend="null",
         max_episode_steps=2,
@@ -64,7 +65,7 @@ def main():
     assert observation2.shape == (1, 5)
     assert info2["commands"]["target_cart_position"].tolist() == [1.0]
 
-    random_task = gobot.rl.make_cartpole_target_task(
+    random_task = make_cartpole_target_task(
         scene="res://gobot_rl_manager_cartpole.jscn",
         backend="null",
         randomize_target_position=True,
