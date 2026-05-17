@@ -6,8 +6,10 @@ import json
 import os
 import sys
 import sysconfig
+from importlib import metadata
 from importlib import resources
 from pathlib import Path
+from urllib.parse import unquote, urlparse
 
 PYTHON_LIBRARY_ENV = "GOBOT_PYTHON_LIBRARY"
 PYTHON_LIBRARY_PRINTED_ENV = "GOBOT_PYTHON_LIBRARY_PRINTED"
@@ -149,10 +151,40 @@ def _project_history_path() -> Path:
     return home / ".gobot" / "projects.json"
 
 
+def _editable_source_examples() -> Path | None:
+    try:
+        dist = metadata.distribution("gobot")
+        direct_url = dist.read_text("direct_url.json")
+        if direct_url is None:
+            return None
+        data = json.loads(direct_url)
+    except (metadata.PackageNotFoundError, OSError, json.JSONDecodeError):
+        return None
+
+    if not isinstance(data, dict):
+        return None
+    dir_info = data.get("dir_info")
+    if not isinstance(dir_info, dict) or not dir_info.get("editable"):
+        return None
+
+    url = data.get("url")
+    if not isinstance(url, str):
+        return None
+    parsed = urlparse(url)
+    if parsed.scheme != "file":
+        return None
+
+    examples = Path(unquote(parsed.path)) / "examples"
+    return examples if examples.is_dir() else None
+
+
 def _register_packaged_examples() -> None:
-    examples = resources.files(__package__).joinpath("examples")
-    examples_path = Path(str(examples))
-    if not examples_path.is_dir():
+    package_examples = Path(str(resources.files(__package__).joinpath("examples")))
+    candidate_examples = [
+        path for path in (_editable_source_examples(), package_examples) if path is not None
+    ]
+    existing_examples = [path for path in candidate_examples if path.is_dir()]
+    if not existing_examples:
         return
 
     history_path = _project_history_path()
@@ -169,14 +201,14 @@ def _register_packaged_examples() -> None:
     if not isinstance(roots, list):
         roots = []
 
-    canonical_examples = str(examples_path.resolve())
+    canonical_examples = [str(path.resolve()) for path in existing_examples]
     normalized_roots = [
         str(Path(root).expanduser().resolve())
         for root in roots
         if isinstance(root, str) and root and Path(root).expanduser().exists()
     ]
-    normalized_roots = [root for root in normalized_roots if root != canonical_examples]
-    normalized_roots.insert(0, canonical_examples)
+    normalized_roots = [root for root in normalized_roots if root not in canonical_examples]
+    normalized_roots = [*canonical_examples, *normalized_roots]
 
     data["example_roots"] = normalized_roots
     projects = data.get("projects")

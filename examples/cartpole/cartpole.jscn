@@ -597,6 +597,56 @@
                 "visible": true
             },
             "type": "CollisionShape3D"
+        },
+        {
+            "name": "rail_visual",
+            "parent": 1,
+            "properties": {
+                "material": null,
+                "mesh": "SubResource(CylinderMesh_rail)",
+                "position": {
+                    "matrix_data": {
+                        "cols": 1,
+                        "rows": 3,
+                        "storage": [
+                            0.0,
+                            0.0,
+                            0.0
+                        ]
+                    }
+                },
+                "rotation_degrees": {
+                    "matrix_data": {
+                        "cols": 1,
+                        "rows": 3,
+                        "storage": [
+                            0.0,
+                            0.0,
+                            -90.0
+                        ]
+                    }
+                },
+                "scale": {
+                    "matrix_data": {
+                        "cols": 1,
+                        "rows": 3,
+                        "storage": [
+                            1.0,
+                            1.0,
+                            1.0
+                        ]
+                    }
+                },
+                "script": null,
+                "surface_color": {
+                    "alpha": 1.0,
+                    "blue": 0.75,
+                    "green": 0.0,
+                    "red": 1.0
+                },
+                "visible": true
+            },
+            "type": "MeshInstance3D"
         }
     ],
     "__SUB_RESOURCES__": [
@@ -665,6 +715,15 @@
                     ]
                 }
             }
+        },
+        {
+            "__ID__": "CylinderMesh_rail",
+            "__TYPE__": "CylinderMesh",
+            "height": 4.800000190734863,
+            "material": null,
+            "radial_segments": 24,
+            "radius": 0.02500000037252903,
+            "resource_name": ""
         }
     ],
     "__TYPE__": "PackedScene",

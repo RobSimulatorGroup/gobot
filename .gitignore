@@ -54,3 +54,12 @@ imgui.ini
 dist/
 
 .vscode/
+
+logs/
+
+# Local reference checkouts used during development.
+/envpool/
+/mjlab/
+/mujoco/
+/mujoco_warp/
+/rsl_rl/

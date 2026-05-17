@@ -16,6 +16,17 @@
 namespace gobot {
 namespace {
 
+Object* ResolveObject(ObjectID id, const std::string& command_name, const std::string& role) {
+    auto* object = ObjectDB::GetInstance(id);
+    if (object == nullptr) {
+        LOG_ERROR("{} failed: {} object id {} is no longer valid.",
+                  command_name,
+                  role,
+                  static_cast<std::uint64_t>(id));
+    }
+    return object;
+}
+
 Node* ResolveNode(ObjectID id, const std::string& command_name, const std::string& role) {
     auto* node = Object::PointerCastTo<Node>(ObjectDB::GetInstance(id));
     if (node == nullptr) {
@@ -303,6 +314,73 @@ bool RenameNodeCommand::MergeWith(const SceneCommand& next) {
         return false;
     }
     new_name_ = rename->new_name_;
+    return true;
+}
+
+SetObjectPropertyCommand::SetObjectPropertyCommand(ObjectID object_id,
+                                                   std::string property_name,
+                                                   Variant new_value)
+    : object_id_(object_id),
+      property_name_(std::move(property_name)),
+      new_value_(std::move(new_value)) {
+}
+
+bool SetObjectPropertyCommand::Do() {
+    Object* object = ResolveObject(object_id_, GetName(), "target");
+    if (object == nullptr) {
+        return false;
+    }
+
+    if (!captured_old_value_) {
+        old_value_ = object->Get(property_name_);
+        if (!old_value_.is_valid()) {
+            LOG_ERROR("{} failed: property '{}' does not exist on object '{}'.",
+                      GetName(),
+                      property_name_,
+                      object->GetClassStringName());
+            return false;
+        }
+        captured_old_value_ = true;
+    }
+
+    if (!object->Set(property_name_, new_value_)) {
+        LOG_ERROR("{} failed: cannot set property '{}' on object '{}'.",
+                  GetName(),
+                  property_name_,
+                  object->GetClassStringName());
+        return false;
+    }
+    return true;
+}
+
+bool SetObjectPropertyCommand::Undo() {
+    Object* object = ResolveObject(object_id_, GetName(), "target");
+    if (object == nullptr || !captured_old_value_) {
+        return false;
+    }
+
+    if (!object->Set(property_name_, old_value_)) {
+        LOG_ERROR("{} undo failed: cannot restore property '{}' on object '{}'.",
+                  GetName(),
+                  property_name_,
+                  object->GetClassStringName());
+        return false;
+    }
+    return true;
+}
+
+std::string SetObjectPropertyCommand::GetName() const {
+    return "Set Object Property";
+}
+
+bool SetObjectPropertyCommand::MergeWith(const SceneCommand& next) {
+    const auto* set_property = dynamic_cast<const SetObjectPropertyCommand*>(&next);
+    if (set_property == nullptr ||
+        set_property->object_id_ != object_id_ ||
+        set_property->property_name_ != property_name_) {
+        return false;
+    }
+    new_value_ = set_property->new_value_;
     return true;
 }
 

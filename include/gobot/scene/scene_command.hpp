@@ -72,6 +72,23 @@ private:
     bool captured_old_name_{false};
 };
 
+class GOBOT_EXPORT SetObjectPropertyCommand : public SceneCommand {
+public:
+    SetObjectPropertyCommand(ObjectID object_id, std::string property_name, Variant new_value);
+
+    bool Do() override;
+    bool Undo() override;
+    std::string GetName() const override;
+    bool MergeWith(const SceneCommand& next) override;
+
+private:
+    ObjectID object_id_;
+    std::string property_name_;
+    Variant old_value_;
+    Variant new_value_;
+    bool captured_old_value_{false};
+};
+
 class GOBOT_EXPORT SetNodePropertyCommand : public SceneCommand {
 public:
     SetNodePropertyCommand(ObjectID node_id, std::string property_name, Variant new_value);

@@ -12,7 +12,6 @@
 #include "gobot/editor/editor.hpp"
 #include "gobot/main/engine_context.hpp"
 #include "gobot/log.hpp"
-#include "gobot/scene/node.hpp"
 #include "gobot/scene/scene_command.hpp"
 
 namespace gobot {
@@ -73,15 +72,17 @@ bool PropertyDataModel::SetValue(Variant new_value) {
         return true;
     }
 
-    if (auto* node = Object::PointerCastTo<Node>(variant_cache_.object)) {
+    if (auto* object = variant_cache_.object) {
         if (auto* editor = Editor::GetInstanceOrNull()) {
             auto* context = editor->GetEngineContext();
             return context != nullptr &&
-                   context->ExecuteSceneCommand(std::make_unique<SetNodePropertyCommand>(
-                           node->GetInstanceId(),
-                           property_cache_.property_name_str,
+                   context->ExecuteSceneCommand(std::make_unique<SetObjectPropertyCommand>(
+                           object->GetInstanceId(),
+                           property_cache_.property_name,
                            new_value));
         }
+
+        return object->Set(property_cache_.property_name, std::move(new_value));
     }
 
     return false;
