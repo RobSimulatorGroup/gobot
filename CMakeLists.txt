@@ -514,6 +514,10 @@ set_target_properties(gobot_editor
         RUNTIME_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/python/gobot"
         INSTALL_RPATH "$ORIGIN"
 )
+add_custom_command(TARGET gobot_editor POST_BUILD
+        COMMAND "${CMAKE_COMMAND}" -E create_symlink
+                "python/gobot/$<TARGET_FILE_NAME:gobot_editor>"
+                "${CMAKE_BINARY_DIR}/$<TARGET_FILE_NAME:gobot_editor>")
 
 install(DIRECTORY "${CMAKE_CURRENT_SOURCE_DIR}/examples/"
         DESTINATION "gobot/examples" COMPONENT python

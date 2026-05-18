@@ -2,12 +2,14 @@
 
 #include <algorithm>
 #include <filesystem>
+#include <fstream>
 
 #include <gobot/core/io/resource_format_mjcf.hpp>
 #include <gobot/core/io/resource_format_urdf.hpp>
 #include <gobot/scene/collision_shape_3d.hpp>
 #include <gobot/scene/joint_3d.hpp>
 #include <gobot/scene/link_3d.hpp>
+#include <gobot/scene/mesh_instance_3d.hpp>
 #include <gobot/scene/resources/cylinder_shape_3d.hpp>
 #include <gobot/scene/resources/packed_scene.hpp>
 #include <gobot/scene/robot_3d.hpp>
@@ -102,6 +104,58 @@ TEST(TestResourceFormatMJCF, imports_bodies_joints_and_collision_geoms_as_scene_
     EXPECT_NEAR(cylinder->GetHeight(), 1.0, 1.0e-6);
 
     EXPECT_EQ(FindNodeByName(robot, "hinge_motor"), nullptr);
+
+    gobot::Object::Delete(root_node);
+}
+
+TEST(TestResourceFormatMJCF, imports_mesh_geoms_as_visuals) {
+    if (!gobot::ResourceFormatLoaderMJCF::IsMuJoCoAvailable()) {
+        GTEST_SKIP() << "MuJoCo support is not enabled.";
+    }
+
+    const std::filesystem::path fixture_path =
+            std::filesystem::temp_directory_path() / "gobot_mjcf_mesh_visual.xml";
+    const std::filesystem::path mesh_path =
+            std::filesystem::current_path() / "tests/fixtures/mesh/tetrahedron.obj";
+    {
+        std::ofstream file(fixture_path);
+        file << R"(<mujoco model="mesh_visual_bot">
+  <asset>
+    <mesh name="tetrahedron" file=")" << mesh_path.string() << R"("/>
+  </asset>
+  <worldbody>
+    <body name="base">
+      <geom name="tetrahedron_visual" type="mesh" mesh="tetrahedron" rgba="0.25 0.5 0.75 1" contype="0" conaffinity="0"/>
+    </body>
+  </worldbody>
+</mujoco>
+)";
+    }
+
+    gobot::Ref<gobot::ResourceFormatLoaderMJCF> loader = gobot::MakeRef<gobot::ResourceFormatLoaderMJCF>();
+    gobot::Ref<gobot::Resource> resource = loader->Load(fixture_path.string());
+    ASSERT_TRUE(resource.IsValid());
+
+    gobot::Ref<gobot::PackedScene> packed_scene = gobot::dynamic_pointer_cast<gobot::PackedScene>(resource);
+    ASSERT_TRUE(packed_scene.IsValid());
+
+    gobot::Node* root_node = packed_scene->Instantiate();
+    ASSERT_NE(root_node, nullptr);
+
+    auto* visual = gobot::Object::PointerCastTo<gobot::MeshInstance3D>(
+            FindNodeByName(root_node, "tetrahedron_visual"));
+    ASSERT_NE(visual, nullptr);
+    ASSERT_TRUE(visual->GetMesh().IsValid());
+    EXPECT_EQ(visual->GetMesh()->GetPath(), mesh_path.lexically_normal().string());
+    const gobot::Vector3 position = visual->GetPosition();
+    EXPECT_NEAR(position.x(), 0.0, 1.0e-9);
+    EXPECT_NEAR(position.y(), 0.0, 1.0e-9);
+    EXPECT_NEAR(position.z(), 0.0, 1.0e-9);
+    EXPECT_TRUE(visual->GetRotationMatrix().isApprox(gobot::Matrix3::Identity(), 1.0e-9));
+    EXPECT_TRUE(visual->GetScale().isApprox(gobot::Vector3::Ones(), 1.0e-9));
+    EXPECT_FLOAT_EQ(visual->GetSurfaceColor().red(), 0.25f);
+    EXPECT_FLOAT_EQ(visual->GetSurfaceColor().green(), 0.5f);
+    EXPECT_FLOAT_EQ(visual->GetSurfaceColor().blue(), 0.75f);
 
     gobot::Object::Delete(root_node);
 }

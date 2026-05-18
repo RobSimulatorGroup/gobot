@@ -17,14 +17,20 @@
 #include <utility>
 
 #include "gobot/core/config/project_setting.hpp"
+#include "gobot/core/io/resource_loader.hpp"
 #include "gobot/core/registration.hpp"
 #include "gobot/core/string_utils.hpp"
 #include "gobot/log.hpp"
+#include "gobot/rendering/render_server.hpp"
 #include "gobot/scene/collision_shape_3d.hpp"
 #include "gobot/scene/joint_3d.hpp"
 #include "gobot/scene/link_3d.hpp"
+#include "gobot/scene/mesh_instance_3d.hpp"
+#include "gobot/scene/resources/array_mesh.hpp"
 #include "gobot/scene/resources/box_shape_3d.hpp"
 #include "gobot/scene/resources/cylinder_shape_3d.hpp"
+#include "gobot/scene/resources/material.hpp"
+#include "gobot/scene/resources/mesh.hpp"
 #include "gobot/scene/resources/packed_scene.hpp"
 #include "gobot/scene/resources/sphere_shape_3d.hpp"
 #include "gobot/scene/robot_3d.hpp"
@@ -121,6 +127,124 @@ Matrix3 ToMatrix3FromMuJoCoQuat(const mjtNum* quat) {
                 matrix[3], matrix[4], matrix[5],
                 matrix[6], matrix[7], matrix[8];
     return rotation;
+}
+
+void InvertFrameAccumulation(mjtNum pos[3], mjtNum quat[4], const mjtNum child_pos[3], const mjtNum child_quat[4]) {
+    mjtNum child_quat_inv[4] = {};
+    mjtNum corrected_quat[4] = {};
+    mju_negQuat(child_quat_inv, child_quat);
+    mju_mulQuat(corrected_quat, quat, child_quat_inv);
+    mju_copy4(quat, corrected_quat);
+
+    mjtNum rotation[9] = {};
+    mjtNum rotated_child_pos[3] = {};
+    mju_quat2Mat(rotation, quat);
+    mju_mulMatVec3(rotated_child_pos, rotation, child_pos);
+    mju_subFrom3(pos, rotated_child_pos);
+}
+
+Color ToColor(const float* rgba) {
+    return {
+            static_cast<float>(rgba[0]),
+            static_cast<float>(rgba[1]),
+            static_cast<float>(rgba[2]),
+            static_cast<float>(rgba[3])};
+}
+
+std::string ReadMuJoCoString(const mjString* value) {
+    const char* string_value = mjs_getString(value);
+    return string_value != nullptr ? std::string(string_value) : std::string();
+}
+
+std::filesystem::path ResolveMJCFAssetPath(const std::filesystem::path& source_file,
+                                           const std::string& mesh_dir,
+                                           const std::string& asset_file) {
+    std::filesystem::path path(asset_file);
+    if (path.is_absolute()) {
+        return path.lexically_normal();
+    }
+
+    std::filesystem::path root = source_file.parent_path();
+    if (!mesh_dir.empty()) {
+        std::filesystem::path mesh_root(mesh_dir);
+        root = mesh_root.is_absolute() ? mesh_root : root / mesh_root;
+    }
+
+    return (root / path).lexically_normal();
+}
+
+std::string LocalizePath(const std::filesystem::path& path) {
+    ProjectSettings* settings = ProjectSettings::s_singleton;
+    return settings != nullptr ? settings->LocalizePath(path.string()) : path.string();
+}
+
+std::string MakeUniqueVisualName(const mjModel* model, int geom_id) {
+    const int mesh_id = model->geom_dataid[geom_id];
+    const std::string geom_name = GetMuJoCoName(model, mjOBJ_GEOM, geom_id, "");
+    if (!geom_name.empty()) {
+        return geom_name;
+    }
+
+    return GetMuJoCoName(model, mjOBJ_MESH, mesh_id, fmt::format("mesh_{}", mesh_id)) + "_visual_" +
+           std::to_string(geom_id);
+}
+
+Ref<Mesh> MakeMeshReference(const std::string& mesh_path) {
+    if (mesh_path.empty()) {
+        return {};
+    }
+
+    if (ResourceCache::Has(mesh_path)) {
+        Ref<Mesh> cached_mesh = dynamic_pointer_cast<Mesh>(ResourceCache::GetRef(mesh_path));
+        if (cached_mesh.IsValid()) {
+            return cached_mesh;
+        }
+    }
+
+    if (RenderServer::HasInstance() && ResourceLoader::Exists(mesh_path, "Mesh")) {
+        Ref<Resource> loaded_resource = ResourceLoader::Load(mesh_path, "Mesh", ResourceFormatLoader::CacheMode::Reuse);
+        Ref<Mesh> loaded_mesh = dynamic_pointer_cast<Mesh>(loaded_resource);
+        if (loaded_mesh.IsValid()) {
+            return loaded_mesh;
+        }
+    }
+
+    Ref<Mesh> mesh = MakeRef<Mesh>();
+    mesh->SetPath(mesh_path);
+    return mesh;
+}
+
+std::unordered_map<int, std::string> BuildMeshAssetPaths(const std::string& input_path) {
+    std::unordered_map<int, std::string> mesh_paths;
+    char error[kMuJoCoErrorBufferSize] = {};
+    std::unique_ptr<mjSpec, decltype(&mj_deleteSpec)> spec(
+            mj_parseXML(input_path.c_str(), nullptr, error, sizeof(error)),
+            mj_deleteSpec);
+    if (!spec) {
+        LOG_ERROR("MuJoCo failed to parse MJCF '{}' while resolving mesh assets: {}.", input_path, error);
+        return mesh_paths;
+    }
+
+    const std::filesystem::path source_file(input_path);
+    const std::string mesh_dir = ReadMuJoCoString(spec->compiler.meshdir);
+    for (mjsElement* element = mjs_firstElement(spec.get(), mjOBJ_MESH);
+         element != nullptr;
+         element = mjs_nextElement(spec.get(), element)) {
+        mjsMesh* mesh = mjs_asMesh(element);
+        if (mesh == nullptr) {
+            continue;
+        }
+
+        const int mesh_id = mjs_getId(element);
+        const std::string file = ReadMuJoCoString(mesh->file);
+        if (mesh_id < 0 || file.empty()) {
+            continue;
+        }
+
+        mesh_paths[mesh_id] = LocalizePath(ResolveMJCFAssetPath(source_file, mesh_dir, file));
+    }
+
+    return mesh_paths;
 }
 
 SceneState::NodeData MakeRobotNode(const std::string& name, const std::string& source_path) {
@@ -250,6 +374,41 @@ SceneState::NodeData MakeGeomCollisionNode(const mjModel* model, int geom_id, in
     return node_data;
 }
 
+SceneState::NodeData MakeGeomVisualNode(const mjModel* model,
+                                        int geom_id,
+                                        int parent,
+                                        const std::unordered_map<int, std::string>& mesh_paths) {
+    SceneState::NodeData node_data;
+    node_data.type = "MeshInstance3D";
+    node_data.name = MakeUniqueVisualName(model, geom_id);
+    node_data.parent = parent;
+
+    const int mesh_id = model->geom_dataid[geom_id];
+    mjtNum position[3] = {};
+    mjtNum quaternion[4] = {};
+    mju_copy3(position, model->geom_pos + 3 * geom_id);
+    mju_copy4(quaternion, model->geom_quat + 4 * geom_id);
+    InvertFrameAccumulation(position, quaternion, model->mesh_pos + 3 * mesh_id, model->mesh_quat + 4 * mesh_id);
+    AddTransformProperties(node_data, ToVector3(position), ToMatrix3FromMuJoCoQuat(quaternion));
+
+    auto mesh_path_iter = mesh_paths.find(mesh_id);
+    if (mesh_path_iter != mesh_paths.end()) {
+        AddProperty(node_data, "mesh", MakeMeshReference(mesh_path_iter->second));
+    }
+
+    const mjtNum* scale = model->mesh_scale + 3 * mesh_id;
+    AddProperty(node_data, "scale", Vector3{
+            static_cast<RealType>(scale[0]),
+            static_cast<RealType>(scale[1]),
+            static_cast<RealType>(scale[2])});
+    AddProperty(node_data, "surface_color", ToColor(model->geom_rgba + 4 * geom_id));
+
+    Ref<PBRMaterial3D> material = MakeRef<PBRMaterial3D>();
+    material->SetAlbedo(ToColor(model->geom_rgba + 4 * geom_id));
+    AddProperty(node_data, "material", dynamic_pointer_cast<Material>(material));
+    return node_data;
+}
+
 void ApplyActuatorLimitsToJoints(const mjModel* model, std::unordered_map<int, SceneState::NodeData>* joint_nodes) {
     if (model == nullptr || joint_nodes == nullptr) {
         return;
@@ -329,6 +488,7 @@ Ref<Resource> ResourceFormatLoaderMJCF::Load(const std::string& path,
     Ref<SceneState> state = packed_scene->GetState();
 
     const std::string model_name = ReadMJCFModelName(xml);
+    const std::unordered_map<int, std::string> mesh_paths = BuildMeshAssetPaths(input_path);
     const int robot_index = state->AddNode(MakeRobotNode(model_name, original_path.empty() ? path : original_path));
 
     std::unordered_map<int, int> body_to_link_node;
@@ -371,6 +531,10 @@ Ref<Resource> ResourceFormatLoaderMJCF::Load(const std::string& path,
 
         for (int geom_offset = 0; geom_offset < model->body_geomnum[body_id]; ++geom_offset) {
             const int geom_id = model->body_geomadr[body_id] + geom_offset;
+            if (model->geom_type[geom_id] == mjGEOM_MESH && model->geom_dataid[geom_id] >= 0) {
+                state->AddNode(MakeGeomVisualNode(model.get(), geom_id, link_index, mesh_paths));
+                continue;
+            }
             if (!MakeGeomShape(model.get(), geom_id).IsValid()) {
                 continue;
             }
