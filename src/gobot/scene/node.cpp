@@ -636,8 +636,6 @@ int Node::GetIndex() const {
 }
 
 Node::~Node() {
-    children_.clear();
-
     ERR_FAIL_COND(parent_);
     ERR_FAIL_COND(!children_.empty());
 }

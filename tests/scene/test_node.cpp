@@ -134,6 +134,25 @@ LOG_OFF;
 LOG_ON;
 }
 
+TEST(TestNodeLifecycle, delete_root_recursively_deletes_children) {
+    auto* root = gobot::Node::New<gobot::Node>();
+    auto* child = gobot::Node::New<gobot::Node>();
+    auto* grandchild = gobot::Node::New<gobot::Node>();
+
+    root->AddChild(child);
+    child->AddChild(grandchild);
+
+    const gobot::ObjectID root_id = root->GetInstanceId();
+    const gobot::ObjectID child_id = child->GetInstanceId();
+    const gobot::ObjectID grandchild_id = grandchild->GetInstanceId();
+
+    gobot::Node::Delete(root);
+
+    EXPECT_EQ(gobot::ObjectDB::GetInstance(root_id), nullptr);
+    EXPECT_EQ(gobot::ObjectDB::GetInstance(child_id), nullptr);
+    EXPECT_EQ(gobot::ObjectDB::GetInstance(grandchild_id), nullptr);
+}
+
 TEST_F(TestNode, reparent_node) {
     gobot::SceneTree::GetInstance()->GetRoot()->AddChild(node);
     node->Reparent(gobot::SceneTree::GetInstance()->GetRoot());
