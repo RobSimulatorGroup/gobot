@@ -34,6 +34,7 @@ public:
 
     void ToolBar();
     void ToolBar(const ImVec2& screen_position);
+    ImVec2 GetToolBarSize(const ImVec2& screen_position) const;
 
     void Resize(uint32_t width, uint32_t height);
 
@@ -47,7 +48,8 @@ private:
     void ProcessViewportInput(Node* scene_root,
                               const ImVec2& viewport_position,
                               const ImVec2& viewport_size,
-                              bool mouse_inside_rect);
+                              bool mouse_inside_rect,
+                              bool viewport_input_blocked);
 
     std::unique_ptr<EditorViewportRenderer> viewport_renderer_;
     Node* hovered_node_{nullptr};

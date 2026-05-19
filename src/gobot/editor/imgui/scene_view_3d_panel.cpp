@@ -52,11 +52,32 @@ Robot3D* FindRobotAncestor(Node* node) {
     return nullptr;
 }
 
-Robot3D* FindActiveRobot(Node* hovered_node) {
+Robot3D* FindFirstRobot(Node* node) {
+    if (!node) {
+        return nullptr;
+    }
+
+    if (auto* robot = Object::PointerCastTo<Robot3D>(node)) {
+        return robot;
+    }
+
+    for (std::size_t i = 0; i < node->GetChildCount(); ++i) {
+        if (auto* robot = FindFirstRobot(node->GetChild(static_cast<int>(i)))) {
+            return robot;
+        }
+    }
+
+    return nullptr;
+}
+
+Robot3D* FindActiveRobot(Node* scene_root, Node* hovered_node) {
     if (auto* robot = FindRobotAncestor(Editor::GetInstance()->GetSelected())) {
         return robot;
     }
-    return FindRobotAncestor(hovered_node);
+    if (auto* robot = FindRobotAncestor(hovered_node)) {
+        return robot;
+    }
+    return FindFirstRobot(scene_root);
 }
 
 bool IsJointMotionEditable(Joint3D* joint) {
@@ -421,9 +442,14 @@ void SceneView3DPanel::OnImGuiContent()
         node3d_editor->OnImGuizmo();
     }
 
-    const bool imgui_blocks_viewport_input = ImGuiBlocksViewportInput();
+    const ImVec2 toolbar_position{scene_view_position.x + 8.0f, scene_view_position.y + 8.0f};
+    const ImVec2 toolbar_size = GetToolBarSize(toolbar_position);
+    const ImVec2 toolbar_max{toolbar_position.x + toolbar_size.x, toolbar_position.y + toolbar_size.y};
+    const bool toolbar_blocks_viewport_input = ImGui::IsMouseHoveringRect(toolbar_position, toolbar_max, false);
+    const bool imgui_blocks_viewport_input = ImGuiBlocksViewportInput() || toolbar_blocks_viewport_input;
     bool mouse_inside_rect = ImGui::IsMouseHoveringRect(min_bound, max_bound) && !imgui_blocks_viewport_input;
-    ProcessViewportInput(scene_root, scene_view_position, scene_view_size, mouse_inside_rect);
+    ProcessViewportInput(scene_root, scene_view_position, scene_view_size, mouse_inside_rect,
+                         imgui_blocks_viewport_input);
     node3d_editor->SetNeedUpdateCamera(mouse_inside_rect && !dragged_joint_ && !drag_force_active_ &&
                                        !ImGuizmo::IsUsing() && !ImGuizmo::IsOver());
 
@@ -472,7 +498,7 @@ void SceneView3DPanel::OnImGuiContent()
         }
     }
 
-    ToolBar({scene_view_position.x + 8.0f, scene_view_position.y + 8.0f});
+    ToolBar(toolbar_position);
     ImGui::SetCursorScreenPos({scene_view_position.x, scene_view_position.y + scene_view_size.y});
     ImGui::Dummy({1.0f, 1.0f});
 
@@ -481,7 +507,8 @@ void SceneView3DPanel::OnImGuiContent()
 void SceneView3DPanel::ProcessViewportInput(Node* scene_root,
                                             const ImVec2& viewport_position,
                                             const ImVec2& viewport_size,
-                                            bool mouse_inside_rect) {
+                                            bool mouse_inside_rect,
+                                            bool viewport_input_blocked) {
     auto* node3d_editor = Node3DEditor::GetInstance();
     const bool gizmo_captures_mouse = ImGuizmo::IsUsing() || ImGuizmo::IsOver();
     const bool runtime_playing = IsSceneRuntimePlaying();
@@ -503,7 +530,7 @@ void SceneView3DPanel::ProcessViewportInput(Node* scene_root,
     auto* motion_joint = runtime_playing ? nullptr : FindMotionJointForViewportTarget(hovered_node_);
     motion_target_joint_ = motion_joint;
 
-    if (!left_down) {
+    if (!left_down || viewport_input_blocked) {
         pressed_joint_ = nullptr;
         dragged_joint_ = nullptr;
         if (drag_force_active_) {
@@ -799,10 +826,62 @@ void SceneView3DPanel::ToolBar()
     ToolBar(ImGui::GetCursorScreenPos());
 }
 
+ImVec2 SceneView3DPanel::GetToolBarSize(const ImVec2& screen_position) const {
+    const float base_font_size = ImGui::GetFontSize();
+    const float button_extent = std::max(30.0f, base_font_size * 1.32f);
+    const float spacing = 4.0f;
+    const float separator_width = 9.0f;
+    const float right_limit = ImGui::GetWindowPos().x + ImGui::GetWindowContentRegionMax().x - 8.0f;
+
+    constexpr int button_count = 9;
+    constexpr int separator_count = 5;
+    const float toolbar_width = button_count * button_extent +
+                                separator_count * separator_width +
+                                (button_count + separator_count - 1) * spacing;
+
+    if (screen_position.x + toolbar_width <= right_limit) {
+        return {toolbar_width, button_extent};
+    }
+
+    const float available_width = std::max(button_extent, right_limit - screen_position.x);
+    int row_count = 1;
+    float row_width = 0.0f;
+    float max_row_width = 0.0f;
+    auto add_item = [&](float item_width) {
+        if (row_width > 0.0f && screen_position.x + row_width + spacing + item_width > right_limit) {
+            max_row_width = std::max(max_row_width, row_width);
+            row_width = 0.0f;
+            ++row_count;
+        }
+        if (row_width > 0.0f) {
+            row_width += spacing;
+        }
+        row_width += item_width;
+    };
+
+    add_item(button_extent);
+    add_item(separator_width);
+    add_item(button_extent);
+    add_item(button_extent);
+    add_item(button_extent);
+    add_item(separator_width);
+    add_item(button_extent);
+    add_item(separator_width);
+    add_item(button_extent);
+    add_item(separator_width);
+    add_item(button_extent);
+    add_item(separator_width);
+    add_item(button_extent);
+    add_item(button_extent);
+    max_row_width = std::max(max_row_width, row_width);
+
+    return {std::min(max_row_width, available_width), row_count * button_extent + (row_count - 1) * spacing};
+}
+
 void SceneView3DPanel::ToolBar(const ImVec2& screen_position)
 {
     auto node3d_editor = Node3DEditor::GetInstance();
-    auto* active_robot = FindActiveRobot(hovered_node_);
+    auto* active_robot = FindActiveRobot(Editor::GetInstance()->GetActiveSceneRoot(), hovered_node_);
     const float base_font_size = ImGui::GetFontSize();
     const float button_extent = std::max(30.0f, base_font_size * 1.32f);
     const ImVec2 button_size{button_extent, button_extent};
