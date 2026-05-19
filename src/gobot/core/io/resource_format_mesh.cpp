@@ -167,10 +167,12 @@ Ref<Resource> ResourceFormatLoaderMesh::Load(const std::string& path,
     // Robotics assets authored for URDF are already in the URDF/world up-axis convention.
     // Assimp's default Collada root-axis conversion would cancel Blender-exported node transforms.
     importer.SetPropertyInteger(AI_CONFIG_IMPORT_COLLADA_IGNORE_UP_DIRECTION, 1);
+    importer.SetPropertyFloat(AI_CONFIG_PP_GSN_MAX_SMOOTHING_ANGLE, 80.0f);
     const aiScene* scene = importer.ReadFile(global_path,
                                              aiProcess_Triangulate |
                                              aiProcess_JoinIdenticalVertices |
-                                             aiProcess_GenNormals |
+                                             aiProcess_DropNormals |
+                                             aiProcess_GenSmoothNormals |
                                              aiProcess_ImproveCacheLocality);
     if (scene == nullptr || scene->mRootNode == nullptr) {
         LOG_ERROR("Assimp failed to load mesh '{}': {}", path, importer.GetErrorString());

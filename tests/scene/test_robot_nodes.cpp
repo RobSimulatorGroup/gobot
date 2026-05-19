@@ -1,5 +1,7 @@
 #include <gtest/gtest.h>
 
+#include <cmath>
+
 #include <gobot/scene/joint_3d.hpp>
 #include <gobot/scene/link_3d.hpp>
 #include <gobot/scene/robot_3d.hpp>
@@ -63,4 +65,39 @@ TEST(TestRobotNodes, reflected_properties_are_available) {
     EXPECT_TRUE(gobot::Type::get<gobot::Joint3D>().get_property("upper_limit").is_valid());
     EXPECT_TRUE(gobot::Type::get<gobot::Joint3D>().get_property("effort_limit").is_valid());
     EXPECT_TRUE(gobot::Type::get<gobot::Joint3D>().get_property("velocity_limit").is_valid());
+}
+
+TEST(TestRobotNodes, motion_mode_applies_joint_position_delta_from_entered_pose) {
+    auto* robot = gobot::Object::New<gobot::Robot3D>();
+    robot->SetName("robot");
+
+    auto* joint = gobot::Object::New<gobot::Joint3D>();
+    joint->SetName("joint");
+    joint->SetJointType(gobot::JointType::Revolute);
+    joint->SetAxis(gobot::Vector3::UnitZ());
+    joint->SetLowerLimit(-2.0);
+    joint->SetUpperLimit(2.0);
+    joint->SetJointPosition(0.9);
+
+    auto* link = gobot::Object::New<gobot::Link3D>();
+    link->SetName("link");
+    link->SetPosition({1.0, 0.0, 0.0});
+
+    robot->AddChild(joint);
+    joint->AddChild(link);
+
+    robot->SetMode(gobot::RobotMode::Motion);
+    EXPECT_TRUE(link->GetPosition().isApprox(gobot::Vector3(1.0, 0.0, 0.0), CMP_EPSILON));
+
+    joint->SetJointPosition(1.1);
+    const gobot::Vector3 expected{
+            std::cos(0.2),
+            std::sin(0.2),
+            0.0};
+    EXPECT_TRUE(link->GetPosition().isApprox(expected, CMP_EPSILON));
+
+    robot->SetMode(gobot::RobotMode::Assembly);
+    EXPECT_TRUE(link->GetPosition().isApprox(gobot::Vector3(1.0, 0.0, 0.0), CMP_EPSILON));
+
+    gobot::Object::Delete(robot);
 }

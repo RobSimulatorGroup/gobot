@@ -1004,6 +1004,10 @@ void MuJoCoPhysicsWorld::AddFloatingBaseJointsToSpec(void* spec_ptr, const Physi
         const std::string free_joint_name = joint.name.empty()
                                                     ? fmt::format("{}_freejoint", joint.child_link)
                                                     : joint.name;
+        if (mjs_findElement(spec, mjOBJ_JOINT, free_joint_name.c_str()) != nullptr) {
+            continue;
+        }
+
         mjs_setName(free_joint->element, free_joint_name.c_str());
         ++added_count;
     }

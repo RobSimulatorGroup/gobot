@@ -22,6 +22,8 @@ namespace {
 
 constexpr float kJointPickRadiusPixels = 14.0f;
 constexpr float kJointHandleRadiusPixels = 6.0f;
+constexpr float kJointAxisArrowLengthPixels = 10.0f;
+constexpr float kJointAxisArrowHalfWidthPixels = 5.0f;
 
 struct LocalBounds {
     Vector3 min{Vector3::Zero()};
@@ -74,6 +76,51 @@ Vector3 GetJointInteractionPosition(const Joint3D* joint) {
     }
 
     return joint->GetGlobalPosition();
+}
+
+bool ShouldDrawJointAxis(const Joint3D* joint) {
+    if (joint == nullptr) {
+        return false;
+    }
+
+    switch (joint->GetJointType()) {
+        case JointType::Revolute:
+        case JointType::Continuous:
+        case JointType::Prismatic:
+            return true;
+        default:
+            return false;
+    }
+}
+
+void DrawScreenArrowHead(ImDrawList* draw_list,
+                         const ImVec2& start,
+                         const ImVec2& end,
+                         ImU32 color,
+                         float thickness) {
+    if (draw_list == nullptr) {
+        return;
+    }
+
+    const float dx = end.x - start.x;
+    const float dy = end.y - start.y;
+    const float length = std::sqrt(dx * dx + dy * dy);
+    if (length <= CMP_EPSILON) {
+        return;
+    }
+
+    const float ux = dx / length;
+    const float uy = dy / length;
+    const float px = -uy;
+    const float py = ux;
+    const ImVec2 left{
+            end.x - ux * kJointAxisArrowLengthPixels + px * kJointAxisArrowHalfWidthPixels,
+            end.y - uy * kJointAxisArrowLengthPixels + py * kJointAxisArrowHalfWidthPixels};
+    const ImVec2 right{
+            end.x - ux * kJointAxisArrowLengthPixels - px * kJointAxisArrowHalfWidthPixels,
+            end.y - uy * kJointAxisArrowLengthPixels - py * kJointAxisArrowHalfWidthPixels};
+    draw_list->AddLine(end, left, color, thickness);
+    draw_list->AddLine(end, right, color, thickness);
 }
 
 Ray MakeRay(const Camera3D* camera,
@@ -483,12 +530,15 @@ void DrawEditorOverlay(Node* node,
             draw_list->AddCircle(joint_screen, kJointPickRadiusPixels, color, 24,
                                  selected || hovered || motion_target ? 2.0f : 1.0f);
 
-            const Vector3 axis_end = interaction_position
-                    + joint->GetGlobalTransform().linear() * joint->GetAxis().normalized() * 0.22;
-            ImVec2 axis_screen;
-            if (ProjectPoint(camera, axis_end, viewport_position, viewport_size, axis_screen)) {
-                draw_list->AddLine(joint_screen, axis_screen, color,
-                                   selected || hovered || motion_target ? 2.0f : 1.0f);
+            if (ShouldDrawJointAxis(joint)) {
+                const Vector3 axis_end = interaction_position
+                        + joint->GetGlobalTransform().linear() * joint->GetAxis().normalized() * 0.28;
+                ImVec2 axis_screen;
+                if (ProjectPoint(camera, axis_end, viewport_position, viewport_size, axis_screen)) {
+                    const float axis_thickness = selected || hovered || motion_target ? 2.0f : 1.25f;
+                    draw_list->AddLine(joint_screen, axis_screen, color, axis_thickness);
+                    DrawScreenArrowHead(draw_list, joint_screen, axis_screen, color, axis_thickness);
+                }
             }
         }
     }

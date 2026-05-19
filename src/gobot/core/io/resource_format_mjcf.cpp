@@ -13,6 +13,7 @@
 #include <memory>
 #include <regex>
 #include <sstream>
+#include <string_view>
 #include <unordered_map>
 #include <utility>
 
@@ -103,6 +104,13 @@ void AddTransformProperties(SceneState::NodeData& node_data, const Vector3& posi
 }
 
 #ifdef GOBOT_HAS_MUJOCO
+Affine3 MakeTransform(const Vector3& position, const Matrix3& rotation) {
+    Affine3 transform = Affine3::Identity();
+    transform.translation() = position;
+    transform.linear() = rotation;
+    return transform;
+}
+
 std::string GetMuJoCoName(const mjModel* model, int object_type, int object_id, const std::string& fallback) {
     const char* name = mj_id2name(model, object_type, object_id);
     if (name != nullptr && name[0] != '\0') {
@@ -129,6 +137,26 @@ Matrix3 ToMatrix3FromMuJoCoQuat(const mjtNum* quat) {
     return rotation;
 }
 
+Affine3 GetBodyWorldTransform(const mjData* data, int body_id) {
+    return MakeTransform(ToVector3(data->xpos + 3 * body_id),
+                         ToMatrix3FromMuJoCoQuat(data->xquat + 4 * body_id));
+}
+
+Affine3 GetJointWorldTransform(const mjModel* model, const mjData* data, int joint_id, int child_body_id) {
+    if (model->jnt_type[joint_id] == mjJNT_FREE) {
+        const int qpos_address = model->jnt_qposadr[joint_id];
+        if (qpos_address >= 0 && qpos_address + 6 < model->nq) {
+            return MakeTransform(ToVector3(data->qpos + qpos_address),
+                                 ToMatrix3FromMuJoCoQuat(data->qpos + qpos_address + 3));
+        }
+    }
+
+    const Affine3 body_world_transform = GetBodyWorldTransform(data, child_body_id);
+    Affine3 joint_local_transform = Affine3::Identity();
+    joint_local_transform.translation() = ToVector3(model->jnt_pos + 3 * joint_id);
+    return body_world_transform * joint_local_transform;
+}
+
 void InvertFrameAccumulation(mjtNum pos[3], mjtNum quat[4], const mjtNum child_pos[3], const mjtNum child_quat[4]) {
     mjtNum child_quat_inv[4] = {};
     mjtNum corrected_quat[4] = {};
@@ -149,6 +177,35 @@ Color ToColor(const float* rgba) {
             static_cast<float>(rgba[1]),
             static_cast<float>(rgba[2]),
             static_cast<float>(rgba[3])};
+}
+
+Color GetGeomColor(const mjModel* model, int geom_id) {
+    const int material_id = model->geom_matid[geom_id];
+    if (material_id >= 0 && material_id < model->nmat) {
+        return ToColor(model->mat_rgba + 4 * material_id);
+    }
+    return ToColor(model->geom_rgba + 4 * geom_id);
+}
+
+int FindStandKeyframe(const mjModel* model) {
+    for (int key_id = 0; key_id < model->nkey; ++key_id) {
+        const char* name = mj_id2name(model, mjOBJ_KEY, key_id);
+        if (name != nullptr && std::string_view(name) == "stand") {
+            return key_id;
+        }
+    }
+    return -1;
+}
+
+void ApplyStandKeyframeToData(const mjModel* model, mjData* data) {
+    const int stand_key_id = FindStandKeyframe(model);
+    if (stand_key_id < 0) {
+        return;
+    }
+
+    std::copy_n(model->key_qpos + stand_key_id * model->nq, model->nq, data->qpos);
+    std::copy_n(model->key_ctrl + stand_key_id * model->nu, model->nu, data->ctrl);
+    mj_forward(model, data);
 }
 
 std::string ReadMuJoCoString(const mjString* value) {
@@ -197,6 +254,9 @@ Ref<Mesh> MakeMeshReference(const std::string& mesh_path) {
     if (ResourceCache::Has(mesh_path)) {
         Ref<Mesh> cached_mesh = dynamic_pointer_cast<Mesh>(ResourceCache::GetRef(mesh_path));
         if (cached_mesh.IsValid()) {
+            if (Ref<ArrayMesh> array_mesh = dynamic_pointer_cast<ArrayMesh>(cached_mesh); array_mesh.IsValid()) {
+                array_mesh->SetMaterial({});
+            }
             return cached_mesh;
         }
     }
@@ -205,6 +265,9 @@ Ref<Mesh> MakeMeshReference(const std::string& mesh_path) {
         Ref<Resource> loaded_resource = ResourceLoader::Load(mesh_path, "Mesh", ResourceFormatLoader::CacheMode::Reuse);
         Ref<Mesh> loaded_mesh = dynamic_pointer_cast<Mesh>(loaded_resource);
         if (loaded_mesh.IsValid()) {
+            if (Ref<ArrayMesh> array_mesh = dynamic_pointer_cast<ArrayMesh>(loaded_mesh); array_mesh.IsValid()) {
+                array_mesh->SetMaterial({});
+            }
             return loaded_mesh;
         }
     }
@@ -255,14 +318,15 @@ SceneState::NodeData MakeRobotNode(const std::string& name, const std::string& s
     return node_data;
 }
 
-SceneState::NodeData MakeBodyLinkNode(const mjModel* model, int body_id, int parent) {
+SceneState::NodeData MakeBodyLinkNode(const mjModel* model,
+                                      int body_id,
+                                      int parent,
+                                      const Affine3& local_transform) {
     SceneState::NodeData node_data;
     node_data.type = "Link3D";
     node_data.name = GetMuJoCoName(model, mjOBJ_BODY, body_id, fmt::format("body_{}", body_id));
     node_data.parent = parent;
-    AddTransformProperties(node_data,
-                           ToVector3(model->body_pos + 3 * body_id),
-                           ToMatrix3FromMuJoCoQuat(model->body_quat + 4 * body_id));
+    AddTransformProperties(node_data, local_transform.translation(), local_transform.linear());
     AddProperty(node_data, "has_inertial", model->body_mass[body_id] > 0.0);
     AddProperty(node_data, "mass", static_cast<RealType>(model->body_mass[body_id]));
     AddProperty(node_data, "center_of_mass", ToVector3(model->body_ipos + 3 * body_id));
@@ -291,12 +355,14 @@ SceneState::NodeData MakeBodyJointNode(const mjModel* model,
                                        int joint_id,
                                        int parent,
                                        const std::string& parent_link,
-                                       const std::string& child_link) {
+                                       const std::string& child_link,
+                                       const Affine3& local_transform,
+                                       const mjData* data) {
     SceneState::NodeData node_data;
     node_data.type = "Joint3D";
     node_data.name = GetMuJoCoName(model, mjOBJ_JOINT, joint_id, fmt::format("{}_joint", child_link));
     node_data.parent = parent;
-    AddTransformProperties(node_data, ToVector3(model->jnt_pos + 3 * joint_id), Matrix3::Identity());
+    AddTransformProperties(node_data, local_transform.translation(), local_transform.linear());
     AddProperty(node_data, "joint_type", ToGobotJointType(model->jnt_type[joint_id]));
     AddProperty(node_data, "parent_link", parent_link);
     AddProperty(node_data, "child_link", child_link);
@@ -320,11 +386,18 @@ SceneState::NodeData MakeBodyJointNode(const mjModel* model,
 
     const int dof_address = model->jnt_dofadr[joint_id];
     AddProperty(node_data, "velocity_limit", static_cast<RealType>(0.0));
-    AddProperty(node_data, "damping", static_cast<RealType>(model->dof_damping[dof_address]));
-    AddProperty(node_data, "joint_position",
-                model->jnt_type[joint_id] == mjJNT_HINGE || model->jnt_type[joint_id] == mjJNT_SLIDE
-                        ? static_cast<RealType>(model->qpos0[model->jnt_qposadr[joint_id]])
+    AddProperty(node_data, "damping",
+                dof_address >= 0 && dof_address < model->nv
+                        ? static_cast<RealType>(model->dof_damping[dof_address])
                         : static_cast<RealType>(0.0));
+    RealType initial_joint_position = 0.0;
+    if (model->jnt_type[joint_id] == mjJNT_HINGE || model->jnt_type[joint_id] == mjJNT_SLIDE) {
+        const int qpos_address = model->jnt_qposadr[joint_id];
+        if (qpos_address >= 0 && qpos_address < model->nq) {
+            initial_joint_position = static_cast<RealType>(data->qpos[qpos_address]);
+        }
+    }
+    AddProperty(node_data, "joint_position", initial_joint_position);
     (void)dof_address;
     return node_data;
 }
@@ -371,6 +444,7 @@ SceneState::NodeData MakeGeomCollisionNode(const mjModel* model, int geom_id, in
                            ToVector3(model->geom_pos + 3 * geom_id),
                            ToMatrix3FromMuJoCoQuat(model->geom_quat + 4 * geom_id));
     AddProperty(node_data, "shape", MakeGeomShape(model, geom_id));
+    AddProperty(node_data, "visible", false);
     return node_data;
 }
 
@@ -401,10 +475,16 @@ SceneState::NodeData MakeGeomVisualNode(const mjModel* model,
             static_cast<RealType>(scale[0]),
             static_cast<RealType>(scale[1]),
             static_cast<RealType>(scale[2])});
-    AddProperty(node_data, "surface_color", ToColor(model->geom_rgba + 4 * geom_id));
+    const Color color = GetGeomColor(model, geom_id);
+    AddProperty(node_data, "surface_color", color);
 
     Ref<PBRMaterial3D> material = MakeRef<PBRMaterial3D>();
-    material->SetAlbedo(ToColor(model->geom_rgba + 4 * geom_id));
+    material->SetAlbedo(color);
+    if (const int material_id = model->geom_matid[geom_id]; material_id >= 0 && material_id < model->nmat) {
+        material->SetMetallic(static_cast<RealType>(model->mat_metallic[material_id]));
+        material->SetRoughness(static_cast<RealType>(model->mat_roughness[material_id]));
+        material->SetSpecular(static_cast<RealType>(model->mat_specular[material_id]));
+    }
     AddProperty(node_data, "material", dynamic_pointer_cast<Material>(material));
     return node_data;
 }
@@ -483,6 +563,7 @@ Ref<Resource> ResourceFormatLoaderMJCF::Load(const std::string& path,
         return {};
     }
     mj_forward(model.get(), data.get());
+    ApplyStandKeyframeToData(model.get(), data.get());
 
     Ref<PackedScene> packed_scene = MakeRef<PackedScene>();
     Ref<SceneState> state = packed_scene->GetState();
@@ -498,6 +579,10 @@ Ref<Resource> ResourceFormatLoaderMJCF::Load(const std::string& path,
         const int parent_link_index = parent_body_id > 0 && body_to_link_node.contains(parent_body_id)
                                               ? body_to_link_node[parent_body_id]
                                               : robot_index;
+        const Affine3 parent_world_transform = parent_body_id > 0
+                                                       ? GetBodyWorldTransform(data.get(), parent_body_id)
+                                                       : Affine3::Identity();
+        const Affine3 body_world_transform = GetBodyWorldTransform(data.get(), body_id);
         const std::string parent_link = parent_body_id > 0
                                                 ? GetMuJoCoName(model.get(),
                                                                 mjOBJ_BODY,
@@ -508,12 +593,18 @@ Ref<Resource> ResourceFormatLoaderMJCF::Load(const std::string& path,
                                                      mjOBJ_BODY,
                                                      body_id,
                                                      fmt::format("body_{}", body_id));
-
         int link_parent_index = parent_link_index;
+        Affine3 link_parent_world_transform = parent_world_transform;
+        Affine3 joint_parent_world_transform = parent_world_transform;
         for (int joint_offset = 0; joint_offset < model->body_jntnum[body_id]; ++joint_offset) {
             const int joint_id = model->body_jntadr[body_id] + joint_offset;
+            const Affine3 joint_world_transform = GetJointWorldTransform(model.get(), data.get(), joint_id, body_id);
+            const Affine3 joint_local_transform = joint_parent_world_transform.inverse() * joint_world_transform;
             joint_nodes.emplace(joint_id,
-                                MakeBodyJointNode(model.get(), joint_id, parent_link_index, parent_link, child_link));
+                                MakeBodyJointNode(model.get(), joint_id, parent_link_index, parent_link, child_link,
+                                                  joint_local_transform,
+                                                  data.get()));
+            joint_parent_world_transform = joint_world_transform;
         }
 
         ApplyActuatorLimitsToJoints(model.get(), &joint_nodes);
@@ -523,10 +614,14 @@ Ref<Resource> ResourceFormatLoaderMJCF::Load(const std::string& path,
             if (joint_iter != joint_nodes.end()) {
                 joint_iter->second.parent = link_parent_index;
                 link_parent_index = state->AddNode(joint_iter->second);
+                link_parent_world_transform =
+                        GetJointWorldTransform(model.get(), data.get(), joint_id, body_id);
             }
         }
 
-        const int link_index = state->AddNode(MakeBodyLinkNode(model.get(), body_id, link_parent_index));
+        const Affine3 link_local_transform = link_parent_world_transform.inverse() * body_world_transform;
+        const int link_index =
+                state->AddNode(MakeBodyLinkNode(model.get(), body_id, link_parent_index, link_local_transform));
         body_to_link_node[body_id] = link_index;
 
         for (int geom_offset = 0; geom_offset < model->body_geomnum[body_id]; ++geom_offset) {

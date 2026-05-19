@@ -1,32 +1,32 @@
 {
     "__EXT_RESOURCES__": [
         {
-            "__ID__": "6_VmD8h",
-            "__PATH__": "res://assets/thigh.stl",
-            "__TYPE__": "Mesh"
-        },
-        {
-            "__ID__": "5_pmV5b",
+            "__ID__": "5_HtRKQ",
             "__PATH__": "res://assets/calf.stl",
             "__TYPE__": "Mesh"
         },
         {
-            "__ID__": "3_xCwJn",
-            "__PATH__": "res://assets/hip.stl",
-            "__TYPE__": "Mesh"
-        },
-        {
-            "__ID__": "2_Obiz7",
-            "__PATH__": "res://assets/trunk.stl",
-            "__TYPE__": "Mesh"
-        },
-        {
-            "__ID__": "4_TcRPE",
+            "__ID__": "4_cZfNQ",
             "__PATH__": "res://assets/thigh_mirror.stl",
             "__TYPE__": "Mesh"
         },
         {
-            "__ID__": "1_vEfgc",
+            "__ID__": "3_Ousab",
+            "__PATH__": "res://assets/hip.stl",
+            "__TYPE__": "Mesh"
+        },
+        {
+            "__ID__": "6_Rra9b",
+            "__PATH__": "res://assets/thigh.stl",
+            "__TYPE__": "Mesh"
+        },
+        {
+            "__ID__": "2_HsKUQ",
+            "__PATH__": "res://assets/trunk.stl",
+            "__TYPE__": "Mesh"
+        },
+        {
+            "__ID__": "1_iLCD2",
             "__PATH__": "res://scripts/go1.py",
             "__TYPE__": "PythonScript"
         }
@@ -71,7 +71,7 @@
                         ]
                     }
                 },
-                "script": "ExtResource(1_vEfgc)",
+                "script": "ExtResource(1_iLCD2)",
                 "source_path": "/home/wqq/gobot/examples/go1/go1_scene.xml",
                 "visible": true
             },
@@ -106,7 +106,7 @@
                         "storage": [
                             0.0,
                             0.0,
-                            0.0
+                            0.27000001072883606
                         ]
                     }
                 },
@@ -185,7 +185,7 @@
                         "storage": [
                             0.0,
                             0.0,
-                            0.4449999928474426
+                            0.0
                         ]
                     }
                 },
@@ -221,8 +221,8 @@
             "name": "trunk_visual_1",
             "parent": 2,
             "properties": {
-                "material": "SubResource(PBRMaterial3D_TTddP)",
-                "mesh": "ExtResource(2_Obiz7)",
+                "material": "SubResource(PBRMaterial3D_lx8tV)",
+                "mesh": "ExtResource(2_HsKUQ)",
                 "position": {
                     "matrix_data": {
                         "cols": 1,
@@ -259,9 +259,9 @@
                 "script": null,
                 "surface_color": {
                     "alpha": 1.0,
-                    "blue": 0.5,
-                    "green": 0.5,
-                    "red": 0.5
+                    "blue": 0.20000000298023224,
+                    "green": 0.20000000298023224,
+                    "red": 0.20000000298023224
                 },
                 "visible": true
             },
@@ -306,8 +306,8 @@
                     }
                 },
                 "script": null,
-                "shape": "SubResource(BoxShape3D_0qiI1)",
-                "visible": true
+                "shape": "SubResource(BoxShape3D_3C9uS)",
+                "visible": false
             },
             "type": "CollisionShape3D"
         },
@@ -350,8 +350,8 @@
                     }
                 },
                 "script": null,
-                "shape": "SubResource(SphereShape3D_hv0dY)",
-                "visible": true
+                "shape": "SubResource(SphereShape3D_IjRwK)",
+                "visible": false
             },
             "type": "CollisionShape3D"
         },
@@ -382,8 +382,8 @@
                         "cols": 1,
                         "rows": 3,
                         "storage": [
-                            0.0,
-                            0.0,
+                            0.18809999525547028,
+                            -0.04675000160932541,
                             0.0
                         ]
                     }
@@ -461,8 +461,8 @@
                         "cols": 1,
                         "rows": 3,
                         "storage": [
-                            0.18809999525547028,
-                            -0.04675000160932541,
+                            0.0,
+                            0.0,
                             0.0
                         ]
                     }
@@ -499,8 +499,8 @@
             "name": "hip_visual_4",
             "parent": 7,
             "properties": {
-                "material": "SubResource(PBRMaterial3D_ZhsnS)",
-                "mesh": "ExtResource(3_xCwJn)",
+                "material": "SubResource(PBRMaterial3D_jb6yF)",
+                "mesh": "ExtResource(3_Ousab)",
                 "position": {
                     "matrix_data": {
                         "cols": 1,
@@ -537,9 +537,9 @@
                 "script": null,
                 "surface_color": {
                     "alpha": 1.0,
-                    "blue": 0.5,
-                    "green": 0.5,
-                    "red": 0.5
+                    "blue": 0.20000000298023224,
+                    "green": 0.20000000298023224,
+                    "red": 0.20000000298023224
                 },
                 "visible": true
             },
@@ -584,8 +584,8 @@
                     }
                 },
                 "script": null,
-                "shape": "SubResource(CylinderShape3D_sPOzg)",
-                "visible": true
+                "shape": "SubResource(CylinderShape3D_0ZVJ4)",
+                "visible": false
             },
             "type": "CollisionShape3D"
         },
@@ -607,7 +607,7 @@
                 "child_link": "FR_thigh",
                 "damping": 0.0,
                 "effort_limit": 0.0,
-                "joint_position": 0.0,
+                "joint_position": 0.8999999761581421,
                 "joint_type": "Revolute",
                 "lower_limit": -0.6859999895095825,
                 "parent_link": "FR_hip",
@@ -617,7 +617,7 @@
                         "rows": 3,
                         "storage": [
                             0.0,
-                            0.0,
+                            -0.08000000566244125,
                             0.0
                         ]
                     }
@@ -628,8 +628,8 @@
                         "rows": 3,
                         "storage": [
                             -0.0,
-                            0.0,
-                            -0.0
+                            51.566200256347656,
+                            0.0
                         ]
                     }
                 },
@@ -696,7 +696,7 @@
                         "rows": 3,
                         "storage": [
                             0.0,
-                            -0.07999999821186066,
+                            0.0,
                             0.0
                         ]
                     }
@@ -733,8 +733,8 @@
             "name": "thigh_mirror_visual_6",
             "parent": 11,
             "properties": {
-                "material": "SubResource(PBRMaterial3D_uUJFO)",
-                "mesh": "ExtResource(4_TcRPE)",
+                "material": "SubResource(PBRMaterial3D_imbcr)",
+                "mesh": "ExtResource(4_cZfNQ)",
                 "position": {
                     "matrix_data": {
                         "cols": 1,
@@ -771,9 +771,9 @@
                 "script": null,
                 "surface_color": {
                     "alpha": 1.0,
-                    "blue": 0.5,
-                    "green": 0.5,
-                    "red": 0.5
+                    "blue": 0.20000000298023224,
+                    "green": 0.20000000298023224,
+                    "red": 0.20000000298023224
                 },
                 "visible": true
             },
@@ -818,8 +818,8 @@
                     }
                 },
                 "script": null,
-                "shape": "SubResource(CylinderShape3D_kuxJl)",
-                "visible": true
+                "shape": "SubResource(CylinderShape3D_clmHw)",
+                "visible": false
             },
             "type": "CollisionShape3D"
         },
@@ -862,8 +862,8 @@
                     }
                 },
                 "script": null,
-                "shape": "SubResource(CylinderShape3D_Ma3DJ)",
-                "visible": true
+                "shape": "SubResource(CylinderShape3D_J1qIL)",
+                "visible": false
             },
             "type": "CollisionShape3D"
         },
@@ -906,8 +906,8 @@
                     }
                 },
                 "script": null,
-                "shape": "SubResource(CylinderShape3D_tU1Kf)",
-                "visible": true
+                "shape": "SubResource(CylinderShape3D_8aEel)",
+                "visible": false
             },
             "type": "CollisionShape3D"
         },
@@ -929,7 +929,7 @@
                 "child_link": "FR_calf",
                 "damping": 0.0,
                 "effort_limit": 0.0,
-                "joint_position": -0.8880000114440918,
+                "joint_position": -1.7999999523162842,
                 "joint_type": "Revolute",
                 "lower_limit": -2.818000078201294,
                 "parent_link": "FR_thigh",
@@ -940,7 +940,7 @@
                         "storage": [
                             0.0,
                             0.0,
-                            0.0
+                            -0.21299999952316284
                         ]
                     }
                 },
@@ -950,7 +950,7 @@
                         "rows": 3,
                         "storage": [
                             -0.0,
-                            0.0,
+                            -103.13240051269531,
                             -0.0
                         ]
                     }
@@ -1019,7 +1019,7 @@
                         "storage": [
                             0.0,
                             0.0,
-                            -0.21299999952316284
+                            0.0
                         ]
                     }
                 },
@@ -1029,9 +1029,9 @@
                         "cols": 1,
                         "rows": 3,
                         "storage": [
-                            -0.0,
                             0.0,
-                            -0.0
+                            0.0,
+                            0.0
                         ]
                     }
                 },
@@ -1055,8 +1055,8 @@
             "name": "calf_visual_10",
             "parent": 17,
             "properties": {
-                "material": "SubResource(PBRMaterial3D_1bgog)",
-                "mesh": "ExtResource(5_pmV5b)",
+                "material": "SubResource(PBRMaterial3D_cy9mq)",
+                "mesh": "ExtResource(5_HtRKQ)",
                 "position": {
                     "matrix_data": {
                         "cols": 1,
@@ -1093,9 +1093,9 @@
                 "script": null,
                 "surface_color": {
                     "alpha": 1.0,
-                    "blue": 0.5,
-                    "green": 0.5,
-                    "red": 0.5
+                    "blue": 0.20000000298023224,
+                    "green": 0.20000000298023224,
+                    "red": 0.20000000298023224
                 },
                 "visible": true
             },
@@ -1140,8 +1140,8 @@
                     }
                 },
                 "script": null,
-                "shape": "SubResource(CylinderShape3D_2Dd5F)",
-                "visible": true
+                "shape": "SubResource(CylinderShape3D_6cFgv)",
+                "visible": false
             },
             "type": "CollisionShape3D"
         },
@@ -1184,8 +1184,8 @@
                     }
                 },
                 "script": null,
-                "shape": "SubResource(CylinderShape3D_WLuMI)",
-                "visible": true
+                "shape": "SubResource(CylinderShape3D_kmTh3)",
+                "visible": false
             },
             "type": "CollisionShape3D"
         },
@@ -1228,8 +1228,8 @@
                     }
                 },
                 "script": null,
-                "shape": "SubResource(SphereShape3D_Rjl7a)",
-                "visible": true
+                "shape": "SubResource(SphereShape3D_xYRgl)",
+                "visible": false
             },
             "type": "CollisionShape3D"
         },
@@ -1260,8 +1260,8 @@
                         "cols": 1,
                         "rows": 3,
                         "storage": [
-                            0.0,
-                            0.0,
+                            0.18809999525547028,
+                            0.04675000160932541,
                             0.0
                         ]
                     }
@@ -1339,8 +1339,8 @@
                         "cols": 1,
                         "rows": 3,
                         "storage": [
-                            0.18809999525547028,
-                            0.04675000160932541,
+                            0.0,
+                            0.0,
                             0.0
                         ]
                     }
@@ -1377,8 +1377,8 @@
             "name": "hip_visual_14",
             "parent": 23,
             "properties": {
-                "material": "SubResource(PBRMaterial3D_TTeoA)",
-                "mesh": "ExtResource(3_xCwJn)",
+                "material": "SubResource(PBRMaterial3D_qDWoD)",
+                "mesh": "ExtResource(3_Ousab)",
                 "position": {
                     "matrix_data": {
                         "cols": 1,
@@ -1415,9 +1415,9 @@
                 "script": null,
                 "surface_color": {
                     "alpha": 1.0,
-                    "blue": 0.5,
-                    "green": 0.5,
-                    "red": 0.5
+                    "blue": 0.20000000298023224,
+                    "green": 0.20000000298023224,
+                    "red": 0.20000000298023224
                 },
                 "visible": true
             },
@@ -1462,8 +1462,8 @@
                     }
                 },
                 "script": null,
-                "shape": "SubResource(CylinderShape3D_8SLAS)",
-                "visible": true
+                "shape": "SubResource(CylinderShape3D_Ct1Fe)",
+                "visible": false
             },
             "type": "CollisionShape3D"
         },
@@ -1485,7 +1485,7 @@
                 "child_link": "FL_thigh",
                 "damping": 0.0,
                 "effort_limit": 0.0,
-                "joint_position": 0.0,
+                "joint_position": 0.8999999761581421,
                 "joint_type": "Revolute",
                 "lower_limit": -0.6859999895095825,
                 "parent_link": "FL_hip",
@@ -1495,7 +1495,7 @@
                         "rows": 3,
                         "storage": [
                             0.0,
-                            0.0,
+                            0.08000000566244125,
                             0.0
                         ]
                     }
@@ -1506,8 +1506,8 @@
                         "rows": 3,
                         "storage": [
                             -0.0,
-                            0.0,
-                            -0.0
+                            51.566200256347656,
+                            0.0
                         ]
                     }
                 },
@@ -1574,7 +1574,7 @@
                         "rows": 3,
                         "storage": [
                             0.0,
-                            0.07999999821186066,
+                            0.0,
                             0.0
                         ]
                     }
@@ -1611,8 +1611,8 @@
             "name": "thigh_visual_16",
             "parent": 27,
             "properties": {
-                "material": "SubResource(PBRMaterial3D_Hb1wH)",
-                "mesh": "ExtResource(6_VmD8h)",
+                "material": "SubResource(PBRMaterial3D_YGyjS)",
+                "mesh": "ExtResource(6_Rra9b)",
                 "position": {
                     "matrix_data": {
                         "cols": 1,
@@ -1649,9 +1649,9 @@
                 "script": null,
                 "surface_color": {
                     "alpha": 1.0,
-                    "blue": 0.5,
-                    "green": 0.5,
-                    "red": 0.5
+                    "blue": 0.20000000298023224,
+                    "green": 0.20000000298023224,
+                    "red": 0.20000000298023224
                 },
                 "visible": true
             },
@@ -1696,8 +1696,8 @@
                     }
                 },
                 "script": null,
-                "shape": "SubResource(CylinderShape3D_EwEN4)",
-                "visible": true
+                "shape": "SubResource(CylinderShape3D_Upedc)",
+                "visible": false
             },
             "type": "CollisionShape3D"
         },
@@ -1740,8 +1740,8 @@
                     }
                 },
                 "script": null,
-                "shape": "SubResource(CylinderShape3D_ZemHQ)",
-                "visible": true
+                "shape": "SubResource(CylinderShape3D_IcDHh)",
+                "visible": false
             },
             "type": "CollisionShape3D"
         },
@@ -1784,8 +1784,8 @@
                     }
                 },
                 "script": null,
-                "shape": "SubResource(CylinderShape3D_lAkVe)",
-                "visible": true
+                "shape": "SubResource(CylinderShape3D_OKa3w)",
+                "visible": false
             },
             "type": "CollisionShape3D"
         },
@@ -1807,7 +1807,7 @@
                 "child_link": "FL_calf",
                 "damping": 0.0,
                 "effort_limit": 0.0,
-                "joint_position": -0.8880000114440918,
+                "joint_position": -1.7999999523162842,
                 "joint_type": "Revolute",
                 "lower_limit": -2.818000078201294,
                 "parent_link": "FL_thigh",
@@ -1818,7 +1818,7 @@
                         "storage": [
                             0.0,
                             0.0,
-                            0.0
+                            -0.21299999952316284
                         ]
                     }
                 },
@@ -1828,7 +1828,7 @@
                         "rows": 3,
                         "storage": [
                             -0.0,
-                            0.0,
+                            -103.13240051269531,
                             -0.0
                         ]
                     }
@@ -1897,7 +1897,7 @@
                         "storage": [
                             0.0,
                             0.0,
-                            -0.21299999952316284
+                            0.0
                         ]
                     }
                 },
@@ -1907,9 +1907,9 @@
                         "cols": 1,
                         "rows": 3,
                         "storage": [
-                            -0.0,
                             0.0,
-                            -0.0
+                            0.0,
+                            0.0
                         ]
                     }
                 },
@@ -1933,8 +1933,8 @@
             "name": "calf_visual_20",
             "parent": 33,
             "properties": {
-                "material": "SubResource(PBRMaterial3D_3hs4N)",
-                "mesh": "ExtResource(5_pmV5b)",
+                "material": "SubResource(PBRMaterial3D_aAtlI)",
+                "mesh": "ExtResource(5_HtRKQ)",
                 "position": {
                     "matrix_data": {
                         "cols": 1,
@@ -1971,9 +1971,9 @@
                 "script": null,
                 "surface_color": {
                     "alpha": 1.0,
-                    "blue": 0.5,
-                    "green": 0.5,
-                    "red": 0.5
+                    "blue": 0.20000000298023224,
+                    "green": 0.20000000298023224,
+                    "red": 0.20000000298023224
                 },
                 "visible": true
             },
@@ -2018,8 +2018,8 @@
                     }
                 },
                 "script": null,
-                "shape": "SubResource(CylinderShape3D_IZtfV)",
-                "visible": true
+                "shape": "SubResource(CylinderShape3D_F0TEF)",
+                "visible": false
             },
             "type": "CollisionShape3D"
         },
@@ -2062,8 +2062,8 @@
                     }
                 },
                 "script": null,
-                "shape": "SubResource(CylinderShape3D_gJxp3)",
-                "visible": true
+                "shape": "SubResource(CylinderShape3D_MCKha)",
+                "visible": false
             },
             "type": "CollisionShape3D"
         },
@@ -2106,8 +2106,8 @@
                     }
                 },
                 "script": null,
-                "shape": "SubResource(SphereShape3D_0bGc2)",
-                "visible": true
+                "shape": "SubResource(SphereShape3D_IPlhN)",
+                "visible": false
             },
             "type": "CollisionShape3D"
         },
@@ -2138,8 +2138,8 @@
                         "cols": 1,
                         "rows": 3,
                         "storage": [
-                            0.0,
-                            0.0,
+                            -0.18809999525547028,
+                            -0.04675000160932541,
                             0.0
                         ]
                     }
@@ -2217,8 +2217,8 @@
                         "cols": 1,
                         "rows": 3,
                         "storage": [
-                            -0.18809999525547028,
-                            -0.04675000160932541,
+                            0.0,
+                            0.0,
                             0.0
                         ]
                     }
@@ -2255,8 +2255,8 @@
             "name": "hip_visual_24",
             "parent": 39,
             "properties": {
-                "material": "SubResource(PBRMaterial3D_mRknx)",
-                "mesh": "ExtResource(3_xCwJn)",
+                "material": "SubResource(PBRMaterial3D_76jse)",
+                "mesh": "ExtResource(3_Ousab)",
                 "position": {
                     "matrix_data": {
                         "cols": 1,
@@ -2293,9 +2293,9 @@
                 "script": null,
                 "surface_color": {
                     "alpha": 1.0,
-                    "blue": 0.5,
-                    "green": 0.5,
-                    "red": 0.5
+                    "blue": 0.20000000298023224,
+                    "green": 0.20000000298023224,
+                    "red": 0.20000000298023224
                 },
                 "visible": true
             },
@@ -2340,8 +2340,8 @@
                     }
                 },
                 "script": null,
-                "shape": "SubResource(CylinderShape3D_r7wf5)",
-                "visible": true
+                "shape": "SubResource(CylinderShape3D_i5l8B)",
+                "visible": false
             },
             "type": "CollisionShape3D"
         },
@@ -2363,7 +2363,7 @@
                 "child_link": "RR_thigh",
                 "damping": 0.0,
                 "effort_limit": 0.0,
-                "joint_position": 0.0,
+                "joint_position": 0.8999999761581421,
                 "joint_type": "Revolute",
                 "lower_limit": -0.6859999895095825,
                 "parent_link": "RR_hip",
@@ -2373,7 +2373,7 @@
                         "rows": 3,
                         "storage": [
                             0.0,
-                            0.0,
+                            -0.08000000566244125,
                             0.0
                         ]
                     }
@@ -2384,8 +2384,8 @@
                         "rows": 3,
                         "storage": [
                             -0.0,
-                            0.0,
-                            -0.0
+                            51.566200256347656,
+                            0.0
                         ]
                     }
                 },
@@ -2452,7 +2452,7 @@
                         "rows": 3,
                         "storage": [
                             0.0,
-                            -0.07999999821186066,
+                            0.0,
                             0.0
                         ]
                     }
@@ -2489,8 +2489,8 @@
             "name": "thigh_mirror_visual_26",
             "parent": 43,
             "properties": {
-                "material": "SubResource(PBRMaterial3D_kYD6s)",
-                "mesh": "ExtResource(4_TcRPE)",
+                "material": "SubResource(PBRMaterial3D_RsoLI)",
+                "mesh": "ExtResource(4_cZfNQ)",
                 "position": {
                     "matrix_data": {
                         "cols": 1,
@@ -2527,9 +2527,9 @@
                 "script": null,
                 "surface_color": {
                     "alpha": 1.0,
-                    "blue": 0.5,
-                    "green": 0.5,
-                    "red": 0.5
+                    "blue": 0.20000000298023224,
+                    "green": 0.20000000298023224,
+                    "red": 0.20000000298023224
                 },
                 "visible": true
             },
@@ -2574,8 +2574,8 @@
                     }
                 },
                 "script": null,
-                "shape": "SubResource(CylinderShape3D_K6wmc)",
-                "visible": true
+                "shape": "SubResource(CylinderShape3D_Os29c)",
+                "visible": false
             },
             "type": "CollisionShape3D"
         },
@@ -2618,8 +2618,8 @@
                     }
                 },
                 "script": null,
-                "shape": "SubResource(CylinderShape3D_GATRV)",
-                "visible": true
+                "shape": "SubResource(CylinderShape3D_xhHQs)",
+                "visible": false
             },
             "type": "CollisionShape3D"
         },
@@ -2662,8 +2662,8 @@
                     }
                 },
                 "script": null,
-                "shape": "SubResource(CylinderShape3D_BIQ5n)",
-                "visible": true
+                "shape": "SubResource(CylinderShape3D_a05Cl)",
+                "visible": false
             },
             "type": "CollisionShape3D"
         },
@@ -2685,7 +2685,7 @@
                 "child_link": "RR_calf",
                 "damping": 0.0,
                 "effort_limit": 0.0,
-                "joint_position": -0.8880000114440918,
+                "joint_position": -1.7999999523162842,
                 "joint_type": "Revolute",
                 "lower_limit": -2.818000078201294,
                 "parent_link": "RR_thigh",
@@ -2696,7 +2696,7 @@
                         "storage": [
                             0.0,
                             0.0,
-                            0.0
+                            -0.21300002932548523
                         ]
                     }
                 },
@@ -2706,7 +2706,7 @@
                         "rows": 3,
                         "storage": [
                             -0.0,
-                            0.0,
+                            -103.13240051269531,
                             -0.0
                         ]
                     }
@@ -2775,7 +2775,7 @@
                         "storage": [
                             0.0,
                             0.0,
-                            -0.21299999952316284
+                            0.0
                         ]
                     }
                 },
@@ -2785,9 +2785,9 @@
                         "cols": 1,
                         "rows": 3,
                         "storage": [
-                            -0.0,
                             0.0,
-                            -0.0
+                            0.0,
+                            0.0
                         ]
                     }
                 },
@@ -2811,8 +2811,8 @@
             "name": "calf_visual_30",
             "parent": 49,
             "properties": {
-                "material": "SubResource(PBRMaterial3D_dg7zB)",
-                "mesh": "ExtResource(5_pmV5b)",
+                "material": "SubResource(PBRMaterial3D_QGQB8)",
+                "mesh": "ExtResource(5_HtRKQ)",
                 "position": {
                     "matrix_data": {
                         "cols": 1,
@@ -2849,9 +2849,9 @@
                 "script": null,
                 "surface_color": {
                     "alpha": 1.0,
-                    "blue": 0.5,
-                    "green": 0.5,
-                    "red": 0.5
+                    "blue": 0.20000000298023224,
+                    "green": 0.20000000298023224,
+                    "red": 0.20000000298023224
                 },
                 "visible": true
             },
@@ -2896,8 +2896,8 @@
                     }
                 },
                 "script": null,
-                "shape": "SubResource(CylinderShape3D_EzWtp)",
-                "visible": true
+                "shape": "SubResource(CylinderShape3D_SJQU3)",
+                "visible": false
             },
             "type": "CollisionShape3D"
         },
@@ -2940,8 +2940,8 @@
                     }
                 },
                 "script": null,
-                "shape": "SubResource(CylinderShape3D_MsAWH)",
-                "visible": true
+                "shape": "SubResource(CylinderShape3D_WgnUF)",
+                "visible": false
             },
             "type": "CollisionShape3D"
         },
@@ -2984,8 +2984,8 @@
                     }
                 },
                 "script": null,
-                "shape": "SubResource(SphereShape3D_i7FfQ)",
-                "visible": true
+                "shape": "SubResource(SphereShape3D_pa9y8)",
+                "visible": false
             },
             "type": "CollisionShape3D"
         },
@@ -3016,8 +3016,8 @@
                         "cols": 1,
                         "rows": 3,
                         "storage": [
-                            0.0,
-                            0.0,
+                            -0.18809999525547028,
+                            0.04675000160932541,
                             0.0
                         ]
                     }
@@ -3095,8 +3095,8 @@
                         "cols": 1,
                         "rows": 3,
                         "storage": [
-                            -0.18809999525547028,
-                            0.04675000160932541,
+                            0.0,
+                            0.0,
                             0.0
                         ]
                     }
@@ -3133,8 +3133,8 @@
             "name": "hip_visual_34",
             "parent": 55,
             "properties": {
-                "material": "SubResource(PBRMaterial3D_AldZW)",
-                "mesh": "ExtResource(3_xCwJn)",
+                "material": "SubResource(PBRMaterial3D_oqIgp)",
+                "mesh": "ExtResource(3_Ousab)",
                 "position": {
                     "matrix_data": {
                         "cols": 1,
@@ -3171,9 +3171,9 @@
                 "script": null,
                 "surface_color": {
                     "alpha": 1.0,
-                    "blue": 0.5,
-                    "green": 0.5,
-                    "red": 0.5
+                    "blue": 0.20000000298023224,
+                    "green": 0.20000000298023224,
+                    "red": 0.20000000298023224
                 },
                 "visible": true
             },
@@ -3218,8 +3218,8 @@
                     }
                 },
                 "script": null,
-                "shape": "SubResource(CylinderShape3D_8l7ge)",
-                "visible": true
+                "shape": "SubResource(CylinderShape3D_UZxIF)",
+                "visible": false
             },
             "type": "CollisionShape3D"
         },
@@ -3241,7 +3241,7 @@
                 "child_link": "RL_thigh",
                 "damping": 0.0,
                 "effort_limit": 0.0,
-                "joint_position": 0.0,
+                "joint_position": 0.8999999761581421,
                 "joint_type": "Revolute",
                 "lower_limit": -0.6859999895095825,
                 "parent_link": "RL_hip",
@@ -3251,7 +3251,7 @@
                         "rows": 3,
                         "storage": [
                             0.0,
-                            0.0,
+                            0.08000000566244125,
                             0.0
                         ]
                     }
@@ -3262,8 +3262,8 @@
                         "rows": 3,
                         "storage": [
                             -0.0,
-                            0.0,
-                            -0.0
+                            51.566200256347656,
+                            0.0
                         ]
                     }
                 },
@@ -3330,7 +3330,7 @@
                         "rows": 3,
                         "storage": [
                             0.0,
-                            0.07999999821186066,
+                            0.0,
                             0.0
                         ]
                     }
@@ -3367,8 +3367,8 @@
             "name": "thigh_visual_36",
             "parent": 59,
             "properties": {
-                "material": "SubResource(PBRMaterial3D_1mg5N)",
-                "mesh": "ExtResource(6_VmD8h)",
+                "material": "SubResource(PBRMaterial3D_SJxoo)",
+                "mesh": "ExtResource(6_Rra9b)",
                 "position": {
                     "matrix_data": {
                         "cols": 1,
@@ -3405,9 +3405,9 @@
                 "script": null,
                 "surface_color": {
                     "alpha": 1.0,
-                    "blue": 0.5,
-                    "green": 0.5,
-                    "red": 0.5
+                    "blue": 0.20000000298023224,
+                    "green": 0.20000000298023224,
+                    "red": 0.20000000298023224
                 },
                 "visible": true
             },
@@ -3452,8 +3452,8 @@
                     }
                 },
                 "script": null,
-                "shape": "SubResource(CylinderShape3D_JK6H6)",
-                "visible": true
+                "shape": "SubResource(CylinderShape3D_medfU)",
+                "visible": false
             },
             "type": "CollisionShape3D"
         },
@@ -3496,8 +3496,8 @@
                     }
                 },
                 "script": null,
-                "shape": "SubResource(CylinderShape3D_xKxXo)",
-                "visible": true
+                "shape": "SubResource(CylinderShape3D_ek71a)",
+                "visible": false
             },
             "type": "CollisionShape3D"
         },
@@ -3540,8 +3540,8 @@
                     }
                 },
                 "script": null,
-                "shape": "SubResource(CylinderShape3D_9Ojwk)",
-                "visible": true
+                "shape": "SubResource(CylinderShape3D_uOMbI)",
+                "visible": false
             },
             "type": "CollisionShape3D"
         },
@@ -3563,7 +3563,7 @@
                 "child_link": "RL_calf",
                 "damping": 0.0,
                 "effort_limit": 0.0,
-                "joint_position": -0.8880000114440918,
+                "joint_position": -1.7999999523162842,
                 "joint_type": "Revolute",
                 "lower_limit": -2.818000078201294,
                 "parent_link": "RL_thigh",
@@ -3574,7 +3574,7 @@
                         "storage": [
                             0.0,
                             0.0,
-                            0.0
+                            -0.21300002932548523
                         ]
                     }
                 },
@@ -3584,7 +3584,7 @@
                         "rows": 3,
                         "storage": [
                             -0.0,
-                            0.0,
+                            -103.13240051269531,
                             -0.0
                         ]
                     }
@@ -3653,7 +3653,7 @@
                         "storage": [
                             0.0,
                             0.0,
-                            -0.21299999952316284
+                            0.0
                         ]
                     }
                 },
@@ -3663,9 +3663,9 @@
                         "cols": 1,
                         "rows": 3,
                         "storage": [
-                            -0.0,
                             0.0,
-                            -0.0
+                            0.0,
+                            0.0
                         ]
                     }
                 },
@@ -3689,8 +3689,8 @@
             "name": "calf_visual_40",
             "parent": 65,
             "properties": {
-                "material": "SubResource(PBRMaterial3D_sXZjA)",
-                "mesh": "ExtResource(5_pmV5b)",
+                "material": "SubResource(PBRMaterial3D_PZZYb)",
+                "mesh": "ExtResource(5_HtRKQ)",
                 "position": {
                     "matrix_data": {
                         "cols": 1,
@@ -3727,9 +3727,9 @@
                 "script": null,
                 "surface_color": {
                     "alpha": 1.0,
-                    "blue": 0.5,
-                    "green": 0.5,
-                    "red": 0.5
+                    "blue": 0.20000000298023224,
+                    "green": 0.20000000298023224,
+                    "red": 0.20000000298023224
                 },
                 "visible": true
             },
@@ -3774,8 +3774,8 @@
                     }
                 },
                 "script": null,
-                "shape": "SubResource(CylinderShape3D_ahCJE)",
-                "visible": true
+                "shape": "SubResource(CylinderShape3D_wcQAd)",
+                "visible": false
             },
             "type": "CollisionShape3D"
         },
@@ -3818,8 +3818,8 @@
                     }
                 },
                 "script": null,
-                "shape": "SubResource(CylinderShape3D_BwE5S)",
-                "visible": true
+                "shape": "SubResource(CylinderShape3D_B0d0F)",
+                "visible": false
             },
             "type": "CollisionShape3D"
         },
@@ -3862,29 +3862,29 @@
                     }
                 },
                 "script": null,
-                "shape": "SubResource(SphereShape3D_h28bm)",
-                "visible": true
+                "shape": "SubResource(SphereShape3D_dE4Jt)",
+                "visible": false
             },
             "type": "CollisionShape3D"
         }
     ],
     "__SUB_RESOURCES__": [
         {
-            "__ID__": "PBRMaterial3D_TTddP",
+            "__ID__": "PBRMaterial3D_lx8tV",
             "__TYPE__": "PBRMaterial3D",
             "albedo": {
                 "alpha": 1.0,
-                "blue": 0.5,
-                "green": 0.5,
-                "red": 0.5
+                "blue": 0.20000000298023224,
+                "green": 0.20000000298023224,
+                "red": 0.20000000298023224
             },
             "metallic": 0.0,
             "resource_name": "",
-            "roughness": 0.5,
+            "roughness": 0.0,
             "specular": 0.5
         },
         {
-            "__ID__": "BoxShape3D_0qiI1",
+            "__ID__": "BoxShape3D_3C9uS",
             "__TYPE__": "BoxShape3D",
             "resource_name": "",
             "size": {
@@ -3900,367 +3900,367 @@
             }
         },
         {
-            "__ID__": "SphereShape3D_hv0dY",
+            "__ID__": "SphereShape3D_IjRwK",
             "__TYPE__": "SphereShape3D",
             "radius": 0.05999999865889549,
             "resource_name": ""
         },
         {
-            "__ID__": "PBRMaterial3D_ZhsnS",
+            "__ID__": "PBRMaterial3D_jb6yF",
             "__TYPE__": "PBRMaterial3D",
             "albedo": {
                 "alpha": 1.0,
-                "blue": 0.5,
-                "green": 0.5,
-                "red": 0.5
+                "blue": 0.20000000298023224,
+                "green": 0.20000000298023224,
+                "red": 0.20000000298023224
             },
             "metallic": 0.0,
             "resource_name": "",
-            "roughness": 0.5,
+            "roughness": 0.0,
             "specular": 0.5
         },
         {
-            "__ID__": "CylinderShape3D_sPOzg",
+            "__ID__": "CylinderShape3D_0ZVJ4",
             "__TYPE__": "CylinderShape3D",
             "height": 0.019999999552965164,
             "radius": 0.05000000074505806,
             "resource_name": ""
         },
         {
-            "__ID__": "PBRMaterial3D_uUJFO",
+            "__ID__": "PBRMaterial3D_imbcr",
             "__TYPE__": "PBRMaterial3D",
             "albedo": {
                 "alpha": 1.0,
-                "blue": 0.5,
-                "green": 0.5,
-                "red": 0.5
+                "blue": 0.20000000298023224,
+                "green": 0.20000000298023224,
+                "red": 0.20000000298023224
             },
             "metallic": 0.0,
             "resource_name": "",
-            "roughness": 0.5,
+            "roughness": 0.0,
             "specular": 0.5
         },
         {
-            "__ID__": "CylinderShape3D_kuxJl",
+            "__ID__": "CylinderShape3D_clmHw",
             "__TYPE__": "CylinderShape3D",
             "height": 0.1599999964237213,
             "radius": 0.014999999664723873,
             "resource_name": ""
         },
         {
-            "__ID__": "CylinderShape3D_Ma3DJ",
+            "__ID__": "CylinderShape3D_J1qIL",
             "__TYPE__": "CylinderShape3D",
             "height": 0.10198038816452026,
             "radius": 0.014999999664723873,
             "resource_name": ""
         },
         {
-            "__ID__": "CylinderShape3D_tU1Kf",
+            "__ID__": "CylinderShape3D_8aEel",
             "__TYPE__": "CylinderShape3D",
             "height": 0.04472136124968529,
             "radius": 0.014999999664723873,
             "resource_name": ""
         },
         {
-            "__ID__": "PBRMaterial3D_1bgog",
+            "__ID__": "PBRMaterial3D_cy9mq",
             "__TYPE__": "PBRMaterial3D",
             "albedo": {
                 "alpha": 1.0,
-                "blue": 0.5,
-                "green": 0.5,
-                "red": 0.5
+                "blue": 0.20000000298023224,
+                "green": 0.20000000298023224,
+                "red": 0.20000000298023224
             },
             "metallic": 0.0,
             "resource_name": "",
-            "roughness": 0.5,
+            "roughness": 0.0,
             "specular": 0.5
         },
         {
-            "__ID__": "CylinderShape3D_2Dd5F",
+            "__ID__": "CylinderShape3D_6cFgv",
             "__TYPE__": "CylinderShape3D",
             "height": 0.13152946531772614,
             "radius": 0.009999999776482582,
             "resource_name": ""
         },
         {
-            "__ID__": "CylinderShape3D_WLuMI",
+            "__ID__": "CylinderShape3D_kmTh3",
             "__TYPE__": "CylinderShape3D",
             "height": 0.07280109822750092,
             "radius": 0.009999999776482582,
             "resource_name": ""
         },
         {
-            "__ID__": "SphereShape3D_Rjl7a",
+            "__ID__": "SphereShape3D_xYRgl",
             "__TYPE__": "SphereShape3D",
             "radius": 0.023000000044703484,
             "resource_name": ""
         },
         {
-            "__ID__": "PBRMaterial3D_TTeoA",
+            "__ID__": "PBRMaterial3D_qDWoD",
             "__TYPE__": "PBRMaterial3D",
             "albedo": {
                 "alpha": 1.0,
-                "blue": 0.5,
-                "green": 0.5,
-                "red": 0.5
+                "blue": 0.20000000298023224,
+                "green": 0.20000000298023224,
+                "red": 0.20000000298023224
             },
             "metallic": 0.0,
             "resource_name": "",
-            "roughness": 0.5,
+            "roughness": 0.0,
             "specular": 0.5
         },
         {
-            "__ID__": "CylinderShape3D_8SLAS",
+            "__ID__": "CylinderShape3D_Ct1Fe",
             "__TYPE__": "CylinderShape3D",
             "height": 0.019999999552965164,
             "radius": 0.05000000074505806,
             "resource_name": ""
         },
         {
-            "__ID__": "PBRMaterial3D_Hb1wH",
+            "__ID__": "PBRMaterial3D_YGyjS",
             "__TYPE__": "PBRMaterial3D",
             "albedo": {
                 "alpha": 1.0,
-                "blue": 0.5,
-                "green": 0.5,
-                "red": 0.5
+                "blue": 0.20000000298023224,
+                "green": 0.20000000298023224,
+                "red": 0.20000000298023224
             },
             "metallic": 0.0,
             "resource_name": "",
-            "roughness": 0.5,
+            "roughness": 0.0,
             "specular": 0.5
         },
         {
-            "__ID__": "CylinderShape3D_EwEN4",
+            "__ID__": "CylinderShape3D_Upedc",
             "__TYPE__": "CylinderShape3D",
             "height": 0.1599999964237213,
             "radius": 0.014999999664723873,
             "resource_name": ""
         },
         {
-            "__ID__": "CylinderShape3D_ZemHQ",
+            "__ID__": "CylinderShape3D_IcDHh",
             "__TYPE__": "CylinderShape3D",
             "height": 0.10198038816452026,
             "radius": 0.014999999664723873,
             "resource_name": ""
         },
         {
-            "__ID__": "CylinderShape3D_lAkVe",
+            "__ID__": "CylinderShape3D_OKa3w",
             "__TYPE__": "CylinderShape3D",
             "height": 0.04472136124968529,
             "radius": 0.014999999664723873,
             "resource_name": ""
         },
         {
-            "__ID__": "PBRMaterial3D_3hs4N",
+            "__ID__": "PBRMaterial3D_aAtlI",
             "__TYPE__": "PBRMaterial3D",
             "albedo": {
                 "alpha": 1.0,
-                "blue": 0.5,
-                "green": 0.5,
-                "red": 0.5
+                "blue": 0.20000000298023224,
+                "green": 0.20000000298023224,
+                "red": 0.20000000298023224
             },
             "metallic": 0.0,
             "resource_name": "",
-            "roughness": 0.5,
+            "roughness": 0.0,
             "specular": 0.5
         },
         {
-            "__ID__": "CylinderShape3D_IZtfV",
+            "__ID__": "CylinderShape3D_F0TEF",
             "__TYPE__": "CylinderShape3D",
             "height": 0.13152946531772614,
             "radius": 0.009999999776482582,
             "resource_name": ""
         },
         {
-            "__ID__": "CylinderShape3D_gJxp3",
+            "__ID__": "CylinderShape3D_MCKha",
             "__TYPE__": "CylinderShape3D",
             "height": 0.07280109822750092,
             "radius": 0.009999999776482582,
             "resource_name": ""
         },
         {
-            "__ID__": "SphereShape3D_0bGc2",
+            "__ID__": "SphereShape3D_IPlhN",
             "__TYPE__": "SphereShape3D",
             "radius": 0.023000000044703484,
             "resource_name": ""
         },
         {
-            "__ID__": "PBRMaterial3D_mRknx",
+            "__ID__": "PBRMaterial3D_76jse",
             "__TYPE__": "PBRMaterial3D",
             "albedo": {
                 "alpha": 1.0,
-                "blue": 0.5,
-                "green": 0.5,
-                "red": 0.5
+                "blue": 0.20000000298023224,
+                "green": 0.20000000298023224,
+                "red": 0.20000000298023224
             },
             "metallic": 0.0,
             "resource_name": "",
-            "roughness": 0.5,
+            "roughness": 0.0,
             "specular": 0.5
         },
         {
-            "__ID__": "CylinderShape3D_r7wf5",
+            "__ID__": "CylinderShape3D_i5l8B",
             "__TYPE__": "CylinderShape3D",
             "height": 0.019999999552965164,
             "radius": 0.05000000074505806,
             "resource_name": ""
         },
         {
-            "__ID__": "PBRMaterial3D_kYD6s",
+            "__ID__": "PBRMaterial3D_RsoLI",
             "__TYPE__": "PBRMaterial3D",
             "albedo": {
                 "alpha": 1.0,
-                "blue": 0.5,
-                "green": 0.5,
-                "red": 0.5
+                "blue": 0.20000000298023224,
+                "green": 0.20000000298023224,
+                "red": 0.20000000298023224
             },
             "metallic": 0.0,
             "resource_name": "",
-            "roughness": 0.5,
+            "roughness": 0.0,
             "specular": 0.5
         },
         {
-            "__ID__": "CylinderShape3D_K6wmc",
+            "__ID__": "CylinderShape3D_Os29c",
             "__TYPE__": "CylinderShape3D",
             "height": 0.1599999964237213,
             "radius": 0.014999999664723873,
             "resource_name": ""
         },
         {
-            "__ID__": "CylinderShape3D_GATRV",
+            "__ID__": "CylinderShape3D_xhHQs",
             "__TYPE__": "CylinderShape3D",
             "height": 0.10198038816452026,
             "radius": 0.014999999664723873,
             "resource_name": ""
         },
         {
-            "__ID__": "CylinderShape3D_BIQ5n",
+            "__ID__": "CylinderShape3D_a05Cl",
             "__TYPE__": "CylinderShape3D",
             "height": 0.04472136124968529,
             "radius": 0.014999999664723873,
             "resource_name": ""
         },
         {
-            "__ID__": "PBRMaterial3D_dg7zB",
+            "__ID__": "PBRMaterial3D_QGQB8",
             "__TYPE__": "PBRMaterial3D",
             "albedo": {
                 "alpha": 1.0,
-                "blue": 0.5,
-                "green": 0.5,
-                "red": 0.5
+                "blue": 0.20000000298023224,
+                "green": 0.20000000298023224,
+                "red": 0.20000000298023224
             },
             "metallic": 0.0,
             "resource_name": "",
-            "roughness": 0.5,
+            "roughness": 0.0,
             "specular": 0.5
         },
         {
-            "__ID__": "CylinderShape3D_EzWtp",
+            "__ID__": "CylinderShape3D_SJQU3",
             "__TYPE__": "CylinderShape3D",
             "height": 0.13152946531772614,
             "radius": 0.009999999776482582,
             "resource_name": ""
         },
         {
-            "__ID__": "CylinderShape3D_MsAWH",
+            "__ID__": "CylinderShape3D_WgnUF",
             "__TYPE__": "CylinderShape3D",
             "height": 0.07280109822750092,
             "radius": 0.009999999776482582,
             "resource_name": ""
         },
         {
-            "__ID__": "SphereShape3D_i7FfQ",
+            "__ID__": "SphereShape3D_pa9y8",
             "__TYPE__": "SphereShape3D",
             "radius": 0.023000000044703484,
             "resource_name": ""
         },
         {
-            "__ID__": "PBRMaterial3D_AldZW",
+            "__ID__": "PBRMaterial3D_oqIgp",
             "__TYPE__": "PBRMaterial3D",
             "albedo": {
                 "alpha": 1.0,
-                "blue": 0.5,
-                "green": 0.5,
-                "red": 0.5
+                "blue": 0.20000000298023224,
+                "green": 0.20000000298023224,
+                "red": 0.20000000298023224
             },
             "metallic": 0.0,
             "resource_name": "",
-            "roughness": 0.5,
+            "roughness": 0.0,
             "specular": 0.5
         },
         {
-            "__ID__": "CylinderShape3D_8l7ge",
+            "__ID__": "CylinderShape3D_UZxIF",
             "__TYPE__": "CylinderShape3D",
             "height": 0.019999999552965164,
             "radius": 0.05000000074505806,
             "resource_name": ""
         },
         {
-            "__ID__": "PBRMaterial3D_1mg5N",
+            "__ID__": "PBRMaterial3D_SJxoo",
             "__TYPE__": "PBRMaterial3D",
             "albedo": {
                 "alpha": 1.0,
-                "blue": 0.5,
-                "green": 0.5,
-                "red": 0.5
+                "blue": 0.20000000298023224,
+                "green": 0.20000000298023224,
+                "red": 0.20000000298023224
             },
             "metallic": 0.0,
             "resource_name": "",
-            "roughness": 0.5,
+            "roughness": 0.0,
             "specular": 0.5
         },
         {
-            "__ID__": "CylinderShape3D_JK6H6",
+            "__ID__": "CylinderShape3D_medfU",
             "__TYPE__": "CylinderShape3D",
             "height": 0.1599999964237213,
             "radius": 0.014999999664723873,
             "resource_name": ""
         },
         {
-            "__ID__": "CylinderShape3D_xKxXo",
+            "__ID__": "CylinderShape3D_ek71a",
             "__TYPE__": "CylinderShape3D",
             "height": 0.10198038816452026,
             "radius": 0.014999999664723873,
             "resource_name": ""
         },
         {
-            "__ID__": "CylinderShape3D_9Ojwk",
+            "__ID__": "CylinderShape3D_uOMbI",
             "__TYPE__": "CylinderShape3D",
             "height": 0.04472136124968529,
             "radius": 0.014999999664723873,
             "resource_name": ""
         },
         {
-            "__ID__": "PBRMaterial3D_sXZjA",
+            "__ID__": "PBRMaterial3D_PZZYb",
             "__TYPE__": "PBRMaterial3D",
             "albedo": {
                 "alpha": 1.0,
-                "blue": 0.5,
-                "green": 0.5,
-                "red": 0.5
+                "blue": 0.20000000298023224,
+                "green": 0.20000000298023224,
+                "red": 0.20000000298023224
             },
             "metallic": 0.0,
             "resource_name": "",
-            "roughness": 0.5,
+            "roughness": 0.0,
             "specular": 0.5
         },
         {
-            "__ID__": "CylinderShape3D_ahCJE",
+            "__ID__": "CylinderShape3D_wcQAd",
             "__TYPE__": "CylinderShape3D",
             "height": 0.13152946531772614,
             "radius": 0.009999999776482582,
             "resource_name": ""
         },
         {
-            "__ID__": "CylinderShape3D_BwE5S",
+            "__ID__": "CylinderShape3D_B0d0F",
             "__TYPE__": "CylinderShape3D",
             "height": 0.07280109822750092,
             "radius": 0.009999999776482582,
             "resource_name": ""
         },
         {
-            "__ID__": "SphereShape3D_h28bm",
+            "__ID__": "SphereShape3D_dE4Jt",
             "__TYPE__": "SphereShape3D",
             "radius": 0.023000000044703484,
             "resource_name": ""

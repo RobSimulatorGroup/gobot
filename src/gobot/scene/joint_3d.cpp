@@ -113,12 +113,12 @@ RealType Joint3D::ClampJointPosition(RealType joint_position) const {
     return joint_position;
 }
 
-Affine3 Joint3D::GetJointMotionTransform() const {
+Affine3 Joint3D::GetJointMotionTransform(RealType joint_position) const {
     Affine3 motion = Affine3::Identity();
     if (joint_type_ == JointType::Revolute || joint_type_ == JointType::Continuous) {
-        motion.linear() = AngleAxis(joint_position_, axis_).toRotationMatrix();
+        motion.linear() = AngleAxis(joint_position, axis_).toRotationMatrix();
     } else if (joint_type_ == JointType::Prismatic) {
-        motion.translation() = axis_ * joint_position_;
+        motion.translation() = axis_ * joint_position;
     }
 
     return motion;
@@ -135,10 +135,12 @@ void Joint3D::ApplyJointMotion() {
 
     SetTransform(assembly_transform_);
 
-    const Affine3 motion = GetJointMotionTransform();
+    const Affine3 reference_motion = GetJointMotionTransform(motion_reference_position_);
+    const Affine3 current_motion = GetJointMotionTransform(joint_position_);
+    const Affine3 motion_delta = current_motion * reference_motion.inverse();
     for (const auto& [child, child_assembly_transform] : child_assembly_transforms_) {
         if (child) {
-            child->SetTransform(motion * child_assembly_transform);
+            child->SetTransform(motion_delta * child_assembly_transform);
         }
     }
 }
@@ -164,6 +166,7 @@ bool Joint3D::HasJointPositionLimits() const {
 
 void Joint3D::CaptureAssemblyPose() {
     assembly_transform_ = GetTransform();
+    motion_reference_position_ = joint_position_;
     child_assembly_transforms_.clear();
     child_assembly_transforms_.reserve(GetChildCount());
 

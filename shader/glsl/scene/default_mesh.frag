@@ -30,14 +30,15 @@ void main() {
     float specular = pow(n_dot_h, shininess) * (1.0 - roughness * 0.75);
 
     vec3 diffuse_color = u_color.rgb * (1.0 - metallic);
-    vec3 ambient_diffuse = diffuse_color * 0.18;
+    vec3 ambient_diffuse = diffuse_color * 0.30;
 
     vec3 sky_color = vec3(0.55, 0.62, 0.70);
     vec3 ground_color = vec3(0.08, 0.085, 0.09);
     float sky_mix = normal.z * 0.5 + 0.5;
     vec3 environment_color = mix(ground_color, sky_color, sky_mix);
+    vec3 environment_diffuse = diffuse_color * environment_color * 0.18;
     vec3 environment_specular = environment_color * fresnel * mix(0.20, 0.85, metallic) * (1.0 - roughness * 0.65);
 
-    vec3 lit = ambient_diffuse + diffuse_color * n_dot_l * 0.82 + fresnel * specular + environment_specular;
+    vec3 lit = ambient_diffuse + environment_diffuse + diffuse_color * n_dot_l * 0.82 + fresnel * specular + environment_specular;
     frag_color = vec4(lit, u_color.a);
 }

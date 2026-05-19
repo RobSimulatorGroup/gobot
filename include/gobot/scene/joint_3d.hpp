@@ -85,7 +85,7 @@ public:
 private:
     RealType ClampJointPosition(RealType joint_position) const;
 
-    Affine3 GetJointMotionTransform() const;
+    Affine3 GetJointMotionTransform(RealType joint_position) const;
 
     void ApplyJointMotion();
 
@@ -99,6 +99,7 @@ private:
     RealType velocity_limit_{0.0};
     RealType damping_{0.0};
     RealType joint_position_{0.0};
+    RealType motion_reference_position_{0.0};
     Affine3 assembly_transform_{Affine3::Identity()};
     std::vector<std::pair<Node3D*, Affine3>> child_assembly_transforms_;
     bool assembly_pose_valid_{false};
