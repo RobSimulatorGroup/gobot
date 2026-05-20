@@ -1,5 +1,8 @@
 #include <gtest/gtest.h>
 
+#include <filesystem>
+#include <fstream>
+
 #include <gobot/physics/physics_server.hpp>
 #include <gobot/scene/collision_shape_3d.hpp>
 #include <gobot/scene/joint_3d.hpp>
@@ -339,5 +342,47 @@ TEST(TestPhysicsServer, mujoco_world_reports_unavailable_when_not_built) {
 #ifndef GOBOT_HAS_MUJOCO
     EXPECT_FALSE(world->IsAvailable());
     EXPECT_FALSE(world->GetLastError().empty());
+#endif
+}
+
+TEST(TestPhysicsServer, mujoco_external_robot_source_keeps_existing_freejoint) {
+#ifdef GOBOT_HAS_MUJOCO
+    const std::filesystem::path xml_path =
+            std::filesystem::temp_directory_path() / "gobot_mujoco_existing_freejoint.xml";
+    {
+        std::ofstream file(xml_path);
+        ASSERT_TRUE(file.is_open());
+        file << R"(<mujoco model="free_base_bot">
+  <worldbody>
+    <body name="base" pos="0 0 0.2">
+      <freejoint name="floating_base_joint"/>
+      <geom name="base_collision" type="box" size="0.1 0.1 0.1"/>
+    </body>
+  </worldbody>
+</mujoco>)";
+    }
+
+    auto* robot = gobot::Object::New<gobot::Robot3D>();
+    robot->SetName("free_base_bot");
+    robot->SetSourcePath(xml_path.string());
+
+    auto* floating_joint = gobot::Object::New<gobot::Joint3D>();
+    floating_joint->SetName("floating_base_joint");
+    floating_joint->SetJointType(gobot::JointType::Floating);
+    floating_joint->SetChildLink("base");
+    robot->AddChild(floating_joint);
+
+    auto* base = gobot::Object::New<gobot::Link3D>();
+    base->SetName("base");
+    floating_joint->AddChild(base);
+
+    gobot::PhysicsServer physics_server(gobot::PhysicsBackendType::MuJoCoCpu);
+    gobot::Ref<gobot::PhysicsWorld> world = physics_server.CreateWorld();
+    ASSERT_TRUE(world->BuildFromScene(robot)) << world->GetLastError();
+    ASSERT_EQ(world->GetSceneState().robots.size(), 1);
+    ASSERT_EQ(world->GetSceneState().robots[0].joints.size(), 1);
+    EXPECT_EQ(world->GetSceneState().robots[0].joints[0].joint_name, "floating_base_joint");
+
+    gobot::Object::Delete(robot);
 #endif
 }

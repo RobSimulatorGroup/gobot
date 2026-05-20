@@ -1,0 +1,291 @@
+{
+    "__EXT_RESOURCES__": [
+        {
+            "__ID__": "2_Ekl80",
+            "__PATH__": "res://go1.jscn",
+            "__TYPE__": "PackedScene"
+        },
+        {
+            "__ID__": "1_1TdFX",
+            "__PATH__": "res://scripts/go1.py",
+            "__TYPE__": "PythonScript"
+        }
+    ],
+    "__META_TYPE__": "SCENE",
+    "__NODES__": [
+        {
+            "name": "go1_scene",
+            "parent": -1,
+            "properties": {
+                "position": {
+                    "matrix_data": {
+                        "cols": 1,
+                        "rows": 3,
+                        "storage": [
+                            0.0,
+                            0.0,
+                            0.0
+                        ]
+                    }
+                },
+                "rotation_degrees": {
+                    "matrix_data": {
+                        "cols": 1,
+                        "rows": 3,
+                        "storage": [
+                            0.0,
+                            0.0,
+                            0.0
+                        ]
+                    }
+                },
+                "scale": {
+                    "matrix_data": {
+                        "cols": 1,
+                        "rows": 3,
+                        "storage": [
+                            1.0,
+                            1.0,
+                            1.0
+                        ]
+                    }
+                },
+                "script": "ExtResource(1_1TdFX)",
+                "visible": true
+            },
+            "type": "Node3D"
+        },
+        {
+            "name": "ground",
+            "parent": 0,
+            "properties": {
+                "position": {
+                    "matrix_data": {
+                        "cols": 1,
+                        "rows": 3,
+                        "storage": [
+                            0.0,
+                            0.0,
+                            -0.009999999776482582
+                        ]
+                    }
+                },
+                "rotation_degrees": {
+                    "matrix_data": {
+                        "cols": 1,
+                        "rows": 3,
+                        "storage": [
+                            0.0,
+                            0.0,
+                            0.0
+                        ]
+                    }
+                },
+                "scale": {
+                    "matrix_data": {
+                        "cols": 1,
+                        "rows": 3,
+                        "storage": [
+                            1.0,
+                            1.0,
+                            1.0
+                        ]
+                    }
+                },
+                "script": null,
+                "visible": true
+            },
+            "type": "Node3D"
+        },
+        {
+            "name": "ground_visual",
+            "parent": 1,
+            "properties": {
+                "material": null,
+                "mesh": "SubResource(BoxMesh_8mln8)",
+                "position": {
+                    "matrix_data": {
+                        "cols": 1,
+                        "rows": 3,
+                        "storage": [
+                            0.0,
+                            0.0,
+                            0.0
+                        ]
+                    }
+                },
+                "rotation_degrees": {
+                    "matrix_data": {
+                        "cols": 1,
+                        "rows": 3,
+                        "storage": [
+                            0.0,
+                            0.0,
+                            0.0
+                        ]
+                    }
+                },
+                "scale": {
+                    "matrix_data": {
+                        "cols": 1,
+                        "rows": 3,
+                        "storage": [
+                            1.0,
+                            1.0,
+                            1.0
+                        ]
+                    }
+                },
+                "script": null,
+                "surface_color": {
+                    "alpha": 1.0,
+                    "blue": 0.800000011920929,
+                    "green": 0.800000011920929,
+                    "red": 0.800000011920929
+                },
+                "visible": true
+            },
+            "type": "MeshInstance3D"
+        },
+        {
+            "name": "ground_collision",
+            "parent": 1,
+            "properties": {
+                "disabled": false,
+                "position": {
+                    "matrix_data": {
+                        "cols": 1,
+                        "rows": 3,
+                        "storage": [
+                            0.0,
+                            0.0,
+                            0.0
+                        ]
+                    }
+                },
+                "rotation_degrees": {
+                    "matrix_data": {
+                        "cols": 1,
+                        "rows": 3,
+                        "storage": [
+                            0.0,
+                            0.0,
+                            0.0
+                        ]
+                    }
+                },
+                "scale": {
+                    "matrix_data": {
+                        "cols": 1,
+                        "rows": 3,
+                        "storage": [
+                            1.0,
+                            1.0,
+                            1.0
+                        ]
+                    }
+                },
+                "script": null,
+                "shape": "SubResource(BoxShape3D_Jr8qv)",
+                "visible": true
+            },
+            "type": "CollisionShape3D"
+        },
+        {
+            "instance": "ExtResource(2_Ekl80)",
+            "name": "go1",
+            "parent": 0,
+            "properties": {
+                "mode": "Assembly",
+                "position": {
+                    "matrix_data": {
+                        "cols": 1,
+                        "rows": 3,
+                        "storage": [
+                            0.0,
+                            0.0,
+                            0.0
+                        ]
+                    }
+                },
+                "rotation_degrees": {
+                    "matrix_data": {
+                        "cols": 1,
+                        "rows": 3,
+                        "storage": [
+                            0.0,
+                            0.0,
+                            0.0
+                        ]
+                    }
+                },
+                "scale": {
+                    "matrix_data": {
+                        "cols": 1,
+                        "rows": 3,
+                        "storage": [
+                            1.0,
+                            1.0,
+                            1.0
+                        ]
+                    }
+                },
+                "script": null,
+                "source_path": "res://go1.xml",
+                "visible": true
+            },
+            "type": "Robot3D"
+        }
+    ],
+    "__SUB_RESOURCES__": [
+        {
+            "__ID__": "PBRMaterial3D_zonSe",
+            "__TYPE__": "PBRMaterial3D",
+            "albedo": {
+                "alpha": 1.0,
+                "blue": 0.800000011920929,
+                "green": 0.800000011920929,
+                "red": 0.800000011920929
+            },
+            "metallic": 0.0,
+            "resource_name": "",
+            "roughness": 0.5,
+            "specular": 0.5
+        },
+        {
+            "__ID__": "BoxMesh_8mln8",
+            "__TYPE__": "BoxMesh",
+            "material": "SubResource(PBRMaterial3D_zonSe)",
+            "resource_name": "",
+            "size": {
+                "matrix_data": {
+                    "cols": 1,
+                    "rows": 3,
+                    "storage": [
+                        100.0,
+                        100.0,
+                        0.019999999552965164
+                    ]
+                }
+            }
+        },
+        {
+            "__ID__": "BoxShape3D_Jr8qv",
+            "__TYPE__": "BoxShape3D",
+            "resource_name": "",
+            "size": {
+                "matrix_data": {
+                    "cols": 1,
+                    "rows": 3,
+                    "storage": [
+                        100.0,
+                        100.0,
+                        0.019999999552965164
+                    ]
+                }
+            }
+        }
+    ],
+    "__TYPE__": "PackedScene",
+    "__VERSION__": 2
+}

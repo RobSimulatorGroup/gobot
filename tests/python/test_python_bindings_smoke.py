@@ -1,3 +1,7 @@
+import json
+import os
+import textwrap
+
 import gobot
 import numpy as np
 
@@ -169,6 +173,72 @@ def main():
     script = gobot.load_resource(script_path, "PythonScript")
     assert script["type"] == "PythonScript"
     assert "class Script" in script["source_code"]
+
+    mujoco_available = any(
+        info["name"] == "MuJoCo CPU" and info["available"]
+        for info in infos
+    )
+    if mujoco_available:
+        split_project = "/tmp/gobot_python_mjcf_split"
+        os.makedirs(split_project, exist_ok=True)
+        with open(os.path.join(split_project, "robot.xml"), "w", encoding="utf-8") as robot_file:
+            robot_file.write(
+                textwrap.dedent(
+                    """
+                    <mujoco model="test_bot">
+                      <worldbody>
+                        <body name="base" pos="0 0 0.2">
+                          <freejoint name="floating_base_joint"/>
+                          <geom name="base_collision" type="box" size="0.1 0.1 0.1"/>
+                        </body>
+                      </worldbody>
+                    </mujoco>
+                    """
+                ).strip()
+            )
+        with open(os.path.join(split_project, "world.xml"), "w", encoding="utf-8") as world_file:
+            world_file.write(
+                textwrap.dedent(
+                    """
+                    <mujoco model="test_world">
+                      <include file="robot.xml"/>
+                      <worldbody>
+                        <geom name="ground" type="plane" size="5 5 0.1" rgba="0.8 0.8 0.8 1"/>
+                      </worldbody>
+                    </mujoco>
+                    """
+                ).strip()
+            )
+        with open(os.path.join(split_project, "script.py"), "w", encoding="utf-8") as split_script_file:
+            split_script_file.write("class Script(gobot.NodeScript):\\n    pass\\n")
+
+        context.set_project_path(split_project)
+        gobot.import_mjcf_scene(
+            "res://world.xml",
+            "res://world.jscn",
+            name="world",
+            script="res://script.py",
+        )
+
+        with open(os.path.join(split_project, "world.jscn"), encoding="utf-8") as world_scene_file:
+            world_scene = json.load(world_scene_file)
+        ext_paths = {resource["__PATH__"] for resource in world_scene["__EXT_RESOURCES__"]}
+        assert "res://robot.jscn" in ext_paths
+        assert "res://script.py" in ext_paths
+        assert world_scene["__NODES__"][0]["name"] == "world"
+        assert world_scene["__NODES__"][0]["type"] == "Node3D"
+        assert str(world_scene["__NODES__"][0]["properties"]["script"]).startswith("ExtResource(")
+        assert any(node["name"] == "ground" and node["type"] == "Node3D" for node in world_scene["__NODES__"])
+        robot_instance_nodes = [node for node in world_scene["__NODES__"] if node["name"] == "test_bot"]
+        assert len(robot_instance_nodes) == 1
+        assert str(robot_instance_nodes[0]["instance"]).startswith("ExtResource(")
+        assert robot_instance_nodes[0]["properties"]["source_path"] == "res://robot.xml"
+
+        with open(os.path.join(split_project, "robot.jscn"), encoding="utf-8") as robot_scene_file:
+            robot_scene = json.load(robot_scene_file)
+        assert robot_scene["__NODES__"][0]["name"] == "test_bot"
+        assert robot_scene["__NODES__"][0]["type"] == "Robot3D"
+        assert robot_scene["__NODES__"][0]["properties"]["source_path"] == "res://robot.xml"
 
 
 if __name__ == "__main__":

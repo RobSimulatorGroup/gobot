@@ -995,16 +995,16 @@ void MuJoCoPhysicsWorld::AddFloatingBaseJointsToSpec(void* spec_ptr, const Physi
             continue;
         }
 
-        mjsJoint* free_joint = mjs_addFreeJoint(child_body);
-        if (!free_joint) {
-            LOG_WARN("Failed to add MuJoCo free joint for Gobot floating joint '{}'.", joint.name);
-            continue;
-        }
-
         const std::string free_joint_name = joint.name.empty()
                                                     ? fmt::format("{}_freejoint", joint.child_link)
                                                     : joint.name;
         if (mjs_findElement(spec, mjOBJ_JOINT, free_joint_name.c_str()) != nullptr) {
+            continue;
+        }
+
+        mjsJoint* free_joint = mjs_addFreeJoint(child_body);
+        if (!free_joint) {
+            LOG_WARN("Failed to add MuJoCo free joint for Gobot floating joint '{}'.", joint.name);
             continue;
         }
 

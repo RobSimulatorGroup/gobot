@@ -5,9 +5,13 @@
 #include <cstdint>
 #include <exception>
 #include <filesystem>
+#include <fstream>
 #include <functional>
+#include <iterator>
 #include <memory>
 #include <optional>
+#include <regex>
+#include <sstream>
 #include <stdexcept>
 #include <string>
 #include <unordered_map>
@@ -21,6 +25,7 @@
 #include "gobot/core/io/python_script.hpp"
 #include "gobot/core/io/resource_loader.hpp"
 #include "gobot/core/io/resource_saver.hpp"
+#include "gobot/core/string_utils.hpp"
 #include "gobot/main/engine_context.hpp"
 #include "gobot/physics/physics_types.hpp"
 #include "gobot/physics/physics_server.hpp"
@@ -34,6 +39,7 @@
 #include "gobot/scene/node_3d.hpp"
 #include "gobot/scene/node_creation_registry.hpp"
 #include "gobot/scene/resources/box_shape_3d.hpp"
+#include "gobot/scene/resources/material.hpp"
 #include "gobot/scene/resources/packed_scene.hpp"
 #include "gobot/scene/resources/primitive_mesh.hpp"
 #include "gobot/scene/robot_3d.hpp"
@@ -310,10 +316,184 @@ bool SaveSceneRoot(Node* root, const std::string& path) {
                                        ResourceSaverFlags::ChangePath);
 }
 
-void ImportMJCFScene(const std::string& xml_path,
-                     const std::string& scene_path,
-                     const std::optional<std::string>& name,
-                     const std::optional<std::string>& script_path) {
+std::string LocalizeResourcePath(const std::string& path) {
+    return ProjectSettings::GetInstance()->LocalizePath(path);
+}
+
+std::string GlobalizeResourcePath(const std::string& path) {
+    return ProjectSettings::GetInstance()->GlobalizePath(LocalizeResourcePath(path));
+}
+
+std::string ResourcePathStem(const std::string& path) {
+    return std::filesystem::path(GlobalizeResourcePath(path)).stem().string();
+}
+
+std::optional<std::string> ReadFirstMJCFIncludeFile(const std::string& xml_path) {
+    std::ifstream input(GlobalizeResourcePath(xml_path));
+    if (!input.is_open()) {
+        return std::nullopt;
+    }
+
+    const std::string xml((std::istreambuf_iterator<char>(input)), std::istreambuf_iterator<char>());
+    static const std::regex include_regex(R"gobot(<\s*include\b([^>]*)>)gobot", std::regex::icase);
+    static const std::regex file_regex(R"gobot(file\s*=\s*["']([^"']+)["'])gobot", std::regex::icase);
+
+    std::smatch include_match;
+    if (!std::regex_search(xml, include_match, include_regex)) {
+        return std::nullopt;
+    }
+
+    std::smatch file_match;
+    const std::string attributes = include_match.size() > 1 ? include_match[1].str() : std::string();
+    if (!std::regex_search(attributes, file_match, file_regex) || file_match.size() < 2) {
+        return std::nullopt;
+    }
+
+    return file_match[1].str();
+}
+
+std::string GetXmlAttribute(const std::string& attributes, const std::string& name) {
+    const std::regex attr_regex("(^|[[:space:]])" + name + R"(\s*=\s*["']([^"']*)["'])", std::regex::icase);
+    std::smatch match;
+    if (!std::regex_search(attributes, match, attr_regex) || match.size() < 3) {
+        return {};
+    }
+    return match[2].str();
+}
+
+std::vector<RealType> ParseRealList(const std::string& text) {
+    std::vector<RealType> values;
+    std::istringstream input(text);
+    RealType value{};
+    while (input >> value) {
+        values.push_back(value);
+    }
+    return values;
+}
+
+Color ParseColorOrDefault(const std::string& text, const Color& fallback) {
+    const std::vector<RealType> values = ParseRealList(text);
+    if (values.size() < 3) {
+        return fallback;
+    }
+    return Color(static_cast<float>(values[0]),
+                 static_cast<float>(values[1]),
+                 static_cast<float>(values[2]),
+                 values.size() >= 4 ? static_cast<float>(values[3]) : 1.0f);
+}
+
+std::vector<std::pair<std::string, std::string>> ReadMJCFPlaneGeoms(const std::string& xml_path) {
+    std::ifstream input(GlobalizeResourcePath(xml_path));
+    if (!input.is_open()) {
+        return {};
+    }
+
+    const std::string xml((std::istreambuf_iterator<char>(input)), std::istreambuf_iterator<char>());
+    static const std::regex geom_regex(R"gobot(<\s*geom\b([^>]*)>)gobot", std::regex::icase);
+
+    std::vector<std::pair<std::string, std::string>> plane_geoms;
+    auto begin = std::sregex_iterator(xml.begin(), xml.end(), geom_regex);
+    auto end = std::sregex_iterator();
+    for (auto iter = begin; iter != end; ++iter) {
+        const std::string attributes = iter->size() > 1 ? (*iter)[1].str() : std::string();
+        if (ToLower(GetXmlAttribute(attributes, "type")) != "plane") {
+            continue;
+        }
+
+        std::string name = GetXmlAttribute(attributes, "name");
+        if (name.empty()) {
+            name = "ground";
+        }
+        plane_geoms.emplace_back(std::move(name), attributes);
+    }
+    return plane_geoms;
+}
+
+std::optional<std::string> ResolveFirstMJCFIncludeResourcePath(const std::string& xml_path) {
+    std::optional<std::string> include_file = ReadFirstMJCFIncludeFile(xml_path);
+    if (!include_file.has_value() || include_file->empty()) {
+        return std::nullopt;
+    }
+
+    if (include_file->find("://") != std::string::npos || IsAbsolutePath(*include_file)) {
+        return LocalizeResourcePath(*include_file);
+    }
+
+    const std::string local_xml_path = LocalizeResourcePath(xml_path);
+    return SimplifyPath(PathJoin(GetBaseDir(local_xml_path), *include_file));
+}
+
+std::string MakeIncludedScenePath(const std::string& scene_path, const std::string& included_xml_path) {
+    const std::string local_scene_path = LocalizeResourcePath(scene_path);
+    return SimplifyPath(PathJoin(GetBaseDir(local_scene_path), ResourcePathStem(included_xml_path) + ".jscn"));
+}
+
+void AddMJCFScenePlaneGeoms(Node3D* scene_root, const std::string& xml_path) {
+    if (scene_root == nullptr) {
+        return;
+    }
+
+    for (const auto& [name, attributes] : ReadMJCFPlaneGeoms(xml_path)) {
+        const std::vector<RealType> size_values = ParseRealList(GetXmlAttribute(attributes, "size"));
+        const RealType size_x = size_values.size() >= 1 ? size_values[0] : 50.0;
+        const RealType size_y = size_values.size() >= 2 ? size_values[1] : size_x;
+        constexpr RealType kGroundThickness = 0.02;
+        const Vector3 ground_size{
+                std::max<RealType>(size_x * 2.0, 0.01),
+                std::max<RealType>(size_y * 2.0, 0.01),
+                kGroundThickness};
+        const std::vector<RealType> pos_values = ParseRealList(GetXmlAttribute(attributes, "pos"));
+        Vector3 position{0.0, 0.0, -kGroundThickness * 0.5};
+        if (pos_values.size() >= 3) {
+            position = Vector3{pos_values[0],
+                               pos_values[1],
+                               static_cast<RealType>(pos_values[2] - kGroundThickness * 0.5)};
+        }
+
+        const Color color = ParseColorOrDefault(GetXmlAttribute(attributes, "rgba"), Color(0.45f, 0.45f, 0.45f, 1.0f));
+
+        auto* ground = Object::New<Node3D>();
+        ground->SetName(name);
+        ground->SetPosition(position);
+
+        auto* visual = Object::New<MeshInstance3D>();
+        visual->SetName(name + "_visual");
+        auto mesh = MakeRef<BoxMesh>();
+        mesh->SetSize(ground_size);
+        auto material = MakeRef<PBRMaterial3D>();
+        material->SetAlbedo(color);
+        mesh->SetMaterial(dynamic_pointer_cast<Material>(material));
+        visual->SetMesh(mesh);
+        visual->SetSurfaceColor(color);
+        ground->AddChild(visual);
+
+        auto* collision = Object::New<CollisionShape3D>();
+        collision->SetName(name + "_collision");
+        auto shape = MakeRef<BoxShape3D>();
+        shape->SetSize(ground_size);
+        collision->SetShape(shape);
+        ground->AddChild(collision);
+
+        scene_root->AddChild(ground);
+    }
+}
+
+Ref<PythonScript> LoadPythonScriptResource(const std::string& script_path) {
+    Ref<PythonScript> script = dynamic_pointer_cast<PythonScript>(
+            ResourceLoader::Load(script_path, "PythonScript", ResourceFormatLoader::CacheMode::Reuse));
+    if (!script.IsValid()) {
+        throw std::runtime_error("failed to load Python script '" + script_path + "'");
+    }
+    return script;
+}
+
+void SetOptionalNodeScript(Node* root, const std::optional<std::string>& script_path) {
+    if (script_path.has_value() && !script_path->empty()) {
+        root->SetScript(LoadPythonScriptResource(*script_path));
+    }
+}
+
+Node* InstantiateMJCFRoot(const std::string& xml_path) {
     Ref<Resource> resource =
             ResourceLoader::Load(xml_path, "PackedScene", ResourceFormatLoader::CacheMode::Ignore);
     Ref<PackedScene> packed_scene = dynamic_pointer_cast<PackedScene>(resource);
@@ -326,19 +506,25 @@ void ImportMJCFScene(const std::string& xml_path,
         throw std::runtime_error("failed to instantiate MJCF scene from '" + xml_path + "'");
     }
 
+    if (auto* robot = Object::PointerCastTo<Robot3D>(root)) {
+        robot->SetSourcePath(LocalizeResourcePath(xml_path));
+    }
+
+    return root;
+}
+
+void SaveSingleMJCFScene(const std::string& xml_path,
+                         const std::string& scene_path,
+                         const std::optional<std::string>& name,
+                         const std::optional<std::string>& script_path) {
+    Node* root = InstantiateMJCFRoot(xml_path);
+
     try {
         if (name.has_value() && !name->empty()) {
             root->SetName(*name);
         }
 
-        if (script_path.has_value() && !script_path->empty()) {
-            Ref<PythonScript> script = dynamic_pointer_cast<PythonScript>(
-                    ResourceLoader::Load(*script_path, "PythonScript", ResourceFormatLoader::CacheMode::Reuse));
-            if (!script.IsValid()) {
-                throw std::runtime_error("failed to load Python script '" + *script_path + "'");
-            }
-            root->SetScript(script);
-        }
+        SetOptionalNodeScript(root, script_path);
 
         if (!SaveSceneRoot(root, scene_path)) {
             throw std::runtime_error("failed to save Gobot scene to '" + scene_path + "'");
@@ -349,6 +535,82 @@ void ImportMJCFScene(const std::string& xml_path,
     }
 
     Object::Delete(root);
+}
+
+bool TrySaveSplitMJCFScene(const std::string& xml_path,
+                           const std::string& scene_path,
+                           const std::optional<std::string>& name,
+                           const std::optional<std::string>& script_path) {
+    std::optional<std::string> included_xml_path = ResolveFirstMJCFIncludeResourcePath(xml_path);
+    if (!included_xml_path.has_value()) {
+        return false;
+    }
+
+    const std::string robot_scene_path = MakeIncludedScenePath(scene_path, *included_xml_path);
+    if (LocalizeResourcePath(robot_scene_path) == LocalizeResourcePath(scene_path)) {
+        return false;
+    }
+
+    Node* robot_root = InstantiateMJCFRoot(*included_xml_path);
+    std::string robot_name = robot_root->GetName().empty() ? ResourcePathStem(*included_xml_path) : robot_root->GetName();
+
+    try {
+        if (robot_root->GetName().empty()) {
+            robot_root->SetName(robot_name);
+        }
+        if (!SaveSceneRoot(robot_root, robot_scene_path)) {
+            throw std::runtime_error("failed to save Gobot robot asset to '" + robot_scene_path + "'");
+        }
+    } catch (...) {
+        Object::Delete(robot_root);
+        throw;
+    }
+    Object::Delete(robot_root);
+
+    Ref<PackedScene> robot_scene = dynamic_pointer_cast<PackedScene>(
+            ResourceLoader::Load(robot_scene_path, "PackedScene", ResourceFormatLoader::CacheMode::Replace));
+    if (!robot_scene.IsValid()) {
+        throw std::runtime_error("failed to load generated Gobot robot asset '" + robot_scene_path + "'");
+    }
+    if (robot_scene->GetPath().empty()) {
+        throw std::runtime_error("generated Gobot robot asset has no resource path '" + robot_scene_path + "'");
+    }
+
+    auto* scene_root = Object::New<Node3D>();
+    try {
+        scene_root->SetName(name.has_value() && !name->empty() ? *name : ResourcePathStem(scene_path));
+        SetOptionalNodeScript(scene_root, script_path);
+        AddMJCFScenePlaneGeoms(scene_root, xml_path);
+
+        Node* robot_instance = robot_scene->Instantiate();
+        if (robot_instance == nullptr) {
+            throw std::runtime_error("failed to instantiate generated Gobot robot asset '" + robot_scene_path + "'");
+        }
+        robot_instance->SetName(robot_name);
+        robot_instance->SetSceneInstance(robot_scene);
+        scene_root->AddChild(robot_instance);
+
+        if (!SaveSceneRoot(scene_root, scene_path)) {
+            throw std::runtime_error("failed to save Gobot scene to '" + scene_path + "'");
+        }
+    } catch (...) {
+        Object::Delete(scene_root);
+        throw;
+    }
+
+    Object::Delete(scene_root);
+    return true;
+}
+
+void ImportMJCFScene(const std::string& xml_path,
+                     const std::string& scene_path,
+                     const std::optional<std::string>& name,
+                     const std::optional<std::string>& script_path) {
+    if (TrySaveSplitMJCFScene(xml_path, scene_path, name, script_path)) {
+        return;
+    }
+
+    SaveSingleMJCFScene(xml_path, scene_path, name, script_path);
 }
 
 PhysicsBackendType ParseBackend(const std::string& backend) {
