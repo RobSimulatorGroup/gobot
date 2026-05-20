@@ -22,8 +22,9 @@ namespace {
 
 constexpr float kJointPickRadiusPixels = 14.0f;
 constexpr float kJointHandleRadiusPixels = 6.0f;
-constexpr float kJointAxisArrowLengthPixels = 10.0f;
-constexpr float kJointAxisArrowHalfWidthPixels = 5.0f;
+constexpr float kJointAxisWorldLength = 0.18f;
+constexpr float kJointAxisArrowLengthPixels = 14.0f;
+constexpr float kJointAxisArrowHalfWidthPixels = 7.0f;
 
 struct LocalBounds {
     Vector3 min{Vector3::Zero()};
@@ -121,6 +122,30 @@ void DrawScreenArrowHead(ImDrawList* draw_list,
             end.y - uy * kJointAxisArrowLengthPixels - py * kJointAxisArrowHalfWidthPixels};
     draw_list->AddLine(end, left, color, thickness);
     draw_list->AddLine(end, right, color, thickness);
+}
+
+void DrawScreenArrow(ImDrawList* draw_list,
+                     const ImVec2& start,
+                     const ImVec2& end,
+                     ImU32 color,
+                     float thickness) {
+    if (draw_list == nullptr) {
+        return;
+    }
+
+    const float dx = end.x - start.x;
+    const float dy = end.y - start.y;
+    const float length = std::sqrt(dx * dx + dy * dy);
+    if (length <= CMP_EPSILON) {
+        return;
+    }
+
+    const float arrow_length = std::min(kJointAxisArrowLengthPixels, length);
+    const ImVec2 line_end{
+            end.x - dx / length * arrow_length,
+            end.y - dy / length * arrow_length};
+    draw_list->AddLine(start, line_end, color, thickness);
+    DrawScreenArrowHead(draw_list, start, end, color, thickness);
 }
 
 Ray MakeRay(const Camera3D* camera,
@@ -532,12 +557,11 @@ void DrawEditorOverlay(Node* node,
 
             if (ShouldDrawJointAxis(joint)) {
                 const Vector3 axis_end = interaction_position
-                        + joint->GetGlobalTransform().linear() * joint->GetAxis().normalized() * 0.28;
+                        + joint->GetGlobalTransform().linear() * joint->GetAxis().normalized() * kJointAxisWorldLength;
                 ImVec2 axis_screen;
                 if (ProjectPoint(camera, axis_end, viewport_position, viewport_size, axis_screen)) {
-                    const float axis_thickness = selected || hovered || motion_target ? 2.0f : 1.25f;
-                    draw_list->AddLine(joint_screen, axis_screen, color, axis_thickness);
-                    DrawScreenArrowHead(draw_list, joint_screen, axis_screen, color, axis_thickness);
+                    const float axis_thickness = selected || hovered || motion_target ? 2.5f : 1.75f;
+                    DrawScreenArrow(draw_list, joint_screen, axis_screen, color, axis_thickness);
                 }
             }
         }
