@@ -269,6 +269,42 @@ TEST(TestSimulationServer, syncs_floating_joint_transform_to_motion_mode_robot) 
     gobot::Object::Delete(robot);
 }
 
+TEST(TestSimulationServer, reset_link_state_syncs_floating_base_to_motion_robot) {
+    gobot::SimulationServer simulation_server;
+
+    auto* robot = gobot::Object::New<gobot::Robot3D>();
+    robot->SetName("robot");
+
+    auto* floating_joint = gobot::Object::New<gobot::Joint3D>();
+    floating_joint->SetName("floating_base_joint");
+    floating_joint->SetJointType(gobot::JointType::Floating);
+    floating_joint->SetChildLink("base");
+
+    auto* base_link = gobot::Object::New<gobot::Link3D>();
+    base_link->SetName("base");
+
+    robot->AddChild(floating_joint);
+    floating_joint->AddChild(base_link);
+    robot->SetMode(gobot::RobotMode::Motion);
+
+    ASSERT_TRUE(simulation_server.BuildWorldFromScene(robot));
+    ASSERT_TRUE(simulation_server.ResetLinkState("robot",
+                                                "base",
+                                                gobot::Vector3(1.0, 2.0, 3.0),
+                                                gobot::Quaternion::Identity(),
+                                                gobot::Vector3(0.1, 0.2, 0.3),
+                                                gobot::Vector3(0.4, 0.5, 0.6)));
+
+    const gobot::PhysicsLinkState& link_state =
+            simulation_server.GetWorld()->GetSceneState().robots[0].links[0];
+    EXPECT_TRUE(link_state.global_transform.translation().isApprox(gobot::Vector3(1.0, 2.0, 3.0), CMP_EPSILON));
+    EXPECT_TRUE(link_state.linear_velocity.isApprox(gobot::Vector3(0.1, 0.2, 0.3), CMP_EPSILON));
+    EXPECT_TRUE(link_state.angular_velocity.isApprox(gobot::Vector3(0.4, 0.5, 0.6), CMP_EPSILON));
+    EXPECT_TRUE(floating_joint->GetTransform().translation().isApprox(gobot::Vector3(1.0, 2.0, 3.0), CMP_EPSILON));
+
+    gobot::Object::Delete(robot);
+}
+
 TEST(TestSimulationServer, does_not_sync_world_joint_state_to_assembly_mode_robot) {
     gobot::SimulationServer simulation_server;
 

@@ -1,44 +1,25 @@
-"""Vectorized Go1 locomotion environment for velocity tracking.
+"""Gobot-backed Go1 velocity-tracking environment for rsl_rl.
 
-Observation (48-dim):
-    base_lin_vel (3) + base_ang_vel (3) + projected_gravity (3) +
-    cmd_vel (3: vx, vy, yaw) +
-    joint_pos - default_pos (12) + joint_vel (12) + last_action (12)
-
-Action (12-dim):
-    target joint position offsets from the default standing pose.
-
-Control:
-    MuJoCo position actuators with PD-like behavior. kp is set on actuators,
-    kd is applied as joint damping. The policy runs at 50 Hz by default.
+This intentionally uses Gobot's scene and simulation APIs instead of importing
+MuJoCo directly. The editable source of truth is ``examples/go1/go1_scene.jscn``.
 """
 
 from __future__ import annotations
 
-import os
 from pathlib import Path
 
 import numpy as np
 import torch
 from tensordict import TensorDict
 
-try:
-    import mujoco
-except ModuleNotFoundError as error:
-    raise ModuleNotFoundError(
-        "examples/go1 requires the Python mujoco package for training."
-    ) from error
-
+import gobot
 from rsl_rl.env import VecEnv
 
 
-_EXAMPLE_DIR = Path(__file__).resolve().parent
-GO1_XML = Path(
-    os.environ.get(
-        "GOBOT_GO1_XML",
-        _EXAMPLE_DIR / "go1.xml",
-    )
-)
+EXAMPLE_ROOT = Path(__file__).resolve().parents[1]
+SCENE_PATH = "res://go1_scene.jscn"
+ROBOT = "go1"
+BASE_LINK = "trunk"
 
 JOINT_NAMES = [
     "FR_hip_joint",
@@ -77,40 +58,11 @@ ACTION_SCALE = 0.25
 KP = 40.0
 KD = 1.0
 DECIMATION = 10
-
-
-def _build_model(xml_path: str | Path = GO1_XML) -> mujoco.MjModel:
-    spec = mujoco.MjSpec.from_file(str(xml_path))
-    spec.option.timestep = 0.002
-    spec.option.iterations = 10
-
-    ground = spec.worldbody.add_geom()
-    ground.name = "ground"
-    ground.type = mujoco.mjtGeom.mjGEOM_PLANE
-    ground.size = [50.0, 50.0, 0.1]
-    ground.rgba = [0.8, 0.8, 0.8, 1.0]
-    ground.friction = [1.0, 0.005, 0.0001]
-
-    joint_name_set = set(JOINT_NAMES)
-    for joint in spec.joints:
-        if joint.name in joint_name_set:
-            joint.damping[0] = KD
-
-    for joint_name in JOINT_NAMES:
-        actuator = spec.add_actuator()
-        actuator.name = joint_name.replace("_joint", "")
-        actuator.trntype = mujoco.mjtTrn.mjTRN_JOINT
-        actuator.target = joint_name
-        actuator.gaintype = mujoco.mjtGain.mjGAIN_FIXED
-        actuator.gainprm[:] = [KP] + [0.0] * 9
-        actuator.biastype = mujoco.mjtBias.mjBIAS_AFFINE
-        actuator.biasprm[:] = [0.0, -KP, 0.0] + [0.0] * 7
-
-    return spec.compile()
+FIXED_TIME_STEP = 0.002
 
 
 class Go1VecEnv(VecEnv):
-    """rsl_rl VecEnv implemented directly with Python MuJoCo."""
+    """Vectorized Go1 task backed by one Gobot MuJoCo model and many runtime states."""
 
     num_obs: int = 48
 
@@ -119,30 +71,54 @@ class Go1VecEnv(VecEnv):
         num_envs: int = 64,
         max_episode_length: int = 1000,
         device: str = "cpu",
-        xml_path: str | Path = GO1_XML,
+        project_path: str | Path = EXAMPLE_ROOT,
+        scene_path: str = SCENE_PATH,
+        decimation: int = DECIMATION,
         seed: int = 42,
     ) -> None:
         self.num_envs = int(num_envs)
         self.max_episode_length = int(max_episode_length)
         self.device = device
-        self.xml_path = Path(xml_path)
-        self._rng = np.random.default_rng(seed)
-
-        self._model = _build_model(self.xml_path)
-        self._datas = [mujoco.MjData(self._model) for _ in range(self.num_envs)]
-        self.num_actions = 12
+        self.project_path = Path(project_path)
+        self.scene_path = scene_path
+        self.decimation = int(decimation)
+        self.num_actions = len(JOINT_NAMES)
         self.episode_length_buf = torch.zeros(self.num_envs, dtype=torch.long, device=device)
+
+        self._rng = np.random.default_rng(seed)
         self._cmds = np.zeros((self.num_envs, 3), dtype=np.float32)
         self._last_actions = np.zeros((self.num_envs, self.num_actions), dtype=np.float32)
+
+        self.context = gobot.app.context()
+        self.context.set_project_path(str(self.project_path))
+        self.context.load_scene(self.scene_path)
+        self.context.fixed_time_step = FIXED_TIME_STEP
+        self.context.set_default_joint_gains(
+            {
+                "position_stiffness": KP,
+                "velocity_damping": KD,
+                "integral_gain": 0.0,
+                "integral_limit": 0.0,
+            }
+        )
+        self.context.build_world(gobot.PhysicsBackendType.MuJoCoCpu)
+        self.context.configure_batch_world(self.num_envs)
 
         self.cfg = {
             "num_envs": self.num_envs,
             "max_episode_length": self.max_episode_length,
-            "xml_path": str(self.xml_path),
+            "project_path": str(self.project_path),
+            "scene_path": self.scene_path,
+            "backend": "MuJoCoCpu",
+            "robot": ROBOT,
+            "base_link": BASE_LINK,
+            "joint_names": JOINT_NAMES,
             "action_scale": ACTION_SCALE,
             "kp": KP,
             "kd": KD,
-            "decimation": DECIMATION,
+            "decimation": self.decimation,
+            "fixed_time_step": FIXED_TIME_STEP,
+            "seed": seed,
         }
         self._obs = self._reset_all()
 
@@ -169,13 +145,15 @@ class Go1VecEnv(VecEnv):
         dones = np.zeros(self.num_envs, dtype=bool)
         time_outs = np.zeros(self.num_envs, dtype=bool)
 
-        for env_id, data in enumerate(self._datas):
-            data.ctrl[:] = DEFAULT_POS + ACTION_SCALE * actions_np[env_id]
-            for _ in range(DECIMATION):
-                mujoco.mj_step(self._model, data)
+        base_heights = np.zeros(self.num_envs, dtype=np.float32)
+        for env_id in range(self.num_envs):
+            action = actions_np[env_id]
+            self._apply_action(env_id, action)
+            self.context.step_batch_env(env_id, self.decimation)
 
-            rewards[env_id] = self._compute_reward(data, self._cmds[env_id], actions_np[env_id])
-            terminated = self._terminated(data)
+            state = self._robot_state(env_id)
+            rewards[env_id] = self._compute_reward(state, self._cmds[env_id], action)
+            terminated = self._terminated(state)
 
             self.episode_length_buf[env_id] += 1
             timed_out = bool(self.episode_length_buf[env_id] >= self.max_episode_length)
@@ -183,12 +161,14 @@ class Go1VecEnv(VecEnv):
             dones[env_id] = done
             time_outs[env_id] = timed_out and not terminated
 
+            self._last_actions[env_id] = action
             if done:
                 self._reset_env(env_id)
                 self.episode_length_buf[env_id] = 0
+                state = self._robot_state(env_id)
 
-            self._last_actions[env_id] = actions_np[env_id]
-            obs_list.append(self._get_obs(self._datas[env_id], self._cmds[env_id], self._last_actions[env_id]))
+            base_heights[env_id] = self._base_link(state)["position"][2]
+            obs_list.append(self._get_obs(state, self._cmds[env_id], self._last_actions[env_id]))
 
         self._obs = torch.as_tensor(np.stack(obs_list), dtype=torch.float32, device=self.device)
         obs_td = TensorDict(
@@ -196,7 +176,13 @@ class Go1VecEnv(VecEnv):
             batch_size=[self.num_envs],
             device=self.device,
         )
-        extras = {"time_outs": torch.as_tensor(time_outs, dtype=torch.bool, device=self.device)}
+        extras = {
+            "time_outs": torch.as_tensor(time_outs, dtype=torch.bool, device=self.device),
+            "log": {
+                "/go1/command_vx": torch.as_tensor(float(np.mean(self._cmds[:, 0])), device=self.device),
+                "/go1/base_height": torch.as_tensor(float(np.mean(base_heights)), device=self.device),
+            },
+        }
         return (
             obs_td,
             torch.as_tensor(rewards, dtype=torch.float32, device=self.device),
@@ -205,91 +191,143 @@ class Go1VecEnv(VecEnv):
         )
 
     def close(self) -> None:
-        pass
+        self.context.clear_world()
 
-    def _compute_reward(self, data: mujoco.MjData, cmd: np.ndarray, action: np.ndarray) -> float:
-        quat = data.qpos[3:7]
-        base_lin_vel = _rotate_vec_by_quat_inv(data.qvel[0:3], quat)
-        base_ang_vel = data.qvel[3:6].copy()
+    def _apply_action(self, env_id: int, action: np.ndarray) -> None:
+        target_pos = DEFAULT_POS + ACTION_SCALE * action
+        for joint_name, target in zip(JOINT_NAMES, target_pos, strict=True):
+            self.context.set_batch_joint_position_target(env_id, ROBOT, joint_name, float(target))
+
+    def _compute_reward(self, state: dict, cmd: np.ndarray, action: np.ndarray) -> float:
+        base = self._base_link(state)
+        world_lin_vel = np.asarray(base["linear_velocity"], dtype=np.float64)
+        base_lin_vel = _rotate_vec_by_quat_inv(world_lin_vel, base["quaternion"])
+        base_ang_vel = np.asarray(base["angular_velocity"], dtype=np.float64)
         vx_cmd, vy_cmd, yaw_cmd = cmd
 
         lin_vel_err = (base_lin_vel[0] - vx_cmd) ** 2 + (base_lin_vel[1] - vy_cmd) ** 2
         ang_vel_err = (base_ang_vel[2] - yaw_cmd) ** 2
         r_lin = np.exp(-lin_vel_err / 0.25)
         r_ang = np.exp(-ang_vel_err / 0.25)
-
-        r_z_vel = -1.5 * float(data.qvel[2] ** 2)
+        r_z_vel = -1.5 * world_lin_vel[2] ** 2
         r_ang_xy = -0.05 * float(np.sum(base_ang_vel[:2] ** 2))
-        r_action = -0.002 * float(np.sum(action ** 2))
-        r_joint_vel = -0.001 * float(np.sum(data.qvel[6:] ** 2))
-        r_height = -2.0 * max(0.0, 0.27 - float(data.qpos[2]))
+        r_action = -0.002 * float(np.sum(action**2))
+        joint_vel = np.asarray(self._joint_values(state)[1], dtype=np.float64)
+        r_joint_vel = -0.001 * float(np.sum(joint_vel**2))
+        r_height = -2.0 * max(0.0, 0.27 - base["position"][2])
         return float(r_lin + 0.5 * r_ang + r_z_vel + r_ang_xy + r_action + r_joint_vel + r_height)
 
-    def _get_obs(self, data: mujoco.MjData, cmd: np.ndarray, last_action: np.ndarray) -> np.ndarray:
-        quat = data.qpos[3:7]
-        base_lin_vel = _rotate_vec_by_quat_inv(data.qvel[0:3], quat)
-        base_ang_vel = data.qvel[3:6].copy()
-        projected_gravity = _rotate_vec_by_quat_inv(np.array([0.0, 0.0, -1.0]), quat)
-        joint_pos_rel = (data.qpos[7:] - DEFAULT_POS).astype(np.float32)
-        joint_vel = data.qvel[6:].astype(np.float32)
+    def _terminated(self, state: dict) -> bool:
+        base = self._base_link(state)
+        roll, pitch = _quat_to_rp(base["quaternion"])
+        return bool(base["position"][2] < 0.15 or abs(roll) > 0.8 or abs(pitch) > 0.8)
+
+    def _get_obs(self, state: dict, cmd: np.ndarray, last_action: np.ndarray) -> np.ndarray:
+        base = self._base_link(state)
+        quat = base["quaternion"]
+        base_lin_vel = _rotate_vec_by_quat_inv(np.asarray(base["linear_velocity"], dtype=np.float64), quat)
+        base_ang_vel = np.asarray(base["angular_velocity"], dtype=np.float64)
+        projected_gravity = _rotate_vec_by_quat_inv(np.array([0.0, 0.0, -1.0], dtype=np.float64), quat)
+        joint_pos, joint_vel = self._joint_values(state)
+        joint_pos_rel = np.asarray(joint_pos, dtype=np.float32) - DEFAULT_POS.astype(np.float32)
+
         return np.concatenate(
             [
                 base_lin_vel.astype(np.float32),
                 base_ang_vel.astype(np.float32),
                 projected_gravity.astype(np.float32),
                 cmd.astype(np.float32),
-                joint_pos_rel,
-                joint_vel,
+                joint_pos_rel.astype(np.float32),
+                np.asarray(joint_vel, dtype=np.float32),
                 last_action.astype(np.float32),
             ]
         )
 
-    def _terminated(self, data: mujoco.MjData) -> bool:
-        trunk_z = float(data.qpos[2])
-        roll, pitch = _quat_to_rp(data.qpos[3:7])
-        return bool(trunk_z < 0.15 or abs(roll) > 0.8 or abs(pitch) > 0.8)
-
     def _reset_env(self, env_id: int) -> None:
-        data = self._datas[env_id]
-        mujoco.mj_resetData(self._model, data)
-        data.qpos[0:3] = [0.0, 0.0, 0.27]
-        data.qpos[3:7] = [1.0, 0.0, 0.0, 0.0]
-        data.qpos[7:] = DEFAULT_POS + self._rng.uniform(-0.05, 0.05, self.num_actions)
-        data.qvel[:] = self._rng.uniform(-0.05, 0.05, self._model.nv)
-        data.ctrl[:] = DEFAULT_POS
+        self.context.reset_batch_env(env_id)
+        self.context.reset_batch_link_state(
+            env_id,
+            ROBOT,
+            BASE_LINK,
+            [0.0, 0.0, 0.27],
+            [1.0, 0.0, 0.0, 0.0],
+            self._rng.uniform(-0.05, 0.05, 3).tolist(),
+            self._rng.uniform(-0.05, 0.05, 3).tolist(),
+        )
+        for joint_name, default_pos in zip(JOINT_NAMES, DEFAULT_POS, strict=True):
+            position = float(default_pos + self._rng.uniform(-0.05, 0.05))
+            velocity = float(self._rng.uniform(-0.05, 0.05))
+            self.context.reset_batch_joint_state(env_id, ROBOT, joint_name, position, velocity)
+            self.context.set_batch_joint_position_target(env_id, ROBOT, joint_name, float(default_pos))
+
         self._cmds[env_id] = _sample_cmd(self._rng)
         self._last_actions[env_id] = 0.0
-        mujoco.mj_forward(self._model, data)
 
     def _reset_all(self) -> torch.Tensor:
         obs_list = []
         for env_id in range(self.num_envs):
             self._reset_env(env_id)
-            obs_list.append(self._get_obs(self._datas[env_id], self._cmds[env_id], self._last_actions[env_id]))
-        return torch.as_tensor(np.stack(obs_list), dtype=torch.float32, device=self.device)
+            obs_list.append(self._get_obs(self._robot_state(env_id), self._cmds[env_id], self._last_actions[env_id]))
+        return torch.as_tensor(
+            np.stack(obs_list),
+            dtype=torch.float32,
+            device=self.device,
+        )
+
+    def _robot_state(self, env_id: int) -> dict:
+        runtime = self.context.get_batch_runtime_state(env_id)
+        for robot in runtime.get("robots", []):
+            if robot.get("name") == ROBOT:
+                return robot
+        raise RuntimeError(f"Gobot runtime state has no robot '{ROBOT}'")
+
+    def _base_link(self, state: dict) -> dict:
+        for link in state.get("links", []):
+            if link.get("name") == BASE_LINK:
+                transform = link.get("global_transform", {})
+                return {
+                    "position": np.asarray(transform.get("position", [0.0, 0.0, 0.0]), dtype=np.float64),
+                    "quaternion": np.asarray(transform.get("quaternion", [1.0, 0.0, 0.0, 0.0]), dtype=np.float64),
+                    "linear_velocity": np.asarray(link.get("linear_velocity", [0.0, 0.0, 0.0]), dtype=np.float64),
+                    "angular_velocity": np.asarray(link.get("angular_velocity", [0.0, 0.0, 0.0]), dtype=np.float64),
+                }
+        raise RuntimeError(f"Gobot runtime state has no link '{BASE_LINK}'")
+
+    def _joint_values(self, state: dict) -> tuple[list[float], list[float]]:
+        joints = {joint.get("name"): joint for joint in state.get("joints", [])}
+        joint_pos = []
+        joint_vel = []
+        for default_pos, joint_name in zip(DEFAULT_POS, JOINT_NAMES, strict=True):
+            joint = joints.get(joint_name, {})
+            joint_pos.append(float(joint.get("position", default_pos)))
+            joint_vel.append(float(joint.get("velocity", 0.0)))
+        return joint_pos, joint_vel
 
 
 def _sample_cmd(rng: np.random.Generator) -> np.ndarray:
-    vx = rng.uniform(-1.0, 1.5)
-    vy = rng.uniform(-0.5, 0.5)
-    yaw = rng.uniform(-1.0, 1.0)
-    return np.array([vx, vy, yaw], dtype=np.float32)
+    return np.array(
+        [
+            rng.uniform(-1.0, 1.5),
+            rng.uniform(-0.5, 0.5),
+            rng.uniform(-1.0, 1.0),
+        ],
+        dtype=np.float32,
+    )
 
 
-def _quat_to_rp(q: np.ndarray) -> tuple[float, float]:
+def _quat_to_rp(q: np.ndarray | list[float]) -> tuple[float, float]:
     w, x, y, z = q
-    roll = np.arctan2(2.0 * (w * x + y * z), 1.0 - 2.0 * (x * x + y * y))
-    pitch = np.arcsin(np.clip(2.0 * (w * y - z * x), -1.0, 1.0))
+    roll = np.arctan2(2 * (w * x + y * z), 1 - 2 * (x * x + y * y))
+    pitch = np.arcsin(np.clip(2 * (w * y - z * x), -1, 1))
     return float(roll), float(pitch)
 
 
-def _rotate_vec_by_quat_inv(v: np.ndarray, q: np.ndarray) -> np.ndarray:
+def _rotate_vec_by_quat_inv(v: np.ndarray, q: np.ndarray | list[float]) -> np.ndarray:
     w, x, y, z = q
-    return _quat_rotate(v, np.array([w, -x, -y, -z]))
+    return _quat_rotate(v, np.array([w, -x, -y, -z], dtype=np.float64))
 
 
 def _quat_rotate(v: np.ndarray, q: np.ndarray) -> np.ndarray:
     w, x, y, z = q
-    xyz = np.array([x, y, z])
-    t = 2.0 * np.cross(xyz, v)
-    return v + w * t + np.cross(xyz, t)
+    t = 2.0 * np.cross(np.array([x, y, z], dtype=np.float64), v)
+    return v + w * t + np.cross(np.array([x, y, z], dtype=np.float64), t)

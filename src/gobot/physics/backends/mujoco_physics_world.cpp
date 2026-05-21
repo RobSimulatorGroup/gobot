@@ -606,8 +606,11 @@ bool MuJoCoPhysicsWorld::BuildFromScene(const Node* scene_root) {
         return false;
     }
 
-    SyncStateToMuJoCo();
-    SyncStateFromMuJoCo();
+    if (!ConfigureEnvironmentBatch(1)) {
+        return false;
+    }
+    SyncStateToMuJoCo(0);
+    SyncStateFromMuJoCo(0);
     last_error_.clear();
     return true;
 #else
@@ -623,9 +626,12 @@ void MuJoCoPhysicsWorld::Reset() {
 
 #ifdef GOBOT_HAS_MUJOCO
     if (model_ && data_) {
+        if (!environment_states_.empty()) {
+            environment_states_[0] = scene_state_;
+        }
         mj_resetData(static_cast<mjModel*>(model_), static_cast<mjData*>(data_));
-        SyncStateToMuJoCo();
-        SyncStateFromMuJoCo();
+        SyncStateToMuJoCo(0);
+        SyncStateFromMuJoCo(0);
     }
 #endif
 }
@@ -655,9 +661,13 @@ void MuJoCoPhysicsWorld::ClearExternalForces() {
     PhysicsWorld::ClearExternalForces();
 #ifdef GOBOT_HAS_MUJOCO
     auto* model = static_cast<mjModel*>(model_);
-    auto* data = static_cast<mjData*>(data_);
-    if (model != nullptr && data != nullptr && model->nbody > 0) {
-        mju_zero(data->xfrc_applied, 6 * model->nbody);
+    if (model != nullptr && model->nbody > 0) {
+        for (void* environment_data : environment_data_) {
+            auto* data = static_cast<mjData*>(environment_data);
+            if (data != nullptr) {
+                mju_zero(data->xfrc_applied, 6 * model->nbody);
+            }
+        }
     }
 #endif
 }
@@ -669,8 +679,11 @@ bool MuJoCoPhysicsWorld::RestoreCompatibleState(const PhysicsSceneState& previou
 
 #ifdef GOBOT_HAS_MUJOCO
     if (model_ && data_) {
-        SyncStateToMuJoCo();
-        SyncStateFromMuJoCo();
+        if (!environment_states_.empty()) {
+            environment_states_[0] = scene_state_;
+        }
+        SyncStateToMuJoCo(0);
+        SyncStateFromMuJoCo(0);
     }
 #endif
 
@@ -690,12 +703,142 @@ void MuJoCoPhysicsWorld::Step(RealType delta_time) {
     }
 
     model->opt.timestep = delta_time > 0.0 ? delta_time : settings_.fixed_time_step;
-    ApplyControlsToMuJoCo();
-    ApplyExternalForcesToMuJoCo();
+    ApplyControlsToMuJoCo(0);
+    ApplyExternalForcesToMuJoCo(0);
     mj_step(model, data);
-    SyncStateFromMuJoCo();
+    SyncStateFromMuJoCo(0);
 #else
     GOB_UNUSED(delta_time);
+#endif
+}
+
+bool MuJoCoPhysicsWorld::ConfigureEnvironmentBatch(std::size_t environment_count) {
+    if (environment_count == 0) {
+        SetLastError("MuJoCo environment batch size must be greater than zero.");
+        return false;
+    }
+
+    if (!available_) {
+        SetLastError(GetUnavailableReason());
+        return false;
+    }
+
+#ifdef GOBOT_HAS_MUJOCO
+    auto* model = static_cast<mjModel*>(model_);
+    if (!model) {
+        SetLastError("MuJoCo model has not been built.");
+        return false;
+    }
+
+    for (std::size_t i = 1; i < environment_data_.size(); ++i) {
+        if (environment_data_[i] != nullptr) {
+            mj_deleteData(static_cast<mjData*>(environment_data_[i]));
+        }
+    }
+    environment_data_.clear();
+
+    if (data_ == nullptr) {
+        data_ = mj_makeData(model);
+        if (data_ == nullptr) {
+            SetLastError("MuJoCo failed to allocate runtime data for environment 0.");
+            return false;
+        }
+    }
+    environment_data_.push_back(data_);
+
+    for (std::size_t i = 1; i < environment_count; ++i) {
+        mjData* data = mj_makeData(model);
+        if (data == nullptr) {
+            SetLastError(fmt::format("MuJoCo failed to allocate runtime data for environment {}.", i));
+            return false;
+        }
+        environment_data_.push_back(data);
+    }
+
+    environment_states_.assign(environment_count, scene_state_);
+    for (std::size_t i = 0; i < environment_count; ++i) {
+        mj_resetData(model, static_cast<mjData*>(environment_data_[i]));
+        SyncStateToMuJoCo(i);
+        SyncStateFromMuJoCo(i);
+    }
+
+    last_error_.clear();
+    return true;
+#else
+    GOB_UNUSED(environment_count);
+    return false;
+#endif
+}
+
+std::size_t MuJoCoPhysicsWorld::GetEnvironmentCount() const {
+#ifdef GOBOT_HAS_MUJOCO
+    return environment_data_.empty() ? 0 : environment_data_.size();
+#else
+    return 0;
+#endif
+}
+
+const PhysicsSceneState* MuJoCoPhysicsWorld::GetEnvironmentState(std::size_t environment_index) const {
+#ifdef GOBOT_HAS_MUJOCO
+    if (!IsEnvironmentIndexValid(environment_index)) {
+        return nullptr;
+    }
+    return &EnvironmentState(environment_index);
+#else
+    GOB_UNUSED(environment_index);
+    return nullptr;
+#endif
+}
+
+bool MuJoCoPhysicsWorld::ResetEnvironment(std::size_t environment_index) {
+    if (!IsEnvironmentIndexValid(environment_index)) {
+        SetLastError(fmt::format("Environment index {} is out of range.", environment_index));
+        return false;
+    }
+
+#ifdef GOBOT_HAS_MUJOCO
+    auto* model = static_cast<mjModel*>(model_);
+    auto* data = static_cast<mjData*>(environment_data_[environment_index]);
+    if (!model || !data) {
+        SetLastError("MuJoCo environment data is unavailable.");
+        return false;
+    }
+
+    EnvironmentState(environment_index) = MakeSceneStateFromSnapshot();
+    mj_resetData(model, data);
+    SyncStateToMuJoCo(environment_index);
+    SyncStateFromMuJoCo(environment_index);
+    last_error_.clear();
+    return true;
+#else
+    return false;
+#endif
+}
+
+bool MuJoCoPhysicsWorld::StepEnvironment(std::size_t environment_index, RealType delta_time) {
+    if (!IsEnvironmentIndexValid(environment_index)) {
+        SetLastError(fmt::format("Environment index {} is out of range.", environment_index));
+        return false;
+    }
+
+#ifdef GOBOT_HAS_MUJOCO
+    auto* model = static_cast<mjModel*>(model_);
+    auto* data = static_cast<mjData*>(environment_data_[environment_index]);
+    if (!model || !data) {
+        SetLastError("MuJoCo environment data is unavailable.");
+        return false;
+    }
+
+    model->opt.timestep = delta_time > 0.0 ? delta_time : settings_.fixed_time_step;
+    ApplyControlsToMuJoCo(environment_index);
+    ApplyExternalForcesToMuJoCo(environment_index);
+    mj_step(model, data);
+    SyncStateFromMuJoCo(environment_index);
+    last_error_.clear();
+    return true;
+#else
+    GOB_UNUSED(delta_time);
+    return false;
 #endif
 }
 
@@ -709,11 +852,115 @@ bool MuJoCoPhysicsWorld::ResetJointState(const std::string& robot_name,
 
 #ifdef GOBOT_HAS_MUJOCO
     if (model_ && data_) {
-        SyncStateToMuJoCo();
-        SyncStateFromMuJoCo();
+        if (!environment_states_.empty()) {
+            environment_states_[0] = scene_state_;
+        }
+        SyncStateToMuJoCo(0);
+        SyncStateFromMuJoCo(0);
     }
 #endif
 
+    return true;
+}
+
+bool MuJoCoPhysicsWorld::ResetEnvironmentJointState(std::size_t environment_index,
+                                                    const std::string& robot_name,
+                                                    const std::string& joint_name,
+                                                    RealType position,
+                                                    RealType velocity) {
+    if (!IsEnvironmentIndexValid(environment_index)) {
+        SetLastError(fmt::format("Environment index {} is out of range.", environment_index));
+        return false;
+    }
+
+    PhysicsSceneState& state = EnvironmentState(environment_index);
+    if (!ResetJointStateIn(state, robot_name, joint_name, position, velocity)) {
+        return false;
+    }
+
+#ifdef GOBOT_HAS_MUJOCO
+    SyncStateToMuJoCo(environment_index);
+    SyncStateFromMuJoCo(environment_index);
+#endif
+    last_error_.clear();
+    return true;
+}
+
+bool MuJoCoPhysicsWorld::ResetLinkState(const std::string& robot_name,
+                                        const std::string& link_name,
+                                        const Vector3& position,
+                                        const Quaternion& orientation,
+                                        const Vector3& linear_velocity,
+                                        const Vector3& angular_velocity) {
+    if (!PhysicsWorld::ResetLinkState(robot_name,
+                                      link_name,
+                                      position,
+                                      orientation,
+                                      linear_velocity,
+                                      angular_velocity)) {
+        return false;
+    }
+
+#ifdef GOBOT_HAS_MUJOCO
+    if (model_ && data_) {
+        if (!environment_states_.empty()) {
+            environment_states_[0] = scene_state_;
+        }
+        SyncStateToMuJoCo(0);
+        SyncStateFromMuJoCo(0);
+    }
+#endif
+
+    return true;
+}
+
+bool MuJoCoPhysicsWorld::ResetEnvironmentLinkState(std::size_t environment_index,
+                                                   const std::string& robot_name,
+                                                   const std::string& link_name,
+                                                   const Vector3& position,
+                                                   const Quaternion& orientation,
+                                                   const Vector3& linear_velocity,
+                                                   const Vector3& angular_velocity) {
+    if (!IsEnvironmentIndexValid(environment_index)) {
+        SetLastError(fmt::format("Environment index {} is out of range.", environment_index));
+        return false;
+    }
+
+    PhysicsSceneState& state = EnvironmentState(environment_index);
+    if (!ResetLinkStateIn(state,
+                          robot_name,
+                          link_name,
+                          position,
+                          orientation,
+                          linear_velocity,
+                          angular_velocity)) {
+        return false;
+    }
+
+#ifdef GOBOT_HAS_MUJOCO
+    SyncStateToMuJoCo(environment_index);
+    SyncStateFromMuJoCo(environment_index);
+#endif
+    last_error_.clear();
+    return true;
+}
+
+bool MuJoCoPhysicsWorld::SetEnvironmentJointControl(std::size_t environment_index,
+                                                    const std::string& robot_name,
+                                                    const std::string& joint_name,
+                                                    PhysicsJointControlMode control_mode,
+                                                    RealType target) {
+    if (!IsEnvironmentIndexValid(environment_index)) {
+        SetLastError(fmt::format("Environment index {} is out of range.", environment_index));
+        return false;
+    }
+
+    PhysicsSceneState& state = EnvironmentState(environment_index);
+    if (!SetJointControlIn(state, robot_name, joint_name, control_mode, target)) {
+        return false;
+    }
+
+    last_error_.clear();
     return true;
 }
 
@@ -752,9 +999,20 @@ bool MuJoCoPhysicsWorld::LoadModelFromRobotSources() {
         }
         used_prefixes.insert(prefix);
 
-        const bool attached = robot.source_path.empty()
-                                      ? AddAuthoredRobotToSpec(parent_spec, robot, robot_index, prefix)
-                                      : AttachRobotModelToSpec(parent_spec, robot, robot_index, prefix);
+        bool attached = false;
+        if (!robot.source_path.empty()) {
+            const std::string model_path = ResolvePhysicsSourcePath(robot.source_path);
+            if (!model_path.empty() && std::filesystem::exists(model_path)) {
+                attached = AttachRobotModelToSpec(parent_spec, robot, robot_index, prefix);
+            } else {
+                LOG_WARN("MuJoCo robot '{}' source '{}' is unavailable; using authored Gobot scene data.",
+                         robot.name,
+                         robot.source_path);
+                attached = AddAuthoredRobotToSpec(parent_spec, robot, robot_index, prefix);
+            }
+        } else {
+            attached = AddAuthoredRobotToSpec(parent_spec, robot, robot_index, prefix);
+        }
         if (!attached) {
             return false;
         }
@@ -1127,23 +1385,40 @@ std::string MuJoCoPhysicsWorld::GetRobotPrefix(std::size_t robot_index) const {
     return {};
 }
 
-void MuJoCoPhysicsWorld::ApplyControlsToMuJoCo() {
+bool MuJoCoPhysicsWorld::IsEnvironmentIndexValid(std::size_t environment_index) const {
+    return environment_index < environment_data_.size() &&
+           environment_index < environment_states_.size() &&
+           environment_data_[environment_index] != nullptr;
+}
+
+PhysicsSceneState& MuJoCoPhysicsWorld::EnvironmentState(std::size_t environment_index) {
+    return environment_index == 0 ? scene_state_ : environment_states_[environment_index];
+}
+
+const PhysicsSceneState& MuJoCoPhysicsWorld::EnvironmentState(std::size_t environment_index) const {
+    return environment_index == 0 ? scene_state_ : environment_states_[environment_index];
+}
+
+void MuJoCoPhysicsWorld::ApplyControlsToMuJoCo(std::size_t environment_index) {
     auto* model = static_cast<mjModel*>(model_);
-    auto* data = static_cast<mjData*>(data_);
+    auto* data = IsEnvironmentIndexValid(environment_index)
+                         ? static_cast<mjData*>(environment_data_[environment_index])
+                         : nullptr;
     if (!model || !data) {
         return;
     }
 
+    PhysicsSceneState& state = EnvironmentState(environment_index);
     for (int velocity_index = 0; velocity_index < model->nv; ++velocity_index) {
         data->qfrc_applied[velocity_index] = 0.0;
     }
 
     for (MuJoCoJointBinding& binding : joint_bindings_) {
-        if (binding.robot_index >= scene_state_.robots.size()) {
+        if (binding.robot_index >= state.robots.size()) {
             continue;
         }
 
-        const PhysicsRobotState& robot_state = scene_state_.robots[binding.robot_index];
+        const PhysicsRobotState& robot_state = state.robots[binding.robot_index];
         if (binding.joint_index >= robot_state.joints.size()) {
             continue;
         }
@@ -1243,13 +1518,16 @@ void MuJoCoPhysicsWorld::ApplyControlsToMuJoCo() {
     }
 }
 
-void MuJoCoPhysicsWorld::ApplyExternalForcesToMuJoCo() {
+void MuJoCoPhysicsWorld::ApplyExternalForcesToMuJoCo(std::size_t environment_index) {
     auto* model = static_cast<mjModel*>(model_);
-    auto* data = static_cast<mjData*>(data_);
+    auto* data = IsEnvironmentIndexValid(environment_index)
+                         ? static_cast<mjData*>(environment_data_[environment_index])
+                         : nullptr;
     if (model == nullptr || data == nullptr || model->nbody <= 0) {
         return;
     }
 
+    const PhysicsSceneState& state = EnvironmentState(environment_index);
     mju_zero(data->xfrc_applied, 6 * model->nbody);
     if (external_forces_.empty()) {
         return;
@@ -1259,10 +1537,10 @@ void MuJoCoPhysicsWorld::ApplyExternalForcesToMuJoCo() {
         auto binding_iter = std::find_if(link_bindings_.begin(),
                                          link_bindings_.end(),
                                          [&](const MuJoCoLinkBinding& binding) {
-                                             if (binding.robot_index >= scene_state_.robots.size()) {
+                                             if (binding.robot_index >= state.robots.size()) {
                                                  return false;
                                              }
-                                             const PhysicsRobotState& robot = scene_state_.robots[binding.robot_index];
+                                             const PhysicsRobotState& robot = state.robots[binding.robot_index];
                                              if (binding.link_index >= robot.links.size()) {
                                                  return false;
                                              }
@@ -1333,10 +1611,14 @@ void MuJoCoPhysicsWorld::FreeModel() {
     link_bindings_.clear();
     joint_bindings_.clear();
 
-    if (data_) {
-        mj_deleteData(static_cast<mjData*>(data_));
-        data_ = nullptr;
+    for (void* environment_data : environment_data_) {
+        if (environment_data != nullptr) {
+            mj_deleteData(static_cast<mjData*>(environment_data));
+        }
     }
+    environment_data_.clear();
+    environment_states_.clear();
+    data_ = nullptr;
 
     if (model_) {
         mj_deleteModel(static_cast<mjModel*>(model_));
@@ -1344,19 +1626,22 @@ void MuJoCoPhysicsWorld::FreeModel() {
     }
 }
 
-void MuJoCoPhysicsWorld::SyncStateFromMuJoCo() {
+void MuJoCoPhysicsWorld::SyncStateFromMuJoCo(std::size_t environment_index) {
     auto* model = static_cast<mjModel*>(model_);
-    auto* data = static_cast<mjData*>(data_);
+    auto* data = IsEnvironmentIndexValid(environment_index)
+                         ? static_cast<mjData*>(environment_data_[environment_index])
+                         : nullptr;
     if (!model || !data) {
         return;
     }
 
+    PhysicsSceneState& state = EnvironmentState(environment_index);
     for (const MuJoCoLinkBinding& binding : link_bindings_) {
-        if (binding.robot_index >= scene_state_.robots.size()) {
+        if (binding.robot_index >= state.robots.size()) {
             continue;
         }
 
-        PhysicsRobotState& robot_state = scene_state_.robots[binding.robot_index];
+        PhysicsRobotState& robot_state = state.robots[binding.robot_index];
         if (binding.link_index >= robot_state.links.size()) {
             continue;
         }
@@ -1391,11 +1676,11 @@ void MuJoCoPhysicsWorld::SyncStateFromMuJoCo() {
     }
 
     for (const MuJoCoJointBinding& binding : joint_bindings_) {
-        if (binding.robot_index >= scene_state_.robots.size()) {
+        if (binding.robot_index >= state.robots.size()) {
             continue;
         }
 
-        PhysicsRobotState& robot_state = scene_state_.robots[binding.robot_index];
+        PhysicsRobotState& robot_state = state.robots[binding.robot_index];
         if (binding.joint_index >= robot_state.joints.size()) {
             continue;
         }
@@ -1409,6 +1694,25 @@ void MuJoCoPhysicsWorld::SyncStateFromMuJoCo() {
                 joint_state.velocity = Vector3(data->qvel[binding.dof_address + 0],
                                                data->qvel[binding.dof_address + 1],
                                                data->qvel[binding.dof_address + 2]).norm();
+            }
+            if (binding.robot_index < scene_snapshot_.robots.size() &&
+                binding.joint_index < scene_snapshot_.robots[binding.robot_index].joints.size()) {
+                const PhysicsJointSnapshot& joint_snapshot =
+                        scene_snapshot_.robots[binding.robot_index].joints[binding.joint_index];
+                for (PhysicsLinkState& link_state : robot_state.links) {
+                    if (link_state.link_name != joint_snapshot.child_link) {
+                        continue;
+                    }
+                    if (binding.dof_address >= 0 && binding.dof_address + 5 < model->nv) {
+                        link_state.linear_velocity = Vector3(data->qvel[binding.dof_address + 0],
+                                                             data->qvel[binding.dof_address + 1],
+                                                             data->qvel[binding.dof_address + 2]);
+                        link_state.angular_velocity = Vector3(data->qvel[binding.dof_address + 3],
+                                                              data->qvel[binding.dof_address + 4],
+                                                              data->qvel[binding.dof_address + 5]);
+                    }
+                    break;
+                }
             }
             continue;
         }
@@ -1424,22 +1728,28 @@ void MuJoCoPhysicsWorld::SyncStateFromMuJoCo() {
         }
     }
 
-    SyncContactsFromMuJoCo();
+    SyncContactsFromMuJoCo(environment_index);
+    if (environment_index == 0 && !environment_states_.empty()) {
+        environment_states_[0] = scene_state_;
+    }
 }
 
-void MuJoCoPhysicsWorld::SyncStateToMuJoCo() {
+void MuJoCoPhysicsWorld::SyncStateToMuJoCo(std::size_t environment_index) {
     auto* model = static_cast<mjModel*>(model_);
-    auto* data = static_cast<mjData*>(data_);
+    auto* data = IsEnvironmentIndexValid(environment_index)
+                         ? static_cast<mjData*>(environment_data_[environment_index])
+                         : nullptr;
     if (!model || !data) {
         return;
     }
 
+    const PhysicsSceneState& state = EnvironmentState(environment_index);
     for (const MuJoCoJointBinding& binding : joint_bindings_) {
-        if (binding.robot_index >= scene_state_.robots.size()) {
+        if (binding.robot_index >= state.robots.size()) {
             continue;
         }
 
-        const PhysicsRobotState& robot_state = scene_state_.robots[binding.robot_index];
+        const PhysicsRobotState& robot_state = state.robots[binding.robot_index];
         if (binding.joint_index >= robot_state.joints.size()) {
             continue;
         }
@@ -1478,6 +1788,14 @@ void MuJoCoPhysicsWorld::SyncStateToMuJoCo() {
                 data->qpos[binding.qpos_address + 5] = orientation.y();
                 data->qpos[binding.qpos_address + 6] = orientation.z();
             }
+            if (child_link_state != nullptr && binding.dof_address >= 0 && binding.dof_address + 5 < model->nv) {
+                data->qvel[binding.dof_address + 0] = child_link_state->linear_velocity.x();
+                data->qvel[binding.dof_address + 1] = child_link_state->linear_velocity.y();
+                data->qvel[binding.dof_address + 2] = child_link_state->linear_velocity.z();
+                data->qvel[binding.dof_address + 3] = child_link_state->angular_velocity.x();
+                data->qvel[binding.dof_address + 4] = child_link_state->angular_velocity.y();
+                data->qvel[binding.dof_address + 5] = child_link_state->angular_velocity.z();
+            }
             continue;
         }
         if (binding.joint_type == mjJNT_BALL) {
@@ -1495,10 +1813,13 @@ void MuJoCoPhysicsWorld::SyncStateToMuJoCo() {
     mj_forward(model, data);
 }
 
-void MuJoCoPhysicsWorld::SyncContactsFromMuJoCo() {
+void MuJoCoPhysicsWorld::SyncContactsFromMuJoCo(std::size_t environment_index) {
     auto* model = static_cast<mjModel*>(model_);
-    auto* data = static_cast<mjData*>(data_);
-    scene_state_.contacts.clear();
+    auto* data = IsEnvironmentIndexValid(environment_index)
+                         ? static_cast<mjData*>(environment_data_[environment_index])
+                         : nullptr;
+    PhysicsSceneState& state = EnvironmentState(environment_index);
+    state.contacts.clear();
     if (!model || !data) {
         return;
     }
@@ -1532,11 +1853,11 @@ void MuJoCoPhysicsWorld::SyncContactsFromMuJoCo() {
         auto add_contact = [&](const MuJoCoLinkBinding& link_binding,
                                const MuJoCoLinkBinding* other_binding,
                                RealType normal_sign) {
-            if (link_binding.robot_index >= scene_state_.robots.size()) {
+            if (link_binding.robot_index >= state.robots.size()) {
                 return;
             }
 
-            const PhysicsRobotState& robot_state = scene_state_.robots[link_binding.robot_index];
+            const PhysicsRobotState& robot_state = state.robots[link_binding.robot_index];
             if (link_binding.link_index >= robot_state.links.size()) {
                 return;
             }
@@ -1545,16 +1866,16 @@ void MuJoCoPhysicsWorld::SyncContactsFromMuJoCo() {
             contact_state.robot_name = robot_state.name;
             contact_state.link_name = robot_state.links[link_binding.link_index].link_name;
             if (other_binding != nullptr &&
-                other_binding->robot_index < scene_state_.robots.size() &&
-                other_binding->link_index < scene_state_.robots[other_binding->robot_index].links.size()) {
-                const PhysicsRobotState& other_robot_state = scene_state_.robots[other_binding->robot_index];
+                other_binding->robot_index < state.robots.size() &&
+                other_binding->link_index < state.robots[other_binding->robot_index].links.size()) {
+                const PhysicsRobotState& other_robot_state = state.robots[other_binding->robot_index];
                 contact_state.other_robot_name = other_robot_state.name;
                 contact_state.other_link_name = other_robot_state.links[other_binding->link_index].link_name;
             }
             contact_state.position = Vector3(contact.pos[0], contact.pos[1], contact.pos[2]);
             contact_state.normal = normal_sign * Vector3(contact.frame[0], contact.frame[1], contact.frame[2]);
             contact_state.distance = contact.dist;
-            scene_state_.contacts.emplace_back(std::move(contact_state));
+            state.contacts.emplace_back(std::move(contact_state));
         };
 
         if (binding_a != nullptr) {

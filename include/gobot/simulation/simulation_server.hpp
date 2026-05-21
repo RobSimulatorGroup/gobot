@@ -76,6 +76,16 @@ public:
 
     int Step(RealType delta_time);
 
+    bool ConfigureEnvironmentBatch(std::size_t environment_count);
+
+    std::size_t GetEnvironmentCount() const;
+
+    const PhysicsSceneState* GetEnvironmentState(std::size_t environment_index) const;
+
+    bool ResetEnvironment(std::size_t environment_index);
+
+    bool StepEnvironment(std::size_t environment_index, std::uint64_t ticks);
+
     bool SyncSceneFromWorld();
 
     bool SetJointPositionTarget(const std::string& robot_name,
@@ -97,6 +107,32 @@ public:
                          const std::string& joint_name,
                          RealType position,
                          RealType velocity);
+
+    bool ResetEnvironmentJointState(std::size_t environment_index,
+                                    const std::string& robot_name,
+                                    const std::string& joint_name,
+                                    RealType position,
+                                    RealType velocity);
+
+    bool ResetLinkState(const std::string& robot_name,
+                        const std::string& link_name,
+                        const Vector3& position,
+                        const Quaternion& orientation,
+                        const Vector3& linear_velocity,
+                        const Vector3& angular_velocity);
+
+    bool ResetEnvironmentLinkState(std::size_t environment_index,
+                                   const std::string& robot_name,
+                                   const std::string& link_name,
+                                   const Vector3& position,
+                                   const Quaternion& orientation,
+                                   const Vector3& linear_velocity,
+                                   const Vector3& angular_velocity);
+
+    bool SetEnvironmentJointPositionTarget(std::size_t environment_index,
+                                           const std::string& robot_name,
+                                           const std::string& joint_name,
+                                           RealType target_position);
 
     bool SetLinkExternalForce(const std::string& robot_name,
                               const std::string& link_name,

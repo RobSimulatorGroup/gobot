@@ -918,6 +918,23 @@ py::dict TransformToPythonDict(const Affine3& transform) {
     return result;
 }
 
+Quaternion PythonToQuaternionWxyz(const py::handle& object) {
+    py::sequence sequence = py::reinterpret_borrow<py::sequence>(object);
+    if (sequence.size() != 4) {
+        throw std::invalid_argument("expected a 4-element quaternion in [w, x, y, z] order");
+    }
+
+    Quaternion quaternion(py::cast<RealType>(sequence[0]),
+                          py::cast<RealType>(sequence[1]),
+                          py::cast<RealType>(sequence[2]),
+                          py::cast<RealType>(sequence[3]));
+    if (quaternion.norm() <= CMP_EPSILON) {
+        return Quaternion::Identity();
+    }
+    quaternion.normalize();
+    return quaternion;
+}
+
 std::string PhysicsJointControlModeName(PhysicsJointControlMode mode) {
     switch (mode) {
         case PhysicsJointControlMode::Passive:
@@ -1312,6 +1329,13 @@ class NodeScript:
             .def_property_readonly("has_world", &EngineContext::HasWorld)
             .def_property_readonly("simulation_time", &EngineContext::GetSimulationTime)
             .def_property_readonly("frame_count", &EngineContext::GetFrameCount)
+            .def_property("fixed_time_step",
+                          &EngineContext::GetFixedTimeStep,
+                          [](EngineContext& context, RealType fixed_time_step) {
+                              if (!context.SetFixedTimeStep(fixed_time_step)) {
+                                  throw std::runtime_error(context.GetLastError());
+                              }
+                          })
             .def_property_readonly("gravity", [](const EngineContext& context) {
                 return Vector3ToPython(context.GetGravity());
             })
@@ -1380,6 +1404,95 @@ class NodeScript:
                     throw std::runtime_error(context.GetLastError());
                 }
             }, py::arg("ticks") = 1)
+            .def("configure_batch_world", [](EngineContext& context, std::size_t num_envs) {
+                SimulationServer* simulation = context.GetSimulationServer();
+                if (simulation == nullptr) {
+                    throw std::runtime_error("active Gobot app context has no SimulationServer");
+                }
+                if (!simulation->ConfigureEnvironmentBatch(num_envs)) {
+                    throw std::runtime_error(simulation->GetLastError());
+                }
+            }, py::arg("num_envs"))
+            .def_property_readonly("batch_env_count", [](EngineContext& context) {
+                SimulationServer* simulation = context.GetSimulationServer();
+                if (simulation == nullptr) {
+                    return static_cast<std::size_t>(0);
+                }
+                return simulation->GetEnvironmentCount();
+            })
+            .def("reset_batch_env", [](EngineContext& context, std::size_t env_id) {
+                SimulationServer* simulation = context.GetSimulationServer();
+                if (simulation == nullptr) {
+                    throw std::runtime_error("active Gobot app context has no SimulationServer");
+                }
+                if (!simulation->ResetEnvironment(env_id)) {
+                    throw std::runtime_error(simulation->GetLastError());
+                }
+            }, py::arg("env_id"))
+            .def("step_batch_env", [](EngineContext& context, std::size_t env_id, std::uint64_t ticks) {
+                SimulationServer* simulation = context.GetSimulationServer();
+                if (simulation == nullptr) {
+                    throw std::runtime_error("active Gobot app context has no SimulationServer");
+                }
+                if (!simulation->StepEnvironment(env_id, ticks)) {
+                    throw std::runtime_error(simulation->GetLastError());
+                }
+            }, py::arg("env_id"), py::arg("ticks") = 1)
+            .def("set_batch_joint_position_target", [](EngineContext& context,
+                                                       std::size_t env_id,
+                                                       const std::string& robot,
+                                                       const std::string& joint,
+                                                       RealType target_position) {
+                SimulationServer* simulation = context.GetSimulationServer();
+                if (simulation == nullptr) {
+                    throw std::runtime_error("active Gobot app context has no SimulationServer");
+                }
+                if (!simulation->SetEnvironmentJointPositionTarget(env_id, robot, joint, target_position)) {
+                    throw std::runtime_error(simulation->GetLastError());
+                }
+            }, py::arg("env_id"), py::arg("robot"), py::arg("joint"), py::arg("target_position"))
+            .def("reset_batch_joint_state", [](EngineContext& context,
+                                               std::size_t env_id,
+                                               const std::string& robot,
+                                               const std::string& joint,
+                                               RealType position,
+                                               RealType velocity) {
+                SimulationServer* simulation = context.GetSimulationServer();
+                if (simulation == nullptr) {
+                    throw std::runtime_error("active Gobot app context has no SimulationServer");
+                }
+                if (!simulation->ResetEnvironmentJointState(env_id, robot, joint, position, velocity)) {
+                    throw std::runtime_error(simulation->GetLastError());
+                }
+            }, py::arg("env_id"), py::arg("robot"), py::arg("joint"), py::arg("position"), py::arg("velocity") = 0.0)
+            .def("reset_batch_link_state", [](EngineContext& context,
+                                              std::size_t env_id,
+                                              const std::string& robot,
+                                              const std::string& link,
+                                              const py::object& position,
+                                              const py::object& orientation,
+                                              const py::object& linear_velocity,
+                                              const py::object& angular_velocity) {
+                SimulationServer* simulation = context.GetSimulationServer();
+                if (simulation == nullptr) {
+                    throw std::runtime_error("active Gobot app context has no SimulationServer");
+                }
+                if (!simulation->ResetEnvironmentLinkState(env_id,
+                                                           robot,
+                                                           link,
+                                                           PythonToVector3(position),
+                                                           PythonToQuaternionWxyz(orientation),
+                                                           PythonToVector3(linear_velocity),
+                                                           PythonToVector3(angular_velocity))) {
+                    throw std::runtime_error(simulation->GetLastError());
+                }
+            }, py::arg("env_id"),
+               py::arg("robot"),
+               py::arg("link"),
+               py::arg("position"),
+               py::arg("orientation") = py::make_tuple(1.0, 0.0, 0.0, 0.0),
+               py::arg("linear_velocity") = py::make_tuple(0.0, 0.0, 0.0),
+               py::arg("angular_velocity") = py::make_tuple(0.0, 0.0, 0.0))
             .def("set_robot_action", [](EngineContext& context,
                                         const std::string& robot,
                                         const std::vector<RealType>& action) {
@@ -1477,6 +1590,31 @@ class NodeScript:
                     throw std::runtime_error(simulation->GetLastError());
                 }
             }, py::arg("robot"), py::arg("joint"), py::arg("position"), py::arg("velocity") = 0.0)
+            .def("reset_link_state", [](EngineContext& context,
+                                        const std::string& robot,
+                                        const std::string& link,
+                                        const py::object& position,
+                                        const py::object& orientation,
+                                        const py::object& linear_velocity,
+                                        const py::object& angular_velocity) {
+                SimulationServer* simulation = context.GetSimulationServer();
+                if (simulation == nullptr) {
+                    throw std::runtime_error("active Gobot app context has no SimulationServer");
+                }
+                if (!simulation->ResetLinkState(robot,
+                                                link,
+                                                PythonToVector3(position),
+                                                PythonToQuaternionWxyz(orientation),
+                                                PythonToVector3(linear_velocity),
+                                                PythonToVector3(angular_velocity))) {
+                    throw std::runtime_error(simulation->GetLastError());
+                }
+            }, py::arg("robot"),
+               py::arg("link"),
+               py::arg("position"),
+               py::arg("orientation") = py::make_tuple(1.0, 0.0, 0.0, 0.0),
+               py::arg("linear_velocity") = py::make_tuple(0.0, 0.0, 0.0),
+               py::arg("angular_velocity") = py::make_tuple(0.0, 0.0, 0.0))
             .def("get_runtime_name_map", [](EngineContext& context) {
                 SimulationServer* simulation = context.GetSimulationServer();
                 if (simulation == nullptr) {
@@ -1499,6 +1637,17 @@ class NodeScript:
                 }
                 return RuntimeStateToPythonDict(world->GetSceneState());
             })
+            .def("get_batch_runtime_state", [](EngineContext& context, std::size_t env_id) {
+                SimulationServer* simulation = context.GetSimulationServer();
+                if (simulation == nullptr) {
+                    throw std::runtime_error("active Gobot app context has no SimulationServer");
+                }
+                const PhysicsSceneState* state = simulation->GetEnvironmentState(env_id);
+                if (state == nullptr) {
+                    throw std::runtime_error("simulation environment state is not available");
+                }
+                return RuntimeStateToPythonDict(*state);
+            }, py::arg("env_id"))
             .def("get_last_error", &EngineContext::GetLastError);
 
     py::class_<PyScene, std::unique_ptr<PyScene>>(module, "Scene")

@@ -327,57 +327,123 @@ void PhysicsWorld::Step(RealType delta_time) {
     GOB_UNUSED(delta_time);
 }
 
+bool PhysicsWorld::ConfigureEnvironmentBatch(std::size_t environment_count) {
+    if (environment_count == 0) {
+        SetLastError("Physics environment batch size must be greater than zero.");
+        return false;
+    }
+
+    if (environment_count != 1) {
+        SetLastError("This physics backend does not support batched environments.");
+        return false;
+    }
+
+    last_error_.clear();
+    return true;
+}
+
+std::size_t PhysicsWorld::GetEnvironmentCount() const {
+    return 1;
+}
+
+const PhysicsSceneState* PhysicsWorld::GetEnvironmentState(std::size_t environment_index) const {
+    if (environment_index != 0) {
+        return nullptr;
+    }
+
+    return &scene_state_;
+}
+
+bool PhysicsWorld::ResetEnvironment(std::size_t environment_index) {
+    if (environment_index != 0) {
+        SetLastError(fmt::format("Environment index {} is out of range.", environment_index));
+        return false;
+    }
+
+    Reset();
+    last_error_.clear();
+    return true;
+}
+
+bool PhysicsWorld::StepEnvironment(std::size_t environment_index, RealType delta_time) {
+    if (environment_index != 0) {
+        SetLastError(fmt::format("Environment index {} is out of range.", environment_index));
+        return false;
+    }
+
+    Step(delta_time);
+    last_error_.clear();
+    return true;
+}
+
 bool PhysicsWorld::ResetJointState(const std::string& robot_name,
                                    const std::string& joint_name,
                                    RealType position,
                                    RealType velocity) {
-    PhysicsJointState* joint_state = FindJointState(robot_name, joint_name);
-    if (!joint_state) {
-        SetLastError(fmt::format("Cannot reset state for missing joint '{}::{}'.", robot_name, joint_name));
+    return ResetJointStateIn(scene_state_, robot_name, joint_name, position, velocity);
+}
+
+bool PhysicsWorld::ResetEnvironmentJointState(std::size_t environment_index,
+                                              const std::string& robot_name,
+                                              const std::string& joint_name,
+                                              RealType position,
+                                              RealType velocity) {
+    if (environment_index != 0) {
+        SetLastError(fmt::format("Environment index {} is out of range.", environment_index));
         return false;
     }
 
-    joint_state->position = position;
-    joint_state->velocity = velocity;
-    joint_state->effort = 0.0;
-    joint_state->control_mode = PhysicsJointControlMode::Passive;
-    joint_state->target_position = position;
-    joint_state->target_velocity = 0.0;
-    joint_state->target_effort = 0.0;
-    last_error_.clear();
-    return true;
+    return ResetJointState(robot_name, joint_name, position, velocity);
+}
+
+bool PhysicsWorld::ResetLinkState(const std::string& robot_name,
+                                  const std::string& link_name,
+                                  const Vector3& position,
+                                  const Quaternion& orientation,
+                                  const Vector3& linear_velocity,
+                                  const Vector3& angular_velocity) {
+    return ResetLinkStateIn(scene_state_,
+                            robot_name,
+                            link_name,
+                            position,
+                            orientation,
+                            linear_velocity,
+                            angular_velocity);
+}
+
+bool PhysicsWorld::ResetEnvironmentLinkState(std::size_t environment_index,
+                                             const std::string& robot_name,
+                                             const std::string& link_name,
+                                             const Vector3& position,
+                                             const Quaternion& orientation,
+                                             const Vector3& linear_velocity,
+                                             const Vector3& angular_velocity) {
+    if (environment_index != 0) {
+        SetLastError(fmt::format("Environment index {} is out of range.", environment_index));
+        return false;
+    }
+
+    return ResetLinkState(robot_name, link_name, position, orientation, linear_velocity, angular_velocity);
 }
 
 bool PhysicsWorld::SetJointControl(const std::string& robot_name,
                                    const std::string& joint_name,
                                    PhysicsJointControlMode control_mode,
                                    RealType target) {
-    PhysicsJointState* joint_state = FindJointState(robot_name, joint_name);
-    if (!joint_state) {
-        SetLastError(fmt::format("Cannot set control for missing joint '{}::{}'.", robot_name, joint_name));
+    return SetJointControlIn(scene_state_, robot_name, joint_name, control_mode, target);
+}
+
+bool PhysicsWorld::SetEnvironmentJointControl(std::size_t environment_index,
+                                              const std::string& robot_name,
+                                              const std::string& joint_name,
+                                              PhysicsJointControlMode control_mode,
+                                              RealType target) {
+    if (environment_index != 0) {
+        SetLastError(fmt::format("Environment index {} is out of range.", environment_index));
         return false;
     }
 
-    joint_state->control_mode = control_mode;
-    switch (control_mode) {
-        case PhysicsJointControlMode::Passive:
-            joint_state->target_position = joint_state->position;
-            joint_state->target_velocity = 0.0;
-            joint_state->target_effort = 0.0;
-            break;
-        case PhysicsJointControlMode::Position:
-            joint_state->target_position = target;
-            break;
-        case PhysicsJointControlMode::Velocity:
-            joint_state->target_velocity = target;
-            break;
-        case PhysicsJointControlMode::Effort:
-            joint_state->target_effort = target;
-            break;
-    }
-
-    last_error_.clear();
-    return true;
+    return SetJointControl(robot_name, joint_name, control_mode, target);
 }
 
 bool PhysicsWorld::SetLinkExternalForce(const std::string& robot_name,
@@ -482,7 +548,13 @@ bool PhysicsWorld::CaptureSceneSnapshot(const Node* scene_root) {
 
 PhysicsJointState* PhysicsWorld::FindJointState(const std::string& robot_name,
                                                 const std::string& joint_name) {
-    for (PhysicsRobotState& robot_state : scene_state_.robots) {
+    return FindJointStateIn(scene_state_, robot_name, joint_name);
+}
+
+PhysicsJointState* PhysicsWorld::FindJointStateIn(PhysicsSceneState& scene_state,
+                                                  const std::string& robot_name,
+                                                  const std::string& joint_name) {
+    for (PhysicsRobotState& robot_state : scene_state.robots) {
         if (robot_state.name != robot_name) {
             continue;
         }
@@ -499,7 +571,13 @@ PhysicsJointState* PhysicsWorld::FindJointState(const std::string& robot_name,
 
 PhysicsLinkState* PhysicsWorld::FindMutableLinkState(const std::string& robot_name,
                                                      const std::string& link_name) {
-    for (PhysicsRobotState& robot_state : scene_state_.robots) {
+    return FindMutableLinkStateIn(scene_state_, robot_name, link_name);
+}
+
+PhysicsLinkState* PhysicsWorld::FindMutableLinkStateIn(PhysicsSceneState& scene_state,
+                                                       const std::string& robot_name,
+                                                       const std::string& link_name) {
+    for (PhysicsRobotState& robot_state : scene_state.robots) {
         if (robot_state.name != robot_name) {
             continue;
         }
@@ -514,9 +592,92 @@ PhysicsLinkState* PhysicsWorld::FindMutableLinkState(const std::string& robot_na
     return nullptr;
 }
 
-void PhysicsWorld::ResetSceneStateFromSnapshot() {
-    scene_state_ = {};
-    scene_state_.robots.reserve(scene_snapshot_.robots.size());
+bool PhysicsWorld::ResetJointStateIn(PhysicsSceneState& scene_state,
+                                     const std::string& robot_name,
+                                     const std::string& joint_name,
+                                     RealType position,
+                                     RealType velocity) {
+    PhysicsJointState* joint_state = FindJointStateIn(scene_state, robot_name, joint_name);
+    if (!joint_state) {
+        SetLastError(fmt::format("Cannot reset state for missing joint '{}::{}'.", robot_name, joint_name));
+        return false;
+    }
+
+    joint_state->position = position;
+    joint_state->velocity = velocity;
+    joint_state->effort = 0.0;
+    joint_state->control_mode = PhysicsJointControlMode::Passive;
+    joint_state->target_position = position;
+    joint_state->target_velocity = 0.0;
+    joint_state->target_effort = 0.0;
+    last_error_.clear();
+    return true;
+}
+
+bool PhysicsWorld::ResetLinkStateIn(PhysicsSceneState& scene_state,
+                                    const std::string& robot_name,
+                                    const std::string& link_name,
+                                    const Vector3& position,
+                                    const Quaternion& orientation,
+                                    const Vector3& linear_velocity,
+                                    const Vector3& angular_velocity) {
+    PhysicsLinkState* link_state = FindMutableLinkStateIn(scene_state, robot_name, link_name);
+    if (!link_state) {
+        SetLastError(fmt::format("Cannot reset state for missing link '{}::{}'.", robot_name, link_name));
+        return false;
+    }
+
+    Quaternion normalized_orientation = orientation;
+    if (normalized_orientation.norm() <= CMP_EPSILON) {
+        normalized_orientation = Quaternion::Identity();
+    } else {
+        normalized_orientation.normalize();
+    }
+
+    link_state->global_transform.translation() = position;
+    link_state->global_transform.linear() = normalized_orientation.toRotationMatrix();
+    link_state->linear_velocity = linear_velocity;
+    link_state->angular_velocity = angular_velocity;
+    last_error_.clear();
+    return true;
+}
+
+bool PhysicsWorld::SetJointControlIn(PhysicsSceneState& scene_state,
+                                     const std::string& robot_name,
+                                     const std::string& joint_name,
+                                     PhysicsJointControlMode control_mode,
+                                     RealType target) {
+    PhysicsJointState* joint_state = FindJointStateIn(scene_state, robot_name, joint_name);
+    if (!joint_state) {
+        SetLastError(fmt::format("Cannot set control for missing joint '{}::{}'.", robot_name, joint_name));
+        return false;
+    }
+
+    joint_state->control_mode = control_mode;
+    switch (control_mode) {
+        case PhysicsJointControlMode::Passive:
+            joint_state->target_position = joint_state->position;
+            joint_state->target_velocity = 0.0;
+            joint_state->target_effort = 0.0;
+            break;
+        case PhysicsJointControlMode::Position:
+            joint_state->target_position = target;
+            break;
+        case PhysicsJointControlMode::Velocity:
+            joint_state->target_velocity = target;
+            break;
+        case PhysicsJointControlMode::Effort:
+            joint_state->target_effort = target;
+            break;
+    }
+
+    last_error_.clear();
+    return true;
+}
+
+PhysicsSceneState PhysicsWorld::MakeSceneStateFromSnapshot() const {
+    PhysicsSceneState scene_state;
+    scene_state.robots.reserve(scene_snapshot_.robots.size());
 
     for (const PhysicsRobotSnapshot& robot_snapshot : scene_snapshot_.robots) {
         PhysicsRobotState robot_state;
@@ -533,7 +694,7 @@ void PhysicsWorld::ResetSceneStateFromSnapshot() {
             link_state.role = link_snapshot.role;
             link_state.global_transform = link_snapshot.global_transform;
             robot_state.links.emplace_back(std::move(link_state));
-            ++scene_state_.total_link_count;
+            ++scene_state.total_link_count;
         }
 
         for (const PhysicsJointSnapshot& joint_snapshot : robot_snapshot.joints) {
@@ -545,11 +706,17 @@ void PhysicsWorld::ResetSceneStateFromSnapshot() {
             joint_state.position = joint_snapshot.joint_position;
             joint_state.target_position = joint_snapshot.joint_position;
             robot_state.joints.emplace_back(std::move(joint_state));
-            ++scene_state_.total_joint_count;
+            ++scene_state.total_joint_count;
         }
 
-        scene_state_.robots.emplace_back(std::move(robot_state));
+        scene_state.robots.emplace_back(std::move(robot_state));
     }
+
+    return scene_state;
+}
+
+void PhysicsWorld::ResetSceneStateFromSnapshot() {
+    scene_state_ = MakeSceneStateFromSnapshot();
 }
 
 void PhysicsWorld::SetLastError(std::string error) {
@@ -585,6 +752,7 @@ GOBOT_REGISTRATION {
             .method("get_last_error", &PhysicsWorld::GetLastError)
             .method("reset", &PhysicsWorld::Reset)
             .method("step", &PhysicsWorld::Step)
+            .method("reset_link_state", &PhysicsWorld::ResetLinkState)
             .method("set_joint_control", &PhysicsWorld::SetJointControl);
 
     gobot::Type::register_wrapper_converter_for_base_classes<Ref<PhysicsWorld>, Ref<RefCounted>>();

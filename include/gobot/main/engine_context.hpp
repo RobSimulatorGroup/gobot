@@ -55,6 +55,8 @@ public:
     bool ResetSimulation();
     bool StepOnce();
     bool StepTicks(std::uint64_t ticks);
+    RealType GetFixedTimeStep() const;
+    bool SetFixedTimeStep(RealType fixed_time_step);
 
     RealType GetSimulationTime() const;
     std::uint64_t GetFrameCount() const;

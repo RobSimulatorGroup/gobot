@@ -67,7 +67,7 @@
                     }
                 },
                 "script": null,
-                "source_path": "res://go1.xml",
+                "source_path": "",
                 "visible": true
             },
             "type": "Robot3D"

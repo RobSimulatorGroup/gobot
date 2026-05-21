@@ -172,6 +172,7 @@ void SimulationServer::SetFixedTimeStep(RealType fixed_time_step) {
     if (world_.IsValid()) {
         world_->SetSettings(physics_world_settings_);
     }
+    last_error_.clear();
 }
 
 RealType SimulationServer::GetTimeScale() const {
@@ -351,6 +352,66 @@ int SimulationServer::Step(RealType delta_time) {
     return steps;
 }
 
+bool SimulationServer::ConfigureEnvironmentBatch(std::size_t environment_count) {
+    if (!EnsureWorldReady()) {
+        return false;
+    }
+
+    if (!world_->ConfigureEnvironmentBatch(environment_count)) {
+        SetLastError(world_->GetLastError());
+        return false;
+    }
+
+    last_error_.clear();
+    return true;
+}
+
+std::size_t SimulationServer::GetEnvironmentCount() const {
+    if (!world_.IsValid()) {
+        return 0;
+    }
+
+    return world_->GetEnvironmentCount();
+}
+
+const PhysicsSceneState* SimulationServer::GetEnvironmentState(std::size_t environment_index) const {
+    if (!world_.IsValid()) {
+        return nullptr;
+    }
+
+    return world_->GetEnvironmentState(environment_index);
+}
+
+bool SimulationServer::ResetEnvironment(std::size_t environment_index) {
+    if (!EnsureWorldReady()) {
+        return false;
+    }
+
+    if (!world_->ResetEnvironment(environment_index)) {
+        SetLastError(world_->GetLastError());
+        return false;
+    }
+
+    last_error_.clear();
+    return true;
+}
+
+bool SimulationServer::StepEnvironment(std::size_t environment_index, std::uint64_t ticks) {
+    if (!EnsureWorldReady()) {
+        return false;
+    }
+
+    for (std::uint64_t tick = 0; tick < ticks; ++tick) {
+        if (!world_->StepEnvironment(environment_index, physics_world_settings_.fixed_time_step)) {
+            SetLastError(world_->GetLastError());
+            return false;
+        }
+    }
+
+    last_error_.clear();
+    return true;
+}
+
 bool SimulationServer::SyncSceneFromWorld() {
     if (!EnsureWorldReady()) {
         return false;
@@ -436,6 +497,96 @@ bool SimulationServer::ResetJointState(const std::string& robot_name,
     }
 
     ApplyWorldStateToScene();
+    last_error_.clear();
+    return true;
+}
+
+bool SimulationServer::ResetEnvironmentJointState(std::size_t environment_index,
+                                                  const std::string& robot_name,
+                                                  const std::string& joint_name,
+                                                  RealType position,
+                                                  RealType velocity) {
+    if (!EnsureWorldReady()) {
+        return false;
+    }
+
+    if (!world_->ResetEnvironmentJointState(environment_index, robot_name, joint_name, position, velocity)) {
+        SetLastError(world_->GetLastError());
+        return false;
+    }
+
+    last_error_.clear();
+    return true;
+}
+
+bool SimulationServer::ResetLinkState(const std::string& robot_name,
+                                      const std::string& link_name,
+                                      const Vector3& position,
+                                      const Quaternion& orientation,
+                                      const Vector3& linear_velocity,
+                                      const Vector3& angular_velocity) {
+    if (!EnsureWorldReady()) {
+        return false;
+    }
+
+    if (!world_->ResetLinkState(robot_name,
+                                link_name,
+                                position,
+                                orientation,
+                                linear_velocity,
+                                angular_velocity)) {
+        SetLastError(world_->GetLastError());
+        return false;
+    }
+
+    ApplyWorldStateToScene();
+    last_error_.clear();
+    return true;
+}
+
+bool SimulationServer::ResetEnvironmentLinkState(std::size_t environment_index,
+                                                 const std::string& robot_name,
+                                                 const std::string& link_name,
+                                                 const Vector3& position,
+                                                 const Quaternion& orientation,
+                                                 const Vector3& linear_velocity,
+                                                 const Vector3& angular_velocity) {
+    if (!EnsureWorldReady()) {
+        return false;
+    }
+
+    if (!world_->ResetEnvironmentLinkState(environment_index,
+                                           robot_name,
+                                           link_name,
+                                           position,
+                                           orientation,
+                                           linear_velocity,
+                                           angular_velocity)) {
+        SetLastError(world_->GetLastError());
+        return false;
+    }
+
+    last_error_.clear();
+    return true;
+}
+
+bool SimulationServer::SetEnvironmentJointPositionTarget(std::size_t environment_index,
+                                                         const std::string& robot_name,
+                                                         const std::string& joint_name,
+                                                         RealType target_position) {
+    if (!EnsureWorldReady()) {
+        return false;
+    }
+
+    if (!world_->SetEnvironmentJointControl(environment_index,
+                                            robot_name,
+                                            joint_name,
+                                            PhysicsJointControlMode::Position,
+                                            target_position)) {
+        SetLastError(world_->GetLastError());
+        return false;
+    }
+
     last_error_.clear();
     return true;
 }
@@ -783,12 +934,20 @@ GOBOT_REGISTRATION {
             .method("reset", &SimulationServer::Reset)
             .method("step_once", &SimulationServer::StepOnce)
             .method("step", &SimulationServer::Step)
+            .method("configure_environment_batch", &SimulationServer::ConfigureEnvironmentBatch)
+            .method("get_environment_count", &SimulationServer::GetEnvironmentCount)
+            .method("reset_environment", &SimulationServer::ResetEnvironment)
+            .method("step_environment", &SimulationServer::StepEnvironment)
             .method("sync_scene_from_world", &SimulationServer::SyncSceneFromWorld)
             .method("set_joint_position_target", &SimulationServer::SetJointPositionTarget)
             .method("set_joint_velocity_target", &SimulationServer::SetJointVelocityTarget)
             .method("set_joint_effort_target", &SimulationServer::SetJointEffortTarget)
             .method("set_joint_passive", &SimulationServer::SetJointPassive)
             .method("reset_joint_state", &SimulationServer::ResetJointState)
+            .method("reset_link_state", &SimulationServer::ResetLinkState)
+            .method("reset_environment_joint_state", &SimulationServer::ResetEnvironmentJointState)
+            .method("reset_environment_link_state", &SimulationServer::ResetEnvironmentLinkState)
+            .method("set_environment_joint_position_target", &SimulationServer::SetEnvironmentJointPositionTarget)
             .method("set_robot_joint_position_targets_from_normalized_action",
                     set_robot_normalized_action)
             .method("get_simulation_time", &SimulationServer::GetSimulationTime)

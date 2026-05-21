@@ -224,6 +224,24 @@ bool EngineContext::StepTicks(std::uint64_t ticks) {
     return true;
 }
 
+RealType EngineContext::GetFixedTimeStep() const {
+    return simulation_server_ == nullptr ? RealType{0.0} : simulation_server_->GetFixedTimeStep();
+}
+
+bool EngineContext::SetFixedTimeStep(RealType fixed_time_step) {
+    if (simulation_server_ == nullptr) {
+        SetLastError("SimulationServer service is not available.");
+        return false;
+    }
+    simulation_server_->SetFixedTimeStep(fixed_time_step);
+    if (!simulation_server_->GetLastError().empty()) {
+        SetLastError(simulation_server_->GetLastError());
+        return false;
+    }
+    last_error_.clear();
+    return true;
+}
+
 RealType EngineContext::GetSimulationTime() const {
     return simulation_server_ == nullptr ? RealType{0.0} : simulation_server_->GetSimulationTime();
 }

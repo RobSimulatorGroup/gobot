@@ -5,8 +5,16 @@ import gobot
 
 
 ROBOT = "go1"
+BASE_LINK = "trunk"
 DEFAULT_POLICY_PATH = "res://policies/go1.pt"
 PRINT_EVERY_TICKS = 240
+FIXED_TIME_STEP = 0.002
+RESET_BASE_POSITION = [0.0, 0.0, 0.27]
+COMMAND = [
+    float(os.environ.get("GOBOT_GO1_VX", "0.5")),
+    float(os.environ.get("GOBOT_GO1_VY", "0.0")),
+    float(os.environ.get("GOBOT_GO1_YAW", "0.0")),
+]
 JOINT_NAMES = [
     "FR_hip_joint",
     "FR_thigh_joint",
@@ -36,6 +44,9 @@ DEFAULT_POS = [
     -1.8,
 ]
 ACTION_SCALE = 0.25
+KP = 40.0
+KD = 1.0
+DECIMATION = 10
 POSITION_LIMITS = {
     "FR_hip_joint": (-0.863, 0.863),
     "FR_thigh_joint": (-0.686, 4.501),
@@ -55,106 +66,44 @@ POSITION_LIMITS = {
 class TorchPolicy:
     def __init__(self, path):
         import torch
+        from rsl_rl.models import MLPModel
+        from tensordict import TensorDict
 
         self.torch = torch
         self.device = torch.device("cpu")
-        checkpoint = torch.load(path, map_location=self.device, weights_only=False)
-        self.policy = self._load_policy_module(checkpoint)
-        self.policy.to(self.device)
+        obs = TensorDict(
+            {"policy": torch.zeros((1, 48), dtype=torch.float32, device=self.device)},
+            batch_size=[1],
+            device=self.device,
+        )
+        self.policy = MLPModel(
+            obs,
+            {"actor": ["policy"]},
+            "actor",
+            len(JOINT_NAMES),
+            hidden_dims=[512, 256, 128],
+            activation="elu",
+            obs_normalization=True,
+            distribution_cfg={
+                "class_name": "rsl_rl.modules.GaussianDistribution",
+                "init_std": 1.0,
+                "std_type": "scalar",
+            },
+        ).to(self.device)
+        checkpoint = torch.load(path, weights_only=False, map_location=self.device)
+        self.policy.load_state_dict(checkpoint["actor_state_dict"], strict=True)
         self.policy.eval()
 
     def action(self, observation):
         with self.torch.no_grad():
+            from tensordict import TensorDict
+
             obs = self.torch.as_tensor(observation, dtype=self.torch.float32, device=self.device).reshape(1, -1)
-            output = self.policy(obs)
+            obs_td = TensorDict({"policy": obs}, batch_size=[1], device=self.device)
+            output = self.policy(obs_td)
             if isinstance(output, (tuple, list)):
                 output = output[0]
             return output.reshape(-1).clamp(-1.0, 1.0).cpu().tolist()
-
-    def _load_policy_module(self, checkpoint):
-        if isinstance(checkpoint, self.torch.nn.Module):
-            return checkpoint
-        if not isinstance(checkpoint, dict):
-            raise TypeError("expected a torch module or checkpoint dictionary")
-
-        state = checkpoint.get("actor_state_dict") or checkpoint.get("state_dict") or checkpoint
-        if not isinstance(state, dict):
-            raise TypeError("checkpoint has no actor_state_dict/state_dict")
-
-        mlp_state = {}
-        for key, value in state.items():
-            mlp_index = str(key).find("mlp.")
-            if mlp_index >= 0:
-                mlp_state[str(key)[mlp_index:]] = value
-        if not mlp_state:
-            raise ValueError("checkpoint has no rsl_rl MLP actor weights")
-
-        activation = checkpoint.get("activation", "elu")
-        return self._build_mlp(mlp_state, activation, state)
-
-    def _build_mlp(self, state, activation, checkpoint_state):
-        torch = self.torch
-        linear_indices = sorted(
-            int(key.split(".")[1])
-            for key in state
-            if key.startswith("mlp.") and key.endswith(".weight")
-        )
-        if not linear_indices:
-            raise ValueError("checkpoint has no linear layer weights")
-
-        layers = []
-        last_index = linear_indices[-1]
-        for layer_index in linear_indices:
-            weight = state[f"mlp.{layer_index}.weight"]
-            bias = state[f"mlp.{layer_index}.bias"]
-            layers.append(torch.nn.Linear(int(weight.shape[1]), int(weight.shape[0])))
-            if bias.shape[0] != weight.shape[0]:
-                raise ValueError(f"invalid bias shape for layer {layer_index}")
-            if layer_index != last_index:
-                layers.append(self._activation_module(activation))
-
-        class MlpPolicy(torch.nn.Module):
-            def __init__(self, modules):
-                super().__init__()
-                self.mlp = torch.nn.Sequential(*modules)
-
-            def forward(self, x):
-                return self.mlp(x)
-
-        module = MlpPolicy(layers)
-        module.load_state_dict(state, strict=False)
-        self.input_size = int(layers[0].in_features)
-        if "obs_normalizer._mean" in checkpoint_state:
-            mean = checkpoint_state["obs_normalizer._mean"].detach().to(dtype=self.torch.float32)
-            std = checkpoint_state.get("obs_normalizer._std", self.torch.ones_like(mean)).detach().to(dtype=self.torch.float32)
-            std = self.torch.clamp(std, min=1.0e-6)
-            module = self.torch.nn.Sequential(self._Normalizer(mean, std), module)
-        return module
-
-    def _activation_module(self, activation):
-        name = str(activation).lower()
-        if name == "elu":
-            return self.torch.nn.ELU()
-        if name == "relu":
-            return self.torch.nn.ReLU()
-        if name == "tanh":
-            return self.torch.nn.Tanh()
-        raise ValueError(f"unsupported policy activation: {activation}")
-
-    class _Normalizer:
-        def __new__(cls, mean, std):
-            import torch
-
-            class Normalizer(torch.nn.Module):
-                def __init__(self):
-                    super().__init__()
-                    self.register_buffer("mean", mean)
-                    self.register_buffer("std", std)
-
-                def forward(self, x):
-                    return (x - self.mean) / self.std
-
-            return Normalizer()
 
 
 def _clamp(value, lower, upper):
@@ -192,6 +141,15 @@ def _quat_rotate(v, q):
 
 class Script(gobot.NodeScript):
     def _ready(self):
+        self.context.fixed_time_step = FIXED_TIME_STEP
+        self.context.set_default_joint_gains(
+            {
+                "position_stiffness": KP,
+                "velocity_damping": KD,
+                "integral_gain": 0.0,
+                "integral_limit": 0.0,
+            }
+        )
         self.robot = self._find_robot()
         self.joints = [self._find_joint(name) for name in JOINT_NAMES]
         self.policy = self._load_policy()
@@ -200,9 +158,12 @@ class Script(gobot.NodeScript):
         self.world_controls_ready = False
         self.last_action = [0.0] * len(JOINT_NAMES)
         print(
-            "Go1 RL policy playback started. policy={} joints={}".format(
+            "Go1 RL policy playback started. policy={} joints={} cmd=({:.2f}, {:.2f}, {:.2f})".format(
                 "loaded" if self.policy is not None else "missing",
                 len(self.joints),
+                COMMAND[0],
+                COMMAND[1],
+                COMMAND[2],
             )
         )
 
@@ -216,18 +177,19 @@ class Script(gobot.NodeScript):
             return
 
         observation = self._observation()
-        action = [0.0] * len(JOINT_NAMES)
-        if self.policy is not None:
-            action = self.policy.action(observation)
-        if len(action) != len(JOINT_NAMES):
-            print(f"Go1 policy produced {len(action)} actions, expected {len(JOINT_NAMES)}")
+        if self.ticks % DECIMATION == 0:
             action = [0.0] * len(JOINT_NAMES)
+            if self.policy is not None:
+                action = self.policy.action(observation)
+            if len(action) != len(JOINT_NAMES):
+                print(f"Go1 policy produced {len(action)} actions, expected {len(JOINT_NAMES)}")
+                action = [0.0] * len(JOINT_NAMES)
+            self.last_action = [float(value) for value in action]
 
         for index, joint_name in enumerate(JOINT_NAMES):
             lower, upper = POSITION_LIMITS[joint_name]
-            target = _clamp(DEFAULT_POS[index] + ACTION_SCALE * action[index], lower, upper)
+            target = _clamp(DEFAULT_POS[index] + ACTION_SCALE * self.last_action[index], lower, upper)
             self.context.set_joint_position_target(self.robot.name, joint_name, target)
-        self.last_action = [float(value) for value in action]
 
         self.ticks += 1
         if PRINT_EVERY_TICKS > 0 and self.ticks % PRINT_EVERY_TICKS == 0:
@@ -265,6 +227,16 @@ class Script(gobot.NodeScript):
             return True
         if not self.context.has_world:
             return False
+        reset_link_state = getattr(self.context, "reset_link_state", None)
+        if reset_link_state is not None:
+            reset_link_state(
+                self.robot.name,
+                BASE_LINK,
+                RESET_BASE_POSITION,
+                [1.0, 0.0, 0.0, 0.0],
+                [0.0, 0.0, 0.0],
+                [0.0, 0.0, 0.0],
+            )
         for index, joint_name in enumerate(JOINT_NAMES):
             reset_joint_state = getattr(self.context, "reset_joint_state", None)
             if reset_joint_state is not None:
@@ -277,8 +249,8 @@ class Script(gobot.NodeScript):
         x = y = z = 0.0
         state = self._runtime_robot_state()
         if state is not None:
-            base = state.get("base", {})
-            position = base.get("position", [0.0, 0.0, 0.0])
+            base = self._base_link_state(state)
+            position = base.get("position", [0.0, 0.0, 0.0]) if base is not None else [0.0, 0.0, 0.0]
             if len(position) >= 3:
                 x, y, z = position[:3]
         print(
@@ -300,12 +272,14 @@ class Script(gobot.NodeScript):
         if state is None:
             return [0.0] * 48
 
-        base = state.get("base", {})
-        quat = base.get("orientation", [1.0, 0.0, 0.0, 0.0])
+        base = self._base_link_state(state)
+        if base is None:
+            return [0.0] * 48
+        quat = base.get("quaternion", [1.0, 0.0, 0.0, 0.0])
         lin_vel = _quat_rotate_inv(base.get("linear_velocity", [0.0, 0.0, 0.0]), quat)
         ang_vel = base.get("angular_velocity", [0.0, 0.0, 0.0])
         projected_gravity = _quat_rotate_inv([0.0, 0.0, -1.0], quat)
-        cmd = [0.0, 0.0, 0.0]
+        cmd = COMMAND
 
         joint_states = {joint.get("name"): joint for joint in state.get("joints", [])}
         joint_pos = []
@@ -316,6 +290,19 @@ class Script(gobot.NodeScript):
             joint_vel.append(float(joint.get("velocity", 0.0)))
 
         return lin_vel + list(ang_vel[:3]) + projected_gravity + cmd + joint_pos + joint_vel + self.last_action
+
+    def _base_link_state(self, robot_state):
+        for link in robot_state.get("links", []):
+            if link.get("name") != BASE_LINK:
+                continue
+            transform = link.get("global_transform", {})
+            return {
+                "position": transform.get("position", [0.0, 0.0, 0.0]),
+                "quaternion": transform.get("quaternion", [1.0, 0.0, 0.0, 0.0]),
+                "linear_velocity": link.get("linear_velocity", [0.0, 0.0, 0.0]),
+                "angular_velocity": link.get("angular_velocity", [0.0, 0.0, 0.0]),
+            }
+        return None
 
     def _runtime_robot_state(self):
         if not self.context.has_world:

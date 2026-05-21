@@ -43,10 +43,47 @@ public:
 
     void Step(RealType delta_time) override;
 
+    bool ConfigureEnvironmentBatch(std::size_t environment_count) override;
+
+    std::size_t GetEnvironmentCount() const override;
+
+    const PhysicsSceneState* GetEnvironmentState(std::size_t environment_index) const override;
+
+    bool ResetEnvironment(std::size_t environment_index) override;
+
+    bool StepEnvironment(std::size_t environment_index, RealType delta_time) override;
+
     bool ResetJointState(const std::string& robot_name,
                          const std::string& joint_name,
                          RealType position,
                          RealType velocity = 0.0) override;
+
+    bool ResetEnvironmentJointState(std::size_t environment_index,
+                                    const std::string& robot_name,
+                                    const std::string& joint_name,
+                                    RealType position,
+                                    RealType velocity = 0.0) override;
+
+    bool ResetLinkState(const std::string& robot_name,
+                        const std::string& link_name,
+                        const Vector3& position,
+                        const Quaternion& orientation = Quaternion::Identity(),
+                        const Vector3& linear_velocity = Vector3::Zero(),
+                        const Vector3& angular_velocity = Vector3::Zero()) override;
+
+    bool ResetEnvironmentLinkState(std::size_t environment_index,
+                                   const std::string& robot_name,
+                                   const std::string& link_name,
+                                   const Vector3& position,
+                                   const Quaternion& orientation = Quaternion::Identity(),
+                                   const Vector3& linear_velocity = Vector3::Zero(),
+                                   const Vector3& angular_velocity = Vector3::Zero()) override;
+
+    bool SetEnvironmentJointControl(std::size_t environment_index,
+                                    const std::string& robot_name,
+                                    const std::string& joint_name,
+                                    PhysicsJointControlMode control_mode,
+                                    RealType target) override;
 
     bool SetLinkExternalForce(const std::string& robot_name,
                               const std::string& link_name,
@@ -85,17 +122,23 @@ private:
 
     std::string GetRobotPrefix(std::size_t robot_index) const;
 
-    void ApplyControlsToMuJoCo();
+    bool IsEnvironmentIndexValid(std::size_t environment_index) const;
 
-    void ApplyExternalForcesToMuJoCo();
+    PhysicsSceneState& EnvironmentState(std::size_t environment_index);
+
+    const PhysicsSceneState& EnvironmentState(std::size_t environment_index) const;
+
+    void ApplyControlsToMuJoCo(std::size_t environment_index);
+
+    void ApplyExternalForcesToMuJoCo(std::size_t environment_index);
 
     void FreeModel();
 
-    void SyncStateFromMuJoCo();
+    void SyncStateFromMuJoCo(std::size_t environment_index);
 
-    void SyncStateToMuJoCo();
+    void SyncStateToMuJoCo(std::size_t environment_index);
 
-    void SyncContactsFromMuJoCo();
+    void SyncContactsFromMuJoCo(std::size_t environment_index);
 
     struct MuJoCoJointBinding {
         std::size_t robot_index{0};
@@ -127,6 +170,8 @@ private:
 #ifdef GOBOT_HAS_MUJOCO
     void* model_{nullptr};
     void* data_{nullptr};
+    std::vector<void*> environment_data_;
+    std::vector<PhysicsSceneState> environment_states_;
     std::vector<MuJoCoRobotBinding> robot_bindings_;
     std::vector<MuJoCoJointBinding> joint_bindings_;
     std::vector<MuJoCoLinkBinding> link_bindings_;
