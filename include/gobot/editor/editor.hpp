@@ -84,6 +84,8 @@ public:
 
     bool AddGroundToEditedScene();
 
+    bool OpenProjectMainScene();
+
     void RefreshResourcePanel();
 
     bool OpenPythonScriptFromPath(const std::string& path);

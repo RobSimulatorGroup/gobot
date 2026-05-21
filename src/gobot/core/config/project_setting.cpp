@@ -9,6 +9,8 @@
 #include "gobot/core/string_utils.hpp"
 #include "gobot/error_macros.hpp"
 
+#include <fstream>
+
 namespace gobot {
 
 ProjectSettings *ProjectSettings::s_singleton = nullptr;
@@ -30,14 +32,17 @@ bool ProjectSettings::SetProjectPath(const std::string& project_path) {
     project_path_ = std::filesystem::weakly_canonical(project_path);
     if (!std::filesystem::exists(project_path_)) {
         LOG_ERROR("Invalid project path specified: {}", project_path);
+        project_path_.clear();
+        main_scene_path_.clear();
         return false;
     }
-    // TODO(wqq): check if it is a project path(has a project file)
+    LoadProjectConfig();
     return true;
 }
 
 void ProjectSettings::ClearProjectPath() {
     project_path_.clear();
+    main_scene_path_.clear();
 }
 
 std::string ProjectSettings::LocalizePath(std::string_view path) const {
@@ -96,5 +101,108 @@ std::string ProjectSettings::GlobalizePath(std::string_view path) const {
     return path_copy;
 }
 
+bool ProjectSettings::SetMainScenePath(const std::string& main_scene_path) {
+    if (project_path_.empty()) {
+        LOG_ERROR("Cannot set main scene without an open project.");
+        return false;
+    }
+
+    const std::string local_path = LocalizePath(main_scene_path);
+    if (!local_path.starts_with("res://")) {
+        LOG_ERROR("Main scene must be inside the current project: {}", main_scene_path);
+        return false;
+    }
+
+    const std::string extension = std::filesystem::path(local_path).extension().string();
+    if (extension != ".jscn") {
+        LOG_ERROR("Main scene must be a .jscn file: {}", local_path);
+        return false;
+    }
+
+    if (!std::filesystem::exists(GlobalizePath(local_path))) {
+        LOG_ERROR("Main scene does not exist: {}", local_path);
+        return false;
+    }
+
+    const std::string previous_main_scene_path = main_scene_path_;
+    main_scene_path_ = local_path;
+    if (!SaveProjectConfig()) {
+        main_scene_path_ = previous_main_scene_path;
+        return false;
+    }
+    return true;
+}
+
+bool ProjectSettings::SaveProjectConfig() const {
+    if (project_path_.empty()) {
+        return false;
+    }
+
+    Json json = Json::object();
+    json["main_scene"] = main_scene_path_;
+
+    const std::filesystem::path config_path = GetProjectConfigPath();
+    std::ofstream output(config_path, std::ios::out | std::ios::trunc);
+    if (!output.is_open()) {
+        LOG_ERROR("Failed to write project config '{}'.", config_path.string());
+        return false;
+    }
+    output << json.dump(4) << '\n';
+    return true;
+}
+
+void ProjectSettings::LoadProjectConfig() {
+    main_scene_path_.clear();
+
+    if (project_path_.empty()) {
+        return;
+    }
+
+    const std::filesystem::path config_path = GetProjectConfigPath();
+    if (!std::filesystem::exists(config_path)) {
+        return;
+    }
+
+    std::ifstream input(config_path);
+    if (!input.is_open()) {
+        LOG_ERROR("Failed to read project config '{}'.", config_path.string());
+        return;
+    }
+
+    Json json;
+    try {
+        input >> json;
+    } catch (const std::exception& error) {
+        LOG_ERROR("Failed to parse project config '{}': {}", config_path.string(), error.what());
+        return;
+    }
+
+    if (!json.is_object()) {
+        LOG_ERROR("Project config '{}' must be a JSON object.", config_path.string());
+        return;
+    }
+
+    if (!json.contains("main_scene") || json["main_scene"].is_null()) {
+        return;
+    }
+    if (!json["main_scene"].is_string()) {
+        LOG_ERROR("Project config '{}' has non-string main_scene.", config_path.string());
+        return;
+    }
+
+    const std::string local_path = LocalizePath(json["main_scene"].get<std::string>());
+    if (!local_path.starts_with("res://")) {
+        LOG_ERROR("Ignoring main scene outside project in '{}': {}", config_path.string(), local_path);
+        return;
+    }
+    main_scene_path_ = local_path;
+}
+
+std::string ProjectSettings::GetProjectConfigPath() const {
+    if (project_path_.empty()) {
+        return {};
+    }
+    return (std::filesystem::path(project_path_) / "project.gobot").string();
+}
 
 }

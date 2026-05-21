@@ -10,6 +10,9 @@
 #include "gobot/core/object.hpp"
 #include "gobot/core/types.hpp"
 
+#include <string>
+#include <string_view>
+
 namespace gobot {
 
 class GOBOT_EXPORT ProjectSettings : public Object {
@@ -33,8 +36,19 @@ public:
 
     [[nodiscard]] FORCE_INLINE const std::string& GetProjectPath() const { return project_path_; }
 
+    [[nodiscard]] FORCE_INLINE const std::string& GetMainScenePath() const { return main_scene_path_; }
+
+    bool SetMainScenePath(const std::string& main_scene_path);
+
+    bool SaveProjectConfig() const;
+
 private:
+    void LoadProjectConfig();
+
+    [[nodiscard]] std::string GetProjectConfigPath() const;
+
     std::string project_path_;
+    std::string main_scene_path_;
 };
 
 }

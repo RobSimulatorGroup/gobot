@@ -143,6 +143,8 @@ Editor::Editor() {
 
     file_browser_ = new ImGui::FileBrowser();
     file_browser_->SetTitle("File Browser");
+
+    OpenProjectMainScene();
 }
 
 Editor::~Editor() {
@@ -395,6 +397,30 @@ bool Editor::AddGroundToEditedScene() {
 
     selected_ = visual;
     LOG_INFO("Added ground to scene root '{}'.", root->GetName());
+    return true;
+}
+
+bool Editor::OpenProjectMainScene() {
+    ProjectSettings* settings = ProjectSettings::GetInstance();
+    if (settings == nullptr || settings->GetMainScenePath().empty()) {
+        return false;
+    }
+
+    const std::string main_scene_path = settings->GetMainScenePath();
+    if (!std::filesystem::exists(settings->GlobalizePath(main_scene_path))) {
+        LOG_ERROR("Project main scene does not exist: {}", main_scene_path);
+        return false;
+    }
+
+    if (!OpenSceneFromPath(main_scene_path)) {
+        LOG_ERROR("Failed to open project main scene: {}", main_scene_path);
+        return false;
+    }
+
+    if (resource_panel_ != nullptr) {
+        resource_panel_->SelectResource(main_scene_path);
+    }
+    LOG_INFO("Opened project main scene: {}", main_scene_path);
     return true;
 }
 

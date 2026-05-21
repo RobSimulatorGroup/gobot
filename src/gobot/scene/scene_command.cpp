@@ -785,6 +785,17 @@ bool RenameResourceFileCommand::Rename(const std::string& from_path,
         return false;
     }
 
+    if (settings->GetMainScenePath() == from_path) {
+        if (!settings->SetMainScenePath(to_path)) {
+            LOG_ERROR("{} failed: cannot update project main scene '{}' to '{}'.",
+                      phase,
+                      from_path,
+                      to_path);
+            std::filesystem::rename(to_global, from_global, error);
+            return false;
+        }
+    }
+
     Ref<Resource> cached_resource = ResourceCache::GetRef(from_path);
     if (cached_resource.IsValid()) {
         cached_resource->SetPath(to_path, true);

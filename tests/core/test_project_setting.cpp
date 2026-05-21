@@ -68,3 +68,28 @@ TEST(TestProjectSetting, test_localize_path) {
 #endif
 
 }
+
+TEST(TestProjectSetting, saves_and_loads_main_scene) {
+    const std::filesystem::path project_path =
+            std::filesystem::temp_directory_path() / "gobot_project_settings_main_scene_test";
+    std::error_code error;
+    std::filesystem::remove_all(project_path, error);
+    std::filesystem::create_directories(project_path);
+    {
+        std::ofstream scene(project_path / "main.jscn");
+        scene << "{}";
+    }
+
+    {
+        gobot::ProjectSettings project_settings;
+        ASSERT_TRUE(project_settings.SetProjectPath(project_path.string()));
+        ASSERT_TRUE(project_settings.SetMainScenePath("res://main.jscn"));
+        EXPECT_EQ(project_settings.GetMainScenePath(), "res://main.jscn");
+    }
+
+    {
+        gobot::ProjectSettings project_settings;
+        ASSERT_TRUE(project_settings.SetProjectPath(project_path.string()));
+        EXPECT_EQ(project_settings.GetMainScenePath(), "res://main.jscn");
+    }
+}

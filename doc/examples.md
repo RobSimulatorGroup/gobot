@@ -41,7 +41,9 @@ For a source checkout, the editor falls back to the build-time source
 
 Each immediate child directory is treated as an example project when it contains
 at least one `.jscn` scene file. Opening an example sets that directory as the
-current project, so `res://` paths resolve within the example project.
+current project, so `res://` paths resolve within the example project. If the
+project has a `project.gobot` file with a `main_scene` entry, the editor opens
+that scene automatically.
 If multiple roots contain the same example directory name, the editor shows the
 first one from `example_roots` and hides the later duplicates.
 
@@ -53,6 +55,7 @@ first one from `example_roots` and hides the later duplicates.
 - `scripts/cartpole.py`: a Python `NodeScript` controller attached to the root
 - `env.py` and `train.py`: a direct Python MuJoCo + rsl_rl training environment.
 - `inverted_pendulum.xml`: the MJCF model used by the training script.
+- `project.gobot`: sets `cartpole.jscn` as the project main scene.
 
 The training environment is intentionally local to the example. It does not use
 Gobot task JSON or project-specific code inside the `gobot` Python package. The

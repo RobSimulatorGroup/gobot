@@ -568,6 +568,14 @@ void ResourcePanel::DrawResourceTree(DirectoryInformation* dir_info, bool root)
 
     const std::string popup_id = "##ResourceFileContext_" + dir_info->global_path;
     if (!dir_info->is_directory && ImGui::BeginPopupContextItem(popup_id.c_str())) {
+        if (IsNativeSceneFile(dir_info) && ImGui::MenuItem(ICON_MDI_STAR " Set as Main Scene")) {
+            if (ProjectSettings::GetInstance()->SetMainScenePath(dir_info->local_path)) {
+                LOG_INFO("Set project main scene: {}", dir_info->local_path);
+            }
+        }
+        if (IsNativeSceneFile(dir_info)) {
+            ImGui::Separator();
+        }
         if (ImGui::MenuItem(ICON_MDI_RENAME_BOX " Rename File")) {
             pending_rename_resource_file_global_path_ = dir_info->global_path;
             pending_rename_resource_file_local_path_ = dir_info->local_path;
@@ -649,6 +657,18 @@ bool ResourcePanel::SetProjectPath(const std::string& project_path)
         AddProjectHistory(project_path_);
     }
     LOG_INFO("Opened project: {}", project_path_);
+    const std::string& main_scene_path = ProjectSettings::GetInstance()->GetMainScenePath();
+    if (!main_scene_path.empty()) {
+        const std::string main_scene_global_path =
+                ProjectSettings::GetInstance()->GlobalizePath(main_scene_path);
+        if (std::filesystem::exists(main_scene_global_path)) {
+            Editor::GetInstance()->RequestOpenSceneFromPath(main_scene_path);
+            SelectResource(main_scene_path);
+            LOG_INFO("Opening project main scene: {}", main_scene_path);
+        } else {
+            LOG_ERROR("Project main scene does not exist: {}", main_scene_path);
+        }
+    }
     return true;
 }
 
