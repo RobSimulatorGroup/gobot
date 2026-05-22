@@ -6,12 +6,10 @@
 
 #include "gobot/simulation/simulation_server.hpp"
 
-#include <algorithm>
 #include <utility>
 
 #include "gobot/core/registration.hpp"
 #include "gobot/error_macros.hpp"
-#include "gobot/physics/joint_controller.hpp"
 #include "gobot/scene/joint_3d.hpp"
 #include "gobot/scene/link_3d.hpp"
 #include "gobot/scene/node.hpp"
@@ -214,7 +212,7 @@ void SimulationServer::SetPaused(bool paused) {
 }
 
 bool SimulationServer::BuildWorldFromScene(const Node* scene_root) {
-    scene_root_ = scene_root;
+    runtime_scene_.Clear();
     world_ = PhysicsServer::CreateWorldForBackend(backend_type_, physics_world_settings_);
     if (!world_.IsValid()) {
         SetLastError("Failed to create physics world.");
@@ -233,6 +231,12 @@ bool SimulationServer::BuildWorldFromScene(const Node* scene_root) {
         return false;
     }
 
+    if (!runtime_scene_.Initialize(world_, scene_root)) {
+        SetLastError(runtime_scene_.GetLastError());
+        world_.Reset();
+        return false;
+    }
+
     ResetClock();
     last_error_.clear();
     return true;
@@ -244,7 +248,7 @@ bool SimulationServer::RebuildWorldFromScene(const Node* scene_root, bool preser
         previous_state = world_->GetSceneState();
     }
 
-    scene_root_ = scene_root;
+    runtime_scene_.Clear();
     world_ = PhysicsServer::CreateWorldForBackend(backend_type_, physics_world_settings_);
     if (!world_.IsValid()) {
         SetLastError("Failed to create physics world.");
@@ -269,6 +273,12 @@ bool SimulationServer::RebuildWorldFromScene(const Node* scene_root, bool preser
         return false;
     }
 
+    if (!runtime_scene_.Initialize(world_, scene_root)) {
+        SetLastError(runtime_scene_.GetLastError());
+        world_.Reset();
+        return false;
+    }
+
     ResetClock();
     ApplyWorldStateToScene();
     last_error_.clear();
@@ -276,12 +286,12 @@ bool SimulationServer::RebuildWorldFromScene(const Node* scene_root, bool preser
 }
 
 const Node* SimulationServer::GetSceneRoot() const {
-    return scene_root_;
+    return runtime_scene_.GetSceneRoot();
 }
 
 void SimulationServer::ClearWorld() {
+    runtime_scene_.Clear();
     world_.Reset();
-    scene_root_ = nullptr;
     ResetClock();
 }
 
@@ -291,6 +301,14 @@ bool SimulationServer::HasWorld() const {
 
 Ref<PhysicsWorld> SimulationServer::GetWorld() const {
     return world_;
+}
+
+SimulationScene* SimulationServer::GetRuntimeScene() {
+    return runtime_scene_.IsValid() ? &runtime_scene_ : nullptr;
+}
+
+const SimulationScene* SimulationServer::GetRuntimeScene() const {
+    return runtime_scene_.IsValid() ? &runtime_scene_ : nullptr;
 }
 
 bool SimulationServer::Reset() {
@@ -387,8 +405,8 @@ bool SimulationServer::ResetEnvironment(std::size_t environment_index) {
         return false;
     }
 
-    if (!world_->ResetEnvironment(environment_index)) {
-        SetLastError(world_->GetLastError());
+    if (!runtime_scene_.ResetEnvironment(environment_index)) {
+        SetLastError(runtime_scene_.GetLastError());
         return false;
     }
 
@@ -402,8 +420,8 @@ bool SimulationServer::StepEnvironment(std::size_t environment_index, std::uint6
     }
 
     for (std::uint64_t tick = 0; tick < ticks; ++tick) {
-        if (!world_->StepEnvironment(environment_index, physics_world_settings_.fixed_time_step)) {
-            SetLastError(world_->GetLastError());
+        if (!runtime_scene_.StepEnvironment(environment_index, physics_world_settings_.fixed_time_step)) {
+            SetLastError(runtime_scene_.GetLastError());
             return false;
         }
     }
@@ -418,390 +436,6 @@ bool SimulationServer::SyncSceneFromWorld() {
     }
 
     return ApplyWorldStateToScene();
-}
-
-bool SimulationServer::SetJointPositionTarget(const std::string& robot_name,
-                                              const std::string& joint_name,
-                                              RealType target_position) {
-    if (!EnsureWorldReady()) {
-        return false;
-    }
-
-    if (!world_->SetJointControl(robot_name, joint_name, PhysicsJointControlMode::Position, target_position)) {
-        SetLastError(world_->GetLastError());
-        return false;
-    }
-
-    last_error_.clear();
-    return true;
-}
-
-bool SimulationServer::SetJointVelocityTarget(const std::string& robot_name,
-                                              const std::string& joint_name,
-                                              RealType target_velocity) {
-    if (!EnsureWorldReady()) {
-        return false;
-    }
-
-    if (!world_->SetJointControl(robot_name, joint_name, PhysicsJointControlMode::Velocity, target_velocity)) {
-        SetLastError(world_->GetLastError());
-        return false;
-    }
-
-    last_error_.clear();
-    return true;
-}
-
-bool SimulationServer::SetJointEffortTarget(const std::string& robot_name,
-                                            const std::string& joint_name,
-                                            RealType target_effort) {
-    if (!EnsureWorldReady()) {
-        return false;
-    }
-
-    if (!world_->SetJointControl(robot_name, joint_name, PhysicsJointControlMode::Effort, target_effort)) {
-        SetLastError(world_->GetLastError());
-        return false;
-    }
-
-    last_error_.clear();
-    return true;
-}
-
-bool SimulationServer::SetJointPassive(const std::string& robot_name,
-                                       const std::string& joint_name) {
-    if (!EnsureWorldReady()) {
-        return false;
-    }
-
-    if (!world_->SetJointControl(robot_name, joint_name, PhysicsJointControlMode::Passive, 0.0)) {
-        SetLastError(world_->GetLastError());
-        return false;
-    }
-
-    last_error_.clear();
-    return true;
-}
-
-bool SimulationServer::ResetJointState(const std::string& robot_name,
-                                       const std::string& joint_name,
-                                       RealType position,
-                                       RealType velocity) {
-    if (!EnsureWorldReady()) {
-        return false;
-    }
-
-    if (!world_->ResetJointState(robot_name, joint_name, position, velocity)) {
-        SetLastError(world_->GetLastError());
-        return false;
-    }
-
-    ApplyWorldStateToScene();
-    last_error_.clear();
-    return true;
-}
-
-bool SimulationServer::ResetEnvironmentJointState(std::size_t environment_index,
-                                                  const std::string& robot_name,
-                                                  const std::string& joint_name,
-                                                  RealType position,
-                                                  RealType velocity) {
-    if (!EnsureWorldReady()) {
-        return false;
-    }
-
-    if (!world_->ResetEnvironmentJointState(environment_index, robot_name, joint_name, position, velocity)) {
-        SetLastError(world_->GetLastError());
-        return false;
-    }
-
-    last_error_.clear();
-    return true;
-}
-
-bool SimulationServer::ResetLinkState(const std::string& robot_name,
-                                      const std::string& link_name,
-                                      const Vector3& position,
-                                      const Quaternion& orientation,
-                                      const Vector3& linear_velocity,
-                                      const Vector3& angular_velocity) {
-    if (!EnsureWorldReady()) {
-        return false;
-    }
-
-    if (!world_->ResetLinkState(robot_name,
-                                link_name,
-                                position,
-                                orientation,
-                                linear_velocity,
-                                angular_velocity)) {
-        SetLastError(world_->GetLastError());
-        return false;
-    }
-
-    ApplyWorldStateToScene();
-    last_error_.clear();
-    return true;
-}
-
-bool SimulationServer::ResetEnvironmentLinkState(std::size_t environment_index,
-                                                 const std::string& robot_name,
-                                                 const std::string& link_name,
-                                                 const Vector3& position,
-                                                 const Quaternion& orientation,
-                                                 const Vector3& linear_velocity,
-                                                 const Vector3& angular_velocity) {
-    if (!EnsureWorldReady()) {
-        return false;
-    }
-
-    if (!world_->ResetEnvironmentLinkState(environment_index,
-                                           robot_name,
-                                           link_name,
-                                           position,
-                                           orientation,
-                                           linear_velocity,
-                                           angular_velocity)) {
-        SetLastError(world_->GetLastError());
-        return false;
-    }
-
-    last_error_.clear();
-    return true;
-}
-
-bool SimulationServer::SetEnvironmentJointPositionTarget(std::size_t environment_index,
-                                                         const std::string& robot_name,
-                                                         const std::string& joint_name,
-                                                         RealType target_position) {
-    if (!EnsureWorldReady()) {
-        return false;
-    }
-
-    if (!world_->SetEnvironmentJointControl(environment_index,
-                                            robot_name,
-                                            joint_name,
-                                            PhysicsJointControlMode::Position,
-                                            target_position)) {
-        SetLastError(world_->GetLastError());
-        return false;
-    }
-
-    last_error_.clear();
-    return true;
-}
-
-bool SimulationServer::SetLinkExternalForce(const std::string& robot_name,
-                                            const std::string& link_name,
-                                            const Vector3& point,
-                                            const Vector3& force) {
-    if (!EnsureWorldReady()) {
-        return false;
-    }
-
-    if (!world_->SetLinkExternalForce(robot_name, link_name, point, force)) {
-        SetLastError(world_->GetLastError());
-        return false;
-    }
-
-    last_error_.clear();
-    return true;
-}
-
-bool SimulationServer::SetLinkSpringForce(const std::string& robot_name,
-                                          const std::string& link_name,
-                                          const Vector3& local_point,
-                                          const Vector3& target_point,
-                                          const Vector3& force_hint) {
-    if (!EnsureWorldReady()) {
-        return false;
-    }
-
-    if (!world_->SetLinkSpringForce(robot_name, link_name, local_point, target_point, force_hint)) {
-        SetLastError(world_->GetLastError());
-        return false;
-    }
-
-    last_error_.clear();
-    return true;
-}
-
-void SimulationServer::ClearExternalForces() {
-    if (world_.IsValid()) {
-        world_->ClearExternalForces();
-    }
-}
-
-bool SimulationServer::SetRobotJointPositionTargetsFromNormalizedAction(const std::string& robot_name,
-                                                                        const std::vector<RealType>& action) {
-    if (!EnsureWorldReady()) {
-        return false;
-    }
-
-    const PhysicsSceneSnapshot& snapshot = world_->GetSceneSnapshot();
-    const PhysicsSceneState& state = world_->GetSceneState();
-
-    const PhysicsRobotSnapshot* robot_snapshot = nullptr;
-    const PhysicsRobotState* robot_state = nullptr;
-    for (std::size_t robot_index = 0; robot_index < snapshot.robots.size(); ++robot_index) {
-        if (snapshot.robots[robot_index].name != robot_name) {
-            continue;
-        }
-
-        robot_snapshot = &snapshot.robots[robot_index];
-        if (robot_index < state.robots.size()) {
-            robot_state = &state.robots[robot_index];
-        }
-        break;
-    }
-
-    if (robot_snapshot == nullptr || robot_state == nullptr) {
-        SetLastError(fmt::format("Cannot set normalized action for missing robot '{}'.", robot_name));
-        return false;
-    }
-
-    std::size_t action_index = 0;
-    for (std::size_t joint_index = 0; joint_index < robot_snapshot->joints.size(); ++joint_index) {
-        if (joint_index >= robot_state->joints.size()) {
-            continue;
-        }
-
-        const PhysicsJointSnapshot& joint_snapshot = robot_snapshot->joints[joint_index];
-        const PhysicsJointState& joint_state = robot_state->joints[joint_index];
-        const auto joint_type = static_cast<JointType>(joint_snapshot.joint_type);
-        if (joint_type != JointType::Revolute &&
-            joint_type != JointType::Continuous &&
-            joint_type != JointType::Prismatic) {
-            continue;
-        }
-
-        if (action_index >= action.size()) {
-            SetLastError(fmt::format("Robot '{}' expected at least {} joint action value(s), got {}.",
-                                     robot_name,
-                                     action_index + 1,
-                                     action.size()));
-            return false;
-        }
-
-        JointControllerLimits limits = MakeJointControllerLimits(joint_snapshot);
-        if (joint_type == JointType::Continuous) {
-            limits.has_position_limits = false;
-        }
-
-        const RealType target_position =
-                JointController::MapNormalizedActionToTargetPosition(action[action_index],
-                                                                     limits,
-                                                                     joint_state.position,
-                                                                     1.0);
-        if (!world_->SetJointControl(robot_name,
-                                     joint_state.joint_name,
-                                     PhysicsJointControlMode::Position,
-                                     target_position)) {
-            SetLastError(world_->GetLastError());
-            return false;
-        }
-
-        ++action_index;
-    }
-
-    if (action_index < action.size()) {
-        SetLastError(fmt::format("Robot '{}' expected {} joint action value(s), got {}.",
-                                 robot_name,
-                                 action_index,
-                                 action.size()));
-        return false;
-    }
-
-    last_error_.clear();
-    return true;
-}
-
-bool SimulationServer::SetRobotJointPositionTargetsFromNormalizedAction(
-        const std::string& robot_name,
-        const std::vector<std::string>& joint_names,
-        const std::vector<RealType>& action) {
-    if (!EnsureWorldReady()) {
-        return false;
-    }
-
-    if (joint_names.size() != action.size()) {
-        SetLastError(fmt::format("Robot '{}' expected {} named joint action value(s), got {}.",
-                                 robot_name,
-                                 joint_names.size(),
-                                 action.size()));
-        return false;
-    }
-
-    const PhysicsSceneSnapshot& snapshot = world_->GetSceneSnapshot();
-    const PhysicsSceneState& state = world_->GetSceneState();
-
-    const PhysicsRobotSnapshot* robot_snapshot = nullptr;
-    const PhysicsRobotState* robot_state = nullptr;
-    for (std::size_t robot_index = 0; robot_index < snapshot.robots.size(); ++robot_index) {
-        if (snapshot.robots[robot_index].name != robot_name) {
-            continue;
-        }
-
-        robot_snapshot = &snapshot.robots[robot_index];
-        if (robot_index < state.robots.size()) {
-            robot_state = &state.robots[robot_index];
-        }
-        break;
-    }
-
-    if (robot_snapshot == nullptr || robot_state == nullptr) {
-        SetLastError(fmt::format("Cannot set normalized action for missing robot '{}'.", robot_name));
-        return false;
-    }
-
-    for (std::size_t action_index = 0; action_index < joint_names.size(); ++action_index) {
-        const std::string& joint_name = joint_names[action_index];
-        const auto snapshot_iter = std::find_if(robot_snapshot->joints.begin(),
-                                                robot_snapshot->joints.end(),
-                                                [&joint_name](const PhysicsJointSnapshot& joint_snapshot) {
-                                                    return joint_snapshot.name == joint_name;
-                                                });
-        const auto state_iter = std::find_if(robot_state->joints.begin(),
-                                             robot_state->joints.end(),
-                                             [&joint_name](const PhysicsJointState& joint_state) {
-                                                 return joint_state.joint_name == joint_name;
-                                             });
-        if (snapshot_iter == robot_snapshot->joints.end() || state_iter == robot_state->joints.end()) {
-            SetLastError(fmt::format("Robot '{}' has no joint named '{}'.", robot_name, joint_name));
-            return false;
-        }
-
-        const auto joint_type = static_cast<JointType>(snapshot_iter->joint_type);
-        if (joint_type != JointType::Revolute &&
-            joint_type != JointType::Continuous &&
-            joint_type != JointType::Prismatic) {
-            SetLastError(fmt::format("Robot '{}' joint '{}' is not controllable by normalized position action.",
-                                     robot_name,
-                                     joint_name));
-            return false;
-        }
-
-        JointControllerLimits limits = MakeJointControllerLimits(*snapshot_iter);
-        if (joint_type == JointType::Continuous) {
-            limits.has_position_limits = false;
-        }
-
-        const RealType target_position =
-                JointController::MapNormalizedActionToTargetPosition(action[action_index],
-                                                                     limits,
-                                                                     state_iter->position,
-                                                                     1.0);
-        if (!world_->SetJointControl(robot_name,
-                                     state_iter->joint_name,
-                                     PhysicsJointControlMode::Position,
-                                     target_position)) {
-            SetLastError(world_->GetLastError());
-            return false;
-        }
-    }
-
-    last_error_.clear();
-    return true;
 }
 
 RealType SimulationServer::GetSimulationTime() const {
@@ -914,10 +548,6 @@ void SimulationServer::SetLastError(std::string error) {
 } // namespace gobot
 
 GOBOT_REGISTRATION {
-    auto set_robot_normalized_action =
-            static_cast<bool (SimulationServer::*)(const std::string&, const std::vector<RealType>&)>(
-                    &SimulationServer::SetRobotJointPositionTargetsFromNormalizedAction);
-
     Class_<SimulationServer>("SimulationServer")
             .constructor()(CtorAsRawPtr)
             .property("backend_type", &SimulationServer::GetBackendType, &SimulationServer::SetBackendType)
@@ -939,17 +569,6 @@ GOBOT_REGISTRATION {
             .method("reset_environment", &SimulationServer::ResetEnvironment)
             .method("step_environment", &SimulationServer::StepEnvironment)
             .method("sync_scene_from_world", &SimulationServer::SyncSceneFromWorld)
-            .method("set_joint_position_target", &SimulationServer::SetJointPositionTarget)
-            .method("set_joint_velocity_target", &SimulationServer::SetJointVelocityTarget)
-            .method("set_joint_effort_target", &SimulationServer::SetJointEffortTarget)
-            .method("set_joint_passive", &SimulationServer::SetJointPassive)
-            .method("reset_joint_state", &SimulationServer::ResetJointState)
-            .method("reset_link_state", &SimulationServer::ResetLinkState)
-            .method("reset_environment_joint_state", &SimulationServer::ResetEnvironmentJointState)
-            .method("reset_environment_link_state", &SimulationServer::ResetEnvironmentLinkState)
-            .method("set_environment_joint_position_target", &SimulationServer::SetEnvironmentJointPositionTarget)
-            .method("set_robot_joint_position_targets_from_normalized_action",
-                    set_robot_normalized_action)
             .method("get_simulation_time", &SimulationServer::GetSimulationTime)
             .method("get_frame_count", &SimulationServer::GetFrameCount)
             .method("get_last_error", &SimulationServer::GetLastError);

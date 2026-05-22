@@ -269,6 +269,28 @@ TEST(TestSimulationServer, syncs_floating_joint_transform_to_motion_mode_robot) 
     gobot::Object::Delete(robot);
 }
 
+TEST(TestSimulationServer, builds_runtime_scene_entities_with_base_articulation_and_control_types) {
+    gobot::SimulationServer simulation_server;
+
+    gobot::Robot3D* robot = CreateRobotScene();
+    ASSERT_TRUE(simulation_server.BuildWorldFromScene(robot));
+    const gobot::SimulationScene* runtime_scene = simulation_server.GetRuntimeScene();
+    ASSERT_NE(runtime_scene, nullptr);
+    ASSERT_EQ(runtime_scene->GetEntityCount(), 1);
+
+    const gobot::SimulationEntity* entity = runtime_scene->GetEntity("robot");
+    ASSERT_NE(entity, nullptr);
+    EXPECT_TRUE(entity->IsFixedBase());
+    EXPECT_FALSE(entity->IsFloatingBase());
+    EXPECT_TRUE(entity->IsArticulated());
+    EXPECT_TRUE(entity->IsActuated());
+    EXPECT_TRUE(entity->HasJoint("joint"));
+    EXPECT_TRUE(entity->HasLink("base"));
+    EXPECT_TRUE(entity->HasControllableJoint("joint"));
+
+    gobot::Object::Delete(robot);
+}
+
 TEST(TestSimulationServer, reset_link_state_syncs_floating_base_to_motion_robot) {
     gobot::SimulationServer simulation_server;
 
@@ -288,12 +310,14 @@ TEST(TestSimulationServer, reset_link_state_syncs_floating_base_to_motion_robot)
     robot->SetMode(gobot::RobotMode::Motion);
 
     ASSERT_TRUE(simulation_server.BuildWorldFromScene(robot));
-    ASSERT_TRUE(simulation_server.ResetLinkState("robot",
-                                                "base",
-                                                gobot::Vector3(1.0, 2.0, 3.0),
-                                                gobot::Quaternion::Identity(),
-                                                gobot::Vector3(0.1, 0.2, 0.3),
-                                                gobot::Vector3(0.4, 0.5, 0.6)));
+    ASSERT_NE(simulation_server.GetRuntimeScene(), nullptr);
+    ASSERT_TRUE(simulation_server.GetRuntimeScene()->ResetLinkState("robot",
+                                                                    "base",
+                                                                    gobot::Vector3(1.0, 2.0, 3.0),
+                                                                    gobot::Quaternion::Identity(),
+                                                                    gobot::Vector3(0.1, 0.2, 0.3),
+                                                                    gobot::Vector3(0.4, 0.5, 0.6)));
+    ASSERT_TRUE(simulation_server.SyncSceneFromWorld());
 
     const gobot::PhysicsLinkState& link_state =
             simulation_server.GetWorld()->GetSceneState().robots[0].links[0];
@@ -330,31 +354,32 @@ TEST(TestSimulationServer, sets_joint_control_targets_on_world) {
     gobot::Robot3D* robot = CreateRobotScene();
     ASSERT_TRUE(simulation_server.BuildWorldFromScene(robot));
 
-    ASSERT_TRUE(simulation_server.SetJointPositionTarget("robot", "joint", 0.5));
+    ASSERT_NE(simulation_server.GetRuntimeScene(), nullptr);
+    ASSERT_TRUE(simulation_server.GetRuntimeScene()->SetJointPositionTarget("robot", "joint", 0.5));
     const gobot::PhysicsJointState& position_state =
             simulation_server.GetWorld()->GetSceneState().robots[0].joints[0];
     EXPECT_EQ(position_state.control_mode, gobot::PhysicsJointControlMode::Position);
     EXPECT_DOUBLE_EQ(position_state.target_position, 0.5);
 
-    ASSERT_TRUE(simulation_server.SetJointVelocityTarget("robot", "joint", 1.25));
+    ASSERT_TRUE(simulation_server.GetRuntimeScene()->SetJointVelocityTarget("robot", "joint", 1.25));
     const gobot::PhysicsJointState& velocity_state =
             simulation_server.GetWorld()->GetSceneState().robots[0].joints[0];
     EXPECT_EQ(velocity_state.control_mode, gobot::PhysicsJointControlMode::Velocity);
     EXPECT_DOUBLE_EQ(velocity_state.target_velocity, 1.25);
 
-    ASSERT_TRUE(simulation_server.SetJointEffortTarget("robot", "joint", 2.5));
+    ASSERT_TRUE(simulation_server.GetRuntimeScene()->SetJointEffortTarget("robot", "joint", 2.5));
     const gobot::PhysicsJointState& effort_state =
             simulation_server.GetWorld()->GetSceneState().robots[0].joints[0];
     EXPECT_EQ(effort_state.control_mode, gobot::PhysicsJointControlMode::Effort);
     EXPECT_DOUBLE_EQ(effort_state.target_effort, 2.5);
 
-    ASSERT_TRUE(simulation_server.SetJointPassive("robot", "joint"));
+    ASSERT_TRUE(simulation_server.GetRuntimeScene()->SetJointPassive("robot", "joint"));
     const gobot::PhysicsJointState& passive_state =
             simulation_server.GetWorld()->GetSceneState().robots[0].joints[0];
     EXPECT_EQ(passive_state.control_mode, gobot::PhysicsJointControlMode::Passive);
 
-    EXPECT_FALSE(simulation_server.SetJointPositionTarget("robot", "missing", 0.0));
-    EXPECT_FALSE(simulation_server.GetLastError().empty());
+    EXPECT_FALSE(simulation_server.GetRuntimeScene()->SetJointPositionTarget("robot", "missing", 0.0));
+    EXPECT_FALSE(simulation_server.GetRuntimeScene()->GetLastError().empty());
 
     gobot::Object::Delete(robot);
 }
@@ -365,16 +390,17 @@ TEST(TestSimulationServer, maps_normalized_robot_action_to_joint_position_target
     gobot::Robot3D* robot = CreateRobotScene();
     ASSERT_TRUE(simulation_server.BuildWorldFromScene(robot));
 
-    ASSERT_TRUE(simulation_server.SetRobotJointPositionTargetsFromNormalizedAction("robot", {-0.5}));
+    ASSERT_NE(simulation_server.GetRuntimeScene(), nullptr);
+    ASSERT_TRUE(simulation_server.GetRuntimeScene()->SetRobotJointPositionTargetsFromNormalizedAction("robot", {-0.5}));
     const gobot::PhysicsJointState& joint_state =
             simulation_server.GetWorld()->GetSceneState().robots[0].joints[0];
     EXPECT_EQ(joint_state.control_mode, gobot::PhysicsJointControlMode::Position);
     EXPECT_DOUBLE_EQ(joint_state.target_position, -0.5);
 
-    EXPECT_FALSE(simulation_server.SetRobotJointPositionTargetsFromNormalizedAction("robot", {}));
-    EXPECT_FALSE(simulation_server.GetLastError().empty());
-    EXPECT_FALSE(simulation_server.SetRobotJointPositionTargetsFromNormalizedAction("robot", {0.0, 1.0}));
-    EXPECT_FALSE(simulation_server.GetLastError().empty());
+    EXPECT_FALSE(simulation_server.GetRuntimeScene()->SetRobotJointPositionTargetsFromNormalizedAction("robot", {}));
+    EXPECT_FALSE(simulation_server.GetRuntimeScene()->GetLastError().empty());
+    EXPECT_FALSE(simulation_server.GetRuntimeScene()->SetRobotJointPositionTargetsFromNormalizedAction("robot", {0.0, 1.0}));
+    EXPECT_FALSE(simulation_server.GetRuntimeScene()->GetLastError().empty());
 
     gobot::Object::Delete(robot);
 }
@@ -384,8 +410,9 @@ TEST(TestSimulationServer, maps_named_normalized_robot_action_to_selected_joints
 
     gobot::Robot3D* robot = CreateTwoJointRobotScene();
     ASSERT_TRUE(simulation_server.BuildWorldFromScene(robot));
+    ASSERT_NE(simulation_server.GetRuntimeScene(), nullptr);
 
-    ASSERT_TRUE(simulation_server.SetRobotJointPositionTargetsFromNormalizedAction(
+    ASSERT_TRUE(simulation_server.GetRuntimeScene()->SetRobotJointPositionTargetsFromNormalizedAction(
             "robot", std::vector<std::string>{"second_joint"}, std::vector<gobot::RealType>{0.5}));
 
     const auto& joint_states = simulation_server.GetWorld()->GetSceneState().robots[0].joints;
@@ -394,9 +421,9 @@ TEST(TestSimulationServer, maps_named_normalized_robot_action_to_selected_joints
     EXPECT_EQ(joint_states[1].control_mode, gobot::PhysicsJointControlMode::Position);
     EXPECT_DOUBLE_EQ(joint_states[1].target_position, 1.0);
 
-    EXPECT_FALSE(simulation_server.SetRobotJointPositionTargetsFromNormalizedAction(
+    EXPECT_FALSE(simulation_server.GetRuntimeScene()->SetRobotJointPositionTargetsFromNormalizedAction(
             "robot", std::vector<std::string>{"missing"}, std::vector<gobot::RealType>{0.0}));
-    EXPECT_FALSE(simulation_server.GetLastError().empty());
+    EXPECT_FALSE(simulation_server.GetRuntimeScene()->GetLastError().empty());
 
     gobot::Object::Delete(robot);
 }
@@ -435,7 +462,8 @@ TEST(TestSimulationServer, rebuild_world_preserves_compatible_joint_state_by_nam
 
     gobot::Robot3D* robot = CreateRobotScene();
     ASSERT_TRUE(simulation_server.BuildWorldFromScene(robot));
-    ASSERT_TRUE(simulation_server.SetJointPositionTarget("robot", "joint", 0.5));
+    ASSERT_NE(simulation_server.GetRuntimeScene(), nullptr);
+    ASSERT_TRUE(simulation_server.GetRuntimeScene()->SetJointPositionTarget("robot", "joint", 0.5));
 
     gobot::PhysicsJointState preserved_state =
             simulation_server.GetWorld()->GetSceneState().robots[0].joints[0];

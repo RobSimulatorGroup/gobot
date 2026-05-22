@@ -1,12 +1,12 @@
 {
     "__EXT_RESOURCES__": [
         {
-            "__ID__": "2_SGZM1",
+            "__ID__": "2_aZF8Z",
             "__PATH__": "res://go1.jscn",
             "__TYPE__": "PackedScene"
         },
         {
-            "__ID__": "1_QcJVO",
+            "__ID__": "1_9F93n",
             "__PATH__": "res://scripts/go1.py",
             "__TYPE__": "PythonScript"
         }
@@ -50,7 +50,7 @@
                         ]
                     }
                 },
-                "script": "ExtResource(1_QcJVO)",
+                "script": "ExtResource(1_9F93n)",
                 "visible": true
             },
             "type": "Node3D"
@@ -192,11 +192,11 @@
             "type": "CollisionShape3D"
         },
         {
-            "instance": "ExtResource(2_SGZM1)",
+            "instance": "ExtResource(2_aZF8Z)",
             "name": "go1",
             "parent": 0,
             "properties": {
-                "mode": "Assembly",
+                "mode": "Motion",
                 "position": {
                     "matrix_data": {
                         "cols": 1,

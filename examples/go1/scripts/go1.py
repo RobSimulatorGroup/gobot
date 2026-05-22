@@ -151,6 +151,7 @@ class Script(gobot.NodeScript):
             }
         )
         self.robot = self._find_robot()
+        self.robot.mode = gobot.RobotMode.Motion
         self.joints = [self._find_joint(name) for name in JOINT_NAMES]
         self.policy = self._load_policy()
         self.ticks = 0

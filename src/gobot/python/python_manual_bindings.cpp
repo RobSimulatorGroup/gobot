@@ -1447,8 +1447,12 @@ class NodeScript:
                 if (simulation == nullptr) {
                     throw std::runtime_error("active Gobot app context has no SimulationServer");
                 }
-                if (!simulation->SetEnvironmentJointPositionTarget(env_id, robot, joint, target_position)) {
-                    throw std::runtime_error(simulation->GetLastError());
+                SimulationScene* runtime_scene = simulation->GetRuntimeScene();
+                if (runtime_scene == nullptr) {
+                    throw std::runtime_error("simulation runtime scene has not been built");
+                }
+                if (!runtime_scene->SetEnvironmentJointPositionTarget(env_id, robot, joint, target_position)) {
+                    throw std::runtime_error(runtime_scene->GetLastError());
                 }
             }, py::arg("env_id"), py::arg("robot"), py::arg("joint"), py::arg("target_position"))
             .def("reset_batch_joint_state", [](EngineContext& context,
@@ -1461,8 +1465,12 @@ class NodeScript:
                 if (simulation == nullptr) {
                     throw std::runtime_error("active Gobot app context has no SimulationServer");
                 }
-                if (!simulation->ResetEnvironmentJointState(env_id, robot, joint, position, velocity)) {
-                    throw std::runtime_error(simulation->GetLastError());
+                SimulationScene* runtime_scene = simulation->GetRuntimeScene();
+                if (runtime_scene == nullptr) {
+                    throw std::runtime_error("simulation runtime scene has not been built");
+                }
+                if (!runtime_scene->ResetEnvironmentJointState(env_id, robot, joint, position, velocity)) {
+                    throw std::runtime_error(runtime_scene->GetLastError());
                 }
             }, py::arg("env_id"), py::arg("robot"), py::arg("joint"), py::arg("position"), py::arg("velocity") = 0.0)
             .def("reset_batch_link_state", [](EngineContext& context,
@@ -1477,14 +1485,18 @@ class NodeScript:
                 if (simulation == nullptr) {
                     throw std::runtime_error("active Gobot app context has no SimulationServer");
                 }
-                if (!simulation->ResetEnvironmentLinkState(env_id,
-                                                           robot,
-                                                           link,
-                                                           PythonToVector3(position),
-                                                           PythonToQuaternionWxyz(orientation),
-                                                           PythonToVector3(linear_velocity),
-                                                           PythonToVector3(angular_velocity))) {
-                    throw std::runtime_error(simulation->GetLastError());
+                SimulationScene* runtime_scene = simulation->GetRuntimeScene();
+                if (runtime_scene == nullptr) {
+                    throw std::runtime_error("simulation runtime scene has not been built");
+                }
+                if (!runtime_scene->ResetEnvironmentLinkState(env_id,
+                                                              robot,
+                                                              link,
+                                                              PythonToVector3(position),
+                                                              PythonToQuaternionWxyz(orientation),
+                                                              PythonToVector3(linear_velocity),
+                                                              PythonToVector3(angular_velocity))) {
+                    throw std::runtime_error(runtime_scene->GetLastError());
                 }
             }, py::arg("env_id"),
                py::arg("robot"),
@@ -1500,8 +1512,12 @@ class NodeScript:
                 if (simulation == nullptr) {
                     throw std::runtime_error("active Gobot app context has no SimulationServer");
                 }
-                if (!simulation->SetRobotJointPositionTargetsFromNormalizedAction(robot, action)) {
-                    throw std::runtime_error(simulation->GetLastError());
+                SimulationScene* runtime_scene = simulation->GetRuntimeScene();
+                if (runtime_scene == nullptr) {
+                    throw std::runtime_error("simulation runtime scene has not been built");
+                }
+                if (!runtime_scene->SetRobotJointPositionTargetsFromNormalizedAction(robot, action)) {
+                    throw std::runtime_error(runtime_scene->GetLastError());
                 }
             }, py::arg("robot"), py::arg("action"))
             .def("set_robot_named_action", [](EngineContext& context,
@@ -1512,8 +1528,12 @@ class NodeScript:
                 if (simulation == nullptr) {
                     throw std::runtime_error("active Gobot app context has no SimulationServer");
                 }
-                if (!simulation->SetRobotJointPositionTargetsFromNormalizedAction(robot, joint_names, action)) {
-                    throw std::runtime_error(simulation->GetLastError());
+                SimulationScene* runtime_scene = simulation->GetRuntimeScene();
+                if (runtime_scene == nullptr) {
+                    throw std::runtime_error("simulation runtime scene has not been built");
+                }
+                if (!runtime_scene->SetRobotJointPositionTargetsFromNormalizedAction(robot, joint_names, action)) {
+                    throw std::runtime_error(runtime_scene->GetLastError());
                 }
             }, py::arg("robot"), py::arg("joint_names"), py::arg("action"))
             .def("set_default_joint_gains", [](EngineContext& context, py::dict gains) {
@@ -1538,8 +1558,12 @@ class NodeScript:
                 if (simulation == nullptr) {
                     throw std::runtime_error("active Gobot app context has no SimulationServer");
                 }
-                if (!simulation->SetJointPositionTarget(robot, joint, target_position)) {
-                    throw std::runtime_error(simulation->GetLastError());
+                SimulationScene* runtime_scene = simulation->GetRuntimeScene();
+                if (runtime_scene == nullptr) {
+                    throw std::runtime_error("simulation runtime scene has not been built");
+                }
+                if (!runtime_scene->SetJointPositionTarget(robot, joint, target_position)) {
+                    throw std::runtime_error(runtime_scene->GetLastError());
                 }
             }, py::arg("robot"), py::arg("joint"), py::arg("target_position"))
             .def("set_joint_velocity_target", [](EngineContext& context,
@@ -1550,8 +1574,12 @@ class NodeScript:
                 if (simulation == nullptr) {
                     throw std::runtime_error("active Gobot app context has no SimulationServer");
                 }
-                if (!simulation->SetJointVelocityTarget(robot, joint, target_velocity)) {
-                    throw std::runtime_error(simulation->GetLastError());
+                SimulationScene* runtime_scene = simulation->GetRuntimeScene();
+                if (runtime_scene == nullptr) {
+                    throw std::runtime_error("simulation runtime scene has not been built");
+                }
+                if (!runtime_scene->SetJointVelocityTarget(robot, joint, target_velocity)) {
+                    throw std::runtime_error(runtime_scene->GetLastError());
                 }
             }, py::arg("robot"), py::arg("joint"), py::arg("target_velocity"))
             .def("set_joint_effort_target", [](EngineContext& context,
@@ -1562,8 +1590,12 @@ class NodeScript:
                 if (simulation == nullptr) {
                     throw std::runtime_error("active Gobot app context has no SimulationServer");
                 }
-                if (!simulation->SetJointEffortTarget(robot, joint, target_effort)) {
-                    throw std::runtime_error(simulation->GetLastError());
+                SimulationScene* runtime_scene = simulation->GetRuntimeScene();
+                if (runtime_scene == nullptr) {
+                    throw std::runtime_error("simulation runtime scene has not been built");
+                }
+                if (!runtime_scene->SetJointEffortTarget(robot, joint, target_effort)) {
+                    throw std::runtime_error(runtime_scene->GetLastError());
                 }
             }, py::arg("robot"), py::arg("joint"), py::arg("target_effort"))
             .def("set_joint_passive", [](EngineContext& context,
@@ -1573,8 +1605,12 @@ class NodeScript:
                 if (simulation == nullptr) {
                     throw std::runtime_error("active Gobot app context has no SimulationServer");
                 }
-                if (!simulation->SetJointPassive(robot, joint)) {
-                    throw std::runtime_error(simulation->GetLastError());
+                SimulationScene* runtime_scene = simulation->GetRuntimeScene();
+                if (runtime_scene == nullptr) {
+                    throw std::runtime_error("simulation runtime scene has not been built");
+                }
+                if (!runtime_scene->SetJointPassive(robot, joint)) {
+                    throw std::runtime_error(runtime_scene->GetLastError());
                 }
             }, py::arg("robot"), py::arg("joint"))
             .def("reset_joint_state", [](EngineContext& context,
@@ -1586,8 +1622,12 @@ class NodeScript:
                 if (simulation == nullptr) {
                     throw std::runtime_error("active Gobot app context has no SimulationServer");
                 }
-                if (!simulation->ResetJointState(robot, joint, position, velocity)) {
-                    throw std::runtime_error(simulation->GetLastError());
+                SimulationScene* runtime_scene = simulation->GetRuntimeScene();
+                if (runtime_scene == nullptr) {
+                    throw std::runtime_error("simulation runtime scene has not been built");
+                }
+                if (!runtime_scene->ResetJointState(robot, joint, position, velocity)) {
+                    throw std::runtime_error(runtime_scene->GetLastError());
                 }
             }, py::arg("robot"), py::arg("joint"), py::arg("position"), py::arg("velocity") = 0.0)
             .def("reset_link_state", [](EngineContext& context,
@@ -1601,13 +1641,17 @@ class NodeScript:
                 if (simulation == nullptr) {
                     throw std::runtime_error("active Gobot app context has no SimulationServer");
                 }
-                if (!simulation->ResetLinkState(robot,
-                                                link,
-                                                PythonToVector3(position),
-                                                PythonToQuaternionWxyz(orientation),
-                                                PythonToVector3(linear_velocity),
-                                                PythonToVector3(angular_velocity))) {
-                    throw std::runtime_error(simulation->GetLastError());
+                SimulationScene* runtime_scene = simulation->GetRuntimeScene();
+                if (runtime_scene == nullptr) {
+                    throw std::runtime_error("simulation runtime scene has not been built");
+                }
+                if (!runtime_scene->ResetLinkState(robot,
+                                                   link,
+                                                   PythonToVector3(position),
+                                                   PythonToQuaternionWxyz(orientation),
+                                                   PythonToVector3(linear_velocity),
+                                                   PythonToVector3(angular_velocity))) {
+                    throw std::runtime_error(runtime_scene->GetLastError());
                 }
             }, py::arg("robot"),
                py::arg("link"),

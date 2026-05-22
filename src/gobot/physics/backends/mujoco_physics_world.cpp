@@ -791,12 +791,12 @@ const PhysicsSceneState* MuJoCoPhysicsWorld::GetEnvironmentState(std::size_t env
 }
 
 bool MuJoCoPhysicsWorld::ResetEnvironment(std::size_t environment_index) {
+#ifdef GOBOT_HAS_MUJOCO
     if (!IsEnvironmentIndexValid(environment_index)) {
         SetLastError(fmt::format("Environment index {} is out of range.", environment_index));
         return false;
     }
 
-#ifdef GOBOT_HAS_MUJOCO
     auto* model = static_cast<mjModel*>(model_);
     auto* data = static_cast<mjData*>(environment_data_[environment_index]);
     if (!model || !data) {
@@ -811,17 +811,18 @@ bool MuJoCoPhysicsWorld::ResetEnvironment(std::size_t environment_index) {
     last_error_.clear();
     return true;
 #else
+    GOB_UNUSED(environment_index);
     return false;
 #endif
 }
 
 bool MuJoCoPhysicsWorld::StepEnvironment(std::size_t environment_index, RealType delta_time) {
+#ifdef GOBOT_HAS_MUJOCO
     if (!IsEnvironmentIndexValid(environment_index)) {
         SetLastError(fmt::format("Environment index {} is out of range.", environment_index));
         return false;
     }
 
-#ifdef GOBOT_HAS_MUJOCO
     auto* model = static_cast<mjModel*>(model_);
     auto* data = static_cast<mjData*>(environment_data_[environment_index]);
     if (!model || !data) {
@@ -837,6 +838,7 @@ bool MuJoCoPhysicsWorld::StepEnvironment(std::size_t environment_index, RealType
     last_error_.clear();
     return true;
 #else
+    GOB_UNUSED(environment_index);
     GOB_UNUSED(delta_time);
     return false;
 #endif
@@ -868,6 +870,7 @@ bool MuJoCoPhysicsWorld::ResetEnvironmentJointState(std::size_t environment_inde
                                                     const std::string& joint_name,
                                                     RealType position,
                                                     RealType velocity) {
+#ifdef GOBOT_HAS_MUJOCO
     if (!IsEnvironmentIndexValid(environment_index)) {
         SetLastError(fmt::format("Environment index {} is out of range.", environment_index));
         return false;
@@ -884,6 +887,14 @@ bool MuJoCoPhysicsWorld::ResetEnvironmentJointState(std::size_t environment_inde
 #endif
     last_error_.clear();
     return true;
+#else
+    GOB_UNUSED(environment_index);
+    GOB_UNUSED(robot_name);
+    GOB_UNUSED(joint_name);
+    GOB_UNUSED(position);
+    GOB_UNUSED(velocity);
+    return false;
+#endif
 }
 
 bool MuJoCoPhysicsWorld::ResetLinkState(const std::string& robot_name,
@@ -921,6 +932,7 @@ bool MuJoCoPhysicsWorld::ResetEnvironmentLinkState(std::size_t environment_index
                                                    const Quaternion& orientation,
                                                    const Vector3& linear_velocity,
                                                    const Vector3& angular_velocity) {
+#ifdef GOBOT_HAS_MUJOCO
     if (!IsEnvironmentIndexValid(environment_index)) {
         SetLastError(fmt::format("Environment index {} is out of range.", environment_index));
         return false;
@@ -943,6 +955,16 @@ bool MuJoCoPhysicsWorld::ResetEnvironmentLinkState(std::size_t environment_index
 #endif
     last_error_.clear();
     return true;
+#else
+    GOB_UNUSED(environment_index);
+    GOB_UNUSED(robot_name);
+    GOB_UNUSED(link_name);
+    GOB_UNUSED(position);
+    GOB_UNUSED(orientation);
+    GOB_UNUSED(linear_velocity);
+    GOB_UNUSED(angular_velocity);
+    return false;
+#endif
 }
 
 bool MuJoCoPhysicsWorld::SetEnvironmentJointControl(std::size_t environment_index,
@@ -950,6 +972,7 @@ bool MuJoCoPhysicsWorld::SetEnvironmentJointControl(std::size_t environment_inde
                                                     const std::string& joint_name,
                                                     PhysicsJointControlMode control_mode,
                                                     RealType target) {
+#ifdef GOBOT_HAS_MUJOCO
     if (!IsEnvironmentIndexValid(environment_index)) {
         SetLastError(fmt::format("Environment index {} is out of range.", environment_index));
         return false;
@@ -962,6 +985,14 @@ bool MuJoCoPhysicsWorld::SetEnvironmentJointControl(std::size_t environment_inde
 
     last_error_.clear();
     return true;
+#else
+    GOB_UNUSED(environment_index);
+    GOB_UNUSED(robot_name);
+    GOB_UNUSED(joint_name);
+    GOB_UNUSED(control_mode);
+    GOB_UNUSED(target);
+    return false;
+#endif
 }
 
 #ifdef GOBOT_HAS_MUJOCO

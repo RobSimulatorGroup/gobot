@@ -338,16 +338,21 @@ bool ApplyRuntimeSpringForce(Link3D* link,
         return false;
     }
 
-    return SimulationServer::GetInstance()->SetLinkSpringForce(robot->GetName(),
-                                                              link->GetName(),
-                                                              local_point,
-                                                              target_point,
-                                                              force_hint);
+    SimulationScene* runtime_scene = SimulationServer::GetInstance()->GetRuntimeScene();
+    return runtime_scene != nullptr &&
+           runtime_scene->SetLinkSpringForce(robot->GetName(),
+                                             link->GetName(),
+                                             local_point,
+                                             target_point,
+                                             force_hint);
 }
 
 void ClearRuntimeExternalForce() {
     if (SimulationServer::HasInstance()) {
-        SimulationServer::GetInstance()->ClearExternalForces();
+        SimulationScene* runtime_scene = SimulationServer::GetInstance()->GetRuntimeScene();
+        if (runtime_scene != nullptr) {
+            runtime_scene->ClearExternalForces();
+        }
     }
 }
 

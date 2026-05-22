@@ -7,9 +7,12 @@
 #include <gtest/gtest.h>
 
 #include <gobot/rendering/render_server.hpp>
+#include <gobot/rendering/scene_render_items.hpp>
+#include <gobot/scene/collision_shape_3d.hpp>
 #include <gobot/scene/scene_tree.hpp>
 #include <gobot/scene/window.hpp>
 #include <gobot/scene/mesh_instance_3d.hpp>
+#include <gobot/scene/resources/box_shape_3d.hpp>
 #include <gobot/scene/resources/primitive_mesh.hpp>
 
 TEST(TestMeshInstance3D, stores_mesh_resource_and_transform) {
@@ -41,6 +44,23 @@ TEST(TestMeshInstance3D, is_visible_by_default_when_inside_tree) {
 
     EXPECT_TRUE(mesh_instance->IsVisible());
     EXPECT_TRUE(mesh_instance->IsVisibleInTree());
+
+    gobot::Object::Delete(tree);
+}
+
+TEST(TestMeshInstance3D, hidden_collision_shapes_are_collected_for_debug_rendering) {
+    auto render_server = std::make_unique<gobot::RenderServer>();
+    auto* tree = gobot::Object::New<gobot::SceneTree>(false);
+    tree->Initialize();
+
+    auto* collision_shape = gobot::Object::New<gobot::CollisionShape3D>();
+    collision_shape->SetShape(gobot::MakeRef<gobot::BoxShape3D>());
+    collision_shape->SetVisible(false);
+    tree->GetRoot()->AddChild(collision_shape, true);
+
+    const gobot::SceneRenderItems items = gobot::CollectSceneRenderItems(tree->GetRoot());
+    ASSERT_EQ(items.collision_shapes.size(), 1);
+    EXPECT_EQ(items.collision_shapes[0].shape.Get(), collision_shape->GetShape().Get());
 
     gobot::Object::Delete(tree);
 }

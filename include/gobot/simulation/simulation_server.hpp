@@ -13,6 +13,7 @@
 #include "gobot/core/object.hpp"
 #include "gobot/physics/physics_server.hpp"
 #include "gobot/physics/physics_world.hpp"
+#include "gobot/simulation/simulation_scene.hpp"
 
 namespace gobot {
 
@@ -70,6 +71,10 @@ public:
 
     Ref<PhysicsWorld> GetWorld() const;
 
+    SimulationScene* GetRuntimeScene();
+
+    const SimulationScene* GetRuntimeScene() const;
+
     bool Reset();
 
     bool StepOnce();
@@ -87,72 +92,6 @@ public:
     bool StepEnvironment(std::size_t environment_index, std::uint64_t ticks);
 
     bool SyncSceneFromWorld();
-
-    bool SetJointPositionTarget(const std::string& robot_name,
-                                const std::string& joint_name,
-                                RealType target_position);
-
-    bool SetJointVelocityTarget(const std::string& robot_name,
-                                const std::string& joint_name,
-                                RealType target_velocity);
-
-    bool SetJointEffortTarget(const std::string& robot_name,
-                              const std::string& joint_name,
-                              RealType target_effort);
-
-    bool SetJointPassive(const std::string& robot_name,
-                         const std::string& joint_name);
-
-    bool ResetJointState(const std::string& robot_name,
-                         const std::string& joint_name,
-                         RealType position,
-                         RealType velocity);
-
-    bool ResetEnvironmentJointState(std::size_t environment_index,
-                                    const std::string& robot_name,
-                                    const std::string& joint_name,
-                                    RealType position,
-                                    RealType velocity);
-
-    bool ResetLinkState(const std::string& robot_name,
-                        const std::string& link_name,
-                        const Vector3& position,
-                        const Quaternion& orientation,
-                        const Vector3& linear_velocity,
-                        const Vector3& angular_velocity);
-
-    bool ResetEnvironmentLinkState(std::size_t environment_index,
-                                   const std::string& robot_name,
-                                   const std::string& link_name,
-                                   const Vector3& position,
-                                   const Quaternion& orientation,
-                                   const Vector3& linear_velocity,
-                                   const Vector3& angular_velocity);
-
-    bool SetEnvironmentJointPositionTarget(std::size_t environment_index,
-                                           const std::string& robot_name,
-                                           const std::string& joint_name,
-                                           RealType target_position);
-
-    bool SetLinkExternalForce(const std::string& robot_name,
-                              const std::string& link_name,
-                              const Vector3& point,
-                              const Vector3& force);
-
-    bool SetLinkSpringForce(const std::string& robot_name,
-                            const std::string& link_name,
-                            const Vector3& local_point,
-                            const Vector3& target_point,
-                            const Vector3& force_hint);
-
-    void ClearExternalForces();
-
-    bool SetRobotJointPositionTargetsFromNormalizedAction(const std::string& robot_name,
-                                                          const std::vector<RealType>& action);
-
-    bool SetRobotJointPositionTargetsFromNormalizedAction(const std::string& robot_name,
-                                                          const std::vector<std::string>& joint_names,
-                                                          const std::vector<RealType>& action);
 
     RealType GetSimulationTime() const;
 
@@ -180,7 +119,7 @@ private:
     PhysicsBackendType backend_type_{PhysicsBackendType::Null};
     PhysicsWorldSettings physics_world_settings_;
     Ref<PhysicsWorld> world_;
-    const Node* scene_root_{nullptr};
+    SimulationScene runtime_scene_;
     bool paused_{true};
     RealType time_scale_{1.0};
     int max_sub_steps_{8};
