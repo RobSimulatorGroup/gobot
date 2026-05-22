@@ -462,10 +462,34 @@ std::string ResolveMuJoCoAssetPath(const std::filesystem::path& model_dir,
         return direct_path.string();
     }
 
+    if (model_dir.has_parent_path()) {
+        const std::filesystem::path parent_direct_path =
+                (model_dir.parent_path() / file).lexically_normal();
+        if (std::filesystem::exists(parent_direct_path)) {
+            return parent_direct_path.string();
+        }
+    }
+
     if (!asset_dir.empty()) {
         const std::filesystem::path asset_path = (model_dir / asset_dir / file).lexically_normal();
         if (std::filesystem::exists(asset_path)) {
             return asset_path.string();
+        }
+
+        if (model_dir.has_parent_path()) {
+            const std::filesystem::path parent_asset_path =
+                    (model_dir.parent_path() / asset_dir / file).lexically_normal();
+            if (std::filesystem::exists(parent_asset_path)) {
+                return parent_asset_path.string();
+            }
+        }
+
+        if (model_dir.has_parent_path() && model_dir.parent_path().has_parent_path()) {
+            const std::filesystem::path grandparent_asset_path =
+                    (model_dir.parent_path().parent_path() / asset_dir / file).lexically_normal();
+            if (std::filesystem::exists(grandparent_asset_path)) {
+                return grandparent_asset_path.string();
+            }
         }
 
         return asset_path.string();

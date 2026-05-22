@@ -1,12 +1,12 @@
 {
     "__EXT_RESOURCES__": [
         {
-            "__ID__": "2_aZF8Z",
+            "__ID__": "2_FXH2W",
             "__PATH__": "res://go1.jscn",
             "__TYPE__": "PackedScene"
         },
         {
-            "__ID__": "1_9F93n",
+            "__ID__": "1_mQo5M",
             "__PATH__": "res://scripts/go1.py",
             "__TYPE__": "PythonScript"
         }
@@ -50,7 +50,7 @@
                         ]
                     }
                 },
-                "script": "ExtResource(1_9F93n)",
+                "script": "ExtResource(1_mQo5M)",
                 "visible": true
             },
             "type": "Node3D"
@@ -110,7 +110,7 @@
                         "storage": [
                             0.0,
                             0.0,
-                            0.0
+                            -0.019999999552965164
                         ]
                     }
                 },
@@ -143,7 +143,7 @@
                     "green": 0.800000011920929,
                     "red": 0.800000011920929
                 },
-                "visible": true
+                "visible": false
             },
             "type": "MeshInstance3D"
         },
@@ -192,7 +192,7 @@
             "type": "CollisionShape3D"
         },
         {
-            "instance": "ExtResource(2_aZF8Z)",
+            "instance": "ExtResource(2_FXH2W)",
             "name": "go1",
             "parent": 0,
             "properties": {
@@ -231,7 +231,7 @@
                     }
                 },
                 "script": null,
-                "source_path": "",
+                "source_path": "res://assets/xml/go1.xml",
                 "visible": true
             },
             "type": "Robot3D"
