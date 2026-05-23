@@ -86,6 +86,13 @@ When Go1 appears to sink through the floor, check these in order:
    suspect scene-to-viewport synchronization or debug shape drawing, not MuJoCo
    contact generation.
 
+The commonly used Go1 standing qpos with base `z=0.27` starts with the foot
+spheres about `1.8cm` inside the ground in MuJoCo itself. MuJoCo resolves that
+penetration after stepping, but it looks wrong in an editor viewport. The Gobot
+Go1 example therefore resets the base to `z=0.288` for the same joint pose, so
+the scene starts without visible foot penetration while still settling to the
+same standing configuration.
+
 ## Regression Tests
 
 The main guards are:

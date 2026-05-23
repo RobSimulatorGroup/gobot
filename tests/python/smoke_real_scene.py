@@ -60,6 +60,21 @@ def main():
             context.reset_joint_state("go1", name, target, 0.0)
             context.set_joint_position_target("go1", name, target)
 
+        context.step_once()
+        state = context.get_runtime_state()
+        contact_distances = [
+            float(contact["distance"])
+            for contact in state.get("contacts", [])
+            if contact.get("robot_name") == "go1"
+        ]
+        if contact_distances:
+            min_contact_distance = min(contact_distances)
+            print(f"go1_reset_min_contact_distance={min_contact_distance:.6f}")
+            if min_contact_distance < -0.005:
+                raise AssertionError(
+                    f"Go1 reset pose starts too far inside the ground: {min_contact_distance:.6f}"
+                )
+
         for _ in range(200):
             for name, target in zip(script_module.JOINT_NAMES, script_module.DEFAULT_POS):
                 context.set_joint_position_target("go1", name, target)

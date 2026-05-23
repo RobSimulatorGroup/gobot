@@ -9,7 +9,7 @@ BASE_LINK = "trunk"
 DEFAULT_POLICY_PATH = ""
 PRINT_EVERY_TICKS = 240
 FIXED_TIME_STEP = 0.002
-RESET_BASE_POSITION = [0.0, 0.0, 0.27]
+RESET_BASE_POSITION = [0.0, 0.0, 0.288]
 COMMAND = [
     float(os.environ.get("GOBOT_GO1_VX", "0.5")),
     float(os.environ.get("GOBOT_GO1_VY", "0.0")),
