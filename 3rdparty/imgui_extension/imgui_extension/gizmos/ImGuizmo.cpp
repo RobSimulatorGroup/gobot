@@ -919,15 +919,7 @@ namespace IMGUIZMO_NAMESPACE
 
    static bool IsHoveringWindow()
    {
-      ImGuiContext& g = *ImGui::GetCurrentContext();
-      ImGuiWindow* window = ImGui::FindWindowByName(gContext.mDrawList->_OwnerName);
-      if (g.HoveredWindow == window)   // Mouse hovering drawlist window
-         return true;
-      if (g.HoveredWindow != NULL)     // Any other window is hovered
-         return false;
-      if (ImGui::IsMouseHoveringRect(window->InnerRect.Min, window->InnerRect.Max, false))   // Hovering drawlist window rect, while no other window is hovered (for _NoInputs windows)
-         return true;
-      return false;
+      return IsInContextRect(ImGui::GetIO().MousePos);
    }
 
    void SetRect(float x, float y, float width, float height)
@@ -937,7 +929,7 @@ namespace IMGUIZMO_NAMESPACE
       gContext.mWidth = width;
       gContext.mHeight = height;
       gContext.mXMax = gContext.mX + gContext.mWidth;
-      gContext.mYMax = gContext.mY + gContext.mXMax;
+      gContext.mYMax = gContext.mY + gContext.mHeight;
       gContext.mDisplayRatio = width / height;
    }
 
@@ -1601,7 +1593,7 @@ namespace IMGUIZMO_NAMESPACE
 
    static bool CanActivate()
    {
-      if (ImGui::IsMouseClicked(0) && !ImGui::IsAnyItemHovered() && !ImGui::IsAnyItemActive())
+      if (ImGui::IsMouseClicked(0) && !ImGui::IsAnyItemActive())
       {
          return true;
       }
@@ -2053,7 +2045,7 @@ namespace IMGUIZMO_NAMESPACE
          const ImVec2 axisEndOnScreen = worldToPos(gContext.mModel.v.position + dirAxis * gContext.mScreenFactor, gContext.mViewProjection) - ImVec2(gContext.mX, gContext.mY);
 
          vec_t closestPointOnAxis = PointOnSegment(screenCoord, makeVect(axisStartOnScreen), makeVect(axisEndOnScreen));
-         if ((closestPointOnAxis - screenCoord).Length() < 12.f && Intersects(op, static_cast<OPERATION>(TRANSLATE_X << i))) // pixel size
+         if ((closestPointOnAxis - screenCoord).Length() < 18.f && Intersects(op, static_cast<OPERATION>(TRANSLATE_X << i))) // pixel size
          {
             type = MT_MOVE_X + i;
          }

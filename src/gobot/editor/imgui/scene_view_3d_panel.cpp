@@ -443,6 +443,7 @@ void SceneView3DPanel::OnImGuiContent()
 
     auto* node3d_editor = Node3DEditor::GetInstance();
     ImGuizmo::SetRect(scene_view_position.x, scene_view_position.y, scene_view_size.x, scene_view_size.y);
+    ImGuizmo::SetGizmoSizeClipSpace(0.13f);
     if (!Editor::GetInstance()->IsScenePlaySessionRunning()) {
         node3d_editor->OnImGuizmo();
     }
