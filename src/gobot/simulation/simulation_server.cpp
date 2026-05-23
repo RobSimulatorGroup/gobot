@@ -496,11 +496,13 @@ bool SimulationServer::ApplyWorldStateToScene() {
 
         const PhysicsRobotSnapshot* robot_snapshot =
                 FindRobotSnapshot(scene_snapshot, robot_index, robot_state.name);
+        std::string floating_base_link;
         if (robot_snapshot != nullptr) {
             for (const PhysicsJointSnapshot& joint_snapshot : robot_snapshot->joints) {
                 if (static_cast<JointType>(joint_snapshot.joint_type) != JointType::Floating) {
                     continue;
                 }
+                floating_base_link = joint_snapshot.child_link;
 
                 const PhysicsLinkState* floating_link_state =
                         FindLinkState(robot_state, joint_snapshot.child_link);
@@ -527,6 +529,20 @@ bool SimulationServer::ApplyWorldStateToScene() {
             auto* joint = const_cast<Joint3D*>(joint_state.node);
             if (joint && joint->IsMotionModeEnabled() && joint->GetJointType() != JointType::Floating) {
                 joint->SetJointPosition(joint_state.position);
+            }
+        }
+
+        for (const PhysicsLinkState& link_state : robot_state.links) {
+            if (link_state.role == PhysicsLinkRole::VirtualRoot) {
+                continue;
+            }
+            if (!floating_base_link.empty() && link_state.link_name == floating_base_link) {
+                continue;
+            }
+
+            auto* link = const_cast<Link3D*>(link_state.node);
+            if (link != nullptr) {
+                ApplyLinkGlobalTransform(link, link_state.global_transform);
             }
         }
     }

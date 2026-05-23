@@ -458,6 +458,7 @@ void AddMJCFScenePlaneGeoms(Node3D* scene_root, const std::string& xml_path) {
 
         auto* visual = Object::New<MeshInstance3D>();
         visual->SetName(name + "_visual");
+        visual->SetPosition(Vector3{0.0, 0.0, kGroundThickness * 0.5});
         auto mesh = MakeRef<PlaneMesh>();
         mesh->SetSize(Vector2{ground_size.x(), ground_size.y()});
         auto material = MakeRef<PBRMaterial3D>();

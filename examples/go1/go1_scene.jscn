@@ -1,12 +1,12 @@
 {
     "__EXT_RESOURCES__": [
         {
-            "__ID__": "2_Uqx3m",
+            "__ID__": "2_bfAI7",
             "__PATH__": "res://go1.jscn",
             "__TYPE__": "PackedScene"
         },
         {
-            "__ID__": "1_Gnvox",
+            "__ID__": "1_fWcZk",
             "__PATH__": "res://scripts/go1.py",
             "__TYPE__": "PythonScript"
         }
@@ -50,7 +50,7 @@
                         ]
                     }
                 },
-                "script": "ExtResource(1_Gnvox)",
+                "script": "ExtResource(1_fWcZk)",
                 "visible": true
             },
             "type": "Node3D"
@@ -102,7 +102,7 @@
             "parent": 1,
             "properties": {
                 "material": null,
-                "mesh": "SubResource(PlaneMesh_lBmty)",
+                "mesh": "SubResource(PlaneMesh_3izs8)",
                 "position": {
                     "matrix_data": {
                         "cols": 1,
@@ -110,7 +110,7 @@
                         "storage": [
                             0.0,
                             0.0,
-                            0.0
+                            0.009999999776482582
                         ]
                     }
                 },
@@ -202,7 +202,7 @@
                     }
                 },
                 "script": null,
-                "shape": "SubResource(BoxShape3D_95qN8)",
+                "shape": "SubResource(BoxShape3D_oZlXb)",
                 "solimp": [
                     0.8999999761581421,
                     0.949999988079071,
@@ -225,7 +225,7 @@
             "type": "CollisionShape3D"
         },
         {
-            "instance": "ExtResource(2_Uqx3m)",
+            "instance": "ExtResource(2_bfAI7)",
             "name": "go1",
             "parent": 0,
             "properties": {
@@ -272,7 +272,7 @@
     ],
     "__SUB_RESOURCES__": [
         {
-            "__ID__": "PBRMaterial3D_QpVza",
+            "__ID__": "PBRMaterial3D_8Z9i7",
             "__TYPE__": "PBRMaterial3D",
             "albedo": {
                 "alpha": 1.0,
@@ -286,9 +286,9 @@
             "specular": 0.5
         },
         {
-            "__ID__": "PlaneMesh_lBmty",
+            "__ID__": "PlaneMesh_3izs8",
             "__TYPE__": "PlaneMesh",
-            "material": "SubResource(PBRMaterial3D_QpVza)",
+            "material": "SubResource(PBRMaterial3D_8Z9i7)",
             "resource_name": "",
             "size": {
                 "matrix_data": {
@@ -302,7 +302,7 @@
             }
         },
         {
-            "__ID__": "BoxShape3D_95qN8",
+            "__ID__": "BoxShape3D_oZlXb",
             "__TYPE__": "BoxShape3D",
             "resource_name": "",
             "size": {

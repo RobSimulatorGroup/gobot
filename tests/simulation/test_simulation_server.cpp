@@ -8,6 +8,8 @@
 #include <gobot/scene/robot_3d.hpp>
 #include <gobot/scene/resources/box_shape_3d.hpp>
 #include <gobot/scene/resources/capsule_shape_3d.hpp>
+#include <gobot/scene/scene_tree.hpp>
+#include <gobot/scene/window.hpp>
 #include <gobot/simulation/simulation_server.hpp>
 
 namespace {
@@ -71,6 +73,49 @@ gobot::CollisionShape3D* CreateBoxCollision(const std::string& name,
     shape->SetSize(size);
     collision->SetShape(shape);
     return collision;
+}
+
+gobot::Affine3 ComputeTransformFromRoot(const gobot::Node3D* node) {
+    if (node == nullptr) {
+        return gobot::Affine3::Identity();
+    }
+
+    gobot::Affine3 transform = node->GetTransform();
+    const gobot::Node* parent = node->GetParent();
+    while (parent != nullptr) {
+        if (auto* parent_3d = gobot::Object::PointerCastTo<gobot::Node3D>(parent)) {
+            transform = parent_3d->GetTransform() * transform;
+        }
+        parent = parent->GetParent();
+    }
+    return transform;
+}
+
+gobot::Affine3 GetGlobalOrRootTransform(const gobot::Node3D* node) {
+    if (node == nullptr) {
+        return gobot::Affine3::Identity();
+    }
+    if (node->IsInsideTree()) {
+        return node->GetGlobalTransform();
+    }
+    return ComputeTransformFromRoot(node);
+}
+
+gobot::Link3D* FindLinkByName(gobot::Node* node, const std::string& name) {
+    if (node == nullptr) {
+        return nullptr;
+    }
+    if (auto* link = gobot::Object::PointerCastTo<gobot::Link3D>(node);
+        link != nullptr && link->GetName() == name) {
+        return link;
+    }
+
+    for (std::size_t i = 0; i < node->GetChildCount(); ++i) {
+        if (auto* found = FindLinkByName(node->GetChild(static_cast<int>(i)), name)) {
+            return found;
+        }
+    }
+    return nullptr;
 }
 
 gobot::Robot3D* CreateOffsetHingePendulumScene() {
@@ -306,6 +351,49 @@ TEST(TestSimulationServer, syncs_floating_joint_transform_to_motion_mode_robot) 
             gobot::Vector3(4.0, 5.0, 6.0), CMP_EPSILON));
 
     gobot::Object::Delete(robot);
+}
+
+TEST(TestSimulationServer, syncs_backend_link_pose_to_non_base_link_scene_transform) {
+    gobot::SimulationServer simulation_server;
+    auto* tree = gobot::SceneTree::New<gobot::SceneTree>(false);
+    tree->Initialize();
+
+    gobot::Robot3D* robot = CreateTwoJointRobotScene();
+    auto* tip = FindLinkByName(robot, "tip");
+    auto* foot = FindLinkByName(robot, "foot");
+    ASSERT_NE(tip, nullptr);
+    ASSERT_NE(foot, nullptr);
+    auto* foot_collision = CreateBoxCollision("foot_collision", {0.1, 0.1, 0.1});
+    foot->AddChild(foot_collision);
+    tree->GetRoot()->AddChild(robot);
+    robot->SetMode(gobot::RobotMode::Motion);
+
+    ASSERT_TRUE(simulation_server.BuildWorldFromScene(robot));
+    gobot::PhysicsSceneState moved_state = simulation_server.GetWorld()->GetSceneState();
+    ASSERT_EQ(moved_state.robots.size(), 1);
+    ASSERT_GE(moved_state.robots[0].links.size(), 3);
+
+    for (gobot::PhysicsLinkState& link_state : moved_state.robots[0].links) {
+        if (link_state.link_name == "tip") {
+            link_state.global_transform = gobot::Affine3::Identity();
+            link_state.global_transform.translation() = gobot::Vector3(1.0, 2.0, 3.0);
+        } else if (link_state.link_name == "foot") {
+            link_state.global_transform = gobot::Affine3::Identity();
+            link_state.global_transform.translation() = gobot::Vector3(4.0, 5.0, 6.0);
+        }
+    }
+    ASSERT_TRUE(simulation_server.GetWorld()->RestoreCompatibleState(moved_state));
+    ASSERT_TRUE(simulation_server.SyncSceneFromWorld());
+
+    EXPECT_TRUE(ComputeTransformFromRoot(tip).translation().isApprox(gobot::Vector3(1.0, 2.0, 3.0),
+                                                                      CMP_EPSILON));
+    EXPECT_TRUE(GetGlobalOrRootTransform(foot).translation().isApprox(gobot::Vector3(4.0, 5.0, 6.0),
+                                                                       CMP_EPSILON));
+    EXPECT_TRUE(GetGlobalOrRootTransform(foot_collision).translation().isApprox(gobot::Vector3(4.0, 5.0, 6.0),
+                                                                                CMP_EPSILON));
+
+    tree->Finalize();
+    gobot::SceneTree::Delete(tree);
 }
 
 TEST(TestSimulationServer, builds_runtime_scene_entities_with_base_articulation_and_control_types) {

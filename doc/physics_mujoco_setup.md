@@ -63,9 +63,13 @@ is visible at runtime, for example:
 export LD_LIBRARY_PATH=/path/to/mujoco/lib:$LD_LIBRARY_PATH
 ```
 
-The Gobot MuJoCo backend currently loads the first `Robot3D.source_path` as a
-MuJoCo XML model through `mj_loadXML`. URDF support therefore follows MuJoCo's
-compiler behavior, and advanced Gobot scene-to-MJCF export remains a later step.
+The normal authored path builds a MuJoCo model from Gobot scene data in `.jscn`:
+robots, links, joints, collision shapes, contact parameters, and actuator
+settings. `Robot3D.source_path` is kept as provenance and may still be used as a
+fallback for older scenes, but new MJCF-imported examples should not depend on
+loading the original XML at runtime.
+
+For the importer/runtime equivalence goals, see `doc/mjcf_equivalence.md`.
 
 ## Editor Smoke Test
 

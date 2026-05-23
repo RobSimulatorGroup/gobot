@@ -1,5 +1,6 @@
 import argparse
 import importlib.util
+import json
 import pathlib
 import gobot
 
@@ -11,10 +12,28 @@ def main():
     parser.add_argument("--backend", default="mujoco", choices=["null", "mujoco"])
     parser.add_argument("--steps", type=int, default=4)
     parser.add_argument("--expect-go1-stand", action="store_true")
+    parser.add_argument("--expect-empty-robot-source-path", action="store_true")
     args = parser.parse_args()
 
     context = gobot.app.context()
     context.set_project_path(args.project)
+    scene_path = pathlib.Path(args.scene.replace("res://", args.project + "/", 1))
+
+    if args.expect_empty_robot_source_path:
+        scene_json = json.loads(scene_path.read_text())
+        robot_nodes = [
+            node for node in scene_json.get("__NODES__", [])
+            if node.get("type") == "Robot3D"
+        ]
+        if not robot_nodes:
+            raise AssertionError(f"No Robot3D nodes found in {scene_path}")
+        for node in robot_nodes:
+            source_path = node.get("properties", {}).get("source_path", "")
+            if source_path:
+                raise AssertionError(
+                    f"Robot3D '{node.get('name', '<unnamed>')}' still depends on source_path={source_path!r}"
+                )
+
     root = context.load_scene(args.scene)
     print(f"loaded scene root={root.name} type={root.type} children={root.child_count}")
     context.build_world(gobot.PhysicsBackendType.MuJoCoCpu if args.backend == "mujoco"
