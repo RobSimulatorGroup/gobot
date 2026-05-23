@@ -324,7 +324,11 @@ bool SimulationServer::Reset() {
 }
 
 bool SimulationServer::StepOnce() {
-    if (!StepFixed()) {
+    return StepOnce(FixedStepCallback{});
+}
+
+bool SimulationServer::StepOnce(const FixedStepCallback& fixed_step_callback) {
+    if (!StepFixed(fixed_step_callback ? &fixed_step_callback : nullptr)) {
         last_step_count_ = 0;
         return false;
     }
@@ -336,6 +340,10 @@ bool SimulationServer::StepOnce() {
 }
 
 int SimulationServer::Step(RealType delta_time) {
+    return Step(delta_time, FixedStepCallback{});
+}
+
+int SimulationServer::Step(RealType delta_time, const FixedStepCallback& fixed_step_callback) {
     if (paused_ || delta_time <= 0.0 || time_scale_ <= 0.0) {
         last_step_count_ = 0;
         return 0;
@@ -350,7 +358,7 @@ int SimulationServer::Step(RealType delta_time) {
 
     int steps = 0;
     while (accumulator_ + CMP_EPSILON >= physics_world_settings_.fixed_time_step && steps < max_sub_steps_) {
-        if (!StepFixed()) {
+        if (!StepFixed(fixed_step_callback ? &fixed_step_callback : nullptr)) {
             last_step_count_ = steps;
             return steps;
         }
@@ -468,9 +476,13 @@ bool SimulationServer::EnsureWorldReady() {
     return true;
 }
 
-bool SimulationServer::StepFixed() {
+bool SimulationServer::StepFixed(const FixedStepCallback* fixed_step_callback) {
     if (!EnsureWorldReady()) {
         return false;
+    }
+
+    if (fixed_step_callback != nullptr) {
+        (*fixed_step_callback)(physics_world_settings_.fixed_time_step);
     }
 
     world_->Step(physics_world_settings_.fixed_time_step);
@@ -578,8 +590,8 @@ GOBOT_REGISTRATION {
             .method("clear_world", &SimulationServer::ClearWorld)
             .method("has_world", &SimulationServer::HasWorld)
             .method("reset", &SimulationServer::Reset)
-            .method("step_once", &SimulationServer::StepOnce)
-            .method("step", &SimulationServer::Step)
+            .method("step_once", static_cast<bool (SimulationServer::*)()>(&SimulationServer::StepOnce))
+            .method("step", static_cast<int (SimulationServer::*)(RealType)>(&SimulationServer::Step))
             .method("configure_environment_batch", &SimulationServer::ConfigureEnvironmentBatch)
             .method("get_environment_count", &SimulationServer::GetEnvironmentCount)
             .method("reset_environment", &SimulationServer::ResetEnvironment)

@@ -56,6 +56,8 @@ public:
 private:
     void OnWindowClose();
 
+    void NotifyPhysicsProcess(double time);
+
 private:
     friend class Node;
     static SceneTree *s_singleton;

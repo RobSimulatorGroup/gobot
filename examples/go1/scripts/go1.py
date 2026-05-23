@@ -9,7 +9,7 @@ BASE_LINK = "trunk"
 DEFAULT_POLICY_PATH = "res://policies/go1.pt"
 PRINT_EVERY_TICKS = 240
 FIXED_TIME_STEP = 0.002
-RESET_BASE_POSITION = [0.0, 0.0, 0.288]
+RESET_BASE_POSITION = [0.0, 0.0, 0.27]
 COMMAND = [
     float(os.environ.get("GOBOT_GO1_VX", "0.0")),
     float(os.environ.get("GOBOT_GO1_VY", "0.0")),
@@ -17,6 +17,7 @@ COMMAND = [
 ]
 KEYBOARD_COMMAND_MAX = [0.6, 0.35, 1.2]
 COMMAND_SMOOTHING = 8.0
+COMMAND_ACTIVE_DEADBAND = 0.02
 FALLEN_BASE_Z = 0.18
 FALLEN_ROLL_PITCH = 0.8
 KEYBOARD_BINDINGS = {
@@ -141,6 +142,10 @@ def _key_axis(input_state, negative_action, positive_action):
     return value
 
 
+def _command_active(command):
+    return any(abs(float(value)) > COMMAND_ACTIVE_DEADBAND for value in command)
+
+
 def _find_node_by_name(node, name):
     if node is None:
         return None
@@ -226,7 +231,7 @@ class Script(gobot.NodeScript):
         observation = self._observation()
         if self.ticks % DECIMATION == 0:
             action = [0.0] * len(JOINT_NAMES)
-            if self.policy is not None:
+            if self.policy is not None and _command_active(self.command):
                 action = self.policy.action(observation)
             if len(action) != len(JOINT_NAMES):
                 print(f"Go1 policy produced {len(action)} actions, expected {len(JOINT_NAMES)}")

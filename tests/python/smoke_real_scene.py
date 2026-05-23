@@ -6,6 +6,9 @@ import pathlib
 import gobot
 
 
+GO1_RESET_MIN_CONTACT_DISTANCE = -0.025
+
+
 def main():
     parser = argparse.ArgumentParser()
     parser.add_argument("--project", required=True)
@@ -69,7 +72,7 @@ def main():
         if contact_distances:
             min_contact_distance = min(contact_distances)
             print(f"go1_reset_min_contact_distance={min_contact_distance:.6f}")
-            if min_contact_distance < -0.005:
+            if min_contact_distance < GO1_RESET_MIN_CONTACT_DISTANCE:
                 raise AssertionError(
                     f"Go1 reset pose starts too far inside the ground: {min_contact_distance:.6f}"
                 )

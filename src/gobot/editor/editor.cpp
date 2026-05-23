@@ -578,8 +578,11 @@ bool Editor::StepScene() {
         return false;
     }
     simulation->SetPaused(true);
-    NotifyScenePlaySessionPhysicsProcess();
-    return simulation->StepOnce();
+    return simulation->StepOnce([this](RealType fixed_delta) {
+        if (scene_play_session_ != nullptr && scene_play_session_->IsRunning()) {
+            scene_play_session_->NotifyPhysicsProcess(static_cast<double>(fixed_delta));
+        }
+    });
 }
 
 void Editor::StopScenePlaySession() {

@@ -1,6 +1,7 @@
 #include <gtest/gtest.h>
 
 #include <cmath>
+#include <vector>
 
 #include <gobot/scene/collision_shape_3d.hpp>
 #include <gobot/scene/joint_3d.hpp>
@@ -11,6 +12,26 @@
 #include <gobot/scene/scene_tree.hpp>
 #include <gobot/scene/window.hpp>
 #include <gobot/simulation/simulation_server.hpp>
+
+namespace gobot {
+
+class CountingPhysicsNode : public Node {
+    GOBCLASS(CountingPhysicsNode, Node)
+
+public:
+    void NotificationCallBack(NotificationType notification) {
+        if (notification != NotificationType::PhysicsProcess) {
+            return;
+        }
+        ++physics_process_count;
+        physics_process_deltas.push_back(GetPhysicsProcessDeltaTime());
+    }
+
+    int physics_process_count{0};
+    std::vector<double> physics_process_deltas;
+};
+
+} // namespace gobot
 
 namespace {
 
@@ -215,6 +236,80 @@ TEST(TestSimulationServer, builds_world_from_scene_and_steps_with_fixed_time_ste
     EXPECT_NEAR(simulation_server.GetAccumulator(), 0.0, CMP_EPSILON);
 
     gobot::Object::Delete(robot);
+}
+
+TEST(TestSimulationServer, step_invokes_fixed_callback_before_each_world_step) {
+    gobot::SimulationServer simulation_server;
+    simulation_server.SetFixedTimeStep(0.002);
+    simulation_server.SetMaxSubSteps(8);
+    simulation_server.SetPaused(false);
+
+    gobot::Robot3D* robot = CreateRobotScene();
+    ASSERT_TRUE(simulation_server.BuildWorldFromScene(robot));
+
+    int callback_count = 0;
+    std::vector<double> callback_deltas;
+    std::vector<std::uint64_t> frame_counts_before_step;
+    EXPECT_EQ(simulation_server.Step(0.016, [&](gobot::RealType fixed_delta) {
+        ++callback_count;
+        callback_deltas.push_back(static_cast<double>(fixed_delta));
+        frame_counts_before_step.push_back(simulation_server.GetFrameCount());
+    }), 8);
+
+    EXPECT_EQ(callback_count, 8);
+    ASSERT_EQ(callback_deltas.size(), 8);
+    ASSERT_EQ(frame_counts_before_step.size(), 8);
+    for (std::size_t index = 0; index < callback_deltas.size(); ++index) {
+        EXPECT_NEAR(callback_deltas[index], 0.002, CMP_EPSILON);
+        EXPECT_EQ(frame_counts_before_step[index], index);
+    }
+    EXPECT_EQ(simulation_server.GetFrameCount(), 8);
+    EXPECT_NEAR(simulation_server.GetSimulationTime(), 0.016, CMP_EPSILON);
+    EXPECT_NEAR(simulation_server.GetAccumulator(), 0.0, CMP_EPSILON);
+
+    callback_count = 0;
+    EXPECT_EQ(simulation_server.Step(0.001, [&](gobot::RealType) {
+        ++callback_count;
+    }), 0);
+    EXPECT_EQ(callback_count, 0);
+    EXPECT_EQ(simulation_server.GetFrameCount(), 8);
+    EXPECT_NEAR(simulation_server.GetAccumulator(), 0.001, CMP_EPSILON);
+
+    gobot::Object::Delete(robot);
+}
+
+TEST(TestSimulationServer, scene_tree_physics_notifications_follow_fixed_substeps_when_world_runs) {
+    gobot::SceneTree tree(false);
+    tree.Initialize();
+
+    auto* counter = gobot::Object::New<gobot::CountingPhysicsNode>();
+    counter->SetName("counter");
+    tree.GetRoot()->AddChild(counter);
+
+    gobot::SimulationServer simulation_server;
+    simulation_server.SetFixedTimeStep(0.002);
+    simulation_server.SetMaxSubSteps(8);
+    simulation_server.SetPaused(false);
+
+    gobot::Robot3D* robot = CreateRobotScene();
+    tree.GetRoot()->AddChild(robot);
+    ASSERT_TRUE(simulation_server.BuildWorldFromScene(robot));
+
+    tree.PhysicsProcess(0.016);
+
+    EXPECT_EQ(counter->physics_process_count, 8);
+    ASSERT_EQ(counter->physics_process_deltas.size(), 8);
+    for (double delta : counter->physics_process_deltas) {
+        EXPECT_NEAR(delta, 0.002, CMP_EPSILON);
+    }
+    EXPECT_EQ(simulation_server.GetFrameCount(), 8);
+
+    tree.PhysicsProcess(0.001);
+    EXPECT_EQ(counter->physics_process_count, 8);
+    EXPECT_EQ(simulation_server.GetFrameCount(), 8);
+
+    simulation_server.ClearWorld();
+    tree.Finalize();
 }
 
 TEST(TestSimulationServer, paused_step_does_not_advance_but_step_once_does) {

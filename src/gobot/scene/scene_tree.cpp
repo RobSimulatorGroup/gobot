@@ -76,15 +76,18 @@ void SceneTree::CancelQuit() {
 }
 
 bool SceneTree::PhysicsProcess(double time) {
-    physics_process_time_ = time;
-
-    // Physics notifications run before the world step so scripts can update controls for this tick.
-    root_->PropagateNotification(NotificationType::PhysicsProcess);
-
     if (SimulationServer::HasInstance()) {
-        SimulationServer::GetInstance()->Step(static_cast<RealType>(time));
+        SimulationServer* simulation = SimulationServer::GetInstance();
+        if (simulation->HasWorld() && !simulation->IsPaused()) {
+            simulation->Step(static_cast<RealType>(time),
+                             [this](RealType fixed_delta) {
+                                 NotifyPhysicsProcess(static_cast<double>(fixed_delta));
+                             });
+            return quit_;
+        }
     }
 
+    NotifyPhysicsProcess(time);
     return quit_;
 }
 
@@ -102,6 +105,11 @@ bool SceneTree::Process(double time) {
 
 void SceneTree::PullEvent() {
     root_->PullEvent();
+}
+
+void SceneTree::NotifyPhysicsProcess(double time) {
+    physics_process_time_ = time;
+    root_->PropagateNotification(NotificationType::PhysicsProcess);
 }
 
 

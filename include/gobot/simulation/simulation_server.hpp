@@ -7,6 +7,7 @@
 #pragma once
 
 #include <cstdint>
+#include <functional>
 #include <string>
 #include <vector>
 
@@ -23,6 +24,8 @@ class GOBOT_EXPORT SimulationServer : public Object {
     GOBCLASS(SimulationServer, Object)
 
 public:
+    using FixedStepCallback = std::function<void(RealType fixed_delta)>;
+
     explicit SimulationServer(PhysicsBackendType backend_type = PhysicsBackendType::Null);
 
     ~SimulationServer() override;
@@ -79,7 +82,11 @@ public:
 
     bool StepOnce();
 
+    bool StepOnce(const FixedStepCallback& fixed_step_callback);
+
     int Step(RealType delta_time);
+
+    int Step(RealType delta_time, const FixedStepCallback& fixed_step_callback);
 
     bool ConfigureEnvironmentBatch(std::size_t environment_count);
 
@@ -106,7 +113,7 @@ public:
 private:
     bool EnsureWorldReady();
 
-    bool StepFixed();
+    bool StepFixed(const FixedStepCallback* fixed_step_callback = nullptr);
 
     bool ApplyWorldStateToScene();
 
