@@ -25,7 +25,21 @@ jobs:
       - name: Check out repository
         uses: actions/checkout@v4
         with:
-          submodules: recursive
+          submodules: false
+          persist-credentials: false
+
+      - name: Check out submodules
+        env:
+          SUBMODULES_TOKEN: ${{ secrets.SUBMODULES_TOKEN }}
+        run: |
+          if [ -z "${SUBMODULES_TOKEN}" ]; then
+            echo "::error::Missing SUBMODULES_TOKEN secret. Create a fine-grained PAT with Contents: Read access to the private submodule repositories."
+            exit 1
+          fi
+          git config --global url."https://x-access-token:${SUBMODULES_TOKEN}@github.com/".insteadOf "https://github.com/"
+          git config --global url."https://x-access-token:${SUBMODULES_TOKEN}@github.com/".insteadOf "git@github.com:"
+          git submodule sync --recursive
+          git -c protocol.version=2 submodule update --init --force --depth=1 --recursive
 
       - name: Set up Python
         uses: actions/setup-python@v5
@@ -62,7 +76,21 @@ jobs:
       - name: Check out repository
         uses: actions/checkout@v4
         with:
-          submodules: recursive
+          submodules: false
+          persist-credentials: false
+
+      - name: Check out submodules
+        env:
+          SUBMODULES_TOKEN: ${{ secrets.SUBMODULES_TOKEN }}
+        run: |
+          if [ -z "${SUBMODULES_TOKEN}" ]; then
+            echo "::error::Missing SUBMODULES_TOKEN secret. Create a fine-grained PAT with Contents: Read access to the private submodule repositories."
+            exit 1
+          fi
+          git config --global url."https://x-access-token:${SUBMODULES_TOKEN}@github.com/".insteadOf "https://github.com/"
+          git config --global url."https://x-access-token:${SUBMODULES_TOKEN}@github.com/".insteadOf "git@github.com:"
+          git submodule sync --recursive
+          git -c protocol.version=2 submodule update --init --force --depth=1 --recursive
 
       - name: Set up Python
         uses: actions/setup-python@v5
