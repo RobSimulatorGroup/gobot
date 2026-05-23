@@ -3,6 +3,7 @@
 from ._core import (
     CollisionShape3D,
     Joint3D,
+    JointDriveMode,
     JointType,
     Link3D,
     LinkRole,
@@ -26,6 +27,7 @@ from .scene_helpers import create_cartpole_scene, save_cartpole_scene
 __all__ = [
     "CollisionShape3D",
     "Joint3D",
+    "JointDriveMode",
     "JointType",
     "Link3D",
     "LinkRole",

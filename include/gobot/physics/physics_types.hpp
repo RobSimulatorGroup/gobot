@@ -36,6 +36,7 @@ enum class PhysicsShapeType {
     Box,
     Sphere,
     Cylinder,
+    Capsule,
     Mesh
 };
 
@@ -67,6 +68,14 @@ struct PhysicsShapeSnapshot {
     Vector3 box_size{Vector3::Ones()};
     RealType radius{0.0};
     RealType height{0.0};
+    Vector3 friction{1.0, 0.005, 0.0001};
+    int contype{1};
+    int conaffinity{1};
+    int condim{3};
+    Vector2 solref{0.02, 1.0};
+    std::vector<RealType> solimp{0.9, 0.95, 0.001, 0.5, 2.0};
+    RealType margin{0.0};
+    RealType gap{0.0};
     bool disabled{false};
 };
 
@@ -95,6 +104,15 @@ struct PhysicsJointSnapshot {
     RealType velocity_limit{0.0};
     RealType damping{0.0};
     RealType joint_position{0.0};
+    RealType initial_position{0.0};
+    int drive_mode{0};
+    RealType drive_stiffness{0.0};
+    RealType drive_damping{0.0};
+    RealType control_lower_limit{0.0};
+    RealType control_upper_limit{0.0};
+    RealType force_lower_limit{0.0};
+    RealType force_upper_limit{0.0};
+    std::vector<RealType> gear{1.0, 0.0, 0.0, 0.0, 0.0, 0.0};
     int joint_type{0};
 };
 

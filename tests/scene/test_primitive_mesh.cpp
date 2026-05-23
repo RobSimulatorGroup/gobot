@@ -68,3 +68,16 @@ TEST(TestSphereMesh, test_properties_and_cast) {
     gobot::Variant variant = sphere_mesh;
     ASSERT_TRUE(variant.can_convert<gobot::Ref<gobot::PrimitiveMesh>>());
 }
+
+TEST(TestPlaneMesh, test_properties_and_cast) {
+    auto render_server = std::make_unique<gobot::RenderServer>();
+
+    auto plane_mesh = gobot::MakeRef<gobot::PlaneMesh>();
+    plane_mesh->SetSize(gobot::Vector2{4.0f, 5.0f});
+
+    EXPECT_FLOAT_EQ(plane_mesh->GetSize().x(), 4.0f);
+    EXPECT_FLOAT_EQ(plane_mesh->GetSize().y(), 5.0f);
+
+    gobot::Variant variant = plane_mesh;
+    ASSERT_TRUE(variant.can_convert<gobot::Ref<gobot::PrimitiveMesh>>());
+}

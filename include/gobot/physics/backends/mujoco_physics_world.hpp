@@ -147,6 +147,8 @@ private:
         int motor_actuator_id{-1};
         int position_actuator_id{-1};
         int velocity_actuator_id{-1};
+        RealType position_stiffness{0.0};
+        RealType velocity_damping{0.0};
         int qpos_address{-1};
         int dof_address{-1};
         int joint_type{-1};

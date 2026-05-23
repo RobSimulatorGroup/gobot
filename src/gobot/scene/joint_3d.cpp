@@ -155,6 +155,14 @@ RealType Joint3D::GetJointPosition() const {
     return joint_position_;
 }
 
+void Joint3D::SetInitialPosition(RealType initial_position) {
+    initial_position_ = ClampJointPosition(initial_position);
+}
+
+RealType Joint3D::GetInitialPosition() const {
+    return initial_position_;
+}
+
 void Joint3D::ResetJointPosition() {
     joint_position_ = 0.0;
 }
@@ -212,11 +220,88 @@ bool Joint3D::IsMotionModeEnabled() const {
     return motion_mode_enabled_;
 }
 
+void Joint3D::SetDriveMode(JointDriveMode drive_mode) {
+    drive_mode_ = drive_mode;
+}
+
+JointDriveMode Joint3D::GetDriveMode() const {
+    return drive_mode_;
+}
+
+void Joint3D::SetDriveStiffness(RealType stiffness) {
+    if (stiffness < 0.0) {
+        LOG_ERROR("Joint3D drive stiffness cannot be negative.");
+        return;
+    }
+    drive_stiffness_ = stiffness;
+}
+
+RealType Joint3D::GetDriveStiffness() const {
+    return drive_stiffness_;
+}
+
+void Joint3D::SetDriveDamping(RealType damping) {
+    if (damping < 0.0) {
+        LOG_ERROR("Joint3D drive damping cannot be negative.");
+        return;
+    }
+    drive_damping_ = damping;
+}
+
+RealType Joint3D::GetDriveDamping() const {
+    return drive_damping_;
+}
+
+void Joint3D::SetControlLowerLimit(RealType lower_limit) {
+    control_lower_limit_ = lower_limit;
+}
+
+RealType Joint3D::GetControlLowerLimit() const {
+    return control_lower_limit_;
+}
+
+void Joint3D::SetControlUpperLimit(RealType upper_limit) {
+    control_upper_limit_ = upper_limit;
+}
+
+RealType Joint3D::GetControlUpperLimit() const {
+    return control_upper_limit_;
+}
+
+void Joint3D::SetForceLowerLimit(RealType lower_limit) {
+    force_lower_limit_ = lower_limit;
+}
+
+RealType Joint3D::GetForceLowerLimit() const {
+    return force_lower_limit_;
+}
+
+void Joint3D::SetForceUpperLimit(RealType upper_limit) {
+    force_upper_limit_ = upper_limit;
+}
+
+RealType Joint3D::GetForceUpperLimit() const {
+    return force_upper_limit_;
+}
+
+void Joint3D::SetGear(const std::vector<RealType>& gear) {
+    gear_ = gear;
+}
+
+const std::vector<RealType>& Joint3D::GetGear() const {
+    return gear_;
+}
+
+bool Joint3D::HasDrive() const {
+    return drive_mode_ != JointDriveMode::Passive;
+}
+
 } // namespace gobot
 
 GOBOT_REGISTRATION {
 
     QuickEnumeration_<JointType>("JointType");
+    QuickEnumeration_<JointDriveMode>("JointDriveMode");
 
     Class_<Joint3D>("Joint3D")
             .constructor()(CtorAsRawPtr)
@@ -225,10 +310,19 @@ GOBOT_REGISTRATION {
             .property("child_link", &Joint3D::GetChildLink, &Joint3D::SetChildLink)
             .property("axis", &Joint3D::GetAxis, &Joint3D::SetAxis)
             .property("joint_position", &Joint3D::GetJointPosition, &Joint3D::SetJointPosition)
+            .property("initial_position", &Joint3D::GetInitialPosition, &Joint3D::SetInitialPosition)
             .property("lower_limit", &Joint3D::GetLowerLimit, &Joint3D::SetLowerLimit)
             .property("upper_limit", &Joint3D::GetUpperLimit, &Joint3D::SetUpperLimit)
             .property("effort_limit", &Joint3D::GetEffortLimit, &Joint3D::SetEffortLimit)
             .property("velocity_limit", &Joint3D::GetVelocityLimit, &Joint3D::SetVelocityLimit)
-            .property("damping", &Joint3D::GetDamping, &Joint3D::SetDamping);
+            .property("damping", &Joint3D::GetDamping, &Joint3D::SetDamping)
+            .property("drive_mode", &Joint3D::GetDriveMode, &Joint3D::SetDriveMode)
+            .property("drive_stiffness", &Joint3D::GetDriveStiffness, &Joint3D::SetDriveStiffness)
+            .property("drive_damping", &Joint3D::GetDriveDamping, &Joint3D::SetDriveDamping)
+            .property("control_lower_limit", &Joint3D::GetControlLowerLimit, &Joint3D::SetControlLowerLimit)
+            .property("control_upper_limit", &Joint3D::GetControlUpperLimit, &Joint3D::SetControlUpperLimit)
+            .property("force_lower_limit", &Joint3D::GetForceLowerLimit, &Joint3D::SetForceLowerLimit)
+            .property("force_upper_limit", &Joint3D::GetForceUpperLimit, &Joint3D::SetForceUpperLimit)
+            .property("gear", &Joint3D::GetGear, &Joint3D::SetGear);
 
 };

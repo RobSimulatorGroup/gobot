@@ -15,12 +15,28 @@
 #include "gobot/scene/mesh_instance_3d.hpp"
 #include "gobot/scene/node.hpp"
 #include "gobot/scene/resources/box_shape_3d.hpp"
+#include "gobot/scene/resources/capsule_shape_3d.hpp"
 #include "gobot/scene/resources/cylinder_shape_3d.hpp"
 #include "gobot/scene/resources/sphere_shape_3d.hpp"
 #include "gobot/scene/robot_3d.hpp"
 
 namespace gobot {
 namespace {
+
+PhysicsJointControlMode JointDriveModeToControlMode(int drive_mode) {
+    switch (static_cast<JointDriveMode>(drive_mode)) {
+        case JointDriveMode::Position:
+            return PhysicsJointControlMode::Position;
+        case JointDriveMode::Velocity:
+            return PhysicsJointControlMode::Velocity;
+        case JointDriveMode::Motor:
+            return PhysicsJointControlMode::Effort;
+        case JointDriveMode::Passive:
+            return PhysicsJointControlMode::Passive;
+    }
+
+    return PhysicsJointControlMode::Passive;
+}
 
 Affine3 ResolveNodeGlobalTransform(const Node3D* node, const Affine3& parent_global_transform) {
     if (node == nullptr) {
@@ -106,6 +122,14 @@ PhysicsShapeSnapshot CaptureShapeSnapshot(const CollisionShape3D* collision_shap
     snapshot.node = collision_shape;
     snapshot.global_transform = global_transform;
     snapshot.disabled = collision_shape->IsDisabled();
+    snapshot.friction = collision_shape->GetFriction();
+    snapshot.contype = collision_shape->GetContactType();
+    snapshot.conaffinity = collision_shape->GetContactAffinity();
+    snapshot.condim = collision_shape->GetContactDimension();
+    snapshot.solref = collision_shape->GetSolref();
+    snapshot.solimp = collision_shape->GetSolimp();
+    snapshot.margin = collision_shape->GetMargin();
+    snapshot.gap = collision_shape->GetGap();
 
     const Ref<Shape3D>& shape = collision_shape->GetShape();
     if (!shape.IsValid()) {
@@ -118,6 +142,10 @@ PhysicsShapeSnapshot CaptureShapeSnapshot(const CollisionShape3D* collision_shap
     } else if (auto sphere = dynamic_pointer_cast<SphereShape3D>(shape)) {
         snapshot.type = PhysicsShapeType::Sphere;
         snapshot.radius = sphere->GetRadius();
+    } else if (auto capsule = dynamic_pointer_cast<CapsuleShape3D>(shape)) {
+        snapshot.type = PhysicsShapeType::Capsule;
+        snapshot.radius = capsule->GetRadius();
+        snapshot.height = capsule->GetHeight();
     } else if (auto cylinder = dynamic_pointer_cast<CylinderShape3D>(shape)) {
         snapshot.type = PhysicsShapeType::Cylinder;
         snapshot.radius = cylinder->GetRadius();
@@ -174,6 +202,15 @@ void CollectRobotNodes(const Node* node,
         joint_snapshot.velocity_limit = joint->GetVelocityLimit();
         joint_snapshot.damping = joint->GetDamping();
         joint_snapshot.joint_position = joint->GetJointPosition();
+        joint_snapshot.initial_position = joint->GetInitialPosition();
+        joint_snapshot.drive_mode = static_cast<int>(joint->GetDriveMode());
+        joint_snapshot.drive_stiffness = joint->GetDriveStiffness();
+        joint_snapshot.drive_damping = joint->GetDriveDamping();
+        joint_snapshot.control_lower_limit = joint->GetControlLowerLimit();
+        joint_snapshot.control_upper_limit = joint->GetControlUpperLimit();
+        joint_snapshot.force_lower_limit = joint->GetForceLowerLimit();
+        joint_snapshot.force_upper_limit = joint->GetForceUpperLimit();
+        joint_snapshot.gear = joint->GetGear();
         joint_snapshot.joint_type = static_cast<int>(joint->GetJointType());
         robot_snapshot->joints.emplace_back(std::move(joint_snapshot));
     } else if (auto collision_shape = Object::PointerCastTo<CollisionShape3D>(node)) {
@@ -705,6 +742,7 @@ PhysicsSceneState PhysicsWorld::MakeSceneStateFromSnapshot() const {
             joint_state.joint_type = joint_snapshot.joint_type;
             joint_state.position = joint_snapshot.joint_position;
             joint_state.target_position = joint_snapshot.joint_position;
+            joint_state.control_mode = JointDriveModeToControlMode(joint_snapshot.drive_mode);
             robot_state.joints.emplace_back(std::move(joint_state));
             ++scene_state.total_joint_count;
         }

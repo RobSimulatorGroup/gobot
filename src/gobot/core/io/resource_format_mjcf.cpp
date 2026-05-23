@@ -16,6 +16,7 @@
 #include <string_view>
 #include <unordered_map>
 #include <utility>
+#include <vector>
 
 #include "gobot/core/config/project_setting.hpp"
 #include "gobot/core/io/resource_loader.hpp"
@@ -29,6 +30,7 @@
 #include "gobot/scene/mesh_instance_3d.hpp"
 #include "gobot/scene/resources/array_mesh.hpp"
 #include "gobot/scene/resources/box_shape_3d.hpp"
+#include "gobot/scene/resources/capsule_shape_3d.hpp"
 #include "gobot/scene/resources/cylinder_shape_3d.hpp"
 #include "gobot/scene/resources/material.hpp"
 #include "gobot/scene/resources/mesh.hpp"
@@ -89,6 +91,17 @@ std::string ReadMJCFModelName(const std::string& xml) {
 template <typename T>
 void AddProperty(SceneState::NodeData& node_data, std::string name, T value) {
     node_data.properties.push_back({std::move(name), Variant(std::move(value))});
+}
+
+template <typename T>
+void SetProperty(SceneState::NodeData& node_data, const std::string& name, T value) {
+    for (SceneState::PropertyData& property : node_data.properties) {
+        if (property.name == name) {
+            property.value = Variant(std::move(value));
+            return;
+        }
+    }
+    AddProperty(node_data, name, std::move(value));
 }
 
 void AddTransformProperties(SceneState::NodeData& node_data, const Vector3& position, const Matrix3& rotation) {
@@ -187,6 +200,46 @@ Color GetGeomColor(const mjModel* model, int geom_id) {
     return ToColor(model->geom_rgba + 4 * geom_id);
 }
 
+bool IsActuatorForJoint(const mjModel* model, int actuator_id, int joint_id) {
+    const int transmission_type = model->actuator_trntype[actuator_id];
+    const int transmission_id = model->actuator_trnid[2 * actuator_id];
+    return (transmission_type == mjTRN_JOINT || transmission_type == mjTRN_JOINTINPARENT) &&
+           transmission_id == joint_id;
+}
+
+bool LooksLikeMotorActuator(const mjModel* model, int actuator_id) {
+    return model->actuator_gaintype[actuator_id] == mjGAIN_FIXED &&
+           model->actuator_biastype[actuator_id] == mjBIAS_NONE;
+}
+
+bool LooksLikePositionActuator(const mjModel* model, int actuator_id) {
+    const mjtNum* gain = model->actuator_gainprm + mjNGAIN * actuator_id;
+    const mjtNum* bias = model->actuator_biasprm + mjNBIAS * actuator_id;
+    return model->actuator_gaintype[actuator_id] == mjGAIN_FIXED &&
+           model->actuator_biastype[actuator_id] == mjBIAS_AFFINE &&
+           std::abs(bias[1]) > 1.0e-9 &&
+           std::abs(gain[0] + bias[1]) <= std::max<mjtNum>(1.0, std::abs(gain[0])) * 1.0e-6;
+}
+
+bool LooksLikeVelocityActuator(const mjModel* model, int actuator_id) {
+    const mjtNum* gain = model->actuator_gainprm + mjNGAIN * actuator_id;
+    const mjtNum* bias = model->actuator_biasprm + mjNBIAS * actuator_id;
+    return model->actuator_gaintype[actuator_id] == mjGAIN_FIXED &&
+           model->actuator_biastype[actuator_id] == mjBIAS_AFFINE &&
+           std::abs(bias[1]) <= 1.0e-9 &&
+           std::abs(bias[2]) > 1.0e-9 &&
+           std::abs(gain[0] + bias[2]) <= std::max<mjtNum>(1.0, std::abs(gain[0])) * 1.0e-6;
+}
+
+std::vector<RealType> ToRealVector(const mjtNum* values, int count) {
+    std::vector<RealType> result;
+    result.reserve(count);
+    for (int index = 0; index < count; ++index) {
+        result.push_back(static_cast<RealType>(values[index]));
+    }
+    return result;
+}
+
 int FindStandKeyframe(const mjModel* model) {
     for (int key_id = 0; key_id < model->nkey; ++key_id) {
         const char* name = mj_id2name(model, mjOBJ_KEY, key_id);
@@ -216,18 +269,59 @@ std::string ReadMuJoCoString(const mjString* value) {
 std::filesystem::path ResolveMJCFAssetPath(const std::filesystem::path& source_file,
                                            const std::string& mesh_dir,
                                            const std::string& asset_file) {
-    std::filesystem::path path(asset_file);
-    if (path.is_absolute()) {
-        return path.lexically_normal();
+    const std::filesystem::path file(asset_file);
+    if (file.is_absolute()) {
+        const std::filesystem::path absolute_path = file.lexically_normal();
+        if (std::filesystem::exists(absolute_path)) {
+            return absolute_path;
+        }
     }
 
-    std::filesystem::path root = source_file.parent_path();
+    const std::filesystem::path relative_file = file.is_absolute() ? file.filename() : file;
+    const std::filesystem::path source_dir = source_file.parent_path();
+    const std::filesystem::path direct_path = (source_dir / relative_file).lexically_normal();
+    if (std::filesystem::exists(direct_path)) {
+        return direct_path;
+    }
+
+    if (source_dir.has_parent_path()) {
+        const std::filesystem::path parent_direct_path = (source_dir.parent_path() / relative_file).lexically_normal();
+        if (std::filesystem::exists(parent_direct_path)) {
+            return parent_direct_path;
+        }
+    }
+
     if (!mesh_dir.empty()) {
-        std::filesystem::path mesh_root(mesh_dir);
-        root = mesh_root.is_absolute() ? mesh_root : root / mesh_root;
+        const std::filesystem::path mesh_root(mesh_dir);
+        if (mesh_root.is_absolute()) {
+            return (mesh_root / relative_file).lexically_normal();
+        }
+
+        const std::filesystem::path mesh_path = (source_dir / mesh_root / relative_file).lexically_normal();
+        if (std::filesystem::exists(mesh_path)) {
+            return mesh_path;
+        }
+
+        if (source_dir.has_parent_path()) {
+            const std::filesystem::path parent_mesh_path =
+                    (source_dir.parent_path() / mesh_root / relative_file).lexically_normal();
+            if (std::filesystem::exists(parent_mesh_path)) {
+                return parent_mesh_path;
+            }
+        }
+
+        if (source_dir.has_parent_path() && source_dir.parent_path().has_parent_path()) {
+            const std::filesystem::path grandparent_mesh_path =
+                    (source_dir.parent_path().parent_path() / mesh_root / relative_file).lexically_normal();
+            if (std::filesystem::exists(grandparent_mesh_path)) {
+                return grandparent_mesh_path;
+            }
+        }
+
+        return mesh_path;
     }
 
-    return (root / path).lexically_normal();
+    return direct_path;
 }
 
 std::string LocalizePath(const std::filesystem::path& path) {
@@ -277,6 +371,76 @@ Ref<Mesh> MakeMeshReference(const std::string& mesh_path) {
     return mesh;
 }
 
+void NormalizeMJCFFileString(mjString* file,
+                             const std::filesystem::path& source_file,
+                             const std::string& asset_dir) {
+    const std::string existing_path = ReadMuJoCoString(file);
+    if (existing_path.empty()) {
+        return;
+    }
+
+    const std::filesystem::path resolved_path = ResolveMJCFAssetPath(source_file, asset_dir, existing_path);
+    if (!resolved_path.empty()) {
+        mjs_setString(file, resolved_path.string().c_str());
+    }
+}
+
+void NormalizeMJCFAssetPaths(mjSpec* spec, const std::filesystem::path& source_file) {
+    if (spec == nullptr) {
+        return;
+    }
+
+    const std::string mesh_dir = ReadMuJoCoString(spec->compiler.meshdir);
+    const std::string texture_dir = ReadMuJoCoString(spec->compiler.texturedir);
+
+    for (mjsElement* element = mjs_firstElement(spec, mjOBJ_MESH);
+         element != nullptr;
+         element = mjs_nextElement(spec, element)) {
+        mjsMesh* mesh = mjs_asMesh(element);
+        if (mesh != nullptr) {
+            NormalizeMJCFFileString(mesh->file, source_file, mesh_dir);
+        }
+    }
+
+    for (mjsElement* element = mjs_firstElement(spec, mjOBJ_HFIELD);
+         element != nullptr;
+         element = mjs_nextElement(spec, element)) {
+        mjsHField* hfield = mjs_asHField(element);
+        if (hfield != nullptr) {
+            NormalizeMJCFFileString(hfield->file, source_file, mesh_dir);
+        }
+    }
+
+    for (mjsElement* element = mjs_firstElement(spec, mjOBJ_TEXTURE);
+         element != nullptr;
+         element = mjs_nextElement(spec, element)) {
+        mjsTexture* texture = mjs_asTexture(element);
+        if (texture != nullptr) {
+            NormalizeMJCFFileString(texture->file, source_file, texture_dir);
+            if (texture->cubefiles != nullptr) {
+                for (std::string& cube_file : *texture->cubefiles) {
+                    if (!cube_file.empty()) {
+                        cube_file = ResolveMJCFAssetPath(source_file, texture_dir, cube_file).string();
+                    }
+                }
+            }
+        }
+    }
+
+    for (mjsElement* element = mjs_firstElement(spec, mjOBJ_SKIN);
+         element != nullptr;
+         element = mjs_nextElement(spec, element)) {
+        mjsSkin* skin = mjs_asSkin(element);
+        if (skin != nullptr) {
+            NormalizeMJCFFileString(skin->file, source_file, mesh_dir);
+        }
+    }
+
+    mjs_setString(spec->compiler.meshdir, "");
+    mjs_setString(spec->compiler.texturedir, "");
+    mjs_setString(spec->modelfiledir, "");
+}
+
 std::unordered_map<int, std::string> BuildMeshAssetPaths(const std::string& input_path) {
     std::unordered_map<int, std::string> mesh_paths;
     char error[kMuJoCoErrorBufferSize] = {};
@@ -289,6 +453,7 @@ std::unordered_map<int, std::string> BuildMeshAssetPaths(const std::string& inpu
     }
 
     const std::filesystem::path source_file(input_path);
+    NormalizeMJCFAssetPaths(spec.get(), source_file);
     const std::string mesh_dir = ReadMuJoCoString(spec->compiler.meshdir);
     for (mjsElement* element = mjs_firstElement(spec.get(), mjOBJ_MESH);
          element != nullptr;
@@ -398,6 +563,7 @@ SceneState::NodeData MakeBodyJointNode(const mjModel* model,
         }
     }
     AddProperty(node_data, "joint_position", initial_joint_position);
+    AddProperty(node_data, "initial_position", initial_joint_position);
     (void)dof_address;
     return node_data;
 }
@@ -425,7 +591,7 @@ Ref<Shape3D> MakeGeomShape(const mjModel* model, int geom_id) {
             return dynamic_pointer_cast<Shape3D>(shape);
         }
         case mjGEOM_CAPSULE: {
-            Ref<CylinderShape3D> shape = MakeRef<CylinderShape3D>();
+            Ref<CapsuleShape3D> shape = MakeRef<CapsuleShape3D>();
             shape->SetRadius(static_cast<float>(size[0]));
             shape->SetHeight(static_cast<float>(size[1] * 2.0));
             return dynamic_pointer_cast<Shape3D>(shape);
@@ -444,6 +610,16 @@ SceneState::NodeData MakeGeomCollisionNode(const mjModel* model, int geom_id, in
                            ToVector3(model->geom_pos + 3 * geom_id),
                            ToMatrix3FromMuJoCoQuat(model->geom_quat + 4 * geom_id));
     AddProperty(node_data, "shape", MakeGeomShape(model, geom_id));
+    AddProperty(node_data, "friction", ToVector3(model->geom_friction + 3 * geom_id));
+    AddProperty(node_data, "contype", model->geom_contype[geom_id]);
+    AddProperty(node_data, "conaffinity", model->geom_conaffinity[geom_id]);
+    AddProperty(node_data, "condim", model->geom_condim[geom_id]);
+    AddProperty(node_data, "solref", Vector2{
+            static_cast<RealType>(model->geom_solref[2 * geom_id + 0]),
+            static_cast<RealType>(model->geom_solref[2 * geom_id + 1])});
+    AddProperty(node_data, "solimp", ToRealVector(model->geom_solimp + 5 * geom_id, 5));
+    AddProperty(node_data, "margin", static_cast<RealType>(model->geom_margin[geom_id]));
+    AddProperty(node_data, "gap", static_cast<RealType>(model->geom_gap[geom_id]));
     AddProperty(node_data, "visible", false);
     return node_data;
 }
@@ -489,19 +665,19 @@ SceneState::NodeData MakeGeomVisualNode(const mjModel* model,
     return node_data;
 }
 
-void ApplyActuatorLimitsToJoints(const mjModel* model, std::unordered_map<int, SceneState::NodeData>* joint_nodes) {
+void ApplyActuatorsToJoints(const mjModel* model, std::unordered_map<int, SceneState::NodeData>* joint_nodes) {
     if (model == nullptr || joint_nodes == nullptr) {
         return;
     }
 
     for (int actuator_id = 0; actuator_id < model->nu; ++actuator_id) {
-        const int transmission_type = model->actuator_trntype[actuator_id];
-        if (transmission_type != mjTRN_JOINT && transmission_type != mjTRN_JOINTINPARENT) {
+        if (model->actuator_trntype[actuator_id] != mjTRN_JOINT &&
+            model->actuator_trntype[actuator_id] != mjTRN_JOINTINPARENT) {
             continue;
         }
 
         const int joint_id = model->actuator_trnid[2 * actuator_id];
-        if (joint_id < 0 || joint_id >= model->njnt || !model->actuator_forcelimited[actuator_id]) {
+        if (joint_id < 0 || joint_id >= model->njnt) {
             continue;
         }
 
@@ -510,14 +686,36 @@ void ApplyActuatorLimitsToJoints(const mjModel* model, std::unordered_map<int, S
             continue;
         }
 
-        const RealType effort_limit = std::max(
-                std::abs(model->actuator_forcerange[2 * actuator_id]),
-                std::abs(model->actuator_forcerange[2 * actuator_id + 1]));
-        for (SceneState::PropertyData& property : joint_iter->second.properties) {
-            if (property.name == "effort_limit") {
-                property.value = Variant(effort_limit);
-                break;
-            }
+        SceneState::NodeData& joint_node = joint_iter->second;
+        if (model->actuator_forcelimited[actuator_id]) {
+            const RealType effort_limit = std::max(
+                    std::abs(model->actuator_forcerange[2 * actuator_id]),
+                    std::abs(model->actuator_forcerange[2 * actuator_id + 1]));
+            SetProperty(joint_node, "effort_limit", effort_limit);
+            SetProperty(joint_node, "force_lower_limit",
+                        static_cast<RealType>(model->actuator_forcerange[2 * actuator_id]));
+            SetProperty(joint_node, "force_upper_limit",
+                        static_cast<RealType>(model->actuator_forcerange[2 * actuator_id + 1]));
+        }
+
+        if (model->actuator_ctrllimited[actuator_id]) {
+            SetProperty(joint_node, "control_lower_limit",
+                        static_cast<RealType>(model->actuator_ctrlrange[2 * actuator_id]));
+            SetProperty(joint_node, "control_upper_limit",
+                        static_cast<RealType>(model->actuator_ctrlrange[2 * actuator_id + 1]));
+        }
+
+        SetProperty(joint_node, "gear", ToRealVector(model->actuator_gear + 6 * actuator_id, 6));
+
+        const mjtNum* gain = model->actuator_gainprm + mjNGAIN * actuator_id;
+        if (LooksLikePositionActuator(model, actuator_id)) {
+            SetProperty(joint_node, "drive_mode", JointDriveMode::Position);
+            SetProperty(joint_node, "drive_stiffness", static_cast<RealType>(std::abs(gain[0])));
+        } else if (LooksLikeVelocityActuator(model, actuator_id)) {
+            SetProperty(joint_node, "drive_mode", JointDriveMode::Velocity);
+            SetProperty(joint_node, "drive_damping", static_cast<RealType>(std::abs(gain[0])));
+        } else if (LooksLikeMotorActuator(model, actuator_id) || IsActuatorForJoint(model, actuator_id, joint_id)) {
+            SetProperty(joint_node, "drive_mode", JointDriveMode::Motor);
         }
     }
 }
@@ -549,11 +747,20 @@ Ref<Resource> ResourceFormatLoaderMJCF::Load(const std::string& path,
     return {};
 #else
     char error[kMuJoCoErrorBufferSize] = {};
-    std::unique_ptr<mjModel, decltype(&mj_deleteModel)> model(
-            mj_loadXML(input_path.c_str(), nullptr, error, sizeof(error)),
-            mj_deleteModel);
+    std::unique_ptr<mjSpec, decltype(&mj_deleteSpec)> spec(
+            mj_parseXML(input_path.c_str(), nullptr, error, sizeof(error)),
+            mj_deleteSpec);
+    if (!spec) {
+        LOG_ERROR("MuJoCo failed to parse MJCF '{}': {}.", path, error);
+        return {};
+    }
+
+    NormalizeMJCFAssetPaths(spec.get(), std::filesystem::path(input_path));
+
+    std::unique_ptr<mjModel, decltype(&mj_deleteModel)> model(mj_compile(spec.get(), nullptr), mj_deleteModel);
     if (!model) {
-        LOG_ERROR("MuJoCo failed to load MJCF '{}': {}.", path, error);
+        const char* compile_error = mjs_getError(spec.get());
+        LOG_ERROR("MuJoCo failed to compile MJCF '{}': {}.", path, compile_error != nullptr ? compile_error : "unknown error");
         return {};
     }
 
@@ -607,7 +814,7 @@ Ref<Resource> ResourceFormatLoaderMJCF::Load(const std::string& path,
             joint_parent_world_transform = joint_world_transform;
         }
 
-        ApplyActuatorLimitsToJoints(model.get(), &joint_nodes);
+        ApplyActuatorsToJoints(model.get(), &joint_nodes);
         for (int joint_offset = 0; joint_offset < model->body_jntnum[body_id]; ++joint_offset) {
             const int joint_id = model->body_jntadr[body_id] + joint_offset;
             auto joint_iter = joint_nodes.find(joint_id);

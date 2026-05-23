@@ -6,7 +6,7 @@ import gobot
 
 ROBOT = "go1"
 BASE_LINK = "trunk"
-DEFAULT_POLICY_PATH = "res://policies/go1.pt"
+DEFAULT_POLICY_PATH = ""
 PRINT_EVERY_TICKS = 240
 FIXED_TIME_STEP = 0.002
 RESET_BASE_POSITION = [0.0, 0.0, 0.27]
@@ -210,6 +210,9 @@ class Script(gobot.NodeScript):
 
     def _load_policy(self):
         path = os.environ.get("GOBOT_GO1_POLICY", DEFAULT_POLICY_PATH)
+        if not path:
+            print("Go1 RL policy disabled; set GOBOT_GO1_POLICY to a .pt policy to enable playback.")
+            return None
         if path.startswith("res://"):
             project_path = self.context.project_path if self.context is not None else ""
             path = os.path.join(project_path, path.removeprefix("res://"))

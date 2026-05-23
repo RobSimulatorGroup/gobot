@@ -242,6 +242,16 @@ void SetMuJoCoVector3(double* target, const Vector3& value) {
     target[2] = value.z();
 }
 
+void SetMuJoCoArray(double* target, const std::vector<RealType>& value, int max_count) {
+    if (!target) {
+        return;
+    }
+    const int count = std::min<int>(static_cast<int>(value.size()), max_count);
+    for (int index = 0; index < count; ++index) {
+        target[index] = value[index];
+    }
+}
+
 void SetMuJoCoQuaternion(double* target, const Matrix3& rotation) {
     const Quaternion quaternion(rotation);
     target[0] = quaternion.w();
@@ -290,11 +300,41 @@ double PositiveOrDefault(RealType value, double fallback) {
     return value > 0.0 ? static_cast<double>(value) : fallback;
 }
 
+bool HasControlRange(const PhysicsJointSnapshot& joint) {
+    return joint.control_upper_limit > joint.control_lower_limit;
+}
+
+bool HasForceRange(const PhysicsJointSnapshot& joint) {
+    return joint.force_upper_limit > joint.force_lower_limit;
+}
+
+bool HasUsableAuthoredModel(const PhysicsRobotSnapshot& robot) {
+    return !robot.links.empty() || !robot.joints.empty();
+}
+
+void ConfigureGeomContact(mjsGeom* geom, const PhysicsShapeSnapshot& shape) {
+    if (!geom) {
+        return;
+    }
+
+    geom->contype = shape.contype;
+    geom->conaffinity = shape.conaffinity;
+    geom->condim = shape.condim;
+    geom->friction[0] = shape.friction.x();
+    geom->friction[1] = shape.friction.y();
+    geom->friction[2] = shape.friction.z();
+    geom->solref[0] = shape.solref.x();
+    geom->solref[1] = shape.solref.y();
+    SetMuJoCoArray(geom->solimp, shape.solimp, mjNIMP);
+    geom->margin = shape.margin;
+    geom->gap = shape.gap;
+}
+
 void AddShapeGeomToBody(mjsBody* body,
                         const PhysicsShapeSnapshot& shape,
                         const PhysicsLinkSnapshot& link,
                         const std::string& name) {
-    if (!body || shape.disabled || shape.type != PhysicsShapeType::Box) {
+    if (!body || shape.disabled) {
         return;
     }
 
@@ -304,16 +344,32 @@ void AddShapeGeomToBody(mjsBody* body,
     }
 
     mjs_setName(geom->element, name.c_str());
-    geom->type = mjGEOM_BOX;
+    switch (shape.type) {
+        case PhysicsShapeType::Box:
+            geom->type = mjGEOM_BOX;
+            geom->size[0] = shape.box_size.x() * 0.5;
+            geom->size[1] = shape.box_size.y() * 0.5;
+            geom->size[2] = shape.box_size.z() * 0.5;
+            break;
+        case PhysicsShapeType::Sphere:
+            geom->type = mjGEOM_SPHERE;
+            geom->size[0] = shape.radius;
+            break;
+        case PhysicsShapeType::Cylinder:
+            geom->type = mjGEOM_CYLINDER;
+            geom->size[0] = shape.radius;
+            geom->size[1] = shape.height * 0.5;
+            break;
+        case PhysicsShapeType::Capsule:
+            geom->type = mjGEOM_CAPSULE;
+            geom->size[0] = shape.radius;
+            geom->size[1] = shape.height * 0.5;
+            break;
+        default:
+            return;
+    }
     SetMuJoCoGeomPose(geom, RelativeTransform(link.global_transform, shape.global_transform));
-    geom->size[0] = shape.box_size.x() * 0.5;
-    geom->size[1] = shape.box_size.y() * 0.5;
-    geom->size[2] = shape.box_size.z() * 0.5;
-    geom->contype = 1;
-    geom->conaffinity = 1;
-    geom->friction[0] = 1.0;
-    geom->friction[1] = 0.005;
-    geom->friction[2] = 0.0001;
+    ConfigureGeomContact(geom, shape);
     geom->rgba[0] = 0.72f;
     geom->rgba[1] = 0.78f;
     geom->rgba[2] = 0.84f;
@@ -366,14 +422,18 @@ void AddJointToBody(mjsBody* body,
                      RelativeTransform(child_link_global_transform, joint.global_transform).translation());
     const Vector3 world_axis = joint.global_transform.linear() * joint.axis;
     SetMuJoCoVector3(mujoco_joint->axis, child_link_global_transform.linear().transpose() * world_axis);
-    mujoco_joint->ref = joint.joint_position;
+    mujoco_joint->ref = 0.0;
     if (type == JointType::Revolute || type == JointType::Prismatic) {
-        mujoco_joint->limited = joint.upper_limit > joint.lower_limit;
+        mujoco_joint->limited = joint.upper_limit > joint.lower_limit ? mjLIMITED_TRUE : mjLIMITED_FALSE;
         mujoco_joint->range[0] = joint.lower_limit;
         mujoco_joint->range[1] = joint.upper_limit;
     }
-    if (joint.effort_limit > 0.0) {
-        mujoco_joint->actfrclimited = true;
+    if (HasForceRange(joint)) {
+        mujoco_joint->actfrclimited = mjLIMITED_TRUE;
+        mujoco_joint->actfrcrange[0] = joint.force_lower_limit;
+        mujoco_joint->actfrcrange[1] = joint.force_upper_limit;
+    } else if (joint.effort_limit > 0.0) {
+        mujoco_joint->actfrclimited = mjLIMITED_TRUE;
         mujoco_joint->actfrcrange[0] = -joint.effort_limit;
         mujoco_joint->actfrcrange[1] = joint.effort_limit;
     }
@@ -384,18 +444,26 @@ void ConfigureActuatorLimits(mjsActuator* actuator, const PhysicsJointSnapshot& 
     if (!actuator) {
         return;
     }
-    if (control_is_position && joint.upper_limit > joint.lower_limit) {
-        actuator->ctrllimited = true;
+    if (HasControlRange(joint)) {
+        actuator->ctrllimited = mjLIMITED_TRUE;
+        actuator->ctrlrange[0] = joint.control_lower_limit;
+        actuator->ctrlrange[1] = joint.control_upper_limit;
+    } else if (control_is_position && joint.upper_limit > joint.lower_limit) {
+        actuator->ctrllimited = mjLIMITED_TRUE;
         actuator->ctrlrange[0] = joint.lower_limit;
         actuator->ctrlrange[1] = joint.upper_limit;
     }
-    if (!control_is_position && joint.effort_limit > 0.0) {
-        actuator->ctrllimited = true;
+    if (!control_is_position && !HasControlRange(joint) && joint.effort_limit > 0.0) {
+        actuator->ctrllimited = mjLIMITED_TRUE;
         actuator->ctrlrange[0] = -joint.effort_limit;
         actuator->ctrlrange[1] = joint.effort_limit;
     }
-    if (joint.effort_limit > 0.0) {
-        actuator->forcelimited = true;
+    if (HasForceRange(joint)) {
+        actuator->forcelimited = mjLIMITED_TRUE;
+        actuator->forcerange[0] = joint.force_lower_limit;
+        actuator->forcerange[1] = joint.force_upper_limit;
+    } else if (joint.effort_limit > 0.0) {
+        actuator->forcelimited = mjLIMITED_TRUE;
         actuator->forcerange[0] = -joint.effort_limit;
         actuator->forcerange[1] = joint.effort_limit;
     }
@@ -419,25 +487,40 @@ mjsActuator* AddJointActuator(mjSpec* spec,
     mjs_setName(actuator->element, actuator_name.c_str());
     actuator->trntype = mjTRN_JOINT;
     mjs_setString(actuator->target, prefixed_name.c_str());
+    SetMuJoCoArray(actuator->gear, joint.gear, 6);
     ConfigureActuatorLimits(actuator, joint, control_is_position);
     return actuator;
 }
 
 void AddJointActuators(mjSpec* spec, const PhysicsJointSnapshot& joint, const std::string& prefixed_name) {
-    mjsActuator* motor = AddJointActuator(spec, joint, prefixed_name, "_motor", false);
-    if (motor) {
-        mjs_setToMotor(motor);
+    const auto drive_mode = static_cast<JointDriveMode>(joint.drive_mode);
+    if (drive_mode == JointDriveMode::Passive) {
+        return;
     }
 
-    mjsActuator* position = AddJointActuator(spec, joint, prefixed_name, "_position", true);
-    if (position) {
-        mjs_setToPosition(position, 0.0, nullptr, nullptr, nullptr, 0.0);
+    if (drive_mode == JointDriveMode::Motor) {
+        mjsActuator* motor = AddJointActuator(spec, joint, prefixed_name, "_motor", false);
+        if (motor) {
+            mjs_setToMotor(motor);
+        }
+        return;
     }
 
-    mjsActuator* velocity = AddJointActuator(spec, joint, prefixed_name, "_velocity", false);
-    if (velocity) {
-        mjs_setToVelocity(velocity, 0.0);
-        velocity->ctrllimited = false;
+    if (drive_mode == JointDriveMode::Position) {
+        mjsActuator* position = AddJointActuator(spec, joint, prefixed_name, "_position", true);
+        if (position) {
+            mjs_setToPosition(position, joint.drive_stiffness, nullptr, nullptr, nullptr, 0.0);
+            ConfigureActuatorLimits(position, joint, true);
+        }
+        return;
+    }
+
+    if (drive_mode == JointDriveMode::Velocity) {
+        mjsActuator* velocity = AddJointActuator(spec, joint, prefixed_name, "_velocity", false);
+        if (velocity) {
+            mjs_setToVelocity(velocity, joint.drive_damping);
+            ConfigureActuatorLimits(velocity, joint, false);
+        }
     }
 }
 
@@ -1039,6 +1122,7 @@ bool MuJoCoPhysicsWorld::LoadModelFromRobotSources() {
         return false;
     }
     std::unique_ptr<mjSpec, decltype(&mj_deleteSpec)> parent_spec_guard(parent_spec, mj_deleteSpec);
+    parent_spec->compiler.degree = 0;
 
     AddLooseSceneGeomsToSpec(parent_spec);
 
@@ -1055,7 +1139,9 @@ bool MuJoCoPhysicsWorld::LoadModelFromRobotSources() {
         used_prefixes.insert(prefix);
 
         bool attached = false;
-        if (!robot.source_path.empty()) {
+        if (HasUsableAuthoredModel(robot)) {
+            attached = AddAuthoredRobotToSpec(parent_spec, robot, robot_index, prefix);
+        } else if (!robot.source_path.empty()) {
             const std::string model_path = ResolvePhysicsSourcePath(robot.source_path);
             if (!model_path.empty() && std::filesystem::exists(model_path)) {
                 attached = AttachRobotModelToSpec(parent_spec, robot, robot_index, prefix);
@@ -1248,7 +1334,7 @@ void MuJoCoPhysicsWorld::AddLooseSceneGeomsToSpec(void* spec_ptr) {
     int added_count = 0;
     for (std::size_t shape_index = 0; shape_index < scene_snapshot_.loose_collision_shapes.size(); ++shape_index) {
         const PhysicsShapeSnapshot& shape = scene_snapshot_.loose_collision_shapes[shape_index];
-        if (shape.disabled || shape.type != PhysicsShapeType::Box) {
+        if (shape.disabled) {
             continue;
         }
 
@@ -1259,7 +1345,30 @@ void MuJoCoPhysicsWorld::AddLooseSceneGeomsToSpec(void* spec_ptr) {
 
         const std::string name = fmt::format("gobot_loose_box_{}", shape_index);
         mjs_setName(geom->element, name.c_str());
-        geom->type = mjGEOM_BOX;
+        switch (shape.type) {
+            case PhysicsShapeType::Box:
+                geom->type = mjGEOM_BOX;
+                geom->size[0] = shape.box_size.x() * 0.5;
+                geom->size[1] = shape.box_size.y() * 0.5;
+                geom->size[2] = shape.box_size.z() * 0.5;
+                break;
+            case PhysicsShapeType::Sphere:
+                geom->type = mjGEOM_SPHERE;
+                geom->size[0] = shape.radius;
+                break;
+            case PhysicsShapeType::Cylinder:
+                geom->type = mjGEOM_CYLINDER;
+                geom->size[0] = shape.radius;
+                geom->size[1] = shape.height * 0.5;
+                break;
+            case PhysicsShapeType::Capsule:
+                geom->type = mjGEOM_CAPSULE;
+                geom->size[0] = shape.radius;
+                geom->size[1] = shape.height * 0.5;
+                break;
+            default:
+                continue;
+        }
         geom->pos[0] = shape.global_transform.translation().x();
         geom->pos[1] = shape.global_transform.translation().y();
         geom->pos[2] = shape.global_transform.translation().z();
@@ -1268,14 +1377,7 @@ void MuJoCoPhysicsWorld::AddLooseSceneGeomsToSpec(void* spec_ptr) {
         geom->quat[1] = rotation.x();
         geom->quat[2] = rotation.y();
         geom->quat[3] = rotation.z();
-        geom->size[0] = shape.box_size.x() * 0.5;
-        geom->size[1] = shape.box_size.y() * 0.5;
-        geom->size[2] = shape.box_size.z() * 0.5;
-        geom->contype = 1;
-        geom->conaffinity = 1;
-        geom->friction[0] = 1.0;
-        geom->friction[1] = 0.005;
-        geom->friction[2] = 0.0001;
+        ConfigureGeomContact(geom, shape);
         geom->rgba[0] = 0.28f;
         geom->rgba[1] = 0.30f;
         geom->rgba[2] = 0.32f;
@@ -1417,6 +1519,14 @@ void MuJoCoPhysicsWorld::BuildJointBindings() {
             binding.motor_actuator_id = actuator_ids.motor;
             binding.position_actuator_id = actuator_ids.position;
             binding.velocity_actuator_id = actuator_ids.velocity;
+            if (binding.position_actuator_id >= 0) {
+                binding.position_stiffness =
+                        std::abs(model->actuator_gainprm[mjNGAIN * binding.position_actuator_id + 0]);
+            }
+            if (binding.velocity_actuator_id >= 0) {
+                binding.velocity_damping =
+                        std::abs(model->actuator_gainprm[mjNGAIN * binding.velocity_actuator_id + 0]);
+            }
             binding.qpos_address = model->jnt_qposadr[joint_id];
             binding.dof_address = model->jnt_dofadr[joint_id];
             binding.joint_type = model->jnt_type[joint_id];
@@ -1518,17 +1628,23 @@ void MuJoCoPhysicsWorld::ApplyControlsToMuJoCo(std::size_t environment_index) {
                     break;
                 case PhysicsJointControlMode::Position:
                     if (binding.position_actuator_id >= 0) {
+                        const RealType stiffness = binding.position_stiffness > 0.0
+                                                           ? binding.position_stiffness
+                                                           : settings_.default_joint_gains.position_stiffness;
                         SetPositionActuator(model,
                                             data,
                                             binding.position_actuator_id,
                                             JointController::ClampTargetPosition(joint_state.target_position, limits),
-                                            settings_.default_joint_gains.position_stiffness);
+                                            stiffness);
                         if (binding.velocity_actuator_id >= 0 && settings_.default_joint_gains.velocity_damping > 0.0) {
+                            const RealType damping = binding.velocity_damping > 0.0
+                                                             ? binding.velocity_damping
+                                                             : settings_.default_joint_gains.velocity_damping;
                             SetVelocityActuator(model,
                                                 data,
                                                 binding.velocity_actuator_id,
                                                 joint_state.target_velocity,
-                                                settings_.default_joint_gains.velocity_damping);
+                                                damping);
                         }
                     } else {
                         const RealType effort = binding.controller.ComputeEffort(MakeJointControllerState(joint_state),
@@ -1544,11 +1660,14 @@ void MuJoCoPhysicsWorld::ApplyControlsToMuJoCo(std::size_t environment_index) {
                     break;
                 case PhysicsJointControlMode::Velocity:
                     if (binding.velocity_actuator_id >= 0) {
+                        const RealType damping = binding.velocity_damping > 0.0
+                                                         ? binding.velocity_damping
+                                                         : settings_.default_joint_gains.velocity_damping;
                         SetVelocityActuator(model,
                                             data,
                                             binding.velocity_actuator_id,
                                             joint_state.target_velocity,
-                                            settings_.default_joint_gains.velocity_damping);
+                                            damping);
                     } else {
                         const RealType effort = binding.controller.ComputeEffort(MakeJointControllerState(joint_state),
                                                                                  MakeJointControllerCommand(joint_state),

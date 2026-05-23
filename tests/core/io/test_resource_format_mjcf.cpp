@@ -10,6 +10,7 @@
 #include <gobot/scene/joint_3d.hpp>
 #include <gobot/scene/link_3d.hpp>
 #include <gobot/scene/mesh_instance_3d.hpp>
+#include <gobot/scene/resources/capsule_shape_3d.hpp>
 #include <gobot/scene/resources/cylinder_shape_3d.hpp>
 #include <gobot/scene/resources/material.hpp>
 #include <gobot/scene/resources/packed_scene.hpp>
@@ -300,6 +301,81 @@ TEST(TestResourceFormatMJCF, imports_named_material_rgba_for_mesh_visuals) {
     EXPECT_FLOAT_EQ(material->GetMetallic(), 0.1f);
     EXPECT_FLOAT_EQ(material->GetRoughness(), 0.7f);
     EXPECT_FLOAT_EQ(material->GetSpecular(), 0.6f);
+
+    gobot::Object::Delete(root_node);
+}
+
+TEST(TestResourceFormatMJCF, imports_capsule_contact_and_position_actuator_semantics) {
+    if (!gobot::ResourceFormatLoaderMJCF::IsMuJoCoAvailable()) {
+        GTEST_SKIP() << "MuJoCo support is not enabled.";
+    }
+
+    const std::filesystem::path fixture_path =
+            std::filesystem::temp_directory_path() / "gobot_mjcf_core_semantics.xml";
+    {
+        std::ofstream file(fixture_path);
+        file << R"(<mujoco model="semantic_bot">
+  <compiler angle="radian"/>
+  <worldbody>
+    <body name="base" pos="0 0 0.2">
+      <body name="leg" pos="0 0 0">
+        <joint name="knee" type="hinge" axis="0 1 0" limited="true" range="-2 -0.5"/>
+        <geom name="leg_capsule" type="capsule" fromto="0 0 0 0 0 -0.4" size="0.03"
+              friction="0.8 0.02 0.003" contype="2" conaffinity="4" condim="4"
+              solref="0.01 0.9" solimp="0.7 0.8 0.02 0.5 2" margin="0.001" gap="0.0002"/>
+      </body>
+    </body>
+  </worldbody>
+  <actuator>
+    <position name="knee_position" joint="knee" kp="40" ctrlrange="-2 -0.5" forcerange="-12 12"/>
+  </actuator>
+  <keyframe>
+    <key name="stand" qpos="-0.888"/>
+  </keyframe>
+</mujoco>
+)";
+    }
+
+    gobot::Ref<gobot::ResourceFormatLoaderMJCF> loader = gobot::MakeRef<gobot::ResourceFormatLoaderMJCF>();
+    gobot::Ref<gobot::PackedScene> packed_scene =
+            gobot::dynamic_pointer_cast<gobot::PackedScene>(loader->Load(fixture_path.string()));
+    ASSERT_TRUE(packed_scene.IsValid());
+
+    gobot::Node* root_node = packed_scene->Instantiate();
+    ASSERT_NE(root_node, nullptr);
+
+    auto* knee = gobot::Object::PointerCastTo<gobot::Joint3D>(FindNodeByName(root_node, "knee"));
+    ASSERT_NE(knee, nullptr);
+    EXPECT_NEAR(knee->GetJointPosition(), -0.888, 1.0e-6);
+    EXPECT_NEAR(knee->GetInitialPosition(), -0.888, 1.0e-6);
+    EXPECT_EQ(knee->GetDriveMode(), gobot::JointDriveMode::Position);
+    EXPECT_NEAR(knee->GetDriveStiffness(), 40.0, 1.0e-9);
+    EXPECT_NEAR(knee->GetControlLowerLimit(), -2.0, 1.0e-9);
+    EXPECT_NEAR(knee->GetControlUpperLimit(), -0.5, 1.0e-9);
+    EXPECT_NEAR(knee->GetForceLowerLimit(), -12.0, 1.0e-9);
+    EXPECT_NEAR(knee->GetForceUpperLimit(), 12.0, 1.0e-9);
+
+    auto* collision =
+            gobot::Object::PointerCastTo<gobot::CollisionShape3D>(FindNodeByName(root_node, "leg_capsule"));
+    ASSERT_NE(collision, nullptr);
+    gobot::Ref<gobot::CapsuleShape3D> capsule =
+            gobot::dynamic_pointer_cast<gobot::CapsuleShape3D>(collision->GetShape());
+    ASSERT_TRUE(capsule.IsValid());
+    EXPECT_NEAR(capsule->GetRadius(), 0.03, 1.0e-6);
+    EXPECT_NEAR(capsule->GetHeight(), 0.4, 1.0e-6);
+    EXPECT_TRUE(collision->GetFriction().isApprox(gobot::Vector3(0.8, 0.02, 0.003), 1.0e-9));
+    EXPECT_EQ(collision->GetContactType(), 2);
+    EXPECT_EQ(collision->GetContactAffinity(), 4);
+    EXPECT_EQ(collision->GetContactDimension(), 4);
+    EXPECT_TRUE(collision->GetSolref().isApprox(gobot::Vector2(0.01, 0.9), 1.0e-9));
+    ASSERT_EQ(collision->GetSolimp().size(), 5);
+    EXPECT_NEAR(collision->GetSolimp()[0], 0.7, 1.0e-6);
+    EXPECT_NEAR(collision->GetSolimp()[1], 0.8, 1.0e-6);
+    EXPECT_NEAR(collision->GetSolimp()[2], 0.02, 1.0e-9);
+    EXPECT_NEAR(collision->GetSolimp()[3], 0.5, 1.0e-9);
+    EXPECT_NEAR(collision->GetSolimp()[4], 2.0, 1.0e-9);
+    EXPECT_NEAR(collision->GetMargin(), 0.001, 1.0e-9);
+    EXPECT_NEAR(collision->GetGap(), 0.0002, 1.0e-9);
 
     gobot::Object::Delete(root_node);
 }

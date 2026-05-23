@@ -458,8 +458,8 @@ void AddMJCFScenePlaneGeoms(Node3D* scene_root, const std::string& xml_path) {
 
         auto* visual = Object::New<MeshInstance3D>();
         visual->SetName(name + "_visual");
-        auto mesh = MakeRef<BoxMesh>();
-        mesh->SetSize(ground_size);
+        auto mesh = MakeRef<PlaneMesh>();
+        mesh->SetSize(Vector2{ground_size.x(), ground_size.y()});
         auto material = MakeRef<PBRMaterial3D>();
         material->SetAlbedo(color);
         mesh->SetMaterial(dynamic_pointer_cast<Material>(material));
@@ -490,6 +490,56 @@ Ref<PythonScript> LoadPythonScriptResource(const std::string& script_path) {
 void SetOptionalNodeScript(Node* root, const std::optional<std::string>& script_path) {
     if (script_path.has_value() && !script_path->empty()) {
         root->SetScript(LoadPythonScriptResource(*script_path));
+    }
+}
+
+void CopyMJCFDynamicProperties(Node* target, const Node* source) {
+    if (target == nullptr || source == nullptr) {
+        return;
+    }
+
+    if (auto* target_joint = Object::PointerCastTo<Joint3D>(target)) {
+        const auto* source_joint = Object::PointerCastTo<Joint3D>(source);
+        if (source_joint != nullptr) {
+            target_joint->SetJointPosition(source_joint->GetJointPosition());
+            target_joint->SetInitialPosition(source_joint->GetInitialPosition());
+            target_joint->SetDriveMode(source_joint->GetDriveMode());
+            target_joint->SetDriveStiffness(source_joint->GetDriveStiffness());
+            target_joint->SetDriveDamping(source_joint->GetDriveDamping());
+            target_joint->SetControlLowerLimit(source_joint->GetControlLowerLimit());
+            target_joint->SetControlUpperLimit(source_joint->GetControlUpperLimit());
+            target_joint->SetForceLowerLimit(source_joint->GetForceLowerLimit());
+            target_joint->SetForceUpperLimit(source_joint->GetForceUpperLimit());
+            target_joint->SetGear(source_joint->GetGear());
+        }
+    }
+
+    if (auto* target_collision = Object::PointerCastTo<CollisionShape3D>(target)) {
+        const auto* source_collision = Object::PointerCastTo<CollisionShape3D>(source);
+        if (source_collision != nullptr) {
+            target_collision->SetFriction(source_collision->GetFriction());
+            target_collision->SetContactType(source_collision->GetContactType());
+            target_collision->SetContactAffinity(source_collision->GetContactAffinity());
+            target_collision->SetContactDimension(source_collision->GetContactDimension());
+            target_collision->SetSolref(source_collision->GetSolref());
+            target_collision->SetSolimp(source_collision->GetSolimp());
+            target_collision->SetMargin(source_collision->GetMargin());
+            target_collision->SetGap(source_collision->GetGap());
+        }
+    }
+
+    std::unordered_map<std::string, const Node*> source_children_by_name;
+    for (std::size_t i = 0; i < source->GetChildCount(); ++i) {
+        const Node* source_child = source->GetChild(static_cast<int>(i));
+        source_children_by_name[source_child->GetName()] = source_child;
+    }
+
+    for (std::size_t i = 0; i < target->GetChildCount(); ++i) {
+        Node* target_child = target->GetChild(static_cast<int>(i));
+        auto source_iter = source_children_by_name.find(target_child->GetName());
+        if (source_iter != source_children_by_name.end()) {
+            CopyMJCFDynamicProperties(target_child, source_iter->second);
+        }
     }
 }
 
@@ -552,9 +602,11 @@ bool TrySaveSplitMJCFScene(const std::string& xml_path,
     }
 
     Node* robot_root = InstantiateMJCFRoot(*included_xml_path);
+    Node* compiled_scene_root = InstantiateMJCFRoot(xml_path);
     std::string robot_name = robot_root->GetName().empty() ? ResourcePathStem(*included_xml_path) : robot_root->GetName();
 
     try {
+        CopyMJCFDynamicProperties(robot_root, compiled_scene_root);
         if (robot_root->GetName().empty()) {
             robot_root->SetName(robot_name);
         }
@@ -563,9 +615,11 @@ bool TrySaveSplitMJCFScene(const std::string& xml_path,
         }
     } catch (...) {
         Object::Delete(robot_root);
+        Object::Delete(compiled_scene_root);
         throw;
     }
     Object::Delete(robot_root);
+    Object::Delete(compiled_scene_root);
 
     Ref<PackedScene> robot_scene = dynamic_pointer_cast<PackedScene>(
             ResourceLoader::Load(robot_scene_path, "PackedScene", ResourceFormatLoader::CacheMode::Replace));
@@ -962,7 +1016,16 @@ py::dict JointSnapshotToPythonDict(const PhysicsJointSnapshot& joint) {
     result["effort_limit"] = joint.effort_limit;
     result["velocity_limit"] = joint.velocity_limit;
     result["damping"] = joint.damping;
-    result["initial_position"] = joint.joint_position;
+    result["joint_position"] = joint.joint_position;
+    result["initial_position"] = joint.initial_position;
+    result["drive_mode"] = joint.drive_mode;
+    result["drive_stiffness"] = joint.drive_stiffness;
+    result["drive_damping"] = joint.drive_damping;
+    result["control_lower_limit"] = joint.control_lower_limit;
+    result["control_upper_limit"] = joint.control_upper_limit;
+    result["force_lower_limit"] = joint.force_lower_limit;
+    result["force_upper_limit"] = joint.force_upper_limit;
+    result["gear"] = joint.gear;
     result["global_transform"] = TransformToPythonDict(joint.global_transform);
     return result;
 }
@@ -1278,6 +1341,13 @@ class NodeScript:
             .value("Prismatic", JointType::Prismatic)
             .value("Floating", JointType::Floating)
             .value("Planar", JointType::Planar)
+            .export_values();
+
+    py::enum_<JointDriveMode>(module, "JointDriveMode")
+            .value("Passive", JointDriveMode::Passive)
+            .value("Motor", JointDriveMode::Motor)
+            .value("Position", JointDriveMode::Position)
+            .value("Velocity", JointDriveMode::Velocity)
             .export_values();
 
     py::enum_<RobotMode>(module, "RobotMode")
@@ -1925,6 +1995,78 @@ class NodeScript:
                           [](PyJoint3DHandle& handle, RealType joint_position) {
                               Joint3D* joint = handle.ResolveAs<Joint3D>();
                               ExecuteSetNodeProperty(joint, "joint_position", Variant(joint_position));
+                          })
+            .def_property("initial_position",
+                          [](const PyJoint3DHandle& handle) {
+                              return handle.ResolveAs<Joint3D>()->GetInitialPosition();
+                          },
+                          [](PyJoint3DHandle& handle, RealType initial_position) {
+                              Joint3D* joint = handle.ResolveAs<Joint3D>();
+                              ExecuteSetNodeProperty(joint, "initial_position", Variant(initial_position));
+                          })
+            .def_property("drive_mode",
+                          [](const PyJoint3DHandle& handle) {
+                              return handle.ResolveAs<Joint3D>()->GetDriveMode();
+                          },
+                          [](PyJoint3DHandle& handle, JointDriveMode drive_mode) {
+                              Joint3D* joint = handle.ResolveAs<Joint3D>();
+                              ExecuteSetNodeProperty(joint, "drive_mode", Variant(drive_mode));
+                          })
+            .def_property("drive_stiffness",
+                          [](const PyJoint3DHandle& handle) {
+                              return handle.ResolveAs<Joint3D>()->GetDriveStiffness();
+                          },
+                          [](PyJoint3DHandle& handle, RealType stiffness) {
+                              Joint3D* joint = handle.ResolveAs<Joint3D>();
+                              ExecuteSetNodeProperty(joint, "drive_stiffness", Variant(stiffness));
+                          })
+            .def_property("drive_damping",
+                          [](const PyJoint3DHandle& handle) {
+                              return handle.ResolveAs<Joint3D>()->GetDriveDamping();
+                          },
+                          [](PyJoint3DHandle& handle, RealType damping) {
+                              Joint3D* joint = handle.ResolveAs<Joint3D>();
+                              ExecuteSetNodeProperty(joint, "drive_damping", Variant(damping));
+                          })
+            .def_property("control_lower_limit",
+                          [](const PyJoint3DHandle& handle) {
+                              return handle.ResolveAs<Joint3D>()->GetControlLowerLimit();
+                          },
+                          [](PyJoint3DHandle& handle, RealType lower_limit) {
+                              Joint3D* joint = handle.ResolveAs<Joint3D>();
+                              ExecuteSetNodeProperty(joint, "control_lower_limit", Variant(lower_limit));
+                          })
+            .def_property("control_upper_limit",
+                          [](const PyJoint3DHandle& handle) {
+                              return handle.ResolveAs<Joint3D>()->GetControlUpperLimit();
+                          },
+                          [](PyJoint3DHandle& handle, RealType upper_limit) {
+                              Joint3D* joint = handle.ResolveAs<Joint3D>();
+                              ExecuteSetNodeProperty(joint, "control_upper_limit", Variant(upper_limit));
+                          })
+            .def_property("force_lower_limit",
+                          [](const PyJoint3DHandle& handle) {
+                              return handle.ResolveAs<Joint3D>()->GetForceLowerLimit();
+                          },
+                          [](PyJoint3DHandle& handle, RealType lower_limit) {
+                              Joint3D* joint = handle.ResolveAs<Joint3D>();
+                              ExecuteSetNodeProperty(joint, "force_lower_limit", Variant(lower_limit));
+                          })
+            .def_property("force_upper_limit",
+                          [](const PyJoint3DHandle& handle) {
+                              return handle.ResolveAs<Joint3D>()->GetForceUpperLimit();
+                          },
+                          [](PyJoint3DHandle& handle, RealType upper_limit) {
+                              Joint3D* joint = handle.ResolveAs<Joint3D>();
+                              ExecuteSetNodeProperty(joint, "force_upper_limit", Variant(upper_limit));
+                          })
+            .def_property("gear",
+                          [](const PyJoint3DHandle& handle) {
+                              return handle.ResolveAs<Joint3D>()->GetGear();
+                          },
+                          [](PyJoint3DHandle& handle, const std::vector<RealType>& gear) {
+                              Joint3D* joint = handle.ResolveAs<Joint3D>();
+                              ExecuteSetNodeProperty(joint, "gear", Variant(gear));
                           });
 
     collision_shape_class

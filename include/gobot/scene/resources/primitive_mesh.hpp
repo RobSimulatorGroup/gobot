@@ -79,6 +79,15 @@ class GOBOT_EXPORT PlaneMesh : public PrimitiveMesh {
     GOBCLASS(PlaneMesh, PrimitiveMesh)
 public:
     PlaneMesh();
+
+    void SetSize(Vector2 size);
+
+    const Vector2& GetSize() const;
+
+private:
+    void UpdateMesh();
+
+    Vector2 size_{1.0, 1.0};
 };
 
 class GOBOT_EXPORT SphereMesh : public PrimitiveMesh {

@@ -24,6 +24,13 @@ enum class JointType {
     Planar
 };
 
+enum class JointDriveMode {
+    Passive,
+    Motor,
+    Position,
+    Velocity
+};
+
 class GOBOT_EXPORT Joint3D : public Node3D {
     GOBCLASS(Joint3D, Node3D)
 
@@ -70,6 +77,10 @@ public:
 
     RealType GetJointPosition() const;
 
+    void SetInitialPosition(RealType initial_position);
+
+    RealType GetInitialPosition() const;
+
     void ResetJointPosition();
 
     bool HasJointPositionLimits() const;
@@ -81,6 +92,40 @@ public:
     void SetMotionModeEnabled(bool enabled);
 
     bool IsMotionModeEnabled() const;
+
+    void SetDriveMode(JointDriveMode drive_mode);
+
+    JointDriveMode GetDriveMode() const;
+
+    void SetDriveStiffness(RealType stiffness);
+
+    RealType GetDriveStiffness() const;
+
+    void SetDriveDamping(RealType damping);
+
+    RealType GetDriveDamping() const;
+
+    void SetControlLowerLimit(RealType lower_limit);
+
+    RealType GetControlLowerLimit() const;
+
+    void SetControlUpperLimit(RealType upper_limit);
+
+    RealType GetControlUpperLimit() const;
+
+    void SetForceLowerLimit(RealType lower_limit);
+
+    RealType GetForceLowerLimit() const;
+
+    void SetForceUpperLimit(RealType upper_limit);
+
+    RealType GetForceUpperLimit() const;
+
+    void SetGear(const std::vector<RealType>& gear);
+
+    const std::vector<RealType>& GetGear() const;
+
+    bool HasDrive() const;
 
 private:
     RealType ClampJointPosition(RealType joint_position) const;
@@ -99,11 +144,20 @@ private:
     RealType velocity_limit_{0.0};
     RealType damping_{0.0};
     RealType joint_position_{0.0};
+    RealType initial_position_{0.0};
     RealType motion_reference_position_{0.0};
     Affine3 assembly_transform_{Affine3::Identity()};
     std::vector<std::pair<Node3D*, Affine3>> child_assembly_transforms_;
     bool assembly_pose_valid_{false};
     bool motion_mode_enabled_{false};
+    JointDriveMode drive_mode_{JointDriveMode::Passive};
+    RealType drive_stiffness_{0.0};
+    RealType drive_damping_{0.0};
+    RealType control_lower_limit_{0.0};
+    RealType control_upper_limit_{0.0};
+    RealType force_lower_limit_{0.0};
+    RealType force_upper_limit_{0.0};
+    std::vector<RealType> gear_{1.0, 0.0, 0.0, 0.0, 0.0, 0.0};
 };
 
 }

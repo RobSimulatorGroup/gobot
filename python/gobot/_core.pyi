@@ -24,6 +24,13 @@ class JointType(Enum):
     Planar: ClassVar[JointType]
 
 
+class JointDriveMode(Enum):
+    Passive: ClassVar[JointDriveMode]
+    Motor: ClassVar[JointDriveMode]
+    Position: ClassVar[JointDriveMode]
+    Velocity: ClassVar[JointDriveMode]
+
+
 class RobotMode(Enum):
     Assembly: ClassVar[RobotMode]
     Motion: ClassVar[RobotMode]
@@ -217,6 +224,15 @@ class Joint3D(Node3D):
     velocity_limit: float
     damping: float
     joint_position: float
+    initial_position: float
+    drive_mode: JointDriveMode
+    drive_stiffness: float
+    drive_damping: float
+    control_lower_limit: float
+    control_upper_limit: float
+    force_lower_limit: float
+    force_upper_limit: float
+    gear: list[float]
 
 
 class CollisionShape3D(Node3D):

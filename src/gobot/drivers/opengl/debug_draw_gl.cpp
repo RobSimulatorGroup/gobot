@@ -12,6 +12,7 @@
 #include "gobot/rendering/scene_render_items.hpp"
 #include "gobot/scene/camera_3d.hpp"
 #include "gobot/scene/resources/box_shape_3d.hpp"
+#include "gobot/scene/resources/capsule_shape_3d.hpp"
 #include "gobot/scene/resources/cylinder_shape_3d.hpp"
 #include "gobot/scene/resources/sphere_shape_3d.hpp"
 #include "glsl_shader_hpp/debug_draw_frag.hpp"
@@ -149,6 +150,21 @@ void AppendCylinderLines(std::vector<float>& vertices, const Affine3& transform,
     }
 }
 
+void AppendCapsuleLines(std::vector<float>& vertices, const Affine3& transform, RealType radius, RealType height) {
+    constexpr int segments = 48;
+    const RealType half_height = height * static_cast<RealType>(0.5);
+
+    AppendCylinderLines(vertices, transform, radius, height);
+
+    Affine3 top_transform = transform;
+    top_transform.translation() = transform * Vector3{0.0, 0.0, half_height};
+    AppendSphereLines(vertices, top_transform, radius);
+
+    Affine3 bottom_transform = transform;
+    bottom_transform.translation() = transform * Vector3{0.0, 0.0, -half_height};
+    AppendSphereLines(vertices, bottom_transform, radius);
+}
+
 void CollectCollisionLines(const SceneRenderItems& render_items, std::vector<float>& vertices) {
     for (const CollisionDebugRenderItem& item : render_items.collision_shapes) {
         if (Ref<BoxShape3D> box = dynamic_pointer_cast<BoxShape3D>(item.shape); box.IsValid()) {
@@ -160,6 +176,11 @@ void CollectCollisionLines(const SceneRenderItems& render_items, std::vector<flo
                                 item.transform,
                                 static_cast<RealType>(cylinder->GetRadius()),
                                 static_cast<RealType>(cylinder->GetHeight()));
+        } else if (Ref<CapsuleShape3D> capsule = dynamic_pointer_cast<CapsuleShape3D>(item.shape); capsule.IsValid()) {
+            AppendCapsuleLines(vertices,
+                               item.transform,
+                               static_cast<RealType>(capsule->GetRadius()),
+                               static_cast<RealType>(capsule->GetHeight()));
         }
     }
 }

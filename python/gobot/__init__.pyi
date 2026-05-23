@@ -3,6 +3,7 @@ from ._core import (
     CollisionShape3D,
     Joint3D,
     JointControllerGains,
+    JointDriveMode,
     JointType,
     Link3D,
     LinkRole,

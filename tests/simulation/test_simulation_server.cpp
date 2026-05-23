@@ -7,6 +7,7 @@
 #include <gobot/scene/link_3d.hpp>
 #include <gobot/scene/robot_3d.hpp>
 #include <gobot/scene/resources/box_shape_3d.hpp>
+#include <gobot/scene/resources/capsule_shape_3d.hpp>
 #include <gobot/simulation/simulation_server.hpp>
 
 namespace {
@@ -100,6 +101,44 @@ gobot::Robot3D* CreateOffsetHingePendulumScene() {
     robot->AddChild(base);
     base->AddChild(joint);
     joint->AddChild(pole);
+    return robot;
+}
+
+gobot::Robot3D* CreateActuatedLimitedHingeScene() {
+    auto* robot = gobot::Object::New<gobot::Robot3D>();
+    robot->SetName("limited");
+
+    auto* base = gobot::Object::New<gobot::Link3D>();
+    base->SetName("base");
+    base->SetRole(gobot::LinkRole::VirtualRoot);
+
+    auto* joint = gobot::Object::New<gobot::Joint3D>();
+    joint->SetName("calf");
+    joint->SetJointType(gobot::JointType::Revolute);
+    joint->SetParentLink("base");
+    joint->SetChildLink("tip");
+    joint->SetAxis({0.0, 1.0, 0.0});
+    joint->SetLowerLimit(-2.818);
+    joint->SetUpperLimit(-0.888);
+    joint->SetJointPosition(-2.0);
+    joint->SetInitialPosition(-2.0);
+    joint->SetDriveMode(gobot::JointDriveMode::Position);
+    joint->SetDriveStiffness(40.0);
+    joint->SetControlLowerLimit(-2.818);
+    joint->SetControlUpperLimit(-0.888);
+    joint->SetForceLowerLimit(-40.0);
+    joint->SetForceUpperLimit(40.0);
+
+    auto* tip = gobot::Object::New<gobot::Link3D>();
+    tip->SetName("tip");
+    tip->SetPosition({0.0, 0.0, -0.25});
+    tip->SetHasInertial(true);
+    tip->SetMass(0.2);
+    tip->SetInertiaDiagonal({0.002, 0.002, 0.002});
+
+    robot->AddChild(base);
+    base->AddChild(joint);
+    joint->AddChild(tip);
     return robot;
 }
 
@@ -573,6 +612,31 @@ TEST(TestSimulationServer, mujoco_authored_offset_hinge_pendulum_falls_under_gra
     ASSERT_EQ(stepped_joints.size(), 1);
     EXPECT_TRUE(std::isfinite(stepped_joints[0].position));
     EXPECT_GT(std::abs(stepped_joints[0].position - initial_position), 0.01);
+
+    gobot::Object::Delete(robot);
+#endif
+}
+
+TEST(TestSimulationServer, mujoco_authored_position_actuator_respects_imported_limits) {
+#ifdef GOBOT_HAS_MUJOCO
+    gobot::SimulationServer simulation_server(gobot::PhysicsBackendType::MuJoCoCpu);
+    simulation_server.SetFixedTimeStep(1.0 / 240.0);
+    simulation_server.SetPaused(false);
+
+    gobot::Robot3D* robot = CreateActuatedLimitedHingeScene();
+    ASSERT_TRUE(simulation_server.BuildWorldFromScene(robot)) << simulation_server.GetLastError();
+    ASSERT_NE(simulation_server.GetRuntimeScene(), nullptr);
+    ASSERT_TRUE(simulation_server.GetRuntimeScene()->SetJointPositionTarget("limited", "calf", 0.0));
+
+    for (int tick = 0; tick < 240; ++tick) {
+        ASSERT_TRUE(simulation_server.StepOnce()) << simulation_server.GetLastError();
+    }
+
+    const auto& joints = simulation_server.GetWorld()->GetSceneState().robots[0].joints;
+    ASSERT_EQ(joints.size(), 1);
+    EXPECT_TRUE(std::isfinite(joints[0].position));
+    EXPECT_LE(joints[0].position, -0.888 + 1.0e-3);
+    EXPECT_GT(joints[0].position, -2.0);
 
     gobot::Object::Delete(robot);
 #endif

@@ -120,7 +120,41 @@ void CylinderMesh::UpdateMesh() {
 /////////////////////////////////
 
 PlaneMesh::PlaneMesh() {
+    UpdateMesh();
+}
 
+void PlaneMesh::SetSize(Vector2 size) {
+    size_.x() = std::max<RealType>(size.x(), 0.0);
+    size_.y() = std::max<RealType>(size.y(), 0.0);
+    UpdateMesh();
+}
+
+const Vector2& PlaneMesh::GetSize() const {
+    return size_;
+}
+
+void PlaneMesh::UpdateMesh() {
+    if (!RenderServer::HasInstance()) {
+        return;
+    }
+
+    const RealType half_x = size_.x() * 0.5;
+    const RealType half_y = size_.y() * 0.5;
+    RS::GetInstance()->MeshSetSurface(
+            GetRid(),
+            {
+                    Vector3{-half_x, -half_y, 0.0},
+                    Vector3{half_x, -half_y, 0.0},
+                    Vector3{half_x, half_y, 0.0},
+                    Vector3{-half_x, half_y, 0.0},
+            },
+            {0, 1, 2, 0, 2, 3},
+            {
+                    Vector3{0.0, 0.0, 1.0},
+                    Vector3{0.0, 0.0, 1.0},
+                    Vector3{0.0, 0.0, 1.0},
+                    Vector3{0.0, 0.0, 1.0},
+            });
 }
 
 /////////////////////////////////
@@ -202,6 +236,12 @@ GOBOT_REGISTRATION {
             .property("radial_segments", &CylinderMesh::GetRadialSegments, &CylinderMesh::SetRadialSegments);
 
     gobot::Type::register_wrapper_converter_for_base_classes<Ref<CylinderMesh>, Ref<PrimitiveMesh>>();
+
+    Class_<PlaneMesh>("PlaneMesh")
+            .constructor()(CtorAsRawPtr)
+            .property("size", &PlaneMesh::GetSize, &PlaneMesh::SetSize);
+
+    gobot::Type::register_wrapper_converter_for_base_classes<Ref<PlaneMesh>, Ref<PrimitiveMesh>>();
 
     Class_<SphereMesh>("SphereMesh")
             .constructor()(CtorAsRawPtr)
