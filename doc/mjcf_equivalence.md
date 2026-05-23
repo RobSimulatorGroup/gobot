@@ -80,8 +80,9 @@ When Go1 appears to sink through the floor, check these in order:
 3. Check base height after reset and a short run. A healthy default stand smoke
    test is around `z=0.26`; values near `0.05` mean the robot has collapsed.
 4. Confirm `examples/go1/go1.jscn` has `source_path: ""`.
-5. Confirm no local policy is auto-loaded. The example only loads a policy when
-   `GOBOT_GO1_POLICY` is set.
+5. For stand-only debugging, run with `GOBOT_GO1_POLICY=""`. For interactive
+   walking, the example tries `res://policies/go1.pt` by default and
+   `GOBOT_GO1_POLICY` can override that path.
 6. If physics height/contact are correct but debug shapes look below the floor,
    suspect scene-to-viewport synchronization or debug shape drawing, not MuJoCo
    contact generation.
@@ -92,6 +93,23 @@ penetration after stepping, but it looks wrong in an editor viewport. The Gobot
 Go1 example therefore resets the base to `z=0.288` for the same joint pose, so
 the scene starts without visible foot penetration while still settling to the
 same standing configuration.
+
+## Go1 Keyboard Control
+
+Play Mode keyboard input is routed through Gobot's engine `Input` service
+instead of direct SDL or ImGui callbacks in `examples/go1/scripts/go1.py`.
+The engine API only exposes key state and viewport control focus; Go1's WASD
+mapping lives in the example script because it is controller configuration, not
+a global engine action map. Click the 3D Viewer while Play Mode is running to
+give the runtime scene keyboard control; press `Esc` to release it. Text
+fields, popups, and other editor UI should not drive the robot.
+
+The Go1 script polls `context.input` during `_physics_process()`. `W/S` control
+forward speed, `Q/E` strafe, `A/D` yaw, `Space` commands stop, and `R` resets
+the runtime pose. These keys drive the policy command velocity when the default
+`res://policies/go1.pt` policy, or a `GOBOT_GO1_POLICY` override, is loaded.
+Without a policy the example keeps the standing PD target and does not fake
+walking.
 
 ## Regression Tests
 

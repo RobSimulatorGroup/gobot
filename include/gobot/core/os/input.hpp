@@ -18,6 +18,7 @@
 
 #include "Eigen/Dense"
 
+#include <string>
 #include <mutex>
 
 namespace gobot {
@@ -50,6 +51,8 @@ public:
 
     static Input* GetInstance();
 
+    static Input* GetInstanceOrNull();
+
     FORCE_INLINE const Eigen::Vector2i& GetMousePosition() const { return mouse_position_; }
 
     FORCE_INLINE MouseClickedState GetMouseClickedState(MouseButton mouse_button) const {
@@ -63,6 +66,16 @@ public:
     FORCE_INLINE bool GetKeyPressed(KeyCode key_code) const { return key_pressed_[KeyCodeUInt(key_code)]; }
 
     FORCE_INLINE bool GetKeyHeld(KeyCode key_code) const { return key_held_[KeyCodeUInt(key_code)]; }
+
+    bool IsKeyPressedByName(const std::string& key_name) const;
+
+    bool IsKeyHeldByName(const std::string& key_name) const;
+
+    static bool TryParseKeyName(const std::string& key_name, KeyCode& key_code);
+
+    bool HasControlFocus() const { return control_focus_; }
+
+    void SetControlFocus(bool focused);
 
     FORCE_INLINE float GetScrollOffset() const { return scroll_offset_; }
 
@@ -107,6 +120,7 @@ private:
 
     bool mouse_on_screen_{true};
     MouseMode mouse_mode_{MouseMode::Visible};
+    bool control_focus_{false};
 
     Vector2i mouse_position_{0.0, 0.0};
 };

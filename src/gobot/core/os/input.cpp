@@ -8,7 +8,29 @@
 #include "gobot/core/os/input.hpp"
 #include "gobot/error_macros.hpp"
 
+#include <algorithm>
+#include <cctype>
+#include <magic_enum.hpp>
+#include <string>
+#include <string_view>
+
 namespace gobot {
+
+namespace {
+
+std::string NormalizeKeyName(std::string_view key_name) {
+    std::string normalized;
+    normalized.reserve(key_name.size());
+    for (char c : key_name) {
+        if (c == '_' || c == '-' || std::isspace(static_cast<unsigned char>(c))) {
+            continue;
+        }
+        normalized.push_back(static_cast<char>(std::tolower(static_cast<unsigned char>(c))));
+    }
+    return normalized;
+}
+
+} // namespace
 
 Input *Input::s_singleton = nullptr;
 
@@ -51,6 +73,7 @@ void Input::Reset()
     memset(mouse_clicked_, 0, static_cast<MouseButtonUInt>(MouseButton::ButtonMaxNum));
 
     mouse_on_screen_ = true;
+    control_focus_ = false;
     scroll_offset_  = 0.0f;
 }
 
@@ -63,6 +86,9 @@ void Input::ResetPressed()
 
 bool Input::OnKeyPressed(const KeyPressedEvent& e)
 {
+    if (e.GetKeyCode() == KeyCode::Escape && control_focus_) {
+        SetControlFocus(false);
+    }
     SetKeyPressed(e.GetKeyCode(), e.GetRepeatCount() < 1);
     SetKeyHeld(e.GetKeyCode(), true);
     return false;
@@ -118,12 +144,57 @@ Input* Input::GetInstance() {
     return s_singleton;
 }
 
+Input* Input::GetInstanceOrNull() {
+    return s_singleton;
+}
+
 void Input::SetMouseMode(MouseMode p_mode) {
     mouse_mode_ = p_mode;
 }
 
 MouseMode Input::GetMouseMode() const {
     return mouse_mode_;
+}
+
+bool Input::IsKeyPressedByName(const std::string& key_name) const {
+    if (!control_focus_) {
+        return false;
+    }
+    KeyCode key_code = KeyCode::Unknown;
+    if (!TryParseKeyName(key_name, key_code)) {
+        return false;
+    }
+    return GetKeyPressed(key_code);
+}
+
+bool Input::IsKeyHeldByName(const std::string& key_name) const {
+    if (!control_focus_) {
+        return false;
+    }
+    KeyCode key_code = KeyCode::Unknown;
+    if (!TryParseKeyName(key_name, key_code)) {
+        return false;
+    }
+    return GetKeyHeld(key_code);
+}
+
+bool Input::TryParseKeyName(const std::string& key_name, KeyCode& key_code) {
+    const std::string normalized = NormalizeKeyName(key_name);
+    for (KeyCode candidate : magic_enum::enum_values<KeyCode>()) {
+        if (NormalizeKeyName(magic_enum::enum_name(candidate)) == normalized) {
+            key_code = candidate;
+            return true;
+        }
+    }
+    return false;
+}
+
+void Input::SetControlFocus(bool focused) {
+    if (control_focus_ == focused) {
+        return;
+    }
+    control_focus_ = focused;
+    ResetPressed();
 }
 
 void Input::SetKeyPressed(KeyCode key, bool pressed) {

@@ -6,15 +6,29 @@ import gobot
 
 ROBOT = "go1"
 BASE_LINK = "trunk"
-DEFAULT_POLICY_PATH = ""
+DEFAULT_POLICY_PATH = "res://policies/go1.pt"
 PRINT_EVERY_TICKS = 240
 FIXED_TIME_STEP = 0.002
 RESET_BASE_POSITION = [0.0, 0.0, 0.288]
 COMMAND = [
-    float(os.environ.get("GOBOT_GO1_VX", "0.5")),
+    float(os.environ.get("GOBOT_GO1_VX", "0.0")),
     float(os.environ.get("GOBOT_GO1_VY", "0.0")),
     float(os.environ.get("GOBOT_GO1_YAW", "0.0")),
 ]
+KEYBOARD_COMMAND_MAX = [0.6, 0.35, 1.2]
+COMMAND_SMOOTHING = 8.0
+FALLEN_BASE_Z = 0.18
+FALLEN_ROLL_PITCH = 0.8
+KEYBOARD_BINDINGS = {
+    "forward": ("W", "Up"),
+    "backward": ("S", "Down"),
+    "turn_left": ("A", "Left"),
+    "turn_right": ("D", "Right"),
+    "strafe_left": ("Q",),
+    "strafe_right": ("E",),
+    "stop": ("Space",),
+    "reset": ("R",),
+}
 JOINT_NAMES = [
     "FR_hip_joint",
     "FR_thigh_joint",
@@ -110,6 +124,23 @@ def _clamp(value, lower, upper):
     return max(lower, min(upper, float(value)))
 
 
+def _key_held(input_state, action):
+    return any(input_state.is_key_held(key) for key in KEYBOARD_BINDINGS[action])
+
+
+def _key_pressed(input_state, action):
+    return any(input_state.is_key_pressed(key) for key in KEYBOARD_BINDINGS[action])
+
+
+def _key_axis(input_state, negative_action, positive_action):
+    value = 0.0
+    if _key_held(input_state, negative_action):
+        value -= 1.0
+    if _key_held(input_state, positive_action):
+        value += 1.0
+    return value
+
+
 def _find_node_by_name(node, name):
     if node is None:
         return None
@@ -139,6 +170,13 @@ def _quat_rotate(v, q):
     ]
 
 
+def _quat_to_roll_pitch(q):
+    w, x, y, z = q
+    roll = math.atan2(2.0 * (w * x + y * z), 1.0 - 2.0 * (x * x + y * y))
+    pitch = math.asin(_clamp(2.0 * (w * y - z * x), -1.0, 1.0))
+    return roll, pitch
+
+
 class Script(gobot.NodeScript):
     def _ready(self):
         self.context.fixed_time_step = FIXED_TIME_STEP
@@ -159,14 +197,16 @@ class Script(gobot.NodeScript):
         self.ticks = 0
         self.playing = True
         self.world_controls_ready = False
+        self.command = list(COMMAND)
         self.last_action = [0.0] * len(JOINT_NAMES)
         print(
-            "Go1 RL policy playback started. policy={} joints={} cmd=({:.2f}, {:.2f}, {:.2f})".format(
+            "Go1 RL policy playback started. policy={} joints={} cmd=({:.2f}, {:.2f}, {:.2f}) keyboard={}".format(
                 "loaded" if self.policy is not None else "missing",
                 len(self.joints),
-                COMMAND[0],
-                COMMAND[1],
-                COMMAND[2],
+                self.command[0],
+                self.command[1],
+                self.command[2],
+                "click 3D Viewer, WASD/QE, Space stop, R reset" if self.policy is not None else "missing res://policies/go1.pt",
             )
         )
 
@@ -179,6 +219,10 @@ class Script(gobot.NodeScript):
         if not self._ensure_world_controls():
             return
 
+        if self._update_keyboard_command(delta):
+            return
+        if self._reset_if_fallen():
+            return
         observation = self._observation()
         if self.ticks % DECIMATION == 0:
             action = [0.0] * len(JOINT_NAMES)
@@ -202,6 +246,7 @@ class Script(gobot.NodeScript):
         self.ticks = 0
         self.playing = True
         self.world_controls_ready = False
+        self.command = list(COMMAND)
         self.last_action = [0.0] * len(JOINT_NAMES)
 
     def pause(self):
@@ -211,7 +256,9 @@ class Script(gobot.NodeScript):
         self.playing = True
 
     def _load_policy(self):
-        path = os.environ.get("GOBOT_GO1_POLICY", DEFAULT_POLICY_PATH)
+        path = os.environ.get("GOBOT_GO1_POLICY")
+        if path is None:
+            path = DEFAULT_POLICY_PATH
         if not path:
             print("Go1 RL policy disabled; set GOBOT_GO1_POLICY to a .pt policy to enable playback.")
             return None
@@ -251,6 +298,51 @@ class Script(gobot.NodeScript):
         self.world_controls_ready = True
         return True
 
+    def _update_keyboard_command(self, delta):
+        input_state = getattr(self.context, "input", None)
+        if input_state is None:
+            return False
+        if _key_pressed(input_state, "reset"):
+            self.reset()
+            return True
+        if self.policy is None:
+            return False
+
+        if not input_state.has_control_focus or _key_held(input_state, "stop"):
+            desired = [0.0, 0.0, 0.0]
+        else:
+            desired = [
+                KEYBOARD_COMMAND_MAX[0] * _key_axis(input_state, "backward", "forward"),
+                KEYBOARD_COMMAND_MAX[1] * _key_axis(input_state, "strafe_right", "strafe_left"),
+                KEYBOARD_COMMAND_MAX[2] * _key_axis(input_state, "turn_right", "turn_left"),
+            ]
+        alpha = _clamp(float(delta) * COMMAND_SMOOTHING, 0.0, 1.0)
+        for index in range(3):
+            self.command[index] += (desired[index] - self.command[index]) * alpha
+        return False
+
+    def _reset_if_fallen(self):
+        state = self._runtime_robot_state()
+        if state is None:
+            return False
+        base = self._base_link_state(state)
+        if base is None:
+            return False
+        position = base.get("position", [0.0, 0.0, 0.0])
+        quat = base.get("quaternion", [1.0, 0.0, 0.0, 0.0])
+        roll, pitch = _quat_to_roll_pitch(quat)
+        if position[2] >= FALLEN_BASE_Z and abs(roll) <= FALLEN_ROLL_PITCH and abs(pitch) <= FALLEN_ROLL_PITCH:
+            return False
+        print(
+            "Go1 reset after fall: z={:.3f} roll={:.2f} pitch={:.2f}".format(
+                position[2],
+                roll,
+                pitch,
+            )
+        )
+        self.reset()
+        return True
+
     def _print_state(self, observation):
         x = y = z = 0.0
         state = self._runtime_robot_state()
@@ -261,7 +353,7 @@ class Script(gobot.NodeScript):
                 x, y, z = position[:3]
         print(
             "Go1 RL tick t={:.2f}s base=({:.3f}, {:.3f}, {:.3f}) "
-            "cmd=({:.2f}, {:.2f}, {:.2f}) action_norm={:.3f}".format(
+            "cmd=({:.2f}, {:.2f}, {:.2f}) policy={} focus={} action_norm={:.3f}".format(
                 self.context.simulation_time,
                 x,
                 y,
@@ -269,6 +361,8 @@ class Script(gobot.NodeScript):
                 observation[9],
                 observation[10],
                 observation[11],
+                "on" if self.policy is not None else "off",
+                "on" if getattr(self.context.input, "has_control_focus", False) else "off",
                 math.sqrt(sum(value * value for value in self.last_action)),
             )
         )
@@ -285,7 +379,7 @@ class Script(gobot.NodeScript):
         lin_vel = _quat_rotate_inv(base.get("linear_velocity", [0.0, 0.0, 0.0]), quat)
         ang_vel = base.get("angular_velocity", [0.0, 0.0, 0.0])
         projected_gravity = _quat_rotate_inv([0.0, 0.0, -1.0], quat)
-        cmd = COMMAND
+        cmd = self.command
 
         joint_states = {joint.get("name"): joint for joint in state.get("joints", [])}
         joint_pos = []

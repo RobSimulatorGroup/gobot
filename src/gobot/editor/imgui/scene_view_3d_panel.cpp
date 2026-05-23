@@ -10,6 +10,7 @@
 #include "gobot/editor/node3d_editor.hpp"
 #include "gobot/editor/editor.hpp"
 #include "gobot/editor/editor_viewport_renderer.hpp"
+#include "gobot/core/os/input.hpp"
 #include "gobot/main/engine_context.hpp"
 #include "gobot/simulation/simulation_server.hpp"
 #include "gobot/scene/camera_3d.hpp"
@@ -454,6 +455,17 @@ void SceneView3DPanel::OnImGuiContent()
     const bool toolbar_blocks_viewport_input = ImGui::IsMouseHoveringRect(toolbar_position, toolbar_max, false);
     const bool imgui_blocks_viewport_input = ImGuiBlocksViewportInput() || toolbar_blocks_viewport_input;
     bool mouse_inside_rect = ImGui::IsMouseHoveringRect(min_bound, max_bound) && !imgui_blocks_viewport_input;
+
+    auto* input = Input::GetInstance();
+    if (!Editor::GetInstance()->IsScenePlaySessionRunning()) {
+        input->SetControlFocus(false);
+    } else {
+        if (mouse_inside_rect && ImGui::IsMouseClicked(ImGuiMouseButton_Left) &&
+                   !ImGui::GetIO().WantTextInput && !imgui_blocks_viewport_input) {
+            input->SetControlFocus(true);
+        }
+    }
+
     ProcessViewportInput(scene_root, scene_view_position, scene_view_size, mouse_inside_rect,
                          imgui_blocks_viewport_input);
     node3d_editor->SetNeedUpdateCamera(mouse_inside_rect && !dragged_joint_ && !drag_force_active_ &&

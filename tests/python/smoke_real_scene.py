@@ -1,6 +1,7 @@
 import argparse
 import importlib.util
 import json
+import os
 import pathlib
 import gobot
 
@@ -48,9 +49,7 @@ def main():
         spec = importlib.util.spec_from_file_location("go1_scene_script", script_path)
         script_module = importlib.util.module_from_spec(spec)
         spec.loader.exec_module(script_module)
-
-        if script_module.DEFAULT_POLICY_PATH:
-            raise AssertionError("Go1 example must not auto-load a local policy by default")
+        os.environ["GOBOT_GO1_POLICY"] = ""
 
         context.reset_link_state("go1", "trunk", script_module.RESET_BASE_POSITION,
                                  [1.0, 0.0, 0.0, 0.0],

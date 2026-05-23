@@ -25,6 +25,7 @@
 #include "gobot/core/io/python_script.hpp"
 #include "gobot/core/io/resource_loader.hpp"
 #include "gobot/core/io/resource_saver.hpp"
+#include "gobot/core/os/input.hpp"
 #include "gobot/core/string_utils.hpp"
 #include "gobot/main/engine_context.hpp"
 #include "gobot/physics/physics_types.hpp"
@@ -1356,6 +1357,11 @@ class NodeScript:
             .value("Motion", RobotMode::Motion)
             .export_values();
 
+    py::class_<Input>(module, "Input")
+            .def_property_readonly("has_control_focus", &Input::HasControlFocus)
+            .def("is_key_pressed", &Input::IsKeyPressedByName, py::arg("key_name"))
+            .def("is_key_held", &Input::IsKeyHeldByName, py::arg("key_name"));
+
     py::enum_<LinkRole>(module, "LinkRole")
             .value("Physical", LinkRole::Physical)
             .value("VirtualRoot", LinkRole::VirtualRoot)
@@ -1393,6 +1399,9 @@ class NodeScript:
                 }
                 return MakeTypedNodeObject(root);
             })
+            .def_property_readonly("input", [](EngineContext&) -> Input* {
+                return Input::GetInstanceOrNull();
+            }, py::return_value_policy::reference)
             .def_property("backend_type",
                           &EngineContext::GetBackendType,
                           &EngineContext::SetBackendType)
