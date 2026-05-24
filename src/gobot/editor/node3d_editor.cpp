@@ -60,6 +60,10 @@ bool ImGuiBlocksViewportInput() {
     return ImGui::IsPopupOpen(nullptr, ImGuiPopupFlags_AnyPopupId);
 }
 
+bool IsFiniteVector(const Vector3& vector) {
+    return std::isfinite(vector.x()) && std::isfinite(vector.y()) && std::isfinite(vector.z());
+}
+
 }
 
 Node3DEditor::Node3DEditor() {
@@ -97,6 +101,37 @@ void Node3DEditor::ResetCamera() {
     mouse_speed_ = 0.0020f;
 
     SetCameraOrbit({8.0f, 8.0f, 6.0f}, {0.0f, 0.0f, 0.0f}, Vector3::UnitZ());
+}
+
+EditorSceneViewState Node3DEditor::GetSceneViewState() const {
+    if (camera3d_ == nullptr) {
+        return {};
+    }
+    return EditorSceneViewState{
+            .eye = camera3d_->GetViewMatrixEye(),
+            .at = camera3d_->GetViewMatrixAt(),
+            .up = camera3d_->GetViewMatrixUp(),
+    };
+}
+
+void Node3DEditor::ApplySceneViewState(const EditorSceneViewState& state) {
+    const Vector3 view_direction = state.at - state.eye;
+    if (!IsFiniteVector(state.eye) || !IsFiniteVector(state.at) ||
+        !IsFiniteVector(state.up) || view_direction.isZero(CMP_EPSILON) ||
+        state.up.isZero(CMP_EPSILON)) {
+        ResetCamera();
+        return;
+    }
+
+    Vector3 up = state.up.normalized();
+    if (std::abs(view_direction.normalized().dot(up)) > 1.0 - CMP_EPSILON) {
+        up = Vector3::UnitZ();
+        if (std::abs(view_direction.normalized().dot(up)) > 1.0 - CMP_EPSILON) {
+            up = Vector3::UnitY();
+        }
+    }
+
+    SetCameraOrbit(state.eye, state.at, up);
 }
 
 

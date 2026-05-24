@@ -8,6 +8,7 @@
 #pragma once
 
 #include "gobot/core/object.hpp"
+#include "gobot/core/config/project_setting.hpp"
 #include "gobot/scene/camera_3d.hpp"
 #include "gobot/scene/imgui_node.hpp"
 #include "gobot/scene/resources/material.hpp"
@@ -25,6 +26,10 @@ public:
     Node3DEditor();
 
     void ResetCamera();
+
+    [[nodiscard]] EditorSceneViewState GetSceneViewState() const;
+
+    void ApplySceneViewState(const EditorSceneViewState& state);
 
     ~Node3DEditor() override;
 

@@ -15,6 +15,62 @@ namespace gobot {
 
 ProjectSettings *ProjectSettings::s_singleton = nullptr;
 
+namespace {
+
+constexpr const char* kEditorSceneViewsKey = "editor_scene_views";
+constexpr const char* kEyeKey = "eye";
+constexpr const char* kAtKey = "at";
+constexpr const char* kUpKey = "up";
+
+Json Vector3ToJson(const Vector3& vector) {
+    return Json::array({vector.x(), vector.y(), vector.z()});
+}
+
+std::optional<Vector3> Vector3FromJson(const Json& json) {
+    if (!json.is_array() || json.size() != 3) {
+        return std::nullopt;
+    }
+
+    Vector3 vector{};
+    for (int i = 0; i < 3; ++i) {
+        if (!json[i].is_number()) {
+            return std::nullopt;
+        }
+        vector[i] = static_cast<RealType>(json[i].get<double>());
+    }
+    return vector;
+}
+
+std::optional<EditorSceneViewState> SceneViewStateFromJson(const Json& json) {
+    if (!json.is_object() || !json.contains(kEyeKey) ||
+        !json.contains(kAtKey) || !json.contains(kUpKey)) {
+        return std::nullopt;
+    }
+
+    std::optional<Vector3> eye = Vector3FromJson(json[kEyeKey]);
+    std::optional<Vector3> at = Vector3FromJson(json[kAtKey]);
+    std::optional<Vector3> up = Vector3FromJson(json[kUpKey]);
+    if (!eye || !at || !up) {
+        return std::nullopt;
+    }
+
+    return EditorSceneViewState{
+            .eye = *eye,
+            .at = *at,
+            .up = *up,
+    };
+}
+
+Json SceneViewStateToJson(const EditorSceneViewState& state) {
+    return Json{
+            {kEyeKey, Vector3ToJson(state.eye)},
+            {kAtKey, Vector3ToJson(state.at)},
+            {kUpKey, Vector3ToJson(state.up)},
+    };
+}
+
+} // namespace
+
 ProjectSettings::ProjectSettings() {
     s_singleton = this;
 }
@@ -43,6 +99,7 @@ bool ProjectSettings::SetProjectPath(const std::string& project_path) {
 void ProjectSettings::ClearProjectPath() {
     project_path_.clear();
     main_scene_path_.clear();
+    editor_scene_view_states_.clear();
 }
 
 std::string ProjectSettings::LocalizePath(std::string_view path) const {
@@ -133,6 +190,30 @@ bool ProjectSettings::SetMainScenePath(const std::string& main_scene_path) {
     return true;
 }
 
+bool ProjectSettings::SetEditorSceneViewState(const std::string& scene_path,
+                                              const EditorSceneViewState& state) {
+    if (project_path_.empty()) {
+        return false;
+    }
+
+    const std::string local_path = LocalizePath(scene_path);
+    if (local_path.empty() || !local_path.starts_with("res://")) {
+        return false;
+    }
+
+    editor_scene_view_states_[local_path] = state;
+    return SaveProjectConfig();
+}
+
+std::optional<EditorSceneViewState> ProjectSettings::GetEditorSceneViewState(const std::string& scene_path) const {
+    const std::string local_path = LocalizePath(scene_path);
+    auto it = editor_scene_view_states_.find(local_path);
+    if (it == editor_scene_view_states_.end()) {
+        return std::nullopt;
+    }
+    return it->second;
+}
+
 bool ProjectSettings::SaveProjectConfig() const {
     if (project_path_.empty()) {
         return false;
@@ -140,6 +221,13 @@ bool ProjectSettings::SaveProjectConfig() const {
 
     Json json = Json::object();
     json["main_scene"] = main_scene_path_;
+    if (!editor_scene_view_states_.empty()) {
+        Json scene_views = Json::object();
+        for (const auto& [path, state] : editor_scene_view_states_) {
+            scene_views[path] = SceneViewStateToJson(state);
+        }
+        json[kEditorSceneViewsKey] = scene_views;
+    }
 
     const std::filesystem::path config_path = GetProjectConfigPath();
     std::ofstream output(config_path, std::ios::out | std::ios::trunc);
@@ -153,6 +241,7 @@ bool ProjectSettings::SaveProjectConfig() const {
 
 void ProjectSettings::LoadProjectConfig() {
     main_scene_path_.clear();
+    editor_scene_view_states_.clear();
 
     if (project_path_.empty()) {
         return;
@@ -180,6 +269,29 @@ void ProjectSettings::LoadProjectConfig() {
     if (!json.is_object()) {
         LOG_ERROR("Project config '{}' must be a JSON object.", config_path.string());
         return;
+    }
+
+    if (json.contains(kEditorSceneViewsKey) && !json[kEditorSceneViewsKey].is_null()) {
+        if (!json[kEditorSceneViewsKey].is_object()) {
+            LOG_ERROR("Project config '{}' has non-object editor_scene_views.", config_path.string());
+        } else {
+            for (auto it = json[kEditorSceneViewsKey].begin(); it != json[kEditorSceneViewsKey].end(); ++it) {
+                const std::string local_path = LocalizePath(it.key());
+                if (!local_path.starts_with("res://")) {
+                    LOG_ERROR("Ignoring editor scene view outside project in '{}': {}",
+                              config_path.string(), local_path);
+                    continue;
+                }
+
+                std::optional<EditorSceneViewState> state = SceneViewStateFromJson(it.value());
+                if (!state) {
+                    LOG_ERROR("Ignoring invalid editor scene view in '{}': {}",
+                              config_path.string(), local_path);
+                    continue;
+                }
+                editor_scene_view_states_[local_path] = *state;
+            }
+        }
     }
 
     if (!json.contains("main_scene") || json["main_scene"].is_null()) {

@@ -148,6 +148,7 @@ Editor::Editor() {
 }
 
 Editor::~Editor() {
+    SaveCurrentSceneViewState();
     if (scene_play_session_ != nullptr) {
         scene_play_session_->Stop();
     }
@@ -208,6 +209,10 @@ void Editor::SetSelected(Node* selected) {
 }
 
 bool Editor::SaveEditedScene(const std::string& path) const {
+    if (path == current_scene_path_) {
+        SaveCurrentSceneViewState();
+    }
+
     if (edited_scene_ == nullptr || !edited_scene_->SaveToPath(path)) {
         return false;
     }
@@ -256,6 +261,7 @@ bool Editor::OpenSceneFromPath(const std::string& path) {
     current_scene_path_ = path;
     BindEngineContextToEditedScene();
     ClearSceneDirty();
+    RestoreCurrentSceneViewState();
     UpdatePythonPanelFromSceneRootScript();
     LOG_INFO("Opened scene: {}", current_scene_path_);
     return true;
@@ -275,8 +281,10 @@ bool Editor::NewEditedScene() {
     }
 
     selected_ = edited_scene_->GetRoot();
+    SaveCurrentSceneViewState();
     current_scene_path_.clear();
     BindEngineContextToEditedScene();
+    node3d_editor_->ResetCamera();
     ClearSceneDirty();
     LOG_INFO("Created a new scene.");
     return true;
@@ -293,6 +301,7 @@ void Editor::RequestImportSceneFromPath(const std::string& path) {
         if (LoadEditedScene(path)) {
             current_scene_path_ = NativeScenePathForImport(std::filesystem::path(path));
             BindEngineContextToEditedScene();
+            RestoreCurrentSceneViewState();
             if (engine_context_ != nullptr) {
                 engine_context_->MarkSceneDirtyBaseline();
             }
@@ -462,6 +471,43 @@ void Editor::UpdatePythonPanelFromSceneRootScript() {
 
     python_panel_->SetOpen(true);
     python_panel_->LoadScript(script->GetPath());
+}
+
+void Editor::SaveCurrentSceneViewState() const {
+    if (current_scene_path_.empty() || node3d_editor_ == nullptr) {
+        return;
+    }
+
+    ProjectSettings* settings = ProjectSettings::GetInstance();
+    if (settings == nullptr || settings->GetProjectPath().empty()) {
+        return;
+    }
+
+    settings->SetEditorSceneViewState(current_scene_path_, node3d_editor_->GetSceneViewState());
+}
+
+void Editor::RestoreCurrentSceneViewState() {
+    if (node3d_editor_ == nullptr) {
+        return;
+    }
+
+    if (current_scene_path_.empty()) {
+        node3d_editor_->ResetCamera();
+        return;
+    }
+
+    ProjectSettings* settings = ProjectSettings::GetInstance();
+    if (settings == nullptr) {
+        node3d_editor_->ResetCamera();
+        return;
+    }
+
+    std::optional<EditorSceneViewState> state = settings->GetEditorSceneViewState(current_scene_path_);
+    if (state) {
+        node3d_editor_->ApplySceneViewState(*state);
+    } else {
+        node3d_editor_->ResetCamera();
+    }
 }
 
 void Editor::FocusSceneViewerPanel() {
@@ -917,6 +963,7 @@ void Editor::DrawUnsavedSceneDialog() {
         ClearSceneDirty();
         if (pending_quit_request_) {
             pending_quit_request_ = false;
+            SaveCurrentSceneViewState();
             SceneTree::GetInstance()->ConfirmQuit();
         } else {
             ContinuePendingSceneSwitch();
@@ -949,6 +996,7 @@ void Editor::HandleQuitRequest() {
         return;
     }
 
+    SaveCurrentSceneViewState();
     scene_tree->ConfirmQuit();
 }
 
@@ -963,6 +1011,7 @@ void Editor::RequestSceneSwitch(std::function<void()> action) {
         return;
     }
 
+    SaveCurrentSceneViewState();
     action();
 }
 
@@ -973,6 +1022,7 @@ void Editor::ContinuePendingSceneSwitch() {
 
     auto action = std::move(pending_scene_switch_action_);
     pending_scene_switch_action_ = nullptr;
+    SaveCurrentSceneViewState();
     action();
 }
 
@@ -1038,6 +1088,7 @@ void Editor::HandleSceneFileDialogSelection() {
     if (scene_file_dialog_mode_ == SceneFileDialogMode::SaveAs) {
         if (SaveEditedScene(scene_path)) {
             current_scene_path_ = scene_path;
+            SaveCurrentSceneViewState();
             ClearSceneDirty();
             LOG_INFO("Saved scene: {}", current_scene_path_);
             if (pending_quit_request_) {

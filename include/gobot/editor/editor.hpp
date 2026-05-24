@@ -173,6 +173,10 @@ private:
 
     void BindEngineContextToEditedScene();
 
+    void SaveCurrentSceneViewState() const;
+
+    void RestoreCurrentSceneViewState();
+
     void UpdatePythonPanelFromSceneRootScript();
 
     static bool IsNativeScenePath(const std::string& path);

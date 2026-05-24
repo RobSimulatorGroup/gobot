@@ -7,13 +7,22 @@
 
 #pragma once
 
+#include "gobot/core/math/matrix.hpp"
 #include "gobot/core/object.hpp"
 #include "gobot/core/types.hpp"
 
+#include <map>
+#include <optional>
 #include <string>
 #include <string_view>
 
 namespace gobot {
+
+struct EditorSceneViewState {
+    Vector3 eye{};
+    Vector3 at{};
+    Vector3 up{0.0, 0.0, 1.0};
+};
 
 class GOBOT_EXPORT ProjectSettings : public Object {
     GOBCLASS(ProjectSettings, Object)
@@ -40,6 +49,10 @@ public:
 
     bool SetMainScenePath(const std::string& main_scene_path);
 
+    bool SetEditorSceneViewState(const std::string& scene_path, const EditorSceneViewState& state);
+
+    [[nodiscard]] std::optional<EditorSceneViewState> GetEditorSceneViewState(const std::string& scene_path) const;
+
     bool SaveProjectConfig() const;
 
 private:
@@ -49,6 +62,7 @@ private:
 
     std::string project_path_;
     std::string main_scene_path_;
+    std::map<std::string, EditorSceneViewState> editor_scene_view_states_;
 };
 
 }
