@@ -55,10 +55,27 @@ struct PhysicsBackendInfo {
     std::string status;
 };
 
+struct MuJoCoSolverSettings {
+    int solver{2};
+    int integrator{0};
+    int cone{0};
+    int jacobian{2};
+    int iterations{100};
+    int line_search_iterations{50};
+    int no_slip_iterations{0};
+    int convex_collision_iterations{35};
+    RealType tolerance{1.0e-8};
+    RealType line_search_tolerance{0.01};
+    RealType no_slip_tolerance{1.0e-6};
+    RealType convex_collision_tolerance{1.0e-6};
+    RealType impedance_ratio{1.0};
+};
+
 struct PhysicsWorldSettings {
     Vector3 gravity{0.0, 0.0, -9.81};
-    RealType fixed_time_step{1.0 / 240.0};
+    RealType fixed_time_step{0.002};
     JointControllerGains default_joint_gains{100.0, 10.0, 0.0, 0.0};
+    MuJoCoSolverSettings mujoco_solver;
 };
 
 struct PhysicsShapeSnapshot {

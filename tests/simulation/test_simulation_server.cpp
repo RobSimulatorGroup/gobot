@@ -11,6 +11,7 @@
 #include <gobot/scene/resources/capsule_shape_3d.hpp>
 #include <gobot/scene/scene_tree.hpp>
 #include <gobot/scene/window.hpp>
+#include <gobot/physics/backends/mujoco_physics_world.hpp>
 #include <gobot/simulation/simulation_server.hpp>
 
 namespace gobot {
@@ -206,6 +207,27 @@ gobot::Robot3D* CreateActuatedLimitedHingeScene() {
     base->AddChild(joint);
     joint->AddChild(tip);
     return robot;
+}
+
+gobot::Node3D* CreateSceneWithRobotAndGround(gobot::Robot3D* robot, gobot::CollisionShape3D** ground_out = nullptr) {
+    auto* root = gobot::Object::New<gobot::Node3D>();
+    root->SetName("scene");
+
+    auto* ground = CreateBoxCollision("ground", {4.0, 4.0, 0.1});
+    ground->SetPosition({0.0, 0.0, -0.05});
+    ground->SetFriction({1.0, 0.005, 0.0001});
+    ground->SetContactType(3);
+    ground->SetContactAffinity(5);
+    ground->SetContactDimension(4);
+    ground->SetSolref({0.012, 0.8});
+    ground->SetSolimp({0.85, 0.94, 0.002, 0.45, 1.8});
+
+    root->AddChild(ground);
+    root->AddChild(robot);
+    if (ground_out != nullptr) {
+        *ground_out = ground;
+    }
+    return root;
 }
 
 } // namespace
@@ -677,6 +699,98 @@ TEST(TestSimulationServer, default_joint_gains_update_existing_world_settings) {
     EXPECT_DOUBLE_EQ(world_gains.integral_limit, 0.25);
 
     gobot::Object::Delete(robot);
+}
+
+TEST(TestSimulationServer, mujoco_world_uses_training_solver_defaults) {
+#ifdef GOBOT_HAS_MUJOCO
+    gobot::SimulationServer simulation_server(gobot::PhysicsBackendType::MuJoCoCpu);
+    simulation_server.SetFixedTimeStep(0.002);
+    simulation_server.SetPaused(false);
+
+    gobot::Robot3D* robot = CreateActuatedLimitedHingeScene();
+    ASSERT_TRUE(simulation_server.BuildWorldFromScene(robot)) << simulation_server.GetLastError();
+
+    auto world = gobot::dynamic_pointer_cast<gobot::MuJoCoPhysicsWorld>(simulation_server.GetWorld());
+    ASSERT_TRUE(world.IsValid());
+    const gobot::MuJoCoPhysicsWorld::Diagnostics diagnostics = world->GetDiagnostics();
+    EXPECT_NEAR(diagnostics.timestep, 0.002, CMP_EPSILON);
+    EXPECT_EQ(diagnostics.solver, 2);
+    EXPECT_EQ(diagnostics.integrator, 0);
+    EXPECT_EQ(diagnostics.cone, 0);
+    EXPECT_EQ(diagnostics.jacobian, 2);
+    EXPECT_EQ(diagnostics.iterations, 100);
+    EXPECT_EQ(diagnostics.line_search_iterations, 50);
+    EXPECT_EQ(diagnostics.no_slip_iterations, 0);
+    EXPECT_EQ(diagnostics.convex_collision_iterations, 35);
+    EXPECT_NEAR(diagnostics.tolerance, 1.0e-8, 1.0e-12);
+    EXPECT_NEAR(diagnostics.line_search_tolerance, 0.01, 1.0e-8);
+    EXPECT_NEAR(diagnostics.no_slip_tolerance, 1.0e-6, 1.0e-12);
+    EXPECT_NEAR(diagnostics.convex_collision_tolerance, 1.0e-6, 1.0e-12);
+    EXPECT_NEAR(diagnostics.impedance_ratio, 1.0, 1.0e-12);
+
+    gobot::Object::Delete(robot);
+#endif
+}
+
+TEST(TestSimulationServer, mujoco_position_actuator_keeps_training_stiffness_and_damping) {
+#ifdef GOBOT_HAS_MUJOCO
+    gobot::SimulationServer simulation_server(gobot::PhysicsBackendType::MuJoCoCpu);
+    simulation_server.SetFixedTimeStep(0.002);
+    simulation_server.SetPaused(false);
+    gobot::JointControllerGains gains;
+    gains.position_stiffness = 40.0;
+    gains.velocity_damping = 1.0;
+    simulation_server.SetDefaultJointGains(gains);
+
+    gobot::Robot3D* robot = CreateActuatedLimitedHingeScene();
+    ASSERT_EQ(robot->GetChildCount(), 1);
+    auto* base = robot->GetChild(0);
+    ASSERT_NE(base, nullptr);
+    ASSERT_EQ(base->GetChildCount(), 1);
+    auto* joint = gobot::Object::PointerCastTo<gobot::Joint3D>(base->GetChild(0));
+    ASSERT_NE(joint, nullptr);
+    joint->SetDamping(1.0);
+
+    ASSERT_TRUE(simulation_server.BuildWorldFromScene(robot)) << simulation_server.GetLastError();
+
+    auto world = gobot::dynamic_pointer_cast<gobot::MuJoCoPhysicsWorld>(simulation_server.GetWorld());
+    ASSERT_TRUE(world.IsValid());
+    const gobot::MuJoCoPhysicsWorld::Diagnostics diagnostics = world->GetDiagnostics();
+    EXPECT_EQ(diagnostics.actuator_count, 1);
+    EXPECT_NEAR(diagnostics.first_position_actuator_stiffness, 40.0, 1.0e-9);
+    EXPECT_NEAR(diagnostics.first_controllable_joint_damping, 1.0, 1.0e-9);
+
+    gobot::Object::Delete(robot);
+#endif
+}
+
+TEST(TestSimulationServer, mujoco_authored_contact_parameters_match_scene_values) {
+#ifdef GOBOT_HAS_MUJOCO
+    gobot::SimulationServer simulation_server(gobot::PhysicsBackendType::MuJoCoCpu);
+    simulation_server.SetFixedTimeStep(0.002);
+    simulation_server.SetPaused(false);
+
+    gobot::Node3D* root = CreateSceneWithRobotAndGround(CreateActuatedLimitedHingeScene());
+    ASSERT_TRUE(simulation_server.BuildWorldFromScene(root)) << simulation_server.GetLastError();
+
+    auto world = gobot::dynamic_pointer_cast<gobot::MuJoCoPhysicsWorld>(simulation_server.GetWorld());
+    ASSERT_TRUE(world.IsValid());
+    const gobot::MuJoCoPhysicsWorld::Diagnostics diagnostics = world->GetDiagnostics();
+    EXPECT_NEAR(diagnostics.first_collision_friction.x(), 1.0, CMP_EPSILON);
+    EXPECT_NEAR(diagnostics.first_collision_friction.y(), 0.005, CMP_EPSILON);
+    EXPECT_NEAR(diagnostics.first_collision_friction.z(), 0.0001, CMP_EPSILON);
+    EXPECT_EQ(diagnostics.first_collision_contact_dimension, 4);
+    EXPECT_NEAR(diagnostics.first_collision_solref.x(), 0.012, CMP_EPSILON);
+    EXPECT_NEAR(diagnostics.first_collision_solref.y(), 0.8, CMP_EPSILON);
+    ASSERT_EQ(diagnostics.first_collision_solimp.size(), 5);
+    EXPECT_NEAR(diagnostics.first_collision_solimp[0], 0.85, CMP_EPSILON);
+    EXPECT_NEAR(diagnostics.first_collision_solimp[1], 0.94, CMP_EPSILON);
+    EXPECT_NEAR(diagnostics.first_collision_solimp[2], 0.002, CMP_EPSILON);
+    EXPECT_NEAR(diagnostics.first_collision_solimp[3], 0.45, CMP_EPSILON);
+    EXPECT_NEAR(diagnostics.first_collision_solimp[4], 1.8, CMP_EPSILON);
+
+    gobot::Object::Delete(root);
+#endif
 }
 
 TEST(TestSimulationServer, rebuild_world_preserves_compatible_joint_state_by_name) {

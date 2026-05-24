@@ -43,9 +43,6 @@ def main():
     context.build_world(gobot.PhysicsBackendType.MuJoCoCpu if args.backend == "mujoco"
                         else gobot.PhysicsBackendType.Null)
     context.reset_simulation()
-    for index in range(args.steps):
-        context.step_once()
-        print(f"step={index + 1} time={context.simulation_time:.6f} frame={context.frame_count}")
 
     if args.expect_go1_stand:
         script_path = pathlib.Path(args.project) / "scripts" / "go1.py"
@@ -77,10 +74,11 @@ def main():
                     f"Go1 reset pose starts too far inside the ground: {min_contact_distance:.6f}"
                 )
 
-        for _ in range(200):
+        for index in range(args.steps):
             for name, target in zip(script_module.JOINT_NAMES, script_module.DEFAULT_POS):
                 context.set_joint_position_target("go1", name, target)
             context.step_once()
+            print(f"step={index + 1} time={context.simulation_time:.6f} frame={context.frame_count}")
 
         state = context.get_runtime_state()
         robot = next(robot for robot in state["robots"] if robot["name"] == "go1")
@@ -89,6 +87,10 @@ def main():
         print(f"go1_stand_base_z={base_z:.6f}")
         if base_z <= 0.15:
             raise AssertionError(f"Go1 default stand base height is too low: {base_z:.6f}")
+    else:
+        for index in range(args.steps):
+            context.step_once()
+            print(f"step={index + 1} time={context.simulation_time:.6f} frame={context.frame_count}")
 
     return 0
 

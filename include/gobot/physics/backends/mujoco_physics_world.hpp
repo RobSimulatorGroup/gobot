@@ -6,11 +6,9 @@
 
 #pragma once
 
-#ifdef GOBOT_HAS_MUJOCO
 #include <cstddef>
 #include <string>
 #include <vector>
-#endif
 
 #include "gobot/physics/physics_world.hpp"
 #include "gobot/physics/joint_controller.hpp"
@@ -21,6 +19,30 @@ class GOBOT_EXPORT MuJoCoPhysicsWorld : public PhysicsWorld {
     GOBCLASS(MuJoCoPhysicsWorld, PhysicsWorld)
 
 public:
+    struct Diagnostics {
+        RealType timestep{0.0};
+        int solver{0};
+        int integrator{0};
+        int cone{0};
+        int jacobian{0};
+        int iterations{0};
+        int line_search_iterations{0};
+        int no_slip_iterations{0};
+        int convex_collision_iterations{0};
+        RealType tolerance{0.0};
+        RealType line_search_tolerance{0.0};
+        RealType no_slip_tolerance{0.0};
+        RealType convex_collision_tolerance{0.0};
+        RealType impedance_ratio{0.0};
+        int actuator_count{0};
+        RealType first_position_actuator_stiffness{0.0};
+        RealType first_controllable_joint_damping{0.0};
+        Vector3 first_collision_friction{0.0, 0.0, 0.0};
+        int first_collision_contact_dimension{0};
+        Vector2 first_collision_solref{0.0, 0.0};
+        std::vector<RealType> first_collision_solimp;
+    };
+
     MuJoCoPhysicsWorld();
 
     ~MuJoCoPhysicsWorld() override;
@@ -98,6 +120,8 @@ public:
 
     void ClearExternalForces() override;
 
+    Diagnostics GetDiagnostics() const;
+
 private:
 #ifdef GOBOT_HAS_MUJOCO
     bool LoadModelFromRobotSources();
@@ -149,6 +173,7 @@ private:
         int velocity_actuator_id{-1};
         RealType position_stiffness{0.0};
         RealType velocity_damping{0.0};
+        RealType passive_damping{0.0};
         int qpos_address{-1};
         int dof_address{-1};
         int joint_type{-1};

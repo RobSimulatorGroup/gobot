@@ -779,11 +779,28 @@ GOBOT_REGISTRATION {
             .property("robotics_focused", &PhysicsBackendInfo::robotics_focused)
             .property("status", &PhysicsBackendInfo::status);
 
+    Class_<MuJoCoSolverSettings>("MuJoCoSolverSettings")
+            .constructor()
+            .property("solver", &MuJoCoSolverSettings::solver)
+            .property("integrator", &MuJoCoSolverSettings::integrator)
+            .property("cone", &MuJoCoSolverSettings::cone)
+            .property("jacobian", &MuJoCoSolverSettings::jacobian)
+            .property("iterations", &MuJoCoSolverSettings::iterations)
+            .property("line_search_iterations", &MuJoCoSolverSettings::line_search_iterations)
+            .property("no_slip_iterations", &MuJoCoSolverSettings::no_slip_iterations)
+            .property("convex_collision_iterations", &MuJoCoSolverSettings::convex_collision_iterations)
+            .property("tolerance", &MuJoCoSolverSettings::tolerance)
+            .property("line_search_tolerance", &MuJoCoSolverSettings::line_search_tolerance)
+            .property("no_slip_tolerance", &MuJoCoSolverSettings::no_slip_tolerance)
+            .property("convex_collision_tolerance", &MuJoCoSolverSettings::convex_collision_tolerance)
+            .property("impedance_ratio", &MuJoCoSolverSettings::impedance_ratio);
+
     Class_<PhysicsWorldSettings>("PhysicsWorldSettings")
             .constructor()
             .property("gravity", &PhysicsWorldSettings::gravity)
             .property("fixed_time_step", &PhysicsWorldSettings::fixed_time_step)
-            .property("default_joint_gains", &PhysicsWorldSettings::default_joint_gains);
+            .property("default_joint_gains", &PhysicsWorldSettings::default_joint_gains)
+            .property("mujoco_solver", &PhysicsWorldSettings::mujoco_solver);
 
     Class_<PhysicsWorld>("PhysicsWorld")
             .method("is_available", &PhysicsWorld::IsAvailable)

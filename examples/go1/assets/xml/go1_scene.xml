@@ -1,7 +1,7 @@
 <mujoco model="go1_scene">
   <include file="go1.xml"/>
 
-  <option timestep="0.002" iterations="10" solver="Newton" tolerance="1e-10"/>
+  <option timestep="0.002" solver="Newton" iterations="100" ls_iterations="50" tolerance="1e-8"/>
 
   <worldbody>
     <light directional="true" diffuse="0.8 0.8 0.8" specular="0.2 0.2 0.2" pos="0 0 5" dir="0 0 -1"/>

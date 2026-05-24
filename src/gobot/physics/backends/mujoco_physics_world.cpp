@@ -312,6 +312,28 @@ bool HasUsableAuthoredModel(const PhysicsRobotSnapshot& robot) {
     return !robot.links.empty() || !robot.joints.empty();
 }
 
+void ApplyMuJoCoOptions(mjOption* option, const PhysicsWorldSettings& settings) {
+    if (!option) {
+        return;
+    }
+
+    option->timestep = settings.fixed_time_step;
+    SetMuJoCoVector3(option->gravity, settings.gravity);
+    option->solver = settings.mujoco_solver.solver;
+    option->integrator = settings.mujoco_solver.integrator;
+    option->cone = settings.mujoco_solver.cone;
+    option->jacobian = settings.mujoco_solver.jacobian;
+    option->iterations = settings.mujoco_solver.iterations;
+    option->ls_iterations = settings.mujoco_solver.line_search_iterations;
+    option->noslip_iterations = settings.mujoco_solver.no_slip_iterations;
+    option->ccd_iterations = settings.mujoco_solver.convex_collision_iterations;
+    option->tolerance = settings.mujoco_solver.tolerance;
+    option->ls_tolerance = settings.mujoco_solver.line_search_tolerance;
+    option->noslip_tolerance = settings.mujoco_solver.no_slip_tolerance;
+    option->ccd_tolerance = settings.mujoco_solver.convex_collision_tolerance;
+    option->impratio = settings.mujoco_solver.impedance_ratio;
+}
+
 void ConfigureGeomContact(mjsGeom* geom, const PhysicsShapeSnapshot& shape) {
     if (!geom) {
         return;
@@ -779,6 +801,65 @@ void MuJoCoPhysicsWorld::ClearExternalForces() {
 #endif
 }
 
+MuJoCoPhysicsWorld::Diagnostics MuJoCoPhysicsWorld::GetDiagnostics() const {
+    Diagnostics diagnostics;
+#ifdef GOBOT_HAS_MUJOCO
+    const auto* model = static_cast<const mjModel*>(model_);
+    if (model == nullptr) {
+        return diagnostics;
+    }
+
+    diagnostics.timestep = static_cast<RealType>(model->opt.timestep);
+    diagnostics.solver = model->opt.solver;
+    diagnostics.integrator = model->opt.integrator;
+    diagnostics.cone = model->opt.cone;
+    diagnostics.jacobian = model->opt.jacobian;
+    diagnostics.iterations = model->opt.iterations;
+    diagnostics.line_search_iterations = model->opt.ls_iterations;
+    diagnostics.no_slip_iterations = model->opt.noslip_iterations;
+    diagnostics.convex_collision_iterations = model->opt.ccd_iterations;
+    diagnostics.tolerance = static_cast<RealType>(model->opt.tolerance);
+    diagnostics.line_search_tolerance = static_cast<RealType>(model->opt.ls_tolerance);
+    diagnostics.no_slip_tolerance = static_cast<RealType>(model->opt.noslip_tolerance);
+    diagnostics.convex_collision_tolerance = static_cast<RealType>(model->opt.ccd_tolerance);
+    diagnostics.impedance_ratio = static_cast<RealType>(model->opt.impratio);
+    diagnostics.actuator_count = model->nu;
+
+    for (const MuJoCoJointBinding& binding : joint_bindings_) {
+        if (diagnostics.first_position_actuator_stiffness <= 0.0 &&
+            binding.position_actuator_id >= 0 &&
+            binding.position_actuator_id < model->nu) {
+            diagnostics.first_position_actuator_stiffness =
+                    static_cast<RealType>(std::abs(model->actuator_gainprm[
+                            mjNGAIN * binding.position_actuator_id + 0]));
+        }
+        if (diagnostics.first_controllable_joint_damping <= 0.0 &&
+            binding.dof_address >= 0 &&
+            binding.dof_address < model->nv) {
+            diagnostics.first_controllable_joint_damping =
+                    static_cast<RealType>(model->dof_damping[binding.dof_address]);
+        }
+    }
+
+    if (model->ngeom > 0) {
+        diagnostics.first_collision_friction = Vector3{
+                static_cast<RealType>(model->geom_friction[0]),
+                static_cast<RealType>(model->geom_friction[1]),
+                static_cast<RealType>(model->geom_friction[2])};
+        diagnostics.first_collision_contact_dimension = model->geom_condim[0];
+        diagnostics.first_collision_solref = Vector2{
+                static_cast<RealType>(model->geom_solref[0]),
+                static_cast<RealType>(model->geom_solref[1])};
+        diagnostics.first_collision_solimp.reserve(mjNIMP);
+        for (int index = 0; index < mjNIMP; ++index) {
+            diagnostics.first_collision_solimp.push_back(
+                    static_cast<RealType>(model->geom_solimp[index]));
+        }
+    }
+#endif
+    return diagnostics;
+}
+
 bool MuJoCoPhysicsWorld::RestoreCompatibleState(const PhysicsSceneState& previous_state) {
     if (!PhysicsWorld::RestoreCompatibleState(previous_state)) {
         return false;
@@ -809,6 +890,7 @@ void MuJoCoPhysicsWorld::Step(RealType delta_time) {
         return;
     }
 
+    ApplyMuJoCoOptions(&model->opt, settings_);
     model->opt.timestep = delta_time > 0.0 ? delta_time : settings_.fixed_time_step;
     ApplyControlsToMuJoCo(0);
     ApplyExternalForcesToMuJoCo(0);
@@ -937,6 +1019,7 @@ bool MuJoCoPhysicsWorld::StepEnvironment(std::size_t environment_index, RealType
         return false;
     }
 
+    ApplyMuJoCoOptions(&model->opt, settings_);
     model->opt.timestep = delta_time > 0.0 ? delta_time : settings_.fixed_time_step;
     ApplyControlsToMuJoCo(environment_index);
     ApplyExternalForcesToMuJoCo(environment_index);
@@ -1123,6 +1206,7 @@ bool MuJoCoPhysicsWorld::LoadModelFromRobotSources() {
     }
     std::unique_ptr<mjSpec, decltype(&mj_deleteSpec)> parent_spec_guard(parent_spec, mj_deleteSpec);
     parent_spec->compiler.degree = 0;
+    ApplyMuJoCoOptions(&parent_spec->option, settings_);
 
     AddLooseSceneGeomsToSpec(parent_spec);
 
@@ -1175,7 +1259,6 @@ bool MuJoCoPhysicsWorld::LoadModelFromRobotSources() {
         return false;
     }
 
-    SetMuJoCoVector3(model->opt.gravity, settings_.gravity);
     model_ = model;
     data_ = data;
     BuildLinkBindings();
@@ -1530,6 +1613,9 @@ void MuJoCoPhysicsWorld::BuildJointBindings() {
             binding.qpos_address = model->jnt_qposadr[joint_id];
             binding.dof_address = model->jnt_dofadr[joint_id];
             binding.joint_type = model->jnt_type[joint_id];
+            if (binding.dof_address >= 0 && binding.dof_address < model->nv) {
+                binding.passive_damping = static_cast<RealType>(model->dof_damping[binding.dof_address]);
+            }
             binding.controller.SetGains(settings_.default_joint_gains);
             joint_bindings_.emplace_back(binding);
         }
@@ -1645,6 +1731,10 @@ void MuJoCoPhysicsWorld::ApplyControlsToMuJoCo(std::size_t environment_index) {
                                                 binding.velocity_actuator_id,
                                                 joint_state.target_velocity,
                                                 damping);
+                        } else if (binding.passive_damping <= 0.0 &&
+                                   settings_.default_joint_gains.velocity_damping > 0.0) {
+                            data->qfrc_applied[binding.dof_address] -=
+                                    settings_.default_joint_gains.velocity_damping * joint_state.velocity;
                         }
                     } else {
                         const RealType effort = binding.controller.ComputeEffort(MakeJointControllerState(joint_state),
