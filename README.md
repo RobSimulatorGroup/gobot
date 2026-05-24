@@ -98,6 +98,13 @@ python -m pip install -e . --no-build-isolation -Cbuild-dir=build/editable
 Packaged examples are available from the editor start screen under `Examples`.
 See `doc/examples.md` for packaging details.
 
+## Examples
+
+| Example | Preview |
+| --- | --- |
+| CartPole | <img src="doc/video/cartpole.gif" alt="CartPole example" width="420"> |
+| Go1 policy playback | <img src="doc/video/go1.gif" alt="Go1 policy playback" width="420"> |
+
 ## Local Wheel Build
 
 From a source checkout:
