@@ -59,19 +59,26 @@ first one from `example_roots` and hides the later duplicates.
 
 The training environment is intentionally local to the example. It does not use
 Gobot task JSON or project-specific code inside the `gobot` Python package. The
-editor script loads the trained policy for playback in the Gobot scene.
+editor script loads `policies/cartpole.onnx` for lightweight playback in the
+Gobot scene. Install `gobot[train]` only to train or load `.pt` checkpoints
+directly.
 
 ## Go1
 
-`examples/go1` is a direct Python MuJoCo + rsl_rl velocity-tracking example for
-the Unitree Go1. It contains:
+`examples/go1` is a Unitree Go1 policy-playback and training example. The
+editor playback path uses ONNX Runtime when `policies/go1.onnx` is present, so
+it does not need the rsl_rl training stack. Training remains a direct Python
+MuJoCo + rsl_rl workflow. It contains:
 
 - `go1_env.py`: the vectorized MuJoCo environment.
 - `train.py`: the rsl_rl PPO training entry point.
 - `go1_scene.xml`: an MJCF reference scene with ground and position actuators.
 - `go1.xml` and `assets/`: the robot MJCF and meshes used by training.
+- `policies/go1.onnx`: lightweight policy playback graph for the editor.
 
 The default asset path can be overridden with `GOBOT_GO1_XML`.
+The default Gobot install can play ONNX policies. Install `gobot[train]` only
+to train or load `.pt` checkpoints directly.
 
 ## Packaging Rules
 

@@ -11,7 +11,8 @@ HINGE_JOINT = "hinge"
 TARGET_CART_POSITION = 0.0
 FORCE_LIMIT = 3.0
 PRINT_EVERY_TICKS = 240
-DEFAULT_POLICY_PATH = "res://policies/cartpole.pt"
+DEFAULT_POLICY_PATH = "res://policies/cartpole.onnx"
+TORCH_POLICY_PATH = "res://policies/cartpole.pt"
 INITIAL_CART_POSITION = 0.0
 INITIAL_POLE_ANGLE = 0.0
 DISTURBANCE_ENABLED = True
@@ -20,6 +21,22 @@ DISTURBANCE_CLIP = 0.20
 DISTURBANCE_INTERVAL_TICKS = 480
 DISTURBANCE_DURATION_TICKS = 60
 DISTURBANCE_START_TICK = 240
+
+
+class OnnxPolicy:
+    def __init__(self, path):
+        import numpy as np
+        import onnxruntime as ort
+
+        self.np = np
+        self.session = ort.InferenceSession(path, providers=["CPUExecutionProvider"])
+        self.input_name = self.session.get_inputs()[0].name
+        self.output_name = self.session.get_outputs()[0].name
+
+    def action(self, observation):
+        obs = self.np.asarray(observation, dtype=self.np.float32).reshape(1, -1)
+        output = self.session.run([self.output_name], {self.input_name: obs})[0].reshape(-1)
+        return float(self.np.clip(output[0], -FORCE_LIMIT, FORCE_LIMIT))
 
 
 class TorchPolicy:
@@ -144,6 +161,13 @@ class TorchPolicy:
         raise ValueError(f"policy expects {self.input_size} observations, got {len(observation)}")
 
 
+def _resolve_project_path(context, path):
+    if path.startswith("res://"):
+        project_path = context.project_path if context is not None else ""
+        path = os.path.join(project_path, path.removeprefix("res://"))
+    return path
+
+
 
 def _wrap_angle(value):
     return math.atan2(math.sin(float(value)), math.cos(float(value)))
@@ -236,19 +260,53 @@ class Script(gobot.NodeScript):
 
     def _load_policy(self):
         path = os.environ.get("GOBOT_CARTPOLE_POLICY", DEFAULT_POLICY_PATH)
-        if path.startswith("res://"):
-            project_path = self.context.project_path if self.context is not None else ""
-            path = os.path.join(project_path, path.removeprefix("res://"))
+        if not path:
+            print("CartPole RL policy disabled; set GOBOT_CARTPOLE_POLICY to a .onnx or .pt policy to enable playback.")
+            return None
+        path = _resolve_project_path(self.context, path)
         if not path or not os.path.exists(path):
-            print(
-                "CartPole RL policy not found at '{}'; set GOBOT_CARTPOLE_POLICY to a .pt policy.".format(
-                    path or "<empty>"
+            fallback = _resolve_project_path(self.context, TORCH_POLICY_PATH)
+            if os.path.exists(fallback):
+                print(
+                    "CartPole ONNX policy not found at '{}'. Falling back to '{}' "
+                    "requires torch/rsl-rl-lib from gobot[train].".format(path or "<empty>", fallback)
                 )
-            )
+                path = fallback
+            else:
+                print(
+                    "CartPole RL policy not found at '{}'; set GOBOT_CARTPOLE_POLICY to a .onnx or .pt policy.".format(
+                        path or "<empty>"
+                    )
+                )
+                return None
+        extension = os.path.splitext(path)[1].lower()
+        if extension == ".onnx":
+            try:
+                print(f"CartPole RL loading ONNX policy: {path}")
+                return OnnxPolicy(path)
+            except ImportError as error:
+                print("CartPole ONNX policy load failed: onnxruntime is required for default policy playback.")
+                print(f"CartPole ONNX import error: {error}")
+                fallback = _resolve_project_path(self.context, TORCH_POLICY_PATH)
+                if os.path.exists(fallback) and path != fallback:
+                    print(f"CartPole RL falling back to Torch checkpoint: {fallback}")
+                    path = fallback
+                    extension = ".pt"
+                else:
+                    return None
+            except Exception as error:
+                print(f"CartPole ONNX policy load failed: {error}")
+                return None
+        if extension != ".pt":
+            print(f"CartPole RL policy format '{extension or '<none>'}' is unsupported; use .onnx or .pt.")
             return None
         try:
-            print(f"CartPole RL loading policy: {path}")
+            print(f"CartPole RL loading Torch policy: {path}")
             return TorchPolicy(path)
+        except ImportError as error:
+            print("CartPole Torch policy load failed: install gobot[train] to use .pt policies.")
+            print(f"CartPole Torch import error: {error}")
+            return None
         except Exception as error:
             print(f"CartPole RL policy load failed: {error}")
             return None

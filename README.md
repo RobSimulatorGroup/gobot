@@ -70,8 +70,15 @@ cmake --build build/local -j
 At runtime, `GOBOT_PYTHON_LIBRARY=/other/libpython.so` still overrides the
 compiled default.
 
-Gobot installs the Python RL dependencies used by the examples, including
-`rsl-rl-lib`, `tensordict`, and `tensorboard`.
+The default install includes the lightweight ONNX Runtime path used for example
+policy playback. The heavier training stack stays optional:
+
+```bash
+python -m pip install -e ".[train]" -Cbuild-dir=build/editable
+```
+
+`train` installs `torch`, `rsl-rl-lib`, `tensordict`, and `tensorboard` for
+training or directly loading `.pt` checkpoints.
 
 For verbose rebuild output:
 

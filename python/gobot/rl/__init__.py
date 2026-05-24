@@ -1404,13 +1404,7 @@ class GymWrapper:
         return self.env
 
 
-try:
-    from rsl_rl.env import VecEnv as _RslRlVecEnvBase
-except Exception:  # pragma: no cover - optional dependency at import time.
-    _RslRlVecEnvBase = object
-
-
-class RslRlVecEnvWrapper(_RslRlVecEnvBase):
+class RslRlVecEnvWrapper:
     """Thin adapter exposing common rsl_rl vector-env attributes."""
 
     def __init__(self, env: ManagerBasedEnv, clip_actions: float | None = None, device: str = "cpu") -> None:

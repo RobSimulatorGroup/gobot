@@ -17,9 +17,15 @@ authors = [
 ]
 dependencies = [
     "numpy>=1.24",
+    "onnxruntime>=1.17",
+]
+
+[project.optional-dependencies]
+train = [
     "rsl-rl-lib==5.2.0",
-    "tensordict",
     "tensorboard",
+    "tensordict",
+    "torch",
 ]
 
 [project.urls]

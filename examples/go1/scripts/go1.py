@@ -6,7 +6,8 @@ import gobot
 
 ROBOT = "go1"
 BASE_LINK = "trunk"
-DEFAULT_POLICY_PATH = "res://policies/go1.pt"
+DEFAULT_POLICY_PATH = "res://policies/go1.onnx"
+TORCH_POLICY_PATH = "res://policies/go1.pt"
 PRINT_EVERY_TICKS = 240
 FIXED_TIME_STEP = 0.002
 RESET_BASE_POSITION = [0.0, 0.0, 0.27]
@@ -78,6 +79,22 @@ POSITION_LIMITS = {
 }
 
 
+class OnnxPolicy:
+    def __init__(self, path):
+        import numpy as np
+        import onnxruntime as ort
+
+        self.np = np
+        self.session = ort.InferenceSession(path, providers=["CPUExecutionProvider"])
+        self.input_name = self.session.get_inputs()[0].name
+        self.output_name = self.session.get_outputs()[0].name
+
+    def action(self, observation):
+        obs = self.np.asarray(observation, dtype=self.np.float32).reshape(1, -1)
+        output = self.session.run([self.output_name], {self.input_name: obs})[0].reshape(-1)
+        return self.np.clip(output, -1.0, 1.0).astype(float).tolist()
+
+
 class TorchPolicy:
     def __init__(self, path):
         import torch
@@ -118,7 +135,14 @@ class TorchPolicy:
             output = self.policy(obs_td)
             if isinstance(output, (tuple, list)):
                 output = output[0]
-            return output.reshape(-1).clamp(-1.0, 1.0).cpu().tolist()
+        return output.reshape(-1).clamp(-1.0, 1.0).cpu().tolist()
+
+
+def _resolve_project_path(context, path):
+    if path.startswith("res://"):
+        project_path = context.project_path if context is not None else ""
+        path = os.path.join(project_path, path.removeprefix("res://"))
+    return path
 
 
 def _clamp(value, lower, upper):
@@ -211,7 +235,7 @@ class Script(gobot.NodeScript):
                 self.command[0],
                 self.command[1],
                 self.command[2],
-                "click 3D Viewer, WASD/QE, Space stop, R reset" if self.policy is not None else "missing res://policies/go1.pt",
+                "click 3D Viewer, WASD/QE, Space stop, R reset" if self.policy is not None else "missing res://policies/go1.onnx",
             )
         )
 
@@ -265,17 +289,48 @@ class Script(gobot.NodeScript):
         if path is None:
             path = DEFAULT_POLICY_PATH
         if not path:
-            print("Go1 RL policy disabled; set GOBOT_GO1_POLICY to a .pt policy to enable playback.")
+            print("Go1 RL policy disabled; set GOBOT_GO1_POLICY to a .onnx or .pt policy to enable playback.")
             return None
-        if path.startswith("res://"):
-            project_path = self.context.project_path if self.context is not None else ""
-            path = os.path.join(project_path, path.removeprefix("res://"))
+        path = _resolve_project_path(self.context, path)
         if not path or not os.path.exists(path):
-            print(f"Go1 RL policy not found at '{path or '<empty>'}'; set GOBOT_GO1_POLICY to a .pt policy.")
+            fallback = _resolve_project_path(self.context, TORCH_POLICY_PATH)
+            if os.path.exists(fallback):
+                print(
+                    "Go1 ONNX policy not found at '{}'. Falling back to '{}' "
+                    "requires torch/rsl-rl-lib from gobot[train].".format(path or "<empty>", fallback)
+                )
+                path = fallback
+            else:
+                print(f"Go1 RL policy not found at '{path or '<empty>'}'; set GOBOT_GO1_POLICY to a .onnx or .pt policy.")
+                return None
+        extension = os.path.splitext(path)[1].lower()
+        if extension == ".onnx":
+            try:
+                print(f"Go1 RL loading ONNX policy: {path}")
+                return OnnxPolicy(path)
+            except ImportError as error:
+                print("Go1 ONNX policy load failed: onnxruntime is required for default policy playback.")
+                print(f"Go1 ONNX import error: {error}")
+                fallback = _resolve_project_path(self.context, TORCH_POLICY_PATH)
+                if os.path.exists(fallback) and path != fallback:
+                    print(f"Go1 RL falling back to Torch checkpoint: {fallback}")
+                    path = fallback
+                    extension = ".pt"
+                else:
+                    return None
+            except Exception as error:
+                print(f"Go1 ONNX policy load failed: {error}")
+                return None
+        if extension != ".pt":
+            print(f"Go1 RL policy format '{extension or '<none>'}' is unsupported; use .onnx or .pt.")
             return None
         try:
-            print(f"Go1 RL loading policy: {path}")
+            print(f"Go1 RL loading Torch policy: {path}")
             return TorchPolicy(path)
+        except ImportError as error:
+            print("Go1 Torch policy load failed: install gobot[train] to use .pt policies.")
+            print(f"Go1 Torch import error: {error}")
+            return None
         except Exception as error:
             print(f"Go1 RL policy load failed: {error}")
             return None
