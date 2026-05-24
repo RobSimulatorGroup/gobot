@@ -15,6 +15,14 @@ def assert_close_tuple(actual, expected):
 
 
 def main():
+    assert gobot.__version__ == gobot._core.__version__
+    assert gobot.version() == gobot.__version__
+    version_info = gobot.version_info()
+    assert version_info["major"] == 0
+    assert version_info["minor"] == 1
+    assert version_info["patch"] == 7
+    assert isinstance(version_info["commit"], str)
+
     infos = gobot.backend_infos()
     assert infos
     assert any(info["name"] == "Null" and info["available"] for info in infos)

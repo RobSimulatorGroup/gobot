@@ -21,6 +21,7 @@
 #include <pybind11/eval.h>
 #include <pybind11/stl.h>
 
+#include "gobot/core/config/engine.hpp"
 #include "gobot/core/config/project_setting.hpp"
 #include "gobot/core/io/python_script.hpp"
 #include "gobot/core/io/resource_loader.hpp"
@@ -1303,6 +1304,19 @@ void RegisterRuntime(py::module_& module) {
 }
 
 void RegisterManualApis(py::module_& module) {
+    module.attr("__version__") = Engine::GetVersionString();
+    module.def("version", []() {
+        return Engine::GetVersionString();
+    });
+    module.def("version_info", []() {
+        py::dict info;
+        info["major"] = GOBOT_VERSION_MAJOR;
+        info["minor"] = GOBOT_VERSION_MINOR;
+        info["patch"] = GOBOT_VERSION_PATCH;
+        info["commit"] = Engine::GetBuildCommit();
+        return info;
+    });
+
     py::exec(R"(
 class NodeScript:
     """Base class for Python scripts attached to Gobot scene nodes."""

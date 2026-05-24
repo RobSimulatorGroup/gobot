@@ -1,5 +1,5 @@
 cmake_minimum_required (VERSION 3.16)
-project (gobot VERSION 0.1.6)
+project (gobot VERSION 0.1.7)
 
 set(CMAKE_POLICY_VERSION_MINIMUM 3.5)
 
@@ -10,6 +10,7 @@ set(CMAKE_POSITION_INDEPENDENT_CODE ON)
 
 set(GOBOT_ROOT_DIR "${CMAKE_CURRENT_SOURCE_DIR}")
 set(GOBOT_VERSION "${PROJECT_VERSION}")
+set(GOBOT_VERSION_COMMIT "" CACHE STRING "Git commit or build identifier embedded in Gobot version output")
 
 option(GOB_BUILD_TESTS "build tests" OFF)
 option(GOB_BUILD_OPENUSD "build OpenUSD scene importer/exporter support" OFF)
@@ -341,7 +342,8 @@ target_compile_definitions(gobot PUBLIC
         GOBOT_VERSION_MAJOR=${PROJECT_VERSION_MAJOR}
         GOBOT_VERSION_MINOR=${PROJECT_VERSION_MINOR}
         GOBOT_VERSION_PATCH=${PROJECT_VERSION_PATCH}
-        GOBOT_VERSION="${PROJECT_VERSION}")
+        GOBOT_VERSION="${PROJECT_VERSION}"
+        GOBOT_VERSION_COMMIT="${GOBOT_VERSION_COMMIT}")
 
 if(GOB_BUILD_OPENUSD)
     target_compile_definitions(gobot PUBLIC GOBOT_HAS_OPENUSD=1)

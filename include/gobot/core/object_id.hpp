@@ -1,6 +1,6 @@
 /*
  * The gobot is a robot simulation platform.
- * Copyright(c) 2021-2022, RobSimulatorGroup, Qiqi Wu<1258552199@qq.com>.
+ * Copyright(c) 2021-2026, RobSimulatorGroup, Qiqi Wu<1258552199@qq.com>.
  * This file is created by Qiqi Wu, 22-12-9
  * SPDX-License-Identifier: Apache-2.0
  */

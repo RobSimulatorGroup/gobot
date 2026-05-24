@@ -1,12 +1,14 @@
 /*
  * The gobot is a robot simulation platform.
- * Copyright(c) 2021-2023, RobSimulatorGroup, Qiqi Wu<1258552199@qq.com>.
+ * Copyright(c) 2021-2026, RobSimulatorGroup, Qiqi Wu<1258552199@qq.com>.
  * This file is created by Qiqi Wu, 23-2-18
  * SPDX-License-Identifier: Apache-2.0
  */
 
 #include "gobot/core/config/engine.hpp"
 #include "gobot/error_macros.hpp"
+
+#include <string>
 
 namespace gobot {
 
@@ -26,10 +28,17 @@ VersionInfo Engine::GetVersionInfo() const {
             static_cast<uint8_t>(GOBOT_VERSION_MAJOR),
             static_cast<uint8_t>(GOBOT_VERSION_MINOR),
             static_cast<uint8_t>(GOBOT_VERSION_PATCH),
-            "",
+            GetBuildCommit(),
     };
 }
 
+std::string Engine::GetVersionString() {
+    return GOBOT_VERSION;
+}
+
+std::string Engine::GetBuildCommit() {
+    return GOBOT_VERSION_COMMIT;
+}
 
 Engine *Engine::GetInstance() {
     ERR_FAIL_COND_V_MSG(s_singleton == nullptr, nullptr, "Must call this after initialize Engine");

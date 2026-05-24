@@ -1,6 +1,6 @@
 /*
  * The gobot is a robot simulation platform.
- * Copyright(c) 2021-2022, RobSimulatorGroup, Yingnan
+ * Copyright(c) 2021-2026, RobSimulatorGroup, Yingnan
  * Wu<wuyingnan@users.noreply.github.com>.
  * distribute verbatim copies of this license
  * allowed.

@@ -1,6 +1,6 @@
 /*
  * The gobot is a robot simulation platform.
- * Copyright(c) 2021-2023, RobSimulatorGroup, Qiqi Wu<1258552199@qq.com>.
+ * Copyright(c) 2021-2026, RobSimulatorGroup, Qiqi Wu<1258552199@qq.com>.
  * This file is created by Qiqi Wu, 23-2-18
  * SPDX-License-Identifier: Apache-2.0
  */
@@ -32,6 +32,8 @@ public:
     FORCE_INLINE void SetTimeScale(double time_scale) { time_scale_ = time_scale; }
 
     [[nodiscard]] VersionInfo GetVersionInfo() const;
+    [[nodiscard]] static std::string GetVersionString();
+    [[nodiscard]] static std::string GetBuildCommit();
 
 
 private:

@@ -1,5 +1,7 @@
 /*
  * The gobot is a robot simulation platform.
+ * Copyright(c) 2021-2026, RobSimulatorGroup, Qiqi Wu<1258552199@qq.com>.
+ * This file is created by Qiqi Wu, 2026-05-24
  * SPDX-License-Identifier: Apache-2.0
  */
 
@@ -38,6 +40,16 @@ bool ShouldPrintPythonLibrary() {
     return printed == nullptr || std::string(printed) != "1";
 }
 
+bool IsInformationalInvocation(int argc, char* argv[]) {
+    for (int index = 1; index < argc; ++index) {
+        const std::string argument = argv[index] != nullptr ? argv[index] : "";
+        if (argument == "--version" || argument == "-h" || argument == "--help") {
+            return true;
+        }
+    }
+    return false;
+}
+
 std::string ResolvePythonLibrary() {
     const char* python_library = std::getenv("GOBOT_PYTHON_LIBRARY");
     if (python_library != nullptr && !std::string(python_library).empty()) {
@@ -57,7 +69,7 @@ int main(int argc, char* argv[]) {
         return 127;
     }
 
-    if (ShouldPrintPythonLibrary()) {
+    if (ShouldPrintPythonLibrary() && !IsInformationalInvocation(argc, argv)) {
         std::cerr << "[gobot] Python library: " << python_library << std::endl;
     }
 

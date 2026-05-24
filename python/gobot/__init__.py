@@ -6,7 +6,7 @@ from . import _core
 from ._core import *  # noqa: F401,F403
 from .scene_helpers import create_cartpole_scene, save_cartpole_scene
 
-__version__ = "0.1.6"
+__version__ = _core.__version__
 
 _node_from_id = _core._node_from_id
 NodeScript = _core.NodeScript

@@ -1,12 +1,13 @@
 /*
  * The gobot is a robot simulation platform.
- * Copyright(c) 2021-2023, RobSimulatorGroup, Qiqi Wu<1258552199@qq.com>.
+ * Copyright(c) 2021-2026, RobSimulatorGroup, Qiqi Wu<1258552199@qq.com>.
  * This file is created by Qiqi Wu, 23-2-11
  * SPDX-License-Identifier: Apache-2.0
  */
 
 
 #include "gobot/drivers/sdl/sdl_window.hpp"
+#include "gobot/core/config/engine.hpp"
 #include "gobot/core/events/window_event.hpp"
 #include "gobot/core/events/mouse_event.hpp"
 #include "gobot/core/events/key_event.hpp"
@@ -38,7 +39,7 @@ namespace gobot {
 
 static const int s_default_width = 1280;
 static const int s_default_height = 720;
-static const char* s_default_window_title = "Gobot";
+static const char* s_default_window_title = "Gobot " GOBOT_VERSION;
 
 float RoundedRectCoverage(float x,
                           float y,

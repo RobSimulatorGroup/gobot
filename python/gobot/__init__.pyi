@@ -26,11 +26,16 @@ from ._core import (
     load_scene,
     save_scene,
     set_project_path,
+    version,
+    version_info,
 )
 from .scene_helpers import create_cartpole_scene, save_cartpole_scene
 
 from . import app, physics, rl, scene, sim
 
 __version__: str
+
+def version() -> str: ...
+def version_info() -> dict[str, int | str]: ...
 
 __all__: list[str]
