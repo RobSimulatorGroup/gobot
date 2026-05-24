@@ -30,9 +30,14 @@ InspectorPanel::~InspectorPanel() {
 }
 
 void InspectorPanel::RebuildInspector(Node* selected) {
-    const std::uint64_t scene_change_version = Editor::GetInstance()->GetSceneChangeVersion();
+    ObjectID selected_id{};
+    if (selected != nullptr) {
+        selected_id = selected->GetInstanceId();
+    }
+
     if (selected == inspected_node_ &&
-        scene_change_version == inspected_scene_change_version_) {
+        selected_id == inspected_node_id_ &&
+        (selected == nullptr || editor_inspector_->GetVariantCache().type == selected->GetType())) {
         return;
     }
 
@@ -42,7 +47,7 @@ void InspectorPanel::RebuildInspector(Node* selected) {
     }
 
     inspected_node_ = selected;
-    inspected_scene_change_version_ = scene_change_version;
+    inspected_node_id_ = selected_id;
     if (!inspected_node_) {
         return;
     }

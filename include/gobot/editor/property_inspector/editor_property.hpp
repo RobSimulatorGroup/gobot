@@ -7,6 +7,8 @@
 
 #pragma once
 
+#include <string>
+
 #include "gobot/scene/imgui_node.hpp"
 #include "gobot/core/types.hpp"
 #include "gobot/editor/property_inspector/variant_data_model.hpp"
@@ -31,6 +33,8 @@ public:
     void SetRightAlignNextColumn(bool right_align_next_column)  {
         right_align_next_column_ = right_align_next_column;
     }
+
+    [[nodiscard]] std::string GetImGuiID(const char* suffix = nullptr) const;
 
 protected:
     TypeCategory type_category_;

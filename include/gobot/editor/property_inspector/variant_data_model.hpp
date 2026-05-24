@@ -38,6 +38,7 @@ public:
     [[nodiscard]] const Type& GetHolderType() const { return variant_cache_.type; }
 
     FORCE_INLINE VariantCache& GetVariantCache() { return variant_cache_; }
+    FORCE_INLINE const VariantCache& GetVariantCache() const { return variant_cache_; }
 
 protected:
 

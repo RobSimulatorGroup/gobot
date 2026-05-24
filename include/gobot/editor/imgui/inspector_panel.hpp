@@ -7,6 +7,7 @@
 
 #pragma once
 
+#include "gobot/core/object_id.hpp"
 #include "gobot/scene/imgui_window.hpp"
 
 class ImGuiTextFilter;
@@ -29,7 +30,7 @@ private:
     void RebuildInspector(Node* selected);
 
     Node* inspected_node_{nullptr};
-    std::uint64_t inspected_scene_change_version_{0};
+    ObjectID inspected_node_id_{};
 
     ImGuiTextFilter* filter_;
 

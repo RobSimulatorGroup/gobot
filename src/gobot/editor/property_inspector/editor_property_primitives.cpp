@@ -178,7 +178,7 @@ bool DrawJointFloatProperty(PropertyDataModel* model, TypeCategory type_category
 
 void EditorPropertyBool::OnImGuiContent() {
     auto value = property_data_model_->GetValue().to_bool();
-    if (ImGui::Checkbox(GetPtrImGuiID(), &value)) {
+    if (ImGui::Checkbox(GetImGuiID().c_str(), &value)) {
         property_data_model_->SetValue(value);
     }
 }
@@ -189,47 +189,47 @@ void EditorPropertyBool::OnImGuiContent() {
 void EditorPropertyInteger::OnImGuiContent() {
     if (type_category_ == TypeCategory::UInt8) {
         auto value = property_data_model_->GetValue().to_uint8();
-        if (InputScalarCommit(GetPtrImGuiID(), ImGuiDataType_U8, &value)) {
+        if (InputScalarCommit(GetImGuiID().c_str(), ImGuiDataType_U8, &value)) {
             property_data_model_->SetValue(value);
         }
     } else if (type_category_ == TypeCategory::UInt16) {
         auto value = property_data_model_->GetValue().to_uint16();
-        if (InputScalarCommit(GetPtrImGuiID(), ImGuiDataType_U16, &value)) {
+        if (InputScalarCommit(GetImGuiID().c_str(), ImGuiDataType_U16, &value)) {
             property_data_model_->SetValue(value);
         }
     } else if (type_category_ == TypeCategory::UInt32) {
         auto value = property_data_model_->GetValue().to_uint32();
-        if (InputScalarCommit(GetPtrImGuiID(), ImGuiDataType_U32, &value)) {
+        if (InputScalarCommit(GetImGuiID().c_str(), ImGuiDataType_U32, &value)) {
             property_data_model_->SetValue(value);
         }
     } else if (type_category_ == TypeCategory::UInt64) {
         auto value = property_data_model_->GetValue().to_uint64();
-        if (InputScalarCommit(GetPtrImGuiID(), ImGuiDataType_U64, &value)) {
+        if (InputScalarCommit(GetImGuiID().c_str(), ImGuiDataType_U64, &value)) {
             property_data_model_->SetValue(value);
         }
     } else if (type_category_ == TypeCategory::Int8) {
         auto value = property_data_model_->GetValue().to_int8();
-        if (InputScalarCommit(GetPtrImGuiID(), ImGuiDataType_S8, &value)) {
+        if (InputScalarCommit(GetImGuiID().c_str(), ImGuiDataType_S8, &value)) {
             property_data_model_->SetValue(value);
         }
     } else if (type_category_ == TypeCategory::Int8) {
         auto value = property_data_model_->GetValue().to_int8();
-        if (InputScalarCommit(GetPtrImGuiID(), ImGuiDataType_S8, &value)) {
+        if (InputScalarCommit(GetImGuiID().c_str(), ImGuiDataType_S8, &value)) {
             property_data_model_->SetValue(value);
         }
     } else if (type_category_ == TypeCategory::Int16) {
         auto value = property_data_model_->GetValue().to_int16();
-        if (InputScalarCommit(GetPtrImGuiID(), ImGuiDataType_S16, &value)) {
+        if (InputScalarCommit(GetImGuiID().c_str(), ImGuiDataType_S16, &value)) {
             property_data_model_->SetValue(value);
         }
     } else if (type_category_ == TypeCategory::Int32) {
         auto value = property_data_model_->GetValue().to_int32();
-        if (InputScalarCommit(GetPtrImGuiID(), ImGuiDataType_S32, &value)) {
+        if (InputScalarCommit(GetImGuiID().c_str(), ImGuiDataType_S32, &value)) {
             property_data_model_->SetValue(value);
         }
     } else if (type_category_ == TypeCategory::Int64) {
         auto value = property_data_model_->GetValue().to_int64();
-        if (InputScalarCommit(GetPtrImGuiID(), ImGuiDataType_S64, &value)) {
+        if (InputScalarCommit(GetImGuiID().c_str(), ImGuiDataType_S64, &value)) {
             property_data_model_->SetValue(value);
         }
     }
@@ -244,12 +244,12 @@ void EditorPropertyFloat::OnImGuiContent() {
 
     if (type_category_ == TypeCategory::Float) {
         auto value = property_data_model_->GetValue().to_float();
-        if (InputScalarCommit(GetPtrImGuiID(), ImGuiDataType_Float, &value, "%.6g")) {
+        if (InputScalarCommit(GetImGuiID().c_str(), ImGuiDataType_Float, &value, "%.6g")) {
             property_data_model_->SetValue(value);
         }
     } else if (type_category_ == TypeCategory::Double) {
         auto value = property_data_model_->GetValue().to_double();
-        if (InputScalarCommit(GetPtrImGuiID(), ImGuiDataType_Double, &value, "%.6g")) {
+        if (InputScalarCommit(GetImGuiID().c_str(), ImGuiDataType_Double, &value, "%.6g")) {
             property_data_model_->SetValue(value);
         }
     }
@@ -408,7 +408,7 @@ EditorPropertyEnum::EditorPropertyEnum(TypeCategory type_category,
 
 void EditorPropertyEnum::OnImGuiContent() {
     auto index = names_map_.at(property_data_model_->GetValue().to_string());
-    if (ImGui::Combo(GetPtrImGuiID(), &index, &names_[0], names_.size())) {
+    if (ImGui::Combo(GetImGuiID().c_str(), &index, &names_[0], names_.size())) {
         std::string changed_name = names_.at(index);
         Variant data(changed_name);
         if (!(data.convert(data_model_->GetValueType()) && property_data_model_->SetValue(data))) {
@@ -421,7 +421,7 @@ void EditorPropertyEnum::OnImGuiContent() {
 
 void EditorPropertyText::OnImGuiContent() {
     auto value = property_data_model_->GetValue().to_string();
-    if (ImGui::InputText(GetPtrImGuiID(), &value)) {
+    if (ImGui::InputText(GetImGuiID().c_str(), &value)) {
         property_data_model_->SetValue(value);
     }
 }
@@ -430,7 +430,7 @@ void EditorPropertyText::OnImGuiContent() {
 
 void EditorPropertyMultilineText::OnImGuiContent() {
     auto value = property_data_model_->GetValue().to_string();
-    if (ImGui::InputTextMultiline(GetPtrImGuiID(), &value, ImVec2(-FLT_MIN, ImGui::GetTextLineHeight() * 6),
+    if (ImGui::InputTextMultiline(GetImGuiID().c_str(), &value, ImVec2(-FLT_MIN, ImGui::GetTextLineHeight() * 6),
                                   ImGuiInputTextFlags_AllowTabInput | ImGuiInputTextFlags_CtrlEnterForNewLine)) {
         property_data_model_->SetValue(value);
     }
@@ -466,7 +466,7 @@ void EditorPropertyColor::OnImGuiContent() {
     color_[1] = color.green();
     color_[2] = color.blue();
     color_[3] = color.alpha();
-    if (ImGui::ColorEdit4(GetPtrImGuiID(), (float*)&color_, ImGuiColorEditFlags_Float)) {
+    if (ImGui::ColorEdit4(GetImGuiID().c_str(), (float*)&color_, ImGuiColorEditFlags_Float)) {
         color.red() = color_[0];
         color.green() = color_[1];
         color.blue() = color_[2];
