@@ -51,6 +51,10 @@ public:
 
     bool SetEditorSceneViewState(const std::string& scene_path, const EditorSceneViewState& state);
 
+    bool CacheEditorSceneViewState(const std::string& scene_path, const EditorSceneViewState& state);
+
+    bool SaveEditorSceneViewState(const std::string& scene_path, const EditorSceneViewState& state);
+
     [[nodiscard]] std::optional<EditorSceneViewState> GetEditorSceneViewState(const std::string& scene_path) const;
 
     bool SaveProjectConfig() const;

@@ -131,3 +131,61 @@ TEST(TestProjectSetting, saves_and_loads_editor_scene_view_state) {
         EXPECT_TRUE(loaded->up.isApprox(state.up, CMP_EPSILON));
     }
 }
+
+TEST(TestProjectSetting, caches_editor_scene_view_state_without_saving_project_file) {
+    const std::filesystem::path project_path =
+            std::filesystem::temp_directory_path() / "gobot_project_settings_scene_view_cache_test";
+    std::error_code error;
+    std::filesystem::remove_all(project_path, error);
+    std::filesystem::create_directories(project_path);
+    {
+        std::ofstream scene(project_path / "main.jscn");
+        scene << "{}";
+    }
+
+    const gobot::EditorSceneViewState cached_state{
+            .eye = gobot::Vector3(1.0, 2.0, 3.0),
+            .at = gobot::Vector3(4.0, 5.0, 6.0),
+            .up = gobot::Vector3(0.0, 0.0, 1.0),
+    };
+    const gobot::EditorSceneViewState saved_state{
+            .eye = gobot::Vector3(7.0, 8.0, 9.0),
+            .at = gobot::Vector3(10.0, 11.0, 12.0),
+            .up = gobot::Vector3(0.0, 1.0, 0.0),
+    };
+
+    {
+        gobot::ProjectSettings project_settings;
+        ASSERT_TRUE(project_settings.SetProjectPath(project_path.string()));
+        ASSERT_TRUE(project_settings.SetMainScenePath("res://main.jscn"));
+        const auto project_config_time = std::filesystem::last_write_time(project_path / "project.gobot", error);
+        ASSERT_FALSE(error);
+
+        ASSERT_TRUE(project_settings.CacheEditorSceneViewState("res://main.jscn", cached_state));
+        std::optional<gobot::EditorSceneViewState> cached =
+                project_settings.GetEditorSceneViewState("res://main.jscn");
+        ASSERT_TRUE(cached.has_value());
+        EXPECT_TRUE(cached->eye.isApprox(cached_state.eye, CMP_EPSILON));
+        EXPECT_EQ(std::filesystem::last_write_time(project_path / "project.gobot", error), project_config_time);
+        ASSERT_FALSE(error);
+    }
+
+    {
+        gobot::ProjectSettings project_settings;
+        ASSERT_TRUE(project_settings.SetProjectPath(project_path.string()));
+        EXPECT_FALSE(project_settings.GetEditorSceneViewState("res://main.jscn").has_value());
+
+        ASSERT_TRUE(project_settings.SaveEditorSceneViewState("res://main.jscn", saved_state));
+    }
+
+    {
+        gobot::ProjectSettings project_settings;
+        ASSERT_TRUE(project_settings.SetProjectPath(project_path.string()));
+        std::optional<gobot::EditorSceneViewState> loaded =
+                project_settings.GetEditorSceneViewState("res://main.jscn");
+        ASSERT_TRUE(loaded.has_value());
+        EXPECT_TRUE(loaded->eye.isApprox(saved_state.eye, CMP_EPSILON));
+        EXPECT_TRUE(loaded->at.isApprox(saved_state.at, CMP_EPSILON));
+        EXPECT_TRUE(loaded->up.isApprox(saved_state.up, CMP_EPSILON));
+    }
+}

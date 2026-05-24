@@ -1,6 +1,7 @@
 import math
 import os
 import random
+from importlib.metadata import PackageNotFoundError, version
 
 import gobot
 
@@ -23,8 +24,37 @@ DISTURBANCE_DURATION_TICKS = 60
 DISTURBANCE_START_TICK = 240
 
 
+def _parse_version_prefix(value):
+    parts = []
+    for part in str(value).split("."):
+        digits = ""
+        for character in part:
+            if not character.isdigit():
+                break
+            digits += character
+        if not digits:
+            break
+        parts.append(int(digits))
+    return tuple(parts)
+
+
+def _check_onnxruntime_version():
+    try:
+        runtime_version = version("onnxruntime")
+    except PackageNotFoundError as error:
+        raise ImportError("onnxruntime is not installed; install gobot or onnxruntime>=1.19.") from error
+
+    parsed_version = _parse_version_prefix(runtime_version)
+    if parsed_version and parsed_version < (1, 19):
+        raise ImportError(
+            f"onnxruntime {runtime_version} is installed; NumPy 2 playback requires onnxruntime>=1.19."
+        )
+
+
 class OnnxPolicy:
     def __init__(self, path):
+        _check_onnxruntime_version()
+
         import numpy as np
         import onnxruntime as ort
 
@@ -285,7 +315,7 @@ class Script(gobot.NodeScript):
                 print(f"CartPole RL loading ONNX policy: {path}")
                 return OnnxPolicy(path)
             except ImportError as error:
-                print("CartPole ONNX policy load failed: onnxruntime is required for default policy playback.")
+                print("CartPole ONNX policy load failed: onnxruntime>=1.19 is required for NumPy 2 policy playback.")
                 print(f"CartPole ONNX import error: {error}")
                 fallback = _resolve_project_path(self.context, TORCH_POLICY_PATH)
                 if os.path.exists(fallback) and path != fallback:

@@ -48,7 +48,36 @@ TEST(TestMeshInstance3D, is_visible_by_default_when_inside_tree) {
     gobot::Object::Delete(tree);
 }
 
-TEST(TestMeshInstance3D, hidden_collision_shapes_are_collected_for_debug_rendering) {
+TEST(TestMeshInstance3D, hidden_parent_excludes_visible_child_mesh_from_render_items) {
+    auto render_server = std::make_unique<gobot::RenderServer>();
+    auto* tree = gobot::Object::New<gobot::SceneTree>(false);
+    tree->Initialize();
+
+    auto* parent = gobot::Object::New<gobot::Node3D>();
+    auto* mesh_instance = gobot::Object::New<gobot::MeshInstance3D>();
+    mesh_instance->SetMesh(gobot::MakeRef<gobot::BoxMesh>());
+    parent->AddChild(mesh_instance, true);
+    tree->GetRoot()->AddChild(parent, true);
+
+    gobot::SceneRenderItems items = gobot::CollectSceneRenderItems(tree->GetRoot());
+    EXPECT_EQ(items.visual_meshes.size(), 1);
+
+    parent->SetVisible(false);
+    EXPECT_TRUE(mesh_instance->IsVisible());
+    EXPECT_FALSE(mesh_instance->IsVisibleInTree());
+
+    items = gobot::CollectSceneRenderItems(tree->GetRoot());
+    EXPECT_TRUE(items.visual_meshes.empty());
+
+    parent->SetVisible(true);
+    mesh_instance->SetVisible(false);
+    items = gobot::CollectSceneRenderItems(tree->GetRoot());
+    EXPECT_TRUE(items.visual_meshes.empty());
+
+    gobot::Object::Delete(tree);
+}
+
+TEST(TestMeshInstance3D, hidden_collision_shapes_are_excluded_from_debug_rendering) {
     auto render_server = std::make_unique<gobot::RenderServer>();
     auto* tree = gobot::Object::New<gobot::SceneTree>(false);
     tree->Initialize();
@@ -59,8 +88,7 @@ TEST(TestMeshInstance3D, hidden_collision_shapes_are_collected_for_debug_renderi
     tree->GetRoot()->AddChild(collision_shape, true);
 
     const gobot::SceneRenderItems items = gobot::CollectSceneRenderItems(tree->GetRoot());
-    ASSERT_EQ(items.collision_shapes.size(), 1);
-    EXPECT_EQ(items.collision_shapes[0].shape.Get(), collision_shape->GetShape().Get());
+    EXPECT_TRUE(items.collision_shapes.empty());
 
     gobot::Object::Delete(tree);
 }

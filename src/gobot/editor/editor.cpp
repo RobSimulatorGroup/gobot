@@ -210,7 +210,7 @@ void Editor::SetSelected(Node* selected) {
 
 bool Editor::SaveEditedScene(const std::string& path) const {
     if (path == current_scene_path_) {
-        SaveCurrentSceneViewState();
+        SaveCurrentSceneViewState(true);
     }
 
     if (edited_scene_ == nullptr || !edited_scene_->SaveToPath(path)) {
@@ -473,7 +473,7 @@ void Editor::UpdatePythonPanelFromSceneRootScript() {
     python_panel_->LoadScript(script->GetPath());
 }
 
-void Editor::SaveCurrentSceneViewState() const {
+void Editor::SaveCurrentSceneViewState(bool persist_to_project) const {
     if (current_scene_path_.empty() || node3d_editor_ == nullptr) {
         return;
     }
@@ -483,7 +483,12 @@ void Editor::SaveCurrentSceneViewState() const {
         return;
     }
 
-    settings->SetEditorSceneViewState(current_scene_path_, node3d_editor_->GetSceneViewState());
+    const EditorSceneViewState state = node3d_editor_->GetSceneViewState();
+    if (persist_to_project) {
+        settings->SaveEditorSceneViewState(current_scene_path_, state);
+    } else {
+        settings->CacheEditorSceneViewState(current_scene_path_, state);
+    }
 }
 
 void Editor::RestoreCurrentSceneViewState() {

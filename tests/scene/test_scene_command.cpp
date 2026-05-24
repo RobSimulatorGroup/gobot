@@ -63,6 +63,24 @@ TEST_F(TestSceneCommand, tracks_dirty_clean_undo_and_redo) {
     EXPECT_TRUE(root->GetPosition().isApprox(gobot::Vector3(1.0, 2.0, 3.0), CMP_EPSILON));
 }
 
+TEST_F(TestSceneCommand, set_node_visible_property_can_undo_and_redo) {
+    root = gobot::Object::New<gobot::Node3D>();
+    root->SetName("root");
+
+    gobot::SceneCommandStack stack;
+    ASSERT_TRUE(stack.Execute(std::make_unique<gobot::SetNodePropertyCommand>(
+            root->GetInstanceId(),
+            "visible",
+            gobot::Variant(false))));
+    EXPECT_FALSE(root->IsVisible());
+
+    ASSERT_TRUE(stack.Undo());
+    EXPECT_TRUE(root->IsVisible());
+
+    ASSERT_TRUE(stack.Redo());
+    EXPECT_FALSE(root->IsVisible());
+}
+
 TEST_F(TestSceneCommand, transaction_undoes_as_one_command) {
     root = gobot::Object::New<gobot::Node3D>();
     root->SetName("root");

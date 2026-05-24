@@ -192,6 +192,11 @@ bool ProjectSettings::SetMainScenePath(const std::string& main_scene_path) {
 
 bool ProjectSettings::SetEditorSceneViewState(const std::string& scene_path,
                                               const EditorSceneViewState& state) {
+    return SaveEditorSceneViewState(scene_path, state);
+}
+
+bool ProjectSettings::CacheEditorSceneViewState(const std::string& scene_path,
+                                                const EditorSceneViewState& state) {
     if (project_path_.empty()) {
         return false;
     }
@@ -202,6 +207,14 @@ bool ProjectSettings::SetEditorSceneViewState(const std::string& scene_path,
     }
 
     editor_scene_view_states_[local_path] = state;
+    return true;
+}
+
+bool ProjectSettings::SaveEditorSceneViewState(const std::string& scene_path,
+                                               const EditorSceneViewState& state) {
+    if (!CacheEditorSceneViewState(scene_path, state)) {
+        return false;
+    }
     return SaveProjectConfig();
 }
 

@@ -173,7 +173,7 @@ private:
 
     void BindEngineContextToEditedScene();
 
-    void SaveCurrentSceneViewState() const;
+    void SaveCurrentSceneViewState(bool persist_to_project = false) const;
 
     void RestoreCurrentSceneViewState();
 

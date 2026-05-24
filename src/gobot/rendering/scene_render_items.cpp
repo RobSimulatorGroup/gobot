@@ -96,7 +96,10 @@ void CollectNodeRenderItems(const Node* node, SceneRenderItems& items) {
     }
 
     const auto* collision_shape = Object::PointerCastTo<CollisionShape3D>(node);
-    if (collision_shape && collision_shape->IsInsideTree() && !collision_shape->IsDisabled()) {
+    if (collision_shape &&
+        collision_shape->IsInsideTree() &&
+        collision_shape->IsVisibleInTree() &&
+        !collision_shape->IsDisabled()) {
         const Ref<Shape3D>& shape = collision_shape->GetShape();
         if (shape.IsValid()) {
             CollisionDebugRenderItem item;

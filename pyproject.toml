@@ -16,8 +16,8 @@ authors = [
     { name = "RobSimulatorGroup" },
 ]
 dependencies = [
-    "numpy>=1.24",
-    "onnxruntime>=1.17",
+    "numpy>=2,<3",
+    "onnxruntime>=1.19",
 ]
 
 [project.optional-dependencies]

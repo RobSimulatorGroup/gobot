@@ -134,3 +134,32 @@ TEST_F(TestNode3D, child_global_transform_follows_parent_local_transform) {
     ASSERT_TRUE(node1_1->GetPosition().isApprox(Vector3(1.0f, 2.0f, 3.0f), CMP_EPSILON));
     ASSERT_TRUE(node1_1->GetGlobalPosition().isApprox(Vector3(21.0f, 7.0f, 2.0f), CMP_EPSILON));
 }
+
+TEST_F(TestNode3D, child_visibility_in_tree_follows_parent_without_changing_local_visibility) {
+    using namespace gobot;
+
+    SceneTree::GetInstance()->GetRoot()->AddChild(node1);
+    node1->SetName("parent");
+    node1_1->SetName("child");
+    node1->AddChild(node1_1);
+
+    EXPECT_TRUE(node1->IsVisible());
+    EXPECT_TRUE(node1_1->IsVisible());
+    EXPECT_TRUE(node1->IsVisibleInTree());
+    EXPECT_TRUE(node1_1->IsVisibleInTree());
+
+    node1->SetVisible(false);
+    EXPECT_FALSE(node1->IsVisible());
+    EXPECT_TRUE(node1_1->IsVisible());
+    EXPECT_FALSE(node1->IsVisibleInTree());
+    EXPECT_FALSE(node1_1->IsVisibleInTree());
+
+    node1->SetVisible(true);
+    EXPECT_TRUE(node1_1->IsVisible());
+    EXPECT_TRUE(node1_1->IsVisibleInTree());
+
+    node1_1->SetVisible(false);
+    EXPECT_TRUE(node1->IsVisibleInTree());
+    EXPECT_FALSE(node1_1->IsVisible());
+    EXPECT_FALSE(node1_1->IsVisibleInTree());
+}

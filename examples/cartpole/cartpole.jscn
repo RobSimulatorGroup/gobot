@@ -1,7 +1,7 @@
 {
     "__EXT_RESOURCES__": [
         {
-            "__ID__": "1_G2Z1Y",
+            "__ID__": "1_a60dZ",
             "__PATH__": "res://scripts/cartpole.py",
             "__TYPE__": "PythonScript"
         }
@@ -46,7 +46,7 @@
                         ]
                     }
                 },
-                "script": "ExtResource(1_G2Z1Y)",
+                "script": "ExtResource(1_a60dZ)",
                 "source_path": "",
                 "visible": true
             },

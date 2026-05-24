@@ -844,8 +844,13 @@ bool SceneEditorPanel::DrawNode(Node* node)
         const bool is_scene_instance = IsSceneInstanceNode(node);
         const bool can_open_scene_instance = is_scene_instance && !scene_instance->GetPath().empty();
         const bool can_open_script = has_script && !python_script->GetPath().empty();
+        auto* node_3d = Object::PointerCastTo<Node3D>(node);
+        const bool has_visibility_toggle = node_3d != nullptr;
+        const bool node_visible = node_3d == nullptr || node_3d->IsVisible();
+        const bool node_visible_in_tree = node_3d == nullptr || node_3d->IsVisibleInTree();
         bool delete_node = false;
         bool script_icon_clicked = false;
+        bool visibility_icon_clicked = false;
 
         ImGui::PushID(node);
 
@@ -867,7 +872,10 @@ bool SceneEditorPanel::DrawNode(Node* node)
             ImGui::PushStyleVar(ImGuiStyleVar_ItemSpacing, { 1.0f, 2.0f });
 
 
-        ImGui::PushStyleColor(ImGuiCol_Text, ImGuiUtilities::GetIconColor());
+        ImGui::PushStyleColor(ImGuiCol_Text,
+                              node_visible_in_tree
+                                      ? ImVec4(ImGuiUtilities::GetIconColor())
+                                      : ImGui::GetStyleColorVec4(ImGuiCol_TextDisabled));
 
         bool node_open = ImGui::TreeNodeEx(node,
                                            node_flags,
@@ -886,8 +894,15 @@ bool SceneEditorPanel::DrawNode(Node* node)
         ImGui::PopStyleColor();
         const bool dropped_resource_on_row = AcceptResourceDropOnNode(node);
         ImGui::SameLine();
-        if(!double_clicked)
+        if(!double_clicked) {
+            if (!node_visible_in_tree) {
+                ImGui::PushStyleColor(ImGuiCol_Text, ImGui::GetStyleColorVec4(ImGuiCol_TextDisabled));
+            }
             ImGui::TextUnformatted(name.c_str());
+            if (!node_visible_in_tree) {
+                ImGui::PopStyleColor();
+            }
+        }
         node_row_rect.Add(ImRect(ImGui::GetItemRectMin(), ImGui::GetItemRectMax()));
         if (!dropped_resource_on_row) {
             AcceptResourceDropOnNode(node);
@@ -895,13 +910,19 @@ bool SceneEditorPanel::DrawNode(Node* node)
 
         const float icon_button_width = ImGui::GetFrameHeight();
         const float button_spacing = ImGui::GetStyle().ItemInnerSpacing.x;
-        const int scene_instance_button_count = is_scene_instance ? (can_delete ? 2 : 1) : 0;
+        const int visibility_button_count = has_visibility_toggle ? 1 : 0;
+        const float visibility_button_width = icon_button_width * static_cast<float>(visibility_button_count);
+        const float visibility_right_padding = visibility_button_count > 0 ? visibility_button_width + button_spacing : 0.0f;
+        const int scene_instance_button_count = is_scene_instance ? 1 : 0;
         const float scene_instance_buttons_width =
                 icon_button_width * static_cast<float>(scene_instance_button_count) +
                 button_spacing * static_cast<float>(std::max(0, scene_instance_button_count - 1));
-        const float script_icon_right_padding = is_scene_instance && scene_instance_button_count > 0
-                                                ? scene_instance_buttons_width + button_spacing
-                                                : 0.0f;
+        const float scene_instance_right_padding = visibility_button_count > 0 ? visibility_right_padding : 0.0f;
+        const float script_icon_right_padding =
+                scene_instance_right_padding +
+                (is_scene_instance && scene_instance_button_count > 0
+                         ? scene_instance_buttons_width + button_spacing
+                         : 0.0f);
         const float row_end_x = ImGui::GetWindowContentRegionMax().x;
 
         if (has_script) {
@@ -930,8 +951,9 @@ bool SceneEditorPanel::DrawNode(Node* node)
         }
 
         if (is_scene_instance) {
-            if (ImGui::GetCursorPosX() + scene_instance_buttons_width < row_end_x - scene_instance_buttons_width) {
-                ImGui::SameLine(row_end_x - scene_instance_buttons_width);
+            const float scene_instance_buttons_x = row_end_x - scene_instance_right_padding - scene_instance_buttons_width;
+            if (ImGui::GetCursorPosX() + scene_instance_buttons_width < scene_instance_buttons_x) {
+                ImGui::SameLine(scene_instance_buttons_x);
             } else {
                 ImGui::SameLine();
             }
@@ -949,13 +971,51 @@ bool SceneEditorPanel::DrawNode(Node* node)
                 ImGui::EndDisabled();
             }
 
-            if (can_delete) {
+        }
+
+        if (has_visibility_toggle) {
+            const float visibility_icon_x = row_end_x - icon_button_width;
+            if (ImGui::GetCursorPosX() + icon_button_width < visibility_icon_x) {
+                ImGui::SameLine(visibility_icon_x);
+            } else {
                 ImGui::SameLine();
-                if (ImGui::SmallButton(ICON_MDI_DELETE "##DeleteSceneInstance")) {
-                    delete_node = true;
+            }
+
+            const char* visibility_icon = ICON_MDI_EYE;
+            if (!node_visible) {
+                visibility_icon = ICON_MDI_EYE_OFF;
+            } else if (!node_visible_in_tree) {
+                visibility_icon = ICON_MDI_EYE_OUTLINE;
+            }
+
+            ImGui::PushStyleColor(ImGuiCol_Button, ImVec4(0, 0, 0, 0));
+            ImGui::PushStyleColor(ImGuiCol_ButtonHovered, ImGui::GetStyleColorVec4(ImGuiCol_HeaderHovered));
+            ImGui::PushStyleColor(ImGuiCol_ButtonActive, ImGui::GetStyleColorVec4(ImGuiCol_HeaderActive));
+            if (!node_visible_in_tree && node_visible) {
+                ImGui::PushStyleColor(ImGuiCol_Text, ImGui::GetStyleColorVec4(ImGuiCol_TextDisabled));
+            }
+            if (ImGui::SmallButton((std::string(visibility_icon) + "##ToggleNodeVisibility").c_str())) {
+                visibility_icon_clicked = true;
+                if (auto* context = editor->GetEngineContext()) {
+                    context->ExecuteSceneCommand(std::make_unique<SetNodePropertyCommand>(
+                            node->GetInstanceId(),
+                            "visible",
+                            Variant(!node_visible)));
                 }
-                if (ImGui::IsItemHovered()) {
-                    ImGui::SetTooltip("Remove scene instance from the current scene");
+                double_clicked_ = nullptr;
+            }
+            if (!node_visible_in_tree && node_visible) {
+                ImGui::PopStyleColor();
+            }
+            ImGui::PopStyleColor(3);
+
+            if (ImGui::IsItemHovered()) {
+                if (!node_visible) {
+                    ImGui::SetTooltip("Show Node");
+                } else if (!node_visible_in_tree) {
+                    ImGui::SetTooltip("Hidden by parent");
+                } else {
+                    ImGui::SetTooltip("Hide Node");
                 }
             }
         }
@@ -1041,12 +1101,12 @@ bool SceneEditorPanel::DrawNode(Node* node)
             ImGui::EndPopup();
         }
 
-        if(!script_icon_clicked && node_row_hovered && ImGui::IsMouseReleased(ImGuiMouseButton_Left) && !delete_node)
+        if(!script_icon_clicked && !visibility_icon_clicked && node_row_hovered && ImGui::IsMouseReleased(ImGuiMouseButton_Left) && !delete_node)
             editor->SetSelected(node);
         else if(double_clicked_ == node && ImGui::IsMouseClicked(ImGuiMouseButton_Left) && !node_row_hovered)
             double_clicked_ = nullptr;
 
-        if(!script_icon_clicked && ImGui::IsMouseDoubleClicked(ImGuiMouseButton_Left) && node_row_hovered) {
+        if(!script_icon_clicked && !visibility_icon_clicked && ImGui::IsMouseDoubleClicked(ImGuiMouseButton_Left) && node_row_hovered) {
             double_clicked_ = node;
             editor->FocusSceneViewerPanel();
         }

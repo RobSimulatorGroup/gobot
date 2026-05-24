@@ -1,12 +1,12 @@
 {
     "__EXT_RESOURCES__": [
         {
-            "__ID__": "2_ogZXO",
+            "__ID__": "2_jeZtP",
             "__PATH__": "res://go1.jscn",
             "__TYPE__": "PackedScene"
         },
         {
-            "__ID__": "1_vDP19",
+            "__ID__": "1_lDckL",
             "__PATH__": "res://scripts/go1.py",
             "__TYPE__": "PythonScript"
         }
@@ -50,7 +50,7 @@
                         ]
                     }
                 },
-                "script": "ExtResource(1_vDP19)",
+                "script": "ExtResource(1_lDckL)",
                 "visible": true
             },
             "type": "Node3D"
@@ -225,7 +225,7 @@
             "type": "CollisionShape3D"
         },
         {
-            "instance": "ExtResource(2_ogZXO)",
+            "instance": "ExtResource(2_jeZtP)",
             "name": "go1",
             "parent": 0,
             "properties": {
