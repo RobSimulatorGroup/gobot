@@ -19,6 +19,7 @@
 #include "gobot/scene/resources/cylinder_shape_3d.hpp"
 #include "gobot/scene/resources/sphere_shape_3d.hpp"
 #include "gobot/scene/robot_3d.hpp"
+#include "gobot/scene/sensor_3d.hpp"
 
 namespace gobot {
 namespace {
@@ -155,6 +156,55 @@ PhysicsShapeSnapshot CaptureShapeSnapshot(const CollisionShape3D* collision_shap
     return snapshot;
 }
 
+std::vector<std::string> ChannelNamesForSensorType(PhysicsSensorType type) {
+    switch (type) {
+        case PhysicsSensorType::IMU:
+            return {
+                    "orientation_w",
+                    "orientation_x",
+                    "orientation_y",
+                    "orientation_z",
+                    "angular_velocity_x",
+                    "angular_velocity_y",
+                    "angular_velocity_z",
+                    "linear_acceleration_x",
+                    "linear_acceleration_y",
+                    "linear_acceleration_z"};
+        case PhysicsSensorType::Contact:
+            return {"contact_strength"};
+        case PhysicsSensorType::Unknown:
+            break;
+    }
+
+    return {};
+}
+
+PhysicsSensorSnapshot CaptureSensorSnapshot(const Sensor3D* sensor,
+                                            const std::string& link_name,
+                                            const Affine3& global_transform) {
+    PhysicsSensorSnapshot snapshot;
+    snapshot.node = sensor;
+    snapshot.name = sensor->GetName();
+    snapshot.link_name = link_name;
+    snapshot.global_transform = global_transform;
+    snapshot.enabled = sensor->IsEnabled();
+    snapshot.sensor_period = sensor->GetSensorPeriod();
+    snapshot.noise_stddev = sensor->GetNoiseStddev();
+    snapshot.visualize_debug = sensor->ShouldVisualizeDebug();
+
+    if (Object::PointerCastTo<IMUSensor3D>(sensor) != nullptr) {
+        snapshot.type = PhysicsSensorType::IMU;
+    } else if (auto* contact_sensor = Object::PointerCastTo<ContactSensor3D>(sensor)) {
+        snapshot.type = PhysicsSensorType::Contact;
+        snapshot.radius = contact_sensor->GetRadius();
+        snapshot.min_threshold = contact_sensor->GetMinThreshold();
+        snapshot.max_threshold = contact_sensor->GetMaxThreshold();
+    }
+
+    snapshot.channel_names = ChannelNamesForSensorType(snapshot.type);
+    return snapshot;
+}
+
 void CollectRobotNodes(const Node* node,
                        PhysicsRobotSnapshot* robot_snapshot,
                        std::vector<PhysicsShapeSnapshot>* loose_collision_shapes,
@@ -184,6 +234,11 @@ void CollectRobotNodes(const Node* node,
                 link_snapshot.collision_shapes.emplace_back(CaptureShapeSnapshot(
                         collision_shape,
                         ResolveNodeGlobalTransform(collision_shape, node_global_transform)));
+            } else if (auto sensor = Object::PointerCastTo<Sensor3D>(node->GetChild(static_cast<int>(i)))) {
+                robot_snapshot->sensors.emplace_back(CaptureSensorSnapshot(
+                        sensor,
+                        link_snapshot.name,
+                        ResolveNodeGlobalTransform(sensor, node_global_transform)));
             }
         }
 
@@ -250,6 +305,7 @@ void CollectSceneNodes(const Node* node,
         }
         snapshot->total_link_count += robot_snapshot.links.size();
         snapshot->total_joint_count += robot_snapshot.joints.size();
+        snapshot->total_sensor_count += robot_snapshot.sensors.size();
         for (const PhysicsLinkSnapshot& link : robot_snapshot.links) {
             snapshot->total_collision_shape_count += link.collision_shapes.size();
         }
@@ -291,6 +347,18 @@ const PhysicsJointState* FindPreviousJointState(const PhysicsRobotState& robot_s
     for (const PhysicsJointState& joint_state : robot_state.joints) {
         if (joint_state.joint_name == joint_name) {
             return &joint_state;
+        }
+    }
+
+    return nullptr;
+}
+
+const PhysicsSensorState* FindPreviousSensorState(const PhysicsRobotState& robot_state,
+                                                  const std::string& sensor_name,
+                                                  const std::string& link_name) {
+    for (const PhysicsSensorState& sensor_state : robot_state.sensors) {
+        if (sensor_state.sensor_name == sensor_name && sensor_state.link_name == link_name) {
+            return &sensor_state;
         }
     }
 
@@ -348,6 +416,19 @@ bool PhysicsWorld::RestoreCompatibleState(const PhysicsSceneState& previous_stat
             joint_state.target_position = previous_joint_state->target_position;
             joint_state.target_velocity = previous_joint_state->target_velocity;
             joint_state.target_effort = previous_joint_state->target_effort;
+        }
+
+        for (PhysicsSensorState& sensor_state : robot_state.sensors) {
+            const PhysicsSensorState* previous_sensor_state =
+                    FindPreviousSensorState(*previous_robot_state,
+                                            sensor_state.sensor_name,
+                                            sensor_state.link_name);
+            if (previous_sensor_state == nullptr || previous_sensor_state->type != sensor_state.type) {
+                continue;
+            }
+
+            sensor_state.values = previous_sensor_state->values;
+            sensor_state.timestamp = previous_sensor_state->timestamp;
         }
     }
 
@@ -747,6 +828,27 @@ PhysicsSceneState PhysicsWorld::MakeSceneStateFromSnapshot() const {
             ++scene_state.total_joint_count;
         }
 
+        for (const PhysicsSensorSnapshot& sensor_snapshot : robot_snapshot.sensors) {
+            PhysicsSensorState sensor_state;
+            sensor_state.node = sensor_snapshot.node;
+            sensor_state.robot_name = robot_snapshot.name;
+            sensor_state.link_name = sensor_snapshot.link_name;
+            sensor_state.sensor_name = sensor_snapshot.name;
+            sensor_state.type = sensor_snapshot.type;
+            sensor_state.enabled = sensor_snapshot.enabled;
+            sensor_state.channel_names = sensor_snapshot.channel_names;
+            sensor_state.values.assign(sensor_state.channel_names.size(), 0.0);
+            if (sensor_snapshot.type == PhysicsSensorType::IMU && sensor_state.values.size() >= 4) {
+                const Quaternion orientation(sensor_snapshot.global_transform.linear());
+                sensor_state.values[0] = orientation.w();
+                sensor_state.values[1] = orientation.x();
+                sensor_state.values[2] = orientation.y();
+                sensor_state.values[3] = orientation.z();
+            }
+            robot_state.sensors.emplace_back(std::move(sensor_state));
+            ++scene_state.total_sensor_count;
+        }
+
         scene_state.robots.emplace_back(std::move(robot_state));
     }
 
@@ -767,6 +869,7 @@ GOBOT_REGISTRATION {
 
     QuickEnumeration_<PhysicsBackendType>("PhysicsBackendType");
     QuickEnumeration_<PhysicsShapeType>("PhysicsShapeType");
+    QuickEnumeration_<PhysicsSensorType>("PhysicsSensorType");
     QuickEnumeration_<PhysicsJointControlMode>("PhysicsJointControlMode");
 
     Class_<PhysicsBackendInfo>("PhysicsBackendInfo")

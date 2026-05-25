@@ -1,5 +1,7 @@
 from ._core import (
     CollisionShape3D,
+    ContactSensor3D,
+    IMUSensor3D,
     Joint3D,
     JointDriveMode,
     JointType,
@@ -11,6 +13,7 @@ from ._core import (
     Robot3D,
     RobotMode,
     Scene,
+    Sensor3D,
     create_box_collision,
     create_box_visual,
     create_node,

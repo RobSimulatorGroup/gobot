@@ -16,6 +16,7 @@
 #include "gobot/scene/node_3d.hpp"
 #include "gobot/scene/resources/primitive_mesh.hpp"
 #include "gobot/scene/robot_3d.hpp"
+#include "gobot/scene/sensor_3d.hpp"
 
 namespace gobot {
 
@@ -145,6 +146,30 @@ void NodeCreationRegistry::EnsureBuiltInNodeTypesRegistered() {
         "Node3D",
         "Robot joint node that connects parent and child links.",
         []() -> Node* { return CreateNodeInstance<Joint3D>(); }
+    });
+
+    RegisterNodeType({
+        "Sensor3D",
+        "Sensor3D",
+        "Node3D",
+        "Base 3D sensor node with backend-neutral sampling properties.",
+        []() -> Node* { return CreateNodeInstance<Sensor3D>(); }
+    });
+
+    RegisterNodeType({
+        "IMUSensor3D",
+        "IMU Sensor",
+        "Sensor3D",
+        "3D inertial sensor node for orientation, angular velocity, and linear acceleration.",
+        []() -> Node* { return CreateNodeInstance<IMUSensor3D>(); }
+    });
+
+    RegisterNodeType({
+        "ContactSensor3D",
+        "Contact Sensor",
+        "Sensor3D",
+        "3D contact sensor node for contact force or touch intensity.",
+        []() -> Node* { return CreateNodeInstance<ContactSensor3D>(); }
     });
 
     RegisterNodeType({

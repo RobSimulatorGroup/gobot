@@ -243,6 +243,23 @@ class MeshInstance3D(Node3D):
     surface_color: tuple[float, float, float, float]
 
 
+class Sensor3D(Node3D):
+    enabled: bool
+    sensor_period: float
+    noise_stddev: float
+    visualize_debug: bool
+
+
+class IMUSensor3D(Sensor3D):
+    pass
+
+
+class ContactSensor3D(Sensor3D):
+    radius: float
+    min_threshold: float
+    max_threshold: float
+
+
 def set_project_path(project_path: str) -> None: ...
 def load_scene(scene_path: str) -> Scene: ...
 def create_node(type_name: str, name: str = "") -> Node: ...

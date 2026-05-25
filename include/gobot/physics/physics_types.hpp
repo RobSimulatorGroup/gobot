@@ -22,6 +22,7 @@ class Joint3D;
 class Link3D;
 class Node3D;
 class Robot3D;
+class Sensor3D;
 
 enum class PhysicsBackendType {
     Null,
@@ -43,6 +44,12 @@ enum class PhysicsShapeType {
 enum class PhysicsLinkRole {
     Physical,
     VirtualRoot
+};
+
+enum class PhysicsSensorType {
+    Unknown,
+    IMU,
+    Contact
 };
 
 struct PhysicsBackendInfo {
@@ -108,6 +115,22 @@ struct PhysicsLinkSnapshot {
     std::vector<PhysicsShapeSnapshot> collision_shapes;
 };
 
+struct PhysicsSensorSnapshot {
+    const Sensor3D* node{nullptr};
+    PhysicsSensorType type{PhysicsSensorType::Unknown};
+    std::string name;
+    std::string link_name;
+    Affine3 global_transform{Affine3::Identity()};
+    bool enabled{true};
+    RealType sensor_period{0.0};
+    RealType noise_stddev{0.0};
+    bool visualize_debug{false};
+    RealType radius{0.0};
+    RealType min_threshold{0.0};
+    RealType max_threshold{0.0};
+    std::vector<std::string> channel_names;
+};
+
 struct PhysicsJointSnapshot {
     const Joint3D* node{nullptr};
     std::string name;
@@ -139,6 +162,7 @@ struct PhysicsRobotSnapshot {
     std::string source_path;
     std::vector<PhysicsLinkSnapshot> links;
     std::vector<PhysicsJointSnapshot> joints;
+    std::vector<PhysicsSensorSnapshot> sensors;
 };
 
 struct PhysicsSceneSnapshot {
@@ -147,6 +171,7 @@ struct PhysicsSceneSnapshot {
     std::size_t total_link_count{0};
     std::size_t total_joint_count{0};
     std::size_t total_collision_shape_count{0};
+    std::size_t total_sensor_count{0};
 };
 
 struct PhysicsJointState {
@@ -183,6 +208,18 @@ struct PhysicsContactState {
     RealType distance{0.0};
 };
 
+struct PhysicsSensorState {
+    const Sensor3D* node{nullptr};
+    std::string robot_name;
+    std::string link_name;
+    std::string sensor_name;
+    PhysicsSensorType type{PhysicsSensorType::Unknown};
+    bool enabled{true};
+    std::vector<RealType> values;
+    std::vector<std::string> channel_names;
+    RealType timestamp{0.0};
+};
+
 struct PhysicsExternalForce {
     std::string robot_name;
     std::string link_name;
@@ -198,6 +235,7 @@ struct PhysicsRobotState {
     std::string name;
     std::vector<PhysicsLinkState> links;
     std::vector<PhysicsJointState> joints;
+    std::vector<PhysicsSensorState> sensors;
 };
 
 struct PhysicsSceneState {
@@ -205,6 +243,7 @@ struct PhysicsSceneState {
     std::vector<PhysicsContactState> contacts;
     std::size_t total_link_count{0};
     std::size_t total_joint_count{0};
+    std::size_t total_sensor_count{0};
 };
 
 } // namespace gobot

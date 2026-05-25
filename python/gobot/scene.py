@@ -2,6 +2,8 @@
 
 from ._core import (
     CollisionShape3D,
+    ContactSensor3D,
+    IMUSensor3D,
     Joint3D,
     JointDriveMode,
     JointType,
@@ -13,6 +15,7 @@ from ._core import (
     Robot3D,
     RobotMode,
     Scene,
+    Sensor3D,
     create_box_collision,
     create_box_visual,
     create_node,
@@ -26,6 +29,8 @@ from .scene_helpers import create_cartpole_scene, save_cartpole_scene
 
 __all__ = [
     "CollisionShape3D",
+    "ContactSensor3D",
+    "IMUSensor3D",
     "Joint3D",
     "JointDriveMode",
     "JointType",
@@ -37,6 +42,7 @@ __all__ = [
     "Robot3D",
     "RobotMode",
     "Scene",
+    "Sensor3D",
     "create_box_collision",
     "create_box_visual",
     "create_cartpole_scene",

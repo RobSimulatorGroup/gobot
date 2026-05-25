@@ -107,7 +107,18 @@ def main():
     link.add_child(collision)
     visual = gobot.create_box_visual("visual", (0.2, 0.3, 0.4))
     link.add_child(visual)
+    imu = gobot.create_node("IMUSensor3D", "imu")
+    imu.sensor_period = 0.01
+    imu.noise_stddev = 0.02
+    link.add_child(imu)
+    contact = gobot.create_node("ContactSensor3D", "foot_contact")
+    contact.radius = 0.05
+    contact.min_threshold = 0.1
+    contact.max_threshold = 10.0
+    link.add_child(contact)
     assert authored.find("link/collision").name == "collision"
+    assert authored.find("link/imu").type == "IMUSensor3D"
+    assert abs(authored.find("link/foot_contact").radius - 0.05) < 1e-6
     assert visual.type == "MeshInstance3D"
 
     context.clear_scene()
@@ -133,6 +144,28 @@ def main():
     assert name_map["robots"][0]["controllable_joint_names"] == ["slider", "hinge"]
     state = context.get_runtime_state()
     assert state["robots"][0]["joints"][0]["name"] == "slider"
+
+    sensor_root = gobot.create_node("Robot3D", "sensor_bot")
+    sensor_link = gobot.create_node("Link3D", "base")
+    sensor_root.add_child(sensor_link)
+    sensor_imu = gobot.create_node("IMUSensor3D", "imu")
+    sensor_link.add_child(sensor_imu)
+    sensor_contact = gobot.create_node("ContactSensor3D", "contact")
+    sensor_link.add_child(sensor_contact)
+    context.clear_scene()
+    gobot.save_scene(sensor_root, "res://gobot_python_binding_sensor_scene.jscn")
+    context.load_scene("res://gobot_python_binding_sensor_scene.jscn")
+    context.build_world(gobot.PhysicsBackendType.Null)
+    sensor_name_map = context.get_runtime_name_map()
+    assert sensor_name_map["total_sensor_count"] == 2
+    assert sensor_name_map["robots"][0]["sensor_names"] == ["imu", "contact"]
+    sensor_state = context.get_runtime_state()
+    sensors = sensor_state["robots"][0]["sensors"]
+    assert sensors[0]["type"] == "imu"
+    assert len(sensors[0]["values"]) == 10
+    assert sensors[1]["type"] == "contact"
+    assert len(sensors[1]["values"]) == 1
+    context.load_scene("res://gobot_python_binding_cartpole.jscn")
 
     env = gobot.rl.ManagerBasedEnv(
         {

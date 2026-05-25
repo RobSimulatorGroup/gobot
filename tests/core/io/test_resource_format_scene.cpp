@@ -19,12 +19,32 @@
 #include <gobot/scene/resources/array_mesh.hpp>
 #include <gobot/scene/resources/packed_scene.hpp>
 #include <gobot/scene/resources/primitive_mesh.hpp>
+#include <gobot/scene/link_3d.hpp>
+#include <gobot/scene/robot_3d.hpp>
+#include <gobot/scene/sensor_3d.hpp>
 #include <gobot/rendering/render_server.hpp>
 #include <gobot/core/types.hpp>
 #include <gobot/log.hpp>
 
 #include <cstdlib>
 #include <fstream>
+
+namespace {
+
+gobot::Json LoadJsonFile(const std::string& path) {
+    std::ifstream input(path);
+    gobot::Json json;
+    input >> json;
+    return json;
+}
+
+gobot::Json CoreSceneJson(gobot::Json json) {
+    json.erase("__SUB_RESOURCES__");
+    json.erase("__EXT_RESOURCES__");
+    return json;
+}
+
+} // namespace
 
 class TestResourceFormatScene : public testing::Test {
 protected:
@@ -48,6 +68,7 @@ protected:
 
     void SetUp() override {
         setenv("HOME", "/tmp/gobot-test-home", 1);
+        std::filesystem::create_directories("/tmp/test_project");
         auto* project_setting = gobot::ProjectSettings::GetInstance();
         project_setting->SetProjectPath("/tmp/test_project");
 
@@ -224,6 +245,128 @@ TEST_F(TestResourceFormatScene, packed_scene_round_trips_collision_shape_resourc
     EXPECT_FLOAT_EQ(instanced_shape->GetHeight(), 2.0f);
 
     gobot::Object::Delete(root);
+    gobot::Object::Delete(instance);
+}
+
+TEST_F(TestResourceFormatScene, packed_scene_round_trips_sensor_nodes_under_link) {
+    auto* robot = gobot::Object::New<gobot::Robot3D>();
+    robot->SetName("SensorBot");
+
+    auto* base_link = gobot::Object::New<gobot::Link3D>();
+    base_link->SetName("base");
+    robot->AddChild(base_link);
+
+    auto* imu = gobot::Object::New<gobot::IMUSensor3D>();
+    imu->SetName("imu");
+    imu->SetPosition({0.1, 0.2, 0.3});
+    imu->SetSensorPeriod(0.005);
+    imu->SetNoiseStddev(0.01);
+    imu->SetVisualizeDebug(true);
+    base_link->AddChild(imu);
+
+    auto* contact = gobot::Object::New<gobot::ContactSensor3D>();
+    contact->SetName("foot_contact");
+    contact->SetEnabled(false);
+    contact->SetRadius(0.04);
+    contact->SetMinThreshold(0.2);
+    contact->SetMaxThreshold(50.0);
+    contact->SetPosition({0.0, 0.0, -0.2});
+    base_link->AddChild(contact);
+
+    gobot::Ref<gobot::PackedScene> packed_scene = gobot::MakeRef<gobot::PackedScene>();
+    ASSERT_TRUE(packed_scene->Pack(robot));
+
+    USING_ENUM_BITWISE_OPERATORS;
+    ASSERT_TRUE(gobot::ResourceSaver::Save(packed_scene, "res://sensor_scene.jscn",
+                                           gobot::ResourceSaverFlags::ReplaceSubResourcePaths |
+                                           gobot::ResourceSaverFlags::ChangePath));
+
+    gobot::Ref<gobot::Resource> loaded_resource = gobot::ResourceLoader::Load(
+            "res://sensor_scene.jscn", "PackedScene", gobot::ResourceFormatLoader::CacheMode::Ignore);
+    ASSERT_TRUE(loaded_resource.IsValid());
+    gobot::Ref<gobot::PackedScene> loaded_scene = gobot::dynamic_pointer_cast<gobot::PackedScene>(loaded_resource);
+    ASSERT_TRUE(loaded_scene.IsValid());
+
+    gobot::Node* instance = loaded_scene->Instantiate();
+    ASSERT_NE(instance, nullptr);
+    auto* loaded_robot = gobot::Object::PointerCastTo<gobot::Robot3D>(instance);
+    ASSERT_NE(loaded_robot, nullptr);
+    ASSERT_EQ(loaded_robot->GetChildCount(), 1);
+
+    auto* loaded_link = gobot::Object::PointerCastTo<gobot::Link3D>(loaded_robot->GetChild(0));
+    ASSERT_NE(loaded_link, nullptr);
+    ASSERT_EQ(loaded_link->GetChildCount(), 2);
+
+    auto* loaded_imu = gobot::Object::PointerCastTo<gobot::IMUSensor3D>(loaded_link->GetChild(0));
+    ASSERT_NE(loaded_imu, nullptr);
+    EXPECT_EQ(loaded_imu->GetName(), "imu");
+    EXPECT_TRUE(loaded_imu->GetPosition().isApprox(gobot::Vector3(0.1, 0.2, 0.3), CMP_EPSILON));
+    EXPECT_NEAR(loaded_imu->GetSensorPeriod(), 0.005, 1.0e-6);
+    EXPECT_NEAR(loaded_imu->GetNoiseStddev(), 0.01, 1.0e-6);
+    EXPECT_TRUE(loaded_imu->ShouldVisualizeDebug());
+
+    auto* loaded_contact = gobot::Object::PointerCastTo<gobot::ContactSensor3D>(loaded_link->GetChild(1));
+    ASSERT_NE(loaded_contact, nullptr);
+    EXPECT_EQ(loaded_contact->GetName(), "foot_contact");
+    EXPECT_FALSE(loaded_contact->IsEnabled());
+    EXPECT_NEAR(loaded_contact->GetRadius(), 0.04, 1.0e-6);
+    EXPECT_NEAR(loaded_contact->GetMinThreshold(), 0.2, 1.0e-6);
+    EXPECT_NEAR(loaded_contact->GetMaxThreshold(), 50.0, 1.0e-6);
+    EXPECT_TRUE(loaded_contact->GetPosition().isApprox(gobot::Vector3(0.0, 0.0, -0.2), CMP_EPSILON));
+
+    gobot::Object::Delete(robot);
+    gobot::Object::Delete(instance);
+}
+
+TEST_F(TestResourceFormatScene, packed_scene_save_load_instantiate_repack_keeps_core_json_semantics) {
+    auto* robot = gobot::Object::New<gobot::Robot3D>();
+    robot->SetName("RoundTripBot");
+
+    auto* base_link = gobot::Object::New<gobot::Link3D>();
+    base_link->SetName("base");
+    base_link->SetPosition({0.1, 0.2, 0.3});
+    robot->AddChild(base_link);
+
+    auto* imu = gobot::Object::New<gobot::IMUSensor3D>();
+    imu->SetName("imu");
+    imu->SetSensorPeriod(0.01);
+    imu->SetNoiseStddev(0.02);
+    base_link->AddChild(imu);
+
+    auto* contact = gobot::Object::New<gobot::ContactSensor3D>();
+    contact->SetName("foot_contact");
+    contact->SetPosition({0.0, 0.0, -0.25});
+    contact->SetRadius(0.05);
+    contact->SetMinThreshold(0.1);
+    contact->SetMaxThreshold(20.0);
+    base_link->AddChild(contact);
+
+    gobot::Ref<gobot::PackedScene> first_pack = gobot::MakeRef<gobot::PackedScene>();
+    ASSERT_TRUE(first_pack->Pack(robot));
+
+    USING_ENUM_BITWISE_OPERATORS;
+    ASSERT_TRUE(gobot::ResourceSaver::Save(first_pack, "res://round_trip_first.jscn",
+                                           gobot::ResourceSaverFlags::ReplaceSubResourcePaths |
+                                           gobot::ResourceSaverFlags::ChangePath));
+
+    gobot::Ref<gobot::PackedScene> loaded_scene = gobot::dynamic_pointer_cast<gobot::PackedScene>(
+            gobot::ResourceLoader::Load("res://round_trip_first.jscn",
+                                        "PackedScene",
+                                        gobot::ResourceFormatLoader::CacheMode::Ignore));
+    ASSERT_TRUE(loaded_scene.IsValid());
+    gobot::Node* instance = loaded_scene->Instantiate();
+    ASSERT_NE(instance, nullptr);
+
+    gobot::Ref<gobot::PackedScene> second_pack = gobot::MakeRef<gobot::PackedScene>();
+    ASSERT_TRUE(second_pack->Pack(instance));
+    ASSERT_TRUE(gobot::ResourceSaver::Save(second_pack, "res://round_trip_second.jscn",
+                                           gobot::ResourceSaverFlags::ReplaceSubResourcePaths |
+                                           gobot::ResourceSaverFlags::ChangePath));
+
+    EXPECT_EQ(CoreSceneJson(LoadJsonFile("/tmp/test_project/round_trip_first.jscn")),
+              CoreSceneJson(LoadJsonFile("/tmp/test_project/round_trip_second.jscn")));
+
+    gobot::Object::Delete(robot);
     gobot::Object::Delete(instance);
 }
 

@@ -10,6 +10,7 @@
 #include <gobot/scene/node_creation_registry.hpp>
 #include <gobot/scene/resources/primitive_mesh.hpp>
 #include <gobot/scene/robot_3d.hpp>
+#include <gobot/scene/sensor_3d.hpp>
 
 namespace {
 
@@ -31,6 +32,9 @@ TEST(TestNodeCreationRegistry, built_in_entries_keep_node_inheritance_shape) {
     const auto* robot = FindEntry("Robot3D");
     const auto* link = FindEntry("Link3D");
     const auto* joint = FindEntry("Joint3D");
+    const auto* sensor = FindEntry("Sensor3D");
+    const auto* imu_sensor = FindEntry("IMUSensor3D");
+    const auto* contact_sensor = FindEntry("ContactSensor3D");
     const auto* mesh_instance = FindEntry("MeshInstance3D");
     const auto* box_mesh = FindEntry("BoxMeshInstance3D");
     const auto* cylinder_mesh = FindEntry("CylinderMeshInstance3D");
@@ -42,6 +46,9 @@ TEST(TestNodeCreationRegistry, built_in_entries_keep_node_inheritance_shape) {
     ASSERT_NE(robot, nullptr);
     ASSERT_NE(link, nullptr);
     ASSERT_NE(joint, nullptr);
+    ASSERT_NE(sensor, nullptr);
+    ASSERT_NE(imu_sensor, nullptr);
+    ASSERT_NE(contact_sensor, nullptr);
     ASSERT_NE(mesh_instance, nullptr);
     ASSERT_NE(box_mesh, nullptr);
     ASSERT_NE(cylinder_mesh, nullptr);
@@ -53,6 +60,9 @@ TEST(TestNodeCreationRegistry, built_in_entries_keep_node_inheritance_shape) {
     EXPECT_EQ(robot->parent_id, "Node3D");
     EXPECT_EQ(link->parent_id, "Node3D");
     EXPECT_EQ(joint->parent_id, "Node3D");
+    EXPECT_EQ(sensor->parent_id, "Node3D");
+    EXPECT_EQ(imu_sensor->parent_id, "Sensor3D");
+    EXPECT_EQ(contact_sensor->parent_id, "Sensor3D");
     EXPECT_EQ(mesh_instance->parent_id, "Node3D");
     EXPECT_EQ(box_mesh->parent_id, "MeshInstance3D");
     EXPECT_EQ(cylinder_mesh->parent_id, "MeshInstance3D");
@@ -74,6 +84,18 @@ TEST(TestNodeCreationRegistry, creates_robot_semantic_nodes) {
     ASSERT_NE(joint_node, nullptr);
     EXPECT_NE(gobot::Object::PointerCastTo<gobot::Joint3D>(joint_node), nullptr);
     gobot::Object::Delete(joint_node);
+}
+
+TEST(TestNodeCreationRegistry, creates_sensor_nodes) {
+    gobot::Node* imu_node = gobot::NodeCreationRegistry::CreateNode("IMUSensor3D");
+    ASSERT_NE(imu_node, nullptr);
+    EXPECT_NE(gobot::Object::PointerCastTo<gobot::IMUSensor3D>(imu_node), nullptr);
+    gobot::Object::Delete(imu_node);
+
+    gobot::Node* contact_node = gobot::NodeCreationRegistry::CreateNode("ContactSensor3D");
+    ASSERT_NE(contact_node, nullptr);
+    EXPECT_NE(gobot::Object::PointerCastTo<gobot::ContactSensor3D>(contact_node), nullptr);
+    gobot::Object::Delete(contact_node);
 }
 
 TEST(TestNodeCreationRegistry, creates_mesh_instance_node) {

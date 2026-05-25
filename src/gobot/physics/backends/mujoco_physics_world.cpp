@@ -280,6 +280,103 @@ Affine3 RelativeTransform(const Affine3& parent, const Affine3& child) {
     return parent.inverse() * child;
 }
 
+std::string SensorSiteName(const std::string& prefix, const PhysicsSensorSnapshot& sensor) {
+    return prefix + sensor.link_name + "_" + sensor.name + "_site";
+}
+
+std::string SensorComponentName(const std::string& prefix,
+                                const PhysicsSensorSnapshot& sensor,
+                                std::string_view component) {
+    return prefix + sensor.link_name + "_" + sensor.name + "_" + std::string(component);
+}
+
+mjsSite* AddSensorSiteToBody(mjsBody* body,
+                             const PhysicsSensorSnapshot& sensor,
+                             const PhysicsLinkSnapshot& link,
+                             const std::string& site_name) {
+    if (!body || !sensor.enabled) {
+        return nullptr;
+    }
+
+    mjsSite* site = mjs_addSite(body, nullptr);
+    if (!site) {
+        return nullptr;
+    }
+
+    mjs_setName(site->element, site_name.c_str());
+    SetMuJoCoVector3(site->pos, RelativeTransform(link.global_transform, sensor.global_transform).translation());
+    SetMuJoCoQuaternion(site->quat, RelativeTransform(link.global_transform, sensor.global_transform).linear());
+    site->type = mjGEOM_SPHERE;
+    const double radius = sensor.radius > 0.0 ? static_cast<double>(sensor.radius) : 0.01;
+    site->size[0] = radius;
+    site->size[1] = radius;
+    site->size[2] = radius;
+    site->rgba[0] = 0.1f;
+    site->rgba[1] = 0.55f;
+    site->rgba[2] = 0.95f;
+    site->rgba[3] = sensor.visualize_debug ? 1.0f : 0.0f;
+    return site;
+}
+
+mjsSensor* AddSiteSensor(mjSpec* spec,
+                         const std::string& sensor_name,
+                         mjtSensor type,
+                         const std::string& site_name,
+                         const PhysicsSensorSnapshot& sensor) {
+    if (!spec) {
+        return nullptr;
+    }
+
+    mjsSensor* mujoco_sensor = mjs_addSensor(spec);
+    if (!mujoco_sensor) {
+        return nullptr;
+    }
+
+    mjs_setName(mujoco_sensor->element, sensor_name.c_str());
+    mujoco_sensor->type = type;
+    mujoco_sensor->objtype = mjOBJ_SITE;
+    mjs_setString(mujoco_sensor->objname, site_name.c_str());
+    mujoco_sensor->noise = sensor.noise_stddev;
+    if (sensor.sensor_period > 0.0) {
+        mujoco_sensor->interval[0] = sensor.sensor_period;
+    }
+    return mujoco_sensor;
+}
+
+void AddSensorToSpec(mjSpec* spec,
+                     mjsBody* body,
+                     const PhysicsSensorSnapshot& sensor,
+                     const PhysicsLinkSnapshot& link,
+                     const std::string& prefix) {
+    if (!spec || !body || !sensor.enabled || sensor.type == PhysicsSensorType::Unknown) {
+        return;
+    }
+
+    const std::string site_name = SensorSiteName(prefix, sensor);
+    if (AddSensorSiteToBody(body, sensor, link, site_name) == nullptr) {
+        return;
+    }
+
+    switch (sensor.type) {
+        case PhysicsSensorType::IMU:
+            AddSiteSensor(spec, SensorComponentName(prefix, sensor, "orientation"), mjSENS_FRAMEQUAT, site_name, sensor);
+            AddSiteSensor(spec, SensorComponentName(prefix, sensor, "angular_velocity"), mjSENS_GYRO, site_name, sensor);
+            AddSiteSensor(spec, SensorComponentName(prefix, sensor, "linear_acceleration"), mjSENS_ACCELEROMETER,
+                          site_name, sensor);
+            break;
+        case PhysicsSensorType::Contact:
+            if (mjsSensor* touch_sensor =
+                        AddSiteSensor(spec, SensorComponentName(prefix, sensor, "contact"), mjSENS_TOUCH, site_name, sensor)) {
+                if (sensor.max_threshold > 0.0) {
+                    touch_sensor->cutoff = static_cast<double>(sensor.max_threshold);
+                }
+            }
+            break;
+        case PhysicsSensorType::Unknown:
+            break;
+    }
+}
+
 bool IsControllableMuJoCoJoint(const PhysicsJointSnapshot& joint) {
     const auto type = static_cast<JointType>(joint.joint_type);
     return type == JointType::Revolute ||
@@ -1263,6 +1360,7 @@ bool MuJoCoPhysicsWorld::LoadModelFromRobotSources() {
     data_ = data;
     BuildLinkBindings();
     BuildJointBindings();
+    BuildSensorBindings();
 
     LOG_INFO("MuJoCo merged physics model loaded: robots={}, nq={}, nv={}, joints={}",
              robot_bindings_.size(),
@@ -1387,6 +1485,12 @@ bool MuJoCoPhysicsWorld::AddAuthoredRobotToSpec(void* parent_spec_ptr,
                                link.collision_shapes[shape_index],
                                link,
                                fmt::format("{}{}_geom_{}", prefix, link.name, shape_index));
+        }
+
+        for (const PhysicsSensorSnapshot& sensor : robot.sensors) {
+            if (sensor.link_name == link.name) {
+                AddSensorToSpec(parent_spec, body, sensor, link, prefix);
+            }
         }
 
         bodies[link.name] = body;
@@ -1624,6 +1728,81 @@ void MuJoCoPhysicsWorld::BuildJointBindings() {
     LOG_INFO("MuJoCo joint bindings built: {} of {} Gobot joints.",
              joint_bindings_.size(),
              scene_state_.total_joint_count);
+}
+
+void MuJoCoPhysicsWorld::BuildSensorBindings() {
+    sensor_bindings_.clear();
+
+    auto* model = static_cast<mjModel*>(model_);
+    if (!model) {
+        return;
+    }
+
+    for (std::size_t robot_index = 0; robot_index < scene_state_.robots.size(); ++robot_index) {
+        PhysicsRobotState& robot_state = scene_state_.robots[robot_index];
+        const std::string prefix = GetRobotPrefix(robot_index);
+        if (prefix.empty()) {
+            LOG_WARN("MuJoCo has no loaded model prefix for Gobot robot '{}'. Its sensors will not be synchronized.",
+                     robot_state.name);
+            continue;
+        }
+
+        if (robot_index >= scene_snapshot_.robots.size()) {
+            continue;
+        }
+
+        const PhysicsRobotSnapshot& robot_snapshot = scene_snapshot_.robots[robot_index];
+        for (std::size_t sensor_index = 0; sensor_index < robot_state.sensors.size(); ++sensor_index) {
+            if (sensor_index >= robot_snapshot.sensors.size()) {
+                continue;
+            }
+
+            const PhysicsSensorSnapshot& sensor_snapshot = robot_snapshot.sensors[sensor_index];
+            if (!sensor_snapshot.enabled) {
+                continue;
+            }
+
+            MuJoCoSensorBinding binding;
+            binding.robot_index = robot_index;
+            binding.sensor_index = sensor_index;
+
+            auto add_component = [&](std::string_view component, std::size_t value_offset) {
+                const std::string component_name = SensorComponentName(prefix, sensor_snapshot, component);
+                const int sensor_id = mj_name2id(model, mjOBJ_SENSOR, component_name.c_str());
+                if (sensor_id < 0) {
+                    LOG_WARN("MuJoCo model does not contain sensor '{}' for Gobot sensor '{}::{}::{}'.",
+                             component_name,
+                             robot_state.name,
+                             sensor_snapshot.link_name,
+                             sensor_snapshot.name);
+                    return;
+                }
+
+                binding.components.push_back({sensor_id, value_offset});
+            };
+
+            switch (sensor_snapshot.type) {
+                case PhysicsSensorType::IMU:
+                    add_component("orientation", 0);
+                    add_component("angular_velocity", 4);
+                    add_component("linear_acceleration", 7);
+                    break;
+                case PhysicsSensorType::Contact:
+                    add_component("contact", 0);
+                    break;
+                case PhysicsSensorType::Unknown:
+                    break;
+            }
+
+            if (!binding.components.empty()) {
+                sensor_bindings_.emplace_back(std::move(binding));
+            }
+        }
+    }
+
+    LOG_INFO("MuJoCo sensor bindings built: {} of {} Gobot sensors.",
+             sensor_bindings_.size(),
+             scene_state_.total_sensor_count);
 }
 
 std::string MuJoCoPhysicsWorld::GetRobotPrefix(std::size_t robot_index) const {
@@ -1872,6 +2051,7 @@ void MuJoCoPhysicsWorld::ApplyExternalForcesToMuJoCo(std::size_t environment_ind
 }
 
 void MuJoCoPhysicsWorld::FreeModel() {
+    sensor_bindings_.clear();
     link_bindings_.clear();
     joint_bindings_.clear();
 
@@ -1993,6 +2173,7 @@ void MuJoCoPhysicsWorld::SyncStateFromMuJoCo(std::size_t environment_index) {
     }
 
     SyncContactsFromMuJoCo(environment_index);
+    SyncSensorsFromMuJoCo(environment_index);
     if (environment_index == 0 && !environment_states_.empty()) {
         environment_states_[0] = scene_state_;
     }
@@ -2148,6 +2329,59 @@ void MuJoCoPhysicsWorld::SyncContactsFromMuJoCo(std::size_t environment_index) {
         if (binding_b != nullptr) {
             add_contact(*binding_b, binding_a, -1.0);
         }
+    }
+}
+
+void MuJoCoPhysicsWorld::SyncSensorsFromMuJoCo(std::size_t environment_index) {
+    auto* model = static_cast<mjModel*>(model_);
+    auto* data = IsEnvironmentIndexValid(environment_index)
+                         ? static_cast<mjData*>(environment_data_[environment_index])
+                         : nullptr;
+    PhysicsSceneState& state = EnvironmentState(environment_index);
+    if (!model || !data) {
+        return;
+    }
+
+    const RealType timestamp = static_cast<RealType>(data->time);
+    for (const MuJoCoSensorBinding& binding : sensor_bindings_) {
+        if (binding.robot_index >= state.robots.size()) {
+            continue;
+        }
+
+        PhysicsRobotState& robot_state = state.robots[binding.robot_index];
+        if (binding.sensor_index >= robot_state.sensors.size()) {
+            continue;
+        }
+
+        PhysicsSensorState& sensor_state = robot_state.sensors[binding.sensor_index];
+        if (!sensor_state.enabled) {
+            continue;
+        }
+
+        for (const MuJoCoSensorComponentBinding& component : binding.components) {
+            const int sensor_id = component.sensor_id;
+            if (sensor_id < 0 || sensor_id >= model->nsensor) {
+                continue;
+            }
+
+            const int address = model->sensor_adr[sensor_id];
+            const int dimension = model->sensor_dim[sensor_id];
+            if (address < 0 || dimension < 0 || address + dimension > model->nsensordata) {
+                continue;
+            }
+
+            const std::size_t value_offset = component.value_offset;
+            const std::size_t writable_count = sensor_state.values.size() > value_offset
+                                                       ? sensor_state.values.size() - value_offset
+                                                       : 0;
+            const std::size_t count = std::min<std::size_t>(static_cast<std::size_t>(dimension), writable_count);
+            for (std::size_t value_index = 0; value_index < count; ++value_index) {
+                sensor_state.values[value_offset + value_index] =
+                        static_cast<RealType>(data->sensordata[address + static_cast<int>(value_index)]);
+            }
+        }
+
+        sensor_state.timestamp = timestamp;
     }
 }
 #endif

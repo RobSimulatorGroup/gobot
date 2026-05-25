@@ -47,6 +47,7 @@
 #include "gobot/scene/robot_3d.hpp"
 #include "gobot/scene/scene_command.hpp"
 #include "gobot/scene/scene_initializer.hpp"
+#include "gobot/scene/sensor_3d.hpp"
 #include "gobot/simulation/simulation_server.hpp"
 
 namespace gobot::python {
@@ -188,6 +189,18 @@ struct PyCollisionShape3DHandle : public PyNode3DHandle {
 
 struct PyMeshInstance3DHandle : public PyNode3DHandle {
     using PyNode3DHandle::PyNode3DHandle;
+};
+
+struct PySensor3DHandle : public PyNode3DHandle {
+    using PyNode3DHandle::PyNode3DHandle;
+};
+
+struct PyIMUSensor3DHandle : public PySensor3DHandle {
+    using PySensor3DHandle::PySensor3DHandle;
+};
+
+struct PyContactSensor3DHandle : public PySensor3DHandle {
+    using PySensor3DHandle::PySensor3DHandle;
 };
 
 std::string ExpectedTypeForNode(Node* node);
@@ -1007,6 +1020,19 @@ std::string PhysicsJointControlModeName(PhysicsJointControlMode mode) {
     return "unknown";
 }
 
+std::string PhysicsSensorTypeName(PhysicsSensorType type) {
+    switch (type) {
+        case PhysicsSensorType::IMU:
+            return "imu";
+        case PhysicsSensorType::Contact:
+            return "contact";
+        case PhysicsSensorType::Unknown:
+            break;
+    }
+
+    return "unknown";
+}
+
 py::dict JointSnapshotToPythonDict(const PhysicsJointSnapshot& joint) {
     py::dict result;
     result["name"] = joint.name;
@@ -1046,6 +1072,24 @@ py::dict LinkSnapshotToPythonDict(const PhysicsLinkSnapshot& link) {
     return result;
 }
 
+py::dict SensorSnapshotToPythonDict(const PhysicsSensorSnapshot& sensor) {
+    py::dict result;
+    result["name"] = sensor.name;
+    result["sensor_name"] = sensor.name;
+    result["link_name"] = sensor.link_name;
+    result["type"] = PhysicsSensorTypeName(sensor.type);
+    result["enabled"] = sensor.enabled;
+    result["sensor_period"] = sensor.sensor_period;
+    result["noise_stddev"] = sensor.noise_stddev;
+    result["visualize_debug"] = sensor.visualize_debug;
+    result["radius"] = sensor.radius;
+    result["min_threshold"] = sensor.min_threshold;
+    result["max_threshold"] = sensor.max_threshold;
+    result["channel_names"] = sensor.channel_names;
+    result["global_transform"] = TransformToPythonDict(sensor.global_transform);
+    return result;
+}
+
 py::dict RuntimeNameMapToPythonDict(const PhysicsSceneSnapshot& snapshot) {
     py::dict result;
     py::list robots;
@@ -1081,6 +1125,15 @@ py::dict RuntimeNameMapToPythonDict(const PhysicsSceneSnapshot& snapshot) {
         robot_dict["joints"] = joints;
         robot_dict["joint_names"] = joint_names;
         robot_dict["controllable_joint_names"] = controllable_joint_names;
+
+        py::list sensors;
+        py::list sensor_names;
+        for (const PhysicsSensorSnapshot& sensor : robot.sensors) {
+            sensors.append(SensorSnapshotToPythonDict(sensor));
+            sensor_names.append(sensor.name);
+        }
+        robot_dict["sensors"] = sensors;
+        robot_dict["sensor_names"] = sensor_names;
         robots.append(robot_dict);
     }
 
@@ -1088,6 +1141,7 @@ py::dict RuntimeNameMapToPythonDict(const PhysicsSceneSnapshot& snapshot) {
     result["total_link_count"] = snapshot.total_link_count;
     result["total_joint_count"] = snapshot.total_joint_count;
     result["total_collision_shape_count"] = snapshot.total_collision_shape_count;
+    result["total_sensor_count"] = snapshot.total_sensor_count;
     return result;
 }
 
@@ -1131,6 +1185,20 @@ py::dict ContactStateToPythonDict(const PhysicsContactState& contact) {
     return result;
 }
 
+py::dict SensorStateToPythonDict(const PhysicsSensorState& sensor) {
+    py::dict result;
+    result["robot_name"] = sensor.robot_name;
+    result["link_name"] = sensor.link_name;
+    result["name"] = sensor.sensor_name;
+    result["sensor_name"] = sensor.sensor_name;
+    result["type"] = PhysicsSensorTypeName(sensor.type);
+    result["enabled"] = sensor.enabled;
+    result["values"] = sensor.values;
+    result["channel_names"] = sensor.channel_names;
+    result["timestamp"] = sensor.timestamp;
+    return result;
+}
+
 py::dict RuntimeStateToPythonDict(const PhysicsSceneState& state) {
     py::dict result;
     py::list robots;
@@ -1149,6 +1217,12 @@ py::dict RuntimeStateToPythonDict(const PhysicsSceneState& state) {
             joints.append(JointStateToPythonDict(joint));
         }
         robot_dict["joints"] = joints;
+
+        py::list sensors;
+        for (const PhysicsSensorState& sensor : robot.sensors) {
+            sensors.append(SensorStateToPythonDict(sensor));
+        }
+        robot_dict["sensors"] = sensors;
         robots.append(robot_dict);
     }
 
@@ -1161,6 +1235,7 @@ py::dict RuntimeStateToPythonDict(const PhysicsSceneState& state) {
     result["contacts"] = contacts;
     result["total_link_count"] = state.total_link_count;
     result["total_joint_count"] = state.total_joint_count;
+    result["total_sensor_count"] = state.total_sensor_count;
     return result;
 }
 
@@ -1238,9 +1313,31 @@ PyMeshInstance3DHandle MakeMeshInstance3DHandle(MeshInstance3D* node,
     return PyMeshInstance3DHandle(node, "MeshInstance3D", ActiveSceneEpoch(), ownership);
 }
 
+PySensor3DHandle MakeSensor3DHandle(Sensor3D* node, PyNodeOwnership ownership = PyNodeOwnership::Borrowed) {
+    return PySensor3DHandle(node, "Sensor3D", ActiveSceneEpoch(), ownership);
+}
+
+PyIMUSensor3DHandle MakeIMUSensor3DHandle(IMUSensor3D* node, PyNodeOwnership ownership = PyNodeOwnership::Borrowed) {
+    return PyIMUSensor3DHandle(node, "IMUSensor3D", ActiveSceneEpoch(), ownership);
+}
+
+PyContactSensor3DHandle MakeContactSensor3DHandle(ContactSensor3D* node,
+                                                  PyNodeOwnership ownership = PyNodeOwnership::Borrowed) {
+    return PyContactSensor3DHandle(node, "ContactSensor3D", ActiveSceneEpoch(), ownership);
+}
+
 PyNodeHandle MakeTypedNodeHandle(Node* node, PyNodeOwnership ownership) {
     if (auto* mesh_instance = Object::PointerCastTo<MeshInstance3D>(node)) {
         return MakeMeshInstance3DHandle(mesh_instance, ownership);
+    }
+    if (auto* contact_sensor = Object::PointerCastTo<ContactSensor3D>(node)) {
+        return MakeContactSensor3DHandle(contact_sensor, ownership);
+    }
+    if (auto* imu_sensor = Object::PointerCastTo<IMUSensor3D>(node)) {
+        return MakeIMUSensor3DHandle(imu_sensor, ownership);
+    }
+    if (auto* sensor = Object::PointerCastTo<Sensor3D>(node)) {
+        return MakeSensor3DHandle(sensor, ownership);
     }
     if (auto* collision_shape = Object::PointerCastTo<CollisionShape3D>(node)) {
         return MakeCollisionShape3DHandle(collision_shape, ownership);
@@ -1263,6 +1360,15 @@ PyNodeHandle MakeTypedNodeHandle(Node* node, PyNodeOwnership ownership) {
 py::object MakeTypedNodeObject(Node* node, PyNodeOwnership ownership) {
     if (auto* mesh_instance = Object::PointerCastTo<MeshInstance3D>(node)) {
         return py::cast(MakeMeshInstance3DHandle(mesh_instance, ownership));
+    }
+    if (auto* contact_sensor = Object::PointerCastTo<ContactSensor3D>(node)) {
+        return py::cast(MakeContactSensor3DHandle(contact_sensor, ownership));
+    }
+    if (auto* imu_sensor = Object::PointerCastTo<IMUSensor3D>(node)) {
+        return py::cast(MakeIMUSensor3DHandle(imu_sensor, ownership));
+    }
+    if (auto* sensor = Object::PointerCastTo<Sensor3D>(node)) {
+        return py::cast(MakeSensor3DHandle(sensor, ownership));
     }
     if (auto* collision_shape = Object::PointerCastTo<CollisionShape3D>(node)) {
         return py::cast(MakeCollisionShape3DHandle(collision_shape, ownership));
@@ -1390,12 +1496,19 @@ class NodeScript:
             py::class_<PyCollisionShape3DHandle, PyNode3DHandle>(module, "CollisionShape3D");
     auto mesh_instance_class =
             py::class_<PyMeshInstance3DHandle, PyNode3DHandle>(module, "MeshInstance3D");
+    auto sensor3d_class = py::class_<PySensor3DHandle, PyNode3DHandle>(module, "Sensor3D");
+    auto imu_sensor3d_class = py::class_<PyIMUSensor3DHandle, PySensor3DHandle>(module, "IMUSensor3D");
+    auto contact_sensor3d_class =
+            py::class_<PyContactSensor3DHandle, PySensor3DHandle>(module, "ContactSensor3D");
 
     py::implicitly_convertible<PyRobot3DHandle, PyNodeHandle>();
     py::implicitly_convertible<PyLink3DHandle, PyNodeHandle>();
     py::implicitly_convertible<PyJoint3DHandle, PyNodeHandle>();
     py::implicitly_convertible<PyCollisionShape3DHandle, PyNodeHandle>();
     py::implicitly_convertible<PyMeshInstance3DHandle, PyNodeHandle>();
+    py::implicitly_convertible<PySensor3DHandle, PyNodeHandle>();
+    py::implicitly_convertible<PyIMUSensor3DHandle, PyNodeHandle>();
+    py::implicitly_convertible<PyContactSensor3DHandle, PyNodeHandle>();
 
     py::class_<EngineContext>(module, "AppContext")
             .def_property_readonly("project_path", &EngineContext::GetProjectPath)
@@ -2102,6 +2215,68 @@ class NodeScript:
                               CollisionShape3D* collision_shape = handle.ResolveAs<CollisionShape3D>();
                               ExecuteSetNodeProperty(collision_shape, "disabled", Variant(disabled));
                           });
+
+    sensor3d_class
+            .def_property("enabled",
+                          [](const PySensor3DHandle& handle) {
+                              return handle.ResolveAs<Sensor3D>()->IsEnabled();
+                          },
+                          [](PySensor3DHandle& handle, bool enabled) {
+                              Sensor3D* sensor = handle.ResolveAs<Sensor3D>();
+                              ExecuteSetNodeProperty(sensor, "enabled", Variant(enabled));
+                          })
+            .def_property("sensor_period",
+                          [](const PySensor3DHandle& handle) {
+                              return handle.ResolveAs<Sensor3D>()->GetSensorPeriod();
+                          },
+                          [](PySensor3DHandle& handle, RealType sensor_period) {
+                              Sensor3D* sensor = handle.ResolveAs<Sensor3D>();
+                              ExecuteSetNodeProperty(sensor, "sensor_period", Variant(sensor_period));
+                          })
+            .def_property("noise_stddev",
+                          [](const PySensor3DHandle& handle) {
+                              return handle.ResolveAs<Sensor3D>()->GetNoiseStddev();
+                          },
+                          [](PySensor3DHandle& handle, RealType noise_stddev) {
+                              Sensor3D* sensor = handle.ResolveAs<Sensor3D>();
+                              ExecuteSetNodeProperty(sensor, "noise_stddev", Variant(noise_stddev));
+                          })
+            .def_property("visualize_debug",
+                          [](const PySensor3DHandle& handle) {
+                              return handle.ResolveAs<Sensor3D>()->ShouldVisualizeDebug();
+                          },
+                          [](PySensor3DHandle& handle, bool visualize_debug) {
+                              Sensor3D* sensor = handle.ResolveAs<Sensor3D>();
+                              ExecuteSetNodeProperty(sensor, "visualize_debug", Variant(visualize_debug));
+                          });
+
+    contact_sensor3d_class
+            .def_property("radius",
+                          [](const PyContactSensor3DHandle& handle) {
+                              return handle.ResolveAs<ContactSensor3D>()->GetRadius();
+                          },
+                          [](PyContactSensor3DHandle& handle, RealType radius) {
+                              ContactSensor3D* sensor = handle.ResolveAs<ContactSensor3D>();
+                              ExecuteSetNodeProperty(sensor, "radius", Variant(radius));
+                          })
+            .def_property("min_threshold",
+                          [](const PyContactSensor3DHandle& handle) {
+                              return handle.ResolveAs<ContactSensor3D>()->GetMinThreshold();
+                          },
+                          [](PyContactSensor3DHandle& handle, RealType min_threshold) {
+                              ContactSensor3D* sensor = handle.ResolveAs<ContactSensor3D>();
+                              ExecuteSetNodeProperty(sensor, "min_threshold", Variant(min_threshold));
+                          })
+            .def_property("max_threshold",
+                          [](const PyContactSensor3DHandle& handle) {
+                              return handle.ResolveAs<ContactSensor3D>()->GetMaxThreshold();
+                          },
+                          [](PyContactSensor3DHandle& handle, RealType max_threshold) {
+                              ContactSensor3D* sensor = handle.ResolveAs<ContactSensor3D>();
+                              ExecuteSetNodeProperty(sensor, "max_threshold", Variant(max_threshold));
+                          });
+
+    GOB_UNUSED(imu_sensor3d_class);
 
     mesh_instance_class
             .def_property("surface_color",

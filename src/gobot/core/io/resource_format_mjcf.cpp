@@ -7,6 +7,7 @@
 #include "gobot/core/io/resource_format_mjcf.hpp"
 
 #include <algorithm>
+#include <array>
 #include <cmath>
 #include <filesystem>
 #include <fstream>
@@ -15,6 +16,7 @@
 #include <sstream>
 #include <string_view>
 #include <unordered_map>
+#include <unordered_set>
 #include <utility>
 #include <vector>
 
@@ -37,6 +39,7 @@
 #include "gobot/scene/resources/packed_scene.hpp"
 #include "gobot/scene/resources/sphere_shape_3d.hpp"
 #include "gobot/scene/robot_3d.hpp"
+#include "gobot/scene/sensor_3d.hpp"
 
 #ifdef GOBOT_HAS_MUJOCO
 #include <mujoco/mujoco.h>
@@ -248,6 +251,183 @@ int FindStandKeyframe(const mjModel* model) {
         }
     }
     return -1;
+}
+
+bool IsImportedIMUSensorType(int sensor_type) {
+    return sensor_type == mjSENS_ACCELEROMETER ||
+           sensor_type == mjSENS_GYRO ||
+           sensor_type == mjSENS_FRAMEQUAT;
+}
+
+bool IsImportedContactSensorType(int sensor_type) {
+    return sensor_type == mjSENS_TOUCH;
+}
+
+std::string TrimIMUSensorComponentSuffix(std::string sensor_name) {
+    if (sensor_name.empty()) {
+        return sensor_name;
+    }
+
+    const std::string lowered = ToLower(sensor_name);
+    const std::array<std::string_view, 8> suffixes = {
+            "_accelerometer",
+            "_accel",
+            "_linear_acceleration",
+            "_gyro",
+            "_angular_velocity",
+            "_framequat",
+            "_orientation",
+            "_quat"};
+
+    for (std::string_view suffix : suffixes) {
+        if (lowered.size() > suffix.size() &&
+            lowered.ends_with(suffix)) {
+            sensor_name.resize(sensor_name.size() - suffix.size());
+            break;
+        }
+    }
+
+    return sensor_name.empty() ? "imu" : sensor_name;
+}
+
+SceneState::NodeData MakeCommonSensorNode(const std::string& type,
+                                          const std::string& name,
+                                          int parent,
+                                          const mjModel* model,
+                                          int site_id,
+                                          const std::vector<int>& sensor_ids) {
+    SceneState::NodeData node_data;
+    node_data.type = type;
+    node_data.name = name;
+    node_data.parent = parent;
+    AddTransformProperties(node_data,
+                           ToVector3(model->site_pos + 3 * site_id),
+                           ToMatrix3FromMuJoCoQuat(model->site_quat + 4 * site_id));
+    AddProperty(node_data, "enabled", true);
+
+    RealType sensor_period = 0.0;
+    RealType noise_stddev = 0.0;
+    for (int sensor_id : sensor_ids) {
+        if (sensor_id < 0 || sensor_id >= model->nsensor) {
+            continue;
+        }
+        const auto period = static_cast<RealType>(model->sensor_interval[2 * sensor_id]);
+        if (period > 0.0 && (sensor_period <= 0.0 || period < sensor_period)) {
+            sensor_period = period;
+        }
+        noise_stddev = std::max(noise_stddev, static_cast<RealType>(model->sensor_noise[sensor_id]));
+    }
+
+    AddProperty(node_data, "sensor_period", sensor_period);
+    AddProperty(node_data, "noise_stddev", noise_stddev);
+    AddProperty(node_data, "visualize_debug", false);
+    return node_data;
+}
+
+std::string MakeIMUSensorName(const mjModel* model, int site_id, const std::vector<int>& sensor_ids) {
+    for (int sensor_id : sensor_ids) {
+        const std::string sensor_name = GetMuJoCoName(model, mjOBJ_SENSOR, sensor_id, "");
+        if (!sensor_name.empty()) {
+            return TrimIMUSensorComponentSuffix(sensor_name);
+        }
+    }
+
+    return GetMuJoCoName(model, mjOBJ_SITE, site_id, fmt::format("site_{}", site_id)) + "_imu";
+}
+
+SceneState::NodeData MakeIMUSensorNode(const mjModel* model,
+                                       int site_id,
+                                       int parent,
+                                       const std::vector<int>& sensor_ids) {
+    return MakeCommonSensorNode("IMUSensor3D",
+                                MakeIMUSensorName(model, site_id, sensor_ids),
+                                parent,
+                                model,
+                                site_id,
+                                sensor_ids);
+}
+
+SceneState::NodeData MakeContactSensorNode(const mjModel* model,
+                                           int site_id,
+                                           int parent,
+                                           const std::vector<int>& sensor_ids) {
+    std::string name;
+    if (!sensor_ids.empty()) {
+        name = GetMuJoCoName(model, mjOBJ_SENSOR, sensor_ids.front(), "");
+    }
+    if (name.empty()) {
+        name = GetMuJoCoName(model, mjOBJ_SITE, site_id, fmt::format("site_{}", site_id)) + "_contact";
+    }
+
+    SceneState::NodeData node_data = MakeCommonSensorNode("ContactSensor3D", name, parent, model, site_id, sensor_ids);
+    const RealType radius = static_cast<RealType>(std::max<mjtNum>(model->site_size[3 * site_id], 0.02));
+    AddProperty(node_data, "radius", radius);
+    AddProperty(node_data, "min_threshold", static_cast<RealType>(0.0));
+    RealType max_threshold = 0.0;
+    for (int sensor_id : sensor_ids) {
+        if (sensor_id >= 0 && sensor_id < model->nsensor && model->sensor_cutoff[sensor_id] > 0.0) {
+            max_threshold = std::max(max_threshold, static_cast<RealType>(model->sensor_cutoff[sensor_id]));
+        }
+    }
+    AddProperty(node_data, "max_threshold", max_threshold);
+    return node_data;
+}
+
+void AddSensorsToSceneState(const Ref<SceneState>& state,
+                            const mjModel* model,
+                            const std::unordered_map<int, int>& body_to_link_node) {
+    if (!state.IsValid() || model == nullptr || model->nsensor <= 0) {
+        return;
+    }
+
+    std::vector<std::vector<int>> imu_sensor_ids_by_site(static_cast<std::size_t>(model->nsite));
+    std::vector<std::vector<int>> contact_sensor_ids_by_site(static_cast<std::size_t>(model->nsite));
+    std::unordered_set<int> warned_sensor_types;
+    for (int sensor_id = 0; sensor_id < model->nsensor; ++sensor_id) {
+        if (model->sensor_objtype[sensor_id] != mjOBJ_SITE ||
+            model->sensor_objid[sensor_id] < 0 ||
+            model->sensor_objid[sensor_id] >= model->nsite) {
+            if (warned_sensor_types.insert(model->sensor_type[sensor_id]).second) {
+                LOG_WARN("MJCF sensor type {} is not imported because it is not attached to a site.",
+                         model->sensor_type[sensor_id]);
+            }
+            continue;
+        }
+
+        const int site_id = model->sensor_objid[sensor_id];
+        if (IsImportedIMUSensorType(model->sensor_type[sensor_id])) {
+            imu_sensor_ids_by_site[static_cast<std::size_t>(site_id)].push_back(sensor_id);
+        } else if (IsImportedContactSensorType(model->sensor_type[sensor_id])) {
+            contact_sensor_ids_by_site[static_cast<std::size_t>(site_id)].push_back(sensor_id);
+        } else if (warned_sensor_types.insert(model->sensor_type[sensor_id]).second) {
+            LOG_WARN("MJCF sensor type {} is not imported as a Gobot sensor node.",
+                     model->sensor_type[sensor_id]);
+        }
+    }
+
+    for (int site_id = 0; site_id < model->nsite; ++site_id) {
+        const std::vector<int>& sensor_ids = imu_sensor_ids_by_site[static_cast<std::size_t>(site_id)];
+        if (sensor_ids.empty()) {
+            continue;
+        }
+        const int body_id = model->site_bodyid[site_id];
+        const auto parent_iter = body_to_link_node.find(body_id);
+        if (parent_iter != body_to_link_node.end()) {
+            state->AddNode(MakeIMUSensorNode(model, site_id, parent_iter->second, sensor_ids));
+        }
+    }
+
+    for (int site_id = 0; site_id < model->nsite; ++site_id) {
+        const std::vector<int>& sensor_ids = contact_sensor_ids_by_site[static_cast<std::size_t>(site_id)];
+        if (sensor_ids.empty()) {
+            continue;
+        }
+        const int body_id = model->site_bodyid[site_id];
+        const auto parent_iter = body_to_link_node.find(body_id);
+        if (parent_iter != body_to_link_node.end()) {
+            state->AddNode(MakeContactSensorNode(model, site_id, parent_iter->second, sensor_ids));
+        }
+    }
 }
 
 void ApplyStandKeyframeToData(const mjModel* model, mjData* data) {
@@ -843,6 +1023,7 @@ Ref<Resource> ResourceFormatLoaderMJCF::Load(const std::string& path,
             state->AddNode(MakeGeomCollisionNode(model.get(), geom_id, link_index));
         }
     }
+    AddSensorsToSceneState(state, model.get(), body_to_link_node);
 
     LOG_INFO("MJCF '{}' generated PackedScene with {} nodes.", path, state->GetNodeCount());
     return packed_scene;

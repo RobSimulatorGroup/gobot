@@ -15,6 +15,7 @@
 #include <gobot/scene/resources/material.hpp>
 #include <gobot/scene/resources/packed_scene.hpp>
 #include <gobot/scene/robot_3d.hpp>
+#include <gobot/scene/sensor_3d.hpp>
 
 namespace {
 
@@ -28,6 +29,23 @@ gobot::Node* FindNodeByName(gobot::Node* node, const std::string& name) {
 
     for (std::size_t i = 0; i < node->GetChildCount(); ++i) {
         if (auto* found = FindNodeByName(node->GetChild(static_cast<int>(i)), name)) {
+            return found;
+        }
+    }
+    return nullptr;
+}
+
+template <typename T>
+T* FindFirstNodeOfType(gobot::Node* node) {
+    if (node == nullptr) {
+        return nullptr;
+    }
+    if (auto* typed_node = gobot::Object::PointerCastTo<T>(node)) {
+        return typed_node;
+    }
+
+    for (std::size_t i = 0; i < node->GetChildCount(); ++i) {
+        if (auto* found = FindFirstNodeOfType<T>(node->GetChild(static_cast<int>(i)))) {
             return found;
         }
     }
@@ -376,6 +394,63 @@ TEST(TestResourceFormatMJCF, imports_capsule_contact_and_position_actuator_seman
     EXPECT_NEAR(collision->GetSolimp()[4], 2.0, 1.0e-9);
     EXPECT_NEAR(collision->GetMargin(), 0.001, 1.0e-9);
     EXPECT_NEAR(collision->GetGap(), 0.0002, 1.0e-9);
+
+    gobot::Object::Delete(root_node);
+}
+
+TEST(TestResourceFormatMJCF, imports_site_imu_and_touch_sensors_as_gobot_sensor_nodes) {
+    if (!gobot::ResourceFormatLoaderMJCF::IsMuJoCoAvailable()) {
+        GTEST_SKIP() << "MuJoCo support is not enabled.";
+    }
+
+    const std::filesystem::path fixture_path =
+            std::filesystem::temp_directory_path() / "gobot_mjcf_sensor_nodes.xml";
+    {
+        std::ofstream file(fixture_path);
+        file << R"(<mujoco model="sensor_bot">
+  <worldbody>
+    <body name="base" pos="0 0 0.3">
+      <freejoint name="floating_base_joint"/>
+      <geom name="base_collision" type="box" size="0.05 0.05 0.05"/>
+      <site name="imu_site" pos="0.1 0.2 0.3" size="0.02"/>
+      <site name="foot_site" pos="0 0 -0.1" size="0.05"/>
+    </body>
+  </worldbody>
+  <sensor>
+    <accelerometer name="imu_accel" site="imu_site" noise="0.01"/>
+    <gyro name="imu_gyro" site="imu_site" noise="0.02"/>
+    <framequat name="imu_orientation" objtype="site" objname="imu_site"/>
+    <touch name="foot_touch" site="foot_site" cutoff="25"/>
+  </sensor>
+</mujoco>
+)";
+    }
+
+    gobot::Ref<gobot::ResourceFormatLoaderMJCF> loader = gobot::MakeRef<gobot::ResourceFormatLoaderMJCF>();
+    gobot::Ref<gobot::PackedScene> packed_scene =
+            gobot::dynamic_pointer_cast<gobot::PackedScene>(loader->Load(fixture_path.string()));
+    ASSERT_TRUE(packed_scene.IsValid());
+
+    gobot::Node* root_node = packed_scene->Instantiate();
+    ASSERT_NE(root_node, nullptr);
+
+    auto* base = gobot::Object::PointerCastTo<gobot::Link3D>(FindNodeByName(root_node, "base"));
+    ASSERT_NE(base, nullptr);
+
+    auto* imu = FindFirstNodeOfType<gobot::IMUSensor3D>(root_node);
+    ASSERT_NE(imu, nullptr);
+    EXPECT_EQ(imu->GetParent(), base);
+    EXPECT_EQ(imu->GetName(), "imu");
+    EXPECT_TRUE(imu->GetPosition().isApprox(gobot::Vector3(0.1, 0.2, 0.3), 1.0e-9));
+    EXPECT_NEAR(imu->GetNoiseStddev(), 0.02, 1.0e-6);
+
+    auto* contact = FindFirstNodeOfType<gobot::ContactSensor3D>(root_node);
+    ASSERT_NE(contact, nullptr);
+    EXPECT_EQ(contact->GetParent(), base);
+    EXPECT_EQ(contact->GetName(), "foot_touch");
+    EXPECT_TRUE(contact->GetPosition().isApprox(gobot::Vector3(0.0, 0.0, -0.1), 1.0e-9));
+    EXPECT_NEAR(contact->GetRadius(), 0.05, 1.0e-6);
+    EXPECT_NEAR(contact->GetMaxThreshold(), 25.0, 1.0e-6);
 
     gobot::Object::Delete(root_node);
 }

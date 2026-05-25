@@ -2,6 +2,7 @@
 
 #include <filesystem>
 #include <fstream>
+#include <cmath>
 
 #include <gobot/physics/physics_server.hpp>
 #include <gobot/scene/collision_shape_3d.hpp>
@@ -11,6 +12,7 @@
 #include <gobot/scene/resources/box_shape_3d.hpp>
 #include <gobot/scene/resources/mesh.hpp>
 #include <gobot/scene/robot_3d.hpp>
+#include <gobot/scene/sensor_3d.hpp>
 
 TEST(TestPhysicsServer, exposes_backend_capabilities_without_optional_dependencies) {
     gobot::PhysicsServer physics_server;
@@ -188,6 +190,68 @@ TEST(TestPhysicsServer, initializes_link_state_from_robot_snapshot) {
     EXPECT_TRUE(state.robots[0].links[0].global_transform.translation().isApprox(
             gobot::Vector3(1.0, 2.0, 3.0), CMP_EPSILON));
     EXPECT_EQ(state.total_link_count, 1);
+
+    gobot::Object::Delete(robot);
+}
+
+TEST(TestPhysicsServer, captures_sensor_nodes_in_snapshot_and_state) {
+    auto* robot = gobot::Object::New<gobot::Robot3D>();
+    robot->SetName("robot");
+
+    auto* base_link = gobot::Object::New<gobot::Link3D>();
+    base_link->SetName("base");
+    base_link->SetPosition({1.0, 2.0, 3.0});
+
+    auto* imu = gobot::Object::New<gobot::IMUSensor3D>();
+    imu->SetName("imu");
+    imu->SetPosition({0.1, 0.2, 0.3});
+    imu->SetSensorPeriod(0.01);
+    imu->SetNoiseStddev(0.02);
+    base_link->AddChild(imu);
+
+    auto* contact = gobot::Object::New<gobot::ContactSensor3D>();
+    contact->SetName("foot_contact");
+    contact->SetPosition({0.0, 0.0, -0.2});
+    contact->SetRadius(0.05);
+    contact->SetMinThreshold(0.1);
+    contact->SetMaxThreshold(100.0);
+    base_link->AddChild(contact);
+    robot->AddChild(base_link);
+
+    gobot::PhysicsServer physics_server;
+    gobot::Ref<gobot::PhysicsWorld> world = physics_server.CreateWorld();
+    ASSERT_TRUE(world->BuildFromScene(robot));
+
+    const gobot::PhysicsSceneSnapshot& snapshot = world->GetSceneSnapshot();
+    ASSERT_EQ(snapshot.robots.size(), 1);
+    ASSERT_EQ(snapshot.robots[0].sensors.size(), 2);
+    EXPECT_EQ(snapshot.total_sensor_count, 2);
+
+    const gobot::PhysicsSensorSnapshot& imu_snapshot = snapshot.robots[0].sensors[0];
+    EXPECT_EQ(imu_snapshot.name, "imu");
+    EXPECT_EQ(imu_snapshot.link_name, "base");
+    EXPECT_EQ(imu_snapshot.type, gobot::PhysicsSensorType::IMU);
+    EXPECT_EQ(imu_snapshot.channel_names.size(), 10);
+    EXPECT_TRUE(imu_snapshot.global_transform.translation().isApprox(
+            gobot::Vector3(1.1, 2.2, 3.3), CMP_EPSILON));
+
+    const gobot::PhysicsSensorSnapshot& contact_snapshot = snapshot.robots[0].sensors[1];
+    EXPECT_EQ(contact_snapshot.name, "foot_contact");
+    EXPECT_EQ(contact_snapshot.type, gobot::PhysicsSensorType::Contact);
+    EXPECT_NEAR(contact_snapshot.radius, 0.05, 1.0e-6);
+    EXPECT_NEAR(contact_snapshot.min_threshold, 0.1, 1.0e-6);
+    EXPECT_NEAR(contact_snapshot.max_threshold, 100.0, 1.0e-6);
+    ASSERT_EQ(contact_snapshot.channel_names.size(), 1);
+    EXPECT_EQ(contact_snapshot.channel_names[0], "contact_strength");
+
+    const gobot::PhysicsSceneState& state = world->GetSceneState();
+    ASSERT_EQ(state.robots.size(), 1);
+    ASSERT_EQ(state.robots[0].sensors.size(), 2);
+    EXPECT_EQ(state.total_sensor_count, 2);
+    ASSERT_EQ(state.robots[0].sensors[0].values.size(), 10);
+    EXPECT_DOUBLE_EQ(state.robots[0].sensors[0].values[0], 1.0);
+    ASSERT_EQ(state.robots[0].sensors[1].values.size(), 1);
+    EXPECT_DOUBLE_EQ(state.robots[0].sensors[1].values[0], 0.0);
 
     gobot::Object::Delete(robot);
 }
@@ -382,6 +446,57 @@ TEST(TestPhysicsServer, mujoco_external_robot_source_keeps_existing_freejoint) {
     ASSERT_EQ(world->GetSceneState().robots.size(), 1);
     ASSERT_EQ(world->GetSceneState().robots[0].joints.size(), 1);
     EXPECT_EQ(world->GetSceneState().robots[0].joints[0].joint_name, "floating_base_joint");
+
+    gobot::Object::Delete(robot);
+#endif
+}
+
+TEST(TestPhysicsServer, mujoco_authored_sensor_nodes_produce_runtime_values) {
+#ifdef GOBOT_HAS_MUJOCO
+    auto* robot = gobot::Object::New<gobot::Robot3D>();
+    robot->SetName("sensor_bot");
+
+    auto* base = gobot::Object::New<gobot::Link3D>();
+    base->SetName("base");
+    base->SetMass(1.0);
+    base->SetCenterOfMass({0.0, 0.0, 0.0});
+    base->SetInertiaDiagonal({0.01, 0.01, 0.01});
+
+    auto* imu = gobot::Object::New<gobot::IMUSensor3D>();
+    imu->SetName("imu");
+    imu->SetPosition({0.0, 0.0, 0.0});
+    base->AddChild(imu);
+
+    auto* contact = gobot::Object::New<gobot::ContactSensor3D>();
+    contact->SetName("contact");
+    contact->SetRadius(0.05);
+    contact->SetPosition({0.0, 0.0, 0.0});
+    base->AddChild(contact);
+    robot->AddChild(base);
+
+    gobot::PhysicsServer physics_server(gobot::PhysicsBackendType::MuJoCoCpu);
+    gobot::Ref<gobot::PhysicsWorld> world = physics_server.CreateWorld();
+    ASSERT_TRUE(world->BuildFromScene(robot)) << world->GetLastError();
+    world->Step(0.002);
+
+    const gobot::PhysicsSceneState& state = world->GetSceneState();
+    ASSERT_EQ(state.robots.size(), 1);
+    ASSERT_EQ(state.robots[0].sensors.size(), 2);
+    EXPECT_EQ(state.total_sensor_count, 2);
+
+    const gobot::PhysicsSensorState& imu_state = state.robots[0].sensors[0];
+    EXPECT_EQ(imu_state.type, gobot::PhysicsSensorType::IMU);
+    ASSERT_EQ(imu_state.values.size(), 10);
+    for (gobot::RealType value : imu_state.values) {
+        EXPECT_TRUE(std::isfinite(value));
+    }
+    EXPECT_GT(imu_state.timestamp, 0.0);
+
+    const gobot::PhysicsSensorState& contact_state = state.robots[0].sensors[1];
+    EXPECT_EQ(contact_state.type, gobot::PhysicsSensorType::Contact);
+    ASSERT_EQ(contact_state.values.size(), 1);
+    EXPECT_TRUE(std::isfinite(contact_state.values[0]));
+    EXPECT_GT(contact_state.timestamp, 0.0);
 
     gobot::Object::Delete(robot);
 #endif

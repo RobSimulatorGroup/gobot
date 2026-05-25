@@ -5,6 +5,7 @@
 #include <gobot/scene/joint_3d.hpp>
 #include <gobot/scene/link_3d.hpp>
 #include <gobot/scene/robot_3d.hpp>
+#include <gobot/scene/sensor_3d.hpp>
 
 TEST(TestRobotNodes, stores_robot_link_and_joint_metadata) {
     auto* robot = gobot::Object::New<gobot::Robot3D>();
@@ -65,6 +66,40 @@ TEST(TestRobotNodes, reflected_properties_are_available) {
     EXPECT_TRUE(gobot::Type::get<gobot::Joint3D>().get_property("upper_limit").is_valid());
     EXPECT_TRUE(gobot::Type::get<gobot::Joint3D>().get_property("effort_limit").is_valid());
     EXPECT_TRUE(gobot::Type::get<gobot::Joint3D>().get_property("velocity_limit").is_valid());
+
+    EXPECT_TRUE(gobot::Type::get<gobot::Sensor3D>().get_property("enabled").is_valid());
+    EXPECT_TRUE(gobot::Type::get<gobot::Sensor3D>().get_property("sensor_period").is_valid());
+    EXPECT_TRUE(gobot::Type::get<gobot::Sensor3D>().get_property("noise_stddev").is_valid());
+    EXPECT_TRUE(gobot::Type::get<gobot::Sensor3D>().get_property("visualize_debug").is_valid());
+    EXPECT_TRUE(gobot::Type::get<gobot::ContactSensor3D>().get_property("radius").is_valid());
+    EXPECT_TRUE(gobot::Type::get<gobot::ContactSensor3D>().get_property("min_threshold").is_valid());
+    EXPECT_TRUE(gobot::Type::get<gobot::ContactSensor3D>().get_property("max_threshold").is_valid());
+}
+
+TEST(TestRobotNodes, stores_sensor_metadata) {
+    auto* imu = gobot::Object::New<gobot::IMUSensor3D>();
+    imu->SetName("imu");
+    imu->SetEnabled(false);
+    imu->SetSensorPeriod(0.01);
+    imu->SetNoiseStddev(0.02);
+    imu->SetVisualizeDebug(true);
+
+    EXPECT_FALSE(imu->IsEnabled());
+    EXPECT_NEAR(imu->GetSensorPeriod(), 0.01, 1.0e-6);
+    EXPECT_NEAR(imu->GetNoiseStddev(), 0.02, 1.0e-6);
+    EXPECT_TRUE(imu->ShouldVisualizeDebug());
+    gobot::Object::Delete(imu);
+
+    auto* contact = gobot::Object::New<gobot::ContactSensor3D>();
+    contact->SetName("foot_contact");
+    contact->SetRadius(0.05);
+    contact->SetMinThreshold(0.1);
+    contact->SetMaxThreshold(100.0);
+
+    EXPECT_NEAR(contact->GetRadius(), 0.05, 1.0e-6);
+    EXPECT_NEAR(contact->GetMinThreshold(), 0.1, 1.0e-6);
+    EXPECT_NEAR(contact->GetMaxThreshold(), 100.0, 1.0e-6);
+    gobot::Object::Delete(contact);
 }
 
 TEST(TestRobotNodes, motion_mode_applies_joint_position_delta_from_entered_pose) {

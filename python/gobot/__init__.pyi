@@ -1,6 +1,8 @@
 from ._core import (
     AppContext,
     CollisionShape3D,
+    ContactSensor3D,
+    IMUSensor3D,
     Joint3D,
     JointControllerGains,
     JointDriveMode,
@@ -16,6 +18,7 @@ from ._core import (
     Robot3D,
     RobotMode,
     Scene,
+    Sensor3D,
     backend_infos,
     create_box_collision,
     create_box_visual,

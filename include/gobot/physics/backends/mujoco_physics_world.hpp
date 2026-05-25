@@ -142,6 +142,8 @@ private:
 
     void BuildJointBindings();
 
+    void BuildSensorBindings();
+
     void BuildLinkBindings();
 
     std::string GetRobotPrefix(std::size_t robot_index) const;
@@ -163,6 +165,8 @@ private:
     void SyncStateToMuJoCo(std::size_t environment_index);
 
     void SyncContactsFromMuJoCo(std::size_t environment_index);
+
+    void SyncSensorsFromMuJoCo(std::size_t environment_index);
 
     struct MuJoCoJointBinding {
         std::size_t robot_index{0};
@@ -186,6 +190,17 @@ private:
         int body_id{-1};
     };
 
+    struct MuJoCoSensorComponentBinding {
+        int sensor_id{-1};
+        std::size_t value_offset{0};
+    };
+
+    struct MuJoCoSensorBinding {
+        std::size_t robot_index{0};
+        std::size_t sensor_index{0};
+        std::vector<MuJoCoSensorComponentBinding> components;
+    };
+
     struct MuJoCoRobotBinding {
         std::size_t robot_index{0};
         std::string prefix;
@@ -202,6 +217,7 @@ private:
     std::vector<MuJoCoRobotBinding> robot_bindings_;
     std::vector<MuJoCoJointBinding> joint_bindings_;
     std::vector<MuJoCoLinkBinding> link_bindings_;
+    std::vector<MuJoCoSensorBinding> sensor_bindings_;
 #endif
 };
 
