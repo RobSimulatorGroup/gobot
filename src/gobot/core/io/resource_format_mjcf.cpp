@@ -256,11 +256,16 @@ int FindStandKeyframe(const mjModel* model) {
 bool IsImportedIMUSensorType(int sensor_type) {
     return sensor_type == mjSENS_ACCELEROMETER ||
            sensor_type == mjSENS_GYRO ||
+           sensor_type == mjSENS_VELOCIMETER ||
            sensor_type == mjSENS_FRAMEQUAT;
 }
 
 bool IsImportedContactSensorType(int sensor_type) {
     return sensor_type == mjSENS_TOUCH;
+}
+
+bool IsImportedAngularMomentumSensorType(int sensor_type) {
+    return sensor_type == mjSENS_SUBTREEANGMOM;
 }
 
 std::string TrimIMUSensorComponentSuffix(std::string sensor_name) {
@@ -269,12 +274,17 @@ std::string TrimIMUSensorComponentSuffix(std::string sensor_name) {
     }
 
     const std::string lowered = ToLower(sensor_name);
-    const std::array<std::string_view, 8> suffixes = {
+    const std::array<std::string_view, 13> suffixes = {
             "_accelerometer",
             "_accel",
             "_linear_acceleration",
+            "_lin_acc",
             "_gyro",
             "_angular_velocity",
+            "_ang_vel",
+            "_velocimeter",
+            "_linear_velocity",
+            "_lin_vel",
             "_framequat",
             "_orientation",
             "_quat"};
@@ -290,6 +300,30 @@ std::string TrimIMUSensorComponentSuffix(std::string sensor_name) {
     return sensor_name.empty() ? "imu" : sensor_name;
 }
 
+std::string TrimAngularMomentumSensorSuffix(std::string sensor_name) {
+    if (sensor_name.empty()) {
+        return sensor_name;
+    }
+
+    const std::string lowered = ToLower(sensor_name);
+    const std::array<std::string_view, 5> suffixes = {
+            "_subtree_angmom",
+            "_subtreeangmom",
+            "_angular_momentum",
+            "_angmom",
+            "_ang_mom"};
+
+    for (std::string_view suffix : suffixes) {
+        if (lowered.size() > suffix.size() &&
+            lowered.ends_with(suffix)) {
+            sensor_name.resize(sensor_name.size() - suffix.size());
+            break;
+        }
+    }
+
+    return sensor_name.empty() ? "angular_momentum" : sensor_name;
+}
+
 SceneState::NodeData MakeCommonSensorNode(const std::string& type,
                                           const std::string& name,
                                           int parent,
@@ -303,6 +337,37 @@ SceneState::NodeData MakeCommonSensorNode(const std::string& type,
     AddTransformProperties(node_data,
                            ToVector3(model->site_pos + 3 * site_id),
                            ToMatrix3FromMuJoCoQuat(model->site_quat + 4 * site_id));
+    AddProperty(node_data, "enabled", true);
+
+    RealType sensor_period = 0.0;
+    RealType noise_stddev = 0.0;
+    for (int sensor_id : sensor_ids) {
+        if (sensor_id < 0 || sensor_id >= model->nsensor) {
+            continue;
+        }
+        const auto period = static_cast<RealType>(model->sensor_interval[2 * sensor_id]);
+        if (period > 0.0 && (sensor_period <= 0.0 || period < sensor_period)) {
+            sensor_period = period;
+        }
+        noise_stddev = std::max(noise_stddev, static_cast<RealType>(model->sensor_noise[sensor_id]));
+    }
+
+    AddProperty(node_data, "sensor_period", sensor_period);
+    AddProperty(node_data, "noise_stddev", noise_stddev);
+    AddProperty(node_data, "visualize_debug", false);
+    return node_data;
+}
+
+SceneState::NodeData MakeCommonSensorNode(const std::string& type,
+                                          const std::string& name,
+                                          int parent,
+                                          const std::vector<int>& sensor_ids,
+                                          const mjModel* model) {
+    SceneState::NodeData node_data;
+    node_data.type = type;
+    node_data.name = name;
+    node_data.parent = parent;
+    AddTransformProperties(node_data, Vector3::Zero(), Matrix3::Identity());
     AddProperty(node_data, "enabled", true);
 
     RealType sensor_period = 0.0;
@@ -373,6 +438,21 @@ SceneState::NodeData MakeContactSensorNode(const mjModel* model,
     return node_data;
 }
 
+SceneState::NodeData MakeAngularMomentumSensorNode(const mjModel* model,
+                                                   int body_id,
+                                                   int parent,
+                                                   const std::vector<int>& sensor_ids) {
+    std::string name;
+    if (!sensor_ids.empty()) {
+        name = TrimAngularMomentumSensorSuffix(GetMuJoCoName(model, mjOBJ_SENSOR, sensor_ids.front(), ""));
+    }
+    if (name.empty()) {
+        name = GetMuJoCoName(model, mjOBJ_BODY, body_id, fmt::format("body_{}", body_id)) + "_angular_momentum";
+    }
+
+    return MakeCommonSensorNode("AngularMomentumSensor3D", name, parent, sensor_ids, model);
+}
+
 void AddSensorsToSceneState(const Ref<SceneState>& state,
                             const mjModel* model,
                             const std::unordered_map<int, int>& body_to_link_node) {
@@ -382,8 +462,17 @@ void AddSensorsToSceneState(const Ref<SceneState>& state,
 
     std::vector<std::vector<int>> imu_sensor_ids_by_site(static_cast<std::size_t>(model->nsite));
     std::vector<std::vector<int>> contact_sensor_ids_by_site(static_cast<std::size_t>(model->nsite));
+    std::vector<std::vector<int>> angular_momentum_sensor_ids_by_body(static_cast<std::size_t>(model->nbody));
     std::unordered_set<int> warned_sensor_types;
     for (int sensor_id = 0; sensor_id < model->nsensor; ++sensor_id) {
+        if (IsImportedAngularMomentumSensorType(model->sensor_type[sensor_id]) &&
+            model->sensor_objtype[sensor_id] == mjOBJ_BODY &&
+            model->sensor_objid[sensor_id] >= 0 &&
+            model->sensor_objid[sensor_id] < model->nbody) {
+            angular_momentum_sensor_ids_by_body[static_cast<std::size_t>(model->sensor_objid[sensor_id])].push_back(sensor_id);
+            continue;
+        }
+
         if (model->sensor_objtype[sensor_id] != mjOBJ_SITE ||
             model->sensor_objid[sensor_id] < 0 ||
             model->sensor_objid[sensor_id] >= model->nsite) {
@@ -402,6 +491,18 @@ void AddSensorsToSceneState(const Ref<SceneState>& state,
         } else if (warned_sensor_types.insert(model->sensor_type[sensor_id]).second) {
             LOG_WARN("MJCF sensor type {} is not imported as a Gobot sensor node.",
                      model->sensor_type[sensor_id]);
+        }
+    }
+
+    for (int body_id = 1; body_id < model->nbody; ++body_id) {
+        const std::vector<int>& sensor_ids =
+                angular_momentum_sensor_ids_by_body[static_cast<std::size_t>(body_id)];
+        if (sensor_ids.empty()) {
+            continue;
+        }
+        const auto parent_iter = body_to_link_node.find(body_id);
+        if (parent_iter != body_to_link_node.end()) {
+            state->AddNode(MakeAngularMomentumSensorNode(model, body_id, parent_iter->second, sensor_ids));
         }
     }
 

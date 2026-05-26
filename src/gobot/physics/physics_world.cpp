@@ -167,9 +167,17 @@ std::vector<std::string> ChannelNamesForSensorType(PhysicsSensorType type) {
                     "angular_velocity_x",
                     "angular_velocity_y",
                     "angular_velocity_z",
+                    "linear_velocity_x",
+                    "linear_velocity_y",
+                    "linear_velocity_z",
                     "linear_acceleration_x",
                     "linear_acceleration_y",
                     "linear_acceleration_z"};
+        case PhysicsSensorType::AngularMomentum:
+            return {
+                    "angular_momentum_x",
+                    "angular_momentum_y",
+                    "angular_momentum_z"};
         case PhysicsSensorType::Contact:
             return {"contact_strength"};
         case PhysicsSensorType::Unknown:
@@ -194,6 +202,8 @@ PhysicsSensorSnapshot CaptureSensorSnapshot(const Sensor3D* sensor,
 
     if (Object::PointerCastTo<IMUSensor3D>(sensor) != nullptr) {
         snapshot.type = PhysicsSensorType::IMU;
+    } else if (Object::PointerCastTo<AngularMomentumSensor3D>(sensor) != nullptr) {
+        snapshot.type = PhysicsSensorType::AngularMomentum;
     } else if (auto* contact_sensor = Object::PointerCastTo<ContactSensor3D>(sensor)) {
         snapshot.type = PhysicsSensorType::Contact;
         snapshot.radius = contact_sensor->GetRadius();

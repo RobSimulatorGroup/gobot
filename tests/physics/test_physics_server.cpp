@@ -209,6 +209,11 @@ TEST(TestPhysicsServer, captures_sensor_nodes_in_snapshot_and_state) {
     imu->SetNoiseStddev(0.02);
     base_link->AddChild(imu);
 
+    auto* angular_momentum = gobot::Object::New<gobot::AngularMomentumSensor3D>();
+    angular_momentum->SetName("root_angmom");
+    angular_momentum->SetSensorPeriod(0.02);
+    base_link->AddChild(angular_momentum);
+
     auto* contact = gobot::Object::New<gobot::ContactSensor3D>();
     contact->SetName("foot_contact");
     contact->SetPosition({0.0, 0.0, -0.2});
@@ -224,18 +229,27 @@ TEST(TestPhysicsServer, captures_sensor_nodes_in_snapshot_and_state) {
 
     const gobot::PhysicsSceneSnapshot& snapshot = world->GetSceneSnapshot();
     ASSERT_EQ(snapshot.robots.size(), 1);
-    ASSERT_EQ(snapshot.robots[0].sensors.size(), 2);
-    EXPECT_EQ(snapshot.total_sensor_count, 2);
+    ASSERT_EQ(snapshot.robots[0].sensors.size(), 3);
+    EXPECT_EQ(snapshot.total_sensor_count, 3);
 
     const gobot::PhysicsSensorSnapshot& imu_snapshot = snapshot.robots[0].sensors[0];
     EXPECT_EQ(imu_snapshot.name, "imu");
     EXPECT_EQ(imu_snapshot.link_name, "base");
     EXPECT_EQ(imu_snapshot.type, gobot::PhysicsSensorType::IMU);
-    EXPECT_EQ(imu_snapshot.channel_names.size(), 10);
+    ASSERT_EQ(imu_snapshot.channel_names.size(), 13);
+    EXPECT_EQ(imu_snapshot.channel_names[7], "linear_velocity_x");
+    EXPECT_EQ(imu_snapshot.channel_names[8], "linear_velocity_y");
+    EXPECT_EQ(imu_snapshot.channel_names[9], "linear_velocity_z");
     EXPECT_TRUE(imu_snapshot.global_transform.translation().isApprox(
             gobot::Vector3(1.1, 2.2, 3.3), CMP_EPSILON));
 
-    const gobot::PhysicsSensorSnapshot& contact_snapshot = snapshot.robots[0].sensors[1];
+    const gobot::PhysicsSensorSnapshot& angular_momentum_snapshot = snapshot.robots[0].sensors[1];
+    EXPECT_EQ(angular_momentum_snapshot.name, "root_angmom");
+    EXPECT_EQ(angular_momentum_snapshot.type, gobot::PhysicsSensorType::AngularMomentum);
+    ASSERT_EQ(angular_momentum_snapshot.channel_names.size(), 3);
+    EXPECT_EQ(angular_momentum_snapshot.channel_names[0], "angular_momentum_x");
+
+    const gobot::PhysicsSensorSnapshot& contact_snapshot = snapshot.robots[0].sensors[2];
     EXPECT_EQ(contact_snapshot.name, "foot_contact");
     EXPECT_EQ(contact_snapshot.type, gobot::PhysicsSensorType::Contact);
     EXPECT_NEAR(contact_snapshot.radius, 0.05, 1.0e-6);
@@ -246,12 +260,13 @@ TEST(TestPhysicsServer, captures_sensor_nodes_in_snapshot_and_state) {
 
     const gobot::PhysicsSceneState& state = world->GetSceneState();
     ASSERT_EQ(state.robots.size(), 1);
-    ASSERT_EQ(state.robots[0].sensors.size(), 2);
-    EXPECT_EQ(state.total_sensor_count, 2);
-    ASSERT_EQ(state.robots[0].sensors[0].values.size(), 10);
+    ASSERT_EQ(state.robots[0].sensors.size(), 3);
+    EXPECT_EQ(state.total_sensor_count, 3);
+    ASSERT_EQ(state.robots[0].sensors[0].values.size(), 13);
     EXPECT_DOUBLE_EQ(state.robots[0].sensors[0].values[0], 1.0);
-    ASSERT_EQ(state.robots[0].sensors[1].values.size(), 1);
-    EXPECT_DOUBLE_EQ(state.robots[0].sensors[1].values[0], 0.0);
+    ASSERT_EQ(state.robots[0].sensors[1].values.size(), 3);
+    ASSERT_EQ(state.robots[0].sensors[2].values.size(), 1);
+    EXPECT_DOUBLE_EQ(state.robots[0].sensors[2].values[0], 0.0);
 
     gobot::Object::Delete(robot);
 }
@@ -467,6 +482,10 @@ TEST(TestPhysicsServer, mujoco_authored_sensor_nodes_produce_runtime_values) {
     imu->SetPosition({0.0, 0.0, 0.0});
     base->AddChild(imu);
 
+    auto* angular_momentum = gobot::Object::New<gobot::AngularMomentumSensor3D>();
+    angular_momentum->SetName("root_angmom");
+    base->AddChild(angular_momentum);
+
     auto* contact = gobot::Object::New<gobot::ContactSensor3D>();
     contact->SetName("contact");
     contact->SetRadius(0.05);
@@ -481,18 +500,26 @@ TEST(TestPhysicsServer, mujoco_authored_sensor_nodes_produce_runtime_values) {
 
     const gobot::PhysicsSceneState& state = world->GetSceneState();
     ASSERT_EQ(state.robots.size(), 1);
-    ASSERT_EQ(state.robots[0].sensors.size(), 2);
-    EXPECT_EQ(state.total_sensor_count, 2);
+    ASSERT_EQ(state.robots[0].sensors.size(), 3);
+    EXPECT_EQ(state.total_sensor_count, 3);
 
     const gobot::PhysicsSensorState& imu_state = state.robots[0].sensors[0];
     EXPECT_EQ(imu_state.type, gobot::PhysicsSensorType::IMU);
-    ASSERT_EQ(imu_state.values.size(), 10);
+    ASSERT_EQ(imu_state.values.size(), 13);
     for (gobot::RealType value : imu_state.values) {
         EXPECT_TRUE(std::isfinite(value));
     }
     EXPECT_GT(imu_state.timestamp, 0.0);
 
-    const gobot::PhysicsSensorState& contact_state = state.robots[0].sensors[1];
+    const gobot::PhysicsSensorState& angular_momentum_state = state.robots[0].sensors[1];
+    EXPECT_EQ(angular_momentum_state.type, gobot::PhysicsSensorType::AngularMomentum);
+    ASSERT_EQ(angular_momentum_state.values.size(), 3);
+    for (gobot::RealType value : angular_momentum_state.values) {
+        EXPECT_TRUE(std::isfinite(value));
+    }
+    EXPECT_GT(angular_momentum_state.timestamp, 0.0);
+
+    const gobot::PhysicsSensorState& contact_state = state.robots[0].sensors[2];
     EXPECT_EQ(contact_state.type, gobot::PhysicsSensorType::Contact);
     ASSERT_EQ(contact_state.values.size(), 1);
     EXPECT_TRUE(std::isfinite(contact_state.values[0]));

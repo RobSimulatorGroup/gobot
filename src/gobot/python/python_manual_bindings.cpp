@@ -199,6 +199,10 @@ struct PyIMUSensor3DHandle : public PySensor3DHandle {
     using PySensor3DHandle::PySensor3DHandle;
 };
 
+struct PyAngularMomentumSensor3DHandle : public PySensor3DHandle {
+    using PySensor3DHandle::PySensor3DHandle;
+};
+
 struct PyContactSensor3DHandle : public PySensor3DHandle {
     using PySensor3DHandle::PySensor3DHandle;
 };
@@ -1024,6 +1028,8 @@ std::string PhysicsSensorTypeName(PhysicsSensorType type) {
     switch (type) {
         case PhysicsSensorType::IMU:
             return "imu";
+        case PhysicsSensorType::AngularMomentum:
+            return "angular_momentum";
         case PhysicsSensorType::Contact:
             return "contact";
         case PhysicsSensorType::Unknown:
@@ -1321,6 +1327,11 @@ PyIMUSensor3DHandle MakeIMUSensor3DHandle(IMUSensor3D* node, PyNodeOwnership own
     return PyIMUSensor3DHandle(node, "IMUSensor3D", ActiveSceneEpoch(), ownership);
 }
 
+PyAngularMomentumSensor3DHandle MakeAngularMomentumSensor3DHandle(AngularMomentumSensor3D* node,
+                                                                  PyNodeOwnership ownership = PyNodeOwnership::Borrowed) {
+    return PyAngularMomentumSensor3DHandle(node, "AngularMomentumSensor3D", ActiveSceneEpoch(), ownership);
+}
+
 PyContactSensor3DHandle MakeContactSensor3DHandle(ContactSensor3D* node,
                                                   PyNodeOwnership ownership = PyNodeOwnership::Borrowed) {
     return PyContactSensor3DHandle(node, "ContactSensor3D", ActiveSceneEpoch(), ownership);
@@ -1332,6 +1343,9 @@ PyNodeHandle MakeTypedNodeHandle(Node* node, PyNodeOwnership ownership) {
     }
     if (auto* contact_sensor = Object::PointerCastTo<ContactSensor3D>(node)) {
         return MakeContactSensor3DHandle(contact_sensor, ownership);
+    }
+    if (auto* angular_momentum_sensor = Object::PointerCastTo<AngularMomentumSensor3D>(node)) {
+        return MakeAngularMomentumSensor3DHandle(angular_momentum_sensor, ownership);
     }
     if (auto* imu_sensor = Object::PointerCastTo<IMUSensor3D>(node)) {
         return MakeIMUSensor3DHandle(imu_sensor, ownership);
@@ -1363,6 +1377,9 @@ py::object MakeTypedNodeObject(Node* node, PyNodeOwnership ownership) {
     }
     if (auto* contact_sensor = Object::PointerCastTo<ContactSensor3D>(node)) {
         return py::cast(MakeContactSensor3DHandle(contact_sensor, ownership));
+    }
+    if (auto* angular_momentum_sensor = Object::PointerCastTo<AngularMomentumSensor3D>(node)) {
+        return py::cast(MakeAngularMomentumSensor3DHandle(angular_momentum_sensor, ownership));
     }
     if (auto* imu_sensor = Object::PointerCastTo<IMUSensor3D>(node)) {
         return py::cast(MakeIMUSensor3DHandle(imu_sensor, ownership));
@@ -1498,6 +1515,8 @@ class NodeScript:
             py::class_<PyMeshInstance3DHandle, PyNode3DHandle>(module, "MeshInstance3D");
     auto sensor3d_class = py::class_<PySensor3DHandle, PyNode3DHandle>(module, "Sensor3D");
     auto imu_sensor3d_class = py::class_<PyIMUSensor3DHandle, PySensor3DHandle>(module, "IMUSensor3D");
+    auto angular_momentum_sensor3d_class =
+            py::class_<PyAngularMomentumSensor3DHandle, PySensor3DHandle>(module, "AngularMomentumSensor3D");
     auto contact_sensor3d_class =
             py::class_<PyContactSensor3DHandle, PySensor3DHandle>(module, "ContactSensor3D");
 
@@ -1508,6 +1527,7 @@ class NodeScript:
     py::implicitly_convertible<PyMeshInstance3DHandle, PyNodeHandle>();
     py::implicitly_convertible<PySensor3DHandle, PyNodeHandle>();
     py::implicitly_convertible<PyIMUSensor3DHandle, PyNodeHandle>();
+    py::implicitly_convertible<PyAngularMomentumSensor3DHandle, PyNodeHandle>();
     py::implicitly_convertible<PyContactSensor3DHandle, PyNodeHandle>();
 
     py::class_<EngineContext>(module, "AppContext")
@@ -2277,6 +2297,7 @@ class NodeScript:
                           });
 
     GOB_UNUSED(imu_sensor3d_class);
+    GOB_UNUSED(angular_momentum_sensor3d_class);
 
     mesh_instance_class
             .def_property("surface_color",

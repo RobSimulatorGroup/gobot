@@ -254,6 +254,10 @@ class IMUSensor3D(Sensor3D):
     pass
 
 
+class AngularMomentumSensor3D(Sensor3D):
+    pass
+
+
 class ContactSensor3D(Sensor3D):
     radius: float
     min_threshold: float

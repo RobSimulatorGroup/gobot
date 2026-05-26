@@ -419,6 +419,7 @@ TEST(TestResourceFormatMJCF, imports_site_imu_and_touch_sensors_as_gobot_sensor_
   <sensor>
     <accelerometer name="imu_accel" site="imu_site" noise="0.01"/>
     <gyro name="imu_gyro" site="imu_site" noise="0.02"/>
+    <velocimeter name="imu_lin_vel" site="imu_site" noise="0.03"/>
     <framequat name="imu_orientation" objtype="site" objname="imu_site"/>
     <touch name="foot_touch" site="foot_site" cutoff="25"/>
   </sensor>
@@ -442,7 +443,7 @@ TEST(TestResourceFormatMJCF, imports_site_imu_and_touch_sensors_as_gobot_sensor_
     EXPECT_EQ(imu->GetParent(), base);
     EXPECT_EQ(imu->GetName(), "imu");
     EXPECT_TRUE(imu->GetPosition().isApprox(gobot::Vector3(0.1, 0.2, 0.3), 1.0e-9));
-    EXPECT_NEAR(imu->GetNoiseStddev(), 0.02, 1.0e-6);
+    EXPECT_NEAR(imu->GetNoiseStddev(), 0.03, 1.0e-6);
 
     auto* contact = FindFirstNodeOfType<gobot::ContactSensor3D>(root_node);
     ASSERT_NE(contact, nullptr);
@@ -451,6 +452,40 @@ TEST(TestResourceFormatMJCF, imports_site_imu_and_touch_sensors_as_gobot_sensor_
     EXPECT_TRUE(contact->GetPosition().isApprox(gobot::Vector3(0.0, 0.0, -0.1), 1.0e-9));
     EXPECT_NEAR(contact->GetRadius(), 0.05, 1.0e-6);
     EXPECT_NEAR(contact->GetMaxThreshold(), 25.0, 1.0e-6);
+
+    gobot::Object::Delete(root_node);
+}
+
+TEST(TestResourceFormatMJCF, imports_go1_imu_velocimeter_as_imu_sensor_node) {
+    if (!gobot::ResourceFormatLoaderMJCF::IsMuJoCoAvailable()) {
+        GTEST_SKIP() << "MuJoCo support is not enabled.";
+    }
+
+    const std::filesystem::path fixture_path =
+            std::filesystem::current_path() / "examples/go1/assets/xml/go1.xml";
+
+    gobot::Ref<gobot::ResourceFormatLoaderMJCF> loader = gobot::MakeRef<gobot::ResourceFormatLoaderMJCF>();
+    gobot::Ref<gobot::PackedScene> packed_scene =
+            gobot::dynamic_pointer_cast<gobot::PackedScene>(loader->Load(fixture_path.string()));
+    ASSERT_TRUE(packed_scene.IsValid());
+
+    gobot::Node* root_node = packed_scene->Instantiate();
+    ASSERT_NE(root_node, nullptr);
+
+    auto* trunk = gobot::Object::PointerCastTo<gobot::Link3D>(FindNodeByName(root_node, "trunk"));
+    ASSERT_NE(trunk, nullptr);
+
+    auto* imu = FindFirstNodeOfType<gobot::IMUSensor3D>(root_node);
+    ASSERT_NE(imu, nullptr);
+    EXPECT_EQ(imu->GetParent(), trunk);
+    EXPECT_EQ(imu->GetName(), "imu");
+    EXPECT_TRUE(imu->GetPosition().isApprox(gobot::Vector3(-0.01592, -0.06659, -0.00617), 1.0e-9));
+
+    auto* angular_momentum = FindFirstNodeOfType<gobot::AngularMomentumSensor3D>(root_node);
+    ASSERT_NE(angular_momentum, nullptr);
+    EXPECT_EQ(angular_momentum->GetParent(), trunk);
+    EXPECT_EQ(angular_momentum->GetName(), "root");
+    EXPECT_TRUE(angular_momentum->GetPosition().isApprox(gobot::Vector3::Zero(), 1.0e-9));
 
     gobot::Object::Delete(root_node);
 }

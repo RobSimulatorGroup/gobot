@@ -160,8 +160,16 @@ void NodeCreationRegistry::EnsureBuiltInNodeTypesRegistered() {
         "IMUSensor3D",
         "IMU Sensor",
         "Sensor3D",
-        "3D inertial sensor node for orientation, angular velocity, and linear acceleration.",
+        "3D inertial sensor node for orientation, angular velocity, linear velocity, and linear acceleration.",
         []() -> Node* { return CreateNodeInstance<IMUSensor3D>(); }
+    });
+
+    RegisterNodeType({
+        "AngularMomentumSensor3D",
+        "Angular Momentum Sensor",
+        "Sensor3D",
+        "3D sensor node for subtree angular momentum.",
+        []() -> Node* { return CreateNodeInstance<AngularMomentumSensor3D>(); }
     });
 
     RegisterNodeType({

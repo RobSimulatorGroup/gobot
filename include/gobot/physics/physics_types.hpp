@@ -49,6 +49,7 @@ enum class PhysicsLinkRole {
 enum class PhysicsSensorType {
     Unknown,
     IMU,
+    AngularMomentum,
     Contact
 };
 

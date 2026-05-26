@@ -1,6 +1,7 @@
 """Scene binding exports."""
 
 from ._core import (
+    AngularMomentumSensor3D,
     CollisionShape3D,
     ContactSensor3D,
     IMUSensor3D,
@@ -28,6 +29,7 @@ from ._core import (
 from .scene_helpers import create_cartpole_scene, save_cartpole_scene
 
 __all__ = [
+    "AngularMomentumSensor3D",
     "CollisionShape3D",
     "ContactSensor3D",
     "IMUSensor3D",

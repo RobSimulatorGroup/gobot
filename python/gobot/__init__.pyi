@@ -1,4 +1,5 @@
 from ._core import (
+    AngularMomentumSensor3D,
     AppContext,
     CollisionShape3D,
     ContactSensor3D,

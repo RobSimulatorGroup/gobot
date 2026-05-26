@@ -46,6 +46,13 @@ public:
     IMUSensor3D() = default;
 };
 
+class GOBOT_EXPORT AngularMomentumSensor3D : public Sensor3D {
+    GOBCLASS(AngularMomentumSensor3D, Sensor3D)
+
+public:
+    AngularMomentumSensor3D() = default;
+};
+
 class GOBOT_EXPORT ContactSensor3D : public Sensor3D {
     GOBCLASS(ContactSensor3D, Sensor3D)
 

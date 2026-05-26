@@ -343,6 +343,31 @@ mjsSensor* AddSiteSensor(mjSpec* spec,
     return mujoco_sensor;
 }
 
+mjsSensor* AddBodySensor(mjSpec* spec,
+                         const std::string& sensor_name,
+                         mjtSensor type,
+                         const std::string& body_name,
+                         const PhysicsSensorSnapshot& sensor) {
+    if (!spec) {
+        return nullptr;
+    }
+
+    mjsSensor* mujoco_sensor = mjs_addSensor(spec);
+    if (!mujoco_sensor) {
+        return nullptr;
+    }
+
+    mjs_setName(mujoco_sensor->element, sensor_name.c_str());
+    mujoco_sensor->type = type;
+    mujoco_sensor->objtype = mjOBJ_BODY;
+    mjs_setString(mujoco_sensor->objname, body_name.c_str());
+    mujoco_sensor->noise = sensor.noise_stddev;
+    if (sensor.sensor_period > 0.0) {
+        mujoco_sensor->interval[0] = sensor.sensor_period;
+    }
+    return mujoco_sensor;
+}
+
 void AddSensorToSpec(mjSpec* spec,
                      mjsBody* body,
                      const PhysicsSensorSnapshot& sensor,
@@ -353,16 +378,26 @@ void AddSensorToSpec(mjSpec* spec,
     }
 
     const std::string site_name = SensorSiteName(prefix, sensor);
-    if (AddSensorSiteToBody(body, sensor, link, site_name) == nullptr) {
-        return;
+    if (sensor.type != PhysicsSensorType::AngularMomentum) {
+        if (AddSensorSiteToBody(body, sensor, link, site_name) == nullptr) {
+            return;
+        }
     }
 
     switch (sensor.type) {
         case PhysicsSensorType::IMU:
             AddSiteSensor(spec, SensorComponentName(prefix, sensor, "orientation"), mjSENS_FRAMEQUAT, site_name, sensor);
             AddSiteSensor(spec, SensorComponentName(prefix, sensor, "angular_velocity"), mjSENS_GYRO, site_name, sensor);
+            AddSiteSensor(spec, SensorComponentName(prefix, sensor, "linear_velocity"), mjSENS_VELOCIMETER, site_name, sensor);
             AddSiteSensor(spec, SensorComponentName(prefix, sensor, "linear_acceleration"), mjSENS_ACCELEROMETER,
                           site_name, sensor);
+            break;
+        case PhysicsSensorType::AngularMomentum:
+            AddBodySensor(spec,
+                          SensorComponentName(prefix, sensor, "angular_momentum"),
+                          mjSENS_SUBTREEANGMOM,
+                          prefix + link.name,
+                          sensor);
             break;
         case PhysicsSensorType::Contact:
             if (mjsSensor* touch_sensor =
@@ -1785,7 +1820,11 @@ void MuJoCoPhysicsWorld::BuildSensorBindings() {
                 case PhysicsSensorType::IMU:
                     add_component("orientation", 0);
                     add_component("angular_velocity", 4);
-                    add_component("linear_acceleration", 7);
+                    add_component("linear_velocity", 7);
+                    add_component("linear_acceleration", 10);
+                    break;
+                case PhysicsSensorType::AngularMomentum:
+                    add_component("angular_momentum", 0);
                     break;
                 case PhysicsSensorType::Contact:
                     add_component("contact", 0);

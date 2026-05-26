@@ -116,8 +116,11 @@ def main():
     contact.min_threshold = 0.1
     contact.max_threshold = 10.0
     link.add_child(contact)
+    angular_momentum = gobot.create_node("AngularMomentumSensor3D", "root_angmom")
+    link.add_child(angular_momentum)
     assert authored.find("link/collision").name == "collision"
     assert authored.find("link/imu").type == "IMUSensor3D"
+    assert authored.find("link/root_angmom").type == "AngularMomentumSensor3D"
     assert abs(authored.find("link/foot_contact").radius - 0.05) < 1e-6
     assert visual.type == "MeshInstance3D"
 
@@ -150,6 +153,8 @@ def main():
     sensor_root.add_child(sensor_link)
     sensor_imu = gobot.create_node("IMUSensor3D", "imu")
     sensor_link.add_child(sensor_imu)
+    sensor_angular_momentum = gobot.create_node("AngularMomentumSensor3D", "root_angmom")
+    sensor_link.add_child(sensor_angular_momentum)
     sensor_contact = gobot.create_node("ContactSensor3D", "contact")
     sensor_link.add_child(sensor_contact)
     context.clear_scene()
@@ -157,14 +162,21 @@ def main():
     context.load_scene("res://gobot_python_binding_sensor_scene.jscn")
     context.build_world(gobot.PhysicsBackendType.Null)
     sensor_name_map = context.get_runtime_name_map()
-    assert sensor_name_map["total_sensor_count"] == 2
-    assert sensor_name_map["robots"][0]["sensor_names"] == ["imu", "contact"]
+    assert sensor_name_map["total_sensor_count"] == 3
+    assert sensor_name_map["robots"][0]["sensor_names"] == ["imu", "root_angmom", "contact"]
     sensor_state = context.get_runtime_state()
     sensors = sensor_state["robots"][0]["sensors"]
     assert sensors[0]["type"] == "imu"
-    assert len(sensors[0]["values"]) == 10
-    assert sensors[1]["type"] == "contact"
-    assert len(sensors[1]["values"]) == 1
+    assert len(sensors[0]["values"]) == 13
+    assert sensors[0]["channel_names"][7:10] == [
+        "linear_velocity_x",
+        "linear_velocity_y",
+        "linear_velocity_z",
+    ]
+    assert sensors[1]["type"] == "angular_momentum"
+    assert len(sensors[1]["values"]) == 3
+    assert sensors[2]["type"] == "contact"
+    assert len(sensors[2]["values"]) == 1
     context.load_scene("res://gobot_python_binding_cartpole.jscn")
 
     env = gobot.rl.ManagerBasedEnv(

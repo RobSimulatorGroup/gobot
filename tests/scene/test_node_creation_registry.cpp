@@ -34,6 +34,7 @@ TEST(TestNodeCreationRegistry, built_in_entries_keep_node_inheritance_shape) {
     const auto* joint = FindEntry("Joint3D");
     const auto* sensor = FindEntry("Sensor3D");
     const auto* imu_sensor = FindEntry("IMUSensor3D");
+    const auto* angular_momentum_sensor = FindEntry("AngularMomentumSensor3D");
     const auto* contact_sensor = FindEntry("ContactSensor3D");
     const auto* mesh_instance = FindEntry("MeshInstance3D");
     const auto* box_mesh = FindEntry("BoxMeshInstance3D");
@@ -48,6 +49,7 @@ TEST(TestNodeCreationRegistry, built_in_entries_keep_node_inheritance_shape) {
     ASSERT_NE(joint, nullptr);
     ASSERT_NE(sensor, nullptr);
     ASSERT_NE(imu_sensor, nullptr);
+    ASSERT_NE(angular_momentum_sensor, nullptr);
     ASSERT_NE(contact_sensor, nullptr);
     ASSERT_NE(mesh_instance, nullptr);
     ASSERT_NE(box_mesh, nullptr);
@@ -62,6 +64,7 @@ TEST(TestNodeCreationRegistry, built_in_entries_keep_node_inheritance_shape) {
     EXPECT_EQ(joint->parent_id, "Node3D");
     EXPECT_EQ(sensor->parent_id, "Node3D");
     EXPECT_EQ(imu_sensor->parent_id, "Sensor3D");
+    EXPECT_EQ(angular_momentum_sensor->parent_id, "Sensor3D");
     EXPECT_EQ(contact_sensor->parent_id, "Sensor3D");
     EXPECT_EQ(mesh_instance->parent_id, "Node3D");
     EXPECT_EQ(box_mesh->parent_id, "MeshInstance3D");
@@ -96,6 +99,11 @@ TEST(TestNodeCreationRegistry, creates_sensor_nodes) {
     ASSERT_NE(contact_node, nullptr);
     EXPECT_NE(gobot::Object::PointerCastTo<gobot::ContactSensor3D>(contact_node), nullptr);
     gobot::Object::Delete(contact_node);
+
+    gobot::Node* angular_momentum_node = gobot::NodeCreationRegistry::CreateNode("AngularMomentumSensor3D");
+    ASSERT_NE(angular_momentum_node, nullptr);
+    EXPECT_NE(gobot::Object::PointerCastTo<gobot::AngularMomentumSensor3D>(angular_momentum_node), nullptr);
+    gobot::Object::Delete(angular_momentum_node);
 }
 
 TEST(TestNodeCreationRegistry, creates_mesh_instance_node) {

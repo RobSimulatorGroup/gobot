@@ -71,6 +71,7 @@ TEST(TestRobotNodes, reflected_properties_are_available) {
     EXPECT_TRUE(gobot::Type::get<gobot::Sensor3D>().get_property("sensor_period").is_valid());
     EXPECT_TRUE(gobot::Type::get<gobot::Sensor3D>().get_property("noise_stddev").is_valid());
     EXPECT_TRUE(gobot::Type::get<gobot::Sensor3D>().get_property("visualize_debug").is_valid());
+    EXPECT_TRUE(gobot::Type::get<gobot::AngularMomentumSensor3D>().is_valid());
     EXPECT_TRUE(gobot::Type::get<gobot::ContactSensor3D>().get_property("radius").is_valid());
     EXPECT_TRUE(gobot::Type::get<gobot::ContactSensor3D>().get_property("min_threshold").is_valid());
     EXPECT_TRUE(gobot::Type::get<gobot::ContactSensor3D>().get_property("max_threshold").is_valid());
@@ -89,6 +90,13 @@ TEST(TestRobotNodes, stores_sensor_metadata) {
     EXPECT_NEAR(imu->GetNoiseStddev(), 0.02, 1.0e-6);
     EXPECT_TRUE(imu->ShouldVisualizeDebug());
     gobot::Object::Delete(imu);
+
+    auto* angular_momentum = gobot::Object::New<gobot::AngularMomentumSensor3D>();
+    angular_momentum->SetName("root_angmom");
+    angular_momentum->SetSensorPeriod(0.02);
+    EXPECT_EQ(angular_momentum->GetName(), "root_angmom");
+    EXPECT_NEAR(angular_momentum->GetSensorPeriod(), 0.02, 1.0e-6);
+    gobot::Object::Delete(angular_momentum);
 
     auto* contact = gobot::Object::New<gobot::ContactSensor3D>();
     contact->SetName("foot_contact");

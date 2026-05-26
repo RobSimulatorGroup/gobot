@@ -264,6 +264,12 @@ TEST_F(TestResourceFormatScene, packed_scene_round_trips_sensor_nodes_under_link
     imu->SetVisualizeDebug(true);
     base_link->AddChild(imu);
 
+    auto* angular_momentum = gobot::Object::New<gobot::AngularMomentumSensor3D>();
+    angular_momentum->SetName("root_angmom");
+    angular_momentum->SetSensorPeriod(0.02);
+    angular_momentum->SetPosition({0.0, 0.1, 0.0});
+    base_link->AddChild(angular_momentum);
+
     auto* contact = gobot::Object::New<gobot::ContactSensor3D>();
     contact->SetName("foot_contact");
     contact->SetEnabled(false);
@@ -295,7 +301,7 @@ TEST_F(TestResourceFormatScene, packed_scene_round_trips_sensor_nodes_under_link
 
     auto* loaded_link = gobot::Object::PointerCastTo<gobot::Link3D>(loaded_robot->GetChild(0));
     ASSERT_NE(loaded_link, nullptr);
-    ASSERT_EQ(loaded_link->GetChildCount(), 2);
+    ASSERT_EQ(loaded_link->GetChildCount(), 3);
 
     auto* loaded_imu = gobot::Object::PointerCastTo<gobot::IMUSensor3D>(loaded_link->GetChild(0));
     ASSERT_NE(loaded_imu, nullptr);
@@ -305,7 +311,14 @@ TEST_F(TestResourceFormatScene, packed_scene_round_trips_sensor_nodes_under_link
     EXPECT_NEAR(loaded_imu->GetNoiseStddev(), 0.01, 1.0e-6);
     EXPECT_TRUE(loaded_imu->ShouldVisualizeDebug());
 
-    auto* loaded_contact = gobot::Object::PointerCastTo<gobot::ContactSensor3D>(loaded_link->GetChild(1));
+    auto* loaded_angular_momentum =
+            gobot::Object::PointerCastTo<gobot::AngularMomentumSensor3D>(loaded_link->GetChild(1));
+    ASSERT_NE(loaded_angular_momentum, nullptr);
+    EXPECT_EQ(loaded_angular_momentum->GetName(), "root_angmom");
+    EXPECT_NEAR(loaded_angular_momentum->GetSensorPeriod(), 0.02, 1.0e-6);
+    EXPECT_TRUE(loaded_angular_momentum->GetPosition().isApprox(gobot::Vector3(0.0, 0.1, 0.0), CMP_EPSILON));
+
+    auto* loaded_contact = gobot::Object::PointerCastTo<gobot::ContactSensor3D>(loaded_link->GetChild(2));
     ASSERT_NE(loaded_contact, nullptr);
     EXPECT_EQ(loaded_contact->GetName(), "foot_contact");
     EXPECT_FALSE(loaded_contact->IsEnabled());
@@ -332,6 +345,10 @@ TEST_F(TestResourceFormatScene, packed_scene_save_load_instantiate_repack_keeps_
     imu->SetSensorPeriod(0.01);
     imu->SetNoiseStddev(0.02);
     base_link->AddChild(imu);
+
+    auto* angular_momentum = gobot::Object::New<gobot::AngularMomentumSensor3D>();
+    angular_momentum->SetName("root_angmom");
+    base_link->AddChild(angular_momentum);
 
     auto* contact = gobot::Object::New<gobot::ContactSensor3D>();
     contact->SetName("foot_contact");

@@ -93,6 +93,9 @@ GOBOT_REGISTRATION {
     Class_<IMUSensor3D>("IMUSensor3D")
             .constructor()(CtorAsRawPtr);
 
+    Class_<AngularMomentumSensor3D>("AngularMomentumSensor3D")
+            .constructor()(CtorAsRawPtr);
+
     Class_<ContactSensor3D>("ContactSensor3D")
             .constructor()(CtorAsRawPtr)
             .property("radius", &ContactSensor3D::GetRadius, &ContactSensor3D::SetRadius)
