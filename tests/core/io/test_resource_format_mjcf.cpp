@@ -484,7 +484,7 @@ TEST(TestResourceFormatMJCF, imports_go1_imu_velocimeter_as_imu_sensor_node) {
     auto* angular_momentum = FindFirstNodeOfType<gobot::AngularMomentumSensor3D>(root_node);
     ASSERT_NE(angular_momentum, nullptr);
     EXPECT_EQ(angular_momentum->GetParent(), trunk);
-    EXPECT_EQ(angular_momentum->GetName(), "root");
+    EXPECT_EQ(angular_momentum->GetName(), "root_angmom");
     EXPECT_TRUE(angular_momentum->GetPosition().isApprox(gobot::Vector3::Zero(), 1.0e-9));
 
     gobot::Object::Delete(root_node);

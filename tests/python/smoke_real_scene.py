@@ -1,6 +1,7 @@
 import argparse
 import importlib.util
 import json
+import math
 import os
 import pathlib
 import gobot
@@ -16,6 +17,7 @@ def main():
     parser.add_argument("--backend", default="mujoco", choices=["null", "mujoco"])
     parser.add_argument("--steps", type=int, default=4)
     parser.add_argument("--expect-go1-stand", action="store_true")
+    parser.add_argument("--expect-go1-sensors", action="store_true")
     parser.add_argument("--expect-empty-robot-source-path", action="store_true")
     args = parser.parse_args()
 
@@ -91,6 +93,44 @@ def main():
         for index in range(args.steps):
             context.step_once()
             print(f"step={index + 1} time={context.simulation_time:.6f} frame={context.frame_count}")
+
+    if args.expect_go1_sensors:
+        state = context.get_runtime_state()
+        robot = next(robot for robot in state["robots"] if robot["name"] == "go1")
+        sensors = {sensor["sensor_name"]: sensor for sensor in robot.get("sensors", [])}
+        print(f"go1_sensor_names={sorted(sensors)}")
+
+        imu = sensors.get("imu")
+        if imu is None:
+            raise AssertionError("Go1 runtime state is missing IMUSensor3D 'imu'")
+        if imu["type"] != "imu":
+            raise AssertionError(f"Go1 imu sensor has unexpected type {imu['type']!r}")
+        if len(imu["values"]) != 13:
+            raise AssertionError(f"Go1 imu sensor expected 13 values, got {len(imu['values'])}")
+        if imu["channel_names"][7:10] != [
+            "linear_velocity_x",
+            "linear_velocity_y",
+            "linear_velocity_z",
+        ]:
+            raise AssertionError(f"Go1 imu channel names missing linear velocity: {imu['channel_names']!r}")
+
+        angular_momentum = sensors.get("root_angmom")
+        if angular_momentum is None:
+            raise AssertionError("Go1 runtime state is missing AngularMomentumSensor3D 'root_angmom'")
+        if angular_momentum["type"] != "angular_momentum":
+            raise AssertionError(
+                f"Go1 angular momentum sensor has unexpected type {angular_momentum['type']!r}"
+            )
+        if len(angular_momentum["values"]) != 3:
+            raise AssertionError(
+                f"Go1 angular momentum sensor expected 3 values, got {len(angular_momentum['values'])}"
+            )
+
+        for sensor in (imu, angular_momentum):
+            if sensor["timestamp"] <= 0.0:
+                raise AssertionError(f"Go1 sensor {sensor['sensor_name']} timestamp did not advance")
+            if not all(math.isfinite(float(value)) for value in sensor["values"]):
+                raise AssertionError(f"Go1 sensor {sensor['sensor_name']} produced non-finite values")
 
     return 0
 

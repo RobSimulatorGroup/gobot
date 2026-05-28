@@ -300,30 +300,6 @@ std::string TrimIMUSensorComponentSuffix(std::string sensor_name) {
     return sensor_name.empty() ? "imu" : sensor_name;
 }
 
-std::string TrimAngularMomentumSensorSuffix(std::string sensor_name) {
-    if (sensor_name.empty()) {
-        return sensor_name;
-    }
-
-    const std::string lowered = ToLower(sensor_name);
-    const std::array<std::string_view, 5> suffixes = {
-            "_subtree_angmom",
-            "_subtreeangmom",
-            "_angular_momentum",
-            "_angmom",
-            "_ang_mom"};
-
-    for (std::string_view suffix : suffixes) {
-        if (lowered.size() > suffix.size() &&
-            lowered.ends_with(suffix)) {
-            sensor_name.resize(sensor_name.size() - suffix.size());
-            break;
-        }
-    }
-
-    return sensor_name.empty() ? "angular_momentum" : sensor_name;
-}
-
 SceneState::NodeData MakeCommonSensorNode(const std::string& type,
                                           const std::string& name,
                                           int parent,
@@ -444,7 +420,7 @@ SceneState::NodeData MakeAngularMomentumSensorNode(const mjModel* model,
                                                    const std::vector<int>& sensor_ids) {
     std::string name;
     if (!sensor_ids.empty()) {
-        name = TrimAngularMomentumSensorSuffix(GetMuJoCoName(model, mjOBJ_SENSOR, sensor_ids.front(), ""));
+        name = GetMuJoCoName(model, mjOBJ_SENSOR, sensor_ids.front(), "");
     }
     if (name.empty()) {
         name = GetMuJoCoName(model, mjOBJ_BODY, body_id, fmt::format("body_{}", body_id)) + "_angular_momentum";

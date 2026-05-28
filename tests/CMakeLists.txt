@@ -110,3 +110,22 @@ set_tests_properties(test_python_rl_manager_config
             ENVIRONMENT "PYTHONNOUSERSITE=1;PYTHONPATH=${CMAKE_BINARY_DIR}/python"
             WORKING_DIRECTORY "${CMAKE_SOURCE_DIR}"
 )
+
+if(GOB_BUILD_MUJOCO AND GOBOT_MUJOCO_TARGET)
+    add_test(
+            NAME test_python_go1_mujoco_sensor_smoke
+            COMMAND ${Python3_EXECUTABLE}
+                    ${CMAKE_CURRENT_SOURCE_DIR}/python/smoke_real_scene.py
+                    --project examples/go1
+                    --scene res://go1_scene.jscn
+                    --backend mujoco
+                    --steps 600
+                    --expect-go1-stand
+                    --expect-go1-sensors
+    )
+    set_tests_properties(test_python_go1_mujoco_sensor_smoke
+            PROPERTIES
+                ENVIRONMENT "PYTHONNOUSERSITE=1;PYTHONPATH=${CMAKE_BINARY_DIR}/python"
+                WORKING_DIRECTORY "${CMAKE_SOURCE_DIR}"
+    )
+endif()
