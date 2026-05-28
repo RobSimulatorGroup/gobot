@@ -1,27 +1,27 @@
 {
     "__EXT_RESOURCES__": [
         {
-            "__ID__": "5_1TlIZ",
+            "__ID__": "5_RKags",
             "__PATH__": "res://assets/thigh.stl",
             "__TYPE__": "Mesh"
         },
         {
-            "__ID__": "4_uIxgl",
+            "__ID__": "4_7KQlT",
             "__PATH__": "res://assets/calf.stl",
             "__TYPE__": "Mesh"
         },
         {
-            "__ID__": "3_nq8Am",
+            "__ID__": "3_gLZWK",
             "__PATH__": "res://assets/thigh_mirror.stl",
             "__TYPE__": "Mesh"
         },
         {
-            "__ID__": "2_0LQxN",
+            "__ID__": "2_TpHXS",
             "__PATH__": "res://assets/hip.stl",
             "__TYPE__": "Mesh"
         },
         {
-            "__ID__": "1_3EkDc",
+            "__ID__": "1_9ROq6",
             "__PATH__": "res://assets/trunk.stl",
             "__TYPE__": "Mesh"
         }
@@ -67,7 +67,7 @@
                     }
                 },
                 "script": null,
-                "source_path": "",
+                "source_path": "res://assets/xml/go1.xml",
                 "visible": true
             },
             "type": "Robot3D"
@@ -232,8 +232,8 @@
             "name": "trunk_visual_0",
             "parent": 2,
             "properties": {
-                "material": "SubResource(PBRMaterial3D_8oUFl)",
-                "mesh": "ExtResource(1_3EkDc)",
+                "material": "SubResource(PBRMaterial3D_Itawn)",
+                "mesh": "ExtResource(1_9ROq6)",
                 "position": {
                     "matrix_data": {
                         "cols": 1,
@@ -333,7 +333,7 @@
                     }
                 },
                 "script": null,
-                "shape": "SubResource(BoxShape3D_D1zwN)",
+                "shape": "SubResource(BoxShape3D_ALhiP)",
                 "solimp": [
                     0.8999999761581421,
                     0.949999988079071,
@@ -410,7 +410,7 @@
                     }
                 },
                 "script": null,
-                "shape": "SubResource(SphereShape3D_AwiPu)",
+                "shape": "SubResource(SphereShape3D_Y3kJg)",
                 "solimp": [
                     0.8999999761581421,
                     0.949999988079071,
@@ -592,8 +592,8 @@
             "name": "hip_visual_3",
             "parent": 7,
             "properties": {
-                "material": "SubResource(PBRMaterial3D_18rHQ)",
-                "mesh": "ExtResource(2_0LQxN)",
+                "material": "SubResource(PBRMaterial3D_JPklf)",
+                "mesh": "ExtResource(2_TpHXS)",
                 "position": {
                     "matrix_data": {
                         "cols": 1,
@@ -693,7 +693,7 @@
                     }
                 },
                 "script": null,
-                "shape": "SubResource(CapsuleShape3D_I9NpC)",
+                "shape": "SubResource(CapsuleShape3D_tab7j)",
                 "solimp": [
                     0.8999999761581421,
                     0.949999988079071,
@@ -875,8 +875,8 @@
             "name": "thigh_mirror_visual_5",
             "parent": 11,
             "properties": {
-                "material": "SubResource(PBRMaterial3D_M3GP0)",
-                "mesh": "ExtResource(3_nq8Am)",
+                "material": "SubResource(PBRMaterial3D_VPhAE)",
+                "mesh": "ExtResource(3_gLZWK)",
                 "position": {
                     "matrix_data": {
                         "cols": 1,
@@ -976,7 +976,7 @@
                     }
                 },
                 "script": null,
-                "shape": "SubResource(CapsuleShape3D_FzluP)",
+                "shape": "SubResource(CapsuleShape3D_aCCXb)",
                 "solimp": [
                     0.8999999761581421,
                     0.949999988079071,
@@ -1053,7 +1053,7 @@
                     }
                 },
                 "script": null,
-                "shape": "SubResource(CapsuleShape3D_pSF8d)",
+                "shape": "SubResource(CapsuleShape3D_neNDF)",
                 "solimp": [
                     0.8999999761581421,
                     0.949999988079071,
@@ -1130,7 +1130,7 @@
                     }
                 },
                 "script": null,
-                "shape": "SubResource(CapsuleShape3D_eCX9h)",
+                "shape": "SubResource(CapsuleShape3D_k7UA8)",
                 "solimp": [
                     0.8999999761581421,
                     0.949999988079071,
@@ -1312,8 +1312,8 @@
             "name": "calf_visual_9",
             "parent": 17,
             "properties": {
-                "material": "SubResource(PBRMaterial3D_QKK0e)",
-                "mesh": "ExtResource(4_uIxgl)",
+                "material": "SubResource(PBRMaterial3D_OSzlc)",
+                "mesh": "ExtResource(4_7KQlT)",
                 "position": {
                     "matrix_data": {
                         "cols": 1,
@@ -1413,7 +1413,7 @@
                     }
                 },
                 "script": null,
-                "shape": "SubResource(CapsuleShape3D_rtmSd)",
+                "shape": "SubResource(CapsuleShape3D_NqAAm)",
                 "solimp": [
                     0.8999999761581421,
                     0.949999988079071,
@@ -1490,7 +1490,7 @@
                     }
                 },
                 "script": null,
-                "shape": "SubResource(CapsuleShape3D_6OsmJ)",
+                "shape": "SubResource(CapsuleShape3D_bVMFA)",
                 "solimp": [
                     0.8999999761581421,
                     0.949999988079071,
@@ -1567,7 +1567,7 @@
                     }
                 },
                 "script": null,
-                "shape": "SubResource(SphereShape3D_JDLfF)",
+                "shape": "SubResource(SphereShape3D_PlbnX)",
                 "solimp": [
                     0.8999999761581421,
                     0.949999988079071,
@@ -1749,8 +1749,8 @@
             "name": "hip_visual_13",
             "parent": 23,
             "properties": {
-                "material": "SubResource(PBRMaterial3D_RZTjI)",
-                "mesh": "ExtResource(2_0LQxN)",
+                "material": "SubResource(PBRMaterial3D_BPTYv)",
+                "mesh": "ExtResource(2_TpHXS)",
                 "position": {
                     "matrix_data": {
                         "cols": 1,
@@ -1850,7 +1850,7 @@
                     }
                 },
                 "script": null,
-                "shape": "SubResource(CapsuleShape3D_azaNT)",
+                "shape": "SubResource(CapsuleShape3D_iJB2z)",
                 "solimp": [
                     0.8999999761581421,
                     0.949999988079071,
@@ -2032,8 +2032,8 @@
             "name": "thigh_visual_15",
             "parent": 27,
             "properties": {
-                "material": "SubResource(PBRMaterial3D_FuscA)",
-                "mesh": "ExtResource(5_1TlIZ)",
+                "material": "SubResource(PBRMaterial3D_URySw)",
+                "mesh": "ExtResource(5_RKags)",
                 "position": {
                     "matrix_data": {
                         "cols": 1,
@@ -2133,7 +2133,7 @@
                     }
                 },
                 "script": null,
-                "shape": "SubResource(CapsuleShape3D_KYBoF)",
+                "shape": "SubResource(CapsuleShape3D_dPsfQ)",
                 "solimp": [
                     0.8999999761581421,
                     0.949999988079071,
@@ -2210,7 +2210,7 @@
                     }
                 },
                 "script": null,
-                "shape": "SubResource(CapsuleShape3D_m93FU)",
+                "shape": "SubResource(CapsuleShape3D_Q1eaj)",
                 "solimp": [
                     0.8999999761581421,
                     0.949999988079071,
@@ -2287,7 +2287,7 @@
                     }
                 },
                 "script": null,
-                "shape": "SubResource(CapsuleShape3D_HFfl1)",
+                "shape": "SubResource(CapsuleShape3D_5177h)",
                 "solimp": [
                     0.8999999761581421,
                     0.949999988079071,
@@ -2469,8 +2469,8 @@
             "name": "calf_visual_19",
             "parent": 33,
             "properties": {
-                "material": "SubResource(PBRMaterial3D_bGzDw)",
-                "mesh": "ExtResource(4_uIxgl)",
+                "material": "SubResource(PBRMaterial3D_M7QL9)",
+                "mesh": "ExtResource(4_7KQlT)",
                 "position": {
                     "matrix_data": {
                         "cols": 1,
@@ -2570,7 +2570,7 @@
                     }
                 },
                 "script": null,
-                "shape": "SubResource(CapsuleShape3D_x07Ic)",
+                "shape": "SubResource(CapsuleShape3D_DewAm)",
                 "solimp": [
                     0.8999999761581421,
                     0.949999988079071,
@@ -2647,7 +2647,7 @@
                     }
                 },
                 "script": null,
-                "shape": "SubResource(CapsuleShape3D_hIr61)",
+                "shape": "SubResource(CapsuleShape3D_8VR91)",
                 "solimp": [
                     0.8999999761581421,
                     0.949999988079071,
@@ -2724,7 +2724,7 @@
                     }
                 },
                 "script": null,
-                "shape": "SubResource(SphereShape3D_TJUEG)",
+                "shape": "SubResource(SphereShape3D_XA8sH)",
                 "solimp": [
                     0.8999999761581421,
                     0.949999988079071,
@@ -2906,8 +2906,8 @@
             "name": "hip_visual_23",
             "parent": 39,
             "properties": {
-                "material": "SubResource(PBRMaterial3D_mCPW2)",
-                "mesh": "ExtResource(2_0LQxN)",
+                "material": "SubResource(PBRMaterial3D_dSArb)",
+                "mesh": "ExtResource(2_TpHXS)",
                 "position": {
                     "matrix_data": {
                         "cols": 1,
@@ -3007,7 +3007,7 @@
                     }
                 },
                 "script": null,
-                "shape": "SubResource(CapsuleShape3D_tkhJ9)",
+                "shape": "SubResource(CapsuleShape3D_XHVbS)",
                 "solimp": [
                     0.8999999761581421,
                     0.949999988079071,
@@ -3189,8 +3189,8 @@
             "name": "thigh_mirror_visual_25",
             "parent": 43,
             "properties": {
-                "material": "SubResource(PBRMaterial3D_sni73)",
-                "mesh": "ExtResource(3_nq8Am)",
+                "material": "SubResource(PBRMaterial3D_Akhae)",
+                "mesh": "ExtResource(3_gLZWK)",
                 "position": {
                     "matrix_data": {
                         "cols": 1,
@@ -3290,7 +3290,7 @@
                     }
                 },
                 "script": null,
-                "shape": "SubResource(CapsuleShape3D_qvnbj)",
+                "shape": "SubResource(CapsuleShape3D_SARMB)",
                 "solimp": [
                     0.8999999761581421,
                     0.949999988079071,
@@ -3367,7 +3367,7 @@
                     }
                 },
                 "script": null,
-                "shape": "SubResource(CapsuleShape3D_uf5eB)",
+                "shape": "SubResource(CapsuleShape3D_8F5sS)",
                 "solimp": [
                     0.8999999761581421,
                     0.949999988079071,
@@ -3444,7 +3444,7 @@
                     }
                 },
                 "script": null,
-                "shape": "SubResource(CapsuleShape3D_ljrLu)",
+                "shape": "SubResource(CapsuleShape3D_snMz7)",
                 "solimp": [
                     0.8999999761581421,
                     0.949999988079071,
@@ -3626,8 +3626,8 @@
             "name": "calf_visual_29",
             "parent": 49,
             "properties": {
-                "material": "SubResource(PBRMaterial3D_ShJIh)",
-                "mesh": "ExtResource(4_uIxgl)",
+                "material": "SubResource(PBRMaterial3D_5ApNi)",
+                "mesh": "ExtResource(4_7KQlT)",
                 "position": {
                     "matrix_data": {
                         "cols": 1,
@@ -3727,7 +3727,7 @@
                     }
                 },
                 "script": null,
-                "shape": "SubResource(CapsuleShape3D_5ZxH5)",
+                "shape": "SubResource(CapsuleShape3D_j3VQe)",
                 "solimp": [
                     0.8999999761581421,
                     0.949999988079071,
@@ -3804,7 +3804,7 @@
                     }
                 },
                 "script": null,
-                "shape": "SubResource(CapsuleShape3D_LrMQT)",
+                "shape": "SubResource(CapsuleShape3D_csprC)",
                 "solimp": [
                     0.8999999761581421,
                     0.949999988079071,
@@ -3881,7 +3881,7 @@
                     }
                 },
                 "script": null,
-                "shape": "SubResource(SphereShape3D_l3JIN)",
+                "shape": "SubResource(SphereShape3D_hElMk)",
                 "solimp": [
                     0.8999999761581421,
                     0.949999988079071,
@@ -4063,8 +4063,8 @@
             "name": "hip_visual_33",
             "parent": 55,
             "properties": {
-                "material": "SubResource(PBRMaterial3D_jx17f)",
-                "mesh": "ExtResource(2_0LQxN)",
+                "material": "SubResource(PBRMaterial3D_cmR0I)",
+                "mesh": "ExtResource(2_TpHXS)",
                 "position": {
                     "matrix_data": {
                         "cols": 1,
@@ -4164,7 +4164,7 @@
                     }
                 },
                 "script": null,
-                "shape": "SubResource(CapsuleShape3D_nASng)",
+                "shape": "SubResource(CapsuleShape3D_RJRLq)",
                 "solimp": [
                     0.8999999761581421,
                     0.949999988079071,
@@ -4346,8 +4346,8 @@
             "name": "thigh_visual_35",
             "parent": 59,
             "properties": {
-                "material": "SubResource(PBRMaterial3D_v4wzq)",
-                "mesh": "ExtResource(5_1TlIZ)",
+                "material": "SubResource(PBRMaterial3D_pBIeI)",
+                "mesh": "ExtResource(5_RKags)",
                 "position": {
                     "matrix_data": {
                         "cols": 1,
@@ -4447,7 +4447,7 @@
                     }
                 },
                 "script": null,
-                "shape": "SubResource(CapsuleShape3D_sgfjK)",
+                "shape": "SubResource(CapsuleShape3D_Px91c)",
                 "solimp": [
                     0.8999999761581421,
                     0.949999988079071,
@@ -4524,7 +4524,7 @@
                     }
                 },
                 "script": null,
-                "shape": "SubResource(CapsuleShape3D_tPP0T)",
+                "shape": "SubResource(CapsuleShape3D_MVrN8)",
                 "solimp": [
                     0.8999999761581421,
                     0.949999988079071,
@@ -4601,7 +4601,7 @@
                     }
                 },
                 "script": null,
-                "shape": "SubResource(CapsuleShape3D_Xknz6)",
+                "shape": "SubResource(CapsuleShape3D_Gaak3)",
                 "solimp": [
                     0.8999999761581421,
                     0.949999988079071,
@@ -4783,8 +4783,8 @@
             "name": "calf_visual_39",
             "parent": 65,
             "properties": {
-                "material": "SubResource(PBRMaterial3D_CZitE)",
-                "mesh": "ExtResource(4_uIxgl)",
+                "material": "SubResource(PBRMaterial3D_j6mto)",
+                "mesh": "ExtResource(4_7KQlT)",
                 "position": {
                     "matrix_data": {
                         "cols": 1,
@@ -4884,7 +4884,7 @@
                     }
                 },
                 "script": null,
-                "shape": "SubResource(CapsuleShape3D_6v7Lb)",
+                "shape": "SubResource(CapsuleShape3D_uYz78)",
                 "solimp": [
                     0.8999999761581421,
                     0.949999988079071,
@@ -4961,7 +4961,7 @@
                     }
                 },
                 "script": null,
-                "shape": "SubResource(CapsuleShape3D_nUtD2)",
+                "shape": "SubResource(CapsuleShape3D_GrD2J)",
                 "solimp": [
                     0.8999999761581421,
                     0.949999988079071,
@@ -5038,7 +5038,7 @@
                     }
                 },
                 "script": null,
-                "shape": "SubResource(SphereShape3D_TtTRs)",
+                "shape": "SubResource(SphereShape3D_RgRB0)",
                 "solimp": [
                     0.8999999761581421,
                     0.949999988079071,
@@ -5059,11 +5059,103 @@
                 "visible": false
             },
             "type": "CollisionShape3D"
+        },
+        {
+            "name": "root",
+            "parent": 2,
+            "properties": {
+                "enabled": true,
+                "noise_stddev": 0.0,
+                "position": {
+                    "matrix_data": {
+                        "cols": 1,
+                        "rows": 3,
+                        "storage": [
+                            0.0,
+                            0.0,
+                            0.0
+                        ]
+                    }
+                },
+                "rotation_degrees": {
+                    "matrix_data": {
+                        "cols": 1,
+                        "rows": 3,
+                        "storage": [
+                            -0.0,
+                            0.0,
+                            -0.0
+                        ]
+                    }
+                },
+                "scale": {
+                    "matrix_data": {
+                        "cols": 1,
+                        "rows": 3,
+                        "storage": [
+                            1.0,
+                            1.0,
+                            1.0
+                        ]
+                    }
+                },
+                "script": null,
+                "sensor_period": 0.0,
+                "visible": true,
+                "visualize_debug": false
+            },
+            "type": "AngularMomentumSensor3D"
+        },
+        {
+            "name": "imu",
+            "parent": 2,
+            "properties": {
+                "enabled": true,
+                "noise_stddev": 0.0,
+                "position": {
+                    "matrix_data": {
+                        "cols": 1,
+                        "rows": 3,
+                        "storage": [
+                            -0.01592000015079975,
+                            -0.06659000366926193,
+                            -0.006169999949634075
+                        ]
+                    }
+                },
+                "rotation_degrees": {
+                    "matrix_data": {
+                        "cols": 1,
+                        "rows": 3,
+                        "storage": [
+                            -0.0,
+                            0.0,
+                            -0.0
+                        ]
+                    }
+                },
+                "scale": {
+                    "matrix_data": {
+                        "cols": 1,
+                        "rows": 3,
+                        "storage": [
+                            1.0,
+                            1.0,
+                            1.0
+                        ]
+                    }
+                },
+                "script": null,
+                "sensor_period": 0.0,
+                "visible": true,
+                "visualize_debug": false
+            },
+            "type": "IMUSensor3D"
         }
     ],
     "__SUB_RESOURCES__": [
         {
-            "__ID__": "PBRMaterial3D_8oUFl",
+            "__ID__": "PBRMaterial3D_Itawn",
             "__TYPE__": "PBRMaterial3D",
             "albedo": {
                 "alpha": 1.0,
@@ -5077,7 +5169,7 @@
             "specular": 0.5
         },
         {
-            "__ID__": "BoxShape3D_D1zwN",
+            "__ID__": "BoxShape3D_ALhiP",
             "__TYPE__": "BoxShape3D",
             "resource_name": "",
             "size": {
@@ -5093,13 +5185,13 @@
             }
         },
         {
-            "__ID__": "SphereShape3D_AwiPu",
+            "__ID__": "SphereShape3D_Y3kJg",
             "__TYPE__": "SphereShape3D",
             "radius": 0.05999999865889549,
             "resource_name": ""
         },
         {
-            "__ID__": "PBRMaterial3D_18rHQ",
+            "__ID__": "PBRMaterial3D_JPklf",
             "__TYPE__": "PBRMaterial3D",
             "albedo": {
                 "alpha": 1.0,
@@ -5113,14 +5205,14 @@
             "specular": 0.5
         },
         {
-            "__ID__": "CapsuleShape3D_I9NpC",
+            "__ID__": "CapsuleShape3D_tab7j",
             "__TYPE__": "CapsuleShape3D",
             "height": 0.019999999552965164,
             "radius": 0.05000000074505806,
             "resource_name": ""
         },
         {
-            "__ID__": "PBRMaterial3D_M3GP0",
+            "__ID__": "PBRMaterial3D_VPhAE",
             "__TYPE__": "PBRMaterial3D",
             "albedo": {
                 "alpha": 1.0,
@@ -5134,28 +5226,28 @@
             "specular": 0.5
         },
         {
-            "__ID__": "CapsuleShape3D_FzluP",
+            "__ID__": "CapsuleShape3D_aCCXb",
             "__TYPE__": "CapsuleShape3D",
             "height": 0.1599999964237213,
             "radius": 0.014999999664723873,
             "resource_name": ""
         },
         {
-            "__ID__": "CapsuleShape3D_pSF8d",
+            "__ID__": "CapsuleShape3D_neNDF",
             "__TYPE__": "CapsuleShape3D",
             "height": 0.10198038816452026,
             "radius": 0.014999999664723873,
             "resource_name": ""
         },
         {
-            "__ID__": "CapsuleShape3D_eCX9h",
+            "__ID__": "CapsuleShape3D_k7UA8",
             "__TYPE__": "CapsuleShape3D",
             "height": 0.04472136124968529,
             "radius": 0.014999999664723873,
             "resource_name": ""
         },
         {
-            "__ID__": "PBRMaterial3D_QKK0e",
+            "__ID__": "PBRMaterial3D_OSzlc",
             "__TYPE__": "PBRMaterial3D",
             "albedo": {
                 "alpha": 1.0,
@@ -5169,27 +5261,27 @@
             "specular": 0.5
         },
         {
-            "__ID__": "CapsuleShape3D_rtmSd",
+            "__ID__": "CapsuleShape3D_NqAAm",
             "__TYPE__": "CapsuleShape3D",
             "height": 0.13152946531772614,
             "radius": 0.009999999776482582,
             "resource_name": ""
         },
         {
-            "__ID__": "CapsuleShape3D_6OsmJ",
+            "__ID__": "CapsuleShape3D_bVMFA",
             "__TYPE__": "CapsuleShape3D",
             "height": 0.07280109822750092,
             "radius": 0.009999999776482582,
             "resource_name": ""
         },
         {
-            "__ID__": "SphereShape3D_JDLfF",
+            "__ID__": "SphereShape3D_PlbnX",
             "__TYPE__": "SphereShape3D",
             "radius": 0.023000000044703484,
             "resource_name": ""
         },
         {
-            "__ID__": "PBRMaterial3D_RZTjI",
+            "__ID__": "PBRMaterial3D_BPTYv",
             "__TYPE__": "PBRMaterial3D",
             "albedo": {
                 "alpha": 1.0,
@@ -5203,14 +5295,14 @@
             "specular": 0.5
         },
         {
-            "__ID__": "CapsuleShape3D_azaNT",
+            "__ID__": "CapsuleShape3D_iJB2z",
             "__TYPE__": "CapsuleShape3D",
             "height": 0.019999999552965164,
             "radius": 0.05000000074505806,
             "resource_name": ""
         },
         {
-            "__ID__": "PBRMaterial3D_FuscA",
+            "__ID__": "PBRMaterial3D_URySw",
             "__TYPE__": "PBRMaterial3D",
             "albedo": {
                 "alpha": 1.0,
@@ -5224,28 +5316,28 @@
             "specular": 0.5
         },
         {
-            "__ID__": "CapsuleShape3D_KYBoF",
+            "__ID__": "CapsuleShape3D_dPsfQ",
             "__TYPE__": "CapsuleShape3D",
             "height": 0.1599999964237213,
             "radius": 0.014999999664723873,
             "resource_name": ""
         },
         {
-            "__ID__": "CapsuleShape3D_m93FU",
+            "__ID__": "CapsuleShape3D_Q1eaj",
             "__TYPE__": "CapsuleShape3D",
             "height": 0.10198038816452026,
             "radius": 0.014999999664723873,
             "resource_name": ""
         },
         {
-            "__ID__": "CapsuleShape3D_HFfl1",
+            "__ID__": "CapsuleShape3D_5177h",
             "__TYPE__": "CapsuleShape3D",
             "height": 0.04472136124968529,
             "radius": 0.014999999664723873,
             "resource_name": ""
         },
         {
-            "__ID__": "PBRMaterial3D_bGzDw",
+            "__ID__": "PBRMaterial3D_M7QL9",
             "__TYPE__": "PBRMaterial3D",
             "albedo": {
                 "alpha": 1.0,
@@ -5259,27 +5351,27 @@
             "specular": 0.5
         },
         {
-            "__ID__": "CapsuleShape3D_x07Ic",
+            "__ID__": "CapsuleShape3D_DewAm",
             "__TYPE__": "CapsuleShape3D",
             "height": 0.13152946531772614,
             "radius": 0.009999999776482582,
             "resource_name": ""
         },
         {
-            "__ID__": "CapsuleShape3D_hIr61",
+            "__ID__": "CapsuleShape3D_8VR91",
             "__TYPE__": "CapsuleShape3D",
             "height": 0.07280109822750092,
             "radius": 0.009999999776482582,
             "resource_name": ""
         },
         {
-            "__ID__": "SphereShape3D_TJUEG",
+            "__ID__": "SphereShape3D_XA8sH",
             "__TYPE__": "SphereShape3D",
             "radius": 0.023000000044703484,
             "resource_name": ""
         },
         {
-            "__ID__": "PBRMaterial3D_mCPW2",
+            "__ID__": "PBRMaterial3D_dSArb",
             "__TYPE__": "PBRMaterial3D",
             "albedo": {
                 "alpha": 1.0,
@@ -5293,14 +5385,14 @@
             "specular": 0.5
         },
         {
-            "__ID__": "CapsuleShape3D_tkhJ9",
+            "__ID__": "CapsuleShape3D_XHVbS",
             "__TYPE__": "CapsuleShape3D",
             "height": 0.019999999552965164,
             "radius": 0.05000000074505806,
             "resource_name": ""
         },
         {
-            "__ID__": "PBRMaterial3D_sni73",
+            "__ID__": "PBRMaterial3D_Akhae",
             "__TYPE__": "PBRMaterial3D",
             "albedo": {
                 "alpha": 1.0,
@@ -5314,28 +5406,28 @@
             "specular": 0.5
         },
         {
-            "__ID__": "CapsuleShape3D_qvnbj",
+            "__ID__": "CapsuleShape3D_SARMB",
             "__TYPE__": "CapsuleShape3D",
             "height": 0.1599999964237213,
             "radius": 0.014999999664723873,
             "resource_name": ""
         },
         {
-            "__ID__": "CapsuleShape3D_uf5eB",
+            "__ID__": "CapsuleShape3D_8F5sS",
             "__TYPE__": "CapsuleShape3D",
             "height": 0.10198038816452026,
             "radius": 0.014999999664723873,
             "resource_name": ""
         },
         {
-            "__ID__": "CapsuleShape3D_ljrLu",
+            "__ID__": "CapsuleShape3D_snMz7",
             "__TYPE__": "CapsuleShape3D",
             "height": 0.04472136124968529,
             "radius": 0.014999999664723873,
             "resource_name": ""
         },
         {
-            "__ID__": "PBRMaterial3D_ShJIh",
+            "__ID__": "PBRMaterial3D_5ApNi",
             "__TYPE__": "PBRMaterial3D",
             "albedo": {
                 "alpha": 1.0,
@@ -5349,27 +5441,27 @@
             "specular": 0.5
         },
         {
-            "__ID__": "CapsuleShape3D_5ZxH5",
+            "__ID__": "CapsuleShape3D_j3VQe",
             "__TYPE__": "CapsuleShape3D",
             "height": 0.13152946531772614,
             "radius": 0.009999999776482582,
             "resource_name": ""
         },
         {
-            "__ID__": "CapsuleShape3D_LrMQT",
+            "__ID__": "CapsuleShape3D_csprC",
             "__TYPE__": "CapsuleShape3D",
             "height": 0.07280109822750092,
             "radius": 0.009999999776482582,
             "resource_name": ""
         },
         {
-            "__ID__": "SphereShape3D_l3JIN",
+            "__ID__": "SphereShape3D_hElMk",
             "__TYPE__": "SphereShape3D",
             "radius": 0.023000000044703484,
             "resource_name": ""
         },
         {
-            "__ID__": "PBRMaterial3D_jx17f",
+            "__ID__": "PBRMaterial3D_cmR0I",
             "__TYPE__": "PBRMaterial3D",
             "albedo": {
                 "alpha": 1.0,
@@ -5383,14 +5475,14 @@
             "specular": 0.5
         },
         {
-            "__ID__": "CapsuleShape3D_nASng",
+            "__ID__": "CapsuleShape3D_RJRLq",
             "__TYPE__": "CapsuleShape3D",
             "height": 0.019999999552965164,
             "radius": 0.05000000074505806,
             "resource_name": ""
         },
         {
-            "__ID__": "PBRMaterial3D_v4wzq",
+            "__ID__": "PBRMaterial3D_pBIeI",
             "__TYPE__": "PBRMaterial3D",
             "albedo": {
                 "alpha": 1.0,
@@ -5404,28 +5496,28 @@
             "specular": 0.5
         },
         {
-            "__ID__": "CapsuleShape3D_sgfjK",
+            "__ID__": "CapsuleShape3D_Px91c",
             "__TYPE__": "CapsuleShape3D",
             "height": 0.1599999964237213,
             "radius": 0.014999999664723873,
             "resource_name": ""
         },
         {
-            "__ID__": "CapsuleShape3D_tPP0T",
+            "__ID__": "CapsuleShape3D_MVrN8",
             "__TYPE__": "CapsuleShape3D",
             "height": 0.10198038816452026,
             "radius": 0.014999999664723873,
             "resource_name": ""
         },
         {
-            "__ID__": "CapsuleShape3D_Xknz6",
+            "__ID__": "CapsuleShape3D_Gaak3",
             "__TYPE__": "CapsuleShape3D",
             "height": 0.04472136124968529,
             "radius": 0.014999999664723873,
             "resource_name": ""
         },
         {
-            "__ID__": "PBRMaterial3D_CZitE",
+            "__ID__": "PBRMaterial3D_j6mto",
             "__TYPE__": "PBRMaterial3D",
             "albedo": {
                 "alpha": 1.0,
@@ -5439,21 +5531,21 @@
             "specular": 0.5
         },
         {
-            "__ID__": "CapsuleShape3D_6v7Lb",
+            "__ID__": "CapsuleShape3D_uYz78",
             "__TYPE__": "CapsuleShape3D",
             "height": 0.13152946531772614,
             "radius": 0.009999999776482582,
             "resource_name": ""
         },
         {
-            "__ID__": "CapsuleShape3D_nUtD2",
+            "__ID__": "CapsuleShape3D_GrD2J",
             "__TYPE__": "CapsuleShape3D",
             "height": 0.07280109822750092,
             "radius": 0.009999999776482582,
             "resource_name": ""
         },
         {
-            "__ID__": "SphereShape3D_TtTRs",
+            "__ID__": "SphereShape3D_RgRB0",
             "__TYPE__": "SphereShape3D",
             "radius": 0.023000000044703484,
             "resource_name": ""

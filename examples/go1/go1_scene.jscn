@@ -1,12 +1,12 @@
 {
     "__EXT_RESOURCES__": [
         {
-            "__ID__": "2_jeZtP",
+            "__ID__": "2_p1JEY",
             "__PATH__": "res://go1.jscn",
             "__TYPE__": "PackedScene"
         },
         {
-            "__ID__": "1_lDckL",
+            "__ID__": "1_5p5fm",
             "__PATH__": "res://scripts/go1.py",
             "__TYPE__": "PythonScript"
         }
@@ -50,7 +50,7 @@
                         ]
                     }
                 },
-                "script": "ExtResource(1_lDckL)",
+                "script": "ExtResource(1_5p5fm)",
                 "visible": true
             },
             "type": "Node3D"
@@ -102,7 +102,7 @@
             "parent": 1,
             "properties": {
                 "material": null,
-                "mesh": "SubResource(PlaneMesh_3izs8)",
+                "mesh": "SubResource(PlaneMesh_zj8VI)",
                 "position": {
                     "matrix_data": {
                         "cols": 1,
@@ -202,7 +202,7 @@
                     }
                 },
                 "script": null,
-                "shape": "SubResource(BoxShape3D_oZlXb)",
+                "shape": "SubResource(BoxShape3D_vnUCx)",
                 "solimp": [
                     0.8999999761581421,
                     0.949999988079071,
@@ -225,11 +225,11 @@
             "type": "CollisionShape3D"
         },
         {
-            "instance": "ExtResource(2_jeZtP)",
+            "instance": "ExtResource(2_p1JEY)",
             "name": "go1",
             "parent": 0,
             "properties": {
-                "mode": "Motion",
+                "mode": "Assembly",
                 "position": {
                     "matrix_data": {
                         "cols": 1,
@@ -264,7 +264,7 @@
                     }
                 },
                 "script": null,
-                "source_path": "",
+                "source_path": "res://assets/xml/go1.xml",
                 "visible": true
             },
             "type": "Robot3D"
@@ -272,13 +272,13 @@
     ],
     "__SUB_RESOURCES__": [
         {
-            "__ID__": "PBRMaterial3D_8Z9i7",
+            "__ID__": "PBRMaterial3D_9ZXmw",
             "__TYPE__": "PBRMaterial3D",
             "albedo": {
                 "alpha": 1.0,
-                "blue": 0.4126637578010559,
-                "green": 0.4126637578010559,
-                "red": 0.38293033838272095
+                "blue": 0.800000011920929,
+                "green": 0.800000011920929,
+                "red": 0.800000011920929
             },
             "metallic": 0.0,
             "resource_name": "",
@@ -286,9 +286,9 @@
             "specular": 0.5
         },
         {
-            "__ID__": "PlaneMesh_3izs8",
+            "__ID__": "PlaneMesh_zj8VI",
             "__TYPE__": "PlaneMesh",
-            "material": "SubResource(PBRMaterial3D_8Z9i7)",
+            "material": "SubResource(PBRMaterial3D_9ZXmw)",
             "resource_name": "",
             "size": {
                 "matrix_data": {
@@ -302,7 +302,7 @@
             }
         },
         {
-            "__ID__": "BoxShape3D_oZlXb",
+            "__ID__": "BoxShape3D_vnUCx",
             "__TYPE__": "BoxShape3D",
             "resource_name": "",
             "size": {
