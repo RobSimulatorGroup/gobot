@@ -35,5 +35,5 @@
             ]
         }
     },
-    "main_scene": "res://terrain_scene.jscn"
+    "main_scene": "res://go1_scene.jscn"
 }

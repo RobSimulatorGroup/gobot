@@ -1,14 +1,14 @@
 {
     "__EXT_RESOURCES__": [
         {
-            "__ID__": "2_G5xMH",
-            "__PATH__": "res://go1.jscn",
+            "__ID__": "3_ZQNXU",
+            "__PATH__": "res://terrain_scene.jscn",
             "__TYPE__": "PackedScene"
         },
         {
-            "__ID__": "1_cvhAM",
-            "__PATH__": "res://scripts/go1.py",
-            "__TYPE__": "PythonScript"
+            "__ID__": "2_7JajF",
+            "__PATH__": "res://go1.jscn",
+            "__TYPE__": "PackedScene"
         }
     ],
     "__META_TYPE__": "SCENE",
@@ -50,186 +50,17 @@
                         ]
                     }
                 },
-                "script": "ExtResource(1_cvhAM)",
-                "visible": true
-            },
-            "type": "Node3D"
-        },
-        {
-            "name": "ground",
-            "parent": 0,
-            "properties": {
-                "position": {
-                    "matrix_data": {
-                        "cols": 1,
-                        "rows": 3,
-                        "storage": [
-                            0.0,
-                            0.0,
-                            -0.009999999776482582
-                        ]
-                    }
-                },
-                "rotation_degrees": {
-                    "matrix_data": {
-                        "cols": 1,
-                        "rows": 3,
-                        "storage": [
-                            0.0,
-                            0.0,
-                            0.0
-                        ]
-                    }
-                },
-                "scale": {
-                    "matrix_data": {
-                        "cols": 1,
-                        "rows": 3,
-                        "storage": [
-                            1.0,
-                            1.0,
-                            1.0
-                        ]
-                    }
-                },
                 "script": null,
                 "visible": true
             },
             "type": "Node3D"
         },
         {
-            "name": "ground_visual",
-            "parent": 1,
-            "properties": {
-                "material": null,
-                "mesh": "SubResource(PlaneMesh_83tcV)",
-                "position": {
-                    "matrix_data": {
-                        "cols": 1,
-                        "rows": 3,
-                        "storage": [
-                            0.0,
-                            0.0,
-                            0.009999999776482582
-                        ]
-                    }
-                },
-                "rotation_degrees": {
-                    "matrix_data": {
-                        "cols": 1,
-                        "rows": 3,
-                        "storage": [
-                            0.0,
-                            0.0,
-                            0.0
-                        ]
-                    }
-                },
-                "scale": {
-                    "matrix_data": {
-                        "cols": 1,
-                        "rows": 3,
-                        "storage": [
-                            1.0,
-                            1.0,
-                            1.0
-                        ]
-                    }
-                },
-                "script": null,
-                "surface_color": {
-                    "alpha": 1.0,
-                    "blue": 0.800000011920929,
-                    "green": 0.800000011920929,
-                    "red": 0.800000011920929
-                },
-                "visible": true
-            },
-            "type": "MeshInstance3D"
-        },
-        {
-            "name": "ground_collision",
-            "parent": 1,
-            "properties": {
-                "conaffinity": 1,
-                "condim": 3,
-                "contype": 1,
-                "disabled": false,
-                "friction": {
-                    "matrix_data": {
-                        "cols": 1,
-                        "rows": 3,
-                        "storage": [
-                            1.0,
-                            0.004999999888241291,
-                            9.999999747378752e-05
-                        ]
-                    }
-                },
-                "gap": 0.0,
-                "margin": 0.0,
-                "position": {
-                    "matrix_data": {
-                        "cols": 1,
-                        "rows": 3,
-                        "storage": [
-                            0.0,
-                            0.0,
-                            0.0
-                        ]
-                    }
-                },
-                "rotation_degrees": {
-                    "matrix_data": {
-                        "cols": 1,
-                        "rows": 3,
-                        "storage": [
-                            0.0,
-                            0.0,
-                            0.0
-                        ]
-                    }
-                },
-                "scale": {
-                    "matrix_data": {
-                        "cols": 1,
-                        "rows": 3,
-                        "storage": [
-                            1.0,
-                            1.0,
-                            1.0
-                        ]
-                    }
-                },
-                "script": null,
-                "shape": "SubResource(BoxShape3D_X48AD)",
-                "solimp": [
-                    0.8999999761581421,
-                    0.949999988079071,
-                    0.0010000000474974513,
-                    0.5,
-                    2.0
-                ],
-                "solref": {
-                    "matrix_data": {
-                        "cols": 1,
-                        "rows": 2,
-                        "storage": [
-                            0.019999999552965164,
-                            1.0
-                        ]
-                    }
-                },
-                "visible": true
-            },
-            "type": "CollisionShape3D"
-        },
-        {
-            "instance": "ExtResource(2_G5xMH)",
+            "instance": "ExtResource(2_7JajF)",
             "name": "go1",
             "parent": 0,
             "properties": {
-                "mode": "Assembly",
+                "mode": "Motion",
                 "position": {
                     "matrix_data": {
                         "cols": 1,
@@ -268,54 +99,49 @@
                 "visible": true
             },
             "type": "Robot3D"
-        }
-    ],
-    "__SUB_RESOURCES__": [
+        },
         {
-            "__ID__": "PBRMaterial3D_Zi5Zr",
-            "__TYPE__": "PBRMaterial3D",
-            "albedo": {
-                "alpha": 1.0,
-                "blue": 0.800000011920929,
-                "green": 0.800000011920929,
-                "red": 0.800000011920929
+            "instance": "ExtResource(3_ZQNXU)",
+            "name": "terrain_world",
+            "parent": 0,
+            "properties": {
+                "position": {
+                    "matrix_data": {
+                        "cols": 1,
+                        "rows": 3,
+                        "storage": [
+                            0.0,
+                            0.0,
+                            0.0
+                        ]
+                    }
+                },
+                "rotation_degrees": {
+                    "matrix_data": {
+                        "cols": 1,
+                        "rows": 3,
+                        "storage": [
+                            0.0,
+                            0.0,
+                            0.0
+                        ]
+                    }
+                },
+                "scale": {
+                    "matrix_data": {
+                        "cols": 1,
+                        "rows": 3,
+                        "storage": [
+                            1.0,
+                            1.0,
+                            1.0
+                        ]
+                    }
+                },
+                "script": null,
+                "visible": true
             },
-            "metallic": 0.0,
-            "resource_name": "",
-            "roughness": 0.5,
-            "specular": 0.5
-        },
-        {
-            "__ID__": "PlaneMesh_83tcV",
-            "__TYPE__": "PlaneMesh",
-            "material": "SubResource(PBRMaterial3D_Zi5Zr)",
-            "resource_name": "",
-            "size": {
-                "matrix_data": {
-                    "cols": 1,
-                    "rows": 2,
-                    "storage": [
-                        100.0,
-                        100.0
-                    ]
-                }
-            }
-        },
-        {
-            "__ID__": "BoxShape3D_X48AD",
-            "__TYPE__": "BoxShape3D",
-            "resource_name": "",
-            "size": {
-                "matrix_data": {
-                    "cols": 1,
-                    "rows": 3,
-                    "storage": [
-                        100.0,
-                        100.0,
-                        0.019999999552965164
-                    ]
-                }
-            }
+            "type": "Node3D"
         }
     ],
     "__TYPE__": "PackedScene",

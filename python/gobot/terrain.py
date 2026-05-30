@@ -42,7 +42,7 @@ TerrainKind = Literal[
 _MUJOCO_BLUE: Color4 = (0.25, 0.35, 0.55, 1.0)
 _MUJOCO_RED: Color4 = (0.65, 0.28, 0.22, 1.0)
 _MUJOCO_GREEN: Color4 = (0.34, 0.52, 0.36, 1.0)
-_PLATFORM_COLOR: Color4 = (0.78, 0.80, 0.76, 1.0)
+_PLATFORM_COLOR: Color4 = (0.44, 0.46, 0.42, 1.0)
 
 
 @dataclass(slots=True)
@@ -392,9 +392,9 @@ def radial_pit(
 
 def mjlab_showcase_terrains() -> dict[str, SubTerrainCfg]:
     return {
-        "flat": flat(),
         "blue_stairs": pyramid_stairs(step_height=0.10, step_width=0.28, platform_width=0.75),
         "pit": radial_pit(depth=0.65, radius=1.20, flat_radius=0.28),
+        "flat": flat(),
         "bumps": wave_terrain(amplitude=0.16, num_waves=5.0),
         "rough": random_rough(noise_range=(-0.08, 0.10), noise_step=0.01, downsampled_scale=0.18),
         "red_stairs_inv": pyramid_stairs_inv(step_height=0.10, step_width=0.28, platform_width=0.75),
@@ -555,6 +555,9 @@ def _add_pyramid_stairs(terrain: _core.Terrain3D, cfg: TerrainGeneratorCfg, sub_
     step_height = float(sub_cfg.kwargs.get("step_height", 0.08)) * (0.5 + difficulty)
     platform_width = float(sub_cfg.kwargs.get("platform_width", 1.0))
     inverted = bool(sub_cfg.kwargs.get("inverted", False))
+    if inverted:
+        return _add_inverted_pyramid_stairs(terrain, cfg, step_width, step_height, platform_width, center)
+
     half_x = cfg.size[0] * 0.5
     half_y = cfg.size[1] * 0.5
     layer = 0
@@ -576,6 +579,51 @@ def _add_pyramid_stairs(terrain: _core.Terrain3D, cfg: TerrainGeneratorCfg, sub_
         layer += 1
     _add_box_top(terrain, center[0], center[1], 0.0, platform_width, platform_width, _get_platform_color())
     return extrema
+
+
+def _add_inverted_pyramid_stairs(
+    terrain: _core.Terrain3D,
+    cfg: TerrainGeneratorCfg,
+    step_width: float,
+    step_height: float,
+    platform_width: float,
+    center: Vector3,
+) -> float:
+    half_x = cfg.size[0] * 0.5
+    half_y = cfg.size[1] * 0.5
+    target_half = platform_width * 0.5
+    layer = 0
+    min_height = 0.0
+
+    while half_x > target_half and half_y > target_half:
+        inner_x = max(half_x - step_width, target_half)
+        inner_y = max(half_y - step_width, target_half)
+        height = -step_height * layer
+        shade = 0.55 + 0.45 * min(layer / 8.0, 1.0)
+        color = (
+            min(_MUJOCO_RED[0] * shade, 1.0),
+            min(_MUJOCO_RED[1] * shade, 1.0),
+            min(_MUJOCO_RED[2] * shade, 1.0),
+            _MUJOCO_RED[3],
+        )
+
+        strip_y = half_y - inner_y
+        if strip_y > 1.0e-6:
+            _add_box_top(terrain, center[0], center[1] + (inner_y + half_y) * 0.5, height, half_x * 2.0, strip_y, color)
+            _add_box_top(terrain, center[0], center[1] - (inner_y + half_y) * 0.5, height, half_x * 2.0, strip_y, color)
+        strip_x = half_x - inner_x
+        if strip_x > 1.0e-6 and inner_y > 1.0e-6:
+            _add_box_top(terrain, center[0] + (inner_x + half_x) * 0.5, center[1], height, strip_x, inner_y * 2.0, color)
+            _add_box_top(terrain, center[0] - (inner_x + half_x) * 0.5, center[1], height, strip_x, inner_y * 2.0, color)
+
+        min_height = height
+        half_x = inner_x
+        half_y = inner_y
+        layer += 1
+
+    center_height = -step_height * layer
+    _add_box_top(terrain, center[0], center[1], center_height, platform_width, platform_width, _get_platform_color())
+    return min_height
 
 
 def _add_random_grid(terrain: _core.Terrain3D, cfg: TerrainGeneratorCfg, sub_cfg: SubTerrainCfg, center: Vector3, difficulty: float, rng: np.random.Generator) -> float:

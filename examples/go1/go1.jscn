@@ -351,7 +351,7 @@
                         ]
                     }
                 },
-                "visible": false
+                "visible": true
             },
             "type": "CollisionShape3D"
         },
@@ -428,7 +428,7 @@
                         ]
                     }
                 },
-                "visible": false
+                "visible": true
             },
             "type": "CollisionShape3D"
         },
@@ -452,8 +452,8 @@
                 "control_upper_limit": 0.8629999756813049,
                 "damping": 0.0,
                 "drive_damping": 0.0,
-                "drive_mode": "Position",
-                "drive_stiffness": 40.0,
+                "drive_mode": "Passive",
+                "drive_stiffness": 0.0,
                 "effort_limit": 0.0,
                 "force_lower_limit": 0.0,
                 "force_upper_limit": 0.0,
@@ -711,7 +711,7 @@
                         ]
                     }
                 },
-                "visible": false
+                "visible": true
             },
             "type": "CollisionShape3D"
         },
@@ -735,8 +735,8 @@
                 "control_upper_limit": 4.500999927520752,
                 "damping": 0.0,
                 "drive_damping": 0.0,
-                "drive_mode": "Position",
-                "drive_stiffness": 40.0,
+                "drive_mode": "Passive",
+                "drive_stiffness": 0.0,
                 "effort_limit": 0.0,
                 "force_lower_limit": 0.0,
                 "force_upper_limit": 0.0,
@@ -994,7 +994,7 @@
                         ]
                     }
                 },
-                "visible": false
+                "visible": true
             },
             "type": "CollisionShape3D"
         },
@@ -1071,7 +1071,7 @@
                         ]
                     }
                 },
-                "visible": false
+                "visible": true
             },
             "type": "CollisionShape3D"
         },
@@ -1148,7 +1148,7 @@
                         ]
                     }
                 },
-                "visible": false
+                "visible": true
             },
             "type": "CollisionShape3D"
         },
@@ -1172,8 +1172,8 @@
                 "control_upper_limit": -0.8880000114440918,
                 "damping": 0.0,
                 "drive_damping": 0.0,
-                "drive_mode": "Position",
-                "drive_stiffness": 40.0,
+                "drive_mode": "Passive",
+                "drive_stiffness": 0.0,
                 "effort_limit": 0.0,
                 "force_lower_limit": 0.0,
                 "force_upper_limit": 0.0,
@@ -1431,7 +1431,7 @@
                         ]
                     }
                 },
-                "visible": false
+                "visible": true
             },
             "type": "CollisionShape3D"
         },
@@ -1508,7 +1508,7 @@
                         ]
                     }
                 },
-                "visible": false
+                "visible": true
             },
             "type": "CollisionShape3D"
         },
@@ -1585,7 +1585,7 @@
                         ]
                     }
                 },
-                "visible": false
+                "visible": true
             },
             "type": "CollisionShape3D"
         },
@@ -1609,8 +1609,8 @@
                 "control_upper_limit": 0.8629999756813049,
                 "damping": 0.0,
                 "drive_damping": 0.0,
-                "drive_mode": "Position",
-                "drive_stiffness": 40.0,
+                "drive_mode": "Passive",
+                "drive_stiffness": 0.0,
                 "effort_limit": 0.0,
                 "force_lower_limit": 0.0,
                 "force_upper_limit": 0.0,
@@ -1868,7 +1868,7 @@
                         ]
                     }
                 },
-                "visible": false
+                "visible": true
             },
             "type": "CollisionShape3D"
         },
@@ -1892,8 +1892,8 @@
                 "control_upper_limit": 4.500999927520752,
                 "damping": 0.0,
                 "drive_damping": 0.0,
-                "drive_mode": "Position",
-                "drive_stiffness": 40.0,
+                "drive_mode": "Passive",
+                "drive_stiffness": 0.0,
                 "effort_limit": 0.0,
                 "force_lower_limit": 0.0,
                 "force_upper_limit": 0.0,
@@ -2151,7 +2151,7 @@
                         ]
                     }
                 },
-                "visible": false
+                "visible": true
             },
             "type": "CollisionShape3D"
         },
@@ -2228,7 +2228,7 @@
                         ]
                     }
                 },
-                "visible": false
+                "visible": true
             },
             "type": "CollisionShape3D"
         },
@@ -2305,7 +2305,7 @@
                         ]
                     }
                 },
-                "visible": false
+                "visible": true
             },
             "type": "CollisionShape3D"
         },
@@ -2329,8 +2329,8 @@
                 "control_upper_limit": -0.8880000114440918,
                 "damping": 0.0,
                 "drive_damping": 0.0,
-                "drive_mode": "Position",
-                "drive_stiffness": 40.0,
+                "drive_mode": "Passive",
+                "drive_stiffness": 0.0,
                 "effort_limit": 0.0,
                 "force_lower_limit": 0.0,
                 "force_upper_limit": 0.0,
@@ -2588,7 +2588,7 @@
                         ]
                     }
                 },
-                "visible": false
+                "visible": true
             },
             "type": "CollisionShape3D"
         },
@@ -2665,7 +2665,7 @@
                         ]
                     }
                 },
-                "visible": false
+                "visible": true
             },
             "type": "CollisionShape3D"
         },
@@ -2742,7 +2742,7 @@
                         ]
                     }
                 },
-                "visible": false
+                "visible": true
             },
             "type": "CollisionShape3D"
         },
@@ -2766,8 +2766,8 @@
                 "control_upper_limit": 0.8629999756813049,
                 "damping": 0.0,
                 "drive_damping": 0.0,
-                "drive_mode": "Position",
-                "drive_stiffness": 40.0,
+                "drive_mode": "Passive",
+                "drive_stiffness": 0.0,
                 "effort_limit": 0.0,
                 "force_lower_limit": 0.0,
                 "force_upper_limit": 0.0,
@@ -3025,7 +3025,7 @@
                         ]
                     }
                 },
-                "visible": false
+                "visible": true
             },
             "type": "CollisionShape3D"
         },
@@ -3049,8 +3049,8 @@
                 "control_upper_limit": 4.500999927520752,
                 "damping": 0.0,
                 "drive_damping": 0.0,
-                "drive_mode": "Position",
-                "drive_stiffness": 40.0,
+                "drive_mode": "Passive",
+                "drive_stiffness": 0.0,
                 "effort_limit": 0.0,
                 "force_lower_limit": 0.0,
                 "force_upper_limit": 0.0,
@@ -3308,7 +3308,7 @@
                         ]
                     }
                 },
-                "visible": false
+                "visible": true
             },
             "type": "CollisionShape3D"
         },
@@ -3385,7 +3385,7 @@
                         ]
                     }
                 },
-                "visible": false
+                "visible": true
             },
             "type": "CollisionShape3D"
         },
@@ -3462,7 +3462,7 @@
                         ]
                     }
                 },
-                "visible": false
+                "visible": true
             },
             "type": "CollisionShape3D"
         },
@@ -3486,8 +3486,8 @@
                 "control_upper_limit": -0.8880000114440918,
                 "damping": 0.0,
                 "drive_damping": 0.0,
-                "drive_mode": "Position",
-                "drive_stiffness": 40.0,
+                "drive_mode": "Passive",
+                "drive_stiffness": 0.0,
                 "effort_limit": 0.0,
                 "force_lower_limit": 0.0,
                 "force_upper_limit": 0.0,
@@ -3745,7 +3745,7 @@
                         ]
                     }
                 },
-                "visible": false
+                "visible": true
             },
             "type": "CollisionShape3D"
         },
@@ -3822,7 +3822,7 @@
                         ]
                     }
                 },
-                "visible": false
+                "visible": true
             },
             "type": "CollisionShape3D"
         },
@@ -3899,7 +3899,7 @@
                         ]
                     }
                 },
-                "visible": false
+                "visible": true
             },
             "type": "CollisionShape3D"
         },
@@ -3923,8 +3923,8 @@
                 "control_upper_limit": 0.8629999756813049,
                 "damping": 0.0,
                 "drive_damping": 0.0,
-                "drive_mode": "Position",
-                "drive_stiffness": 40.0,
+                "drive_mode": "Passive",
+                "drive_stiffness": 0.0,
                 "effort_limit": 0.0,
                 "force_lower_limit": 0.0,
                 "force_upper_limit": 0.0,
@@ -4182,7 +4182,7 @@
                         ]
                     }
                 },
-                "visible": false
+                "visible": true
             },
             "type": "CollisionShape3D"
         },
@@ -4206,8 +4206,8 @@
                 "control_upper_limit": 4.500999927520752,
                 "damping": 0.0,
                 "drive_damping": 0.0,
-                "drive_mode": "Position",
-                "drive_stiffness": 40.0,
+                "drive_mode": "Passive",
+                "drive_stiffness": 0.0,
                 "effort_limit": 0.0,
                 "force_lower_limit": 0.0,
                 "force_upper_limit": 0.0,
@@ -4465,7 +4465,7 @@
                         ]
                     }
                 },
-                "visible": false
+                "visible": true
             },
             "type": "CollisionShape3D"
         },
@@ -4542,7 +4542,7 @@
                         ]
                     }
                 },
-                "visible": false
+                "visible": true
             },
             "type": "CollisionShape3D"
         },
@@ -4619,7 +4619,7 @@
                         ]
                     }
                 },
-                "visible": false
+                "visible": true
             },
             "type": "CollisionShape3D"
         },
@@ -4643,8 +4643,8 @@
                 "control_upper_limit": -0.8880000114440918,
                 "damping": 0.0,
                 "drive_damping": 0.0,
-                "drive_mode": "Position",
-                "drive_stiffness": 40.0,
+                "drive_mode": "Passive",
+                "drive_stiffness": 0.0,
                 "effort_limit": 0.0,
                 "force_lower_limit": 0.0,
                 "force_upper_limit": 0.0,
@@ -4902,7 +4902,7 @@
                         ]
                     }
                 },
-                "visible": false
+                "visible": true
             },
             "type": "CollisionShape3D"
         },
@@ -4979,7 +4979,7 @@
                         ]
                     }
                 },
-                "visible": false
+                "visible": true
             },
             "type": "CollisionShape3D"
         },
@@ -5056,7 +5056,7 @@
                         ]
                     }
                 },
-                "visible": false
+                "visible": true
             },
             "type": "CollisionShape3D"
         },
