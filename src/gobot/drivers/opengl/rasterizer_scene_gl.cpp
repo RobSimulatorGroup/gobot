@@ -147,6 +147,9 @@ void GLRasterizerScene::UploadMesh(GLMeshData* mesh) {
     if (mesh->normal_buffer == 0) {
         glCreateBuffers(1, &mesh->normal_buffer);
     }
+    if (mesh->color_buffer == 0) {
+        glCreateBuffers(1, &mesh->color_buffer);
+    }
     if (mesh->index_buffer == 0) {
         glCreateBuffers(1, &mesh->index_buffer);
     }
@@ -158,6 +161,10 @@ void GLRasterizerScene::UploadMesh(GLMeshData* mesh) {
     glNamedBufferData(mesh->normal_buffer,
                       static_cast<GLsizeiptr>(mesh->normals.size() * sizeof(float)),
                       mesh->normals.data(),
+                      GL_STATIC_DRAW);
+    glNamedBufferData(mesh->color_buffer,
+                      static_cast<GLsizeiptr>(mesh->colors.size() * sizeof(float)),
+                      mesh->colors.data(),
                       GL_STATIC_DRAW);
     glNamedBufferData(mesh->index_buffer,
                       static_cast<GLsizeiptr>(mesh->indices.size() * sizeof(uint32_t)),
@@ -172,6 +179,10 @@ void GLRasterizerScene::UploadMesh(GLMeshData* mesh) {
     glEnableVertexArrayAttrib(mesh->vao, 1);
     glVertexArrayAttribFormat(mesh->vao, 1, 3, GL_FLOAT, GL_FALSE, 0);
     glVertexArrayAttribBinding(mesh->vao, 1, 1);
+    glVertexArrayVertexBuffer(mesh->vao, 2, mesh->color_buffer, 0, 4 * sizeof(float));
+    glEnableVertexArrayAttrib(mesh->vao, 2);
+    glVertexArrayAttribFormat(mesh->vao, 2, 4, GL_FLOAT, GL_FALSE, 0);
+    glVertexArrayAttribBinding(mesh->vao, 2, 2);
     glVertexArrayElementBuffer(mesh->vao, mesh->index_buffer);
 
     mesh->dirty = false;

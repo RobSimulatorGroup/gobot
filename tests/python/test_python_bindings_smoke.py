@@ -32,6 +32,8 @@ def main():
     assert gobot.PhysicsBackendType.MuJoCoWarp == gobot.physics.PhysicsBackendType.MuJoCoWarp
     assert gobot.sim.JointControllerGains is gobot.JointControllerGains
     assert gobot.scene.Node is gobot.Node
+    assert gobot.scene.Terrain3D is gobot.Terrain3D
+    assert "create_terrain_node" in gobot.terrain.__all__
     assert "ManagerBasedEnv" in gobot.rl.__all__
     assert "VectorEnv" not in gobot.rl.__all__
     assert not hasattr(gobot._core, "NativeVectorEnv")
@@ -177,6 +179,31 @@ def main():
     assert len(sensors[1]["values"]) == 3
     assert sensors[2]["type"] == "contact"
     assert len(sensors[2]["values"]) == 1
+
+    terrain_cfg = gobot.terrain.TerrainGeneratorCfg(
+        size=(2.0, 2.0),
+        num_rows=1,
+        num_cols=1,
+        seed=42,
+        sub_terrains={"rough": gobot.terrain.random_rough(noise_range=(-0.02, 0.02))},
+        horizontal_scale=0.5,
+    )
+    terrain_a = gobot.terrain.create_terrain_node(terrain_cfg, "terrain_a")
+    terrain_b = gobot.terrain.create_terrain_node(terrain_cfg, "terrain_b")
+    assert isinstance(terrain_a, gobot.Terrain3D)
+    assert terrain_a.heightfield_count == 1
+    assert terrain_a.color_mode == gobot.TerrainColorMode.MjLab
+    assert terrain_a.get_heightfield_heights(0) == terrain_b.get_heightfield_heights(0)
+    assert len(terrain_a.spawn_origins) == 1
+    terrain_root = gobot.create_node("Node3D", "terrain_world")
+    terrain_root.add_child(terrain_a)
+    gobot.save_scene(terrain_root, "res://gobot_python_binding_terrain_scene.jscn")
+    context.load_scene("res://gobot_python_binding_terrain_scene.jscn")
+    loaded_terrain = context.root.find("terrain_a")
+    assert loaded_terrain.type == "Terrain3D"
+    assert loaded_terrain.color_mode == gobot.TerrainColorMode.MjLab
+    context.build_world(gobot.PhysicsBackendType.Null)
+
     context.load_scene("res://gobot_python_binding_cartpole.jscn")
 
     env = gobot.rl.ManagerBasedEnv(

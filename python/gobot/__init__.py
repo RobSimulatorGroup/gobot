@@ -17,6 +17,7 @@ physics = _importlib.import_module(__name__ + ".physics")
 rl = _importlib.import_module(__name__ + ".rl")
 scene = _importlib.import_module(__name__ + ".scene")
 sim = _importlib.import_module(__name__ + ".sim")
+terrain = _importlib.import_module(__name__ + ".terrain")
 
 try:
     from ._core import __doc__ as __doc__

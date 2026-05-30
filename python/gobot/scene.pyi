@@ -15,6 +15,8 @@ from ._core import (
     RobotMode,
     Scene,
     Sensor3D,
+    TerrainColorMode,
+    Terrain3D,
     create_box_collision,
     create_box_visual,
     create_node,

@@ -101,8 +101,9 @@ void RenderServer::MeshSetBox(const RID& mesh, const Vector3& size) {
 void RenderServer::MeshSetSurface(const RID& mesh,
                                   const std::vector<Vector3>& vertices,
                                   const std::vector<uint32_t>& indices,
-                                  const std::vector<Vector3>& normals) {
-    RSG::mesh_storage->MeshSetSurface(mesh, vertices, indices, normals);
+                                  const std::vector<Vector3>& normals,
+                                  const std::vector<Color>& colors) {
+    RSG::mesh_storage->MeshSetSurface(mesh, vertices, indices, normals, colors);
 }
 
 void RenderServer::MeshSetCylinder(const RID& mesh, RealType radius, RealType height, int radial_segments) {

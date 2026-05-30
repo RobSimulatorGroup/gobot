@@ -24,6 +24,13 @@ void PushVertex(std::vector<float>& vertices, RealType x, RealType y, RealType z
     vertices.push_back(static_cast<float>(z));
 }
 
+void PushColor(std::vector<float>& colors, const Color& color) {
+    colors.push_back(color.red());
+    colors.push_back(color.green());
+    colors.push_back(color.blue());
+    colors.push_back(color.alpha());
+}
+
 Vector3 ReadVertex(const std::vector<float>& vertices, uint32_t index) {
     const std::size_t offset = static_cast<std::size_t>(index) * 3;
     return {vertices[offset], vertices[offset + 1], vertices[offset + 2]};
@@ -73,11 +80,15 @@ std::vector<float> GenerateSmoothNormals(const std::vector<float>& vertices, con
 void SetMeshData(GLMeshData* mesh,
                  std::vector<float> vertices,
                  std::vector<uint32_t> indices,
-                 std::vector<float> normals = {}) {
+                 std::vector<float> normals = {},
+                 std::vector<float> colors = {}) {
     mesh->vertices = std::move(vertices);
     mesh->normals = normals.size() == mesh->vertices.size()
             ? std::move(normals)
             : GenerateSmoothNormals(mesh->vertices, indices);
+    mesh->colors = colors.size() == (mesh->vertices.size() / 3) * 4
+            ? std::move(colors)
+            : std::vector<float>((mesh->vertices.size() / 3) * 4, 1.0f);
     mesh->indices = std::move(indices);
     mesh->index_count = static_cast<GLsizei>(mesh->indices.size());
     mesh->dirty = true;
@@ -160,7 +171,8 @@ void GLMeshStorage::MeshSetBox(const RID& p_rid, const Vector3& size) {
 void GLMeshStorage::MeshSetSurface(const RID& p_rid,
                                    const std::vector<Vector3>& surface_vertices,
                                    const std::vector<uint32_t>& surface_indices,
-                                   const std::vector<Vector3>& surface_normals) {
+                                   const std::vector<Vector3>& surface_normals,
+                                   const std::vector<Color>& surface_colors) {
     GLMeshData* mesh = mesh_owner_.GetOrNull(p_rid);
     ERR_FAIL_COND(mesh == nullptr);
 
@@ -176,7 +188,13 @@ void GLMeshStorage::MeshSetSurface(const RID& p_rid,
         PushVertex(normals, normal.x(), normal.y(), normal.z());
     }
 
-    SetMeshData(mesh, std::move(vertices), surface_indices, std::move(normals));
+    std::vector<float> colors;
+    colors.reserve(surface_colors.size() * 4);
+    for (const Color& color : surface_colors) {
+        PushColor(colors, color);
+    }
+
+    SetMeshData(mesh, std::move(vertices), surface_indices, std::move(normals), std::move(colors));
 }
 
 void GLMeshStorage::MeshSetCylinder(const RID& p_rid, RealType radius, RealType height, int radial_segments) {
@@ -296,6 +314,9 @@ void GLMeshStorage::MeshFree(const RID& p_rid) {
     }
     if (mesh->normal_buffer != 0) {
         glDeleteBuffers(1, &mesh->normal_buffer);
+    }
+    if (mesh->color_buffer != 0) {
+        glDeleteBuffers(1, &mesh->color_buffer);
     }
     if (mesh->index_buffer != 0) {
         glDeleteBuffers(1, &mesh->index_buffer);

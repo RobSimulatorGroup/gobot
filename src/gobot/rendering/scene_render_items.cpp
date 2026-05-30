@@ -5,6 +5,7 @@
 #include "gobot/scene/node.hpp"
 #include "gobot/scene/resources/material.hpp"
 #include "gobot/scene/resources/mesh.hpp"
+#include "gobot/scene/terrain_3d.hpp"
 
 #include "gobot/log.hpp"
 
@@ -91,6 +92,22 @@ void CollectNodeRenderItems(const Node* node, SceneRenderItems& items) {
                           item.specular);
             }
 #endif
+            items.visual_meshes.push_back(item);
+        }
+    }
+
+    const auto* terrain = Object::PointerCastTo<Terrain3D>(node);
+    if (terrain && terrain->IsInsideTree() && terrain->IsVisibleInTree()) {
+        Ref<ArrayMesh> mesh_resource = terrain->GetRenderMesh();
+        if (mesh_resource.IsValid()) {
+            VisualMeshRenderItem item;
+            item.mesh = mesh_resource->GetRid();
+            item.model = terrain->GetGlobalTransform().matrix();
+            item.surface_color = terrain->GetColorMode() == TerrainColorMode::HeightRamp
+                    ? Color{1.0f, 1.0f, 1.0f, terrain->GetSurfaceColor().alpha()}
+                    : terrain->GetSurfaceColor();
+            item.roughness = 0.92f;
+            item.specular = 0.12f;
             items.visual_meshes.push_back(item);
         }
     }

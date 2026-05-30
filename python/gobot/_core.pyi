@@ -41,6 +41,12 @@ class LinkRole(Enum):
     VirtualRoot: ClassVar[LinkRole]
 
 
+class TerrainColorMode(Enum):
+    SurfaceColor: ClassVar[TerrainColorMode]
+    HeightRamp: ClassVar[TerrainColorMode]
+    MjLab: ClassVar[TerrainColorMode]
+
+
 class JointControllerGains:
     position_stiffness: float
     velocity_damping: float
@@ -241,6 +247,51 @@ class CollisionShape3D(Node3D):
 
 class MeshInstance3D(Node3D):
     surface_color: tuple[float, float, float, float]
+
+
+class Terrain3D(Node3D):
+    box_count: int
+    heightfield_count: int
+    mesh_patch_count: int
+    spawn_origins: list[Vector3]
+    surface_color: tuple[float, float, float, float]
+    color_mode: TerrainColorMode
+    height_low_color: tuple[float, float, float, float]
+    height_high_color: tuple[float, float, float, float]
+    height_range_min: float
+    height_range_max: float
+    friction: Vector3
+    solref: tuple[float, float]
+    solimp: list[float]
+
+    def clear_terrain(self) -> None: ...
+    def add_box(
+        self,
+        center: Vector3,
+        size: Vector3,
+        rotation_degrees: Vector3 = (0.0, 0.0, 0.0),
+        color: tuple[float, float, float, float] = (1.0, 1.0, 1.0, 1.0),
+    ) -> None: ...
+    def add_heightfield(
+        self,
+        center: Vector3,
+        size: tuple[float, float],
+        rows: int,
+        cols: int,
+        heights: Sequence[float],
+        base_thickness: float = 0.1,
+        normalized_elevation: Sequence[float] = (),
+        z_offset: float = 0.0,
+    ) -> None: ...
+    def add_mesh_patch(
+        self,
+        center: Vector3,
+        vertices: Sequence[Vector3],
+        indices: Sequence[int],
+        rotation_degrees: Vector3 = (0.0, 0.0, 0.0),
+        color: tuple[float, float, float, float] = (1.0, 1.0, 1.0, 1.0),
+    ) -> None: ...
+    def get_heightfield_heights(self, index: int) -> list[float]: ...
 
 
 class Sensor3D(Node3D):

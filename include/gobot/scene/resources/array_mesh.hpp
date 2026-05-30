@@ -8,6 +8,7 @@
 
 #include "gobot/scene/resources/mesh.hpp"
 #include "gobot/scene/resources/material.hpp"
+#include "gobot/core/color.hpp"
 #include "gobot/core/math/matrix.hpp"
 #include "gobot/core/rid.hpp"
 
@@ -24,13 +25,16 @@ public:
 
     void SetSurface(std::vector<Vector3> vertices,
                     std::vector<uint32_t> indices,
-                    std::vector<Vector3> normals = {});
+                    std::vector<Vector3> normals = {},
+                    std::vector<Color> colors = {});
 
     const std::vector<Vector3>& GetVertices() const;
 
     const std::vector<uint32_t>& GetIndices() const;
 
     const std::vector<Vector3>& GetNormals() const;
+
+    const std::vector<Color>& GetColors() const;
 
     void SetMaterial(const Ref<Material>& material);
 
@@ -45,6 +49,7 @@ private:
     std::vector<Vector3> vertices_;
     std::vector<uint32_t> indices_;
     std::vector<Vector3> normals_;
+    std::vector<Color> colors_;
     Ref<Material> material_{nullptr};
 };
 

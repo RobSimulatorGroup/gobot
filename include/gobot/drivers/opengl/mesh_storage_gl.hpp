@@ -17,10 +17,12 @@ namespace gobot::opengl {
 struct GLMeshData {
     std::vector<float> vertices;
     std::vector<float> normals;
+    std::vector<float> colors;
     std::vector<uint32_t> indices;
     GLuint vao = 0;
     GLuint vertex_buffer = 0;
     GLuint normal_buffer = 0;
+    GLuint color_buffer = 0;
     GLuint index_buffer = 0;
     GLsizei index_count = 0;
     bool dirty = true;
@@ -41,7 +43,8 @@ public:
     void MeshSetSurface(const RID& p_rid,
                         const std::vector<Vector3>& vertices,
                         const std::vector<uint32_t>& indices,
-                        const std::vector<Vector3>& normals) override;
+                        const std::vector<Vector3>& normals,
+                        const std::vector<Color>& colors) override;
 
     void MeshSetCylinder(const RID& p_rid, RealType radius, RealType height, int radial_segments) override;
 

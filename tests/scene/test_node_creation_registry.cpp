@@ -11,6 +11,7 @@
 #include <gobot/scene/resources/primitive_mesh.hpp>
 #include <gobot/scene/robot_3d.hpp>
 #include <gobot/scene/sensor_3d.hpp>
+#include <gobot/scene/terrain_3d.hpp>
 
 namespace {
 
@@ -29,6 +30,7 @@ TEST(TestNodeCreationRegistry, built_in_entries_keep_node_inheritance_shape) {
     const auto* node = FindEntry("Node");
     const auto* node_3d = FindEntry("Node3D");
     const auto* collision_shape = FindEntry("CollisionShape3D");
+    const auto* terrain = FindEntry("Terrain3D");
     const auto* robot = FindEntry("Robot3D");
     const auto* link = FindEntry("Link3D");
     const auto* joint = FindEntry("Joint3D");
@@ -44,6 +46,7 @@ TEST(TestNodeCreationRegistry, built_in_entries_keep_node_inheritance_shape) {
     ASSERT_NE(node, nullptr);
     ASSERT_NE(node_3d, nullptr);
     ASSERT_NE(collision_shape, nullptr);
+    ASSERT_NE(terrain, nullptr);
     ASSERT_NE(robot, nullptr);
     ASSERT_NE(link, nullptr);
     ASSERT_NE(joint, nullptr);
@@ -59,6 +62,7 @@ TEST(TestNodeCreationRegistry, built_in_entries_keep_node_inheritance_shape) {
     EXPECT_TRUE(node->parent_id.empty());
     EXPECT_EQ(node_3d->parent_id, "Node");
     EXPECT_EQ(collision_shape->parent_id, "Node3D");
+    EXPECT_EQ(terrain->parent_id, "Node3D");
     EXPECT_EQ(robot->parent_id, "Node3D");
     EXPECT_EQ(link->parent_id, "Node3D");
     EXPECT_EQ(joint->parent_id, "Node3D");
@@ -113,6 +117,18 @@ TEST(TestNodeCreationRegistry, creates_mesh_instance_node) {
     auto* mesh_instance = gobot::Object::PointerCastTo<gobot::MeshInstance3D>(node);
     ASSERT_NE(mesh_instance, nullptr);
     EXPECT_FALSE(mesh_instance->GetMesh().IsValid());
+
+    gobot::Object::Delete(node);
+}
+
+TEST(TestNodeCreationRegistry, creates_terrain_node) {
+    gobot::Node* node = gobot::NodeCreationRegistry::CreateNode("Terrain3D");
+    ASSERT_NE(node, nullptr);
+
+    auto* terrain = gobot::Object::PointerCastTo<gobot::Terrain3D>(node);
+    ASSERT_NE(terrain, nullptr);
+    EXPECT_EQ(terrain->GetBoxes().size(), 0);
+    EXPECT_EQ(terrain->GetHeightFields().size(), 0);
 
     gobot::Object::Delete(node);
 }

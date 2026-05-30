@@ -11,6 +11,7 @@
 #include <string>
 #include <vector>
 
+#include "gobot/core/color.hpp"
 #include "gobot/core/math/geometry.hpp"
 #include "gobot/core/ref_counted.hpp"
 #include "gobot/physics/joint_controller.hpp"
@@ -23,6 +24,7 @@ class Link3D;
 class Node3D;
 class Robot3D;
 class Sensor3D;
+class Terrain3D;
 
 enum class PhysicsBackendType {
     Null,
@@ -166,13 +168,56 @@ struct PhysicsRobotSnapshot {
     std::vector<PhysicsSensorSnapshot> sensors;
 };
 
+struct PhysicsTerrainBoxSnapshot {
+    Affine3 global_transform{Affine3::Identity()};
+    Vector3 size{Vector3::Ones()};
+};
+
+struct PhysicsTerrainHeightFieldSnapshot {
+    Affine3 global_transform{Affine3::Identity()};
+    Vector2 size{1.0, 1.0};
+    int rows{0};
+    int cols{0};
+    std::vector<RealType> heights;
+    std::vector<RealType> normalized_elevation;
+    RealType base_thickness{0.1};
+    RealType z_offset{0.0};
+};
+
+struct PhysicsTerrainMeshPatchSnapshot {
+    Affine3 global_transform{Affine3::Identity()};
+    std::vector<Vector3> vertices;
+    std::vector<std::uint32_t> indices;
+    Color color{1.0f, 1.0f, 1.0f, 1.0f};
+};
+
+struct PhysicsTerrainSnapshot {
+    const Terrain3D* node{nullptr};
+    std::string name;
+    Color surface_color{0.48f, 0.56f, 0.50f, 1.0f};
+    Vector3 friction{1.0, 0.005, 0.0001};
+    int contype{1};
+    int conaffinity{1};
+    int condim{3};
+    Vector2 solref{0.02, 1.0};
+    std::vector<RealType> solimp{0.9, 0.95, 0.001, 0.5, 2.0};
+    RealType margin{0.0};
+    RealType gap{0.0};
+    std::vector<PhysicsTerrainBoxSnapshot> boxes;
+    std::vector<PhysicsTerrainHeightFieldSnapshot> heightfields;
+    std::vector<PhysicsTerrainMeshPatchSnapshot> mesh_patches;
+    std::vector<Vector3> spawn_origins;
+};
+
 struct PhysicsSceneSnapshot {
     std::vector<PhysicsRobotSnapshot> robots;
+    std::vector<PhysicsTerrainSnapshot> terrains;
     std::vector<PhysicsShapeSnapshot> loose_collision_shapes;
     std::size_t total_link_count{0};
     std::size_t total_joint_count{0};
     std::size_t total_collision_shape_count{0};
     std::size_t total_sensor_count{0};
+    std::size_t total_terrain_count{0};
 };
 
 struct PhysicsJointState {

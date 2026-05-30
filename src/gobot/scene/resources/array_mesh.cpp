@@ -26,12 +26,17 @@ ArrayMesh::~ArrayMesh() {
 
 void ArrayMesh::SetSurface(std::vector<Vector3> vertices,
                            std::vector<uint32_t> indices,
-                           std::vector<Vector3> normals) {
+                           std::vector<Vector3> normals,
+                           std::vector<Color> colors) {
     vertices_ = std::move(vertices);
     indices_ = std::move(indices);
     normals_ = std::move(normals);
+    colors_ = std::move(colors);
     if (normals_.size() != vertices_.size()) {
         normals_.clear();
+    }
+    if (colors_.size() != vertices_.size()) {
+        colors_.clear();
     }
     UploadSurface();
 }
@@ -46,6 +51,10 @@ const std::vector<uint32_t>& ArrayMesh::GetIndices() const {
 
 const std::vector<Vector3>& ArrayMesh::GetNormals() const {
     return normals_;
+}
+
+const std::vector<Color>& ArrayMesh::GetColors() const {
+    return colors_;
 }
 
 void ArrayMesh::SetMaterial(const Ref<Material>& material) {
@@ -67,7 +76,7 @@ void ArrayMesh::UploadSurface() {
     if (mesh_.IsNull()) {
         mesh_ = RenderServer::GetInstance()->MeshCreate();
     }
-    RS::GetInstance()->MeshSetSurface(mesh_, vertices_, indices_, normals_);
+    RS::GetInstance()->MeshSetSurface(mesh_, vertices_, indices_, normals_, colors_);
 }
 
 } // namespace gobot

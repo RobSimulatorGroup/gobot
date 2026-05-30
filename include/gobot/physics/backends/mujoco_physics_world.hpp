@@ -138,6 +138,8 @@ private:
 
     void AddLooseSceneGeomsToSpec(void* spec);
 
+    void AddTerrainGeomsToSpec(void* spec);
+
     void AddFloatingBaseJointsToSpec(void* spec, const PhysicsRobotSnapshot& robot);
 
     void BuildJointBindings();

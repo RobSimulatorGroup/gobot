@@ -20,6 +20,8 @@ from ._core import (
     RobotMode,
     Scene,
     Sensor3D,
+    TerrainColorMode,
+    Terrain3D,
     backend_infos,
     create_box_collision,
     create_box_visual,
@@ -35,7 +37,7 @@ from ._core import (
 )
 from .scene_helpers import create_cartpole_scene, save_cartpole_scene
 
-from . import app, physics, rl, scene, sim
+from . import app, physics, rl, scene, sim, terrain
 
 __version__: str
 

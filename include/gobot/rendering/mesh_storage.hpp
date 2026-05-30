@@ -9,6 +9,7 @@
 
 #include "gobot/core/rid.hpp"
 #include "gobot/core/rid_owner.hpp"
+#include "gobot/core/color.hpp"
 #include "gobot/core/math/matrix.hpp"
 
 #include <vector>
@@ -28,7 +29,8 @@ public:
     virtual void MeshSetSurface(const RID& p_rid,
                                 const std::vector<Vector3>& vertices,
                                 const std::vector<uint32_t>& indices,
-                                const std::vector<Vector3>& normals) = 0;
+                                const std::vector<Vector3>& normals,
+                                const std::vector<Color>& colors) = 0;
 
     virtual void MeshSetCylinder(const RID& p_rid, RealType radius, RealType height, int radial_segments) = 0;
 

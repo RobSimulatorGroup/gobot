@@ -5,6 +5,9 @@ This document records the current design direction from the editor/rendering cle
 For the current MuJoCo CPU, MuJoCo Warp, and `gobot.rl` roadmap, see
 `doc/mujoco_rl_plan.md`.
 
+For the MJLab-style Terrain3D visual/physics parity work, see
+`doc/mjlab_terrain.md`.
+
 ## Long-Term Goal
 
 Gobot should grow into a robot editing, simulation, and rendering engine in the same broad category as Isaac Sim. The engine should support robotics workflows such as reinforcement learning, motion planning, collision detection, robot asset editing, and simulation/debug visualization.

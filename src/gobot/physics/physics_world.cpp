@@ -20,6 +20,7 @@
 #include "gobot/scene/resources/sphere_shape_3d.hpp"
 #include "gobot/scene/robot_3d.hpp"
 #include "gobot/scene/sensor_3d.hpp"
+#include "gobot/scene/terrain_3d.hpp"
 
 namespace gobot {
 namespace {
@@ -215,6 +216,73 @@ PhysicsSensorSnapshot CaptureSensorSnapshot(const Sensor3D* sensor,
     return snapshot;
 }
 
+PhysicsTerrainSnapshot CaptureTerrainSnapshot(const Terrain3D* terrain,
+                                              const Affine3& global_transform) {
+    PhysicsTerrainSnapshot snapshot;
+    snapshot.node = terrain;
+    snapshot.name = terrain->GetName();
+    snapshot.surface_color = terrain->GetSurfaceColor();
+    snapshot.friction = terrain->GetFriction();
+    snapshot.contype = terrain->GetContactType();
+    snapshot.conaffinity = terrain->GetContactAffinity();
+    snapshot.condim = terrain->GetContactDimension();
+    snapshot.solref = terrain->GetSolref();
+    snapshot.solimp = terrain->GetSolimp();
+    snapshot.margin = terrain->GetMargin();
+    snapshot.gap = terrain->GetGap();
+    snapshot.spawn_origins = terrain->GetSpawnOrigins();
+
+    for (const TerrainBox& box : terrain->GetBoxes()) {
+        Affine3 local = Affine3::Identity();
+        local.translation() = box.center;
+        local.SetEulerAngle({
+                DEG_TO_RAD(box.rotation_degrees.x()),
+                DEG_TO_RAD(box.rotation_degrees.y()),
+                DEG_TO_RAD(box.rotation_degrees.z())
+        }, EulerOrder::SXYZ);
+
+        PhysicsTerrainBoxSnapshot box_snapshot;
+        box_snapshot.global_transform = global_transform * local;
+        box_snapshot.size = box.size;
+        snapshot.boxes.push_back(std::move(box_snapshot));
+    }
+
+    for (const TerrainHeightField& heightfield : terrain->GetHeightFields()) {
+        Affine3 local = Affine3::Identity();
+        local.translation() = heightfield.center;
+
+        PhysicsTerrainHeightFieldSnapshot heightfield_snapshot;
+        heightfield_snapshot.global_transform = global_transform * local;
+        heightfield_snapshot.size = heightfield.size;
+        heightfield_snapshot.rows = heightfield.rows;
+        heightfield_snapshot.cols = heightfield.cols;
+        heightfield_snapshot.heights = heightfield.heights;
+        heightfield_snapshot.normalized_elevation = heightfield.normalized_elevation;
+        heightfield_snapshot.base_thickness = heightfield.base_thickness;
+        heightfield_snapshot.z_offset = heightfield.z_offset;
+        snapshot.heightfields.push_back(std::move(heightfield_snapshot));
+    }
+
+    for (const TerrainMeshPatch& mesh_patch : terrain->GetMeshPatches()) {
+        Affine3 local = Affine3::Identity();
+        local.translation() = mesh_patch.center;
+        local.SetEulerAngle({
+                DEG_TO_RAD(mesh_patch.rotation_degrees.x()),
+                DEG_TO_RAD(mesh_patch.rotation_degrees.y()),
+                DEG_TO_RAD(mesh_patch.rotation_degrees.z())
+        }, EulerOrder::SXYZ);
+
+        PhysicsTerrainMeshPatchSnapshot mesh_patch_snapshot;
+        mesh_patch_snapshot.global_transform = global_transform * local;
+        mesh_patch_snapshot.vertices = mesh_patch.vertices;
+        mesh_patch_snapshot.indices = mesh_patch.indices;
+        mesh_patch_snapshot.color = mesh_patch.color;
+        snapshot.mesh_patches.push_back(std::move(mesh_patch_snapshot));
+    }
+
+    return snapshot;
+}
+
 void CollectRobotNodes(const Node* node,
                        PhysicsRobotSnapshot* robot_snapshot,
                        std::vector<PhysicsShapeSnapshot>* loose_collision_shapes,
@@ -326,6 +394,13 @@ void CollectSceneNodes(const Node* node,
     if (auto collision_shape = Object::PointerCastTo<CollisionShape3D>(node)) {
         snapshot->loose_collision_shapes.emplace_back(CaptureShapeSnapshot(collision_shape, node_global_transform));
         ++snapshot->total_collision_shape_count;
+    } else if (auto terrain = Object::PointerCastTo<Terrain3D>(node)) {
+        PhysicsTerrainSnapshot terrain_snapshot = CaptureTerrainSnapshot(terrain, node_global_transform);
+        snapshot->total_terrain_count += 1;
+        snapshot->total_collision_shape_count += terrain_snapshot.boxes.size() +
+                                                 terrain_snapshot.heightfields.size() +
+                                                 terrain_snapshot.mesh_patches.size();
+        snapshot->terrains.emplace_back(std::move(terrain_snapshot));
     }
 
     for (std::size_t i = 0; i < node->GetChildCount(); ++i) {

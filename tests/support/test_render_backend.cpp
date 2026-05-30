@@ -38,7 +38,8 @@ public:
     void MeshSetSurface(const RID&,
                         const std::vector<Vector3>&,
                         const std::vector<uint32_t>&,
-                        const std::vector<Vector3>&) override {}
+                        const std::vector<Vector3>&,
+                        const std::vector<Color>&) override {}
     void MeshSetCylinder(const RID&, RealType, RealType, int) override {}
     void MeshSetSphere(const RID&, RealType, int, int) override {}
     bool OwnsMesh(const RID& p_rid) const override { return meshes_.Owns(p_rid); }

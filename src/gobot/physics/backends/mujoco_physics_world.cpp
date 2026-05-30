@@ -484,6 +484,127 @@ void ConfigureGeomContact(mjsGeom* geom, const PhysicsShapeSnapshot& shape) {
     geom->gap = shape.gap;
 }
 
+void ConfigureGeomContact(mjsGeom* geom, const PhysicsTerrainSnapshot& terrain) {
+    if (!geom) {
+        return;
+    }
+
+    geom->contype = terrain.contype;
+    geom->conaffinity = terrain.conaffinity;
+    geom->condim = terrain.condim;
+    geom->friction[0] = terrain.friction.x();
+    geom->friction[1] = terrain.friction.y();
+    geom->friction[2] = terrain.friction.z();
+    geom->solref[0] = terrain.solref.x();
+    geom->solref[1] = terrain.solref.y();
+    SetMuJoCoArray(geom->solimp, terrain.solimp, mjNIMP);
+    geom->margin = terrain.margin;
+    geom->gap = terrain.gap;
+}
+
+void SetMuJoCoGeomColor(mjsGeom* geom, const Color& color) {
+    if (!geom) {
+        return;
+    }
+    geom->rgba[0] = color.red();
+    geom->rgba[1] = color.green();
+    geom->rgba[2] = color.blue();
+    geom->rgba[3] = color.alpha();
+}
+
+bool SetMuJoCoMeshData(mjsMesh* mesh,
+                       const PhysicsTerrainMeshPatchSnapshot& mesh_patch) {
+    if (!mesh || mesh_patch.vertices.empty() || mesh_patch.indices.empty()) {
+        return false;
+    }
+
+    std::vector<float> vertices;
+    vertices.reserve(mesh_patch.vertices.size() * 3);
+    for (const Vector3& vertex : mesh_patch.vertices) {
+        vertices.push_back(static_cast<float>(vertex.x()));
+        vertices.push_back(static_cast<float>(vertex.y()));
+        vertices.push_back(static_cast<float>(vertex.z()));
+    }
+
+    std::vector<int> indices;
+    indices.reserve(mesh_patch.indices.size());
+    for (std::uint32_t index : mesh_patch.indices) {
+        if (index >= mesh_patch.vertices.size()) {
+            return false;
+        }
+        indices.push_back(static_cast<int>(index));
+    }
+
+    const int vertex_count = static_cast<int>(mesh_patch.vertices.size());
+    const int face_count = static_cast<int>(indices.size() / 3);
+    if (vertex_count <= 0 || face_count <= 0) {
+        return false;
+    }
+
+    mjs_setFloat(mesh->uservert, vertices.data(), static_cast<int>(vertices.size()));
+    mjs_setInt(mesh->userface, indices.data(), static_cast<int>(indices.size()));
+    return true;
+}
+
+std::vector<float> NormalizeHeightFieldData(const PhysicsTerrainHeightFieldSnapshot& heightfield,
+                                            RealType* min_height,
+                                            RealType* height_range) {
+    std::vector<float> data;
+    const std::size_t expected_count = static_cast<std::size_t>(heightfield.rows) *
+                                       static_cast<std::size_t>(heightfield.cols);
+    data.resize(expected_count, 0.0f);
+
+    if (expected_count == 0) {
+        if (min_height) {
+            *min_height = 0.0;
+        }
+        if (height_range) {
+            *height_range = CMP_EPSILON;
+        }
+        return data;
+    }
+
+    RealType min_value = 0.0;
+    RealType max_value = 0.0;
+    if (!heightfield.normalized_elevation.empty()) {
+        for (std::size_t index = 0; index < expected_count; ++index) {
+            const RealType value = index < heightfield.normalized_elevation.size()
+                    ? heightfield.normalized_elevation[index]
+                    : 0.0;
+            data[index] = static_cast<float>(std::clamp(value,
+                                                        static_cast<RealType>(0.0),
+                                                        static_cast<RealType>(1.0)));
+        }
+        if (min_height) {
+            *min_height = heightfield.z_offset;
+        }
+        if (height_range) {
+            *height_range = 1.0;
+        }
+        return data;
+    }
+
+    if (!heightfield.heights.empty()) {
+        const auto minmax = std::minmax_element(heightfield.heights.begin(), heightfield.heights.end());
+        min_value = *minmax.first;
+        max_value = *minmax.second;
+    }
+    const RealType range = std::max<RealType>(max_value - min_value, CMP_EPSILON);
+
+    for (std::size_t index = 0; index < expected_count; ++index) {
+        const RealType value = index < heightfield.heights.size() ? heightfield.heights[index] : min_value;
+        data[index] = static_cast<float>((value - min_value) / range);
+    }
+
+    if (min_height) {
+        *min_height = min_value + heightfield.z_offset;
+    }
+    if (height_range) {
+        *height_range = range;
+    }
+    return data;
+}
+
 void AddShapeGeomToBody(mjsBody* body,
                         const PhysicsShapeSnapshot& shape,
                         const PhysicsLinkSnapshot& link,
@@ -1341,6 +1462,7 @@ bool MuJoCoPhysicsWorld::LoadModelFromRobotSources() {
     ApplyMuJoCoOptions(&parent_spec->option, settings_);
 
     AddLooseSceneGeomsToSpec(parent_spec);
+    AddTerrainGeomsToSpec(parent_spec);
 
     std::set<std::string> used_prefixes;
     robot_bindings_.clear();
@@ -1609,6 +1731,138 @@ void MuJoCoPhysicsWorld::AddLooseSceneGeomsToSpec(void* spec_ptr) {
 
     if (added_count > 0) {
         LOG_INFO("Added {} loose Gobot box collision geoms to the MuJoCo world.", added_count);
+    }
+}
+
+void MuJoCoPhysicsWorld::AddTerrainGeomsToSpec(void* spec_ptr) {
+    auto* spec = static_cast<mjSpec*>(spec_ptr);
+    if (!spec || scene_snapshot_.terrains.empty()) {
+        return;
+    }
+
+    mjsBody* world = mjs_findBody(spec, "world");
+    if (!world) {
+        LOG_WARN("MuJoCo spec has no world body; Gobot Terrain3D geoms were not added.");
+        return;
+    }
+
+    int added_count = 0;
+    int hfield_count = 0;
+    int mesh_count = 0;
+    for (std::size_t terrain_index = 0; terrain_index < scene_snapshot_.terrains.size(); ++terrain_index) {
+        const PhysicsTerrainSnapshot& terrain = scene_snapshot_.terrains[terrain_index];
+        const std::string terrain_name = SanitizeMuJoCoName(
+                terrain.name.empty() ? fmt::format("terrain_{}", terrain_index) : terrain.name);
+
+        for (std::size_t box_index = 0; box_index < terrain.boxes.size(); ++box_index) {
+            const PhysicsTerrainBoxSnapshot& box = terrain.boxes[box_index];
+            if (box.size.x() <= 0.0 || box.size.y() <= 0.0 || box.size.z() <= 0.0) {
+                continue;
+            }
+
+            mjsGeom* geom = mjs_addGeom(world, nullptr);
+            if (!geom) {
+                continue;
+            }
+
+            const std::string name = fmt::format("gobot_{}_box_{}", terrain_name, box_index);
+            mjs_setName(geom->element, name.c_str());
+            geom->type = mjGEOM_BOX;
+            geom->size[0] = box.size.x() * 0.5;
+            geom->size[1] = box.size.y() * 0.5;
+            geom->size[2] = box.size.z() * 0.5;
+            SetMuJoCoGeomPose(geom, box.global_transform);
+            ConfigureGeomContact(geom, terrain);
+            SetMuJoCoGeomColor(geom, terrain.surface_color);
+            ++added_count;
+        }
+
+        for (std::size_t hfield_index = 0; hfield_index < terrain.heightfields.size(); ++hfield_index) {
+            const PhysicsTerrainHeightFieldSnapshot& heightfield = terrain.heightfields[hfield_index];
+            const std::size_t expected_count = static_cast<std::size_t>(heightfield.rows) *
+                                               static_cast<std::size_t>(heightfield.cols);
+            if (heightfield.rows < 2 || heightfield.cols < 2 || expected_count == 0) {
+                continue;
+            }
+
+            RealType min_height = 0.0;
+            RealType height_range = CMP_EPSILON;
+            std::vector<float> normalized_heights =
+                    NormalizeHeightFieldData(heightfield, &min_height, &height_range);
+
+            mjsHField* mujoco_hfield = mjs_addHField(spec);
+            if (!mujoco_hfield) {
+                continue;
+            }
+
+            const std::string hfield_name = fmt::format("gobot_{}_hfield_{}", terrain_name, hfield_index);
+            mjs_setName(mujoco_hfield->element, hfield_name.c_str());
+            mujoco_hfield->nrow = heightfield.rows;
+            mujoco_hfield->ncol = heightfield.cols;
+            mujoco_hfield->size[0] = heightfield.size.x() * 0.5;
+            mujoco_hfield->size[1] = heightfield.size.y() * 0.5;
+            mujoco_hfield->size[2] = height_range;
+            mujoco_hfield->size[3] = std::max<RealType>(heightfield.base_thickness, 0.0);
+            mjs_setFloat(mujoco_hfield->userdata,
+                         normalized_heights.data(),
+                         static_cast<int>(normalized_heights.size()));
+
+            mjsGeom* geom = mjs_addGeom(world, nullptr);
+            if (!geom) {
+                continue;
+            }
+
+            const std::string geom_name = fmt::format("{}_geom", hfield_name);
+            mjs_setName(geom->element, geom_name.c_str());
+            geom->type = mjGEOM_HFIELD;
+            mjs_setString(geom->hfieldname, hfield_name.c_str());
+            SetMuJoCoGeomPose(geom, heightfield.global_transform);
+            geom->pos[2] += min_height;
+            ConfigureGeomContact(geom, terrain);
+            SetMuJoCoGeomColor(geom, terrain.surface_color);
+            ++added_count;
+            ++hfield_count;
+        }
+
+        for (std::size_t mesh_index = 0; mesh_index < terrain.mesh_patches.size(); ++mesh_index) {
+            const PhysicsTerrainMeshPatchSnapshot& mesh_patch = terrain.mesh_patches[mesh_index];
+            if (mesh_patch.vertices.empty() || mesh_patch.indices.size() < 3) {
+                continue;
+            }
+
+            mjsMesh* mujoco_mesh = mjs_addMesh(spec, nullptr);
+            if (!mujoco_mesh) {
+                continue;
+            }
+
+            const std::string mesh_name = fmt::format("gobot_{}_mesh_{}", terrain_name, mesh_index);
+            mjs_setName(mujoco_mesh->element, mesh_name.c_str());
+            if (!SetMuJoCoMeshData(mujoco_mesh, mesh_patch)) {
+                continue;
+            }
+
+            mjsGeom* geom = mjs_addGeom(world, nullptr);
+            if (!geom) {
+                continue;
+            }
+
+            const std::string geom_name = fmt::format("{}_geom", mesh_name);
+            mjs_setName(geom->element, geom_name.c_str());
+            geom->type = mjGEOM_MESH;
+            mjs_setString(geom->meshname, mesh_name.c_str());
+            SetMuJoCoGeomPose(geom, mesh_patch.global_transform);
+            ConfigureGeomContact(geom, terrain);
+            SetMuJoCoGeomColor(geom, mesh_patch.color);
+            ++added_count;
+            ++mesh_count;
+        }
+    }
+
+    if (added_count > 0) {
+        LOG_INFO("Added {} Gobot Terrain3D geom(s) to the MuJoCo world ({} hfield asset(s), {} mesh asset(s)).",
+                 added_count,
+                 hfield_count,
+                 mesh_count);
     }
 }
 

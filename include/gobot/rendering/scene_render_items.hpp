@@ -20,6 +20,7 @@
 namespace gobot {
 
 class Node;
+class Terrain3D;
 
 struct VisualMeshRenderItem {
     RID mesh;

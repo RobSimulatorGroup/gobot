@@ -48,6 +48,7 @@
 #include "gobot/scene/scene_command.hpp"
 #include "gobot/scene/scene_initializer.hpp"
 #include "gobot/scene/sensor_3d.hpp"
+#include "gobot/scene/terrain_3d.hpp"
 #include "gobot/simulation/simulation_server.hpp"
 
 namespace gobot::python {
@@ -188,6 +189,10 @@ struct PyCollisionShape3DHandle : public PyNode3DHandle {
 };
 
 struct PyMeshInstance3DHandle : public PyNode3DHandle {
+    using PyNode3DHandle::PyNode3DHandle;
+};
+
+struct PyTerrain3DHandle : public PyNode3DHandle {
     using PyNode3DHandle::PyNode3DHandle;
 };
 
@@ -1009,6 +1014,54 @@ Quaternion PythonToQuaternionWxyz(const py::handle& object) {
     return quaternion;
 }
 
+Vector2 PythonToVector2(const py::handle& object) {
+    py::sequence sequence = py::reinterpret_borrow<py::sequence>(object);
+    if (sequence.size() != 2) {
+        throw std::invalid_argument("expected a 2-element vector");
+    }
+    return {
+            py::cast<RealType>(sequence[0]),
+            py::cast<RealType>(sequence[1])
+    };
+}
+
+py::tuple Vector2ToPython(const Vector2& value) {
+    return py::make_tuple(value.x(), value.y());
+}
+
+Color PythonToColor4(const py::handle& object) {
+    py::sequence sequence = py::reinterpret_borrow<py::sequence>(object);
+    if (sequence.size() != 4) {
+        throw std::invalid_argument("expected a 4-element color");
+    }
+    return Color(static_cast<float>(py::cast<RealType>(sequence[0])),
+                 static_cast<float>(py::cast<RealType>(sequence[1])),
+                 static_cast<float>(py::cast<RealType>(sequence[2])),
+                 static_cast<float>(py::cast<RealType>(sequence[3])));
+}
+
+py::tuple ColorToPython(const Color& color) {
+    return py::make_tuple(color.red(), color.green(), color.blue(), color.alpha());
+}
+
+std::vector<Vector3> PythonToVector3List(const py::handle& object) {
+    py::sequence sequence = py::reinterpret_borrow<py::sequence>(object);
+    std::vector<Vector3> values;
+    values.reserve(static_cast<std::size_t>(sequence.size()));
+    for (py::handle item : sequence) {
+        values.push_back(PythonToVector3(item));
+    }
+    return values;
+}
+
+py::list Vector3ListToPython(const std::vector<Vector3>& values) {
+    py::list result;
+    for (const Vector3& value : values) {
+        result.append(Vector3ToPython(value));
+    }
+    return result;
+}
+
 std::string PhysicsJointControlModeName(PhysicsJointControlMode mode) {
     switch (mode) {
         case PhysicsJointControlMode::Passive:
@@ -1319,6 +1372,10 @@ PyMeshInstance3DHandle MakeMeshInstance3DHandle(MeshInstance3D* node,
     return PyMeshInstance3DHandle(node, "MeshInstance3D", ActiveSceneEpoch(), ownership);
 }
 
+PyTerrain3DHandle MakeTerrain3DHandle(Terrain3D* node, PyNodeOwnership ownership = PyNodeOwnership::Borrowed) {
+    return PyTerrain3DHandle(node, "Terrain3D", ActiveSceneEpoch(), ownership);
+}
+
 PySensor3DHandle MakeSensor3DHandle(Sensor3D* node, PyNodeOwnership ownership = PyNodeOwnership::Borrowed) {
     return PySensor3DHandle(node, "Sensor3D", ActiveSceneEpoch(), ownership);
 }
@@ -1340,6 +1397,9 @@ PyContactSensor3DHandle MakeContactSensor3DHandle(ContactSensor3D* node,
 PyNodeHandle MakeTypedNodeHandle(Node* node, PyNodeOwnership ownership) {
     if (auto* mesh_instance = Object::PointerCastTo<MeshInstance3D>(node)) {
         return MakeMeshInstance3DHandle(mesh_instance, ownership);
+    }
+    if (auto* terrain = Object::PointerCastTo<Terrain3D>(node)) {
+        return MakeTerrain3DHandle(terrain, ownership);
     }
     if (auto* contact_sensor = Object::PointerCastTo<ContactSensor3D>(node)) {
         return MakeContactSensor3DHandle(contact_sensor, ownership);
@@ -1374,6 +1434,9 @@ PyNodeHandle MakeTypedNodeHandle(Node* node, PyNodeOwnership ownership) {
 py::object MakeTypedNodeObject(Node* node, PyNodeOwnership ownership) {
     if (auto* mesh_instance = Object::PointerCastTo<MeshInstance3D>(node)) {
         return py::cast(MakeMeshInstance3DHandle(mesh_instance, ownership));
+    }
+    if (auto* terrain = Object::PointerCastTo<Terrain3D>(node)) {
+        return py::cast(MakeTerrain3DHandle(terrain, ownership));
     }
     if (auto* contact_sensor = Object::PointerCastTo<ContactSensor3D>(node)) {
         return py::cast(MakeContactSensor3DHandle(contact_sensor, ownership));
@@ -1504,6 +1567,12 @@ class NodeScript:
             .value("VirtualRoot", LinkRole::VirtualRoot)
             .export_values();
 
+    py::enum_<TerrainColorMode>(module, "TerrainColorMode")
+            .value("SurfaceColor", TerrainColorMode::SurfaceColor)
+            .value("HeightRamp", TerrainColorMode::HeightRamp)
+            .value("MjLab", TerrainColorMode::MjLab)
+            .export_values();
+
     auto node_class = py::class_<PyNodeHandle>(module, "Node");
     auto node3d_class = py::class_<PyNode3DHandle, PyNodeHandle>(module, "Node3D");
     auto robot3d_class = py::class_<PyRobot3DHandle, PyNode3DHandle>(module, "Robot3D");
@@ -1513,6 +1582,7 @@ class NodeScript:
             py::class_<PyCollisionShape3DHandle, PyNode3DHandle>(module, "CollisionShape3D");
     auto mesh_instance_class =
             py::class_<PyMeshInstance3DHandle, PyNode3DHandle>(module, "MeshInstance3D");
+    auto terrain3d_class = py::class_<PyTerrain3DHandle, PyNode3DHandle>(module, "Terrain3D");
     auto sensor3d_class = py::class_<PySensor3DHandle, PyNode3DHandle>(module, "Sensor3D");
     auto imu_sensor3d_class = py::class_<PyIMUSensor3DHandle, PySensor3DHandle>(module, "IMUSensor3D");
     auto angular_momentum_sensor3d_class =
@@ -2234,6 +2304,192 @@ class NodeScript:
                           [](PyCollisionShape3DHandle& handle, bool disabled) {
                               CollisionShape3D* collision_shape = handle.ResolveAs<CollisionShape3D>();
                               ExecuteSetNodeProperty(collision_shape, "disabled", Variant(disabled));
+                          });
+
+    terrain3d_class
+            .def("clear_terrain",
+                 [](PyTerrain3DHandle& handle) {
+                     Terrain3D* terrain = handle.ResolveAs<Terrain3D>();
+                     ExecuteSetNodeProperty(terrain, "boxes", Variant(std::vector<TerrainBox>{}));
+                     ExecuteSetNodeProperty(terrain, "heightfields", Variant(std::vector<TerrainHeightField>{}));
+                     ExecuteSetNodeProperty(terrain, "mesh_patches", Variant(std::vector<TerrainMeshPatch>{}));
+                     ExecuteSetNodeProperty(terrain, "spawn_origins", Variant(std::vector<Vector3>{}));
+                 })
+            .def("add_box",
+                 [](PyTerrain3DHandle& handle,
+                    const py::handle& center,
+                    const py::handle& size,
+                    const py::handle& rotation_degrees,
+                    const py::handle& color) {
+                     Terrain3D* terrain = handle.ResolveAs<Terrain3D>();
+                     std::vector<TerrainBox> boxes = terrain->GetBoxes();
+                     TerrainBox box;
+                     box.center = PythonToVector3(center);
+                     box.size = PythonToVector3(size);
+                     box.rotation_degrees = PythonToVector3(rotation_degrees);
+                     box.color = PythonToColor4(color);
+                     boxes.push_back(box);
+                     ExecuteSetNodeProperty(terrain, "boxes", Variant(boxes));
+                 },
+                 py::arg("center"),
+                 py::arg("size"),
+                 py::arg("rotation_degrees") = py::make_tuple(0.0, 0.0, 0.0),
+                 py::arg("color") = py::make_tuple(1.0, 1.0, 1.0, 1.0))
+            .def("add_heightfield",
+                 [](PyTerrain3DHandle& handle,
+                    const py::handle& center,
+                    const py::handle& size,
+                    int rows,
+                    int cols,
+                    const std::vector<RealType>& heights,
+                    RealType base_thickness,
+                    const std::vector<RealType>& normalized_elevation,
+                    RealType z_offset) {
+                     Terrain3D* terrain = handle.ResolveAs<Terrain3D>();
+                     std::vector<TerrainHeightField> heightfields = terrain->GetHeightFields();
+                     TerrainHeightField heightfield;
+                     heightfield.center = PythonToVector3(center);
+                     heightfield.size = PythonToVector2(size);
+                     heightfield.rows = rows;
+                     heightfield.cols = cols;
+                     heightfield.heights = heights;
+                     heightfield.normalized_elevation = normalized_elevation;
+                     heightfield.base_thickness = base_thickness;
+                     heightfield.z_offset = z_offset;
+                     heightfields.push_back(std::move(heightfield));
+                     ExecuteSetNodeProperty(terrain, "heightfields", Variant(heightfields));
+                 },
+                 py::arg("center"),
+                 py::arg("size"),
+                 py::arg("rows"),
+                 py::arg("cols"),
+                 py::arg("heights"),
+                 py::arg("base_thickness") = 0.1,
+                 py::arg("normalized_elevation") = std::vector<RealType>{},
+                 py::arg("z_offset") = 0.0)
+            .def("add_mesh_patch",
+                 [](PyTerrain3DHandle& handle,
+                    const py::handle& center,
+                    const py::handle& vertices,
+                    const std::vector<std::uint32_t>& indices,
+                    const py::handle& rotation_degrees,
+                    const py::handle& color) {
+                     Terrain3D* terrain = handle.ResolveAs<Terrain3D>();
+                     std::vector<TerrainMeshPatch> mesh_patches = terrain->GetMeshPatches();
+                     TerrainMeshPatch mesh_patch;
+                     mesh_patch.center = PythonToVector3(center);
+                     mesh_patch.vertices = PythonToVector3List(vertices);
+                     mesh_patch.indices = indices;
+                     mesh_patch.rotation_degrees = PythonToVector3(rotation_degrees);
+                     mesh_patch.color = PythonToColor4(color);
+                     mesh_patches.push_back(std::move(mesh_patch));
+                     ExecuteSetNodeProperty(terrain, "mesh_patches", Variant(mesh_patches));
+                 },
+                 py::arg("center"),
+                 py::arg("vertices"),
+                 py::arg("indices"),
+                 py::arg("rotation_degrees") = py::make_tuple(0.0, 0.0, 0.0),
+                 py::arg("color") = py::make_tuple(1.0, 1.0, 1.0, 1.0))
+            .def_property_readonly("box_count",
+                                   [](const PyTerrain3DHandle& handle) {
+                                       return handle.ResolveAs<Terrain3D>()->GetBoxes().size();
+                                   })
+            .def_property_readonly("heightfield_count",
+                                   [](const PyTerrain3DHandle& handle) {
+                                       return handle.ResolveAs<Terrain3D>()->GetHeightFields().size();
+                                   })
+            .def_property_readonly("mesh_patch_count",
+                                   [](const PyTerrain3DHandle& handle) {
+                                       return handle.ResolveAs<Terrain3D>()->GetMeshPatches().size();
+                                   })
+            .def("get_heightfield_heights",
+                 [](const PyTerrain3DHandle& handle, std::size_t index) {
+                     const auto& heightfields = handle.ResolveAs<Terrain3D>()->GetHeightFields();
+                     if (index >= heightfields.size()) {
+                         throw py::index_error("Terrain3D heightfield index out of range");
+                     }
+                     return heightfields[index].heights;
+                 },
+                 py::arg("index"))
+            .def_property("spawn_origins",
+                          [](const PyTerrain3DHandle& handle) {
+                              return Vector3ListToPython(handle.ResolveAs<Terrain3D>()->GetSpawnOrigins());
+                          },
+                          [](PyTerrain3DHandle& handle, const py::handle& value) {
+                              Terrain3D* terrain = handle.ResolveAs<Terrain3D>();
+                              ExecuteSetNodeProperty(terrain, "spawn_origins", Variant(PythonToVector3List(value)));
+                          })
+            .def_property("surface_color",
+                          [](const PyTerrain3DHandle& handle) {
+                              return ColorToPython(handle.ResolveAs<Terrain3D>()->GetSurfaceColor());
+                          },
+                          [](PyTerrain3DHandle& handle, const py::handle& value) {
+                              Terrain3D* terrain = handle.ResolveAs<Terrain3D>();
+                              ExecuteSetNodeProperty(terrain, "surface_color", Variant(PythonToColor4(value)));
+                          })
+            .def_property("color_mode",
+                          [](const PyTerrain3DHandle& handle) {
+                              return handle.ResolveAs<Terrain3D>()->GetColorMode();
+                          },
+                          [](PyTerrain3DHandle& handle, TerrainColorMode value) {
+                              Terrain3D* terrain = handle.ResolveAs<Terrain3D>();
+                              ExecuteSetNodeProperty(terrain, "color_mode", Variant(value));
+                          })
+            .def_property("height_low_color",
+                          [](const PyTerrain3DHandle& handle) {
+                              return ColorToPython(handle.ResolveAs<Terrain3D>()->GetHeightLowColor());
+                          },
+                          [](PyTerrain3DHandle& handle, const py::handle& value) {
+                              Terrain3D* terrain = handle.ResolveAs<Terrain3D>();
+                              ExecuteSetNodeProperty(terrain, "height_low_color", Variant(PythonToColor4(value)));
+                          })
+            .def_property("height_high_color",
+                          [](const PyTerrain3DHandle& handle) {
+                              return ColorToPython(handle.ResolveAs<Terrain3D>()->GetHeightHighColor());
+                          },
+                          [](PyTerrain3DHandle& handle, const py::handle& value) {
+                              Terrain3D* terrain = handle.ResolveAs<Terrain3D>();
+                              ExecuteSetNodeProperty(terrain, "height_high_color", Variant(PythonToColor4(value)));
+                          })
+            .def_property("height_range_min",
+                          [](const PyTerrain3DHandle& handle) {
+                              return handle.ResolveAs<Terrain3D>()->GetHeightRangeMin();
+                          },
+                          [](PyTerrain3DHandle& handle, RealType value) {
+                              Terrain3D* terrain = handle.ResolveAs<Terrain3D>();
+                              ExecuteSetNodeProperty(terrain, "height_range_min", Variant(value));
+                          })
+            .def_property("height_range_max",
+                          [](const PyTerrain3DHandle& handle) {
+                              return handle.ResolveAs<Terrain3D>()->GetHeightRangeMax();
+                          },
+                          [](PyTerrain3DHandle& handle, RealType value) {
+                              Terrain3D* terrain = handle.ResolveAs<Terrain3D>();
+                              ExecuteSetNodeProperty(terrain, "height_range_max", Variant(value));
+                          })
+            .def_property("friction",
+                          [](const PyTerrain3DHandle& handle) {
+                              return Vector3ToPython(handle.ResolveAs<Terrain3D>()->GetFriction());
+                          },
+                          [](PyTerrain3DHandle& handle, const py::handle& value) {
+                              Terrain3D* terrain = handle.ResolveAs<Terrain3D>();
+                              ExecuteSetNodeProperty(terrain, "friction", Variant(PythonToVector3(value)));
+                          })
+            .def_property("solref",
+                          [](const PyTerrain3DHandle& handle) {
+                              return Vector2ToPython(handle.ResolveAs<Terrain3D>()->GetSolref());
+                          },
+                          [](PyTerrain3DHandle& handle, const py::handle& value) {
+                              Terrain3D* terrain = handle.ResolveAs<Terrain3D>();
+                              ExecuteSetNodeProperty(terrain, "solref", Variant(PythonToVector2(value)));
+                          })
+            .def_property("solimp",
+                          [](const PyTerrain3DHandle& handle) {
+                              return handle.ResolveAs<Terrain3D>()->GetSolimp();
+                          },
+                          [](PyTerrain3DHandle& handle, const std::vector<RealType>& value) {
+                              Terrain3D* terrain = handle.ResolveAs<Terrain3D>();
+                              ExecuteSetNodeProperty(terrain, "solimp", Variant(value));
                           });
 
     sensor3d_class

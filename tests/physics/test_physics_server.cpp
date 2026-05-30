@@ -13,6 +13,7 @@
 #include <gobot/scene/resources/mesh.hpp>
 #include <gobot/scene/robot_3d.hpp>
 #include <gobot/scene/sensor_3d.hpp>
+#include <gobot/scene/terrain_3d.hpp>
 
 TEST(TestPhysicsServer, exposes_backend_capabilities_without_optional_dependencies) {
     gobot::PhysicsServer physics_server;
@@ -271,6 +272,61 @@ TEST(TestPhysicsServer, captures_sensor_nodes_in_snapshot_and_state) {
     gobot::Object::Delete(robot);
 }
 
+TEST(TestPhysicsServer, captures_terrain_nodes_in_snapshot) {
+    auto* root = gobot::Object::New<gobot::Node3D>();
+    root->SetName("root");
+
+    auto* terrain = gobot::Object::New<gobot::Terrain3D>();
+    terrain->SetName("terrain");
+    terrain->SetPosition({1.0, 2.0, 0.0});
+    terrain->SetFriction({1.2, 0.01, 0.0002});
+    terrain->AddBox({0.0, 0.0, -0.5}, {4.0, 3.0, 1.0});
+
+    gobot::TerrainHeightField heightfield;
+    heightfield.center = {0.5, 0.0, 0.0};
+    heightfield.size = {2.0, 2.0};
+    heightfield.rows = 2;
+    heightfield.cols = 2;
+    heightfield.heights = {0.0, 0.1, 0.2, 0.3};
+    heightfield.normalized_elevation = {0.0, 0.33, 0.66, 1.0};
+    heightfield.base_thickness = 0.15;
+    heightfield.z_offset = -0.1;
+    terrain->AddHeightField(heightfield);
+    gobot::TerrainMeshPatch mesh_patch;
+    mesh_patch.center = {0.0, -0.5, 0.0};
+    mesh_patch.vertices = {{0.0, 0.0, 0.0}, {0.5, 0.0, 0.0}, {0.0, 0.5, 0.0}};
+    mesh_patch.indices = {0, 1, 2};
+    mesh_patch.color = {0.5f, 0.6f, 0.7f, 1.0f};
+    terrain->AddMeshPatch(mesh_patch);
+    terrain->SetSpawnOrigins({{1.0, 2.0, 0.3}});
+    root->AddChild(terrain);
+
+    gobot::PhysicsServer physics_server;
+    gobot::Ref<gobot::PhysicsWorld> world = physics_server.CreateWorld();
+    ASSERT_TRUE(world->BuildFromScene(root));
+
+    const gobot::PhysicsSceneSnapshot& snapshot = world->GetSceneSnapshot();
+    ASSERT_EQ(snapshot.terrains.size(), 1);
+    EXPECT_EQ(snapshot.total_terrain_count, 1);
+    EXPECT_EQ(snapshot.total_collision_shape_count, 3);
+    EXPECT_TRUE(snapshot.terrains[0].friction.isApprox(gobot::Vector3(1.2, 0.01, 0.0002), CMP_EPSILON));
+    ASSERT_EQ(snapshot.terrains[0].boxes.size(), 1);
+    ASSERT_EQ(snapshot.terrains[0].heightfields.size(), 1);
+    ASSERT_EQ(snapshot.terrains[0].mesh_patches.size(), 1);
+    EXPECT_TRUE(snapshot.terrains[0].boxes[0].global_transform.translation().isApprox(
+            gobot::Vector3(1.0, 2.0, -0.5), CMP_EPSILON));
+    EXPECT_TRUE(snapshot.terrains[0].heightfields[0].global_transform.translation().isApprox(
+            gobot::Vector3(1.5, 2.0, 0.0), CMP_EPSILON));
+    EXPECT_EQ(snapshot.terrains[0].heightfields[0].normalized_elevation.size(), 4);
+    EXPECT_FLOAT_EQ(snapshot.terrains[0].heightfields[0].z_offset, -0.1);
+    EXPECT_TRUE(snapshot.terrains[0].mesh_patches[0].global_transform.translation().isApprox(
+            gobot::Vector3(1.0, 1.5, 0.0), CMP_EPSILON));
+    ASSERT_EQ(snapshot.terrains[0].spawn_origins.size(), 1);
+    EXPECT_TRUE(snapshot.terrains[0].spawn_origins[0].isApprox(gobot::Vector3(1.0, 2.0, 0.3), CMP_EPSILON));
+
+    gobot::Object::Delete(root);
+}
+
 TEST(TestPhysicsServer, preserves_virtual_root_link_role_in_snapshot_and_state) {
     auto* robot = gobot::Object::New<gobot::Robot3D>();
     robot->SetName("robot");
@@ -526,5 +582,44 @@ TEST(TestPhysicsServer, mujoco_authored_sensor_nodes_produce_runtime_values) {
     EXPECT_GT(contact_state.timestamp, 0.0);
 
     gobot::Object::Delete(robot);
+#endif
+}
+
+TEST(TestPhysicsServer, mujoco_authored_terrain_compiles) {
+#ifdef GOBOT_HAS_MUJOCO
+    auto* root = gobot::Object::New<gobot::Node3D>();
+    root->SetName("root");
+
+    auto* terrain = gobot::Object::New<gobot::Terrain3D>();
+    terrain->SetName("terrain");
+    terrain->AddBox({0.0, 0.0, -0.5}, {4.0, 4.0, 1.0});
+
+    gobot::TerrainHeightField heightfield;
+    heightfield.center = {3.0, 0.0, 0.0};
+    heightfield.size = {2.0, 2.0};
+    heightfield.rows = 3;
+    heightfield.cols = 3;
+    heightfield.heights = {0.0, 0.1, 0.0, 0.2, 0.3, 0.2, 0.0, 0.1, 0.0};
+    terrain->AddHeightField(heightfield);
+    root->AddChild(terrain);
+
+    auto* robot = gobot::Object::New<gobot::Robot3D>();
+    robot->SetName("terrain_bot");
+    auto* base = gobot::Object::New<gobot::Link3D>();
+    base->SetName("base");
+    base->SetMass(1.0);
+    base->SetCenterOfMass({0.0, 0.0, 0.0});
+    base->SetInertiaDiagonal({0.01, 0.01, 0.01});
+    robot->AddChild(base);
+    root->AddChild(robot);
+
+    gobot::PhysicsServer physics_server(gobot::PhysicsBackendType::MuJoCoCpu);
+    gobot::Ref<gobot::PhysicsWorld> world = physics_server.CreateWorld();
+    ASSERT_TRUE(world->BuildFromScene(root)) << world->GetLastError();
+    world->Step(0.002);
+    EXPECT_EQ(world->GetSceneSnapshot().total_terrain_count, 1);
+    EXPECT_EQ(world->GetSceneSnapshot().terrains[0].heightfields.size(), 1);
+
+    gobot::Object::Delete(root);
 #endif
 }

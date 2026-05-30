@@ -17,6 +17,7 @@
 #include "gobot/scene/resources/primitive_mesh.hpp"
 #include "gobot/scene/robot_3d.hpp"
 #include "gobot/scene/sensor_3d.hpp"
+#include "gobot/scene/terrain_3d.hpp"
 
 namespace gobot {
 
@@ -122,6 +123,14 @@ void NodeCreationRegistry::EnsureBuiltInNodeTypesRegistered() {
         "Node3D",
         "3D node that provides collision geometry for physics and collision queries.",
         []() -> Node* { return CreateNodeInstance<CollisionShape3D>(); }
+    });
+
+    RegisterNodeType({
+        "Terrain3D",
+        "Terrain3D",
+        "Node3D",
+        "3D terrain node with primitive and heightfield collision surfaces.",
+        []() -> Node* { return CreateNodeInstance<Terrain3D>(); }
     });
 
     RegisterNodeType({

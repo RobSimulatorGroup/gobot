@@ -62,6 +62,7 @@ package_add_test(test_node_3d scene/test_node_3d.cpp)
 package_add_test(test_scene_command scene/test_scene_command.cpp)
 package_add_test(test_mesh_instance_3d scene/test_mesh_instance_3d.cpp)
 package_add_test(test_collision_shape_3d scene/test_collision_shape_3d.cpp)
+package_add_test(test_terrain_3d scene/test_terrain_3d.cpp)
 package_add_test(test_node_creation_registry scene/test_node_creation_registry.cpp)
 package_add_test(test_robot_nodes scene/test_robot_nodes.cpp)
 package_add_test(test_resource_creation_registry scene/test_resource_creation_registry.cpp)
@@ -99,6 +100,15 @@ add_test(
 set_tests_properties(test_python_bindings_smoke
         PROPERTIES
             ENVIRONMENT "PYTHONNOUSERSITE=1;PYTHONPATH=${CMAKE_BINARY_DIR}/python"
+            WORKING_DIRECTORY "${CMAKE_SOURCE_DIR}"
+)
+add_test(
+        NAME test_python_terrain_generation_scene
+        COMMAND ${Python3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/python/test_terrain_generation_scene.py
+)
+set_tests_properties(test_python_terrain_generation_scene
+        PROPERTIES
+            ENVIRONMENT "HOME=/tmp/gobot-test-home;PYTHONNOUSERSITE=1;PYTHONPATH=${CMAKE_BINARY_DIR}/python"
             WORKING_DIRECTORY "${CMAKE_SOURCE_DIR}"
 )
 add_test(
