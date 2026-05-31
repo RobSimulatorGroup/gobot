@@ -222,6 +222,12 @@ TEST(TestPhysicsServer, captures_sensor_nodes_in_snapshot_and_state) {
     contact->SetMinThreshold(0.1);
     contact->SetMaxThreshold(100.0);
     base_link->AddChild(contact);
+
+    auto* terrain_height = gobot::Object::New<gobot::TerrainHeightSensor3D>();
+    terrain_height->SetName("terrain_scan");
+    terrain_height->SetPosition({0.0, 0.0, 0.4});
+    terrain_height->SetSampleOffsets({{0.0, 0.0, 0.0}, {0.2, 0.0, 0.0}});
+    base_link->AddChild(terrain_height);
     robot->AddChild(base_link);
 
     gobot::PhysicsServer physics_server;
@@ -230,8 +236,8 @@ TEST(TestPhysicsServer, captures_sensor_nodes_in_snapshot_and_state) {
 
     const gobot::PhysicsSceneSnapshot& snapshot = world->GetSceneSnapshot();
     ASSERT_EQ(snapshot.robots.size(), 1);
-    ASSERT_EQ(snapshot.robots[0].sensors.size(), 3);
-    EXPECT_EQ(snapshot.total_sensor_count, 3);
+    ASSERT_EQ(snapshot.robots[0].sensors.size(), 4);
+    EXPECT_EQ(snapshot.total_sensor_count, 4);
 
     const gobot::PhysicsSensorSnapshot& imu_snapshot = snapshot.robots[0].sensors[0];
     EXPECT_EQ(imu_snapshot.name, "imu");
@@ -259,17 +265,87 @@ TEST(TestPhysicsServer, captures_sensor_nodes_in_snapshot_and_state) {
     ASSERT_EQ(contact_snapshot.channel_names.size(), 1);
     EXPECT_EQ(contact_snapshot.channel_names[0], "contact_strength");
 
+    const gobot::PhysicsSensorSnapshot& terrain_height_snapshot = snapshot.robots[0].sensors[3];
+    EXPECT_EQ(terrain_height_snapshot.name, "terrain_scan");
+    EXPECT_EQ(terrain_height_snapshot.type, gobot::PhysicsSensorType::TerrainHeight);
+    ASSERT_EQ(terrain_height_snapshot.sample_offsets.size(), 2);
+    ASSERT_EQ(terrain_height_snapshot.channel_names.size(), 2);
+    EXPECT_EQ(terrain_height_snapshot.channel_names[0], "clearance_0");
+    EXPECT_EQ(terrain_height_snapshot.channel_names[1], "clearance_1");
+    EXPECT_TRUE(terrain_height_snapshot.local_transform.translation().isApprox(
+            gobot::Vector3(0.0, 0.0, 0.4), CMP_EPSILON));
+
     const gobot::PhysicsSceneState& state = world->GetSceneState();
     ASSERT_EQ(state.robots.size(), 1);
-    ASSERT_EQ(state.robots[0].sensors.size(), 3);
-    EXPECT_EQ(state.total_sensor_count, 3);
+    ASSERT_EQ(state.robots[0].sensors.size(), 4);
+    EXPECT_EQ(state.total_sensor_count, 4);
     ASSERT_EQ(state.robots[0].sensors[0].values.size(), 13);
     EXPECT_DOUBLE_EQ(state.robots[0].sensors[0].values[0], 1.0);
     ASSERT_EQ(state.robots[0].sensors[1].values.size(), 3);
     ASSERT_EQ(state.robots[0].sensors[2].values.size(), 1);
     EXPECT_DOUBLE_EQ(state.robots[0].sensors[2].values[0], 0.0);
+    ASSERT_EQ(state.robots[0].sensors[3].values.size(), 2);
+    EXPECT_TRUE(state.robots[0].sensors[3].global_transform.translation().isApprox(
+            gobot::Vector3(1.0, 2.0, 3.4), CMP_EPSILON));
 
     gobot::Object::Delete(robot);
+}
+
+TEST(TestPhysicsServer, terrain_height_sensor_queries_box_heightfield_and_mesh_patch) {
+    auto* root = gobot::Object::New<gobot::Node3D>();
+    root->SetName("root");
+
+    auto* terrain = gobot::Object::New<gobot::Terrain3D>();
+    terrain->SetName("terrain");
+    terrain->AddBox({0.0, 0.0, -0.1}, {1.0, 1.0, 0.2});
+
+    gobot::TerrainHeightField heightfield;
+    heightfield.center = {2.0, 0.0, 0.0};
+    heightfield.size = {2.0, 2.0};
+    heightfield.rows = 2;
+    heightfield.cols = 2;
+    heightfield.heights = {0.0, 0.2, 0.4, 0.6};
+    terrain->AddHeightField(heightfield);
+
+    gobot::TerrainMeshPatch mesh_patch;
+    mesh_patch.center = {4.0, 0.0, 0.0};
+    mesh_patch.vertices = {{-0.5, -0.5, 0.3}, {0.5, -0.5, 0.3}, {-0.5, 0.5, 0.3}};
+    mesh_patch.indices = {0, 1, 2};
+    terrain->AddMeshPatch(mesh_patch);
+    root->AddChild(terrain);
+
+    auto* robot = gobot::Object::New<gobot::Robot3D>();
+    robot->SetName("robot");
+    auto* link = gobot::Object::New<gobot::Link3D>();
+    link->SetName("base");
+    link->SetPosition({0.0, 0.0, 1.0});
+    auto* sensor = gobot::Object::New<gobot::TerrainHeightSensor3D>();
+    sensor->SetName("terrain_scan");
+    sensor->SetSampleOffsets({{0.0, 0.0, 0.0}, {2.0, 0.0, 0.0}, {4.0, -0.25, 0.0}});
+    link->AddChild(sensor);
+    robot->AddChild(link);
+    root->AddChild(robot);
+
+    gobot::PhysicsServer physics_server;
+    gobot::Ref<gobot::PhysicsWorld> world = physics_server.CreateWorld();
+    ASSERT_TRUE(world->BuildFromScene(root));
+
+    const gobot::PhysicsSceneState& state = world->GetSceneState();
+    ASSERT_EQ(state.robots.size(), 1);
+    ASSERT_EQ(state.robots[0].sensors.size(), 1);
+    const gobot::PhysicsSensorState& sensor_state = state.robots[0].sensors[0];
+    ASSERT_EQ(sensor_state.values.size(), 3);
+    EXPECT_NEAR(sensor_state.values[0], 1.0, 1.0e-6);
+    EXPECT_NEAR(sensor_state.values[1], 0.7, 1.0e-6);
+    EXPECT_NEAR(sensor_state.values[2], 0.7, 1.0e-6);
+
+    ASSERT_TRUE(world->ResetLinkState("robot", "base", {0.0, 0.0, 1.2}));
+    const gobot::PhysicsSensorState& moved_sensor_state = world->GetSceneState().robots[0].sensors[0];
+    EXPECT_NEAR(moved_sensor_state.values[0], 1.2, 1.0e-6);
+    EXPECT_TRUE(moved_sensor_state.global_transform.translation().isApprox(
+            gobot::Vector3(0.0, 0.0, 1.2), CMP_EPSILON));
+
+    gobot::Object::Delete(root);
 }
 
 TEST(TestPhysicsServer, captures_terrain_nodes_in_snapshot) {

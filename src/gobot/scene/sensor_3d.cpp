@@ -79,6 +79,14 @@ RealType ContactSensor3D::GetMaxThreshold() const {
     return max_threshold_;
 }
 
+void TerrainHeightSensor3D::SetSampleOffsets(const std::vector<Vector3>& sample_offsets) {
+    sample_offsets_ = sample_offsets;
+}
+
+const std::vector<Vector3>& TerrainHeightSensor3D::GetSampleOffsets() const {
+    return sample_offsets_;
+}
+
 } // namespace gobot
 
 GOBOT_REGISTRATION {
@@ -101,5 +109,10 @@ GOBOT_REGISTRATION {
             .property("radius", &ContactSensor3D::GetRadius, &ContactSensor3D::SetRadius)
             .property("min_threshold", &ContactSensor3D::GetMinThreshold, &ContactSensor3D::SetMinThreshold)
             .property("max_threshold", &ContactSensor3D::GetMaxThreshold, &ContactSensor3D::SetMaxThreshold);
+
+    Class_<TerrainHeightSensor3D>("TerrainHeightSensor3D")
+            .constructor()(CtorAsRawPtr)
+            .property("sample_offsets", &TerrainHeightSensor3D::GetSampleOffsets,
+                      &TerrainHeightSensor3D::SetSampleOffsets);
 
 };

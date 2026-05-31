@@ -390,6 +390,41 @@ def radial_pit(
     )
 
 
+def go1_training_terrains() -> dict[str, SubTerrainCfg]:
+    """Go1-sized rough terrain presets.
+
+    These keep MJLab-style visual variety while capping obstacles to heights a
+    small quadruped can plausibly step over during early locomotion training.
+    """
+
+    return {
+        "flat": flat(proportion=0.16),
+        "rough_easy": random_rough(proportion=0.12, noise_range=(-0.015, 0.020), downsampled_scale=0.20),
+        "waves": wave_terrain(proportion=0.10, amplitude=0.030, num_waves=2.0),
+        "grid": box_random_grid(proportion=0.10, grid_width=0.45, height_range=(-0.020, 0.065), platform_width=1.10),
+        "stones": stepping_stones(
+            proportion=0.08,
+            stone_size=0.55,
+            stone_distance=0.18,
+            height_range=(-0.020, 0.055),
+            platform_width=1.10,
+        ),
+        "slope": hf_pyramid_slope(proportion=0.10, slope=0.090, platform_width=1.20),
+        "slope_inv": hf_pyramid_slope_inv(proportion=0.08, slope=0.080, platform_width=1.20),
+        "stairs": pyramid_stairs(proportion=0.10, step_height=0.026, step_width=0.42, platform_width=1.20),
+        "stairs_inv": pyramid_stairs_inv(proportion=0.06, step_height=0.022, step_width=0.42, platform_width=1.20),
+        "obstacles": discrete_obstacles(
+            proportion=0.08,
+            obstacle_count=14,
+            obstacle_size=(0.14, 0.30),
+            height_range=(0.025, 0.085),
+            platform_width=1.10,
+        ),
+        "mound": radial_mound(proportion=0.06, height=0.14, radius=1.10, flat_radius=0.22),
+        "pit": radial_pit(proportion=0.04, depth=0.12, radius=1.10, flat_radius=0.22),
+    }
+
+
 def mjlab_showcase_terrains() -> dict[str, SubTerrainCfg]:
     return {
         "blue_stairs": pyramid_stairs(step_height=0.10, step_width=0.28, platform_width=0.75),
@@ -961,6 +996,7 @@ __all__ = [
     "ROUGH_TERRAINS_CFG",
     "brand_ramp",
     "darken_rgba",
+    "go1_training_terrains",
     "mjlab_showcase_terrains",
     "create_terrain_node",
     "flat",

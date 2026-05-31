@@ -103,6 +103,8 @@ public:
 protected:
     bool CaptureSceneSnapshot(const Node* scene_root);
 
+    void UpdateSensorGlobalTransformsAndTerrainHeights(PhysicsSceneState& scene_state, RealType timestamp);
+
     PhysicsJointState* FindJointState(const std::string& robot_name,
                                       const std::string& joint_name);
 

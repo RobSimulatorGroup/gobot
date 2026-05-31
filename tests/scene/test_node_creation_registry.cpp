@@ -38,6 +38,7 @@ TEST(TestNodeCreationRegistry, built_in_entries_keep_node_inheritance_shape) {
     const auto* imu_sensor = FindEntry("IMUSensor3D");
     const auto* angular_momentum_sensor = FindEntry("AngularMomentumSensor3D");
     const auto* contact_sensor = FindEntry("ContactSensor3D");
+    const auto* terrain_height_sensor = FindEntry("TerrainHeightSensor3D");
     const auto* mesh_instance = FindEntry("MeshInstance3D");
     const auto* box_mesh = FindEntry("BoxMeshInstance3D");
     const auto* cylinder_mesh = FindEntry("CylinderMeshInstance3D");
@@ -54,6 +55,7 @@ TEST(TestNodeCreationRegistry, built_in_entries_keep_node_inheritance_shape) {
     ASSERT_NE(imu_sensor, nullptr);
     ASSERT_NE(angular_momentum_sensor, nullptr);
     ASSERT_NE(contact_sensor, nullptr);
+    ASSERT_NE(terrain_height_sensor, nullptr);
     ASSERT_NE(mesh_instance, nullptr);
     ASSERT_NE(box_mesh, nullptr);
     ASSERT_NE(cylinder_mesh, nullptr);
@@ -70,6 +72,7 @@ TEST(TestNodeCreationRegistry, built_in_entries_keep_node_inheritance_shape) {
     EXPECT_EQ(imu_sensor->parent_id, "Sensor3D");
     EXPECT_EQ(angular_momentum_sensor->parent_id, "Sensor3D");
     EXPECT_EQ(contact_sensor->parent_id, "Sensor3D");
+    EXPECT_EQ(terrain_height_sensor->parent_id, "Sensor3D");
     EXPECT_EQ(mesh_instance->parent_id, "Node3D");
     EXPECT_EQ(box_mesh->parent_id, "MeshInstance3D");
     EXPECT_EQ(cylinder_mesh->parent_id, "MeshInstance3D");
@@ -108,6 +111,11 @@ TEST(TestNodeCreationRegistry, creates_sensor_nodes) {
     ASSERT_NE(angular_momentum_node, nullptr);
     EXPECT_NE(gobot::Object::PointerCastTo<gobot::AngularMomentumSensor3D>(angular_momentum_node), nullptr);
     gobot::Object::Delete(angular_momentum_node);
+
+    gobot::Node* terrain_height_node = gobot::NodeCreationRegistry::CreateNode("TerrainHeightSensor3D");
+    ASSERT_NE(terrain_height_node, nullptr);
+    EXPECT_NE(gobot::Object::PointerCastTo<gobot::TerrainHeightSensor3D>(terrain_height_node), nullptr);
+    gobot::Object::Delete(terrain_height_node);
 }
 
 TEST(TestNodeCreationRegistry, creates_mesh_instance_node) {

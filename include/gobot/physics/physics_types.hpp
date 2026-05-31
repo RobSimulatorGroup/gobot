@@ -52,7 +52,8 @@ enum class PhysicsSensorType {
     Unknown,
     IMU,
     AngularMomentum,
-    Contact
+    Contact,
+    TerrainHeight
 };
 
 struct PhysicsBackendInfo {
@@ -124,6 +125,7 @@ struct PhysicsSensorSnapshot {
     std::string name;
     std::string link_name;
     Affine3 global_transform{Affine3::Identity()};
+    Affine3 local_transform{Affine3::Identity()};
     bool enabled{true};
     RealType sensor_period{0.0};
     RealType noise_stddev{0.0};
@@ -131,6 +133,7 @@ struct PhysicsSensorSnapshot {
     RealType radius{0.0};
     RealType min_threshold{0.0};
     RealType max_threshold{0.0};
+    std::vector<Vector3> sample_offsets;
     std::vector<std::string> channel_names;
 };
 
@@ -261,6 +264,7 @@ struct PhysicsSensorState {
     std::string sensor_name;
     PhysicsSensorType type{PhysicsSensorType::Unknown};
     bool enabled{true};
+    Affine3 global_transform{Affine3::Identity()};
     std::vector<RealType> values;
     std::vector<std::string> channel_names;
     RealType timestamp{0.0};

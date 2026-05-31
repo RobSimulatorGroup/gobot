@@ -126,8 +126,41 @@ def main():
                 f"Go1 angular momentum sensor expected 3 values, got {len(angular_momentum['values'])}"
             )
 
-        for sensor in (imu, angular_momentum):
-            if sensor["timestamp"] <= 0.0:
+        terrain_scan = sensors.get("terrain_scan")
+        if terrain_scan is None:
+            raise AssertionError("Go1 runtime state is missing TerrainHeightSensor3D 'terrain_scan'")
+        if terrain_scan["type"] != "terrain_height":
+            raise AssertionError(f"Go1 terrain scan sensor has unexpected type {terrain_scan['type']!r}")
+        if len(terrain_scan["values"]) != 15:
+            raise AssertionError(f"Go1 terrain scan expected 15 values, got {len(terrain_scan['values'])}")
+        if terrain_scan["channel_names"][:3] != ["clearance_0", "clearance_1", "clearance_2"]:
+            raise AssertionError(f"Go1 terrain scan channel names are unexpected: {terrain_scan['channel_names']!r}")
+        if "global_transform" not in terrain_scan:
+            raise AssertionError("Go1 terrain scan runtime state is missing global_transform")
+
+        for foot in ("FR", "FL", "RR", "RL"):
+            height_sensor = sensors.get(f"{foot}_foot_height_scan")
+            if height_sensor is None:
+                raise AssertionError(f"Go1 runtime state is missing {foot}_foot_height_scan")
+            if height_sensor["type"] != "terrain_height" or len(height_sensor["values"]) != 1:
+                raise AssertionError(f"Go1 {foot} foot height sensor is malformed: {height_sensor!r}")
+            contact_sensor = sensors.get(f"{foot}_foot_contact")
+            if contact_sensor is None:
+                raise AssertionError(f"Go1 runtime state is missing {foot}_foot_contact")
+            if contact_sensor["type"] != "contact" or len(contact_sensor["values"]) != 1:
+                raise AssertionError(f"Go1 {foot} foot contact sensor is malformed: {contact_sensor!r}")
+
+        checked_sensors = [imu, angular_momentum, terrain_scan]
+        checked_sensors += [
+            sensors[f"{foot}_foot_height_scan"]
+            for foot in ("FR", "FL", "RR", "RL")
+        ]
+        checked_sensors += [
+            sensors[f"{foot}_foot_contact"]
+            for foot in ("FR", "FL", "RR", "RL")
+        ]
+        for sensor in checked_sensors:
+            if args.backend == "mujoco" and sensor["timestamp"] <= 0.0:
                 raise AssertionError(f"Go1 sensor {sensor['sensor_name']} timestamp did not advance")
             if not all(math.isfinite(float(value)) for value in sensor["values"]):
                 raise AssertionError(f"Go1 sensor {sensor['sensor_name']} produced non-finite values")

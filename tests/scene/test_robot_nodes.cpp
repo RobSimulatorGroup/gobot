@@ -75,6 +75,7 @@ TEST(TestRobotNodes, reflected_properties_are_available) {
     EXPECT_TRUE(gobot::Type::get<gobot::ContactSensor3D>().get_property("radius").is_valid());
     EXPECT_TRUE(gobot::Type::get<gobot::ContactSensor3D>().get_property("min_threshold").is_valid());
     EXPECT_TRUE(gobot::Type::get<gobot::ContactSensor3D>().get_property("max_threshold").is_valid());
+    EXPECT_TRUE(gobot::Type::get<gobot::TerrainHeightSensor3D>().get_property("sample_offsets").is_valid());
 }
 
 TEST(TestRobotNodes, stores_sensor_metadata) {
@@ -108,6 +109,15 @@ TEST(TestRobotNodes, stores_sensor_metadata) {
     EXPECT_NEAR(contact->GetMinThreshold(), 0.1, 1.0e-6);
     EXPECT_NEAR(contact->GetMaxThreshold(), 100.0, 1.0e-6);
     gobot::Object::Delete(contact);
+
+    auto* terrain_height = gobot::Object::New<gobot::TerrainHeightSensor3D>();
+    terrain_height->SetName("terrain_scan");
+    terrain_height->SetSampleOffsets({{0.1, 0.0, 0.0}, {0.2, 0.1, -0.1}});
+
+    ASSERT_EQ(terrain_height->GetSampleOffsets().size(), 2);
+    EXPECT_TRUE(terrain_height->GetSampleOffsets()[0].isApprox(gobot::Vector3(0.1, 0.0, 0.0), CMP_EPSILON));
+    EXPECT_TRUE(terrain_height->GetSampleOffsets()[1].isApprox(gobot::Vector3(0.2, 0.1, -0.1), CMP_EPSILON));
+    gobot::Object::Delete(terrain_height);
 }
 
 TEST(TestRobotNodes, motion_mode_applies_joint_position_delta_from_entered_pose) {

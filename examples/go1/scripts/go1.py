@@ -1,5 +1,6 @@
 import math
 import os
+import json
 from importlib.metadata import PackageNotFoundError, version
 
 import gobot
@@ -7,11 +8,11 @@ import gobot
 
 ROBOT = "go1"
 BASE_LINK = "trunk"
-DEFAULT_POLICY_PATH = "res://policies/go1.onnx"
-TORCH_POLICY_PATH = "res://policies/go1.pt"
+DEFAULT_POLICY_PATH = "res://policies/go1.onnx2"
+TORCH_POLICY_PATH = "res://policies/model_final.pt"
 PRINT_EVERY_TICKS = 240
 FIXED_TIME_STEP = 0.002
-RESET_BASE_POSITION = [0.0, 0.0, 0.27]
+RESET_BASE_POSITION = [0.0, 0.0, 0.32]
 COMMAND = [
     float(os.environ.get("GOBOT_GO1_VX", "0.0")),
     float(os.environ.get("GOBOT_GO1_VY", "0.0")),
@@ -60,10 +61,12 @@ DEFAULT_POS = [
     0.9,
     -1.8,
 ]
-ACTION_SCALE = 0.25
+ACTION_SCALE = 0.35
 KP = 40.0
 KD = 1.0
 DECIMATION = 10
+HEIGHT_SCAN_POINTS = tuple((x, y) for x in (0.3, 0.6, 0.9, 1.2, 1.5) for y in (-0.45, 0.0, 0.45))
+TERRAIN_SCAN_SENSOR = "terrain_scan"
 POSITION_LIMITS = {
     "FR_hip_joint": (-0.863, 0.863),
     "FR_thigh_joint": (-0.686, 4.501),
@@ -133,8 +136,10 @@ class TorchPolicy:
 
         self.torch = torch
         self.device = torch.device("cpu")
+        checkpoint = torch.load(path, weights_only=False, map_location=self.device)
+        self.obs_dim = _checkpoint_obs_dim(checkpoint)
         obs = TensorDict(
-            {"policy": torch.zeros((1, 48), dtype=torch.float32, device=self.device)},
+            {"policy": torch.zeros((1, self.obs_dim), dtype=torch.float32, device=self.device)},
             batch_size=[1],
             device=self.device,
         )
@@ -152,7 +157,6 @@ class TorchPolicy:
                 "std_type": "scalar",
             },
         ).to(self.device)
-        checkpoint = torch.load(path, weights_only=False, map_location=self.device)
         self.policy.load_state_dict(checkpoint["actor_state_dict"], strict=True)
         self.policy.eval()
 
@@ -200,6 +204,17 @@ def _command_active(command):
     return any(abs(float(value)) > COMMAND_ACTIVE_DEADBAND for value in command)
 
 
+def _checkpoint_obs_dim(checkpoint):
+    actor_state = checkpoint.get("actor_state_dict", {})
+    normalizer_mean = actor_state.get("obs_normalizer._mean")
+    if normalizer_mean is not None and len(normalizer_mean.shape) == 2:
+        return int(normalizer_mean.shape[1])
+    for value in actor_state.values():
+        if getattr(value, "ndim", 0) == 2:
+            return int(value.shape[1])
+    return 48
+
+
 def _find_node_by_name(node, name):
     if node is None:
         return None
@@ -236,6 +251,115 @@ def _quat_to_roll_pitch(q):
     return roll, pitch
 
 
+def _quat_to_yaw(q):
+    w, x, y, z = q
+    return math.atan2(2.0 * (w * z + x * y), 1.0 - 2.0 * (y * y + z * z))
+
+
+def _json_vec(value, size):
+    if isinstance(value, dict):
+        value = value.get("matrix_data", {}).get("storage", [])
+    vector = [0.0] * size
+    if value is None:
+        return vector
+    for index, item in enumerate(list(value)[:size]):
+        vector[index] = float(item)
+    return vector
+
+
+class TerrainSampler:
+    def __init__(self, scene_path):
+        self.boxes = []
+        self.heightfields = []
+        if not scene_path or not os.path.exists(scene_path):
+            return
+        with open(scene_path, encoding="utf-8") as scene_file:
+            data = json.load(scene_file)
+        terrain_node = next((node for node in data.get("__NODES__", []) if node.get("type") == "Terrain3D"), None)
+        if terrain_node is None:
+            return
+        properties = terrain_node.get("properties", {})
+        for box in properties.get("boxes", []):
+            self.boxes.append(
+                {
+                    "center": _json_vec(box.get("center"), 3),
+                    "size": _json_vec(box.get("size"), 3),
+                    "rotation": _json_vec(box.get("rotation_degrees"), 3),
+                }
+            )
+        for heightfield in properties.get("heightfields", []):
+            rows = int(heightfield.get("rows", 0))
+            cols = int(heightfield.get("cols", 0))
+            heights = list(heightfield.get("heights", []))
+            if rows <= 1 or cols <= 1 or len(heights) != rows * cols:
+                continue
+            self.heightfields.append(
+                {
+                    "center": _json_vec(heightfield.get("center"), 3),
+                    "size": _json_vec(heightfield.get("size"), 2),
+                    "rows": rows,
+                    "cols": cols,
+                    "heights": [float(value) for value in heights],
+                    "z_offset": float(heightfield.get("z_offset", 0.0)),
+                }
+            )
+
+    def height_at(self, x, y):
+        height = None
+        for box in self.boxes:
+            candidate = self._box_height(box, x, y)
+            if candidate is not None:
+                height = candidate if height is None else max(height, candidate)
+        for heightfield in self.heightfields:
+            candidate = self._heightfield_height(heightfield, x, y)
+            if candidate is not None:
+                height = candidate if height is None else max(height, candidate)
+        return 0.0 if height is None else float(height)
+
+    @staticmethod
+    def _box_height(box, x, y):
+        center = box["center"]
+        size = box["size"]
+        rotation = box["rotation"]
+        local_x = x - center[0]
+        local_y = y - center[1]
+        yaw = -math.radians(rotation[2])
+        cos_yaw = math.cos(yaw)
+        sin_yaw = math.sin(yaw)
+        rx = cos_yaw * local_x - sin_yaw * local_y
+        ry = sin_yaw * local_x + cos_yaw * local_y
+        if abs(rx) > size[0] * 0.5 or abs(ry) > size[1] * 0.5:
+            return None
+        return center[2] + size[2] * 0.5
+
+    @staticmethod
+    def _heightfield_height(heightfield, x, y):
+        center = heightfield["center"]
+        size = heightfield["size"]
+        local_x = x - center[0]
+        local_y = y - center[1]
+        if abs(local_x) > size[0] * 0.5 or abs(local_y) > size[1] * 0.5:
+            return None
+        cols = heightfield["cols"]
+        rows = heightfield["rows"]
+        u = (local_x / size[0] + 0.5) * (cols - 1)
+        v = (local_y / size[1] + 0.5) * (rows - 1)
+        c0 = int(_clamp(math.floor(u), 0, cols - 1))
+        r0 = int(_clamp(math.floor(v), 0, rows - 1))
+        c1 = min(c0 + 1, cols - 1)
+        r1 = min(r0 + 1, rows - 1)
+        fu = u - c0
+        fv = v - r0
+        heights = heightfield["heights"]
+        h00 = heights[r0 * cols + c0]
+        h10 = heights[r0 * cols + c1]
+        h01 = heights[r1 * cols + c0]
+        h11 = heights[r1 * cols + c1]
+        h0 = h00 * (1.0 - fu) + h10 * fu
+        h1 = h01 * (1.0 - fu) + h11 * fu
+        return center[2] + heightfield["z_offset"] + h0 * (1.0 - fv) + h1 * fv
+
+
 class Script(gobot.NodeScript):
     def _ready(self):
         self.context.fixed_time_step = FIXED_TIME_STEP
@@ -250,9 +374,14 @@ class Script(gobot.NodeScript):
         self.robot = self._find_robot()
         self.joints = [self._find_joint(name) for name in JOINT_NAMES]
         for joint in self.joints:
+            joint.drive_mode = gobot.JointDriveMode.Position
+            joint.drive_stiffness = KP
+            joint.drive_damping = KD
             joint.damping = KD
         self.robot.mode = gobot.RobotMode.Motion
         self.policy = self._load_policy()
+        self.policy_obs_dim = getattr(self.policy, "obs_dim", 48)
+        self.terrain_sampler = TerrainSampler(_resolve_project_path(self.context, "res://terrain_scene.jscn"))
         self.ticks = 0
         self.playing = True
         self.world_controls_ready = False
@@ -265,7 +394,7 @@ class Script(gobot.NodeScript):
                 self.command[0],
                 self.command[1],
                 self.command[2],
-                "click 3D Viewer, WASD/QE, Space stop, R reset" if self.policy is not None else "missing res://policies/go1.onnx",
+                "click 3D Viewer, WASD/QE, Space stop, R reset" if self.policy is not None else "missing policy",
             )
         )
 
@@ -460,12 +589,13 @@ class Script(gobot.NodeScript):
     def _observation(self):
         state = self._runtime_robot_state()
         if state is None:
-            return [0.0] * 48
+            return [0.0] * self.policy_obs_dim
 
         base = self._base_link_state(state)
         if base is None:
-            return [0.0] * 48
+            return [0.0] * self.policy_obs_dim
         quat = base.get("quaternion", [1.0, 0.0, 0.0, 0.0])
+        position = base.get("position", [0.0, 0.0, 0.0])
         lin_vel = _quat_rotate_inv(base.get("linear_velocity", [0.0, 0.0, 0.0]), quat)
         ang_vel = base.get("angular_velocity", [0.0, 0.0, 0.0])
         projected_gravity = _quat_rotate_inv([0.0, 0.0, -1.0], quat)
@@ -479,7 +609,35 @@ class Script(gobot.NodeScript):
             joint_pos.append(float(joint.get("position", DEFAULT_POS[index])) - DEFAULT_POS[index])
             joint_vel.append(float(joint.get("velocity", 0.0)))
 
-        return lin_vel + list(ang_vel[:3]) + projected_gravity + cmd + joint_pos + joint_vel + self.last_action
+        obs = lin_vel + list(ang_vel[:3]) + projected_gravity + cmd + joint_pos + joint_vel + self.last_action
+        if self.policy_obs_dim > len(obs):
+            obs += self._height_scan(state, position, quat)[: self.policy_obs_dim - len(obs)]
+        if len(obs) < self.policy_obs_dim:
+            obs += [0.0] * (self.policy_obs_dim - len(obs))
+        return obs[: self.policy_obs_dim]
+
+    def _height_scan(self, robot_state, base_position, quat):
+        sensor = self._sensor_map(robot_state).get(TERRAIN_SCAN_SENSOR)
+        if sensor is not None:
+            values = [float(value) for value in sensor.get("values", [])]
+            if len(values) == len(HEIGHT_SCAN_POINTS) and all(math.isfinite(value) for value in values):
+                return [_clamp(value, -1.0, 1.0) for value in values]
+        yaw = _quat_to_yaw(quat)
+        cos_yaw = math.cos(yaw)
+        sin_yaw = math.sin(yaw)
+        samples = []
+        for local_x, local_y in HEIGHT_SCAN_POINTS:
+            world_x = base_position[0] + cos_yaw * local_x - sin_yaw * local_y
+            world_y = base_position[1] + sin_yaw * local_x + cos_yaw * local_y
+            terrain_height = self.terrain_sampler.height_at(world_x, world_y)
+            samples.append(_clamp(base_position[2] - terrain_height, -1.0, 1.0))
+        return samples
+
+    def _sensor_map(self, robot_state):
+        return {
+            sensor.get("name") or sensor.get("sensor_name"): sensor
+            for sensor in robot_state.get("sensors", [])
+        }
 
     def _base_link_state(self, robot_state):
         for link in robot_state.get("links", []):

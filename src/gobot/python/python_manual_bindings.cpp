@@ -212,6 +212,10 @@ struct PyContactSensor3DHandle : public PySensor3DHandle {
     using PySensor3DHandle::PySensor3DHandle;
 };
 
+struct PyTerrainHeightSensor3DHandle : public PySensor3DHandle {
+    using PySensor3DHandle::PySensor3DHandle;
+};
+
 std::string ExpectedTypeForNode(Node* node);
 PyNodeHandle MakeTypedNodeHandle(Node* node, PyNodeOwnership ownership = PyNodeOwnership::Borrowed);
 py::object MakeTypedNodeObject(Node* node, PyNodeOwnership ownership = PyNodeOwnership::Borrowed);
@@ -1085,6 +1089,8 @@ std::string PhysicsSensorTypeName(PhysicsSensorType type) {
             return "angular_momentum";
         case PhysicsSensorType::Contact:
             return "contact";
+        case PhysicsSensorType::TerrainHeight:
+            return "terrain_height";
         case PhysicsSensorType::Unknown:
             break;
     }
@@ -1144,8 +1150,10 @@ py::dict SensorSnapshotToPythonDict(const PhysicsSensorSnapshot& sensor) {
     result["radius"] = sensor.radius;
     result["min_threshold"] = sensor.min_threshold;
     result["max_threshold"] = sensor.max_threshold;
+    result["sample_offsets"] = Vector3ListToPython(sensor.sample_offsets);
     result["channel_names"] = sensor.channel_names;
     result["global_transform"] = TransformToPythonDict(sensor.global_transform);
+    result["local_transform"] = TransformToPythonDict(sensor.local_transform);
     return result;
 }
 
@@ -1252,6 +1260,7 @@ py::dict SensorStateToPythonDict(const PhysicsSensorState& sensor) {
     result["sensor_name"] = sensor.sensor_name;
     result["type"] = PhysicsSensorTypeName(sensor.type);
     result["enabled"] = sensor.enabled;
+    result["global_transform"] = TransformToPythonDict(sensor.global_transform);
     result["values"] = sensor.values;
     result["channel_names"] = sensor.channel_names;
     result["timestamp"] = sensor.timestamp;
@@ -1394,6 +1403,12 @@ PyContactSensor3DHandle MakeContactSensor3DHandle(ContactSensor3D* node,
     return PyContactSensor3DHandle(node, "ContactSensor3D", ActiveSceneEpoch(), ownership);
 }
 
+PyTerrainHeightSensor3DHandle MakeTerrainHeightSensor3DHandle(
+        TerrainHeightSensor3D* node,
+        PyNodeOwnership ownership = PyNodeOwnership::Borrowed) {
+    return PyTerrainHeightSensor3DHandle(node, "TerrainHeightSensor3D", ActiveSceneEpoch(), ownership);
+}
+
 PyNodeHandle MakeTypedNodeHandle(Node* node, PyNodeOwnership ownership) {
     if (auto* mesh_instance = Object::PointerCastTo<MeshInstance3D>(node)) {
         return MakeMeshInstance3DHandle(mesh_instance, ownership);
@@ -1403,6 +1418,9 @@ PyNodeHandle MakeTypedNodeHandle(Node* node, PyNodeOwnership ownership) {
     }
     if (auto* contact_sensor = Object::PointerCastTo<ContactSensor3D>(node)) {
         return MakeContactSensor3DHandle(contact_sensor, ownership);
+    }
+    if (auto* terrain_height_sensor = Object::PointerCastTo<TerrainHeightSensor3D>(node)) {
+        return MakeTerrainHeightSensor3DHandle(terrain_height_sensor, ownership);
     }
     if (auto* angular_momentum_sensor = Object::PointerCastTo<AngularMomentumSensor3D>(node)) {
         return MakeAngularMomentumSensor3DHandle(angular_momentum_sensor, ownership);
@@ -1440,6 +1458,9 @@ py::object MakeTypedNodeObject(Node* node, PyNodeOwnership ownership) {
     }
     if (auto* contact_sensor = Object::PointerCastTo<ContactSensor3D>(node)) {
         return py::cast(MakeContactSensor3DHandle(contact_sensor, ownership));
+    }
+    if (auto* terrain_height_sensor = Object::PointerCastTo<TerrainHeightSensor3D>(node)) {
+        return py::cast(MakeTerrainHeightSensor3DHandle(terrain_height_sensor, ownership));
     }
     if (auto* angular_momentum_sensor = Object::PointerCastTo<AngularMomentumSensor3D>(node)) {
         return py::cast(MakeAngularMomentumSensor3DHandle(angular_momentum_sensor, ownership));
@@ -1589,6 +1610,8 @@ class NodeScript:
             py::class_<PyAngularMomentumSensor3DHandle, PySensor3DHandle>(module, "AngularMomentumSensor3D");
     auto contact_sensor3d_class =
             py::class_<PyContactSensor3DHandle, PySensor3DHandle>(module, "ContactSensor3D");
+    auto terrain_height_sensor3d_class =
+            py::class_<PyTerrainHeightSensor3DHandle, PySensor3DHandle>(module, "TerrainHeightSensor3D");
 
     py::implicitly_convertible<PyRobot3DHandle, PyNodeHandle>();
     py::implicitly_convertible<PyLink3DHandle, PyNodeHandle>();
@@ -1599,6 +1622,7 @@ class NodeScript:
     py::implicitly_convertible<PyIMUSensor3DHandle, PyNodeHandle>();
     py::implicitly_convertible<PyAngularMomentumSensor3DHandle, PyNodeHandle>();
     py::implicitly_convertible<PyContactSensor3DHandle, PyNodeHandle>();
+    py::implicitly_convertible<PyTerrainHeightSensor3DHandle, PyNodeHandle>();
 
     py::class_<EngineContext>(module, "AppContext")
             .def_property_readonly("project_path", &EngineContext::GetProjectPath)
@@ -2550,6 +2574,17 @@ class NodeScript:
                           [](PyContactSensor3DHandle& handle, RealType max_threshold) {
                               ContactSensor3D* sensor = handle.ResolveAs<ContactSensor3D>();
                               ExecuteSetNodeProperty(sensor, "max_threshold", Variant(max_threshold));
+                          });
+
+    terrain_height_sensor3d_class
+            .def_property("sample_offsets",
+                          [](const PyTerrainHeightSensor3DHandle& handle) {
+                              return Vector3ListToPython(
+                                      handle.ResolveAs<TerrainHeightSensor3D>()->GetSampleOffsets());
+                          },
+                          [](PyTerrainHeightSensor3DHandle& handle, const py::handle& value) {
+                              TerrainHeightSensor3D* sensor = handle.ResolveAs<TerrainHeightSensor3D>();
+                              ExecuteSetNodeProperty(sensor, "sample_offsets", Variant(PythonToVector3List(value)));
                           });
 
     GOB_UNUSED(imu_sensor3d_class);

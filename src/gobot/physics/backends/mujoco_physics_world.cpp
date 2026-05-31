@@ -378,7 +378,8 @@ void AddSensorToSpec(mjSpec* spec,
     }
 
     const std::string site_name = SensorSiteName(prefix, sensor);
-    if (sensor.type != PhysicsSensorType::AngularMomentum) {
+    if (sensor.type != PhysicsSensorType::AngularMomentum &&
+        sensor.type != PhysicsSensorType::TerrainHeight) {
         if (AddSensorSiteToBody(body, sensor, link, site_name) == nullptr) {
             return;
         }
@@ -406,6 +407,8 @@ void AddSensorToSpec(mjSpec* spec,
                     touch_sensor->cutoff = static_cast<double>(sensor.max_threshold);
                 }
             }
+            break;
+        case PhysicsSensorType::TerrainHeight:
             break;
         case PhysicsSensorType::Unknown:
             break;
@@ -2083,6 +2086,8 @@ void MuJoCoPhysicsWorld::BuildSensorBindings() {
                 case PhysicsSensorType::Contact:
                     add_component("contact", 0);
                     break;
+                case PhysicsSensorType::TerrainHeight:
+                    break;
                 case PhysicsSensorType::Unknown:
                     break;
             }
@@ -2467,6 +2472,7 @@ void MuJoCoPhysicsWorld::SyncStateFromMuJoCo(std::size_t environment_index) {
 
     SyncContactsFromMuJoCo(environment_index);
     SyncSensorsFromMuJoCo(environment_index);
+    UpdateSensorGlobalTransformsAndTerrainHeights(state, static_cast<RealType>(data->time));
     if (environment_index == 0 && !environment_states_.empty()) {
         environment_states_[0] = scene_state_;
     }
@@ -2549,6 +2555,8 @@ void MuJoCoPhysicsWorld::SyncStateToMuJoCo(std::size_t environment_index) {
     }
 
     mj_forward(model, data);
+    UpdateSensorGlobalTransformsAndTerrainHeights(EnvironmentState(environment_index),
+                                                 static_cast<RealType>(data->time));
 }
 
 void MuJoCoPhysicsWorld::SyncContactsFromMuJoCo(std::size_t environment_index) {

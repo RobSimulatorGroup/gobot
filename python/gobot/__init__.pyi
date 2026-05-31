@@ -20,6 +20,7 @@ from ._core import (
     RobotMode,
     Scene,
     Sensor3D,
+    TerrainHeightSensor3D,
     TerrainColorMode,
     Terrain3D,
     backend_infos,

@@ -315,6 +315,10 @@ class ContactSensor3D(Sensor3D):
     max_threshold: float
 
 
+class TerrainHeightSensor3D(Sensor3D):
+    sample_offsets: list[Vector3]
+
+
 def set_project_path(project_path: str) -> None: ...
 def load_scene(scene_path: str) -> Scene: ...
 def create_node(type_name: str, name: str = "") -> Node: ...

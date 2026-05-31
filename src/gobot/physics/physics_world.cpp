@@ -6,6 +6,10 @@
 
 #include "gobot/physics/physics_world.hpp"
 
+#include <algorithm>
+#include <cmath>
+#include <limits>
+#include <optional>
 #include <utility>
 
 #include "gobot/core/registration.hpp"
@@ -181,6 +185,8 @@ std::vector<std::string> ChannelNamesForSensorType(PhysicsSensorType type) {
                     "angular_momentum_z"};
         case PhysicsSensorType::Contact:
             return {"contact_strength"};
+        case PhysicsSensorType::TerrainHeight:
+            break;
         case PhysicsSensorType::Unknown:
             break;
     }
@@ -196,6 +202,7 @@ PhysicsSensorSnapshot CaptureSensorSnapshot(const Sensor3D* sensor,
     snapshot.name = sensor->GetName();
     snapshot.link_name = link_name;
     snapshot.global_transform = global_transform;
+    snapshot.local_transform = sensor->GetTransform();
     snapshot.enabled = sensor->IsEnabled();
     snapshot.sensor_period = sensor->GetSensorPeriod();
     snapshot.noise_stddev = sensor->GetNoiseStddev();
@@ -210,9 +217,18 @@ PhysicsSensorSnapshot CaptureSensorSnapshot(const Sensor3D* sensor,
         snapshot.radius = contact_sensor->GetRadius();
         snapshot.min_threshold = contact_sensor->GetMinThreshold();
         snapshot.max_threshold = contact_sensor->GetMaxThreshold();
+    } else if (auto* terrain_height_sensor = Object::PointerCastTo<TerrainHeightSensor3D>(sensor)) {
+        snapshot.type = PhysicsSensorType::TerrainHeight;
+        snapshot.sample_offsets = terrain_height_sensor->GetSampleOffsets();
     }
 
     snapshot.channel_names = ChannelNamesForSensorType(snapshot.type);
+    if (snapshot.type == PhysicsSensorType::TerrainHeight) {
+        snapshot.channel_names.reserve(snapshot.sample_offsets.size());
+        for (std::size_t index = 0; index < snapshot.sample_offsets.size(); ++index) {
+            snapshot.channel_names.push_back(fmt::format("clearance_{}", index));
+        }
+    }
     return snapshot;
 }
 
@@ -450,6 +466,147 @@ const PhysicsSensorState* FindPreviousSensorState(const PhysicsRobotState& robot
     return nullptr;
 }
 
+std::optional<RealType> QueryTerrainBoxHeight(const PhysicsTerrainBoxSnapshot& box, const Vector3& world_position) {
+    const Vector3 half = box.size.cwiseMax(Vector3::Zero()) * 0.5;
+    if (half.x() <= CMP_EPSILON || half.y() <= CMP_EPSILON || half.z() <= CMP_EPSILON) {
+        return std::nullopt;
+    }
+
+    const Affine3 inverse = box.global_transform.inverse();
+    const Vector3 local = inverse * world_position;
+    if (std::abs(local.x()) > half.x() + CMP_EPSILON ||
+        std::abs(local.y()) > half.y() + CMP_EPSILON) {
+        return std::nullopt;
+    }
+
+    const Vector3 top = box.global_transform * Vector3(local.x(), local.y(), half.z());
+    return top.z();
+}
+
+std::optional<RealType> QueryTerrainHeightFieldHeight(const PhysicsTerrainHeightFieldSnapshot& heightfield,
+                                                      const Vector3& world_position) {
+    if (heightfield.rows < 2 ||
+        heightfield.cols < 2 ||
+        heightfield.size.x() <= CMP_EPSILON ||
+        heightfield.size.y() <= CMP_EPSILON ||
+        heightfield.heights.size() < static_cast<std::size_t>(heightfield.rows * heightfield.cols)) {
+        return std::nullopt;
+    }
+
+    const Vector3 center = heightfield.global_transform.translation();
+    const Vector3 local = world_position - center;
+    const RealType half_x = heightfield.size.x() * 0.5;
+    const RealType half_y = heightfield.size.y() * 0.5;
+    if (std::abs(local.x()) > half_x + CMP_EPSILON || std::abs(local.y()) > half_y + CMP_EPSILON) {
+        return std::nullopt;
+    }
+
+    const RealType u = (local.x() / heightfield.size.x() + 0.5) * static_cast<RealType>(heightfield.cols - 1);
+    const RealType v = (local.y() / heightfield.size.y() + 0.5) * static_cast<RealType>(heightfield.rows - 1);
+    const int c0 = std::clamp(static_cast<int>(std::floor(u)), 0, heightfield.cols - 1);
+    const int r0 = std::clamp(static_cast<int>(std::floor(v)), 0, heightfield.rows - 1);
+    const int c1 = std::min(c0 + 1, heightfield.cols - 1);
+    const int r1 = std::min(r0 + 1, heightfield.rows - 1);
+    const RealType fu = u - static_cast<RealType>(c0);
+    const RealType fv = v - static_cast<RealType>(r0);
+
+    auto height_at = [&heightfield](int row, int col) {
+        const std::size_t index = static_cast<std::size_t>(row * heightfield.cols + col);
+        return heightfield.heights[index];
+    };
+
+    const RealType h00 = height_at(r0, c0);
+    const RealType h10 = height_at(r0, c1);
+    const RealType h01 = height_at(r1, c0);
+    const RealType h11 = height_at(r1, c1);
+    const RealType h0 = h00 * (1.0 - fu) + h10 * fu;
+    const RealType h1 = h01 * (1.0 - fu) + h11 * fu;
+    const RealType local_height = heightfield.z_offset + h0 * (1.0 - fv) + h1 * fv;
+    return center.z() + local_height;
+}
+
+std::optional<RealType> IntersectVerticalRayWithTriangle(const Vector3& world_position,
+                                                         const Vector3& a,
+                                                         const Vector3& b,
+                                                         const Vector3& c) {
+    const Vector2 p{world_position.x(), world_position.y()};
+    const Vector2 a2{a.x(), a.y()};
+    const Vector2 b2{b.x(), b.y()};
+    const Vector2 c2{c.x(), c.y()};
+    const Vector2 v0 = b2 - a2;
+    const Vector2 v1 = c2 - a2;
+    const Vector2 v2 = p - a2;
+    const RealType denominator = v0.x() * v1.y() - v1.x() * v0.y();
+    if (std::abs(denominator) <= CMP_EPSILON) {
+        return std::nullopt;
+    }
+
+    const RealType inv_denominator = 1.0 / denominator;
+    const RealType u = (v2.x() * v1.y() - v1.x() * v2.y()) * inv_denominator;
+    const RealType v = (v0.x() * v2.y() - v2.x() * v0.y()) * inv_denominator;
+    const RealType w = 1.0 - u - v;
+    if (u < -CMP_EPSILON || v < -CMP_EPSILON || w < -CMP_EPSILON) {
+        return std::nullopt;
+    }
+
+    return w * a.z() + u * b.z() + v * c.z();
+}
+
+std::optional<RealType> QueryTerrainMeshPatchHeight(const PhysicsTerrainMeshPatchSnapshot& mesh_patch,
+                                                    const Vector3& world_position) {
+    if (mesh_patch.vertices.empty() || mesh_patch.indices.size() < 3) {
+        return std::nullopt;
+    }
+
+    std::optional<RealType> height;
+    for (std::size_t index = 0; index + 2 < mesh_patch.indices.size(); index += 3) {
+        const std::uint32_t i0 = mesh_patch.indices[index + 0];
+        const std::uint32_t i1 = mesh_patch.indices[index + 1];
+        const std::uint32_t i2 = mesh_patch.indices[index + 2];
+        if (i0 >= mesh_patch.vertices.size() ||
+            i1 >= mesh_patch.vertices.size() ||
+            i2 >= mesh_patch.vertices.size()) {
+            continue;
+        }
+
+        const Vector3 a = mesh_patch.global_transform * mesh_patch.vertices[i0];
+        const Vector3 b = mesh_patch.global_transform * mesh_patch.vertices[i1];
+        const Vector3 c = mesh_patch.global_transform * mesh_patch.vertices[i2];
+        const std::optional<RealType> candidate = IntersectVerticalRayWithTriangle(world_position, a, b, c);
+        if (!candidate.has_value()) {
+            continue;
+        }
+        height = height.has_value()
+                         ? std::optional<RealType>(std::max(height.value(), candidate.value()))
+                         : candidate;
+    }
+
+    return height;
+}
+
+RealType QueryTerrainHeight(const PhysicsSceneSnapshot& snapshot, const Vector3& world_position) {
+    RealType height = -std::numeric_limits<RealType>::infinity();
+    for (const PhysicsTerrainSnapshot& terrain : snapshot.terrains) {
+        for (const PhysicsTerrainBoxSnapshot& box : terrain.boxes) {
+            if (const std::optional<RealType> candidate = QueryTerrainBoxHeight(box, world_position)) {
+                height = std::max(height, candidate.value());
+            }
+        }
+        for (const PhysicsTerrainHeightFieldSnapshot& heightfield : terrain.heightfields) {
+            if (const std::optional<RealType> candidate = QueryTerrainHeightFieldHeight(heightfield, world_position)) {
+                height = std::max(height, candidate.value());
+            }
+        }
+        for (const PhysicsTerrainMeshPatchSnapshot& mesh_patch : terrain.mesh_patches) {
+            if (const std::optional<RealType> candidate = QueryTerrainMeshPatchHeight(mesh_patch, world_position)) {
+                height = std::max(height, candidate.value());
+            }
+        }
+    }
+
+    return std::isfinite(height) ? height : 0.0;
+}
+
 } // namespace
 
 const PhysicsWorldSettings& PhysicsWorld::GetSettings() const {
@@ -517,6 +674,7 @@ bool PhysicsWorld::RestoreCompatibleState(const PhysicsSceneState& previous_stat
         }
     }
 
+    UpdateSensorGlobalTransformsAndTerrainHeights(scene_state_, 0.0);
     last_error_.clear();
     return true;
 }
@@ -528,6 +686,7 @@ void PhysicsWorld::Reset() {
 
 void PhysicsWorld::Step(RealType delta_time) {
     GOB_UNUSED(delta_time);
+    UpdateSensorGlobalTransformsAndTerrainHeights(scene_state_, 0.0);
 }
 
 bool PhysicsWorld::ConfigureEnvironmentBatch(std::size_t environment_count) {
@@ -605,13 +764,17 @@ bool PhysicsWorld::ResetLinkState(const std::string& robot_name,
                                   const Quaternion& orientation,
                                   const Vector3& linear_velocity,
                                   const Vector3& angular_velocity) {
-    return ResetLinkStateIn(scene_state_,
-                            robot_name,
-                            link_name,
-                            position,
-                            orientation,
-                            linear_velocity,
-                            angular_velocity);
+    const bool reset = ResetLinkStateIn(scene_state_,
+                                        robot_name,
+                                        link_name,
+                                        position,
+                                        orientation,
+                                        linear_velocity,
+                                        angular_velocity);
+    if (reset) {
+        UpdateSensorGlobalTransformsAndTerrainHeights(scene_state_, 0.0);
+    }
+    return reset;
 }
 
 bool PhysicsWorld::ResetEnvironmentLinkState(std::size_t environment_index,
@@ -747,6 +910,44 @@ bool PhysicsWorld::CaptureSceneSnapshot(const Node* scene_root) {
     CollectSceneNodes(scene_root, &scene_snapshot_, Affine3::Identity());
     last_error_.clear();
     return true;
+}
+
+void PhysicsWorld::UpdateSensorGlobalTransformsAndTerrainHeights(PhysicsSceneState& scene_state, RealType timestamp) {
+    for (std::size_t robot_index = 0; robot_index < scene_state.robots.size(); ++robot_index) {
+        if (robot_index >= scene_snapshot_.robots.size()) {
+            continue;
+        }
+
+        PhysicsRobotState& robot_state = scene_state.robots[robot_index];
+        const PhysicsRobotSnapshot& robot_snapshot = scene_snapshot_.robots[robot_index];
+        for (std::size_t sensor_index = 0; sensor_index < robot_state.sensors.size(); ++sensor_index) {
+            if (sensor_index >= robot_snapshot.sensors.size()) {
+                continue;
+            }
+
+            PhysicsSensorState& sensor_state = robot_state.sensors[sensor_index];
+            const PhysicsSensorSnapshot& sensor_snapshot = robot_snapshot.sensors[sensor_index];
+            const PhysicsLinkState* link_state = FindLinkState(robot_state, sensor_snapshot.link_name);
+            const Affine3 link_transform = link_state != nullptr
+                                                   ? link_state->global_transform
+                                                   : Affine3::Identity();
+            sensor_state.global_transform = link_transform * sensor_snapshot.local_transform;
+
+            if (sensor_state.type != PhysicsSensorType::TerrainHeight || !sensor_state.enabled) {
+                continue;
+            }
+
+            if (sensor_state.values.size() != sensor_snapshot.sample_offsets.size()) {
+                sensor_state.values.assign(sensor_snapshot.sample_offsets.size(), 0.0);
+            }
+            for (std::size_t sample_index = 0; sample_index < sensor_snapshot.sample_offsets.size(); ++sample_index) {
+                const Vector3 sample_world = sensor_state.global_transform * sensor_snapshot.sample_offsets[sample_index];
+                sensor_state.values[sample_index] =
+                        sample_world.z() - QueryTerrainHeight(scene_snapshot_, sample_world);
+            }
+            sensor_state.timestamp = timestamp;
+        }
+    }
 }
 
 PhysicsJointState* PhysicsWorld::FindJointState(const std::string& robot_name,
@@ -921,6 +1122,7 @@ PhysicsSceneState PhysicsWorld::MakeSceneStateFromSnapshot() const {
             sensor_state.sensor_name = sensor_snapshot.name;
             sensor_state.type = sensor_snapshot.type;
             sensor_state.enabled = sensor_snapshot.enabled;
+            sensor_state.global_transform = sensor_snapshot.global_transform;
             sensor_state.channel_names = sensor_snapshot.channel_names;
             sensor_state.values.assign(sensor_state.channel_names.size(), 0.0);
             if (sensor_snapshot.type == PhysicsSensorType::IMU && sensor_state.values.size() >= 4) {
@@ -942,6 +1144,7 @@ PhysicsSceneState PhysicsWorld::MakeSceneStateFromSnapshot() const {
 
 void PhysicsWorld::ResetSceneStateFromSnapshot() {
     scene_state_ = MakeSceneStateFromSnapshot();
+    UpdateSensorGlobalTransformsAndTerrainHeights(scene_state_, 0.0);
 }
 
 void PhysicsWorld::SetLastError(std::string error) {

@@ -6,6 +6,8 @@
 
 #pragma once
 
+#include <vector>
+
 #include "gobot/scene/node_3d.hpp"
 
 namespace gobot {
@@ -75,6 +77,20 @@ private:
     RealType radius_{0.02};
     RealType min_threshold_{0.0};
     RealType max_threshold_{0.0};
+};
+
+class GOBOT_EXPORT TerrainHeightSensor3D : public Sensor3D {
+    GOBCLASS(TerrainHeightSensor3D, Sensor3D)
+
+public:
+    TerrainHeightSensor3D() = default;
+
+    void SetSampleOffsets(const std::vector<Vector3>& sample_offsets);
+
+    const std::vector<Vector3>& GetSampleOffsets() const;
+
+private:
+    std::vector<Vector3> sample_offsets_{Vector3::Zero()};
 };
 
 } // namespace gobot

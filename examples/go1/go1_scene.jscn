@@ -1,17 +1,17 @@
 {
     "__EXT_RESOURCES__": [
         {
-            "__ID__": "2_R52xi",
-            "__PATH__": "res://go1.jscn",
-            "__TYPE__": "PackedScene"
-        },
-        {
-            "__ID__": "3_oNtXO",
+            "__ID__": "3_1OiVC",
             "__PATH__": "res://terrain_scene.jscn",
             "__TYPE__": "PackedScene"
         },
         {
-            "__ID__": "1_MvvUI",
+            "__ID__": "2_eIrz8",
+            "__PATH__": "res://go1.jscn",
+            "__TYPE__": "PackedScene"
+        },
+        {
+            "__ID__": "1_LTDGs",
             "__PATH__": "res://scripts/go1.py",
             "__TYPE__": "PythonScript"
         }
@@ -55,13 +55,13 @@
                         ]
                     }
                 },
-                "script": "ExtResource(1_MvvUI)",
+                "script": "ExtResource(1_LTDGs)",
                 "visible": true
             },
             "type": "Node3D"
         },
         {
-            "instance": "ExtResource(2_R52xi)",
+            "instance": "ExtResource(2_eIrz8)",
             "name": "go1",
             "parent": 0,
             "properties": {
@@ -106,7 +106,7 @@
             "type": "Robot3D"
         },
         {
-            "instance": "ExtResource(3_oNtXO)",
+            "instance": "ExtResource(3_1OiVC)",
             "name": "terrain_world",
             "parent": 0,
             "properties": {
