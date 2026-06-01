@@ -89,8 +89,8 @@ struct PhysicsWorldSettings {
     MuJoCoSolverSettings mujoco_solver;
     bool debug_draw_contacts{false};
     bool debug_draw_contact_forces{true};
-    RealType debug_contact_force_scale{0.02};
-    RealType debug_contact_force_max_length{0.5};
+    RealType debug_contact_force_scale{0.08};
+    RealType debug_contact_force_max_length{0.8};
 };
 
 struct PhysicsShapeSnapshot {

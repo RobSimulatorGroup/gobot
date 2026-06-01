@@ -5466,7 +5466,7 @@
                 "script": null,
                 "sensor_period": 0.0,
                 "visible": true,
-                "visualize_debug": false,
+                "visualize_debug": true,
                 "radius": 0.03,
                 "min_threshold": 0.0,
                 "max_threshold": 0.0
@@ -5574,7 +5574,7 @@
                 "script": null,
                 "sensor_period": 0.0,
                 "visible": true,
-                "visualize_debug": false,
+                "visualize_debug": true,
                 "radius": 0.03,
                 "min_threshold": 0.0,
                 "max_threshold": 0.0
@@ -5682,7 +5682,7 @@
                 "script": null,
                 "sensor_period": 0.0,
                 "visible": true,
-                "visualize_debug": false,
+                "visualize_debug": true,
                 "radius": 0.03,
                 "min_threshold": 0.0,
                 "max_threshold": 0.0
@@ -5790,7 +5790,7 @@
                 "script": null,
                 "sensor_period": 0.0,
                 "visible": true,
-                "visualize_debug": false,
+                "visualize_debug": true,
                 "radius": 0.03,
                 "min_threshold": 0.0,
                 "max_threshold": 0.0

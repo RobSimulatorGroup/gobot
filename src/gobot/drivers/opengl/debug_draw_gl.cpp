@@ -488,7 +488,7 @@ void GLRendererDebugDraw::DrawHeightScannerDebug(const PhysicsSceneState* physic
 }
 
 void GLRendererDebugDraw::DrawContactDebug(const PhysicsWorld* physics_world) {
-    if (physics_world == nullptr || !physics_world->GetSettings().debug_draw_contacts) {
+    if (physics_world == nullptr) {
         contact_point_lines_.vertex_count = 0;
         contact_normal_lines_.vertex_count = 0;
         contact_force_lines_.vertex_count = 0;
@@ -497,10 +497,43 @@ void GLRendererDebugDraw::DrawContactDebug(const PhysicsWorld* physics_world) {
 
     const PhysicsSceneState& physics_state = physics_world->GetSceneState();
     const PhysicsWorldSettings& settings = physics_world->GetSettings();
+    std::vector<std::pair<std::string, std::string>> visualized_sensor_links;
+    if (!settings.debug_draw_contacts) {
+        for (const PhysicsRobotState& robot : physics_state.robots) {
+            for (const PhysicsSensorState& sensor : robot.sensors) {
+                if (sensor.type == PhysicsSensorType::Contact && sensor.enabled && sensor.visualize_debug) {
+                    visualized_sensor_links.emplace_back(robot.name, sensor.link_name);
+                }
+            }
+        }
+        if (visualized_sensor_links.empty()) {
+            contact_point_lines_.vertex_count = 0;
+            contact_normal_lines_.vertex_count = 0;
+            contact_force_lines_.vertex_count = 0;
+            return;
+        }
+    }
+
+    auto should_draw_contact = [&](const PhysicsContactState& contact) {
+        if (settings.debug_draw_contacts) {
+            return true;
+        }
+        return std::any_of(visualized_sensor_links.begin(),
+                           visualized_sensor_links.end(),
+                           [&](const auto& link_key) {
+                               return link_key.first == contact.robot_name &&
+                                      link_key.second == contact.link_name;
+                           });
+    };
+
     std::vector<float> point_vertices;
     std::vector<float> normal_vertices;
     std::vector<float> force_vertices;
     for (const PhysicsContactState& contact : physics_state.contacts) {
+        if (!should_draw_contact(contact)) {
+            continue;
+        }
+
         AppendCross(point_vertices, contact.position, 0.035);
 
         const RealType normal_norm = contact.normal.norm();
