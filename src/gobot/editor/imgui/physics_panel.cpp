@@ -114,24 +114,24 @@ void DrawDebugVisualizationControls(SimulationServer* simulation) {
     bool changed = false;
 
     bool draw_contacts = settings.debug_draw_contacts;
-    if (ImGui::Checkbox("Contact debug", &draw_contacts)) {
+    if (ImGui::Checkbox("Contact points / normals", &draw_contacts)) {
         settings.debug_draw_contacts = draw_contacts;
         changed = true;
     }
     if (ImGui::IsItemHovered()) {
-        ImGui::SetTooltip("Draw contact points and contact vectors over the scene.");
+        ImGui::SetTooltip("Draw contact point crosses and blue normal arrows. The normal is the geometric separating direction.");
     }
 
     bool draw_contact_forces = settings.debug_draw_contact_forces;
     if (!settings.debug_draw_contacts) {
         ImGui::BeginDisabled();
     }
-    if (ImGui::Checkbox("Contact forces", &draw_contact_forces)) {
+    if (ImGui::Checkbox("Contact force arrows", &draw_contact_forces)) {
         settings.debug_draw_contact_forces = draw_contact_forces;
         changed = true;
     }
     if (ImGui::IsItemHovered(ImGuiHoveredFlags_AllowWhenDisabled)) {
-        ImGui::SetTooltip("Draw force arrows. Arrow length is scaled and capped for readability.");
+        ImGui::SetTooltip("Draw red solver force arrows. Force has magnitude and can include tangential friction components.");
     }
 
     double force_scale = static_cast<double>(settings.debug_contact_force_scale);
@@ -141,6 +141,9 @@ void DrawDebugVisualizationControls(SimulationServer* simulation) {
             changed = true;
         }
     }
+    if (ImGui::IsItemHovered(ImGuiHoveredFlags_AllowWhenDisabled)) {
+        ImGui::SetTooltip("Scales the red contact force arrows only; it does not change simulation forces.");
+    }
 
     double max_force_length = static_cast<double>(settings.debug_contact_force_max_length);
     if (ImGui::InputDouble("Max force length", &max_force_length, 0.05, 0.2, "%.3f")) {
@@ -148,6 +151,9 @@ void DrawDebugVisualizationControls(SimulationServer* simulation) {
             settings.debug_contact_force_max_length = static_cast<RealType>(max_force_length);
             changed = true;
         }
+    }
+    if (ImGui::IsItemHovered(ImGuiHoveredFlags_AllowWhenDisabled)) {
+        ImGui::SetTooltip("Caps the red contact force arrow length so large impulses remain readable.");
     }
     if (!settings.debug_draw_contacts) {
         ImGui::EndDisabled();
