@@ -119,7 +119,7 @@ public:
 
 class TestDebugDraw final : public RendererDebugDraw {
 public:
-    void RenderEditorDebug(const RID&, const Camera3D*, const Node*) override {}
+    void RenderEditorDebug(const RID&, const Camera3D*, const Node*, const PhysicsWorld*) override {}
 };
 
 class TestUtilities final : public RendererUtilities {

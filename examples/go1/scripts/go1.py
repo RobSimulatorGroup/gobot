@@ -9,7 +9,7 @@ import gobot
 ROBOT = "go1"
 BASE_LINK = "trunk"
 DEFAULT_POLICY_PATH = "res://policies/go1.onnx2"
-TORCH_POLICY_PATH = "res://policies/model_final.pt"
+TORCH_POLICY_PATH = "res://policies/go1.pt"
 PRINT_EVERY_TICKS = 240
 FIXED_TIME_STEP = 0.002
 RESET_BASE_POSITION = [0.0, 0.0, 0.32]

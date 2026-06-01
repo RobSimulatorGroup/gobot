@@ -159,9 +159,12 @@ def main():
     sensor_link.add_child(sensor_angular_momentum)
     sensor_contact = gobot.create_node("ContactSensor3D", "contact")
     sensor_link.add_child(sensor_contact)
-    sensor_height = gobot.create_node("TerrainHeightSensor3D", "terrain_scan")
+    sensor_height = gobot.create_node("HeightScanner3D", "terrain_scan")
     sensor_height.position = (0.0, 0.0, 1.0)
     sensor_height.sample_offsets = [(0.0, 0.0, 0.0), (0.5, 0.0, 0.0)]
+    sensor_height.ray_direction = (0.0, 0.0, -1.0)
+    sensor_height.ray_direction_world_space = True
+    sensor_height.max_distance = 2.0
     sensor_link.add_child(sensor_height)
     terrain_for_sensor = gobot.create_node("Terrain3D", "sensor_terrain")
     terrain_for_sensor.add_box((0.0, 0.0, -0.05), (2.0, 2.0, 0.1))
@@ -176,8 +179,11 @@ def main():
     assert sensor_name_map["total_sensor_count"] == 4
     assert sensor_name_map["robots"][0]["sensor_names"] == ["imu", "root_angmom", "contact", "terrain_scan"]
     terrain_snapshot = sensor_name_map["robots"][0]["sensors"][3]
-    assert terrain_snapshot["type"] == "terrain_height"
+    assert terrain_snapshot["type"] == "height_scanner"
     assert len(terrain_snapshot["sample_offsets"]) == 2
+    assert tuple(terrain_snapshot["ray_direction"]) == (0.0, 0.0, -1.0)
+    assert terrain_snapshot["ray_direction_world_space"] is True
+    assert abs(float(terrain_snapshot["max_distance"]) - 2.0) < 1e-6
     sensor_state = context.get_runtime_state()
     sensors = sensor_state["robots"][0]["sensors"]
     assert sensors[0]["type"] == "imu"
@@ -191,10 +197,13 @@ def main():
     assert len(sensors[1]["values"]) == 3
     assert sensors[2]["type"] == "contact"
     assert len(sensors[2]["values"]) == 1
-    assert sensors[3]["type"] == "terrain_height"
-    assert sensors[3]["channel_names"] == ["clearance_0", "clearance_1"]
+    assert sensors[3]["type"] == "height_scanner"
+    assert sensors[3]["channel_names"] == ["distance_0", "distance_1"]
     assert len(sensors[3]["values"]) == 2
     assert all(abs(float(value) - 1.0) < 1e-6 for value in sensors[3]["values"])
+    assert len(sensors[3]["hits"]) == 2
+    assert all(hit["hit"] for hit in sensors[3]["hits"])
+    assert all(abs(float(hit["distance"]) - 1.0) < 1e-6 for hit in sensors[3]["hits"])
     assert tuple(sensors[3]["global_transform"]["position"]) == (0.0, 0.0, 1.0)
 
     terrain_cfg = gobot.terrain.TerrainGeneratorCfg(

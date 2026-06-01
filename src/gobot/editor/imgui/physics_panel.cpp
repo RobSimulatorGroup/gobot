@@ -109,6 +109,55 @@ void DrawTimingControls(SimulationServer* simulation) {
     ImGui::Text("Accumulator: %.6f", static_cast<double>(simulation->GetAccumulator()));
 }
 
+void DrawDebugVisualizationControls(SimulationServer* simulation) {
+    PhysicsWorldSettings settings = simulation->GetPhysicsWorldSettings();
+    bool changed = false;
+
+    bool draw_contacts = settings.debug_draw_contacts;
+    if (ImGui::Checkbox("Contact debug", &draw_contacts)) {
+        settings.debug_draw_contacts = draw_contacts;
+        changed = true;
+    }
+    if (ImGui::IsItemHovered()) {
+        ImGui::SetTooltip("Draw contact points and contact vectors over the scene.");
+    }
+
+    bool draw_contact_forces = settings.debug_draw_contact_forces;
+    if (!settings.debug_draw_contacts) {
+        ImGui::BeginDisabled();
+    }
+    if (ImGui::Checkbox("Contact forces", &draw_contact_forces)) {
+        settings.debug_draw_contact_forces = draw_contact_forces;
+        changed = true;
+    }
+    if (ImGui::IsItemHovered(ImGuiHoveredFlags_AllowWhenDisabled)) {
+        ImGui::SetTooltip("Draw force arrows. Arrow length is scaled and capped for readability.");
+    }
+
+    double force_scale = static_cast<double>(settings.debug_contact_force_scale);
+    if (ImGui::InputDouble("Force scale", &force_scale, 0.005, 0.02, "%.4f")) {
+        if (force_scale >= 0.0 && std::isfinite(force_scale)) {
+            settings.debug_contact_force_scale = static_cast<RealType>(force_scale);
+            changed = true;
+        }
+    }
+
+    double max_force_length = static_cast<double>(settings.debug_contact_force_max_length);
+    if (ImGui::InputDouble("Max force length", &max_force_length, 0.05, 0.2, "%.3f")) {
+        if (max_force_length >= 0.0 && std::isfinite(max_force_length)) {
+            settings.debug_contact_force_max_length = static_cast<RealType>(max_force_length);
+            changed = true;
+        }
+    }
+    if (!settings.debug_draw_contacts) {
+        ImGui::EndDisabled();
+    }
+
+    if (changed) {
+        simulation->SetPhysicsWorldSettings(settings);
+    }
+}
+
 const char* JointControlModeLabel(PhysicsJointControlMode mode) {
     switch (mode) {
         case PhysicsJointControlMode::Passive:
@@ -201,6 +250,9 @@ void PhysicsPanel::OnImGuiContent() {
                 static_cast<double>(gravity.x()),
                 static_cast<double>(gravity.y()),
                 static_cast<double>(gravity.z()));
+    if (ImGui::CollapsingHeader("Debug Visualization")) {
+        DrawDebugVisualizationControls(simulation);
+    }
 
     Node* edited_scene_root = editor != nullptr ? editor->GetEditedSceneRoot() : nullptr;
     Node* scene_root = editor != nullptr ? editor->GetActiveSceneRoot() : nullptr;

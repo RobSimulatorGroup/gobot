@@ -12,12 +12,17 @@ namespace gobot {
 
 class Camera3D;
 class Node;
+class PhysicsWorld;
+struct PhysicsSceneState;
 
 class RendererDebugDraw {
 public:
     virtual ~RendererDebugDraw() = default;
 
-    virtual void RenderEditorDebug(const RID& render_target, const Camera3D* camera, const Node* scene_root) = 0;
+    virtual void RenderEditorDebug(const RID& render_target,
+                                   const Camera3D* camera,
+                                   const Node* scene_root,
+                                   const PhysicsWorld* physics_world = nullptr) = 0;
 };
 
 }

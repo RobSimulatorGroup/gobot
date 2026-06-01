@@ -315,8 +315,11 @@ class ContactSensor3D(Sensor3D):
     max_threshold: float
 
 
-class TerrainHeightSensor3D(Sensor3D):
+class HeightScanner3D(Sensor3D):
     sample_offsets: list[Vector3]
+    ray_direction: Vector3
+    ray_direction_world_space: bool
+    max_distance: float
 
 
 def set_project_path(project_path: str) -> None: ...

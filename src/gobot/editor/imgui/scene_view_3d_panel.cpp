@@ -428,7 +428,14 @@ void SceneView3DPanel::OnImGuiContent()
     Resize(static_cast<uint32_t>(scene_view_size.x), static_cast<uint32_t>(scene_view_size.y));
 
     auto* scene_root = Editor::GetInstance()->GetActiveSceneRoot();
-    viewport_renderer_->Render(view_port_, scene_root, camera_3d);
+    const PhysicsWorld* physics_world = nullptr;
+    if (SimulationServer::HasInstance()) {
+        Ref<PhysicsWorld> world = SimulationServer::GetInstance()->GetWorld();
+        if (world.IsValid()) {
+            physics_world = world.Get();
+        }
+    }
+    viewport_renderer_->Render(view_port_, scene_root, camera_3d, physics_world);
 
     ImGui::SetCursorPos({0.0f, viewport_top_offset});
     const ImVec2 scene_view_position = ImGui::GetCursorScreenPos();

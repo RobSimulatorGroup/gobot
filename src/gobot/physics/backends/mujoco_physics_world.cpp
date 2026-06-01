@@ -379,7 +379,7 @@ void AddSensorToSpec(mjSpec* spec,
 
     const std::string site_name = SensorSiteName(prefix, sensor);
     if (sensor.type != PhysicsSensorType::AngularMomentum &&
-        sensor.type != PhysicsSensorType::TerrainHeight) {
+        sensor.type != PhysicsSensorType::HeightScanner) {
         if (AddSensorSiteToBody(body, sensor, link, site_name) == nullptr) {
             return;
         }
@@ -408,7 +408,7 @@ void AddSensorToSpec(mjSpec* spec,
                 }
             }
             break;
-        case PhysicsSensorType::TerrainHeight:
+        case PhysicsSensorType::HeightScanner:
             break;
         case PhysicsSensorType::Unknown:
             break;
@@ -2086,7 +2086,7 @@ void MuJoCoPhysicsWorld::BuildSensorBindings() {
                 case PhysicsSensorType::Contact:
                     add_component("contact", 0);
                     break;
-                case PhysicsSensorType::TerrainHeight:
+                case PhysicsSensorType::HeightScanner:
                     break;
                 case PhysicsSensorType::Unknown:
                     break;
@@ -2472,7 +2472,7 @@ void MuJoCoPhysicsWorld::SyncStateFromMuJoCo(std::size_t environment_index) {
 
     SyncContactsFromMuJoCo(environment_index);
     SyncSensorsFromMuJoCo(environment_index);
-    UpdateSensorGlobalTransformsAndTerrainHeights(state, static_cast<RealType>(data->time));
+    UpdateSensorGlobalTransformsAndHeightScanners(state, static_cast<RealType>(data->time));
     if (environment_index == 0 && !environment_states_.empty()) {
         environment_states_[0] = scene_state_;
     }
@@ -2555,8 +2555,8 @@ void MuJoCoPhysicsWorld::SyncStateToMuJoCo(std::size_t environment_index) {
     }
 
     mj_forward(model, data);
-    UpdateSensorGlobalTransformsAndTerrainHeights(EnvironmentState(environment_index),
-                                                 static_cast<RealType>(data->time));
+    UpdateSensorGlobalTransformsAndHeightScanners(EnvironmentState(environment_index),
+                                                  static_cast<RealType>(data->time));
 }
 
 void MuJoCoPhysicsWorld::SyncContactsFromMuJoCo(std::size_t environment_index) {
@@ -2596,6 +2596,15 @@ void MuJoCoPhysicsWorld::SyncContactsFromMuJoCo(std::size_t environment_index) {
             continue;
         }
 
+        mjtNum force6[6] = {};
+        mj_contactForce(model, data, contact_index, force6);
+        const Vector3 frame_x(contact.frame[0], contact.frame[1], contact.frame[2]);
+        const Vector3 frame_y(contact.frame[3], contact.frame[4], contact.frame[5]);
+        const Vector3 frame_z(contact.frame[6], contact.frame[7], contact.frame[8]);
+        const Vector3 world_force = frame_x * static_cast<RealType>(force6[0]) +
+                                    frame_y * static_cast<RealType>(force6[1]) +
+                                    frame_z * static_cast<RealType>(force6[2]);
+
         auto add_contact = [&](const MuJoCoLinkBinding& link_binding,
                                const MuJoCoLinkBinding* other_binding,
                                RealType normal_sign) {
@@ -2619,7 +2628,9 @@ void MuJoCoPhysicsWorld::SyncContactsFromMuJoCo(std::size_t environment_index) {
                 contact_state.other_link_name = other_robot_state.links[other_binding->link_index].link_name;
             }
             contact_state.position = Vector3(contact.pos[0], contact.pos[1], contact.pos[2]);
-            contact_state.normal = normal_sign * Vector3(contact.frame[0], contact.frame[1], contact.frame[2]);
+            contact_state.normal = -normal_sign * Vector3(contact.frame[0], contact.frame[1], contact.frame[2]);
+            contact_state.force = -normal_sign * world_force;
+            contact_state.normal_force = std::max<RealType>(0.0, contact_state.force.dot(contact_state.normal));
             contact_state.distance = contact.dist;
             state.contacts.emplace_back(std::move(contact_state));
         };

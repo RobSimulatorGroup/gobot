@@ -75,7 +75,10 @@ TEST(TestRobotNodes, reflected_properties_are_available) {
     EXPECT_TRUE(gobot::Type::get<gobot::ContactSensor3D>().get_property("radius").is_valid());
     EXPECT_TRUE(gobot::Type::get<gobot::ContactSensor3D>().get_property("min_threshold").is_valid());
     EXPECT_TRUE(gobot::Type::get<gobot::ContactSensor3D>().get_property("max_threshold").is_valid());
-    EXPECT_TRUE(gobot::Type::get<gobot::TerrainHeightSensor3D>().get_property("sample_offsets").is_valid());
+    EXPECT_TRUE(gobot::Type::get<gobot::HeightScanner3D>().get_property("sample_offsets").is_valid());
+    EXPECT_TRUE(gobot::Type::get<gobot::HeightScanner3D>().get_property("ray_direction").is_valid());
+    EXPECT_TRUE(gobot::Type::get<gobot::HeightScanner3D>().get_property("ray_direction_world_space").is_valid());
+    EXPECT_TRUE(gobot::Type::get<gobot::HeightScanner3D>().get_property("max_distance").is_valid());
 }
 
 TEST(TestRobotNodes, stores_sensor_metadata) {
@@ -110,13 +113,19 @@ TEST(TestRobotNodes, stores_sensor_metadata) {
     EXPECT_NEAR(contact->GetMaxThreshold(), 100.0, 1.0e-6);
     gobot::Object::Delete(contact);
 
-    auto* terrain_height = gobot::Object::New<gobot::TerrainHeightSensor3D>();
+    auto* terrain_height = gobot::Object::New<gobot::HeightScanner3D>();
     terrain_height->SetName("terrain_scan");
     terrain_height->SetSampleOffsets({{0.1, 0.0, 0.0}, {0.2, 0.1, -0.1}});
+    terrain_height->SetRayDirection({0.0, 0.0, -2.0});
+    terrain_height->SetRayDirectionWorldSpace(false);
+    terrain_height->SetMaxDistance(2.5);
 
     ASSERT_EQ(terrain_height->GetSampleOffsets().size(), 2);
     EXPECT_TRUE(terrain_height->GetSampleOffsets()[0].isApprox(gobot::Vector3(0.1, 0.0, 0.0), CMP_EPSILON));
     EXPECT_TRUE(terrain_height->GetSampleOffsets()[1].isApprox(gobot::Vector3(0.2, 0.1, -0.1), CMP_EPSILON));
+    EXPECT_TRUE(terrain_height->GetRayDirection().isApprox(gobot::Vector3(0.0, 0.0, -1.0), CMP_EPSILON));
+    EXPECT_FALSE(terrain_height->IsRayDirectionWorldSpace());
+    EXPECT_NEAR(terrain_height->GetMaxDistance(), 2.5, 1.0e-6);
     gobot::Object::Delete(terrain_height);
 }
 

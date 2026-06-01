@@ -53,7 +53,7 @@ enum class PhysicsSensorType {
     IMU,
     AngularMomentum,
     Contact,
-    TerrainHeight
+    HeightScanner
 };
 
 struct PhysicsBackendInfo {
@@ -87,6 +87,10 @@ struct PhysicsWorldSettings {
     RealType fixed_time_step{0.002};
     JointControllerGains default_joint_gains{100.0, 10.0, 0.0, 0.0};
     MuJoCoSolverSettings mujoco_solver;
+    bool debug_draw_contacts{false};
+    bool debug_draw_contact_forces{true};
+    RealType debug_contact_force_scale{0.02};
+    RealType debug_contact_force_max_length{0.5};
 };
 
 struct PhysicsShapeSnapshot {
@@ -134,6 +138,9 @@ struct PhysicsSensorSnapshot {
     RealType min_threshold{0.0};
     RealType max_threshold{0.0};
     std::vector<Vector3> sample_offsets;
+    Vector3 ray_direction{0.0, 0.0, -1.0};
+    bool ray_direction_world_space{true};
+    RealType max_distance{3.0};
     std::vector<std::string> channel_names;
 };
 
@@ -254,7 +261,33 @@ struct PhysicsContactState {
     std::string other_link_name;
     Vector3 position{Vector3::Zero()};
     Vector3 normal{Vector3::UnitZ()};
+    Vector3 force{Vector3::Zero()};
+    RealType normal_force{0.0};
     RealType distance{0.0};
+};
+
+struct PhysicsRaycastQuery {
+    Vector3 origin{Vector3::Zero()};
+    Vector3 direction{0.0, 0.0, -1.0};
+    RealType max_distance{1.0};
+};
+
+struct PhysicsRaycastHit {
+    bool hit{false};
+    Vector3 origin{Vector3::Zero()};
+    Vector3 point{Vector3::Zero()};
+    Vector3 normal{Vector3::UnitZ()};
+    RealType distance{0.0};
+    std::string terrain_name;
+};
+
+struct PhysicsSensorRaycastHit {
+    bool hit{false};
+    Vector3 origin{Vector3::Zero()};
+    Vector3 point{Vector3::Zero()};
+    Vector3 normal{Vector3::UnitZ()};
+    RealType distance{0.0};
+    std::string terrain_name;
 };
 
 struct PhysicsSensorState {
@@ -264,8 +297,10 @@ struct PhysicsSensorState {
     std::string sensor_name;
     PhysicsSensorType type{PhysicsSensorType::Unknown};
     bool enabled{true};
+    bool visualize_debug{false};
     Affine3 global_transform{Affine3::Identity()};
     std::vector<RealType> values;
+    std::vector<PhysicsSensorRaycastHit> hits;
     std::vector<std::string> channel_names;
     RealType timestamp{0.0};
 };

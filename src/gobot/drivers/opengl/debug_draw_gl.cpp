@@ -9,6 +9,8 @@
 #include "gobot/drivers/opengl/texture_storage.hpp"
 #include "gobot/error_macros.hpp"
 #include "gobot/log.hpp"
+#include "gobot/physics/physics_types.hpp"
+#include "gobot/physics/physics_world.hpp"
 #include "gobot/rendering/scene_render_items.hpp"
 #include "gobot/scene/camera_3d.hpp"
 #include "gobot/scene/resources/box_shape_3d.hpp"
@@ -72,6 +74,85 @@ void AppendLine(std::vector<float>& vertices,
                 const Vector3& to) {
     PushWorldVertex(vertices, transform * from);
     PushWorldVertex(vertices, transform * to);
+}
+
+void AppendWorldLine(std::vector<float>& vertices, const Vector3& from, const Vector3& to) {
+    PushWorldVertex(vertices, from);
+    PushWorldVertex(vertices, to);
+}
+
+void AppendCross(std::vector<float>& vertices, const Vector3& center, RealType radius) {
+    AppendWorldLine(vertices, center - Vector3::UnitX() * radius, center + Vector3::UnitX() * radius);
+    AppendWorldLine(vertices, center - Vector3::UnitY() * radius, center + Vector3::UnitY() * radius);
+    AppendWorldLine(vertices, center - Vector3::UnitZ() * radius, center + Vector3::UnitZ() * radius);
+}
+
+void AppendArrow(std::vector<float>& vertices, const Vector3& from, const Vector3& to) {
+    AppendWorldLine(vertices, from, to);
+
+    const Vector3 delta = to - from;
+    const RealType length = delta.norm();
+    if (length <= CMP_EPSILON) {
+        return;
+    }
+
+    const Vector3 direction = delta / length;
+    Vector3 side = direction.cross(Vector3::UnitZ());
+    if (side.norm() <= CMP_EPSILON) {
+        side = direction.cross(Vector3::UnitY());
+    }
+    if (side.norm() <= CMP_EPSILON) {
+        return;
+    }
+    side.normalize();
+
+    const RealType head_length = std::min<RealType>(0.06, length * static_cast<RealType>(0.35));
+    const RealType head_width = head_length * static_cast<RealType>(0.45);
+    const Vector3 base = to - direction * head_length;
+    AppendWorldLine(vertices, to, base + side * head_width);
+    AppendWorldLine(vertices, to, base - side * head_width);
+}
+
+void EnsureLineBuffer(GLRendererDebugDraw::LineBuffer& buffer) {
+    if (buffer.vao != 0) {
+        return;
+    }
+
+    glCreateVertexArrays(1, &buffer.vao);
+    glCreateBuffers(1, &buffer.vertex_buffer);
+    glVertexArrayVertexBuffer(buffer.vao, 0, buffer.vertex_buffer, 0, 3 * sizeof(float));
+    glEnableVertexArrayAttrib(buffer.vao, 0);
+    glVertexArrayAttribFormat(buffer.vao, 0, 3, GL_FLOAT, GL_FALSE, 0);
+    glVertexArrayAttribBinding(buffer.vao, 0, 0);
+}
+
+void DrawLineBuffer(GLRendererDebugDraw::LineBuffer& buffer,
+                    const std::vector<float>& vertices,
+                    GLuint program,
+                    float red,
+                    float green,
+                    float blue,
+                    float alpha,
+                    float line_width) {
+    if (vertices.empty()) {
+        buffer.vertex_count = 0;
+        return;
+    }
+
+    EnsureLineBuffer(buffer);
+    glNamedBufferData(buffer.vertex_buffer,
+                      static_cast<GLsizeiptr>(vertices.size() * sizeof(float)),
+                      vertices.data(),
+                      GL_STREAM_DRAW);
+    buffer.vertex_count = static_cast<GLsizei>(vertices.size() / 3);
+
+    const Matrix4 model = Matrix4::Identity();
+    glUniformMatrix4fv(glGetUniformLocation(program, "u_model"), 1, GL_FALSE, model.data());
+    glUniform4f(glGetUniformLocation(program, "u_color"), red, green, blue, alpha);
+    glBindVertexArray(buffer.vao);
+    glLineWidth(line_width);
+    glDrawArrays(GL_LINES, 0, buffer.vertex_count);
+    glLineWidth(1.0f);
 }
 
 void AppendBoxLines(std::vector<float>& vertices, const Affine3& transform, const Vector3& size) {
@@ -195,6 +276,10 @@ GLRendererDebugDraw::~GLRendererDebugDraw() {
     FreeLineBuffer(editor_grid_);
     FreeLineBuffer(world_axes_);
     FreeLineBuffer(collision_lines_);
+    FreeLineBuffer(height_scanner_lines_);
+    FreeLineBuffer(contact_point_lines_);
+    FreeLineBuffer(contact_normal_lines_);
+    FreeLineBuffer(contact_force_lines_);
 }
 
 void GLRendererDebugDraw::EnsureProgram() {
@@ -355,7 +440,98 @@ void GLRendererDebugDraw::DrawCollisionDebug(const SceneRenderItems& render_item
     glLineWidth(1.0f);
 }
 
-void GLRendererDebugDraw::RenderEditorDebug(const RID& render_target, const Camera3D* camera, const Node* scene_root) {
+void GLRendererDebugDraw::DrawHeightScannerDebug(const PhysicsSceneState* physics_state) {
+    std::vector<float> vertices;
+    if (physics_state != nullptr) {
+        for (const PhysicsRobotState& robot : physics_state->robots) {
+            for (const PhysicsSensorState& sensor : robot.sensors) {
+                if (sensor.type != PhysicsSensorType::HeightScanner || !sensor.enabled || !sensor.visualize_debug) {
+                    continue;
+                }
+                for (const PhysicsSensorRaycastHit& hit : sensor.hits) {
+                    AppendWorldLine(vertices, hit.origin, hit.point);
+                    if (hit.hit) {
+                        AppendCross(vertices, hit.point, 0.025);
+                    }
+                }
+            }
+        }
+    }
+
+    if (vertices.empty()) {
+        height_scanner_lines_.vertex_count = 0;
+        return;
+    }
+
+    if (height_scanner_lines_.vao == 0) {
+        glCreateVertexArrays(1, &height_scanner_lines_.vao);
+        glCreateBuffers(1, &height_scanner_lines_.vertex_buffer);
+        glVertexArrayVertexBuffer(height_scanner_lines_.vao, 0, height_scanner_lines_.vertex_buffer, 0, 3 * sizeof(float));
+        glEnableVertexArrayAttrib(height_scanner_lines_.vao, 0);
+        glVertexArrayAttribFormat(height_scanner_lines_.vao, 0, 3, GL_FLOAT, GL_FALSE, 0);
+        glVertexArrayAttribBinding(height_scanner_lines_.vao, 0, 0);
+    }
+
+    glNamedBufferData(height_scanner_lines_.vertex_buffer,
+                      static_cast<GLsizeiptr>(vertices.size() * sizeof(float)),
+                      vertices.data(),
+                      GL_STREAM_DRAW);
+    height_scanner_lines_.vertex_count = static_cast<GLsizei>(vertices.size() / 3);
+
+    const Matrix4 model = Matrix4::Identity();
+    glUniformMatrix4fv(glGetUniformLocation(program_, "u_model"), 1, GL_FALSE, model.data());
+    glUniform4f(glGetUniformLocation(program_, "u_color"), 1.0f, 0.82f, 0.22f, 0.9f);
+    glBindVertexArray(height_scanner_lines_.vao);
+    glLineWidth(1.25f);
+    glDrawArrays(GL_LINES, 0, height_scanner_lines_.vertex_count);
+    glLineWidth(1.0f);
+}
+
+void GLRendererDebugDraw::DrawContactDebug(const PhysicsWorld* physics_world) {
+    if (physics_world == nullptr || !physics_world->GetSettings().debug_draw_contacts) {
+        contact_point_lines_.vertex_count = 0;
+        contact_normal_lines_.vertex_count = 0;
+        contact_force_lines_.vertex_count = 0;
+        return;
+    }
+
+    const PhysicsSceneState& physics_state = physics_world->GetSceneState();
+    const PhysicsWorldSettings& settings = physics_world->GetSettings();
+    std::vector<float> point_vertices;
+    std::vector<float> normal_vertices;
+    std::vector<float> force_vertices;
+    for (const PhysicsContactState& contact : physics_state.contacts) {
+        AppendCross(point_vertices, contact.position, 0.035);
+
+        const RealType normal_norm = contact.normal.norm();
+        if (normal_norm > CMP_EPSILON) {
+            AppendArrow(normal_vertices,
+                        contact.position,
+                        contact.position + contact.normal / normal_norm * static_cast<RealType>(0.14));
+        }
+
+        const RealType force_norm = contact.force.norm();
+        if (settings.debug_draw_contact_forces && force_norm > CMP_EPSILON) {
+            const RealType arrow_length =
+                    std::min(settings.debug_contact_force_max_length,
+                             settings.debug_contact_force_scale * std::log1p(force_norm));
+            if (arrow_length > CMP_EPSILON) {
+                AppendArrow(force_vertices,
+                            contact.position,
+                            contact.position + contact.force / force_norm * arrow_length);
+            }
+        }
+    }
+
+    DrawLineBuffer(contact_point_lines_, point_vertices, program_, 1.0f, 0.28f, 0.18f, 0.9f, 2.0f);
+    DrawLineBuffer(contact_normal_lines_, normal_vertices, program_, 0.20f, 0.70f, 1.0f, 0.9f, 2.0f);
+    DrawLineBuffer(contact_force_lines_, force_vertices, program_, 1.0f, 0.05f, 0.02f, 0.95f, 3.0f);
+}
+
+void GLRendererDebugDraw::RenderEditorDebug(const RID& render_target,
+                                            const Camera3D* camera,
+                                            const Node* scene_root,
+                                            const PhysicsWorld* physics_world) {
     ERR_FAIL_COND(camera == nullptr);
 
     auto* rt = TextureStorage::GetInstance()->GetRenderTarget(render_target);
@@ -383,9 +559,15 @@ void GLRendererDebugDraw::RenderEditorDebug(const RID& render_target, const Came
     glUniformMatrix4fv(glGetUniformLocation(program_, "u_projection"), 1, GL_FALSE, projection.data());
 
     const SceneRenderItems render_items = CollectSceneRenderItems(scene_root);
+    const PhysicsSceneState* physics_state = physics_world != nullptr ? &physics_world->GetSceneState() : nullptr;
     DrawEditorGrid();
     DrawWorldAxes();
     DrawCollisionDebug(render_items);
+    DrawHeightScannerDebug(physics_state);
+
+    glDisable(GL_DEPTH_TEST);
+    DrawContactDebug(physics_world);
+    glEnable(GL_DEPTH_TEST);
 
     glDisable(GL_BLEND);
     glDepthMask(GL_TRUE);

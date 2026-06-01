@@ -12,10 +12,14 @@ namespace gobot {
 
 class Camera3D;
 class Node;
+class PhysicsWorld;
 
 class GOBOT_EXPORT EditorViewportRenderer {
 public:
-    void Render(const RID& viewport, const Node* scene_root, const Camera3D* camera);
+    void Render(const RID& viewport,
+                const Node* scene_root,
+                const Camera3D* camera,
+                const PhysicsWorld* physics_world = nullptr);
 
     Node* PickNode(Node* scene_root,
                    const Camera3D* camera,

@@ -223,10 +223,12 @@ TEST(TestPhysicsServer, captures_sensor_nodes_in_snapshot_and_state) {
     contact->SetMaxThreshold(100.0);
     base_link->AddChild(contact);
 
-    auto* terrain_height = gobot::Object::New<gobot::TerrainHeightSensor3D>();
+    auto* terrain_height = gobot::Object::New<gobot::HeightScanner3D>();
     terrain_height->SetName("terrain_scan");
     terrain_height->SetPosition({0.0, 0.0, 0.4});
     terrain_height->SetSampleOffsets({{0.0, 0.0, 0.0}, {0.2, 0.0, 0.0}});
+    terrain_height->SetRayDirection({0.0, 0.0, -1.0});
+    terrain_height->SetMaxDistance(2.0);
     base_link->AddChild(terrain_height);
     robot->AddChild(base_link);
 
@@ -267,11 +269,14 @@ TEST(TestPhysicsServer, captures_sensor_nodes_in_snapshot_and_state) {
 
     const gobot::PhysicsSensorSnapshot& terrain_height_snapshot = snapshot.robots[0].sensors[3];
     EXPECT_EQ(terrain_height_snapshot.name, "terrain_scan");
-    EXPECT_EQ(terrain_height_snapshot.type, gobot::PhysicsSensorType::TerrainHeight);
+    EXPECT_EQ(terrain_height_snapshot.type, gobot::PhysicsSensorType::HeightScanner);
     ASSERT_EQ(terrain_height_snapshot.sample_offsets.size(), 2);
+    EXPECT_TRUE(terrain_height_snapshot.ray_direction.isApprox(gobot::Vector3(0.0, 0.0, -1.0), CMP_EPSILON));
+    EXPECT_TRUE(terrain_height_snapshot.ray_direction_world_space);
+    EXPECT_NEAR(terrain_height_snapshot.max_distance, 2.0, 1.0e-6);
     ASSERT_EQ(terrain_height_snapshot.channel_names.size(), 2);
-    EXPECT_EQ(terrain_height_snapshot.channel_names[0], "clearance_0");
-    EXPECT_EQ(terrain_height_snapshot.channel_names[1], "clearance_1");
+    EXPECT_EQ(terrain_height_snapshot.channel_names[0], "distance_0");
+    EXPECT_EQ(terrain_height_snapshot.channel_names[1], "distance_1");
     EXPECT_TRUE(terrain_height_snapshot.local_transform.translation().isApprox(
             gobot::Vector3(0.0, 0.0, 0.4), CMP_EPSILON));
 
@@ -285,13 +290,14 @@ TEST(TestPhysicsServer, captures_sensor_nodes_in_snapshot_and_state) {
     ASSERT_EQ(state.robots[0].sensors[2].values.size(), 1);
     EXPECT_DOUBLE_EQ(state.robots[0].sensors[2].values[0], 0.0);
     ASSERT_EQ(state.robots[0].sensors[3].values.size(), 2);
+    ASSERT_EQ(state.robots[0].sensors[3].hits.size(), 2);
     EXPECT_TRUE(state.robots[0].sensors[3].global_transform.translation().isApprox(
             gobot::Vector3(1.0, 2.0, 3.4), CMP_EPSILON));
 
     gobot::Object::Delete(robot);
 }
 
-TEST(TestPhysicsServer, terrain_height_sensor_queries_box_heightfield_and_mesh_patch) {
+TEST(TestPhysicsServer, height_scanner_raycast_queries_box_heightfield_and_mesh_patch) {
     auto* root = gobot::Object::New<gobot::Node3D>();
     root->SetName("root");
 
@@ -319,9 +325,10 @@ TEST(TestPhysicsServer, terrain_height_sensor_queries_box_heightfield_and_mesh_p
     auto* link = gobot::Object::New<gobot::Link3D>();
     link->SetName("base");
     link->SetPosition({0.0, 0.0, 1.0});
-    auto* sensor = gobot::Object::New<gobot::TerrainHeightSensor3D>();
+    auto* sensor = gobot::Object::New<gobot::HeightScanner3D>();
     sensor->SetName("terrain_scan");
     sensor->SetSampleOffsets({{0.0, 0.0, 0.0}, {2.0, 0.0, 0.0}, {4.0, -0.25, 0.0}});
+    sensor->SetMaxDistance(2.0);
     link->AddChild(sensor);
     robot->AddChild(link);
     root->AddChild(robot);
@@ -338,12 +345,27 @@ TEST(TestPhysicsServer, terrain_height_sensor_queries_box_heightfield_and_mesh_p
     EXPECT_NEAR(sensor_state.values[0], 1.0, 1.0e-6);
     EXPECT_NEAR(sensor_state.values[1], 0.7, 1.0e-6);
     EXPECT_NEAR(sensor_state.values[2], 0.7, 1.0e-6);
+    ASSERT_EQ(sensor_state.hits.size(), 3);
+    EXPECT_TRUE(sensor_state.hits[0].hit);
+    EXPECT_TRUE(sensor_state.hits[1].hit);
+    EXPECT_TRUE(sensor_state.hits[2].hit);
+    EXPECT_NEAR(sensor_state.hits[0].point.x(), 0.0, 1.0e-6);
+    EXPECT_NEAR(sensor_state.hits[0].point.y(), 0.0, 1.0e-6);
+    EXPECT_NEAR(sensor_state.hits[0].point.z(), 0.0, 1.0e-6);
 
     ASSERT_TRUE(world->ResetLinkState("robot", "base", {0.0, 0.0, 1.2}));
     const gobot::PhysicsSensorState& moved_sensor_state = world->GetSceneState().robots[0].sensors[0];
     EXPECT_NEAR(moved_sensor_state.values[0], 1.2, 1.0e-6);
     EXPECT_TRUE(moved_sensor_state.global_transform.translation().isApprox(
             gobot::Vector3(0.0, 0.0, 1.2), CMP_EPSILON));
+
+    const gobot::PhysicsRaycastHit miss = world->RaycastTerrain({
+            {10.0, 10.0, 1.0},
+            {0.0, 0.0, -1.0},
+            1.5
+    });
+    EXPECT_FALSE(miss.hit);
+    EXPECT_NEAR(miss.distance, 1.5, 1.0e-6);
 
     gobot::Object::Delete(root);
 }

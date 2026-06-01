@@ -5194,7 +5194,7 @@
                 "script": null,
                 "sensor_period": 0.0,
                 "visible": true,
-                "visualize_debug": false,
+                "visualize_debug": true,
                 "sample_offsets": [
                     {
                         "matrix_data": {
@@ -5363,7 +5363,7 @@
                     }
                 ]
             },
-            "type": "TerrainHeightSensor3D"
+            "type": "HeightScanner3D"
         },
         {
             "name": "FR_foot_height_scan",
@@ -5422,7 +5422,7 @@
                     }
                 ]
             },
-            "type": "TerrainHeightSensor3D"
+            "type": "HeightScanner3D"
         },
         {
             "name": "FR_foot_contact",
@@ -5530,7 +5530,7 @@
                     }
                 ]
             },
-            "type": "TerrainHeightSensor3D"
+            "type": "HeightScanner3D"
         },
         {
             "name": "FL_foot_contact",
@@ -5638,7 +5638,7 @@
                     }
                 ]
             },
-            "type": "TerrainHeightSensor3D"
+            "type": "HeightScanner3D"
         },
         {
             "name": "RR_foot_contact",
@@ -5746,7 +5746,7 @@
                     }
                 ]
             },
-            "type": "TerrainHeightSensor3D"
+            "type": "HeightScanner3D"
         },
         {
             "name": "RL_foot_contact",

@@ -24,6 +24,7 @@ namespace gobot {
 class Camera3D;
 class Node;
 class SceneTree;
+class PhysicsWorld;
 
 class GOBOT_EXPORT RenderServer : public Object {
     GOBCLASS(RenderServer, Object)
@@ -124,7 +125,10 @@ public:
 
     void RenderSceneToViewport(const RID& viewport, const Node* scene_root, const Camera3D* camera);
 
-    void RenderEditorDebugToViewport(const RID& viewport, const Camera3D* camera, const Node* scene_root);
+    void RenderEditorDebugToViewport(const RID& viewport,
+                                     const Camera3D* camera,
+                                     const Node* scene_root,
+                                     const PhysicsWorld* physics_world = nullptr);
 
     void Free(const RID& rid);
 

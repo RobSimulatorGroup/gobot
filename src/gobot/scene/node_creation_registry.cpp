@@ -190,11 +190,11 @@ void NodeCreationRegistry::EnsureBuiltInNodeTypesRegistered() {
     });
 
     RegisterNodeType({
-        "TerrainHeightSensor3D",
-        "Terrain Height Sensor",
+        "HeightScanner3D",
+        "Height Scanner",
         "Sensor3D",
-        "3D terrain sensor node that samples clearances above authored Terrain3D surfaces.",
-        []() -> Node* { return CreateNodeInstance<TerrainHeightSensor3D>(); }
+        "3D raycast-style scanner that measures distances to authored Terrain3D surfaces.",
+        []() -> Node* { return CreateNodeInstance<HeightScanner3D>(); }
     });
 
     RegisterNodeType({

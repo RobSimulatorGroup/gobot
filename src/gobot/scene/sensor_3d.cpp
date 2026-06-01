@@ -79,12 +79,44 @@ RealType ContactSensor3D::GetMaxThreshold() const {
     return max_threshold_;
 }
 
-void TerrainHeightSensor3D::SetSampleOffsets(const std::vector<Vector3>& sample_offsets) {
+void HeightScanner3D::SetSampleOffsets(const std::vector<Vector3>& sample_offsets) {
     sample_offsets_ = sample_offsets;
 }
 
-const std::vector<Vector3>& TerrainHeightSensor3D::GetSampleOffsets() const {
+const std::vector<Vector3>& HeightScanner3D::GetSampleOffsets() const {
     return sample_offsets_;
+}
+
+void HeightScanner3D::SetRayDirection(const Vector3& ray_direction) {
+    if (ray_direction.squaredNorm() <= CMP_EPSILON2) {
+        LOG_ERROR("HeightScanner3D ray_direction cannot be zero.");
+        return;
+    }
+    ray_direction_ = ray_direction.normalized();
+}
+
+const Vector3& HeightScanner3D::GetRayDirection() const {
+    return ray_direction_;
+}
+
+void HeightScanner3D::SetRayDirectionWorldSpace(bool ray_direction_world_space) {
+    ray_direction_world_space_ = ray_direction_world_space;
+}
+
+bool HeightScanner3D::IsRayDirectionWorldSpace() const {
+    return ray_direction_world_space_;
+}
+
+void HeightScanner3D::SetMaxDistance(RealType max_distance) {
+    if (max_distance <= 0.0) {
+        LOG_ERROR("HeightScanner3D max_distance must be positive.");
+        return;
+    }
+    max_distance_ = max_distance;
+}
+
+RealType HeightScanner3D::GetMaxDistance() const {
+    return max_distance_;
 }
 
 } // namespace gobot
@@ -110,9 +142,15 @@ GOBOT_REGISTRATION {
             .property("min_threshold", &ContactSensor3D::GetMinThreshold, &ContactSensor3D::SetMinThreshold)
             .property("max_threshold", &ContactSensor3D::GetMaxThreshold, &ContactSensor3D::SetMaxThreshold);
 
-    Class_<TerrainHeightSensor3D>("TerrainHeightSensor3D")
+    Class_<HeightScanner3D>("HeightScanner3D")
             .constructor()(CtorAsRawPtr)
-            .property("sample_offsets", &TerrainHeightSensor3D::GetSampleOffsets,
-                      &TerrainHeightSensor3D::SetSampleOffsets);
+            .property("sample_offsets", &HeightScanner3D::GetSampleOffsets,
+                      &HeightScanner3D::SetSampleOffsets)
+            .property("ray_direction", &HeightScanner3D::GetRayDirection,
+                      &HeightScanner3D::SetRayDirection)
+            .property("ray_direction_world_space", &HeightScanner3D::IsRayDirectionWorldSpace,
+                      &HeightScanner3D::SetRayDirectionWorldSpace)
+            .property("max_distance", &HeightScanner3D::GetMaxDistance,
+                      &HeightScanner3D::SetMaxDistance);
 
 };

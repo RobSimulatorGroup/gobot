@@ -25,13 +25,20 @@ public:
 
     ~GLRendererDebugDraw() override;
 
-    void RenderEditorDebug(const RID& render_target, const Camera3D* camera, const Node* scene_root) override;
+    void RenderEditorDebug(const RID& render_target,
+                           const Camera3D* camera,
+                           const Node* scene_root,
+                           const PhysicsWorld* physics_world = nullptr) override;
 
 private:
     GLuint program_ = 0;
     LineBuffer editor_grid_;
     LineBuffer world_axes_;
     LineBuffer collision_lines_;
+    LineBuffer height_scanner_lines_;
+    LineBuffer contact_point_lines_;
+    LineBuffer contact_normal_lines_;
+    LineBuffer contact_force_lines_;
 
     void EnsureProgram();
 
@@ -44,6 +51,10 @@ private:
     void DrawWorldAxes();
 
     void DrawCollisionDebug(const SceneRenderItems& render_items);
+
+    void DrawHeightScannerDebug(const PhysicsSceneState* physics_state);
+
+    void DrawContactDebug(const PhysicsWorld* physics_world);
 };
 
 }
