@@ -123,14 +123,11 @@ void DrawDebugVisualizationControls(SimulationServer* simulation) {
     }
 
     bool draw_contact_forces = settings.debug_draw_contact_forces;
-    if (!settings.debug_draw_contacts) {
-        ImGui::BeginDisabled();
-    }
     if (ImGui::Checkbox("Contact force arrows", &draw_contact_forces)) {
         settings.debug_draw_contact_forces = draw_contact_forces;
         changed = true;
     }
-    if (ImGui::IsItemHovered(ImGuiHoveredFlags_AllowWhenDisabled)) {
+    if (ImGui::IsItemHovered()) {
         ImGui::SetTooltip("Draw red solver force arrows. Force has magnitude and can include tangential friction components.");
     }
 
@@ -141,7 +138,7 @@ void DrawDebugVisualizationControls(SimulationServer* simulation) {
             changed = true;
         }
     }
-    if (ImGui::IsItemHovered(ImGuiHoveredFlags_AllowWhenDisabled)) {
+    if (ImGui::IsItemHovered()) {
         ImGui::SetTooltip("Scales the red contact force arrows only; it does not change simulation forces.");
     }
 
@@ -152,11 +149,8 @@ void DrawDebugVisualizationControls(SimulationServer* simulation) {
             changed = true;
         }
     }
-    if (ImGui::IsItemHovered(ImGuiHoveredFlags_AllowWhenDisabled)) {
+    if (ImGui::IsItemHovered()) {
         ImGui::SetTooltip("Caps the red contact force arrow length so large impulses remain readable.");
-    }
-    if (!settings.debug_draw_contacts) {
-        ImGui::EndDisabled();
     }
 
     if (changed) {
