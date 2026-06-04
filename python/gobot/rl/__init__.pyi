@@ -7,6 +7,21 @@ from typing import Any, Callable, Mapping, Sequence
 import numpy as np
 
 from .._core import AppContext, PhysicsBackendType
+from .velocity import (
+    GobotVelocityEnv,
+    UniformVelocityCommandCfg,
+    UniformVelocityCommandRanges,
+    VelocityObservationCfg,
+    VelocityRewardCfg,
+    VelocityStage,
+    VelocityTaskCfg,
+    rsl_rl_train_cfg,
+    unitree_g1_flat_velocity_cfg,
+    unitree_g1_rough_velocity_cfg,
+    unitree_go1_flat_velocity_cfg,
+    unitree_go1_rough_velocity_cfg,
+    velocity_task_cfg,
+)
 
 ArrayLike = Sequence[float] | np.ndarray
 
