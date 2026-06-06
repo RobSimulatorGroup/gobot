@@ -70,6 +70,11 @@ package_add_test(test_packed_scene scene/test_packed_scene.cpp)
 package_add_test(test_edited_scene
         editor/test_edited_scene.cpp
         ${PROJECT_SOURCE_DIR}/src/gobot/editor/edited_scene.cpp)
+package_add_test(test_editor_type_icons
+        editor/test_type_icons.cpp
+        ${PROJECT_SOURCE_DIR}/src/gobot/editor/imgui/type_icons.cpp)
+target_include_directories(test_editor_type_icons PRIVATE
+        ${PROJECT_SOURCE_DIR}/3rdparty/imgui_extension)
 add_executable(test_scene_play_session
         editor/test_scene_play_session.cpp
         ${PROJECT_SOURCE_DIR}/src/gobot/editor/scene_play_session.cpp

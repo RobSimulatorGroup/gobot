@@ -17,6 +17,15 @@
 #include <algorithm>
 
 namespace gobot {
+namespace {
+
+void DrawHoverTooltip(const char* text) {
+    if (ImGui::IsItemHovered(ImGuiHoveredFlags_DelayNormal | ImGuiHoveredFlags_NoSharedDelay)) {
+        ImGui::SetTooltip("%s", text);
+    }
+}
+
+} // namespace
 
 InspectorPanel::InspectorPanel() {
     SetName("InspectorPanel");
@@ -68,15 +77,24 @@ void InspectorPanel::OnImGuiContent() {
     if (ImGui::Button(ICON_MDI_FILE_PLUS)) {
         // TODO(wqq): new
     }
+    if (ImGui::IsItemHovered()) {
+        ImGui::SetTooltip("New resource");
+    }
 
     ImGui::SameLine();
     if (ImGui::Button(ICON_MDI_ARROW_UP_BOX)) {
         // TODO(wqq): load
     }
+    if (ImGui::IsItemHovered()) {
+        ImGui::SetTooltip("Load resource");
+    }
 
     ImGui::SameLine();
     if (ImGui::Button(ICON_MDI_CONTENT_SAVE)) {
         // TODO(wqq): save
+    }
+    if (ImGui::IsItemHovered()) {
+        ImGui::SetTooltip("Save resource");
     }
 
     auto button_size = ImGui::GetItemRectSize();
@@ -86,16 +104,21 @@ void InspectorPanel::OnImGuiContent() {
     if (ImGui::ArrowButton("##left", ImGuiDir_Left)) {
 
     }
+    DrawHoverTooltip("Go to the previous inspected object");
     ImGui::SameLine(0.0f, ImGui::GetStyle().ItemInnerSpacing.x);
 
     if (ImGui::ArrowButton("##right", ImGuiDir_Right)) {
 
     }
+    DrawHoverTooltip("Go to the next inspected object");
 
     ImGui::SameLine(std::max(ImGui::GetCursorPosX() + item_spacing,
                              ImGui::GetContentRegionMax().x - icon_button_width));
     if (ImGui::Button(ICON_MDI_HISTORY)) {
         // TODO(wqq): select current_inspector_index_
+    }
+    if (ImGui::IsItemHovered()) {
+        ImGui::SetTooltip("Inspector history");
     }
 
     if (!editor_inspector_) {
@@ -106,7 +129,14 @@ void InspectorPanel::OnImGuiContent() {
     auto& cache = editor_inspector_->GetVariantCache();
     auto* property_name = editor_inspector_->GetNameProperty();
 
-    ImGui::TextUnformatted(GetTypeIcon(cache.type));
+    const float icon_size = ImGui::GetTextLineHeight();
+    DrawEditorIcon(GetTypeEditorIcon(cache.type), {icon_size, icon_size});
+    if (ImGui::IsItemHovered()) {
+        ImGui::BeginTooltip();
+        ImGui::Text("Selected type: %s", cache.type.get_name().data());
+        ImGui::TextUnformatted("Properties are grouped by inheritance below.");
+        ImGui::EndTooltip();
+    }
 
 
     if (property_name) {
@@ -120,10 +150,14 @@ void InspectorPanel::OnImGuiContent() {
         if (ImGui::InputText(fmt::format("##{}", property_name->GetPropertyName()).c_str(), &str)) {
             property_name->SetValue(str);
         }
+        DrawHoverTooltip("Selected node name. Editing this renames the node in SceneTree.");
 
         ImGui::SameLine();
         if (ImGui::Button(ICON_MDI_COGS)) {
             ImGui::OpenPopup("Inspector setting");
+        }
+        if (ImGui::IsItemHovered()) {
+            ImGui::SetTooltip("Inspector options");
         }
         if (ImGui::BeginPopup("Inspector setting"))
         {
@@ -149,6 +183,7 @@ void InspectorPanel::OnImGuiContent() {
 
 
     filter_->Draw("###PropertyFilter", ImGui::GetContentRegionAvail().x);
+    DrawHoverTooltip("Filter visible properties by name");
 
     if(!filter_->IsActive()) {
         ImGui::SameLine();

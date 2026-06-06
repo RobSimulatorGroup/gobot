@@ -114,21 +114,21 @@ void DrawDebugVisualizationControls(SimulationServer* simulation) {
     bool changed = false;
 
     bool draw_contacts = settings.debug_draw_contacts;
-    if (ImGui::Checkbox("Contact points / normals", &draw_contacts)) {
+    if (ImGui::Checkbox(ICON_MDI_CROSSHAIRS " Contact points / normals", &draw_contacts)) {
         settings.debug_draw_contacts = draw_contacts;
         changed = true;
     }
     if (ImGui::IsItemHovered()) {
-        ImGui::SetTooltip("Draw contact point crosses and blue normal arrows. The normal is the geometric separating direction.");
+        ImGui::SetTooltip("Draw contact crosses and blue normal directions. Normals are geometric directions, not force magnitudes.");
     }
 
     bool draw_contact_forces = settings.debug_draw_contact_forces;
-    if (ImGui::Checkbox("Contact force arrows", &draw_contact_forces)) {
+    if (ImGui::Checkbox(ICON_MDI_AXIS_ARROW " Contact force arrows", &draw_contact_forces)) {
         settings.debug_draw_contact_forces = draw_contact_forces;
         changed = true;
     }
     if (ImGui::IsItemHovered()) {
-        ImGui::SetTooltip("Draw red solver force arrows. Force has magnitude and can include tangential friction components.");
+        ImGui::SetTooltip("Draw red solver force arrows. Force arrows encode direction and magnitude, including friction components when available.");
     }
 
     double force_scale = static_cast<double>(settings.debug_contact_force_scale);
@@ -260,7 +260,7 @@ void PhysicsPanel::OnImGuiContent() {
     if (!can_build || script_session_running) {
         ImGui::BeginDisabled();
     }
-    if (ImGui::Button("Build World")) {
+    if (ImGui::Button(ICON_MDI_CUBE_SCAN " Build World")) {
         if (editor != nullptr) {
             editor->StopScene();
             scene_root = editor->GetEditedSceneRoot();
@@ -269,6 +269,9 @@ void PhysicsPanel::OnImGuiContent() {
         }
         simulation->SetBackendType(selected_backend_);
         simulation->BuildWorldFromScene(scene_root);
+    }
+    if (ImGui::IsItemHovered(ImGuiHoveredFlags_AllowWhenDisabled)) {
+        ImGui::SetTooltip("Build a physics world from the active scene");
     }
     if (!can_build || script_session_running) {
         ImGui::EndDisabled();
@@ -308,20 +311,26 @@ void PhysicsPanel::OnImGuiContent() {
     if (!has_world) {
         ImGui::BeginDisabled();
     }
-    if (ImGui::Button("Reset")) {
+    if (ImGui::Button(ICON_MDI_RESTART " Reset")) {
         if (editor != nullptr && editor->IsScenePlaySessionRunning()) {
             editor->ResetScenePlaySession();
         } else {
             simulation->Reset();
         }
     }
+    if (ImGui::IsItemHovered(ImGuiHoveredFlags_AllowWhenDisabled)) {
+        ImGui::SetTooltip("Reset the current physics world or scene playback session");
+    }
     ImGui::SameLine();
-    if (ImGui::Button("Clear")) {
+    if (ImGui::Button(ICON_MDI_DELETE " Clear")) {
         if (editor != nullptr) {
             editor->StopScene();
         } else {
             simulation->ClearWorld();
         }
+    }
+    if (ImGui::IsItemHovered(ImGuiHoveredFlags_AllowWhenDisabled)) {
+        ImGui::SetTooltip("Stop playback and remove the current physics world");
     }
     if (!has_world) {
         ImGui::EndDisabled();

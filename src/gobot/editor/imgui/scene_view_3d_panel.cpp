@@ -1004,20 +1004,20 @@ void SceneView3DPanel::ToolBar(const ImVec2& screen_position)
         ImGui::SameLine();
     };
 
-    draw_operation_button("select", ICON_MDI_CURSOR_DEFAULT, "Select", Node3DEditor::InvalidGuizmoOperation());
+    draw_operation_button("select", ICON_MDI_CURSOR_DEFAULT, "Select nodes in the viewport", Node3DEditor::InvalidGuizmoOperation());
     draw_separator();
-    draw_operation_button("translate", ICON_MDI_ARROW_ALL, "Translate", ImGuizmo::TRANSLATE);
-    draw_operation_button("rotate", ICON_MDI_ROTATE_3D, "Rotate", ImGuizmo::ROTATE);
-    draw_operation_button("scale", ICON_MDI_ARROW_EXPAND_ALL, "Scale", ImGuizmo::SCALE);
+    draw_operation_button("translate", ICON_MDI_ARROW_ALL, "Move selected Node3D", ImGuizmo::TRANSLATE);
+    draw_operation_button("rotate", ICON_MDI_ROTATE_3D, "Rotate selected Node3D", ImGuizmo::ROTATE);
+    draw_operation_button("scale", ICON_MDI_ARROW_EXPAND_ALL, "Scale selected Node3D", ImGuizmo::SCALE);
     draw_separator();
-    draw_operation_button("universal", ICON_MDI_CROP_ROTATE, "Universal", ImGuizmo::UNIVERSAL);
+    draw_operation_button("universal", ICON_MDI_CROP_ROTATE, "Universal transform gizmo", ImGuizmo::UNIVERSAL);
     draw_separator();
-    draw_operation_button("bounds", ICON_MDI_BORDER_NONE, "Bounds", ImGuizmo::BOUNDS);
+    draw_operation_button("bounds", ICON_MDI_BORDER_NONE, "Edit selection bounds", ImGuizmo::BOUNDS);
     draw_separator();
 
     {
         const bool selected = node3d_editor->SnapGuizmo();
-        draw_toolbar_button("snap", ICON_MDI_MAGNET, "Snap", selected, true, [&]() {
+        draw_toolbar_button("snap", ICON_MDI_MAGNET, "Toggle transform snapping", selected, true, [&]() {
             node3d_editor->SnapGuizmo() = !selected;
         });
     }
@@ -1029,10 +1029,10 @@ void SceneView3DPanel::ToolBar(const ImVec2& screen_position)
         const bool assembly_mode = robot_available && active_robot->GetMode() == RobotMode::Assembly;
         const bool motion_mode = robot_available && active_robot->GetMode() == RobotMode::Motion;
 
-        draw_toolbar_button("assembly_mode", ICON_MDI_COGS, "Assembly Mode", assembly_mode, robot_available, [&]() {
+        draw_toolbar_button("assembly_mode", ICON_MDI_ROBOT_INDUSTRIAL, "Robot assembly mode: edit links and structure", assembly_mode, robot_available, [&]() {
             active_robot->SetMode(RobotMode::Assembly);
         });
-        draw_toolbar_button("motion_mode", ICON_MDI_AXIS_ARROW, "Motion Mode", motion_mode, robot_available, [&]() {
+        draw_toolbar_button("motion_mode", ICON_MDI_AXIS_ARROW, "Robot motion mode: edit joint positions", motion_mode, robot_available, [&]() {
             active_robot->SetMode(RobotMode::Motion);
         });
     }

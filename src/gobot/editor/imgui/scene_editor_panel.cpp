@@ -22,6 +22,7 @@
 #include "gobot/core/config/project_setting.hpp"
 #include "gobot/core/string_utils.hpp"
 #include "gobot/editor/imgui/imgui_utilities.hpp"
+#include "gobot/editor/imgui/type_icons.hpp"
 #include "gobot/editor/editor.hpp"
 #include "gobot/editor/python_script_template.hpp"
 #include "gobot/main/engine_context.hpp"
@@ -133,6 +134,21 @@ bool IsProjectLocalScriptPath(const std::string& path) {
     return path.starts_with("res://") && IsPythonScriptPath(path);
 }
 
+void DrawInlineEditorIcon(const EditorIcon& icon) {
+    const float icon_size = ImGui::GetTextLineHeight();
+    DrawEditorIcon(icon, {icon_size, icon_size});
+}
+
+void DrawHoverTooltip(const char* text) {
+    if (ImGui::IsItemHovered(ImGuiHoveredFlags_DelayNormal | ImGuiHoveredFlags_NoSharedDelay)) {
+        ImGui::SetTooltip("%s", text);
+    }
+}
+
+void DrawHoverTooltip(const std::string& text) {
+    DrawHoverTooltip(text.c_str());
+}
+
 std::vector<std::string> FindProjectPythonScripts() {
     std::vector<std::string> scripts;
     const auto* settings = ProjectSettings::GetInstance();
@@ -163,16 +179,6 @@ std::vector<std::string> FindProjectPythonScripts() {
 
     std::ranges::sort(scripts);
     return scripts;
-}
-
-const char* GetAddNodeIcon(const NodeCreationEntry& entry) {
-    if (entry.id == "Node") {
-        return ICON_MDI_CIRCLE_OUTLINE;
-    }
-    if (entry.id == "Node3D") {
-        return ICON_MDI_VECTOR_POINT;
-    }
-    return ICON_MDI_CUBE_OUTLINE;
 }
 
 bool AcceptSceneResourceDrop() {
@@ -535,6 +541,7 @@ void SceneEditorPanel::DrawAddChildDialog() {
         ImGui::SetKeyboardFocusHere();
     }
     ImGui::InputTextWithHint("##AddNodeSearch", "Search node type...", &add_node_search_);
+    DrawHoverTooltip("Filter node types by class name or display name");
     ImGui::TextUnformatted("Matches");
     ImGui::Separator();
 
@@ -573,15 +580,32 @@ void SceneEditorPanel::DrawAddChildDialog() {
             ImGui::SetNextItemOpen(true, ImGuiCond_Always);
         }
 
-        const bool open = ImGui::TreeNodeEx(entry->id.c_str(),
-                                           flags,
-                                           "%s  %s",
-                                           GetAddNodeIcon(*entry),
-                                           entry->display_name.c_str());
-        if (ImGui::IsItemClicked() && !ImGui::IsItemToggledOpen()) {
+        const std::string item_id = "##AddNode_" + entry->id;
+        const bool open = ImGui::TreeNodeEx(item_id.c_str(), flags);
+        const bool item_clicked = ImGui::IsItemClicked() && !ImGui::IsItemToggledOpen();
+        const bool item_double_clicked = ImGui::IsItemHovered() && ImGui::IsMouseDoubleClicked(ImGuiMouseButton_Left);
+        ImGui::SameLine();
+        DrawInlineEditorIcon(GetTypeEditorIcon(entry->id));
+        if (ImGui::IsItemHovered(ImGuiHoveredFlags_DelayNormal | ImGuiHoveredFlags_NoSharedDelay)) {
+            ImGui::SetTooltip("%s", entry->id.c_str());
+        }
+        ImGui::SameLine();
+        ImGui::TextUnformatted(entry->display_name.c_str());
+        if (ImGui::IsItemHovered(ImGuiHoveredFlags_DelayNormal | ImGuiHoveredFlags_NoSharedDelay)) {
+            ImGui::BeginTooltip();
+            ImGui::TextUnformatted(entry->display_name.c_str());
+            ImGui::Separator();
+            ImGui::TextUnformatted(entry->id.c_str());
+            if (!entry->description.empty()) {
+                ImGui::Spacing();
+                ImGui::TextWrapped("%s", entry->description.c_str());
+            }
+            ImGui::EndTooltip();
+        }
+        if (item_clicked) {
             selected_add_node_id_ = entry->id;
         }
-        if (ImGui::IsItemHovered() && ImGui::IsMouseDoubleClicked(ImGuiMouseButton_Left)) {
+        if (item_double_clicked) {
             selected_add_node_id_ = entry->id;
             create_requested = CreateSelectedAddNode();
         }
@@ -679,12 +703,13 @@ void SceneEditorPanel::DrawAttachScriptDialog() {
         return;
     }
 
-    ImGui::Text("Node:");
-    ImGui::SameLine(150.0f);
-    ImGui::TextUnformatted(attach_script_node_->GetName().c_str());
+        ImGui::Text("Node:");
+        ImGui::SameLine(150.0f);
+        ImGui::TextUnformatted(attach_script_node_->GetName().c_str());
+        DrawHoverTooltip("Node that will receive the Python script");
 
-    ImGui::Text("Script:");
-    ImGui::SameLine(150.0f);
+        ImGui::Text("Script:");
+        ImGui::SameLine(150.0f);
     const float mode_button_width = 180.0f;
     if (ImGui::Selectable("New Script",
                           attach_script_create_new_,
@@ -712,11 +737,13 @@ void SceneEditorPanel::DrawAttachScriptDialog() {
         if (ImGui::IsWindowAppearing()) {
             ImGui::SetKeyboardFocusHere();
         }
-        ImGui::InputText("##AttachScriptPath", &attach_script_path_);
+    ImGui::InputText("##AttachScriptPath", &attach_script_path_);
+        DrawHoverTooltip("Target script path. Must be a project-local res:// .py file");
 
         ImGui::TextUnformatted("Template:");
         ImGui::SameLine(150.0f);
         ImGui::Checkbox("Use default NodeScript template", &attach_script_template_enabled_);
+        DrawHoverTooltip("Create the file with Gobot's default NodeScript stub");
 
         const std::string normalized_path = EnsurePythonScriptExtension(attach_script_path_);
         const bool valid_path = IsProjectLocalScriptPath(normalized_path);
@@ -753,10 +780,12 @@ void SceneEditorPanel::DrawAttachScriptDialog() {
             ImGui::SetKeyboardFocusHere();
         }
         ImGui::InputTextWithHint("##AttachScriptSearch", "Search Python scripts...", &attach_script_search_);
+        DrawHoverTooltip("Filter existing project Python scripts");
 
         if (ImGui::Button(ICON_MDI_REFRESH " Refresh")) {
             attach_script_candidates_ = FindProjectPythonScripts();
         }
+        DrawHoverTooltip("Rescan the current project for Python scripts");
 
         ImGui::BeginChild("AttachScriptList", {0.0f, 0.0f}, true);
         bool showed_any = false;
@@ -770,6 +799,7 @@ void SceneEditorPanel::DrawAttachScriptDialog() {
             if (ImGui::Selectable(item_label.c_str(), selected)) {
                 attach_selected_script_path_ = script_path;
             }
+            DrawHoverTooltip(script_path);
             if (ImGui::IsItemHovered() && ImGui::IsMouseDoubleClicked(ImGuiMouseButton_Left)) {
                 attach_selected_script_path_ = script_path;
                 if (AttachSelectedScript()) {
@@ -880,7 +910,7 @@ bool SceneEditorPanel::DrawNode(Node* node)
         bool node_open = ImGui::TreeNodeEx(node,
                                            node_flags,
                                            "%s",
-                                           is_scene_instance ? ICON_MDI_LINK_BOX_OUTLINE : ICON_MDI_CUBE_OUTLINE);
+                                           "");
         ImRect node_row_rect(ImGui::GetItemRectMin(), ImGui::GetItemRectMax());
         node_row_rect.Max.x = ImGui::GetWindowPos().x + ImGui::GetWindowContentRegionMax().x;
         {
@@ -894,11 +924,41 @@ bool SceneEditorPanel::DrawNode(Node* node)
         ImGui::PopStyleColor();
         const bool dropped_resource_on_row = AcceptResourceDropOnNode(node);
         ImGui::SameLine();
+        if (!node_visible_in_tree) {
+            ImGui::BeginDisabled();
+        }
+        DrawInlineEditorIcon(GetNodeEditorIcon(*node));
+        if (ImGui::IsItemHovered(ImGuiHoveredFlags_DelayNormal | ImGuiHoveredFlags_NoSharedDelay)) {
+            ImGui::SetTooltip("%s", node->GetType().get_name().data());
+        }
+        if (!node_visible_in_tree) {
+            ImGui::EndDisabled();
+        }
+        node_row_rect.Add(ImRect(ImGui::GetItemRectMin(), ImGui::GetItemRectMax()));
+        ImGui::SameLine();
         if(!double_clicked) {
             if (!node_visible_in_tree) {
                 ImGui::PushStyleColor(ImGuiCol_Text, ImGui::GetStyleColorVec4(ImGuiCol_TextDisabled));
             }
             ImGui::TextUnformatted(name.c_str());
+            if (ImGui::IsItemHovered(ImGuiHoveredFlags_DelayNormal | ImGuiHoveredFlags_NoSharedDelay)) {
+                ImGui::BeginTooltip();
+                ImGui::TextUnformatted(name.c_str());
+                ImGui::Separator();
+                ImGui::Text("Type: %s", node->GetType().get_name().data());
+                if (node->GetParent() != nullptr) {
+                    ImGui::Text("Parent: %s", node->GetParent()->GetName().c_str());
+                }
+                if (is_scene_instance && scene_instance.IsValid() && !scene_instance->GetPath().empty()) {
+                    ImGui::Text("Scene: %s", scene_instance->GetPath().c_str());
+                }
+                if (has_script && python_script.IsValid() && !python_script->GetPath().empty()) {
+                    ImGui::Text("Script: %s", python_script->GetPath().c_str());
+                }
+                ImGui::Spacing();
+                ImGui::TextUnformatted("Click to select. Double-click to rename and focus the 3D view.");
+                ImGui::EndTooltip();
+            }
             if (!node_visible_in_tree) {
                 ImGui::PopStyleColor();
             }
@@ -944,9 +1004,14 @@ bool SceneEditorPanel::DrawNode(Node* node)
             }
             ImGui::PopStyleColor(3);
             if (ImGui::IsItemHovered()) {
-                ImGui::SetTooltip("%s",
-                                  can_open_script ? python_script->GetPath().c_str()
-                                                  : "Python script has no resource path");
+                ImGui::BeginTooltip();
+                ImGui::TextUnformatted(can_open_script ? "Open attached Python script"
+                                                       : "Attached Python script has no resource path");
+                if (can_open_script) {
+                    ImGui::Separator();
+                    ImGui::TextUnformatted(python_script->GetPath().c_str());
+                }
+                ImGui::EndTooltip();
             }
         }
 
@@ -964,8 +1029,15 @@ bool SceneEditorPanel::DrawNode(Node* node)
             if (ImGui::SmallButton(ICON_MDI_OPEN_IN_NEW "##OpenSceneInstance")) {
                 RequestOpenSceneInstance(scene_instance->GetPath());
             }
-            if (ImGui::IsItemHovered()) {
-                ImGui::SetTooltip("Open scene instance");
+            if (ImGui::IsItemHovered(ImGuiHoveredFlags_AllowWhenDisabled)) {
+                ImGui::BeginTooltip();
+                ImGui::TextUnformatted(can_open_scene_instance ? "Open the source scene for this instance"
+                                                               : "Scene instance has no resource path");
+                if (can_open_scene_instance) {
+                    ImGui::Separator();
+                    ImGui::TextUnformatted(scene_instance->GetPath().c_str());
+                }
+                ImGui::EndTooltip();
             }
             if (!can_open_scene_instance) {
                 ImGui::EndDisabled();
@@ -1011,11 +1083,11 @@ bool SceneEditorPanel::DrawNode(Node* node)
 
             if (ImGui::IsItemHovered()) {
                 if (!node_visible) {
-                    ImGui::SetTooltip("Show Node");
+                    ImGui::SetTooltip("Show this Node3D and its visible children");
                 } else if (!node_visible_in_tree) {
-                    ImGui::SetTooltip("Hidden by parent");
+                    ImGui::SetTooltip("Visible locally, but hidden by a parent Node3D");
                 } else {
-                    ImGui::SetTooltip("Hide Node");
+                    ImGui::SetTooltip("Hide this Node3D and its children in the scene tree");
                 }
             }
         }

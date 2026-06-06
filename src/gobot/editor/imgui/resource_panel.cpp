@@ -11,6 +11,7 @@
 #include "gobot/core/string_utils.hpp"
 #include "gobot/editor/editor.hpp"
 #include "gobot/editor/imgui/imgui_utilities.hpp"
+#include "gobot/editor/imgui/type_icons.hpp"
 #include "gobot/editor/python_script_template.hpp"
 #include "gobot/main/engine_context.hpp"
 #include "gobot/scene/scene_command.hpp"
@@ -187,15 +188,31 @@ bool ResourceEntryLess(const DirectoryInformation* left, const DirectoryInformat
 
 const char* ResourceIcon(const DirectoryInformation* dir_info) {
     if (dir_info == nullptr) {
-        return ICON_MDI_FILE;
+        return ICON_MDI_FILE_OUTLINE;
     }
-    if (dir_info->is_directory) {
-        return ICON_MDI_FOLDER;
+    return GetResourcePathIcon(dir_info->global_path, dir_info->is_directory);
+}
+
+EditorIcon ResourceEditorIcon(const DirectoryInformation* dir_info) {
+    if (dir_info == nullptr) {
+        return GetResourcePathEditorIcon("", false);
     }
-    if (IsPythonScriptFile(dir_info)) {
-        return ICON_MDI_LANGUAGE_PYTHON;
-    }
-    return ICON_MDI_FILE;
+    return GetResourcePathEditorIcon(dir_info->global_path, dir_info->is_directory);
+}
+
+void DrawInlineResourceIcon(const DirectoryInformation* dir_info) {
+    const float icon_size = ImGui::GetTextLineHeight();
+    DrawEditorIcon(ResourceEditorIcon(dir_info), {icon_size, icon_size});
+}
+
+bool DrawClickableResourceIcon(const DirectoryInformation* dir_info) {
+    const float icon_size = ImGui::GetFrameHeight();
+    const std::string button_id = "##ResourceIcon_" + (dir_info != nullptr ? dir_info->global_path : std::string());
+    const bool clicked = ImGui::InvisibleButton(button_id.c_str(), {icon_size, icon_size});
+    const ImVec2 min = ImGui::GetItemRectMin();
+    ImGui::SetCursorScreenPos(min);
+    DrawEditorIcon(ResourceEditorIcon(dir_info), {icon_size, icon_size});
+    return clicked;
 }
 
 } // namespace
@@ -315,9 +332,15 @@ void ResourcePanel::OnImGuiContent() {
         if (ImGui::Button(ICON_MDI_FOLDER_OPEN)) {
             OpenProjectBrowser();
         }
+        if (ImGui::IsItemHovered()) {
+            ImGui::SetTooltip("Open project folder");
+        }
         ImGui::SameLine();
         if (ImGui::Button(ICON_MDI_FOLDER_PLUS)) {
             request_new_resource_folder_popup_ = true;
+        }
+        if (ImGui::IsItemHovered()) {
+            ImGui::SetTooltip("New resource folder");
         }
         ImGui::SameLine();
         if (ImGui::Button(ICON_MDI_LANGUAGE_PYTHON)) {
@@ -436,7 +459,7 @@ bool ResourcePanel::RenderFile(int dirIndex, bool folder, int shownIndex, bool g
     if(gridView) {
         ImGui::BeginGroup();
 
-        if(ImGui::Button(folder ? ICON_MDI_FOLDER : ICON_MDI_FILE)) {
+        if(DrawClickableResourceIcon(current_dir_->children[dirIndex])) {
         }
 
         if(ImGui::IsMouseDoubleClicked(ImGuiMouseButton_Left)) {
@@ -451,7 +474,7 @@ bool ResourcePanel::RenderFile(int dirIndex, bool folder, int shownIndex, bool g
         if((shownIndex + 1) % grid_items_per_row_ != 0)
             ImGui::SameLine();
     } else {
-        ImGui::TextUnformatted(folder ? ICON_MDI_FOLDER : ICON_MDI_FILE);
+        DrawInlineResourceIcon(current_dir_->children[dirIndex]);
         ImGui::SameLine();
         if(ImGui::Selectable(current_dir_->children[dirIndex]->this_path.c_str(),
                              false, ImGuiSelectableFlags_AllowDoubleClick)) {
@@ -481,7 +504,7 @@ bool ResourcePanel::RenderFile(int dirIndex, bool folder, int shownIndex, bool g
     if(ImGui::BeginDragDropSource(ImGuiDragDropFlags_SourceAllowNullID))
     {
         DirectoryInformation* child = current_dir_->children[dirIndex];
-        ImGui::TextUnformatted(ResourceIcon(child));
+        DrawInlineResourceIcon(child);
 
         ImGui::SameLine();
         ImGui::TextUnformatted(child->local_path.c_str());
@@ -528,25 +551,33 @@ void ResourcePanel::DrawResourceTree(DirectoryInformation* dir_info, bool root)
         ImGui::SetNextItemOpen(true);
     }
 
-    const char* icon = ResourceIcon(dir_info);
-    const std::string label = std::string(icon) + " " + dir_info->this_path + "##" + dir_info->global_path;
+    const std::string label = "##ResourceTree_" + dir_info->global_path;
     const bool open = ImGui::TreeNodeEx(label.c_str(), node_flags);
+    ImRect row_rect(ImGui::GetItemRectMin(), ImGui::GetItemRectMax());
+    ImGui::SameLine();
+    DrawInlineResourceIcon(dir_info);
+    row_rect.Add(ImRect(ImGui::GetItemRectMin(), ImGui::GetItemRectMax()));
+    ImGui::SameLine();
+    ImGui::TextUnformatted(dir_info->this_path.c_str());
+    row_rect.Add(ImRect(ImGui::GetItemRectMin(), ImGui::GetItemRectMax()));
     if (dir_info == selected_resource_ && pending_scroll_resource_path_ == dir_info->global_path) {
         ImGui::SetScrollHereY(0.5f);
         pending_scroll_resource_path_.clear();
     }
-    if (ImGui::IsItemClicked()) {
+    const bool row_hovered = ImGui::IsMouseHoveringRect(row_rect.Min, row_rect.Max, false) &&
+                             ImGui::IsWindowHovered(ImGuiHoveredFlags_AllowWhenBlockedByPopup);
+    if (row_hovered && ImGui::IsMouseClicked(ImGuiMouseButton_Left)) {
         selected_resource_ = dir_info;
         if (dir_info->is_directory) {
             ChangeDirectory(dir_info);
         }
     }
-    if (ImGui::IsItemHovered()) {
+    if (row_hovered) {
         ImGui::SetTooltip("%s", dir_info->local_path.c_str());
     }
 
     if (!dir_info->is_directory && ImGui::BeginDragDropSource(ImGuiDragDropFlags_SourceAllowNullID)) {
-        ImGui::TextUnformatted(ResourceIcon(dir_info));
+        DrawInlineResourceIcon(dir_info);
         ImGui::SameLine();
         ImGui::TextUnformatted(dir_info->local_path.c_str());
         ImGui::SetDragDropPayload(DragDropPayloadType(dir_info),
@@ -555,7 +586,7 @@ void ResourcePanel::DrawResourceTree(DirectoryInformation* dir_info, bool root)
         ImGui::EndDragDropSource();
     }
 
-    if (ImGui::IsMouseDoubleClicked(ImGuiMouseButton_Left) && ImGui::IsItemHovered()) {
+    if (ImGui::IsMouseDoubleClicked(ImGuiMouseButton_Left) && row_hovered) {
         if (dir_info->is_directory) {
             ChangeDirectory(dir_info);
         } else if (IsNativeSceneFile(dir_info)) {

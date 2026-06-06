@@ -21,6 +21,9 @@
 #include "imgui.h"
 #include "imgui_internal.h"
 
+#include <algorithm>
+#include <string>
+
 
 namespace gobot {
 
@@ -47,6 +50,45 @@ bool ShouldHidePropertyInInspector(const Type& owner_type, const Property& prope
         return true;
     }
     return false;
+}
+
+void DrawInspectorTypeHeader(const Type& type) {
+    const auto name_view = type.get_name();
+    const std::string type_name(name_view.data(), name_view.size());
+    const ImGuiStyle& style = ImGui::GetStyle();
+    const float icon_size = ImGui::GetTextLineHeight();
+    const ImVec2 header_min = ImGui::GetCursorScreenPos();
+
+    ImGui::AlignTextToFramePadding();
+    DrawEditorIcon(GetTypeEditorIcon(type), {icon_size, icon_size});
+    const bool icon_hovered = ImGui::IsItemHovered(ImGuiHoveredFlags_DelayNormal | ImGuiHoveredFlags_NoSharedDelay);
+
+    ImGui::SameLine();
+    ImGui::TextUnformatted(type_name.c_str());
+    const bool label_hovered = ImGui::IsItemHovered(ImGuiHoveredFlags_DelayNormal | ImGuiHoveredFlags_NoSharedDelay);
+
+    const ImVec2 label_min = ImGui::GetItemRectMin();
+    const ImVec2 label_max = ImGui::GetItemRectMax();
+    const float line_start_x = label_max.x + style.ItemSpacing.x;
+    const float line_end_x = ImGui::GetWindowPos().x + ImGui::GetWindowContentRegionMax().x;
+    if (line_start_x < line_end_x) {
+        const float line_y = (label_min.y + label_max.y) * 0.5f;
+        ImGui::GetWindowDrawList()->AddLine({line_start_x, line_y},
+                                            {line_end_x, line_y},
+                                            ImGui::GetColorU32(ImGuiCol_Separator),
+                                            1.0f);
+    }
+
+    const ImVec2 header_max(line_end_x, std::max(label_max.y, header_min.y + icon_size));
+    const bool row_hovered =
+            ImGui::IsMouseHoveringRect(header_min, header_max) &&
+            ImGui::IsWindowHovered(ImGuiHoveredFlags_AllowWhenBlockedByPopup);
+    if (icon_hovered || label_hovered || row_hovered) {
+        ImGui::BeginTooltip();
+        ImGui::Text("Type group: %s", type_name.c_str());
+        ImGui::TextUnformatted("Only editor-visible properties declared by this type are shown here.");
+        ImGui::EndTooltip();
+    }
 }
 
 } // namespace
@@ -125,8 +167,8 @@ void EditorInspector::InitializeEditors() {
     }
 
     for (const auto& type: inheritance_chain_) {
-        AddChild(ImGuiCustomNode::New<ImGuiCustomNode>([&type]() {
-            ImGui::SeparatorText(fmt::format("{} {}", GetTypeIcon(type), type.get_name().data()).c_str());
+        AddChild(ImGuiCustomNode::New<ImGuiCustomNode>([type]() {
+            DrawInspectorTypeHeader(type);
         }));
 
         for (const auto& prop : properties_map_.at(type)) {
