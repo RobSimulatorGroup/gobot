@@ -4,11 +4,6 @@ import json
 from importlib.metadata import PackageNotFoundError, version
 
 import gobot
-from gobot.rl.locomotion import (
-    VELOCITY_OBS_SCHEMA_VERSION,
-    build_velocity_actor_observation,
-    velocity_actor_observation_schema,
-)
 
 
 ROBOT = "go1"
@@ -73,7 +68,7 @@ DECIMATION = 10
 HEIGHT_SCAN_POINTS = tuple((x, y) for x in (0.3, 0.6, 0.9, 1.2, 1.5) for y in (-0.45, 0.0, 0.45))
 HEIGHT_SCAN_MAX_DISTANCE = 5.0
 TERRAIN_SCAN_SENSOR = "terrain_scan"
-ACTOR_OBS_SCHEMA = velocity_actor_observation_schema(len(JOINT_NAMES), len(HEIGHT_SCAN_POINTS))
+VELOCITY_OBS_SCHEMA_VERSION = "gobot_velocity_v1"
 POSITION_LIMITS = {
     "FR_hip_joint": (-0.863, 0.863),
     "FR_thigh_joint": (-0.686, 4.501),
@@ -88,6 +83,71 @@ POSITION_LIMITS = {
     "RL_thigh_joint": (-0.686, 4.501),
     "RL_calf_joint": (-2.818, -0.888),
 }
+
+
+class ObservationSchema:
+    def __init__(self, version, fields):
+        self.version = version
+        self.fields = tuple(fields)
+
+    @property
+    def dim(self):
+        return sum(dim for _, dim in self.fields)
+
+    @property
+    def names(self):
+        names = []
+        for name, dim in self.fields:
+            if dim == 1:
+                names.append(name)
+            else:
+                names.extend(f"{name}.{index}" for index in range(dim))
+        return tuple(names)
+
+
+def velocity_actor_observation_schema(action_dim, height_scan_dim):
+    return ObservationSchema(
+        VELOCITY_OBS_SCHEMA_VERSION,
+        (
+            ("base_lin_vel_b", 3),
+            ("base_ang_vel_b", 3),
+            ("projected_gravity", 3),
+            ("joint_pos_rel", action_dim),
+            ("joint_vel", action_dim),
+            ("last_action", action_dim),
+            ("command", 3),
+            ("height_scan", height_scan_dim),
+        ),
+    )
+
+
+def build_velocity_actor_observation(
+    *,
+    base_lin_vel_b,
+    base_ang_vel_b,
+    projected_gravity,
+    joint_pos_rel,
+    joint_vel,
+    last_action,
+    command,
+    height_scan,
+):
+    obs = []
+    for part in (
+        base_lin_vel_b,
+        base_ang_vel_b,
+        projected_gravity,
+        joint_pos_rel,
+        joint_vel,
+        last_action,
+        command,
+        height_scan,
+    ):
+        obs.extend(float(value) for value in part)
+    return obs
+
+
+ACTOR_OBS_SCHEMA = velocity_actor_observation_schema(len(JOINT_NAMES), len(HEIGHT_SCAN_POINTS))
 
 
 def _parse_version_prefix(value):
@@ -662,7 +722,7 @@ class Script(gobot.NodeScript):
             last_action=self.last_action,
             command=cmd,
             height_scan=height_scan,
-        ).astype(float).tolist()
+        )
         if self.policy_obs_dim > len(obs):
             obs += [0.0] * (self.policy_obs_dim - len(obs))
         return obs[: self.policy_obs_dim]
