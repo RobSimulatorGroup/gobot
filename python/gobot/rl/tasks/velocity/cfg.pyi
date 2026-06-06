@@ -65,6 +65,27 @@ class VelocityRewardCfg:
     pose_std_walking: Mapping[str, float]
     pose_std_running: Mapping[str, float]
 
+class VelocityTerrainNormalUprightCfg:
+    enabled: bool
+    min_hit_count: int
+
+class VelocityIllegalContactCfg:
+    enabled: bool
+    terminate_on_thigh: bool
+    ground_force_threshold: float
+    self_collision_force_threshold: float
+    thigh_link_patterns: tuple[str, ...]
+    shank_link_patterns: tuple[str, ...]
+    trunk_head_link_patterns: tuple[str, ...]
+
+class VelocityDomainRandomizationCfg:
+    enabled: bool
+    encoder_bias_range: tuple[float, float]
+    reset_lin_vel_ranges: Mapping[str, tuple[float, float]]
+    reset_ang_vel_ranges: Mapping[str, tuple[float, float]]
+    foot_friction_range: tuple[float, float]
+    base_com_offset_ranges: Mapping[str, tuple[float, float]]
+
 class VelocityTaskCfg:
     name: str
     robot_family: str
@@ -90,6 +111,13 @@ class VelocityTaskCfg:
     terrain_curriculum: bool
     terrain_curriculum_steps: int
     spawn_difficulty_radius: float
+    terrain_normal_upright: VelocityTerrainNormalUprightCfg
+    contact_history_length: int
+    illegal_contact: VelocityIllegalContactCfg
+    domain_randomization: VelocityDomainRandomizationCfg
+    push_enabled: bool
+    push_interval_range_s: tuple[float, float]
+    push_velocity_ranges: Mapping[str, tuple[float, float]]
     observations: VelocityObservationCfg
     command: UniformVelocityCommandCfg
     command_curriculum: tuple[VelocityStage, ...]

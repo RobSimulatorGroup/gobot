@@ -1,10 +1,13 @@
 from .cfg import (
     UniformVelocityCommandCfg,
     UniformVelocityCommandRanges,
+    VelocityDomainRandomizationCfg,
+    VelocityIllegalContactCfg,
     VelocityObservationCfg,
     VelocityRewardCfg,
     VelocityStage,
     VelocityTaskCfg,
+    VelocityTerrainNormalUprightCfg,
     rsl_rl_train_cfg,
     unitree_g1_flat_velocity_cfg,
     unitree_g1_rough_velocity_cfg,

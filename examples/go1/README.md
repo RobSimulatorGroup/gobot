@@ -41,6 +41,12 @@ PYTHONPATH=/home/wqq/gobot/build/python \
   --policy-out policies/go1_velocity.pt
 ```
 
+The default Go1 rough task now includes terrain-normal upright reward, foot
+contact history, rough-terrain illegal-contact penalties, per-env terrain
+curriculum, encoder-bias/reset randomization, and scheduled base velocity
+pushes. CUDA is used by default when PyTorch reports it as available; pass
+`--device cpu` only when you explicitly want CPU PPO.
+
 Resume from the latest checkpoint in the log directory:
 
 ```bash

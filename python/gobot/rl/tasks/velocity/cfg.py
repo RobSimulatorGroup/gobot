@@ -140,6 +140,68 @@ class VelocityRewardCfg:
 
 
 @dataclass
+class VelocityTerrainNormalUprightCfg:
+    """Use the local terrain plane instead of world-up for the upright reward."""
+
+    enabled: bool = True
+    min_hit_count: int = 3
+
+
+@dataclass
+class VelocityIllegalContactCfg:
+    """Best-effort collision classification from runtime contact link names."""
+
+    enabled: bool = True
+    terminate_on_thigh: bool = True
+    ground_force_threshold: float = 1.0e-5
+    self_collision_force_threshold: float = 1.0e-5
+    thigh_link_patterns: tuple[str, ...] = (r".*_thigh",)
+    shank_link_patterns: tuple[str, ...] = (r".*_calf",)
+    trunk_head_link_patterns: tuple[str, ...] = (r"trunk", r".*head.*")
+
+
+@dataclass
+class VelocityDomainRandomizationCfg:
+    """Domain randomization parameters for the Gobot velocity task."""
+
+    enabled: bool = True
+    encoder_bias_range: tuple[float, float] = (-0.01, 0.01)
+    reset_lin_vel_ranges: Mapping[str, tuple[float, float]] = field(
+        default_factory=lambda: {
+            "x": (-0.05, 0.05),
+            "y": (-0.05, 0.05),
+            "z": (-0.05, 0.05),
+        }
+    )
+    reset_ang_vel_ranges: Mapping[str, tuple[float, float]] = field(
+        default_factory=lambda: {
+            "x": (-0.05, 0.05),
+            "y": (-0.05, 0.05),
+            "z": (-0.05, 0.05),
+        }
+    )
+    foot_friction_range: tuple[float, float] = (0.3, 1.5)
+    base_com_offset_ranges: Mapping[str, tuple[float, float]] = field(
+        default_factory=lambda: {
+            "x": (-0.025, 0.025),
+            "y": (-0.025, 0.025),
+            "z": (-0.03, 0.03),
+        }
+    )
+
+
+def _default_push_velocity_ranges() -> Mapping[str, tuple[float, float]]:
+    return {
+        "x": (-0.5, 0.5),
+        "y": (-0.5, 0.5),
+        "z": (0.0, 0.0),
+        "roll": (0.0, 0.0),
+        "pitch": (0.0, 0.0),
+        "yaw": (-0.25, 0.25),
+    }
+
+
+@dataclass
 class VelocityTaskCfg:
     """Gobot-native equivalent of MJLab velocity task config."""
 
@@ -167,6 +229,13 @@ class VelocityTaskCfg:
     terrain_curriculum: bool = True
     terrain_curriculum_steps: int = 21600
     spawn_difficulty_radius: float = 0.85
+    terrain_normal_upright: VelocityTerrainNormalUprightCfg = field(default_factory=VelocityTerrainNormalUprightCfg)
+    contact_history_length: int = 4
+    illegal_contact: VelocityIllegalContactCfg = field(default_factory=VelocityIllegalContactCfg)
+    domain_randomization: VelocityDomainRandomizationCfg = field(default_factory=VelocityDomainRandomizationCfg)
+    push_enabled: bool = True
+    push_interval_range_s: tuple[float, float] = (2.0, 6.0)
+    push_velocity_ranges: Mapping[str, tuple[float, float]] = field(default_factory=_default_push_velocity_ranges)
     observations: VelocityObservationCfg = field(default_factory=VelocityObservationCfg)
     command: UniformVelocityCommandCfg = field(default_factory=UniformVelocityCommandCfg)
     command_curriculum: tuple[VelocityStage, ...] = (
@@ -187,6 +256,8 @@ def unitree_go1_rough_velocity_cfg(
         cfg.episode_length_s = float(1_000_000_000)
         cfg.terrain_curriculum = False
         cfg.observations.actor_noise = False
+        cfg.domain_randomization.enabled = False
+        cfg.push_enabled = False
     return cfg
 
 
@@ -200,6 +271,8 @@ def unitree_go1_flat_velocity_cfg(
     cfg.terrain_type = "flat"
     cfg.observations.height_scan_sensor = None
     cfg.terrain_curriculum = False
+    cfg.terrain_normal_upright.enabled = False
+    cfg.illegal_contact.enabled = False
     cfg.rewards.upright = 1.0
     return cfg
 
@@ -238,6 +311,8 @@ def unitree_g1_flat_velocity_cfg(
     cfg.terrain_type = "flat"
     cfg.observations.height_scan_sensor = None
     cfg.terrain_curriculum = False
+    cfg.terrain_normal_upright.enabled = False
+    cfg.illegal_contact.enabled = False
     return cfg
 
 
@@ -325,8 +400,11 @@ __all__ = [
     "UniformVelocityCommandRanges",
     "VelocityObservationCfg",
     "VelocityRewardCfg",
+    "VelocityDomainRandomizationCfg",
+    "VelocityIllegalContactCfg",
     "VelocityStage",
     "VelocityTaskCfg",
+    "VelocityTerrainNormalUprightCfg",
     "rsl_rl_train_cfg",
     "unitree_g1_flat_velocity_cfg",
     "unitree_g1_rough_velocity_cfg",

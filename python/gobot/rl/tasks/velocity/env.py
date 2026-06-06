@@ -83,16 +83,39 @@ class GobotVelocityEnv:
         self._total_policy_steps = 0
         self._curriculum_progress = 0.0
 
+        self._foot_count = len(self.cfg_obj.foot_names)
+        self._contact_history_length = max(1, int(self.cfg_obj.contact_history_length))
         self._last_actions = np.zeros((self.num_envs, self.num_actions), dtype=np.float32)
         self._previous_actions = np.zeros_like(self._last_actions)
-        self._last_foot_contact = np.zeros((self.num_envs, len(self.cfg_obj.foot_names)), dtype=np.float32)
+        self._last_foot_contact = np.zeros((self.num_envs, self._foot_count), dtype=np.float32)
         self._foot_air_time = np.zeros_like(self._last_foot_contact)
         self._foot_peak_height = np.zeros_like(self._last_foot_contact)
-        self._previous_foot_positions = np.zeros((self.num_envs, len(self.cfg_obj.foot_names), 3), dtype=np.float32)
+        self._previous_foot_positions = np.zeros((self.num_envs, self._foot_count, 3), dtype=np.float32)
         self._foot_velocities = np.zeros_like(self._previous_foot_positions)
+        self._foot_contact_history = np.zeros(
+            (self.num_envs, self._contact_history_length, self._foot_count),
+            dtype=np.float32,
+        )
+        self._foot_force_history = np.zeros(
+            (self.num_envs, self._contact_history_length, self._foot_count, 3),
+            dtype=np.float32,
+        )
+        self._foot_history_cursor = np.zeros(self.num_envs, dtype=np.int64)
+        self._first_contact = np.zeros((self.num_envs, self._foot_count), dtype=np.float32)
+        self._landing_force = np.zeros((self.num_envs, self._foot_count), dtype=np.float32)
+        self._terrain_normal_error = np.zeros(self.num_envs, dtype=np.float32)
+        self._illegal_contact_counts = np.zeros(self.num_envs, dtype=np.float32)
+        self._self_collision_counts = np.zeros(self.num_envs, dtype=np.float32)
+        self._shank_collision_counts = np.zeros(self.num_envs, dtype=np.float32)
+        self._trunk_head_collision_counts = np.zeros(self.num_envs, dtype=np.float32)
+        self._encoder_bias = np.zeros((self.num_envs, self.num_actions), dtype=np.float32)
+        self._push_time_left = np.zeros(self.num_envs, dtype=np.float32)
+        self._push_count = np.zeros(self.num_envs, dtype=np.int64)
         self._spawn_indices = np.zeros(self.num_envs, dtype=np.int64)
         self._terrain_levels = np.zeros(self.num_envs, dtype=np.float32)
+        self._terrain_curriculum_limits = np.zeros(self.num_envs, dtype=np.float32)
         self._reset_reasons = np.zeros(self.num_envs, dtype=np.int64)
+        self._current_command_stage = 0
 
         self.project_path = Path(self.cfg_obj.project_path).resolve()
         self.context = gobot.app.context()
@@ -124,7 +147,6 @@ class GobotVelocityEnv:
         if robot_map is None:
             raise RuntimeError(f"Gobot scene has no robot named {self.cfg_obj.robot_name!r}")
         self._height_scan_dim = self._sensor_dim(robot_map, self.cfg_obj.observations.height_scan_sensor)
-        self._foot_count = len(self.cfg_obj.foot_names)
         self.num_obs = 3 + 3 + 3 + self.num_actions + self.num_actions + self.num_actions + 3 + self._height_scan_dim
         self.num_privileged_obs = self.num_obs + self._foot_count * (1 + 1 + 1 + 3)
         self.command_manager = UniformVelocityCommand(self.cfg_obj.command, self)
@@ -144,6 +166,12 @@ class GobotVelocityEnv:
             "height_scan_dim": self._height_scan_dim,
             "decimation": self.decimation,
             "physics_dt": self.physics_dt,
+            "terrain_normal_upright": self.cfg_obj.terrain_normal_upright.enabled,
+            "contact_history_length": self._contact_history_length,
+            "illegal_contact": self.cfg_obj.illegal_contact.enabled,
+            "domain_randomization": self.cfg_obj.domain_randomization.enabled,
+            "push_enabled": self.cfg_obj.push_enabled,
+            "push_interval_range_s": self.cfg_obj.push_interval_range_s,
         }
         self.extras: dict[str, Any] = {}
         self._obs, self._critic_obs = self._reset_all()
@@ -157,6 +185,8 @@ class GobotVelocityEnv:
             self._rng = np.random.default_rng(self.seed)
         self.episode_length_buf.zero_()
         self._episode_returns[:] = 0.0
+        self._terrain_curriculum_limits[:] = 0.0
+        self._push_count[:] = 0
         self._obs, self._critic_obs = self._reset_all()
         return self.get_observations()
 
@@ -173,6 +203,7 @@ class GobotVelocityEnv:
         states_after_step: list[VelocityRuntimeState | None] = [None] * self.num_envs
         for env_id in range(self.num_envs):
             self._apply_action(env_id, action_np[env_id])
+            self._maybe_apply_push(env_id)
             self.context.step_batch_env(env_id, self.decimation)
             states_after_step[env_id] = self._runtime_state(env_id)
         self.command_manager.compute(self.step_dt, states_after_step)
@@ -189,17 +220,27 @@ class GobotVelocityEnv:
             "foot_clearance": np.zeros(self.num_envs, dtype=np.float32),
             "foot_contact_ratio": np.zeros(self.num_envs, dtype=np.float32),
             "foot_slip": np.zeros(self.num_envs, dtype=np.float32),
+            "terrain_normal_error": np.zeros(self.num_envs, dtype=np.float32),
+            "illegal_contact_count": np.zeros(self.num_envs, dtype=np.float32),
+            "self_collision_count": np.zeros(self.num_envs, dtype=np.float32),
+            "shank_collision_count": np.zeros(self.num_envs, dtype=np.float32),
+            "trunk_head_collision_count": np.zeros(self.num_envs, dtype=np.float32),
+            "landing_force": np.zeros(self.num_envs, dtype=np.float32),
+            "terrain_curriculum_limit": np.zeros(self.num_envs, dtype=np.float32),
+            "encoder_bias_abs": np.zeros(self.num_envs, dtype=np.float32),
+            "push_count": np.zeros(self.num_envs, dtype=np.float32),
         }
         reward_terms: dict[str, np.ndarray] = {}
 
         for env_id, state in enumerate(states_after_step):
             assert state is not None
+            self._update_contact_summary(env_id, state)
             self._update_foot_history(env_id, state)
             reward, breakdown = self._compute_reward(env_id, state, action_np[env_id])
             for name, value in breakdown.items():
                 reward_terms.setdefault(name, np.zeros(self.num_envs, dtype=np.float32))[env_id] = value
             rewards[env_id] = reward
-            terminated[env_id] = self._terminated(state)
+            terminated[env_id] = self._terminated(env_id, state)
             self.episode_length_buf[env_id] += 1
             time_outs[env_id] = bool(self.episode_length_buf[env_id] >= self.max_episode_length and not terminated[env_id])
             done = bool(terminated[env_id] or time_outs[env_id])
@@ -207,10 +248,20 @@ class GobotVelocityEnv:
             self._episode_returns[env_id] += rewards[env_id]
             self._previous_actions[env_id] = self._last_actions[env_id]
             self._last_actions[env_id] = action_np[env_id]
+            metrics["terrain_normal_error"][env_id] = self._terrain_normal_error[env_id]
+            metrics["illegal_contact_count"][env_id] = self._illegal_contact_counts[env_id]
+            metrics["self_collision_count"][env_id] = self._self_collision_counts[env_id]
+            metrics["shank_collision_count"][env_id] = self._shank_collision_counts[env_id]
+            metrics["trunk_head_collision_count"][env_id] = self._trunk_head_collision_counts[env_id]
+            metrics["landing_force"][env_id] = float(np.sum(self._landing_force[env_id]))
+            metrics["encoder_bias_abs"][env_id] = float(np.mean(np.abs(self._encoder_bias[env_id])))
+            metrics["push_count"][env_id] = float(self._push_count[env_id])
 
             if done:
+                self._update_terrain_curriculum_limit(env_id, state, reset_reason[env_id])
                 self._reset_env(env_id, reason=reset_reason[env_id])
                 state = self._runtime_state(env_id)
+            metrics["terrain_curriculum_limit"][env_id] = self._terrain_curriculum_limits[env_id]
 
             obs = self._actor_obs(env_id, state, corrupt=True)
             critic = self._critic_obs_for(env_id, state, obs)
@@ -237,6 +288,16 @@ class GobotVelocityEnv:
                 "/velocity/foot_clearance": torch.as_tensor(float(np.mean(metrics["foot_clearance"])), device=self.device),
                 "/velocity/foot_contact_ratio": torch.as_tensor(float(np.mean(metrics["foot_contact_ratio"])), device=self.device),
                 "/velocity/foot_slip": torch.as_tensor(float(np.mean(metrics["foot_slip"])), device=self.device),
+                "/velocity/terrain_normal_error": torch.as_tensor(float(np.mean(metrics["terrain_normal_error"])), device=self.device),
+                "/velocity/illegal_contact_count": torch.as_tensor(float(np.mean(metrics["illegal_contact_count"])), device=self.device),
+                "/velocity/self_collision_count": torch.as_tensor(float(np.mean(metrics["self_collision_count"])), device=self.device),
+                "/velocity/shank_collision_count": torch.as_tensor(float(np.mean(metrics["shank_collision_count"])), device=self.device),
+                "/velocity/trunk_head_collision_count": torch.as_tensor(float(np.mean(metrics["trunk_head_collision_count"])), device=self.device),
+                "/velocity/landing_force": torch.as_tensor(float(np.mean(metrics["landing_force"])), device=self.device),
+                "/velocity/terrain_curriculum_limit": torch.as_tensor(float(np.mean(metrics["terrain_curriculum_limit"])), device=self.device),
+                "/velocity/encoder_bias_abs": torch.as_tensor(float(np.mean(metrics["encoder_bias_abs"])), device=self.device),
+                "/velocity/push_count": torch.as_tensor(float(np.mean(metrics["push_count"])), device=self.device),
+                "/velocity/command_stage": torch.as_tensor(float(self._current_command_stage), device=self.device),
                 "/velocity/reset_reason": torch.as_tensor(float(np.mean(reset_reason)), device=self.device),
                 "/velocity/command_vx": torch.as_tensor(float(np.mean(self.command_manager.command_b[:, 0])), device=self.device),
                 "/velocity/command_vy": torch.as_tensor(float(np.mean(self.command_manager.command_b[:, 1])), device=self.device),
@@ -323,15 +384,17 @@ class GobotVelocityEnv:
     def _terrain_height(self, x: float, y: float) -> float:
         return self._terrain_sampler.height_at(float(x), float(y))
 
-    def _sample_spawn_index(self) -> int:
+    def _sample_spawn_index(self, env_id: int) -> int:
         if not self.cfg_obj.terrain_curriculum:
             return int(self._rng.integers(0, self._spawn_origins.shape[0]))
         warmup_progress = 0.10
-        if self._curriculum_progress < warmup_progress:
+        if self._curriculum_progress < warmup_progress and self._terrain_curriculum_limits[env_id] <= 0.0:
             return self._center_spawn_index
         difficulty_progress = (self._curriculum_progress - warmup_progress) / max(1.0 - warmup_progress, 1.0e-6)
-        allowed_count = max(1, int(np.ceil(difficulty_progress * self._spawn_order.size)))
-        candidates = self._spawn_order[:allowed_count]
+        allowed_level = max(float(np.clip(difficulty_progress, 0.0, 1.0)), float(self._terrain_curriculum_limits[env_id]))
+        candidates = np.flatnonzero(self._spawn_levels <= allowed_level + 1.0e-6)
+        if candidates.size == 0:
+            candidates = self._spawn_order[:1]
         if self._center_spawn_index not in candidates:
             candidates = np.concatenate([candidates, np.asarray([self._center_spawn_index], dtype=np.int64)])
         return int(candidates[int(self._rng.integers(0, len(candidates)))])
@@ -344,15 +407,18 @@ class GobotVelocityEnv:
 
     def _apply_command_curriculum(self) -> None:
         ranges = self.cfg_obj.command.ranges
-        for stage in self.cfg_obj.command_curriculum:
+        current_stage = 0
+        for index, stage in enumerate(self.cfg_obj.command_curriculum):
             if self._total_policy_steps < stage.step:
                 continue
+            current_stage = index
             if stage.lin_vel_x is not None:
                 ranges.lin_vel_x = stage.lin_vel_x
             if stage.lin_vel_y is not None:
                 ranges.lin_vel_y = stage.lin_vel_y
             if stage.ang_vel_z is not None:
                 ranges.ang_vel_z = stage.ang_vel_z
+        self._current_command_stage = current_stage
 
     def _reset_all(self):
         obs_list = []
@@ -371,21 +437,36 @@ class GobotVelocityEnv:
 
     def _reset_env(self, env_id: int, *, reason: int) -> None:
         self.context.reset_batch_env(env_id)
-        spawn_index = self._sample_spawn_index()
+        spawn_index = self._sample_spawn_index(env_id)
         spawn = self._spawn_origins[spawn_index].copy()
         spawn[:2] += self._rng.uniform(-self.cfg_obj.spawn_jitter, self.cfg_obj.spawn_jitter, 2)
         terrain_height = self._terrain_height(spawn[0], spawn[1])
         base_z = max(spawn[2], terrain_height) + self.cfg_obj.base_clearance
         yaw = float(self._rng.uniform(-math.pi, math.pi))
+        reset_lin_vel = (
+            self._sample_range_vec(self.cfg_obj.domain_randomization.reset_lin_vel_ranges, ("x", "y", "z"))
+            if self.cfg_obj.domain_randomization.enabled
+            else np.zeros(3, dtype=np.float32)
+        )
+        reset_ang_vel = (
+            self._sample_range_vec(self.cfg_obj.domain_randomization.reset_ang_vel_ranges, ("x", "y", "z"))
+            if self.cfg_obj.domain_randomization.enabled
+            else np.zeros(3, dtype=np.float32)
+        )
         self.context.reset_batch_link_state(
             env_id,
             self.cfg_obj.robot_name,
             self.cfg_obj.base_link,
             [float(spawn[0]), float(spawn[1]), float(base_z)],
             _quat_from_yaw(yaw).tolist(),
-            self._rng.uniform(-0.05, 0.05, 3).tolist(),
-            self._rng.uniform(-0.05, 0.05, 3).tolist(),
+            reset_lin_vel.tolist(),
+            reset_ang_vel.tolist(),
         )
+        if self.cfg_obj.domain_randomization.enabled:
+            lo, hi = self.cfg_obj.domain_randomization.encoder_bias_range
+            self._encoder_bias[env_id] = self._rng.uniform(lo, hi, self.num_actions).astype(np.float32)
+        else:
+            self._encoder_bias[env_id] = 0.0
         for joint_name, default_pos in zip(self.joint_names, self.default_joint_pos, strict=True):
             self.context.reset_batch_joint_state(
                 env_id,
@@ -407,8 +488,81 @@ class GobotVelocityEnv:
         self._foot_peak_height[env_id] = 0.0
         self._foot_velocities[env_id] = 0.0
         self._previous_foot_positions[env_id] = 0.0
+        self._foot_contact_history[env_id] = 0.0
+        self._foot_force_history[env_id] = 0.0
+        self._foot_history_cursor[env_id] = 0
+        self._first_contact[env_id] = 0.0
+        self._landing_force[env_id] = 0.0
+        self._terrain_normal_error[env_id] = 0.0
+        self._illegal_contact_counts[env_id] = 0.0
+        self._self_collision_counts[env_id] = 0.0
+        self._shank_collision_counts[env_id] = 0.0
+        self._trunk_head_collision_counts[env_id] = 0.0
+        self._reset_push_timer(env_id)
         self._reset_reasons[env_id] = reason
         self.command_manager.reset(np.asarray([env_id], dtype=np.int64))
+
+    def _sample_range_vec(self, ranges: Mapping[str, tuple[float, float]], names: Sequence[str]) -> np.ndarray:
+        values = []
+        for name in names:
+            lo, hi = ranges.get(name, (0.0, 0.0))
+            values.append(float(self._rng.uniform(lo, hi)))
+        return np.asarray(values, dtype=np.float32)
+
+    def _reset_push_timer(self, env_id: int) -> None:
+        if not self.cfg_obj.push_enabled:
+            self._push_time_left[env_id] = math.inf
+            return
+        lo, hi = self.cfg_obj.push_interval_range_s
+        self._push_time_left[env_id] = float(self._rng.uniform(lo, hi))
+
+    def _maybe_apply_push(self, env_id: int) -> None:
+        if not self.cfg_obj.push_enabled:
+            return
+        self._push_time_left[env_id] -= self.step_dt
+        if self._push_time_left[env_id] > 0.0:
+            return
+        state = self._runtime_state(env_id)
+        position = _as_vec(state.base.get("global_transform", {}).get("position"), 3)
+        orientation = _quat(state.base)
+        linear_velocity = _as_vec(state.base.get("linear_velocity"), 3)
+        angular_velocity = _as_vec(state.base.get("angular_velocity"), 3)
+        linear_velocity += self._sample_range_vec(self.cfg_obj.push_velocity_ranges, ("x", "y", "z"))
+        angular_velocity += self._sample_range_vec(self.cfg_obj.push_velocity_ranges, ("roll", "pitch", "yaw"))
+        self.context.reset_batch_link_state(
+            env_id,
+            self.cfg_obj.robot_name,
+            self.cfg_obj.base_link,
+            position.tolist(),
+            orientation.tolist(),
+            linear_velocity.tolist(),
+            angular_velocity.tolist(),
+        )
+        self._push_count[env_id] += 1
+        self._reset_push_timer(env_id)
+
+    def _update_terrain_curriculum_limit(
+        self,
+        env_id: int,
+        state: VelocityRuntimeState,
+        reset_reason: int,
+    ) -> None:
+        if not self.cfg_obj.terrain_curriculum:
+            self._terrain_curriculum_limits[env_id] = 1.0
+            return
+        base_pos = _as_vec(state.base.get("global_transform", {}).get("position"), 3)
+        distance = float(np.linalg.norm(base_pos[:2] - self._episode_start_xy[env_id]))
+        survival = float(self.episode_length_buf[env_id]) / max(float(self.max_episode_length), 1.0)
+        level_step = 1.0 / max(float(self._spawn_order.size - 1), 1.0)
+        commanded_speed = float(np.linalg.norm(self.command_manager.command_b[env_id, :2]))
+        expected_distance = max(0.25, commanded_speed * survival * self.max_episode_length * self.step_dt * 0.5)
+
+        level = float(self._terrain_curriculum_limits[env_id])
+        if reset_reason == 2 or survival > 0.75 or distance > expected_distance:
+            level += level_step
+        elif reset_reason == 1 and survival < 0.25:
+            level -= level_step
+        self._terrain_curriculum_limits[env_id] = float(np.clip(level, 0.0, 1.0))
 
     def _apply_action(self, env_id: int, action: np.ndarray) -> None:
         target_pos = self.default_joint_pos + self.action_scale * action
@@ -438,7 +592,7 @@ class GobotVelocityEnv:
         base_lin_vel = _rotate_vec_by_quat_inv(_as_vec(state.base.get("linear_velocity"), 3), base_quat)
         base_ang_vel = _rotate_vec_by_quat_inv(_as_vec(state.base.get("angular_velocity"), 3), base_quat)
         projected_gravity = _rotate_vec_by_quat_inv(np.array([0.0, 0.0, -1.0], dtype=np.float32), base_quat)
-        joint_pos, joint_vel = self._joint_values(state)
+        joint_pos, joint_vel = self._joint_values(state, env_id=env_id, apply_encoder_bias=True)
         joint_pos_rel = joint_pos - self.default_joint_pos
         height_scan = self._height_scan(state)
         parts = [
@@ -474,13 +628,21 @@ class GobotVelocityEnv:
             return values
         return values + self._rng.uniform(noise_range[0], noise_range[1], size=values.shape).astype(np.float32)
 
-    def _joint_values(self, state: VelocityRuntimeState) -> tuple[np.ndarray, np.ndarray]:
+    def _joint_values(
+        self,
+        state: VelocityRuntimeState,
+        *,
+        env_id: int | None = None,
+        apply_encoder_bias: bool = False,
+    ) -> tuple[np.ndarray, np.ndarray]:
         pos = np.zeros(self.num_actions, dtype=np.float32)
         vel = np.zeros(self.num_actions, dtype=np.float32)
         for index, joint_name in enumerate(self.joint_names):
             joint = state.joints.get(joint_name, {})
             pos[index] = float(joint.get("position", self.default_joint_pos[index]))
             vel[index] = float(joint.get("velocity", 0.0))
+        if apply_encoder_bias and env_id is not None:
+            pos += self._encoder_bias[env_id]
         return pos, vel
 
     def _height_scan(self, state: VelocityRuntimeState) -> np.ndarray:
@@ -539,6 +701,8 @@ class GobotVelocityEnv:
         foot_positions = self._foot_positions(state)
         forces = np.zeros((self._foot_count, 3), dtype=np.float32)
         for contact in state.contacts:
+            if not self._robot_contact_links(contact):
+                continue
             position = _as_vec(contact.get("position"), 3)
             if foot_positions.size == 0:
                 continue
@@ -548,6 +712,88 @@ class GobotVelocityEnv:
             forces[index] += _as_vec(contact.get("force"), 3)
         return forces
 
+    def _update_contact_summary(self, env_id: int, state: VelocityRuntimeState) -> None:
+        summary = self._contact_summary(state)
+        self._illegal_contact_counts[env_id] = summary["illegal"]
+        self._self_collision_counts[env_id] = summary["self_collision"]
+        self._shank_collision_counts[env_id] = summary["shank"]
+        self._trunk_head_collision_counts[env_id] = summary["trunk_head"]
+
+    def _contact_summary(self, state: VelocityRuntimeState) -> dict[str, float]:
+        cfg = self.cfg_obj.illegal_contact
+        if not cfg.enabled:
+            return {
+                "illegal": 0.0,
+                "self_collision": 0.0,
+                "shank": 0.0,
+                "trunk_head": 0.0,
+            }
+        summary = {
+            "illegal": 0.0,
+            "self_collision": 0.0,
+            "shank": 0.0,
+            "trunk_head": 0.0,
+        }
+        for contact in state.contacts:
+            links = self._robot_contact_links(contact)
+            if not links:
+                continue
+            magnitude = self._contact_force_magnitude(contact)
+            robot_name = str(contact.get("robot_name") or "")
+            other_robot = str(contact.get("other_robot_name") or "")
+            is_self_collision = bool(robot_name == self.cfg_obj.robot_name and other_robot == self.cfg_obj.robot_name)
+            if is_self_collision and magnitude >= cfg.self_collision_force_threshold:
+                summary["self_collision"] += 1.0
+                continue
+            if magnitude < cfg.ground_force_threshold:
+                continue
+            for link_name in links:
+                if cfg.terminate_on_thigh and self._matches_any(link_name, cfg.thigh_link_patterns):
+                    summary["illegal"] += 1.0
+                if self._matches_any(link_name, cfg.shank_link_patterns) and not self._contact_near_any_foot(state, contact):
+                    summary["shank"] += 1.0
+                if self._matches_any(link_name, cfg.trunk_head_link_patterns):
+                    summary["trunk_head"] += 1.0
+        return summary
+
+    def _robot_contact_links(self, contact: Mapping[str, Any]) -> list[str]:
+        links = []
+        if str(contact.get("robot_name") or "") == self.cfg_obj.robot_name:
+            link_name = str(contact.get("link_name") or "")
+            if link_name:
+                links.append(link_name)
+        if str(contact.get("other_robot_name") or "") == self.cfg_obj.robot_name:
+            link_name = str(contact.get("other_link_name") or "")
+            if link_name:
+                links.append(link_name)
+        return links
+
+    @staticmethod
+    def _contact_force_magnitude(contact: Mapping[str, Any]) -> float:
+        normal_force = contact.get("normal_force")
+        if normal_force is not None:
+            try:
+                magnitude = abs(float(normal_force))
+                if magnitude > 0.0:
+                    return magnitude
+            except (TypeError, ValueError):
+                pass
+        return float(np.linalg.norm(_as_vec(contact.get("force"), 3)))
+
+    def _contact_near_any_foot(self, state: VelocityRuntimeState, contact: Mapping[str, Any]) -> bool:
+        foot_positions = self._foot_positions(state)
+        if foot_positions.size == 0:
+            return False
+        position = _as_vec(contact.get("position"), 3)
+        return bool(np.min(np.linalg.norm(foot_positions - position.reshape(1, 3), axis=1)) <= 0.18)
+
+    @staticmethod
+    def _matches_any(name: str, patterns: Sequence[str]) -> bool:
+        for pattern in patterns:
+            if re.fullmatch(pattern, name) or re.search(pattern, name):
+                return True
+        return False
+
     def _update_foot_history(self, env_id: int, state: VelocityRuntimeState) -> None:
         positions = self._foot_positions(state)
         if not np.any(self._previous_foot_positions[env_id]):
@@ -556,6 +802,14 @@ class GobotVelocityEnv:
         self._previous_foot_positions[env_id] = positions
         contacts = self._foot_contacts(state)
         heights = self._foot_heights(state)
+        forces = self._foot_contact_forces(state)
+        first_contact = (contacts > 0.0) & (self._last_foot_contact[env_id] <= 0.0)
+        self._first_contact[env_id] = first_contact.astype(np.float32)
+        self._landing_force[env_id] = np.linalg.norm(forces, axis=1) * self._first_contact[env_id]
+        cursor = int(self._foot_history_cursor[env_id] % self._contact_history_length)
+        self._foot_contact_history[env_id, cursor] = contacts
+        self._foot_force_history[env_id, cursor] = forces
+        self._foot_history_cursor[env_id] = (cursor + 1) % self._contact_history_length
         in_air = contacts <= 0.0
         self._foot_air_time[env_id] = np.where(in_air, self._foot_air_time[env_id] + self.step_dt, 0.0)
         self._foot_peak_height[env_id] = np.where(in_air, np.maximum(self._foot_peak_height[env_id], heights), self._foot_peak_height[env_id])
@@ -572,8 +826,7 @@ class GobotVelocityEnv:
 
         lin_error = float(np.sum(np.square(command[:2] - base_lin_vel_b[:2])) + base_lin_vel_b[2] ** 2)
         ang_error = float((command[2] - base_ang_vel_b[2]) ** 2 + np.sum(np.square(base_ang_vel_b[:2])))
-        projected_gravity = _rotate_vec_by_quat_inv(np.array([0.0, 0.0, -1.0], dtype=np.float32), base_quat)
-        upright_error = float(np.sum(np.square(projected_gravity[:2])))
+        upright_error = self._upright_error(env_id, state, base_quat)
         action_rate = float(np.sum(np.square(action - self._previous_actions[env_id])))
         command_speed = float(np.linalg.norm(command[:2]) + abs(command[2]))
 
@@ -582,9 +835,8 @@ class GobotVelocityEnv:
         foot_clearance_cost = float(np.sum(np.abs(foot_heights - reward_cfg.foot_target_height) * np.linalg.norm(self._foot_velocities[env_id, :, :2], axis=1)))
         active = 1.0 if command_speed > reward_cfg.command_threshold else 0.0
         foot_slip = self._foot_slip_cost(env_id, foot_contacts) * active
-        forces = self._foot_contact_forces(state)
-        first_contact = (foot_contacts > 0.0) & (self._last_foot_contact[env_id] <= 0.0)
-        landing_force = float(np.sum(np.linalg.norm(forces, axis=1) * first_contact.astype(np.float32))) * active
+        first_contact = self._first_contact[env_id] > 0.0
+        landing_force = float(np.sum(self._landing_force[env_id])) * active
         swing_error = np.square(self._foot_peak_height[env_id] / max(reward_cfg.foot_target_height, 1.0e-6) - 1.0)
         swing_cost = float(np.sum(swing_error * first_contact.astype(np.float32))) * active
         self._foot_peak_height[env_id] = np.where(first_contact, 0.0, self._foot_peak_height[env_id])
@@ -603,6 +855,9 @@ class GobotVelocityEnv:
             "foot_swing_height": reward_cfg.foot_swing_height * swing_cost,
             "foot_slip": reward_cfg.foot_slip * foot_slip,
             "soft_landing": reward_cfg.soft_landing * landing_force,
+            "self_collisions": reward_cfg.self_collisions * float(self._self_collision_counts[env_id]),
+            "shank_collision": reward_cfg.shank_collision * float(self._shank_collision_counts[env_id]),
+            "trunk_head_collision": reward_cfg.trunk_head_collision * float(self._trunk_head_collision_counts[env_id]),
         }
         return float(sum(breakdown.values()) * self.step_dt), {key: float(value) for key, value in breakdown.items()}
 
@@ -639,13 +894,70 @@ class GobotVelocityEnv:
         vel_xy = np.linalg.norm(self._foot_velocities[env_id, :, :2], axis=1)
         return float(np.sum(np.square(vel_xy) * foot_contacts))
 
+    def _upright_error(self, env_id: int, state: VelocityRuntimeState, base_quat: np.ndarray) -> float:
+        if self.cfg_obj.terrain_normal_upright.enabled and self._height_scan_dim > 0:
+            normal_w = self._terrain_normal_from_scan(state)
+            body_normal = _rotate_vec_by_quat_inv(normal_w, base_quat)
+            error = float(np.sum(np.square(body_normal[:2])))
+        else:
+            projected_gravity = _rotate_vec_by_quat_inv(np.array([0.0, 0.0, -1.0], dtype=np.float32), base_quat)
+            error = float(np.sum(np.square(projected_gravity[:2])))
+        self._terrain_normal_error[env_id] = error
+        return error
+
+    def _terrain_normal_from_scan(self, state: VelocityRuntimeState) -> np.ndarray:
+        sensor_name = self.cfg_obj.observations.height_scan_sensor
+        if sensor_name is None:
+            return np.array([0.0, 0.0, 1.0], dtype=np.float32)
+        sensor = state.sensors.get(sensor_name)
+        if sensor is None:
+            return np.array([0.0, 0.0, 1.0], dtype=np.float32)
+        points = []
+        normals = []
+        for hit in sensor.get("hits", []):
+            if not hit.get("hit", False):
+                continue
+            point = _as_vec(hit.get("point"), 3)
+            if np.all(np.isfinite(point)):
+                points.append(point.astype(np.float64))
+            normal = _as_vec(hit.get("normal"), 3)
+            if np.all(np.isfinite(normal)) and np.linalg.norm(normal) > 1.0e-6:
+                normals.append(normal.astype(np.float64))
+
+        min_hits = max(3, int(self.cfg_obj.terrain_normal_upright.min_hit_count))
+        if len(points) >= min_hits:
+            cloud = np.asarray(points, dtype=np.float64)
+            centered = cloud - np.mean(cloud, axis=0)
+            try:
+                _, _, vh = np.linalg.svd(centered, full_matrices=False)
+                normal = vh[-1]
+                if normal[2] < 0.0:
+                    normal = -normal
+                length = np.linalg.norm(normal)
+                if length > 1.0e-6 and np.all(np.isfinite(normal)):
+                    return (normal / length).astype(np.float32)
+            except np.linalg.LinAlgError:
+                pass
+        if normals:
+            normal = np.mean(np.asarray(normals, dtype=np.float64), axis=0)
+            if normal[2] < 0.0:
+                normal = -normal
+            length = np.linalg.norm(normal)
+            if length > 1.0e-6 and np.all(np.isfinite(normal)):
+                return (normal / length).astype(np.float32)
+        return np.array([0.0, 0.0, 1.0], dtype=np.float32)
+
     def _base_clearance(self, state: VelocityRuntimeState) -> float:
         position = _as_vec(state.base.get("global_transform", {}).get("position"), 3)
         return float(position[2] - self._terrain_height(position[0], position[1]))
 
-    def _terminated(self, state: VelocityRuntimeState) -> bool:
+    def _terminated(self, env_id: int, state: VelocityRuntimeState) -> bool:
         if self.cfg_obj.terrain_type == "rough":
-            return self._base_clearance(state) < self.cfg_obj.min_base_clearance
+            if self._base_clearance(state) < self.cfg_obj.min_base_clearance:
+                return True
+            if self.cfg_obj.illegal_contact.enabled and self._illegal_contact_counts[env_id] > 0.0:
+                return True
+            return False
         roll, pitch = _quat_to_rp(_quat(state.base))
         return bool(self._base_clearance(state) < self.cfg_obj.min_base_clearance or abs(roll) > math.radians(70.0) or abs(pitch) > math.radians(70.0))
 
