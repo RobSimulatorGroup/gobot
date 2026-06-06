@@ -2,29 +2,29 @@ from pathlib import Path
 
 import numpy as np
 
-import gobot
+from gobot.rl.tasks import velocity
 
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
 
 
 def test_velocity_task_factories():
-    go1_rough = gobot.rl.velocity_task_cfg("go1_rough", project_path="/tmp/go1")
+    go1_rough = velocity.velocity_task_cfg("go1_rough", project_path="/tmp/go1")
     assert go1_rough.name == "unitree_go1_rough_velocity"
     assert go1_rough.robot_name == "go1"
     assert go1_rough.observations.height_scan_sensor == "terrain_scan"
 
-    go1_flat = gobot.rl.velocity_task_cfg("go1_flat", project_path="/tmp/go1")
+    go1_flat = velocity.velocity_task_cfg("go1_flat", project_path="/tmp/go1")
     assert go1_flat.name == "unitree_go1_flat_velocity"
     assert go1_flat.observations.height_scan_sensor is None
     assert not go1_flat.terrain_curriculum
 
-    g1 = gobot.rl.velocity_task_cfg("g1_rough", project_path="/tmp/g1")
+    g1 = velocity.velocity_task_cfg("g1_rough", project_path="/tmp/g1")
     assert g1.name == "unitree_g1_rough_velocity"
     assert g1.robot_family == "g1"
 
     try:
-        gobot.rl.GobotVelocityEnv(g1, num_envs=1, device="cpu")
+        velocity.GobotVelocityEnv(g1, num_envs=1, device="cpu")
     except NotImplementedError:
         pass
     else:
@@ -34,9 +34,9 @@ def test_velocity_task_factories():
 def test_go1_velocity_env_reset_step_shapes():
     torch = __import__("torch")
 
-    cfg = gobot.rl.unitree_go1_rough_velocity_cfg(project_path=REPO_ROOT / "examples/go1")
+    cfg = velocity.unitree_go1_rough_velocity_cfg(project_path=REPO_ROOT / "examples/go1")
     cfg.observations.actor_noise = False
-    env = gobot.rl.GobotVelocityEnv(cfg, num_envs=1, device="cpu", seed=123, max_episode_length=4)
+    env = velocity.GobotVelocityEnv(cfg, num_envs=1, device="cpu", seed=123, max_episode_length=4)
     try:
         observations = env.get_observations()
         assert observations["actor"].shape == (1, env.num_obs)

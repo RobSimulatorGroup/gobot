@@ -10,7 +10,7 @@ from pathlib import Path
 import torch
 from rsl_rl.runners import OnPolicyRunner
 
-import gobot
+from gobot.rl.tasks.velocity import GobotVelocityEnv, rsl_rl_train_cfg, velocity_task_cfg
 
 
 def main() -> None:
@@ -35,7 +35,7 @@ def main() -> None:
         log_dir = project_path / log_dir
     os.makedirs(log_dir, exist_ok=True)
 
-    cfg = gobot.rl.velocity_task_cfg(args.task, project_path=project_path)
+    cfg = velocity_task_cfg(args.task, project_path=project_path)
     cfg.terrain_curriculum = bool(args.terrain_curriculum)
     cfg.observations.actor_noise = bool(args.obs_noise)
     cfg.terrain_curriculum_steps = max(1, int(args.iterations * 24 * 0.6))
@@ -45,7 +45,7 @@ def main() -> None:
     print(f"Envs: {args.num_envs}")
     print(f"Log dir: {log_dir}")
 
-    env = gobot.rl.GobotVelocityEnv(
+    env = GobotVelocityEnv(
         cfg,
         num_envs=args.num_envs,
         device=args.device,
@@ -54,7 +54,7 @@ def main() -> None:
     )
     print(f"Obs actor/critic/actions: {env.num_obs}/{env.num_privileged_obs}/{env.num_actions}")
 
-    train_cfg = gobot.rl.rsl_rl_train_cfg(
+    train_cfg = rsl_rl_train_cfg(
         experiment_name=cfg.name,
         max_iterations=args.iterations,
         save_interval=50,

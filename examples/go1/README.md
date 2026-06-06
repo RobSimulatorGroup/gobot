@@ -6,8 +6,7 @@ This example keeps the robot project self-contained:
 - `assets/xml/go1_scene.xml` is the MJCF scene that includes `go1.xml`.
 - `go1.jscn` is the Gobot robot scene imported from `go1.xml`.
 - `go1_scene.jscn` is the Gobot scene that references `go1.jscn`.
-- `train/go1_env.py` is the rsl_rl-compatible environment backed by Gobot simulation.
-- `train/go1_train.py` trains a policy into `policies/`.
+- `train/go1_velocity_train.py` trains the Gobot-native velocity task into `policies/`.
 - `scripts/go1.py` is attached to the `go1_scene.jscn` root and plays a trained policy in `gobot_editor`.
 - `policies/go1.onnx` is the default lightweight playback policy.
 - `policies/go1.pt` is the training checkpoint fallback for environments with `gobot[train]`.
@@ -28,11 +27,33 @@ gobot.import_mjcf_scene(
 )
 ```
 
-Train:
+Train from the Go1 project root:
 
 ```bash
-cd /home/wqq/gobot/examples/go1/train
-python3 go1_train.py --num_envs 256 --iterations 1500 --log_dir logs/go1
+cd /home/wqq/gobot/examples/go1
+PYTHONNOUSERSITE=1 \
+PYTHONPATH=/home/wqq/gobot/build/python \
+/home/wqq/miniconda3/envs/ppo/bin/python train/go1_velocity_train.py \
+  --task go1_rough \
+  --num-envs 256 \
+  --iterations 1500 \
+  --log-dir logs/go1_velocity \
+  --policy-out policies/go1_velocity.pt
+```
+
+Resume from the latest checkpoint in the log directory:
+
+```bash
+cd /home/wqq/gobot/examples/go1
+PYTHONNOUSERSITE=1 \
+PYTHONPATH=/home/wqq/gobot/build/python \
+/home/wqq/miniconda3/envs/ppo/bin/python train/go1_velocity_train.py \
+  --task go1_rough \
+  --num-envs 256 \
+  --iterations 1500 \
+  --log-dir logs/go1_velocity \
+  --policy-out policies/go1_velocity.pt \
+  --resume
 ```
 
 Export a trained checkpoint for lightweight editor playback:

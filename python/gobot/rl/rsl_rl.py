@@ -5,7 +5,7 @@ from __future__ import annotations
 from dataclasses import asdict, dataclass, field, is_dataclass
 from typing import Any, Literal, Mapping, Tuple
 
-from . import GobotOnPolicyRunner, RslRlVecEnvWrapper
+from .manager import GobotOnPolicyRunner, RslRlVecEnvWrapper
 
 
 @dataclass
