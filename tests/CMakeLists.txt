@@ -75,6 +75,23 @@ package_add_test(test_editor_type_icons
         ${PROJECT_SOURCE_DIR}/src/gobot/editor/imgui/type_icons.cpp)
 target_include_directories(test_editor_type_icons PRIVATE
         ${PROJECT_SOURCE_DIR}/3rdparty/imgui_extension)
+add_executable(test_python_panel
+        editor/test_python_panel.cpp)
+target_compile_options(test_python_panel PUBLIC "${GOBOT_COMPILE_OPTIONS}")
+target_include_directories(test_python_panel PRIVATE
+        ${PROJECT_SOURCE_DIR}/3rdparty/ImGuiColorTextEdit
+        ${PROJECT_SOURCE_DIR}/3rdparty/imgui
+        ${PROJECT_SOURCE_DIR}/3rdparty/imgui_extension)
+target_link_libraries(test_python_panel gtest gmock gobot_editor_runtime)
+if (MSVC)
+    target_link_libraries(test_python_panel -Wl,--whole-archive gobot_test_support)
+else ()
+    target_link_libraries(test_python_panel -Wl,--no-as-needed gobot_test_support)
+endif ()
+gtest_discover_tests(test_python_panel
+        EXTRA_ARGS --gtest_color=yes
+        WORKING_DIRECTORY "${PROJECT_SOURCE_DIR}")
+set_target_properties(test_python_panel PROPERTIES FOLDER tests)
 add_executable(test_scene_play_session
         editor/test_scene_play_session.cpp
         ${PROJECT_SOURCE_DIR}/src/gobot/editor/scene_play_session.cpp
