@@ -44,7 +44,7 @@ struct GOBOT_EXPORT TerrainMeshPatch {
 enum class TerrainColorMode {
     SurfaceColor,
     HeightRamp,
-    MjLab,
+    Palette,
 };
 
 class GOBOT_EXPORT Terrain3D : public Node3D {

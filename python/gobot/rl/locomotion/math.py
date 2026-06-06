@@ -1,4 +1,4 @@
-"""Math and scene-value helpers for velocity tasks."""
+"""Math and scene-value helpers for locomotion tasks."""
 
 from __future__ import annotations
 
@@ -6,6 +6,7 @@ import math
 from typing import Any, Mapping, Sequence
 
 import numpy as np
+
 
 def _json_vec(value: object, size: int) -> np.ndarray:
     if isinstance(value, dict):

@@ -5626,7 +5626,7 @@
                         }
                     }
                 ],
-                "color_mode": "MjLab",
+                "color_mode": "Palette",
                 "conaffinity": 1,
                 "condim": 3,
                 "contype": 1,

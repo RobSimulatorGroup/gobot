@@ -131,7 +131,7 @@ Color HsvToRgb(RealType hue, RealType saturation, RealType value, RealType alpha
     };
 }
 
-Color MjLabHeightColor(RealType elevation) {
+Color PaletteHeightColor(RealType elevation) {
     const RealType e = std::clamp(elevation, static_cast<RealType>(0.0), static_cast<RealType>(1.0));
     return HsvToRgb(static_cast<RealType>(0.5) - e * static_cast<RealType>(0.45),
                    static_cast<RealType>(0.6) - e * static_cast<RealType>(0.2),
@@ -158,7 +158,7 @@ void AppendHeightFieldMesh(std::vector<Vector3>& vertices,
                 const RealType elevation = index < heightfield.normalized_elevation.size()
                         ? heightfield.normalized_elevation[index]
                         : (index < heightfield.heights.size() ? heightfield.heights[index] : 0.0);
-                colors->push_back(MjLabHeightColor(elevation));
+                colors->push_back(PaletteHeightColor(elevation));
             }
         }
     }
@@ -561,7 +561,7 @@ void Terrain3D::RebuildRenderMesh() const {
     std::vector<Vector3> normals;
     std::vector<Color> colors;
     std::vector<Color>* per_vertex_colors =
-            (color_mode_ == TerrainColorMode::MjLab) ? &colors : nullptr;
+            (color_mode_ == TerrainColorMode::Palette) ? &colors : nullptr;
     for (const TerrainBox& box : boxes_) {
         AppendBoxMesh(vertices, indices, normals, per_vertex_colors, box);
     }

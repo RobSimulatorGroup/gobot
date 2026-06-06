@@ -1613,7 +1613,7 @@ class NodeScript:
     py::enum_<TerrainColorMode>(module, "TerrainColorMode")
             .value("SurfaceColor", TerrainColorMode::SurfaceColor)
             .value("HeightRamp", TerrainColorMode::HeightRamp)
-            .value("MjLab", TerrainColorMode::MjLab)
+            .value("Palette", TerrainColorMode::Palette)
             .export_values();
 
     auto node_class = py::class_<PyNodeHandle>(module, "Node");

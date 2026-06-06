@@ -71,7 +71,8 @@ it does not need the rsl_rl training stack. Training remains a direct Python
 MuJoCo + rsl_rl workflow. It contains:
 
 - `train/go1_velocity_train.py`: the rsl_rl PPO training entry point.
-- `gobot.rl.tasks.velocity`: the vectorized Gobot velocity environment.
+- `train/go1_velocity_env.py`: the Go1-owned vectorized Gobot velocity environment.
+- `train/go1_velocity_cfg.py`: Go1 joints, rewards, PPO, command, and terrain curriculum settings.
 - `go1_scene.xml`: an MJCF reference scene with ground and position actuators.
 - `go1.xml` and `assets/`: the robot MJCF and meshes used by training.
 - `policies/go1.onnx`: lightweight policy playback graph for the editor.

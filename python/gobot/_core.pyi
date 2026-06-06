@@ -44,7 +44,7 @@ class LinkRole(Enum):
 class TerrainColorMode(Enum):
     SurfaceColor: ClassVar[TerrainColorMode]
     HeightRamp: ClassVar[TerrainColorMode]
-    MjLab: ClassVar[TerrainColorMode]
+    Palette: ClassVar[TerrainColorMode]
 
 
 class JointControllerGains:

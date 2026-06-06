@@ -81,9 +81,9 @@ TEST_F(TestTerrain3D, stores_primitives_heightfields_and_spawn_origins) {
     gobot::Object::Delete(terrain);
 }
 
-TEST_F(TestTerrain3D, mjlab_render_mesh_uses_authored_colors) {
+TEST_F(TestTerrain3D, render_mesh_uses_authored_colors) {
     auto* terrain = gobot::Object::New<gobot::Terrain3D>();
-    terrain->SetColorMode(gobot::TerrainColorMode::MjLab);
+    terrain->SetColorMode(gobot::TerrainColorMode::Palette);
 
     gobot::TerrainBox box;
     box.center = {0.0, 0.0, -0.5};
@@ -153,7 +153,7 @@ TEST_F(TestTerrain3D, round_trips_through_packed_scene) {
     auto* terrain = gobot::Object::New<gobot::Terrain3D>();
     terrain->SetName("terrain");
     terrain->SetSurfaceColor({0.2f, 0.4f, 0.6f, 1.0f});
-    terrain->SetColorMode(gobot::TerrainColorMode::MjLab);
+    terrain->SetColorMode(gobot::TerrainColorMode::Palette);
     terrain->SetHeightLowColor({0.1f, 0.2f, 0.3f, 1.0f});
     terrain->SetHeightHighColor({0.8f, 0.7f, 0.2f, 1.0f});
     terrain->SetHeightRangeMin(-0.25);
@@ -203,7 +203,7 @@ TEST_F(TestTerrain3D, round_trips_through_packed_scene) {
     EXPECT_FLOAT_EQ(loaded_terrain->GetHeightFields()[0].z_offset, -0.1);
     EXPECT_FLOAT_EQ(loaded_terrain->GetMeshPatches()[0].color.green(), 0.6f);
     EXPECT_FLOAT_EQ(loaded_terrain->GetSurfaceColor().blue(), 0.6f);
-    EXPECT_EQ(loaded_terrain->GetColorMode(), gobot::TerrainColorMode::MjLab);
+    EXPECT_EQ(loaded_terrain->GetColorMode(), gobot::TerrainColorMode::Palette);
     EXPECT_FLOAT_EQ(loaded_terrain->GetHeightLowColor().green(), 0.2f);
     EXPECT_FLOAT_EQ(loaded_terrain->GetHeightHighColor().red(), 0.8f);
     EXPECT_FLOAT_EQ(loaded_terrain->GetHeightRangeMin(), -0.25);

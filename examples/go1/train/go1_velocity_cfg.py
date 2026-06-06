@@ -1,4 +1,4 @@
-"""Configuration for Gobot velocity locomotion tasks."""
+"""Configuration for the Go1 velocity training example."""
 
 from __future__ import annotations
 
@@ -8,6 +8,8 @@ from pathlib import Path
 from typing import Any, Mapping
 
 import numpy as np
+
+from gobot.rl.locomotion import UniformVelocityCommandCfg, VelocityCommandStage
 
 GO1_JOINT_NAMES: tuple[str, ...] = (
     "FR_hip_joint",
@@ -43,38 +45,6 @@ GO1_DEFAULT_JOINT_POS = np.array(
 )
 
 GO1_FOOT_NAMES: tuple[str, ...] = ("FR", "FL", "RR", "RL")
-
-
-@dataclass
-class UniformVelocityCommandRanges:
-    lin_vel_x: tuple[float, float] = (-1.0, 1.0)
-    lin_vel_y: tuple[float, float] = (-1.0, 1.0)
-    ang_vel_z: tuple[float, float] = (-0.5, 0.5)
-    heading: tuple[float, float] | None = (-math.pi, math.pi)
-
-
-@dataclass
-class UniformVelocityCommandCfg:
-    """Subset of MJLab's velocity command config used by Gobot tasks."""
-
-    name: str = "twist"
-    resampling_time_range: tuple[float, float] = (3.0, 8.0)
-    rel_standing_envs: float = 0.1
-    rel_heading_envs: float = 0.3
-    rel_world_envs: float = 0.0
-    rel_forward_envs: float = 0.2
-    heading_command: bool = True
-    heading_control_stiffness: float = 0.5
-    init_velocity_prob: float = 0.0
-    ranges: UniformVelocityCommandRanges = field(default_factory=UniformVelocityCommandRanges)
-
-
-@dataclass
-class VelocityStage:
-    step: int
-    lin_vel_x: tuple[float, float] | None = None
-    lin_vel_y: tuple[float, float] | None = None
-    ang_vel_z: tuple[float, float] | None = None
 
 
 @dataclass
@@ -202,11 +172,10 @@ def _default_push_velocity_ranges() -> Mapping[str, tuple[float, float]]:
 
 
 @dataclass
-class VelocityTaskCfg:
-    """Gobot-native equivalent of MJLab velocity task config."""
+class Go1VelocityCfg:
+    """Go1 velocity task config for this example project."""
 
-    name: str = "unitree_go1_rough_velocity"
-    robot_family: str = "go1"
+    name: str = "gobot_go1_velocity"
     terrain_type: str = "rough"
     project_path: str | Path = "examples/go1"
     scene_path: str = "res://go1_scene.jscn"
@@ -238,20 +207,20 @@ class VelocityTaskCfg:
     push_velocity_ranges: Mapping[str, tuple[float, float]] = field(default_factory=_default_push_velocity_ranges)
     observations: VelocityObservationCfg = field(default_factory=VelocityObservationCfg)
     command: UniformVelocityCommandCfg = field(default_factory=UniformVelocityCommandCfg)
-    command_curriculum: tuple[VelocityStage, ...] = (
-        VelocityStage(step=0, lin_vel_x=(-1.0, 1.0), ang_vel_z=(-0.5, 0.5)),
-        VelocityStage(step=5000 * 24, lin_vel_x=(-1.5, 2.0), ang_vel_z=(-0.7, 0.7)),
-        VelocityStage(step=10000 * 24, lin_vel_x=(-2.0, 3.0)),
+    command_curriculum: tuple[VelocityCommandStage, ...] = (
+        VelocityCommandStage(step=0, lin_vel_x=(-1.0, 1.0), ang_vel_z=(-0.5, 0.5)),
+        VelocityCommandStage(step=5000 * 24, lin_vel_x=(-1.5, 2.0), ang_vel_z=(-0.7, 0.7)),
+        VelocityCommandStage(step=10000 * 24, lin_vel_x=(-2.0, 3.0)),
     )
     rewards: VelocityRewardCfg = field(default_factory=VelocityRewardCfg)
 
 
-def unitree_go1_rough_velocity_cfg(
+def go1_rough_velocity_cfg(
     *,
     project_path: str | Path = "examples/go1",
     play: bool = False,
-) -> VelocityTaskCfg:
-    cfg = VelocityTaskCfg(project_path=project_path)
+) -> Go1VelocityCfg:
+    cfg = Go1VelocityCfg(project_path=project_path)
     if play:
         cfg.episode_length_s = float(1_000_000_000)
         cfg.terrain_curriculum = False
@@ -261,13 +230,13 @@ def unitree_go1_rough_velocity_cfg(
     return cfg
 
 
-def unitree_go1_flat_velocity_cfg(
+def go1_flat_velocity_cfg(
     *,
     project_path: str | Path = "examples/go1",
     play: bool = False,
-) -> VelocityTaskCfg:
-    cfg = unitree_go1_rough_velocity_cfg(project_path=project_path, play=play)
-    cfg.name = "unitree_go1_flat_velocity"
+) -> Go1VelocityCfg:
+    cfg = go1_rough_velocity_cfg(project_path=project_path, play=play)
+    cfg.name = "gobot_go1_flat_velocity"
     cfg.terrain_type = "flat"
     cfg.observations.height_scan_sensor = None
     cfg.terrain_curriculum = False
@@ -277,63 +246,17 @@ def unitree_go1_flat_velocity_cfg(
     return cfg
 
 
-def unitree_g1_rough_velocity_cfg(
-    *,
-    project_path: str | Path = "examples/g1",
-    play: bool = False,
-) -> VelocityTaskCfg:
-    del play
-    return VelocityTaskCfg(
-        name="unitree_g1_rough_velocity",
-        robot_family="g1",
-        project_path=project_path,
-        scene_path="res://g1_scene.jscn",
-        terrain_scene_path="terrain_scene.jscn",
-        robot_name="g1",
-        base_link="torso_link",
-        joint_names=(),
-        default_joint_pos=(),
-        foot_names=("left", "right"),
-        foot_link_names=("left_ankle_roll_link", "right_ankle_roll_link"),
-        action_scale=0.25,
-        kp=40.0,
-        kd=1.0,
-    )
-
-
-def unitree_g1_flat_velocity_cfg(
-    *,
-    project_path: str | Path = "examples/g1",
-    play: bool = False,
-) -> VelocityTaskCfg:
-    cfg = unitree_g1_rough_velocity_cfg(project_path=project_path, play=play)
-    cfg.name = "unitree_g1_flat_velocity"
-    cfg.terrain_type = "flat"
-    cfg.observations.height_scan_sensor = None
-    cfg.terrain_curriculum = False
-    cfg.terrain_normal_upright.enabled = False
-    cfg.illegal_contact.enabled = False
-    return cfg
-
-
-def velocity_task_cfg(name: str, *, project_path: str | Path | None = None, play: bool = False) -> VelocityTaskCfg:
+def go1_velocity_cfg(name: str, *, project_path: str | Path | None = None, play: bool = False) -> Go1VelocityCfg:
     factories = {
-        "go1_rough": unitree_go1_rough_velocity_cfg,
-        "unitree_go1_rough": unitree_go1_rough_velocity_cfg,
-        "unitree_go1_rough_velocity": unitree_go1_rough_velocity_cfg,
-        "go1_flat": unitree_go1_flat_velocity_cfg,
-        "unitree_go1_flat": unitree_go1_flat_velocity_cfg,
-        "unitree_go1_flat_velocity": unitree_go1_flat_velocity_cfg,
-        "g1_rough": unitree_g1_rough_velocity_cfg,
-        "unitree_g1_rough": unitree_g1_rough_velocity_cfg,
-        "unitree_g1_rough_velocity": unitree_g1_rough_velocity_cfg,
-        "g1_flat": unitree_g1_flat_velocity_cfg,
-        "unitree_g1_flat": unitree_g1_flat_velocity_cfg,
-        "unitree_g1_flat_velocity": unitree_g1_flat_velocity_cfg,
+        "go1_rough": go1_rough_velocity_cfg,
+        "go1_velocity": go1_rough_velocity_cfg,
+        "gobot_go1_velocity": go1_rough_velocity_cfg,
+        "go1_flat": go1_flat_velocity_cfg,
+        "gobot_go1_flat_velocity": go1_flat_velocity_cfg,
     }
     key = name.lower()
     if key not in factories:
-        raise ValueError(f"unknown velocity task {name!r}; expected one of {sorted(factories)}")
+        raise ValueError(f"unknown Go1 velocity task {name!r}; expected one of {sorted(factories)}")
     kwargs: dict[str, Any] = {"play": play}
     if project_path is not None:
         kwargs["project_path"] = project_path
@@ -396,19 +319,14 @@ __all__ = [
     "GO1_DEFAULT_JOINT_POS",
     "GO1_FOOT_NAMES",
     "GO1_JOINT_NAMES",
-    "UniformVelocityCommandCfg",
-    "UniformVelocityCommandRanges",
+    "Go1VelocityCfg",
     "VelocityObservationCfg",
     "VelocityRewardCfg",
     "VelocityDomainRandomizationCfg",
     "VelocityIllegalContactCfg",
-    "VelocityStage",
-    "VelocityTaskCfg",
     "VelocityTerrainNormalUprightCfg",
+    "go1_flat_velocity_cfg",
+    "go1_rough_velocity_cfg",
+    "go1_velocity_cfg",
     "rsl_rl_train_cfg",
-    "unitree_g1_flat_velocity_cfg",
-    "unitree_g1_rough_velocity_cfg",
-    "unitree_go1_flat_velocity_cfg",
-    "unitree_go1_rough_velocity_cfg",
-    "velocity_task_cfg",
 ]

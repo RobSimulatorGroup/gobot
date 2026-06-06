@@ -1,4 +1,4 @@
-"""Train Go1 with the Gobot-native MJLab-style velocity task."""
+"""Train the Go1 velocity policy with the Gobot runtime."""
 
 from __future__ import annotations
 
@@ -10,12 +10,17 @@ from pathlib import Path
 import torch
 from rsl_rl.runners import OnPolicyRunner
 
-from gobot.rl.tasks.velocity import GobotVelocityEnv, rsl_rl_train_cfg, velocity_task_cfg
+try:
+    from .go1_velocity_cfg import go1_velocity_cfg, rsl_rl_train_cfg
+    from .go1_velocity_env import Go1VelocityEnv
+except ImportError:
+    from go1_velocity_cfg import go1_velocity_cfg, rsl_rl_train_cfg
+    from go1_velocity_env import Go1VelocityEnv
 
 
 def main() -> None:
     parser = argparse.ArgumentParser()
-    parser.add_argument("--task", type=str, default="go1_rough", help="Velocity task name, e.g. go1_rough or go1_flat.")
+    parser.add_argument("--task", type=str, default="go1_rough", help="Go1 velocity task name: go1_rough or go1_flat.")
     parser.add_argument("--num-envs", "--num_envs", type=int, default=256)
     parser.add_argument("--iterations", type=int, default=1500)
     parser.add_argument("--max-episode-length", type=int, default=None)
@@ -35,7 +40,7 @@ def main() -> None:
         log_dir = project_path / log_dir
     os.makedirs(log_dir, exist_ok=True)
 
-    cfg = velocity_task_cfg(args.task, project_path=project_path)
+    cfg = go1_velocity_cfg(args.task, project_path=project_path)
     cfg.terrain_curriculum = bool(args.terrain_curriculum)
     cfg.observations.actor_noise = bool(args.obs_noise)
     cfg.terrain_curriculum_steps = max(1, int(args.iterations * 24 * 0.6))
@@ -45,7 +50,7 @@ def main() -> None:
     print(f"Envs: {args.num_envs}")
     print(f"Log dir: {log_dir}")
 
-    env = GobotVelocityEnv(
+    env = Go1VelocityEnv(
         cfg,
         num_envs=args.num_envs,
         device=args.device,
@@ -73,13 +78,13 @@ def main() -> None:
     runner.learn(num_learning_iterations=args.iterations, init_at_random_ep_len=checkpoint is None)
 
     final_path = log_dir / "model_final.pt"
-    runner.save(str(final_path), infos={"gobot_velocity": env.cfg})
+    runner.save(str(final_path), infos={"gobot_go1_velocity": env.cfg})
 
     policy_path = Path(args.policy_out)
     if not policy_path.is_absolute():
         policy_path = project_path / policy_path
     policy_path.parent.mkdir(parents=True, exist_ok=True)
-    runner.save(str(policy_path), infos={"gobot_velocity": env.cfg})
+    runner.save(str(policy_path), infos={"gobot_go1_velocity": env.cfg})
 
     print(f"Saved final model to {final_path}")
     print(f"Saved editor policy to {policy_path}")

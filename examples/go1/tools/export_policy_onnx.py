@@ -8,21 +8,26 @@ from pathlib import Path
 
 import torch
 
+from gobot.rl.locomotion import velocity_actor_observation_schema
 
-OBS_SIZE = 48
 ACTION_SIZE = 12
 HIDDEN_DIMS = (512, 256, 128)
+DEFAULT_OBS_SIZE = velocity_actor_observation_schema(ACTION_SIZE, 15).dim
 SCRIPT_DIR = Path(__file__).resolve().parent
 
 
 class Go1Policy(torch.nn.Module):
     def __init__(self, actor_state: dict[str, torch.Tensor]) -> None:
         super().__init__()
-        self.register_buffer("obs_mean", actor_state["obs_normalizer._mean"].to(dtype=torch.float32))
-        self.register_buffer("obs_std", actor_state["obs_normalizer._std"].to(dtype=torch.float32))
+        self.obs_size = _checkpoint_obs_dim(actor_state)
+        self.use_obs_normalizer = "obs_normalizer._mean" in actor_state
+        mean = actor_state.get("obs_normalizer._mean", torch.zeros((1, self.obs_size), dtype=torch.float32))
+        std = actor_state.get("obs_normalizer._std", torch.ones((1, self.obs_size), dtype=torch.float32))
+        self.register_buffer("obs_mean", mean.to(dtype=torch.float32))
+        self.register_buffer("obs_std", std.to(dtype=torch.float32).clamp_min(1.0e-6))
 
         layers: list[torch.nn.Module] = []
-        input_size = OBS_SIZE
+        input_size = self.obs_size
         for layer_index, output_size in enumerate((*HIDDEN_DIMS, ACTION_SIZE)):
             linear = torch.nn.Linear(input_size, output_size)
             state_index = layer_index * 2
@@ -35,8 +40,19 @@ class Go1Policy(torch.nn.Module):
         self.mlp = torch.nn.Sequential(*layers)
 
     def forward(self, obs: torch.Tensor) -> torch.Tensor:
-        obs = (obs - self.obs_mean) / (self.obs_std + 1.0e-2)
+        if self.use_obs_normalizer:
+            obs = (obs - self.obs_mean) / (self.obs_std + 1.0e-2)
         return self.mlp(obs)
+
+
+def _checkpoint_obs_dim(actor_state: dict[str, torch.Tensor]) -> int:
+    normalizer_mean = actor_state.get("obs_normalizer._mean")
+    if normalizer_mean is not None and len(normalizer_mean.shape) == 2:
+        return int(normalizer_mean.shape[1])
+    first_weight = actor_state.get("mlp.0.weight")
+    if first_weight is not None and len(first_weight.shape) == 2:
+        return int(first_weight.shape[1])
+    return DEFAULT_OBS_SIZE
 
 
 def export_policy(checkpoint_path: Path, output_path: Path) -> None:
@@ -45,7 +61,7 @@ def export_policy(checkpoint_path: Path, output_path: Path) -> None:
     policy = Go1Policy(actor_state).eval()
 
     output_path.parent.mkdir(parents=True, exist_ok=True)
-    dummy_obs = torch.zeros(1, OBS_SIZE, dtype=torch.float32)
+    dummy_obs = torch.zeros(1, policy.obs_size, dtype=torch.float32)
     torch.onnx.export(
         policy,
         dummy_obs,

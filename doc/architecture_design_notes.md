@@ -5,8 +5,8 @@ This document records the current design direction from the editor/rendering cle
 For the current MuJoCo CPU, MuJoCo Warp, and `gobot.rl` roadmap, see
 `doc/mujoco_rl_plan.md`.
 
-For the MJLab-style Terrain3D visual/physics parity work, see
-`doc/mjlab_terrain.md`.
+For Terrain3D visual/physics parity work, see the terrain-generation helpers in
+`python/gobot/terrain`.
 
 ## Long-Term Goal
 

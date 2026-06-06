@@ -218,7 +218,7 @@ def main():
     terrain_b = gobot.terrain.create_terrain_node(terrain_cfg, "terrain_b")
     assert isinstance(terrain_a, gobot.Terrain3D)
     assert terrain_a.heightfield_count == 1
-    assert terrain_a.color_mode == gobot.TerrainColorMode.MjLab
+    assert terrain_a.color_mode == gobot.TerrainColorMode.Palette
     assert terrain_a.get_heightfield_heights(0) == terrain_b.get_heightfield_heights(0)
     assert len(terrain_a.spawn_origins) == 1
     terrain_root = gobot.create_node("Node3D", "terrain_world")
@@ -227,7 +227,7 @@ def main():
     context.load_scene("res://gobot_python_binding_terrain_scene.jscn")
     loaded_terrain = context.root.find("terrain_a")
     assert loaded_terrain.type == "Terrain3D"
-    assert loaded_terrain.color_mode == gobot.TerrainColorMode.MjLab
+    assert loaded_terrain.color_mode == gobot.TerrainColorMode.Palette
     context.build_world(gobot.PhysicsBackendType.Null)
 
     context.load_scene("res://gobot_python_binding_cartpole.jscn")

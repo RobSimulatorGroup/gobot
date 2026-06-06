@@ -2,19 +2,53 @@
 
 from __future__ import annotations
 
+from dataclasses import dataclass, field
 import math
-from typing import TYPE_CHECKING, Sequence
+from typing import Any, Protocol, Sequence
 
 import numpy as np
 
-from .cfg import UniformVelocityCommandCfg
-from .math_utils import _as_vec, _quat, _quat_to_yaw, _rotate_vec_by_quat_inv, _wrap_to_pi
+from .math import _as_vec, _quat, _quat_to_yaw, _rotate_vec_by_quat_inv, _wrap_to_pi
 
-if TYPE_CHECKING:
-    from .env import GobotVelocityEnv, VelocityRuntimeState
+
+@dataclass
+class UniformVelocityCommandRanges:
+    lin_vel_x: tuple[float, float] = (-1.0, 1.0)
+    lin_vel_y: tuple[float, float] = (-1.0, 1.0)
+    ang_vel_z: tuple[float, float] = (-0.5, 0.5)
+    heading: tuple[float, float] | None = (-math.pi, math.pi)
+
+
+@dataclass
+class UniformVelocityCommandCfg:
+    name: str = "twist"
+    resampling_time_range: tuple[float, float] = (3.0, 8.0)
+    rel_standing_envs: float = 0.1
+    rel_heading_envs: float = 0.3
+    rel_world_envs: float = 0.0
+    rel_forward_envs: float = 0.2
+    heading_command: bool = True
+    heading_control_stiffness: float = 0.5
+    init_velocity_prob: float = 0.0
+    ranges: UniformVelocityCommandRanges = field(default_factory=UniformVelocityCommandRanges)
+
+
+@dataclass
+class VelocityCommandStage:
+    step: int
+    lin_vel_x: tuple[float, float] | None = None
+    lin_vel_y: tuple[float, float] | None = None
+    ang_vel_z: tuple[float, float] | None = None
+
+
+class VelocityCommandEnv(Protocol):
+    num_envs: int
+    step_dt: float
+    _rng: np.random.Generator
+
 
 class UniformVelocityCommand:
-    def __init__(self, cfg: UniformVelocityCommandCfg, env: "GobotVelocityEnv") -> None:
+    def __init__(self, cfg: UniformVelocityCommandCfg, env: VelocityCommandEnv) -> None:
         self.cfg = cfg
         self.env = env
         self.command_b = np.zeros((env.num_envs, 3), dtype=np.float32)
@@ -38,7 +72,7 @@ class UniformVelocityCommand:
         self.metrics["error_vel_xy"][env_ids] = 0.0
         self.metrics["error_vel_yaw"][env_ids] = 0.0
 
-    def compute(self, dt: float, states: Sequence[VelocityRuntimeState | None]) -> None:
+    def compute(self, dt: float, states: Sequence[Any | None]) -> None:
         self.time_left -= float(dt)
         resample_ids = np.flatnonzero(self.time_left <= 0.0).astype(np.int64)
         if resample_ids.size:
@@ -73,7 +107,7 @@ class UniformVelocityCommand:
             self.command_b[forward_ids, 1] = 0.0
             self.command_b[forward_ids, 2] = 0.0
 
-    def _update_heading_and_world_commands(self, states: Sequence[VelocityRuntimeState | None]) -> None:
+    def _update_heading_and_world_commands(self, states: Sequence[Any | None]) -> None:
         for env_id, state in enumerate(states):
             if state is None:
                 continue
@@ -90,5 +124,9 @@ class UniformVelocityCommand:
         self.command_w[self.is_standing_env] = 0.0
 
 
-
-__all__ = ["UniformVelocityCommand"]
+__all__ = [
+    "UniformVelocityCommand",
+    "UniformVelocityCommandCfg",
+    "UniformVelocityCommandRanges",
+    "VelocityCommandStage",
+]

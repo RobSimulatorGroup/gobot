@@ -1,5 +1,5 @@
-"""Task packages for Gobot reinforcement learning."""
+"""Optional task packages for Gobot reinforcement learning."""
 
 from __future__ import annotations
 
-__all__ = ["velocity"]
+__all__: list[str] = []

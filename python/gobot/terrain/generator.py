@@ -1,4 +1,4 @@
-"""Terrain3D generation helpers with MJLab-style visuals."""
+"""Terrain3D generation helpers for Gobot scenes."""
 
 from __future__ import annotations
 
@@ -65,7 +65,7 @@ class TerrainGeneratorCfg:
     horizontal_scale: float = 0.1
     base_thickness: float = 0.1
     surface_color: Color4 = (1.0, 1.0, 1.0, 1.0)
-    color_mode: _core.TerrainColorMode = _core.TerrainColorMode.MjLab
+    color_mode: _core.TerrainColorMode = _core.TerrainColorMode.Palette
     height_low_color: Color4 = (0.10, 0.34, 0.30, 1.0)
     height_high_color: Color4 = (0.62, 0.44, 0.25, 1.0)
     height_range_min: float = 0.0
@@ -393,7 +393,7 @@ def radial_pit(
 def go1_training_terrains() -> dict[str, SubTerrainCfg]:
     """Go1-sized rough terrain presets.
 
-    These keep MJLab-style visual variety while capping obstacles to heights a
+    These keep varied visual terrain while capping obstacles to heights a
     small quadruped can plausibly step over during early locomotion training.
     """
 
@@ -425,7 +425,7 @@ def go1_training_terrains() -> dict[str, SubTerrainCfg]:
     }
 
 
-def mjlab_showcase_terrains() -> dict[str, SubTerrainCfg]:
+def showcase_terrains() -> dict[str, SubTerrainCfg]:
     return {
         "blue_stairs": pyramid_stairs(step_height=0.10, step_width=0.28, platform_width=0.75),
         "pit": radial_pit(depth=0.65, radius=1.20, flat_radius=0.28),
@@ -997,7 +997,7 @@ __all__ = [
     "brand_ramp",
     "darken_rgba",
     "go1_training_terrains",
-    "mjlab_showcase_terrains",
+    "showcase_terrains",
     "create_terrain_node",
     "flat",
     "pyramid_stairs",

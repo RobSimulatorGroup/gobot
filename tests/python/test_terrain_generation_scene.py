@@ -30,7 +30,7 @@ def main():
     spawn_count = len(terrain.spawn_origins)
     assert box_count + heightfield_count + mesh_patch_count > 0
     assert spawn_count == cfg.num_rows * cfg.num_cols
-    assert terrain.color_mode == gobot.TerrainColorMode.MjLab
+    assert terrain.color_mode == gobot.TerrainColorMode.Palette
 
     root.add_child(terrain)
     gobot.save_scene(root, "res://generated_terrain.jscn")
@@ -39,14 +39,14 @@ def main():
     scene = gobot.load_scene("res://generated_terrain.jscn")
     loaded_terrain = scene.root.find("generated_terrain")
     assert loaded_terrain.type == "Terrain3D"
-    assert loaded_terrain.color_mode == gobot.TerrainColorMode.MjLab
+    assert loaded_terrain.color_mode == gobot.TerrainColorMode.Palette
 
     context = gobot.app.context()
     context.set_project_path(project)
     context.load_scene("res://generated_terrain.jscn")
     context_terrain = context.root.find("generated_terrain")
     assert context_terrain.type == "Terrain3D"
-    assert context_terrain.color_mode == gobot.TerrainColorMode.MjLab
+    assert context_terrain.color_mode == gobot.TerrainColorMode.Palette
     context.build_world(gobot.PhysicsBackendType.Null)
 
     print(

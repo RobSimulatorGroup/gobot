@@ -1,4 +1,4 @@
-"""Terrain height fallback queries for velocity-task reset placement."""
+"""Terrain height fallback queries for locomotion reset placement."""
 
 from __future__ import annotations
 
@@ -8,7 +8,8 @@ from typing import Any, Mapping
 
 import numpy as np
 
-from .math_utils import _json_vec
+from .math import _json_vec
+
 
 class TerrainSampler:
     """Small height-query fallback for reset placement."""
@@ -209,7 +210,6 @@ class TerrainSampler:
         h11 = heights[r1, c1]
         sampled = center[2] + heightfield["z_offset"] + (h00 * (1.0 - fu) + h10 * fu) * (1.0 - fv) + (h01 * (1.0 - fu) + h11 * fu) * fv
         return np.where(mask, sampled, -np.inf)
-
 
 
 __all__ = ["TerrainSampler"]

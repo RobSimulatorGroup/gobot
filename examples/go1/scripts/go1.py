@@ -4,6 +4,11 @@ import json
 from importlib.metadata import PackageNotFoundError, version
 
 import gobot
+from gobot.rl.locomotion import (
+    VELOCITY_OBS_SCHEMA_VERSION,
+    build_velocity_actor_observation,
+    velocity_actor_observation_schema,
+)
 
 
 ROBOT = "go1"
@@ -66,7 +71,9 @@ KP = 40.0
 KD = 1.0
 DECIMATION = 10
 HEIGHT_SCAN_POINTS = tuple((x, y) for x in (0.3, 0.6, 0.9, 1.2, 1.5) for y in (-0.45, 0.0, 0.45))
+HEIGHT_SCAN_MAX_DISTANCE = 5.0
 TERRAIN_SCAN_SENSOR = "terrain_scan"
+ACTOR_OBS_SCHEMA = velocity_actor_observation_schema(len(JOINT_NAMES), len(HEIGHT_SCAN_POINTS))
 POSITION_LIMITS = {
     "FR_hip_joint": (-0.863, 0.863),
     "FR_thigh_joint": (-0.686, 4.501),
@@ -137,7 +144,9 @@ class TorchPolicy:
         self.torch = torch
         self.device = torch.device("cpu")
         checkpoint = torch.load(path, weights_only=False, map_location=self.device)
+        actor_state = checkpoint.get("actor_state_dict", {})
         self.obs_dim = _checkpoint_obs_dim(checkpoint)
+        _validate_checkpoint_schema(checkpoint, self.obs_dim)
         obs = TensorDict(
             {"policy": torch.zeros((1, self.obs_dim), dtype=torch.float32, device=self.device)},
             batch_size=[1],
@@ -150,7 +159,7 @@ class TorchPolicy:
             len(JOINT_NAMES),
             hidden_dims=[512, 256, 128],
             activation="elu",
-            obs_normalization=True,
+            obs_normalization=_checkpoint_has_obs_normalizer(actor_state),
             distribution_cfg={
                 "class_name": "rsl_rl.modules.GaussianDistribution",
                 "init_std": 1.0,
@@ -212,7 +221,41 @@ def _checkpoint_obs_dim(checkpoint):
     for value in actor_state.values():
         if getattr(value, "ndim", 0) == 2:
             return int(value.shape[1])
-    return 48
+    metadata = _checkpoint_velocity_metadata(checkpoint)
+    if metadata is not None:
+        return int(metadata.get("num_obs", ACTOR_OBS_SCHEMA.dim))
+    return ACTOR_OBS_SCHEMA.dim
+
+
+def _checkpoint_has_obs_normalizer(actor_state):
+    return "obs_normalizer._mean" in actor_state
+
+
+def _checkpoint_velocity_metadata(checkpoint):
+    infos = checkpoint.get("infos")
+    if isinstance(infos, dict):
+        metadata = infos.get("gobot_go1_velocity")
+        if isinstance(metadata, dict):
+            return metadata
+    metadata = checkpoint.get("gobot_go1_velocity")
+    if isinstance(metadata, dict):
+        return metadata
+    return None
+
+
+def _validate_checkpoint_schema(checkpoint, obs_dim):
+    metadata = _checkpoint_velocity_metadata(checkpoint)
+    if metadata is None:
+        if obs_dim != ACTOR_OBS_SCHEMA.dim:
+            print(f"Go1 checkpoint has legacy obs dim {obs_dim}; current playback schema expects {ACTOR_OBS_SCHEMA.dim}.")
+        return
+    version = metadata.get("obs_schema_version")
+    names = tuple(metadata.get("obs_names", ()))
+    if version != VELOCITY_OBS_SCHEMA_VERSION or names != ACTOR_OBS_SCHEMA.names:
+        print(
+            "Go1 checkpoint observation schema differs from playback: "
+            f"checkpoint version={version!r} dim={metadata.get('num_obs')} current={ACTOR_OBS_SCHEMA.version} dim={ACTOR_OBS_SCHEMA.dim}"
+        )
 
 
 def _find_node_by_name(node, name):
@@ -380,7 +423,7 @@ class Script(gobot.NodeScript):
             joint.damping = KD
         self.robot.mode = gobot.RobotMode.Motion
         self.policy = self._load_policy()
-        self.policy_obs_dim = getattr(self.policy, "obs_dim", 48)
+        self.policy_obs_dim = getattr(self.policy, "obs_dim", ACTOR_OBS_SCHEMA.dim)
         self.terrain_sampler = TerrainSampler(_resolve_project_path(self.context, "res://terrain_scene.jscn"))
         self.ticks = 0
         self.playing = True
@@ -577,9 +620,9 @@ class Script(gobot.NodeScript):
                 x,
                 y,
                 z,
-                observation[9],
-                observation[10],
-                observation[11],
+                self.command[0],
+                self.command[1],
+                self.command[2],
                 "on" if self.policy is not None else "off",
                 "on" if getattr(self.context.input, "has_control_focus", False) else "off",
                 math.sqrt(sum(value * value for value in self.last_action)),
@@ -597,7 +640,7 @@ class Script(gobot.NodeScript):
         quat = base.get("quaternion", [1.0, 0.0, 0.0, 0.0])
         position = base.get("position", [0.0, 0.0, 0.0])
         lin_vel = _quat_rotate_inv(base.get("linear_velocity", [0.0, 0.0, 0.0]), quat)
-        ang_vel = base.get("angular_velocity", [0.0, 0.0, 0.0])
+        ang_vel = _quat_rotate_inv(base.get("angular_velocity", [0.0, 0.0, 0.0]), quat)
         projected_gravity = _quat_rotate_inv([0.0, 0.0, -1.0], quat)
         cmd = self.command
 
@@ -609,10 +652,18 @@ class Script(gobot.NodeScript):
             joint_pos.append(float(joint.get("position", DEFAULT_POS[index])) - DEFAULT_POS[index])
             joint_vel.append(float(joint.get("velocity", 0.0)))
 
-        obs = lin_vel + list(ang_vel[:3]) + projected_gravity + cmd + joint_pos + joint_vel + self.last_action
+        height_scan = self._height_scan(state, position, quat)
+        obs = build_velocity_actor_observation(
+            base_lin_vel_b=lin_vel,
+            base_ang_vel_b=ang_vel[:3],
+            projected_gravity=projected_gravity,
+            joint_pos_rel=joint_pos,
+            joint_vel=joint_vel,
+            last_action=self.last_action,
+            command=cmd,
+            height_scan=height_scan,
+        ).astype(float).tolist()
         if self.policy_obs_dim > len(obs):
-            obs += self._height_scan(state, position, quat)[: self.policy_obs_dim - len(obs)]
-        if len(obs) < self.policy_obs_dim:
             obs += [0.0] * (self.policy_obs_dim - len(obs))
         return obs[: self.policy_obs_dim]
 
@@ -621,7 +672,7 @@ class Script(gobot.NodeScript):
         if sensor is not None:
             values = [float(value) for value in sensor.get("values", [])]
             if len(values) == len(HEIGHT_SCAN_POINTS) and all(math.isfinite(value) for value in values):
-                return [_clamp(value, -1.0, 1.0) for value in values]
+                return [float(value) / HEIGHT_SCAN_MAX_DISTANCE for value in values]
         yaw = _quat_to_yaw(quat)
         cos_yaw = math.cos(yaw)
         sin_yaw = math.sin(yaw)
@@ -630,7 +681,7 @@ class Script(gobot.NodeScript):
             world_x = base_position[0] + cos_yaw * local_x - sin_yaw * local_y
             world_y = base_position[1] + sin_yaw * local_x + cos_yaw * local_y
             terrain_height = self.terrain_sampler.height_at(world_x, world_y)
-            samples.append(_clamp(base_position[2] - terrain_height, -1.0, 1.0))
+            samples.append((base_position[2] - terrain_height) / HEIGHT_SCAN_MAX_DISTANCE)
         return samples
 
     def _sensor_map(self, robot_state):

@@ -1,4 +1,4 @@
-"""Gobot runtime environment for velocity locomotion tasks."""
+"""Go1 rsl_rl vector environment for velocity locomotion training."""
 
 from __future__ import annotations
 
@@ -12,9 +12,15 @@ import numpy as np
 
 import gobot
 
-from .cfg import VelocityTaskCfg, unitree_go1_rough_velocity_cfg
-from .command import UniformVelocityCommand
-from .math_utils import (
+from gobot.rl.locomotion import (
+    TerrainSampler,
+    UniformVelocityCommand,
+    build_velocity_actor_observation,
+    build_velocity_critic_observation,
+    velocity_actor_observation_schema,
+    velocity_critic_observation_schema,
+)
+from gobot.rl.locomotion.math import (
     _as_vec,
     _find_node_by_name,
     _quat,
@@ -22,7 +28,11 @@ from .math_utils import (
     _quat_to_rp,
     _rotate_vec_by_quat_inv,
 )
-from .terrain import TerrainSampler
+
+try:
+    from .go1_velocity_cfg import Go1VelocityCfg, go1_rough_velocity_cfg
+except ImportError:
+    from go1_velocity_cfg import Go1VelocityCfg, go1_rough_velocity_cfg
 
 @dataclass
 class VelocityRuntimeState:
@@ -34,14 +44,14 @@ class VelocityRuntimeState:
     contacts: Sequence[Mapping[str, Any]]
 
 
-class GobotVelocityEnv:
-    """rsl_rl-compatible vector env for MJLab-style velocity tasks."""
+class Go1VelocityEnv:
+    """rsl_rl-compatible vector env for the Go1 velocity example."""
 
     is_vector_env = True
 
     def __init__(
         self,
-        cfg: VelocityTaskCfg | None = None,
+        cfg: Go1VelocityCfg | None = None,
         *,
         num_envs: int = 64,
         device: str = "cpu",
@@ -51,18 +61,9 @@ class GobotVelocityEnv:
         try:
             import torch
         except ImportError as error:
-            raise RuntimeError("GobotVelocityEnv requires gobot[train] dependencies.") from error
+            raise RuntimeError("Go1VelocityEnv requires gobot[train] dependencies.") from error
         self.torch = torch
-        self.cfg_obj = cfg if cfg is not None else unitree_go1_rough_velocity_cfg()
-        if self.cfg_obj.name != "unitree_go1_rough_velocity":
-            raise NotImplementedError(
-                f"{self.cfg_obj.name} is configured for API parity with MJLab velocity, "
-                "but the current Gobot repository only ships a runnable Go1 rough velocity scene."
-            )
-        if self.cfg_obj.robot_family != "go1":
-            raise NotImplementedError(
-                f"{self.cfg_obj.name} is configured, but this repository currently ships only the Go1 Gobot asset."
-            )
+        self.cfg_obj = cfg if cfg is not None else go1_rough_velocity_cfg()
         self.num_envs = int(num_envs)
         self.device = device
         self.seed = int(seed)
@@ -147,14 +148,19 @@ class GobotVelocityEnv:
         if robot_map is None:
             raise RuntimeError(f"Gobot scene has no robot named {self.cfg_obj.robot_name!r}")
         self._height_scan_dim = self._sensor_dim(robot_map, self.cfg_obj.observations.height_scan_sensor)
-        self.num_obs = 3 + 3 + 3 + self.num_actions + self.num_actions + self.num_actions + 3 + self._height_scan_dim
-        self.num_privileged_obs = self.num_obs + self._foot_count * (1 + 1 + 1 + 3)
+        self.actor_obs_schema = velocity_actor_observation_schema(self.num_actions, self._height_scan_dim)
+        self.critic_obs_schema = velocity_critic_observation_schema(self.num_actions, self._height_scan_dim, self._foot_count)
+        self.num_obs = self.actor_obs_schema.dim
+        self.num_privileged_obs = self.critic_obs_schema.dim
         self.command_manager = UniformVelocityCommand(self.cfg_obj.command, self)
 
         self.cfg = {
             "name": self.cfg_obj.name,
-            "source": "gobot.rl.tasks.velocity",
-            "mjlab_task": "velocity",
+            "source": "examples.go1.train.go1_velocity_env",
+            "task": "gobot_go1_velocity",
+            "obs_schema_version": self.actor_obs_schema.version,
+            "obs_names": self.actor_obs_schema.names,
+            "critic_obs_names": self.critic_obs_schema.names,
             "robot": self.cfg_obj.robot_name,
             "scene_path": self.cfg_obj.scene_path,
             "project_path": str(self.project_path),
@@ -595,29 +601,25 @@ class GobotVelocityEnv:
         joint_pos, joint_vel = self._joint_values(state, env_id=env_id, apply_encoder_bias=True)
         joint_pos_rel = joint_pos - self.default_joint_pos
         height_scan = self._height_scan(state)
-        parts = [
-            self._with_noise("base_lin_vel", base_lin_vel, corrupt),
-            self._with_noise("base_ang_vel", base_ang_vel, corrupt),
-            self._with_noise("projected_gravity", projected_gravity, corrupt),
-            self._with_noise("joint_pos", joint_pos_rel, corrupt),
-            self._with_noise("joint_vel", joint_vel, corrupt),
-            self._last_actions[env_id],
-            self.command_manager.command_b[env_id],
-            self._with_noise("height_scan", height_scan, corrupt) / max(self.cfg_obj.observations.terrain_scan_max_distance, 1.0e-6),
-        ]
-        return np.concatenate([np.asarray(part, dtype=np.float32).reshape(-1) for part in parts])
+        return build_velocity_actor_observation(
+            base_lin_vel_b=self._with_noise("base_lin_vel", base_lin_vel, corrupt),
+            base_ang_vel_b=self._with_noise("base_ang_vel", base_ang_vel, corrupt),
+            projected_gravity=self._with_noise("projected_gravity", projected_gravity, corrupt),
+            joint_pos_rel=self._with_noise("joint_pos", joint_pos_rel, corrupt),
+            joint_vel=self._with_noise("joint_vel", joint_vel, corrupt),
+            last_action=self._last_actions[env_id],
+            command=self.command_manager.command_b[env_id],
+            height_scan=self._with_noise("height_scan", height_scan, corrupt) / max(self.cfg_obj.observations.terrain_scan_max_distance, 1.0e-6),
+        )
 
     def _critic_obs_for(self, env_id: int, state: VelocityRuntimeState, actor_obs: np.ndarray) -> np.ndarray:
-        foot_forces = self._foot_contact_forces(state).reshape(-1)
-        extra = np.concatenate(
-            [
-                self._foot_heights(state),
-                self._foot_air_time[env_id],
-                self._foot_contacts(state),
-                np.sign(foot_forces) * np.log1p(np.abs(foot_forces)),
-            ]
-        ).astype(np.float32)
-        return np.concatenate([actor_obs.astype(np.float32), extra])
+        return build_velocity_critic_observation(
+            actor_obs=actor_obs,
+            foot_height=self._foot_heights(state),
+            foot_air_time=self._foot_air_time[env_id],
+            foot_contact=self._foot_contacts(state),
+            foot_contact_forces=self._foot_contact_forces(state).reshape(-1),
+        )
 
     def _with_noise(self, name: str, values: np.ndarray, corrupt: bool) -> np.ndarray:
         values = np.asarray(values, dtype=np.float32)
@@ -962,4 +964,4 @@ class GobotVelocityEnv:
         return bool(self._base_clearance(state) < self.cfg_obj.min_base_clearance or abs(roll) > math.radians(70.0) or abs(pitch) > math.radians(70.0))
 
 
-__all__ = ["GobotVelocityEnv", "VelocityRuntimeState"]
+__all__ = ["Go1VelocityEnv", "VelocityRuntimeState"]

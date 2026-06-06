@@ -6,7 +6,9 @@ This example keeps the robot project self-contained:
 - `assets/xml/go1_scene.xml` is the MJCF scene that includes `go1.xml`.
 - `go1.jscn` is the Gobot robot scene imported from `go1.xml`.
 - `go1_scene.jscn` is the Gobot scene that references `go1.jscn`.
-- `train/go1_velocity_train.py` trains the Gobot-native velocity task into `policies/`.
+- `train/go1_velocity_train.py` trains the Go1-owned velocity task into `policies/`.
+- `train/go1_velocity_env.py` contains the Go1 rsl_rl vector environment.
+- `train/go1_velocity_cfg.py` contains Go1 joints, rewards, PPO, command, and terrain curriculum settings.
 - `scripts/go1.py` is attached to the `go1_scene.jscn` root and plays a trained policy in `gobot_editor`.
 - `policies/go1.onnx` is the default lightweight playback policy.
 - `policies/go1.pt` is the training checkpoint fallback for environments with `gobot[train]`.
