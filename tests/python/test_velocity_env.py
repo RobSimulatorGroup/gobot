@@ -1,5 +1,6 @@
 from pathlib import Path
 import sys
+import types
 
 import numpy as np
 
@@ -13,6 +14,8 @@ for path in (REPO_ROOT, REPO_ROOT / "python", REPO_ROOT / "build/python"):
 from examples.go1.scripts import go1 as go1_playback
 from examples.go1.train import go1_velocity_cfg as go1_cfg
 from examples.go1.train.go1_velocity_env import Go1VelocityEnv, VelocityRuntimeState
+from examples.go1.train import go1_velocity_video
+from examples.go1.train.go1_velocity_video import Go1TrainingVideoCfg, Go1TrainingVideoRecorder
 from gobot.rl.locomotion import (
     UniformVelocityCommand,
     velocity_actor_observation_schema,
@@ -202,6 +205,195 @@ def test_go1_spawn_curriculum_is_seed_reproducible():
     first._update_terrain_curriculum_limit(0, state, reset_reason=2)
     second._update_terrain_curriculum_limit(0, state, reset_reason=2)
     assert np.allclose(first._terrain_curriculum_limits, second._terrain_curriculum_limits)
+
+
+def test_go1_video_recorder_steps_eval_env_not_training_env(monkeypatch, tmp_path):
+    torch = __import__("torch")
+    written: dict[str, object] = {}
+
+    class DummyImageIo:
+        @staticmethod
+        def imwrite(path, frames, fps, codec):
+            written["path"] = path
+            written["frames"] = frames.copy()
+            written["fps"] = fps
+            written["codec"] = codec
+
+    class DummyPolicy:
+        training = True
+
+        def __init__(self):
+            self.eval_calls = 0
+            self.train_calls = 0
+
+        def eval(self):
+            self.eval_calls += 1
+            self.training = False
+
+        def train(self):
+            self.train_calls += 1
+            self.training = True
+
+        def __call__(self, obs):
+            batch = obs["actor"].shape[0]
+            return torch.zeros((batch, 1), dtype=torch.float32)
+
+    class DummyContext:
+        root = None
+
+        def clear_scene(self):
+            pass
+
+    class DummyEvalEnv:
+        instances: list["DummyEvalEnv"] = []
+
+        def __init__(self, cfg, *, num_envs, device, seed, max_episode_length, context):
+            self.cfg_obj = cfg
+            self.num_envs = int(num_envs)
+            self.device = device
+            self.seed = seed
+            self.max_episode_length = max_episode_length
+            self.context = context
+            self.torch = torch
+            self.command_manager = type("Command", (), {"command_b": np.zeros((self.num_envs, 3), dtype=np.float32)})()
+            self.reset_seeds: list[int | None] = []
+            self.step_calls = 0
+            self.closed = False
+            DummyEvalEnv.instances.append(self)
+
+        def reset(self, seed=None):
+            self.reset_seeds.append(seed)
+            return _obs(self.num_envs, self.device)
+
+        def step(self, actions):
+            self.step_calls += 1
+            return _obs(self.num_envs, self.device), torch.zeros(self.num_envs), torch.zeros(self.num_envs, dtype=torch.bool), {}
+
+        def _runtime_state(self, env_id):
+            return VelocityRuntimeState(
+                robot={},
+                base={"global_transform": {"position": [float(self.step_calls), 0.0, 0.4]}},
+                joints={},
+                links={},
+                sensors={},
+                contacts=[],
+            )
+
+        def close(self):
+            self.closed = True
+
+    class TrainingEnv:
+        def __init__(self):
+            self.cfg_obj = go1_cfg.go1_flat_velocity_cfg(project_path="/tmp/go1")
+            self.num_envs = 3
+            self.device = "cpu"
+            self.seed = 123
+            self.max_episode_length = 99
+            self.episode_length_buf = torch.tensor([4, 5, 6])
+            self._total_policy_steps = 17
+            self.get_observations_calls = 0
+            self.step_calls = 0
+
+        def get_observations(self):
+            self.get_observations_calls += 1
+            return _obs(self.num_envs, self.device)
+
+        def step(self, actions):
+            self.step_calls += 1
+            raise AssertionError("training env must not be stepped by video recorder")
+
+    monkeypatch.setattr(go1_velocity_video.gobot.app, "create_context", lambda: DummyContext())
+    monkeypatch.setattr(go1_velocity_video, "Go1VelocityEnv", DummyEvalEnv)
+    imageio_module = types.ModuleType("imageio")
+    imageio_module.v3 = DummyImageIo
+    monkeypatch.setitem(sys.modules, "imageio", imageio_module)
+    monkeypatch.setitem(sys.modules, "imageio.v3", DummyImageIo)
+    monkeypatch.setattr(
+        go1_velocity_video.gobot.render,
+        "capture_rgb",
+        lambda **_: np.full((2, 3, 3), 127, dtype=np.uint8),
+    )
+
+    train_env = TrainingEnv()
+    episode_lengths = train_env.episode_length_buf.clone()
+    recorder = Go1TrainingVideoRecorder(
+        train_env,
+        Go1TrainingVideoCfg(
+            interval=1,
+            env_id=0,
+            num_envs=2,
+            seed=999,
+            steps=3,
+            fps=12,
+            width=3,
+            height=2,
+            directory=tmp_path,
+        ),
+    )
+    policy = DummyPolicy()
+
+    path = recorder.record(2, policy)
+
+    assert path == tmp_path / "go1_velocity_iter_000002.mp4"
+    assert train_env.step_calls == 0
+    assert train_env.get_observations_calls == 0
+    assert train_env._total_policy_steps == 17
+    assert torch.equal(train_env.episode_length_buf, episode_lengths)
+    assert len(DummyEvalEnv.instances) == 1
+    assert DummyEvalEnv.instances[0].num_envs == 2
+    assert DummyEvalEnv.instances[0].reset_seeds == [999]
+    assert DummyEvalEnv.instances[0].step_calls == 3
+    assert policy.eval_calls == 1
+    assert policy.train_calls == 1
+    assert written["fps"] == 12
+    assert np.asarray(written["frames"]).shape == (3, 2, 3, 3)
+
+
+def test_go1_video_recorder_invalid_eval_env_id_skips(monkeypatch, tmp_path):
+    torch = __import__("torch")
+
+    class DummyPolicy:
+        training = False
+
+        def eval(self):
+            pass
+
+        def __call__(self, obs):
+            return torch.zeros((obs["actor"].shape[0], 1), dtype=torch.float32)
+
+    class TrainingEnv:
+        cfg_obj = go1_cfg.go1_flat_velocity_cfg(project_path="/tmp/go1")
+        num_envs = 4
+        device = "cpu"
+        seed = 1
+        max_episode_length = 8
+        step_calls = 0
+
+        def step(self, actions):
+            self.step_calls += 1
+            raise AssertionError("training env must not be stepped")
+
+    class EvalEnv:
+        def __init__(self):
+            self.num_envs = 1
+
+    recorder = Go1TrainingVideoRecorder(
+        TrainingEnv(),
+        Go1TrainingVideoCfg(interval=1, env_id=2, num_envs=1, steps=1, directory=tmp_path),
+    )
+    recorder._eval_env = EvalEnv()
+
+    assert recorder.record(0, DummyPolicy()) is None
+    assert recorder.env.step_calls == 0
+
+
+def _obs(num_envs: int, device: str):
+    torch = __import__("torch")
+    return {
+        "actor": torch.zeros((num_envs, 1), dtype=torch.float32, device=device),
+        "critic": torch.zeros((num_envs, 1), dtype=torch.float32, device=device),
+        "policy": torch.zeros((num_envs, 1), dtype=torch.float32, device=device),
+    }
 
 
 def _curriculum_env(seed: int):

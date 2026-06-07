@@ -150,6 +150,35 @@ def main():
     state = context.get_runtime_state()
     assert state["robots"][0]["joints"][0]["name"] == "slider"
 
+    eval_context = gobot.app.create_context()
+    assert eval_context is not context
+    eval_context.set_project_path("/tmp")
+    eval_context.load_scene("res://gobot_python_binding_cartpole.jscn")
+    eval_root = eval_context.root
+    main_root = context.root
+    assert eval_root is not None
+    assert main_root is not None
+    assert eval_root.id != main_root.id
+    assert eval_root.name == main_root.name == "cartpole"
+    eval_root.name = "eval_cartpole"
+    assert eval_context.root.name == "eval_cartpole"
+    assert context.root.name == "cartpole"
+    eval_child = eval_context.root.find("rail")
+    assert eval_child is not None
+    assert eval_child.name == "rail"
+    eval_context.build_world(gobot.PhysicsBackendType.Null)
+    assert eval_context.has_world is True
+    assert context.has_world is True
+    stale_eval_root = eval_context.root
+    eval_context.clear_scene()
+    assert eval_context.root is None
+    try:
+        _ = stale_eval_root.name
+        raise AssertionError("old eval context handle should raise ReferenceError after scene clear")
+    except ReferenceError as error:
+        assert "inactive scene epoch" in str(error)
+    assert context.root.name == "cartpole"
+
     sensor_root = gobot.create_node("Robot3D", "sensor_bot")
     sensor_link = gobot.create_node("Link3D", "base")
     sensor_root.add_child(sensor_link)

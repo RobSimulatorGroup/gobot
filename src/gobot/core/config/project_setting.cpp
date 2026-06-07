@@ -84,6 +84,10 @@ ProjectSettings* ProjectSettings::GetInstance() {
     return s_singleton;
 }
 
+bool ProjectSettings::HasInstance() {
+    return s_singleton != nullptr;
+}
+
 bool ProjectSettings::SetProjectPath(const std::string& project_path) {
     project_path_ = std::filesystem::weakly_canonical(project_path);
     if (!std::filesystem::exists(project_path_)) {

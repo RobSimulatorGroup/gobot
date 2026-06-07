@@ -35,6 +35,8 @@ public:
 
     static ProjectSettings* GetInstance();
 
+    static bool HasInstance();
+
     [[nodiscard]] std::string LocalizePath(std::string_view path) const;
 
     [[nodiscard]] std::string GlobalizePath(std::string_view path) const;

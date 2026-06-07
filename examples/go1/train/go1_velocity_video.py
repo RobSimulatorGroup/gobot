@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+import copy
 from pathlib import Path
 from typing import Any, Mapping
 
@@ -20,6 +21,8 @@ except ImportError:
 class Go1TrainingVideoCfg:
     interval: int = 100
     env_id: int = 0
+    num_envs: int = 1
+    seed: int | None = None
     steps: int = 240
     fps: int = 30
     width: int = 640
@@ -35,6 +38,8 @@ class Go1TrainingVideoRecorder:
         self._warned = False
         self._last_recorded_iteration: int | None = None
         self._node_cache: dict[str, Any] = {}
+        self._eval_context: gobot.AppContext | None = None
+        self._eval_env: Go1VelocityEnv | None = None
 
     def record(self, iteration: int, policy: Any) -> Path | None:
         if not self.enabled:
@@ -43,8 +48,11 @@ class Go1TrainingVideoRecorder:
             return None
         if iteration < 0 or iteration % self.cfg.interval != 0:
             return None
-        if self.cfg.env_id < 0 or self.cfg.env_id >= self.env.num_envs:
-            self._warn_once(f"render env id {self.cfg.env_id} is outside [0, {self.env.num_envs})")
+        eval_env = self._ensure_eval_env()
+        if eval_env is None:
+            return None
+        if self.cfg.env_id < 0 or self.cfg.env_id >= eval_env.num_envs:
+            self._warn_once(f"render env id {self.cfg.env_id} is outside [0, {eval_env.num_envs})")
             return None
 
         try:
@@ -60,16 +68,16 @@ class Go1TrainingVideoRecorder:
         frames: list[np.ndarray] = []
         was_training = getattr(policy, "training", False)
         policy.eval()
-        torch = self.env.torch
-        obs = self.env.get_observations().to(self.env.device)
+        torch = eval_env.torch
+        obs = eval_env.reset(seed=self._video_seed()).to(eval_env.device)
         try:
             with torch.inference_mode():
                 for _ in range(self.cfg.steps):
                     actions = policy(obs)
-                    obs, _, _, _ = self.env.step(actions.to(self.env.device))
-                    state = self.env._runtime_state(self.cfg.env_id)
-                    self._sync_scene_from_state(state)
-                    frames.append(self._capture_frame(state))
+                    obs, _, _, _ = eval_env.step(actions.to(eval_env.device))
+                    state = eval_env._runtime_state(self.cfg.env_id)
+                    self._sync_scene_from_state(eval_env, state)
+                    frames.append(self._capture_frame(eval_env, state))
         except Exception as error:
             self._warn_once(f"Go1 training video capture failed; continuing training: {error}")
             return None
@@ -90,21 +98,55 @@ class Go1TrainingVideoRecorder:
         print(f"Saved Go1 training video: {video_path}")
         return video_path
 
-    def _sync_scene_from_state(self, state: VelocityRuntimeState) -> None:
+    def close(self) -> None:
+        if self._eval_env is not None:
+            self._eval_env.close()
+            self._eval_env = None
+        if self._eval_context is not None:
+            self._eval_context.clear_scene()
+            self._eval_context = None
+        shutdown_capture = getattr(gobot.render, "_shutdown_headless_render_context", None)
+        if shutdown_capture is not None:
+            shutdown_capture()
+        self._node_cache.clear()
+
+    def _ensure_eval_env(self) -> Go1VelocityEnv | None:
+        if self._eval_env is not None:
+            return self._eval_env
+        try:
+            self._eval_context = gobot.app.create_context()
+            self._eval_env = Go1VelocityEnv(
+                copy.deepcopy(self.env.cfg_obj),
+                num_envs=max(1, int(self.cfg.num_envs)),
+                device=self.env.device,
+                seed=self._video_seed(),
+                max_episode_length=self.env.max_episode_length,
+                context=self._eval_context,
+            )
+        except Exception as error:
+            self._warn_once(f"failed to initialize Go1 video eval environment: {error}")
+            self.close()
+            return None
+        return self._eval_env
+
+    def _video_seed(self) -> int:
+        return int(self.cfg.seed if self.cfg.seed is not None else self.env.seed + 1_000_003)
+
+    def _sync_scene_from_state(self, env: Go1VelocityEnv, state: VelocityRuntimeState) -> None:
         for link_name, link in state.links.items():
             transform = link.get("global_transform", {})
             position = transform.get("position")
             orientation = transform.get("quaternion")
             if position is None or orientation is None:
                 continue
-            node = self._find_node(link_name)
+            node = self._find_node(env, link_name)
             if node is None or not hasattr(node, "set_global_transform"):
                 continue
             node.set_global_transform(position, orientation)
 
-    def _capture_frame(self, state: VelocityRuntimeState) -> np.ndarray:
+    def _capture_frame(self, env: Go1VelocityEnv, state: VelocityRuntimeState) -> np.ndarray:
         base_position = np.asarray(state.base.get("global_transform", {}).get("position", (0.0, 0.0, 0.4)), dtype=float)
-        command = np.asarray(self.env.command_manager.command_b[self.cfg.env_id], dtype=float)
+        command = np.asarray(env.command_manager.command_b[self.cfg.env_id], dtype=float)
         heading = np.array([command[0], command[1], 0.0], dtype=float)
         if float(np.linalg.norm(heading[:2])) < 0.05:
             heading = np.array([1.0, 0.0, 0.0], dtype=float)
@@ -113,7 +155,7 @@ class Go1TrainingVideoRecorder:
         target = base_position + np.array([0.0, 0.0, 0.25], dtype=float)
         eye = target - heading * 2.2 + side * 0.65 + np.array([0.0, 0.0, 1.0], dtype=float)
         return gobot.render.capture_rgb(
-            root=self.env.context.root,
+            root=env.context.root,
             width=self.cfg.width,
             height=self.cfg.height,
             eye=eye.tolist(),
@@ -124,10 +166,10 @@ class Go1TrainingVideoRecorder:
             z_far=100.0,
         )
 
-    def _find_node(self, name: str) -> Any | None:
+    def _find_node(self, env: Go1VelocityEnv, name: str) -> Any | None:
         if name in self._node_cache:
             return self._node_cache[name]
-        root = self.env.context.root
+        root = env.context.root
         node = None
         if root is not None:
             node = root.find(name)

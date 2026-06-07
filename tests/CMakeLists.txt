@@ -142,6 +142,15 @@ set_tests_properties(test_python_rl_manager_config
             ENVIRONMENT "PYTHONNOUSERSITE=1;PYTHONPATH=${CMAKE_BINARY_DIR}/python"
             WORKING_DIRECTORY "${CMAKE_SOURCE_DIR}"
 )
+add_test(
+        NAME test_velocity_env
+        COMMAND ${Python3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/python/test_velocity_env.py
+)
+set_tests_properties(test_velocity_env
+        PROPERTIES
+            ENVIRONMENT "HOME=/tmp/gobot-test-home;PYTHONNOUSERSITE=1;PYTHONPATH=${CMAKE_BINARY_DIR}/python"
+            WORKING_DIRECTORY "${CMAKE_SOURCE_DIR}"
+)
 
 if(GOB_BUILD_MUJOCO AND GOBOT_MUJOCO_TARGET)
     add_test(

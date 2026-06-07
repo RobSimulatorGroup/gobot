@@ -1,5 +1,6 @@
 from ._core import AppContext
 
 def context() -> AppContext: ...
+def create_context() -> AppContext: ...
 
 __all__: list[str]

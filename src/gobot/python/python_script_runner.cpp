@@ -23,6 +23,8 @@ namespace {
 
 namespace py = pybind11;
 
+py::object MakeContextHandle();
+
 class SourceLocationWriter {
 public:
     explicit SourceLocationWriter(std::string default_filename) :
@@ -311,7 +313,8 @@ Node* FindRoot(Node* node) {
 
 py::object MakeNodeHandle(Node* node) {
     py::module_ gobot = py::module_::import("gobot");
-    return gobot.attr("_node_from_id")(static_cast<std::uint64_t>(node->GetInstanceId()));
+    py::object context = MakeContextHandle();
+    return gobot.attr("_node_from_id")(static_cast<std::uint64_t>(node->GetInstanceId()), context);
 }
 
 py::object MakeContextHandle() {

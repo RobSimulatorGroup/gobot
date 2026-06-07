@@ -4,11 +4,10 @@
 
 #include "gobot/core/config/project_setting.hpp"
 #include "gobot/core/io/resource_loader.hpp"
+#include "gobot/main/runtime_scene_owner.hpp"
 #include "gobot/python/python_script_runner.hpp"
 #include "gobot/scene/node.hpp"
 #include "gobot/scene/resources/packed_scene.hpp"
-#include "gobot/scene/scene_tree.hpp"
-#include "gobot/scene/window.hpp"
 #include "gobot/simulation/simulation_server.hpp"
 
 namespace gobot {
@@ -82,7 +81,7 @@ void EngineContext::SetSceneRoot(Node* scene_root, bool take_ownership, const st
         if (owns_scene_root_) {
             AttachOwnedSceneToRuntimeTree();
         } else {
-            ClearRuntimeTree();
+            runtime_scene_owner_.reset();
         }
         scene_path_ = scene_path;
         ClearWorld();
@@ -370,7 +369,7 @@ void EngineContext::MarkSceneDirtyBaseline() {
 }
 
 void EngineContext::ClearOwnedScene() {
-    ClearRuntimeTree();
+    runtime_scene_owner_.reset();
     if (scene_root_ != nullptr && owns_scene_root_) {
         Object::Delete(scene_root_);
     }
@@ -383,22 +382,10 @@ void EngineContext::AttachOwnedSceneToRuntimeTree() {
         return;
     }
 
-    ClearRuntimeTree();
-    runtime_tree_ = Object::New<SceneTree>(false);
-    runtime_tree_->Initialize();
-    runtime_tree_->GetRoot()->AddChild(scene_root_, false);
-}
-
-void EngineContext::ClearRuntimeTree() {
-    if (runtime_tree_ == nullptr) {
-        return;
+    if (!runtime_scene_owner_) {
+        runtime_scene_owner_ = std::make_unique<RuntimeSceneOwner>();
     }
-    if (scene_root_ != nullptr && scene_root_->GetParent() == runtime_tree_->GetRoot()) {
-        runtime_tree_->GetRoot()->RemoveChild(scene_root_);
-    }
-    runtime_tree_->Finalize();
-    Object::Delete(runtime_tree_);
-    runtime_tree_ = nullptr;
+    runtime_scene_owner_->Attach(scene_root_);
 }
 
 void EngineContext::AdvanceSceneEpoch() {

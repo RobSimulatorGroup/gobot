@@ -339,7 +339,8 @@ file(GLOB_RECURSE SOURCE_RENDERING CONFIGURE_DEPENDS "src/gobot/rendering/*.cpp"
 file(GLOB_RECURSE SOURCE_EDITOR CONFIGURE_DEPENDS "src/gobot/editor/*.cpp")
 file(GLOB_RECURSE SOURCE_MAIN CONFIGURE_DEPENDS "src/gobot/main/*.cpp")
 set(SOURCE_APP_RUNTIME
-        "${CMAKE_CURRENT_SOURCE_DIR}/src/gobot/main/engine_context.cpp")
+        "${CMAKE_CURRENT_SOURCE_DIR}/src/gobot/main/engine_context.cpp"
+        "${CMAKE_CURRENT_SOURCE_DIR}/src/gobot/main/runtime_scene_owner.cpp")
 list(REMOVE_ITEM SOURCE_MAIN ${SOURCE_APP_RUNTIME})
 set(SOURCE_PYTHON_RUNTIME
         src/gobot/python/python_app_context.cpp)

@@ -15,7 +15,7 @@ namespace gobot {
 class Node;
 class PhysicsServer;
 class ProjectSettings;
-class SceneTree;
+class RuntimeSceneOwner;
 class SimulationServer;
 
 class GOBOT_EXPORT EngineContext {
@@ -88,7 +88,6 @@ public:
 private:
     void ClearOwnedScene();
     void AttachOwnedSceneToRuntimeTree();
-    void ClearRuntimeTree();
     void AdvanceSceneEpoch();
     void SetLastError(std::string error);
 
@@ -97,7 +96,7 @@ private:
     SimulationServer* simulation_server_{nullptr};
     Node* scene_root_{nullptr};
     bool owns_scene_root_{false};
-    SceneTree* runtime_tree_{nullptr};
+    std::unique_ptr<RuntimeSceneOwner> runtime_scene_owner_;
     // Monotonically changes when the active scene root is replaced or cleared.
     // Python node handles capture this value so handles from an old scene fail
     // with ReferenceError instead of accidentally resolving into a new scene.

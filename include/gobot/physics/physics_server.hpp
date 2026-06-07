@@ -18,7 +18,8 @@ class GOBOT_EXPORT PhysicsServer : public Object {
     GOBCLASS(PhysicsServer, Object)
 
 public:
-    explicit PhysicsServer(PhysicsBackendType backend_type = PhysicsBackendType::Null);
+    explicit PhysicsServer(PhysicsBackendType backend_type = PhysicsBackendType::Null,
+                           bool register_singleton = true);
 
     ~PhysicsServer() override;
 
@@ -49,6 +50,7 @@ private:
     static PhysicsServer* s_singleton;
 
     PhysicsBackendType backend_type_{PhysicsBackendType::Null};
+    bool registered_singleton_{false};
 };
 
 } // namespace gobot

@@ -79,11 +79,17 @@ std::string CurrentEglError(const char* action) {
 HeadlessRenderContext::HeadlessRenderContext() = default;
 
 HeadlessRenderContext::~HeadlessRenderContext() {
-    render_server_.reset();
+    Shutdown();
+}
 
+void HeadlessRenderContext::Shutdown() {
 #if defined(GOBOT_HAS_EGL)
     if (platform_) {
         if (platform_->display != EGL_NO_DISPLAY) {
+            if (platform_->context != EGL_NO_CONTEXT && platform_->surface != EGL_NO_SURFACE) {
+                eglMakeCurrent(platform_->display, platform_->surface, platform_->surface, platform_->context);
+            }
+            render_server_.reset();
             eglMakeCurrent(platform_->display, EGL_NO_SURFACE, EGL_NO_SURFACE, EGL_NO_CONTEXT);
             if (platform_->context != EGL_NO_CONTEXT) {
                 eglDestroyContext(platform_->display, platform_->context);
@@ -93,8 +99,11 @@ HeadlessRenderContext::~HeadlessRenderContext() {
             }
             eglTerminate(platform_->display);
         }
+        platform_.reset();
+        return;
     }
 #endif
+    render_server_.reset();
 }
 
 bool HeadlessRenderContext::Initialize() {

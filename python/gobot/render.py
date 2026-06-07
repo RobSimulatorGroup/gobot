@@ -33,4 +33,8 @@ def capture_rgb(
     return _core._capture_rgb(root, width, height, eye, target, up, fov_y, z_near, z_far)
 
 
+def _shutdown_headless_render_context() -> None:
+    _core._shutdown_headless_render_context()
+
+
 __all__ = ["capture_rgb"]

@@ -24,6 +24,7 @@ public:
     HeadlessRenderContext& operator=(const HeadlessRenderContext&) = delete;
 
     bool Initialize();
+    void Shutdown();
     bool IsReady() const;
     const std::string& GetLastError() const;
 

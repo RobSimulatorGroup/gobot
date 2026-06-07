@@ -101,9 +101,12 @@ void ApplyNodeGlobalTransform(Node3D* node, const Affine3& global_transform) {
 
 SimulationServer* SimulationServer::s_singleton = nullptr;
 
-SimulationServer::SimulationServer(PhysicsBackendType backend_type)
-    : backend_type_(backend_type) {
-    s_singleton = this;
+SimulationServer::SimulationServer(PhysicsBackendType backend_type, bool register_singleton)
+    : backend_type_(backend_type),
+      registered_singleton_(register_singleton) {
+    if (registered_singleton_) {
+        s_singleton = this;
+    }
 }
 
 SimulationServer::~SimulationServer() {

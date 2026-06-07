@@ -6,8 +6,10 @@ from ._core import (
 )
 
 context = app.context
+create_context = app.create_context
 
 __all__ = [
     "AppContext",
+    "create_context",
     "context",
 ]

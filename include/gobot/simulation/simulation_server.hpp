@@ -26,7 +26,8 @@ class GOBOT_EXPORT SimulationServer : public Object {
 public:
     using FixedStepCallback = std::function<void(RealType fixed_delta)>;
 
-    explicit SimulationServer(PhysicsBackendType backend_type = PhysicsBackendType::Null);
+    explicit SimulationServer(PhysicsBackendType backend_type = PhysicsBackendType::Null,
+                              bool register_singleton = true);
 
     ~SimulationServer() override;
 
@@ -124,6 +125,7 @@ private:
     static SimulationServer* s_singleton;
 
     PhysicsBackendType backend_type_{PhysicsBackendType::Null};
+    bool registered_singleton_{false};
     PhysicsWorldSettings physics_world_settings_;
     Ref<PhysicsWorld> world_;
     SimulationScene runtime_scene_;

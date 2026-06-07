@@ -15,13 +15,18 @@ namespace gobot {
 
 PhysicsServer* PhysicsServer::s_singleton = nullptr;
 
-PhysicsServer::PhysicsServer(PhysicsBackendType backend_type)
-    : backend_type_(backend_type) {
-    s_singleton = this;
+PhysicsServer::PhysicsServer(PhysicsBackendType backend_type, bool register_singleton)
+    : backend_type_(backend_type),
+      registered_singleton_(register_singleton) {
+    if (registered_singleton_) {
+        s_singleton = this;
+    }
 }
 
 PhysicsServer::~PhysicsServer() {
-    s_singleton = nullptr;
+    if (s_singleton == this) {
+        s_singleton = nullptr;
+    }
 }
 
 PhysicsServer* PhysicsServer::GetInstance() {

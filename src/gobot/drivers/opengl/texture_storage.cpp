@@ -80,6 +80,10 @@ void TextureStorage::RenderTargetFree(RID p_rid) {
     if (t) {
         t->is_render_target = false;
     }
+    if (rt->texture.IsValid()) {
+        texture_owner_.Free(rt->texture);
+        rt->texture = RID();
+    }
     render_target_owner_.Free(p_rid);
 }
 

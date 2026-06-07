@@ -66,6 +66,7 @@ enum class PyNodeOwnership {
 
 struct PyNodeHandleState {
     ObjectID id;
+    EngineContext* context{nullptr};
     std::uint64_t scene_epoch{0};
     std::string name_snapshot;
     PyNodeOwnership ownership{PyNodeOwnership::Borrowed};
@@ -76,10 +77,12 @@ struct PyNodeHandle {
     std::string expected_type;
 
     static std::shared_ptr<PyNodeHandleState> MakeState(Node* node,
+                                                        EngineContext* context,
                                                         std::uint64_t epoch,
                                                         PyNodeOwnership node_ownership) {
         auto state = std::make_shared<PyNodeHandleState>();
         state->id = node != nullptr ? node->GetInstanceId() : ObjectID();
+        state->context = context;
         state->scene_epoch = epoch;
         state->name_snapshot = node != nullptr ? node->GetName() : std::string();
         state->ownership = node_ownership;
@@ -90,9 +93,10 @@ struct PyNodeHandle {
 
     PyNodeHandle(Node* node,
                  std::string expected_type_name,
+                 EngineContext* context,
                  std::uint64_t epoch,
                  PyNodeOwnership node_ownership)
-        : state(MakeState(node, epoch, node_ownership)),
+        : state(MakeState(node, context, epoch, node_ownership)),
           expected_type(std::move(expected_type_name)) {
     }
 
@@ -221,8 +225,14 @@ struct PyHeightScanner3DHandle : public PySensor3DHandle {
 };
 
 std::string ExpectedTypeForNode(Node* node);
-PyNodeHandle MakeTypedNodeHandle(Node* node, PyNodeOwnership ownership = PyNodeOwnership::Borrowed);
-py::object MakeTypedNodeObject(Node* node, PyNodeOwnership ownership = PyNodeOwnership::Borrowed);
+PyNodeHandle MakeTypedNodeHandle(Node* node,
+                                 PyNodeOwnership ownership = PyNodeOwnership::Borrowed,
+                                 EngineContext* context = nullptr,
+                                 std::uint64_t epoch = 0);
+py::object MakeTypedNodeObject(Node* node,
+                               PyNodeOwnership ownership = PyNodeOwnership::Borrowed,
+                               EngineContext* context = nullptr,
+                               std::uint64_t epoch = 0);
 
 template <typename Func>
 void ExecuteSceneMutation(const std::string&, Func&& func) {
@@ -233,6 +243,7 @@ void ExecuteSceneMutation(const std::string&, Func&& func) {
 }
 
 void ExecuteSetNodeProperty(Node* node, const std::string& property_name, Variant value);
+EngineContext* ContextForNode(const Node* node);
 
 std::uint64_t ActiveSceneEpoch() {
     const std::uint64_t scene_script_epoch = PythonScriptRunner::GetExecutingSceneScriptEpoch();
@@ -242,11 +253,39 @@ std::uint64_t ActiveSceneEpoch() {
     return GetActiveAppContext().GetSceneEpoch();
 }
 
+EngineContext* ActiveSceneContext() {
+    if (PythonScriptRunner::GetExecutingSceneScriptEpoch() != 0) {
+        return GetActiveAppContextOrNull();
+    }
+    return &GetActiveAppContext();
+}
+
 Node* ActiveSceneRoot() {
     if (Node* scene_script_root = PythonScriptRunner::GetExecutingSceneScriptRoot()) {
         return scene_script_root;
     }
     return GetActiveAppContext().GetSceneRoot();
+}
+
+std::uint64_t SceneEpochForContext(EngineContext* context) {
+    const std::uint64_t scene_script_epoch = PythonScriptRunner::GetExecutingSceneScriptEpoch();
+    if (scene_script_epoch != 0 && context == GetActiveAppContextOrNull()) {
+        return scene_script_epoch;
+    }
+    if (context != nullptr) {
+        return context->GetSceneEpoch();
+    }
+    return ActiveSceneEpoch();
+}
+
+Node* SceneRootForContext(EngineContext& context) {
+    if (PythonScriptRunner::GetExecutingSceneScriptEpoch() != 0 &&
+        &context == GetActiveAppContextOrNull()) {
+        if (Node* scene_script_root = PythonScriptRunner::GetExecutingSceneScriptRoot()) {
+            return scene_script_root;
+        }
+    }
+    return context.GetSceneRoot();
 }
 
 bool IsSceneScriptRuntimeMutation() {
@@ -257,6 +296,27 @@ bool IsSceneScriptRuntimeMutation() {
     PyErr_SetString(PyExc_ReferenceError, message.c_str());
     throw py::error_already_set();
 }
+
+class ScopedActiveAppContext {
+public:
+    explicit ScopedActiveAppContext(EngineContext* context) {
+        previous_context_ = GetActiveAppContextOrNull();
+        if (context != nullptr && context != previous_context_) {
+            SetActiveAppContext(context);
+            changed_ = true;
+        }
+    }
+
+    ~ScopedActiveAppContext() {
+        if (changed_) {
+            SetActiveAppContext(previous_context_);
+        }
+    }
+
+private:
+    EngineContext* previous_context_{nullptr};
+    bool changed_{false};
+};
 
 Robot3D* CreateTestRobotScene() {
     auto* robot = Object::New<Robot3D>();
@@ -774,7 +834,10 @@ py::list GetNodeChildren(PyNodeHandle& handle) {
     Node* node = handle.Resolve();
     py::list children;
     for (std::size_t index = 0; index < node->GetChildCount(); ++index) {
-        children.append(MakeTypedNodeObject(node->GetChild(static_cast<int>(index))));
+        children.append(MakeTypedNodeObject(node->GetChild(static_cast<int>(index)),
+                                            PyNodeOwnership::Borrowed,
+                                            handle.state ? handle.state->context : nullptr,
+                                            handle.state ? handle.state->scene_epoch : 0));
     }
     return children;
 }
@@ -784,7 +847,10 @@ py::object GetNodeChild(PyNodeHandle& handle, int index) {
     if (child == nullptr) {
         throw py::index_error("Gobot node child index is out of range");
     }
-    return MakeTypedNodeObject(child);
+    return MakeTypedNodeObject(child,
+                               PyNodeOwnership::Borrowed,
+                               handle.state ? handle.state->context : nullptr,
+                               handle.state ? handle.state->scene_epoch : 0);
 }
 
 py::object FindNode(PyNodeHandle& handle, const std::string& path) {
@@ -792,7 +858,10 @@ py::object FindNode(PyNodeHandle& handle, const std::string& path) {
     if (node == nullptr) {
         return py::none();
     }
-    return MakeTypedNodeObject(node);
+    return MakeTypedNodeObject(node,
+                               PyNodeOwnership::Borrowed,
+                               handle.state ? handle.state->context : nullptr,
+                               handle.state ? handle.state->scene_epoch : 0);
 }
 
 py::object NodeGetProperty(const PyNodeHandle& handle, const std::string& name) {
@@ -806,6 +875,7 @@ py::object NodeGetProperty(const PyNodeHandle& handle, const std::string& name) 
 
 void NodeSetProperty(PyNodeHandle& handle, const std::string& name, const py::handle& value) {
     Node* node = handle.Resolve();
+    ScopedActiveAppContext scoped_context(handle.state ? handle.state->context : nullptr);
     const Property property = node->GetType().get_property(name);
     if (!property.is_valid()) {
         throw py::key_error("unknown Gobot property '" + name + "'");
@@ -824,6 +894,7 @@ void NodeSetProperty(PyNodeHandle& handle, const std::string& name, const py::ha
 py::object NodeAddChild(PyNodeHandle& handle, PyNodeHandle& child_handle, bool force_readable_name) {
     Node* node = handle.Resolve();
     Node* child = child_handle.Resolve();
+    ScopedActiveAppContext scoped_context(handle.state ? handle.state->context : nullptr);
     if (IsSceneScriptRuntimeMutation()) {
         node->AddChild(child, force_readable_name);
     } else {
@@ -835,12 +906,16 @@ py::object NodeAddChild(PyNodeHandle& handle, PyNodeHandle& child_handle, bool f
     }
     child_handle.TransferToTree();
     child_handle.RefreshSnapshot(child);
-    return MakeTypedNodeObject(child);
+    return MakeTypedNodeObject(child,
+                               PyNodeOwnership::Borrowed,
+                               handle.state ? handle.state->context : nullptr,
+                               handle.state ? handle.state->scene_epoch : 0);
 }
 
 py::object NodeRemoveChild(PyNodeHandle& handle, PyNodeHandle& child_handle, bool delete_child) {
     Node* node = handle.Resolve();
     Node* child = child_handle.Resolve();
+    ScopedActiveAppContext scoped_context(handle.state ? handle.state->context : nullptr);
     if (child->GetParent() != node) {
         throw std::invalid_argument("Gobot node '" + child->GetName() + "' is not a child of '" +
                                     node->GetName() + "'");
@@ -874,6 +949,7 @@ py::object NodeRemoveChild(PyNodeHandle& handle, PyNodeHandle& child_handle, boo
 void NodeReparent(PyNodeHandle& handle, PyNodeHandle& parent_handle) {
     Node* node = handle.Resolve();
     Node* parent = parent_handle.Resolve();
+    ScopedActiveAppContext scoped_context(handle.state ? handle.state->context : nullptr);
     if (IsSceneScriptRuntimeMutation()) {
         node->Reparent(parent);
     } else {
@@ -890,7 +966,10 @@ py::object NodeGetParent(PyNodeHandle& handle) {
     if (parent == nullptr) {
         return py::none();
     }
-    return MakeTypedNodeObject(parent);
+    return MakeTypedNodeObject(parent,
+                               PyNodeOwnership::Borrowed,
+                               handle.state ? handle.state->context : nullptr,
+                               handle.state ? handle.state->scene_epoch : 0);
 }
 
 py::list NodeGetPropertyNames(const PyNodeHandle& handle) {
@@ -1101,15 +1180,10 @@ py::array_t<std::uint8_t> CaptureRgb(const py::handle& root_handle,
         throw std::runtime_error("cannot capture RGB without a scene root");
     }
 
-    // Transitional bridge for Python video capture. A first-class runtime scene
-    // owner should eventually create and tear down this render context.
-    static HeadlessRenderContext* headless_context = nullptr;
     if (!RenderServer::HasInstance()) {
-        if (headless_context == nullptr) {
-            headless_context = new HeadlessRenderContext();
-        }
-        if (!headless_context->Initialize()) {
-            throw std::runtime_error(headless_context->GetLastError());
+        HeadlessRenderContext& headless_context = EnsureHeadlessRenderContext();
+        if (!headless_context.Initialize()) {
+            throw std::runtime_error(headless_context.GetLastError());
         }
     }
 
@@ -1413,10 +1487,15 @@ Node* PyNodeHandle::Resolve() const {
     if (!state || state->id.IsNull()) {
         ThrowReferenceError("Gobot node handle is invalid");
     }
+    if (state->context != nullptr && !IsAppContextLive(state->context)) {
+        ThrowReferenceError("Gobot node handle '" + state->name_snapshot +
+                            "' belongs to a destroyed app context");
+    }
 
     if (state->ownership != PyNodeOwnership::DetachedOwned &&
         state->scene_epoch != 0 &&
-        state->scene_epoch != ActiveSceneEpoch()) {
+        state->context != nullptr &&
+        state->scene_epoch != SceneEpochForContext(state->context)) {
         ThrowReferenceError("Gobot node handle '" + state->name_snapshot +
                             "' is from an inactive scene epoch");
     }
@@ -1432,10 +1511,11 @@ Node* PyNodeHandle::Resolve() const {
 
 void PyNodeHandle::TransferToDetachedOwned(Node* node) {
     if (!state) {
-        state = MakeState(node, ActiveSceneEpoch(), PyNodeOwnership::DetachedOwned);
+        state = MakeState(node, ActiveSceneContext(), ActiveSceneEpoch(), PyNodeOwnership::DetachedOwned);
         return;
     }
     state->id = node != nullptr ? node->GetInstanceId() : ObjectID();
+    state->context = ActiveSceneContext();
     state->scene_epoch = ActiveSceneEpoch();
     state->ownership = PyNodeOwnership::DetachedOwned;
     RefreshSnapshot(node);
@@ -1445,148 +1525,218 @@ std::string ExpectedTypeForNode(Node* node) {
     return node == nullptr ? "Node" : std::string(node->GetClassStringName());
 }
 
-PyNodeHandle MakeNodeHandle(Node* node, PyNodeOwnership ownership = PyNodeOwnership::Borrowed) {
-    return PyNodeHandle(node, ExpectedTypeForNode(node), ActiveSceneEpoch(), ownership);
+EngineContext* ResolveHandleContext(EngineContext* context) {
+    return context != nullptr ? context : ActiveSceneContext();
 }
 
-PyNode3DHandle MakeNode3DHandle(Node3D* node, PyNodeOwnership ownership = PyNodeOwnership::Borrowed) {
-    return PyNode3DHandle(node, ExpectedTypeForNode(node), ActiveSceneEpoch(), ownership);
+std::uint64_t ResolveHandleEpoch(EngineContext* context, std::uint64_t epoch) {
+    if (epoch != 0) {
+        return epoch;
+    }
+    return SceneEpochForContext(ResolveHandleContext(context));
 }
 
-PyRobot3DHandle MakeRobot3DHandle(Robot3D* node, PyNodeOwnership ownership = PyNodeOwnership::Borrowed) {
-    return PyRobot3DHandle(node, "Robot3D", ActiveSceneEpoch(), ownership);
+PyNodeHandle MakeNodeHandle(Node* node,
+                            PyNodeOwnership ownership = PyNodeOwnership::Borrowed,
+                            EngineContext* context = nullptr,
+                            std::uint64_t epoch = 0) {
+    EngineContext* resolved_context = ResolveHandleContext(context);
+    return PyNodeHandle(node, ExpectedTypeForNode(node), resolved_context, ResolveHandleEpoch(resolved_context, epoch), ownership);
 }
 
-PyLink3DHandle MakeLink3DHandle(Link3D* node, PyNodeOwnership ownership = PyNodeOwnership::Borrowed) {
-    return PyLink3DHandle(node, "Link3D", ActiveSceneEpoch(), ownership);
+PyNode3DHandle MakeNode3DHandle(Node3D* node,
+                                PyNodeOwnership ownership = PyNodeOwnership::Borrowed,
+                                EngineContext* context = nullptr,
+                                std::uint64_t epoch = 0) {
+    EngineContext* resolved_context = ResolveHandleContext(context);
+    return PyNode3DHandle(node, ExpectedTypeForNode(node), resolved_context, ResolveHandleEpoch(resolved_context, epoch), ownership);
 }
 
-PyJoint3DHandle MakeJoint3DHandle(Joint3D* node, PyNodeOwnership ownership = PyNodeOwnership::Borrowed) {
-    return PyJoint3DHandle(node, "Joint3D", ActiveSceneEpoch(), ownership);
+PyRobot3DHandle MakeRobot3DHandle(Robot3D* node,
+                                  PyNodeOwnership ownership = PyNodeOwnership::Borrowed,
+                                  EngineContext* context = nullptr,
+                                  std::uint64_t epoch = 0) {
+    EngineContext* resolved_context = ResolveHandleContext(context);
+    return PyRobot3DHandle(node, "Robot3D", resolved_context, ResolveHandleEpoch(resolved_context, epoch), ownership);
+}
+
+PyLink3DHandle MakeLink3DHandle(Link3D* node,
+                                PyNodeOwnership ownership = PyNodeOwnership::Borrowed,
+                                EngineContext* context = nullptr,
+                                std::uint64_t epoch = 0) {
+    EngineContext* resolved_context = ResolveHandleContext(context);
+    return PyLink3DHandle(node, "Link3D", resolved_context, ResolveHandleEpoch(resolved_context, epoch), ownership);
+}
+
+PyJoint3DHandle MakeJoint3DHandle(Joint3D* node,
+                                  PyNodeOwnership ownership = PyNodeOwnership::Borrowed,
+                                  EngineContext* context = nullptr,
+                                  std::uint64_t epoch = 0) {
+    EngineContext* resolved_context = ResolveHandleContext(context);
+    return PyJoint3DHandle(node, "Joint3D", resolved_context, ResolveHandleEpoch(resolved_context, epoch), ownership);
 }
 
 PyCollisionShape3DHandle MakeCollisionShape3DHandle(CollisionShape3D* node,
-                                                    PyNodeOwnership ownership = PyNodeOwnership::Borrowed) {
-    return PyCollisionShape3DHandle(node, "CollisionShape3D", ActiveSceneEpoch(), ownership);
+                                                    PyNodeOwnership ownership = PyNodeOwnership::Borrowed,
+                                                    EngineContext* context = nullptr,
+                                                    std::uint64_t epoch = 0) {
+    EngineContext* resolved_context = ResolveHandleContext(context);
+    return PyCollisionShape3DHandle(node, "CollisionShape3D", resolved_context, ResolveHandleEpoch(resolved_context, epoch), ownership);
 }
 
 PyMeshInstance3DHandle MakeMeshInstance3DHandle(MeshInstance3D* node,
-                                                PyNodeOwnership ownership = PyNodeOwnership::Borrowed) {
-    return PyMeshInstance3DHandle(node, "MeshInstance3D", ActiveSceneEpoch(), ownership);
+                                                PyNodeOwnership ownership = PyNodeOwnership::Borrowed,
+                                                EngineContext* context = nullptr,
+                                                std::uint64_t epoch = 0) {
+    EngineContext* resolved_context = ResolveHandleContext(context);
+    return PyMeshInstance3DHandle(node, "MeshInstance3D", resolved_context, ResolveHandleEpoch(resolved_context, epoch), ownership);
 }
 
-PyTerrain3DHandle MakeTerrain3DHandle(Terrain3D* node, PyNodeOwnership ownership = PyNodeOwnership::Borrowed) {
-    return PyTerrain3DHandle(node, "Terrain3D", ActiveSceneEpoch(), ownership);
+PyTerrain3DHandle MakeTerrain3DHandle(Terrain3D* node,
+                                      PyNodeOwnership ownership = PyNodeOwnership::Borrowed,
+                                      EngineContext* context = nullptr,
+                                      std::uint64_t epoch = 0) {
+    EngineContext* resolved_context = ResolveHandleContext(context);
+    return PyTerrain3DHandle(node, "Terrain3D", resolved_context, ResolveHandleEpoch(resolved_context, epoch), ownership);
 }
 
-PySensor3DHandle MakeSensor3DHandle(Sensor3D* node, PyNodeOwnership ownership = PyNodeOwnership::Borrowed) {
-    return PySensor3DHandle(node, "Sensor3D", ActiveSceneEpoch(), ownership);
+PySensor3DHandle MakeSensor3DHandle(Sensor3D* node,
+                                    PyNodeOwnership ownership = PyNodeOwnership::Borrowed,
+                                    EngineContext* context = nullptr,
+                                    std::uint64_t epoch = 0) {
+    EngineContext* resolved_context = ResolveHandleContext(context);
+    return PySensor3DHandle(node, "Sensor3D", resolved_context, ResolveHandleEpoch(resolved_context, epoch), ownership);
 }
 
-PyIMUSensor3DHandle MakeIMUSensor3DHandle(IMUSensor3D* node, PyNodeOwnership ownership = PyNodeOwnership::Borrowed) {
-    return PyIMUSensor3DHandle(node, "IMUSensor3D", ActiveSceneEpoch(), ownership);
+PyIMUSensor3DHandle MakeIMUSensor3DHandle(IMUSensor3D* node,
+                                          PyNodeOwnership ownership = PyNodeOwnership::Borrowed,
+                                          EngineContext* context = nullptr,
+                                          std::uint64_t epoch = 0) {
+    EngineContext* resolved_context = ResolveHandleContext(context);
+    return PyIMUSensor3DHandle(node, "IMUSensor3D", resolved_context, ResolveHandleEpoch(resolved_context, epoch), ownership);
 }
 
 PyAngularMomentumSensor3DHandle MakeAngularMomentumSensor3DHandle(AngularMomentumSensor3D* node,
-                                                                  PyNodeOwnership ownership = PyNodeOwnership::Borrowed) {
-    return PyAngularMomentumSensor3DHandle(node, "AngularMomentumSensor3D", ActiveSceneEpoch(), ownership);
+                                                                  PyNodeOwnership ownership = PyNodeOwnership::Borrowed,
+                                                                  EngineContext* context = nullptr,
+                                                                  std::uint64_t epoch = 0) {
+    EngineContext* resolved_context = ResolveHandleContext(context);
+    return PyAngularMomentumSensor3DHandle(
+            node,
+            "AngularMomentumSensor3D",
+            resolved_context,
+            ResolveHandleEpoch(resolved_context, epoch),
+            ownership);
 }
 
 PyContactSensor3DHandle MakeContactSensor3DHandle(ContactSensor3D* node,
-                                                  PyNodeOwnership ownership = PyNodeOwnership::Borrowed) {
-    return PyContactSensor3DHandle(node, "ContactSensor3D", ActiveSceneEpoch(), ownership);
+                                                  PyNodeOwnership ownership = PyNodeOwnership::Borrowed,
+                                                  EngineContext* context = nullptr,
+                                                  std::uint64_t epoch = 0) {
+    EngineContext* resolved_context = ResolveHandleContext(context);
+    return PyContactSensor3DHandle(node, "ContactSensor3D", resolved_context, ResolveHandleEpoch(resolved_context, epoch), ownership);
 }
 
 PyHeightScanner3DHandle MakeHeightScanner3DHandle(
         HeightScanner3D* node,
-        PyNodeOwnership ownership = PyNodeOwnership::Borrowed) {
-    return PyHeightScanner3DHandle(node, "HeightScanner3D", ActiveSceneEpoch(), ownership);
+        PyNodeOwnership ownership = PyNodeOwnership::Borrowed,
+        EngineContext* context = nullptr,
+        std::uint64_t epoch = 0) {
+    EngineContext* resolved_context = ResolveHandleContext(context);
+    return PyHeightScanner3DHandle(node, "HeightScanner3D", resolved_context, ResolveHandleEpoch(resolved_context, epoch), ownership);
 }
 
-PyNodeHandle MakeTypedNodeHandle(Node* node, PyNodeOwnership ownership) {
+PyNodeHandle MakeTypedNodeHandle(Node* node,
+                                 PyNodeOwnership ownership,
+                                 EngineContext* context,
+                                 std::uint64_t epoch) {
     if (auto* mesh_instance = Object::PointerCastTo<MeshInstance3D>(node)) {
-        return MakeMeshInstance3DHandle(mesh_instance, ownership);
+        return MakeMeshInstance3DHandle(mesh_instance, ownership, context, epoch);
     }
     if (auto* terrain = Object::PointerCastTo<Terrain3D>(node)) {
-        return MakeTerrain3DHandle(terrain, ownership);
+        return MakeTerrain3DHandle(terrain, ownership, context, epoch);
     }
     if (auto* contact_sensor = Object::PointerCastTo<ContactSensor3D>(node)) {
-        return MakeContactSensor3DHandle(contact_sensor, ownership);
+        return MakeContactSensor3DHandle(contact_sensor, ownership, context, epoch);
     }
     if (auto* height_scanner = Object::PointerCastTo<HeightScanner3D>(node)) {
-        return MakeHeightScanner3DHandle(height_scanner, ownership);
+        return MakeHeightScanner3DHandle(height_scanner, ownership, context, epoch);
     }
     if (auto* angular_momentum_sensor = Object::PointerCastTo<AngularMomentumSensor3D>(node)) {
-        return MakeAngularMomentumSensor3DHandle(angular_momentum_sensor, ownership);
+        return MakeAngularMomentumSensor3DHandle(angular_momentum_sensor, ownership, context, epoch);
     }
     if (auto* imu_sensor = Object::PointerCastTo<IMUSensor3D>(node)) {
-        return MakeIMUSensor3DHandle(imu_sensor, ownership);
+        return MakeIMUSensor3DHandle(imu_sensor, ownership, context, epoch);
     }
     if (auto* sensor = Object::PointerCastTo<Sensor3D>(node)) {
-        return MakeSensor3DHandle(sensor, ownership);
+        return MakeSensor3DHandle(sensor, ownership, context, epoch);
     }
     if (auto* collision_shape = Object::PointerCastTo<CollisionShape3D>(node)) {
-        return MakeCollisionShape3DHandle(collision_shape, ownership);
+        return MakeCollisionShape3DHandle(collision_shape, ownership, context, epoch);
     }
     if (auto* joint = Object::PointerCastTo<Joint3D>(node)) {
-        return MakeJoint3DHandle(joint, ownership);
+        return MakeJoint3DHandle(joint, ownership, context, epoch);
     }
     if (auto* link = Object::PointerCastTo<Link3D>(node)) {
-        return MakeLink3DHandle(link, ownership);
+        return MakeLink3DHandle(link, ownership, context, epoch);
     }
     if (auto* robot = Object::PointerCastTo<Robot3D>(node)) {
-        return MakeRobot3DHandle(robot, ownership);
+        return MakeRobot3DHandle(robot, ownership, context, epoch);
     }
     if (auto* node_3d = Object::PointerCastTo<Node3D>(node)) {
-        return MakeNode3DHandle(node_3d, ownership);
+        return MakeNode3DHandle(node_3d, ownership, context, epoch);
     }
-    return MakeNodeHandle(node, ownership);
+    return MakeNodeHandle(node, ownership, context, epoch);
 }
 
-py::object MakeTypedNodeObject(Node* node, PyNodeOwnership ownership) {
+py::object MakeTypedNodeObject(Node* node,
+                               PyNodeOwnership ownership,
+                               EngineContext* context,
+                               std::uint64_t epoch) {
     if (auto* mesh_instance = Object::PointerCastTo<MeshInstance3D>(node)) {
-        return py::cast(MakeMeshInstance3DHandle(mesh_instance, ownership));
+        return py::cast(MakeMeshInstance3DHandle(mesh_instance, ownership, context, epoch));
     }
     if (auto* terrain = Object::PointerCastTo<Terrain3D>(node)) {
-        return py::cast(MakeTerrain3DHandle(terrain, ownership));
+        return py::cast(MakeTerrain3DHandle(terrain, ownership, context, epoch));
     }
     if (auto* contact_sensor = Object::PointerCastTo<ContactSensor3D>(node)) {
-        return py::cast(MakeContactSensor3DHandle(contact_sensor, ownership));
+        return py::cast(MakeContactSensor3DHandle(contact_sensor, ownership, context, epoch));
     }
     if (auto* height_scanner = Object::PointerCastTo<HeightScanner3D>(node)) {
-        return py::cast(MakeHeightScanner3DHandle(height_scanner, ownership));
+        return py::cast(MakeHeightScanner3DHandle(height_scanner, ownership, context, epoch));
     }
     if (auto* angular_momentum_sensor = Object::PointerCastTo<AngularMomentumSensor3D>(node)) {
-        return py::cast(MakeAngularMomentumSensor3DHandle(angular_momentum_sensor, ownership));
+        return py::cast(MakeAngularMomentumSensor3DHandle(angular_momentum_sensor, ownership, context, epoch));
     }
     if (auto* imu_sensor = Object::PointerCastTo<IMUSensor3D>(node)) {
-        return py::cast(MakeIMUSensor3DHandle(imu_sensor, ownership));
+        return py::cast(MakeIMUSensor3DHandle(imu_sensor, ownership, context, epoch));
     }
     if (auto* sensor = Object::PointerCastTo<Sensor3D>(node)) {
-        return py::cast(MakeSensor3DHandle(sensor, ownership));
+        return py::cast(MakeSensor3DHandle(sensor, ownership, context, epoch));
     }
     if (auto* collision_shape = Object::PointerCastTo<CollisionShape3D>(node)) {
-        return py::cast(MakeCollisionShape3DHandle(collision_shape, ownership));
+        return py::cast(MakeCollisionShape3DHandle(collision_shape, ownership, context, epoch));
     }
     if (auto* joint = Object::PointerCastTo<Joint3D>(node)) {
-        return py::cast(MakeJoint3DHandle(joint, ownership));
+        return py::cast(MakeJoint3DHandle(joint, ownership, context, epoch));
     }
     if (auto* link = Object::PointerCastTo<Link3D>(node)) {
-        return py::cast(MakeLink3DHandle(link, ownership));
+        return py::cast(MakeLink3DHandle(link, ownership, context, epoch));
     }
     if (auto* robot = Object::PointerCastTo<Robot3D>(node)) {
-        return py::cast(MakeRobot3DHandle(robot, ownership));
+        return py::cast(MakeRobot3DHandle(robot, ownership, context, epoch));
     }
     if (auto* node_3d = Object::PointerCastTo<Node3D>(node)) {
-        return py::cast(MakeNode3DHandle(node_3d, ownership));
+        return py::cast(MakeNode3DHandle(node_3d, ownership, context, epoch));
     }
-    return py::cast(MakeNodeHandle(node, ownership));
+    return py::cast(MakeNodeHandle(node, ownership, context, epoch));
 }
 
 void ExecuteSetNodeProperty(Node* node, const std::string& property_name, Variant value) {
     if (node == nullptr) {
         throw std::invalid_argument("cannot set property on a null Gobot node");
     }
+    ScopedActiveAppContext scoped_context(ContextForNode(node));
     if (IsSceneScriptRuntimeMutation()) {
         if (!node->Set(property_name, std::move(value))) {
             throw std::runtime_error("failed to set Gobot runtime node property '" + property_name + "'");
@@ -1596,6 +1746,13 @@ void ExecuteSetNodeProperty(Node* node, const std::string& property_name, Varian
     ExecuteSceneMutation("set_property", [&]() {
         return std::make_unique<SetNodePropertyCommand>(node->GetInstanceId(), property_name, std::move(value));
     });
+}
+
+EngineContext* ContextForNode(const Node* node) {
+    if (EngineContext* context = FindAppContextForSceneRoot(node)) {
+        return context;
+    }
+    return GetActiveAppContextOrNull();
 }
 
 } // namespace
@@ -1718,7 +1875,7 @@ class NodeScript:
     py::implicitly_convertible<PyContactSensor3DHandle, PyNodeHandle>();
     py::implicitly_convertible<PyHeightScanner3DHandle, PyNodeHandle>();
 
-    py::class_<EngineContext>(module, "AppContext")
+    py::class_<EngineContext, std::shared_ptr<EngineContext>>(module, "AppContext")
             .def_property_readonly("project_path", &EngineContext::GetProjectPath)
             .def_property_readonly("scene_path", &EngineContext::GetScenePath)
             .def_property_readonly("scene_epoch", &EngineContext::GetSceneEpoch)
@@ -1728,11 +1885,14 @@ class NodeScript:
             .def_property_readonly("undo_name", &EngineContext::GetUndoSceneCommandName)
             .def_property_readonly("redo_name", &EngineContext::GetRedoSceneCommandName)
             .def_property_readonly("root", [](EngineContext& context) -> py::object {
-                Node* root = ActiveSceneRoot();
+                Node* root = SceneRootForContext(context);
                 if (root == nullptr) {
                     return py::none();
                 }
-                return MakeTypedNodeObject(root);
+                return MakeTypedNodeObject(root,
+                                           PyNodeOwnership::Borrowed,
+                                           &context,
+                                           SceneEpochForContext(&context));
             })
             .def_property_readonly("input", [](EngineContext&) -> Input* {
                 return Input::GetInstanceOrNull();
@@ -1763,7 +1923,10 @@ class NodeScript:
                 if (!context.LoadScene(scene_path)) {
                     throw std::runtime_error(context.GetLastError());
                 }
-                return MakeTypedNodeObject(context.GetSceneRoot());
+                return MakeTypedNodeObject(context.GetSceneRoot(),
+                                           PyNodeOwnership::Borrowed,
+                                           &context,
+                                           context.GetSceneEpoch());
             }, py::arg("scene_path"))
             .def("clear_scene", &EngineContext::ClearScene)
             .def("notify_scene_changed", &EngineContext::NotifySceneChanged)
@@ -2748,9 +2911,12 @@ class NodeScript:
     });
 
     py::module_ app_module = module.def_submodule("app", "Gobot application runtime context.");
-    app_module.def("context", []() -> EngineContext& {
-        return GetActiveAppContext();
-    }, py::return_value_policy::reference);
+    app_module.def("context", []() {
+        return std::shared_ptr<EngineContext>(&GetActiveAppContext(), [](EngineContext*) {});
+    });
+    app_module.def("create_context", []() {
+        return CreateAppContext();
+    });
 
     module.def("load_scene", [](const std::string& scene_path) {
         EnsureRuntimeContext();
@@ -2815,14 +2981,19 @@ class NodeScript:
         return ResourceToPythonDict(ResourceLoader::Load(path, type_hint));
     }, py::arg("path"), py::arg("type_hint") = "");
 
-    module.def("_node_from_id", [](std::uint64_t id) -> py::object {
+    module.def("_node_from_id", [](std::uint64_t id, const py::object& context_object) -> py::object {
         EnsureRuntimeContext();
         auto* node = Object::PointerCastTo<Node>(ObjectDB::GetInstance(ObjectID(id)));
         if (node == nullptr) {
             return py::none();
         }
-        return MakeTypedNodeObject(node);
-    }, py::arg("id"));
+        EngineContext* context = context_object.is_none() ? nullptr : py::cast<EngineContext*>(context_object);
+        EngineContext* handle_context = context != nullptr ? context : ContextForNode(node);
+        return MakeTypedNodeObject(node,
+                                   PyNodeOwnership::Borrowed,
+                                   handle_context,
+                                   SceneEpochForContext(handle_context));
+    }, py::arg("id"), py::arg("context") = py::none());
 
     module.def("_capture_rgb",
                [](const py::object& root,
@@ -2846,6 +3017,10 @@ class NodeScript:
                py::arg("fov_y") = 60.0,
                py::arg("z_near") = 0.05,
                py::arg("z_far") = 200.0);
+
+    module.def("_shutdown_headless_render_context", []() {
+        ShutdownHeadlessRenderContext();
+    });
 
     module.def("create_test_scene", []() {
         EnsureRuntimeContext();

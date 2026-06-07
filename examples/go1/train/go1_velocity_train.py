@@ -41,7 +41,8 @@ def main() -> None:
     parser.add_argument("--resume", action="store_true", help="Resume from the latest model_*.pt in log-dir.")
     parser.add_argument("--checkpoint", type=str, default=None, help="Checkpoint path to resume from.")
     parser.add_argument("--render-video-interval", type=int, default=100, help="Write an MP4 every N training iterations. Set 0 to disable.")
-    parser.add_argument("--render-video-env-id", type=int, default=0, help="Training batch env id to mirror into the RGB capture scene.")
+    parser.add_argument("--render-video-env-id", type=int, default=0, help="Eval batch env id to capture into the RGB training video.")
+    parser.add_argument("--render-video-num-envs", type=int, default=1, help="Number of environments in the independent video eval rollout.")
     parser.add_argument("--render-video-steps", type=int, default=240)
     parser.add_argument("--render-video-fps", type=int, default=30)
     parser.add_argument("--render-video-width", type=int, default=640)
@@ -88,6 +89,8 @@ def main() -> None:
         Go1TrainingVideoCfg(
             interval=int(args.render_video_interval),
             env_id=int(args.render_video_env_id),
+            num_envs=int(args.render_video_num_envs),
+            seed=int(args.seed) + 1_000_003,
             steps=int(args.render_video_steps),
             fps=int(args.render_video_fps),
             width=int(args.render_video_width),
@@ -111,20 +114,23 @@ def main() -> None:
         if infos:
             print(f"Checkpoint infos: {sorted(infos.keys())}")
 
-    runner.learn(num_learning_iterations=args.iterations, init_at_random_ep_len=checkpoint is None)
+    try:
+        runner.learn(num_learning_iterations=args.iterations, init_at_random_ep_len=checkpoint is None)
 
-    final_path = log_dir / "model_final.pt"
-    runner.save(str(final_path), infos={"gobot_go1_velocity": env.cfg})
+        final_path = log_dir / "model_final.pt"
+        runner.save(str(final_path), infos={"gobot_go1_velocity": env.cfg})
 
-    policy_path = Path(args.policy_out)
-    if not policy_path.is_absolute():
-        policy_path = project_path / policy_path
-    policy_path.parent.mkdir(parents=True, exist_ok=True)
-    runner.save(str(policy_path), infos={"gobot_go1_velocity": env.cfg})
+        policy_path = Path(args.policy_out)
+        if not policy_path.is_absolute():
+            policy_path = project_path / policy_path
+        policy_path.parent.mkdir(parents=True, exist_ok=True)
+        runner.save(str(policy_path), infos={"gobot_go1_velocity": env.cfg})
 
-    print(f"Saved final model to {final_path}")
-    print(f"Saved editor policy to {policy_path}")
-    env.close()
+        print(f"Saved final model to {final_path}")
+        print(f"Saved editor policy to {policy_path}")
+    finally:
+        env.close()
+        video_recorder.close()
 
 
 def _resolve_checkpoint(checkpoint: str | None, log_dir: Path) -> Path:

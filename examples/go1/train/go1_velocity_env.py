@@ -57,6 +57,7 @@ class Go1VelocityEnv:
         device: str = "cpu",
         seed: int = 42,
         max_episode_length: int | None = None,
+        context: gobot.AppContext | None = None,
     ) -> None:
         try:
             import torch
@@ -119,7 +120,7 @@ class Go1VelocityEnv:
         self._current_command_stage = 0
 
         self.project_path = Path(self.cfg_obj.project_path).resolve()
-        self.context = gobot.app.context()
+        self.context = context if context is not None else gobot.app.context()
         self.context.set_project_path(str(self.project_path))
         self.context.load_scene(self.cfg_obj.scene_path)
         self._spawn_origins = self._load_spawn_origins()
@@ -316,6 +317,7 @@ class Go1VelocityEnv:
 
     def close(self) -> None:
         self.context.clear_world()
+        self.context.clear_scene()
 
     def set_training_progress(self, policy_steps: int) -> None:
         self._total_policy_steps = max(0, int(policy_steps))
