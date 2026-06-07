@@ -20,7 +20,7 @@ def main():
     version_info = gobot.version_info()
     assert version_info["major"] == 0
     assert version_info["minor"] == 1
-    assert version_info["patch"] == 7
+    assert version_info["patch"] == 8
     assert isinstance(version_info["commit"], str)
 
     infos = gobot.backend_infos()
