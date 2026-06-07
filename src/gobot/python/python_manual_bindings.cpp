@@ -19,6 +19,7 @@
 #include <vector>
 
 #include <pybind11/eval.h>
+#include <pybind11/numpy.h>
 #include <pybind11/stl.h>
 
 #include "gobot/core/config/engine.hpp"
@@ -34,6 +35,9 @@
 #include "gobot/physics/physics_world.hpp"
 #include "gobot/python/python_app_context.hpp"
 #include "gobot/python/python_script_runner.hpp"
+#include "gobot/rendering/headless_render_context.hpp"
+#include "gobot/rendering/render_server.hpp"
+#include "gobot/scene/camera_3d.hpp"
 #include "gobot/scene/collision_shape_3d.hpp"
 #include "gobot/scene/joint_3d.hpp"
 #include "gobot/scene/link_3d.hpp"
@@ -1064,6 +1068,74 @@ py::list Vector3ListToPython(const std::vector<Vector3>& values) {
         result.append(Vector3ToPython(value));
     }
     return result;
+}
+
+Affine3 PythonToTransformWxyz(const py::handle& position, const py::handle& orientation) {
+    Affine3 transform = Affine3::Identity();
+    transform.translation() = PythonToVector3(position);
+    transform.linear() = PythonToQuaternionWxyz(orientation).toRotationMatrix();
+    return transform;
+}
+
+py::array_t<std::uint8_t> CaptureRgb(const py::handle& root_handle,
+                                     int width,
+                                     int height,
+                                     const py::handle& eye,
+                                     const py::handle& target,
+                                     const py::handle& up,
+                                     RealType fov_y,
+                                     RealType z_near,
+                                     RealType z_far) {
+    if (width <= 0 || height <= 0) {
+        throw std::invalid_argument("capture size must be positive");
+    }
+
+    Node* root = nullptr;
+    if (root_handle.is_none()) {
+        root = ActiveSceneRoot();
+    } else {
+        const PyNodeHandle& handle = py::cast<const PyNodeHandle&>(root_handle);
+        root = handle.Resolve();
+    }
+    if (root == nullptr) {
+        throw std::runtime_error("cannot capture RGB without a scene root");
+    }
+
+    // Transitional bridge for Python video capture. A first-class runtime scene
+    // owner should eventually create and tear down this render context.
+    static HeadlessRenderContext* headless_context = nullptr;
+    if (!RenderServer::HasInstance()) {
+        if (headless_context == nullptr) {
+            headless_context = new HeadlessRenderContext();
+        }
+        if (!headless_context->Initialize()) {
+            throw std::runtime_error(headless_context->GetLastError());
+        }
+    }
+
+    auto* render_server = RenderServer::GetInstance();
+    if (render_server == nullptr) {
+        throw std::runtime_error("Gobot RenderServer is not initialized");
+    }
+
+    Camera3D camera;
+    camera.SetAspect(static_cast<RealType>(width) / static_cast<RealType>(height));
+    camera.SetPerspective(fov_y, z_near, z_far);
+    camera.SetViewMatrix(PythonToVector3(eye), PythonToVector3(target), PythonToVector3(up));
+
+    RID capture_viewport = render_server->ViewportCreate();
+    render_server->ViewportSetSize(capture_viewport, width, height);
+    render_server->RenderSceneToViewport(capture_viewport, root, &camera);
+    std::vector<std::uint8_t> pixels = render_server->ReadViewportRgbPixels(capture_viewport, true);
+    render_server->Free(capture_viewport);
+    if (pixels.size() != static_cast<std::size_t>(width) * height * 3) {
+        throw std::runtime_error("RGB capture readback returned an unexpected pixel buffer size");
+    }
+
+    py::array_t<std::uint8_t> array({height, width, 3});
+    py::buffer_info info = array.request();
+    std::copy(pixels.begin(), pixels.end(), static_cast<std::uint8_t*>(info.ptr));
+    return array;
 }
 
 std::string PhysicsJointControlModeName(PhysicsJointControlMode mode) {
@@ -2126,6 +2198,18 @@ class NodeScript:
                           [](PyNode3DHandle& handle, bool visible) {
                               Node3D* node = handle.ResolveAs<Node3D>();
                               ExecuteSetNodeProperty(node, "visible", Variant(visible));
+                          })
+            .def("set_global_transform",
+                          [](PyNode3DHandle& handle,
+                             const py::handle& position,
+                             const py::handle& orientation) {
+                              handle.ResolveAs<Node3D>()->SetGlobalTransform(PythonToTransformWxyz(position, orientation));
+                          })
+            .def("set_transform",
+                          [](PyNode3DHandle& handle,
+                             const py::handle& position,
+                             const py::handle& orientation) {
+                              handle.ResolveAs<Node3D>()->SetTransform(PythonToTransformWxyz(position, orientation));
                           });
 
     robot3d_class
@@ -2739,6 +2823,29 @@ class NodeScript:
         }
         return MakeTypedNodeObject(node);
     }, py::arg("id"));
+
+    module.def("_capture_rgb",
+               [](const py::object& root,
+                  int width,
+                  int height,
+                  const py::handle& eye,
+                  const py::handle& target,
+                  const py::handle& up,
+                  RealType fov_y,
+                  RealType z_near,
+                  RealType z_far) {
+                   EnsureRuntimeContext();
+                   return CaptureRgb(root, width, height, eye, target, up, fov_y, z_near, z_far);
+               },
+               py::arg("root") = py::none(),
+               py::arg("width") = 640,
+               py::arg("height") = 480,
+               py::arg("eye") = py::make_tuple(2.4, -3.0, 1.6),
+               py::arg("target") = py::make_tuple(0.0, 0.0, 0.5),
+               py::arg("up") = py::make_tuple(0.0, 0.0, 1.0),
+               py::arg("fov_y") = 60.0,
+               py::arg("z_near") = 0.05,
+               py::arg("z_far") = 200.0);
 
     module.def("create_test_scene", []() {
         EnsureRuntimeContext();

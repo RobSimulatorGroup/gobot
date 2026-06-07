@@ -99,6 +99,13 @@ public:
         }
     }
     void* GetRenderTargetColorTextureNativeHandle(RID) override { return nullptr; }
+    std::vector<std::uint8_t> RenderTargetReadRgbPixels(RID p_render_target, bool) override {
+        auto* target = render_targets_.GetOrNull(p_render_target);
+        if (target == nullptr || target->width <= 0 || target->height <= 0) {
+            return {};
+        }
+        return std::vector<std::uint8_t>(static_cast<std::size_t>(target->width) * target->height * 3, 0);
+    }
 
     RID TextureAllocate() override {
         RID rid = textures_.AllocateRID();

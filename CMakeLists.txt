@@ -16,6 +16,7 @@ option(GOB_BUILD_TESTS "build tests" OFF)
 option(GOB_BUILD_OPENUSD "build OpenUSD scene importer/exporter support" OFF)
 option(GOB_BUILD_ASSIMP "build mesh import support through Assimp" ON)
 option(GOB_BUILD_MUJOCO "build MuJoCo CPU physics backend support" ON)
+option(GOB_BUILD_EGL "build EGL headless OpenGL rendering support" ON)
 option(GOB_FETCH_MUJOCO "download MuJoCo from the official GitHub repository when GOB_BUILD_MUJOCO is ON and no local SDK/package is found" ON)
 set(GOB_MUJOCO_ROOT "" CACHE PATH "MuJoCo SDK or install prefix. Supports either a CMake package install or an extracted SDK with include/ and lib/.")
 set(GOB_MUJOCO_GIT_TAG "3.8.0" CACHE STRING "MuJoCo release tag used when GOB_FETCH_MUJOCO is ON")
@@ -32,6 +33,34 @@ if(PROJECT_SOURCE_DIR STREQUAL PROJECT_BINARY_DIR)
 endif()
 
 find_package(Eigen3 REQUIRED)
+
+set(GOBOT_EGL_TARGET "")
+if(GOB_BUILD_EGL)
+    find_package(PkgConfig QUIET)
+    if(PkgConfig_FOUND)
+        pkg_check_modules(GOBOT_EGL QUIET IMPORTED_TARGET egl)
+    endif()
+    if(TARGET PkgConfig::GOBOT_EGL)
+        set(GOBOT_EGL_TARGET PkgConfig::GOBOT_EGL)
+    else()
+        find_path(GOBOT_EGL_INCLUDE_DIR NAMES EGL/egl.h)
+        find_library(GOBOT_EGL_LIBRARY NAMES EGL)
+        if(GOBOT_EGL_INCLUDE_DIR AND GOBOT_EGL_LIBRARY)
+            add_library(gobot_egl_sdk UNKNOWN IMPORTED GLOBAL)
+            set_target_properties(gobot_egl_sdk
+                PROPERTIES
+                    IMPORTED_LOCATION "${GOBOT_EGL_LIBRARY}"
+                    INTERFACE_INCLUDE_DIRECTORIES "${GOBOT_EGL_INCLUDE_DIR}"
+            )
+            set(GOBOT_EGL_TARGET gobot_egl_sdk)
+        endif()
+    endif()
+    if(GOBOT_EGL_TARGET)
+        message(STATUS "Gobot EGL headless rendering enabled with target: ${GOBOT_EGL_TARGET}")
+    else()
+        message(WARNING "GOB_BUILD_EGL is ON, but EGL was not found. Python RGB capture will report unavailable.")
+    endif()
+endif()
 
 CPMFindPackage(
     NAME nlohmann_json
@@ -300,6 +329,12 @@ file(GLOB_RECURSE SOURCE_SCENE CONFIGURE_DEPENDS "src/gobot/scene/*.cpp")
 file(GLOB_RECURSE SOURCE_PHYSICS CONFIGURE_DEPENDS "src/gobot/physics/*.cpp")
 file(GLOB_RECURSE SOURCE_SIMULATION CONFIGURE_DEPENDS "src/gobot/simulation/*.cpp")
 file(GLOB_RECURSE SOURCE_DRIVERS CONFIGURE_DEPENDS "src/gobot/drivers/*.cpp")
+file(GLOB_RECURSE SOURCE_OPENGL_DRIVERS CONFIGURE_DEPENDS "src/gobot/drivers/opengl/*.cpp")
+list(REMOVE_ITEM SOURCE_OPENGL_DRIVERS
+        "${CMAKE_CURRENT_SOURCE_DIR}/src/gobot/drivers/opengl/imgui_renderer.cpp")
+foreach(GOBOT_OPENGL_DRIVER_SOURCE IN LISTS SOURCE_OPENGL_DRIVERS)
+    list(REMOVE_ITEM SOURCE_DRIVERS "${GOBOT_OPENGL_DRIVER_SOURCE}")
+endforeach()
 file(GLOB_RECURSE SOURCE_RENDERING CONFIGURE_DEPENDS "src/gobot/rendering/*.cpp")
 file(GLOB_RECURSE SOURCE_EDITOR CONFIGURE_DEPENDS "src/gobot/editor/*.cpp")
 file(GLOB_RECURSE SOURCE_MAIN CONFIGURE_DEPENDS "src/gobot/main/*.cpp")
@@ -314,7 +349,7 @@ set(SOURCE_EDITOR_SCENE
 list(REMOVE_ITEM SOURCE_SCENE ${SOURCE_EDITOR_SCENE})
 
 # https://github.com/bincrafters/community/issues/466#issuecomment-426265654
-add_library(gobot SHARED ${SOURCE_CORE} ${SOURCE_RENDERING} ${SOURCE_SCENE} ${SOURCE_PHYSICS} ${SOURCE_SIMULATION} ${SOURCE_APP_RUNTIME} ${SOURCE_PYTHON_RUNTIME})
+add_library(gobot SHARED ${SOURCE_CORE} ${SOURCE_RENDERING} ${SOURCE_SCENE} ${SOURCE_PHYSICS} ${SOURCE_SIMULATION} ${SOURCE_OPENGL_DRIVERS} ${SOURCE_APP_RUNTIME} ${SOURCE_PYTHON_RUNTIME})
 target_compile_options(gobot PUBLIC "-fno-gnu-unique" "-Wno-volatile" "-Wno-deprecated-enum-enum-conversion")
 
 # https://forum.qt.io/topic/97296/export-qobject-based-class-from-dll/2
@@ -337,6 +372,7 @@ target_link_libraries(gobot
         Eigen3::Eigen
         magic_enum::magic_enum
         nlohmann_json::nlohmann_json
+        glad
 )
 target_compile_definitions(gobot PUBLIC
         GOBOT_VERSION_MAJOR=${PROJECT_VERSION_MAJOR}
@@ -358,6 +394,11 @@ endif()
 if(GOB_BUILD_MUJOCO)
     target_compile_definitions(gobot PUBLIC GOBOT_HAS_MUJOCO=1)
     target_link_libraries(gobot PUBLIC ${GOBOT_MUJOCO_TARGET})
+endif()
+
+if(GOB_BUILD_EGL AND GOBOT_EGL_TARGET)
+    target_compile_definitions(gobot PUBLIC GOBOT_HAS_EGL=1)
+    target_link_libraries(gobot PUBLIC ${GOBOT_EGL_TARGET})
 endif()
 
 target_compile_definitions(gobot PUBLIC GOBOT_HAS_PYTHON=1 GOBOT_HAS_PYTHON_EMBED=1)

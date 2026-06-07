@@ -40,13 +40,27 @@ RID PrimitiveMesh::GetRid() const {
     return mesh_;
 }
 
+RID PrimitiveMesh::EnsureRid() const {
+    if (mesh_.IsNull() && RenderServer::HasInstance()) {
+        mesh_ = RenderServer::GetInstance()->MeshCreate();
+    }
+    return mesh_;
+}
+
 
 //////////////////////
 
 BoxMesh::BoxMesh() {
     if (RenderServer::HasInstance()) {
-        RS::GetInstance()->MeshSetBox(GetRid(), size_);
+        RS::GetInstance()->MeshSetBox(EnsureRid(), size_);
     }
+}
+
+RID BoxMesh::GetRid() const {
+    if (PrimitiveMesh::GetRid().IsNull() && RenderServer::HasInstance()) {
+        RS::GetInstance()->MeshSetBox(EnsureRid(), size_);
+    }
+    return PrimitiveMesh::GetRid();
 }
 
 void BoxMesh::SetWidth(RealType p_width) {
@@ -61,7 +75,7 @@ RealType BoxMesh::GetWidth() const {
 void BoxMesh::SetSize(Vector3 size) {
     size_ = size;
     if (RenderServer::HasInstance()) {
-        RS::GetInstance()->MeshSetBox(GetRid(), size_);
+        RS::GetInstance()->MeshSetBox(EnsureRid(), size_);
     }
 }
 
@@ -73,6 +87,13 @@ const Vector3& BoxMesh::GetSize() const {
 
 CylinderMesh::CylinderMesh() {
     UpdateMesh();
+}
+
+RID CylinderMesh::GetRid() const {
+    if (PrimitiveMesh::GetRid().IsNull()) {
+        UpdateMesh();
+    }
+    return PrimitiveMesh::GetRid();
 }
 
 void CylinderMesh::SetRadius(RealType radius) {
@@ -110,17 +131,24 @@ int CylinderMesh::GetRadialSegments() const {
     return radial_segments_;
 }
 
-void CylinderMesh::UpdateMesh() {
+void CylinderMesh::UpdateMesh() const {
     if (!RenderServer::HasInstance()) {
         return;
     }
-    RS::GetInstance()->MeshSetCylinder(GetRid(), radius_, height_, radial_segments_);
+    RS::GetInstance()->MeshSetCylinder(EnsureRid(), radius_, height_, radial_segments_);
 }
 
 /////////////////////////////////
 
 PlaneMesh::PlaneMesh() {
     UpdateMesh();
+}
+
+RID PlaneMesh::GetRid() const {
+    if (PrimitiveMesh::GetRid().IsNull()) {
+        UpdateMesh();
+    }
+    return PrimitiveMesh::GetRid();
 }
 
 void PlaneMesh::SetSize(Vector2 size) {
@@ -133,7 +161,7 @@ const Vector2& PlaneMesh::GetSize() const {
     return size_;
 }
 
-void PlaneMesh::UpdateMesh() {
+void PlaneMesh::UpdateMesh() const {
     if (!RenderServer::HasInstance()) {
         return;
     }
@@ -141,7 +169,7 @@ void PlaneMesh::UpdateMesh() {
     const RealType half_x = size_.x() * 0.5;
     const RealType half_y = size_.y() * 0.5;
     RS::GetInstance()->MeshSetSurface(
-            GetRid(),
+            EnsureRid(),
             {
                     Vector3{-half_x, -half_y, 0.0},
                     Vector3{half_x, -half_y, 0.0},
@@ -161,6 +189,13 @@ void PlaneMesh::UpdateMesh() {
 
 SphereMesh::SphereMesh() {
     UpdateMesh();
+}
+
+RID SphereMesh::GetRid() const {
+    if (PrimitiveMesh::GetRid().IsNull()) {
+        UpdateMesh();
+    }
+    return PrimitiveMesh::GetRid();
 }
 
 void SphereMesh::SetRadius(RealType radius) {
@@ -194,11 +229,11 @@ int SphereMesh::GetRings() const {
     return rings_;
 }
 
-void SphereMesh::UpdateMesh() {
+void SphereMesh::UpdateMesh() const {
     if (!RenderServer::HasInstance()) {
         return;
     }
-    RS::GetInstance()->MeshSetSphere(GetRid(), radius_, radial_segments_, rings_);
+    RS::GetInstance()->MeshSetSphere(EnsureRid(), radius_, radial_segments_, rings_);
 }
 
 /////////////////////////////////

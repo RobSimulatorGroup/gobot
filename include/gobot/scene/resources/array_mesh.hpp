@@ -43,9 +43,9 @@ public:
     RID GetRid() const override;
 
 private:
-    void UploadSurface();
+    void UploadSurface() const;
 
-    RID mesh_;
+    mutable RID mesh_;
     std::vector<Vector3> vertices_;
     std::vector<uint32_t> indices_;
     std::vector<Vector3> normals_;

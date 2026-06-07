@@ -27,8 +27,11 @@ public:
 
     RID GetRid() const override;
 
+protected:
+    RID EnsureRid() const;
+
 private:
-    RID mesh_;
+    mutable RID mesh_;
     Ref<Material> material_{nullptr};
 };
 
@@ -37,6 +40,8 @@ class GOBOT_EXPORT BoxMesh : public PrimitiveMesh {
     GOBCLASS(BoxMesh, PrimitiveMesh)
 public:
     BoxMesh();
+
+    RID GetRid() const override;
 
     void SetWidth(RealType p_width);
 
@@ -55,6 +60,8 @@ class GOBOT_EXPORT CylinderMesh : public PrimitiveMesh {
 public:
     CylinderMesh();
 
+    RID GetRid() const override;
+
     void SetRadius(RealType radius);
 
     RealType GetRadius() const;
@@ -68,7 +75,7 @@ public:
     int GetRadialSegments() const;
 
 private:
-    void UpdateMesh();
+    void UpdateMesh() const;
 
     RealType radius_{0.5};
     RealType height_{1.0};
@@ -80,12 +87,14 @@ class GOBOT_EXPORT PlaneMesh : public PrimitiveMesh {
 public:
     PlaneMesh();
 
+    RID GetRid() const override;
+
     void SetSize(Vector2 size);
 
     const Vector2& GetSize() const;
 
 private:
-    void UpdateMesh();
+    void UpdateMesh() const;
 
     Vector2 size_{1.0, 1.0};
 };
@@ -94,6 +103,8 @@ class GOBOT_EXPORT SphereMesh : public PrimitiveMesh {
     GOBCLASS(SphereMesh, PrimitiveMesh)
 public:
     SphereMesh();
+
+    RID GetRid() const override;
 
     void SetRadius(RealType radius);
 
@@ -108,7 +119,7 @@ public:
     int GetRings() const;
 
 private:
-    void UpdateMesh();
+    void UpdateMesh() const;
 
     RealType radius_{0.5};
     int radial_segments_{32};

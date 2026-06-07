@@ -98,6 +98,8 @@ public:
 
     void* GetRenderTargetColorTextureNativeHandle(RID p_render_target) override;
 
+    std::vector<std::uint8_t> RenderTargetReadRgbPixels(RID p_render_target, bool p_flip_y) override;
+
     // texture related
 
     RID TextureAllocate() override;

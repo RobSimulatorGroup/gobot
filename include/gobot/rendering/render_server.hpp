@@ -15,6 +15,7 @@
 #include "rendering_server_globals.hpp"
 #include "renderer_viewport.hpp"
 
+#include <cstdint>
 #include <vector>
 
 namespace gobot {
@@ -49,6 +50,8 @@ public:
     }
 
     void* GetRenderTargetColorTextureNativeHandle(const RID& p_view_port);
+
+    std::vector<std::uint8_t> ReadViewportRgbPixels(const RID& p_view_port, bool p_flip_y = true);
 
     // shader
     RID ShaderCreate(ShaderType p_shader_type) {

@@ -35,6 +35,13 @@ viewport renders that clone, and physics worlds are built from that clone. Stop
 destroys the runtime clone after `_exit_tree`, so script changes do not dirty or
 mutate the edited scene.
 
+The same boundary should become a first-class runtime scene owner/root for
+headless simulation, offscreen rendering, editor Play Mode, and policy
+playback. Runtime scene loading should attach instantiated scene nodes to that
+runtime root so `IsInsideTree()`, paths, world membership, and visibility have
+normal semantics. The runtime root remains outside the edited SceneTree dock,
+undo/redo stack, save path, and dirty-state tracking.
+
 The editor exposes scene playback through the top menu bar controls. While a
 script session is running, physics backend and world-build controls are locked
 to avoid replacing the world under script-driven runtime state. Node script

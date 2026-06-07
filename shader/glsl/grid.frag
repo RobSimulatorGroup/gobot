@@ -1,4 +1,4 @@
-#version 460 core
+#version 450 core
 
 #include "grid_parameters.h"
 #include "grid_calculation.h"

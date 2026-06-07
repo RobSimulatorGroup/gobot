@@ -14,6 +14,7 @@ NodeScript = _core.NodeScript
 
 app = _importlib.import_module(__name__ + ".app")
 physics = _importlib.import_module(__name__ + ".physics")
+render = _importlib.import_module(__name__ + ".render")
 rl = _importlib.import_module(__name__ + ".rl")
 scene = _importlib.import_module(__name__ + ".scene")
 sim = _importlib.import_module(__name__ + ".sim")

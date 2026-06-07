@@ -13,9 +13,17 @@ from rsl_rl.runners import OnPolicyRunner
 try:
     from .go1_velocity_cfg import go1_velocity_cfg, rsl_rl_train_cfg
     from .go1_velocity_env import Go1VelocityEnv
+    from .go1_velocity_video import Go1TrainingVideoCfg, Go1TrainingVideoRecorder, VideoCheckpointRunnerMixin
 except ImportError:
     from go1_velocity_cfg import go1_velocity_cfg, rsl_rl_train_cfg
     from go1_velocity_env import Go1VelocityEnv
+    from go1_velocity_video import Go1TrainingVideoCfg, Go1TrainingVideoRecorder, VideoCheckpointRunnerMixin
+
+
+class Go1OnPolicyRunner(VideoCheckpointRunnerMixin, OnPolicyRunner):
+    def __init__(self, *args, video_recorder: Go1TrainingVideoRecorder | None = None, **kwargs) -> None:
+        super().__init__(*args, **kwargs)
+        self.video_recorder = video_recorder
 
 
 def main() -> None:
@@ -32,6 +40,13 @@ def main() -> None:
     parser.add_argument("--no-obs-noise", dest="obs_noise", action="store_false", default=True)
     parser.add_argument("--resume", action="store_true", help="Resume from the latest model_*.pt in log-dir.")
     parser.add_argument("--checkpoint", type=str, default=None, help="Checkpoint path to resume from.")
+    parser.add_argument("--render-video-interval", type=int, default=100, help="Write an MP4 every N training iterations. Set 0 to disable.")
+    parser.add_argument("--render-video-env-id", type=int, default=0, help="Training batch env id to mirror into the RGB capture scene.")
+    parser.add_argument("--render-video-steps", type=int, default=240)
+    parser.add_argument("--render-video-fps", type=int, default=30)
+    parser.add_argument("--render-video-width", type=int, default=640)
+    parser.add_argument("--render-video-height", type=int, default=480)
+    parser.add_argument("--render-video-dir", type=str, default=None)
     args = parser.parse_args()
 
     project_path = Path(__file__).resolve().parents[1]
@@ -62,10 +77,31 @@ def main() -> None:
     train_cfg = rsl_rl_train_cfg(
         experiment_name=cfg.name,
         max_iterations=args.iterations,
-        save_interval=50,
+        save_interval=max(1, int(args.render_video_interval)) if args.render_video_interval > 0 else 50,
         obs_normalization=False,
     )
-    runner = OnPolicyRunner(env, copy.deepcopy(train_cfg), log_dir=str(log_dir), device=args.device)
+    video_dir = Path(args.render_video_dir) if args.render_video_dir else log_dir / "videos"
+    if not video_dir.is_absolute():
+        video_dir = project_path / video_dir
+    video_recorder = Go1TrainingVideoRecorder(
+        env,
+        Go1TrainingVideoCfg(
+            interval=int(args.render_video_interval),
+            env_id=int(args.render_video_env_id),
+            steps=int(args.render_video_steps),
+            fps=int(args.render_video_fps),
+            width=int(args.render_video_width),
+            height=int(args.render_video_height),
+            directory=video_dir,
+        ),
+    )
+    runner = Go1OnPolicyRunner(
+        env,
+        copy.deepcopy(train_cfg),
+        log_dir=str(log_dir),
+        device=args.device,
+        video_recorder=video_recorder,
+    )
     checkpoint = _resolve_checkpoint(args.checkpoint, log_dir) if args.checkpoint or args.resume else None
     if checkpoint is not None:
         infos = runner.load(str(checkpoint), map_location=args.device)

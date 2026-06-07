@@ -121,7 +121,7 @@ add_test(
 )
 set_tests_properties(test_python_bindings_smoke
         PROPERTIES
-            ENVIRONMENT "PYTHONNOUSERSITE=1;PYTHONPATH=${CMAKE_BINARY_DIR}/python"
+            ENVIRONMENT "HOME=/tmp/gobot-test-home;PYTHONNOUSERSITE=1;PYTHONPATH=${CMAKE_BINARY_DIR}/python"
             WORKING_DIRECTORY "${CMAKE_SOURCE_DIR}"
 )
 add_test(

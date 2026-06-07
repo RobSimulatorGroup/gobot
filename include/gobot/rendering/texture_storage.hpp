@@ -11,6 +11,9 @@
 #include "gobot/core/rid.hpp"
 #include "gobot/core/rid_owner.hpp"
 
+#include <cstdint>
+#include <vector>
+
 namespace gobot {
 
 class RendererTextureStorage {
@@ -24,6 +27,8 @@ public:
     virtual void RenderTargetSetSize(RID p_render_target, int p_width, int p_height, uint32_t p_view_count) = 0;
 
     virtual void* GetRenderTargetColorTextureNativeHandle(RID p_texture) = 0;
+
+    virtual std::vector<std::uint8_t> RenderTargetReadRgbPixels(RID p_render_target, bool p_flip_y) = 0;
 
     // texture
     virtual RID TextureAllocate() = 0;

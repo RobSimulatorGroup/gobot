@@ -65,6 +65,13 @@ void* RendererViewport::GetRenderTargetColorTextureNativeHandle(RID p_viewport) 
     return RSG::texture_storage->GetRenderTargetColorTextureNativeHandle(viewport->render_target);
 }
 
+std::vector<std::uint8_t> RendererViewport::ReadViewportRgbPixels(RID p_viewport, bool p_flip_y) {
+    Viewport *viewport = viewport_owner_.GetOrNull(p_viewport);
+    ERR_FAIL_COND_V(!viewport, {});
+
+    return RSG::texture_storage->RenderTargetReadRgbPixels(viewport->render_target, p_flip_y);
+}
+
 RID RendererViewport::GetViewportRenderTarget(RID p_viewport) const {
     const Viewport *viewport = viewport_owner_.GetOrNull(p_viewport);
     ERR_FAIL_COND_V(!viewport, RID());

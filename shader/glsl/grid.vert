@@ -1,4 +1,4 @@
-#version 460 core
+#version 450 core
 
 #include "gl_buffer_declation.h"
 #include "grid_parameters.h"

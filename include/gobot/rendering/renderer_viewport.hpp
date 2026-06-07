@@ -10,6 +10,9 @@
 #include "gobot/core/rid_owner.hpp"
 #include "gobot/core/math/matrix.hpp"
 
+#include <cstdint>
+#include <vector>
+
 namespace gobot {
 
 class RendererViewport {
@@ -18,9 +21,9 @@ class RendererViewport {
         RID self;
         RID render_target;
 
-        Vector2i size;
-        uint32_t view_count;
-        bool viewport_render_direct_to_screen;
+        Vector2i size{0, 0};
+        uint32_t view_count{0};
+        bool viewport_render_direct_to_screen{false};
     };
 
 public:
@@ -37,6 +40,8 @@ public:
     bool Free(const RID& p_rid);
 
     void* GetRenderTargetColorTextureNativeHandle(RID p_viewport);
+
+    std::vector<std::uint8_t> ReadViewportRgbPixels(RID p_viewport, bool p_flip_y);
 
     RID GetViewportRenderTarget(RID p_viewport) const;
 

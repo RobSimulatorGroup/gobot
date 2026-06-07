@@ -88,6 +88,10 @@ void* RenderServer::GetRenderTargetColorTextureNativeHandle(const RID& p_view_po
     return RSG::viewport->GetRenderTargetColorTextureNativeHandle(p_view_port);
 }
 
+std::vector<std::uint8_t> RenderServer::ReadViewportRgbPixels(const RID& p_view_port, bool p_flip_y) {
+    return RSG::viewport->ReadViewportRgbPixels(p_view_port, p_flip_y);
+}
+
 RID RenderServer::MeshCreate() {
     auto rid = RSG::mesh_storage->MeshAllocate();
     RSG::mesh_storage->MeshInitialize(rid);

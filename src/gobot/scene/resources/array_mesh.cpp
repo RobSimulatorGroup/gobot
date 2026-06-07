@@ -66,10 +66,13 @@ const Ref<Material>& ArrayMesh::GetMaterial() const {
 }
 
 RID ArrayMesh::GetRid() const {
+    if (mesh_.IsNull() && RenderServer::HasInstance() && !vertices_.empty() && !indices_.empty()) {
+        UploadSurface();
+    }
     return mesh_;
 }
 
-void ArrayMesh::UploadSurface() {
+void ArrayMesh::UploadSurface() const {
     if (!RenderServer::HasInstance()) {
         return;
     }

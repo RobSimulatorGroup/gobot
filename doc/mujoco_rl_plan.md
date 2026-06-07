@@ -40,6 +40,16 @@ Compatibility wrappers can live above the core API.
 - Editor playback should use the same Gobot action/control API as training, but
   it remains a visualization/debug surface rather than the training runtime.
 
+Long-term, Gobot should provide an explicit runtime scene owner/root for
+headless simulation, offscreen rendering, editor Play Mode, and policy
+playback. Loading a scene for runtime use should attach instantiated nodes to a
+runtime tree with normal lifecycle, path lookup, world membership, and
+visibility semantics, instead of returning a permanently detached root and
+spreading `IsInsideTree()` exceptions through engine code. This runtime root is
+not the edited SceneTree: it must not appear in the editor SceneTree dock, must
+not participate in undo/redo or dirty-state tracking, and must be destroyed as a
+runtime artifact when the session/evaluation ends.
+
 ## Scene To Runtime Compile Layer
 
 The compile layer should produce a stable runtime name map from `.jscn` or a

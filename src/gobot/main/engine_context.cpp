@@ -7,6 +7,8 @@
 #include "gobot/python/python_script_runner.hpp"
 #include "gobot/scene/node.hpp"
 #include "gobot/scene/resources/packed_scene.hpp"
+#include "gobot/scene/scene_tree.hpp"
+#include "gobot/scene/window.hpp"
 #include "gobot/simulation/simulation_server.hpp"
 
 namespace gobot {
@@ -77,6 +79,11 @@ bool EngineContext::LoadScene(const std::string& scene_path) {
 void EngineContext::SetSceneRoot(Node* scene_root, bool take_ownership, const std::string& scene_path) {
     if (scene_root_ == scene_root) {
         owns_scene_root_ = take_ownership;
+        if (owns_scene_root_) {
+            AttachOwnedSceneToRuntimeTree();
+        } else {
+            ClearRuntimeTree();
+        }
         scene_path_ = scene_path;
         ClearWorld();
         scene_command_stack_.Clear();
@@ -94,6 +101,9 @@ void EngineContext::SetSceneRoot(Node* scene_root, bool take_ownership, const st
     AdvanceSceneEpoch();
     scene_root_ = scene_root;
     owns_scene_root_ = take_ownership;
+    if (owns_scene_root_) {
+        AttachOwnedSceneToRuntimeTree();
+    }
     scene_path_ = scene_path;
     python::PythonScriptRunner::SetSceneScriptContext(this);
     python::PythonScriptRunner::SetSceneScriptRoot(scene_root_, scene_epoch_);
@@ -360,11 +370,35 @@ void EngineContext::MarkSceneDirtyBaseline() {
 }
 
 void EngineContext::ClearOwnedScene() {
+    ClearRuntimeTree();
     if (scene_root_ != nullptr && owns_scene_root_) {
         Object::Delete(scene_root_);
     }
     scene_root_ = nullptr;
     owns_scene_root_ = false;
+}
+
+void EngineContext::AttachOwnedSceneToRuntimeTree() {
+    if (scene_root_ == nullptr || !owns_scene_root_ || scene_root_->IsInsideTree()) {
+        return;
+    }
+
+    ClearRuntimeTree();
+    runtime_tree_ = Object::New<SceneTree>(false);
+    runtime_tree_->Initialize();
+    runtime_tree_->GetRoot()->AddChild(scene_root_, false);
+}
+
+void EngineContext::ClearRuntimeTree() {
+    if (runtime_tree_ == nullptr) {
+        return;
+    }
+    if (scene_root_ != nullptr && scene_root_->GetParent() == runtime_tree_->GetRoot()) {
+        runtime_tree_->GetRoot()->RemoveChild(scene_root_);
+    }
+    runtime_tree_->Finalize();
+    Object::Delete(runtime_tree_);
+    runtime_tree_ = nullptr;
 }
 
 void EngineContext::AdvanceSceneEpoch() {

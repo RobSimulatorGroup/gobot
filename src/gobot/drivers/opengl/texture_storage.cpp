@@ -219,6 +219,43 @@ void* TextureStorage::GetRenderTargetColorTextureNativeHandle(RID p_render_targe
     return reinterpret_cast<void*>(rt->color);
 }
 
+std::vector<std::uint8_t> TextureStorage::RenderTargetReadRgbPixels(RID p_render_target, bool p_flip_y) {
+    auto* rt = GetRenderTarget(p_render_target);
+    ERR_FAIL_COND_V_MSG(!rt, {}, "Render target cannot be null");
+    ERR_FAIL_COND_V_MSG(rt->fbo == 0, {}, "Render target has no framebuffer");
+    ERR_FAIL_COND_V_MSG(rt->size.x() <= 0 || rt->size.y() <= 0, {}, "Render target has no size");
+
+    const int width = rt->size.x();
+    const int height = rt->size.y();
+    std::vector<std::uint8_t> bottom_left_data(static_cast<std::size_t>(width) * height * 3);
+
+    GLint previous_read_framebuffer = 0;
+    GLint previous_pack_alignment = 0;
+    glGetIntegerv(GL_READ_FRAMEBUFFER_BINDING, &previous_read_framebuffer);
+    glGetIntegerv(GL_PACK_ALIGNMENT, &previous_pack_alignment);
+
+    glBindFramebuffer(GL_READ_FRAMEBUFFER, rt->fbo);
+    glReadBuffer(GL_COLOR_ATTACHMENT0);
+    glPixelStorei(GL_PACK_ALIGNMENT, 1);
+    glReadPixels(0, 0, width, height, GL_RGB, GL_UNSIGNED_BYTE, bottom_left_data.data());
+
+    glPixelStorei(GL_PACK_ALIGNMENT, previous_pack_alignment);
+    glBindFramebuffer(GL_READ_FRAMEBUFFER, static_cast<GLuint>(previous_read_framebuffer));
+
+    if (!p_flip_y) {
+        return bottom_left_data;
+    }
+
+    std::vector<std::uint8_t> top_left_data(bottom_left_data.size());
+    const std::size_t row_bytes = static_cast<std::size_t>(width) * 3;
+    for (int y = 0; y < height; ++y) {
+        const std::size_t src = static_cast<std::size_t>(height - 1 - y) * row_bytes;
+        const std::size_t dst = static_cast<std::size_t>(y) * row_bytes;
+        std::copy_n(bottom_left_data.data() + src, row_bytes, top_left_data.data() + dst);
+    }
+    return top_left_data;
+}
+
 void TextureStorage::Texture2DInitialize(RID texture_id, const Ref<Image> &image) {
     ERR_FAIL_COND(!image.IsValid());
 
