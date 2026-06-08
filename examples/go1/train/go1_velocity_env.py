@@ -6,6 +6,7 @@ from dataclasses import dataclass
 import math
 from pathlib import Path
 import re
+import time
 from typing import Any, Mapping, Sequence
 
 import numpy as np
@@ -86,6 +87,7 @@ class Go1VelocityEnv:
         seed: int = 42,
         max_episode_length: int | None = None,
         sim_workers: int = 0,
+        profile_step: bool = False,
         context: gobot.AppContext | None = None,
     ) -> None:
         try:
@@ -98,6 +100,9 @@ class Go1VelocityEnv:
         self.device = device
         self.seed = int(seed)
         self.sim_workers = max(0, int(sim_workers))
+        self.profile_step = bool(profile_step)
+        self._profile_step_count = 0
+        self._profile_totals: dict[str, float] = {}
         self._rng = np.random.default_rng(self.seed)
         self.num_actions = len(self.cfg_obj.joint_names)
         self.joint_names = tuple(self.cfg_obj.joint_names)
@@ -173,6 +178,7 @@ class Go1VelocityEnv:
         self._configure_robot_drives()
         self.context.build_world(gobot.PhysicsBackendType.MuJoCoCpu)
         self.context.configure_batch_world(self.num_envs)
+        self.resolved_sim_workers = int(self.context.resolved_batch_workers(self.sim_workers))
 
         name_map = self.context.get_runtime_name_map()
         robot_map = next((robot for robot in name_map.get("robots", []) if robot.get("name") == self.cfg_obj.robot_name), None)
@@ -264,6 +270,7 @@ class Go1VelocityEnv:
 
     def step(self, actions):
         torch = self.torch
+        profile_marks: dict[str, float] | None = {"start": time.perf_counter()} if self.profile_step else None
         self._total_policy_steps += self.num_envs
         self._apply_command_curriculum()
         self._update_curriculum_progress()
@@ -271,12 +278,20 @@ class Go1VelocityEnv:
         action_np = actions.detach().cpu().numpy() if hasattr(actions, "detach") else np.asarray(actions)
         action_np = np.asarray(action_np, dtype=np.float32).reshape(self.num_envs, self.num_actions)
         action_np = np.clip(action_np, -1.0, 1.0)
+        if profile_marks is not None:
+            profile_marks["action_prepare"] = time.perf_counter()
 
         self._apply_actions(action_np)
         for env_id in range(self.num_envs):
             self._maybe_apply_push(env_id)
+        if profile_marks is not None:
+            profile_marks["action_apply"] = time.perf_counter()
         self.context.step_batch(self.decimation, workers=self.sim_workers)
+        if profile_marks is not None:
+            profile_marks["physics"] = time.perf_counter()
         batch_state = self._batch_runtime_state()
+        if profile_marks is not None:
+            profile_marks["state"] = time.perf_counter()
         command_states = self._command_states_from_batch(batch_state)
         self.command_manager.compute(self.step_dt, command_states)
 
@@ -350,6 +365,8 @@ class Go1VelocityEnv:
         self._critic_obs = torch.as_tensor(critic_np, dtype=torch.float32, device=self.device)
         done_t = torch.as_tensor(terminated | time_outs, dtype=torch.bool, device=self.device)
         rewards_t = torch.as_tensor(rewards, dtype=torch.float32, device=self.device)
+        if profile_marks is not None:
+            profile_marks["obs_reward_tensor"] = time.perf_counter()
         extras = {
             "time_outs": torch.as_tensor(time_outs, dtype=torch.bool, device=self.device),
             "log": {
@@ -375,6 +392,9 @@ class Go1VelocityEnv:
             },
             "reward_terms": {name: torch.as_tensor(value, dtype=torch.float32, device=self.device) for name, value in reward_terms.items()},
         }
+        if profile_marks is not None:
+            for name, value in self._consume_profile_marks(profile_marks).items():
+                extras["log"][f"/profile/{name}_ms"] = torch.as_tensor(value, device=self.device)
         self.extras = extras
         return self._tensor_dict(self._obs, self._critic_obs), rewards_t, done_t, extras
 
@@ -386,6 +406,30 @@ class Go1VelocityEnv:
         self._total_policy_steps = max(0, int(policy_steps))
         self._apply_command_curriculum()
         self._update_curriculum_progress()
+
+    def profile_summary(self) -> dict[str, float]:
+        if self._profile_step_count <= 0:
+            return {}
+        return {name: total / self._profile_step_count for name, total in self._profile_totals.items()}
+
+    def _consume_profile_marks(self, marks: dict[str, float]) -> dict[str, float]:
+        ordered = [
+            ("action_prepare", "start"),
+            ("action_apply", "action_prepare"),
+            ("physics", "action_apply"),
+            ("state", "physics"),
+            ("obs_reward_tensor", "state"),
+        ]
+        values: dict[str, float] = {}
+        for name, previous in ordered:
+            if name in marks and previous in marks:
+                values[name] = (marks[name] - marks[previous]) * 1000.0
+        if "obs_reward_tensor" in marks:
+            values["total"] = (marks["obs_reward_tensor"] - marks["start"]) * 1000.0
+        self._profile_step_count += 1
+        for name, value in values.items():
+            self._profile_totals[name] = self._profile_totals.get(name, 0.0) + value
+        return self.profile_summary()
 
     def _tensor_dict(self, actor, critic):
         from tensordict import TensorDict

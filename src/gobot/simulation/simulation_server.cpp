@@ -455,6 +455,14 @@ bool SimulationServer::StepEnvironmentBatch(std::uint64_t ticks, std::size_t wor
     return true;
 }
 
+std::size_t SimulationServer::ResolveEnvironmentBatchWorkerCount(std::size_t worker_count) const {
+    if (!world_.IsValid()) {
+        return 0;
+    }
+
+    return world_->ResolveEnvironmentBatchWorkerCount(worker_count);
+}
+
 bool SimulationServer::SyncSceneFromWorld() {
     if (!EnsureWorldReady()) {
         return false;

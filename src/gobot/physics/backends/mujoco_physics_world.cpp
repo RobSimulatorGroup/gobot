@@ -7,8 +7,6 @@
 #include "gobot/physics/backends/mujoco_physics_world.hpp"
 
 #include <algorithm>
-#include <atomic>
-#include <barrier>
 #include <cctype>
 #include <cmath>
 #include <filesystem>
@@ -140,53 +138,25 @@ MuJoCoJointActuatorIds FindActuatorsForJoint(const mjModel* model, int joint_id,
     return ids;
 }
 
-void ZeroActuatorTerms(mjModel* model, int actuator_id) {
-    if (!model || actuator_id < 0 || actuator_id >= model->nu) {
-        return;
-    }
-    for (int index = 0; index < mjNGAIN; ++index) {
-        model->actuator_gainprm[mjNGAIN * actuator_id + index] = 0.0;
-    }
-    for (int index = 0; index < mjNBIAS; ++index) {
-        model->actuator_biasprm[mjNBIAS * actuator_id + index] = 0.0;
-    }
-}
-
-void DisableActuator(mjModel* model, mjData* data, int actuator_id) {
+void SetActuatorControl(mjModel* model, mjData* data, int actuator_id, RealType value) {
     if (!model || !data || actuator_id < 0 || actuator_id >= model->nu) {
         return;
     }
-    data->ctrl[actuator_id] = 0.0;
-    ZeroActuatorTerms(model, actuator_id);
+    data->ctrl[actuator_id] = value;
 }
 
 void SetMotorActuator(mjModel* model, mjData* data, int actuator_id, RealType effort) {
-    if (!model || !data || actuator_id < 0 || actuator_id >= model->nu) {
-        return;
-    }
-    ZeroActuatorTerms(model, actuator_id);
-    model->actuator_gainprm[mjNGAIN * actuator_id + 0] = 1.0;
-    data->ctrl[actuator_id] = effort;
+    SetActuatorControl(model, data, actuator_id, effort);
 }
 
 void SetPositionActuator(mjModel* model, mjData* data, int actuator_id, RealType target, RealType stiffness) {
-    if (!model || !data || actuator_id < 0 || actuator_id >= model->nu) {
-        return;
-    }
-    ZeroActuatorTerms(model, actuator_id);
-    model->actuator_gainprm[mjNGAIN * actuator_id + 0] = stiffness;
-    model->actuator_biasprm[mjNBIAS * actuator_id + 1] = -stiffness;
-    data->ctrl[actuator_id] = target;
+    GOB_UNUSED(stiffness);
+    SetActuatorControl(model, data, actuator_id, target);
 }
 
 void SetVelocityActuator(mjModel* model, mjData* data, int actuator_id, RealType target, RealType damping) {
-    if (!model || !data || actuator_id < 0 || actuator_id >= model->nu) {
-        return;
-    }
-    ZeroActuatorTerms(model, actuator_id);
-    model->actuator_gainprm[mjNGAIN * actuator_id + 0] = damping;
-    model->actuator_biasprm[mjNBIAS * actuator_id + 2] = -damping;
-    data->ctrl[actuator_id] = target;
+    GOB_UNUSED(damping);
+    SetActuatorControl(model, data, actuator_id, target);
 }
 
 std::string ResolvePhysicsSourcePath(const std::string& source_path) {
@@ -1161,6 +1131,8 @@ void MuJoCoPhysicsWorld::Step(RealType delta_time) {
 }
 
 bool MuJoCoPhysicsWorld::ConfigureEnvironmentBatch(std::size_t environment_count) {
+    StopBatchWorkers();
+
     if (environment_count == 0) {
         SetLastError("MuJoCo environment batch size must be greater than zero.");
         return false;
@@ -1204,6 +1176,9 @@ bool MuJoCoPhysicsWorld::ConfigureEnvironmentBatch(std::size_t environment_count
     }
 
     environment_states_.assign(environment_count, scene_state_);
+    for (MuJoCoJointBinding& binding : joint_bindings_) {
+        binding.controllers.assign(environment_count, JointController(settings_.default_joint_gains));
+    }
     for (std::size_t i = 0; i < environment_count; ++i) {
         mj_resetData(model, static_cast<mjData*>(environment_data_[i]));
         SyncStateToMuJoCo(i);
@@ -1253,6 +1228,11 @@ bool MuJoCoPhysicsWorld::ResetEnvironment(std::size_t environment_index) {
     }
 
     EnvironmentState(environment_index) = MakeSceneStateFromSnapshot();
+    for (MuJoCoJointBinding& binding : joint_bindings_) {
+        if (environment_index < binding.controllers.size()) {
+            binding.controllers[environment_index].Reset();
+        }
+    }
     mj_resetData(model, data);
     SyncStateToMuJoCo(environment_index);
     SyncStateFromMuJoCo(environment_index);
@@ -1293,6 +1273,131 @@ bool MuJoCoPhysicsWorld::StepEnvironment(std::size_t environment_index, RealType
 #endif
 }
 
+std::size_t MuJoCoPhysicsWorld::ResolveBatchWorkerCount(std::size_t requested_workers,
+                                                        std::size_t environment_count) const {
+#ifdef GOBOT_HAS_MUJOCO
+    if (environment_count == 0) {
+        return 0;
+    }
+    std::size_t worker_count = requested_workers;
+    if (worker_count == 0) {
+        worker_count = static_cast<std::size_t>(std::thread::hardware_concurrency());
+    }
+    if (worker_count == 0) {
+        worker_count = 1;
+    }
+    return std::min(environment_count, worker_count);
+#else
+    GOB_UNUSED(requested_workers);
+    GOB_UNUSED(environment_count);
+    return 0;
+#endif
+}
+
+bool MuJoCoPhysicsWorld::EnsureBatchWorkers(std::size_t worker_count) {
+#ifdef GOBOT_HAS_MUJOCO
+    if (worker_count <= 1) {
+        StopBatchWorkers();
+        return true;
+    }
+    if (batch_workers_.size() == worker_count) {
+        return true;
+    }
+
+    StopBatchWorkers();
+    batch_stop_ = false;
+    batch_generation_ = 0;
+    batch_completed_workers_ = 0;
+    batch_next_environment_ = 0;
+    batch_active_workers_ = 0;
+    batch_environment_count_ = 0;
+    batch_work_chunk_ = 1;
+    batch_ticks_ = 0;
+    batch_work_pending_ = false;
+    batch_workers_.reserve(worker_count);
+    for (std::size_t worker_index = 0; worker_index < worker_count; ++worker_index) {
+        batch_workers_.emplace_back(&MuJoCoPhysicsWorld::BatchWorkerLoop, this, worker_index);
+    }
+    return true;
+#else
+    GOB_UNUSED(worker_count);
+    return false;
+#endif
+}
+
+void MuJoCoPhysicsWorld::StopBatchWorkers() {
+#ifdef GOBOT_HAS_MUJOCO
+    {
+        std::lock_guard<std::mutex> lock(batch_mutex_);
+        batch_stop_ = true;
+        batch_work_pending_ = false;
+        ++batch_generation_;
+    }
+    batch_cv_.notify_all();
+    for (std::thread& worker : batch_workers_) {
+        if (worker.joinable()) {
+            worker.join();
+        }
+    }
+    batch_workers_.clear();
+    batch_stop_ = false;
+    batch_completed_workers_ = 0;
+    batch_next_environment_ = 0;
+    batch_active_workers_ = 0;
+    batch_environment_count_ = 0;
+    batch_work_chunk_ = 1;
+    batch_ticks_ = 0;
+    batch_work_pending_ = false;
+#endif
+}
+
+void MuJoCoPhysicsWorld::BatchWorkerLoop(std::size_t worker_index) {
+#ifdef GOBOT_HAS_MUJOCO
+    GOB_UNUSED(worker_index);
+    std::size_t observed_generation = 0;
+    while (true) {
+        std::uint64_t ticks = 0;
+        {
+            std::unique_lock<std::mutex> lock(batch_mutex_);
+            batch_cv_.wait(lock, [&]() {
+                return batch_stop_ || (batch_work_pending_ && batch_generation_ != observed_generation);
+            });
+            if (batch_stop_) {
+                return;
+            }
+            observed_generation = batch_generation_;
+            ticks = batch_ticks_;
+        }
+
+        auto* model = static_cast<mjModel*>(model_);
+        while (true) {
+            const std::size_t begin = batch_next_environment_.fetch_add(batch_work_chunk_, std::memory_order_relaxed);
+            if (begin >= batch_environment_count_) {
+                break;
+            }
+            const std::size_t end = std::min(begin + batch_work_chunk_, batch_environment_count_);
+            for (std::size_t environment_index = begin; environment_index < end; ++environment_index) {
+                ApplyControlsToMuJoCo(environment_index);
+                ApplyExternalForcesToMuJoCo(environment_index);
+                auto* data = static_cast<mjData*>(environment_data_[environment_index]);
+                for (std::uint64_t tick = 0; tick < ticks; ++tick) {
+                    mj_step(model, data);
+                }
+                SyncStateFromMuJoCo(environment_index);
+            }
+        }
+
+        if (batch_completed_workers_.fetch_add(1, std::memory_order_acq_rel) + 1 >= batch_active_workers_) {
+            std::lock_guard<std::mutex> lock(batch_mutex_);
+            batch_work_pending_ = false;
+            batch_done_cv_.notify_one();
+        }
+    }
+#else
+    GOB_UNUSED(worker_index);
+#endif
+}
+
 bool MuJoCoPhysicsWorld::StepEnvironmentBatch(RealType delta_time, std::uint64_t ticks, std::size_t worker_count) {
 #ifdef GOBOT_HAS_MUJOCO
     if (ticks == 0) {
@@ -1322,60 +1427,43 @@ bool MuJoCoPhysicsWorld::StepEnvironmentBatch(RealType delta_time, std::uint64_t
     ApplyMuJoCoOptions(&model->opt, settings_);
     model->opt.timestep = delta_time > 0.0 ? delta_time : settings_.fixed_time_step;
 
-    const auto step_environment = [&](std::size_t environment_index) {
-        auto* data = static_cast<mjData*>(environment_data_[environment_index]);
-        mj_step(model, data);
-        SyncStateFromMuJoCo(environment_index);
-    };
-
-    const std::size_t max_workers = worker_count == 0
-                                            ? static_cast<std::size_t>(std::thread::hardware_concurrency())
-                                            : worker_count;
-    const std::size_t resolved_workers = std::min(environment_count, std::max<std::size_t>(1, max_workers));
+    const std::size_t resolved_workers = ResolveBatchWorkerCount(worker_count, environment_count);
     if (resolved_workers == 1 || environment_count == 1) {
-        for (std::uint64_t tick = 0; tick < ticks; ++tick) {
-            for (std::size_t environment_index = 0; environment_index < environment_count; ++environment_index) {
-                ApplyControlsToMuJoCo(environment_index);
-                ApplyExternalForcesToMuJoCo(environment_index);
-                step_environment(environment_index);
+        StopBatchWorkers();
+        for (std::size_t environment_index = 0; environment_index < environment_count; ++environment_index) {
+            ApplyControlsToMuJoCo(environment_index);
+            ApplyExternalForcesToMuJoCo(environment_index);
+            auto* data = static_cast<mjData*>(environment_data_[environment_index]);
+            for (std::uint64_t tick = 0; tick < ticks; ++tick) {
+                mj_step(model, data);
             }
+            SyncStateFromMuJoCo(environment_index);
         }
         last_error_.clear();
         return true;
     }
 
-    std::atomic<std::size_t> next_environment{0};
-    std::barrier tick_barrier(static_cast<std::ptrdiff_t>(resolved_workers + 1));
-    std::vector<std::thread> workers;
-    workers.reserve(resolved_workers);
-    for (std::size_t worker_index = 0; worker_index < resolved_workers; ++worker_index) {
-        workers.emplace_back([&]() {
-            for (std::uint64_t tick = 0; tick < ticks; ++tick) {
-                tick_barrier.arrive_and_wait();
-                while (true) {
-                    const std::size_t environment_index = next_environment.fetch_add(1, std::memory_order_relaxed);
-                    if (environment_index >= environment_count) {
-                        break;
-                    }
-                    step_environment(environment_index);
-                }
-                tick_barrier.arrive_and_wait();
-            }
+    if (!EnsureBatchWorkers(resolved_workers)) {
+        return false;
+    }
+
+    {
+        std::lock_guard<std::mutex> lock(batch_mutex_);
+        batch_ticks_ = ticks;
+        batch_next_environment_ = 0;
+        batch_active_workers_ = resolved_workers;
+        batch_environment_count_ = environment_count;
+        batch_work_chunk_ = std::max<std::size_t>(1, environment_count / (resolved_workers * 4));
+        batch_completed_workers_ = 0;
+        batch_work_pending_ = true;
+        ++batch_generation_;
+    }
+    batch_cv_.notify_all();
+    {
+        std::unique_lock<std::mutex> lock(batch_mutex_);
+        batch_done_cv_.wait(lock, [&]() {
+            return !batch_work_pending_;
         });
-    }
-
-    for (std::uint64_t tick = 0; tick < ticks; ++tick) {
-        for (std::size_t environment_index = 0; environment_index < environment_count; ++environment_index) {
-            ApplyControlsToMuJoCo(environment_index);
-            ApplyExternalForcesToMuJoCo(environment_index);
-        }
-        next_environment.store(0, std::memory_order_relaxed);
-        tick_barrier.arrive_and_wait();
-        tick_barrier.arrive_and_wait();
-    }
-
-    for (std::thread& worker : workers) {
-        worker.join();
     }
 
     last_error_.clear();
@@ -1385,6 +1473,15 @@ bool MuJoCoPhysicsWorld::StepEnvironmentBatch(RealType delta_time, std::uint64_t
     GOB_UNUSED(ticks);
     GOB_UNUSED(worker_count);
     return false;
+#endif
+}
+
+std::size_t MuJoCoPhysicsWorld::ResolveEnvironmentBatchWorkerCount(std::size_t worker_count) const {
+#ifdef GOBOT_HAS_MUJOCO
+    return ResolveBatchWorkerCount(worker_count, GetEnvironmentCount());
+#else
+    GOB_UNUSED(worker_count);
+    return 0;
 #endif
 }
 
@@ -2162,7 +2259,6 @@ void MuJoCoPhysicsWorld::BuildJointBindings() {
             if (binding.dof_address >= 0 && binding.dof_address < model->nv) {
                 binding.passive_damping = static_cast<RealType>(model->dof_damping[binding.dof_address]);
             }
-            binding.controller.SetGains(settings_.default_joint_gains);
             joint_bindings_.emplace_back(binding);
         }
     }
@@ -2310,10 +2406,14 @@ void MuJoCoPhysicsWorld::ApplyControlsToMuJoCo(std::size_t environment_index) {
             continue;
         }
 
-        binding.controller.SetGains(settings_.default_joint_gains);
-        DisableActuator(model, data, binding.motor_actuator_id);
-        DisableActuator(model, data, binding.position_actuator_id);
-        DisableActuator(model, data, binding.velocity_actuator_id);
+        if (binding.controllers.size() <= environment_index) {
+            binding.controllers.resize(environment_index + 1, JointController(settings_.default_joint_gains));
+        }
+        JointController& controller = binding.controllers[environment_index];
+        controller.SetGains(settings_.default_joint_gains);
+        SetActuatorControl(model, data, binding.motor_actuator_id, 0.0);
+        SetActuatorControl(model, data, binding.position_actuator_id, 0.0);
+        SetActuatorControl(model, data, binding.velocity_actuator_id, 0.0);
 
         JointControllerLimits limits;
         if (binding.robot_index < scene_snapshot_.robots.size() &&
@@ -2364,10 +2464,10 @@ void MuJoCoPhysicsWorld::ApplyControlsToMuJoCo(std::size_t environment_index) {
                                     settings_.default_joint_gains.velocity_damping * joint_state.velocity;
                         }
                     } else {
-                        const RealType effort = binding.controller.ComputeEffort(MakeJointControllerState(joint_state),
-                                                                                 MakeJointControllerCommand(joint_state),
-                                                                                 limits,
-                                                                                 settings_.fixed_time_step);
+                        const RealType effort = controller.ComputeEffort(MakeJointControllerState(joint_state),
+                                                                         MakeJointControllerCommand(joint_state),
+                                                                         limits,
+                                                                         settings_.fixed_time_step);
                         if (binding.motor_actuator_id >= 0) {
                             SetMotorActuator(model, data, binding.motor_actuator_id, effort);
                         } else {
@@ -2386,10 +2486,10 @@ void MuJoCoPhysicsWorld::ApplyControlsToMuJoCo(std::size_t environment_index) {
                                             joint_state.target_velocity,
                                             damping);
                     } else {
-                        const RealType effort = binding.controller.ComputeEffort(MakeJointControllerState(joint_state),
-                                                                                 MakeJointControllerCommand(joint_state),
-                                                                                 limits,
-                                                                                 settings_.fixed_time_step);
+                        const RealType effort = controller.ComputeEffort(MakeJointControllerState(joint_state),
+                                                                         MakeJointControllerCommand(joint_state),
+                                                                         limits,
+                                                                         settings_.fixed_time_step);
                         if (binding.motor_actuator_id >= 0) {
                             SetMotorActuator(model, data, binding.motor_actuator_id, effort);
                         } else {
@@ -2401,10 +2501,10 @@ void MuJoCoPhysicsWorld::ApplyControlsToMuJoCo(std::size_t environment_index) {
             continue;
         }
 
-        const RealType effort = binding.controller.ComputeEffort(MakeJointControllerState(joint_state),
-                                                                 MakeJointControllerCommand(joint_state),
-                                                                 limits,
-                                                                 settings_.fixed_time_step);
+        const RealType effort = controller.ComputeEffort(MakeJointControllerState(joint_state),
+                                                         MakeJointControllerCommand(joint_state),
+                                                         limits,
+                                                         settings_.fixed_time_step);
         data->qfrc_applied[binding.dof_address] = effort;
     }
 }
@@ -2499,6 +2599,8 @@ void MuJoCoPhysicsWorld::ApplyExternalForcesToMuJoCo(std::size_t environment_ind
 }
 
 void MuJoCoPhysicsWorld::FreeModel() {
+    StopBatchWorkers();
+
     sensor_bindings_.clear();
     link_bindings_.clear();
     joint_bindings_.clear();

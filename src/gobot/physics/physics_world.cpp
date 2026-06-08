@@ -10,6 +10,7 @@
 #include <cmath>
 #include <limits>
 #include <optional>
+#include <thread>
 #include <utility>
 
 #include "gobot/core/registration.hpp"
@@ -973,6 +974,20 @@ bool PhysicsWorld::StepEnvironmentBatch(RealType delta_time, std::uint64_t ticks
     }
     last_error_.clear();
     return true;
+}
+
+std::size_t PhysicsWorld::ResolveEnvironmentBatchWorkerCount(std::size_t worker_count) const {
+    const std::size_t environment_count = GetEnvironmentCount();
+    if (environment_count == 0) {
+        return 0;
+    }
+    if (worker_count == 0) {
+        worker_count = static_cast<std::size_t>(std::thread::hardware_concurrency());
+    }
+    if (worker_count == 0) {
+        worker_count = 1;
+    }
+    return std::min(environment_count, worker_count);
 }
 
 bool PhysicsWorld::ResetJointState(const std::string& robot_name,

@@ -101,6 +101,8 @@ public:
 
     bool StepEnvironmentBatch(std::uint64_t ticks, std::size_t worker_count = 0);
 
+    std::size_t ResolveEnvironmentBatchWorkerCount(std::size_t worker_count = 0) const;
+
     bool SyncSceneFromWorld();
 
     RealType GetSimulationTime() const;

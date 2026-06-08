@@ -2392,6 +2392,13 @@ class NodeScript:
                     throw std::runtime_error(simulation->GetLastError());
                 }
             }, py::arg("ticks") = 1, py::arg("workers") = 0)
+            .def("resolved_batch_workers", [](EngineContext& context, std::size_t workers) {
+                SimulationServer* simulation = context.GetSimulationServer();
+                if (simulation == nullptr) {
+                    throw std::runtime_error("active Gobot app context has no SimulationServer");
+                }
+                return simulation->ResolveEnvironmentBatchWorkerCount(workers);
+            }, py::arg("workers") = 0)
             .def("set_batch_joint_position_target", [](EngineContext& context,
                                                        std::size_t env_id,
                                                        const std::string& robot,

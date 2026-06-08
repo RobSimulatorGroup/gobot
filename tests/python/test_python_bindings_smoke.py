@@ -34,8 +34,9 @@ def main():
     assert gobot.scene.Node is gobot.Node
     assert gobot.scene.Terrain3D is gobot.Terrain3D
     assert "create_terrain_node" in gobot.terrain.__all__
-    assert "ManagerBasedEnv" in gobot.rl.__all__
+    assert "ManagerBasedEnv" not in gobot.rl.__all__
     assert "VectorEnv" not in gobot.rl.__all__
+    assert "velocity_actor_observation_schema" in gobot.rl.locomotion.__all__
     assert not hasattr(gobot._core, "NativeVectorEnv")
 
     context = gobot.app.context()
@@ -205,6 +206,8 @@ def main():
     context.load_scene("res://gobot_python_binding_sensor_scene.jscn")
     context.build_world(gobot.PhysicsBackendType.Null)
     context.configure_batch_world(1)
+    assert context.resolved_batch_workers(0) == 1
+    assert context.resolved_batch_workers(8) == 1
     context.step_batch(2, workers=2)
     context.set_batch_joint_position_targets("sensor_bot", [], np.zeros((1, 0), dtype=np.float64))
     batch_state = context.get_batch_robot_state(
@@ -278,49 +281,6 @@ def main():
     assert loaded_terrain.type == "Terrain3D"
     assert loaded_terrain.color_mode == gobot.TerrainColorMode.Palette
     context.build_world(gobot.PhysicsBackendType.Null)
-
-    context.load_scene("res://gobot_python_binding_cartpole.jscn")
-
-    env = gobot.rl.ManagerBasedEnv(
-        {
-            "backend": "null",
-            "num_envs": 1,
-            "physics_dt": 1.0 / 240.0,
-            "decimation": 4,
-            "episode_length_s": 1.0 / 30.0,
-            "robot": "cartpole",
-            "controlled_joints": ["slider"],
-            "observations": {},
-            "rewards": {},
-            "terminations": {},
-            "events": {},
-        }
-    )
-    observation, info = env.reset(seed=5)
-    assert observation.shape == (1, env.observation_spec.size)
-    assert env.action_spec.names == ("slider/target_position_normalized",)
-    observation, reward, terminated, truncated, info = env.step([[2.0]])
-    assert observation.shape == (1, env.observation_spec.size)
-    assert reward.shape == (1,)
-    assert terminated.shape == (1,)
-    assert truncated.shape == (1,)
-    assert reward[0] == env.env_dt
-    assert not bool(truncated[0])
-    observation, reward, terminated, truncated, info = env.step([[0.0]])
-    assert "terminal_observation" in info
-    assert info["terminal_observation"].shape == (1, env.observation_spec.size)
-    gym_env = gobot.rl.GymWrapper(env)
-    gym_obs, gym_info = gym_env.reset(seed=6)
-    assert gym_obs.shape == (env.observation_spec.size,)
-    gym_obs, gym_reward, gym_terminated, gym_truncated, gym_info = gym_env.step([0.0])
-    assert isinstance(gym_reward, float)
-    assert isinstance(gym_terminated, bool)
-    assert isinstance(gym_truncated, bool)
-    try:
-        gobot.rl.ManagerBasedEnv({"backend": "null", "num_envs": 2})
-        raise AssertionError("num_envs > 1 should require a vector backend")
-    except NotImplementedError as error:
-        assert "num_envs=1" in str(error)
 
     script_path = "/tmp/gobot_python_binding_smoke.py"
     with open(script_path, "w", encoding="utf-8") as script_file:

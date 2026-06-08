@@ -12,7 +12,7 @@ The target pipeline is:
 ```text
 Gobot SceneTree / .jscn
   -> scene-to-physics compile layer
-  -> Python task envs / gobot.rl ManagerBasedEnv
+  -> Python task envs using Gobot batch action/state APIs
   -> MuJoCo CPU semantic baseline
   -> MuJoCo Warp CUDA graph fast path
   -> editor debug / policy playback
@@ -70,7 +70,7 @@ The Python-facing runtime map and state APIs should expose Gobot names and
 engine units. They should not expose backend array indices as the primary user
 contract.
 
-## `gobot.rl` Manager Layer
+## Python Task Environment Layer
 
 The intended package shape is:
 
@@ -79,24 +79,13 @@ gobot.sim
   MuJoCo CPU stepping/state/control
 
 gobot.rl
-  ManagerBasedEnv
-  managers
-  specs
-  wrappers
+  locomotion helpers
+  training config helpers
+  compatibility wrappers above task envs
 
 gobot.app
   editor/runtime context
 ```
-
-`ManagerBasedEnv` is organized around these pieces:
-
-- `ActionManager`
-- `ObservationManager`
-- `RewardManager`
-- `TerminationManager`
-- `EventManager`
-- `CommandManager`
-- `Recorder` / `Metrics`
 
 Default step order:
 
@@ -126,12 +115,25 @@ Default semantics:
 
 Current implementation status:
 
-- `gobot.rl.ManagerBasedEnv` exists as the single-runtime Python manager
-  reference path.
-- Example vectorized training environments currently live as normal Python
-  task modules under `examples/` instead of a generic native C++ task-json
-  backend.
-- `GymWrapper` and `RslRlVecEnvWrapper` live above the core API.
+- The legacy string-dispatched `gobot.rl.ManagerBasedEnv` prototype has been
+  removed.
+- Vectorized training environments currently live as normal Python task modules
+  under `examples/`.
+- Task code defines observations, rewards, resets, commands, and metrics in
+  Python while C++ provides generic batch stepping, action application, and
+  runtime state extraction.
+- The batch API should stay backend-neutral: MuJoCo CPU may implement it as one
+  shared `mjModel` with one `mjData` per environment, while MuJoCo Warp should
+  expose the same reset/action/state surface over `wp_model` / `wp_data`.
+- Fixed task functions should be expressed as batch functions over structured
+  arrays/tensors, not as arbitrary per-step Python scene traversal. That keeps
+  the Python authoring surface while allowing `torch.compile`, Numba, a future
+  Gobot term graph, or native/Warp kernels to fuse observation, reward,
+  termination, and reset-mask computation.
+- JIT-compatible task functions may read batch state arrays, previous actions,
+  commands, randomization buffers, and done masks. They must not call
+  `node.find()`, pull Python dictionaries from `get_runtime_state()`, or mutate
+  scene nodes inside the hot reward/observation path.
 
 ## MuJoCo CPU VectorEnv Baseline
 
@@ -149,6 +151,8 @@ Required behavior:
 - Each environment owns independent seed, episode length, reset state, command,
   target, and runtime metrics.
 - CPU VectorEnv is the behavior reference for MuJoCo Warp.
+- Reset and terminal handling should be expressed as explicit environment masks
+  so CPU and Warp can share task code.
 
 Current native CPU implementation status:
 

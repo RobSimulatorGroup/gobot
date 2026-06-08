@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 import copy
+import json
 from pathlib import Path
 from typing import Any, Mapping
 
@@ -64,20 +65,23 @@ class Go1TrainingVideoRecorder:
         video_dir = self.cfg.directory or Path("videos")
         video_dir.mkdir(parents=True, exist_ok=True)
         video_path = video_dir / f"go1_velocity_iter_{iteration:06d}.mp4"
+        replay_prefix = video_dir / f"go1_velocity_iter_{iteration:06d}"
 
         frames: list[np.ndarray] = []
+        replay_frames: list[dict[str, np.ndarray]] = []
         was_training = getattr(policy, "training", False)
         policy.eval()
         torch = eval_env.torch
         obs = eval_env.reset(seed=self._video_seed()).to(eval_env.device)
         try:
             with torch.inference_mode():
-                for _ in range(self.cfg.steps):
+                for step_index in range(self.cfg.steps):
                     actions = policy(obs)
                     obs, _, _, _ = eval_env.step(actions.to(eval_env.device))
                     state = eval_env._runtime_state(self.cfg.env_id)
                     self._sync_scene_from_state(eval_env, state)
                     frames.append(self._capture_frame(eval_env, state))
+                    replay_frames.append(self._replay_frame(eval_env, state, actions, step_index))
         except Exception as error:
             self._warn_once(f"Go1 training video capture failed; continuing training: {error}")
             return None
@@ -93,6 +97,8 @@ class Go1TrainingVideoRecorder:
         except Exception as error:
             self._warn_once(f"failed to write Go1 training video {video_path}: {error}")
             return None
+
+        self._write_replay_bundle(iteration, replay_prefix, video_path, replay_frames)
 
         self._last_recorded_iteration = iteration
         print(f"Saved Go1 training video: {video_path}")
@@ -122,6 +128,7 @@ class Go1TrainingVideoRecorder:
                 seed=self._video_seed(),
                 max_episode_length=self.env.max_episode_length,
                 sim_workers=1,
+                profile_step=False,
                 context=self._eval_context,
             )
         except Exception as error:
@@ -166,6 +173,87 @@ class Go1TrainingVideoRecorder:
             z_near=0.03,
             z_far=100.0,
         )
+
+    def _replay_frame(self, env: Go1VelocityEnv, state: VelocityRuntimeState, actions: Any, step_index: int) -> dict[str, np.ndarray]:
+        action_np = actions.detach().cpu().numpy() if hasattr(actions, "detach") else np.asarray(actions)
+        action_np = np.asarray(action_np, dtype=np.float32)
+        if action_np.ndim >= 2:
+            action_np = action_np[self.cfg.env_id]
+        command = np.asarray(env.command_manager.command_b[self.cfg.env_id], dtype=np.float32)
+        base_transform = state.base.get("global_transform", {})
+        base_position = np.asarray(base_transform.get("position", (0.0, 0.0, 0.0)), dtype=np.float32)
+        base_quaternion = np.asarray(base_transform.get("quaternion", (1.0, 0.0, 0.0, 0.0)), dtype=np.float32)
+        joint_position = np.asarray(
+            [float(state.joints.get(name, {}).get("position", 0.0)) for name in env.joint_names],
+            dtype=np.float32,
+        )
+        joint_velocity = np.asarray(
+            [float(state.joints.get(name, {}).get("velocity", 0.0)) for name in env.joint_names],
+            dtype=np.float32,
+        )
+        return {
+            "step": np.asarray(step_index, dtype=np.int32),
+            "time": np.asarray(step_index * env.step_dt, dtype=np.float32),
+            "action": action_np.astype(np.float32, copy=False),
+            "command": command,
+            "base_position": base_position,
+            "base_quaternion": base_quaternion,
+            "base_linear_velocity": np.asarray(state.base.get("linear_velocity", (0.0, 0.0, 0.0)), dtype=np.float32),
+            "base_angular_velocity": np.asarray(state.base.get("angular_velocity", (0.0, 0.0, 0.0)), dtype=np.float32),
+            "joint_position": joint_position,
+            "joint_velocity": joint_velocity,
+        }
+
+    def _write_replay_bundle(
+        self,
+        iteration: int,
+        replay_prefix: Path,
+        video_path: Path,
+        frames: list[dict[str, np.ndarray]],
+    ) -> None:
+        if not frames or self._eval_env is None:
+            return
+        metadata_path = replay_prefix.with_suffix(".replay.json")
+        data_path = replay_prefix.with_suffix(".replay.npz")
+        scene_path = replay_prefix.with_suffix(".replay.jscn")
+        metadata: dict[str, Any] = {
+            "version": "gobot.go1.replay.v1",
+            "iteration": int(iteration),
+            "video": video_path.name,
+            "data": data_path.name,
+            "scene": scene_path.name,
+            "env_id": int(self.cfg.env_id),
+            "seed": int(self._video_seed()),
+            "steps": int(len(frames)),
+            "dt": float(self._eval_env.step_dt),
+            "fps": int(self.cfg.fps),
+            "robot": self._eval_env.cfg_obj.robot_name,
+            "base_link": self._eval_env.cfg_obj.base_link,
+            "joint_names": list(self._eval_env.joint_names),
+            "command_names": ["vx", "vy", "yaw"],
+        }
+        try:
+            if self._eval_env.context.root is not None:
+                gobot.save_scene(self._eval_env.context.root, str(scene_path))
+        except Exception as error:
+            metadata["scene_error"] = str(error)
+        try:
+            np.savez_compressed(
+                data_path,
+                step=np.asarray([frame["step"] for frame in frames], dtype=np.int32),
+                time=np.asarray([frame["time"] for frame in frames], dtype=np.float32),
+                action=np.stack([frame["action"] for frame in frames], axis=0),
+                command=np.stack([frame["command"] for frame in frames], axis=0),
+                base_position=np.stack([frame["base_position"] for frame in frames], axis=0),
+                base_quaternion=np.stack([frame["base_quaternion"] for frame in frames], axis=0),
+                base_linear_velocity=np.stack([frame["base_linear_velocity"] for frame in frames], axis=0),
+                base_angular_velocity=np.stack([frame["base_angular_velocity"] for frame in frames], axis=0),
+                joint_position=np.stack([frame["joint_position"] for frame in frames], axis=0),
+                joint_velocity=np.stack([frame["joint_velocity"] for frame in frames], axis=0),
+            )
+            metadata_path.write_text(json.dumps(metadata, indent=2, sort_keys=True), encoding="utf-8")
+        except Exception as error:
+            self._warn_once(f"failed to write Go1 replay bundle {metadata_path}: {error}")
 
     def _find_node(self, env: Go1VelocityEnv, name: str) -> Any | None:
         if name in self._node_cache:

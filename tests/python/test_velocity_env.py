@@ -337,15 +337,18 @@ def test_go1_video_recorder_steps_eval_env_not_training_env(monkeypatch, tmp_pat
     class DummyEvalEnv:
         instances: list["DummyEvalEnv"] = []
 
-        def __init__(self, cfg, *, num_envs, device, seed, max_episode_length, sim_workers, context):
+        def __init__(self, cfg, *, num_envs, device, seed, max_episode_length, sim_workers, profile_step, context):
             self.cfg_obj = cfg
             self.num_envs = int(num_envs)
             self.device = device
             self.seed = seed
             self.max_episode_length = max_episode_length
             self.sim_workers = sim_workers
+            self.profile_step = profile_step
             self.context = context
             self.torch = torch
+            self.step_dt = 0.02
+            self.joint_names = ("joint",)
             self.command_manager = type("Command", (), {"command_b": np.zeros((self.num_envs, 3), dtype=np.float32)})()
             self.reset_seeds: list[int | None] = []
             self.step_calls = 0
@@ -364,7 +367,7 @@ def test_go1_video_recorder_steps_eval_env_not_training_env(monkeypatch, tmp_pat
             return VelocityRuntimeState(
                 robot={},
                 base={"global_transform": {"position": [float(self.step_calls), 0.0, 0.4]}},
-                joints={},
+                joints={"joint": {"position": float(self.step_calls), "velocity": 0.0}},
                 links={},
                 sensors={},
                 contacts=[],
@@ -433,12 +436,15 @@ def test_go1_video_recorder_steps_eval_env_not_training_env(monkeypatch, tmp_pat
     assert len(DummyEvalEnv.instances) == 1
     assert DummyEvalEnv.instances[0].num_envs == 2
     assert DummyEvalEnv.instances[0].sim_workers == 1
+    assert DummyEvalEnv.instances[0].profile_step is False
     assert DummyEvalEnv.instances[0].reset_seeds == [999]
     assert DummyEvalEnv.instances[0].step_calls == 3
     assert policy.eval_calls == 1
     assert policy.train_calls == 1
     assert written["fps"] == 12
     assert np.asarray(written["frames"]).shape == (3, 2, 3, 3)
+    assert (tmp_path / "go1_velocity_iter_000002.replay.json").exists()
+    assert (tmp_path / "go1_velocity_iter_000002.replay.npz").exists()
 
 
 def test_go1_video_recorder_invalid_eval_env_id_skips(monkeypatch, tmp_path):

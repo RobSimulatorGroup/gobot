@@ -5,8 +5,6 @@ from __future__ import annotations
 from dataclasses import asdict, dataclass, field, is_dataclass
 from typing import Any, Literal, Mapping, Tuple
 
-from .manager import GobotOnPolicyRunner, RslRlVecEnvWrapper
-
 
 @dataclass
 class RslRlModelCfg:
@@ -276,12 +274,10 @@ def _drop_nones(value: Any) -> Any:
 
 
 __all__ = [
-    "GobotOnPolicyRunner",
     "RslRlBaseRunnerCfg",
     "RslRlModelCfg",
     "RslRlOnPolicyRunnerCfg",
     "RslRlPpoAlgorithmCfg",
-    "RslRlVecEnvWrapper",
     "rsl_rl_cfg_to_dataclass",
     "rsl_rl_cfg_to_dict",
 ]

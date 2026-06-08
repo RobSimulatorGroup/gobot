@@ -1,26 +1,6 @@
 from __future__ import annotations
 
-from .manager import (
-    ActionManager,
-    CommandManager,
-    EnvConfig,
-    EventManager,
-    GobotOnPolicyRunner,
-    GymWrapper,
-    ManagerBasedEnv,
-    ManagerTermConfig,
-    Metrics,
-    ObservationManager,
-    Recorder,
-    RewardManager,
-    RslRlVecEnvWrapper,
-    TaskConfig,
-    TerminationManager,
-    VectorSpace,
-    VectorSpec,
-    load_task_config,
-    space_from_spec,
-)
+from . import locomotion
 from .rsl_rl import (
     RslRlBaseRunnerCfg,
     RslRlModelCfg,

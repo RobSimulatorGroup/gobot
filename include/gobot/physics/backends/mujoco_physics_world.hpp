@@ -6,8 +6,12 @@
 
 #pragma once
 
+#include <atomic>
 #include <cstddef>
+#include <condition_variable>
+#include <mutex>
 #include <string>
+#include <thread>
 #include <vector>
 
 #include "gobot/physics/physics_world.hpp"
@@ -78,6 +82,8 @@ public:
     bool StepEnvironmentBatch(RealType delta_time,
                               std::uint64_t ticks = 1,
                               std::size_t worker_count = 0) override;
+
+    std::size_t ResolveEnvironmentBatchWorkerCount(std::size_t worker_count) const override;
 
     bool ResetJointState(const std::string& robot_name,
                          const std::string& joint_name,
@@ -193,7 +199,7 @@ private:
         int qpos_address{-1};
         int dof_address{-1};
         int joint_type{-1};
-        JointController controller;
+        std::vector<JointController> controllers;
     };
 
     struct MuJoCoLinkBinding {
@@ -219,6 +225,15 @@ private:
     };
 #endif
 
+    std::size_t ResolveBatchWorkerCount(std::size_t requested_workers,
+                                        std::size_t environment_count) const;
+
+    bool EnsureBatchWorkers(std::size_t worker_count);
+
+    void StopBatchWorkers();
+
+    void BatchWorkerLoop(std::size_t worker_index);
+
     bool available_{false};
 
 #ifdef GOBOT_HAS_MUJOCO
@@ -230,6 +245,20 @@ private:
     std::vector<MuJoCoJointBinding> joint_bindings_;
     std::vector<MuJoCoLinkBinding> link_bindings_;
     std::vector<MuJoCoSensorBinding> sensor_bindings_;
+
+    std::vector<std::thread> batch_workers_;
+    std::mutex batch_mutex_;
+    std::condition_variable batch_cv_;
+    std::condition_variable batch_done_cv_;
+    std::size_t batch_generation_{0};
+    std::atomic<std::size_t> batch_completed_workers_{0};
+    std::atomic<std::size_t> batch_next_environment_{0};
+    std::size_t batch_active_workers_{0};
+    std::size_t batch_environment_count_{0};
+    std::size_t batch_work_chunk_{1};
+    std::uint64_t batch_ticks_{0};
+    bool batch_stop_{false};
+    bool batch_work_pending_{false};
 #endif
 };
 

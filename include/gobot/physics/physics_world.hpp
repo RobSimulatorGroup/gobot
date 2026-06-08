@@ -50,6 +50,8 @@ public:
                                       std::uint64_t ticks = 1,
                                       std::size_t worker_count = 0);
 
+    virtual std::size_t ResolveEnvironmentBatchWorkerCount(std::size_t worker_count) const;
+
     virtual bool ResetJointState(const std::string& robot_name,
                                  const std::string& joint_name,
                                  RealType position,

@@ -36,6 +36,7 @@ def main() -> None:
     parser.add_argument("--device", type=str, default="cuda" if torch.cuda.is_available() else "cpu")
     parser.add_argument("--seed", type=int, default=42)
     parser.add_argument("--sim-workers", type=int, default=0, help="CPU workers for batched physics stepping. 0 uses hardware concurrency; 1 keeps stepping serial.")
+    parser.add_argument("--profile-step", action="store_true", help="Log rolling Go1 env step phase timings.")
     parser.add_argument("--policy-out", type=str, default="policies/go1_velocity.pt")
     parser.add_argument("--no-terrain-curriculum", dest="terrain_curriculum", action="store_false", default=True)
     parser.add_argument("--no-obs-noise", dest="obs_noise", action="store_false", default=True)
@@ -74,8 +75,10 @@ def main() -> None:
         seed=args.seed,
         max_episode_length=args.max_episode_length,
         sim_workers=args.sim_workers,
+        profile_step=args.profile_step,
     )
     print(f"Obs actor/critic/actions: {env.num_obs}/{env.num_privileged_obs}/{env.num_actions}")
+    print(f"Sim workers: requested={args.sim_workers} resolved={env.resolved_sim_workers}")
 
     train_cfg = rsl_rl_train_cfg(
         experiment_name=cfg.name,
