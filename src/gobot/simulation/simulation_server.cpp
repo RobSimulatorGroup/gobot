@@ -441,6 +441,20 @@ bool SimulationServer::StepEnvironment(std::size_t environment_index, std::uint6
     return true;
 }
 
+bool SimulationServer::StepEnvironmentBatch(std::uint64_t ticks, std::size_t worker_count) {
+    if (!EnsureWorldReady()) {
+        return false;
+    }
+
+    if (!runtime_scene_.StepEnvironmentBatch(physics_world_settings_.fixed_time_step, ticks, worker_count)) {
+        SetLastError(runtime_scene_.GetLastError());
+        return false;
+    }
+
+    last_error_.clear();
+    return true;
+}
+
 bool SimulationServer::SyncSceneFromWorld() {
     if (!EnsureWorldReady()) {
         return false;

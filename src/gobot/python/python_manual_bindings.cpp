@@ -1084,6 +1084,37 @@ py::dict TransformToPythonDict(const Affine3& transform) {
     return result;
 }
 
+template <typename T>
+py::array_t<T> MakeArray(std::vector<T> data, std::vector<py::ssize_t> shape) {
+    auto* storage = new std::vector<T>(std::move(data));
+    T* pointer = storage->data();
+    py::capsule owner(storage, [](void* value) {
+        delete static_cast<std::vector<T>*>(value);
+    });
+    return py::array_t<T>(std::move(shape), pointer, owner);
+}
+
+py::array_t<RealType> MakeRealArray(std::vector<RealType> data, std::vector<py::ssize_t> shape) {
+    return MakeArray<RealType>(std::move(data), std::move(shape));
+}
+
+py::array_t<std::uint8_t> MakeBoolArray(std::vector<std::uint8_t> data, std::vector<py::ssize_t> shape) {
+    return MakeArray<std::uint8_t>(std::move(data), std::move(shape));
+}
+
+void FillVector3(std::vector<RealType>& values, std::size_t offset, const Vector3& vector) {
+    values[offset + 0] = vector.x();
+    values[offset + 1] = vector.y();
+    values[offset + 2] = vector.z();
+}
+
+void FillQuaternionWxyz(std::vector<RealType>& values, std::size_t offset, const Quaternion& quaternion) {
+    values[offset + 0] = quaternion.w();
+    values[offset + 1] = quaternion.x();
+    values[offset + 2] = quaternion.y();
+    values[offset + 3] = quaternion.z();
+}
+
 Quaternion PythonToQuaternionWxyz(const py::handle& object) {
     py::sequence sequence = py::reinterpret_borrow<py::sequence>(object);
     if (sequence.size() != 4) {
@@ -1472,6 +1503,340 @@ py::dict RuntimeStateToPythonDict(const PhysicsSceneState& state) {
     result["total_link_count"] = state.total_link_count;
     result["total_joint_count"] = state.total_joint_count;
     result["total_sensor_count"] = state.total_sensor_count;
+    return result;
+}
+
+const PhysicsRobotSnapshot* FindRobotSnapshot(const PhysicsSceneSnapshot& snapshot,
+                                              const std::string& robot_name) {
+    for (const PhysicsRobotSnapshot& robot : snapshot.robots) {
+        if (robot.name == robot_name) {
+            return &robot;
+        }
+    }
+    return nullptr;
+}
+
+const PhysicsRobotState* FindRobotState(const PhysicsSceneState& state,
+                                        const std::string& robot_name) {
+    for (const PhysicsRobotState& robot : state.robots) {
+        if (robot.name == robot_name) {
+            return &robot;
+        }
+    }
+    return nullptr;
+}
+
+const PhysicsLinkState* FindLinkState(const PhysicsRobotState& robot,
+                                      const std::string& link_name) {
+    for (const PhysicsLinkState& link : robot.links) {
+        if (link.link_name == link_name) {
+            return &link;
+        }
+    }
+    return nullptr;
+}
+
+const PhysicsJointState* FindJointState(const PhysicsRobotState& robot,
+                                        const std::string& joint_name) {
+    for (const PhysicsJointState& joint : robot.joints) {
+        if (joint.joint_name == joint_name) {
+            return &joint;
+        }
+    }
+    return nullptr;
+}
+
+const PhysicsJointSnapshot* FindJointSnapshot(const PhysicsRobotSnapshot& robot,
+                                              const std::string& joint_name) {
+    for (const PhysicsJointSnapshot& joint : robot.joints) {
+        if (joint.name == joint_name) {
+            return &joint;
+        }
+    }
+    return nullptr;
+}
+
+const PhysicsSensorState* FindSensorState(const PhysicsRobotState& robot,
+                                          const std::string& sensor_name) {
+    for (const PhysicsSensorState& sensor : robot.sensors) {
+        if (sensor.sensor_name == sensor_name) {
+            return &sensor;
+        }
+    }
+    return nullptr;
+}
+
+const PhysicsSensorSnapshot* FindSensorSnapshot(const PhysicsRobotSnapshot& robot,
+                                                const std::string& sensor_name) {
+    for (const PhysicsSensorSnapshot& sensor : robot.sensors) {
+        if (sensor.name == sensor_name) {
+            return &sensor;
+        }
+    }
+    return nullptr;
+}
+
+py::dict BatchRobotStateToPythonDict(SimulationServer& simulation,
+                                     const std::string& robot_name,
+                                     const std::string& base_link,
+                                     const std::vector<std::string>& joint_names,
+                                     const std::vector<std::string>& link_names,
+                                     const std::vector<std::string>& sensor_names) {
+    Ref<PhysicsWorld> world = simulation.GetWorld();
+    if (!world.IsValid()) {
+        throw std::runtime_error("simulation world has not been built from a scene");
+    }
+
+    const std::size_t environment_count = simulation.GetEnvironmentCount();
+    if (environment_count == 0) {
+        throw std::runtime_error("simulation environment batch has not been configured");
+    }
+
+    const PhysicsSceneSnapshot& snapshot = world->GetSceneSnapshot();
+    const PhysicsRobotSnapshot* robot_snapshot = FindRobotSnapshot(snapshot, robot_name);
+    if (robot_snapshot == nullptr) {
+        throw std::runtime_error("Gobot runtime snapshot has no robot '" + robot_name + "'");
+    }
+
+    std::vector<std::string> resolved_link_names = link_names;
+    if (resolved_link_names.empty()) {
+        resolved_link_names.reserve(robot_snapshot->links.size());
+        for (const PhysicsLinkSnapshot& link : robot_snapshot->links) {
+            resolved_link_names.push_back(link.name);
+        }
+    }
+
+    std::unordered_map<std::string, std::int32_t> link_index_by_name;
+    for (std::size_t index = 0; index < resolved_link_names.size(); ++index) {
+        link_index_by_name[resolved_link_names[index]] = static_cast<std::int32_t>(index);
+    }
+
+    const std::size_t joint_count = joint_names.size();
+    const std::size_t link_count = resolved_link_names.size();
+    const std::size_t sensor_count = sensor_names.size();
+
+    std::vector<RealType> base_position(environment_count * 3, 0.0);
+    std::vector<RealType> base_quaternion(environment_count * 4, 0.0);
+    std::vector<RealType> base_linear_velocity(environment_count * 3, 0.0);
+    std::vector<RealType> base_angular_velocity(environment_count * 3, 0.0);
+    std::vector<RealType> joint_position(environment_count * joint_count, 0.0);
+    std::vector<RealType> joint_velocity(environment_count * joint_count, 0.0);
+    std::vector<RealType> joint_effort(environment_count * joint_count, 0.0);
+    std::vector<RealType> joint_target_position(environment_count * joint_count, 0.0);
+    std::vector<RealType> joint_target_velocity(environment_count * joint_count, 0.0);
+    std::vector<RealType> joint_target_effort(environment_count * joint_count, 0.0);
+    std::vector<RealType> joint_lower_limit(joint_count, 0.0);
+    std::vector<RealType> joint_upper_limit(joint_count, 0.0);
+    std::vector<RealType> link_position(environment_count * link_count * 3, 0.0);
+    std::vector<RealType> link_quaternion(environment_count * link_count * 4, 0.0);
+    std::vector<RealType> link_linear_velocity(environment_count * link_count * 3, 0.0);
+    std::vector<RealType> link_angular_velocity(environment_count * link_count * 3, 0.0);
+
+    std::vector<std::int32_t> sensor_value_count(sensor_count, 0);
+    std::vector<std::int32_t> sensor_hit_count(sensor_count, 0);
+    std::size_t max_sensor_values = 0;
+    std::size_t max_sensor_hits = 0;
+    for (std::size_t sensor_index = 0; sensor_index < sensor_count; ++sensor_index) {
+        const PhysicsSensorSnapshot* sensor_snapshot = FindSensorSnapshot(*robot_snapshot, sensor_names[sensor_index]);
+        if (sensor_snapshot == nullptr) {
+            throw std::runtime_error("Gobot runtime snapshot robot '" + robot_name +
+                                     "' has no sensor '" + sensor_names[sensor_index] + "'");
+        }
+        sensor_value_count[sensor_index] = static_cast<std::int32_t>(sensor_snapshot->channel_names.size());
+        sensor_hit_count[sensor_index] = static_cast<std::int32_t>(sensor_snapshot->sample_offsets.size());
+        max_sensor_values = std::max(max_sensor_values, sensor_snapshot->channel_names.size());
+        max_sensor_hits = std::max(max_sensor_hits, sensor_snapshot->sample_offsets.size());
+    }
+
+    for (std::size_t joint_index = 0; joint_index < joint_count; ++joint_index) {
+        const PhysicsJointSnapshot* joint_snapshot = FindJointSnapshot(*robot_snapshot, joint_names[joint_index]);
+        if (joint_snapshot == nullptr) {
+            throw std::runtime_error("Gobot runtime snapshot robot '" + robot_name +
+                                     "' has no joint '" + joint_names[joint_index] + "'");
+        }
+        joint_lower_limit[joint_index] = joint_snapshot->lower_limit;
+        joint_upper_limit[joint_index] = joint_snapshot->upper_limit;
+    }
+
+    std::vector<RealType> sensor_position(environment_count * sensor_count * 3, 0.0);
+    std::vector<RealType> sensor_quaternion(environment_count * sensor_count * 4, 0.0);
+    std::vector<RealType> sensor_values(environment_count * sensor_count * max_sensor_values, 0.0);
+    std::vector<std::uint8_t> sensor_hit(environment_count * sensor_count * max_sensor_hits, 0);
+    std::vector<RealType> sensor_hit_origin(environment_count * sensor_count * max_sensor_hits * 3, 0.0);
+    std::vector<RealType> sensor_hit_point(environment_count * sensor_count * max_sensor_hits * 3, 0.0);
+    std::vector<RealType> sensor_hit_normal(environment_count * sensor_count * max_sensor_hits * 3, 0.0);
+    std::vector<RealType> sensor_hit_distance(environment_count * sensor_count * max_sensor_hits, 0.0);
+
+    std::vector<std::size_t> robot_contact_counts(environment_count, 0);
+    std::size_t max_contact_count = 0;
+    for (std::size_t environment_index = 0; environment_index < environment_count; ++environment_index) {
+        const PhysicsSceneState* state = simulation.GetEnvironmentState(environment_index);
+        if (state == nullptr) {
+            throw std::runtime_error(fmt::format("simulation environment state {} is not available", environment_index));
+        }
+        for (const PhysicsContactState& contact : state->contacts) {
+            if (contact.robot_name == robot_name || contact.other_robot_name == robot_name) {
+                ++robot_contact_counts[environment_index];
+            }
+        }
+        max_contact_count = std::max(max_contact_count, robot_contact_counts[environment_index]);
+    }
+
+    std::vector<std::int32_t> contact_count(environment_count, 0);
+    std::vector<std::int32_t> contact_link_index(environment_count * max_contact_count * 2, -1);
+    std::vector<RealType> contact_position(environment_count * max_contact_count * 3, 0.0);
+    std::vector<RealType> contact_normal(environment_count * max_contact_count * 3, 0.0);
+    std::vector<RealType> contact_force(environment_count * max_contact_count * 3, 0.0);
+    std::vector<RealType> contact_normal_force(environment_count * max_contact_count, 0.0);
+    std::vector<RealType> contact_distance(environment_count * max_contact_count, 0.0);
+
+    for (std::size_t environment_index = 0; environment_index < environment_count; ++environment_index) {
+        const PhysicsSceneState* state = simulation.GetEnvironmentState(environment_index);
+        const PhysicsRobotState* robot_state = state != nullptr ? FindRobotState(*state, robot_name) : nullptr;
+        if (robot_state == nullptr) {
+            throw std::runtime_error("Gobot runtime state has no robot '" + robot_name + "'");
+        }
+
+        const PhysicsLinkState* base_state = FindLinkState(*robot_state, base_link);
+        if (base_state == nullptr) {
+            throw std::runtime_error("Gobot runtime state robot '" + robot_name +
+                                     "' has no base link '" + base_link + "'");
+        }
+        const std::size_t base3 = environment_index * 3;
+        const std::size_t base4 = environment_index * 4;
+        FillVector3(base_position, base3, base_state->global_transform.translation());
+        FillQuaternionWxyz(base_quaternion, base4, Quaternion(base_state->global_transform.linear()));
+        FillVector3(base_linear_velocity, base3, base_state->linear_velocity);
+        FillVector3(base_angular_velocity, base3, base_state->angular_velocity);
+
+        for (std::size_t joint_index = 0; joint_index < joint_count; ++joint_index) {
+            const PhysicsJointState* joint_state = FindJointState(*robot_state, joint_names[joint_index]);
+            if (joint_state == nullptr) {
+                throw std::runtime_error("Gobot runtime state robot '" + robot_name +
+                                         "' has no joint '" + joint_names[joint_index] + "'");
+            }
+            const std::size_t offset = environment_index * joint_count + joint_index;
+            joint_position[offset] = joint_state->position;
+            joint_velocity[offset] = joint_state->velocity;
+            joint_effort[offset] = joint_state->effort;
+            joint_target_position[offset] = joint_state->target_position;
+            joint_target_velocity[offset] = joint_state->target_velocity;
+            joint_target_effort[offset] = joint_state->target_effort;
+        }
+
+        for (std::size_t link_index = 0; link_index < link_count; ++link_index) {
+            const PhysicsLinkState* link_state = FindLinkState(*robot_state, resolved_link_names[link_index]);
+            if (link_state == nullptr) {
+                throw std::runtime_error("Gobot runtime state robot '" + robot_name +
+                                         "' has no link '" + resolved_link_names[link_index] + "'");
+            }
+            const std::size_t offset3 = (environment_index * link_count + link_index) * 3;
+            const std::size_t offset4 = (environment_index * link_count + link_index) * 4;
+            FillVector3(link_position, offset3, link_state->global_transform.translation());
+            FillQuaternionWxyz(link_quaternion, offset4, Quaternion(link_state->global_transform.linear()));
+            FillVector3(link_linear_velocity, offset3, link_state->linear_velocity);
+            FillVector3(link_angular_velocity, offset3, link_state->angular_velocity);
+        }
+
+        for (std::size_t sensor_index = 0; sensor_index < sensor_count; ++sensor_index) {
+            const PhysicsSensorState* sensor_state = FindSensorState(*robot_state, sensor_names[sensor_index]);
+            if (sensor_state == nullptr) {
+                throw std::runtime_error("Gobot runtime state robot '" + robot_name +
+                                         "' has no sensor '" + sensor_names[sensor_index] + "'");
+            }
+            const std::size_t offset3 = (environment_index * sensor_count + sensor_index) * 3;
+            const std::size_t offset4 = (environment_index * sensor_count + sensor_index) * 4;
+            FillVector3(sensor_position, offset3, sensor_state->global_transform.translation());
+            FillQuaternionWxyz(sensor_quaternion, offset4, Quaternion(sensor_state->global_transform.linear()));
+            for (std::size_t value_index = 0; value_index < sensor_state->values.size() &&
+                                              value_index < max_sensor_values; ++value_index) {
+                sensor_values[(environment_index * sensor_count + sensor_index) * max_sensor_values + value_index] =
+                        sensor_state->values[value_index];
+            }
+            for (std::size_t hit_index = 0; hit_index < sensor_state->hits.size() &&
+                                            hit_index < max_sensor_hits; ++hit_index) {
+                const PhysicsSensorRaycastHit& hit = sensor_state->hits[hit_index];
+                const std::size_t hit_base = (environment_index * sensor_count + sensor_index) * max_sensor_hits +
+                                             hit_index;
+                sensor_hit[hit_base] = hit.hit ? 1 : 0;
+                sensor_hit_distance[hit_base] = hit.distance;
+                FillVector3(sensor_hit_origin, hit_base * 3, hit.origin);
+                FillVector3(sensor_hit_point, hit_base * 3, hit.point);
+                FillVector3(sensor_hit_normal, hit_base * 3, hit.normal);
+            }
+        }
+
+        std::size_t contact_index = 0;
+        for (const PhysicsContactState& contact : state->contacts) {
+            if (contact.robot_name != robot_name && contact.other_robot_name != robot_name) {
+                continue;
+            }
+            if (contact_index >= max_contact_count) {
+                break;
+            }
+            const std::size_t contact_base = environment_index * max_contact_count + contact_index;
+            if (contact.robot_name == robot_name) {
+                const auto iter = link_index_by_name.find(contact.link_name);
+                if (iter != link_index_by_name.end()) {
+                    contact_link_index[contact_base * 2 + 0] = iter->second;
+                }
+            }
+            if (contact.other_robot_name == robot_name) {
+                const auto iter = link_index_by_name.find(contact.other_link_name);
+                if (iter != link_index_by_name.end()) {
+                    contact_link_index[contact_base * 2 + 1] = iter->second;
+                }
+            }
+            FillVector3(contact_position, contact_base * 3, contact.position);
+            FillVector3(contact_normal, contact_base * 3, contact.normal);
+            FillVector3(contact_force, contact_base * 3, contact.force);
+            contact_normal_force[contact_base] = contact.normal_force;
+            contact_distance[contact_base] = contact.distance;
+            ++contact_index;
+        }
+        contact_count[environment_index] = static_cast<std::int32_t>(contact_index);
+    }
+
+    py::dict result;
+    result["robot_name"] = robot_name;
+    result["base_link"] = base_link;
+    result["joint_names"] = joint_names;
+    result["link_names"] = resolved_link_names;
+    result["sensor_names"] = sensor_names;
+    result["env_count"] = environment_count;
+    result["base_position"] = MakeRealArray(std::move(base_position), {static_cast<py::ssize_t>(environment_count), 3});
+    result["base_quaternion"] = MakeRealArray(std::move(base_quaternion), {static_cast<py::ssize_t>(environment_count), 4});
+    result["base_linear_velocity"] = MakeRealArray(std::move(base_linear_velocity), {static_cast<py::ssize_t>(environment_count), 3});
+    result["base_angular_velocity"] = MakeRealArray(std::move(base_angular_velocity), {static_cast<py::ssize_t>(environment_count), 3});
+    result["joint_position"] = MakeRealArray(std::move(joint_position), {static_cast<py::ssize_t>(environment_count), static_cast<py::ssize_t>(joint_count)});
+    result["joint_velocity"] = MakeRealArray(std::move(joint_velocity), {static_cast<py::ssize_t>(environment_count), static_cast<py::ssize_t>(joint_count)});
+    result["joint_effort"] = MakeRealArray(std::move(joint_effort), {static_cast<py::ssize_t>(environment_count), static_cast<py::ssize_t>(joint_count)});
+    result["joint_target_position"] = MakeRealArray(std::move(joint_target_position), {static_cast<py::ssize_t>(environment_count), static_cast<py::ssize_t>(joint_count)});
+    result["joint_target_velocity"] = MakeRealArray(std::move(joint_target_velocity), {static_cast<py::ssize_t>(environment_count), static_cast<py::ssize_t>(joint_count)});
+    result["joint_target_effort"] = MakeRealArray(std::move(joint_target_effort), {static_cast<py::ssize_t>(environment_count), static_cast<py::ssize_t>(joint_count)});
+    result["joint_lower_limit"] = MakeRealArray(std::move(joint_lower_limit), {static_cast<py::ssize_t>(joint_count)});
+    result["joint_upper_limit"] = MakeRealArray(std::move(joint_upper_limit), {static_cast<py::ssize_t>(joint_count)});
+    result["link_position"] = MakeRealArray(std::move(link_position), {static_cast<py::ssize_t>(environment_count), static_cast<py::ssize_t>(link_count), 3});
+    result["link_quaternion"] = MakeRealArray(std::move(link_quaternion), {static_cast<py::ssize_t>(environment_count), static_cast<py::ssize_t>(link_count), 4});
+    result["link_linear_velocity"] = MakeRealArray(std::move(link_linear_velocity), {static_cast<py::ssize_t>(environment_count), static_cast<py::ssize_t>(link_count), 3});
+    result["link_angular_velocity"] = MakeRealArray(std::move(link_angular_velocity), {static_cast<py::ssize_t>(environment_count), static_cast<py::ssize_t>(link_count), 3});
+    result["sensor_value_count"] = MakeArray<std::int32_t>(std::move(sensor_value_count), {static_cast<py::ssize_t>(sensor_count)});
+    result["sensor_hit_count"] = MakeArray<std::int32_t>(std::move(sensor_hit_count), {static_cast<py::ssize_t>(sensor_count)});
+    result["sensor_position"] = MakeRealArray(std::move(sensor_position), {static_cast<py::ssize_t>(environment_count), static_cast<py::ssize_t>(sensor_count), 3});
+    result["sensor_quaternion"] = MakeRealArray(std::move(sensor_quaternion), {static_cast<py::ssize_t>(environment_count), static_cast<py::ssize_t>(sensor_count), 4});
+    result["sensor_values"] = MakeRealArray(std::move(sensor_values), {static_cast<py::ssize_t>(environment_count), static_cast<py::ssize_t>(sensor_count), static_cast<py::ssize_t>(max_sensor_values)});
+    result["sensor_hit"] = MakeBoolArray(std::move(sensor_hit), {static_cast<py::ssize_t>(environment_count), static_cast<py::ssize_t>(sensor_count), static_cast<py::ssize_t>(max_sensor_hits)});
+    result["sensor_hit_origin"] = MakeRealArray(std::move(sensor_hit_origin), {static_cast<py::ssize_t>(environment_count), static_cast<py::ssize_t>(sensor_count), static_cast<py::ssize_t>(max_sensor_hits), 3});
+    result["sensor_hit_point"] = MakeRealArray(std::move(sensor_hit_point), {static_cast<py::ssize_t>(environment_count), static_cast<py::ssize_t>(sensor_count), static_cast<py::ssize_t>(max_sensor_hits), 3});
+    result["sensor_hit_normal"] = MakeRealArray(std::move(sensor_hit_normal), {static_cast<py::ssize_t>(environment_count), static_cast<py::ssize_t>(sensor_count), static_cast<py::ssize_t>(max_sensor_hits), 3});
+    result["sensor_hit_distance"] = MakeRealArray(std::move(sensor_hit_distance), {static_cast<py::ssize_t>(environment_count), static_cast<py::ssize_t>(sensor_count), static_cast<py::ssize_t>(max_sensor_hits)});
+    result["contact_count"] = MakeArray<std::int32_t>(std::move(contact_count), {static_cast<py::ssize_t>(environment_count)});
+    result["contact_link_index"] = MakeArray<std::int32_t>(std::move(contact_link_index), {static_cast<py::ssize_t>(environment_count), static_cast<py::ssize_t>(max_contact_count), 2});
+    result["contact_position"] = MakeRealArray(std::move(contact_position), {static_cast<py::ssize_t>(environment_count), static_cast<py::ssize_t>(max_contact_count), 3});
+    result["contact_normal"] = MakeRealArray(std::move(contact_normal), {static_cast<py::ssize_t>(environment_count), static_cast<py::ssize_t>(max_contact_count), 3});
+    result["contact_force"] = MakeRealArray(std::move(contact_force), {static_cast<py::ssize_t>(environment_count), static_cast<py::ssize_t>(max_contact_count), 3});
+    result["contact_normal_force"] = MakeRealArray(std::move(contact_normal_force), {static_cast<py::ssize_t>(environment_count), static_cast<py::ssize_t>(max_contact_count)});
+    result["contact_distance"] = MakeRealArray(std::move(contact_distance), {static_cast<py::ssize_t>(environment_count), static_cast<py::ssize_t>(max_contact_count)});
     return result;
 }
 
@@ -2016,6 +2381,17 @@ class NodeScript:
                     throw std::runtime_error(simulation->GetLastError());
                 }
             }, py::arg("env_id"), py::arg("ticks") = 1)
+            .def("step_batch", [](EngineContext& context, std::uint64_t ticks, std::size_t workers) {
+                SimulationServer* simulation = context.GetSimulationServer();
+                if (simulation == nullptr) {
+                    throw std::runtime_error("active Gobot app context has no SimulationServer");
+                }
+                py::gil_scoped_release release;
+                if (!simulation->StepEnvironmentBatch(ticks, workers)) {
+                    py::gil_scoped_acquire acquire;
+                    throw std::runtime_error(simulation->GetLastError());
+                }
+            }, py::arg("ticks") = 1, py::arg("workers") = 0)
             .def("set_batch_joint_position_target", [](EngineContext& context,
                                                        std::size_t env_id,
                                                        const std::string& robot,
@@ -2033,6 +2409,38 @@ class NodeScript:
                     throw std::runtime_error(runtime_scene->GetLastError());
                 }
             }, py::arg("env_id"), py::arg("robot"), py::arg("joint"), py::arg("target_position"))
+            .def("set_batch_joint_position_targets", [](EngineContext& context,
+                                                        const std::string& robot,
+                                                        const std::vector<std::string>& joint_names,
+                                                        py::array_t<RealType, py::array::c_style | py::array::forcecast> target_positions) {
+                SimulationServer* simulation = context.GetSimulationServer();
+                if (simulation == nullptr) {
+                    throw std::runtime_error("active Gobot app context has no SimulationServer");
+                }
+                SimulationScene* runtime_scene = simulation->GetRuntimeScene();
+                if (runtime_scene == nullptr) {
+                    throw std::runtime_error("simulation runtime scene has not been built");
+                }
+                const py::buffer_info buffer = target_positions.request();
+                if (buffer.ndim != 2) {
+                    throw std::invalid_argument("target_positions must be a 2D array with shape [num_envs, num_joints]");
+                }
+                const auto environment_count = static_cast<std::size_t>(buffer.shape[0]);
+                const auto joint_count = static_cast<std::size_t>(buffer.shape[1]);
+                if (joint_count != joint_names.size()) {
+                    throw std::invalid_argument(fmt::format("target_positions has {} joint column(s), expected {}",
+                                                            joint_count,
+                                                            joint_names.size()));
+                }
+                const auto* data = static_cast<const RealType*>(buffer.ptr);
+                std::vector<RealType> targets(data, data + environment_count * joint_count);
+                if (!runtime_scene->SetEnvironmentJointPositionTargets(robot,
+                                                                       joint_names,
+                                                                       targets,
+                                                                       environment_count)) {
+                    throw std::runtime_error(runtime_scene->GetLastError());
+                }
+            }, py::arg("robot"), py::arg("joint_names"), py::arg("target_positions"))
             .def("reset_batch_joint_state", [](EngineContext& context,
                                                std::size_t env_id,
                                                const std::string& robot,
@@ -2270,6 +2678,27 @@ class NodeScript:
                 }
                 return RuntimeStateToPythonDict(*state);
             }, py::arg("env_id"))
+            .def("get_batch_robot_state", [](EngineContext& context,
+                                             const std::string& robot,
+                                             const std::string& base_link,
+                                             const std::vector<std::string>& joint_names,
+                                             const std::vector<std::string>& link_names,
+                                             const std::vector<std::string>& sensor_names) {
+                SimulationServer* simulation = context.GetSimulationServer();
+                if (simulation == nullptr) {
+                    throw std::runtime_error("active Gobot app context has no SimulationServer");
+                }
+                return BatchRobotStateToPythonDict(*simulation,
+                                                   robot,
+                                                   base_link,
+                                                   joint_names,
+                                                   link_names,
+                                                   sensor_names);
+            }, py::arg("robot"),
+               py::arg("base_link"),
+               py::arg("joint_names"),
+               py::arg("link_names") = std::vector<std::string>{},
+               py::arg("sensor_names") = std::vector<std::string>{})
             .def("get_last_error", &EngineContext::GetLastError);
 
     py::class_<PyScene, std::unique_ptr<PyScene>>(module, "Scene")

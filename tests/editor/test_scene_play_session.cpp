@@ -10,6 +10,7 @@
 #include <gobot/editor/scene_play_session.hpp>
 #include <gobot/main/engine_context.hpp>
 #include <gobot/physics/physics_server.hpp>
+#include <gobot/python/python_app_context.hpp>
 #include <gobot/scene/joint_3d.hpp>
 #include <gobot/scene/link_3d.hpp>
 #include <gobot/scene/node_3d.hpp>
@@ -30,6 +31,7 @@ protected:
         context = std::make_unique<gobot::EngineContext>(project_settings,
                                                          physics_server,
                                                          simulation_server);
+        gobot::python::RegisterExternalAppContext(context.get());
         setenv("PYTHONNOUSERSITE", "1", 1);
         setenv("PYTHONPATH", GOBOT_TEST_BUILD_PYTHON_DIR, 1);
         setenv("HOME", "/tmp/gobot-test-home", 1);
@@ -47,6 +49,7 @@ protected:
 
     void TearDown() override {
         session.Stop();
+        gobot::python::UnregisterExternalAppContext(context.get());
         context.reset();
         gobot::SceneInitializer::Destroy();
         if (tree != nullptr) {
@@ -216,6 +219,33 @@ class Script(gobot.NodeScript):
 
     session.Stop();
     EXPECT_EQ(session.GetRuntimeRoot(), nullptr);
+}
+
+TEST_F(TestScenePlaySession, node_script_root_handle_uses_live_external_context) {
+    auto script = MakeScript("scripts/root_lookup.py", R"PY(
+import gobot
+import os
+import pathlib
+
+RESULT = pathlib.Path(os.environ["GOBOT_SCENE_PLAY_SESSION_ROOT_LOOKUP"])
+
+class Script(gobot.NodeScript):
+    def _ready(self):
+        root = self.get_root()
+        robot = root.find("robot")
+        RESULT.write_text(f"{root.name}:{robot.name}")
+)PY");
+
+    auto* robot = gobot::Object::New<gobot::Node>();
+    robot->SetName("robot");
+    root->AddChild(robot);
+    root->SetScript(script);
+    setenv("GOBOT_SCENE_PLAY_SESSION_ROOT_LOOKUP",
+           (project_path / "scripts" / "root_lookup.txt").string().c_str(),
+           1);
+
+    ASSERT_TRUE(session.Start(root, context.get())) << session.GetLastError();
+    EXPECT_EQ(ReadText("scripts/root_lookup.txt"), "EditedRoot:robot");
 }
 
 TEST_F(TestScenePlaySession, runtime_clone_expands_scene_instance_children_for_playback) {

@@ -204,6 +204,26 @@ def main():
     gobot.save_scene(sensor_world, "res://gobot_python_binding_sensor_scene.jscn")
     context.load_scene("res://gobot_python_binding_sensor_scene.jscn")
     context.build_world(gobot.PhysicsBackendType.Null)
+    context.configure_batch_world(1)
+    context.step_batch(2, workers=2)
+    context.set_batch_joint_position_targets("sensor_bot", [], np.zeros((1, 0), dtype=np.float64))
+    batch_state = context.get_batch_robot_state(
+        "sensor_bot",
+        "base",
+        [],
+        ["base"],
+        ["terrain_scan"],
+    )
+    assert batch_state["env_count"] == 1
+    assert batch_state["base_position"].shape == (1, 3)
+    assert batch_state["base_quaternion"].shape == (1, 4)
+    assert batch_state["link_position"].shape == (1, 1, 3)
+    assert batch_state["sensor_values"].shape == (1, 1, 2)
+    assert batch_state["sensor_hit"].shape == (1, 1, 2)
+    assert batch_state["sensor_hit_point"].shape == (1, 1, 2, 3)
+    assert batch_state["contact_link_index"].shape[0] == 1
+    assert tuple(batch_state["sensor_names"]) == ("terrain_scan",)
+    assert tuple(batch_state["link_names"]) == ("base",)
     sensor_name_map = context.get_runtime_name_map()
     assert sensor_name_map["total_sensor_count"] == 4
     assert sensor_name_map["robots"][0]["sensor_names"] == ["imu", "root_angmom", "contact", "terrain_scan"]

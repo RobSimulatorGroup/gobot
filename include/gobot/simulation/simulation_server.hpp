@@ -99,6 +99,8 @@ public:
 
     bool StepEnvironment(std::size_t environment_index, std::uint64_t ticks);
 
+    bool StepEnvironmentBatch(std::uint64_t ticks, std::size_t worker_count = 0);
+
     bool SyncSceneFromWorld();
 
     RealType GetSimulationTime() const;

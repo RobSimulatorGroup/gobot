@@ -97,6 +97,20 @@ bool SimulationScene::StepEnvironment(std::size_t environment_index, RealType de
     return true;
 }
 
+bool SimulationScene::StepEnvironmentBatch(RealType delta_time, std::uint64_t ticks, std::size_t worker_count) {
+    if (!EnsureReady()) {
+        return false;
+    }
+
+    if (!world_->StepEnvironmentBatch(delta_time, ticks, worker_count)) {
+        SetLastError(world_->GetLastError());
+        return false;
+    }
+
+    last_error_.clear();
+    return true;
+}
+
 bool SimulationScene::SetJointPositionTarget(const std::string& robot_name,
                                              const std::string& joint_name,
                                              RealType target_position) {
@@ -248,6 +262,29 @@ bool SimulationScene::SetEnvironmentJointPositionTarget(std::size_t environment_
     }
     if (!controller.SetEnvironmentJointPositionTarget(environment_index, joint_name, target_position)) {
         SetLastError(controller.GetLastError());
+        return false;
+    }
+    last_error_.clear();
+    return true;
+}
+
+bool SimulationScene::SetEnvironmentJointPositionTargets(const std::string& robot_name,
+                                                         const std::vector<std::string>& joint_names,
+                                                         const std::vector<RealType>& target_positions,
+                                                         std::size_t environment_count) {
+    if (!EnsureReady()) {
+        return false;
+    }
+    if (GetEntity(robot_name) == nullptr) {
+        SetLastError(fmt::format("Simulation scene has no entity named '{}'.", robot_name));
+        return false;
+    }
+    if (!world_->SetEnvironmentJointControls(robot_name,
+                                             joint_names,
+                                             PhysicsJointControlMode::Position,
+                                             target_positions,
+                                             environment_count)) {
+        SetLastError(world_->GetLastError());
         return false;
     }
     last_error_.clear();

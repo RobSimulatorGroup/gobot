@@ -35,6 +35,7 @@ def main() -> None:
     parser.add_argument("--log-dir", "--log_dir", type=str, default="logs/go1_velocity")
     parser.add_argument("--device", type=str, default="cuda" if torch.cuda.is_available() else "cpu")
     parser.add_argument("--seed", type=int, default=42)
+    parser.add_argument("--sim-workers", type=int, default=0, help="CPU workers for batched physics stepping. 0 uses hardware concurrency; 1 keeps stepping serial.")
     parser.add_argument("--policy-out", type=str, default="policies/go1_velocity.pt")
     parser.add_argument("--no-terrain-curriculum", dest="terrain_curriculum", action="store_false", default=True)
     parser.add_argument("--no-obs-noise", dest="obs_noise", action="store_false", default=True)
@@ -59,7 +60,7 @@ def main() -> None:
     cfg = go1_velocity_cfg(args.task, project_path=project_path)
     cfg.terrain_curriculum = bool(args.terrain_curriculum)
     cfg.observations.actor_noise = bool(args.obs_noise)
-    cfg.terrain_curriculum_steps = max(1, int(args.iterations * 24 * 0.6))
+    cfg.terrain_curriculum_steps = max(1, int(args.iterations * args.num_envs * 24 * 0.6))
 
     print(f"Task: {cfg.name}")
     print(f"Device: {args.device}")
@@ -72,6 +73,7 @@ def main() -> None:
         device=args.device,
         seed=args.seed,
         max_episode_length=args.max_episode_length,
+        sim_workers=args.sim_workers,
     )
     print(f"Obs actor/critic/actions: {env.num_obs}/{env.num_privileged_obs}/{env.num_actions}")
 
@@ -108,7 +110,9 @@ def main() -> None:
     checkpoint = _resolve_checkpoint(args.checkpoint, log_dir) if args.checkpoint or args.resume else None
     if checkpoint is not None:
         infos = runner.load(str(checkpoint), map_location=args.device)
-        env.set_training_progress(runner.current_learning_iteration * train_cfg["num_steps_per_env"])
+        env.set_training_progress(
+            runner.current_learning_iteration * args.num_envs * train_cfg["num_steps_per_env"]
+        )
         print(f"Resumed checkpoint: {checkpoint}")
         print(f"Resume iteration: {runner.current_learning_iteration}")
         if infos:

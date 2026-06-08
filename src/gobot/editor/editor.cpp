@@ -102,6 +102,7 @@ Editor::Editor() {
     engine_context_ = new EngineContext(ProjectSettings::GetInstance(),
                                         PhysicsServer::GetInstance(),
                                         SimulationServer::GetInstance());
+    python::RegisterExternalAppContext(engine_context_);
     engine_context_->SetSceneChangedCallback([this]() {
         ++scene_change_version_;
         scene_dirty_ = engine_context_ != nullptr && engine_context_->IsSceneDirty();
@@ -156,6 +157,7 @@ Editor::~Editor() {
     if (python::GetActiveAppContextOrNull() == engine_context_) {
         python::SetActiveAppContext(nullptr);
     }
+    python::UnregisterExternalAppContext(engine_context_);
     delete engine_context_;
     engine_context_ = nullptr;
     s_singleton = nullptr;

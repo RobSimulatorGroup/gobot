@@ -32,6 +32,9 @@ void RegisterAppContext(EngineContext* context) {
 }
 
 void UnregisterAppContext(EngineContext* context) {
+    if (s_active_app_context == context) {
+        s_active_app_context = nullptr;
+    }
     auto& contexts = AppContexts();
     contexts.erase(std::remove(contexts.begin(), contexts.end(), context), contexts.end());
 }
@@ -160,6 +163,14 @@ GobotRuntime& Runtime() {
 
 void SetActiveAppContext(EngineContext* context) {
     s_active_app_context = context;
+}
+
+void RegisterExternalAppContext(EngineContext* context) {
+    RegisterAppContext(context);
+}
+
+void UnregisterExternalAppContext(EngineContext* context) {
+    UnregisterAppContext(context);
 }
 
 EngineContext& GetActiveAppContext() {

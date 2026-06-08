@@ -41,6 +41,10 @@ public:
 
     bool StepEnvironment(std::size_t environment_index, RealType delta_time);
 
+    bool StepEnvironmentBatch(RealType delta_time,
+                              std::uint64_t ticks = 1,
+                              std::size_t worker_count = 0);
+
     bool SetJointPositionTarget(const std::string& robot_name,
                                 const std::string& joint_name,
                                 RealType target_position);
@@ -85,6 +89,11 @@ public:
                                            const std::string& robot_name,
                                            const std::string& joint_name,
                                            RealType target_position);
+
+    bool SetEnvironmentJointPositionTargets(const std::string& robot_name,
+                                            const std::vector<std::string>& joint_names,
+                                            const std::vector<RealType>& target_positions,
+                                            std::size_t environment_count);
 
     bool SetLinkExternalForce(const std::string& robot_name,
                               const std::string& link_name,

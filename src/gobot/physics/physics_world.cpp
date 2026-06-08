@@ -961,6 +961,20 @@ bool PhysicsWorld::StepEnvironment(std::size_t environment_index, RealType delta
     return true;
 }
 
+bool PhysicsWorld::StepEnvironmentBatch(RealType delta_time, std::uint64_t ticks, std::size_t worker_count) {
+    GOB_UNUSED(worker_count);
+    const std::size_t environment_count = GetEnvironmentCount();
+    for (std::uint64_t tick = 0; tick < ticks; ++tick) {
+        for (std::size_t environment_index = 0; environment_index < environment_count; ++environment_index) {
+            if (!StepEnvironment(environment_index, delta_time)) {
+                return false;
+            }
+        }
+    }
+    last_error_.clear();
+    return true;
+}
+
 bool PhysicsWorld::ResetJointState(const std::string& robot_name,
                                    const std::string& joint_name,
                                    RealType position,
@@ -1033,6 +1047,45 @@ bool PhysicsWorld::SetEnvironmentJointControl(std::size_t environment_index,
     }
 
     return SetJointControl(robot_name, joint_name, control_mode, target);
+}
+
+bool PhysicsWorld::SetEnvironmentJointControls(const std::string& robot_name,
+                                               const std::vector<std::string>& joint_names,
+                                               PhysicsJointControlMode control_mode,
+                                               const std::vector<RealType>& targets,
+                                               std::size_t environment_count) {
+    if (environment_count != GetEnvironmentCount()) {
+        SetLastError(fmt::format("Expected targets for {} environment(s), got {}.",
+                                 GetEnvironmentCount(),
+                                 environment_count));
+        return false;
+    }
+    if (targets.size() != environment_count * joint_names.size()) {
+        SetLastError(fmt::format("Expected {} batched joint target value(s), got {}.",
+                                 environment_count * joint_names.size(),
+                                 targets.size()));
+        return false;
+    }
+    if (joint_names.empty()) {
+        last_error_.clear();
+        return true;
+    }
+
+    for (std::size_t environment_index = 0; environment_index < environment_count; ++environment_index) {
+        const std::size_t row_offset = environment_index * joint_names.size();
+        for (std::size_t joint_index = 0; joint_index < joint_names.size(); ++joint_index) {
+            if (!SetEnvironmentJointControl(environment_index,
+                                            robot_name,
+                                            joint_names[joint_index],
+                                            control_mode,
+                                            targets[row_offset + joint_index])) {
+                return false;
+            }
+        }
+    }
+
+    last_error_.clear();
+    return true;
 }
 
 bool PhysicsWorld::SetLinkExternalForce(const std::string& robot_name,

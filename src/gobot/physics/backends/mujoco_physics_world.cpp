@@ -7,12 +7,15 @@
 #include "gobot/physics/backends/mujoco_physics_world.hpp"
 
 #include <algorithm>
+#include <atomic>
+#include <barrier>
 #include <cctype>
 #include <cmath>
 #include <filesystem>
 #include <memory>
 #include <set>
 #include <string_view>
+#include <thread>
 #include <unordered_map>
 
 #include "gobot/core/config/project_setting.hpp"
@@ -1290,6 +1293,101 @@ bool MuJoCoPhysicsWorld::StepEnvironment(std::size_t environment_index, RealType
 #endif
 }
 
+bool MuJoCoPhysicsWorld::StepEnvironmentBatch(RealType delta_time, std::uint64_t ticks, std::size_t worker_count) {
+#ifdef GOBOT_HAS_MUJOCO
+    if (ticks == 0) {
+        last_error_.clear();
+        return true;
+    }
+
+    const std::size_t environment_count = GetEnvironmentCount();
+    if (environment_count == 0) {
+        SetLastError("MuJoCo environment batch has not been configured.");
+        return false;
+    }
+
+    auto* model = static_cast<mjModel*>(model_);
+    if (!model) {
+        SetLastError("MuJoCo model has not been built.");
+        return false;
+    }
+
+    for (std::size_t environment_index = 0; environment_index < environment_count; ++environment_index) {
+        if (environment_data_[environment_index] == nullptr) {
+            SetLastError(fmt::format("MuJoCo runtime data for environment {} is unavailable.", environment_index));
+            return false;
+        }
+    }
+
+    ApplyMuJoCoOptions(&model->opt, settings_);
+    model->opt.timestep = delta_time > 0.0 ? delta_time : settings_.fixed_time_step;
+
+    const auto step_environment = [&](std::size_t environment_index) {
+        auto* data = static_cast<mjData*>(environment_data_[environment_index]);
+        mj_step(model, data);
+        SyncStateFromMuJoCo(environment_index);
+    };
+
+    const std::size_t max_workers = worker_count == 0
+                                            ? static_cast<std::size_t>(std::thread::hardware_concurrency())
+                                            : worker_count;
+    const std::size_t resolved_workers = std::min(environment_count, std::max<std::size_t>(1, max_workers));
+    if (resolved_workers == 1 || environment_count == 1) {
+        for (std::uint64_t tick = 0; tick < ticks; ++tick) {
+            for (std::size_t environment_index = 0; environment_index < environment_count; ++environment_index) {
+                ApplyControlsToMuJoCo(environment_index);
+                ApplyExternalForcesToMuJoCo(environment_index);
+                step_environment(environment_index);
+            }
+        }
+        last_error_.clear();
+        return true;
+    }
+
+    std::atomic<std::size_t> next_environment{0};
+    std::barrier tick_barrier(static_cast<std::ptrdiff_t>(resolved_workers + 1));
+    std::vector<std::thread> workers;
+    workers.reserve(resolved_workers);
+    for (std::size_t worker_index = 0; worker_index < resolved_workers; ++worker_index) {
+        workers.emplace_back([&]() {
+            for (std::uint64_t tick = 0; tick < ticks; ++tick) {
+                tick_barrier.arrive_and_wait();
+                while (true) {
+                    const std::size_t environment_index = next_environment.fetch_add(1, std::memory_order_relaxed);
+                    if (environment_index >= environment_count) {
+                        break;
+                    }
+                    step_environment(environment_index);
+                }
+                tick_barrier.arrive_and_wait();
+            }
+        });
+    }
+
+    for (std::uint64_t tick = 0; tick < ticks; ++tick) {
+        for (std::size_t environment_index = 0; environment_index < environment_count; ++environment_index) {
+            ApplyControlsToMuJoCo(environment_index);
+            ApplyExternalForcesToMuJoCo(environment_index);
+        }
+        next_environment.store(0, std::memory_order_relaxed);
+        tick_barrier.arrive_and_wait();
+        tick_barrier.arrive_and_wait();
+    }
+
+    for (std::thread& worker : workers) {
+        worker.join();
+    }
+
+    last_error_.clear();
+    return true;
+#else
+    GOB_UNUSED(delta_time);
+    GOB_UNUSED(ticks);
+    GOB_UNUSED(worker_count);
+    return false;
+#endif
+}
+
 bool MuJoCoPhysicsWorld::ResetJointState(const std::string& robot_name,
                                          const std::string& joint_name,
                                          RealType position,
@@ -1437,6 +1535,58 @@ bool MuJoCoPhysicsWorld::SetEnvironmentJointControl(std::size_t environment_inde
     GOB_UNUSED(joint_name);
     GOB_UNUSED(control_mode);
     GOB_UNUSED(target);
+    return false;
+#endif
+}
+
+bool MuJoCoPhysicsWorld::SetEnvironmentJointControls(const std::string& robot_name,
+                                                     const std::vector<std::string>& joint_names,
+                                                     PhysicsJointControlMode control_mode,
+                                                     const std::vector<RealType>& targets,
+                                                     std::size_t environment_count) {
+#ifdef GOBOT_HAS_MUJOCO
+    if (environment_count != GetEnvironmentCount()) {
+        SetLastError(fmt::format("Expected targets for {} MuJoCo environment(s), got {}.",
+                                 GetEnvironmentCount(),
+                                 environment_count));
+        return false;
+    }
+    if (targets.size() != environment_count * joint_names.size()) {
+        SetLastError(fmt::format("Expected {} batched joint target value(s), got {}.",
+                                 environment_count * joint_names.size(),
+                                 targets.size()));
+        return false;
+    }
+    if (joint_names.empty()) {
+        last_error_.clear();
+        return true;
+    }
+    for (std::size_t environment_index = 0; environment_index < environment_count; ++environment_index) {
+        if (!IsEnvironmentIndexValid(environment_index)) {
+            SetLastError(fmt::format("Environment index {} is out of range.", environment_index));
+            return false;
+        }
+        PhysicsSceneState& state = EnvironmentState(environment_index);
+        const std::size_t row_offset = environment_index * joint_names.size();
+        for (std::size_t joint_index = 0; joint_index < joint_names.size(); ++joint_index) {
+            if (!SetJointControlIn(state,
+                                   robot_name,
+                                   joint_names[joint_index],
+                                   control_mode,
+                                   targets[row_offset + joint_index])) {
+                return false;
+            }
+        }
+    }
+
+    last_error_.clear();
+    return true;
+#else
+    GOB_UNUSED(robot_name);
+    GOB_UNUSED(joint_names);
+    GOB_UNUSED(control_mode);
+    GOB_UNUSED(targets);
+    GOB_UNUSED(environment_count);
     return false;
 #endif
 }

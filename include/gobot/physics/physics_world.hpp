@@ -46,6 +46,10 @@ public:
 
     virtual bool StepEnvironment(std::size_t environment_index, RealType delta_time);
 
+    virtual bool StepEnvironmentBatch(RealType delta_time,
+                                      std::uint64_t ticks = 1,
+                                      std::size_t worker_count = 0);
+
     virtual bool ResetJointState(const std::string& robot_name,
                                  const std::string& joint_name,
                                  RealType position,
@@ -82,6 +86,12 @@ public:
                                             const std::string& joint_name,
                                             PhysicsJointControlMode control_mode,
                                             RealType target);
+
+    virtual bool SetEnvironmentJointControls(const std::string& robot_name,
+                                             const std::vector<std::string>& joint_names,
+                                             PhysicsJointControlMode control_mode,
+                                             const std::vector<RealType>& targets,
+                                             std::size_t environment_count);
 
     virtual bool SetLinkExternalForce(const std::string& robot_name,
                                       const std::string& link_name,

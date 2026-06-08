@@ -121,6 +121,7 @@ class Go1TrainingVideoRecorder:
                 device=self.env.device,
                 seed=self._video_seed(),
                 max_episode_length=self.env.max_episode_length,
+                sim_workers=1,
                 context=self._eval_context,
             )
         except Exception as error:

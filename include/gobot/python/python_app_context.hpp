@@ -20,6 +20,10 @@ namespace gobot::python {
 
 GOBOT_EXPORT void SetActiveAppContext(EngineContext* context);
 
+GOBOT_EXPORT void RegisterExternalAppContext(EngineContext* context);
+
+GOBOT_EXPORT void UnregisterExternalAppContext(EngineContext* context);
+
 GOBOT_EXPORT EngineContext* GetActiveAppContextOrNull();
 
 GOBOT_EXPORT EngineContext& GetActiveAppContext();

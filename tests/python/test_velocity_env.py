@@ -23,6 +23,15 @@ from gobot.rl.locomotion import (
 )
 
 
+def _assert_raises_runtime_error(pattern: str, fn) -> None:
+    try:
+        fn()
+    except RuntimeError as error:
+        assert pattern in str(error)
+        return
+    raise AssertionError("expected RuntimeError")
+
+
 def test_go1_velocity_cfg_dimensions():
     cfg = go1_cfg.go1_velocity_cfg("go1_rough", project_path="/tmp/go1")
     assert cfg.name == "gobot_go1_velocity"
@@ -52,6 +61,12 @@ def test_go1_playback_schema_matches_training_schema():
     training_schema = velocity_actor_observation_schema(len(cfg.joint_names), len(go1_playback.HEIGHT_SCAN_POINTS))
     assert go1_playback.ACTOR_OBS_SCHEMA.names == training_schema.names
     assert go1_playback.ACTOR_OBS_SCHEMA.dim == 63
+
+
+def test_go1_playback_height_scan_requires_runtime_sensor():
+    script = object.__new__(go1_playback.Script)
+
+    _assert_raises_runtime_error("missing required sensor", lambda: script._height_scan({"sensors": []}))
 
 
 def test_go1_velocity_env_reset_step_shapes():
@@ -114,6 +129,40 @@ def test_go1_velocity_terrain_normal_plane_fit():
     expected = np.array([-0.1, 0.0, 1.0], dtype=np.float32)
     expected /= np.linalg.norm(expected)
     assert np.allclose(normal, expected, atol=1.0e-5)
+
+
+def test_go1_velocity_height_scan_requires_configured_sensor():
+    env = object.__new__(Go1VelocityEnv)
+    env.cfg_obj = go1_cfg.go1_rough_velocity_cfg(project_path="/tmp/go1")
+    env._height_scan_dim = 4
+    state = VelocityRuntimeState(robot={}, base={}, joints={}, links={}, sensors={}, contacts=[])
+
+    _assert_raises_runtime_error("missing configured height scan sensor", lambda: env._height_scan(state))
+
+
+def test_go1_velocity_height_scan_requires_valid_shape():
+    env = object.__new__(Go1VelocityEnv)
+    env.cfg_obj = go1_cfg.go1_rough_velocity_cfg(project_path="/tmp/go1")
+    env._height_scan_dim = 4
+    state = VelocityRuntimeState(
+        robot={},
+        base={},
+        joints={},
+        links={},
+        sensors={"terrain_scan": {"hits": [], "values": [1.0, 2.0, 3.0, 4.0]}},
+        contacts=[],
+    )
+
+    _assert_raises_runtime_error("expected 4", lambda: env._height_scan(state))
+
+
+def test_go1_velocity_height_scan_allows_explicitly_disabled_sensor():
+    env = object.__new__(Go1VelocityEnv)
+    env.cfg_obj = go1_cfg.go1_flat_velocity_cfg(project_path="/tmp/go1")
+    env._height_scan_dim = 0
+    state = VelocityRuntimeState(robot={}, base={}, joints={}, links={}, sensors={}, contacts=[])
+
+    assert env._height_scan(state).shape == (0,)
 
 
 def test_go1_velocity_contact_summary_classifies_illegal_contacts():
@@ -207,6 +256,47 @@ def test_go1_spawn_curriculum_is_seed_reproducible():
     assert np.allclose(first._terrain_curriculum_limits, second._terrain_curriculum_limits)
 
 
+def test_go1_apply_actions_uses_batch_joint_api():
+    env = object.__new__(Go1VelocityEnv)
+    env.cfg_obj = go1_cfg.go1_rough_velocity_cfg(project_path="/tmp/go1")
+    env.num_envs = 2
+    env.num_actions = 3
+    env.joint_names = ("j0", "j1", "j2")
+    env.default_joint_pos = np.asarray([0.1, 0.2, 0.3], dtype=np.float32)
+    env.action_scale = np.asarray([0.5, 1.0, 1.5], dtype=np.float32)
+    calls = []
+
+    class Context:
+        def set_batch_joint_position_targets(self, robot, joint_names, targets):
+            calls.append((robot, tuple(joint_names), np.asarray(targets, dtype=np.float32).copy()))
+
+    env.context = Context()
+    env._apply_actions(np.asarray([[1.0, -1.0, 0.0], [0.0, 0.5, -0.5]], dtype=np.float32))
+
+    assert len(calls) == 1
+    robot, joint_names, targets = calls[0]
+    assert robot == env.cfg_obj.robot_name
+    assert joint_names == env.joint_names
+    assert np.allclose(targets, [[0.6, -0.8, 0.3], [0.1, 0.7, -0.45]])
+
+
+def test_go1_policy_steps_count_environment_samples():
+    env = object.__new__(Go1VelocityEnv)
+    env.cfg_obj = go1_cfg.go1_rough_velocity_cfg(project_path="/tmp/go1")
+    env.cfg_obj.terrain_curriculum_steps = 40
+    env.num_envs = 4
+    env._total_policy_steps = 0
+
+    env.set_training_progress(12)
+    assert env._total_policy_steps == 12
+    assert np.isclose(env._curriculum_progress, 0.3)
+
+    env._total_policy_steps += env.num_envs
+    env._update_curriculum_progress()
+    assert env._total_policy_steps == 16
+    assert np.isclose(env._curriculum_progress, 0.4)
+
+
 def test_go1_video_recorder_steps_eval_env_not_training_env(monkeypatch, tmp_path):
     torch = __import__("torch")
     written: dict[str, object] = {}
@@ -247,12 +337,13 @@ def test_go1_video_recorder_steps_eval_env_not_training_env(monkeypatch, tmp_pat
     class DummyEvalEnv:
         instances: list["DummyEvalEnv"] = []
 
-        def __init__(self, cfg, *, num_envs, device, seed, max_episode_length, context):
+        def __init__(self, cfg, *, num_envs, device, seed, max_episode_length, sim_workers, context):
             self.cfg_obj = cfg
             self.num_envs = int(num_envs)
             self.device = device
             self.seed = seed
             self.max_episode_length = max_episode_length
+            self.sim_workers = sim_workers
             self.context = context
             self.torch = torch
             self.command_manager = type("Command", (), {"command_b": np.zeros((self.num_envs, 3), dtype=np.float32)})()
@@ -341,6 +432,7 @@ def test_go1_video_recorder_steps_eval_env_not_training_env(monkeypatch, tmp_pat
     assert torch.equal(train_env.episode_length_buf, episode_lengths)
     assert len(DummyEvalEnv.instances) == 1
     assert DummyEvalEnv.instances[0].num_envs == 2
+    assert DummyEvalEnv.instances[0].sim_workers == 1
     assert DummyEvalEnv.instances[0].reset_seeds == [999]
     assert DummyEvalEnv.instances[0].step_calls == 3
     assert policy.eval_calls == 1
@@ -429,6 +521,8 @@ def main():
     test_go1_velocity_contact_summary_classifies_illegal_contacts()
     test_go1_command_sampling_is_seed_reproducible()
     test_go1_spawn_curriculum_is_seed_reproducible()
+    test_go1_apply_actions_uses_batch_joint_api()
+    test_go1_policy_steps_count_environment_samples()
     test_go1_velocity_env_reset_step_shapes()
 
 
