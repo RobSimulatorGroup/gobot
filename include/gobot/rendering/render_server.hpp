@@ -26,6 +26,7 @@ class Camera3D;
 class Node;
 class SceneTree;
 class PhysicsWorld;
+struct DebugArrow;
 
 class GOBOT_EXPORT RenderServer : public Object {
     GOBCLASS(RenderServer, Object)
@@ -132,6 +133,10 @@ public:
                                      const Camera3D* camera,
                                      const Node* scene_root,
                                      const PhysicsWorld* physics_world = nullptr);
+
+    void RenderDebugArrowsToViewport(const RID& viewport,
+                                     const Camera3D* camera,
+                                     const std::vector<DebugArrow>& arrows);
 
     void Free(const RID& rid);
 

@@ -137,6 +137,20 @@ void RenderServer::RenderEditorDebugToViewport(const RID& viewport,
     RSG::debug_draw->RenderEditorDebug(render_target, camera, scene_root, physics_world);
 }
 
+void RenderServer::RenderDebugArrowsToViewport(const RID& viewport,
+                                               const Camera3D* camera,
+                                               const std::vector<DebugArrow>& arrows) {
+    ERR_FAIL_COND(RSG::debug_draw == nullptr);
+    if (arrows.empty()) {
+        return;
+    }
+
+    const RID render_target = RSG::viewport->GetViewportRenderTarget(viewport);
+    ERR_FAIL_COND(render_target.IsNull());
+
+    RSG::debug_draw->RenderDebugArrows(render_target, camera, arrows);
+}
+
 
 
 }

@@ -30,15 +30,22 @@ public:
                            const Node* scene_root,
                            const PhysicsWorld* physics_world = nullptr) override;
 
+    void RenderDebugArrows(const RID& render_target,
+                           const Camera3D* camera,
+                           const std::vector<DebugArrow>& arrows) override;
+
 private:
     GLuint program_ = 0;
     LineBuffer editor_grid_;
     LineBuffer world_axes_;
     LineBuffer collision_lines_;
-    LineBuffer height_scanner_lines_;
+    LineBuffer height_scanner_ray_lines_;
+    LineBuffer height_scanner_hit_spheres_;
+    LineBuffer height_scanner_normal_lines_;
     LineBuffer contact_point_lines_;
     LineBuffer contact_normal_lines_;
     LineBuffer contact_force_lines_;
+    LineBuffer debug_arrow_lines_;
 
     void EnsureProgram();
 

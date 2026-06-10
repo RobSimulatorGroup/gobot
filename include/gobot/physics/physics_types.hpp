@@ -15,6 +15,7 @@
 #include "gobot/core/math/geometry.hpp"
 #include "gobot/core/ref_counted.hpp"
 #include "gobot/physics/joint_controller.hpp"
+#include "gobot/scene/sensor_3d.hpp"
 
 namespace gobot {
 
@@ -53,6 +54,8 @@ enum class PhysicsSensorType {
     IMU,
     AngularMomentum,
     Contact,
+    RayCast,
+    TerrainHeight,
     HeightScanner
 };
 
@@ -141,6 +144,7 @@ struct PhysicsSensorSnapshot {
     Vector3 ray_direction{0.0, 0.0, -1.0};
     bool ray_direction_world_space{true};
     RealType max_distance{3.0};
+    RayReductionMode reduction_mode{RayReductionMode::None};
     std::vector<std::string> channel_names;
 };
 
@@ -223,6 +227,7 @@ struct PhysicsSceneSnapshot {
     std::vector<PhysicsRobotSnapshot> robots;
     std::vector<PhysicsTerrainSnapshot> terrains;
     std::vector<PhysicsShapeSnapshot> loose_collision_shapes;
+    std::vector<PhysicsSensorSnapshot> loose_sensors;
     std::size_t total_link_count{0};
     std::size_t total_joint_count{0};
     std::size_t total_collision_shape_count{0};
@@ -326,6 +331,7 @@ struct PhysicsRobotState {
 struct PhysicsSceneState {
     std::vector<PhysicsRobotState> robots;
     std::vector<PhysicsContactState> contacts;
+    std::vector<PhysicsSensorState> loose_sensors;
     std::size_t total_link_count{0};
     std::size_t total_joint_count{0};
     std::size_t total_sensor_count{0};

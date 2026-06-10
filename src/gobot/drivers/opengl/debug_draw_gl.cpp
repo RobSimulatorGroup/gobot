@@ -9,6 +9,7 @@
 #include "gobot/drivers/opengl/texture_storage.hpp"
 #include "gobot/error_macros.hpp"
 #include "gobot/log.hpp"
+#include "gobot/physics/backends/null_physics_world.hpp"
 #include "gobot/physics/physics_types.hpp"
 #include "gobot/physics/physics_world.hpp"
 #include "gobot/rendering/scene_render_items.hpp"
@@ -23,6 +24,8 @@
 #include <algorithm>
 #include <array>
 #include <cmath>
+#include <iterator>
+#include <optional>
 #include <string>
 #include <vector>
 
@@ -87,6 +90,43 @@ void AppendCross(std::vector<float>& vertices, const Vector3& center, RealType r
     AppendWorldLine(vertices, center - Vector3::UnitZ() * radius, center + Vector3::UnitZ() * radius);
 }
 
+Vector3 SpherePoint(const Vector3& center, RealType radius, RealType theta, RealType phi) {
+    const RealType sin_theta = std::sin(theta);
+    return center + Vector3{
+            std::cos(phi) * sin_theta * radius,
+            std::cos(theta) * radius,
+            std::sin(phi) * sin_theta * radius,
+    };
+}
+
+void AppendSphereTriangles(std::vector<float>& vertices, const Vector3& center, RealType radius) {
+    constexpr int stack_count = 12;
+    constexpr int sector_count = 24;
+    for (int stack = 0; stack < stack_count; ++stack) {
+        const RealType theta0 = static_cast<RealType>(Math_PI * stack / stack_count);
+        const RealType theta1 = static_cast<RealType>(Math_PI * (stack + 1) / stack_count);
+        for (int segment = 0; segment < sector_count; ++segment) {
+            const RealType phi0 = static_cast<RealType>(2.0 * Math_PI * segment / sector_count);
+            const RealType phi1 = static_cast<RealType>(2.0 * Math_PI * (segment + 1) / sector_count);
+            const Vector3 p00 = SpherePoint(center, radius, theta0, phi0);
+            const Vector3 p10 = SpherePoint(center, radius, theta1, phi0);
+            const Vector3 p11 = SpherePoint(center, radius, theta1, phi1);
+            const Vector3 p01 = SpherePoint(center, radius, theta0, phi1);
+
+            if (stack != 0) {
+                PushWorldVertex(vertices, p00);
+                PushWorldVertex(vertices, p10);
+                PushWorldVertex(vertices, p01);
+            }
+            if (stack != stack_count - 1) {
+                PushWorldVertex(vertices, p01);
+                PushWorldVertex(vertices, p10);
+                PushWorldVertex(vertices, p11);
+            }
+        }
+    }
+}
+
 void AppendArrow(std::vector<float>& vertices, const Vector3& from, const Vector3& to) {
     AppendWorldLine(vertices, from, to);
 
@@ -111,6 +151,38 @@ void AppendArrow(std::vector<float>& vertices, const Vector3& from, const Vector
     const Vector3 base = to - direction * head_length;
     AppendWorldLine(vertices, to, base + side * head_width);
     AppendWorldLine(vertices, to, base - side * head_width);
+}
+
+struct ArrowBatch {
+    Color color;
+    std::vector<float> vertices;
+};
+
+bool SameColor(const Color& left, const Color& right) {
+    return std::abs(left.red() - right.red()) <= 1.0e-4f &&
+           std::abs(left.green() - right.green()) <= 1.0e-4f &&
+           std::abs(left.blue() - right.blue()) <= 1.0e-4f &&
+           std::abs(left.alpha() - right.alpha()) <= 1.0e-4f;
+}
+
+std::vector<ArrowBatch> BuildArrowBatches(const std::vector<DebugArrow>& arrows) {
+    std::vector<ArrowBatch> batches;
+    for (const DebugArrow& arrow : arrows) {
+        const Vector3 scaled_vector = arrow.vector * arrow.scale;
+        if (scaled_vector.squaredNorm() <= CMP_EPSILON2) {
+            continue;
+        }
+
+        auto iter = std::ranges::find_if(batches, [&](const ArrowBatch& batch) {
+            return SameColor(batch.color, arrow.color);
+        });
+        if (iter == batches.end()) {
+            batches.push_back({arrow.color, {}});
+            iter = std::prev(batches.end());
+        }
+        AppendArrow(iter->vertices, arrow.start, arrow.start + scaled_vector);
+    }
+    return batches;
 }
 
 void EnsureLineBuffer(GLRendererDebugDraw::LineBuffer& buffer) {
@@ -153,6 +225,32 @@ void DrawLineBuffer(GLRendererDebugDraw::LineBuffer& buffer,
     glLineWidth(line_width);
     glDrawArrays(GL_LINES, 0, buffer.vertex_count);
     glLineWidth(1.0f);
+}
+
+void DrawTriangleBuffer(GLRendererDebugDraw::LineBuffer& buffer,
+                        const std::vector<float>& vertices,
+                        GLuint program,
+                        float red,
+                        float green,
+                        float blue,
+                        float alpha) {
+    if (vertices.empty()) {
+        buffer.vertex_count = 0;
+        return;
+    }
+
+    EnsureLineBuffer(buffer);
+    glNamedBufferData(buffer.vertex_buffer,
+                      static_cast<GLsizeiptr>(vertices.size() * sizeof(float)),
+                      vertices.data(),
+                      GL_STREAM_DRAW);
+    buffer.vertex_count = static_cast<GLsizei>(vertices.size() / 3);
+
+    const Matrix4 model = Matrix4::Identity();
+    glUniformMatrix4fv(glGetUniformLocation(program, "u_model"), 1, GL_FALSE, model.data());
+    glUniform4f(glGetUniformLocation(program, "u_color"), red, green, blue, alpha);
+    glBindVertexArray(buffer.vao);
+    glDrawArrays(GL_TRIANGLES, 0, buffer.vertex_count);
 }
 
 void AppendBoxLines(std::vector<float>& vertices, const Affine3& transform, const Vector3& size) {
@@ -276,10 +374,13 @@ GLRendererDebugDraw::~GLRendererDebugDraw() {
     FreeLineBuffer(editor_grid_);
     FreeLineBuffer(world_axes_);
     FreeLineBuffer(collision_lines_);
-    FreeLineBuffer(height_scanner_lines_);
+    FreeLineBuffer(height_scanner_ray_lines_);
+    FreeLineBuffer(height_scanner_hit_spheres_);
+    FreeLineBuffer(height_scanner_normal_lines_);
     FreeLineBuffer(contact_point_lines_);
     FreeLineBuffer(contact_normal_lines_);
     FreeLineBuffer(contact_force_lines_);
+    FreeLineBuffer(debug_arrow_lines_);
 }
 
 void GLRendererDebugDraw::EnsureProgram() {
@@ -441,50 +542,56 @@ void GLRendererDebugDraw::DrawCollisionDebug(const SceneRenderItems& render_item
 }
 
 void GLRendererDebugDraw::DrawHeightScannerDebug(const PhysicsSceneState* physics_state) {
-    std::vector<float> vertices;
+    std::vector<float> ray_vertices;
+    std::vector<float> hit_vertices;
+    std::vector<float> normal_vertices;
+    auto append_sensor = [&](const PhysicsSensorState& sensor) {
+        if ((sensor.type != PhysicsSensorType::RayCast &&
+             sensor.type != PhysicsSensorType::TerrainHeight &&
+             sensor.type != PhysicsSensorType::HeightScanner) ||
+            !sensor.enabled ||
+            !sensor.visualize_debug) {
+            return;
+        }
+        for (const PhysicsSensorRaycastHit& hit : sensor.hits) {
+            const Vector3 delta = hit.point - hit.origin;
+            const RealType length = delta.norm();
+            if (length > CMP_EPSILON) {
+                const Vector3 direction = delta / length;
+                const RealType guide_offset = std::min<RealType>(0.18, length * static_cast<RealType>(0.18));
+                AppendWorldLine(ray_vertices, hit.origin + direction * guide_offset, hit.point);
+            }
+
+            if (!hit.hit) {
+                continue;
+            }
+
+            const RealType normal_length = hit.normal.norm();
+            constexpr RealType kHitSphereRadius = 0.022;
+            AppendSphereTriangles(hit_vertices, hit.point, kHitSphereRadius);
+
+            if (normal_length > CMP_EPSILON) {
+                constexpr RealType kNormalVisualLength = 0.16;
+                AppendArrow(normal_vertices,
+                            hit.point,
+                            hit.point + hit.normal / normal_length * kNormalVisualLength);
+            }
+        }
+    };
     if (physics_state != nullptr) {
         for (const PhysicsRobotState& robot : physics_state->robots) {
             for (const PhysicsSensorState& sensor : robot.sensors) {
-                if (sensor.type != PhysicsSensorType::HeightScanner || !sensor.enabled || !sensor.visualize_debug) {
-                    continue;
-                }
-                for (const PhysicsSensorRaycastHit& hit : sensor.hits) {
-                    AppendWorldLine(vertices, hit.origin, hit.point);
-                    if (hit.hit) {
-                        AppendCross(vertices, hit.point, 0.025);
-                    }
-                }
+                append_sensor(sensor);
             }
+        }
+        for (const PhysicsSensorState& sensor : physics_state->loose_sensors) {
+            append_sensor(sensor);
         }
     }
 
-    if (vertices.empty()) {
-        height_scanner_lines_.vertex_count = 0;
-        return;
-    }
-
-    if (height_scanner_lines_.vao == 0) {
-        glCreateVertexArrays(1, &height_scanner_lines_.vao);
-        glCreateBuffers(1, &height_scanner_lines_.vertex_buffer);
-        glVertexArrayVertexBuffer(height_scanner_lines_.vao, 0, height_scanner_lines_.vertex_buffer, 0, 3 * sizeof(float));
-        glEnableVertexArrayAttrib(height_scanner_lines_.vao, 0);
-        glVertexArrayAttribFormat(height_scanner_lines_.vao, 0, 3, GL_FLOAT, GL_FALSE, 0);
-        glVertexArrayAttribBinding(height_scanner_lines_.vao, 0, 0);
-    }
-
-    glNamedBufferData(height_scanner_lines_.vertex_buffer,
-                      static_cast<GLsizeiptr>(vertices.size() * sizeof(float)),
-                      vertices.data(),
-                      GL_STREAM_DRAW);
-    height_scanner_lines_.vertex_count = static_cast<GLsizei>(vertices.size() / 3);
-
-    const Matrix4 model = Matrix4::Identity();
-    glUniformMatrix4fv(glGetUniformLocation(program_, "u_model"), 1, GL_FALSE, model.data());
-    glUniform4f(glGetUniformLocation(program_, "u_color"), 1.0f, 0.82f, 0.22f, 0.9f);
-    glBindVertexArray(height_scanner_lines_.vao);
-    glLineWidth(1.25f);
-    glDrawArrays(GL_LINES, 0, height_scanner_lines_.vertex_count);
-    glLineWidth(1.0f);
+    DrawLineBuffer(height_scanner_ray_lines_, ray_vertices, program_, 0.35f, 0.95f, 0.22f, 0.42f, 1.0f);
+    DrawTriangleBuffer(height_scanner_hit_spheres_, hit_vertices, program_, 0.0f, 0.93f, 1.0f, 0.98f);
+    DrawLineBuffer(height_scanner_normal_lines_, normal_vertices, program_, 1.0f, 0.88f, 0.05f, 0.95f, 1.75f);
 }
 
 void GLRendererDebugDraw::DrawContactDebug(const PhysicsWorld* physics_world) {
@@ -592,7 +699,16 @@ void GLRendererDebugDraw::RenderEditorDebug(const RID& render_target,
     glUniformMatrix4fv(glGetUniformLocation(program_, "u_projection"), 1, GL_FALSE, projection.data());
 
     const SceneRenderItems render_items = CollectSceneRenderItems(scene_root);
-    const PhysicsSceneState* physics_state = physics_world != nullptr ? &physics_world->GetSceneState() : nullptr;
+    std::optional<NullPhysicsWorld> preview_world;
+    if (physics_world == nullptr && scene_root != nullptr) {
+        preview_world.emplace();
+        if (!preview_world->BuildFromScene(scene_root)) {
+            preview_world.reset();
+        }
+    }
+    const PhysicsSceneState* physics_state = physics_world != nullptr
+                                                     ? &physics_world->GetSceneState()
+                                                     : (preview_world.has_value() ? &preview_world->GetSceneState() : nullptr);
     DrawEditorGrid();
     DrawWorldAxes();
     DrawCollisionDebug(render_items);
@@ -601,6 +717,57 @@ void GLRendererDebugDraw::RenderEditorDebug(const RID& render_target,
     glDisable(GL_DEPTH_TEST);
     DrawContactDebug(physics_world);
     glEnable(GL_DEPTH_TEST);
+
+    glDisable(GL_BLEND);
+    glDepthMask(GL_TRUE);
+    glBindVertexArray(0);
+    glUseProgram(0);
+    glBindFramebuffer(GL_FRAMEBUFFER, 0);
+}
+
+void GLRendererDebugDraw::RenderDebugArrows(const RID& render_target,
+                                            const Camera3D* camera,
+                                            const std::vector<DebugArrow>& arrows) {
+    ERR_FAIL_COND(camera == nullptr);
+    if (arrows.empty()) {
+        debug_arrow_lines_.vertex_count = 0;
+        return;
+    }
+
+    auto* rt = TextureStorage::GetInstance()->GetRenderTarget(render_target);
+    ERR_FAIL_COND(rt == nullptr);
+    if (rt->fbo == 0 || rt->size.x() <= 0 || rt->size.y() <= 0) {
+        return;
+    }
+
+    EnsureProgram();
+    if (program_ == 0) {
+        return;
+    }
+
+    glBindFramebuffer(GL_FRAMEBUFFER, rt->fbo);
+    glViewport(0, 0, rt->size.x(), rt->size.y());
+    glEnable(GL_DEPTH_TEST);
+    glDepthMask(GL_FALSE);
+    glEnable(GL_BLEND);
+    glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
+
+    glUseProgram(program_);
+    const Matrix4 view = camera->GetViewMatrix();
+    const Matrix4 projection = camera->GetProjectionMatrix();
+    glUniformMatrix4fv(glGetUniformLocation(program_, "u_view"), 1, GL_FALSE, view.data());
+    glUniformMatrix4fv(glGetUniformLocation(program_, "u_projection"), 1, GL_FALSE, projection.data());
+
+    for (const ArrowBatch& batch : BuildArrowBatches(arrows)) {
+        DrawLineBuffer(debug_arrow_lines_,
+                       batch.vertices,
+                       program_,
+                       batch.color.red(),
+                       batch.color.green(),
+                       batch.color.blue(),
+                       batch.color.alpha(),
+                       4.0f);
+    }
 
     glDisable(GL_BLEND);
     glDepthMask(GL_TRUE);

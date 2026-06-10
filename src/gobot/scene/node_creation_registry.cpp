@@ -190,10 +190,26 @@ void NodeCreationRegistry::EnsureBuiltInNodeTypesRegistered() {
     });
 
     RegisterNodeType({
+        "RayCastSensor3D",
+        "RayCast Sensor",
+        "Sensor3D",
+        "3D raycast sensor with authored ray sample offsets and direction.",
+        []() -> Node* { return CreateNodeInstance<RayCastSensor3D>(); }
+    });
+
+    RegisterNodeType({
+        "TerrainHeightSensor3D",
+        "Terrain Height Sensor",
+        "RayCastSensor3D",
+        "3D terrain raycast sensor that reports vertical clearance from each sample frame to the terrain hit point.",
+        []() -> Node* { return CreateNodeInstance<TerrainHeightSensor3D>(); }
+    });
+
+    RegisterNodeType({
         "HeightScanner3D",
         "Height Scanner",
-        "Sensor3D",
-        "3D raycast-style scanner that measures distances to authored Terrain3D surfaces.",
+        "TerrainHeightSensor3D",
+        "Compatibility terrain height scanner. Prefer TerrainHeightSensor3D for new scenes.",
         []() -> Node* { return CreateNodeInstance<HeightScanner3D>(); }
     });
 

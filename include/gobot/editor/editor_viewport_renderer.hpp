@@ -2,8 +2,11 @@
 
 #include "gobot/core/math/geometry.hpp"
 #include "gobot/core/rid.hpp"
+#include "gobot/rendering/renderer_debug_draw.hpp"
 
 #include "gobot_export.h"
+
+#include <vector>
 
 struct ImDrawList;
 struct ImVec2;
@@ -19,7 +22,8 @@ public:
     void Render(const RID& viewport,
                 const Node* scene_root,
                 const Camera3D* camera,
-                const PhysicsWorld* physics_world = nullptr);
+                const PhysicsWorld* physics_world = nullptr,
+                const std::vector<DebugArrow>& debug_arrows = {});
 
     Node* PickNode(Node* scene_root,
                    const Camera3D* camera,

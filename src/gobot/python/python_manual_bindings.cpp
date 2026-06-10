@@ -220,8 +220,16 @@ struct PyContactSensor3DHandle : public PySensor3DHandle {
     using PySensor3DHandle::PySensor3DHandle;
 };
 
-struct PyHeightScanner3DHandle : public PySensor3DHandle {
+struct PyRayCastSensor3DHandle : public PySensor3DHandle {
     using PySensor3DHandle::PySensor3DHandle;
+};
+
+struct PyTerrainHeightSensor3DHandle : public PyRayCastSensor3DHandle {
+    using PyRayCastSensor3DHandle::PyRayCastSensor3DHandle;
+};
+
+struct PyHeightScanner3DHandle : public PyTerrainHeightSensor3DHandle {
+    using PyTerrainHeightSensor3DHandle::PyTerrainHeightSensor3DHandle;
 };
 
 std::string ExpectedTypeForNode(Node* node);
@@ -1180,6 +1188,39 @@ py::list Vector3ListToPython(const std::vector<Vector3>& values) {
     return result;
 }
 
+std::vector<DebugArrow> PythonToDebugArrows(const py::handle& object) {
+    if (object.is_none()) {
+        return {};
+    }
+
+    py::sequence sequence = py::reinterpret_borrow<py::sequence>(object);
+    std::vector<DebugArrow> arrows;
+    arrows.reserve(static_cast<std::size_t>(sequence.size()));
+    for (py::handle item : sequence) {
+        py::dict values = py::reinterpret_borrow<py::dict>(item);
+        DebugArrow arrow;
+        if (!values.contains("start")) {
+            throw std::invalid_argument("debug arrow is missing 'start'");
+        }
+        if (!values.contains("vector")) {
+            throw std::invalid_argument("debug arrow is missing 'vector'");
+        }
+        arrow.start = PythonToVector3(values["start"]);
+        arrow.vector = PythonToVector3(values["vector"]);
+        if (values.contains("color")) {
+            arrow.color = PythonToColor4(values["color"]);
+        }
+        if (values.contains("scale")) {
+            arrow.scale = py::cast<RealType>(values["scale"]);
+        }
+        if (values.contains("label")) {
+            arrow.label = py::cast<std::string>(values["label"]);
+        }
+        arrows.push_back(std::move(arrow));
+    }
+    return arrows;
+}
+
 Affine3 PythonToTransformWxyz(const py::handle& position, const py::handle& orientation) {
     Affine3 transform = Affine3::Identity();
     transform.translation() = PythonToVector3(position);
@@ -1195,7 +1236,8 @@ py::array_t<std::uint8_t> CaptureRgb(const py::handle& root_handle,
                                      const py::handle& up,
                                      RealType fov_y,
                                      RealType z_near,
-                                     RealType z_far) {
+                                     RealType z_far,
+                                     const py::handle& debug_arrows) {
     if (width <= 0 || height <= 0) {
         throw std::invalid_argument("capture size must be positive");
     }
@@ -1231,6 +1273,7 @@ py::array_t<std::uint8_t> CaptureRgb(const py::handle& root_handle,
     RID capture_viewport = render_server->ViewportCreate();
     render_server->ViewportSetSize(capture_viewport, width, height);
     render_server->RenderSceneToViewport(capture_viewport, root, &camera);
+    render_server->RenderDebugArrowsToViewport(capture_viewport, &camera, PythonToDebugArrows(debug_arrows));
     std::vector<std::uint8_t> pixels = render_server->ReadViewportRgbPixels(capture_viewport, true);
     render_server->Free(capture_viewport);
     if (pixels.size() != static_cast<std::size_t>(width) * height * 3) {
@@ -1266,6 +1309,10 @@ std::string PhysicsSensorTypeName(PhysicsSensorType type) {
             return "angular_momentum";
         case PhysicsSensorType::Contact:
             return "contact";
+        case PhysicsSensorType::RayCast:
+            return "raycast";
+        case PhysicsSensorType::TerrainHeight:
+            return "terrain_height";
         case PhysicsSensorType::HeightScanner:
             return "height_scanner";
         case PhysicsSensorType::Unknown:
@@ -1273,6 +1320,21 @@ std::string PhysicsSensorTypeName(PhysicsSensorType type) {
     }
 
     return "unknown";
+}
+
+std::string RayReductionModeName(RayReductionMode reduction_mode) {
+    switch (reduction_mode) {
+        case RayReductionMode::None:
+            return "none";
+        case RayReductionMode::Min:
+            return "min";
+        case RayReductionMode::Max:
+            return "max";
+        case RayReductionMode::Mean:
+            return "mean";
+    }
+
+    return "none";
 }
 
 py::dict JointSnapshotToPythonDict(const PhysicsJointSnapshot& joint) {
@@ -1331,6 +1393,7 @@ py::dict SensorSnapshotToPythonDict(const PhysicsSensorSnapshot& sensor) {
     result["ray_direction"] = Vector3ToPython(sensor.ray_direction);
     result["ray_direction_world_space"] = sensor.ray_direction_world_space;
     result["max_distance"] = sensor.max_distance;
+    result["reduction_mode"] = RayReductionModeName(sensor.reduction_mode);
     result["channel_names"] = sensor.channel_names;
     result["global_transform"] = TransformToPythonDict(sensor.global_transform);
     result["local_transform"] = TransformToPythonDict(sensor.local_transform);
@@ -1498,8 +1561,14 @@ py::dict RuntimeStateToPythonDict(const PhysicsSceneState& state) {
         contacts.append(ContactStateToPythonDict(contact));
     }
 
+    py::list sensors;
+    for (const PhysicsSensorState& sensor : state.loose_sensors) {
+        sensors.append(SensorStateToPythonDict(sensor));
+    }
+
     result["robots"] = robots;
     result["contacts"] = contacts;
+    result["sensors"] = sensors;
     result["total_link_count"] = state.total_link_count;
     result["total_joint_count"] = state.total_joint_count;
     result["total_sensor_count"] = state.total_sensor_count;
@@ -2002,6 +2071,23 @@ PyContactSensor3DHandle MakeContactSensor3DHandle(ContactSensor3D* node,
     return PyContactSensor3DHandle(node, "ContactSensor3D", resolved_context, ResolveHandleEpoch(resolved_context, epoch), ownership);
 }
 
+PyRayCastSensor3DHandle MakeRayCastSensor3DHandle(RayCastSensor3D* node,
+                                                  PyNodeOwnership ownership = PyNodeOwnership::Borrowed,
+                                                  EngineContext* context = nullptr,
+                                                  std::uint64_t epoch = 0) {
+    EngineContext* resolved_context = ResolveHandleContext(context);
+    return PyRayCastSensor3DHandle(node, "RayCastSensor3D", resolved_context, ResolveHandleEpoch(resolved_context, epoch), ownership);
+}
+
+PyTerrainHeightSensor3DHandle MakeTerrainHeightSensor3DHandle(
+        TerrainHeightSensor3D* node,
+        PyNodeOwnership ownership = PyNodeOwnership::Borrowed,
+        EngineContext* context = nullptr,
+        std::uint64_t epoch = 0) {
+    EngineContext* resolved_context = ResolveHandleContext(context);
+    return PyTerrainHeightSensor3DHandle(node, "TerrainHeightSensor3D", resolved_context, ResolveHandleEpoch(resolved_context, epoch), ownership);
+}
+
 PyHeightScanner3DHandle MakeHeightScanner3DHandle(
         HeightScanner3D* node,
         PyNodeOwnership ownership = PyNodeOwnership::Borrowed,
@@ -2026,6 +2112,12 @@ PyNodeHandle MakeTypedNodeHandle(Node* node,
     }
     if (auto* height_scanner = Object::PointerCastTo<HeightScanner3D>(node)) {
         return MakeHeightScanner3DHandle(height_scanner, ownership, context, epoch);
+    }
+    if (auto* terrain_height_sensor = Object::PointerCastTo<TerrainHeightSensor3D>(node)) {
+        return MakeTerrainHeightSensor3DHandle(terrain_height_sensor, ownership, context, epoch);
+    }
+    if (auto* raycast_sensor = Object::PointerCastTo<RayCastSensor3D>(node)) {
+        return MakeRayCastSensor3DHandle(raycast_sensor, ownership, context, epoch);
     }
     if (auto* angular_momentum_sensor = Object::PointerCastTo<AngularMomentumSensor3D>(node)) {
         return MakeAngularMomentumSensor3DHandle(angular_momentum_sensor, ownership, context, epoch);
@@ -2069,6 +2161,12 @@ py::object MakeTypedNodeObject(Node* node,
     }
     if (auto* height_scanner = Object::PointerCastTo<HeightScanner3D>(node)) {
         return py::cast(MakeHeightScanner3DHandle(height_scanner, ownership, context, epoch));
+    }
+    if (auto* terrain_height_sensor = Object::PointerCastTo<TerrainHeightSensor3D>(node)) {
+        return py::cast(MakeTerrainHeightSensor3DHandle(terrain_height_sensor, ownership, context, epoch));
+    }
+    if (auto* raycast_sensor = Object::PointerCastTo<RayCastSensor3D>(node)) {
+        return py::cast(MakeRayCastSensor3DHandle(raycast_sensor, ownership, context, epoch));
     }
     if (auto* angular_momentum_sensor = Object::PointerCastTo<AngularMomentumSensor3D>(node)) {
         return py::cast(MakeAngularMomentumSensor3DHandle(angular_momentum_sensor, ownership, context, epoch));
@@ -2194,6 +2292,13 @@ class NodeScript:
             .value("Motion", RobotMode::Motion)
             .export_values();
 
+    py::enum_<RayReductionMode>(module, "RayReductionMode")
+            .value("None_", RayReductionMode::None)
+            .value("Min", RayReductionMode::Min)
+            .value("Max", RayReductionMode::Max)
+            .value("Mean", RayReductionMode::Mean)
+            .export_values();
+
     py::class_<Input>(module, "Input")
             .def_property_readonly("has_control_focus", &Input::HasControlFocus)
             .def("is_key_pressed", &Input::IsKeyPressedByName, py::arg("key_name"))
@@ -2226,8 +2331,12 @@ class NodeScript:
             py::class_<PyAngularMomentumSensor3DHandle, PySensor3DHandle>(module, "AngularMomentumSensor3D");
     auto contact_sensor3d_class =
             py::class_<PyContactSensor3DHandle, PySensor3DHandle>(module, "ContactSensor3D");
+    auto raycast_sensor3d_class =
+            py::class_<PyRayCastSensor3DHandle, PySensor3DHandle>(module, "RayCastSensor3D");
+    auto terrain_height_sensor3d_class =
+            py::class_<PyTerrainHeightSensor3DHandle, PyRayCastSensor3DHandle>(module, "TerrainHeightSensor3D");
     auto height_scanner3d_class =
-            py::class_<PyHeightScanner3DHandle, PySensor3DHandle>(module, "HeightScanner3D");
+            py::class_<PyHeightScanner3DHandle, PyTerrainHeightSensor3DHandle>(module, "HeightScanner3D");
 
     py::implicitly_convertible<PyRobot3DHandle, PyNodeHandle>();
     py::implicitly_convertible<PyLink3DHandle, PyNodeHandle>();
@@ -2238,6 +2347,8 @@ class NodeScript:
     py::implicitly_convertible<PyIMUSensor3DHandle, PyNodeHandle>();
     py::implicitly_convertible<PyAngularMomentumSensor3DHandle, PyNodeHandle>();
     py::implicitly_convertible<PyContactSensor3DHandle, PyNodeHandle>();
+    py::implicitly_convertible<PyRayCastSensor3DHandle, PyNodeHandle>();
+    py::implicitly_convertible<PyTerrainHeightSensor3DHandle, PyNodeHandle>();
     py::implicitly_convertible<PyHeightScanner3DHandle, PyNodeHandle>();
 
     py::class_<EngineContext, std::shared_ptr<EngineContext>>(module, "AppContext")
@@ -3281,43 +3392,54 @@ class NodeScript:
                               ExecuteSetNodeProperty(sensor, "max_threshold", Variant(max_threshold));
                           });
 
-    height_scanner3d_class
+    raycast_sensor3d_class
             .def_property("sample_offsets",
-                          [](const PyHeightScanner3DHandle& handle) {
+                          [](const PyRayCastSensor3DHandle& handle) {
                               return Vector3ListToPython(
-                                      handle.ResolveAs<HeightScanner3D>()->GetSampleOffsets());
+                                      handle.ResolveAs<RayCastSensor3D>()->GetSampleOffsets());
                           },
-                          [](PyHeightScanner3DHandle& handle, const py::handle& value) {
-                              HeightScanner3D* sensor = handle.ResolveAs<HeightScanner3D>();
+                          [](PyRayCastSensor3DHandle& handle, const py::handle& value) {
+                              RayCastSensor3D* sensor = handle.ResolveAs<RayCastSensor3D>();
                               ExecuteSetNodeProperty(sensor, "sample_offsets", Variant(PythonToVector3List(value)));
                           })
             .def_property("ray_direction",
-                          [](const PyHeightScanner3DHandle& handle) {
-                              return Vector3ToPython(handle.ResolveAs<HeightScanner3D>()->GetRayDirection());
+                          [](const PyRayCastSensor3DHandle& handle) {
+                              return Vector3ToPython(handle.ResolveAs<RayCastSensor3D>()->GetRayDirection());
                           },
-                          [](PyHeightScanner3DHandle& handle, const py::handle& value) {
-                              HeightScanner3D* sensor = handle.ResolveAs<HeightScanner3D>();
+                          [](PyRayCastSensor3DHandle& handle, const py::handle& value) {
+                              RayCastSensor3D* sensor = handle.ResolveAs<RayCastSensor3D>();
                               ExecuteSetNodeProperty(sensor, "ray_direction", Variant(PythonToVector3(value)));
                           })
             .def_property("ray_direction_world_space",
-                          [](const PyHeightScanner3DHandle& handle) {
-                              return handle.ResolveAs<HeightScanner3D>()->IsRayDirectionWorldSpace();
+                          [](const PyRayCastSensor3DHandle& handle) {
+                              return handle.ResolveAs<RayCastSensor3D>()->IsRayDirectionWorldSpace();
                           },
-                          [](PyHeightScanner3DHandle& handle, bool value) {
-                              HeightScanner3D* sensor = handle.ResolveAs<HeightScanner3D>();
+                          [](PyRayCastSensor3DHandle& handle, bool value) {
+                              RayCastSensor3D* sensor = handle.ResolveAs<RayCastSensor3D>();
                               ExecuteSetNodeProperty(sensor, "ray_direction_world_space", Variant(value));
                           })
             .def_property("max_distance",
-                          [](const PyHeightScanner3DHandle& handle) {
-                              return handle.ResolveAs<HeightScanner3D>()->GetMaxDistance();
+                          [](const PyRayCastSensor3DHandle& handle) {
+                              return handle.ResolveAs<RayCastSensor3D>()->GetMaxDistance();
                           },
-                          [](PyHeightScanner3DHandle& handle, RealType max_distance) {
-                              HeightScanner3D* sensor = handle.ResolveAs<HeightScanner3D>();
+                          [](PyRayCastSensor3DHandle& handle, RealType max_distance) {
+                              RayCastSensor3D* sensor = handle.ResolveAs<RayCastSensor3D>();
                               ExecuteSetNodeProperty(sensor, "max_distance", Variant(max_distance));
+                          });
+
+    terrain_height_sensor3d_class
+            .def_property("reduction_mode",
+                          [](const PyTerrainHeightSensor3DHandle& handle) {
+                              return handle.ResolveAs<TerrainHeightSensor3D>()->GetReductionMode();
+                          },
+                          [](PyTerrainHeightSensor3DHandle& handle, RayReductionMode reduction_mode) {
+                              TerrainHeightSensor3D* sensor = handle.ResolveAs<TerrainHeightSensor3D>();
+                              ExecuteSetNodeProperty(sensor, "reduction_mode", Variant(reduction_mode));
                           });
 
     GOB_UNUSED(imu_sensor3d_class);
     GOB_UNUSED(angular_momentum_sensor3d_class);
+    GOB_UNUSED(height_scanner3d_class);
 
     mesh_instance_class
             .def_property("surface_color",
@@ -3440,9 +3562,10 @@ class NodeScript:
                   const py::handle& up,
                   RealType fov_y,
                   RealType z_near,
-                  RealType z_far) {
+                  RealType z_far,
+                  const py::handle& debug_arrows) {
                    EnsureRuntimeContext();
-                   return CaptureRgb(root, width, height, eye, target, up, fov_y, z_near, z_far);
+                   return CaptureRgb(root, width, height, eye, target, up, fov_y, z_near, z_far, debug_arrows);
                },
                py::arg("root") = py::none(),
                py::arg("width") = 640,
@@ -3452,7 +3575,22 @@ class NodeScript:
                py::arg("up") = py::make_tuple(0.0, 0.0, 1.0),
                py::arg("fov_y") = 60.0,
                py::arg("z_near") = 0.05,
-               py::arg("z_far") = 200.0);
+               py::arg("z_far") = 200.0,
+               py::arg("debug_arrows") = py::none());
+
+    auto set_debug_arrows = [](const py::handle& debug_arrows) {
+        EnsureRuntimeContext();
+        GetActiveAppContext().SetDebugArrows(PythonToDebugArrows(debug_arrows));
+    };
+    module.def("_set_debug_arrows", set_debug_arrows, py::arg("debug_arrows"));
+    module.def("set_debug_arrows", set_debug_arrows, py::arg("debug_arrows"));
+
+    auto clear_debug_arrows = []() {
+        EnsureRuntimeContext();
+        GetActiveAppContext().ClearDebugArrows();
+    };
+    module.def("_clear_debug_arrows", clear_debug_arrows);
+    module.def("clear_debug_arrows", clear_debug_arrows);
 
     module.def("_shutdown_headless_render_context", []() {
         ShutdownHeadlessRenderContext();

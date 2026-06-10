@@ -186,6 +186,10 @@ std::vector<std::string> ChannelNamesForSensorType(PhysicsSensorType type) {
                     "angular_momentum_z"};
         case PhysicsSensorType::Contact:
             return {"contact_strength"};
+        case PhysicsSensorType::RayCast:
+            break;
+        case PhysicsSensorType::TerrainHeight:
+            break;
         case PhysicsSensorType::HeightScanner:
             break;
         case PhysicsSensorType::Unknown:
@@ -224,13 +228,36 @@ PhysicsSensorSnapshot CaptureSensorSnapshot(const Sensor3D* sensor,
         snapshot.ray_direction = height_scanner->GetRayDirection();
         snapshot.ray_direction_world_space = height_scanner->IsRayDirectionWorldSpace();
         snapshot.max_distance = height_scanner->GetMaxDistance();
+        snapshot.reduction_mode = height_scanner->GetReductionMode();
+    } else if (auto* terrain_height_sensor = Object::PointerCastTo<TerrainHeightSensor3D>(sensor)) {
+        snapshot.type = PhysicsSensorType::TerrainHeight;
+        snapshot.sample_offsets = terrain_height_sensor->GetSampleOffsets();
+        snapshot.ray_direction = terrain_height_sensor->GetRayDirection();
+        snapshot.ray_direction_world_space = terrain_height_sensor->IsRayDirectionWorldSpace();
+        snapshot.max_distance = terrain_height_sensor->GetMaxDistance();
+        snapshot.reduction_mode = terrain_height_sensor->GetReductionMode();
+    } else if (auto* raycast_sensor = Object::PointerCastTo<RayCastSensor3D>(sensor)) {
+        snapshot.type = PhysicsSensorType::RayCast;
+        snapshot.sample_offsets = raycast_sensor->GetSampleOffsets();
+        snapshot.ray_direction = raycast_sensor->GetRayDirection();
+        snapshot.ray_direction_world_space = raycast_sensor->IsRayDirectionWorldSpace();
+        snapshot.max_distance = raycast_sensor->GetMaxDistance();
     }
 
     snapshot.channel_names = ChannelNamesForSensorType(snapshot.type);
-    if (snapshot.type == PhysicsSensorType::HeightScanner) {
+    if (snapshot.type == PhysicsSensorType::RayCast || snapshot.type == PhysicsSensorType::HeightScanner) {
         snapshot.channel_names.reserve(snapshot.sample_offsets.size());
         for (std::size_t index = 0; index < snapshot.sample_offsets.size(); ++index) {
             snapshot.channel_names.push_back(fmt::format("distance_{}", index));
+        }
+    } else if (snapshot.type == PhysicsSensorType::TerrainHeight) {
+        if (snapshot.reduction_mode == RayReductionMode::None) {
+            snapshot.channel_names.reserve(snapshot.sample_offsets.size());
+            for (std::size_t index = 0; index < snapshot.sample_offsets.size(); ++index) {
+                snapshot.channel_names.push_back(fmt::format("height_{}", index));
+            }
+        } else {
+            snapshot.channel_names.push_back("height");
         }
     }
     return snapshot;
@@ -414,6 +441,9 @@ void CollectSceneNodes(const Node* node,
     if (auto collision_shape = Object::PointerCastTo<CollisionShape3D>(node)) {
         snapshot->loose_collision_shapes.emplace_back(CaptureShapeSnapshot(collision_shape, node_global_transform));
         ++snapshot->total_collision_shape_count;
+    } else if (auto sensor = Object::PointerCastTo<Sensor3D>(node)) {
+        snapshot->loose_sensors.emplace_back(CaptureSensorSnapshot(sensor, std::string{}, node_global_transform));
+        ++snapshot->total_sensor_count;
     } else if (auto terrain = Object::PointerCastTo<Terrain3D>(node)) {
         PhysicsTerrainSnapshot terrain_snapshot = CaptureTerrainSnapshot(terrain, node_global_transform);
         snapshot->total_terrain_count += 1;
@@ -468,6 +498,62 @@ const PhysicsSensorState* FindPreviousSensorState(const PhysicsRobotState& robot
     }
 
     return nullptr;
+}
+
+PhysicsSensorState MakeSensorStateFromSnapshot(const PhysicsSensorSnapshot& sensor_snapshot,
+                                               const std::string& robot_name = {}) {
+    PhysicsSensorState sensor_state;
+    sensor_state.node = sensor_snapshot.node;
+    sensor_state.robot_name = robot_name;
+    sensor_state.link_name = sensor_snapshot.link_name;
+    sensor_state.sensor_name = sensor_snapshot.name;
+    sensor_state.type = sensor_snapshot.type;
+    sensor_state.enabled = sensor_snapshot.enabled;
+    sensor_state.visualize_debug = sensor_snapshot.visualize_debug;
+    sensor_state.global_transform = sensor_snapshot.global_transform;
+    sensor_state.channel_names = sensor_snapshot.channel_names;
+    sensor_state.values.assign(sensor_state.channel_names.size(), 0.0);
+    if (sensor_snapshot.type == PhysicsSensorType::IMU && sensor_state.values.size() >= 4) {
+        const Quaternion orientation(sensor_snapshot.global_transform.linear());
+        sensor_state.values[0] = orientation.w();
+        sensor_state.values[1] = orientation.x();
+        sensor_state.values[2] = orientation.y();
+        sensor_state.values[3] = orientation.z();
+    }
+    return sensor_state;
+}
+
+bool IsRaycastSensorType(PhysicsSensorType type) {
+    return type == PhysicsSensorType::RayCast ||
+           type == PhysicsSensorType::TerrainHeight ||
+           type == PhysicsSensorType::HeightScanner;
+}
+
+bool IsTerrainHeightSensorType(PhysicsSensorType type) {
+    return type == PhysicsSensorType::TerrainHeight ||
+           type == PhysicsSensorType::HeightScanner;
+}
+
+RealType ReduceRayValues(const std::vector<RealType>& values, RayReductionMode reduction_mode) {
+    if (values.empty()) {
+        return 0.0;
+    }
+    switch (reduction_mode) {
+        case RayReductionMode::Min:
+            return *std::min_element(values.begin(), values.end());
+        case RayReductionMode::Max:
+            return *std::max_element(values.begin(), values.end());
+        case RayReductionMode::Mean: {
+            RealType sum = 0.0;
+            for (RealType value : values) {
+                sum += value;
+            }
+            return sum / static_cast<RealType>(values.size());
+        }
+        case RayReductionMode::None:
+            break;
+    }
+    return values.front();
 }
 
 struct InternalTerrainRaycastHit {
@@ -898,7 +984,7 @@ bool PhysicsWorld::RestoreCompatibleState(const PhysicsSceneState& previous_stat
         }
     }
 
-    UpdateSensorGlobalTransformsAndHeightScanners(scene_state_, 0.0);
+    UpdateSensorGlobalTransformsAndRaycastSensors(scene_state_, 0.0);
     last_error_.clear();
     return true;
 }
@@ -910,7 +996,7 @@ void PhysicsWorld::Reset() {
 
 void PhysicsWorld::Step(RealType delta_time) {
     GOB_UNUSED(delta_time);
-    UpdateSensorGlobalTransformsAndHeightScanners(scene_state_, 0.0);
+    UpdateSensorGlobalTransformsAndRaycastSensors(scene_state_, 0.0);
 }
 
 bool PhysicsWorld::ConfigureEnvironmentBatch(std::size_t environment_count) {
@@ -1024,7 +1110,7 @@ bool PhysicsWorld::ResetLinkState(const std::string& robot_name,
                                         linear_velocity,
                                         angular_velocity);
     if (reset) {
-        UpdateSensorGlobalTransformsAndHeightScanners(scene_state_, 0.0);
+        UpdateSensorGlobalTransformsAndRaycastSensors(scene_state_, 0.0);
     }
     return reset;
 }
@@ -1258,7 +1344,69 @@ bool PhysicsWorld::CaptureSceneSnapshot(const Node* scene_root) {
     return true;
 }
 
-void PhysicsWorld::UpdateSensorGlobalTransformsAndHeightScanners(PhysicsSceneState& scene_state, RealType timestamp) {
+void PhysicsWorld::UpdateRaycastSensorState(PhysicsSensorState& sensor_state,
+                                            const PhysicsSensorSnapshot& sensor_snapshot,
+                                            const Affine3& parent_transform,
+                                            RealType timestamp) {
+    sensor_state.global_transform = parent_transform * sensor_snapshot.local_transform;
+
+    if (!IsRaycastSensorType(sensor_state.type) || !sensor_state.enabled) {
+        return;
+    }
+
+    const bool reduce_values = IsTerrainHeightSensorType(sensor_state.type) &&
+                               sensor_snapshot.reduction_mode != RayReductionMode::None;
+    const std::size_t value_count = reduce_values ? 1 : sensor_snapshot.sample_offsets.size();
+    if (sensor_state.values.size() != value_count) {
+        sensor_state.values.assign(value_count, 0.0);
+    }
+    if (sensor_state.hits.size() != sensor_snapshot.sample_offsets.size()) {
+        sensor_state.hits.assign(sensor_snapshot.sample_offsets.size(), {});
+    }
+    Vector3 ray_direction = sensor_snapshot.ray_direction_world_space
+                                    ? sensor_snapshot.ray_direction
+                                    : sensor_state.global_transform.linear() * sensor_snapshot.ray_direction;
+    if (ray_direction.squaredNorm() <= CMP_EPSILON2) {
+        ray_direction = Vector3{0.0, 0.0, -1.0};
+    } else {
+        ray_direction.normalize();
+    }
+    for (std::size_t sample_index = 0; sample_index < sensor_snapshot.sample_offsets.size(); ++sample_index) {
+        const Vector3 origin = sensor_state.global_transform * sensor_snapshot.sample_offsets[sample_index];
+        const PhysicsRaycastHit hit = RaycastTerrain({
+                origin,
+                ray_direction,
+                sensor_snapshot.max_distance
+        });
+        const RealType value = IsTerrainHeightSensorType(sensor_state.type)
+                                       ? (hit.hit ? origin.z() - hit.point.z() : sensor_snapshot.max_distance)
+                                       : hit.distance;
+        if (!reduce_values) {
+            sensor_state.values[sample_index] = value;
+        }
+        PhysicsSensorRaycastHit sensor_hit;
+        sensor_hit.hit = hit.hit;
+        sensor_hit.origin = hit.origin;
+        sensor_hit.point = hit.point;
+        sensor_hit.normal = hit.normal;
+        sensor_hit.distance = hit.distance;
+        sensor_hit.terrain_name = hit.terrain_name;
+        sensor_state.hits[sample_index] = std::move(sensor_hit);
+    }
+    if (reduce_values) {
+        std::vector<RealType> per_ray_values;
+        per_ray_values.reserve(sensor_snapshot.sample_offsets.size());
+        for (const PhysicsSensorRaycastHit& hit : sensor_state.hits) {
+            per_ray_values.push_back(hit.hit
+                                             ? hit.origin.z() - hit.point.z()
+                                             : sensor_snapshot.max_distance);
+        }
+        sensor_state.values[0] = ReduceRayValues(per_ray_values, sensor_snapshot.reduction_mode);
+    }
+    sensor_state.timestamp = timestamp;
+}
+
+void PhysicsWorld::UpdateSensorGlobalTransformsAndRaycastSensors(PhysicsSceneState& scene_state, RealType timestamp) {
     for (std::size_t robot_index = 0; robot_index < scene_state.robots.size(); ++robot_index) {
         if (robot_index >= scene_snapshot_.robots.size()) {
             continue;
@@ -1277,45 +1425,17 @@ void PhysicsWorld::UpdateSensorGlobalTransformsAndHeightScanners(PhysicsSceneSta
             const Affine3 link_transform = link_state != nullptr
                                                    ? link_state->global_transform
                                                    : Affine3::Identity();
-            sensor_state.global_transform = link_transform * sensor_snapshot.local_transform;
-
-            if (sensor_state.type != PhysicsSensorType::HeightScanner || !sensor_state.enabled) {
-                continue;
-            }
-
-            if (sensor_state.values.size() != sensor_snapshot.sample_offsets.size()) {
-                sensor_state.values.assign(sensor_snapshot.sample_offsets.size(), 0.0);
-            }
-            if (sensor_state.hits.size() != sensor_snapshot.sample_offsets.size()) {
-                sensor_state.hits.assign(sensor_snapshot.sample_offsets.size(), {});
-            }
-            Vector3 ray_direction = sensor_snapshot.ray_direction_world_space
-                                            ? sensor_snapshot.ray_direction
-                                            : sensor_state.global_transform.linear() * sensor_snapshot.ray_direction;
-            if (ray_direction.squaredNorm() <= CMP_EPSILON2) {
-                ray_direction = Vector3{0.0, 0.0, -1.0};
-            } else {
-                ray_direction.normalize();
-            }
-            for (std::size_t sample_index = 0; sample_index < sensor_snapshot.sample_offsets.size(); ++sample_index) {
-                const Vector3 origin = sensor_state.global_transform * sensor_snapshot.sample_offsets[sample_index];
-                const PhysicsRaycastHit hit = RaycastTerrain({
-                        origin,
-                        ray_direction,
-                        sensor_snapshot.max_distance
-                });
-                sensor_state.values[sample_index] = hit.distance;
-                PhysicsSensorRaycastHit sensor_hit;
-                sensor_hit.hit = hit.hit;
-                sensor_hit.origin = hit.origin;
-                sensor_hit.point = hit.point;
-                sensor_hit.normal = hit.normal;
-                sensor_hit.distance = hit.distance;
-                sensor_hit.terrain_name = hit.terrain_name;
-                sensor_state.hits[sample_index] = std::move(sensor_hit);
-            }
-            sensor_state.timestamp = timestamp;
+            UpdateRaycastSensorState(sensor_state, sensor_snapshot, link_transform, timestamp);
         }
+    }
+    for (std::size_t sensor_index = 0; sensor_index < scene_state.loose_sensors.size(); ++sensor_index) {
+        if (sensor_index >= scene_snapshot_.loose_sensors.size()) {
+            continue;
+        }
+        UpdateRaycastSensorState(scene_state.loose_sensors[sensor_index],
+                                 scene_snapshot_.loose_sensors[sensor_index],
+                                 Affine3::Identity(),
+                                 timestamp);
     }
 }
 
@@ -1484,29 +1604,16 @@ PhysicsSceneState PhysicsWorld::MakeSceneStateFromSnapshot() const {
         }
 
         for (const PhysicsSensorSnapshot& sensor_snapshot : robot_snapshot.sensors) {
-            PhysicsSensorState sensor_state;
-            sensor_state.node = sensor_snapshot.node;
-            sensor_state.robot_name = robot_snapshot.name;
-            sensor_state.link_name = sensor_snapshot.link_name;
-            sensor_state.sensor_name = sensor_snapshot.name;
-            sensor_state.type = sensor_snapshot.type;
-            sensor_state.enabled = sensor_snapshot.enabled;
-            sensor_state.visualize_debug = sensor_snapshot.visualize_debug;
-            sensor_state.global_transform = sensor_snapshot.global_transform;
-            sensor_state.channel_names = sensor_snapshot.channel_names;
-            sensor_state.values.assign(sensor_state.channel_names.size(), 0.0);
-            if (sensor_snapshot.type == PhysicsSensorType::IMU && sensor_state.values.size() >= 4) {
-                const Quaternion orientation(sensor_snapshot.global_transform.linear());
-                sensor_state.values[0] = orientation.w();
-                sensor_state.values[1] = orientation.x();
-                sensor_state.values[2] = orientation.y();
-                sensor_state.values[3] = orientation.z();
-            }
-            robot_state.sensors.emplace_back(std::move(sensor_state));
+            robot_state.sensors.emplace_back(MakeSensorStateFromSnapshot(sensor_snapshot, robot_snapshot.name));
             ++scene_state.total_sensor_count;
         }
 
         scene_state.robots.emplace_back(std::move(robot_state));
+    }
+
+    for (const PhysicsSensorSnapshot& sensor_snapshot : scene_snapshot_.loose_sensors) {
+        scene_state.loose_sensors.emplace_back(MakeSensorStateFromSnapshot(sensor_snapshot));
+        ++scene_state.total_sensor_count;
     }
 
     return scene_state;
@@ -1514,7 +1621,7 @@ PhysicsSceneState PhysicsWorld::MakeSceneStateFromSnapshot() const {
 
 void PhysicsWorld::ResetSceneStateFromSnapshot() {
     scene_state_ = MakeSceneStateFromSnapshot();
-    UpdateSensorGlobalTransformsAndHeightScanners(scene_state_, 0.0);
+    UpdateSensorGlobalTransformsAndRaycastSensors(scene_state_, 0.0);
 }
 
 void PhysicsWorld::SetLastError(std::string error) {

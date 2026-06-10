@@ -4,10 +4,12 @@
 #include <functional>
 #include <memory>
 #include <string>
+#include <vector>
 
 #include "gobot/core/object.hpp"
 #include "gobot/physics/physics_types.hpp"
 #include "gobot/physics/physics_server.hpp"
+#include "gobot/rendering/renderer_debug_draw.hpp"
 #include "gobot/scene/scene_command.hpp"
 
 namespace gobot {
@@ -66,6 +68,10 @@ public:
     SimulationServer* GetSimulationServer() const;
     const std::string& GetLastError() const;
 
+    void SetDebugArrows(std::vector<DebugArrow> arrows);
+    const std::vector<DebugArrow>& GetDebugArrows() const;
+    void ClearDebugArrows();
+
     void SetSceneChangedCallback(SceneChangedCallback callback);
     void SetLoadSceneCallback(LoadSceneCallback callback);
     void NotifySceneChanged();
@@ -103,6 +109,7 @@ private:
     std::uint64_t scene_epoch_{1};
     std::string scene_path_;
     std::string last_error_;
+    std::vector<DebugArrow> debug_arrows_;
     SceneChangedCallback scene_changed_callback_;
     LoadSceneCallback load_scene_callback_;
     SceneCommandStack scene_command_stack_;

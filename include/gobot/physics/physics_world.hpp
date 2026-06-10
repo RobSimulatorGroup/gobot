@@ -117,7 +117,12 @@ public:
 protected:
     bool CaptureSceneSnapshot(const Node* scene_root);
 
-    void UpdateSensorGlobalTransformsAndHeightScanners(PhysicsSceneState& scene_state, RealType timestamp);
+    void UpdateRaycastSensorState(PhysicsSensorState& sensor_state,
+                                  const PhysicsSensorSnapshot& sensor_snapshot,
+                                  const Affine3& parent_transform,
+                                  RealType timestamp);
+
+    void UpdateSensorGlobalTransformsAndRaycastSensors(PhysicsSceneState& scene_state, RealType timestamp);
 
     PhysicsJointState* FindJointState(const std::string& robot_name,
                                       const std::string& joint_name);

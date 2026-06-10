@@ -22,6 +22,7 @@ EngineContext::EngineContext(ProjectSettings* project_settings,
 
 EngineContext::~EngineContext() {
     python::PythonScriptRunner::ClearSceneScriptContext(this);
+    ClearDebugArrows();
     ClearWorld();
     ClearOwnedScene();
 }
@@ -126,6 +127,7 @@ bool EngineContext::HasScene() const {
 
 void EngineContext::ClearScene() {
     ClearWorld();
+    ClearDebugArrows();
     ClearOwnedScene();
     scene_command_stack_.Clear();
     scene_command_stack_.MarkClean();
@@ -185,6 +187,7 @@ bool EngineContext::RebuildWorld(bool preserve_state) {
 }
 
 void EngineContext::ClearWorld() {
+    ClearDebugArrows();
     if (simulation_server_ != nullptr) {
         simulation_server_->ClearWorld();
     }
@@ -257,6 +260,18 @@ RealType EngineContext::GetSimulationTime() const {
 
 std::uint64_t EngineContext::GetFrameCount() const {
     return simulation_server_ == nullptr ? 0 : simulation_server_->GetFrameCount();
+}
+
+void EngineContext::SetDebugArrows(std::vector<DebugArrow> arrows) {
+    debug_arrows_ = std::move(arrows);
+}
+
+const std::vector<DebugArrow>& EngineContext::GetDebugArrows() const {
+    return debug_arrows_;
+}
+
+void EngineContext::ClearDebugArrows() {
+    debug_arrows_.clear();
 }
 
 Vector3 EngineContext::GetGravity() const {

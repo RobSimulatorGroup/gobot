@@ -5,12 +5,14 @@ from __future__ import annotations
 from dataclasses import dataclass
 import copy
 import json
+import math
 from pathlib import Path
 from typing import Any, Mapping
 
 import numpy as np
 
 import gobot
+from gobot.rl.locomotion.math import _quat, _quat_to_yaw
 
 try:
     from .go1_velocity_env import Go1VelocityEnv, VelocityRuntimeState
@@ -29,6 +31,7 @@ class Go1TrainingVideoCfg:
     width: int = 640
     height: int = 480
     directory: Path | None = None
+    debug_arrows: bool = True
 
 
 class Go1TrainingVideoRecorder:
@@ -80,8 +83,20 @@ class Go1TrainingVideoRecorder:
                     obs, _, _, _ = eval_env.step(actions.to(eval_env.device))
                     state = eval_env._runtime_state(self.cfg.env_id)
                     self._sync_scene_from_state(eval_env, state)
-                    frames.append(self._capture_frame(eval_env, state))
-                    replay_frames.append(self._replay_frame(eval_env, state, actions, step_index))
+                    debug_start, command_world, actual_world = self._velocity_arrow_vectors(eval_env, state)
+                    debug_arrows = self._debug_arrows(debug_start, command_world, actual_world) if self.cfg.debug_arrows else []
+                    frames.append(self._capture_frame(eval_env, state, debug_arrows))
+                    replay_frames.append(
+                        self._replay_frame(
+                            eval_env,
+                            state,
+                            actions,
+                            step_index,
+                            debug_start,
+                            command_world,
+                            actual_world,
+                        )
+                    )
         except Exception as error:
             self._warn_once(f"Go1 training video capture failed; continuing training: {error}")
             return None
@@ -152,7 +167,12 @@ class Go1TrainingVideoRecorder:
                 continue
             node.set_global_transform(position, orientation)
 
-    def _capture_frame(self, env: Go1VelocityEnv, state: VelocityRuntimeState) -> np.ndarray:
+    def _capture_frame(
+        self,
+        env: Go1VelocityEnv,
+        state: VelocityRuntimeState,
+        debug_arrows: list[gobot.render.DebugArrow],
+    ) -> np.ndarray:
         base_position = np.asarray(state.base.get("global_transform", {}).get("position", (0.0, 0.0, 0.4)), dtype=float)
         command = np.asarray(env.command_manager.command_b[self.cfg.env_id], dtype=float)
         heading = np.array([command[0], command[1], 0.0], dtype=float)
@@ -172,9 +192,19 @@ class Go1TrainingVideoRecorder:
             fov_y=60.0,
             z_near=0.03,
             z_far=100.0,
+            debug_arrows=debug_arrows,
         )
 
-    def _replay_frame(self, env: Go1VelocityEnv, state: VelocityRuntimeState, actions: Any, step_index: int) -> dict[str, np.ndarray]:
+    def _replay_frame(
+        self,
+        env: Go1VelocityEnv,
+        state: VelocityRuntimeState,
+        actions: Any,
+        step_index: int,
+        debug_start: np.ndarray,
+        command_world: np.ndarray,
+        actual_world: np.ndarray,
+    ) -> dict[str, np.ndarray]:
         action_np = actions.detach().cpu().numpy() if hasattr(actions, "detach") else np.asarray(actions)
         action_np = np.asarray(action_np, dtype=np.float32)
         if action_np.ndim >= 2:
@@ -191,6 +221,22 @@ class Go1TrainingVideoRecorder:
             [float(state.joints.get(name, {}).get("velocity", 0.0)) for name in env.joint_names],
             dtype=np.float32,
         )
+        debug_arrow_start = np.stack(
+            [debug_start, debug_start + np.array([0.0, 0.0, 0.08], dtype=np.float32)],
+            axis=0,
+        ).astype(np.float32, copy=False)
+        debug_arrow_vector = np.stack([command_world, actual_world], axis=0).astype(np.float32, copy=False)
+        debug_arrow_color = np.asarray(
+            [[0.15, 0.85, 0.20, 1.0], [0.10, 0.42, 1.0, 1.0]],
+            dtype=np.float32,
+        )
+        debug_arrow_visible = np.asarray(
+            [
+                self.cfg.debug_arrows and float(np.linalg.norm(command_world[:2])) > 1.0e-4,
+                self.cfg.debug_arrows and float(np.linalg.norm(actual_world[:2])) > 1.0e-4,
+            ],
+            dtype=np.bool_,
+        )
         return {
             "step": np.asarray(step_index, dtype=np.int32),
             "time": np.asarray(step_index * env.step_dt, dtype=np.float32),
@@ -202,7 +248,62 @@ class Go1TrainingVideoRecorder:
             "base_angular_velocity": np.asarray(state.base.get("angular_velocity", (0.0, 0.0, 0.0)), dtype=np.float32),
             "joint_position": joint_position,
             "joint_velocity": joint_velocity,
+            "debug_arrow_start": debug_arrow_start,
+            "debug_arrow_vector": debug_arrow_vector,
+            "debug_arrow_color": debug_arrow_color,
+            "debug_arrow_visible": debug_arrow_visible,
         }
+
+    def _debug_arrows(
+        self,
+        start: np.ndarray,
+        command_world: np.ndarray,
+        actual_world: np.ndarray,
+    ) -> list[gobot.render.DebugArrow]:
+        arrows: list[gobot.render.DebugArrow] = []
+        if float(np.linalg.norm(command_world[:2])) > 1.0e-4:
+            arrows.append(
+                gobot.render.DebugArrow(
+                    start=start.tolist(),
+                    vector=command_world.tolist(),
+                    color=(0.15, 0.85, 0.20, 1.0),
+                    scale=0.55,
+                    label="command_velocity",
+                )
+            )
+        if float(np.linalg.norm(actual_world[:2])) > 1.0e-4:
+            arrows.append(
+                gobot.render.DebugArrow(
+                    start=(start + np.array([0.0, 0.0, 0.08], dtype=np.float32)).tolist(),
+                    vector=actual_world.tolist(),
+                    color=(0.10, 0.42, 1.0, 1.0),
+                    scale=0.55,
+                    label="actual_velocity",
+                )
+            )
+        return arrows
+
+    def _velocity_arrow_vectors(
+        self,
+        env: Go1VelocityEnv,
+        state: VelocityRuntimeState,
+    ) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
+        base_transform = state.base.get("global_transform", {})
+        base_position = np.asarray(base_transform.get("position", (0.0, 0.0, 0.0)), dtype=np.float32)
+        start = base_position + np.array([0.0, 0.0, 0.30], dtype=np.float32)
+        command_b = np.asarray(env.command_manager.command_b[self.cfg.env_id], dtype=np.float32)
+        yaw = _quat_to_yaw(_quat(state.base))
+        command_world = np.array(
+            [
+                math.cos(yaw) * command_b[0] - math.sin(yaw) * command_b[1],
+                math.sin(yaw) * command_b[0] + math.cos(yaw) * command_b[1],
+                0.0,
+            ],
+            dtype=np.float32,
+        )
+        actual_world = np.asarray(state.base.get("linear_velocity", (0.0, 0.0, 0.0)), dtype=np.float32)
+        actual_world = np.array([actual_world[0], actual_world[1], 0.0], dtype=np.float32)
+        return start, command_world, actual_world
 
     def _write_replay_bundle(
         self,
@@ -231,6 +332,10 @@ class Go1TrainingVideoRecorder:
             "base_link": self._eval_env.cfg_obj.base_link,
             "joint_names": list(self._eval_env.joint_names),
             "command_names": ["vx", "vy", "yaw"],
+            "debug_overlays": [
+                {"label": "command_velocity", "source": "command_velocity_world", "color": [0.15, 0.85, 0.20, 1.0], "scale": 0.55},
+                {"label": "actual_velocity", "source": "actual_velocity_world", "color": [0.10, 0.42, 1.0, 1.0], "scale": 0.55},
+            ] if self.cfg.debug_arrows else [],
         }
         try:
             if self._eval_env.context.root is not None:
@@ -250,6 +355,10 @@ class Go1TrainingVideoRecorder:
                 base_angular_velocity=np.stack([frame["base_angular_velocity"] for frame in frames], axis=0),
                 joint_position=np.stack([frame["joint_position"] for frame in frames], axis=0),
                 joint_velocity=np.stack([frame["joint_velocity"] for frame in frames], axis=0),
+                debug_arrow_start=np.stack([frame["debug_arrow_start"] for frame in frames], axis=0),
+                debug_arrow_vector=np.stack([frame["debug_arrow_vector"] for frame in frames], axis=0),
+                debug_arrow_color=np.stack([frame["debug_arrow_color"] for frame in frames], axis=0),
+                debug_arrow_visible=np.stack([frame["debug_arrow_visible"] for frame in frames], axis=0),
             )
             metadata_path.write_text(json.dumps(metadata, indent=2, sort_keys=True), encoding="utf-8")
         except Exception as error:

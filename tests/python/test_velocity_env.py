@@ -300,6 +300,7 @@ def test_go1_policy_steps_count_environment_samples():
 def test_go1_video_recorder_steps_eval_env_not_training_env(monkeypatch, tmp_path):
     torch = __import__("torch")
     written: dict[str, object] = {}
+    captures: list[dict[str, object]] = []
 
     class DummyImageIo:
         @staticmethod
@@ -366,7 +367,11 @@ def test_go1_video_recorder_steps_eval_env_not_training_env(monkeypatch, tmp_pat
         def _runtime_state(self, env_id):
             return VelocityRuntimeState(
                 robot={},
-                base={"global_transform": {"position": [float(self.step_calls), 0.0, 0.4]}},
+                base={
+                    "global_transform": {"position": [float(self.step_calls), 0.0, 0.4]},
+                    "linear_velocity": [0.5, 0.0, 0.0],
+                    "angular_velocity": [0.0, 0.0, 0.0],
+                },
                 joints={"joint": {"position": float(self.step_calls), "velocity": 0.0}},
                 links={},
                 sensors={},
@@ -405,7 +410,7 @@ def test_go1_video_recorder_steps_eval_env_not_training_env(monkeypatch, tmp_pat
     monkeypatch.setattr(
         go1_velocity_video.gobot.render,
         "capture_rgb",
-        lambda **_: np.full((2, 3, 3), 127, dtype=np.uint8),
+        lambda **kwargs: captures.append(kwargs) or np.full((2, 3, 3), 127, dtype=np.uint8),
     )
 
     train_env = TrainingEnv()
@@ -443,8 +448,19 @@ def test_go1_video_recorder_steps_eval_env_not_training_env(monkeypatch, tmp_pat
     assert policy.train_calls == 1
     assert written["fps"] == 12
     assert np.asarray(written["frames"]).shape == (3, 2, 3, 3)
+    assert len(captures) == 3
+    assert all("debug_arrows" in capture for capture in captures)
+    assert all(len(capture["debug_arrows"]) == 1 for capture in captures)
+    assert captures[0]["debug_arrows"][0].label == "actual_velocity"
     assert (tmp_path / "go1_velocity_iter_000002.replay.json").exists()
     assert (tmp_path / "go1_velocity_iter_000002.replay.npz").exists()
+    replay = np.load(tmp_path / "go1_velocity_iter_000002.replay.npz")
+    assert replay["debug_arrow_start"].shape == (3, 2, 3)
+    assert replay["debug_arrow_vector"].shape == (3, 2, 3)
+    assert replay["debug_arrow_color"].shape == (3, 2, 4)
+    assert replay["debug_arrow_visible"].shape == (3, 2)
+    assert not bool(replay["debug_arrow_visible"][0, 0])
+    assert bool(replay["debug_arrow_visible"][0, 1])
 
 
 def test_go1_video_recorder_invalid_eval_env_id_skips(monkeypatch, tmp_path):
@@ -483,6 +499,42 @@ def test_go1_video_recorder_invalid_eval_env_id_skips(monkeypatch, tmp_path):
 
     assert recorder.record(0, DummyPolicy()) is None
     assert recorder.env.step_calls == 0
+
+
+def test_go1_video_debug_arrows_rotate_command_to_world():
+    cfg = go1_cfg.go1_flat_velocity_cfg(project_path="/tmp/go1")
+    env = type(
+        "Env",
+        (),
+        {"command_manager": type("Command", (), {"command_b": np.asarray([[1.0, 0.0, 0.0]], dtype=np.float32)})()},
+    )()
+    recorder = Go1TrainingVideoRecorder(
+        type("TrainingEnv", (), {"cfg_obj": cfg, "seed": 1})(),
+        Go1TrainingVideoCfg(interval=1, env_id=0, steps=1),
+    )
+    half = float(np.sqrt(0.5))
+    state = VelocityRuntimeState(
+        robot={},
+        base={
+            "global_transform": {
+                "position": [1.0, 2.0, 0.4],
+                "quaternion": [float(half), 0.0, 0.0, float(half)],
+            },
+            "linear_velocity": [0.0, -0.5, 0.0],
+        },
+        joints={},
+        links={},
+        sensors={},
+        contacts=[],
+    )
+
+    start, command_world, actual_world = recorder._velocity_arrow_vectors(env, state)
+    arrows = recorder._debug_arrows(start, command_world, actual_world)
+
+    assert np.allclose(start, [1.0, 2.0, 0.70])
+    assert np.allclose(command_world, [0.0, 1.0, 0.0], atol=1.0e-5)
+    assert np.allclose(actual_world, [0.0, -0.5, 0.0])
+    assert [arrow.label for arrow in arrows] == ["command_velocity", "actual_velocity"]
 
 
 def _obs(num_envs: int, device: str):

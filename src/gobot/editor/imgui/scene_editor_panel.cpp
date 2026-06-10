@@ -135,7 +135,9 @@ bool IsProjectLocalScriptPath(const std::string& path) {
 }
 
 void DrawInlineEditorIcon(const EditorIcon& icon) {
-    const float icon_size = ImGui::GetTextLineHeight();
+    const float icon_size = icon.kind == EditorIconKind::Axis3D
+                                    ? std::max(22.0f, ImGui::GetTextLineHeight())
+                                    : ImGui::GetTextLineHeight();
     DrawEditorIcon(icon, {icon_size, icon_size});
 }
 

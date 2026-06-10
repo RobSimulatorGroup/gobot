@@ -328,11 +328,26 @@ class ContactSensor3D(Sensor3D):
     max_threshold: float
 
 
-class HeightScanner3D(Sensor3D):
+class RayReductionMode(Enum):
+    None_: ClassVar[RayReductionMode]
+    Min: ClassVar[RayReductionMode]
+    Max: ClassVar[RayReductionMode]
+    Mean: ClassVar[RayReductionMode]
+
+
+class RayCastSensor3D(Sensor3D):
     sample_offsets: list[Vector3]
     ray_direction: Vector3
     ray_direction_world_space: bool
     max_distance: float
+
+
+class TerrainHeightSensor3D(RayCastSensor3D):
+    reduction_mode: RayReductionMode
+
+
+class HeightScanner3D(TerrainHeightSensor3D):
+    pass
 
 
 def set_project_path(project_path: str) -> None: ...

@@ -1,8 +1,22 @@
-from typing import Any, Sequence
+from dataclasses import dataclass
+from typing import Any, Mapping, Sequence
 
 import numpy as np
 
 Vector3Like = Sequence[float]
+ColorLike = Sequence[float]
+
+@dataclass(frozen=True)
+class DebugArrow:
+    start: Vector3Like
+    vector: Vector3Like
+    color: ColorLike = (1.0, 1.0, 1.0, 1.0)
+    scale: float = 1.0
+    label: str = ""
+
+    def to_dict(self) -> dict[str, object]: ...
+
+DebugArrowLike = DebugArrow | Mapping[str, Any]
 
 def capture_rgb(
     *,
@@ -15,4 +29,8 @@ def capture_rgb(
     fov_y: float = 60.0,
     z_near: float = 0.05,
     z_far: float = 200.0,
+    debug_arrows: Sequence[DebugArrowLike] | None = None,
 ) -> np.ndarray: ...
+
+def set_debug_arrows(debug_arrows: Sequence[DebugArrowLike]) -> None: ...
+def clear_debug_arrows() -> None: ...

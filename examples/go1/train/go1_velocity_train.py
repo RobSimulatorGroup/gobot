@@ -50,6 +50,8 @@ def main() -> None:
     parser.add_argument("--render-video-width", type=int, default=640)
     parser.add_argument("--render-video-height", type=int, default=480)
     parser.add_argument("--render-video-dir", type=str, default=None)
+    parser.add_argument("--render-video-debug-arrows", dest="render_video_debug_arrows", action="store_true", default=True)
+    parser.add_argument("--no-render-video-debug-arrows", dest="render_video_debug_arrows", action="store_false")
     args = parser.parse_args()
 
     project_path = Path(__file__).resolve().parents[1]
@@ -101,6 +103,7 @@ def main() -> None:
             width=int(args.render_video_width),
             height=int(args.render_video_height),
             directory=video_dir,
+            debug_arrows=bool(args.render_video_debug_arrows),
         ),
     )
     runner = Go1OnPolicyRunner(

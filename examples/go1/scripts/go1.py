@@ -20,6 +20,9 @@ COMMAND = [
 KEYBOARD_COMMAND_MAX = [0.6, 0.35, 1.2]
 COMMAND_SMOOTHING = 8.0
 COMMAND_ACTIVE_DEADBAND = 0.02
+DEBUG_ARROW_SCALE = 0.55
+DEBUG_ARROW_Z_OFFSET = 0.30
+DEBUG_ARROW_SEPARATION = 0.08
 FALLEN_BASE_Z = 0.18
 FALLEN_ROLL_PITCH = 0.8
 KEYBOARD_BINDINGS = {
@@ -272,6 +275,10 @@ def _command_active(command):
     return any(abs(float(value)) > COMMAND_ACTIVE_DEADBAND for value in command)
 
 
+def _vector_xy_norm(vector):
+    return math.sqrt(float(vector[0]) * float(vector[0]) + float(vector[1]) * float(vector[1]))
+
+
 def _checkpoint_obs_dim(checkpoint):
     actor_state = checkpoint.get("actor_state_dict", {})
     normalizer_mean = actor_state.get("obs_normalizer._mean")
@@ -353,6 +360,11 @@ def _quat_to_roll_pitch(q):
     return roll, pitch
 
 
+def _quat_yaw(q):
+    w, x, y, z = q
+    return math.atan2(2.0 * (w * z + x * y), 1.0 - 2.0 * (y * y + z * z))
+
+
 class Script(gobot.NodeScript):
     def _ready(self):
         self.context.fixed_time_step = FIXED_TIME_STEP
@@ -393,6 +405,9 @@ class Script(gobot.NodeScript):
     def _process(self, delta):
         pass
 
+    def _exit_tree(self):
+        gobot.clear_debug_arrows()
+
     def _physics_process(self, delta):
         if not self.playing:
             return
@@ -404,6 +419,7 @@ class Script(gobot.NodeScript):
         if self._reset_if_fallen():
             return
         observation = self._observation()
+        self._update_debug_arrows()
         if self.ticks % DECIMATION == 0:
             action = [0.0] * len(JOINT_NAMES)
             if self.policy is not None and _command_active(self.command):
@@ -428,9 +444,11 @@ class Script(gobot.NodeScript):
         self.world_controls_ready = False
         self.command = list(COMMAND)
         self.last_action = [0.0] * len(JOINT_NAMES)
+        gobot.clear_debug_arrows()
 
     def pause(self):
         self.playing = False
+        gobot.clear_debug_arrows()
 
     def play(self):
         self.playing = True
@@ -577,6 +595,61 @@ class Script(gobot.NodeScript):
                 math.sqrt(sum(value * value for value in self.last_action)),
             )
         )
+
+    def _update_debug_arrows(self):
+        state = self._runtime_robot_state()
+        if state is None:
+            gobot.clear_debug_arrows()
+            return
+        base = self._base_link_state(state)
+        if base is None:
+            gobot.clear_debug_arrows()
+            return
+
+        position = base.get("position", [0.0, 0.0, 0.0])
+        if len(position) < 3:
+            gobot.clear_debug_arrows()
+            return
+        quat = base.get("quaternion", [1.0, 0.0, 0.0, 0.0])
+        yaw = _quat_yaw(quat)
+        command_world = [
+            math.cos(yaw) * self.command[0] - math.sin(yaw) * self.command[1],
+            math.sin(yaw) * self.command[0] + math.cos(yaw) * self.command[1],
+            0.0,
+        ]
+        actual = base.get("linear_velocity", [0.0, 0.0, 0.0])
+        actual_world = [
+            float(actual[0]) if len(actual) > 0 else 0.0,
+            float(actual[1]) if len(actual) > 1 else 0.0,
+            0.0,
+        ]
+        start = [
+            float(position[0]),
+            float(position[1]),
+            float(position[2]) + DEBUG_ARROW_Z_OFFSET,
+        ]
+        arrows = []
+        if _vector_xy_norm(command_world) > COMMAND_ACTIVE_DEADBAND:
+            arrows.append(
+                {
+                    "start": start,
+                    "vector": command_world,
+                    "color": (0.15, 0.85, 0.20, 1.0),
+                    "scale": DEBUG_ARROW_SCALE,
+                    "label": "command_velocity",
+                }
+            )
+        if _vector_xy_norm(actual_world) > COMMAND_ACTIVE_DEADBAND:
+            arrows.append(
+                {
+                    "start": [start[0], start[1], start[2] + DEBUG_ARROW_SEPARATION],
+                    "vector": actual_world,
+                    "color": (0.10, 0.42, 1.0, 1.0),
+                    "scale": DEBUG_ARROW_SCALE,
+                    "label": "actual_velocity",
+                }
+            )
+        gobot.set_debug_arrows(arrows)
 
     def _observation(self):
         state = self._runtime_robot_state()

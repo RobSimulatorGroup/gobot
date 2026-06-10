@@ -627,11 +627,13 @@ void PickNodeRecursive(Node* node,
 void EditorViewportRenderer::Render(const RID& viewport,
                                     const Node* scene_root,
                                     const Camera3D* camera,
-                                    const PhysicsWorld* physics_world) {
+                                    const PhysicsWorld* physics_world,
+                                    const std::vector<DebugArrow>& debug_arrows) {
     if (scene_root) {
         RS::GetInstance()->RenderSceneToViewport(viewport, scene_root, camera);
     }
     RS::GetInstance()->RenderEditorDebugToViewport(viewport, camera, scene_root, physics_world);
+    RS::GetInstance()->RenderDebugArrowsToViewport(viewport, camera, debug_arrows);
 }
 
 Node* EditorViewportRenderer::PickNode(Node* scene_root,

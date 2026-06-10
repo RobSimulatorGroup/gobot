@@ -127,6 +127,7 @@ public:
 class TestDebugDraw final : public RendererDebugDraw {
 public:
     void RenderEditorDebug(const RID&, const Camera3D*, const Node*, const PhysicsWorld*) override {}
+    void RenderDebugArrows(const RID&, const Camera3D*, const std::vector<DebugArrow>&) override {}
 };
 
 class TestUtilities final : public RendererUtilities {

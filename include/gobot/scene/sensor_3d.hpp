@@ -79,11 +79,18 @@ private:
     RealType max_threshold_{0.0};
 };
 
-class GOBOT_EXPORT HeightScanner3D : public Sensor3D {
-    GOBCLASS(HeightScanner3D, Sensor3D)
+enum class RayReductionMode {
+    None,
+    Min,
+    Max,
+    Mean,
+};
+
+class GOBOT_EXPORT RayCastSensor3D : public Sensor3D {
+    GOBCLASS(RayCastSensor3D, Sensor3D)
 
 public:
-    HeightScanner3D() = default;
+    RayCastSensor3D() = default;
 
     void SetSampleOffsets(const std::vector<Vector3>& sample_offsets);
 
@@ -101,11 +108,32 @@ public:
 
     RealType GetMaxDistance() const;
 
-private:
+protected:
     std::vector<Vector3> sample_offsets_{Vector3::Zero()};
     Vector3 ray_direction_{0.0, 0.0, -1.0};
     bool ray_direction_world_space_{true};
     RealType max_distance_{3.0};
+};
+
+class GOBOT_EXPORT TerrainHeightSensor3D : public RayCastSensor3D {
+    GOBCLASS(TerrainHeightSensor3D, RayCastSensor3D)
+
+public:
+    TerrainHeightSensor3D() = default;
+
+    void SetReductionMode(RayReductionMode reduction_mode);
+
+    RayReductionMode GetReductionMode() const;
+
+private:
+    RayReductionMode reduction_mode_{RayReductionMode::Min};
+};
+
+class GOBOT_EXPORT HeightScanner3D : public TerrainHeightSensor3D {
+    GOBCLASS(HeightScanner3D, TerrainHeightSensor3D)
+
+public:
+    HeightScanner3D();
 };
 
 } // namespace gobot

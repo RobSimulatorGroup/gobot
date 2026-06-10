@@ -30,6 +30,8 @@
 
 #include <fmt/format.h>
 
+#include <vector>
+
 #include <algorithm>
 #include <cmath>
 #include <cstdint>
@@ -435,7 +437,16 @@ void SceneView3DPanel::OnImGuiContent()
             physics_world = world.Get();
         }
     }
-    viewport_renderer_->Render(view_port_, scene_root, camera_3d, physics_world);
+    static const std::vector<DebugArrow> empty_debug_arrows;
+    const EngineContext* engine_context = Editor::GetInstance()->GetEngineContext();
+    const std::vector<DebugArrow>& debug_arrows = engine_context != nullptr
+                                                          ? engine_context->GetDebugArrows()
+                                                          : empty_debug_arrows;
+    viewport_renderer_->Render(view_port_,
+                               scene_root,
+                               camera_3d,
+                               physics_world,
+                               debug_arrows);
 
     ImGui::SetCursorPos({0.0f, viewport_top_offset});
     const ImVec2 scene_view_position = ImGui::GetCursorScreenPos();

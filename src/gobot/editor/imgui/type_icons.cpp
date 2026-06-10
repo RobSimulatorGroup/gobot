@@ -76,6 +76,8 @@ const std::unordered_map<std::string_view, EditorIcon>& TypeIconMap() {
             {"IMUSensor3D", FontIcon(ICON_MDI_GAUGE, kSensorColor)},
             {"AngularMomentumSensor3D", FontIcon(ICON_MDI_ROTATE_3D, kSensorColor)},
             {"ContactSensor3D", FontIcon(ICON_MDI_CROSSHAIRS, kSensorColor)},
+            {"RayCastSensor3D", FontIcon(ICON_MDI_RAY_START_END, kSensorColor)},
+            {"TerrainHeightSensor3D", FontIcon(ICON_MDI_TERRAIN, kSensorColor)},
             {"HeightScanner3D", FontIcon(ICON_MDI_RAY_START_END, kSensorColor)},
 
             {"Resource", FontIcon(ICON_MDI_FILE_OUTLINE, kResourceColor)},

@@ -248,6 +248,41 @@ class Script(gobot.NodeScript):
     EXPECT_EQ(ReadText("scripts/root_lookup.txt"), "EditedRoot:robot");
 }
 
+TEST_F(TestScenePlaySession, node_script_debug_arrows_are_context_runtime_data) {
+    auto script = MakeScript("scripts/debug_arrows.py", R"PY(
+import gobot
+
+class Script(gobot.NodeScript):
+    def _ready(self):
+        gobot.render.set_debug_arrows([
+            gobot.render.DebugArrow(
+                start=(1.0, 2.0, 3.0),
+                vector=(0.5, 0.0, 0.0),
+                color=(0.1, 0.2, 0.3, 1.0),
+                scale=2.0,
+                label="test_arrow",
+            )
+        ])
+
+    def _exit_tree(self):
+        gobot.render.clear_debug_arrows()
+)PY");
+
+    root->SetScript(script);
+
+    ASSERT_TRUE(session.Start(root, context.get())) << session.GetLastError();
+    ASSERT_EQ(context->GetDebugArrows().size(), 1);
+    EXPECT_EQ(context->GetDebugArrows()[0].label, "test_arrow");
+    EXPECT_TRUE(context->GetDebugArrows()[0].start.isApprox(gobot::Vector3(1.0, 2.0, 3.0)));
+    EXPECT_TRUE(context->GetDebugArrows()[0].vector.isApprox(gobot::Vector3(0.5, 0.0, 0.0)));
+    EXPECT_FLOAT_EQ(context->GetDebugArrows()[0].color.red(), 0.1f);
+    EXPECT_DOUBLE_EQ(context->GetDebugArrows()[0].scale, 2.0);
+
+    session.Stop();
+    EXPECT_TRUE(context->GetDebugArrows().empty());
+    EXPECT_FALSE(context->IsSceneDirty());
+}
+
 TEST_F(TestScenePlaySession, runtime_clone_expands_scene_instance_children_for_playback) {
     auto* prefab_root = gobot::Object::New<gobot::Node3D>();
     prefab_root->SetName("RobotPrefab");

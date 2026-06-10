@@ -359,6 +359,24 @@ TEST(TestPhysicsServer, height_scanner_raycast_queries_box_heightfield_and_mesh_
     EXPECT_TRUE(moved_sensor_state.global_transform.translation().isApprox(
             gobot::Vector3(0.0, 0.0, 1.2), CMP_EPSILON));
 
+    auto* loose_sensor = gobot::Object::New<gobot::TerrainHeightSensor3D>();
+    loose_sensor->SetName("preview_height");
+    loose_sensor->SetPosition({0.0, 0.0, 1.0});
+    loose_sensor->SetSampleOffsets({{0.0, 0.0, 0.0}, {2.0, 0.0, 0.0}});
+    loose_sensor->SetMaxDistance(2.0);
+    root->AddChild(loose_sensor);
+
+    ASSERT_TRUE(world->BuildFromScene(root));
+    const gobot::PhysicsSceneState& preview_state = world->GetSceneState();
+    ASSERT_EQ(preview_state.loose_sensors.size(), 1);
+    const gobot::PhysicsSensorState& loose_sensor_state = preview_state.loose_sensors[0];
+    EXPECT_EQ(loose_sensor_state.type, gobot::PhysicsSensorType::TerrainHeight);
+    ASSERT_EQ(loose_sensor_state.values.size(), 1);
+    EXPECT_NEAR(loose_sensor_state.values[0], 0.7, 1.0e-6);
+    ASSERT_EQ(loose_sensor_state.hits.size(), 2);
+    EXPECT_TRUE(loose_sensor_state.hits[0].hit);
+    EXPECT_TRUE(loose_sensor_state.hits[1].hit);
+
     const gobot::PhysicsRaycastHit miss = world->RaycastTerrain({
             {10.0, 10.0, 1.0},
             {0.0, 0.0, -1.0},

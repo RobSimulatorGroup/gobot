@@ -79,49 +79,63 @@ RealType ContactSensor3D::GetMaxThreshold() const {
     return max_threshold_;
 }
 
-void HeightScanner3D::SetSampleOffsets(const std::vector<Vector3>& sample_offsets) {
+void RayCastSensor3D::SetSampleOffsets(const std::vector<Vector3>& sample_offsets) {
     sample_offsets_ = sample_offsets;
 }
 
-const std::vector<Vector3>& HeightScanner3D::GetSampleOffsets() const {
+const std::vector<Vector3>& RayCastSensor3D::GetSampleOffsets() const {
     return sample_offsets_;
 }
 
-void HeightScanner3D::SetRayDirection(const Vector3& ray_direction) {
+void RayCastSensor3D::SetRayDirection(const Vector3& ray_direction) {
     if (ray_direction.squaredNorm() <= CMP_EPSILON2) {
-        LOG_ERROR("HeightScanner3D ray_direction cannot be zero.");
+        LOG_ERROR("RayCastSensor3D ray_direction cannot be zero.");
         return;
     }
     ray_direction_ = ray_direction.normalized();
 }
 
-const Vector3& HeightScanner3D::GetRayDirection() const {
+const Vector3& RayCastSensor3D::GetRayDirection() const {
     return ray_direction_;
 }
 
-void HeightScanner3D::SetRayDirectionWorldSpace(bool ray_direction_world_space) {
+void RayCastSensor3D::SetRayDirectionWorldSpace(bool ray_direction_world_space) {
     ray_direction_world_space_ = ray_direction_world_space;
 }
 
-bool HeightScanner3D::IsRayDirectionWorldSpace() const {
+bool RayCastSensor3D::IsRayDirectionWorldSpace() const {
     return ray_direction_world_space_;
 }
 
-void HeightScanner3D::SetMaxDistance(RealType max_distance) {
+void RayCastSensor3D::SetMaxDistance(RealType max_distance) {
     if (max_distance <= 0.0) {
-        LOG_ERROR("HeightScanner3D max_distance must be positive.");
+        LOG_ERROR("RayCastSensor3D max_distance must be positive.");
         return;
     }
     max_distance_ = max_distance;
 }
 
-RealType HeightScanner3D::GetMaxDistance() const {
+RealType RayCastSensor3D::GetMaxDistance() const {
     return max_distance_;
+}
+
+void TerrainHeightSensor3D::SetReductionMode(RayReductionMode reduction_mode) {
+    reduction_mode_ = reduction_mode;
+}
+
+RayReductionMode TerrainHeightSensor3D::GetReductionMode() const {
+    return reduction_mode_;
+}
+
+HeightScanner3D::HeightScanner3D() {
+    SetReductionMode(RayReductionMode::None);
 }
 
 } // namespace gobot
 
 GOBOT_REGISTRATION {
+
+    gobot::QuickEnumeration_<gobot::RayReductionMode>("RayReductionMode");
 
     Class_<Sensor3D>("Sensor3D")
             .constructor()(CtorAsRawPtr)
@@ -142,6 +156,30 @@ GOBOT_REGISTRATION {
             .property("min_threshold", &ContactSensor3D::GetMinThreshold, &ContactSensor3D::SetMinThreshold)
             .property("max_threshold", &ContactSensor3D::GetMaxThreshold, &ContactSensor3D::SetMaxThreshold);
 
+    Class_<RayCastSensor3D>("RayCastSensor3D")
+            .constructor()(CtorAsRawPtr)
+            .property("sample_offsets", &RayCastSensor3D::GetSampleOffsets,
+                      &RayCastSensor3D::SetSampleOffsets)
+            .property("ray_direction", &RayCastSensor3D::GetRayDirection,
+                      &RayCastSensor3D::SetRayDirection)
+            .property("ray_direction_world_space", &RayCastSensor3D::IsRayDirectionWorldSpace,
+                      &RayCastSensor3D::SetRayDirectionWorldSpace)
+            .property("max_distance", &RayCastSensor3D::GetMaxDistance,
+                      &RayCastSensor3D::SetMaxDistance);
+
+    Class_<TerrainHeightSensor3D>("TerrainHeightSensor3D")
+            .constructor()(CtorAsRawPtr)
+            .property("sample_offsets", &TerrainHeightSensor3D::GetSampleOffsets,
+                      &TerrainHeightSensor3D::SetSampleOffsets)
+            .property("ray_direction", &TerrainHeightSensor3D::GetRayDirection,
+                      &TerrainHeightSensor3D::SetRayDirection)
+            .property("ray_direction_world_space", &TerrainHeightSensor3D::IsRayDirectionWorldSpace,
+                      &TerrainHeightSensor3D::SetRayDirectionWorldSpace)
+            .property("max_distance", &TerrainHeightSensor3D::GetMaxDistance,
+                      &TerrainHeightSensor3D::SetMaxDistance)
+            .property("reduction_mode", &TerrainHeightSensor3D::GetReductionMode,
+                      &TerrainHeightSensor3D::SetReductionMode);
+
     Class_<HeightScanner3D>("HeightScanner3D")
             .constructor()(CtorAsRawPtr)
             .property("sample_offsets", &HeightScanner3D::GetSampleOffsets,
@@ -151,6 +189,8 @@ GOBOT_REGISTRATION {
             .property("ray_direction_world_space", &HeightScanner3D::IsRayDirectionWorldSpace,
                       &HeightScanner3D::SetRayDirectionWorldSpace)
             .property("max_distance", &HeightScanner3D::GetMaxDistance,
-                      &HeightScanner3D::SetMaxDistance);
+                      &HeightScanner3D::SetMaxDistance)
+            .property("reduction_mode", &HeightScanner3D::GetReductionMode,
+                      &HeightScanner3D::SetReductionMode);
 
 };

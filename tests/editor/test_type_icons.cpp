@@ -13,6 +13,8 @@ TEST(TestTypeIcons, uses_distinct_icons_for_editor_node_categories) {
     EXPECT_STREQ(gobot::GetTypeIcon("Joint3D"), ICON_MDI_SOURCE_COMMIT);
     EXPECT_EQ(gobot::GetTypeEditorIcon("Joint3D").kind, gobot::EditorIconKind::Joint3D);
     EXPECT_STREQ(gobot::GetTypeIcon("ContactSensor3D"), ICON_MDI_CROSSHAIRS);
+    EXPECT_STREQ(gobot::GetTypeIcon("RayCastSensor3D"), ICON_MDI_RAY_START_END);
+    EXPECT_STREQ(gobot::GetTypeIcon("TerrainHeightSensor3D"), ICON_MDI_TERRAIN);
     EXPECT_STREQ(gobot::GetTypeIcon("HeightScanner3D"), ICON_MDI_RAY_START_END);
     EXPECT_STREQ(gobot::GetTypeIcon("CylinderMesh"), ICON_MDI_PIPE);
 }
