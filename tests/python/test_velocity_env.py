@@ -23,6 +23,20 @@ from gobot.rl.locomotion import (
 )
 
 
+OPTIONAL_DEPENDENCY_SKIP_CODE = 77
+
+
+class OptionalDependencyUnavailable(RuntimeError):
+    pass
+
+
+def _require_torch():
+    try:
+        return __import__("torch")
+    except ImportError as error:
+        raise OptionalDependencyUnavailable("torch is unavailable; skipping Go1 velocity env integration test") from error
+
+
 def _assert_raises_runtime_error(pattern: str, fn) -> None:
     try:
         fn()
@@ -70,7 +84,7 @@ def test_go1_playback_height_scan_requires_runtime_sensor():
 
 
 def test_go1_velocity_env_reset_step_shapes():
-    torch = __import__("torch")
+    torch = _require_torch()
 
     cfg = go1_cfg.go1_rough_velocity_cfg(project_path=REPO_ROOT / "examples/go1")
     cfg.observations.actor_noise = False
@@ -298,7 +312,7 @@ def test_go1_policy_steps_count_environment_samples():
 
 
 def test_go1_video_recorder_steps_eval_env_not_training_env(monkeypatch, tmp_path):
-    torch = __import__("torch")
+    torch = _require_torch()
     written: dict[str, object] = {}
     captures: list[dict[str, object]] = []
 
@@ -464,7 +478,7 @@ def test_go1_video_recorder_steps_eval_env_not_training_env(monkeypatch, tmp_pat
 
 
 def test_go1_video_recorder_invalid_eval_env_id_skips(monkeypatch, tmp_path):
-    torch = __import__("torch")
+    torch = _require_torch()
 
     class DummyPolicy:
         training = False
@@ -538,7 +552,7 @@ def test_go1_video_debug_arrows_rotate_command_to_world():
 
 
 def _obs(num_envs: int, device: str):
-    torch = __import__("torch")
+    torch = _require_torch()
     return {
         "actor": torch.zeros((num_envs, 1), dtype=torch.float32, device=device),
         "critic": torch.zeros((num_envs, 1), dtype=torch.float32, device=device),
@@ -581,7 +595,11 @@ def main():
     test_go1_spawn_curriculum_is_seed_reproducible()
     test_go1_apply_actions_uses_batch_joint_api()
     test_go1_policy_steps_count_environment_samples()
-    test_go1_velocity_env_reset_step_shapes()
+    try:
+        test_go1_velocity_env_reset_step_shapes()
+    except OptionalDependencyUnavailable as error:
+        print(error)
+        sys.exit(OPTIONAL_DEPENDENCY_SKIP_CODE)
 
 
 if __name__ == "__main__":

@@ -140,6 +140,7 @@ add_test(
 set_tests_properties(test_velocity_env
         PROPERTIES
             ENVIRONMENT "HOME=/tmp/gobot-test-home;PYTHONNOUSERSITE=1;PYTHONPATH=${CMAKE_BINARY_DIR}/python"
+            SKIP_RETURN_CODE 77
             WORKING_DIRECTORY "${CMAKE_SOURCE_DIR}"
 )
 
