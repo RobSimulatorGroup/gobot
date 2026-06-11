@@ -99,6 +99,7 @@ public:
 private:
     void LoadExampleProjects(const Json& history_json = Json::object());
     bool IsExampleProjectPath(const std::string& project_path) const;
+    bool OpenResource(DirectoryInformation* resource);
 
     std::string project_path_;
     std::string move_path_;

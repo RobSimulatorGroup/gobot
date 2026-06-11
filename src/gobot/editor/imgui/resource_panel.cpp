@@ -491,13 +491,8 @@ bool ResourcePanel::RenderFile(int dirIndex, bool folder, int shownIndex, bool g
         if(folder) {
             selected_resource_ = child;
             ChangeDirectory(child);
-        } else if (IsNativeSceneFile(child)) {
-            SelectResource(child->local_path);
-            Editor::GetInstance()->RequestOpenSceneFromPath(child->local_path);
-            Editor::GetInstance()->FocusSceneViewerPanel();
-        } else if (IsPythonScriptFile(child)) {
-            SelectResource(child->local_path);
-            Editor::GetInstance()->OpenPythonScriptFromPath(child->local_path);
+        } else {
+            OpenResource(child);
         }
     }
 
@@ -553,6 +548,9 @@ void ResourcePanel::DrawResourceTree(DirectoryInformation* dir_info, bool root)
 
     const std::string label = "##ResourceTree_" + dir_info->global_path;
     const bool open = ImGui::TreeNodeEx(label.c_str(), node_flags);
+    const bool tree_item_hovered = ImGui::IsItemHovered();
+    const bool tree_item_double_clicked =
+            tree_item_hovered && ImGui::IsMouseDoubleClicked(ImGuiMouseButton_Left);
     ImRect row_rect(ImGui::GetItemRectMin(), ImGui::GetItemRectMax());
     ImGui::SameLine();
     DrawInlineResourceIcon(dir_info);
@@ -566,7 +564,7 @@ void ResourcePanel::DrawResourceTree(DirectoryInformation* dir_info, bool root)
     }
     const bool row_hovered = ImGui::IsMouseHoveringRect(row_rect.Min, row_rect.Max, false) &&
                              ImGui::IsWindowHovered(ImGuiHoveredFlags_AllowWhenBlockedByPopup);
-    if (row_hovered && ImGui::IsMouseClicked(ImGuiMouseButton_Left)) {
+    if ((row_hovered || tree_item_hovered) && ImGui::IsMouseClicked(ImGuiMouseButton_Left)) {
         selected_resource_ = dir_info;
         if (dir_info->is_directory) {
             ChangeDirectory(dir_info);
@@ -586,19 +584,19 @@ void ResourcePanel::DrawResourceTree(DirectoryInformation* dir_info, bool root)
         ImGui::EndDragDropSource();
     }
 
-    if (ImGui::IsMouseDoubleClicked(ImGuiMouseButton_Left) && row_hovered) {
+    if (tree_item_double_clicked || (ImGui::IsMouseDoubleClicked(ImGuiMouseButton_Left) && row_hovered)) {
         if (dir_info->is_directory) {
             ChangeDirectory(dir_info);
-        } else if (IsNativeSceneFile(dir_info)) {
-            Editor::GetInstance()->RequestOpenSceneFromPath(dir_info->local_path);
-            Editor::GetInstance()->FocusSceneViewerPanel();
-        } else if (IsPythonScriptFile(dir_info)) {
-            Editor::GetInstance()->OpenPythonScriptFromPath(dir_info->local_path);
+        } else {
+            OpenResource(dir_info);
         }
     }
 
     const std::string popup_id = "##ResourceFileContext_" + dir_info->global_path;
     if (!dir_info->is_directory && ImGui::BeginPopupContextItem(popup_id.c_str())) {
+        if (IsNativeSceneFile(dir_info) && ImGui::MenuItem(ICON_MDI_OPEN_IN_NEW " Open Scene")) {
+            OpenResource(dir_info);
+        }
         if (IsNativeSceneFile(dir_info) && ImGui::MenuItem(ICON_MDI_STAR " Set as Main Scene")) {
             if (ProjectSettings::GetInstance()->SetMainScenePath(dir_info->local_path)) {
                 LOG_INFO("Set project main scene: {}", dir_info->local_path);
@@ -622,7 +620,7 @@ void ResourcePanel::DrawResourceTree(DirectoryInformation* dir_info, bool root)
             request_delete_resource_file_popup_ = true;
         }
         if (IsPythonScriptFile(dir_info) && ImGui::MenuItem(ICON_MDI_PENCIL " Edit Script")) {
-            Editor::GetInstance()->OpenPythonScriptFromPath(dir_info->local_path);
+            OpenResource(dir_info);
         }
         if (IsPythonScriptFile(dir_info) && ImGui::MenuItem(ICON_MDI_OPEN_IN_NEW " Open in VS Code")) {
             OpenInExternalCodeEditor(dir_info->global_path);
@@ -701,6 +699,30 @@ bool ResourcePanel::SetProjectPath(const std::string& project_path)
         }
     }
     return true;
+}
+
+bool ResourcePanel::OpenResource(DirectoryInformation* resource)
+{
+    if (resource == nullptr || resource->is_directory) {
+        return false;
+    }
+
+    const std::string local_path = resource->local_path;
+    if (IsNativeSceneFile(resource)) {
+        SelectResource(local_path);
+        Editor::GetInstance()->RequestOpenSceneFromPath(local_path);
+        Editor::GetInstance()->FocusSceneViewerPanel();
+        return true;
+    }
+
+    if (IsPythonScriptFile(resource)) {
+        SelectResource(local_path);
+        Editor::GetInstance()->OpenPythonScriptFromPath(local_path);
+        Editor::GetInstance()->FocusPythonPanel();
+        return true;
+    }
+
+    return false;
 }
 
 bool ResourcePanel::SelectResource(const std::string& local_path)
