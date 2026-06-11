@@ -224,24 +224,36 @@ PhysicsSensorSnapshot CaptureSensorSnapshot(const Sensor3D* sensor,
         snapshot.max_threshold = contact_sensor->GetMaxThreshold();
     } else if (auto* height_scanner = Object::PointerCastTo<HeightScanner3D>(sensor)) {
         snapshot.type = PhysicsSensorType::HeightScanner;
-        snapshot.sample_offsets = height_scanner->GetSampleOffsets();
+        snapshot.sample_offsets = height_scanner->GetResolvedSampleOffsets();
         snapshot.ray_direction = height_scanner->GetRayDirection();
         snapshot.ray_direction_world_space = height_scanner->IsRayDirectionWorldSpace();
         snapshot.max_distance = height_scanner->GetMaxDistance();
         snapshot.reduction_mode = height_scanner->GetReductionMode();
+        snapshot.pattern_mode = height_scanner->GetPatternMode();
+        snapshot.grid_size = height_scanner->GetGridSize();
+        snapshot.grid_resolution = height_scanner->GetGridResolution();
+        snapshot.ray_alignment = height_scanner->GetRayAlignment();
     } else if (auto* terrain_height_sensor = Object::PointerCastTo<TerrainHeightSensor3D>(sensor)) {
         snapshot.type = PhysicsSensorType::TerrainHeight;
-        snapshot.sample_offsets = terrain_height_sensor->GetSampleOffsets();
+        snapshot.sample_offsets = terrain_height_sensor->GetResolvedSampleOffsets();
         snapshot.ray_direction = terrain_height_sensor->GetRayDirection();
         snapshot.ray_direction_world_space = terrain_height_sensor->IsRayDirectionWorldSpace();
         snapshot.max_distance = terrain_height_sensor->GetMaxDistance();
         snapshot.reduction_mode = terrain_height_sensor->GetReductionMode();
+        snapshot.pattern_mode = terrain_height_sensor->GetPatternMode();
+        snapshot.grid_size = terrain_height_sensor->GetGridSize();
+        snapshot.grid_resolution = terrain_height_sensor->GetGridResolution();
+        snapshot.ray_alignment = terrain_height_sensor->GetRayAlignment();
     } else if (auto* raycast_sensor = Object::PointerCastTo<RayCastSensor3D>(sensor)) {
         snapshot.type = PhysicsSensorType::RayCast;
-        snapshot.sample_offsets = raycast_sensor->GetSampleOffsets();
+        snapshot.sample_offsets = raycast_sensor->GetResolvedSampleOffsets();
         snapshot.ray_direction = raycast_sensor->GetRayDirection();
         snapshot.ray_direction_world_space = raycast_sensor->IsRayDirectionWorldSpace();
         snapshot.max_distance = raycast_sensor->GetMaxDistance();
+        snapshot.pattern_mode = raycast_sensor->GetPatternMode();
+        snapshot.grid_size = raycast_sensor->GetGridSize();
+        snapshot.grid_resolution = raycast_sensor->GetGridResolution();
+        snapshot.ray_alignment = raycast_sensor->GetRayAlignment();
     }
 
     snapshot.channel_names = ChannelNamesForSensorType(snapshot.type);
@@ -556,6 +568,41 @@ RealType ReduceRayValues(const std::vector<RealType>& values, RayReductionMode r
     return values.front();
 }
 
+Matrix3 RayAlignmentMatrix(const Affine3& transform, RayAlignmentMode alignment) {
+    switch (alignment) {
+        case RayAlignmentMode::World:
+            return Matrix3::Identity();
+        case RayAlignmentMode::Base:
+            return transform.linear();
+        case RayAlignmentMode::Yaw: {
+            const Vector3 x_axis = transform.linear() * Vector3::UnitX();
+            const RealType yaw = std::atan2(x_axis.y(), x_axis.x());
+            return AngleAxis(yaw, Vector3::UnitZ()).toRotationMatrix();
+        }
+    }
+    return Matrix3::Identity();
+}
+
+Vector3 ResolveRayDirection(const PhysicsSensorSnapshot& sensor_snapshot,
+                            const Matrix3& alignment_matrix,
+                            const Affine3& sensor_transform) {
+    Vector3 ray_direction = sensor_snapshot.ray_direction;
+    if (sensor_snapshot.ray_alignment == RayAlignmentMode::Base) {
+        ray_direction = sensor_transform.linear() * ray_direction;
+    } else if (sensor_snapshot.ray_alignment == RayAlignmentMode::Yaw) {
+        ray_direction = alignment_matrix * ray_direction;
+    } else if (!sensor_snapshot.ray_direction_world_space) {
+        ray_direction = sensor_transform.linear() * ray_direction;
+    }
+
+    if (ray_direction.squaredNorm() <= CMP_EPSILON2) {
+        ray_direction = Vector3{0.0, 0.0, -1.0};
+    } else {
+        ray_direction.normalize();
+    }
+    return ray_direction;
+}
+
 struct InternalTerrainRaycastHit {
     bool hit{false};
     Vector3 point{Vector3::Zero()};
@@ -688,6 +735,62 @@ std::optional<RealType> QueryTerrainHeightFieldHeight(const PhysicsTerrainHeight
     return center.z() + local_height;
 }
 
+std::optional<Vector3> QueryTerrainHeightFieldNormal(const PhysicsTerrainHeightFieldSnapshot& heightfield,
+                                                     const Vector3& world_position) {
+    if (heightfield.rows < 2 ||
+        heightfield.cols < 2 ||
+        heightfield.size.x() <= CMP_EPSILON ||
+        heightfield.size.y() <= CMP_EPSILON ||
+        heightfield.heights.size() < static_cast<std::size_t>(heightfield.rows * heightfield.cols)) {
+        return std::nullopt;
+    }
+
+    const Vector3 center = heightfield.global_transform.translation();
+    const Vector3 local = world_position - center;
+    const RealType half_x = heightfield.size.x() * 0.5;
+    const RealType half_y = heightfield.size.y() * 0.5;
+    if (std::abs(local.x()) > half_x + CMP_EPSILON || std::abs(local.y()) > half_y + CMP_EPSILON) {
+        return std::nullopt;
+    }
+
+    const RealType cell_x = heightfield.size.x() / static_cast<RealType>(heightfield.cols - 1);
+    const RealType cell_y = heightfield.size.y() / static_cast<RealType>(heightfield.rows - 1);
+    const RealType u = (local.x() / heightfield.size.x() + 0.5) * static_cast<RealType>(heightfield.cols - 1);
+    const RealType v = (local.y() / heightfield.size.y() + 0.5) * static_cast<RealType>(heightfield.rows - 1);
+    const int col = std::clamp(static_cast<int>(std::round(u)), 0, heightfield.cols - 1);
+    const int row = std::clamp(static_cast<int>(std::round(v)), 0, heightfield.rows - 1);
+    const int col_minus = std::max(col - 1, 0);
+    const int col_plus = std::min(col + 1, heightfield.cols - 1);
+    const int row_minus = std::max(row - 1, 0);
+    const int row_plus = std::min(row + 1, heightfield.rows - 1);
+
+    auto height_at = [&heightfield](int sample_row, int sample_col) {
+        const std::size_t index = static_cast<std::size_t>(sample_row * heightfield.cols + sample_col);
+        return heightfield.heights[index] + heightfield.z_offset;
+    };
+
+    const RealType dx = std::max<RealType>(cell_x * static_cast<RealType>(col_plus - col_minus), CMP_EPSILON);
+    const RealType dy = std::max<RealType>(cell_y * static_cast<RealType>(row_plus - row_minus), CMP_EPSILON);
+    const RealType dh_dx = (height_at(row, col_plus) - height_at(row, col_minus)) / dx;
+    const RealType dh_dy = (height_at(row_plus, col) - height_at(row_minus, col)) / dy;
+
+    Vector3 local_normal{-dh_dx, -dh_dy, 1.0};
+    if (local_normal.squaredNorm() <= CMP_EPSILON2) {
+        local_normal = Vector3::UnitZ();
+    } else {
+        local_normal.normalize();
+    }
+    Vector3 world_normal = heightfield.global_transform.linear() * local_normal;
+    if (world_normal.squaredNorm() <= CMP_EPSILON2) {
+        return Vector3::UnitZ();
+    }
+    world_normal.normalize();
+    if (world_normal.z() < 0.0) {
+        world_normal = -world_normal;
+    }
+    return world_normal;
+}
+
 std::optional<InternalTerrainRaycastHit> RaycastTerrainHeightField(const PhysicsTerrainHeightFieldSnapshot& heightfield,
                                                                    const std::string& terrain_name,
                                                                    const PhysicsRaycastQuery& query) {
@@ -735,7 +838,7 @@ std::optional<InternalTerrainRaycastHit> RaycastTerrainHeightField(const Physics
             InternalTerrainRaycastHit hit;
             hit.hit = true;
             hit.point = Vector3(hit_point.x(), hit_point.y(), hit_height.value());
-            hit.normal = Vector3::UnitZ();
+            hit.normal = QueryTerrainHeightFieldNormal(heightfield, hit.point).value_or(Vector3::UnitZ());
             hit.distance = hit_t;
             hit.terrain_name = terrain_name;
             best = hit;
@@ -1363,16 +1466,11 @@ void PhysicsWorld::UpdateRaycastSensorState(PhysicsSensorState& sensor_state,
     if (sensor_state.hits.size() != sensor_snapshot.sample_offsets.size()) {
         sensor_state.hits.assign(sensor_snapshot.sample_offsets.size(), {});
     }
-    Vector3 ray_direction = sensor_snapshot.ray_direction_world_space
-                                    ? sensor_snapshot.ray_direction
-                                    : sensor_state.global_transform.linear() * sensor_snapshot.ray_direction;
-    if (ray_direction.squaredNorm() <= CMP_EPSILON2) {
-        ray_direction = Vector3{0.0, 0.0, -1.0};
-    } else {
-        ray_direction.normalize();
-    }
+    const Matrix3 alignment_matrix = RayAlignmentMatrix(sensor_state.global_transform, sensor_snapshot.ray_alignment);
+    const Vector3 ray_direction = ResolveRayDirection(sensor_snapshot, alignment_matrix, sensor_state.global_transform);
     for (std::size_t sample_index = 0; sample_index < sensor_snapshot.sample_offsets.size(); ++sample_index) {
-        const Vector3 origin = sensor_state.global_transform * sensor_snapshot.sample_offsets[sample_index];
+        const Vector3 origin = sensor_state.global_transform.translation() +
+                               alignment_matrix * sensor_snapshot.sample_offsets[sample_index];
         const PhysicsRaycastHit hit = RaycastTerrain({
                 origin,
                 ray_direction,

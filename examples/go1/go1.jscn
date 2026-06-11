@@ -5195,173 +5195,33 @@
                 "sensor_period": 0.0,
                 "visible": true,
                 "visualize_debug": true,
-                "sample_offsets": [
-                    {
-                        "matrix_data": {
-                            "cols": 1,
-                            "rows": 3,
-                            "storage": [
-                                0.3,
-                                -0.45,
-                                0.0
-                            ]
-                        }
-                    },
-                    {
-                        "matrix_data": {
-                            "cols": 1,
-                            "rows": 3,
-                            "storage": [
-                                0.3,
-                                0.0,
-                                0.0
-                            ]
-                        }
-                    },
-                    {
-                        "matrix_data": {
-                            "cols": 1,
-                            "rows": 3,
-                            "storage": [
-                                0.3,
-                                0.45,
-                                0.0
-                            ]
-                        }
-                    },
-                    {
-                        "matrix_data": {
-                            "cols": 1,
-                            "rows": 3,
-                            "storage": [
-                                0.6,
-                                -0.45,
-                                0.0
-                            ]
-                        }
-                    },
-                    {
-                        "matrix_data": {
-                            "cols": 1,
-                            "rows": 3,
-                            "storage": [
-                                0.6,
-                                0.0,
-                                0.0
-                            ]
-                        }
-                    },
-                    {
-                        "matrix_data": {
-                            "cols": 1,
-                            "rows": 3,
-                            "storage": [
-                                0.6,
-                                0.45,
-                                0.0
-                            ]
-                        }
-                    },
-                    {
-                        "matrix_data": {
-                            "cols": 1,
-                            "rows": 3,
-                            "storage": [
-                                0.9,
-                                -0.45,
-                                0.0
-                            ]
-                        }
-                    },
-                    {
-                        "matrix_data": {
-                            "cols": 1,
-                            "rows": 3,
-                            "storage": [
-                                0.9,
-                                0.0,
-                                0.0
-                            ]
-                        }
-                    },
-                    {
-                        "matrix_data": {
-                            "cols": 1,
-                            "rows": 3,
-                            "storage": [
-                                0.9,
-                                0.45,
-                                0.0
-                            ]
-                        }
-                    },
-                    {
-                        "matrix_data": {
-                            "cols": 1,
-                            "rows": 3,
-                            "storage": [
-                                1.2,
-                                -0.45,
-                                0.0
-                            ]
-                        }
-                    },
-                    {
-                        "matrix_data": {
-                            "cols": 1,
-                            "rows": 3,
-                            "storage": [
-                                1.2,
-                                0.0,
-                                0.0
-                            ]
-                        }
-                    },
-                    {
-                        "matrix_data": {
-                            "cols": 1,
-                            "rows": 3,
-                            "storage": [
-                                1.2,
-                                0.45,
-                                0.0
-                            ]
-                        }
-                    },
-                    {
-                        "matrix_data": {
-                            "cols": 1,
-                            "rows": 3,
-                            "storage": [
-                                1.5,
-                                -0.45,
-                                0.0
-                            ]
-                        }
-                    },
-                    {
-                        "matrix_data": {
-                            "cols": 1,
-                            "rows": 3,
-                            "storage": [
-                                1.5,
-                                0.0,
-                                0.0
-                            ]
-                        }
-                    },
-                    {
-                        "matrix_data": {
-                            "cols": 1,
-                            "rows": 3,
-                            "storage": [
-                                1.5,
-                                0.45,
-                                0.0
-                            ]
-                        }
+                "pattern_mode": "Grid",
+                "grid_size": {
+                    "matrix_data": {
+                        "cols": 1,
+                        "rows": 2,
+                        "storage": [
+                            1.6,
+                            1.0
+                        ]
                     }
-                ]
+                },
+                "grid_resolution": 0.1,
+                "ray_alignment": "Yaw",
+                "ray_direction": {
+                    "matrix_data": {
+                        "cols": 1,
+                        "rows": 3,
+                        "storage": [
+                            0.0,
+                            0.0,
+                            -1.0
+                        ]
+                    }
+                },
+                "ray_direction_world_space": true,
+                "max_distance": 5.0,
+                "reduction_mode": "None"
             },
             "type": "HeightScanner3D"
         },
@@ -5414,15 +5274,75 @@
                             "cols": 1,
                             "rows": 3,
                             "storage": [
-                                0.0,
+                                0.04,
                                 0.0,
                                 0.0
                             ]
                         }
+                    },
+                    {
+                        "matrix_data": {
+                            "cols": 1,
+                            "rows": 3,
+                            "storage": [
+                                0.0,
+                                0.04,
+                                0.0
+                            ]
+                        }
+                    },
+                    {
+                        "matrix_data": {
+                            "cols": 1,
+                            "rows": 3,
+                            "storage": [
+                                -0.04,
+                                0.0,
+                                0.0
+                            ]
+                        }
+                    },
+                    {
+                        "matrix_data": {
+                            "cols": 1,
+                            "rows": 3,
+                            "storage": [
+                                0.0,
+                                -0.04,
+                                0.0
+                            ]
+                        }
                     }
-                ]
+                ],
+                "pattern_mode": "Custom",
+                "grid_size": {
+                    "matrix_data": {
+                        "cols": 1,
+                        "rows": 2,
+                        "storage": [
+                            1.0,
+                            1.0
+                        ]
+                    }
+                },
+                "grid_resolution": 0.1,
+                "ray_alignment": "Yaw",
+                "ray_direction": {
+                    "matrix_data": {
+                        "cols": 1,
+                        "rows": 3,
+                        "storage": [
+                            0.0,
+                            0.0,
+                            -1.0
+                        ]
+                    }
+                },
+                "ray_direction_world_space": true,
+                "max_distance": 1.0,
+                "reduction_mode": "Min"
             },
-            "type": "HeightScanner3D"
+            "type": "TerrainHeightSensor3D"
         },
         {
             "name": "FR_foot_contact",
@@ -5522,15 +5442,75 @@
                             "cols": 1,
                             "rows": 3,
                             "storage": [
-                                0.0,
+                                0.04,
                                 0.0,
                                 0.0
                             ]
                         }
+                    },
+                    {
+                        "matrix_data": {
+                            "cols": 1,
+                            "rows": 3,
+                            "storage": [
+                                0.0,
+                                0.04,
+                                0.0
+                            ]
+                        }
+                    },
+                    {
+                        "matrix_data": {
+                            "cols": 1,
+                            "rows": 3,
+                            "storage": [
+                                -0.04,
+                                0.0,
+                                0.0
+                            ]
+                        }
+                    },
+                    {
+                        "matrix_data": {
+                            "cols": 1,
+                            "rows": 3,
+                            "storage": [
+                                0.0,
+                                -0.04,
+                                0.0
+                            ]
+                        }
                     }
-                ]
+                ],
+                "pattern_mode": "Custom",
+                "grid_size": {
+                    "matrix_data": {
+                        "cols": 1,
+                        "rows": 2,
+                        "storage": [
+                            1.0,
+                            1.0
+                        ]
+                    }
+                },
+                "grid_resolution": 0.1,
+                "ray_alignment": "Yaw",
+                "ray_direction": {
+                    "matrix_data": {
+                        "cols": 1,
+                        "rows": 3,
+                        "storage": [
+                            0.0,
+                            0.0,
+                            -1.0
+                        ]
+                    }
+                },
+                "ray_direction_world_space": true,
+                "max_distance": 1.0,
+                "reduction_mode": "Min"
             },
-            "type": "HeightScanner3D"
+            "type": "TerrainHeightSensor3D"
         },
         {
             "name": "FL_foot_contact",
@@ -5630,15 +5610,75 @@
                             "cols": 1,
                             "rows": 3,
                             "storage": [
-                                0.0,
+                                0.04,
                                 0.0,
                                 0.0
                             ]
                         }
+                    },
+                    {
+                        "matrix_data": {
+                            "cols": 1,
+                            "rows": 3,
+                            "storage": [
+                                0.0,
+                                0.04,
+                                0.0
+                            ]
+                        }
+                    },
+                    {
+                        "matrix_data": {
+                            "cols": 1,
+                            "rows": 3,
+                            "storage": [
+                                -0.04,
+                                0.0,
+                                0.0
+                            ]
+                        }
+                    },
+                    {
+                        "matrix_data": {
+                            "cols": 1,
+                            "rows": 3,
+                            "storage": [
+                                0.0,
+                                -0.04,
+                                0.0
+                            ]
+                        }
                     }
-                ]
+                ],
+                "pattern_mode": "Custom",
+                "grid_size": {
+                    "matrix_data": {
+                        "cols": 1,
+                        "rows": 2,
+                        "storage": [
+                            1.0,
+                            1.0
+                        ]
+                    }
+                },
+                "grid_resolution": 0.1,
+                "ray_alignment": "Yaw",
+                "ray_direction": {
+                    "matrix_data": {
+                        "cols": 1,
+                        "rows": 3,
+                        "storage": [
+                            0.0,
+                            0.0,
+                            -1.0
+                        ]
+                    }
+                },
+                "ray_direction_world_space": true,
+                "max_distance": 1.0,
+                "reduction_mode": "Min"
             },
-            "type": "HeightScanner3D"
+            "type": "TerrainHeightSensor3D"
         },
         {
             "name": "RR_foot_contact",
@@ -5738,15 +5778,75 @@
                             "cols": 1,
                             "rows": 3,
                             "storage": [
-                                0.0,
+                                0.04,
                                 0.0,
                                 0.0
                             ]
                         }
+                    },
+                    {
+                        "matrix_data": {
+                            "cols": 1,
+                            "rows": 3,
+                            "storage": [
+                                0.0,
+                                0.04,
+                                0.0
+                            ]
+                        }
+                    },
+                    {
+                        "matrix_data": {
+                            "cols": 1,
+                            "rows": 3,
+                            "storage": [
+                                -0.04,
+                                0.0,
+                                0.0
+                            ]
+                        }
+                    },
+                    {
+                        "matrix_data": {
+                            "cols": 1,
+                            "rows": 3,
+                            "storage": [
+                                0.0,
+                                -0.04,
+                                0.0
+                            ]
+                        }
                     }
-                ]
+                ],
+                "pattern_mode": "Custom",
+                "grid_size": {
+                    "matrix_data": {
+                        "cols": 1,
+                        "rows": 2,
+                        "storage": [
+                            1.0,
+                            1.0
+                        ]
+                    }
+                },
+                "grid_resolution": 0.1,
+                "ray_alignment": "Yaw",
+                "ray_direction": {
+                    "matrix_data": {
+                        "cols": 1,
+                        "rows": 3,
+                        "storage": [
+                            0.0,
+                            0.0,
+                            -1.0
+                        ]
+                    }
+                },
+                "ray_direction_world_space": true,
+                "max_distance": 1.0,
+                "reduction_mode": "Min"
             },
-            "type": "HeightScanner3D"
+            "type": "TerrainHeightSensor3D"
         },
         {
             "name": "RL_foot_contact",

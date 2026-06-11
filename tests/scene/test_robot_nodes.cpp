@@ -126,14 +126,26 @@ TEST(TestRobotNodes, stores_sensor_metadata) {
     terrain_height->SetRayDirection({0.0, 0.0, -2.0});
     terrain_height->SetRayDirectionWorldSpace(false);
     terrain_height->SetMaxDistance(2.5);
+    terrain_height->SetPatternMode(gobot::RayPatternMode::Grid);
+    terrain_height->SetGridSize({1.6, 1.0});
+    terrain_height->SetGridResolution(0.1);
+    terrain_height->SetRayAlignment(gobot::RayAlignmentMode::Yaw);
 
     ASSERT_EQ(terrain_height->GetSampleOffsets().size(), 2);
     EXPECT_TRUE(terrain_height->GetSampleOffsets()[0].isApprox(gobot::Vector3(0.1, 0.0, 0.0), CMP_EPSILON));
     EXPECT_TRUE(terrain_height->GetSampleOffsets()[1].isApprox(gobot::Vector3(0.2, 0.1, -0.1), CMP_EPSILON));
+    const std::vector<gobot::Vector3> resolved_offsets = terrain_height->GetResolvedSampleOffsets();
+    ASSERT_EQ(resolved_offsets.size(), 187);
+    EXPECT_TRUE(resolved_offsets.front().isApprox(gobot::Vector3(-0.8, -0.5, 0.0), CMP_EPSILON));
+    EXPECT_TRUE(resolved_offsets.back().isApprox(gobot::Vector3(0.8, 0.5, 0.0), CMP_EPSILON));
     EXPECT_TRUE(terrain_height->GetRayDirection().isApprox(gobot::Vector3(0.0, 0.0, -1.0), CMP_EPSILON));
     EXPECT_FALSE(terrain_height->IsRayDirectionWorldSpace());
     EXPECT_NEAR(terrain_height->GetMaxDistance(), 2.5, 1.0e-6);
     EXPECT_EQ(terrain_height->GetReductionMode(), gobot::RayReductionMode::None);
+    EXPECT_EQ(terrain_height->GetPatternMode(), gobot::RayPatternMode::Grid);
+    EXPECT_TRUE(terrain_height->GetGridSize().isApprox(gobot::Vector2(1.6, 1.0), CMP_EPSILON));
+    EXPECT_NEAR(terrain_height->GetGridResolution(), 0.1, 1.0e-6);
+    EXPECT_EQ(terrain_height->GetRayAlignment(), gobot::RayAlignmentMode::Yaw);
     gobot::Object::Delete(terrain_height);
 
     auto* terrain_sensor = gobot::Object::New<gobot::TerrainHeightSensor3D>();

@@ -12,7 +12,14 @@ from gobot.rl.locomotion import velocity_actor_observation_schema
 
 ACTION_SIZE = 12
 HIDDEN_DIMS = (512, 256, 128)
-DEFAULT_OBS_SIZE = velocity_actor_observation_schema(ACTION_SIZE, 15).dim
+TERRAIN_SCAN_GRID_SIZE = (1.6, 1.0)
+TERRAIN_SCAN_GRID_RESOLUTION = 0.1
+TERRAIN_SCAN_DIM = (
+    int(round(TERRAIN_SCAN_GRID_SIZE[0] / TERRAIN_SCAN_GRID_RESOLUTION)) + 1
+) * (
+    int(round(TERRAIN_SCAN_GRID_SIZE[1] / TERRAIN_SCAN_GRID_RESOLUTION)) + 1
+)
+DEFAULT_OBS_SIZE = velocity_actor_observation_schema(ACTION_SIZE, TERRAIN_SCAN_DIM).dim
 SCRIPT_DIR = Path(__file__).resolve().parent
 
 

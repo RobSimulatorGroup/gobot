@@ -335,11 +335,26 @@ class RayReductionMode(Enum):
     Mean: ClassVar[RayReductionMode]
 
 
+class RayPatternMode(Enum):
+    Custom: ClassVar[RayPatternMode]
+    Grid: ClassVar[RayPatternMode]
+
+
+class RayAlignmentMode(Enum):
+    World: ClassVar[RayAlignmentMode]
+    Base: ClassVar[RayAlignmentMode]
+    Yaw: ClassVar[RayAlignmentMode]
+
+
 class RayCastSensor3D(Sensor3D):
     sample_offsets: list[Vector3]
     ray_direction: Vector3
     ray_direction_world_space: bool
     max_distance: float
+    pattern_mode: RayPatternMode
+    grid_size: tuple[float, float]
+    grid_resolution: float
+    ray_alignment: RayAlignmentMode
 
 
 class TerrainHeightSensor3D(RayCastSensor3D):

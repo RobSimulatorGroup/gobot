@@ -11,7 +11,7 @@ DEFAULT_POLICY_PATH = "res://policies/go1.onnx2"
 TORCH_POLICY_PATH = "res://policies/go1.pt"
 PRINT_EVERY_TICKS = 240
 FIXED_TIME_STEP = 0.002
-RESET_BASE_POSITION = [0.0, 0.0, 0.32]
+RESET_BASE_POSITION = [0.0, 0.0, 0.35]
 COMMAND = [
     float(os.environ.get("GOBOT_GO1_VX", "0.0")),
     float(os.environ.get("GOBOT_GO1_VY", "0.0")),
@@ -67,7 +67,13 @@ ACTION_SCALE = 0.35
 KP = 40.0
 KD = 1.0
 DECIMATION = 10
-HEIGHT_SCAN_POINTS = tuple((x, y) for x in (0.3, 0.6, 0.9, 1.2, 1.5) for y in (-0.45, 0.0, 0.45))
+TERRAIN_SCAN_GRID_SIZE = (1.6, 1.0)
+TERRAIN_SCAN_GRID_RESOLUTION = 0.1
+TERRAIN_SCAN_DIM = (
+    int(round(TERRAIN_SCAN_GRID_SIZE[0] / TERRAIN_SCAN_GRID_RESOLUTION)) + 1
+) * (
+    int(round(TERRAIN_SCAN_GRID_SIZE[1] / TERRAIN_SCAN_GRID_RESOLUTION)) + 1
+)
 HEIGHT_SCAN_MAX_DISTANCE = 5.0
 TERRAIN_SCAN_SENSOR = "terrain_scan"
 VELOCITY_OBS_SCHEMA_VERSION = "gobot_velocity_v1"
@@ -149,7 +155,7 @@ def build_velocity_actor_observation(
     return obs
 
 
-ACTOR_OBS_SCHEMA = velocity_actor_observation_schema(len(JOINT_NAMES), len(HEIGHT_SCAN_POINTS))
+ACTOR_OBS_SCHEMA = velocity_actor_observation_schema(len(JOINT_NAMES), TERRAIN_SCAN_DIM)
 
 
 def _parse_version_prefix(value):
@@ -190,9 +196,23 @@ class OnnxPolicy:
         self.session = ort.InferenceSession(path, providers=["CPUExecutionProvider"])
         self.input_name = self.session.get_inputs()[0].name
         self.output_name = self.session.get_outputs()[0].name
+        input_shape = self.session.get_inputs()[0].shape
+        self.obs_dim = None
+        if input_shape and isinstance(input_shape[-1], int):
+            self.obs_dim = int(input_shape[-1])
+            if self.obs_dim != ACTOR_OBS_SCHEMA.dim:
+                raise RuntimeError(
+                    "Go1 ONNX policy observation dimension mismatch: "
+                    f"policy={self.obs_dim}, playback={ACTOR_OBS_SCHEMA.dim}. "
+                    "Retrain or export with the current terrain_scan grid schema."
+                )
 
     def action(self, observation):
         obs = self.np.asarray(observation, dtype=self.np.float32).reshape(1, -1)
+        if self.obs_dim is not None and obs.shape[1] != self.obs_dim:
+            raise RuntimeError(
+                f"Go1 ONNX policy expected {self.obs_dim} observations, got {obs.shape[1]}"
+            )
         output = self.session.run([self.output_name], {self.input_name: obs})[0].reshape(-1)
         return self.np.clip(output, -1.0, 1.0).astype(float).tolist()
 
@@ -313,12 +333,16 @@ def _validate_checkpoint_schema(checkpoint, obs_dim):
     metadata = _checkpoint_velocity_metadata(checkpoint)
     if metadata is None:
         if obs_dim != ACTOR_OBS_SCHEMA.dim:
-            print(f"Go1 checkpoint has legacy obs dim {obs_dim}; current playback schema expects {ACTOR_OBS_SCHEMA.dim}.")
+            raise RuntimeError(
+                "Go1 checkpoint observation dimension mismatch: "
+                f"checkpoint={obs_dim}, playback={ACTOR_OBS_SCHEMA.dim}. "
+                "Retrain or export with the current terrain_scan grid schema."
+            )
         return
     version = metadata.get("obs_schema_version")
     names = tuple(metadata.get("obs_names", ()))
     if version != VELOCITY_OBS_SCHEMA_VERSION or names != ACTOR_OBS_SCHEMA.names:
-        print(
+        raise RuntimeError(
             "Go1 checkpoint observation schema differs from playback: "
             f"checkpoint version={version!r} dim={metadata.get('num_obs')} current={ACTOR_OBS_SCHEMA.version} dim={ACTOR_OBS_SCHEMA.dim}"
         )
@@ -386,6 +410,9 @@ class Script(gobot.NodeScript):
         self.robot.mode = gobot.RobotMode.Motion
         self.policy = self._load_policy()
         self.policy_obs_dim = getattr(self.policy, "obs_dim", ACTOR_OBS_SCHEMA.dim)
+        if self.policy_obs_dim is None:
+            self.policy_obs_dim = ACTOR_OBS_SCHEMA.dim
+        self.height_scan_dim = TERRAIN_SCAN_DIM
         self.ticks = 0
         self.playing = True
         self.world_controls_ready = False
@@ -684,19 +711,22 @@ class Script(gobot.NodeScript):
             command=cmd,
             height_scan=height_scan,
         )
-        if self.policy_obs_dim > len(obs):
-            obs += [0.0] * (self.policy_obs_dim - len(obs))
-        return obs[: self.policy_obs_dim]
+        if len(obs) != self.policy_obs_dim:
+            raise RuntimeError(
+                f"Go1 playback observation schema mismatch: expected {self.policy_obs_dim}, got {len(obs)}"
+            )
+        return obs
 
     def _height_scan(self, robot_state):
         sensor = self._sensor_map(robot_state).get(TERRAIN_SCAN_SENSOR)
         if sensor is None:
             raise RuntimeError(f"Go1 runtime state is missing required sensor {TERRAIN_SCAN_SENSOR!r}")
         values = [float(value) for value in sensor.get("values", [])]
-        if len(values) != len(HEIGHT_SCAN_POINTS) or not all(math.isfinite(value) for value in values):
+        expected = getattr(self, "height_scan_dim", TERRAIN_SCAN_DIM)
+        if len(values) != expected or not all(math.isfinite(value) for value in values):
             raise RuntimeError(
                 f"Go1 sensor {TERRAIN_SCAN_SENSOR!r} produced invalid height scan values: "
-                f"expected {len(HEIGHT_SCAN_POINTS)}, got {len(values)}"
+                f"expected {expected}, got {len(values)}"
             )
         return [value / HEIGHT_SCAN_MAX_DISTANCE for value in values]
 

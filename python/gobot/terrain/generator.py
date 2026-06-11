@@ -398,31 +398,30 @@ def go1_training_terrains() -> dict[str, SubTerrainCfg]:
     """
 
     return {
-        "flat": flat(proportion=0.16),
-        "rough_easy": random_rough(proportion=0.12, noise_range=(-0.015, 0.020), downsampled_scale=0.20),
-        "waves": wave_terrain(proportion=0.10, amplitude=0.030, num_waves=2.0),
-        "grid": box_random_grid(proportion=0.10, grid_width=0.45, height_range=(-0.020, 0.065), platform_width=1.10),
-        "stones": stepping_stones(
-            proportion=0.08,
-            stone_size=0.55,
-            stone_distance=0.18,
-            height_range=(-0.020, 0.055),
-            platform_width=1.10,
-        ),
-        "slope": hf_pyramid_slope(proportion=0.10, slope=0.090, platform_width=1.20),
-        "slope_inv": hf_pyramid_slope_inv(proportion=0.08, slope=0.080, platform_width=1.20),
-        "stairs": pyramid_stairs(proportion=0.10, step_height=0.026, step_width=0.42, platform_width=1.20),
-        "stairs_inv": pyramid_stairs_inv(proportion=0.06, step_height=0.022, step_width=0.42, platform_width=1.20),
-        "obstacles": discrete_obstacles(
-            proportion=0.08,
-            obstacle_count=14,
-            obstacle_size=(0.14, 0.30),
-            height_range=(0.025, 0.085),
-            platform_width=1.10,
-        ),
-        "mound": radial_mound(proportion=0.06, height=0.14, radius=1.10, flat_radius=0.22),
-        "pit": radial_pit(proportion=0.04, depth=0.12, radius=1.10, flat_radius=0.22),
+        "flat": flat(proportion=0.2),
+        "pyramid_stairs": pyramid_stairs(proportion=0.2, step_height=0.10, step_width=0.30, platform_width=3.0),
+        "pyramid_stairs_inv": pyramid_stairs_inv(proportion=0.2, step_height=0.10, step_width=0.30, platform_width=3.0),
+        "hf_pyramid_slope": hf_pyramid_slope(proportion=0.1, slope=0.5, platform_width=2.0),
+        "hf_pyramid_slope_inv": hf_pyramid_slope_inv(proportion=0.1, slope=0.5, platform_width=2.0),
+        "random_rough": random_rough(proportion=0.1, noise_range=(0.02, 0.10), noise_step=0.02, downsampled_scale=0.30),
+        "wave_terrain": wave_terrain(proportion=0.1, amplitude=0.10, num_waves=4.0),
     }
+
+
+def go1_rough_terrain_cfg(*, seed: int = 11, curriculum: bool = True) -> TerrainGeneratorCfg:
+    """Go1 rough terrain grid aligned with the mjlab velocity task."""
+
+    return TerrainGeneratorCfg(
+        size=(8.0, 8.0),
+        border_width=20.0,
+        num_rows=10,
+        num_cols=20,
+        seed=seed,
+        curriculum=curriculum,
+        sub_terrains=go1_training_terrains(),
+        horizontal_scale=0.2,
+        color_mode=_core.TerrainColorMode.Palette,
+    )
 
 
 def showcase_terrains() -> dict[str, SubTerrainCfg]:
@@ -457,8 +456,9 @@ def create_terrain_node(cfg: TerrainGeneratorCfg, name: str = "terrain") -> _cor
     rng = np.random.default_rng(cfg.seed)
     origins: list[Vector3] = []
 
+    column_count = len(curriculum_choices) if cfg.curriculum else max(cfg.num_cols, 0)
     total_x = cfg.num_rows * cfg.size[0] + 2.0 * cfg.border_width
-    total_y = cfg.num_cols * cfg.size[1] + 2.0 * cfg.border_width
+    total_y = column_count * cfg.size[1] + 2.0 * cfg.border_width
     origin_x = -total_x * 0.5 + cfg.border_width + cfg.size[0] * 0.5
     origin_y = -total_y * 0.5 + cfg.border_width + cfg.size[1] * 0.5
 
@@ -466,12 +466,12 @@ def create_terrain_node(cfg: TerrainGeneratorCfg, name: str = "terrain") -> _cor
         terrain.add_box((0.0, 0.0, -0.55), (total_x, total_y, 0.9), color=darken_rgba(_get_platform_color(), 0.55))
 
     for row in range(max(cfg.num_rows, 0)):
-        for col in range(max(cfg.num_cols, 0)):
+        for col in range(column_count):
             patch_center = (origin_x + row * cfg.size[0], origin_y + col * cfg.size[1], 0.0)
             if cfg.curriculum:
                 denom = max(cfg.num_rows - 1, 1)
                 difficulty = cfg.difficulty_range[0] + (cfg.difficulty_range[1] - cfg.difficulty_range[0]) * (row / denom)
-                sub_cfg = curriculum_choices[(row * max(cfg.num_cols, 1) + col) % len(curriculum_choices)]
+                sub_cfg = curriculum_choices[col % len(curriculum_choices)]
             else:
                 difficulty = float(rng.uniform(cfg.difficulty_range[0], cfg.difficulty_range[1]))
                 sub_cfg = choices[int(rng.integers(0, len(choices)))]
@@ -996,6 +996,7 @@ __all__ = [
     "ROUGH_TERRAINS_CFG",
     "brand_ramp",
     "darken_rgba",
+    "go1_rough_terrain_cfg",
     "go1_training_terrains",
     "showcase_terrains",
     "create_terrain_node",

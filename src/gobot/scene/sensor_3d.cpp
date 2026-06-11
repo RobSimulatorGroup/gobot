@@ -6,6 +6,8 @@
 
 #include "gobot/scene/sensor_3d.hpp"
 
+#include <algorithm>
+
 #include "gobot/core/registration.hpp"
 #include "gobot/log.hpp"
 
@@ -119,6 +121,71 @@ RealType RayCastSensor3D::GetMaxDistance() const {
     return max_distance_;
 }
 
+void RayCastSensor3D::SetPatternMode(RayPatternMode pattern_mode) {
+    pattern_mode_ = pattern_mode;
+}
+
+RayPatternMode RayCastSensor3D::GetPatternMode() const {
+    return pattern_mode_;
+}
+
+void RayCastSensor3D::SetGridSize(const Vector2& grid_size) {
+    if (grid_size.x() <= 0.0 || grid_size.y() <= 0.0) {
+        LOG_ERROR("RayCastSensor3D grid_size components must be positive.");
+        return;
+    }
+    grid_size_ = grid_size;
+}
+
+const Vector2& RayCastSensor3D::GetGridSize() const {
+    return grid_size_;
+}
+
+void RayCastSensor3D::SetGridResolution(RealType grid_resolution) {
+    if (grid_resolution <= 0.0) {
+        LOG_ERROR("RayCastSensor3D grid_resolution must be positive.");
+        return;
+    }
+    grid_resolution_ = grid_resolution;
+}
+
+RealType RayCastSensor3D::GetGridResolution() const {
+    return grid_resolution_;
+}
+
+void RayCastSensor3D::SetRayAlignment(RayAlignmentMode ray_alignment) {
+    ray_alignment_ = ray_alignment;
+}
+
+RayAlignmentMode RayCastSensor3D::GetRayAlignment() const {
+    return ray_alignment_;
+}
+
+std::vector<Vector3> RayCastSensor3D::GetResolvedSampleOffsets() const {
+    if (pattern_mode_ != RayPatternMode::Grid) {
+        return sample_offsets_;
+    }
+
+    const int x_count = std::max(1, static_cast<int>(std::floor(grid_size_.x() / grid_resolution_ + 0.5)) + 1);
+    const int y_count = std::max(1, static_cast<int>(std::floor(grid_size_.y() / grid_resolution_ + 0.5)) + 1);
+    std::vector<Vector3> offsets;
+    offsets.reserve(static_cast<std::size_t>(x_count * y_count));
+    for (int x_index = 0; x_index < x_count; ++x_index) {
+        const RealType x = x_count == 1
+                ? 0.0
+                : -grid_size_.x() * 0.5 +
+                  grid_size_.x() * static_cast<RealType>(x_index) / static_cast<RealType>(x_count - 1);
+        for (int y_index = 0; y_index < y_count; ++y_index) {
+            const RealType y = y_count == 1
+                    ? 0.0
+                    : -grid_size_.y() * 0.5 +
+                      grid_size_.y() * static_cast<RealType>(y_index) / static_cast<RealType>(y_count - 1);
+            offsets.emplace_back(x, y, 0.0);
+        }
+    }
+    return offsets;
+}
+
 void TerrainHeightSensor3D::SetReductionMode(RayReductionMode reduction_mode) {
     reduction_mode_ = reduction_mode;
 }
@@ -136,6 +203,8 @@ HeightScanner3D::HeightScanner3D() {
 GOBOT_REGISTRATION {
 
     gobot::QuickEnumeration_<gobot::RayReductionMode>("RayReductionMode");
+    gobot::QuickEnumeration_<gobot::RayPatternMode>("RayPatternMode");
+    gobot::QuickEnumeration_<gobot::RayAlignmentMode>("RayAlignmentMode");
 
     Class_<Sensor3D>("Sensor3D")
             .constructor()(CtorAsRawPtr)
@@ -165,7 +234,15 @@ GOBOT_REGISTRATION {
             .property("ray_direction_world_space", &RayCastSensor3D::IsRayDirectionWorldSpace,
                       &RayCastSensor3D::SetRayDirectionWorldSpace)
             .property("max_distance", &RayCastSensor3D::GetMaxDistance,
-                      &RayCastSensor3D::SetMaxDistance);
+                      &RayCastSensor3D::SetMaxDistance)
+            .property("pattern_mode", &RayCastSensor3D::GetPatternMode,
+                      &RayCastSensor3D::SetPatternMode)
+            .property("grid_size", &RayCastSensor3D::GetGridSize,
+                      &RayCastSensor3D::SetGridSize)
+            .property("grid_resolution", &RayCastSensor3D::GetGridResolution,
+                      &RayCastSensor3D::SetGridResolution)
+            .property("ray_alignment", &RayCastSensor3D::GetRayAlignment,
+                      &RayCastSensor3D::SetRayAlignment);
 
     Class_<TerrainHeightSensor3D>("TerrainHeightSensor3D")
             .constructor()(CtorAsRawPtr)
@@ -178,7 +255,15 @@ GOBOT_REGISTRATION {
             .property("max_distance", &TerrainHeightSensor3D::GetMaxDistance,
                       &TerrainHeightSensor3D::SetMaxDistance)
             .property("reduction_mode", &TerrainHeightSensor3D::GetReductionMode,
-                      &TerrainHeightSensor3D::SetReductionMode);
+                      &TerrainHeightSensor3D::SetReductionMode)
+            .property("pattern_mode", &TerrainHeightSensor3D::GetPatternMode,
+                      &TerrainHeightSensor3D::SetPatternMode)
+            .property("grid_size", &TerrainHeightSensor3D::GetGridSize,
+                      &TerrainHeightSensor3D::SetGridSize)
+            .property("grid_resolution", &TerrainHeightSensor3D::GetGridResolution,
+                      &TerrainHeightSensor3D::SetGridResolution)
+            .property("ray_alignment", &TerrainHeightSensor3D::GetRayAlignment,
+                      &TerrainHeightSensor3D::SetRayAlignment);
 
     Class_<HeightScanner3D>("HeightScanner3D")
             .constructor()(CtorAsRawPtr)
@@ -191,6 +276,14 @@ GOBOT_REGISTRATION {
             .property("max_distance", &HeightScanner3D::GetMaxDistance,
                       &HeightScanner3D::SetMaxDistance)
             .property("reduction_mode", &HeightScanner3D::GetReductionMode,
-                      &HeightScanner3D::SetReductionMode);
+                      &HeightScanner3D::SetReductionMode)
+            .property("pattern_mode", &HeightScanner3D::GetPatternMode,
+                      &HeightScanner3D::SetPatternMode)
+            .property("grid_size", &HeightScanner3D::GetGridSize,
+                      &HeightScanner3D::SetGridSize)
+            .property("grid_resolution", &HeightScanner3D::GetGridResolution,
+                      &HeightScanner3D::SetGridResolution)
+            .property("ray_alignment", &HeightScanner3D::GetRayAlignment,
+                      &HeightScanner3D::SetRayAlignment);
 
 };

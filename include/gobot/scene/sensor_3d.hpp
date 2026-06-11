@@ -86,6 +86,17 @@ enum class RayReductionMode {
     Mean,
 };
 
+enum class RayPatternMode {
+    Custom,
+    Grid,
+};
+
+enum class RayAlignmentMode {
+    World,
+    Base,
+    Yaw,
+};
+
 class GOBOT_EXPORT RayCastSensor3D : public Sensor3D {
     GOBCLASS(RayCastSensor3D, Sensor3D)
 
@@ -108,11 +119,33 @@ public:
 
     RealType GetMaxDistance() const;
 
+    void SetPatternMode(RayPatternMode pattern_mode);
+
+    RayPatternMode GetPatternMode() const;
+
+    void SetGridSize(const Vector2& grid_size);
+
+    const Vector2& GetGridSize() const;
+
+    void SetGridResolution(RealType grid_resolution);
+
+    RealType GetGridResolution() const;
+
+    void SetRayAlignment(RayAlignmentMode ray_alignment);
+
+    RayAlignmentMode GetRayAlignment() const;
+
+    std::vector<Vector3> GetResolvedSampleOffsets() const;
+
 protected:
     std::vector<Vector3> sample_offsets_{Vector3::Zero()};
     Vector3 ray_direction_{0.0, 0.0, -1.0};
     bool ray_direction_world_space_{true};
     RealType max_distance_{3.0};
+    RayPatternMode pattern_mode_{RayPatternMode::Custom};
+    Vector2 grid_size_{1.0, 1.0};
+    RealType grid_resolution_{0.1};
+    RayAlignmentMode ray_alignment_{RayAlignmentMode::World};
 };
 
 class GOBOT_EXPORT TerrainHeightSensor3D : public RayCastSensor3D {

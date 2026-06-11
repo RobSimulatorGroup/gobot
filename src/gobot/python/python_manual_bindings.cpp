@@ -1337,6 +1337,28 @@ std::string RayReductionModeName(RayReductionMode reduction_mode) {
     return "none";
 }
 
+std::string RayPatternModeName(RayPatternMode pattern_mode) {
+    switch (pattern_mode) {
+        case RayPatternMode::Custom:
+            return "custom";
+        case RayPatternMode::Grid:
+            return "grid";
+    }
+    return "custom";
+}
+
+std::string RayAlignmentModeName(RayAlignmentMode ray_alignment) {
+    switch (ray_alignment) {
+        case RayAlignmentMode::World:
+            return "world";
+        case RayAlignmentMode::Base:
+            return "base";
+        case RayAlignmentMode::Yaw:
+            return "yaw";
+    }
+    return "world";
+}
+
 py::dict JointSnapshotToPythonDict(const PhysicsJointSnapshot& joint) {
     py::dict result;
     result["name"] = joint.name;
@@ -1394,6 +1416,10 @@ py::dict SensorSnapshotToPythonDict(const PhysicsSensorSnapshot& sensor) {
     result["ray_direction_world_space"] = sensor.ray_direction_world_space;
     result["max_distance"] = sensor.max_distance;
     result["reduction_mode"] = RayReductionModeName(sensor.reduction_mode);
+    result["pattern_mode"] = RayPatternModeName(sensor.pattern_mode);
+    result["grid_size"] = Vector2ToPython(sensor.grid_size);
+    result["grid_resolution"] = sensor.grid_resolution;
+    result["ray_alignment"] = RayAlignmentModeName(sensor.ray_alignment);
     result["channel_names"] = sensor.channel_names;
     result["global_transform"] = TransformToPythonDict(sensor.global_transform);
     result["local_transform"] = TransformToPythonDict(sensor.local_transform);
@@ -2297,6 +2323,17 @@ class NodeScript:
             .value("Min", RayReductionMode::Min)
             .value("Max", RayReductionMode::Max)
             .value("Mean", RayReductionMode::Mean)
+            .export_values();
+
+    py::enum_<RayPatternMode>(module, "RayPatternMode")
+            .value("Custom", RayPatternMode::Custom)
+            .value("Grid", RayPatternMode::Grid)
+            .export_values();
+
+    py::enum_<RayAlignmentMode>(module, "RayAlignmentMode")
+            .value("World", RayAlignmentMode::World)
+            .value("Base", RayAlignmentMode::Base)
+            .value("Yaw", RayAlignmentMode::Yaw)
             .export_values();
 
     py::class_<Input>(module, "Input")
@@ -3425,6 +3462,38 @@ class NodeScript:
                           [](PyRayCastSensor3DHandle& handle, RealType max_distance) {
                               RayCastSensor3D* sensor = handle.ResolveAs<RayCastSensor3D>();
                               ExecuteSetNodeProperty(sensor, "max_distance", Variant(max_distance));
+                          })
+            .def_property("pattern_mode",
+                          [](const PyRayCastSensor3DHandle& handle) {
+                              return handle.ResolveAs<RayCastSensor3D>()->GetPatternMode();
+                          },
+                          [](PyRayCastSensor3DHandle& handle, RayPatternMode pattern_mode) {
+                              RayCastSensor3D* sensor = handle.ResolveAs<RayCastSensor3D>();
+                              ExecuteSetNodeProperty(sensor, "pattern_mode", Variant(pattern_mode));
+                          })
+            .def_property("grid_size",
+                          [](const PyRayCastSensor3DHandle& handle) {
+                              return Vector2ToPython(handle.ResolveAs<RayCastSensor3D>()->GetGridSize());
+                          },
+                          [](PyRayCastSensor3DHandle& handle, const py::handle& value) {
+                              RayCastSensor3D* sensor = handle.ResolveAs<RayCastSensor3D>();
+                              ExecuteSetNodeProperty(sensor, "grid_size", Variant(PythonToVector2(value)));
+                          })
+            .def_property("grid_resolution",
+                          [](const PyRayCastSensor3DHandle& handle) {
+                              return handle.ResolveAs<RayCastSensor3D>()->GetGridResolution();
+                          },
+                          [](PyRayCastSensor3DHandle& handle, RealType grid_resolution) {
+                              RayCastSensor3D* sensor = handle.ResolveAs<RayCastSensor3D>();
+                              ExecuteSetNodeProperty(sensor, "grid_resolution", Variant(grid_resolution));
+                          })
+            .def_property("ray_alignment",
+                          [](const PyRayCastSensor3DHandle& handle) {
+                              return handle.ResolveAs<RayCastSensor3D>()->GetRayAlignment();
+                          },
+                          [](PyRayCastSensor3DHandle& handle, RayAlignmentMode ray_alignment) {
+                              RayCastSensor3D* sensor = handle.ResolveAs<RayCastSensor3D>();
+                              ExecuteSetNodeProperty(sensor, "ray_alignment", Variant(ray_alignment));
                           });
 
     terrain_height_sensor3d_class

@@ -56,10 +56,14 @@ def test_go1_velocity_cfg_dimensions():
     assert cfg.domain_randomization.enabled
     assert cfg.push_enabled
 
-    actor_schema = velocity_actor_observation_schema(len(cfg.joint_names), 15)
-    critic_schema = velocity_critic_observation_schema(len(cfg.joint_names), 15, len(cfg.foot_names))
-    assert actor_schema.dim == 63
-    assert critic_schema.dim == 87
+    actor_schema = velocity_actor_observation_schema(len(cfg.joint_names), go1_playback.TERRAIN_SCAN_DIM)
+    critic_schema = velocity_critic_observation_schema(
+        len(cfg.joint_names),
+        go1_playback.TERRAIN_SCAN_DIM,
+        len(cfg.foot_names),
+    )
+    assert actor_schema.dim == 235
+    assert critic_schema.dim == 259
     assert len(cfg.joint_names) == 12
 
     flat = go1_cfg.go1_velocity_cfg("go1_flat", project_path="/tmp/go1")
@@ -72,9 +76,9 @@ def test_go1_velocity_cfg_dimensions():
 
 def test_go1_playback_schema_matches_training_schema():
     cfg = go1_cfg.go1_rough_velocity_cfg(project_path="/tmp/go1")
-    training_schema = velocity_actor_observation_schema(len(cfg.joint_names), len(go1_playback.HEIGHT_SCAN_POINTS))
+    training_schema = velocity_actor_observation_schema(len(cfg.joint_names), go1_playback.TERRAIN_SCAN_DIM)
     assert go1_playback.ACTOR_OBS_SCHEMA.names == training_schema.names
-    assert go1_playback.ACTOR_OBS_SCHEMA.dim == 63
+    assert go1_playback.ACTOR_OBS_SCHEMA.dim == 235
 
 
 def test_go1_playback_height_scan_requires_runtime_sensor():
@@ -93,8 +97,8 @@ def test_go1_velocity_env_reset_step_shapes():
         observations = env.get_observations()
         assert observations["actor"].shape == (1, env.num_obs)
         assert observations["critic"].shape == (1, env.num_privileged_obs)
-        assert env.num_obs == 63
-        assert env.num_privileged_obs == 87
+        assert env.num_obs == 235
+        assert env.num_privileged_obs == 259
         assert env.cfg["task"] == "gobot_go1_velocity"
         assert env.cfg["obs_schema_version"] == env.actor_obs_schema.version
         assert env.cfg["obs_names"] == env.actor_obs_schema.names

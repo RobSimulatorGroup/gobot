@@ -131,20 +131,20 @@ def main():
             raise AssertionError("Go1 runtime state is missing HeightScanner3D 'terrain_scan'")
         if terrain_scan["type"] != "height_scanner":
             raise AssertionError(f"Go1 terrain scan sensor has unexpected type {terrain_scan['type']!r}")
-        if len(terrain_scan["values"]) != 15:
-            raise AssertionError(f"Go1 terrain scan expected 15 values, got {len(terrain_scan['values'])}")
+        if len(terrain_scan["values"]) != 187:
+            raise AssertionError(f"Go1 terrain scan expected 187 values, got {len(terrain_scan['values'])}")
         if terrain_scan["channel_names"][:3] != ["distance_0", "distance_1", "distance_2"]:
             raise AssertionError(f"Go1 terrain scan channel names are unexpected: {terrain_scan['channel_names']!r}")
         if "global_transform" not in terrain_scan:
             raise AssertionError("Go1 terrain scan runtime state is missing global_transform")
-        if len(terrain_scan.get("hits", [])) != 15:
+        if len(terrain_scan.get("hits", [])) != 187:
             raise AssertionError("Go1 terrain scan runtime state is missing raycast hits")
 
         for foot in ("FR", "FL", "RR", "RL"):
             height_sensor = sensors.get(f"{foot}_foot_height_scan")
             if height_sensor is None:
                 raise AssertionError(f"Go1 runtime state is missing {foot}_foot_height_scan")
-            if height_sensor["type"] != "height_scanner" or len(height_sensor["values"]) != 1:
+            if height_sensor["type"] != "terrain_height" or len(height_sensor["values"]) != 1:
                 raise AssertionError(f"Go1 {foot} foot height sensor is malformed: {height_sensor!r}")
             contact_sensor = sensors.get(f"{foot}_foot_contact")
             if contact_sensor is None:

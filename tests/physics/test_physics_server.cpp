@@ -352,6 +352,8 @@ TEST(TestPhysicsServer, height_scanner_raycast_queries_box_heightfield_and_mesh_
     EXPECT_NEAR(sensor_state.hits[0].point.x(), 0.0, 1.0e-6);
     EXPECT_NEAR(sensor_state.hits[0].point.y(), 0.0, 1.0e-6);
     EXPECT_NEAR(sensor_state.hits[0].point.z(), 0.0, 1.0e-6);
+    EXPECT_TRUE(sensor_state.hits[1].normal.z() < 0.99);
+    EXPECT_TRUE(sensor_state.hits[1].normal.z() > 0.0);
 
     ASSERT_TRUE(world->ResetLinkState("robot", "base", {0.0, 0.0, 1.2}));
     const gobot::PhysicsSensorState& moved_sensor_state = world->GetSceneState().robots[0].sensors[0];
@@ -384,6 +386,43 @@ TEST(TestPhysicsServer, height_scanner_raycast_queries_box_heightfield_and_mesh_
     });
     EXPECT_FALSE(miss.hit);
     EXPECT_NEAR(miss.distance, 1.5, 1.0e-6);
+
+    gobot::Object::Delete(root);
+}
+
+TEST(TestPhysicsServer, raycast_grid_pattern_can_follow_yaw_without_pitch_roll) {
+    auto* root = gobot::Object::New<gobot::Node3D>();
+    root->SetName("root");
+
+    auto* terrain = gobot::Object::New<gobot::Terrain3D>();
+    terrain->SetName("terrain");
+    terrain->AddBox({0.0, 0.0, -0.1}, {10.0, 10.0, 0.2});
+    root->AddChild(terrain);
+
+    auto* sensor = gobot::Object::New<gobot::RayCastSensor3D>();
+    sensor->SetName("terrain_scan");
+    sensor->SetPosition({0.0, 0.0, 1.0});
+    sensor->SetEulerDegree({20.0, 30.0, 90.0});
+    sensor->SetPatternMode(gobot::RayPatternMode::Grid);
+    sensor->SetGridSize({0.2, 0.2});
+    sensor->SetGridResolution(0.2);
+    sensor->SetRayAlignment(gobot::RayAlignmentMode::Yaw);
+    sensor->SetMaxDistance(2.0);
+    root->AddChild(sensor);
+
+    gobot::PhysicsServer physics_server;
+    gobot::Ref<gobot::PhysicsWorld> world = physics_server.CreateWorld();
+    ASSERT_TRUE(world->BuildFromScene(root));
+
+    const gobot::PhysicsSceneState& state = world->GetSceneState();
+    ASSERT_EQ(state.loose_sensors.size(), 1);
+    const gobot::PhysicsSensorState& sensor_state = state.loose_sensors[0];
+    ASSERT_EQ(sensor_state.hits.size(), 4);
+    for (const gobot::PhysicsSensorRaycastHit& hit : sensor_state.hits) {
+        EXPECT_TRUE(hit.hit);
+        EXPECT_NEAR(hit.origin.z(), 1.0, 1.0e-6);
+        EXPECT_NEAR(hit.point.z(), 0.0, 1.0e-6);
+    }
 
     gobot::Object::Delete(root);
 }

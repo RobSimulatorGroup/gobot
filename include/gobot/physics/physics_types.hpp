@@ -145,6 +145,10 @@ struct PhysicsSensorSnapshot {
     bool ray_direction_world_space{true};
     RealType max_distance{3.0};
     RayReductionMode reduction_mode{RayReductionMode::None};
+    RayPatternMode pattern_mode{RayPatternMode::Custom};
+    Vector2 grid_size{1.0, 1.0};
+    RealType grid_resolution{0.1};
+    RayAlignmentMode ray_alignment{RayAlignmentMode::World};
     std::vector<std::string> channel_names;
 };
 
