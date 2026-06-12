@@ -55,6 +55,14 @@ def test_go1_velocity_cfg_dimensions():
     assert cfg.illegal_contact.enabled
     assert cfg.domain_randomization.enabled
     assert cfg.push_enabled
+    assert np.allclose(np.asarray(cfg.default_joint_pos, dtype=np.float32)[[0, 3, 6, 9]], [0.1, -0.1, 0.1, -0.1])
+    assert cfg.spawn_jitter == 0.5
+    assert cfg.push_interval_range_s == (1.0, 3.0)
+    assert cfg.push_velocity_ranges["z"] == (-0.4, 0.4)
+    assert cfg.push_velocity_ranges["roll"] == (-0.52, 0.52)
+    assert cfg.domain_randomization.encoder_bias_range == (-0.015, 0.015)
+    assert np.isclose(cfg.action_scale[r".*_(hip|thigh)_joint"], 0.3727530386870487)
+    assert np.isclose(cfg.action_scale[r".*_calf_joint"], 0.24850202579136574)
 
     actor_schema = velocity_actor_observation_schema(len(cfg.joint_names), go1_playback.TERRAIN_SCAN_DIM)
     critic_schema = velocity_critic_observation_schema(
@@ -79,6 +87,16 @@ def test_go1_playback_schema_matches_training_schema():
     training_schema = velocity_actor_observation_schema(len(cfg.joint_names), go1_playback.TERRAIN_SCAN_DIM)
     assert go1_playback.ACTOR_OBS_SCHEMA.names == training_schema.names
     assert go1_playback.ACTOR_OBS_SCHEMA.dim == 235
+    assert np.allclose(go1_playback.DEFAULT_POS, cfg.default_joint_pos)
+    assert np.allclose(
+        go1_playback.ACTION_SCALE,
+        [
+            cfg.action_scale[r".*_(hip|thigh)_joint"],
+            cfg.action_scale[r".*_(hip|thigh)_joint"],
+            cfg.action_scale[r".*_calf_joint"],
+        ]
+        * 4,
+    )
 
 
 def test_go1_playback_height_scan_requires_runtime_sensor():

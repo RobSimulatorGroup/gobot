@@ -50,20 +50,33 @@ JOINT_NAMES = [
     "RL_calf_joint",
 ]
 DEFAULT_POS = [
-    0.0,
+    0.1,
     0.9,
     -1.8,
-    0.0,
+    -0.1,
     0.9,
     -1.8,
-    0.0,
+    0.1,
     0.9,
     -1.8,
-    0.0,
+    -0.1,
     0.9,
     -1.8,
 ]
-ACTION_SCALE = 0.35
+ACTION_SCALE = [
+    0.3727530386870487,
+    0.3727530386870487,
+    0.24850202579136574,
+    0.3727530386870487,
+    0.3727530386870487,
+    0.24850202579136574,
+    0.3727530386870487,
+    0.3727530386870487,
+    0.24850202579136574,
+    0.3727530386870487,
+    0.3727530386870487,
+    0.24850202579136574,
+]
 KP = 40.0
 KD = 1.0
 DECIMATION = 10
@@ -458,7 +471,7 @@ class Script(gobot.NodeScript):
 
         for index, joint_name in enumerate(JOINT_NAMES):
             lower, upper = POSITION_LIMITS[joint_name]
-            target = _clamp(DEFAULT_POS[index] + ACTION_SCALE * self.last_action[index], lower, upper)
+            target = _clamp(DEFAULT_POS[index] + ACTION_SCALE[index] * self.last_action[index], lower, upper)
             self.context.set_joint_position_target(self.robot.name, joint_name, target)
 
         self.ticks += 1

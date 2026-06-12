@@ -28,16 +28,16 @@ GO1_JOINT_NAMES: tuple[str, ...] = (
 
 GO1_DEFAULT_JOINT_POS = np.array(
     [
-        0.0,
+        0.1,
         0.9,
         -1.8,
-        0.0,
+        -0.1,
         0.9,
         -1.8,
-        0.0,
+        0.1,
         0.9,
         -1.8,
-        0.0,
+        -0.1,
         0.9,
         -1.8,
     ],
@@ -45,6 +45,10 @@ GO1_DEFAULT_JOINT_POS = np.array(
 )
 
 GO1_FOOT_NAMES: tuple[str, ...] = ("FR", "FL", "RR", "RL")
+GO1_ACTION_SCALE: Mapping[str, float] = {
+    r".*_(hip|thigh)_joint": 0.3727530386870487,
+    r".*_calf_joint": 0.24850202579136574,
+}
 
 
 @dataclass
@@ -135,7 +139,7 @@ class VelocityDomainRandomizationCfg:
     """Domain randomization parameters for the Gobot velocity task."""
 
     enabled: bool = True
-    encoder_bias_range: tuple[float, float] = (-0.01, 0.01)
+    encoder_bias_range: tuple[float, float] = (-0.015, 0.015)
     reset_lin_vel_ranges: Mapping[str, tuple[float, float]] = field(
         default_factory=lambda: {
             "x": (-0.05, 0.05),
@@ -164,10 +168,10 @@ def _default_push_velocity_ranges() -> Mapping[str, tuple[float, float]]:
     return {
         "x": (-0.5, 0.5),
         "y": (-0.5, 0.5),
-        "z": (0.0, 0.0),
-        "roll": (0.0, 0.0),
-        "pitch": (0.0, 0.0),
-        "yaw": (-0.25, 0.25),
+        "z": (-0.4, 0.4),
+        "roll": (-0.52, 0.52),
+        "pitch": (-0.52, 0.52),
+        "yaw": (-0.78, 0.78),
     }
 
 
@@ -186,7 +190,7 @@ class Go1VelocityCfg:
     default_joint_pos: tuple[float, ...] = tuple(float(x) for x in GO1_DEFAULT_JOINT_POS)
     foot_names: tuple[str, ...] = GO1_FOOT_NAMES
     foot_link_names: tuple[str, ...] = ("FR_calf", "FL_calf", "RR_calf", "RL_calf")
-    action_scale: float | Mapping[str, float] = 0.35
+    action_scale: float | Mapping[str, float] = field(default_factory=lambda: dict(GO1_ACTION_SCALE))
     kp: float = 40.0
     kd: float = 1.0
     physics_dt: float = 0.002
@@ -194,7 +198,7 @@ class Go1VelocityCfg:
     episode_length_s: float = 20.0
     base_clearance: float = 0.32
     min_base_clearance: float = 0.16
-    spawn_jitter: float = 0.35
+    spawn_jitter: float = 0.5
     terrain_curriculum: bool = True
     terrain_curriculum_steps: int = 21600
     spawn_difficulty_radius: float = 0.85
@@ -203,7 +207,7 @@ class Go1VelocityCfg:
     illegal_contact: VelocityIllegalContactCfg = field(default_factory=VelocityIllegalContactCfg)
     domain_randomization: VelocityDomainRandomizationCfg = field(default_factory=VelocityDomainRandomizationCfg)
     push_enabled: bool = True
-    push_interval_range_s: tuple[float, float] = (2.0, 6.0)
+    push_interval_range_s: tuple[float, float] = (1.0, 3.0)
     push_velocity_ranges: Mapping[str, tuple[float, float]] = field(default_factory=_default_push_velocity_ranges)
     observations: VelocityObservationCfg = field(default_factory=VelocityObservationCfg)
     command: UniformVelocityCommandCfg = field(default_factory=UniformVelocityCommandCfg)
@@ -319,6 +323,7 @@ __all__ = [
     "GO1_DEFAULT_JOINT_POS",
     "GO1_FOOT_NAMES",
     "GO1_JOINT_NAMES",
+    "GO1_ACTION_SCALE",
     "Go1VelocityCfg",
     "VelocityObservationCfg",
     "VelocityRewardCfg",

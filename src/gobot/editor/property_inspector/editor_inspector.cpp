@@ -73,18 +73,6 @@ void DrawInspectorTypeHeader(const Type& type, const ImVec2& min, const ImVec2& 
     ImGui::TextUnformatted(type_name.c_str());
     const bool label_hovered = ImGui::IsItemHovered(ImGuiHoveredFlags_DelayNormal | ImGuiHoveredFlags_NoSharedDelay);
 
-    const ImVec2 label_min = ImGui::GetItemRectMin();
-    const ImVec2 label_max = ImGui::GetItemRectMax();
-    const float line_start_x = label_max.x + style.ItemSpacing.x;
-    const float line_end_x = ImGui::GetWindowPos().x + ImGui::GetWindowContentRegionMax().x;
-    if (line_start_x < line_end_x) {
-        const float line_y = (label_min.y + label_max.y) * 0.5f;
-        draw_list->AddLine({line_start_x, line_y},
-                           {line_end_x, line_y},
-                           ImGui::GetColorU32(ImGuiCol_Separator),
-                           1.0f);
-    }
-
     if (icon_hovered || label_hovered) {
         ImGui::BeginTooltip();
         ImGui::Text("Type group: %s", type_name.c_str());
