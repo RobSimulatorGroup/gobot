@@ -7,7 +7,6 @@
 
 #include "gobot/editor/property_inspector/editor_inspector.hpp"
 #include "gobot/editor/property_inspector/editor_property.hpp"
-#include "gobot/scene/imgui_custom_node.hpp"
 #include "gobot/error_macros.hpp"
 #include "gobot/editor/property_inspector/editor_property_primitives.hpp"
 #include "gobot/editor/property_inspector/editor_property_math.hpp"
@@ -22,6 +21,7 @@
 #include "imgui_internal.h"
 
 #include <algorithm>
+#include <set>
 #include <string>
 
 
@@ -52,12 +52,18 @@ bool ShouldHidePropertyInInspector(const Type& owner_type, const Property& prope
     return false;
 }
 
-void DrawInspectorTypeHeader(const Type& type) {
+void DrawInspectorTypeHeader(const Type& type, const ImVec2& min, const ImVec2& max) {
     const auto name_view = type.get_name();
     const std::string type_name(name_view.data(), name_view.size());
     const ImGuiStyle& style = ImGui::GetStyle();
     const float icon_size = ImGui::GetTextLineHeight();
-    const ImVec2 header_min = ImGui::GetCursorScreenPos();
+    ImDrawList* draw_list = ImGui::GetWindowDrawList();
+    draw_list->AddRectFilled(min, max, ImGui::GetColorU32(ImGuiCol_Header), style.FrameRounding);
+
+    ImGui::SetCursorScreenPos({
+            min.x + style.FramePadding.x * 2.0f,
+            min.y + (max.y - min.y - icon_size) * 0.5f
+    });
 
     ImGui::AlignTextToFramePadding();
     DrawEditorIcon(GetTypeEditorIcon(type), {icon_size, icon_size});
@@ -73,25 +79,44 @@ void DrawInspectorTypeHeader(const Type& type) {
     const float line_end_x = ImGui::GetWindowPos().x + ImGui::GetWindowContentRegionMax().x;
     if (line_start_x < line_end_x) {
         const float line_y = (label_min.y + label_max.y) * 0.5f;
-        ImGui::GetWindowDrawList()->AddLine({line_start_x, line_y},
-                                            {line_end_x, line_y},
-                                            ImGui::GetColorU32(ImGuiCol_Separator),
-                                            1.0f);
+        draw_list->AddLine({line_start_x, line_y},
+                           {line_end_x, line_y},
+                           ImGui::GetColorU32(ImGuiCol_Separator),
+                           1.0f);
     }
 
-    const ImVec2 header_max(line_end_x, std::max(label_max.y, header_min.y + icon_size));
-    const bool row_hovered =
-            ImGui::IsMouseHoveringRect(header_min, header_max) &&
-            ImGui::IsWindowHovered(ImGuiHoveredFlags_AllowWhenBlockedByPopup);
-    if (icon_hovered || label_hovered || row_hovered) {
+    if (icon_hovered || label_hovered) {
         ImGui::BeginTooltip();
         ImGui::Text("Type group: %s", type_name.c_str());
-        ImGui::TextUnformatted("Only editor-visible properties declared by this type are shown here.");
+        ImGui::TextUnformatted("Editor-visible properties declared by this type.");
         ImGui::EndTooltip();
     }
 }
 
 } // namespace
+
+EditorInspectorSection::EditorInspectorSection(Type type)
+    : type_(type) {
+}
+
+bool EditorInspectorSection::Begin() {
+    const float header_height = ImGui::GetFrameHeight();
+    const float header_width = ImGui::GetContentRegionAvail().x;
+    ImGui::Dummy({header_width, header_height});
+    const ImVec2 header_min = ImGui::GetItemRectMin();
+    const ImVec2 header_max = ImGui::GetItemRectMax();
+    DrawInspectorTypeHeader(type_, header_min, header_max);
+    ImGui::SetCursorScreenPos({header_min.x, header_max.y});
+
+    ImGuiNode::Begin();
+    ImGui::Indent(ImGui::GetStyle().IndentSpacing);
+    return true;
+}
+
+void EditorInspectorSection::End() {
+    ImGui::Unindent(ImGui::GetStyle().IndentSpacing);
+    ImGuiNode::End();
+}
 
 Ref<EditorInspectorPlugin> EditorInspector::s_inspector_plugins[MAX_PLUGINS];
 int EditorInspector::s_inspector_plugin_count = 0;
@@ -115,10 +140,16 @@ EditorInspector::EditorInspector(Variant& variant)
 
     for (const auto& type :  inheritance_chain_) {
         properties_map_.insert({type, {}});
+        std::set<std::string> property_names;
         for (const auto& property : type.get_properties(rttr::filter_item::public_access |
                                                         rttr::filter_item::declared_only |
                                                         rttr::filter_item::static_item |
                                                         rttr::filter_item::instance_item)) {
+            const std::string property_name = property.get_name().data();
+            if (property_names.contains(property_name)) {
+                continue;
+            }
+            property_names.insert(property_name);
             if (property == name_property) {
                 continue;
             }
@@ -167,15 +198,18 @@ void EditorInspector::InitializeEditors() {
     }
 
     for (const auto& type: inheritance_chain_) {
-        AddChild(ImGuiCustomNode::New<ImGuiCustomNode>([type]() {
-            DrawInspectorTypeHeader(type);
-        }));
+        if (properties_map_.at(type).empty()) {
+            continue;
+        }
+
+        auto* section = Object::New<EditorInspectorSection>(type);
+        AddChild(section);
 
         for (const auto& prop : properties_map_.at(type)) {
             for (Ref<EditorInspectorPlugin> &valid_plugin : valid_plugins) {
                 bool exclusive = valid_plugin->ParseProperty(std::make_unique<PropertyDataModel>(cache_, prop));
                 for (const auto& editor : valid_plugin->GetAddEditors()) {
-                    AddChild(editor);
+                    section->AddChild(editor);
                 }
                 valid_plugin->GetAddEditors().clear();
                 if (exclusive) {

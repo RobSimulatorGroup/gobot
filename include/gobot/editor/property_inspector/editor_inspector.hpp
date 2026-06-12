@@ -16,6 +16,21 @@
 
 namespace gobot {
 
+class EditorInspectorSection : public ImGuiNode {
+    GOBCLASS(EditorInspectorSection, ImGuiNode)
+
+public:
+    explicit EditorInspectorSection(Type type);
+
+protected:
+    bool Begin() override;
+
+    void End() override;
+
+private:
+    Type type_;
+};
+
 class EditorInspectorPlugin : public RefCounted {
     GOBCLASS(EditorInspectorPlugin, RefCounted)
 public:

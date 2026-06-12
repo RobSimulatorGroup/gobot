@@ -246,44 +246,10 @@ GOBOT_REGISTRATION {
 
     Class_<TerrainHeightSensor3D>("TerrainHeightSensor3D")
             .constructor()(CtorAsRawPtr)
-            .property("sample_offsets", &TerrainHeightSensor3D::GetSampleOffsets,
-                      &TerrainHeightSensor3D::SetSampleOffsets)
-            .property("ray_direction", &TerrainHeightSensor3D::GetRayDirection,
-                      &TerrainHeightSensor3D::SetRayDirection)
-            .property("ray_direction_world_space", &TerrainHeightSensor3D::IsRayDirectionWorldSpace,
-                      &TerrainHeightSensor3D::SetRayDirectionWorldSpace)
-            .property("max_distance", &TerrainHeightSensor3D::GetMaxDistance,
-                      &TerrainHeightSensor3D::SetMaxDistance)
             .property("reduction_mode", &TerrainHeightSensor3D::GetReductionMode,
-                      &TerrainHeightSensor3D::SetReductionMode)
-            .property("pattern_mode", &TerrainHeightSensor3D::GetPatternMode,
-                      &TerrainHeightSensor3D::SetPatternMode)
-            .property("grid_size", &TerrainHeightSensor3D::GetGridSize,
-                      &TerrainHeightSensor3D::SetGridSize)
-            .property("grid_resolution", &TerrainHeightSensor3D::GetGridResolution,
-                      &TerrainHeightSensor3D::SetGridResolution)
-            .property("ray_alignment", &TerrainHeightSensor3D::GetRayAlignment,
-                      &TerrainHeightSensor3D::SetRayAlignment);
+                      &TerrainHeightSensor3D::SetReductionMode);
 
     Class_<HeightScanner3D>("HeightScanner3D")
-            .constructor()(CtorAsRawPtr)
-            .property("sample_offsets", &HeightScanner3D::GetSampleOffsets,
-                      &HeightScanner3D::SetSampleOffsets)
-            .property("ray_direction", &HeightScanner3D::GetRayDirection,
-                      &HeightScanner3D::SetRayDirection)
-            .property("ray_direction_world_space", &HeightScanner3D::IsRayDirectionWorldSpace,
-                      &HeightScanner3D::SetRayDirectionWorldSpace)
-            .property("max_distance", &HeightScanner3D::GetMaxDistance,
-                      &HeightScanner3D::SetMaxDistance)
-            .property("reduction_mode", &HeightScanner3D::GetReductionMode,
-                      &HeightScanner3D::SetReductionMode)
-            .property("pattern_mode", &HeightScanner3D::GetPatternMode,
-                      &HeightScanner3D::SetPatternMode)
-            .property("grid_size", &HeightScanner3D::GetGridSize,
-                      &HeightScanner3D::SetGridSize)
-            .property("grid_resolution", &HeightScanner3D::GetGridResolution,
-                      &HeightScanner3D::SetGridResolution)
-            .property("ray_alignment", &HeightScanner3D::GetRayAlignment,
-                      &HeightScanner3D::SetRayAlignment);
+            .constructor()(CtorAsRawPtr);
 
 };
