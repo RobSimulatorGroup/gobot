@@ -18,6 +18,7 @@ struct ImVec2;
 namespace gobot {
 
 class Camera3D;
+class Node3D;
 class SceneView3DPanel;
 
 class GOBOT_EXPORT Node3DEditor : public ImGuiNode {
@@ -51,6 +52,10 @@ public:
 
     void SetBlockCameraInput(bool block_camera_input);
 
+    void SetViewportZoomPivot(const Vector3& pivot, bool valid);
+
+    void FocusNode(const Node3D* node);
+
     bool& SnapGuizmo();
 
 protected:
@@ -78,6 +83,8 @@ private:
     float vertical_angle_{0.0};
 
     float distance_{0.0};
+    Vector3 zoom_pivot_{Vector3::Zero()};
+    bool zoom_pivot_valid_{false};
 
     bool mouse_down_{false};
 

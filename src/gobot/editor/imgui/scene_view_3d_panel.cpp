@@ -551,11 +551,13 @@ void SceneView3DPanel::ProcessViewportInput(Node* scene_root,
     if (!scene_root || !mouse_inside_rect || gizmo_captures_mouse) {
         hovered_node_ = nullptr;
         motion_target_joint_ = nullptr;
+        node3d_editor->SetViewportZoomPivot(Vector3::Zero(), false);
     } else {
         Vector3 hit_point = Vector3::Zero();
         hovered_node_ = viewport_renderer_->PickNode(scene_root, node3d_editor->GetCamera3D(),
                                                      viewport_position, viewport_size, ImGui::GetMousePos(),
                                                      &hit_point, runtime_playing, runtime_playing);
+        node3d_editor->SetViewportZoomPivot(hit_point, hovered_node_ != nullptr);
         if (hovered_node_ != nullptr && !drag_force_point_locked_) {
             drag_force_point_ = hit_point;
         }

@@ -18,6 +18,7 @@
 #include "gobot/scene/scene_command.hpp"
 #include "gobot/scene/window.hpp"
 #include "gobot/scene/joint_3d.hpp"
+#include "gobot/scene/node_3d.hpp"
 #include "gobot/scene/robot_3d.hpp"
 #include "gobot/log.hpp"
 #include "imgui.h"
@@ -172,6 +173,39 @@ void Node3DEditor::SetBlockCameraInput(bool block_camera_input) {
     block_camera_input_ = block_camera_input;
 }
 
+void Node3DEditor::SetViewportZoomPivot(const Vector3& pivot, bool valid) {
+    zoom_pivot_ = pivot;
+    zoom_pivot_valid_ = valid && IsFiniteVector(pivot);
+}
+
+void Node3DEditor::FocusNode(const Node3D* node) {
+    if (node == nullptr || camera3d_ == nullptr || !node->IsInsideTree()) {
+        return;
+    }
+
+    const Vector3 at = node->GetGlobalPosition();
+    if (!IsFiniteVector(at)) {
+        return;
+    }
+
+    Vector3 direction = camera3d_->GetViewMatrixAt() - camera3d_->GetViewMatrixEye();
+    if (direction.squaredNorm() <= CMP_EPSILON2) {
+        direction = Vector3{-1.0, -1.0, -0.75};
+    }
+    direction.normalize();
+
+    Vector3 up = camera3d_->GetViewMatrixUp();
+    if (!IsFiniteVector(up) || up.squaredNorm() <= CMP_EPSILON2 ||
+        std::abs(up.normalized().dot(direction)) > 1.0 - CMP_EPSILON) {
+        up = Vector3::UnitZ();
+    } else {
+        up.normalize();
+    }
+
+    const Vector3 eye = at - direction * std::max(distance_, 0.5f);
+    SetCameraOrbit(eye, at, up);
+}
+
 void Node3DEditor::UpdateCamera(double delta_time) {
     if (block_camera_input_ || ImGuiBlocksViewportInput()) {
         mouse_down_ = false;
@@ -247,8 +281,14 @@ void Node3DEditor::UpdateCamera(double delta_time) {
         eye = at - direction * distance_;
     } else {
         if (std::abs(scroll_offset) > CMP_EPSILON) {
+            const float previous_distance = distance_;
             distance_ *= std::pow(0.85f, scroll_offset);
-            distance_ = std::max(distance_, 0.1f);
+            distance_ = std::max(distance_, static_cast<float>(camera3d_->GetNear()));
+            if (zoom_pivot_valid_ && previous_distance > CMP_EPSILON) {
+                const float zoom_ratio = distance_ / previous_distance;
+                eye = zoom_pivot_ + (eye - zoom_pivot_) * zoom_ratio;
+                at = zoom_pivot_ + (at - zoom_pivot_) * zoom_ratio;
+            }
         }
         eye = at - direction * distance_;
     }
@@ -258,7 +298,7 @@ void Node3DEditor::UpdateCamera(double delta_time) {
 
 void Node3DEditor::SetCameraOrbit(const Vector3& eye, const Vector3& at, const Vector3& up) {
     const Vector3 direction = (at - eye).normalized();
-    distance_ = std::max(static_cast<float>((at - eye).norm()), 0.1f);
+    distance_ = std::max(static_cast<float>((at - eye).norm()), static_cast<float>(camera3d_->GetNear()));
     vertical_angle_ = static_cast<float>(std::asin(std::clamp(direction.z(), static_cast<RealType>(-1.0), static_cast<RealType>(1.0))));
     horizontal_angle_ = static_cast<float>(std::atan2(direction.y(), direction.x()));
     camera3d_->SetViewMatrix(eye, at, up);

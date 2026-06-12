@@ -24,6 +24,7 @@
 #include "gobot/editor/imgui/imgui_utilities.hpp"
 #include "gobot/editor/imgui/type_icons.hpp"
 #include "gobot/editor/editor.hpp"
+#include "gobot/editor/node3d_editor.hpp"
 #include "gobot/editor/python_script_template.hpp"
 #include "gobot/main/engine_context.hpp"
 #include "gobot/scene/node_3d.hpp"
@@ -1183,6 +1184,9 @@ bool SceneEditorPanel::DrawNode(Node* node)
         if(!script_icon_clicked && !visibility_icon_clicked && ImGui::IsMouseDoubleClicked(ImGuiMouseButton_Left) && node_row_hovered) {
             double_clicked_ = node;
             editor->FocusSceneViewerPanel();
+            if (auto* node_3d = Object::PointerCastTo<Node3D>(node)) {
+                Node3DEditor::GetInstance()->FocusNode(node_3d);
+            }
         }
 
         if(delete_node) {
