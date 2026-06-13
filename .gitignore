@@ -19,6 +19,8 @@
 # Python cache files
 __pycache__/
 *.py[cod]
+.venv/
+uv.lock
 
 # Fortran module files
 *.mod

@@ -23,10 +23,14 @@ dependencies = [
 
 [project.optional-dependencies]
 train = [
+    "imageio>=2.35",
+    "imageio-ffmpeg",
+    "mujoco>=3.8",
+    "onnx>=1.16",
     "rsl-rl-lib==5.2.0",
     "tensorboard",
     "tensordict",
-    "torch",
+    "torch>=2.7",
 ]
 
 [project.urls]
@@ -36,6 +40,16 @@ Issues = "https://github.com/RobSimulatorGroup/gobot/issues"
 
 [project.scripts]
 gobot_editor = "gobot.cli:editor"
+
+[[tool.uv.index]]
+name = "pytorch-cu128"
+url = "https://download.pytorch.org/whl/cu128"
+explicit = true
+
+[tool.uv.sources]
+torch = [
+    { index = "pytorch-cu128", extra = "train", marker = "sys_platform == 'linux'" },
+]
 
 [tool.scikit-build]
 cmake.build-type = "Release"

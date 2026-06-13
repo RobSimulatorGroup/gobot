@@ -53,16 +53,14 @@ For source checkout development:
 
 ```bash
 cd /path/to/gobot
-python -m pip install -e . -Cbuild-dir=build/editable
-gobot_editor
+uv sync
+uv run gobot_editor
 ```
 
-For a direct CMake build, compile the current environment's libpython path into
-the launcher:
+For a direct CMake build, use the Python selected by `uv`:
 
 ```bash
-cmake -S . -B build/local \
-  -DGOBOT_PYTHON_LIBRARY="$CONDA_PREFIX/lib/libpython3.12.so"
+cmake -S . -B build/local -DPython3_EXECUTABLE="$(uv python find)"
 cmake --build build/local -j
 ./build/local/python/gobot/gobot_editor
 ```
@@ -74,25 +72,16 @@ The default install includes the lightweight ONNX Runtime path used for example
 policy playback. The heavier training stack stays optional:
 
 ```bash
-python -m pip install -e ".[train]" -Cbuild-dir=build/editable
+uv sync --extra train
 ```
 
-`train` installs `torch`, `rsl-rl-lib`, `tensordict`, and `tensorboard` for
-training or directly loading `.pt` checkpoints.
+`train` installs CUDA PyTorch, `rsl-rl-lib`, `tensordict`, and `tensorboard`
+for training or directly loading `.pt` checkpoints.
 
-For verbose rebuild output:
-
-```bash
-python -m pip install -v -e . -Cbuild-dir=build/editable -Cbuild.verbose=true
-```
-
-For repeated C++ edit/build cycles, keep `build-dir` fixed so CMake and Ninja
-can reuse the previous build tree. If the build requirements are already
-installed in the active Python environment, `--no-build-isolation` avoids
-creating a temporary build environment on every reinstall:
+Run example training through `uv` rather than a conda Python path:
 
 ```bash
-python -m pip install -e . --no-build-isolation -Cbuild-dir=build/editable
+uv run --extra train python examples/go1/train/go1_velocity_train.py --task go1_rough --num-envs 256 --iterations 1500
 ```
 
 Packaged examples are available from the editor start screen under `Examples`.
@@ -113,15 +102,14 @@ From a source checkout:
 git clone https://github.com/RobSimulatorGroup/gobot.git
 cd gobot
 git submodule update --init --recursive
-python -m pip install -U build scikit-build-core
-python -m build --wheel
-python -m pip install --force-reinstall dist/gobot-*.whl
+uv run --with build python -m build --wheel
+uv pip install --force-reinstall dist/gobot-*.whl
 ```
 
 For a faster local build without MuJoCo:
 
 ```bash
-python -m build --wheel -Ccmake.define.GOB_BUILD_MUJOCO=OFF
+uv run --with build python -m build --wheel -Ccmake.define.GOB_BUILD_MUJOCO=OFF
 ```
 
 ## Notes

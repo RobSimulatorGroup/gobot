@@ -63,10 +63,6 @@ def _current_environment_library_dirs() -> list[Path]:
         Path(sys.exec_prefix),
     ]
 
-    conda_prefix = os.environ.get("CONDA_PREFIX")
-    if conda_prefix:
-        roots.append(Path(conda_prefix))
-
     roots.extend([Path(sys.base_prefix), Path(sys.base_exec_prefix)])
 
     dirs = [root / "lib" for root in roots]

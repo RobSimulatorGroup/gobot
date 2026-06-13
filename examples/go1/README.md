@@ -32,13 +32,20 @@ gobot.import_mjcf_scene(
 Train from the Go1 project root:
 
 ```bash
-cd /home/wqq/gobot/examples/go1
-PYTHONNOUSERSITE=1 \
-PYTHONPATH=/home/wqq/gobot/build/python \
-/home/wqq/miniconda3/envs/ppo/bin/python train/go1_velocity_train.py \
+cd /home/wqq/gobot
+uv run --extra train python examples/go1/train/go1_velocity_train.py \
   --task go1_rough \
   --num-envs 256 \
   --iterations 1500 \
+  --device cuda \
+  --sim-workers 0 \
+  --render-video-interval 100 \
+  --render-video-num-envs 1 \
+  --render-video-env-id 0 \
+  --render-video-steps 240 \
+  --render-video-fps 30 \
+  --render-video-width 1280 \
+  --render-video-height 720 \
   --log-dir logs/go1_velocity \
   --policy-out policies/go1_velocity.pt
 ```
@@ -52,13 +59,14 @@ pushes. CUDA is used by default when PyTorch reports it as available; pass
 Resume from the latest checkpoint in the log directory:
 
 ```bash
-cd /home/wqq/gobot/examples/go1
-PYTHONNOUSERSITE=1 \
-PYTHONPATH=/home/wqq/gobot/build/python \
-/home/wqq/miniconda3/envs/ppo/bin/python train/go1_velocity_train.py \
+cd /home/wqq/gobot
+uv run --extra train python examples/go1/train/go1_velocity_train.py \
   --task go1_rough \
   --num-envs 256 \
   --iterations 1500 \
+  --device cuda \
+  --sim-workers 0 \
+  --render-video-interval 100 \
   --log-dir logs/go1_velocity \
   --policy-out policies/go1_velocity.pt \
   --resume
@@ -67,8 +75,10 @@ PYTHONPATH=/home/wqq/gobot/build/python \
 Export a trained checkpoint for lightweight editor playback:
 
 ```bash
-cd /home/wqq/gobot/examples/go1/tools
-python3 export_policy_onnx.py --checkpoint ../policies/go1.pt --output ../policies/go1.onnx
+cd /home/wqq/gobot
+uv run --extra train python examples/go1/tools/export_policy_onnx.py \
+  --checkpoint examples/go1/policies/go1_velocity.pt \
+  --output examples/go1/policies/go1.onnx
 ```
 
 The default Gobot install can play ONNX policies. Install `gobot[train]` only
