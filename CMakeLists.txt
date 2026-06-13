@@ -262,6 +262,43 @@ if(NOT Python3_FOUND)
 endif()
 set(GOBOT_PYTHON_LIBRARY "" CACHE FILEPATH
         "Optional default libpython path compiled into gobot_editor; runtime GOBOT_PYTHON_LIBRARY overrides it.")
+if(NOT GOBOT_PYTHON_LIBRARY)
+    set(GOBOT_INFERRED_PYTHON_LIBRARY "")
+    if(TARGET Python3::Python)
+        foreach(GOBOT_PYTHON_LOCATION_PROPERTY
+                IMPORTED_LOCATION
+                IMPORTED_LOCATION_RELEASE
+                IMPORTED_LOCATION_RELWITHDEBINFO
+                IMPORTED_LOCATION_MINSIZEREL
+                IMPORTED_LOCATION_DEBUG)
+            if(NOT GOBOT_INFERRED_PYTHON_LIBRARY)
+                get_target_property(GOBOT_PYTHON_LOCATION
+                        Python3::Python
+                        ${GOBOT_PYTHON_LOCATION_PROPERTY})
+                if(GOBOT_PYTHON_LOCATION AND EXISTS "${GOBOT_PYTHON_LOCATION}" AND NOT IS_DIRECTORY "${GOBOT_PYTHON_LOCATION}")
+                    set(GOBOT_INFERRED_PYTHON_LIBRARY "${GOBOT_PYTHON_LOCATION}")
+                endif()
+            endif()
+        endforeach()
+    endif()
+    if(NOT GOBOT_INFERRED_PYTHON_LIBRARY AND Python3_LIBRARIES)
+        foreach(GOBOT_PYTHON_LOCATION IN LISTS Python3_LIBRARIES)
+            if(EXISTS "${GOBOT_PYTHON_LOCATION}" AND NOT IS_DIRECTORY "${GOBOT_PYTHON_LOCATION}")
+                set(GOBOT_INFERRED_PYTHON_LIBRARY "${GOBOT_PYTHON_LOCATION}")
+                break()
+            endif()
+        endforeach()
+    endif()
+    if(NOT GOBOT_INFERRED_PYTHON_LIBRARY AND Python3_LIBRARY_RELEASE)
+        if(EXISTS "${Python3_LIBRARY_RELEASE}" AND NOT IS_DIRECTORY "${Python3_LIBRARY_RELEASE}")
+            set(GOBOT_INFERRED_PYTHON_LIBRARY "${Python3_LIBRARY_RELEASE}")
+        endif()
+    endif()
+    if(GOBOT_INFERRED_PYTHON_LIBRARY)
+        set(GOBOT_PYTHON_LIBRARY "${GOBOT_INFERRED_PYTHON_LIBRARY}" CACHE FILEPATH
+                "Optional default libpython path compiled into gobot_editor; runtime GOBOT_PYTHON_LIBRARY overrides it." FORCE)
+    endif()
+endif()
 if(GOBOT_PYTHON_LIBRARY)
     message(STATUS "Gobot editor default Python library: ${GOBOT_PYTHON_LIBRARY}")
 endif()
@@ -433,10 +470,14 @@ set_target_properties(gobot
         INSTALL_RPATH "$ORIGIN"
 )
 set(GOBOT_PYTHON_PACKAGE_DIR "${CMAKE_CURRENT_SOURCE_DIR}/python/gobot")
+set(GOBOT_PYTHON_CLI_PACKAGE_DIR "${CMAKE_CURRENT_SOURCE_DIR}/python/gobot_cli")
 add_custom_target(gobot_python_package
         COMMAND ${CMAKE_COMMAND} -E copy_directory
                 "${GOBOT_PYTHON_PACKAGE_DIR}"
                 "${CMAKE_BINARY_DIR}/python/gobot"
+        COMMAND ${CMAKE_COMMAND} -E copy_directory
+                "${GOBOT_PYTHON_CLI_PACKAGE_DIR}"
+                "${CMAKE_BINARY_DIR}/python/gobot_cli"
         COMMENT "Copying Gobot Python package files"
 )
 add_dependencies(gobot_python gobot_python_package)
@@ -451,6 +492,12 @@ install(DIRECTORY "${GOBOT_PYTHON_PACKAGE_DIR}/"
         PATTERN "*.py"
         PATTERN "*.pyi"
         PATTERN "py.typed")
+install(DIRECTORY "${GOBOT_PYTHON_CLI_PACKAGE_DIR}/"
+        DESTINATION "gobot_cli" COMPONENT python
+        FILES_MATCHING
+        PATTERN "__pycache__" EXCLUDE
+        PATTERN "*.pyc" EXCLUDE
+        PATTERN "*.py")
 if(GOB_BUILD_MUJOCO AND GOBOT_MUJOCO_TARGET)
     install(FILES "$<TARGET_FILE:${GOBOT_MUJOCO_TARGET}>" DESTINATION "gobot" COMPONENT python)
 endif()
@@ -550,7 +597,9 @@ add_executable(gobot_editor
 )
 add_dependencies(gobot_editor gobot_editor_runtime)
 target_compile_definitions(gobot_editor PRIVATE
-        GOBOT_DEFAULT_PYTHON_LIBRARY="${GOBOT_PYTHON_LIBRARY}")
+        GOBOT_DEFAULT_PYTHON_LIBRARY="${GOBOT_PYTHON_LIBRARY}"
+        GOBOT_DEFAULT_PYTHON_VERSION_MAJOR=${Python3_VERSION_MAJOR}
+        GOBOT_DEFAULT_PYTHON_VERSION_MINOR=${Python3_VERSION_MINOR})
 target_link_libraries(gobot_editor PRIVATE
         ${CMAKE_DL_LIBS})
 set_target_properties(gobot_editor

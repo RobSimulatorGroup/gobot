@@ -39,7 +39,7 @@ Repository = "https://github.com/RobSimulatorGroup/gobot"
 Issues = "https://github.com/RobSimulatorGroup/gobot/issues"
 
 [project.scripts]
-gobot_editor = "gobot.cli:editor"
+gobot_editor = "gobot_cli.editor:editor"
 
 [[tool.uv.index]]
 name = "pytorch-cu128"
@@ -54,7 +54,7 @@ torch = [
 [tool.scikit-build]
 cmake.build-type = "Release"
 build-dir = "build/{wheel_tag}"
-wheel.packages = ["python/gobot"]
+wheel.packages = ["python/gobot", "python/gobot_cli"]
 
 [tool.scikit-build.install]
 components = ["python"]
