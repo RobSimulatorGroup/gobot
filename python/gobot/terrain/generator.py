@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass, field
 import colorsys
-from typing import Literal
+from typing import Any, Literal
 
 import numpy as np
 
@@ -49,7 +49,7 @@ _PLATFORM_COLOR: Color4 = (0.44, 0.46, 0.42, 1.0)
 class SubTerrainCfg:
     kind: TerrainKind
     proportion: float = 1.0
-    kwargs: dict[str, float | int | bool] = field(default_factory=dict)
+    kwargs: dict[str, Any] = field(default_factory=dict)
 
 
 @dataclass(slots=True)
@@ -61,6 +61,8 @@ class TerrainGeneratorCfg:
     seed: int | None = None
     curriculum: bool = False
     difficulty_range: Vector2 = (0.0, 1.0)
+    origin_row: int | None = None
+    origin_sub_terrain: str | None = None
     sub_terrains: dict[str, SubTerrainCfg] = field(default_factory=dict)
     horizontal_scale: float = 0.1
     base_thickness: float = 0.1
@@ -110,20 +112,22 @@ def pyramid_stairs(
     *,
     proportion: float = 1.0,
     step_height: float = 0.08,
+    step_height_range: Vector2 | None = None,
     step_width: float = 0.35,
     platform_width: float = 1.0,
+    border_width: float = 0.0,
     inverted: bool = False,
 ) -> SubTerrainCfg:
-    return SubTerrainCfg(
-        "pyramid_stairs",
-        proportion,
-        {
-            "step_height": step_height,
-            "step_width": step_width,
-            "platform_width": platform_width,
-            "inverted": inverted,
-        },
-    )
+    kwargs: dict[str, Any] = {
+        "step_height": step_height,
+        "step_width": step_width,
+        "platform_width": platform_width,
+        "border_width": border_width,
+        "inverted": inverted,
+    }
+    if step_height_range is not None:
+        kwargs["step_height_range"] = step_height_range
+    return SubTerrainCfg("pyramid_stairs", proportion, kwargs)
 
 
 def pyramid_stairs_inv(**kwargs) -> SubTerrainCfg:
@@ -169,14 +173,20 @@ def hf_pyramid_slope(
     *,
     proportion: float = 1.0,
     slope: float = 0.65,
+    slope_range: Vector2 | None = None,
     platform_width: float = 1.0,
+    border_width: float = 0.0,
     inverted: bool = False,
 ) -> SubTerrainCfg:
-    return SubTerrainCfg(
-        "hf_pyramid_slope",
-        proportion,
-        {"slope": slope, "platform_width": platform_width, "inverted": inverted},
-    )
+    kwargs: dict[str, Any] = {
+        "slope": slope,
+        "platform_width": platform_width,
+        "border_width": border_width,
+        "inverted": inverted,
+    }
+    if slope_range is not None:
+        kwargs["slope_range"] = slope_range
+    return SubTerrainCfg("hf_pyramid_slope", proportion, kwargs)
 
 
 def hf_pyramid_slope_inv(**kwargs) -> SubTerrainCfg:
@@ -189,7 +199,9 @@ def random_rough(
     proportion: float = 1.0,
     noise_range: Vector2 = (-0.05, 0.05),
     noise_step: float = 0.01,
-    downsampled_scale: float = 0.3,
+    downsampled_scale: float | None = 0.3,
+    border_width: float = 0.0,
+    scale_by_difficulty: bool = True,
 ) -> SubTerrainCfg:
     return SubTerrainCfg(
         "random_rough",
@@ -199,6 +211,8 @@ def random_rough(
             "noise_max": noise_range[1],
             "noise_step": noise_step,
             "downsampled_scale": downsampled_scale,
+            "border_width": border_width,
+            "scale_by_difficulty": scale_by_difficulty,
         },
     )
 
@@ -207,9 +221,18 @@ def wave_terrain(
     *,
     proportion: float = 1.0,
     amplitude: float = 0.08,
+    amplitude_range: Vector2 | None = None,
     num_waves: float = 2.0,
+    border_width: float = 0.0,
 ) -> SubTerrainCfg:
-    return SubTerrainCfg("wave", proportion, {"amplitude": amplitude, "num_waves": num_waves})
+    kwargs: dict[str, Any] = {
+        "amplitude": amplitude,
+        "num_waves": num_waves,
+        "border_width": border_width,
+    }
+    if amplitude_range is not None:
+        kwargs["amplitude_range"] = amplitude_range
+    return SubTerrainCfg("wave", proportion, kwargs)
 
 
 def wave(**kwargs) -> SubTerrainCfg:
@@ -391,20 +414,50 @@ def radial_pit(
 
 
 def go1_training_terrains() -> dict[str, SubTerrainCfg]:
-    """Go1-sized rough terrain presets.
-
-    These keep varied visual terrain while capping obstacles to heights a
-    small quadruped can plausibly step over during early locomotion training.
-    """
+    """Go1 rough terrain presets mirroring mjlab ``ROUGH_TERRAINS_CFG``."""
 
     return {
         "flat": flat(proportion=0.2),
-        "pyramid_stairs": pyramid_stairs(proportion=0.2, step_height=0.10, step_width=0.30, platform_width=3.0),
-        "pyramid_stairs_inv": pyramid_stairs_inv(proportion=0.2, step_height=0.10, step_width=0.30, platform_width=3.0),
-        "hf_pyramid_slope": hf_pyramid_slope(proportion=0.1, slope=0.5, platform_width=2.0),
-        "hf_pyramid_slope_inv": hf_pyramid_slope_inv(proportion=0.1, slope=0.5, platform_width=2.0),
-        "random_rough": random_rough(proportion=0.1, noise_range=(0.02, 0.10), noise_step=0.02, downsampled_scale=0.30),
-        "wave_terrain": wave_terrain(proportion=0.1, amplitude=0.10, num_waves=4.0),
+        "pyramid_stairs": pyramid_stairs(
+            proportion=0.2,
+            step_height_range=(0.0, 0.1),
+            step_width=0.30,
+            platform_width=3.0,
+            border_width=1.0,
+        ),
+        "pyramid_stairs_inv": pyramid_stairs_inv(
+            proportion=0.2,
+            step_height_range=(0.0, 0.1),
+            step_width=0.30,
+            platform_width=3.0,
+            border_width=1.0,
+        ),
+        "hf_pyramid_slope": hf_pyramid_slope(
+            proportion=0.1,
+            slope_range=(0.0, 1.0),
+            platform_width=2.0,
+            border_width=0.25,
+        ),
+        "hf_pyramid_slope_inv": hf_pyramid_slope_inv(
+            proportion=0.1,
+            slope_range=(0.0, 1.0),
+            platform_width=2.0,
+            border_width=0.25,
+        ),
+        "random_rough": random_rough(
+            proportion=0.1,
+            noise_range=(0.02, 0.10),
+            noise_step=0.02,
+            downsampled_scale=None,
+            border_width=0.25,
+            scale_by_difficulty=False,
+        ),
+        "wave_terrain": wave_terrain(
+            proportion=0.1,
+            amplitude_range=(0.0, 0.2),
+            num_waves=4.0,
+            border_width=0.25,
+        ),
     }
 
 
@@ -418,8 +471,10 @@ def go1_rough_terrain_cfg(*, seed: int = 11, curriculum: bool = True) -> Terrain
         num_cols=20,
         seed=seed,
         curriculum=curriculum,
+        origin_row=5,
+        origin_sub_terrain="flat",
         sub_terrains=go1_training_terrains(),
-        horizontal_scale=0.2,
+        horizontal_scale=0.1,
         color_mode=_core.TerrainColorMode.Palette,
     )
 
@@ -452,25 +507,42 @@ def create_terrain_node(cfg: TerrainGeneratorCfg, name: str = "terrain") -> _cor
     terrain.height_range_max = cfg.height_range_max
     terrains = cfg.sub_terrains or {"flat": flat()}
     choices = _normalized_choices(terrains)
-    curriculum_choices = list(terrains.values()) or [flat()]
+    curriculum_items = list(terrains.items()) or [("flat", flat())]
+    curriculum_choices = _ordered_curriculum_choices(curriculum_items, cfg)
     rng = np.random.default_rng(cfg.seed)
     origins: list[Vector3] = []
 
     column_count = len(curriculum_choices) if cfg.curriculum else max(cfg.num_cols, 0)
-    total_x = cfg.num_rows * cfg.size[0] + 2.0 * cfg.border_width
-    total_y = column_count * cfg.size[1] + 2.0 * cfg.border_width
-    origin_x = -total_x * 0.5 + cfg.border_width + cfg.size[0] * 0.5
-    origin_y = -total_y * 0.5 + cfg.border_width + cfg.size[1] * 0.5
+    patch_span_x = max(cfg.num_rows, 0) * cfg.size[0]
+    patch_span_y = column_count * cfg.size[1]
+    total_x = patch_span_x + 2.0 * cfg.border_width
+    total_y = patch_span_y + 2.0 * cfg.border_width
+
+    if cfg.origin_row is not None and cfg.num_rows > 0:
+        origin_x = -float(np.clip(cfg.origin_row, 0, cfg.num_rows - 1)) * cfg.size[0]
+    else:
+        origin_x = -patch_span_x * 0.5 + cfg.size[0] * 0.5
+    if cfg.origin_sub_terrain and cfg.curriculum and column_count > 0:
+        origin_y = -float(column_count // 2) * cfg.size[1]
+    else:
+        origin_y = -patch_span_y * 0.5 + cfg.size[1] * 0.5
+
+    patch_min_x = origin_x - cfg.size[0] * 0.5
+    patch_max_x = origin_x + (max(cfg.num_rows, 1) - 1) * cfg.size[0] + cfg.size[0] * 0.5
+    patch_min_y = origin_y - cfg.size[1] * 0.5
+    patch_max_y = origin_y + (max(column_count, 1) - 1) * cfg.size[1] + cfg.size[1] * 0.5
+    terrain_center = ((patch_min_x + patch_max_x) * 0.5, (patch_min_y + patch_max_y) * 0.5, -0.55)
 
     if cfg.border_width > 0.0:
-        terrain.add_box((0.0, 0.0, -0.55), (total_x, total_y, 0.9), color=darken_rgba(_get_platform_color(), 0.55))
+        terrain.add_box(terrain_center, (total_x, total_y, 0.9), color=darken_rgba(_get_platform_color(), 0.55))
 
     for row in range(max(cfg.num_rows, 0)):
         for col in range(column_count):
             patch_center = (origin_x + row * cfg.size[0], origin_y + col * cfg.size[1], 0.0)
             if cfg.curriculum:
-                denom = max(cfg.num_rows - 1, 1)
-                difficulty = cfg.difficulty_range[0] + (cfg.difficulty_range[1] - cfg.difficulty_range[0]) * (row / denom)
+                lower, upper = cfg.difficulty_range
+                row_fraction = (row + float(rng.uniform())) / max(cfg.num_rows, 1)
+                difficulty = lower + (upper - lower) * row_fraction
                 sub_cfg = curriculum_choices[col % len(curriculum_choices)]
             else:
                 difficulty = float(rng.uniform(cfg.difficulty_range[0], cfg.difficulty_range[1]))
@@ -479,6 +551,27 @@ def create_terrain_node(cfg: TerrainGeneratorCfg, name: str = "terrain") -> _cor
 
     terrain.spawn_origins = origins
     return terrain
+
+
+def _ordered_curriculum_choices(
+    items: list[tuple[str, SubTerrainCfg]],
+    cfg: TerrainGeneratorCfg,
+) -> list[SubTerrainCfg]:
+    if not items:
+        return [flat()]
+    if not cfg.curriculum or not cfg.origin_sub_terrain:
+        return [sub_cfg for _, sub_cfg in items]
+
+    origin_index = next(
+        (index for index, (name, _) in enumerate(items) if name == cfg.origin_sub_terrain),
+        None,
+    )
+    if origin_index is None:
+        return [sub_cfg for _, sub_cfg in items]
+
+    target_index = len(items) // 2
+    shift = target_index - origin_index
+    return [items[(column - shift) % len(items)][1] for column in range(len(items))]
 
 
 def _normalized_choices(sub_terrains: dict[str, SubTerrainCfg]) -> list[SubTerrainCfg]:
@@ -587,16 +680,19 @@ def _add_box_top(terrain: _core.Terrain3D, x: float, y: float, height: float, sx
 
 def _add_pyramid_stairs(terrain: _core.Terrain3D, cfg: TerrainGeneratorCfg, sub_cfg: SubTerrainCfg, center: Vector3, difficulty: float) -> float:
     step_width = float(sub_cfg.kwargs.get("step_width", 0.35))
-    step_height = float(sub_cfg.kwargs.get("step_height", 0.08)) * (0.5 + difficulty)
+    step_height = _difficulty_value(sub_cfg.kwargs, "step_height", "step_height_range", difficulty, 0.08)
     platform_width = float(sub_cfg.kwargs.get("platform_width", 1.0))
+    border_width = max(0.0, float(sub_cfg.kwargs.get("border_width", 0.0)))
     inverted = bool(sub_cfg.kwargs.get("inverted", False))
     if inverted:
-        return _add_inverted_pyramid_stairs(terrain, cfg, step_width, step_height, platform_width, center)
+        return _add_inverted_pyramid_stairs(terrain, cfg, step_width, step_height, platform_width, border_width, center)
 
-    half_x = cfg.size[0] * 0.5
-    half_y = cfg.size[1] * 0.5
+    half_x = max(1.0e-6, (cfg.size[0] - 2.0 * border_width) * 0.5)
+    half_y = max(1.0e-6, (cfg.size[1] - 2.0 * border_width) * 0.5)
     layer = 0
     extrema = 0.0
+    if border_width > 0.0:
+        _add_flat(terrain, cfg, center)
     while half_x > platform_width * 0.5 and half_y > platform_width * 0.5:
         height = step_height * layer * (-1.0 if inverted else 1.0)
         shade = 0.55 + 0.45 * min(layer / 8.0, 1.0)
@@ -622,13 +718,17 @@ def _add_inverted_pyramid_stairs(
     step_width: float,
     step_height: float,
     platform_width: float,
+    border_width: float,
     center: Vector3,
 ) -> float:
-    half_x = cfg.size[0] * 0.5
-    half_y = cfg.size[1] * 0.5
+    half_x = max(1.0e-6, (cfg.size[0] - 2.0 * border_width) * 0.5)
+    half_y = max(1.0e-6, (cfg.size[1] - 2.0 * border_width) * 0.5)
     target_half = platform_width * 0.5
     layer = 0
     min_height = 0.0
+
+    if border_width > 0.0:
+        _add_flat(terrain, cfg, center)
 
     while half_x > target_half and half_y > target_half:
         inner_x = max(half_x - step_width, target_half)
@@ -893,31 +993,49 @@ def _heightfield(cfg: TerrainGeneratorCfg, sub_cfg: SubTerrainCfg, difficulty: f
     x = np.linspace(-cfg.size[0] * 0.5, cfg.size[0] * 0.5, cols)
     y = np.linspace(-cfg.size[1] * 0.5, cfg.size[1] * 0.5, rows)
     xx, yy = np.meshgrid(x, y)
+    border_mask = _heightfield_border_mask(cfg, sub_cfg, rows, cols)
 
     if sub_cfg.kind == "hf_pyramid_slope":
-        slope = float(sub_cfg.kwargs.get("slope", 0.35)) * (0.5 + difficulty)
+        slope = _difficulty_value(sub_cfg.kwargs, "slope", "slope_range", difficulty, 0.35)
         platform_width = float(sub_cfg.kwargs.get("platform_width", 1.0))
-        half_extent = min(cfg.size[0], cfg.size[1]) * 0.5
+        border_width = max(0.0, float(sub_cfg.kwargs.get("border_width", 0.0)))
+        half_extent = max(1.0e-6, min(cfg.size[0], cfg.size[1]) * 0.5 - border_width)
         edge_distance = np.maximum(half_extent - np.maximum(np.abs(xx), np.abs(yy)), 0.0)
         plateau_distance = max(half_extent - platform_width * 0.5, 0.0)
         heights = np.minimum(edge_distance, plateau_distance) * slope
+        heights[border_mask] = 0.0
         return -heights if bool(sub_cfg.kwargs.get("inverted", False)) else heights
 
     if sub_cfg.kind == "random_rough":
-        noise_min = float(sub_cfg.kwargs.get("noise_min", -0.05)) * (0.5 + difficulty)
-        noise_max = float(sub_cfg.kwargs.get("noise_max", 0.05)) * (0.5 + difficulty)
+        difficulty_scale = 0.5 + difficulty if bool(sub_cfg.kwargs.get("scale_by_difficulty", True)) else 1.0
+        noise_min = float(sub_cfg.kwargs.get("noise_min", -0.05)) * difficulty_scale
+        noise_max = float(sub_cfg.kwargs.get("noise_max", 0.05)) * difficulty_scale
         noise_step = max(float(sub_cfg.kwargs.get("noise_step", 0.01)), 1.0e-6)
-        scale = max(float(sub_cfg.kwargs.get("downsampled_scale", 0.3)), cfg.horizontal_scale)
+        downsampled_scale = sub_cfg.kwargs.get("downsampled_scale")
+        scale = cfg.horizontal_scale if downsampled_scale is None else max(float(downsampled_scale), cfg.horizontal_scale)
         coarse_rows = max(2, int(round(cfg.size[1] / scale)) + 1)
         coarse_cols = max(2, int(round(cfg.size[0] / scale)) + 1)
         coarse = rng.uniform(noise_min, noise_max, size=(coarse_rows, coarse_cols))
         heights = _resize(coarse, rows, cols)
-        return np.round(heights / noise_step) * noise_step
+        heights = np.round(heights / noise_step) * noise_step
+        heights[border_mask] = 0.0
+        return heights
 
     if sub_cfg.kind == "wave":
-        amplitude = float(sub_cfg.kwargs.get("amplitude", 0.08)) * (0.5 + difficulty)
+        amplitude = _difficulty_value(sub_cfg.kwargs, "amplitude", "amplitude_range", difficulty, 0.08)
         num_waves = float(sub_cfg.kwargs.get("num_waves", 2.0))
-        return amplitude * (np.sin(num_waves * np.pi * xx / cfg.size[0]) + np.cos(num_waves * np.pi * yy / cfg.size[1]))
+        if "amplitude_range" in sub_cfg.kwargs:
+            heights = 0.5 * amplitude * (
+                np.sin(2.0 * num_waves * np.pi * xx / cfg.size[0])
+                + np.cos(2.0 * num_waves * np.pi * yy / cfg.size[1])
+            )
+        else:
+            heights = amplitude * (
+                np.sin(num_waves * np.pi * xx / cfg.size[0])
+                + np.cos(num_waves * np.pi * yy / cfg.size[1])
+            )
+        heights[border_mask] = 0.0
+        return heights
 
     if sub_cfg.kind == "perlin_noise":
         amplitude = float(sub_cfg.kwargs.get("amplitude", 0.08)) * (0.5 + difficulty)
@@ -926,6 +1044,41 @@ def _heightfield(cfg: TerrainGeneratorCfg, sub_cfg: SubTerrainCfg, difficulty: f
         return amplitude * _value_noise(rows, cols, frequency, octaves, rng)
 
     return np.zeros((rows, cols), dtype=float)
+
+
+def _difficulty_value(
+    kwargs: dict[str, Any],
+    value_key: str,
+    range_key: str,
+    difficulty: float,
+    default: float,
+) -> float:
+    value_range = kwargs.get(range_key)
+    if value_range is not None:
+        lower, upper = value_range
+        return float(lower) + float(difficulty) * (float(upper) - float(lower))
+    return float(kwargs.get(value_key, default)) * (0.5 + difficulty)
+
+
+def _heightfield_border_mask(
+    cfg: TerrainGeneratorCfg,
+    sub_cfg: SubTerrainCfg,
+    rows: int,
+    cols: int,
+) -> np.ndarray:
+    border_width = max(0.0, float(sub_cfg.kwargs.get("border_width", 0.0)))
+    if border_width <= 0.0:
+        return np.zeros((rows, cols), dtype=bool)
+    border_rows = min(rows // 2, int(border_width / max(cfg.horizontal_scale, 1.0e-6)))
+    border_cols = min(cols // 2, int(border_width / max(cfg.horizontal_scale, 1.0e-6)))
+    mask = np.zeros((rows, cols), dtype=bool)
+    if border_rows > 0:
+        mask[:border_rows, :] = True
+        mask[-border_rows:, :] = True
+    if border_cols > 0:
+        mask[:, :border_cols] = True
+        mask[:, -border_cols:] = True
+    return mask
 
 
 def _heightfield_shape(cfg: TerrainGeneratorCfg) -> tuple[int, int]:

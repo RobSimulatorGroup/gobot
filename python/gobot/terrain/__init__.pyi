@@ -1,4 +1,4 @@
-from typing import Literal
+from typing import Any, Literal
 
 from .._core import TerrainColorMode
 
@@ -28,7 +28,7 @@ TerrainKind = Literal[
 class SubTerrainCfg:
     kind: TerrainKind
     proportion: float
-    kwargs: dict[str, float | int | bool]
+    kwargs: dict[str, Any]
 
 class TerrainGeneratorCfg:
     size: Vector2
@@ -38,6 +38,8 @@ class TerrainGeneratorCfg:
     seed: int | None
     curriculum: bool
     difficulty_range: Vector2
+    origin_row: int | None
+    origin_sub_terrain: str | None
     sub_terrains: dict[str, SubTerrainCfg]
     horizontal_scale: float
     base_thickness: float
@@ -53,8 +55,10 @@ def pyramid_stairs(
     *,
     proportion: float = 1.0,
     step_height: float = 0.08,
+    step_height_range: Vector2 | None = None,
     step_width: float = 0.35,
     platform_width: float = 1.0,
+    border_width: float = 0.0,
     inverted: bool = False,
 ) -> SubTerrainCfg: ...
 def random_grid(
@@ -68,7 +72,9 @@ def hf_pyramid_slope(
     *,
     proportion: float = 1.0,
     slope: float = 0.65,
+    slope_range: Vector2 | None = None,
     platform_width: float = 1.0,
+    border_width: float = 0.0,
     inverted: bool = False,
 ) -> SubTerrainCfg: ...
 def random_rough(
@@ -76,13 +82,17 @@ def random_rough(
     proportion: float = 1.0,
     noise_range: Vector2 = (-0.05, 0.05),
     noise_step: float = 0.01,
-    downsampled_scale: float = 0.3,
+    downsampled_scale: float | None = 0.3,
+    border_width: float = 0.0,
+    scale_by_difficulty: bool = True,
 ) -> SubTerrainCfg: ...
 def wave(
     *,
     proportion: float = 1.0,
     amplitude: float = 0.08,
+    amplitude_range: Vector2 | None = None,
     num_waves: float = 2.0,
+    border_width: float = 0.0,
 ) -> SubTerrainCfg: ...
 def perlin_noise(
     *,
@@ -97,7 +107,9 @@ def wave_terrain(
     *,
     proportion: float = 1.0,
     amplitude: float = 0.08,
+    amplitude_range: Vector2 | None = None,
     num_waves: float = 2.0,
+    border_width: float = 0.0,
 ) -> SubTerrainCfg: ...
 def discrete_obstacles(**kwargs) -> SubTerrainCfg: ...
 def box_random_grid(**kwargs) -> SubTerrainCfg: ...

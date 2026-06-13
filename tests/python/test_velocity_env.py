@@ -597,7 +597,7 @@ def _curriculum_env(seed: int):
         ],
         dtype=np.float64,
     )
-    env._center_spawn_index = 0
+    env._warmup_spawn_index = 0
     env._spawn_levels = np.asarray([0.0, 0.25, 0.5, 1.0], dtype=np.float32)
     env._spawn_order = np.arange(4, dtype=np.int64)
     env._terrain_curriculum_limits = np.zeros(1, dtype=np.float32)

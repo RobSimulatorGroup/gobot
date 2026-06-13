@@ -159,7 +159,7 @@ class Go1VelocityEnv:
         self.context.set_project_path(str(self.project_path))
         self.context.load_scene(self.cfg_obj.scene_path)
         self._spawn_origins = self._load_spawn_origins()
-        self._center_spawn_index = int(np.argmin(np.linalg.norm(self._spawn_origins[:, :2], axis=1)))
+        self._warmup_spawn_index = int(np.argmin(np.linalg.norm(self._spawn_origins[:, :2], axis=1)))
         self._terrain_sampler = TerrainSampler(self.project_path / self.cfg_obj.terrain_scene_path)
         self._spawn_difficulties = self._spawn_difficulty_scores()
         self._spawn_order = np.argsort(self._spawn_difficulties, kind="stable")
@@ -504,14 +504,14 @@ class Go1VelocityEnv:
             return int(self._rng.integers(0, self._spawn_origins.shape[0]))
         warmup_progress = 0.10
         if self._curriculum_progress < warmup_progress and self._terrain_curriculum_limits[env_id] <= 0.0:
-            return self._center_spawn_index
+            return self._warmup_spawn_index
         difficulty_progress = (self._curriculum_progress - warmup_progress) / max(1.0 - warmup_progress, 1.0e-6)
         allowed_level = max(float(np.clip(difficulty_progress, 0.0, 1.0)), float(self._terrain_curriculum_limits[env_id]))
         candidates = np.flatnonzero(self._spawn_levels <= allowed_level + 1.0e-6)
         if candidates.size == 0:
             candidates = self._spawn_order[:1]
-        if self._center_spawn_index not in candidates:
-            candidates = np.concatenate([candidates, np.asarray([self._center_spawn_index], dtype=np.int64)])
+        if self._warmup_spawn_index not in candidates:
+            candidates = np.concatenate([candidates, np.asarray([self._warmup_spawn_index], dtype=np.int64)])
         return int(candidates[int(self._rng.integers(0, len(candidates)))])
 
     def _update_curriculum_progress(self) -> None:

@@ -11,7 +11,9 @@ DEFAULT_POLICY_PATH = "res://policies/go1.onnx2"
 TORCH_POLICY_PATH = "res://policies/go1.pt"
 PRINT_EVERY_TICKS = 240
 FIXED_TIME_STEP = 0.002
-RESET_BASE_POSITION = [0.0, 0.0, 0.35]
+RESET_BASE_CLEARANCE = 0.32
+RESET_BASE_POSITION = [0.0, 0.0, RESET_BASE_CLEARANCE]
+ROBOT_ROOT_TO_BASE_Z = 0.4449999928474426
 COMMAND = [
     float(os.environ.get("GOBOT_GO1_VX", "0.0")),
     float(os.environ.get("GOBOT_GO1_VY", "0.0")),
@@ -415,6 +417,8 @@ class Script(gobot.NodeScript):
         )
         self.robot = self._find_robot()
         self.joints = [self._find_joint(name) for name in JOINT_NAMES]
+        self.reset_base_position = list(RESET_BASE_POSITION)
+        self._set_robot_editor_transform(self.reset_base_position)
         for joint in self.joints:
             joint.drive_mode = gobot.JointDriveMode.Position
             joint.drive_stiffness = KP
@@ -485,6 +489,7 @@ class Script(gobot.NodeScript):
         self.command = list(COMMAND)
         self.last_action = [0.0] * len(JOINT_NAMES)
         gobot.clear_debug_arrows()
+        self._set_robot_editor_transform(self.reset_base_position)
 
     def pause(self):
         self.playing = False
@@ -554,7 +559,7 @@ class Script(gobot.NodeScript):
             reset_link_state(
                 self.robot.name,
                 BASE_LINK,
-                RESET_BASE_POSITION,
+                self.reset_base_position,
                 [1.0, 0.0, 0.0, 0.0],
                 [0.0, 0.0, 0.0],
                 [0.0, 0.0, 0.0],
@@ -566,6 +571,15 @@ class Script(gobot.NodeScript):
             self.context.set_joint_position_target(self.robot.name, joint_name, DEFAULT_POS[index])
         self.world_controls_ready = True
         return True
+
+    def _set_robot_editor_transform(self, position):
+        set_transform = getattr(self.robot, "set_transform", None)
+        if set_transform is None:
+            return
+        set_transform(
+            [float(position[0]), float(position[1]), float(position[2]) - ROBOT_ROOT_TO_BASE_Z],
+            [1.0, 0.0, 0.0, 0.0],
+        )
 
     def _update_keyboard_command(self, delta):
         input_state = getattr(self.context, "input", None)
