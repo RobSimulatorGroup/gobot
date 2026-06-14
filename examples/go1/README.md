@@ -10,8 +10,8 @@ This example keeps the robot project self-contained:
 - `train/go1_velocity_env.py` contains the Go1 rsl_rl vector environment.
 - `train/go1_velocity_cfg.py` contains Go1 joints, rewards, PPO, command, and terrain curriculum settings.
 - `scripts/go1.py` is attached to the `go1_scene.jscn` root and plays a trained policy in `gobot_editor`.
-- `policies/go1.onnx` is the default lightweight playback policy.
-- `policies/go1.pt` is the training checkpoint fallback for environments with `gobot[train]`.
+- `policies/go1.pt` is the default mjlab-derived rough-terrain playback checkpoint.
+- `policies/go1.onnx` is the optional lightweight playback policy.
 - `tools/export_policy_onnx.py` converts `policies/go1.pt` to `policies/go1.onnx`.
 - `project.gobot` sets `go1_scene.jscn` as the project main scene.
 
@@ -81,7 +81,32 @@ uv run --extra train python examples/go1/tools/export_policy_onnx.py \
   --output examples/go1/policies/go1.onnx
 ```
 
-The default Gobot install can play ONNX policies. Install `gobot[train]` only
-when training or directly loading `.pt` checkpoints.
+The default Go1 playback now loads `policies/go1.pt`, so install/use
+`gobot[train]` when opening the project with the shipped Torch checkpoint. Set
+`GOBOT_GO1_POLICY=res://policies/go1.onnx` if you want ONNX-only playback.
+
+Play the mjlab-derived Go1 `.pt` checkpoint in the editor with keyboard velocity
+commands:
+
+```bash
+cd /home/wqq/gobot
+uv run --extra train gobot_editor --path examples/go1
+```
+
+Click the 3D viewer, then use `W/S` for forward/backward, `Q/E` for strafe,
+`A/D` for yaw, `Space` to stop, and `R` to reset. The keyboard command limits
+default to the mjlab Go1 rough task ranges: `vx=1.0`, `vy=1.0`, `yaw=0.5`.
+Playback defaults to `240Hz` physics, `50Hz` policy updates,
+Go1-specific hip/thigh/calf PD gains,
+and `trunk` reset height `0.278m`. Override with `GOBOT_GO1_PHYSICS_HZ`,
+`GOBOT_GO1_POLICY_HZ`, `GOBOT_GO1_RESET_BASE_Z`, or per-joint gain variables
+such as `GOBOT_GO1_HIP_KP` when comparing variants. Sensor debug rays are off
+by default for editor FPS; set `GOBOT_GO1_DEBUG_VIZ=mjlab` to draw the mjlab-like
+terrain/foot scan and twist/upright debug arrows, or `GOBOT_GO1_SENSOR_DEBUG=1`
+for only the Go1 scan sensors. Set `GOBOT_GO1_SENSOR_DEBUG_ALL=1` to include all
+sensors.
+For `GOBOT_GO1_PHYSICS_HZ=480`, 60 FPS rendering needs 8 physics ticks per
+render frame; the playback script raises `max_sub_steps` automatically so
+short render-frame spikes do not drop simulation time.
 
 Run the editor from an editable install and open the `examples/go1` project.

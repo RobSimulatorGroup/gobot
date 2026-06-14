@@ -8,6 +8,7 @@
 
 #include <algorithm>
 #include <cmath>
+#include <cstdint>
 #include <limits>
 #include <optional>
 #include <thread>
@@ -199,6 +200,10 @@ std::vector<std::string> ChannelNamesForSensorType(PhysicsSensorType type) {
     return {};
 }
 
+void SetBoxXYBounds(PhysicsTerrainBoxSnapshot* box);
+void SetHeightFieldXYBounds(PhysicsTerrainHeightFieldSnapshot* heightfield);
+void SetMeshPatchXYBounds(PhysicsTerrainMeshPatchSnapshot* mesh_patch);
+
 PhysicsSensorSnapshot CaptureSensorSnapshot(const Sensor3D* sensor,
                                             const std::string& link_name,
                                             const Affine3& global_transform) {
@@ -303,6 +308,7 @@ PhysicsTerrainSnapshot CaptureTerrainSnapshot(const Terrain3D* terrain,
         PhysicsTerrainBoxSnapshot box_snapshot;
         box_snapshot.global_transform = global_transform * local;
         box_snapshot.size = box.size;
+        SetBoxXYBounds(&box_snapshot);
         snapshot.boxes.push_back(std::move(box_snapshot));
     }
 
@@ -319,6 +325,7 @@ PhysicsTerrainSnapshot CaptureTerrainSnapshot(const Terrain3D* terrain,
         heightfield_snapshot.normalized_elevation = heightfield.normalized_elevation;
         heightfield_snapshot.base_thickness = heightfield.base_thickness;
         heightfield_snapshot.z_offset = heightfield.z_offset;
+        SetHeightFieldXYBounds(&heightfield_snapshot);
         snapshot.heightfields.push_back(std::move(heightfield_snapshot));
     }
 
@@ -336,6 +343,7 @@ PhysicsTerrainSnapshot CaptureTerrainSnapshot(const Terrain3D* terrain,
         mesh_patch_snapshot.vertices = mesh_patch.vertices;
         mesh_patch_snapshot.indices = mesh_patch.indices;
         mesh_patch_snapshot.color = mesh_patch.color;
+        SetMeshPatchXYBounds(&mesh_patch_snapshot);
         snapshot.mesh_patches.push_back(std::move(mesh_patch_snapshot));
     }
 
@@ -603,6 +611,8 @@ Vector3 ResolveRayDirection(const PhysicsSensorSnapshot& sensor_snapshot,
     return ray_direction;
 }
 
+bool IsVerticalTerrainHeightRay(const PhysicsRaycastQuery& query);
+
 struct InternalTerrainRaycastHit {
     bool hit{false};
     Vector3 point{Vector3::Zero()};
@@ -611,7 +621,94 @@ struct InternalTerrainRaycastHit {
     std::string terrain_name;
 };
 
+bool PointInXYBounds(const Vector3& point,
+                     const Vector2& xy_min,
+                     const Vector2& xy_max,
+                     RealType margin = CMP_EPSILON) {
+    return point.x() >= xy_min.x() - margin &&
+           point.x() <= xy_max.x() + margin &&
+           point.y() >= xy_min.y() - margin &&
+           point.y() <= xy_max.y() + margin;
+}
+
+void ExpandXYBounds(const Vector3& point, Vector2* xy_min, Vector2* xy_max, bool* initialized) {
+    if (xy_min == nullptr || xy_max == nullptr || initialized == nullptr) {
+        return;
+    }
+    const Vector2 xy{point.x(), point.y()};
+    if (!*initialized) {
+        *xy_min = xy;
+        *xy_max = xy;
+        *initialized = true;
+        return;
+    }
+    xy_min->x() = std::min(xy_min->x(), xy.x());
+    xy_min->y() = std::min(xy_min->y(), xy.y());
+    xy_max->x() = std::max(xy_max->x(), xy.x());
+    xy_max->y() = std::max(xy_max->y(), xy.y());
+}
+
+void SetBoxXYBounds(PhysicsTerrainBoxSnapshot* box) {
+    if (box == nullptr) {
+        return;
+    }
+    const Vector3 half = box->size.cwiseMax(Vector3::Zero()) * 0.5;
+    bool initialized = false;
+    for (int x_sign : {-1, 1}) {
+        for (int y_sign : {-1, 1}) {
+            for (int z_sign : {-1, 1}) {
+                ExpandXYBounds(box->global_transform *
+                                       Vector3(static_cast<RealType>(x_sign) * half.x(),
+                                               static_cast<RealType>(y_sign) * half.y(),
+                                               static_cast<RealType>(z_sign) * half.z()),
+                               &box->xy_min,
+                               &box->xy_max,
+                               &initialized);
+            }
+        }
+    }
+    box->has_xy_bounds = initialized;
+}
+
+void SetHeightFieldXYBounds(PhysicsTerrainHeightFieldSnapshot* heightfield) {
+    if (heightfield == nullptr) {
+        return;
+    }
+    const RealType half_x = heightfield->size.x() * 0.5;
+    const RealType half_y = heightfield->size.y() * 0.5;
+    bool initialized = false;
+    for (int x_sign : {-1, 1}) {
+        for (int y_sign : {-1, 1}) {
+            ExpandXYBounds(heightfield->global_transform *
+                                   Vector3(static_cast<RealType>(x_sign) * half_x,
+                                           static_cast<RealType>(y_sign) * half_y,
+                                           0.0),
+                           &heightfield->xy_min,
+                           &heightfield->xy_max,
+                           &initialized);
+        }
+    }
+    heightfield->has_xy_bounds = initialized;
+}
+
+void SetMeshPatchXYBounds(PhysicsTerrainMeshPatchSnapshot* mesh_patch) {
+    if (mesh_patch == nullptr) {
+        return;
+    }
+    bool initialized = false;
+    for (const Vector3& vertex : mesh_patch->vertices) {
+        ExpandXYBounds(mesh_patch->global_transform * vertex,
+                       &mesh_patch->xy_min,
+                       &mesh_patch->xy_max,
+                       &initialized);
+    }
+    mesh_patch->has_xy_bounds = initialized;
+}
+
 std::optional<RealType> QueryTerrainBoxHeight(const PhysicsTerrainBoxSnapshot& box, const Vector3& world_position) {
+    if (box.has_xy_bounds && !PointInXYBounds(world_position, box.xy_min, box.xy_max)) {
+        return std::nullopt;
+    }
     const Vector3 half = box.size.cwiseMax(Vector3::Zero()) * 0.5;
     if (half.x() <= CMP_EPSILON || half.y() <= CMP_EPSILON || half.z() <= CMP_EPSILON) {
         return std::nullopt;
@@ -631,6 +728,11 @@ std::optional<RealType> QueryTerrainBoxHeight(const PhysicsTerrainBoxSnapshot& b
 std::optional<InternalTerrainRaycastHit> RaycastTerrainBox(const PhysicsTerrainBoxSnapshot& box,
                                                            const std::string& terrain_name,
                                                            const PhysicsRaycastQuery& query) {
+    if (IsVerticalTerrainHeightRay(query) &&
+        box.has_xy_bounds &&
+        !PointInXYBounds(query.origin, box.xy_min, box.xy_max)) {
+        return std::nullopt;
+    }
     const Vector3 half = box.size.cwiseMax(Vector3::Zero()) * 0.5;
     if (half.x() <= CMP_EPSILON || half.y() <= CMP_EPSILON || half.z() <= CMP_EPSILON) {
         return std::nullopt;
@@ -695,6 +797,9 @@ std::optional<InternalTerrainRaycastHit> RaycastTerrainBox(const PhysicsTerrainB
 
 std::optional<RealType> QueryTerrainHeightFieldHeight(const PhysicsTerrainHeightFieldSnapshot& heightfield,
                                                       const Vector3& world_position) {
+    if (heightfield.has_xy_bounds && !PointInXYBounds(world_position, heightfield.xy_min, heightfield.xy_max)) {
+        return std::nullopt;
+    }
     if (heightfield.rows < 2 ||
         heightfield.cols < 2 ||
         heightfield.size.x() <= CMP_EPSILON ||
@@ -737,6 +842,9 @@ std::optional<RealType> QueryTerrainHeightFieldHeight(const PhysicsTerrainHeight
 
 std::optional<Vector3> QueryTerrainHeightFieldNormal(const PhysicsTerrainHeightFieldSnapshot& heightfield,
                                                      const Vector3& world_position) {
+    if (heightfield.has_xy_bounds && !PointInXYBounds(world_position, heightfield.xy_min, heightfield.xy_max)) {
+        return std::nullopt;
+    }
     if (heightfield.rows < 2 ||
         heightfield.cols < 2 ||
         heightfield.size.x() <= CMP_EPSILON ||
@@ -791,12 +899,44 @@ std::optional<Vector3> QueryTerrainHeightFieldNormal(const PhysicsTerrainHeightF
     return world_normal;
 }
 
+bool IsVerticalTerrainHeightRay(const PhysicsRaycastQuery& query) {
+    return std::abs(query.direction.x()) <= CMP_EPSILON &&
+           std::abs(query.direction.y()) <= CMP_EPSILON &&
+           std::abs(query.direction.z()) > CMP_EPSILON;
+}
+
+std::optional<InternalTerrainRaycastHit> RaycastTerrainHeightFieldVertical(
+        const PhysicsTerrainHeightFieldSnapshot& heightfield,
+        const std::string& terrain_name,
+        const PhysicsRaycastQuery& query) {
+    const std::optional<RealType> height = QueryTerrainHeightFieldHeight(heightfield, query.origin);
+    if (!height.has_value()) {
+        return std::nullopt;
+    }
+
+    const RealType distance = (height.value() - query.origin.z()) / query.direction.z();
+    if (distance < 0.0 || distance > query.max_distance) {
+        return std::nullopt;
+    }
+
+    InternalTerrainRaycastHit hit;
+    hit.hit = true;
+    hit.point = Vector3(query.origin.x(), query.origin.y(), height.value());
+    hit.normal = QueryTerrainHeightFieldNormal(heightfield, hit.point).value_or(Vector3::UnitZ());
+    hit.distance = distance;
+    hit.terrain_name = terrain_name;
+    return hit;
+}
+
 std::optional<InternalTerrainRaycastHit> RaycastTerrainHeightField(const PhysicsTerrainHeightFieldSnapshot& heightfield,
                                                                    const std::string& terrain_name,
                                                                    const PhysicsRaycastQuery& query) {
     const RealType direction_z = query.direction.z();
     if (std::abs(direction_z) <= CMP_EPSILON) {
         return std::nullopt;
+    }
+    if (IsVerticalTerrainHeightRay(query)) {
+        return RaycastTerrainHeightFieldVertical(heightfield, terrain_name, query);
     }
 
     std::optional<InternalTerrainRaycastHit> best;
@@ -932,6 +1072,9 @@ std::optional<InternalTerrainRaycastHit> RaycastTriangle(const Vector3& origin,
 
 std::optional<RealType> QueryTerrainMeshPatchHeight(const PhysicsTerrainMeshPatchSnapshot& mesh_patch,
                                                     const Vector3& world_position) {
+    if (mesh_patch.has_xy_bounds && !PointInXYBounds(world_position, mesh_patch.xy_min, mesh_patch.xy_max)) {
+        return std::nullopt;
+    }
     if (mesh_patch.vertices.empty() || mesh_patch.indices.size() < 3) {
         return std::nullopt;
     }
@@ -965,6 +1108,11 @@ std::optional<RealType> QueryTerrainMeshPatchHeight(const PhysicsTerrainMeshPatc
 std::optional<InternalTerrainRaycastHit> RaycastTerrainMeshPatch(const PhysicsTerrainMeshPatchSnapshot& mesh_patch,
                                                                  const std::string& terrain_name,
                                                                  const PhysicsRaycastQuery& query) {
+    if (IsVerticalTerrainHeightRay(query) &&
+        mesh_patch.has_xy_bounds &&
+        !PointInXYBounds(query.origin, mesh_patch.xy_min, mesh_patch.xy_max)) {
+        return std::nullopt;
+    }
     if (mesh_patch.vertices.empty() || mesh_patch.indices.size() < 3) {
         return std::nullopt;
     }
@@ -1379,7 +1527,7 @@ const PhysicsSceneState& PhysicsWorld::GetSceneState() const {
     return scene_state_;
 }
 
-PhysicsRaycastHit PhysicsWorld::RaycastTerrain(const PhysicsRaycastQuery& query) const {
+PhysicsRaycastHit PhysicsWorld::RaycastTerrainFallback(const PhysicsRaycastQuery& query) const {
     PhysicsRaycastHit result;
     result.origin = query.origin;
 
@@ -1434,6 +1582,16 @@ PhysicsRaycastHit PhysicsWorld::RaycastTerrain(const PhysicsRaycastQuery& query)
     return result;
 }
 
+PhysicsRaycastHit PhysicsWorld::RaycastTerrain(const PhysicsRaycastQuery& query) const {
+    return RaycastTerrainFallback(query);
+}
+
+PhysicsRaycastHit PhysicsWorld::RaycastTerrainForSensor(const PhysicsRaycastQuery& query,
+                                                        std::size_t environment_index) const {
+    GOB_UNUSED(environment_index);
+    return RaycastTerrainFallback(query);
+}
+
 bool PhysicsWorld::CaptureSceneSnapshot(const Node* scene_root) {
     scene_snapshot_ = {};
     scene_state_ = {};
@@ -1450,11 +1608,23 @@ bool PhysicsWorld::CaptureSceneSnapshot(const Node* scene_root) {
 void PhysicsWorld::UpdateRaycastSensorState(PhysicsSensorState& sensor_state,
                                             const PhysicsSensorSnapshot& sensor_snapshot,
                                             const Affine3& parent_transform,
-                                            RealType timestamp) {
+                                            RealType timestamp,
+                                            std::size_t environment_index) {
     sensor_state.global_transform = parent_transform * sensor_snapshot.local_transform;
 
     if (!IsRaycastSensorType(sensor_state.type) || !sensor_state.enabled) {
         return;
+    }
+    if (sensor_snapshot.sensor_period > 0.0 &&
+        timestamp > 0.0 &&
+        sensor_state.timestamp > 0.0) {
+        const auto current_bucket = static_cast<std::int64_t>(
+                std::floor((timestamp + CMP_EPSILON) / sensor_snapshot.sensor_period));
+        const auto previous_bucket = static_cast<std::int64_t>(
+                std::floor((sensor_state.timestamp + CMP_EPSILON) / sensor_snapshot.sensor_period));
+        if (current_bucket <= previous_bucket) {
+            return;
+        }
     }
 
     const bool reduce_values = IsTerrainHeightSensorType(sensor_state.type) &&
@@ -1471,11 +1641,11 @@ void PhysicsWorld::UpdateRaycastSensorState(PhysicsSensorState& sensor_state,
     for (std::size_t sample_index = 0; sample_index < sensor_snapshot.sample_offsets.size(); ++sample_index) {
         const Vector3 origin = sensor_state.global_transform.translation() +
                                alignment_matrix * sensor_snapshot.sample_offsets[sample_index];
-        const PhysicsRaycastHit hit = RaycastTerrain({
+        const PhysicsRaycastHit hit = RaycastTerrainForSensor({
                 origin,
                 ray_direction,
                 sensor_snapshot.max_distance
-        });
+        }, environment_index);
         const RealType value = IsTerrainHeightSensorType(sensor_state.type)
                                        ? (hit.hit ? origin.z() - hit.point.z() : sensor_snapshot.max_distance)
                                        : hit.distance;
@@ -1504,7 +1674,9 @@ void PhysicsWorld::UpdateRaycastSensorState(PhysicsSensorState& sensor_state,
     sensor_state.timestamp = timestamp;
 }
 
-void PhysicsWorld::UpdateSensorGlobalTransformsAndRaycastSensors(PhysicsSceneState& scene_state, RealType timestamp) {
+void PhysicsWorld::UpdateSensorGlobalTransformsAndRaycastSensors(PhysicsSceneState& scene_state,
+                                                                 RealType timestamp,
+                                                                 std::size_t environment_index) {
     for (std::size_t robot_index = 0; robot_index < scene_state.robots.size(); ++robot_index) {
         if (robot_index >= scene_snapshot_.robots.size()) {
             continue;
@@ -1523,7 +1695,7 @@ void PhysicsWorld::UpdateSensorGlobalTransformsAndRaycastSensors(PhysicsSceneSta
             const Affine3 link_transform = link_state != nullptr
                                                    ? link_state->global_transform
                                                    : Affine3::Identity();
-            UpdateRaycastSensorState(sensor_state, sensor_snapshot, link_transform, timestamp);
+            UpdateRaycastSensorState(sensor_state, sensor_snapshot, link_transform, timestamp, environment_index);
         }
     }
     for (std::size_t sensor_index = 0; sensor_index < scene_state.loose_sensors.size(); ++sensor_index) {
@@ -1533,7 +1705,8 @@ void PhysicsWorld::UpdateSensorGlobalTransformsAndRaycastSensors(PhysicsSceneSta
         UpdateRaycastSensorState(scene_state.loose_sensors[sensor_index],
                                  scene_snapshot_.loose_sensors[sensor_index],
                                  Affine3::Identity(),
-                                 timestamp);
+                                 timestamp,
+                                 environment_index);
     }
 }
 

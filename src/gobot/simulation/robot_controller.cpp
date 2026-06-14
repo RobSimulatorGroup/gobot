@@ -57,6 +57,32 @@ bool RobotController::SetJointPositionTarget(const std::string& joint_name, Real
     return SetJointControl(joint_name, PhysicsJointControlMode::Position, target_position);
 }
 
+bool RobotController::SetJointPositionTargets(const std::vector<std::string>& joint_names,
+                                              const std::vector<RealType>& target_positions) {
+    if (!EnsureReady()) {
+        return false;
+    }
+    if (joint_names.size() != target_positions.size()) {
+        SetLastError(fmt::format("Robot '{}' expected {} joint position target value(s), got {}.",
+                                 entity_->GetName(),
+                                 joint_names.size(),
+                                 target_positions.size()));
+        return false;
+    }
+    for (std::size_t index = 0; index < joint_names.size(); ++index) {
+        if (!world_->SetJointControl(entity_->GetName(),
+                                     joint_names[index],
+                                     PhysicsJointControlMode::Position,
+                                     target_positions[index])) {
+            SetLastError(world_->GetLastError());
+            return false;
+        }
+    }
+
+    last_error_.clear();
+    return true;
+}
+
 bool RobotController::SetJointVelocityTarget(const std::string& joint_name, RealType target_velocity) {
     return SetJointControl(joint_name, PhysicsJointControlMode::Velocity, target_velocity);
 }

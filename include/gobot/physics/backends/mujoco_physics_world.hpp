@@ -136,7 +136,13 @@ public:
 
     void ClearExternalForces() override;
 
+    PhysicsRaycastHit RaycastTerrain(const PhysicsRaycastQuery& query) const override;
+
     Diagnostics GetDiagnostics() const;
+
+protected:
+    PhysicsRaycastHit RaycastTerrainForSensor(const PhysicsRaycastQuery& query,
+                                              std::size_t environment_index) const override;
 
 private:
 #ifdef GOBOT_HAS_MUJOCO
@@ -185,6 +191,9 @@ private:
     void SyncContactsFromMuJoCo(std::size_t environment_index);
 
     void SyncSensorsFromMuJoCo(std::size_t environment_index);
+
+    PhysicsRaycastHit RaycastTerrainWithMuJoCo(const PhysicsRaycastQuery& query,
+                                               std::size_t environment_index) const;
 
     struct MuJoCoJointBinding {
         std::size_t robot_index{0};

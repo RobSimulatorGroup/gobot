@@ -14,6 +14,16 @@ namespace gobot {
 namespace {
 
 std::filesystem::path GetLogFilePath() {
+    const char* env_log_dir = std::getenv("GOBOT_LOG_DIR");
+    if (env_log_dir != nullptr && *env_log_dir != '\0') {
+        std::filesystem::path log_dir = env_log_dir;
+        std::error_code error;
+        std::filesystem::create_directories(log_dir, error);
+        if (!error) {
+            return log_dir / "gobot.log";
+        }
+    }
+
     const char* home = std::getenv("HOME");
     if (home == nullptr || *home == '\0') {
         return "gobot.log";
@@ -52,11 +62,14 @@ void Logger::Init() {
     console_sink->set_pattern("%^[%T] [%@]: %v%$");
     sink_list.push_back(console_sink);
 
-    // add rotate file sink
-    auto rotating_sink = std::make_shared<spdlog::sinks::rotating_file_sink_mt>(GetLogFilePath().string(), 1024 * 1024,
-                                                                           5, false);
-    rotating_sink->set_pattern("[%T] [%@] [%l]: %v");
-    sink_list.push_back(rotating_sink);
+    try {
+        auto rotating_sink = std::make_shared<spdlog::sinks::rotating_file_sink_mt>(
+            GetLogFilePath().string(), 1024 * 1024, 5, false);
+        rotating_sink->set_pattern("[%T] [%@] [%l]: %v");
+        sink_list.push_back(rotating_sink);
+    } catch (const spdlog::spdlog_ex& error) {
+        spdlog::warn("Gobot file logging disabled: {}", error.what());
+    }
     logger_ = std::make_shared<spdlog::logger>("GOBOT", begin(sink_list), end(sink_list));
 
     //register it if you need to access it globally
@@ -69,4 +82,3 @@ void Logger::Init() {
 
 
 }
-

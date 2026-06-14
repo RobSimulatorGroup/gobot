@@ -28,6 +28,9 @@ public:
 
     bool SetJointPositionTarget(const std::string& joint_name, RealType target_position);
 
+    bool SetJointPositionTargets(const std::vector<std::string>& joint_names,
+                                 const std::vector<RealType>& target_positions);
+
     bool SetJointVelocityTarget(const std::string& joint_name, RealType target_velocity);
 
     bool SetJointEffortTarget(const std::string& joint_name, RealType target_effort);

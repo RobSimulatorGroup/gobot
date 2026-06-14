@@ -7,6 +7,7 @@
 #include "gobot/physics/backends/null_physics_world.hpp"
 
 #include "gobot/core/registration.hpp"
+#include "gobot/log.hpp"
 
 namespace gobot {
 
@@ -20,6 +21,19 @@ bool NullPhysicsWorld::IsAvailable() const {
 
 const std::string& NullPhysicsWorld::GetLastError() const {
     return last_error_;
+}
+
+PhysicsRaycastHit NullPhysicsWorld::RaycastTerrain(const PhysicsRaycastQuery& query) const {
+    if (!reported_missing_native_raycast_.exchange(true)) {
+        LOG_WARN("Null physics backend has no native terrain raycast; using Gobot geometry fallback.");
+    }
+    return RaycastTerrainFallback(query);
+}
+
+PhysicsRaycastHit NullPhysicsWorld::RaycastTerrainForSensor(const PhysicsRaycastQuery& query,
+                                                            std::size_t environment_index) const {
+    GOB_UNUSED(environment_index);
+    return RaycastTerrain(query);
 }
 
 } // namespace gobot

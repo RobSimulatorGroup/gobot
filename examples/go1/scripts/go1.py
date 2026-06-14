@@ -7,11 +7,20 @@ import gobot
 
 ROBOT = "go1"
 BASE_LINK = "trunk"
-DEFAULT_POLICY_PATH = "res://policies/go1.onnx2"
+DEFAULT_POLICY_PATH = "res://policies/go1.pt"
 TORCH_POLICY_PATH = "res://policies/go1.pt"
-PRINT_EVERY_TICKS = 240
-FIXED_TIME_STEP = 0.002
-RESET_BASE_CLEARANCE = 0.32
+DEBUG_VIZ_MODE = os.environ.get("GOBOT_GO1_DEBUG_VIZ", "0").strip().lower()
+DEBUG_VIZ_MJLAB = DEBUG_VIZ_MODE in {"1", "true", "yes", "on", "mjlab"}
+DEBUG_VIZ_LABEL = "mjlab" if DEBUG_VIZ_MJLAB else "off"
+PHYSICS_HZ = float(os.environ.get("GOBOT_GO1_PHYSICS_HZ", "240.0"))
+FIXED_TIME_STEP = 1.0 / max(PHYSICS_HZ, 1.0)
+POLICY_HZ = float(os.environ.get("GOBOT_GO1_POLICY_HZ", "50.0"))
+SENSOR_PERIOD = 1.0 / max(POLICY_HZ, 1.0)
+MAX_SUB_STEPS = max(8, int(math.ceil(PHYSICS_HZ / 60.0)) + 2)
+PRINT_EVERY_TICKS = max(1, int(os.environ.get("GOBOT_GO1_PRINT_EVERY_TICKS", str(round(PHYSICS_HZ * 2.0)))))
+SENSOR_DEBUG = DEBUG_VIZ_MJLAB or os.environ.get("GOBOT_GO1_SENSOR_DEBUG", "0").lower() in {"1", "true", "yes", "on"}
+SENSOR_DEBUG_ALL = os.environ.get("GOBOT_GO1_SENSOR_DEBUG_ALL", "0").lower() in {"1", "true", "yes", "on"}
+RESET_BASE_CLEARANCE = float(os.environ.get("GOBOT_GO1_RESET_BASE_Z", "0.278"))
 RESET_BASE_POSITION = [0.0, 0.0, RESET_BASE_CLEARANCE]
 ROBOT_ROOT_TO_BASE_Z = 0.4449999928474426
 COMMAND = [
@@ -19,12 +28,22 @@ COMMAND = [
     float(os.environ.get("GOBOT_GO1_VY", "0.0")),
     float(os.environ.get("GOBOT_GO1_YAW", "0.0")),
 ]
-KEYBOARD_COMMAND_MAX = [0.6, 0.35, 1.2]
+KEYBOARD_COMMAND_MAX = [
+    float(os.environ.get("GOBOT_GO1_MAX_VX", "1.0")),
+    float(os.environ.get("GOBOT_GO1_MAX_VY", "1.0")),
+    float(os.environ.get("GOBOT_GO1_MAX_YAW", "0.5")),
+]
 COMMAND_SMOOTHING = 8.0
 COMMAND_ACTIVE_DEADBAND = 0.02
 DEBUG_ARROW_SCALE = 0.55
 DEBUG_ARROW_Z_OFFSET = 0.30
 DEBUG_ARROW_SEPARATION = 0.08
+MJLAB_ARROW_SCALE = 0.5
+MJLAB_ARROW_Z_OFFSET = 0.2
+UPRIGHT_ARROW_SCALE = 0.25
+UPRIGHT_ARROW_Z_OFFSET = 0.24
+UPRIGHT_ARROW_SIDE_OFFSET = 0.08
+TWIST_ARROW_SIDE_OFFSET = 0.06
 FALLEN_BASE_Z = 0.18
 FALLEN_ROLL_PITCH = 0.8
 KEYBOARD_BINDINGS = {
@@ -79,9 +98,40 @@ ACTION_SCALE = [
     0.3727530386870487,
     0.24850202579136574,
 ]
-KP = 40.0
-KD = 1.0
-DECIMATION = 10
+HIP_KP = float(os.environ.get("GOBOT_GO1_HIP_KP", "15.89524265323492"))
+HIP_KD = float(os.environ.get("GOBOT_GO1_HIP_KD", "1.0119225759919113"))
+KNEE_KP = float(os.environ.get("GOBOT_GO1_KNEE_KP", "35.764295969778566"))
+KNEE_KD = float(os.environ.get("GOBOT_GO1_KNEE_KD", "2.2768257959818003"))
+JOINT_KP = [
+    HIP_KP,
+    HIP_KP,
+    KNEE_KP,
+    HIP_KP,
+    HIP_KP,
+    KNEE_KP,
+    HIP_KP,
+    HIP_KP,
+    KNEE_KP,
+    HIP_KP,
+    HIP_KP,
+    KNEE_KP,
+]
+JOINT_KD = [
+    HIP_KD,
+    HIP_KD,
+    KNEE_KD,
+    HIP_KD,
+    HIP_KD,
+    KNEE_KD,
+    HIP_KD,
+    HIP_KD,
+    KNEE_KD,
+    HIP_KD,
+    HIP_KD,
+    KNEE_KD,
+]
+DECIMATION = max(1, int(round((1.0 / max(POLICY_HZ, 1.0)) / FIXED_TIME_STEP)))
+STATE_UPDATE_STRIDE = max(1, int(os.environ.get("GOBOT_GO1_STATE_STRIDE", str(DECIMATION))))
 TERRAIN_SCAN_GRID_SIZE = (1.6, 1.0)
 TERRAIN_SCAN_GRID_RESOLUTION = 0.1
 TERRAIN_SCAN_DIM = (
@@ -91,6 +141,13 @@ TERRAIN_SCAN_DIM = (
 )
 HEIGHT_SCAN_MAX_DISTANCE = 5.0
 TERRAIN_SCAN_SENSOR = "terrain_scan"
+FOOT_HEIGHT_SENSOR_NAMES = (
+    "FR_foot_height_scan",
+    "FL_foot_height_scan",
+    "RR_foot_height_scan",
+    "RL_foot_height_scan",
+)
+DEBUG_SENSOR_NAMES = frozenset((TERRAIN_SCAN_SENSOR, *FOOT_HEIGHT_SENSOR_NAMES))
 VELOCITY_OBS_SCHEMA_VERSION = "gobot_velocity_v1"
 POSITION_LIMITS = {
     "FR_hip_joint": (-0.863, 0.863),
@@ -235,47 +292,71 @@ class OnnxPolicy:
 class TorchPolicy:
     def __init__(self, path):
         import torch
-        from rsl_rl.models import MLPModel
-        from tensordict import TensorDict
 
         self.torch = torch
         self.device = torch.device("cpu")
         checkpoint = torch.load(path, weights_only=False, map_location=self.device)
         actor_state = checkpoint.get("actor_state_dict", {})
         self.obs_dim = _checkpoint_obs_dim(checkpoint)
+        self.action_dim = _checkpoint_action_dim(actor_state)
         _validate_checkpoint_schema(checkpoint, self.obs_dim)
-        obs = TensorDict(
-            {"policy": torch.zeros((1, self.obs_dim), dtype=torch.float32, device=self.device)},
-            batch_size=[1],
-            device=self.device,
-        )
-        self.policy = MLPModel(
-            obs,
-            {"actor": ["policy"]},
-            "actor",
-            len(JOINT_NAMES),
-            hidden_dims=[512, 256, 128],
-            activation="elu",
-            obs_normalization=_checkpoint_has_obs_normalizer(actor_state),
-            distribution_cfg={
-                "class_name": "rsl_rl.modules.GaussianDistribution",
-                "init_std": 1.0,
-                "std_type": "scalar",
-            },
-        ).to(self.device)
-        self.policy.load_state_dict(checkpoint["actor_state_dict"], strict=True)
+        self.policy = _CheckpointMlpPolicy(torch, actor_state, self.obs_dim, self.action_dim).to(self.device)
         self.policy.eval()
 
     def action(self, observation):
         with self.torch.no_grad():
-            from tensordict import TensorDict
-
             obs = self.torch.as_tensor(observation, dtype=self.torch.float32, device=self.device).reshape(1, -1)
-            obs_td = TensorDict({"policy": obs}, batch_size=[1], device=self.device)
-            output = self.policy(obs_td)
-            if isinstance(output, (tuple, list)):
-                output = output[0]
+            output = self.policy(obs)
         return output.reshape(-1).clamp(-1.0, 1.0).cpu().tolist()
+
+
+class _CheckpointMlpPolicy:
+    def __init__(self, torch, actor_state, obs_dim, action_dim):
+        self.torch = torch
+        self.module = torch.nn.Module()
+        self.module.add_module("mlp", _build_mlp(torch, _checkpoint_mlp_dims(actor_state, obs_dim, action_dim)))
+        mlp_state = {
+            key: value
+            for key, value in actor_state.items()
+            if key.startswith("mlp.")
+        }
+        if not mlp_state:
+            raise RuntimeError("Torch checkpoint actor_state_dict does not contain mlp.* weights")
+        self.module.load_state_dict(mlp_state, strict=True)
+        self.mean = _checkpoint_normalizer_tensor(torch, actor_state, "obs_normalizer._mean")
+        self.std = _checkpoint_normalizer_tensor(torch, actor_state, "obs_normalizer._std")
+        if self.std is None:
+            var = _checkpoint_normalizer_tensor(torch, actor_state, "obs_normalizer._var")
+            if var is not None:
+                self.std = torch.sqrt(torch.clamp(var, min=1.0e-12))
+        if self.mean is not None and self.std is None:
+            self.std = torch.ones_like(self.mean)
+
+    def to(self, device):
+        self.module.to(device)
+        if self.mean is not None:
+            self.mean = self.mean.to(device)
+        if self.std is not None:
+            self.std = self.std.to(device)
+        return self
+
+    def eval(self):
+        self.module.eval()
+        return self
+
+    def __call__(self, obs):
+        if self.mean is not None:
+            obs = (obs - self.mean.reshape(1, -1)) / self.std.reshape(1, -1).clamp_min(1.0e-6)
+        return self.module.mlp(obs)
+
+
+def _build_mlp(torch, dims):
+    layers = []
+    for index in range(len(dims) - 1):
+        layers.append(torch.nn.Linear(dims[index], dims[index + 1]))
+        if index < len(dims) - 2:
+            layers.append(torch.nn.ELU())
+    return torch.nn.Sequential(*layers)
 
 
 def _resolve_project_path(context, path):
@@ -317,10 +398,13 @@ def _vector_xy_norm(vector):
 def _checkpoint_obs_dim(checkpoint):
     actor_state = checkpoint.get("actor_state_dict", {})
     normalizer_mean = actor_state.get("obs_normalizer._mean")
-    if normalizer_mean is not None and len(normalizer_mean.shape) == 2:
-        return int(normalizer_mean.shape[1])
-    for value in actor_state.values():
-        if getattr(value, "ndim", 0) == 2:
+    if normalizer_mean is not None and getattr(normalizer_mean, "ndim", 0) > 0:
+        return int(normalizer_mean.reshape(-1).shape[0])
+    first_linear = actor_state.get("mlp.0.weight")
+    if first_linear is not None and getattr(first_linear, "ndim", 0) == 2:
+        return int(first_linear.shape[1])
+    for key, value in actor_state.items():
+        if key.endswith(".weight") and getattr(value, "ndim", 0) == 2:
             return int(value.shape[1])
     metadata = _checkpoint_velocity_metadata(checkpoint)
     if metadata is not None:
@@ -328,8 +412,57 @@ def _checkpoint_obs_dim(checkpoint):
     return ACTOR_OBS_SCHEMA.dim
 
 
-def _checkpoint_has_obs_normalizer(actor_state):
-    return "obs_normalizer._mean" in actor_state
+def _checkpoint_action_dim(actor_state):
+    last_weight = None
+    last_layer_index = -1
+    for key, value in actor_state.items():
+        if not key.startswith("mlp.") or not key.endswith(".weight") or getattr(value, "ndim", 0) != 2:
+            continue
+        layer_index = _checkpoint_mlp_layer_index(key)
+        if layer_index > last_layer_index:
+            last_layer_index = layer_index
+            last_weight = value
+    if last_weight is None:
+        raise RuntimeError("Torch checkpoint actor_state_dict does not contain mlp.*.weight tensors")
+    action_dim = int(last_weight.shape[0])
+    if action_dim != len(JOINT_NAMES):
+        raise RuntimeError(f"Go1 policy action dimension mismatch: checkpoint={action_dim}, playback={len(JOINT_NAMES)}")
+    return action_dim
+
+
+def _checkpoint_mlp_layer_index(key):
+    parts = key.split(".")
+    if len(parts) < 3:
+        return -1
+    try:
+        return int(parts[1])
+    except ValueError:
+        return -1
+
+
+def _checkpoint_mlp_dims(actor_state, obs_dim, action_dim):
+    weights = []
+    for key, value in actor_state.items():
+        if not key.startswith("mlp.") or not key.endswith(".weight") or getattr(value, "ndim", 0) != 2:
+            continue
+        weights.append((_checkpoint_mlp_layer_index(key), value))
+    weights.sort(key=lambda item: item[0])
+    if not weights:
+        return [int(obs_dim), int(action_dim)]
+    dims = [int(weights[0][1].shape[1])]
+    dims.extend(int(weight.shape[0]) for _, weight in weights)
+    if dims[0] != int(obs_dim):
+        raise RuntimeError(f"Go1 policy observation dimension mismatch: checkpoint={dims[0]}, playback={obs_dim}")
+    if dims[-1] != int(action_dim):
+        raise RuntimeError(f"Go1 policy action dimension mismatch: checkpoint={dims[-1]}, playback={action_dim}")
+    return dims
+
+
+def _checkpoint_normalizer_tensor(torch, actor_state, name):
+    value = actor_state.get(name)
+    if value is None:
+        return None
+    return torch.as_tensor(value, dtype=torch.float32).reshape(-1)
 
 
 def _checkpoint_velocity_metadata(checkpoint):
@@ -407,23 +540,26 @@ def _quat_yaw(q):
 class Script(gobot.NodeScript):
     def _ready(self):
         self.context.fixed_time_step = FIXED_TIME_STEP
+        if hasattr(self.context, "max_sub_steps"):
+            self.context.max_sub_steps = MAX_SUB_STEPS
         self.context.set_default_joint_gains(
             {
-                "position_stiffness": KP,
-                "velocity_damping": KD,
+                "position_stiffness": HIP_KP,
+                "velocity_damping": HIP_KD,
                 "integral_gain": 0.0,
                 "integral_limit": 0.0,
             }
         )
         self.robot = self._find_robot()
+        self._configure_sensor_debug()
         self.joints = [self._find_joint(name) for name in JOINT_NAMES]
         self.reset_base_position = list(RESET_BASE_POSITION)
         self._set_robot_editor_transform(self.reset_base_position)
-        for joint in self.joints:
+        for index, joint in enumerate(self.joints):
             joint.drive_mode = gobot.JointDriveMode.Position
-            joint.drive_stiffness = KP
-            joint.drive_damping = KD
-            joint.damping = KD
+            joint.drive_stiffness = JOINT_KP[index]
+            joint.drive_damping = JOINT_KD[index]
+            joint.damping = JOINT_KD[index]
         self.robot.mode = gobot.RobotMode.Motion
         self.policy = self._load_policy()
         self.policy_obs_dim = getattr(self.policy, "obs_dim", ACTOR_OBS_SCHEMA.dim)
@@ -435,10 +571,18 @@ class Script(gobot.NodeScript):
         self.world_controls_ready = False
         self.command = list(COMMAND)
         self.last_action = [0.0] * len(JOINT_NAMES)
+        self.last_targets = list(DEFAULT_POS)
         print(
-            "Go1 RL policy playback started. policy={} joints={} cmd=({:.2f}, {:.2f}, {:.2f}) keyboard={}".format(
+            "Go1 RL policy playback started. policy={} joints={} physics_hz={:.1f} policy_hz={:.1f} decimation={} "
+            "reset_z={:.3f} debug_viz={} sensor_debug={} cmd=({:.2f}, {:.2f}, {:.2f}) keyboard={}".format(
                 "loaded" if self.policy is not None else "missing",
                 len(self.joints),
+                PHYSICS_HZ,
+                POLICY_HZ,
+                DECIMATION,
+                RESET_BASE_CLEARANCE,
+                DEBUG_VIZ_LABEL,
+                "on" if SENSOR_DEBUG else "off",
                 self.command[0],
                 self.command[1],
                 self.command[2],
@@ -460,27 +604,30 @@ class Script(gobot.NodeScript):
 
         if self._update_keyboard_command(delta):
             return
-        if self._reset_if_fallen():
+
+        policy_tick = self.ticks % DECIMATION == 0
+        state_tick = policy_tick or self.ticks % STATE_UPDATE_STRIDE == 0
+        robot_state = self._runtime_robot_state() if state_tick else None
+        if robot_state is not None and self._reset_if_fallen(robot_state):
             return
-        observation = self._observation()
-        self._update_debug_arrows()
-        if self.ticks % DECIMATION == 0:
+
+        if policy_tick:
             action = [0.0] * len(JOINT_NAMES)
             if self.policy is not None and _command_active(self.command):
+                observation = self._observation(robot_state)
                 action = self.policy.action(observation)
             if len(action) != len(JOINT_NAMES):
                 print(f"Go1 policy produced {len(action)} actions, expected {len(JOINT_NAMES)}")
                 action = [0.0] * len(JOINT_NAMES)
             self.last_action = [float(value) for value in action]
-
-        for index, joint_name in enumerate(JOINT_NAMES):
-            lower, upper = POSITION_LIMITS[joint_name]
-            target = _clamp(DEFAULT_POS[index] + ACTION_SCALE[index] * self.last_action[index], lower, upper)
-            self.context.set_joint_position_target(self.robot.name, joint_name, target)
+            self.last_targets = self._action_targets(self.last_action)
+            self._set_joint_position_targets(self.last_targets)
+            if robot_state is not None:
+                self._update_debug_arrows(robot_state)
 
         self.ticks += 1
         if PRINT_EVERY_TICKS > 0 and self.ticks % PRINT_EVERY_TICKS == 0:
-            self._print_state(observation)
+            self._print_state(robot_state)
 
     def reset(self):
         self.ticks = 0
@@ -488,6 +635,7 @@ class Script(gobot.NodeScript):
         self.world_controls_ready = False
         self.command = list(COMMAND)
         self.last_action = [0.0] * len(JOINT_NAMES)
+        self.last_targets = list(DEFAULT_POS)
         gobot.clear_debug_arrows()
         self._set_robot_editor_transform(self.reset_base_position)
 
@@ -511,7 +659,7 @@ class Script(gobot.NodeScript):
             if os.path.exists(fallback):
                 print(
                     "Go1 ONNX policy not found at '{}'. Falling back to '{}' "
-                    "requires torch/rsl-rl-lib from gobot[train].".format(path or "<empty>", fallback)
+                    "requires torch from gobot[train].".format(path or "<empty>", fallback)
                 )
                 path = fallback
             else:
@@ -568,9 +716,28 @@ class Script(gobot.NodeScript):
             reset_joint_state = getattr(self.context, "reset_joint_state", None)
             if reset_joint_state is not None:
                 reset_joint_state(self.robot.name, joint_name, DEFAULT_POS[index], 0.0)
-            self.context.set_joint_position_target(self.robot.name, joint_name, DEFAULT_POS[index])
+        self.last_targets = list(DEFAULT_POS)
+        self._set_joint_position_targets(self.last_targets)
         self.world_controls_ready = True
         return True
+
+    def _set_joint_position_targets(self, targets):
+        set_targets = getattr(self.context, "set_joint_position_targets", None)
+        if set_targets is not None:
+            set_targets(self.robot.name, JOINT_NAMES, targets)
+            return
+        set_target = getattr(self.context, "set_joint_position_target", None)
+        if set_target is None:
+            raise RuntimeError("Gobot AppContext has no joint position target API")
+        for joint_name, target in zip(JOINT_NAMES, targets):
+            set_target(self.robot.name, joint_name, target)
+
+    def _action_targets(self, action):
+        targets = []
+        for index, joint_name in enumerate(JOINT_NAMES):
+            lower, upper = POSITION_LIMITS[joint_name]
+            targets.append(_clamp(DEFAULT_POS[index] + ACTION_SCALE[index] * float(action[index]), lower, upper))
+        return targets
 
     def _set_robot_editor_transform(self, position):
         set_transform = getattr(self.robot, "set_transform", None)
@@ -580,6 +747,27 @@ class Script(gobot.NodeScript):
             [float(position[0]), float(position[1]), float(position[2]) - ROBOT_ROOT_TO_BASE_Z],
             [1.0, 0.0, 0.0, 0.0],
         )
+
+    def _configure_sensor_debug(self):
+        for node in self._iter_nodes(self.robot):
+            if hasattr(node, "sensor_period") and getattr(node, "name", "") in DEBUG_SENSOR_NAMES:
+                node.sensor_period = SENSOR_PERIOD
+            if hasattr(node, "visualize_debug"):
+                node.visualize_debug = self._should_visualize_sensor(node)
+
+    def _should_visualize_sensor(self, node):
+        if not SENSOR_DEBUG:
+            return False
+        if SENSOR_DEBUG_ALL:
+            return True
+        return getattr(node, "name", "") in DEBUG_SENSOR_NAMES
+
+    def _iter_nodes(self, node):
+        if node is None:
+            return
+        yield node
+        for child in getattr(node, "children", []):
+            yield from self._iter_nodes(child)
 
     def _update_keyboard_command(self, delta):
         input_state = getattr(self.context, "input", None)
@@ -604,8 +792,9 @@ class Script(gobot.NodeScript):
             self.command[index] += (desired[index] - self.command[index]) * alpha
         return False
 
-    def _reset_if_fallen(self):
-        state = self._runtime_robot_state()
+    def _reset_if_fallen(self, state=None):
+        if state is None:
+            state = self._runtime_robot_state()
         if state is None:
             return False
         base = self._base_link_state(state)
@@ -626,9 +815,10 @@ class Script(gobot.NodeScript):
         self.reset()
         return True
 
-    def _print_state(self, observation):
+    def _print_state(self, state=None):
         x = y = z = 0.0
-        state = self._runtime_robot_state()
+        if state is None:
+            state = self._runtime_robot_state()
         if state is not None:
             base = self._base_link_state(state)
             position = base.get("position", [0.0, 0.0, 0.0]) if base is not None else [0.0, 0.0, 0.0]
@@ -650,8 +840,12 @@ class Script(gobot.NodeScript):
             )
         )
 
-    def _update_debug_arrows(self):
-        state = self._runtime_robot_state()
+    def _update_debug_arrows(self, state=None):
+        if DEBUG_VIZ_MJLAB:
+            self._update_mjlab_debug_arrows(state)
+            return
+        if state is None:
+            state = self._runtime_robot_state()
         if state is None:
             gobot.clear_debug_arrows()
             return
@@ -705,8 +899,143 @@ class Script(gobot.NodeScript):
             )
         gobot.set_debug_arrows(arrows)
 
-    def _observation(self):
-        state = self._runtime_robot_state()
+    def _update_mjlab_debug_arrows(self, state=None):
+        if state is None:
+            state = self._runtime_robot_state()
+        if state is None:
+            gobot.clear_debug_arrows()
+            return
+        base = self._base_link_state(state)
+        if base is None:
+            gobot.clear_debug_arrows()
+            return
+
+        position = base.get("position", [0.0, 0.0, 0.0])
+        if len(position) < 3:
+            gobot.clear_debug_arrows()
+            return
+        quat = base.get("quaternion", [1.0, 0.0, 0.0, 0.0])
+        command_start = self._offset_from_base(
+            position,
+            quat,
+            [0.0, TWIST_ARROW_SIDE_OFFSET, MJLAB_ARROW_Z_OFFSET * MJLAB_ARROW_SCALE],
+        )
+        actual_start = self._offset_from_base(
+            position,
+            quat,
+            [0.0, -TWIST_ARROW_SIDE_OFFSET, MJLAB_ARROW_Z_OFFSET * MJLAB_ARROW_SCALE],
+        )
+        angular_start = self._offset_from_base(
+            position,
+            quat,
+            [TWIST_ARROW_SIDE_OFFSET, 0.0, MJLAB_ARROW_Z_OFFSET * MJLAB_ARROW_SCALE],
+        )
+        actual_angular_start = self._offset_from_base(
+            position,
+            quat,
+            [-TWIST_ARROW_SIDE_OFFSET, 0.0, MJLAB_ARROW_Z_OFFSET * MJLAB_ARROW_SCALE],
+        )
+        terrain_origin = self._offset_from_base(
+            position,
+            quat,
+            [0.0, UPRIGHT_ARROW_SIDE_OFFSET, UPRIGHT_ARROW_Z_OFFSET],
+        )
+        body_up_origin = self._offset_from_base(
+            position,
+            quat,
+            [0.0, -UPRIGHT_ARROW_SIDE_OFFSET, UPRIGHT_ARROW_Z_OFFSET],
+        )
+        actual_lin_b = _quat_rotate_inv(base.get("linear_velocity", [0.0, 0.0, 0.0]), quat)
+        actual_ang_b = _quat_rotate_inv(base.get("angular_velocity", [0.0, 0.0, 0.0]), quat)
+        arrows = [
+            {
+                "start": command_start,
+                "vector": _quat_rotate([self.command[0], self.command[1], 0.0], quat),
+                "color": (0.2, 0.2, 0.6, 0.6),
+                "scale": MJLAB_ARROW_SCALE,
+                "label": "twist_command_linear",
+            },
+            {
+                "start": angular_start,
+                "vector": _quat_rotate([0.0, 0.0, self.command[2]], quat),
+                "color": (0.2, 0.6, 0.2, 0.6),
+                "scale": MJLAB_ARROW_SCALE,
+                "label": "twist_command_angular",
+            },
+            {
+                "start": actual_start,
+                "vector": _quat_rotate([actual_lin_b[0], actual_lin_b[1], 0.0], quat),
+                "color": (0.0, 0.6, 1.0, 0.7),
+                "scale": MJLAB_ARROW_SCALE,
+                "label": "twist_actual_linear",
+            },
+            {
+                "start": actual_angular_start,
+                "vector": _quat_rotate([0.0, 0.0, actual_ang_b[2] if len(actual_ang_b) > 2 else 0.0], quat),
+                "color": (0.0, 1.0, 0.4, 0.7),
+                "scale": MJLAB_ARROW_SCALE,
+                "label": "twist_actual_angular",
+            },
+        ]
+
+        terrain_normal = self._terrain_normal(state)
+        if terrain_normal is not None:
+            arrows.append(
+                {
+                    "start": terrain_origin,
+                    "vector": terrain_normal,
+                    "color": (0.8, 0.2, 0.8, 0.8),
+                    "scale": UPRIGHT_ARROW_SCALE,
+                    "label": "terrain_normal",
+                }
+            )
+        arrows.append(
+            {
+                "start": body_up_origin,
+                "vector": _quat_rotate([0.0, 0.0, 1.0], quat),
+                "color": (1.0, 0.5, 0.0, 0.8),
+                "scale": UPRIGHT_ARROW_SCALE,
+                "label": "body_up",
+            }
+        )
+        gobot.set_debug_arrows(arrows)
+
+    def _offset_from_base(self, position, quat, local_offset):
+        offset = _quat_rotate(local_offset, quat)
+        return [
+            float(position[0]) + offset[0],
+            float(position[1]) + offset[1],
+            float(position[2]) + offset[2],
+        ]
+
+    def _terrain_normal(self, robot_state):
+        sensor = self._sensor_map(robot_state).get(TERRAIN_SCAN_SENSOR)
+        if sensor is None:
+            return None
+        total = [0.0, 0.0, 0.0]
+        count = 0
+        for hit in sensor.get("hits", []):
+            if not hit.get("hit", False):
+                continue
+            normal = hit.get("normal", [0.0, 0.0, 0.0])
+            if len(normal) < 3:
+                continue
+            total[0] += float(normal[0])
+            total[1] += float(normal[1])
+            total[2] += float(normal[2])
+            count += 1
+        if count == 0:
+            return None
+        length = math.sqrt(total[0] * total[0] + total[1] * total[1] + total[2] * total[2])
+        if length <= 1.0e-6:
+            return None
+        if total[2] < 0.0:
+            length = -length
+        return [total[0] / length, total[1] / length, total[2] / length]
+
+    def _observation(self, state=None):
+        if state is None:
+            state = self._runtime_robot_state()
         if state is None:
             return [0.0] * self.policy_obs_dim
 

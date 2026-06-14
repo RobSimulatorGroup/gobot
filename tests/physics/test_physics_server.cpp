@@ -336,6 +336,16 @@ TEST(TestPhysicsServer, height_scanner_raycast_queries_box_heightfield_and_mesh_
     gobot::PhysicsServer physics_server;
     gobot::Ref<gobot::PhysicsWorld> world = physics_server.CreateWorld();
     ASSERT_TRUE(world->BuildFromScene(root));
+    const gobot::PhysicsSceneSnapshot& snapshot = world->GetSceneSnapshot();
+    ASSERT_EQ(snapshot.terrains.size(), 1);
+    ASSERT_EQ(snapshot.terrains[0].boxes.size(), 1);
+    ASSERT_EQ(snapshot.terrains[0].heightfields.size(), 1);
+    ASSERT_EQ(snapshot.terrains[0].mesh_patches.size(), 1);
+    EXPECT_TRUE(snapshot.terrains[0].boxes[0].has_xy_bounds);
+    EXPECT_TRUE(snapshot.terrains[0].heightfields[0].has_xy_bounds);
+    EXPECT_TRUE(snapshot.terrains[0].mesh_patches[0].has_xy_bounds);
+    EXPECT_TRUE(snapshot.terrains[0].heightfields[0].xy_min.isApprox(gobot::Vector2(1.0, -1.0), CMP_EPSILON));
+    EXPECT_TRUE(snapshot.terrains[0].heightfields[0].xy_max.isApprox(gobot::Vector2(3.0, 1.0), CMP_EPSILON));
 
     const gobot::PhysicsSceneState& state = world->GetSceneState();
     ASSERT_EQ(state.robots.size(), 1);
@@ -354,6 +364,21 @@ TEST(TestPhysicsServer, height_scanner_raycast_queries_box_heightfield_and_mesh_
     EXPECT_NEAR(sensor_state.hits[0].point.z(), 0.0, 1.0e-6);
     EXPECT_TRUE(sensor_state.hits[1].normal.z() < 0.99);
     EXPECT_TRUE(sensor_state.hits[1].normal.z() > 0.0);
+
+    const gobot::PhysicsRaycastHit heightfield_hit = world->RaycastTerrain({
+            {2.0, 0.0, 1.0},
+            {0.0, 0.0, -1.0},
+            2.0
+    });
+    EXPECT_TRUE(heightfield_hit.hit);
+    EXPECT_NEAR(heightfield_hit.point.z(), 0.3, 1.0e-6);
+
+    const gobot::PhysicsRaycastHit heightfield_bounds_miss = world->RaycastTerrain({
+            {3.25, 0.0, 1.0},
+            {0.0, 0.0, -1.0},
+            2.0
+    });
+    EXPECT_FALSE(heightfield_bounds_miss.hit);
 
     ASSERT_TRUE(world->ResetLinkState("robot", "base", {0.0, 0.0, 1.2}));
     const gobot::PhysicsSensorState& moved_sensor_state = world->GetSceneState().robots[0].sensors[0];
@@ -774,6 +799,52 @@ TEST(TestPhysicsServer, mujoco_authored_terrain_compiles) {
     world->Step(0.002);
     EXPECT_EQ(world->GetSceneSnapshot().total_terrain_count, 1);
     EXPECT_EQ(world->GetSceneSnapshot().terrains[0].heightfields.size(), 1);
+
+    gobot::Object::Delete(root);
+#endif
+}
+
+TEST(TestPhysicsServer, mujoco_terrain_raycast_ignores_robot_collision_geoms) {
+#ifdef GOBOT_HAS_MUJOCO
+    auto* root = gobot::Object::New<gobot::Node3D>();
+    root->SetName("root");
+
+    auto* terrain = gobot::Object::New<gobot::Terrain3D>();
+    terrain->SetName("terrain");
+    terrain->AddBox({0.0, 0.0, -0.05}, {4.0, 4.0, 0.1});
+    root->AddChild(terrain);
+
+    auto* robot = gobot::Object::New<gobot::Robot3D>();
+    robot->SetName("raycast_bot");
+    auto* base = gobot::Object::New<gobot::Link3D>();
+    base->SetName("base");
+    base->SetPosition({0.0, 0.0, 0.5});
+    base->SetMass(1.0);
+    base->SetCenterOfMass({0.0, 0.0, 0.0});
+    base->SetInertiaDiagonal({0.01, 0.01, 0.01});
+
+    auto* collision = gobot::Object::New<gobot::CollisionShape3D>();
+    collision->SetName("base_collision");
+    auto shape = gobot::MakeRef<gobot::BoxShape3D>();
+    shape->SetSize({0.5, 0.5, 0.5});
+    collision->SetShape(shape);
+    base->AddChild(collision);
+    robot->AddChild(base);
+    root->AddChild(robot);
+
+    gobot::PhysicsServer physics_server(gobot::PhysicsBackendType::MuJoCoCpu);
+    gobot::Ref<gobot::PhysicsWorld> world = physics_server.CreateWorld();
+    ASSERT_TRUE(world->BuildFromScene(root)) << world->GetLastError();
+
+    const gobot::PhysicsRaycastHit hit = world->RaycastTerrain({
+            {0.0, 0.0, 2.0},
+            {0.0, 0.0, -1.0},
+            4.0
+    });
+    ASSERT_TRUE(hit.hit);
+    EXPECT_NEAR(hit.point.z(), 0.0, 1.0e-6);
+    EXPECT_GT(hit.distance, 1.9);
+    EXPECT_NE(hit.terrain_name.find("gobot_terrain_box_0"), std::string::npos);
 
     gobot::Object::Delete(root);
 #endif

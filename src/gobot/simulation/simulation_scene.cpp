@@ -126,6 +126,21 @@ bool SimulationScene::SetJointPositionTarget(const std::string& robot_name,
     return true;
 }
 
+bool SimulationScene::SetJointPositionTargets(const std::string& robot_name,
+                                              const std::vector<std::string>& joint_names,
+                                              const std::vector<RealType>& target_positions) {
+    RobotController controller = GetRequiredRobotController(robot_name);
+    if (!controller.IsValid()) {
+        return false;
+    }
+    if (!controller.SetJointPositionTargets(joint_names, target_positions)) {
+        SetLastError(controller.GetLastError());
+        return false;
+    }
+    last_error_.clear();
+    return true;
+}
+
 bool SimulationScene::SetJointVelocityTarget(const std::string& robot_name,
                                              const std::string& joint_name,
                                              RealType target_velocity) {

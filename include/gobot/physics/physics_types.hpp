@@ -189,6 +189,9 @@ struct PhysicsRobotSnapshot {
 struct PhysicsTerrainBoxSnapshot {
     Affine3 global_transform{Affine3::Identity()};
     Vector3 size{Vector3::Ones()};
+    Vector2 xy_min{Vector2::Zero()};
+    Vector2 xy_max{Vector2::Zero()};
+    bool has_xy_bounds{false};
 };
 
 struct PhysicsTerrainHeightFieldSnapshot {
@@ -200,6 +203,9 @@ struct PhysicsTerrainHeightFieldSnapshot {
     std::vector<RealType> normalized_elevation;
     RealType base_thickness{0.1};
     RealType z_offset{0.0};
+    Vector2 xy_min{Vector2::Zero()};
+    Vector2 xy_max{Vector2::Zero()};
+    bool has_xy_bounds{false};
 };
 
 struct PhysicsTerrainMeshPatchSnapshot {
@@ -207,6 +213,9 @@ struct PhysicsTerrainMeshPatchSnapshot {
     std::vector<Vector3> vertices;
     std::vector<std::uint32_t> indices;
     Color color{1.0f, 1.0f, 1.0f, 1.0f};
+    Vector2 xy_min{Vector2::Zero()};
+    Vector2 xy_max{Vector2::Zero()};
+    bool has_xy_bounds{false};
 };
 
 struct PhysicsTerrainSnapshot {

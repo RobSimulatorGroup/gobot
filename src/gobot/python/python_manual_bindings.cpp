@@ -2424,6 +2424,13 @@ class NodeScript:
                                   throw std::runtime_error(context.GetLastError());
                               }
                           })
+            .def_property("max_sub_steps",
+                          &EngineContext::GetMaxSubSteps,
+                          [](EngineContext& context, int max_sub_steps) {
+                              if (!context.SetMaxSubSteps(max_sub_steps)) {
+                                  throw std::runtime_error(context.GetLastError());
+                              }
+                          })
             .def_property_readonly("gravity", [](const EngineContext& context) {
                 return Vector3ToPython(context.GetGravity());
             })
@@ -2707,6 +2714,22 @@ class NodeScript:
                     throw std::runtime_error(runtime_scene->GetLastError());
                 }
             }, py::arg("robot"), py::arg("joint"), py::arg("target_position"))
+            .def("set_joint_position_targets", [](EngineContext& context,
+                                                  const std::string& robot,
+                                                  const std::vector<std::string>& joint_names,
+                                                  const std::vector<RealType>& target_positions) {
+                SimulationServer* simulation = context.GetSimulationServer();
+                if (simulation == nullptr) {
+                    throw std::runtime_error("active Gobot app context has no SimulationServer");
+                }
+                SimulationScene* runtime_scene = simulation->GetRuntimeScene();
+                if (runtime_scene == nullptr) {
+                    throw std::runtime_error("simulation runtime scene has not been built");
+                }
+                if (!runtime_scene->SetJointPositionTargets(robot, joint_names, target_positions)) {
+                    throw std::runtime_error(runtime_scene->GetLastError());
+                }
+            }, py::arg("robot"), py::arg("joint_names"), py::arg("target_positions"))
             .def("set_joint_velocity_target", [](EngineContext& context,
                                                  const std::string& robot,
                                                  const std::string& joint,

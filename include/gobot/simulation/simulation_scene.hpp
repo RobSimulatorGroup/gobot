@@ -49,6 +49,10 @@ public:
                                 const std::string& joint_name,
                                 RealType target_position);
 
+    bool SetJointPositionTargets(const std::string& robot_name,
+                                 const std::vector<std::string>& joint_names,
+                                 const std::vector<RealType>& target_positions);
+
     bool SetJointVelocityTarget(const std::string& robot_name,
                                 const std::string& joint_name,
                                 RealType target_velocity);

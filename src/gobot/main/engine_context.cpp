@@ -254,6 +254,24 @@ bool EngineContext::SetFixedTimeStep(RealType fixed_time_step) {
     return true;
 }
 
+int EngineContext::GetMaxSubSteps() const {
+    return simulation_server_ == nullptr ? 0 : simulation_server_->GetMaxSubSteps();
+}
+
+bool EngineContext::SetMaxSubSteps(int max_sub_steps) {
+    if (simulation_server_ == nullptr) {
+        SetLastError("SimulationServer service is not available.");
+        return false;
+    }
+    simulation_server_->SetMaxSubSteps(max_sub_steps);
+    if (!simulation_server_->GetLastError().empty()) {
+        SetLastError(simulation_server_->GetLastError());
+        return false;
+    }
+    last_error_.clear();
+    return true;
+}
+
 RealType EngineContext::GetSimulationTime() const {
     return simulation_server_ == nullptr ? RealType{0.0} : simulation_server_->GetSimulationTime();
 }

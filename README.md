@@ -60,9 +60,9 @@ uv run gobot_editor
 For a direct CMake build, use the Python selected by `uv`:
 
 ```bash
-cmake -S . -B build/local -DPython3_EXECUTABLE="$(uv python find)"
-cmake --build build/local -j
-./build/local/python/gobot/gobot_editor
+cmake -S . -B build -DPython3_EXECUTABLE="$(uv python find)"
+cmake --build build -j
+./build/python/gobot/gobot_editor
 ```
 
 At runtime, `GOBOT_PYTHON_LIBRARY=/other/libpython.so` still overrides the
@@ -104,12 +104,6 @@ cd gobot
 git submodule update --init --recursive
 uv run --with build python -m build --wheel
 uv pip install --force-reinstall dist/gobot-*.whl
-```
-
-For a faster local build without MuJoCo:
-
-```bash
-uv run --with build python -m build --wheel -Ccmake.define.GOB_BUILD_MUJOCO=OFF
 ```
 
 ## Notes

@@ -567,11 +567,11 @@ void GLRendererDebugDraw::DrawHeightScannerDebug(const PhysicsSceneState* physic
             }
 
             const RealType normal_length = hit.normal.norm();
-            constexpr RealType kHitSphereRadius = 0.022;
+            constexpr RealType kHitSphereRadius = 0.012;
             AppendSphereTriangles(hit_vertices, hit.point, kHitSphereRadius);
 
             if (normal_length > CMP_EPSILON) {
-                constexpr RealType kNormalVisualLength = 0.16;
+                constexpr RealType kNormalVisualLength = 0.07;
                 AppendArrow(normal_vertices,
                             hit.point,
                             hit.point + hit.normal / normal_length * kNormalVisualLength);

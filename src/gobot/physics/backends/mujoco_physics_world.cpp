@@ -32,6 +32,7 @@ namespace {
 #ifdef GOBOT_HAS_MUJOCO
 constexpr int kMuJoCoErrorBufferSize = 1024;
 constexpr RealType kMuJoCoActuatorEpsilon = 1.0e-9;
+constexpr int kGobotTerrainGeomGroup = 5;
 
 struct MuJoCoJointActuatorIds {
     int motor{-1};
@@ -482,6 +483,7 @@ void ConfigureGeomContact(mjsGeom* geom, const PhysicsTerrainSnapshot& terrain) 
     SetMuJoCoArray(geom->solimp, terrain.solimp, mjNIMP);
     geom->margin = terrain.margin;
     geom->gap = terrain.gap;
+    geom->group = kGobotTerrainGeomGroup;
 }
 
 void SetMuJoCoGeomColor(mjsGeom* geom, const Color& color) {
@@ -1694,7 +1696,79 @@ bool MuJoCoPhysicsWorld::SetEnvironmentJointControls(const std::string& robot_na
 #endif
 }
 
+PhysicsRaycastHit MuJoCoPhysicsWorld::RaycastTerrain(const PhysicsRaycastQuery& query) const {
 #ifdef GOBOT_HAS_MUJOCO
+    if (model_ && data_) {
+        return RaycastTerrainWithMuJoCo(query, 0);
+    }
+#endif
+    return RaycastTerrainFallback(query);
+}
+
+PhysicsRaycastHit MuJoCoPhysicsWorld::RaycastTerrainForSensor(const PhysicsRaycastQuery& query,
+                                                              std::size_t environment_index) const {
+#ifdef GOBOT_HAS_MUJOCO
+    if (model_ && IsEnvironmentIndexValid(environment_index)) {
+        return RaycastTerrainWithMuJoCo(query, environment_index);
+    }
+#endif
+    return RaycastTerrainFallback(query);
+}
+
+#ifdef GOBOT_HAS_MUJOCO
+PhysicsRaycastHit MuJoCoPhysicsWorld::RaycastTerrainWithMuJoCo(const PhysicsRaycastQuery& query,
+                                                               std::size_t environment_index) const {
+    PhysicsRaycastHit result;
+    result.origin = query.origin;
+
+    Vector3 direction = query.direction;
+    if (direction.squaredNorm() <= CMP_EPSILON2 || query.max_distance <= 0.0) {
+        result.point = query.origin;
+        result.distance = 0.0;
+        return result;
+    }
+    direction.normalize();
+    result.point = query.origin + direction * query.max_distance;
+    result.distance = query.max_distance;
+
+    auto* model = static_cast<mjModel*>(model_);
+    auto* data = IsEnvironmentIndexValid(environment_index)
+                         ? static_cast<mjData*>(environment_data_[environment_index])
+                         : nullptr;
+    if (!model || !data) {
+        return result;
+    }
+
+    mjtByte geom_group[mjNGROUP] = {};
+    geom_group[std::min(kGobotTerrainGeomGroup, mjNGROUP - 1)] = 1;
+    const mjtNum origin[3] = {query.origin.x(), query.origin.y(), query.origin.z()};
+    const mjtNum ray_direction[3] = {direction.x(), direction.y(), direction.z()};
+    int geom_id = -1;
+    mjtNum normal[3] = {0.0, 0.0, 0.0};
+    const mjtNum distance = mj_ray(model,
+                                   data,
+                                   origin,
+                                   ray_direction,
+                                   geom_group,
+                                   1,
+                                   -1,
+                                   &geom_id,
+                                   normal);
+    if (distance < 0.0 || distance > query.max_distance || geom_id < 0) {
+        return result;
+    }
+
+    result.hit = true;
+    result.distance = static_cast<RealType>(distance);
+    result.point = query.origin + direction * result.distance;
+    const Vector3 hit_normal(normal[0], normal[1], normal[2]);
+    if (hit_normal.squaredNorm() > CMP_EPSILON2) {
+        result.normal = hit_normal.normalized();
+    }
+    result.terrain_name = GetMuJoCoName(model, mjOBJ_GEOM, geom_id);
+    return result;
+}
+
 bool MuJoCoPhysicsWorld::LoadModelFromRobotSources() {
     FreeModel();
 
@@ -2734,7 +2808,7 @@ void MuJoCoPhysicsWorld::SyncStateFromMuJoCo(std::size_t environment_index) {
 
     SyncContactsFromMuJoCo(environment_index);
     SyncSensorsFromMuJoCo(environment_index);
-    UpdateSensorGlobalTransformsAndRaycastSensors(state, static_cast<RealType>(data->time));
+    UpdateSensorGlobalTransformsAndRaycastSensors(state, static_cast<RealType>(data->time), environment_index);
     if (environment_index == 0 && !environment_states_.empty()) {
         environment_states_[0] = scene_state_;
     }
@@ -2818,7 +2892,8 @@ void MuJoCoPhysicsWorld::SyncStateToMuJoCo(std::size_t environment_index) {
 
     mj_forward(model, data);
     UpdateSensorGlobalTransformsAndRaycastSensors(EnvironmentState(environment_index),
-                                                  static_cast<RealType>(data->time));
+                                                  static_cast<RealType>(data->time),
+                                                  environment_index);
 }
 
 void MuJoCoPhysicsWorld::SyncContactsFromMuJoCo(std::size_t environment_index) {

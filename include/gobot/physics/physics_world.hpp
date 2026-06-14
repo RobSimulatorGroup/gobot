@@ -112,17 +112,25 @@ public:
 
     const PhysicsSceneState& GetSceneState() const;
 
-    PhysicsRaycastHit RaycastTerrain(const PhysicsRaycastQuery& query) const;
+    virtual PhysicsRaycastHit RaycastTerrain(const PhysicsRaycastQuery& query) const;
 
 protected:
     bool CaptureSceneSnapshot(const Node* scene_root);
 
+    PhysicsRaycastHit RaycastTerrainFallback(const PhysicsRaycastQuery& query) const;
+
+    virtual PhysicsRaycastHit RaycastTerrainForSensor(const PhysicsRaycastQuery& query,
+                                                      std::size_t environment_index) const;
+
     void UpdateRaycastSensorState(PhysicsSensorState& sensor_state,
                                   const PhysicsSensorSnapshot& sensor_snapshot,
                                   const Affine3& parent_transform,
-                                  RealType timestamp);
+                                  RealType timestamp,
+                                  std::size_t environment_index = 0);
 
-    void UpdateSensorGlobalTransformsAndRaycastSensors(PhysicsSceneState& scene_state, RealType timestamp);
+    void UpdateSensorGlobalTransformsAndRaycastSensors(PhysicsSceneState& scene_state,
+                                                       RealType timestamp,
+                                                       std::size_t environment_index = 0);
 
     PhysicsJointState* FindJointState(const std::string& robot_name,
                                       const std::string& joint_name);
