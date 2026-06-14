@@ -614,7 +614,13 @@ bool Editor::StartScenePlaySession() {
     if (scene_play_session_ == nullptr) {
         return false;
     }
-    return scene_play_session_->Start(GetEditedSceneRoot(), engine_context_);
+    if (!scene_play_session_->Start(GetEditedSceneRoot(), engine_context_)) {
+        return false;
+    }
+    if (auto* input = Input::GetInstanceOrNull()) {
+        input->SetControlFocus(true);
+    }
+    return true;
 }
 
 bool Editor::PlayScene() {
