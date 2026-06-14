@@ -20,6 +20,7 @@ PYTHON_LIBRARY_ENV = "GOBOT_PYTHON_LIBRARY"
 PYTHON_LIBRARY_PRINTED_ENV = "GOBOT_PYTHON_LIBRARY_PRINTED"
 PYTHON_EXECUTABLE_ENV = "GOBOT_PYTHON_EXECUTABLE"
 PYTHON_HOME_ENV = "GOBOT_PYTHON_HOME"
+EDITOR_EXECUTABLE_ENV = "GOBOT_EDITOR_EXECUTABLE"
 DIST_NAME = "gobot"
 
 
@@ -241,11 +242,14 @@ def _packaged_examples() -> Path | None:
 
 
 def _find_editor_executable() -> Path:
-    candidate = _packaged_gobot_dir()
-    if candidate is not None:
-        executable = candidate / "gobot_editor"
+    override = os.environ.get(EDITOR_EXECUTABLE_ENV)
+    if override:
+        executable = Path(override).expanduser()
         if executable.is_file():
-            return executable
+            return executable.resolve()
+        raise RuntimeError(
+            f"{EDITOR_EXECUTABLE_ENV} is set to '{override}', but that file does not exist."
+        )
 
     source_root = _editable_source_root()
     if source_root is not None:
@@ -259,6 +263,12 @@ def _find_editor_executable() -> Path:
         for executable in build_candidates:
             if executable.is_file():
                 return executable
+
+    candidate = _packaged_gobot_dir()
+    if candidate is not None:
+        executable = candidate / "gobot_editor"
+        if executable.is_file():
+            return executable
 
     raise RuntimeError(
         "Could not find the packaged gobot_editor executable. "

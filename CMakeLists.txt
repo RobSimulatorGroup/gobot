@@ -647,10 +647,12 @@ target_compile_definitions(gobot_editor PRIVATE
         GOBOT_DEFAULT_PYTHON_VERSION_MAJOR=${Python3_VERSION_MAJOR}
         GOBOT_DEFAULT_PYTHON_VERSION_MINOR=${Python3_VERSION_MINOR})
 target_link_libraries(gobot_editor PRIVATE
+        gobot_editor_runtime
         ${CMAKE_DL_LIBS})
 set_target_properties(gobot_editor
     PROPERTIES
         RUNTIME_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/python/gobot"
+        BUILD_RPATH "${CMAKE_BINARY_DIR}/python/gobot;${CMAKE_BINARY_DIR};${CMAKE_BINARY_DIR}/lib"
         INSTALL_RPATH "$ORIGIN"
 )
 add_custom_command(TARGET gobot_editor POST_BUILD
