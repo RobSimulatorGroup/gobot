@@ -6,8 +6,6 @@
 
 #pragma once
 
-#include <atomic>
-
 #include "gobot/physics/physics_world.hpp"
 
 namespace gobot {
@@ -28,8 +26,6 @@ protected:
     PhysicsRaycastHit RaycastTerrainForSensor(const PhysicsRaycastQuery& query,
                                               std::size_t environment_index) const override;
 
-private:
-    mutable std::atomic_bool reported_missing_native_raycast_{false};
 };
 
 } // namespace gobot

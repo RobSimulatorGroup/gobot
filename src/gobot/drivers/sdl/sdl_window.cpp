@@ -24,7 +24,11 @@
 #include "glad/glad.h"
 
 #include <algorithm>
+#include <cctype>
 #include <cmath>
+#include <cstdlib>
+#include <string>
+#include <string_view>
 
 #ifndef ENTRY_CONFIG_USE_WAYLAND
 #	define ENTRY_CONFIG_USE_WAYLAND 0
@@ -41,6 +45,42 @@ namespace gobot {
 static const int s_default_width = 1280;
 static const int s_default_height = 720;
 static const char* s_default_window_title = "Gobot " GOBOT_VERSION;
+
+std::string LowerAscii(std::string_view value) {
+    std::string result;
+    result.reserve(value.size());
+    for (char character : value) {
+        result.push_back(static_cast<char>(std::tolower(static_cast<unsigned char>(character))));
+    }
+    return result;
+}
+
+int ResolveSwapInterval() {
+    if (const char* value = std::getenv("GOBOT_SWAP_INTERVAL"); value != nullptr && value[0] != '\0') {
+        char* end = nullptr;
+        const long parsed = std::strtol(value, &end, 10);
+        while (end != nullptr && *end != '\0' && std::isspace(static_cast<unsigned char>(*end)) != 0) {
+            ++end;
+        }
+        if (end != value && *end == '\0') {
+            return static_cast<int>(std::clamp(parsed, -1L, 1L));
+        }
+        LOG_WARN("Ignoring invalid GOBOT_SWAP_INTERVAL='{}'; expected -1, 0, or 1.", value);
+    }
+
+    if (const char* value = std::getenv("GOBOT_VSYNC"); value != nullptr && value[0] != '\0') {
+        const std::string normalized = LowerAscii(value);
+        if (normalized == "0" || normalized == "false" || normalized == "off" || normalized == "no") {
+            return 0;
+        }
+        if (normalized == "1" || normalized == "true" || normalized == "on" || normalized == "yes") {
+            return 1;
+        }
+        LOG_WARN("Ignoring invalid GOBOT_VSYNC='{}'; expected 0/1, false/true, off/on, or no/yes.", value);
+    }
+
+    return 1;
+}
 
 float RoundedRectCoverage(float x,
                           float y,
@@ -210,7 +250,12 @@ SDLWindow::SDLWindow()
     if (RS::GetInstance()->GetRendererType() == RendererType::OpenGL46) {
         SDL_GLContext gl_context = SDL_GL_CreateContext(sdl2_window_);
         SDL_GL_MakeCurrent(sdl2_window_, gl_context);
-        SDL_GL_SetSwapInterval(1); // Enable vsync
+        const int swap_interval = ResolveSwapInterval();
+        if (SDL_GL_SetSwapInterval(swap_interval) != 0) {
+            LOG_WARN("Failed to set SDL GL swap interval {}: {}", swap_interval, SDL_GetError());
+        } else {
+            LOG_INFO("SDL GL swap interval: {}", swap_interval);
+        }
 
         // Check OpenGL properties
         LOG_INFO("OpenGL loaded...");

@@ -86,6 +86,21 @@ std::string FileStemOrFilename(const std::string& path) {
     return name.empty() ? "[unsaved]" : name;
 }
 
+void SelectEditorPlayBackend(SimulationServer* simulation) {
+    if (simulation == nullptr || simulation->GetBackendType() != PhysicsBackendType::Null) {
+        return;
+    }
+
+    const PhysicsBackendInfo mujoco_info =
+            PhysicsServer::GetBackendInfoForBackend(PhysicsBackendType::MuJoCoCpu);
+    if (!mujoco_info.available) {
+        return;
+    }
+
+    simulation->SetBackendType(PhysicsBackendType::MuJoCoCpu);
+    LOG_INFO("Editor Play selected MuJoCo CPU physics backend.");
+}
+
 } // namespace
 
 Editor* Editor::s_singleton = nullptr;
@@ -609,6 +624,8 @@ bool Editor::PlayScene() {
     if (simulation == nullptr || GetEditedSceneRoot() == nullptr) {
         return false;
     }
+
+    SelectEditorPlayBackend(simulation);
 
     if (!IsScenePlaySessionRunning() && !StartScenePlaySession()) {
         simulation->SetPaused(true);

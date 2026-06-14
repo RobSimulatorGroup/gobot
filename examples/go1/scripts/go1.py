@@ -7,7 +7,7 @@ import gobot
 
 ROBOT = "go1"
 BASE_LINK = "trunk"
-DEFAULT_POLICY_PATH = "res://policies/go1.pt"
+DEFAULT_POLICY_PATH = "res://policies/go1.onnx"
 TORCH_POLICY_PATH = "res://policies/go1.pt"
 PHYSICS_HZ = float(os.environ.get("GOBOT_GO1_PHYSICS_HZ", "240.0"))
 FIXED_TIME_STEP = 1.0 / max(PHYSICS_HZ, 1.0)
