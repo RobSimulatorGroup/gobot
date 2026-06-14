@@ -218,7 +218,20 @@ def build_velocity_actor_observation(
     return obs
 
 
+LEGACY_ACTOR_OBS_SCHEMA = velocity_actor_observation_schema(len(JOINT_NAMES), 0)
 ACTOR_OBS_SCHEMA = velocity_actor_observation_schema(len(JOINT_NAMES), TERRAIN_SCAN_DIM)
+
+
+def _supported_actor_obs_dims():
+    return {LEGACY_ACTOR_OBS_SCHEMA.dim, ACTOR_OBS_SCHEMA.dim}
+
+
+def _actor_schema_for_dim(obs_dim):
+    if obs_dim == LEGACY_ACTOR_OBS_SCHEMA.dim:
+        return LEGACY_ACTOR_OBS_SCHEMA
+    if obs_dim == ACTOR_OBS_SCHEMA.dim:
+        return ACTOR_OBS_SCHEMA
+    return None
 
 
 def _parse_version_prefix(value):
@@ -263,11 +276,11 @@ class OnnxPolicy:
         self.obs_dim = None
         if input_shape and isinstance(input_shape[-1], int):
             self.obs_dim = int(input_shape[-1])
-            if self.obs_dim != ACTOR_OBS_SCHEMA.dim:
+            if _actor_schema_for_dim(self.obs_dim) is None:
                 raise RuntimeError(
                     "Go1 ONNX policy observation dimension mismatch: "
-                    f"policy={self.obs_dim}, playback={ACTOR_OBS_SCHEMA.dim}. "
-                    "Retrain or export with the current terrain_scan grid schema."
+                    f"policy={self.obs_dim}, supported={sorted(_supported_actor_obs_dims())}. "
+                    "Retrain/export the policy or use a matching GOBOT_GO1_POLICY."
                 )
 
     def action(self, observation):
@@ -471,19 +484,20 @@ def _checkpoint_velocity_metadata(checkpoint):
 def _validate_checkpoint_schema(checkpoint, obs_dim):
     metadata = _checkpoint_velocity_metadata(checkpoint)
     if metadata is None:
-        if obs_dim != ACTOR_OBS_SCHEMA.dim:
+        if _actor_schema_for_dim(obs_dim) is None:
             raise RuntimeError(
                 "Go1 checkpoint observation dimension mismatch: "
-                f"checkpoint={obs_dim}, playback={ACTOR_OBS_SCHEMA.dim}. "
-                "Retrain or export with the current terrain_scan grid schema."
+                f"checkpoint={obs_dim}, supported={sorted(_supported_actor_obs_dims())}. "
+                "Retrain/export the policy or use a matching GOBOT_GO1_POLICY."
             )
         return
     version = metadata.get("obs_schema_version")
     names = tuple(metadata.get("obs_names", ()))
-    if version != VELOCITY_OBS_SCHEMA_VERSION or names != ACTOR_OBS_SCHEMA.names:
+    expected_schema = _actor_schema_for_dim(obs_dim)
+    if expected_schema is None or version != VELOCITY_OBS_SCHEMA_VERSION or names != expected_schema.names:
         raise RuntimeError(
             "Go1 checkpoint observation schema differs from playback: "
-            f"checkpoint version={version!r} dim={metadata.get('num_obs')} current={ACTOR_OBS_SCHEMA.version} dim={ACTOR_OBS_SCHEMA.dim}"
+            f"checkpoint version={version!r} dim={metadata.get('num_obs')} current={VELOCITY_OBS_SCHEMA_VERSION} dim={obs_dim}"
         )
 
 
@@ -556,7 +570,8 @@ class Script(gobot.NodeScript):
         self.policy_obs_dim = getattr(self.policy, "obs_dim", ACTOR_OBS_SCHEMA.dim)
         if self.policy_obs_dim is None:
             self.policy_obs_dim = ACTOR_OBS_SCHEMA.dim
-        self.height_scan_dim = TERRAIN_SCAN_DIM
+        self.policy_obs_schema = _actor_schema_for_dim(self.policy_obs_dim) or ACTOR_OBS_SCHEMA
+        self.height_scan_dim = dict(self.policy_obs_schema.fields).get("height_scan", TERRAIN_SCAN_DIM)
         self.ticks = 0
         self.playing = True
         self.world_controls_ready = False
@@ -942,7 +957,7 @@ class Script(gobot.NodeScript):
             joint_pos.append(float(joint.get("position", DEFAULT_POS[index])) - DEFAULT_POS[index])
             joint_vel.append(float(joint.get("velocity", 0.0)))
 
-        height_scan = self._height_scan(state)
+        height_scan = self._height_scan(state) if self.height_scan_dim > 0 else []
         obs = build_velocity_actor_observation(
             base_lin_vel_b=lin_vel,
             base_ang_vel_b=ang_vel[:3],
