@@ -7,6 +7,7 @@
 
 #include "gobot/drivers/opengl/rasterizer_scene_gl.hpp"
 
+#include "gobot/core/profile.hpp"
 #include "gobot/drivers/opengl/mesh_storage_gl.hpp"
 #include "gobot/drivers/opengl/texture_storage.hpp"
 #include "gobot/error_macros.hpp"
@@ -57,6 +58,7 @@ GLRasterizerScene::~GLRasterizerScene() {
 }
 
 void GLRasterizerScene::RenderScene(const RID& render_target, const Node* scene_root, const Camera3D* camera) {
+    GOBOT_PROFILE_ZONE("OpenGL::RenderScene");
     ERR_FAIL_COND(scene_root == nullptr);
     ERR_FAIL_COND(camera == nullptr);
     ERR_FAIL_COND(mesh_storage_ == nullptr);
@@ -90,7 +92,12 @@ void GLRasterizerScene::RenderScene(const RID& render_target, const Node* scene_
                 static_cast<float>(camera_position.y()),
                 static_cast<float>(camera_position.z()));
 
-    const SceneRenderItems render_items = CollectSceneRenderItems(scene_root);
+    SceneRenderItems render_items;
+    {
+        GOBOT_PROFILE_ZONE("OpenGL::CollectSceneRenderItems");
+        render_items = CollectSceneRenderItems(scene_root);
+    }
+    GOBOT_PROFILE_PLOT("visual_meshes", static_cast<double>(render_items.visual_meshes.size()));
     for (const VisualMeshRenderItem& item : render_items.visual_meshes) {
         DrawVisualItem(item);
     }

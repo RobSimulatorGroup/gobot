@@ -8,6 +8,7 @@
 
 
 #include "gobot/scene/scene_tree.hpp"
+#include "gobot/core/profile.hpp"
 #include "gobot/scene/window.hpp"
 #include "gobot/error_macros.hpp"
 #include "gobot/core/events/event.hpp"
@@ -76,13 +77,16 @@ void SceneTree::CancelQuit() {
 }
 
 bool SceneTree::PhysicsProcess(double time) {
+    GOBOT_PROFILE_ZONE("SceneTree::PhysicsProcess");
     if (SimulationServer::HasInstance()) {
         SimulationServer* simulation = SimulationServer::GetInstance();
         if (simulation->HasWorld() && !simulation->IsPaused()) {
             simulation->Step(static_cast<RealType>(time),
                              [this](RealType fixed_delta) {
+                                 GOBOT_PROFILE_ZONE("SceneTree::PhysicsProcessCallbacks");
                                  NotifyPhysicsProcess(static_cast<double>(fixed_delta));
                              });
+            GOBOT_PROFILE_PLOT("physics_steps_per_frame", simulation->GetLastStepCount());
             return quit_;
         }
     }
@@ -92,12 +96,16 @@ bool SceneTree::PhysicsProcess(double time) {
 }
 
 bool SceneTree::Process(double time) {
+    GOBOT_PROFILE_ZONE("SceneTree::Process");
     process_time_ = time;
 
     MainLoop::Process(time);
 
     // TODO(wqq): Do we need group
-    root_->PropagateNotification(NotificationType::Process);
+    {
+        GOBOT_PROFILE_ZONE("SceneTree::ProcessCallbacks");
+        root_->PropagateNotification(NotificationType::Process);
+    }
 
     return quit_;
 }
@@ -108,6 +116,7 @@ void SceneTree::PullEvent() {
 }
 
 void SceneTree::NotifyPhysicsProcess(double time) {
+    GOBOT_PROFILE_ZONE("SceneTree::NotifyPhysicsProcess");
     physics_process_time_ = time;
     root_->PropagateNotification(NotificationType::PhysicsProcess);
 }

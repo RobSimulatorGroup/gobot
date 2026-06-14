@@ -28,7 +28,8 @@ public:
     void RenderEditorDebug(const RID& render_target,
                            const Camera3D* camera,
                            const Node* scene_root,
-                           const PhysicsWorld* physics_world = nullptr) override;
+                           const PhysicsWorld* physics_world = nullptr,
+                           bool show_collision_shapes = true) override;
 
     void RenderDebugArrows(const RID& render_target,
                            const Camera3D* camera,

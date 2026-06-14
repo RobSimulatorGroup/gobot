@@ -9,16 +9,13 @@ ROBOT = "go1"
 BASE_LINK = "trunk"
 DEFAULT_POLICY_PATH = "res://policies/go1.pt"
 TORCH_POLICY_PATH = "res://policies/go1.pt"
-DEBUG_VIZ_MODE = os.environ.get("GOBOT_GO1_DEBUG_VIZ", "0").strip().lower()
-DEBUG_VIZ_MJLAB = DEBUG_VIZ_MODE in {"1", "true", "yes", "on", "mjlab"}
-DEBUG_VIZ_LABEL = "mjlab" if DEBUG_VIZ_MJLAB else "off"
 PHYSICS_HZ = float(os.environ.get("GOBOT_GO1_PHYSICS_HZ", "240.0"))
 FIXED_TIME_STEP = 1.0 / max(PHYSICS_HZ, 1.0)
 POLICY_HZ = float(os.environ.get("GOBOT_GO1_POLICY_HZ", "50.0"))
 SENSOR_PERIOD = 1.0 / max(POLICY_HZ, 1.0)
 MAX_SUB_STEPS = max(8, int(math.ceil(PHYSICS_HZ / 60.0)) + 2)
 PRINT_EVERY_TICKS = max(1, int(os.environ.get("GOBOT_GO1_PRINT_EVERY_TICKS", str(round(PHYSICS_HZ * 2.0)))))
-SENSOR_DEBUG = DEBUG_VIZ_MJLAB or os.environ.get("GOBOT_GO1_SENSOR_DEBUG", "0").lower() in {"1", "true", "yes", "on"}
+SENSOR_DEBUG = os.environ.get("GOBOT_GO1_SENSOR_DEBUG", "0").lower() in {"1", "true", "yes", "on"}
 SENSOR_DEBUG_ALL = os.environ.get("GOBOT_GO1_SENSOR_DEBUG_ALL", "0").lower() in {"1", "true", "yes", "on"}
 RESET_BASE_CLEARANCE = float(os.environ.get("GOBOT_GO1_RESET_BASE_Z", "0.278"))
 RESET_BASE_POSITION = [0.0, 0.0, RESET_BASE_CLEARANCE]
@@ -38,12 +35,6 @@ COMMAND_ACTIVE_DEADBAND = 0.02
 DEBUG_ARROW_SCALE = 0.55
 DEBUG_ARROW_Z_OFFSET = 0.30
 DEBUG_ARROW_SEPARATION = 0.08
-MJLAB_ARROW_SCALE = 0.5
-MJLAB_ARROW_Z_OFFSET = 0.2
-UPRIGHT_ARROW_SCALE = 0.25
-UPRIGHT_ARROW_Z_OFFSET = 0.24
-UPRIGHT_ARROW_SIDE_OFFSET = 0.08
-TWIST_ARROW_SIDE_OFFSET = 0.06
 FALLEN_BASE_Z = 0.18
 FALLEN_ROLL_PITCH = 0.8
 KEYBOARD_BINDINGS = {
@@ -574,14 +565,13 @@ class Script(gobot.NodeScript):
         self.last_targets = list(DEFAULT_POS)
         print(
             "Go1 RL policy playback started. policy={} joints={} physics_hz={:.1f} policy_hz={:.1f} decimation={} "
-            "reset_z={:.3f} debug_viz={} sensor_debug={} cmd=({:.2f}, {:.2f}, {:.2f}) keyboard={}".format(
+            "reset_z={:.3f} sensor_debug={} cmd=({:.2f}, {:.2f}, {:.2f}) keyboard={}".format(
                 "loaded" if self.policy is not None else "missing",
                 len(self.joints),
                 PHYSICS_HZ,
                 POLICY_HZ,
                 DECIMATION,
                 RESET_BASE_CLEARANCE,
-                DEBUG_VIZ_LABEL,
                 "on" if SENSOR_DEBUG else "off",
                 self.command[0],
                 self.command[1],
@@ -841,9 +831,6 @@ class Script(gobot.NodeScript):
         )
 
     def _update_debug_arrows(self, state=None):
-        if DEBUG_VIZ_MJLAB:
-            self._update_mjlab_debug_arrows(state)
-            return
         if state is None:
             state = self._runtime_robot_state()
         if state is None:
@@ -897,107 +884,6 @@ class Script(gobot.NodeScript):
                     "label": "actual_velocity",
                 }
             )
-        gobot.set_debug_arrows(arrows)
-
-    def _update_mjlab_debug_arrows(self, state=None):
-        if state is None:
-            state = self._runtime_robot_state()
-        if state is None:
-            gobot.clear_debug_arrows()
-            return
-        base = self._base_link_state(state)
-        if base is None:
-            gobot.clear_debug_arrows()
-            return
-
-        position = base.get("position", [0.0, 0.0, 0.0])
-        if len(position) < 3:
-            gobot.clear_debug_arrows()
-            return
-        quat = base.get("quaternion", [1.0, 0.0, 0.0, 0.0])
-        command_start = self._offset_from_base(
-            position,
-            quat,
-            [0.0, TWIST_ARROW_SIDE_OFFSET, MJLAB_ARROW_Z_OFFSET * MJLAB_ARROW_SCALE],
-        )
-        actual_start = self._offset_from_base(
-            position,
-            quat,
-            [0.0, -TWIST_ARROW_SIDE_OFFSET, MJLAB_ARROW_Z_OFFSET * MJLAB_ARROW_SCALE],
-        )
-        angular_start = self._offset_from_base(
-            position,
-            quat,
-            [TWIST_ARROW_SIDE_OFFSET, 0.0, MJLAB_ARROW_Z_OFFSET * MJLAB_ARROW_SCALE],
-        )
-        actual_angular_start = self._offset_from_base(
-            position,
-            quat,
-            [-TWIST_ARROW_SIDE_OFFSET, 0.0, MJLAB_ARROW_Z_OFFSET * MJLAB_ARROW_SCALE],
-        )
-        terrain_origin = self._offset_from_base(
-            position,
-            quat,
-            [0.0, UPRIGHT_ARROW_SIDE_OFFSET, UPRIGHT_ARROW_Z_OFFSET],
-        )
-        body_up_origin = self._offset_from_base(
-            position,
-            quat,
-            [0.0, -UPRIGHT_ARROW_SIDE_OFFSET, UPRIGHT_ARROW_Z_OFFSET],
-        )
-        actual_lin_b = _quat_rotate_inv(base.get("linear_velocity", [0.0, 0.0, 0.0]), quat)
-        actual_ang_b = _quat_rotate_inv(base.get("angular_velocity", [0.0, 0.0, 0.0]), quat)
-        arrows = [
-            {
-                "start": command_start,
-                "vector": _quat_rotate([self.command[0], self.command[1], 0.0], quat),
-                "color": (0.2, 0.2, 0.6, 0.6),
-                "scale": MJLAB_ARROW_SCALE,
-                "label": "twist_command_linear",
-            },
-            {
-                "start": angular_start,
-                "vector": _quat_rotate([0.0, 0.0, self.command[2]], quat),
-                "color": (0.2, 0.6, 0.2, 0.6),
-                "scale": MJLAB_ARROW_SCALE,
-                "label": "twist_command_angular",
-            },
-            {
-                "start": actual_start,
-                "vector": _quat_rotate([actual_lin_b[0], actual_lin_b[1], 0.0], quat),
-                "color": (0.0, 0.6, 1.0, 0.7),
-                "scale": MJLAB_ARROW_SCALE,
-                "label": "twist_actual_linear",
-            },
-            {
-                "start": actual_angular_start,
-                "vector": _quat_rotate([0.0, 0.0, actual_ang_b[2] if len(actual_ang_b) > 2 else 0.0], quat),
-                "color": (0.0, 1.0, 0.4, 0.7),
-                "scale": MJLAB_ARROW_SCALE,
-                "label": "twist_actual_angular",
-            },
-        ]
-
-        terrain_normal = self._terrain_normal(state)
-        if terrain_normal is not None:
-            arrows.append(
-                {
-                    "start": terrain_origin,
-                    "vector": terrain_normal,
-                    "color": (0.8, 0.2, 0.8, 0.8),
-                    "scale": UPRIGHT_ARROW_SCALE,
-                    "label": "terrain_normal",
-                }
-            )
-        arrows.append(
-            {
-                "start": body_up_origin,
-                "vector": _quat_rotate([0.0, 0.0, 1.0], quat),
-                "color": (1.0, 0.5, 0.0, 0.8),
-                "scale": UPRIGHT_ARROW_SCALE,
-                "label": "body_up",
-            }
-        )
         gobot.set_debug_arrows(arrows)
 
     def _offset_from_base(self, position, quat, local_offset):

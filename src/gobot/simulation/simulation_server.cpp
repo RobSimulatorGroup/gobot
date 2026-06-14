@@ -8,6 +8,7 @@
 
 #include <utility>
 
+#include "gobot/core/profile.hpp"
 #include "gobot/core/registration.hpp"
 #include "gobot/error_macros.hpp"
 #include "gobot/scene/joint_3d.hpp"
@@ -214,6 +215,14 @@ void SimulationServer::SetPaused(bool paused) {
     paused_ = paused;
 }
 
+bool SimulationServer::ShouldSyncSceneOnFixedStep() const {
+    return sync_scene_on_fixed_step_;
+}
+
+void SimulationServer::SetSyncSceneOnFixedStep(bool sync_scene_on_fixed_step) {
+    sync_scene_on_fixed_step_ = sync_scene_on_fixed_step;
+}
+
 bool SimulationServer::BuildWorldFromScene(const Node* scene_root) {
     runtime_scene_.Clear();
     world_ = PhysicsServer::CreateWorldForBackend(backend_type_, physics_world_settings_);
@@ -347,6 +356,7 @@ int SimulationServer::Step(RealType delta_time) {
 }
 
 int SimulationServer::Step(RealType delta_time, const FixedStepCallback& fixed_step_callback) {
+    GOBOT_PROFILE_ZONE("SimulationServer::Step");
     if (paused_ || delta_time <= 0.0 || time_scale_ <= 0.0) {
         last_step_count_ = 0;
         return 0;
@@ -378,6 +388,7 @@ int SimulationServer::Step(RealType delta_time, const FixedStepCallback& fixed_s
     }
 
     last_step_count_ = steps;
+    GOBOT_PROFILE_PLOT("physics_steps_per_frame", steps);
     return steps;
 }
 
@@ -502,22 +513,31 @@ bool SimulationServer::EnsureWorldReady() {
 }
 
 bool SimulationServer::StepFixed(const FixedStepCallback* fixed_step_callback) {
+    GOBOT_PROFILE_ZONE("SimulationServer::StepFixed");
     if (!EnsureWorldReady()) {
         return false;
     }
 
     if (fixed_step_callback != nullptr) {
+        GOBOT_PROFILE_ZONE("SimulationServer::FixedStepCallback");
         (*fixed_step_callback)(physics_world_settings_.fixed_time_step);
     }
 
-    world_->Step(physics_world_settings_.fixed_time_step);
+    {
+        GOBOT_PROFILE_ZONE("SimulationServer::WorldStep");
+        world_->Step(physics_world_settings_.fixed_time_step);
+    }
     simulation_time_ += physics_world_settings_.fixed_time_step;
     ++frame_count_;
-    ApplyWorldStateToScene();
+    if (sync_scene_on_fixed_step_) {
+        GOBOT_PROFILE_ZONE("SimulationServer::ApplyWorldStateToScene");
+        ApplyWorldStateToScene();
+    }
     return true;
 }
 
 bool SimulationServer::ApplyWorldStateToScene() {
+    GOBOT_PROFILE_ZONE("SimulationServer::ApplyWorldStateToScene");
     if (!world_.IsValid()) {
         return false;
     }

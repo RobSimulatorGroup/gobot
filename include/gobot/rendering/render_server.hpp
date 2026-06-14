@@ -132,7 +132,8 @@ public:
     void RenderEditorDebugToViewport(const RID& viewport,
                                      const Camera3D* camera,
                                      const Node* scene_root,
-                                     const PhysicsWorld* physics_world = nullptr);
+                                     const PhysicsWorld* physics_world = nullptr,
+                                     bool show_collision_shapes = true);
 
     void RenderDebugArrowsToViewport(const RID& viewport,
                                      const Camera3D* camera,

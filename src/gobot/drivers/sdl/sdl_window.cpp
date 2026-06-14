@@ -11,6 +11,7 @@
 #include "gobot/core/events/window_event.hpp"
 #include "gobot/core/events/mouse_event.hpp"
 #include "gobot/core/events/key_event.hpp"
+#include "gobot/core/profile.hpp"
 #include "gobot/rendering/render_server.hpp"
 #include "gobot/platfom.hpp"
 #include "gobot/log.hpp"
@@ -514,6 +515,7 @@ void SDLWindow::ProcessEvents() {
 }
 
 void SDLWindow::SwapBuffers() {
+    GOBOT_PROFILE_ZONE("SDLWindow::SwapBuffers");
     if (RS::GetInstance()->GetRendererType() == RendererType::OpenGL46) {
         SDL_GL_SwapWindow(sdl2_window_);
     }

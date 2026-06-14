@@ -1,5 +1,6 @@
 #include "gobot/editor/editor_viewport_renderer.hpp"
 
+#include "gobot/core/profile.hpp"
 #include "gobot/editor/editor.hpp"
 #include "gobot/rendering/render_server.hpp"
 #include "gobot/scene/camera_3d.hpp"
@@ -628,12 +629,25 @@ void EditorViewportRenderer::Render(const RID& viewport,
                                     const Node* scene_root,
                                     const Camera3D* camera,
                                     const PhysicsWorld* physics_world,
-                                    const std::vector<DebugArrow>& debug_arrows) {
+                                    const std::vector<DebugArrow>& debug_arrows,
+                                    bool show_collision_shapes) {
+    GOBOT_PROFILE_ZONE("EditorViewportRenderer::Render");
     if (scene_root) {
+        GOBOT_PROFILE_ZONE("EditorViewportRenderer::RenderScene");
         RS::GetInstance()->RenderSceneToViewport(viewport, scene_root, camera);
     }
-    RS::GetInstance()->RenderEditorDebugToViewport(viewport, camera, scene_root, physics_world);
-    RS::GetInstance()->RenderDebugArrowsToViewport(viewport, camera, debug_arrows);
+    {
+        GOBOT_PROFILE_ZONE("EditorViewportRenderer::RenderEditorDebug");
+        RS::GetInstance()->RenderEditorDebugToViewport(viewport,
+                                                       camera,
+                                                       scene_root,
+                                                       physics_world,
+                                                       show_collision_shapes);
+    }
+    {
+        GOBOT_PROFILE_ZONE("EditorViewportRenderer::RenderDebugArrows");
+        RS::GetInstance()->RenderDebugArrowsToViewport(viewport, camera, debug_arrows);
+    }
 }
 
 Node* EditorViewportRenderer::PickNode(Node* scene_root,
@@ -644,6 +658,7 @@ Node* EditorViewportRenderer::PickNode(Node* scene_root,
                                        Vector3* hit_point,
                                        bool prefer_mesh,
                                        bool surface_only) const {
+    GOBOT_PROFILE_ZONE("EditorViewportRenderer::PickNode");
     if (!scene_root || !camera) {
         return nullptr;
     }
@@ -694,6 +709,7 @@ void EditorViewportRenderer::RenderOverlay(const Node* scene_root,
                                            const Node* hovered_node,
                                            const Node* motion_target_node,
                                            bool show_joint_handles) {
+    GOBOT_PROFILE_ZONE("EditorViewportRenderer::RenderOverlay");
     if (!scene_root || !camera || !draw_list) {
         return;
     }

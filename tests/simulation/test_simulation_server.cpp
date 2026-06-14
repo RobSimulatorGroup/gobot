@@ -399,6 +399,40 @@ TEST(TestSimulationServer, syncs_world_joint_state_to_motion_mode_robot) {
     gobot::Object::Delete(robot);
 }
 
+TEST(TestSimulationServer, can_defer_scene_sync_until_explicit_request) {
+    gobot::SimulationServer simulation_server;
+
+    gobot::Robot3D* robot = CreateRobotScene();
+    auto* joint = gobot::Object::PointerCastTo<gobot::Joint3D>(robot->GetChild(1));
+    ASSERT_NE(joint, nullptr);
+
+    robot->SetMode(gobot::RobotMode::Motion);
+    ASSERT_TRUE(simulation_server.BuildWorldFromScene(robot));
+    ASSERT_TRUE(simulation_server.GetWorld().IsValid());
+
+    gobot::PhysicsSceneState moved_state = simulation_server.GetWorld()->GetSceneState();
+    ASSERT_EQ(moved_state.robots.size(), 1);
+    ASSERT_GE(moved_state.robots[0].joints.size(), 1);
+    moved_state.robots[0].joints[0].position = 0.8;
+    ASSERT_TRUE(simulation_server.GetWorld()->RestoreCompatibleState(moved_state));
+
+    simulation_server.SetSyncSceneOnFixedStep(false);
+    ASSERT_TRUE(simulation_server.StepOnce());
+    EXPECT_DOUBLE_EQ(joint->GetJointPosition(), 0.25);
+
+    ASSERT_TRUE(simulation_server.SyncSceneFromWorld());
+    EXPECT_NEAR(joint->GetJointPosition(), 0.8, CMP_EPSILON);
+
+    simulation_server.SetSyncSceneOnFixedStep(true);
+    moved_state = simulation_server.GetWorld()->GetSceneState();
+    moved_state.robots[0].joints[0].position = 0.2;
+    ASSERT_TRUE(simulation_server.GetWorld()->RestoreCompatibleState(moved_state));
+    ASSERT_TRUE(simulation_server.StepOnce());
+    EXPECT_NEAR(joint->GetJointPosition(), 0.2, CMP_EPSILON);
+
+    gobot::Object::Delete(robot);
+}
+
 TEST(TestSimulationServer, syncs_world_link_transform_to_motion_mode_robot) {
     gobot::SimulationServer simulation_server;
 

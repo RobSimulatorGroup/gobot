@@ -18,7 +18,9 @@ option(GOB_BUILD_ASSIMP "build mesh import support through Assimp" ON)
 option(GOB_BUILD_MUJOCO "build MuJoCo CPU physics backend support" ON)
 option(GOB_BUILD_EGL "build EGL headless OpenGL rendering support" ON)
 option(GOB_FETCH_MUJOCO "download MuJoCo from the official GitHub repository when GOB_BUILD_MUJOCO is ON and no local SDK/package is found" ON)
+option(GOB_ENABLE_TRACY "enable Tracy profiler instrumentation" OFF)
 set(GOB_MUJOCO_ROOT "" CACHE PATH "MuJoCo SDK or install prefix. Supports either a CMake package install or an extracted SDK with include/ and lib/.")
+set(GOB_TRACY_ROOT "" CACHE PATH "Tracy install prefix or source checkout used when GOB_ENABLE_TRACY is ON")
 set(GOB_MUJOCO_GIT_TAG "3.8.0" CACHE STRING "MuJoCo release tag used when GOB_FETCH_MUJOCO is ON")
 set(GOB_ASSIMP_IMPORTERS "COLLADA;OBJ;STL;PLY;GLTF" CACHE STRING "Assimp importers enabled for Gobot mesh import")
 
@@ -71,6 +73,45 @@ CPMFindPackage(
 
 if(GOB_BUILD_OPENUSD)
     find_package(pxr REQUIRED CONFIG)
+endif()
+
+set(GOBOT_TRACY_TARGET "")
+if(GOB_ENABLE_TRACY)
+    set(GOBOT_TRACY_ROOT_CANDIDATE "${GOB_TRACY_ROOT}")
+    if(NOT GOBOT_TRACY_ROOT_CANDIDATE AND EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/3rdparty/tracy/public/TracyClient.cpp")
+        set(GOBOT_TRACY_ROOT_CANDIDATE "${CMAKE_CURRENT_SOURCE_DIR}/3rdparty/tracy")
+    endif()
+
+    find_package(Tracy CONFIG QUIET)
+
+    if(NOT TARGET Tracy::TracyClient AND GOBOT_TRACY_ROOT_CANDIDATE)
+        find_package(Tracy CONFIG QUIET
+            PATHS
+                "${GOBOT_TRACY_ROOT_CANDIDATE}"
+                "${GOBOT_TRACY_ROOT_CANDIDATE}/lib/cmake/Tracy"
+                "${GOBOT_TRACY_ROOT_CANDIDATE}/lib64/cmake/Tracy"
+            NO_DEFAULT_PATH
+        )
+    endif()
+
+    if(TARGET Tracy::TracyClient)
+        set(GOBOT_TRACY_TARGET Tracy::TracyClient)
+    elseif(GOBOT_TRACY_ROOT_CANDIDATE AND EXISTS "${GOBOT_TRACY_ROOT_CANDIDATE}/public/TracyClient.cpp")
+        add_library(gobot_tracy_client STATIC "${GOBOT_TRACY_ROOT_CANDIDATE}/public/TracyClient.cpp")
+        target_include_directories(gobot_tracy_client PUBLIC "${GOBOT_TRACY_ROOT_CANDIDATE}/public")
+        target_compile_definitions(gobot_tracy_client PUBLIC TRACY_ENABLE=1)
+        set(GOBOT_TRACY_TARGET gobot_tracy_client)
+    endif()
+
+    if(GOBOT_TRACY_TARGET)
+        message(STATUS "Gobot Tracy profiling enabled with target: ${GOBOT_TRACY_TARGET}")
+    else()
+        message(FATAL_ERROR
+            "GOB_ENABLE_TRACY is ON, but Tracy was not found.\n"
+            "Provide a package/prefix with -DGOB_TRACY_ROOT=/path/to/tracy or -DCMAKE_PREFIX_PATH=/path/to/tracy,\n"
+            "or initialize the optional 3rdparty/tracy submodule."
+        )
+    endif()
 endif()
 
 set(GOBOT_MUJOCO_TARGET "")
@@ -418,6 +459,11 @@ target_compile_definitions(gobot PUBLIC
         GOBOT_VERSION_PATCH=${PROJECT_VERSION_PATCH}
         GOBOT_VERSION="${PROJECT_VERSION}"
         GOBOT_VERSION_COMMIT="${GOBOT_VERSION_COMMIT}")
+
+if(GOB_ENABLE_TRACY AND GOBOT_TRACY_TARGET)
+    target_compile_definitions(gobot PUBLIC GOBOT_ENABLE_TRACY=1 TRACY_ENABLE=1)
+    target_link_libraries(gobot PUBLIC ${GOBOT_TRACY_TARGET})
+endif()
 
 if(GOB_BUILD_OPENUSD)
     target_compile_definitions(gobot PUBLIC GOBOT_HAS_OPENUSD=1)

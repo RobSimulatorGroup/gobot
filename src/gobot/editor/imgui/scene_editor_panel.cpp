@@ -185,6 +185,9 @@ std::vector<std::string> FindProjectPythonScripts() {
 }
 
 bool AcceptSceneResourceDrop() {
+    if (auto* editor = Editor::GetInstanceOrNull(); editor != nullptr && editor->IsSceneTreeReadOnly()) {
+        return false;
+    }
     if (!ImGui::BeginDragDropTarget()) {
         return false;
     }
@@ -279,6 +282,10 @@ SceneEditorPanel::~SceneEditorPanel()
 }
 
 Node* SceneEditorPanel::GetAddChildTarget(Node* scene_root) const {
+    if (Editor::GetInstance()->IsSceneTreeReadOnly()) {
+        return nullptr;
+    }
+
     auto* selected = Editor::GetInstance()->GetSelected();
     if (selected == nullptr || scene_root == nullptr) {
         return scene_root;
@@ -295,6 +302,10 @@ Node* SceneEditorPanel::GetAddChildTarget(Node* scene_root) const {
 }
 
 void SceneEditorPanel::RequestOpenAddChildDialog(Node* parent) {
+    if (Editor::GetInstance()->IsSceneTreeReadOnly()) {
+        return;
+    }
+
     add_child_parent_ = parent;
     open_add_child_dialog_ = true;
     add_node_search_.clear();
@@ -302,6 +313,10 @@ void SceneEditorPanel::RequestOpenAddChildDialog(Node* parent) {
 }
 
 bool SceneEditorPanel::CreateSelectedAddNode() {
+    if (Editor::GetInstance()->IsSceneTreeReadOnly()) {
+        return false;
+    }
+
     if (add_child_parent_ == nullptr ||
         selected_add_node_id_.empty()) {
         return false;
@@ -327,6 +342,10 @@ bool SceneEditorPanel::CreateSelectedAddNode() {
 }
 
 void SceneEditorPanel::RequestOpenAttachScriptDialog(Node* node) {
+    if (Editor::GetInstance()->IsSceneTreeReadOnly()) {
+        return;
+    }
+
     if (node == nullptr) {
         return;
     }
@@ -342,6 +361,10 @@ void SceneEditorPanel::RequestOpenAttachScriptDialog(Node* node) {
 }
 
 bool SceneEditorPanel::AttachSelectedScript() {
+    if (Editor::GetInstance()->IsSceneTreeReadOnly()) {
+        return false;
+    }
+
     if (attach_script_node_ == nullptr) {
         return false;
     }
@@ -387,6 +410,7 @@ bool SceneEditorPanel::IsSceneInstanceNode(Node* node) const {
 bool SceneEditorPanel::CanDeleteNode(Node* node) const {
     auto* editor = Editor::GetInstance();
     return node != nullptr &&
+           !editor->IsSceneTreeReadOnly() &&
            node != editor->GetEditedSceneRoot() &&
            node->GetParent() != nullptr;
 }
@@ -412,11 +436,19 @@ bool SceneEditorPanel::DeleteNode(Node* node) {
 }
 
 bool SceneEditorPanel::AttachScript(Node* node) {
+    if (Editor::GetInstance()->IsSceneTreeReadOnly()) {
+        return false;
+    }
+
     RequestOpenAttachScriptDialog(node);
     return node != nullptr;
 }
 
 bool SceneEditorPanel::AttachScript(Node* node, const std::string& script_path) {
+    if (Editor::GetInstance()->IsSceneTreeReadOnly()) {
+        return false;
+    }
+
     if (node == nullptr || script_path.empty()) {
         return false;
     }
@@ -449,6 +481,10 @@ bool SceneEditorPanel::AttachScript(Node* node, const std::string& script_path) 
 }
 
 bool SceneEditorPanel::AcceptResourceDropOnNode(Node* node) {
+    if (Editor::GetInstance()->IsSceneTreeReadOnly()) {
+        return false;
+    }
+
     if (node == nullptr || !ImGui::BeginDragDropTarget()) {
         return false;
     }
@@ -483,6 +519,10 @@ bool SceneEditorPanel::AcceptResourceDropOnNode(Node* node) {
 }
 
 bool SceneEditorPanel::DetachScript(Node* node) {
+    if (Editor::GetInstance()->IsSceneTreeReadOnly()) {
+        return false;
+    }
+
     if (node == nullptr || !node->GetScript().IsValid()) {
         return false;
     }
@@ -870,6 +910,7 @@ bool SceneEditorPanel::DrawNode(Node* node)
     }
 
     if (show) {
+        const bool read_only = editor->IsSceneTreeReadOnly();
         const bool can_delete = CanDeleteNode(node);
         const Ref<PackedScene> scene_instance = node->GetSceneInstance();
         const Ref<PythonScript> python_script = node->GetScript();
@@ -878,7 +919,7 @@ bool SceneEditorPanel::DrawNode(Node* node)
         const bool can_open_scene_instance = is_scene_instance && !scene_instance->GetPath().empty();
         const bool can_open_script = has_script && !python_script->GetPath().empty();
         auto* node_3d = Object::PointerCastTo<Node3D>(node);
-        const bool has_visibility_toggle = node_3d != nullptr;
+        const bool has_visibility_toggle = node_3d != nullptr && !read_only;
         const bool node_visible = node_3d == nullptr || node_3d->IsVisible();
         const bool node_visible_in_tree = node_3d == nullptr || node_3d->IsVisibleInTree();
         bool delete_node = false;
@@ -959,7 +1000,9 @@ bool SceneEditorPanel::DrawNode(Node* node)
                     ImGui::Text("Script: %s", python_script->GetPath().c_str());
                 }
                 ImGui::Spacing();
-                ImGui::TextUnformatted("Click to select. Double-click to rename and focus the 3D view.");
+                ImGui::TextUnformatted(read_only
+                                               ? "Click to select. Double-click to focus the 3D view."
+                                               : "Click to select. Double-click to rename and focus the 3D view.");
                 ImGui::EndTooltip();
             }
             if (!node_visible_in_tree) {
@@ -1106,7 +1149,9 @@ bool SceneEditorPanel::DrawNode(Node* node)
         if(double_clicked) {
             auto value = name;
             ImGui::PushItemWidth(-1);
-            if(ImGui::InputText("##Name", &value)) {
+            if(read_only) {
+                ImGui::TextUnformatted(name.c_str());
+            } else if(ImGui::InputText("##Name", &value)) {
                 if (auto* context = editor->GetEngineContext()) {
                     context->ExecuteSceneCommand(std::make_unique<RenameNodeCommand>(node->GetInstanceId(), value));
                 }
@@ -1116,13 +1161,13 @@ bool SceneEditorPanel::DrawNode(Node* node)
 
         if(ImGui::BeginPopup("NodeContext")) {
             editor->SetSelected(node);
-            if (is_scene_instance) {
+            if (is_scene_instance || read_only) {
                 ImGui::BeginDisabled();
             }
             if (ImGui::MenuItem("Add Child")) {
                 RequestOpenAddChildDialog(node);
             }
-            if (is_scene_instance) {
+            if (is_scene_instance || read_only) {
                 ImGui::EndDisabled();
             }
             if (!can_open_scene_instance) {
@@ -1143,22 +1188,22 @@ bool SceneEditorPanel::DrawNode(Node* node)
             if (!can_open_script) {
                 ImGui::EndDisabled();
             }
-            if (has_script) {
+            if (has_script || read_only) {
                 ImGui::BeginDisabled();
             }
             if (ImGui::MenuItem(ICON_MDI_LANGUAGE_PYTHON " Attach Script")) {
                 AttachScript(node);
             }
-            if (has_script) {
+            if (has_script || read_only) {
                 ImGui::EndDisabled();
             }
-            if (!has_script) {
+            if (!has_script || read_only) {
                 ImGui::BeginDisabled();
             }
             if (ImGui::MenuItem(ICON_MDI_CLOSE " Detach Script")) {
                 DetachScript(node);
             }
-            if (!has_script) {
+            if (!has_script || read_only) {
                 ImGui::EndDisabled();
             }
             if (!can_delete) {
@@ -1182,7 +1227,7 @@ bool SceneEditorPanel::DrawNode(Node* node)
             double_clicked_ = nullptr;
 
         if(!script_icon_clicked && !visibility_icon_clicked && ImGui::IsMouseDoubleClicked(ImGuiMouseButton_Left) && node_row_hovered) {
-            double_clicked_ = node;
+            double_clicked_ = read_only ? nullptr : node;
             editor->FocusSceneViewerPanel();
             if (auto* node_3d = Object::PointerCastTo<Node3D>(node)) {
                 Node3DEditor::GetInstance()->FocusNode(node_3d);
@@ -1280,19 +1325,28 @@ void SceneEditorPanel::OnImGuiContent()
     select_up_ = Input::GetInstance()->GetKeyPressed(KeyCode::Up);
     select_down_ = Input::GetInstance()->GetKeyPressed(KeyCode::Down);
 
-    auto* scene_root = Editor::GetInstance()->GetEditedSceneRoot();
+    auto* editor = Editor::GetInstance();
+    auto* scene_root = editor->GetSceneTreeRoot();
     if(!scene_root) {
         return;
     }
+    const bool read_only = editor->IsSceneTreeReadOnly();
 
     ImGui::PushStyleColor(ImGuiCol_MenuBarBg, ImGui::GetStyleColorVec4(ImGuiCol_TabActive));
 
+    if (read_only) {
+        ImGui::BeginDisabled();
+    }
     if(ImGui::Button(ICON_MDI_PLUS)) {
         RequestOpenAddChildDialog(GetAddChildTarget(scene_root));
     }
+    if (read_only) {
+        ImGui::EndDisabled();
+        DrawHoverTooltip("Runtime Scene is read-only while Play Mode is active");
+    }
 
     ImGui::SameLine();
-    Node* selected = Editor::GetInstance()->GetSelected();
+    Node* selected = editor->GetSelected();
     const bool can_delete_selected = CanDeleteNode(selected);
     if (!can_delete_selected) {
         ImGui::BeginDisabled();
@@ -1302,6 +1356,12 @@ void SceneEditorPanel::OnImGuiContent()
     }
     if (!can_delete_selected) {
         ImGui::EndDisabled();
+    }
+
+    if (read_only) {
+        ImGui::SameLine();
+        ImGui::TextDisabled("Runtime Scene");
+        DrawHoverTooltip("Showing the active Play Mode clone. Selection and Inspector are read-only.");
     }
 
     ImGui::SameLine();

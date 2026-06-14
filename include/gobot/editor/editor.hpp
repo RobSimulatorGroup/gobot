@@ -62,6 +62,14 @@ public:
 
     Node* GetActiveSceneRoot() const;
 
+    Node* GetSceneTreeRoot() const;
+
+    [[nodiscard]] bool IsRuntimeNode(const Node* node) const;
+
+    [[nodiscard]] bool IsSceneTreeReadOnly() const;
+
+    bool SyncRuntimeSceneFromSimulation();
+
     EngineContext* GetEngineContext() const { return engine_context_; }
 
     bool SaveEditedScene(const std::string& path) const;

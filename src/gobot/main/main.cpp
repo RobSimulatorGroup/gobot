@@ -6,6 +6,7 @@
  */
 
 #include "gobot/main/main.hpp"
+#include "gobot/core/profile.hpp"
 #include "gobot/editor/editor.hpp"
 #include "gobot/scene/scene_tree.hpp"
 #include "gobot/core/config/project_setting.hpp"
@@ -116,22 +117,37 @@ bool Main::Start() {
 
 bool Main::Iteration()
 {
+    GOBOT_PROFILE_ZONE("Main::Iteration");
     auto time_now = std::chrono::high_resolution_clock::now();
     auto duration = std::chrono::duration<double, std::ratio<1>>(time_now - s_last_ticks).count();
+    GOBOT_PROFILE_PLOT("frame_ms", duration * 1000.0);
+    if (duration > 0.0) {
+        GOBOT_PROFILE_PLOT("render_fps", 1.0 / duration);
+    }
 
     s_last_ticks = time_now;
 
     bool exit = false;
-    if (OS::GetInstance()->GetMainLoop()->PhysicsProcess(duration)) {
-        exit = true;
+    {
+        GOBOT_PROFILE_ZONE("Main::PhysicsProcess");
+        if (OS::GetInstance()->GetMainLoop()->PhysicsProcess(duration)) {
+            exit = true;
+        }
     }
 
-    if (OS::GetInstance()->GetMainLoop()->Process(duration)) {
-        exit = true;
+    {
+        GOBOT_PROFILE_ZONE("Main::Process");
+        if (OS::GetInstance()->GetMainLoop()->Process(duration)) {
+            exit = true;
+        }
     }
 
-    RS::GetInstance()->Draw();
+    {
+        GOBOT_PROFILE_ZONE("Main::Draw");
+        RS::GetInstance()->Draw();
+    }
 
+    GOBOT_PROFILE_FRAME("MainFrame");
 
     return exit;
 

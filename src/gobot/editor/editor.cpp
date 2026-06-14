@@ -182,6 +182,23 @@ Node* Editor::GetActiveSceneRoot() const {
     return GetEditedSceneRoot();
 }
 
+Node* Editor::GetSceneTreeRoot() const {
+    return GetActiveSceneRoot();
+}
+
+bool Editor::IsRuntimeNode(const Node* node) const {
+    if (node == nullptr || scene_play_session_ == nullptr || !scene_play_session_->IsRunning()) {
+        return false;
+    }
+
+    Node* runtime_root = scene_play_session_->GetRuntimeRoot();
+    return runtime_root != nullptr && (node == runtime_root || runtime_root->IsAncestorOf(node));
+}
+
+bool Editor::IsSceneTreeReadOnly() const {
+    return IsScenePlaySessionRunning();
+}
+
 void Editor::BindEngineContextToEditedScene() {
     if (engine_context_ == nullptr) {
         return;
@@ -193,8 +210,9 @@ void Editor::BindEngineContextToEditedScene() {
 }
 
 void Editor::SetSelected(Node* selected) {
-    Node* scene_root = GetEditedSceneRoot();
-    if (selected != nullptr && scene_root != nullptr) {
+    const bool runtime_node = IsRuntimeNode(selected);
+    Node* scene_root = runtime_node ? GetSceneTreeRoot() : GetEditedSceneRoot();
+    if (!runtime_node && selected != nullptr && scene_root != nullptr) {
         Node* instance_root = nullptr;
         for (Node* node = selected; node != nullptr && node != scene_root; node = node->GetParent()) {
             if (node->GetSceneInstance().IsValid()) {
@@ -208,6 +226,19 @@ void Editor::SetSelected(Node* selected) {
     }
 
     selected_ = selected;
+}
+
+bool Editor::SyncRuntimeSceneFromSimulation() {
+    if (!IsScenePlaySessionRunning() || !SimulationServer::HasInstance()) {
+        return false;
+    }
+
+    SimulationServer* simulation = SimulationServer::GetInstance();
+    if (!simulation->HasWorld() || simulation->GetSceneRoot() != scene_play_session_->GetRuntimeRoot()) {
+        return false;
+    }
+
+    return simulation->SyncSceneFromWorld();
 }
 
 bool Editor::SaveEditedScene(const std::string& path) const {
@@ -592,14 +623,18 @@ bool Editor::PlayScene() {
 
     if (!simulation->HasWorld() || simulation->GetSceneRoot() != play_root) {
         simulation->ClearWorld();
+        simulation->SetSyncSceneOnFixedStep(false);
         if (!simulation->BuildWorldFromScene(play_root)) {
             StopScenePlaySession();
             simulation->SetPaused(true);
             return false;
         }
+    } else {
+        simulation->SetSyncSceneOnFixedStep(false);
     }
 
     simulation->SetPaused(false);
+    SyncRuntimeSceneFromSimulation();
     return true;
 }
 
@@ -608,12 +643,14 @@ bool Editor::PauseScene() {
         return false;
     }
     SimulationServer::GetInstance()->SetPaused(true);
+    SimulationServer::GetInstance()->SetSyncSceneOnFixedStep(true);
     return true;
 }
 
 bool Editor::StopScene() {
     if (SimulationServer::HasInstance()) {
         SimulationServer::GetInstance()->SetPaused(true);
+        SimulationServer::GetInstance()->SetSyncSceneOnFixedStep(true);
         SimulationServer::GetInstance()->ClearWorld();
     }
     StopScenePlaySession();
@@ -631,6 +668,7 @@ bool Editor::StepScene() {
         return false;
     }
     simulation->SetPaused(true);
+    simulation->SetSyncSceneOnFixedStep(true);
     return simulation->StepOnce([this](RealType fixed_delta) {
         if (scene_play_session_ != nullptr && scene_play_session_->IsRunning()) {
             scene_play_session_->NotifyPhysicsProcess(static_cast<double>(fixed_delta));
@@ -643,6 +681,7 @@ void Editor::StopScenePlaySession() {
         SimulationServer* simulation = SimulationServer::GetInstance();
         if (simulation->GetSceneRoot() == scene_play_session_->GetRuntimeRoot()) {
             simulation->SetPaused(true);
+            simulation->SetSyncSceneOnFixedStep(true);
             simulation->ClearWorld();
         }
     }
@@ -663,11 +702,14 @@ bool Editor::ResetScenePlaySession() {
     }
     const bool running = scene_play_session_->Reset(GetEditedSceneRoot(), engine_context_);
     if (running && SimulationServer::HasInstance()) {
-        SimulationServer::GetInstance()->ClearWorld();
-        if (!SimulationServer::GetInstance()->BuildWorldFromScene(scene_play_session_->GetRuntimeRoot())) {
+        SimulationServer* simulation = SimulationServer::GetInstance();
+        simulation->ClearWorld();
+        simulation->SetSyncSceneOnFixedStep(false);
+        if (!simulation->BuildWorldFromScene(scene_play_session_->GetRuntimeRoot())) {
             scene_play_session_->Stop();
             return false;
         }
+        SyncRuntimeSceneFromSimulation();
     }
     return running;
 }
@@ -691,6 +733,7 @@ void Editor::NotifyScenePlaySessionProcess() {
     if (SimulationServer::HasInstance() && SimulationServer::GetInstance()->IsPaused()) {
         return;
     }
+    SyncRuntimeSceneFromSimulation();
     scene_play_session_->NotifyProcess(GetProcessDeltaTime());
 }
 

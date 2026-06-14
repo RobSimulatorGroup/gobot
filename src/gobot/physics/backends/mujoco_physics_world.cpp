@@ -17,6 +17,7 @@
 #include <unordered_map>
 
 #include "gobot/core/config/project_setting.hpp"
+#include "gobot/core/profile.hpp"
 #include "gobot/core/registration.hpp"
 #include "gobot/log.hpp"
 #include "gobot/physics/joint_controller.hpp"
@@ -957,6 +958,7 @@ const std::string& MuJoCoPhysicsWorld::GetLastError() const {
 }
 
 bool MuJoCoPhysicsWorld::BuildFromScene(const Node* scene_root) {
+    GOBOT_PROFILE_ZONE("MuJoCoPhysicsWorld::BuildFromScene");
     if (!CaptureSceneSnapshot(scene_root)) {
         return false;
     }
@@ -1116,6 +1118,7 @@ bool MuJoCoPhysicsWorld::RestoreCompatibleState(const PhysicsSceneState& previou
 }
 
 void MuJoCoPhysicsWorld::Step(RealType delta_time) {
+    GOBOT_PROFILE_ZONE("MuJoCoPhysicsWorld::Step");
     if (!available_) {
         return;
     }
@@ -1129,10 +1132,22 @@ void MuJoCoPhysicsWorld::Step(RealType delta_time) {
 
     ApplyMuJoCoOptions(&model->opt, settings_);
     model->opt.timestep = delta_time > 0.0 ? delta_time : settings_.fixed_time_step;
-    ApplyControlsToMuJoCo(0);
-    ApplyExternalForcesToMuJoCo(0);
-    mj_step(model, data);
-    SyncStateFromMuJoCo(0);
+    {
+        GOBOT_PROFILE_ZONE("MuJoCoPhysicsWorld::ApplyControls");
+        ApplyControlsToMuJoCo(0);
+    }
+    {
+        GOBOT_PROFILE_ZONE("MuJoCoPhysicsWorld::ApplyExternalForces");
+        ApplyExternalForcesToMuJoCo(0);
+    }
+    {
+        GOBOT_PROFILE_ZONE("MuJoCoPhysicsWorld::mj_step");
+        mj_step(model, data);
+    }
+    {
+        GOBOT_PROFILE_ZONE("MuJoCoPhysicsWorld::SyncStateFromMuJoCo");
+        SyncStateFromMuJoCo(0);
+    }
 #else
     GOB_UNUSED(delta_time);
 #endif
@@ -1253,6 +1268,7 @@ bool MuJoCoPhysicsWorld::ResetEnvironment(std::size_t environment_index) {
 }
 
 bool MuJoCoPhysicsWorld::StepEnvironment(std::size_t environment_index, RealType delta_time) {
+    GOBOT_PROFILE_ZONE("MuJoCoPhysicsWorld::StepEnvironment");
 #ifdef GOBOT_HAS_MUJOCO
     if (!IsEnvironmentIndexValid(environment_index)) {
         SetLastError(fmt::format("Environment index {} is out of range.", environment_index));
@@ -1268,10 +1284,22 @@ bool MuJoCoPhysicsWorld::StepEnvironment(std::size_t environment_index, RealType
 
     ApplyMuJoCoOptions(&model->opt, settings_);
     model->opt.timestep = delta_time > 0.0 ? delta_time : settings_.fixed_time_step;
-    ApplyControlsToMuJoCo(environment_index);
-    ApplyExternalForcesToMuJoCo(environment_index);
-    mj_step(model, data);
-    SyncStateFromMuJoCo(environment_index);
+    {
+        GOBOT_PROFILE_ZONE("MuJoCoPhysicsWorld::ApplyControls");
+        ApplyControlsToMuJoCo(environment_index);
+    }
+    {
+        GOBOT_PROFILE_ZONE("MuJoCoPhysicsWorld::ApplyExternalForces");
+        ApplyExternalForcesToMuJoCo(environment_index);
+    }
+    {
+        GOBOT_PROFILE_ZONE("MuJoCoPhysicsWorld::mj_step");
+        mj_step(model, data);
+    }
+    {
+        GOBOT_PROFILE_ZONE("MuJoCoPhysicsWorld::SyncStateFromMuJoCo");
+        SyncStateFromMuJoCo(environment_index);
+    }
     last_error_.clear();
     return true;
 #else
@@ -1697,6 +1725,7 @@ bool MuJoCoPhysicsWorld::SetEnvironmentJointControls(const std::string& robot_na
 }
 
 PhysicsRaycastHit MuJoCoPhysicsWorld::RaycastTerrain(const PhysicsRaycastQuery& query) const {
+    GOBOT_PROFILE_ZONE("MuJoCoPhysicsWorld::RaycastTerrain");
 #ifdef GOBOT_HAS_MUJOCO
     if (model_ && data_) {
         return RaycastTerrainWithMuJoCo(query, 0);
@@ -1707,6 +1736,7 @@ PhysicsRaycastHit MuJoCoPhysicsWorld::RaycastTerrain(const PhysicsRaycastQuery& 
 
 PhysicsRaycastHit MuJoCoPhysicsWorld::RaycastTerrainForSensor(const PhysicsRaycastQuery& query,
                                                               std::size_t environment_index) const {
+    GOBOT_PROFILE_ZONE("MuJoCoPhysicsWorld::RaycastTerrainForSensor");
 #ifdef GOBOT_HAS_MUJOCO
     if (model_ && IsEnvironmentIndexValid(environment_index)) {
         return RaycastTerrainWithMuJoCo(query, environment_index);
@@ -1718,6 +1748,7 @@ PhysicsRaycastHit MuJoCoPhysicsWorld::RaycastTerrainForSensor(const PhysicsRayca
 #ifdef GOBOT_HAS_MUJOCO
 PhysicsRaycastHit MuJoCoPhysicsWorld::RaycastTerrainWithMuJoCo(const PhysicsRaycastQuery& query,
                                                                std::size_t environment_index) const {
+    GOBOT_PROFILE_ZONE("MuJoCoPhysicsWorld::RaycastTerrainWithMuJoCo");
     PhysicsRaycastHit result;
     result.origin = query.origin;
 
@@ -2705,6 +2736,7 @@ void MuJoCoPhysicsWorld::FreeModel() {
 }
 
 void MuJoCoPhysicsWorld::SyncStateFromMuJoCo(std::size_t environment_index) {
+    GOBOT_PROFILE_ZONE("MuJoCoPhysicsWorld::SyncStateFromMuJoCo");
     auto* model = static_cast<mjModel*>(model_);
     auto* data = IsEnvironmentIndexValid(environment_index)
                          ? static_cast<mjData*>(environment_data_[environment_index])
@@ -2806,15 +2838,26 @@ void MuJoCoPhysicsWorld::SyncStateFromMuJoCo(std::size_t environment_index) {
         }
     }
 
-    SyncContactsFromMuJoCo(environment_index);
-    SyncSensorsFromMuJoCo(environment_index);
-    UpdateSensorGlobalTransformsAndRaycastSensors(state, static_cast<RealType>(data->time), environment_index);
+    {
+        GOBOT_PROFILE_ZONE("MuJoCoPhysicsWorld::SyncContactsFromMuJoCo");
+        SyncContactsFromMuJoCo(environment_index);
+    }
+    {
+        GOBOT_PROFILE_ZONE("MuJoCoPhysicsWorld::SyncSensorsFromMuJoCo");
+        SyncSensorsFromMuJoCo(environment_index);
+    }
+    {
+        GOBOT_PROFILE_ZONE("MuJoCoPhysicsWorld::UpdateSensorGlobalTransformsAndRaycasts");
+        UpdateSensorGlobalTransformsAndRaycastSensors(state, static_cast<RealType>(data->time), environment_index);
+    }
     if (environment_index == 0 && !environment_states_.empty()) {
+        GOBOT_PROFILE_ZONE("MuJoCoPhysicsWorld::ExportRuntimeState");
         environment_states_[0] = scene_state_;
     }
 }
 
 void MuJoCoPhysicsWorld::SyncStateToMuJoCo(std::size_t environment_index) {
+    GOBOT_PROFILE_ZONE("MuJoCoPhysicsWorld::SyncStateToMuJoCo");
     auto* model = static_cast<mjModel*>(model_);
     auto* data = IsEnvironmentIndexValid(environment_index)
                          ? static_cast<mjData*>(environment_data_[environment_index])
@@ -2897,6 +2940,7 @@ void MuJoCoPhysicsWorld::SyncStateToMuJoCo(std::size_t environment_index) {
 }
 
 void MuJoCoPhysicsWorld::SyncContactsFromMuJoCo(std::size_t environment_index) {
+    GOBOT_PROFILE_ZONE("MuJoCoPhysicsWorld::SyncContactsFromMuJoCo");
     auto* model = static_cast<mjModel*>(model_);
     auto* data = IsEnvironmentIndexValid(environment_index)
                          ? static_cast<mjData*>(environment_data_[environment_index])
@@ -2982,6 +3026,7 @@ void MuJoCoPhysicsWorld::SyncContactsFromMuJoCo(std::size_t environment_index) {
 }
 
 void MuJoCoPhysicsWorld::SyncSensorsFromMuJoCo(std::size_t environment_index) {
+    GOBOT_PROFILE_ZONE("MuJoCoPhysicsWorld::SyncSensorsFromMuJoCo");
     auto* model = static_cast<mjModel*>(model_);
     auto* data = IsEnvironmentIndexValid(environment_index)
                          ? static_cast<mjData*>(environment_data_[environment_index])

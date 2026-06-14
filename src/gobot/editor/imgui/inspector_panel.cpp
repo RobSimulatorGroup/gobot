@@ -128,6 +128,8 @@ void InspectorPanel::OnImGuiContent() {
 
     auto& cache = editor_inspector_->GetVariantCache();
     auto* property_name = editor_inspector_->GetNameProperty();
+    auto* inspected_node = Object::PointerCastTo<Node>(cache.object);
+    const bool runtime_node = Editor::GetInstance()->IsRuntimeNode(inspected_node);
 
     const float icon_size = ImGui::GetTextLineHeight();
     DrawEditorIcon(GetTypeEditorIcon(cache.type), {icon_size, icon_size});
@@ -147,10 +149,19 @@ void InspectorPanel::OnImGuiContent() {
                                                 content_right - ImGui::GetCursorScreenPos().x -
                                                 settings_button_width - item_spacing);
         ImGui::SetNextItemWidth(name_input_width);
-        if (ImGui::InputText(fmt::format("##{}", property_name->GetPropertyName()).c_str(), &str)) {
+        if (runtime_node) {
+            ImGui::BeginDisabled();
+        }
+        const bool name_changed = ImGui::InputText(fmt::format("##{}", property_name->GetPropertyName()).c_str(), &str);
+        if (runtime_node) {
+            ImGui::EndDisabled();
+        }
+        if (!runtime_node && name_changed) {
             property_name->SetValue(str);
         }
-        DrawHoverTooltip("Selected node name. Editing this renames the node in SceneTree.");
+        DrawHoverTooltip(runtime_node
+                         ? "Runtime node name. Play Mode Inspector is read-only."
+                         : "Selected node name. Editing this renames the node in SceneTree.");
 
         ImGui::SameLine();
         if (ImGui::Button(ICON_MDI_COGS)) {
@@ -181,6 +192,10 @@ void InspectorPanel::OnImGuiContent() {
         }
     }
 
+    if (runtime_node) {
+        ImGui::TextDisabled("Runtime state");
+        DrawHoverTooltip("Showing the active Play Mode clone. Properties are synchronized from the simulation world once per editor frame.");
+    }
 
     filter_->Draw("###PropertyFilter", ImGui::GetContentRegionAvail().x);
     DrawHoverTooltip("Filter visible properties by name");

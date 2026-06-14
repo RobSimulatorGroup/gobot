@@ -6,6 +6,7 @@
  */
 
 #include "gobot/rendering/render_server.hpp"
+#include "gobot/core/profile.hpp"
 #include "gobot/scene/node.hpp"
 #include "gobot/scene/scene_tree.hpp"
 #include "gobot/scene/window.hpp"
@@ -65,6 +66,7 @@ bool RenderServer::HasInstance() {
 }
 
 void RenderServer::Draw() {
+    GOBOT_PROFILE_ZONE("RenderServer::Draw");
     SceneTree::GetInstance()->GetRoot()->GetWindow()->SwapBuffers();
 }
 
@@ -119,6 +121,7 @@ void RenderServer::MeshSetSphere(const RID& mesh, RealType radius, int radial_se
 }
 
 void RenderServer::RenderSceneToViewport(const RID& viewport, const Node* scene_root, const Camera3D* camera) {
+    GOBOT_PROFILE_ZONE("RenderServer::RenderSceneToViewport");
     ERR_FAIL_COND(RSG::scene == nullptr);
     const RID render_target = RSG::viewport->GetViewportRenderTarget(viewport);
     ERR_FAIL_COND(render_target.IsNull());
@@ -129,17 +132,21 @@ void RenderServer::RenderSceneToViewport(const RID& viewport, const Node* scene_
 void RenderServer::RenderEditorDebugToViewport(const RID& viewport,
                                                const Camera3D* camera,
                                                const Node* scene_root,
-                                               const PhysicsWorld* physics_world) {
+                                               const PhysicsWorld* physics_world,
+                                               bool show_collision_shapes) {
+    GOBOT_PROFILE_ZONE("RenderServer::RenderEditorDebugToViewport");
     ERR_FAIL_COND(RSG::debug_draw == nullptr);
     const RID render_target = RSG::viewport->GetViewportRenderTarget(viewport);
     ERR_FAIL_COND(render_target.IsNull());
 
-    RSG::debug_draw->RenderEditorDebug(render_target, camera, scene_root, physics_world);
+    RSG::debug_draw->RenderEditorDebug(render_target, camera, scene_root, physics_world, show_collision_shapes);
 }
 
 void RenderServer::RenderDebugArrowsToViewport(const RID& viewport,
                                                const Camera3D* camera,
                                                const std::vector<DebugArrow>& arrows) {
+    GOBOT_PROFILE_ZONE("RenderServer::RenderDebugArrowsToViewport");
+    GOBOT_PROFILE_PLOT("debug_arrows", static_cast<double>(arrows.size()));
     ERR_FAIL_COND(RSG::debug_draw == nullptr);
     if (arrows.empty()) {
         return;

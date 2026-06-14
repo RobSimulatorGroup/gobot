@@ -6,6 +6,7 @@
  */
 
 #include "gobot/editor/imgui/imgui_manager.hpp"
+#include "gobot/core/profile.hpp"
 #include "gobot/editor/imgui/imgui_utilities.hpp"
 #include "gobot/drivers/sdl/sdl_window.hpp"
 #include "gobot/scene/scene_tree.hpp"
@@ -101,12 +102,14 @@ ImGuiManager* ImGuiManager::GetInstance()
 }
 
 void ImGuiManager::BeginFrame() {
+    GOBOT_PROFILE_ZONE("ImGui::BeginFrame");
     imgui_renderer_->NewFrame();
     ImGui::NewFrame();
     ImGuizmo::BeginFrame();
 }
 
 void ImGuiManager::EndFrame() {
+    GOBOT_PROFILE_ZONE("ImGui::EndFrame");
     imgui_renderer_->Render();
 }
 

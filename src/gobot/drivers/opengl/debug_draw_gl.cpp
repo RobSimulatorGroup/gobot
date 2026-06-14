@@ -6,6 +6,7 @@
 
 #include "gobot/drivers/opengl/debug_draw_gl.hpp"
 
+#include "gobot/core/profile.hpp"
 #include "gobot/drivers/opengl/texture_storage.hpp"
 #include "gobot/error_macros.hpp"
 #include "gobot/log.hpp"
@@ -510,8 +511,10 @@ void GLRendererDebugDraw::DrawWorldAxes() {
 }
 
 void GLRendererDebugDraw::DrawCollisionDebug(const SceneRenderItems& render_items) {
+    GOBOT_PROFILE_ZONE("OpenGL::DrawCollisionDebug");
     std::vector<float> vertices;
     CollectCollisionLines(render_items, vertices);
+    GOBOT_PROFILE_PLOT("debug_vertices", static_cast<double>(vertices.size() / 3));
     if (vertices.empty()) {
         collision_lines_.vertex_count = 0;
         return;
@@ -542,6 +545,7 @@ void GLRendererDebugDraw::DrawCollisionDebug(const SceneRenderItems& render_item
 }
 
 void GLRendererDebugDraw::DrawHeightScannerDebug(const PhysicsSceneState* physics_state) {
+    GOBOT_PROFILE_ZONE("OpenGL::DrawHeightScannerDebug");
     std::vector<float> ray_vertices;
     std::vector<float> hit_vertices;
     std::vector<float> normal_vertices;
@@ -588,6 +592,7 @@ void GLRendererDebugDraw::DrawHeightScannerDebug(const PhysicsSceneState* physic
             append_sensor(sensor);
         }
     }
+    GOBOT_PROFILE_PLOT("sensor_hits", static_cast<double>(hit_vertices.size() / 9));
 
     DrawLineBuffer(height_scanner_ray_lines_, ray_vertices, program_, 0.35f, 0.95f, 0.22f, 0.42f, 1.0f);
     DrawTriangleBuffer(height_scanner_hit_spheres_, hit_vertices, program_, 0.0f, 0.93f, 1.0f, 0.98f);
@@ -595,6 +600,7 @@ void GLRendererDebugDraw::DrawHeightScannerDebug(const PhysicsSceneState* physic
 }
 
 void GLRendererDebugDraw::DrawContactDebug(const PhysicsWorld* physics_world) {
+    GOBOT_PROFILE_ZONE("OpenGL::DrawContactDebug");
     if (physics_world == nullptr) {
         contact_point_lines_.vertex_count = 0;
         contact_normal_lines_.vertex_count = 0;
@@ -671,7 +677,9 @@ void GLRendererDebugDraw::DrawContactDebug(const PhysicsWorld* physics_world) {
 void GLRendererDebugDraw::RenderEditorDebug(const RID& render_target,
                                             const Camera3D* camera,
                                             const Node* scene_root,
-                                            const PhysicsWorld* physics_world) {
+                                            const PhysicsWorld* physics_world,
+                                            bool show_collision_shapes) {
+    GOBOT_PROFILE_ZONE("OpenGL::RenderEditorDebug");
     ERR_FAIL_COND(camera == nullptr);
 
     auto* rt = TextureStorage::GetInstance()->GetRenderTarget(render_target);
@@ -698,7 +706,6 @@ void GLRendererDebugDraw::RenderEditorDebug(const RID& render_target,
     glUniformMatrix4fv(glGetUniformLocation(program_, "u_view"), 1, GL_FALSE, view.data());
     glUniformMatrix4fv(glGetUniformLocation(program_, "u_projection"), 1, GL_FALSE, projection.data());
 
-    const SceneRenderItems render_items = CollectSceneRenderItems(scene_root);
     std::optional<NullPhysicsWorld> preview_world;
     if (physics_world == nullptr && scene_root != nullptr) {
         preview_world.emplace();
@@ -711,7 +718,17 @@ void GLRendererDebugDraw::RenderEditorDebug(const RID& render_target,
                                                      : (preview_world.has_value() ? &preview_world->GetSceneState() : nullptr);
     DrawEditorGrid();
     DrawWorldAxes();
-    DrawCollisionDebug(render_items);
+    if (show_collision_shapes) {
+        SceneRenderItems render_items;
+        {
+            GOBOT_PROFILE_ZONE("OpenGL::CollectDebugRenderItems");
+            render_items = CollectSceneRenderItems(scene_root);
+        }
+        DrawCollisionDebug(render_items);
+    } else {
+        collision_lines_.vertex_count = 0;
+        GOBOT_PROFILE_PLOT("debug_vertices", 0.0);
+    }
     DrawHeightScannerDebug(physics_state);
 
     glDisable(GL_DEPTH_TEST);
@@ -728,6 +745,7 @@ void GLRendererDebugDraw::RenderEditorDebug(const RID& render_target,
 void GLRendererDebugDraw::RenderDebugArrows(const RID& render_target,
                                             const Camera3D* camera,
                                             const std::vector<DebugArrow>& arrows) {
+    GOBOT_PROFILE_ZONE("OpenGL::RenderDebugArrows");
     ERR_FAIL_COND(camera == nullptr);
     if (arrows.empty()) {
         debug_arrow_lines_.vertex_count = 0;

@@ -446,7 +446,8 @@ void SceneView3DPanel::OnImGuiContent()
                                scene_root,
                                camera_3d,
                                physics_world,
-                               debug_arrows);
+                               debug_arrows,
+                               !Editor::GetInstance()->IsScenePlaySessionRunning());
 
     ImGui::SetCursorPos({0.0f, viewport_top_offset});
     const ImVec2 scene_view_position = ImGui::GetCursorScreenPos();
@@ -548,11 +549,19 @@ void SceneView3DPanel::ProcessViewportInput(Node* scene_root,
     auto* node3d_editor = Node3DEditor::GetInstance();
     const bool gizmo_captures_mouse = ImGuizmo::IsUsing() || ImGuizmo::IsOver();
     const bool runtime_playing = IsSceneRuntimePlaying();
+    const bool left_down = ImGui::IsMouseDown(ImGuiMouseButton_Left);
+    const bool camera_modifier_down = ImGui::GetIO().KeyCtrl || ImGui::GetIO().KeyShift;
+    const bool should_pick =
+            scene_root != nullptr &&
+            mouse_inside_rect &&
+            !gizmo_captures_mouse &&
+            (!runtime_playing ||
+             (ImGui::IsMouseClicked(ImGuiMouseButton_Left) && !camera_modifier_down && !viewport_input_blocked));
     if (!scene_root || !mouse_inside_rect || gizmo_captures_mouse) {
         hovered_node_ = nullptr;
         motion_target_joint_ = nullptr;
         node3d_editor->SetViewportZoomPivot(Vector3::Zero(), false);
-    } else {
+    } else if (should_pick) {
         Vector3 hit_point = Vector3::Zero();
         hovered_node_ = viewport_renderer_->PickNode(scene_root, node3d_editor->GetCamera3D(),
                                                      viewport_position, viewport_size, ImGui::GetMousePos(),
@@ -561,10 +570,10 @@ void SceneView3DPanel::ProcessViewportInput(Node* scene_root,
         if (hovered_node_ != nullptr && !drag_force_point_locked_) {
             drag_force_point_ = hit_point;
         }
+    } else if (runtime_playing) {
+        motion_target_joint_ = nullptr;
     }
 
-    const bool left_down = ImGui::IsMouseDown(ImGuiMouseButton_Left);
-    const bool camera_modifier_down = ImGui::GetIO().KeyCtrl || ImGui::GetIO().KeyShift;
     auto* motion_joint = runtime_playing ? nullptr : FindMotionJointForViewportTarget(hovered_node_);
     motion_target_joint_ = motion_joint;
 

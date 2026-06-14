@@ -63,6 +63,10 @@ public:
 
     void SetPaused(bool paused);
 
+    bool ShouldSyncSceneOnFixedStep() const;
+
+    void SetSyncSceneOnFixedStep(bool sync_scene_on_fixed_step);
+
     bool BuildWorldFromScene(const Node* scene_root);
 
     bool RebuildWorldFromScene(const Node* scene_root, bool preserve_state = true);
@@ -134,6 +138,7 @@ private:
     Ref<PhysicsWorld> world_;
     SimulationScene runtime_scene_;
     bool paused_{true};
+    bool sync_scene_on_fixed_step_{true};
     RealType time_scale_{1.0};
     int max_sub_steps_{8};
     int last_step_count_{0};

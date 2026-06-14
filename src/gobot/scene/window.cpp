@@ -7,6 +7,7 @@
 
 
 #include "gobot/scene/window.hpp"
+#include "gobot/core/profile.hpp"
 #include "gobot/core/os/input.hpp"
 #include "gobot/log.hpp"
 #include "gobot/error_macros.hpp"
@@ -62,6 +63,7 @@ void Window::PullEvent()
 }
 
 void Window::SwapBuffers() {
+    GOBOT_PROFILE_ZONE("Window::SwapBuffers");
     ERR_FAIL_COND(window_ == nullptr);
     window_->SwapBuffers();
 }
