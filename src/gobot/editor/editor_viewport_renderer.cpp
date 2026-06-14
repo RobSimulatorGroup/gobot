@@ -630,7 +630,7 @@ void EditorViewportRenderer::Render(const RID& viewport,
                                     const Camera3D* camera,
                                     const PhysicsWorld* physics_world,
                                     const std::vector<DebugArrow>& debug_arrows,
-                                    bool show_collision_shapes) {
+                                    bool show_collision_debug) {
     GOBOT_PROFILE_ZONE("EditorViewportRenderer::Render");
     if (scene_root) {
         GOBOT_PROFILE_ZONE("EditorViewportRenderer::RenderScene");
@@ -642,7 +642,7 @@ void EditorViewportRenderer::Render(const RID& viewport,
                                                        camera,
                                                        scene_root,
                                                        physics_world,
-                                                       show_collision_shapes);
+                                                       show_collision_debug);
     }
     {
         GOBOT_PROFILE_ZONE("EditorViewportRenderer::RenderDebugArrows");

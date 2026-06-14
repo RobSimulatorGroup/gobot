@@ -24,7 +24,7 @@ public:
                 const Camera3D* camera,
                 const PhysicsWorld* physics_world = nullptr,
                 const std::vector<DebugArrow>& debug_arrows = {},
-                bool show_collision_shapes = true);
+                bool show_collision_debug = true);
 
     Node* PickNode(Node* scene_root,
                    const Camera3D* camera,

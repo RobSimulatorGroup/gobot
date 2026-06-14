@@ -442,12 +442,13 @@ void SceneView3DPanel::OnImGuiContent()
     const std::vector<DebugArrow>& debug_arrows = engine_context != nullptr
                                                           ? engine_context->GetDebugArrows()
                                                           : empty_debug_arrows;
+    const bool show_collision_debug = !Editor::GetInstance()->IsScenePlaySessionRunning();
     viewport_renderer_->Render(view_port_,
                                scene_root,
                                camera_3d,
                                physics_world,
                                debug_arrows,
-                               !Editor::GetInstance()->IsScenePlaySessionRunning());
+                               show_collision_debug);
 
     ImGui::SetCursorPos({0.0f, viewport_top_offset});
     const ImVec2 scene_view_position = ImGui::GetCursorScreenPos();

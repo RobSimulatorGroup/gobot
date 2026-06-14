@@ -7,6 +7,7 @@ import gobot
 
 ROBOT = "go1"
 BASE_LINK = "trunk"
+POLICY_ENV = "GOBOT_GO1_POLICY"
 DEFAULT_POLICY_PATH = "res://policies/go1.onnx"
 TORCH_POLICY_PATH = "res://policies/go1.pt"
 PHYSICS_HZ = float(os.environ.get("GOBOT_GO1_PHYSICS_HZ", "240.0"))
@@ -218,20 +219,7 @@ def build_velocity_actor_observation(
     return obs
 
 
-LEGACY_ACTOR_OBS_SCHEMA = velocity_actor_observation_schema(len(JOINT_NAMES), 0)
 ACTOR_OBS_SCHEMA = velocity_actor_observation_schema(len(JOINT_NAMES), TERRAIN_SCAN_DIM)
-
-
-def _supported_actor_obs_dims():
-    return {LEGACY_ACTOR_OBS_SCHEMA.dim, ACTOR_OBS_SCHEMA.dim}
-
-
-def _actor_schema_for_dim(obs_dim):
-    if obs_dim == LEGACY_ACTOR_OBS_SCHEMA.dim:
-        return LEGACY_ACTOR_OBS_SCHEMA
-    if obs_dim == ACTOR_OBS_SCHEMA.dim:
-        return ACTOR_OBS_SCHEMA
-    return None
 
 
 def _parse_version_prefix(value):
@@ -261,6 +249,14 @@ def _check_onnxruntime_version():
         )
 
 
+def _policy_extension(path):
+    return os.path.splitext(path)[1].lower()
+
+
+def _policy_disabled(value):
+    return value is not None and value.strip() == ""
+
+
 class OnnxPolicy:
     def __init__(self, path):
         _check_onnxruntime_version()
@@ -276,11 +272,11 @@ class OnnxPolicy:
         self.obs_dim = None
         if input_shape and isinstance(input_shape[-1], int):
             self.obs_dim = int(input_shape[-1])
-            if _actor_schema_for_dim(self.obs_dim) is None:
+            if self.obs_dim != ACTOR_OBS_SCHEMA.dim:
                 raise RuntimeError(
                     "Go1 ONNX policy observation dimension mismatch: "
-                    f"policy={self.obs_dim}, supported={sorted(_supported_actor_obs_dims())}. "
-                    "Retrain/export the policy or use a matching GOBOT_GO1_POLICY."
+                    f"policy={self.obs_dim}, playback={ACTOR_OBS_SCHEMA.dim}. "
+                    "Retrain or export with the current terrain_scan grid schema."
                 )
 
     def action(self, observation):
@@ -368,6 +364,12 @@ def _resolve_project_path(context, path):
         project_path = context.project_path if context is not None else ""
         path = os.path.join(project_path, path.removeprefix("res://"))
     return path
+
+
+def _resolve_policy_path(context, path):
+    if not path:
+        return ""
+    return _resolve_project_path(context, path)
 
 
 def _clamp(value, lower, upper):
@@ -484,20 +486,19 @@ def _checkpoint_velocity_metadata(checkpoint):
 def _validate_checkpoint_schema(checkpoint, obs_dim):
     metadata = _checkpoint_velocity_metadata(checkpoint)
     if metadata is None:
-        if _actor_schema_for_dim(obs_dim) is None:
+        if obs_dim != ACTOR_OBS_SCHEMA.dim:
             raise RuntimeError(
                 "Go1 checkpoint observation dimension mismatch: "
-                f"checkpoint={obs_dim}, supported={sorted(_supported_actor_obs_dims())}. "
-                "Retrain/export the policy or use a matching GOBOT_GO1_POLICY."
+                f"checkpoint={obs_dim}, playback={ACTOR_OBS_SCHEMA.dim}. "
+                "Retrain or export with the current terrain_scan grid schema."
             )
         return
     version = metadata.get("obs_schema_version")
     names = tuple(metadata.get("obs_names", ()))
-    expected_schema = _actor_schema_for_dim(obs_dim)
-    if expected_schema is None or version != VELOCITY_OBS_SCHEMA_VERSION or names != expected_schema.names:
+    if version != VELOCITY_OBS_SCHEMA_VERSION or names != ACTOR_OBS_SCHEMA.names:
         raise RuntimeError(
             "Go1 checkpoint observation schema differs from playback: "
-            f"checkpoint version={version!r} dim={metadata.get('num_obs')} current={VELOCITY_OBS_SCHEMA_VERSION} dim={obs_dim}"
+            f"checkpoint version={version!r} dim={metadata.get('num_obs')} current={ACTOR_OBS_SCHEMA.version} dim={ACTOR_OBS_SCHEMA.dim}"
         )
 
 
@@ -559,6 +560,14 @@ class Script(gobot.NodeScript):
         self._configure_sensor_debug()
         self.joints = [self._find_joint(name) for name in JOINT_NAMES]
         self.reset_base_position = list(RESET_BASE_POSITION)
+        self._configure_robot_for_playback()
+        self.policy = self._load_policy()
+        self.policy_obs_dim = self._policy_observation_dim()
+        self.height_scan_dim = TERRAIN_SCAN_DIM
+        self._reset_playback_state()
+        self._print_startup()
+
+    def _configure_robot_for_playback(self):
         self._set_robot_editor_transform(self.reset_base_position)
         for index, joint in enumerate(self.joints):
             joint.drive_mode = gobot.JointDriveMode.Position
@@ -566,18 +575,20 @@ class Script(gobot.NodeScript):
             joint.drive_damping = JOINT_KD[index]
             joint.damping = JOINT_KD[index]
         self.robot.mode = gobot.RobotMode.Motion
-        self.policy = self._load_policy()
-        self.policy_obs_dim = getattr(self.policy, "obs_dim", ACTOR_OBS_SCHEMA.dim)
-        if self.policy_obs_dim is None:
-            self.policy_obs_dim = ACTOR_OBS_SCHEMA.dim
-        self.policy_obs_schema = _actor_schema_for_dim(self.policy_obs_dim) or ACTOR_OBS_SCHEMA
-        self.height_scan_dim = dict(self.policy_obs_schema.fields).get("height_scan", TERRAIN_SCAN_DIM)
+
+    def _policy_observation_dim(self):
+        obs_dim = getattr(self.policy, "obs_dim", ACTOR_OBS_SCHEMA.dim)
+        return ACTOR_OBS_SCHEMA.dim if obs_dim is None else obs_dim
+
+    def _reset_playback_state(self):
         self.ticks = 0
         self.playing = True
         self.world_controls_ready = False
         self.command = list(COMMAND)
         self.last_action = [0.0] * len(JOINT_NAMES)
         self.last_targets = list(DEFAULT_POS)
+
+    def _print_startup(self):
         print(
             "Go1 RL policy playback started. policy={} joints={} physics_hz={:.1f} policy_hz={:.1f} decimation={} "
             "reset_z={:.3f} sensor_debug={} cmd=({:.2f}, {:.2f}, {:.2f}) keyboard={}".format(
@@ -652,50 +663,60 @@ class Script(gobot.NodeScript):
         self.playing = True
 
     def _load_policy(self):
-        path = os.environ.get("GOBOT_GO1_POLICY")
-        if path is None:
-            path = DEFAULT_POLICY_PATH
-        if not path:
-            print("Go1 RL policy disabled; set GOBOT_GO1_POLICY to a .onnx or .pt policy to enable playback.")
+        requested_policy = os.environ.get(POLICY_ENV)
+        if _policy_disabled(requested_policy):
+            print(f"Go1 RL policy disabled; set {POLICY_ENV} to a .onnx or .pt policy to enable playback.")
             return None
-        path = _resolve_project_path(self.context, path)
+
+        policy_ref = requested_policy if requested_policy is not None else DEFAULT_POLICY_PATH
+        explicit_policy = requested_policy is not None
+        path = _resolve_policy_path(self.context, policy_ref)
         if not path or not os.path.exists(path):
-            fallback = _resolve_project_path(self.context, TORCH_POLICY_PATH)
-            if os.path.exists(fallback):
-                print(
-                    "Go1 ONNX policy not found at '{}'. Falling back to '{}' "
-                    "requires torch from gobot[train].".format(path or "<empty>", fallback)
-                )
-                path = fallback
-            else:
-                print(f"Go1 RL policy not found at '{path or '<empty>'}'; set GOBOT_GO1_POLICY to a .onnx or .pt policy.")
+            print(f"Go1 RL policy not found at '{path or '<empty>'}'.")
+            if explicit_policy:
+                print(f"Set {POLICY_ENV} to an existing .onnx or .pt policy.")
                 return None
-        extension = os.path.splitext(path)[1].lower()
+            return self._load_torch_fallback("default ONNX policy is missing")
+
+        extension = _policy_extension(path)
         if extension == ".onnx":
-            try:
-                print(f"Go1 RL loading ONNX policy: {path}")
-                return OnnxPolicy(path)
-            except ImportError as error:
-                print("Go1 ONNX policy load failed: onnxruntime>=1.19 is required for NumPy 2 policy playback.")
-                print(f"Go1 ONNX import error: {error}")
-                fallback = _resolve_project_path(self.context, TORCH_POLICY_PATH)
-                if os.path.exists(fallback) and path != fallback:
-                    print(f"Go1 RL falling back to Torch checkpoint: {fallback}")
-                    path = fallback
-                    extension = ".pt"
-                else:
-                    return None
-            except Exception as error:
-                print(f"Go1 ONNX policy load failed: {error}")
-                return None
-        if extension != ".pt":
-            print(f"Go1 RL policy format '{extension or '<none>'}' is unsupported; use .onnx or .pt.")
+            return self._load_onnx_policy(path, allow_torch_fallback=not explicit_policy)
+        if extension == ".pt":
+            return self._load_torch_policy(path)
+
+        print(f"Go1 RL policy format '{extension or '<none>'}' is unsupported; use .onnx or .pt.")
+        return None
+
+    def _load_onnx_policy(self, path, allow_torch_fallback):
+        try:
+            print(f"Go1 RL loading ONNX policy: {path}")
+            return OnnxPolicy(path)
+        except ImportError as error:
+            print("Go1 ONNX policy load failed: onnxruntime>=1.19 is required for NumPy 2 policy playback.")
+            print(f"Go1 ONNX import error: {error}")
+            if allow_torch_fallback:
+                return self._load_torch_fallback("ONNX runtime is unavailable")
             return None
+        except Exception as error:
+            print(f"Go1 ONNX policy load failed: {error}")
+            if allow_torch_fallback:
+                return self._load_torch_fallback("default ONNX policy failed")
+            return None
+
+    def _load_torch_fallback(self, reason):
+        fallback = _resolve_policy_path(self.context, TORCH_POLICY_PATH)
+        if not fallback or not os.path.exists(fallback):
+            print(f"Go1 Torch fallback skipped: {reason}; missing {fallback or '<empty>'}.")
+            return None
+        print(f"Go1 RL falling back to Torch checkpoint ({reason}): {fallback}")
+        return self._load_torch_policy(fallback)
+
+    def _load_torch_policy(self, path):
         try:
             print(f"Go1 RL loading Torch policy: {path}")
             return TorchPolicy(path)
         except ImportError as error:
-            print("Go1 Torch policy load failed: install gobot[train] to use .pt policies.")
+            print("Go1 Torch policy load failed: install/use gobot[train] to use .pt policies.")
             print(f"Go1 Torch import error: {error}")
             return None
         except Exception as error:
@@ -957,7 +978,7 @@ class Script(gobot.NodeScript):
             joint_pos.append(float(joint.get("position", DEFAULT_POS[index])) - DEFAULT_POS[index])
             joint_vel.append(float(joint.get("velocity", 0.0)))
 
-        height_scan = self._height_scan(state) if self.height_scan_dim > 0 else []
+        height_scan = self._height_scan(state)
         obs = build_velocity_actor_observation(
             base_lin_vel_b=lin_vel,
             base_ang_vel_b=ang_vel[:3],

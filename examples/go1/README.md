@@ -11,7 +11,7 @@ This example keeps the robot project self-contained:
 - `train/go1_velocity_cfg.py` contains Go1 joints, rewards, PPO, command, and terrain curriculum settings.
 - `scripts/go1.py` is attached to the `go1_scene.jscn` root and plays a trained policy in `gobot_editor`.
 - `policies/go1.onnx` is the default lightweight rough-terrain playback policy.
-- `policies/go1.pt` is the optional Torch checkpoint used by training/export workflows.
+- `policies/go1.pt` is the Torch checkpoint used by training, export, and fallback playback.
 - `tools/export_policy_onnx.py` converts `policies/go1.pt` to `policies/go1.onnx`.
 - `project.gobot` sets `go1_scene.jscn` as the project main scene.
 
@@ -81,9 +81,10 @@ uv run --extra train python examples/go1/tools/export_policy_onnx.py \
   --output examples/go1/policies/go1.onnx
 ```
 
-The default Go1 playback loads `policies/go1.onnx`, so editor playback does not
-require Torch. Set `GOBOT_GO1_POLICY=res://policies/go1.pt` and install/use
-`gobot[train]` if you want to play the shipped Torch checkpoint.
+The default Go1 playback loads `policies/go1.onnx`, exported from the shipped
+Torch checkpoint with the current observation schema. Set
+`GOBOT_GO1_POLICY=res://policies/go1.pt` and install/use `gobot[train]` if you
+want to play the Torch checkpoint directly.
 
 Play the mjlab-derived Go1 ONNX policy in the editor with keyboard velocity
 commands:
