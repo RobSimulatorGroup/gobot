@@ -481,7 +481,6 @@ void SceneView3DPanel::OnImGuiContent()
     } else {
         const bool viewport_accepts_keyboard =
                 !ImGui::GetIO().WantTextInput &&
-                !ImGui::GetIO().WantCaptureKeyboard &&
                 !ImGuiBlocksViewportInput();
         if (viewport_accepts_keyboard && (mouse_inside_rect || input->HasControlFocus())) {
             input->SetControlFocus(true);
