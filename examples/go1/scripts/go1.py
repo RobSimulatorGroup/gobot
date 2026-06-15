@@ -23,7 +23,6 @@ COMMAND_SMOOTHING = 8.0
 COMMAND_ACTIVE_DEADBAND = 0.02
 FALLEN_BASE_Z = 0.18
 FALLEN_ROLL_PITCH = 0.8
-VELOCITY_DEBUG_NODE_NAME = "velocity_debug"
 KEYBOARD_BINDINGS = {
     "forward": ("W", "Up"),
     "backward": ("S", "Down"),
@@ -516,11 +515,6 @@ def _quat_to_roll_pitch(q):
     return roll, pitch
 
 
-def _quat_yaw(q):
-    w, x, y, z = q
-    return math.atan2(2.0 * (w * z + x * y), 1.0 - 2.0 * (y * y + z * z))
-
-
 class Script(gobot.NodeScript):
     def _ready(self):
         self.context.fixed_time_step = FIXED_TIME_STEP
@@ -535,7 +529,6 @@ class Script(gobot.NodeScript):
             }
         )
         self.robot = self._find_robot()
-        self.velocity_debug = self._ensure_velocity_debug_node()
         self.joints = [self._find_joint(name) for name in JOINT_NAMES]
         self.reset_base_position = list(RESET_BASE_POSITION)
         self._configure_robot_for_playback()
@@ -583,12 +576,6 @@ class Script(gobot.NodeScript):
             )
         )
 
-    def _process(self, delta):
-        pass
-
-    def _exit_tree(self):
-        gobot.clear_debug_arrows()
-
     def _physics_process(self, delta):
         if not self.playing:
             return
@@ -614,8 +601,6 @@ class Script(gobot.NodeScript):
             self.last_action = [float(value) for value in action]
             self.last_targets = self._action_targets(self.last_action)
             self._set_joint_position_targets(self.last_targets)
-            if robot_state is not None:
-                self._update_velocity_debug(robot_state)
 
         self.ticks += 1
         if PRINT_EVERY_TICKS > 0 and self.ticks % PRINT_EVERY_TICKS == 0:
@@ -628,14 +613,10 @@ class Script(gobot.NodeScript):
         self.command = list(COMMAND)
         self.last_action = [0.0] * len(JOINT_NAMES)
         self.last_targets = list(DEFAULT_POS)
-        gobot.clear_debug_arrows()
-        self._clear_velocity_debug()
         self._set_robot_editor_transform(self.reset_base_position)
 
     def pause(self):
         self.playing = False
-        gobot.clear_debug_arrows()
-        self._clear_velocity_debug()
 
     def play(self):
         self.playing = True
@@ -752,16 +733,6 @@ class Script(gobot.NodeScript):
             [1.0, 0.0, 0.0, 0.0],
         )
 
-    def _ensure_velocity_debug_node(self):
-        root = self.get_root()
-        existing = root.find(VELOCITY_DEBUG_NODE_NAME) if root is not None else None
-        if existing is None and root is not None:
-            existing = _find_node_by_name(root, VELOCITY_DEBUG_NODE_NAME)
-        if existing is None:
-            existing = gobot.create_node("VelocityCommandDebug3D", VELOCITY_DEBUG_NODE_NAME)
-            root.add_child(existing, True)
-        return existing
-
     def _update_keyboard_command(self, delta):
         input_state = getattr(self.context, "input", None)
         if input_state is None:
@@ -832,64 +803,6 @@ class Script(gobot.NodeScript):
                 math.sqrt(sum(value * value for value in self.last_action)),
             )
         )
-
-    def _clear_velocity_debug(self):
-        debug = getattr(self, "velocity_debug", None)
-        if debug is None:
-            return
-        for name, value in (
-            ("command_linear_velocity", [0.0, 0.0, 0.0]),
-            ("command_yaw_rate", 0.0),
-            ("measured_linear_velocity", [0.0, 0.0, 0.0]),
-            ("measured_yaw_rate", 0.0),
-            ("policy_loaded", self.policy is not None),
-            ("input_focused", False),
-            ("action_norm", 0.0),
-        ):
-            try:
-                debug.set_property(name, value)
-            except (KeyError, RuntimeError):
-                pass
-
-    def _update_velocity_debug(self, state=None):
-        debug = getattr(self, "velocity_debug", None)
-        if debug is None:
-            return
-        if state is None:
-            state = self._runtime_robot_state()
-        if state is None:
-            self._clear_velocity_debug()
-            return
-        base = self._base_link_state(state)
-        if base is None:
-            self._clear_velocity_debug()
-            return
-
-        position = base.get("position", [0.0, 0.0, 0.0])
-        if len(position) < 3:
-            self._clear_velocity_debug()
-            return
-        quat = base.get("quaternion", [1.0, 0.0, 0.0, 0.0])
-        yaw = _quat_yaw(quat)
-        actual_linear = base.get("linear_velocity", [0.0, 0.0, 0.0])
-        actual_angular = base.get("angular_velocity", [0.0, 0.0, 0.0])
-        measured_body = _quat_rotate_inv(actual_linear, quat)
-        measured_angular_body = _quat_rotate_inv(actual_angular, quat)
-        measured_yaw = float(measured_angular_body[2]) if len(measured_angular_body) > 2 else 0.0
-
-        debug.position = [
-            float(position[0]),
-            float(position[1]),
-            float(position[2]),
-        ]
-        debug.rotation_degrees = [0.0, 0.0, math.degrees(yaw)]
-        debug.set_property("command_linear_velocity", [self.command[0], self.command[1], 0.0])
-        debug.set_property("command_yaw_rate", self.command[2])
-        debug.set_property("measured_linear_velocity", [measured_body[0], measured_body[1], 0.0])
-        debug.set_property("measured_yaw_rate", measured_yaw)
-        debug.set_property("policy_loaded", self.policy is not None)
-        debug.set_property("input_focused", bool(getattr(self.context.input, "has_control_focus", False)))
-        debug.set_property("action_norm", math.sqrt(sum(value * value for value in self.last_action)))
 
     def _offset_from_base(self, position, quat, local_offset):
         offset = _quat_rotate(local_offset, quat)
