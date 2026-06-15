@@ -5102,7 +5102,7 @@
                 "script": null,
                 "sensor_period": 0.0,
                 "visible": true,
-                "visualize_debug": false
+                "visualize_debug": true
             },
             "type": "AngularMomentumSensor3D"
         },
@@ -5148,7 +5148,7 @@
                 "script": null,
                 "sensor_period": 0.0,
                 "visible": true,
-                "visualize_debug": false
+                "visualize_debug": true
             },
             "type": "IMUSensor3D"
         },
@@ -5267,7 +5267,7 @@
                 "script": null,
                 "sensor_period": 0.0,
                 "visible": true,
-                "visualize_debug": false,
+                "visualize_debug": true,
                 "sample_offsets": [
                     {
                         "matrix_data": {
@@ -5435,7 +5435,7 @@
                 "script": null,
                 "sensor_period": 0.0,
                 "visible": true,
-                "visualize_debug": false,
+                "visualize_debug": true,
                 "sample_offsets": [
                     {
                         "matrix_data": {
@@ -5603,7 +5603,7 @@
                 "script": null,
                 "sensor_period": 0.0,
                 "visible": true,
-                "visualize_debug": false,
+                "visualize_debug": true,
                 "sample_offsets": [
                     {
                         "matrix_data": {
@@ -5771,7 +5771,7 @@
                 "script": null,
                 "sensor_period": 0.0,
                 "visible": true,
-                "visualize_debug": false,
+                "visualize_debug": true,
                 "sample_offsets": [
                     {
                         "matrix_data": {

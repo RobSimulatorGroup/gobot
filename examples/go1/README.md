@@ -97,16 +97,12 @@ uv run gobot_editor --path examples/go1
 Click the 3D viewer, then use `W/S` for forward/backward, `Q/E` for strafe,
 `A/D` for yaw, `Space` to stop, and `R` to reset. The keyboard command limits
 default to the mjlab Go1 rough task ranges: `vx=1.0`, `vy=1.0`, `yaw=0.5`.
-Playback defaults to `240Hz` physics, `50Hz` policy updates,
-Go1-specific hip/thigh/calf PD gains,
-and `trunk` reset height `0.278m`. Override with `GOBOT_GO1_PHYSICS_HZ`,
-`GOBOT_GO1_POLICY_HZ`, `GOBOT_GO1_RESET_BASE_Z`, or per-joint gain variables
-such as `GOBOT_GO1_HIP_KP` when comparing variants. Sensor debug rays and
-velocity/upright debug arrows are off by default for editor FPS; set
-`GOBOT_GO1_SENSOR_DEBUG=1` to draw the Go1 scan sensors and command arrows. Set
-`GOBOT_GO1_SENSOR_DEBUG_ALL=1` to include all sensors.
-For `GOBOT_GO1_PHYSICS_HZ=480`, 60 FPS rendering needs 8 physics ticks per
-render frame; the playback script raises `max_sub_steps` automatically so
-short render-frame spikes do not drop simulation time.
+Playback defaults to `500Hz` physics with `10` max substeps and `50Hz`
+policy updates (`decimation=10`). At a `60Hz` editor render rate this averages
+about `8.33` physics ticks per rendered frame, matching the Go1 training
+configuration's `0.002s` physics step. Go1-specific hip/thigh/calf PD gains and
+`trunk` reset height `0.278m` are built in. Sensor debug visualization is
+enabled by the sensor nodes and velocity command debug is driven by the runtime
+`VelocityCommandDebug3D` node.
 
 Run the editor from an editable install and open the `examples/go1` project.

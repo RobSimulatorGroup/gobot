@@ -9,6 +9,7 @@
 #include "gobot/scene/node_3d.hpp"
 #include "gobot/scene/resources/array_mesh.hpp"
 #include "gobot/scene/resources/primitive_mesh.hpp"
+#include "gobot/scene/velocity_command_debug_3d.hpp"
 
 #include "imgui.h"
 
@@ -26,6 +27,8 @@ constexpr float kJointHandleRadiusPixels = 6.0f;
 constexpr float kJointAxisWorldLength = 0.18f;
 constexpr float kJointAxisArrowLengthPixels = 14.0f;
 constexpr float kJointAxisArrowHalfWidthPixels = 7.0f;
+constexpr RealType kVelocityArrowEpsilon = 1.0e-5;
+constexpr RealType kYawDirectionRadius = 0.24;
 
 struct LocalBounds {
     Vector3 min{Vector3::Zero()};
@@ -623,6 +626,78 @@ void PickNodeRecursive(Node* node,
     }
 }
 
+void CollectVelocityCommandDebugArrowsRecursive(const Node* node, std::vector<DebugArrow>& arrows) {
+    if (node == nullptr) {
+        return;
+    }
+
+    if (auto* debug_node = Object::PointerCastTo<const VelocityCommandDebug3D>(node);
+        debug_node != nullptr && debug_node->IsInsideTree() && debug_node->IsVisibleInTree() &&
+        debug_node->IsEnabled()) {
+        const Affine3 global_transform = debug_node->GetGlobalTransform();
+        const Vector3 origin = global_transform.translation() + Vector3{0.0, 0.0, debug_node->GetZOffset()};
+        const Matrix3 basis = global_transform.linear();
+        const RealType arrow_scale = debug_node->GetArrowScale();
+
+        auto add_linear_arrow = [&](const Vector3& local_velocity,
+                                    const Color& color,
+                                    const std::string& label) {
+            if (local_velocity.squaredNorm() <= kVelocityArrowEpsilon * kVelocityArrowEpsilon) {
+                return;
+            }
+            arrows.push_back(DebugArrow{
+                    origin,
+                    basis * (local_velocity * arrow_scale),
+                    color,
+                    1.0,
+                    label});
+        };
+
+        if (debug_node->ShouldShowCommandVelocity()) {
+            add_linear_arrow(debug_node->GetCommandLinearVelocity(),
+                             Color(0.1f, 0.55f, 1.0f, 1.0f),
+                             "command velocity");
+        }
+        if (debug_node->ShouldShowMeasuredVelocity()) {
+            add_linear_arrow(debug_node->GetMeasuredLinearVelocity(),
+                             Color(0.1f, 0.9f, 0.35f, 1.0f),
+                             "measured velocity");
+        }
+        if (debug_node->ShouldShowYawRate()) {
+            const RealType command_yaw_rate = debug_node->GetCommandYawRate();
+            const RealType measured_yaw_rate = debug_node->GetMeasuredYawRate();
+            const RealType yaw_rate = std::abs(command_yaw_rate) > kVelocityArrowEpsilon
+                    ? command_yaw_rate
+                    : measured_yaw_rate;
+            if (std::abs(yaw_rate) > kVelocityArrowEpsilon) {
+                const RealType sign = yaw_rate >= 0.0 ? 1.0 : -1.0;
+                const RealType yaw_length = std::abs(yaw_rate) * arrow_scale;
+                const Vector3 world_axis = basis * Vector3::UnitZ();
+                const Vector3 axis_vector = world_axis * (sign * yaw_length);
+                arrows.push_back(DebugArrow{
+                        origin - axis_vector * 0.5,
+                        axis_vector,
+                        Color(1.0f, 0.72f, 0.08f, 1.0f),
+                        1.0,
+                        "yaw angular velocity axis"});
+
+                const Vector3 local_start{kYawDirectionRadius, 0.0, 0.0};
+                const Vector3 local_tangent{0.0, sign * yaw_length, 0.0};
+                arrows.push_back(DebugArrow{
+                        origin + basis * local_start,
+                        basis * local_tangent,
+                        Color(1.0f, 0.48f, 0.04f, 1.0f),
+                        1.0,
+                        "yaw angular velocity direction"});
+            }
+        }
+    }
+
+    for (std::size_t index = 0; index < node->GetChildCount(); ++index) {
+        CollectVelocityCommandDebugArrowsRecursive(node->GetChild(static_cast<int>(index)), arrows);
+    }
+}
+
 }
 
 void EditorViewportRenderer::Render(const RID& viewport,
@@ -646,8 +721,19 @@ void EditorViewportRenderer::Render(const RID& viewport,
     }
     {
         GOBOT_PROFILE_ZONE("EditorViewportRenderer::RenderDebugArrows");
-        RS::GetInstance()->RenderDebugArrowsToViewport(viewport, camera, debug_arrows);
+        std::vector<DebugArrow> combined_debug_arrows = debug_arrows;
+        std::vector<DebugArrow> velocity_debug_arrows = CollectVelocityCommandDebugArrows(scene_root);
+        combined_debug_arrows.insert(combined_debug_arrows.end(),
+                                     velocity_debug_arrows.begin(),
+                                     velocity_debug_arrows.end());
+        RS::GetInstance()->RenderDebugArrowsToViewport(viewport, camera, combined_debug_arrows);
     }
+}
+
+std::vector<DebugArrow> EditorViewportRenderer::CollectVelocityCommandDebugArrows(const Node* scene_root) const {
+    std::vector<DebugArrow> arrows;
+    CollectVelocityCommandDebugArrowsRecursive(scene_root, arrows);
+    return arrows;
 }
 
 Node* EditorViewportRenderer::PickNode(Node* scene_root,

@@ -12,6 +12,7 @@
 #include <gobot/scene/robot_3d.hpp>
 #include <gobot/scene/sensor_3d.hpp>
 #include <gobot/scene/terrain_3d.hpp>
+#include <gobot/scene/velocity_command_debug_3d.hpp>
 
 namespace {
 
@@ -41,6 +42,7 @@ TEST(TestNodeCreationRegistry, built_in_entries_keep_node_inheritance_shape) {
     const auto* raycast_sensor = FindEntry("RayCastSensor3D");
     const auto* terrain_height_sensor = FindEntry("TerrainHeightSensor3D");
     const auto* height_scanner_sensor = FindEntry("HeightScanner3D");
+    const auto* velocity_command_debug = FindEntry("VelocityCommandDebug3D");
     const auto* mesh_instance = FindEntry("MeshInstance3D");
     const auto* box_mesh = FindEntry("BoxMeshInstance3D");
     const auto* cylinder_mesh = FindEntry("CylinderMeshInstance3D");
@@ -60,6 +62,7 @@ TEST(TestNodeCreationRegistry, built_in_entries_keep_node_inheritance_shape) {
     ASSERT_NE(raycast_sensor, nullptr);
     ASSERT_NE(terrain_height_sensor, nullptr);
     ASSERT_NE(height_scanner_sensor, nullptr);
+    ASSERT_NE(velocity_command_debug, nullptr);
     ASSERT_NE(mesh_instance, nullptr);
     ASSERT_NE(box_mesh, nullptr);
     ASSERT_NE(cylinder_mesh, nullptr);
@@ -79,10 +82,27 @@ TEST(TestNodeCreationRegistry, built_in_entries_keep_node_inheritance_shape) {
     EXPECT_EQ(raycast_sensor->parent_id, "Sensor3D");
     EXPECT_EQ(terrain_height_sensor->parent_id, "RayCastSensor3D");
     EXPECT_EQ(height_scanner_sensor->parent_id, "TerrainHeightSensor3D");
+    EXPECT_EQ(velocity_command_debug->parent_id, "Node3D");
     EXPECT_EQ(mesh_instance->parent_id, "Node3D");
     EXPECT_EQ(box_mesh->parent_id, "MeshInstance3D");
     EXPECT_EQ(cylinder_mesh->parent_id, "MeshInstance3D");
     EXPECT_EQ(sphere_mesh->parent_id, "MeshInstance3D");
+}
+
+TEST(TestNodeCreationRegistry, creates_velocity_command_debug_node) {
+    gobot::Node* node = gobot::NodeCreationRegistry::CreateNode("VelocityCommandDebug3D");
+    ASSERT_NE(node, nullptr);
+
+    auto* debug_node = gobot::Object::PointerCastTo<gobot::VelocityCommandDebug3D>(node);
+    ASSERT_NE(debug_node, nullptr);
+    EXPECT_TRUE(debug_node->IsEnabled());
+    EXPECT_TRUE(debug_node->ShouldShowCommandVelocity());
+    EXPECT_TRUE(debug_node->ShouldShowMeasuredVelocity());
+    EXPECT_TRUE(debug_node->ShouldShowYawRate());
+    EXPECT_NEAR(debug_node->GetArrowScale(), 0.55, 1.0e-6);
+    EXPECT_NEAR(debug_node->GetZOffset(), 0.30, 1.0e-6);
+
+    gobot::Object::Delete(node);
 }
 
 TEST(TestNodeCreationRegistry, creates_robot_semantic_nodes) {

@@ -10,34 +10,20 @@ BASE_LINK = "trunk"
 POLICY_ENV = "GOBOT_GO1_POLICY"
 DEFAULT_POLICY_PATH = "res://policies/go1.onnx"
 TORCH_POLICY_PATH = "res://policies/go1.pt"
-PHYSICS_HZ = float(os.environ.get("GOBOT_GO1_PHYSICS_HZ", "240.0"))
-FIXED_TIME_STEP = 1.0 / max(PHYSICS_HZ, 1.0)
-POLICY_HZ = float(os.environ.get("GOBOT_GO1_POLICY_HZ", "50.0"))
-SENSOR_PERIOD = 1.0 / max(POLICY_HZ, 1.0)
-MAX_SUB_STEPS = max(8, int(math.ceil(PHYSICS_HZ / 60.0)) + 2)
-PRINT_EVERY_TICKS = max(1, int(os.environ.get("GOBOT_GO1_PRINT_EVERY_TICKS", str(round(PHYSICS_HZ * 2.0)))))
-SENSOR_DEBUG = os.environ.get("GOBOT_GO1_SENSOR_DEBUG", "0").lower() in {"1", "true", "yes", "on"}
-SENSOR_DEBUG_ALL = os.environ.get("GOBOT_GO1_SENSOR_DEBUG_ALL", "0").lower() in {"1", "true", "yes", "on"}
-RESET_BASE_CLEARANCE = float(os.environ.get("GOBOT_GO1_RESET_BASE_Z", "0.278"))
-RESET_BASE_POSITION = [0.0, 0.0, RESET_BASE_CLEARANCE]
+PHYSICS_HZ = 500.0
+POLICY_HZ = 50.0
+FIXED_TIME_STEP = 1.0 / PHYSICS_HZ
+MAX_SUB_STEPS = 10
+PRINT_EVERY_TICKS = int(PHYSICS_HZ * 2.0)
+RESET_BASE_POSITION = [0.0, 0.0, 0.278]
 ROBOT_ROOT_TO_BASE_Z = 0.4449999928474426
-COMMAND = [
-    float(os.environ.get("GOBOT_GO1_VX", "0.0")),
-    float(os.environ.get("GOBOT_GO1_VY", "0.0")),
-    float(os.environ.get("GOBOT_GO1_YAW", "0.0")),
-]
-KEYBOARD_COMMAND_MAX = [
-    float(os.environ.get("GOBOT_GO1_MAX_VX", "1.0")),
-    float(os.environ.get("GOBOT_GO1_MAX_VY", "1.0")),
-    float(os.environ.get("GOBOT_GO1_MAX_YAW", "0.5")),
-]
+COMMAND = [0.0, 0.0, 0.0]
+KEYBOARD_COMMAND_MAX = [1.0, 1.0, 0.5]
 COMMAND_SMOOTHING = 8.0
 COMMAND_ACTIVE_DEADBAND = 0.02
-DEBUG_ARROW_SCALE = 0.55
-DEBUG_ARROW_Z_OFFSET = 0.30
-DEBUG_ARROW_SEPARATION = 0.08
 FALLEN_BASE_Z = 0.18
 FALLEN_ROLL_PITCH = 0.8
+VELOCITY_DEBUG_NODE_NAME = "velocity_debug"
 KEYBOARD_BINDINGS = {
     "forward": ("W", "Up"),
     "backward": ("S", "Down"),
@@ -90,10 +76,10 @@ ACTION_SCALE = [
     0.3727530386870487,
     0.24850202579136574,
 ]
-HIP_KP = float(os.environ.get("GOBOT_GO1_HIP_KP", "15.89524265323492"))
-HIP_KD = float(os.environ.get("GOBOT_GO1_HIP_KD", "1.0119225759919113"))
-KNEE_KP = float(os.environ.get("GOBOT_GO1_KNEE_KP", "35.764295969778566"))
-KNEE_KD = float(os.environ.get("GOBOT_GO1_KNEE_KD", "2.2768257959818003"))
+HIP_KP = 15.89524265323492
+HIP_KD = 1.0119225759919113
+KNEE_KP = 35.764295969778566
+KNEE_KD = 2.2768257959818003
 JOINT_KP = [
     HIP_KP,
     HIP_KP,
@@ -123,7 +109,6 @@ JOINT_KD = [
     KNEE_KD,
 ]
 DECIMATION = max(1, int(round((1.0 / max(POLICY_HZ, 1.0)) / FIXED_TIME_STEP)))
-STATE_UPDATE_STRIDE = max(1, int(os.environ.get("GOBOT_GO1_STATE_STRIDE", str(DECIMATION))))
 TERRAIN_SCAN_GRID_SIZE = (1.6, 1.0)
 TERRAIN_SCAN_GRID_RESOLUTION = 0.1
 TERRAIN_SCAN_DIM = (
@@ -133,13 +118,6 @@ TERRAIN_SCAN_DIM = (
 )
 HEIGHT_SCAN_MAX_DISTANCE = 5.0
 TERRAIN_SCAN_SENSOR = "terrain_scan"
-FOOT_HEIGHT_SENSOR_NAMES = (
-    "FR_foot_height_scan",
-    "FL_foot_height_scan",
-    "RR_foot_height_scan",
-    "RL_foot_height_scan",
-)
-DEBUG_SENSOR_NAMES = frozenset((TERRAIN_SCAN_SENSOR, *FOOT_HEIGHT_SENSOR_NAMES))
 VELOCITY_OBS_SCHEMA_VERSION = "gobot_velocity_v1"
 POSITION_LIMITS = {
     "FR_hip_joint": (-0.863, 0.863),
@@ -557,7 +535,7 @@ class Script(gobot.NodeScript):
             }
         )
         self.robot = self._find_robot()
-        self._configure_sensor_debug()
+        self.velocity_debug = self._ensure_velocity_debug_node()
         self.joints = [self._find_joint(name) for name in JOINT_NAMES]
         self.reset_base_position = list(RESET_BASE_POSITION)
         self._configure_robot_for_playback()
@@ -591,14 +569,13 @@ class Script(gobot.NodeScript):
     def _print_startup(self):
         print(
             "Go1 RL policy playback started. policy={} joints={} physics_hz={:.1f} policy_hz={:.1f} decimation={} "
-            "reset_z={:.3f} sensor_debug={} cmd=({:.2f}, {:.2f}, {:.2f}) keyboard={}".format(
+            "reset_z={:.3f} cmd=({:.2f}, {:.2f}, {:.2f}) keyboard={}".format(
                 "loaded" if self.policy is not None else "missing",
                 len(self.joints),
                 PHYSICS_HZ,
                 POLICY_HZ,
                 DECIMATION,
-                RESET_BASE_CLEARANCE,
-                "on" if SENSOR_DEBUG else "off",
+                self.reset_base_position[2],
                 self.command[0],
                 self.command[1],
                 self.command[2],
@@ -622,8 +599,7 @@ class Script(gobot.NodeScript):
             return
 
         policy_tick = self.ticks % DECIMATION == 0
-        state_tick = policy_tick or self.ticks % STATE_UPDATE_STRIDE == 0
-        robot_state = self._runtime_robot_state() if state_tick else None
+        robot_state = self._runtime_robot_state() if policy_tick else None
         if robot_state is not None and self._reset_if_fallen(robot_state):
             return
 
@@ -639,7 +615,7 @@ class Script(gobot.NodeScript):
             self.last_targets = self._action_targets(self.last_action)
             self._set_joint_position_targets(self.last_targets)
             if robot_state is not None:
-                self._update_debug_arrows(robot_state)
+                self._update_velocity_debug(robot_state)
 
         self.ticks += 1
         if PRINT_EVERY_TICKS > 0 and self.ticks % PRINT_EVERY_TICKS == 0:
@@ -653,11 +629,13 @@ class Script(gobot.NodeScript):
         self.last_action = [0.0] * len(JOINT_NAMES)
         self.last_targets = list(DEFAULT_POS)
         gobot.clear_debug_arrows()
+        self._clear_velocity_debug()
         self._set_robot_editor_transform(self.reset_base_position)
 
     def pause(self):
         self.playing = False
         gobot.clear_debug_arrows()
+        self._clear_velocity_debug()
 
     def play(self):
         self.playing = True
@@ -774,26 +752,15 @@ class Script(gobot.NodeScript):
             [1.0, 0.0, 0.0, 0.0],
         )
 
-    def _configure_sensor_debug(self):
-        for node in self._iter_nodes(self.robot):
-            if hasattr(node, "sensor_period") and getattr(node, "name", "") in DEBUG_SENSOR_NAMES:
-                node.sensor_period = SENSOR_PERIOD
-            if hasattr(node, "visualize_debug"):
-                node.visualize_debug = self._should_visualize_sensor(node)
-
-    def _should_visualize_sensor(self, node):
-        if not SENSOR_DEBUG:
-            return False
-        if SENSOR_DEBUG_ALL:
-            return True
-        return getattr(node, "name", "") in DEBUG_SENSOR_NAMES
-
-    def _iter_nodes(self, node):
-        if node is None:
-            return
-        yield node
-        for child in getattr(node, "children", []):
-            yield from self._iter_nodes(child)
+    def _ensure_velocity_debug_node(self):
+        root = self.get_root()
+        existing = root.find(VELOCITY_DEBUG_NODE_NAME) if root is not None else None
+        if existing is None and root is not None:
+            existing = _find_node_by_name(root, VELOCITY_DEBUG_NODE_NAME)
+        if existing is None:
+            existing = gobot.create_node("VelocityCommandDebug3D", VELOCITY_DEBUG_NODE_NAME)
+            root.add_child(existing, True)
+        return existing
 
     def _update_keyboard_command(self, delta):
         input_state = getattr(self.context, "input", None)
@@ -866,61 +833,63 @@ class Script(gobot.NodeScript):
             )
         )
 
-    def _update_debug_arrows(self, state=None):
+    def _clear_velocity_debug(self):
+        debug = getattr(self, "velocity_debug", None)
+        if debug is None:
+            return
+        for name, value in (
+            ("command_linear_velocity", [0.0, 0.0, 0.0]),
+            ("command_yaw_rate", 0.0),
+            ("measured_linear_velocity", [0.0, 0.0, 0.0]),
+            ("measured_yaw_rate", 0.0),
+            ("policy_loaded", self.policy is not None),
+            ("input_focused", False),
+            ("action_norm", 0.0),
+        ):
+            try:
+                debug.set_property(name, value)
+            except (KeyError, RuntimeError):
+                pass
+
+    def _update_velocity_debug(self, state=None):
+        debug = getattr(self, "velocity_debug", None)
+        if debug is None:
+            return
         if state is None:
             state = self._runtime_robot_state()
         if state is None:
-            gobot.clear_debug_arrows()
+            self._clear_velocity_debug()
             return
         base = self._base_link_state(state)
         if base is None:
-            gobot.clear_debug_arrows()
+            self._clear_velocity_debug()
             return
 
         position = base.get("position", [0.0, 0.0, 0.0])
         if len(position) < 3:
-            gobot.clear_debug_arrows()
+            self._clear_velocity_debug()
             return
         quat = base.get("quaternion", [1.0, 0.0, 0.0, 0.0])
         yaw = _quat_yaw(quat)
-        command_world = [
-            math.cos(yaw) * self.command[0] - math.sin(yaw) * self.command[1],
-            math.sin(yaw) * self.command[0] + math.cos(yaw) * self.command[1],
-            0.0,
-        ]
-        actual = base.get("linear_velocity", [0.0, 0.0, 0.0])
-        actual_world = [
-            float(actual[0]) if len(actual) > 0 else 0.0,
-            float(actual[1]) if len(actual) > 1 else 0.0,
-            0.0,
-        ]
-        start = [
+        actual_linear = base.get("linear_velocity", [0.0, 0.0, 0.0])
+        actual_angular = base.get("angular_velocity", [0.0, 0.0, 0.0])
+        measured_body = _quat_rotate_inv(actual_linear, quat)
+        measured_angular_body = _quat_rotate_inv(actual_angular, quat)
+        measured_yaw = float(measured_angular_body[2]) if len(measured_angular_body) > 2 else 0.0
+
+        debug.position = [
             float(position[0]),
             float(position[1]),
-            float(position[2]) + DEBUG_ARROW_Z_OFFSET,
+            float(position[2]),
         ]
-        arrows = []
-        if _vector_xy_norm(command_world) > COMMAND_ACTIVE_DEADBAND:
-            arrows.append(
-                {
-                    "start": start,
-                    "vector": command_world,
-                    "color": (0.15, 0.85, 0.20, 1.0),
-                    "scale": DEBUG_ARROW_SCALE,
-                    "label": "command_velocity",
-                }
-            )
-        if _vector_xy_norm(actual_world) > COMMAND_ACTIVE_DEADBAND:
-            arrows.append(
-                {
-                    "start": [start[0], start[1], start[2] + DEBUG_ARROW_SEPARATION],
-                    "vector": actual_world,
-                    "color": (0.10, 0.42, 1.0, 1.0),
-                    "scale": DEBUG_ARROW_SCALE,
-                    "label": "actual_velocity",
-                }
-            )
-        gobot.set_debug_arrows(arrows)
+        debug.rotation_degrees = [0.0, 0.0, math.degrees(yaw)]
+        debug.set_property("command_linear_velocity", [self.command[0], self.command[1], 0.0])
+        debug.set_property("command_yaw_rate", self.command[2])
+        debug.set_property("measured_linear_velocity", [measured_body[0], measured_body[1], 0.0])
+        debug.set_property("measured_yaw_rate", measured_yaw)
+        debug.set_property("policy_loaded", self.policy is not None)
+        debug.set_property("input_focused", bool(getattr(self.context.input, "has_control_focus", False)))
+        debug.set_property("action_norm", math.sqrt(sum(value * value for value in self.last_action)))
 
     def _offset_from_base(self, position, quat, local_offset):
         offset = _quat_rotate(local_offset, quat)

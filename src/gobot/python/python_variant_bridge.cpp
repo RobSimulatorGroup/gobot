@@ -119,19 +119,33 @@ Variant SequenceToVariantForType(const py::handle& object, const Type& type) {
     return value;
 }
 
+bool IsNumpyAvailableForVectorCasts() {
+    static const bool available = []() {
+        try {
+            py::module_::import("numpy");
+            return true;
+        } catch (py::error_already_set& error) {
+            if (!error.matches(PyExc_ImportError)) {
+                throw;
+            }
+            return false;
+        }
+    }();
+    return available;
+}
+
 } // namespace
 
 py::object Vector3ToPython(const Vector3& vector) {
-    return py::cast(vector);
+    if (IsNumpyAvailableForVectorCasts()) {
+        return py::cast(vector);
+    }
+    return py::make_tuple(vector.x(), vector.y(), vector.z());
 }
 
 Vector3 PythonToVector3(const py::handle& object) {
-    if (py::isinstance<py::array>(object)) {
-        py::array array = py::reinterpret_borrow<py::array>(object);
-        if (array.ndim() != 1 || array.shape(0) != 3) {
-            throw std::invalid_argument("expected a 1D numpy vector with shape (3,)");
-        }
-        return py::cast<Vector3>(object);
+    if (py::isinstance<py::str>(object) || py::isinstance<py::bytes>(object)) {
+        throw std::invalid_argument("expected a 3-element vector");
     }
     py::sequence sequence = py::reinterpret_borrow<py::sequence>(object);
     if (sequence.size() != 3) {

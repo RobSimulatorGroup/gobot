@@ -330,7 +330,7 @@ SceneState::NodeData MakeCommonSensorNode(const std::string& type,
 
     AddProperty(node_data, "sensor_period", sensor_period);
     AddProperty(node_data, "noise_stddev", noise_stddev);
-    AddProperty(node_data, "visualize_debug", false);
+    AddProperty(node_data, "visualize_debug", true);
     return node_data;
 }
 
@@ -361,7 +361,7 @@ SceneState::NodeData MakeCommonSensorNode(const std::string& type,
 
     AddProperty(node_data, "sensor_period", sensor_period);
     AddProperty(node_data, "noise_stddev", noise_stddev);
-    AddProperty(node_data, "visualize_debug", false);
+    AddProperty(node_data, "visualize_debug", true);
     return node_data;
 }
 

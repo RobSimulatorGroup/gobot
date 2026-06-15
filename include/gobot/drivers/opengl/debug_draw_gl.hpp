@@ -41,8 +41,12 @@ private:
     LineBuffer world_axes_;
     LineBuffer collision_lines_;
     LineBuffer height_scanner_ray_lines_;
+    LineBuffer height_scanner_miss_ray_lines_;
     LineBuffer height_scanner_hit_spheres_;
-    LineBuffer height_scanner_normal_lines_;
+    LineBuffer terrain_height_hit_spheres_;
+    LineBuffer raycast_hit_spheres_;
+    LineBuffer terrain_height_normal_lines_;
+    LineBuffer raycast_normal_lines_;
     LineBuffer contact_point_lines_;
     LineBuffer contact_normal_lines_;
     LineBuffer contact_force_lines_;

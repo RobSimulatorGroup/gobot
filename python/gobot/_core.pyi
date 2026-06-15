@@ -223,6 +223,15 @@ class Node3D(Node):
     visible: bool
 
 
+class VelocityCommandDebug3D(Node3D):
+    enabled: bool
+    show_command_velocity: bool
+    show_measured_velocity: bool
+    show_yaw_rate: bool
+    arrow_scale: float
+    z_offset: float
+
+
 class Robot3D(Node3D):
     source_path: str
     mode: RobotMode

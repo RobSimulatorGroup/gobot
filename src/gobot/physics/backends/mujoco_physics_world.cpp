@@ -551,24 +551,6 @@ std::vector<float> NormalizeHeightFieldData(const PhysicsTerrainHeightFieldSnaps
 
     RealType min_value = 0.0;
     RealType max_value = 0.0;
-    if (!heightfield.normalized_elevation.empty()) {
-        for (std::size_t index = 0; index < expected_count; ++index) {
-            const RealType value = index < heightfield.normalized_elevation.size()
-                    ? heightfield.normalized_elevation[index]
-                    : 0.0;
-            data[index] = static_cast<float>(std::clamp(value,
-                                                        static_cast<RealType>(0.0),
-                                                        static_cast<RealType>(1.0)));
-        }
-        if (min_height) {
-            *min_height = heightfield.z_offset;
-        }
-        if (height_range) {
-            *height_range = 1.0;
-        }
-        return data;
-    }
-
     if (!heightfield.heights.empty()) {
         const auto minmax = std::minmax_element(heightfield.heights.begin(), heightfield.heights.end());
         min_value = *minmax.first;

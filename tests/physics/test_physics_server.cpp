@@ -849,3 +849,49 @@ TEST(TestPhysicsServer, mujoco_terrain_raycast_ignores_robot_collision_geoms) {
     gobot::Object::Delete(root);
 #endif
 }
+
+TEST(TestPhysicsServer, mujoco_heightfield_raycast_uses_visible_heights_not_palette_values) {
+#ifdef GOBOT_HAS_MUJOCO
+    auto* root = gobot::Object::New<gobot::Node3D>();
+    root->SetName("root");
+
+    auto* terrain = gobot::Object::New<gobot::Terrain3D>();
+    terrain->SetName("terrain");
+
+    gobot::TerrainHeightField heightfield;
+    heightfield.size = {2.0, 2.0};
+    heightfield.rows = 2;
+    heightfield.cols = 2;
+    heightfield.heights = {0.2, 0.2, 0.2, 0.2};
+    heightfield.normalized_elevation = {0.0, 1.0, 0.0, 1.0};
+    heightfield.z_offset = -0.1;
+    terrain->AddHeightField(heightfield);
+    root->AddChild(terrain);
+
+    auto* robot = gobot::Object::New<gobot::Robot3D>();
+    robot->SetName("hfield_probe_bot");
+    auto* base = gobot::Object::New<gobot::Link3D>();
+    base->SetName("base");
+    base->SetPosition({4.0, 4.0, 1.0});
+    base->SetMass(1.0);
+    base->SetCenterOfMass({0.0, 0.0, 0.0});
+    base->SetInertiaDiagonal({0.01, 0.01, 0.01});
+    robot->AddChild(base);
+    root->AddChild(robot);
+
+    gobot::PhysicsServer physics_server(gobot::PhysicsBackendType::MuJoCoCpu);
+    gobot::Ref<gobot::PhysicsWorld> world = physics_server.CreateWorld();
+    ASSERT_TRUE(world->BuildFromScene(root)) << world->GetLastError();
+
+    const gobot::PhysicsRaycastHit hit = world->RaycastTerrain({
+            {0.0, 0.0, 1.0},
+            {0.0, 0.0, -1.0},
+            2.0
+    });
+    ASSERT_TRUE(hit.hit);
+    EXPECT_NEAR(hit.point.z(), 0.1, 1.0e-5);
+    EXPECT_NE(hit.terrain_name.find("hfield"), std::string::npos);
+
+    gobot::Object::Delete(root);
+#endif
+}

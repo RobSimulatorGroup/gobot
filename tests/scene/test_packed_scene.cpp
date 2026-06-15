@@ -9,6 +9,9 @@
 #include <gobot/scene/node.hpp>
 #include <gobot/scene/node_3d.hpp>
 #include <gobot/scene/resources/packed_scene.hpp>
+#include <gobot/scene/velocity_command_debug_3d.hpp>
+
+#include <algorithm>
 
 TEST(TestPackedScene, pack_records_scene_tree_structure) {
     auto* root = gobot::Node3D::New<gobot::Node3D>();
@@ -83,6 +86,73 @@ TEST(TestPackedScene, instantiate_rebuilds_scene_tree_structure) {
     EXPECT_EQ(instanced_sensor->GetClassStringName(), "Node");
     EXPECT_EQ(instanced_sensor->GetName(), "Sensor");
     EXPECT_EQ(instanced_sensor->GetParent(), instanced_arm);
+
+    gobot::Object::Delete(root);
+    gobot::Object::Delete(instance);
+}
+
+TEST(TestPackedScene, velocity_command_debug_packs_config_without_runtime_state) {
+    auto* root = gobot::Node3D::New<gobot::Node3D>();
+    root->SetName("Root");
+
+    auto* debug = gobot::Node3D::New<gobot::VelocityCommandDebug3D>();
+    debug->SetName("velocity_debug");
+    debug->SetArrowScale(0.75);
+    debug->SetZOffset(0.35);
+    debug->SetShowYawRate(false);
+    debug->SetCommandLinearVelocity({1.0, 2.0, 0.0});
+    debug->SetCommandYawRate(0.4);
+    debug->SetMeasuredLinearVelocity({0.5, 0.25, 0.0});
+    debug->SetMeasuredYawRate(0.2);
+    debug->SetPolicyLoaded(true);
+    debug->SetInputFocused(true);
+    debug->SetActionNorm(3.0);
+    root->AddChild(debug);
+
+    gobot::Ref<gobot::PackedScene> packed_scene = gobot::MakeRef<gobot::PackedScene>();
+    ASSERT_TRUE(packed_scene->Pack(root));
+
+    gobot::Ref<gobot::SceneState> state = packed_scene->GetState();
+    ASSERT_EQ(state->GetNodeCount(), 2);
+    const auto* debug_data = state->GetNodeData(1);
+    ASSERT_NE(debug_data, nullptr);
+    EXPECT_EQ(debug_data->type, "VelocityCommandDebug3D");
+
+    auto has_property = [debug_data](const std::string& name) {
+        return std::any_of(debug_data->properties.begin(),
+                           debug_data->properties.end(),
+                           [&name](const gobot::SceneState::PropertyData& property) {
+                               return property.name == name;
+                           });
+    };
+
+    EXPECT_TRUE(has_property("arrow_scale"));
+    EXPECT_TRUE(has_property("z_offset"));
+    EXPECT_TRUE(has_property("show_yaw_rate"));
+    EXPECT_FALSE(has_property("command_linear_velocity"));
+    EXPECT_FALSE(has_property("command_yaw_rate"));
+    EXPECT_FALSE(has_property("measured_linear_velocity"));
+    EXPECT_FALSE(has_property("measured_yaw_rate"));
+    EXPECT_FALSE(has_property("velocity_error"));
+    EXPECT_FALSE(has_property("policy_loaded"));
+    EXPECT_FALSE(has_property("input_focused"));
+    EXPECT_FALSE(has_property("action_norm"));
+
+    gobot::Node* instance = packed_scene->Instantiate();
+    ASSERT_NE(instance, nullptr);
+    ASSERT_EQ(instance->GetChildCount(), 1);
+    auto* instanced_debug = gobot::Object::PointerCastTo<gobot::VelocityCommandDebug3D>(instance->GetChild(0));
+    ASSERT_NE(instanced_debug, nullptr);
+    EXPECT_NEAR(instanced_debug->GetArrowScale(), 0.75, 1.0e-6);
+    EXPECT_NEAR(instanced_debug->GetZOffset(), 0.35, 1.0e-6);
+    EXPECT_FALSE(instanced_debug->ShouldShowYawRate());
+    EXPECT_TRUE(instanced_debug->GetCommandLinearVelocity().isZero());
+    EXPECT_DOUBLE_EQ(instanced_debug->GetCommandYawRate(), 0.0);
+    EXPECT_TRUE(instanced_debug->GetMeasuredLinearVelocity().isZero());
+    EXPECT_DOUBLE_EQ(instanced_debug->GetMeasuredYawRate(), 0.0);
+    EXPECT_FALSE(instanced_debug->IsPolicyLoaded());
+    EXPECT_FALSE(instanced_debug->IsInputFocused());
+    EXPECT_DOUBLE_EQ(instanced_debug->GetActionNorm(), 0.0);
 
     gobot::Object::Delete(root);
     gobot::Object::Delete(instance);

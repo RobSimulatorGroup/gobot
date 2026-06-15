@@ -53,6 +53,7 @@
 #include "gobot/scene/scene_initializer.hpp"
 #include "gobot/scene/sensor_3d.hpp"
 #include "gobot/scene/terrain_3d.hpp"
+#include "gobot/scene/velocity_command_debug_3d.hpp"
 #include "gobot/simulation/simulation_server.hpp"
 
 namespace gobot::python {
@@ -230,6 +231,10 @@ struct PyTerrainHeightSensor3DHandle : public PyRayCastSensor3DHandle {
 
 struct PyHeightScanner3DHandle : public PyTerrainHeightSensor3DHandle {
     using PyTerrainHeightSensor3DHandle::PyTerrainHeightSensor3DHandle;
+};
+
+struct PyVelocityCommandDebug3DHandle : public PyNode3DHandle {
+    using PyNode3DHandle::PyNode3DHandle;
 };
 
 std::string ExpectedTypeForNode(Node* node);
@@ -2123,10 +2128,27 @@ PyHeightScanner3DHandle MakeHeightScanner3DHandle(
     return PyHeightScanner3DHandle(node, "HeightScanner3D", resolved_context, ResolveHandleEpoch(resolved_context, epoch), ownership);
 }
 
+PyVelocityCommandDebug3DHandle MakeVelocityCommandDebug3DHandle(
+        VelocityCommandDebug3D* node,
+        PyNodeOwnership ownership = PyNodeOwnership::Borrowed,
+        EngineContext* context = nullptr,
+        std::uint64_t epoch = 0) {
+    EngineContext* resolved_context = ResolveHandleContext(context);
+    return PyVelocityCommandDebug3DHandle(
+            node,
+            "VelocityCommandDebug3D",
+            resolved_context,
+            ResolveHandleEpoch(resolved_context, epoch),
+            ownership);
+}
+
 PyNodeHandle MakeTypedNodeHandle(Node* node,
                                  PyNodeOwnership ownership,
                                  EngineContext* context,
                                  std::uint64_t epoch) {
+    if (auto* velocity_debug = Object::PointerCastTo<VelocityCommandDebug3D>(node)) {
+        return MakeVelocityCommandDebug3DHandle(velocity_debug, ownership, context, epoch);
+    }
     if (auto* mesh_instance = Object::PointerCastTo<MeshInstance3D>(node)) {
         return MakeMeshInstance3DHandle(mesh_instance, ownership, context, epoch);
     }
@@ -2176,6 +2198,9 @@ py::object MakeTypedNodeObject(Node* node,
                                PyNodeOwnership ownership,
                                EngineContext* context,
                                std::uint64_t epoch) {
+    if (auto* velocity_debug = Object::PointerCastTo<VelocityCommandDebug3D>(node)) {
+        return py::cast(MakeVelocityCommandDebug3DHandle(velocity_debug, ownership, context, epoch));
+    }
     if (auto* mesh_instance = Object::PointerCastTo<MeshInstance3D>(node)) {
         return py::cast(MakeMeshInstance3DHandle(mesh_instance, ownership, context, epoch));
     }
@@ -2374,6 +2399,8 @@ class NodeScript:
             py::class_<PyTerrainHeightSensor3DHandle, PyRayCastSensor3DHandle>(module, "TerrainHeightSensor3D");
     auto height_scanner3d_class =
             py::class_<PyHeightScanner3DHandle, PyTerrainHeightSensor3DHandle>(module, "HeightScanner3D");
+    auto velocity_command_debug3d_class =
+            py::class_<PyVelocityCommandDebug3DHandle, PyNode3DHandle>(module, "VelocityCommandDebug3D");
 
     py::implicitly_convertible<PyRobot3DHandle, PyNodeHandle>();
     py::implicitly_convertible<PyLink3DHandle, PyNodeHandle>();
@@ -2387,6 +2414,7 @@ class NodeScript:
     py::implicitly_convertible<PyRayCastSensor3DHandle, PyNodeHandle>();
     py::implicitly_convertible<PyTerrainHeightSensor3DHandle, PyNodeHandle>();
     py::implicitly_convertible<PyHeightScanner3DHandle, PyNodeHandle>();
+    py::implicitly_convertible<PyVelocityCommandDebug3DHandle, PyNodeHandle>();
 
     py::class_<EngineContext, std::shared_ptr<EngineContext>>(module, "AppContext")
             .def_property_readonly("project_path", &EngineContext::GetProjectPath)

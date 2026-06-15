@@ -18,6 +18,7 @@
 #include "gobot/scene/robot_3d.hpp"
 #include "gobot/scene/sensor_3d.hpp"
 #include "gobot/scene/terrain_3d.hpp"
+#include "gobot/scene/velocity_command_debug_3d.hpp"
 
 namespace gobot {
 
@@ -163,6 +164,14 @@ void NodeCreationRegistry::EnsureBuiltInNodeTypesRegistered() {
         "Node3D",
         "Base 3D sensor node with backend-neutral sampling properties.",
         []() -> Node* { return CreateNodeInstance<Sensor3D>(); }
+    });
+
+    RegisterNodeType({
+        "VelocityCommandDebug3D",
+        "Velocity Command Debug",
+        "Node3D",
+        "3D debug node for commanded and measured velocity-control state.",
+        []() -> Node* { return CreateNodeInstance<VelocityCommandDebug3D>(); }
     });
 
     RegisterNodeType({

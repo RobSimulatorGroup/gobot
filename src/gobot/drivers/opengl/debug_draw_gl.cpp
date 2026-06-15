@@ -72,6 +72,24 @@ void PushWorldVertex(std::vector<float>& vertices, const Vector3& point) {
     vertices.push_back(static_cast<float>(point.z()));
 }
 
+struct SensorHitDebugStyle {
+    RealType radius{0.012};
+    bool show_normal{false};
+};
+
+SensorHitDebugStyle GetSensorHitDebugStyle(const PhysicsSensorState& sensor) {
+    switch (sensor.type) {
+        case PhysicsSensorType::HeightScanner:
+            return SensorHitDebugStyle{0.010, false};
+        case PhysicsSensorType::TerrainHeight:
+            return SensorHitDebugStyle{0.008, true};
+        case PhysicsSensorType::RayCast:
+            return SensorHitDebugStyle{0.010, true};
+        default:
+            return SensorHitDebugStyle{};
+    }
+}
+
 void AppendLine(std::vector<float>& vertices,
                 const Affine3& transform,
                 const Vector3& from,
@@ -376,8 +394,12 @@ GLRendererDebugDraw::~GLRendererDebugDraw() {
     FreeLineBuffer(world_axes_);
     FreeLineBuffer(collision_lines_);
     FreeLineBuffer(height_scanner_ray_lines_);
+    FreeLineBuffer(height_scanner_miss_ray_lines_);
     FreeLineBuffer(height_scanner_hit_spheres_);
-    FreeLineBuffer(height_scanner_normal_lines_);
+    FreeLineBuffer(terrain_height_hit_spheres_);
+    FreeLineBuffer(raycast_hit_spheres_);
+    FreeLineBuffer(terrain_height_normal_lines_);
+    FreeLineBuffer(raycast_normal_lines_);
     FreeLineBuffer(contact_point_lines_);
     FreeLineBuffer(contact_normal_lines_);
     FreeLineBuffer(contact_force_lines_);
@@ -547,8 +569,12 @@ void GLRendererDebugDraw::DrawCollisionDebug(const SceneRenderItems& render_item
 void GLRendererDebugDraw::DrawHeightScannerDebug(const PhysicsSceneState* physics_state) {
     GOBOT_PROFILE_ZONE("OpenGL::DrawHeightScannerDebug");
     std::vector<float> ray_vertices;
-    std::vector<float> hit_vertices;
-    std::vector<float> normal_vertices;
+    std::vector<float> miss_ray_vertices;
+    std::vector<float> height_scanner_hit_vertices;
+    std::vector<float> terrain_height_hit_vertices;
+    std::vector<float> raycast_hit_vertices;
+    std::vector<float> terrain_height_normal_vertices;
+    std::vector<float> raycast_normal_vertices;
     auto append_sensor = [&](const PhysicsSensorState& sensor) {
         if ((sensor.type != PhysicsSensorType::RayCast &&
              sensor.type != PhysicsSensorType::TerrainHeight &&
@@ -557,13 +583,26 @@ void GLRendererDebugDraw::DrawHeightScannerDebug(const PhysicsSceneState* physic
             !sensor.visualize_debug) {
             return;
         }
+        const SensorHitDebugStyle style = GetSensorHitDebugStyle(sensor);
+        std::vector<float>* hit_vertices = &raycast_hit_vertices;
+        std::vector<float>* normal_vertices = &raycast_normal_vertices;
+        if (sensor.type == PhysicsSensorType::HeightScanner) {
+            hit_vertices = &height_scanner_hit_vertices;
+            normal_vertices = nullptr;
+        } else if (sensor.type == PhysicsSensorType::TerrainHeight) {
+            hit_vertices = &terrain_height_hit_vertices;
+            normal_vertices = &terrain_height_normal_vertices;
+        }
         for (const PhysicsSensorRaycastHit& hit : sensor.hits) {
-            const Vector3 delta = hit.point - hit.origin;
+            const Vector3 end_point = hit.hit ? hit.point : hit.origin + (hit.point - hit.origin) * 0.12;
+            const Vector3 delta = end_point - hit.origin;
             const RealType length = delta.norm();
             if (length > CMP_EPSILON) {
                 const Vector3 direction = delta / length;
                 const RealType guide_offset = std::min<RealType>(0.18, length * static_cast<RealType>(0.18));
-                AppendWorldLine(ray_vertices, hit.origin + direction * guide_offset, hit.point);
+                AppendWorldLine(hit.hit ? ray_vertices : miss_ray_vertices,
+                                hit.origin + direction * guide_offset,
+                                end_point);
             }
 
             if (!hit.hit) {
@@ -571,14 +610,18 @@ void GLRendererDebugDraw::DrawHeightScannerDebug(const PhysicsSceneState* physic
             }
 
             const RealType normal_length = hit.normal.norm();
-            constexpr RealType kHitSphereRadius = 0.012;
-            AppendSphereTriangles(hit_vertices, hit.point, kHitSphereRadius);
-
+            Vector3 normal = Vector3::UnitZ();
             if (normal_length > CMP_EPSILON) {
+                normal = hit.normal / normal_length;
+            }
+            const Vector3 marker_point = hit.point;
+            AppendSphereTriangles(*hit_vertices, marker_point, style.radius);
+
+            if (style.show_normal && normal_vertices != nullptr && normal_length > CMP_EPSILON) {
                 constexpr RealType kNormalVisualLength = 0.07;
-                AppendArrow(normal_vertices,
-                            hit.point,
-                            hit.point + hit.normal / normal_length * kNormalVisualLength);
+                AppendArrow(*normal_vertices,
+                            marker_point,
+                            marker_point + normal * kNormalVisualLength);
             }
         }
     };
@@ -592,11 +635,24 @@ void GLRendererDebugDraw::DrawHeightScannerDebug(const PhysicsSceneState* physic
             append_sensor(sensor);
         }
     }
-    GOBOT_PROFILE_PLOT("sensor_hits", static_cast<double>(hit_vertices.size() / 9));
+    const std::size_t hit_vertex_count = height_scanner_hit_vertices.size() +
+                                         terrain_height_hit_vertices.size() +
+                                         raycast_hit_vertices.size();
+    GOBOT_PROFILE_PLOT("sensor_hits", static_cast<double>(hit_vertex_count / 9));
 
     DrawLineBuffer(height_scanner_ray_lines_, ray_vertices, program_, 0.35f, 0.95f, 0.22f, 0.42f, 1.0f);
-    DrawTriangleBuffer(height_scanner_hit_spheres_, hit_vertices, program_, 0.0f, 0.93f, 1.0f, 0.98f);
-    DrawLineBuffer(height_scanner_normal_lines_, normal_vertices, program_, 1.0f, 0.88f, 0.05f, 0.95f, 1.75f);
+    DrawLineBuffer(height_scanner_miss_ray_lines_, miss_ray_vertices,
+                   program_, 0.45f, 0.55f, 0.50f, 0.22f, 1.0f);
+    DrawTriangleBuffer(height_scanner_hit_spheres_, height_scanner_hit_vertices,
+                       program_, 0.0f, 0.75f, 1.0f, 0.70f);
+    DrawTriangleBuffer(terrain_height_hit_spheres_, terrain_height_hit_vertices,
+                       program_, 1.0f, 0.46f, 0.08f, 0.95f);
+    DrawTriangleBuffer(raycast_hit_spheres_, raycast_hit_vertices,
+                       program_, 0.78f, 0.38f, 1.0f, 0.90f);
+    DrawLineBuffer(terrain_height_normal_lines_, terrain_height_normal_vertices,
+                   program_, 1.0f, 0.84f, 0.12f, 0.90f, 1.35f);
+    DrawLineBuffer(raycast_normal_lines_, raycast_normal_vertices,
+                   program_, 0.88f, 0.62f, 1.0f, 0.85f, 1.25f);
 }
 
 void GLRendererDebugDraw::DrawContactDebug(const PhysicsWorld* physics_world) {

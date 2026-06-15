@@ -26,6 +26,8 @@ public:
                 const std::vector<DebugArrow>& debug_arrows = {},
                 bool show_collision_debug = true);
 
+    std::vector<DebugArrow> CollectVelocityCommandDebugArrows(const Node* scene_root) const;
+
     Node* PickNode(Node* scene_root,
                    const Camera3D* camera,
                    const ImVec2& viewport_position,

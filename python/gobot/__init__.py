@@ -15,10 +15,18 @@ NodeScript = _core.NodeScript
 app = _importlib.import_module(__name__ + ".app")
 physics = _importlib.import_module(__name__ + ".physics")
 render = _importlib.import_module(__name__ + ".render")
-rl = _importlib.import_module(__name__ + ".rl")
 scene = _importlib.import_module(__name__ + ".scene")
 sim = _importlib.import_module(__name__ + ".sim")
-terrain = _importlib.import_module(__name__ + ".terrain")
+
+_LAZY_SUBMODULES = {"rl", "terrain"}
+
+
+def __getattr__(name):
+    if name in _LAZY_SUBMODULES:
+        module = _importlib.import_module(__name__ + "." + name)
+        globals()[name] = module
+        return module
+    raise AttributeError(f"module {__name__!r} has no attribute {name!r}")
 
 try:
     from ._core import __doc__ as __doc__
@@ -29,4 +37,4 @@ __all__ = [
     name
     for name in globals()
     if not name.startswith("_") and name not in {"annotations"}
-]
+] + sorted(_LAZY_SUBMODULES)

@@ -91,6 +91,7 @@ TEST(TestRobotNodes, reflected_properties_are_available) {
 TEST(TestRobotNodes, stores_sensor_metadata) {
     auto* imu = gobot::Object::New<gobot::IMUSensor3D>();
     imu->SetName("imu");
+    EXPECT_TRUE(imu->ShouldVisualizeDebug());
     imu->SetEnabled(false);
     imu->SetSensorPeriod(0.01);
     imu->SetNoiseStddev(0.02);

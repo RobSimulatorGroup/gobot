@@ -38,7 +38,7 @@ private:
     bool enabled_{true};
     RealType sensor_period_{0.0};
     RealType noise_stddev_{0.0};
-    bool visualize_debug_{false};
+    bool visualize_debug_{true};
 };
 
 class GOBOT_EXPORT IMUSensor3D : public Sensor3D {

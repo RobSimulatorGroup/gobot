@@ -23,6 +23,7 @@ from ._core import (
     Sensor3D,
     TerrainColorMode,
     Terrain3D,
+    VelocityCommandDebug3D,
     backend_infos,
     create_box_collision,
     create_box_visual,
