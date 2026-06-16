@@ -53,6 +53,18 @@ bool Sensor3D::ShouldVisualizeDebug() const {
     return visualize_debug_;
 }
 
+void Sensor3D::SetDebugMarkerRadius(RealType debug_marker_radius) {
+    if (debug_marker_radius < 0.0) {
+        LOG_ERROR("Sensor3D debug_marker_radius cannot be negative.");
+        return;
+    }
+    debug_marker_radius_ = debug_marker_radius;
+}
+
+RealType Sensor3D::GetDebugMarkerRadius() const {
+    return debug_marker_radius_;
+}
+
 void ContactSensor3D::SetRadius(RealType radius) {
     if (radius < 0.0) {
         LOG_ERROR("ContactSensor3D radius cannot be negative.");
@@ -211,7 +223,8 @@ GOBOT_REGISTRATION {
             .property("enabled", &Sensor3D::IsEnabled, &Sensor3D::SetEnabled)
             .property("sensor_period", &Sensor3D::GetSensorPeriod, &Sensor3D::SetSensorPeriod)
             .property("noise_stddev", &Sensor3D::GetNoiseStddev, &Sensor3D::SetNoiseStddev)
-            .property("visualize_debug", &Sensor3D::ShouldVisualizeDebug, &Sensor3D::SetVisualizeDebug);
+            .property("visualize_debug", &Sensor3D::ShouldVisualizeDebug, &Sensor3D::SetVisualizeDebug)
+            .property("debug_marker_radius", &Sensor3D::GetDebugMarkerRadius, &Sensor3D::SetDebugMarkerRadius);
 
     Class_<IMUSensor3D>("IMUSensor3D")
             .constructor()(CtorAsRawPtr);

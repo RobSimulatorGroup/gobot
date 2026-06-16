@@ -260,12 +260,12 @@ class Script(gobot.NodeScript):
             action = self.policy.action(self.observation)
         action = _clamp(action, -FORCE_LIMIT, FORCE_LIMIT)
         effort = action
-        self.context.set_joint_effort_target(self.robot.name, SLIDER_JOINT, effort)
+        self.robot.set_joint_effort_target(SLIDER_JOINT, effort)
         disturbance = self._sample_disturbance()
         if disturbance != 0.0:
-            self.context.set_joint_effort_target(self.robot.name, HINGE_JOINT, disturbance)
+            self.robot.set_joint_effort_target(HINGE_JOINT, disturbance)
         else:
-            self.context.set_joint_passive(self.robot.name, HINGE_JOINT)
+            self.robot.set_joint_passive(HINGE_JOINT)
 
         self.ticks += 1
         if PRINT_EVERY_TICKS > 0 and self.ticks % PRINT_EVERY_TICKS == 0:
@@ -346,15 +346,9 @@ class Script(gobot.NodeScript):
             return True
         if not self.context.has_world:
             return False
-        reset_joint_state = getattr(self.context, "reset_joint_state", None)
-        if reset_joint_state is not None:
-            reset_joint_state(self.robot.name, SLIDER_JOINT, INITIAL_CART_POSITION, 0.0)
-            reset_joint_state(self.robot.name, HINGE_JOINT, INITIAL_POLE_ANGLE, 0.0)
-        else:
-            self.slider.joint_position = INITIAL_CART_POSITION
-            self.hinge.joint_position = INITIAL_POLE_ANGLE
-            self.context.rebuild_world(False)
-        self.context.set_joint_passive(self.robot.name, HINGE_JOINT)
+        self.robot.reset_joint_state(SLIDER_JOINT, INITIAL_CART_POSITION, 0.0)
+        self.robot.reset_joint_state(HINGE_JOINT, INITIAL_POLE_ANGLE, 0.0)
+        self.robot.set_joint_passive(HINGE_JOINT)
         self.world_controls_ready = True
         self.previous_x = INITIAL_CART_POSITION
         self.previous_theta = INITIAL_POLE_ANGLE
@@ -464,8 +458,5 @@ class Script(gobot.NodeScript):
     def _runtime_joint_states(self):
         if not self.context.has_world:
             return None
-        state = self.context.get_runtime_state()
-        for robot in state.get("robots", []):
-            if robot.get("name") == self.robot.name:
-                return {joint.get("name"): joint for joint in robot.get("joints", [])}
-        return None
+        state = self.robot.get_runtime_state()
+        return {joint.get("name"): joint for joint in state.get("joints", [])}

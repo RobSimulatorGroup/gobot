@@ -145,11 +145,16 @@ def main():
     gobot.save_scene(cartpole_root, "res://gobot_python_binding_cartpole.jscn")
     context.load_scene("res://gobot_python_binding_cartpole.jscn")
     context.build_world(gobot.PhysicsBackendType.Null)
-    name_map = context.get_runtime_name_map()
-    assert name_map["robots"][0]["name"] == "cartpole"
-    assert name_map["robots"][0]["controllable_joint_names"] == ["slider", "hinge"]
-    state = context.get_runtime_state()
-    assert state["robots"][0]["joints"][0]["name"] == "slider"
+    runtime_cartpole = context.root
+    assert runtime_cartpole is not None
+    name_map = runtime_cartpole.get_runtime_snapshot()
+    assert name_map["name"] == "cartpole"
+    assert name_map["controllable_joint_names"] == ["slider", "hinge"]
+    state = runtime_cartpole.get_runtime_state()
+    assert state["joints"][0]["name"] == "slider"
+    assert not hasattr(context, "get_runtime_state")
+    assert not hasattr(context, "get_runtime_name_map")
+    assert not hasattr(context, "set_joint_position_target")
 
     eval_context = gobot.app.create_context()
     assert eval_context is not context
@@ -227,17 +232,18 @@ def main():
     assert batch_state["contact_link_index"].shape[0] == 1
     assert tuple(batch_state["sensor_names"]) == ("terrain_scan",)
     assert tuple(batch_state["link_names"]) == ("base",)
-    sensor_name_map = context.get_runtime_name_map()
-    assert sensor_name_map["total_sensor_count"] == 4
-    assert sensor_name_map["robots"][0]["sensor_names"] == ["imu", "root_angmom", "contact", "terrain_scan"]
-    terrain_snapshot = sensor_name_map["robots"][0]["sensors"][3]
+    runtime_sensor_bot = context.root.find("sensor_bot")
+    assert runtime_sensor_bot is not None
+    sensor_name_map = runtime_sensor_bot.get_runtime_snapshot()
+    assert sensor_name_map["sensor_names"] == ["imu", "root_angmom", "contact", "terrain_scan"]
+    terrain_snapshot = sensor_name_map["sensors"][3]
     assert terrain_snapshot["type"] == "height_scanner"
     assert len(terrain_snapshot["sample_offsets"]) == 2
     assert tuple(terrain_snapshot["ray_direction"]) == (0.0, 0.0, -1.0)
     assert terrain_snapshot["ray_direction_world_space"] is True
     assert abs(float(terrain_snapshot["max_distance"]) - 2.0) < 1e-6
-    sensor_state = context.get_runtime_state()
-    sensors = sensor_state["robots"][0]["sensors"]
+    sensor_state = runtime_sensor_bot.get_runtime_state()
+    sensors = sensor_state["sensors"]
     assert sensors[0]["type"] == "imu"
     assert len(sensors[0]["values"]) == 13
     assert sensors[0]["channel_names"][7:10] == [

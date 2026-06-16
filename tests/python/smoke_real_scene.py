@@ -45,6 +45,9 @@ def main():
     context.build_world(gobot.PhysicsBackendType.MuJoCoCpu if args.backend == "mujoco"
                         else gobot.PhysicsBackendType.Null)
     context.reset_simulation()
+    go1 = root.find("go1")
+    if go1 is None:
+        go1 = root if root.name == "go1" else None
 
     if args.expect_go1_stand:
         script_path = pathlib.Path(args.project) / "scripts" / "go1.py"
@@ -53,16 +56,18 @@ def main():
         spec.loader.exec_module(script_module)
         os.environ["GOBOT_GO1_POLICY"] = ""
 
-        context.reset_link_state("go1", "trunk", script_module.RESET_BASE_POSITION,
-                                 [1.0, 0.0, 0.0, 0.0],
-                                 [0.0, 0.0, 0.0],
-                                 [0.0, 0.0, 0.0])
+        if go1 is None:
+            raise AssertionError("Loaded scene has no Robot3D node 'go1'")
+        go1.reset_link_state("trunk", script_module.RESET_BASE_POSITION,
+                             [1.0, 0.0, 0.0, 0.0],
+                             [0.0, 0.0, 0.0],
+                             [0.0, 0.0, 0.0])
         for name, target in zip(script_module.JOINT_NAMES, script_module.DEFAULT_POS):
-            context.reset_joint_state("go1", name, target, 0.0)
-            context.set_joint_position_target("go1", name, target)
+            go1.reset_joint_state(name, target, 0.0)
+            go1.set_joint_position_target(name, target)
 
         context.step_once()
-        state = context.get_runtime_state()
+        state = go1.get_runtime_state()
         contact_distances = [
             float(contact["distance"])
             for contact in state.get("contacts", [])
@@ -78,12 +83,11 @@ def main():
 
         for index in range(args.steps):
             for name, target in zip(script_module.JOINT_NAMES, script_module.DEFAULT_POS):
-                context.set_joint_position_target("go1", name, target)
+                go1.set_joint_position_target(name, target)
             context.step_once()
             print(f"step={index + 1} time={context.simulation_time:.6f} frame={context.frame_count}")
 
-        state = context.get_runtime_state()
-        robot = next(robot for robot in state["robots"] if robot["name"] == "go1")
+        robot = go1.get_runtime_state()
         base = next(link for link in robot["links"] if link["link_name"] == "trunk")
         base_z = base["global_transform"]["position"][2]
         print(f"go1_stand_base_z={base_z:.6f}")
@@ -95,8 +99,9 @@ def main():
             print(f"step={index + 1} time={context.simulation_time:.6f} frame={context.frame_count}")
 
     if args.expect_go1_sensors:
-        state = context.get_runtime_state()
-        robot = next(robot for robot in state["robots"] if robot["name"] == "go1")
+        if go1 is None:
+            raise AssertionError("Loaded scene has no Robot3D node 'go1'")
+        robot = go1.get_runtime_state()
         sensors = {sensor["sensor_name"]: sensor for sensor in robot.get("sensors", [])}
         print(f"go1_sensor_names={sorted(sensors)}")
 

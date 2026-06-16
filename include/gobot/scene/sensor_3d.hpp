@@ -34,11 +34,16 @@ public:
 
     bool ShouldVisualizeDebug() const;
 
+    void SetDebugMarkerRadius(RealType debug_marker_radius);
+
+    RealType GetDebugMarkerRadius() const;
+
 private:
     bool enabled_{true};
     RealType sensor_period_{0.0};
     RealType noise_stddev_{0.0};
     bool visualize_debug_{true};
+    RealType debug_marker_radius_{0.0};
 };
 
 class GOBOT_EXPORT IMUSensor3D : public Sensor3D {

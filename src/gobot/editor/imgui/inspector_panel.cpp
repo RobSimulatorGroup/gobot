@@ -160,7 +160,7 @@ void InspectorPanel::OnImGuiContent() {
             property_name->SetValue(str);
         }
         DrawHoverTooltip(runtime_node
-                         ? "Runtime node name. Play Mode Inspector is read-only."
+                         ? "Runtime node name. Rename is disabled while Play Mode is active."
                          : "Selected node name. Editing this renames the node in SceneTree.");
 
         ImGui::SameLine();
@@ -194,7 +194,7 @@ void InspectorPanel::OnImGuiContent() {
 
     if (runtime_node) {
         ImGui::TextDisabled("Runtime state");
-        DrawHoverTooltip("Showing the active Play Mode clone. Properties are synchronized from the simulation world once per editor frame.");
+        DrawHoverTooltip("Showing the active Play Mode clone. Inspector edits are temporary and are not saved to the edited scene.");
     }
 
     filter_->Draw("###PropertyFilter", ImGui::GetContentRegionAvail().x);

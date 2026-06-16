@@ -19,6 +19,7 @@
 #include "gobot/scene/resources/capsule_shape_3d.hpp"
 #include "gobot/scene/resources/cylinder_shape_3d.hpp"
 #include "gobot/scene/resources/sphere_shape_3d.hpp"
+#include "gobot/scene/sensor_3d.hpp"
 #include "glsl_shader_hpp/debug_draw_frag.hpp"
 #include "glsl_shader_hpp/debug_draw_vert.hpp"
 
@@ -78,16 +79,38 @@ struct SensorHitDebugStyle {
 };
 
 SensorHitDebugStyle GetSensorHitDebugStyle(const PhysicsSensorState& sensor) {
+    RealType radius = 0.0;
+    bool show_normal = false;
     switch (sensor.type) {
         case PhysicsSensorType::HeightScanner:
-            return SensorHitDebugStyle{0.010, false};
+            radius = 0.010;
+            break;
         case PhysicsSensorType::TerrainHeight:
-            return SensorHitDebugStyle{0.008, true};
+            radius = 0.008;
+            show_normal = true;
+            break;
         case PhysicsSensorType::RayCast:
-            return SensorHitDebugStyle{0.010, true};
+            radius = 0.010;
+            show_normal = true;
+            break;
         default:
             return SensorHitDebugStyle{};
     }
+
+    if (sensor.node != nullptr) {
+        const RealType node_radius = sensor.node->GetDebugMarkerRadius();
+        if (node_radius > 0.0) {
+            radius = node_radius;
+        }
+    }
+    return SensorHitDebugStyle{radius, show_normal};
+}
+
+bool ShouldVisualizeSensorDebug(const PhysicsSensorState& sensor) {
+    return sensor.node != nullptr ? sensor.node->IsEnabled() &&
+                                            sensor.node->ShouldVisualizeDebug() &&
+                                            sensor.node->IsVisibleInTree()
+                                  : sensor.enabled && sensor.visualize_debug;
 }
 
 void AppendLine(std::vector<float>& vertices,
@@ -578,9 +601,8 @@ void GLRendererDebugDraw::DrawHeightScannerDebug(const PhysicsSceneState* physic
     auto append_sensor = [&](const PhysicsSensorState& sensor) {
         if ((sensor.type != PhysicsSensorType::RayCast &&
              sensor.type != PhysicsSensorType::TerrainHeight &&
-             sensor.type != PhysicsSensorType::HeightScanner) ||
-            !sensor.enabled ||
-            !sensor.visualize_debug) {
+            sensor.type != PhysicsSensorType::HeightScanner) ||
+            !ShouldVisualizeSensorDebug(sensor)) {
             return;
         }
         const SensorHitDebugStyle style = GetSensorHitDebugStyle(sensor);
@@ -670,7 +692,8 @@ void GLRendererDebugDraw::DrawContactDebug(const PhysicsWorld* physics_world) {
     if (!settings.debug_draw_contacts) {
         for (const PhysicsRobotState& robot : physics_state.robots) {
             for (const PhysicsSensorState& sensor : robot.sensors) {
-                if (sensor.type == PhysicsSensorType::Contact && sensor.enabled && sensor.visualize_debug) {
+                if (sensor.type == PhysicsSensorType::Contact &&
+                    ShouldVisualizeSensorDebug(sensor)) {
                     visualized_sensor_links.emplace_back(robot.name, sensor.link_name);
                 }
             }

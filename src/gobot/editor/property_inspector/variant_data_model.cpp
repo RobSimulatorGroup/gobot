@@ -55,11 +55,6 @@ const std::string& PropertyDataModel::GetPropertyNameStr() const {
 }
 
 bool PropertyDataModel::IsPropertyReadOnly() const {
-    if (auto* object = variant_cache_.object) {
-        if (auto* editor = Editor::GetInstanceOrNull(); editor != nullptr && editor->IsRuntimeNode(Object::PointerCastTo<Node>(object))) {
-            return true;
-        }
-    }
     return property_cache_.property_readonly;
 }
 
@@ -74,7 +69,8 @@ const std::string& PropertyDataModel::GetPropertyToolTipStr() const {
 bool PropertyDataModel::SetValue(Variant new_value) {
     if (auto* object = variant_cache_.object) {
         if (auto* editor = Editor::GetInstanceOrNull(); editor != nullptr && editor->IsRuntimeNode(Object::PointerCastTo<Node>(object))) {
-            return false;
+            return !property_cache_.property_readonly &&
+                   object->Set(property_cache_.property_name, std::move(new_value));
         }
     }
 

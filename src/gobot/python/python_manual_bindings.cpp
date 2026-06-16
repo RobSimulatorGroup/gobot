@@ -54,6 +54,7 @@
 #include "gobot/scene/sensor_3d.hpp"
 #include "gobot/scene/terrain_3d.hpp"
 #include "gobot/scene/velocity_command_debug_3d.hpp"
+#include "gobot/simulation/simulation_scene.hpp"
 #include "gobot/simulation/simulation_server.hpp"
 
 namespace gobot::python {
@@ -257,6 +258,7 @@ void ExecuteSceneMutation(const std::string&, Func&& func) {
 
 void ExecuteSetNodeProperty(Node* node, const std::string& property_name, Variant value);
 EngineContext* ContextForNode(const Node* node);
+EngineContext* ResolveHandleContext(EngineContext* context);
 
 std::uint64_t ActiveSceneEpoch() {
     const std::uint64_t scene_script_epoch = PythonScriptRunner::GetExecutingSceneScriptEpoch();
@@ -1413,6 +1415,7 @@ py::dict SensorSnapshotToPythonDict(const PhysicsSensorSnapshot& sensor) {
     result["sensor_period"] = sensor.sensor_period;
     result["noise_stddev"] = sensor.noise_stddev;
     result["visualize_debug"] = sensor.visualize_debug;
+    result["debug_marker_radius"] = sensor.node != nullptr ? sensor.node->GetDebugMarkerRadius() : 0.0;
     result["radius"] = sensor.radius;
     result["min_threshold"] = sensor.min_threshold;
     result["max_threshold"] = sensor.max_threshold;
@@ -1428,61 +1431,6 @@ py::dict SensorSnapshotToPythonDict(const PhysicsSensorSnapshot& sensor) {
     result["channel_names"] = sensor.channel_names;
     result["global_transform"] = TransformToPythonDict(sensor.global_transform);
     result["local_transform"] = TransformToPythonDict(sensor.local_transform);
-    return result;
-}
-
-py::dict RuntimeNameMapToPythonDict(const PhysicsSceneSnapshot& snapshot) {
-    py::dict result;
-    py::list robots;
-
-    for (const PhysicsRobotSnapshot& robot : snapshot.robots) {
-        py::dict robot_dict;
-        robot_dict["name"] = robot.name;
-        robot_dict["source_path"] = robot.source_path;
-
-        py::list links;
-        py::list link_names;
-        for (const PhysicsLinkSnapshot& link : robot.links) {
-            links.append(LinkSnapshotToPythonDict(link));
-            link_names.append(link.name);
-        }
-        robot_dict["links"] = links;
-        robot_dict["link_names"] = link_names;
-
-        py::list joints;
-        py::list joint_names;
-        py::list controllable_joint_names;
-        for (const PhysicsJointSnapshot& joint : robot.joints) {
-            joints.append(JointSnapshotToPythonDict(joint));
-            joint_names.append(joint.name);
-
-            const auto joint_type = static_cast<JointType>(joint.joint_type);
-            if (joint_type == JointType::Revolute ||
-                joint_type == JointType::Continuous ||
-                joint_type == JointType::Prismatic) {
-                controllable_joint_names.append(joint.name);
-            }
-        }
-        robot_dict["joints"] = joints;
-        robot_dict["joint_names"] = joint_names;
-        robot_dict["controllable_joint_names"] = controllable_joint_names;
-
-        py::list sensors;
-        py::list sensor_names;
-        for (const PhysicsSensorSnapshot& sensor : robot.sensors) {
-            sensors.append(SensorSnapshotToPythonDict(sensor));
-            sensor_names.append(sensor.name);
-        }
-        robot_dict["sensors"] = sensors;
-        robot_dict["sensor_names"] = sensor_names;
-        robots.append(robot_dict);
-    }
-
-    result["robots"] = robots;
-    result["total_link_count"] = snapshot.total_link_count;
-    result["total_joint_count"] = snapshot.total_joint_count;
-    result["total_collision_shape_count"] = snapshot.total_collision_shape_count;
-    result["total_sensor_count"] = snapshot.total_sensor_count;
     return result;
 }
 
@@ -1548,6 +1496,7 @@ py::dict SensorStateToPythonDict(const PhysicsSensorState& sensor) {
     result["type"] = PhysicsSensorTypeName(sensor.type);
     result["enabled"] = sensor.enabled;
     result["visualize_debug"] = sensor.visualize_debug;
+    result["debug_marker_radius"] = sensor.node != nullptr ? sensor.node->GetDebugMarkerRadius() : 0.0;
     result["global_transform"] = TransformToPythonDict(sensor.global_transform);
     result["values"] = sensor.values;
     py::list hits;
@@ -1674,6 +1623,151 @@ const PhysicsSensorSnapshot* FindSensorSnapshot(const PhysicsRobotSnapshot& robo
         }
     }
     return nullptr;
+}
+
+SimulationServer* SimulationServerForRobotHandle(const PyRobot3DHandle& handle) {
+    EngineContext* context = ResolveHandleContext(handle.state ? handle.state->context : nullptr);
+    if (context == nullptr) {
+        throw std::runtime_error("Gobot robot node is not associated with an app context");
+    }
+
+    SimulationServer* simulation = context->GetSimulationServer();
+    if (simulation == nullptr) {
+        throw std::runtime_error("Gobot robot node app context has no SimulationServer");
+    }
+
+    return simulation;
+}
+
+SimulationScene* RuntimeSceneForRobotHandle(const PyRobot3DHandle& handle) {
+    Robot3D* robot = handle.ResolveAs<Robot3D>();
+    SimulationServer* simulation = SimulationServerForRobotHandle(handle);
+    SimulationScene* runtime_scene = simulation->GetRuntimeScene();
+    if (runtime_scene == nullptr || !runtime_scene->IsValid()) {
+        throw std::runtime_error("simulation runtime scene has not been built");
+    }
+
+    const Node* runtime_root = runtime_scene->GetSceneRoot();
+    if (runtime_root == nullptr) {
+        throw std::runtime_error("simulation runtime scene has no scene root");
+    }
+    if (robot != runtime_root && !runtime_root->IsAncestorOf(robot)) {
+        throw std::runtime_error("Gobot robot node '" + robot->GetName() +
+                                 "' is not part of the active runtime scene");
+    }
+
+    return runtime_scene;
+}
+
+Ref<PhysicsWorld> RuntimeWorldForRobotHandle(const PyRobot3DHandle& handle) {
+    SimulationServer* simulation = SimulationServerForRobotHandle(handle);
+    Ref<PhysicsWorld> world = simulation->GetWorld();
+    if (!world.IsValid()) {
+        throw std::runtime_error("simulation world has not been built from a scene");
+    }
+    return world;
+}
+
+py::dict RobotSnapshotToPythonDict(const PhysicsRobotSnapshot& robot) {
+    py::dict result;
+    result["name"] = robot.name;
+    result["source_path"] = robot.source_path;
+
+    py::list links;
+    py::list link_names;
+    for (const PhysicsLinkSnapshot& link : robot.links) {
+        links.append(LinkSnapshotToPythonDict(link));
+        link_names.append(link.name);
+    }
+    result["links"] = links;
+    result["link_names"] = link_names;
+
+    py::list joints;
+    py::list joint_names;
+    py::list controllable_joint_names;
+    for (const PhysicsJointSnapshot& joint : robot.joints) {
+        joints.append(JointSnapshotToPythonDict(joint));
+        joint_names.append(joint.name);
+
+        const auto joint_type = static_cast<JointType>(joint.joint_type);
+        if (joint_type == JointType::Revolute ||
+            joint_type == JointType::Continuous ||
+            joint_type == JointType::Prismatic) {
+            controllable_joint_names.append(joint.name);
+        }
+    }
+    result["joints"] = joints;
+    result["joint_names"] = joint_names;
+    result["controllable_joint_names"] = controllable_joint_names;
+
+    py::list sensors;
+    py::list sensor_names;
+    for (const PhysicsSensorSnapshot& sensor : robot.sensors) {
+        sensors.append(SensorSnapshotToPythonDict(sensor));
+        sensor_names.append(sensor.name);
+    }
+    result["sensors"] = sensors;
+    result["sensor_names"] = sensor_names;
+    return result;
+}
+
+py::dict RobotStateToPythonDict(const PhysicsRobotState& robot,
+                                const PhysicsSceneState* scene_state = nullptr) {
+    py::dict result;
+    result["name"] = robot.name;
+
+    py::list links;
+    for (const PhysicsLinkState& link : robot.links) {
+        links.append(LinkStateToPythonDict(link));
+    }
+    result["links"] = links;
+
+    py::list joints;
+    for (const PhysicsJointState& joint : robot.joints) {
+        joints.append(JointStateToPythonDict(joint));
+    }
+    result["joints"] = joints;
+
+    py::list sensors;
+    for (const PhysicsSensorState& sensor : robot.sensors) {
+        sensors.append(SensorStateToPythonDict(sensor));
+    }
+    result["sensors"] = sensors;
+
+    py::list contacts;
+    if (scene_state != nullptr) {
+        for (const PhysicsContactState& contact : scene_state->contacts) {
+            if (contact.robot_name == robot.name || contact.other_robot_name == robot.name) {
+                contacts.append(ContactStateToPythonDict(contact));
+            }
+        }
+    }
+    result["contacts"] = contacts;
+    return result;
+}
+
+const PhysicsRobotSnapshot& RequiredRobotSnapshotForHandle(const PyRobot3DHandle& handle) {
+    Robot3D* robot = handle.ResolveAs<Robot3D>();
+    const PhysicsSceneSnapshot& snapshot = RuntimeWorldForRobotHandle(handle)->GetSceneSnapshot();
+    const PhysicsRobotSnapshot* robot_snapshot = FindRobotSnapshot(snapshot, robot->GetName());
+    if (robot_snapshot == nullptr) {
+        throw std::runtime_error("Gobot runtime snapshot has no robot '" + robot->GetName() + "'");
+    }
+    return *robot_snapshot;
+}
+
+const PhysicsRobotState& RequiredRobotStateForHandle(const PyRobot3DHandle& handle) {
+    Robot3D* robot = handle.ResolveAs<Robot3D>();
+    const PhysicsSceneState& state = RuntimeWorldForRobotHandle(handle)->GetSceneState();
+    const PhysicsRobotState* robot_state = FindRobotState(state, robot->GetName());
+    if (robot_state == nullptr) {
+        throw std::runtime_error("Gobot runtime state has no robot '" + robot->GetName() + "'");
+    }
+    return *robot_state;
+}
+
+const PhysicsSceneState& RequiredSceneStateForHandle(const PyRobot3DHandle& handle) {
+    return RuntimeWorldForRobotHandle(handle)->GetSceneState();
 }
 
 py::dict BatchRobotStateToPythonDict(SimulationServer& simulation,
@@ -2681,37 +2775,6 @@ class NodeScript:
                py::arg("orientation") = py::make_tuple(1.0, 0.0, 0.0, 0.0),
                py::arg("linear_velocity") = py::make_tuple(0.0, 0.0, 0.0),
                py::arg("angular_velocity") = py::make_tuple(0.0, 0.0, 0.0))
-            .def("set_robot_action", [](EngineContext& context,
-                                        const std::string& robot,
-                                        const std::vector<RealType>& action) {
-                SimulationServer* simulation = context.GetSimulationServer();
-                if (simulation == nullptr) {
-                    throw std::runtime_error("active Gobot app context has no SimulationServer");
-                }
-                SimulationScene* runtime_scene = simulation->GetRuntimeScene();
-                if (runtime_scene == nullptr) {
-                    throw std::runtime_error("simulation runtime scene has not been built");
-                }
-                if (!runtime_scene->SetRobotJointPositionTargetsFromNormalizedAction(robot, action)) {
-                    throw std::runtime_error(runtime_scene->GetLastError());
-                }
-            }, py::arg("robot"), py::arg("action"))
-            .def("set_robot_named_action", [](EngineContext& context,
-                                              const std::string& robot,
-                                              const std::vector<std::string>& joint_names,
-                                              const std::vector<RealType>& action) {
-                SimulationServer* simulation = context.GetSimulationServer();
-                if (simulation == nullptr) {
-                    throw std::runtime_error("active Gobot app context has no SimulationServer");
-                }
-                SimulationScene* runtime_scene = simulation->GetRuntimeScene();
-                if (runtime_scene == nullptr) {
-                    throw std::runtime_error("simulation runtime scene has not been built");
-                }
-                if (!runtime_scene->SetRobotJointPositionTargetsFromNormalizedAction(robot, joint_names, action)) {
-                    throw std::runtime_error(runtime_scene->GetLastError());
-                }
-            }, py::arg("robot"), py::arg("joint_names"), py::arg("action"))
             .def("set_default_joint_gains", [](EngineContext& context, py::dict gains) {
                 SimulationServer* simulation = context.GetSimulationServer();
                 if (simulation == nullptr) {
@@ -2725,153 +2788,6 @@ class NodeScript:
                     throw std::runtime_error("active Gobot app context has no SimulationServer");
                 }
                 return ReflectedToPythonDict(simulation->GetDefaultJointGains());
-            })
-            .def("set_joint_position_target", [](EngineContext& context,
-                                                 const std::string& robot,
-                                                 const std::string& joint,
-                                                 RealType target_position) {
-                SimulationServer* simulation = context.GetSimulationServer();
-                if (simulation == nullptr) {
-                    throw std::runtime_error("active Gobot app context has no SimulationServer");
-                }
-                SimulationScene* runtime_scene = simulation->GetRuntimeScene();
-                if (runtime_scene == nullptr) {
-                    throw std::runtime_error("simulation runtime scene has not been built");
-                }
-                if (!runtime_scene->SetJointPositionTarget(robot, joint, target_position)) {
-                    throw std::runtime_error(runtime_scene->GetLastError());
-                }
-            }, py::arg("robot"), py::arg("joint"), py::arg("target_position"))
-            .def("set_joint_position_targets", [](EngineContext& context,
-                                                  const std::string& robot,
-                                                  const std::vector<std::string>& joint_names,
-                                                  const std::vector<RealType>& target_positions) {
-                SimulationServer* simulation = context.GetSimulationServer();
-                if (simulation == nullptr) {
-                    throw std::runtime_error("active Gobot app context has no SimulationServer");
-                }
-                SimulationScene* runtime_scene = simulation->GetRuntimeScene();
-                if (runtime_scene == nullptr) {
-                    throw std::runtime_error("simulation runtime scene has not been built");
-                }
-                if (!runtime_scene->SetJointPositionTargets(robot, joint_names, target_positions)) {
-                    throw std::runtime_error(runtime_scene->GetLastError());
-                }
-            }, py::arg("robot"), py::arg("joint_names"), py::arg("target_positions"))
-            .def("set_joint_velocity_target", [](EngineContext& context,
-                                                 const std::string& robot,
-                                                 const std::string& joint,
-                                                 RealType target_velocity) {
-                SimulationServer* simulation = context.GetSimulationServer();
-                if (simulation == nullptr) {
-                    throw std::runtime_error("active Gobot app context has no SimulationServer");
-                }
-                SimulationScene* runtime_scene = simulation->GetRuntimeScene();
-                if (runtime_scene == nullptr) {
-                    throw std::runtime_error("simulation runtime scene has not been built");
-                }
-                if (!runtime_scene->SetJointVelocityTarget(robot, joint, target_velocity)) {
-                    throw std::runtime_error(runtime_scene->GetLastError());
-                }
-            }, py::arg("robot"), py::arg("joint"), py::arg("target_velocity"))
-            .def("set_joint_effort_target", [](EngineContext& context,
-                                               const std::string& robot,
-                                               const std::string& joint,
-                                               RealType target_effort) {
-                SimulationServer* simulation = context.GetSimulationServer();
-                if (simulation == nullptr) {
-                    throw std::runtime_error("active Gobot app context has no SimulationServer");
-                }
-                SimulationScene* runtime_scene = simulation->GetRuntimeScene();
-                if (runtime_scene == nullptr) {
-                    throw std::runtime_error("simulation runtime scene has not been built");
-                }
-                if (!runtime_scene->SetJointEffortTarget(robot, joint, target_effort)) {
-                    throw std::runtime_error(runtime_scene->GetLastError());
-                }
-            }, py::arg("robot"), py::arg("joint"), py::arg("target_effort"))
-            .def("set_joint_passive", [](EngineContext& context,
-                                         const std::string& robot,
-                                         const std::string& joint) {
-                SimulationServer* simulation = context.GetSimulationServer();
-                if (simulation == nullptr) {
-                    throw std::runtime_error("active Gobot app context has no SimulationServer");
-                }
-                SimulationScene* runtime_scene = simulation->GetRuntimeScene();
-                if (runtime_scene == nullptr) {
-                    throw std::runtime_error("simulation runtime scene has not been built");
-                }
-                if (!runtime_scene->SetJointPassive(robot, joint)) {
-                    throw std::runtime_error(runtime_scene->GetLastError());
-                }
-            }, py::arg("robot"), py::arg("joint"))
-            .def("reset_joint_state", [](EngineContext& context,
-                                         const std::string& robot,
-                                         const std::string& joint,
-                                         RealType position,
-                                         RealType velocity) {
-                SimulationServer* simulation = context.GetSimulationServer();
-                if (simulation == nullptr) {
-                    throw std::runtime_error("active Gobot app context has no SimulationServer");
-                }
-                SimulationScene* runtime_scene = simulation->GetRuntimeScene();
-                if (runtime_scene == nullptr) {
-                    throw std::runtime_error("simulation runtime scene has not been built");
-                }
-                if (!runtime_scene->ResetJointState(robot, joint, position, velocity)) {
-                    throw std::runtime_error(runtime_scene->GetLastError());
-                }
-            }, py::arg("robot"), py::arg("joint"), py::arg("position"), py::arg("velocity") = 0.0)
-            .def("reset_link_state", [](EngineContext& context,
-                                        const std::string& robot,
-                                        const std::string& link,
-                                        const py::object& position,
-                                        const py::object& orientation,
-                                        const py::object& linear_velocity,
-                                        const py::object& angular_velocity) {
-                SimulationServer* simulation = context.GetSimulationServer();
-                if (simulation == nullptr) {
-                    throw std::runtime_error("active Gobot app context has no SimulationServer");
-                }
-                SimulationScene* runtime_scene = simulation->GetRuntimeScene();
-                if (runtime_scene == nullptr) {
-                    throw std::runtime_error("simulation runtime scene has not been built");
-                }
-                if (!runtime_scene->ResetLinkState(robot,
-                                                   link,
-                                                   PythonToVector3(position),
-                                                   PythonToQuaternionWxyz(orientation),
-                                                   PythonToVector3(linear_velocity),
-                                                   PythonToVector3(angular_velocity))) {
-                    throw std::runtime_error(runtime_scene->GetLastError());
-                }
-            }, py::arg("robot"),
-               py::arg("link"),
-               py::arg("position"),
-               py::arg("orientation") = py::make_tuple(1.0, 0.0, 0.0, 0.0),
-               py::arg("linear_velocity") = py::make_tuple(0.0, 0.0, 0.0),
-               py::arg("angular_velocity") = py::make_tuple(0.0, 0.0, 0.0))
-            .def("get_runtime_name_map", [](EngineContext& context) {
-                SimulationServer* simulation = context.GetSimulationServer();
-                if (simulation == nullptr) {
-                    throw std::runtime_error("active Gobot app context has no SimulationServer");
-                }
-                Ref<PhysicsWorld> world = simulation->GetWorld();
-                if (!world.IsValid()) {
-                    throw std::runtime_error("simulation world has not been built from a scene");
-                }
-                return RuntimeNameMapToPythonDict(world->GetSceneSnapshot());
-            })
-            .def("get_runtime_state", [](EngineContext& context) {
-                SimulationServer* simulation = context.GetSimulationServer();
-                if (simulation == nullptr) {
-                    throw std::runtime_error("active Gobot app context has no SimulationServer");
-                }
-                Ref<PhysicsWorld> world = simulation->GetWorld();
-                if (!world.IsValid()) {
-                    throw std::runtime_error("simulation world has not been built from a scene");
-                }
-                return RuntimeStateToPythonDict(world->GetSceneState());
             })
             .def("get_batch_runtime_state", [](EngineContext& context, std::size_t env_id) {
                 SimulationServer* simulation = context.GetSimulationServer();
@@ -3026,7 +2942,173 @@ class NodeScript:
                           [](PyRobot3DHandle& handle, RobotMode mode) {
                               Robot3D* robot = handle.ResolveAs<Robot3D>();
                               ExecuteSetNodeProperty(robot, "mode", Variant(mode));
-                          });
+                          })
+            .def("set_joint_position_target",
+                 [](PyRobot3DHandle& handle,
+                    const std::string& joint,
+                    RealType target_position) {
+                     Robot3D* robot = handle.ResolveAs<Robot3D>();
+                     SimulationScene* runtime_scene = RuntimeSceneForRobotHandle(handle);
+                     if (!runtime_scene->SetJointPositionTarget(robot->GetName(), joint, target_position)) {
+                         throw std::runtime_error(runtime_scene->GetLastError());
+                     }
+                 },
+                 py::arg("joint"),
+                 py::arg("target_position"))
+            .def("set_joint_position_targets",
+                 [](PyRobot3DHandle& handle,
+                    const std::vector<std::string>& joint_names,
+                    const std::vector<RealType>& target_positions) {
+                     Robot3D* robot = handle.ResolveAs<Robot3D>();
+                     SimulationScene* runtime_scene = RuntimeSceneForRobotHandle(handle);
+                     if (!runtime_scene->SetJointPositionTargets(robot->GetName(), joint_names, target_positions)) {
+                         throw std::runtime_error(runtime_scene->GetLastError());
+                     }
+                 },
+                 py::arg("joint_names"),
+                 py::arg("target_positions"))
+            .def("set_joint_velocity_target",
+                 [](PyRobot3DHandle& handle,
+                    const std::string& joint,
+                    RealType target_velocity) {
+                     Robot3D* robot = handle.ResolveAs<Robot3D>();
+                     SimulationScene* runtime_scene = RuntimeSceneForRobotHandle(handle);
+                     if (!runtime_scene->SetJointVelocityTarget(robot->GetName(), joint, target_velocity)) {
+                         throw std::runtime_error(runtime_scene->GetLastError());
+                     }
+                 },
+                 py::arg("joint"),
+                 py::arg("target_velocity"))
+            .def("set_joint_effort_target",
+                 [](PyRobot3DHandle& handle,
+                    const std::string& joint,
+                    RealType target_effort) {
+                     Robot3D* robot = handle.ResolveAs<Robot3D>();
+                     SimulationScene* runtime_scene = RuntimeSceneForRobotHandle(handle);
+                     if (!runtime_scene->SetJointEffortTarget(robot->GetName(), joint, target_effort)) {
+                         throw std::runtime_error(runtime_scene->GetLastError());
+                     }
+                 },
+                 py::arg("joint"),
+                 py::arg("target_effort"))
+            .def("set_joint_passive",
+                 [](PyRobot3DHandle& handle, const std::string& joint) {
+                     Robot3D* robot = handle.ResolveAs<Robot3D>();
+                     SimulationScene* runtime_scene = RuntimeSceneForRobotHandle(handle);
+                     if (!runtime_scene->SetJointPassive(robot->GetName(), joint)) {
+                         throw std::runtime_error(runtime_scene->GetLastError());
+                     }
+                 },
+                 py::arg("joint"))
+            .def("set_action",
+                 [](PyRobot3DHandle& handle, const std::vector<RealType>& action) {
+                     Robot3D* robot = handle.ResolveAs<Robot3D>();
+                     SimulationScene* runtime_scene = RuntimeSceneForRobotHandle(handle);
+                     if (!runtime_scene->SetRobotJointPositionTargetsFromNormalizedAction(robot->GetName(), action)) {
+                         throw std::runtime_error(runtime_scene->GetLastError());
+                     }
+                 },
+                 py::arg("action"))
+            .def("set_named_action",
+                 [](PyRobot3DHandle& handle,
+                    const std::vector<std::string>& joint_names,
+                    const std::vector<RealType>& action) {
+                     Robot3D* robot = handle.ResolveAs<Robot3D>();
+                     SimulationScene* runtime_scene = RuntimeSceneForRobotHandle(handle);
+                     if (!runtime_scene->SetRobotJointPositionTargetsFromNormalizedAction(
+                                 robot->GetName(),
+                                 joint_names,
+                                 action)) {
+                         throw std::runtime_error(runtime_scene->GetLastError());
+                     }
+                 },
+                 py::arg("joint_names"),
+                 py::arg("action"))
+            .def("reset_joint_state",
+                 [](PyRobot3DHandle& handle,
+                    const std::string& joint,
+                    RealType position,
+                    RealType velocity) {
+                     Robot3D* robot = handle.ResolveAs<Robot3D>();
+                     SimulationScene* runtime_scene = RuntimeSceneForRobotHandle(handle);
+                     if (!runtime_scene->ResetJointState(robot->GetName(), joint, position, velocity)) {
+                         throw std::runtime_error(runtime_scene->GetLastError());
+                     }
+                 },
+                 py::arg("joint"),
+                 py::arg("position"),
+                 py::arg("velocity") = 0.0)
+            .def("reset_link_state",
+                 [](PyRobot3DHandle& handle,
+                    const std::string& link,
+                    const py::object& position,
+                    const py::object& orientation,
+                    const py::object& linear_velocity,
+                    const py::object& angular_velocity) {
+                     Robot3D* robot = handle.ResolveAs<Robot3D>();
+                     SimulationScene* runtime_scene = RuntimeSceneForRobotHandle(handle);
+                     if (!runtime_scene->ResetLinkState(robot->GetName(),
+                                                        link,
+                                                        PythonToVector3(position),
+                                                        PythonToQuaternionWxyz(orientation),
+                                                        PythonToVector3(linear_velocity),
+                                                        PythonToVector3(angular_velocity))) {
+                         throw std::runtime_error(runtime_scene->GetLastError());
+                     }
+                 },
+                 py::arg("link"),
+                 py::arg("position"),
+                 py::arg("orientation") = py::make_tuple(1.0, 0.0, 0.0, 0.0),
+                 py::arg("linear_velocity") = py::make_tuple(0.0, 0.0, 0.0),
+                 py::arg("angular_velocity") = py::make_tuple(0.0, 0.0, 0.0))
+            .def("get_runtime_snapshot",
+                 [](const PyRobot3DHandle& handle) {
+                     RuntimeSceneForRobotHandle(handle);
+                     return RobotSnapshotToPythonDict(RequiredRobotSnapshotForHandle(handle));
+                 })
+            .def("get_runtime_state",
+                 [](const PyRobot3DHandle& handle) {
+                     RuntimeSceneForRobotHandle(handle);
+                     const PhysicsSceneState& scene_state = RequiredSceneStateForHandle(handle);
+                     const PhysicsRobotState& robot_state = RequiredRobotStateForHandle(handle);
+                     return RobotStateToPythonDict(robot_state, &scene_state);
+                 })
+            .def("get_joint_state",
+                 [](const PyRobot3DHandle& handle, const std::string& joint) {
+                     RuntimeSceneForRobotHandle(handle);
+                     const PhysicsRobotState& robot = RequiredRobotStateForHandle(handle);
+                     const PhysicsJointState* joint_state = FindJointState(robot, joint);
+                     if (joint_state == nullptr) {
+                         throw std::runtime_error("Gobot runtime state robot '" + robot.name +
+                                                  "' has no joint '" + joint + "'");
+                     }
+                     return JointStateToPythonDict(*joint_state);
+                 },
+                 py::arg("joint"))
+            .def("get_link_state",
+                 [](const PyRobot3DHandle& handle, const std::string& link) {
+                     RuntimeSceneForRobotHandle(handle);
+                     const PhysicsRobotState& robot = RequiredRobotStateForHandle(handle);
+                     const PhysicsLinkState* link_state = FindLinkState(robot, link);
+                     if (link_state == nullptr) {
+                         throw std::runtime_error("Gobot runtime state robot '" + robot.name +
+                                                  "' has no link '" + link + "'");
+                     }
+                     return LinkStateToPythonDict(*link_state);
+                 },
+                 py::arg("link"))
+            .def("get_sensor_state",
+                 [](const PyRobot3DHandle& handle, const std::string& sensor) {
+                     RuntimeSceneForRobotHandle(handle);
+                     const PhysicsRobotState& robot = RequiredRobotStateForHandle(handle);
+                     const PhysicsSensorState* sensor_state = FindSensorState(robot, sensor);
+                     if (sensor_state == nullptr) {
+                         throw std::runtime_error("Gobot runtime state robot '" + robot.name +
+                                                  "' has no sensor '" + sensor + "'");
+                     }
+                     return SensorStateToPythonDict(*sensor_state);
+                 },
+                 py::arg("sensor"));
 
     link3d_class
             .def_property("has_inertial",
@@ -3452,6 +3534,14 @@ class NodeScript:
                           [](PySensor3DHandle& handle, bool visualize_debug) {
                               Sensor3D* sensor = handle.ResolveAs<Sensor3D>();
                               ExecuteSetNodeProperty(sensor, "visualize_debug", Variant(visualize_debug));
+                          })
+            .def_property("debug_marker_radius",
+                          [](const PySensor3DHandle& handle) {
+                              return handle.ResolveAs<Sensor3D>()->GetDebugMarkerRadius();
+                          },
+                          [](PySensor3DHandle& handle, RealType debug_marker_radius) {
+                              Sensor3D* sensor = handle.ResolveAs<Sensor3D>();
+                              ExecuteSetNodeProperty(sensor, "debug_marker_radius", Variant(debug_marker_radius));
                           });
 
     contact_sensor3d_class

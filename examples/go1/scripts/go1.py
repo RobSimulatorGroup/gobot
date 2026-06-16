@@ -33,80 +33,38 @@ KEYBOARD_BINDINGS = {
     "stop": ("Space",),
     "reset": ("R",),
 }
-JOINT_NAMES = [
-    "FR_hip_joint",
-    "FR_thigh_joint",
-    "FR_calf_joint",
-    "FL_hip_joint",
-    "FL_thigh_joint",
-    "FL_calf_joint",
-    "RR_hip_joint",
-    "RR_thigh_joint",
-    "RR_calf_joint",
-    "RL_hip_joint",
-    "RL_thigh_joint",
-    "RL_calf_joint",
-]
+LEG_ORDER = ("FR", "FL", "RR", "RL")
+JOINT_KIND_ORDER = ("hip", "thigh", "calf")
+JOINT_NAMES = [f"{leg}_{kind}_joint" for leg in LEG_ORDER for kind in JOINT_KIND_ORDER]
+DEFAULT_POS_BY_LEG = {
+    "FR": (0.1, 0.9, -1.8),
+    "FL": (-0.1, 0.9, -1.8),
+    "RR": (0.1, 0.9, -1.8),
+    "RL": (-0.1, 0.9, -1.8),
+}
 DEFAULT_POS = [
-    0.1,
-    0.9,
-    -1.8,
-    -0.1,
-    0.9,
-    -1.8,
-    0.1,
-    0.9,
-    -1.8,
-    -0.1,
-    0.9,
-    -1.8,
+    DEFAULT_POS_BY_LEG[leg][kind_index]
+    for leg in LEG_ORDER
+    for kind_index, _kind in enumerate(JOINT_KIND_ORDER)
 ]
+ACTION_SCALE_BY_KIND = {
+    "hip": 0.3727530386870487,
+    "thigh": 0.3727530386870487,
+    "calf": 0.24850202579136574,
+}
 ACTION_SCALE = [
-    0.3727530386870487,
-    0.3727530386870487,
-    0.24850202579136574,
-    0.3727530386870487,
-    0.3727530386870487,
-    0.24850202579136574,
-    0.3727530386870487,
-    0.3727530386870487,
-    0.24850202579136574,
-    0.3727530386870487,
-    0.3727530386870487,
-    0.24850202579136574,
+    ACTION_SCALE_BY_KIND[kind]
+    for _leg in LEG_ORDER
+    for kind in JOINT_KIND_ORDER
 ]
 HIP_KP = 15.89524265323492
 HIP_KD = 1.0119225759919113
 KNEE_KP = 35.764295969778566
 KNEE_KD = 2.2768257959818003
-JOINT_KP = [
-    HIP_KP,
-    HIP_KP,
-    KNEE_KP,
-    HIP_KP,
-    HIP_KP,
-    KNEE_KP,
-    HIP_KP,
-    HIP_KP,
-    KNEE_KP,
-    HIP_KP,
-    HIP_KP,
-    KNEE_KP,
-]
-JOINT_KD = [
-    HIP_KD,
-    HIP_KD,
-    KNEE_KD,
-    HIP_KD,
-    HIP_KD,
-    KNEE_KD,
-    HIP_KD,
-    HIP_KD,
-    KNEE_KD,
-    HIP_KD,
-    HIP_KD,
-    KNEE_KD,
-]
+JOINT_KP_BY_KIND = {"hip": HIP_KP, "thigh": HIP_KP, "calf": KNEE_KP}
+JOINT_KD_BY_KIND = {"hip": HIP_KD, "thigh": HIP_KD, "calf": KNEE_KD}
+JOINT_KP = [JOINT_KP_BY_KIND[kind] for _leg in LEG_ORDER for kind in JOINT_KIND_ORDER]
+JOINT_KD = [JOINT_KD_BY_KIND[kind] for _leg in LEG_ORDER for kind in JOINT_KIND_ORDER]
 DECIMATION = max(1, int(round((1.0 / max(POLICY_HZ, 1.0)) / FIXED_TIME_STEP)))
 TERRAIN_SCAN_GRID_SIZE = (1.6, 1.0)
 TERRAIN_SCAN_GRID_RESOLUTION = 0.1
@@ -118,19 +76,15 @@ TERRAIN_SCAN_DIM = (
 HEIGHT_SCAN_MAX_DISTANCE = 5.0
 TERRAIN_SCAN_SENSOR = "terrain_scan"
 VELOCITY_OBS_SCHEMA_VERSION = "gobot_velocity_v1"
+POSITION_LIMITS_BY_KIND = {
+    "hip": (-0.863, 0.863),
+    "thigh": (-0.686, 4.501),
+    "calf": (-2.818, -0.888),
+}
 POSITION_LIMITS = {
-    "FR_hip_joint": (-0.863, 0.863),
-    "FR_thigh_joint": (-0.686, 4.501),
-    "FR_calf_joint": (-2.818, -0.888),
-    "FL_hip_joint": (-0.863, 0.863),
-    "FL_thigh_joint": (-0.686, 4.501),
-    "FL_calf_joint": (-2.818, -0.888),
-    "RR_hip_joint": (-0.863, 0.863),
-    "RR_thigh_joint": (-0.686, 4.501),
-    "RR_calf_joint": (-2.818, -0.888),
-    "RL_hip_joint": (-0.863, 0.863),
-    "RL_thigh_joint": (-0.686, 4.501),
-    "RL_calf_joint": (-2.818, -0.888),
+    f"{leg}_{kind}_joint": POSITION_LIMITS_BY_KIND[kind]
+    for leg in LEG_ORDER
+    for kind in JOINT_KIND_ORDER
 }
 
 
@@ -374,10 +328,6 @@ def _command_active(command):
     return any(abs(float(value)) > COMMAND_ACTIVE_DEADBAND for value in command)
 
 
-def _vector_xy_norm(vector):
-    return math.sqrt(float(vector[0]) * float(vector[0]) + float(vector[1]) * float(vector[1]))
-
-
 def _checkpoint_obs_dim(checkpoint):
     actor_state = checkpoint.get("actor_state_dict", {})
     normalizer_mean = actor_state.get("obs_normalizer._mean")
@@ -518,8 +468,7 @@ def _quat_to_roll_pitch(q):
 class Script(gobot.NodeScript):
     def _ready(self):
         self.context.fixed_time_step = FIXED_TIME_STEP
-        if hasattr(self.context, "max_sub_steps"):
-            self.context.max_sub_steps = MAX_SUB_STEPS
+        self.context.max_sub_steps = MAX_SUB_STEPS
         self.context.set_default_joint_gains(
             {
                 "position_stiffness": HIP_KP,
@@ -687,35 +636,22 @@ class Script(gobot.NodeScript):
             return True
         if not self.context.has_world:
             return False
-        reset_link_state = getattr(self.context, "reset_link_state", None)
-        if reset_link_state is not None:
-            reset_link_state(
-                self.robot.name,
-                BASE_LINK,
-                self.reset_base_position,
-                [1.0, 0.0, 0.0, 0.0],
-                [0.0, 0.0, 0.0],
-                [0.0, 0.0, 0.0],
-            )
+        self.robot.reset_link_state(
+            BASE_LINK,
+            self.reset_base_position,
+            [1.0, 0.0, 0.0, 0.0],
+            [0.0, 0.0, 0.0],
+            [0.0, 0.0, 0.0],
+        )
         for index, joint_name in enumerate(JOINT_NAMES):
-            reset_joint_state = getattr(self.context, "reset_joint_state", None)
-            if reset_joint_state is not None:
-                reset_joint_state(self.robot.name, joint_name, DEFAULT_POS[index], 0.0)
+            self.robot.reset_joint_state(joint_name, DEFAULT_POS[index], 0.0)
         self.last_targets = list(DEFAULT_POS)
         self._set_joint_position_targets(self.last_targets)
         self.world_controls_ready = True
         return True
 
     def _set_joint_position_targets(self, targets):
-        set_targets = getattr(self.context, "set_joint_position_targets", None)
-        if set_targets is not None:
-            set_targets(self.robot.name, JOINT_NAMES, targets)
-            return
-        set_target = getattr(self.context, "set_joint_position_target", None)
-        if set_target is None:
-            raise RuntimeError("Gobot AppContext has no joint position target API")
-        for joint_name, target in zip(JOINT_NAMES, targets):
-            set_target(self.robot.name, joint_name, target)
+        self.robot.set_joint_position_targets(JOINT_NAMES, targets)
 
     def _action_targets(self, action):
         targets = []
@@ -725,10 +661,7 @@ class Script(gobot.NodeScript):
         return targets
 
     def _set_robot_editor_transform(self, position):
-        set_transform = getattr(self.robot, "set_transform", None)
-        if set_transform is None:
-            return
-        set_transform(
+        self.robot.set_transform(
             [float(position[0]), float(position[1]), float(position[2]) - ROBOT_ROOT_TO_BASE_Z],
             [1.0, 0.0, 0.0, 0.0],
         )
@@ -803,39 +736,6 @@ class Script(gobot.NodeScript):
                 math.sqrt(sum(value * value for value in self.last_action)),
             )
         )
-
-    def _offset_from_base(self, position, quat, local_offset):
-        offset = _quat_rotate(local_offset, quat)
-        return [
-            float(position[0]) + offset[0],
-            float(position[1]) + offset[1],
-            float(position[2]) + offset[2],
-        ]
-
-    def _terrain_normal(self, robot_state):
-        sensor = self._sensor_map(robot_state).get(TERRAIN_SCAN_SENSOR)
-        if sensor is None:
-            return None
-        total = [0.0, 0.0, 0.0]
-        count = 0
-        for hit in sensor.get("hits", []):
-            if not hit.get("hit", False):
-                continue
-            normal = hit.get("normal", [0.0, 0.0, 0.0])
-            if len(normal) < 3:
-                continue
-            total[0] += float(normal[0])
-            total[1] += float(normal[1])
-            total[2] += float(normal[2])
-            count += 1
-        if count == 0:
-            return None
-        length = math.sqrt(total[0] * total[0] + total[1] * total[1] + total[2] * total[2])
-        if length <= 1.0e-6:
-            return None
-        if total[2] < 0.0:
-            length = -length
-        return [total[0] / length, total[1] / length, total[2] / length]
 
     def _observation(self, state=None):
         if state is None:
@@ -912,11 +812,7 @@ class Script(gobot.NodeScript):
     def _runtime_robot_state(self):
         if not self.context.has_world:
             return None
-        state = self.context.get_runtime_state()
-        for robot in state.get("robots", []):
-            if robot.get("name") == self.robot.name:
-                return robot
-        return None
+        return self.robot.get_runtime_state()
 
     def _find_robot(self):
         root = self.get_root()

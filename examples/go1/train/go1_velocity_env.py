@@ -158,6 +158,7 @@ class Go1VelocityEnv:
         self.context = context if context is not None else gobot.app.context()
         self.context.set_project_path(str(self.project_path))
         self.context.load_scene(self.cfg_obj.scene_path)
+        self.robot = self._find_robot_node()
         self._spawn_origins = self._load_spawn_origins()
         self._warmup_spawn_index = int(np.argmin(np.linalg.norm(self._spawn_origins[:, :2], axis=1)))
         self._terrain_sampler = TerrainSampler(self.project_path / self.cfg_obj.terrain_scene_path)
@@ -180,10 +181,7 @@ class Go1VelocityEnv:
         self.context.configure_batch_world(self.num_envs)
         self.resolved_sim_workers = int(self.context.resolved_batch_workers(self.sim_workers))
 
-        name_map = self.context.get_runtime_name_map()
-        robot_map = next((robot for robot in name_map.get("robots", []) if robot.get("name") == self.cfg_obj.robot_name), None)
-        if robot_map is None:
-            raise RuntimeError(f"Gobot scene has no robot named {self.cfg_obj.robot_name!r}")
+        robot_map = self.robot.get_runtime_snapshot()
         self._height_scan_dim = self._sensor_dim(robot_map, self.cfg_obj.observations.height_scan_sensor)
         if self.cfg_obj.observations.height_scan_sensor is not None and self._height_scan_dim == 0:
             raise RuntimeError(
@@ -463,20 +461,23 @@ class Go1VelocityEnv:
         return 0
 
     def _configure_robot_drives(self) -> None:
-        root = self.context.root
-        robot = root.find(self.cfg_obj.robot_name) if root is not None else None
-        if robot is None:
-            robot = _find_node_by_name(root, self.cfg_obj.robot_name)
-        if robot is None:
-            return
         for joint_name in self.joint_names:
-            joint = robot.find(joint_name) or _find_node_by_name(robot, joint_name)
+            joint = self.robot.find(joint_name) or _find_node_by_name(self.robot, joint_name)
             if joint is None:
                 continue
             joint.drive_mode = gobot.JointDriveMode.Position
             joint.drive_stiffness = self.cfg_obj.kp
             joint.drive_damping = self.cfg_obj.kd
             joint.damping = self.cfg_obj.kd
+
+    def _find_robot_node(self):
+        root = self.context.root
+        robot = root.find(self.cfg_obj.robot_name) if root is not None else None
+        if robot is None:
+            robot = _find_node_by_name(root, self.cfg_obj.robot_name)
+        if robot is None:
+            raise RuntimeError(f"Gobot scene has no robot named {self.cfg_obj.robot_name!r}")
+        return robot
 
     def _load_spawn_origins(self) -> np.ndarray:
         root = self.context.root

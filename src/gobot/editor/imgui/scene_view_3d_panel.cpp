@@ -442,7 +442,7 @@ void SceneView3DPanel::OnImGuiContent()
     const std::vector<DebugArrow>& debug_arrows = engine_context != nullptr
                                                           ? engine_context->GetDebugArrows()
                                                           : empty_debug_arrows;
-    const bool show_collision_debug = !Editor::GetInstance()->IsScenePlaySessionRunning();
+    const bool show_collision_debug = true;
     viewport_renderer_->Render(view_port_,
                                scene_root,
                                camera_3d,
