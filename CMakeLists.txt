@@ -488,6 +488,14 @@ endif()
 target_compile_definitions(gobot PUBLIC GOBOT_HAS_PYTHON=1 GOBOT_HAS_PYTHON_EMBED=1)
 set(GOBOT_PYTHON_BINDING_SOURCES
         src/gobot/python/python_manual_bindings.cpp
+        src/gobot/python/manual_bindings/manual_binding_api.cpp
+        src/gobot/python/manual_bindings/manual_binding_app_context.cpp
+        src/gobot/python/manual_bindings/manual_binding_common.cpp
+        src/gobot/python/manual_bindings/manual_binding_helpers.cpp
+        src/gobot/python/manual_bindings/manual_binding_module_functions.cpp
+        src/gobot/python/manual_bindings/manual_binding_robot.cpp
+        src/gobot/python/manual_bindings/manual_binding_scene_nodes.cpp
+        src/gobot/python/manual_bindings/manual_binding_sensors_terrain.cpp
         src/gobot/python/python_reflected_bindings.cpp
         src/gobot/python/python_variant_bridge.cpp)
 target_sources(gobot PRIVATE src/gobot/python/python_script_runner.cpp)
