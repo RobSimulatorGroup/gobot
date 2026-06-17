@@ -7,7 +7,7 @@ build-backend = "scikit_build_core.build"
 
 [project]
 name = "gobot"
-version = "0.1.8"
+version = "0.1.9"
 description = "Python bindings for the Gobot robotics scene, simulation, and rendering engine."
 readme = "README.md"
 requires-python = ">=3.10"
@@ -21,18 +21,6 @@ dependencies = [
     "scipy>=1.11",
 ]
 
-[project.optional-dependencies]
-train = [
-    "imageio>=2.35",
-    "imageio-ffmpeg",
-    "mujoco>=3.8",
-    "onnx>=1.16",
-    "rsl-rl-lib==5.2.0",
-    "tensorboard",
-    "tensordict",
-    "torch>=2.7",
-]
-
 [project.urls]
 Homepage = "https://github.com/RobSimulatorGroup/gobot"
 Repository = "https://github.com/RobSimulatorGroup/gobot"
@@ -40,6 +28,14 @@ Issues = "https://github.com/RobSimulatorGroup/gobot/issues"
 
 [project.scripts]
 gobot_editor = "gobot_cli.editor:editor"
+
+[project.optional-dependencies]
+train = [
+    "rsl-rl-lib==5.2.0",
+    "tensorboard",
+    "tensordict",
+    "torch>=2.7",
+]
 
 [[tool.uv.index]]
 name = "pytorch-cu128"

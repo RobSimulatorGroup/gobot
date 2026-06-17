@@ -5,14 +5,14 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-#include <dlfcn.h>
-
 #include <cstdlib>
 #include <filesystem>
 #include <iostream>
 #include <string>
 #include <system_error>
 #include <vector>
+
+#include <Python.h>
 
 #ifndef GOBOT_DEFAULT_PYTHON_LIBRARY
 #define GOBOT_DEFAULT_PYTHON_LIBRARY ""
@@ -27,11 +27,6 @@
 #endif
 
 namespace {
-
-std::string DlErrorString() {
-    const char* error = dlerror();
-    return error != nullptr ? std::string(error) : std::string("unknown dynamic loader error");
-}
 
 bool ShouldPrintPythonLibrary() {
     const char* printed = std::getenv("GOBOT_PYTHON_LIBRARY_PRINTED");
@@ -104,6 +99,11 @@ std::filesystem::path ResolvePythonLibraryPath(const std::string& configured_pat
 extern "C" int gobot_editor_main(int argc, char* argv[]);
 
 int main(int argc, char* argv[]) {
+    // Keep libpython as a direct DT_NEEDED dependency of the editor launcher.
+    // libgobot/editor runtime use Python C API symbols before the embedded
+    // interpreter starts, and --as-needed may otherwise drop the dependency.
+    (void)Py_IsInitialized();
+
     const std::string configured_python_library = ConfiguredPythonLibrary();
     if (configured_python_library.empty()) {
         std::cerr << "[gobot] GOBOT_PYTHON_LIBRARY is not set. "
@@ -125,13 +125,6 @@ int main(int argc, char* argv[]) {
 
     if (ShouldPrintPythonLibrary() && !IsInformationalInvocation(argc, argv)) {
         std::cerr << "[gobot] Python library: " << python_library << std::endl;
-    }
-
-    void* python_handle = dlopen(python_library.c_str(), RTLD_NOW | RTLD_GLOBAL);
-    if (python_handle == nullptr) {
-        std::cerr << "[gobot] Failed to load Python library file '" << python_library
-                  << "': " << DlErrorString() << std::endl;
-        return 127;
     }
 
     return gobot_editor_main(argc, argv);

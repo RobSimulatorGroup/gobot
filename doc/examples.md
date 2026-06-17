@@ -60,8 +60,7 @@ first one from `example_roots` and hides the later duplicates.
 The training environment is intentionally local to the example. It does not use
 Gobot task JSON or project-specific code inside the `gobot` Python package. The
 editor script loads `policies/cartpole.onnx` for lightweight playback in the
-Gobot scene. Install `gobot[train]` only to train or load `.pt` checkpoints
-directly.
+Gobot scene. Install `gobot[train]` only to load `.pt` checkpoints directly.
 
 ## Go1
 
@@ -79,7 +78,8 @@ MuJoCo + rsl_rl workflow. It contains:
 
 The default asset path can be overridden with `GOBOT_GO1_XML`.
 The default Gobot install can play ONNX policies. Install `gobot[train]` only
-to train or load `.pt` checkpoints directly.
+to train or load `.pt` checkpoints directly. Install `imageio imageio-ffmpeg`
+for MP4 training captures and `onnx` for ONNX export.
 
 ## Packaging Rules
 

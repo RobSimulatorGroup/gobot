@@ -75,8 +75,11 @@ policy playback. The heavier training stack stays optional:
 uv sync --extra train
 ```
 
-`train` installs CUDA PyTorch, `rsl-rl-lib`, `tensordict`, and `tensorboard`
-for training or directly loading `.pt` checkpoints.
+`train` installs PyTorch, `rsl-rl-lib`, `tensordict`, and `tensorboard` for
+training or directly loading `.pt` checkpoints. It does not install Python
+`mujoco`; Gobot uses its packaged native MuJoCo backend. Install
+`imageio imageio-ffmpeg` only for MP4 training captures, and `onnx>=1.16` only
+for exporting checkpoints to ONNX.
 
 Run example training through `uv` rather than a conda Python path:
 

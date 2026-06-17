@@ -1,5 +1,5 @@
 cmake_minimum_required (VERSION 3.16)
-project (gobot VERSION 0.1.8)
+project (gobot VERSION 0.1.9)
 
 set(CMAKE_POLICY_VERSION_MINIMUM 3.5)
 
@@ -554,6 +554,22 @@ install(DIRECTORY "${GOBOT_PYTHON_CLI_PACKAGE_DIR}/"
         PATTERN "*.py")
 if(GOB_BUILD_MUJOCO AND GOBOT_MUJOCO_TARGET)
     install(FILES "$<TARGET_FILE:${GOBOT_MUJOCO_TARGET}>" DESTINATION "gobot" COMPONENT python)
+    get_target_property(GOBOT_MUJOCO_IMPORTED_LOCATION "${GOBOT_MUJOCO_TARGET}" IMPORTED_LOCATION)
+    if(GOBOT_MUJOCO_IMPORTED_LOCATION)
+        execute_process(
+                COMMAND "${CMAKE_OBJDUMP}" -p "${GOBOT_MUJOCO_IMPORTED_LOCATION}"
+                OUTPUT_VARIABLE GOBOT_MUJOCO_OBJDUMP
+                ERROR_QUIET)
+        if(GOBOT_MUJOCO_OBJDUMP MATCHES "SONAME[ \t]+([^ \t\r\n]+)")
+            set(GOBOT_MUJOCO_SONAME "${CMAKE_MATCH_1}")
+            get_filename_component(GOBOT_MUJOCO_LIBRARY_DIR "${GOBOT_MUJOCO_IMPORTED_LOCATION}" DIRECTORY)
+            set(GOBOT_MUJOCO_SONAME_PATH "${GOBOT_MUJOCO_LIBRARY_DIR}/${GOBOT_MUJOCO_SONAME}")
+            if(EXISTS "${GOBOT_MUJOCO_SONAME_PATH}" AND
+               NOT "${GOBOT_MUJOCO_SONAME_PATH}" STREQUAL "${GOBOT_MUJOCO_IMPORTED_LOCATION}")
+                install(FILES "${GOBOT_MUJOCO_SONAME_PATH}" DESTINATION "gobot" COMPONENT python)
+            endif()
+        endif()
+    endif()
 endif()
 gobot_install_license_files("${CMAKE_CURRENT_SOURCE_DIR}" "gobot")
 gobot_install_license_files("${CMAKE_CURRENT_SOURCE_DIR}/3rdparty/assimp" "assimp")
@@ -655,6 +671,7 @@ target_compile_definitions(gobot_editor PRIVATE
         GOBOT_DEFAULT_PYTHON_VERSION_MAJOR=${Python3_VERSION_MAJOR}
         GOBOT_DEFAULT_PYTHON_VERSION_MINOR=${Python3_VERSION_MINOR})
 target_link_libraries(gobot_editor PRIVATE
+        Python3::Python
         gobot_editor_runtime
         ${CMAKE_DL_LIBS})
 set_target_properties(gobot_editor

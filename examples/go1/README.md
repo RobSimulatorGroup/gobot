@@ -33,6 +33,7 @@ Train from the Go1 project root:
 
 ```bash
 cd /home/wqq/gobot
+uv pip install imageio imageio-ffmpeg
 uv run --extra train python examples/go1/train/go1_velocity_train.py \
   --task go1_rough \
   --num-envs 256 \
@@ -60,6 +61,7 @@ Resume from the latest checkpoint in the log directory:
 
 ```bash
 cd /home/wqq/gobot
+uv pip install imageio imageio-ffmpeg
 uv run --extra train python examples/go1/train/go1_velocity_train.py \
   --task go1_rough \
   --num-envs 256 \
@@ -76,6 +78,7 @@ Export a trained checkpoint for lightweight editor playback:
 
 ```bash
 cd /home/wqq/gobot
+uv pip install onnx
 uv run --extra train python examples/go1/tools/export_policy_onnx.py \
   --checkpoint examples/go1/policies/go1_velocity.pt \
   --output examples/go1/policies/go1.onnx
