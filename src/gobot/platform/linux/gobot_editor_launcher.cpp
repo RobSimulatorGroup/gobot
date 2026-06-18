@@ -6,13 +6,12 @@
  */
 
 #include <cstdlib>
+#include <dlfcn.h>
 #include <filesystem>
 #include <iostream>
 #include <string>
 #include <system_error>
 #include <vector>
-
-#include <Python.h>
 
 #ifndef GOBOT_DEFAULT_PYTHON_LIBRARY
 #define GOBOT_DEFAULT_PYTHON_LIBRARY ""
@@ -94,16 +93,43 @@ std::filesystem::path ResolvePythonLibraryPath(const std::string& configured_pat
     return {};
 }
 
+void* OpenSharedLibrary(const std::filesystem::path& path, const std::string& role, int flags) {
+    dlerror();
+    void* handle = dlopen(path.string().c_str(), flags);
+    if (handle != nullptr) {
+        return handle;
+    }
+
+    const char* error = dlerror();
+    std::cerr << "[gobot] Failed to load " << role << " '" << path.string() << "'";
+    if (error != nullptr) {
+        std::cerr << ": " << error;
+    }
+    std::cerr << std::endl;
+    return nullptr;
+}
+
+using EditorMainFn = int (*)(int, char**);
+
+EditorMainFn LoadEditorMain(void* runtime_handle) {
+    dlerror();
+    void* symbol = dlsym(runtime_handle, "gobot_editor_main");
+    const char* error = dlerror();
+    if (error != nullptr || symbol == nullptr) {
+        std::cerr << "[gobot] Failed to resolve gobot_editor_main";
+        if (error != nullptr) {
+            std::cerr << ": " << error;
+        }
+        std::cerr << std::endl;
+        return nullptr;
+    }
+
+    return reinterpret_cast<EditorMainFn>(symbol);
+}
+
 } // namespace
 
-extern "C" int gobot_editor_main(int argc, char* argv[]);
-
 int main(int argc, char* argv[]) {
-    // Keep libpython as a direct DT_NEEDED dependency of the editor launcher.
-    // libgobot/editor runtime use Python C API symbols before the embedded
-    // interpreter starts, and --as-needed may otherwise drop the dependency.
-    (void)Py_IsInitialized();
-
     const std::string configured_python_library = ConfiguredPythonLibrary();
     if (configured_python_library.empty()) {
         std::cerr << "[gobot] GOBOT_PYTHON_LIBRARY is not set. "
@@ -127,5 +153,24 @@ int main(int argc, char* argv[]) {
         std::cerr << "[gobot] Python library: " << python_library << std::endl;
     }
 
-    return gobot_editor_main(argc, argv);
+    void* python_handle =
+            OpenSharedLibrary(python_library_path, "Python library", RTLD_NOW | RTLD_GLOBAL);
+    if (python_handle == nullptr) {
+        return 127;
+    }
+
+    void* runtime_handle =
+            OpenSharedLibrary("libgobot_editor_runtime.so",
+                              "Gobot editor runtime",
+                              RTLD_NOW | RTLD_LOCAL);
+    if (runtime_handle == nullptr) {
+        return 127;
+    }
+
+    EditorMainFn editor_main = LoadEditorMain(runtime_handle);
+    if (editor_main == nullptr) {
+        return 127;
+    }
+
+    return editor_main(argc, argv);
 }

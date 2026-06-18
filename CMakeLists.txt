@@ -1,5 +1,5 @@
 cmake_minimum_required (VERSION 3.16)
-project (gobot VERSION 0.1.10)
+project (gobot VERSION 0.1.11)
 
 set(CMAKE_POLICY_VERSION_MINIMUM 3.5)
 
@@ -676,8 +676,6 @@ target_compile_definitions(gobot_editor PRIVATE
         GOBOT_DEFAULT_PYTHON_VERSION_MAJOR=${Python3_VERSION_MAJOR}
         GOBOT_DEFAULT_PYTHON_VERSION_MINOR=${Python3_VERSION_MINOR})
 target_link_libraries(gobot_editor PRIVATE
-        Python3::Python
-        gobot_editor_runtime
         ${CMAKE_DL_LIBS})
 set_target_properties(gobot_editor
     PROPERTIES
