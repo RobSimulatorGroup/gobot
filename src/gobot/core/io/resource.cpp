@@ -12,6 +12,7 @@
 #include "gobot/error_macros.hpp"
 
 
+#include <mutex>
 #include <random>
 
 namespace gobot {
@@ -209,18 +210,21 @@ std::string Resource::GetUniqueId() const {
 std::string Resource::GenerateResourceUniqueId() {
     int length = 5;
 
-    static auto& chrs = "0123456789"
-                        "abcdefghijklmnopqrstuvwxyz"
-                        "ABCDEFGHIJKLMNOPQRSTUVWXYZ";
+    static constexpr const char* chrs = "0123456789"
+                                        "abcdefghijklmnopqrstuvwxyz"
+                                        "ABCDEFGHIJKLMNOPQRSTUVWXYZ";
 
-    thread_local static std::mt19937 rg{std::random_device{}()};
-    thread_local static std::uniform_int_distribution<> pick(0, sizeof(chrs) - 2);
+    static std::mutex random_mutex;
+    static std::mt19937 generator{std::random_device{}()};
+    static std::uniform_int_distribution<int> pick(0, 61);
 
     std::string s;
     s.reserve(length);
 
-    while(length--)
-        s += chrs[pick(rg)];
+    std::lock_guard<std::mutex> lock(random_mutex);
+    while (length--) {
+        s += chrs[pick(generator)];
+    }
     return s;
 }
 

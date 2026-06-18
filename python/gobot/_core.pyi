@@ -4,7 +4,15 @@ from enum import Enum
 from types import ModuleType
 from typing import Any, ClassVar, Sequence
 
-Vector3 = tuple[float, float, float]
+import numpy as np
+import numpy.typing as npt
+
+FloatArray = npt.NDArray[np.float64]
+VectorLike = Sequence[float] | FloatArray
+Vector2 = FloatArray
+Vector3 = FloatArray
+Vector4 = FloatArray
+Quaternion = FloatArray
 
 
 class PhysicsBackendType(Enum):
@@ -130,10 +138,10 @@ class AppContext:
         env_id: int,
         robot: str,
         link: str,
-        position: Sequence[float],
-        orientation: Sequence[float] = (1.0, 0.0, 0.0, 0.0),
-        linear_velocity: Sequence[float] = (0.0, 0.0, 0.0),
-        angular_velocity: Sequence[float] = (0.0, 0.0, 0.0),
+        position: VectorLike,
+        orientation: VectorLike = (1.0, 0.0, 0.0, 0.0),
+        linear_velocity: VectorLike = (0.0, 0.0, 0.0),
+        angular_velocity: VectorLike = (0.0, 0.0, 0.0),
     ) -> None: ...
     def set_default_joint_gains(self, gains: dict[str, Any]) -> None: ...
     def get_default_joint_gains(self) -> dict[str, Any]: ...
@@ -215,28 +223,6 @@ class Robot3D(Node3D):
     source_path: str
     mode: RobotMode
 
-    def set_joint_position_target(self, joint: str, target_position: float) -> None: ...
-    def set_joint_position_targets(self, joint_names: Sequence[str], target_positions: Sequence[float]) -> None: ...
-    def set_joint_velocity_target(self, joint: str, target_velocity: float) -> None: ...
-    def set_joint_effort_target(self, joint: str, target_effort: float) -> None: ...
-    def set_joint_passive(self, joint: str) -> None: ...
-    def set_action(self, action: Sequence[float]) -> None: ...
-    def set_named_action(self, joint_names: Sequence[str], action: Sequence[float]) -> None: ...
-    def reset_joint_state(self, joint: str, position: float, velocity: float = 0.0) -> None: ...
-    def reset_link_state(
-        self,
-        link: str,
-        position: Sequence[float],
-        orientation: Sequence[float] = (1.0, 0.0, 0.0, 0.0),
-        linear_velocity: Sequence[float] = (0.0, 0.0, 0.0),
-        angular_velocity: Sequence[float] = (0.0, 0.0, 0.0),
-    ) -> None: ...
-    def get_runtime_snapshot(self) -> dict[str, Any]: ...
-    def get_runtime_state(self) -> dict[str, Any]: ...
-    def get_joint_state(self, joint: str) -> dict[str, Any]: ...
-    def get_link_state(self, link: str) -> dict[str, Any]: ...
-    def get_sensor_state(self, sensor: str) -> dict[str, Any]: ...
-
 
 class Link3D(Node3D):
     has_inertial: bool
@@ -244,6 +230,15 @@ class Link3D(Node3D):
     center_of_mass: Vector3
     inertia_diagonal: Vector3
     role: LinkRole
+
+    def reset_runtime_state(
+        self,
+        position: VectorLike,
+        orientation: VectorLike = (1.0, 0.0, 0.0, 0.0),
+        linear_velocity: VectorLike = (0.0, 0.0, 0.0),
+        angular_velocity: VectorLike = (0.0, 0.0, 0.0),
+    ) -> None: ...
+    def get_runtime_state(self) -> dict[str, Any]: ...
 
 
 class Joint3D(Node3D):
@@ -267,6 +262,13 @@ class Joint3D(Node3D):
     force_upper_limit: float
     gear: list[float]
 
+    def set_position_target(self, target: float) -> None: ...
+    def set_velocity_target(self, target: float) -> None: ...
+    def set_effort_target(self, target: float) -> None: ...
+    def set_passive(self) -> None: ...
+    def reset_runtime_state(self, position: float, velocity: float = 0.0) -> None: ...
+    def get_runtime_state(self) -> dict[str, Any]: ...
+
 
 class CollisionShape3D(Node3D):
     disabled: bool
@@ -288,7 +290,7 @@ class Terrain3D(Node3D):
     height_range_min: float
     height_range_max: float
     friction: Vector3
-    solref: tuple[float, float]
+    solref: Vector2
     solimp: list[float]
 
     def clear_terrain(self) -> None: ...
@@ -302,7 +304,7 @@ class Terrain3D(Node3D):
     def add_heightfield(
         self,
         center: Vector3,
-        size: tuple[float, float],
+        size: VectorLike,
         rows: int,
         cols: int,
         heights: Sequence[float],
@@ -327,6 +329,8 @@ class Sensor3D(Node3D):
     noise_stddev: float
     visualize_debug: bool
     debug_marker_radius: float
+
+    def get_runtime_state(self) -> dict[str, Any]: ...
 
 
 class IMUSensor3D(Sensor3D):
@@ -367,7 +371,7 @@ class RayCastSensor3D(Sensor3D):
     ray_direction_world_space: bool
     max_distance: float
     pattern_mode: RayPatternMode
-    grid_size: tuple[float, float]
+    grid_size: Vector2
     grid_resolution: float
     ray_alignment: RayAlignmentMode
 

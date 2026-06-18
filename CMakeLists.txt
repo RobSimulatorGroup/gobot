@@ -1,5 +1,5 @@
 cmake_minimum_required (VERSION 3.16)
-project (gobot VERSION 0.1.9)
+project (gobot VERSION 0.1.10)
 
 set(CMAKE_POLICY_VERSION_MINIMUM 3.5)
 
@@ -342,6 +342,11 @@ if(NOT GOBOT_PYTHON_LIBRARY)
 endif()
 if(GOBOT_PYTHON_LIBRARY)
     message(STATUS "Gobot editor default Python library: ${GOBOT_PYTHON_LIBRARY}")
+    if(IS_DIRECTORY "${GOBOT_PYTHON_LIBRARY}")
+        set(GOBOT_PYTHON_LIBRARY_DIR "${GOBOT_PYTHON_LIBRARY}")
+    else()
+        get_filename_component(GOBOT_PYTHON_LIBRARY_DIR "${GOBOT_PYTHON_LIBRARY}" DIRECTORY)
+    endif()
 endif()
 set(PYBIND11_FINDPYTHON ON)
 if(EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/3rdparty/pybind11/CMakeLists.txt")
@@ -688,7 +693,8 @@ add_custom_command(TARGET gobot_editor POST_BUILD
 install(DIRECTORY "${CMAKE_CURRENT_SOURCE_DIR}/examples/"
         DESTINATION "gobot/examples" COMPONENT python
         PATTERN "__pycache__" EXCLUDE
-        PATTERN "*.pyc" EXCLUDE)
+        PATTERN "*.pyc" EXCLUDE
+        PATTERN "logs" EXCLUDE)
 install(TARGETS gobot_editor
         RUNTIME DESTINATION "gobot" COMPONENT python)
 

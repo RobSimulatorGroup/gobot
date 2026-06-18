@@ -386,7 +386,6 @@ py::dict TransformToPythonDict(const Affine3& transform);
 
 Quaternion PythonToQuaternionWxyz(const py::handle& object);
 Vector2 PythonToVector2(const py::handle& object);
-py::tuple Vector2ToPython(const Vector2& value);
 Color PythonToColor4(const py::handle& object);
 py::tuple ColorToPython(const Color& color);
 std::vector<Vector3> PythonToVector3List(const py::handle& object);
@@ -409,6 +408,9 @@ const PhysicsLinkState* FindLinkState(const PhysicsRobotState& robot, const std:
 const PhysicsJointState* FindJointState(const PhysicsRobotState& robot, const std::string& joint_name);
 const PhysicsSensorState* FindSensorState(const PhysicsRobotState& robot, const std::string& sensor_name);
 SimulationScene* RuntimeSceneForRobotHandle(const PyRobot3DHandle& handle);
+SimulationScene* RuntimeSceneForNodeHandle(const PyNodeHandle& handle);
+Robot3D* RuntimeRobotForNodeHandle(const PyNodeHandle& handle);
+const PhysicsRobotState& RequiredRobotStateForNodeHandle(const PyNodeHandle& handle);
 const PhysicsRobotSnapshot& RequiredRobotSnapshotForHandle(const PyRobot3DHandle& handle);
 const PhysicsRobotState& RequiredRobotStateForHandle(const PyRobot3DHandle& handle);
 const PhysicsSceneState& RequiredSceneStateForHandle(const PyRobot3DHandle& handle);

@@ -35,6 +35,29 @@ try:
 except ImportError:
     from go1_velocity_cfg import Go1VelocityCfg, go1_rough_velocity_cfg
 
+
+def _iter_nodes(node):
+    if node is None:
+        return
+    yield node
+    for child in node.children:
+        yield from _iter_nodes(child)
+
+
+def _node_names_by_type(root, type_name: str) -> list[str]:
+    return [node.name for node in _iter_nodes(root) if getattr(node, "type", "") == type_name]
+
+
+def _node_names_by_base_type(root, base_type: str) -> list[str]:
+    if base_type != "Sensor3D":
+        return _node_names_by_type(root, base_type)
+    return [
+        node.name
+        for node in _iter_nodes(root)
+        if str(getattr(node, "type", "")).endswith("Sensor3D") or hasattr(node, "sensor_period")
+    ]
+
+
 @dataclass
 class VelocityRuntimeState:
     robot: Mapping[str, Any]
@@ -181,8 +204,8 @@ class Go1VelocityEnv:
         self.context.configure_batch_world(self.num_envs)
         self.resolved_sim_workers = int(self.context.resolved_batch_workers(self.sim_workers))
 
-        robot_map = self.robot.get_runtime_snapshot()
-        self._height_scan_dim = self._sensor_dim(robot_map, self.cfg_obj.observations.height_scan_sensor)
+        self._scene_link_names = tuple(_node_names_by_type(self.robot, "Link3D"))
+        self._height_scan_dim = self._sensor_dim(self.cfg_obj.observations.height_scan_sensor)
         if self.cfg_obj.observations.height_scan_sensor is not None and self._height_scan_dim == 0:
             raise RuntimeError(
                 f"Gobot scene robot {self.cfg_obj.robot_name!r} has no usable height scan sensor "
@@ -190,7 +213,7 @@ class Go1VelocityEnv:
             )
         self._batch_link_names = tuple(
             dict.fromkeys(
-                [str(name) for name in robot_map.get("link_names", [])]
+                [str(name) for name in self._scene_link_names]
                 or [self.cfg_obj.base_link, *self.cfg_obj.foot_link_names]
             )
         )
@@ -451,13 +474,28 @@ class Go1VelocityEnv:
             return np.asarray(values, dtype=np.float32)
         return np.full((self.num_actions,), float(scale), dtype=np.float32)
 
-    @staticmethod
-    def _sensor_dim(robot_map: Mapping[str, Any], sensor_name: str | None) -> int:
+    def _sensor_dim(self, sensor_name: str | None) -> int:
         if sensor_name is None:
             return 0
-        for sensor in robot_map.get("sensors", []):
-            if sensor.get("sensor_name") == sensor_name or sensor.get("name") == sensor_name:
-                return len(sensor.get("channel_names", []))
+        sensor = self.robot.find(sensor_name) or _find_node_by_name(self.robot, sensor_name)
+        if sensor is None:
+            return 0
+        if getattr(sensor, "pattern_mode", None) == gobot.RayPatternMode.Grid:
+            grid_size = np.asarray(getattr(sensor, "grid_size"), dtype=np.float64)
+            resolution = float(getattr(sensor, "grid_resolution"))
+            if grid_size.shape == (2,) and resolution > 0.0:
+                return (int(round(float(grid_size[0]) / resolution)) + 1) * (
+                    int(round(float(grid_size[1]) / resolution)) + 1
+                )
+        if hasattr(sensor, "sample_offsets"):
+            return len(getattr(sensor, "sample_offsets", []))
+        if hasattr(sensor, "grid_size") and hasattr(sensor, "grid_resolution"):
+            grid_size = np.asarray(getattr(sensor, "grid_size"), dtype=np.float64)
+            resolution = float(getattr(sensor, "grid_resolution"))
+            if grid_size.shape == (2,) and resolution > 0.0:
+                return (int(round(float(grid_size[0]) / resolution)) + 1) * (
+                    int(round(float(grid_size[1]) / resolution)) + 1
+                )
         return 0
 
     def _configure_robot_drives(self) -> None:

@@ -783,8 +783,9 @@ py::dict TransformToPythonDict(const Affine3& transform) {
     const Quaternion rotation(transform.linear());
 
     py::dict result;
-    result["position"] = py::make_tuple(position.x(), position.y(), position.z());
-    result["quaternion"] = py::make_tuple(rotation.w(), rotation.x(), rotation.y(), rotation.z());
+    result["position"] = Vector3ToPython(position);
+    result["quaternion"] = QuaternionWxyzToPython(rotation);
+    result["matrix"] = Matrix4ToPython(transform.matrix());
     return result;
 }
 
@@ -806,6 +807,28 @@ py::array_t<std::uint8_t> MakeBoolArray(std::vector<std::uint8_t> data, std::vec
     return MakeArray<std::uint8_t>(std::move(data), std::move(shape));
 }
 
+std::vector<double> PythonToFixedDoubleArray(const py::handle& object,
+                                             py::ssize_t expected_size,
+                                             const std::string& description) {
+    if (py::isinstance<py::str>(object) || py::isinstance<py::bytes>(object)) {
+        throw std::invalid_argument("expected a " + description);
+    }
+
+    py::array_t<double, py::array::c_style | py::array::forcecast> array =
+            py::array_t<double, py::array::c_style | py::array::forcecast>::ensure(object);
+    if (!array) {
+        throw std::invalid_argument("expected a " + description);
+    }
+
+    py::buffer_info info = array.request();
+    if (info.ndim != 1 || info.shape[0] != expected_size) {
+        throw std::invalid_argument("expected a " + description);
+    }
+
+    const auto* data = static_cast<const double*>(info.ptr);
+    return std::vector<double>(data, data + expected_size);
+}
+
 void FillVector3(std::vector<RealType>& values, std::size_t offset, const Vector3& vector) {
     values[offset + 0] = vector.x();
     values[offset + 1] = vector.y();
@@ -820,15 +843,13 @@ void FillQuaternionWxyz(std::vector<RealType>& values, std::size_t offset, const
 }
 
 Quaternion PythonToQuaternionWxyz(const py::handle& object) {
-    py::sequence sequence = py::reinterpret_borrow<py::sequence>(object);
-    if (sequence.size() != 4) {
-        throw std::invalid_argument("expected a 4-element quaternion in [w, x, y, z] order");
-    }
-
-    Quaternion quaternion(py::cast<RealType>(sequence[0]),
-                          py::cast<RealType>(sequence[1]),
-                          py::cast<RealType>(sequence[2]),
-                          py::cast<RealType>(sequence[3]));
+    std::vector<double> values = PythonToFixedDoubleArray(object,
+                                                          4,
+                                                          "4-element quaternion in [w, x, y, z] order");
+    Quaternion quaternion(static_cast<RealType>(values[0]),
+                          static_cast<RealType>(values[1]),
+                          static_cast<RealType>(values[2]),
+                          static_cast<RealType>(values[3]));
     if (quaternion.norm() <= CMP_EPSILON) {
         return Quaternion::Identity();
     }
@@ -837,18 +858,8 @@ Quaternion PythonToQuaternionWxyz(const py::handle& object) {
 }
 
 Vector2 PythonToVector2(const py::handle& object) {
-    py::sequence sequence = py::reinterpret_borrow<py::sequence>(object);
-    if (sequence.size() != 2) {
-        throw std::invalid_argument("expected a 2-element vector");
-    }
-    return {
-            py::cast<RealType>(sequence[0]),
-            py::cast<RealType>(sequence[1])
-    };
-}
-
-py::tuple Vector2ToPython(const Vector2& value) {
-    return py::make_tuple(value.x(), value.y());
+    std::vector<double> values = PythonToFixedDoubleArray(object, 2, "2-element vector");
+    return {static_cast<RealType>(values[0]), static_cast<RealType>(values[1])};
 }
 
 Color PythonToColor4(const py::handle& object) {
@@ -1348,6 +1359,26 @@ SimulationScene* RuntimeSceneForRobotHandle(const PyRobot3DHandle& handle) {
     return runtime_scene;
 }
 
+Robot3D* RuntimeRobotForNodeHandle(const PyNodeHandle& handle) {
+    Node* node = handle.Resolve();
+    for (Node* current = node; current != nullptr; current = current->GetParent()) {
+        if (auto* robot = Object::PointerCastTo<Robot3D>(current)) {
+            return robot;
+        }
+    }
+    throw std::runtime_error("Gobot runtime node '" + node->GetName() + "' is not under a Robot3D node");
+}
+
+SimulationScene* RuntimeSceneForNodeHandle(const PyNodeHandle& handle) {
+    Robot3D* robot = RuntimeRobotForNodeHandle(handle);
+    const PyRobot3DHandle robot_handle(robot,
+                                       "Robot3D",
+                                       handle.state ? handle.state->context : nullptr,
+                                       handle.state ? handle.state->scene_epoch : 0,
+                                       PyNodeOwnership::Borrowed);
+    return RuntimeSceneForRobotHandle(robot_handle);
+}
+
 Ref<PhysicsWorld> RuntimeWorldForRobotHandle(const PyRobot3DHandle& handle) {
     SimulationServer* simulation = SimulationServerForRobotHandle(handle);
     Ref<PhysicsWorld> world = simulation->GetWorld();
@@ -1453,6 +1484,16 @@ const PhysicsRobotState& RequiredRobotStateForHandle(const PyRobot3DHandle& hand
         throw std::runtime_error("Gobot runtime state has no robot '" + robot->GetName() + "'");
     }
     return *robot_state;
+}
+
+const PhysicsRobotState& RequiredRobotStateForNodeHandle(const PyNodeHandle& handle) {
+    Robot3D* robot = RuntimeRobotForNodeHandle(handle);
+    const PyRobot3DHandle robot_handle(robot,
+                                       "Robot3D",
+                                       handle.state ? handle.state->context : nullptr,
+                                       handle.state ? handle.state->scene_epoch : 0,
+                                       PyNodeOwnership::Borrowed);
+    return RequiredRobotStateForHandle(robot_handle);
 }
 
 const PhysicsSceneState& RequiredSceneStateForHandle(const PyRobot3DHandle& handle) {

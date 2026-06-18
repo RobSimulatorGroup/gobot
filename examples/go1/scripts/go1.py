@@ -478,7 +478,9 @@ class Script(gobot.NodeScript):
             }
         )
         self.robot = self._find_robot()
+        self.base_link = self._find_link(BASE_LINK)
         self.joints = [self._find_joint(name) for name in JOINT_NAMES]
+        self.terrain_scan = self._find_sensor(TERRAIN_SCAN_SENSOR)
         self.reset_base_position = list(RESET_BASE_POSITION)
         self._configure_robot_for_playback()
         self.policy = self._load_policy()
@@ -636,22 +638,22 @@ class Script(gobot.NodeScript):
             return True
         if not self.context.has_world:
             return False
-        self.robot.reset_link_state(
-            BASE_LINK,
+        self.base_link.reset_runtime_state(
             self.reset_base_position,
             [1.0, 0.0, 0.0, 0.0],
             [0.0, 0.0, 0.0],
             [0.0, 0.0, 0.0],
         )
-        for index, joint_name in enumerate(JOINT_NAMES):
-            self.robot.reset_joint_state(joint_name, DEFAULT_POS[index], 0.0)
+        for index, joint in enumerate(self.joints):
+            joint.reset_runtime_state(DEFAULT_POS[index], 0.0)
         self.last_targets = list(DEFAULT_POS)
         self._set_joint_position_targets(self.last_targets)
         self.world_controls_ready = True
         return True
 
     def _set_joint_position_targets(self, targets):
-        self.robot.set_joint_position_targets(JOINT_NAMES, targets)
+        for joint, target in zip(self.joints, targets):
+            joint.set_position_target(float(target))
 
     def _action_targets(self, action):
         targets = []
@@ -812,7 +814,16 @@ class Script(gobot.NodeScript):
     def _runtime_robot_state(self):
         if not self.context.has_world:
             return None
-        return self.robot.get_runtime_state()
+        links = [self.base_link.get_runtime_state()]
+        joints = [joint.get_runtime_state() for joint in self.joints]
+        sensors = [self.terrain_scan.get_runtime_state()]
+        return {
+            "name": self.robot.name,
+            "links": links,
+            "joints": joints,
+            "sensors": sensors,
+            "contacts": [],
+        }
 
     def _find_robot(self):
         root = self.get_root()
@@ -830,3 +841,15 @@ class Script(gobot.NodeScript):
         if joint is None:
             raise RuntimeError(f"robot '{self.robot.name}' has no joint '{name}'")
         return joint
+
+    def _find_link(self, name):
+        link = _find_node_by_name(self.robot, name)
+        if link is None:
+            raise RuntimeError(f"robot '{self.robot.name}' has no link '{name}'")
+        return link
+
+    def _find_sensor(self, name):
+        sensor = _find_node_by_name(self.robot, name)
+        if sensor is None:
+            raise RuntimeError(f"robot '{self.robot.name}' has no sensor '{name}'")
+        return sensor

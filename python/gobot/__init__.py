@@ -1,6 +1,29 @@
 """Python package facade for the Gobot engine bindings."""
 
+import ctypes as _ctypes
 import importlib as _importlib
+import os as _os
+import sys as _sys
+import sysconfig as _sysconfig
+
+
+def _preload_current_libpython() -> None:
+    if not _sys.platform.startswith("linux"):
+        return
+    libdir = _sysconfig.get_config_var("LIBDIR")
+    soname = _sysconfig.get_config_var("INSTSONAME") or _sysconfig.get_config_var("LDLIBRARY")
+    if not isinstance(libdir, str) or not isinstance(soname, str):
+        return
+    path = _os.path.join(libdir, soname)
+    if not _os.path.isfile(path):
+        return
+    try:
+        _ctypes.CDLL(path, mode=_ctypes.RTLD_GLOBAL)
+    except OSError:
+        return
+
+
+_preload_current_libpython()
 
 from . import _core
 from ._core import *  # noqa: F401,F403

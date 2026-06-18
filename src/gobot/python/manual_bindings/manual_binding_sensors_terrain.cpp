@@ -1,6 +1,20 @@
 #include "manual_bindings_internal.hpp"
 
 namespace gobot::python {
+namespace {
+
+const PhysicsSensorState& RequiredSensorStateForHandle(const PySensor3DHandle& handle) {
+    const Sensor3D* sensor = handle.ResolveAs<Sensor3D>();
+    const PhysicsRobotState& robot = RequiredRobotStateForNodeHandle(handle);
+    const PhysicsSensorState* sensor_state = FindSensorState(robot, sensor->GetName());
+    if (sensor_state == nullptr) {
+        throw std::runtime_error("Gobot runtime state robot '" + robot.name +
+                                 "' has no sensor '" + sensor->GetName() + "'");
+    }
+    return *sensor_state;
+}
+
+} // namespace
 
 void RegisterManualTerrainSensorBindings(PyTerrain3DClass& terrain3d_class,
                                          PySensor3DClass& sensor3d_class,
@@ -237,7 +251,12 @@ void RegisterManualTerrainSensorBindings(PyTerrain3DClass& terrain3d_class,
                           [](PySensor3DHandle& handle, RealType debug_marker_radius) {
                               Sensor3D* sensor = handle.ResolveAs<Sensor3D>();
                               ExecuteSetNodeProperty(sensor, "debug_marker_radius", Variant(debug_marker_radius));
-                          });
+                          })
+            .def("get_runtime_state",
+                 [](const PySensor3DHandle& handle) {
+                     RuntimeSceneForNodeHandle(handle);
+                     return SensorStateToPythonDict(RequiredSensorStateForHandle(handle));
+                 });
 
     contact_sensor3d_class
             .def_property("radius",

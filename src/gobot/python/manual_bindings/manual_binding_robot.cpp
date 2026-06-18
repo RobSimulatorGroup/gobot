@@ -1,6 +1,35 @@
 #include "manual_bindings_internal.hpp"
 
 namespace gobot::python {
+namespace {
+
+const std::string& RuntimeRobotNameForHandle(const PyNodeHandle& handle) {
+    return RuntimeRobotForNodeHandle(handle)->GetName();
+}
+
+const PhysicsLinkState& RequiredLinkStateForHandle(const PyLink3DHandle& handle) {
+    const Link3D* link = handle.ResolveAs<Link3D>();
+    const PhysicsRobotState& robot = RequiredRobotStateForNodeHandle(handle);
+    const PhysicsLinkState* link_state = FindLinkState(robot, link->GetName());
+    if (link_state == nullptr) {
+        throw std::runtime_error("Gobot runtime state robot '" + robot.name +
+                                 "' has no link '" + link->GetName() + "'");
+    }
+    return *link_state;
+}
+
+const PhysicsJointState& RequiredJointStateForHandle(const PyJoint3DHandle& handle) {
+    const Joint3D* joint = handle.ResolveAs<Joint3D>();
+    const PhysicsRobotState& robot = RequiredRobotStateForNodeHandle(handle);
+    const PhysicsJointState* joint_state = FindJointState(robot, joint->GetName());
+    if (joint_state == nullptr) {
+        throw std::runtime_error("Gobot runtime state robot '" + robot.name +
+                                 "' has no joint '" + joint->GetName() + "'");
+    }
+    return *joint_state;
+}
+
+} // namespace
 
 void RegisterManualRobotBindings(PyRobot3DClass& robot3d_class,
                                  PyLink3DClass& link3d_class,
@@ -22,173 +51,7 @@ void RegisterManualRobotBindings(PyRobot3DClass& robot3d_class,
                           [](PyRobot3DHandle& handle, RobotMode mode) {
                               Robot3D* robot = handle.ResolveAs<Robot3D>();
                               ExecuteSetNodeProperty(robot, "mode", Variant(mode));
-                          })
-            .def("set_joint_position_target",
-                 [](PyRobot3DHandle& handle,
-                    const std::string& joint,
-                    RealType target_position) {
-                     Robot3D* robot = handle.ResolveAs<Robot3D>();
-                     SimulationScene* runtime_scene = RuntimeSceneForRobotHandle(handle);
-                     if (!runtime_scene->SetJointPositionTarget(robot->GetName(), joint, target_position)) {
-                         throw std::runtime_error(runtime_scene->GetLastError());
-                     }
-                 },
-                 py::arg("joint"),
-                 py::arg("target_position"))
-            .def("set_joint_position_targets",
-                 [](PyRobot3DHandle& handle,
-                    const std::vector<std::string>& joint_names,
-                    const std::vector<RealType>& target_positions) {
-                     Robot3D* robot = handle.ResolveAs<Robot3D>();
-                     SimulationScene* runtime_scene = RuntimeSceneForRobotHandle(handle);
-                     if (!runtime_scene->SetJointPositionTargets(robot->GetName(), joint_names, target_positions)) {
-                         throw std::runtime_error(runtime_scene->GetLastError());
-                     }
-                 },
-                 py::arg("joint_names"),
-                 py::arg("target_positions"))
-            .def("set_joint_velocity_target",
-                 [](PyRobot3DHandle& handle,
-                    const std::string& joint,
-                    RealType target_velocity) {
-                     Robot3D* robot = handle.ResolveAs<Robot3D>();
-                     SimulationScene* runtime_scene = RuntimeSceneForRobotHandle(handle);
-                     if (!runtime_scene->SetJointVelocityTarget(robot->GetName(), joint, target_velocity)) {
-                         throw std::runtime_error(runtime_scene->GetLastError());
-                     }
-                 },
-                 py::arg("joint"),
-                 py::arg("target_velocity"))
-            .def("set_joint_effort_target",
-                 [](PyRobot3DHandle& handle,
-                    const std::string& joint,
-                    RealType target_effort) {
-                     Robot3D* robot = handle.ResolveAs<Robot3D>();
-                     SimulationScene* runtime_scene = RuntimeSceneForRobotHandle(handle);
-                     if (!runtime_scene->SetJointEffortTarget(robot->GetName(), joint, target_effort)) {
-                         throw std::runtime_error(runtime_scene->GetLastError());
-                     }
-                 },
-                 py::arg("joint"),
-                 py::arg("target_effort"))
-            .def("set_joint_passive",
-                 [](PyRobot3DHandle& handle, const std::string& joint) {
-                     Robot3D* robot = handle.ResolveAs<Robot3D>();
-                     SimulationScene* runtime_scene = RuntimeSceneForRobotHandle(handle);
-                     if (!runtime_scene->SetJointPassive(robot->GetName(), joint)) {
-                         throw std::runtime_error(runtime_scene->GetLastError());
-                     }
-                 },
-                 py::arg("joint"))
-            .def("set_action",
-                 [](PyRobot3DHandle& handle, const std::vector<RealType>& action) {
-                     Robot3D* robot = handle.ResolveAs<Robot3D>();
-                     SimulationScene* runtime_scene = RuntimeSceneForRobotHandle(handle);
-                     if (!runtime_scene->SetRobotJointPositionTargetsFromNormalizedAction(robot->GetName(), action)) {
-                         throw std::runtime_error(runtime_scene->GetLastError());
-                     }
-                 },
-                 py::arg("action"))
-            .def("set_named_action",
-                 [](PyRobot3DHandle& handle,
-                    const std::vector<std::string>& joint_names,
-                    const std::vector<RealType>& action) {
-                     Robot3D* robot = handle.ResolveAs<Robot3D>();
-                     SimulationScene* runtime_scene = RuntimeSceneForRobotHandle(handle);
-                     if (!runtime_scene->SetRobotJointPositionTargetsFromNormalizedAction(
-                                 robot->GetName(),
-                                 joint_names,
-                                 action)) {
-                         throw std::runtime_error(runtime_scene->GetLastError());
-                     }
-                 },
-                 py::arg("joint_names"),
-                 py::arg("action"))
-            .def("reset_joint_state",
-                 [](PyRobot3DHandle& handle,
-                    const std::string& joint,
-                    RealType position,
-                    RealType velocity) {
-                     Robot3D* robot = handle.ResolveAs<Robot3D>();
-                     SimulationScene* runtime_scene = RuntimeSceneForRobotHandle(handle);
-                     if (!runtime_scene->ResetJointState(robot->GetName(), joint, position, velocity)) {
-                         throw std::runtime_error(runtime_scene->GetLastError());
-                     }
-                 },
-                 py::arg("joint"),
-                 py::arg("position"),
-                 py::arg("velocity") = 0.0)
-            .def("reset_link_state",
-                 [](PyRobot3DHandle& handle,
-                    const std::string& link,
-                    const py::object& position,
-                    const py::object& orientation,
-                    const py::object& linear_velocity,
-                    const py::object& angular_velocity) {
-                     Robot3D* robot = handle.ResolveAs<Robot3D>();
-                     SimulationScene* runtime_scene = RuntimeSceneForRobotHandle(handle);
-                     if (!runtime_scene->ResetLinkState(robot->GetName(),
-                                                        link,
-                                                        PythonToVector3(position),
-                                                        PythonToQuaternionWxyz(orientation),
-                                                        PythonToVector3(linear_velocity),
-                                                        PythonToVector3(angular_velocity))) {
-                         throw std::runtime_error(runtime_scene->GetLastError());
-                     }
-                 },
-                 py::arg("link"),
-                 py::arg("position"),
-                 py::arg("orientation") = py::make_tuple(1.0, 0.0, 0.0, 0.0),
-                 py::arg("linear_velocity") = py::make_tuple(0.0, 0.0, 0.0),
-                 py::arg("angular_velocity") = py::make_tuple(0.0, 0.0, 0.0))
-            .def("get_runtime_snapshot",
-                 [](const PyRobot3DHandle& handle) {
-                     RuntimeSceneForRobotHandle(handle);
-                     return RobotSnapshotToPythonDict(RequiredRobotSnapshotForHandle(handle));
-                 })
-            .def("get_runtime_state",
-                 [](const PyRobot3DHandle& handle) {
-                     RuntimeSceneForRobotHandle(handle);
-                     const PhysicsSceneState& scene_state = RequiredSceneStateForHandle(handle);
-                     const PhysicsRobotState& robot_state = RequiredRobotStateForHandle(handle);
-                     return RobotStateToPythonDict(robot_state, &scene_state);
-                 })
-            .def("get_joint_state",
-                 [](const PyRobot3DHandle& handle, const std::string& joint) {
-                     RuntimeSceneForRobotHandle(handle);
-                     const PhysicsRobotState& robot = RequiredRobotStateForHandle(handle);
-                     const PhysicsJointState* joint_state = FindJointState(robot, joint);
-                     if (joint_state == nullptr) {
-                         throw std::runtime_error("Gobot runtime state robot '" + robot.name +
-                                                  "' has no joint '" + joint + "'");
-                     }
-                     return JointStateToPythonDict(*joint_state);
-                 },
-                 py::arg("joint"))
-            .def("get_link_state",
-                 [](const PyRobot3DHandle& handle, const std::string& link) {
-                     RuntimeSceneForRobotHandle(handle);
-                     const PhysicsRobotState& robot = RequiredRobotStateForHandle(handle);
-                     const PhysicsLinkState* link_state = FindLinkState(robot, link);
-                     if (link_state == nullptr) {
-                         throw std::runtime_error("Gobot runtime state robot '" + robot.name +
-                                                  "' has no link '" + link + "'");
-                     }
-                     return LinkStateToPythonDict(*link_state);
-                 },
-                 py::arg("link"))
-            .def("get_sensor_state",
-                 [](const PyRobot3DHandle& handle, const std::string& sensor) {
-                     RuntimeSceneForRobotHandle(handle);
-                     const PhysicsRobotState& robot = RequiredRobotStateForHandle(handle);
-                     const PhysicsSensorState* sensor_state = FindSensorState(robot, sensor);
-                     if (sensor_state == nullptr) {
-                         throw std::runtime_error("Gobot runtime state robot '" + robot.name +
-                                                  "' has no sensor '" + sensor + "'");
-                     }
-                     return SensorStateToPythonDict(*sensor_state);
-                 },
-                 py::arg("sensor"));
+                          });
 
     link3d_class
             .def_property("has_inertial",
@@ -230,7 +93,33 @@ void RegisterManualRobotBindings(PyRobot3DClass& robot3d_class,
                           [](PyLink3DHandle& handle, LinkRole role) {
                               Link3D* link = handle.ResolveAs<Link3D>();
                               ExecuteSetNodeProperty(link, "role", Variant(role));
-                          });
+                          })
+            .def("reset_runtime_state",
+                 [](PyLink3DHandle& handle,
+                    const py::object& position,
+                    const py::object& orientation,
+                    const py::object& linear_velocity,
+                    const py::object& angular_velocity) {
+                     Link3D* link = handle.ResolveAs<Link3D>();
+                     SimulationScene* runtime_scene = RuntimeSceneForNodeHandle(handle);
+                     if (!runtime_scene->ResetLinkState(RuntimeRobotNameForHandle(handle),
+                                                        link->GetName(),
+                                                        PythonToVector3(position),
+                                                        PythonToQuaternionWxyz(orientation),
+                                                        PythonToVector3(linear_velocity),
+                                                        PythonToVector3(angular_velocity))) {
+                         throw std::runtime_error(runtime_scene->GetLastError());
+                     }
+                 },
+                 py::arg("position"),
+                 py::arg("orientation") = py::make_tuple(1.0, 0.0, 0.0, 0.0),
+                 py::arg("linear_velocity") = py::make_tuple(0.0, 0.0, 0.0),
+                 py::arg("angular_velocity") = py::make_tuple(0.0, 0.0, 0.0))
+            .def("get_runtime_state",
+                 [](const PyLink3DHandle& handle) {
+                     RuntimeSceneForNodeHandle(handle);
+                     return LinkStateToPythonDict(RequiredLinkStateForHandle(handle));
+                 });
 
     joint3d_class
             .def_property("joint_type",
@@ -384,7 +273,66 @@ void RegisterManualRobotBindings(PyRobot3DClass& robot3d_class,
                           [](PyJoint3DHandle& handle, const std::vector<RealType>& gear) {
                               Joint3D* joint = handle.ResolveAs<Joint3D>();
                               ExecuteSetNodeProperty(joint, "gear", Variant(gear));
-                          });
+                          })
+            .def("set_position_target",
+                 [](PyJoint3DHandle& handle, RealType target_position) {
+                     Joint3D* joint = handle.ResolveAs<Joint3D>();
+                     SimulationScene* runtime_scene = RuntimeSceneForNodeHandle(handle);
+                     if (!runtime_scene->SetJointPositionTarget(RuntimeRobotNameForHandle(handle),
+                                                                joint->GetName(),
+                                                                target_position)) {
+                         throw std::runtime_error(runtime_scene->GetLastError());
+                     }
+                 },
+                 py::arg("target"))
+            .def("set_velocity_target",
+                 [](PyJoint3DHandle& handle, RealType target_velocity) {
+                     Joint3D* joint = handle.ResolveAs<Joint3D>();
+                     SimulationScene* runtime_scene = RuntimeSceneForNodeHandle(handle);
+                     if (!runtime_scene->SetJointVelocityTarget(RuntimeRobotNameForHandle(handle),
+                                                                joint->GetName(),
+                                                                target_velocity)) {
+                         throw std::runtime_error(runtime_scene->GetLastError());
+                     }
+                 },
+                 py::arg("target"))
+            .def("set_effort_target",
+                 [](PyJoint3DHandle& handle, RealType target_effort) {
+                     Joint3D* joint = handle.ResolveAs<Joint3D>();
+                     SimulationScene* runtime_scene = RuntimeSceneForNodeHandle(handle);
+                     if (!runtime_scene->SetJointEffortTarget(RuntimeRobotNameForHandle(handle),
+                                                              joint->GetName(),
+                                                              target_effort)) {
+                         throw std::runtime_error(runtime_scene->GetLastError());
+                     }
+                 },
+                 py::arg("target"))
+            .def("set_passive",
+                 [](PyJoint3DHandle& handle) {
+                     Joint3D* joint = handle.ResolveAs<Joint3D>();
+                     SimulationScene* runtime_scene = RuntimeSceneForNodeHandle(handle);
+                     if (!runtime_scene->SetJointPassive(RuntimeRobotNameForHandle(handle), joint->GetName())) {
+                         throw std::runtime_error(runtime_scene->GetLastError());
+                     }
+                 })
+            .def("reset_runtime_state",
+                 [](PyJoint3DHandle& handle, RealType position, RealType velocity) {
+                     Joint3D* joint = handle.ResolveAs<Joint3D>();
+                     SimulationScene* runtime_scene = RuntimeSceneForNodeHandle(handle);
+                     if (!runtime_scene->ResetJointState(RuntimeRobotNameForHandle(handle),
+                                                         joint->GetName(),
+                                                         position,
+                                                         velocity)) {
+                         throw std::runtime_error(runtime_scene->GetLastError());
+                     }
+                 },
+                 py::arg("position"),
+                 py::arg("velocity") = 0.0)
+            .def("get_runtime_state",
+                 [](const PyJoint3DHandle& handle) {
+                     RuntimeSceneForNodeHandle(handle);
+                     return JointStateToPythonDict(RequiredJointStateForHandle(handle));
+                 });
 
     collision_shape_class
             .def_property("disabled",

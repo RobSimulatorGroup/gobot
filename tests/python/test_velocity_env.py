@@ -4,6 +4,10 @@ import types
 
 import numpy as np
 
+from _gobot_test_import import prefer_build_gobot
+
+prefer_build_gobot()
+
 REPO_ROOT = Path(__file__).resolve().parents[2]
 for path in (REPO_ROOT, REPO_ROOT / "python", REPO_ROOT / "build/python"):
     path_string = str(path)

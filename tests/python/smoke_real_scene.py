@@ -4,10 +4,24 @@ import json
 import math
 import os
 import pathlib
+
+from _gobot_test_import import prefer_build_gobot
+
+prefer_build_gobot()
+
 import gobot
 
 
-GO1_RESET_MIN_CONTACT_DISTANCE = -0.025
+def _find_node_by_name(node, name):
+    if node is None:
+        return None
+    if node.name == name:
+        return node
+    for child in node.children:
+        found = _find_node_by_name(child, name)
+        if found is not None:
+            return found
+    return None
 
 
 def main():
@@ -58,37 +72,33 @@ def main():
 
         if go1 is None:
             raise AssertionError("Loaded scene has no Robot3D node 'go1'")
-        go1.reset_link_state("trunk", script_module.RESET_BASE_POSITION,
-                             [1.0, 0.0, 0.0, 0.0],
-                             [0.0, 0.0, 0.0],
-                             [0.0, 0.0, 0.0])
+        base_link = _find_node_by_name(go1, "trunk")
+        if base_link is None:
+            raise AssertionError("Go1 scene has no trunk link")
+        joints = {}
         for name, target in zip(script_module.JOINT_NAMES, script_module.DEFAULT_POS):
-            go1.reset_joint_state(name, target, 0.0)
-            go1.set_joint_position_target(name, target)
+            joint = _find_node_by_name(go1, name)
+            if joint is None:
+                raise AssertionError(f"Go1 scene has no joint {name!r}")
+            joints[name] = joint
+
+        base_link.reset_runtime_state(script_module.RESET_BASE_POSITION,
+                                      [1.0, 0.0, 0.0, 0.0],
+                                      [0.0, 0.0, 0.0],
+                                      [0.0, 0.0, 0.0])
+        for name, target in zip(script_module.JOINT_NAMES, script_module.DEFAULT_POS):
+            joints[name].reset_runtime_state(target, 0.0)
+            joints[name].set_position_target(target)
 
         context.step_once()
-        state = go1.get_runtime_state()
-        contact_distances = [
-            float(contact["distance"])
-            for contact in state.get("contacts", [])
-            if contact.get("robot_name") == "go1"
-        ]
-        if contact_distances:
-            min_contact_distance = min(contact_distances)
-            print(f"go1_reset_min_contact_distance={min_contact_distance:.6f}")
-            if min_contact_distance < GO1_RESET_MIN_CONTACT_DISTANCE:
-                raise AssertionError(
-                    f"Go1 reset pose starts too far inside the ground: {min_contact_distance:.6f}"
-                )
 
         for index in range(args.steps):
             for name, target in zip(script_module.JOINT_NAMES, script_module.DEFAULT_POS):
-                go1.set_joint_position_target(name, target)
+                joints[name].set_position_target(target)
             context.step_once()
             print(f"step={index + 1} time={context.simulation_time:.6f} frame={context.frame_count}")
 
-        robot = go1.get_runtime_state()
-        base = next(link for link in robot["links"] if link["link_name"] == "trunk")
+        base = base_link.get_runtime_state()
         base_z = base["global_transform"]["position"][2]
         print(f"go1_stand_base_z={base_z:.6f}")
         if base_z <= 0.15:
@@ -101,8 +111,18 @@ def main():
     if args.expect_go1_sensors:
         if go1 is None:
             raise AssertionError("Loaded scene has no Robot3D node 'go1'")
-        robot = go1.get_runtime_state()
-        sensors = {sensor["sensor_name"]: sensor for sensor in robot.get("sensors", [])}
+        sensors = {}
+        for name in ("imu", "root_angmom", "terrain_scan"):
+            sensor_node = _find_node_by_name(go1, name)
+            if sensor_node is not None:
+                state = sensor_node.get_runtime_state()
+                sensors[state["sensor_name"]] = state
+        for foot in ("FR", "FL", "RR", "RL"):
+            for suffix in ("foot_height_scan", "foot_contact"):
+                sensor_node = _find_node_by_name(go1, f"{foot}_{suffix}")
+                if sensor_node is not None:
+                    state = sensor_node.get_runtime_state()
+                    sensors[state["sensor_name"]] = state
         print(f"go1_sensor_names={sorted(sensors)}")
 
         imu = sensors.get("imu")

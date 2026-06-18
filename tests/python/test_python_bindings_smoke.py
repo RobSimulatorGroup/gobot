@@ -2,6 +2,10 @@ import json
 import os
 import textwrap
 
+from _gobot_test_import import prefer_build_gobot
+
+prefer_build_gobot()
+
 import gobot
 import numpy as np
 
@@ -17,10 +21,11 @@ def assert_close_tuple(actual, expected):
 def main():
     assert gobot.__version__ == gobot._core.__version__
     assert gobot.version() == gobot.__version__
+    version_parts = [int(part) for part in gobot.__version__.split(".")[:3]]
     version_info = gobot.version_info()
-    assert version_info["major"] == 0
-    assert version_info["minor"] == 1
-    assert version_info["patch"] == 8
+    assert version_info["major"] == version_parts[0]
+    assert version_info["minor"] == version_parts[1]
+    assert version_info["patch"] == version_parts[2]
     assert isinstance(version_info["commit"], str)
 
     infos = gobot.backend_infos()
@@ -147,14 +152,20 @@ def main():
     context.build_world(gobot.PhysicsBackendType.Null)
     runtime_cartpole = context.root
     assert runtime_cartpole is not None
-    name_map = runtime_cartpole.get_runtime_snapshot()
-    assert name_map["name"] == "cartpole"
-    assert name_map["controllable_joint_names"] == ["slider", "hinge"]
-    state = runtime_cartpole.get_runtime_state()
-    assert state["joints"][0]["name"] == "slider"
+    slider = runtime_cartpole.find("rail/slider")
+    hinge = runtime_cartpole.find("rail/slider/cart/hinge")
+    assert slider.get_runtime_state()["name"] == "slider"
+    assert hinge.get_runtime_state()["name"] == "hinge"
     assert not hasattr(context, "get_runtime_state")
     assert not hasattr(context, "get_runtime_name_map")
     assert not hasattr(context, "set_joint_position_target")
+    assert not hasattr(runtime_cartpole, "get_runtime_state")
+    assert not hasattr(runtime_cartpole, "set_joint_position_target")
+    slider.set_position_target(0.0)
+    slider.set_velocity_target(0.0)
+    slider.set_effort_target(0.0)
+    slider.set_passive()
+    slider.reset_runtime_state(0.0, 0.0)
 
     eval_context = gobot.app.create_context()
     assert eval_context is not context
@@ -234,16 +245,19 @@ def main():
     assert tuple(batch_state["link_names"]) == ("base",)
     runtime_sensor_bot = context.root.find("sensor_bot")
     assert runtime_sensor_bot is not None
-    sensor_name_map = runtime_sensor_bot.get_runtime_snapshot()
-    assert sensor_name_map["sensor_names"] == ["imu", "root_angmom", "contact", "terrain_scan"]
-    terrain_snapshot = sensor_name_map["sensors"][3]
-    assert terrain_snapshot["type"] == "height_scanner"
-    assert len(terrain_snapshot["sample_offsets"]) == 2
-    assert tuple(terrain_snapshot["ray_direction"]) == (0.0, 0.0, -1.0)
-    assert terrain_snapshot["ray_direction_world_space"] is True
-    assert abs(float(terrain_snapshot["max_distance"]) - 2.0) < 1e-6
-    sensor_state = runtime_sensor_bot.get_runtime_state()
-    sensors = sensor_state["sensors"]
+    terrain_scan_node = runtime_sensor_bot.find("base/terrain_scan")
+    assert terrain_scan_node is not None
+    assert len(terrain_scan_node.sample_offsets) == 2
+    assert np.asarray(terrain_scan_node.ray_direction).shape == (3,)
+    assert tuple(terrain_scan_node.ray_direction) == (0.0, 0.0, -1.0)
+    assert terrain_scan_node.ray_direction_world_space is True
+    assert abs(float(terrain_scan_node.max_distance) - 2.0) < 1e-6
+    sensors = [
+        runtime_sensor_bot.find("base/imu").get_runtime_state(),
+        runtime_sensor_bot.find("base/root_angmom").get_runtime_state(),
+        runtime_sensor_bot.find("base/contact").get_runtime_state(),
+        terrain_scan_node.get_runtime_state(),
+    ]
     assert sensors[0]["type"] == "imu"
     assert len(sensors[0]["values"]) == 13
     assert sensors[0]["channel_names"][7:10] == [

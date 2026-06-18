@@ -260,12 +260,12 @@ class Script(gobot.NodeScript):
             action = self.policy.action(self.observation)
         action = _clamp(action, -FORCE_LIMIT, FORCE_LIMIT)
         effort = action
-        self.robot.set_joint_effort_target(SLIDER_JOINT, effort)
+        self.slider.set_effort_target(effort)
         disturbance = self._sample_disturbance()
         if disturbance != 0.0:
-            self.robot.set_joint_effort_target(HINGE_JOINT, disturbance)
+            self.hinge.set_effort_target(disturbance)
         else:
-            self.robot.set_joint_passive(HINGE_JOINT)
+            self.hinge.set_passive()
 
         self.ticks += 1
         if PRINT_EVERY_TICKS > 0 and self.ticks % PRINT_EVERY_TICKS == 0:
@@ -346,9 +346,9 @@ class Script(gobot.NodeScript):
             return True
         if not self.context.has_world:
             return False
-        self.robot.reset_joint_state(SLIDER_JOINT, INITIAL_CART_POSITION, 0.0)
-        self.robot.reset_joint_state(HINGE_JOINT, INITIAL_POLE_ANGLE, 0.0)
-        self.robot.set_joint_passive(HINGE_JOINT)
+        self.slider.reset_runtime_state(INITIAL_CART_POSITION, 0.0)
+        self.hinge.reset_runtime_state(INITIAL_POLE_ANGLE, 0.0)
+        self.hinge.set_passive()
         self.world_controls_ready = True
         self.previous_x = INITIAL_CART_POSITION
         self.previous_theta = INITIAL_POLE_ANGLE
@@ -458,5 +458,7 @@ class Script(gobot.NodeScript):
     def _runtime_joint_states(self):
         if not self.context.has_world:
             return None
-        state = self.robot.get_runtime_state()
-        return {joint.get("name"): joint for joint in state.get("joints", [])}
+        return {
+            SLIDER_JOINT: self.slider.get_runtime_state(),
+            HINGE_JOINT: self.hinge.get_runtime_state(),
+        }

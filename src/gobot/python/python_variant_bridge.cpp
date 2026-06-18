@@ -119,43 +119,83 @@ Variant SequenceToVariantForType(const py::handle& object, const Type& type) {
     return value;
 }
 
-bool IsNumpyAvailableForVectorCasts() {
-    static const bool available = []() {
-        try {
-            py::module_::import("numpy");
-            return true;
-        } catch (py::error_already_set& error) {
-            if (!error.matches(PyExc_ImportError)) {
-                throw;
-            }
-            return false;
+template <typename MatrixType>
+py::array_t<double> MatrixToNumpyCopy(const MatrixType& matrix) {
+    py::array_t<double> result({
+            static_cast<py::ssize_t>(matrix.rows()),
+            static_cast<py::ssize_t>(matrix.cols()),
+    });
+    py::buffer_info info = result.request();
+    auto* data = static_cast<double*>(info.ptr);
+    for (Eigen::Index row = 0; row < matrix.rows(); ++row) {
+        for (Eigen::Index col = 0; col < matrix.cols(); ++col) {
+            data[static_cast<std::size_t>(row * matrix.cols() + col)] = static_cast<double>(matrix(row, col));
         }
-    }();
-    return available;
+    }
+    return result;
+}
+
+template <typename VectorType>
+py::array_t<double> VectorToNumpyCopy(const VectorType& vector) {
+    py::array_t<double> result({static_cast<py::ssize_t>(vector.size())});
+    py::buffer_info info = result.request();
+    auto* data = static_cast<double*>(info.ptr);
+    for (Eigen::Index index = 0; index < vector.size(); ++index) {
+        data[static_cast<std::size_t>(index)] = static_cast<double>(vector(index));
+    }
+    return result;
+}
+
+std::vector<double> PythonToFixedDoubleArray(const py::handle& object,
+                                             py::ssize_t expected_size,
+                                             const std::string& description) {
+    if (py::isinstance<py::str>(object) || py::isinstance<py::bytes>(object)) {
+        throw std::invalid_argument("expected a " + description);
+    }
+
+    py::array_t<double, py::array::c_style | py::array::forcecast> array =
+            py::array_t<double, py::array::c_style | py::array::forcecast>::ensure(object);
+    if (!array) {
+        throw std::invalid_argument("expected a " + description);
+    }
+
+    py::buffer_info info = array.request();
+    if (info.ndim != 1 || info.shape[0] != expected_size) {
+        throw std::invalid_argument("expected a " + description);
+    }
+
+    const auto* data = static_cast<const double*>(info.ptr);
+    return std::vector<double>(data, data + expected_size);
 }
 
 } // namespace
 
 py::object Vector3ToPython(const Vector3& vector) {
-    if (IsNumpyAvailableForVectorCasts()) {
-        return py::cast(vector);
-    }
-    return py::make_tuple(vector.x(), vector.y(), vector.z());
+    return VectorToNumpyCopy(vector);
+}
+
+py::object Vector2ToPython(const Vector2& vector) {
+    return VectorToNumpyCopy(vector);
+}
+
+py::object QuaternionWxyzToPython(const Quaternion& quaternion) {
+    py::array_t<double> result({4});
+    py::buffer_info info = result.request();
+    auto* data = static_cast<double*>(info.ptr);
+    data[0] = static_cast<double>(quaternion.w());
+    data[1] = static_cast<double>(quaternion.x());
+    data[2] = static_cast<double>(quaternion.y());
+    data[3] = static_cast<double>(quaternion.z());
+    return result;
+}
+
+py::object Matrix4ToPython(const Eigen::Matrix<RealType, 4, 4>& matrix) {
+    return MatrixToNumpyCopy(matrix);
 }
 
 Vector3 PythonToVector3(const py::handle& object) {
-    if (py::isinstance<py::str>(object) || py::isinstance<py::bytes>(object)) {
-        throw std::invalid_argument("expected a 3-element vector");
-    }
-    py::sequence sequence = py::reinterpret_borrow<py::sequence>(object);
-    if (sequence.size() != 3) {
-        throw std::invalid_argument("expected a 3-element vector");
-    }
-    return {
-            py::cast<RealType>(sequence[0]),
-            py::cast<RealType>(sequence[1]),
-            py::cast<RealType>(sequence[2])
-    };
+    std::vector<double> values = PythonToFixedDoubleArray(object, 3, "3-element vector");
+    return {static_cast<RealType>(values[0]), static_cast<RealType>(values[1]), static_cast<RealType>(values[2])};
 }
 
 py::object VariantToPython(const Variant& variant) {

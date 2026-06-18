@@ -39,6 +39,12 @@ GOBOT_EXPORT Vector3 PythonToVector3(const py::handle& object);
 
 GOBOT_EXPORT py::object Vector3ToPython(const Vector3& vector);
 
+GOBOT_EXPORT py::object Vector2ToPython(const Vector2& vector);
+
+GOBOT_EXPORT py::object QuaternionWxyzToPython(const Quaternion& quaternion);
+
+GOBOT_EXPORT py::object Matrix4ToPython(const Eigen::Matrix<RealType, 4, 4>& matrix);
+
 GOBOT_EXPORT py::dict ReflectedToPythonDict(const Variant& value);
 
 GOBOT_EXPORT Variant DictToReflected(py::dict dict, const Type& type);

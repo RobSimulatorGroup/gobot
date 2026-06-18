@@ -33,6 +33,7 @@ protected:
                                                          simulation_server);
         gobot::python::RegisterExternalAppContext(context.get());
         setenv("PYTHONNOUSERSITE", "1", 1);
+        setenv("GOBOT_PYTHON_EXECUTABLE", GOBOT_TEST_PYTHON_EXECUTABLE, 1);
         setenv("PYTHONPATH", GOBOT_TEST_BUILD_PYTHON_DIR, 1);
         setenv("HOME", "/tmp/gobot-test-home", 1);
         project_path = std::filesystem::temp_directory_path() / "gobot_scene_play_session_test";

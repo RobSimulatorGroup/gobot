@@ -99,7 +99,8 @@ add_executable(test_scene_play_session
 target_compile_options(test_scene_play_session PUBLIC "${GOBOT_COMPILE_OPTIONS}")
 target_compile_definitions(test_scene_play_session
         PRIVATE
-            GOBOT_TEST_BUILD_PYTHON_DIR="${CMAKE_BINARY_DIR}/python")
+            GOBOT_TEST_BUILD_PYTHON_DIR="${CMAKE_BINARY_DIR}/python"
+            GOBOT_TEST_PYTHON_EXECUTABLE="${Python3_EXECUTABLE}")
 target_link_libraries(test_scene_play_session gtest gmock)
 if (MSVC)
     target_link_libraries(test_scene_play_session -Wl,--whole-archive gobot_test_support)
@@ -115,13 +116,20 @@ package_add_test(test_physics_server physics/test_physics_server.cpp)
 package_add_test(test_joint_controller physics/test_joint_controller.cpp)
 package_add_test(test_simulation_server simulation/test_simulation_server.cpp)
 
+set(GOBOT_PYTHON_TEST_ENV
+        "HOME=/tmp/gobot-test-home;PYTHONNOUSERSITE=1;PYTHONPATH=${CMAKE_BINARY_DIR}/python")
+if(GOBOT_PYTHON_LIBRARY_DIR)
+    string(APPEND GOBOT_PYTHON_TEST_ENV
+            ";LD_LIBRARY_PATH=${GOBOT_PYTHON_LIBRARY_DIR}:${CMAKE_BINARY_DIR}/python/gobot")
+endif()
+
 add_test(
         NAME test_python_bindings_smoke
         COMMAND ${Python3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/python/test_python_bindings_smoke.py
 )
 set_tests_properties(test_python_bindings_smoke
         PROPERTIES
-            ENVIRONMENT "HOME=/tmp/gobot-test-home;PYTHONNOUSERSITE=1;PYTHONPATH=${CMAKE_BINARY_DIR}/python"
+            ENVIRONMENT "${GOBOT_PYTHON_TEST_ENV}"
             WORKING_DIRECTORY "${CMAKE_SOURCE_DIR}"
 )
 add_test(
@@ -130,7 +138,7 @@ add_test(
 )
 set_tests_properties(test_python_terrain_generation_scene
         PROPERTIES
-            ENVIRONMENT "HOME=/tmp/gobot-test-home;PYTHONNOUSERSITE=1;PYTHONPATH=${CMAKE_BINARY_DIR}/python"
+            ENVIRONMENT "${GOBOT_PYTHON_TEST_ENV}"
             WORKING_DIRECTORY "${CMAKE_SOURCE_DIR}"
 )
 add_test(
@@ -139,7 +147,7 @@ add_test(
 )
 set_tests_properties(test_velocity_env
         PROPERTIES
-            ENVIRONMENT "HOME=/tmp/gobot-test-home;PYTHONNOUSERSITE=1;PYTHONPATH=${CMAKE_BINARY_DIR}/python"
+            ENVIRONMENT "${GOBOT_PYTHON_TEST_ENV}"
             SKIP_RETURN_CODE 77
             WORKING_DIRECTORY "${CMAKE_SOURCE_DIR}"
 )
@@ -158,7 +166,7 @@ if(GOB_BUILD_MUJOCO AND GOBOT_MUJOCO_TARGET)
     )
     set_tests_properties(test_python_go1_mujoco_sensor_smoke
             PROPERTIES
-                ENVIRONMENT "PYTHONNOUSERSITE=1;PYTHONPATH=${CMAKE_BINARY_DIR}/python"
+                ENVIRONMENT "${GOBOT_PYTHON_TEST_ENV}"
                 WORKING_DIRECTORY "${CMAKE_SOURCE_DIR}"
     )
 endif()
