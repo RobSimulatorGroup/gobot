@@ -480,12 +480,18 @@ void SceneView3DPanel::OnImGuiContent()
     if (!Editor::GetInstance()->IsScenePlaySessionRunning()) {
         input->SetControlFocus(false);
     } else {
+        const bool viewport_clicked =
+                mouse_inside_rect && ImGui::IsMouseClicked(ImGuiMouseButton_Left);
         const bool viewport_accepts_keyboard =
-                !ImGui::GetIO().WantTextInput &&
                 !ImGuiBlocksViewportInput();
-        if (viewport_accepts_keyboard && (mouse_inside_rect || input->HasControlFocus())) {
+        if (viewport_clicked && viewport_accepts_keyboard) {
+            ImGui::ClearActiveID();
             input->SetControlFocus(true);
-        } else if (!viewport_accepts_keyboard) {
+        } else if (viewport_accepts_keyboard &&
+                   !ImGui::GetIO().WantTextInput &&
+                   (mouse_inside_rect || input->HasControlFocus())) {
+            input->SetControlFocus(true);
+        } else if (!viewport_accepts_keyboard || ImGui::GetIO().WantTextInput) {
             input->SetControlFocus(false);
         }
     }
