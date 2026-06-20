@@ -82,6 +82,30 @@ class PhysicsBackendInfo:
     def from_dict(value: dict[str, Any]) -> PhysicsBackendInfo: ...
 
 
+_has_mujoco_batch_pool: bool
+
+
+class _MujocoBatchPool:
+    num_envs: int
+    threads: int
+    nq: int
+    nv: int
+    nu: int
+    nstate: int
+    ncontrol: int
+    nsensordata: int
+
+    def __init__(self, xml_path: str, num_envs: int, threads: int = 0, timestep: float = 0.002) -> None: ...
+    def initial_state(self) -> FloatArray: ...
+    def step(
+        self,
+        state0: FloatArray,
+        control: FloatArray | None = None,
+        nstep: int = 1,
+        return_sensor: bool = False,
+    ) -> FloatArray | tuple[FloatArray, FloatArray]: ...
+
+
 class AppContext:
     project_path: str
     scene_path: str

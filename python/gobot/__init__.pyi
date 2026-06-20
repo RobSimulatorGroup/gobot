@@ -24,6 +24,8 @@ from ._core import (
     TerrainColorMode,
     Terrain3D,
     VelocityCommandDebug3D,
+    _MujocoBatchPool,
+    _has_mujoco_batch_pool,
     backend_infos,
     create_box_collision,
     create_box_visual,

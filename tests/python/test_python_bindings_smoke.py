@@ -340,6 +340,39 @@ def main():
         for info in infos
     )
     if mujoco_available:
+        if getattr(gobot, "_has_mujoco_batch_pool", False):
+            batch_xml = "/tmp/gobot_python_mujoco_batch_pool.xml"
+            with open(batch_xml, "w", encoding="utf-8") as batch_file:
+                batch_file.write(
+                    textwrap.dedent(
+                        """
+                        <mujoco model="batch_smoke">
+                          <option timestep="0.002"/>
+                          <worldbody>
+                            <body name="cart" pos="0 0 0">
+                              <joint name="slider" type="slide" axis="1 0 0"/>
+                              <geom name="cart_collision" type="box" size="0.05 0.05 0.05"/>
+                            </body>
+                          </worldbody>
+                          <actuator>
+                            <motor name="slider_motor" joint="slider"/>
+                          </actuator>
+                        </mujoco>
+                        """
+                    ).strip()
+                )
+            pool = gobot._MujocoBatchPool(batch_xml, num_envs=2, threads=1, timestep=0.002)
+            assert pool.num_envs == 2
+            assert pool.nstate > 0
+            assert pool.ncontrol == 1
+            batch_state = pool.initial_state()
+            assert isinstance(batch_state, np.ndarray)
+            assert batch_state.shape == (2, pool.nstate)
+            batch_control = np.zeros((2, 3, pool.ncontrol), dtype=np.float64)
+            batch_next_state, batch_sensor = pool.step(batch_state, control=batch_control, nstep=3, return_sensor=True)
+            assert batch_next_state.shape == (2, pool.nstate)
+            assert batch_sensor.shape == (2, pool.nsensordata)
+
         split_project = "/tmp/gobot_python_mjcf_split"
         os.makedirs(split_project, exist_ok=True)
         with open(os.path.join(split_project, "robot.xml"), "w", encoding="utf-8") as robot_file:

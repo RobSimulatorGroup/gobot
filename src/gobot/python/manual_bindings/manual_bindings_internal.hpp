@@ -442,6 +442,7 @@ void RegisterManualTerrainSensorBindings(PyTerrain3DClass& terrain3d_class,
                                          PyTerrainHeightSensor3DClass& terrain_height_sensor3d_class,
                                          PyHeightScanner3DClass& height_scanner3d_class,
                                          PyMeshInstance3DClass& mesh_instance_class);
+void RegisterManualMujocoBatchBindings(py::module_& module);
 void RegisterManualModuleFunctions(py::module_& module);
 
 } // namespace gobot::python

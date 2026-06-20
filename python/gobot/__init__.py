@@ -32,6 +32,8 @@ from .scene_helpers import create_cartpole_scene, save_cartpole_scene
 __version__ = _core.__version__
 
 _node_from_id = _core._node_from_id
+_has_mujoco_batch_pool = getattr(_core, "_has_mujoco_batch_pool", False)
+_MujocoBatchPool = getattr(_core, "_MujocoBatchPool", None)
 NodeScript = _core.NodeScript
 
 

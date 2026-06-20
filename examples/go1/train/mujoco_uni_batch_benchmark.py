@@ -1,13 +1,14 @@
-"""Benchmark UniLab-style MuJoCo batch state-array stepping.
+"""Benchmark Gobot and UniLab-style MuJoCo batch state-array stepping.
 
-The script prefers the mujoco_uni ``mujoco.batch_env.BatchEnvPool`` API when
-``mujoco._batch_env`` is installed. When that extension is unavailable it falls
-back to official ``mujoco.rollout.Rollout`` and labels the backend accordingly.
+The script prefers Gobot's internal ``_MujocoBatchPool`` when available. It can
+also benchmark the mujoco_uni ``mujoco.batch_env.BatchEnvPool`` API when
+``mujoco._batch_env`` is installed, or official ``mujoco.rollout.Rollout``.
 """
 
 from __future__ import annotations
 
 import argparse
+from contextlib import contextmanager
 import os
 import importlib.util
 import json
@@ -30,7 +31,7 @@ def main() -> None:
     parser.add_argument("--nstep", type=int, default=10, help="MuJoCo physics steps per measured call.")
     parser.add_argument("--threads", type=int, default=0, help="Worker threads. 0 lets the backend choose serial/pool defaults.")
     parser.add_argument("--actions", choices=("zero", "random"), default="random")
-    parser.add_argument("--backend", choices=("auto", "batch_env", "rollout"), default="auto")
+    parser.add_argument("--backend", choices=("auto", "gobot", "batch_env", "rollout"), default="auto")
     parser.add_argument("--json-out", type=str, default=None)
     args = parser.parse_args()
 
@@ -66,7 +67,9 @@ def main() -> None:
     print(f"nstep: {args.nstep}")
     print(f"nq/nv/nu/nstate/ncontrol/nsensordata: {model.nq}/{model.nv}/{model.nu}/{nstate}/{ncontrol}/{model.nsensordata}")
 
-    if backend == "batch_env":
+    if backend == "gobot":
+        metrics = _run_gobot_batch(xml_path, ncontrol, rng, args)
+    elif backend == "batch_env":
         metrics = _run_batch_env(model, state, ncontrol, rng, args)
     else:
         metrics = _run_rollout(model, state, ncontrol, rng, args)
@@ -118,14 +121,29 @@ def main() -> None:
 
 
 def _resolve_backend(requested: str) -> str:
+    has_gobot_batch = _has_gobot_batch_pool()
     has_batch_env = importlib.util.find_spec("mujoco._batch_env") is not None
+    if requested == "gobot" and not has_gobot_batch:
+        raise RuntimeError("gobot._MujocoBatchPool is not available; rebuild Gobot with MuJoCo support")
     if requested == "batch_env" and not has_batch_env:
         raise RuntimeError("mujoco._batch_env is not installed; cannot run BatchEnvPool benchmark")
     if requested == "rollout":
         return "rollout"
+    if requested == "gobot":
+        return "gobot"
     if requested == "batch_env":
         return "batch_env"
+    if has_gobot_batch:
+        return "gobot"
     return "batch_env" if has_batch_env else "rollout"
+
+
+def _has_gobot_batch_pool() -> bool:
+    try:
+        import gobot
+    except Exception:
+        return False
+    return bool(getattr(gobot, "_has_mujoco_batch_pool", False)) and getattr(gobot, "_MujocoBatchPool", None) is not None
 
 
 def _load_model(xml_path: Path) -> mujoco.MjModel:
@@ -145,6 +163,17 @@ def _load_model(xml_path: Path) -> mujoco.MjModel:
 
 
 def _load_go1_model_with_absolute_meshdir(xml_path: Path, project_path: Path) -> mujoco.MjModel:
+    with _temporary_go1_xml(xml_path, project_path) as scene_xml:
+        previous_cwd = Path.cwd()
+        try:
+            os.chdir(scene_xml.parent)
+            return mujoco.MjModel.from_xml_path(scene_xml.name)
+        finally:
+            os.chdir(previous_cwd)
+
+
+@contextmanager
+def _temporary_go1_xml(xml_path: Path, project_path: Path):
     with tempfile.TemporaryDirectory(prefix="gobot_go1_mjcf_") as tmp:
         tmp_dir = Path(tmp)
         scene_xml = tmp_dir / xml_path.name
@@ -154,12 +183,43 @@ def _load_go1_model_with_absolute_meshdir(xml_path: Path, project_path: Path) ->
         meshdir = (project_path / "assets").as_posix()
         robot_text = robot_text.replace('meshdir="assets"', f'meshdir="{meshdir}"')
         robot_xml.write_text(robot_text, encoding="utf-8")
-        previous_cwd = Path.cwd()
-        try:
-            os.chdir(tmp_dir)
-            return mujoco.MjModel.from_xml_path(scene_xml.name)
-        finally:
-            os.chdir(previous_cwd)
+        yield scene_xml
+
+
+@contextmanager
+def _xml_path_for_c_loader(xml_path: Path):
+    go1_project = None
+    if xml_path.parent.name == "xml" and xml_path.parent.parent.name == "assets":
+        go1_project = xml_path.parent.parent.parent
+    if go1_project is not None:
+        with _temporary_go1_xml(xml_path, go1_project) as scene_xml:
+            yield scene_xml
+        return
+    yield xml_path
+
+
+def _run_gobot_batch(xml_path: Path, ncontrol: int, rng: np.random.Generator, args: argparse.Namespace) -> dict[str, Any]:
+    import gobot
+
+    with _xml_path_for_c_loader(xml_path) as c_xml_path:
+        pool = gobot._MujocoBatchPool(str(c_xml_path), num_envs=args.num_envs, threads=args.threads, timestep=0.002)
+        state = pool.initial_state()
+        if ncontrol != pool.ncontrol:
+            raise RuntimeError(f"control size mismatch: Python model has {ncontrol}, Gobot pool has {pool.ncontrol}")
+
+        for _ in range(args.warmup_steps):
+            control = _make_control(args.num_envs, args.nstep, pool.ncontrol, args.actions, rng)
+            state = pool.step(state, control=control, nstep=args.nstep)
+
+        times: list[float] = []
+        begin_total = time.perf_counter()
+        for _ in range(args.steps):
+            control = _make_control(args.num_envs, args.nstep, pool.ncontrol, args.actions, rng)
+            begin = time.perf_counter()
+            state = pool.step(state, control=control, nstep=args.nstep)
+            times.append(time.perf_counter() - begin)
+        elapsed = time.perf_counter() - begin_total
+        return _timing_metrics(elapsed, times)
 
 
 def _run_batch_env(model: mujoco.MjModel, state: np.ndarray, ncontrol: int, rng: np.random.Generator, args: argparse.Namespace) -> dict[str, Any]:
