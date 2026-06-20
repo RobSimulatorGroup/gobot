@@ -2,53 +2,30 @@
 
 from __future__ import annotations
 
-from dataclasses import dataclass
 from typing import Iterable
 
 import numpy as np
 
+from gobot.rl.spec import ObservationSpec, SpecField
+
 
 VELOCITY_OBS_SCHEMA_VERSION = "gobot_velocity_v1"
-
-
-@dataclass(frozen=True)
-class ObservationField:
-    name: str
-    dim: int
-
-
-@dataclass(frozen=True)
-class ObservationSchema:
-    version: str
-    fields: tuple[ObservationField, ...]
-
-    @property
-    def dim(self) -> int:
-        return sum(field.dim for field in self.fields)
-
-    @property
-    def names(self) -> tuple[str, ...]:
-        names: list[str] = []
-        for field in self.fields:
-            if field.dim == 1:
-                names.append(field.name)
-            else:
-                names.extend(f"{field.name}.{index}" for index in range(field.dim))
-        return tuple(names)
+ObservationField = SpecField
+ObservationSchema = ObservationSpec
 
 
 def velocity_actor_observation_schema(action_dim: int, height_scan_dim: int) -> ObservationSchema:
     return ObservationSchema(
         version=VELOCITY_OBS_SCHEMA_VERSION,
         fields=(
-            ObservationField("base_lin_vel_b", 3),
-            ObservationField("base_ang_vel_b", 3),
+            ObservationField("base_lin_vel_b", 3, "m/s"),
+            ObservationField("base_ang_vel_b", 3, "rad/s"),
             ObservationField("projected_gravity", 3),
-            ObservationField("joint_pos_rel", int(action_dim)),
-            ObservationField("joint_vel", int(action_dim)),
+            ObservationField("joint_pos_rel", int(action_dim), "rad"),
+            ObservationField("joint_vel", int(action_dim), "rad/s"),
             ObservationField("last_action", int(action_dim)),
             ObservationField("command", 3),
-            ObservationField("height_scan", int(height_scan_dim)),
+            ObservationField("height_scan", int(height_scan_dim), "normalized"),
         ),
     )
 

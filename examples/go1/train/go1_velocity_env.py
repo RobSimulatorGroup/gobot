@@ -13,6 +13,7 @@ import numpy as np
 
 import gobot
 
+from gobot.rl import ActionSpec, BatchEnvState, BatchSimulationRuntime, CpuBatchEnv, SpecField
 from gobot.rl.locomotion import (
     TerrainSampler,
     UniformVelocityCommand,
@@ -96,7 +97,7 @@ class VelocityBatchRuntimeState:
     contact_normal_force: np.ndarray
 
 
-class Go1VelocityEnv:
+class Go1VelocityEnv(CpuBatchEnv):
     """rsl_rl-compatible vector env for the Go1 velocity example."""
 
     is_vector_env = True
@@ -117,16 +118,14 @@ class Go1VelocityEnv:
             import torch
         except ImportError as error:
             raise RuntimeError("Go1VelocityEnv requires gobot[train] dependencies.") from error
+        super().__init__(num_envs=int(num_envs), seed=int(seed))
         self.torch = torch
         self.cfg_obj = cfg if cfg is not None else go1_rough_velocity_cfg()
-        self.num_envs = int(num_envs)
         self.device = device
-        self.seed = int(seed)
         self.sim_workers = max(0, int(sim_workers))
         self.profile_step = bool(profile_step)
         self._profile_step_count = 0
         self._profile_totals: dict[str, float] = {}
-        self._rng = np.random.default_rng(self.seed)
         self.num_actions = len(self.cfg_obj.joint_names)
         self.joint_names = tuple(self.cfg_obj.joint_names)
         self.default_joint_pos = np.asarray(self.cfg_obj.default_joint_pos, dtype=np.float32)
@@ -201,8 +200,6 @@ class Go1VelocityEnv:
         )
         self._configure_robot_drives()
         self.context.build_world(gobot.PhysicsBackendType.MuJoCoCpu)
-        self.context.configure_batch_world(self.num_envs)
-        self.resolved_sim_workers = int(self.context.resolved_batch_workers(self.sim_workers))
 
         self._scene_link_names = tuple(_node_names_by_type(self.robot, "Link3D"))
         self._height_scan_dim = self._sensor_dim(self.cfg_obj.observations.height_scan_sensor)
@@ -241,8 +238,21 @@ class Go1VelocityEnv:
             if self.cfg_obj.observations.height_scan_sensor is not None
             else -1
         )
+        self.runtime = BatchSimulationRuntime(
+            self.context,
+            robot=self.cfg_obj.robot_name,
+            base_link=self.cfg_obj.base_link,
+            joint_names=self.joint_names,
+            link_names=self._batch_link_names,
+            sensor_names=self._batch_sensor_names,
+        )
+        self.runtime.configure(self.num_envs)
+        self.resolved_sim_workers = self.runtime.resolved_workers(self.sim_workers)
         self.actor_obs_schema = velocity_actor_observation_schema(self.num_actions, self._height_scan_dim)
         self.critic_obs_schema = velocity_critic_observation_schema(self.num_actions, self._height_scan_dim, self._foot_count)
+        self.action_spec = self._make_action_spec()
+        self.observation_spec = self.actor_obs_schema
+        self.critic_observation_spec = self.critic_obs_schema
         self.num_obs = self.actor_obs_schema.dim
         self.num_privileged_obs = self.critic_obs_schema.dim
         self.command_manager = UniformVelocityCommand(self.cfg_obj.command, self)
@@ -254,6 +264,9 @@ class Go1VelocityEnv:
             "obs_schema_version": self.actor_obs_schema.version,
             "obs_names": self.actor_obs_schema.names,
             "critic_obs_names": self.critic_obs_schema.names,
+            "obs_spec": self.actor_obs_schema.metadata(),
+            "critic_obs_spec": self.critic_obs_schema.metadata(),
+            "action_spec": self.action_spec.metadata(),
             "robot": self.cfg_obj.robot_name,
             "scene_path": self.cfg_obj.scene_path,
             "project_path": str(self.project_path),
@@ -274,19 +287,32 @@ class Go1VelocityEnv:
         }
         self.extras: dict[str, Any] = {}
         self._obs, self._critic_obs = self._reset_all()
+        self._state = BatchEnvState(
+            obs={
+                "actor": self._obs.detach().cpu().numpy().copy(),
+                "critic": self._critic_obs.detach().cpu().numpy().copy(),
+            },
+            reward=np.zeros((self.num_envs,), dtype=np.float32),
+            terminated=np.zeros((self.num_envs,), dtype=bool),
+            truncated=np.zeros((self.num_envs,), dtype=bool),
+            info={"steps": self.episode_length_buf.detach().cpu().numpy().astype(np.int64, copy=True)},
+        )
 
     def get_observations(self):
         return self._tensor_dict(self._obs, self._critic_obs)
 
     def reset(self, seed: int | None = None):
-        if seed is not None:
-            self.seed = int(seed)
-            self._rng = np.random.default_rng(self.seed)
+        self.reset_seed(seed)
         self.episode_length_buf.zero_()
         self._episode_returns[:] = 0.0
         self._terrain_curriculum_limits[:] = 0.0
         self._push_count[:] = 0
         self._obs, self._critic_obs = self._reset_all()
+        self._sync_batch_env_state(
+            reward=np.zeros((self.num_envs,), dtype=np.float32),
+            terminated=np.zeros((self.num_envs,), dtype=bool),
+            truncated=np.zeros((self.num_envs,), dtype=bool),
+        )
         return self.get_observations()
 
     def step(self, actions):
@@ -307,7 +333,7 @@ class Go1VelocityEnv:
             self._maybe_apply_push(env_id)
         if profile_marks is not None:
             profile_marks["action_apply"] = time.perf_counter()
-        self.context.step_batch(self.decimation, workers=self.sim_workers)
+        self.runtime.step(self.decimation, workers=self.sim_workers)
         if profile_marks is not None:
             profile_marks["physics"] = time.perf_counter()
         batch_state = self._batch_runtime_state()
@@ -417,6 +443,17 @@ class Go1VelocityEnv:
             for name, value in self._consume_profile_marks(profile_marks).items():
                 extras["log"][f"/profile/{name}_ms"] = torch.as_tensor(value, device=self.device)
         self.extras = extras
+        self._sync_batch_env_state(
+            reward=rewards,
+            terminated=terminated,
+            truncated=time_outs,
+            info_extra={
+                "metrics": metrics,
+                "reward_terms": reward_terms,
+                "reset_reason": reset_reason,
+                "time_outs": time_outs,
+            },
+        )
         return self._tensor_dict(self._obs, self._critic_obs), rewards_t, done_t, extras
 
     def close(self) -> None:
@@ -459,6 +496,38 @@ class Go1VelocityEnv:
             {"actor": actor.clone(), "critic": critic.clone(), "policy": actor.clone()},
             batch_size=[self.num_envs],
             device=self.device,
+        )
+
+    def _make_action_spec(self) -> ActionSpec:
+        return ActionSpec(
+            version=f"{self.actor_obs_schema.version}_action_v1",
+            fields=tuple(SpecField(str(name), 1) for name in self.joint_names),
+            lower=-1.0,
+            upper=1.0,
+        )
+
+    def _sync_batch_env_state(
+        self,
+        *,
+        reward: np.ndarray,
+        terminated: np.ndarray,
+        truncated: np.ndarray,
+        info_extra: Mapping[str, Any] | None = None,
+    ) -> None:
+        info: dict[str, Any] = {
+            "steps": self.episode_length_buf.detach().cpu().numpy().astype(np.int64, copy=True),
+        }
+        if info_extra:
+            info.update(info_extra)
+        self._state = BatchEnvState(
+            obs={
+                "actor": self._obs.detach().cpu().numpy().copy(),
+                "critic": self._critic_obs.detach().cpu().numpy().copy(),
+            },
+            reward=np.asarray(reward, dtype=np.float32).reshape(self.num_envs),
+            terminated=np.asarray(terminated, dtype=bool).reshape(self.num_envs),
+            truncated=np.asarray(truncated, dtype=bool).reshape(self.num_envs),
+            info=info,
         )
 
     def _action_scale_array(self, scale: float | Mapping[str, float]) -> np.ndarray:
@@ -590,7 +659,7 @@ class Go1VelocityEnv:
         )
 
     def _reset_env(self, env_id: int, *, reason: int) -> None:
-        self.context.reset_batch_env(env_id)
+        self.runtime.reset_env(env_id)
         spawn_index = self._sample_spawn_index(env_id)
         spawn = self._spawn_origins[spawn_index].copy()
         spawn[:2] += self._rng.uniform(-self.cfg_obj.spawn_jitter, self.cfg_obj.spawn_jitter, 2)
@@ -607,9 +676,8 @@ class Go1VelocityEnv:
             if self.cfg_obj.domain_randomization.enabled
             else np.zeros(3, dtype=np.float32)
         )
-        self.context.reset_batch_link_state(
+        self.runtime.reset_link_state(
             env_id,
-            self.cfg_obj.robot_name,
             self.cfg_obj.base_link,
             [float(spawn[0]), float(spawn[1]), float(base_z)],
             _quat_from_yaw(yaw).tolist(),
@@ -622,14 +690,13 @@ class Go1VelocityEnv:
         else:
             self._encoder_bias[env_id] = 0.0
         for joint_name, default_pos in zip(self.joint_names, self.default_joint_pos, strict=True):
-            self.context.reset_batch_joint_state(
+            self.runtime.reset_joint_state(
                 env_id,
-                self.cfg_obj.robot_name,
                 joint_name,
                 float(default_pos + self._rng.uniform(-0.05, 0.05)),
                 float(self._rng.uniform(-0.05, 0.05)),
             )
-            self.context.set_batch_joint_position_target(env_id, self.cfg_obj.robot_name, joint_name, float(default_pos))
+            self.runtime.set_joint_position_target(env_id, joint_name, float(default_pos))
         self._spawn_indices[env_id] = spawn_index
         self._terrain_levels[env_id] = float(self._spawn_levels[spawn_index])
         self._episode_start_xy[env_id] = spawn[:2]
@@ -683,9 +750,8 @@ class Go1VelocityEnv:
         angular_velocity = _as_vec(state.base.get("angular_velocity"), 3)
         linear_velocity += self._sample_range_vec(self.cfg_obj.push_velocity_ranges, ("x", "y", "z"))
         angular_velocity += self._sample_range_vec(self.cfg_obj.push_velocity_ranges, ("roll", "pitch", "yaw"))
-        self.context.reset_batch_link_state(
+        self.runtime.reset_link_state(
             env_id,
-            self.cfg_obj.robot_name,
             self.cfg_obj.base_link,
             position.tolist(),
             orientation.tolist(),
@@ -733,24 +799,14 @@ class Go1VelocityEnv:
     def _apply_action(self, env_id: int, action: np.ndarray) -> None:
         target_pos = self.default_joint_pos + self.action_scale * action
         for joint_name, target in zip(self.joint_names, target_pos, strict=True):
-            self.context.set_batch_joint_position_target(env_id, self.cfg_obj.robot_name, joint_name, float(target))
+            self.runtime.set_joint_position_target(env_id, joint_name, float(target))
 
     def _apply_actions(self, actions: np.ndarray) -> None:
         target_pos = self.default_joint_pos.reshape(1, -1) + self.action_scale.reshape(1, -1) * actions
-        self.context.set_batch_joint_position_targets(
-            self.cfg_obj.robot_name,
-            list(self.joint_names),
-            np.asarray(target_pos, dtype=np.float64),
-        )
+        self.runtime.set_joint_position_targets(np.asarray(target_pos, dtype=np.float64))
 
     def _batch_runtime_state(self) -> VelocityBatchRuntimeState:
-        raw = self.context.get_batch_robot_state(
-            self.cfg_obj.robot_name,
-            self.cfg_obj.base_link,
-            list(self.joint_names),
-            list(self._batch_link_names),
-            list(self._batch_sensor_names),
-        )
+        raw = self.runtime.robot_state()
         return VelocityBatchRuntimeState(
             raw=raw,
             base_position=np.asarray(raw["base_position"], dtype=np.float32),
@@ -801,7 +857,7 @@ class Go1VelocityEnv:
         return states
 
     def _runtime_state(self, env_id: int) -> VelocityRuntimeState:
-        runtime = self.context.get_batch_runtime_state(env_id)
+        runtime = self.runtime.env_state(env_id)
         robot = next((robot for robot in runtime.get("robots", []) if robot.get("name") == self.cfg_obj.robot_name), None)
         if robot is None:
             raise RuntimeError(f"Gobot runtime state has no robot {self.cfg_obj.robot_name!r}")

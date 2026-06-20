@@ -39,10 +39,36 @@ def main():
     assert gobot.scene.Node is gobot.Node
     assert gobot.scene.Terrain3D is gobot.Terrain3D
     assert "create_terrain_node" in gobot.terrain.__all__
+    assert "BatchEnvState" in gobot.rl.__all__
+    assert "BatchSimulationRuntime" in gobot.rl.__all__
+    assert "CpuBatchEnv" in gobot.rl.__all__
     assert "ManagerBasedEnv" not in gobot.rl.__all__
     assert "VectorEnv" not in gobot.rl.__all__
     assert "velocity_actor_observation_schema" in gobot.rl.locomotion.__all__
     assert not hasattr(gobot._core, "NativeVectorEnv")
+
+    action_spec = gobot.rl.ActionSpec(
+        "smoke_action_v1",
+        (gobot.rl.SpecField("left", 1), gobot.rl.SpecField("right", 1)),
+    )
+    assert action_spec.names == ("left", "right")
+    assert action_spec.dim == 2
+    assert action_spec.metadata()["dim"] == 2
+    assert np.allclose(action_spec.clip([2.0, -2.0]), [1.0, -1.0])
+    gobot.rl.validate_spec_metadata({"version": "smoke_action_v1", "dim": 2}, action_spec, kind="action")
+    try:
+        gobot.rl.validate_spec_metadata({"version": "wrong", "dim": 2}, action_spec, kind="action")
+        raise AssertionError("spec metadata mismatch should fail")
+    except RuntimeError as error:
+        assert "version mismatch" in str(error)
+
+    state = gobot.rl.BatchEnvState(
+        obs={"actor": np.zeros((2, 3), dtype=np.float32)},
+        reward=np.zeros(2, dtype=np.float32),
+        terminated=np.asarray([False, True]),
+        truncated=np.asarray([False, False]),
+    )
+    assert state.done.tolist() == [False, True]
 
     context = gobot.app.context()
     assert context.backend_type == gobot.PhysicsBackendType.Null

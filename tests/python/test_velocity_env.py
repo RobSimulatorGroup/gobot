@@ -306,18 +306,29 @@ def test_go1_apply_actions_uses_batch_joint_api():
     env.action_scale = np.asarray([0.5, 1.0, 1.5], dtype=np.float32)
     calls = []
 
-    class Context:
-        def set_batch_joint_position_targets(self, robot, joint_names, targets):
-            calls.append((robot, tuple(joint_names), np.asarray(targets, dtype=np.float32).copy()))
+    class Runtime:
+        def set_joint_position_targets(self, targets):
+            calls.append(np.asarray(targets, dtype=np.float32).copy())
 
-    env.context = Context()
+    env.runtime = Runtime()
     env._apply_actions(np.asarray([[1.0, -1.0, 0.0], [0.0, 0.5, -0.5]], dtype=np.float32))
 
     assert len(calls) == 1
-    robot, joint_names, targets = calls[0]
-    assert robot == env.cfg_obj.robot_name
-    assert joint_names == env.joint_names
+    targets = calls[0]
     assert np.allclose(targets, [[0.6, -0.8, 0.3], [0.1, 0.7, -0.45]])
+
+
+def test_go1_action_spec_matches_joint_order():
+    env = object.__new__(Go1VelocityEnv)
+    env.joint_names = ("j0", "j1", "j2")
+    env.actor_obs_schema = velocity_actor_observation_schema(3, 0)
+
+    spec = env._make_action_spec()
+
+    assert spec.dim == 3
+    assert spec.names == env.joint_names
+    assert spec.metadata()["names"] == env.joint_names
+    assert np.allclose(spec.clip([[2.0, -2.0, 0.5]]), [[1.0, -1.0, 0.5]])
 
 
 def test_go1_policy_steps_count_environment_samples():

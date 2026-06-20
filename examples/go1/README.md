@@ -51,6 +51,38 @@ uv run --extra train python examples/go1/train/go1_velocity_train.py \
   --policy-out policies/go1_velocity.pt
 ```
 
+Benchmark the Gobot Go1 vector env hot path without the PPO learner:
+
+```bash
+cd /home/wqq/gobot
+uv run --extra train python examples/go1/train/go1_velocity_benchmark.py \
+  --task go1_flat \
+  --num-envs 64 \
+  --steps 100 \
+  --warmup-steps 10 \
+  --device cpu \
+  --sim-workers 0 \
+  --no-obs-noise
+```
+
+Benchmark a UniLab-style raw MuJoCo state-array batch step path:
+
+```bash
+cd /home/wqq/gobot
+uv run --extra train python examples/go1/train/mujoco_uni_batch_benchmark.py \
+  --num-envs 64 \
+  --steps 100 \
+  --warmup-steps 10 \
+  --nstep 10 \
+  --threads 16
+```
+
+`mujoco_uni_batch_benchmark.py` uses `mujoco._batch_env`/`BatchEnvPool` when
+that extension is installed. Otherwise it falls back to official
+`mujoco.rollout.Rollout` and prints `Backend: rollout`, which is still useful
+as a raw MuJoCo state-array stepping baseline but is not the persistent
+`BatchEnvPool` implementation.
+
 The default Go1 rough task now includes terrain-normal upright reward, foot
 contact history, rough-terrain illegal-contact penalties, per-env terrain
 curriculum, encoder-bias/reset randomization, and scheduled base velocity
