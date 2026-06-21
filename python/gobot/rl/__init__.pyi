@@ -9,6 +9,7 @@ from .rsl_rl import (
     RslRlModelCfg,
     RslRlOnPolicyRunnerCfg,
     RslRlPpoAlgorithmCfg,
+    RslRlVecEnvWrapper,
     rsl_rl_cfg_to_dataclass,
     rsl_rl_cfg_to_dict,
 )

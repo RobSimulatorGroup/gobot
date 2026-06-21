@@ -9,7 +9,6 @@ from .runtime import (
     GobotSceneBatchState,
     LocomotionBatchSpec,
     NativeLocomotionBatchBackend,
-    NativeLocomotionBatchState,
 )
 from .spec import ActionSpec, ObservationSpec, SpecField, validate_spec_metadata
 from . import locomotion
@@ -18,6 +17,7 @@ from .rsl_rl import (
     RslRlModelCfg,
     RslRlOnPolicyRunnerCfg,
     RslRlPpoAlgorithmCfg,
+    RslRlVecEnvWrapper,
     rsl_rl_cfg_to_dataclass,
     rsl_rl_cfg_to_dict,
 )
@@ -32,12 +32,12 @@ __all__ = [
     "LocomotionBatchSpec",
     "locomotion",
     "NativeLocomotionBatchBackend",
-    "NativeLocomotionBatchState",
     "ObservationSpec",
     "RslRlBaseRunnerCfg",
     "RslRlModelCfg",
     "RslRlOnPolicyRunnerCfg",
     "RslRlPpoAlgorithmCfg",
+    "RslRlVecEnvWrapper",
     "SpecField",
     "rsl_rl_cfg_to_dataclass",
     "rsl_rl_cfg_to_dict",

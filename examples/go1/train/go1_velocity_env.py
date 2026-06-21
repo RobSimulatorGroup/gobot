@@ -1,4 +1,4 @@
-"""Go1 rsl_rl vector environment for velocity locomotion training."""
+"""Go1 NumPy batch environment for velocity locomotion training."""
 
 from __future__ import annotations
 
@@ -31,7 +31,6 @@ from gobot.rl.locomotion import (
     LocomotionControlCfg,
     LocomotionNoiseCfg,
     NativeLocomotionBatchBackend,
-    NativeLocomotionBatchState,
     TerrainSampler,
     UniformVelocityCommand,
     build_velocity_actor_observation,
@@ -123,12 +122,11 @@ class VelocityRuntimeState:
     sensors: Mapping[str, Mapping[str, Any]]
     contacts: Sequence[Mapping[str, Any]]
 
-
-VelocityBatchRuntimeState = NativeLocomotionBatchState
+VelocityBatchRuntimeState = Any
 
 
 class Go1VelocityEnv(LocomotionBatchEnv):
-    """rsl_rl-compatible vector env for the Go1 velocity example."""
+    """NumPy batch env for the Go1 velocity example."""
 
     is_vector_env = True
 
@@ -144,11 +142,6 @@ class Go1VelocityEnv(LocomotionBatchEnv):
         profile_step: bool = False,
         context: gobot.AppContext | None = None,
     ) -> None:
-        try:
-            import torch
-        except ImportError as error:
-            raise RuntimeError("Go1VelocityEnv requires gobot[train] dependencies.") from error
-        self.torch = torch
         self.cfg_obj = cfg if cfg is not None else go1_rough_velocity_cfg()
         joint_names = tuple(self.cfg_obj.joint_names)
         default_joint_pos = np.asarray(self.cfg_obj.default_joint_pos, dtype=np.float32)
@@ -173,10 +166,7 @@ class Go1VelocityEnv(LocomotionBatchEnv):
         self.step_dt = self.physics_dt * self.decimation
         self.max_episode_length = int(max_episode_length or math.ceil(float(self.cfg_obj.episode_length_s) / self.step_dt))
         self._episode_length_np = np.zeros(self.num_envs, dtype=np.int64)
-        if str(device) == "cpu":
-            self.episode_length_buf = torch.from_numpy(self._episode_length_np)
-        else:
-            self.episode_length_buf = torch.zeros(self.num_envs, dtype=torch.long, device=device)
+        self.episode_length_buf = self._episode_length_np
         self._episode_start_xy = np.zeros((self.num_envs, 2), dtype=np.float32)
         self._episode_returns = np.zeros(self.num_envs, dtype=np.float32)
         self._total_policy_steps = 0
@@ -328,8 +318,8 @@ class Go1VelocityEnv(LocomotionBatchEnv):
         }
         self.extras: dict[str, Any] = {}
         self._obs, self._critic_obs = self._reset_all()
-        self._state_obs_actor = self._obs.detach().cpu().numpy().copy()
-        self._state_obs_critic = self._critic_obs.detach().cpu().numpy().copy()
+        self._state_obs_actor = self._obs.copy()
+        self._state_obs_critic = self._critic_obs.copy()
         self._state_reward = np.zeros((self.num_envs,), dtype=np.float32)
         self._state_terminated = np.zeros((self.num_envs,), dtype=bool)
         self._state_truncated = np.zeros((self.num_envs,), dtype=bool)
@@ -345,49 +335,110 @@ class Go1VelocityEnv(LocomotionBatchEnv):
             info={"steps": self._state_steps},
         )
 
-    def get_observations(self):
-        return self._tensor_dict(self._obs, self._critic_obs)
+    @property
+    def obs_groups_spec(self) -> dict[str, int]:
+        return {"actor": self.num_obs, "critic": self.num_privileged_obs}
 
-    def reset(self, seed: int | None = None):
-        self.reset_seed(seed)
-        self._episode_length_np[:] = 0
-        if str(self.device) != "cpu":
-            self.episode_length_buf.zero_()
-        self._episode_returns[:] = 0.0
-        self._terrain_curriculum_limits[:] = 0.0
-        self._push_count[:] = 0
-        self._obs, self._critic_obs = self._reset_all()
-        self._sync_batch_env_state(
-            reward=np.zeros((self.num_envs,), dtype=np.float32),
-            terminated=np.zeros((self.num_envs,), dtype=bool),
-            truncated=np.zeros((self.num_envs,), dtype=bool),
-            obs_actor=self._obs.detach().cpu().numpy(),
-            obs_critic=self._critic_obs.detach().cpu().numpy(),
-        )
-        return self.get_observations()
+    def get_observations(self) -> dict[str, np.ndarray]:
+        return {key: value.copy() for key, value in self._state.obs.items()} if self._state is not None else {
+            "actor": self._obs.copy(),
+            "critic": self._critic_obs.copy(),
+        }
+
+    def init_state(self) -> BatchEnvState:
+        return self._state
+
+    def reset(
+        self,
+        env_ids: np.ndarray | None = None,
+        *,
+        seed: int | None = None,
+    ) -> tuple[dict[str, np.ndarray], dict[str, Any]]:
+        if env_ids is None:
+            self.reset_seed(seed)
+            env_ids = np.arange(self.num_envs, dtype=np.int64)
+        else:
+            env_ids = np.asarray(env_ids, dtype=np.int64).reshape(-1)
+            if seed is not None:
+                self.reset_seed(seed)
+        if env_ids.size == 0:
+            return {
+                "actor": np.zeros((0, self.num_obs), dtype=np.float32),
+                "critic": np.zeros((0, self.num_privileged_obs), dtype=np.float32),
+            }, {}
+        if np.any(env_ids < 0) or np.any(env_ids >= self.num_envs):
+            raise IndexError("reset env_ids contain an out-of-range environment id")
+        full_reset = env_ids.size == self.num_envs and np.array_equal(env_ids, np.arange(self.num_envs, dtype=np.int64))
+        if full_reset:
+            self._episode_length_np[:] = 0
+            self._episode_returns[:] = 0.0
+            self._terrain_curriculum_limits[:] = 0.0
+            self._push_count[:] = 0
+        self._reset_envs(env_ids, np.zeros(env_ids.size, dtype=np.int64))
+        batch_state = self.backend.state
+        self.backend.compute_observations()
+        obs = np.asarray(batch_state.actor_obs, dtype=np.float32).copy()
+        critic = np.asarray(batch_state.critic_obs, dtype=np.float32).copy()
+        if self.noise_cfg.level > 0.0 and self.cfg_obj.observations.actor_noise:
+            obs = self._apply_actor_obs_noise(obs)
+            critic[:, : self.num_obs] = obs
+        self._obs = obs
+        self._critic_obs = critic
+        if self._state is not None:
+            self._sync_batch_env_state(
+                reward=self._state.reward,
+                terminated=self._state.terminated,
+                truncated=self._state.truncated,
+                obs_actor=obs,
+                obs_critic=critic,
+            )
+            self._state.terminated[env_ids] = False
+            self._state.truncated[env_ids] = False
+            self._state.info["steps"][env_ids] = 0
+        reset_info = {
+            "reset_env_ids": env_ids.copy(),
+            "reset_reason": self._reset_reasons[env_ids].copy(),
+            "terrain_level": self._terrain_levels[env_ids].copy(),
+        }
+        return {"actor": obs[env_ids].copy(), "critic": critic[env_ids].copy()}, reset_info
+
+    def reset_all(self, seed: int | None = None) -> dict[str, np.ndarray]:
+        obs, _ = self.reset(seed=seed)
+        return obs
 
     def step(self, actions):
-        torch = self.torch
+        step_t0 = self.perf_counter()
+        self.clear_step_final_observation()
         profile_marks = self._new_profile_marks()
         self._total_policy_steps += self.num_envs
         self._apply_command_curriculum()
         self._update_curriculum_progress()
 
+        t0 = self.perf_counter()
         action_np = self._prepare_actions(actions)
+        apply_action_ms = (self.perf_counter() - t0) * 1000.0
         self._mark_profile(profile_marks, "action_prepare")
 
+        t0 = self.perf_counter()
         self._apply_pushes()
         self._mark_profile(profile_marks, "action_apply")
+        backend_action_ms = (self.perf_counter() - t0) * 1000.0
+        t0 = self.perf_counter()
         self.backend.step_actions(
             action_np,
             self.decimation,
             workers=self.sim_workers,
             simulate_action_latency=self.control_cfg.simulate_action_latency,
         )
+        backend_physics_ms = (self.perf_counter() - t0) * 1000.0
         self._mark_profile(profile_marks, "physics")
+        t0 = self.perf_counter()
         batch_state = self.backend.state
+        backend_refresh_cache_ms = (self.perf_counter() - t0) * 1000.0
         self._mark_profile(profile_marks, "state")
+        step_core_ms = backend_action_ms + backend_physics_ms + backend_refresh_cache_ms
 
+        t0 = self.perf_counter()
         self.command_manager.compute_batch(
             self.step_dt,
             base_quaternion=batch_state.base_quaternion,
@@ -398,7 +449,11 @@ class Go1VelocityEnv(LocomotionBatchEnv):
         np.copyto(batch_state.command, self.command_manager.command_b)
         self._mark_profile(profile_marks, "command")
 
-        self.backend.compute_task()
+        fused_task_observations = hasattr(self.backend, "compute_task_observations")
+        if fused_task_observations:
+            self.backend.compute_task_observations()
+        else:
+            self.backend.compute_task()
         foot_heights = batch_state.foot_height
         foot_contacts = batch_state.foot_contact
         self._mark_profile(profile_marks, "contact")
@@ -422,17 +477,28 @@ class Go1VelocityEnv(LocomotionBatchEnv):
             "encoder_bias_abs": float(np.mean(np.abs(batch_state.encoder_bias))),
             "push_count": float(np.mean(self._push_count)),
         }
+        update_state_ms = (self.perf_counter() - t0) * 1000.0
 
+        t0 = self.perf_counter()
         terminated = np.asarray(batch_state.terminated, dtype=bool).copy()
         self._episode_length_np += 1
-        if str(self.device) != "cpu":
-            self.episode_length_buf += 1
         time_outs = (self._episode_length_np >= self.max_episode_length) & ~terminated
         done_envs = terminated | time_outs
         reset_reason = np.where(terminated, 1, np.where(time_outs, 2, 0)).astype(np.int64)
         self._episode_returns += rewards
         reset_env_ids = np.flatnonzero(done_envs).astype(np.int64)
+        terminal_actor_obs: np.ndarray | None = None
+        terminal_critic_obs: np.ndarray | None = None
+        if reset_env_ids.size and not fused_task_observations:
+            self.backend.compute_observations()
         if reset_env_ids.size:
+            terminal_actor_obs = np.asarray(batch_state.actor_obs, dtype=np.float32).copy()
+            terminal_critic_obs = np.asarray(batch_state.critic_obs, dtype=np.float32).copy()
+            if self.noise_cfg.level > 0.0 and self.cfg_obj.observations.actor_noise:
+                terminal_actor_obs = self._apply_actor_obs_noise(terminal_actor_obs)
+                terminal_critic_obs[:, : self.num_obs] = terminal_actor_obs
+        if reset_env_ids.size:
+            self.capture_final_observation(reset_env_ids)
             for env_id in reset_env_ids:
                 self._update_terrain_curriculum_limit_from_position(
                     int(env_id),
@@ -452,48 +518,59 @@ class Go1VelocityEnv(LocomotionBatchEnv):
             batch_state = self.backend.state
             np.copyto(batch_state.command, self.command_manager.command_b)
         self._mark_profile(profile_marks, "termination_reset")
+        reset_done_ms = (self.perf_counter() - t0) * 1000.0
 
-        self.backend.compute_observations()
+        t0 = self.perf_counter()
+        if not fused_task_observations and not reset_env_ids.size:
+            self.backend.compute_observations()
+        elif reset_env_ids.size:
+            self.backend.compute_observations()
         obs_np = np.asarray(batch_state.actor_obs, dtype=np.float32).copy()
         critic_np = np.asarray(batch_state.critic_obs, dtype=np.float32).copy()
         if self.noise_cfg.level > 0.0 and self.cfg_obj.observations.actor_noise:
             obs_np = self._apply_actor_obs_noise(obs_np)
             critic_np[:, : self.num_obs] = obs_np
         self._mark_profile(profile_marks, "obs_build")
-        self._obs = torch.as_tensor(obs_np, dtype=torch.float32, device=self.device)
-        self._critic_obs = torch.as_tensor(critic_np, dtype=torch.float32, device=self.device)
-        done_t = torch.as_tensor(done_envs, dtype=torch.bool, device=self.device)
-        rewards_t = torch.as_tensor(rewards, dtype=torch.float32, device=self.device)
+        self._obs = obs_np
+        self._critic_obs = critic_np
         self._mark_profile(profile_marks, "tensor_convert")
+        observation_ms = (self.perf_counter() - t0) * 1000.0
+
+        if reset_env_ids.size and self._state is not None:
+            scratch = self._state.final_observation
+            if scratch is not None and terminal_actor_obs is not None and terminal_critic_obs is not None:
+                scratch["actor"][reset_env_ids] = terminal_actor_obs[reset_env_ids]
+                scratch["critic"][reset_env_ids] = terminal_critic_obs[reset_env_ids]
+                self._state.info["final_observation"] = scratch
         extras = {
-            "time_outs": torch.as_tensor(time_outs, dtype=torch.bool, device=self.device),
+            "time_outs": time_outs.copy(),
             "log": {
-                "/velocity/terrain_level": torch.as_tensor(float(np.mean(self._terrain_levels)), device=self.device),
-                "/velocity/velocity_error": torch.as_tensor(log_values["velocity_error"], device=self.device),
-                "/velocity/foot_clearance": torch.as_tensor(log_values["foot_clearance"], device=self.device),
-                "/velocity/foot_contact_ratio": torch.as_tensor(log_values["foot_contact_ratio"], device=self.device),
-                "/velocity/foot_slip": torch.as_tensor(log_values["foot_slip"], device=self.device),
-                "/velocity/terrain_normal_error": torch.as_tensor(log_values["terrain_normal_error"], device=self.device),
-                "/velocity/illegal_contact_count": torch.as_tensor(log_values["illegal_contact_count"], device=self.device),
-                "/velocity/self_collision_count": torch.as_tensor(log_values["self_collision_count"], device=self.device),
-                "/velocity/shank_collision_count": torch.as_tensor(log_values["shank_collision_count"], device=self.device),
-                "/velocity/trunk_head_collision_count": torch.as_tensor(log_values["trunk_head_collision_count"], device=self.device),
-                "/velocity/landing_force": torch.as_tensor(log_values["landing_force"], device=self.device),
-                "/velocity/terrain_curriculum_limit": torch.as_tensor(log_values["terrain_curriculum_limit"], device=self.device),
-                "/velocity/encoder_bias_abs": torch.as_tensor(log_values["encoder_bias_abs"], device=self.device),
-                "/velocity/push_count": torch.as_tensor(log_values["push_count"], device=self.device),
-                "/velocity/command_stage": torch.as_tensor(float(self._current_command_stage), device=self.device),
-                "/velocity/reset_reason": torch.as_tensor(float(np.mean(reset_reason)), device=self.device),
-                "/velocity/command_vx": torch.as_tensor(float(np.mean(self.command_manager.command_b[:, 0])), device=self.device),
-                "/velocity/command_vy": torch.as_tensor(float(np.mean(self.command_manager.command_b[:, 1])), device=self.device),
-                "/velocity/command_yaw": torch.as_tensor(float(np.mean(self.command_manager.command_b[:, 2])), device=self.device),
+                "/velocity/terrain_level": np.asarray(float(np.mean(self._terrain_levels)), dtype=np.float32),
+                "/velocity/velocity_error": np.asarray(log_values["velocity_error"], dtype=np.float32),
+                "/velocity/foot_clearance": np.asarray(log_values["foot_clearance"], dtype=np.float32),
+                "/velocity/foot_contact_ratio": np.asarray(log_values["foot_contact_ratio"], dtype=np.float32),
+                "/velocity/foot_slip": np.asarray(log_values["foot_slip"], dtype=np.float32),
+                "/velocity/terrain_normal_error": np.asarray(log_values["terrain_normal_error"], dtype=np.float32),
+                "/velocity/illegal_contact_count": np.asarray(log_values["illegal_contact_count"], dtype=np.float32),
+                "/velocity/self_collision_count": np.asarray(log_values["self_collision_count"], dtype=np.float32),
+                "/velocity/shank_collision_count": np.asarray(log_values["shank_collision_count"], dtype=np.float32),
+                "/velocity/trunk_head_collision_count": np.asarray(log_values["trunk_head_collision_count"], dtype=np.float32),
+                "/velocity/landing_force": np.asarray(log_values["landing_force"], dtype=np.float32),
+                "/velocity/terrain_curriculum_limit": np.asarray(log_values["terrain_curriculum_limit"], dtype=np.float32),
+                "/velocity/encoder_bias_abs": np.asarray(log_values["encoder_bias_abs"], dtype=np.float32),
+                "/velocity/push_count": np.asarray(log_values["push_count"], dtype=np.float32),
+                "/velocity/command_stage": np.asarray(float(self._current_command_stage), dtype=np.float32),
+                "/velocity/reset_reason": np.asarray(float(np.mean(reset_reason)), dtype=np.float32),
+                "/velocity/command_vx": np.asarray(float(np.mean(self.command_manager.command_b[:, 0])), dtype=np.float32),
+                "/velocity/command_vy": np.asarray(float(np.mean(self.command_manager.command_b[:, 1])), dtype=np.float32),
+                "/velocity/command_yaw": np.asarray(float(np.mean(self.command_manager.command_b[:, 2])), dtype=np.float32),
             },
-            "reward_terms": {name: torch.as_tensor(value.copy(), dtype=torch.float32, device=self.device) for name, value in reward_terms.items()},
+            "reward_terms": {name: value.copy() for name, value in reward_terms.items()},
         }
         self._mark_profile(profile_marks, "extras")
         if profile_marks is not None:
             for name, value in self._consume_profile_marks(profile_marks).items():
-                extras["log"][f"/profile/{name}_ms"] = torch.as_tensor(value, device=self.device)
+                extras["log"][f"/profile/{name}_ms"] = np.asarray(value, dtype=np.float32)
         self.extras = extras
         self._sync_batch_env_state(
             reward=rewards,
@@ -505,9 +582,20 @@ class Go1VelocityEnv(LocomotionBatchEnv):
                 "reward_terms": reward_terms,
                 "reset_reason": reset_reason,
                 "time_outs": time_outs,
+                "log": extras["log"],
             },
         )
-        return self._tensor_dict(self._obs, self._critic_obs), rewards_t, done_t, extras
+        self.step_counter += 1
+        timing = self._state.info.setdefault("timing", {})
+        timing["env_step_total_ms"] = (self.perf_counter() - step_t0) * 1000.0
+        timing["apply_action_ms"] = apply_action_ms
+        timing["step_core_ms"] = step_core_ms
+        timing["backend_apply_action_ms"] = backend_action_ms
+        timing["backend_physics_ms"] = backend_physics_ms
+        timing["backend_refresh_cache_ms"] = backend_refresh_cache_ms
+        timing["update_state_ms"] = update_state_ms + observation_ms
+        timing["reset_done_ms"] = reset_done_ms
+        return self._state
 
     def close(self) -> None:
         self.context.clear_world()
@@ -517,15 +605,6 @@ class Go1VelocityEnv(LocomotionBatchEnv):
         self._total_policy_steps = max(0, int(policy_steps))
         self._apply_command_curriculum()
         self._update_curriculum_progress()
-
-    def _tensor_dict(self, actor, critic):
-        from tensordict import TensorDict
-
-        return TensorDict(
-            {"actor": actor.clone(), "critic": critic.clone(), "policy": actor.clone()},
-            batch_size=[self.num_envs],
-            device=self.device,
-        )
 
     def _apply_actor_obs_noise(self, obs: np.ndarray) -> np.ndarray:
         obs = np.asarray(obs, dtype=np.float32).copy()
@@ -579,12 +658,16 @@ class Go1VelocityEnv(LocomotionBatchEnv):
         info: dict[str, Any] = {
             "steps": self._state_steps,
         }
+        if self._state is not None:
+            for key in ("final_observation", "_final_observation"):
+                if key in self._state.info:
+                    info[key] = self._state.info[key]
         if info_extra:
             info.update(info_extra)
         if obs_actor is None:
-            obs_actor = self._obs.detach().cpu().numpy()
+            obs_actor = self._obs
         if obs_critic is None:
-            obs_critic = self._critic_obs.detach().cpu().numpy()
+            obs_critic = self._critic_obs
         np.copyto(self._state_obs_actor, obs_actor)
         np.copyto(self._state_obs_critic, obs_critic)
         np.copyto(self._state_reward, np.asarray(reward, dtype=np.float32).reshape(self.num_envs))
@@ -806,11 +889,7 @@ class Go1VelocityEnv(LocomotionBatchEnv):
         if self.noise_cfg.level > 0.0 and self.cfg_obj.observations.actor_noise:
             obs = self._apply_actor_obs_noise(obs)
             critic[:, : self.num_obs] = obs
-        torch = self.torch
-        return (
-            torch.as_tensor(obs, dtype=torch.float32, device=self.device),
-            torch.as_tensor(critic, dtype=torch.float32, device=self.device),
-        )
+        return obs, critic
 
     def _apply_pushes(self) -> None:
         for env_id in range(self.num_envs):
@@ -926,10 +1005,6 @@ class Go1VelocityEnv(LocomotionBatchEnv):
         state.previous_foot_position[rows] = 0.0
         self.command_manager.reset(env_ids)
         np.copyto(state.command, self.command_manager.command_b)
-        if str(self.device) != "cpu":
-            indices_t = self.torch.as_tensor(env_ids, dtype=self.torch.long, device=self.device)
-            self.episode_length_buf[indices_t] = 0
-
     def _sample_range_vec(self, ranges: Mapping[str, tuple[float, float]], names: Sequence[str]) -> np.ndarray:
         values = []
         for name in names:

@@ -9,6 +9,7 @@ from pathlib import Path
 from typing import Sequence
 
 import torch
+from gobot.rl.rsl_rl import RslRlVecEnvWrapper
 from rsl_rl.runners import OnPolicyRunner
 
 try:
@@ -75,7 +76,7 @@ def build_velocity_cfg(args: argparse.Namespace, project_path: Path):
     return cfg
 
 
-def build_env(args: argparse.Namespace, cfg) -> Go1VelocityEnv:
+def build_core_env(args: argparse.Namespace, cfg) -> Go1VelocityEnv:
     return Go1VelocityEnv(
         cfg,
         num_envs=args.num_envs,
@@ -87,6 +88,10 @@ def build_env(args: argparse.Namespace, cfg) -> Go1VelocityEnv:
     )
 
 
+def build_env(args: argparse.Namespace, cfg) -> RslRlVecEnvWrapper:
+    return RslRlVecEnvWrapper(build_core_env(args, cfg), device=args.device)
+
+
 def build_train_cfg(args: argparse.Namespace, cfg) -> dict:
     return rsl_rl_train_cfg(
         experiment_name=cfg.name,
@@ -96,7 +101,7 @@ def build_train_cfg(args: argparse.Namespace, cfg) -> dict:
     )
 
 
-def build_video_recorder(args: argparse.Namespace, env: Go1VelocityEnv, log_dir: Path, project_path: Path) -> Go1TrainingVideoRecorder:
+def build_video_recorder(args: argparse.Namespace, env: RslRlVecEnvWrapper, log_dir: Path, project_path: Path) -> Go1TrainingVideoRecorder:
     video_dir = Path(args.render_video_dir) if args.render_video_dir else log_dir / "videos"
     if not video_dir.is_absolute():
         video_dir = project_path / video_dir

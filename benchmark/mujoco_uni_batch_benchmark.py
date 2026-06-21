@@ -13,6 +13,7 @@ import os
 import importlib.util
 import json
 import statistics
+import sys
 import tempfile
 import time
 from pathlib import Path
@@ -20,6 +21,19 @@ from typing import Any
 
 import mujoco
 import numpy as np
+
+REPO_ROOT = Path(__file__).resolve().parents[1]
+GO1_PROJECT = REPO_ROOT / "examples/go1"
+
+try:
+    from examples.go1.train._repo_imports import prefer_repo_gobot
+except ImportError:
+    repo_root_string = str(REPO_ROOT)
+    if repo_root_string not in sys.path:
+        sys.path.insert(0, repo_root_string)
+    from examples.go1.train._repo_imports import prefer_repo_gobot
+
+prefer_repo_gobot()
 
 
 def main() -> None:
@@ -44,8 +58,8 @@ def main() -> None:
     if args.nstep <= 0:
         raise ValueError("--nstep must be positive")
 
-    repo_root = Path(__file__).resolve().parents[3]
-    xml_path = Path(args.xml) if args.xml else repo_root / "examples/go1/assets/xml/go1_scene.xml"
+    repo_root = REPO_ROOT
+    xml_path = Path(args.xml) if args.xml else GO1_PROJECT / "assets/xml/go1_scene.xml"
     if not xml_path.is_absolute():
         xml_path = repo_root / xml_path
 

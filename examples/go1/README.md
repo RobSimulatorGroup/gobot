@@ -55,7 +55,7 @@ Benchmark the Gobot Go1 vector env hot path without the PPO learner:
 
 ```bash
 cd /home/wqq/gobot
-uv run --extra train python examples/go1/train/go1_velocity_benchmark.py \
+uv run --extra train python benchmark/go1_velocity_benchmark.py \
   --task go1_flat \
   --num-envs 64 \
   --steps 100 \
@@ -75,7 +75,7 @@ Benchmark a UniLab-style raw MuJoCo state-array batch step path:
 
 ```bash
 cd /home/wqq/gobot
-uv run --extra train python examples/go1/train/mujoco_uni_batch_benchmark.py \
+uv run --extra train python benchmark/mujoco_uni_batch_benchmark.py \
   --num-envs 64 \
   --steps 100 \
   --warmup-steps 10 \

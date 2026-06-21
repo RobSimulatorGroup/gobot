@@ -1,7 +1,8 @@
-"""Terrain height fallback queries for locomotion reset placement."""
+"""Terrain height and spawn helpers for locomotion tasks."""
 
 from __future__ import annotations
 
+from dataclasses import dataclass
 import json
 from pathlib import Path
 from typing import Any, Mapping
@@ -9,6 +10,115 @@ from typing import Any, Mapping
 import numpy as np
 
 from .math import _json_vec
+
+
+@dataclass
+class HeightScan:
+    """Normalizes terrain height-scan arrays for observation groups."""
+
+    dim: int
+    max_distance: float = 5.0
+    enabled: bool = True
+
+    def normalize(self, values: np.ndarray | None) -> np.ndarray:
+        if not self.enabled:
+            return np.zeros((0,), dtype=np.float32)
+        if self.dim <= 0:
+            if values is None:
+                return np.zeros((0,), dtype=np.float32)
+            raise RuntimeError("height scan is configured with zero channels")
+        if values is None:
+            raise RuntimeError("height scan is enabled but no values were provided")
+        array = np.asarray(values, dtype=np.float32)
+        if array.shape[-1:] != (self.dim,):
+            raise RuntimeError(f"height scan expected trailing dimension {self.dim}, got {array.shape}")
+        return array / max(float(self.max_distance), 1.0e-6)
+
+    def terrain_normal(self, points: np.ndarray, hits: np.ndarray | None = None, *, min_hits: int = 3) -> np.ndarray:
+        points = np.asarray(points, dtype=np.float32)
+        if points.shape[-1] != 3:
+            raise ValueError(f"height scan points must have last dimension 3, got {points.shape}")
+        flat = points.reshape(-1, 3)
+        if hits is not None:
+            mask = np.asarray(hits, dtype=bool).reshape(-1)
+            flat = flat[mask[: flat.shape[0]]]
+        flat = flat[np.all(np.isfinite(flat), axis=1)]
+        if flat.shape[0] < max(3, int(min_hits)):
+            return np.asarray([0.0, 0.0, 1.0], dtype=np.float32)
+        centered = flat.astype(np.float64) - np.mean(flat.astype(np.float64), axis=0)
+        try:
+            _, _, vh = np.linalg.svd(centered, full_matrices=False)
+        except np.linalg.LinAlgError:
+            return np.asarray([0.0, 0.0, 1.0], dtype=np.float32)
+        normal = vh[-1]
+        if normal[2] < 0.0:
+            normal = -normal
+        length = np.linalg.norm(normal)
+        if length <= 1.0e-6 or not np.all(np.isfinite(normal)):
+            return np.asarray([0.0, 0.0, 1.0], dtype=np.float32)
+        return (normal / length).astype(np.float32)
+
+
+class TerrainSpawn:
+    """Spawn origin sampling with a simple promote/demote curriculum."""
+
+    def __init__(
+        self,
+        origins: np.ndarray,
+        *,
+        levels: np.ndarray | None = None,
+        curriculum: bool = True,
+        warmup_index: int | None = None,
+    ) -> None:
+        origins = np.asarray(origins, dtype=np.float32)
+        if origins.ndim != 2 or origins.shape[1] != 3 or origins.shape[0] == 0:
+            origins = np.zeros((1, 3), dtype=np.float32)
+        self.origins = origins
+        if levels is None:
+            levels = np.zeros((origins.shape[0],), dtype=np.float32)
+        self.levels = np.asarray(levels, dtype=np.float32).reshape(-1)
+        if self.levels.shape != (origins.shape[0],):
+            raise ValueError("terrain spawn levels must match origins")
+        self.curriculum = bool(curriculum)
+        self.order = np.argsort(self.levels, kind="stable")
+        self.warmup_index = int(np.argmin(np.linalg.norm(origins[:, :2], axis=1)) if warmup_index is None else warmup_index)
+
+    def sample_index(
+        self,
+        rng: np.random.Generator,
+        *,
+        progress: float,
+        limit: float,
+        warmup_progress: float = 0.10,
+    ) -> int:
+        if not self.curriculum:
+            return int(rng.integers(0, self.origins.shape[0]))
+        if float(progress) < warmup_progress and float(limit) <= 0.0:
+            return self.warmup_index
+        allowed_level = max(float(np.clip(progress, 0.0, 1.0)), float(limit))
+        candidates = np.flatnonzero(self.levels <= allowed_level + 1.0e-6)
+        if candidates.size == 0:
+            candidates = self.order[:1]
+        if self.warmup_index not in candidates:
+            candidates = np.concatenate([candidates, np.asarray([self.warmup_index], dtype=np.int64)])
+        return int(candidates[int(rng.integers(0, len(candidates)))])
+
+    def update_limit(
+        self,
+        current: float,
+        *,
+        reset_reason: int,
+        survival: float,
+        distance: float,
+        expected_distance: float,
+    ) -> float:
+        step = 1.0 / max(float(self.order.size - 1), 1.0)
+        level = float(current)
+        if int(reset_reason) == 2 or survival > 0.75 or distance > expected_distance:
+            level += step
+        elif int(reset_reason) == 1 and survival < 0.25:
+            level -= step
+        return float(np.clip(level, 0.0, 1.0))
 
 
 class TerrainSampler:
@@ -228,4 +338,4 @@ class TerrainSampler:
         return np.where(mask, sampled, -np.inf)
 
 
-__all__ = ["TerrainSampler"]
+__all__ = ["HeightScan", "TerrainSampler", "TerrainSpawn"]

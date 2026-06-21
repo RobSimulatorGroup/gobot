@@ -5,6 +5,10 @@ from __future__ import annotations
 from dataclasses import asdict, dataclass, field, is_dataclass
 from typing import Any, Literal, Mapping, Tuple
 
+import numpy as np
+
+from .batch import BatchEnvState
+
 
 @dataclass
 class RslRlModelCfg:
@@ -86,6 +90,156 @@ class RslRlOnPolicyRunnerCfg(RslRlBaseRunnerCfg):
     )
     critic: RslRlModelCfg = field(default_factory=RslRlModelCfg)
     algorithm: RslRlPpoAlgorithmCfg = field(default_factory=RslRlPpoAlgorithmCfg)
+
+
+class RslRlVecEnvWrapper:
+    """Torch/TensorDict adapter for Gobot's NumPy batch env contract."""
+
+    is_vector_env = True
+
+    def __init__(self, env: Any, *, device: str = "cpu") -> None:
+        self.env = env
+        self.device = str(device)
+        try:
+            import torch
+            from tensordict import TensorDict
+        except ImportError as error:
+            raise RuntimeError("RslRlVecEnvWrapper requires gobot[train] dependencies.") from error
+        self.torch = torch
+        self.TensorDict = TensorDict
+        self._episode_length_buf = self.torch.zeros(self.num_envs, dtype=self.torch.long, device=self.device)
+        self._sync_steps_from_core()
+
+    def __getattr__(self, name: str) -> Any:
+        return getattr(self.env, name)
+
+    @property
+    def num_envs(self) -> int:
+        return int(self.env.num_envs)
+
+    @property
+    def num_actions(self) -> int:
+        return int(self.env.num_actions)
+
+    @property
+    def num_obs(self) -> int:
+        return int(self.env.num_obs)
+
+    @property
+    def num_privileged_obs(self) -> int:
+        return int(getattr(self.env, "num_privileged_obs", self.env.num_obs))
+
+    @property
+    def episode_length_buf(self):
+        return self._episode_length_buf
+
+    @episode_length_buf.setter
+    def episode_length_buf(self, value) -> None:
+        self._episode_length_buf = self.torch.as_tensor(value, dtype=self.torch.long, device=self.device).clone()
+        self._sync_steps_to_core()
+
+    @property
+    def cfg(self) -> Mapping[str, Any]:
+        return self.env.cfg
+
+    @property
+    def cfg_obj(self) -> Any:
+        return self.env.cfg_obj
+
+    @property
+    def seed(self) -> int:
+        return int(self.env.seed)
+
+    @property
+    def max_episode_length(self) -> int:
+        return int(self.env.max_episode_length)
+
+    def reset(self, seed: int | None = None):
+        obs, _ = self.env.reset(seed=seed)
+        self._sync_steps_from_core()
+        return self._tensor_obs(obs)
+
+    def get_observations(self):
+        return self._tensor_obs(self._core_state().obs)
+
+    def step(self, actions):
+        self._sync_steps_to_core()
+        core_actions = actions.detach().cpu().numpy() if hasattr(actions, "detach") else np.asarray(actions)
+        state = self.env.step(core_actions)
+        self._sync_steps_from_core()
+        reward = self.torch.as_tensor(state.reward, dtype=self.torch.float32, device=self.device)
+        done = self.torch.as_tensor(state.done, dtype=self.torch.bool, device=self.device)
+        extras = self._tensor_extras(state.info)
+        return self._tensor_obs(state.obs), reward, done, extras
+
+    def close(self) -> None:
+        self.env.close()
+
+    def _core_state(self) -> BatchEnvState:
+        state = self.env.state
+        if state is None:
+            state = self.env.init_state()
+        return state
+
+    def _sync_steps_from_core(self) -> None:
+        state = getattr(self.env, "state", None)
+        if state is None:
+            return
+        steps = state.info.get("steps")
+        if steps is None:
+            return
+        self._episode_length_buf = self.torch.as_tensor(
+            np.asarray(steps, dtype=np.int64),
+            dtype=self.torch.long,
+            device=self.device,
+        ).clone()
+
+    def _sync_steps_to_core(self) -> None:
+        state = getattr(self.env, "state", None)
+        if state is None:
+            return
+        steps = state.info.get("steps")
+        if isinstance(steps, np.ndarray) and steps.shape == (self.num_envs,):
+            np.copyto(steps, self._episode_length_buf.detach().cpu().numpy())
+
+    def _tensor_obs(self, obs: Mapping[str, Any]):
+        data = {
+            key: self.torch.as_tensor(np.asarray(value), dtype=self.torch.float32, device=self.device).clone()
+            for key, value in obs.items()
+        }
+        if "actor" in data and "policy" not in data:
+            data["policy"] = data["actor"].clone()
+        elif "obs" in data and "policy" not in data:
+            data["policy"] = data["obs"].clone()
+        return self.TensorDict(data, batch_size=[self.num_envs], device=self.device)
+
+    def _tensor_extras(self, info: Mapping[str, Any]) -> dict[str, Any]:
+        extras: dict[str, Any] = {}
+        if "time_outs" in info:
+            extras["time_outs"] = self.torch.as_tensor(info["time_outs"], dtype=self.torch.bool, device=self.device)
+        elif "truncated" in info:
+            extras["time_outs"] = self.torch.as_tensor(info["truncated"], dtype=self.torch.bool, device=self.device)
+        log = info.get("log", {})
+        if isinstance(log, Mapping):
+            extras["log"] = {
+                key: self.torch.as_tensor(value, dtype=self.torch.float32, device=self.device)
+                for key, value in log.items()
+            }
+        reward_terms = info.get("reward_terms")
+        if isinstance(reward_terms, Mapping):
+            extras["reward_terms"] = {
+                key: self.torch.as_tensor(value, dtype=self.torch.float32, device=self.device)
+                for key, value in reward_terms.items()
+            }
+        if "final_observation" in info:
+            extras["final_observation"] = self._tensor_obs(info["final_observation"])
+        if "_final_observation" in info:
+            extras["_final_observation"] = self.torch.as_tensor(
+                info["_final_observation"],
+                dtype=self.torch.bool,
+                device=self.device,
+            )
+        return extras
 
 
 def rsl_rl_cfg_to_dict(cfg: Mapping[str, Any] | RslRlBaseRunnerCfg | type | object) -> dict[str, Any]:
@@ -278,6 +432,7 @@ __all__ = [
     "RslRlModelCfg",
     "RslRlOnPolicyRunnerCfg",
     "RslRlPpoAlgorithmCfg",
+    "RslRlVecEnvWrapper",
     "rsl_rl_cfg_to_dataclass",
     "rsl_rl_cfg_to_dict",
 ]

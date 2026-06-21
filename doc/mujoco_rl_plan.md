@@ -218,7 +218,7 @@ per-environment Python calls inside the step loop.
 The benchmark script is:
 
 ```bash
-uv run --extra train python examples/go1/train/mujoco_uni_batch_benchmark.py \
+uv run --extra train python benchmark/mujoco_uni_batch_benchmark.py \
   --backend gobot --num-envs 64 --steps 100 --warmup-steps 10 \
   --nstep 10 --threads 16 --actions random
 ```

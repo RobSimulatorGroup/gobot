@@ -357,6 +357,18 @@ public:
 #endif
     }
 
+    void ComputeTaskObservations() {
+#ifdef GOBOT_HAS_MUJOCO
+        for (std::size_t env_id = 0; env_id < environment_count_; ++env_id) {
+            UpdateFootHistory(env_id);
+            ComputeRewardAndTermination(env_id);
+            FillObservation(env_id);
+        }
+#else
+        throw std::runtime_error("Gobot was built without MuJoCo support");
+#endif
+    }
+
     void Refresh() {
 #ifdef GOBOT_HAS_MUJOCO
         FillAllEnvironments();
@@ -1522,6 +1534,9 @@ void RegisterManualAppContextBindings(py::module_& module) {
                  py::call_guard<py::gil_scoped_release>())
             .def("compute_observations",
                  &PyLocomotionBatchView::ComputeObservations,
+                 py::call_guard<py::gil_scoped_release>())
+            .def("compute_task_observations",
+                 &PyLocomotionBatchView::ComputeTaskObservations,
                  py::call_guard<py::gil_scoped_release>())
             .def("refresh",
                  &PyLocomotionBatchView::Refresh,

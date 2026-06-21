@@ -190,63 +190,25 @@ class LocomotionBatchSpec:
     self_collision_force_threshold: float = 20.0
 
 
-@dataclass
-class NativeLocomotionBatchState:
-    """Persistent NumPy views owned by Gobot's native locomotion batch view."""
+class _NativeLocomotionBatchArrays:
+    """Internal attribute view over persistent native NumPy arrays."""
 
-    action: np.ndarray
-    submitted_action: np.ndarray
-    default_joint_position: np.ndarray
-    action_scale: np.ndarray
-    previous_action: np.ndarray
-    last_action: np.ndarray
-    encoder_bias: np.ndarray
-    command: np.ndarray
-    pose_std_standing: np.ndarray
-    pose_std_walking: np.ndarray
-    pose_std_running: np.ndarray
-    reward_weights: np.ndarray
-    task_params: np.ndarray
-    task_flags: np.ndarray
-    base_position: np.ndarray
-    base_quaternion: np.ndarray
-    base_linear_velocity: np.ndarray
-    base_angular_velocity: np.ndarray
-    base_linear_velocity_body: np.ndarray
-    base_angular_velocity_body: np.ndarray
-    projected_gravity: np.ndarray
-    joint_position: np.ndarray
-    joint_velocity: np.ndarray
-    joint_lower_limit: np.ndarray
-    joint_upper_limit: np.ndarray
-    foot_position: np.ndarray
-    foot_velocity: np.ndarray
-    foot_height: np.ndarray
-    foot_contact: np.ndarray
-    foot_contact_force: np.ndarray
-    height_scan: np.ndarray
-    height_scan_hit: np.ndarray
-    height_scan_point: np.ndarray
-    height_scan_normal: np.ndarray
-    illegal_contact_count: np.ndarray
-    self_collision_count: np.ndarray
-    shank_collision_count: np.ndarray
-    trunk_head_collision_count: np.ndarray
-    foot_air_time: np.ndarray
-    foot_peak_height: np.ndarray
-    last_foot_contact: np.ndarray
-    first_contact: np.ndarray
-    landing_force: np.ndarray
-    previous_foot_position: np.ndarray
-    reward: np.ndarray
-    terminated: np.ndarray
-    base_clearance: np.ndarray
-    velocity_error: np.ndarray
-    foot_slip: np.ndarray
-    terrain_normal_error: np.ndarray
-    reward_terms: np.ndarray
-    actor_obs: np.ndarray
-    critic_obs: np.ndarray
+    __slots__ = ("_arrays",)
+
+    def __init__(self, arrays: dict[str, np.ndarray]) -> None:
+        self._arrays = arrays
+
+    def array(self, name: str) -> np.ndarray:
+        try:
+            return self._arrays[name]
+        except KeyError as error:
+            raise AttributeError(name) from error
+
+    def __getattr__(self, name: str) -> np.ndarray:
+        return self.array(name)
+
+    def __getitem__(self, name: str) -> np.ndarray:
+        return self._arrays[name]
 
 
 class GobotSceneBatchBackend:
@@ -476,14 +438,14 @@ class NativeLocomotionBatchBackend:
         self.self_collision_force_threshold = float(spec.self_collision_force_threshold)
         self._view: Any | None = None
         self._arrays: dict[str, np.ndarray] = {}
-        self._state: NativeLocomotionBatchState | None = None
+        self._state: _NativeLocomotionBatchArrays | None = None
 
     @property
     def env_count(self) -> int:
         return self.runtime.env_count
 
     @property
-    def state(self) -> NativeLocomotionBatchState:
+    def state(self) -> _NativeLocomotionBatchArrays:
         if self._state is None:
             return self.refresh()
         return self._state
@@ -532,6 +494,15 @@ class NativeLocomotionBatchBackend:
 
     def compute_observations(self) -> None:
         self._require_view()
+        self._view.compute_observations()
+
+    def compute_task_observations(self) -> None:
+        self._require_view()
+        fused = getattr(self._view, "compute_task_observations", None)
+        if fused is not None:
+            fused()
+            return
+        self._view.compute_task()
         self._view.compute_observations()
 
     def set_position_targets(self, ctrl: Any) -> None:
@@ -606,7 +577,7 @@ class NativeLocomotionBatchBackend:
     def env_state(self, env_id: int) -> Any:
         return self.runtime.env_state(env_id)
 
-    def refresh(self) -> NativeLocomotionBatchState:
+    def refresh(self) -> _NativeLocomotionBatchArrays:
         self._require_view()
         self._view.refresh()
         if self._state is None:
@@ -617,62 +588,8 @@ class NativeLocomotionBatchBackend:
         if self._view is None:
             raise RuntimeError("Gobot native locomotion batch backend has not been configured")
 
-    def _state_from_arrays(self) -> NativeLocomotionBatchState:
-        self._state = NativeLocomotionBatchState(
-            action=self._arrays["action"],
-            submitted_action=self._arrays["submitted_action"],
-            default_joint_position=self._arrays["default_joint_position"],
-            action_scale=self._arrays["action_scale"],
-            previous_action=self._arrays["previous_action"],
-            last_action=self._arrays["last_action"],
-            encoder_bias=self._arrays["encoder_bias"],
-            command=self._arrays["command"],
-            pose_std_standing=self._arrays["pose_std_standing"],
-            pose_std_walking=self._arrays["pose_std_walking"],
-            pose_std_running=self._arrays["pose_std_running"],
-            reward_weights=self._arrays["reward_weights"],
-            task_params=self._arrays["task_params"],
-            task_flags=self._arrays["task_flags"],
-            base_position=self._arrays["base_position"],
-            base_quaternion=self._arrays["base_quaternion"],
-            base_linear_velocity=self._arrays["base_linear_velocity"],
-            base_angular_velocity=self._arrays["base_angular_velocity"],
-            base_linear_velocity_body=self._arrays["base_linear_velocity_body"],
-            base_angular_velocity_body=self._arrays["base_angular_velocity_body"],
-            projected_gravity=self._arrays["projected_gravity"],
-            joint_position=self._arrays["joint_position"],
-            joint_velocity=self._arrays["joint_velocity"],
-            joint_lower_limit=self._arrays["joint_lower_limit"],
-            joint_upper_limit=self._arrays["joint_upper_limit"],
-            foot_position=self._arrays["foot_position"],
-            foot_velocity=self._arrays["foot_velocity"],
-            foot_height=self._arrays["foot_height"],
-            foot_contact=self._arrays["foot_contact"],
-            foot_contact_force=self._arrays["foot_contact_force"],
-            height_scan=self._arrays["height_scan"],
-            height_scan_hit=self._arrays["height_scan_hit"],
-            height_scan_point=self._arrays["height_scan_point"],
-            height_scan_normal=self._arrays["height_scan_normal"],
-            illegal_contact_count=self._arrays["illegal_contact_count"],
-            self_collision_count=self._arrays["self_collision_count"],
-            shank_collision_count=self._arrays["shank_collision_count"],
-            trunk_head_collision_count=self._arrays["trunk_head_collision_count"],
-            foot_air_time=self._arrays["foot_air_time"],
-            foot_peak_height=self._arrays["foot_peak_height"],
-            last_foot_contact=self._arrays["last_foot_contact"],
-            first_contact=self._arrays["first_contact"],
-            landing_force=self._arrays["landing_force"],
-            previous_foot_position=self._arrays["previous_foot_position"],
-            reward=self._arrays["reward"],
-            terminated=self._arrays["terminated"],
-            base_clearance=self._arrays["base_clearance"],
-            velocity_error=self._arrays["velocity_error"],
-            foot_slip=self._arrays["foot_slip"],
-            terrain_normal_error=self._arrays["terrain_normal_error"],
-            reward_terms=self._arrays["reward_terms"],
-            actor_obs=self._arrays["actor_obs"],
-            critic_obs=self._arrays["critic_obs"],
-        )
+    def _state_from_arrays(self) -> _NativeLocomotionBatchArrays:
+        self._state = _NativeLocomotionBatchArrays(self._arrays)
         return self._state
 
     def get_base_pos(self) -> np.ndarray:
@@ -714,5 +631,4 @@ __all__ = [
     "GobotSceneBatchState",
     "LocomotionBatchSpec",
     "NativeLocomotionBatchBackend",
-    "NativeLocomotionBatchState",
 ]

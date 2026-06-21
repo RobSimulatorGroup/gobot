@@ -12,6 +12,7 @@ from typing import Any, Mapping
 import numpy as np
 
 import gobot
+from gobot.rl.rsl_rl import RslRlVecEnvWrapper
 from gobot.rl.locomotion.math import _quat, _quat_to_yaw
 
 try:
@@ -74,13 +75,16 @@ class Go1TrainingVideoRecorder:
         replay_frames: list[dict[str, np.ndarray]] = []
         was_training = getattr(policy, "training", False)
         policy.eval()
-        torch = eval_env.torch
-        obs = eval_env.reset(seed=self._video_seed()).to(eval_env.device)
+        wrapper = RslRlVecEnvWrapper(eval_env, device=self.env.device)
+        torch = wrapper.torch
+        obs = wrapper.reset(seed=self._video_seed())
         try:
             with torch.inference_mode():
                 for step_index in range(self.cfg.steps):
                     actions = policy(obs)
-                    obs, _, _, _ = eval_env.step(actions.to(eval_env.device))
+                    action_np = actions.detach().cpu().numpy() if hasattr(actions, "detach") else np.asarray(actions)
+                    state_batch = eval_env.step(action_np)
+                    obs = wrapper._tensor_obs(state_batch.obs)
                     state = eval_env._runtime_state(self.cfg.env_id)
                     self._sync_scene_from_state(eval_env, state)
                     debug_start, command_world, actual_world = self._velocity_arrow_vectors(eval_env, state)
@@ -90,7 +94,7 @@ class Go1TrainingVideoRecorder:
                         self._replay_frame(
                             eval_env,
                             state,
-                            actions,
+                            action_np,
                             step_index,
                             debug_start,
                             command_world,

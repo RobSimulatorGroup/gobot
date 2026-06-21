@@ -1,16 +1,21 @@
-"""Reusable CPU batch environment scaffolding."""
+"""Reusable NumPy batch environment scaffolding."""
 
 from __future__ import annotations
 
 from dataclasses import dataclass, field, replace
-from typing import Any
+import time
+from typing import Any, Mapping
 
 import numpy as np
 
 
 @dataclass
 class BatchEnvState:
-    """Batched RL state returned by Gobot CPU environments."""
+    """Batched RL state returned by Gobot environments.
+
+    The core Gobot RL contract is intentionally NumPy-only. Frameworks such as
+    RSL-RL, Gymnasium, and Torch live behind adapters.
+    """
 
     obs: dict[str, np.ndarray]
     reward: np.ndarray
@@ -28,11 +33,7 @@ class BatchEnvState:
 
 
 class CpuBatchEnv:
-    """Minimal UniLab-style CPU batch env lifecycle base.
-
-    Subclasses can either use ``step_state`` directly or keep a library-specific
-    return shape while reusing the state/reset/timing helpers.
-    """
+    """Minimal UniLab-style NumPy batch env lifecycle base."""
 
     is_vector_env = True
 
@@ -45,10 +46,20 @@ class CpuBatchEnv:
         self._autoreset = bool(autoreset)
         self._state: BatchEnvState | None = None
         self.step_counter = 0
+        self._final_observation_scratch: dict[str, np.ndarray] | None = None
 
     @property
     def state(self) -> BatchEnvState | None:
         return self._state
+
+    @property
+    def obs_groups_spec(self) -> dict[str, int]:
+        """Observation group dimensions, e.g. ``{"obs": 98, "critic": 101}``."""
+        raise NotImplementedError
+
+    @property
+    def observation_space_shape(self) -> tuple[int]:
+        return (sum(int(dim) for dim in self.obs_groups_spec.values()),)
 
     @property
     def autoreset(self) -> bool:
@@ -77,6 +88,18 @@ class CpuBatchEnv:
             info={"steps": np.zeros((self.num_envs,), dtype=np.int64)},
         )
 
+    def init_state(self) -> BatchEnvState:
+        self._state = self.make_empty_state(self.obs_groups_spec)
+        self.reset_done_envs(self.reset)
+        self.clear_step_final_observation()
+        return self._state
+
+    def reset(self, env_ids: np.ndarray) -> tuple[dict[str, np.ndarray], dict[str, Any]]:
+        raise NotImplementedError
+
+    def step(self, actions: Any) -> BatchEnvState:
+        raise NotImplementedError
+
     def reset_done_envs(self, reset_fn, *, done: np.ndarray | None = None) -> np.ndarray:
         if self._state is None:
             raise RuntimeError("batch env state has not been initialized")
@@ -88,7 +111,20 @@ class CpuBatchEnv:
             return env_ids
 
         self.capture_final_observation(env_ids)
-        reset_fn(env_ids)
+        result = reset_fn(env_ids)
+        obs: Mapping[str, np.ndarray] | None = None
+        reset_info: Mapping[str, Any] = {}
+        if isinstance(result, tuple) and len(result) == 2:
+            obs, reset_info = result
+        elif isinstance(result, Mapping):
+            obs = result
+        if obs is not None:
+            for key, values in obs.items():
+                if key not in self._state.obs:
+                    raise KeyError(f"reset returned unknown observation group {key!r}")
+                self._state.obs[key][env_ids] = np.asarray(values, dtype=self._state.obs[key].dtype)
+        if reset_info:
+            self.merge_reset_info(env_ids, reset_info)
         steps = self._state.info.get("steps")
         if isinstance(steps, np.ndarray) and steps.shape == (self.num_envs,):
             steps[env_ids] = 0
@@ -99,12 +135,13 @@ class CpuBatchEnv:
     def capture_final_observation(self, env_ids: np.ndarray) -> None:
         if self._state is None:
             return
-        scratch = self._state.final_observation
+        scratch = self._final_observation_scratch
         if scratch is None or set(scratch) != set(self._state.obs):
             scratch = {key: np.zeros_like(value) for key, value in self._state.obs.items()}
-            self._state.final_observation = scratch
+            self._final_observation_scratch = scratch
         for key, values in self._state.obs.items():
             scratch[key][env_ids] = values[env_ids]
+        self._state.final_observation = scratch
         self._state.info["final_observation"] = scratch
         terminal_mask = self._state.info.get("_final_observation")
         if not isinstance(terminal_mask, np.ndarray) or terminal_mask.shape != (self.num_envs,):
@@ -113,12 +150,43 @@ class CpuBatchEnv:
         terminal_mask[:] = False
         terminal_mask[env_ids] = True
 
+    def clear_step_final_observation(self) -> None:
+        if self._state is None:
+            return
+        self._state.final_observation = None
+        terminal_mask = self._state.info.get("_final_observation")
+        if isinstance(terminal_mask, np.ndarray):
+            terminal_mask.fill(False)
+
+    def merge_reset_info(self, env_ids: np.ndarray, reset_info: Mapping[str, Any]) -> None:
+        if self._state is None:
+            return
+        for key, value in reset_info.items():
+            if isinstance(value, np.ndarray):
+                array = np.asarray(value)
+                if array.shape[:1] != (env_ids.size,):
+                    self._state.info[key] = array
+                    continue
+                if key not in self._state.info or not isinstance(self._state.info[key], np.ndarray):
+                    self._state.info[key] = np.zeros((self.num_envs, *array.shape[1:]), dtype=array.dtype)
+                target = self._state.info[key]
+                if isinstance(target, np.ndarray) and target.shape[:1] == (self.num_envs,):
+                    target[env_ids] = array
+                else:
+                    self._state.info[key] = array
+            else:
+                self._state.info[key] = value
+
     def update_timing(self, **milliseconds: float) -> None:
         if self._state is None:
             return
         timing = self._state.info.setdefault("timing", {})
         for name, value in milliseconds.items():
             timing[name] = float(value)
+
+    @staticmethod
+    def perf_counter() -> float:
+        return time.perf_counter()
 
 
 __all__ = ["BatchEnvState", "CpuBatchEnv"]
