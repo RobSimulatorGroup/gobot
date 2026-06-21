@@ -21,7 +21,7 @@ from examples.go1.train import go1_velocity_cfg as go1_cfg
 from examples.go1.train.go1_velocity_env import Go1VelocityEnv, VelocityRuntimeState
 from examples.go1.train import go1_velocity_video
 from examples.go1.train.go1_velocity_video import Go1TrainingVideoCfg, Go1TrainingVideoRecorder
-from gobot.rl import BatchEnvState
+from gobot.rl import ActionSpec, BatchEnvState, RewardTermSpec, SpecField, TaskExpression, TaskLayout, task_buffer
 from gobot.rl.rsl_rl import RslRlVecEnvWrapper
 from gobot.rl.locomotion import (
     HeightScan,
@@ -71,6 +71,34 @@ def test_batch_env_state_contract_and_terminal_observation():
     )
     assert state.done.tolist() == [False, True, True]
     assert isinstance(state.obs, dict)
+
+
+def test_task_ir_metadata_and_native_array_validation():
+    actor_spec = velocity_actor_observation_schema(1, 0)
+    task = TaskLayout(
+        name="dummy",
+        version="dummy_v1",
+        action_spec=ActionSpec(
+            version="action_v1",
+            fields=(SpecField("joint", 1),),
+        ),
+        obs_groups={"actor": actor_spec},
+        buffers=(task_buffer("obs", "env", actor_spec.dim), task_buffer("flag", "env", dtype="uint8")),
+        reward_terms=(
+            RewardTermSpec("alive", 1.0, TaskExpression("constant", params={"value": 1.0})),
+        ),
+    )
+    assert task.metadata()["kind"] == "gobot_task_ir"
+    assert task.obs_groups_spec == {"actor": actor_spec.dim}
+    assert task.reward_names == ("alive",)
+
+    arrays = types.SimpleNamespace(
+        obs=np.zeros((2, actor_spec.dim), dtype=np.float32),
+        flag=np.zeros((2,), dtype=np.uint8),
+    )
+    task.validate_native_arrays(arrays)
+    arrays.obs = np.zeros((2, actor_spec.dim + 1), dtype=np.float32)
+    _assert_raises_runtime_error("shape mismatch", lambda: task.validate_native_arrays(arrays))
 
 
 def test_locomotion_unit_helpers():
@@ -241,6 +269,13 @@ def test_go1_velocity_env_reset_step_shapes():
         assert env.cfg["task"] == "gobot_go1_velocity"
         assert env.cfg["obs_schema_version"] == env.actor_obs_schema.version
         assert env.cfg["obs_names"] == env.actor_obs_schema.names
+        assert env.task_ir.obs_groups_spec == env.obs_groups_spec
+        assert env.task_ir.reward_names == tuple(term["name"] for term in env.cfg["task_ir"]["reward_terms"])
+        assert env.cfg["task_ir"]["kind"] == "gobot_task_ir"
+        assert env.cfg["task_ir"]["backend"] == "gobot_native_cpu_fused"
+        assert env.cfg["task_ir"]["obs_groups_spec"] == env.obs_groups_spec
+        assert env.cfg["task_ir"]["reward_terms"][0]["name"] == "track_linear_velocity"
+        env.task_ir.validate_native_arrays(env.backend.state)
 
         state = env.step(np.zeros((1, env.num_actions), dtype=np.float32))
         assert isinstance(state, BatchEnvState)
@@ -835,6 +870,7 @@ def _curriculum_env(seed: int):
 def main():
     test_go1_velocity_cfg_dimensions()
     test_batch_env_state_contract_and_terminal_observation()
+    test_task_ir_metadata_and_native_array_validation()
     test_go1_benchmark_metrics_match_unilab_env_step_accounting()
     test_go1_playback_schema_matches_training_schema()
     test_go1_velocity_terrain_normal_plane_fit()

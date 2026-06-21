@@ -23,7 +23,12 @@ from gobot.rl import (
     ActionSpec,
     BatchEnvState,
     BatchSimulationRuntime,
+    RewardTermSpec,
     SpecField,
+    TaskExpression,
+    TaskLayout,
+    TerminationSpec,
+    task_buffer,
 )
 from gobot.rl.locomotion import (
     HeightScan,
@@ -282,6 +287,8 @@ class Go1VelocityEnv(LocomotionBatchEnv):
         self.num_privileged_obs = self.critic_obs_schema.dim
         self._configure_native_task_buffers()
         self._configure_native_command()
+        self.task_ir = self._make_task_ir()
+        self.task_ir.validate_native_arrays(self.backend.state)
 
         self.cfg = {
             "name": self.cfg_obj.name,
@@ -293,6 +300,9 @@ class Go1VelocityEnv(LocomotionBatchEnv):
             "obs_spec": self.actor_obs_schema.metadata(),
             "critic_obs_spec": self.critic_obs_schema.metadata(),
             "action_spec": self.action_spec.metadata(),
+            "task_ir": self.task_ir.metadata(),
+            "task_ir_version": self.task_ir.version,
+            "task_ir_backend": self.task_ir.backend,
             "robot": self.cfg_obj.robot_name,
             "scene_path": self.cfg_obj.scene_path,
             "project_path": str(self.project_path),
@@ -648,6 +658,163 @@ class Go1VelocityEnv(LocomotionBatchEnv):
             upper=1.0,
         )
 
+    def _make_task_ir(self) -> TaskLayout:
+        reward_cfg = self.cfg_obj.rewards
+        reward_inputs = {
+            "track_linear_velocity": ("command", "base_linear_velocity_body"),
+            "track_angular_velocity": ("command", "base_angular_velocity_body"),
+            "upright": ("projected_gravity", "height_scan_normal"),
+            "pose": ("joint_position", "default_joint_position", "pose_std_standing", "pose_std_walking", "pose_std_running"),
+            "body_ang_vel": ("base_angular_velocity_body",),
+            "dof_pos_limits": ("joint_position", "joint_lower_limit", "joint_upper_limit"),
+            "action_rate_l2": ("submitted_action", "last_action"),
+            "air_time": ("foot_air_time", "first_contact", "command"),
+            "foot_clearance": ("foot_height", "foot_contact"),
+            "foot_swing_height": ("foot_peak_height", "foot_contact"),
+            "foot_slip": ("foot_slip",),
+            "soft_landing": ("landing_force",),
+            "self_collisions": ("self_collision_count",),
+            "shank_collision": ("shank_collision_count",),
+            "trunk_head_collision": ("trunk_head_collision_count",),
+        }
+        reward_params = {
+            "track_linear_velocity": {"std": reward_cfg.lin_vel_std},
+            "track_angular_velocity": {"std": reward_cfg.ang_vel_std},
+            "upright": {
+                "std": reward_cfg.upright_std,
+                "terrain_normal": self.cfg_obj.terrain_normal_upright.enabled and self._height_scan_dim > 0,
+            },
+            "pose": {
+                "walking_threshold": reward_cfg.pose_walking_threshold,
+                "running_threshold": reward_cfg.pose_running_threshold,
+            },
+            "air_time": {"command_threshold": reward_cfg.command_threshold},
+            "foot_clearance": {"target_height": reward_cfg.foot_target_height},
+            "foot_swing_height": {"target_height": reward_cfg.foot_target_height},
+            "soft_landing": {"ground_force_threshold": self.cfg_obj.illegal_contact.ground_force_threshold},
+        }
+        reward_terms = tuple(
+            RewardTermSpec(
+                name=name,
+                weight=weight,
+                expression=TaskExpression(
+                    f"go1_velocity.{name}",
+                    reward_inputs.get(name, ()),
+                    reward_params.get(name, {}),
+                ),
+                scale_by_dt=True,
+            )
+            for name, weight in zip(_REWARD_TERM_NAMES, self._reward_weights(), strict=True)
+        )
+        terminations = [
+            TerminationSpec(
+                "base_clearance",
+                TaskExpression("less_than", ("base_clearance",), {"threshold": self.cfg_obj.min_base_clearance}),
+            ),
+        ]
+        if self.cfg_obj.terrain_type == "flat":
+            terminations.append(
+                TerminationSpec(
+                    "flat_roll_pitch_limit",
+                    TaskExpression("roll_pitch_limit", ("projected_gravity",), {"threshold_rad": math.radians(70.0)}),
+                )
+            )
+        if self.cfg_obj.illegal_contact.enabled:
+            terminations.append(
+                TerminationSpec(
+                    "illegal_contact",
+                    TaskExpression("greater_than", ("illegal_contact_count",), {"threshold": 0.0}),
+                )
+            )
+        buffers = (
+            task_buffer("target_position", "env", "dof", role="action_target"),
+            task_buffer("action", "env", "dof", role="action"),
+            task_buffer("submitted_action", "env", "dof", role="action"),
+            task_buffer("previous_action", "env", "dof", role="history"),
+            task_buffer("last_action", "env", "dof", role="history"),
+            task_buffer("default_joint_position", "dof", role="config"),
+            task_buffer("action_scale", "dof", role="config"),
+            task_buffer("encoder_bias", "env", "dof", role="randomization"),
+            task_buffer("command", "env", 3, role="command"),
+            task_buffer("command_world", "env", 3, role="command"),
+            task_buffer("heading_commands", "env", role="command"),
+            task_buffer("command_heading_error", "env", role="command"),
+            task_buffer("command_time_left", "env", role="command"),
+            task_buffer("command_is_heading_env", "env", dtype="uint8", role="command"),
+            task_buffer("command_is_standing_env", "env", dtype="uint8", role="command"),
+            task_buffer("command_is_world_env", "env", dtype="uint8", role="command"),
+            task_buffer("command_is_forward_env", "env", dtype="uint8", role="command"),
+            task_buffer("command_ranges", "command_range", role="config"),
+            task_buffer("gait_phase", "env", 2, role="locomotion_optional"),
+            task_buffer("feet_phase_height_target", "env", 2, role="locomotion_optional"),
+            task_buffer("pose_weights", "dof", role="config"),
+            task_buffer("pose_std_standing", "dof", role="config"),
+            task_buffer("pose_std_walking", "dof", role="config"),
+            task_buffer("pose_std_running", "dof", role="config"),
+            task_buffer("reward_weights", len(_REWARD_TERM_NAMES), role="config"),
+            task_buffer("task_params", len(_TASK_PARAM), role="config"),
+            task_buffer("task_flags", len(_TASK_FLAG), role="config"),
+            task_buffer("reset_base_position", "env", 3, role="reset"),
+            task_buffer("reset_base_quaternion", "env", 4, role="reset"),
+            task_buffer("reset_base_linear_velocity", "env", 3, role="reset"),
+            task_buffer("reset_base_angular_velocity", "env", 3, role="reset"),
+            task_buffer("reset_joint_position", "env", "dof", role="reset"),
+            task_buffer("reset_joint_velocity", "env", "dof", role="reset"),
+            task_buffer("base_position", "env", 3, role="base_state"),
+            task_buffer("base_quaternion", "env", 4, role="base_state"),
+            task_buffer("base_linear_velocity", "env", 3, role="base_state"),
+            task_buffer("base_angular_velocity", "env", 3, role="base_state"),
+            task_buffer("base_linear_velocity_body", "env", 3, role="base_state"),
+            task_buffer("base_angular_velocity_body", "env", 3, role="base_state"),
+            task_buffer("projected_gravity", "env", 3, role="base_state"),
+            task_buffer("base_height", "env", role="base_state"),
+            task_buffer("joint_position", "env", "dof", role="dof_state"),
+            task_buffer("joint_velocity", "env", "dof", role="dof_state"),
+            task_buffer("qacc", "env", "dof", role="dof_state"),
+            task_buffer("torques", "env", "dof", role="dof_state"),
+            task_buffer("joint_lower_limit", "dof", role="dof_state"),
+            task_buffer("joint_upper_limit", "dof", role="dof_state"),
+            task_buffer("foot_position", "env", "foot", 3, role="foot_state"),
+            task_buffer("feet_quat", "env", "foot", 4, role="foot_state"),
+            task_buffer("foot_velocity", "env", "foot", 3, role="foot_state"),
+            task_buffer("foot_height", "env", "foot", role="foot_state"),
+            task_buffer("foot_contact", "env", "foot", role="foot_state"),
+            task_buffer("foot_contact_force", "env", "foot", 3, role="foot_state"),
+            task_buffer("height_scan", "env", self._height_scan_dim, role="terrain"),
+            task_buffer("height_scan_hit", "env", self._height_scan_dim, dtype="uint8", role="terrain"),
+            task_buffer("height_scan_point", "env", self._height_scan_dim, 3, role="terrain"),
+            task_buffer("height_scan_normal", "env", self._height_scan_dim, 3, role="terrain"),
+            task_buffer("illegal_contact_count", "env", role="termination"),
+            task_buffer("self_collision_count", "env", role="reward"),
+            task_buffer("shank_collision_count", "env", role="reward"),
+            task_buffer("trunk_head_collision_count", "env", role="reward"),
+            task_buffer("foot_air_time", "env", "foot", role="reward"),
+            task_buffer("foot_peak_height", "env", "foot", role="reward"),
+            task_buffer("last_foot_contact", "env", "foot", role="history"),
+            task_buffer("first_contact", "env", "foot", role="reward"),
+            task_buffer("landing_force", "env", "foot", role="reward"),
+            task_buffer("previous_foot_position", "env", "foot", 3, role="history"),
+            task_buffer("reward", "env", role="output"),
+            task_buffer("terminated", "env", dtype="uint8", role="output"),
+            task_buffer("base_clearance", "env", role="termination"),
+            task_buffer("velocity_error", "env", role="reward"),
+            task_buffer("foot_slip", "env", role="reward"),
+            task_buffer("terrain_normal_error", "env", role="reward"),
+            task_buffer("reward_terms", "env", len(_REWARD_TERM_NAMES), role="output"),
+            task_buffer("actor_obs", "env", self.num_obs, role="output"),
+            task_buffer("critic_obs", "env", self.num_privileged_obs, role="output"),
+        )
+        return TaskLayout(
+            name=self.cfg_obj.name,
+            version="go1_velocity_task_ir_v1",
+            action_spec=self.action_spec,
+            obs_groups={"actor": self.actor_obs_schema, "critic": self.critic_obs_schema},
+            buffers=buffers,
+            reward_terms=reward_terms,
+            terminations=tuple(terminations),
+            backend="gobot_native_cpu_fused",
+        )
+
     def _apply_actions(self, actions: np.ndarray) -> None:
         targets = self.target_positions_from_actions(actions)
         backend = getattr(self, "backend", None)
@@ -767,26 +934,7 @@ class Go1VelocityEnv(LocomotionBatchEnv):
         np.copyto(state.pose_std_running, self._pose_std_from_table(self.cfg_obj.rewards.pose_std_running))
 
         reward_cfg = self.cfg_obj.rewards
-        reward_weights = np.asarray(
-            [
-                reward_cfg.track_linear_velocity,
-                reward_cfg.track_angular_velocity,
-                reward_cfg.upright,
-                reward_cfg.pose,
-                reward_cfg.body_ang_vel,
-                reward_cfg.dof_pos_limits,
-                reward_cfg.action_rate_l2,
-                reward_cfg.air_time,
-                reward_cfg.foot_clearance,
-                reward_cfg.foot_swing_height,
-                reward_cfg.foot_slip,
-                reward_cfg.soft_landing,
-                reward_cfg.self_collisions,
-                reward_cfg.shank_collision,
-                reward_cfg.trunk_head_collision,
-            ],
-            dtype=np.float32,
-        )
+        reward_weights = np.asarray(self._reward_weights(), dtype=np.float32)
         np.copyto(state.reward_weights, reward_weights)
 
         params = np.zeros_like(state.task_params, dtype=np.float32)
@@ -810,6 +958,26 @@ class Go1VelocityEnv(LocomotionBatchEnv):
         )
         flags[_TASK_FLAG["illegal_contact_enabled"]] = 1.0 if self.cfg_obj.illegal_contact.enabled else 0.0
         np.copyto(state.task_flags, flags)
+
+    def _reward_weights(self) -> tuple[float, ...]:
+        reward_cfg = self.cfg_obj.rewards
+        return (
+            reward_cfg.track_linear_velocity,
+            reward_cfg.track_angular_velocity,
+            reward_cfg.upright,
+            reward_cfg.pose,
+            reward_cfg.body_ang_vel,
+            reward_cfg.dof_pos_limits,
+            reward_cfg.action_rate_l2,
+            reward_cfg.air_time,
+            reward_cfg.foot_clearance,
+            reward_cfg.foot_swing_height,
+            reward_cfg.foot_slip,
+            reward_cfg.soft_landing,
+            reward_cfg.self_collisions,
+            reward_cfg.shank_collision,
+            reward_cfg.trunk_head_collision,
+        )
 
     def _configure_native_command(self) -> None:
         command_cfg = self.cfg_obj.command

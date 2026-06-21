@@ -130,6 +130,12 @@ Current implementation status:
   the Python authoring surface while allowing `torch.compile`, Numba, a future
   Gobot term graph, or native/Warp kernels to fuse observation, reward,
   termination, and reset-mask computation.
+- The first Gobot term graph is `gobot.rl.TaskLayout` / `TaskIR`: a restricted
+  metadata contract for action specs, observation groups, persistent native
+  buffers, reward terms, and termination expressions. It is not an arbitrary
+  Python callback runtime. Python config builds the layout once, then the
+  native batch backend validates that the declared buffers match the C++ flat
+  array views before training starts.
 - JIT-compatible task functions may read batch state arrays, previous actions,
   commands, randomization buffers, and done masks. They must not call
   `node.find()`, pull Python dictionaries from `get_runtime_state()`, or mutate
@@ -161,6 +167,11 @@ Current native CPU implementation status:
   example projects.
 - A future engine-backed vector env should expose a clean task API instead of
   serializing reward/observation definitions through opaque JSON.
+- Go1 now exposes a `TaskIR` layout in `env.cfg["task_ir"]` and validates that
+  its declared buffers match the native locomotion batch view. The current
+  native implementation still executes a hand-written C++ fused Go1 kernel;
+  the layout is the replacement boundary for adding G1 and future codegen
+  without growing `NativeLocomotionBatchState` into another robot-specific API.
 
 Current Gobot Go1 CPU batch env shape:
 
@@ -293,6 +304,27 @@ EnvPool reference notes:
 
 The Warp backend must be designed around persistent buffers, reset masks, and
 CUDA graph replay.
+
+Warp's LLVM path is useful as an implementation reference, not as an immediate
+runtime dependency for Gobot's CPU MuJoCo training path. In
+`warp/build_llvm.py`, Warp fetches or builds a pinned Clang/LLVM package, links
+it into `warp-clang`, lowers restricted Python kernel ASTs to generated C++ or
+CUDA source, and stores compiled artifacts in a versioned kernel cache. The
+Gobot equivalent should start from `TaskIR` and flat Gobot/MuJoCo buffers:
+
+```text
+.jscn + robot task config
+  -> mjModel + offset tables + TaskIR
+  -> native CPU kernel today
+  -> optional generated C++/LLVM or Warp kernel later
+```
+
+That keeps `.jscn` / SceneTree compile-only for training hot paths and avoids
+turning arbitrary Python functions into runtime scene traversal. If Gobot later
+adds code generation, the supported source should be the restricted `TaskIR`
+operations over persistent arrays. Python-to-LLVM at runtime is JIT; generating
+C++ or object files ahead of training is AOT/transpilation. Both must preserve
+the same batch buffer contract.
 
 Initialization:
 
