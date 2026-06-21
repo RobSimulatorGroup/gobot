@@ -178,7 +178,7 @@ class Go1TrainingVideoRecorder:
         debug_arrows: list[gobot.render.DebugArrow],
     ) -> np.ndarray:
         base_position = np.asarray(state.base.get("global_transform", {}).get("position", (0.0, 0.0, 0.4)), dtype=float)
-        command = np.asarray(env.command_manager.command_b[self.cfg.env_id], dtype=float)
+        command = np.asarray(env.command_b[self.cfg.env_id], dtype=float)
         heading = np.array([command[0], command[1], 0.0], dtype=float)
         if float(np.linalg.norm(heading[:2])) < 0.05:
             heading = np.array([1.0, 0.0, 0.0], dtype=float)
@@ -213,7 +213,7 @@ class Go1TrainingVideoRecorder:
         action_np = np.asarray(action_np, dtype=np.float32)
         if action_np.ndim >= 2:
             action_np = action_np[self.cfg.env_id]
-        command = np.asarray(env.command_manager.command_b[self.cfg.env_id], dtype=np.float32)
+        command = np.asarray(env.command_b[self.cfg.env_id], dtype=np.float32)
         base_transform = state.base.get("global_transform", {})
         base_position = np.asarray(base_transform.get("position", (0.0, 0.0, 0.0)), dtype=np.float32)
         base_quaternion = np.asarray(base_transform.get("quaternion", (1.0, 0.0, 0.0, 0.0)), dtype=np.float32)
@@ -295,7 +295,7 @@ class Go1TrainingVideoRecorder:
         base_transform = state.base.get("global_transform", {})
         base_position = np.asarray(base_transform.get("position", (0.0, 0.0, 0.0)), dtype=np.float32)
         start = base_position + np.array([0.0, 0.0, 0.30], dtype=np.float32)
-        command_b = np.asarray(env.command_manager.command_b[self.cfg.env_id], dtype=np.float32)
+        command_b = np.asarray(env.command_b[self.cfg.env_id], dtype=np.float32)
         yaw = _quat_to_yaw(_quat(state.base))
         command_world = np.array(
             [

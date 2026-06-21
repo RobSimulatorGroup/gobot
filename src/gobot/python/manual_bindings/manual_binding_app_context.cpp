@@ -1,5 +1,9 @@
 #include "manual_bindings_internal.hpp"
 
+#include <atomic>
+#include <mutex>
+#include <random>
+#include <thread>
 #include <limits>
 #include <unordered_set>
 
@@ -127,6 +131,18 @@ enum LocomotionTaskFlagIndex : std::size_t {
     kTaskFlagCount
 };
 
+enum LocomotionCommandRangeIndex : std::size_t {
+    kCommandLinVelXMin = 0,
+    kCommandLinVelXMax,
+    kCommandLinVelYMin,
+    kCommandLinVelYMax,
+    kCommandAngVelZMin,
+    kCommandAngVelZMax,
+    kCommandHeadingMin,
+    kCommandHeadingMax,
+    kCommandRangeCount
+};
+
 template <typename T>
 py::array_t<T> VectorArrayView(std::vector<T>& values,
                                std::initializer_list<py::ssize_t> shape,
@@ -204,6 +220,24 @@ public:
                 VectorArrayView(encoder_bias_, {EnvDim(), JointDim()}, owner, true);
         arrays["command"] =
                 VectorArrayView(command_, {EnvDim(), 3}, owner, true);
+        arrays["command_world"] =
+                VectorArrayView(command_world_, {EnvDim(), 3}, owner, false);
+        arrays["command_heading_target"] =
+                VectorArrayView(command_heading_target_, {EnvDim()}, owner, false);
+        arrays["command_heading_error"] =
+                VectorArrayView(command_heading_error_, {EnvDim()}, owner, false);
+        arrays["command_time_left"] =
+                VectorArrayView(command_time_left_, {EnvDim()}, owner, false);
+        arrays["command_is_heading_env"] =
+                VectorArrayView(command_is_heading_env_, {EnvDim()}, owner, false);
+        arrays["command_is_standing_env"] =
+                VectorArrayView(command_is_standing_env_, {EnvDim()}, owner, false);
+        arrays["command_is_world_env"] =
+                VectorArrayView(command_is_world_env_, {EnvDim()}, owner, false);
+        arrays["command_is_forward_env"] =
+                VectorArrayView(command_is_forward_env_, {EnvDim()}, owner, false);
+        arrays["command_ranges"] =
+                VectorArrayView(command_ranges_, {CommandRangeDim()}, owner, true);
         arrays["pose_std_standing"] =
                 VectorArrayView(pose_std_standing_, {JointDim()}, owner, true);
         arrays["pose_std_walking"] =
@@ -328,7 +362,7 @@ public:
         if (!world_->StepEnvironmentBatchInternal(fixed_time_step, ticks, workers, false, false)) {
             throw std::runtime_error(world_->GetLastError());
         }
-        FillAllEnvironments();
+        FillAllEnvironments(workers);
 #else
         GOB_UNUSED(ticks);
         GOB_UNUSED(workers);
@@ -359,12 +393,106 @@ public:
 
     void ComputeTaskObservations() {
 #ifdef GOBOT_HAS_MUJOCO
-        for (std::size_t env_id = 0; env_id < environment_count_; ++env_id) {
+        ComputeTaskObservations(0);
+#else
+        throw std::runtime_error("Gobot was built without MuJoCo support");
+#endif
+    }
+
+    void ComputeTaskObservations(std::size_t workers) {
+#ifdef GOBOT_HAS_MUJOCO
+        ForEachEnvironment(workers, [this](std::size_t env_id) {
             UpdateFootHistory(env_id);
             ComputeRewardAndTermination(env_id);
             FillObservation(env_id);
-        }
+        });
 #else
+        throw std::runtime_error("Gobot was built without MuJoCo support");
+#endif
+    }
+
+    void ConfigureCommand(double step_dt,
+                          double resampling_time_min,
+                          double resampling_time_max,
+                          double lin_vel_x_min,
+                          double lin_vel_x_max,
+                          double lin_vel_y_min,
+                          double lin_vel_y_max,
+                          double ang_vel_z_min,
+                          double ang_vel_z_max,
+                          double heading_min,
+                          double heading_max,
+                          double rel_standing_envs,
+                          double rel_heading_envs,
+                          double rel_world_envs,
+                          double rel_forward_envs,
+                          bool heading_command,
+                          double heading_control_stiffness,
+                          std::uint64_t seed) {
+        command_step_dt_ = static_cast<float>(std::max(step_dt, 1.0e-9));
+        command_resampling_min_ = static_cast<float>(std::max(0.0, resampling_time_min));
+        command_resampling_max_ = static_cast<float>(std::max(resampling_time_max, resampling_time_min));
+        command_rel_standing_envs_ = static_cast<float>(std::clamp(rel_standing_envs, 0.0, 1.0));
+        command_rel_heading_envs_ = static_cast<float>(std::clamp(rel_heading_envs, 0.0, 1.0));
+        command_rel_world_envs_ = static_cast<float>(std::clamp(rel_world_envs, 0.0, 1.0));
+        command_rel_forward_envs_ = static_cast<float>(std::clamp(rel_forward_envs, 0.0, 1.0));
+        command_heading_enabled_ = heading_command;
+        command_heading_stiffness_ = static_cast<float>(heading_control_stiffness);
+        command_rng_.seed(seed);
+        command_ranges_[kCommandLinVelXMin] = static_cast<float>(lin_vel_x_min);
+        command_ranges_[kCommandLinVelXMax] = static_cast<float>(lin_vel_x_max);
+        command_ranges_[kCommandLinVelYMin] = static_cast<float>(lin_vel_y_min);
+        command_ranges_[kCommandLinVelYMax] = static_cast<float>(lin_vel_y_max);
+        command_ranges_[kCommandAngVelZMin] = static_cast<float>(ang_vel_z_min);
+        command_ranges_[kCommandAngVelZMax] = static_cast<float>(ang_vel_z_max);
+        command_ranges_[kCommandHeadingMin] = static_cast<float>(heading_min);
+        command_ranges_[kCommandHeadingMax] = static_cast<float>(heading_max);
+        command_configured_ = true;
+    }
+
+    void SetCommandRanges(double lin_vel_x_min,
+                          double lin_vel_x_max,
+                          double lin_vel_y_min,
+                          double lin_vel_y_max,
+                          double ang_vel_z_min,
+                          double ang_vel_z_max) {
+        command_ranges_[kCommandLinVelXMin] = static_cast<float>(lin_vel_x_min);
+        command_ranges_[kCommandLinVelXMax] = static_cast<float>(lin_vel_x_max);
+        command_ranges_[kCommandLinVelYMin] = static_cast<float>(lin_vel_y_min);
+        command_ranges_[kCommandLinVelYMax] = static_cast<float>(lin_vel_y_max);
+        command_ranges_[kCommandAngVelZMin] = static_cast<float>(ang_vel_z_min);
+        command_ranges_[kCommandAngVelZMax] = static_cast<float>(ang_vel_z_max);
+    }
+
+    void ResetCommands(const std::vector<std::size_t>& env_ids) {
+        if (!command_configured_ || env_ids.empty()) {
+            return;
+        }
+        for (std::size_t env_id : env_ids) {
+            RequireEnvironmentIndex(env_id);
+            ResampleCommand(env_id);
+            command_time_left_[env_id] = Uniform(command_resampling_min_, command_resampling_max_);
+        }
+        UpdateCommands();
+    }
+
+    void StepTraining(std::uint64_t ticks, std::size_t workers, bool simulate_action_latency) {
+#ifdef GOBOT_HAS_MUJOCO
+        PrepareActionTargets(simulate_action_latency);
+        ApplyTargetPositions();
+        const RealType fixed_time_step = world_->GetSettings().fixed_time_step;
+        if (!world_->StepEnvironmentBatchInternal(fixed_time_step, ticks, workers, false, false)) {
+            throw std::runtime_error(world_->GetLastError());
+        }
+        FillAllEnvironments(workers);
+        if (command_configured_) {
+            ComputeCommands();
+        }
+        ComputeTaskObservations(workers);
+#else
+        GOB_UNUSED(ticks);
+        GOB_UNUSED(workers);
+        GOB_UNUSED(simulate_action_latency);
         throw std::runtime_error("Gobot was built without MuJoCo support");
 #endif
     }
@@ -419,7 +547,9 @@ public:
         if (!world_->ResetEnvironmentRobotStates(reset_states)) {
             throw std::runtime_error(world_->GetLastError());
         }
-        FillAllEnvironments();
+        for (std::size_t env_id : env_ids) {
+            FillEnvironment(env_id);
+        }
     }
 
     void SetBaseVelocity(std::size_t env_id,
@@ -499,6 +629,10 @@ private:
 
     py::ssize_t TaskFlagDim() const {
         return static_cast<py::ssize_t>(kTaskFlagCount);
+    }
+
+    py::ssize_t CommandRangeDim() const {
+        return static_cast<py::ssize_t>(kCommandRangeCount);
     }
 
     py::ssize_t ActorObsDim() const {
@@ -698,6 +832,64 @@ private:
         return Vector3(data.cvel[6 * body_id + 3], data.cvel[6 * body_id + 4], data.cvel[6 * body_id + 5]);
     }
 
+    std::size_t ResolveViewWorkers(std::size_t workers) const {
+        const std::size_t resolved = world_.IsValid()
+                                             ? world_->ResolveEnvironmentBatchWorkerCount(workers)
+                                             : workers;
+        return std::max<std::size_t>(1, std::min(resolved, environment_count_));
+    }
+
+    template <typename Func>
+    void ForEachEnvironment(std::size_t workers, Func&& func) {
+        const std::size_t resolved_workers = ResolveViewWorkers(workers);
+        if (resolved_workers <= 1 || environment_count_ <= 1) {
+            for (std::size_t env_id = 0; env_id < environment_count_; ++env_id) {
+                func(env_id);
+            }
+            return;
+        }
+        std::atomic<std::size_t> next{0};
+        std::atomic<bool> has_error{false};
+        std::mutex error_mutex;
+        std::exception_ptr first_error;
+        const std::size_t chunk = std::max<std::size_t>(1, environment_count_ / (resolved_workers * 8));
+        std::vector<std::thread> threads;
+        threads.reserve(resolved_workers);
+        for (std::size_t worker_index = 0; worker_index < resolved_workers; ++worker_index) {
+            threads.emplace_back([&]() {
+                try {
+                    while (true) {
+                        if (has_error.load(std::memory_order_acquire)) {
+                            break;
+                        }
+                        const std::size_t begin = next.fetch_add(chunk, std::memory_order_relaxed);
+                        if (begin >= environment_count_) {
+                            break;
+                        }
+                        const std::size_t end = std::min(begin + chunk, environment_count_);
+                        for (std::size_t env_id = begin; env_id < end; ++env_id) {
+                            func(env_id);
+                        }
+                    }
+                } catch (...) {
+                    std::lock_guard<std::mutex> lock(error_mutex);
+                    if (first_error == nullptr) {
+                        first_error = std::current_exception();
+                        has_error.store(true, std::memory_order_release);
+                    }
+                }
+            });
+        }
+        for (std::thread& thread : threads) {
+            if (thread.joinable()) {
+                thread.join();
+            }
+        }
+        if (first_error != nullptr) {
+            std::rethrow_exception(first_error);
+        }
+    }
+
     void AllocateBuffers() {
         action_.assign(environment_count_ * joint_count_, 0.0f);
         submitted_action_.assign(environment_count_ * joint_count_, 0.0f);
@@ -707,6 +899,15 @@ private:
         last_action_.assign(environment_count_ * joint_count_, 0.0f);
         encoder_bias_.assign(environment_count_ * joint_count_, 0.0f);
         command_.assign(environment_count_ * 3, 0.0f);
+        command_world_.assign(environment_count_ * 3, 0.0f);
+        command_heading_target_.assign(environment_count_, 0.0f);
+        command_heading_error_.assign(environment_count_, 0.0f);
+        command_time_left_.assign(environment_count_, 0.0f);
+        command_is_heading_env_.assign(environment_count_, 0);
+        command_is_standing_env_.assign(environment_count_, 0);
+        command_is_world_env_.assign(environment_count_, 0);
+        command_is_forward_env_.assign(environment_count_, 0);
+        command_ranges_.assign(kCommandRangeCount, 0.0f);
         pose_std_standing_.assign(joint_count_, 0.3f);
         pose_std_walking_.assign(joint_count_, 0.3f);
         pose_std_running_.assign(joint_count_, 0.3f);
@@ -782,6 +983,101 @@ private:
         }
     }
 
+    float Uniform(float lo, float hi) {
+        if (hi < lo) {
+            std::swap(lo, hi);
+        }
+        if (std::abs(hi - lo) <= 1.0e-9f) {
+            return lo;
+        }
+        std::uniform_real_distribution<float> distribution(lo, hi);
+        return distribution(command_rng_);
+    }
+
+    void ResampleCommand(std::size_t env_id) {
+        const std::size_t env3 = env_id * 3;
+        command_[env3 + 0] = Uniform(command_ranges_[kCommandLinVelXMin],
+                                     command_ranges_[kCommandLinVelXMax]);
+        command_[env3 + 1] = Uniform(command_ranges_[kCommandLinVelYMin],
+                                     command_ranges_[kCommandLinVelYMax]);
+        command_[env3 + 2] = Uniform(command_ranges_[kCommandAngVelZMin],
+                                     command_ranges_[kCommandAngVelZMax]);
+        command_heading_target_[env_id] = command_heading_enabled_
+                                                  ? Uniform(command_ranges_[kCommandHeadingMin],
+                                                            command_ranges_[kCommandHeadingMax])
+                                                  : 0.0f;
+        command_is_heading_env_[env_id] =
+                command_heading_enabled_ && Uniform(0.0f, 1.0f) <= command_rel_heading_envs_ ? 1 : 0;
+        command_is_standing_env_[env_id] = Uniform(0.0f, 1.0f) <= command_rel_standing_envs_ ? 1 : 0;
+        command_is_world_env_[env_id] = Uniform(0.0f, 1.0f) <= command_rel_world_envs_ ? 1 : 0;
+        command_world_[env3 + 0] = command_[env3 + 0];
+        command_world_[env3 + 1] = command_[env3 + 1];
+        command_world_[env3 + 2] = command_[env3 + 2];
+        command_is_forward_env_[env_id] = Uniform(0.0f, 1.0f) <= command_rel_forward_envs_ ? 1 : 0;
+        if (command_is_forward_env_[env_id] != 0) {
+            command_[env3 + 0] = std::max(std::abs(command_[env3 + 0]), 0.3f);
+            command_[env3 + 1] = 0.0f;
+            command_[env3 + 2] = 0.0f;
+        }
+    }
+
+    static float WrapToPi(float value) {
+        constexpr float kPi = static_cast<float>(M_PI);
+        constexpr float kTwoPi = static_cast<float>(2.0 * M_PI);
+        value = std::fmod(value + kPi, kTwoPi);
+        if (value < 0.0f) {
+            value += kTwoPi;
+        }
+        return value - kPi;
+    }
+
+    void ComputeCommands() {
+        for (std::size_t env_id = 0; env_id < environment_count_; ++env_id) {
+            command_time_left_[env_id] -= command_step_dt_;
+            if (command_time_left_[env_id] <= 0.0f) {
+                ResampleCommand(env_id);
+                command_time_left_[env_id] = Uniform(command_resampling_min_, command_resampling_max_);
+            }
+        }
+        UpdateCommands();
+    }
+
+    void UpdateCommands() {
+        ForEachEnvironment(0, [this](std::size_t env_id) {
+            const std::size_t env3 = env_id * 3;
+            const std::size_t env4 = env_id * 4;
+            const float w = base_quaternion_[env4 + 0];
+            const float x = base_quaternion_[env4 + 1];
+            const float y = base_quaternion_[env4 + 2];
+            const float z = base_quaternion_[env4 + 3];
+            const float heading = std::atan2(2.0f * (w * z + x * y),
+                                             1.0f - 2.0f * (y * y + z * z));
+            if (command_heading_enabled_ && command_is_heading_env_[env_id] != 0) {
+                const float error = WrapToPi(command_heading_target_[env_id] - heading);
+                command_heading_error_[env_id] = error;
+                command_[env3 + 2] = std::clamp(command_heading_stiffness_ * error,
+                                                command_ranges_[kCommandAngVelZMin],
+                                                command_ranges_[kCommandAngVelZMax]);
+            }
+            if (command_is_world_env_[env_id] != 0) {
+                const float vx_w = command_world_[env3 + 0];
+                const float vy_w = command_world_[env3 + 1];
+                const float cos_h = std::cos(heading);
+                const float sin_h = std::sin(heading);
+                command_[env3 + 0] = cos_h * vx_w + sin_h * vy_w;
+                command_[env3 + 1] = -sin_h * vx_w + cos_h * vy_w;
+            }
+            if (command_is_standing_env_[env_id] != 0) {
+                command_[env3 + 0] = 0.0f;
+                command_[env3 + 1] = 0.0f;
+                command_[env3 + 2] = 0.0f;
+                command_world_[env3 + 0] = 0.0f;
+                command_world_[env3 + 1] = 0.0f;
+                command_world_[env3 + 2] = 0.0f;
+            }
+        });
+    }
+
     void ApplyTargetPositions() {
         auto* model = static_cast<mjModel*>(world_->model_);
         if (model == nullptr) {
@@ -807,10 +1103,10 @@ private:
         }
     }
 
-    void FillAllEnvironments() {
-        for (std::size_t env_id = 0; env_id < environment_count_; ++env_id) {
+    void FillAllEnvironments(std::size_t workers = 0) {
+        ForEachEnvironment(workers, [this](std::size_t env_id) {
             FillEnvironment(env_id);
-        }
+        });
     }
 
     void FillEnvironment(std::size_t env_id) {
@@ -1459,6 +1755,26 @@ private:
     std::vector<float> last_action_;
     std::vector<float> encoder_bias_;
     std::vector<float> command_;
+    std::vector<float> command_world_;
+    std::vector<float> command_heading_target_;
+    std::vector<float> command_heading_error_;
+    std::vector<float> command_time_left_;
+    std::vector<std::uint8_t> command_is_heading_env_;
+    std::vector<std::uint8_t> command_is_standing_env_;
+    std::vector<std::uint8_t> command_is_world_env_;
+    std::vector<std::uint8_t> command_is_forward_env_;
+    std::vector<float> command_ranges_;
+    std::mt19937 command_rng_{1};
+    bool command_configured_{false};
+    bool command_heading_enabled_{true};
+    float command_step_dt_{0.02f};
+    float command_resampling_min_{3.0f};
+    float command_resampling_max_{8.0f};
+    float command_rel_standing_envs_{0.1f};
+    float command_rel_heading_envs_{0.3f};
+    float command_rel_world_envs_{0.0f};
+    float command_rel_forward_envs_{0.2f};
+    float command_heading_stiffness_{0.5f};
     std::vector<float> pose_std_standing_;
     std::vector<float> pose_std_walking_;
     std::vector<float> pose_std_running_;
@@ -1529,6 +1845,43 @@ void RegisterManualAppContextBindings(py::module_& module) {
                  py::arg("workers") = 0,
                  py::arg("simulate_action_latency") = false,
                  py::call_guard<py::gil_scoped_release>())
+            .def("step_training",
+                 &PyLocomotionBatchView::StepTraining,
+                 py::arg("ticks") = 1,
+                 py::arg("workers") = 0,
+                 py::arg("simulate_action_latency") = false,
+                 py::call_guard<py::gil_scoped_release>())
+            .def("configure_command",
+                 &PyLocomotionBatchView::ConfigureCommand,
+                 py::arg("step_dt"),
+                 py::arg("resampling_time_min"),
+                 py::arg("resampling_time_max"),
+                 py::arg("lin_vel_x_min"),
+                 py::arg("lin_vel_x_max"),
+                 py::arg("lin_vel_y_min"),
+                 py::arg("lin_vel_y_max"),
+                 py::arg("ang_vel_z_min"),
+                 py::arg("ang_vel_z_max"),
+                 py::arg("heading_min"),
+                 py::arg("heading_max"),
+                 py::arg("rel_standing_envs"),
+                 py::arg("rel_heading_envs"),
+                 py::arg("rel_world_envs"),
+                 py::arg("rel_forward_envs"),
+                 py::arg("heading_command"),
+                 py::arg("heading_control_stiffness"),
+                 py::arg("seed"))
+            .def("set_command_ranges",
+                 &PyLocomotionBatchView::SetCommandRanges,
+                 py::arg("lin_vel_x_min"),
+                 py::arg("lin_vel_x_max"),
+                 py::arg("lin_vel_y_min"),
+                 py::arg("lin_vel_y_max"),
+                 py::arg("ang_vel_z_min"),
+                 py::arg("ang_vel_z_max"))
+            .def("reset_commands",
+                 &PyLocomotionBatchView::ResetCommands,
+                 py::arg("env_ids"))
             .def("compute_task",
                  &PyLocomotionBatchView::ComputeTask,
                  py::call_guard<py::gil_scoped_release>())
@@ -1536,7 +1889,7 @@ void RegisterManualAppContextBindings(py::module_& module) {
                  &PyLocomotionBatchView::ComputeObservations,
                  py::call_guard<py::gil_scoped_release>())
             .def("compute_task_observations",
-                 &PyLocomotionBatchView::ComputeTaskObservations,
+                 py::overload_cast<>(&PyLocomotionBatchView::ComputeTaskObservations),
                  py::call_guard<py::gil_scoped_release>())
             .def("refresh",
                  &PyLocomotionBatchView::Refresh,

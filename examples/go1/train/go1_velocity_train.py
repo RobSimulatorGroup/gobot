@@ -9,8 +9,16 @@ from pathlib import Path
 from typing import Sequence
 
 import torch
-from gobot.rl.rsl_rl import RslRlVecEnvWrapper
 from rsl_rl.runners import OnPolicyRunner
+
+try:
+    from ._repo_imports import prefer_repo_gobot
+except ImportError:
+    from _repo_imports import prefer_repo_gobot
+
+prefer_repo_gobot()
+
+from gobot.rl.rsl_rl import RslRlVecEnvWrapper
 
 try:
     from .go1_velocity_cfg import go1_velocity_cfg, rsl_rl_train_cfg

@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+import math
 from typing import Any, Sequence
 
 import numpy as np
@@ -486,6 +487,86 @@ class NativeLocomotionBatchBackend:
         self._require_view()
         np.copyto(self._arrays["action"], np.asarray(actions, dtype=np.float32))
         self._view.step_actions(int(nsteps), int(workers), bool(simulate_action_latency))
+        return {}
+
+    def configure_command(
+        self,
+        *,
+        step_dt: float,
+        resampling_time_range: Sequence[float],
+        lin_vel_x: Sequence[float],
+        lin_vel_y: Sequence[float],
+        ang_vel_z: Sequence[float],
+        heading: Sequence[float] | None,
+        rel_standing_envs: float,
+        rel_heading_envs: float,
+        rel_world_envs: float,
+        rel_forward_envs: float,
+        heading_command: bool,
+        heading_control_stiffness: float,
+        seed: int,
+    ) -> None:
+        self._require_view()
+        if not hasattr(self._view, "configure_command"):
+            raise RuntimeError("Gobot native locomotion batch view has no native command runtime")
+        resampling = tuple(float(value) for value in resampling_time_range)
+        if len(resampling) != 2:
+            raise ValueError("resampling_time_range must have two values")
+        heading_range = (-math.pi, math.pi) if heading is None else tuple(float(value) for value in heading)
+        if len(heading_range) != 2:
+            raise ValueError("heading range must have two values")
+        self._view.configure_command(
+            float(step_dt),
+            float(resampling[0]),
+            float(resampling[1]),
+            float(lin_vel_x[0]),
+            float(lin_vel_x[1]),
+            float(lin_vel_y[0]),
+            float(lin_vel_y[1]),
+            float(ang_vel_z[0]),
+            float(ang_vel_z[1]),
+            float(heading_range[0]),
+            float(heading_range[1]),
+            float(rel_standing_envs),
+            float(rel_heading_envs),
+            float(rel_world_envs),
+            float(rel_forward_envs),
+            bool(heading_command),
+            float(heading_control_stiffness),
+            int(seed),
+        )
+
+    def set_command_ranges(
+        self,
+        *,
+        lin_vel_x: Sequence[float],
+        lin_vel_y: Sequence[float],
+        ang_vel_z: Sequence[float],
+    ) -> None:
+        self._require_view()
+        if not hasattr(self._view, "set_command_ranges"):
+            raise RuntimeError("Gobot native locomotion batch view has no native command range update")
+        self._view.set_command_ranges(
+            float(lin_vel_x[0]),
+            float(lin_vel_x[1]),
+            float(lin_vel_y[0]),
+            float(lin_vel_y[1]),
+            float(ang_vel_z[0]),
+            float(ang_vel_z[1]),
+        )
+
+    def reset_commands(self, env_ids: Sequence[int]) -> None:
+        self._require_view()
+        if not hasattr(self._view, "reset_commands"):
+            raise RuntimeError("Gobot native locomotion batch view has no native command reset")
+        self._view.reset_commands([int(env_id) for env_id in env_ids])
+
+    def step_training(self, actions: Any, nsteps: int, *, workers: int = 0, simulate_action_latency: bool = False) -> dict[str, Any]:
+        self._require_view()
+        if not hasattr(self._view, "step_training"):
+            raise RuntimeError("Gobot native locomotion batch view has no fused training step")
+        np.copyto(self._arrays["action"], np.asarray(actions, dtype=np.float32))
+        self._view.step_training(int(nsteps), int(workers), bool(simulate_action_latency))
         return {}
 
     def compute_task(self) -> None:

@@ -3,11 +3,17 @@
 from __future__ import annotations
 
 from dataclasses import asdict, dataclass, field, is_dataclass
+import time
 from typing import Any, Literal, Mapping, Tuple
 
 import numpy as np
 
 from .batch import BatchEnvState
+
+
+def _writable_array(value: Any) -> np.ndarray:
+    array = np.asarray(value)
+    return array if array.flags.writeable else array.copy()
 
 
 @dataclass
@@ -108,6 +114,7 @@ class RslRlVecEnvWrapper:
         self.torch = torch
         self.TensorDict = TensorDict
         self._episode_length_buf = self.torch.zeros(self.num_envs, dtype=self.torch.long, device=self.device)
+        self._last_step_profile_ms: dict[str, float] = {}
         self._sync_steps_from_core()
 
     def __getattr__(self, name: str) -> Any:
@@ -163,14 +170,40 @@ class RslRlVecEnvWrapper:
         return self._tensor_obs(self._core_state().obs)
 
     def step(self, actions):
+        total_t0 = time.perf_counter()
+        t0 = total_t0
         self._sync_steps_to_core()
+        sync_to_core_ms = (time.perf_counter() - t0) * 1000.0
+        t0 = time.perf_counter()
         core_actions = actions.detach().cpu().numpy() if hasattr(actions, "detach") else np.asarray(actions)
+        action_to_numpy_ms = (time.perf_counter() - t0) * 1000.0
+        t0 = time.perf_counter()
         state = self.env.step(core_actions)
+        env_step_ms = (time.perf_counter() - t0) * 1000.0
+        t0 = time.perf_counter()
         self._sync_steps_from_core()
+        sync_from_core_ms = (time.perf_counter() - t0) * 1000.0
+        t0 = time.perf_counter()
         reward = self.torch.as_tensor(state.reward, dtype=self.torch.float32, device=self.device)
         done = self.torch.as_tensor(state.done, dtype=self.torch.bool, device=self.device)
         extras = self._tensor_extras(state.info)
-        return self._tensor_obs(state.obs), reward, done, extras
+        extras_to_tensor_ms = (time.perf_counter() - t0) * 1000.0
+        t0 = time.perf_counter()
+        obs = self._tensor_obs(state.obs)
+        obs_to_tensor_ms = (time.perf_counter() - t0) * 1000.0
+        self._last_step_profile_ms = {
+            "wrapper_total_ms": (time.perf_counter() - total_t0) * 1000.0,
+            "sync_to_core_ms": sync_to_core_ms,
+            "action_to_numpy_ms": action_to_numpy_ms,
+            "env_step_ms": env_step_ms,
+            "sync_from_core_ms": sync_from_core_ms,
+            "extras_to_tensor_ms": extras_to_tensor_ms,
+            "obs_to_tensor_ms": obs_to_tensor_ms,
+        }
+        return obs, reward, done, extras
+
+    def last_step_profile_ms(self) -> dict[str, float]:
+        return dict(self._last_step_profile_ms)
 
     def close(self) -> None:
         self.env.close()
@@ -204,7 +237,7 @@ class RslRlVecEnvWrapper:
 
     def _tensor_obs(self, obs: Mapping[str, Any]):
         data = {
-            key: self.torch.as_tensor(np.asarray(value), dtype=self.torch.float32, device=self.device).clone()
+            key: self.torch.as_tensor(_writable_array(value), dtype=self.torch.float32, device=self.device).clone()
             for key, value in obs.items()
         }
         if "actor" in data and "policy" not in data:
@@ -216,26 +249,26 @@ class RslRlVecEnvWrapper:
     def _tensor_extras(self, info: Mapping[str, Any]) -> dict[str, Any]:
         extras: dict[str, Any] = {}
         if "time_outs" in info:
-            extras["time_outs"] = self.torch.as_tensor(info["time_outs"], dtype=self.torch.bool, device=self.device)
+            extras["time_outs"] = self.torch.as_tensor(_writable_array(info["time_outs"]), dtype=self.torch.bool, device=self.device)
         elif "truncated" in info:
-            extras["time_outs"] = self.torch.as_tensor(info["truncated"], dtype=self.torch.bool, device=self.device)
+            extras["time_outs"] = self.torch.as_tensor(_writable_array(info["truncated"]), dtype=self.torch.bool, device=self.device)
         log = info.get("log", {})
         if isinstance(log, Mapping):
             extras["log"] = {
-                key: self.torch.as_tensor(value, dtype=self.torch.float32, device=self.device)
+                key: self.torch.as_tensor(_writable_array(value), dtype=self.torch.float32, device=self.device)
                 for key, value in log.items()
             }
         reward_terms = info.get("reward_terms")
         if isinstance(reward_terms, Mapping):
             extras["reward_terms"] = {
-                key: self.torch.as_tensor(value, dtype=self.torch.float32, device=self.device)
+                key: self.torch.as_tensor(_writable_array(value), dtype=self.torch.float32, device=self.device)
                 for key, value in reward_terms.items()
             }
         if "final_observation" in info:
             extras["final_observation"] = self._tensor_obs(info["final_observation"])
         if "_final_observation" in info:
             extras["_final_observation"] = self.torch.as_tensor(
-                info["_final_observation"],
+                _writable_array(info["_final_observation"]),
                 dtype=self.torch.bool,
                 device=self.device,
             )
