@@ -19,7 +19,7 @@
 
 namespace gobot {
 namespace python {
-class PyGo1LocomotionBatchView;
+class PyLocomotionBatchView;
 }
 
 class GOBOT_EXPORT MuJoCoPhysicsWorld : public PhysicsWorld {
@@ -209,7 +209,7 @@ protected:
                                               std::size_t environment_index) const override;
 
 private:
-    friend class python::PyGo1LocomotionBatchView;
+    friend class python::PyLocomotionBatchView;
 
 #ifdef GOBOT_HAS_MUJOCO
     bool LoadModelFromRobotSources();

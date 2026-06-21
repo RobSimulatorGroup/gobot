@@ -175,8 +175,24 @@ class GobotSceneBatchState:
 
 
 @dataclass
-class GobotGo1FastBatchState:
-    """Persistent NumPy views owned by Gobot's Go1 MuJoCo fast batch view."""
+class LocomotionBatchSpec:
+    """Names and thresholds used to build a native locomotion batch view."""
+
+    foot_link_names: Sequence[str] = ()
+    foot_height_sensor_names: Sequence[str] = ()
+    foot_contact_sensor_names: Sequence[str] = ()
+    height_scan_sensor: str | None = None
+    thigh_link_patterns: Sequence[str] = ()
+    shank_link_patterns: Sequence[str] = ()
+    trunk_head_link_patterns: Sequence[str] = ()
+    terminate_on_thigh_contact: bool = True
+    ground_force_threshold: float = 50.0
+    self_collision_force_threshold: float = 20.0
+
+
+@dataclass
+class NativeLocomotionBatchState:
+    """Persistent NumPy views owned by Gobot's native locomotion batch view."""
 
     base_position: np.ndarray
     base_quaternion: np.ndarray
@@ -380,8 +396,8 @@ class GobotSceneBatchBackend:
         return self.state.sensor_values[:, index, :]
 
 
-class GobotGo1FastBatchBackend:
-    """Go1-specific MuJoCo batch backend with persistent C++-owned buffers."""
+class NativeLocomotionBatchBackend:
+    """MuJoCo locomotion batch backend with persistent C++-owned buffers."""
 
     is_fast = True
 
@@ -389,9 +405,10 @@ class GobotGo1FastBatchBackend:
         self,
         runtime: BatchSimulationRuntime,
         *,
-        foot_link_names: Sequence[str],
-        foot_height_sensor_names: Sequence[str],
-        foot_contact_sensor_names: Sequence[str],
+        spec: LocomotionBatchSpec | None = None,
+        foot_link_names: Sequence[str] = (),
+        foot_height_sensor_names: Sequence[str] = (),
+        foot_contact_sensor_names: Sequence[str] = (),
         height_scan_sensor: str | None = None,
         thigh_link_patterns: Sequence[str] = (),
         shank_link_patterns: Sequence[str] = (),
@@ -401,35 +418,50 @@ class GobotGo1FastBatchBackend:
         self_collision_force_threshold: float = 20.0,
     ) -> None:
         self.runtime = runtime
-        self.foot_link_names = tuple(str(name) for name in foot_link_names)
-        self.foot_height_sensor_names = tuple(str(name) for name in foot_height_sensor_names)
-        self.foot_contact_sensor_names = tuple(str(name) for name in foot_contact_sensor_names)
-        self.height_scan_sensor = "" if height_scan_sensor is None else str(height_scan_sensor)
-        self.thigh_link_patterns = tuple(str(pattern) for pattern in thigh_link_patterns)
-        self.shank_link_patterns = tuple(str(pattern) for pattern in shank_link_patterns)
-        self.trunk_head_link_patterns = tuple(str(pattern) for pattern in trunk_head_link_patterns)
-        self.terminate_on_thigh_contact = bool(terminate_on_thigh_contact)
-        self.ground_force_threshold = float(ground_force_threshold)
-        self.self_collision_force_threshold = float(self_collision_force_threshold)
+        if spec is None:
+            spec = LocomotionBatchSpec(
+                foot_link_names=foot_link_names,
+                foot_height_sensor_names=foot_height_sensor_names,
+                foot_contact_sensor_names=foot_contact_sensor_names,
+                height_scan_sensor=height_scan_sensor,
+                thigh_link_patterns=thigh_link_patterns,
+                shank_link_patterns=shank_link_patterns,
+                trunk_head_link_patterns=trunk_head_link_patterns,
+                terminate_on_thigh_contact=terminate_on_thigh_contact,
+                ground_force_threshold=ground_force_threshold,
+                self_collision_force_threshold=self_collision_force_threshold,
+            )
+        self.spec = spec
+        self.foot_link_names = tuple(str(name) for name in spec.foot_link_names)
+        self.foot_height_sensor_names = tuple(str(name) for name in spec.foot_height_sensor_names)
+        self.foot_contact_sensor_names = tuple(str(name) for name in spec.foot_contact_sensor_names)
+        self.height_scan_sensor = "" if spec.height_scan_sensor is None else str(spec.height_scan_sensor)
+        self.thigh_link_patterns = tuple(str(pattern) for pattern in spec.thigh_link_patterns)
+        self.shank_link_patterns = tuple(str(pattern) for pattern in spec.shank_link_patterns)
+        self.trunk_head_link_patterns = tuple(str(pattern) for pattern in spec.trunk_head_link_patterns)
+        self.terminate_on_thigh_contact = bool(spec.terminate_on_thigh_contact)
+        self.ground_force_threshold = float(spec.ground_force_threshold)
+        self.self_collision_force_threshold = float(spec.self_collision_force_threshold)
         self._view: Any | None = None
         self._arrays: dict[str, np.ndarray] = {}
-        self._state: GobotGo1FastBatchState | None = None
+        self._state: NativeLocomotionBatchState | None = None
 
     @property
     def env_count(self) -> int:
         return self.runtime.env_count
 
     @property
-    def state(self) -> GobotGo1FastBatchState:
+    def state(self) -> NativeLocomotionBatchState:
         if self._state is None:
             return self.refresh()
         return self._state
 
     def configure(self, num_envs: int) -> None:
-        if not hasattr(self.runtime.context, "create_go1_locomotion_batch_view"):
-            raise RuntimeError("Gobot Python binding has no Go1 locomotion fast batch view")
+        create_view = getattr(self.runtime.context, "create_locomotion_batch_view", None)
+        if create_view is None:
+            raise RuntimeError("Gobot Python binding has no native locomotion batch view")
         self.runtime.configure(int(num_envs))
-        self._view = self.runtime.context.create_go1_locomotion_batch_view(
+        self._view = create_view(
             self.runtime.robot,
             self.runtime.base_link,
             list(self.runtime.joint_names),
@@ -465,7 +497,7 @@ class GobotGo1FastBatchBackend:
         try:
             joint_index = self.runtime.joint_names.index(str(joint))
         except ValueError as error:
-            raise KeyError(f"Gobot Go1 fast backend has no joint {joint!r}") from error
+            raise KeyError(f"Gobot native locomotion backend has no joint {joint!r}") from error
         self._arrays["target_position"][int(env_id), joint_index] = float(target_position)
 
     def reset_env(self, env_id: int) -> None:
@@ -528,7 +560,7 @@ class GobotGo1FastBatchBackend:
     def env_state(self, env_id: int) -> Any:
         return self.runtime.env_state(env_id)
 
-    def refresh(self) -> GobotGo1FastBatchState:
+    def refresh(self) -> NativeLocomotionBatchState:
         self._require_view()
         self._view.refresh()
         if self._state is None:
@@ -537,10 +569,10 @@ class GobotGo1FastBatchBackend:
 
     def _require_view(self) -> None:
         if self._view is None:
-            raise RuntimeError("Gobot Go1 fast batch backend has not been configured")
+            raise RuntimeError("Gobot native locomotion batch backend has not been configured")
 
-    def _state_from_arrays(self) -> GobotGo1FastBatchState:
-        self._state = GobotGo1FastBatchState(
+    def _state_from_arrays(self) -> NativeLocomotionBatchState:
+        self._state = NativeLocomotionBatchState(
             base_position=self._arrays["base_position"],
             base_quaternion=self._arrays["base_quaternion"],
             base_linear_velocity=self._arrays["base_linear_velocity"],
@@ -595,13 +627,14 @@ class GobotGo1FastBatchBackend:
         if name in self.foot_contact_sensor_names:
             index = self.foot_contact_sensor_names.index(name)
             return self.state.foot_contact[:, index : index + 1]
-        raise KeyError(f"Gobot Go1 fast backend has no sensor {name!r}")
+        raise KeyError(f"Gobot native locomotion backend has no sensor {name!r}")
 
 
 __all__ = [
     "BatchSimulationRuntime",
-    "GobotGo1FastBatchBackend",
-    "GobotGo1FastBatchState",
     "GobotSceneBatchBackend",
     "GobotSceneBatchState",
+    "LocomotionBatchSpec",
+    "NativeLocomotionBatchBackend",
+    "NativeLocomotionBatchState",
 ]

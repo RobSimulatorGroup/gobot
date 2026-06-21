@@ -68,6 +68,18 @@ class TerrainSampler:
                 height = max(height, candidate)
         return float(height if np.isfinite(height) else 0.0)
 
+    def heights_at(self, xy: np.ndarray) -> np.ndarray:
+        """Return terrain heights for points with shape ``(..., 2)``."""
+        points = np.asarray(xy, dtype=np.float64)
+        if points.shape[-1] != 2:
+            raise ValueError(f"xy must have last dimension 2, got {points.shape}")
+        flat = points.reshape(-1, 2)
+        if self._grid_heights is not None:
+            heights = self._grid_heights_at(flat[:, 0], flat[:, 1])
+        else:
+            heights = np.asarray([self.height_at(float(x), float(y)) for x, y in flat], dtype=np.float64)
+        return heights.reshape(points.shape[:-1]).astype(np.float32)
+
     def _build_height_grid(self) -> None:
         bounds = self._terrain_bounds()
         if bounds is None:
@@ -113,22 +125,26 @@ class TerrainSampler:
 
     def _grid_height_at(self, x: float, y: float) -> float:
         assert self._grid_heights is not None
-        u = (float(x) - self._grid_origin[0]) / self._grid_resolution
-        v = (float(y) - self._grid_origin[1]) / self._grid_resolution
+        return float(self._grid_heights_at(np.asarray([x]), np.asarray([y]))[0])
+
+    def _grid_heights_at(self, x: np.ndarray, y: np.ndarray) -> np.ndarray:
+        assert self._grid_heights is not None
+        u = (np.asarray(x, dtype=np.float64) - self._grid_origin[0]) / self._grid_resolution
+        v = (np.asarray(y, dtype=np.float64) - self._grid_origin[1]) / self._grid_resolution
         rows, cols = self._grid_heights.shape
-        if u < 0.0 or v < 0.0 or u > cols - 1 or v > rows - 1:
-            return 0.0
-        c0 = int(np.clip(np.floor(u), 0, cols - 1))
-        r0 = int(np.clip(np.floor(v), 0, rows - 1))
-        c1 = min(c0 + 1, cols - 1)
-        r1 = min(r0 + 1, rows - 1)
-        fu = float(u - c0)
-        fv = float(v - r0)
+        inside = (u >= 0.0) & (v >= 0.0) & (u <= cols - 1) & (v <= rows - 1)
+        c0 = np.clip(np.floor(u).astype(np.int64), 0, cols - 1)
+        r0 = np.clip(np.floor(v).astype(np.int64), 0, rows - 1)
+        c1 = np.minimum(c0 + 1, cols - 1)
+        r1 = np.minimum(r0 + 1, rows - 1)
+        fu = u - c0
+        fv = v - r0
         h00 = self._grid_heights[r0, c0]
         h10 = self._grid_heights[r0, c1]
         h01 = self._grid_heights[r1, c0]
         h11 = self._grid_heights[r1, c1]
-        return float((h00 * (1.0 - fu) + h10 * fu) * (1.0 - fv) + (h01 * (1.0 - fu) + h11 * fu) * fv)
+        sampled = (h00 * (1.0 - fu) + h10 * fu) * (1.0 - fv) + (h01 * (1.0 - fu) + h11 * fu) * fv
+        return np.where(inside, sampled, 0.0)
 
     @staticmethod
     def _box_height(box: Mapping[str, Any], x: float, y: float) -> float | None:

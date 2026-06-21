@@ -5,10 +5,11 @@ from __future__ import annotations
 from .batch import BatchEnvState, CpuBatchEnv
 from .runtime import (
     BatchSimulationRuntime,
-    GobotGo1FastBatchBackend,
-    GobotGo1FastBatchState,
     GobotSceneBatchBackend,
     GobotSceneBatchState,
+    LocomotionBatchSpec,
+    NativeLocomotionBatchBackend,
+    NativeLocomotionBatchState,
 )
 from .spec import ActionSpec, ObservationSpec, SpecField, validate_spec_metadata
 from . import locomotion
@@ -26,11 +27,12 @@ __all__ = [
     "BatchEnvState",
     "BatchSimulationRuntime",
     "CpuBatchEnv",
-    "GobotGo1FastBatchBackend",
-    "GobotGo1FastBatchState",
     "GobotSceneBatchBackend",
     "GobotSceneBatchState",
+    "LocomotionBatchSpec",
     "locomotion",
+    "NativeLocomotionBatchBackend",
+    "NativeLocomotionBatchState",
     "ObservationSpec",
     "RslRlBaseRunnerCfg",
     "RslRlModelCfg",

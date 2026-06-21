@@ -249,6 +249,8 @@ def go1_flat_velocity_cfg(
     cfg = go1_rough_velocity_cfg(project_path=project_path, play=play)
     cfg.name = "gobot_go1_flat_velocity"
     cfg.terrain_type = "flat"
+    cfg.scene_path = "res://go1_flat_scene.jscn"
+    cfg.terrain_scene_path = "flat_terrain_scene.jscn"
     cfg.observations.height_scan_sensor = None
     cfg.terrain_curriculum = False
     cfg.terrain_normal_upright.enabled = False

@@ -2,6 +2,12 @@
 
 from __future__ import annotations
 
+from gobot.rl.runtime import (
+    LocomotionBatchSpec,
+    NativeLocomotionBatchBackend,
+    NativeLocomotionBatchState,
+)
+
 from .base import LocomotionBatchEnv, LocomotionControlCfg, LocomotionNoiseCfg
 from .command import (
     UniformVelocityCommand,
@@ -23,8 +29,11 @@ from .terrain import TerrainSampler
 
 __all__ = [
     "LocomotionBatchEnv",
+    "LocomotionBatchSpec",
     "LocomotionControlCfg",
     "LocomotionNoiseCfg",
+    "NativeLocomotionBatchBackend",
+    "NativeLocomotionBatchState",
     "ObservationField",
     "ObservationSchema",
     "TerrainSampler",

@@ -107,9 +107,9 @@ py::array_t<T> VectorArrayView(std::vector<T>& values,
 
 } // namespace
 
-class PyGo1LocomotionBatchView {
+class PyLocomotionBatchView {
 public:
-    PyGo1LocomotionBatchView(Ref<MuJoCoPhysicsWorld> world,
+    PyLocomotionBatchView(Ref<MuJoCoPhysicsWorld> world,
                              std::string robot_name,
                              std::string base_link,
                              std::vector<std::string> joint_names,
@@ -945,15 +945,15 @@ private:
 };
 
 void RegisterManualAppContextBindings(py::module_& module) {
-    py::class_<PyGo1LocomotionBatchView, std::shared_ptr<PyGo1LocomotionBatchView>>(
+    py::class_<PyLocomotionBatchView, std::shared_ptr<PyLocomotionBatchView>>(
             module,
-            "_Go1LocomotionBatchView")
-            .def("arrays", &PyGo1LocomotionBatchView::Arrays)
-            .def("step", &PyGo1LocomotionBatchView::Step, py::arg("ticks") = 1, py::arg("workers") = 0)
-            .def("refresh", &PyGo1LocomotionBatchView::Refresh)
-            .def("reset", &PyGo1LocomotionBatchView::Reset, py::arg("env_ids"))
+            "_LocomotionBatchView")
+            .def("arrays", &PyLocomotionBatchView::Arrays)
+            .def("step", &PyLocomotionBatchView::Step, py::arg("ticks") = 1, py::arg("workers") = 0)
+            .def("refresh", &PyLocomotionBatchView::Refresh)
+            .def("reset", &PyLocomotionBatchView::Reset, py::arg("env_ids"))
             .def("set_base_velocity",
-                 &PyGo1LocomotionBatchView::SetBaseVelocity,
+                 &PyLocomotionBatchView::SetBaseVelocity,
                  py::arg("env_id"),
                  py::arg("linear_velocity"),
                  py::arg("angular_velocity"));
@@ -1081,20 +1081,20 @@ void RegisterManualAppContextBindings(py::module_& module) {
                     throw std::runtime_error(simulation->GetLastError());
                 }
             }, py::arg("num_envs"))
-            .def("create_go1_locomotion_batch_view", [](EngineContext& context,
-                                                        const std::string& robot,
-                                                        const std::string& base_link,
-                                                        const std::vector<std::string>& joint_names,
-                                                        const std::vector<std::string>& foot_link_names,
-                                                        const std::vector<std::string>& foot_height_sensor_names,
-                                                        const std::vector<std::string>& foot_contact_sensor_names,
-                                                        const std::string& height_scan_sensor,
-                                                        const std::vector<std::string>& thigh_link_patterns,
-                                                        const std::vector<std::string>& shank_link_patterns,
-                                                        const std::vector<std::string>& trunk_head_link_patterns,
-                                                        bool terminate_on_thigh_contact,
-                                                        double ground_force_threshold,
-                                                        double self_collision_force_threshold) {
+            .def("create_locomotion_batch_view", [](EngineContext& context,
+                                                    const std::string& robot,
+                                                    const std::string& base_link,
+                                                    const std::vector<std::string>& joint_names,
+                                                    const std::vector<std::string>& foot_link_names,
+                                                    const std::vector<std::string>& foot_height_sensor_names,
+                                                    const std::vector<std::string>& foot_contact_sensor_names,
+                                                    const std::string& height_scan_sensor,
+                                                    const std::vector<std::string>& thigh_link_patterns,
+                                                    const std::vector<std::string>& shank_link_patterns,
+                                                    const std::vector<std::string>& trunk_head_link_patterns,
+                                                    bool terminate_on_thigh_contact,
+                                                    double ground_force_threshold,
+                                                    double self_collision_force_threshold) {
                 SimulationServer* simulation = context.GetSimulationServer();
                 if (simulation == nullptr) {
                     throw std::runtime_error("active Gobot app context has no SimulationServer");
@@ -1104,20 +1104,20 @@ void RegisterManualAppContextBindings(py::module_& module) {
                 if (!mujoco_world.IsValid()) {
                     throw std::runtime_error("active batch world is not a MuJoCo world");
                 }
-                return std::make_shared<PyGo1LocomotionBatchView>(mujoco_world,
-                                                                  robot,
-                                                                  base_link,
-                                                                  joint_names,
-                                                                  foot_link_names,
-                                                                  foot_height_sensor_names,
-                                                                  foot_contact_sensor_names,
-                                                                  height_scan_sensor,
-                                                                  thigh_link_patterns,
-                                                                  shank_link_patterns,
-                                                                  trunk_head_link_patterns,
-                                                                  terminate_on_thigh_contact,
-                                                                  ground_force_threshold,
-                                                                  self_collision_force_threshold);
+                return std::make_shared<PyLocomotionBatchView>(mujoco_world,
+                                                               robot,
+                                                               base_link,
+                                                               joint_names,
+                                                               foot_link_names,
+                                                               foot_height_sensor_names,
+                                                               foot_contact_sensor_names,
+                                                               height_scan_sensor,
+                                                               thigh_link_patterns,
+                                                               shank_link_patterns,
+                                                               trunk_head_link_patterns,
+                                                               terminate_on_thigh_contact,
+                                                               ground_force_threshold,
+                                                               self_collision_force_threshold);
             }, py::arg("robot"),
                py::arg("base_link"),
                py::arg("joint_names"),

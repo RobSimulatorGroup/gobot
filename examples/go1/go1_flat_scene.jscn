@@ -1,0 +1,154 @@
+{
+    "__EXT_RESOURCES__": [
+        {
+            "__ID__": "3_FLAT",
+            "__PATH__": "res://flat_terrain_scene.jscn",
+            "__TYPE__": "PackedScene"
+        },
+        {
+            "__ID__": "2_GO1",
+            "__PATH__": "res://go1.jscn",
+            "__TYPE__": "PackedScene"
+        },
+        {
+            "__ID__": "1_SCRIPT",
+            "__PATH__": "res://scripts/go1.py",
+            "__TYPE__": "PythonScript"
+        }
+    ],
+    "__META_TYPE__": "SCENE",
+    "__NODES__": [
+        {
+            "name": "go1_scene",
+            "parent": -1,
+            "properties": {
+                "position": {
+                    "matrix_data": {
+                        "cols": 1,
+                        "rows": 3,
+                        "storage": [
+                            0.0,
+                            0.0,
+                            0.0
+                        ]
+                    }
+                },
+                "rotation_degrees": {
+                    "matrix_data": {
+                        "cols": 1,
+                        "rows": 3,
+                        "storage": [
+                            0.0,
+                            0.0,
+                            0.0
+                        ]
+                    }
+                },
+                "scale": {
+                    "matrix_data": {
+                        "cols": 1,
+                        "rows": 3,
+                        "storage": [
+                            1.0,
+                            1.0,
+                            1.0
+                        ]
+                    }
+                },
+                "script": "ExtResource(1_SCRIPT)",
+                "visible": true
+            },
+            "type": "Node3D"
+        },
+        {
+            "instance": "ExtResource(2_GO1)",
+            "name": "go1",
+            "parent": 0,
+            "properties": {
+                "mode": "Motion",
+                "position": {
+                    "matrix_data": {
+                        "cols": 1,
+                        "rows": 3,
+                        "storage": [
+                            0.0,
+                            0.0,
+                            -0.12499999284744258
+                        ]
+                    }
+                },
+                "rotation_degrees": {
+                    "matrix_data": {
+                        "cols": 1,
+                        "rows": 3,
+                        "storage": [
+                            0.0,
+                            0.0,
+                            0.0
+                        ]
+                    }
+                },
+                "scale": {
+                    "matrix_data": {
+                        "cols": 1,
+                        "rows": 3,
+                        "storage": [
+                            1.0,
+                            1.0,
+                            1.0
+                        ]
+                    }
+                },
+                "script": null,
+                "source_path": "res://assets/xml/go1.xml",
+                "visible": true
+            },
+            "type": "Robot3D"
+        },
+        {
+            "instance": "ExtResource(3_FLAT)",
+            "name": "terrain_world",
+            "parent": 0,
+            "properties": {
+                "position": {
+                    "matrix_data": {
+                        "cols": 1,
+                        "rows": 3,
+                        "storage": [
+                            0.0,
+                            0.0,
+                            0.0
+                        ]
+                    }
+                },
+                "rotation_degrees": {
+                    "matrix_data": {
+                        "cols": 1,
+                        "rows": 3,
+                        "storage": [
+                            0.0,
+                            0.0,
+                            0.0
+                        ]
+                    }
+                },
+                "scale": {
+                    "matrix_data": {
+                        "cols": 1,
+                        "rows": 3,
+                        "storage": [
+                            1.0,
+                            1.0,
+                            1.0
+                        ]
+                    }
+                },
+                "script": null,
+                "visible": true
+            },
+            "type": "Node3D"
+        }
+    ],
+    "__TYPE__": "PackedScene",
+    "__VERSION__": 2
+}

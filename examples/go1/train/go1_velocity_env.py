@@ -23,16 +23,17 @@ from gobot.rl import (
     ActionSpec,
     BatchEnvState,
     BatchSimulationRuntime,
-    GobotGo1FastBatchBackend,
-    GobotGo1FastBatchState,
     GobotSceneBatchBackend,
     GobotSceneBatchState,
     SpecField,
 )
 from gobot.rl.locomotion import (
     LocomotionBatchEnv,
+    LocomotionBatchSpec,
     LocomotionControlCfg,
     LocomotionNoiseCfg,
+    NativeLocomotionBatchBackend,
+    NativeLocomotionBatchState,
     TerrainSampler,
     UniformVelocityCommand,
     build_velocity_actor_observation,
@@ -87,7 +88,7 @@ class VelocityRuntimeState:
     contacts: Sequence[Mapping[str, Any]]
 
 
-VelocityBatchRuntimeState = GobotSceneBatchState | GobotGo1FastBatchState
+VelocityBatchRuntimeState = GobotSceneBatchState | NativeLocomotionBatchState
 
 
 class Go1VelocityEnv(LocomotionBatchEnv):
@@ -377,28 +378,28 @@ class Go1VelocityEnv(LocomotionBatchEnv):
         }
 
         terminated = self._terminated_batch(batch_state, projected_gravity, metrics["base_clearance"])
-        reset_env_ids: list[int] = []
-        reset_reasons: list[int] = []
-        for env_id in range(self.num_envs):
-            self.episode_length_buf[env_id] += 1
-            time_outs[env_id] = bool(self.episode_length_buf[env_id] >= self.max_episode_length and not terminated[env_id])
-            done = bool(terminated[env_id] or time_outs[env_id])
-            reset_reason[env_id] = 1 if terminated[env_id] else (2 if time_outs[env_id] else 0)
-            self._episode_returns[env_id] += rewards[env_id]
+        self.episode_length_buf += 1
+        episode_steps_np = self.episode_length_buf.detach().cpu().numpy()
+        time_outs = (episode_steps_np >= self.max_episode_length) & ~terminated
+        done_envs = terminated | time_outs
+        reset_reason = np.where(terminated, 1, np.where(time_outs, 2, 0)).astype(np.int64)
+        self._episode_returns += rewards
+        reset_env_ids = np.flatnonzero(done_envs).astype(np.int64)
+        if reset_env_ids.size:
+            for env_id in reset_env_ids:
+                self._update_terrain_curriculum_limit_from_position(
+                    int(env_id),
+                    batch_state.base_position[int(env_id)],
+                    int(reset_reason[int(env_id)]),
+                )
+            self._reset_envs(reset_env_ids, reset_reason[reset_env_ids])
+        metrics["terrain_curriculum_limit"] = self._terrain_curriculum_limits.copy()
 
-            if done:
-                self._update_terrain_curriculum_limit_from_position(env_id, batch_state.base_position[env_id], reset_reason[env_id])
-                reset_env_ids.append(env_id)
-                reset_reasons.append(int(reset_reason[env_id]))
-            metrics["terrain_curriculum_limit"][env_id] = self._terrain_curriculum_limits[env_id]
-        if reset_env_ids:
-            self._reset_envs(np.asarray(reset_env_ids, dtype=np.int64), np.asarray(reset_reasons, dtype=np.int64))
-
-        active_envs = ~(terminated | time_outs)
+        active_envs = ~done_envs
         self._previous_actions[active_envs] = self._last_actions[active_envs]
         self._last_actions[active_envs] = action_np[active_envs]
 
-        if np.any(terminated | time_outs):
+        if reset_env_ids.size:
             batch_state = self.backend.refresh()
             base_lin_vel_b, base_ang_vel_b, projected_gravity = self._base_motion_batch(batch_state)
             foot_heights = self._foot_heights_batch(batch_state)
@@ -411,7 +412,7 @@ class Go1VelocityEnv(LocomotionBatchEnv):
         self._mark_profile(profile_marks, "obs_build")
         self._obs = torch.as_tensor(obs_np, dtype=torch.float32, device=self.device)
         self._critic_obs = torch.as_tensor(critic_np, dtype=torch.float32, device=self.device)
-        done_t = torch.as_tensor(terminated | time_outs, dtype=torch.bool, device=self.device)
+        done_t = torch.as_tensor(done_envs, dtype=torch.bool, device=self.device)
         rewards_t = torch.as_tensor(rewards, dtype=torch.float32, device=self.device)
         self._mark_profile(profile_marks, "tensor_convert")
         extras = {
@@ -543,9 +544,8 @@ class Go1VelocityEnv(LocomotionBatchEnv):
 
     def _make_batch_backend(self):
         illegal_cfg = self.cfg_obj.illegal_contact
-        if hasattr(self.context, "create_go1_locomotion_batch_view"):
-            return GobotGo1FastBatchBackend(
-                self.runtime,
+        if hasattr(self.context, "create_locomotion_batch_view"):
+            spec = LocomotionBatchSpec(
                 foot_link_names=self.cfg_obj.foot_link_names,
                 foot_height_sensor_names=[f"{foot}_foot_height_scan" for foot in self.cfg_obj.foot_names],
                 foot_contact_sensor_names=[f"{foot}_foot_contact" for foot in self.cfg_obj.foot_names],
@@ -556,6 +556,10 @@ class Go1VelocityEnv(LocomotionBatchEnv):
                 terminate_on_thigh_contact=illegal_cfg.terminate_on_thigh,
                 ground_force_threshold=illegal_cfg.ground_force_threshold,
                 self_collision_force_threshold=illegal_cfg.self_collision_force_threshold,
+            )
+            return NativeLocomotionBatchBackend(
+                self.runtime,
+                spec=spec,
             )
         return GobotSceneBatchBackend(self.runtime)
 
@@ -587,7 +591,15 @@ class Go1VelocityEnv(LocomotionBatchEnv):
         return scores
 
     def _terrain_height(self, x: float, y: float) -> float:
+        if self.cfg_obj.terrain_type == "flat":
+            return 0.0
         return self._terrain_sampler.height_at(float(x), float(y))
+
+    def _terrain_heights(self, xy: np.ndarray) -> np.ndarray:
+        points = np.asarray(xy, dtype=np.float32).reshape(-1, 2)
+        if self.cfg_obj.terrain_type == "flat":
+            return np.zeros((points.shape[0],), dtype=np.float32)
+        return self._terrain_sampler.heights_at(points)
 
     def _sample_spawn_index(self, env_id: int) -> int:
         if not self.cfg_obj.terrain_curriculum:
@@ -1566,13 +1578,8 @@ class Go1VelocityEnv(LocomotionBatchEnv):
         return float(position[2] - self._terrain_height(position[0], position[1]))
 
     def _base_clearance_batch(self, batch: VelocityBatchRuntimeState) -> np.ndarray:
-        return np.asarray(
-            [
-                float(position[2] - self._terrain_height(float(position[0]), float(position[1])))
-                for position in batch.base_position
-            ],
-            dtype=np.float32,
-        )
+        base_position = np.asarray(batch.base_position, dtype=np.float32)
+        return (base_position[:, 2] - self._terrain_heights(base_position[:, :2])).astype(np.float32)
 
     def _terminated(self, env_id: int, state: VelocityRuntimeState) -> bool:
         if self.cfg_obj.terrain_type == "rough":
