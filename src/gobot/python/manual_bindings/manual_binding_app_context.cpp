@@ -1,6 +1,8 @@
 #include "manual_bindings_internal.hpp"
 
+#include <array>
 #include <atomic>
+#include <chrono>
 #include <mutex>
 #include <random>
 #include <thread>
@@ -143,6 +145,18 @@ enum LocomotionCommandRangeIndex : std::size_t {
     kCommandRangeCount
 };
 
+enum LocomotionStepProfileIndex : std::size_t {
+    kStepProfileTotal = 0,
+    kStepProfilePrepareAction,
+    kStepProfileApplyControl,
+    kStepProfileMjStep,
+    kStepProfileExtractState,
+    kStepProfileCommand,
+    kStepProfileReward,
+    kStepProfileObservation,
+    kStepProfileCount
+};
+
 template <typename T>
 py::array_t<T> VectorArrayView(std::vector<T>& values,
                                std::initializer_list<py::ssize_t> shape,
@@ -220,9 +234,13 @@ public:
                 VectorArrayView(encoder_bias_, {EnvDim(), JointDim()}, owner, true);
         arrays["command"] =
                 VectorArrayView(command_, {EnvDim(), 3}, owner, true);
+        arrays["commands"] =
+                VectorArrayView(command_, {EnvDim(), 3}, owner, true);
         arrays["command_world"] =
                 VectorArrayView(command_world_, {EnvDim(), 3}, owner, false);
         arrays["command_heading_target"] =
+                VectorArrayView(command_heading_target_, {EnvDim()}, owner, false);
+        arrays["heading_commands"] =
                 VectorArrayView(command_heading_target_, {EnvDim()}, owner, false);
         arrays["command_heading_error"] =
                 VectorArrayView(command_heading_error_, {EnvDim()}, owner, false);
@@ -238,6 +256,14 @@ public:
                 VectorArrayView(command_is_forward_env_, {EnvDim()}, owner, false);
         arrays["command_ranges"] =
                 VectorArrayView(command_ranges_, {CommandRangeDim()}, owner, true);
+        arrays["gait_phase"] =
+                VectorArrayView(gait_phase_, {EnvDim(), 2}, owner, true);
+        arrays["feet_phase_height_target"] =
+                VectorArrayView(feet_phase_height_target_, {EnvDim(), 2}, owner, true);
+        arrays["pose_weights"] =
+                VectorArrayView(pose_weights_, {JointDim()}, owner, true);
+        arrays["step_profile_ms"] =
+                VectorArrayView(step_profile_ms_, {StepProfileDim()}, owner, false);
         arrays["pose_std_standing"] =
                 VectorArrayView(pose_std_standing_, {JointDim()}, owner, true);
         arrays["pose_std_walking"] =
@@ -264,7 +290,11 @@ public:
                 VectorArrayView(reset_joint_velocity_, {EnvDim(), JointDim()}, owner, true);
         arrays["base_position"] =
                 VectorArrayView(base_position_, {EnvDim(), 3}, owner, false);
+        arrays["base_pos"] =
+                VectorArrayView(base_position_, {EnvDim(), 3}, owner, false);
         arrays["base_quaternion"] =
+                VectorArrayView(base_quaternion_, {EnvDim(), 4}, owner, false);
+        arrays["base_quat"] =
                 VectorArrayView(base_quaternion_, {EnvDim(), 4}, owner, false);
         arrays["base_linear_velocity"] =
                 VectorArrayView(base_linear_velocity_, {EnvDim(), 3}, owner, false);
@@ -272,25 +302,47 @@ public:
                 VectorArrayView(base_angular_velocity_, {EnvDim(), 3}, owner, false);
         arrays["base_linear_velocity_body"] =
                 VectorArrayView(base_linear_velocity_body_, {EnvDim(), 3}, owner, false);
+        arrays["linvel"] =
+                VectorArrayView(base_linear_velocity_body_, {EnvDim(), 3}, owner, false);
         arrays["base_angular_velocity_body"] =
+                VectorArrayView(base_angular_velocity_body_, {EnvDim(), 3}, owner, false);
+        arrays["gyro"] =
                 VectorArrayView(base_angular_velocity_body_, {EnvDim(), 3}, owner, false);
         arrays["projected_gravity"] =
                 VectorArrayView(projected_gravity_, {EnvDim(), 3}, owner, false);
+        arrays["gravity"] =
+                VectorArrayView(projected_gravity_, {EnvDim(), 3}, owner, false);
+        arrays["base_height"] =
+                VectorArrayView(base_height_, {EnvDim()}, owner, false);
         arrays["joint_position"] =
+                VectorArrayView(joint_position_, {EnvDim(), JointDim()}, owner, false);
+        arrays["dof_pos"] =
                 VectorArrayView(joint_position_, {EnvDim(), JointDim()}, owner, false);
         arrays["joint_velocity"] =
                 VectorArrayView(joint_velocity_, {EnvDim(), JointDim()}, owner, false);
+        arrays["dof_vel"] =
+                VectorArrayView(joint_velocity_, {EnvDim(), JointDim()}, owner, false);
+        arrays["qacc"] =
+                VectorArrayView(joint_acceleration_, {EnvDim(), JointDim()}, owner, false);
+        arrays["torques"] =
+                VectorArrayView(joint_torque_, {EnvDim(), JointDim()}, owner, false);
         arrays["joint_lower_limit"] =
                 VectorArrayView(joint_lower_limit_, {JointDim()}, owner, false);
         arrays["joint_upper_limit"] =
                 VectorArrayView(joint_upper_limit_, {JointDim()}, owner, false);
         arrays["foot_position"] =
                 VectorArrayView(foot_position_, {EnvDim(), FootDim(), 3}, owner, false);
+        arrays["feet_pos"] =
+                VectorArrayView(foot_position_, {EnvDim(), FootDim(), 3}, owner, false);
+        arrays["feet_quat"] =
+                VectorArrayView(foot_quaternion_, {EnvDim(), FootDim(), 4}, owner, false);
         arrays["foot_velocity"] =
                 VectorArrayView(foot_velocity_, {EnvDim(), FootDim(), 3}, owner, false);
         arrays["foot_height"] =
                 VectorArrayView(foot_height_, {EnvDim(), FootDim()}, owner, false);
         arrays["foot_contact"] =
+                VectorArrayView(foot_contact_, {EnvDim(), FootDim()}, owner, false);
+        arrays["feet_contact"] =
                 VectorArrayView(foot_contact_, {EnvDim(), FootDim()}, owner, false);
         arrays["foot_contact_force"] =
                 VectorArrayView(foot_contact_force_, {EnvDim(), FootDim(), 3}, owner, false);
@@ -478,17 +530,7 @@ public:
 
     void StepTraining(std::uint64_t ticks, std::size_t workers, bool simulate_action_latency) {
 #ifdef GOBOT_HAS_MUJOCO
-        PrepareActionTargets(simulate_action_latency);
-        ApplyTargetPositions();
-        const RealType fixed_time_step = world_->GetSettings().fixed_time_step;
-        if (!world_->StepEnvironmentBatchInternal(fixed_time_step, ticks, workers, false, false)) {
-            throw std::runtime_error(world_->GetLastError());
-        }
-        FillAllEnvironments(workers);
-        if (command_configured_) {
-            ComputeCommands();
-        }
-        ComputeTaskObservations(workers);
+        StepTrainingFused(ticks, workers, simulate_action_latency);
 #else
         GOB_UNUSED(ticks);
         GOB_UNUSED(workers);
@@ -633,6 +675,10 @@ private:
 
     py::ssize_t CommandRangeDim() const {
         return static_cast<py::ssize_t>(kCommandRangeCount);
+    }
+
+    py::ssize_t StepProfileDim() const {
+        return static_cast<py::ssize_t>(kStepProfileCount);
     }
 
     py::ssize_t ActorObsDim() const {
@@ -839,12 +885,19 @@ private:
         return std::max<std::size_t>(1, std::min(resolved, environment_count_));
     }
 
+    using Clock = std::chrono::steady_clock;
+    using TimePoint = Clock::time_point;
+
+    static double ElapsedMs(TimePoint begin) {
+        return std::chrono::duration<double, std::milli>(Clock::now() - begin).count();
+    }
+
     template <typename Func>
-    void ForEachEnvironment(std::size_t workers, Func&& func) {
+    void ForEachEnvironmentWithWorker(std::size_t workers, Func&& func) {
         const std::size_t resolved_workers = ResolveViewWorkers(workers);
         if (resolved_workers <= 1 || environment_count_ <= 1) {
             for (std::size_t env_id = 0; env_id < environment_count_; ++env_id) {
-                func(env_id);
+                func(env_id, 0);
             }
             return;
         }
@@ -856,7 +909,7 @@ private:
         std::vector<std::thread> threads;
         threads.reserve(resolved_workers);
         for (std::size_t worker_index = 0; worker_index < resolved_workers; ++worker_index) {
-            threads.emplace_back([&]() {
+            threads.emplace_back([&, worker_index]() {
                 try {
                     while (true) {
                         if (has_error.load(std::memory_order_acquire)) {
@@ -868,7 +921,7 @@ private:
                         }
                         const std::size_t end = std::min(begin + chunk, environment_count_);
                         for (std::size_t env_id = begin; env_id < end; ++env_id) {
-                            func(env_id);
+                            func(env_id, worker_index);
                         }
                     }
                 } catch (...) {
@@ -890,6 +943,13 @@ private:
         }
     }
 
+    template <typename Func>
+    void ForEachEnvironment(std::size_t workers, Func&& func) {
+        ForEachEnvironmentWithWorker(workers, [&](std::size_t env_id, std::size_t) {
+            func(env_id);
+        });
+    }
+
     void AllocateBuffers() {
         action_.assign(environment_count_ * joint_count_, 0.0f);
         submitted_action_.assign(environment_count_ * joint_count_, 0.0f);
@@ -908,6 +968,10 @@ private:
         command_is_world_env_.assign(environment_count_, 0);
         command_is_forward_env_.assign(environment_count_, 0);
         command_ranges_.assign(kCommandRangeCount, 0.0f);
+        gait_phase_.assign(environment_count_ * 2, 0.0f);
+        feet_phase_height_target_.assign(environment_count_ * 2, 0.0f);
+        pose_weights_.assign(joint_count_, 1.0f);
+        step_profile_ms_.assign(kStepProfileCount, 0.0f);
         pose_std_standing_.assign(joint_count_, 0.3f);
         pose_std_walking_.assign(joint_count_, 0.3f);
         pose_std_running_.assign(joint_count_, 0.3f);
@@ -928,11 +992,15 @@ private:
         base_linear_velocity_body_.assign(environment_count_ * 3, 0.0f);
         base_angular_velocity_body_.assign(environment_count_ * 3, 0.0f);
         projected_gravity_.assign(environment_count_ * 3, 0.0f);
+        base_height_.assign(environment_count_, 0.0f);
         joint_position_.assign(environment_count_ * joint_count_, 0.0f);
         joint_velocity_.assign(environment_count_ * joint_count_, 0.0f);
+        joint_acceleration_.assign(environment_count_ * joint_count_, 0.0f);
+        joint_torque_.assign(environment_count_ * joint_count_, 0.0f);
         joint_lower_limit_.assign(joint_count_, 0.0f);
         joint_upper_limit_.assign(joint_count_, 0.0f);
         foot_position_.assign(environment_count_ * foot_count_ * 3, 0.0f);
+        foot_quaternion_.assign(environment_count_ * foot_count_ * 4, 0.0f);
         foot_velocity_.assign(environment_count_ * foot_count_ * 3, 0.0f);
         foot_height_.assign(environment_count_ * foot_count_, 0.0f);
         foot_contact_.assign(environment_count_ * foot_count_, 0.0f);
@@ -980,6 +1048,22 @@ private:
                 target_position_[offset] = default_joint_position_[joint_index] +
                                            action_scale_[joint_index] * control_action;
             }
+        }
+    }
+
+    void ResetStepProfile() {
+        std::fill(step_profile_ms_.begin(), step_profile_ms_.end(), 0.0f);
+    }
+
+    void AddProfileMs(std::size_t profile_index, double value_ms) {
+        if (profile_index < step_profile_ms_.size()) {
+            step_profile_ms_[profile_index] += static_cast<float>(value_ms);
+        }
+    }
+
+    void SetProfileMs(std::size_t profile_index, double value_ms) {
+        if (profile_index < step_profile_ms_.size()) {
+            step_profile_ms_[profile_index] = static_cast<float>(value_ms);
         }
     }
 
@@ -1031,7 +1115,7 @@ private:
         return value - kPi;
     }
 
-    void ComputeCommands() {
+    void AdvanceCommandTimersAndResample() {
         for (std::size_t env_id = 0; env_id < environment_count_; ++env_id) {
             command_time_left_[env_id] -= command_step_dt_;
             if (command_time_left_[env_id] <= 0.0f) {
@@ -1039,43 +1123,51 @@ private:
                 command_time_left_[env_id] = Uniform(command_resampling_min_, command_resampling_max_);
             }
         }
+    }
+
+    void ComputeCommands() {
+        AdvanceCommandTimersAndResample();
         UpdateCommands();
     }
 
     void UpdateCommands() {
         ForEachEnvironment(0, [this](std::size_t env_id) {
-            const std::size_t env3 = env_id * 3;
-            const std::size_t env4 = env_id * 4;
-            const float w = base_quaternion_[env4 + 0];
-            const float x = base_quaternion_[env4 + 1];
-            const float y = base_quaternion_[env4 + 2];
-            const float z = base_quaternion_[env4 + 3];
-            const float heading = std::atan2(2.0f * (w * z + x * y),
-                                             1.0f - 2.0f * (y * y + z * z));
-            if (command_heading_enabled_ && command_is_heading_env_[env_id] != 0) {
-                const float error = WrapToPi(command_heading_target_[env_id] - heading);
-                command_heading_error_[env_id] = error;
-                command_[env3 + 2] = std::clamp(command_heading_stiffness_ * error,
-                                                command_ranges_[kCommandAngVelZMin],
-                                                command_ranges_[kCommandAngVelZMax]);
-            }
-            if (command_is_world_env_[env_id] != 0) {
-                const float vx_w = command_world_[env3 + 0];
-                const float vy_w = command_world_[env3 + 1];
-                const float cos_h = std::cos(heading);
-                const float sin_h = std::sin(heading);
-                command_[env3 + 0] = cos_h * vx_w + sin_h * vy_w;
-                command_[env3 + 1] = -sin_h * vx_w + cos_h * vy_w;
-            }
-            if (command_is_standing_env_[env_id] != 0) {
-                command_[env3 + 0] = 0.0f;
-                command_[env3 + 1] = 0.0f;
-                command_[env3 + 2] = 0.0f;
-                command_world_[env3 + 0] = 0.0f;
-                command_world_[env3 + 1] = 0.0f;
-                command_world_[env3 + 2] = 0.0f;
-            }
+            UpdateCommandForEnvironment(env_id);
         });
+    }
+
+    void UpdateCommandForEnvironment(std::size_t env_id) {
+        const std::size_t env3 = env_id * 3;
+        const std::size_t env4 = env_id * 4;
+        const float w = base_quaternion_[env4 + 0];
+        const float x = base_quaternion_[env4 + 1];
+        const float y = base_quaternion_[env4 + 2];
+        const float z = base_quaternion_[env4 + 3];
+        const float heading = std::atan2(2.0f * (w * z + x * y),
+                                         1.0f - 2.0f * (y * y + z * z));
+        if (command_heading_enabled_ && command_is_heading_env_[env_id] != 0) {
+            const float error = WrapToPi(command_heading_target_[env_id] - heading);
+            command_heading_error_[env_id] = error;
+            command_[env3 + 2] = std::clamp(command_heading_stiffness_ * error,
+                                            command_ranges_[kCommandAngVelZMin],
+                                            command_ranges_[kCommandAngVelZMax]);
+        }
+        if (command_is_world_env_[env_id] != 0) {
+            const float vx_w = command_world_[env3 + 0];
+            const float vy_w = command_world_[env3 + 1];
+            const float cos_h = std::cos(heading);
+            const float sin_h = std::sin(heading);
+            command_[env3 + 0] = cos_h * vx_w + sin_h * vy_w;
+            command_[env3 + 1] = -sin_h * vx_w + cos_h * vy_w;
+        }
+        if (command_is_standing_env_[env_id] != 0) {
+            command_[env3 + 0] = 0.0f;
+            command_[env3 + 1] = 0.0f;
+            command_[env3 + 2] = 0.0f;
+            command_world_[env3 + 0] = 0.0f;
+            command_world_[env3 + 1] = 0.0f;
+            command_world_[env3 + 2] = 0.0f;
+        }
     }
 
     void ApplyTargetPositions() {
@@ -1084,23 +1176,104 @@ private:
             throw std::runtime_error("MuJoCo model has not been built");
         }
         for (std::size_t env_id = 0; env_id < environment_count_; ++env_id) {
+            ApplyTargetPositionsForEnvironment(*model, env_id);
+        }
+    }
+
+    void ApplyTargetPositionsForEnvironment(const mjModel& model, std::size_t env_id) {
+        auto* data = static_cast<mjData*>(world_->environment_data_[env_id]);
+        if (data == nullptr) {
+            throw std::runtime_error(fmt::format("MuJoCo data for environment {} is not available", env_id));
+        }
+        if (model.nv > 0) {
+            mju_zero(data->qfrc_applied, model.nv);
+        }
+        if (model.nbody > 0) {
+            mju_zero(data->xfrc_applied, 6 * model.nbody);
+        }
+        for (std::size_t joint_index = 0; joint_index < joint_count_; ++joint_index) {
+            const auto& binding = world_->joint_bindings_[joint_binding_indices_[joint_index]];
+            const int actuator_id = binding.position_actuator_id >= 0
+                                            ? binding.position_actuator_id
+                                            : binding.motor_actuator_id;
+            if (actuator_id < 0 || actuator_id >= model.nu) {
+                throw std::runtime_error(fmt::format("joint '{}' has no usable MuJoCo actuator",
+                                                     joint_names_[joint_index]));
+            }
+            data->ctrl[actuator_id] =
+                    static_cast<mjtNum>(target_position_[env_id * joint_count_ + joint_index]);
+        }
+    }
+
+    void StepTrainingFused(std::uint64_t ticks, std::size_t workers, bool simulate_action_latency) {
+        ResetStepProfile();
+        const TimePoint total_begin = Clock::now();
+        TimePoint phase_begin = Clock::now();
+        PrepareActionTargets(simulate_action_latency);
+        SetProfileMs(kStepProfilePrepareAction, ElapsedMs(phase_begin));
+
+        phase_begin = Clock::now();
+        if (command_configured_) {
+            AdvanceCommandTimersAndResample();
+        }
+        AddProfileMs(kStepProfileCommand, ElapsedMs(phase_begin));
+
+        auto* model = static_cast<mjModel*>(world_->model_);
+        if (model == nullptr) {
+            throw std::runtime_error("MuJoCo model has not been built");
+        }
+        model->opt.timestep = world_->GetSettings().fixed_time_step;
+
+        const std::size_t resolved_workers = ResolveViewWorkers(workers);
+        std::vector<std::array<double, kStepProfileCount>> worker_profiles(resolved_workers);
+        for (auto& profile : worker_profiles) {
+            profile.fill(0.0);
+        }
+
+        ForEachEnvironmentWithWorker(resolved_workers, [&](std::size_t env_id, std::size_t worker_index) {
+            auto& profile = worker_profiles[std::min(worker_index, worker_profiles.size() - 1)];
+            TimePoint begin = Clock::now();
+            ApplyTargetPositionsForEnvironment(*model, env_id);
+            profile[kStepProfileApplyControl] += ElapsedMs(begin);
+
             auto* data = static_cast<mjData*>(world_->environment_data_[env_id]);
             if (data == nullptr) {
                 throw std::runtime_error(fmt::format("MuJoCo data for environment {} is not available", env_id));
             }
-            for (std::size_t joint_index = 0; joint_index < joint_count_; ++joint_index) {
-                const auto& binding = world_->joint_bindings_[joint_binding_indices_[joint_index]];
-                const int actuator_id = binding.position_actuator_id >= 0
-                                                ? binding.position_actuator_id
-                                                : binding.motor_actuator_id;
-                if (actuator_id < 0 || actuator_id >= model->nu) {
-                    throw std::runtime_error(fmt::format("joint '{}' has no usable MuJoCo actuator",
-                                                         joint_names_[joint_index]));
-                }
-                data->ctrl[actuator_id] =
-                        static_cast<mjtNum>(target_position_[env_id * joint_count_ + joint_index]);
+            begin = Clock::now();
+            for (std::uint64_t tick = 0; tick < ticks; ++tick) {
+                mj_step(model, data);
             }
+            profile[kStepProfileMjStep] += ElapsedMs(begin);
+
+            begin = Clock::now();
+            FillEnvironment(env_id);
+            profile[kStepProfileExtractState] += ElapsedMs(begin);
+
+            begin = Clock::now();
+            if (command_configured_) {
+                UpdateCommandForEnvironment(env_id);
+            }
+            profile[kStepProfileCommand] += ElapsedMs(begin);
+
+            begin = Clock::now();
+            UpdateFootHistory(env_id);
+            ComputeRewardAndTermination(env_id);
+            profile[kStepProfileReward] += ElapsedMs(begin);
+
+            begin = Clock::now();
+            FillObservation(env_id);
+            profile[kStepProfileObservation] += ElapsedMs(begin);
+        });
+
+        for (std::size_t profile_index = kStepProfileApplyControl; profile_index < kStepProfileCount; ++profile_index) {
+            double critical_path_ms = 0.0;
+            for (const auto& worker_profile : worker_profiles) {
+                critical_path_ms = std::max(critical_path_ms, worker_profile[profile_index]);
+            }
+            AddProfileMs(profile_index, critical_path_ms);
         }
+        SetProfileMs(kStepProfileTotal, ElapsedMs(total_begin));
     }
 
     void FillAllEnvironments(std::size_t workers = 0) {
@@ -1123,6 +1296,7 @@ private:
         base_position_[env3 + 0] = static_cast<float>(data->xpos[3 * base_body + 0]);
         base_position_[env3 + 1] = static_cast<float>(data->xpos[3 * base_body + 1]);
         base_position_[env3 + 2] = static_cast<float>(data->xpos[3 * base_body + 2]);
+        base_height_[env_id] = base_position_[env3 + 2];
         Matrix3 rotation;
         rotation << data->xmat[9 * base_body + 0], data->xmat[9 * base_body + 1], data->xmat[9 * base_body + 2],
                 data->xmat[9 * base_body + 3], data->xmat[9 * base_body + 4], data->xmat[9 * base_body + 5],
@@ -1166,6 +1340,12 @@ private:
             joint_velocity_[offset] = binding.dof_address >= 0 && binding.dof_address < model->nv
                                               ? static_cast<float>(data->qvel[binding.dof_address])
                                               : 0.0f;
+            joint_acceleration_[offset] = binding.dof_address >= 0 && binding.dof_address < model->nv
+                                                  ? static_cast<float>(data->qacc[binding.dof_address])
+                                                  : 0.0f;
+            joint_torque_[offset] = binding.dof_address >= 0 && binding.dof_address < model->nv
+                                            ? static_cast<float>(data->qfrc_actuator[binding.dof_address])
+                                            : 0.0f;
         }
 
         for (std::size_t foot_index = 0; foot_index < foot_count_; ++foot_index) {
@@ -1175,6 +1355,16 @@ private:
             foot_position_[foot3 + 0] = static_cast<float>(data->xpos[3 * body_id + 0]);
             foot_position_[foot3 + 1] = static_cast<float>(data->xpos[3 * body_id + 1]);
             foot_position_[foot3 + 2] = static_cast<float>(data->xpos[3 * body_id + 2]);
+            Matrix3 foot_rotation;
+            foot_rotation << data->xmat[9 * body_id + 0], data->xmat[9 * body_id + 1], data->xmat[9 * body_id + 2],
+                    data->xmat[9 * body_id + 3], data->xmat[9 * body_id + 4], data->xmat[9 * body_id + 5],
+                    data->xmat[9 * body_id + 6], data->xmat[9 * body_id + 7], data->xmat[9 * body_id + 8];
+            const Quaternion foot_orientation(foot_rotation);
+            const std::size_t foot4 = (env_id * foot_count_ + foot_index) * 4;
+            foot_quaternion_[foot4 + 0] = static_cast<float>(foot_orientation.w());
+            foot_quaternion_[foot4 + 1] = static_cast<float>(foot_orientation.x());
+            foot_quaternion_[foot4 + 2] = static_cast<float>(foot_orientation.y());
+            foot_quaternion_[foot4 + 3] = static_cast<float>(foot_orientation.z());
             const Vector3 foot_linear_velocity = BodyLinearVelocity(*data, body_id);
             foot_velocity_[foot3 + 0] = static_cast<float>(foot_linear_velocity.x());
             foot_velocity_[foot3 + 1] = static_cast<float>(foot_linear_velocity.y());
@@ -1764,6 +1954,10 @@ private:
     std::vector<std::uint8_t> command_is_world_env_;
     std::vector<std::uint8_t> command_is_forward_env_;
     std::vector<float> command_ranges_;
+    std::vector<float> gait_phase_;
+    std::vector<float> feet_phase_height_target_;
+    std::vector<float> pose_weights_;
+    std::vector<float> step_profile_ms_;
     std::mt19937 command_rng_{1};
     bool command_configured_{false};
     bool command_heading_enabled_{true};
@@ -1795,11 +1989,15 @@ private:
     std::vector<float> base_linear_velocity_body_;
     std::vector<float> base_angular_velocity_body_;
     std::vector<float> projected_gravity_;
+    std::vector<float> base_height_;
     std::vector<float> joint_position_;
     std::vector<float> joint_velocity_;
+    std::vector<float> joint_acceleration_;
+    std::vector<float> joint_torque_;
     std::vector<float> joint_lower_limit_;
     std::vector<float> joint_upper_limit_;
     std::vector<float> foot_position_;
+    std::vector<float> foot_quaternion_;
     std::vector<float> foot_velocity_;
     std::vector<float> foot_height_;
     std::vector<float> foot_contact_;

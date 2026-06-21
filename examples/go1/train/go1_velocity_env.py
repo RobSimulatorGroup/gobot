@@ -427,13 +427,14 @@ class Go1VelocityEnv(LocomotionBatchEnv):
             workers=self.sim_workers,
             simulate_action_latency=self.control_cfg.simulate_action_latency,
         )
-        backend_physics_ms = (self.perf_counter() - t0) * 1000.0
+        native_step_total_ms = (self.perf_counter() - t0) * 1000.0
         self._mark_profile(profile_marks, "physics")
         t0 = self.perf_counter()
         batch_state = self.backend.state
         backend_refresh_cache_ms = (self.perf_counter() - t0) * 1000.0
         self._mark_profile(profile_marks, "state")
-        step_core_ms = backend_action_ms + backend_physics_ms + backend_refresh_cache_ms
+        step_core_ms = backend_action_ms + native_step_total_ms + backend_refresh_cache_ms
+        native_profile = self.backend.step_profile()
 
         t0 = self.perf_counter()
         self._mark_profile(profile_marks, "command")
@@ -570,10 +571,13 @@ class Go1VelocityEnv(LocomotionBatchEnv):
         timing["apply_action_ms"] = apply_action_ms
         timing["step_core_ms"] = step_core_ms
         timing["backend_apply_action_ms"] = backend_action_ms
-        timing["backend_physics_ms"] = backend_physics_ms
+        timing["backend_physics_ms"] = native_step_total_ms
+        timing["native_step_total_ms"] = native_step_total_ms
         timing["backend_refresh_cache_ms"] = backend_refresh_cache_ms
         timing["update_state_ms"] = update_state_ms + observation_ms
         timing["reset_done_ms"] = reset_done_ms
+        for key, value in native_profile.items():
+            timing[f"native_{key}"] = float(value)
         return self._state
 
     def close(self) -> None:

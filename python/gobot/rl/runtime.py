@@ -8,6 +8,17 @@ from typing import Any, Sequence
 
 import numpy as np
 
+LOCOMOTION_STEP_PROFILE_NAMES: tuple[str, ...] = (
+    "total_ms",
+    "prepare_action_ms",
+    "apply_ctrl_ms",
+    "mj_step_ms",
+    "extract_state_ms",
+    "command_ms",
+    "reward_ms",
+    "obs_ms",
+)
+
 
 class BatchSimulationRuntime:
     """Small facade used by CPU batch envs.
@@ -210,6 +221,14 @@ class _NativeLocomotionBatchArrays:
 
     def __getitem__(self, name: str) -> np.ndarray:
         return self._arrays[name]
+
+    def step_profile(self) -> dict[str, float]:
+        values = np.asarray(self._arrays.get("step_profile_ms", ()), dtype=np.float64).reshape(-1)
+        return {
+            name: float(values[index])
+            for index, name in enumerate(LOCOMOTION_STEP_PROFILE_NAMES)
+            if index < values.size
+        }
 
 
 class GobotSceneBatchBackend:
@@ -569,6 +588,9 @@ class NativeLocomotionBatchBackend:
         self._view.step_training(int(nsteps), int(workers), bool(simulate_action_latency))
         return {}
 
+    def step_profile(self) -> dict[str, float]:
+        return self.state.step_profile()
+
     def compute_task(self) -> None:
         self._require_view()
         self._view.compute_task()
@@ -711,5 +733,6 @@ __all__ = [
     "GobotSceneBatchBackend",
     "GobotSceneBatchState",
     "LocomotionBatchSpec",
+    "LOCOMOTION_STEP_PROFILE_NAMES",
     "NativeLocomotionBatchBackend",
 ]
