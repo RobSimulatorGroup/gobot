@@ -194,10 +194,27 @@ class LocomotionBatchSpec:
 class NativeLocomotionBatchState:
     """Persistent NumPy views owned by Gobot's native locomotion batch view."""
 
+    action: np.ndarray
+    submitted_action: np.ndarray
+    default_joint_position: np.ndarray
+    action_scale: np.ndarray
+    previous_action: np.ndarray
+    last_action: np.ndarray
+    encoder_bias: np.ndarray
+    command: np.ndarray
+    pose_std_standing: np.ndarray
+    pose_std_walking: np.ndarray
+    pose_std_running: np.ndarray
+    reward_weights: np.ndarray
+    task_params: np.ndarray
+    task_flags: np.ndarray
     base_position: np.ndarray
     base_quaternion: np.ndarray
     base_linear_velocity: np.ndarray
     base_angular_velocity: np.ndarray
+    base_linear_velocity_body: np.ndarray
+    base_angular_velocity_body: np.ndarray
+    projected_gravity: np.ndarray
     joint_position: np.ndarray
     joint_velocity: np.ndarray
     joint_lower_limit: np.ndarray
@@ -215,6 +232,21 @@ class NativeLocomotionBatchState:
     self_collision_count: np.ndarray
     shank_collision_count: np.ndarray
     trunk_head_collision_count: np.ndarray
+    foot_air_time: np.ndarray
+    foot_peak_height: np.ndarray
+    last_foot_contact: np.ndarray
+    first_contact: np.ndarray
+    landing_force: np.ndarray
+    previous_foot_position: np.ndarray
+    reward: np.ndarray
+    terminated: np.ndarray
+    base_clearance: np.ndarray
+    velocity_error: np.ndarray
+    foot_slip: np.ndarray
+    terrain_normal_error: np.ndarray
+    reward_terms: np.ndarray
+    actor_obs: np.ndarray
+    critic_obs: np.ndarray
 
 
 class GobotSceneBatchBackend:
@@ -488,6 +520,20 @@ class NativeLocomotionBatchBackend:
         self._view.step(int(nsteps), int(workers))
         return {}
 
+    def step_actions(self, actions: Any, nsteps: int, *, workers: int = 0, simulate_action_latency: bool = False) -> dict[str, Any]:
+        self._require_view()
+        np.copyto(self._arrays["action"], np.asarray(actions, dtype=np.float32))
+        self._view.step_actions(int(nsteps), int(workers), bool(simulate_action_latency))
+        return {}
+
+    def compute_task(self) -> None:
+        self._require_view()
+        self._view.compute_task()
+
+    def compute_observations(self) -> None:
+        self._require_view()
+        self._view.compute_observations()
+
     def set_position_targets(self, ctrl: Any) -> None:
         self._require_view()
         np.copyto(self._arrays["target_position"], np.asarray(ctrl, dtype=np.float32))
@@ -573,10 +619,27 @@ class NativeLocomotionBatchBackend:
 
     def _state_from_arrays(self) -> NativeLocomotionBatchState:
         self._state = NativeLocomotionBatchState(
+            action=self._arrays["action"],
+            submitted_action=self._arrays["submitted_action"],
+            default_joint_position=self._arrays["default_joint_position"],
+            action_scale=self._arrays["action_scale"],
+            previous_action=self._arrays["previous_action"],
+            last_action=self._arrays["last_action"],
+            encoder_bias=self._arrays["encoder_bias"],
+            command=self._arrays["command"],
+            pose_std_standing=self._arrays["pose_std_standing"],
+            pose_std_walking=self._arrays["pose_std_walking"],
+            pose_std_running=self._arrays["pose_std_running"],
+            reward_weights=self._arrays["reward_weights"],
+            task_params=self._arrays["task_params"],
+            task_flags=self._arrays["task_flags"],
             base_position=self._arrays["base_position"],
             base_quaternion=self._arrays["base_quaternion"],
             base_linear_velocity=self._arrays["base_linear_velocity"],
             base_angular_velocity=self._arrays["base_angular_velocity"],
+            base_linear_velocity_body=self._arrays["base_linear_velocity_body"],
+            base_angular_velocity_body=self._arrays["base_angular_velocity_body"],
+            projected_gravity=self._arrays["projected_gravity"],
             joint_position=self._arrays["joint_position"],
             joint_velocity=self._arrays["joint_velocity"],
             joint_lower_limit=self._arrays["joint_lower_limit"],
@@ -594,6 +657,21 @@ class NativeLocomotionBatchBackend:
             self_collision_count=self._arrays["self_collision_count"],
             shank_collision_count=self._arrays["shank_collision_count"],
             trunk_head_collision_count=self._arrays["trunk_head_collision_count"],
+            foot_air_time=self._arrays["foot_air_time"],
+            foot_peak_height=self._arrays["foot_peak_height"],
+            last_foot_contact=self._arrays["last_foot_contact"],
+            first_contact=self._arrays["first_contact"],
+            landing_force=self._arrays["landing_force"],
+            previous_foot_position=self._arrays["previous_foot_position"],
+            reward=self._arrays["reward"],
+            terminated=self._arrays["terminated"],
+            base_clearance=self._arrays["base_clearance"],
+            velocity_error=self._arrays["velocity_error"],
+            foot_slip=self._arrays["foot_slip"],
+            terrain_normal_error=self._arrays["terrain_normal_error"],
+            reward_terms=self._arrays["reward_terms"],
+            actor_obs=self._arrays["actor_obs"],
+            critic_obs=self._arrays["critic_obs"],
         )
         return self._state
 

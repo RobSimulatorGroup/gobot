@@ -86,6 +86,47 @@ bool MatchesAnyPattern(const std::string& name, const std::vector<std::regex>& p
     return false;
 }
 
+enum LocomotionRewardTermIndex : std::size_t {
+    kRewardTrackLinearVelocity = 0,
+    kRewardTrackAngularVelocity,
+    kRewardUpright,
+    kRewardPose,
+    kRewardBodyAngVel,
+    kRewardDofPosLimits,
+    kRewardActionRateL2,
+    kRewardAirTime,
+    kRewardFootClearance,
+    kRewardFootSwingHeight,
+    kRewardFootSlip,
+    kRewardSoftLanding,
+    kRewardSelfCollisions,
+    kRewardShankCollision,
+    kRewardTrunkHeadCollision,
+    kRewardTermCount
+};
+
+enum LocomotionTaskParamIndex : std::size_t {
+    kParamStepDt = 0,
+    kParamLinVelStd2,
+    kParamAngVelStd2,
+    kParamUprightStd2,
+    kParamFootTargetHeight,
+    kParamCommandThreshold,
+    kParamMinBaseClearance,
+    kParamFlatRollPitchLimit,
+    kParamPoseWalkingThreshold,
+    kParamPoseRunningThreshold,
+    kParamHeightScanMaxDistance,
+    kTaskParamCount
+};
+
+enum LocomotionTaskFlagIndex : std::size_t {
+    kFlagRoughTerrain = 0,
+    kFlagTerrainNormalUpright,
+    kFlagIllegalContactEnabled,
+    kTaskFlagCount
+};
+
 template <typename T>
 py::array_t<T> VectorArrayView(std::vector<T>& values,
                                std::initializer_list<py::ssize_t> shape,
@@ -147,6 +188,34 @@ public:
         py::dict arrays;
         arrays["target_position"] =
                 VectorArrayView(target_position_, {EnvDim(), JointDim()}, owner, true);
+        arrays["action"] =
+                VectorArrayView(action_, {EnvDim(), JointDim()}, owner, true);
+        arrays["submitted_action"] =
+                VectorArrayView(submitted_action_, {EnvDim(), JointDim()}, owner, false);
+        arrays["default_joint_position"] =
+                VectorArrayView(default_joint_position_, {JointDim()}, owner, true);
+        arrays["action_scale"] =
+                VectorArrayView(action_scale_, {JointDim()}, owner, true);
+        arrays["previous_action"] =
+                VectorArrayView(previous_action_, {EnvDim(), JointDim()}, owner, true);
+        arrays["last_action"] =
+                VectorArrayView(last_action_, {EnvDim(), JointDim()}, owner, true);
+        arrays["encoder_bias"] =
+                VectorArrayView(encoder_bias_, {EnvDim(), JointDim()}, owner, true);
+        arrays["command"] =
+                VectorArrayView(command_, {EnvDim(), 3}, owner, true);
+        arrays["pose_std_standing"] =
+                VectorArrayView(pose_std_standing_, {JointDim()}, owner, true);
+        arrays["pose_std_walking"] =
+                VectorArrayView(pose_std_walking_, {JointDim()}, owner, true);
+        arrays["pose_std_running"] =
+                VectorArrayView(pose_std_running_, {JointDim()}, owner, true);
+        arrays["reward_weights"] =
+                VectorArrayView(reward_weights_, {RewardTermDim()}, owner, true);
+        arrays["task_params"] =
+                VectorArrayView(task_params_, {TaskParamDim()}, owner, true);
+        arrays["task_flags"] =
+                VectorArrayView(task_flags_, {TaskFlagDim()}, owner, true);
         arrays["reset_base_position"] =
                 VectorArrayView(reset_base_position_, {EnvDim(), 3}, owner, true);
         arrays["reset_base_quaternion"] =
@@ -167,6 +236,12 @@ public:
                 VectorArrayView(base_linear_velocity_, {EnvDim(), 3}, owner, false);
         arrays["base_angular_velocity"] =
                 VectorArrayView(base_angular_velocity_, {EnvDim(), 3}, owner, false);
+        arrays["base_linear_velocity_body"] =
+                VectorArrayView(base_linear_velocity_body_, {EnvDim(), 3}, owner, false);
+        arrays["base_angular_velocity_body"] =
+                VectorArrayView(base_angular_velocity_body_, {EnvDim(), 3}, owner, false);
+        arrays["projected_gravity"] =
+                VectorArrayView(projected_gravity_, {EnvDim(), 3}, owner, false);
         arrays["joint_position"] =
                 VectorArrayView(joint_position_, {EnvDim(), JointDim()}, owner, false);
         arrays["joint_velocity"] =
@@ -201,7 +276,49 @@ public:
                 VectorArrayView(shank_collision_count_, {EnvDim()}, owner, false);
         arrays["trunk_head_collision_count"] =
                 VectorArrayView(trunk_head_collision_count_, {EnvDim()}, owner, false);
+        arrays["foot_air_time"] =
+                VectorArrayView(foot_air_time_, {EnvDim(), FootDim()}, owner, true);
+        arrays["foot_peak_height"] =
+                VectorArrayView(foot_peak_height_, {EnvDim(), FootDim()}, owner, true);
+        arrays["last_foot_contact"] =
+                VectorArrayView(last_foot_contact_, {EnvDim(), FootDim()}, owner, true);
+        arrays["first_contact"] =
+                VectorArrayView(first_contact_, {EnvDim(), FootDim()}, owner, false);
+        arrays["landing_force"] =
+                VectorArrayView(landing_force_, {EnvDim(), FootDim()}, owner, false);
+        arrays["previous_foot_position"] =
+                VectorArrayView(previous_foot_position_, {EnvDim(), FootDim(), 3}, owner, true);
+        arrays["reward"] =
+                VectorArrayView(reward_, {EnvDim()}, owner, false);
+        arrays["terminated"] =
+                VectorArrayView(terminated_, {EnvDim()}, owner, false);
+        arrays["base_clearance"] =
+                VectorArrayView(base_clearance_, {EnvDim()}, owner, false);
+        arrays["velocity_error"] =
+                VectorArrayView(velocity_error_, {EnvDim()}, owner, false);
+        arrays["foot_slip"] =
+                VectorArrayView(foot_slip_, {EnvDim()}, owner, false);
+        arrays["terrain_normal_error"] =
+                VectorArrayView(terrain_normal_error_, {EnvDim()}, owner, false);
+        arrays["reward_terms"] =
+                VectorArrayView(reward_terms_, {EnvDim(), RewardTermDim()}, owner, false);
+        arrays["actor_obs"] =
+                VectorArrayView(actor_obs_, {EnvDim(), ActorObsDim()}, owner, false);
+        arrays["critic_obs"] =
+                VectorArrayView(critic_obs_, {EnvDim(), CriticObsDim()}, owner, false);
         return arrays;
+    }
+
+    void StepActions(std::uint64_t ticks, std::size_t workers, bool simulate_action_latency) {
+#ifdef GOBOT_HAS_MUJOCO
+        PrepareActionTargets(simulate_action_latency);
+        Step(ticks, workers);
+#else
+        GOB_UNUSED(ticks);
+        GOB_UNUSED(workers);
+        GOB_UNUSED(simulate_action_latency);
+        throw std::runtime_error("Gobot was built without MuJoCo support");
+#endif
     }
 
     void Step(std::uint64_t ticks, std::size_t workers) {
@@ -215,6 +332,27 @@ public:
 #else
         GOB_UNUSED(ticks);
         GOB_UNUSED(workers);
+        throw std::runtime_error("Gobot was built without MuJoCo support");
+#endif
+    }
+
+    void ComputeTask() {
+#ifdef GOBOT_HAS_MUJOCO
+        for (std::size_t env_id = 0; env_id < environment_count_; ++env_id) {
+            UpdateFootHistory(env_id);
+            ComputeRewardAndTermination(env_id);
+        }
+#else
+        throw std::runtime_error("Gobot was built without MuJoCo support");
+#endif
+    }
+
+    void ComputeObservations() {
+#ifdef GOBOT_HAS_MUJOCO
+        for (std::size_t env_id = 0; env_id < environment_count_; ++env_id) {
+            FillObservation(env_id);
+        }
+#else
         throw std::runtime_error("Gobot was built without MuJoCo support");
 #endif
     }
@@ -337,6 +475,26 @@ private:
 
     py::ssize_t HeightScanDim() const {
         return static_cast<py::ssize_t>(height_scan_count_);
+    }
+
+    py::ssize_t RewardTermDim() const {
+        return static_cast<py::ssize_t>(kRewardTermCount);
+    }
+
+    py::ssize_t TaskParamDim() const {
+        return static_cast<py::ssize_t>(kTaskParamCount);
+    }
+
+    py::ssize_t TaskFlagDim() const {
+        return static_cast<py::ssize_t>(kTaskFlagCount);
+    }
+
+    py::ssize_t ActorObsDim() const {
+        return static_cast<py::ssize_t>(ActorObservationDim());
+    }
+
+    py::ssize_t CriticObsDim() const {
+        return static_cast<py::ssize_t>(CriticObservationDim());
     }
 
     void RequireEnvironmentIndex(std::size_t env_id) const {
@@ -529,6 +687,20 @@ private:
     }
 
     void AllocateBuffers() {
+        action_.assign(environment_count_ * joint_count_, 0.0f);
+        submitted_action_.assign(environment_count_ * joint_count_, 0.0f);
+        default_joint_position_.assign(joint_count_, 0.0f);
+        action_scale_.assign(joint_count_, 0.0f);
+        previous_action_.assign(environment_count_ * joint_count_, 0.0f);
+        last_action_.assign(environment_count_ * joint_count_, 0.0f);
+        encoder_bias_.assign(environment_count_ * joint_count_, 0.0f);
+        command_.assign(environment_count_ * 3, 0.0f);
+        pose_std_standing_.assign(joint_count_, 0.3f);
+        pose_std_walking_.assign(joint_count_, 0.3f);
+        pose_std_running_.assign(joint_count_, 0.3f);
+        reward_weights_.assign(kRewardTermCount, 0.0f);
+        task_params_.assign(kTaskParamCount, 0.0f);
+        task_flags_.assign(kTaskFlagCount, 0.0f);
         target_position_.assign(environment_count_ * joint_count_, 0.0f);
         reset_base_position_.assign(environment_count_ * 3, 0.0f);
         reset_base_quaternion_.assign(environment_count_ * 4, 0.0f);
@@ -540,6 +712,9 @@ private:
         base_quaternion_.assign(environment_count_ * 4, 0.0f);
         base_linear_velocity_.assign(environment_count_ * 3, 0.0f);
         base_angular_velocity_.assign(environment_count_ * 3, 0.0f);
+        base_linear_velocity_body_.assign(environment_count_ * 3, 0.0f);
+        base_angular_velocity_body_.assign(environment_count_ * 3, 0.0f);
+        projected_gravity_.assign(environment_count_ * 3, 0.0f);
         joint_position_.assign(environment_count_ * joint_count_, 0.0f);
         joint_velocity_.assign(environment_count_ * joint_count_, 0.0f);
         joint_lower_limit_.assign(joint_count_, 0.0f);
@@ -557,6 +732,21 @@ private:
         self_collision_count_.assign(environment_count_, 0.0f);
         shank_collision_count_.assign(environment_count_, 0.0f);
         trunk_head_collision_count_.assign(environment_count_, 0.0f);
+        foot_air_time_.assign(environment_count_ * foot_count_, 0.0f);
+        foot_peak_height_.assign(environment_count_ * foot_count_, 0.0f);
+        last_foot_contact_.assign(environment_count_ * foot_count_, 0.0f);
+        first_contact_.assign(environment_count_ * foot_count_, 0.0f);
+        landing_force_.assign(environment_count_ * foot_count_, 0.0f);
+        previous_foot_position_.assign(environment_count_ * foot_count_ * 3, 0.0f);
+        reward_.assign(environment_count_, 0.0f);
+        terminated_.assign(environment_count_, 0);
+        base_clearance_.assign(environment_count_, 0.0f);
+        velocity_error_.assign(environment_count_, 0.0f);
+        foot_slip_.assign(environment_count_, 0.0f);
+        terrain_normal_error_.assign(environment_count_, 0.0f);
+        reward_terms_.assign(environment_count_ * kRewardTermCount, 0.0f);
+        actor_obs_.assign(environment_count_ * ActorObservationDim(), 0.0f);
+        critic_obs_.assign(environment_count_ * CriticObservationDim(), 0.0f);
 
         const PhysicsSceneSnapshot& snapshot = world_->GetSceneSnapshot();
         for (std::size_t joint_index = 0; joint_index < joint_binding_indices_.size(); ++joint_index) {
@@ -564,6 +754,19 @@ private:
             const PhysicsJointSnapshot& joint = snapshot.robots[binding.robot_index].joints[binding.joint_index];
             joint_lower_limit_[joint_index] = static_cast<float>(joint.lower_limit);
             joint_upper_limit_[joint_index] = static_cast<float>(joint.upper_limit);
+        }
+    }
+
+    void PrepareActionTargets(bool simulate_action_latency) {
+        for (std::size_t env_id = 0; env_id < environment_count_; ++env_id) {
+            for (std::size_t joint_index = 0; joint_index < joint_count_; ++joint_index) {
+                const std::size_t offset = env_id * joint_count_ + joint_index;
+                const float clipped = std::clamp(action_[offset], -1.0f, 1.0f);
+                submitted_action_[offset] = clipped;
+                const float control_action = simulate_action_latency ? last_action_[offset] : clipped;
+                target_position_[offset] = default_joint_position_[joint_index] +
+                                           action_scale_[joint_index] * control_action;
+            }
         }
     }
 
@@ -627,6 +830,24 @@ private:
         base_linear_velocity_[env3 + 0] = static_cast<float>(data->cvel[6 * base_body + 3]);
         base_linear_velocity_[env3 + 1] = static_cast<float>(data->cvel[6 * base_body + 4]);
         base_linear_velocity_[env3 + 2] = static_cast<float>(data->cvel[6 * base_body + 5]);
+        const Vector3 base_linear_velocity_w(base_linear_velocity_[env3 + 0],
+                                             base_linear_velocity_[env3 + 1],
+                                             base_linear_velocity_[env3 + 2]);
+        const Vector3 base_angular_velocity_w(base_angular_velocity_[env3 + 0],
+                                              base_angular_velocity_[env3 + 1],
+                                              base_angular_velocity_[env3 + 2]);
+        const Vector3 base_linear_velocity_b = rotation.transpose() * base_linear_velocity_w;
+        const Vector3 base_angular_velocity_b = rotation.transpose() * base_angular_velocity_w;
+        const Vector3 gravity_b = rotation.transpose() * Vector3(0.0, 0.0, -1.0);
+        base_linear_velocity_body_[env3 + 0] = static_cast<float>(base_linear_velocity_b.x());
+        base_linear_velocity_body_[env3 + 1] = static_cast<float>(base_linear_velocity_b.y());
+        base_linear_velocity_body_[env3 + 2] = static_cast<float>(base_linear_velocity_b.z());
+        base_angular_velocity_body_[env3 + 0] = static_cast<float>(base_angular_velocity_b.x());
+        base_angular_velocity_body_[env3 + 1] = static_cast<float>(base_angular_velocity_b.y());
+        base_angular_velocity_body_[env3 + 2] = static_cast<float>(base_angular_velocity_b.z());
+        projected_gravity_[env3 + 0] = static_cast<float>(gravity_b.x());
+        projected_gravity_[env3 + 1] = static_cast<float>(gravity_b.y());
+        projected_gravity_[env3 + 2] = static_cast<float>(gravity_b.z());
 
         for (std::size_t joint_index = 0; joint_index < joint_count_; ++joint_index) {
             const auto& binding = world_->joint_bindings_[joint_binding_indices_[joint_index]];
@@ -659,6 +880,310 @@ private:
         FillFootSensors(env_id, *data);
         FillHeightScan(env_id, *data);
         FillContactSummary(env_id, *model, *data);
+    }
+
+    std::size_t ActorObservationDim() const {
+        return 12 + joint_count_ * 3 + height_scan_count_;
+    }
+
+    std::size_t CriticObservationDim() const {
+        return ActorObservationDim() + foot_count_ * 6;
+    }
+
+    float Param(std::size_t index, float fallback = 0.0f) const {
+        return index < task_params_.size() ? task_params_[index] : fallback;
+    }
+
+    bool Flag(std::size_t index) const {
+        return index < task_flags_.size() && task_flags_[index] != 0;
+    }
+
+    float RewardWeight(std::size_t index) const {
+        return index < reward_weights_.size() ? reward_weights_[index] : 0.0f;
+    }
+
+    void UpdateFootHistory(std::size_t env_id) {
+        const float step_dt = std::max(Param(kParamStepDt, 0.02f), 1.0e-6f);
+        bool was_initialized = false;
+        for (std::size_t foot_index = 0; foot_index < foot_count_; ++foot_index) {
+            const std::size_t foot3 = (env_id * foot_count_ + foot_index) * 3;
+            if (std::abs(previous_foot_position_[foot3 + 0]) > 0.0f ||
+                std::abs(previous_foot_position_[foot3 + 1]) > 0.0f ||
+                std::abs(previous_foot_position_[foot3 + 2]) > 0.0f) {
+                was_initialized = true;
+                break;
+            }
+        }
+        for (std::size_t foot_index = 0; foot_index < foot_count_; ++foot_index) {
+            const std::size_t foot = env_id * foot_count_ + foot_index;
+            const std::size_t foot3 = foot * 3;
+            if (!was_initialized) {
+                previous_foot_position_[foot3 + 0] = foot_position_[foot3 + 0];
+                previous_foot_position_[foot3 + 1] = foot_position_[foot3 + 1];
+                previous_foot_position_[foot3 + 2] = foot_position_[foot3 + 2];
+            }
+            foot_velocity_[foot3 + 0] = (foot_position_[foot3 + 0] - previous_foot_position_[foot3 + 0]) / step_dt;
+            foot_velocity_[foot3 + 1] = (foot_position_[foot3 + 1] - previous_foot_position_[foot3 + 1]) / step_dt;
+            foot_velocity_[foot3 + 2] = (foot_position_[foot3 + 2] - previous_foot_position_[foot3 + 2]) / step_dt;
+            previous_foot_position_[foot3 + 0] = foot_position_[foot3 + 0];
+            previous_foot_position_[foot3 + 1] = foot_position_[foot3 + 1];
+            previous_foot_position_[foot3 + 2] = foot_position_[foot3 + 2];
+
+            const bool contact = foot_contact_[foot] > 0.0f;
+            first_contact_[foot] = contact && last_foot_contact_[foot] <= 0.0f ? 1.0f : 0.0f;
+            const float force_x = foot_contact_force_[foot3 + 0];
+            const float force_y = foot_contact_force_[foot3 + 1];
+            const float force_z = foot_contact_force_[foot3 + 2];
+            landing_force_[foot] = std::sqrt(force_x * force_x + force_y * force_y + force_z * force_z) *
+                                   first_contact_[foot];
+            if (contact) {
+                foot_air_time_[foot] = 0.0f;
+            } else {
+                foot_air_time_[foot] += step_dt;
+            }
+            if (!contact) {
+                foot_peak_height_[foot] = std::max(foot_peak_height_[foot], foot_height_[foot]);
+            }
+        }
+    }
+
+    float BaseClearance(std::size_t env_id) const {
+        const std::size_t env3 = env_id * 3;
+        if (!Flag(kFlagRoughTerrain)) {
+            return base_position_[env3 + 2];
+        }
+        const Vector3 origin(base_position_[env3 + 0], base_position_[env3 + 1], base_position_[env3 + 2] + 1.0f);
+        const PhysicsRaycastHit hit = world_->RaycastTerrainWithMuJoCo({origin, Vector3(0.0, 0.0, -1.0), 5.0}, env_id);
+        if (!hit.hit) {
+            return base_position_[env3 + 2];
+        }
+        return static_cast<float>(base_position_[env3 + 2] - hit.point.z());
+    }
+
+    float UprightError(std::size_t env_id) {
+        const std::size_t env3 = env_id * 3;
+        if (!Flag(kFlagTerrainNormalUpright) || height_scan_count_ == 0) {
+            const float gx = projected_gravity_[env3 + 0];
+            const float gy = projected_gravity_[env3 + 1];
+            return gx * gx + gy * gy;
+        }
+        Vector3 normal(0.0, 0.0, 0.0);
+        std::size_t valid_count = 0;
+        for (std::size_t sample_index = 0; sample_index < height_scan_count_; ++sample_index) {
+            if (height_scan_hit_[env_id * height_scan_count_ + sample_index] == 0) {
+                continue;
+            }
+            const std::size_t normal_index = (env_id * height_scan_count_ + sample_index) * 3;
+            Vector3 sample_normal(height_scan_normal_[normal_index + 0],
+                                  height_scan_normal_[normal_index + 1],
+                                  height_scan_normal_[normal_index + 2]);
+            if (sample_normal.squaredNorm() <= CMP_EPSILON2) {
+                continue;
+            }
+            if (sample_normal.z() < 0.0) {
+                sample_normal = -sample_normal;
+            }
+            normal += sample_normal.normalized();
+            ++valid_count;
+        }
+        if (valid_count == 0 || normal.squaredNorm() <= CMP_EPSILON2) {
+            normal = Vector3(0.0, 0.0, 1.0);
+        } else {
+            normal.normalize();
+        }
+        auto* data = static_cast<mjData*>(world_->environment_data_[env_id]);
+        const auto& base_binding = world_->link_bindings_[base_link_binding_index_];
+        const Matrix3 rotation = BodyTransform(*data, base_binding.body_id).linear();
+        const Vector3 body_normal = rotation.transpose() * normal;
+        const float error = static_cast<float>(body_normal.x() * body_normal.x() + body_normal.y() * body_normal.y());
+        terrain_normal_error_[env_id] = error;
+        return error;
+    }
+
+    float JointLimitCost(std::size_t env_id) const {
+        float cost = 0.0f;
+        for (std::size_t joint_index = 0; joint_index < joint_count_; ++joint_index) {
+            const std::size_t offset = env_id * joint_count_ + joint_index;
+            const float position = joint_position_[offset];
+            const float lower = joint_lower_limit_[joint_index];
+            const float upper = joint_upper_limit_[joint_index];
+            if (std::isfinite(lower)) {
+                cost += std::max(0.0f, lower - position);
+            }
+            if (std::isfinite(upper)) {
+                cost += std::max(0.0f, position - upper);
+            }
+        }
+        return cost;
+    }
+
+    void ComputeRewardAndTermination(std::size_t env_id) {
+        const float step_dt = Param(kParamStepDt, 0.02f);
+        const float lin_vel_std2 = std::max(Param(kParamLinVelStd2, 0.25f), 1.0e-6f);
+        const float ang_vel_std2 = std::max(Param(kParamAngVelStd2, 0.5f), 1.0e-6f);
+        const float upright_std2 = std::max(Param(kParamUprightStd2, 0.2f), 1.0e-6f);
+        const float foot_target_height = Param(kParamFootTargetHeight, 0.1f);
+        const float command_threshold = Param(kParamCommandThreshold, 0.05f);
+        const float min_base_clearance = Param(kParamMinBaseClearance, 0.16f);
+        const float flat_limit = Param(kParamFlatRollPitchLimit, static_cast<float>(70.0 * M_PI / 180.0));
+        const float walking_threshold = Param(kParamPoseWalkingThreshold, 0.05f);
+        const float running_threshold = Param(kParamPoseRunningThreshold, 1.5f);
+
+        const std::size_t env3 = env_id * 3;
+        const float* command = &command_[env3];
+        const float* lin_b = &base_linear_velocity_body_[env3];
+        const float* ang_b = &base_angular_velocity_body_[env3];
+        const float lin_error = (command[0] - lin_b[0]) * (command[0] - lin_b[0]) +
+                                (command[1] - lin_b[1]) * (command[1] - lin_b[1]) +
+                                lin_b[2] * lin_b[2];
+        const float ang_error = (command[2] - ang_b[2]) * (command[2] - ang_b[2]) +
+                                ang_b[0] * ang_b[0] + ang_b[1] * ang_b[1];
+        const float command_speed = std::sqrt(command[0] * command[0] + command[1] * command[1]) +
+                                    std::abs(command[2]);
+        const float active = command_speed > command_threshold ? 1.0f : 0.0f;
+        const float upright_error = UprightError(env_id);
+
+        float action_rate = 0.0f;
+        float pose_error = 0.0f;
+        const std::vector<float>* pose_std = &pose_std_running_;
+        if (command_speed < walking_threshold) {
+            pose_std = &pose_std_standing_;
+        } else if (command_speed < running_threshold) {
+            pose_std = &pose_std_walking_;
+        }
+        for (std::size_t joint_index = 0; joint_index < joint_count_; ++joint_index) {
+            const std::size_t offset = env_id * joint_count_ + joint_index;
+            const float delta_action = submitted_action_[offset] - previous_action_[offset];
+            action_rate += delta_action * delta_action;
+            const float std_value = std::max((*pose_std)[joint_index], 1.0e-6f);
+            const float pose_delta = joint_position_[offset] - default_joint_position_[joint_index];
+            pose_error += (pose_delta * pose_delta) / (std_value * std_value);
+        }
+        if (joint_count_ > 0) {
+            pose_error /= static_cast<float>(joint_count_);
+        }
+
+        float foot_clearance_cost = 0.0f;
+        float foot_slip_cost = 0.0f;
+        float air_time_count = 0.0f;
+        float landing_force_sum = 0.0f;
+        float swing_cost = 0.0f;
+        for (std::size_t foot_index = 0; foot_index < foot_count_; ++foot_index) {
+            const std::size_t foot = env_id * foot_count_ + foot_index;
+            const std::size_t foot3 = foot * 3;
+            const float vel_xy = std::sqrt(foot_velocity_[foot3 + 0] * foot_velocity_[foot3 + 0] +
+                                           foot_velocity_[foot3 + 1] * foot_velocity_[foot3 + 1]);
+            foot_clearance_cost += std::abs(foot_height_[foot] - foot_target_height) * vel_xy;
+            foot_slip_cost += vel_xy * vel_xy * foot_contact_[foot];
+            if (foot_air_time_[foot] > 0.05f && foot_air_time_[foot] < 0.5f) {
+                air_time_count += 1.0f;
+            }
+            landing_force_sum += landing_force_[foot];
+            if (first_contact_[foot] > 0.0f) {
+                const float height_error = foot_peak_height_[foot] / std::max(foot_target_height, 1.0e-6f) - 1.0f;
+                swing_cost += height_error * height_error;
+                foot_peak_height_[foot] = 0.0f;
+            }
+            last_foot_contact_[foot] = foot_contact_[foot];
+        }
+        foot_slip_[env_id] = foot_slip_cost * active;
+        base_clearance_[env_id] = BaseClearance(env_id);
+        velocity_error_[env_id] = std::sqrt((command[0] - lin_b[0]) * (command[0] - lin_b[0]) +
+                                            (command[1] - lin_b[1]) * (command[1] - lin_b[1]));
+
+        float* terms = &reward_terms_[env_id * kRewardTermCount];
+        terms[kRewardTrackLinearVelocity] = RewardWeight(kRewardTrackLinearVelocity) * std::exp(-lin_error / lin_vel_std2);
+        terms[kRewardTrackAngularVelocity] = RewardWeight(kRewardTrackAngularVelocity) * std::exp(-ang_error / ang_vel_std2);
+        terms[kRewardUpright] = RewardWeight(kRewardUpright) * std::exp(-upright_error / upright_std2);
+        terms[kRewardPose] = RewardWeight(kRewardPose) * std::exp(-pose_error);
+        terms[kRewardBodyAngVel] = RewardWeight(kRewardBodyAngVel) * (ang_b[0] * ang_b[0] + ang_b[1] * ang_b[1]);
+        terms[kRewardDofPosLimits] = RewardWeight(kRewardDofPosLimits) * JointLimitCost(env_id);
+        terms[kRewardActionRateL2] = RewardWeight(kRewardActionRateL2) * action_rate;
+        terms[kRewardAirTime] = RewardWeight(kRewardAirTime) * air_time_count * active;
+        terms[kRewardFootClearance] = RewardWeight(kRewardFootClearance) * foot_clearance_cost * active;
+        terms[kRewardFootSwingHeight] = RewardWeight(kRewardFootSwingHeight) * swing_cost * active;
+        terms[kRewardFootSlip] = RewardWeight(kRewardFootSlip) * foot_slip_cost * active;
+        terms[kRewardSoftLanding] = RewardWeight(kRewardSoftLanding) * landing_force_sum * active;
+        terms[kRewardSelfCollisions] = RewardWeight(kRewardSelfCollisions) * self_collision_count_[env_id];
+        terms[kRewardShankCollision] = RewardWeight(kRewardShankCollision) * shank_collision_count_[env_id];
+        terms[kRewardTrunkHeadCollision] = RewardWeight(kRewardTrunkHeadCollision) * trunk_head_collision_count_[env_id];
+
+        float sum = 0.0f;
+        for (std::size_t term_index = 0; term_index < kRewardTermCount; ++term_index) {
+            sum += terms[term_index];
+        }
+        reward_[env_id] = sum * step_dt;
+
+        bool has_terminated = base_clearance_[env_id] < min_base_clearance;
+        if (Flag(kFlagRoughTerrain)) {
+            if (Flag(kFlagIllegalContactEnabled) && illegal_contact_count_[env_id] > 0.0f) {
+                has_terminated = true;
+            }
+        } else {
+            const std::size_t env4 = env_id * 4;
+            const float w = base_quaternion_[env4 + 0];
+            const float x = base_quaternion_[env4 + 1];
+            const float y = base_quaternion_[env4 + 2];
+            const float z = base_quaternion_[env4 + 3];
+            const float roll = std::atan2(2.0f * (w * x + y * z), 1.0f - 2.0f * (x * x + y * y));
+            const float pitch = std::asin(std::clamp(2.0f * (w * y - z * x), -1.0f, 1.0f));
+            has_terminated = has_terminated || std::abs(roll) > flat_limit || std::abs(pitch) > flat_limit;
+        }
+        terminated_[env_id] = has_terminated ? 1 : 0;
+    }
+
+    void FillObservation(std::size_t env_id) {
+        const float height_scan_scale = 1.0f / std::max(Param(kParamHeightScanMaxDistance, 5.0f), 1.0e-6f);
+        std::size_t write = env_id * ActorObservationDim();
+        const std::size_t env3 = env_id * 3;
+        for (std::size_t i = 0; i < 3; ++i) {
+            actor_obs_[write++] = base_linear_velocity_body_[env3 + i];
+        }
+        for (std::size_t i = 0; i < 3; ++i) {
+            actor_obs_[write++] = base_angular_velocity_body_[env3 + i];
+        }
+        for (std::size_t i = 0; i < 3; ++i) {
+            actor_obs_[write++] = projected_gravity_[env3 + i];
+        }
+        for (std::size_t joint_index = 0; joint_index < joint_count_; ++joint_index) {
+            const std::size_t offset = env_id * joint_count_ + joint_index;
+            actor_obs_[write++] = joint_position_[offset] + encoder_bias_[offset] - default_joint_position_[joint_index];
+        }
+        for (std::size_t joint_index = 0; joint_index < joint_count_; ++joint_index) {
+            actor_obs_[write++] = joint_velocity_[env_id * joint_count_ + joint_index];
+        }
+        for (std::size_t joint_index = 0; joint_index < joint_count_; ++joint_index) {
+            actor_obs_[write++] = last_action_[env_id * joint_count_ + joint_index];
+        }
+        for (std::size_t i = 0; i < 3; ++i) {
+            actor_obs_[write++] = command_[env3 + i];
+        }
+        for (std::size_t sample_index = 0; sample_index < height_scan_count_; ++sample_index) {
+            actor_obs_[write++] = height_scan_[env_id * height_scan_count_ + sample_index] * height_scan_scale;
+        }
+
+        const std::size_t actor_dim = ActorObservationDim();
+        std::size_t critic_write = env_id * CriticObservationDim();
+        const std::size_t actor_start = env_id * actor_dim;
+        for (std::size_t i = 0; i < actor_dim; ++i) {
+            critic_obs_[critic_write++] = actor_obs_[actor_start + i];
+        }
+        for (std::size_t foot_index = 0; foot_index < foot_count_; ++foot_index) {
+            critic_obs_[critic_write++] = foot_height_[env_id * foot_count_ + foot_index];
+        }
+        for (std::size_t foot_index = 0; foot_index < foot_count_; ++foot_index) {
+            critic_obs_[critic_write++] = foot_air_time_[env_id * foot_count_ + foot_index];
+        }
+        for (std::size_t foot_index = 0; foot_index < foot_count_; ++foot_index) {
+            critic_obs_[critic_write++] = foot_contact_[env_id * foot_count_ + foot_index];
+        }
+        for (std::size_t foot_index = 0; foot_index < foot_count_; ++foot_index) {
+            const std::size_t foot3 = (env_id * foot_count_ + foot_index) * 3;
+            for (std::size_t axis = 0; axis < 3; ++axis) {
+                const float value = foot_contact_force_[foot3 + axis];
+                critic_obs_[critic_write++] = std::copysign(std::log1p(std::abs(value)), value);
+            }
+        }
     }
 
     void FillFootSensors(std::size_t env_id, const mjData& data) {
@@ -914,6 +1439,20 @@ private:
     std::vector<std::uint8_t> body_is_shank_;
     std::vector<std::uint8_t> body_is_trunk_head_;
 
+    std::vector<float> action_;
+    std::vector<float> submitted_action_;
+    std::vector<float> default_joint_position_;
+    std::vector<float> action_scale_;
+    std::vector<float> previous_action_;
+    std::vector<float> last_action_;
+    std::vector<float> encoder_bias_;
+    std::vector<float> command_;
+    std::vector<float> pose_std_standing_;
+    std::vector<float> pose_std_walking_;
+    std::vector<float> pose_std_running_;
+    std::vector<float> reward_weights_;
+    std::vector<float> task_params_;
+    std::vector<float> task_flags_;
     std::vector<float> target_position_;
     std::vector<float> reset_base_position_;
     std::vector<float> reset_base_quaternion_;
@@ -925,6 +1464,9 @@ private:
     std::vector<float> base_quaternion_;
     std::vector<float> base_linear_velocity_;
     std::vector<float> base_angular_velocity_;
+    std::vector<float> base_linear_velocity_body_;
+    std::vector<float> base_angular_velocity_body_;
+    std::vector<float> projected_gravity_;
     std::vector<float> joint_position_;
     std::vector<float> joint_velocity_;
     std::vector<float> joint_lower_limit_;
@@ -942,6 +1484,21 @@ private:
     std::vector<float> self_collision_count_;
     std::vector<float> shank_collision_count_;
     std::vector<float> trunk_head_collision_count_;
+    std::vector<float> foot_air_time_;
+    std::vector<float> foot_peak_height_;
+    std::vector<float> last_foot_contact_;
+    std::vector<float> first_contact_;
+    std::vector<float> landing_force_;
+    std::vector<float> previous_foot_position_;
+    std::vector<float> reward_;
+    std::vector<std::uint8_t> terminated_;
+    std::vector<float> base_clearance_;
+    std::vector<float> velocity_error_;
+    std::vector<float> foot_slip_;
+    std::vector<float> terrain_normal_error_;
+    std::vector<float> reward_terms_;
+    std::vector<float> actor_obs_;
+    std::vector<float> critic_obs_;
 };
 
 void RegisterManualAppContextBindings(py::module_& module) {
@@ -949,9 +1506,30 @@ void RegisterManualAppContextBindings(py::module_& module) {
             module,
             "_LocomotionBatchView")
             .def("arrays", &PyLocomotionBatchView::Arrays)
-            .def("step", &PyLocomotionBatchView::Step, py::arg("ticks") = 1, py::arg("workers") = 0)
-            .def("refresh", &PyLocomotionBatchView::Refresh)
-            .def("reset", &PyLocomotionBatchView::Reset, py::arg("env_ids"))
+            .def("step",
+                 &PyLocomotionBatchView::Step,
+                 py::arg("ticks") = 1,
+                 py::arg("workers") = 0,
+                 py::call_guard<py::gil_scoped_release>())
+            .def("step_actions",
+                 &PyLocomotionBatchView::StepActions,
+                 py::arg("ticks") = 1,
+                 py::arg("workers") = 0,
+                 py::arg("simulate_action_latency") = false,
+                 py::call_guard<py::gil_scoped_release>())
+            .def("compute_task",
+                 &PyLocomotionBatchView::ComputeTask,
+                 py::call_guard<py::gil_scoped_release>())
+            .def("compute_observations",
+                 &PyLocomotionBatchView::ComputeObservations,
+                 py::call_guard<py::gil_scoped_release>())
+            .def("refresh",
+                 &PyLocomotionBatchView::Refresh,
+                 py::call_guard<py::gil_scoped_release>())
+            .def("reset",
+                 &PyLocomotionBatchView::Reset,
+                 py::arg("env_ids"),
+                 py::call_guard<py::gil_scoped_release>())
             .def("set_base_velocity",
                  &PyLocomotionBatchView::SetBaseVelocity,
                  py::arg("env_id"),

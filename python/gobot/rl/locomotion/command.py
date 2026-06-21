@@ -94,12 +94,15 @@ class UniformVelocityCommand:
         base_quaternion: np.ndarray,
         base_lin_vel_b: np.ndarray,
         base_ang_vel_b: np.ndarray,
+        update_metrics: bool = True,
     ) -> None:
         self.time_left -= float(dt)
         resample_ids = np.flatnonzero(self.time_left <= 0.0).astype(np.int64)
         if resample_ids.size:
             self.reset(resample_ids)
         self._update_heading_and_world_commands_batch(base_quaternion)
+        if not update_metrics:
+            return
         max_command_step = max(self.cfg.resampling_time_range[1] / max(self.env.step_dt, 1.0e-9), 1.0)
         self.metrics["error_vel_xy"] += (
             np.linalg.norm(self.command_b[:, :2] - np.asarray(base_lin_vel_b, dtype=np.float32)[:, :2], axis=1)
