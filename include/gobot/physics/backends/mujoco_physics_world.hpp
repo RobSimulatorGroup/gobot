@@ -18,6 +18,9 @@
 #include "gobot/physics/joint_controller.hpp"
 
 namespace gobot {
+namespace python {
+class PyGo1LocomotionBatchView;
+}
 
 class GOBOT_EXPORT MuJoCoPhysicsWorld : public PhysicsWorld {
     GOBCLASS(MuJoCoPhysicsWorld, PhysicsWorld)
@@ -45,6 +48,62 @@ public:
         int first_collision_contact_dimension{0};
         Vector2 first_collision_solref{0.0, 0.0};
         std::vector<RealType> first_collision_solimp;
+    };
+
+    struct BatchRobotStateRequest {
+        std::string robot_name;
+        std::string base_link;
+        std::vector<std::string> joint_names;
+        std::vector<std::string> link_names;
+        std::vector<std::string> sensor_names;
+        std::vector<RealType> target_positions;
+        std::uint64_t ticks{1};
+        std::size_t worker_count{0};
+    };
+
+    struct BatchRobotStateArrays {
+        std::string robot_name;
+        std::string base_link;
+        std::vector<std::string> joint_names;
+        std::vector<std::string> link_names;
+        std::vector<std::string> sensor_names;
+        std::size_t environment_count{0};
+        std::size_t max_sensor_values{0};
+        std::size_t max_sensor_hits{0};
+        std::size_t max_contact_count{0};
+        std::vector<RealType> base_position;
+        std::vector<RealType> base_quaternion;
+        std::vector<RealType> base_linear_velocity;
+        std::vector<RealType> base_angular_velocity;
+        std::vector<RealType> joint_position;
+        std::vector<RealType> joint_velocity;
+        std::vector<RealType> joint_effort;
+        std::vector<RealType> joint_target_position;
+        std::vector<RealType> joint_target_velocity;
+        std::vector<RealType> joint_target_effort;
+        std::vector<RealType> joint_lower_limit;
+        std::vector<RealType> joint_upper_limit;
+        std::vector<RealType> link_position;
+        std::vector<RealType> link_quaternion;
+        std::vector<RealType> link_linear_velocity;
+        std::vector<RealType> link_angular_velocity;
+        std::vector<std::int32_t> sensor_value_count;
+        std::vector<std::int32_t> sensor_hit_count;
+        std::vector<RealType> sensor_position;
+        std::vector<RealType> sensor_quaternion;
+        std::vector<RealType> sensor_values;
+        std::vector<std::uint8_t> sensor_hit;
+        std::vector<RealType> sensor_hit_origin;
+        std::vector<RealType> sensor_hit_point;
+        std::vector<RealType> sensor_hit_normal;
+        std::vector<RealType> sensor_hit_distance;
+        std::vector<std::int32_t> contact_count;
+        std::vector<std::int32_t> contact_link_index;
+        std::vector<RealType> contact_position;
+        std::vector<RealType> contact_normal;
+        std::vector<RealType> contact_force;
+        std::vector<RealType> contact_normal_force;
+        std::vector<RealType> contact_distance;
     };
 
     MuJoCoPhysicsWorld();
@@ -111,6 +170,8 @@ public:
                                    const Vector3& linear_velocity = Vector3::Zero(),
                                    const Vector3& angular_velocity = Vector3::Zero()) override;
 
+    bool ResetEnvironmentRobotStates(const std::vector<PhysicsEnvironmentRobotResetState>& reset_states) override;
+
     bool SetEnvironmentJointControl(std::size_t environment_index,
                                     const std::string& robot_name,
                                     const std::string& joint_name,
@@ -122,6 +183,9 @@ public:
                                      PhysicsJointControlMode control_mode,
                                      const std::vector<RealType>& targets,
                                      std::size_t environment_count) override;
+
+    bool StepEnvironmentBatchFastRobotState(const BatchRobotStateRequest& request,
+                                            BatchRobotStateArrays& arrays);
 
     bool SetLinkExternalForce(const std::string& robot_name,
                               const std::string& link_name,
@@ -145,6 +209,8 @@ protected:
                                               std::size_t environment_index) const override;
 
 private:
+    friend class python::PyGo1LocomotionBatchView;
+
 #ifdef GOBOT_HAS_MUJOCO
     bool LoadModelFromRobotSources();
 
@@ -237,6 +303,12 @@ private:
     std::size_t ResolveBatchWorkerCount(std::size_t requested_workers,
                                         std::size_t environment_count) const;
 
+    bool StepEnvironmentBatchInternal(RealType delta_time,
+                                      std::uint64_t ticks,
+                                      std::size_t worker_count,
+                                      bool sync_state,
+                                      bool apply_controls = true);
+
     bool EnsureBatchWorkers(std::size_t worker_count);
 
     void StopBatchWorkers();
@@ -266,6 +338,8 @@ private:
     std::size_t batch_environment_count_{0};
     std::size_t batch_work_chunk_{1};
     std::uint64_t batch_ticks_{0};
+    bool batch_sync_state_{true};
+    bool batch_apply_controls_{true};
     bool batch_stop_{false};
     bool batch_work_pending_{false};
 #endif

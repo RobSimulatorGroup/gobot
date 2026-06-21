@@ -3,7 +3,13 @@
 from __future__ import annotations
 
 from .batch import BatchEnvState, CpuBatchEnv
-from .runtime import BatchSimulationRuntime
+from .runtime import (
+    BatchSimulationRuntime,
+    GobotGo1FastBatchBackend,
+    GobotGo1FastBatchState,
+    GobotSceneBatchBackend,
+    GobotSceneBatchState,
+)
 from .spec import ActionSpec, ObservationSpec, SpecField, validate_spec_metadata
 from . import locomotion
 from .rsl_rl import (
@@ -20,6 +26,10 @@ __all__ = [
     "BatchEnvState",
     "BatchSimulationRuntime",
     "CpuBatchEnv",
+    "GobotGo1FastBatchBackend",
+    "GobotGo1FastBatchState",
+    "GobotSceneBatchBackend",
+    "GobotSceneBatchState",
     "locomotion",
     "ObservationSpec",
     "RslRlBaseRunnerCfg",

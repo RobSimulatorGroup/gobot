@@ -7,7 +7,7 @@ This example keeps the robot project self-contained:
 - `go1.jscn` is the Gobot robot scene imported from `go1.xml`.
 - `go1_scene.jscn` is the Gobot scene that references `go1.jscn`.
 - `train/go1_velocity_train.py` trains the Go1-owned velocity task into `policies/`.
-- `train/go1_velocity_env.py` contains the Go1 rsl_rl vector environment.
+- `train/go1_velocity_env.py` contains the Go1 rsl_rl vector environment. It trains from the Gobot `.jscn` scene through a scene-authored CPU batch backend facade, not by importing XML directly.
 - `train/go1_velocity_cfg.py` contains Go1 joints, rewards, PPO, command, and terrain curriculum settings.
 - `scripts/go1.py` is attached to the `go1_scene.jscn` root and plays a trained policy in `gobot_editor`.
 - `policies/go1.onnx` is the default lightweight rough-terrain playback policy.
@@ -62,8 +62,14 @@ uv run --extra train python examples/go1/train/go1_velocity_benchmark.py \
   --warmup-steps 10 \
   --device cpu \
   --sim-workers 0 \
-  --no-obs-noise
+  --no-obs-noise \
+  --profile-step
 ```
+
+`--profile-step` reports the major Go1 CPU batch env phases: action
+preparation/application, physics, state refresh, command update, contact
+updates, reward, termination/reset, observation build, tensor conversion, and
+extras/logging.
 
 Benchmark a UniLab-style raw MuJoCo state-array batch step path:
 

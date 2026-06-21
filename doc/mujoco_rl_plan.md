@@ -167,19 +167,28 @@ Current Gobot Go1 CPU batch env shape:
 ```text
 Python Go1VelocityEnv.step(action)
   -> torch action clipping / scaling
-  -> gobot.app.AppContext.set_batch_joint_position_targets(...)
-  -> SimulationScene / MuJoCoPhysicsWorld
-  -> one shared mjModel + per-env runtime data/state
-  -> step_batch(decimation, workers)
-  -> Gobot runtime state extraction by robot/link/joint/sensor name
-  -> Python dict -> numpy/torch observation, reward, done, reset logic
+  -> GobotSceneBatchBackend.step(target_joint_positions, decimation)
+       -> gobot.app.AppContext.set_batch_joint_position_targets(...)
+       -> step_batch(decimation, workers)
+  -> GobotSceneBatchBackend.refresh()
+       -> cached numpy arrays for base, joints, links, sensors, contacts
+  -> Python task update_state:
+       command sampling, contact history, reward, termination, reset, obs tensors
+```
+
+The Go1 task borrows UniLab's useful structure without adopting UniLab's XML
+entrypoint:
+
+```text
+apply_action(action) -> backend.step(ctrl) -> backend cached arrays -> update_state()
 ```
 
 This path is closest to the intended engine contract. It preserves Gobot scene
 authorship, node names, terrain/sensor nodes, debug visibility, and controller
 semantics. Its main throughput cost is that hot-loop observation/reward/reset
-work still crosses through Gobot runtime state dictionaries and Python/Torch
-task code.
+work still crosses through Gobot runtime state extraction and Python/Torch task
+code. The `GobotSceneBatchBackend` facade is the public training-side boundary;
+the direct XML `_MujocoBatchPool` remains a benchmark/internal probe.
 
 State-array MuJoCo batch stepping shape, inspired by UniLab `mujoco_uni`
 `batch_env`:

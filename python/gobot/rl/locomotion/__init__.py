@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from .base import LocomotionBatchEnv, LocomotionControlCfg, LocomotionNoiseCfg
 from .command import (
     UniformVelocityCommand,
     UniformVelocityCommandCfg,
@@ -21,6 +22,9 @@ from .observation import (
 from .terrain import TerrainSampler
 
 __all__ = [
+    "LocomotionBatchEnv",
+    "LocomotionControlCfg",
+    "LocomotionNoiseCfg",
     "ObservationField",
     "ObservationSchema",
     "TerrainSampler",

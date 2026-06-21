@@ -89,6 +89,8 @@ public:
                                    const Vector3& linear_velocity,
                                    const Vector3& angular_velocity);
 
+    bool ResetEnvironmentRobotStates(const std::vector<PhysicsEnvironmentRobotResetState>& reset_states);
+
     bool SetEnvironmentJointPositionTarget(std::size_t environment_index,
                                            const std::string& robot_name,
                                            const std::string& joint_name,

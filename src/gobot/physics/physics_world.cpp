@@ -1381,6 +1381,61 @@ bool PhysicsWorld::ResetEnvironmentLinkState(std::size_t environment_index,
     return ResetLinkState(robot_name, link_name, position, orientation, linear_velocity, angular_velocity);
 }
 
+bool PhysicsWorld::ResetEnvironmentRobotStates(const std::vector<PhysicsEnvironmentRobotResetState>& reset_states) {
+    for (const PhysicsEnvironmentRobotResetState& reset_state : reset_states) {
+        if (reset_state.joint_positions.size() != reset_state.joint_names.size() ||
+            reset_state.joint_velocities.size() != reset_state.joint_names.size()) {
+            SetLastError(fmt::format("Expected {} joint reset value(s) for robot '{}', got {} position(s) and {} velocity value(s).",
+                                     reset_state.joint_names.size(),
+                                     reset_state.robot_name,
+                                     reset_state.joint_positions.size(),
+                                     reset_state.joint_velocities.size()));
+            return false;
+        }
+        if (!reset_state.joint_position_targets.empty() &&
+            reset_state.joint_position_targets.size() != reset_state.joint_names.size()) {
+            SetLastError(fmt::format("Expected {} joint target value(s) for robot '{}', got {}.",
+                                     reset_state.joint_names.size(),
+                                     reset_state.robot_name,
+                                     reset_state.joint_position_targets.size()));
+            return false;
+        }
+        if (!ResetEnvironment(reset_state.environment_index)) {
+            return false;
+        }
+        if (!ResetEnvironmentLinkState(reset_state.environment_index,
+                                       reset_state.robot_name,
+                                       reset_state.base_link_name,
+                                       reset_state.base_position,
+                                       reset_state.base_orientation,
+                                       reset_state.base_linear_velocity,
+                                       reset_state.base_angular_velocity)) {
+            return false;
+        }
+        for (std::size_t joint_index = 0; joint_index < reset_state.joint_names.size(); ++joint_index) {
+            if (!ResetEnvironmentJointState(reset_state.environment_index,
+                                            reset_state.robot_name,
+                                            reset_state.joint_names[joint_index],
+                                            reset_state.joint_positions[joint_index],
+                                            reset_state.joint_velocities[joint_index])) {
+                return false;
+            }
+        }
+        for (std::size_t joint_index = 0; joint_index < reset_state.joint_position_targets.size(); ++joint_index) {
+            if (!SetEnvironmentJointControl(reset_state.environment_index,
+                                            reset_state.robot_name,
+                                            reset_state.joint_names[joint_index],
+                                            PhysicsJointControlMode::Position,
+                                            reset_state.joint_position_targets[joint_index])) {
+                return false;
+            }
+        }
+    }
+
+    last_error_.clear();
+    return true;
+}
+
 bool PhysicsWorld::SetJointControl(const std::string& robot_name,
                                    const std::string& joint_name,
                                    PhysicsJointControlMode control_mode,

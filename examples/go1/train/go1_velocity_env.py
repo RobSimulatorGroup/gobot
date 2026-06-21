@@ -6,15 +6,33 @@ from dataclasses import dataclass
 import math
 from pathlib import Path
 import re
-import time
 from typing import Any, Mapping, Sequence
 
 import numpy as np
 
+try:
+    from ._repo_imports import prefer_repo_gobot
+except ImportError:
+    from _repo_imports import prefer_repo_gobot
+
+prefer_repo_gobot()
+
 import gobot
 
-from gobot.rl import ActionSpec, BatchEnvState, BatchSimulationRuntime, CpuBatchEnv, SpecField
+from gobot.rl import (
+    ActionSpec,
+    BatchEnvState,
+    BatchSimulationRuntime,
+    GobotGo1FastBatchBackend,
+    GobotGo1FastBatchState,
+    GobotSceneBatchBackend,
+    GobotSceneBatchState,
+    SpecField,
+)
 from gobot.rl.locomotion import (
+    LocomotionBatchEnv,
+    LocomotionControlCfg,
+    LocomotionNoiseCfg,
     TerrainSampler,
     UniformVelocityCommand,
     build_velocity_actor_observation,
@@ -69,35 +87,10 @@ class VelocityRuntimeState:
     contacts: Sequence[Mapping[str, Any]]
 
 
-@dataclass
-class VelocityBatchRuntimeState:
-    raw: Mapping[str, Any]
-    base_position: np.ndarray
-    base_quaternion: np.ndarray
-    base_linear_velocity: np.ndarray
-    base_angular_velocity: np.ndarray
-    joint_position: np.ndarray
-    joint_velocity: np.ndarray
-    joint_lower_limit: np.ndarray
-    joint_upper_limit: np.ndarray
-    link_names: tuple[str, ...]
-    link_position: np.ndarray
-    sensor_names: tuple[str, ...]
-    sensor_position: np.ndarray
-    sensor_values: np.ndarray
-    sensor_value_count: np.ndarray
-    sensor_hit: np.ndarray
-    sensor_hit_point: np.ndarray
-    sensor_hit_normal: np.ndarray
-    sensor_hit_distance: np.ndarray
-    contact_count: np.ndarray
-    contact_link_index: np.ndarray
-    contact_position: np.ndarray
-    contact_force: np.ndarray
-    contact_normal_force: np.ndarray
+VelocityBatchRuntimeState = GobotSceneBatchState | GobotGo1FastBatchState
 
 
-class Go1VelocityEnv(CpuBatchEnv):
+class Go1VelocityEnv(LocomotionBatchEnv):
     """rsl_rl-compatible vector env for the Go1 velocity example."""
 
     is_vector_env = True
@@ -118,20 +111,26 @@ class Go1VelocityEnv(CpuBatchEnv):
             import torch
         except ImportError as error:
             raise RuntimeError("Go1VelocityEnv requires gobot[train] dependencies.") from error
-        super().__init__(num_envs=int(num_envs), seed=int(seed))
         self.torch = torch
         self.cfg_obj = cfg if cfg is not None else go1_rough_velocity_cfg()
+        joint_names = tuple(self.cfg_obj.joint_names)
+        default_joint_pos = np.asarray(self.cfg_obj.default_joint_pos, dtype=np.float32)
+        if len(joint_names) == 0 or default_joint_pos.shape != (len(joint_names),):
+            raise ValueError("velocity task joint_names and default_joint_pos must be non-empty and have the same length")
+        super().__init__(
+            num_envs=int(num_envs),
+            seed=int(seed),
+            control_cfg=LocomotionControlCfg(action_scale=self.cfg_obj.action_scale),
+            noise_cfg=LocomotionNoiseCfg(
+                level=1.0 if self.cfg_obj.observations.actor_noise else 0.0,
+                ranges=self.cfg_obj.observations.actor_noise_ranges,
+            ),
+            joint_names=joint_names,
+            default_joint_pos=default_joint_pos,
+            profile_step=profile_step,
+        )
         self.device = device
         self.sim_workers = max(0, int(sim_workers))
-        self.profile_step = bool(profile_step)
-        self._profile_step_count = 0
-        self._profile_totals: dict[str, float] = {}
-        self.num_actions = len(self.cfg_obj.joint_names)
-        self.joint_names = tuple(self.cfg_obj.joint_names)
-        self.default_joint_pos = np.asarray(self.cfg_obj.default_joint_pos, dtype=np.float32)
-        if self.num_actions == 0 or self.default_joint_pos.shape != (self.num_actions,):
-            raise ValueError("velocity task joint_names and default_joint_pos must be non-empty and have the same length")
-        self.action_scale = self._action_scale_array(self.cfg_obj.action_scale)
         self.physics_dt = float(self.cfg_obj.physics_dt)
         self.decimation = int(self.cfg_obj.decimation)
         self.step_dt = self.physics_dt * self.decimation
@@ -144,8 +143,6 @@ class Go1VelocityEnv(CpuBatchEnv):
 
         self._foot_count = len(self.cfg_obj.foot_names)
         self._contact_history_length = max(1, int(self.cfg_obj.contact_history_length))
-        self._last_actions = np.zeros((self.num_envs, self.num_actions), dtype=np.float32)
-        self._previous_actions = np.zeros_like(self._last_actions)
         self._last_foot_contact = np.zeros((self.num_envs, self._foot_count), dtype=np.float32)
         self._foot_air_time = np.zeros_like(self._last_foot_contact)
         self._foot_peak_height = np.zeros_like(self._last_foot_contact)
@@ -246,8 +243,9 @@ class Go1VelocityEnv(CpuBatchEnv):
             link_names=self._batch_link_names,
             sensor_names=self._batch_sensor_names,
         )
-        self.runtime.configure(self.num_envs)
-        self.resolved_sim_workers = self.runtime.resolved_workers(self.sim_workers)
+        self.backend = self._make_batch_backend()
+        self.backend.configure(self.num_envs)
+        self.resolved_sim_workers = self.backend.resolved_workers(self.sim_workers)
         self.actor_obs_schema = velocity_actor_observation_schema(self.num_actions, self._height_scan_dim)
         self.critic_obs_schema = velocity_critic_observation_schema(self.num_actions, self._height_scan_dim, self._foot_count)
         self.action_spec = self._make_action_spec()
@@ -284,6 +282,7 @@ class Go1VelocityEnv(CpuBatchEnv):
             "domain_randomization": self.cfg_obj.domain_randomization.enabled,
             "push_enabled": self.cfg_obj.push_enabled,
             "push_interval_range_s": self.cfg_obj.push_interval_range_s,
+            "fast_batch_view": bool(getattr(self.backend, "is_fast", False)),
         }
         self.extras: dict[str, Any] = {}
         self._obs, self._critic_obs = self._reset_all()
@@ -317,41 +316,37 @@ class Go1VelocityEnv(CpuBatchEnv):
 
     def step(self, actions):
         torch = self.torch
-        profile_marks: dict[str, float] | None = {"start": time.perf_counter()} if self.profile_step else None
+        profile_marks = self._new_profile_marks()
         self._total_policy_steps += self.num_envs
         self._apply_command_curriculum()
         self._update_curriculum_progress()
 
-        action_np = actions.detach().cpu().numpy() if hasattr(actions, "detach") else np.asarray(actions)
-        action_np = np.asarray(action_np, dtype=np.float32).reshape(self.num_envs, self.num_actions)
-        action_np = np.clip(action_np, -1.0, 1.0)
-        if profile_marks is not None:
-            profile_marks["action_prepare"] = time.perf_counter()
+        action_np = self._prepare_actions(actions)
+        self._mark_profile(profile_marks, "action_prepare")
 
-        self._apply_actions(action_np)
-        for env_id in range(self.num_envs):
-            self._maybe_apply_push(env_id)
-        if profile_marks is not None:
-            profile_marks["action_apply"] = time.perf_counter()
-        self.runtime.step(self.decimation, workers=self.sim_workers)
-        if profile_marks is not None:
-            profile_marks["physics"] = time.perf_counter()
-        batch_state = self._batch_runtime_state()
-        if profile_marks is not None:
-            profile_marks["state"] = time.perf_counter()
-        command_states = self._command_states_from_batch(batch_state)
-        self.command_manager.compute(self.step_dt, command_states)
+        ctrl = self._target_positions_from_actions(action_np)
+        self._apply_pushes()
+        self._mark_profile(profile_marks, "action_apply")
+        self.backend.step(ctrl, self.decimation, workers=self.sim_workers)
+        self._mark_profile(profile_marks, "physics")
+        batch_state = self.backend.state
+        self._mark_profile(profile_marks, "state")
+
+        base_lin_vel_b, base_ang_vel_b, projected_gravity = self._base_motion_batch(batch_state)
+        self.command_manager.compute_batch(
+            self.step_dt,
+            base_quaternion=batch_state.base_quaternion,
+            base_lin_vel_b=base_lin_vel_b,
+            base_ang_vel_b=base_ang_vel_b,
+        )
+        self._mark_profile(profile_marks, "command")
 
         self._update_contact_summary_batch(batch_state)
         self._update_foot_history_batch(batch_state)
-        base_lin_vel_b = _rotate_vec_batch_by_quat_inv(batch_state.base_linear_velocity, batch_state.base_quaternion)
-        base_ang_vel_b = _rotate_vec_batch_by_quat_inv(batch_state.base_angular_velocity, batch_state.base_quaternion)
-        projected_gravity = _rotate_vec_batch_by_quat_inv(
-            np.broadcast_to(np.asarray([0.0, 0.0, -1.0], dtype=np.float32), (self.num_envs, 3)),
-            batch_state.base_quaternion,
-        )
         foot_heights = self._foot_heights_batch(batch_state)
         foot_contacts = self._foot_contacts_batch(batch_state)
+        foot_forces = self._foot_contact_forces_batch(batch_state)
+        self._mark_profile(profile_marks, "contact")
         rewards, reward_terms = self._compute_reward_batch(
             batch_state,
             action_np,
@@ -361,6 +356,7 @@ class Go1VelocityEnv(CpuBatchEnv):
             foot_heights,
             foot_contacts,
         )
+        self._mark_profile(profile_marks, "reward")
         time_outs = np.zeros(self.num_envs, dtype=bool)
         reset_reason = np.zeros(self.num_envs, dtype=np.int64)
         metrics: dict[str, np.ndarray] = {
@@ -381,39 +377,43 @@ class Go1VelocityEnv(CpuBatchEnv):
         }
 
         terminated = self._terminated_batch(batch_state, projected_gravity, metrics["base_clearance"])
+        reset_env_ids: list[int] = []
+        reset_reasons: list[int] = []
         for env_id in range(self.num_envs):
             self.episode_length_buf[env_id] += 1
             time_outs[env_id] = bool(self.episode_length_buf[env_id] >= self.max_episode_length and not terminated[env_id])
             done = bool(terminated[env_id] or time_outs[env_id])
             reset_reason[env_id] = 1 if terminated[env_id] else (2 if time_outs[env_id] else 0)
             self._episode_returns[env_id] += rewards[env_id]
-            self._previous_actions[env_id] = self._last_actions[env_id]
-            self._last_actions[env_id] = action_np[env_id]
 
             if done:
                 self._update_terrain_curriculum_limit_from_position(env_id, batch_state.base_position[env_id], reset_reason[env_id])
-                self._reset_env(env_id, reason=reset_reason[env_id])
+                reset_env_ids.append(env_id)
+                reset_reasons.append(int(reset_reason[env_id]))
             metrics["terrain_curriculum_limit"][env_id] = self._terrain_curriculum_limits[env_id]
+        if reset_env_ids:
+            self._reset_envs(np.asarray(reset_env_ids, dtype=np.int64), np.asarray(reset_reasons, dtype=np.int64))
+
+        active_envs = ~(terminated | time_outs)
+        self._previous_actions[active_envs] = self._last_actions[active_envs]
+        self._last_actions[active_envs] = action_np[active_envs]
 
         if np.any(terminated | time_outs):
-            batch_state = self._batch_runtime_state()
-            base_lin_vel_b = _rotate_vec_batch_by_quat_inv(batch_state.base_linear_velocity, batch_state.base_quaternion)
-            base_ang_vel_b = _rotate_vec_batch_by_quat_inv(batch_state.base_angular_velocity, batch_state.base_quaternion)
-            projected_gravity = _rotate_vec_batch_by_quat_inv(
-                np.broadcast_to(np.asarray([0.0, 0.0, -1.0], dtype=np.float32), (self.num_envs, 3)),
-                batch_state.base_quaternion,
-            )
+            batch_state = self.backend.refresh()
+            base_lin_vel_b, base_ang_vel_b, projected_gravity = self._base_motion_batch(batch_state)
             foot_heights = self._foot_heights_batch(batch_state)
             foot_contacts = self._foot_contacts_batch(batch_state)
+            foot_forces = self._foot_contact_forces_batch(batch_state)
+        self._mark_profile(profile_marks, "termination_reset")
 
         obs_np = self._actor_obs_batch(batch_state, base_lin_vel_b, base_ang_vel_b, projected_gravity, corrupt=True)
-        critic_np = self._critic_obs_batch(obs_np, foot_heights, foot_contacts, self._foot_contact_forces_batch(batch_state))
+        critic_np = self._critic_obs_batch(obs_np, foot_heights, foot_contacts, foot_forces)
+        self._mark_profile(profile_marks, "obs_build")
         self._obs = torch.as_tensor(obs_np, dtype=torch.float32, device=self.device)
         self._critic_obs = torch.as_tensor(critic_np, dtype=torch.float32, device=self.device)
         done_t = torch.as_tensor(terminated | time_outs, dtype=torch.bool, device=self.device)
         rewards_t = torch.as_tensor(rewards, dtype=torch.float32, device=self.device)
-        if profile_marks is not None:
-            profile_marks["obs_reward_tensor"] = time.perf_counter()
+        self._mark_profile(profile_marks, "tensor_convert")
         extras = {
             "time_outs": torch.as_tensor(time_outs, dtype=torch.bool, device=self.device),
             "log": {
@@ -439,6 +439,7 @@ class Go1VelocityEnv(CpuBatchEnv):
             },
             "reward_terms": {name: torch.as_tensor(value, dtype=torch.float32, device=self.device) for name, value in reward_terms.items()},
         }
+        self._mark_profile(profile_marks, "extras")
         if profile_marks is not None:
             for name, value in self._consume_profile_marks(profile_marks).items():
                 extras["log"][f"/profile/{name}_ms"] = torch.as_tensor(value, device=self.device)
@@ -464,30 +465,6 @@ class Go1VelocityEnv(CpuBatchEnv):
         self._total_policy_steps = max(0, int(policy_steps))
         self._apply_command_curriculum()
         self._update_curriculum_progress()
-
-    def profile_summary(self) -> dict[str, float]:
-        if self._profile_step_count <= 0:
-            return {}
-        return {name: total / self._profile_step_count for name, total in self._profile_totals.items()}
-
-    def _consume_profile_marks(self, marks: dict[str, float]) -> dict[str, float]:
-        ordered = [
-            ("action_prepare", "start"),
-            ("action_apply", "action_prepare"),
-            ("physics", "action_apply"),
-            ("state", "physics"),
-            ("obs_reward_tensor", "state"),
-        ]
-        values: dict[str, float] = {}
-        for name, previous in ordered:
-            if name in marks and previous in marks:
-                values[name] = (marks[name] - marks[previous]) * 1000.0
-        if "obs_reward_tensor" in marks:
-            values["total"] = (marks["obs_reward_tensor"] - marks["start"]) * 1000.0
-        self._profile_step_count += 1
-        for name, value in values.items():
-            self._profile_totals[name] = self._profile_totals.get(name, 0.0) + value
-        return self.profile_summary()
 
     def _tensor_dict(self, actor, critic):
         from tensordict import TensorDict
@@ -530,19 +507,6 @@ class Go1VelocityEnv(CpuBatchEnv):
             info=info,
         )
 
-    def _action_scale_array(self, scale: float | Mapping[str, float]) -> np.ndarray:
-        if isinstance(scale, Mapping):
-            values = []
-            for joint_name in self.cfg_obj.joint_names:
-                matched = None
-                for pattern, value in scale.items():
-                    if re.fullmatch(pattern, joint_name) or pattern == joint_name:
-                        matched = float(value)
-                        break
-                values.append(0.35 if matched is None else matched)
-            return np.asarray(values, dtype=np.float32)
-        return np.full((self.num_actions,), float(scale), dtype=np.float32)
-
     def _sensor_dim(self, sensor_name: str | None) -> int:
         if sensor_name is None:
             return 0
@@ -576,6 +540,24 @@ class Go1VelocityEnv(CpuBatchEnv):
             joint.drive_stiffness = self.cfg_obj.kp
             joint.drive_damping = self.cfg_obj.kd
             joint.damping = self.cfg_obj.kd
+
+    def _make_batch_backend(self):
+        illegal_cfg = self.cfg_obj.illegal_contact
+        if hasattr(self.context, "create_go1_locomotion_batch_view"):
+            return GobotGo1FastBatchBackend(
+                self.runtime,
+                foot_link_names=self.cfg_obj.foot_link_names,
+                foot_height_sensor_names=[f"{foot}_foot_height_scan" for foot in self.cfg_obj.foot_names],
+                foot_contact_sensor_names=[f"{foot}_foot_contact" for foot in self.cfg_obj.foot_names],
+                height_scan_sensor=self.cfg_obj.observations.height_scan_sensor,
+                thigh_link_patterns=illegal_cfg.thigh_link_patterns,
+                shank_link_patterns=illegal_cfg.shank_link_patterns,
+                trunk_head_link_patterns=illegal_cfg.trunk_head_link_patterns,
+                terminate_on_thigh_contact=illegal_cfg.terminate_on_thigh,
+                ground_force_threshold=illegal_cfg.ground_force_threshold,
+                self_collision_force_threshold=illegal_cfg.self_collision_force_threshold,
+            )
+        return GobotSceneBatchBackend(self.runtime)
 
     def _find_robot_node(self):
         root = self.context.root
@@ -644,84 +626,124 @@ class Go1VelocityEnv(CpuBatchEnv):
         self._current_command_stage = current_stage
 
     def _reset_all(self):
-        obs_list = []
-        critic_list = []
-        for env_id in range(self.num_envs):
-            self._reset_env(env_id, reason=0)
-            state = self._runtime_state(env_id)
-            obs = self._actor_obs(env_id, state, corrupt=True)
-            obs_list.append(obs)
-            critic_list.append(self._critic_obs_for(env_id, state, obs))
+        env_ids = np.arange(self.num_envs, dtype=np.int64)
+        self._reset_envs(env_ids, np.zeros(self.num_envs, dtype=np.int64))
+        batch_state = self.backend.refresh()
+        base_lin_vel_b, base_ang_vel_b, projected_gravity = self._base_motion_batch(batch_state)
+        foot_heights = self._foot_heights_batch(batch_state)
+        foot_contacts = self._foot_contacts_batch(batch_state)
+        foot_forces = self._foot_contact_forces_batch(batch_state)
+        obs = self._actor_obs_batch(batch_state, base_lin_vel_b, base_ang_vel_b, projected_gravity, corrupt=True)
+        critic = self._critic_obs_batch(obs, foot_heights, foot_contacts, foot_forces)
         torch = self.torch
         return (
-            torch.as_tensor(np.stack(obs_list), dtype=torch.float32, device=self.device),
-            torch.as_tensor(np.stack(critic_list), dtype=torch.float32, device=self.device),
+            torch.as_tensor(obs, dtype=torch.float32, device=self.device),
+            torch.as_tensor(critic, dtype=torch.float32, device=self.device),
         )
 
+    def _apply_pushes(self) -> None:
+        for env_id in range(self.num_envs):
+            self._maybe_apply_push(env_id)
+
+    def _base_motion_batch(
+        self,
+        batch_state: VelocityBatchRuntimeState,
+    ) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
+        base_lin_vel_b = _rotate_vec_batch_by_quat_inv(batch_state.base_linear_velocity, batch_state.base_quaternion)
+        base_ang_vel_b = _rotate_vec_batch_by_quat_inv(batch_state.base_angular_velocity, batch_state.base_quaternion)
+        projected_gravity = _rotate_vec_batch_by_quat_inv(
+            np.broadcast_to(np.asarray([0.0, 0.0, -1.0], dtype=np.float32), (self.num_envs, 3)),
+            batch_state.base_quaternion,
+        )
+        return base_lin_vel_b, base_ang_vel_b, projected_gravity
+
     def _reset_env(self, env_id: int, *, reason: int) -> None:
-        self.runtime.reset_env(env_id)
-        spawn_index = self._sample_spawn_index(env_id)
-        spawn = self._spawn_origins[spawn_index].copy()
-        spawn[:2] += self._rng.uniform(-self.cfg_obj.spawn_jitter, self.cfg_obj.spawn_jitter, 2)
-        terrain_height = self._terrain_height(spawn[0], spawn[1])
-        base_z = max(spawn[2], terrain_height) + self.cfg_obj.base_clearance
-        yaw = float(self._rng.uniform(-math.pi, math.pi))
-        reset_lin_vel = (
-            self._sample_range_vec(self.cfg_obj.domain_randomization.reset_lin_vel_ranges, ("x", "y", "z"))
-            if self.cfg_obj.domain_randomization.enabled
-            else np.zeros(3, dtype=np.float32)
-        )
-        reset_ang_vel = (
-            self._sample_range_vec(self.cfg_obj.domain_randomization.reset_ang_vel_ranges, ("x", "y", "z"))
-            if self.cfg_obj.domain_randomization.enabled
-            else np.zeros(3, dtype=np.float32)
-        )
-        self.runtime.reset_link_state(
-            env_id,
-            self.cfg_obj.base_link,
-            [float(spawn[0]), float(spawn[1]), float(base_z)],
-            _quat_from_yaw(yaw).tolist(),
-            reset_lin_vel.tolist(),
-            reset_ang_vel.tolist(),
-        )
-        if self.cfg_obj.domain_randomization.enabled:
-            lo, hi = self.cfg_obj.domain_randomization.encoder_bias_range
-            self._encoder_bias[env_id] = self._rng.uniform(lo, hi, self.num_actions).astype(np.float32)
-        else:
-            self._encoder_bias[env_id] = 0.0
-        for joint_name, default_pos in zip(self.joint_names, self.default_joint_pos, strict=True):
-            self.runtime.reset_joint_state(
-                env_id,
-                joint_name,
-                float(default_pos + self._rng.uniform(-0.05, 0.05)),
-                float(self._rng.uniform(-0.05, 0.05)),
+        self._reset_envs(np.asarray([env_id], dtype=np.int64), np.asarray([reason], dtype=np.int64))
+
+    def _reset_envs(self, env_ids: np.ndarray, reasons: np.ndarray) -> None:
+        env_ids = np.asarray(env_ids, dtype=np.int64).reshape(-1)
+        reasons = np.asarray(reasons, dtype=np.int64).reshape(-1)
+        if env_ids.size == 0:
+            return
+        if reasons.size != env_ids.size:
+            raise ValueError("reset reasons must have the same length as env_ids")
+
+        reset_count = int(env_ids.size)
+        base_positions = np.zeros((reset_count, 3), dtype=np.float32)
+        base_orientations = np.zeros((reset_count, 4), dtype=np.float32)
+        base_linear_velocities = np.zeros((reset_count, 3), dtype=np.float32)
+        base_angular_velocities = np.zeros((reset_count, 3), dtype=np.float32)
+        joint_positions = np.zeros((reset_count, self.num_actions), dtype=np.float32)
+        joint_velocities = np.zeros((reset_count, self.num_actions), dtype=np.float32)
+        joint_targets = np.broadcast_to(self.default_joint_pos.reshape(1, -1), (reset_count, self.num_actions)).astype(np.float32, copy=True)
+
+        for row, env_id_value in enumerate(env_ids):
+            env_id = int(env_id_value)
+            spawn_index = self._sample_spawn_index(env_id)
+            spawn = self._spawn_origins[spawn_index].copy()
+            spawn[:2] += self._rng.uniform(-self.cfg_obj.spawn_jitter, self.cfg_obj.spawn_jitter, 2)
+            terrain_height = self._terrain_height(spawn[0], spawn[1])
+            base_z = max(spawn[2], terrain_height) + self.cfg_obj.base_clearance
+            yaw = float(self._rng.uniform(-math.pi, math.pi))
+            reset_lin_vel = (
+                self._sample_range_vec(self.cfg_obj.domain_randomization.reset_lin_vel_ranges, ("x", "y", "z"))
+                if self.cfg_obj.domain_randomization.enabled
+                else np.zeros(3, dtype=np.float32)
             )
-            self.runtime.set_joint_position_target(env_id, joint_name, float(default_pos))
-        self._spawn_indices[env_id] = spawn_index
-        self._terrain_levels[env_id] = float(self._spawn_levels[spawn_index])
-        self._episode_start_xy[env_id] = spawn[:2]
-        self.episode_length_buf[env_id] = 0
-        self._episode_returns[env_id] = 0.0
-        self._previous_actions[env_id] = 0.0
-        self._last_actions[env_id] = 0.0
-        self._last_foot_contact[env_id] = 0.0
-        self._foot_air_time[env_id] = 0.0
-        self._foot_peak_height[env_id] = 0.0
-        self._foot_velocities[env_id] = 0.0
-        self._previous_foot_positions[env_id] = 0.0
-        self._foot_contact_history[env_id] = 0.0
-        self._foot_force_history[env_id] = 0.0
-        self._foot_history_cursor[env_id] = 0
-        self._first_contact[env_id] = 0.0
-        self._landing_force[env_id] = 0.0
-        self._terrain_normal_error[env_id] = 0.0
-        self._illegal_contact_counts[env_id] = 0.0
-        self._self_collision_counts[env_id] = 0.0
-        self._shank_collision_counts[env_id] = 0.0
-        self._trunk_head_collision_counts[env_id] = 0.0
-        self._reset_push_timer(env_id)
-        self._reset_reasons[env_id] = reason
-        self.command_manager.reset(np.asarray([env_id], dtype=np.int64))
+            reset_ang_vel = (
+                self._sample_range_vec(self.cfg_obj.domain_randomization.reset_ang_vel_ranges, ("x", "y", "z"))
+                if self.cfg_obj.domain_randomization.enabled
+                else np.zeros(3, dtype=np.float32)
+            )
+            if self.cfg_obj.domain_randomization.enabled:
+                lo, hi = self.cfg_obj.domain_randomization.encoder_bias_range
+                self._encoder_bias[env_id] = self._rng.uniform(lo, hi, self.num_actions).astype(np.float32)
+            else:
+                self._encoder_bias[env_id] = 0.0
+
+            base_positions[row] = np.asarray([float(spawn[0]), float(spawn[1]), float(base_z)], dtype=np.float32)
+            base_orientations[row] = _quat_from_yaw(yaw)
+            base_linear_velocities[row] = reset_lin_vel
+            base_angular_velocities[row] = reset_ang_vel
+            joint_positions[row] = self.default_joint_pos + self._rng.uniform(-0.05, 0.05, self.num_actions).astype(np.float32)
+            joint_velocities[row] = self._rng.uniform(-0.05, 0.05, self.num_actions).astype(np.float32)
+
+            self._spawn_indices[env_id] = spawn_index
+            self._terrain_levels[env_id] = float(self._spawn_levels[spawn_index])
+            self._episode_start_xy[env_id] = spawn[:2]
+            self.episode_length_buf[env_id] = 0
+            self._episode_returns[env_id] = 0.0
+            self._previous_actions[env_id] = 0.0
+            self._last_actions[env_id] = 0.0
+            self._last_foot_contact[env_id] = 0.0
+            self._foot_air_time[env_id] = 0.0
+            self._foot_peak_height[env_id] = 0.0
+            self._foot_velocities[env_id] = 0.0
+            self._previous_foot_positions[env_id] = 0.0
+            self._foot_contact_history[env_id] = 0.0
+            self._foot_force_history[env_id] = 0.0
+            self._foot_history_cursor[env_id] = 0
+            self._first_contact[env_id] = 0.0
+            self._landing_force[env_id] = 0.0
+            self._terrain_normal_error[env_id] = 0.0
+            self._illegal_contact_counts[env_id] = 0.0
+            self._self_collision_counts[env_id] = 0.0
+            self._shank_collision_counts[env_id] = 0.0
+            self._trunk_head_collision_counts[env_id] = 0.0
+            self._reset_push_timer(env_id)
+            self._reset_reasons[env_id] = int(reasons[row])
+
+        self.backend.reset_robot_states(
+            env_ids.tolist(),
+            base_positions=base_positions,
+            base_orientations=base_orientations,
+            base_linear_velocities=base_linear_velocities,
+            base_angular_velocities=base_angular_velocities,
+            joint_positions=joint_positions,
+            joint_velocities=joint_velocities,
+            joint_position_targets=joint_targets,
+        )
+        self.command_manager.reset(env_ids)
 
     def _sample_range_vec(self, ranges: Mapping[str, tuple[float, float]], names: Sequence[str]) -> np.ndarray:
         values = []
@@ -743,6 +765,16 @@ class Go1VelocityEnv(CpuBatchEnv):
         self._push_time_left[env_id] -= self.step_dt
         if self._push_time_left[env_id] > 0.0:
             return
+        if hasattr(self.backend, "set_base_velocity") and hasattr(self.backend.state, "base_linear_velocity"):
+            batch = self.backend.state
+            linear_velocity = np.asarray(batch.base_linear_velocity[env_id], dtype=np.float32).copy()
+            angular_velocity = np.asarray(batch.base_angular_velocity[env_id], dtype=np.float32).copy()
+            linear_velocity += self._sample_range_vec(self.cfg_obj.push_velocity_ranges, ("x", "y", "z"))
+            angular_velocity += self._sample_range_vec(self.cfg_obj.push_velocity_ranges, ("roll", "pitch", "yaw"))
+            self.backend.set_base_velocity(env_id, linear_velocity, angular_velocity)
+            self._push_count[env_id] += 1
+            self._reset_push_timer(env_id)
+            return
         state = self._runtime_state(env_id)
         position = _as_vec(state.base.get("global_transform", {}).get("position"), 3)
         orientation = _quat(state.base)
@@ -750,7 +782,7 @@ class Go1VelocityEnv(CpuBatchEnv):
         angular_velocity = _as_vec(state.base.get("angular_velocity"), 3)
         linear_velocity += self._sample_range_vec(self.cfg_obj.push_velocity_ranges, ("x", "y", "z"))
         angular_velocity += self._sample_range_vec(self.cfg_obj.push_velocity_ranges, ("roll", "pitch", "yaw"))
-        self.runtime.reset_link_state(
+        self.backend.reset_link_state(
             env_id,
             self.cfg_obj.base_link,
             position.tolist(),
@@ -799,40 +831,18 @@ class Go1VelocityEnv(CpuBatchEnv):
     def _apply_action(self, env_id: int, action: np.ndarray) -> None:
         target_pos = self.default_joint_pos + self.action_scale * action
         for joint_name, target in zip(self.joint_names, target_pos, strict=True):
-            self.runtime.set_joint_position_target(env_id, joint_name, float(target))
+            self.backend.set_joint_position_target(env_id, joint_name, float(target))
 
     def _apply_actions(self, actions: np.ndarray) -> None:
-        target_pos = self.default_joint_pos.reshape(1, -1) + self.action_scale.reshape(1, -1) * actions
-        self.runtime.set_joint_position_targets(np.asarray(target_pos, dtype=np.float64))
+        targets = self._target_positions_from_actions(actions)
+        backend = getattr(self, "backend", None)
+        if backend is not None:
+            backend.set_position_targets(targets)
+            return
+        self.runtime.set_joint_position_targets(targets)
 
     def _batch_runtime_state(self) -> VelocityBatchRuntimeState:
-        raw = self.runtime.robot_state()
-        return VelocityBatchRuntimeState(
-            raw=raw,
-            base_position=np.asarray(raw["base_position"], dtype=np.float32),
-            base_quaternion=np.asarray(raw["base_quaternion"], dtype=np.float32),
-            base_linear_velocity=np.asarray(raw["base_linear_velocity"], dtype=np.float32),
-            base_angular_velocity=np.asarray(raw["base_angular_velocity"], dtype=np.float32),
-            joint_position=np.asarray(raw["joint_position"], dtype=np.float32),
-            joint_velocity=np.asarray(raw["joint_velocity"], dtype=np.float32),
-            joint_lower_limit=np.asarray(raw["joint_lower_limit"], dtype=np.float32),
-            joint_upper_limit=np.asarray(raw["joint_upper_limit"], dtype=np.float32),
-            link_names=tuple(str(name) for name in raw.get("link_names", self._batch_link_names)),
-            link_position=np.asarray(raw["link_position"], dtype=np.float32),
-            sensor_names=tuple(str(name) for name in raw.get("sensor_names", self._batch_sensor_names)),
-            sensor_position=np.asarray(raw["sensor_position"], dtype=np.float32),
-            sensor_values=np.asarray(raw["sensor_values"], dtype=np.float32),
-            sensor_value_count=np.asarray(raw["sensor_value_count"], dtype=np.int64),
-            sensor_hit=np.asarray(raw["sensor_hit"], dtype=bool),
-            sensor_hit_point=np.asarray(raw["sensor_hit_point"], dtype=np.float32),
-            sensor_hit_normal=np.asarray(raw["sensor_hit_normal"], dtype=np.float32),
-            sensor_hit_distance=np.asarray(raw["sensor_hit_distance"], dtype=np.float32),
-            contact_count=np.asarray(raw["contact_count"], dtype=np.int64),
-            contact_link_index=np.asarray(raw["contact_link_index"], dtype=np.int64),
-            contact_position=np.asarray(raw["contact_position"], dtype=np.float32),
-            contact_force=np.asarray(raw["contact_force"], dtype=np.float32),
-            contact_normal_force=np.asarray(raw["contact_normal_force"], dtype=np.float32),
-        )
+        return self.backend.refresh()
 
     def _command_states_from_batch(self, batch: VelocityBatchRuntimeState) -> list[VelocityRuntimeState]:
         states: list[VelocityRuntimeState] = []
@@ -857,7 +867,7 @@ class Go1VelocityEnv(CpuBatchEnv):
         return states
 
     def _runtime_state(self, env_id: int) -> VelocityRuntimeState:
-        runtime = self.runtime.env_state(env_id)
+        runtime = self.backend.env_state(env_id)
         robot = next((robot for robot in runtime.get("robots", []) if robot.get("name") == self.cfg_obj.robot_name), None)
         if robot is None:
             raise RuntimeError(f"Gobot runtime state has no robot {self.cfg_obj.robot_name!r}")
@@ -883,14 +893,14 @@ class Go1VelocityEnv(CpuBatchEnv):
         joint_pos_rel = joint_pos - self.default_joint_pos
         height_scan = self._height_scan(state)
         return build_velocity_actor_observation(
-            base_lin_vel_b=self._with_noise("base_lin_vel", base_lin_vel, corrupt),
-            base_ang_vel_b=self._with_noise("base_ang_vel", base_ang_vel, corrupt),
-            projected_gravity=self._with_noise("projected_gravity", projected_gravity, corrupt),
-            joint_pos_rel=self._with_noise("joint_pos", joint_pos_rel, corrupt),
-            joint_vel=self._with_noise("joint_vel", joint_vel, corrupt),
+            base_lin_vel_b=self._obs_noise(base_lin_vel, "base_lin_vel", corrupt=corrupt),
+            base_ang_vel_b=self._obs_noise(base_ang_vel, "base_ang_vel", corrupt=corrupt),
+            projected_gravity=self._obs_noise(projected_gravity, "projected_gravity", corrupt=corrupt),
+            joint_pos_rel=self._obs_noise(joint_pos_rel, "joint_pos", corrupt=corrupt),
+            joint_vel=self._obs_noise(joint_vel, "joint_vel", corrupt=corrupt),
             last_action=self._last_actions[env_id],
             command=self.command_manager.command_b[env_id],
-            height_scan=self._with_noise("height_scan", height_scan, corrupt) / max(self.cfg_obj.observations.terrain_scan_max_distance, 1.0e-6),
+            height_scan=self._obs_noise(height_scan, "height_scan", corrupt=corrupt) / max(self.cfg_obj.observations.terrain_scan_max_distance, 1.0e-6),
         )
 
     def _critic_obs_for(self, env_id: int, state: VelocityRuntimeState, actor_obs: np.ndarray) -> np.ndarray:
@@ -914,14 +924,14 @@ class Go1VelocityEnv(CpuBatchEnv):
         joint_pos_rel = batch.joint_position + self._encoder_bias - self.default_joint_pos.reshape(1, -1)
         height_scan = self._height_scan_batch(batch)
         parts = [
-            self._with_noise("base_lin_vel", base_lin_vel_b, corrupt),
-            self._with_noise("base_ang_vel", base_ang_vel_b, corrupt),
-            self._with_noise("projected_gravity", projected_gravity, corrupt),
-            self._with_noise("joint_pos", joint_pos_rel, corrupt),
-            self._with_noise("joint_vel", batch.joint_velocity, corrupt),
+            self._obs_noise(base_lin_vel_b, "base_lin_vel", corrupt=corrupt),
+            self._obs_noise(base_ang_vel_b, "base_ang_vel", corrupt=corrupt),
+            self._obs_noise(projected_gravity, "projected_gravity", corrupt=corrupt),
+            self._obs_noise(joint_pos_rel, "joint_pos", corrupt=corrupt),
+            self._obs_noise(batch.joint_velocity, "joint_vel", corrupt=corrupt),
             self._last_actions,
             self.command_manager.command_b,
-            self._with_noise("height_scan", height_scan, corrupt)
+            self._obs_noise(height_scan, "height_scan", corrupt=corrupt)
             / max(self.cfg_obj.observations.terrain_scan_max_distance, 1.0e-6),
         ]
         return np.concatenate([np.asarray(part, dtype=np.float32).reshape(self.num_envs, -1) for part in parts], axis=1)
@@ -942,15 +952,6 @@ class Go1VelocityEnv(CpuBatchEnv):
             log_forces.reshape(self.num_envs, -1),
         ]
         return np.concatenate([np.asarray(part, dtype=np.float32).reshape(self.num_envs, -1) for part in parts], axis=1)
-
-    def _with_noise(self, name: str, values: np.ndarray, corrupt: bool) -> np.ndarray:
-        values = np.asarray(values, dtype=np.float32)
-        if not corrupt or not self.cfg_obj.observations.actor_noise:
-            return values
-        noise_range = self.cfg_obj.observations.actor_noise_ranges.get(name)
-        if noise_range is None:
-            return values
-        return values + self._rng.uniform(noise_range[0], noise_range[1], size=values.shape).astype(np.float32)
 
     def _joint_values(
         self,
@@ -999,6 +1000,14 @@ class Go1VelocityEnv(CpuBatchEnv):
             return np.zeros((self.num_envs, 0), dtype=np.float32)
         if self._height_scan_dim == 0:
             raise RuntimeError(f"Go1 height scan sensor {sensor_name!r} is configured but has no channels")
+        if hasattr(batch, "height_scan"):
+            height_scan = np.asarray(batch.height_scan, dtype=np.float32)
+            if height_scan.shape[1] != self._height_scan_dim:
+                raise RuntimeError(
+                    f"Go1 height scan sensor {sensor_name!r} produced {height_scan.shape[1]} hits, "
+                    f"expected {self._height_scan_dim}"
+                )
+            return height_scan
         sensor_index = int(self._height_scan_sensor_index)
         if sensor_index < 0:
             raise RuntimeError(f"Go1 runtime state is missing configured height scan sensor {sensor_name!r}")
@@ -1025,6 +1034,8 @@ class Go1VelocityEnv(CpuBatchEnv):
         return np.asarray(values, dtype=np.float32)
 
     def _foot_heights_batch(self, batch: VelocityBatchRuntimeState) -> np.ndarray:
+        if hasattr(batch, "foot_height"):
+            return np.asarray(batch.foot_height, dtype=np.float32)
         values = np.zeros((self.num_envs, self._foot_count), dtype=np.float32)
         for foot_index, sensor_index in enumerate(self._foot_height_sensor_indices):
             if sensor_index < 0 or batch.sensor_values.shape[2] == 0:
@@ -1041,6 +1052,8 @@ class Go1VelocityEnv(CpuBatchEnv):
         return np.asarray(values, dtype=np.float32)
 
     def _foot_contacts_batch(self, batch: VelocityBatchRuntimeState) -> np.ndarray:
+        if hasattr(batch, "foot_contact"):
+            return np.asarray(batch.foot_contact, dtype=np.float32)
         values = np.zeros((self.num_envs, self._foot_count), dtype=np.float32)
         for foot_index, sensor_index in enumerate(self._foot_contact_sensor_indices):
             if sensor_index < 0 or batch.sensor_values.shape[2] == 0:
@@ -1060,6 +1073,8 @@ class Go1VelocityEnv(CpuBatchEnv):
         return np.asarray(values, dtype=np.float32)
 
     def _foot_positions_batch(self, batch: VelocityBatchRuntimeState) -> np.ndarray:
+        if hasattr(batch, "foot_position"):
+            return np.asarray(batch.foot_position, dtype=np.float32)
         return batch.link_position[:, self._foot_link_indices, :]
 
     def _foot_contact_forces(self, state: VelocityRuntimeState) -> np.ndarray:
@@ -1078,6 +1093,8 @@ class Go1VelocityEnv(CpuBatchEnv):
         return forces
 
     def _foot_contact_forces_batch(self, batch: VelocityBatchRuntimeState) -> np.ndarray:
+        if hasattr(batch, "foot_contact_force"):
+            return np.asarray(batch.foot_contact_force, dtype=np.float32)
         foot_positions = self._foot_positions_batch(batch)
         forces = np.zeros((self.num_envs, self._foot_count, 3), dtype=np.float32)
         max_contacts = batch.contact_position.shape[1]
@@ -1109,6 +1126,12 @@ class Go1VelocityEnv(CpuBatchEnv):
         self._shank_collision_counts[:] = 0.0
         self._trunk_head_collision_counts[:] = 0.0
         if not cfg.enabled:
+            return
+        if hasattr(batch, "illegal_contact_count"):
+            self._illegal_contact_counts[:] = np.asarray(batch.illegal_contact_count, dtype=np.float32)
+            self._self_collision_counts[:] = np.asarray(batch.self_collision_count, dtype=np.float32)
+            self._shank_collision_counts[:] = np.asarray(batch.shank_collision_count, dtype=np.float32)
+            self._trunk_head_collision_counts[:] = np.asarray(batch.trunk_head_collision_count, dtype=np.float32)
             return
         max_contacts = batch.contact_link_index.shape[1]
         for env_id in range(self.num_envs):
@@ -1495,12 +1518,17 @@ class Go1VelocityEnv(CpuBatchEnv):
         sensor_name = self.cfg_obj.observations.height_scan_sensor
         if sensor_name is None:
             return np.broadcast_to(np.asarray([0.0, 0.0, 1.0], dtype=np.float32), (self.num_envs, 3)).copy()
-        sensor_index = int(self._height_scan_sensor_index)
-        if sensor_index < 0:
-            raise RuntimeError(f"Go1 runtime state is missing configured height scan sensor {sensor_name!r}")
-        points = batch.sensor_hit_point[:, sensor_index, : self._height_scan_dim, :]
-        normals = batch.sensor_hit_normal[:, sensor_index, : self._height_scan_dim, :]
-        hits = batch.sensor_hit[:, sensor_index, : self._height_scan_dim]
+        if hasattr(batch, "height_scan_point"):
+            points = np.asarray(batch.height_scan_point, dtype=np.float32)[:, : self._height_scan_dim, :]
+            normals = np.asarray(batch.height_scan_normal, dtype=np.float32)[:, : self._height_scan_dim, :]
+            hits = np.asarray(batch.height_scan_hit, dtype=bool)[:, : self._height_scan_dim]
+        else:
+            sensor_index = int(self._height_scan_sensor_index)
+            if sensor_index < 0:
+                raise RuntimeError(f"Go1 runtime state is missing configured height scan sensor {sensor_name!r}")
+            points = batch.sensor_hit_point[:, sensor_index, : self._height_scan_dim, :]
+            normals = batch.sensor_hit_normal[:, sensor_index, : self._height_scan_dim, :]
+            hits = batch.sensor_hit[:, sensor_index, : self._height_scan_dim]
         min_hits = max(3, int(self.cfg_obj.terrain_normal_upright.min_hit_count))
         result = np.zeros((self.num_envs, 3), dtype=np.float32)
         result[:, 2] = 1.0

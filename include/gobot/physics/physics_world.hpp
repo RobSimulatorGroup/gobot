@@ -78,6 +78,8 @@ public:
                                            const Vector3& linear_velocity = Vector3::Zero(),
                                            const Vector3& angular_velocity = Vector3::Zero());
 
+    virtual bool ResetEnvironmentRobotStates(const std::vector<PhysicsEnvironmentRobotResetState>& reset_states);
+
     bool SetJointControl(const std::string& robot_name,
                          const std::string& joint_name,
                          PhysicsJointControlMode control_mode,

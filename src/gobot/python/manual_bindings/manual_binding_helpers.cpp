@@ -1764,6 +1764,58 @@ py::dict BatchRobotStateToPythonDict(SimulationServer& simulation,
     return result;
 }
 
+py::dict BatchRobotStateArraysToPythonDict(MuJoCoPhysicsWorld::BatchRobotStateArrays arrays) {
+    const auto environment_count = static_cast<py::ssize_t>(arrays.environment_count);
+    const auto joint_count = static_cast<py::ssize_t>(arrays.joint_names.size());
+    const auto link_count = static_cast<py::ssize_t>(arrays.link_names.size());
+    const auto sensor_count = static_cast<py::ssize_t>(arrays.sensor_names.size());
+    const auto max_sensor_values = static_cast<py::ssize_t>(arrays.max_sensor_values);
+    const auto max_sensor_hits = static_cast<py::ssize_t>(arrays.max_sensor_hits);
+    const auto max_contact_count = static_cast<py::ssize_t>(arrays.max_contact_count);
+
+    py::dict result;
+    result["robot_name"] = arrays.robot_name;
+    result["base_link"] = arrays.base_link;
+    result["joint_names"] = arrays.joint_names;
+    result["link_names"] = arrays.link_names;
+    result["sensor_names"] = arrays.sensor_names;
+    result["env_count"] = arrays.environment_count;
+    result["base_position"] = MakeRealArray(std::move(arrays.base_position), {environment_count, 3});
+    result["base_quaternion"] = MakeRealArray(std::move(arrays.base_quaternion), {environment_count, 4});
+    result["base_linear_velocity"] = MakeRealArray(std::move(arrays.base_linear_velocity), {environment_count, 3});
+    result["base_angular_velocity"] = MakeRealArray(std::move(arrays.base_angular_velocity), {environment_count, 3});
+    result["joint_position"] = MakeRealArray(std::move(arrays.joint_position), {environment_count, joint_count});
+    result["joint_velocity"] = MakeRealArray(std::move(arrays.joint_velocity), {environment_count, joint_count});
+    result["joint_effort"] = MakeRealArray(std::move(arrays.joint_effort), {environment_count, joint_count});
+    result["joint_target_position"] = MakeRealArray(std::move(arrays.joint_target_position), {environment_count, joint_count});
+    result["joint_target_velocity"] = MakeRealArray(std::move(arrays.joint_target_velocity), {environment_count, joint_count});
+    result["joint_target_effort"] = MakeRealArray(std::move(arrays.joint_target_effort), {environment_count, joint_count});
+    result["joint_lower_limit"] = MakeRealArray(std::move(arrays.joint_lower_limit), {joint_count});
+    result["joint_upper_limit"] = MakeRealArray(std::move(arrays.joint_upper_limit), {joint_count});
+    result["link_position"] = MakeRealArray(std::move(arrays.link_position), {environment_count, link_count, 3});
+    result["link_quaternion"] = MakeRealArray(std::move(arrays.link_quaternion), {environment_count, link_count, 4});
+    result["link_linear_velocity"] = MakeRealArray(std::move(arrays.link_linear_velocity), {environment_count, link_count, 3});
+    result["link_angular_velocity"] = MakeRealArray(std::move(arrays.link_angular_velocity), {environment_count, link_count, 3});
+    result["sensor_value_count"] = MakeArray<std::int32_t>(std::move(arrays.sensor_value_count), {sensor_count});
+    result["sensor_hit_count"] = MakeArray<std::int32_t>(std::move(arrays.sensor_hit_count), {sensor_count});
+    result["sensor_position"] = MakeRealArray(std::move(arrays.sensor_position), {environment_count, sensor_count, 3});
+    result["sensor_quaternion"] = MakeRealArray(std::move(arrays.sensor_quaternion), {environment_count, sensor_count, 4});
+    result["sensor_values"] = MakeRealArray(std::move(arrays.sensor_values), {environment_count, sensor_count, max_sensor_values});
+    result["sensor_hit"] = MakeBoolArray(std::move(arrays.sensor_hit), {environment_count, sensor_count, max_sensor_hits});
+    result["sensor_hit_origin"] = MakeRealArray(std::move(arrays.sensor_hit_origin), {environment_count, sensor_count, max_sensor_hits, 3});
+    result["sensor_hit_point"] = MakeRealArray(std::move(arrays.sensor_hit_point), {environment_count, sensor_count, max_sensor_hits, 3});
+    result["sensor_hit_normal"] = MakeRealArray(std::move(arrays.sensor_hit_normal), {environment_count, sensor_count, max_sensor_hits, 3});
+    result["sensor_hit_distance"] = MakeRealArray(std::move(arrays.sensor_hit_distance), {environment_count, sensor_count, max_sensor_hits});
+    result["contact_count"] = MakeArray<std::int32_t>(std::move(arrays.contact_count), {environment_count});
+    result["contact_link_index"] = MakeArray<std::int32_t>(std::move(arrays.contact_link_index), {environment_count, max_contact_count, 2});
+    result["contact_position"] = MakeRealArray(std::move(arrays.contact_position), {environment_count, max_contact_count, 3});
+    result["contact_normal"] = MakeRealArray(std::move(arrays.contact_normal), {environment_count, max_contact_count, 3});
+    result["contact_force"] = MakeRealArray(std::move(arrays.contact_force), {environment_count, max_contact_count, 3});
+    result["contact_normal_force"] = MakeRealArray(std::move(arrays.contact_normal_force), {environment_count, max_contact_count});
+    result["contact_distance"] = MakeRealArray(std::move(arrays.contact_distance), {environment_count, max_contact_count});
+    return result;
+}
+
 
 EngineContext& EnsureRuntimeContext() {
     return GetActiveAppContext();

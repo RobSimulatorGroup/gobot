@@ -9,6 +9,13 @@ from typing import Any, Mapping
 
 import numpy as np
 
+try:
+    from ._repo_imports import prefer_repo_gobot
+except ImportError:
+    from _repo_imports import prefer_repo_gobot
+
+prefer_repo_gobot()
+
 from gobot.rl.locomotion import UniformVelocityCommandCfg, VelocityCommandStage
 
 GO1_JOINT_NAMES: tuple[str, ...] = (

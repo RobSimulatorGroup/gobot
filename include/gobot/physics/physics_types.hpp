@@ -333,6 +333,20 @@ struct PhysicsExternalForce {
     bool use_spring{false};
 };
 
+struct PhysicsEnvironmentRobotResetState {
+    std::size_t environment_index{0};
+    std::string robot_name;
+    std::string base_link_name;
+    Vector3 base_position{Vector3::Zero()};
+    Quaternion base_orientation{Quaternion::Identity()};
+    Vector3 base_linear_velocity{Vector3::Zero()};
+    Vector3 base_angular_velocity{Vector3::Zero()};
+    std::vector<std::string> joint_names;
+    std::vector<RealType> joint_positions;
+    std::vector<RealType> joint_velocities;
+    std::vector<RealType> joint_position_targets;
+};
+
 struct PhysicsRobotState {
     const Robot3D* node{nullptr};
     std::string name;

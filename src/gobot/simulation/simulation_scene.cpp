@@ -267,6 +267,24 @@ bool SimulationScene::ResetEnvironmentLinkState(std::size_t environment_index,
     return true;
 }
 
+bool SimulationScene::ResetEnvironmentRobotStates(const std::vector<PhysicsEnvironmentRobotResetState>& reset_states) {
+    if (!EnsureReady()) {
+        return false;
+    }
+    for (const PhysicsEnvironmentRobotResetState& reset_state : reset_states) {
+        if (GetEntity(reset_state.robot_name) == nullptr) {
+            SetLastError(fmt::format("Simulation scene has no entity named '{}'.", reset_state.robot_name));
+            return false;
+        }
+    }
+    if (!world_->ResetEnvironmentRobotStates(reset_states)) {
+        SetLastError(world_->GetLastError());
+        return false;
+    }
+    last_error_.clear();
+    return true;
+}
+
 bool SimulationScene::SetEnvironmentJointPositionTarget(std::size_t environment_index,
                                                         const std::string& robot_name,
                                                         const std::string& joint_name,

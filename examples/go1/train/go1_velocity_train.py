@@ -6,6 +6,7 @@ import argparse
 import copy
 import os
 from pathlib import Path
+from typing import Sequence
 
 import torch
 from rsl_rl.runners import OnPolicyRunner
@@ -26,7 +27,7 @@ class Go1OnPolicyRunner(VideoCheckpointRunnerMixin, OnPolicyRunner):
         self.video_recorder = video_recorder
 
 
-def main() -> None:
+def build_arg_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser()
     parser.add_argument("--task", type=str, default="go1_rough", help="Go1 velocity task name: go1_rough or go1_flat.")
     parser.add_argument("--num-envs", "--num_envs", type=int, default=256)
@@ -52,25 +53,30 @@ def main() -> None:
     parser.add_argument("--render-video-dir", type=str, default=None)
     parser.add_argument("--render-video-debug-arrows", dest="render_video_debug_arrows", action="store_true", default=True)
     parser.add_argument("--no-render-video-debug-arrows", dest="render_video_debug_arrows", action="store_false")
-    args = parser.parse_args()
+    return parser
 
-    project_path = Path(__file__).resolve().parents[1]
-    log_dir = Path(args.log_dir)
+
+def resolve_project_path() -> Path:
+    return Path(__file__).resolve().parents[1]
+
+
+def resolve_log_dir(log_dir_arg: str, project_path: Path) -> Path:
+    log_dir = Path(log_dir_arg)
     if not log_dir.is_absolute():
         log_dir = project_path / log_dir
-    os.makedirs(log_dir, exist_ok=True)
+    return log_dir
 
+
+def build_velocity_cfg(args: argparse.Namespace, project_path: Path):
     cfg = go1_velocity_cfg(args.task, project_path=project_path)
     cfg.terrain_curriculum = bool(args.terrain_curriculum)
     cfg.observations.actor_noise = bool(args.obs_noise)
     cfg.terrain_curriculum_steps = max(1, int(args.iterations * args.num_envs * 24 * 0.6))
+    return cfg
 
-    print(f"Task: {cfg.name}")
-    print(f"Device: {args.device}")
-    print(f"Envs: {args.num_envs}")
-    print(f"Log dir: {log_dir}")
 
-    env = Go1VelocityEnv(
+def build_env(args: argparse.Namespace, cfg) -> Go1VelocityEnv:
+    return Go1VelocityEnv(
         cfg,
         num_envs=args.num_envs,
         device=args.device,
@@ -79,19 +85,22 @@ def main() -> None:
         sim_workers=args.sim_workers,
         profile_step=args.profile_step,
     )
-    print(f"Obs actor/critic/actions: {env.num_obs}/{env.num_privileged_obs}/{env.num_actions}")
-    print(f"Sim workers: requested={args.sim_workers} resolved={env.resolved_sim_workers}")
 
-    train_cfg = rsl_rl_train_cfg(
+
+def build_train_cfg(args: argparse.Namespace, cfg) -> dict:
+    return rsl_rl_train_cfg(
         experiment_name=cfg.name,
         max_iterations=args.iterations,
         save_interval=max(1, int(args.render_video_interval)) if args.render_video_interval > 0 else 50,
         obs_normalization=False,
     )
+
+
+def build_video_recorder(args: argparse.Namespace, env: Go1VelocityEnv, log_dir: Path, project_path: Path) -> Go1TrainingVideoRecorder:
     video_dir = Path(args.render_video_dir) if args.render_video_dir else log_dir / "videos"
     if not video_dir.is_absolute():
         video_dir = project_path / video_dir
-    video_recorder = Go1TrainingVideoRecorder(
+    return Go1TrainingVideoRecorder(
         env,
         Go1TrainingVideoCfg(
             interval=int(args.render_video_interval),
@@ -106,13 +115,43 @@ def main() -> None:
             debug_arrows=bool(args.render_video_debug_arrows),
         ),
     )
-    runner = Go1OnPolicyRunner(
+
+
+def build_runner(
+    args: argparse.Namespace,
+    env: Go1VelocityEnv,
+    train_cfg: dict,
+    log_dir: Path,
+    video_recorder: Go1TrainingVideoRecorder,
+) -> Go1OnPolicyRunner:
+    return Go1OnPolicyRunner(
         env,
         copy.deepcopy(train_cfg),
         log_dir=str(log_dir),
         device=args.device,
         video_recorder=video_recorder,
     )
+
+
+def run_training(args: argparse.Namespace) -> tuple[Path, Path]:
+    project_path = resolve_project_path()
+    log_dir = resolve_log_dir(args.log_dir, project_path)
+    os.makedirs(log_dir, exist_ok=True)
+
+    cfg = build_velocity_cfg(args, project_path)
+
+    print(f"Task: {cfg.name}")
+    print(f"Device: {args.device}")
+    print(f"Envs: {args.num_envs}")
+    print(f"Log dir: {log_dir}")
+
+    env = build_env(args, cfg)
+    print(f"Obs actor/critic/actions: {env.num_obs}/{env.num_privileged_obs}/{env.num_actions}")
+    print(f"Sim workers: requested={args.sim_workers} resolved={env.resolved_sim_workers}")
+
+    train_cfg = build_train_cfg(args, cfg)
+    video_recorder = build_video_recorder(args, env, log_dir, project_path)
+    runner = build_runner(args, env, train_cfg, log_dir, video_recorder)
     checkpoint = _resolve_checkpoint(args.checkpoint, log_dir) if args.checkpoint or args.resume else None
     if checkpoint is not None:
         infos = runner.load(str(checkpoint), map_location=args.device)
@@ -138,9 +177,18 @@ def main() -> None:
 
         print(f"Saved final model to {final_path}")
         print(f"Saved editor policy to {policy_path}")
+        return final_path, policy_path
     finally:
         env.close()
         video_recorder.close()
+
+
+def parse_args(argv: Sequence[str] | None = None) -> argparse.Namespace:
+    return build_arg_parser().parse_args(argv)
+
+
+def main(argv: Sequence[str] | None = None) -> None:
+    run_training(parse_args(argv))
 
 
 def _resolve_checkpoint(checkpoint: str | None, log_dir: Path) -> Path:

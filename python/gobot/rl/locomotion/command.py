@@ -87,6 +87,29 @@ class UniformVelocityCommand:
             self.metrics["error_vel_xy"][env_id] += np.linalg.norm(self.command_b[env_id, :2] - base_lin_vel_b[:2]) / max_command_step
             self.metrics["error_vel_yaw"][env_id] += abs(self.command_b[env_id, 2] - base_ang_vel_b[2]) / max_command_step
 
+    def compute_batch(
+        self,
+        dt: float,
+        *,
+        base_quaternion: np.ndarray,
+        base_lin_vel_b: np.ndarray,
+        base_ang_vel_b: np.ndarray,
+    ) -> None:
+        self.time_left -= float(dt)
+        resample_ids = np.flatnonzero(self.time_left <= 0.0).astype(np.int64)
+        if resample_ids.size:
+            self.reset(resample_ids)
+        self._update_heading_and_world_commands_batch(base_quaternion)
+        max_command_step = max(self.cfg.resampling_time_range[1] / max(self.env.step_dt, 1.0e-9), 1.0)
+        self.metrics["error_vel_xy"] += (
+            np.linalg.norm(self.command_b[:, :2] - np.asarray(base_lin_vel_b, dtype=np.float32)[:, :2], axis=1)
+            / max_command_step
+        ).astype(np.float32)
+        self.metrics["error_vel_yaw"] += (
+            np.abs(self.command_b[:, 2] - np.asarray(base_ang_vel_b, dtype=np.float32)[:, 2])
+            / max_command_step
+        ).astype(np.float32)
+
     def _resample(self, env_ids: np.ndarray) -> None:
         ranges = self.cfg.ranges
         self.command_b[env_ids, 0] = self.env._rng.uniform(*ranges.lin_vel_x, size=env_ids.shape)
@@ -120,6 +143,35 @@ class UniformVelocityCommand:
                 vx_w, vy_w = self.command_w[env_id, :2]
                 self.command_b[env_id, 0] = math.cos(heading) * vx_w + math.sin(heading) * vy_w
                 self.command_b[env_id, 1] = -math.sin(heading) * vx_w + math.cos(heading) * vy_w
+        self.command_b[self.is_standing_env] = 0.0
+        self.command_w[self.is_standing_env] = 0.0
+
+    def _update_heading_and_world_commands_batch(self, base_quaternion: np.ndarray) -> None:
+        q = np.asarray(base_quaternion, dtype=np.float32).reshape(self.env.num_envs, 4)
+        w = q[:, 0]
+        x = q[:, 1]
+        y = q[:, 2]
+        z = q[:, 3]
+        heading = np.arctan2(2.0 * (w * z + x * y), 1.0 - 2.0 * (y * y + z * z)).astype(np.float32)
+        if self.cfg.heading_command:
+            heading_ids = self.is_heading_env
+            if np.any(heading_ids):
+                error = self.heading_target[heading_ids] - heading[heading_ids]
+                self.heading_error[heading_ids] = ((error + math.pi) % (2.0 * math.pi) - math.pi).astype(np.float32)
+                lo, hi = self.cfg.ranges.ang_vel_z
+                self.command_b[heading_ids, 2] = np.clip(
+                    self.cfg.heading_control_stiffness * self.heading_error[heading_ids],
+                    lo,
+                    hi,
+                )
+        world_ids = self.is_world_env
+        if np.any(world_ids):
+            vx_w = self.command_w[world_ids, 0].copy()
+            vy_w = self.command_w[world_ids, 1].copy()
+            cos_h = np.cos(heading[world_ids])
+            sin_h = np.sin(heading[world_ids])
+            self.command_b[world_ids, 0] = cos_h * vx_w + sin_h * vy_w
+            self.command_b[world_ids, 1] = -sin_h * vx_w + cos_h * vy_w
         self.command_b[self.is_standing_env] = 0.0
         self.command_w[self.is_standing_env] = 0.0
 
