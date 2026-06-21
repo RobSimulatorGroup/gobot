@@ -42,6 +42,7 @@ def main() -> None:
     parser.add_argument("--no-obs-noise", dest="obs_noise", action="store_false", default=True)
     parser.add_argument("--terrain-curriculum", action="store_true", default=False)
     parser.add_argument("--profile-step", action="store_true", help="Enable Go1 env phase timing logs.")
+    parser.add_argument("--no-step-extras", action="store_true", default=False, help="Disable per-step reward-term/log extras during timing.")
     parser.add_argument("--json-out", type=str, default=None, help="Optional path for benchmark metrics JSON.")
     args = parser.parse_args()
 
@@ -64,6 +65,7 @@ def main() -> None:
         max_episode_length=args.max_episode_length,
         sim_workers=args.sim_workers,
         profile_step=args.profile_step,
+        collect_step_extras=not args.no_step_extras,
     )
 
     try:
@@ -174,6 +176,7 @@ def build_benchmark_metrics(*, cfg_name: str, env: Go1VelocityEnv, args, elapsed
         "num_steps": int(args.steps),
         "warmup_steps": int(args.warmup_steps),
         "actions": args.actions,
+        "collect_step_extras": bool(not getattr(args, "no_step_extras", False)),
         "sim_workers_requested": int(args.sim_workers),
         "sim_workers_resolved": int(env.resolved_sim_workers),
         "physics_dt": float(env.physics_dt),

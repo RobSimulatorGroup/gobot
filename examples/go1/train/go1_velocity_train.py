@@ -47,6 +47,7 @@ def build_arg_parser() -> argparse.ArgumentParser:
     parser.add_argument("--seed", type=int, default=42)
     parser.add_argument("--sim-workers", type=int, default=0, help="CPU workers for batched physics stepping. 0 uses hardware concurrency; 1 keeps stepping serial.")
     parser.add_argument("--profile-step", action="store_true", help="Log rolling Go1 env step phase timings.")
+    parser.add_argument("--no-step-extras", action="store_true", default=False, help="Disable per-step reward-term/log extras.")
     parser.add_argument("--policy-out", type=str, default="policies/go1_velocity.pt")
     parser.add_argument("--no-terrain-curriculum", dest="terrain_curriculum", action="store_false", default=True)
     parser.add_argument("--no-obs-noise", dest="obs_noise", action="store_false", default=True)
@@ -93,6 +94,7 @@ def build_core_env(args: argparse.Namespace, cfg) -> Go1VelocityEnv:
         max_episode_length=args.max_episode_length,
         sim_workers=args.sim_workers,
         profile_step=args.profile_step,
+        collect_step_extras=not args.no_step_extras,
     )
 
 

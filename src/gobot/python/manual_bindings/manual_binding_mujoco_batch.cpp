@@ -3,7 +3,9 @@
 #ifdef GOBOT_HAS_MUJOCO
 #include <mujoco/mujoco.h>
 
+#include <array>
 #include <atomic>
+#include <chrono>
 #include <condition_variable>
 #include <cstring>
 #include <functional>
@@ -16,6 +18,36 @@ namespace gobot::python {
 #ifdef GOBOT_HAS_MUJOCO
 
 namespace {
+
+using BatchClock = std::chrono::steady_clock;
+using BatchTimePoint = BatchClock::time_point;
+
+enum BatchProfileIndex : std::size_t {
+    kBatchProfileTotal = 0,
+    kBatchProfileOutputAlloc,
+    kBatchProfileKernelTotal,
+    kBatchProfileStateLoad,
+    kBatchProfileApplyControl,
+    kBatchProfileMjStep,
+    kBatchProfileStateStore,
+    kBatchProfileSensorCopy,
+    kBatchProfileCount,
+};
+
+constexpr std::array<const char*, kBatchProfileCount> kBatchProfileNames = {
+        "total_ms",
+        "output_alloc_ms",
+        "kernel_total_ms",
+        "state_load_ms",
+        "apply_ctrl_ms",
+        "mj_step_ms",
+        "state_store_ms",
+        "sensor_copy_ms",
+};
+
+double ElapsedMs(BatchTimePoint begin) {
+    return std::chrono::duration<double, std::milli>(BatchClock::now() - begin).count();
+}
 
 template <typename T>
 py::array_t<T> MakeOwnedArray(std::vector<T> data, std::vector<py::ssize_t> shape) {
@@ -147,6 +179,14 @@ public:
         return nsensordata_;
     }
 
+    py::dict StepProfile() const {
+        py::dict result;
+        for (std::size_t index = 0; index < kBatchProfileCount; ++index) {
+            result[py::str(kBatchProfileNames[index])] = last_step_profile_ms_[index];
+        }
+        return result;
+    }
+
     py::array_t<double> InitialState() {
         std::vector<double> output(num_envs_ * static_cast<std::size_t>(nstate_));
         std::vector<mjtNum> state(static_cast<std::size_t>(nstate_));
@@ -167,6 +207,7 @@ public:
                     py::object control,
                     int nstep,
                     bool return_sensor) {
+        const BatchTimePoint total_begin = BatchClock::now();
         if (nstep <= 0) {
             throw py::value_error("nstep must be positive");
         }
@@ -196,21 +237,34 @@ public:
         const std::size_t state_width = static_cast<std::size_t>(nstate_);
         const std::size_t control_width = static_cast<std::size_t>(ncontrol_);
         const std::size_t sensor_width = static_cast<std::size_t>(std::max(0, nsensordata_));
+        std::array<double, kBatchProfileCount> profile_values{};
+        BatchTimePoint phase_begin = BatchClock::now();
         std::vector<double> state_out(num_envs_ * state_width);
         std::vector<double> sensor_out;
         if (return_sensor) {
             sensor_out.resize(num_envs_ * sensor_width);
         }
+        profile_values[kBatchProfileOutputAlloc] = ElapsedMs(phase_begin);
 
+        std::vector<std::array<double, kBatchProfileCount>> worker_profiles(threads_);
+        for (auto& profile : worker_profiles) {
+            profile.fill(0.0);
+        }
+
+        phase_begin = BatchClock::now();
         {
             py::gil_scoped_release release;
             RunParallel([&](std::size_t worker_index, std::size_t begin, std::size_t end) {
+                auto& worker_profile = worker_profiles[std::min(worker_index, worker_profiles.size() - 1)];
                 mjData* data = datas_[worker_index];
                 for (std::size_t env = begin; env < end; ++env) {
+                    BatchTimePoint step_begin = BatchClock::now();
                     mj_setState(model_, data, state_ptr + env * state_width, mjSTATE_FULLPHYSICS);
                     if (model_->nv > 0) {
                         mju_zero(data->qacc_warmstart, model_->nv);
                     }
+                    worker_profile[kBatchProfileStateLoad] += ElapsedMs(step_begin);
+                    step_begin = BatchClock::now();
                     for (int step = 0; step < nstep; ++step) {
                         if (model_->nu > 0) {
                             if (control_ptr != nullptr) {
@@ -225,19 +279,34 @@ public:
                         }
                         mj_step(model_, data);
                     }
+                    worker_profile[kBatchProfileMjStep] += ElapsedMs(step_begin);
+                    step_begin = BatchClock::now();
                     mj_getState(model_, data, state_out.data() + env * state_width, mjSTATE_FULLPHYSICS);
+                    worker_profile[kBatchProfileStateStore] += ElapsedMs(step_begin);
                     if (return_sensor && sensor_width > 0) {
+                        step_begin = BatchClock::now();
                         std::memcpy(sensor_out.data() + env * sensor_width,
                                     data->sensordata,
                                     sensor_width * sizeof(double));
+                        worker_profile[kBatchProfileSensorCopy] += ElapsedMs(step_begin);
                     }
                 }
             });
+        }
+        profile_values[kBatchProfileKernelTotal] = ElapsedMs(phase_begin);
+        for (std::size_t profile_index = kBatchProfileStateLoad; profile_index < kBatchProfileCount; ++profile_index) {
+            double critical_path_ms = 0.0;
+            for (const auto& worker_profile : worker_profiles) {
+                critical_path_ms = std::max(critical_path_ms, worker_profile[profile_index]);
+            }
+            profile_values[profile_index] = critical_path_ms;
         }
 
         py::array_t<double> state_array =
                 MakeOwnedArray<double>(std::move(state_out),
                                        {static_cast<py::ssize_t>(num_envs_), static_cast<py::ssize_t>(nstate_)});
+        profile_values[kBatchProfileTotal] = ElapsedMs(total_begin);
+        last_step_profile_ms_ = profile_values;
         if (!return_sensor) {
             return state_array;
         }
@@ -343,6 +412,7 @@ private:
     int nstate_{0};
     int ncontrol_{0};
     int nsensordata_{0};
+    std::array<double, kBatchProfileCount> last_step_profile_ms_{};
 };
 
 } // namespace
@@ -367,6 +437,7 @@ void RegisterManualMujocoBatchBindings(py::module_& module) {
             .def_property_readonly("ncontrol", &PyMujocoBatchPool::GetNcontrol)
             .def_property_readonly("nsensordata", &PyMujocoBatchPool::GetNsensordata)
             .def("initial_state", &PyMujocoBatchPool::InitialState)
+            .def("step_profile", &PyMujocoBatchPool::StepProfile)
             .def("step",
                  &PyMujocoBatchPool::Step,
                  py::arg("state0"),

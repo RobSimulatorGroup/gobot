@@ -16,6 +16,7 @@ import statistics
 import sys
 import tempfile
 import time
+from types import SimpleNamespace
 from pathlib import Path
 from typing import Any
 
@@ -58,61 +59,31 @@ def main() -> None:
     if args.nstep <= 0:
         raise ValueError("--nstep must be positive")
 
-    repo_root = REPO_ROOT
-    xml_path = Path(args.xml) if args.xml else GO1_PROJECT / "assets/xml/go1_scene.xml"
-    if not xml_path.is_absolute():
-        xml_path = repo_root / xml_path
-
-    model = _load_model(xml_path)
-    model.opt.timestep = 0.002
-    nstate = mujoco.mj_stateSize(model, mujoco.mjtState.mjSTATE_FULLPHYSICS)
-    ncontrol = mujoco.mj_stateSize(model, mujoco.mjtState.mjSTATE_CTRL)
-    rng = np.random.default_rng(10_123)
-    state = _initial_state(model, args.num_envs, nstate)
-
-    backend = _resolve_backend(args.backend)
-    print(f"Backend: {backend}")
-    print(f"XML: {xml_path}")
-    print(f"Envs: {args.num_envs}")
-    print(f"Threads: {args.threads}")
-    print(f"Actions: {args.actions}")
-    print(f"Warmup calls: {args.warmup_steps}")
-    print(f"Measured calls: {args.steps}")
-    print(f"nstep: {args.nstep}")
-    print(f"nq/nv/nu/nstate/ncontrol/nsensordata: {model.nq}/{model.nv}/{model.nu}/{nstate}/{ncontrol}/{model.nsensordata}")
-
-    if backend == "gobot":
-        metrics = _run_gobot_batch(xml_path, ncontrol, rng, args)
-    elif backend == "batch_env":
-        metrics = _run_batch_env(model, state, ncontrol, rng, args)
-    else:
-        metrics = _run_rollout(model, state, ncontrol, rng, args)
-
-    metrics.update(
-        {
-            "backend": backend,
-            "xml": str(xml_path),
-            "num_envs": int(args.num_envs),
-            "steps": int(args.steps),
-            "warmup_steps": int(args.warmup_steps),
-            "nstep": int(args.nstep),
-            "threads": int(args.threads),
-            "actions": args.actions,
-            "nq": int(model.nq),
-            "nv": int(model.nv),
-            "nu": int(model.nu),
-            "nstate": int(nstate),
-            "ncontrol": int(ncontrol),
-            "nsensordata": int(model.nsensordata),
-        }
+    metrics = run_batch_benchmark(
+        xml=args.xml,
+        num_envs=args.num_envs,
+        steps=args.steps,
+        warmup_steps=args.warmup_steps,
+        nstep=args.nstep,
+        threads=args.threads,
+        actions=args.actions,
+        backend=args.backend,
     )
-    env_steps = int(args.steps * args.num_envs)
-    physics_ticks = int(env_steps * args.nstep)
-    metrics["env_steps"] = env_steps
-    metrics["physics_ticks"] = physics_ticks
-    metrics["step_calls_per_second"] = float(args.steps / metrics["elapsed_seconds"])
-    metrics["env_steps_per_second"] = float(env_steps / metrics["elapsed_seconds"])
-    metrics["physics_ticks_per_second"] = float(physics_ticks / metrics["elapsed_seconds"])
+
+    print("")
+    print(f"Backend: {metrics['backend']}")
+    print(f"XML: {metrics['xml']}")
+    print(f"Envs: {metrics['num_envs']}")
+    print(f"Threads: {metrics['threads']}")
+    print(f"Actions: {metrics['actions']}")
+    print(f"Warmup calls: {metrics['warmup_steps']}")
+    print(f"Measured calls: {metrics['steps']}")
+    print(f"nstep: {metrics['nstep']}")
+    print(
+        "nq/nv/nu/nstate/ncontrol/nsensordata: "
+        f"{metrics['nq']}/{metrics['nv']}/{metrics['nu']}/"
+        f"{metrics['nstate']}/{metrics['ncontrol']}/{metrics['nsensordata']}"
+    )
 
     print("")
     print("Benchmark:")
@@ -126,12 +97,91 @@ def main() -> None:
         "p95_call_ms",
     ):
         print(f"  {key}: {metrics[key]:.3f}")
+    if metrics.get("timing_median_ms"):
+        print("  breakdown_median_ms:")
+        for key, value in metrics["timing_median_ms"].items():
+            print(f"    {key}: {value:.3f}")
 
     if args.json_out:
         output_path = Path(args.json_out)
         output_path.parent.mkdir(parents=True, exist_ok=True)
         output_path.write_text(json.dumps(metrics, indent=2, sort_keys=True) + "\n", encoding="utf-8")
         print(f"\nWrote JSON: {output_path}")
+
+
+def run_batch_benchmark(
+    *,
+    xml: str | Path | None = None,
+    num_envs: int = 64,
+    steps: int = 100,
+    warmup_steps: int = 10,
+    nstep: int = 10,
+    threads: int = 0,
+    actions: str = "random",
+    backend: str = "auto",
+) -> dict[str, Any]:
+    if num_envs <= 0:
+        raise ValueError("num_envs must be positive")
+    if steps <= 0:
+        raise ValueError("steps must be positive")
+    if warmup_steps < 0:
+        raise ValueError("warmup_steps cannot be negative")
+    if nstep <= 0:
+        raise ValueError("nstep must be positive")
+
+    xml_path = Path(xml) if xml is not None else GO1_PROJECT / "assets/xml/go1_scene.xml"
+    if not xml_path.is_absolute():
+        xml_path = REPO_ROOT / xml_path
+
+    model = _load_model(xml_path)
+    model.opt.timestep = 0.002
+    nstate = mujoco.mj_stateSize(model, mujoco.mjtState.mjSTATE_FULLPHYSICS)
+    ncontrol = mujoco.mj_stateSize(model, mujoco.mjtState.mjSTATE_CTRL)
+    state = _initial_state(model, int(num_envs), nstate)
+    rng = np.random.default_rng(10_123)
+    resolved_backend = _resolve_backend(backend)
+    args = SimpleNamespace(
+        num_envs=int(num_envs),
+        steps=int(steps),
+        warmup_steps=int(warmup_steps),
+        nstep=int(nstep),
+        threads=int(threads),
+        actions=str(actions),
+    )
+
+    if resolved_backend == "gobot":
+        metrics = _run_gobot_batch(xml_path, ncontrol, rng, args)
+    elif resolved_backend == "batch_env":
+        metrics = _run_batch_env(model, state, ncontrol, rng, args)
+    else:
+        metrics = _run_rollout(model, state, ncontrol, rng, args)
+
+    metrics.update(
+        {
+            "backend": resolved_backend,
+            "xml": str(xml_path),
+            "num_envs": int(num_envs),
+            "steps": int(steps),
+            "warmup_steps": int(warmup_steps),
+            "nstep": int(nstep),
+            "threads": int(threads),
+            "actions": str(actions),
+            "nq": int(model.nq),
+            "nv": int(model.nv),
+            "nu": int(model.nu),
+            "nstate": int(nstate),
+            "ncontrol": int(ncontrol),
+            "nsensordata": int(model.nsensordata),
+        }
+    )
+    env_steps = int(steps * num_envs)
+    physics_ticks = int(env_steps * nstep)
+    metrics["env_steps"] = env_steps
+    metrics["physics_ticks"] = physics_ticks
+    metrics["step_calls_per_second"] = float(steps / metrics["elapsed_seconds"])
+    metrics["env_steps_per_second"] = float(env_steps / metrics["elapsed_seconds"])
+    metrics["physics_ticks_per_second"] = float(physics_ticks / metrics["elapsed_seconds"])
+    return metrics
 
 
 def _resolve_backend(requested: str) -> str:
@@ -226,14 +276,21 @@ def _run_gobot_batch(xml_path: Path, ncontrol: int, rng: np.random.Generator, ar
             state = pool.step(state, control=control, nstep=args.nstep)
 
         times: list[float] = []
+        profile_records: dict[str, list[float]] = {}
         begin_total = time.perf_counter()
         for _ in range(args.steps):
             control = _make_control(args.num_envs, args.nstep, pool.ncontrol, args.actions, rng)
             begin = time.perf_counter()
             state = pool.step(state, control=control, nstep=args.nstep)
             times.append(time.perf_counter() - begin)
+            for key, value in pool.step_profile().items():
+                profile_records.setdefault(str(key), []).append(float(value))
         elapsed = time.perf_counter() - begin_total
-        return _timing_metrics(elapsed, times)
+        metrics = _timing_metrics(elapsed, times)
+        metrics["timing_records"] = profile_records
+        metrics["timing_mean_ms"] = _timing_mean(profile_records)
+        metrics["timing_median_ms"] = _timing_median(profile_records)
+        return metrics
 
 
 def _run_batch_env(model: mujoco.MjModel, state: np.ndarray, ncontrol: int, rng: np.random.Generator, args: argparse.Namespace) -> dict[str, Any]:
@@ -327,6 +384,14 @@ def _timing_metrics(elapsed: float, times: list[float]) -> dict[str, float]:
         "p50_call_ms": _percentile_ms(times, 0.50),
         "p95_call_ms": _percentile_ms(times, 0.95),
     }
+
+
+def _timing_mean(records: dict[str, list[float]]) -> dict[str, float]:
+    return {key: float(np.mean(np.asarray(values, dtype=np.float64))) for key, values in records.items() if values}
+
+
+def _timing_median(records: dict[str, list[float]]) -> dict[str, float]:
+    return {key: float(np.median(np.asarray(values, dtype=np.float64))) for key, values in records.items() if values}
 
 
 def _percentile_ms(values: list[float], fraction: float) -> float:

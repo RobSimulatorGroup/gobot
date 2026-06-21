@@ -26,6 +26,7 @@ from gobot.rl import (
     SpecField,
 )
 from gobot.rl.locomotion import (
+    HeightScan,
     LocomotionBatchEnv,
     LocomotionBatchSpec,
     LocomotionControlCfg,
@@ -133,6 +134,7 @@ class Go1VelocityEnv(LocomotionBatchEnv):
         max_episode_length: int | None = None,
         sim_workers: int = 0,
         profile_step: bool = False,
+        collect_step_extras: bool = True,
         context: gobot.AppContext | None = None,
     ) -> None:
         self.cfg_obj = cfg if cfg is not None else go1_rough_velocity_cfg()
@@ -154,6 +156,7 @@ class Go1VelocityEnv(LocomotionBatchEnv):
         )
         self.device = device
         self.sim_workers = max(0, int(sim_workers))
+        self.collect_step_extras = bool(collect_step_extras)
         self.physics_dt = float(self.cfg_obj.physics_dt)
         self.decimation = int(self.cfg_obj.decimation)
         self.step_dt = self.physics_dt * self.decimation
@@ -334,7 +337,13 @@ class Go1VelocityEnv(LocomotionBatchEnv):
 
     @property
     def command_b(self) -> np.ndarray:
-        return self.backend.state.command
+        backend = getattr(self, "backend", None)
+        if backend is not None:
+            return backend.state.command
+        command_manager = getattr(self, "command_manager", None)
+        if command_manager is not None and hasattr(command_manager, "command_b"):
+            return command_manager.command_b
+        return np.zeros((self.num_envs, 3), dtype=np.float32)
 
     def get_observations(self) -> dict[str, np.ndarray]:
         return {key: value.copy() for key, value in self._state.obs.items()} if self._state is not None else {
@@ -443,25 +452,29 @@ class Go1VelocityEnv(LocomotionBatchEnv):
         foot_contacts = batch_state.foot_contact
         self._mark_profile(profile_marks, "contact")
         rewards = np.asarray(batch_state.reward, dtype=np.float32).copy()
-        reward_terms = {
-            name: np.asarray(batch_state.reward_terms[:, index], dtype=np.float32)
-            for index, name in enumerate(_REWARD_TERM_NAMES)
-        }
+        reward_terms = {}
+        if self.collect_step_extras:
+            reward_terms = {
+                name: np.asarray(batch_state.reward_terms[:, index], dtype=np.float32)
+                for index, name in enumerate(_REWARD_TERM_NAMES)
+            }
         self._mark_profile(profile_marks, "reward")
-        log_values = {
-            "velocity_error": float(np.mean(batch_state.velocity_error)),
-            "foot_clearance": float(np.mean(foot_heights)) if foot_heights.size else 0.0,
-            "foot_contact_ratio": float(np.mean(foot_contacts)) if foot_contacts.size else 0.0,
-            "foot_slip": float(np.mean(batch_state.foot_slip)),
-            "terrain_normal_error": float(np.mean(batch_state.terrain_normal_error)),
-            "illegal_contact_count": float(np.mean(batch_state.illegal_contact_count)),
-            "self_collision_count": float(np.mean(batch_state.self_collision_count)),
-            "shank_collision_count": float(np.mean(batch_state.shank_collision_count)),
-            "trunk_head_collision_count": float(np.mean(batch_state.trunk_head_collision_count)),
-            "landing_force": float(np.mean(np.sum(batch_state.landing_force, axis=1))),
-            "encoder_bias_abs": float(np.mean(np.abs(batch_state.encoder_bias))),
-            "push_count": float(np.mean(self._push_count)),
-        }
+        log_values: dict[str, float] = {}
+        if self.collect_step_extras:
+            log_values = {
+                "velocity_error": float(np.mean(batch_state.velocity_error)),
+                "foot_clearance": float(np.mean(foot_heights)) if foot_heights.size else 0.0,
+                "foot_contact_ratio": float(np.mean(foot_contacts)) if foot_contacts.size else 0.0,
+                "foot_slip": float(np.mean(batch_state.foot_slip)),
+                "terrain_normal_error": float(np.mean(batch_state.terrain_normal_error)),
+                "illegal_contact_count": float(np.mean(batch_state.illegal_contact_count)),
+                "self_collision_count": float(np.mean(batch_state.self_collision_count)),
+                "shank_collision_count": float(np.mean(batch_state.shank_collision_count)),
+                "trunk_head_collision_count": float(np.mean(batch_state.trunk_head_collision_count)),
+                "landing_force": float(np.mean(np.sum(batch_state.landing_force, axis=1))),
+                "encoder_bias_abs": float(np.mean(np.abs(batch_state.encoder_bias))),
+                "push_count": float(np.mean(self._push_count)),
+            }
         update_state_ms = (self.perf_counter() - t0) * 1000.0
 
         t0 = self.perf_counter()
@@ -489,7 +502,8 @@ class Go1VelocityEnv(LocomotionBatchEnv):
                     int(reset_reason[int(env_id)]),
                 )
             self._reset_envs(reset_env_ids, reset_reason[reset_env_ids])
-        log_values["terrain_curriculum_limit"] = float(np.mean(self._terrain_curriculum_limits))
+        if self.collect_step_extras:
+            log_values["terrain_curriculum_limit"] = float(np.mean(self._terrain_curriculum_limits))
 
         active_envs = ~done_envs
         batch_state.previous_action[active_envs] = batch_state.last_action[active_envs]
@@ -522,31 +536,13 @@ class Go1VelocityEnv(LocomotionBatchEnv):
                 scratch["actor"][reset_env_ids] = terminal_actor_obs[reset_env_ids]
                 scratch["critic"][reset_env_ids] = terminal_critic_obs[reset_env_ids]
                 self._state.info["final_observation"] = scratch
+        log_info = self._step_log_info(batch_state, reset_reason, log_values) if self.collect_step_extras else {}
         extras = {
             "time_outs": time_outs.copy(),
-            "log": {
-                "/velocity/terrain_level": np.asarray(float(np.mean(self._terrain_levels)), dtype=np.float32),
-                "/velocity/velocity_error": np.asarray(log_values["velocity_error"], dtype=np.float32),
-                "/velocity/foot_clearance": np.asarray(log_values["foot_clearance"], dtype=np.float32),
-                "/velocity/foot_contact_ratio": np.asarray(log_values["foot_contact_ratio"], dtype=np.float32),
-                "/velocity/foot_slip": np.asarray(log_values["foot_slip"], dtype=np.float32),
-                "/velocity/terrain_normal_error": np.asarray(log_values["terrain_normal_error"], dtype=np.float32),
-                "/velocity/illegal_contact_count": np.asarray(log_values["illegal_contact_count"], dtype=np.float32),
-                "/velocity/self_collision_count": np.asarray(log_values["self_collision_count"], dtype=np.float32),
-                "/velocity/shank_collision_count": np.asarray(log_values["shank_collision_count"], dtype=np.float32),
-                "/velocity/trunk_head_collision_count": np.asarray(log_values["trunk_head_collision_count"], dtype=np.float32),
-                "/velocity/landing_force": np.asarray(log_values["landing_force"], dtype=np.float32),
-                "/velocity/terrain_curriculum_limit": np.asarray(log_values["terrain_curriculum_limit"], dtype=np.float32),
-                "/velocity/encoder_bias_abs": np.asarray(log_values["encoder_bias_abs"], dtype=np.float32),
-                "/velocity/push_count": np.asarray(log_values["push_count"], dtype=np.float32),
-                "/velocity/command_stage": np.asarray(float(self._current_command_stage), dtype=np.float32),
-                "/velocity/reset_reason": np.asarray(float(np.mean(reset_reason)), dtype=np.float32),
-                "/velocity/command_vx": np.asarray(float(np.mean(batch_state.command[:, 0])), dtype=np.float32),
-                "/velocity/command_vy": np.asarray(float(np.mean(batch_state.command[:, 1])), dtype=np.float32),
-                "/velocity/command_yaw": np.asarray(float(np.mean(batch_state.command[:, 2])), dtype=np.float32),
-            },
-            "reward_terms": {name: value.copy() for name, value in reward_terms.items()},
+            "log": log_info,
         }
+        if reward_terms:
+            extras["reward_terms"] = {name: value.copy() for name, value in reward_terms.items()}
         self._mark_profile(profile_marks, "extras")
         if profile_marks is not None:
             for name, value in self._consume_profile_marks(profile_marks).items():
@@ -559,12 +555,13 @@ class Go1VelocityEnv(LocomotionBatchEnv):
             obs_actor=obs_np,
             obs_critic=critic_np,
             info_extra={
-                "reward_terms": reward_terms,
                 "reset_reason": reset_reason,
                 "time_outs": time_outs,
                 "log": extras["log"],
             },
         )
+        if reward_terms:
+            self._state.info["reward_terms"] = reward_terms
         self.step_counter += 1
         timing = self._state.info.setdefault("timing", {})
         timing["env_step_total_ms"] = (self.perf_counter() - step_t0) * 1000.0
@@ -588,6 +585,29 @@ class Go1VelocityEnv(LocomotionBatchEnv):
         self._total_policy_steps = max(0, int(policy_steps))
         self._apply_command_curriculum()
         self._update_curriculum_progress()
+
+    def _step_log_info(self, batch_state: Any, reset_reason: np.ndarray, log_values: Mapping[str, float]) -> dict[str, np.ndarray]:
+        return {
+            "/velocity/terrain_level": np.asarray(float(np.mean(self._terrain_levels)), dtype=np.float32),
+            "/velocity/velocity_error": np.asarray(log_values["velocity_error"], dtype=np.float32),
+            "/velocity/foot_clearance": np.asarray(log_values["foot_clearance"], dtype=np.float32),
+            "/velocity/foot_contact_ratio": np.asarray(log_values["foot_contact_ratio"], dtype=np.float32),
+            "/velocity/foot_slip": np.asarray(log_values["foot_slip"], dtype=np.float32),
+            "/velocity/terrain_normal_error": np.asarray(log_values["terrain_normal_error"], dtype=np.float32),
+            "/velocity/illegal_contact_count": np.asarray(log_values["illegal_contact_count"], dtype=np.float32),
+            "/velocity/self_collision_count": np.asarray(log_values["self_collision_count"], dtype=np.float32),
+            "/velocity/shank_collision_count": np.asarray(log_values["shank_collision_count"], dtype=np.float32),
+            "/velocity/trunk_head_collision_count": np.asarray(log_values["trunk_head_collision_count"], dtype=np.float32),
+            "/velocity/landing_force": np.asarray(log_values["landing_force"], dtype=np.float32),
+            "/velocity/terrain_curriculum_limit": np.asarray(log_values["terrain_curriculum_limit"], dtype=np.float32),
+            "/velocity/encoder_bias_abs": np.asarray(log_values["encoder_bias_abs"], dtype=np.float32),
+            "/velocity/push_count": np.asarray(log_values["push_count"], dtype=np.float32),
+            "/velocity/command_stage": np.asarray(float(self._current_command_stage), dtype=np.float32),
+            "/velocity/reset_reason": np.asarray(float(np.mean(reset_reason)), dtype=np.float32),
+            "/velocity/command_vx": np.asarray(float(np.mean(batch_state.command[:, 0])), dtype=np.float32),
+            "/velocity/command_vy": np.asarray(float(np.mean(batch_state.command[:, 1])), dtype=np.float32),
+            "/velocity/command_yaw": np.asarray(float(np.mean(batch_state.command[:, 2])), dtype=np.float32),
+        }
 
     def _apply_actor_obs_noise(self, obs: np.ndarray) -> np.ndarray:
         obs = np.asarray(obs, dtype=np.float32).copy()
@@ -627,6 +647,18 @@ class Go1VelocityEnv(LocomotionBatchEnv):
             lower=-1.0,
             upper=1.0,
         )
+
+    def _apply_actions(self, actions: np.ndarray) -> None:
+        targets = self.target_positions_from_actions(actions)
+        backend = getattr(self, "backend", None)
+        if backend is not None and hasattr(backend, "set_position_targets"):
+            backend.set_position_targets(targets)
+            return
+        runtime = getattr(self, "runtime", None)
+        if runtime is not None and hasattr(runtime, "set_joint_position_targets"):
+            runtime.set_joint_position_targets(targets)
+            return
+        raise RuntimeError("Go1VelocityEnv has no backend/runtime action target sink")
 
     def _sync_batch_env_state(
         self,
@@ -1003,6 +1035,93 @@ class Go1VelocityEnv(LocomotionBatchEnv):
             values.append(float(self._rng.uniform(lo, hi)))
         return np.asarray(values, dtype=np.float32)
 
+    def _height_scan(self, state: VelocityBatchRuntimeState) -> np.ndarray:
+        if self._height_scan_dim <= 0:
+            return np.zeros((0,), dtype=np.float32)
+        sensor_name = self.cfg_obj.observations.height_scan_sensor
+        if sensor_name is None:
+            return np.zeros((0,), dtype=np.float32)
+        sensors = getattr(state, "sensors", None) if not isinstance(state, Mapping) else state.get("sensors", {})
+        sensor = sensors.get(sensor_name) if isinstance(sensors, Mapping) else None
+        if sensor is None:
+            raise RuntimeError(f"missing configured height scan sensor {sensor_name!r}")
+        hits = sensor.get("hits", []) if isinstance(sensor, Mapping) else []
+        if len(hits) != self._height_scan_dim:
+            raise RuntimeError(f"height scan sensor {sensor_name!r} expected {self._height_scan_dim} hits, got {len(hits)}")
+        values = np.zeros((self._height_scan_dim,), dtype=np.float32)
+        for index, hit in enumerate(hits):
+            if not isinstance(hit, Mapping) or not bool(hit.get("hit", False)):
+                values[index] = 0.0
+                continue
+            distance = hit.get("distance")
+            if distance is not None:
+                values[index] = float(distance)
+                continue
+            point = np.asarray(hit.get("point", [0.0, 0.0, 0.0]), dtype=np.float32).reshape(3)
+            values[index] = float(point[2])
+        return HeightScan(self._height_scan_dim, self.cfg_obj.observations.terrain_scan_max_distance).normalize(values)
+
+    def _terrain_normal_from_scan(self, state: VelocityBatchRuntimeState) -> np.ndarray:
+        if self._height_scan_dim <= 0:
+            return np.asarray([0.0, 0.0, 1.0], dtype=np.float32)
+        sensor_name = self.cfg_obj.observations.height_scan_sensor
+        if sensor_name is None:
+            return np.asarray([0.0, 0.0, 1.0], dtype=np.float32)
+        sensors = getattr(state, "sensors", None) if not isinstance(state, Mapping) else state.get("sensors", {})
+        sensor = sensors.get(sensor_name) if isinstance(sensors, Mapping) else None
+        if sensor is None:
+            raise RuntimeError(f"missing configured height scan sensor {sensor_name!r}")
+        hits = sensor.get("hits", []) if isinstance(sensor, Mapping) else []
+        points: list[np.ndarray] = []
+        mask: list[bool] = []
+        for hit in hits:
+            if not isinstance(hit, Mapping):
+                continue
+            points.append(np.asarray(hit.get("point", [0.0, 0.0, 0.0]), dtype=np.float32).reshape(3))
+            mask.append(bool(hit.get("hit", False)))
+        if not points:
+            return np.asarray([0.0, 0.0, 1.0], dtype=np.float32)
+        return HeightScan(len(points)).terrain_normal(np.asarray(points, dtype=np.float32), np.asarray(mask, dtype=bool))
+
+    def _contact_summary(self, state: VelocityBatchRuntimeState) -> dict[str, float]:
+        contacts = getattr(state, "contacts", None) if not isinstance(state, Mapping) else state.get("contacts", [])
+        if contacts is None:
+            contacts = []
+        cfg = self.cfg_obj.illegal_contact
+        summary = {
+            "illegal": 0.0,
+            "self_collision": 0.0,
+            "shank": 0.0,
+            "trunk_head": 0.0,
+        }
+        for contact in contacts:
+            if not isinstance(contact, Mapping):
+                continue
+            normal_force = float(contact.get("normal_force", 0.0))
+            if normal_force < float(cfg.ground_force_threshold):
+                continue
+            robot_name = str(contact.get("robot_name", ""))
+            other_robot_name = str(contact.get("other_robot_name", ""))
+            link_name = str(contact.get("link_name", ""))
+            other_link_name = str(contact.get("other_link_name", ""))
+            if robot_name == self.cfg_obj.robot_name and other_robot_name == self.cfg_obj.robot_name:
+                summary["self_collision"] += 1.0
+                continue
+            robot_link = link_name if robot_name == self.cfg_obj.robot_name else other_link_name
+            if not robot_link:
+                continue
+            if cfg.terminate_on_thigh and self._matches_any(robot_link, cfg.thigh_link_patterns):
+                summary["illegal"] += 1.0
+            if self._matches_any(robot_link, cfg.shank_link_patterns):
+                summary["shank"] += 1.0
+            if self._matches_any(robot_link, cfg.trunk_head_link_patterns):
+                summary["trunk_head"] += 1.0
+        return summary
+
+    @staticmethod
+    def _matches_any(name: str, patterns: Sequence[str]) -> bool:
+        return any(re.fullmatch(pattern, name) for pattern in patterns)
+
     def _reset_push_timer(self, env_id: int) -> None:
         if not self.cfg_obj.push_enabled:
             self._push_time_left[env_id] = math.inf
@@ -1047,6 +1166,18 @@ class Go1VelocityEnv(LocomotionBatchEnv):
         elif reset_reason == 1 and survival < 0.25:
             level -= level_step
         self._terrain_curriculum_limits[env_id] = float(np.clip(level, 0.0, 1.0))
+
+    def _update_terrain_curriculum_limit(
+        self,
+        env_id: int,
+        state: VelocityBatchRuntimeState,
+        *,
+        reset_reason: int,
+    ) -> None:
+        base = getattr(state, "base", None) if not isinstance(state, Mapping) else state.get("base", {})
+        transform = base.get("global_transform", {}) if isinstance(base, Mapping) else {}
+        position = transform.get("position", [0.0, 0.0, 0.0]) if isinstance(transform, Mapping) else [0.0, 0.0, 0.0]
+        self._update_terrain_curriculum_limit_from_position(env_id, np.asarray(position, dtype=np.float32), reset_reason)
 
     def _runtime_state(self, env_id: int) -> VelocityRuntimeState:
         runtime = self.backend.env_state(env_id)

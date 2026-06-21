@@ -44,6 +44,7 @@ def main() -> None:
     parser.add_argument("--no-obs-noise", dest="obs_noise", action="store_false", default=True)
     parser.add_argument("--terrain-curriculum", action="store_true", default=False)
     parser.add_argument("--profile-step", action="store_true")
+    parser.add_argument("--no-step-extras", action="store_true", default=False, help="Disable per-step reward-term/log extras during timing.")
     parser.add_argument("--json-out", type=str, default=None)
     args = parser.parse_args()
 
@@ -58,6 +59,7 @@ def main() -> None:
         seed=args.seed,
         sim_workers=args.sim_workers,
         profile_step=args.profile_step,
+        collect_step_extras=not args.no_step_extras,
     )
     env = RslRlVecEnvWrapper(core_env, device=args.device)
     actor = _Actor(env.num_obs, env.num_actions, device=args.device, seed=args.seed)
@@ -130,6 +132,7 @@ def _metrics(*, args, env: RslRlVecEnvWrapper, core_env: Go1VelocityEnv, elapsed
         "task": core_env.cfg_obj.name,
         "device": args.device,
         "actions": args.actions,
+        "collect_step_extras": bool(not getattr(args, "no_step_extras", False)),
         "num_envs": env.num_envs,
         "steps": int(args.steps),
         "warmup_steps": int(args.warmup_steps),

@@ -372,6 +372,9 @@ def main():
             batch_next_state, batch_sensor = pool.step(batch_state, control=batch_control, nstep=3, return_sensor=True)
             assert batch_next_state.shape == (2, pool.nstate)
             assert batch_sensor.shape == (2, pool.nsensordata)
+            batch_profile = pool.step_profile()
+            assert batch_profile["total_ms"] >= 0.0
+            assert batch_profile["mj_step_ms"] >= 0.0
 
         split_project = "/tmp/gobot_python_mjcf_split"
         os.makedirs(split_project, exist_ok=True)

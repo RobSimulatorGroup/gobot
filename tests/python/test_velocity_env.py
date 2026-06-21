@@ -569,7 +569,19 @@ def test_go1_video_recorder_steps_eval_env_not_training_env(monkeypatch, tmp_pat
     class DummyEvalEnv:
         instances: list["DummyEvalEnv"] = []
 
-        def __init__(self, cfg, *, num_envs, device, seed, max_episode_length, sim_workers, profile_step, context):
+        def __init__(
+            self,
+            cfg,
+            *,
+            num_envs,
+            device,
+            seed,
+            max_episode_length,
+            sim_workers,
+            profile_step,
+            collect_step_extras=True,
+            context,
+        ):
             self.cfg_obj = cfg
             self.num_envs = int(num_envs)
             self.device = device
@@ -577,6 +589,7 @@ def test_go1_video_recorder_steps_eval_env_not_training_env(monkeypatch, tmp_pat
             self.max_episode_length = max_episode_length
             self.sim_workers = sim_workers
             self.profile_step = profile_step
+            self.collect_step_extras = collect_step_extras
             self.context = context
             self.step_dt = 0.02
             self.joint_names = ("joint",)
