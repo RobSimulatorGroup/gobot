@@ -53,7 +53,7 @@ def main() -> None:
     parser.add_argument("--include-rollout", action="store_true", default=True)
     parser.add_argument("--no-obs-noise", dest="obs_noise", action="store_false", default=True)
     parser.add_argument("--no-step-extras", action="store_true", default=False)
-    parser.add_argument("--task-kernel", choices=("aot",), default="aot")
+    parser.add_argument("--task-kernel", choices=("jit",), default="jit")
     parser.add_argument("--json-out", type=str, default=None)
     args = parser.parse_args()
 
@@ -219,7 +219,7 @@ def _env_row(name: str, metrics: dict[str, Any]) -> dict[str, Any]:
         if compiled:
             kernel_note = f", task={mode}, cache_hit={task_kernel.get('cache_hit')}"
             if task_ms is None:
-                task_ms = median.get("aot_task_kernel_ms")
+                task_ms = median.get("jit_task_kernel_ms")
         elif mode and mode != "native":
             kernel_note = f", task={mode}, compiled=false"
     return {

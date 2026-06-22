@@ -3,11 +3,11 @@ from __future__ import annotations
 from .batch import BatchEnvState, CpuBatchEnv
 from .runtime import BatchSimulationRuntime
 from .spec import ActionSpec, ObservationSpec, SpecField, validate_spec_metadata
-from .task_aot import (
+from .task_jit import (
     CompiledTaskKernel,
-    TaskAotBuildInfo,
-    TaskAotCompileError,
-    TaskAotCompiler,
+    TaskJitBuildInfo,
+    TaskJitCompileError,
+    TaskJitCompiler,
 )
 from .task_ir import (
     RewardTermSpec,
@@ -33,6 +33,11 @@ from .task_kernel import (
 from .task_native import (
     NativeTaskArraySpec,
     TaskNativeError,
+)
+from .task_llvm import (
+    llvm_available,
+    llvm_last_error,
+    llvm_version,
 )
 from . import locomotion
 from .rsl_rl import (

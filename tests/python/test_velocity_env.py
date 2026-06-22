@@ -27,7 +27,7 @@ from gobot.rl import (
     BatchEnvState,
     RewardTermSpec,
     SpecField,
-    TaskAotCompiler,
+    TaskJitCompiler,
     TaskExpression,
     TaskLayout,
     task_buffer,
@@ -111,7 +111,7 @@ def test_task_ir_metadata_and_native_array_validation():
     _assert_raises_runtime_error("shape mismatch", lambda: task.validate_native_arrays(arrays))
 
 
-def test_task_aot_compiles_and_runs_dummy_go1_kernel():
+def test_task_jit_compiles_and_runs_dummy_go1_kernel():
     cfg = go1_cfg.go1_flat_velocity_cfg(project_path="/tmp/go1")
     env = object.__new__(Go1VelocityEnv)
     env.cfg_obj = cfg
@@ -129,9 +129,9 @@ def test_task_aot_compiles_and_runs_dummy_go1_kernel():
     env._foot_count = len(cfg.foot_names)
     task = env._make_task_ir()
 
-    arrays = _dummy_aot_arrays(env)
+    arrays = _dummy_jit_arrays(env)
     task.validate_native_arrays(arrays)
-    kernel = TaskAotCompiler(cache_dir="/tmp/gobot-task-aot-test").compile(
+    kernel = TaskJitCompiler(cache_dir="/tmp/gobot-task-jit-test").compile(
         task,
         arrays,
         kernel=go1_velocity_task,
@@ -323,7 +323,7 @@ def test_go1_velocity_env_reset_step_shapes():
         assert env.cfg["task_ir"]["backend"] == "gobot_native_cpu_fused"
         assert env.cfg["task_ir"]["obs_groups_spec"] == env.obs_groups_spec
         assert env.cfg["task_ir"]["reward_terms"][0]["name"] == "track_linear_velocity"
-        assert env.cfg["task_kernel"]["mode"] == "aot"
+        assert env.cfg["task_kernel"]["mode"] == "jit"
         assert env.cfg["task_kernel"]["compiled"]
         assert env.cfg["task_kernel"]["installed"]
         env.task_ir.validate_native_arrays(env.backend.state)
@@ -892,7 +892,7 @@ def _obs_np(num_envs: int):
     }
 
 
-def _dummy_aot_arrays(env):
+def _dummy_jit_arrays(env):
     num_envs = int(env.num_envs)
     num_dof = int(env.num_actions)
     num_feet = int(env._foot_count)
@@ -1016,7 +1016,7 @@ def main():
     test_go1_velocity_cfg_dimensions()
     test_batch_env_state_contract_and_terminal_observation()
     test_task_ir_metadata_and_native_array_validation()
-    test_task_aot_compiles_and_runs_dummy_go1_kernel()
+    test_task_jit_compiles_and_runs_dummy_go1_kernel()
     test_go1_benchmark_metrics_match_unilab_env_step_accounting()
     test_go1_playback_schema_matches_training_schema()
     test_go1_velocity_terrain_normal_plane_fit()

@@ -25,7 +25,7 @@ from gobot.rl import (
     BatchSimulationRuntime,
     RewardTermSpec,
     SpecField,
-    TaskAotCompiler,
+    TaskJitCompiler,
     TaskExpression,
     TaskLayout,
     TerminationSpec,
@@ -146,7 +146,7 @@ class Go1VelocityEnv(LocomotionBatchEnv):
         sim_workers: int = 0,
         profile_step: bool = False,
         collect_step_extras: bool = True,
-        task_kernel: str = "aot",
+        task_kernel: str = "jit",
         context: gobot.AppContext | None = None,
     ) -> None:
         self.cfg_obj = cfg if cfg is not None else go1_rough_velocity_cfg()
@@ -359,10 +359,10 @@ class Go1VelocityEnv(LocomotionBatchEnv):
 
     def _configure_task_kernel(self) -> dict[str, Any]:
         mode = self.task_kernel_mode.lower()
-        if mode != "aot":
-            raise ValueError("task_kernel must be 'aot'")
+        if mode != "jit":
+            raise ValueError("task_kernel must be 'jit'")
 
-        self.compiled_task_kernel = TaskAotCompiler().compile(
+        self.compiled_task_kernel = TaskJitCompiler().compile(
             self.task_ir,
             self.backend.state,
             kernel=go1_velocity_task,
@@ -385,6 +385,8 @@ class Go1VelocityEnv(LocomotionBatchEnv):
             info["compiler"] = build_info.compiler
         if hasattr(build_info, "library_path"):
             info["library_path"] = str(build_info.library_path)
+        if hasattr(build_info, "object_path"):
+            info["object_path"] = str(build_info.object_path)
         if hasattr(build_info, "source_path"):
             info["source_path"] = str(build_info.source_path)
         return info
@@ -485,7 +487,7 @@ class Go1VelocityEnv(LocomotionBatchEnv):
         backend_action_ms = (self.perf_counter() - t0) * 1000.0
         t0 = self.perf_counter()
         backend_step_actions_ms = 0.0
-        aot_task_kernel_ms = 0.0
+        jit_task_kernel_ms = 0.0
         action_step_t0 = self.perf_counter()
         self.backend.step_task_kernel(
             action_np,
@@ -629,7 +631,7 @@ class Go1VelocityEnv(LocomotionBatchEnv):
         timing["backend_physics_ms"] = native_step_total_ms
         timing["native_step_total_ms"] = native_step_total_ms
         timing["backend_step_actions_ms"] = backend_step_actions_ms
-        timing["aot_task_kernel_ms"] = aot_task_kernel_ms
+        timing["jit_task_kernel_ms"] = jit_task_kernel_ms
         timing["backend_refresh_cache_ms"] = backend_refresh_cache_ms
         timing["update_state_ms"] = update_state_ms + observation_ms
         timing["reset_done_ms"] = reset_done_ms

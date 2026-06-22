@@ -7,13 +7,15 @@ from .task_ir import TaskLayout
 from .task_kernel import TaskKernel
 from .task_native import NativeTaskArraySpec
 
-class TaskAotCompileError(RuntimeError): ...
+class TaskJitCompileError(RuntimeError): ...
 
-class TaskAotBuildInfo:
+class TaskJitBuildInfo:
     source_path: Path
+    object_path: Path
     library_path: Path
     cache_key: str
     compiler: str
+    backend: str
     compile_ms: float
     cache_hit: bool
     array_names: tuple[str, ...]
@@ -21,13 +23,14 @@ class TaskAotBuildInfo:
 
 class CompiledTaskKernel:
     library_path: Path
-    build_info: TaskAotBuildInfo
-    def __init__(self, library_path: Path, build_info: TaskAotBuildInfo) -> None: ...
+    object_path: Path
+    build_info: TaskJitBuildInfo
+    def __init__(self, function_address: int, build_info: TaskJitBuildInfo) -> None: ...
     @property
     def function_address(self) -> int: ...
     def run(self, arrays: Any) -> None: ...
 
-class TaskAotCompiler:
+class TaskJitCompiler:
     cache_dir: Path
     compiler: str
     cxxflags: tuple[str, ...]

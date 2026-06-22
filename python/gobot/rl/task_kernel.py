@@ -1,4 +1,4 @@
-"""Warp-style Python task kernels for Gobot RL AOT compilation."""
+"""Warp-style Python task kernels for Gobot RL JIT compilation."""
 
 from __future__ import annotations
 
@@ -10,6 +10,14 @@ import textwrap
 from typing import Any, Callable
 
 import numpy as np
+
+
+# Public kernel surface -----------------------------------------------------
+#
+# This module is the Python frontend for Gobot task kernels.  It intentionally
+# does not compile anything by itself; TaskJitCompiler owns the LLVM step.  The
+# job here is closer to Warp's frontend: capture a restricted Python function,
+# validate the AST, and lower it to a tiny C++ kernel over flat batch buffers.
 
 
 class TaskKernelCompileError(RuntimeError):
@@ -42,7 +50,7 @@ def task_kernel(
     launch: str = "actor_obs",
     launch_axis: int = 0,
 ) -> TaskKernel | Callable[[Callable[..., Any]], TaskKernel]:
-    """Decorate a restricted Python task function for AOT compilation.
+    """Decorate a restricted Python task function for JIT compilation.
 
     The lowered C++ kernel executes once per row of ``launch`` along
     ``launch_axis``. Inside the function, ``tid()`` returns that row index.
@@ -97,8 +105,8 @@ def generate_cpp_from_task_kernel(
     *,
     abi_version: int,
 ) -> tuple[str, tuple[str, ...]]:
-    compiler = _TaskKernelAstCompiler(kernel, arrays, abi_version=abi_version)
-    return compiler.compile()
+    lowerer = _TaskKernelLowerer(kernel, arrays, abi_version=abi_version)
+    return lowerer.compile()
 
 
 def _extract_function_source(func: Callable[..., Any]) -> tuple[str, int, ast.Module]:
@@ -110,7 +118,9 @@ def _extract_function_source(func: Callable[..., Any]) -> tuple[str, int, ast.Mo
     return source, lineno, ast.parse(source)
 
 
-class _TaskKernelAstCompiler:
+class _TaskKernelLowerer:
+    """Lower one decorated Python function to Gobot's task-kernel C ABI."""
+
     def __init__(self, kernel: TaskKernel, arrays: Any, *, abi_version: int) -> None:
         self.kernel = kernel
         self.arrays = arrays
@@ -130,11 +140,6 @@ class _TaskKernelAstCompiler:
         pointer_lines = self._pointer_lines()
         source = "\n".join(
             (
-                "#include <algorithm>",
-                "#include <cmath>",
-                "#include <cstddef>",
-                "#include <cstdint>",
-                "",
                 'extern "C" {',
                 "",
                 _CPP_ABI,
@@ -144,9 +149,9 @@ class _TaskKernelAstCompiler:
                 "int gobot_task_kernel_v1(TaskKernelContext* context) {",
                 f"    if (context == nullptr || context->abi_version != {self.abi_version}) {{ return -1; }}",
                 "    TaskKernelContext& ctx = *context;",
-                f'    const std::size_t _launch_dim = dim(ctx, "{self.kernel.launch}", {int(self.kernel.launch_axis)});',
+                f'    const size_t _launch_dim = dim(ctx, "{self.kernel.launch}", {int(self.kernel.launch_axis)});',
                 *pointer_lines,
-                "    for (std::size_t _env_id = 0; _env_id < _launch_dim; ++_env_id) {",
+                "    for (size_t _env_id = 0; _env_id < _launch_dim; ++_env_id) {",
                 *body_lines,
                 "    }",
                 "    return 0;",
@@ -197,7 +202,7 @@ class _TaskKernelAstCompiler:
             old_locals = set(self.locals)
             self.locals.add(loop_var)
             body = self._block(statement.body, indent=indent + 1)
-            lines = [f"{prefix}for (std::size_t {loop_var} = {start}; {loop_var} < {stop}; ++{loop_var}) {{"]
+            lines = [f"{prefix}for (size_t {loop_var} = {start}; {loop_var} < {stop}; ++{loop_var}) {{"]
             lines.extend(body)
             lines.append(f"{prefix}}}")
             self.locals = old_locals
@@ -275,12 +280,24 @@ class _TaskKernelAstCompiler:
             if len(args) != 3:
                 raise TaskKernelCompileError("where() expects 3 arguments")
             return f"({args[0]} ? {args[1]} : {args[2]})"
-        if name in {"sqrt", "abs", "exp", "log1p", "sin", "cos", "copysign"}:
-            return f"std::{name}({', '.join(args)})"
+        if name == "sqrt":
+            return f"__builtin_sqrtf({', '.join(args)})"
+        if name == "abs":
+            return f"__builtin_fabsf({', '.join(args)})"
+        if name == "exp":
+            return f"__builtin_expf({', '.join(args)})"
+        if name == "log1p":
+            return f"__builtin_log1pf({', '.join(args)})"
+        if name == "sin":
+            return f"__builtin_sinf({', '.join(args)})"
+        if name == "cos":
+            return f"__builtin_cosf({', '.join(args)})"
+        if name == "copysign":
+            return f"__builtin_copysignf({', '.join(args)})"
         if name == "max":
-            return f"std::max({', '.join(args)})"
+            return f"gobot_max({', '.join(args)})"
         if name == "min":
-            return f"std::min({', '.join(args)})"
+            return f"gobot_min({', '.join(args)})"
         if name in {"param", "flag", "weight"}:
             return f"{name}({', '.join(args)})"
         if name == "float":
@@ -423,18 +440,22 @@ _BUILTIN_FUNCTION_NAMES = {
 
 
 _CPP_ABI = r"""
+using size_t = decltype(sizeof(0));
+using uint32_t = unsigned int;
+using uint8_t = unsigned char;
+
 struct TaskArrayView {
     const char* name;
-    std::uint32_t dtype;
-    std::uint32_t rank;
-    std::size_t shape[4];
-    std::size_t strides[4];
+    uint32_t dtype;
+    uint32_t rank;
+    size_t shape[4];
+    size_t strides[4];
     void* data;
 };
 
 struct TaskKernelContext {
-    std::uint32_t abi_version;
-    std::size_t array_count;
+    uint32_t abi_version;
+    size_t array_count;
     const TaskArrayView* arrays;
 };
 """
@@ -452,8 +473,16 @@ static inline bool streq(const char* a, const char* b) {
     return *a == *b;
 }
 
+static inline float gobot_max(float a, float b) {
+    return a > b ? a : b;
+}
+
+static inline float gobot_min(float a, float b) {
+    return a < b ? a : b;
+}
+
 static const TaskArrayView* find_array(const TaskKernelContext& ctx, const char* name) {
-    for (std::size_t i = 0; i < ctx.array_count; ++i) {
+    for (size_t i = 0; i < ctx.array_count; ++i) {
         if (ctx.arrays[i].name != nullptr && streq(ctx.arrays[i].name, name)) {
             return &ctx.arrays[i];
         }
@@ -466,12 +495,12 @@ static float* f32(const TaskKernelContext& ctx, const char* name) {
     return view != nullptr ? static_cast<float*>(view->data) : nullptr;
 }
 
-static std::uint8_t* u8(const TaskKernelContext& ctx, const char* name) {
+static uint8_t* u8(const TaskKernelContext& ctx, const char* name) {
     const TaskArrayView* view = find_array(ctx, name);
-    return view != nullptr ? static_cast<std::uint8_t*>(view->data) : nullptr;
+    return view != nullptr ? static_cast<uint8_t*>(view->data) : nullptr;
 }
 
-static std::size_t dim(const TaskKernelContext& ctx, const char* name, std::size_t axis) {
+static size_t dim(const TaskKernelContext& ctx, const char* name, size_t axis) {
     const TaskArrayView* view = find_array(ctx, name);
     return view != nullptr && axis < view->rank ? view->shape[axis] : 0;
 }
@@ -481,22 +510,22 @@ static bool has_array_data(const TaskKernelContext& ctx, const char* name, const
     if (view == nullptr) {
         return false;
     }
-    std::size_t count = 1;
-    for (std::size_t axis = 0; axis < view->rank; ++axis) {
+    size_t count = 1;
+    for (size_t axis = 0; axis < view->rank; ++axis) {
         count *= view->shape[axis];
     }
     return data != nullptr || count == 0;
 }
 
-static inline float param(const float* values, std::size_t index, float fallback) {
+static inline float param(const float* values, size_t index, float fallback) {
     return values != nullptr ? values[index] : fallback;
 }
 
-static inline float flag(const float* values, std::size_t index) {
+static inline float flag(const float* values, size_t index) {
     return values != nullptr ? values[index] : 0.0f;
 }
 
-static inline float weight(const float* values, std::size_t index) {
+static inline float weight(const float* values, size_t index) {
     return values != nullptr ? values[index] : 0.0f;
 }
 """
