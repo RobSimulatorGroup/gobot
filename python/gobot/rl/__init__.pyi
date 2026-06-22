@@ -3,6 +3,12 @@ from __future__ import annotations
 from .batch import BatchEnvState, CpuBatchEnv
 from .runtime import BatchSimulationRuntime
 from .spec import ActionSpec, ObservationSpec, SpecField, validate_spec_metadata
+from .task_aot import (
+    CompiledTaskKernel,
+    TaskAotBuildInfo,
+    TaskAotCompileError,
+    TaskAotCompiler,
+)
 from .task_ir import (
     RewardTermSpec,
     TaskBufferSpec,
@@ -11,6 +17,22 @@ from .task_ir import (
     TaskLayout,
     TerminationSpec,
     task_buffer,
+)
+from .task_kernel import (
+    TaskKernel,
+    TaskKernelCompileError,
+    dim,
+    flag,
+    kernel,
+    param,
+    task_kernel,
+    tid,
+    weight,
+    where,
+)
+from .task_native import (
+    NativeTaskArraySpec,
+    TaskNativeError,
 )
 from . import locomotion
 from .rsl_rl import (

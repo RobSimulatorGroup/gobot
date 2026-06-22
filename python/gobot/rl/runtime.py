@@ -200,6 +200,11 @@ class LocomotionBatchSpec:
     terminate_on_thigh_contact: bool = True
     ground_force_threshold: float = 50.0
     self_collision_force_threshold: float = 20.0
+    reward_term_count: int = 0
+    task_param_count: int = 0
+    task_flag_count: int = 0
+    actor_obs_dim: int = 0
+    critic_obs_dim: int = 0
 
 
 class _NativeLocomotionBatchArrays:
@@ -456,9 +461,15 @@ class NativeLocomotionBatchBackend:
         self.terminate_on_thigh_contact = bool(spec.terminate_on_thigh_contact)
         self.ground_force_threshold = float(spec.ground_force_threshold)
         self.self_collision_force_threshold = float(spec.self_collision_force_threshold)
+        self.reward_term_count = int(spec.reward_term_count)
+        self.task_param_count = int(spec.task_param_count)
+        self.task_flag_count = int(spec.task_flag_count)
+        self.actor_obs_dim = int(spec.actor_obs_dim)
+        self.critic_obs_dim = int(spec.critic_obs_dim)
         self._view: Any | None = None
         self._arrays: dict[str, np.ndarray] = {}
         self._state: _NativeLocomotionBatchArrays | None = None
+        self._installed_task_kernel: Any | None = None
 
     @property
     def env_count(self) -> int:
@@ -489,6 +500,11 @@ class NativeLocomotionBatchBackend:
             self.terminate_on_thigh_contact,
             self.ground_force_threshold,
             self.self_collision_force_threshold,
+            self.reward_term_count,
+            self.task_param_count,
+            self.task_flag_count,
+            self.actor_obs_dim,
+            self.critic_obs_dim,
         )
         self._arrays = {str(name): np.asarray(value) for name, value in dict(self._view.arrays()).items()}
         self._state = self._state_from_arrays()
@@ -580,33 +596,63 @@ class NativeLocomotionBatchBackend:
             raise RuntimeError("Gobot native locomotion batch view has no native command reset")
         self._view.reset_commands([int(env_id) for env_id in env_ids])
 
-    def step_training(self, actions: Any, nsteps: int, *, workers: int = 0, simulate_action_latency: bool = False) -> dict[str, Any]:
+    def step_task_inputs(self, actions: Any, nsteps: int, *, workers: int = 0, simulate_action_latency: bool = False) -> dict[str, Any]:
         self._require_view()
-        if not hasattr(self._view, "step_training"):
-            raise RuntimeError("Gobot native locomotion batch view has no fused training step")
+        step_task_inputs = getattr(self._view, "step_task_inputs", None)
+        if step_task_inputs is None:
+            raise RuntimeError("Gobot native locomotion batch view has no task-input step")
         np.copyto(self._arrays["action"], np.asarray(actions, dtype=np.float32))
-        self._view.step_training(int(nsteps), int(workers), bool(simulate_action_latency))
+        step_task_inputs(int(nsteps), int(workers), bool(simulate_action_latency))
         return {}
+
+    def install_task_kernel(self, compiled_kernel: Any) -> None:
+        self._require_view()
+        install = getattr(self._view, "install_task_kernel", None)
+        if install is None:
+            raise RuntimeError("Gobot native locomotion batch view has no task-kernel install entry")
+        build_info = getattr(compiled_kernel, "build_info", None)
+        array_specs = getattr(build_info, "array_specs", None)
+        function_address = int(getattr(compiled_kernel, "function_address", 0))
+        if not array_specs or function_address == 0:
+            raise RuntimeError("compiled task kernel does not expose native array specs/function address")
+        install(
+            function_address,
+            [
+                {"name": str(spec.name), "dtype": int(spec.dtype), "rank": int(spec.rank)}
+                for spec in array_specs
+            ],
+        )
+        self._installed_task_kernel = compiled_kernel
+
+    def clear_task_kernel(self) -> None:
+        self._require_view()
+        clear = getattr(self._view, "clear_task_kernel", None)
+        if clear is not None:
+            clear()
+        self._installed_task_kernel = None
+
+    def step_task_kernel(self, actions: Any, nsteps: int, *, workers: int = 0, simulate_action_latency: bool = False) -> dict[str, Any]:
+        self._require_view()
+        step_task_kernel = getattr(self._view, "step_task_kernel", None)
+        if step_task_kernel is None:
+            raise RuntimeError("Gobot native locomotion batch view has no installed task-kernel step")
+        if getattr(self, "_installed_task_kernel", None) is None:
+            raise RuntimeError("no compiled task kernel is installed on this backend")
+        np.copyto(self._arrays["action"], np.asarray(actions, dtype=np.float32))
+        step_task_kernel(int(nsteps), int(workers), bool(simulate_action_latency))
+        return {}
+
+    def run_task_kernel(self) -> None:
+        self._require_view()
+        run_task_kernel = getattr(self._view, "run_task_kernel", None)
+        if run_task_kernel is None:
+            raise RuntimeError("Gobot native locomotion batch view has no task-kernel run entry")
+        if getattr(self, "_installed_task_kernel", None) is None:
+            raise RuntimeError("no compiled task kernel is installed on this backend")
+        run_task_kernel()
 
     def step_profile(self) -> dict[str, float]:
         return self.state.step_profile()
-
-    def compute_task(self) -> None:
-        self._require_view()
-        self._view.compute_task()
-
-    def compute_observations(self) -> None:
-        self._require_view()
-        self._view.compute_observations()
-
-    def compute_task_observations(self) -> None:
-        self._require_view()
-        fused = getattr(self._view, "compute_task_observations", None)
-        if fused is not None:
-            fused()
-            return
-        self._view.compute_task()
-        self._view.compute_observations()
 
     def set_position_targets(self, ctrl: Any) -> None:
         self._require_view()

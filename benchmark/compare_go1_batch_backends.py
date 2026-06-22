@@ -53,6 +53,7 @@ def main() -> None:
     parser.add_argument("--include-rollout", action="store_true", default=True)
     parser.add_argument("--no-obs-noise", dest="obs_noise", action="store_false", default=True)
     parser.add_argument("--no-step-extras", action="store_true", default=False)
+    parser.add_argument("--task-kernel", choices=("aot",), default="aot")
     parser.add_argument("--json-out", type=str, default=None)
     args = parser.parse_args()
 
@@ -66,6 +67,7 @@ def main() -> None:
         "device": args.device,
         "actions": args.actions,
         "raw_actions": raw_actions,
+        "task_kernel": args.task_kernel,
         "entries": {},
     }
 
@@ -128,6 +130,7 @@ def _run_go1_env(args: argparse.Namespace) -> dict[str, Any]:
         sim_workers=args.sim_workers,
         profile_step=False,
         collect_step_extras=not args.no_step_extras,
+        task_kernel=args.task_kernel,
     )
     try:
         generator = np.random.default_rng(int(args.seed) + 10_000)
@@ -154,6 +157,7 @@ def _run_go1_env(args: argparse.Namespace) -> dict[str, Any]:
             timing_records=timing_records,
         )
         metrics["collect_step_extras"] = bool(not args.no_step_extras)
+        metrics["task_kernel"] = dict(env.task_kernel_info)
         return metrics
     finally:
         env.close()
@@ -170,6 +174,7 @@ def _run_go1_training(args: argparse.Namespace) -> dict[str, Any]:
         sim_workers=args.sim_workers,
         profile_step=False,
         collect_step_extras=not args.no_step_extras,
+        task_kernel=args.task_kernel,
     )
     env = RslRlVecEnvWrapper(core_env, device=args.device)
     actor = _Actor(env.num_obs, env.num_actions, device=args.device, seed=args.seed)
@@ -205,17 +210,29 @@ def _make_env_actions(env: Go1VelocityEnv, mode: str, generator: np.random.Gener
 
 def _env_row(name: str, metrics: dict[str, Any]) -> dict[str, Any]:
     median = metrics.get("timing_median_ms", {})
+    task_kernel = metrics.get("task_kernel", {})
+    kernel_note = ""
+    task_ms = median.get("native_reward_ms")
+    if isinstance(task_kernel, dict) and task_kernel:
+        mode = task_kernel.get("mode")
+        compiled = task_kernel.get("compiled")
+        if compiled:
+            kernel_note = f", task={mode}, cache_hit={task_kernel.get('cache_hit')}"
+            if task_ms is None:
+                task_ms = median.get("aot_task_kernel_ms")
+        elif mode and mode != "native":
+            kernel_note = f", task={mode}, compiled=false"
     return {
         "name": name,
         "env_steps_s": metrics.get("throughput_env_steps_per_s"),
         "total_ms": median.get("env_step_total_ms", metrics.get("mean_step_ms")),
         "mj_step_ms": median.get("native_mj_step_ms"),
         "state_extract_ms": median.get("native_extract_state_ms"),
-        "reward_ms": median.get("native_reward_ms"),
+        "reward_ms": task_ms,
         "obs_ms": median.get("native_obs_ms"),
         "reset_ms": median.get("reset_done_ms"),
         "python_ms": _sum_present(median, ("apply_action_ms", "backend_refresh_cache_ms", "update_state_ms", "reset_done_ms")),
-        "notes": f"workers={metrics.get('sim_workers_resolved')}",
+        "notes": f"workers={metrics.get('sim_workers_resolved')}{kernel_note}",
     }
 
 

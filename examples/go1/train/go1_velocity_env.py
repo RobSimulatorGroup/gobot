@@ -25,6 +25,7 @@ from gobot.rl import (
     BatchSimulationRuntime,
     RewardTermSpec,
     SpecField,
+    TaskAotCompiler,
     TaskExpression,
     TaskLayout,
     TerminationSpec,
@@ -50,6 +51,11 @@ try:
     from .go1_velocity_cfg import Go1VelocityCfg, go1_rough_velocity_cfg
 except ImportError:
     from go1_velocity_cfg import Go1VelocityCfg, go1_rough_velocity_cfg
+
+try:
+    from .go1_task_kernels import go1_velocity_task
+except ImportError:
+    from go1_task_kernels import go1_velocity_task
 
 _REWARD_TERM_NAMES: tuple[str, ...] = (
     "track_linear_velocity",
@@ -140,6 +146,7 @@ class Go1VelocityEnv(LocomotionBatchEnv):
         sim_workers: int = 0,
         profile_step: bool = False,
         collect_step_extras: bool = True,
+        task_kernel: str = "aot",
         context: gobot.AppContext | None = None,
     ) -> None:
         self.cfg_obj = cfg if cfg is not None else go1_rough_velocity_cfg()
@@ -162,6 +169,7 @@ class Go1VelocityEnv(LocomotionBatchEnv):
         self.device = device
         self.sim_workers = max(0, int(sim_workers))
         self.collect_step_extras = bool(collect_step_extras)
+        self.task_kernel_mode = str(task_kernel)
         self.physics_dt = float(self.cfg_obj.physics_dt)
         self.decimation = int(self.cfg_obj.decimation)
         self.step_dt = self.physics_dt * self.decimation
@@ -275,9 +283,6 @@ class Go1VelocityEnv(LocomotionBatchEnv):
             link_names=self._batch_link_names,
             sensor_names=self._batch_sensor_names,
         )
-        self.backend = self._make_batch_backend()
-        self.backend.configure(self.num_envs)
-        self.resolved_sim_workers = self.backend.resolved_workers(self.sim_workers)
         self.actor_obs_schema = velocity_actor_observation_schema(self.num_actions, self._height_scan_dim)
         self.critic_obs_schema = velocity_critic_observation_schema(self.num_actions, self._height_scan_dim, self._foot_count)
         self.action_spec = self._make_action_spec()
@@ -285,10 +290,16 @@ class Go1VelocityEnv(LocomotionBatchEnv):
         self.critic_observation_spec = self.critic_obs_schema
         self.num_obs = self.actor_obs_schema.dim
         self.num_privileged_obs = self.critic_obs_schema.dim
+        self.backend = self._make_batch_backend()
+        self.backend.configure(self.num_envs)
+        self.resolved_sim_workers = self.backend.resolved_workers(self.sim_workers)
         self._configure_native_task_buffers()
         self._configure_native_command()
         self.task_ir = self._make_task_ir()
         self.task_ir.validate_native_arrays(self.backend.state)
+        self.compiled_task_kernel = None
+        self._compiled_task_kernel_installed = False
+        self.task_kernel_info = self._configure_task_kernel()
 
         self.cfg = {
             "name": self.cfg_obj.name,
@@ -303,6 +314,7 @@ class Go1VelocityEnv(LocomotionBatchEnv):
             "task_ir": self.task_ir.metadata(),
             "task_ir_version": self.task_ir.version,
             "task_ir_backend": self.task_ir.backend,
+            "task_kernel": dict(self.task_kernel_info),
             "robot": self.cfg_obj.robot_name,
             "scene_path": self.cfg_obj.scene_path,
             "project_path": str(self.project_path),
@@ -344,6 +356,38 @@ class Go1VelocityEnv(LocomotionBatchEnv):
     @property
     def obs_groups_spec(self) -> dict[str, int]:
         return {"actor": self.num_obs, "critic": self.num_privileged_obs}
+
+    def _configure_task_kernel(self) -> dict[str, Any]:
+        mode = self.task_kernel_mode.lower()
+        if mode != "aot":
+            raise ValueError("task_kernel must be 'aot'")
+
+        self.compiled_task_kernel = TaskAotCompiler().compile(
+            self.task_ir,
+            self.backend.state,
+            kernel=go1_velocity_task,
+        )
+        self.backend.install_task_kernel(self.compiled_task_kernel)
+        self._compiled_task_kernel_installed = True
+
+        build_info = self.compiled_task_kernel.build_info
+        info: dict[str, Any] = {
+            "mode": mode,
+            "compiled": True,
+            "installed": True,
+            "backend": getattr(build_info, "backend", mode),
+            "cache_key": build_info.cache_key,
+            "cache_hit": build_info.cache_hit,
+            "compile_ms": build_info.compile_ms,
+            "array_count": len(build_info.array_specs),
+        }
+        if hasattr(build_info, "compiler"):
+            info["compiler"] = build_info.compiler
+        if hasattr(build_info, "library_path"):
+            info["library_path"] = str(build_info.library_path)
+        if hasattr(build_info, "source_path"):
+            info["source_path"] = str(build_info.source_path)
+        return info
 
     @property
     def command_b(self) -> np.ndarray:
@@ -392,7 +436,7 @@ class Go1VelocityEnv(LocomotionBatchEnv):
             self._push_count[:] = 0
         self._reset_envs(env_ids, np.zeros(env_ids.size, dtype=np.int64))
         batch_state = self.backend.state
-        self.backend.compute_observations()
+        self._run_task_kernel()
         obs = np.asarray(batch_state.actor_obs, dtype=np.float32).copy()
         critic = np.asarray(batch_state.critic_obs, dtype=np.float32).copy()
         if self.noise_cfg.level > 0.0 and self.cfg_obj.observations.actor_noise:
@@ -440,12 +484,16 @@ class Go1VelocityEnv(LocomotionBatchEnv):
         self._mark_profile(profile_marks, "action_apply")
         backend_action_ms = (self.perf_counter() - t0) * 1000.0
         t0 = self.perf_counter()
-        self.backend.step_training(
+        backend_step_actions_ms = 0.0
+        aot_task_kernel_ms = 0.0
+        action_step_t0 = self.perf_counter()
+        self.backend.step_task_kernel(
             action_np,
             self.decimation,
             workers=self.sim_workers,
             simulate_action_latency=self.control_cfg.simulate_action_latency,
         )
+        backend_step_actions_ms = (self.perf_counter() - action_step_t0) * 1000.0
         native_step_total_ms = (self.perf_counter() - t0) * 1000.0
         self._mark_profile(profile_marks, "physics")
         t0 = self.perf_counter()
@@ -528,7 +576,7 @@ class Go1VelocityEnv(LocomotionBatchEnv):
 
         t0 = self.perf_counter()
         if reset_env_ids.size:
-            self.backend.compute_observations()
+            self._run_task_kernel()
         obs_np = np.asarray(batch_state.actor_obs, dtype=np.float32).copy()
         critic_np = np.asarray(batch_state.critic_obs, dtype=np.float32).copy()
         if self.noise_cfg.level > 0.0 and self.cfg_obj.observations.actor_noise:
@@ -580,6 +628,8 @@ class Go1VelocityEnv(LocomotionBatchEnv):
         timing["backend_apply_action_ms"] = backend_action_ms
         timing["backend_physics_ms"] = native_step_total_ms
         timing["native_step_total_ms"] = native_step_total_ms
+        timing["backend_step_actions_ms"] = backend_step_actions_ms
+        timing["aot_task_kernel_ms"] = aot_task_kernel_ms
         timing["backend_refresh_cache_ms"] = backend_refresh_cache_ms
         timing["update_state_ms"] = update_state_ms + observation_ms
         timing["reset_done_ms"] = reset_done_ms
@@ -918,6 +968,11 @@ class Go1VelocityEnv(LocomotionBatchEnv):
                 terminate_on_thigh_contact=illegal_cfg.terminate_on_thigh,
                 ground_force_threshold=illegal_cfg.ground_force_threshold,
                 self_collision_force_threshold=illegal_cfg.self_collision_force_threshold,
+                reward_term_count=len(_REWARD_TERM_NAMES),
+                task_param_count=len(_TASK_PARAM),
+                task_flag_count=len(_TASK_FLAG),
+                actor_obs_dim=self.num_obs,
+                critic_obs_dim=self.num_privileged_obs,
             )
             return NativeLocomotionBatchBackend(
                 self.runtime,
@@ -1086,13 +1141,16 @@ class Go1VelocityEnv(LocomotionBatchEnv):
         env_ids = np.arange(self.num_envs, dtype=np.int64)
         self._reset_envs(env_ids, np.zeros(self.num_envs, dtype=np.int64))
         batch_state = self.backend.state
-        self.backend.compute_observations()
+        self._run_task_kernel()
         obs = np.asarray(batch_state.actor_obs, dtype=np.float32).copy()
         critic = np.asarray(batch_state.critic_obs, dtype=np.float32).copy()
         if self.noise_cfg.level > 0.0 and self.cfg_obj.observations.actor_noise:
             obs = self._apply_actor_obs_noise(obs)
             critic[:, : self.num_obs] = obs
         return obs, critic
+
+    def _run_task_kernel(self) -> None:
+        self.backend.run_task_kernel()
 
     def _apply_pushes(self) -> None:
         for env_id in range(self.num_envs):

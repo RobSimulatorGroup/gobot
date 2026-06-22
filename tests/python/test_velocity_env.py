@@ -18,10 +18,20 @@ for path in (REPO_ROOT, REPO_ROOT / "python", REPO_ROOT / "build/python"):
 from examples.go1.scripts import go1 as go1_playback
 from benchmark import go1_velocity_benchmark
 from examples.go1.train import go1_velocity_cfg as go1_cfg
+from examples.go1.train.go1_task_kernels import go1_velocity_task
 from examples.go1.train.go1_velocity_env import Go1VelocityEnv, VelocityRuntimeState
 from examples.go1.train import go1_velocity_video
 from examples.go1.train.go1_velocity_video import Go1TrainingVideoCfg, Go1TrainingVideoRecorder
-from gobot.rl import ActionSpec, BatchEnvState, RewardTermSpec, SpecField, TaskExpression, TaskLayout, task_buffer
+from gobot.rl import (
+    ActionSpec,
+    BatchEnvState,
+    RewardTermSpec,
+    SpecField,
+    TaskAotCompiler,
+    TaskExpression,
+    TaskLayout,
+    task_buffer,
+)
 from gobot.rl.rsl_rl import RslRlVecEnvWrapper
 from gobot.rl.locomotion import (
     HeightScan,
@@ -99,6 +109,44 @@ def test_task_ir_metadata_and_native_array_validation():
     task.validate_native_arrays(arrays)
     arrays.obs = np.zeros((2, actor_spec.dim + 1), dtype=np.float32)
     _assert_raises_runtime_error("shape mismatch", lambda: task.validate_native_arrays(arrays))
+
+
+def test_task_aot_compiles_and_runs_dummy_go1_kernel():
+    cfg = go1_cfg.go1_flat_velocity_cfg(project_path="/tmp/go1")
+    env = object.__new__(Go1VelocityEnv)
+    env.cfg_obj = cfg
+    env.num_envs = 2
+    env.num_actions = len(cfg.joint_names)
+    env.joint_names = tuple(cfg.joint_names)
+    env.default_joint_pos = np.asarray(cfg.default_joint_pos, dtype=np.float32)
+    env.action_scale = np.ones(env.num_actions, dtype=np.float32)
+    env.actor_obs_schema = velocity_actor_observation_schema(env.num_actions, 0)
+    env.critic_obs_schema = velocity_critic_observation_schema(env.num_actions, 0, len(cfg.foot_names))
+    env.action_spec = env._make_action_spec()
+    env.num_obs = env.actor_obs_schema.dim
+    env.num_privileged_obs = env.critic_obs_schema.dim
+    env._height_scan_dim = 0
+    env._foot_count = len(cfg.foot_names)
+    task = env._make_task_ir()
+
+    arrays = _dummy_aot_arrays(env)
+    task.validate_native_arrays(arrays)
+    kernel = TaskAotCompiler(cache_dir="/tmp/gobot-task-aot-test").compile(
+        task,
+        arrays,
+        kernel=go1_velocity_task,
+    )
+    kernel.run(arrays)
+
+    assert kernel.build_info.library_path.exists()
+    assert kernel.function_address != 0
+    assert len(kernel.build_info.array_specs) == len(kernel.build_info.array_names)
+    assert np.isfinite(arrays.actor_obs).all()
+    assert np.isfinite(arrays.critic_obs).all()
+    assert np.isfinite(arrays.reward).all()
+    assert arrays.actor_obs.shape == (2, env.num_obs)
+    assert arrays.critic_obs.shape == (2, env.num_privileged_obs)
+    assert arrays.reward_terms.shape[1] == 15
 
 
 def test_locomotion_unit_helpers():
@@ -275,6 +323,9 @@ def test_go1_velocity_env_reset_step_shapes():
         assert env.cfg["task_ir"]["backend"] == "gobot_native_cpu_fused"
         assert env.cfg["task_ir"]["obs_groups_spec"] == env.obs_groups_spec
         assert env.cfg["task_ir"]["reward_terms"][0]["name"] == "track_linear_velocity"
+        assert env.cfg["task_kernel"]["mode"] == "aot"
+        assert env.cfg["task_kernel"]["compiled"]
+        assert env.cfg["task_kernel"]["installed"]
         env.task_ir.validate_native_arrays(env.backend.state)
 
         state = env.step(np.zeros((1, env.num_actions), dtype=np.float32))
@@ -841,6 +892,100 @@ def _obs_np(num_envs: int):
     }
 
 
+def _dummy_aot_arrays(env):
+    num_envs = int(env.num_envs)
+    num_dof = int(env.num_actions)
+    num_feet = int(env._foot_count)
+    height_scan_dim = int(env._height_scan_dim)
+    reward_terms = len(env._reward_weights())
+    arrays = types.SimpleNamespace()
+    arrays.target_position = np.zeros((num_envs, num_dof), dtype=np.float32)
+    arrays.action = np.zeros((num_envs, num_dof), dtype=np.float32)
+    arrays.submitted_action = np.zeros((num_envs, num_dof), dtype=np.float32)
+    arrays.previous_action = np.zeros((num_envs, num_dof), dtype=np.float32)
+    arrays.last_action = np.zeros((num_envs, num_dof), dtype=np.float32)
+    arrays.default_joint_position = np.asarray(env.default_joint_pos, dtype=np.float32).copy()
+    arrays.action_scale = np.ones((num_dof,), dtype=np.float32)
+    arrays.encoder_bias = np.zeros((num_envs, num_dof), dtype=np.float32)
+    arrays.command = np.zeros((num_envs, 3), dtype=np.float32)
+    arrays.command_world = np.zeros((num_envs, 3), dtype=np.float32)
+    arrays.heading_commands = np.zeros((num_envs,), dtype=np.float32)
+    arrays.command_heading_error = np.zeros((num_envs,), dtype=np.float32)
+    arrays.command_time_left = np.zeros((num_envs,), dtype=np.float32)
+    arrays.command_is_heading_env = np.zeros((num_envs,), dtype=np.uint8)
+    arrays.command_is_standing_env = np.zeros((num_envs,), dtype=np.uint8)
+    arrays.command_is_world_env = np.zeros((num_envs,), dtype=np.uint8)
+    arrays.command_is_forward_env = np.zeros((num_envs,), dtype=np.uint8)
+    arrays.command_ranges = np.zeros((8,), dtype=np.float32)
+    arrays.gait_phase = np.zeros((num_envs, 2), dtype=np.float32)
+    arrays.feet_phase_height_target = np.zeros((num_envs, 2), dtype=np.float32)
+    arrays.pose_weights = np.ones((num_dof,), dtype=np.float32)
+    arrays.pose_std_standing = np.ones((num_dof,), dtype=np.float32)
+    arrays.pose_std_walking = np.ones((num_dof,), dtype=np.float32)
+    arrays.pose_std_running = np.ones((num_dof,), dtype=np.float32)
+    arrays.reward_weights = np.asarray(env._reward_weights(), dtype=np.float32)
+    arrays.task_params = np.zeros((11,), dtype=np.float32)
+    arrays.task_params[0] = 0.02
+    arrays.task_params[1] = 0.25
+    arrays.task_params[2] = 0.25
+    arrays.task_params[3] = 0.25
+    arrays.task_params[5] = 0.05
+    arrays.task_params[6] = 0.16
+    arrays.task_params[7] = np.deg2rad(70.0)
+    arrays.task_params[10] = 5.0
+    arrays.task_flags = np.zeros((3,), dtype=np.float32)
+    arrays.reset_base_position = np.zeros((num_envs, 3), dtype=np.float32)
+    arrays.reset_base_quaternion = np.zeros((num_envs, 4), dtype=np.float32)
+    arrays.reset_base_linear_velocity = np.zeros((num_envs, 3), dtype=np.float32)
+    arrays.reset_base_angular_velocity = np.zeros((num_envs, 3), dtype=np.float32)
+    arrays.reset_joint_position = np.zeros((num_envs, num_dof), dtype=np.float32)
+    arrays.reset_joint_velocity = np.zeros((num_envs, num_dof), dtype=np.float32)
+    arrays.base_position = np.zeros((num_envs, 3), dtype=np.float32)
+    arrays.base_quaternion = np.zeros((num_envs, 4), dtype=np.float32)
+    arrays.base_linear_velocity = np.zeros((num_envs, 3), dtype=np.float32)
+    arrays.base_angular_velocity = np.zeros((num_envs, 3), dtype=np.float32)
+    arrays.base_linear_velocity_body = np.zeros((num_envs, 3), dtype=np.float32)
+    arrays.base_angular_velocity_body = np.zeros((num_envs, 3), dtype=np.float32)
+    arrays.projected_gravity = np.tile(np.asarray([0.0, 0.0, -1.0], dtype=np.float32), (num_envs, 1))
+    arrays.base_height = np.full((num_envs,), 0.35, dtype=np.float32)
+    arrays.joint_position = np.tile(arrays.default_joint_position, (num_envs, 1))
+    arrays.joint_velocity = np.zeros((num_envs, num_dof), dtype=np.float32)
+    arrays.qacc = np.zeros((num_envs, num_dof), dtype=np.float32)
+    arrays.torques = np.zeros((num_envs, num_dof), dtype=np.float32)
+    arrays.joint_lower_limit = np.full((num_dof,), -np.inf, dtype=np.float32)
+    arrays.joint_upper_limit = np.full((num_dof,), np.inf, dtype=np.float32)
+    arrays.foot_position = np.zeros((num_envs, num_feet, 3), dtype=np.float32)
+    arrays.feet_quat = np.zeros((num_envs, num_feet, 4), dtype=np.float32)
+    arrays.foot_velocity = np.zeros((num_envs, num_feet, 3), dtype=np.float32)
+    arrays.foot_height = np.zeros((num_envs, num_feet), dtype=np.float32)
+    arrays.foot_contact = np.ones((num_envs, num_feet), dtype=np.float32)
+    arrays.foot_contact_force = np.zeros((num_envs, num_feet, 3), dtype=np.float32)
+    arrays.height_scan = np.zeros((num_envs, height_scan_dim), dtype=np.float32)
+    arrays.height_scan_hit = np.zeros((num_envs, height_scan_dim), dtype=np.uint8)
+    arrays.height_scan_point = np.zeros((num_envs, height_scan_dim, 3), dtype=np.float32)
+    arrays.height_scan_normal = np.zeros((num_envs, height_scan_dim, 3), dtype=np.float32)
+    arrays.illegal_contact_count = np.zeros((num_envs,), dtype=np.float32)
+    arrays.self_collision_count = np.zeros((num_envs,), dtype=np.float32)
+    arrays.shank_collision_count = np.zeros((num_envs,), dtype=np.float32)
+    arrays.trunk_head_collision_count = np.zeros((num_envs,), dtype=np.float32)
+    arrays.foot_air_time = np.zeros((num_envs, num_feet), dtype=np.float32)
+    arrays.foot_peak_height = np.zeros((num_envs, num_feet), dtype=np.float32)
+    arrays.last_foot_contact = np.zeros((num_envs, num_feet), dtype=np.float32)
+    arrays.first_contact = np.zeros((num_envs, num_feet), dtype=np.float32)
+    arrays.landing_force = np.zeros((num_envs, num_feet), dtype=np.float32)
+    arrays.previous_foot_position = np.zeros((num_envs, num_feet, 3), dtype=np.float32)
+    arrays.reward = np.zeros((num_envs,), dtype=np.float32)
+    arrays.terminated = np.zeros((num_envs,), dtype=np.uint8)
+    arrays.base_clearance = np.zeros((num_envs,), dtype=np.float32)
+    arrays.velocity_error = np.zeros((num_envs,), dtype=np.float32)
+    arrays.foot_slip = np.zeros((num_envs,), dtype=np.float32)
+    arrays.terrain_normal_error = np.zeros((num_envs,), dtype=np.float32)
+    arrays.reward_terms = np.zeros((num_envs, reward_terms), dtype=np.float32)
+    arrays.actor_obs = np.zeros((num_envs, env.num_obs), dtype=np.float32)
+    arrays.critic_obs = np.zeros((num_envs, env.num_privileged_obs), dtype=np.float32)
+    return arrays
+
+
 def _curriculum_env(seed: int):
     env = object.__new__(Go1VelocityEnv)
     env.cfg_obj = go1_cfg.go1_rough_velocity_cfg(project_path="/tmp/go1")
@@ -871,6 +1016,7 @@ def main():
     test_go1_velocity_cfg_dimensions()
     test_batch_env_state_contract_and_terminal_observation()
     test_task_ir_metadata_and_native_array_validation()
+    test_task_aot_compiles_and_runs_dummy_go1_kernel()
     test_go1_benchmark_metrics_match_unilab_env_step_accounting()
     test_go1_playback_schema_matches_training_schema()
     test_go1_velocity_terrain_normal_plane_fit()
