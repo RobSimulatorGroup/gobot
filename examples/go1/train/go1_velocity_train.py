@@ -39,6 +39,7 @@ class Go1OnPolicyRunner(VideoCheckpointRunnerMixin, OnPolicyRunner):
 def build_arg_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser()
     parser.add_argument("--task", type=str, default="go1_rough", help="Go1 velocity task name: go1_rough or go1_flat.")
+    parser.add_argument("--cpu-batch", action="store_true", help="Use CPU smoke-training defaults: go1_flat, 64 envs, no video.")
     parser.add_argument("--num-envs", "--num_envs", type=int, default=256)
     parser.add_argument("--iterations", type=int, default=1500)
     parser.add_argument("--max-episode-length", type=int, default=None)
@@ -149,6 +150,7 @@ def build_runner(
 
 
 def run_training(args: argparse.Namespace) -> tuple[Path, Path]:
+    apply_run_preset(args)
     project_path = resolve_project_path()
     log_dir = resolve_log_dir(args.log_dir, project_path)
     os.makedirs(log_dir, exist_ok=True)
@@ -190,8 +192,16 @@ def run_training(args: argparse.Namespace) -> tuple[Path, Path]:
         policy_path.parent.mkdir(parents=True, exist_ok=True)
         runner.save(str(policy_path), infos={"gobot_go1_velocity": env.cfg})
 
-        print(f"Saved final model to {final_path}")
-        print(f"Saved editor policy to {policy_path}")
+        print_training_summary(
+            args=args,
+            cfg=cfg,
+            env=env,
+            train_cfg=train_cfg,
+            log_dir=log_dir,
+            final_path=final_path,
+            policy_path=policy_path,
+            video_dir=video_recorder.cfg.directory,
+        )
         return final_path, policy_path
     finally:
         env.close()
@@ -223,6 +233,52 @@ def _resolve_checkpoint(checkpoint: str | None, log_dir: Path) -> Path:
 def _checkpoint_iteration(path: Path) -> int:
     suffix = path.stem.removeprefix("model_")
     return int(suffix) if suffix.isdigit() else -1
+
+
+def apply_run_preset(args: argparse.Namespace) -> None:
+    if not args.cpu_batch:
+        return
+    args.task = "go1_flat"
+    args.device = "cpu"
+    args.num_envs = 64
+    args.sim_workers = 0
+    args.render_video_interval = 0
+    args.log_dir = "logs/go1_velocity_cpu_batch"
+    args.policy_out = "policies/go1_velocity_cpu_batch.pt"
+
+
+def print_training_summary(
+    *,
+    args: argparse.Namespace,
+    cfg,
+    env: RslRlVecEnvWrapper,
+    train_cfg: dict,
+    log_dir: Path,
+    final_path: Path,
+    policy_path: Path,
+    video_dir: Path,
+) -> None:
+    core_env = env.env
+    task_kernel = getattr(core_env, "task_kernel_info", {})
+    rows = [
+        ("task", cfg.name),
+        ("device", args.device),
+        ("envs", args.num_envs),
+        ("iterations", args.iterations),
+        ("rollout steps/env", train_cfg["num_steps_per_env"]),
+        ("sim workers", f"requested={args.sim_workers}, resolved={env.resolved_sim_workers}"),
+        ("task kernel", f"{task_kernel.get('backend', 'unknown')}:{task_kernel.get('mode', 'unknown')} cache_hit={task_kernel.get('cache_hit')}"),
+        ("log dir", log_dir),
+        ("final checkpoint", final_path),
+        ("editor policy", policy_path),
+    ]
+    if int(args.render_video_interval) > 0:
+        rows.append(("video dir", video_dir))
+    width = max(len(name) for name, _ in rows)
+    print("\nTraining summary")
+    print("----------------")
+    for name, value in rows:
+        print(f"{name.ljust(width)} : {value}")
 
 
 if __name__ == "__main__":

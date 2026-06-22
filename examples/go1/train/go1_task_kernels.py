@@ -8,30 +8,19 @@ from gobot.rl import dim, flag, kernel, param, tid, weight, where
 R_TRACK_LINEAR_VELOCITY = 0
 R_TRACK_ANGULAR_VELOCITY = 1
 R_UPRIGHT = 2
-R_POSE = 3
-R_BODY_ANG_VEL = 4
-R_DOF_POS_LIMITS = 5
-R_ACTION_RATE_L2 = 6
-R_AIR_TIME = 7
-R_FOOT_CLEARANCE = 8
-R_FOOT_SWING_HEIGHT = 9
-R_FOOT_SLIP = 10
-R_SOFT_LANDING = 11
-R_SELF_COLLISIONS = 12
-R_SHANK_COLLISION = 13
-R_TRUNK_HEAD_COLLISION = 14
+R_ACTION_RATE_L2 = 3
+R_AIR_TIME = 4
+R_FOOT_CLEARANCE = 5
+R_FOOT_SLIP = 6
 
 P_STEP_DT = 0
 P_LIN_VEL_STD2 = 1
 P_ANG_VEL_STD2 = 2
 P_UPRIGHT_STD2 = 3
-P_FOOT_TARGET_HEIGHT = 4
-P_COMMAND_THRESHOLD = 5
-P_MIN_BASE_CLEARANCE = 6
-P_FLAT_ROLL_PITCH_LIMIT = 7
-P_POSE_WALKING_THRESHOLD = 8
-P_POSE_RUNNING_THRESHOLD = 9
-P_HEIGHT_SCAN_MAX_DISTANCE = 10
+P_COMMAND_THRESHOLD = 4
+P_MIN_BASE_CLEARANCE = 5
+P_FLAT_ROLL_PITCH_LIMIT = 6
+P_HEIGHT_SCAN_MAX_DISTANCE = 7
 
 F_ROUGH_TERRAIN = 0
 
@@ -75,11 +64,11 @@ def go1_velocity_task(a):
         + a.projected_gravity[env3 + 1] * a.projected_gravity[env3 + 1]
     )
 
-    action_rate = 0.0
+    action_rate_l2 = 0.0
     for joint_index in range(num_dof):
         dof_offset = env_id * num_dof + joint_index
         delta_action = a.submitted_action[dof_offset] - a.previous_action[dof_offset]
-        action_rate += delta_action * delta_action
+        action_rate_l2 += delta_action * delta_action
 
     foot_clearance_sum = 0.0
     foot_slip_sum = 0.0
@@ -101,7 +90,7 @@ def go1_velocity_task(a):
     a.reward_terms[term_base + R_TRACK_LINEAR_VELOCITY] = weight(a.reward_weights, R_TRACK_LINEAR_VELOCITY) * exp(-lin_error / lin_vel_std2)
     a.reward_terms[term_base + R_TRACK_ANGULAR_VELOCITY] = weight(a.reward_weights, R_TRACK_ANGULAR_VELOCITY) * exp(-ang_error / ang_vel_std2)
     a.reward_terms[term_base + R_UPRIGHT] = weight(a.reward_weights, R_UPRIGHT) * exp(-upright_error / upright_std2)
-    a.reward_terms[term_base + R_ACTION_RATE_L2] = weight(a.reward_weights, R_ACTION_RATE_L2) * action_rate
+    a.reward_terms[term_base + R_ACTION_RATE_L2] = weight(a.reward_weights, R_ACTION_RATE_L2) * action_rate_l2
     a.reward_terms[term_base + R_AIR_TIME] = weight(a.reward_weights, R_AIR_TIME) * air_time_count * active
     a.reward_terms[term_base + R_FOOT_CLEARANCE] = weight(a.reward_weights, R_FOOT_CLEARANCE) * foot_clearance_sum * active
     a.reward_terms[term_base + R_FOOT_SLIP] = weight(a.reward_weights, R_FOOT_SLIP) * foot_slip_sum * active

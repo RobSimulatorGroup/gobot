@@ -80,52 +80,14 @@ class VelocityRewardCfg:
     track_linear_velocity: float = 2.0
     track_angular_velocity: float = 2.0
     upright: float = 1.0
-    pose: float = 1.0
-    body_ang_vel: float = 0.0
-    angular_momentum: float = 0.0
-    dof_pos_limits: float = -1.0
     action_rate_l2: float = -0.1
     air_time: float = 0.0
     foot_clearance: float = -2.0
-    foot_swing_height: float = -0.25
     foot_slip: float = -0.1
-    soft_landing: float = -1.0e-5
-    self_collisions: float = -0.1
-    shank_collision: float = -0.1
-    trunk_head_collision: float = -0.1
     lin_vel_std: float = math.sqrt(0.25)
     ang_vel_std: float = math.sqrt(0.5)
     upright_std: float = math.sqrt(0.2)
-    foot_target_height: float = 0.1
     command_threshold: float = 0.05
-    pose_walking_threshold: float = 0.05
-    pose_running_threshold: float = 1.5
-    pose_std_standing: Mapping[str, float] = field(
-        default_factory=lambda: {
-            r".*(FR|FL|RR|RL)_(hip|thigh)_joint.*": 0.05,
-            r".*(FR|FL|RR|RL)_calf_joint.*": 0.1,
-        }
-    )
-    pose_std_walking: Mapping[str, float] = field(
-        default_factory=lambda: {
-            r".*(FR|FL|RR|RL)_(hip|thigh)_joint.*": 0.3,
-            r".*(FR|FL|RR|RL)_calf_joint.*": 0.6,
-        }
-    )
-    pose_std_running: Mapping[str, float] = field(
-        default_factory=lambda: {
-            r".*(FR|FL|RR|RL)_(hip|thigh)_joint.*": 0.3,
-            r".*(FR|FL|RR|RL)_calf_joint.*": 0.6,
-        }
-    )
-
-
-@dataclass
-class VelocityTerrainNormalUprightCfg:
-    """Use the local terrain plane instead of world-up for the upright reward."""
-
-    enabled: bool = True
-    min_hit_count: int = 3
 
 
 @dataclass
@@ -209,8 +171,6 @@ class Go1VelocityCfg:
     terrain_curriculum: bool = True
     terrain_curriculum_steps: int = 21600
     spawn_difficulty_radius: float = 0.85
-    terrain_normal_upright: VelocityTerrainNormalUprightCfg = field(default_factory=VelocityTerrainNormalUprightCfg)
-    contact_history_length: int = 4
     illegal_contact: VelocityIllegalContactCfg = field(default_factory=VelocityIllegalContactCfg)
     domain_randomization: VelocityDomainRandomizationCfg = field(default_factory=VelocityDomainRandomizationCfg)
     push_enabled: bool = True
@@ -253,7 +213,6 @@ def go1_flat_velocity_cfg(
     cfg.terrain_scene_path = "flat_terrain_scene.jscn"
     cfg.observations.height_scan_sensor = None
     cfg.terrain_curriculum = False
-    cfg.terrain_normal_upright.enabled = False
     cfg.illegal_contact.enabled = False
     cfg.rewards.upright = 1.0
     return cfg
@@ -338,7 +297,6 @@ __all__ = [
     "VelocityRewardCfg",
     "VelocityDomainRandomizationCfg",
     "VelocityIllegalContactCfg",
-    "VelocityTerrainNormalUprightCfg",
     "go1_flat_velocity_cfg",
     "go1_rough_velocity_cfg",
     "go1_velocity_cfg",

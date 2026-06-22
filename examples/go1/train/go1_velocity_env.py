@@ -5,7 +5,6 @@ from __future__ import annotations
 from dataclasses import dataclass
 import math
 from pathlib import Path
-import re
 from typing import Any, Mapping, Sequence
 
 import numpy as np
@@ -32,7 +31,6 @@ from gobot.rl import (
     task_buffer,
 )
 from gobot.rl.locomotion import (
-    HeightScan,
     LocomotionBatchEnv,
     LocomotionBatchSpec,
     LocomotionControlCfg,
@@ -61,18 +59,10 @@ _REWARD_TERM_NAMES: tuple[str, ...] = (
     "track_linear_velocity",
     "track_angular_velocity",
     "upright",
-    "pose",
-    "body_ang_vel",
-    "dof_pos_limits",
     "action_rate_l2",
     "air_time",
     "foot_clearance",
-    "foot_swing_height",
     "foot_slip",
-    "soft_landing",
-    "self_collisions",
-    "shank_collision",
-    "trunk_head_collision",
 )
 
 _TASK_PARAM = {
@@ -80,19 +70,24 @@ _TASK_PARAM = {
     "lin_vel_std2": 1,
     "ang_vel_std2": 2,
     "upright_std2": 3,
-    "foot_target_height": 4,
-    "command_threshold": 5,
-    "min_base_clearance": 6,
-    "flat_roll_pitch_limit": 7,
-    "pose_walking_threshold": 8,
-    "pose_running_threshold": 9,
-    "height_scan_max_distance": 10,
+    "command_threshold": 4,
+    "min_base_clearance": 5,
+    "flat_roll_pitch_limit": 6,
+    "height_scan_max_distance": 7,
 }
 
 _TASK_FLAG = {
     "rough_terrain": 0,
-    "terrain_normal_upright": 1,
-    "illegal_contact_enabled": 2,
+}
+
+_REWARD_INPUTS: Mapping[str, tuple[str, ...]] = {
+    "track_linear_velocity": ("command", "base_linear_velocity_body"),
+    "track_angular_velocity": ("command", "base_angular_velocity_body"),
+    "upright": ("projected_gravity",),
+    "action_rate_l2": ("submitted_action", "previous_action"),
+    "air_time": ("foot_air_time", "command"),
+    "foot_clearance": ("foot_height", "foot_contact"),
+    "foot_slip": ("foot_slip",),
 }
 
 
@@ -182,28 +177,6 @@ class Go1VelocityEnv(LocomotionBatchEnv):
         self._curriculum_progress = 0.0
 
         self._foot_count = len(self.cfg_obj.foot_names)
-        self._contact_history_length = max(1, int(self.cfg_obj.contact_history_length))
-        self._last_foot_contact = np.zeros((self.num_envs, self._foot_count), dtype=np.float32)
-        self._foot_air_time = np.zeros_like(self._last_foot_contact)
-        self._foot_peak_height = np.zeros_like(self._last_foot_contact)
-        self._previous_foot_positions = np.zeros((self.num_envs, self._foot_count, 3), dtype=np.float32)
-        self._foot_velocities = np.zeros_like(self._previous_foot_positions)
-        self._foot_contact_history = np.zeros(
-            (self.num_envs, self._contact_history_length, self._foot_count),
-            dtype=np.float32,
-        )
-        self._foot_force_history = np.zeros(
-            (self.num_envs, self._contact_history_length, self._foot_count, 3),
-            dtype=np.float32,
-        )
-        self._foot_history_cursor = np.zeros(self.num_envs, dtype=np.int64)
-        self._first_contact = np.zeros((self.num_envs, self._foot_count), dtype=np.float32)
-        self._landing_force = np.zeros((self.num_envs, self._foot_count), dtype=np.float32)
-        self._terrain_normal_error = np.zeros(self.num_envs, dtype=np.float32)
-        self._illegal_contact_counts = np.zeros(self.num_envs, dtype=np.float32)
-        self._self_collision_counts = np.zeros(self.num_envs, dtype=np.float32)
-        self._shank_collision_counts = np.zeros(self.num_envs, dtype=np.float32)
-        self._trunk_head_collision_counts = np.zeros(self.num_envs, dtype=np.float32)
         self._encoder_bias = np.zeros((self.num_envs, self.num_actions), dtype=np.float32)
         self._push_time_left = np.zeros(self.num_envs, dtype=np.float32)
         self._push_count = np.zeros(self.num_envs, dtype=np.int64)
@@ -326,8 +299,6 @@ class Go1VelocityEnv(LocomotionBatchEnv):
             "height_scan_dim": self._height_scan_dim,
             "decimation": self.decimation,
             "physics_dt": self.physics_dt,
-            "terrain_normal_upright": self.cfg_obj.terrain_normal_upright.enabled,
-            "contact_history_length": self._contact_history_length,
             "illegal_contact": self.cfg_obj.illegal_contact.enabled,
             "domain_randomization": self.cfg_obj.domain_randomization.enabled,
             "push_enabled": self.cfg_obj.push_enabled,
@@ -711,53 +682,40 @@ class Go1VelocityEnv(LocomotionBatchEnv):
         )
 
     def _make_task_ir(self) -> TaskLayout:
+        return TaskLayout(
+            name=self.cfg_obj.name,
+            version="go1_velocity_task_ir_v1",
+            action_spec=self.action_spec,
+            obs_groups={"actor": self.actor_obs_schema, "critic": self.critic_obs_schema},
+            buffers=self._task_kernel_buffers(),
+            reward_terms=self._task_reward_terms(),
+            terminations=self._task_terminations(),
+            backend="gobot_native_cpu_fused",
+        )
+
+    def _task_reward_terms(self) -> tuple[RewardTermSpec, ...]:
         reward_cfg = self.cfg_obj.rewards
-        reward_inputs = {
-            "track_linear_velocity": ("command", "base_linear_velocity_body"),
-            "track_angular_velocity": ("command", "base_angular_velocity_body"),
-            "upright": ("projected_gravity", "height_scan_normal"),
-            "pose": ("joint_position", "default_joint_position", "pose_std_standing", "pose_std_walking", "pose_std_running"),
-            "body_ang_vel": ("base_angular_velocity_body",),
-            "dof_pos_limits": ("joint_position", "joint_lower_limit", "joint_upper_limit"),
-            "action_rate_l2": ("submitted_action", "last_action"),
-            "air_time": ("foot_air_time", "first_contact", "command"),
-            "foot_clearance": ("foot_height", "foot_contact"),
-            "foot_swing_height": ("foot_peak_height", "foot_contact"),
-            "foot_slip": ("foot_slip",),
-            "soft_landing": ("landing_force",),
-            "self_collisions": ("self_collision_count",),
-            "shank_collision": ("shank_collision_count",),
-            "trunk_head_collision": ("trunk_head_collision_count",),
-        }
         reward_params = {
             "track_linear_velocity": {"std": reward_cfg.lin_vel_std},
             "track_angular_velocity": {"std": reward_cfg.ang_vel_std},
-            "upright": {
-                "std": reward_cfg.upright_std,
-                "terrain_normal": self.cfg_obj.terrain_normal_upright.enabled and self._height_scan_dim > 0,
-            },
-            "pose": {
-                "walking_threshold": reward_cfg.pose_walking_threshold,
-                "running_threshold": reward_cfg.pose_running_threshold,
-            },
+            "upright": {"std": reward_cfg.upright_std},
             "air_time": {"command_threshold": reward_cfg.command_threshold},
-            "foot_clearance": {"target_height": reward_cfg.foot_target_height},
-            "foot_swing_height": {"target_height": reward_cfg.foot_target_height},
-            "soft_landing": {"ground_force_threshold": self.cfg_obj.illegal_contact.ground_force_threshold},
         }
-        reward_terms = tuple(
+        return tuple(
             RewardTermSpec(
                 name=name,
                 weight=weight,
                 expression=TaskExpression(
                     f"go1_velocity.{name}",
-                    reward_inputs.get(name, ()),
+                    _REWARD_INPUTS[name],
                     reward_params.get(name, {}),
                 ),
                 scale_by_dt=True,
             )
             for name, weight in zip(_REWARD_TERM_NAMES, self._reward_weights(), strict=True)
         )
+
+    def _task_terminations(self) -> tuple[TerminationSpec, ...]:
         terminations = [
             TerminationSpec(
                 "base_clearance",
@@ -771,100 +729,38 @@ class Go1VelocityEnv(LocomotionBatchEnv):
                     TaskExpression("roll_pitch_limit", ("projected_gravity",), {"threshold_rad": math.radians(70.0)}),
                 )
             )
-        if self.cfg_obj.illegal_contact.enabled:
-            terminations.append(
-                TerminationSpec(
-                    "illegal_contact",
-                    TaskExpression("greater_than", ("illegal_contact_count",), {"threshold": 0.0}),
-                )
-            )
-        buffers = (
-            task_buffer("target_position", "env", "dof", role="action_target"),
-            task_buffer("action", "env", "dof", role="action"),
-            task_buffer("submitted_action", "env", "dof", role="action"),
-            task_buffer("previous_action", "env", "dof", role="history"),
-            task_buffer("last_action", "env", "dof", role="history"),
-            task_buffer("default_joint_position", "dof", role="config"),
-            task_buffer("action_scale", "dof", role="config"),
-            task_buffer("encoder_bias", "env", "dof", role="randomization"),
-            task_buffer("command", "env", 3, role="command"),
-            task_buffer("command_world", "env", 3, role="command"),
-            task_buffer("heading_commands", "env", role="command"),
-            task_buffer("command_heading_error", "env", role="command"),
-            task_buffer("command_time_left", "env", role="command"),
-            task_buffer("command_is_heading_env", "env", dtype="uint8", role="command"),
-            task_buffer("command_is_standing_env", "env", dtype="uint8", role="command"),
-            task_buffer("command_is_world_env", "env", dtype="uint8", role="command"),
-            task_buffer("command_is_forward_env", "env", dtype="uint8", role="command"),
-            task_buffer("command_ranges", "command_range", role="config"),
-            task_buffer("gait_phase", "env", 2, role="locomotion_optional"),
-            task_buffer("feet_phase_height_target", "env", 2, role="locomotion_optional"),
-            task_buffer("pose_weights", "dof", role="config"),
-            task_buffer("pose_std_standing", "dof", role="config"),
-            task_buffer("pose_std_walking", "dof", role="config"),
-            task_buffer("pose_std_running", "dof", role="config"),
-            task_buffer("reward_weights", len(_REWARD_TERM_NAMES), role="config"),
-            task_buffer("task_params", len(_TASK_PARAM), role="config"),
-            task_buffer("task_flags", len(_TASK_FLAG), role="config"),
-            task_buffer("reset_base_position", "env", 3, role="reset"),
-            task_buffer("reset_base_quaternion", "env", 4, role="reset"),
-            task_buffer("reset_base_linear_velocity", "env", 3, role="reset"),
-            task_buffer("reset_base_angular_velocity", "env", 3, role="reset"),
-            task_buffer("reset_joint_position", "env", "dof", role="reset"),
-            task_buffer("reset_joint_velocity", "env", "dof", role="reset"),
-            task_buffer("base_position", "env", 3, role="base_state"),
-            task_buffer("base_quaternion", "env", 4, role="base_state"),
-            task_buffer("base_linear_velocity", "env", 3, role="base_state"),
-            task_buffer("base_angular_velocity", "env", 3, role="base_state"),
+        return tuple(terminations)
+
+    def _task_kernel_buffers(self):
+        return (
             task_buffer("base_linear_velocity_body", "env", 3, role="base_state"),
             task_buffer("base_angular_velocity_body", "env", 3, role="base_state"),
             task_buffer("projected_gravity", "env", 3, role="base_state"),
-            task_buffer("base_height", "env", role="base_state"),
             task_buffer("joint_position", "env", "dof", role="dof_state"),
             task_buffer("joint_velocity", "env", "dof", role="dof_state"),
-            task_buffer("qacc", "env", "dof", role="dof_state"),
-            task_buffer("torques", "env", "dof", role="dof_state"),
-            task_buffer("joint_lower_limit", "dof", role="dof_state"),
-            task_buffer("joint_upper_limit", "dof", role="dof_state"),
-            task_buffer("foot_position", "env", "foot", 3, role="foot_state"),
-            task_buffer("feet_quat", "env", "foot", 4, role="foot_state"),
-            task_buffer("foot_velocity", "env", "foot", 3, role="foot_state"),
+            task_buffer("default_joint_position", "dof", role="config"),
+            task_buffer("encoder_bias", "env", "dof", role="randomization"),
+            task_buffer("previous_action", "env", "dof", role="history"),
+            task_buffer("last_action", "env", "dof", role="history"),
+            task_buffer("submitted_action", "env", "dof", role="action"),
+            task_buffer("command", "env", 3, role="command"),
+            task_buffer("height_scan", "env", self._height_scan_dim, role="terrain"),
             task_buffer("foot_height", "env", "foot", role="foot_state"),
+            task_buffer("foot_air_time", "env", "foot", role="reward"),
             task_buffer("foot_contact", "env", "foot", role="foot_state"),
             task_buffer("foot_contact_force", "env", "foot", 3, role="foot_state"),
-            task_buffer("height_scan", "env", self._height_scan_dim, role="terrain"),
-            task_buffer("height_scan_hit", "env", self._height_scan_dim, dtype="uint8", role="terrain"),
-            task_buffer("height_scan_point", "env", self._height_scan_dim, 3, role="terrain"),
-            task_buffer("height_scan_normal", "env", self._height_scan_dim, 3, role="terrain"),
-            task_buffer("illegal_contact_count", "env", role="termination"),
-            task_buffer("self_collision_count", "env", role="reward"),
-            task_buffer("shank_collision_count", "env", role="reward"),
-            task_buffer("trunk_head_collision_count", "env", role="reward"),
-            task_buffer("foot_air_time", "env", "foot", role="reward"),
-            task_buffer("foot_peak_height", "env", "foot", role="reward"),
-            task_buffer("last_foot_contact", "env", "foot", role="history"),
-            task_buffer("first_contact", "env", "foot", role="reward"),
-            task_buffer("landing_force", "env", "foot", role="reward"),
-            task_buffer("previous_foot_position", "env", "foot", 3, role="history"),
-            task_buffer("reward", "env", role="output"),
-            task_buffer("terminated", "env", dtype="uint8", role="output"),
+            task_buffer("base_height", "env", role="base_state"),
             task_buffer("base_clearance", "env", role="termination"),
             task_buffer("velocity_error", "env", role="reward"),
             task_buffer("foot_slip", "env", role="reward"),
-            task_buffer("terrain_normal_error", "env", role="reward"),
+            task_buffer("reward_weights", len(_REWARD_TERM_NAMES), role="config"),
+            task_buffer("task_params", len(_TASK_PARAM), role="config"),
+            task_buffer("task_flags", len(_TASK_FLAG), role="config"),
             task_buffer("reward_terms", "env", len(_REWARD_TERM_NAMES), role="output"),
+            task_buffer("reward", "env", role="output"),
+            task_buffer("terminated", "env", dtype="uint8", role="output"),
             task_buffer("actor_obs", "env", self.num_obs, role="output"),
             task_buffer("critic_obs", "env", self.num_privileged_obs, role="output"),
-        )
-        return TaskLayout(
-            name=self.cfg_obj.name,
-            version="go1_velocity_task_ir_v1",
-            action_spec=self.action_spec,
-            obs_groups={"actor": self.actor_obs_schema, "critic": self.critic_obs_schema},
-            buffers=buffers,
-            reward_terms=reward_terms,
-            terminations=tuple(terminations),
-            backend="gobot_native_cpu_fused",
         )
 
     def _apply_actions(self, actions: np.ndarray) -> None:
@@ -986,9 +882,9 @@ class Go1VelocityEnv(LocomotionBatchEnv):
         state = self.backend.state
         np.copyto(state.default_joint_position, self.default_joint_pos.astype(np.float32))
         np.copyto(state.action_scale, self.action_scale.astype(np.float32))
-        np.copyto(state.pose_std_standing, self._pose_std_from_table(self.cfg_obj.rewards.pose_std_standing))
-        np.copyto(state.pose_std_walking, self._pose_std_from_table(self.cfg_obj.rewards.pose_std_walking))
-        np.copyto(state.pose_std_running, self._pose_std_from_table(self.cfg_obj.rewards.pose_std_running))
+        state.pose_std_standing[:] = 1.0
+        state.pose_std_walking[:] = 1.0
+        state.pose_std_running[:] = 1.0
 
         reward_cfg = self.cfg_obj.rewards
         reward_weights = np.asarray(self._reward_weights(), dtype=np.float32)
@@ -999,21 +895,14 @@ class Go1VelocityEnv(LocomotionBatchEnv):
         params[_TASK_PARAM["lin_vel_std2"]] = reward_cfg.lin_vel_std**2
         params[_TASK_PARAM["ang_vel_std2"]] = reward_cfg.ang_vel_std**2
         params[_TASK_PARAM["upright_std2"]] = reward_cfg.upright_std**2
-        params[_TASK_PARAM["foot_target_height"]] = reward_cfg.foot_target_height
         params[_TASK_PARAM["command_threshold"]] = reward_cfg.command_threshold
         params[_TASK_PARAM["min_base_clearance"]] = self.cfg_obj.min_base_clearance
         params[_TASK_PARAM["flat_roll_pitch_limit"]] = math.radians(70.0)
-        params[_TASK_PARAM["pose_walking_threshold"]] = reward_cfg.pose_walking_threshold
-        params[_TASK_PARAM["pose_running_threshold"]] = reward_cfg.pose_running_threshold
         params[_TASK_PARAM["height_scan_max_distance"]] = self.cfg_obj.observations.terrain_scan_max_distance
         np.copyto(state.task_params, params)
 
         flags = np.zeros_like(state.task_flags, dtype=np.float32)
         flags[_TASK_FLAG["rough_terrain"]] = 1.0 if self.cfg_obj.terrain_type == "rough" else 0.0
-        flags[_TASK_FLAG["terrain_normal_upright"]] = (
-            1.0 if self.cfg_obj.terrain_normal_upright.enabled and self._height_scan_dim > 0 else 0.0
-        )
-        flags[_TASK_FLAG["illegal_contact_enabled"]] = 1.0 if self.cfg_obj.illegal_contact.enabled else 0.0
         np.copyto(state.task_flags, flags)
 
     def _reward_weights(self) -> tuple[float, ...]:
@@ -1022,18 +911,10 @@ class Go1VelocityEnv(LocomotionBatchEnv):
             reward_cfg.track_linear_velocity,
             reward_cfg.track_angular_velocity,
             reward_cfg.upright,
-            reward_cfg.pose,
-            reward_cfg.body_ang_vel,
-            reward_cfg.dof_pos_limits,
             reward_cfg.action_rate_l2,
             reward_cfg.air_time,
             reward_cfg.foot_clearance,
-            reward_cfg.foot_swing_height,
             reward_cfg.foot_slip,
-            reward_cfg.soft_landing,
-            reward_cfg.self_collisions,
-            reward_cfg.shank_collision,
-            reward_cfg.trunk_head_collision,
         )
 
     def _configure_native_command(self) -> None:
@@ -1055,15 +936,6 @@ class Go1VelocityEnv(LocomotionBatchEnv):
             seed=self.seed + 17_171,
         )
         self._apply_command_curriculum()
-
-    def _pose_std_from_table(self, table: Mapping[str, float]) -> np.ndarray:
-        values = np.full(self.num_actions, 0.3, dtype=np.float32)
-        for index, joint_name in enumerate(self.joint_names):
-            for pattern, value in table.items():
-                if re.fullmatch(pattern, joint_name):
-                    values[index] = float(value)
-                    break
-        return values
 
     def _find_robot_node(self):
         root = self.context.root
@@ -1216,21 +1088,6 @@ class Go1VelocityEnv(LocomotionBatchEnv):
             self._episode_returns[env_id] = 0.0
             self._previous_actions[env_id] = 0.0
             self._last_actions[env_id] = 0.0
-            self._last_foot_contact[env_id] = 0.0
-            self._foot_air_time[env_id] = 0.0
-            self._foot_peak_height[env_id] = 0.0
-            self._foot_velocities[env_id] = 0.0
-            self._previous_foot_positions[env_id] = 0.0
-            self._foot_contact_history[env_id] = 0.0
-            self._foot_force_history[env_id] = 0.0
-            self._foot_history_cursor[env_id] = 0
-            self._first_contact[env_id] = 0.0
-            self._landing_force[env_id] = 0.0
-            self._terrain_normal_error[env_id] = 0.0
-            self._illegal_contact_counts[env_id] = 0.0
-            self._self_collision_counts[env_id] = 0.0
-            self._shank_collision_counts[env_id] = 0.0
-            self._trunk_head_collision_counts[env_id] = 0.0
             self._reset_push_timer(env_id)
             self._reset_reasons[env_id] = int(reasons[row])
 
@@ -1262,93 +1119,6 @@ class Go1VelocityEnv(LocomotionBatchEnv):
             lo, hi = ranges.get(name, (0.0, 0.0))
             values.append(float(self._rng.uniform(lo, hi)))
         return np.asarray(values, dtype=np.float32)
-
-    def _height_scan(self, state: VelocityBatchRuntimeState) -> np.ndarray:
-        if self._height_scan_dim <= 0:
-            return np.zeros((0,), dtype=np.float32)
-        sensor_name = self.cfg_obj.observations.height_scan_sensor
-        if sensor_name is None:
-            return np.zeros((0,), dtype=np.float32)
-        sensors = getattr(state, "sensors", None) if not isinstance(state, Mapping) else state.get("sensors", {})
-        sensor = sensors.get(sensor_name) if isinstance(sensors, Mapping) else None
-        if sensor is None:
-            raise RuntimeError(f"missing configured height scan sensor {sensor_name!r}")
-        hits = sensor.get("hits", []) if isinstance(sensor, Mapping) else []
-        if len(hits) != self._height_scan_dim:
-            raise RuntimeError(f"height scan sensor {sensor_name!r} expected {self._height_scan_dim} hits, got {len(hits)}")
-        values = np.zeros((self._height_scan_dim,), dtype=np.float32)
-        for index, hit in enumerate(hits):
-            if not isinstance(hit, Mapping) or not bool(hit.get("hit", False)):
-                values[index] = 0.0
-                continue
-            distance = hit.get("distance")
-            if distance is not None:
-                values[index] = float(distance)
-                continue
-            point = np.asarray(hit.get("point", [0.0, 0.0, 0.0]), dtype=np.float32).reshape(3)
-            values[index] = float(point[2])
-        return HeightScan(self._height_scan_dim, self.cfg_obj.observations.terrain_scan_max_distance).normalize(values)
-
-    def _terrain_normal_from_scan(self, state: VelocityBatchRuntimeState) -> np.ndarray:
-        if self._height_scan_dim <= 0:
-            return np.asarray([0.0, 0.0, 1.0], dtype=np.float32)
-        sensor_name = self.cfg_obj.observations.height_scan_sensor
-        if sensor_name is None:
-            return np.asarray([0.0, 0.0, 1.0], dtype=np.float32)
-        sensors = getattr(state, "sensors", None) if not isinstance(state, Mapping) else state.get("sensors", {})
-        sensor = sensors.get(sensor_name) if isinstance(sensors, Mapping) else None
-        if sensor is None:
-            raise RuntimeError(f"missing configured height scan sensor {sensor_name!r}")
-        hits = sensor.get("hits", []) if isinstance(sensor, Mapping) else []
-        points: list[np.ndarray] = []
-        mask: list[bool] = []
-        for hit in hits:
-            if not isinstance(hit, Mapping):
-                continue
-            points.append(np.asarray(hit.get("point", [0.0, 0.0, 0.0]), dtype=np.float32).reshape(3))
-            mask.append(bool(hit.get("hit", False)))
-        if not points:
-            return np.asarray([0.0, 0.0, 1.0], dtype=np.float32)
-        return HeightScan(len(points)).terrain_normal(np.asarray(points, dtype=np.float32), np.asarray(mask, dtype=bool))
-
-    def _contact_summary(self, state: VelocityBatchRuntimeState) -> dict[str, float]:
-        contacts = getattr(state, "contacts", None) if not isinstance(state, Mapping) else state.get("contacts", [])
-        if contacts is None:
-            contacts = []
-        cfg = self.cfg_obj.illegal_contact
-        summary = {
-            "illegal": 0.0,
-            "self_collision": 0.0,
-            "shank": 0.0,
-            "trunk_head": 0.0,
-        }
-        for contact in contacts:
-            if not isinstance(contact, Mapping):
-                continue
-            normal_force = float(contact.get("normal_force", 0.0))
-            if normal_force < float(cfg.ground_force_threshold):
-                continue
-            robot_name = str(contact.get("robot_name", ""))
-            other_robot_name = str(contact.get("other_robot_name", ""))
-            link_name = str(contact.get("link_name", ""))
-            other_link_name = str(contact.get("other_link_name", ""))
-            if robot_name == self.cfg_obj.robot_name and other_robot_name == self.cfg_obj.robot_name:
-                summary["self_collision"] += 1.0
-                continue
-            robot_link = link_name if robot_name == self.cfg_obj.robot_name else other_link_name
-            if not robot_link:
-                continue
-            if cfg.terminate_on_thigh and self._matches_any(robot_link, cfg.thigh_link_patterns):
-                summary["illegal"] += 1.0
-            if self._matches_any(robot_link, cfg.shank_link_patterns):
-                summary["shank"] += 1.0
-            if self._matches_any(robot_link, cfg.trunk_head_link_patterns):
-                summary["trunk_head"] += 1.0
-        return summary
-
-    @staticmethod
-    def _matches_any(name: str, patterns: Sequence[str]) -> bool:
-        return any(re.fullmatch(pattern, name) for pattern in patterns)
 
     def _reset_push_timer(self, env_id: int) -> None:
         if not self.cfg_obj.push_enabled:

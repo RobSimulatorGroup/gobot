@@ -51,6 +51,14 @@ uv run --extra train python examples/go1/train/go1_velocity_train.py \
   --policy-out policies/go1_velocity.pt
 ```
 
+For a small CPU smoke run, use the built-in preset instead of a separate entry
+script:
+
+```bash
+cd /home/wqq/gobot
+uv run --extra train python examples/go1/train/go1_velocity_train.py --cpu-batch --iterations 10
+```
+
 Benchmark the Gobot Go1 vector env hot path without the PPO learner:
 
 ```bash
