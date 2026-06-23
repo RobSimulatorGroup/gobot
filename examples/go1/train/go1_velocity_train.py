@@ -49,6 +49,7 @@ def build_arg_parser() -> argparse.ArgumentParser:
     parser.add_argument("--sim-workers", type=int, default=0, help="CPU workers for batched physics stepping. 0 uses hardware concurrency; 1 keeps stepping serial.")
     parser.add_argument("--profile-step", action="store_true", help="Log rolling Go1 env step phase timings.")
     parser.add_argument("--no-step-extras", action="store_true", default=False, help="Disable per-step reward-term/log extras.")
+    parser.add_argument("--task-runtime", choices=("numpy",), default="numpy", help="Go1 task runtime. The current path is CPU batch NumPy.")
     parser.add_argument("--policy-out", type=str, default="policies/go1_velocity.pt")
     parser.add_argument("--no-terrain-curriculum", dest="terrain_curriculum", action="store_false", default=True)
     parser.add_argument("--no-obs-noise", dest="obs_noise", action="store_false", default=True)
@@ -96,6 +97,7 @@ def build_core_env(args: argparse.Namespace, cfg) -> Go1VelocityEnv:
         sim_workers=args.sim_workers,
         profile_step=args.profile_step,
         collect_step_extras=not args.no_step_extras,
+        task_runtime=args.task_runtime,
     )
 
 
@@ -259,7 +261,7 @@ def print_training_summary(
     video_dir: Path,
 ) -> None:
     core_env = env.env
-    task_kernel = getattr(core_env, "task_kernel_info", {})
+    task_runtime = getattr(core_env, "task_runtime_info", {})
     rows = [
         ("task", cfg.name),
         ("device", args.device),
@@ -267,7 +269,7 @@ def print_training_summary(
         ("iterations", args.iterations),
         ("rollout steps/env", train_cfg["num_steps_per_env"]),
         ("sim workers", f"requested={args.sim_workers}, resolved={env.resolved_sim_workers}"),
-        ("task kernel", f"{task_kernel.get('backend', 'unknown')}:{task_kernel.get('mode', 'unknown')} cache_hit={task_kernel.get('cache_hit')}"),
+        ("task runtime", f"{task_runtime.get('backend', 'unknown')}:{task_runtime.get('mode', 'unknown')}"),
         ("log dir", log_dir),
         ("final checkpoint", final_path),
         ("editor policy", policy_path),

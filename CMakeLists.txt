@@ -17,11 +17,9 @@ option(GOB_BUILD_OPENUSD "build OpenUSD scene importer/exporter support" OFF)
 option(GOB_BUILD_ASSIMP "build mesh import support through Assimp" ON)
 option(GOB_BUILD_MUJOCO "build MuJoCo CPU physics backend support" ON)
 option(GOB_BUILD_EGL "build EGL headless OpenGL rendering support" ON)
-option(GOB_BUILD_TASK_LLVM "build LLVM/Clang runtime compiler for RL task kernels" ON)
 option(GOB_FETCH_MUJOCO "download MuJoCo from the official GitHub repository when GOB_BUILD_MUJOCO is ON and no local SDK/package is found" ON)
 option(GOB_ENABLE_TRACY "enable Tracy profiler instrumentation" OFF)
 set(GOB_MUJOCO_ROOT "" CACHE PATH "MuJoCo SDK or install prefix. Supports either a CMake package install or an extracted SDK with include/ and lib/.")
-set(GOB_LLVM_ROOT "" CACHE PATH "LLVM/Clang install prefix for Gobot RL task kernel compilation.")
 set(GOB_TRACY_ROOT "" CACHE PATH "Tracy install prefix or source checkout used when GOB_ENABLE_TRACY is ON")
 set(GOB_MUJOCO_GIT_TAG "3.8.0" CACHE STRING "MuJoCo release tag used when GOB_FETCH_MUJOCO is ON")
 set(GOB_ASSIMP_IMPORTERS "COLLADA;OBJ;STL;PLY;GLTF" CACHE STRING "Assimp importers enabled for Gobot mesh import")
@@ -75,33 +73,6 @@ CPMFindPackage(
 
 if(GOB_BUILD_OPENUSD)
     find_package(pxr REQUIRED CONFIG)
-endif()
-
-set(GOBOT_TASK_LLVM_AVAILABLE OFF)
-if(GOB_BUILD_TASK_LLVM)
-    set(GOBOT_LLVM_ROOT_CANDIDATES)
-    if(GOB_LLVM_ROOT)
-        list(APPEND GOBOT_LLVM_ROOT_CANDIDATES "${GOB_LLVM_ROOT}")
-    endif()
-    if(EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/3rdparty/llvm/lib/cmake/llvm")
-        list(APPEND GOBOT_LLVM_ROOT_CANDIDATES "${CMAKE_CURRENT_SOURCE_DIR}/3rdparty/llvm")
-    endif()
-
-    find_package(LLVM CONFIG QUIET PATHS ${GOBOT_LLVM_ROOT_CANDIDATES} NO_DEFAULT_PATH)
-    find_package(Clang CONFIG QUIET PATHS ${GOBOT_LLVM_ROOT_CANDIDATES} NO_DEFAULT_PATH)
-    if(NOT LLVM_FOUND)
-        find_package(LLVM CONFIG QUIET)
-    endif()
-    if(NOT Clang_FOUND)
-        find_package(Clang CONFIG QUIET)
-    endif()
-
-    if(LLVM_FOUND AND Clang_FOUND)
-        set(GOBOT_TASK_LLVM_AVAILABLE ON)
-        message(STATUS "Gobot task LLVM enabled with LLVM ${LLVM_PACKAGE_VERSION}")
-    else()
-        message(WARNING "GOB_BUILD_TASK_LLVM is ON, but LLVM/Clang was not found. @gobot.rl.kernel LLVM compilation will be unavailable.")
-    endif()
 endif()
 
 set(GOBOT_TRACY_TARGET "")
@@ -514,42 +485,6 @@ if(GOB_BUILD_MUJOCO)
     target_link_libraries(gobot PUBLIC ${GOBOT_MUJOCO_TARGET})
 endif()
 
-add_library(gobot_task_llvm STATIC src/gobot/rl/task_llvm.cpp)
-target_include_directories(gobot_task_llvm
-    PUBLIC
-        ${CMAKE_CURRENT_SOURCE_DIR}/src/gobot/rl
-)
-target_compile_options(gobot_task_llvm PRIVATE "-fno-gnu-unique")
-if(GOBOT_TASK_LLVM_AVAILABLE)
-    target_compile_definitions(gobot_task_llvm PRIVATE GOBOT_HAS_TASK_LLVM=1 _GLIBCXX_USE_CXX11_ABI=0)
-    target_include_directories(gobot_task_llvm SYSTEM PRIVATE ${LLVM_INCLUDE_DIRS} ${CLANG_INCLUDE_DIRS})
-    target_link_libraries(gobot_task_llvm PRIVATE
-            clangCodeGen
-            clangFrontend
-            clangSerialization
-            clangDriver
-            clangParse
-            clangSema
-            clangAnalysis
-            clangAST
-            clangLex
-            clangBasic
-            LLVMOrcJIT
-            LLVMJITLink
-            LLVMExecutionEngine
-            LLVMRuntimeDyld
-            LLVMX86CodeGen
-            LLVMX86AsmParser
-            LLVMX86Desc
-            LLVMX86Info
-            LLVMCodeGen
-            LLVMTarget
-            LLVMObject
-            LLVMMC
-            LLVMCore
-            LLVMSupport)
-endif()
-
 if(GOB_BUILD_EGL AND GOBOT_EGL_TARGET)
     target_compile_definitions(gobot PUBLIC GOBOT_HAS_EGL=1)
     target_link_libraries(gobot PUBLIC ${GOBOT_EGL_TARGET})
@@ -583,7 +518,7 @@ pybind11_add_module(gobot_python MODULE
         src/gobot/python/python_module.cpp
         ${GOBOT_PYTHON_BINDING_SOURCES}
 )
-target_link_libraries(gobot_python PRIVATE gobot gobot_task_llvm)
+target_link_libraries(gobot_python PRIVATE gobot)
 set_target_properties(gobot_python
     PROPERTIES
         OUTPUT_NAME "_core"

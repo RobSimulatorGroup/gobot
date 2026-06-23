@@ -1,6 +1,5 @@
 from pathlib import Path
 import sys
-import types
 
 import numpy as np
 
@@ -18,17 +17,10 @@ for path in (REPO_ROOT, REPO_ROOT / "python", REPO_ROOT / "build/python"):
 from benchmark import go1_velocity_benchmark
 from examples.go1.scripts import go1 as go1_playback
 from examples.go1.train import go1_velocity_cfg as go1_cfg
-from examples.go1.train.go1_task_kernels import go1_velocity_task
 from examples.go1.train.go1_velocity_env import Go1VelocityEnv
 from gobot.rl import (
-    ActionSpec,
     BatchEnvState,
-    RewardTermSpec,
-    SpecField,
-    TaskExpression,
-    TaskJitCompiler,
-    TaskLayout,
-    task_buffer,
+    TaskRuntimeMetadata,
 )
 from gobot.rl.locomotion import (
     HeightScan,
@@ -79,47 +71,21 @@ def test_batch_env_state_contract():
     assert isinstance(state.obs, dict)
 
 
-def test_task_ir_metadata_and_array_validation():
+def test_task_runtime_metadata_is_public_task_summary():
     actor_spec = velocity_actor_observation_schema(1, 0)
-    task = TaskLayout(
+    metadata = TaskRuntimeMetadata(
         name="dummy",
-        version="dummy_v1",
-        action_spec=ActionSpec(version="action_v1", fields=(SpecField("joint", 1),)),
-        obs_groups={"actor": actor_spec},
-        buffers=(task_buffer("obs", "env", actor_spec.dim), task_buffer("flag", "env", dtype="uint8")),
-        reward_terms=(RewardTermSpec("alive", 1.0, TaskExpression("constant", params={"value": 1.0})),),
+        version="dummy_numpy_v1",
+        obs_groups_spec={"actor": actor_spec.dim},
+        reward_names=("alive",),
+        backend="gobot_native_cpu_batch_numpy",
+        cache_info={"note": "unit-test"},
     )
-    arrays = types.SimpleNamespace(
-        obs=np.zeros((2, actor_spec.dim), dtype=np.float32),
-        flag=np.zeros((2,), dtype=np.uint8),
-    )
-    assert task.metadata()["kind"] == "gobot_task_ir"
-    assert task.obs_groups_spec == {"actor": actor_spec.dim}
-    assert task.reward_names == ("alive",)
-    task.validate_native_arrays(arrays)
-
-    arrays.obs = np.zeros((2, actor_spec.dim + 1), dtype=np.float32)
-    _assert_runtime_error("shape mismatch", lambda: task.validate_native_arrays(arrays))
-
-
-def test_go1_task_jit_compiles_and_runs():
-    env = _dummy_go1_env()
-    task = env._make_task_ir()
-    arrays = _dummy_go1_arrays(env)
-
-    task.validate_native_arrays(arrays)
-    compiled = TaskJitCompiler(cache_dir="/tmp/gobot-task-jit-test").compile(task, arrays, kernel=go1_velocity_task)
-    compiled.run(arrays)
-
-    assert compiled.function_address != 0
-    assert compiled.build_info.backend == "llvm"
-    assert compiled.build_info.library_path.exists()
-    assert arrays.actor_obs.shape == (2, env.num_obs)
-    assert arrays.critic_obs.shape == (2, env.num_privileged_obs)
-    assert arrays.reward_terms.shape == (2, 7)
-    assert np.isfinite(arrays.actor_obs).all()
-    assert np.isfinite(arrays.critic_obs).all()
-    assert np.isfinite(arrays.reward).all()
+    payload = metadata.metadata()
+    assert payload["kind"] == "gobot_task_runtime_metadata"
+    assert payload["obs_groups_spec"] == {"actor": actor_spec.dim}
+    assert payload["reward_names"] == ["alive"]
+    assert payload["cache_info"] == {"note": "unit-test"}
 
 
 def test_locomotion_common_helpers():
@@ -220,9 +186,10 @@ def test_go1_velocity_env_reset_step_shapes():
         assert obs["actor"].shape == (1, 235)
         assert obs["critic"].shape == (1, 259)
         assert env.obs_groups_spec == {"actor": 235, "critic": 259}
-        assert env.cfg["task_kernel"]["mode"] == "jit"
-        assert env.cfg["task_kernel"]["compiled"]
-        assert env.task_ir.reward_names == (
+        assert env.cfg["task_runtime"]["mode"] == "numpy"
+        assert not env.cfg["task_runtime"]["compiled"]
+        assert env.cfg["task_runtime"]["backend"] == "gobot_native_cpu_batch_numpy"
+        assert env.cfg["task_runtime"]["reward_names"] == (
             "track_linear_velocity",
             "track_angular_velocity",
             "upright",
@@ -231,7 +198,19 @@ def test_go1_velocity_env_reset_step_shapes():
             "foot_clearance",
             "foot_slip",
         )
-        env.task_ir.validate_native_arrays(env.backend.state)
+        assert env.cfg["task_runtime"]["obs_groups_spec"] == {"actor": 235, "critic": 259}
+        go1_env_source = Path(__file__).resolve().parents[2].joinpath(
+            "examples/go1/train/go1_velocity_env.py"
+        ).read_text(encoding="utf-8")
+        assert "TaskExpression" not in go1_env_source
+        assert "RewardTermSpec" not in go1_env_source
+        assert "task_buffer(" not in go1_env_source
+        assert "TaskJitCompiler" not in go1_env_source
+        assert "install_kernel(" not in go1_env_source
+        assert "step_task_kernel(" not in go1_env_source
+        assert "set_base_velocities(" in go1_env_source
+        assert "_maybe_apply_push" not in go1_env_source
+        assert not REPO_ROOT.joinpath("examples/go1/train/go1_task_kernels.py").exists()
 
         state = env.step(np.zeros((1, env.num_actions), dtype=np.float32))
         assert isinstance(state, BatchEnvState)
@@ -241,7 +220,7 @@ def test_go1_velocity_env_reset_step_shapes():
         assert np.isfinite(state.obs["actor"]).all()
         assert np.isfinite(state.obs["critic"]).all()
         assert np.isfinite(state.reward).all()
-        for key in ("env_step_total_ms", "backend_physics_ms", "update_state_ms", "reset_done_ms"):
+        for key in ("env_step_total_ms", "backend_physics_ms", "numpy_task_ms", "update_state_ms", "reset_done_ms"):
             assert key in state.info["timing"]
     finally:
         env.close()
@@ -294,67 +273,10 @@ def test_rsl_rl_wrapper_keeps_core_env_numpy():
     assert isinstance(env.state.obs["actor"], np.ndarray)
 
 
-def _dummy_go1_env():
-    cfg = go1_cfg.go1_flat_velocity_cfg(project_path="/tmp/go1")
-    env = object.__new__(Go1VelocityEnv)
-    env.cfg_obj = cfg
-    env.num_envs = 2
-    env.num_actions = len(cfg.joint_names)
-    env.joint_names = tuple(cfg.joint_names)
-    env.default_joint_pos = np.asarray(cfg.default_joint_pos, dtype=np.float32)
-    env.action_scale = np.ones(env.num_actions, dtype=np.float32)
-    env.actor_obs_schema = velocity_actor_observation_schema(env.num_actions, 0)
-    env.critic_obs_schema = velocity_critic_observation_schema(env.num_actions, 0, len(cfg.foot_names))
-    env.action_spec = env._make_action_spec()
-    env.num_obs = env.actor_obs_schema.dim
-    env.num_privileged_obs = env.critic_obs_schema.dim
-    env._height_scan_dim = 0
-    env._foot_count = len(cfg.foot_names)
-    return env
-
-
-def _dummy_go1_arrays(env):
-    num_envs = int(env.num_envs)
-    num_dof = int(env.num_actions)
-    num_feet = int(env._foot_count)
-    height_scan_dim = int(env._height_scan_dim)
-    arrays = types.SimpleNamespace()
-    arrays.base_linear_velocity_body = np.zeros((num_envs, 3), dtype=np.float32)
-    arrays.base_angular_velocity_body = np.zeros((num_envs, 3), dtype=np.float32)
-    arrays.projected_gravity = np.tile(np.asarray([0.0, 0.0, -1.0], dtype=np.float32), (num_envs, 1))
-    arrays.joint_position = np.tile(np.asarray(env.default_joint_pos, dtype=np.float32), (num_envs, 1))
-    arrays.joint_velocity = np.zeros((num_envs, num_dof), dtype=np.float32)
-    arrays.default_joint_position = np.asarray(env.default_joint_pos, dtype=np.float32).copy()
-    arrays.encoder_bias = np.zeros((num_envs, num_dof), dtype=np.float32)
-    arrays.previous_action = np.zeros((num_envs, num_dof), dtype=np.float32)
-    arrays.last_action = np.zeros((num_envs, num_dof), dtype=np.float32)
-    arrays.submitted_action = np.zeros((num_envs, num_dof), dtype=np.float32)
-    arrays.command = np.zeros((num_envs, 3), dtype=np.float32)
-    arrays.foot_height = np.zeros((num_envs, num_feet), dtype=np.float32)
-    arrays.foot_air_time = np.zeros((num_envs, num_feet), dtype=np.float32)
-    arrays.foot_contact = np.ones((num_envs, num_feet), dtype=np.float32)
-    arrays.foot_contact_force = np.zeros((num_envs, num_feet, 3), dtype=np.float32)
-    arrays.base_height = np.full((num_envs,), 0.35, dtype=np.float32)
-    arrays.base_clearance = np.zeros((num_envs,), dtype=np.float32)
-    arrays.velocity_error = np.zeros((num_envs,), dtype=np.float32)
-    arrays.foot_slip = np.zeros((num_envs,), dtype=np.float32)
-    arrays.reward_weights = np.asarray(env._reward_weights(), dtype=np.float32)
-    arrays.task_params = np.asarray([0.02, 0.25, 0.25, 0.25, 0.05, 0.16, np.deg2rad(70.0), 5.0], dtype=np.float32)
-    arrays.task_flags = np.zeros((1,), dtype=np.float32)
-    arrays.reward_terms = np.zeros((num_envs, 7), dtype=np.float32)
-    arrays.reward = np.zeros((num_envs,), dtype=np.float32)
-    arrays.terminated = np.zeros((num_envs,), dtype=np.uint8)
-    arrays.actor_obs = np.zeros((num_envs, env.num_obs), dtype=np.float32)
-    arrays.critic_obs = np.zeros((num_envs, env.num_privileged_obs), dtype=np.float32)
-    arrays.height_scan = np.zeros((num_envs, height_scan_dim), dtype=np.float32)
-    return arrays
-
-
 def main():
     tests = [
         test_batch_env_state_contract,
-        test_task_ir_metadata_and_array_validation,
-        test_go1_task_jit_compiles_and_runs,
+        test_task_runtime_metadata_is_public_task_summary,
         test_locomotion_common_helpers,
         test_go1_cfg_and_playback_schema_match,
         test_go1_benchmark_uses_unilab_env_step_accounting,

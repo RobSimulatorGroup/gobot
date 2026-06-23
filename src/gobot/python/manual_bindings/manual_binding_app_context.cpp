@@ -4,13 +4,14 @@
 #include <array>
 #include <atomic>
 #include <chrono>
+#include <condition_variable>
 #include <cstdint>
+#include <functional>
 #include <mutex>
 #include <random>
 #include <cstring>
 #include <thread>
 #include <limits>
-#include <type_traits>
 #include <unordered_set>
 
 #ifdef GOBOT_HAS_MUJOCO
@@ -124,28 +125,6 @@ enum LocomotionStepProfileIndex : std::size_t {
     kStepProfileCount
 };
 
-constexpr std::uint32_t kTaskKernelAbiVersion = 2;
-constexpr std::uint32_t kTaskKernelDtypeFloat32 = 1;
-constexpr std::uint32_t kTaskKernelDtypeUint8 = 2;
-constexpr std::size_t kTaskKernelMaxRank = 4;
-
-struct TaskArrayView {
-    const char* name{nullptr};
-    std::uint32_t dtype{0};
-    std::uint32_t rank{0};
-    std::size_t shape[kTaskKernelMaxRank]{};
-    std::size_t strides[kTaskKernelMaxRank]{};
-    void* data{nullptr};
-};
-
-struct TaskKernelContext {
-    std::uint32_t abi_version{kTaskKernelAbiVersion};
-    std::size_t array_count{0};
-    const TaskArrayView* arrays{nullptr};
-};
-
-using TaskKernelFunction = int (*)(TaskKernelContext*);
-
 template <typename T>
 py::array_t<T> VectorArrayView(std::vector<T>& values,
                                std::initializer_list<py::ssize_t> shape,
@@ -225,6 +204,10 @@ public:
         }
         AllocateBuffers();
         Refresh();
+    }
+
+    ~PyLocomotionBatchView() {
+        StopViewWorkers();
     }
 
     py::dict Arrays() {
@@ -389,23 +372,23 @@ public:
         arrays["previous_foot_position"] =
                 VectorArrayView(previous_foot_position_, {EnvDim(), FootDim(), 3}, owner, true);
         arrays["reward"] =
-                VectorArrayView(reward_, {EnvDim()}, owner, false);
+                VectorArrayView(reward_, {EnvDim()}, owner, true);
         arrays["terminated"] =
-                VectorArrayView(terminated_, {EnvDim()}, owner, false);
+                VectorArrayView(terminated_, {EnvDim()}, owner, true);
         arrays["base_clearance"] =
-                VectorArrayView(base_clearance_, {EnvDim()}, owner, false);
+                VectorArrayView(base_clearance_, {EnvDim()}, owner, true);
         arrays["velocity_error"] =
-                VectorArrayView(velocity_error_, {EnvDim()}, owner, false);
+                VectorArrayView(velocity_error_, {EnvDim()}, owner, true);
         arrays["foot_slip"] =
-                VectorArrayView(foot_slip_, {EnvDim()}, owner, false);
+                VectorArrayView(foot_slip_, {EnvDim()}, owner, true);
         arrays["terrain_normal_error"] =
-                VectorArrayView(terrain_normal_error_, {EnvDim()}, owner, false);
+                VectorArrayView(terrain_normal_error_, {EnvDim()}, owner, true);
         arrays["reward_terms"] =
-                VectorArrayView(reward_terms_, {EnvDim(), RewardTermDim()}, owner, false);
+                VectorArrayView(reward_terms_, {EnvDim(), RewardTermDim()}, owner, true);
         arrays["actor_obs"] =
-                VectorArrayView(actor_obs_, {EnvDim(), ActorObsDim()}, owner, false);
+                VectorArrayView(actor_obs_, {EnvDim(), ActorObsDim()}, owner, true);
         arrays["critic_obs"] =
-                VectorArrayView(critic_obs_, {EnvDim(), CriticObsDim()}, owner, false);
+                VectorArrayView(critic_obs_, {EnvDim(), CriticObsDim()}, owner, true);
         return arrays;
     }
 
@@ -571,135 +554,6 @@ public:
 #endif
     }
 
-    void InstallTaskKernel(std::uintptr_t function_address, const py::list& array_specs) {
-        if (function_address == 0) {
-            throw std::invalid_argument("task kernel function address must be non-zero");
-        }
-        task_kernel_function_ = reinterpret_cast<TaskKernelFunction>(function_address);
-        task_kernel_names_.clear();
-        task_kernel_views_.clear();
-        const std::size_t spec_count = static_cast<std::size_t>(py::len(array_specs));
-        std::vector<std::uint32_t> dtypes;
-        std::vector<std::uint32_t> ranks;
-        task_kernel_names_.reserve(spec_count);
-        dtypes.reserve(spec_count);
-        ranks.reserve(spec_count);
-        for (const py::handle& item : array_specs) {
-            const py::dict spec = py::reinterpret_borrow<py::dict>(item);
-            task_kernel_names_.push_back(py::cast<std::string>(spec["name"]));
-            dtypes.push_back(py::cast<std::uint32_t>(spec["dtype"]));
-            ranks.push_back(py::cast<std::uint32_t>(spec["rank"]));
-        }
-        task_kernel_views_.reserve(spec_count);
-        for (std::size_t index = 0; index < spec_count; ++index) {
-            task_kernel_views_.push_back(MakeTaskArrayView(task_kernel_names_[index], dtypes[index], ranks[index]));
-        }
-    }
-
-    void ClearTaskKernel() {
-        task_kernel_function_ = nullptr;
-        task_kernel_names_.clear();
-        task_kernel_views_.clear();
-    }
-
-    void StepTaskKernel(std::uint64_t ticks, std::size_t workers, bool simulate_action_latency) {
-        if (task_kernel_function_ == nullptr) {
-            throw std::runtime_error("no task kernel is installed on this locomotion batch view");
-        }
-#ifdef GOBOT_HAS_MUJOCO
-        ResetStepProfile();
-        const TimePoint total_begin = Clock::now();
-        TimePoint phase_begin = Clock::now();
-        PrepareActionTargets(simulate_action_latency);
-        SetProfileMs(kStepProfilePrepareAction, ElapsedMs(phase_begin));
-
-        phase_begin = Clock::now();
-        if (command_configured_) {
-            AdvanceCommandTimersAndResample();
-        }
-        AddProfileMs(kStepProfileCommand, ElapsedMs(phase_begin));
-
-        auto* model = static_cast<mjModel*>(world_->model_);
-        if (model == nullptr) {
-            throw std::runtime_error("MuJoCo model has not been built");
-        }
-        model->opt.timestep = world_->GetSettings().fixed_time_step;
-
-        const std::size_t resolved_workers = ResolveViewWorkers(workers);
-        std::vector<std::array<double, kStepProfileCount>> worker_profiles(resolved_workers);
-        for (auto& profile : worker_profiles) {
-            profile.fill(0.0);
-        }
-
-        ForEachEnvironmentWithWorker(resolved_workers, [&](std::size_t env_id, std::size_t worker_index) {
-            auto& profile = worker_profiles[std::min(worker_index, worker_profiles.size() - 1)];
-            TimePoint begin = Clock::now();
-            ApplyTargetPositionsForEnvironment(*model, env_id);
-            profile[kStepProfileApplyControl] += ElapsedMs(begin);
-
-            auto* data = static_cast<mjData*>(world_->environment_data_[env_id]);
-            if (data == nullptr) {
-                throw std::runtime_error(fmt::format("MuJoCo data for environment {} is not available", env_id));
-            }
-            begin = Clock::now();
-            for (std::uint64_t tick = 0; tick < ticks; ++tick) {
-                mj_step(model, data);
-            }
-            profile[kStepProfileMjStep] += ElapsedMs(begin);
-
-            begin = Clock::now();
-            FillEnvironment(env_id);
-            profile[kStepProfileExtractState] += ElapsedMs(begin);
-
-            begin = Clock::now();
-            if (command_configured_) {
-                UpdateCommandForEnvironment(env_id);
-            }
-            UpdateFootHistory(env_id);
-            profile[kStepProfileCommand] += ElapsedMs(begin);
-        });
-
-        phase_begin = Clock::now();
-        TaskKernelContext context;
-        context.abi_version = kTaskKernelAbiVersion;
-        context.array_count = task_kernel_views_.size();
-        context.arrays = task_kernel_views_.data();
-        const int status = task_kernel_function_(&context);
-        if (status != 0) {
-            throw std::runtime_error(fmt::format("task kernel failed with status {}", status));
-        }
-        SetProfileMs(kStepProfileReward, ElapsedMs(phase_begin));
-
-        for (std::size_t profile_index = kStepProfileApplyControl; profile_index < kStepProfileCount; ++profile_index) {
-            double critical_path_ms = 0.0;
-            for (const auto& worker_profile : worker_profiles) {
-                critical_path_ms = std::max(critical_path_ms, worker_profile[profile_index]);
-            }
-            AddProfileMs(profile_index, critical_path_ms);
-        }
-        SetProfileMs(kStepProfileTotal, ElapsedMs(total_begin));
-#else
-        GOB_UNUSED(ticks);
-        GOB_UNUSED(workers);
-        GOB_UNUSED(simulate_action_latency);
-        throw std::runtime_error("Gobot was built without MuJoCo support");
-#endif
-    }
-
-    void RunTaskKernel() {
-        if (task_kernel_function_ == nullptr) {
-            throw std::runtime_error("no task kernel is installed on this locomotion batch view");
-        }
-        TaskKernelContext context;
-        context.abi_version = kTaskKernelAbiVersion;
-        context.array_count = task_kernel_views_.size();
-        context.arrays = task_kernel_views_.data();
-        const int status = task_kernel_function_(&context);
-        if (status != 0) {
-            throw std::runtime_error(fmt::format("task kernel failed with status {}", status));
-        }
-    }
-
     void Refresh() {
 #ifdef GOBOT_HAS_MUJOCO
         FillAllEnvironments();
@@ -771,24 +625,44 @@ public:
         }
         const auto* linear = static_cast<const float*>(linear_buffer.ptr);
         const auto* angular = static_cast<const float*>(angular_buffer.ptr);
-        auto* model = static_cast<mjModel*>(world_->model_);
-        auto* data = static_cast<mjData*>(world_->environment_data_[env_id]);
-        const auto& binding = world_->joint_bindings_[base_free_joint_binding_index_];
-        if (binding.dof_address < 0 || binding.dof_address + 5 >= model->nv) {
-            throw std::runtime_error("Go1 base free joint velocity address is invalid");
-        }
-        data->qvel[binding.dof_address + 0] = linear[0];
-        data->qvel[binding.dof_address + 1] = linear[1];
-        data->qvel[binding.dof_address + 2] = linear[2];
-        data->qvel[binding.dof_address + 3] = angular[0];
-        data->qvel[binding.dof_address + 4] = angular[1];
-        data->qvel[binding.dof_address + 5] = angular[2];
-        mj_forward(model, data);
+        SetBaseVelocityForEnvironment(env_id, linear, angular);
         FillEnvironment(env_id);
 #else
         GOB_UNUSED(env_id);
         GOB_UNUSED(linear_velocity);
         GOB_UNUSED(angular_velocity);
+        throw std::runtime_error("Gobot was built without MuJoCo support");
+#endif
+    }
+
+    void SetBaseVelocities(const std::vector<std::size_t>& env_ids,
+                           py::array_t<float, py::array::c_style | py::array::forcecast> linear_velocities,
+                           py::array_t<float, py::array::c_style | py::array::forcecast> angular_velocities) {
+#ifdef GOBOT_HAS_MUJOCO
+        if (base_free_joint_binding_index_ >= world_->joint_bindings_.size()) {
+            throw std::runtime_error("Go1 base free joint binding is not available");
+        }
+        auto linear_buffer = linear_velocities.request();
+        auto angular_buffer = angular_velocities.request();
+        const std::size_t count = env_ids.size();
+        if (linear_buffer.ndim != 2 || angular_buffer.ndim != 2 ||
+            linear_buffer.shape[0] != static_cast<py::ssize_t>(count) ||
+            angular_buffer.shape[0] != static_cast<py::ssize_t>(count) ||
+            linear_buffer.shape[1] != 3 || angular_buffer.shape[1] != 3) {
+            throw std::invalid_argument("linear_velocities and angular_velocities must have shape [len(env_ids), 3]");
+        }
+        const auto* linear = static_cast<const float*>(linear_buffer.ptr);
+        const auto* angular = static_cast<const float*>(angular_buffer.ptr);
+        for (std::size_t row = 0; row < count; ++row) {
+            const std::size_t env_id = env_ids[row];
+            RequireEnvironmentIndex(env_id);
+            SetBaseVelocityForEnvironment(env_id, linear + row * 3, angular + row * 3);
+            FillEnvironment(env_id);
+        }
+#else
+        GOB_UNUSED(env_ids);
+        GOB_UNUSED(linear_velocities);
+        GOB_UNUSED(angular_velocities);
         throw std::runtime_error("Gobot was built without MuJoCo support");
 #endif
     }
@@ -848,140 +722,6 @@ private:
 
     py::ssize_t CriticObsDim() const {
         return static_cast<py::ssize_t>(critic_obs_dim_);
-    }
-
-    template <typename T>
-    TaskArrayView MakeTaskArrayViewFor(const std::string& name,
-                                       std::uint32_t requested_dtype,
-                                       std::uint32_t requested_rank,
-                                       std::vector<T>& buffer,
-                                       std::initializer_list<std::size_t> shape) const {
-        const std::uint32_t dtype = std::is_same_v<T, float> ? kTaskKernelDtypeFloat32
-                                                             : (std::is_same_v<T, std::uint8_t> ? kTaskKernelDtypeUint8
-                                                                                                : 0);
-        if (dtype == 0) {
-            throw std::runtime_error(fmt::format("task kernel buffer '{}' has unsupported native dtype", name));
-        }
-        if (requested_dtype != dtype) {
-            throw std::invalid_argument(fmt::format("task kernel buffer '{}' dtype mismatch", name));
-        }
-        if (requested_rank != shape.size()) {
-            throw std::invalid_argument(fmt::format("task kernel buffer '{}' rank mismatch", name));
-        }
-        if (shape.size() > kTaskKernelMaxRank) {
-            throw std::invalid_argument(fmt::format("task kernel buffer '{}' rank exceeds ABI max", name));
-        }
-        std::size_t expected = 1;
-        for (std::size_t extent : shape) {
-            expected *= extent;
-        }
-        if (expected != buffer.size()) {
-            throw std::runtime_error(
-                    fmt::format("task kernel buffer '{}' storage mismatch: expected {}, got {}",
-                                name,
-                                expected,
-                                buffer.size()));
-        }
-
-        TaskArrayView view;
-        view.name = name.c_str();
-        view.dtype = dtype;
-        view.rank = requested_rank;
-        view.data = buffer.data();
-        std::array<std::size_t, kTaskKernelMaxRank> shape_values{};
-        std::copy(shape.begin(), shape.end(), shape_values.begin());
-        for (std::size_t axis = 0; axis < shape.size(); ++axis) {
-            view.shape[axis] = shape_values[axis];
-        }
-        std::size_t stride = 1;
-        for (std::ptrdiff_t axis = static_cast<std::ptrdiff_t>(shape.size()) - 1; axis >= 0; --axis) {
-            view.strides[static_cast<std::size_t>(axis)] = stride;
-            stride *= shape_values[static_cast<std::size_t>(axis)];
-        }
-        return view;
-    }
-
-    TaskArrayView MakeTaskArrayView(const std::string& name,
-                                    std::uint32_t requested_dtype,
-                                    std::uint32_t requested_rank) {
-        if (name == "target_position") return MakeTaskArrayViewFor(name, requested_dtype, requested_rank, target_position_, {environment_count_, joint_count_});
-        if (name == "action") return MakeTaskArrayViewFor(name, requested_dtype, requested_rank, action_, {environment_count_, joint_count_});
-        if (name == "submitted_action") return MakeTaskArrayViewFor(name, requested_dtype, requested_rank, submitted_action_, {environment_count_, joint_count_});
-        if (name == "default_joint_position") return MakeTaskArrayViewFor(name, requested_dtype, requested_rank, default_joint_position_, {joint_count_});
-        if (name == "action_scale") return MakeTaskArrayViewFor(name, requested_dtype, requested_rank, action_scale_, {joint_count_});
-        if (name == "previous_action") return MakeTaskArrayViewFor(name, requested_dtype, requested_rank, previous_action_, {environment_count_, joint_count_});
-        if (name == "last_action") return MakeTaskArrayViewFor(name, requested_dtype, requested_rank, last_action_, {environment_count_, joint_count_});
-        if (name == "encoder_bias") return MakeTaskArrayViewFor(name, requested_dtype, requested_rank, encoder_bias_, {environment_count_, joint_count_});
-        if (name == "command" || name == "commands") return MakeTaskArrayViewFor(name, requested_dtype, requested_rank, command_, {environment_count_, 3});
-        if (name == "command_world") return MakeTaskArrayViewFor(name, requested_dtype, requested_rank, command_world_, {environment_count_, 3});
-        if (name == "command_heading_target" || name == "heading_commands") return MakeTaskArrayViewFor(name, requested_dtype, requested_rank, command_heading_target_, {environment_count_});
-        if (name == "command_heading_error") return MakeTaskArrayViewFor(name, requested_dtype, requested_rank, command_heading_error_, {environment_count_});
-        if (name == "command_time_left") return MakeTaskArrayViewFor(name, requested_dtype, requested_rank, command_time_left_, {environment_count_});
-        if (name == "command_is_heading_env") return MakeTaskArrayViewFor(name, requested_dtype, requested_rank, command_is_heading_env_, {environment_count_});
-        if (name == "command_is_standing_env") return MakeTaskArrayViewFor(name, requested_dtype, requested_rank, command_is_standing_env_, {environment_count_});
-        if (name == "command_is_world_env") return MakeTaskArrayViewFor(name, requested_dtype, requested_rank, command_is_world_env_, {environment_count_});
-        if (name == "command_is_forward_env") return MakeTaskArrayViewFor(name, requested_dtype, requested_rank, command_is_forward_env_, {environment_count_});
-        if (name == "command_ranges") return MakeTaskArrayViewFor(name, requested_dtype, requested_rank, command_ranges_, {kCommandRangeCount});
-        if (name == "gait_phase") return MakeTaskArrayViewFor(name, requested_dtype, requested_rank, gait_phase_, {environment_count_, 2});
-        if (name == "feet_phase_height_target") return MakeTaskArrayViewFor(name, requested_dtype, requested_rank, feet_phase_height_target_, {environment_count_, 2});
-        if (name == "pose_weights") return MakeTaskArrayViewFor(name, requested_dtype, requested_rank, pose_weights_, {joint_count_});
-        if (name == "step_profile_ms") return MakeTaskArrayViewFor(name, requested_dtype, requested_rank, step_profile_ms_, {kStepProfileCount});
-        if (name == "pose_std_standing") return MakeTaskArrayViewFor(name, requested_dtype, requested_rank, pose_std_standing_, {joint_count_});
-        if (name == "pose_std_walking") return MakeTaskArrayViewFor(name, requested_dtype, requested_rank, pose_std_walking_, {joint_count_});
-        if (name == "pose_std_running") return MakeTaskArrayViewFor(name, requested_dtype, requested_rank, pose_std_running_, {joint_count_});
-        if (name == "reward_weights") return MakeTaskArrayViewFor(name, requested_dtype, requested_rank, reward_weights_, {reward_term_count_});
-        if (name == "task_params") return MakeTaskArrayViewFor(name, requested_dtype, requested_rank, task_params_, {task_param_count_});
-        if (name == "task_flags") return MakeTaskArrayViewFor(name, requested_dtype, requested_rank, task_flags_, {task_flag_count_});
-        if (name == "reset_base_position") return MakeTaskArrayViewFor(name, requested_dtype, requested_rank, reset_base_position_, {environment_count_, 3});
-        if (name == "reset_base_quaternion") return MakeTaskArrayViewFor(name, requested_dtype, requested_rank, reset_base_quaternion_, {environment_count_, 4});
-        if (name == "reset_base_linear_velocity") return MakeTaskArrayViewFor(name, requested_dtype, requested_rank, reset_base_linear_velocity_, {environment_count_, 3});
-        if (name == "reset_base_angular_velocity") return MakeTaskArrayViewFor(name, requested_dtype, requested_rank, reset_base_angular_velocity_, {environment_count_, 3});
-        if (name == "reset_joint_position") return MakeTaskArrayViewFor(name, requested_dtype, requested_rank, reset_joint_position_, {environment_count_, joint_count_});
-        if (name == "reset_joint_velocity") return MakeTaskArrayViewFor(name, requested_dtype, requested_rank, reset_joint_velocity_, {environment_count_, joint_count_});
-        if (name == "base_position" || name == "base_pos") return MakeTaskArrayViewFor(name, requested_dtype, requested_rank, base_position_, {environment_count_, 3});
-        if (name == "base_quaternion" || name == "base_quat") return MakeTaskArrayViewFor(name, requested_dtype, requested_rank, base_quaternion_, {environment_count_, 4});
-        if (name == "base_linear_velocity") return MakeTaskArrayViewFor(name, requested_dtype, requested_rank, base_linear_velocity_, {environment_count_, 3});
-        if (name == "base_angular_velocity") return MakeTaskArrayViewFor(name, requested_dtype, requested_rank, base_angular_velocity_, {environment_count_, 3});
-        if (name == "base_linear_velocity_body" || name == "linvel") return MakeTaskArrayViewFor(name, requested_dtype, requested_rank, base_linear_velocity_body_, {environment_count_, 3});
-        if (name == "base_angular_velocity_body" || name == "gyro") return MakeTaskArrayViewFor(name, requested_dtype, requested_rank, base_angular_velocity_body_, {environment_count_, 3});
-        if (name == "projected_gravity" || name == "gravity") return MakeTaskArrayViewFor(name, requested_dtype, requested_rank, projected_gravity_, {environment_count_, 3});
-        if (name == "base_height") return MakeTaskArrayViewFor(name, requested_dtype, requested_rank, base_height_, {environment_count_});
-        if (name == "joint_position" || name == "dof_pos") return MakeTaskArrayViewFor(name, requested_dtype, requested_rank, joint_position_, {environment_count_, joint_count_});
-        if (name == "joint_velocity" || name == "dof_vel") return MakeTaskArrayViewFor(name, requested_dtype, requested_rank, joint_velocity_, {environment_count_, joint_count_});
-        if (name == "qacc") return MakeTaskArrayViewFor(name, requested_dtype, requested_rank, joint_acceleration_, {environment_count_, joint_count_});
-        if (name == "torques") return MakeTaskArrayViewFor(name, requested_dtype, requested_rank, joint_torque_, {environment_count_, joint_count_});
-        if (name == "joint_lower_limit") return MakeTaskArrayViewFor(name, requested_dtype, requested_rank, joint_lower_limit_, {joint_count_});
-        if (name == "joint_upper_limit") return MakeTaskArrayViewFor(name, requested_dtype, requested_rank, joint_upper_limit_, {joint_count_});
-        if (name == "foot_position" || name == "feet_pos") return MakeTaskArrayViewFor(name, requested_dtype, requested_rank, foot_position_, {environment_count_, foot_count_, 3});
-        if (name == "feet_quat") return MakeTaskArrayViewFor(name, requested_dtype, requested_rank, foot_quaternion_, {environment_count_, foot_count_, 4});
-        if (name == "foot_velocity") return MakeTaskArrayViewFor(name, requested_dtype, requested_rank, foot_velocity_, {environment_count_, foot_count_, 3});
-        if (name == "foot_height") return MakeTaskArrayViewFor(name, requested_dtype, requested_rank, foot_height_, {environment_count_, foot_count_});
-        if (name == "foot_contact" || name == "feet_contact") return MakeTaskArrayViewFor(name, requested_dtype, requested_rank, foot_contact_, {environment_count_, foot_count_});
-        if (name == "foot_contact_force") return MakeTaskArrayViewFor(name, requested_dtype, requested_rank, foot_contact_force_, {environment_count_, foot_count_, 3});
-        if (name == "height_scan") return MakeTaskArrayViewFor(name, requested_dtype, requested_rank, height_scan_, {environment_count_, height_scan_count_});
-        if (name == "height_scan_hit") return MakeTaskArrayViewFor(name, requested_dtype, requested_rank, height_scan_hit_, {environment_count_, height_scan_count_});
-        if (name == "height_scan_point") return MakeTaskArrayViewFor(name, requested_dtype, requested_rank, height_scan_point_, {environment_count_, height_scan_count_, 3});
-        if (name == "height_scan_normal") return MakeTaskArrayViewFor(name, requested_dtype, requested_rank, height_scan_normal_, {environment_count_, height_scan_count_, 3});
-        if (name == "illegal_contact_count") return MakeTaskArrayViewFor(name, requested_dtype, requested_rank, illegal_contact_count_, {environment_count_});
-        if (name == "self_collision_count") return MakeTaskArrayViewFor(name, requested_dtype, requested_rank, self_collision_count_, {environment_count_});
-        if (name == "shank_collision_count") return MakeTaskArrayViewFor(name, requested_dtype, requested_rank, shank_collision_count_, {environment_count_});
-        if (name == "trunk_head_collision_count") return MakeTaskArrayViewFor(name, requested_dtype, requested_rank, trunk_head_collision_count_, {environment_count_});
-        if (name == "foot_air_time") return MakeTaskArrayViewFor(name, requested_dtype, requested_rank, foot_air_time_, {environment_count_, foot_count_});
-        if (name == "foot_peak_height") return MakeTaskArrayViewFor(name, requested_dtype, requested_rank, foot_peak_height_, {environment_count_, foot_count_});
-        if (name == "last_foot_contact") return MakeTaskArrayViewFor(name, requested_dtype, requested_rank, last_foot_contact_, {environment_count_, foot_count_});
-        if (name == "first_contact") return MakeTaskArrayViewFor(name, requested_dtype, requested_rank, first_contact_, {environment_count_, foot_count_});
-        if (name == "landing_force") return MakeTaskArrayViewFor(name, requested_dtype, requested_rank, landing_force_, {environment_count_, foot_count_});
-        if (name == "previous_foot_position") return MakeTaskArrayViewFor(name, requested_dtype, requested_rank, previous_foot_position_, {environment_count_, foot_count_, 3});
-        if (name == "reward") return MakeTaskArrayViewFor(name, requested_dtype, requested_rank, reward_, {environment_count_});
-        if (name == "terminated") return MakeTaskArrayViewFor(name, requested_dtype, requested_rank, terminated_, {environment_count_});
-        if (name == "base_clearance") return MakeTaskArrayViewFor(name, requested_dtype, requested_rank, base_clearance_, {environment_count_});
-        if (name == "velocity_error") return MakeTaskArrayViewFor(name, requested_dtype, requested_rank, velocity_error_, {environment_count_});
-        if (name == "foot_slip") return MakeTaskArrayViewFor(name, requested_dtype, requested_rank, foot_slip_, {environment_count_});
-        if (name == "terrain_normal_error") return MakeTaskArrayViewFor(name, requested_dtype, requested_rank, terrain_normal_error_, {environment_count_});
-        if (name == "reward_terms") return MakeTaskArrayViewFor(name, requested_dtype, requested_rank, reward_terms_, {environment_count_, reward_term_count_});
-        if (name == "actor_obs") return MakeTaskArrayViewFor(name, requested_dtype, requested_rank, actor_obs_, {environment_count_, actor_obs_dim_});
-        if (name == "critic_obs") return MakeTaskArrayViewFor(name, requested_dtype, requested_rank, critic_obs_, {environment_count_, critic_obs_dim_});
-        throw std::invalid_argument(fmt::format("unknown task kernel buffer '{}'", name));
     }
 
     void RequireEnvironmentIndex(std::size_t env_id) const {
@@ -1062,6 +802,22 @@ private:
     }
 
 #ifdef GOBOT_HAS_MUJOCO
+    void SetBaseVelocityForEnvironment(std::size_t env_id, const float* linear, const float* angular) {
+        auto* model = static_cast<mjModel*>(world_->model_);
+        auto* data = static_cast<mjData*>(world_->environment_data_[env_id]);
+        const auto& binding = world_->joint_bindings_[base_free_joint_binding_index_];
+        if (binding.dof_address < 0 || binding.dof_address + 5 >= model->nv) {
+            throw std::runtime_error("Go1 base free joint velocity address is invalid");
+        }
+        data->qvel[binding.dof_address + 0] = linear[0];
+        data->qvel[binding.dof_address + 1] = linear[1];
+        data->qvel[binding.dof_address + 2] = linear[2];
+        data->qvel[binding.dof_address + 3] = angular[0];
+        data->qvel[binding.dof_address + 4] = angular[1];
+        data->qvel[binding.dof_address + 5] = angular[2];
+        mj_forward(model, data);
+    }
+
     std::size_t FindJointBindingIndex(const std::string& joint_name) const {
         const PhysicsSceneSnapshot& snapshot = world_->GetSceneSnapshot();
         for (std::size_t binding_index = 0; binding_index < world_->joint_bindings_.size(); ++binding_index) {
@@ -1182,6 +938,7 @@ private:
 
     using Clock = std::chrono::steady_clock;
     using TimePoint = Clock::time_point;
+    using EnvironmentTask = std::function<void(std::size_t, std::size_t)>;
 
     static double ElapsedMs(TimePoint begin) {
         return std::chrono::duration<double, std::milli>(Clock::now() - begin).count();
@@ -1191,50 +948,133 @@ private:
     void ForEachEnvironmentWithWorker(std::size_t workers, Func&& func) {
         const std::size_t resolved_workers = ResolveViewWorkers(workers);
         if (resolved_workers <= 1 || environment_count_ <= 1) {
+            StopViewWorkers();
             for (std::size_t env_id = 0; env_id < environment_count_; ++env_id) {
                 func(env_id, 0);
             }
             return;
         }
-        std::atomic<std::size_t> next{0};
-        std::atomic<bool> has_error{false};
-        std::mutex error_mutex;
-        std::exception_ptr first_error;
-        const std::size_t chunk = std::max<std::size_t>(1, environment_count_ / (resolved_workers * 8));
-        std::vector<std::thread> threads;
-        threads.reserve(resolved_workers);
-        for (std::size_t worker_index = 0; worker_index < resolved_workers; ++worker_index) {
-            threads.emplace_back([&, worker_index]() {
-                try {
-                    while (true) {
-                        if (has_error.load(std::memory_order_acquire)) {
+        EnsureViewWorkers(resolved_workers);
+        auto task = EnvironmentTask([&func](std::size_t env_id, std::size_t worker_index) {
+            func(env_id, worker_index);
+        });
+        RunViewWorkers(std::move(task), resolved_workers);
+    }
+
+    void EnsureViewWorkers(std::size_t worker_count) {
+        if (worker_count <= 1) {
+            StopViewWorkers();
+            return;
+        }
+        if (view_workers_.size() == worker_count) {
+            return;
+        }
+        StopViewWorkers();
+        view_workers_.reserve(worker_count);
+        std::size_t initial_generation = 0;
+        {
+            std::lock_guard<std::mutex> lock(view_worker_mutex_);
+            initial_generation = view_worker_generation_;
+        }
+        for (std::size_t worker_index = 0; worker_index < worker_count; ++worker_index) {
+            view_workers_.emplace_back(&PyLocomotionBatchView::ViewWorkerLoop, this, worker_index, initial_generation);
+        }
+    }
+
+    void RunViewWorkers(EnvironmentTask task, std::size_t worker_count) {
+        {
+            std::lock_guard<std::mutex> lock(view_worker_mutex_);
+            view_worker_task_ = std::move(task);
+            view_worker_count_ = worker_count;
+            view_worker_chunk_ = std::max<std::size_t>(1, environment_count_ / (worker_count * 8));
+            view_worker_next_env_.store(0, std::memory_order_release);
+            view_worker_completed_ = 0;
+            view_worker_error_ = nullptr;
+            ++view_worker_generation_;
+        }
+        view_worker_cv_.notify_all();
+        std::unique_lock<std::mutex> lock(view_worker_mutex_);
+        view_worker_done_cv_.wait(lock, [&]() {
+            return view_worker_completed_ >= worker_count;
+        });
+        view_worker_task_ = nullptr;
+        if (view_worker_error_ != nullptr) {
+            std::rethrow_exception(view_worker_error_);
+        }
+    }
+
+    void ViewWorkerLoop(std::size_t worker_index, std::size_t observed_generation) {
+        while (true) {
+            EnvironmentTask task;
+            std::size_t generation = 0;
+            {
+                std::unique_lock<std::mutex> lock(view_worker_mutex_);
+                view_worker_cv_.wait(lock, [&]() {
+                    return view_worker_stop_ || view_worker_generation_ != observed_generation;
+                });
+                if (view_worker_stop_) {
+                    return;
+                }
+                task = view_worker_task_;
+                generation = view_worker_generation_;
+            }
+
+            try {
+                while (true) {
+                    {
+                        std::lock_guard<std::mutex> lock(view_worker_mutex_);
+                        if (view_worker_error_ != nullptr) {
                             break;
-                        }
-                        const std::size_t begin = next.fetch_add(chunk, std::memory_order_relaxed);
-                        if (begin >= environment_count_) {
-                            break;
-                        }
-                        const std::size_t end = std::min(begin + chunk, environment_count_);
-                        for (std::size_t env_id = begin; env_id < end; ++env_id) {
-                            func(env_id, worker_index);
                         }
                     }
-                } catch (...) {
-                    std::lock_guard<std::mutex> lock(error_mutex);
-                    if (first_error == nullptr) {
-                        first_error = std::current_exception();
-                        has_error.store(true, std::memory_order_release);
+                    const std::size_t begin = view_worker_next_env_.fetch_add(view_worker_chunk_, std::memory_order_relaxed);
+                    if (begin >= environment_count_) {
+                        break;
+                    }
+                    const std::size_t end = std::min(begin + view_worker_chunk_, environment_count_);
+                    for (std::size_t env_id = begin; env_id < end; ++env_id) {
+                        task(env_id, worker_index);
                     }
                 }
-            });
-        }
-        for (std::thread& thread : threads) {
-            if (thread.joinable()) {
-                thread.join();
+            } catch (...) {
+                std::lock_guard<std::mutex> lock(view_worker_mutex_);
+                if (view_worker_error_ == nullptr) {
+                    view_worker_error_ = std::current_exception();
+                }
+            }
+
+            {
+                std::lock_guard<std::mutex> lock(view_worker_mutex_);
+                observed_generation = generation;
+                view_worker_completed_++;
+                if (view_worker_completed_ >= view_worker_count_) {
+                    view_worker_done_cv_.notify_one();
+                }
             }
         }
-        if (first_error != nullptr) {
-            std::rethrow_exception(first_error);
+    }
+
+    void StopViewWorkers() {
+        {
+            std::lock_guard<std::mutex> lock(view_worker_mutex_);
+            view_worker_stop_ = true;
+            ++view_worker_generation_;
+        }
+        view_worker_cv_.notify_all();
+        for (std::thread& worker : view_workers_) {
+            if (worker.joinable()) {
+                worker.join();
+            }
+        }
+        view_workers_.clear();
+        {
+            std::lock_guard<std::mutex> lock(view_worker_mutex_);
+            view_worker_stop_ = false;
+            view_worker_task_ = nullptr;
+            view_worker_count_ = 0;
+            view_worker_completed_ = 0;
+            view_worker_error_ = nullptr;
+            view_worker_next_env_.store(0, std::memory_order_release);
         }
     }
 
@@ -1914,10 +1754,6 @@ private:
     std::vector<std::uint8_t> body_is_thigh_;
     std::vector<std::uint8_t> body_is_shank_;
     std::vector<std::uint8_t> body_is_trunk_head_;
-    TaskKernelFunction task_kernel_function_{nullptr};
-    std::vector<std::string> task_kernel_names_;
-    std::vector<TaskArrayView> task_kernel_views_;
-
     std::vector<float> action_;
     std::vector<float> submitted_action_;
     std::vector<float> default_joint_position_;
@@ -2006,6 +1842,18 @@ private:
     std::vector<float> reward_terms_;
     std::vector<float> actor_obs_;
     std::vector<float> critic_obs_;
+    std::vector<std::thread> view_workers_;
+    std::mutex view_worker_mutex_;
+    std::condition_variable view_worker_cv_;
+    std::condition_variable view_worker_done_cv_;
+    EnvironmentTask view_worker_task_;
+    std::atomic<std::size_t> view_worker_next_env_{0};
+    std::size_t view_worker_chunk_{1};
+    std::size_t view_worker_generation_{0};
+    std::size_t view_worker_count_{0};
+    std::size_t view_worker_completed_{0};
+    bool view_worker_stop_{false};
+    std::exception_ptr view_worker_error_;
 };
 
 void RegisterManualAppContextBindings(py::module_& module) {
@@ -2029,20 +1877,6 @@ void RegisterManualAppContextBindings(py::module_& module) {
                  py::arg("ticks") = 1,
                  py::arg("workers") = 0,
                  py::arg("simulate_action_latency") = false,
-                 py::call_guard<py::gil_scoped_release>())
-            .def("install_task_kernel",
-                 &PyLocomotionBatchView::InstallTaskKernel,
-                 py::arg("function_address"),
-                 py::arg("array_specs"))
-            .def("clear_task_kernel", &PyLocomotionBatchView::ClearTaskKernel)
-            .def("step_task_kernel",
-                 &PyLocomotionBatchView::StepTaskKernel,
-                 py::arg("ticks") = 1,
-                 py::arg("workers") = 0,
-                 py::arg("simulate_action_latency") = false,
-                 py::call_guard<py::gil_scoped_release>())
-            .def("run_task_kernel",
-                 &PyLocomotionBatchView::RunTaskKernel,
                  py::call_guard<py::gil_scoped_release>())
             .def("configure_command",
                  &PyLocomotionBatchView::ConfigureCommand,
@@ -2086,7 +1920,12 @@ void RegisterManualAppContextBindings(py::module_& module) {
                  &PyLocomotionBatchView::SetBaseVelocity,
                  py::arg("env_id"),
                  py::arg("linear_velocity"),
-                 py::arg("angular_velocity"));
+                 py::arg("angular_velocity"))
+            .def("set_base_velocities",
+                 &PyLocomotionBatchView::SetBaseVelocities,
+                 py::arg("env_ids"),
+                 py::arg("linear_velocities"),
+                 py::arg("angular_velocities"));
 
     py::class_<EngineContext, std::shared_ptr<EngineContext>>(module, "AppContext")
             .def_property_readonly("project_path", &EngineContext::GetProjectPath)

@@ -469,7 +469,6 @@ class NativeLocomotionBatchBackend:
         self._view: Any | None = None
         self._arrays: dict[str, np.ndarray] = {}
         self._state: _NativeLocomotionBatchArrays | None = None
-        self._installed_task_kernel: Any | None = None
 
     @property
     def env_count(self) -> int:
@@ -605,52 +604,6 @@ class NativeLocomotionBatchBackend:
         step_task_inputs(int(nsteps), int(workers), bool(simulate_action_latency))
         return {}
 
-    def install_task_kernel(self, compiled_kernel: Any) -> None:
-        self._require_view()
-        install = getattr(self._view, "install_task_kernel", None)
-        if install is None:
-            raise RuntimeError("Gobot native locomotion batch view has no task-kernel install entry")
-        build_info = getattr(compiled_kernel, "build_info", None)
-        array_specs = getattr(build_info, "array_specs", None)
-        function_address = int(getattr(compiled_kernel, "function_address", 0))
-        if not array_specs or function_address == 0:
-            raise RuntimeError("compiled task kernel does not expose native array specs/function address")
-        install(
-            function_address,
-            [
-                {"name": str(spec.name), "dtype": int(spec.dtype), "rank": int(spec.rank)}
-                for spec in array_specs
-            ],
-        )
-        self._installed_task_kernel = compiled_kernel
-
-    def clear_task_kernel(self) -> None:
-        self._require_view()
-        clear = getattr(self._view, "clear_task_kernel", None)
-        if clear is not None:
-            clear()
-        self._installed_task_kernel = None
-
-    def step_task_kernel(self, actions: Any, nsteps: int, *, workers: int = 0, simulate_action_latency: bool = False) -> dict[str, Any]:
-        self._require_view()
-        step_task_kernel = getattr(self._view, "step_task_kernel", None)
-        if step_task_kernel is None:
-            raise RuntimeError("Gobot native locomotion batch view has no installed task-kernel step")
-        if getattr(self, "_installed_task_kernel", None) is None:
-            raise RuntimeError("no compiled task kernel is installed on this backend")
-        np.copyto(self._arrays["action"], np.asarray(actions, dtype=np.float32))
-        step_task_kernel(int(nsteps), int(workers), bool(simulate_action_latency))
-        return {}
-
-    def run_task_kernel(self) -> None:
-        self._require_view()
-        run_task_kernel = getattr(self._view, "run_task_kernel", None)
-        if run_task_kernel is None:
-            raise RuntimeError("Gobot native locomotion batch view has no task-kernel run entry")
-        if getattr(self, "_installed_task_kernel", None) is None:
-            raise RuntimeError("no compiled task kernel is installed on this backend")
-        run_task_kernel()
-
     def step_profile(self) -> dict[str, float]:
         return self.state.step_profile()
 
@@ -722,6 +675,21 @@ class NativeLocomotionBatchBackend:
             np.asarray(linear_velocity, dtype=np.float32),
             np.asarray(angular_velocity, dtype=np.float32),
         )
+
+    def set_base_velocities(self, env_ids: Sequence[int], linear_velocities: Any, angular_velocities: Any) -> None:
+        self._require_view()
+        env_id_array = np.asarray(env_ids, dtype=np.int64).reshape(-1)
+        linear = np.asarray(linear_velocities, dtype=np.float32)
+        angular = np.asarray(angular_velocities, dtype=np.float32)
+        expected_shape = (int(env_id_array.size), 3)
+        if linear.shape != expected_shape or angular.shape != expected_shape:
+            raise ValueError("linear_velocities and angular_velocities must have shape [len(env_ids), 3]")
+        set_many = getattr(self._view, "set_base_velocities", None)
+        if set_many is not None:
+            set_many([int(env_id) for env_id in env_id_array], linear, angular)
+            return
+        for row, env_id in enumerate(env_id_array):
+            self.set_base_velocity(int(env_id), linear[row], angular[row])
 
     def env_state(self, env_id: int) -> Any:
         return self.runtime.env_state(env_id)

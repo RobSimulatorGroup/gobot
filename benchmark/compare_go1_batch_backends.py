@@ -53,7 +53,7 @@ def main() -> None:
     parser.add_argument("--include-rollout", action="store_true", default=True)
     parser.add_argument("--no-obs-noise", dest="obs_noise", action="store_false", default=True)
     parser.add_argument("--no-step-extras", action="store_true", default=False)
-    parser.add_argument("--task-kernel", choices=("jit",), default="jit")
+    parser.add_argument("--task-runtime", choices=("numpy",), default="numpy")
     parser.add_argument("--json-out", type=str, default=None)
     args = parser.parse_args()
 
@@ -67,7 +67,7 @@ def main() -> None:
         "device": args.device,
         "actions": args.actions,
         "raw_actions": raw_actions,
-        "task_kernel": args.task_kernel,
+        "task_runtime": args.task_runtime,
         "entries": {},
     }
 
@@ -130,7 +130,7 @@ def _run_go1_env(args: argparse.Namespace) -> dict[str, Any]:
         sim_workers=args.sim_workers,
         profile_step=False,
         collect_step_extras=not args.no_step_extras,
-        task_kernel=args.task_kernel,
+        task_runtime=args.task_runtime,
     )
     try:
         generator = np.random.default_rng(int(args.seed) + 10_000)
@@ -157,7 +157,7 @@ def _run_go1_env(args: argparse.Namespace) -> dict[str, Any]:
             timing_records=timing_records,
         )
         metrics["collect_step_extras"] = bool(not args.no_step_extras)
-        metrics["task_kernel"] = dict(env.task_kernel_info)
+        metrics["task_runtime"] = dict(env.task_runtime_info)
         return metrics
     finally:
         env.close()
@@ -174,7 +174,7 @@ def _run_go1_training(args: argparse.Namespace) -> dict[str, Any]:
         sim_workers=args.sim_workers,
         profile_step=False,
         collect_step_extras=not args.no_step_extras,
-        task_kernel=args.task_kernel,
+        task_runtime=args.task_runtime,
     )
     env = RslRlVecEnvWrapper(core_env, device=args.device)
     actor = _Actor(env.num_obs, env.num_actions, device=args.device, seed=args.seed)
@@ -210,18 +210,15 @@ def _make_env_actions(env: Go1VelocityEnv, mode: str, generator: np.random.Gener
 
 def _env_row(name: str, metrics: dict[str, Any]) -> dict[str, Any]:
     median = metrics.get("timing_median_ms", {})
-    task_kernel = metrics.get("task_kernel", {})
+    task_runtime = metrics.get("task_runtime", {})
     kernel_note = ""
-    task_ms = median.get("native_reward_ms")
-    if isinstance(task_kernel, dict) and task_kernel:
-        mode = task_kernel.get("mode")
-        compiled = task_kernel.get("compiled")
-        if compiled:
-            kernel_note = f", task={mode}, cache_hit={task_kernel.get('cache_hit')}"
-            if task_ms is None:
-                task_ms = median.get("jit_task_kernel_ms")
-        elif mode and mode != "native":
-            kernel_note = f", task={mode}, compiled=false"
+    task_ms = median.get("numpy_task_ms", median.get("native_reward_ms"))
+    if isinstance(task_runtime, dict) and task_runtime:
+        mode = task_runtime.get("mode")
+        backend = task_runtime.get("backend")
+        kernel_note = f", task={mode}"
+        if backend:
+            kernel_note = f", task={mode}, backend={backend}"
     return {
         "name": name,
         "env_steps_s": metrics.get("throughput_env_steps_per_s"),

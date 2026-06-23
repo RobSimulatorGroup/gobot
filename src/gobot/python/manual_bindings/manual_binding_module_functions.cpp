@@ -1,7 +1,5 @@
 #include "manual_bindings_internal.hpp"
 
-#include "../../rl/task_llvm.hpp"
-
 namespace gobot::python {
 
 void RegisterManualModuleFunctions(py::module_& module) {
@@ -154,59 +152,6 @@ void RegisterManualModuleFunctions(py::module_& module) {
         return infos;
     });
 
-    module.def("_task_llvm_available", []() {
-        return rl::TaskLlvmAvailable();
-    });
-    module.def("_task_llvm_version", []() {
-        return rl::TaskLlvmVersion();
-    });
-    module.def("_task_llvm_last_error", []() {
-        return rl::TaskLlvmLastError();
-    });
-    module.def("_task_llvm_compile_cpp",
-               [](const std::string& source,
-                  const std::string& virtual_path,
-                  const std::string& object_path,
-                  int optimization_level,
-                  bool fast_math,
-                  bool debug) {
-                   rl::TaskLlvmCompileOptions options;
-                   options.optimization_level = optimization_level;
-                   options.fast_math = fast_math;
-                   options.debug = debug;
-                   const int status = rl::TaskLlvmCompileCpp(source, virtual_path, object_path, options);
-                   if (status != 0) {
-                       throw std::runtime_error("task LLVM compile failed: " + rl::TaskLlvmLastError());
-                   }
-                   return status;
-               },
-               py::arg("source"),
-               py::arg("virtual_path"),
-               py::arg("object_path"),
-               py::arg("optimization_level") = 3,
-               py::arg("fast_math") = true,
-               py::arg("debug") = false);
-    module.def("_task_llvm_load_obj", [](const std::string& object_path, const std::string& module_name) {
-        const int status = rl::TaskLlvmLoadObject(object_path, module_name);
-        if (status != 0) {
-            throw std::runtime_error("task LLVM load failed: " + rl::TaskLlvmLastError());
-        }
-        return status;
-    }, py::arg("object_path"), py::arg("module_name"));
-    module.def("_task_llvm_lookup", [](const std::string& module_name, const std::string& symbol_name) {
-        const std::uint64_t address = rl::TaskLlvmLookup(module_name, symbol_name);
-        if (address == 0) {
-            throw std::runtime_error("task LLVM lookup failed: " + rl::TaskLlvmLastError());
-        }
-        return address;
-    }, py::arg("module_name"), py::arg("symbol_name"));
-    module.def("_task_llvm_unload", [](const std::string& module_name) {
-        const int status = rl::TaskLlvmUnload(module_name);
-        if (status != 0) {
-            throw std::runtime_error("task LLVM unload failed: " + rl::TaskLlvmLastError());
-        }
-        return status;
-    }, py::arg("module_name"));
 }
 
 } // namespace gobot::python
