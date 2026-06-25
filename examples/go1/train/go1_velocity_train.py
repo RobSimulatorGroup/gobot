@@ -51,7 +51,8 @@ def build_arg_parser() -> argparse.ArgumentParser:
     parser.add_argument("--no-step-extras", action="store_true", default=False, help="Disable per-step reward-term/log extras.")
     parser.add_argument("--task-runtime", choices=("numpy",), default="numpy", help="Go1 task runtime. The current path is CPU batch NumPy.")
     parser.add_argument("--policy-out", type=str, default="policies/go1_velocity.pt")
-    parser.add_argument("--no-terrain-curriculum", dest="terrain_curriculum", action="store_false", default=True)
+    parser.add_argument("--terrain-curriculum", dest="terrain_curriculum", action="store_true", default=None)
+    parser.add_argument("--no-terrain-curriculum", dest="terrain_curriculum", action="store_false")
     parser.add_argument("--no-obs-noise", dest="obs_noise", action="store_false", default=True)
     parser.add_argument("--resume", action="store_true", help="Resume from the latest model_*.pt in log-dir.")
     parser.add_argument("--checkpoint", type=str, default=None, help="Checkpoint path to resume from.")
@@ -81,7 +82,8 @@ def resolve_log_dir(log_dir_arg: str, project_path: Path) -> Path:
 
 def build_velocity_cfg(args: argparse.Namespace, project_path: Path):
     cfg = go1_velocity_cfg(args.task, project_path=project_path)
-    cfg.terrain_curriculum = bool(args.terrain_curriculum)
+    if args.terrain_curriculum is not None:
+        cfg.terrain_curriculum = bool(args.terrain_curriculum)
     cfg.observations.actor_noise = bool(args.obs_noise)
     cfg.terrain_curriculum_steps = max(1, int(args.iterations * args.num_envs * 24 * 0.6))
     return cfg
@@ -111,6 +113,7 @@ def build_train_cfg(args: argparse.Namespace, cfg) -> dict:
         max_iterations=args.iterations,
         save_interval=max(1, int(args.render_video_interval)) if args.render_video_interval > 0 else 50,
         obs_normalization=False,
+        clip_actions=float(getattr(cfg, "action_clip", 1.0)),
     )
 
 
@@ -186,13 +189,14 @@ def run_training(args: argparse.Namespace) -> tuple[Path, Path]:
         runner.learn(num_learning_iterations=args.iterations, init_at_random_ep_len=checkpoint is None)
 
         final_path = log_dir / "model_final.pt"
-        runner.save(str(final_path), infos={"gobot_go1_velocity": env.cfg})
+        checkpoint_infos = {"gobot_go1_velocity": env.cfg, cfg.name: env.cfg}
+        runner.save(str(final_path), infos=checkpoint_infos)
 
         policy_path = Path(args.policy_out)
         if not policy_path.is_absolute():
             policy_path = project_path / policy_path
         policy_path.parent.mkdir(parents=True, exist_ok=True)
-        runner.save(str(policy_path), infos={"gobot_go1_velocity": env.cfg})
+        runner.save(str(policy_path), infos=checkpoint_infos)
 
         print_training_summary(
             args=args,

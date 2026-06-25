@@ -223,6 +223,8 @@ public:
                 VectorArrayView(default_joint_position_, {JointDim()}, owner, true);
         arrays["action_scale"] =
                 VectorArrayView(action_scale_, {JointDim()}, owner, true);
+        arrays["action_clip"] =
+                VectorArrayView(action_clip_, {1}, owner, true);
         arrays["previous_action"] =
                 VectorArrayView(previous_action_, {EnvDim(), JointDim()}, owner, true);
         arrays["last_action"] =
@@ -1174,10 +1176,11 @@ private:
     }
 
     void PrepareActionTargets(bool simulate_action_latency) {
+        const float clip_limit = std::max(0.0f, action_clip_.empty() ? 1.0f : action_clip_[0]);
         for (std::size_t env_id = 0; env_id < environment_count_; ++env_id) {
             for (std::size_t joint_index = 0; joint_index < joint_count_; ++joint_index) {
                 const std::size_t offset = env_id * joint_count_ + joint_index;
-                const float clipped = std::clamp(action_[offset], -1.0f, 1.0f);
+                const float clipped = std::clamp(action_[offset], -clip_limit, clip_limit);
                 submitted_action_[offset] = clipped;
                 const float control_action = simulate_action_latency ? last_action_[offset] : clipped;
                 target_position_[offset] = default_joint_position_[joint_index] +
@@ -1758,6 +1761,7 @@ private:
     std::vector<float> submitted_action_;
     std::vector<float> default_joint_position_;
     std::vector<float> action_scale_;
+    std::vector<float> action_clip_{1.0f};
     std::vector<float> previous_action_;
     std::vector<float> last_action_;
     std::vector<float> encoder_bias_;

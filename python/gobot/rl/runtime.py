@@ -435,6 +435,11 @@ class NativeLocomotionBatchBackend:
         terminate_on_thigh_contact: bool = True,
         ground_force_threshold: float = 50.0,
         self_collision_force_threshold: float = 20.0,
+        reward_term_count: int = 0,
+        task_param_count: int = 0,
+        task_flag_count: int = 0,
+        actor_obs_dim: int = 0,
+        critic_obs_dim: int = 0,
     ) -> None:
         self.runtime = runtime
         if spec is None:
@@ -449,6 +454,11 @@ class NativeLocomotionBatchBackend:
                 terminate_on_thigh_contact=terminate_on_thigh_contact,
                 ground_force_threshold=ground_force_threshold,
                 self_collision_force_threshold=self_collision_force_threshold,
+                reward_term_count=reward_term_count,
+                task_param_count=task_param_count,
+                task_flag_count=task_flag_count,
+                actor_obs_dim=actor_obs_dim,
+                critic_obs_dim=critic_obs_dim,
             )
         self.spec = spec
         self.foot_link_names = tuple(str(name) for name in spec.foot_link_names)

@@ -97,11 +97,14 @@ that extension is installed. Otherwise it falls back to official
 as a raw MuJoCo state-array stepping baseline but is not the persistent
 `BatchEnvPool` implementation.
 
-The default Go1 rough task now includes terrain-normal upright reward, foot
-contact history, rough-terrain illegal-contact penalties, per-env terrain
-curriculum, encoder-bias/reset randomization, and scheduled base velocity
-pushes. CUDA is used by default when PyTorch reports it as available; pass
-`--device cpu` only when you explicitly want CPU PPO.
+The default Go1 rough/flat tasks use UniLab-compatible observation dimensions,
+reward names/scales, command ranges, PD gains, action scale/clip, and reset
+randomization while still loading the Gobot `.jscn` scene as the source of
+truth. Gobot-specific encoder-bias randomization, terrain curriculum, and
+velocity pushes are not enabled by default for these UniLab profiles; matching
+UniLab's base-mass/COM/KP-KD/xfrc randomization requires additional native
+MuJoCo batch hooks. CUDA is used by default when PyTorch reports it as
+available; pass `--device cpu` only when you explicitly want CPU PPO.
 
 Resume from the latest checkpoint in the log directory:
 

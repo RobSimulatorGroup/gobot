@@ -143,6 +143,11 @@ class NativeLocomotionBatchBackend:
         terminate_on_thigh_contact: bool = True,
         ground_force_threshold: float = 50.0,
         self_collision_force_threshold: float = 20.0,
+        reward_term_count: int = 0,
+        task_param_count: int = 0,
+        task_flag_count: int = 0,
+        actor_obs_dim: int = 0,
+        critic_obs_dim: int = 0,
     ) -> None: ...
     @property
     def env_count(self) -> int: ...
