@@ -125,7 +125,7 @@ def test_locomotion_common_helpers():
     assert "action_rate_l2" in terms
 
 
-def test_go1_unilab_cfg_profiles_and_legacy_playback_schema():
+def test_go1_unilab_cfg_profiles_and_playback_schemas():
     cfg = go1_cfg.go1_velocity_cfg("go1_rough", project_path="/tmp/go1")
     assert cfg.name == "gobot_go1_unilab_rough"
     assert cfg.task_profile == "unilab_rough"
@@ -143,19 +143,37 @@ def test_go1_unilab_cfg_profiles_and_legacy_playback_schema():
     assert cfg.command.ranges.lin_vel_x == (-1.0, 1.0)
     assert cfg.command.ranges.lin_vel_y == (-1.0, 1.0)
     assert cfg.command.ranges.ang_vel_z == (-1.0, 1.0)
-    assert not cfg.domain_randomization.enabled
-    assert not cfg.push_enabled
+    assert cfg.domain_randomization.enabled
+    assert cfg.domain_randomization.randomize_base_mass
+    assert cfg.domain_randomization.random_com
+    assert cfg.domain_randomization.randomize_kp
+    assert cfg.domain_randomization.randomize_kd
+    assert cfg.push_enabled
+    assert cfg.push_interval_steps == 750
+    assert cfg.terrain_out_of_bounds
     assert cfg.unilab_rewards.scales["feet_gait"] == 0.5
     assert cfg.unilab_rewards.scales["tracking_lin_vel"] == 3.0
     assert np.allclose(np.asarray(cfg.default_joint_pos, dtype=np.float32)[[0, 3, 6, 9]], [0.1, -0.1, 0.1, -0.1])
 
-    # Playback still accepts legacy exported velocity policies until it grows
-    # profile-aware observation construction from checkpoint metadata.
     actor_schema = velocity_actor_observation_schema(len(cfg.joint_names), go1_playback.TERRAIN_SCAN_DIM)
     critic_schema = velocity_critic_observation_schema(len(cfg.joint_names), go1_playback.TERRAIN_SCAN_DIM, len(cfg.foot_names))
     assert actor_schema.dim == 235
     assert critic_schema.dim == 259
     assert go1_playback.ACTOR_OBS_SCHEMA.names == actor_schema.names
+    assert go1_playback.UNILAB_ROUGH_ACTOR_OBS_SCHEMA.dim == 45
+    assert go1_playback.UNILAB_FLAT_ACTOR_OBS_SCHEMA.dim == 49
+    assert go1_playback._validate_checkpoint_schema(
+        {
+            "infos": {
+                "gobot_go1_unilab_rough": {
+                    "obs_schema_version": go1_playback.UNILAB_ROUGH_ACTOR_OBS_SCHEMA.version,
+                    "obs_names": go1_playback.UNILAB_ROUGH_ACTOR_OBS_SCHEMA.names,
+                    "num_obs": 45,
+                }
+            }
+        },
+        45,
+    ).version == go1_playback.UNILAB_ROUGH_ACTOR_OBS_SCHEMA.version
     assert np.allclose(go1_playback.DEFAULT_POS, cfg.default_joint_pos)
 
     flat = go1_cfg.go1_velocity_cfg("go1_flat", project_path="/tmp/go1")
@@ -171,6 +189,12 @@ def test_go1_unilab_cfg_profiles_and_legacy_playback_schema():
     assert flat.command.ranges.lin_vel_x == (-0.6, 1.0)
     assert flat.command.ranges.lin_vel_y == (-0.4, 0.4)
     assert flat.command.ranges.ang_vel_z == (-0.8, 0.8)
+    assert flat.domain_randomization.enabled
+    assert flat.domain_randomization.randomize_base_mass
+    assert flat.domain_randomization.random_com
+    assert not flat.domain_randomization.randomize_kp
+    assert not flat.domain_randomization.randomize_kd
+    assert flat.push_enabled
     assert flat.unilab_rewards.scales["base_height"] == -100.0
 
 
@@ -207,6 +231,49 @@ def test_go1_benchmark_uses_unilab_env_step_accounting():
     assert metrics["timing_median_ms"]["env_step_total_ms"] == 10.0
 
 
+def test_go1_playback_profile_observation_shapes():
+    script = object.__new__(go1_playback.Script)
+    state = {
+        "links": [
+            {
+                "name": go1_playback.BASE_LINK,
+                "global_transform": {"position": [0.0, 0.0, 0.5], "quaternion": [1.0, 0.0, 0.0, 0.0]},
+                "linear_velocity": [0.1, 0.2, 0.3],
+                "angular_velocity": [0.4, 0.5, 0.6],
+            }
+        ],
+        "joints": [
+            {"name": name, "position": go1_playback.DEFAULT_POS[index], "velocity": 0.0}
+            for index, name in enumerate(go1_playback.JOINT_NAMES)
+        ],
+        "sensors": [
+            {
+                "name": go1_playback.TERRAIN_SCAN_SENSOR,
+                "values": [0.0] * go1_playback.TERRAIN_SCAN_DIM,
+            }
+        ],
+    }
+    script.command = [0.1, 0.0, 0.0]
+    script.last_action = [0.0] * len(go1_playback.JOINT_NAMES)
+    script.feet_phase = [0.0] * len(go1_playback.LEG_ORDER)
+    script.phase = 0.0
+
+    script.policy_profile = "legacy"
+    script.policy_obs_dim = go1_playback.ACTOR_OBS_SCHEMA.dim
+    script.height_scan_dim = go1_playback.TERRAIN_SCAN_DIM
+    assert len(script._observation(state)) == go1_playback.ACTOR_OBS_SCHEMA.dim
+
+    script.policy_profile = "unilab_flat"
+    script.policy_obs_dim = go1_playback.UNILAB_FLAT_ACTOR_OBS_SCHEMA.dim
+    assert len(script._observation(state)) == go1_playback.UNILAB_FLAT_ACTOR_OBS_SCHEMA.dim
+
+    script.policy_profile = "unilab_rough"
+    script.policy_obs_dim = go1_playback.UNILAB_ROUGH_ACTOR_OBS_SCHEMA.dim
+    assert len(script._observation(state)) == go1_playback.UNILAB_ROUGH_ACTOR_OBS_SCHEMA.dim
+    script._update_feet_phase()
+    assert script.phase > 0.0
+
+
 def test_go1_train_cfg_preserves_unilab_task_contract():
     args = go1_velocity_train.parse_args(["--task", "go1_rough", "--iterations", "2", "--num-envs", "3"])
     cfg = go1_velocity_train.build_velocity_cfg(args, REPO_ROOT / "examples/go1")
@@ -232,6 +299,7 @@ def test_go1_unilab_rough_env_reset_step_shapes():
     cfg = go1_cfg.go1_rough_velocity_cfg(project_path=REPO_ROOT / "examples/go1")
     cfg.observations.actor_noise = False
     cfg.push_enabled = False
+    cfg.domain_randomization.enabled = False
     env = Go1VelocityEnv(cfg, num_envs=1, device="cpu", seed=123, max_episode_length=4)
     try:
         expected_critic_dim = 48 + env.cfg["height_scan_dim"]
@@ -269,8 +337,12 @@ def test_go1_unilab_rough_env_reset_step_shapes():
         )
         assert env.cfg["task_runtime"]["obs_groups_spec"] == {"actor": 45, "critic": expected_critic_dim}
         assert "action_clip" in env.cfg["task_runtime"]["array_names"]
+        assert "push_force" in env.cfg["task_runtime"]["array_names"]
+        assert "base_mass_delta" in env.cfg["task_runtime"]["array_names"]
+        assert "joint_kp" in env.cfg["task_runtime"]["array_names"]
         assert env.cfg["task_runtime"]["metadata"]["cache_info"]["scene_source"] == "jscn"
         assert env.cfg["task_runtime"]["metadata"]["cache_info"]["unilab_reference"]
+        assert env.cfg["task_runtime"]["metadata"]["cache_info"]["native_contact_detail"] == "categorized"
         go1_env_source = Path(__file__).resolve().parents[2].joinpath(
             "examples/go1/train/go1_velocity_env.py"
         ).read_text(encoding="utf-8")
@@ -280,7 +352,7 @@ def test_go1_unilab_rough_env_reset_step_shapes():
         assert "TaskJitCompiler" not in go1_env_source
         assert "install_kernel(" not in go1_env_source
         assert "step_task_kernel(" not in go1_env_source
-        assert "set_base_velocities(" in go1_env_source
+        assert "set_push_forces(" in go1_env_source
         assert "_maybe_apply_push" not in go1_env_source
         assert not REPO_ROOT.joinpath("examples/go1/train/go1_task_kernels.py").exists()
 
@@ -302,6 +374,7 @@ def test_go1_unilab_flat_env_reset_step_shapes():
     cfg = go1_cfg.go1_flat_velocity_cfg(project_path=REPO_ROOT / "examples/go1")
     cfg.observations.actor_noise = False
     cfg.push_enabled = False
+    cfg.domain_randomization.enabled = False
     env = Go1VelocityEnv(cfg, num_envs=1, device="cpu", seed=123, max_episode_length=4)
     try:
         obs = env.get_observations()
@@ -383,8 +456,9 @@ def main():
         test_batch_env_state_contract,
         test_task_runtime_metadata_is_public_task_summary,
         test_locomotion_common_helpers,
-        test_go1_unilab_cfg_profiles_and_legacy_playback_schema,
+        test_go1_unilab_cfg_profiles_and_playback_schemas,
         test_go1_benchmark_uses_unilab_env_step_accounting,
+        test_go1_playback_profile_observation_shapes,
         test_go1_train_cfg_preserves_unilab_task_contract,
         test_go1_unilab_rough_env_reset_step_shapes,
         test_go1_unilab_flat_env_reset_step_shapes,

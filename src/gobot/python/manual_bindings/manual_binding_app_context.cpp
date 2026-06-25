@@ -4,6 +4,7 @@
 #include <array>
 #include <atomic>
 #include <chrono>
+#include <cctype>
 #include <condition_variable>
 #include <cstdint>
 #include <functional>
@@ -95,6 +96,18 @@ bool MatchesAnyPattern(const std::string& name, const std::vector<std::regex>& p
         }
     }
     return false;
+}
+
+bool ContainsCaseInsensitive(const std::string& value, const std::string& needle) {
+    auto value_it = value.begin();
+    return std::search(value_it,
+                       value.end(),
+                       needle.begin(),
+                       needle.end(),
+                       [](char a, char b) {
+                           return std::tolower(static_cast<unsigned char>(a)) ==
+                                  std::tolower(static_cast<unsigned char>(b));
+                       }) != value.end();
 }
 
 constexpr std::size_t kDefaultRewardTermCount = 15;
@@ -225,6 +238,18 @@ public:
                 VectorArrayView(action_scale_, {JointDim()}, owner, true);
         arrays["action_clip"] =
                 VectorArrayView(action_clip_, {1}, owner, true);
+        arrays["push_force"] =
+                VectorArrayView(push_force_, {EnvDim(), 3}, owner, true);
+        arrays["push_torque"] =
+                VectorArrayView(push_torque_, {EnvDim(), 3}, owner, true);
+        arrays["base_mass_delta"] =
+                VectorArrayView(base_mass_delta_, {EnvDim()}, owner, true);
+        arrays["base_com_offset"] =
+                VectorArrayView(base_com_offset_, {EnvDim(), 3}, owner, true);
+        arrays["joint_kp"] =
+                VectorArrayView(joint_kp_, {EnvDim(), JointDim()}, owner, true);
+        arrays["joint_kd"] =
+                VectorArrayView(joint_kd_, {EnvDim(), JointDim()}, owner, true);
         arrays["previous_action"] =
                 VectorArrayView(previous_action_, {EnvDim(), JointDim()}, owner, true);
         arrays["last_action"] =
@@ -361,6 +386,14 @@ public:
                 VectorArrayView(shank_collision_count_, {EnvDim()}, owner, false);
         arrays["trunk_head_collision_count"] =
                 VectorArrayView(trunk_head_collision_count_, {EnvDim()}, owner, false);
+        arrays["base_collision_count"] =
+                VectorArrayView(base_collision_count_, {EnvDim()}, owner, false);
+        arrays["hip_collision_count"] =
+                VectorArrayView(hip_collision_count_, {EnvDim()}, owner, false);
+        arrays["thigh_collision_count"] =
+                VectorArrayView(thigh_collision_count_, {EnvDim()}, owner, false);
+        arrays["calf_collision_count"] =
+                VectorArrayView(calf_collision_count_, {EnvDim()}, owner, false);
         arrays["foot_air_time"] =
                 VectorArrayView(foot_air_time_, {EnvDim(), FootDim()}, owner, true);
         arrays["foot_peak_height"] =
@@ -506,7 +539,8 @@ public:
         }
         model->opt.timestep = world_->GetSettings().fixed_time_step;
 
-        const std::size_t resolved_workers = ResolveViewWorkers(workers);
+        const bool uses_model_randomization = UsesSharedModelRandomization();
+        const std::size_t resolved_workers = uses_model_randomization ? 1 : ResolveViewWorkers(workers);
         std::vector<std::array<double, kStepProfileCount>> worker_profiles(resolved_workers);
         for (auto& profile : worker_profiles) {
             profile.fill(0.0);
@@ -516,6 +550,8 @@ public:
             auto& profile = worker_profiles[std::min(worker_index, worker_profiles.size() - 1)];
             TimePoint begin = Clock::now();
             ApplyTargetPositionsForEnvironment(*model, env_id);
+            ApplyPushForEnvironment(*model, env_id);
+            ApplySharedModelRandomizationForEnvironment(*model, env_id);
             profile[kStepProfileApplyControl] += ElapsedMs(begin);
 
             auto* data = static_cast<mjData*>(world_->environment_data_[env_id]);
@@ -530,6 +566,7 @@ public:
 
             begin = Clock::now();
             FillEnvironment(env_id);
+            RestoreSharedModelRandomization(*model);
             profile[kStepProfileExtractState] += ElapsedMs(begin);
 
             begin = Clock::now();
@@ -891,6 +928,8 @@ private:
         body_is_robot_.assign(static_cast<std::size_t>(model.nbody), 0);
         body_foot_index_.assign(static_cast<std::size_t>(model.nbody), -1);
         body_link_name_.assign(static_cast<std::size_t>(model.nbody), std::string());
+        body_is_base_.assign(static_cast<std::size_t>(model.nbody), 0);
+        body_is_hip_.assign(static_cast<std::size_t>(model.nbody), 0);
         body_is_thigh_.assign(static_cast<std::size_t>(model.nbody), 0);
         body_is_shank_.assign(static_cast<std::size_t>(model.nbody), 0);
         body_is_trunk_head_.assign(static_cast<std::size_t>(model.nbody), 0);
@@ -903,6 +942,8 @@ private:
             const auto body_index = static_cast<std::size_t>(binding.body_id);
             body_is_robot_[body_index] = 1;
             body_link_name_[body_index] = link.name;
+            body_is_base_[body_index] = link.name == base_link_ || MatchesAnyPattern(link.name, trunk_head_link_patterns_) ? 1 : 0;
+            body_is_hip_[body_index] = ContainsCaseInsensitive(link.name, "hip") ? 1 : 0;
             body_is_thigh_[body_index] = MatchesAnyPattern(link.name, thigh_link_patterns_) ? 1 : 0;
             body_is_shank_[body_index] = MatchesAnyPattern(link.name, shank_link_patterns_) ? 1 : 0;
             body_is_trunk_head_[body_index] = MatchesAnyPattern(link.name, trunk_head_link_patterns_) ? 1 : 0;
@@ -1092,6 +1133,13 @@ private:
         submitted_action_.assign(environment_count_ * joint_count_, 0.0f);
         default_joint_position_.assign(joint_count_, 0.0f);
         action_scale_.assign(joint_count_, 0.0f);
+        action_clip_.assign(1, 1.0f);
+        push_force_.assign(environment_count_ * 3, 0.0f);
+        push_torque_.assign(environment_count_ * 3, 0.0f);
+        base_mass_delta_.assign(environment_count_, 0.0f);
+        base_com_offset_.assign(environment_count_ * 3, 0.0f);
+        joint_kp_.assign(environment_count_ * joint_count_, 0.0f);
+        joint_kd_.assign(environment_count_ * joint_count_, 0.0f);
         previous_action_.assign(environment_count_ * joint_count_, 0.0f);
         last_action_.assign(environment_count_ * joint_count_, 0.0f);
         encoder_bias_.assign(environment_count_ * joint_count_, 0.0f);
@@ -1150,6 +1198,10 @@ private:
         self_collision_count_.assign(environment_count_, 0.0f);
         shank_collision_count_.assign(environment_count_, 0.0f);
         trunk_head_collision_count_.assign(environment_count_, 0.0f);
+        base_collision_count_.assign(environment_count_, 0.0f);
+        hip_collision_count_.assign(environment_count_, 0.0f);
+        thigh_collision_count_.assign(environment_count_, 0.0f);
+        calf_collision_count_.assign(environment_count_, 0.0f);
         foot_air_time_.assign(environment_count_ * foot_count_, 0.0f);
         foot_peak_height_.assign(environment_count_ * foot_count_, 0.0f);
         last_foot_contact_.assign(environment_count_ * foot_count_, 0.0f);
@@ -1341,6 +1393,163 @@ private:
             data->ctrl[actuator_id] =
                     static_cast<mjtNum>(target_position_[env_id * joint_count_ + joint_index]);
         }
+    }
+
+    bool UsesSharedModelRandomization() const {
+        for (float value : base_mass_delta_) {
+            if (std::abs(value) > 1.0e-8f) {
+                return true;
+            }
+        }
+        for (float value : base_com_offset_) {
+            if (std::abs(value) > 1.0e-8f) {
+                return true;
+            }
+        }
+        for (float value : joint_kp_) {
+            if (value > 0.0f) {
+                return true;
+            }
+        }
+        for (float value : joint_kd_) {
+            if (value > 0.0f) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    void ApplyPushForEnvironment(const mjModel& model, std::size_t env_id) {
+        auto* data = static_cast<mjData*>(world_->environment_data_[env_id]);
+        if (data == nullptr || model.nbody <= 0) {
+            return;
+        }
+        const auto& base_binding = world_->link_bindings_[base_link_binding_index_];
+        const int body_id = base_binding.body_id;
+        if (body_id < 0 || body_id >= model.nbody) {
+            return;
+        }
+        const std::size_t env3 = env_id * 3;
+        const float fx = push_force_[env3 + 0];
+        const float fy = push_force_[env3 + 1];
+        const float fz = push_force_[env3 + 2];
+        const float tx = push_torque_[env3 + 0];
+        const float ty = push_torque_[env3 + 1];
+        const float tz = push_torque_[env3 + 2];
+        if (std::abs(fx) <= 1.0e-8f && std::abs(fy) <= 1.0e-8f && std::abs(fz) <= 1.0e-8f &&
+            std::abs(tx) <= 1.0e-8f && std::abs(ty) <= 1.0e-8f && std::abs(tz) <= 1.0e-8f) {
+            return;
+        }
+        data->xfrc_applied[6 * body_id + 0] += fx;
+        data->xfrc_applied[6 * body_id + 1] += fy;
+        data->xfrc_applied[6 * body_id + 2] += fz;
+        data->xfrc_applied[6 * body_id + 3] += tx;
+        data->xfrc_applied[6 * body_id + 4] += ty;
+        data->xfrc_applied[6 * body_id + 5] += tz;
+        push_force_[env3 + 0] = 0.0f;
+        push_force_[env3 + 1] = 0.0f;
+        push_force_[env3 + 2] = 0.0f;
+        push_torque_[env3 + 0] = 0.0f;
+        push_torque_[env3 + 1] = 0.0f;
+        push_torque_[env3 + 2] = 0.0f;
+    }
+
+    void CacheBaseModelParameters(const mjModel& model) {
+        if (!base_body_mass_.empty()) {
+            return;
+        }
+        base_body_mass_.assign(model.body_mass, model.body_mass + model.nbody);
+        base_body_ipos_.assign(model.body_ipos, model.body_ipos + 3 * model.nbody);
+        base_joint_kp_.assign(joint_count_, 0.0f);
+        base_joint_kd_.assign(joint_count_, 0.0f);
+        for (std::size_t joint_index = 0; joint_index < joint_count_; ++joint_index) {
+            const auto& binding = world_->joint_bindings_[joint_binding_indices_[joint_index]];
+            const int actuator_id = binding.position_actuator_id >= 0
+                                            ? binding.position_actuator_id
+                                            : binding.motor_actuator_id;
+            if (actuator_id >= 0 && actuator_id < model.nu) {
+                base_joint_kp_[joint_index] =
+                        static_cast<float>(std::abs(model.actuator_gainprm[mjNGAIN * actuator_id + 0]));
+                base_joint_kd_[joint_index] =
+                        static_cast<float>(std::abs(model.actuator_biasprm[mjNBIAS * actuator_id + 2]));
+            }
+        }
+    }
+
+    void ApplySharedModelRandomizationForEnvironment(mjModel& model, std::size_t env_id) {
+        if (!UsesSharedModelRandomization()) {
+            return;
+        }
+        CacheBaseModelParameters(model);
+        shared_model_randomization_active_ = true;
+        const auto& base_binding = world_->link_bindings_[base_link_binding_index_];
+        const int base_body = base_binding.body_id;
+        if (base_body >= 0 && base_body < model.nbody) {
+            const std::size_t body_index = static_cast<std::size_t>(base_body);
+            model.body_mass[base_body] =
+                    std::max<mjtNum>(mjMINVAL, base_body_mass_[body_index] + base_mass_delta_[env_id]);
+            const std::size_t ipos_offset = body_index * 3;
+            const std::size_t env3 = env_id * 3;
+            model.body_ipos[3 * base_body + 0] = base_body_ipos_[ipos_offset + 0] + base_com_offset_[env3 + 0];
+            model.body_ipos[3 * base_body + 1] = base_body_ipos_[ipos_offset + 1] + base_com_offset_[env3 + 1];
+            model.body_ipos[3 * base_body + 2] = base_body_ipos_[ipos_offset + 2] + base_com_offset_[env3 + 2];
+            mj_setConst(&model, static_cast<mjData*>(world_->environment_data_[env_id]));
+        }
+        for (std::size_t joint_index = 0; joint_index < joint_count_; ++joint_index) {
+            const auto& binding = world_->joint_bindings_[joint_binding_indices_[joint_index]];
+            const int actuator_id = binding.position_actuator_id >= 0
+                                            ? binding.position_actuator_id
+                                            : binding.motor_actuator_id;
+            if (actuator_id < 0 || actuator_id >= model.nu) {
+                continue;
+            }
+            const std::size_t offset = env_id * joint_count_ + joint_index;
+            const float kp = joint_kp_[offset] > 0.0f ? joint_kp_[offset] : base_joint_kp_[joint_index];
+            const float kd = joint_kd_[offset] > 0.0f ? joint_kd_[offset] : base_joint_kd_[joint_index];
+            if (kp > 0.0f) {
+                model.actuator_gainprm[mjNGAIN * actuator_id + 0] = kp;
+                model.actuator_biasprm[mjNBIAS * actuator_id + 1] = -kp;
+            }
+            if (kd > 0.0f) {
+                model.actuator_biasprm[mjNBIAS * actuator_id + 2] = -kd;
+            }
+        }
+    }
+
+    void RestoreSharedModelRandomization(mjModel& model) {
+        if (!shared_model_randomization_active_) {
+            return;
+        }
+        if (!base_body_mass_.empty() && model.nbody > 0) {
+            for (int body_id = 0; body_id < model.nbody; ++body_id) {
+                model.body_mass[body_id] = base_body_mass_[static_cast<std::size_t>(body_id)];
+            }
+            for (int index = 0; index < 3 * model.nbody; ++index) {
+                model.body_ipos[index] = base_body_ipos_[static_cast<std::size_t>(index)];
+            }
+            if (!world_->environment_data_.empty() && world_->environment_data_[0] != nullptr) {
+                mj_setConst(&model, static_cast<mjData*>(world_->environment_data_[0]));
+            }
+        }
+        for (std::size_t joint_index = 0; joint_index < joint_count_; ++joint_index) {
+            const auto& binding = world_->joint_bindings_[joint_binding_indices_[joint_index]];
+            const int actuator_id = binding.position_actuator_id >= 0
+                                            ? binding.position_actuator_id
+                                            : binding.motor_actuator_id;
+            if (actuator_id < 0 || actuator_id >= model.nu) {
+                continue;
+            }
+            const float kp = base_joint_kp_[joint_index];
+            const float kd = base_joint_kd_[joint_index];
+            if (kp > 0.0f) {
+                model.actuator_gainprm[mjNGAIN * actuator_id + 0] = kp;
+                model.actuator_biasprm[mjNBIAS * actuator_id + 1] = -kp;
+            }
+            if (kd > 0.0f) {
+                model.actuator_biasprm[mjNBIAS * actuator_id + 2] = -kd;
+            }
+        }
+        shared_model_randomization_active_ = false;
     }
 
     void FillAllEnvironments(std::size_t workers = 0) {
@@ -1618,6 +1827,10 @@ private:
         self_collision_count_[env_id] = 0.0f;
         shank_collision_count_[env_id] = 0.0f;
         trunk_head_collision_count_[env_id] = 0.0f;
+        base_collision_count_[env_id] = 0.0f;
+        hip_collision_count_[env_id] = 0.0f;
+        thigh_collision_count_[env_id] = 0.0f;
+        calf_collision_count_[env_id] = 0.0f;
 
         for (int contact_index = 0; contact_index < data.ncon; ++contact_index) {
             const mjContact& contact = data.contact[contact_index];
@@ -1668,10 +1881,18 @@ private:
             }
 
             const int robot_body = robot_a ? body_a : body_b;
+            if (IsBaseBody(robot_body)) {
+                base_collision_count_[env_id] += 1.0f;
+            }
+            if (IsHipBody(robot_body)) {
+                hip_collision_count_[env_id] += 1.0f;
+            }
             if (IsThighBody(robot_body) && terminate_on_thigh_contact_) {
+                thigh_collision_count_[env_id] += 1.0f;
                 illegal_contact_count_[env_id] += 1.0f;
             }
             if (IsShankBody(robot_body) && nearest_foot < 0) {
+                calf_collision_count_[env_id] += 1.0f;
                 shank_collision_count_[env_id] += 1.0f;
             }
             if (IsTrunkHeadBody(robot_body)) {
@@ -1688,6 +1909,16 @@ private:
     bool IsThighBody(int body_id) const {
         return body_id >= 0 && static_cast<std::size_t>(body_id) < body_is_thigh_.size() &&
                body_is_thigh_[static_cast<std::size_t>(body_id)] != 0;
+    }
+
+    bool IsBaseBody(int body_id) const {
+        return body_id >= 0 && static_cast<std::size_t>(body_id) < body_is_base_.size() &&
+               body_is_base_[static_cast<std::size_t>(body_id)] != 0;
+    }
+
+    bool IsHipBody(int body_id) const {
+        return body_id >= 0 && static_cast<std::size_t>(body_id) < body_is_hip_.size() &&
+               body_is_hip_[static_cast<std::size_t>(body_id)] != 0;
     }
 
     bool IsShankBody(int body_id) const {
@@ -1754,6 +1985,8 @@ private:
     std::vector<std::uint8_t> body_is_robot_;
     std::vector<int> body_foot_index_;
     std::vector<std::string> body_link_name_;
+    std::vector<std::uint8_t> body_is_base_;
+    std::vector<std::uint8_t> body_is_hip_;
     std::vector<std::uint8_t> body_is_thigh_;
     std::vector<std::uint8_t> body_is_shank_;
     std::vector<std::uint8_t> body_is_trunk_head_;
@@ -1762,6 +1995,17 @@ private:
     std::vector<float> default_joint_position_;
     std::vector<float> action_scale_;
     std::vector<float> action_clip_{1.0f};
+    std::vector<float> push_force_;
+    std::vector<float> push_torque_;
+    std::vector<float> base_mass_delta_;
+    std::vector<float> base_com_offset_;
+    std::vector<float> joint_kp_;
+    std::vector<float> joint_kd_;
+    std::vector<RealType> base_body_mass_;
+    std::vector<RealType> base_body_ipos_;
+    std::vector<float> base_joint_kp_;
+    std::vector<float> base_joint_kd_;
+    bool shared_model_randomization_active_{false};
     std::vector<float> previous_action_;
     std::vector<float> last_action_;
     std::vector<float> encoder_bias_;
@@ -1831,6 +2075,10 @@ private:
     std::vector<float> self_collision_count_;
     std::vector<float> shank_collision_count_;
     std::vector<float> trunk_head_collision_count_;
+    std::vector<float> base_collision_count_;
+    std::vector<float> hip_collision_count_;
+    std::vector<float> thigh_collision_count_;
+    std::vector<float> calf_collision_count_;
     std::vector<float> foot_air_time_;
     std::vector<float> foot_peak_height_;
     std::vector<float> last_foot_contact_;

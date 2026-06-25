@@ -190,6 +190,10 @@ class TerrainSampler:
             heights = np.asarray([self.height_at(float(x), float(y)) for x, y in flat], dtype=np.float64)
         return heights.reshape(points.shape[:-1]).astype(np.float32)
 
+    def bounds(self) -> tuple[float, float, float, float] | None:
+        """Return the loaded terrain XY bounds as ``(min_x, min_y, max_x, max_y)``."""
+        return self._terrain_bounds()
+
     def _build_height_grid(self) -> None:
         bounds = self._terrain_bounds()
         if bounds is None:

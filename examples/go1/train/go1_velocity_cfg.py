@@ -145,6 +145,16 @@ class VelocityDomainRandomizationCfg:
     """Domain randomization parameters for the Gobot velocity task."""
 
     enabled: bool = True
+    randomize_base_mass: bool = True
+    added_mass_range: tuple[float, float] = (-1.5, 1.5)
+    random_com: bool = True
+    com_offset_x: tuple[float, float] = (-0.05, 0.05)
+    com_offset_y: tuple[float, float] | None = None
+    com_offset_z: tuple[float, float] | None = None
+    randomize_kp: bool = False
+    kp_multiplier_range: tuple[float, float] = (0.9, 1.1)
+    randomize_kd: bool = False
+    kd_multiplier_range: tuple[float, float] = (0.9, 1.1)
     encoder_bias_range: tuple[float, float] = (-0.015, 0.015)
     reset_lin_vel_ranges: Mapping[str, tuple[float, float]] = field(
         default_factory=lambda: {
@@ -181,6 +191,14 @@ def _default_push_velocity_ranges() -> Mapping[str, tuple[float, float]]:
     }
 
 
+def _default_push_force_ranges() -> Mapping[str, tuple[float, float]]:
+    return {
+        "x": (-1.0, 1.0),
+        "y": (-1.0, 1.0),
+        "z": (-0.5, 0.5),
+    }
+
+
 @dataclass
 class Go1VelocityCfg:
     """Go1 velocity task config for this example project."""
@@ -210,11 +228,15 @@ class Go1VelocityCfg:
     terrain_curriculum: bool = False
     terrain_curriculum_steps: int = 21600
     spawn_difficulty_radius: float = 0.85
+    terrain_out_of_bounds: bool = True
+    terrain_distance_buffer: float = 3.0
     illegal_contact: VelocityIllegalContactCfg = field(default_factory=VelocityIllegalContactCfg)
     domain_randomization: VelocityDomainRandomizationCfg = field(
-        default_factory=lambda: VelocityDomainRandomizationCfg(enabled=False)
+        default_factory=lambda: VelocityDomainRandomizationCfg(enabled=True)
     )
-    push_enabled: bool = False
+    push_enabled: bool = True
+    push_interval_steps: int = 750
+    push_force_ranges: Mapping[str, tuple[float, float]] = field(default_factory=_default_push_force_ranges)
     push_interval_range_s: tuple[float, float] = (1.0, 3.0)
     push_velocity_ranges: Mapping[str, tuple[float, float]] = field(default_factory=_default_push_velocity_ranges)
     observations: VelocityObservationCfg = field(default_factory=VelocityObservationCfg)
@@ -318,8 +340,14 @@ def go1_rough_velocity_cfg(
     cfg.base_clearance = 0.45
     cfg.min_base_clearance = 0.0
     cfg.terrain_curriculum = False
-    cfg.domain_randomization.enabled = False
-    cfg.push_enabled = False
+    cfg.terrain_out_of_bounds = True
+    cfg.domain_randomization.enabled = True
+    cfg.domain_randomization.randomize_base_mass = True
+    cfg.domain_randomization.random_com = True
+    cfg.domain_randomization.randomize_kp = True
+    cfg.domain_randomization.randomize_kd = True
+    cfg.push_enabled = True
+    cfg.push_interval_steps = 750
     cfg.command = UniformVelocityCommandCfg(
         resampling_time_range=(10.0, 10.0),
         rel_standing_envs=0.1,
@@ -367,7 +395,15 @@ def go1_flat_velocity_cfg(
     cfg.min_base_clearance = 0.0
     cfg.observations.height_scan_sensor = None
     cfg.terrain_curriculum = False
+    cfg.terrain_out_of_bounds = False
     cfg.illegal_contact.enabled = False
+    cfg.domain_randomization.enabled = True
+    cfg.domain_randomization.randomize_base_mass = True
+    cfg.domain_randomization.random_com = True
+    cfg.domain_randomization.randomize_kp = False
+    cfg.domain_randomization.randomize_kd = False
+    cfg.push_enabled = True
+    cfg.push_interval_steps = 750
     cfg.command = UniformVelocityCommandCfg(
         resampling_time_range=(1_000_000_000.0, 1_000_000_000.0),
         rel_standing_envs=0.0,
@@ -384,6 +420,12 @@ def go1_flat_velocity_cfg(
     )
     cfg.command_curriculum = (VelocityCommandStage(step=0),)
     cfg.unilab_rewards = _unilab_flat_reward_cfg()
+    if play:
+        cfg.episode_length_s = float(1_000_000_000)
+        cfg.terrain_curriculum = False
+        cfg.observations.actor_noise = False
+        cfg.domain_randomization.enabled = False
+        cfg.push_enabled = False
     return cfg
 
 

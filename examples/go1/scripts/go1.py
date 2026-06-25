@@ -57,6 +57,14 @@ ACTION_SCALE = [
     for _leg in LEG_ORDER
     for kind in JOINT_KIND_ORDER
 ]
+UNILAB_FLAT_ACTION_SCALE = [0.25 for _ in JOINT_NAMES]
+UNILAB_ROUGH_ACTION_SCALE = [
+    0.125 if kind == "hip" else 0.25
+    for _leg in LEG_ORDER
+    for kind in JOINT_KIND_ORDER
+]
+UNILAB_KP = 35.0
+UNILAB_KD = 0.5
 HIP_KP = 15.89524265323492
 HIP_KD = 1.0119225759919113
 KNEE_KP = 35.764295969778566
@@ -76,6 +84,8 @@ TERRAIN_SCAN_DIM = (
 HEIGHT_SCAN_MAX_DISTANCE = 5.0
 TERRAIN_SCAN_SENSOR = "terrain_scan"
 VELOCITY_OBS_SCHEMA_VERSION = "gobot_velocity_v1"
+UNILAB_FLAT_OBS_SCHEMA_VERSION = "gobot_go1_unilab_flat_actor_v1"
+UNILAB_ROUGH_OBS_SCHEMA_VERSION = "gobot_go1_unilab_rough_actor_v1"
 POSITION_LIMITS_BY_KIND = {
     "hip": (-0.863, 0.863),
     "thigh": (-0.686, 4.501),
@@ -124,6 +134,35 @@ def velocity_actor_observation_schema(action_dim, height_scan_dim):
     )
 
 
+def unilab_flat_actor_observation_schema(action_dim, foot_count):
+    return ObservationSchema(
+        UNILAB_FLAT_OBS_SCHEMA_VERSION,
+        (
+            ("gyro", 3),
+            ("projected_gravity", 3),
+            ("joint_pos_rel", action_dim),
+            ("joint_vel", action_dim),
+            ("current_action", action_dim),
+            ("command", 3),
+            ("feet_phase", foot_count),
+        ),
+    )
+
+
+def unilab_rough_actor_observation_schema(action_dim):
+    return ObservationSchema(
+        UNILAB_ROUGH_OBS_SCHEMA_VERSION,
+        (
+            ("gyro_scaled", 3),
+            ("projected_gravity", 3),
+            ("command", 3),
+            ("joint_pos_rel", action_dim),
+            ("joint_vel_scaled", action_dim),
+            ("current_action", action_dim),
+        ),
+    )
+
+
 def build_velocity_actor_observation(
     *,
     base_lin_vel_b,
@@ -151,6 +190,8 @@ def build_velocity_actor_observation(
 
 
 ACTOR_OBS_SCHEMA = velocity_actor_observation_schema(len(JOINT_NAMES), TERRAIN_SCAN_DIM)
+UNILAB_FLAT_ACTOR_OBS_SCHEMA = unilab_flat_actor_observation_schema(len(JOINT_NAMES), len(LEG_ORDER))
+UNILAB_ROUGH_ACTOR_OBS_SCHEMA = unilab_rough_actor_observation_schema(len(JOINT_NAMES))
 
 
 def _parse_version_prefix(value):
@@ -199,16 +240,20 @@ class OnnxPolicy:
         self.session = ort.InferenceSession(path, providers=["CPUExecutionProvider"])
         self.input_name = self.session.get_inputs()[0].name
         self.output_name = self.session.get_outputs()[0].name
+        self.profile = "legacy"
+        self.schema = None
         input_shape = self.session.get_inputs()[0].shape
         self.obs_dim = None
         if input_shape and isinstance(input_shape[-1], int):
             self.obs_dim = int(input_shape[-1])
-            if self.obs_dim != ACTOR_OBS_SCHEMA.dim:
+            self.schema = _schema_for_obs_dim(self.obs_dim)
+            if self.schema is None:
                 raise RuntimeError(
                     "Go1 ONNX policy observation dimension mismatch: "
-                    f"policy={self.obs_dim}, playback={ACTOR_OBS_SCHEMA.dim}. "
-                    "Retrain or export with the current terrain_scan grid schema."
+                    f"policy={self.obs_dim}, supported={_supported_obs_dims()}. "
+                    "Retrain or export with a supported Go1 profile."
                 )
+            self.profile = _profile_for_schema(self.schema)
 
     def action(self, observation):
         obs = self.np.asarray(observation, dtype=self.np.float32).reshape(1, -1)
@@ -217,7 +262,7 @@ class OnnxPolicy:
                 f"Go1 ONNX policy expected {self.obs_dim} observations, got {obs.shape[1]}"
             )
         output = self.session.run([self.output_name], {self.input_name: obs})[0].reshape(-1)
-        return self.np.clip(output, -1.0, 1.0).astype(float).tolist()
+        return output.astype(float).tolist()
 
 
 class TorchPolicy:
@@ -230,7 +275,8 @@ class TorchPolicy:
         actor_state = checkpoint.get("actor_state_dict", {})
         self.obs_dim = _checkpoint_obs_dim(checkpoint)
         self.action_dim = _checkpoint_action_dim(actor_state)
-        _validate_checkpoint_schema(checkpoint, self.obs_dim)
+        self.schema = _validate_checkpoint_schema(checkpoint, self.obs_dim)
+        self.profile = _profile_for_schema(self.schema)
         self.policy = _CheckpointMlpPolicy(torch, actor_state, self.obs_dim, self.action_dim).to(self.device)
         self.policy.eval()
 
@@ -238,7 +284,7 @@ class TorchPolicy:
         with self.torch.no_grad():
             obs = self.torch.as_tensor(observation, dtype=self.torch.float32, device=self.device).reshape(1, -1)
             output = self.policy(obs)
-        return output.reshape(-1).clamp(-1.0, 1.0).cpu().tolist()
+        return output.reshape(-1).cpu().tolist()
 
 
 class _CheckpointMlpPolicy:
@@ -404,29 +450,66 @@ def _checkpoint_velocity_metadata(checkpoint):
         metadata = infos.get("gobot_go1_velocity")
         if isinstance(metadata, dict):
             return metadata
+        for key in ("gobot_go1_unilab_flat", "gobot_go1_unilab_rough"):
+            metadata = infos.get(key)
+            if isinstance(metadata, dict):
+                return metadata
     metadata = checkpoint.get("gobot_go1_velocity")
     if isinstance(metadata, dict):
         return metadata
     return None
 
 
+def _supported_schemas():
+    return (ACTOR_OBS_SCHEMA, UNILAB_FLAT_ACTOR_OBS_SCHEMA, UNILAB_ROUGH_ACTOR_OBS_SCHEMA)
+
+
+def _supported_obs_dims():
+    return tuple(schema.dim for schema in _supported_schemas())
+
+
+def _schema_for_obs_dim(obs_dim):
+    matches = [schema for schema in _supported_schemas() if schema.dim == int(obs_dim)]
+    return matches[0] if len(matches) == 1 else None
+
+
+def _schema_for_metadata(metadata, obs_dim):
+    version = metadata.get("obs_schema_version")
+    names = tuple(metadata.get("obs_names", ()))
+    for schema in _supported_schemas():
+        if version == schema.version and names == schema.names:
+            return schema
+    return _schema_for_obs_dim(obs_dim)
+
+
+def _profile_for_schema(schema):
+    if schema.version == UNILAB_FLAT_OBS_SCHEMA_VERSION:
+        return "unilab_flat"
+    if schema.version == UNILAB_ROUGH_OBS_SCHEMA_VERSION:
+        return "unilab_rough"
+    return "legacy"
+
+
 def _validate_checkpoint_schema(checkpoint, obs_dim):
     metadata = _checkpoint_velocity_metadata(checkpoint)
     if metadata is None:
-        if obs_dim != ACTOR_OBS_SCHEMA.dim:
+        schema = _schema_for_obs_dim(obs_dim)
+        if schema is None:
             raise RuntimeError(
                 "Go1 checkpoint observation dimension mismatch: "
-                f"checkpoint={obs_dim}, playback={ACTOR_OBS_SCHEMA.dim}. "
-                "Retrain or export with the current terrain_scan grid schema."
+                f"checkpoint={obs_dim}, supported={_supported_obs_dims()}. "
+                "Retrain or export with a supported Go1 profile."
             )
-        return
+        return schema
+    schema = _schema_for_metadata(metadata, obs_dim)
     version = metadata.get("obs_schema_version")
     names = tuple(metadata.get("obs_names", ()))
-    if version != VELOCITY_OBS_SCHEMA_VERSION or names != ACTOR_OBS_SCHEMA.names:
+    if schema is None or version != schema.version or names != schema.names:
         raise RuntimeError(
             "Go1 checkpoint observation schema differs from playback: "
-            f"checkpoint version={version!r} dim={metadata.get('num_obs')} current={ACTOR_OBS_SCHEMA.version} dim={ACTOR_OBS_SCHEMA.dim}"
+            f"checkpoint version={version!r} dim={metadata.get('num_obs')} supported={[(s.version, s.dim) for s in _supported_schemas()]}"
         )
+    return schema
 
 
 def _find_node_by_name(node, name):
@@ -469,38 +552,62 @@ class Script(gobot.NodeScript):
     def _ready(self):
         self.context.fixed_time_step = FIXED_TIME_STEP
         self.context.max_sub_steps = MAX_SUB_STEPS
-        self.context.set_default_joint_gains(
-            {
-                "position_stiffness": HIP_KP,
-                "velocity_damping": HIP_KD,
-                "integral_gain": 0.0,
-                "integral_limit": 0.0,
-            }
-        )
         self.robot = self._find_robot()
         self.base_link = self._find_link(BASE_LINK)
         self.joints = [self._find_joint(name) for name in JOINT_NAMES]
         self.terrain_scan = self._find_sensor(TERRAIN_SCAN_SENSOR)
         self.reset_base_position = list(RESET_BASE_POSITION)
-        self._configure_robot_for_playback()
         self.policy = self._load_policy()
-        self.policy_obs_dim = self._policy_observation_dim()
-        self.height_scan_dim = TERRAIN_SCAN_DIM
+        self.policy_schema = self._policy_observation_schema()
+        self.policy_profile = _profile_for_schema(self.policy_schema)
+        self.policy_obs_dim = self.policy_schema.dim
+        self.height_scan_dim = TERRAIN_SCAN_DIM if self.policy_profile == "legacy" else 0
+        self.action_scale = self._profile_action_scale()
+        self.action_clip = 100.0 if self.policy_profile == "unilab_rough" else 1.0
+        default_kp = UNILAB_KP if self.policy_profile in {"unilab_flat", "unilab_rough"} else HIP_KP
+        default_kd = UNILAB_KD if self.policy_profile in {"unilab_flat", "unilab_rough"} else HIP_KD
+        self.context.set_default_joint_gains(
+            {
+                "position_stiffness": default_kp,
+                "velocity_damping": default_kd,
+                "integral_gain": 0.0,
+                "integral_limit": 0.0,
+            }
+        )
+        self._configure_robot_for_playback()
         self._reset_playback_state()
         self._print_startup()
 
     def _configure_robot_for_playback(self):
         self._set_robot_editor_transform(self.reset_base_position)
+        use_unilab_gains = getattr(self, "policy_profile", "legacy") in {"unilab_flat", "unilab_rough"}
         for index, joint in enumerate(self.joints):
             joint.drive_mode = gobot.JointDriveMode.Position
-            joint.drive_stiffness = JOINT_KP[index]
-            joint.drive_damping = JOINT_KD[index]
-            joint.damping = JOINT_KD[index]
+            joint.drive_stiffness = UNILAB_KP if use_unilab_gains else JOINT_KP[index]
+            joint.drive_damping = UNILAB_KD if use_unilab_gains else JOINT_KD[index]
+            joint.damping = UNILAB_KD if use_unilab_gains else JOINT_KD[index]
         self.robot.mode = gobot.RobotMode.Motion
 
     def _policy_observation_dim(self):
         obs_dim = getattr(self.policy, "obs_dim", ACTOR_OBS_SCHEMA.dim)
         return ACTOR_OBS_SCHEMA.dim if obs_dim is None else obs_dim
+
+    def _policy_observation_schema(self):
+        schema = getattr(self.policy, "schema", None)
+        if schema is not None:
+            return schema
+        obs_dim = self._policy_observation_dim()
+        schema = _schema_for_obs_dim(obs_dim)
+        if schema is None:
+            raise RuntimeError(f"Go1 policy observation dimension {obs_dim} is unsupported")
+        return schema
+
+    def _profile_action_scale(self):
+        if self.policy_profile == "unilab_flat":
+            return list(UNILAB_FLAT_ACTION_SCALE)
+        if self.policy_profile == "unilab_rough":
+            return list(UNILAB_ROUGH_ACTION_SCALE)
+        return list(ACTION_SCALE)
 
     def _reset_playback_state(self):
         self.ticks = 0
@@ -509,6 +616,8 @@ class Script(gobot.NodeScript):
         self.command = list(COMMAND)
         self.last_action = [0.0] * len(JOINT_NAMES)
         self.last_targets = list(DEFAULT_POS)
+        self.phase = 0.0
+        self.feet_phase = [0.0] * len(LEG_ORDER)
 
     def _print_startup(self):
         print(
@@ -526,6 +635,7 @@ class Script(gobot.NodeScript):
                 "click 3D Viewer, WASD/QE, Space stop, R reset" if self.policy is not None else "missing policy",
             )
         )
+        print(f"Go1 RL playback profile={self.policy_profile} obs_dim={self.policy_obs_dim}")
 
     def _physics_process(self, delta):
         if not self.playing:
@@ -542,6 +652,7 @@ class Script(gobot.NodeScript):
             return
 
         if policy_tick:
+            self._update_feet_phase()
             action = [0.0] * len(JOINT_NAMES)
             if self.policy is not None and _command_active(self.command):
                 observation = self._observation(robot_state)
@@ -564,6 +675,8 @@ class Script(gobot.NodeScript):
         self.command = list(COMMAND)
         self.last_action = [0.0] * len(JOINT_NAMES)
         self.last_targets = list(DEFAULT_POS)
+        self.phase = 0.0
+        self.feet_phase = [0.0] * len(LEG_ORDER)
         self._set_robot_editor_transform(self.reset_base_position)
 
     def pause(self):
@@ -659,7 +772,8 @@ class Script(gobot.NodeScript):
         targets = []
         for index, joint_name in enumerate(JOINT_NAMES):
             lower, upper = POSITION_LIMITS[joint_name]
-            targets.append(_clamp(DEFAULT_POS[index] + ACTION_SCALE[index] * float(action[index]), lower, upper))
+            clipped_action = _clamp(float(action[index]), -self.action_clip, self.action_clip)
+            targets.append(_clamp(DEFAULT_POS[index] + self.action_scale[index] * clipped_action, lower, upper))
         return targets
 
     def _set_robot_editor_transform(self, position):
@@ -714,6 +828,14 @@ class Script(gobot.NodeScript):
         self.reset()
         return True
 
+    def _update_feet_phase(self):
+        self.phase = (self.phase + (1.0 / POLICY_HZ) * 2.0) % 1.0
+        if len(self.feet_phase) >= 4:
+            self.feet_phase[0] = self.phase
+            self.feet_phase[3] = self.phase
+            self.feet_phase[1] = (self.phase + 0.5) % 1.0
+            self.feet_phase[2] = (self.phase + 0.5) % 1.0
+
     def _print_state(self, state=None):
         x = y = z = 0.0
         if state is None:
@@ -762,17 +884,42 @@ class Script(gobot.NodeScript):
             joint_pos.append(float(joint.get("position", DEFAULT_POS[index])) - DEFAULT_POS[index])
             joint_vel.append(float(joint.get("velocity", 0.0)))
 
-        height_scan = self._height_scan(state)
-        obs = build_velocity_actor_observation(
-            base_lin_vel_b=lin_vel,
-            base_ang_vel_b=ang_vel[:3],
-            projected_gravity=projected_gravity,
-            joint_pos_rel=joint_pos,
-            joint_vel=joint_vel,
-            last_action=self.last_action,
-            command=cmd,
-            height_scan=height_scan,
-        )
+        if self.policy_profile == "unilab_flat":
+            obs = []
+            for part in (
+                ang_vel[:3],
+                projected_gravity,
+                joint_pos,
+                joint_vel,
+                self.last_action,
+                cmd,
+                self.feet_phase,
+            ):
+                obs.extend(float(value) for value in part)
+        elif self.policy_profile == "unilab_rough":
+            obs = []
+            joint_vel_scaled = [float(value) * 0.05 for value in joint_vel]
+            for part in (
+                [float(value) * 0.25 for value in ang_vel[:3]],
+                projected_gravity,
+                cmd,
+                joint_pos,
+                joint_vel_scaled,
+                self.last_action,
+            ):
+                obs.extend(float(value) for value in part)
+        else:
+            height_scan = self._height_scan(state)
+            obs = build_velocity_actor_observation(
+                base_lin_vel_b=lin_vel,
+                base_ang_vel_b=ang_vel[:3],
+                projected_gravity=projected_gravity,
+                joint_pos_rel=joint_pos,
+                joint_vel=joint_vel,
+                last_action=self.last_action,
+                command=cmd,
+                height_scan=height_scan,
+            )
         if len(obs) != self.policy_obs_dim:
             raise RuntimeError(
                 f"Go1 playback observation schema mismatch: expected {self.policy_obs_dim}, got {len(obs)}"

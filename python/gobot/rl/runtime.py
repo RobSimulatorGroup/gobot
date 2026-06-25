@@ -701,6 +701,44 @@ class NativeLocomotionBatchBackend:
         for row, env_id in enumerate(env_id_array):
             self.set_base_velocity(int(env_id), linear[row], angular[row])
 
+    def set_push_forces(self, env_ids: Sequence[int], forces: Any, torques: Any | None = None) -> None:
+        self._require_view()
+        env_id_array = np.asarray(env_ids, dtype=np.int64).reshape(-1)
+        force = np.asarray(forces, dtype=np.float32)
+        expected_shape = (int(env_id_array.size), 3)
+        if force.shape != expected_shape:
+            raise ValueError("forces must have shape [len(env_ids), 3]")
+        if torques is None:
+            torque = np.zeros(expected_shape, dtype=np.float32)
+        else:
+            torque = np.asarray(torques, dtype=np.float32)
+            if torque.shape != expected_shape:
+                raise ValueError("torques must have shape [len(env_ids), 3]")
+        self._arrays["push_force"][env_id_array] = force
+        self._arrays["push_torque"][env_id_array] = torque
+
+    def reset_domain_randomization(
+        self,
+        env_ids: Sequence[int],
+        *,
+        base_mass_delta: Any | None = None,
+        base_com_offset: Any | None = None,
+        joint_kp: Any | None = None,
+        joint_kd: Any | None = None,
+    ) -> None:
+        self._require_view()
+        env_id_array = np.asarray(env_ids, dtype=np.int64).reshape(-1)
+        if env_id_array.size == 0:
+            return
+        if base_mass_delta is not None:
+            self._arrays["base_mass_delta"][env_id_array] = np.asarray(base_mass_delta, dtype=np.float32).reshape(-1)
+        if base_com_offset is not None:
+            self._arrays["base_com_offset"][env_id_array] = np.asarray(base_com_offset, dtype=np.float32).reshape(-1, 3)
+        if joint_kp is not None:
+            self._arrays["joint_kp"][env_id_array] = np.asarray(joint_kp, dtype=np.float32).reshape(-1, len(self.runtime.joint_names))
+        if joint_kd is not None:
+            self._arrays["joint_kd"][env_id_array] = np.asarray(joint_kd, dtype=np.float32).reshape(-1, len(self.runtime.joint_names))
+
     def env_state(self, env_id: int) -> Any:
         return self.runtime.env_state(env_id)
 
