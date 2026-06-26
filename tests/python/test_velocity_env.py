@@ -17,7 +17,6 @@ for path in (REPO_ROOT, REPO_ROOT / "python", REPO_ROOT / "build/python"):
 from benchmark import go1_velocity_benchmark
 from examples.go1.scripts import go1 as go1_playback
 from examples.go1.train import go1_velocity_cfg as go1_cfg
-from examples.go1.train import go1_velocity_train
 from examples.go1.train.go1_velocity_env import Go1VelocityEnv
 from gobot.rl import (
     BatchEnvState,
@@ -49,6 +48,17 @@ def _require_torch():
         return __import__("torch")
     except ImportError as error:
         raise OptionalDependencyUnavailable("torch is unavailable; skipping torch-backed integration test") from error
+
+
+def _require_go1_velocity_train():
+    try:
+        from examples.go1.train import go1_velocity_train
+    except ImportError as error:
+        missing = getattr(error, "name", "")
+        if missing in {"torch", "rsl_rl"}:
+            raise OptionalDependencyUnavailable("Go1 training dependencies are unavailable; skipping train cfg test") from error
+        raise
+    return go1_velocity_train
 
 
 def _assert_runtime_error(pattern: str, fn) -> None:
@@ -275,6 +285,8 @@ def test_go1_playback_profile_observation_shapes():
 
 
 def test_go1_train_cfg_preserves_unilab_task_contract():
+    go1_velocity_train = _require_go1_velocity_train()
+
     args = go1_velocity_train.parse_args(["--task", "go1_rough", "--iterations", "2", "--num-envs", "3"])
     cfg = go1_velocity_train.build_velocity_cfg(args, REPO_ROOT / "examples/go1")
     assert cfg.task_profile == "unilab_rough"
@@ -465,11 +477,14 @@ def main():
         test_go1_unilab_flat_env_reset_step_shapes,
         test_rsl_rl_wrapper_keeps_core_env_numpy,
     ]
-    try:
-        for test in tests:
+    skipped = 0
+    for test in tests:
+        try:
             test()
-    except OptionalDependencyUnavailable as error:
-        print(error)
+        except OptionalDependencyUnavailable as error:
+            skipped += 1
+            print(error)
+    if skipped == len(tests):
         sys.exit(OPTIONAL_DEPENDENCY_SKIP_CODE)
 
 
