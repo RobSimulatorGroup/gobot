@@ -343,6 +343,7 @@ def test_go1_unilab_rough_env_reset_step_shapes():
         assert env.cfg["task_runtime"]["metadata"]["cache_info"]["scene_source"] == "jscn"
         assert env.cfg["task_runtime"]["metadata"]["cache_info"]["unilab_reference"]
         assert env.cfg["task_runtime"]["metadata"]["cache_info"]["native_contact_detail"] == "categorized"
+        assert env.cfg["task_runtime"]["metadata"]["cache_info"]["domain_randomization_backend"] == "per_env_mjmodel_pool"
         go1_env_source = Path(__file__).resolve().parents[2].joinpath(
             "examples/go1/train/go1_velocity_env.py"
         ).read_text(encoding="utf-8")

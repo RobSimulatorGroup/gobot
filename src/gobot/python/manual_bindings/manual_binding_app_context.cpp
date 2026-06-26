@@ -533,31 +533,27 @@ public:
         }
         AddProfileMs(kStepProfileCommand, ElapsedMs(phase_begin));
 
-        auto* model = static_cast<mjModel*>(world_->model_);
-        if (model == nullptr) {
-            throw std::runtime_error("MuJoCo model has not been built");
-        }
-        model->opt.timestep = world_->GetSettings().fixed_time_step;
-
-        const bool uses_model_randomization = UsesSharedModelRandomization();
-        const std::size_t resolved_workers = uses_model_randomization ? 1 : ResolveViewWorkers(workers);
+        const std::size_t resolved_workers = ResolveViewWorkers(workers);
         std::vector<std::array<double, kStepProfileCount>> worker_profiles(resolved_workers);
         for (auto& profile : worker_profiles) {
             profile.fill(0.0);
         }
 
         ForEachEnvironmentWithWorker(resolved_workers, [&](std::size_t env_id, std::size_t worker_index) {
+            auto* model = ModelForEnvironment(env_id);
+            auto* data = DataForEnvironment(env_id);
+            if (model == nullptr || data == nullptr) {
+                throw std::runtime_error(fmt::format("MuJoCo model/data for environment {} is not available", env_id));
+            }
+            model->opt.timestep = world_->GetSettings().fixed_time_step;
+
             auto& profile = worker_profiles[std::min(worker_index, worker_profiles.size() - 1)];
             TimePoint begin = Clock::now();
             ApplyTargetPositionsForEnvironment(*model, env_id);
             ApplyPushForEnvironment(*model, env_id);
-            ApplySharedModelRandomizationForEnvironment(*model, env_id);
+            ApplyModelRandomizationForEnvironment(*model, *data, env_id);
             profile[kStepProfileApplyControl] += ElapsedMs(begin);
 
-            auto* data = static_cast<mjData*>(world_->environment_data_[env_id]);
-            if (data == nullptr) {
-                throw std::runtime_error(fmt::format("MuJoCo data for environment {} is not available", env_id));
-            }
             begin = Clock::now();
             for (std::uint64_t tick = 0; tick < ticks; ++tick) {
                 mj_step(model, data);
@@ -566,7 +562,6 @@ public:
 
             begin = Clock::now();
             FillEnvironment(env_id);
-            RestoreSharedModelRandomization(*model);
             profile[kStepProfileExtractState] += ElapsedMs(begin);
 
             begin = Clock::now();
@@ -771,6 +766,18 @@ private:
         }
     }
 
+#ifdef GOBOT_HAS_MUJOCO
+    mjModel* ModelForEnvironment(std::size_t env_id) const {
+        RequireEnvironmentIndex(env_id);
+        return static_cast<mjModel*>(world_->ModelForEnvironment(env_id));
+    }
+
+    mjData* DataForEnvironment(std::size_t env_id) const {
+        RequireEnvironmentIndex(env_id);
+        return static_cast<mjData*>(world_->DataForEnvironment(env_id));
+    }
+#endif
+
     void Initialize() {
 #ifndef GOBOT_HAS_MUJOCO
         throw std::runtime_error("Gobot was built without MuJoCo support");
@@ -782,7 +789,7 @@ private:
         if (environment_count_ == 0) {
             throw std::runtime_error("MuJoCo environment batch has not been configured");
         }
-        auto* model = static_cast<mjModel*>(world_->model_);
+        auto* model = static_cast<mjModel*>(world_->ModelForEnvironment(0));
         if (model == nullptr) {
             throw std::runtime_error("MuJoCo model has not been built");
         }
@@ -842,8 +849,8 @@ private:
 
 #ifdef GOBOT_HAS_MUJOCO
     void SetBaseVelocityForEnvironment(std::size_t env_id, const float* linear, const float* angular) {
-        auto* model = static_cast<mjModel*>(world_->model_);
-        auto* data = static_cast<mjData*>(world_->environment_data_[env_id]);
+        auto* model = ModelForEnvironment(env_id);
+        auto* data = DataForEnvironment(env_id);
         const auto& binding = world_->joint_bindings_[base_free_joint_binding_index_];
         if (binding.dof_address < 0 || binding.dof_address + 5 >= model->nv) {
             throw std::runtime_error("Go1 base free joint velocity address is invalid");
@@ -888,7 +895,7 @@ private:
     }
 
     SensorView FindSensorView(const std::string& sensor_name) const {
-        auto* model = static_cast<mjModel*>(world_->model_);
+        auto* model = static_cast<mjModel*>(world_->ModelForEnvironment(0));
         const PhysicsSceneSnapshot& snapshot = world_->GetSceneSnapshot();
         const PhysicsRobotSnapshot& robot = snapshot.robots[robot_index_];
         std::size_t sensor_index = robot.sensors.size();
@@ -1361,17 +1368,17 @@ private:
     }
 
     void ApplyTargetPositions() {
-        auto* model = static_cast<mjModel*>(world_->model_);
-        if (model == nullptr) {
-            throw std::runtime_error("MuJoCo model has not been built");
-        }
         for (std::size_t env_id = 0; env_id < environment_count_; ++env_id) {
+            auto* model = ModelForEnvironment(env_id);
+            if (model == nullptr) {
+                throw std::runtime_error(fmt::format("MuJoCo model for environment {} is not available", env_id));
+            }
             ApplyTargetPositionsForEnvironment(*model, env_id);
         }
     }
 
     void ApplyTargetPositionsForEnvironment(const mjModel& model, std::size_t env_id) {
-        auto* data = static_cast<mjData*>(world_->environment_data_[env_id]);
+        auto* data = DataForEnvironment(env_id);
         if (data == nullptr) {
             throw std::runtime_error(fmt::format("MuJoCo data for environment {} is not available", env_id));
         }
@@ -1395,32 +1402,8 @@ private:
         }
     }
 
-    bool UsesSharedModelRandomization() const {
-        for (float value : base_mass_delta_) {
-            if (std::abs(value) > 1.0e-8f) {
-                return true;
-            }
-        }
-        for (float value : base_com_offset_) {
-            if (std::abs(value) > 1.0e-8f) {
-                return true;
-            }
-        }
-        for (float value : joint_kp_) {
-            if (value > 0.0f) {
-                return true;
-            }
-        }
-        for (float value : joint_kd_) {
-            if (value > 0.0f) {
-                return true;
-            }
-        }
-        return false;
-    }
-
     void ApplyPushForEnvironment(const mjModel& model, std::size_t env_id) {
-        auto* data = static_cast<mjData*>(world_->environment_data_[env_id]);
+        auto* data = DataForEnvironment(env_id);
         if (data == nullptr || model.nbody <= 0) {
             return;
         }
@@ -1476,24 +1459,35 @@ private:
         }
     }
 
-    void ApplySharedModelRandomizationForEnvironment(mjModel& model, std::size_t env_id) {
-        if (!UsesSharedModelRandomization()) {
-            return;
-        }
+    void ApplyModelRandomizationForEnvironment(mjModel& model, mjData& data, std::size_t env_id) {
         CacheBaseModelParameters(model);
-        shared_model_randomization_active_ = true;
+        const auto changed = [](mjtNum current, mjtNum desired) {
+            return std::abs(current - desired) > static_cast<mjtNum>(1.0e-12);
+        };
+        bool constants_changed = false;
         const auto& base_binding = world_->link_bindings_[base_link_binding_index_];
         const int base_body = base_binding.body_id;
         if (base_body >= 0 && base_body < model.nbody) {
             const std::size_t body_index = static_cast<std::size_t>(base_body);
-            model.body_mass[base_body] =
-                    std::max<mjtNum>(mjMINVAL, base_body_mass_[body_index] + base_mass_delta_[env_id]);
             const std::size_t ipos_offset = body_index * 3;
             const std::size_t env3 = env_id * 3;
-            model.body_ipos[3 * base_body + 0] = base_body_ipos_[ipos_offset + 0] + base_com_offset_[env3 + 0];
-            model.body_ipos[3 * base_body + 1] = base_body_ipos_[ipos_offset + 1] + base_com_offset_[env3 + 1];
-            model.body_ipos[3 * base_body + 2] = base_body_ipos_[ipos_offset + 2] + base_com_offset_[env3 + 2];
-            mj_setConst(&model, static_cast<mjData*>(world_->environment_data_[env_id]));
+            const mjtNum desired_mass =
+                    std::max<mjtNum>(mjMINVAL, base_body_mass_[body_index] + base_mass_delta_[env_id]);
+            const mjtNum desired_ipos[3] = {
+                    base_body_ipos_[ipos_offset + 0] + base_com_offset_[env3 + 0],
+                    base_body_ipos_[ipos_offset + 1] + base_com_offset_[env3 + 1],
+                    base_body_ipos_[ipos_offset + 2] + base_com_offset_[env3 + 2],
+            };
+            if (changed(model.body_mass[base_body], desired_mass) ||
+                changed(model.body_ipos[3 * base_body + 0], desired_ipos[0]) ||
+                changed(model.body_ipos[3 * base_body + 1], desired_ipos[1]) ||
+                changed(model.body_ipos[3 * base_body + 2], desired_ipos[2])) {
+                model.body_mass[base_body] = desired_mass;
+                model.body_ipos[3 * base_body + 0] = desired_ipos[0];
+                model.body_ipos[3 * base_body + 1] = desired_ipos[1];
+                model.body_ipos[3 * base_body + 2] = desired_ipos[2];
+                constants_changed = true;
+            }
         }
         for (std::size_t joint_index = 0; joint_index < joint_count_; ++joint_index) {
             const auto& binding = world_->joint_bindings_[joint_binding_indices_[joint_index]];
@@ -1507,49 +1501,24 @@ private:
             const float kp = joint_kp_[offset] > 0.0f ? joint_kp_[offset] : base_joint_kp_[joint_index];
             const float kd = joint_kd_[offset] > 0.0f ? joint_kd_[offset] : base_joint_kd_[joint_index];
             if (kp > 0.0f) {
-                model.actuator_gainprm[mjNGAIN * actuator_id + 0] = kp;
-                model.actuator_biasprm[mjNBIAS * actuator_id + 1] = -kp;
+                const mjtNum desired_kp = static_cast<mjtNum>(kp);
+                if (changed(model.actuator_gainprm[mjNGAIN * actuator_id + 0], desired_kp)) {
+                    model.actuator_gainprm[mjNGAIN * actuator_id + 0] = desired_kp;
+                }
+                if (changed(model.actuator_biasprm[mjNBIAS * actuator_id + 1], -desired_kp)) {
+                    model.actuator_biasprm[mjNBIAS * actuator_id + 1] = -desired_kp;
+                }
             }
             if (kd > 0.0f) {
-                model.actuator_biasprm[mjNBIAS * actuator_id + 2] = -kd;
+                const mjtNum desired_kd = static_cast<mjtNum>(kd);
+                if (changed(model.actuator_biasprm[mjNBIAS * actuator_id + 2], -desired_kd)) {
+                    model.actuator_biasprm[mjNBIAS * actuator_id + 2] = -desired_kd;
+                }
             }
         }
-    }
-
-    void RestoreSharedModelRandomization(mjModel& model) {
-        if (!shared_model_randomization_active_) {
-            return;
+        if (constants_changed) {
+            mj_setConst(&model, &data);
         }
-        if (!base_body_mass_.empty() && model.nbody > 0) {
-            for (int body_id = 0; body_id < model.nbody; ++body_id) {
-                model.body_mass[body_id] = base_body_mass_[static_cast<std::size_t>(body_id)];
-            }
-            for (int index = 0; index < 3 * model.nbody; ++index) {
-                model.body_ipos[index] = base_body_ipos_[static_cast<std::size_t>(index)];
-            }
-            if (!world_->environment_data_.empty() && world_->environment_data_[0] != nullptr) {
-                mj_setConst(&model, static_cast<mjData*>(world_->environment_data_[0]));
-            }
-        }
-        for (std::size_t joint_index = 0; joint_index < joint_count_; ++joint_index) {
-            const auto& binding = world_->joint_bindings_[joint_binding_indices_[joint_index]];
-            const int actuator_id = binding.position_actuator_id >= 0
-                                            ? binding.position_actuator_id
-                                            : binding.motor_actuator_id;
-            if (actuator_id < 0 || actuator_id >= model.nu) {
-                continue;
-            }
-            const float kp = base_joint_kp_[joint_index];
-            const float kd = base_joint_kd_[joint_index];
-            if (kp > 0.0f) {
-                model.actuator_gainprm[mjNGAIN * actuator_id + 0] = kp;
-                model.actuator_biasprm[mjNBIAS * actuator_id + 1] = -kp;
-            }
-            if (kd > 0.0f) {
-                model.actuator_biasprm[mjNBIAS * actuator_id + 2] = -kd;
-            }
-        }
-        shared_model_randomization_active_ = false;
     }
 
     void FillAllEnvironments(std::size_t workers = 0) {
@@ -1559,8 +1528,8 @@ private:
     }
 
     void FillEnvironment(std::size_t env_id) {
-        auto* model = static_cast<mjModel*>(world_->model_);
-        auto* data = static_cast<mjData*>(world_->environment_data_[env_id]);
+        auto* model = ModelForEnvironment(env_id);
+        auto* data = DataForEnvironment(env_id);
         if (model == nullptr || data == nullptr) {
             throw std::runtime_error("MuJoCo model or data is not available");
         }
@@ -2005,7 +1974,6 @@ private:
     std::vector<RealType> base_body_ipos_;
     std::vector<float> base_joint_kp_;
     std::vector<float> base_joint_kd_;
-    bool shared_model_randomization_active_{false};
     std::vector<float> previous_action_;
     std::vector<float> last_action_;
     std::vector<float> encoder_bias_;

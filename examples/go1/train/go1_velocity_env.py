@@ -889,7 +889,7 @@ class Go1VelocityEnv(LocomotionBatchEnv):
                 "scene_path": self.cfg_obj.scene_path,
                 "unilab_reference": self._task_profile in {"unilab_flat", "unilab_rough"},
                 "native_contact_detail": "categorized" if self._task_profile == "unilab_rough" else "foot_sensors",
-                "domain_randomization_backend": "shared_mjmodel_serial_step",
+                "domain_randomization_backend": "per_env_mjmodel_pool",
             },
         )
 

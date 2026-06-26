@@ -244,6 +244,10 @@ private:
 
     const PhysicsSceneState& EnvironmentState(std::size_t environment_index) const;
 
+    void* ModelForEnvironment(std::size_t environment_index) const;
+
+    void* DataForEnvironment(std::size_t environment_index) const;
+
     void ApplyControlsToMuJoCo(std::size_t environment_index);
 
     void ApplyExternalForcesToMuJoCo(std::size_t environment_index);
@@ -320,6 +324,7 @@ private:
 #ifdef GOBOT_HAS_MUJOCO
     void* model_{nullptr};
     void* data_{nullptr};
+    std::vector<void*> environment_models_;
     std::vector<void*> environment_data_;
     std::vector<PhysicsSceneState> environment_states_;
     std::vector<MuJoCoRobotBinding> robot_bindings_;
