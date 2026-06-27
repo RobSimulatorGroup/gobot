@@ -16,6 +16,13 @@ def _writable_array(value: Any) -> np.ndarray:
     return array if array.flags.writeable else array.copy()
 
 
+def _scalar_float(value: Any) -> float:
+    array = np.asarray(value, dtype=np.float32)
+    if array.shape == ():
+        return float(array)
+    return float(np.mean(array))
+
+
 @dataclass
 class RslRlModelCfg:
     """Config for a single RSL-RL model."""
@@ -115,6 +122,21 @@ class RslRlVecEnvWrapper:
         self.TensorDict = TensorDict
         self.include_final_observation = bool(getattr(env, "rsl_rl_include_final_observation", False))
         self.include_reward_terms = bool(getattr(env, "rsl_rl_include_reward_terms", False))
+        self._torch_device = self.torch.device(self.device)
+        self._use_pinned_transfer = self._torch_device.type == "cuda" and self.torch.cuda.is_available()
+        self._obs_buffers: list[Any] = []
+        self._obs_buffer_specs: dict[str, tuple[int, ...]] | None = None
+        self._obs_staging: dict[str, Any] = {}
+        self._next_obs_buffer = 0
+        self._reward_buf = self.torch.empty(self.num_envs, dtype=self.torch.float32, device=self.device)
+        self._reward_staging = self._empty_cpu_tensor((self.num_envs,), self.torch.float32)
+        self._done_buf = self.torch.empty(self.num_envs, dtype=self.torch.bool, device=self.device)
+        self._done_staging = self._empty_cpu_tensor((self.num_envs,), self.torch.bool)
+        self._timeouts_buf = self.torch.empty(self.num_envs, dtype=self.torch.bool, device=self.device)
+        self._timeouts_staging = self._empty_cpu_tensor((self.num_envs,), self.torch.bool)
+        self._action_cpu = self._empty_cpu_tensor((self.num_envs, self.num_actions), self.torch.float32)
+        self._action_cpu_numpy = self._action_cpu.numpy()
+        self._episode_length_staging = self._empty_cpu_tensor((self.num_envs,), self.torch.long)
         self._episode_length_buf = self.torch.zeros(self.num_envs, dtype=self.torch.long, device=self.device)
         self._last_step_profile_ms: dict[str, float] = {}
         self._sync_steps_from_core()
@@ -144,7 +166,10 @@ class RslRlVecEnvWrapper:
 
     @episode_length_buf.setter
     def episode_length_buf(self, value) -> None:
-        self._episode_length_buf = self.torch.as_tensor(value, dtype=self.torch.long, device=self.device).clone()
+        if hasattr(value, "detach"):
+            self._episode_length_buf.copy_(value.detach().to(device=self.device, dtype=self.torch.long))
+        else:
+            self._copy_array_to_tensor(self._episode_length_buf, value, self._episode_length_staging)
         self._sync_steps_to_core()
 
     @property
@@ -177,7 +202,7 @@ class RslRlVecEnvWrapper:
         self._sync_steps_to_core()
         sync_to_core_ms = (time.perf_counter() - t0) * 1000.0
         t0 = time.perf_counter()
-        core_actions = actions.detach().cpu().numpy() if hasattr(actions, "detach") else np.asarray(actions)
+        core_actions = self._actions_to_numpy(actions)
         action_to_numpy_ms = (time.perf_counter() - t0) * 1000.0
         t0 = time.perf_counter()
         state = self.env.step(core_actions)
@@ -186,8 +211,8 @@ class RslRlVecEnvWrapper:
         self._sync_steps_from_core()
         sync_from_core_ms = (time.perf_counter() - t0) * 1000.0
         t0 = time.perf_counter()
-        reward = self.torch.as_tensor(state.reward, dtype=self.torch.float32, device=self.device)
-        done = self.torch.as_tensor(state.done, dtype=self.torch.bool, device=self.device)
+        self._copy_array_to_tensor(self._reward_buf, state.reward, self._reward_staging)
+        self._copy_array_to_tensor(self._done_buf, state.done, self._done_staging)
         extras = self._tensor_extras(state.info)
         extras_to_tensor_ms = (time.perf_counter() - t0) * 1000.0
         t0 = time.perf_counter()
@@ -202,10 +227,18 @@ class RslRlVecEnvWrapper:
             "extras_to_tensor_ms": extras_to_tensor_ms,
             "obs_to_tensor_ms": obs_to_tensor_ms,
         }
-        return obs, reward, done, extras
+        return obs, self._reward_buf, self._done_buf, extras
 
     def last_step_profile_ms(self) -> dict[str, float]:
         return dict(self._last_step_profile_ms)
+
+    def memory_profile(self) -> dict[str, Any]:
+        return {
+            "obs_buffers": len(self._obs_buffers),
+            "obs_keys": ",".join(sorted(self._obs_buffer_specs or ())),
+            "log_on_cpu": True,
+            "pinned_transfer": self._use_pinned_transfer,
+        }
 
     def close(self) -> None:
         self.env.close()
@@ -223,11 +256,7 @@ class RslRlVecEnvWrapper:
         steps = state.info.get("steps")
         if steps is None:
             return
-        self._episode_length_buf = self.torch.as_tensor(
-            np.asarray(steps, dtype=np.int64),
-            dtype=self.torch.long,
-            device=self.device,
-        ).clone()
+        self._copy_array_to_tensor(self._episode_length_buf, np.asarray(steps, dtype=np.int64), self._episode_length_staging)
 
     def _sync_steps_to_core(self) -> None:
         state = getattr(self.env, "state", None)
@@ -235,29 +264,37 @@ class RslRlVecEnvWrapper:
             return
         steps = state.info.get("steps")
         if isinstance(steps, np.ndarray) and steps.shape == (self.num_envs,):
-            np.copyto(steps, self._episode_length_buf.detach().cpu().numpy())
+            if self._episode_length_buf.device.type == "cpu":
+                np.copyto(steps, self._episode_length_buf.numpy())
+            else:
+                self._episode_length_staging.copy_(self._episode_length_buf)
+                np.copyto(steps, self._episode_length_staging.numpy())
 
     def _tensor_obs(self, obs: Mapping[str, Any]):
-        data = {
-            key: self.torch.as_tensor(_writable_array(value), dtype=self.torch.float32, device=self.device).clone()
-            for key, value in obs.items()
-        }
-        if "actor" in data and "policy" not in data:
-            data["policy"] = data["actor"].clone()
-        elif "obs" in data and "policy" not in data:
-            data["policy"] = data["obs"].clone()
-        return self.TensorDict(data, batch_size=[self.num_envs], device=self.device)
+        self._ensure_obs_buffers(obs)
+        target = self._obs_buffers[self._next_obs_buffer]
+        self._next_obs_buffer = (self._next_obs_buffer + 1) % len(self._obs_buffers)
+        for key, value in obs.items():
+            if key in target:
+                self._obs_staging[key] = self._copy_array_to_tensor(target[key], value, self._obs_staging.get(key))
+        if "actor" in target and "policy" in target and "policy" not in obs:
+            target["policy"].copy_(target["actor"])
+        elif "obs" in target and "policy" in target and "policy" not in obs:
+            target["policy"].copy_(target["obs"])
+        return self.TensorDict(dict(target), batch_size=[self.num_envs], device=self.device)
 
     def _tensor_extras(self, info: Mapping[str, Any]) -> dict[str, Any]:
         extras: dict[str, Any] = {}
         if "time_outs" in info:
-            extras["time_outs"] = self.torch.as_tensor(_writable_array(info["time_outs"]), dtype=self.torch.bool, device=self.device)
+            self._copy_array_to_tensor(self._timeouts_buf, info["time_outs"], self._timeouts_staging)
+            extras["time_outs"] = self._timeouts_buf
         elif "truncated" in info:
-            extras["time_outs"] = self.torch.as_tensor(_writable_array(info["truncated"]), dtype=self.torch.bool, device=self.device)
+            self._copy_array_to_tensor(self._timeouts_buf, info["truncated"], self._timeouts_staging)
+            extras["time_outs"] = self._timeouts_buf
         log = info.get("log", {})
         if isinstance(log, Mapping):
             extras["log"] = {
-                key: self.torch.as_tensor(_writable_array(value), dtype=self.torch.float32, device=self.device)
+                key: _scalar_float(value)
                 for key, value in log.items()
             }
         reward_terms = info.get("reward_terms")
@@ -279,6 +316,65 @@ class RslRlVecEnvWrapper:
                         device=self.device,
                     )
         return extras
+
+    def _empty_cpu_tensor(self, shape: tuple[int, ...], dtype):
+        if self._use_pinned_transfer:
+            try:
+                return self.torch.empty(shape, dtype=dtype, pin_memory=True)
+            except RuntimeError:
+                pass
+        return self.torch.empty(shape, dtype=dtype)
+
+    def _copy_array_to_tensor(self, target, value: Any, staging=None):
+        array = _writable_array(value)
+        source = self.torch.as_tensor(array, dtype=target.dtype)
+        if tuple(source.shape) != tuple(target.shape):
+            raise ValueError(f"expected array shape {tuple(target.shape)}, got {tuple(source.shape)}")
+        if target.device.type == "cpu":
+            target.copy_(source)
+            return staging
+        if staging is None or tuple(staging.shape) != tuple(target.shape) or staging.dtype != target.dtype:
+            staging = self._empty_cpu_tensor(tuple(target.shape), target.dtype)
+        staging.copy_(source)
+        target.copy_(staging)
+        return staging
+
+    def _actions_to_numpy(self, actions: Any) -> np.ndarray:
+        if not hasattr(actions, "detach"):
+            return np.asarray(actions, dtype=np.float32)
+        tensor = actions.detach()
+        expected_shape = (self.num_envs, self.num_actions)
+        if tuple(tensor.shape) != expected_shape:
+            return tensor.cpu().numpy()
+        if tensor.dtype != self.torch.float32:
+            tensor = tensor.to(dtype=self.torch.float32)
+        self._action_cpu.copy_(tensor)
+        return self._action_cpu_numpy
+
+    def _ensure_obs_buffers(self, obs: Mapping[str, Any]) -> None:
+        specs: dict[str, tuple[int, ...]] = {
+            key: tuple(np.asarray(value).shape)
+            for key, value in obs.items()
+        }
+        if "actor" in specs and "policy" not in specs:
+            specs["policy"] = specs["actor"]
+        elif "obs" in specs and "policy" not in specs:
+            specs["policy"] = specs["obs"]
+        if self._obs_buffer_specs == specs and self._obs_buffers:
+            return
+        self._obs_buffer_specs = dict(specs)
+        self._obs_staging = {
+            key: self._empty_cpu_tensor(shape, self.torch.float32)
+            for key, shape in specs.items()
+        }
+        self._obs_buffers = []
+        for _ in range(2):
+            data = {
+                key: self.torch.empty(shape, dtype=self.torch.float32, device=self.device)
+                for key, shape in specs.items()
+            }
+            self._obs_buffers.append(data)
+        self._next_obs_buffer = 0
 
 
 def rsl_rl_cfg_to_dict(cfg: Mapping[str, Any] | RslRlBaseRunnerCfg | type | object) -> dict[str, Any]:

@@ -608,7 +608,7 @@ def test_rsl_rl_wrapper_keeps_core_env_numpy():
     assert obs["critic"].shape == (2, 5)
     assert reward.tolist() == [1.0, 1.0]
     assert done.tolist() == [False, False]
-    assert extras["log"]["x"].item() == 1.0
+    assert extras["log"]["x"] == 1.0
     assert "reward_terms" not in extras
     assert "final_observation" not in extras
     assert "_final_observation" not in extras
