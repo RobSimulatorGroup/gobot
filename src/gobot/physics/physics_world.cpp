@@ -618,7 +618,7 @@ struct InternalTerrainRaycastHit {
     Vector3 point{Vector3::Zero()};
     Vector3 normal{Vector3::UnitZ()};
     RealType distance{0.0};
-    std::string terrain_name;
+    const std::string* terrain_name{nullptr};
 };
 
 bool PointInXYBounds(const Vector3& point,
@@ -791,7 +791,7 @@ std::optional<InternalTerrainRaycastHit> RaycastTerrainBox(const PhysicsTerrainB
     hit.point = box.global_transform * (origin + direction * distance);
     hit.normal = (box.global_transform.linear() * local_normal).normalized();
     hit.distance = distance;
-    hit.terrain_name = terrain_name;
+    hit.terrain_name = &terrain_name;
     return hit;
 }
 
@@ -924,7 +924,7 @@ std::optional<InternalTerrainRaycastHit> RaycastTerrainHeightFieldVertical(
     hit.point = Vector3(query.origin.x(), query.origin.y(), height.value());
     hit.normal = QueryTerrainHeightFieldNormal(heightfield, hit.point).value_or(Vector3::UnitZ());
     hit.distance = distance;
-    hit.terrain_name = terrain_name;
+    hit.terrain_name = &terrain_name;
     return hit;
 }
 
@@ -980,7 +980,7 @@ std::optional<InternalTerrainRaycastHit> RaycastTerrainHeightField(const Physics
             hit.point = Vector3(hit_point.x(), hit_point.y(), hit_height.value());
             hit.normal = QueryTerrainHeightFieldNormal(heightfield, hit.point).value_or(Vector3::UnitZ());
             hit.distance = hit_t;
-            hit.terrain_name = terrain_name;
+            hit.terrain_name = &terrain_name;
             best = hit;
             break;
         }
@@ -1136,7 +1136,7 @@ std::optional<InternalTerrainRaycastHit> RaycastTerrainMeshPatch(const PhysicsTe
         if (!candidate.has_value()) {
             continue;
         }
-        candidate->terrain_name = terrain_name;
+        candidate->terrain_name = &terrain_name;
         if (!best.has_value() || candidate->distance < best->distance) {
             best = candidate;
         }
@@ -1582,7 +1582,8 @@ const PhysicsSceneState& PhysicsWorld::GetSceneState() const {
     return scene_state_;
 }
 
-PhysicsRaycastHit PhysicsWorld::RaycastTerrainFallback(const PhysicsRaycastQuery& query) const {
+PhysicsRaycastHit PhysicsWorld::RaycastTerrainFallback(const PhysicsRaycastQuery& query,
+                                                       bool include_terrain_name) const {
     PhysicsRaycastHit result;
     result.origin = query.origin;
 
@@ -1632,7 +1633,9 @@ PhysicsRaycastHit PhysicsWorld::RaycastTerrainFallback(const PhysicsRaycastQuery
         result.point = best->point;
         result.normal = best->normal;
         result.distance = best->distance;
-        result.terrain_name = best->terrain_name;
+        if (include_terrain_name && best->terrain_name != nullptr) {
+            result.terrain_name = *best->terrain_name;
+        }
     }
     return result;
 }
@@ -1644,7 +1647,7 @@ PhysicsRaycastHit PhysicsWorld::RaycastTerrain(const PhysicsRaycastQuery& query)
 PhysicsRaycastHit PhysicsWorld::RaycastTerrainForSensor(const PhysicsRaycastQuery& query,
                                                         std::size_t environment_index) const {
     GOB_UNUSED(environment_index);
-    return RaycastTerrainFallback(query);
+    return RaycastTerrainFallback(query, false);
 }
 
 bool PhysicsWorld::CaptureSceneSnapshot(const Node* scene_root) {

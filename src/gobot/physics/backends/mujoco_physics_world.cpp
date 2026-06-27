@@ -2419,19 +2419,13 @@ PhysicsRaycastHit MuJoCoPhysicsWorld::RaycastTerrain(const PhysicsRaycastQuery& 
 
 PhysicsRaycastHit MuJoCoPhysicsWorld::RaycastTerrainForSensor(const PhysicsRaycastQuery& query,
                                                               std::size_t environment_index) const {
-    GOBOT_PROFILE_ZONE("MuJoCoPhysicsWorld::RaycastTerrainForSensor");
-#ifdef GOBOT_HAS_MUJOCO
-    if (ModelForEnvironment(environment_index) && DataForEnvironment(environment_index)) {
-        return RaycastTerrainWithMuJoCo(query, environment_index);
-    }
-#endif
-    return RaycastTerrainFallback(query);
+    GOB_UNUSED(environment_index);
+    return RaycastTerrainFallback(query, false);
 }
 
 #ifdef GOBOT_HAS_MUJOCO
 PhysicsRaycastHit MuJoCoPhysicsWorld::RaycastTerrainWithMuJoCo(const PhysicsRaycastQuery& query,
                                                                std::size_t environment_index) const {
-    GOBOT_PROFILE_ZONE("MuJoCoPhysicsWorld::RaycastTerrainWithMuJoCo");
     PhysicsRaycastHit result;
     result.origin = query.origin;
 

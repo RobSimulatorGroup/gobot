@@ -1817,10 +1817,10 @@ private:
         RealType first_value = 0.0;
         for (std::size_t sample_index = 0; sample_index < sensor_view.snapshot->sample_offsets.size(); ++sample_index) {
             const Vector3 origin = sensor_position + alignment * sensor_view.snapshot->sample_offsets[sample_index];
-            const PhysicsRaycastHit hit = world_->RaycastTerrainWithMuJoCo({origin,
-                                                                            ray_direction,
-                                                                            sensor_view.snapshot->max_distance},
-                                                                           env_id);
+            const PhysicsRaycastHit hit = world_->RaycastTerrainForSensor({origin,
+                                                                           ray_direction,
+                                                                           sensor_view.snapshot->max_distance},
+                                                                          env_id);
             const RealType value = (sensor_view.snapshot->type == PhysicsSensorType::TerrainHeight ||
                                     sensor_view.snapshot->type == PhysicsSensorType::HeightScanner)
                                            ? (hit.hit ? origin.z() - hit.point.z()

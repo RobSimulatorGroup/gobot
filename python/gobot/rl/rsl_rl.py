@@ -125,6 +125,7 @@ class RslRlVecEnvWrapper:
         self._torch_device = self.torch.device(self.device)
         self._use_pinned_transfer = bool(getattr(env, "rsl_rl_use_pinned_transfer", False))
         self._obs_buffers: list[Any] = []
+        self._obs_tensordicts: list[Any] = []
         self._obs_buffer_specs: dict[str, tuple[int, ...]] | None = None
         self._obs_staging: dict[str, Any] = {}
         self._next_obs_buffer = 0
@@ -235,6 +236,7 @@ class RslRlVecEnvWrapper:
     def memory_profile(self) -> dict[str, Any]:
         return {
             "obs_buffers": len(self._obs_buffers),
+            "obs_tensordicts": len(self._obs_tensordicts),
             "obs_keys": ",".join(sorted(self._obs_buffer_specs or ())),
             "log_on_cpu": True,
             "pinned_transfer": self._use_pinned_transfer,
@@ -272,8 +274,9 @@ class RslRlVecEnvWrapper:
 
     def _tensor_obs(self, obs: Mapping[str, Any]):
         self._ensure_obs_buffers(obs)
-        target = self._obs_buffers[self._next_obs_buffer]
-        self._next_obs_buffer = (self._next_obs_buffer + 1) % len(self._obs_buffers)
+        buffer_index = self._next_obs_buffer
+        target = self._obs_buffers[buffer_index]
+        self._next_obs_buffer = (buffer_index + 1) % len(self._obs_buffers)
         for key, value in obs.items():
             if key in target:
                 self._obs_staging[key] = self._copy_array_to_tensor(target[key], value, self._obs_staging.get(key))
@@ -281,7 +284,7 @@ class RslRlVecEnvWrapper:
             target["policy"].copy_(target["actor"])
         elif "obs" in target and "policy" in target and "policy" not in obs:
             target["policy"].copy_(target["obs"])
-        return self.TensorDict(dict(target), batch_size=[self.num_envs], device=self.device)
+        return self._obs_tensordicts[buffer_index]
 
     def _tensor_extras(self, info: Mapping[str, Any]) -> dict[str, Any]:
         extras: dict[str, Any] = {}
@@ -368,12 +371,14 @@ class RslRlVecEnvWrapper:
             for key, shape in specs.items()
         }
         self._obs_buffers = []
+        self._obs_tensordicts = []
         for _ in range(2):
             data = {
                 key: self.torch.empty(shape, dtype=self.torch.float32, device=self.device)
                 for key, shape in specs.items()
             }
             self._obs_buffers.append(data)
+            self._obs_tensordicts.append(self.TensorDict(data, batch_size=[self.num_envs], device=self.device))
         self._next_obs_buffer = 0
 
 

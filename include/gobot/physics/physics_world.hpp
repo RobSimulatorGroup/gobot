@@ -119,7 +119,8 @@ public:
 protected:
     bool CaptureSceneSnapshot(const Node* scene_root);
 
-    PhysicsRaycastHit RaycastTerrainFallback(const PhysicsRaycastQuery& query) const;
+    PhysicsRaycastHit RaycastTerrainFallback(const PhysicsRaycastQuery& query,
+                                             bool include_terrain_name = true) const;
 
     virtual PhysicsRaycastHit RaycastTerrainForSensor(const PhysicsRaycastQuery& query,
                                                       std::size_t environment_index) const;
