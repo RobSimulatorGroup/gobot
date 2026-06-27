@@ -165,6 +165,7 @@ public:
                              std::string robot_name,
                              std::string base_link,
                              std::vector<std::string> joint_names,
+                             std::vector<std::string> link_names,
                              std::vector<std::string> foot_link_names,
                              std::vector<std::string> foot_height_sensor_names,
                              std::vector<std::string> foot_contact_sensor_names,
@@ -184,6 +185,7 @@ public:
           robot_name_(std::move(robot_name)),
           base_link_(std::move(base_link)),
           joint_names_(std::move(joint_names)),
+          link_names_(std::move(link_names)),
           foot_link_names_(std::move(foot_link_names)),
           foot_height_sensor_names_(std::move(foot_height_sensor_names)),
           foot_contact_sensor_names_(std::move(foot_contact_sensor_names)),
@@ -354,6 +356,14 @@ public:
                 VectorArrayView(joint_lower_limit_, {JointDim()}, owner, false);
         arrays["joint_upper_limit"] =
                 VectorArrayView(joint_upper_limit_, {JointDim()}, owner, false);
+        arrays["link_position"] =
+                VectorArrayView(link_position_, {EnvDim(), LinkDim(), 3}, owner, false);
+        arrays["link_quaternion"] =
+                VectorArrayView(link_quaternion_, {EnvDim(), LinkDim(), 4}, owner, false);
+        arrays["link_linear_velocity"] =
+                VectorArrayView(link_linear_velocity_, {EnvDim(), LinkDim(), 3}, owner, false);
+        arrays["link_angular_velocity"] =
+                VectorArrayView(link_angular_velocity_, {EnvDim(), LinkDim(), 3}, owner, false);
         arrays["foot_position"] =
                 VectorArrayView(foot_position_, {EnvDim(), FootDim(), 3}, owner, false);
         arrays["feet_pos"] =
@@ -726,6 +736,10 @@ private:
         return static_cast<py::ssize_t>(foot_count_);
     }
 
+    py::ssize_t LinkDim() const {
+        return static_cast<py::ssize_t>(link_count_);
+    }
+
     py::ssize_t HeightScanDim() const {
         return static_cast<py::ssize_t>(height_scan_count_);
     }
@@ -813,6 +827,13 @@ private:
         }
         joint_count_ = joint_binding_indices_.size();
 
+        link_names_ = NormalizeLinkNames(*robot_snapshot, link_names_);
+        link_binding_indices_.reserve(link_names_.size());
+        for (const std::string& link_name : link_names_) {
+            link_binding_indices_.push_back(FindLinkBindingIndex(link_name));
+        }
+        link_count_ = link_binding_indices_.size();
+
         base_free_joint_binding_index_ = world_->joint_bindings_.size();
         for (std::size_t binding_index = 0; binding_index < world_->joint_bindings_.size(); ++binding_index) {
             const auto& binding = world_->joint_bindings_[binding_index];
@@ -892,6 +913,19 @@ private:
             }
         }
         throw std::runtime_error(fmt::format("link '{}' is not bound in MuJoCo world", link_name));
+    }
+
+    std::vector<std::string> NormalizeLinkNames(const PhysicsRobotSnapshot& robot,
+                                                const std::vector<std::string>& requested) const {
+        if (!requested.empty()) {
+            return requested;
+        }
+        std::vector<std::string> names;
+        names.reserve(robot.links.size());
+        for (const PhysicsLinkSnapshot& link : robot.links) {
+            names.push_back(link.name);
+        }
+        return names;
     }
 
     SensorView FindSensorView(const std::string& sensor_name) const {
@@ -1191,6 +1225,10 @@ private:
         joint_torque_.assign(environment_count_ * joint_count_, 0.0f);
         joint_lower_limit_.assign(joint_count_, 0.0f);
         joint_upper_limit_.assign(joint_count_, 0.0f);
+        link_position_.assign(environment_count_ * link_count_ * 3, 0.0f);
+        link_quaternion_.assign(environment_count_ * link_count_ * 4, 0.0f);
+        link_linear_velocity_.assign(environment_count_ * link_count_ * 3, 0.0f);
+        link_angular_velocity_.assign(environment_count_ * link_count_ * 3, 0.0f);
         foot_position_.assign(environment_count_ * foot_count_ * 3, 0.0f);
         foot_quaternion_.assign(environment_count_ * foot_count_ * 4, 0.0f);
         foot_velocity_.assign(environment_count_ * foot_count_ * 3, 0.0f);
@@ -1593,6 +1631,48 @@ private:
                                             : 0.0f;
         }
 
+        for (std::size_t link_index = 0; link_index < link_count_; ++link_index) {
+            const auto& binding = world_->link_bindings_[link_binding_indices_[link_index]];
+            const int body_id = binding.body_id;
+            const std::size_t link3 = (env_id * link_count_ + link_index) * 3;
+            const std::size_t link4 = (env_id * link_count_ + link_index) * 4;
+            if (body_id < 0 || body_id >= model->nbody) {
+                link_position_[link3 + 0] = 0.0f;
+                link_position_[link3 + 1] = 0.0f;
+                link_position_[link3 + 2] = 0.0f;
+                link_quaternion_[link4 + 0] = 1.0f;
+                link_quaternion_[link4 + 1] = 0.0f;
+                link_quaternion_[link4 + 2] = 0.0f;
+                link_quaternion_[link4 + 3] = 0.0f;
+                link_linear_velocity_[link3 + 0] = 0.0f;
+                link_linear_velocity_[link3 + 1] = 0.0f;
+                link_linear_velocity_[link3 + 2] = 0.0f;
+                link_angular_velocity_[link3 + 0] = 0.0f;
+                link_angular_velocity_[link3 + 1] = 0.0f;
+                link_angular_velocity_[link3 + 2] = 0.0f;
+                continue;
+            }
+            link_position_[link3 + 0] = static_cast<float>(data->xpos[3 * body_id + 0]);
+            link_position_[link3 + 1] = static_cast<float>(data->xpos[3 * body_id + 1]);
+            link_position_[link3 + 2] = static_cast<float>(data->xpos[3 * body_id + 2]);
+            Matrix3 link_rotation;
+            link_rotation << data->xmat[9 * body_id + 0], data->xmat[9 * body_id + 1], data->xmat[9 * body_id + 2],
+                    data->xmat[9 * body_id + 3], data->xmat[9 * body_id + 4], data->xmat[9 * body_id + 5],
+                    data->xmat[9 * body_id + 6], data->xmat[9 * body_id + 7], data->xmat[9 * body_id + 8];
+            const Quaternion link_orientation(link_rotation);
+            link_quaternion_[link4 + 0] = static_cast<float>(link_orientation.w());
+            link_quaternion_[link4 + 1] = static_cast<float>(link_orientation.x());
+            link_quaternion_[link4 + 2] = static_cast<float>(link_orientation.y());
+            link_quaternion_[link4 + 3] = static_cast<float>(link_orientation.z());
+            link_angular_velocity_[link3 + 0] = static_cast<float>(data->cvel[6 * body_id + 0]);
+            link_angular_velocity_[link3 + 1] = static_cast<float>(data->cvel[6 * body_id + 1]);
+            link_angular_velocity_[link3 + 2] = static_cast<float>(data->cvel[6 * body_id + 2]);
+            const Vector3 link_linear_velocity = BodyLinearVelocity(*data, body_id);
+            link_linear_velocity_[link3 + 0] = static_cast<float>(link_linear_velocity.x());
+            link_linear_velocity_[link3 + 1] = static_cast<float>(link_linear_velocity.y());
+            link_linear_velocity_[link3 + 2] = static_cast<float>(link_linear_velocity.z());
+        }
+
         for (std::size_t foot_index = 0; foot_index < foot_count_; ++foot_index) {
             const auto& binding = world_->link_bindings_[foot_link_binding_indices_[foot_index]];
             const int body_id = binding.body_id;
@@ -1923,6 +2003,7 @@ private:
     std::string robot_name_;
     std::string base_link_;
     std::vector<std::string> joint_names_;
+    std::vector<std::string> link_names_;
     std::vector<std::string> foot_link_names_;
     std::vector<std::string> foot_height_sensor_names_;
     std::vector<std::string> foot_contact_sensor_names_;
@@ -1937,6 +2018,7 @@ private:
     std::size_t robot_index_{0};
     std::size_t environment_count_{0};
     std::size_t joint_count_{0};
+    std::size_t link_count_{0};
     std::size_t foot_count_{0};
     std::size_t height_scan_count_{0};
     std::size_t reward_term_count_{0};
@@ -1947,6 +2029,7 @@ private:
     std::size_t base_link_binding_index_{0};
     std::size_t base_free_joint_binding_index_{0};
     std::vector<std::size_t> joint_binding_indices_;
+    std::vector<std::size_t> link_binding_indices_;
     std::vector<std::size_t> foot_link_binding_indices_;
     std::vector<SensorView> foot_height_sensors_;
     std::vector<SensorView> foot_contact_sensors_;
@@ -2029,6 +2112,10 @@ private:
     std::vector<float> joint_torque_;
     std::vector<float> joint_lower_limit_;
     std::vector<float> joint_upper_limit_;
+    std::vector<float> link_position_;
+    std::vector<float> link_quaternion_;
+    std::vector<float> link_linear_velocity_;
+    std::vector<float> link_angular_velocity_;
     std::vector<float> foot_position_;
     std::vector<float> foot_quaternion_;
     std::vector<float> foot_velocity_;
@@ -2288,7 +2375,8 @@ void RegisterManualAppContextBindings(py::module_& module) {
                                                     std::size_t task_param_count,
                                                     std::size_t task_flag_count,
                                                     std::size_t actor_obs_dim,
-                                                    std::size_t critic_obs_dim) {
+                                                    std::size_t critic_obs_dim,
+                                                    const std::vector<std::string>& link_names) {
                 SimulationServer* simulation = context.GetSimulationServer();
                 if (simulation == nullptr) {
                     throw std::runtime_error("active Gobot app context has no SimulationServer");
@@ -2302,6 +2390,7 @@ void RegisterManualAppContextBindings(py::module_& module) {
                                                                robot,
                                                                base_link,
                                                                joint_names,
+                                                               link_names,
                                                                foot_link_names,
                                                                foot_height_sensor_names,
                                                                foot_contact_sensor_names,
@@ -2334,7 +2423,8 @@ void RegisterManualAppContextBindings(py::module_& module) {
                py::arg("task_param_count") = 0,
                py::arg("task_flag_count") = 0,
                py::arg("actor_obs_dim") = 0,
-               py::arg("critic_obs_dim") = 0)
+               py::arg("critic_obs_dim") = 0,
+               py::arg("link_names") = std::vector<std::string>{})
             .def_property_readonly("batch_env_count", [](EngineContext& context) {
                 SimulationServer* simulation = context.GetSimulationServer();
                 if (simulation == nullptr) {

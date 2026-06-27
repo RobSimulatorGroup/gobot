@@ -471,6 +471,44 @@ def test_go1_unilab_rough_env_reset_step_shapes():
         env.close()
 
 
+def test_go1_native_runtime_state_tracks_batch_arrays_after_step():
+    cfg = go1_cfg.go1_rough_velocity_cfg(project_path=REPO_ROOT / "examples/go1")
+    cfg.observations.actor_noise = False
+    cfg.push_enabled = False
+    cfg.domain_randomization.enabled = False
+    env = Go1VelocityEnv(cfg, num_envs=1, device="cpu", seed=123, max_episode_length=8)
+    try:
+        env.reset(seed=123)
+        env.step(np.zeros((1, env.num_actions), dtype=np.float32))
+        runtime_state = env._runtime_state(0)
+        batch_state = env.backend.state
+
+        np.testing.assert_allclose(
+            runtime_state.base["global_transform"]["position"],
+            batch_state.base_position[0],
+            rtol=1.0e-5,
+            atol=1.0e-5,
+        )
+        np.testing.assert_allclose(
+            runtime_state.base["global_transform"]["quaternion"],
+            batch_state.base_quaternion[0],
+            rtol=1.0e-5,
+            atol=1.0e-5,
+        )
+        np.testing.assert_allclose(
+            [runtime_state.joints[name]["position"] for name in env.joint_names],
+            batch_state.joint_position[0],
+            rtol=1.0e-5,
+            atol=1.0e-5,
+        )
+        assert "link_position" in env.cfg["task_runtime"]["array_names"]
+        assert "link_quaternion" in env.cfg["task_runtime"]["array_names"]
+        assert env.cfg_obj.base_link in runtime_state.links
+        assert len(runtime_state.links) == len(env._batch_link_names)
+    finally:
+        env.close()
+
+
 def test_go1_unilab_flat_env_reset_step_shapes():
     cfg = go1_cfg.go1_flat_velocity_cfg(project_path=REPO_ROOT / "examples/go1")
     cfg.observations.actor_noise = False
@@ -562,6 +600,7 @@ def main():
         test_go1_playback_profile_observation_shapes,
         test_go1_train_cfg_preserves_unilab_task_contract,
         test_go1_unilab_rough_env_reset_step_shapes,
+        test_go1_native_runtime_state_tracks_batch_arrays_after_step,
         test_go1_unilab_flat_env_reset_step_shapes,
         test_rsl_rl_wrapper_keeps_core_env_numpy,
     ]

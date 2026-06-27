@@ -514,6 +514,7 @@ class NativeLocomotionBatchBackend:
             self.task_flag_count,
             self.actor_obs_dim,
             self.critic_obs_dim,
+            link_names=list(self.runtime.link_names),
         )
         self._arrays = {str(name): np.asarray(value) for name, value in dict(self._view.arrays()).items()}
         self._state = self._state_from_arrays()
@@ -740,7 +741,41 @@ class NativeLocomotionBatchBackend:
             self._arrays["joint_kd"][env_id_array] = np.asarray(joint_kd, dtype=np.float32).reshape(-1, len(self.runtime.joint_names))
 
     def env_state(self, env_id: int) -> Any:
-        return self.runtime.env_state(env_id)
+        self._require_view()
+        env_id = int(env_id)
+        if env_id < 0 or env_id >= self.env_count:
+            raise IndexError("environment id is out of range")
+        state = self.state
+        base = {
+            "name": self.runtime.base_link,
+            "global_transform": self._transform(
+                state.base_position[env_id],
+                state.base_quaternion[env_id],
+            ),
+            "linear_velocity": np.asarray(state.base_linear_velocity[env_id], dtype=np.float32).tolist(),
+            "angular_velocity": np.asarray(state.base_angular_velocity[env_id], dtype=np.float32).tolist(),
+        }
+        links = self._runtime_links(env_id, state, base)
+        joints = [
+            {
+                "name": name,
+                "position": float(state.joint_position[env_id, index]),
+                "velocity": float(state.joint_velocity[env_id, index]),
+            }
+            for index, name in enumerate(self.runtime.joint_names)
+        ]
+        sensors = self._runtime_sensors(env_id, state)
+        return {
+            "robots": [
+                {
+                    "name": self.runtime.robot,
+                    "links": links,
+                    "joints": joints,
+                    "sensors": sensors,
+                }
+            ],
+            "contacts": [],
+        }
 
     def refresh(self) -> _NativeLocomotionBatchArrays:
         self._require_view()
@@ -748,6 +783,92 @@ class NativeLocomotionBatchBackend:
         if self._state is None:
             self._state = self._state_from_arrays()
         return self._state
+
+    @staticmethod
+    def _transform(position: Any, quaternion: Any) -> dict[str, list[float]]:
+        return {
+            "position": np.asarray(position, dtype=np.float32).reshape(3).tolist(),
+            "quaternion": np.asarray(quaternion, dtype=np.float32).reshape(4).tolist(),
+        }
+
+    def _runtime_links(
+        self,
+        env_id: int,
+        state: _NativeLocomotionBatchArrays,
+        base: dict[str, Any],
+    ) -> list[dict[str, Any]]:
+        links: list[dict[str, Any]] = []
+        link_names = tuple(self.runtime.link_names)
+        try:
+            link_position = state.link_position
+            link_quaternion = state.link_quaternion
+            link_linear_velocity = state.link_linear_velocity
+            link_angular_velocity = state.link_angular_velocity
+        except AttributeError:
+            link_position = link_quaternion = link_linear_velocity = link_angular_velocity = None
+        if link_position is not None and len(link_names) == int(link_position.shape[1]):
+            for index, name in enumerate(link_names):
+                links.append(
+                    {
+                        "name": name,
+                        "global_transform": self._transform(
+                            link_position[env_id, index],
+                            link_quaternion[env_id, index],
+                        ),
+                        "linear_velocity": np.asarray(link_linear_velocity[env_id, index], dtype=np.float32).tolist(),
+                        "angular_velocity": np.asarray(link_angular_velocity[env_id, index], dtype=np.float32).tolist(),
+                    }
+                )
+            if self.runtime.base_link not in {str(link.get("name")) for link in links}:
+                links.insert(0, base)
+            return links
+
+        links.append(base)
+        for index, name in enumerate(self.foot_link_names):
+            links.append(
+                {
+                    "name": name,
+                    "global_transform": self._transform(
+                        state.foot_position[env_id, index],
+                        state.feet_quat[env_id, index],
+                    ),
+                    "linear_velocity": np.asarray(state.foot_velocity[env_id, index], dtype=np.float32).tolist(),
+                    "angular_velocity": [0.0, 0.0, 0.0],
+                }
+            )
+        return links
+
+    def _runtime_sensors(
+        self,
+        env_id: int,
+        state: _NativeLocomotionBatchArrays,
+    ) -> list[dict[str, Any]]:
+        sensors: list[dict[str, Any]] = []
+        for index, name in enumerate(self.foot_height_sensor_names):
+            sensors.append(
+                {
+                    "name": name,
+                    "values": [float(state.foot_height[env_id, index])],
+                }
+            )
+        for index, name in enumerate(self.foot_contact_sensor_names):
+            sensors.append(
+                {
+                    "name": name,
+                    "values": [float(state.foot_contact[env_id, index])],
+                }
+            )
+        if self.height_scan_sensor:
+            sensors.append(
+                {
+                    "name": self.height_scan_sensor,
+                    "values": np.asarray(state.height_scan[env_id], dtype=np.float32).tolist(),
+                    "hit": np.asarray(state.height_scan_hit[env_id], dtype=bool).tolist(),
+                    "hit_point": np.asarray(state.height_scan_point[env_id], dtype=np.float32).tolist(),
+                    "hit_normal": np.asarray(state.height_scan_normal[env_id], dtype=np.float32).tolist(),
+                }
+            )
+        return sensors
 
     def _require_view(self) -> None:
         if self._view is None:
