@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import argparse
 import copy
+import ctypes
 import os
 from pathlib import Path
 from typing import Sequence
@@ -327,6 +328,33 @@ def _cuda_memory_stats(device: str) -> dict[str, float] | None:
     }
 
 
+def _cuda_host_memory_stats(device: str) -> dict[str, float] | None:
+    torch_device = torch.device(device)
+    if torch_device.type != "cuda" or not torch.cuda.is_available():
+        return None
+    try:
+        stats = torch.cuda.host_memory_stats(torch_device.index)
+    except Exception:
+        try:
+            stats = torch.cuda.host_memory_stats()
+        except Exception:
+            return None
+    return {
+        "host_allocated_mb": float(stats.get("allocated_bytes.all.current", 0.0)) / 1024.0 / 1024.0,
+        "host_reserved_mb": float(stats.get("reserved_bytes.all.current", 0.0)) / 1024.0 / 1024.0,
+        "host_active_mb": float(stats.get("active_bytes.all.current", 0.0)) / 1024.0 / 1024.0,
+    }
+
+
+def _trim_cpu_allocator() -> None:
+    if os.name != "posix":
+        return
+    try:
+        ctypes.CDLL("libc.so.6").malloc_trim(0)
+    except Exception:
+        return
+
+
 def _synchronize_device(device: str) -> None:
     torch_device = torch.device(device)
     if torch_device.type != "cuda" or not torch.cuda.is_available():
@@ -339,6 +367,7 @@ def _synchronize_device(device: str) -> None:
 
 def _print_memory_profile(tag: str, device: str) -> None:
     _synchronize_device(device)
+    _trim_cpu_allocator()
     parts = [f"tag={tag}", f"rss_mb={_process_rss_mb():.1f}"]
     cuda_stats = _cuda_memory_stats(device)
     if cuda_stats is not None:
@@ -348,6 +377,15 @@ def _print_memory_profile(tag: str, device: str) -> None:
                 f"cuda_reserved_mb={cuda_stats['reserved_mb']:.1f}",
                 f"cuda_free_mb={cuda_stats['free_mb']:.1f}",
                 f"cuda_total_mb={cuda_stats['total_mb']:.1f}",
+            ]
+        )
+    cuda_host_stats = _cuda_host_memory_stats(device)
+    if cuda_host_stats is not None:
+        parts.extend(
+            [
+                f"cuda_host_alloc_mb={cuda_host_stats['host_allocated_mb']:.1f}",
+                f"cuda_host_reserved_mb={cuda_host_stats['host_reserved_mb']:.1f}",
+                f"cuda_host_active_mb={cuda_host_stats['host_active_mb']:.1f}",
             ]
         )
     print("[memory] " + " ".join(parts), flush=True)

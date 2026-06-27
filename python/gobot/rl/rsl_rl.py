@@ -123,7 +123,7 @@ class RslRlVecEnvWrapper:
         self.include_final_observation = bool(getattr(env, "rsl_rl_include_final_observation", False))
         self.include_reward_terms = bool(getattr(env, "rsl_rl_include_reward_terms", False))
         self._torch_device = self.torch.device(self.device)
-        self._use_pinned_transfer = self._torch_device.type == "cuda" and self.torch.cuda.is_available()
+        self._use_pinned_transfer = bool(getattr(env, "rsl_rl_use_pinned_transfer", False))
         self._obs_buffers: list[Any] = []
         self._obs_buffer_specs: dict[str, tuple[int, ...]] | None = None
         self._obs_staging: dict[str, Any] = {}
