@@ -257,7 +257,10 @@ bool IsImportedIMUSensorType(int sensor_type) {
     return sensor_type == mjSENS_ACCELEROMETER ||
            sensor_type == mjSENS_GYRO ||
            sensor_type == mjSENS_VELOCIMETER ||
-           sensor_type == mjSENS_FRAMEQUAT;
+           sensor_type == mjSENS_FRAMEQUAT ||
+           sensor_type == mjSENS_FRAMELINVEL ||
+           sensor_type == mjSENS_FRAMEANGVEL ||
+           sensor_type == mjSENS_FRAMELINACC;
 }
 
 bool IsImportedContactSensorType(int sensor_type) {
@@ -366,14 +369,39 @@ SceneState::NodeData MakeCommonSensorNode(const std::string& type,
 }
 
 std::string MakeIMUSensorName(const mjModel* model, int site_id, const std::vector<int>& sensor_ids) {
+    std::string common_component_name;
+    bool has_component_name = false;
+    bool component_names_match = true;
     for (int sensor_id : sensor_ids) {
         const std::string sensor_name = GetMuJoCoName(model, mjOBJ_SENSOR, sensor_id, "");
-        if (!sensor_name.empty()) {
-            return TrimIMUSensorComponentSuffix(sensor_name);
+        if (sensor_name.empty()) {
+            continue;
+        }
+        const std::string trimmed_name = TrimIMUSensorComponentSuffix(sensor_name);
+        if (!has_component_name) {
+            common_component_name = trimmed_name;
+            has_component_name = true;
+            continue;
+        }
+        if (trimmed_name != common_component_name) {
+            component_names_match = false;
+            break;
         }
     }
+    if (has_component_name && component_names_match && !common_component_name.empty()) {
+        return common_component_name;
+    }
 
-    return GetMuJoCoName(model, mjOBJ_SITE, site_id, fmt::format("site_{}", site_id)) + "_imu";
+    const std::string site_name = GetMuJoCoName(model, mjOBJ_SITE, site_id, "");
+    if (!site_name.empty()) {
+        return site_name;
+    }
+
+    if (has_component_name && !common_component_name.empty()) {
+        return common_component_name;
+    }
+
+    return fmt::format("site_{}_imu", site_id);
 }
 
 SceneState::NodeData MakeIMUSensorNode(const mjModel* model,
