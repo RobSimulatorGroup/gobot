@@ -48,6 +48,7 @@ def build_arg_parser() -> argparse.ArgumentParser:
     parser.add_argument("--seed", type=int, default=42)
     parser.add_argument("--sim-workers", type=int, default=0, help="CPU workers for batched physics stepping. 0 uses hardware concurrency; 1 keeps stepping serial.")
     parser.add_argument("--profile-step", action="store_true", help="Log rolling Go1 env step phase timings.")
+    parser.add_argument("--profile-memory", action="store_true", help="Print RSS/CUDA memory after each training iteration.")
     parser.add_argument("--no-step-extras", action="store_true", default=False, help="Disable per-step reward-term/log extras.")
     parser.add_argument("--task-runtime", choices=("numpy",), default="numpy", help="Go1 task runtime. The current path is CPU batch NumPy.")
     parser.add_argument("--policy-out", type=str, default="policies/go1_velocity.pt")
@@ -167,13 +168,20 @@ def run_training(args: argparse.Namespace) -> tuple[Path, Path]:
     print(f"Envs: {args.num_envs}")
     print(f"Log dir: {log_dir}")
 
+    if args.profile_memory:
+        _print_memory_profile("before_env", args.device)
     env = build_env(args, cfg)
     print(f"Obs actor/critic/actions: {env.num_obs}/{env.num_privileged_obs}/{env.num_actions}")
     print(f"Sim workers: requested={args.sim_workers} resolved={env.resolved_sim_workers}")
+    if args.profile_memory:
+        _print_memory_profile("after_env", args.device)
 
     train_cfg = build_train_cfg(args, cfg)
     video_recorder = build_video_recorder(args, env, log_dir, project_path)
     runner = build_runner(args, env, train_cfg, log_dir, video_recorder)
+    if args.profile_memory:
+        _install_runner_memory_profile(runner, device=args.device)
+        _print_memory_profile("after_runner", args.device)
     checkpoint = _resolve_checkpoint(args.checkpoint, log_dir) if args.checkpoint or args.resume else None
     if checkpoint is not None:
         infos = runner.load(str(checkpoint), map_location=args.device)
@@ -212,6 +220,8 @@ def run_training(args: argparse.Namespace) -> tuple[Path, Path]:
     finally:
         env.close()
         video_recorder.close()
+        if args.profile_memory:
+            _print_memory_profile("after_close", args.device)
 
 
 def parse_args(argv: Sequence[str] | None = None) -> argparse.Namespace:
@@ -274,6 +284,7 @@ def print_training_summary(
         ("rollout steps/env", train_cfg["num_steps_per_env"]),
         ("sim workers", f"requested={args.sim_workers}, resolved={env.resolved_sim_workers}"),
         ("task runtime", f"{task_runtime.get('backend', 'unknown')}:{task_runtime.get('mode', 'unknown')}"),
+        ("memory profile", "on" if args.profile_memory else "off"),
         ("log dir", log_dir),
         ("final checkpoint", final_path),
         ("editor policy", policy_path),
@@ -285,6 +296,82 @@ def print_training_summary(
     print("----------------")
     for name, value in rows:
         print(f"{name.ljust(width)} : {value}")
+
+
+def _process_rss_mb() -> float:
+    try:
+        with open("/proc/self/status", "r", encoding="utf-8") as status:
+            for line in status:
+                if line.startswith("VmRSS:"):
+                    return int(line.split()[1]) / 1024.0
+    except OSError:
+        return float("nan")
+    return float("nan")
+
+
+def _cuda_memory_stats(device: str) -> dict[str, float] | None:
+    torch_device = torch.device(device)
+    if torch_device.type != "cuda" or not torch.cuda.is_available():
+        return None
+    index = torch_device.index if torch_device.index is not None else torch.cuda.current_device()
+    try:
+        free_bytes, total_bytes = torch.cuda.mem_get_info(index)
+    except Exception:
+        free_bytes, total_bytes = 0, 0
+    return {
+        "allocated_mb": torch.cuda.memory_allocated(index) / 1024.0 / 1024.0,
+        "reserved_mb": torch.cuda.memory_reserved(index) / 1024.0 / 1024.0,
+        "free_mb": free_bytes / 1024.0 / 1024.0,
+        "total_mb": total_bytes / 1024.0 / 1024.0,
+    }
+
+
+def _synchronize_device(device: str) -> None:
+    torch_device = torch.device(device)
+    if torch_device.type != "cuda" or not torch.cuda.is_available():
+        return
+    try:
+        torch.cuda.synchronize(torch_device)
+    except Exception:
+        torch.cuda.synchronize()
+
+
+def _print_memory_profile(tag: str, device: str) -> None:
+    _synchronize_device(device)
+    parts = [f"tag={tag}", f"rss_mb={_process_rss_mb():.1f}"]
+    cuda_stats = _cuda_memory_stats(device)
+    if cuda_stats is not None:
+        parts.extend(
+            [
+                f"cuda_alloc_mb={cuda_stats['allocated_mb']:.1f}",
+                f"cuda_reserved_mb={cuda_stats['reserved_mb']:.1f}",
+                f"cuda_free_mb={cuda_stats['free_mb']:.1f}",
+                f"cuda_total_mb={cuda_stats['total_mb']:.1f}",
+            ]
+        )
+    print("[memory] " + " ".join(parts), flush=True)
+
+
+def _install_runner_memory_profile(runner: Go1OnPolicyRunner, *, device: str) -> None:
+    original_log = runner.logger.log
+    original_save = runner.save
+
+    def log_with_memory_profile(*args, **kwargs):
+        result = original_log(*args, **kwargs)
+        iteration = kwargs.get("it", args[0] if args else runner.current_learning_iteration)
+        _print_memory_profile(f"iteration_{int(iteration):06d}", device)
+        return result
+
+    def save_with_memory_profile(*args, **kwargs):
+        path = kwargs.get("path", args[0] if args else "")
+        path_name = Path(path).name if path else "unknown"
+        _print_memory_profile(f"before_save:{path_name}", device)
+        result = original_save(*args, **kwargs)
+        _print_memory_profile(f"after_save:{path_name}", device)
+        return result
+
+    runner.logger.log = log_with_memory_profile
+    runner.save = save_with_memory_profile
 
 
 if __name__ == "__main__":

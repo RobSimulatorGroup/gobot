@@ -124,6 +124,7 @@ class Go1TrainingVideoRecorder:
         return video_path
 
     def close(self) -> None:
+        self._node_cache.clear()
         if self._eval_env is not None:
             self._eval_env.close()
             self._eval_env = None
@@ -133,7 +134,6 @@ class Go1TrainingVideoRecorder:
         shutdown_capture = getattr(gobot.render, "_shutdown_headless_render_context", None)
         if shutdown_capture is not None:
             shutdown_capture()
-        self._node_cache.clear()
 
     def _ensure_eval_env(self) -> Go1VelocityEnv | None:
         if self._eval_env is not None:
