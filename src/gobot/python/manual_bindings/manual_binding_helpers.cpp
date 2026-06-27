@@ -353,6 +353,7 @@ void CopyMJCFDynamicProperties(Node* target, const Node* source) {
         if (source_joint != nullptr) {
             target_joint->SetJointPosition(source_joint->GetJointPosition());
             target_joint->SetInitialPosition(source_joint->GetInitialPosition());
+            target_joint->SetDamping(source_joint->GetDamping());
             target_joint->SetDriveMode(source_joint->GetDriveMode());
             target_joint->SetDriveStiffness(source_joint->GetDriveStiffness());
             target_joint->SetDriveDamping(source_joint->GetDriveDamping());

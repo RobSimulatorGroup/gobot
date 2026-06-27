@@ -37,10 +37,10 @@ LEG_ORDER = ("FR", "FL", "RR", "RL")
 JOINT_KIND_ORDER = ("hip", "thigh", "calf")
 JOINT_NAMES = [f"{leg}_{kind}_joint" for leg in LEG_ORDER for kind in JOINT_KIND_ORDER]
 DEFAULT_POS_BY_LEG = {
-    "FR": (0.1, 0.9, -1.8),
-    "FL": (-0.1, 0.9, -1.8),
-    "RR": (0.1, 0.9, -1.8),
-    "RL": (-0.1, 0.9, -1.8),
+    "FR": (0.0, 0.9, -1.8),
+    "FL": (0.0, 0.9, -1.8),
+    "RR": (0.0, 1.0, -1.8),
+    "RL": (0.0, 1.0, -1.8),
 }
 DEFAULT_POS = [
     DEFAULT_POS_BY_LEG[leg][kind_index]

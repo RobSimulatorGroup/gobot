@@ -1,3 +1,4 @@
+import json
 from pathlib import Path
 import sys
 
@@ -68,6 +69,17 @@ def _assert_runtime_error(pattern: str, fn) -> None:
         assert pattern in str(error)
         return
     raise AssertionError("expected RuntimeError")
+
+
+def _matrix_storage(value):
+    return tuple(value["matrix_data"]["storage"])
+
+
+def _node_by_name(nodes, name: str, type_name: str | None = None):
+    for node in nodes:
+        if node["name"] == name and (type_name is None or node["type"] == type_name):
+            return node
+    raise AssertionError(f"missing node {name!r}")
 
 
 def test_batch_env_state_contract():
@@ -155,15 +167,38 @@ def test_go1_unilab_cfg_profiles_and_playback_schemas():
     assert cfg.command.ranges.ang_vel_z == (-1.0, 1.0)
     assert cfg.domain_randomization.enabled
     assert cfg.domain_randomization.randomize_base_mass
+    assert cfg.domain_randomization.added_mass_range == (-1.0, 3.0)
     assert cfg.domain_randomization.random_com
     assert cfg.domain_randomization.randomize_kp
+    assert cfg.domain_randomization.kp_multiplier_range == (0.5, 2.0)
     assert cfg.domain_randomization.randomize_kd
+    assert cfg.domain_randomization.kd_multiplier_range == (0.5, 2.0)
+    assert cfg.domain_randomization.encoder_bias_range == (0.0, 0.0)
     assert cfg.push_enabled
-    assert cfg.push_interval_steps == 750
+    assert cfg.push_interval_steps == 625
     assert cfg.terrain_out_of_bounds
     assert cfg.unilab_rewards.scales["feet_gait"] == 0.5
     assert cfg.unilab_rewards.scales["tracking_lin_vel"] == 3.0
-    assert np.allclose(np.asarray(cfg.default_joint_pos, dtype=np.float32)[[0, 3, 6, 9]], [0.1, -0.1, 0.1, -0.1])
+    np.testing.assert_allclose(
+        np.asarray(cfg.default_joint_pos, dtype=np.float32),
+        np.asarray(
+            [
+                0.0,
+                0.9,
+                -1.8,
+                0.0,
+                0.9,
+                -1.8,
+                0.0,
+                1.0,
+                -1.8,
+                0.0,
+                1.0,
+                -1.8,
+            ],
+            dtype=np.float32,
+        ),
+    )
 
     actor_schema = velocity_actor_observation_schema(len(cfg.joint_names), go1_playback.TERRAIN_SCAN_DIM)
     critic_schema = velocity_critic_observation_schema(len(cfg.joint_names), go1_playback.TERRAIN_SCAN_DIM, len(cfg.foot_names))
@@ -206,6 +241,59 @@ def test_go1_unilab_cfg_profiles_and_playback_schemas():
     assert not flat.domain_randomization.randomize_kd
     assert flat.push_enabled
     assert flat.unilab_rewards.scales["base_height"] == -100.0
+
+
+def test_go1_robot_scene_matches_unilab_mujoco_contract():
+    scene = json.loads((REPO_ROOT / "examples/go1/go1.jscn").read_text(encoding="utf-8"))
+    nodes = scene["__NODES__"]
+
+    hip_joint = _node_by_name(nodes, "FR_hip_joint", "Joint3D")["properties"]
+    assert hip_joint["damping"] == 1.0
+    assert hip_joint["drive_mode"] == "Position"
+    assert hip_joint["drive_stiffness"] == 100.0
+    assert hip_joint["force_lower_limit"] == np.float32(-23.7)
+    assert hip_joint["force_upper_limit"] == np.float32(23.7)
+    assert hip_joint["control_lower_limit"] == np.float32(-0.863)
+    assert hip_joint["control_upper_limit"] == np.float32(0.863)
+
+    thigh_joint = _node_by_name(nodes, "FR_thigh_joint", "Joint3D")["properties"]
+    calf_joint = _node_by_name(nodes, "FR_calf_joint", "Joint3D")["properties"]
+    assert thigh_joint["damping"] == 2.0
+    assert thigh_joint["drive_stiffness"] == 100.0
+    assert thigh_joint["force_lower_limit"] == np.float32(-23.7)
+    assert thigh_joint["force_upper_limit"] == np.float32(23.7)
+    assert calf_joint["damping"] == 2.0
+    assert calf_joint["drive_stiffness"] == 100.0
+    assert calf_joint["force_lower_limit"] == np.float32(-35.55)
+    assert calf_joint["force_upper_limit"] == np.float32(35.55)
+
+    node_names = {node["name"] for node in nodes}
+    assert {"base1", "base2", "base3", "FR_hip_geom", "FR_thigh_geom", "FR_calf_geom1", "FR"} <= node_names
+
+    base_collision = _node_by_name(nodes, "base1", "CollisionShape3D")["properties"]
+    assert _matrix_storage(base_collision["friction"]) == (0.0, 0.0, 0.0)
+    assert base_collision["condim"] == 1
+    assert base_collision["margin"] == np.float32(0.001)
+
+    foot_collision = _node_by_name(nodes, "FR", "CollisionShape3D")["properties"]
+    np.testing.assert_allclose(_matrix_storage(foot_collision["friction"]), (0.8, 0.02, 0.01))
+    assert foot_collision["condim"] == 6
+    np.testing.assert_allclose(foot_collision["solimp"][:3], (0.015, 1.0, 0.023))
+    assert foot_collision["margin"] == np.float32(0.005)
+
+    trunk_index = nodes.index(_node_by_name(nodes, "trunk", "Link3D"))
+    assert _node_by_name(nodes, "imu", "IMUSensor3D")["parent"] == trunk_index
+    assert _node_by_name(nodes, "root_angmom", "AngularMomentumSensor3D")["parent"] == trunk_index
+    terrain_scan = _node_by_name(nodes, "terrain_scan", "HeightScanner3D")["properties"]
+    assert terrain_scan["pattern_mode"] == "Grid"
+    assert terrain_scan["reduction_mode"] == "None"
+    for foot in ("FR", "FL", "RR", "RL"):
+        assert _node_by_name(nodes, f"{foot}_foot_height_scan", "TerrainHeightSensor3D")["properties"][
+            "reduction_mode"
+        ] == "Min"
+        assert _node_by_name(nodes, f"{foot}_foot_contact", "ContactSensor3D")["properties"]["radius"] == np.float32(
+            0.03
+        )
 
 
 def test_go1_benchmark_uses_unilab_env_step_accounting():

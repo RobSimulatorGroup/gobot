@@ -35,17 +35,17 @@ GO1_JOINT_NAMES: tuple[str, ...] = (
 
 GO1_DEFAULT_JOINT_POS = np.array(
     [
-        0.1,
+        0.0,
         0.9,
         -1.8,
-        -0.1,
+        0.0,
         0.9,
         -1.8,
-        0.1,
-        0.9,
+        0.0,
+        1.0,
         -1.8,
-        -0.1,
-        0.9,
+        0.0,
+        1.0,
         -1.8,
     ],
     dtype=np.float32,
@@ -343,11 +343,15 @@ def go1_rough_velocity_cfg(
     cfg.terrain_out_of_bounds = True
     cfg.domain_randomization.enabled = True
     cfg.domain_randomization.randomize_base_mass = True
+    cfg.domain_randomization.added_mass_range = (-1.0, 3.0)
     cfg.domain_randomization.random_com = True
     cfg.domain_randomization.randomize_kp = True
+    cfg.domain_randomization.kp_multiplier_range = (0.5, 2.0)
     cfg.domain_randomization.randomize_kd = True
+    cfg.domain_randomization.kd_multiplier_range = (0.5, 2.0)
+    cfg.domain_randomization.encoder_bias_range = (0.0, 0.0)
     cfg.push_enabled = True
-    cfg.push_interval_steps = 750
+    cfg.push_interval_steps = 625
     cfg.command = UniformVelocityCommandCfg(
         resampling_time_range=(10.0, 10.0),
         rel_standing_envs=0.1,

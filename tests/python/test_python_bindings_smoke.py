@@ -387,6 +387,10 @@ def main():
                         <body name="base" pos="0 0 0.2">
                           <freejoint name="floating_base_joint"/>
                           <geom name="base_collision" type="box" size="0.1 0.1 0.1"/>
+                          <body name="arm" pos="0 0 0.2">
+                            <joint name="hinge" type="hinge" axis="0 1 0"/>
+                            <geom name="arm_collision" type="box" size="0.05 0.05 0.05"/>
+                          </body>
                         </body>
                       </worldbody>
                     </mujoco>
@@ -398,6 +402,9 @@ def main():
                 textwrap.dedent(
                     """
                     <mujoco model="test_world">
+                      <default>
+                        <joint damping="3"/>
+                      </default>
                       <include file="robot.xml"/>
                       <worldbody>
                         <geom name="ground" type="plane" size="5 5 0.1" rgba="0.8 0.8 0.8 1"/>
@@ -436,6 +443,9 @@ def main():
         assert robot_scene["__NODES__"][0]["name"] == "test_bot"
         assert robot_scene["__NODES__"][0]["type"] == "Robot3D"
         assert robot_scene["__NODES__"][0]["properties"]["source_path"] == "res://robot.xml"
+        hinge_nodes = [node for node in robot_scene["__NODES__"] if node["name"] == "hinge"]
+        assert len(hinge_nodes) == 1
+        assert hinge_nodes[0]["properties"]["damping"] == 3.0
 
 
 if __name__ == "__main__":

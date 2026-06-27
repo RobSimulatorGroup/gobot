@@ -2,8 +2,9 @@
 
 This example keeps the robot project self-contained:
 
-- `assets/xml/go1.xml` is the MJCF robot asset used for import.
-- `assets/xml/go1_scene.xml` is the MJCF scene that includes `go1.xml`.
+- `assets/xml/go1.xml` is the UniLab-aligned MJCF robot asset used for import.
+- `assets/xml/locomotion_task.xml` is the UniLab Go1 locomotion fragment used as the task reference.
+- `assets/xml/go1_scene.xml` is a flat MJCF reference scene that includes `go1.xml` and `locomotion_task.xml`.
 - `go1.jscn` is the Gobot robot scene imported from `go1.xml`.
 - `go1_scene.jscn` is the Gobot scene that references `go1.jscn`.
 - `train/go1_velocity_train.py` trains the Go1-owned velocity task into `policies/`.
@@ -15,19 +16,18 @@ This example keeps the robot project self-contained:
 - `tools/export_policy_onnx.py` converts `policies/go1.pt` to `policies/go1.onnx`.
 - `project.gobot` sets `go1_scene.jscn` as the project main scene.
 
-Regenerate the Gobot scene after editing the MJCF:
+Regenerate the Gobot robot asset after editing the MJCF:
 
-```python
-import gobot
-
-gobot.set_project_path("/home/wqq/gobot/examples/go1")
-gobot.import_mjcf_scene(
-    "res://assets/xml/go1_scene.xml",
-    "res://go1_scene.jscn",
-    name="go1_scene",
-    script="res://scripts/go1.py",
-)
+```bash
+cd /home/wqq/gobot
+PYTHONNOUSERSITE=1 PYTHONPATH=/home/wqq/gobot/build/python \
+  /home/wqq/gobot/.venv/bin/python3 examples/go1/tools/refresh_go1_robot_scene.py
 ```
+
+This refreshes `go1.jscn` from `assets/xml/go1.xml` and restores the
+Gobot-authored runtime sensors used by training. Do not regenerate
+`go1_scene.jscn` from `go1_scene.xml` for training; the training world keeps
+the Gobot `.jscn` terrain instance as the source of truth.
 
 Train from the Go1 project root:
 
@@ -98,13 +98,15 @@ as a raw MuJoCo state-array stepping baseline but is not the persistent
 `BatchEnvPool` implementation.
 
 The default Go1 rough/flat tasks use UniLab-compatible observation dimensions,
-reward names/scales, command ranges, PD gains, action scale/clip, and reset
-randomization while still loading the Gobot `.jscn` scene as the source of
-truth. Gobot-specific encoder-bias randomization, terrain curriculum, and
-velocity pushes are not enabled by default for these UniLab profiles; matching
-UniLab's base-mass/COM/KP-KD/xfrc randomization requires additional native
-MuJoCo batch hooks. CUDA is used by default when PyTorch reports it as
-available; pass `--device cpu` only when you explicitly want CPU PPO.
+reward names/scales, command ranges, PD gains, action scale/clip, reset
+randomization, and MJCF robot dynamics/collision parameters while still loading
+the Gobot `.jscn` scene as the source of truth. The rough task uses a 6x6
+random rough terrain generated with the same seed, patch size, border, and
+terrain proportions as UniLab's Go1 rough PPO config. Gobot-specific
+encoder-bias randomization is disabled for these UniLab profiles; native
+per-env model-pool randomization handles base mass, COM offset, KP/KD
+multipliers, and push forces. CUDA is used by default when PyTorch reports it
+as available; pass `--device cpu` only when you explicitly want CPU PPO.
 
 Resume from the latest checkpoint in the log directory:
 

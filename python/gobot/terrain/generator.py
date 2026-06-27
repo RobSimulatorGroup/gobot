@@ -43,6 +43,7 @@ _MUJOCO_BLUE: Color4 = (0.25, 0.35, 0.55, 1.0)
 _MUJOCO_RED: Color4 = (0.65, 0.28, 0.22, 1.0)
 _MUJOCO_GREEN: Color4 = (0.34, 0.52, 0.36, 1.0)
 _PLATFORM_COLOR: Color4 = (0.44, 0.46, 0.42, 1.0)
+_UNILAB_VERTICAL_SCALE = 0.005
 
 
 @dataclass(slots=True)
@@ -72,6 +73,7 @@ class TerrainGeneratorCfg:
     height_high_color: Color4 = (0.62, 0.44, 0.25, 1.0)
     height_range_min: float = 0.0
     height_range_max: float = 0.0
+    merged_heightfield: bool = False
 
 
 def darken_rgba(color: Color4, amount: float = 0.72) -> Color4:
@@ -414,68 +416,68 @@ def radial_pit(
 
 
 def go1_training_terrains() -> dict[str, SubTerrainCfg]:
-    """Go1 rough terrain presets mirroring mjlab ``ROUGH_TERRAINS_CFG``."""
+    """UniLab Go1 rough terrain presets used by the PPO training profile."""
 
     return {
-        "flat": flat(proportion=0.2),
+        "flat": flat(proportion=0.0),
         "pyramid_stairs": pyramid_stairs(
-            proportion=0.2,
-            step_height_range=(0.0, 0.1),
-            step_width=0.30,
+            proportion=0.1,
+            step_height_range=(0.025, 0.10),
+            step_width=0.40,
             platform_width=3.0,
-            border_width=1.0,
+            border_width=0.2,
         ),
         "pyramid_stairs_inv": pyramid_stairs_inv(
-            proportion=0.2,
-            step_height_range=(0.0, 0.1),
-            step_width=0.30,
+            proportion=0.1,
+            step_height_range=(0.025, 0.10),
+            step_width=0.40,
             platform_width=3.0,
-            border_width=1.0,
+            border_width=0.2,
         ),
         "hf_pyramid_slope": hf_pyramid_slope(
-            proportion=0.1,
-            slope_range=(0.0, 1.0),
+            proportion=0.2,
+            slope_range=(0.0, 0.3),
             platform_width=2.0,
-            border_width=0.25,
+            border_width=0.2,
         ),
         "hf_pyramid_slope_inv": hf_pyramid_slope_inv(
-            proportion=0.1,
-            slope_range=(0.0, 1.0),
+            proportion=0.2,
+            slope_range=(0.0, 0.3),
             platform_width=2.0,
-            border_width=0.25,
+            border_width=0.2,
         ),
         "random_rough": random_rough(
-            proportion=0.1,
-            noise_range=(0.02, 0.10),
-            noise_step=0.02,
+            proportion=0.3,
+            noise_range=(0.01, 0.06),
+            noise_step=0.01,
             downsampled_scale=None,
-            border_width=0.25,
+            border_width=0.2,
             scale_by_difficulty=False,
         ),
         "wave_terrain": wave_terrain(
-            proportion=0.1,
-            amplitude_range=(0.0, 0.2),
+            proportion=0.3,
+            amplitude_range=(0.0, 0.12),
             num_waves=4.0,
-            border_width=0.25,
+            border_width=0.2,
         ),
     }
 
 
-def go1_rough_terrain_cfg(*, seed: int = 11, curriculum: bool = True) -> TerrainGeneratorCfg:
-    """Go1 rough terrain grid aligned with the mjlab velocity task."""
+def go1_rough_terrain_cfg(*, seed: int = 42, curriculum: bool = False) -> TerrainGeneratorCfg:
+    """Go1 rough terrain grid aligned with UniLab's Go1 PPO MuJoCo profile."""
 
     return TerrainGeneratorCfg(
         size=(8.0, 8.0),
         border_width=20.0,
-        num_rows=10,
-        num_cols=20,
+        num_rows=6,
+        num_cols=6,
         seed=seed,
         curriculum=curriculum,
-        origin_row=5,
-        origin_sub_terrain="flat",
         sub_terrains=go1_training_terrains(),
-        horizontal_scale=0.1,
+        horizontal_scale=0.2,
+        base_thickness=0.05,
         color_mode=_core.TerrainColorMode.Palette,
+        merged_heightfield=True,
     )
 
 
@@ -505,6 +507,10 @@ def create_terrain_node(cfg: TerrainGeneratorCfg, name: str = "terrain") -> _cor
     terrain.height_high_color = cfg.height_high_color
     terrain.height_range_min = cfg.height_range_min
     terrain.height_range_max = cfg.height_range_max
+    if cfg.merged_heightfield:
+        _populate_merged_heightfield_terrain(terrain, cfg)
+        return terrain
+
     terrains = cfg.sub_terrains or {"flat": flat()}
     choices = _normalized_choices(terrains)
     curriculum_items = list(terrains.items()) or [("flat", flat())]
@@ -553,6 +559,70 @@ def create_terrain_node(cfg: TerrainGeneratorCfg, name: str = "terrain") -> _cor
     return terrain
 
 
+def _populate_merged_heightfield_terrain(terrain: _core.Terrain3D, cfg: TerrainGeneratorCfg) -> None:
+    terrains = cfg.sub_terrains or {"flat": flat()}
+    rng = np.random.default_rng(cfg.seed)
+    sub_terrain_items = list(terrains.items())
+    sub_terrain_cfgs = [item[1] for item in sub_terrain_items]
+    proportions = np.asarray([max(float(sub_cfg.proportion), 0.0) for sub_cfg in sub_terrain_cfgs], dtype=np.float64)
+    if not np.any(proportions > 0.0):
+        proportions[:] = 1.0
+    proportions /= np.sum(proportions)
+
+    tile_x_px = int(round(cfg.size[0] / cfg.horizontal_scale))
+    tile_y_px = int(round(cfg.size[1] / cfg.horizontal_scale))
+    border_px = int(round(cfg.border_width / cfg.horizontal_scale))
+    num_cols = len(sub_terrain_cfgs) if cfg.curriculum else max(cfg.num_cols, 0)
+    rows_y = num_cols * tile_y_px + 2 * border_px
+    cols_x = max(cfg.num_rows, 0) * tile_x_px + 2 * border_px
+    if rows_y < 2 or cols_x < 2:
+        terrain.spawn_origins = []
+        return
+
+    heights_yx = np.zeros((rows_y, cols_x), dtype=np.float64)
+    spawn_origins: list[Vector3] = []
+    curriculum_choices = [item[1] for item in sub_terrain_items]
+    for row in range(max(cfg.num_rows, 0)):
+        for col in range(num_cols):
+            lower, upper = cfg.difficulty_range
+            if cfg.curriculum:
+                difficulty = (row + float(rng.uniform())) / max(cfg.num_rows, 1)
+                difficulty = float(lower) + (float(upper) - float(lower)) * difficulty
+                sub_cfg = curriculum_choices[col % len(curriculum_choices)]
+            else:
+                difficulty = float(rng.uniform(float(lower), float(upper)))
+                sub_cfg = sub_terrain_cfgs[int(rng.choice(len(sub_terrain_cfgs), p=proportions))]
+
+            heights_xy, origin_local = _unilab_patch_heightfield(cfg, sub_cfg, difficulty, rng)
+            if heights_xy.shape != (tile_x_px, tile_y_px):
+                raise ValueError(
+                    "merged terrain patch shape does not match TerrainGeneratorCfg.size: "
+                    f"{heights_xy.shape} != {(tile_x_px, tile_y_px)}"
+                )
+            x0 = border_px + row * tile_x_px
+            y0 = border_px + (num_cols - 1 - col) * tile_y_px
+            heights_yx[y0 : y0 + tile_y_px, x0 : x0 + tile_x_px] = heights_xy.T
+            world_position = _unilab_sub_terrain_position(cfg, row, col, num_cols)
+            spawn = origin_local + world_position
+            spawn_origins.append((float(spawn[0]), float(spawn[1]), float(spawn[2])))
+
+    z_min = float(np.min(heights_yx))
+    physical_heights = heights_yx - z_min
+    center = (0.0, 0.0, z_min)
+    size = (cols_x * cfg.horizontal_scale, rows_y * cfg.horizontal_scale)
+    terrain.add_heightfield(
+        center,
+        size,
+        rows_y,
+        cols_x,
+        physical_heights.astype(float).reshape(-1).tolist(),
+        cfg.base_thickness,
+        _normalize_elevation(heights_yx).astype(float).reshape(-1).tolist(),
+        0.0,
+    )
+    terrain.spawn_origins = spawn_origins
+
+
 def _ordered_curriculum_choices(
     items: list[tuple[str, SubTerrainCfg]],
     cfg: TerrainGeneratorCfg,
@@ -577,7 +647,9 @@ def _ordered_curriculum_choices(
 def _normalized_choices(sub_terrains: dict[str, SubTerrainCfg]) -> list[SubTerrainCfg]:
     weighted: list[SubTerrainCfg] = []
     for cfg in sub_terrains.values():
-        weighted.extend([cfg] * max(1, int(round(max(cfg.proportion, 0.0) * 100.0))))
+        count = int(round(max(cfg.proportion, 0.0) * 100.0))
+        if count > 0:
+            weighted.extend([cfg] * count)
     return weighted or [flat()]
 
 
@@ -642,6 +714,212 @@ def _add_radial_heightfield(
     if inverted:
         heights = -heights
     return _add_heightfield_surface(terrain, cfg, center, heights)
+
+
+def _unilab_patch_heightfield(
+    cfg: TerrainGeneratorCfg,
+    sub_cfg: SubTerrainCfg,
+    difficulty: float,
+    rng: np.random.Generator,
+) -> tuple[np.ndarray, np.ndarray]:
+    if sub_cfg.kind == "flat":
+        width_px, length_px = _unilab_patch_shape(cfg)
+        return np.zeros((width_px, length_px), dtype=np.float64), np.asarray(
+            [cfg.size[0] * 0.5, cfg.size[1] * 0.5, 0.0],
+            dtype=np.float64,
+        )
+    if sub_cfg.kind == "pyramid_stairs":
+        return _unilab_pyramid_stairs_heightfield(cfg, sub_cfg, difficulty)
+    if sub_cfg.kind == "hf_pyramid_slope":
+        return _unilab_pyramid_slope_heightfield(cfg, sub_cfg, difficulty)
+    if sub_cfg.kind == "random_rough":
+        return _unilab_random_rough_heightfield(cfg, sub_cfg, rng)
+    if sub_cfg.kind == "wave":
+        return _unilab_wave_heightfield(cfg, sub_cfg, difficulty)
+    return np.zeros(_unilab_patch_shape(cfg), dtype=np.float64), np.asarray(
+        [cfg.size[0] * 0.5, cfg.size[1] * 0.5, 0.0],
+        dtype=np.float64,
+    )
+
+
+def _unilab_patch_shape(cfg: TerrainGeneratorCfg) -> tuple[int, int]:
+    return (
+        max(2, int(round(cfg.size[0] / cfg.horizontal_scale))),
+        max(2, int(round(cfg.size[1] / cfg.horizontal_scale))),
+    )
+
+
+def _unilab_sub_terrain_position(
+    cfg: TerrainGeneratorCfg,
+    row: int,
+    col: int,
+    num_cols: int,
+) -> np.ndarray:
+    return np.asarray(
+        [
+            -cfg.num_rows * cfg.size[0] * 0.5 + row * cfg.size[0],
+            -num_cols * cfg.size[1] * 0.5 + col * cfg.size[1],
+            0.0,
+        ],
+        dtype=np.float64,
+    )
+
+
+def _unilab_noise_to_physical(
+    noise: np.ndarray,
+    *,
+    z_offset: float = 0.0,
+) -> np.ndarray:
+    return (noise.astype(np.float64) - int(np.min(noise))) * _UNILAB_VERTICAL_SCALE + float(z_offset)
+
+
+def _unilab_pyramid_stairs_heightfield(
+    cfg: TerrainGeneratorCfg,
+    sub_cfg: SubTerrainCfg,
+    difficulty: float,
+) -> tuple[np.ndarray, np.ndarray]:
+    step_height = _difficulty_value(sub_cfg.kwargs, "step_height", "step_height_range", difficulty, 0.08)
+    width_px, length_px = _unilab_patch_shape(cfg)
+    step_px = int(round(float(sub_cfg.kwargs.get("step_width", 0.4)) / cfg.horizontal_scale))
+    platform_px = int(round(float(sub_cfg.kwargs.get("platform_width", 3.0)) / cfg.horizontal_scale))
+    border_px = int(round(float(sub_cfg.kwargs.get("border_width", 0.0)) / cfg.horizontal_scale))
+    step_units = int(round(step_height / _UNILAB_VERTICAL_SCALE))
+    noise = np.zeros((width_px, length_px), dtype=np.int16)
+    inner = min(width_px, length_px) - 2 * border_px
+    n_steps = max(0, (inner - platform_px) // (2 * step_px)) if step_px > 0 else 0
+    inverted = bool(sub_cfg.kwargs.get("inverted", False))
+    sign = -1 if inverted else 1
+
+    for step in range(n_steps):
+        lo_x = border_px + step * step_px
+        hi_x = width_px - border_px - step * step_px
+        lo_y = border_px + step * step_px
+        hi_y = length_px - border_px - step * step_px
+        noise[lo_x:hi_x, lo_y:hi_y] = sign * (step + 1) * step_units
+
+    plat_lo_x = border_px + n_steps * step_px
+    plat_hi_x = width_px - border_px - n_steps * step_px
+    plat_lo_y = border_px + n_steps * step_px
+    plat_hi_y = length_px - border_px - n_steps * step_px
+    noise[plat_lo_x:plat_hi_x, plat_lo_y:plat_hi_y] = sign * (n_steps + 1) * step_units
+
+    z_offset = -float(np.max(noise) - np.min(noise)) * _UNILAB_VERTICAL_SCALE if inverted else 0.0
+    spawn_z = sign * (n_steps + 1) * step_units * _UNILAB_VERTICAL_SCALE
+    origin = np.asarray([cfg.size[0] * 0.5, cfg.size[1] * 0.5, spawn_z], dtype=np.float64)
+    return _unilab_noise_to_physical(noise, z_offset=z_offset), origin
+
+
+def _unilab_pyramid_slope_heightfield(
+    cfg: TerrainGeneratorCfg,
+    sub_cfg: SubTerrainCfg,
+    difficulty: float,
+) -> tuple[np.ndarray, np.ndarray]:
+    inverted = bool(sub_cfg.kwargs.get("inverted", False))
+    slope = _difficulty_value(sub_cfg.kwargs, "slope", "slope_range", difficulty, 0.35)
+    if inverted:
+        slope = -slope
+
+    width_px, length_px = _unilab_patch_shape(cfg)
+    border_px = int(float(sub_cfg.kwargs.get("border_width", 0.0)) / cfg.horizontal_scale)
+    inner_width_px = width_px - 2 * border_px
+    inner_length_px = length_px - 2 * border_px
+    noise = np.zeros((width_px, length_px), dtype=np.int16)
+
+    target_width_px = inner_width_px if border_px > 0 else width_px
+    target_length_px = inner_length_px if border_px > 0 else length_px
+    height_max = int(slope * (target_width_px * cfg.horizontal_scale) * 0.5 / _UNILAB_VERTICAL_SCALE)
+    center_x = int(target_width_px * 0.5)
+    center_y = int(target_length_px * 0.5)
+    x = np.arange(0, target_width_px)
+    y = np.arange(0, target_length_px)
+    xx, yy = np.meshgrid(x, y, sparse=True)
+    xx = ((center_x - np.abs(center_x - xx)) / max(center_x, 1)).reshape(target_width_px, 1)
+    yy = ((center_y - np.abs(center_y - yy)) / max(center_y, 1)).reshape(1, target_length_px)
+    hf_raw = height_max * xx * yy
+
+    platform_px = int(float(sub_cfg.kwargs.get("platform_width", 2.0)) / cfg.horizontal_scale / 2)
+    x_pf = target_width_px // 2 - platform_px
+    y_pf = target_length_px // 2 - platform_px
+    z_pf = hf_raw[x_pf, y_pf] if x_pf >= 0 and y_pf >= 0 else 0
+    hf_raw = np.clip(hf_raw, min(0, z_pf), max(0, z_pf))
+    if border_px > 0:
+        noise[border_px : width_px - border_px, border_px : length_px - border_px] = np.rint(hf_raw).astype(np.int16)
+    else:
+        noise = np.rint(hf_raw).astype(np.int16)
+
+    max_h = float(np.max(noise) - np.min(noise)) * _UNILAB_VERTICAL_SCALE
+    z_offset = -max_h if inverted else 0.0
+    spawn_height = z_offset if inverted else max_h
+    origin = np.asarray([cfg.size[0] * 0.5, cfg.size[1] * 0.5, spawn_height], dtype=np.float64)
+    return _unilab_noise_to_physical(noise, z_offset=z_offset), origin
+
+
+def _unilab_random_rough_heightfield(
+    cfg: TerrainGeneratorCfg,
+    sub_cfg: SubTerrainCfg,
+    rng: np.random.Generator,
+) -> tuple[np.ndarray, np.ndarray]:
+    width_px, length_px = _unilab_patch_shape(cfg)
+    border_px = int(float(sub_cfg.kwargs.get("border_width", 0.0)) / cfg.horizontal_scale)
+    noise = np.zeros((width_px, length_px), dtype=np.int16)
+    downsampled_scale = sub_cfg.kwargs.get("downsampled_scale")
+    if downsampled_scale is None:
+        scale = cfg.horizontal_scale
+    else:
+        scale = max(float(downsampled_scale), cfg.horizontal_scale)
+
+    target_width_px = width_px - 2 * border_px if border_px > 0 else width_px
+    target_length_px = length_px - 2 * border_px if border_px > 0 else length_px
+    target_size = (target_width_px * cfg.horizontal_scale, target_length_px * cfg.horizontal_scale)
+    width_downsampled = max(2, int(target_size[0] / scale))
+    length_downsampled = max(2, int(target_size[1] / scale))
+    height_min = int(float(sub_cfg.kwargs.get("noise_min", -0.05)) / _UNILAB_VERTICAL_SCALE)
+    height_max = int(float(sub_cfg.kwargs.get("noise_max", 0.05)) / _UNILAB_VERTICAL_SCALE)
+    height_step = max(1, int(float(sub_cfg.kwargs.get("noise_step", 0.01)) / _UNILAB_VERTICAL_SCALE))
+    height_range = np.arange(height_min, height_max + height_step, height_step)
+    downsampled = rng.choice(height_range, size=(width_downsampled, length_downsampled))
+    upsampled = _bilinear_resample_grid(
+        np.linspace(0.0, target_size[0], width_downsampled),
+        np.linspace(0.0, target_size[1], length_downsampled),
+        downsampled.astype(np.float64),
+        np.linspace(0.0, target_size[0], target_width_px),
+        np.linspace(0.0, target_size[1], target_length_px),
+    )
+    if border_px > 0:
+        noise[border_px : width_px - border_px, border_px : length_px - border_px] = np.rint(upsampled).astype(np.int16)
+    else:
+        noise = np.rint(upsampled).astype(np.int16)
+    spawn_height = (float(sub_cfg.kwargs.get("noise_min", -0.05)) + float(sub_cfg.kwargs.get("noise_max", 0.05))) * 0.5
+    origin = np.asarray([cfg.size[0] * 0.5, cfg.size[1] * 0.5, spawn_height], dtype=np.float64)
+    return _unilab_noise_to_physical(noise), origin
+
+
+def _unilab_wave_heightfield(
+    cfg: TerrainGeneratorCfg,
+    sub_cfg: SubTerrainCfg,
+    difficulty: float,
+) -> tuple[np.ndarray, np.ndarray]:
+    width_px, length_px = _unilab_patch_shape(cfg)
+    border_px = int(float(sub_cfg.kwargs.get("border_width", 0.0)) / cfg.horizontal_scale)
+    target_width_px = width_px - 2 * border_px if border_px > 0 else width_px
+    target_length_px = length_px - 2 * border_px if border_px > 0 else length_px
+    amplitude = _difficulty_value(sub_cfg.kwargs, "amplitude", "amplitude_range", difficulty, 0.08)
+    amplitude_units = int(0.5 * amplitude / _UNILAB_VERTICAL_SCALE)
+    num_waves = max(float(sub_cfg.kwargs.get("num_waves", 1.0)), 1.0e-6)
+    wave_length = target_length_px / num_waves
+    wave_number = 2.0 * np.pi / max(wave_length, 1.0e-6)
+    x = np.arange(0, target_width_px)
+    y = np.arange(0, target_length_px)
+    xx, yy = np.meshgrid(x, y, sparse=True)
+    hf_raw = amplitude_units * (np.cos(yy.reshape(1, target_length_px) * wave_number) + np.sin(xx.reshape(target_width_px, 1) * wave_number))
+    noise = np.zeros((width_px, length_px), dtype=np.int16)
+    if border_px > 0:
+        noise[border_px : width_px - border_px, border_px : length_px - border_px] = np.rint(hf_raw).astype(np.int16)
+    else:
+        noise = np.rint(hf_raw).astype(np.int16)
+    max_h = float(np.max(noise) - np.min(noise)) * _UNILAB_VERTICAL_SCALE
+    origin = np.asarray([cfg.size[0] * 0.5, cfg.size[1] * 0.5, 0.0], dtype=np.float64)
+    return _unilab_noise_to_physical(noise, z_offset=-max_h * 0.5), origin
 
 
 def _add_heightfield_surface(terrain: _core.Terrain3D, cfg: TerrainGeneratorCfg, center: Vector3, heights: np.ndarray) -> float:
@@ -1126,6 +1404,26 @@ def _resize_bilinear(values: np.ndarray, rows: int, cols: int) -> np.ndarray:
     top = values[y0[:, None], x0[None, :]] * (1.0 - wx) + values[y0[:, None], x1[None, :]] * wx
     bottom = values[y1[:, None], x0[None, :]] * (1.0 - wx) + values[y1[:, None], x1[None, :]] * wx
     return top * (1.0 - wy) + bottom * wy
+
+
+def _bilinear_resample_grid(
+    x: np.ndarray,
+    y: np.ndarray,
+    z: np.ndarray,
+    x_new: np.ndarray,
+    y_new: np.ndarray,
+) -> np.ndarray:
+    z = np.asarray(z, dtype=np.float64)
+    nx, ny = z.shape
+    ix = np.clip(np.searchsorted(x, x_new) - 1, 0, nx - 2)
+    iy = np.clip(np.searchsorted(y, y_new) - 1, 0, ny - 2)
+    wx = ((x_new - x[ix]) / (x[ix + 1] - x[ix])).reshape(-1, 1)
+    wy = ((y_new - y[iy]) / (y[iy + 1] - y[iy])).reshape(1, -1)
+    z00 = z[ix[:, None], iy[None, :]]
+    z01 = z[ix[:, None], (iy + 1)[None, :]]
+    z10 = z[(ix + 1)[:, None], iy[None, :]]
+    z11 = z[(ix + 1)[:, None], (iy + 1)[None, :]]
+    return z00 * (1.0 - wx) * (1.0 - wy) + z01 * (1.0 - wx) * wy + z10 * wx * (1.0 - wy) + z11 * wx * wy
 
 
 ROUGH_TERRAINS_CFG: dict[str, SubTerrainCfg] = {
