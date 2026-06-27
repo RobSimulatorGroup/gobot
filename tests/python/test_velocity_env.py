@@ -21,6 +21,7 @@ from examples.go1.train import go1_velocity_cfg as go1_cfg
 from examples.go1.train.go1_velocity_env import Go1VelocityEnv
 from gobot.rl import (
     BatchEnvState,
+    CpuBatchEnv,
     TaskRuntimeMetadata,
 )
 from gobot.rl.locomotion import (
@@ -92,6 +93,21 @@ def test_batch_env_state_contract():
     )
     assert state.done.tolist() == [False, True, True]
     assert isinstance(state.obs, dict)
+
+
+def test_batch_env_clears_stale_final_observation_info():
+    env = CpuBatchEnv(num_envs=2)
+    env._state = env.make_empty_state({"actor": 2})
+    env._state.obs["actor"][:] = np.asarray([[1.0, 2.0], [3.0, 4.0]], dtype=np.float32)
+
+    env.capture_final_observation(np.asarray([1], dtype=np.int64))
+    assert "final_observation" in env._state.info
+    assert env._state.info["_final_observation"].tolist() == [False, True]
+
+    env.clear_step_final_observation()
+    assert env._state.final_observation is None
+    assert "final_observation" not in env._state.info
+    assert "_final_observation" not in env._state.info
 
 
 def test_task_runtime_metadata_is_public_task_summary():
@@ -573,6 +589,12 @@ def test_rsl_rl_wrapper_keeps_core_env_numpy():
             assert isinstance(actions, np.ndarray)
             self.state.reward[:] = 1.0
             self.state.info["log"] = {"x": np.asarray(1.0, dtype=np.float32)}
+            self.state.info["reward_terms"] = {"term": np.ones(2, dtype=np.float32)}
+            self.state.info["final_observation"] = {
+                "actor": np.full((2, 4), 2.0, dtype=np.float32),
+                "critic": np.full((2, 5), 3.0, dtype=np.float32),
+            }
+            self.state.info["_final_observation"] = np.asarray([False, True], dtype=bool)
             return self.state
 
         def close(self):
@@ -587,12 +609,24 @@ def test_rsl_rl_wrapper_keeps_core_env_numpy():
     assert reward.tolist() == [1.0, 1.0]
     assert done.tolist() == [False, False]
     assert extras["log"]["x"].item() == 1.0
+    assert "reward_terms" not in extras
+    assert "final_observation" not in extras
+    assert "_final_observation" not in extras
     assert isinstance(env.state.obs["actor"], np.ndarray)
+
+    env.rsl_rl_include_reward_terms = True
+    env.rsl_rl_include_final_observation = True
+    wrapper = RslRlVecEnvWrapper(env, device="cpu")
+    _, _, _, extras = wrapper.step(torch.zeros((2, 3), dtype=torch.float32))
+    assert extras["reward_terms"]["term"].tolist() == [1.0, 1.0]
+    assert extras["final_observation"]["actor"].shape == (2, 4)
+    assert extras["_final_observation"].tolist() == [False, True]
 
 
 def main():
     tests = [
         test_batch_env_state_contract,
+        test_batch_env_clears_stale_final_observation_info,
         test_task_runtime_metadata_is_public_task_summary,
         test_locomotion_common_helpers,
         test_go1_unilab_cfg_profiles_and_playback_schemas,

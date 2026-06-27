@@ -113,6 +113,8 @@ class RslRlVecEnvWrapper:
             raise RuntimeError("RslRlVecEnvWrapper requires gobot[train] dependencies.") from error
         self.torch = torch
         self.TensorDict = TensorDict
+        self.include_final_observation = bool(getattr(env, "rsl_rl_include_final_observation", False))
+        self.include_reward_terms = bool(getattr(env, "rsl_rl_include_reward_terms", False))
         self._episode_length_buf = self.torch.zeros(self.num_envs, dtype=self.torch.long, device=self.device)
         self._last_step_profile_ms: dict[str, float] = {}
         self._sync_steps_from_core()
@@ -259,19 +261,23 @@ class RslRlVecEnvWrapper:
                 for key, value in log.items()
             }
         reward_terms = info.get("reward_terms")
-        if isinstance(reward_terms, Mapping):
+        if self.include_reward_terms and isinstance(reward_terms, Mapping):
             extras["reward_terms"] = {
                 key: self.torch.as_tensor(_writable_array(value), dtype=self.torch.float32, device=self.device)
                 for key, value in reward_terms.items()
             }
-        if "final_observation" in info:
-            extras["final_observation"] = self._tensor_obs(info["final_observation"])
-        if "_final_observation" in info:
-            extras["_final_observation"] = self.torch.as_tensor(
-                _writable_array(info["_final_observation"]),
-                dtype=self.torch.bool,
-                device=self.device,
-            )
+        final_observation = info.get("final_observation")
+        final_mask = info.get("_final_observation")
+        if self.include_final_observation and final_observation is not None:
+            mask_array = np.asarray(final_mask, dtype=bool) if final_mask is not None else None
+            if mask_array is None or bool(np.any(mask_array)):
+                extras["final_observation"] = self._tensor_obs(final_observation)
+                if mask_array is not None:
+                    extras["_final_observation"] = self.torch.as_tensor(
+                        _writable_array(mask_array),
+                        dtype=self.torch.bool,
+                        device=self.device,
+                    )
         return extras
 
 

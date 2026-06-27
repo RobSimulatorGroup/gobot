@@ -918,10 +918,11 @@ class Go1VelocityEnv(LocomotionBatchEnv):
         info: dict[str, Any] = {
             "steps": self._state_steps,
         }
-        if self._state is not None:
-            for key in ("final_observation", "_final_observation"):
-                if key in self._state.info:
-                    info[key] = self._state.info[key]
+        if self._state is not None and self._state.final_observation is not None:
+            terminal_mask = self._state.info.get("_final_observation")
+            if isinstance(terminal_mask, np.ndarray) and bool(np.any(terminal_mask)):
+                info["final_observation"] = self._state.final_observation
+                info["_final_observation"] = terminal_mask
         if info_extra:
             info.update(info_extra)
         if obs_actor is None:

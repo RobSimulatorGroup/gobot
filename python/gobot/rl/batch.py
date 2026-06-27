@@ -154,9 +154,8 @@ class CpuBatchEnv:
         if self._state is None:
             return
         self._state.final_observation = None
-        terminal_mask = self._state.info.get("_final_observation")
-        if isinstance(terminal_mask, np.ndarray):
-            terminal_mask.fill(False)
+        self._state.info.pop("final_observation", None)
+        self._state.info.pop("_final_observation", None)
 
     def merge_reset_info(self, env_ids: np.ndarray, reset_info: Mapping[str, Any]) -> None:
         if self._state is None:
