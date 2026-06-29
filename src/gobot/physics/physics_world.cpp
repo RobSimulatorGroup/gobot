@@ -128,6 +128,7 @@ PhysicsShapeSnapshot CaptureShapeSnapshot(const CollisionShape3D* collision_shap
                                           const Affine3& global_transform) {
     PhysicsShapeSnapshot snapshot;
     snapshot.node = collision_shape;
+    snapshot.name = collision_shape->GetName();
     snapshot.global_transform = global_transform;
     snapshot.disabled = collision_shape->IsDisabled();
     snapshot.friction = collision_shape->GetFriction();
@@ -401,6 +402,8 @@ void CollectRobotNodes(const Node* node,
         joint_snapshot.effort_limit = joint->GetEffortLimit();
         joint_snapshot.velocity_limit = joint->GetVelocityLimit();
         joint_snapshot.damping = joint->GetDamping();
+        joint_snapshot.armature = joint->GetArmature();
+        joint_snapshot.friction_loss = joint->GetFrictionLoss();
         joint_snapshot.joint_position = joint->GetJointPosition();
         joint_snapshot.initial_position = joint->GetInitialPosition();
         joint_snapshot.drive_mode = static_cast<int>(joint->GetDriveMode());
@@ -817,7 +820,7 @@ std::optional<RealType> QueryTerrainHeightFieldHeight(const PhysicsTerrainHeight
     }
 
     const RealType u = (local.x() / heightfield.size.x() + 0.5) * static_cast<RealType>(heightfield.cols - 1);
-    const RealType v = (local.y() / heightfield.size.y() + 0.5) * static_cast<RealType>(heightfield.rows - 1);
+    const RealType v = (-local.y() / heightfield.size.y() + 0.5) * static_cast<RealType>(heightfield.rows - 1);
     const int c0 = std::clamp(static_cast<int>(std::floor(u)), 0, heightfield.cols - 1);
     const int r0 = std::clamp(static_cast<int>(std::floor(v)), 0, heightfield.rows - 1);
     const int c1 = std::min(c0 + 1, heightfield.cols - 1);
@@ -864,7 +867,7 @@ std::optional<Vector3> QueryTerrainHeightFieldNormal(const PhysicsTerrainHeightF
     const RealType cell_x = heightfield.size.x() / static_cast<RealType>(heightfield.cols - 1);
     const RealType cell_y = heightfield.size.y() / static_cast<RealType>(heightfield.rows - 1);
     const RealType u = (local.x() / heightfield.size.x() + 0.5) * static_cast<RealType>(heightfield.cols - 1);
-    const RealType v = (local.y() / heightfield.size.y() + 0.5) * static_cast<RealType>(heightfield.rows - 1);
+    const RealType v = (-local.y() / heightfield.size.y() + 0.5) * static_cast<RealType>(heightfield.rows - 1);
     const int col = std::clamp(static_cast<int>(std::round(u)), 0, heightfield.cols - 1);
     const int row = std::clamp(static_cast<int>(std::round(v)), 0, heightfield.rows - 1);
     const int col_minus = std::max(col - 1, 0);
@@ -880,7 +883,7 @@ std::optional<Vector3> QueryTerrainHeightFieldNormal(const PhysicsTerrainHeightF
     const RealType dx = std::max<RealType>(cell_x * static_cast<RealType>(col_plus - col_minus), CMP_EPSILON);
     const RealType dy = std::max<RealType>(cell_y * static_cast<RealType>(row_plus - row_minus), CMP_EPSILON);
     const RealType dh_dx = (height_at(row, col_plus) - height_at(row, col_minus)) / dx;
-    const RealType dh_dy = (height_at(row_plus, col) - height_at(row_minus, col)) / dy;
+    const RealType dh_dy = (height_at(row_minus, col) - height_at(row_plus, col)) / dy;
 
     Vector3 local_normal{-dh_dx, -dh_dy, 1.0};
     if (local_normal.squaredNorm() <= CMP_EPSILON2) {

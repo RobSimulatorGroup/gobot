@@ -4,11 +4,12 @@ from __future__ import annotations
 
 import argparse
 import copy
-import ctypes
 import os
+import random
 from pathlib import Path
 from typing import Sequence
 
+import numpy as np
 import torch
 from rsl_rl.runners import OnPolicyRunner
 
@@ -106,17 +107,32 @@ def build_core_env(args: argparse.Namespace, cfg) -> Go1VelocityEnv:
 
 
 def build_env(args: argparse.Namespace, cfg) -> RslRlVecEnvWrapper:
-    return RslRlVecEnvWrapper(build_core_env(args, cfg), device=args.device)
+    env = build_core_env(args, cfg)
+    env.rsl_rl_include_final_observation = True
+    return RslRlVecEnvWrapper(env, device=args.device)
 
 
 def build_train_cfg(args: argparse.Namespace, cfg) -> dict:
-    return rsl_rl_train_cfg(
+    train_cfg = rsl_rl_train_cfg(
         experiment_name=cfg.name,
         max_iterations=args.iterations,
         save_interval=max(1, int(args.render_video_interval)) if args.render_video_interval > 0 else 50,
         obs_normalization=False,
         clip_actions=float(getattr(cfg, "action_clip", 1.0)),
     )
+    train_cfg["seed"] = int(args.seed)
+    return train_cfg
+
+
+def apply_training_seed(seed: int, *, device: str) -> None:
+    seed = int(seed)
+    if seed < 0:
+        raise ValueError(f"seed must be non-negative, got {seed}")
+    random.seed(seed)
+    np.random.seed(seed)
+    torch.manual_seed(seed)
+    if str(device).startswith("cuda") and torch.cuda.is_available():
+        torch.cuda.manual_seed_all(seed)
 
 
 def build_video_recorder(args: argparse.Namespace, env: RslRlVecEnvWrapper, log_dir: Path, project_path: Path) -> Go1TrainingVideoRecorder:
@@ -158,6 +174,7 @@ def build_runner(
 
 def run_training(args: argparse.Namespace) -> tuple[Path, Path]:
     apply_run_preset(args)
+    apply_training_seed(args.seed, device=args.device)
     project_path = resolve_project_path()
     log_dir = resolve_log_dir(args.log_dir, project_path)
     os.makedirs(log_dir, exist_ok=True)
@@ -237,11 +254,14 @@ def main(argv: Sequence[str] | None = None) -> None:
 def _resolve_checkpoint(checkpoint: str | None, log_dir: Path) -> Path:
     if checkpoint:
         path = Path(checkpoint)
+        candidates = [path]
         if not path.is_absolute():
-            path = log_dir / path
-        if not path.exists():
-            raise FileNotFoundError(f"checkpoint does not exist: {path}")
-        return path
+            candidates.append(log_dir / path)
+        for candidate in candidates:
+            if candidate.exists():
+                return candidate
+        tried = ", ".join(str(candidate) for candidate in candidates)
+        raise FileNotFoundError(f"checkpoint does not exist; tried: {tried}")
     checkpoints = sorted(log_dir.glob("model_*.pt"), key=_checkpoint_iteration)
     if not checkpoints:
         raise FileNotFoundError(f"--resume requested but no model_*.pt checkpoints found in {log_dir}")
@@ -347,12 +367,7 @@ def _cuda_host_memory_stats(device: str) -> dict[str, float] | None:
 
 
 def _trim_cpu_allocator() -> None:
-    if os.name != "posix":
-        return
-    try:
-        ctypes.CDLL("libc.so.6").malloc_trim(0)
-    except Exception:
-        return
+    return
 
 
 def _synchronize_device(device: str) -> None:
@@ -367,7 +382,6 @@ def _synchronize_device(device: str) -> None:
 
 def _print_memory_profile(tag: str, device: str) -> None:
     _synchronize_device(device)
-    _trim_cpu_allocator()
     parts = [f"tag={tag}", f"rss_mb={_process_rss_mb():.1f}"]
     cuda_stats = _cuda_memory_stats(device)
     if cuda_stats is not None:

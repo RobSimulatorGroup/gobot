@@ -337,7 +337,8 @@ TEST(TestResourceFormatMJCF, imports_capsule_contact_and_position_actuator_seman
   <worldbody>
     <body name="base" pos="0 0 0.2">
       <body name="leg" pos="0 0 0">
-        <joint name="knee" type="hinge" axis="0 1 0" limited="true" range="-2 -0.5"/>
+        <joint name="knee" type="hinge" axis="0 1 0" limited="true" range="-2 -0.5"
+               armature="0.01" frictionloss="0.2"/>
         <geom name="leg_capsule" type="capsule" fromto="0 0 0 0 0 -0.4" size="0.03"
               friction="0.8 0.02 0.003" contype="2" conaffinity="4" condim="4"
               solref="0.01 0.9" solimp="0.7 0.8 0.02 0.5 2" margin="0.001" gap="0.0002"/>
@@ -366,6 +367,8 @@ TEST(TestResourceFormatMJCF, imports_capsule_contact_and_position_actuator_seman
     ASSERT_NE(knee, nullptr);
     EXPECT_NEAR(knee->GetJointPosition(), -0.888, 1.0e-6);
     EXPECT_NEAR(knee->GetInitialPosition(), -0.888, 1.0e-6);
+    EXPECT_NEAR(knee->GetArmature(), 0.01, 1.0e-6);
+    EXPECT_NEAR(knee->GetFrictionLoss(), 0.2, 1.0e-6);
     EXPECT_EQ(knee->GetDriveMode(), gobot::JointDriveMode::Position);
     EXPECT_NEAR(knee->GetDriveStiffness(), 40.0, 1.0e-9);
     EXPECT_NEAR(knee->GetControlLowerLimit(), -2.0, 1.0e-9);

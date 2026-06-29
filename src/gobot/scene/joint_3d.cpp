@@ -105,6 +105,30 @@ RealType Joint3D::GetDamping() const {
     return damping_;
 }
 
+void Joint3D::SetArmature(RealType armature) {
+    if (armature < 0) {
+        LOG_ERROR("Joint3D armature cannot be negative.");
+        return;
+    }
+    armature_ = armature;
+}
+
+RealType Joint3D::GetArmature() const {
+    return armature_;
+}
+
+void Joint3D::SetFrictionLoss(RealType friction_loss) {
+    if (friction_loss < 0) {
+        LOG_ERROR("Joint3D friction loss cannot be negative.");
+        return;
+    }
+    friction_loss_ = friction_loss;
+}
+
+RealType Joint3D::GetFrictionLoss() const {
+    return friction_loss_;
+}
+
 RealType Joint3D::ClampJointPosition(RealType joint_position) const {
     if (HasJointPositionLimits()) {
         return std::clamp(joint_position, lower_limit_, upper_limit_);
@@ -316,6 +340,8 @@ GOBOT_REGISTRATION {
             .property("effort_limit", &Joint3D::GetEffortLimit, &Joint3D::SetEffortLimit)
             .property("velocity_limit", &Joint3D::GetVelocityLimit, &Joint3D::SetVelocityLimit)
             .property("damping", &Joint3D::GetDamping, &Joint3D::SetDamping)
+            .property("armature", &Joint3D::GetArmature, &Joint3D::SetArmature)
+            .property("friction_loss", &Joint3D::GetFrictionLoss, &Joint3D::SetFrictionLoss)
             .property("drive_mode", &Joint3D::GetDriveMode, &Joint3D::SetDriveMode)
             .property("drive_stiffness", &Joint3D::GetDriveStiffness, &Joint3D::SetDriveStiffness)
             .property("drive_damping", &Joint3D::GetDriveDamping, &Joint3D::SetDriveDamping)

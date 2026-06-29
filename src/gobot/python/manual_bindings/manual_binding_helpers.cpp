@@ -1079,6 +1079,8 @@ py::dict JointSnapshotToPythonDict(const PhysicsJointSnapshot& joint) {
     result["effort_limit"] = joint.effort_limit;
     result["velocity_limit"] = joint.velocity_limit;
     result["damping"] = joint.damping;
+    result["armature"] = joint.armature;
+    result["friction_loss"] = joint.friction_loss;
     result["joint_position"] = joint.joint_position;
     result["initial_position"] = joint.initial_position;
     result["drive_mode"] = joint.drive_mode;

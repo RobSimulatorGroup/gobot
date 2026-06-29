@@ -140,8 +140,15 @@ class Go1TrainingVideoRecorder:
             return self._eval_env
         try:
             self._eval_context = gobot.app.create_context()
+            eval_cfg = copy.deepcopy(self.env.cfg_obj)
+            eval_cfg.episode_length_s = float(1_000_000_000)
+            eval_cfg.terrain_curriculum = False
+            eval_cfg.randomize_rough_reset_pose = False
+            eval_cfg.observations.actor_noise = False
+            eval_cfg.domain_randomization.enabled = False
+            eval_cfg.push_enabled = False
             self._eval_env = Go1VelocityEnv(
-                copy.deepcopy(self.env.cfg_obj),
+                eval_cfg,
                 num_envs=max(1, int(self.cfg.num_envs)),
                 device=self.env.device,
                 seed=self._video_seed(),

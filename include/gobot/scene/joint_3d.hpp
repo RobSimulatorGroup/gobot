@@ -73,6 +73,14 @@ public:
 
     RealType GetDamping() const;
 
+    void SetArmature(RealType armature);
+
+    RealType GetArmature() const;
+
+    void SetFrictionLoss(RealType friction_loss);
+
+    RealType GetFrictionLoss() const;
+
     void SetJointPosition(RealType joint_position);
 
     RealType GetJointPosition() const;
@@ -143,6 +151,8 @@ private:
     RealType effort_limit_{0.0};
     RealType velocity_limit_{0.0};
     RealType damping_{0.0};
+    RealType armature_{0.0};
+    RealType friction_loss_{0.0};
     RealType joint_position_{0.0};
     RealType initial_position_{0.0};
     RealType motion_reference_position_{0.0};

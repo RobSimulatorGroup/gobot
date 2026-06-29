@@ -316,6 +316,7 @@ class Go1VelocityEnv(LocomotionBatchEnv):
         self._task_profile = str(getattr(self.cfg_obj, "task_profile", "gobot_velocity"))
         self._reward_term_names = _reward_names_for_profile(self._task_profile)
         self._advance_task_time = False
+        self._unilab_reset_rng = np.random.RandomState(self.seed)
 
         self._foot_count = len(self.cfg_obj.foot_names)
         self._encoder_bias = np.zeros((self.num_envs, self.num_actions), dtype=np.float32)
@@ -332,10 +333,13 @@ class Go1VelocityEnv(LocomotionBatchEnv):
         self._push_step_left = np.zeros(self.num_envs, dtype=np.int64)
         self._push_count = np.zeros(self.num_envs, dtype=np.int64)
         self._spawn_indices = np.zeros(self.num_envs, dtype=np.int64)
+        self._spawn_type_cols = np.zeros(self.num_envs, dtype=np.int64)
+        self._spawn_env_levels = np.zeros(self.num_envs, dtype=np.int64)
         self._terrain_levels = np.zeros(self.num_envs, dtype=np.float32)
         self._terrain_curriculum_limits = np.zeros(self.num_envs, dtype=np.float32)
         self._reset_reasons = np.zeros(self.num_envs, dtype=np.int64)
         self._current_command_stage = 0
+        self._unilab_info_steps = np.zeros(self.num_envs, dtype=np.uint32)
 
         self.project_path = Path(self.cfg_obj.project_path).resolve()
         self.context = context if context is not None else gobot.app.context()
@@ -343,6 +347,9 @@ class Go1VelocityEnv(LocomotionBatchEnv):
         self.context.load_scene(self.cfg_obj.scene_path)
         self.robot = self._find_robot_node()
         self._spawn_origins = self._load_spawn_origins()
+        self._spawn_grid_shape = self._infer_spawn_grid_shape()
+        self._initialize_unilab_spawn_assignments()
+        self._reset_unilab_reset_rng()
         self._warmup_spawn_index = int(np.argmin(np.linalg.norm(self._spawn_origins[:, :2], axis=1)))
         self._terrain_sampler = TerrainSampler(self.project_path / self.cfg_obj.terrain_scene_path)
         self._terrain_bounds = self._terrain_sampler.bounds()
@@ -360,6 +367,10 @@ class Go1VelocityEnv(LocomotionBatchEnv):
                 "integral_limit": 0.0,
             }
         )
+        if self.cfg_obj.mujoco_solver_settings:
+            current_solver_settings = self.context.get_mujoco_solver_settings()
+            current_solver_settings.update(dict(self.cfg_obj.mujoco_solver_settings))
+            self.context.set_mujoco_solver_settings(current_solver_settings)
         self._configure_robot_drives()
         self.context.build_world(gobot.PhysicsBackendType.MuJoCoCpu)
 
@@ -419,6 +430,8 @@ class Go1VelocityEnv(LocomotionBatchEnv):
         self.resolved_sim_workers = self.backend.resolved_workers(self.sim_workers)
         self._configure_native_task_buffers()
         self._configure_native_command()
+        if self._task_profile == "unilab_rough":
+            self.backend.set_command_step_resampling(True)
         self.task_runtime_metadata = self._make_task_runtime_metadata()
         self.task_runtime_info = self._configure_task_runtime()
 
@@ -446,8 +459,10 @@ class Go1VelocityEnv(LocomotionBatchEnv):
             "height_scan_dim": self._height_scan_dim,
             "decimation": self.decimation,
             "physics_dt": self.physics_dt,
+            "mujoco_solver_settings": dict(self.cfg_obj.mujoco_solver_settings),
             "step_dt": self.step_dt,
             "action_clip": self.cfg_obj.action_clip,
+            "use_unilab_reset_rng": bool(getattr(self.cfg_obj, "use_unilab_reset_rng", False)),
             "illegal_contact": self.cfg_obj.illegal_contact.enabled,
             "domain_randomization": self.cfg_obj.domain_randomization.enabled,
             "push_enabled": self.cfg_obj.push_enabled,
@@ -534,6 +549,19 @@ class Go1VelocityEnv(LocomotionBatchEnv):
             return command_manager.command_b
         return np.zeros((self.num_envs, 3), dtype=np.float32)
 
+    def reset_seed(self, seed: int | None) -> None:
+        super().reset_seed(seed)
+        if seed is not None:
+            self._reset_unilab_reset_rng()
+
+    def _reset_unilab_reset_rng(self) -> None:
+        self._unilab_reset_rng = np.random.RandomState(self.seed)
+        if bool(getattr(self.cfg_obj, "use_unilab_reset_rng", False)):
+            episode_length = min(int(self.max_episode_length), int(np.iinfo(np.uint32).max))
+            if episode_length > 0:
+                self._unilab_reset_rng.randint(0, episode_length, size=self.num_envs, dtype=np.uint32)
+        self._unilab_info_steps.fill(0)
+
     def _prepare_actions(self, actions: Any) -> np.ndarray:
         action_np = actions.detach().cpu().numpy() if hasattr(actions, "detach") else np.asarray(actions)
         action_np = np.asarray(action_np, dtype=np.float32).reshape(self.num_envs, self.num_actions)
@@ -597,7 +625,9 @@ class Go1VelocityEnv(LocomotionBatchEnv):
             )
             self._state.terminated[env_ids] = False
             self._state.truncated[env_ids] = False
-            self._state.info["steps"][env_ids] = 0
+            self._state.info["steps"][env_ids] = (
+                self._unilab_info_steps[env_ids] if self._task_profile == "unilab_rough" else 0
+            )
         reset_info = {
             "reset_env_ids": env_ids.copy(),
             "reset_reason": self._reset_reasons[env_ids].copy(),
@@ -673,6 +703,21 @@ class Go1VelocityEnv(LocomotionBatchEnv):
                 "foot_slip": float(np.mean(batch_state.foot_slip)),
                 "terrain_normal_error": float(np.mean(batch_state.terrain_normal_error)),
                 "illegal_contact_count": float(np.mean(batch_state.illegal_contact_count)),
+                "undesired_contact_count": float(
+                    np.mean(np.asarray(getattr(batch_state, "undesired_contact_count", 0.0), dtype=np.float32))
+                ),
+                "undesired_base_contact_count": float(
+                    np.mean(np.asarray(getattr(batch_state, "undesired_base_contact_count", 0.0), dtype=np.float32))
+                ),
+                "undesired_hip_contact_count": float(
+                    np.mean(np.asarray(getattr(batch_state, "undesired_hip_contact_count", 0.0), dtype=np.float32))
+                ),
+                "undesired_thigh_contact_count": float(
+                    np.mean(np.asarray(getattr(batch_state, "undesired_thigh_contact_count", 0.0), dtype=np.float32))
+                ),
+                "undesired_calf_contact_count": float(
+                    np.mean(np.asarray(getattr(batch_state, "undesired_calf_contact_count", 0.0), dtype=np.float32))
+                ),
                 "self_collision_count": float(np.mean(batch_state.self_collision_count)),
                 "shank_collision_count": float(np.mean(batch_state.shank_collision_count)),
                 "trunk_head_collision_count": float(np.mean(batch_state.trunk_head_collision_count)),
@@ -684,7 +729,11 @@ class Go1VelocityEnv(LocomotionBatchEnv):
 
         t0 = self.perf_counter()
         terminated = np.asarray(batch_state.terminated, dtype=bool).copy()
+        if self._task_profile == "unilab_rough":
+            terminated[:] = False
         self._episode_length_np += 1
+        if self._task_profile == "unilab_rough":
+            self._unilab_info_steps += np.uint32(1)
         terrain_out = self._terrain_out_of_bounds(batch_state)
         time_outs = ((self._episode_length_np >= self.max_episode_length) | terrain_out) & ~terminated
         done_envs = terminated | time_outs
@@ -745,6 +794,9 @@ class Go1VelocityEnv(LocomotionBatchEnv):
                 scratch["critic"][reset_env_ids] = terminal_critic_obs[reset_env_ids]
                 self._state.info["final_observation"] = scratch
         log_info = self._step_log_info(batch_state, reset_reason, log_values) if self.collect_step_extras else {}
+        if reward_terms:
+            for name, value in reward_terms.items():
+                log_info[f"reward/{name}"] = np.asarray(float(np.mean(value)), dtype=np.float32)
         extras = {
             "time_outs": time_outs.copy(),
             "log": log_info,
@@ -789,6 +841,9 @@ class Go1VelocityEnv(LocomotionBatchEnv):
         return self._state
 
     def close(self) -> None:
+        backend = getattr(self, "backend", None)
+        if backend is not None and hasattr(backend, "close"):
+            backend.close()
         self.context.clear_world()
         self.context.clear_scene()
 
@@ -798,6 +853,8 @@ class Go1VelocityEnv(LocomotionBatchEnv):
         self._update_curriculum_progress()
 
     def _step_log_info(self, batch_state: Any, reset_reason: np.ndarray, log_values: Mapping[str, float]) -> dict[str, np.ndarray]:
+        command = np.asarray(batch_state.command, dtype=np.float32)
+        gravity_down = np.asarray(batch_state.projected_gravity, dtype=np.float32)
         return {
             "/velocity/terrain_level": np.asarray(float(np.mean(self._terrain_levels)), dtype=np.float32),
             "/velocity/velocity_error": np.asarray(log_values["velocity_error"], dtype=np.float32),
@@ -806,6 +863,11 @@ class Go1VelocityEnv(LocomotionBatchEnv):
             "/velocity/foot_slip": np.asarray(log_values["foot_slip"], dtype=np.float32),
             "/velocity/terrain_normal_error": np.asarray(log_values["terrain_normal_error"], dtype=np.float32),
             "/velocity/illegal_contact_count": np.asarray(log_values["illegal_contact_count"], dtype=np.float32),
+            "/velocity/undesired_contact_count": np.asarray(log_values["undesired_contact_count"], dtype=np.float32),
+            "/velocity/undesired_base_contact_count": np.asarray(log_values["undesired_base_contact_count"], dtype=np.float32),
+            "/velocity/undesired_hip_contact_count": np.asarray(log_values["undesired_hip_contact_count"], dtype=np.float32),
+            "/velocity/undesired_thigh_contact_count": np.asarray(log_values["undesired_thigh_contact_count"], dtype=np.float32),
+            "/velocity/undesired_calf_contact_count": np.asarray(log_values["undesired_calf_contact_count"], dtype=np.float32),
             "/velocity/self_collision_count": np.asarray(log_values["self_collision_count"], dtype=np.float32),
             "/velocity/shank_collision_count": np.asarray(log_values["shank_collision_count"], dtype=np.float32),
             "/velocity/trunk_head_collision_count": np.asarray(log_values["trunk_head_collision_count"], dtype=np.float32),
@@ -815,9 +877,13 @@ class Go1VelocityEnv(LocomotionBatchEnv):
             "/velocity/push_count": np.asarray(log_values["push_count"], dtype=np.float32),
             "/velocity/command_stage": np.asarray(float(self._current_command_stage), dtype=np.float32),
             "/velocity/reset_reason": np.asarray(float(np.mean(reset_reason)), dtype=np.float32),
-            "/velocity/command_vx": np.asarray(float(np.mean(batch_state.command[:, 0])), dtype=np.float32),
-            "/velocity/command_vy": np.asarray(float(np.mean(batch_state.command[:, 1])), dtype=np.float32),
-            "/velocity/command_yaw": np.asarray(float(np.mean(batch_state.command[:, 2])), dtype=np.float32),
+            "/velocity/command_speed": np.asarray(float(np.mean(np.linalg.norm(command[:, :2], axis=1))), dtype=np.float32),
+            "/velocity/command_yaw_abs": np.asarray(float(np.mean(np.abs(command[:, 2]))), dtype=np.float32),
+            "/velocity/base_clearance": np.asarray(float(np.mean(batch_state.base_clearance)), dtype=np.float32),
+            "/velocity/upright": np.asarray(float(np.mean(-gravity_down[:, 2])), dtype=np.float32),
+            "/velocity/command_vx": np.asarray(float(np.mean(command[:, 0])), dtype=np.float32),
+            "/velocity/command_vy": np.asarray(float(np.mean(command[:, 1])), dtype=np.float32),
+            "/velocity/command_yaw": np.asarray(float(np.mean(command[:, 2])), dtype=np.float32),
         }
 
     def _make_observation_schemas(self) -> tuple[ObservationSpec, ObservationSpec]:
@@ -888,7 +954,7 @@ class Go1VelocityEnv(LocomotionBatchEnv):
                 "scene_source": "jscn",
                 "scene_path": self.cfg_obj.scene_path,
                 "unilab_reference": self._task_profile in {"unilab_flat", "unilab_rough"},
-                "native_contact_detail": "categorized" if self._task_profile == "unilab_rough" else "foot_sensors",
+                "native_contact_detail": "unilab_geom_sensor" if self._task_profile == "unilab_rough" else "foot_sensors",
                 "domain_randomization_backend": "per_env_mjmodel_pool",
             },
         )
@@ -981,7 +1047,6 @@ class Go1VelocityEnv(LocomotionBatchEnv):
             joint.drive_mode = gobot.JointDriveMode.Position
             joint.drive_stiffness = self.cfg_obj.kp
             joint.drive_damping = self.cfg_obj.kd
-            joint.damping = self.cfg_obj.kd
 
     def _make_batch_backend(self):
         illegal_cfg = self.cfg_obj.illegal_contact
@@ -1067,6 +1132,7 @@ class Go1VelocityEnv(LocomotionBatchEnv):
             rel_forward_envs=command_cfg.rel_forward_envs,
             heading_command=command_cfg.heading_command,
             heading_control_stiffness=command_cfg.heading_control_stiffness,
+            zero_small_xy_threshold=command_cfg.zero_small_xy_threshold,
             seed=self.seed + 17_171,
         )
         self._apply_command_curriculum()
@@ -1088,6 +1154,26 @@ class Go1VelocityEnv(LocomotionBatchEnv):
         if origins.ndim != 2 or origins.shape[1] != 3 or origins.shape[0] == 0:
             return np.zeros((1, 3), dtype=np.float64)
         return origins
+
+    def _infer_spawn_grid_shape(self) -> tuple[int, int]:
+        if self._spawn_origins.shape[0] != 36:
+            return (int(self._spawn_origins.shape[0]), 1)
+        unique_x = np.unique(np.round(self._spawn_origins[:, 0], 6))
+        unique_y = np.unique(np.round(self._spawn_origins[:, 1], 6))
+        if unique_x.size * unique_y.size == self._spawn_origins.shape[0]:
+            return (int(unique_x.size), int(unique_y.size))
+        return (int(self._spawn_origins.shape[0]), 1)
+
+    def _initialize_unilab_spawn_assignments(self) -> None:
+        rows, cols = self._spawn_grid_shape
+        if rows <= 0 or cols <= 0:
+            return
+        rng = np.random.default_rng(self.seed)
+        self._spawn_type_cols[:] = rng.integers(0, cols, size=self.num_envs).astype(np.int64)
+        if self.cfg_obj.terrain_curriculum:
+            self._spawn_env_levels[:] = 0
+        else:
+            self._spawn_env_levels[:] = rng.integers(0, rows, size=self.num_envs).astype(np.int64)
 
     def _spawn_difficulty_scores(self) -> np.ndarray:
         radius = float(self.cfg_obj.spawn_difficulty_radius)
@@ -1122,7 +1208,12 @@ class Go1VelocityEnv(LocomotionBatchEnv):
 
     def _sample_spawn_index(self, env_id: int) -> int:
         if not self.cfg_obj.terrain_curriculum:
-            return int(self._rng.integers(0, self._spawn_origins.shape[0]))
+            rows, cols = self._spawn_grid_shape
+            if rows * cols == self._spawn_origins.shape[0] and rows > 0 and cols > 0:
+                row = int(np.clip(self._spawn_env_levels[env_id], 0, rows - 1))
+                col = int(np.clip(self._spawn_type_cols[env_id], 0, cols - 1))
+                return row * cols + col
+            return int(env_id % self._spawn_origins.shape[0])
         warmup_progress = 0.10
         if self._curriculum_progress < warmup_progress and self._terrain_curriculum_limits[env_id] <= 0.0:
             return self._warmup_spawn_index
@@ -1302,7 +1393,7 @@ class Go1VelocityEnv(LocomotionBatchEnv):
         scales = dict(cfg.scales)
         linvel = np.asarray(state.base_linear_velocity_body, dtype=np.float32)
         gyro = np.asarray(state.base_angular_velocity_body, dtype=np.float32)
-        gravity_down = np.asarray(state.projected_gravity, dtype=np.float32)
+        gravity_down = -np.asarray(getattr(state, "upvector", -state.projected_gravity), dtype=np.float32)
         gravity_up = -gravity_down
         dof_pos = np.asarray(state.joint_position, dtype=np.float32)
         dof_vel = np.asarray(state.joint_velocity, dtype=np.float32)
@@ -1365,7 +1456,7 @@ class Go1VelocityEnv(LocomotionBatchEnv):
         scales = dict(cfg.scales)
         linvel = np.asarray(state.base_linear_velocity_body, dtype=np.float32)
         gyro = np.asarray(state.base_angular_velocity_body, dtype=np.float32)
-        gravity_down = np.asarray(state.projected_gravity, dtype=np.float32)
+        gravity_down = -np.asarray(getattr(state, "upvector", -state.projected_gravity), dtype=np.float32)
         gravity_up = -gravity_down
         dof_pos = np.asarray(state.joint_position, dtype=np.float32)
         dof_vel = np.asarray(state.joint_velocity, dtype=np.float32)
@@ -1416,15 +1507,17 @@ class Go1VelocityEnv(LocomotionBatchEnv):
         fl_rr = dof_pos[:, 3:6] - dof_pos[:, 6:9]
         self._set_reward_term(terms, "joint_mirror", 0.5 * (np.sum(np.square(fr_rl), axis=1) + np.sum(np.square(fl_rr), axis=1)) * upright_scale)
         self._set_reward_term(terms, "action_rate", np.sum(np.square(current_actions - last_actions), axis=1))
-        categorized_undesired = (
-            np.asarray(getattr(state, "base_collision_count", 0.0), dtype=np.float32)
-            + np.asarray(getattr(state, "hip_collision_count", 0.0), dtype=np.float32)
-            + np.asarray(getattr(state, "thigh_collision_count", 0.0), dtype=np.float32)
-            + np.asarray(getattr(state, "calf_collision_count", 0.0), dtype=np.float32)
-        )
-        if np.asarray(categorized_undesired).shape != (self.num_envs,):
-            categorized_undesired = np.asarray(state.illegal_contact_count, dtype=np.float32)
-        self._set_reward_term(terms, "undesired_contacts", categorized_undesired * upright_scale)
+        undesired_contacts = np.asarray(getattr(state, "undesired_contact_count", np.empty(0)), dtype=np.float32)
+        if undesired_contacts.shape != (self.num_envs,):
+            undesired_contacts = (
+                np.asarray(getattr(state, "base_collision_count", 0.0), dtype=np.float32)
+                + np.asarray(getattr(state, "hip_collision_count", 0.0), dtype=np.float32)
+                + np.asarray(getattr(state, "thigh_collision_count", 0.0), dtype=np.float32)
+                + np.asarray(getattr(state, "calf_collision_count", 0.0), dtype=np.float32)
+            )
+            if np.asarray(undesired_contacts).shape != (self.num_envs,):
+                undesired_contacts = np.asarray(state.illegal_contact_count, dtype=np.float32)
+        self._set_reward_term(terms, "undesired_contacts", undesired_contacts * upright_scale)
         force_norm = np.linalg.norm(np.asarray(state.foot_contact_force, dtype=np.float32), axis=2)
         force_clip = np.minimum(force_norm, 1500.0)
         self._set_reward_term(terms, "contact_forces", np.sum(np.clip(force_clip - cfg.contact_forces_threshold, 0.0, None), axis=1) * upright_scale)
@@ -1506,8 +1599,7 @@ class Go1VelocityEnv(LocomotionBatchEnv):
     def _foot_contact_mask(self, state: Any) -> np.ndarray:
         force = np.asarray(state.foot_contact_force, dtype=np.float32)
         force_norm = np.linalg.norm(force, axis=2)
-        contact_sensor = np.asarray(state.foot_contact, dtype=np.float32) > 0.0
-        return np.asarray((force_norm > self.cfg_obj.unilab_rewards.contact_threshold) | contact_sensor, dtype=bool)
+        return np.asarray(force_norm > self.cfg_obj.unilab_rewards.contact_threshold, dtype=bool)
 
     def _update_contact_timers(self, contact: np.ndarray) -> None:
         contact = np.asarray(contact, dtype=bool)
@@ -1529,7 +1621,7 @@ class Go1VelocityEnv(LocomotionBatchEnv):
         self._last_air_time[rows] = 0.0
         self._last_contact_time[rows] = 0.0
         self._first_foot_contact[rows] = False
-        self._last_foot_contact_mask[rows] = False
+        self._last_foot_contact_mask[rows] = self._foot_contact_mask(self.backend.state)[rows]
 
     def _estimate_unilab_pd_torques(self, actions: np.ndarray, dof_pos: np.ndarray, dof_vel: np.ndarray) -> np.ndarray:
         targets = actions * self.action_scale.reshape(1, -1) + self.default_joint_pos.reshape(1, -1)
@@ -1592,6 +1684,15 @@ class Go1VelocityEnv(LocomotionBatchEnv):
     def _apply_pushes(self) -> None:
         if not self.cfg_obj.push_enabled:
             return
+        interval = max(1, int(self.cfg_obj.push_interval_steps))
+        if getattr(self.cfg_obj, "push_interval_mode", "per_env_random") == "global":
+            if self.step_counter % interval != 0:
+                return
+            env_ids = np.arange(self.num_envs, dtype=np.int64)
+            push_force = self._sample_range_matrix(self.cfg_obj.push_force_ranges, ("x", "y", "z"), env_ids.size)
+            self.backend.set_push_forces(env_ids.tolist(), push_force)
+            self._push_count[env_ids] += 1
+            return
         self._push_step_left -= 1
         env_ids = np.flatnonzero(self._push_step_left <= 0).astype(np.int64, copy=False)
         if env_ids.size == 0:
@@ -1621,30 +1722,56 @@ class Go1VelocityEnv(LocomotionBatchEnv):
         joint_velocities = np.zeros((reset_count, self.num_actions), dtype=np.float32)
         joint_targets = np.broadcast_to(self.default_joint_pos.reshape(1, -1), (reset_count, self.num_actions)).astype(np.float32, copy=True)
 
+        use_unilab_reset_rng = (
+            self._task_profile == "unilab_rough"
+            and self.cfg_obj.randomize_rough_reset_pose
+            and bool(getattr(self.cfg_obj, "use_unilab_reset_rng", False))
+        )
+        reset_samples = self._sample_unilab_rough_reset(reset_count) if use_unilab_reset_rng else {}
+
         for row, env_id_value in enumerate(env_ids):
             env_id = int(env_id_value)
             spawn_index = self._sample_spawn_index(env_id)
             spawn = self._spawn_origins[spawn_index].copy()
-            spawn[:2] += self._rng.uniform(-self.cfg_obj.spawn_jitter, self.cfg_obj.spawn_jitter, 2)
+            if use_unilab_reset_rng:
+                spawn[:2] += reset_samples["xy_jitter"][row]
+            else:
+                spawn[:2] += self._rng.uniform(-self.cfg_obj.spawn_jitter, self.cfg_obj.spawn_jitter, 2)
             terrain_height = self._terrain_height(spawn[0], spawn[1])
-            base_z = max(spawn[2], terrain_height) + self.cfg_obj.base_clearance
-            yaw = float(self._rng.uniform(-math.pi, math.pi))
+            if self._task_profile == "unilab_rough" and self.cfg_obj.randomize_rough_reset_pose:
+                base_z = float(spawn[2]) + self.cfg_obj.base_clearance
+            else:
+                base_z = max(spawn[2], terrain_height) + self.cfg_obj.base_clearance
             reset_lin_vel = np.zeros(3, dtype=np.float32)
             reset_ang_vel = np.zeros(3, dtype=np.float32)
-            orientation = _quat_from_yaw(yaw)
+            orientation = np.asarray([1.0, 0.0, 0.0, 0.0], dtype=np.float32)
             joint_pos_noise = (-0.05, 0.05)
             joint_vel_noise = (-0.05, 0.05)
             if self._task_profile == "unilab_flat":
+                yaw = float(self._rng.uniform(-math.pi, math.pi))
+                orientation = _quat_from_yaw(yaw)
                 reset_lin_vel = self._rng.uniform(-0.5, 0.5, 3).astype(np.float32)
                 reset_ang_vel = self._rng.uniform(-0.5, 0.5, 3).astype(np.float32)
             elif self._task_profile == "unilab_rough":
-                base_z += float(self._rng.uniform(0.25, 0.5))
-                roll = float(self._rng.uniform(-3.14, 3.14))
-                pitch = float(self._rng.uniform(-3.14, 3.14))
-                yaw = float(self._rng.uniform(-3.14, 3.14))
-                orientation = _quat_from_euler_xyz(roll, pitch, yaw)
-                reset_lin_vel = self._rng.uniform(-0.5, 0.5, 3).astype(np.float32)
-                reset_ang_vel = self._rng.uniform(-0.5, 0.5, 3).astype(np.float32)
+                if use_unilab_reset_rng:
+                    base_z += float(reset_samples["height"][row])
+                    roll = float(reset_samples["roll"][row])
+                    pitch = float(reset_samples["pitch"][row])
+                    yaw = float(reset_samples["yaw"][row])
+                    orientation = _quat_from_euler_xyz(roll, pitch, yaw)
+                    reset_lin_vel = reset_samples["qvel"][row, :3]
+                    reset_ang_vel = reset_samples["qvel"][row, 3:6]
+                elif self.cfg_obj.randomize_rough_reset_pose:
+                    base_z += float(self._rng.uniform(0.25, 0.5))
+                    roll = float(self._rng.uniform(-3.14, 3.14))
+                    pitch = float(self._rng.uniform(-3.14, 3.14))
+                    yaw = float(self._rng.uniform(-3.14, 3.14))
+                    orientation = _quat_from_euler_xyz(roll, pitch, yaw)
+                    reset_lin_vel = self._rng.uniform(-0.5, 0.5, 3).astype(np.float32)
+                    reset_ang_vel = self._rng.uniform(-0.5, 0.5, 3).astype(np.float32)
+                else:
+                    yaw = float(self._rng.uniform(-math.pi, math.pi))
+                    orientation = _quat_from_yaw(yaw)
                 joint_pos_noise = (0.0, 0.0)
                 joint_vel_noise = (0.0, 0.0)
             elif self.cfg_obj.domain_randomization.enabled:
@@ -1667,6 +1794,8 @@ class Go1VelocityEnv(LocomotionBatchEnv):
             self._terrain_levels[env_id] = float(self._spawn_levels[spawn_index])
             self._episode_start_xy[env_id] = spawn[:2]
             self._episode_length_np[env_id] = 0
+            if self._task_profile == "unilab_rough" and int(reasons[row]) != 0:
+                self._unilab_info_steps[env_id] = 0
             self._episode_returns[env_id] = 0.0
             self._previous_actions[env_id] = 0.0
             self._last_actions[env_id] = 0.0
@@ -1693,11 +1822,65 @@ class Go1VelocityEnv(LocomotionBatchEnv):
         state.action[rows] = 0.0
         state.foot_air_time[rows] = 0.0
         state.foot_peak_height[rows] = 0.0
-        state.last_foot_contact[rows] = 0.0
+        if self._task_profile == "unilab_rough":
+            state.last_foot_contact[rows] = self._foot_contact_mask(state)[rows].astype(np.float32)
+        else:
+            state.last_foot_contact[rows] = 0.0
         state.previous_foot_position[rows] = 0.0
+        if hasattr(self.backend, "clear_reset_contacts") and self._task_profile != "unilab_rough":
+            self.backend.clear_reset_contacts(env_ids.tolist())
         self._last_dof_vel_for_acc[rows] = joint_velocities
         self._reset_contact_timers(rows)
-        self.backend.reset_commands(env_ids.tolist())
+        if use_unilab_reset_rng:
+            self._apply_unilab_rough_reset_commands(rows, reset_samples)
+        else:
+            self.backend.reset_commands(env_ids.tolist())
+        if self._task_profile == "unilab_rough":
+            self.backend.set_command_steps(rows.tolist(), self._unilab_info_steps[rows])
+
+    def _sample_unilab_rough_reset(self, reset_count: int) -> dict[str, np.ndarray]:
+        rng = self._unilab_reset_rng
+        command_cfg = self.cfg_obj.command
+        ranges = command_cfg.ranges
+        xy_jitter = rng.uniform(-self.cfg_obj.spawn_jitter, self.cfg_obj.spawn_jitter, (reset_count, 2)).astype(np.float32)
+        height = rng.uniform(0.25, 0.5, (reset_count,)).astype(np.float32)
+        roll = rng.uniform(-3.14, 3.14, (reset_count,)).astype(np.float32)
+        pitch = rng.uniform(-3.14, 3.14, (reset_count,)).astype(np.float32)
+        yaw = rng.uniform(-3.14, 3.14, (reset_count,)).astype(np.float32)
+        qvel = rng.uniform(-0.5, 0.5, (reset_count, 6)).astype(np.float32)
+        commands = rng.uniform(
+            low=np.asarray([ranges.lin_vel_x[0], ranges.lin_vel_y[0], ranges.ang_vel_z[0]], dtype=np.float32),
+            high=np.asarray([ranges.lin_vel_x[1], ranges.lin_vel_y[1], ranges.ang_vel_z[1]], dtype=np.float32),
+            size=(reset_count, 3),
+        ).astype(np.float32)
+        if command_cfg.zero_small_xy_threshold > 0.0:
+            moving = np.linalg.norm(commands[:, :2], axis=1) > float(command_cfg.zero_small_xy_threshold)
+            commands[:, :2] *= moving[:, None]
+        if command_cfg.rel_standing_envs > 0.0:
+            standing = rng.uniform(size=(reset_count,)) < min(float(command_cfg.rel_standing_envs), 1.0)
+            commands[standing] = 0.0
+        if command_cfg.heading_command:
+            commands[:, 2] = 0.0
+        heading_range = ranges.heading if ranges.heading is not None else (-math.pi, math.pi)
+        heading_commands = rng.uniform(float(heading_range[0]), float(heading_range[1]), (reset_count,)).astype(np.float32)
+        return {
+            "xy_jitter": xy_jitter,
+            "height": height,
+            "roll": roll,
+            "pitch": pitch,
+            "yaw": yaw,
+            "qvel": qvel,
+            "commands": commands,
+            "heading_commands": heading_commands,
+        }
+
+    def _apply_unilab_rough_reset_commands(self, rows: np.ndarray, samples: Mapping[str, np.ndarray]) -> None:
+        self.backend.set_commands(
+            rows.tolist(),
+            commands=np.asarray(samples["commands"], dtype=np.float32),
+            heading_targets=np.asarray(samples["heading_commands"], dtype=np.float32),
+            time_left=np.zeros((rows.shape[0],), dtype=np.float32),
+        )
 
     def _apply_reset_domain_randomization(self, env_ids: np.ndarray) -> None:
         if not hasattr(self.backend, "reset_domain_randomization"):
@@ -1709,8 +1892,8 @@ class Go1VelocityEnv(LocomotionBatchEnv):
         count = int(env_ids.size)
         base_mass_delta = np.zeros((count,), dtype=np.float32)
         base_com_offset = np.zeros((count, 3), dtype=np.float32)
-        joint_kp = np.zeros((count, self.num_actions), dtype=np.float32)
-        joint_kd = np.zeros((count, self.num_actions), dtype=np.float32)
+        joint_kp = np.full((count, self.num_actions), float(self.cfg_obj.kp), dtype=np.float32)
+        joint_kd = np.full((count, self.num_actions), float(self.cfg_obj.kd), dtype=np.float32)
         if dr.enabled:
             if dr.randomize_base_mass:
                 lo, hi = dr.added_mass_range
@@ -1759,6 +1942,10 @@ class Go1VelocityEnv(LocomotionBatchEnv):
 
     def _reset_push_timer(self, env_id: int) -> None:
         if not self.cfg_obj.push_enabled:
+            self._push_time_left[env_id] = math.inf
+            self._push_step_left[env_id] = np.iinfo(np.int64).max
+            return
+        if getattr(self.cfg_obj, "push_interval_mode", "per_env_random") == "global":
             self._push_time_left[env_id] = math.inf
             self._push_step_left[env_id] = np.iinfo(np.int64).max
             return

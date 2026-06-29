@@ -6,6 +6,7 @@ from _gobot_test_import import prefer_build_gobot
 prefer_build_gobot()
 
 import gobot
+import numpy as np
 
 
 def main():
@@ -123,11 +124,31 @@ def test_go1_rough_terrain_generation_shape():
     terrain = gobot.terrain.create_terrain_node(cfg, "go1_rough_terrain")
 
     assert len(terrain.spawn_origins) == cfg.num_rows * cfg.num_cols
-    spawn_origins = [tuple(float(value) for value in origin) for origin in terrain.spawn_origins]
+    spawn_origins = np.asarray(terrain.spawn_origins, dtype=np.float64)
     assert min(origin[0] for origin in spawn_origins) >= -24.0
     assert max(origin[0] for origin in spawn_origins) <= 24.0
     assert min(origin[1] for origin in spawn_origins) >= -24.0
     assert max(origin[1] for origin in spawn_origins) <= 24.0
+    np.testing.assert_allclose(
+        spawn_origins[:6],
+        np.asarray(
+            [
+                (-20.0, -20.0, 0.0),
+                (-20.0, -12.0, 0.0),
+                (-20.0, -4.0, -0.6),
+                (-20.0, 4.0, 0.0),
+                (-20.0, 12.0, -0.36),
+                (-20.0, 20.0, -0.575),
+            ],
+            dtype=np.float64,
+        ),
+        atol=1.0e-6,
+    )
+    np.testing.assert_allclose(
+        np.asarray([spawn_origins[:, 2].min(), spawn_origins[:, 2].mean(), spawn_origins[:, 2].max()]),
+        np.asarray([-0.6, 0.0148611111, 0.56]),
+        atol=1.0e-6,
+    )
     assert terrain.box_count == 0
     assert terrain.heightfield_count == 1
     rows = cfg.num_cols * int(round(cfg.size[1] / cfg.horizontal_scale)) + 2 * int(round(cfg.border_width / cfg.horizontal_scale))

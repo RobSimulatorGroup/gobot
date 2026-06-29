@@ -95,7 +95,7 @@ Vector3 HeightFieldVertex(const TerrainHeightField& heightfield, int row, int co
                                           static_cast<RealType>(heightfield.cols - 1));
     const RealType y = heightfield.rows <= 1
                                ? 0.0
-                               : (-heightfield.size.y() * 0.5 +
+                               : (heightfield.size.y() * 0.5 -
                                   heightfield.size.y() * static_cast<RealType>(row) /
                                           static_cast<RealType>(heightfield.rows - 1));
     const std::size_t index = static_cast<std::size_t>(row * heightfield.cols + col);

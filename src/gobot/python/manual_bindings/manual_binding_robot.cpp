@@ -194,6 +194,22 @@ void RegisterManualRobotBindings(PyRobot3DClass& robot3d_class,
                               Joint3D* joint = handle.ResolveAs<Joint3D>();
                               ExecuteSetNodeProperty(joint, "damping", Variant(damping));
                           })
+            .def_property("armature",
+                          [](const PyJoint3DHandle& handle) {
+                              return handle.ResolveAs<Joint3D>()->GetArmature();
+                          },
+                          [](PyJoint3DHandle& handle, RealType armature) {
+                              Joint3D* joint = handle.ResolveAs<Joint3D>();
+                              ExecuteSetNodeProperty(joint, "armature", Variant(armature));
+                          })
+            .def_property("friction_loss",
+                          [](const PyJoint3DHandle& handle) {
+                              return handle.ResolveAs<Joint3D>()->GetFrictionLoss();
+                          },
+                          [](PyJoint3DHandle& handle, RealType friction_loss) {
+                              Joint3D* joint = handle.ResolveAs<Joint3D>();
+                              ExecuteSetNodeProperty(joint, "friction_loss", Variant(friction_loss));
+                          })
             .def_property("joint_position",
                           [](const PyJoint3DHandle& handle) {
                               return handle.ResolveAs<Joint3D>()->GetJointPosition();

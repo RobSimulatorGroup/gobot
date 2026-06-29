@@ -14,6 +14,7 @@ from .spec import ActionSpec, ObservationSpec, SpecField, validate_spec_metadata
 from .task_runtime import TaskRuntimeMetadata
 from . import locomotion
 from .rsl_rl import (
+    FinalObservationAwarePPO,
     RslRlBaseRunnerCfg,
     RslRlModelCfg,
     RslRlOnPolicyRunnerCfg,
@@ -28,6 +29,7 @@ __all__ = [
     "BatchEnvState",
     "BatchSimulationRuntime",
     "CpuBatchEnv",
+    "FinalObservationAwarePPO",
     "GobotSceneBatchBackend",
     "GobotSceneBatchState",
     "LocomotionBatchSpec",

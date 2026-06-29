@@ -10,6 +10,11 @@ import numpy as np
 
 from .batch import BatchEnvState
 
+try:
+    from rsl_rl.algorithms import PPO as _RslRlPPO
+except ImportError:  # pragma: no cover - optional training dependency
+    _RslRlPPO = object
+
 
 def _writable_array(value: Any) -> np.ndarray:
     array = np.asarray(value)
@@ -311,7 +316,9 @@ class RslRlVecEnvWrapper:
         if self.include_final_observation and final_observation is not None:
             mask_array = np.asarray(final_mask, dtype=bool) if final_mask is not None else None
             if mask_array is None or bool(np.any(mask_array)):
-                extras["final_observation"] = self._tensor_obs(final_observation)
+                final_obs_td = self._tensor_obs(final_observation)
+                extras["final_observation"] = final_obs_td
+                extras["time_out_bootstrap_obs"] = final_obs_td
                 if mask_array is not None:
                     extras["_final_observation"] = self.torch.as_tensor(
                         _writable_array(mask_array),
@@ -380,6 +387,58 @@ class RslRlVecEnvWrapper:
             self._obs_buffers.append(data)
             self._obs_tensordicts.append(self.TensorDict(data, batch_size=[self.num_envs], device=self.device))
         self._next_obs_buffer = 0
+
+
+class FinalObservationAwarePPO(_RslRlPPO):
+    """RSL-RL PPO variant that bootstraps timeouts from final observations.
+
+    UniLab uses this behavior for PPO locomotion tasks.  Gobot keeps the class
+    local so training scripts do not depend on UniLab internals.
+    """
+
+    def __init__(self, *args: Any, **kwargs: Any) -> None:
+        if _RslRlPPO is object:
+            raise RuntimeError("FinalObservationAwarePPO requires rsl_rl to be installed")
+        super().__init__(*args, **kwargs)
+
+    def process_env_step(self, obs: Any, rewards: Any, dones: Any, extras: Mapping[str, Any]) -> None:
+        _final_observation_process_env_step(self, obs, rewards, dones, extras)
+
+
+def _final_observation_process_env_step(self, obs: Any, rewards: Any, dones: Any, extras: Mapping[str, Any]) -> None:
+    import torch
+
+    self.actor.update_normalization(obs)
+    self.critic.update_normalization(obs)
+    if self.rnd:
+        self.rnd.update_normalization(obs)
+
+    self.transition.rewards = rewards.clone()
+    self.transition.dones = dones
+
+    if self.rnd:
+        self.intrinsic_rewards = self.rnd.get_intrinsic_reward(obs)
+        self.transition.rewards += self.intrinsic_rewards
+
+    timeouts = extras.get("time_outs")
+    if timeouts is not None:
+        timeout_mask = timeouts.to(self.device).float()
+        timeout_bootstrap_obs = extras.get("time_out_bootstrap_obs")
+        if timeout_bootstrap_obs is not None and torch.count_nonzero(timeout_mask) > 0:
+            bootstrap_values = self.critic(timeout_bootstrap_obs.to(self.device)).detach()
+        else:
+            transition_values = self.transition.values
+            assert transition_values is not None
+            bootstrap_values = transition_values
+        self.transition.rewards += self.gamma * torch.squeeze(
+            bootstrap_values * timeout_mask.unsqueeze(1),
+            1,
+        )
+
+    self.storage.add_transition(self.transition)
+    self.transition.clear()
+    self.actor.reset(dones)
+    self.critic.reset(dones)
 
 
 def rsl_rl_cfg_to_dict(cfg: Mapping[str, Any] | RslRlBaseRunnerCfg | type | object) -> dict[str, Any]:

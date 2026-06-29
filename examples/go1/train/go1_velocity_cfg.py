@@ -63,6 +63,12 @@ GO1_UNILAB_ROUGH_ACTION_SCALE: Mapping[str, float] = {
     "__default__": 0.25,
 }
 
+GO1_UNILAB_MUJOCO_SOLVER_SETTINGS: Mapping[str, Any] = {
+    "cone": 1,  # mjCONE_ELLIPTIC
+    "convex_collision_iterations": 500,
+    "impedance_ratio": 100.0,
+}
+
 
 @dataclass
 class UnilabNoiseCfg:
@@ -219,8 +225,9 @@ class Go1VelocityCfg:
     action_clip: float = 100.0
     kp: float = 35.0
     kd: float = 0.5
-    physics_dt: float = 0.005
-    decimation: int = 4
+    physics_dt: float = 0.01
+    decimation: int = 2
+    mujoco_solver_settings: Mapping[str, Any] = field(default_factory=lambda: dict(GO1_UNILAB_MUJOCO_SOLVER_SETTINGS))
     episode_length_s: float = 20.0
     base_clearance: float = 0.45
     min_base_clearance: float = 0.0
@@ -230,12 +237,15 @@ class Go1VelocityCfg:
     spawn_difficulty_radius: float = 0.85
     terrain_out_of_bounds: bool = True
     terrain_distance_buffer: float = 3.0
+    randomize_rough_reset_pose: bool = True
+    use_unilab_reset_rng: bool = True
     illegal_contact: VelocityIllegalContactCfg = field(default_factory=VelocityIllegalContactCfg)
     domain_randomization: VelocityDomainRandomizationCfg = field(
         default_factory=lambda: VelocityDomainRandomizationCfg(enabled=True)
     )
     push_enabled: bool = True
     push_interval_steps: int = 750
+    push_interval_mode: Literal["per_env_random", "global"] = "per_env_random"
     push_force_ranges: Mapping[str, tuple[float, float]] = field(default_factory=_default_push_force_ranges)
     push_interval_range_s: tuple[float, float] = (1.0, 3.0)
     push_velocity_ranges: Mapping[str, tuple[float, float]] = field(default_factory=_default_push_velocity_ranges)
@@ -249,6 +259,7 @@ class Go1VelocityCfg:
             rel_forward_envs=0.0,
             heading_command=True,
             heading_control_stiffness=0.5,
+            zero_small_xy_threshold=0.08,
             ranges=UniformVelocityCommandRanges(
                 lin_vel_x=(-1.0, 1.0),
                 lin_vel_y=(-1.0, 1.0),
@@ -337,21 +348,26 @@ def go1_rough_velocity_cfg(
     cfg.kd = 0.5
     cfg.physics_dt = 0.005
     cfg.decimation = 4
-    cfg.base_clearance = 0.45
+    cfg.mujoco_solver_settings = dict(GO1_UNILAB_MUJOCO_SOLVER_SETTINGS)
+    # UniLab's home qpos z is 0.27, but get_base_pos() observes the trunk body
+    # 5 cm higher. Gobot resets the authored base body pose directly.
+    cfg.base_clearance = 0.32
     cfg.min_base_clearance = 0.0
     cfg.terrain_curriculum = False
     cfg.terrain_out_of_bounds = True
+    cfg.illegal_contact.ground_force_threshold = 1.0
     cfg.domain_randomization.enabled = True
     cfg.domain_randomization.randomize_base_mass = True
     cfg.domain_randomization.added_mass_range = (-1.0, 3.0)
     cfg.domain_randomization.random_com = True
     cfg.domain_randomization.randomize_kp = True
-    cfg.domain_randomization.kp_multiplier_range = (0.5, 2.0)
+    cfg.domain_randomization.kp_multiplier_range = (0.9, 1.1)
     cfg.domain_randomization.randomize_kd = True
-    cfg.domain_randomization.kd_multiplier_range = (0.5, 2.0)
+    cfg.domain_randomization.kd_multiplier_range = (0.9, 1.1)
     cfg.domain_randomization.encoder_bias_range = (0.0, 0.0)
     cfg.push_enabled = True
     cfg.push_interval_steps = 625
+    cfg.push_interval_mode = "global"
     cfg.command = UniformVelocityCommandCfg(
         resampling_time_range=(10.0, 10.0),
         rel_standing_envs=0.1,
@@ -360,6 +376,7 @@ def go1_rough_velocity_cfg(
         rel_forward_envs=0.0,
         heading_command=True,
         heading_control_stiffness=0.5,
+        zero_small_xy_threshold=0.08,
         ranges=UniformVelocityCommandRanges(
             lin_vel_x=(-1.0, 1.0),
             lin_vel_y=(-1.0, 1.0),
@@ -372,6 +389,7 @@ def go1_rough_velocity_cfg(
     if play:
         cfg.episode_length_s = float(1_000_000_000)
         cfg.terrain_curriculum = False
+        cfg.randomize_rough_reset_pose = False
         cfg.observations.actor_noise = False
         cfg.domain_randomization.enabled = False
         cfg.push_enabled = False
@@ -397,6 +415,7 @@ def go1_flat_velocity_cfg(
     cfg.decimation = 2
     cfg.base_clearance = 0.45
     cfg.min_base_clearance = 0.0
+    cfg.randomize_rough_reset_pose = False
     cfg.observations.height_scan_sensor = None
     cfg.terrain_curriculum = False
     cfg.terrain_out_of_bounds = False
@@ -490,7 +509,7 @@ def rsl_rl_train_cfg(
             "obs_normalization": obs_normalization,
         },
         "algorithm": {
-            "class_name": "rsl_rl.algorithms.PPO",
+            "class_name": "gobot.rl.rsl_rl.FinalObservationAwarePPO",
             "num_learning_epochs": 5,
             "num_mini_batches": 4,
             "clip_param": 0.2,

@@ -840,6 +840,14 @@ SceneState::NodeData MakeBodyJointNode(const mjModel* model,
                 dof_address >= 0 && dof_address < model->nv
                         ? static_cast<RealType>(model->dof_damping[dof_address])
                         : static_cast<RealType>(0.0));
+    AddProperty(node_data, "armature",
+                dof_address >= 0 && dof_address < model->nv
+                        ? static_cast<RealType>(model->dof_armature[dof_address])
+                        : static_cast<RealType>(0.0));
+    AddProperty(node_data, "friction_loss",
+                dof_address >= 0 && dof_address < model->nv
+                        ? static_cast<RealType>(model->dof_frictionloss[dof_address])
+                        : static_cast<RealType>(0.0));
     RealType initial_joint_position = 0.0;
     if (model->jnt_type[joint_id] == mjJNT_HINGE || model->jnt_type[joint_id] == mjJNT_SLIDE) {
         const int qpos_address = model->jnt_qposadr[joint_id];

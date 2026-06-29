@@ -615,9 +615,18 @@ std::vector<float> NormalizeHeightFieldData(const PhysicsTerrainHeightFieldSnaps
     }
     const RealType range = std::max<RealType>(max_value - min_value, CMP_EPSILON);
 
-    for (std::size_t index = 0; index < expected_count; ++index) {
-        const RealType value = index < heightfield.heights.size() ? heightfield.heights[index] : min_value;
-        data[index] = static_cast<float>((value - min_value) / range);
+    for (int row = 0; row < heightfield.rows; ++row) {
+        const int source_row = heightfield.rows - 1 - row;
+        for (int col = 0; col < heightfield.cols; ++col) {
+            const std::size_t destination_index =
+                    static_cast<std::size_t>(row * heightfield.cols + col);
+            const std::size_t source_index =
+                    static_cast<std::size_t>(source_row * heightfield.cols + col);
+            const RealType value = source_index < heightfield.heights.size()
+                                           ? heightfield.heights[source_index]
+                                           : min_value;
+            data[destination_index] = static_cast<float>((value - min_value) / range);
+        }
     }
 
     if (min_height) {
@@ -737,6 +746,8 @@ void AddJointToBody(mjsBody* body,
         mujoco_joint->actfrcrange[1] = joint.effort_limit;
     }
     mujoco_joint->damping[0] = static_cast<double>(joint.damping);
+    mujoco_joint->armature = static_cast<double>(joint.armature);
+    mujoco_joint->frictionloss = static_cast<double>(joint.friction_loss);
 }
 
 void ConfigureActuatorLimits(mjsActuator* actuator, const PhysicsJointSnapshot& joint, bool control_is_position) {
@@ -808,7 +819,16 @@ void AddJointActuators(mjSpec* spec, const PhysicsJointSnapshot& joint, const st
     if (drive_mode == JointDriveMode::Position) {
         mjsActuator* position = AddJointActuator(spec, joint, prefixed_name, "_position", true);
         if (position) {
-            mjs_setToPosition(position, joint.drive_stiffness, nullptr, nullptr, nullptr, 0.0);
+            double kv = static_cast<double>(joint.drive_damping);
+            const char* error = mjs_setToPosition(position,
+                                                  joint.drive_stiffness,
+                                                  kv > 0.0 ? &kv : nullptr,
+                                                  nullptr,
+                                                  nullptr,
+                                                  0.0);
+            if (error != nullptr && error[0] != '\0') {
+                LOG_WARN("Failed to configure MuJoCo position actuator '{}': {}", prefixed_name, error);
+            }
             ConfigureActuatorLimits(position, joint, true);
         }
         return;
@@ -2667,10 +2687,14 @@ bool MuJoCoPhysicsWorld::AddAuthoredRobotToSpec(void* parent_spec_ptr,
         }
 
         for (std::size_t shape_index = 0; shape_index < link.collision_shapes.size(); ++shape_index) {
+            const PhysicsShapeSnapshot& shape = link.collision_shapes[shape_index];
+            const std::string shape_name = shape.name.empty()
+                                                   ? fmt::format("{}{}_geom_{}", prefix, link.name, shape_index)
+                                                   : prefix + SanitizeMuJoCoName(shape.name);
             AddShapeGeomToBody(body,
-                               link.collision_shapes[shape_index],
+                               shape,
                                link,
-                               fmt::format("{}{}_geom_{}", prefix, link.name, shape_index));
+                               shape_name);
         }
 
         for (const PhysicsSensorSnapshot& sensor : robot.sensors) {

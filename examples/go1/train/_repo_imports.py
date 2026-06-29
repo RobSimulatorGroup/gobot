@@ -10,7 +10,9 @@ def prefer_repo_gobot() -> None:
     """Let checkout/build Python files win over a stale editable install."""
 
     repo_root = Path(__file__).resolve().parents[3]
-    for path in (repo_root / "python", repo_root / "build/python"):
+    # Prefer Python source files from the checkout, while keeping build/python
+    # available for the native gobot._core extension.
+    for path in (repo_root / "build/python", repo_root / "python"):
         path_string = str(path)
         while path_string in sys.path:
             sys.path.remove(path_string)

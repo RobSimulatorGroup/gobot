@@ -27,6 +27,8 @@ struct GOBOT_EXPORT TerrainHeightField {
     Vector2 size{1.0, 1.0};
     int rows{0};
     int cols{0};
+    // Row-major heights in image/MuJoCo file convention: columns map to +X,
+    // row 0 maps to the +Y edge of the heightfield.
     std::vector<RealType> heights;
     std::vector<RealType> normalized_elevation;
     RealType base_thickness{0.1};

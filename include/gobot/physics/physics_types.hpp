@@ -98,6 +98,7 @@ struct PhysicsWorldSettings {
 
 struct PhysicsShapeSnapshot {
     const CollisionShape3D* node{nullptr};
+    std::string name;
     PhysicsShapeType type{PhysicsShapeType::Unknown};
     Affine3 global_transform{Affine3::Identity()};
     Vector3 box_size{Vector3::Ones()};
@@ -164,6 +165,8 @@ struct PhysicsJointSnapshot {
     RealType effort_limit{0.0};
     RealType velocity_limit{0.0};
     RealType damping{0.0};
+    RealType armature{0.0};
+    RealType friction_loss{0.0};
     RealType joint_position{0.0};
     RealType initial_position{0.0};
     int drive_mode{0};

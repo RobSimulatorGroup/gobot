@@ -475,7 +475,7 @@ def go1_rough_terrain_cfg(*, seed: int = 42, curriculum: bool = False) -> Terrai
         curriculum=curriculum,
         sub_terrains=go1_training_terrains(),
         horizontal_scale=0.2,
-        base_thickness=0.05,
+        base_thickness=0.6,
         color_mode=_core.TerrainColorMode.Palette,
         merged_heightfield=True,
     )
@@ -590,8 +590,8 @@ def _populate_merged_heightfield_terrain(terrain: _core.Terrain3D, cfg: TerrainG
                 difficulty = float(lower) + (float(upper) - float(lower)) * difficulty
                 sub_cfg = curriculum_choices[col % len(curriculum_choices)]
             else:
-                difficulty = float(rng.uniform(float(lower), float(upper)))
                 sub_cfg = sub_terrain_cfgs[int(rng.choice(len(sub_terrain_cfgs), p=proportions))]
+                difficulty = float(rng.uniform(float(lower), float(upper)))
 
             heights_xy, origin_local = _unilab_patch_heightfield(cfg, sub_cfg, difficulty, rng)
             if heights_xy.shape != (tile_x_px, tile_y_px):
@@ -608,7 +608,7 @@ def _populate_merged_heightfield_terrain(terrain: _core.Terrain3D, cfg: TerrainG
 
     z_min = float(np.min(heights_yx))
     physical_heights = heights_yx - z_min
-    center = (0.0, 0.0, z_min)
+    center = (0.0, 0.0, 0.0)
     size = (cols_x * cfg.horizontal_scale, rows_y * cfg.horizontal_scale)
     terrain.add_heightfield(
         center,
@@ -618,7 +618,7 @@ def _populate_merged_heightfield_terrain(terrain: _core.Terrain3D, cfg: TerrainG
         physical_heights.astype(float).reshape(-1).tolist(),
         cfg.base_thickness,
         _normalize_elevation(heights_yx).astype(float).reshape(-1).tolist(),
-        0.0,
+        z_min,
     )
     terrain.spawn_origins = spawn_origins
 

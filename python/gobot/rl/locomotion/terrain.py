@@ -299,20 +299,12 @@ class TerrainSampler:
             return None
         cols = heightfield["cols"]
         rows = heightfield["rows"]
-        u = (local_x / size[0] + 0.5) * (cols - 1)
-        v = (local_y / size[1] + 0.5) * (rows - 1)
-        c0 = int(np.clip(np.floor(u), 0, cols - 1))
-        r0 = int(np.clip(np.floor(v), 0, rows - 1))
-        c1 = min(c0 + 1, cols - 1)
-        r1 = min(r0 + 1, rows - 1)
-        fu = float(u - c0)
-        fv = float(v - r0)
+        step_x = size[0] / max(cols, 1)
+        step_y = size[1] / max(rows, 1)
+        c = int(np.clip(np.rint((local_x + size[0] * 0.5) / step_x), 0, cols - 1))
+        r = int(np.clip(np.rint((-local_y + size[1] * 0.5) / step_y), 0, rows - 1))
         heights = heightfield["heights"]
-        h00 = heights[r0, c0]
-        h10 = heights[r0, c1]
-        h01 = heights[r1, c0]
-        h11 = heights[r1, c1]
-        return float(center[2] + heightfield["z_offset"] + (h00 * (1.0 - fu) + h10 * fu) * (1.0 - fv) + (h01 * (1.0 - fu) + h11 * fu) * fv)
+        return float(center[2] + heightfield["z_offset"] + heights[r, c])
 
     @staticmethod
     def _heightfield_height_grid(heightfield: Mapping[str, Any], grid_x: np.ndarray, grid_y: np.ndarray) -> np.ndarray | None:
@@ -325,20 +317,12 @@ class TerrainSampler:
             return None
         cols = heightfield["cols"]
         rows = heightfield["rows"]
-        u = (local_x / size[0] + 0.5) * (cols - 1)
-        v = (local_y / size[1] + 0.5) * (rows - 1)
-        c0 = np.clip(np.floor(u).astype(np.int64), 0, cols - 1)
-        r0 = np.clip(np.floor(v).astype(np.int64), 0, rows - 1)
-        c1 = np.minimum(c0 + 1, cols - 1)
-        r1 = np.minimum(r0 + 1, rows - 1)
-        fu = u - c0
-        fv = v - r0
+        step_x = size[0] / max(cols, 1)
+        step_y = size[1] / max(rows, 1)
+        c = np.clip(np.rint((local_x + size[0] * 0.5) / step_x).astype(np.int64), 0, cols - 1)
+        r = np.clip(np.rint((-local_y + size[1] * 0.5) / step_y).astype(np.int64), 0, rows - 1)
         heights = heightfield["heights"]
-        h00 = heights[r0, c0]
-        h10 = heights[r0, c1]
-        h01 = heights[r1, c0]
-        h11 = heights[r1, c1]
-        sampled = center[2] + heightfield["z_offset"] + (h00 * (1.0 - fu) + h10 * fu) * (1.0 - fv) + (h01 * (1.0 - fu) + h11 * fu) * fv
+        sampled = center[2] + heightfield["z_offset"] + heights[r, c]
         return np.where(mask, sampled, -np.inf)
 
 

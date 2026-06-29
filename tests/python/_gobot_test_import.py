@@ -3,9 +3,9 @@ from pathlib import Path
 
 
 def prefer_build_gobot():
-    """Let PYTHONPATH/build artifacts win over scikit-build editable hooks."""
+    """Let checkout Python files win while using build artifacts for native code."""
     repo_root = Path(__file__).resolve().parents[2]
-    for path in (repo_root / "python", repo_root / "build/python"):
+    for path in (repo_root / "build/python", repo_root / "python"):
         path_string = str(path)
         while path_string in sys.path:
             sys.path.remove(path_string)

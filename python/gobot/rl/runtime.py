@@ -491,6 +491,7 @@ class NativeLocomotionBatchBackend:
         return self._state
 
     def configure(self, num_envs: int) -> None:
+        self.close()
         create_view = getattr(self.runtime.context, "create_locomotion_batch_view", None)
         if create_view is None:
             raise RuntimeError("Gobot Python binding has no native locomotion batch view")
@@ -518,6 +519,16 @@ class NativeLocomotionBatchBackend:
         )
         self._arrays = {str(name): np.asarray(value) for name, value in dict(self._view.arrays()).items()}
         self._state = self._state_from_arrays()
+
+    def close(self) -> None:
+        view = self._view
+        self._state = None
+        self._arrays = {}
+        self._view = None
+        if view is not None:
+            close = getattr(view, "close", None)
+            if close is not None:
+                close()
 
     def resolved_workers(self, workers: int = 0) -> int:
         return self.runtime.resolved_workers(workers)
@@ -549,6 +560,7 @@ class NativeLocomotionBatchBackend:
         rel_forward_envs: float,
         heading_command: bool,
         heading_control_stiffness: float,
+        zero_small_xy_threshold: float,
         seed: int,
     ) -> None:
         self._require_view()
@@ -578,6 +590,7 @@ class NativeLocomotionBatchBackend:
             float(rel_forward_envs),
             bool(heading_command),
             float(heading_control_stiffness),
+            float(zero_small_xy_threshold),
             int(seed),
         )
 
@@ -606,6 +619,39 @@ class NativeLocomotionBatchBackend:
             raise RuntimeError("Gobot native locomotion batch view has no native command reset")
         self._view.reset_commands([int(env_id) for env_id in env_ids])
 
+    def set_commands(
+        self,
+        env_ids: Sequence[int],
+        *,
+        commands: Any,
+        heading_targets: Any,
+        time_left: Any,
+    ) -> None:
+        self._require_view()
+        set_commands = getattr(self._view, "set_commands", None)
+        if set_commands is None:
+            raise RuntimeError("Gobot native locomotion batch view has no native command setter")
+        set_commands(
+            [int(env_id) for env_id in env_ids],
+            np.asarray(commands, dtype=np.float32),
+            np.asarray(heading_targets, dtype=np.float32),
+            np.asarray(time_left, dtype=np.float32),
+        )
+
+    def set_command_steps(self, env_ids: Sequence[int], steps: Any) -> None:
+        self._require_view()
+        set_steps = getattr(self._view, "set_command_steps", None)
+        if set_steps is None:
+            raise RuntimeError("Gobot native locomotion batch view has no command-step setter")
+        set_steps([int(env_id) for env_id in env_ids], np.asarray(steps, dtype=np.uint32))
+
+    def set_command_step_resampling(self, enabled: bool) -> None:
+        self._require_view()
+        set_enabled = getattr(self._view, "set_command_step_resampling", None)
+        if set_enabled is None:
+            raise RuntimeError("Gobot native locomotion batch view has no command-step resampling toggle")
+        set_enabled(bool(enabled))
+
     def step_task_inputs(self, actions: Any, nsteps: int, *, workers: int = 0, simulate_action_latency: bool = False) -> dict[str, Any]:
         self._require_view()
         step_task_inputs = getattr(self._view, "step_task_inputs", None)
@@ -617,6 +663,20 @@ class NativeLocomotionBatchBackend:
 
     def step_profile(self) -> dict[str, float]:
         return self.state.step_profile()
+
+    def model_debug(self, env_id: int = 0) -> dict[str, Any]:
+        self._require_view()
+        model_debug = getattr(self._view, "model_debug", None)
+        if model_debug is None:
+            raise RuntimeError("Gobot native locomotion batch view has no model debug API")
+        return dict(model_debug(int(env_id)))
+
+    def terrain_heights(self, points: Any, env_id: int = 0) -> np.ndarray:
+        self._require_view()
+        terrain_heights = getattr(self._view, "terrain_heights", None)
+        if terrain_heights is None:
+            raise RuntimeError("Gobot native locomotion batch view has no terrain height debug API")
+        return np.asarray(terrain_heights(np.asarray(points, dtype=np.float32), int(env_id)), dtype=np.float32)
 
     def set_position_targets(self, ctrl: Any) -> None:
         self._require_view()
@@ -678,6 +738,13 @@ class NativeLocomotionBatchBackend:
         self._arrays["reset_joint_velocity"][rows] = np.asarray(joint_velocities, dtype=np.float32)
         self._arrays["target_position"][rows] = np.asarray(joint_position_targets, dtype=np.float32)
         self._view.reset([int(env_id) for env_id in env_id_array])
+
+    def clear_reset_contacts(self, env_ids: Sequence[int]) -> None:
+        self._require_view()
+        env_id_array = np.asarray(env_ids, dtype=np.int64).reshape(-1)
+        if env_id_array.size == 0:
+            return
+        self._view.clear_reset_contacts([int(env_id) for env_id in env_id_array])
 
     def set_base_velocity(self, env_id: int, linear_velocity: Any, angular_velocity: Any) -> None:
         self._require_view()
