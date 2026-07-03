@@ -1,6 +1,7 @@
 import json
 from pathlib import Path
 import sys
+import tempfile
 
 import numpy as np
 
@@ -16,6 +17,7 @@ for path in (REPO_ROOT / "build/python", REPO_ROOT / "python", REPO_ROOT):
     sys.path.insert(0, path_string)
 
 from benchmark import go1_velocity_benchmark
+from examples.go1.scripts import compare_unilab_gobot_go1_rough as go1_compare
 from examples.go1.scripts import go1 as go1_playback
 from examples.go1.train import go1_velocity_cfg as go1_cfg
 from examples.go1.train.go1_velocity_env import Go1VelocityEnv
@@ -240,6 +242,10 @@ def test_go1_unilab_cfg_profiles_and_playback_schemas():
     assert go1_playback.ACTOR_OBS_SCHEMA.names == actor_schema.names
     assert go1_playback.UNILAB_ROUGH_ACTOR_OBS_SCHEMA.dim == 45
     assert go1_playback.UNILAB_FLAT_ACTOR_OBS_SCHEMA.dim == 49
+    assert go1_playback.FIXED_TIME_STEP == cfg.physics_dt
+    assert go1_playback.DECIMATION == cfg.decimation
+    assert go1_playback.RESET_BASE_POSITION[2] == cfg.base_clearance
+    assert go1_playback.UNILAB_MUJOCO_SOLVER_SETTINGS == dict(go1_cfg.GO1_UNILAB_MUJOCO_SOLVER_SETTINGS)
     assert go1_playback._validate_checkpoint_schema(
         {
             "infos": {
@@ -457,6 +463,215 @@ def test_go1_playback_profile_observation_shapes():
     assert len(script._observation(state)) == go1_playback.UNILAB_ROUGH_ACTOR_OBS_SCHEMA.dim
     script._update_feet_phase()
     assert script.phase > 0.0
+
+
+def test_go1_playback_unilab_rough_uses_unilab_upvector_observation():
+    script = object.__new__(go1_playback.Script)
+    script.command = [0.0, 0.0, 0.0]
+    script.last_action = [0.0] * len(go1_playback.JOINT_NAMES)
+    script.feet_phase = [0.0] * len(go1_playback.LEG_ORDER)
+    script.phase = 0.0
+
+    angle = np.pi / 4.0
+    quat = [float(np.cos(angle / 2.0)), float(np.sin(angle / 2.0)), 0.0, 0.0]
+    state = {
+        "links": [
+            {
+                "name": go1_playback.BASE_LINK,
+                "global_transform": {"position": [0.0, 0.0, 0.5], "quaternion": quat},
+                "linear_velocity": [0.0, 0.0, 0.0],
+                "angular_velocity": [0.0, 0.0, 0.0],
+            }
+        ],
+        "joints": [
+            {"name": name, "position": go1_playback.DEFAULT_POS[index], "velocity": 0.0}
+            for index, name in enumerate(go1_playback.JOINT_NAMES)
+        ],
+        "sensors": [
+            {
+                "name": go1_playback.TERRAIN_SCAN_SENSOR,
+                "values": [0.0] * go1_playback.TERRAIN_SCAN_DIM,
+            }
+        ],
+    }
+
+    script.policy_profile = "unilab_rough"
+    script.policy_obs_dim = go1_playback.UNILAB_ROUGH_ACTOR_OBS_SCHEMA.dim
+    obs = np.asarray(script._observation(state), dtype=np.float32)
+    expected = -np.asarray(go1_playback._quat_rotate([0.0, 0.0, 1.0], quat), dtype=np.float32)
+    np.testing.assert_allclose(obs[3:6], expected, atol=1.0e-6)
+
+
+def test_go1_playback_unilab_rough_uses_heading_feedback_command():
+    script = object.__new__(go1_playback.Script)
+    script.command = [0.3, -0.2, 0.0]
+    script.command_target = [0.3, -0.2, 0.0]
+    script.heading_target = 1.0
+    script.heading_target_initialized = True
+    script.last_action = [0.0] * len(go1_playback.JOINT_NAMES)
+    script.feet_phase = [0.0] * len(go1_playback.LEG_ORDER)
+    script.phase = 0.0
+
+    yaw = 0.25
+    quat = [float(np.cos(yaw / 2.0)), 0.0, 0.0, float(np.sin(yaw / 2.0))]
+    state = {
+        "links": [
+            {
+                "name": go1_playback.BASE_LINK,
+                "global_transform": {"position": [0.0, 0.0, 0.5], "quaternion": quat},
+                "linear_velocity": [0.0, 0.0, 0.0],
+                "angular_velocity": [0.0, 0.0, 0.0],
+            }
+        ],
+        "joints": [
+            {"name": name, "position": go1_playback.DEFAULT_POS[index], "velocity": 0.0}
+            for index, name in enumerate(go1_playback.JOINT_NAMES)
+        ],
+        "sensors": [
+            {
+                "name": go1_playback.TERRAIN_SCAN_SENSOR,
+                "values": [0.0] * go1_playback.TERRAIN_SCAN_DIM,
+            }
+        ],
+    }
+
+    script.policy_profile = "unilab_rough"
+    script.policy_obs_dim = go1_playback.UNILAB_ROUGH_ACTOR_OBS_SCHEMA.dim
+    obs = np.asarray(script._observation(state), dtype=np.float32)
+    np.testing.assert_allclose(obs[6:9], [0.3, -0.2, 0.375], atol=1.0e-6)
+
+
+def test_go1_playback_zero_command_still_runs_policy():
+    class FakePolicy:
+        obs_dim = go1_playback.UNILAB_ROUGH_ACTOR_OBS_SCHEMA.dim
+        schema = go1_playback.UNILAB_ROUGH_ACTOR_OBS_SCHEMA
+
+        def __init__(self):
+            self.calls = 0
+
+        def action(self, observation):
+            self.calls += 1
+            assert len(observation) == self.obs_dim
+            return [0.5] * len(go1_playback.JOINT_NAMES)
+
+    class FakeContext:
+        has_world = True
+        simulation_time = 0.0
+        input = None
+
+    class FakeRobot:
+        name = go1_playback.ROBOT
+
+    class FakeJoint:
+        def __init__(self, name, position):
+            self.name = name
+            self.position = position
+            self.target = None
+
+        def get_runtime_state(self):
+            return {"name": self.name, "position": self.position, "velocity": 0.0}
+
+        def set_position_target(self, value):
+            self.target = float(value)
+
+    class FakeLink:
+        def get_runtime_state(self):
+            return {
+                "name": go1_playback.BASE_LINK,
+                "global_transform": {
+                    "position": [0.0, 0.0, 0.3],
+                    "quaternion": [1.0, 0.0, 0.0, 0.0],
+                },
+                "linear_velocity": [0.0, 0.0, 0.0],
+                "angular_velocity": [0.0, 0.0, 0.0],
+            }
+
+    class FakeSensor:
+        def get_runtime_state(self):
+            return {"name": go1_playback.TERRAIN_SCAN_SENSOR, "values": []}
+
+    script = object.__new__(go1_playback.Script)
+    script.context = FakeContext()
+    script.playing = True
+    script.world_controls_ready = True
+    script.ticks = 0
+    script.command = [0.0, 0.0, 0.0]
+    script.policy = FakePolicy()
+    script.policy_profile = "unilab_rough"
+    script.policy_obs_dim = go1_playback.UNILAB_ROUGH_ACTOR_OBS_SCHEMA.dim
+    script.action_scale = list(go1_playback.UNILAB_ROUGH_ACTION_SCALE)
+    script.action_clip = 100.0
+    script.last_action = [0.0] * len(go1_playback.JOINT_NAMES)
+    script.last_targets = list(go1_playback.DEFAULT_POS)
+    script.phase = 0.0
+    script.feet_phase = [0.0] * len(go1_playback.LEG_ORDER)
+    script.base_link = FakeLink()
+    script.terrain_scan = FakeSensor()
+    script.robot = FakeRobot()
+    script.joints = [
+        FakeJoint(name, go1_playback.DEFAULT_POS[index])
+        for index, name in enumerate(go1_playback.JOINT_NAMES)
+    ]
+
+    script._physics_process(1.0 / go1_playback.PHYSICS_HZ)
+
+    assert script.policy.calls == 1
+    assert script.last_action == [0.5] * len(go1_playback.JOINT_NAMES)
+    assert all(joint.target is not None for joint in script.joints)
+
+
+def test_go1_compare_dump_path_splits_both_backends():
+    class Args:
+        backend = "both"
+
+    with tempfile.TemporaryDirectory() as tmp:
+        tmp_path = Path(tmp)
+        Args.dump_npz = tmp_path / "parity.npz"
+        assert go1_compare._dump_path(Args, "gobot") == tmp_path / "parity_gobot.npz"
+        assert go1_compare._dump_path(Args, "unilab") == tmp_path / "parity_unilab.npz"
+
+    Args.backend = "gobot"
+    Args.dump_npz = Path("/tmp/parity.npz")
+    assert go1_compare._dump_path(Args, "gobot") == Path("/tmp/parity.npz")
+
+
+def test_go1_compare_fixed_reset_disables_randomized_terms():
+    args = go1_compare.build_parser().parse_args(["--fixed-reset"])
+    assert not args.no_domain_rand
+    assert not args.no_push
+    assert not args.no_obs_noise
+
+    go1_compare.normalize_args(args)
+
+    assert args.no_domain_rand
+    assert args.no_push
+    assert args.no_obs_noise
+
+
+def test_go1_rough_playback_reset_uses_nearest_terrain_spawn():
+    class FakeTerrain:
+        spawn_origins = [
+            [-20.0, -20.0, 0.0],
+            [-4.0, -4.0, 0.525],
+            [12.0, 4.0, -0.2],
+        ]
+
+    class FakeTerrainWorld:
+        def find(self, name):
+            return FakeTerrain() if name == "terrain" else None
+
+    class FakeRoot:
+        def find(self, name):
+            return FakeTerrainWorld() if name == "terrain_world" else None
+
+    script = object.__new__(go1_playback.Script)
+    script.policy_profile = "unilab_rough"
+    script.get_root = lambda: FakeRoot()
+
+    np.testing.assert_allclose(
+        script._resolve_reset_base_position(),
+        [-4.0, -4.0, 0.845],
+    )
 
 
 def test_go1_train_cfg_preserves_unilab_task_contract():
@@ -789,6 +1004,12 @@ def main():
         test_go1_unilab_cfg_profiles_and_playback_schemas,
         test_go1_benchmark_uses_unilab_env_step_accounting,
         test_go1_playback_profile_observation_shapes,
+        test_go1_playback_unilab_rough_uses_unilab_upvector_observation,
+        test_go1_playback_unilab_rough_uses_heading_feedback_command,
+        test_go1_playback_zero_command_still_runs_policy,
+        test_go1_compare_dump_path_splits_both_backends,
+        test_go1_compare_fixed_reset_disables_randomized_terms,
+        test_go1_rough_playback_reset_uses_nearest_terrain_spawn,
         test_go1_train_cfg_preserves_unilab_task_contract,
         test_go1_unilab_rough_env_reset_step_shapes,
         test_go1_unilab_rough_native_command_sampling_matches_unilab_reset,

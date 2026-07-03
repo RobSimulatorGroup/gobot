@@ -222,6 +222,7 @@ class Go1VelocityCfg:
     foot_names: tuple[str, ...] = GO1_UNILAB_FOOT_NAMES
     foot_link_names: tuple[str, ...] = GO1_UNILAB_FOOT_LINK_NAMES
     action_scale: float | Mapping[str, float] = field(default_factory=lambda: dict(GO1_UNILAB_ROUGH_ACTION_SCALE))
+    simulate_action_latency: bool = False
     action_clip: float = 100.0
     kp: float = 35.0
     kd: float = 0.5

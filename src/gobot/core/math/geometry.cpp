@@ -17,6 +17,13 @@
 
 
 GOBOT_REGISTRATION {
+    Class_<Quaternionf>("Quaternionf")
+            .constructor()(CtorAsObject)
+            .property("x", &Quaternionf::GetX, &Quaternionf::SetX)
+            .property("y", &Quaternionf::GetY, &Quaternionf::SetY)
+            .property("z", &Quaternionf::GetZ, &Quaternionf::SetZ)
+            .property("w", &Quaternionf::GetW, &Quaternionf::SetW);
+
     Class_<Quaterniond>("Quaterniond")
             .constructor()(CtorAsObject)
             .property("x", &Quaterniond::GetX, &Quaterniond::SetX)

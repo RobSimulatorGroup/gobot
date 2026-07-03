@@ -204,6 +204,7 @@ TEST_F(TestResourceFormatScene, packed_scene_round_trips_collision_shape_resourc
     auto* collision_shape = gobot::Object::New<gobot::CollisionShape3D>();
     collision_shape->SetName("Collision");
     collision_shape->SetPosition({1.0f, 2.0f, 3.0f});
+    collision_shape->SetPriority(3);
 
     gobot::Ref<gobot::CylinderShape3D> cylinder_shape = gobot::MakeRef<gobot::CylinderShape3D>();
     cylinder_shape->SetRadius(0.25f);
@@ -237,6 +238,7 @@ TEST_F(TestResourceFormatScene, packed_scene_round_trips_collision_shape_resourc
     ASSERT_NE(instanced_collision, nullptr);
     EXPECT_EQ(instanced_collision->GetName(), "Collision");
     EXPECT_TRUE(instanced_collision->GetPosition().isApprox(gobot::Vector3(1.0f, 2.0f, 3.0f), CMP_EPSILON));
+    EXPECT_EQ(instanced_collision->GetPriority(), 3);
 
     gobot::Ref<gobot::CylinderShape3D> instanced_shape =
             gobot::dynamic_pointer_cast<gobot::CylinderShape3D>(instanced_collision->GetShape());
@@ -245,6 +247,51 @@ TEST_F(TestResourceFormatScene, packed_scene_round_trips_collision_shape_resourc
     EXPECT_FLOAT_EQ(instanced_shape->GetHeight(), 2.0f);
 
     gobot::Object::Delete(root);
+    gobot::Object::Delete(instance);
+}
+
+TEST_F(TestResourceFormatScene, packed_scene_round_trips_link_inertial_orientation) {
+    auto* robot = gobot::Object::New<gobot::Robot3D>();
+    robot->SetName("InertialBot");
+
+    auto* base_link = gobot::Object::New<gobot::Link3D>();
+    base_link->SetName("base");
+    base_link->SetHasInertial(true);
+    base_link->SetMass(2.0);
+    base_link->SetCenterOfMass({0.1, 0.2, 0.3});
+    base_link->SetInertiaOrientation(gobot::Quaternion(0.5, 0.5, -0.5, 0.5));
+    base_link->SetInertiaDiagonal({1.0, 2.0, 3.0});
+    robot->AddChild(base_link);
+
+    gobot::Ref<gobot::PackedScene> packed_scene = gobot::MakeRef<gobot::PackedScene>();
+    ASSERT_TRUE(packed_scene->Pack(robot));
+
+    USING_ENUM_BITWISE_OPERATORS;
+    ASSERT_TRUE(gobot::ResourceSaver::Save(packed_scene, "res://inertial_scene.jscn",
+                                           gobot::ResourceSaverFlags::ReplaceSubResourcePaths |
+                                           gobot::ResourceSaverFlags::ChangePath));
+
+    gobot::Ref<gobot::Resource> loaded_resource = gobot::ResourceLoader::Load(
+            "res://inertial_scene.jscn", "PackedScene", gobot::ResourceFormatLoader::CacheMode::Ignore);
+    ASSERT_TRUE(loaded_resource.IsValid());
+    gobot::Ref<gobot::PackedScene> loaded_scene = gobot::dynamic_pointer_cast<gobot::PackedScene>(loaded_resource);
+    ASSERT_TRUE(loaded_scene.IsValid());
+
+    gobot::Node* instance = loaded_scene->Instantiate();
+    ASSERT_NE(instance, nullptr);
+    auto* loaded_robot = gobot::Object::PointerCastTo<gobot::Robot3D>(instance);
+    ASSERT_NE(loaded_robot, nullptr);
+    ASSERT_EQ(loaded_robot->GetChildCount(), 1);
+
+    auto* loaded_link = gobot::Object::PointerCastTo<gobot::Link3D>(loaded_robot->GetChild(0));
+    ASSERT_NE(loaded_link, nullptr);
+    EXPECT_TRUE(loaded_link->HasInertial());
+    EXPECT_NEAR(loaded_link->GetMass(), 2.0, 1.0e-9);
+    EXPECT_TRUE(loaded_link->GetCenterOfMass().isApprox(gobot::Vector3(0.1, 0.2, 0.3), CMP_EPSILON));
+    EXPECT_TRUE(loaded_link->GetInertiaOrientation().isApprox(gobot::Quaternion(0.5, 0.5, -0.5, 0.5), CMP_EPSILON));
+    EXPECT_TRUE(loaded_link->GetInertiaDiagonal().isApprox(gobot::Vector3(1.0, 2.0, 3.0), CMP_EPSILON));
+
+    gobot::Object::Delete(robot);
     gobot::Object::Delete(instance);
 }
 

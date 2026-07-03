@@ -142,6 +142,18 @@ Vector3 ToVector3(const mjtNum* values) {
             static_cast<RealType>(values[2])};
 }
 
+Quaternion ToQuaternionWxyz(const mjtNum* values) {
+    Quaternion quaternion(static_cast<RealType>(values[0]),
+                          static_cast<RealType>(values[1]),
+                          static_cast<RealType>(values[2]),
+                          static_cast<RealType>(values[3]));
+    if (quaternion.norm() <= CMP_EPSILON) {
+        return Quaternion::Identity();
+    }
+    quaternion.normalize();
+    return quaternion;
+}
+
 Matrix3 ToMatrix3FromMuJoCoQuat(const mjtNum* quat) {
     mjtNum matrix[9] = {};
     mju_quat2Mat(matrix, quat);
@@ -780,6 +792,7 @@ SceneState::NodeData MakeBodyLinkNode(const mjModel* model,
     AddProperty(node_data, "has_inertial", model->body_mass[body_id] > 0.0);
     AddProperty(node_data, "mass", static_cast<RealType>(model->body_mass[body_id]));
     AddProperty(node_data, "center_of_mass", ToVector3(model->body_ipos + 3 * body_id));
+    AddProperty(node_data, "inertia_orientation", ToQuaternionWxyz(model->body_iquat + 4 * body_id));
     AddProperty(node_data, "inertia_diagonal", ToVector3(model->body_inertia + 3 * body_id));
     AddProperty(node_data, "inertia_off_diagonal", Vector3{0.0, 0.0, 0.0});
     AddProperty(node_data, "role", LinkRole::Physical);
@@ -913,6 +926,7 @@ SceneState::NodeData MakeGeomCollisionNode(const mjModel* model, int geom_id, in
     AddProperty(node_data, "solimp", ToRealVector(model->geom_solimp + 5 * geom_id, 5));
     AddProperty(node_data, "margin", static_cast<RealType>(model->geom_margin[geom_id]));
     AddProperty(node_data, "gap", static_cast<RealType>(model->geom_gap[geom_id]));
+    AddProperty(node_data, "priority", model->geom_priority[geom_id]);
     AddProperty(node_data, "visible", false);
     return node_data;
 }

@@ -31,6 +31,18 @@ const Vector3& Link3D::GetCenterOfMass() const {
     return center_of_mass_;
 }
 
+void Link3D::SetInertiaOrientation(const Quaternion& inertia_orientation) {
+    if (inertia_orientation.norm() <= CMP_EPSILON) {
+        inertia_orientation_ = Quaternion::Identity();
+        return;
+    }
+    inertia_orientation_ = inertia_orientation.normalized();
+}
+
+const Quaternion& Link3D::GetInertiaOrientation() const {
+    return inertia_orientation_;
+}
+
 void Link3D::SetInertiaDiagonal(const Vector3& inertia_diagonal) {
     if ((inertia_diagonal.array() < 0).any()) {
         LOG_ERROR("Link3D inertia diagonal cannot be negative.");
@@ -78,6 +90,7 @@ GOBOT_REGISTRATION {
             .property("has_inertial", &Link3D::HasInertial, &Link3D::SetHasInertial)
             .property("mass", &Link3D::GetMass, &Link3D::SetMass)
             .property("center_of_mass", &Link3D::GetCenterOfMass, &Link3D::SetCenterOfMass)
+            .property("inertia_orientation", &Link3D::GetInertiaOrientation, &Link3D::SetInertiaOrientation)
             .property("inertia_diagonal", &Link3D::GetInertiaDiagonal, &Link3D::SetInertiaDiagonal)
             .property("inertia_off_diagonal", &Link3D::GetInertiaOffDiagonal, &Link3D::SetInertiaOffDiagonal)
             .property("role", &Link3D::GetRole, &Link3D::SetRole);

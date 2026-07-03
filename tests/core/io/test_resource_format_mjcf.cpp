@@ -145,6 +145,48 @@ TEST(TestResourceFormatMJCF, imports_bodies_joints_and_collision_geoms_as_scene_
     gobot::Object::Delete(root_node);
 }
 
+TEST(TestResourceFormatMJCF, imports_body_inertial_orientation) {
+    if (!gobot::ResourceFormatLoaderMJCF::IsMuJoCoAvailable()) {
+        GTEST_SKIP() << "MuJoCo support is not enabled.";
+    }
+
+    const std::filesystem::path fixture_path =
+            std::filesystem::temp_directory_path() / "gobot_mjcf_inertial_orientation.xml";
+    {
+        std::ofstream file(fixture_path);
+        file << R"(<mujoco model="inertial_orientation_bot">
+  <worldbody>
+    <body name="base">
+      <inertial pos="0.1 0.2 0.3" quat="0.5 0.5 -0.5 0.5" mass="2.0" diaginertia="1 2 3"/>
+      <geom name="base_collision" type="sphere" size="0.05" priority="4"/>
+    </body>
+  </worldbody>
+</mujoco>
+)";
+    }
+
+    gobot::Ref<gobot::ResourceFormatLoaderMJCF> loader = gobot::MakeRef<gobot::ResourceFormatLoaderMJCF>();
+    gobot::Ref<gobot::PackedScene> packed_scene =
+            gobot::dynamic_pointer_cast<gobot::PackedScene>(loader->Load(fixture_path.string()));
+    ASSERT_TRUE(packed_scene.IsValid());
+
+    gobot::Node* root_node = packed_scene->Instantiate();
+    ASSERT_NE(root_node, nullptr);
+
+    auto* base = gobot::Object::PointerCastTo<gobot::Link3D>(FindNodeByName(root_node, "base"));
+    ASSERT_NE(base, nullptr);
+    EXPECT_TRUE(base->GetCenterOfMass().isApprox(gobot::Vector3(0.1, 0.2, 0.3), 1.0e-9));
+    EXPECT_TRUE(base->GetInertiaOrientation().isApprox(gobot::Quaternion(0.5, 0.5, -0.5, 0.5), 1.0e-9));
+    EXPECT_TRUE(base->GetInertiaDiagonal().isApprox(gobot::Vector3(1.0, 2.0, 3.0), 1.0e-9));
+
+    auto* collision = gobot::Object::PointerCastTo<gobot::CollisionShape3D>(
+            FindNodeByName(root_node, "base_collision"));
+    ASSERT_NE(collision, nullptr);
+    EXPECT_EQ(collision->GetPriority(), 4);
+
+    gobot::Object::Delete(root_node);
+}
+
 TEST(TestResourceFormatMJCF, imports_mesh_geoms_as_visuals) {
     if (!gobot::ResourceFormatLoaderMJCF::IsMuJoCoAvailable()) {
         GTEST_SKIP() << "MuJoCo support is not enabled.";

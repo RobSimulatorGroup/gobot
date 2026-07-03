@@ -290,7 +290,10 @@ class Go1VelocityEnv(LocomotionBatchEnv):
         super().__init__(
             num_envs=int(num_envs),
             seed=int(seed),
-            control_cfg=LocomotionControlCfg(action_scale=self.cfg_obj.action_scale),
+            control_cfg=LocomotionControlCfg(
+                action_scale=self.cfg_obj.action_scale,
+                simulate_action_latency=bool(self.cfg_obj.simulate_action_latency),
+            ),
             noise_cfg=LocomotionNoiseCfg(
                 level=1.0 if self.cfg_obj.observations.actor_noise else 0.0,
                 ranges=self.cfg_obj.observations.actor_noise_ranges,

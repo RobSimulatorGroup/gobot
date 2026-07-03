@@ -48,7 +48,7 @@ class Go1Policy(torch.nn.Module):
 
     def forward(self, obs: torch.Tensor) -> torch.Tensor:
         if self.use_obs_normalizer:
-            obs = (obs - self.obs_mean) / (self.obs_std + 1.0e-2)
+            obs = (obs - self.obs_mean) / self.obs_std.clamp_min(1.0e-6)
         return self.mlp(obs)
 
 

@@ -1101,6 +1101,7 @@ py::dict LinkSnapshotToPythonDict(const PhysicsLinkSnapshot& link) {
     result["role"] = link.role == PhysicsLinkRole::VirtualRoot ? "virtual_root" : "physical";
     result["mass"] = link.mass;
     result["center_of_mass"] = Vector3ToPython(link.center_of_mass);
+    result["inertia_orientation"] = QuaternionWxyzToPython(link.inertia_orientation);
     result["inertia_diagonal"] = Vector3ToPython(link.inertia_diagonal);
     result["inertia_off_diagonal"] = Vector3ToPython(link.inertia_off_diagonal);
     result["global_transform"] = TransformToPythonDict(link.global_transform);

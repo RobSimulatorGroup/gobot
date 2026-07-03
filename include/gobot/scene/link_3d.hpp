@@ -30,6 +30,10 @@ public:
 
     const Vector3& GetCenterOfMass() const;
 
+    void SetInertiaOrientation(const Quaternion& inertia_orientation);
+
+    const Quaternion& GetInertiaOrientation() const;
+
     void SetInertiaDiagonal(const Vector3& inertia_diagonal);
 
     const Vector3& GetInertiaDiagonal() const;
@@ -50,6 +54,7 @@ private:
     bool has_inertial_{false};
     RealType mass_{0.0};
     Vector3 center_of_mass_{Vector3::Zero()};
+    Quaternion inertia_orientation_{Quaternion::Identity()};
     Vector3 inertia_diagonal_{Vector3::Zero()};
     Vector3 inertia_off_diagonal_{Vector3::Zero()};
     LinkRole role_{LinkRole::Physical};

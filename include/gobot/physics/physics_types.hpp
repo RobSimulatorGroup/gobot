@@ -112,6 +112,7 @@ struct PhysicsShapeSnapshot {
     std::vector<RealType> solimp{0.9, 0.95, 0.001, 0.5, 2.0};
     RealType margin{0.0};
     RealType gap{0.0};
+    int priority{0};
     bool disabled{false};
 };
 
@@ -122,6 +123,7 @@ struct PhysicsLinkSnapshot {
     Affine3 global_transform{Affine3::Identity()};
     RealType mass{0.0};
     Vector3 center_of_mass{Vector3::Zero()};
+    Quaternion inertia_orientation{Quaternion::Identity()};
     Vector3 inertia_diagonal{Vector3::Zero()};
     Vector3 inertia_off_diagonal{Vector3::Zero()};
     std::vector<PhysicsShapeSnapshot> collision_shapes;

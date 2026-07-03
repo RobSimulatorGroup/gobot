@@ -139,6 +139,7 @@ PhysicsShapeSnapshot CaptureShapeSnapshot(const CollisionShape3D* collision_shap
     snapshot.solimp = collision_shape->GetSolimp();
     snapshot.margin = collision_shape->GetMargin();
     snapshot.gap = collision_shape->GetGap();
+    snapshot.priority = collision_shape->GetPriority();
 
     const Ref<Shape3D>& shape = collision_shape->GetShape();
     if (!shape.IsValid()) {
@@ -372,6 +373,7 @@ void CollectRobotNodes(const Node* node,
         link_snapshot.global_transform = node_global_transform;
         link_snapshot.mass = link->GetMass();
         link_snapshot.center_of_mass = link->GetCenterOfMass();
+        link_snapshot.inertia_orientation = link->GetInertiaOrientation();
         link_snapshot.inertia_diagonal = link->GetInertiaDiagonal();
         link_snapshot.inertia_off_diagonal = link->GetInertiaOffDiagonal();
 

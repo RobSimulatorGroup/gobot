@@ -149,13 +149,13 @@ uv run gobot_editor --path examples/go1
 ```
 
 Click the 3D viewer, then use `W/S` for forward/backward, `Q/E` for strafe,
-`A/D` for yaw, `Space` to stop, and `R` to reset. The keyboard command limits
-default to the mjlab Go1 rough task ranges: `vx=1.0`, `vy=1.0`, `yaw=0.5`.
-Playback defaults to `500Hz` physics with `10` max substeps and `50Hz`
-policy updates (`decimation=10`). At a `60Hz` editor render rate this averages
-about `8.33` physics ticks per rendered frame, matching the Go1 training
-configuration's `0.002s` physics step. Go1-specific hip/thigh/calf PD gains and
-`trunk` reset height `0.278m` are built in. Sensor debug visualization is
+`A/D` for heading, `Space` to stop, and `R` to reset. The keyboard command
+limits default to the UniLab Go1 rough task ranges: `vx=1.0`, `vy=1.0`, and
+heading-rate input `0.5`; the policy yaw command is produced by UniLab-style
+heading feedback. Playback defaults to `200Hz` physics with `4` max substeps
+and `50Hz` policy updates (`decimation=4`), matching the Go1 rough
+configuration's `0.005s` physics step. Go1-specific hip/thigh/calf PD gains and
+`trunk` reset height `0.32m` are built in. Sensor debug visualization is
 enabled by the sensor nodes and velocity command debug is driven by the runtime
 `VelocityCommandDebug3D` node.
 

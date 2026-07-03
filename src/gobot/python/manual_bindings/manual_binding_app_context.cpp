@@ -660,6 +660,35 @@ public:
         }
         result["joints"] = joints;
 
+        py::list bodies;
+        for (int body_id = 0; body_id < model->nbody; ++body_id) {
+            const std::string body_name(MuJoCoObjectName(*model, mjOBJ_BODY, body_id));
+            const bool include = body_id == 0 ||
+                                 ContainsCaseInsensitive(body_name, "foot") ||
+                                 ContainsCaseInsensitive(body_name, "hip") ||
+                                 ContainsCaseInsensitive(body_name, "thigh") ||
+                                 ContainsCaseInsensitive(body_name, "calf") ||
+                                 ContainsCaseInsensitive(body_name, "base") ||
+                                 ContainsCaseInsensitive(body_name, "trunk") ||
+                                 MuJoCoNameMatches(body_name, "FL") ||
+                                 MuJoCoNameMatches(body_name, "FR") ||
+                                 MuJoCoNameMatches(body_name, "RL") ||
+                                 MuJoCoNameMatches(body_name, "RR");
+            if (!include) {
+                continue;
+            }
+            py::dict body;
+            body["id"] = body_id;
+            body["name"] = body_name;
+            body["parent_id"] = model->body_parentid[body_id];
+            body["mass"] = static_cast<double>(model->body_mass[body_id]);
+            body["ipos"] = num_list(model->body_ipos + 3 * body_id, 3);
+            body["iquat"] = num_list(model->body_iquat + 4 * body_id, 4);
+            body["inertia"] = num_list(model->body_inertia + 3 * body_id, 3);
+            bodies.append(std::move(body));
+        }
+        result["bodies"] = bodies;
+
         py::list geoms;
         for (int geom_id = 0; geom_id < model->ngeom; ++geom_id) {
             const std::string geom_name(MuJoCoObjectName(*model, mjOBJ_GEOM, geom_id));
@@ -696,6 +725,7 @@ public:
             geom["condim"] = model->geom_condim[geom_id];
             geom["margin"] = static_cast<double>(model->geom_margin[geom_id]);
             geom["gap"] = static_cast<double>(model->geom_gap[geom_id]);
+            geom["priority"] = model->geom_priority[geom_id];
             geom["solref"] = num_list(model->geom_solref + mjNREF * geom_id, mjNREF);
             geom["solimp"] = num_list(model->geom_solimp + mjNIMP * geom_id, mjNIMP);
             geom["contype"] = model->geom_contype[geom_id];

@@ -90,6 +90,14 @@ RealType CollisionShape3D::GetGap() const {
     return gap_;
 }
 
+void CollisionShape3D::SetPriority(int priority) {
+    priority_ = priority;
+}
+
+int CollisionShape3D::GetPriority() const {
+    return priority_;
+}
+
 } // namespace gobot
 
 GOBOT_REGISTRATION {
@@ -105,6 +113,7 @@ GOBOT_REGISTRATION {
             .property("solref", &CollisionShape3D::GetSolref, &CollisionShape3D::SetSolref)
             .property("solimp", &CollisionShape3D::GetSolimp, &CollisionShape3D::SetSolimp)
             .property("margin", &CollisionShape3D::GetMargin, &CollisionShape3D::SetMargin)
-            .property("gap", &CollisionShape3D::GetGap, &CollisionShape3D::SetGap);
+            .property("gap", &CollisionShape3D::GetGap, &CollisionShape3D::SetGap)
+            .property("priority", &CollisionShape3D::GetPriority, &CollisionShape3D::SetPriority);
 
 };

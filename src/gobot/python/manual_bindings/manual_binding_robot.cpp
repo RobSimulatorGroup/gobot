@@ -78,6 +78,14 @@ void RegisterManualRobotBindings(PyRobot3DClass& robot3d_class,
                               Link3D* link = handle.ResolveAs<Link3D>();
                               ExecuteSetNodeProperty(link, "center_of_mass", Variant(PythonToVector3(value)));
                           })
+            .def_property("inertia_orientation",
+                          [](const PyLink3DHandle& handle) {
+                              return QuaternionWxyzToPython(handle.ResolveAs<Link3D>()->GetInertiaOrientation());
+                          },
+                          [](PyLink3DHandle& handle, const py::handle& value) {
+                              Link3D* link = handle.ResolveAs<Link3D>();
+                              ExecuteSetNodeProperty(link, "inertia_orientation", Variant(PythonToQuaternionWxyz(value)));
+                          })
             .def_property("inertia_diagonal",
                           [](const PyLink3DHandle& handle) {
                               return Vector3ToPython(handle.ResolveAs<Link3D>()->GetInertiaDiagonal());

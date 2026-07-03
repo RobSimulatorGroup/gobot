@@ -2,6 +2,7 @@
 
 #include <cmath>
 
+#include <gobot/scene/collision_shape_3d.hpp>
 #include <gobot/scene/joint_3d.hpp>
 #include <gobot/scene/link_3d.hpp>
 #include <gobot/scene/robot_3d.hpp>
@@ -16,6 +17,7 @@ TEST(TestRobotNodes, stores_robot_link_and_joint_metadata) {
     base->SetName("base_link");
     base->SetMass(12.5);
     base->SetCenterOfMass({0.1, 0.2, 0.3});
+    base->SetInertiaOrientation(gobot::Quaternion(0.5, 0.5, -0.5, 0.5));
     base->SetInertiaDiagonal({1.0, 2.0, 3.0});
     base->SetInertiaOffDiagonal({0.01, 0.02, 0.03});
 
@@ -36,6 +38,7 @@ TEST(TestRobotNodes, stores_robot_link_and_joint_metadata) {
     EXPECT_EQ(robot->GetSourcePath(), "res://robots/arm.urdf");
     EXPECT_FLOAT_EQ(base->GetMass(), 12.5);
     EXPECT_TRUE(base->GetCenterOfMass().isApprox(gobot::Vector3(0.1, 0.2, 0.3), CMP_EPSILON));
+    EXPECT_TRUE(base->GetInertiaOrientation().isApprox(gobot::Quaternion(0.5, 0.5, -0.5, 0.5), CMP_EPSILON));
     EXPECT_TRUE(base->GetInertiaDiagonal().isApprox(gobot::Vector3(1.0, 2.0, 3.0), CMP_EPSILON));
     EXPECT_TRUE(base->GetInertiaOffDiagonal().isApprox(gobot::Vector3(0.01, 0.02, 0.03), CMP_EPSILON));
     EXPECT_EQ(shoulder->GetJointType(), gobot::JointType::Revolute);
@@ -55,6 +58,7 @@ TEST(TestRobotNodes, reflected_properties_are_available) {
 
     EXPECT_TRUE(gobot::Type::get<gobot::Link3D>().get_property("mass").is_valid());
     EXPECT_TRUE(gobot::Type::get<gobot::Link3D>().get_property("center_of_mass").is_valid());
+    EXPECT_TRUE(gobot::Type::get<gobot::Link3D>().get_property("inertia_orientation").is_valid());
     EXPECT_TRUE(gobot::Type::get<gobot::Link3D>().get_property("inertia_diagonal").is_valid());
     EXPECT_TRUE(gobot::Type::get<gobot::Link3D>().get_property("inertia_off_diagonal").is_valid());
 
@@ -66,6 +70,8 @@ TEST(TestRobotNodes, reflected_properties_are_available) {
     EXPECT_TRUE(gobot::Type::get<gobot::Joint3D>().get_property("upper_limit").is_valid());
     EXPECT_TRUE(gobot::Type::get<gobot::Joint3D>().get_property("effort_limit").is_valid());
     EXPECT_TRUE(gobot::Type::get<gobot::Joint3D>().get_property("velocity_limit").is_valid());
+
+    EXPECT_TRUE(gobot::Type::get<gobot::CollisionShape3D>().get_property("priority").is_valid());
 
     EXPECT_TRUE(gobot::Type::get<gobot::Sensor3D>().get_property("enabled").is_valid());
     EXPECT_TRUE(gobot::Type::get<gobot::Sensor3D>().get_property("sensor_period").is_valid());

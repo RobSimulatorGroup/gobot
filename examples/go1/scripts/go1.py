@@ -10,17 +10,17 @@ BASE_LINK = "trunk"
 POLICY_ENV = "GOBOT_GO1_POLICY"
 DEFAULT_POLICY_PATH = "res://policies/go1.onnx"
 TORCH_POLICY_PATH = "res://policies/go1.pt"
-PHYSICS_HZ = 500.0
+PHYSICS_HZ = 200.0
 POLICY_HZ = 50.0
 FIXED_TIME_STEP = 1.0 / PHYSICS_HZ
-MAX_SUB_STEPS = 10
+MAX_SUB_STEPS = 4
 PRINT_EVERY_TICKS = int(PHYSICS_HZ * 2.0)
-RESET_BASE_POSITION = [0.0, 0.0, 0.278]
+RESET_BASE_POSITION = [0.0, 0.0, 0.32]
 ROBOT_ROOT_TO_BASE_Z = 0.4449999928474426
 COMMAND = [0.0, 0.0, 0.0]
 KEYBOARD_COMMAND_MAX = [1.0, 1.0, 0.5]
 COMMAND_SMOOTHING = 8.0
-COMMAND_ACTIVE_DEADBAND = 0.02
+UNILAB_HEADING_STIFFNESS = 0.5
 FALLEN_BASE_Z = 0.18
 FALLEN_ROLL_PITCH = 0.8
 KEYBOARD_BINDINGS = {
@@ -65,6 +65,11 @@ UNILAB_ROUGH_ACTION_SCALE = [
 ]
 UNILAB_KP = 35.0
 UNILAB_KD = 0.5
+UNILAB_MUJOCO_SOLVER_SETTINGS = {
+    "cone": 1,
+    "convex_collision_iterations": 500,
+    "impedance_ratio": 100.0,
+}
 HIP_KP = 15.89524265323492
 HIP_KD = 1.0119225759919113
 KNEE_KP = 35.764295969778566
@@ -370,10 +375,6 @@ def _key_axis(input_state, negative_action, positive_action):
     return value
 
 
-def _command_active(command):
-    return any(abs(float(value)) > COMMAND_ACTIVE_DEADBAND for value in command)
-
-
 def _checkpoint_obs_dim(checkpoint):
     actor_state = checkpoint.get("actor_state_dict", {})
     normalizer_mean = actor_state.get("obs_normalizer._mean")
@@ -548,10 +549,25 @@ def _quat_to_roll_pitch(q):
     return roll, pitch
 
 
+def _quat_to_yaw(q):
+    w, x, y, z = q
+    return math.atan2(2.0 * (w * z + x * y), 1.0 - 2.0 * (y * y + z * z))
+
+
+def _wrap_pi(value):
+    return (float(value) + math.pi) % (2.0 * math.pi) - math.pi
+
+
+def _unilab_projected_gravity_from_upvector(q):
+    return [-value for value in _quat_rotate([0.0, 0.0, 1.0], q)]
+
+
 class Script(gobot.NodeScript):
     def _ready(self):
         self.context.fixed_time_step = FIXED_TIME_STEP
         self.context.max_sub_steps = MAX_SUB_STEPS
+        if hasattr(self.context, "set_mujoco_solver_settings"):
+            self.context.set_mujoco_solver_settings(UNILAB_MUJOCO_SOLVER_SETTINGS)
         self.robot = self._find_robot()
         self.base_link = self._find_link(BASE_LINK)
         self.joints = [self._find_joint(name) for name in JOINT_NAMES]
@@ -561,6 +577,7 @@ class Script(gobot.NodeScript):
         self.policy_schema = self._policy_observation_schema()
         self.policy_profile = _profile_for_schema(self.policy_schema)
         self.policy_obs_dim = self.policy_schema.dim
+        self.reset_base_position = self._resolve_reset_base_position()
         self.height_scan_dim = TERRAIN_SCAN_DIM if self.policy_profile == "legacy" else 0
         self.action_scale = self._profile_action_scale()
         self.action_clip = 100.0 if self.policy_profile == "unilab_rough" else 1.0
@@ -609,11 +626,54 @@ class Script(gobot.NodeScript):
             return list(UNILAB_ROUGH_ACTION_SCALE)
         return list(ACTION_SCALE)
 
+    def _resolve_reset_base_position(self):
+        fallback = list(RESET_BASE_POSITION)
+        if getattr(self, "policy_profile", "legacy") != "unilab_rough":
+            return fallback
+        origins = self._terrain_spawn_origins()
+        if not origins:
+            return fallback
+        spawn = min(origins, key=lambda value: value[0] * value[0] + value[1] * value[1])
+        return [spawn[0], spawn[1], spawn[2] + RESET_BASE_POSITION[2]]
+
+    def _terrain_spawn_origins(self):
+        root = self.get_root()
+        terrain_world = None
+        if root is not None:
+            terrain_world = root.find("terrain_world") or _find_node_by_name(root, "terrain_world")
+        terrain = None
+        if terrain_world is not None:
+            terrain = terrain_world.find("terrain") or _find_node_by_name(terrain_world, "terrain")
+        if terrain is None and root is not None:
+            terrain = root.find("terrain") or _find_node_by_name(root, "terrain")
+        if terrain is None:
+            return []
+        origins = getattr(terrain, "spawn_origins", None)
+        if origins is None:
+            return []
+        parsed = []
+        for origin in origins:
+            try:
+                values = [float(origin[index]) for index in range(3)]
+            except (TypeError, IndexError, ValueError):
+                try:
+                    values = [float(value) for value in origin]
+                except (TypeError, ValueError):
+                    continue
+                if len(values) < 3:
+                    continue
+                values = values[:3]
+            parsed.append(values)
+        return parsed
+
     def _reset_playback_state(self):
         self.ticks = 0
         self.playing = True
         self.world_controls_ready = False
         self.command = list(COMMAND)
+        self.command_target = list(COMMAND)
+        self.heading_target = 0.0
+        self.heading_target_initialized = False
         self.last_action = [0.0] * len(JOINT_NAMES)
         self.last_targets = list(DEFAULT_POS)
         self.phase = 0.0
@@ -636,6 +696,14 @@ class Script(gobot.NodeScript):
             )
         )
         print(f"Go1 RL playback profile={self.policy_profile} obs_dim={self.policy_obs_dim}")
+        print(
+            "Go1 RL playback runtime fixed_dt={:.4f} max_sub_steps={} solver={} reset_base_z={:.3f}".format(
+                FIXED_TIME_STEP,
+                MAX_SUB_STEPS,
+                UNILAB_MUJOCO_SOLVER_SETTINGS,
+                self.reset_base_position[2],
+            )
+        )
 
     def _physics_process(self, delta):
         if not self.playing:
@@ -654,7 +722,7 @@ class Script(gobot.NodeScript):
         if policy_tick:
             self._update_feet_phase()
             action = [0.0] * len(JOINT_NAMES)
-            if self.policy is not None and _command_active(self.command):
+            if self.policy is not None:
                 observation = self._observation(robot_state)
                 action = self.policy.action(observation)
             if len(action) != len(JOINT_NAMES):
@@ -673,6 +741,9 @@ class Script(gobot.NodeScript):
         self.playing = True
         self.world_controls_ready = False
         self.command = list(COMMAND)
+        self.command_target = list(COMMAND)
+        self.heading_target = 0.0
+        self.heading_target_initialized = False
         self.last_action = [0.0] * len(JOINT_NAMES)
         self.last_targets = list(DEFAULT_POS)
         self.phase = 0.0
@@ -761,6 +832,7 @@ class Script(gobot.NodeScript):
             joint.reset_runtime_state(DEFAULT_POS[index], 0.0)
         self.last_targets = list(DEFAULT_POS)
         self._set_joint_position_targets(self.last_targets)
+        self._sync_heading_target_from_runtime()
         self.world_controls_ready = True
         return True
 
@@ -795,15 +867,56 @@ class Script(gobot.NodeScript):
         if not input_state.has_control_focus or _key_held(input_state, "stop"):
             desired = [0.0, 0.0, 0.0]
         else:
+            yaw_axis = _key_axis(input_state, "turn_right", "turn_left")
+            if getattr(self, "policy_profile", "legacy") == "unilab_rough":
+                self._ensure_heading_target()
+                self.heading_target = _wrap_pi(
+                    self.heading_target + yaw_axis * KEYBOARD_COMMAND_MAX[2] * float(delta)
+                )
+                yaw_command = 0.0
+            else:
+                yaw_command = KEYBOARD_COMMAND_MAX[2] * yaw_axis
             desired = [
                 KEYBOARD_COMMAND_MAX[0] * _key_axis(input_state, "backward", "forward"),
                 KEYBOARD_COMMAND_MAX[1] * _key_axis(input_state, "strafe_right", "strafe_left"),
-                KEYBOARD_COMMAND_MAX[2] * _key_axis(input_state, "turn_right", "turn_left"),
+                yaw_command,
             ]
         alpha = _clamp(float(delta) * COMMAND_SMOOTHING, 0.0, 1.0)
         for index in range(3):
-            self.command[index] += (desired[index] - self.command[index]) * alpha
+            self.command_target[index] += (desired[index] - self.command_target[index]) * alpha
+        self.command = self._policy_command()
         return False
+
+    def _sync_heading_target_from_runtime(self):
+        state = self._runtime_robot_state()
+        base = self._base_link_state(state) if state is not None else None
+        if base is None:
+            self.heading_target = 0.0
+            self.heading_target_initialized = False
+            return
+        self.heading_target = _quat_to_yaw(base.get("quaternion", [1.0, 0.0, 0.0, 0.0]))
+        self.heading_target_initialized = True
+
+    def _ensure_heading_target(self, state=None):
+        if getattr(self, "heading_target_initialized", False):
+            return
+        if state is None:
+            state = self._runtime_robot_state()
+        base = self._base_link_state(state) if state is not None else None
+        quat = base.get("quaternion", [1.0, 0.0, 0.0, 0.0]) if base is not None else [1.0, 0.0, 0.0, 0.0]
+        self.heading_target = _quat_to_yaw(quat)
+        self.heading_target_initialized = True
+
+    def _policy_command(self, state=None):
+        command = list(getattr(self, "command_target", self.command))
+        if getattr(self, "policy_profile", "legacy") != "unilab_rough":
+            return command
+        self._ensure_heading_target(state)
+        base = self._base_link_state(state) if state is not None else None
+        quat = base.get("quaternion", [1.0, 0.0, 0.0, 0.0]) if base is not None else [1.0, 0.0, 0.0, 0.0]
+        heading_error = _wrap_pi(self.heading_target - _quat_to_yaw(quat))
+        command[2] = _clamp(UNILAB_HEADING_STIFFNESS * heading_error, -1.0, 1.0)
+        return command
 
     def _reset_if_fallen(self, state=None):
         if state is None:
@@ -838,6 +951,8 @@ class Script(gobot.NodeScript):
 
     def _print_state(self, state=None):
         x = y = z = 0.0
+        lin_x = lin_y = lin_z = 0.0
+        ang_x = ang_y = ang_z = 0.0
         if state is None:
             state = self._runtime_robot_state()
         if state is not None:
@@ -845,21 +960,51 @@ class Script(gobot.NodeScript):
             position = base.get("position", [0.0, 0.0, 0.0]) if base is not None else [0.0, 0.0, 0.0]
             if len(position) >= 3:
                 x, y, z = position[:3]
+            if base is not None:
+                quat = base.get("quaternion", [1.0, 0.0, 0.0, 0.0])
+                lin_vel = _quat_rotate_inv(base.get("linear_velocity", [0.0, 0.0, 0.0]), quat)
+                ang_vel = _quat_rotate_inv(base.get("angular_velocity", [0.0, 0.0, 0.0]), quat)
+                if len(lin_vel) >= 3:
+                    lin_x, lin_y, lin_z = lin_vel[:3]
+                if len(ang_vel) >= 3:
+                    ang_x, ang_y, ang_z = ang_vel[:3]
+        key_axis = self._debug_key_axis()
         print(
             "Go1 RL tick t={:.2f}s base=({:.3f}, {:.3f}, {:.3f}) "
-            "cmd=({:.2f}, {:.2f}, {:.2f}) policy={} focus={} action_norm={:.3f}".format(
+            "lin_b=({:.3f}, {:.3f}, {:.3f}) ang_b=({:.3f}, {:.3f}, {:.3f}) "
+            "cmd=({:.2f}, {:.2f}, {:.2f}) keys=({:.0f}, {:.0f}, {:.0f}) "
+            "policy={} focus={} action_norm={:.3f}".format(
                 self.context.simulation_time,
                 x,
                 y,
                 z,
+                lin_x,
+                lin_y,
+                lin_z,
+                ang_x,
+                ang_y,
+                ang_z,
                 self.command[0],
                 self.command[1],
                 self.command[2],
+                key_axis[0],
+                key_axis[1],
+                key_axis[2],
                 "on" if self.policy is not None else "off",
                 "on" if getattr(self.context.input, "has_control_focus", False) else "off",
                 math.sqrt(sum(value * value for value in self.last_action)),
             )
         )
+
+    def _debug_key_axis(self):
+        input_state = getattr(self.context, "input", None)
+        if input_state is None or not input_state.has_control_focus:
+            return [0.0, 0.0, 0.0]
+        return [
+            _key_axis(input_state, "backward", "forward"),
+            _key_axis(input_state, "strafe_right", "strafe_left"),
+            _key_axis(input_state, "turn_right", "turn_left"),
+        ]
 
     def _observation(self, state=None):
         if state is None:
@@ -874,7 +1019,8 @@ class Script(gobot.NodeScript):
         lin_vel = _quat_rotate_inv(base.get("linear_velocity", [0.0, 0.0, 0.0]), quat)
         ang_vel = _quat_rotate_inv(base.get("angular_velocity", [0.0, 0.0, 0.0]), quat)
         projected_gravity = _quat_rotate_inv([0.0, 0.0, -1.0], quat)
-        cmd = self.command
+        unilab_projected_gravity = _unilab_projected_gravity_from_upvector(quat)
+        cmd = self._policy_command(state)
 
         joint_states = {joint.get("name"): joint for joint in state.get("joints", [])}
         joint_pos = []
@@ -888,7 +1034,7 @@ class Script(gobot.NodeScript):
             obs = []
             for part in (
                 ang_vel[:3],
-                projected_gravity,
+                unilab_projected_gravity,
                 joint_pos,
                 joint_vel,
                 self.last_action,
@@ -901,7 +1047,7 @@ class Script(gobot.NodeScript):
             joint_vel_scaled = [float(value) * 0.05 for value in joint_vel]
             for part in (
                 [float(value) * 0.25 for value in ang_vel[:3]],
-                projected_gravity,
+                unilab_projected_gravity,
                 cmd,
                 joint_pos,
                 joint_vel_scaled,

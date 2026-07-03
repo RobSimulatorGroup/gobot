@@ -59,6 +59,10 @@ public:
 
     RealType GetGap() const;
 
+    void SetPriority(int priority);
+
+    int GetPriority() const;
+
 private:
     Ref<Shape3D> shape_{nullptr};
     bool disabled_{false};
@@ -70,6 +74,7 @@ private:
     std::vector<RealType> solimp_{0.9, 0.95, 0.001, 0.5, 2.0};
     RealType margin_{0.0};
     RealType gap_{0.0};
+    int priority_{0};
 };
 
 }

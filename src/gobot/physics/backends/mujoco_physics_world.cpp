@@ -235,6 +235,19 @@ void SetMuJoCoQuaternion(double* target, const Matrix3& rotation) {
     target[3] = quaternion.z();
 }
 
+void SetMuJoCoQuaternion(double* target, const Quaternion& quaternion) {
+    Quaternion normalized = quaternion;
+    if (normalized.norm() <= CMP_EPSILON) {
+        normalized = Quaternion::Identity();
+    } else {
+        normalized.normalize();
+    }
+    target[0] = normalized.w();
+    target[1] = normalized.x();
+    target[2] = normalized.y();
+    target[3] = normalized.z();
+}
+
 void SetMuJoCoPose(mjsBody* body, const Affine3& local_transform) {
     if (!body) {
         return;
@@ -523,6 +536,7 @@ void ConfigureGeomContact(mjsGeom* geom, const PhysicsShapeSnapshot& shape) {
     SetMuJoCoArray(geom->solimp, shape.solimp, mjNIMP);
     geom->margin = shape.margin;
     geom->gap = shape.gap;
+    geom->priority = shape.priority;
 }
 
 void ConfigureGeomContact(mjsGeom* geom, const PhysicsTerrainSnapshot& terrain) {
@@ -692,10 +706,7 @@ void ConfigureBodyInertial(mjsBody* body, const PhysicsLinkSnapshot& link) {
     const double mass = PositiveOrDefault(link.mass, 1.0);
     body->mass = mass;
     SetMuJoCoVector3(body->ipos, link.center_of_mass);
-    body->iquat[0] = 1.0;
-    body->iquat[1] = 0.0;
-    body->iquat[2] = 0.0;
-    body->iquat[3] = 0.0;
+    SetMuJoCoQuaternion(body->iquat, link.inertia_orientation);
     body->inertia[0] = PositiveOrDefault(link.inertia_diagonal.x(), mass * 0.01);
     body->inertia[1] = PositiveOrDefault(link.inertia_diagonal.y(), mass * 0.01);
     body->inertia[2] = PositiveOrDefault(link.inertia_diagonal.z(), mass * 0.01);
