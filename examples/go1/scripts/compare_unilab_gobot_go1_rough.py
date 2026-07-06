@@ -560,10 +560,10 @@ def run_gobot(args: argparse.Namespace) -> int:
 
     prefer_repo_gobot()
 
-    from go1_velocity_cfg import go1_rough_velocity_cfg
+    from go1_velocity_cfg import go1_unilab_rough_velocity_cfg
     from go1_velocity_env import Go1VelocityEnv
 
-    cfg = go1_rough_velocity_cfg(project_path=args.project_path)
+    cfg = go1_unilab_rough_velocity_cfg(project_path=args.project_path)
     if args.eval_reset:
         cfg.episode_length_s = float(1_000_000_000)
         cfg.terrain_curriculum = False

@@ -137,7 +137,24 @@ class TerrainSampler:
         terrain_node = next((node for node in data.get("__NODES__", []) if node.get("type") == "Terrain3D"), None)
         if terrain_node is None:
             return
-        properties = terrain_node.get("properties", {})
+        self._load_properties(terrain_node.get("properties", {}))
+        self._build_height_grid()
+
+    @classmethod
+    def from_terrain_node(cls, terrain: Any, grid_resolution: float = 0.08) -> "TerrainSampler":
+        sampler = cls.__new__(cls)
+        sampler._boxes = []
+        sampler._heightfields = []
+        sampler._grid_resolution = float(grid_resolution)
+        sampler._grid_origin = np.zeros(2, dtype=np.float64)
+        sampler._grid_heights = None
+        node_data = terrain.to_dict() if hasattr(terrain, "to_dict") else {}
+        properties = node_data.get("properties", {}) if isinstance(node_data, Mapping) else {}
+        sampler._load_properties(properties)
+        sampler._build_height_grid()
+        return sampler
+
+    def _load_properties(self, properties: Mapping[str, Any]) -> None:
         for box in properties.get("boxes", []):
             self._boxes.append(
                 {
@@ -162,7 +179,6 @@ class TerrainSampler:
                     "z_offset": float(heightfield.get("z_offset", 0.0)),
                 }
             )
-        self._build_height_grid()
 
     def height_at(self, x: float, y: float) -> float:
         if self._grid_heights is not None:

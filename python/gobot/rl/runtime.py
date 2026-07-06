@@ -793,6 +793,7 @@ class NativeLocomotionBatchBackend:
         base_com_offset: Any | None = None,
         joint_kp: Any | None = None,
         joint_kd: Any | None = None,
+        foot_friction: Any | None = None,
     ) -> None:
         self._require_view()
         env_id_array = np.asarray(env_ids, dtype=np.int64).reshape(-1)
@@ -806,6 +807,14 @@ class NativeLocomotionBatchBackend:
             self._arrays["joint_kp"][env_id_array] = np.asarray(joint_kp, dtype=np.float32).reshape(-1, len(self.runtime.joint_names))
         if joint_kd is not None:
             self._arrays["joint_kd"][env_id_array] = np.asarray(joint_kd, dtype=np.float32).reshape(-1, len(self.runtime.joint_names))
+        if foot_friction is not None:
+            if "foot_friction" not in self._arrays:
+                raise RuntimeError("Gobot native locomotion batch view has no foot_friction array")
+            self._arrays["foot_friction"][env_id_array] = np.asarray(foot_friction, dtype=np.float32).reshape(-1, 3)
+            if "foot_friction_enabled" in self._arrays:
+                self._arrays["foot_friction_enabled"][env_id_array] = 1.0
+        elif "foot_friction_enabled" in self._arrays:
+            self._arrays["foot_friction_enabled"][env_id_array] = 0.0
 
     def env_state(self, env_id: int) -> Any:
         self._require_view()

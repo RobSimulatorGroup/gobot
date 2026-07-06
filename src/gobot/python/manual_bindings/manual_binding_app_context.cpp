@@ -365,6 +365,10 @@ public:
                 VectorArrayView(joint_kp_, {EnvDim(), JointDim()}, owner, true);
         arrays["joint_kd"] =
                 VectorArrayView(joint_kd_, {EnvDim(), JointDim()}, owner, true);
+        arrays["foot_friction"] =
+                VectorArrayView(foot_friction_, {EnvDim(), 3}, owner, true);
+        arrays["foot_friction_enabled"] =
+                VectorArrayView(foot_friction_enabled_, {EnvDim()}, owner, true);
         arrays["previous_action"] =
                 VectorArrayView(previous_action_, {EnvDim(), JointDim()}, owner, true);
         arrays["last_action"] =
@@ -1694,6 +1698,8 @@ private:
         base_com_offset_.assign(environment_count_ * 3, 0.0f);
         joint_kp_.assign(environment_count_ * joint_count_, 0.0f);
         joint_kd_.assign(environment_count_ * joint_count_, 0.0f);
+        foot_friction_.assign(environment_count_ * 3, 0.0f);
+        foot_friction_enabled_.assign(environment_count_, 0.0f);
         previous_action_.assign(environment_count_ * joint_count_, 0.0f);
         last_action_.assign(environment_count_ * joint_count_, 0.0f);
         encoder_bias_.assign(environment_count_ * joint_count_, 0.0f);
@@ -1793,11 +1799,14 @@ private:
     }
 
     void PrepareActionTargets(bool simulate_action_latency) {
-        const float clip_limit = std::max(0.0f, action_clip_.empty() ? 1.0f : action_clip_[0]);
+        const float configured_clip = action_clip_.empty() ? 1.0f : action_clip_[0];
+        const bool clip_enabled = configured_clip >= 0.0f;
+        const float clip_limit = std::max(0.0f, configured_clip);
         for (std::size_t env_id = 0; env_id < environment_count_; ++env_id) {
             for (std::size_t joint_index = 0; joint_index < joint_count_; ++joint_index) {
                 const std::size_t offset = env_id * joint_count_ + joint_index;
-                const float clipped = std::clamp(action_[offset], -clip_limit, clip_limit);
+                const float clipped = clip_enabled ? std::clamp(action_[offset], -clip_limit, clip_limit)
+                                                   : action_[offset];
                 submitted_action_[offset] = clipped;
                 const float control_action = simulate_action_latency ? last_action_[offset] : clipped;
                 target_position_[offset] = default_joint_position_[joint_index] +
@@ -1848,15 +1857,15 @@ private:
                 command_[env3 + 1] = 0.0f;
             }
         }
-        command_heading_target_[env_id] = command_heading_enabled_
+        command_is_heading_env_[env_id] =
+                command_heading_enabled_ && Uniform(0.0f, 1.0f) <= command_rel_heading_envs_ ? 1 : 0;
+        command_heading_target_[env_id] = command_is_heading_env_[env_id] != 0
                                                   ? Uniform(command_ranges_[kCommandHeadingMin],
                                                             command_ranges_[kCommandHeadingMax])
                                                   : 0.0f;
-        if (command_heading_enabled_) {
+        if (command_is_heading_env_[env_id] != 0) {
             command_[env3 + 2] = 0.0f;
         }
-        command_is_heading_env_[env_id] =
-                command_heading_enabled_ && Uniform(0.0f, 1.0f) <= command_rel_heading_envs_ ? 1 : 0;
         command_is_standing_env_[env_id] = Uniform(0.0f, 1.0f) <= command_rel_standing_envs_ ? 1 : 0;
         command_is_world_env_[env_id] = Uniform(0.0f, 1.0f) <= command_rel_world_envs_ ? 1 : 0;
         command_is_forward_env_[env_id] = Uniform(0.0f, 1.0f) <= command_rel_forward_envs_ ? 1 : 0;
@@ -1953,8 +1962,10 @@ private:
         if (command_is_standing_env_[env_id] != 0) {
             command_[env3 + 0] = 0.0f;
             command_[env3 + 1] = 0.0f;
+            command_[env3 + 2] = 0.0f;
             command_world_[env3 + 0] = 0.0f;
             command_world_[env3 + 1] = 0.0f;
+            command_world_[env3 + 2] = 0.0f;
         }
     }
 
@@ -2034,6 +2045,7 @@ private:
         }
         base_body_mass_.assign(model.body_mass, model.body_mass + model.nbody);
         base_body_ipos_.assign(model.body_ipos, model.body_ipos + 3 * model.nbody);
+        base_geom_friction_.assign(model.geom_friction, model.geom_friction + 3 * model.ngeom);
         base_joint_kp_.assign(joint_count_, 0.0f);
         base_joint_kd_.assign(joint_count_, 0.0f);
         for (std::size_t joint_index = 0; joint_index < joint_count_; ++joint_index) {
@@ -2046,6 +2058,38 @@ private:
                         static_cast<float>(std::abs(model.actuator_gainprm[mjNGAIN * actuator_id + 0]));
                 base_joint_kd_[joint_index] =
                         static_cast<float>(std::abs(model.actuator_biasprm[mjNBIAS * actuator_id + 2]));
+            }
+        }
+    }
+
+    bool IsFootGeomName(const std::string_view name) const {
+        if (name.empty()) {
+            return false;
+        }
+        for (const std::string& foot_name : foot_link_names_) {
+            if (!foot_name.empty() && name.find(foot_name) != std::string_view::npos) {
+                return true;
+            }
+        }
+        return name.find("_foot_collision") != std::string_view::npos ||
+               name.find("_foot") != std::string_view::npos;
+    }
+
+    void ApplyFootFrictionForEnvironment(mjModel& model, std::size_t env_id) {
+        if (foot_friction_.empty() || base_geom_friction_.size() < static_cast<std::size_t>(3 * model.ngeom)) {
+            return;
+        }
+        const bool enabled = env_id < foot_friction_enabled_.size() && foot_friction_enabled_[env_id] > 0.5f;
+        const std::size_t env3 = env_id * 3;
+        for (int geom_id = 0; geom_id < model.ngeom; ++geom_id) {
+            const std::string_view geom_name = MuJoCoObjectName(model, mjOBJ_GEOM, geom_id);
+            if (!IsFootGeomName(geom_name)) {
+                continue;
+            }
+            for (int axis = 0; axis < 3; ++axis) {
+                const std::size_t offset = static_cast<std::size_t>(3 * geom_id + axis);
+                model.geom_friction[offset] = enabled ? static_cast<mjtNum>(foot_friction_[env3 + axis])
+                                                      : base_geom_friction_[offset];
             }
         }
     }
@@ -2107,6 +2151,7 @@ private:
                 }
             }
         }
+        ApplyFootFrictionForEnvironment(model, env_id);
         if (constants_changed) {
             RefreshModelConstantsPreservingState(model, data);
         }
@@ -2347,6 +2392,7 @@ private:
             if (!contact) {
                 foot_peak_height_[foot] = std::max(foot_peak_height_[foot], foot_height_[foot]);
             }
+            last_foot_contact_[foot] = contact ? 1.0f : 0.0f;
         }
     }
 
@@ -2502,9 +2548,8 @@ private:
         ClearContactBuffersForEnvironment(env_id);
 
         std::array<int, kUniLabUndesiredGeomNames.size()> unilab_undesired_found_counts{};
-        std::vector<int> foot_contact_ids(foot_count_, -1);
-        std::vector<mjtNum> foot_contact_distances(foot_count_, std::numeric_limits<mjtNum>::max());
-        std::vector<int> foot_contact_flip(foot_count_, 0);
+        std::vector<RealType> foot_net_force(foot_count_ * 3, 0.0);
+        std::vector<int> foot_contact_counts(foot_count_, 0);
 
         for (int contact_index = 0; contact_index < data.ncon; ++contact_index) {
             const mjContact& contact = data.contact[contact_index];
@@ -2537,7 +2582,7 @@ private:
                                            int foot_geom,
                                            bool foot_robot_geom,
                                            bool other_robot_geom,
-                                           bool regular_order) {
+                                           RealType force_sign) {
                 if (foot_index >= foot_count_ || !foot_robot_geom || other_robot_geom) {
                     return;
                 }
@@ -2545,15 +2590,24 @@ private:
                 if (!MuJoCoNameMatches(foot_geom_name, foot_geom_names_[foot_index])) {
                     return;
                 }
-                if (contact.dist < foot_contact_distances[foot_index]) {
-                    foot_contact_distances[foot_index] = contact.dist;
-                    foot_contact_ids[foot_index] = contact_index;
-                    foot_contact_flip[foot_index] = regular_order ? 0 : 1;
-                }
+                mjtNum force6[6] = {0.0, 0.0, 0.0, 0.0, 0.0, 0.0};
+                mj_contactForce(&model, &data, contact_index, force6);
+                const Vector3 frame_x(contact.frame[0], contact.frame[1], contact.frame[2]);
+                const Vector3 frame_y(contact.frame[3], contact.frame[4], contact.frame[5]);
+                const Vector3 frame_z(contact.frame[6], contact.frame[7], contact.frame[8]);
+                const Vector3 world_force = force_sign *
+                                            (frame_x * static_cast<RealType>(force6[0]) +
+                                             frame_y * static_cast<RealType>(force6[1]) +
+                                             frame_z * static_cast<RealType>(force6[2]));
+                const std::size_t foot3 = foot_index * 3;
+                foot_net_force[foot3 + 0] += world_force.x();
+                foot_net_force[foot3 + 1] += world_force.y();
+                foot_net_force[foot3 + 2] += world_force.z();
+                foot_contact_counts[foot_index] += 1;
             };
             for (std::size_t foot_index = 0; foot_index < foot_geom_names_.size(); ++foot_index) {
-                record_foot_contact(foot_index, geom_a, robot_a, robot_b, false);
-                record_foot_contact(foot_index, geom_b, robot_b, robot_a, true);
+                record_foot_contact(foot_index, geom_a, robot_a, robot_b, 1.0);
+                record_foot_contact(foot_index, geom_b, robot_b, robot_a, -1.0);
             }
 
             mjtNum force6[6] = {0.0, 0.0, 0.0, 0.0, 0.0, 0.0};
@@ -2594,22 +2648,17 @@ private:
             }
         }
 
-        for (std::size_t foot_index = 0; foot_index < foot_contact_ids.size(); ++foot_index) {
-            const int contact_id = foot_contact_ids[foot_index];
-            if (contact_id < 0) {
+        for (std::size_t foot_index = 0; foot_index < foot_contact_counts.size(); ++foot_index) {
+            if (foot_contact_counts[foot_index] <= 0) {
                 continue;
-            }
-            mjtNum force6[6] = {0.0, 0.0, 0.0, 0.0, 0.0, 0.0};
-            mj_contactForce(&model, &data, contact_id, force6);
-            if (foot_contact_flip[foot_index] != 0) {
-                force6[2] *= -1.0;
             }
             const std::size_t foot = env_id * foot_count_ + foot_index;
             const std::size_t foot3 = foot * 3;
+            const std::size_t local3 = foot_index * 3;
             foot_contact_[foot] = 1.0f;
-            foot_contact_force_[foot3 + 0] = static_cast<float>(force6[0]);
-            foot_contact_force_[foot3 + 1] = static_cast<float>(force6[1]);
-            foot_contact_force_[foot3 + 2] = static_cast<float>(force6[2]);
+            foot_contact_force_[foot3 + 0] = static_cast<float>(foot_net_force[local3 + 0]);
+            foot_contact_force_[foot3 + 1] = static_cast<float>(foot_net_force[local3 + 1]);
+            foot_contact_force_[foot3 + 2] = static_cast<float>(foot_net_force[local3 + 2]);
         }
 
         for (std::size_t index = 0; index < unilab_undesired_found_counts.size(); ++index) {
@@ -2772,8 +2821,11 @@ private:
     std::vector<float> base_com_offset_;
     std::vector<float> joint_kp_;
     std::vector<float> joint_kd_;
+    std::vector<float> foot_friction_;
+    std::vector<float> foot_friction_enabled_;
     std::vector<RealType> base_body_mass_;
     std::vector<RealType> base_body_ipos_;
+    std::vector<RealType> base_geom_friction_;
     std::vector<float> base_joint_kp_;
     std::vector<float> base_joint_kd_;
     std::vector<float> previous_action_;

@@ -16,6 +16,7 @@ FIXED_TIME_STEP = 1.0 / PHYSICS_HZ
 MAX_SUB_STEPS = 4
 PRINT_EVERY_TICKS = int(PHYSICS_HZ * 2.0)
 RESET_BASE_POSITION = [0.0, 0.0, 0.32]
+MJLAB_RESET_BASE_POSITION = [0.0, 0.0, 0.278]
 ROBOT_ROOT_TO_BASE_Z = 0.4449999928474426
 COMMAND = [0.0, 0.0, 0.0]
 KEYBOARD_COMMAND_MAX = [1.0, 1.0, 0.5]
@@ -42,8 +43,19 @@ DEFAULT_POS_BY_LEG = {
     "RR": (0.0, 1.0, -1.8),
     "RL": (0.0, 1.0, -1.8),
 }
+MJLAB_DEFAULT_POS_BY_LEG = {
+    "FR": (0.1, 0.9, -1.8),
+    "FL": (-0.1, 0.9, -1.8),
+    "RR": (0.1, 0.9, -1.8),
+    "RL": (-0.1, 0.9, -1.8),
+}
 DEFAULT_POS = [
     DEFAULT_POS_BY_LEG[leg][kind_index]
+    for leg in LEG_ORDER
+    for kind_index, _kind in enumerate(JOINT_KIND_ORDER)
+]
+MJLAB_DEFAULT_POS = [
+    MJLAB_DEFAULT_POS_BY_LEG[leg][kind_index]
     for leg in LEG_ORDER
     for kind_index, _kind in enumerate(JOINT_KIND_ORDER)
 ]
@@ -70,6 +82,13 @@ UNILAB_MUJOCO_SOLVER_SETTINGS = {
     "convex_collision_iterations": 500,
     "impedance_ratio": 100.0,
 }
+MJLAB_MUJOCO_SOLVER_SETTINGS = {
+    "cone": 1,
+    "iterations": 10,
+    "line_search_iterations": 20,
+    "convex_collision_iterations": 500,
+    "impedance_ratio": 10.0,
+}
 HIP_KP = 15.89524265323492
 HIP_KD = 1.0119225759919113
 KNEE_KP = 35.764295969778566
@@ -89,6 +108,7 @@ TERRAIN_SCAN_DIM = (
 HEIGHT_SCAN_MAX_DISTANCE = 5.0
 TERRAIN_SCAN_SENSOR = "terrain_scan"
 VELOCITY_OBS_SCHEMA_VERSION = "gobot_velocity_v1"
+MJLAB_ROUGH_OBS_SCHEMA_VERSION = VELOCITY_OBS_SCHEMA_VERSION
 UNILAB_FLAT_OBS_SCHEMA_VERSION = "gobot_go1_unilab_flat_actor_v1"
 UNILAB_ROUGH_OBS_SCHEMA_VERSION = "gobot_go1_unilab_rough_actor_v1"
 POSITION_LIMITS_BY_KIND = {
@@ -451,7 +471,7 @@ def _checkpoint_velocity_metadata(checkpoint):
         metadata = infos.get("gobot_go1_velocity")
         if isinstance(metadata, dict):
             return metadata
-        for key in ("gobot_go1_unilab_flat", "gobot_go1_unilab_rough"):
+        for key in ("gobot_go1_mjlab_rough", "gobot_go1_unilab_flat", "gobot_go1_unilab_rough"):
             metadata = infos.get(key)
             if isinstance(metadata, dict):
                 return metadata
@@ -488,6 +508,8 @@ def _profile_for_schema(schema):
         return "unilab_flat"
     if schema.version == UNILAB_ROUGH_OBS_SCHEMA_VERSION:
         return "unilab_rough"
+    if schema.version == MJLAB_ROUGH_OBS_SCHEMA_VERSION:
+        return "mjlab_rough"
     return "legacy"
 
 
@@ -566,21 +588,23 @@ class Script(gobot.NodeScript):
     def _ready(self):
         self.context.fixed_time_step = FIXED_TIME_STEP
         self.context.max_sub_steps = MAX_SUB_STEPS
-        if hasattr(self.context, "set_mujoco_solver_settings"):
-            self.context.set_mujoco_solver_settings(UNILAB_MUJOCO_SOLVER_SETTINGS)
         self.robot = self._find_robot()
         self.base_link = self._find_link(BASE_LINK)
         self.joints = [self._find_joint(name) for name in JOINT_NAMES]
         self.terrain_scan = self._find_sensor(TERRAIN_SCAN_SENSOR)
-        self.reset_base_position = list(RESET_BASE_POSITION)
         self.policy = self._load_policy()
         self.policy_schema = self._policy_observation_schema()
         self.policy_profile = _profile_for_schema(self.policy_schema)
         self.policy_obs_dim = self.policy_schema.dim
+        self._apply_profile_terrain_overrides()
+        if hasattr(self.context, "set_mujoco_solver_settings"):
+            self.context.set_mujoco_solver_settings(self._profile_mujoco_solver_settings())
+        self.default_pos = self._profile_default_pos()
+        self.reset_base_position = self._profile_reset_base_position()
         self.reset_base_position = self._resolve_reset_base_position()
-        self.height_scan_dim = TERRAIN_SCAN_DIM if self.policy_profile == "legacy" else 0
+        self.height_scan_dim = TERRAIN_SCAN_DIM if self.policy_profile in {"legacy", "mjlab_rough"} else 0
         self.action_scale = self._profile_action_scale()
-        self.action_clip = 100.0 if self.policy_profile == "unilab_rough" else 1.0
+        self.action_clip = self._profile_action_clip()
         default_kp = UNILAB_KP if self.policy_profile in {"unilab_flat", "unilab_rough"} else HIP_KP
         default_kd = UNILAB_KD if self.policy_profile in {"unilab_flat", "unilab_rough"} else HIP_KD
         self.context.set_default_joint_gains(
@@ -626,15 +650,56 @@ class Script(gobot.NodeScript):
             return list(UNILAB_ROUGH_ACTION_SCALE)
         return list(ACTION_SCALE)
 
+    def _profile_action_clip(self):
+        if self.policy_profile == "unilab_rough":
+            return 100.0
+        if self.policy_profile == "mjlab_rough":
+            return None
+        return 1.0
+
+    def _profile_default_pos(self):
+        if self.policy_profile == "mjlab_rough":
+            return list(MJLAB_DEFAULT_POS)
+        return list(DEFAULT_POS)
+
+    def _profile_reset_base_position(self):
+        if self.policy_profile == "mjlab_rough":
+            return list(MJLAB_RESET_BASE_POSITION)
+        return list(RESET_BASE_POSITION)
+
+    def _profile_mujoco_solver_settings(self):
+        if self.policy_profile == "mjlab_rough":
+            return dict(MJLAB_MUJOCO_SOLVER_SETTINGS)
+        return dict(UNILAB_MUJOCO_SOLVER_SETTINGS)
+
+    def _apply_profile_terrain_overrides(self):
+        if self.policy_profile != "mjlab_rough":
+            return
+        root = self.get_root()
+        terrain_world = root.find("terrain_world") if root is not None else None
+        if terrain_world is None:
+            terrain_world = _find_node_by_name(root, "terrain_world")
+        if terrain_world is None:
+            return
+        old_terrain = terrain_world.find("terrain") or _find_node_by_name(terrain_world, "terrain")
+        if old_terrain is not None:
+            terrain_world.remove_child(old_terrain, delete=True)
+        terrain_cfg = gobot.terrain.go1_mjlab_rough_terrain_cfg(seed=42, curriculum=False)
+        terrain_cfg.num_rows = 5
+        terrain_cfg.num_cols = 5
+        terrain_cfg.border_width = 10.0
+        terrain = gobot.terrain.create_terrain_node(terrain_cfg, "terrain")
+        terrain_world.add_child(terrain)
+
     def _resolve_reset_base_position(self):
-        fallback = list(RESET_BASE_POSITION)
-        if getattr(self, "policy_profile", "legacy") != "unilab_rough":
+        fallback = list(getattr(self, "reset_base_position", RESET_BASE_POSITION))
+        if getattr(self, "policy_profile", "legacy") not in {"unilab_rough", "mjlab_rough"}:
             return fallback
         origins = self._terrain_spawn_origins()
         if not origins:
             return fallback
         spawn = min(origins, key=lambda value: value[0] * value[0] + value[1] * value[1])
-        return [spawn[0], spawn[1], spawn[2] + RESET_BASE_POSITION[2]]
+        return [spawn[0], spawn[1], spawn[2] + fallback[2]]
 
     def _terrain_spawn_origins(self):
         root = self.get_root()
@@ -675,7 +740,7 @@ class Script(gobot.NodeScript):
         self.heading_target = 0.0
         self.heading_target_initialized = False
         self.last_action = [0.0] * len(JOINT_NAMES)
-        self.last_targets = list(DEFAULT_POS)
+        self.last_targets = list(self.default_pos)
         self.phase = 0.0
         self.feet_phase = [0.0] * len(LEG_ORDER)
 
@@ -700,7 +765,7 @@ class Script(gobot.NodeScript):
             "Go1 RL playback runtime fixed_dt={:.4f} max_sub_steps={} solver={} reset_base_z={:.3f}".format(
                 FIXED_TIME_STEP,
                 MAX_SUB_STEPS,
-                UNILAB_MUJOCO_SOLVER_SETTINGS,
+                self._profile_mujoco_solver_settings(),
                 self.reset_base_position[2],
             )
         )
@@ -745,7 +810,7 @@ class Script(gobot.NodeScript):
         self.heading_target = 0.0
         self.heading_target_initialized = False
         self.last_action = [0.0] * len(JOINT_NAMES)
-        self.last_targets = list(DEFAULT_POS)
+        self.last_targets = list(self.default_pos)
         self.phase = 0.0
         self.feet_phase = [0.0] * len(LEG_ORDER)
         self._set_robot_editor_transform(self.reset_base_position)
@@ -829,8 +894,8 @@ class Script(gobot.NodeScript):
             [0.0, 0.0, 0.0],
         )
         for index, joint in enumerate(self.joints):
-            joint.reset_runtime_state(DEFAULT_POS[index], 0.0)
-        self.last_targets = list(DEFAULT_POS)
+            joint.reset_runtime_state(self.default_pos[index], 0.0)
+        self.last_targets = list(self.default_pos)
         self._set_joint_position_targets(self.last_targets)
         self._sync_heading_target_from_runtime()
         self.world_controls_ready = True
@@ -844,8 +909,9 @@ class Script(gobot.NodeScript):
         targets = []
         for index, joint_name in enumerate(JOINT_NAMES):
             lower, upper = POSITION_LIMITS[joint_name]
-            clipped_action = _clamp(float(action[index]), -self.action_clip, self.action_clip)
-            targets.append(_clamp(DEFAULT_POS[index] + self.action_scale[index] * clipped_action, lower, upper))
+            raw_action = float(action[index])
+            clipped_action = raw_action if self.action_clip is None else _clamp(raw_action, -self.action_clip, self.action_clip)
+            targets.append(_clamp(self.default_pos[index] + self.action_scale[index] * clipped_action, lower, upper))
         return targets
 
     def _set_robot_editor_transform(self, position):
@@ -1027,7 +1093,7 @@ class Script(gobot.NodeScript):
         joint_vel = []
         for index, joint_name in enumerate(JOINT_NAMES):
             joint = joint_states.get(joint_name, {})
-            joint_pos.append(float(joint.get("position", DEFAULT_POS[index])) - DEFAULT_POS[index])
+            joint_pos.append(float(joint.get("position", self.default_pos[index])) - self.default_pos[index])
             joint_vel.append(float(joint.get("velocity", 0.0)))
 
         if self.policy_profile == "unilab_flat":

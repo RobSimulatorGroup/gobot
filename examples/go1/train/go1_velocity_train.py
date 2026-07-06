@@ -113,12 +113,13 @@ def build_env(args: argparse.Namespace, cfg) -> RslRlVecEnvWrapper:
 
 
 def build_train_cfg(args: argparse.Namespace, cfg) -> dict:
+    action_clip = getattr(cfg, "action_clip", None)
     train_cfg = rsl_rl_train_cfg(
         experiment_name=cfg.name,
         max_iterations=args.iterations,
         save_interval=max(1, int(args.render_video_interval)) if args.render_video_interval > 0 else 50,
         obs_normalization=False,
-        clip_actions=float(getattr(cfg, "action_clip", 1.0)),
+        clip_actions=None if action_clip is None else float(action_clip),
     )
     train_cfg["seed"] = int(args.seed)
     return train_cfg

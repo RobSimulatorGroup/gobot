@@ -481,6 +481,66 @@ def go1_rough_terrain_cfg(*, seed: int = 42, curriculum: bool = False) -> Terrai
     )
 
 
+def go1_mjlab_rough_terrain_cfg(*, seed: int = 42, curriculum: bool = True) -> TerrainGeneratorCfg:
+    """Go1 rough terrain grid aligned with mjlab's Velocity Rough Go1 task."""
+
+    return TerrainGeneratorCfg(
+        size=(8.0, 8.0),
+        border_width=20.0,
+        num_rows=10,
+        num_cols=20,
+        seed=seed,
+        curriculum=curriculum,
+        sub_terrains={
+            "flat": flat(proportion=0.2),
+            "pyramid_stairs": pyramid_stairs(
+                proportion=0.2,
+                step_height_range=(0.0, 0.1),
+                step_width=0.3,
+                platform_width=3.0,
+                border_width=1.0,
+            ),
+            "pyramid_stairs_inv": pyramid_stairs_inv(
+                proportion=0.2,
+                step_height_range=(0.0, 0.1),
+                step_width=0.3,
+                platform_width=3.0,
+                border_width=1.0,
+            ),
+            "hf_pyramid_slope": hf_pyramid_slope(
+                proportion=0.1,
+                slope_range=(0.0, 1.0),
+                platform_width=2.0,
+                border_width=0.25,
+            ),
+            "hf_pyramid_slope_inv": hf_pyramid_slope_inv(
+                proportion=0.1,
+                slope_range=(0.0, 1.0),
+                platform_width=2.0,
+                border_width=0.25,
+            ),
+            "random_rough": random_rough(
+                proportion=0.1,
+                noise_range=(0.02, 0.10),
+                noise_step=0.02,
+                downsampled_scale=0.3,
+                border_width=0.25,
+                scale_by_difficulty=True,
+            ),
+            "wave_terrain": wave_terrain(
+                proportion=0.1,
+                amplitude_range=(0.0, 0.2),
+                num_waves=4.0,
+                border_width=0.25,
+            ),
+        },
+        horizontal_scale=0.1,
+        base_thickness=0.6,
+        color_mode=_core.TerrainColorMode.Palette,
+        merged_heightfield=True,
+    )
+
+
 def showcase_terrains() -> dict[str, SubTerrainCfg]:
     return {
         "blue_stairs": pyramid_stairs(step_height=0.10, step_width=0.28, platform_width=0.75),
@@ -1447,6 +1507,7 @@ __all__ = [
     "ROUGH_TERRAINS_CFG",
     "brand_ramp",
     "darken_rgba",
+    "go1_mjlab_rough_terrain_cfg",
     "go1_rough_terrain_cfg",
     "go1_training_terrains",
     "showcase_terrains",
