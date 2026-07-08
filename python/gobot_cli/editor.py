@@ -134,7 +134,15 @@ def _runtime_library_dirs(python_library: str) -> list[str]:
     return [os.fspath(path) for path in _dedupe_paths(dirs) if path.is_dir()]
 
 
-def _with_editor_python_environment(python_library: str) -> dict[str, str]:
+def _prepend_pythonpath(env: dict[str, str], paths: list[Path]) -> None:
+    existing = env.get("PYTHONPATH")
+    additions = [os.fspath(path) for path in _dedupe_paths(paths) if path.is_dir()]
+    if not additions:
+        return
+    env["PYTHONPATH"] = os.pathsep.join([*additions, existing] if existing else additions)
+
+
+def _with_editor_python_environment(python_library: str, executable: Path) -> dict[str, str]:
     env = os.environ.copy()
     env[PYTHON_LIBRARY_ENV] = python_library
     env[PYTHON_LIBRARY_PRINTED_ENV] = "1"
@@ -148,6 +156,8 @@ def _with_editor_python_environment(python_library: str) -> dict[str, str]:
     library_dirs = _runtime_library_dirs(python_library)
     existing = env.get("LD_LIBRARY_PATH")
     env["LD_LIBRARY_PATH"] = os.pathsep.join([*library_dirs, existing] if existing else library_dirs)
+    if executable.parent.name == "gobot":
+        _prepend_pythonpath(env, [executable.parent.parent])
     return env
 
 
@@ -328,7 +338,7 @@ def editor() -> int:
     executable = _find_editor_executable()
     argv = [os.fspath(executable), *sys.argv[1:]]
     try:
-        os.execvpe(argv[0], argv, _with_editor_python_environment(python_library))
+        os.execvpe(argv[0], argv, _with_editor_python_environment(python_library, executable))
     except OSError as error:
         print(f"[gobot] Failed to launch {argv[0]}: {error}", file=sys.stderr)
         return 127

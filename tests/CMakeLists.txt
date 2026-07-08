@@ -78,6 +78,10 @@ target_include_directories(test_editor_type_icons PRIVATE
 add_executable(test_python_panel
         editor/test_python_panel.cpp)
 target_compile_options(test_python_panel PUBLIC "${GOBOT_COMPILE_OPTIONS}")
+target_compile_definitions(test_python_panel
+        PRIVATE
+            GOBOT_TEST_BUILD_PYTHON_DIR="${CMAKE_BINARY_DIR}/python"
+            GOBOT_TEST_PYTHON_EXECUTABLE="${Python3_EXECUTABLE}")
 target_include_directories(test_python_panel PRIVATE
         ${PROJECT_SOURCE_DIR}/3rdparty/ImGuiColorTextEdit
         ${PROJECT_SOURCE_DIR}/3rdparty/imgui

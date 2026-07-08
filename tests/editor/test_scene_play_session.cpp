@@ -38,6 +38,12 @@ protected:
         setenv("HOME", "/tmp/gobot-test-home", 1);
         project_path = std::filesystem::temp_directory_path() / "gobot_scene_play_session_test";
         std::filesystem::create_directories(project_path);
+        setenv("GOBOT_SCENE_PLAY_SESSION_COUNTS",
+               (project_path / "scripts" / "counts.txt").string().c_str(),
+               1);
+        setenv("GOBOT_SCENE_PLAY_SESSION_ROOT_LOOKUP",
+               (project_path / "scripts" / "root_lookup.txt").string().c_str(),
+               1);
         ASSERT_TRUE(project_settings->SetProjectPath(project_path.string()));
         tree = gobot::SceneTree::New<gobot::SceneTree>(false);
         tree->Initialize();
@@ -133,9 +139,6 @@ class Script(gobot.NodeScript):
     child->SetName("scripted");
     child->SetScript(script);
     root->AddChild(child);
-    setenv("GOBOT_SCENE_PLAY_SESSION_COUNTS",
-           (project_path / "scripts" / "counts.txt").string().c_str(),
-           1);
 
     tree->Process(0.016);
     tree->PhysicsProcess(0.004);
@@ -241,9 +244,6 @@ class Script(gobot.NodeScript):
     robot->SetName("robot");
     root->AddChild(robot);
     root->SetScript(script);
-    setenv("GOBOT_SCENE_PLAY_SESSION_ROOT_LOOKUP",
-           (project_path / "scripts" / "root_lookup.txt").string().c_str(),
-           1);
 
     ASSERT_TRUE(session.Start(root, context.get())) << session.GetLastError();
     EXPECT_EQ(ReadText("scripts/root_lookup.txt"), "EditedRoot:robot");
