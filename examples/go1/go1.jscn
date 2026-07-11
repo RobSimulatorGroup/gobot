@@ -1,27 +1,27 @@
 {
     "__EXT_RESOURCES__": [
         {
-            "__ID__": "5_wAHSQ",
+            "__ID__": "5_85pux",
             "__PATH__": "res://assets/thigh.stl",
             "__TYPE__": "ArrayMesh"
         },
         {
-            "__ID__": "4_dph9v",
+            "__ID__": "4_xjz6e",
             "__PATH__": "res://assets/calf.stl",
             "__TYPE__": "ArrayMesh"
         },
         {
-            "__ID__": "3_WIRL0",
+            "__ID__": "3_Pg0RB",
             "__PATH__": "res://assets/thigh_mirror.stl",
             "__TYPE__": "ArrayMesh"
         },
         {
-            "__ID__": "2_vDN7V",
+            "__ID__": "2_tqwgw",
             "__PATH__": "res://assets/hip.stl",
             "__TYPE__": "ArrayMesh"
         },
         {
-            "__ID__": "1_mKaJa",
+            "__ID__": "1_VOemB",
             "__PATH__": "res://assets/trunk.stl",
             "__TYPE__": "ArrayMesh"
         }
@@ -73,7 +73,7 @@
             "type": "Robot3D"
         },
         {
-            "name": "trunk_joint",
+            "name": "floating_base_joint",
             "parent": 0,
             "properties": {
                 "armature": 0.0,
@@ -240,9 +240,9 @@
             "name": "trunk_visual_0",
             "parent": 2,
             "properties": {
-                "material": "SubResource(PBRMaterial3D_jnjLr)",
-                "mesh": "ExtResource(1_mKaJa)",
-                "mesh_material": "SubResource(PBRMaterial3D_ZwUTE)",
+                "material": "SubResource(PBRMaterial3D_YuHyo)",
+                "mesh": "ExtResource(1_VOemB)",
+                "mesh_material": "SubResource(PBRMaterial3D_f1Omm)",
                 "position": {
                     "matrix_data": {
                         "cols": 1,
@@ -288,10 +288,10 @@
             "type": "MeshInstance3D"
         },
         {
-            "name": "base1",
+            "name": "trunk_collision",
             "parent": 2,
             "properties": {
-                "conaffinity": 2,
+                "conaffinity": 1,
                 "condim": 1,
                 "contype": 1,
                 "disabled": false,
@@ -300,14 +300,14 @@
                         "cols": 1,
                         "rows": 3,
                         "storage": [
-                            0.0,
-                            0.0,
-                            0.0
+                            1.0,
+                            0.004999999888241291,
+                            9.999999747378752e-05
                         ]
                     }
                 },
                 "gap": 0.0,
-                "margin": 0.0010000000474974513,
+                "margin": 0.0,
                 "position": {
                     "matrix_data": {
                         "cols": 1,
@@ -319,6 +319,7 @@
                         ]
                     }
                 },
+                "priority": 0,
                 "rotation_degrees": {
                     "matrix_data": {
                         "cols": 1,
@@ -342,7 +343,7 @@
                     }
                 },
                 "script": null,
-                "shape": "SubResource(BoxShape3D_kt90f)",
+                "shape": "SubResource(BoxShape3D_Dw1Pd)",
                 "solimp": [
                     0.8999999761581421,
                     0.949999988079071,
@@ -365,10 +366,10 @@
             "type": "CollisionShape3D"
         },
         {
-            "name": "base2",
+            "name": "head_collision",
             "parent": 2,
             "properties": {
-                "conaffinity": 2,
+                "conaffinity": 1,
                 "condim": 1,
                 "contype": 1,
                 "disabled": false,
@@ -377,179 +378,26 @@
                         "cols": 1,
                         "rows": 3,
                         "storage": [
-                            0.0,
-                            0.0,
-                            0.0
+                            1.0,
+                            0.004999999888241291,
+                            9.999999747378752e-05
                         ]
                     }
                 },
                 "gap": 0.0,
-                "margin": 0.0010000000474974513,
+                "margin": 0.0,
                 "position": {
                     "matrix_data": {
                         "cols": 1,
                         "rows": 3,
                         "storage": [
-                            0.0,
-                            -0.03999999910593033,
-                            0.0
-                        ]
-                    }
-                },
-                "rotation_degrees": {
-                    "matrix_data": {
-                        "cols": 1,
-                        "rows": 3,
-                        "storage": [
-                            -0.0,
-                            90.0,
-                            0.0
-                        ]
-                    }
-                },
-                "scale": {
-                    "matrix_data": {
-                        "cols": 1,
-                        "rows": 3,
-                        "storage": [
-                            1.0,
-                            1.0,
-                            1.0
-                        ]
-                    }
-                },
-                "script": null,
-                "shape": "SubResource(CylinderShape3D_gIupx)",
-                "solimp": [
-                    0.8999999761581421,
-                    0.949999988079071,
-                    0.0010000000474974513,
-                    0.5,
-                    2.0
-                ],
-                "solref": {
-                    "matrix_data": {
-                        "cols": 1,
-                        "rows": 2,
-                        "storage": [
-                            0.009999999776482582,
-                            1.0
-                        ]
-                    }
-                },
-                "visible": false
-            },
-            "type": "CollisionShape3D"
-        },
-        {
-            "name": "base3",
-            "parent": 2,
-            "properties": {
-                "conaffinity": 2,
-                "condim": 1,
-                "contype": 1,
-                "disabled": false,
-                "friction": {
-                    "matrix_data": {
-                        "cols": 1,
-                        "rows": 3,
-                        "storage": [
-                            0.0,
+                            0.23999999463558197,
                             0.0,
                             0.0
                         ]
                     }
                 },
-                "gap": 0.0,
-                "margin": 0.0010000000474974513,
-                "position": {
-                    "matrix_data": {
-                        "cols": 1,
-                        "rows": 3,
-                        "storage": [
-                            0.0,
-                            0.03999999910593033,
-                            0.0
-                        ]
-                    }
-                },
-                "rotation_degrees": {
-                    "matrix_data": {
-                        "cols": 1,
-                        "rows": 3,
-                        "storage": [
-                            -0.0,
-                            90.0,
-                            0.0
-                        ]
-                    }
-                },
-                "scale": {
-                    "matrix_data": {
-                        "cols": 1,
-                        "rows": 3,
-                        "storage": [
-                            1.0,
-                            1.0,
-                            1.0
-                        ]
-                    }
-                },
-                "script": null,
-                "shape": "SubResource(CylinderShape3D_74B3O)",
-                "solimp": [
-                    0.8999999761581421,
-                    0.949999988079071,
-                    0.0010000000474974513,
-                    0.5,
-                    2.0
-                ],
-                "solref": {
-                    "matrix_data": {
-                        "cols": 1,
-                        "rows": 2,
-                        "storage": [
-                            0.009999999776482582,
-                            1.0
-                        ]
-                    }
-                },
-                "visible": false
-            },
-            "type": "CollisionShape3D"
-        },
-        {
-            "name": "geom_4",
-            "parent": 2,
-            "properties": {
-                "conaffinity": 2,
-                "condim": 1,
-                "contype": 1,
-                "disabled": false,
-                "friction": {
-                    "matrix_data": {
-                        "cols": 1,
-                        "rows": 3,
-                        "storage": [
-                            0.0,
-                            0.0,
-                            0.0
-                        ]
-                    }
-                },
-                "gap": 0.0,
-                "margin": 0.0010000000474974513,
-                "position": {
-                    "matrix_data": {
-                        "cols": 1,
-                        "rows": 3,
-                        "storage": [
-                            0.25,
-                            0.0,
-                            0.0
-                        ]
-                    }
-                },
+                "priority": 0,
                 "rotation_degrees": {
                     "matrix_data": {
                         "cols": 1,
@@ -573,315 +421,7 @@
                     }
                 },
                 "script": null,
-                "shape": "SubResource(BoxShape3D_i0SqA)",
-                "solimp": [
-                    0.8999999761581421,
-                    0.949999988079071,
-                    0.0010000000474974513,
-                    0.5,
-                    2.0
-                ],
-                "solref": {
-                    "matrix_data": {
-                        "cols": 1,
-                        "rows": 2,
-                        "storage": [
-                            0.009999999776482582,
-                            1.0
-                        ]
-                    }
-                },
-                "visible": false
-            },
-            "type": "CollisionShape3D"
-        },
-        {
-            "name": "geom_5",
-            "parent": 2,
-            "properties": {
-                "conaffinity": 2,
-                "condim": 1,
-                "contype": 1,
-                "disabled": false,
-                "friction": {
-                    "matrix_data": {
-                        "cols": 1,
-                        "rows": 3,
-                        "storage": [
-                            0.0,
-                            0.0,
-                            0.0
-                        ]
-                    }
-                },
-                "gap": 0.0,
-                "margin": 0.0010000000474974513,
-                "position": {
-                    "matrix_data": {
-                        "cols": 1,
-                        "rows": 3,
-                        "storage": [
-                            0.25,
-                            0.05999999865889549,
-                            -0.009999999776482582
-                        ]
-                    }
-                },
-                "rotation_degrees": {
-                    "matrix_data": {
-                        "cols": 1,
-                        "rows": 3,
-                        "storage": [
-                            -0.0,
-                            0.0,
-                            -0.0
-                        ]
-                    }
-                },
-                "scale": {
-                    "matrix_data": {
-                        "cols": 1,
-                        "rows": 3,
-                        "storage": [
-                            1.0,
-                            1.0,
-                            1.0
-                        ]
-                    }
-                },
-                "script": null,
-                "shape": "SubResource(CapsuleShape3D_nC0Pf)",
-                "solimp": [
-                    0.8999999761581421,
-                    0.949999988079071,
-                    0.0010000000474974513,
-                    0.5,
-                    2.0
-                ],
-                "solref": {
-                    "matrix_data": {
-                        "cols": 1,
-                        "rows": 2,
-                        "storage": [
-                            0.009999999776482582,
-                            1.0
-                        ]
-                    }
-                },
-                "visible": false
-            },
-            "type": "CollisionShape3D"
-        },
-        {
-            "name": "geom_6",
-            "parent": 2,
-            "properties": {
-                "conaffinity": 2,
-                "condim": 1,
-                "contype": 1,
-                "disabled": false,
-                "friction": {
-                    "matrix_data": {
-                        "cols": 1,
-                        "rows": 3,
-                        "storage": [
-                            0.0,
-                            0.0,
-                            0.0
-                        ]
-                    }
-                },
-                "gap": 0.0,
-                "margin": 0.0010000000474974513,
-                "position": {
-                    "matrix_data": {
-                        "cols": 1,
-                        "rows": 3,
-                        "storage": [
-                            0.25,
-                            -0.05999999865889549,
-                            -0.009999999776482582
-                        ]
-                    }
-                },
-                "rotation_degrees": {
-                    "matrix_data": {
-                        "cols": 1,
-                        "rows": 3,
-                        "storage": [
-                            -0.0,
-                            0.0,
-                            -0.0
-                        ]
-                    }
-                },
-                "scale": {
-                    "matrix_data": {
-                        "cols": 1,
-                        "rows": 3,
-                        "storage": [
-                            1.0,
-                            1.0,
-                            1.0
-                        ]
-                    }
-                },
-                "script": null,
-                "shape": "SubResource(CapsuleShape3D_dqxi8)",
-                "solimp": [
-                    0.8999999761581421,
-                    0.949999988079071,
-                    0.0010000000474974513,
-                    0.5,
-                    2.0
-                ],
-                "solref": {
-                    "matrix_data": {
-                        "cols": 1,
-                        "rows": 2,
-                        "storage": [
-                            0.009999999776482582,
-                            1.0
-                        ]
-                    }
-                },
-                "visible": false
-            },
-            "type": "CollisionShape3D"
-        },
-        {
-            "name": "geom_7",
-            "parent": 2,
-            "properties": {
-                "conaffinity": 2,
-                "condim": 1,
-                "contype": 1,
-                "disabled": false,
-                "friction": {
-                    "matrix_data": {
-                        "cols": 1,
-                        "rows": 3,
-                        "storage": [
-                            0.0,
-                            0.0,
-                            0.0
-                        ]
-                    }
-                },
-                "gap": 0.0,
-                "margin": 0.0010000000474974513,
-                "position": {
-                    "matrix_data": {
-                        "cols": 1,
-                        "rows": 3,
-                        "storage": [
-                            0.25,
-                            0.0,
-                            -0.05000000074505806
-                        ]
-                    }
-                },
-                "rotation_degrees": {
-                    "matrix_data": {
-                        "cols": 1,
-                        "rows": 3,
-                        "storage": [
-                            90.0,
-                            0.0,
-                            -0.0
-                        ]
-                    }
-                },
-                "scale": {
-                    "matrix_data": {
-                        "cols": 1,
-                        "rows": 3,
-                        "storage": [
-                            1.0,
-                            1.0,
-                            1.0
-                        ]
-                    }
-                },
-                "script": null,
-                "shape": "SubResource(CapsuleShape3D_cB19h)",
-                "solimp": [
-                    0.8999999761581421,
-                    0.949999988079071,
-                    0.0010000000474974513,
-                    0.5,
-                    2.0
-                ],
-                "solref": {
-                    "matrix_data": {
-                        "cols": 1,
-                        "rows": 2,
-                        "storage": [
-                            0.009999999776482582,
-                            1.0
-                        ]
-                    }
-                },
-                "visible": false
-            },
-            "type": "CollisionShape3D"
-        },
-        {
-            "name": "geom_8",
-            "parent": 2,
-            "properties": {
-                "conaffinity": 2,
-                "condim": 1,
-                "contype": 1,
-                "disabled": false,
-                "friction": {
-                    "matrix_data": {
-                        "cols": 1,
-                        "rows": 3,
-                        "storage": [
-                            0.0,
-                            0.0,
-                            0.0
-                        ]
-                    }
-                },
-                "gap": 0.0,
-                "margin": 0.0010000000474974513,
-                "position": {
-                    "matrix_data": {
-                        "cols": 1,
-                        "rows": 3,
-                        "storage": [
-                            0.2549999952316284,
-                            0.0,
-                            0.03550000116229057
-                        ]
-                    }
-                },
-                "rotation_degrees": {
-                    "matrix_data": {
-                        "cols": 1,
-                        "rows": 3,
-                        "storage": [
-                            90.0,
-                            0.0,
-                            -0.0
-                        ]
-                    }
-                },
-                "scale": {
-                    "matrix_data": {
-                        "cols": 1,
-                        "rows": 3,
-                        "storage": [
-                            1.0,
-                            1.0,
-                            1.0
-                        ]
-                    }
-                },
-                "script": null,
-                "shape": "SubResource(CapsuleShape3D_e6Kgq)",
+                "shape": "SubResource(SphereShape3D_BswnY)",
                 "solimp": [
                     0.8999999761581421,
                     0.949999988079071,
@@ -907,7 +447,7 @@
             "name": "FR_hip_joint",
             "parent": 2,
             "properties": {
-                "armature": 0.009999999776482582,
+                "armature": 0.004026311915367842,
                 "axis": {
                     "matrix_data": {
                         "cols": 1,
@@ -920,16 +460,16 @@
                     }
                 },
                 "child_link": "FR_hip",
-                "control_lower_limit": -0.8629999756813049,
-                "control_upper_limit": 0.8629999756813049,
-                "damping": 1.0,
-                "drive_damping": 0.0,
+                "control_lower_limit": 0.0,
+                "control_upper_limit": 0.0,
+                "damping": 0.0,
+                "drive_damping": 1.0119225978851318,
                 "drive_mode": "Position",
-                "drive_stiffness": 100.0,
+                "drive_stiffness": 15.895242691040039,
                 "effort_limit": 23.700000762939453,
                 "force_lower_limit": -23.700000762939453,
                 "force_upper_limit": 23.700000762939453,
-                "friction_loss": 0.20000000298023224,
+                "friction_loss": 0.0,
                 "gear": [
                     1.0,
                     0.0,
@@ -978,14 +518,14 @@
                 },
                 "script": null,
                 "upper_limit": 0.8629999756813049,
-                "velocity_limit": 0.0,
+                "velocity_limit": 30.100000381469727,
                 "visible": true
             },
             "type": "Joint3D"
         },
         {
             "name": "FR_hip",
-            "parent": 12,
+            "parent": 6,
             "properties": {
                 "center_of_mass": {
                     "matrix_data": {
@@ -1068,12 +608,12 @@
             "type": "Link3D"
         },
         {
-            "name": "hip_visual_9",
-            "parent": 13,
+            "name": "hip_visual_3",
+            "parent": 7,
             "properties": {
-                "material": "SubResource(PBRMaterial3D_DLeWr)",
-                "mesh": "ExtResource(2_vDN7V)",
-                "mesh_material": "SubResource(PBRMaterial3D_mBeQu)",
+                "material": "SubResource(PBRMaterial3D_oZbTw)",
+                "mesh": "ExtResource(2_tqwgw)",
+                "mesh_material": "SubResource(PBRMaterial3D_DPC1S)",
                 "position": {
                     "matrix_data": {
                         "cols": 1,
@@ -1119,10 +659,10 @@
             "type": "MeshInstance3D"
         },
         {
-            "name": "FR_hip_geom",
-            "parent": 13,
+            "name": "FR_hip_collision",
+            "parent": 7,
             "properties": {
-                "conaffinity": 2,
+                "conaffinity": 1,
                 "condim": 1,
                 "contype": 1,
                 "disabled": false,
@@ -1131,33 +671,34 @@
                         "cols": 1,
                         "rows": 3,
                         "storage": [
-                            0.0,
-                            0.0,
-                            0.0
+                            1.0,
+                            0.004999999888241291,
+                            9.999999747378752e-05
                         ]
                     }
                 },
                 "gap": 0.0,
-                "margin": 0.0010000000474974513,
+                "margin": 0.0,
                 "position": {
                     "matrix_data": {
                         "cols": 1,
                         "rows": 3,
                         "storage": [
                             0.0,
-                            -0.04500000178813934,
+                            -0.029999999329447746,
                             0.0
                         ]
                     }
                 },
+                "priority": 0,
                 "rotation_degrees": {
                     "matrix_data": {
                         "cols": 1,
                         "rows": 3,
                         "storage": [
                             90.0,
-                            0.0,
-                            -0.0
+                            180.0,
+                            -180.0
                         ]
                     }
                 },
@@ -1173,84 +714,7 @@
                     }
                 },
                 "script": null,
-                "shape": "SubResource(CylinderShape3D_zRIsJ)",
-                "solimp": [
-                    0.8999999761581421,
-                    0.949999988079071,
-                    0.0010000000474974513,
-                    0.5,
-                    2.0
-                ],
-                "solref": {
-                    "matrix_data": {
-                        "cols": 1,
-                        "rows": 2,
-                        "storage": [
-                            0.009999999776482582,
-                            1.0
-                        ]
-                    }
-                },
-                "visible": false
-            },
-            "type": "CollisionShape3D"
-        },
-        {
-            "name": "geom_11",
-            "parent": 13,
-            "properties": {
-                "conaffinity": 2,
-                "condim": 1,
-                "contype": 1,
-                "disabled": false,
-                "friction": {
-                    "matrix_data": {
-                        "cols": 1,
-                        "rows": 3,
-                        "storage": [
-                            0.0,
-                            0.0,
-                            0.0
-                        ]
-                    }
-                },
-                "gap": 0.0,
-                "margin": 0.0010000000474974513,
-                "position": {
-                    "matrix_data": {
-                        "cols": 1,
-                        "rows": 3,
-                        "storage": [
-                            0.0,
-                            -0.06499999761581421,
-                            0.0
-                        ]
-                    }
-                },
-                "rotation_degrees": {
-                    "matrix_data": {
-                        "cols": 1,
-                        "rows": 3,
-                        "storage": [
-                            90.0,
-                            0.0,
-                            -0.0
-                        ]
-                    }
-                },
-                "scale": {
-                    "matrix_data": {
-                        "cols": 1,
-                        "rows": 3,
-                        "storage": [
-                            1.0,
-                            1.0,
-                            1.0
-                        ]
-                    }
-                },
-                "script": null,
-                "shape": "SubResource(CylinderShape3D_iSVme)",
+                "shape": "SubResource(CapsuleShape3D_Eyg4G)",
                 "solimp": [
                     0.8999999761581421,
                     0.949999988079071,
@@ -1274,9 +738,9 @@
         },
         {
             "name": "FR_thigh_joint",
-            "parent": 13,
+            "parent": 7,
             "properties": {
-                "armature": 0.009999999776482582,
+                "armature": 0.004026311915367842,
                 "axis": {
                     "matrix_data": {
                         "cols": 1,
@@ -1289,16 +753,16 @@
                     }
                 },
                 "child_link": "FR_thigh",
-                "control_lower_limit": -0.6859999895095825,
-                "control_upper_limit": 4.500999927520752,
-                "damping": 2.0,
-                "drive_damping": 0.0,
+                "control_lower_limit": 0.0,
+                "control_upper_limit": 0.0,
+                "damping": 0.0,
+                "drive_damping": 1.0119225978851318,
                 "drive_mode": "Position",
-                "drive_stiffness": 100.0,
+                "drive_stiffness": 15.895242691040039,
                 "effort_limit": 23.700000762939453,
                 "force_lower_limit": -23.700000762939453,
                 "force_upper_limit": 23.700000762939453,
-                "friction_loss": 0.20000000298023224,
+                "friction_loss": 0.0,
                 "gear": [
                     1.0,
                     0.0,
@@ -1347,14 +811,14 @@
                 },
                 "script": null,
                 "upper_limit": 4.500999927520752,
-                "velocity_limit": 0.0,
+                "velocity_limit": 30.100000381469727,
                 "visible": true
             },
             "type": "Joint3D"
         },
         {
             "name": "FR_thigh",
-            "parent": 17,
+            "parent": 10,
             "properties": {
                 "center_of_mass": {
                     "matrix_data": {
@@ -1437,12 +901,12 @@
             "type": "Link3D"
         },
         {
-            "name": "thigh_mirror_visual_12",
-            "parent": 18,
+            "name": "thigh_mirror_visual_5",
+            "parent": 11,
             "properties": {
-                "material": "SubResource(PBRMaterial3D_PzWp6)",
-                "mesh": "ExtResource(3_WIRL0)",
-                "mesh_material": "SubResource(PBRMaterial3D_nVHUO)",
+                "material": "SubResource(PBRMaterial3D_HKDgA)",
+                "mesh": "ExtResource(3_Pg0RB)",
+                "mesh_material": "SubResource(PBRMaterial3D_lJOdZ)",
                 "position": {
                     "matrix_data": {
                         "cols": 1,
@@ -1488,11 +952,11 @@
             "type": "MeshInstance3D"
         },
         {
-            "name": "FR_thigh_geom",
-            "parent": 18,
+            "name": "FR_thigh_collision1",
+            "parent": 11,
             "properties": {
-                "conaffinity": 2,
-                "condim": 1,
+                "conaffinity": 1,
+                "condim": 3,
                 "contype": 1,
                 "disabled": false,
                 "friction": {
@@ -1500,14 +964,14 @@
                         "cols": 1,
                         "rows": 3,
                         "storage": [
-                            0.0,
-                            0.0,
-                            0.0
+                            1.0,
+                            0.004999999888241291,
+                            9.999999747378752e-05
                         ]
                     }
                 },
                 "gap": 0.0,
-                "margin": 0.0010000000474974513,
+                "margin": 0.0,
                 "position": {
                     "matrix_data": {
                         "cols": 1,
@@ -1519,6 +983,7 @@
                         ]
                     }
                 },
+                "priority": 0,
                 "rotation_degrees": {
                     "matrix_data": {
                         "cols": 1,
@@ -1542,7 +1007,7 @@
                     }
                 },
                 "script": null,
-                "shape": "SubResource(CapsuleShape3D_DucMu)",
+                "shape": "SubResource(CapsuleShape3D_QPHk9)",
                 "solimp": [
                     0.8999999761581421,
                     0.949999988079071,
@@ -1555,7 +1020,7 @@
                         "cols": 1,
                         "rows": 2,
                         "storage": [
-                            0.009999999776482582,
+                            0.019999999552965164,
                             1.0
                         ]
                     }
@@ -1565,11 +1030,11 @@
             "type": "CollisionShape3D"
         },
         {
-            "name": "geom_14",
-            "parent": 18,
+            "name": "FR_thigh_collision2",
+            "parent": 11,
             "properties": {
-                "conaffinity": 2,
-                "condim": 1,
+                "conaffinity": 1,
+                "condim": 3,
                 "contype": 1,
                 "disabled": false,
                 "friction": {
@@ -1577,14 +1042,14 @@
                         "cols": 1,
                         "rows": 3,
                         "storage": [
-                            0.0,
-                            0.0,
-                            0.0
+                            1.0,
+                            0.004999999888241291,
+                            9.999999747378752e-05
                         ]
                     }
                 },
                 "gap": 0.0,
-                "margin": 0.0010000000474974513,
+                "margin": 0.0,
                 "position": {
                     "matrix_data": {
                         "cols": 1,
@@ -1596,6 +1061,7 @@
                         ]
                     }
                 },
+                "priority": 0,
                 "rotation_degrees": {
                     "matrix_data": {
                         "cols": 1,
@@ -1619,7 +1085,7 @@
                     }
                 },
                 "script": null,
-                "shape": "SubResource(CapsuleShape3D_Z92Ky)",
+                "shape": "SubResource(CapsuleShape3D_JKXRA)",
                 "solimp": [
                     0.8999999761581421,
                     0.949999988079071,
@@ -1632,7 +1098,7 @@
                         "cols": 1,
                         "rows": 2,
                         "storage": [
-                            0.009999999776482582,
+                            0.019999999552965164,
                             1.0
                         ]
                     }
@@ -1642,11 +1108,11 @@
             "type": "CollisionShape3D"
         },
         {
-            "name": "geom_15",
-            "parent": 18,
+            "name": "FR_thigh_collision3",
+            "parent": 11,
             "properties": {
-                "conaffinity": 2,
-                "condim": 1,
+                "conaffinity": 1,
+                "condim": 3,
                 "contype": 1,
                 "disabled": false,
                 "friction": {
@@ -1654,14 +1120,14 @@
                         "cols": 1,
                         "rows": 3,
                         "storage": [
-                            0.0,
-                            0.0,
-                            0.0
+                            1.0,
+                            0.004999999888241291,
+                            9.999999747378752e-05
                         ]
                     }
                 },
                 "gap": 0.0,
-                "margin": 0.0010000000474974513,
+                "margin": 0.0,
                 "position": {
                     "matrix_data": {
                         "cols": 1,
@@ -1673,6 +1139,7 @@
                         ]
                     }
                 },
+                "priority": 0,
                 "rotation_degrees": {
                     "matrix_data": {
                         "cols": 1,
@@ -1696,7 +1163,7 @@
                     }
                 },
                 "script": null,
-                "shape": "SubResource(CapsuleShape3D_v5yoF)",
+                "shape": "SubResource(CapsuleShape3D_fyjTn)",
                 "solimp": [
                     0.8999999761581421,
                     0.949999988079071,
@@ -1709,7 +1176,7 @@
                         "cols": 1,
                         "rows": 2,
                         "storage": [
-                            0.009999999776482582,
+                            0.019999999552965164,
                             1.0
                         ]
                     }
@@ -1720,9 +1187,9 @@
         },
         {
             "name": "FR_calf_joint",
-            "parent": 18,
+            "parent": 11,
             "properties": {
-                "armature": 0.009999999776482582,
+                "armature": 0.009059201925992966,
                 "axis": {
                     "matrix_data": {
                         "cols": 1,
@@ -1735,16 +1202,16 @@
                     }
                 },
                 "child_link": "FR_calf",
-                "control_lower_limit": -2.818000078201294,
-                "control_upper_limit": -0.8880000114440918,
-                "damping": 2.0,
-                "drive_damping": 0.0,
+                "control_lower_limit": 0.0,
+                "control_upper_limit": 0.0,
+                "damping": 0.0,
+                "drive_damping": 2.2768259048461914,
                 "drive_mode": "Position",
-                "drive_stiffness": 100.0,
+                "drive_stiffness": 35.76429748535156,
                 "effort_limit": 35.54999923706055,
                 "force_lower_limit": -35.54999923706055,
                 "force_upper_limit": 35.54999923706055,
-                "friction_loss": 0.20000000298023224,
+                "friction_loss": 0.0,
                 "gear": [
                     1.0,
                     0.0,
@@ -1793,14 +1260,14 @@
                 },
                 "script": null,
                 "upper_limit": -0.8880000114440918,
-                "velocity_limit": 0.0,
+                "velocity_limit": 20.059999465942383,
                 "visible": true
             },
             "type": "Joint3D"
         },
         {
             "name": "FR_calf",
-            "parent": 23,
+            "parent": 16,
             "properties": {
                 "center_of_mass": {
                     "matrix_data": {
@@ -1883,12 +1350,12 @@
             "type": "Link3D"
         },
         {
-            "name": "calf_visual_16",
-            "parent": 24,
+            "name": "calf_visual_9",
+            "parent": 17,
             "properties": {
-                "material": "SubResource(PBRMaterial3D_B2DGE)",
-                "mesh": "ExtResource(4_dph9v)",
-                "mesh_material": "SubResource(PBRMaterial3D_zmjhO)",
+                "material": "SubResource(PBRMaterial3D_b3P7M)",
+                "mesh": "ExtResource(4_xjz6e)",
+                "mesh_material": "SubResource(PBRMaterial3D_tq28V)",
                 "position": {
                     "matrix_data": {
                         "cols": 1,
@@ -1934,11 +1401,11 @@
             "type": "MeshInstance3D"
         },
         {
-            "name": "FR_calf_geom1",
-            "parent": 24,
+            "name": "FR_calf_collision1",
+            "parent": 17,
             "properties": {
-                "conaffinity": 2,
-                "condim": 1,
+                "conaffinity": 1,
+                "condim": 3,
                 "contype": 1,
                 "disabled": false,
                 "friction": {
@@ -1946,14 +1413,14 @@
                         "cols": 1,
                         "rows": 3,
                         "storage": [
-                            0.0,
-                            0.0,
-                            0.0
+                            1.0,
+                            0.004999999888241291,
+                            9.999999747378752e-05
                         ]
                     }
                 },
                 "gap": 0.0,
-                "margin": 0.0010000000474974513,
+                "margin": 0.0,
                 "position": {
                     "matrix_data": {
                         "cols": 1,
@@ -1965,6 +1432,7 @@
                         ]
                     }
                 },
+                "priority": 0,
                 "rotation_degrees": {
                     "matrix_data": {
                         "cols": 1,
@@ -1988,7 +1456,7 @@
                     }
                 },
                 "script": null,
-                "shape": "SubResource(CapsuleShape3D_YvLm6)",
+                "shape": "SubResource(CapsuleShape3D_v9hgW)",
                 "solimp": [
                     0.8999999761581421,
                     0.949999988079071,
@@ -2001,7 +1469,7 @@
                         "cols": 1,
                         "rows": 2,
                         "storage": [
-                            0.009999999776482582,
+                            0.019999999552965164,
                             1.0
                         ]
                     }
@@ -2011,11 +1479,11 @@
             "type": "CollisionShape3D"
         },
         {
-            "name": "FR_calf_geom2",
-            "parent": 24,
+            "name": "FR_calf_collision2",
+            "parent": 17,
             "properties": {
-                "conaffinity": 2,
-                "condim": 1,
+                "conaffinity": 1,
+                "condim": 3,
                 "contype": 1,
                 "disabled": false,
                 "friction": {
@@ -2023,14 +1491,14 @@
                         "cols": 1,
                         "rows": 3,
                         "storage": [
-                            0.0,
-                            0.0,
-                            0.0
+                            1.0,
+                            0.004999999888241291,
+                            9.999999747378752e-05
                         ]
                     }
                 },
                 "gap": 0.0,
-                "margin": 0.0010000000474974513,
+                "margin": 0.0,
                 "position": {
                     "matrix_data": {
                         "cols": 1,
@@ -2042,6 +1510,7 @@
                         ]
                     }
                 },
+                "priority": 0,
                 "rotation_degrees": {
                     "matrix_data": {
                         "cols": 1,
@@ -2065,7 +1534,7 @@
                     }
                 },
                 "script": null,
-                "shape": "SubResource(CapsuleShape3D_S5w6w)",
+                "shape": "SubResource(CapsuleShape3D_m8wDa)",
                 "solimp": [
                     0.8999999761581421,
                     0.949999988079071,
@@ -2078,7 +1547,7 @@
                         "cols": 1,
                         "rows": 2,
                         "storage": [
-                            0.009999999776482582,
+                            0.019999999552965164,
                             1.0
                         ]
                     }
@@ -2088,10 +1557,10 @@
             "type": "CollisionShape3D"
         },
         {
-            "name": "FR",
-            "parent": 24,
+            "name": "FR_foot_collision",
+            "parent": 17,
             "properties": {
-                "conaffinity": 2,
+                "conaffinity": 1,
                 "condim": 6,
                 "contype": 1,
                 "disabled": false,
@@ -2100,15 +1569,14 @@
                         "cols": 1,
                         "rows": 3,
                         "storage": [
-                            0.800000011920929,
-                            0.019999999552965164,
-                            0.009999999776482582
+                            1.0,
+                            0.004999999888241291,
+                            0.0005000000237487257
                         ]
                     }
                 },
                 "gap": 0.0,
-                "margin": 0.004999999888241291,
-                "priority": 1,
+                "margin": 0.0,
                 "position": {
                     "matrix_data": {
                         "cols": 1,
@@ -2120,6 +1588,7 @@
                         ]
                     }
                 },
+                "priority": 1,
                 "rotation_degrees": {
                     "matrix_data": {
                         "cols": 1,
@@ -2143,11 +1612,11 @@
                     }
                 },
                 "script": null,
-                "shape": "SubResource(SphereShape3D_t1WZ5)",
+                "shape": "SubResource(SphereShape3D_gh8vZ)",
                 "solimp": [
-                    0.014999999664723873,
-                    1.0,
-                    0.023000000044703484,
+                    0.8999999761581421,
+                    0.949999988079071,
+                    0.0010000000474974513,
                     0.5,
                     2.0
                 ],
@@ -2167,7 +1636,7 @@
         },
         {
             "name": "FR_foot_height_scan",
-            "parent": 24,
+            "parent": 17,
             "properties": {
                 "debug_marker_radius": 0.0,
                 "enabled": true,
@@ -2287,7 +1756,7 @@
         },
         {
             "name": "FR_foot_contact",
-            "parent": 24,
+            "parent": 17,
             "properties": {
                 "debug_marker_radius": 0.0,
                 "enabled": true,
@@ -2339,7 +1808,7 @@
             "name": "FL_hip_joint",
             "parent": 2,
             "properties": {
-                "armature": 0.009999999776482582,
+                "armature": 0.004026311915367842,
                 "axis": {
                     "matrix_data": {
                         "cols": 1,
@@ -2352,16 +1821,16 @@
                     }
                 },
                 "child_link": "FL_hip",
-                "control_lower_limit": -0.8629999756813049,
-                "control_upper_limit": 0.8629999756813049,
-                "damping": 1.0,
-                "drive_damping": 0.0,
+                "control_lower_limit": 0.0,
+                "control_upper_limit": 0.0,
+                "damping": 0.0,
+                "drive_damping": 1.0119225978851318,
                 "drive_mode": "Position",
-                "drive_stiffness": 100.0,
+                "drive_stiffness": 15.895242691040039,
                 "effort_limit": 23.700000762939453,
                 "force_lower_limit": -23.700000762939453,
                 "force_upper_limit": 23.700000762939453,
-                "friction_loss": 0.20000000298023224,
+                "friction_loss": 0.0,
                 "gear": [
                     1.0,
                     0.0,
@@ -2410,14 +1879,14 @@
                 },
                 "script": null,
                 "upper_limit": 0.8629999756813049,
-                "velocity_limit": 0.0,
+                "velocity_limit": 30.100000381469727,
                 "visible": true
             },
             "type": "Joint3D"
         },
         {
             "name": "FL_hip",
-            "parent": 31,
+            "parent": 24,
             "properties": {
                 "center_of_mass": {
                     "matrix_data": {
@@ -2500,12 +1969,12 @@
             "type": "Link3D"
         },
         {
-            "name": "hip_visual_20",
-            "parent": 32,
+            "name": "hip_visual_13",
+            "parent": 25,
             "properties": {
-                "material": "SubResource(PBRMaterial3D_sUucO)",
-                "mesh": "ExtResource(2_vDN7V)",
-                "mesh_material": "SubResource(PBRMaterial3D_mBeQu)",
+                "material": "SubResource(PBRMaterial3D_gNedK)",
+                "mesh": "ExtResource(2_tqwgw)",
+                "mesh_material": "SubResource(PBRMaterial3D_DPC1S)",
                 "position": {
                     "matrix_data": {
                         "cols": 1,
@@ -2551,10 +2020,10 @@
             "type": "MeshInstance3D"
         },
         {
-            "name": "FL_hip_geom",
-            "parent": 32,
+            "name": "FL_hip_collision",
+            "parent": 25,
             "properties": {
-                "conaffinity": 2,
+                "conaffinity": 1,
                 "condim": 1,
                 "contype": 1,
                 "disabled": false,
@@ -2563,25 +2032,26 @@
                         "cols": 1,
                         "rows": 3,
                         "storage": [
-                            0.0,
-                            0.0,
-                            0.0
+                            1.0,
+                            0.004999999888241291,
+                            9.999999747378752e-05
                         ]
                     }
                 },
                 "gap": 0.0,
-                "margin": 0.0010000000474974513,
+                "margin": 0.0,
                 "position": {
                     "matrix_data": {
                         "cols": 1,
                         "rows": 3,
                         "storage": [
                             0.0,
-                            0.04500000178813934,
+                            0.029999999329447746,
                             0.0
                         ]
                     }
                 },
+                "priority": 0,
                 "rotation_degrees": {
                     "matrix_data": {
                         "cols": 1,
@@ -2605,84 +2075,7 @@
                     }
                 },
                 "script": null,
-                "shape": "SubResource(CylinderShape3D_EMYZA)",
-                "solimp": [
-                    0.8999999761581421,
-                    0.949999988079071,
-                    0.0010000000474974513,
-                    0.5,
-                    2.0
-                ],
-                "solref": {
-                    "matrix_data": {
-                        "cols": 1,
-                        "rows": 2,
-                        "storage": [
-                            0.009999999776482582,
-                            1.0
-                        ]
-                    }
-                },
-                "visible": false
-            },
-            "type": "CollisionShape3D"
-        },
-        {
-            "name": "geom_22",
-            "parent": 32,
-            "properties": {
-                "conaffinity": 2,
-                "condim": 1,
-                "contype": 1,
-                "disabled": false,
-                "friction": {
-                    "matrix_data": {
-                        "cols": 1,
-                        "rows": 3,
-                        "storage": [
-                            0.0,
-                            0.0,
-                            0.0
-                        ]
-                    }
-                },
-                "gap": 0.0,
-                "margin": 0.0010000000474974513,
-                "position": {
-                    "matrix_data": {
-                        "cols": 1,
-                        "rows": 3,
-                        "storage": [
-                            0.0,
-                            0.06499999761581421,
-                            0.0
-                        ]
-                    }
-                },
-                "rotation_degrees": {
-                    "matrix_data": {
-                        "cols": 1,
-                        "rows": 3,
-                        "storage": [
-                            90.0,
-                            0.0,
-                            -0.0
-                        ]
-                    }
-                },
-                "scale": {
-                    "matrix_data": {
-                        "cols": 1,
-                        "rows": 3,
-                        "storage": [
-                            1.0,
-                            1.0,
-                            1.0
-                        ]
-                    }
-                },
-                "script": null,
-                "shape": "SubResource(CylinderShape3D_hHKXM)",
+                "shape": "SubResource(CapsuleShape3D_F5EP4)",
                 "solimp": [
                     0.8999999761581421,
                     0.949999988079071,
@@ -2706,9 +2099,9 @@
         },
         {
             "name": "FL_thigh_joint",
-            "parent": 32,
+            "parent": 25,
             "properties": {
-                "armature": 0.009999999776482582,
+                "armature": 0.004026311915367842,
                 "axis": {
                     "matrix_data": {
                         "cols": 1,
@@ -2721,16 +2114,16 @@
                     }
                 },
                 "child_link": "FL_thigh",
-                "control_lower_limit": -0.6859999895095825,
-                "control_upper_limit": 4.500999927520752,
-                "damping": 2.0,
-                "drive_damping": 0.0,
+                "control_lower_limit": 0.0,
+                "control_upper_limit": 0.0,
+                "damping": 0.0,
+                "drive_damping": 1.0119225978851318,
                 "drive_mode": "Position",
-                "drive_stiffness": 100.0,
+                "drive_stiffness": 15.895242691040039,
                 "effort_limit": 23.700000762939453,
                 "force_lower_limit": -23.700000762939453,
                 "force_upper_limit": 23.700000762939453,
-                "friction_loss": 0.20000000298023224,
+                "friction_loss": 0.0,
                 "gear": [
                     1.0,
                     0.0,
@@ -2779,14 +2172,14 @@
                 },
                 "script": null,
                 "upper_limit": 4.500999927520752,
-                "velocity_limit": 0.0,
+                "velocity_limit": 30.100000381469727,
                 "visible": true
             },
             "type": "Joint3D"
         },
         {
             "name": "FL_thigh",
-            "parent": 36,
+            "parent": 28,
             "properties": {
                 "center_of_mass": {
                     "matrix_data": {
@@ -2869,12 +2262,12 @@
             "type": "Link3D"
         },
         {
-            "name": "thigh_visual_23",
-            "parent": 37,
+            "name": "thigh_visual_15",
+            "parent": 29,
             "properties": {
-                "material": "SubResource(PBRMaterial3D_0jDLY)",
-                "mesh": "ExtResource(5_wAHSQ)",
-                "mesh_material": "SubResource(PBRMaterial3D_lkKeU)",
+                "material": "SubResource(PBRMaterial3D_1O7ci)",
+                "mesh": "ExtResource(5_85pux)",
+                "mesh_material": "SubResource(PBRMaterial3D_fIpHh)",
                 "position": {
                     "matrix_data": {
                         "cols": 1,
@@ -2920,11 +2313,11 @@
             "type": "MeshInstance3D"
         },
         {
-            "name": "FL_thigh_geom",
-            "parent": 37,
+            "name": "FL_thigh_collision1",
+            "parent": 29,
             "properties": {
-                "conaffinity": 2,
-                "condim": 1,
+                "conaffinity": 1,
+                "condim": 3,
                 "contype": 1,
                 "disabled": false,
                 "friction": {
@@ -2932,14 +2325,14 @@
                         "cols": 1,
                         "rows": 3,
                         "storage": [
-                            0.0,
-                            0.0,
-                            0.0
+                            1.0,
+                            0.004999999888241291,
+                            9.999999747378752e-05
                         ]
                     }
                 },
                 "gap": 0.0,
-                "margin": 0.0010000000474974513,
+                "margin": 0.0,
                 "position": {
                     "matrix_data": {
                         "cols": 1,
@@ -2951,6 +2344,7 @@
                         ]
                     }
                 },
+                "priority": 0,
                 "rotation_degrees": {
                     "matrix_data": {
                         "cols": 1,
@@ -2974,7 +2368,7 @@
                     }
                 },
                 "script": null,
-                "shape": "SubResource(CapsuleShape3D_EjnzY)",
+                "shape": "SubResource(CapsuleShape3D_MXFfS)",
                 "solimp": [
                     0.8999999761581421,
                     0.949999988079071,
@@ -2987,7 +2381,7 @@
                         "cols": 1,
                         "rows": 2,
                         "storage": [
-                            0.009999999776482582,
+                            0.019999999552965164,
                             1.0
                         ]
                     }
@@ -2997,11 +2391,11 @@
             "type": "CollisionShape3D"
         },
         {
-            "name": "geom_25",
-            "parent": 37,
+            "name": "FL_thigh_collision2",
+            "parent": 29,
             "properties": {
-                "conaffinity": 2,
-                "condim": 1,
+                "conaffinity": 1,
+                "condim": 3,
                 "contype": 1,
                 "disabled": false,
                 "friction": {
@@ -3009,14 +2403,14 @@
                         "cols": 1,
                         "rows": 3,
                         "storage": [
-                            0.0,
-                            0.0,
-                            0.0
+                            1.0,
+                            0.004999999888241291,
+                            9.999999747378752e-05
                         ]
                     }
                 },
                 "gap": 0.0,
-                "margin": 0.0010000000474974513,
+                "margin": 0.0,
                 "position": {
                     "matrix_data": {
                         "cols": 1,
@@ -3028,6 +2422,7 @@
                         ]
                     }
                 },
+                "priority": 0,
                 "rotation_degrees": {
                     "matrix_data": {
                         "cols": 1,
@@ -3051,7 +2446,7 @@
                     }
                 },
                 "script": null,
-                "shape": "SubResource(CapsuleShape3D_ECIfa)",
+                "shape": "SubResource(CapsuleShape3D_t5fiF)",
                 "solimp": [
                     0.8999999761581421,
                     0.949999988079071,
@@ -3064,7 +2459,7 @@
                         "cols": 1,
                         "rows": 2,
                         "storage": [
-                            0.009999999776482582,
+                            0.019999999552965164,
                             1.0
                         ]
                     }
@@ -3074,11 +2469,11 @@
             "type": "CollisionShape3D"
         },
         {
-            "name": "geom_26",
-            "parent": 37,
+            "name": "FL_thigh_collision3",
+            "parent": 29,
             "properties": {
-                "conaffinity": 2,
-                "condim": 1,
+                "conaffinity": 1,
+                "condim": 3,
                 "contype": 1,
                 "disabled": false,
                 "friction": {
@@ -3086,14 +2481,14 @@
                         "cols": 1,
                         "rows": 3,
                         "storage": [
-                            0.0,
-                            0.0,
-                            0.0
+                            1.0,
+                            0.004999999888241291,
+                            9.999999747378752e-05
                         ]
                     }
                 },
                 "gap": 0.0,
-                "margin": 0.0010000000474974513,
+                "margin": 0.0,
                 "position": {
                     "matrix_data": {
                         "cols": 1,
@@ -3105,6 +2500,7 @@
                         ]
                     }
                 },
+                "priority": 0,
                 "rotation_degrees": {
                     "matrix_data": {
                         "cols": 1,
@@ -3128,7 +2524,7 @@
                     }
                 },
                 "script": null,
-                "shape": "SubResource(CapsuleShape3D_SyIa2)",
+                "shape": "SubResource(CapsuleShape3D_lvZrj)",
                 "solimp": [
                     0.8999999761581421,
                     0.949999988079071,
@@ -3141,7 +2537,7 @@
                         "cols": 1,
                         "rows": 2,
                         "storage": [
-                            0.009999999776482582,
+                            0.019999999552965164,
                             1.0
                         ]
                     }
@@ -3152,9 +2548,9 @@
         },
         {
             "name": "FL_calf_joint",
-            "parent": 37,
+            "parent": 29,
             "properties": {
-                "armature": 0.009999999776482582,
+                "armature": 0.009059201925992966,
                 "axis": {
                     "matrix_data": {
                         "cols": 1,
@@ -3167,16 +2563,16 @@
                     }
                 },
                 "child_link": "FL_calf",
-                "control_lower_limit": -2.818000078201294,
-                "control_upper_limit": -0.8880000114440918,
-                "damping": 2.0,
-                "drive_damping": 0.0,
+                "control_lower_limit": 0.0,
+                "control_upper_limit": 0.0,
+                "damping": 0.0,
+                "drive_damping": 2.2768259048461914,
                 "drive_mode": "Position",
-                "drive_stiffness": 100.0,
+                "drive_stiffness": 35.76429748535156,
                 "effort_limit": 35.54999923706055,
                 "force_lower_limit": -35.54999923706055,
                 "force_upper_limit": 35.54999923706055,
-                "friction_loss": 0.20000000298023224,
+                "friction_loss": 0.0,
                 "gear": [
                     1.0,
                     0.0,
@@ -3225,14 +2621,14 @@
                 },
                 "script": null,
                 "upper_limit": -0.8880000114440918,
-                "velocity_limit": 0.0,
+                "velocity_limit": 20.059999465942383,
                 "visible": true
             },
             "type": "Joint3D"
         },
         {
             "name": "FL_calf",
-            "parent": 42,
+            "parent": 34,
             "properties": {
                 "center_of_mass": {
                     "matrix_data": {
@@ -3315,12 +2711,12 @@
             "type": "Link3D"
         },
         {
-            "name": "calf_visual_27",
-            "parent": 43,
+            "name": "calf_visual_19",
+            "parent": 35,
             "properties": {
-                "material": "SubResource(PBRMaterial3D_TCUF4)",
-                "mesh": "ExtResource(4_dph9v)",
-                "mesh_material": "SubResource(PBRMaterial3D_zmjhO)",
+                "material": "SubResource(PBRMaterial3D_NUbzl)",
+                "mesh": "ExtResource(4_xjz6e)",
+                "mesh_material": "SubResource(PBRMaterial3D_tq28V)",
                 "position": {
                     "matrix_data": {
                         "cols": 1,
@@ -3366,11 +2762,11 @@
             "type": "MeshInstance3D"
         },
         {
-            "name": "FL_calf_geom1",
-            "parent": 43,
+            "name": "FL_calf_collision1",
+            "parent": 35,
             "properties": {
-                "conaffinity": 2,
-                "condim": 1,
+                "conaffinity": 1,
+                "condim": 3,
                 "contype": 1,
                 "disabled": false,
                 "friction": {
@@ -3378,14 +2774,14 @@
                         "cols": 1,
                         "rows": 3,
                         "storage": [
-                            0.0,
-                            0.0,
-                            0.0
+                            1.0,
+                            0.004999999888241291,
+                            9.999999747378752e-05
                         ]
                     }
                 },
                 "gap": 0.0,
-                "margin": 0.0010000000474974513,
+                "margin": 0.0,
                 "position": {
                     "matrix_data": {
                         "cols": 1,
@@ -3397,6 +2793,7 @@
                         ]
                     }
                 },
+                "priority": 0,
                 "rotation_degrees": {
                     "matrix_data": {
                         "cols": 1,
@@ -3420,7 +2817,7 @@
                     }
                 },
                 "script": null,
-                "shape": "SubResource(CapsuleShape3D_rLHXl)",
+                "shape": "SubResource(CapsuleShape3D_CWzWt)",
                 "solimp": [
                     0.8999999761581421,
                     0.949999988079071,
@@ -3433,7 +2830,7 @@
                         "cols": 1,
                         "rows": 2,
                         "storage": [
-                            0.009999999776482582,
+                            0.019999999552965164,
                             1.0
                         ]
                     }
@@ -3443,11 +2840,11 @@
             "type": "CollisionShape3D"
         },
         {
-            "name": "FL_calf_geom2",
-            "parent": 43,
+            "name": "FL_calf_collision2",
+            "parent": 35,
             "properties": {
-                "conaffinity": 2,
-                "condim": 1,
+                "conaffinity": 1,
+                "condim": 3,
                 "contype": 1,
                 "disabled": false,
                 "friction": {
@@ -3455,14 +2852,14 @@
                         "cols": 1,
                         "rows": 3,
                         "storage": [
-                            0.0,
-                            0.0,
-                            0.0
+                            1.0,
+                            0.004999999888241291,
+                            9.999999747378752e-05
                         ]
                     }
                 },
                 "gap": 0.0,
-                "margin": 0.0010000000474974513,
+                "margin": 0.0,
                 "position": {
                     "matrix_data": {
                         "cols": 1,
@@ -3474,6 +2871,7 @@
                         ]
                     }
                 },
+                "priority": 0,
                 "rotation_degrees": {
                     "matrix_data": {
                         "cols": 1,
@@ -3497,7 +2895,7 @@
                     }
                 },
                 "script": null,
-                "shape": "SubResource(CapsuleShape3D_oQbX8)",
+                "shape": "SubResource(CapsuleShape3D_zg8EW)",
                 "solimp": [
                     0.8999999761581421,
                     0.949999988079071,
@@ -3510,7 +2908,7 @@
                         "cols": 1,
                         "rows": 2,
                         "storage": [
-                            0.009999999776482582,
+                            0.019999999552965164,
                             1.0
                         ]
                     }
@@ -3520,10 +2918,10 @@
             "type": "CollisionShape3D"
         },
         {
-            "name": "FL",
-            "parent": 43,
+            "name": "FL_foot_collision",
+            "parent": 35,
             "properties": {
-                "conaffinity": 2,
+                "conaffinity": 1,
                 "condim": 6,
                 "contype": 1,
                 "disabled": false,
@@ -3532,15 +2930,14 @@
                         "cols": 1,
                         "rows": 3,
                         "storage": [
-                            0.800000011920929,
-                            0.019999999552965164,
-                            0.009999999776482582
+                            1.0,
+                            0.004999999888241291,
+                            0.0005000000237487257
                         ]
                     }
                 },
                 "gap": 0.0,
-                "margin": 0.004999999888241291,
-                "priority": 1,
+                "margin": 0.0,
                 "position": {
                     "matrix_data": {
                         "cols": 1,
@@ -3552,6 +2949,7 @@
                         ]
                     }
                 },
+                "priority": 1,
                 "rotation_degrees": {
                     "matrix_data": {
                         "cols": 1,
@@ -3575,11 +2973,11 @@
                     }
                 },
                 "script": null,
-                "shape": "SubResource(SphereShape3D_s7PXS)",
+                "shape": "SubResource(SphereShape3D_Hgek8)",
                 "solimp": [
-                    0.014999999664723873,
-                    1.0,
-                    0.023000000044703484,
+                    0.8999999761581421,
+                    0.949999988079071,
+                    0.0010000000474974513,
                     0.5,
                     2.0
                 ],
@@ -3599,7 +2997,7 @@
         },
         {
             "name": "FL_foot_height_scan",
-            "parent": 43,
+            "parent": 35,
             "properties": {
                 "debug_marker_radius": 0.0,
                 "enabled": true,
@@ -3719,7 +3117,7 @@
         },
         {
             "name": "FL_foot_contact",
-            "parent": 43,
+            "parent": 35,
             "properties": {
                 "debug_marker_radius": 0.0,
                 "enabled": true,
@@ -3771,7 +3169,7 @@
             "name": "RR_hip_joint",
             "parent": 2,
             "properties": {
-                "armature": 0.009999999776482582,
+                "armature": 0.004026311915367842,
                 "axis": {
                     "matrix_data": {
                         "cols": 1,
@@ -3784,16 +3182,16 @@
                     }
                 },
                 "child_link": "RR_hip",
-                "control_lower_limit": -0.8629999756813049,
-                "control_upper_limit": 0.8629999756813049,
-                "damping": 1.0,
-                "drive_damping": 0.0,
+                "control_lower_limit": 0.0,
+                "control_upper_limit": 0.0,
+                "damping": 0.0,
+                "drive_damping": 1.0119225978851318,
                 "drive_mode": "Position",
-                "drive_stiffness": 100.0,
+                "drive_stiffness": 15.895242691040039,
                 "effort_limit": 23.700000762939453,
                 "force_lower_limit": -23.700000762939453,
                 "force_upper_limit": 23.700000762939453,
-                "friction_loss": 0.20000000298023224,
+                "friction_loss": 0.0,
                 "gear": [
                     1.0,
                     0.0,
@@ -3842,14 +3240,14 @@
                 },
                 "script": null,
                 "upper_limit": 0.8629999756813049,
-                "velocity_limit": 0.0,
+                "velocity_limit": 30.100000381469727,
                 "visible": true
             },
             "type": "Joint3D"
         },
         {
             "name": "RR_hip",
-            "parent": 50,
+            "parent": 42,
             "properties": {
                 "center_of_mass": {
                     "matrix_data": {
@@ -3932,12 +3330,12 @@
             "type": "Link3D"
         },
         {
-            "name": "hip_visual_31",
-            "parent": 51,
+            "name": "hip_visual_23",
+            "parent": 43,
             "properties": {
-                "material": "SubResource(PBRMaterial3D_jua6l)",
-                "mesh": "ExtResource(2_vDN7V)",
-                "mesh_material": "SubResource(PBRMaterial3D_mBeQu)",
+                "material": "SubResource(PBRMaterial3D_1aToI)",
+                "mesh": "ExtResource(2_tqwgw)",
+                "mesh_material": "SubResource(PBRMaterial3D_DPC1S)",
                 "position": {
                     "matrix_data": {
                         "cols": 1,
@@ -3983,10 +3381,10 @@
             "type": "MeshInstance3D"
         },
         {
-            "name": "RR_hip_geom",
-            "parent": 51,
+            "name": "RR_hip_collision",
+            "parent": 43,
             "properties": {
-                "conaffinity": 2,
+                "conaffinity": 1,
                 "condim": 1,
                 "contype": 1,
                 "disabled": false,
@@ -3995,33 +3393,34 @@
                         "cols": 1,
                         "rows": 3,
                         "storage": [
-                            0.0,
-                            0.0,
-                            0.0
+                            1.0,
+                            0.004999999888241291,
+                            9.999999747378752e-05
                         ]
                     }
                 },
                 "gap": 0.0,
-                "margin": 0.0010000000474974513,
+                "margin": 0.0,
                 "position": {
                     "matrix_data": {
                         "cols": 1,
                         "rows": 3,
                         "storage": [
                             0.0,
-                            -0.04500000178813934,
+                            -0.029999999329447746,
                             0.0
                         ]
                     }
                 },
+                "priority": 0,
                 "rotation_degrees": {
                     "matrix_data": {
                         "cols": 1,
                         "rows": 3,
                         "storage": [
                             90.0,
-                            0.0,
-                            -0.0
+                            180.0,
+                            -180.0
                         ]
                     }
                 },
@@ -4037,161 +3436,7 @@
                     }
                 },
                 "script": null,
-                "shape": "SubResource(CylinderShape3D_SqGAs)",
-                "solimp": [
-                    0.8999999761581421,
-                    0.949999988079071,
-                    0.0010000000474974513,
-                    0.5,
-                    2.0
-                ],
-                "solref": {
-                    "matrix_data": {
-                        "cols": 1,
-                        "rows": 2,
-                        "storage": [
-                            0.009999999776482582,
-                            1.0
-                        ]
-                    }
-                },
-                "visible": false
-            },
-            "type": "CollisionShape3D"
-        },
-        {
-            "name": "geom_33",
-            "parent": 51,
-            "properties": {
-                "conaffinity": 2,
-                "condim": 1,
-                "contype": 1,
-                "disabled": false,
-                "friction": {
-                    "matrix_data": {
-                        "cols": 1,
-                        "rows": 3,
-                        "storage": [
-                            0.0,
-                            0.0,
-                            0.0
-                        ]
-                    }
-                },
-                "gap": 0.0,
-                "margin": 0.0010000000474974513,
-                "position": {
-                    "matrix_data": {
-                        "cols": 1,
-                        "rows": 3,
-                        "storage": [
-                            0.0,
-                            -0.06499999761581421,
-                            0.0
-                        ]
-                    }
-                },
-                "rotation_degrees": {
-                    "matrix_data": {
-                        "cols": 1,
-                        "rows": 3,
-                        "storage": [
-                            90.0,
-                            0.0,
-                            -0.0
-                        ]
-                    }
-                },
-                "scale": {
-                    "matrix_data": {
-                        "cols": 1,
-                        "rows": 3,
-                        "storage": [
-                            1.0,
-                            1.0,
-                            1.0
-                        ]
-                    }
-                },
-                "script": null,
-                "shape": "SubResource(CylinderShape3D_jUZ3Z)",
-                "solimp": [
-                    0.8999999761581421,
-                    0.949999988079071,
-                    0.0010000000474974513,
-                    0.5,
-                    2.0
-                ],
-                "solref": {
-                    "matrix_data": {
-                        "cols": 1,
-                        "rows": 2,
-                        "storage": [
-                            0.009999999776482582,
-                            1.0
-                        ]
-                    }
-                },
-                "visible": false
-            },
-            "type": "CollisionShape3D"
-        },
-        {
-            "name": "geom_34",
-            "parent": 51,
-            "properties": {
-                "conaffinity": 2,
-                "condim": 1,
-                "contype": 1,
-                "disabled": false,
-                "friction": {
-                    "matrix_data": {
-                        "cols": 1,
-                        "rows": 3,
-                        "storage": [
-                            0.0,
-                            0.0,
-                            0.0
-                        ]
-                    }
-                },
-                "gap": 0.0,
-                "margin": 0.0010000000474974513,
-                "position": {
-                    "matrix_data": {
-                        "cols": 1,
-                        "rows": 3,
-                        "storage": [
-                            0.0,
-                            0.0,
-                            0.0
-                        ]
-                    }
-                },
-                "rotation_degrees": {
-                    "matrix_data": {
-                        "cols": 1,
-                        "rows": 3,
-                        "storage": [
-                            90.0,
-                            0.0,
-                            -0.0
-                        ]
-                    }
-                },
-                "scale": {
-                    "matrix_data": {
-                        "cols": 1,
-                        "rows": 3,
-                        "storage": [
-                            1.0,
-                            1.0,
-                            1.0
-                        ]
-                    }
-                },
-                "script": null,
-                "shape": "SubResource(CylinderShape3D_TRqHy)",
+                "shape": "SubResource(CapsuleShape3D_sTmDA)",
                 "solimp": [
                     0.8999999761581421,
                     0.949999988079071,
@@ -4215,9 +3460,9 @@
         },
         {
             "name": "RR_thigh_joint",
-            "parent": 51,
+            "parent": 43,
             "properties": {
-                "armature": 0.009999999776482582,
+                "armature": 0.004026311915367842,
                 "axis": {
                     "matrix_data": {
                         "cols": 1,
@@ -4230,16 +3475,16 @@
                     }
                 },
                 "child_link": "RR_thigh",
-                "control_lower_limit": -0.6859999895095825,
-                "control_upper_limit": 4.500999927520752,
-                "damping": 2.0,
-                "drive_damping": 0.0,
+                "control_lower_limit": 0.0,
+                "control_upper_limit": 0.0,
+                "damping": 0.0,
+                "drive_damping": 1.0119225978851318,
                 "drive_mode": "Position",
-                "drive_stiffness": 100.0,
+                "drive_stiffness": 15.895242691040039,
                 "effort_limit": 23.700000762939453,
                 "force_lower_limit": -23.700000762939453,
                 "force_upper_limit": 23.700000762939453,
-                "friction_loss": 0.20000000298023224,
+                "friction_loss": 0.0,
                 "gear": [
                     1.0,
                     0.0,
@@ -4288,14 +3533,14 @@
                 },
                 "script": null,
                 "upper_limit": 4.500999927520752,
-                "velocity_limit": 0.0,
+                "velocity_limit": 30.100000381469727,
                 "visible": true
             },
             "type": "Joint3D"
         },
         {
             "name": "RR_thigh",
-            "parent": 56,
+            "parent": 46,
             "properties": {
                 "center_of_mass": {
                     "matrix_data": {
@@ -4378,12 +3623,12 @@
             "type": "Link3D"
         },
         {
-            "name": "thigh_mirror_visual_35",
-            "parent": 57,
+            "name": "thigh_mirror_visual_25",
+            "parent": 47,
             "properties": {
-                "material": "SubResource(PBRMaterial3D_hyRbV)",
-                "mesh": "ExtResource(3_WIRL0)",
-                "mesh_material": "SubResource(PBRMaterial3D_nVHUO)",
+                "material": "SubResource(PBRMaterial3D_i1phA)",
+                "mesh": "ExtResource(3_Pg0RB)",
+                "mesh_material": "SubResource(PBRMaterial3D_lJOdZ)",
                 "position": {
                     "matrix_data": {
                         "cols": 1,
@@ -4429,11 +3674,11 @@
             "type": "MeshInstance3D"
         },
         {
-            "name": "RR_thigh_geom",
-            "parent": 57,
+            "name": "RR_thigh_collision1",
+            "parent": 47,
             "properties": {
-                "conaffinity": 2,
-                "condim": 1,
+                "conaffinity": 1,
+                "condim": 3,
                 "contype": 1,
                 "disabled": false,
                 "friction": {
@@ -4441,14 +3686,14 @@
                         "cols": 1,
                         "rows": 3,
                         "storage": [
-                            0.0,
-                            0.0,
-                            0.0
+                            1.0,
+                            0.004999999888241291,
+                            9.999999747378752e-05
                         ]
                     }
                 },
                 "gap": 0.0,
-                "margin": 0.0010000000474974513,
+                "margin": 0.0,
                 "position": {
                     "matrix_data": {
                         "cols": 1,
@@ -4460,6 +3705,7 @@
                         ]
                     }
                 },
+                "priority": 0,
                 "rotation_degrees": {
                     "matrix_data": {
                         "cols": 1,
@@ -4483,7 +3729,7 @@
                     }
                 },
                 "script": null,
-                "shape": "SubResource(CapsuleShape3D_f8qcb)",
+                "shape": "SubResource(CapsuleShape3D_b2b2S)",
                 "solimp": [
                     0.8999999761581421,
                     0.949999988079071,
@@ -4496,7 +3742,7 @@
                         "cols": 1,
                         "rows": 2,
                         "storage": [
-                            0.009999999776482582,
+                            0.019999999552965164,
                             1.0
                         ]
                     }
@@ -4506,11 +3752,11 @@
             "type": "CollisionShape3D"
         },
         {
-            "name": "geom_37",
-            "parent": 57,
+            "name": "RR_thigh_collision2",
+            "parent": 47,
             "properties": {
-                "conaffinity": 2,
-                "condim": 1,
+                "conaffinity": 1,
+                "condim": 3,
                 "contype": 1,
                 "disabled": false,
                 "friction": {
@@ -4518,14 +3764,14 @@
                         "cols": 1,
                         "rows": 3,
                         "storage": [
-                            0.0,
-                            0.0,
-                            0.0
+                            1.0,
+                            0.004999999888241291,
+                            9.999999747378752e-05
                         ]
                     }
                 },
                 "gap": 0.0,
-                "margin": 0.0010000000474974513,
+                "margin": 0.0,
                 "position": {
                     "matrix_data": {
                         "cols": 1,
@@ -4537,6 +3783,7 @@
                         ]
                     }
                 },
+                "priority": 0,
                 "rotation_degrees": {
                     "matrix_data": {
                         "cols": 1,
@@ -4560,7 +3807,7 @@
                     }
                 },
                 "script": null,
-                "shape": "SubResource(CapsuleShape3D_Aw4sy)",
+                "shape": "SubResource(CapsuleShape3D_qrwty)",
                 "solimp": [
                     0.8999999761581421,
                     0.949999988079071,
@@ -4573,7 +3820,7 @@
                         "cols": 1,
                         "rows": 2,
                         "storage": [
-                            0.009999999776482582,
+                            0.019999999552965164,
                             1.0
                         ]
                     }
@@ -4583,11 +3830,11 @@
             "type": "CollisionShape3D"
         },
         {
-            "name": "geom_38",
-            "parent": 57,
+            "name": "RR_thigh_collision3",
+            "parent": 47,
             "properties": {
-                "conaffinity": 2,
-                "condim": 1,
+                "conaffinity": 1,
+                "condim": 3,
                 "contype": 1,
                 "disabled": false,
                 "friction": {
@@ -4595,14 +3842,14 @@
                         "cols": 1,
                         "rows": 3,
                         "storage": [
-                            0.0,
-                            0.0,
-                            0.0
+                            1.0,
+                            0.004999999888241291,
+                            9.999999747378752e-05
                         ]
                     }
                 },
                 "gap": 0.0,
-                "margin": 0.0010000000474974513,
+                "margin": 0.0,
                 "position": {
                     "matrix_data": {
                         "cols": 1,
@@ -4614,6 +3861,7 @@
                         ]
                     }
                 },
+                "priority": 0,
                 "rotation_degrees": {
                     "matrix_data": {
                         "cols": 1,
@@ -4637,7 +3885,7 @@
                     }
                 },
                 "script": null,
-                "shape": "SubResource(CapsuleShape3D_5TQoI)",
+                "shape": "SubResource(CapsuleShape3D_3oZGU)",
                 "solimp": [
                     0.8999999761581421,
                     0.949999988079071,
@@ -4650,7 +3898,7 @@
                         "cols": 1,
                         "rows": 2,
                         "storage": [
-                            0.009999999776482582,
+                            0.019999999552965164,
                             1.0
                         ]
                     }
@@ -4661,9 +3909,9 @@
         },
         {
             "name": "RR_calf_joint",
-            "parent": 57,
+            "parent": 47,
             "properties": {
-                "armature": 0.009999999776482582,
+                "armature": 0.009059201925992966,
                 "axis": {
                     "matrix_data": {
                         "cols": 1,
@@ -4676,16 +3924,16 @@
                     }
                 },
                 "child_link": "RR_calf",
-                "control_lower_limit": -2.818000078201294,
-                "control_upper_limit": -0.8880000114440918,
-                "damping": 2.0,
-                "drive_damping": 0.0,
+                "control_lower_limit": 0.0,
+                "control_upper_limit": 0.0,
+                "damping": 0.0,
+                "drive_damping": 2.2768259048461914,
                 "drive_mode": "Position",
-                "drive_stiffness": 100.0,
+                "drive_stiffness": 35.76429748535156,
                 "effort_limit": 35.54999923706055,
                 "force_lower_limit": -35.54999923706055,
                 "force_upper_limit": 35.54999923706055,
-                "friction_loss": 0.20000000298023224,
+                "friction_loss": 0.0,
                 "gear": [
                     1.0,
                     0.0,
@@ -4734,14 +3982,14 @@
                 },
                 "script": null,
                 "upper_limit": -0.8880000114440918,
-                "velocity_limit": 0.0,
+                "velocity_limit": 20.059999465942383,
                 "visible": true
             },
             "type": "Joint3D"
         },
         {
             "name": "RR_calf",
-            "parent": 62,
+            "parent": 52,
             "properties": {
                 "center_of_mass": {
                     "matrix_data": {
@@ -4824,12 +4072,12 @@
             "type": "Link3D"
         },
         {
-            "name": "calf_visual_39",
-            "parent": 63,
+            "name": "calf_visual_29",
+            "parent": 53,
             "properties": {
-                "material": "SubResource(PBRMaterial3D_8tc5q)",
-                "mesh": "ExtResource(4_dph9v)",
-                "mesh_material": "SubResource(PBRMaterial3D_zmjhO)",
+                "material": "SubResource(PBRMaterial3D_otn6R)",
+                "mesh": "ExtResource(4_xjz6e)",
+                "mesh_material": "SubResource(PBRMaterial3D_tq28V)",
                 "position": {
                     "matrix_data": {
                         "cols": 1,
@@ -4875,11 +4123,11 @@
             "type": "MeshInstance3D"
         },
         {
-            "name": "RR_calf_geom1",
-            "parent": 63,
+            "name": "RR_calf_collision1",
+            "parent": 53,
             "properties": {
-                "conaffinity": 2,
-                "condim": 1,
+                "conaffinity": 1,
+                "condim": 3,
                 "contype": 1,
                 "disabled": false,
                 "friction": {
@@ -4887,14 +4135,14 @@
                         "cols": 1,
                         "rows": 3,
                         "storage": [
-                            0.0,
-                            0.0,
-                            0.0
+                            1.0,
+                            0.004999999888241291,
+                            9.999999747378752e-05
                         ]
                     }
                 },
                 "gap": 0.0,
-                "margin": 0.0010000000474974513,
+                "margin": 0.0,
                 "position": {
                     "matrix_data": {
                         "cols": 1,
@@ -4906,6 +4154,7 @@
                         ]
                     }
                 },
+                "priority": 0,
                 "rotation_degrees": {
                     "matrix_data": {
                         "cols": 1,
@@ -4929,7 +4178,7 @@
                     }
                 },
                 "script": null,
-                "shape": "SubResource(CapsuleShape3D_QMenX)",
+                "shape": "SubResource(CapsuleShape3D_aStQ3)",
                 "solimp": [
                     0.8999999761581421,
                     0.949999988079071,
@@ -4942,7 +4191,7 @@
                         "cols": 1,
                         "rows": 2,
                         "storage": [
-                            0.009999999776482582,
+                            0.019999999552965164,
                             1.0
                         ]
                     }
@@ -4952,11 +4201,11 @@
             "type": "CollisionShape3D"
         },
         {
-            "name": "RR_calf_geom2",
-            "parent": 63,
+            "name": "RR_calf_collision2",
+            "parent": 53,
             "properties": {
-                "conaffinity": 2,
-                "condim": 1,
+                "conaffinity": 1,
+                "condim": 3,
                 "contype": 1,
                 "disabled": false,
                 "friction": {
@@ -4964,14 +4213,14 @@
                         "cols": 1,
                         "rows": 3,
                         "storage": [
-                            0.0,
-                            0.0,
-                            0.0
+                            1.0,
+                            0.004999999888241291,
+                            9.999999747378752e-05
                         ]
                     }
                 },
                 "gap": 0.0,
-                "margin": 0.0010000000474974513,
+                "margin": 0.0,
                 "position": {
                     "matrix_data": {
                         "cols": 1,
@@ -4983,6 +4232,7 @@
                         ]
                     }
                 },
+                "priority": 0,
                 "rotation_degrees": {
                     "matrix_data": {
                         "cols": 1,
@@ -5006,7 +4256,7 @@
                     }
                 },
                 "script": null,
-                "shape": "SubResource(CapsuleShape3D_1EnaT)",
+                "shape": "SubResource(CapsuleShape3D_8JTSo)",
                 "solimp": [
                     0.8999999761581421,
                     0.949999988079071,
@@ -5019,7 +4269,7 @@
                         "cols": 1,
                         "rows": 2,
                         "storage": [
-                            0.009999999776482582,
+                            0.019999999552965164,
                             1.0
                         ]
                     }
@@ -5029,10 +4279,10 @@
             "type": "CollisionShape3D"
         },
         {
-            "name": "RR",
-            "parent": 63,
+            "name": "RR_foot_collision",
+            "parent": 53,
             "properties": {
-                "conaffinity": 2,
+                "conaffinity": 1,
                 "condim": 6,
                 "contype": 1,
                 "disabled": false,
@@ -5041,15 +4291,14 @@
                         "cols": 1,
                         "rows": 3,
                         "storage": [
-                            0.800000011920929,
-                            0.019999999552965164,
-                            0.009999999776482582
+                            1.0,
+                            0.004999999888241291,
+                            0.0005000000237487257
                         ]
                     }
                 },
                 "gap": 0.0,
-                "margin": 0.004999999888241291,
-                "priority": 1,
+                "margin": 0.0,
                 "position": {
                     "matrix_data": {
                         "cols": 1,
@@ -5061,6 +4310,7 @@
                         ]
                     }
                 },
+                "priority": 1,
                 "rotation_degrees": {
                     "matrix_data": {
                         "cols": 1,
@@ -5084,11 +4334,11 @@
                     }
                 },
                 "script": null,
-                "shape": "SubResource(SphereShape3D_fuAKS)",
+                "shape": "SubResource(SphereShape3D_GonNx)",
                 "solimp": [
-                    0.014999999664723873,
-                    1.0,
-                    0.023000000044703484,
+                    0.8999999761581421,
+                    0.949999988079071,
+                    0.0010000000474974513,
                     0.5,
                     2.0
                 ],
@@ -5108,7 +4358,7 @@
         },
         {
             "name": "RR_foot_height_scan",
-            "parent": 63,
+            "parent": 53,
             "properties": {
                 "debug_marker_radius": 0.0,
                 "enabled": true,
@@ -5228,7 +4478,7 @@
         },
         {
             "name": "RR_foot_contact",
-            "parent": 63,
+            "parent": 53,
             "properties": {
                 "debug_marker_radius": 0.0,
                 "enabled": true,
@@ -5280,7 +4530,7 @@
             "name": "RL_hip_joint",
             "parent": 2,
             "properties": {
-                "armature": 0.009999999776482582,
+                "armature": 0.004026311915367842,
                 "axis": {
                     "matrix_data": {
                         "cols": 1,
@@ -5293,16 +4543,16 @@
                     }
                 },
                 "child_link": "RL_hip",
-                "control_lower_limit": -0.8629999756813049,
-                "control_upper_limit": 0.8629999756813049,
-                "damping": 1.0,
-                "drive_damping": 0.0,
+                "control_lower_limit": 0.0,
+                "control_upper_limit": 0.0,
+                "damping": 0.0,
+                "drive_damping": 1.0119225978851318,
                 "drive_mode": "Position",
-                "drive_stiffness": 100.0,
+                "drive_stiffness": 15.895242691040039,
                 "effort_limit": 23.700000762939453,
                 "force_lower_limit": -23.700000762939453,
                 "force_upper_limit": 23.700000762939453,
-                "friction_loss": 0.20000000298023224,
+                "friction_loss": 0.0,
                 "gear": [
                     1.0,
                     0.0,
@@ -5351,14 +4601,14 @@
                 },
                 "script": null,
                 "upper_limit": 0.8629999756813049,
-                "velocity_limit": 0.0,
+                "velocity_limit": 30.100000381469727,
                 "visible": true
             },
             "type": "Joint3D"
         },
         {
             "name": "RL_hip",
-            "parent": 70,
+            "parent": 60,
             "properties": {
                 "center_of_mass": {
                     "matrix_data": {
@@ -5441,12 +4691,12 @@
             "type": "Link3D"
         },
         {
-            "name": "hip_visual_43",
-            "parent": 71,
+            "name": "hip_visual_33",
+            "parent": 61,
             "properties": {
-                "material": "SubResource(PBRMaterial3D_yrhxn)",
-                "mesh": "ExtResource(2_vDN7V)",
-                "mesh_material": "SubResource(PBRMaterial3D_mBeQu)",
+                "material": "SubResource(PBRMaterial3D_auCxW)",
+                "mesh": "ExtResource(2_tqwgw)",
+                "mesh_material": "SubResource(PBRMaterial3D_DPC1S)",
                 "position": {
                     "matrix_data": {
                         "cols": 1,
@@ -5492,10 +4742,10 @@
             "type": "MeshInstance3D"
         },
         {
-            "name": "RL_hip_geom",
-            "parent": 71,
+            "name": "RL_hip_collision",
+            "parent": 61,
             "properties": {
-                "conaffinity": 2,
+                "conaffinity": 1,
                 "condim": 1,
                 "contype": 1,
                 "disabled": false,
@@ -5504,25 +4754,26 @@
                         "cols": 1,
                         "rows": 3,
                         "storage": [
-                            0.0,
-                            0.0,
-                            0.0
+                            1.0,
+                            0.004999999888241291,
+                            9.999999747378752e-05
                         ]
                     }
                 },
                 "gap": 0.0,
-                "margin": 0.0010000000474974513,
+                "margin": 0.0,
                 "position": {
                     "matrix_data": {
                         "cols": 1,
                         "rows": 3,
                         "storage": [
                             0.0,
-                            0.04500000178813934,
+                            0.029999999329447746,
                             0.0
                         ]
                     }
                 },
+                "priority": 0,
                 "rotation_degrees": {
                     "matrix_data": {
                         "cols": 1,
@@ -5546,161 +4797,7 @@
                     }
                 },
                 "script": null,
-                "shape": "SubResource(CylinderShape3D_7pGVs)",
-                "solimp": [
-                    0.8999999761581421,
-                    0.949999988079071,
-                    0.0010000000474974513,
-                    0.5,
-                    2.0
-                ],
-                "solref": {
-                    "matrix_data": {
-                        "cols": 1,
-                        "rows": 2,
-                        "storage": [
-                            0.009999999776482582,
-                            1.0
-                        ]
-                    }
-                },
-                "visible": false
-            },
-            "type": "CollisionShape3D"
-        },
-        {
-            "name": "geom_45",
-            "parent": 71,
-            "properties": {
-                "conaffinity": 2,
-                "condim": 1,
-                "contype": 1,
-                "disabled": false,
-                "friction": {
-                    "matrix_data": {
-                        "cols": 1,
-                        "rows": 3,
-                        "storage": [
-                            0.0,
-                            0.0,
-                            0.0
-                        ]
-                    }
-                },
-                "gap": 0.0,
-                "margin": 0.0010000000474974513,
-                "position": {
-                    "matrix_data": {
-                        "cols": 1,
-                        "rows": 3,
-                        "storage": [
-                            0.0,
-                            0.06499999761581421,
-                            0.0
-                        ]
-                    }
-                },
-                "rotation_degrees": {
-                    "matrix_data": {
-                        "cols": 1,
-                        "rows": 3,
-                        "storage": [
-                            90.0,
-                            0.0,
-                            -0.0
-                        ]
-                    }
-                },
-                "scale": {
-                    "matrix_data": {
-                        "cols": 1,
-                        "rows": 3,
-                        "storage": [
-                            1.0,
-                            1.0,
-                            1.0
-                        ]
-                    }
-                },
-                "script": null,
-                "shape": "SubResource(CylinderShape3D_ofzs1)",
-                "solimp": [
-                    0.8999999761581421,
-                    0.949999988079071,
-                    0.0010000000474974513,
-                    0.5,
-                    2.0
-                ],
-                "solref": {
-                    "matrix_data": {
-                        "cols": 1,
-                        "rows": 2,
-                        "storage": [
-                            0.009999999776482582,
-                            1.0
-                        ]
-                    }
-                },
-                "visible": false
-            },
-            "type": "CollisionShape3D"
-        },
-        {
-            "name": "geom_46",
-            "parent": 71,
-            "properties": {
-                "conaffinity": 2,
-                "condim": 1,
-                "contype": 1,
-                "disabled": false,
-                "friction": {
-                    "matrix_data": {
-                        "cols": 1,
-                        "rows": 3,
-                        "storage": [
-                            0.0,
-                            0.0,
-                            0.0
-                        ]
-                    }
-                },
-                "gap": 0.0,
-                "margin": 0.0010000000474974513,
-                "position": {
-                    "matrix_data": {
-                        "cols": 1,
-                        "rows": 3,
-                        "storage": [
-                            0.0,
-                            0.0,
-                            0.0
-                        ]
-                    }
-                },
-                "rotation_degrees": {
-                    "matrix_data": {
-                        "cols": 1,
-                        "rows": 3,
-                        "storage": [
-                            90.0,
-                            0.0,
-                            -0.0
-                        ]
-                    }
-                },
-                "scale": {
-                    "matrix_data": {
-                        "cols": 1,
-                        "rows": 3,
-                        "storage": [
-                            1.0,
-                            1.0,
-                            1.0
-                        ]
-                    }
-                },
-                "script": null,
-                "shape": "SubResource(CylinderShape3D_oheeI)",
+                "shape": "SubResource(CapsuleShape3D_OHYYG)",
                 "solimp": [
                     0.8999999761581421,
                     0.949999988079071,
@@ -5724,9 +4821,9 @@
         },
         {
             "name": "RL_thigh_joint",
-            "parent": 71,
+            "parent": 61,
             "properties": {
-                "armature": 0.009999999776482582,
+                "armature": 0.004026311915367842,
                 "axis": {
                     "matrix_data": {
                         "cols": 1,
@@ -5739,16 +4836,16 @@
                     }
                 },
                 "child_link": "RL_thigh",
-                "control_lower_limit": -0.6859999895095825,
-                "control_upper_limit": 4.500999927520752,
-                "damping": 2.0,
-                "drive_damping": 0.0,
+                "control_lower_limit": 0.0,
+                "control_upper_limit": 0.0,
+                "damping": 0.0,
+                "drive_damping": 1.0119225978851318,
                 "drive_mode": "Position",
-                "drive_stiffness": 100.0,
+                "drive_stiffness": 15.895242691040039,
                 "effort_limit": 23.700000762939453,
                 "force_lower_limit": -23.700000762939453,
                 "force_upper_limit": 23.700000762939453,
-                "friction_loss": 0.20000000298023224,
+                "friction_loss": 0.0,
                 "gear": [
                     1.0,
                     0.0,
@@ -5797,14 +4894,14 @@
                 },
                 "script": null,
                 "upper_limit": 4.500999927520752,
-                "velocity_limit": 0.0,
+                "velocity_limit": 30.100000381469727,
                 "visible": true
             },
             "type": "Joint3D"
         },
         {
             "name": "RL_thigh",
-            "parent": 76,
+            "parent": 64,
             "properties": {
                 "center_of_mass": {
                     "matrix_data": {
@@ -5887,12 +4984,12 @@
             "type": "Link3D"
         },
         {
-            "name": "thigh_visual_47",
-            "parent": 77,
+            "name": "thigh_visual_35",
+            "parent": 65,
             "properties": {
-                "material": "SubResource(PBRMaterial3D_4Tu5f)",
-                "mesh": "ExtResource(5_wAHSQ)",
-                "mesh_material": "SubResource(PBRMaterial3D_lkKeU)",
+                "material": "SubResource(PBRMaterial3D_ZZ6VM)",
+                "mesh": "ExtResource(5_85pux)",
+                "mesh_material": "SubResource(PBRMaterial3D_fIpHh)",
                 "position": {
                     "matrix_data": {
                         "cols": 1,
@@ -5938,11 +5035,11 @@
             "type": "MeshInstance3D"
         },
         {
-            "name": "RL_thigh_geom",
-            "parent": 77,
+            "name": "RL_thigh_collision1",
+            "parent": 65,
             "properties": {
-                "conaffinity": 2,
-                "condim": 1,
+                "conaffinity": 1,
+                "condim": 3,
                 "contype": 1,
                 "disabled": false,
                 "friction": {
@@ -5950,14 +5047,14 @@
                         "cols": 1,
                         "rows": 3,
                         "storage": [
-                            0.0,
-                            0.0,
-                            0.0
+                            1.0,
+                            0.004999999888241291,
+                            9.999999747378752e-05
                         ]
                     }
                 },
                 "gap": 0.0,
-                "margin": 0.0010000000474974513,
+                "margin": 0.0,
                 "position": {
                     "matrix_data": {
                         "cols": 1,
@@ -5969,6 +5066,7 @@
                         ]
                     }
                 },
+                "priority": 0,
                 "rotation_degrees": {
                     "matrix_data": {
                         "cols": 1,
@@ -5992,7 +5090,7 @@
                     }
                 },
                 "script": null,
-                "shape": "SubResource(CapsuleShape3D_0096T)",
+                "shape": "SubResource(CapsuleShape3D_oly8W)",
                 "solimp": [
                     0.8999999761581421,
                     0.949999988079071,
@@ -6005,7 +5103,7 @@
                         "cols": 1,
                         "rows": 2,
                         "storage": [
-                            0.009999999776482582,
+                            0.019999999552965164,
                             1.0
                         ]
                     }
@@ -6015,11 +5113,11 @@
             "type": "CollisionShape3D"
         },
         {
-            "name": "geom_49",
-            "parent": 77,
+            "name": "RL_thigh_collision2",
+            "parent": 65,
             "properties": {
-                "conaffinity": 2,
-                "condim": 1,
+                "conaffinity": 1,
+                "condim": 3,
                 "contype": 1,
                 "disabled": false,
                 "friction": {
@@ -6027,14 +5125,14 @@
                         "cols": 1,
                         "rows": 3,
                         "storage": [
-                            0.0,
-                            0.0,
-                            0.0
+                            1.0,
+                            0.004999999888241291,
+                            9.999999747378752e-05
                         ]
                     }
                 },
                 "gap": 0.0,
-                "margin": 0.0010000000474974513,
+                "margin": 0.0,
                 "position": {
                     "matrix_data": {
                         "cols": 1,
@@ -6046,6 +5144,7 @@
                         ]
                     }
                 },
+                "priority": 0,
                 "rotation_degrees": {
                     "matrix_data": {
                         "cols": 1,
@@ -6069,7 +5168,7 @@
                     }
                 },
                 "script": null,
-                "shape": "SubResource(CapsuleShape3D_9aVYH)",
+                "shape": "SubResource(CapsuleShape3D_CZbXu)",
                 "solimp": [
                     0.8999999761581421,
                     0.949999988079071,
@@ -6082,7 +5181,7 @@
                         "cols": 1,
                         "rows": 2,
                         "storage": [
-                            0.009999999776482582,
+                            0.019999999552965164,
                             1.0
                         ]
                     }
@@ -6092,11 +5191,11 @@
             "type": "CollisionShape3D"
         },
         {
-            "name": "geom_50",
-            "parent": 77,
+            "name": "RL_thigh_collision3",
+            "parent": 65,
             "properties": {
-                "conaffinity": 2,
-                "condim": 1,
+                "conaffinity": 1,
+                "condim": 3,
                 "contype": 1,
                 "disabled": false,
                 "friction": {
@@ -6104,14 +5203,14 @@
                         "cols": 1,
                         "rows": 3,
                         "storage": [
-                            0.0,
-                            0.0,
-                            0.0
+                            1.0,
+                            0.004999999888241291,
+                            9.999999747378752e-05
                         ]
                     }
                 },
                 "gap": 0.0,
-                "margin": 0.0010000000474974513,
+                "margin": 0.0,
                 "position": {
                     "matrix_data": {
                         "cols": 1,
@@ -6123,6 +5222,7 @@
                         ]
                     }
                 },
+                "priority": 0,
                 "rotation_degrees": {
                     "matrix_data": {
                         "cols": 1,
@@ -6146,7 +5246,7 @@
                     }
                 },
                 "script": null,
-                "shape": "SubResource(CapsuleShape3D_pV0uM)",
+                "shape": "SubResource(CapsuleShape3D_VBFbF)",
                 "solimp": [
                     0.8999999761581421,
                     0.949999988079071,
@@ -6159,7 +5259,7 @@
                         "cols": 1,
                         "rows": 2,
                         "storage": [
-                            0.009999999776482582,
+                            0.019999999552965164,
                             1.0
                         ]
                     }
@@ -6170,9 +5270,9 @@
         },
         {
             "name": "RL_calf_joint",
-            "parent": 77,
+            "parent": 65,
             "properties": {
-                "armature": 0.009999999776482582,
+                "armature": 0.009059201925992966,
                 "axis": {
                     "matrix_data": {
                         "cols": 1,
@@ -6185,16 +5285,16 @@
                     }
                 },
                 "child_link": "RL_calf",
-                "control_lower_limit": -2.818000078201294,
-                "control_upper_limit": -0.8880000114440918,
-                "damping": 2.0,
-                "drive_damping": 0.0,
+                "control_lower_limit": 0.0,
+                "control_upper_limit": 0.0,
+                "damping": 0.0,
+                "drive_damping": 2.2768259048461914,
                 "drive_mode": "Position",
-                "drive_stiffness": 100.0,
+                "drive_stiffness": 35.76429748535156,
                 "effort_limit": 35.54999923706055,
                 "force_lower_limit": -35.54999923706055,
                 "force_upper_limit": 35.54999923706055,
-                "friction_loss": 0.20000000298023224,
+                "friction_loss": 0.0,
                 "gear": [
                     1.0,
                     0.0,
@@ -6243,14 +5343,14 @@
                 },
                 "script": null,
                 "upper_limit": -0.8880000114440918,
-                "velocity_limit": 0.0,
+                "velocity_limit": 20.059999465942383,
                 "visible": true
             },
             "type": "Joint3D"
         },
         {
             "name": "RL_calf",
-            "parent": 82,
+            "parent": 70,
             "properties": {
                 "center_of_mass": {
                     "matrix_data": {
@@ -6333,12 +5433,12 @@
             "type": "Link3D"
         },
         {
-            "name": "calf_visual_51",
-            "parent": 83,
+            "name": "calf_visual_39",
+            "parent": 71,
             "properties": {
-                "material": "SubResource(PBRMaterial3D_mUP1g)",
-                "mesh": "ExtResource(4_dph9v)",
-                "mesh_material": "SubResource(PBRMaterial3D_zmjhO)",
+                "material": "SubResource(PBRMaterial3D_lZ9wB)",
+                "mesh": "ExtResource(4_xjz6e)",
+                "mesh_material": "SubResource(PBRMaterial3D_tq28V)",
                 "position": {
                     "matrix_data": {
                         "cols": 1,
@@ -6384,11 +5484,11 @@
             "type": "MeshInstance3D"
         },
         {
-            "name": "RL_calf_geom1",
-            "parent": 83,
+            "name": "RL_calf_collision1",
+            "parent": 71,
             "properties": {
-                "conaffinity": 2,
-                "condim": 1,
+                "conaffinity": 1,
+                "condim": 3,
                 "contype": 1,
                 "disabled": false,
                 "friction": {
@@ -6396,14 +5496,14 @@
                         "cols": 1,
                         "rows": 3,
                         "storage": [
-                            0.0,
-                            0.0,
-                            0.0
+                            1.0,
+                            0.004999999888241291,
+                            9.999999747378752e-05
                         ]
                     }
                 },
                 "gap": 0.0,
-                "margin": 0.0010000000474974513,
+                "margin": 0.0,
                 "position": {
                     "matrix_data": {
                         "cols": 1,
@@ -6415,6 +5515,7 @@
                         ]
                     }
                 },
+                "priority": 0,
                 "rotation_degrees": {
                     "matrix_data": {
                         "cols": 1,
@@ -6438,7 +5539,7 @@
                     }
                 },
                 "script": null,
-                "shape": "SubResource(CapsuleShape3D_0Rfvi)",
+                "shape": "SubResource(CapsuleShape3D_EFWjt)",
                 "solimp": [
                     0.8999999761581421,
                     0.949999988079071,
@@ -6451,7 +5552,7 @@
                         "cols": 1,
                         "rows": 2,
                         "storage": [
-                            0.009999999776482582,
+                            0.019999999552965164,
                             1.0
                         ]
                     }
@@ -6461,11 +5562,11 @@
             "type": "CollisionShape3D"
         },
         {
-            "name": "RL_calf_geom2",
-            "parent": 83,
+            "name": "RL_calf_collision2",
+            "parent": 71,
             "properties": {
-                "conaffinity": 2,
-                "condim": 1,
+                "conaffinity": 1,
+                "condim": 3,
                 "contype": 1,
                 "disabled": false,
                 "friction": {
@@ -6473,14 +5574,14 @@
                         "cols": 1,
                         "rows": 3,
                         "storage": [
-                            0.0,
-                            0.0,
-                            0.0
+                            1.0,
+                            0.004999999888241291,
+                            9.999999747378752e-05
                         ]
                     }
                 },
                 "gap": 0.0,
-                "margin": 0.0010000000474974513,
+                "margin": 0.0,
                 "position": {
                     "matrix_data": {
                         "cols": 1,
@@ -6492,6 +5593,7 @@
                         ]
                     }
                 },
+                "priority": 0,
                 "rotation_degrees": {
                     "matrix_data": {
                         "cols": 1,
@@ -6515,7 +5617,7 @@
                     }
                 },
                 "script": null,
-                "shape": "SubResource(CapsuleShape3D_nAhTF)",
+                "shape": "SubResource(CapsuleShape3D_F21Gk)",
                 "solimp": [
                     0.8999999761581421,
                     0.949999988079071,
@@ -6528,7 +5630,7 @@
                         "cols": 1,
                         "rows": 2,
                         "storage": [
-                            0.009999999776482582,
+                            0.019999999552965164,
                             1.0
                         ]
                     }
@@ -6538,10 +5640,10 @@
             "type": "CollisionShape3D"
         },
         {
-            "name": "RL",
-            "parent": 83,
+            "name": "RL_foot_collision",
+            "parent": 71,
             "properties": {
-                "conaffinity": 2,
+                "conaffinity": 1,
                 "condim": 6,
                 "contype": 1,
                 "disabled": false,
@@ -6550,15 +5652,14 @@
                         "cols": 1,
                         "rows": 3,
                         "storage": [
-                            0.800000011920929,
-                            0.019999999552965164,
-                            0.009999999776482582
+                            1.0,
+                            0.004999999888241291,
+                            0.0005000000237487257
                         ]
                     }
                 },
                 "gap": 0.0,
-                "margin": 0.004999999888241291,
-                "priority": 1,
+                "margin": 0.0,
                 "position": {
                     "matrix_data": {
                         "cols": 1,
@@ -6570,6 +5671,7 @@
                         ]
                     }
                 },
+                "priority": 1,
                 "rotation_degrees": {
                     "matrix_data": {
                         "cols": 1,
@@ -6593,11 +5695,11 @@
                     }
                 },
                 "script": null,
-                "shape": "SubResource(SphereShape3D_rBdZh)",
+                "shape": "SubResource(SphereShape3D_2I7J4)",
                 "solimp": [
-                    0.014999999664723873,
-                    1.0,
-                    0.023000000044703484,
+                    0.8999999761581421,
+                    0.949999988079071,
+                    0.0010000000474974513,
                     0.5,
                     2.0
                 ],
@@ -6617,7 +5719,7 @@
         },
         {
             "name": "RL_foot_height_scan",
-            "parent": 83,
+            "parent": 71,
             "properties": {
                 "debug_marker_radius": 0.0,
                 "enabled": true,
@@ -6737,7 +5839,7 @@
         },
         {
             "name": "RL_foot_contact",
-            "parent": 83,
+            "parent": 71,
             "properties": {
                 "debug_marker_radius": 0.0,
                 "enabled": true,
@@ -6969,7 +6071,7 @@
     ],
     "__SUB_RESOURCES__": [
         {
-            "__ID__": "PBRMaterial3D_jnjLr",
+            "__ID__": "PBRMaterial3D_YuHyo",
             "__TYPE__": "PBRMaterial3D",
             "albedo": {
                 "alpha": 1.0,
@@ -6983,7 +6085,7 @@
             "specular": 0.5
         },
         {
-            "__ID__": "PBRMaterial3D_ZwUTE",
+            "__ID__": "PBRMaterial3D_f1Omm",
             "__TYPE__": "PBRMaterial3D",
             "albedo": {
                 "alpha": 1.0,
@@ -6997,7 +6099,7 @@
             "specular": 0.5
         },
         {
-            "__ID__": "BoxShape3D_kt90f",
+            "__ID__": "BoxShape3D_Dw1Pd",
             "__TYPE__": "BoxShape3D",
             "resource_name": "",
             "size": {
@@ -7005,73 +6107,21 @@
                     "cols": 1,
                     "rows": 3,
                     "storage": [
-                        0.25,
-                        0.07999999821186066,
-                        0.11400000005960464
-                    ]
-                }
-            }
-        },
-        {
-            "__ID__": "CylinderShape3D_gIupx",
-            "__TYPE__": "CylinderShape3D",
-            "height": 0.25,
-            "radius": 0.057999998331069946,
-            "resource_name": ""
-        },
-        {
-            "__ID__": "CylinderShape3D_74B3O",
-            "__TYPE__": "CylinderShape3D",
-            "height": 0.25,
-            "radius": 0.057999998331069946,
-            "resource_name": ""
-        },
-        {
-            "__ID__": "BoxShape3D_i0SqA",
-            "__TYPE__": "BoxShape3D",
-            "resource_name": "",
-            "size": {
-                "matrix_data": {
-                    "cols": 1,
-                    "rows": 3,
-                    "storage": [
-                        0.009999999776482582,
-                        0.11999999731779099,
+                        0.25999999046325684,
+                        0.18000000715255737,
                         0.10000000149011612
                     ]
                 }
             }
         },
         {
-            "__ID__": "CapsuleShape3D_nC0Pf",
-            "__TYPE__": "CapsuleShape3D",
-            "height": 0.07000000029802322,
-            "radius": 0.008999999612569809,
+            "__ID__": "SphereShape3D_BswnY",
+            "__TYPE__": "SphereShape3D",
+            "radius": 0.05999999865889549,
             "resource_name": ""
         },
         {
-            "__ID__": "CapsuleShape3D_dqxi8",
-            "__TYPE__": "CapsuleShape3D",
-            "height": 0.07000000029802322,
-            "radius": 0.008999999612569809,
-            "resource_name": ""
-        },
-        {
-            "__ID__": "CapsuleShape3D_cB19h",
-            "__TYPE__": "CapsuleShape3D",
-            "height": 0.11999999731779099,
-            "radius": 0.009999999776482582,
-            "resource_name": ""
-        },
-        {
-            "__ID__": "CapsuleShape3D_e6Kgq",
-            "__TYPE__": "CapsuleShape3D",
-            "height": 0.10400000214576721,
-            "radius": 0.020999999716877937,
-            "resource_name": ""
-        },
-        {
-            "__ID__": "PBRMaterial3D_DLeWr",
+            "__ID__": "PBRMaterial3D_oZbTw",
             "__TYPE__": "PBRMaterial3D",
             "albedo": {
                 "alpha": 1.0,
@@ -7085,7 +6135,7 @@
             "specular": 0.5
         },
         {
-            "__ID__": "PBRMaterial3D_mBeQu",
+            "__ID__": "PBRMaterial3D_DPC1S",
             "__TYPE__": "PBRMaterial3D",
             "albedo": {
                 "alpha": 1.0,
@@ -7099,21 +6149,14 @@
             "specular": 0.5
         },
         {
-            "__ID__": "CylinderShape3D_zRIsJ",
-            "__TYPE__": "CylinderShape3D",
-            "height": 0.03999999910593033,
-            "radius": 0.04600000008940697,
+            "__ID__": "CapsuleShape3D_Eyg4G",
+            "__TYPE__": "CapsuleShape3D",
+            "height": 0.019999999552965164,
+            "radius": 0.05000000074505806,
             "resource_name": ""
         },
         {
-            "__ID__": "CylinderShape3D_iSVme",
-            "__TYPE__": "CylinderShape3D",
-            "height": 0.03999999910593033,
-            "radius": 0.03099999949336052,
-            "resource_name": ""
-        },
-        {
-            "__ID__": "PBRMaterial3D_PzWp6",
+            "__ID__": "PBRMaterial3D_HKDgA",
             "__TYPE__": "PBRMaterial3D",
             "albedo": {
                 "alpha": 1.0,
@@ -7127,7 +6170,7 @@
             "specular": 0.5
         },
         {
-            "__ID__": "PBRMaterial3D_nVHUO",
+            "__ID__": "PBRMaterial3D_lJOdZ",
             "__TYPE__": "PBRMaterial3D",
             "albedo": {
                 "alpha": 1.0,
@@ -7141,28 +6184,28 @@
             "specular": 0.5
         },
         {
-            "__ID__": "CapsuleShape3D_DucMu",
+            "__ID__": "CapsuleShape3D_QPHk9",
             "__TYPE__": "CapsuleShape3D",
             "height": 0.1599999964237213,
             "radius": 0.014999999664723873,
             "resource_name": ""
         },
         {
-            "__ID__": "CapsuleShape3D_Z92Ky",
+            "__ID__": "CapsuleShape3D_JKXRA",
             "__TYPE__": "CapsuleShape3D",
             "height": 0.10198038816452026,
             "radius": 0.014999999664723873,
             "resource_name": ""
         },
         {
-            "__ID__": "CapsuleShape3D_v5yoF",
+            "__ID__": "CapsuleShape3D_fyjTn",
             "__TYPE__": "CapsuleShape3D",
             "height": 0.04472136124968529,
             "radius": 0.014999999664723873,
             "resource_name": ""
         },
         {
-            "__ID__": "PBRMaterial3D_B2DGE",
+            "__ID__": "PBRMaterial3D_b3P7M",
             "__TYPE__": "PBRMaterial3D",
             "albedo": {
                 "alpha": 1.0,
@@ -7176,7 +6219,7 @@
             "specular": 0.5
         },
         {
-            "__ID__": "PBRMaterial3D_zmjhO",
+            "__ID__": "PBRMaterial3D_tq28V",
             "__TYPE__": "PBRMaterial3D",
             "albedo": {
                 "alpha": 1.0,
@@ -7190,27 +6233,27 @@
             "specular": 0.5
         },
         {
-            "__ID__": "CapsuleShape3D_YvLm6",
+            "__ID__": "CapsuleShape3D_v9hgW",
             "__TYPE__": "CapsuleShape3D",
             "height": 0.13152946531772614,
             "radius": 0.009999999776482582,
             "resource_name": ""
         },
         {
-            "__ID__": "CapsuleShape3D_S5w6w",
+            "__ID__": "CapsuleShape3D_m8wDa",
             "__TYPE__": "CapsuleShape3D",
             "height": 0.07280109822750092,
             "radius": 0.009999999776482582,
             "resource_name": ""
         },
         {
-            "__ID__": "SphereShape3D_t1WZ5",
+            "__ID__": "SphereShape3D_gh8vZ",
             "__TYPE__": "SphereShape3D",
             "radius": 0.023000000044703484,
             "resource_name": ""
         },
         {
-            "__ID__": "PBRMaterial3D_sUucO",
+            "__ID__": "PBRMaterial3D_gNedK",
             "__TYPE__": "PBRMaterial3D",
             "albedo": {
                 "alpha": 1.0,
@@ -7224,21 +6267,14 @@
             "specular": 0.5
         },
         {
-            "__ID__": "CylinderShape3D_EMYZA",
-            "__TYPE__": "CylinderShape3D",
-            "height": 0.03999999910593033,
-            "radius": 0.04600000008940697,
+            "__ID__": "CapsuleShape3D_F5EP4",
+            "__TYPE__": "CapsuleShape3D",
+            "height": 0.019999999552965164,
+            "radius": 0.05000000074505806,
             "resource_name": ""
         },
         {
-            "__ID__": "CylinderShape3D_hHKXM",
-            "__TYPE__": "CylinderShape3D",
-            "height": 0.03999999910593033,
-            "radius": 0.03099999949336052,
-            "resource_name": ""
-        },
-        {
-            "__ID__": "PBRMaterial3D_0jDLY",
+            "__ID__": "PBRMaterial3D_1O7ci",
             "__TYPE__": "PBRMaterial3D",
             "albedo": {
                 "alpha": 1.0,
@@ -7252,7 +6288,7 @@
             "specular": 0.5
         },
         {
-            "__ID__": "PBRMaterial3D_lkKeU",
+            "__ID__": "PBRMaterial3D_fIpHh",
             "__TYPE__": "PBRMaterial3D",
             "albedo": {
                 "alpha": 1.0,
@@ -7266,28 +6302,28 @@
             "specular": 0.5
         },
         {
-            "__ID__": "CapsuleShape3D_EjnzY",
+            "__ID__": "CapsuleShape3D_MXFfS",
             "__TYPE__": "CapsuleShape3D",
             "height": 0.1599999964237213,
             "radius": 0.014999999664723873,
             "resource_name": ""
         },
         {
-            "__ID__": "CapsuleShape3D_ECIfa",
+            "__ID__": "CapsuleShape3D_t5fiF",
             "__TYPE__": "CapsuleShape3D",
             "height": 0.10198038816452026,
             "radius": 0.014999999664723873,
             "resource_name": ""
         },
         {
-            "__ID__": "CapsuleShape3D_SyIa2",
+            "__ID__": "CapsuleShape3D_lvZrj",
             "__TYPE__": "CapsuleShape3D",
             "height": 0.04472136124968529,
             "radius": 0.014999999664723873,
             "resource_name": ""
         },
         {
-            "__ID__": "PBRMaterial3D_TCUF4",
+            "__ID__": "PBRMaterial3D_NUbzl",
             "__TYPE__": "PBRMaterial3D",
             "albedo": {
                 "alpha": 1.0,
@@ -7301,27 +6337,27 @@
             "specular": 0.5
         },
         {
-            "__ID__": "CapsuleShape3D_rLHXl",
+            "__ID__": "CapsuleShape3D_CWzWt",
             "__TYPE__": "CapsuleShape3D",
             "height": 0.13152946531772614,
             "radius": 0.009999999776482582,
             "resource_name": ""
         },
         {
-            "__ID__": "CapsuleShape3D_oQbX8",
+            "__ID__": "CapsuleShape3D_zg8EW",
             "__TYPE__": "CapsuleShape3D",
             "height": 0.07280109822750092,
             "radius": 0.009999999776482582,
             "resource_name": ""
         },
         {
-            "__ID__": "SphereShape3D_s7PXS",
+            "__ID__": "SphereShape3D_Hgek8",
             "__TYPE__": "SphereShape3D",
             "radius": 0.023000000044703484,
             "resource_name": ""
         },
         {
-            "__ID__": "PBRMaterial3D_jua6l",
+            "__ID__": "PBRMaterial3D_1aToI",
             "__TYPE__": "PBRMaterial3D",
             "albedo": {
                 "alpha": 1.0,
@@ -7335,28 +6371,14 @@
             "specular": 0.5
         },
         {
-            "__ID__": "CylinderShape3D_SqGAs",
-            "__TYPE__": "CylinderShape3D",
-            "height": 0.03999999910593033,
-            "radius": 0.04600000008940697,
+            "__ID__": "CapsuleShape3D_sTmDA",
+            "__TYPE__": "CapsuleShape3D",
+            "height": 0.019999999552965164,
+            "radius": 0.05000000074505806,
             "resource_name": ""
         },
         {
-            "__ID__": "CylinderShape3D_jUZ3Z",
-            "__TYPE__": "CylinderShape3D",
-            "height": 0.03999999910593033,
-            "radius": 0.03099999949336052,
-            "resource_name": ""
-        },
-        {
-            "__ID__": "CylinderShape3D_TRqHy",
-            "__TYPE__": "CylinderShape3D",
-            "height": 0.03999999910593033,
-            "radius": 0.04600000008940697,
-            "resource_name": ""
-        },
-        {
-            "__ID__": "PBRMaterial3D_hyRbV",
+            "__ID__": "PBRMaterial3D_i1phA",
             "__TYPE__": "PBRMaterial3D",
             "albedo": {
                 "alpha": 1.0,
@@ -7370,28 +6392,28 @@
             "specular": 0.5
         },
         {
-            "__ID__": "CapsuleShape3D_f8qcb",
+            "__ID__": "CapsuleShape3D_b2b2S",
             "__TYPE__": "CapsuleShape3D",
             "height": 0.1599999964237213,
             "radius": 0.014999999664723873,
             "resource_name": ""
         },
         {
-            "__ID__": "CapsuleShape3D_Aw4sy",
+            "__ID__": "CapsuleShape3D_qrwty",
             "__TYPE__": "CapsuleShape3D",
             "height": 0.10198038816452026,
             "radius": 0.014999999664723873,
             "resource_name": ""
         },
         {
-            "__ID__": "CapsuleShape3D_5TQoI",
+            "__ID__": "CapsuleShape3D_3oZGU",
             "__TYPE__": "CapsuleShape3D",
             "height": 0.04472136124968529,
             "radius": 0.014999999664723873,
             "resource_name": ""
         },
         {
-            "__ID__": "PBRMaterial3D_8tc5q",
+            "__ID__": "PBRMaterial3D_otn6R",
             "__TYPE__": "PBRMaterial3D",
             "albedo": {
                 "alpha": 1.0,
@@ -7405,27 +6427,27 @@
             "specular": 0.5
         },
         {
-            "__ID__": "CapsuleShape3D_QMenX",
+            "__ID__": "CapsuleShape3D_aStQ3",
             "__TYPE__": "CapsuleShape3D",
             "height": 0.13152946531772614,
             "radius": 0.009999999776482582,
             "resource_name": ""
         },
         {
-            "__ID__": "CapsuleShape3D_1EnaT",
+            "__ID__": "CapsuleShape3D_8JTSo",
             "__TYPE__": "CapsuleShape3D",
             "height": 0.07280109822750092,
             "radius": 0.009999999776482582,
             "resource_name": ""
         },
         {
-            "__ID__": "SphereShape3D_fuAKS",
+            "__ID__": "SphereShape3D_GonNx",
             "__TYPE__": "SphereShape3D",
             "radius": 0.023000000044703484,
             "resource_name": ""
         },
         {
-            "__ID__": "PBRMaterial3D_yrhxn",
+            "__ID__": "PBRMaterial3D_auCxW",
             "__TYPE__": "PBRMaterial3D",
             "albedo": {
                 "alpha": 1.0,
@@ -7439,28 +6461,14 @@
             "specular": 0.5
         },
         {
-            "__ID__": "CylinderShape3D_7pGVs",
-            "__TYPE__": "CylinderShape3D",
-            "height": 0.03999999910593033,
-            "radius": 0.04600000008940697,
+            "__ID__": "CapsuleShape3D_OHYYG",
+            "__TYPE__": "CapsuleShape3D",
+            "height": 0.019999999552965164,
+            "radius": 0.05000000074505806,
             "resource_name": ""
         },
         {
-            "__ID__": "CylinderShape3D_ofzs1",
-            "__TYPE__": "CylinderShape3D",
-            "height": 0.03999999910593033,
-            "radius": 0.03099999949336052,
-            "resource_name": ""
-        },
-        {
-            "__ID__": "CylinderShape3D_oheeI",
-            "__TYPE__": "CylinderShape3D",
-            "height": 0.03999999910593033,
-            "radius": 0.04600000008940697,
-            "resource_name": ""
-        },
-        {
-            "__ID__": "PBRMaterial3D_4Tu5f",
+            "__ID__": "PBRMaterial3D_ZZ6VM",
             "__TYPE__": "PBRMaterial3D",
             "albedo": {
                 "alpha": 1.0,
@@ -7474,28 +6482,28 @@
             "specular": 0.5
         },
         {
-            "__ID__": "CapsuleShape3D_0096T",
+            "__ID__": "CapsuleShape3D_oly8W",
             "__TYPE__": "CapsuleShape3D",
             "height": 0.1599999964237213,
             "radius": 0.014999999664723873,
             "resource_name": ""
         },
         {
-            "__ID__": "CapsuleShape3D_9aVYH",
+            "__ID__": "CapsuleShape3D_CZbXu",
             "__TYPE__": "CapsuleShape3D",
             "height": 0.10198038816452026,
             "radius": 0.014999999664723873,
             "resource_name": ""
         },
         {
-            "__ID__": "CapsuleShape3D_pV0uM",
+            "__ID__": "CapsuleShape3D_VBFbF",
             "__TYPE__": "CapsuleShape3D",
             "height": 0.04472136124968529,
             "radius": 0.014999999664723873,
             "resource_name": ""
         },
         {
-            "__ID__": "PBRMaterial3D_mUP1g",
+            "__ID__": "PBRMaterial3D_lZ9wB",
             "__TYPE__": "PBRMaterial3D",
             "albedo": {
                 "alpha": 1.0,
@@ -7509,21 +6517,21 @@
             "specular": 0.5
         },
         {
-            "__ID__": "CapsuleShape3D_0Rfvi",
+            "__ID__": "CapsuleShape3D_EFWjt",
             "__TYPE__": "CapsuleShape3D",
             "height": 0.13152946531772614,
             "radius": 0.009999999776482582,
             "resource_name": ""
         },
         {
-            "__ID__": "CapsuleShape3D_nAhTF",
+            "__ID__": "CapsuleShape3D_F21Gk",
             "__TYPE__": "CapsuleShape3D",
             "height": 0.07280109822750092,
             "radius": 0.009999999776482582,
             "resource_name": ""
         },
         {
-            "__ID__": "SphereShape3D_rBdZh",
+            "__ID__": "SphereShape3D_2I7J4",
             "__TYPE__": "SphereShape3D",
             "radius": 0.023000000044703484,
             "resource_name": ""

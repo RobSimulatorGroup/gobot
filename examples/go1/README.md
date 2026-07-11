@@ -16,12 +16,12 @@ This example keeps the robot project self-contained:
 - `tools/export_policy_onnx.py` converts `policies/go1.pt` to `policies/go1.onnx`.
 - `project.gobot` sets `go1_scene.jscn` as the project main scene.
 
-Regenerate the Gobot robot asset after editing the MJCF:
+Regenerate the Gobot robot asset after editing the MJCF. The current editable
+install supplies `gobot`; no source/build `PYTHONPATH` is needed:
 
 ```bash
 cd /home/wqq/gobot
-PYTHONNOUSERSITE=1 PYTHONPATH=/home/wqq/gobot/build/python \
-  /home/wqq/gobot/.venv/bin/python3 examples/go1/tools/refresh_go1_robot_scene.py
+uv run python examples/go1/tools/refresh_go1_robot_scene.py
 ```
 
 This refreshes `go1.jscn` from `assets/xml/go1.xml` and restores the
@@ -97,16 +97,11 @@ that extension is installed. Otherwise it falls back to official
 as a raw MuJoCo state-array stepping baseline but is not the persistent
 `BatchEnvPool` implementation.
 
-The default Go1 rough/flat tasks use UniLab-compatible observation dimensions,
-reward names/scales, command ranges, PD gains, action scale/clip, reset
-randomization, and MJCF robot dynamics/collision parameters while still loading
-the Gobot `.jscn` scene as the source of truth. The rough task uses a 6x6
-random rough terrain generated with the same seed, patch size, border, and
-terrain proportions as UniLab's Go1 rough PPO config. Gobot-specific
-encoder-bias randomization is disabled for these UniLab profiles; native
-per-env model-pool randomization handles base mass, COM offset, KP/KD
-multipliers, and push forces. CUDA is used by default when PyTorch reports it
-as available; pass `--device cpu` only when you explicitly want CPU PPO.
+The default `go1_rough` task follows the Go1 rough-terrain observation,
+reward, command, event, robot-dynamics, collision, and mixed-terrain settings
+while loading the Gobot `.jscn` scene as the source of truth. Simulation always
+uses Gobot's CPU MuJoCo batch runtime. `--device` controls the PyTorch learner;
+it does not select the physics backend.
 
 Resume from the latest checkpoint in the log directory:
 
@@ -140,7 +135,7 @@ Torch checkpoint with the current observation schema. Set
 `GOBOT_GO1_POLICY=res://policies/go1.pt` and install/use `gobot[train]` if you
 want to play the Torch checkpoint directly.
 
-Play the mjlab-derived Go1 ONNX policy in the editor with keyboard velocity
+Play the current Go1 ONNX policy in the editor with keyboard velocity
 commands:
 
 ```bash

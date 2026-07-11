@@ -514,7 +514,12 @@ else()
     endif()
 endif()
 
-pybind11_add_module(gobot_python MODULE
+set(GOBOT_PYBIND11_MODULE_OPTIONS)
+if(SKBUILD AND SKBUILD_STATE STREQUAL "editable")
+    # Editable rebuilds favor link speed; release wheels keep pybind11's LTO extras.
+    list(APPEND GOBOT_PYBIND11_MODULE_OPTIONS NO_EXTRAS)
+endif()
+pybind11_add_module(gobot_python MODULE ${GOBOT_PYBIND11_MODULE_OPTIONS}
         src/gobot/python/python_module.cpp
         ${GOBOT_PYTHON_BINDING_SOURCES}
 )
@@ -546,20 +551,24 @@ add_dependencies(gobot_python gobot_python_package)
 install(TARGETS gobot_python gobot
         RUNTIME DESTINATION "gobot" COMPONENT python
         LIBRARY DESTINATION "gobot" COMPONENT python)
-install(DIRECTORY "${GOBOT_PYTHON_PACKAGE_DIR}/"
-        DESTINATION "gobot" COMPONENT python
-        FILES_MATCHING
-        PATTERN "__pycache__" EXCLUDE
-        PATTERN "*.pyc" EXCLUDE
-        PATTERN "*.py"
-        PATTERN "*.pyi"
-        PATTERN "py.typed")
-install(DIRECTORY "${GOBOT_PYTHON_CLI_PACKAGE_DIR}/"
-        DESTINATION "gobot_cli" COMPONENT python
-        FILES_MATCHING
-        PATTERN "__pycache__" EXCLUDE
-        PATTERN "*.pyc" EXCLUDE
-        PATTERN "*.py")
+if(NOT SKBUILD)
+    # scikit-build-core installs these through wheel.packages. Keeping a second
+    # CMake copy makes editable imports resolve to stale wheel staging files.
+    install(DIRECTORY "${GOBOT_PYTHON_PACKAGE_DIR}/"
+            DESTINATION "gobot" COMPONENT python
+            FILES_MATCHING
+            PATTERN "__pycache__" EXCLUDE
+            PATTERN "*.pyc" EXCLUDE
+            PATTERN "*.py"
+            PATTERN "*.pyi"
+            PATTERN "py.typed")
+    install(DIRECTORY "${GOBOT_PYTHON_CLI_PACKAGE_DIR}/"
+            DESTINATION "gobot_cli" COMPONENT python
+            FILES_MATCHING
+            PATTERN "__pycache__" EXCLUDE
+            PATTERN "*.pyc" EXCLUDE
+            PATTERN "*.py")
+endif()
 if(GOB_BUILD_MUJOCO AND GOBOT_MUJOCO_TARGET)
     install(FILES "$<TARGET_FILE:${GOBOT_MUJOCO_TARGET}>" DESTINATION "gobot" COMPONENT python)
     get_target_property(GOBOT_MUJOCO_IMPORTED_LOCATION "${GOBOT_MUJOCO_TARGET}" IMPORTED_LOCATION)

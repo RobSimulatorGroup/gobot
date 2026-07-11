@@ -212,6 +212,9 @@ py::object VariantToPython(const Variant& variant) {
     if (type == Type::get<std::string>()) {
         return py::str(value.to_string());
     }
+    if (type == Type::get<Vector2>()) {
+        return Vector2ToPython(value.get_value<Vector2>());
+    }
     if (type == Type::get<Vector3>()) {
         return Vector3ToPython(value.get_value<Vector3>());
     }
@@ -266,6 +269,10 @@ Variant PythonToVariantForType(const py::handle& object, const Type& type) {
     }
     if (type == Type::get<std::string>()) {
         return Variant(py::cast<std::string>(object));
+    }
+    if (type == Type::get<Vector2>()) {
+        std::vector<double> values = PythonToFixedDoubleArray(object, 2, "2-element vector");
+        return Variant(Vector2{static_cast<RealType>(values[0]), static_cast<RealType>(values[1])});
     }
     if (type == Type::get<Vector3>()) {
         return Variant(PythonToVector3(object));

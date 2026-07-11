@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import sys
 import time
 from pathlib import Path
 from types import SimpleNamespace
@@ -14,17 +15,8 @@ import numpy as np
 REPO_ROOT = Path(__file__).resolve().parents[1]
 GO1_PROJECT = REPO_ROOT / "examples/go1"
 
-try:
-    from examples.go1.train._repo_imports import prefer_repo_gobot
-except ImportError:
-    import sys as _sys
-
-    _repo_root_string = str(REPO_ROOT)
-    if _repo_root_string not in _sys.path:
-        _sys.path.insert(0, _repo_root_string)
-    from examples.go1.train._repo_imports import prefer_repo_gobot
-
-prefer_repo_gobot()
+if str(REPO_ROOT) not in sys.path:
+    sys.path.insert(0, str(REPO_ROOT))
 
 from benchmark.go1_training_throughput import _Actor, _append_record
 from benchmark.go1_training_throughput import _make_actions as _make_training_actions

@@ -9,8 +9,9 @@ from typing import Any, Literal
 import numpy as np
 
 try:
-    from scipy import ndimage
+    from scipy import interpolate, ndimage
 except Exception:  # pragma: no cover - exercised when optional build env is incomplete.
+    interpolate = None
     ndimage = None
 
 from .. import _core
@@ -73,6 +74,7 @@ class TerrainGeneratorCfg:
     height_high_color: Color4 = (0.62, 0.44, 0.25, 1.0)
     height_range_min: float = 0.0
     height_range_max: float = 0.0
+    generator_mode: Literal["standard", "mixed"] = "standard"
     merged_heightfield: bool = False
 
 
@@ -463,26 +465,8 @@ def go1_training_terrains() -> dict[str, SubTerrainCfg]:
     }
 
 
-def go1_rough_terrain_cfg(*, seed: int = 42, curriculum: bool = False) -> TerrainGeneratorCfg:
-    """Go1 rough terrain grid aligned with UniLab's Go1 PPO MuJoCo profile."""
-
-    return TerrainGeneratorCfg(
-        size=(8.0, 8.0),
-        border_width=20.0,
-        num_rows=6,
-        num_cols=6,
-        seed=seed,
-        curriculum=curriculum,
-        sub_terrains=go1_training_terrains(),
-        horizontal_scale=0.2,
-        base_thickness=0.6,
-        color_mode=_core.TerrainColorMode.Palette,
-        merged_heightfield=True,
-    )
-
-
-def go1_mjlab_rough_terrain_cfg(*, seed: int = 42, curriculum: bool = True) -> TerrainGeneratorCfg:
-    """Go1 rough terrain grid aligned with mjlab's Velocity Rough Go1 task."""
+def go1_rough_terrain_cfg(*, seed: int = 42, curriculum: bool = True) -> TerrainGeneratorCfg:
+    """Mixed-geometry rough terrain used by the Go1 velocity task."""
 
     return TerrainGeneratorCfg(
         size=(8.0, 8.0),
@@ -523,9 +507,9 @@ def go1_mjlab_rough_terrain_cfg(*, seed: int = 42, curriculum: bool = True) -> T
                 proportion=0.1,
                 noise_range=(0.02, 0.10),
                 noise_step=0.02,
-                downsampled_scale=0.3,
+                downsampled_scale=None,
                 border_width=0.25,
-                scale_by_difficulty=True,
+                scale_by_difficulty=False,
             ),
             "wave_terrain": wave_terrain(
                 proportion=0.1,
@@ -537,7 +521,8 @@ def go1_mjlab_rough_terrain_cfg(*, seed: int = 42, curriculum: bool = True) -> T
         horizontal_scale=0.1,
         base_thickness=0.6,
         color_mode=_core.TerrainColorMode.Palette,
-        merged_heightfield=True,
+        generator_mode="mixed",
+        merged_heightfield=False,
     )
 
 
@@ -567,6 +552,9 @@ def create_terrain_node(cfg: TerrainGeneratorCfg, name: str = "terrain") -> _cor
     terrain.height_high_color = cfg.height_high_color
     terrain.height_range_min = cfg.height_range_min
     terrain.height_range_max = cfg.height_range_max
+    if cfg.generator_mode == "mixed":
+        _populate_mixed_terrain(terrain, cfg)
+        return terrain
     if cfg.merged_heightfield:
         _populate_merged_heightfield_terrain(terrain, cfg)
         return terrain
@@ -617,6 +605,331 @@ def create_terrain_node(cfg: TerrainGeneratorCfg, name: str = "terrain") -> _cor
 
     terrain.spawn_origins = origins
     return terrain
+
+
+def _populate_mixed_terrain(terrain: _core.Terrain3D, cfg: TerrainGeneratorCfg) -> None:
+    """Build the same mixed box/heightfield grid used by the Go1 terrain generator."""
+
+    items = list((cfg.sub_terrains or {"flat": flat()}).items())
+    sub_terrains = [item[1] for item in items]
+    rows = max(int(cfg.num_rows), 0)
+    cols = len(sub_terrains) if cfg.curriculum else max(int(cfg.num_cols), 0)
+    if rows == 0 or cols == 0:
+        terrain.spawn_origins = []
+        return
+
+    rng = np.random.default_rng(cfg.seed)
+    origins = np.zeros((rows, cols, 3), dtype=np.float64)
+    proportions = np.asarray([float(sub_cfg.proportion) for sub_cfg in sub_terrains], dtype=np.float64)
+    proportions = np.maximum(proportions, 0.0)
+    if not np.any(proportions > 0.0):
+        proportions[:] = 1.0
+    proportions /= np.sum(proportions)
+
+    def generate(row: int, col: int, sub_cfg: SubTerrainCfg, difficulty: float) -> None:
+        corner = np.asarray(
+            [
+                -rows * cfg.size[0] * 0.5 + row * cfg.size[0],
+                -cols * cfg.size[1] * 0.5 + col * cfg.size[1],
+                0.0,
+            ],
+            dtype=np.float64,
+        )
+        origins[row, col] = _add_mixed_patch(terrain, cfg, sub_cfg, corner, difficulty, rng)
+
+    if cfg.curriculum:
+        # Columns are the outer loop, so keep the same RNG consumption order.
+        for col, sub_cfg in enumerate(sub_terrains):
+            for row in range(rows):
+                lower, upper = cfg.difficulty_range
+                difficulty = (row + float(rng.uniform())) / rows
+                generate(row, col, sub_cfg, float(lower) + (float(upper) - float(lower)) * difficulty)
+    else:
+        for index in range(rows * cols):
+            row, col = np.unravel_index(index, (rows, cols))
+            sub_cfg = sub_terrains[int(rng.choice(len(sub_terrains), p=proportions))]
+            difficulty = float(rng.uniform(*cfg.difficulty_range))
+            generate(int(row), int(col), sub_cfg, difficulty)
+
+    if cfg.border_width > 0.0:
+        inner = (rows * cfg.size[0], cols * cfg.size[1])
+        outer = (inner[0] + 2.0 * cfg.border_width, inner[1] + 2.0 * cfg.border_width)
+        _add_mixed_border_boxes(
+            terrain,
+            outer,
+            inner,
+            1.0,
+            (0.0, 0.0, -0.5),
+            darken_rgba(_get_platform_color(), 0.55),
+        )
+
+    terrain.spawn_origins = [tuple(float(value) for value in origin) for origin in origins.reshape(-1, 3)]
+
+
+def _add_mixed_patch(
+    terrain: _core.Terrain3D,
+    cfg: TerrainGeneratorCfg,
+    sub_cfg: SubTerrainCfg,
+    corner: np.ndarray,
+    difficulty: float,
+    rng: np.random.Generator,
+) -> np.ndarray:
+    center = corner + np.asarray([cfg.size[0] * 0.5, cfg.size[1] * 0.5, 0.0])
+    if sub_cfg.kind == "flat":
+        terrain.add_box(
+            (float(center[0]), float(center[1]), -0.5),
+            (cfg.size[0], cfg.size[1], 1.0),
+            color=(0.5, 0.5, 0.5, 1.0),
+        )
+        return center
+    if sub_cfg.kind == "pyramid_stairs":
+        return _add_mixed_pyramid_stairs(terrain, cfg, sub_cfg, corner, difficulty)
+    if sub_cfg.kind in {"hf_pyramid_slope", "random_rough", "wave"}:
+        return _add_mixed_heightfield_patch(terrain, cfg, sub_cfg, corner, difficulty, rng)
+    raise ValueError(f"Mixed terrain mode does not support sub-terrain kind {sub_cfg.kind!r}")
+
+
+def _add_mixed_border_boxes(
+    terrain: _core.Terrain3D,
+    size: Vector2,
+    inner_size: Vector2,
+    height: float,
+    position: Vector3,
+    color: Color4,
+) -> None:
+    thickness_x = (size[0] - inner_size[0]) * 0.5
+    thickness_y = (size[1] - inner_size[1]) * 0.5
+    _add_mixed_box(
+        terrain,
+        (position[0], position[1] + inner_size[1] * 0.5 + thickness_y * 0.5, position[2]),
+        (size[0], thickness_y, height),
+        color,
+    )
+    _add_mixed_box(
+        terrain,
+        (position[0], position[1] - inner_size[1] * 0.5 - thickness_y * 0.5, position[2]),
+        (size[0], thickness_y, height),
+        color,
+    )
+    _add_mixed_box(
+        terrain,
+        (position[0] - inner_size[0] * 0.5 - thickness_x * 0.5, position[1], position[2]),
+        (thickness_x, inner_size[1], height),
+        color,
+    )
+    _add_mixed_box(
+        terrain,
+        (position[0] + inner_size[0] * 0.5 + thickness_x * 0.5, position[1], position[2]),
+        (thickness_x, inner_size[1], height),
+        color,
+    )
+
+
+def _add_mixed_box(terrain: _core.Terrain3D, center: Vector3, size: Vector3, color: Color4) -> None:
+    terrain.add_box(
+        tuple(float(value) for value in center),
+        tuple(max(float(value), 2.0e-6) for value in size),
+        color=color,
+    )
+
+
+def _add_mixed_pyramid_stairs(
+    terrain: _core.Terrain3D,
+    cfg: TerrainGeneratorCfg,
+    sub_cfg: SubTerrainCfg,
+    corner: np.ndarray,
+    difficulty: float,
+) -> np.ndarray:
+    step_height = _difficulty_value(sub_cfg.kwargs, "step_height", "step_height_range", difficulty, 0.08)
+    step_width = float(sub_cfg.kwargs.get("step_width", 0.3))
+    platform_width = float(sub_cfg.kwargs.get("platform_width", 3.0))
+    border_width = float(sub_cfg.kwargs.get("border_width", 0.0))
+    inverted = bool(sub_cfg.kwargs.get("inverted", False))
+    num_steps_x = int((cfg.size[0] - 2.0 * border_width - platform_width) / (2.0 * step_width))
+    num_steps_y = int((cfg.size[1] - 2.0 * border_width - platform_width) / (2.0 * step_width))
+    num_steps = max(0, min(num_steps_x, num_steps_y))
+    center = corner + np.asarray([cfg.size[0] * 0.5, cfg.size[1] * 0.5, 0.0])
+    terrain_size = (cfg.size[0] - 2.0 * border_width, cfg.size[1] - 2.0 * border_width)
+    color = _MUJOCO_RED if inverted else _MUJOCO_BLUE
+
+    if border_width > 0.0:
+        _add_mixed_border_boxes(
+            terrain,
+            cfg.size,
+            terrain_size,
+            step_height,
+            (float(center[0]), float(center[1]), -0.5 * step_height),
+            darken_rgba(color, 0.85),
+        )
+
+    if inverted:
+        total_height = (num_steps + 1) * step_height
+        for k in range(num_steps):
+            box_size = (terrain_size[0] - 2.0 * k * step_width, terrain_size[1] - 2.0 * k * step_width)
+            box_z = -total_height * 0.5 - (k + 1) * step_height * 0.5
+            box_offset = (k + 0.5) * step_width
+            box_height = total_height - (k + 1) * step_height
+            _add_mixed_box(terrain, (center[0], center[1] + terrain_size[1] * 0.5 - box_offset, box_z), (box_size[0], step_width, box_height), color)
+            _add_mixed_box(terrain, (center[0], center[1] - terrain_size[1] * 0.5 + box_offset, box_z), (box_size[0], step_width, box_height), color)
+            side_length = box_size[1] - 2.0 * step_width
+            _add_mixed_box(terrain, (center[0] + terrain_size[0] * 0.5 - box_offset, center[1], box_z), (step_width, side_length, box_height), color)
+            _add_mixed_box(terrain, (center[0] - terrain_size[0] * 0.5 + box_offset, center[1], box_z), (step_width, side_length, box_height), color)
+        _add_mixed_box(
+            terrain,
+            (center[0], center[1], -total_height - step_height * 0.5),
+            (terrain_size[0] - 2.0 * num_steps * step_width, terrain_size[1] - 2.0 * num_steps * step_width, step_height),
+            color,
+        )
+        return np.asarray([center[0], center[1], -(num_steps + 1) * step_height], dtype=np.float64)
+
+    for k in range(num_steps):
+        box_size = (terrain_size[0] - 2.0 * k * step_width, terrain_size[1] - 2.0 * k * step_width)
+        box_z = k * step_height * 0.5
+        box_offset = (k + 0.5) * step_width
+        box_height = (k + 2) * step_height
+        _add_mixed_box(terrain, (center[0], center[1] + terrain_size[1] * 0.5 - box_offset, box_z), (box_size[0], step_width, box_height), color)
+        _add_mixed_box(terrain, (center[0], center[1] - terrain_size[1] * 0.5 + box_offset, box_z), (box_size[0], step_width, box_height), color)
+        side_length = box_size[1] - 2.0 * step_width
+        _add_mixed_box(terrain, (center[0] + terrain_size[0] * 0.5 - box_offset, center[1], box_z), (step_width, side_length, box_height), color)
+        _add_mixed_box(terrain, (center[0] - terrain_size[0] * 0.5 + box_offset, center[1], box_z), (step_width, side_length, box_height), color)
+    _add_mixed_box(
+        terrain,
+        (center[0], center[1], num_steps * step_height * 0.5),
+        (
+            terrain_size[0] - 2.0 * num_steps * step_width,
+            terrain_size[1] - 2.0 * num_steps * step_width,
+            (num_steps + 2) * step_height,
+        ),
+        color,
+    )
+    return np.asarray([center[0], center[1], (num_steps + 1) * step_height], dtype=np.float64)
+
+
+def _add_mixed_heightfield_patch(
+    terrain: _core.Terrain3D,
+    cfg: TerrainGeneratorCfg,
+    sub_cfg: SubTerrainCfg,
+    corner: np.ndarray,
+    difficulty: float,
+    rng: np.random.Generator,
+) -> np.ndarray:
+    noise, z_offset, spawn_height, base_thickness_ratio = _mixed_heightfield_noise(
+        cfg, sub_cfg, difficulty, rng
+    )
+    elevation_min = int(np.min(noise))
+    elevation_max = int(np.max(noise))
+    elevation_range = elevation_max - elevation_min if elevation_max != elevation_min else 1
+    physical = (noise.astype(np.float64) - elevation_min) * _UNILAB_VERTICAL_SCALE
+    normalized = (noise.astype(np.float64) - elevation_min) / elevation_range
+    max_physical_height = elevation_range * _UNILAB_VERTICAL_SCALE
+    center = corner + np.asarray([cfg.size[0] * 0.5, cfg.size[1] * 0.5, 0.0])
+
+    # Terrain3D row zero is +Y while MuJoCo hfield row zero is -Y. The backend
+    # flips rows during compilation, so store a flipped editor representation.
+    terrain.add_heightfield(
+        tuple(float(value) for value in center),
+        cfg.size,
+        int(noise.shape[0]),
+        int(noise.shape[1]),
+        np.flipud(physical).astype(float).reshape(-1).tolist(),
+        max_physical_height * base_thickness_ratio,
+        np.flipud(normalized).astype(float).reshape(-1).tolist(),
+        float(z_offset),
+    )
+    return np.asarray([center[0], center[1], spawn_height], dtype=np.float64)
+
+
+def _mixed_heightfield_noise(
+    cfg: TerrainGeneratorCfg,
+    sub_cfg: SubTerrainCfg,
+    difficulty: float,
+    rng: np.random.Generator,
+) -> tuple[np.ndarray, float, float, float]:
+    horizontal_scale = float(cfg.horizontal_scale)
+    width_pixels = int(cfg.size[0] / horizontal_scale)
+    length_pixels = int(cfg.size[1] / horizontal_scale)
+    border_pixels = int(float(sub_cfg.kwargs.get("border_width", 0.0)) / horizontal_scale)
+    noise = np.zeros((width_pixels, length_pixels), dtype=np.int16)
+
+    if sub_cfg.kind == "hf_pyramid_slope":
+        slope = _difficulty_value(sub_cfg.kwargs, "slope", "slope_range", difficulty, 0.35)
+        inverted = bool(sub_cfg.kwargs.get("inverted", False))
+        if inverted:
+            slope = -slope
+        inner_width = width_pixels - 2 * border_pixels
+        inner_length = length_pixels - 2 * border_pixels
+        target_width = inner_width if border_pixels > 0 else width_pixels
+        target_length = inner_length if border_pixels > 0 else length_pixels
+        height_max = int(slope * (target_width * horizontal_scale) * 0.5 / _UNILAB_VERTICAL_SCALE)
+        center_x = int(target_width * 0.5)
+        center_y = int(target_length * 0.5)
+        xx = ((center_x - np.abs(center_x - np.arange(target_width))) / center_x).reshape(target_width, 1)
+        yy = ((center_y - np.abs(center_y - np.arange(target_length))) / center_y).reshape(1, target_length)
+        raw = height_max * xx * yy
+        platform_width = int(float(sub_cfg.kwargs.get("platform_width", 2.0)) / horizontal_scale / 2.0)
+        x_pf = target_width // 2 - platform_width
+        y_pf = target_length // 2 - platform_width
+        z_pf = raw[x_pf, y_pf] if x_pf >= 0 and y_pf >= 0 else 0
+        raw = np.clip(raw, min(0, z_pf), max(0, z_pf))
+        if border_pixels > 0:
+            noise[border_pixels:-border_pixels, border_pixels:-border_pixels] = np.rint(raw).astype(np.int16)
+        else:
+            noise = np.rint(raw).astype(np.int16)
+        height_range = int(np.max(noise) - np.min(noise)) or 1
+        max_height = height_range * _UNILAB_VERTICAL_SCALE
+        z_offset = -max_height if inverted else 0.0
+        return noise, z_offset, z_offset if inverted else max_height, 1.0
+
+    if sub_cfg.kind == "random_rough":
+        downsampled_scale_value = sub_cfg.kwargs.get("downsampled_scale")
+        downsampled_scale = horizontal_scale if downsampled_scale_value is None else float(downsampled_scale_value)
+        inner_width = width_pixels - 2 * border_pixels if border_pixels > 0 else width_pixels
+        inner_length = length_pixels - 2 * border_pixels if border_pixels > 0 else length_pixels
+        inner_size = (inner_width * horizontal_scale, inner_length * horizontal_scale)
+        width_downsampled = int(inner_size[0] / downsampled_scale)
+        length_downsampled = int(inner_size[1] / downsampled_scale)
+        height_min = int(float(sub_cfg.kwargs.get("noise_min", -0.05)) / _UNILAB_VERTICAL_SCALE)
+        height_max = int(float(sub_cfg.kwargs.get("noise_max", 0.05)) / _UNILAB_VERTICAL_SCALE)
+        height_step = int(float(sub_cfg.kwargs.get("noise_step", 0.005)) / _UNILAB_VERTICAL_SCALE)
+        choices = np.arange(height_min, height_max + height_step, height_step)
+        sampled = rng.choice(choices, size=(width_downsampled, length_downsampled))
+        source_x = np.linspace(0.0, inner_size[0], width_downsampled)
+        source_y = np.linspace(0.0, inner_size[1], length_downsampled)
+        target_x = np.linspace(0.0, inner_size[0], inner_width)
+        target_y = np.linspace(0.0, inner_size[1], inner_length)
+        if interpolate is not None:
+            upsampled = interpolate.RectBivariateSpline(source_x, source_y, sampled)(target_x, target_y)
+        else:  # pragma: no cover - scipy is a package dependency.
+            upsampled = _bilinear_resample_grid(source_x, source_y, sampled, target_x, target_y)
+        if border_pixels > 0:
+            noise[border_pixels:-border_pixels, border_pixels:-border_pixels] = np.rint(upsampled).astype(np.int16)
+        else:
+            noise = np.rint(upsampled).astype(np.int16)
+        spawn_height = (
+            float(sub_cfg.kwargs.get("noise_min", -0.05))
+            + float(sub_cfg.kwargs.get("noise_max", 0.05))
+        ) * 0.5
+        return noise, 0.0, spawn_height, 1.0
+
+    if sub_cfg.kind == "wave":
+        amplitude = _difficulty_value(sub_cfg.kwargs, "amplitude", "amplitude_range", difficulty, 0.08)
+        inner_width = width_pixels - 2 * border_pixels if border_pixels > 0 else width_pixels
+        inner_length = length_pixels - 2 * border_pixels if border_pixels > 0 else length_pixels
+        amplitude_pixels = int(0.5 * amplitude / _UNILAB_VERTICAL_SCALE)
+        num_waves = float(sub_cfg.kwargs.get("num_waves", 1.0))
+        wave_number = 2.0 * np.pi / (inner_length / num_waves)
+        xx = np.arange(inner_width).reshape(inner_width, 1)
+        yy = np.arange(inner_length).reshape(1, inner_length)
+        raw = amplitude_pixels * (np.cos(yy * wave_number) + np.sin(xx * wave_number))
+        if border_pixels > 0:
+            noise[border_pixels:-border_pixels, border_pixels:-border_pixels] = np.rint(raw).astype(np.int16)
+        else:
+            noise = np.rint(raw).astype(np.int16)
+        height_range = int(np.max(noise) - np.min(noise)) or 1
+        max_height = height_range * _UNILAB_VERTICAL_SCALE
+        return noise, -max_height * 0.5, 0.0, 0.25
+
+    raise ValueError(f"unsupported mixed heightfield kind {sub_cfg.kind!r}")
 
 
 def _populate_merged_heightfield_terrain(terrain: _core.Terrain3D, cfg: TerrainGeneratorCfg) -> None:
@@ -1507,7 +1820,6 @@ __all__ = [
     "ROUGH_TERRAINS_CFG",
     "brand_ramp",
     "darken_rgba",
-    "go1_mjlab_rough_terrain_cfg",
     "go1_rough_terrain_cfg",
     "go1_training_terrains",
     "showcase_terrains",

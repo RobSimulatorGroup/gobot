@@ -127,9 +127,11 @@ class UniformVelocityCommand:
                 raise ValueError("heading_command=True requires heading range")
             self.heading_target[env_ids] = self.env._rng.uniform(*ranges.heading, size=env_ids.shape)
             self.is_heading_env[env_ids] = self.env._rng.uniform(0.0, 1.0, size=env_ids.shape) <= self.cfg.rel_heading_envs
-            self.command_b[env_ids, 2] = 0.0
+            heading_ids = env_ids[self.is_heading_env[env_ids]]
+            self.command_b[heading_ids, 2] = 0.0
         self.is_standing_env[env_ids] = self.env._rng.uniform(0.0, 1.0, size=env_ids.shape) <= self.cfg.rel_standing_envs
         self.is_world_env[env_ids] = self.env._rng.uniform(0.0, 1.0, size=env_ids.shape) <= self.cfg.rel_world_envs
+        self.command_w[env_ids] = self.command_b[env_ids]
         self.is_forward_env[env_ids] = self.env._rng.uniform(0.0, 1.0, size=env_ids.shape) <= self.cfg.rel_forward_envs
         forward_ids = env_ids[self.is_forward_env[env_ids]]
         if forward_ids.size:
@@ -139,7 +141,6 @@ class UniformVelocityCommand:
         standing_ids = env_ids[self.is_standing_env[env_ids]]
         if standing_ids.size:
             self.command_b[standing_ids] = 0.0
-        self.command_w[env_ids] = self.command_b[env_ids]
         self.heading_error[env_ids] = 0.0
 
     def _update_heading_and_world_commands(self, states: Sequence[Any | None]) -> None:

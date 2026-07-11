@@ -3,7 +3,6 @@
 import ctypes as _ctypes
 import importlib as _importlib
 import os as _os
-from pathlib import Path as _Path
 import sys as _sys
 import sysconfig as _sysconfig
 
@@ -25,12 +24,6 @@ def _preload_current_libpython() -> None:
 
 
 _preload_current_libpython()
-
-_repo_build_package = _Path(__file__).resolve().parents[2] / "build" / "python" / "gobot"
-if _repo_build_package.is_dir():
-    _repo_build_package_string = str(_repo_build_package)
-    if _repo_build_package_string not in __path__:
-        __path__.append(_repo_build_package_string)
 
 from . import _core
 from ._core import *  # noqa: F401,F403

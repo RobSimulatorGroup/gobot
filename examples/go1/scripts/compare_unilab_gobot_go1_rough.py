@@ -556,10 +556,6 @@ def run_gobot(args: argparse.Namespace) -> int:
     if str(train_dir) not in sys.path:
         sys.path.insert(0, str(train_dir))
 
-    from _repo_imports import prefer_repo_gobot
-
-    prefer_repo_gobot()
-
     from go1_velocity_cfg import go1_unilab_rough_velocity_cfg
     from go1_velocity_env import Go1VelocityEnv
 
@@ -1099,15 +1095,6 @@ def run_unilab_parent(args: argparse.Namespace) -> int:
         print(f"UniLab venv python not found: {python}", file=sys.stderr)
         return 2
     env = os.environ.copy()
-    src_paths = [
-        str(unilab_root / "src"),
-        str(REPO_ROOT),
-        str(REPO_ROOT / "python"),
-        str(REPO_ROOT / "build/python"),
-    ]
-    if env.get("PYTHONPATH"):
-        src_paths.append(env["PYTHONPATH"])
-    env["PYTHONPATH"] = ":".join(src_paths)
     env.setdefault("XDG_CACHE_HOME", "/tmp/unilab-cache")
     Path(env["XDG_CACHE_HOME"]).mkdir(parents=True, exist_ok=True)
     cmd = [

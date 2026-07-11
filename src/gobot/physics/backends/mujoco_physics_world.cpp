@@ -765,14 +765,14 @@ void ConfigureActuatorLimits(mjsActuator* actuator, const PhysicsJointSnapshot& 
     if (!actuator) {
         return;
     }
+    if (control_is_position) {
+        actuator->inheritrange = 0.0;
+        actuator->ctrllimited = mjLIMITED_FALSE;
+    }
     if (HasControlRange(joint)) {
         actuator->ctrllimited = mjLIMITED_TRUE;
         actuator->ctrlrange[0] = joint.control_lower_limit;
         actuator->ctrlrange[1] = joint.control_upper_limit;
-    } else if (control_is_position && joint.upper_limit > joint.lower_limit) {
-        actuator->ctrllimited = mjLIMITED_TRUE;
-        actuator->ctrlrange[0] = joint.lower_limit;
-        actuator->ctrlrange[1] = joint.upper_limit;
     }
     if (!control_is_position && !HasControlRange(joint) && joint.effort_limit > 0.0) {
         actuator->ctrllimited = mjLIMITED_TRUE;
@@ -1140,9 +1140,23 @@ MuJoCoPhysicsWorld::Diagnostics MuJoCoPhysicsWorld::GetDiagnostics() const {
         if (diagnostics.first_position_actuator_stiffness <= 0.0 &&
             binding.position_actuator_id >= 0 &&
             binding.position_actuator_id < model->nu) {
+            const int actuator_id = binding.position_actuator_id;
             diagnostics.first_position_actuator_stiffness =
                     static_cast<RealType>(std::abs(model->actuator_gainprm[
-                            mjNGAIN * binding.position_actuator_id + 0]));
+                            mjNGAIN * actuator_id + 0]));
+            diagnostics.first_position_actuator_control_limited = model->actuator_ctrllimited[actuator_id];
+            diagnostics.first_position_actuator_control_range = Vector2{
+                    static_cast<RealType>(model->actuator_ctrlrange[2 * actuator_id + 0]),
+                    static_cast<RealType>(model->actuator_ctrlrange[2 * actuator_id + 1])};
+            diagnostics.first_position_actuator_force_limited = model->actuator_forcelimited[actuator_id];
+            diagnostics.first_position_actuator_force_range = Vector2{
+                    static_cast<RealType>(model->actuator_forcerange[2 * actuator_id + 0]),
+                    static_cast<RealType>(model->actuator_forcerange[2 * actuator_id + 1])};
+            const auto* data = static_cast<const mjData*>(data_);
+            if (data != nullptr && actuator_id < model->nu) {
+                diagnostics.first_position_actuator_control_value =
+                        static_cast<RealType>(data->ctrl[actuator_id]);
+            }
         }
         if (diagnostics.first_controllable_joint_damping <= 0.0 &&
             binding.dof_address >= 0 &&
@@ -3279,7 +3293,7 @@ void MuJoCoPhysicsWorld::ApplyControlsToMuJoCo(std::size_t environment_index) {
                         SetPositionActuator(model,
                                             data,
                                             binding.position_actuator_id,
-                                            JointController::ClampTargetPosition(joint_state.target_position, limits),
+                                            joint_state.target_position,
                                             stiffness);
                         if (binding.velocity_actuator_id >= 0 && settings_.default_joint_gains.velocity_damping > 0.0) {
                             const RealType damping = binding.velocity_damping > 0.0

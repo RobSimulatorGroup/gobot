@@ -9,13 +9,6 @@ from typing import Any, Literal, Mapping
 
 import numpy as np
 
-try:
-    from ._repo_imports import prefer_repo_gobot
-except ImportError:
-    from _repo_imports import prefer_repo_gobot
-
-prefer_repo_gobot()
-
 from gobot.rl.locomotion import UniformVelocityCommandCfg, UniformVelocityCommandRanges, VelocityCommandStage
 
 GO1_JOINT_NAMES: tuple[str, ...] = (
@@ -33,7 +26,7 @@ GO1_JOINT_NAMES: tuple[str, ...] = (
     "RL_calf_joint",
 )
 
-GO1_DEFAULT_JOINT_POS = np.array(
+GO1_UNILAB_DEFAULT_JOINT_POS = np.array(
     [
         0.0,
         0.9,
@@ -51,7 +44,7 @@ GO1_DEFAULT_JOINT_POS = np.array(
     dtype=np.float32,
 )
 
-GO1_MJLAB_DEFAULT_JOINT_POS = np.array(
+GO1_DEFAULT_JOINT_POS = np.array(
     [
         0.1,
         0.9,
@@ -82,41 +75,98 @@ GO1_UNILAB_ROUGH_ACTION_SCALE: Mapping[str, float] = {
     "__default__": 0.25,
 }
 
-_GO1_MJLAB_HIP_THIGH_KP = 15.895242654143557
-_GO1_MJLAB_CALF_KP = 35.764295971822996
-_GO1_MJLAB_HIP_THIGH_KD = 1.0119225760208341
-_GO1_MJLAB_CALF_KD = 2.2768257960468765
-GO1_MJLAB_KP = np.array(
+_GO1_HIP_THIGH_KP = 15.895242654143557
+_GO1_CALF_KP = 35.764295971822996
+_GO1_HIP_THIGH_KD = 1.0119225760208341
+_GO1_CALF_KD = 2.2768257960468765
+_GO1_HIP_THIGH_ARMATURE = 0.000111842 * 6.0**2
+_GO1_CALF_ARMATURE = 0.000111842 * 9.0**2
+_GO1_HIP_THIGH_EFFORT_LIMIT = 23.7
+_GO1_CALF_EFFORT_LIMIT = 35.55
+_GO1_HIP_THIGH_VELOCITY_LIMIT = 30.1
+_GO1_CALF_VELOCITY_LIMIT = 20.06
+GO1_KP = np.array(
     [
-        _GO1_MJLAB_HIP_THIGH_KP,
-        _GO1_MJLAB_HIP_THIGH_KP,
-        _GO1_MJLAB_CALF_KP,
-        _GO1_MJLAB_HIP_THIGH_KP,
-        _GO1_MJLAB_HIP_THIGH_KP,
-        _GO1_MJLAB_CALF_KP,
-        _GO1_MJLAB_HIP_THIGH_KP,
-        _GO1_MJLAB_HIP_THIGH_KP,
-        _GO1_MJLAB_CALF_KP,
-        _GO1_MJLAB_HIP_THIGH_KP,
-        _GO1_MJLAB_HIP_THIGH_KP,
-        _GO1_MJLAB_CALF_KP,
+        _GO1_HIP_THIGH_KP,
+        _GO1_HIP_THIGH_KP,
+        _GO1_CALF_KP,
+        _GO1_HIP_THIGH_KP,
+        _GO1_HIP_THIGH_KP,
+        _GO1_CALF_KP,
+        _GO1_HIP_THIGH_KP,
+        _GO1_HIP_THIGH_KP,
+        _GO1_CALF_KP,
+        _GO1_HIP_THIGH_KP,
+        _GO1_HIP_THIGH_KP,
+        _GO1_CALF_KP,
     ],
     dtype=np.float32,
 )
-GO1_MJLAB_KD = np.array(
+GO1_KD = np.array(
     [
-        _GO1_MJLAB_HIP_THIGH_KD,
-        _GO1_MJLAB_HIP_THIGH_KD,
-        _GO1_MJLAB_CALF_KD,
-        _GO1_MJLAB_HIP_THIGH_KD,
-        _GO1_MJLAB_HIP_THIGH_KD,
-        _GO1_MJLAB_CALF_KD,
-        _GO1_MJLAB_HIP_THIGH_KD,
-        _GO1_MJLAB_HIP_THIGH_KD,
-        _GO1_MJLAB_CALF_KD,
-        _GO1_MJLAB_HIP_THIGH_KD,
-        _GO1_MJLAB_HIP_THIGH_KD,
-        _GO1_MJLAB_CALF_KD,
+        _GO1_HIP_THIGH_KD,
+        _GO1_HIP_THIGH_KD,
+        _GO1_CALF_KD,
+        _GO1_HIP_THIGH_KD,
+        _GO1_HIP_THIGH_KD,
+        _GO1_CALF_KD,
+        _GO1_HIP_THIGH_KD,
+        _GO1_HIP_THIGH_KD,
+        _GO1_CALF_KD,
+        _GO1_HIP_THIGH_KD,
+        _GO1_HIP_THIGH_KD,
+        _GO1_CALF_KD,
+    ],
+    dtype=np.float32,
+)
+GO1_ARMATURE = np.array(
+    [
+        _GO1_HIP_THIGH_ARMATURE,
+        _GO1_HIP_THIGH_ARMATURE,
+        _GO1_CALF_ARMATURE,
+        _GO1_HIP_THIGH_ARMATURE,
+        _GO1_HIP_THIGH_ARMATURE,
+        _GO1_CALF_ARMATURE,
+        _GO1_HIP_THIGH_ARMATURE,
+        _GO1_HIP_THIGH_ARMATURE,
+        _GO1_CALF_ARMATURE,
+        _GO1_HIP_THIGH_ARMATURE,
+        _GO1_HIP_THIGH_ARMATURE,
+        _GO1_CALF_ARMATURE,
+    ],
+    dtype=np.float32,
+)
+GO1_EFFORT_LIMIT = np.array(
+    [
+        _GO1_HIP_THIGH_EFFORT_LIMIT,
+        _GO1_HIP_THIGH_EFFORT_LIMIT,
+        _GO1_CALF_EFFORT_LIMIT,
+        _GO1_HIP_THIGH_EFFORT_LIMIT,
+        _GO1_HIP_THIGH_EFFORT_LIMIT,
+        _GO1_CALF_EFFORT_LIMIT,
+        _GO1_HIP_THIGH_EFFORT_LIMIT,
+        _GO1_HIP_THIGH_EFFORT_LIMIT,
+        _GO1_CALF_EFFORT_LIMIT,
+        _GO1_HIP_THIGH_EFFORT_LIMIT,
+        _GO1_HIP_THIGH_EFFORT_LIMIT,
+        _GO1_CALF_EFFORT_LIMIT,
+    ],
+    dtype=np.float32,
+)
+GO1_VELOCITY_LIMIT = np.array(
+    [
+        _GO1_HIP_THIGH_VELOCITY_LIMIT,
+        _GO1_HIP_THIGH_VELOCITY_LIMIT,
+        _GO1_CALF_VELOCITY_LIMIT,
+        _GO1_HIP_THIGH_VELOCITY_LIMIT,
+        _GO1_HIP_THIGH_VELOCITY_LIMIT,
+        _GO1_CALF_VELOCITY_LIMIT,
+        _GO1_HIP_THIGH_VELOCITY_LIMIT,
+        _GO1_HIP_THIGH_VELOCITY_LIMIT,
+        _GO1_CALF_VELOCITY_LIMIT,
+        _GO1_HIP_THIGH_VELOCITY_LIMIT,
+        _GO1_HIP_THIGH_VELOCITY_LIMIT,
+        _GO1_CALF_VELOCITY_LIMIT,
     ],
     dtype=np.float32,
 )
@@ -127,7 +177,7 @@ GO1_UNILAB_MUJOCO_SOLVER_SETTINGS: Mapping[str, Any] = {
     "impedance_ratio": 100.0,
 }
 
-GO1_MJLAB_MUJOCO_SOLVER_SETTINGS: Mapping[str, Any] = {
+GO1_MUJOCO_SOLVER_SETTINGS: Mapping[str, Any] = {
     "cone": 1,  # mjCONE_ELLIPTIC
     "iterations": 10,
     "line_search_iterations": 20,
@@ -298,26 +348,26 @@ def _default_push_force_ranges() -> Mapping[str, tuple[float, float]]:
 class Go1VelocityCfg:
     """Go1 velocity task config for this example project."""
 
-    name: str = "gobot_go1_mjlab_rough"
+    name: str = "gobot_go1_rough"
     terrain_type: str = "rough"
-    task_profile: Literal["gobot_velocity", "mjlab_rough", "unilab_flat", "unilab_rough"] = "mjlab_rough"
+    task_profile: Literal["gobot_velocity", "go1_rough", "unilab_flat", "unilab_rough"] = "go1_rough"
     project_path: str | Path = "examples/go1"
     scene_path: str = "res://go1_scene.jscn"
     terrain_scene_path: str = "terrain_scene.jscn"
     robot_name: str = "go1"
     base_link: str = "trunk"
     joint_names: tuple[str, ...] = GO1_JOINT_NAMES
-    default_joint_pos: tuple[float, ...] = tuple(float(x) for x in GO1_MJLAB_DEFAULT_JOINT_POS)
+    default_joint_pos: tuple[float, ...] = tuple(float(x) for x in GO1_DEFAULT_JOINT_POS)
     foot_names: tuple[str, ...] = GO1_FOOT_NAMES
     foot_link_names: tuple[str, ...] = GO1_FOOT_LINK_NAMES
     action_scale: float | Mapping[str, float] = field(default_factory=lambda: dict(GO1_ACTION_SCALE))
     simulate_action_latency: bool = False
     action_clip: float | None = None
-    kp: float | tuple[float, ...] = tuple(float(x) for x in GO1_MJLAB_KP)
-    kd: float | tuple[float, ...] = tuple(float(x) for x in GO1_MJLAB_KD)
+    kp: float | tuple[float, ...] = tuple(float(x) for x in GO1_KP)
+    kd: float | tuple[float, ...] = tuple(float(x) for x in GO1_KD)
     physics_dt: float = 0.005
     decimation: int = 4
-    mujoco_solver_settings: Mapping[str, Any] = field(default_factory=lambda: dict(GO1_MJLAB_MUJOCO_SOLVER_SETTINGS))
+    mujoco_solver_settings: Mapping[str, Any] = field(default_factory=lambda: dict(GO1_MUJOCO_SOLVER_SETTINGS))
     episode_length_s: float = 20.0
     base_clearance: float = 0.278
     min_base_clearance: float = 0.0
@@ -434,18 +484,18 @@ def go1_rough_velocity_cfg(
     play: bool = False,
 ) -> Go1VelocityCfg:
     cfg = Go1VelocityCfg(project_path=project_path)
-    cfg.name = "gobot_go1_mjlab_rough"
-    cfg.task_profile = "mjlab_rough"
-    cfg.default_joint_pos = tuple(float(x) for x in GO1_MJLAB_DEFAULT_JOINT_POS)
+    cfg.name = "gobot_go1_rough"
+    cfg.task_profile = "go1_rough"
+    cfg.default_joint_pos = tuple(float(x) for x in GO1_DEFAULT_JOINT_POS)
     cfg.foot_names = GO1_FOOT_NAMES
     cfg.foot_link_names = GO1_FOOT_LINK_NAMES
     cfg.action_scale = dict(GO1_ACTION_SCALE)
     cfg.action_clip = None
-    cfg.kp = tuple(float(x) for x in GO1_MJLAB_KP)
-    cfg.kd = tuple(float(x) for x in GO1_MJLAB_KD)
+    cfg.kp = tuple(float(x) for x in GO1_KP)
+    cfg.kd = tuple(float(x) for x in GO1_KD)
     cfg.physics_dt = 0.005
     cfg.decimation = 4
-    cfg.mujoco_solver_settings = dict(GO1_MJLAB_MUJOCO_SOLVER_SETTINGS)
+    cfg.mujoco_solver_settings = dict(GO1_MUJOCO_SOLVER_SETTINGS)
     cfg.base_clearance = 0.278
     cfg.reset_z_range = (0.01, 0.05)
     cfg.randomize_reset_yaw = True
@@ -516,7 +566,7 @@ def go1_unilab_rough_velocity_cfg(
     cfg = Go1VelocityCfg(project_path=project_path)
     cfg.name = "gobot_go1_unilab_rough"
     cfg.task_profile = "unilab_rough"
-    cfg.default_joint_pos = tuple(float(x) for x in GO1_DEFAULT_JOINT_POS)
+    cfg.default_joint_pos = tuple(float(x) for x in GO1_UNILAB_DEFAULT_JOINT_POS)
     cfg.foot_names = GO1_UNILAB_FOOT_NAMES
     cfg.foot_link_names = GO1_UNILAB_FOOT_LINK_NAMES
     cfg.action_scale = dict(GO1_UNILAB_ROUGH_ACTION_SCALE)
@@ -640,8 +690,7 @@ def go1_flat_velocity_cfg(
 def go1_velocity_cfg(name: str, *, project_path: str | Path | None = None, play: bool = False) -> Go1VelocityCfg:
     factories = {
         "go1_rough": go1_rough_velocity_cfg,
-        "go1_mjlab_rough": go1_rough_velocity_cfg,
-        "gobot_go1_mjlab_rough": go1_rough_velocity_cfg,
+        "gobot_go1_rough": go1_rough_velocity_cfg,
         "go1_velocity": go1_rough_velocity_cfg,
         "gobot_go1_velocity": go1_rough_velocity_cfg,
         "go1_unilab_rough": go1_unilab_rough_velocity_cfg,
@@ -715,16 +764,19 @@ def rsl_rl_train_cfg(
 
 
 __all__ = [
-    "GO1_DEFAULT_JOINT_POS",
+    "GO1_UNILAB_DEFAULT_JOINT_POS",
     "GO1_FOOT_NAMES",
     "GO1_FOOT_LINK_NAMES",
     "GO1_UNILAB_FOOT_NAMES",
     "GO1_JOINT_NAMES",
     "GO1_ACTION_SCALE",
-    "GO1_MJLAB_DEFAULT_JOINT_POS",
-    "GO1_MJLAB_KP",
-    "GO1_MJLAB_KD",
-    "GO1_MJLAB_MUJOCO_SOLVER_SETTINGS",
+    "GO1_DEFAULT_JOINT_POS",
+    "GO1_KP",
+    "GO1_KD",
+    "GO1_ARMATURE",
+    "GO1_EFFORT_LIMIT",
+    "GO1_VELOCITY_LIMIT",
+    "GO1_MUJOCO_SOLVER_SETTINGS",
     "GO1_UNILAB_ROUGH_ACTION_SCALE",
     "Go1VelocityCfg",
     "UnilabNoiseCfg",

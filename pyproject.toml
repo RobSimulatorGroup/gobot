@@ -37,6 +37,12 @@ train = [
     "torch>=2.7",
 ]
 
+[dependency-groups]
+dev = [
+    "packaging>=23.2",
+    "scikit-build-core>=0.10",
+]
+
 [[tool.uv.index]]
 name = "pytorch-cu128"
 url = "https://download.pytorch.org/whl/cu128"

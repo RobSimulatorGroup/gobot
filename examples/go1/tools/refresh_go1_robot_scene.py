@@ -1,17 +1,23 @@
-"""Regenerate the Go1 robot scene from the UniLab-aligned MJCF asset."""
+"""Regenerate the Go1 robot scene from the Go1 MJCF asset."""
 
 from __future__ import annotations
 
 from pathlib import Path
+import re
 import sys
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "train"))
 
-from _repo_imports import prefer_repo_gobot
-
-prefer_repo_gobot()
-
 import gobot
+
+from go1_velocity_cfg import (
+    GO1_JOINT_NAMES,
+    GO1_ARMATURE,
+    GO1_EFFORT_LIMIT,
+    GO1_KD,
+    GO1_KP,
+    GO1_VELOCITY_LIMIT,
+)
 
 
 FOOT_LINKS: dict[str, str] = {
@@ -27,6 +33,7 @@ FOOT_SAMPLE_OFFSETS: tuple[tuple[float, float, float], ...] = (
     (-0.04, 0.0, 0.0),
     (0.0, -0.04, 0.0),
 )
+FOOT_COLLISION_PATTERN = re.compile(r"^[FR][LR]_foot_collision$")
 
 
 def _required_child(root: gobot.Node, path: str) -> gobot.Node:
@@ -122,12 +129,46 @@ def _add_foot_sensors(root: gobot.Node) -> None:
         link.add_child(contact)
 
 
+def _apply_go1_joint_dynamics(root: gobot.Node) -> None:
+    for joint_index, joint_name in enumerate(GO1_JOINT_NAMES):
+        joint = _required_name(root, joint_name)
+        effort_limit = float(GO1_EFFORT_LIMIT[joint_index])
+        joint.drive_mode = gobot.JointDriveMode.Position
+        joint.drive_stiffness = float(GO1_KP[joint_index])
+        joint.drive_damping = float(GO1_KD[joint_index])
+        joint.armature = float(GO1_ARMATURE[joint_index])
+        joint.effort_limit = effort_limit
+        joint.velocity_limit = float(GO1_VELOCITY_LIMIT[joint_index])
+        joint.force_lower_limit = -effort_limit
+        joint.force_upper_limit = effort_limit
+        joint.control_lower_limit = 0.0
+        joint.control_upper_limit = 0.0
+        joint.damping = 0.0
+        joint.friction_loss = 0.0
+
+
+def _apply_go1_collision_config(node: gobot.Node) -> None:
+    if isinstance(node, gobot.CollisionShape3D) and node.name.endswith("_collision"):
+        is_foot = FOOT_COLLISION_PATTERN.fullmatch(node.name) is not None
+        node.set_property("contype", 1)
+        node.set_property("conaffinity", 1)
+        node.set_property("condim", 6 if is_foot else 1)
+        node.set_property("priority", 1 if is_foot else 0)
+        node.set_property("solref", (0.01, 1.0))
+        if is_foot:
+            node.set_property("friction", (1.0, 5.0e-3, 5.0e-4))
+    for child in node.children:
+        _apply_go1_collision_config(child)
+
+
 def main() -> None:
     project_path = Path(__file__).resolve().parents[1]
     gobot.set_project_path(str(project_path))
     gobot.import_mjcf_scene("res://assets/xml/go1.xml", "res://go1.jscn", name="go1")
     scene = gobot.load_scene("res://go1.jscn")
     root = scene.root
+    _apply_go1_joint_dynamics(root)
+    _apply_go1_collision_config(root)
     _add_trunk_sensors(root)
     _add_foot_sensors(root)
     gobot.save_scene(root, "res://go1.jscn")

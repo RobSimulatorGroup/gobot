@@ -53,20 +53,55 @@ For source checkout development:
 
 ```bash
 cd /path/to/gobot
-uv sync
-uv run gobot_editor
+uv sync --extra train
+uv run gobot_editor --path examples/go1
 ```
 
-For a direct CMake build, use the Python selected by `uv`:
+`uv sync` installs Gobot editable: Python files import directly from the
+checkout, while `_core`, `libgobot`, and `gobot_editor` come from the same
+build installed in `.venv`. After changing C++ or CMake files, rebuild and
+reinstall only Gobot:
 
 ```bash
-cmake -S . -B build -DPython3_EXECUTABLE="$(uv python find)"
-cmake --build build -j
-./build/python/gobot/gobot_editor
+uv sync --extra train --reinstall-package gobot --no-build-isolation-package gobot
 ```
 
-At runtime, `GOBOT_PYTHON_LIBRARY=/other/libpython.so` still overrides the
-compiled default.
+The initial `uv sync` installs the build backend in `.venv`; disabling build
+isolation on later native rebuilds prevents CMake from caching a temporary
+build environment's Python executable.
+
+Python-only edits need no rebuild. Do not add `PYTHONPATH` or launch an editor
+from `build/python`; that can combine source files, native extensions, and
+executables from different builds. The package launcher selects the native
+artifacts installed in its own environment.
+
+`uv run` is environment activation, not a separate Gobot runtime. These are
+equivalent after `uv sync`:
+
+```bash
+uv run gobot_editor --path examples/go1
+.venv/bin/gobot_editor --path examples/go1
+```
+
+Alternatively, run `source .venv/bin/activate` once and then use
+`gobot_editor` or `python` directly. At runtime,
+`GOBOT_PYTHON_LIBRARY=/other/libpython.so` still overrides automatic
+libpython discovery.
+
+For a standalone CMake build used by C++ tests, use a separate build directory
+and the Python selected by `uv`:
+
+```bash
+cmake -S . -B build/dev -DPython3_EXECUTABLE="$(uv python find)"
+cmake --build build/dev -j
+```
+
+That standalone build is not the artifact used by the `.venv` console script;
+run the following command when the installed editor must be updated:
+
+```bash
+uv sync --extra train --reinstall-package gobot --no-build-isolation-package gobot
+```
 
 The default install includes the lightweight ONNX Runtime path used for example
 policy playback. The heavier training stack stays optional:

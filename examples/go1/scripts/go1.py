@@ -15,8 +15,8 @@ POLICY_HZ = 50.0
 FIXED_TIME_STEP = 1.0 / PHYSICS_HZ
 MAX_SUB_STEPS = 4
 PRINT_EVERY_TICKS = int(PHYSICS_HZ * 2.0)
-RESET_BASE_POSITION = [0.0, 0.0, 0.32]
-MJLAB_RESET_BASE_POSITION = [0.0, 0.0, 0.278]
+UNILAB_RESET_BASE_POSITION = [0.0, 0.0, 0.32]
+RESET_BASE_POSITION = [0.0, 0.0, 0.278]
 ROBOT_ROOT_TO_BASE_Z = 0.4449999928474426
 COMMAND = [0.0, 0.0, 0.0]
 KEYBOARD_COMMAND_MAX = [1.0, 1.0, 0.5]
@@ -37,25 +37,25 @@ KEYBOARD_BINDINGS = {
 LEG_ORDER = ("FR", "FL", "RR", "RL")
 JOINT_KIND_ORDER = ("hip", "thigh", "calf")
 JOINT_NAMES = [f"{leg}_{kind}_joint" for leg in LEG_ORDER for kind in JOINT_KIND_ORDER]
-DEFAULT_POS_BY_LEG = {
+UNILAB_DEFAULT_POS_BY_LEG = {
     "FR": (0.0, 0.9, -1.8),
     "FL": (0.0, 0.9, -1.8),
     "RR": (0.0, 1.0, -1.8),
     "RL": (0.0, 1.0, -1.8),
 }
-MJLAB_DEFAULT_POS_BY_LEG = {
+DEFAULT_POS_BY_LEG = {
     "FR": (0.1, 0.9, -1.8),
     "FL": (-0.1, 0.9, -1.8),
     "RR": (0.1, 0.9, -1.8),
     "RL": (-0.1, 0.9, -1.8),
 }
-DEFAULT_POS = [
-    DEFAULT_POS_BY_LEG[leg][kind_index]
+UNILAB_DEFAULT_POS = [
+    UNILAB_DEFAULT_POS_BY_LEG[leg][kind_index]
     for leg in LEG_ORDER
     for kind_index, _kind in enumerate(JOINT_KIND_ORDER)
 ]
-MJLAB_DEFAULT_POS = [
-    MJLAB_DEFAULT_POS_BY_LEG[leg][kind_index]
+DEFAULT_POS = [
+    DEFAULT_POS_BY_LEG[leg][kind_index]
     for leg in LEG_ORDER
     for kind_index, _kind in enumerate(JOINT_KIND_ORDER)
 ]
@@ -82,7 +82,7 @@ UNILAB_MUJOCO_SOLVER_SETTINGS = {
     "convex_collision_iterations": 500,
     "impedance_ratio": 100.0,
 }
-MJLAB_MUJOCO_SOLVER_SETTINGS = {
+MUJOCO_SOLVER_SETTINGS = {
     "cone": 1,
     "iterations": 10,
     "line_search_iterations": 20,
@@ -93,10 +93,22 @@ HIP_KP = 15.89524265323492
 HIP_KD = 1.0119225759919113
 KNEE_KP = 35.764295969778566
 KNEE_KD = 2.2768257959818003
+HIP_ARMATURE = 0.000111842 * 6.0**2
+KNEE_ARMATURE = 0.000111842 * 9.0**2
+HIP_EFFORT_LIMIT = 23.7
+KNEE_EFFORT_LIMIT = 35.55
+HIP_VELOCITY_LIMIT = 30.1
+KNEE_VELOCITY_LIMIT = 20.06
 JOINT_KP_BY_KIND = {"hip": HIP_KP, "thigh": HIP_KP, "calf": KNEE_KP}
 JOINT_KD_BY_KIND = {"hip": HIP_KD, "thigh": HIP_KD, "calf": KNEE_KD}
+JOINT_ARMATURE_BY_KIND = {"hip": HIP_ARMATURE, "thigh": HIP_ARMATURE, "calf": KNEE_ARMATURE}
+JOINT_EFFORT_LIMIT_BY_KIND = {"hip": HIP_EFFORT_LIMIT, "thigh": HIP_EFFORT_LIMIT, "calf": KNEE_EFFORT_LIMIT}
+JOINT_VELOCITY_LIMIT_BY_KIND = {"hip": HIP_VELOCITY_LIMIT, "thigh": HIP_VELOCITY_LIMIT, "calf": KNEE_VELOCITY_LIMIT}
 JOINT_KP = [JOINT_KP_BY_KIND[kind] for _leg in LEG_ORDER for kind in JOINT_KIND_ORDER]
 JOINT_KD = [JOINT_KD_BY_KIND[kind] for _leg in LEG_ORDER for kind in JOINT_KIND_ORDER]
+JOINT_ARMATURE = [JOINT_ARMATURE_BY_KIND[kind] for _leg in LEG_ORDER for kind in JOINT_KIND_ORDER]
+JOINT_EFFORT_LIMIT = [JOINT_EFFORT_LIMIT_BY_KIND[kind] for _leg in LEG_ORDER for kind in JOINT_KIND_ORDER]
+JOINT_VELOCITY_LIMIT = [JOINT_VELOCITY_LIMIT_BY_KIND[kind] for _leg in LEG_ORDER for kind in JOINT_KIND_ORDER]
 DECIMATION = max(1, int(round((1.0 / max(POLICY_HZ, 1.0)) / FIXED_TIME_STEP)))
 TERRAIN_SCAN_GRID_SIZE = (1.6, 1.0)
 TERRAIN_SCAN_GRID_RESOLUTION = 0.1
@@ -108,7 +120,7 @@ TERRAIN_SCAN_DIM = (
 HEIGHT_SCAN_MAX_DISTANCE = 5.0
 TERRAIN_SCAN_SENSOR = "terrain_scan"
 VELOCITY_OBS_SCHEMA_VERSION = "gobot_velocity_v1"
-MJLAB_ROUGH_OBS_SCHEMA_VERSION = VELOCITY_OBS_SCHEMA_VERSION
+GO1_ROUGH_OBS_SCHEMA_VERSION = VELOCITY_OBS_SCHEMA_VERSION
 UNILAB_FLAT_OBS_SCHEMA_VERSION = "gobot_go1_unilab_flat_actor_v1"
 UNILAB_ROUGH_OBS_SCHEMA_VERSION = "gobot_go1_unilab_rough_actor_v1"
 POSITION_LIMITS_BY_KIND = {
@@ -471,7 +483,7 @@ def _checkpoint_velocity_metadata(checkpoint):
         metadata = infos.get("gobot_go1_velocity")
         if isinstance(metadata, dict):
             return metadata
-        for key in ("gobot_go1_mjlab_rough", "gobot_go1_unilab_flat", "gobot_go1_unilab_rough"):
+        for key in ("gobot_go1_rough", "gobot_go1_unilab_flat", "gobot_go1_unilab_rough"):
             metadata = infos.get(key)
             if isinstance(metadata, dict):
                 return metadata
@@ -508,8 +520,8 @@ def _profile_for_schema(schema):
         return "unilab_flat"
     if schema.version == UNILAB_ROUGH_OBS_SCHEMA_VERSION:
         return "unilab_rough"
-    if schema.version == MJLAB_ROUGH_OBS_SCHEMA_VERSION:
-        return "mjlab_rough"
+    if schema.version == GO1_ROUGH_OBS_SCHEMA_VERSION:
+        return "go1_rough"
     return "legacy"
 
 
@@ -602,7 +614,7 @@ class Script(gobot.NodeScript):
         self.default_pos = self._profile_default_pos()
         self.reset_base_position = self._profile_reset_base_position()
         self.reset_base_position = self._resolve_reset_base_position()
-        self.height_scan_dim = TERRAIN_SCAN_DIM if self.policy_profile in {"legacy", "mjlab_rough"} else 0
+        self.height_scan_dim = TERRAIN_SCAN_DIM if self.policy_profile in {"legacy", "go1_rough"} else 0
         self.action_scale = self._profile_action_scale()
         self.action_clip = self._profile_action_clip()
         default_kp = UNILAB_KP if self.policy_profile in {"unilab_flat", "unilab_rough"} else HIP_KP
@@ -622,11 +634,24 @@ class Script(gobot.NodeScript):
     def _configure_robot_for_playback(self):
         self._set_robot_editor_transform(self.reset_base_position)
         use_unilab_gains = getattr(self, "policy_profile", "legacy") in {"unilab_flat", "unilab_rough"}
+        use_go1_rough_dynamics = getattr(self, "policy_profile", "legacy") == "go1_rough"
         for index, joint in enumerate(self.joints):
             joint.drive_mode = gobot.JointDriveMode.Position
             joint.drive_stiffness = UNILAB_KP if use_unilab_gains else JOINT_KP[index]
             joint.drive_damping = UNILAB_KD if use_unilab_gains else JOINT_KD[index]
-            joint.damping = UNILAB_KD if use_unilab_gains else JOINT_KD[index]
+            if use_go1_rough_dynamics:
+                effort_limit = JOINT_EFFORT_LIMIT[index]
+                joint.armature = JOINT_ARMATURE[index]
+                joint.effort_limit = effort_limit
+                joint.velocity_limit = JOINT_VELOCITY_LIMIT[index]
+                joint.force_lower_limit = -effort_limit
+                joint.force_upper_limit = effort_limit
+                joint.control_lower_limit = 0.0
+                joint.control_upper_limit = 0.0
+                joint.damping = 0.0
+                joint.friction_loss = 0.0
+            else:
+                joint.damping = UNILAB_KD if use_unilab_gains else JOINT_KD[index]
         self.robot.mode = gobot.RobotMode.Motion
 
     def _policy_observation_dim(self):
@@ -653,27 +678,27 @@ class Script(gobot.NodeScript):
     def _profile_action_clip(self):
         if self.policy_profile == "unilab_rough":
             return 100.0
-        if self.policy_profile == "mjlab_rough":
+        if self.policy_profile == "go1_rough":
             return None
         return 1.0
 
     def _profile_default_pos(self):
-        if self.policy_profile == "mjlab_rough":
-            return list(MJLAB_DEFAULT_POS)
+        if self.policy_profile in {"unilab_flat", "unilab_rough"}:
+            return list(UNILAB_DEFAULT_POS)
         return list(DEFAULT_POS)
 
     def _profile_reset_base_position(self):
-        if self.policy_profile == "mjlab_rough":
-            return list(MJLAB_RESET_BASE_POSITION)
+        if self.policy_profile in {"unilab_flat", "unilab_rough"}:
+            return list(UNILAB_RESET_BASE_POSITION)
         return list(RESET_BASE_POSITION)
 
     def _profile_mujoco_solver_settings(self):
-        if self.policy_profile == "mjlab_rough":
-            return dict(MJLAB_MUJOCO_SOLVER_SETTINGS)
+        if self.policy_profile == "go1_rough":
+            return dict(MUJOCO_SOLVER_SETTINGS)
         return dict(UNILAB_MUJOCO_SOLVER_SETTINGS)
 
     def _apply_profile_terrain_overrides(self):
-        if self.policy_profile != "mjlab_rough":
+        if self.policy_profile != "go1_rough":
             return
         root = self.get_root()
         terrain_world = root.find("terrain_world") if root is not None else None
@@ -684,7 +709,7 @@ class Script(gobot.NodeScript):
         old_terrain = terrain_world.find("terrain") or _find_node_by_name(terrain_world, "terrain")
         if old_terrain is not None:
             terrain_world.remove_child(old_terrain, delete=True)
-        terrain_cfg = gobot.terrain.go1_mjlab_rough_terrain_cfg(seed=42, curriculum=False)
+        terrain_cfg = gobot.terrain.go1_rough_terrain_cfg(seed=42, curriculum=False)
         terrain_cfg.num_rows = 5
         terrain_cfg.num_cols = 5
         terrain_cfg.border_width = 10.0
@@ -693,7 +718,7 @@ class Script(gobot.NodeScript):
 
     def _resolve_reset_base_position(self):
         fallback = list(getattr(self, "reset_base_position", RESET_BASE_POSITION))
-        if getattr(self, "policy_profile", "legacy") not in {"unilab_rough", "mjlab_rough"}:
+        if getattr(self, "policy_profile", "legacy") not in {"unilab_rough", "go1_rough"}:
             return fallback
         origins = self._terrain_spawn_origins()
         if not origins:

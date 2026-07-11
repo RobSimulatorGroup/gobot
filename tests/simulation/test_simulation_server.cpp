@@ -972,3 +972,37 @@ TEST(TestSimulationServer, mujoco_authored_position_actuator_respects_imported_l
     gobot::Object::Delete(robot);
 #endif
 }
+
+TEST(TestSimulationServer, mujoco_position_actuator_without_control_range_allows_out_of_range_targets) {
+#ifdef GOBOT_HAS_MUJOCO
+    gobot::SimulationServer simulation_server(gobot::PhysicsBackendType::MuJoCoCpu);
+    simulation_server.SetFixedTimeStep(1.0 / 240.0);
+    simulation_server.SetPaused(false);
+
+    gobot::Robot3D* robot = CreateActuatedLimitedHingeScene();
+    ASSERT_EQ(robot->GetChildCount(), 1);
+    auto* base = robot->GetChild(0);
+    ASSERT_NE(base, nullptr);
+    ASSERT_EQ(base->GetChildCount(), 1);
+    auto* joint = gobot::Object::PointerCastTo<gobot::Joint3D>(base->GetChild(0));
+    ASSERT_NE(joint, nullptr);
+    joint->SetControlLowerLimit(0.0);
+    joint->SetControlUpperLimit(0.0);
+
+    ASSERT_TRUE(simulation_server.BuildWorldFromScene(robot)) << simulation_server.GetLastError();
+    ASSERT_NE(simulation_server.GetRuntimeScene(), nullptr);
+    ASSERT_TRUE(simulation_server.GetRuntimeScene()->SetJointPositionTarget("limited", "calf", 0.0));
+    ASSERT_TRUE(simulation_server.StepOnce()) << simulation_server.GetLastError();
+
+    auto world = gobot::dynamic_pointer_cast<gobot::MuJoCoPhysicsWorld>(simulation_server.GetWorld());
+    ASSERT_TRUE(world.IsValid());
+    const gobot::MuJoCoPhysicsWorld::Diagnostics diagnostics = world->GetDiagnostics();
+    EXPECT_EQ(diagnostics.first_position_actuator_control_limited, 0);
+    EXPECT_NEAR(diagnostics.first_position_actuator_control_value, 0.0, CMP_EPSILON);
+    EXPECT_EQ(diagnostics.first_position_actuator_force_limited, 1);
+    EXPECT_NEAR(diagnostics.first_position_actuator_force_range.x(), -40.0, CMP_EPSILON);
+    EXPECT_NEAR(diagnostics.first_position_actuator_force_range.y(), 40.0, CMP_EPSILON);
+
+    gobot::Object::Delete(robot);
+#endif
+}

@@ -43,6 +43,11 @@ public:
         RealType impedance_ratio{0.0};
         int actuator_count{0};
         RealType first_position_actuator_stiffness{0.0};
+        int first_position_actuator_control_limited{0};
+        Vector2 first_position_actuator_control_range{0.0, 0.0};
+        int first_position_actuator_force_limited{0};
+        Vector2 first_position_actuator_force_range{0.0, 0.0};
+        RealType first_position_actuator_control_value{0.0};
         RealType first_controllable_joint_damping{0.0};
         Vector3 first_collision_friction{0.0, 0.0, 0.0};
         int first_collision_contact_dimension{0};

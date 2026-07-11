@@ -124,25 +124,7 @@ def _find_current_python_library() -> str:
     )
 
 
-def _runtime_library_dirs(python_library: str) -> list[str]:
-    dirs = _current_environment_library_dirs()
-    library_path = Path(python_library)
-    if library_path.is_dir():
-        dirs.insert(0, library_path)
-    elif library_path.parent and os.fspath(library_path.parent) != ".":
-        dirs.insert(0, library_path.expanduser().parent)
-    return [os.fspath(path) for path in _dedupe_paths(dirs) if path.is_dir()]
-
-
-def _prepend_pythonpath(env: dict[str, str], paths: list[Path]) -> None:
-    existing = env.get("PYTHONPATH")
-    additions = [os.fspath(path) for path in _dedupe_paths(paths) if path.is_dir()]
-    if not additions:
-        return
-    env["PYTHONPATH"] = os.pathsep.join([*additions, existing] if existing else additions)
-
-
-def _with_editor_python_environment(python_library: str, executable: Path) -> dict[str, str]:
+def _with_editor_python_environment(python_library: str) -> dict[str, str]:
     env = os.environ.copy()
     env[PYTHON_LIBRARY_ENV] = python_library
     env[PYTHON_LIBRARY_PRINTED_ENV] = "1"
@@ -153,11 +135,6 @@ def _with_editor_python_environment(python_library: str, executable: Path) -> di
     else:
         env.pop(PYTHON_HOME_ENV, None)
 
-    library_dirs = _runtime_library_dirs(python_library)
-    existing = env.get("LD_LIBRARY_PATH")
-    env["LD_LIBRARY_PATH"] = os.pathsep.join([*library_dirs, existing] if existing else library_dirs)
-    if executable.parent.name == "gobot":
-        _prepend_pythonpath(env, [executable.parent.parent])
     return env
 
 
@@ -261,28 +238,15 @@ def _find_editor_executable() -> Path:
             f"{EDITOR_EXECUTABLE_ENV} is set to '{override}', but that file does not exist."
         )
 
-    source_root = _editable_source_root()
-    if source_root is not None:
-        build_candidates = [
-            source_root / "build" / "python" / "gobot" / "gobot_editor",
-            source_root / "build" / "gobot_editor",
-        ]
-        build_root = source_root / "build"
-        if build_root.is_dir():
-            build_candidates.extend(sorted(build_root.glob("*/python/gobot/gobot_editor")))
-        for executable in build_candidates:
-            if executable.is_file():
-                return executable
-
-    candidate = _packaged_gobot_dir()
-    if candidate is not None:
-        executable = candidate / "gobot_editor"
+    packaged_dir = _packaged_gobot_dir()
+    if packaged_dir is not None:
+        executable = packaged_dir / "gobot_editor"
         if executable.is_file():
             return executable
 
     raise RuntimeError(
         "Could not find the packaged gobot_editor executable. "
-        "Reinstall gobot or build the project before running this command."
+        "Reinstall the current gobot environment before running this command."
     )
 
 
@@ -338,7 +302,7 @@ def editor() -> int:
     executable = _find_editor_executable()
     argv = [os.fspath(executable), *sys.argv[1:]]
     try:
-        os.execvpe(argv[0], argv, _with_editor_python_environment(python_library, executable))
+        os.execvpe(argv[0], argv, _with_editor_python_environment(python_library))
     except OSError as error:
         print(f"[gobot] Failed to launch {argv[0]}: {error}", file=sys.stderr)
         return 127

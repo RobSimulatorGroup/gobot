@@ -5,10 +5,6 @@ import math
 import os
 import pathlib
 
-from _gobot_test_import import prefer_build_gobot
-
-prefer_build_gobot()
-
 import gobot
 
 

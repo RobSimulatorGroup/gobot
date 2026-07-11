@@ -26,15 +26,8 @@ import numpy as np
 REPO_ROOT = Path(__file__).resolve().parents[1]
 GO1_PROJECT = REPO_ROOT / "examples/go1"
 
-try:
-    from examples.go1.train._repo_imports import prefer_repo_gobot
-except ImportError:
-    repo_root_string = str(REPO_ROOT)
-    if repo_root_string not in sys.path:
-        sys.path.insert(0, repo_root_string)
-    from examples.go1.train._repo_imports import prefer_repo_gobot
-
-prefer_repo_gobot()
+if str(REPO_ROOT) not in sys.path:
+    sys.path.insert(0, str(REPO_ROOT))
 
 
 def main() -> None:

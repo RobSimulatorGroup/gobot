@@ -203,7 +203,8 @@ UniLabContactGroup UniLabUndesiredContactGroupForIndex(std::size_t index) {
 std::string FootGeomNameFromSensorOrLinkName(std::string_view sensor_name, std::string_view link_name) {
     constexpr std::string_view kFootContactSuffix = "_foot_contact";
     if (EndsWith(sensor_name, kFootContactSuffix) && sensor_name.size() > kFootContactSuffix.size()) {
-        return std::string(sensor_name.substr(0, sensor_name.size() - kFootContactSuffix.size()));
+        return fmt::format("{}_foot_collision",
+                           sensor_name.substr(0, sensor_name.size() - kFootContactSuffix.size()));
     }
     const std::size_t separator = link_name.find('_');
     if (separator != std::string_view::npos && separator > 0) {
@@ -1010,12 +1011,6 @@ public:
         PrepareActionTargets(simulate_action_latency);
         SetProfileMs(kStepProfilePrepareAction, ElapsedMs(phase_begin));
 
-        phase_begin = Clock::now();
-        if (command_configured_ && !command_step_resampling_enabled_) {
-            AdvanceCommandTimersAndResample();
-        }
-        AddProfileMs(kStepProfileCommand, ElapsedMs(phase_begin));
-
         const std::size_t resolved_workers = ResolveViewWorkers(workers);
         std::vector<std::array<double, kStepProfileCount>> worker_profiles(resolved_workers);
         for (auto& profile : worker_profiles) {
@@ -1038,22 +1033,24 @@ public:
             profile[kStepProfileApplyControl] += ElapsedMs(begin);
 
             begin = Clock::now();
+            ContactHistorySummary contact_history;
             for (std::uint64_t tick = 0; tick < ticks; ++tick) {
                 mj_step(model, data);
+                contact_history.Add(ClassifyContactHistoryStep(*model, *data));
             }
             profile[kStepProfileMjStep] += ElapsedMs(begin);
 
             begin = Clock::now();
             FillEnvironment(env_id);
+            illegal_contact_count_[env_id] = terminate_on_thigh_contact_
+                                                     ? static_cast<float>(contact_history.thigh_ground_steps)
+                                                     : 0.0f;
+            self_collision_count_[env_id] = static_cast<float>(contact_history.self_collision_steps);
+            shank_collision_count_[env_id] = static_cast<float>(contact_history.shank_ground_steps);
+            trunk_head_collision_count_[env_id] = static_cast<float>(contact_history.trunk_head_ground_steps);
             profile[kStepProfileExtractState] += ElapsedMs(begin);
 
             begin = Clock::now();
-            if (command_configured_) {
-                if (command_step_resampling_enabled_) {
-                    AdvanceCommandStepAndResample(env_id);
-                }
-                UpdateCommandForEnvironment(env_id);
-            }
             UpdateFootHistory(env_id);
             profile[kStepProfileCommand] += ElapsedMs(begin);
         });
@@ -1192,6 +1189,18 @@ public:
         GOB_UNUSED(angular_velocities);
         throw std::runtime_error("Gobot was built without MuJoCo support");
 #endif
+    }
+
+    void AdvanceCommands() {
+        if (command_configured_) {
+            ComputeCommands();
+        }
+    }
+
+    void UpdateCommandFrames() {
+        if (command_configured_) {
+            UpdateCommands();
+        }
     }
 
 private:
@@ -1526,8 +1535,30 @@ private:
         return transform;
     }
 
-    Vector3 BodyLinearVelocity(const mjData& data, int body_id) const {
-        return Vector3(data.cvel[6 * body_id + 3], data.cvel[6 * body_id + 4], data.cvel[6 * body_id + 5]);
+    Vector3 PointLinearVelocity(const mjModel& model,
+                                const mjData& data,
+                                int body_id,
+                                const Vector3& point) const {
+        const Vector3 angular_velocity(data.cvel[6 * body_id + 0],
+                                       data.cvel[6 * body_id + 1],
+                                       data.cvel[6 * body_id + 2]);
+        const Vector3 com_velocity(data.cvel[6 * body_id + 3],
+                                   data.cvel[6 * body_id + 4],
+                                   data.cvel[6 * body_id + 5]);
+        const int root_body_id = model.body_rootid[body_id];
+        const Vector3 subtree_com(data.subtree_com[3 * root_body_id + 0],
+                                  data.subtree_com[3 * root_body_id + 1],
+                                  data.subtree_com[3 * root_body_id + 2]);
+        return com_velocity - angular_velocity.cross(subtree_com - point);
+    }
+
+    Vector3 BodyLinearVelocity(const mjModel& model, const mjData& data, int body_id) const {
+        return PointLinearVelocity(model,
+                                   data,
+                                   body_id,
+                                   Vector3(data.xpos[3 * body_id + 0],
+                                           data.xpos[3 * body_id + 1],
+                                           data.xpos[3 * body_id + 2]));
     }
 
     std::size_t ResolveViewWorkers(std::size_t workers) const {
@@ -1807,8 +1838,10 @@ private:
                 const std::size_t offset = env_id * joint_count_ + joint_index;
                 const float clipped = clip_enabled ? std::clamp(action_[offset], -clip_limit, clip_limit)
                                                    : action_[offset];
+                previous_action_[offset] = last_action_[offset];
                 submitted_action_[offset] = clipped;
-                const float control_action = simulate_action_latency ? last_action_[offset] : clipped;
+                const float control_action = simulate_action_latency ? previous_action_[offset] : clipped;
+                last_action_[offset] = clipped;
                 target_position_[offset] = default_joint_position_[joint_index] +
                                            action_scale_[joint_index] * control_action;
             }
@@ -1857,17 +1890,18 @@ private:
                 command_[env3 + 1] = 0.0f;
             }
         }
+        command_heading_target_[env_id] = Uniform(command_ranges_[kCommandHeadingMin],
+                                                  command_ranges_[kCommandHeadingMax]);
         command_is_heading_env_[env_id] =
                 command_heading_enabled_ && Uniform(0.0f, 1.0f) <= command_rel_heading_envs_ ? 1 : 0;
-        command_heading_target_[env_id] = command_is_heading_env_[env_id] != 0
-                                                  ? Uniform(command_ranges_[kCommandHeadingMin],
-                                                            command_ranges_[kCommandHeadingMax])
-                                                  : 0.0f;
         if (command_is_heading_env_[env_id] != 0) {
             command_[env3 + 2] = 0.0f;
         }
         command_is_standing_env_[env_id] = Uniform(0.0f, 1.0f) <= command_rel_standing_envs_ ? 1 : 0;
         command_is_world_env_[env_id] = Uniform(0.0f, 1.0f) <= command_rel_world_envs_ ? 1 : 0;
+        command_world_[env3 + 0] = command_[env3 + 0];
+        command_world_[env3 + 1] = command_[env3 + 1];
+        command_world_[env3 + 2] = command_[env3 + 2];
         command_is_forward_env_[env_id] = Uniform(0.0f, 1.0f) <= command_rel_forward_envs_ ? 1 : 0;
         if (command_is_forward_env_[env_id] != 0) {
             command_[env3 + 0] = std::max(std::abs(command_[env3 + 0]), 0.3f);
@@ -1879,9 +1913,6 @@ private:
             command_[env3 + 1] = 0.0f;
             command_[env3 + 2] = 0.0f;
         }
-        command_world_[env3 + 0] = command_[env3 + 0];
-        command_world_[env3 + 1] = command_[env3 + 1];
-        command_world_[env3 + 2] = command_[env3 + 2];
         command_heading_error_[env_id] = 0.0f;
     }
 
@@ -1948,8 +1979,8 @@ private:
             const float error = WrapToPi(command_heading_target_[env_id] - heading);
             command_heading_error_[env_id] = error;
             command_[env3 + 2] = std::clamp(command_heading_stiffness_ * error,
-                                            -command_heading_clip_,
-                                            command_heading_clip_);
+                                            command_ranges_[kCommandAngVelZMin],
+                                            command_ranges_[kCommandAngVelZMax]);
         }
         if (command_is_world_env_[env_id] != 0) {
             const float vx_w = command_world_[env3 + 0];
@@ -2205,12 +2236,10 @@ private:
         base_angular_velocity_[env3 + 0] = static_cast<float>(data->cvel[6 * base_body + 0]);
         base_angular_velocity_[env3 + 1] = static_cast<float>(data->cvel[6 * base_body + 1]);
         base_angular_velocity_[env3 + 2] = static_cast<float>(data->cvel[6 * base_body + 2]);
-        base_linear_velocity_[env3 + 0] = static_cast<float>(data->cvel[6 * base_body + 3]);
-        base_linear_velocity_[env3 + 1] = static_cast<float>(data->cvel[6 * base_body + 4]);
-        base_linear_velocity_[env3 + 2] = static_cast<float>(data->cvel[6 * base_body + 5]);
-        const Vector3 base_linear_velocity_w(base_linear_velocity_[env3 + 0],
-                                             base_linear_velocity_[env3 + 1],
-                                             base_linear_velocity_[env3 + 2]);
+        const Vector3 base_linear_velocity_w = BodyLinearVelocity(*model, *data, base_body);
+        base_linear_velocity_[env3 + 0] = static_cast<float>(base_linear_velocity_w.x());
+        base_linear_velocity_[env3 + 1] = static_cast<float>(base_linear_velocity_w.y());
+        base_linear_velocity_[env3 + 2] = static_cast<float>(base_linear_velocity_w.z());
         const Vector3 base_angular_velocity_w(base_angular_velocity_[env3 + 0],
                                               base_angular_velocity_[env3 + 1],
                                               base_angular_velocity_[env3 + 2]);
@@ -2304,7 +2333,7 @@ private:
             link_angular_velocity_[link3 + 0] = static_cast<float>(data->cvel[6 * body_id + 0]);
             link_angular_velocity_[link3 + 1] = static_cast<float>(data->cvel[6 * body_id + 1]);
             link_angular_velocity_[link3 + 2] = static_cast<float>(data->cvel[6 * body_id + 2]);
-            const Vector3 link_linear_velocity = BodyLinearVelocity(*data, body_id);
+            const Vector3 link_linear_velocity = BodyLinearVelocity(*model, *data, body_id);
             link_linear_velocity_[link3 + 0] = static_cast<float>(link_linear_velocity.x());
             link_linear_velocity_[link3 + 1] = static_cast<float>(link_linear_velocity.y());
             link_linear_velocity_[link3 + 2] = static_cast<float>(link_linear_velocity.z());
@@ -2327,7 +2356,7 @@ private:
             foot_quaternion_[foot4 + 1] = static_cast<float>(foot_orientation.x());
             foot_quaternion_[foot4 + 2] = static_cast<float>(foot_orientation.y());
             foot_quaternion_[foot4 + 3] = static_cast<float>(foot_orientation.z());
-            const Vector3 foot_linear_velocity = BodyLinearVelocity(*data, body_id);
+            const Vector3 foot_linear_velocity = BodyLinearVelocity(*model, *data, body_id);
             foot_velocity_[foot3 + 0] = static_cast<float>(foot_linear_velocity.x());
             foot_velocity_[foot3 + 1] = static_cast<float>(foot_linear_velocity.y());
             foot_velocity_[foot3 + 2] = static_cast<float>(foot_linear_velocity.z());
@@ -2337,7 +2366,7 @@ private:
             foot_contact_force_[foot3 + 2] = 0.0f;
         }
 
-        FillFootSensors(env_id, *data);
+        FillFootSensors(env_id, *model, *data);
         FillHeightScan(env_id, *data);
         FillContactSummary(env_id, *model, *data);
     }
@@ -2352,31 +2381,9 @@ private:
 
     void UpdateFootHistory(std::size_t env_id) {
         const float step_dt = std::max(command_step_dt_, 1.0e-6f);
-        bool was_initialized = false;
-        for (std::size_t foot_index = 0; foot_index < foot_count_; ++foot_index) {
-            const std::size_t foot3 = (env_id * foot_count_ + foot_index) * 3;
-            if (std::abs(previous_foot_position_[foot3 + 0]) > 0.0f ||
-                std::abs(previous_foot_position_[foot3 + 1]) > 0.0f ||
-                std::abs(previous_foot_position_[foot3 + 2]) > 0.0f) {
-                was_initialized = true;
-                break;
-            }
-        }
         for (std::size_t foot_index = 0; foot_index < foot_count_; ++foot_index) {
             const std::size_t foot = env_id * foot_count_ + foot_index;
             const std::size_t foot3 = foot * 3;
-            if (!was_initialized) {
-                previous_foot_position_[foot3 + 0] = foot_position_[foot3 + 0];
-                previous_foot_position_[foot3 + 1] = foot_position_[foot3 + 1];
-                previous_foot_position_[foot3 + 2] = foot_position_[foot3 + 2];
-            }
-            foot_velocity_[foot3 + 0] = (foot_position_[foot3 + 0] - previous_foot_position_[foot3 + 0]) / step_dt;
-            foot_velocity_[foot3 + 1] = (foot_position_[foot3 + 1] - previous_foot_position_[foot3 + 1]) / step_dt;
-            foot_velocity_[foot3 + 2] = (foot_position_[foot3 + 2] - previous_foot_position_[foot3 + 2]) / step_dt;
-            previous_foot_position_[foot3 + 0] = foot_position_[foot3 + 0];
-            previous_foot_position_[foot3 + 1] = foot_position_[foot3 + 1];
-            previous_foot_position_[foot3 + 2] = foot_position_[foot3 + 2];
-
             const bool contact = foot_contact_[foot] > 0.0f;
             first_contact_[foot] = contact && last_foot_contact_[foot] <= 0.0f ? 1.0f : 0.0f;
             const float force_x = foot_contact_force_[foot3 + 0];
@@ -2396,7 +2403,7 @@ private:
         }
     }
 
-    void FillFootSensors(std::size_t env_id, const mjData& data) {
+    void FillFootSensors(std::size_t env_id, const mjModel& model, const mjData& data) {
         const std::size_t height_count = std::min(foot_count_, foot_height_sensors_.size());
         for (std::size_t foot_index = 0; foot_index < height_count; ++foot_index) {
             const std::size_t offset = env_id * foot_count_ + foot_index;
@@ -2418,6 +2425,13 @@ private:
                     foot_position_[foot3 + 0] = static_cast<float>(sensor_position.x());
                     foot_position_[foot3 + 1] = static_cast<float>(sensor_position.y());
                     foot_position_[foot3 + 2] = static_cast<float>(sensor_position.z());
+                    const Vector3 sensor_velocity = PointLinearVelocity(model,
+                                                                        data,
+                                                                        link_binding.body_id,
+                                                                        sensor_position);
+                    foot_velocity_[foot3 + 0] = static_cast<float>(sensor_velocity.x());
+                    foot_velocity_[foot3 + 1] = static_cast<float>(sensor_velocity.y());
+                    foot_velocity_[foot3 + 2] = static_cast<float>(sensor_velocity.z());
                 }
             }
         }
@@ -2542,6 +2556,76 @@ private:
         outputs.normals = &height_scan_normal_;
         outputs.base_index = env_id * height_scan_count_;
         SampleRaySensor(env_id, data, height_scan_sensor_view_, &outputs);
+    }
+
+    struct ContactHistorySummary {
+        int self_collision_steps{0};
+        int thigh_ground_steps{0};
+        int shank_ground_steps{0};
+        int trunk_head_ground_steps{0};
+
+        void Add(const ContactHistorySummary& other) {
+            self_collision_steps += other.self_collision_steps;
+            thigh_ground_steps += other.thigh_ground_steps;
+            shank_ground_steps += other.shank_ground_steps;
+            trunk_head_ground_steps += other.trunk_head_ground_steps;
+        }
+    };
+
+    ContactHistorySummary ClassifyContactHistoryStep(const mjModel& model, const mjData& data) const {
+        bool self_collision = false;
+        bool thigh_ground = false;
+        bool shank_ground = false;
+        bool trunk_head_ground = false;
+
+        for (int contact_index = 0; contact_index < data.ncon; ++contact_index) {
+            const mjContact& contact = data.contact[contact_index];
+            const int geom_a = contact.geom[0];
+            const int geom_b = contact.geom[1];
+            if (geom_a < 0 || geom_a >= model.ngeom || geom_b < 0 || geom_b >= model.ngeom) {
+                continue;
+            }
+            const bool robot_a = IsRobotBody(model.geom_bodyid[geom_a]);
+            const bool robot_b = IsRobotBody(model.geom_bodyid[geom_b]);
+            if (!robot_a && !robot_b) {
+                continue;
+            }
+
+            mjtNum force6[6] = {0.0, 0.0, 0.0, 0.0, 0.0, 0.0};
+            mj_contactForce(&model, &data, contact_index, force6);
+            const RealType force_magnitude = std::sqrt(
+                    static_cast<RealType>(force6[0] * force6[0] +
+                                          force6[1] * force6[1] +
+                                          force6[2] * force6[2]));
+
+            if (robot_a && robot_b) {
+                self_collision = self_collision || force_magnitude > self_collision_force_threshold_;
+                continue;
+            }
+            if (force_magnitude <= ground_force_threshold_) {
+                continue;
+            }
+
+            const int robot_geom = robot_a ? geom_a : geom_b;
+            const std::string geom_name{MuJoCoObjectName(model, mjOBJ_GEOM, robot_geom)};
+            bool foot_geom = false;
+            for (const std::string& foot_geom_name : foot_geom_names_) {
+                if (MuJoCoNameMatches(geom_name, foot_geom_name)) {
+                    foot_geom = true;
+                    break;
+                }
+            }
+            thigh_ground = thigh_ground || MatchesAnyPattern(geom_name, thigh_link_patterns_);
+            shank_ground = shank_ground || (!foot_geom && MatchesAnyPattern(geom_name, shank_link_patterns_));
+            trunk_head_ground = trunk_head_ground || MatchesAnyPattern(geom_name, trunk_head_link_patterns_);
+        }
+
+        ContactHistorySummary result;
+        result.self_collision_steps = self_collision ? 1 : 0;
+        result.thigh_ground_steps = thigh_ground ? 1 : 0;
+        result.shank_ground_steps = shank_ground ? 1 : 0;
+        result.trunk_head_ground_steps = trunk_head_ground ? 1 : 0;
+        return result;
     }
 
     void FillContactSummary(std::size_t env_id, const mjModel& model, const mjData& data) {
@@ -2850,7 +2934,6 @@ private:
     bool command_configured_{false};
     bool command_heading_enabled_{true};
     bool command_step_resampling_enabled_{false};
-    float command_heading_clip_{2.0f};
     float command_step_dt_{0.02f};
     float command_resampling_min_{3.0f};
     float command_resampling_max_{8.0f};
@@ -3018,6 +3101,8 @@ void RegisterManualAppContextBindings(py::module_& module) {
             .def("set_command_step_resampling",
                  &PyLocomotionBatchView::SetCommandStepResampling,
                  py::arg("enabled"))
+            .def("advance_commands", &PyLocomotionBatchView::AdvanceCommands)
+            .def("update_command_frames", &PyLocomotionBatchView::UpdateCommandFrames)
             .def("refresh",
                  &PyLocomotionBatchView::Refresh,
                  py::call_guard<py::gil_scoped_release>())

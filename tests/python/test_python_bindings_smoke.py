@@ -2,10 +2,6 @@ import json
 import os
 import textwrap
 
-from _gobot_test_import import prefer_build_gobot
-
-prefer_build_gobot()
-
 import gobot
 import numpy as np
 

@@ -110,7 +110,7 @@ import sys
 import gobot
 import gobot.terrain
 
-cfg = gobot.terrain.go1_mjlab_rough_terrain_cfg(seed=7, curriculum=False)
+cfg = gobot.terrain.go1_rough_terrain_cfg(seed=7, curriculum=False)
 path = pathlib.Path(os.environ["GOBOT_EMBEDDED_IMPORT_RESULT"])
 path.write_text(
     f"{gobot.__name__}:{gobot._core.__name__}:"

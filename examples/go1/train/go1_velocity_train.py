@@ -13,13 +13,6 @@ import numpy as np
 import torch
 from rsl_rl.runners import OnPolicyRunner
 
-try:
-    from ._repo_imports import prefer_repo_gobot
-except ImportError:
-    from _repo_imports import prefer_repo_gobot
-
-prefer_repo_gobot()
-
 from gobot.rl.rsl_rl import RslRlVecEnvWrapper
 
 try:
