@@ -23,6 +23,30 @@ class PhysicsBackendType(Enum):
     RigidIpcCpu: ClassVar[PhysicsBackendType]
 
 
+class PhysicsSolverType(Enum):
+    ProjectedGaussSeidel: ClassVar[PhysicsSolverType]
+    ConjugateGradient: ClassVar[PhysicsSolverType]
+    Newton: ClassVar[PhysicsSolverType]
+
+
+class PhysicsIntegratorType(Enum):
+    Euler: ClassVar[PhysicsIntegratorType]
+    RungeKutta4: ClassVar[PhysicsIntegratorType]
+    Implicit: ClassVar[PhysicsIntegratorType]
+    ImplicitFast: ClassVar[PhysicsIntegratorType]
+
+
+class PhysicsFrictionConeType(Enum):
+    Pyramidal: ClassVar[PhysicsFrictionConeType]
+    Elliptic: ClassVar[PhysicsFrictionConeType]
+
+
+class PhysicsJacobianType(Enum):
+    Dense: ClassVar[PhysicsJacobianType]
+    Sparse: ClassVar[PhysicsJacobianType]
+    Auto: ClassVar[PhysicsJacobianType]
+
+
 class JointType(Enum):
     Fixed: ClassVar[JointType]
     Revolute: ClassVar[JointType]
@@ -55,6 +79,14 @@ class TerrainColorMode(Enum):
     Palette: ClassVar[TerrainColorMode]
 
 
+class TerrainSubTerrainType(Enum):
+    Flat: ClassVar[TerrainSubTerrainType]
+    PyramidStairs: ClassVar[TerrainSubTerrainType]
+    PyramidSlope: ClassVar[TerrainSubTerrainType]
+    RandomRough: ClassVar[TerrainSubTerrainType]
+    Wave: ClassVar[TerrainSubTerrainType]
+
+
 class JointControllerGains:
     position_stiffness: float
     velocity_damping: float
@@ -80,31 +112,6 @@ class PhysicsBackendInfo:
     def to_dict(self) -> dict[str, Any]: ...
     @staticmethod
     def from_dict(value: dict[str, Any]) -> PhysicsBackendInfo: ...
-
-
-_has_mujoco_batch_pool: bool
-
-
-class _MujocoBatchPool:
-    num_envs: int
-    threads: int
-    nq: int
-    nv: int
-    nu: int
-    nstate: int
-    ncontrol: int
-    nsensordata: int
-
-    def __init__(self, xml_path: str, num_envs: int, threads: int = 0, timestep: float = 0.002) -> None: ...
-    def initial_state(self) -> FloatArray: ...
-    def step_profile(self) -> dict[str, float]: ...
-    def step(
-        self,
-        state0: FloatArray,
-        control: FloatArray | None = None,
-        nstep: int = 1,
-        return_sensor: bool = False,
-    ) -> FloatArray | tuple[FloatArray, FloatArray]: ...
 
 
 class AppContext:
@@ -154,9 +161,9 @@ class AppContext:
         foot_height_sensor_names: Sequence[str],
         foot_contact_sensor_names: Sequence[str],
         height_scan_sensor: str = "",
-        thigh_link_patterns: Sequence[str] = (),
-        shank_link_patterns: Sequence[str] = (),
-        trunk_head_link_patterns: Sequence[str] = (),
+        thigh_shape_patterns: Sequence[str] = (),
+        shank_shape_patterns: Sequence[str] = (),
+        trunk_head_shape_patterns: Sequence[str] = (),
         terminate_on_thigh_contact: bool = True,
         ground_force_threshold: float = 50.0,
         self_collision_force_threshold: float = 20.0,
@@ -330,6 +337,8 @@ class Terrain3D(Node3D):
     box_count: int
     heightfield_count: int
     mesh_patch_count: int
+    generator_config: dict[str, Any]
+    generation_error: str
     spawn_origins: list[Vector3]
     surface_color: tuple[float, float, float, float]
     color_mode: TerrainColorMode
@@ -342,6 +351,7 @@ class Terrain3D(Node3D):
     solimp: list[float]
 
     def clear_terrain(self) -> None: ...
+    def regenerate_terrain(self) -> None: ...
     def add_box(
         self,
         center: Vector3,

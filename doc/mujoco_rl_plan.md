@@ -99,7 +99,6 @@ for substep in decimation:
 
 compute_termination()
 compute_reward()
-store_terminal_observation()
 reset_done_envs()
 compute_observation()
 ```
@@ -110,7 +109,9 @@ Default semantics:
 - `env_dt = physics_dt * decimation`.
 - Reward terms use `env_dt`.
 - Done environments auto-reset by default.
-- `info["terminal_observation"]` stores the observation before reset.
+- Generic batch environments may opt into `final_observation`; the Go1 task
+  follows immediate reset semantics and does not build a terminal observation
+  in its hot path.
 - Core APIs are batched even when `num_envs == 1`.
 
 Current implementation status:
@@ -127,7 +128,7 @@ Current implementation status:
   expose the same reset/action/state surface over `wp_model` / `wp_data`.
 - Fixed task functions should be expressed as NumPy batch functions over
   structured arrays, not as arbitrary per-step Python scene traversal. That is
-  the UniLab-style contract: action, physics state, reward, done, reset masks,
+  the array-first contract: action, physics state, reward, done, reset masks,
   and observations are all `(num_envs, *)` arrays.
 - The previous runtime LLVM/JIT task-kernel path has been removed from the Go1
   training surface. Future code generation can be reconsidered only after the
@@ -160,142 +161,48 @@ Required behavior:
 Current native CPU implementation status:
 
 - The generic C++ `NativeVectorEnv` / task-json path has been removed.
-- CartPole and Go1 training use explicit Python MuJoCo `VecEnv` classes in the
-  example projects.
+- Go1 training loads the Gobot `.jscn` scene and uses the engine's typed CPU
+  batch API. Python never loads MJCF or reads `mjModel` / `mjData`.
 - A future engine-backed vector env should expose a clean task API instead of
   serializing reward/observation definitions through opaque JSON.
 - Go1 exposes task runtime metadata in `env.cfg["task_runtime"]`. The current
-  runtime is `numpy`: native C++ performs batched action preparation, MuJoCo
-  stepping, command update, contact/height-scan extraction, and persistent array
-  updates; Python computes observation, reward, and termination with vectorized
-  NumPy over those arrays.
+  runtime is `numpy`: C++ owns persistent action/task buffers, command update,
+  typed physics stepping, and state/contact/height-scan extraction; Python
+  computes observation, reward, and termination with vectorized NumPy.
 
 Current Gobot Go1 CPU batch env shape:
 
 ```text
 Python Go1VelocityEnv.step(action)
-  -> torch action clipping / scaling
-  -> GobotSceneBatchBackend.step(target_joint_positions, decimation)
-       -> gobot.app.AppContext.set_batch_joint_position_targets(...)
-       -> step_batch(decimation, workers)
-  -> GobotSceneBatchBackend.refresh()
-       -> cached numpy arrays for base, joints, links, sensors, contacts
-  -> Python task update_state:
-       command sampling, contact history, reward, termination, reset, obs tensors
+  -> NativeLocomotionBatchBackend.step_task_inputs(...)
+  -> AppContext native batch view
+       prepares clipped/scaled joint targets
+       submits PhysicsRobotBatchStepRequest with Gobot names and typed arrays
+  -> PhysicsWorld::StepRobotBatch(...)
+       applies per-environment model randomization and pushes
+       steps the backend's persistent CPU worker pool
+       returns PhysicsRobotBatchStepResult state/contact/sensor arrays
+  -> vectorized NumPy reward, termination, observation, and reset
+  -> stable BatchEnvState returned to the training wrapper
 ```
 
-The Go1 task borrows UniLab's useful structure without adopting UniLab's XML
-entrypoint:
+The scene remains the source of truth. `PhysicsSceneCompiler` compiles the
+loaded `.jscn` hierarchy once, and the MuJoCo backend builds each CPU
+environment from that snapshot. Training must not load an MJCF file as a
+second runtime source.
 
-```text
-apply_action(action) -> backend.step(ctrl) -> backend cached arrays -> update_state()
-```
+The backend-neutral kernel split is complete: Python sources include no physics
+backend headers, `MuJoCoPhysicsWorld` has no Python friend, and architecture
+tests reject raw MuJoCo pointers or binding storage in Python code. The next
+split is smaller and above physics: move the locomotion view's command state,
+foot history, and zero-copy buffers from the binding translation unit into a
+`LocomotionBatchRuntime` simulation service. The pybind class should then only
+adapt NumPy arrays and lifecycle calls to that service.
 
-This path is closest to the intended engine contract. It preserves Gobot scene
-authorship, node names, terrain/sensor nodes, debug visibility, and controller
-semantics. Its main throughput cost is that hot-loop observation/reward/reset
-work still crosses through Gobot runtime state extraction and Python/Torch task
-code. The `GobotSceneBatchBackend` facade is the public training-side boundary;
-the direct XML `_MujocoBatchPool` remains a benchmark/internal probe.
-
-State-array MuJoCo batch stepping shape, inspired by UniLab `mujoco_uni`
-`batch_env`:
-
-```text
-Python benchmark / future task hot path
-  -> state0: ndarray[num_envs, nstate]
-  -> control: ndarray[num_envs, nstep, ncontrol]
-  -> gobot._MujocoBatchPool
-       owns one mjModel
-       owns one mjData per worker
-       uses persistent worker threads
-       dynamically assigns env chunks
-       releases the GIL
-       calls mj_setState / mj_step / mj_getState in C++
-  -> next_state: ndarray[num_envs, nstate]
-  -> optional sensordata: ndarray[num_envs, nsensordata]
-```
-
-This path is deliberately internal for now. It bypasses SceneTree traversal and
-named Gobot runtime state extraction, so it is a performance probe and a
-candidate hot physics kernel for future RL tasks, not a replacement for Gobot's
-authoring/runtime boundary. The useful lesson from UniLab is the data-oriented
-contract: batch state/control arrays, persistent C++ worker resources, and no
-per-environment Python calls inside the step loop.
-
-The benchmark script is:
-
-```bash
-uv run --extra train python benchmark/mujoco_uni_batch_benchmark.py \
-  --backend gobot --num-envs 64 --steps 100 --warmup-steps 10 \
-  --nstep 10 --threads 16 --actions random
-```
-
-For comparison, `--backend rollout` runs DeepMind MuJoCo's official Python
-`mujoco.rollout.Rollout` extension. That is also direct C++ MuJoCo stepping; it
-is not Gobot and it is not UniLab. It remains a useful performance reference for
-raw state/control rollout when the API is specialized around MuJoCo arrays.
-
-`mujoco.rollout.Rollout` is generally not the right training runtime by itself.
-It can accept a new `state0` and a control trajectory each call, but its contract
-is batch trajectory rollout, not an interactive vector environment. It does not
-own per-environment episode state, reset masks, command sampling, domain
-randomization, reward/termination terms, observation fusion, named Gobot
-joint/link/sensor extraction, or debug/runtime state. Those pieces can be built
-around it in Python, but then the training loop tends to reintroduce the Python
-bookkeeping and state-copy costs Gobot is trying to move below the hot path.
-Gobot should therefore treat rollout as a performance reference and borrow its
-data-oriented C++ loop shape, not make it the public RL environment API.
-
-Measured on 2026-06-20 with Go1 flat MJCF, random controls, `nstep=10`,
-`threads=16`, `steps=100`, `warmup_steps=10`:
-
-| Path | Envs | Mean call/step ms | Env steps/s | Physics ticks/s | Relative to current Go1 env |
-| --- | ---: | ---: | ---: | ---: | ---: |
-| Current Gobot Go1 env | 16 | 14.581 | 1,097 | 10,973 | 1.00x |
-| Gobot `_MujocoBatchPool` | 16 | 0.939 | 16,648 | 166,483 | 15.17x |
-| MuJoCo `rollout.Rollout` | 16 | 0.810 | 18,975 | 189,749 | 17.29x |
-| Current Gobot Go1 env | 64 | 51.094 | 1,253 | 12,526 | 1.00x |
-| Gobot `_MujocoBatchPool` | 64 | 2.452 | 25,544 | 255,443 | 20.39x |
-| MuJoCo `rollout.Rollout` | 64 | 2.168 | 28,307 | 283,075 | 22.60x |
-
-Interpretation:
-
-- The current Gobot Go1 env is end-to-end task stepping: Gobot runtime state,
-  named joints/links/sensors, Torch observations, rewards, done/reset handling,
-  and action bookkeeping are included.
-- `_MujocoBatchPool` and MuJoCo `rollout.Rollout` measure raw MuJoCo
-  state/control stepping only. They do not compute Go1 observations, rewards,
-  resets, command randomization, terrain curriculum, or Gobot debug state.
-- Gobot's internal state-array pool is now within roughly 88-90% of MuJoCo
-  `rollout.Rollout` on this benchmark. The remaining gap is expected: rollout is
-  a mature MuJoCo-specific extension with a very narrow API and tuned thread
-  scheduling, while Gobot's pool is a first internal probe that still returns
-  Python-facing arrays through Gobot's binding layer.
-- The next useful optimization is not to expose `_MujocoBatchPool` as a public
-  API. Instead, move Go1 task hot-path physics, selected sensor extraction, and
-  observation buffers toward persistent state/control arrays while preserving
-  Gobot scene compilation and named configuration at initialization time.
-
-EnvPool reference notes:
-
-- EnvPool uses an `ActionBufferQueue -> ThreadPool -> StateBufferQueue` model.
-  Workers pull single-env action slices and push finished state slices into
-  preallocated buffers.
-- Its fastest path avoids most locks: action dispatch uses atomic ring-buffer
-  allocation plus lightweight semaphores, and state writes use packed atomic
-  offsets to reserve non-overlapping output slices.
-- EnvPool also keeps a stock of preallocated state buffers so the hot path
-  usually avoids allocation, and async mode can return whichever environments
-  finish first instead of waiting for the slowest environment.
-- Gobot's first CPU VecEnv intentionally does not copy the full EnvPool queue
-  machinery. It keeps the engine-facing boundary simple while validating
-  deterministic reset, named joint control, observation/reward contracts, and
-  rsl_rl training.
-- Follow-up performance work can replace the row-parallel worker dispatch with
-  EnvPool-style fixed queues, preallocated output buffers, per-env ready queues,
-  optional CPU affinity, and true async "first completed batch" semantics once
-  the Gobot simulation contracts are stable.
+Performance work must preserve deterministic reset, stable joint ordering,
+substep contact history, and the policy manifest contract. Use persistent
+workers and preallocated buffers; do not reintroduce direct-XML benchmark
+paths as training APIs.
 
 ## MuJoCo Warp Fast Path
 

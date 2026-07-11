@@ -11,6 +11,7 @@
 #include <cctype>
 #include <filesystem>
 #include <string>
+#include <utility>
 
 #include "gobot/core/config/project_setting.hpp"
 #include "gobot/core/io/python_script.hpp"
@@ -612,9 +613,11 @@ std::string Editor::GetSceneViewTitle() const {
 
 bool Editor::StartScenePlaySession() {
     if (scene_play_session_ == nullptr) {
+        RequestPlayError("Scene Play Session is unavailable.");
         return false;
     }
     if (!scene_play_session_->Start(GetEditedSceneRoot(), engine_context_)) {
+        RequestPlayError(scene_play_session_->GetLastError());
         return false;
     }
     if (auto* input = Input::GetInstanceOrNull()) {
@@ -628,6 +631,7 @@ bool Editor::PlayScene() {
                                            ? SimulationServer::GetInstance()
                                            : nullptr;
     if (simulation == nullptr || GetEditedSceneRoot() == nullptr) {
+        RequestPlayError("Cannot play without an edited scene and Simulation Server.");
         return false;
     }
 
@@ -641,6 +645,7 @@ bool Editor::PlayScene() {
     Node* play_root = GetActiveSceneRoot();
     if (play_root == nullptr) {
         simulation->SetPaused(true);
+        RequestPlayError("Scene Play Session did not produce a runtime scene.");
         return false;
     }
 
@@ -648,8 +653,10 @@ bool Editor::PlayScene() {
         simulation->ClearWorld();
         simulation->SetSyncSceneOnFixedStep(false);
         if (!simulation->BuildWorldFromScene(play_root)) {
+            const std::string error = simulation->GetLastError();
             StopScenePlaySession();
             simulation->SetPaused(true);
+            RequestPlayError(error.empty() ? "Failed to build the runtime physics world." : error);
             return false;
         }
     } else {
@@ -822,6 +829,7 @@ void Editor::OnImGuiContent() {
     file_browser_->Display();
     HandleSceneFileDialogSelection();
     DrawUnsavedSceneDialog();
+    DrawPlayErrorDialog();
 }
 
 void Editor::DrawMenuBar() {
@@ -1053,6 +1061,31 @@ void Editor::DrawUnsavedSceneDialog() {
         ImGui::CloseCurrentPopup();
     }
 
+    ImGui::EndPopup();
+}
+
+void Editor::RequestPlayError(std::string message) {
+    play_error_dialog_message_ = message.empty() ? "Scene playback failed." : std::move(message);
+    request_play_error_dialog_ = true;
+}
+
+void Editor::DrawPlayErrorDialog() {
+    if (request_play_error_dialog_) {
+        ImGui::OpenPopup("Play Error");
+        request_play_error_dialog_ = false;
+    }
+
+    if (!ImGui::BeginPopupModal("Play Error", nullptr, ImGuiWindowFlags_AlwaysAutoResize)) {
+        return;
+    }
+
+    ImGui::PushTextWrapPos(ImGui::GetFontSize() * 36.0f);
+    ImGui::TextUnformatted(play_error_dialog_message_.c_str());
+    ImGui::PopTextWrapPos();
+    ImGui::Separator();
+    if (ImGui::Button("Close")) {
+        ImGui::CloseCurrentPopup();
+    }
     ImGui::EndPopup();
 }
 

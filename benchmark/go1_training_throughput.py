@@ -25,7 +25,6 @@ from gobot.rl.rsl_rl import RslRlVecEnvWrapper
 
 def main() -> None:
     parser = argparse.ArgumentParser()
-    parser.add_argument("--task", type=str, default="go1_flat", help="Go1 velocity task: go1_flat or go1_rough.")
     parser.add_argument("--num-envs", "--num_envs", type=int, default=2048)
     parser.add_argument("--steps", "--num-steps", "--num_steps", type=int, default=20)
     parser.add_argument("--warmup-steps", "--warmup_steps", type=int, default=5)
@@ -40,7 +39,7 @@ def main() -> None:
     parser.add_argument("--json-out", type=str, default=None)
     args = parser.parse_args()
 
-    cfg = go1_velocity_cfg(args.task, project_path=GO1_PROJECT)
+    cfg = go1_velocity_cfg(project_path=GO1_PROJECT)
     cfg.observations.actor_noise = bool(args.obs_noise)
     cfg.terrain_curriculum = bool(args.terrain_curriculum)
 

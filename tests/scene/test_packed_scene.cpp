@@ -8,10 +8,29 @@
 
 #include <gobot/scene/node.hpp>
 #include <gobot/scene/node_3d.hpp>
+#include <gobot/scene/joint_3d.hpp>
+#include <gobot/scene/link_3d.hpp>
+#include <gobot/scene/robot_3d.hpp>
 #include <gobot/scene/resources/packed_scene.hpp>
 #include <gobot/scene/velocity_command_debug_3d.hpp>
 
 #include <algorithm>
+
+namespace {
+
+const gobot::SceneState::PropertyData* FindProperty(
+        const gobot::SceneState::NodeData& node,
+        const std::string& name) {
+    const auto property = std::find_if(
+            node.properties.begin(),
+            node.properties.end(),
+            [&name](const gobot::SceneState::PropertyData& candidate) {
+                return candidate.name == name;
+            });
+    return property == node.properties.end() ? nullptr : &*property;
+}
+
+} // namespace
 
 TEST(TestPackedScene, pack_records_scene_tree_structure) {
     auto* root = gobot::Node3D::New<gobot::Node3D>();
@@ -89,6 +108,60 @@ TEST(TestPackedScene, instantiate_rebuilds_scene_tree_structure) {
 
     gobot::Object::Delete(root);
     gobot::Object::Delete(instance);
+}
+
+TEST(TestPackedScene, pack_motion_robot_reads_assembly_pose_without_mutating_scene) {
+    auto* robot = gobot::Object::New<gobot::Robot3D>();
+    robot->SetName("robot");
+
+    auto* joint = gobot::Object::New<gobot::Joint3D>();
+    joint->SetName("joint");
+    joint->SetJointType(gobot::JointType::Revolute);
+    joint->SetAxis(gobot::Vector3::UnitZ());
+    joint->SetLowerLimit(-2.0);
+    joint->SetUpperLimit(2.0);
+    joint->SetJointPosition(0.4);
+
+    auto* link = gobot::Object::New<gobot::Link3D>();
+    link->SetName("link");
+    link->SetPosition({1.0, 0.0, 0.0});
+
+    robot->AddChild(joint);
+    joint->AddChild(link);
+    robot->SetMode(gobot::RobotMode::Motion);
+    joint->SetJointPosition(0.9);
+
+    const gobot::Affine3 joint_transform_before = joint->GetTransform();
+    const gobot::Affine3 link_transform_before = link->GetTransform();
+    ASSERT_FALSE(link->GetPosition().isApprox(gobot::Vector3(1.0, 0.0, 0.0), CMP_EPSILON));
+
+    gobot::Ref<gobot::PackedScene> packed_scene = gobot::MakeRef<gobot::PackedScene>();
+    ASSERT_TRUE(packed_scene->Pack(robot));
+
+    EXPECT_EQ(robot->GetMode(), gobot::RobotMode::Motion);
+    EXPECT_TRUE(joint->IsMotionModeEnabled());
+    EXPECT_NEAR(joint->GetJointPosition(), 0.9, CMP_EPSILON);
+    EXPECT_TRUE(joint->GetTransform().isApprox(joint_transform_before, CMP_EPSILON));
+    EXPECT_TRUE(link->GetTransform().isApprox(link_transform_before, CMP_EPSILON));
+
+    const gobot::Ref<gobot::SceneState> state = packed_scene->GetState();
+    ASSERT_EQ(state->GetNodeCount(), 3);
+
+    const auto* robot_data = state->GetNodeData(0);
+    ASSERT_NE(robot_data, nullptr);
+    const auto* mode = FindProperty(*robot_data, "mode");
+    ASSERT_NE(mode, nullptr);
+    EXPECT_EQ(mode->value.convert<gobot::RobotMode>(), gobot::RobotMode::Motion);
+
+    const auto* link_data = state->GetNodeData(2);
+    ASSERT_NE(link_data, nullptr);
+    const auto* position = FindProperty(*link_data, "position");
+    ASSERT_NE(position, nullptr);
+    EXPECT_TRUE(position->value.convert<gobot::Vector3>().isApprox(
+            gobot::Vector3(1.0, 0.0, 0.0),
+            CMP_EPSILON));
+
+    gobot::Object::Delete(robot);
 }
 
 TEST(TestPackedScene, velocity_command_debug_packs_config_without_runtime_state) {

@@ -11,8 +11,8 @@
 
 #include <fmt/format.h>
 
+#include "gobot/core/robotics_types.hpp"
 #include "gobot/physics/joint_controller.hpp"
-#include "gobot/scene/joint_3d.hpp"
 #include "gobot/simulation/simulation_entity.hpp"
 
 namespace gobot {

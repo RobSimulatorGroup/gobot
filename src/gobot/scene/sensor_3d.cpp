@@ -182,16 +182,14 @@ std::vector<Vector3> RayCastSensor3D::GetResolvedSampleOffsets() const {
     const int y_count = std::max(1, static_cast<int>(std::floor(grid_size_.y() / grid_resolution_ + 0.5)) + 1);
     std::vector<Vector3> offsets;
     offsets.reserve(static_cast<std::size_t>(x_count * y_count));
-    for (int x_index = 0; x_index < x_count; ++x_index) {
-        const RealType x = x_count == 1
+    for (int y_index = 0; y_index < y_count; ++y_index) {
+        const RealType y = y_count == 1
                 ? 0.0
-                : -grid_size_.x() * 0.5 +
-                  grid_size_.x() * static_cast<RealType>(x_index) / static_cast<RealType>(x_count - 1);
-        for (int y_index = 0; y_index < y_count; ++y_index) {
-            const RealType y = y_count == 1
+                : -grid_size_.y() * 0.5 + grid_resolution_ * static_cast<RealType>(y_index);
+        for (int x_index = 0; x_index < x_count; ++x_index) {
+            const RealType x = x_count == 1
                     ? 0.0
-                    : -grid_size_.y() * 0.5 +
-                      grid_size_.y() * static_cast<RealType>(y_index) / static_cast<RealType>(y_count - 1);
+                    : -grid_size_.x() * 0.5 + grid_resolution_ * static_cast<RealType>(x_index);
             offsets.emplace_back(x, y, 0.0);
         }
     }

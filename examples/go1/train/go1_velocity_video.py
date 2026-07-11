@@ -13,12 +13,12 @@ import numpy as np
 
 import gobot
 from gobot.rl.rsl_rl import RslRlVecEnvWrapper
-from gobot.rl.locomotion.math import _quat, _quat_to_yaw
+from gobot.rl.locomotion.math import _quat_to_yaw
 
 try:
-    from .go1_velocity_env import Go1VelocityEnv, VelocityRuntimeState
+    from .go1_velocity_env import Go1VelocityEnv
 except ImportError:
-    from go1_velocity_env import Go1VelocityEnv, VelocityRuntimeState
+    from go1_velocity_env import Go1VelocityEnv
 
 
 @dataclass
@@ -85,7 +85,7 @@ class Go1TrainingVideoRecorder:
                     action_np = actions.detach().cpu().numpy() if hasattr(actions, "detach") else np.asarray(actions)
                     state_batch = eval_env.step(action_np)
                     obs = wrapper._tensor_obs(state_batch.obs)
-                    state = eval_env._runtime_state(self.cfg.env_id)
+                    state = eval_env.backend.state
                     self._sync_scene_from_state(eval_env, state)
                     debug_start, command_world, actual_world = self._velocity_arrow_vectors(eval_env, state)
                     debug_arrows = self._debug_arrows(debug_start, command_world, actual_world) if self.cfg.debug_arrows else []
@@ -143,7 +143,6 @@ class Go1TrainingVideoRecorder:
             eval_cfg = copy.deepcopy(self.env.cfg_obj)
             eval_cfg.episode_length_s = float(1_000_000_000)
             eval_cfg.terrain_curriculum = False
-            eval_cfg.randomize_rough_reset_pose = False
             eval_cfg.observations.actor_noise = False
             eval_cfg.domain_randomization.enabled = False
             eval_cfg.push_enabled = False
@@ -166,13 +165,11 @@ class Go1TrainingVideoRecorder:
     def _video_seed(self) -> int:
         return int(self.cfg.seed if self.cfg.seed is not None else self.env.seed + 1_000_003)
 
-    def _sync_scene_from_state(self, env: Go1VelocityEnv, state: VelocityRuntimeState) -> None:
-        for link_name, link in state.links.items():
-            transform = link.get("global_transform", {})
-            position = transform.get("position")
-            orientation = transform.get("quaternion")
-            if position is None or orientation is None:
-                continue
+    def _sync_scene_from_state(self, env: Go1VelocityEnv, state: Any) -> None:
+        env_id = self.cfg.env_id
+        for link_index, link_name in enumerate(env._batch_link_names):
+            position = state.link_position[env_id, link_index]
+            orientation = state.link_quaternion[env_id, link_index]
             node = self._find_node(env, link_name)
             if node is None or not hasattr(node, "set_global_transform"):
                 continue
@@ -181,10 +178,10 @@ class Go1TrainingVideoRecorder:
     def _capture_frame(
         self,
         env: Go1VelocityEnv,
-        state: VelocityRuntimeState,
+        state: Any,
         debug_arrows: list[gobot.render.DebugArrow],
     ) -> np.ndarray:
-        base_position = np.asarray(state.base.get("global_transform", {}).get("position", (0.0, 0.0, 0.4)), dtype=float)
+        base_position = np.asarray(state.base_position[self.cfg.env_id], dtype=float)
         command = np.asarray(env.command_b[self.cfg.env_id], dtype=float)
         heading = np.array([command[0], command[1], 0.0], dtype=float)
         if float(np.linalg.norm(heading[:2])) < 0.05:
@@ -209,7 +206,7 @@ class Go1TrainingVideoRecorder:
     def _replay_frame(
         self,
         env: Go1VelocityEnv,
-        state: VelocityRuntimeState,
+        state: Any,
         actions: Any,
         step_index: int,
         debug_start: np.ndarray,
@@ -221,17 +218,11 @@ class Go1TrainingVideoRecorder:
         if action_np.ndim >= 2:
             action_np = action_np[self.cfg.env_id]
         command = np.asarray(env.command_b[self.cfg.env_id], dtype=np.float32)
-        base_transform = state.base.get("global_transform", {})
-        base_position = np.asarray(base_transform.get("position", (0.0, 0.0, 0.0)), dtype=np.float32)
-        base_quaternion = np.asarray(base_transform.get("quaternion", (1.0, 0.0, 0.0, 0.0)), dtype=np.float32)
-        joint_position = np.asarray(
-            [float(state.joints.get(name, {}).get("position", 0.0)) for name in env.joint_names],
-            dtype=np.float32,
-        )
-        joint_velocity = np.asarray(
-            [float(state.joints.get(name, {}).get("velocity", 0.0)) for name in env.joint_names],
-            dtype=np.float32,
-        )
+        env_id = self.cfg.env_id
+        base_position = np.asarray(state.base_position[env_id], dtype=np.float32)
+        base_quaternion = np.asarray(state.base_quaternion[env_id], dtype=np.float32)
+        joint_position = np.asarray(state.joint_position[env_id], dtype=np.float32)
+        joint_velocity = np.asarray(state.joint_velocity[env_id], dtype=np.float32)
         debug_arrow_start = np.stack(
             [debug_start, debug_start + np.array([0.0, 0.0, 0.08], dtype=np.float32)],
             axis=0,
@@ -255,8 +246,8 @@ class Go1TrainingVideoRecorder:
             "command": command,
             "base_position": base_position,
             "base_quaternion": base_quaternion,
-            "base_linear_velocity": np.asarray(state.base.get("linear_velocity", (0.0, 0.0, 0.0)), dtype=np.float32),
-            "base_angular_velocity": np.asarray(state.base.get("angular_velocity", (0.0, 0.0, 0.0)), dtype=np.float32),
+            "base_linear_velocity": np.asarray(state.base_linear_velocity[env_id], dtype=np.float32),
+            "base_angular_velocity": np.asarray(state.base_angular_velocity[env_id], dtype=np.float32),
             "joint_position": joint_position,
             "joint_velocity": joint_velocity,
             "debug_arrow_start": debug_arrow_start,
@@ -297,13 +288,13 @@ class Go1TrainingVideoRecorder:
     def _velocity_arrow_vectors(
         self,
         env: Go1VelocityEnv,
-        state: VelocityRuntimeState,
+        state: Any,
     ) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
-        base_transform = state.base.get("global_transform", {})
-        base_position = np.asarray(base_transform.get("position", (0.0, 0.0, 0.0)), dtype=np.float32)
+        env_id = self.cfg.env_id
+        base_position = np.asarray(state.base_position[env_id], dtype=np.float32)
         start = base_position + np.array([0.0, 0.0, 0.30], dtype=np.float32)
-        command_b = np.asarray(env.command_b[self.cfg.env_id], dtype=np.float32)
-        yaw = _quat_to_yaw(_quat(state.base))
+        command_b = np.asarray(env.command_b[env_id], dtype=np.float32)
+        yaw = _quat_to_yaw(state.base_quaternion[env_id])
         command_world = np.array(
             [
                 math.cos(yaw) * command_b[0] - math.sin(yaw) * command_b[1],
@@ -312,7 +303,7 @@ class Go1TrainingVideoRecorder:
             ],
             dtype=np.float32,
         )
-        actual_world = np.asarray(state.base.get("linear_velocity", (0.0, 0.0, 0.0)), dtype=np.float32)
+        actual_world = np.asarray(state.base_linear_velocity[env_id], dtype=np.float32)
         actual_world = np.array([actual_world[0], actual_world[1], 0.0], dtype=np.float32)
         return start, command_world, actual_world
 

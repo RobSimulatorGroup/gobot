@@ -12,7 +12,10 @@ class TestPythonPanel : public testing::Test {
 protected:
     void SetUp() override {
         project_settings = gobot::Object::New<gobot::ProjectSettings>();
-        project_path = std::filesystem::temp_directory_path() / "gobot_python_panel_test";
+        const testing::TestInfo* test_info = testing::UnitTest::GetInstance()->current_test_info();
+        ASSERT_NE(test_info, nullptr);
+        project_path = std::filesystem::temp_directory_path() /
+                       (std::string("gobot_python_panel_test_") + test_info->name());
         std::filesystem::remove_all(project_path);
         std::filesystem::create_directories(project_path / "scripts");
         ASSERT_TRUE(project_settings->SetProjectPath(project_path.string()));

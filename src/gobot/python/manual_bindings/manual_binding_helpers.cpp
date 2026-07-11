@@ -1119,7 +1119,7 @@ py::dict SensorSnapshotToPythonDict(const PhysicsSensorSnapshot& sensor) {
     result["sensor_period"] = sensor.sensor_period;
     result["noise_stddev"] = sensor.noise_stddev;
     result["visualize_debug"] = sensor.visualize_debug;
-    result["debug_marker_radius"] = sensor.node != nullptr ? sensor.node->GetDebugMarkerRadius() : 0.0;
+    result["debug_marker_radius"] = sensor.debug_marker_radius;
     result["radius"] = sensor.radius;
     result["min_threshold"] = sensor.min_threshold;
     result["max_threshold"] = sensor.max_threshold;
@@ -1200,7 +1200,7 @@ py::dict SensorStateToPythonDict(const PhysicsSensorState& sensor) {
     result["type"] = PhysicsSensorTypeName(sensor.type);
     result["enabled"] = sensor.enabled;
     result["visualize_debug"] = sensor.visualize_debug;
-    result["debug_marker_radius"] = sensor.node != nullptr ? sensor.node->GetDebugMarkerRadius() : 0.0;
+    result["debug_marker_radius"] = sensor.debug_marker_radius;
     result["global_transform"] = TransformToPythonDict(sensor.global_transform);
     result["values"] = sensor.values;
     py::list hits;
@@ -1395,7 +1395,6 @@ Ref<PhysicsWorld> RuntimeWorldForRobotHandle(const PyRobot3DHandle& handle) {
 py::dict RobotSnapshotToPythonDict(const PhysicsRobotSnapshot& robot) {
     py::dict result;
     result["name"] = robot.name;
-    result["source_path"] = robot.source_path;
 
     py::list links;
     py::list link_names;
@@ -1768,7 +1767,7 @@ py::dict BatchRobotStateToPythonDict(SimulationServer& simulation,
     return result;
 }
 
-py::dict BatchRobotStateArraysToPythonDict(MuJoCoPhysicsWorld::BatchRobotStateArrays arrays) {
+py::dict RobotBatchStepResultToPythonDict(PhysicsRobotBatchStepResult arrays) {
     const auto environment_count = static_cast<py::ssize_t>(arrays.environment_count);
     const auto joint_count = static_cast<py::ssize_t>(arrays.joint_names.size());
     const auto link_count = static_cast<py::ssize_t>(arrays.link_names.size());
@@ -1783,6 +1782,8 @@ py::dict BatchRobotStateArraysToPythonDict(MuJoCoPhysicsWorld::BatchRobotStateAr
     result["joint_names"] = arrays.joint_names;
     result["link_names"] = arrays.link_names;
     result["sensor_names"] = arrays.sensor_names;
+    result["shape_names"] = arrays.shape_names;
+    result["contact_shape_group_names"] = arrays.contact_shape_group_names;
     result["env_count"] = arrays.environment_count;
     result["base_position"] = MakeRealArray(std::move(arrays.base_position), {environment_count, 3});
     result["base_quaternion"] = MakeRealArray(std::move(arrays.base_quaternion), {environment_count, 4});
@@ -1790,6 +1791,7 @@ py::dict BatchRobotStateArraysToPythonDict(MuJoCoPhysicsWorld::BatchRobotStateAr
     result["base_angular_velocity"] = MakeRealArray(std::move(arrays.base_angular_velocity), {environment_count, 3});
     result["joint_position"] = MakeRealArray(std::move(arrays.joint_position), {environment_count, joint_count});
     result["joint_velocity"] = MakeRealArray(std::move(arrays.joint_velocity), {environment_count, joint_count});
+    result["joint_acceleration"] = MakeRealArray(std::move(arrays.joint_acceleration), {environment_count, joint_count});
     result["joint_effort"] = MakeRealArray(std::move(arrays.joint_effort), {environment_count, joint_count});
     result["joint_target_position"] = MakeRealArray(std::move(arrays.joint_target_position), {environment_count, joint_count});
     result["joint_target_velocity"] = MakeRealArray(std::move(arrays.joint_target_velocity), {environment_count, joint_count});
@@ -1804,6 +1806,7 @@ py::dict BatchRobotStateArraysToPythonDict(MuJoCoPhysicsWorld::BatchRobotStateAr
     result["sensor_hit_count"] = MakeArray<std::int32_t>(std::move(arrays.sensor_hit_count), {sensor_count});
     result["sensor_position"] = MakeRealArray(std::move(arrays.sensor_position), {environment_count, sensor_count, 3});
     result["sensor_quaternion"] = MakeRealArray(std::move(arrays.sensor_quaternion), {environment_count, sensor_count, 4});
+    result["sensor_linear_velocity"] = MakeRealArray(std::move(arrays.sensor_linear_velocity), {environment_count, sensor_count, 3});
     result["sensor_values"] = MakeRealArray(std::move(arrays.sensor_values), {environment_count, sensor_count, max_sensor_values});
     result["sensor_hit"] = MakeBoolArray(std::move(arrays.sensor_hit), {environment_count, sensor_count, max_sensor_hits});
     result["sensor_hit_origin"] = MakeRealArray(std::move(arrays.sensor_hit_origin), {environment_count, sensor_count, max_sensor_hits, 3});
@@ -1812,11 +1815,23 @@ py::dict BatchRobotStateArraysToPythonDict(MuJoCoPhysicsWorld::BatchRobotStateAr
     result["sensor_hit_distance"] = MakeRealArray(std::move(arrays.sensor_hit_distance), {environment_count, sensor_count, max_sensor_hits});
     result["contact_count"] = MakeArray<std::int32_t>(std::move(arrays.contact_count), {environment_count});
     result["contact_link_index"] = MakeArray<std::int32_t>(std::move(arrays.contact_link_index), {environment_count, max_contact_count, 2});
+    result["contact_shape_index"] = MakeArray<std::int32_t>(std::move(arrays.contact_shape_index), {environment_count, max_contact_count, 2});
     result["contact_position"] = MakeRealArray(std::move(arrays.contact_position), {environment_count, max_contact_count, 3});
     result["contact_normal"] = MakeRealArray(std::move(arrays.contact_normal), {environment_count, max_contact_count, 3});
     result["contact_force"] = MakeRealArray(std::move(arrays.contact_force), {environment_count, max_contact_count, 3});
     result["contact_normal_force"] = MakeRealArray(std::move(arrays.contact_normal_force), {environment_count, max_contact_count});
     result["contact_distance"] = MakeRealArray(std::move(arrays.contact_distance), {environment_count, max_contact_count});
+    result["link_contact_tick_count"] = MakeArray<std::int32_t>(std::move(arrays.link_contact_tick_count), {environment_count, link_count});
+    result["shape_contact_tick_count"] = MakeArray<std::int32_t>(std::move(arrays.shape_contact_tick_count), {environment_count, static_cast<py::ssize_t>(arrays.shape_names.size())});
+    result["contact_shape_group_tick_count"] = MakeArray<std::int32_t>(
+            std::move(arrays.contact_shape_group_tick_count),
+            {environment_count, static_cast<py::ssize_t>(arrays.contact_shape_group_names.size())});
+    result["contact_shape_group_history"] = MakeBoolArray(
+            std::move(arrays.contact_shape_group_history),
+            {environment_count,
+             static_cast<py::ssize_t>(arrays.contact_shape_group_names.size()),
+             static_cast<py::ssize_t>(arrays.contact_history_tick_count)});
+    result["self_contact_tick_count"] = MakeArray<std::int32_t>(std::move(arrays.self_contact_tick_count), {environment_count});
     return result;
 }
 

@@ -6,6 +6,7 @@
 
 #include "gobot/physics/physics_types.hpp"
 #include "gobot/python/python_binding_policy.hpp"
+#include "gobot/scene/resources/terrain_generator_config.hpp"
 
 namespace gobot::python {
 namespace {
@@ -81,6 +82,11 @@ void RegisterReflectedTypes(py::module_& module) {
     EnsureSubmodule(module, "physics");
 
     RegisterReflectedEnum<PhysicsBackendType>(module, "physics");
+    RegisterReflectedEnum<PhysicsSolverType>(module, "physics");
+    RegisterReflectedEnum<PhysicsIntegratorType>(module, "physics");
+    RegisterReflectedEnum<PhysicsFrictionConeType>(module, "physics");
+    RegisterReflectedEnum<PhysicsJacobianType>(module, "physics");
+    RegisterReflectedEnum<TerrainSubTerrainType>(module, "scene");
     RegisterReflectedValueType<JointControllerGains>(module, "sim");
     RegisterReflectedValueType<PhysicsBackendInfo>(module, "physics");
 }

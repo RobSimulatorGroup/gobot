@@ -144,6 +144,9 @@ TEST(TestRobotNodes, stores_sensor_metadata) {
     const std::vector<gobot::Vector3> resolved_offsets = terrain_height->GetResolvedSampleOffsets();
     ASSERT_EQ(resolved_offsets.size(), 187);
     EXPECT_TRUE(resolved_offsets.front().isApprox(gobot::Vector3(-0.8, -0.5, 0.0), CMP_EPSILON));
+    EXPECT_TRUE(resolved_offsets[1].isApprox(gobot::Vector3(-0.7, -0.5, 0.0), CMP_EPSILON));
+    EXPECT_TRUE(resolved_offsets[16].isApprox(gobot::Vector3(0.8, -0.5, 0.0), CMP_EPSILON));
+    EXPECT_TRUE(resolved_offsets[17].isApprox(gobot::Vector3(-0.8, -0.4, 0.0), CMP_EPSILON));
     EXPECT_TRUE(resolved_offsets.back().isApprox(gobot::Vector3(0.8, 0.5, 0.0), CMP_EPSILON));
     EXPECT_TRUE(terrain_height->GetRayDirection().isApprox(gobot::Vector3(0.0, 0.0, -1.0), CMP_EPSILON));
     EXPECT_FALSE(terrain_height->IsRayDirectionWorldSpace());

@@ -1,0 +1,201 @@
+{
+    "__VERSION__": 2,
+    "__META_TYPE__": "RESOURCE",
+    "__TYPE__": "TerrainGeneratorConfig",
+    "__EXT_RESOURCES__": [],
+    "__SUB_RESOURCES__": [],
+    "__RESOURCE__": {
+        "resource_name": "Go1 Rough Terrain",
+        "schema_version": 1,
+        "seed": 42,
+        "curriculum": true,
+        "num_rows": 10,
+        "num_cols": 20,
+        "patch_size": {
+            "matrix_data": {
+                "rows": 2,
+                "cols": 1,
+                "storage": [8.0, 8.0]
+            }
+        },
+        "border_width": 20.0,
+        "difficulty_range": {
+            "matrix_data": {
+                "rows": 2,
+                "cols": 1,
+                "storage": [0.0, 1.0]
+            }
+        },
+        "horizontal_scale": 0.1,
+        "sub_terrains": [
+            {
+                "name": "flat",
+                "type": "Flat",
+                "proportion": 0.2,
+                "inverted": false,
+                "step_height_range": {
+                    "matrix_data": {"rows": 2, "cols": 1, "storage": [0.0, 0.1]}
+                },
+                "step_width": 0.3,
+                "platform_width": 3.0,
+                "slope_range": {
+                    "matrix_data": {"rows": 2, "cols": 1, "storage": [0.0, 1.0]}
+                },
+                "noise_range": {
+                    "matrix_data": {"rows": 2, "cols": 1, "storage": [0.02, 0.1]}
+                },
+                "noise_step": 0.02,
+                "downsampled_scale": 0.0,
+                "amplitude_range": {
+                    "matrix_data": {"rows": 2, "cols": 1, "storage": [0.0, 0.2]}
+                },
+                "num_waves": 4.0,
+                "border_width": 0.0
+            },
+            {
+                "name": "pyramid_stairs",
+                "type": "PyramidStairs",
+                "proportion": 0.2,
+                "inverted": false,
+                "step_height_range": {
+                    "matrix_data": {"rows": 2, "cols": 1, "storage": [0.0, 0.1]}
+                },
+                "step_width": 0.3,
+                "platform_width": 3.0,
+                "slope_range": {
+                    "matrix_data": {"rows": 2, "cols": 1, "storage": [0.0, 1.0]}
+                },
+                "noise_range": {
+                    "matrix_data": {"rows": 2, "cols": 1, "storage": [0.02, 0.1]}
+                },
+                "noise_step": 0.02,
+                "downsampled_scale": 0.0,
+                "amplitude_range": {
+                    "matrix_data": {"rows": 2, "cols": 1, "storage": [0.0, 0.2]}
+                },
+                "num_waves": 4.0,
+                "border_width": 1.0
+            },
+            {
+                "name": "pyramid_stairs_inverted",
+                "type": "PyramidStairs",
+                "proportion": 0.2,
+                "inverted": true,
+                "step_height_range": {
+                    "matrix_data": {"rows": 2, "cols": 1, "storage": [0.0, 0.1]}
+                },
+                "step_width": 0.3,
+                "platform_width": 3.0,
+                "slope_range": {
+                    "matrix_data": {"rows": 2, "cols": 1, "storage": [0.0, 1.0]}
+                },
+                "noise_range": {
+                    "matrix_data": {"rows": 2, "cols": 1, "storage": [0.02, 0.1]}
+                },
+                "noise_step": 0.02,
+                "downsampled_scale": 0.0,
+                "amplitude_range": {
+                    "matrix_data": {"rows": 2, "cols": 1, "storage": [0.0, 0.2]}
+                },
+                "num_waves": 4.0,
+                "border_width": 1.0
+            },
+            {
+                "name": "pyramid_slope",
+                "type": "PyramidSlope",
+                "proportion": 0.1,
+                "inverted": false,
+                "step_height_range": {
+                    "matrix_data": {"rows": 2, "cols": 1, "storage": [0.0, 0.1]}
+                },
+                "step_width": 0.3,
+                "platform_width": 2.0,
+                "slope_range": {
+                    "matrix_data": {"rows": 2, "cols": 1, "storage": [0.0, 1.0]}
+                },
+                "noise_range": {
+                    "matrix_data": {"rows": 2, "cols": 1, "storage": [0.02, 0.1]}
+                },
+                "noise_step": 0.02,
+                "downsampled_scale": 0.0,
+                "amplitude_range": {
+                    "matrix_data": {"rows": 2, "cols": 1, "storage": [0.0, 0.2]}
+                },
+                "num_waves": 4.0,
+                "border_width": 0.25
+            },
+            {
+                "name": "pyramid_slope_inverted",
+                "type": "PyramidSlope",
+                "proportion": 0.1,
+                "inverted": true,
+                "step_height_range": {
+                    "matrix_data": {"rows": 2, "cols": 1, "storage": [0.0, 0.1]}
+                },
+                "step_width": 0.3,
+                "platform_width": 2.0,
+                "slope_range": {
+                    "matrix_data": {"rows": 2, "cols": 1, "storage": [0.0, 1.0]}
+                },
+                "noise_range": {
+                    "matrix_data": {"rows": 2, "cols": 1, "storage": [0.02, 0.1]}
+                },
+                "noise_step": 0.02,
+                "downsampled_scale": 0.0,
+                "amplitude_range": {
+                    "matrix_data": {"rows": 2, "cols": 1, "storage": [0.0, 0.2]}
+                },
+                "num_waves": 4.0,
+                "border_width": 0.25
+            },
+            {
+                "name": "random_rough",
+                "type": "RandomRough",
+                "proportion": 0.1,
+                "inverted": false,
+                "step_height_range": {
+                    "matrix_data": {"rows": 2, "cols": 1, "storage": [0.0, 0.1]}
+                },
+                "step_width": 0.3,
+                "platform_width": 3.0,
+                "slope_range": {
+                    "matrix_data": {"rows": 2, "cols": 1, "storage": [0.0, 1.0]}
+                },
+                "noise_range": {
+                    "matrix_data": {"rows": 2, "cols": 1, "storage": [0.02, 0.1]}
+                },
+                "noise_step": 0.02,
+                "downsampled_scale": 0.0,
+                "amplitude_range": {
+                    "matrix_data": {"rows": 2, "cols": 1, "storage": [0.0, 0.2]}
+                },
+                "num_waves": 4.0,
+                "border_width": 0.25
+            },
+            {
+                "name": "wave",
+                "type": "Wave",
+                "proportion": 0.1,
+                "inverted": false,
+                "step_height_range": {
+                    "matrix_data": {"rows": 2, "cols": 1, "storage": [0.0, 0.1]}
+                },
+                "step_width": 0.3,
+                "platform_width": 3.0,
+                "slope_range": {
+                    "matrix_data": {"rows": 2, "cols": 1, "storage": [0.0, 1.0]}
+                },
+                "noise_range": {
+                    "matrix_data": {"rows": 2, "cols": 1, "storage": [0.02, 0.1]}
+                },
+                "noise_step": 0.02,
+                "downsampled_scale": 0.0,
+                "amplitude_range": {
+                    "matrix_data": {"rows": 2, "cols": 1, "storage": [0.0, 0.2]}
+                },
+                "num_waves": 4.0,
+                "border_width": 0.25
+            }
+        ]
+    }
+}

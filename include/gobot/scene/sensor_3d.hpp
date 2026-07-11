@@ -8,6 +8,7 @@
 
 #include <vector>
 
+#include "gobot/core/robotics_types.hpp"
 #include "gobot/scene/node_3d.hpp"
 
 namespace gobot {
@@ -82,24 +83,6 @@ private:
     RealType radius_{0.02};
     RealType min_threshold_{0.0};
     RealType max_threshold_{0.0};
-};
-
-enum class RayReductionMode {
-    None,
-    Min,
-    Max,
-    Mean,
-};
-
-enum class RayPatternMode {
-    Custom,
-    Grid,
-};
-
-enum class RayAlignmentMode {
-    World,
-    Base,
-    Yaw,
 };
 
 class GOBOT_EXPORT RayCastSensor3D : public Sensor3D {

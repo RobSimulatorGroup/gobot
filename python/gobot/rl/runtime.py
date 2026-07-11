@@ -194,9 +194,9 @@ class LocomotionBatchSpec:
     foot_height_sensor_names: Sequence[str] = ()
     foot_contact_sensor_names: Sequence[str] = ()
     height_scan_sensor: str | None = None
-    thigh_link_patterns: Sequence[str] = ()
-    shank_link_patterns: Sequence[str] = ()
-    trunk_head_link_patterns: Sequence[str] = ()
+    thigh_shape_patterns: Sequence[str] = ()
+    shank_shape_patterns: Sequence[str] = ()
+    trunk_head_shape_patterns: Sequence[str] = ()
     terminate_on_thigh_contact: bool = True
     ground_force_threshold: float = 50.0
     self_collision_force_threshold: float = 20.0
@@ -237,7 +237,7 @@ class _NativeLocomotionBatchArrays:
 
 
 class GobotSceneBatchBackend:
-    """UniLab-style Python facade over Gobot's scene-authored batch runtime.
+    """Python facade over Gobot's scene-authored batch runtime.
 
     The source of truth stays the loaded Gobot scene. This class only narrows
     the hot training path to batched control arrays, a single physics step call,
@@ -429,9 +429,9 @@ class NativeLocomotionBatchBackend:
         foot_height_sensor_names: Sequence[str] = (),
         foot_contact_sensor_names: Sequence[str] = (),
         height_scan_sensor: str | None = None,
-        thigh_link_patterns: Sequence[str] = (),
-        shank_link_patterns: Sequence[str] = (),
-        trunk_head_link_patterns: Sequence[str] = (),
+        thigh_shape_patterns: Sequence[str] = (),
+        shank_shape_patterns: Sequence[str] = (),
+        trunk_head_shape_patterns: Sequence[str] = (),
         terminate_on_thigh_contact: bool = True,
         ground_force_threshold: float = 50.0,
         self_collision_force_threshold: float = 20.0,
@@ -448,9 +448,9 @@ class NativeLocomotionBatchBackend:
                 foot_height_sensor_names=foot_height_sensor_names,
                 foot_contact_sensor_names=foot_contact_sensor_names,
                 height_scan_sensor=height_scan_sensor,
-                thigh_link_patterns=thigh_link_patterns,
-                shank_link_patterns=shank_link_patterns,
-                trunk_head_link_patterns=trunk_head_link_patterns,
+                thigh_shape_patterns=thigh_shape_patterns,
+                shank_shape_patterns=shank_shape_patterns,
+                trunk_head_shape_patterns=trunk_head_shape_patterns,
                 terminate_on_thigh_contact=terminate_on_thigh_contact,
                 ground_force_threshold=ground_force_threshold,
                 self_collision_force_threshold=self_collision_force_threshold,
@@ -465,9 +465,9 @@ class NativeLocomotionBatchBackend:
         self.foot_height_sensor_names = tuple(str(name) for name in spec.foot_height_sensor_names)
         self.foot_contact_sensor_names = tuple(str(name) for name in spec.foot_contact_sensor_names)
         self.height_scan_sensor = "" if spec.height_scan_sensor is None else str(spec.height_scan_sensor)
-        self.thigh_link_patterns = tuple(str(pattern) for pattern in spec.thigh_link_patterns)
-        self.shank_link_patterns = tuple(str(pattern) for pattern in spec.shank_link_patterns)
-        self.trunk_head_link_patterns = tuple(str(pattern) for pattern in spec.trunk_head_link_patterns)
+        self.thigh_shape_patterns = tuple(str(pattern) for pattern in spec.thigh_shape_patterns)
+        self.shank_shape_patterns = tuple(str(pattern) for pattern in spec.shank_shape_patterns)
+        self.trunk_head_shape_patterns = tuple(str(pattern) for pattern in spec.trunk_head_shape_patterns)
         self.terminate_on_thigh_contact = bool(spec.terminate_on_thigh_contact)
         self.ground_force_threshold = float(spec.ground_force_threshold)
         self.self_collision_force_threshold = float(spec.self_collision_force_threshold)
@@ -504,9 +504,9 @@ class NativeLocomotionBatchBackend:
             list(self.foot_height_sensor_names),
             list(self.foot_contact_sensor_names),
             self.height_scan_sensor,
-            list(self.thigh_link_patterns),
-            list(self.shank_link_patterns),
-            list(self.trunk_head_link_patterns),
+            list(self.thigh_shape_patterns),
+            list(self.shank_shape_patterns),
+            list(self.trunk_head_shape_patterns),
             self.terminate_on_thigh_contact,
             self.ground_force_threshold,
             self.self_collision_force_threshold,
@@ -678,13 +678,6 @@ class NativeLocomotionBatchBackend:
     def step_profile(self) -> dict[str, float]:
         return self.state.step_profile()
 
-    def model_debug(self, env_id: int = 0) -> dict[str, Any]:
-        self._require_view()
-        model_debug = getattr(self._view, "model_debug", None)
-        if model_debug is None:
-            raise RuntimeError("Gobot native locomotion batch view has no model debug API")
-        return dict(model_debug(int(env_id)))
-
     def terrain_heights(self, points: Any, env_id: int = 0) -> np.ndarray:
         self._require_view()
         terrain_heights = getattr(self._view, "terrain_heights", None)
@@ -768,7 +761,14 @@ class NativeLocomotionBatchBackend:
             np.asarray(angular_velocity, dtype=np.float32),
         )
 
-    def set_base_velocities(self, env_ids: Sequence[int], linear_velocities: Any, angular_velocities: Any) -> None:
+    def set_base_velocities(
+        self,
+        env_ids: Sequence[int],
+        linear_velocities: Any,
+        angular_velocities: Any,
+        *,
+        refresh: bool = True,
+    ) -> None:
         self._require_view()
         env_id_array = np.asarray(env_ids, dtype=np.int64).reshape(-1)
         linear = np.asarray(linear_velocities, dtype=np.float32)
@@ -778,8 +778,10 @@ class NativeLocomotionBatchBackend:
             raise ValueError("linear_velocities and angular_velocities must have shape [len(env_ids), 3]")
         set_many = getattr(self._view, "set_base_velocities", None)
         if set_many is not None:
-            set_many([int(env_id) for env_id in env_id_array], linear, angular)
+            set_many([int(env_id) for env_id in env_id_array], linear, angular, bool(refresh))
             return
+        if not refresh:
+            raise RuntimeError("deferred base-velocity writes require the native batch setter")
         for row, env_id in enumerate(env_id_array):
             self.set_base_velocity(int(env_id), linear[row], angular[row])
 

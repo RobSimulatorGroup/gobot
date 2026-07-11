@@ -11,25 +11,10 @@
 #include <vector>
 
 #include "gobot/core/math/geometry.hpp"
+#include "gobot/core/robotics_types.hpp"
 #include "gobot/scene/node_3d.hpp"
 
 namespace gobot {
-
-enum class JointType {
-    Fixed,
-    Revolute,
-    Continuous,
-    Prismatic,
-    Floating,
-    Planar
-};
-
-enum class JointDriveMode {
-    Passive,
-    Motor,
-    Position,
-    Velocity
-};
 
 class GOBOT_EXPORT Joint3D : public Node3D {
     GOBCLASS(Joint3D, Node3D)
@@ -96,6 +81,8 @@ public:
     void CaptureAssemblyPose();
 
     void RestoreAssemblyPose();
+
+    bool GetAssemblyChildTransform(const Node3D* child, Affine3* transform) const;
 
     void SetMotionModeEnabled(bool enabled);
 

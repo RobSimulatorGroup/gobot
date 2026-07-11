@@ -22,7 +22,6 @@ from examples.go1.train.go1_velocity_env import Go1VelocityEnv
 
 def main() -> None:
     parser = argparse.ArgumentParser()
-    parser.add_argument("--task", type=str, default="go1_flat", help="Go1 velocity task: go1_flat or go1_rough.")
     parser.add_argument("--num-envs", "--num_envs", type=int, default=2048)
     parser.add_argument("--steps", "--num-steps", "--num_steps", type=int, default=20, help="Measured env.step calls.")
     parser.add_argument("--warmup-steps", "--warmup_steps", type=int, default=5, help="Unmeasured env.step calls before timing.")
@@ -45,7 +44,7 @@ def main() -> None:
     if args.warmup_steps < 0:
         raise ValueError("--warmup-steps cannot be negative")
 
-    cfg = go1_velocity_cfg(args.task, project_path=GO1_PROJECT)
+    cfg = go1_velocity_cfg(project_path=GO1_PROJECT)
     cfg.observations.actor_noise = bool(args.obs_noise)
     cfg.terrain_curriculum = bool(args.terrain_curriculum)
 

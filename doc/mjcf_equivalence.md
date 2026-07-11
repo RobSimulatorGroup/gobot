@@ -4,8 +4,7 @@ This page explains the current Gobot goal for MJCF import and MuJoCo runtime
 execution. The short version is:
 
 - `.jscn` is the editable source of truth after import.
-- `Robot3D.source_path` is provenance or fallback data, not the normal Go1
-  simulation path.
+- `Robot3D.source_path` is import provenance and is never a simulation input.
 - MuJoCo body state is the runtime source of truth after stepping.
 - The editor viewport must display the runtime body state, not a second pose
   reconstructed by editor-only transforms.
@@ -47,9 +46,9 @@ After import, MJCF data should be represented as normal Gobot scene objects:
 - `CollisionShape3D` owns contact and friction parameters.
 - shape resources, including `CapsuleShape3D`, preserve geometry.
 
-For Go1, `examples/go1/go1.jscn` intentionally has an empty `source_path`.
-If Go1 still stands, it proves the authored Gobot data is good enough to build
-the MuJoCo model.
+Go1 must stand even if its `source_path` is changed to a missing file. The
+physics snapshot intentionally contains no import source path, proving the
+authored Gobot data is sufficient to build the MuJoCo model.
 
 ## Runtime Path
 
@@ -79,20 +78,17 @@ When Go1 appears to sink through the floor, check these in order:
    targets, for example thigh around `0.9` and calf around `-1.8`.
 3. Check base height after reset and a short run. A healthy default stand smoke
    test is around `z=0.26`; values near `0.05` mean the robot has collapsed.
-4. Confirm `examples/go1/go1.jscn` has `source_path: ""`.
-5. For stand-only debugging, run with `GOBOT_GO1_POLICY=""`. For interactive
-   walking, the example tries `res://policies/go1.pt` by default and
-   `GOBOT_GO1_POLICY` can override that path.
+4. Confirm changing `Robot3D.source_path` does not change the compiled model.
+5. For interactive walking, export the current manifest-backed policy to
+   `res://policies/go1_velocity.onnx`; `GOBOT_GO1_POLICY` can override that path.
 6. If physics height/contact are correct but debug shapes look below the floor,
    suspect scene-to-viewport synchronization or debug shape drawing, not MuJoCo
    contact generation.
 
-The commonly used Go1 standing qpos with base `z=0.27` starts with the foot
-spheres about `1.8cm` inside the ground in MuJoCo itself. MuJoCo resolves that
-penetration after stepping, but it looks wrong in an editor viewport. The Gobot
-Go1 example therefore resets the base to `z=0.288` for the same joint pose, so
-the scene starts without visible foot penetration while still settling to the
-same standing configuration.
+The Go1 task defines a `0.278m` base clearance relative to the selected terrain
+spawn origin. The world-space reset `z` can therefore be negative on pits or
+positive on raised patches; it must not be interpreted as a flat-ground
+constant.
 
 ## Go1 Keyboard Control
 
@@ -106,10 +102,10 @@ fields, popups, and other editor UI should not drive the robot.
 
 The Go1 script polls `context.input` during `_physics_process()`. `W/S` control
 forward speed, `Q/E` strafe, `A/D` yaw, `Space` commands stop, and `R` resets
-the runtime pose. These keys drive the policy command velocity when the default
-`res://policies/go1.pt` policy, or a `GOBOT_GO1_POLICY` override, is loaded.
-Without a policy the example keeps the standing PD target and does not fake
-walking.
+the runtime pose. These keys drive the policy command velocity when
+`res://policies/go1_velocity.onnx`, the fallback
+`res://policies/go1_velocity.pt`, or a `GOBOT_GO1_POLICY` override is loaded.
+Missing, legacy, or contract-mismatched policies fail at startup.
 
 ## Regression Tests
 

@@ -57,6 +57,46 @@ const PhysicsLinkSnapshot* FindLinkSnapshot(const PhysicsRobotSnapshot& robot_sn
     return nullptr;
 }
 
+const PhysicsRobotSceneBinding* FindRobotSceneBinding(const PhysicsSceneBindings& bindings,
+                                                      const PhysicsSceneSnapshot& snapshot,
+                                                      std::size_t robot_index,
+                                                      const std::string& robot_name) {
+    if (robot_index < bindings.robots.size() &&
+        robot_index < snapshot.robots.size() &&
+        snapshot.robots[robot_index].name == robot_name) {
+        return &bindings.robots[robot_index];
+    }
+
+    for (std::size_t index = 0; index < snapshot.robots.size() && index < bindings.robots.size(); ++index) {
+        if (snapshot.robots[index].name == robot_name) {
+            return &bindings.robots[index];
+        }
+    }
+    return nullptr;
+}
+
+const Joint3D* FindJointSceneNode(const PhysicsRobotSceneBinding& binding,
+                                 const PhysicsRobotSnapshot& snapshot,
+                                 const std::string& joint_name) {
+    for (std::size_t index = 0; index < snapshot.joints.size() && index < binding.joints.size(); ++index) {
+        if (snapshot.joints[index].name == joint_name) {
+            return binding.joints[index];
+        }
+    }
+    return nullptr;
+}
+
+const Link3D* FindLinkSceneNode(const PhysicsRobotSceneBinding& binding,
+                               const PhysicsRobotSnapshot& snapshot,
+                               const std::string& link_name) {
+    for (std::size_t index = 0; index < snapshot.links.size() && index < binding.links.size(); ++index) {
+        if (snapshot.links[index].name == link_name) {
+            return binding.links[index];
+        }
+    }
+    return nullptr;
+}
+
 const char* BackendName(PhysicsBackendType backend_type) {
     switch (backend_type) {
         case PhysicsBackendType::Null:
@@ -225,6 +265,7 @@ void SimulationServer::SetSyncSceneOnFixedStep(bool sync_scene_on_fixed_step) {
 
 bool SimulationServer::BuildWorldFromScene(const Node* scene_root) {
     runtime_scene_.Clear();
+    scene_bindings_ = {};
     world_ = PhysicsServer::CreateWorldForBackend(backend_type_, physics_world_settings_);
     if (!world_.IsValid()) {
         SetLastError("Failed to create physics world.");
@@ -237,11 +278,19 @@ bool SimulationServer::BuildWorldFromScene(const Node* scene_root) {
         return false;
     }
 
-    if (!world_->BuildFromScene(scene_root)) {
+    CompiledPhysicsScene compiled_scene;
+    std::string compile_error;
+    if (!PhysicsSceneCompiler::Compile(scene_root, &compiled_scene, &compile_error)) {
+        SetLastError(std::move(compile_error));
+        world_.Reset();
+        return false;
+    }
+    if (!world_->Build(std::move(compiled_scene.snapshot))) {
         SetLastError(world_->GetLastError());
         world_.Reset();
         return false;
     }
+    scene_bindings_ = std::move(compiled_scene.bindings);
 
     if (!runtime_scene_.Initialize(world_, scene_root)) {
         SetLastError(runtime_scene_.GetLastError());
@@ -261,6 +310,7 @@ bool SimulationServer::RebuildWorldFromScene(const Node* scene_root, bool preser
     }
 
     runtime_scene_.Clear();
+    scene_bindings_ = {};
     world_ = PhysicsServer::CreateWorldForBackend(backend_type_, physics_world_settings_);
     if (!world_.IsValid()) {
         SetLastError("Failed to create physics world.");
@@ -273,11 +323,19 @@ bool SimulationServer::RebuildWorldFromScene(const Node* scene_root, bool preser
         return false;
     }
 
-    if (!world_->BuildFromScene(scene_root)) {
+    CompiledPhysicsScene compiled_scene;
+    std::string compile_error;
+    if (!PhysicsSceneCompiler::Compile(scene_root, &compiled_scene, &compile_error)) {
+        SetLastError(std::move(compile_error));
+        world_.Reset();
+        return false;
+    }
+    if (!world_->Build(std::move(compiled_scene.snapshot))) {
         SetLastError(world_->GetLastError());
         world_.Reset();
         return false;
     }
+    scene_bindings_ = std::move(compiled_scene.bindings);
 
     if (preserve_state && !world_->RestoreCompatibleState(previous_state)) {
         SetLastError(world_->GetLastError());
@@ -303,6 +361,7 @@ const Node* SimulationServer::GetSceneRoot() const {
 
 void SimulationServer::ClearWorld() {
     runtime_scene_.Clear();
+    scene_bindings_ = {};
     world_.Reset();
     ResetClock();
 }
@@ -546,15 +605,17 @@ bool SimulationServer::ApplyWorldStateToScene() {
     const PhysicsSceneSnapshot& scene_snapshot = world_->GetSceneSnapshot();
     for (std::size_t robot_index = 0; robot_index < scene_state.robots.size(); ++robot_index) {
         const PhysicsRobotState& robot_state = scene_state.robots[robot_index];
-        auto* robot = const_cast<Robot3D*>(robot_state.node);
+        const PhysicsRobotSnapshot* robot_snapshot =
+                FindRobotSnapshot(scene_snapshot, robot_index, robot_state.name);
+        const PhysicsRobotSceneBinding* scene_binding =
+                FindRobotSceneBinding(scene_bindings_, scene_snapshot, robot_index, robot_state.name);
+        auto* robot = scene_binding != nullptr ? const_cast<Robot3D*>(scene_binding->robot) : nullptr;
         if (!robot || robot->GetMode() != RobotMode::Motion) {
             continue;
         }
 
-        const PhysicsRobotSnapshot* robot_snapshot =
-                FindRobotSnapshot(scene_snapshot, robot_index, robot_state.name);
         std::string floating_base_link;
-        if (robot_snapshot != nullptr) {
+        if (robot_snapshot != nullptr && scene_binding != nullptr) {
             for (const PhysicsJointSnapshot& joint_snapshot : robot_snapshot->joints) {
                 if (static_cast<JointType>(joint_snapshot.joint_type) != JointType::Floating) {
                     continue;
@@ -567,8 +628,10 @@ bool SimulationServer::ApplyWorldStateToScene() {
                     continue;
                 }
 
-                auto* joint = const_cast<Joint3D*>(joint_snapshot.node);
-                auto* floating_link = const_cast<Link3D*>(floating_link_state->node);
+                auto* joint = const_cast<Joint3D*>(
+                        FindJointSceneNode(*scene_binding, *robot_snapshot, joint_snapshot.name));
+                auto* floating_link = const_cast<Link3D*>(
+                        FindLinkSceneNode(*scene_binding, *robot_snapshot, floating_link_state->link_name));
                 const PhysicsLinkSnapshot* floating_link_snapshot =
                         FindLinkSnapshot(*robot_snapshot, joint_snapshot.child_link);
                 if (joint != nullptr && floating_link != nullptr && floating_link_snapshot != nullptr) {
@@ -583,7 +646,10 @@ bool SimulationServer::ApplyWorldStateToScene() {
         }
 
         for (const PhysicsJointState& joint_state : robot_state.joints) {
-            auto* joint = const_cast<Joint3D*>(joint_state.node);
+            auto* joint = robot_snapshot != nullptr && scene_binding != nullptr
+                                  ? const_cast<Joint3D*>(FindJointSceneNode(
+                                            *scene_binding, *robot_snapshot, joint_state.joint_name))
+                                  : nullptr;
             if (joint && joint->IsMotionModeEnabled() && joint->GetJointType() != JointType::Floating) {
                 joint->SetJointPosition(joint_state.position);
             }
@@ -597,7 +663,10 @@ bool SimulationServer::ApplyWorldStateToScene() {
                 continue;
             }
 
-            auto* link = const_cast<Link3D*>(link_state.node);
+            auto* link = robot_snapshot != nullptr && scene_binding != nullptr
+                                 ? const_cast<Link3D*>(FindLinkSceneNode(
+                                           *scene_binding, *robot_snapshot, link_state.link_name))
+                                 : nullptr;
             if (link != nullptr) {
                 ApplyLinkGlobalTransform(link, link_state.global_transform);
             }

@@ -128,10 +128,27 @@ if(GOBOT_PYTHON_LIBRARY_DIR)
 endif()
 
 add_test(
+        NAME test_architecture_dependencies
+        COMMAND ${Python3_EXECUTABLE}
+                ${CMAKE_CURRENT_SOURCE_DIR}/architecture/test_dependency_boundaries.py
+)
+set_tests_properties(test_architecture_dependencies
+        PROPERTIES WORKING_DIRECTORY "${CMAKE_SOURCE_DIR}")
+
+add_test(
         NAME test_python_bindings_smoke
         COMMAND ${Python3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/python/test_python_bindings_smoke.py
 )
 set_tests_properties(test_python_bindings_smoke
+        PROPERTIES
+            ENVIRONMENT "${GOBOT_PYTHON_TEST_ENV}"
+            WORKING_DIRECTORY "${CMAKE_SOURCE_DIR}"
+)
+add_test(
+        NAME test_python_policy_manifest
+        COMMAND ${Python3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/python/test_policy_manifest.py
+)
+set_tests_properties(test_python_policy_manifest
         PROPERTIES
             ENVIRONMENT "${GOBOT_PYTHON_TEST_ENV}"
             WORKING_DIRECTORY "${CMAKE_SOURCE_DIR}"

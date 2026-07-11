@@ -1,6 +1,16 @@
 from __future__ import annotations
 
 from .batch import BatchEnvState, CpuBatchEnv
+from .policy import (
+    ONNX_POLICY_MANIFEST_KEY,
+    POLICY_MANIFEST_KEY,
+    PolicyManifest,
+    policy_manifest_from_checkpoint,
+    policy_manifest_from_onnx_metadata,
+    read_policy_manifest_sidecar,
+    scene_bundle_digest,
+    write_policy_manifest_sidecar,
+)
 from .runtime import (
     BatchSimulationRuntime,
     GobotSceneBatchBackend,
@@ -12,7 +22,6 @@ from .spec import ActionSpec, ObservationSpec, SpecField, validate_spec_metadata
 from .task_runtime import TaskRuntimeMetadata
 from . import locomotion
 from .rsl_rl import (
-    FinalObservationAwarePPO,
     RslRlBaseRunnerCfg,
     RslRlModelCfg,
     RslRlOnPolicyRunnerCfg,

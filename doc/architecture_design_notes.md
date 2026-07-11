@@ -1,6 +1,7 @@
-# Gobot Architecture Notes
+# Gobot Architecture Notes (Historical Roadmap)
 
-This document records the current design direction from the editor/rendering cleanup work.
+The authoritative current boundaries are in `doc/architecture.md`. This file
+retains longer-term rendering, physics, and editor roadmap notes.
 
 For the current MuJoCo CPU, MuJoCo Warp, and `gobot.rl` roadmap, see
 `doc/mujoco_rl_plan.md`.
@@ -180,7 +181,8 @@ Backend direction:
 The scene-to-physics data model should be backend-neutral:
 
 - `PhysicsSceneSnapshot`: robots, loose collision shapes, total object counts.
-- `PhysicsRobotSnapshot`: robot source path, links, joints.
+- `PhysicsRobotSnapshot`: stable robot name, links, joints, and sensors. Import
+  source paths do not enter runtime snapshots.
 - `PhysicsLinkSnapshot`: transform, mass, center of mass, inertia, collision shapes.
 - `PhysicsJointSnapshot`: parent/child links, joint type, axis, limits, velocity/effort limits, current joint position.
 - `PhysicsShapeSnapshot`: shape type, transform, box/sphere/cylinder/mesh dimensions, disabled state.
@@ -204,7 +206,8 @@ Implementation phases:
    - prefer a local MuJoCo SDK/package through `GOB_MUJOCO_ROOT` or `CMAKE_PREFIX_PATH`.
    - allow opt-in source fetching through `GOB_FETCH_MUJOCO` and a pinned `GOB_MUJOCO_GIT_TAG`.
    - do not make MuJoCo a default submodule unless Gobot later needs a fully vendored offline dependency set.
-   - create a MuJoCo model from the neutral robot snapshot or from the source URDF when that is the most reliable path.
+   - create a MuJoCo model only from the neutral authored snapshot; import URDF
+     or MJCF into Gobot scene data before runtime compilation.
    - map joint limits, axes, inertial data, and primitive collision shapes first.
    - support reset and fixed-step simulation before adding advanced controls.
 5. Add physics debug visualization:
@@ -242,8 +245,8 @@ The first useful milestone is not full dynamics. It is a reliable simulation she
 The authoritative data flow should remain scene-first:
 
 1. `Robot3D`, `Link3D`, `Joint3D`, and `CollisionShape3D` live in the Gobot scene tree.
-2. `PhysicsWorld::BuildFromScene(scene_root)` captures a backend-neutral `PhysicsSceneSnapshot`.
-3. `MuJoCoPhysicsWorld` reads `Robot3D::source_path` and builds a MuJoCo model from URDF/MJCF XML or an equivalent generated `mjSpec`.
+2. `PhysicsSceneCompiler::Compile(scene_root)` captures a backend-neutral `PhysicsSceneSnapshot` and separate scene bindings.
+3. `MuJoCoPhysicsWorld::Build(snapshot)` builds an `mjSpec` only from authored Gobot data in the snapshot.
 4. Link, joint, and actuator bindings map Gobot names to MuJoCo body, joint, and actuator ids.
 5. Runtime stepping applies controls, calls `mj_step`, reads MuJoCo state, and updates `PhysicsSceneState`.
 6. `SimulationServer::ApplyWorldStateToScene()` writes simulation-owned state back to Gobot scene nodes.
@@ -253,7 +256,7 @@ URDF imports should mark a root link with no visual, no collision, and no inerti
 Scene edits must use two different paths:
 
 - Runtime state edits, such as joint position targets, velocities, efforts, reset poses, floating base pose, and control mode, should update `PhysicsSceneState` / `mjData` and call `mj_forward` without rebuilding `mjModel`.
-- Model/topology edits, such as changing `Robot3D::source_path`, adding/removing links or joints, changing joint type/axis/limits, changing collision shapes, or changing actuators, require rebuilding the physics world.
+- Model/topology edits, such as adding/removing links or joints, changing joint type/axis/limits, changing collision shapes, or changing actuators, require recompiling and rebuilding the physics world. Changing import provenance alone does not.
 
 The rebuild path is:
 
@@ -261,7 +264,7 @@ The rebuild path is:
 2. Save the previous `PhysicsSceneState`.
 3. Capture a fresh scene snapshot.
 4. Destroy old backend runtime data (`mjData`) and model data (`mjModel`).
-5. Parse/load/generate MuJoCo XML or `mjSpec`, compile with `mj_compile`, and allocate `mjData`.
+5. Generate `mjSpec` from the compiled snapshot, compile with `mj_compile`, and allocate `mjData`.
 6. Rebuild link, joint, and actuator bindings by name.
 7. Restore compatible previous state by robot/link/joint name, preserving only matching joint types.
 8. Sync the restored scene state into `mjData`.
@@ -274,7 +277,7 @@ Exporting a temporary URDF or MJCF file is acceptable as a transition step, but 
 
 ## Python Binding Direction
 
-The Python layer should be added after the C++ API boundaries are stable enough to bind cleanly.
+The Python layer exists and should be migrated as C++ service boundaries become stable.
 
 Recommended shape:
 

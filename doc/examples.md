@@ -65,18 +65,18 @@ Gobot scene. Install `gobot[train]` only to load `.pt` checkpoints directly.
 ## Go1
 
 `examples/go1` is a Unitree Go1 policy-playback and training example. The
-editor playback path uses ONNX Runtime when `policies/go1.onnx` is present, so
-it does not need the rsl_rl training stack. Training remains a direct Python
-MuJoCo + rsl_rl workflow. It contains:
+editor playback path uses ONNX Runtime when `policies/go1_velocity.onnx` is
+present, so it does not need the rsl_rl training stack. Training uses Gobot's
+scene-authored MuJoCo CPU batch world through the normal Python API. It contains:
 
 - `train/go1_velocity_train.py`: the rsl_rl PPO training entry point.
 - `train/go1_velocity_env.py`: the Go1-owned vectorized Gobot velocity environment.
-- `train/go1_velocity_cfg.py`: Go1 joints, rewards, PPO, command, and terrain curriculum settings.
-- `go1_scene.xml`: an MJCF reference scene with ground and position actuators.
-- `go1.xml` and `assets/`: the robot MJCF and meshes used by training.
-- `policies/go1.onnx`: lightweight policy playback graph for the editor.
+- `train/go1_velocity_cfg.py`: Go1 joints, rewards, PPO, command, and terrain spawn-curriculum settings.
+- `go1_scene.jscn`: the authored scene with an editor-visible `Terrain3D` node.
+- `terrain/rough_terrain.jres`: the compact versioned procedural terrain recipe shared by editor, Play, and training.
+- `go1.jscn` and `assets/`: the imported robot scene and source meshes.
+- `policies/go1_velocity.onnx`: generated lightweight policy playback graph.
 
-The default asset path can be overridden with `GOBOT_GO1_XML`.
 The default Gobot install can play ONNX policies. Install `gobot[train]` only
 to train or load `.pt` checkpoints directly. Install `imageio imageio-ffmpeg`
 for MP4 training captures and `onnx` for ONNX export.
@@ -88,6 +88,6 @@ The Python package install step includes:
 - `.jscn` scene files.
 - `.py` scripts.
 - `.xml` MuJoCo scene files.
-- policy checkpoints and other example assets checked into `examples/`.
+- source assets checked into `examples/`; generated Go1 policies stay local.
 
 Generated Python cache files and directories are excluded.

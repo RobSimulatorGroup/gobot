@@ -1,11 +1,6 @@
 {
     "__EXT_RESOURCES__": [
         {
-            "__ID__": "3_KysiB",
-            "__PATH__": "res://terrain_scene.jscn",
-            "__TYPE__": "PackedScene"
-        },
-        {
             "__ID__": "2_Jr8iE",
             "__PATH__": "res://go1.jscn",
             "__TYPE__": "PackedScene"
@@ -14,6 +9,11 @@
             "__ID__": "1_ZQA7c",
             "__PATH__": "res://scripts/go1.py",
             "__TYPE__": "PythonScript"
+        },
+        {
+            "__ID__": "3_terrain",
+            "__PATH__": "res://terrain/rough_terrain.jres",
+            "__TYPE__": "TerrainGeneratorConfig"
         }
     ],
     "__META_TYPE__": "SCENE",
@@ -106,7 +106,6 @@
             "type": "Robot3D"
         },
         {
-            "instance": "ExtResource(3_KysiB)",
             "name": "terrain_world",
             "parent": 0,
             "properties": {
@@ -147,6 +146,38 @@
                 "visible": true
             },
             "type": "Node3D"
+        },
+        {
+            "name": "terrain",
+            "parent": 2,
+            "properties": {
+                "color_mode": "Palette",
+                "generator_config": "ExtResource(3_terrain)",
+                "position": {
+                    "matrix_data": {
+                        "cols": 1,
+                        "rows": 3,
+                        "storage": [0.0, 0.0, 0.0]
+                    }
+                },
+                "rotation_degrees": {
+                    "matrix_data": {
+                        "cols": 1,
+                        "rows": 3,
+                        "storage": [0.0, 0.0, 0.0]
+                    }
+                },
+                "scale": {
+                    "matrix_data": {
+                        "cols": 1,
+                        "rows": 3,
+                        "storage": [1.0, 1.0, 1.0]
+                    }
+                },
+                "script": null,
+                "visible": true
+            },
+            "type": "Terrain3D"
         }
     ],
     "__TYPE__": "PackedScene",

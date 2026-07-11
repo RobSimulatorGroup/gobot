@@ -58,7 +58,6 @@ void RegisterManualApis(py::module_& module) {
                                         terrain_height_sensor3d_class,
                                         height_scanner3d_class,
                                         mesh_instance_class);
-    RegisterManualMujocoBatchBindings(module);
     RegisterManualModuleFunctions(module);
 }
 

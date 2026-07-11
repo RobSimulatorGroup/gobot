@@ -17,6 +17,7 @@
 #include "gobot/scene/resources/primitive_mesh.hpp"
 #include "gobot/scene/resources/shape_3d.hpp"
 #include "gobot/scene/resources/sphere_shape_3d.hpp"
+#include "gobot/scene/resources/terrain_generator_config.hpp"
 
 namespace gobot {
 
@@ -108,6 +109,9 @@ Variant ResourceRefToPropertyVariant(const Ref<Resource>& resource, const Type& 
     }
     if (expected_type == Type::get<SphereShape3D>()) {
         return resource.DynamicPointerCast<SphereShape3D>();
+    }
+    if (expected_type == Type::get<TerrainGeneratorConfig>()) {
+        return resource.DynamicPointerCast<TerrainGeneratorConfig>();
     }
 
     return {};
@@ -278,6 +282,15 @@ void ResourceCreationRegistry::EnsureBuiltInResourceTypesRegistered() {
         "Sphere collision shape resource.",
         Type::get<SphereShape3D>(),
         []() -> Ref<Resource> { return CreateResourceRef<SphereShape3D>(); }
+    });
+
+    RegisterResourceType({
+        "TerrainGeneratorConfig",
+        "TerrainGeneratorConfig",
+        "Resource",
+        "Versioned procedural terrain generation configuration.",
+        Type::get<TerrainGeneratorConfig>(),
+        []() -> Ref<Resource> { return CreateResourceRef<TerrainGeneratorConfig>(); }
     });
 }
 

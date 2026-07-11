@@ -12,6 +12,8 @@
 #include <limits>
 
 #include "gobot/core/registration.hpp"
+#include "gobot/log.hpp"
+#include "gobot/scene/terrain_generator.hpp"
 
 namespace gobot {
 namespace {
@@ -354,15 +356,17 @@ std::vector<Color> GenerateHeightRampColors(const std::vector<Vector3>& vertices
 } // namespace
 
 void Terrain3D::ClearTerrain() {
-    boxes_.clear();
-    heightfields_.clear();
-    mesh_patches_.clear();
-    spawn_origins_.clear();
+    authored_boxes_.clear();
+    authored_heightfields_.clear();
+    authored_mesh_patches_.clear();
+    authored_spawn_origins_.clear();
+    generator_config_.Reset();
+    InvalidateGeneratedTerrain();
     MarkMeshDirty();
 }
 
 void Terrain3D::AddBox(const TerrainBox& box) {
-    boxes_.push_back(box);
+    authored_boxes_.push_back(box);
     MarkMeshDirty();
 }
 
@@ -377,52 +381,97 @@ void Terrain3D::AddBox(const Vector3& center,
 }
 
 void Terrain3D::SetBoxes(const std::vector<TerrainBox>& boxes) {
-    boxes_ = boxes;
+    authored_boxes_ = boxes;
     MarkMeshDirty();
 }
 
 const std::vector<TerrainBox>& Terrain3D::GetBoxes() const {
-    return boxes_;
+    EnsureGenerated();
+    return generator_config_.IsValid() ? generated_boxes_ : authored_boxes_;
+}
+
+const std::vector<TerrainBox>& Terrain3D::GetAuthoredBoxes() const {
+    return authored_boxes_;
 }
 
 void Terrain3D::AddHeightField(const TerrainHeightField& heightfield) {
-    heightfields_.push_back(heightfield);
+    authored_heightfields_.push_back(heightfield);
     MarkMeshDirty();
 }
 
 void Terrain3D::SetHeightFields(const std::vector<TerrainHeightField>& heightfields) {
-    heightfields_ = heightfields;
+    authored_heightfields_ = heightfields;
     MarkMeshDirty();
 }
 
 const std::vector<TerrainHeightField>& Terrain3D::GetHeightFields() const {
-    return heightfields_;
+    EnsureGenerated();
+    return generator_config_.IsValid() ? generated_heightfields_ : authored_heightfields_;
+}
+
+const std::vector<TerrainHeightField>& Terrain3D::GetAuthoredHeightFields() const {
+    return authored_heightfields_;
 }
 
 void Terrain3D::AddMeshPatch(const TerrainMeshPatch& mesh_patch) {
-    mesh_patches_.push_back(mesh_patch);
+    authored_mesh_patches_.push_back(mesh_patch);
     MarkMeshDirty();
 }
 
 void Terrain3D::SetMeshPatches(const std::vector<TerrainMeshPatch>& mesh_patches) {
-    mesh_patches_ = mesh_patches;
+    authored_mesh_patches_ = mesh_patches;
     MarkMeshDirty();
 }
 
 const std::vector<TerrainMeshPatch>& Terrain3D::GetMeshPatches() const {
-    return mesh_patches_;
+    EnsureGenerated();
+    return generator_config_.IsValid() ? generated_mesh_patches_ : authored_mesh_patches_;
+}
+
+const std::vector<TerrainMeshPatch>& Terrain3D::GetAuthoredMeshPatches() const {
+    return authored_mesh_patches_;
 }
 
 void Terrain3D::SetSpawnOrigins(const std::vector<Vector3>& spawn_origins) {
-    spawn_origins_ = spawn_origins;
+    authored_spawn_origins_ = spawn_origins;
 }
 
 const std::vector<Vector3>& Terrain3D::GetSpawnOrigins() const {
-    return spawn_origins_;
+    EnsureGenerated();
+    return generator_config_.IsValid() ? generated_spawn_origins_ : authored_spawn_origins_;
+}
+
+const std::vector<Vector3>& Terrain3D::GetAuthoredSpawnOrigins() const {
+    return authored_spawn_origins_;
+}
+
+void Terrain3D::SetGeneratorConfig(const Ref<TerrainGeneratorConfig>& generator_config) {
+    if (generator_config_ == generator_config) {
+        return;
+    }
+    generator_config_ = generator_config;
+    InvalidateGeneratedTerrain();
+    MarkMeshDirty();
+}
+
+Ref<TerrainGeneratorConfig> Terrain3D::GetGeneratorConfig() const {
+    return generator_config_;
+}
+
+void Terrain3D::RegenerateTerrain() {
+    InvalidateGeneratedTerrain();
+    MarkMeshDirty();
+    EnsureGenerated();
+}
+
+const std::string& Terrain3D::GetGenerationError() const {
+    EnsureGenerated();
+    return generation_error_;
 }
 
 void Terrain3D::SetSurfaceColor(const Color& color) {
     surface_color_ = color;
+    MarkMeshDirty();
 }
 
 Color Terrain3D::GetSurfaceColor() const {
@@ -543,11 +592,51 @@ Ref<ArrayMesh> Terrain3D::GetRenderMesh() const {
     return render_mesh_;
 }
 
+void Terrain3D::EnsureGenerated() const {
+    if (!generator_config_.IsValid()) {
+        return;
+    }
+    const std::size_t content_hash = generator_config_->GetContentHash();
+    if (generated_config_hash_valid_ && content_hash == generated_config_hash_) {
+        return;
+    }
+
+    GeneratedTerrainData generated;
+    std::string error;
+    if (!GenerateTerrain(*generator_config_.Get(), &generated, &error)) {
+        generated_boxes_.clear();
+        generated_heightfields_.clear();
+        generated_mesh_patches_.clear();
+        generated_spawn_origins_.clear();
+        generation_error_ = std::move(error);
+        LOG_ERROR("Terrain3D '{}' generation failed: {}", GetName(), generation_error_);
+    } else {
+        generated_boxes_ = std::move(generated.boxes);
+        generated_heightfields_ = std::move(generated.heightfields);
+        generated_mesh_patches_ = std::move(generated.mesh_patches);
+        generated_spawn_origins_ = std::move(generated.spawn_origins);
+        generation_error_.clear();
+    }
+    generated_config_hash_ = content_hash;
+    generated_config_hash_valid_ = true;
+    render_mesh_dirty_ = true;
+}
+
+void Terrain3D::InvalidateGeneratedTerrain() {
+    generated_boxes_.clear();
+    generated_heightfields_.clear();
+    generated_mesh_patches_.clear();
+    generated_spawn_origins_.clear();
+    generated_config_hash_valid_ = false;
+    generation_error_.clear();
+}
+
 void Terrain3D::MarkMeshDirty() {
     render_mesh_dirty_ = true;
 }
 
 void Terrain3D::RebuildRenderMesh() const {
+    EnsureGenerated();
     if (!render_mesh_dirty_ && render_mesh_.IsValid()) {
         return;
     }
@@ -562,13 +651,13 @@ void Terrain3D::RebuildRenderMesh() const {
     std::vector<Color> colors;
     std::vector<Color>* per_vertex_colors =
             (color_mode_ == TerrainColorMode::Palette) ? &colors : nullptr;
-    for (const TerrainBox& box : boxes_) {
+    for (const TerrainBox& box : GetBoxes()) {
         AppendBoxMesh(vertices, indices, normals, per_vertex_colors, box);
     }
-    for (const TerrainHeightField& heightfield : heightfields_) {
+    for (const TerrainHeightField& heightfield : GetHeightFields()) {
         AppendHeightFieldMesh(vertices, indices, normals, per_vertex_colors, heightfield);
     }
-    for (const TerrainMeshPatch& mesh_patch : mesh_patches_) {
+    for (const TerrainMeshPatch& mesh_patch : GetMeshPatches()) {
         AppendMeshPatch(vertices, indices, normals, per_vertex_colors, mesh_patch);
     }
 
@@ -619,10 +708,13 @@ GOBOT_REGISTRATION {
 
     Class_<gobot::Terrain3D>("Terrain3D")
             .constructor()(CtorAsRawPtr)
-            .property("boxes", &gobot::Terrain3D::GetBoxes, &gobot::Terrain3D::SetBoxes)
-            .property("heightfields", &gobot::Terrain3D::GetHeightFields, &gobot::Terrain3D::SetHeightFields)
-            .property("mesh_patches", &gobot::Terrain3D::GetMeshPatches, &gobot::Terrain3D::SetMeshPatches)
-            .property("spawn_origins", &gobot::Terrain3D::GetSpawnOrigins, &gobot::Terrain3D::SetSpawnOrigins)
+            .property("boxes", &gobot::Terrain3D::GetAuthoredBoxes, &gobot::Terrain3D::SetBoxes)
+            .property("heightfields", &gobot::Terrain3D::GetAuthoredHeightFields, &gobot::Terrain3D::SetHeightFields)
+            .property("mesh_patches", &gobot::Terrain3D::GetAuthoredMeshPatches, &gobot::Terrain3D::SetMeshPatches)
+            .property("spawn_origins", &gobot::Terrain3D::GetAuthoredSpawnOrigins, &gobot::Terrain3D::SetSpawnOrigins)
+            .property("generator_config",
+                      &gobot::Terrain3D::GetGeneratorConfig,
+                      &gobot::Terrain3D::SetGeneratorConfig)
             .property("surface_color", &gobot::Terrain3D::GetSurfaceColor, &gobot::Terrain3D::SetSurfaceColor)
             .property("color_mode", &gobot::Terrain3D::GetColorMode, &gobot::Terrain3D::SetColorMode)
             .property("height_low_color", &gobot::Terrain3D::GetHeightLowColor, &gobot::Terrain3D::SetHeightLowColor)

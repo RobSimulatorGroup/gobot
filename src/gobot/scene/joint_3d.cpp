@@ -225,6 +225,23 @@ void Joint3D::RestoreAssemblyPose() {
     }
 }
 
+bool Joint3D::GetAssemblyChildTransform(const Node3D* child, Affine3* transform) const {
+    if (!assembly_pose_valid_ || child == nullptr || transform == nullptr) {
+        return false;
+    }
+
+    const auto child_transform = std::find_if(
+            child_assembly_transforms_.begin(),
+            child_assembly_transforms_.end(),
+            [child](const auto& entry) { return entry.first == child; });
+    if (child_transform == child_assembly_transforms_.end()) {
+        return false;
+    }
+
+    *transform = child_transform->second;
+    return true;
+}
+
 void Joint3D::SetMotionModeEnabled(bool enabled) {
     if (motion_mode_enabled_ == enabled) {
         return;

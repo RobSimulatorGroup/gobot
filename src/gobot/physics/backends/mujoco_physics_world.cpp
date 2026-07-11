@@ -9,19 +9,16 @@
 #include <algorithm>
 #include <cctype>
 #include <cmath>
-#include <filesystem>
 #include <memory>
 #include <set>
-#include <string_view>
 #include <thread>
 #include <unordered_map>
 
-#include "gobot/core/config/project_setting.hpp"
 #include "gobot/core/profile.hpp"
 #include "gobot/core/registration.hpp"
 #include "gobot/log.hpp"
 #include "gobot/physics/joint_controller.hpp"
-#include "gobot/scene/joint_3d.hpp"
+#include "gobot/physics/physics_sensor_utils.hpp"
 
 #ifdef GOBOT_HAS_MUJOCO
 #include <mujoco/mujoco.h>
@@ -31,7 +28,6 @@ namespace gobot {
 namespace {
 
 #ifdef GOBOT_HAS_MUJOCO
-constexpr int kMuJoCoErrorBufferSize = 1024;
 constexpr RealType kMuJoCoActuatorEpsilon = 1.0e-9;
 constexpr int kGobotTerrainGeomGroup = 5;
 
@@ -161,22 +157,6 @@ void SetVelocityActuator(mjModel* model, mjData* data, int actuator_id, RealType
     SetActuatorControl(model, data, actuator_id, target);
 }
 
-std::string ResolvePhysicsSourcePath(const std::string& source_path) {
-    if (source_path.empty()) {
-        return {};
-    }
-
-    if (ProjectSettings::s_singleton) {
-        return ProjectSettings::GetInstance()->GlobalizePath(source_path);
-    }
-
-    if (source_path.starts_with("res://")) {
-        return source_path.substr(std::string_view("res://").size());
-    }
-
-    return source_path;
-}
-
 const PhysicsLinkSnapshot* FindLinkSnapshot(const PhysicsRobotSnapshot& robot, const std::string& link_name) {
     for (const PhysicsLinkSnapshot& link : robot.links) {
         if (link.name == link_name) {
@@ -246,6 +226,23 @@ void SetMuJoCoQuaternion(double* target, const Quaternion& quaternion) {
     target[1] = normalized.x();
     target[2] = normalized.y();
     target[3] = normalized.z();
+}
+
+Quaternion ReadMuJoCoQuaternion(const mjtNum* source) {
+    Quaternion quaternion(source[0], source[1], source[2], source[3]);
+    if (quaternion.norm() <= CMP_EPSILON) {
+        return Quaternion::Identity();
+    }
+    quaternion.normalize();
+    return quaternion;
+}
+
+Vector3 WorldAngularVelocityToFreeJointQvel(const mjtNum* qpos, const Vector3& angular_velocity_world) {
+    return ReadMuJoCoQuaternion(qpos).conjugate() * angular_velocity_world;
+}
+
+Vector3 FreeJointQvelToWorldAngularVelocity(const mjtNum* qpos, const Vector3& angular_velocity_body) {
+    return ReadMuJoCoQuaternion(qpos) * angular_velocity_body;
 }
 
 void SetMuJoCoPose(mjsBody* body, const Affine3& local_transform) {
@@ -425,63 +422,6 @@ bool HasBodyJoint(const PhysicsLinkSnapshot& link, const PhysicsRobotSnapshot& r
     return parent_joint != nullptr && !IsFixedMuJoCoJoint(*parent_joint);
 }
 
-Matrix3 SensorRayAlignmentMatrix(const Affine3& transform, RayAlignmentMode alignment) {
-    switch (alignment) {
-        case RayAlignmentMode::World:
-            return Matrix3::Identity();
-        case RayAlignmentMode::Base:
-            return transform.linear();
-        case RayAlignmentMode::Yaw: {
-            const Vector3 x_axis = transform.linear() * Vector3::UnitX();
-            const RealType yaw = std::atan2(x_axis.y(), x_axis.x());
-            return AngleAxis(yaw, Vector3::UnitZ()).toRotationMatrix();
-        }
-    }
-    return Matrix3::Identity();
-}
-
-Vector3 ResolveSensorRayDirection(const PhysicsSensorSnapshot& sensor_snapshot,
-                                  const Matrix3& alignment_matrix,
-                                  const Affine3& sensor_transform) {
-    Vector3 ray_direction = sensor_snapshot.ray_direction;
-    if (sensor_snapshot.ray_alignment == RayAlignmentMode::Base) {
-        ray_direction = sensor_transform.linear() * ray_direction;
-    } else if (sensor_snapshot.ray_alignment == RayAlignmentMode::Yaw) {
-        ray_direction = alignment_matrix * ray_direction;
-    } else if (!sensor_snapshot.ray_direction_world_space) {
-        ray_direction = sensor_transform.linear() * ray_direction;
-    }
-
-    if (ray_direction.squaredNorm() <= CMP_EPSILON2) {
-        ray_direction = Vector3{0.0, 0.0, -1.0};
-    } else {
-        ray_direction.normalize();
-    }
-    return ray_direction;
-}
-
-RealType ReduceSensorRayValues(const std::vector<RealType>& values, RayReductionMode reduction_mode) {
-    if (values.empty()) {
-        return 0.0;
-    }
-    switch (reduction_mode) {
-        case RayReductionMode::Min:
-            return *std::min_element(values.begin(), values.end());
-        case RayReductionMode::Max:
-            return *std::max_element(values.begin(), values.end());
-        case RayReductionMode::Mean: {
-            RealType sum = 0.0;
-            for (RealType value : values) {
-                sum += value;
-            }
-            return sum / static_cast<RealType>(values.size());
-        }
-        case RayReductionMode::None:
-            break;
-    }
-    return values.front();
-}
-
 double PositiveOrDefault(RealType value, double fallback) {
     return value > 0.0 ? static_cast<double>(value) : fallback;
 }
@@ -499,16 +439,29 @@ bool HasUsableAuthoredModel(const PhysicsRobotSnapshot& robot) {
 }
 
 void ApplyMuJoCoOptions(mjOption* option, const PhysicsWorldSettings& settings) {
+    static_assert(static_cast<int>(PhysicsSolverType::ProjectedGaussSeidel) == mjSOL_PGS);
+    static_assert(static_cast<int>(PhysicsSolverType::ConjugateGradient) == mjSOL_CG);
+    static_assert(static_cast<int>(PhysicsSolverType::Newton) == mjSOL_NEWTON);
+    static_assert(static_cast<int>(PhysicsIntegratorType::Euler) == mjINT_EULER);
+    static_assert(static_cast<int>(PhysicsIntegratorType::RungeKutta4) == mjINT_RK4);
+    static_assert(static_cast<int>(PhysicsIntegratorType::Implicit) == mjINT_IMPLICIT);
+    static_assert(static_cast<int>(PhysicsIntegratorType::ImplicitFast) == mjINT_IMPLICITFAST);
+    static_assert(static_cast<int>(PhysicsFrictionConeType::Pyramidal) == mjCONE_PYRAMIDAL);
+    static_assert(static_cast<int>(PhysicsFrictionConeType::Elliptic) == mjCONE_ELLIPTIC);
+    static_assert(static_cast<int>(PhysicsJacobianType::Dense) == mjJAC_DENSE);
+    static_assert(static_cast<int>(PhysicsJacobianType::Sparse) == mjJAC_SPARSE);
+    static_assert(static_cast<int>(PhysicsJacobianType::Auto) == mjJAC_AUTO);
+
     if (!option) {
         return;
     }
 
     option->timestep = settings.fixed_time_step;
     SetMuJoCoVector3(option->gravity, settings.gravity);
-    option->solver = settings.mujoco_solver.solver;
-    option->integrator = settings.mujoco_solver.integrator;
-    option->cone = settings.mujoco_solver.cone;
-    option->jacobian = settings.mujoco_solver.jacobian;
+    option->solver = static_cast<int>(settings.mujoco_solver.solver);
+    option->integrator = static_cast<int>(settings.mujoco_solver.integrator);
+    option->cone = static_cast<int>(settings.mujoco_solver.cone);
+    option->jacobian = static_cast<int>(settings.mujoco_solver.jacobian);
     option->iterations = settings.mujoco_solver.iterations;
     option->ls_iterations = settings.mujoco_solver.line_search_iterations;
     option->noslip_iterations = settings.mujoco_solver.no_slip_iterations;
@@ -854,134 +807,6 @@ void AddJointActuators(mjSpec* spec, const PhysicsJointSnapshot& joint, const st
     }
 }
 
-std::string GetMuJoCoString(const mjString* value) {
-    return value ? mjs_getString(value) : "";
-}
-
-std::string ResolveMuJoCoAssetPath(const std::filesystem::path& model_dir,
-                                   const std::string& asset_dir,
-                                   const std::string& file_path) {
-    if (file_path.empty()) {
-        return {};
-    }
-
-    const std::filesystem::path file(file_path);
-    if (file.is_absolute()) {
-        return file.lexically_normal().string();
-    }
-
-    const std::filesystem::path direct_path = (model_dir / file).lexically_normal();
-    if (std::filesystem::exists(direct_path)) {
-        return direct_path.string();
-    }
-
-    if (model_dir.has_parent_path()) {
-        const std::filesystem::path parent_direct_path =
-                (model_dir.parent_path() / file).lexically_normal();
-        if (std::filesystem::exists(parent_direct_path)) {
-            return parent_direct_path.string();
-        }
-    }
-
-    if (!asset_dir.empty()) {
-        const std::filesystem::path asset_path = (model_dir / asset_dir / file).lexically_normal();
-        if (std::filesystem::exists(asset_path)) {
-            return asset_path.string();
-        }
-
-        if (model_dir.has_parent_path()) {
-            const std::filesystem::path parent_asset_path =
-                    (model_dir.parent_path() / asset_dir / file).lexically_normal();
-            if (std::filesystem::exists(parent_asset_path)) {
-                return parent_asset_path.string();
-            }
-        }
-
-        if (model_dir.has_parent_path() && model_dir.parent_path().has_parent_path()) {
-            const std::filesystem::path grandparent_asset_path =
-                    (model_dir.parent_path().parent_path() / asset_dir / file).lexically_normal();
-            if (std::filesystem::exists(grandparent_asset_path)) {
-                return grandparent_asset_path.string();
-            }
-        }
-
-        return asset_path.string();
-    }
-
-    return direct_path.string();
-}
-
-void NormalizeMuJoCoFileString(mjString* file,
-                               const std::filesystem::path& model_dir,
-                               const std::string& asset_dir) {
-    const std::string existing_path = GetMuJoCoString(file);
-    if (existing_path.empty()) {
-        return;
-    }
-
-    const std::string resolved_path = ResolveMuJoCoAssetPath(model_dir, asset_dir, existing_path);
-    if (!resolved_path.empty()) {
-        mjs_setString(file, resolved_path.c_str());
-    }
-}
-
-void NormalizeMuJoCoAssetPaths(mjSpec* spec, const std::filesystem::path& model_path) {
-    if (!spec) {
-        return;
-    }
-
-    const std::filesystem::path model_dir = model_path.parent_path();
-    const std::string mesh_dir = GetMuJoCoString(spec->compiler.meshdir);
-    const std::string texture_dir = GetMuJoCoString(spec->compiler.texturedir);
-
-    for (mjsElement* element = mjs_firstElement(spec, mjOBJ_MESH);
-         element;
-         element = mjs_nextElement(spec, element)) {
-        mjsMesh* mesh = mjs_asMesh(element);
-        if (mesh) {
-            NormalizeMuJoCoFileString(mesh->file, model_dir, mesh_dir);
-        }
-    }
-
-    for (mjsElement* element = mjs_firstElement(spec, mjOBJ_HFIELD);
-         element;
-         element = mjs_nextElement(spec, element)) {
-        mjsHField* hfield = mjs_asHField(element);
-        if (hfield) {
-            NormalizeMuJoCoFileString(hfield->file, model_dir, mesh_dir);
-        }
-    }
-
-    for (mjsElement* element = mjs_firstElement(spec, mjOBJ_TEXTURE);
-         element;
-         element = mjs_nextElement(spec, element)) {
-        mjsTexture* texture = mjs_asTexture(element);
-        if (texture) {
-            NormalizeMuJoCoFileString(texture->file, model_dir, texture_dir);
-            if (texture->cubefiles) {
-                for (std::string& cube_file : *texture->cubefiles) {
-                    if (!cube_file.empty()) {
-                        cube_file = ResolveMuJoCoAssetPath(model_dir, texture_dir, cube_file);
-                    }
-                }
-            }
-        }
-    }
-
-    for (mjsElement* element = mjs_firstElement(spec, mjOBJ_SKIN);
-         element;
-         element = mjs_nextElement(spec, element)) {
-        mjsSkin* skin = mjs_asSkin(element);
-        if (skin) {
-            NormalizeMuJoCoFileString(skin->file, model_dir, mesh_dir);
-        }
-    }
-
-    mjs_setString(spec->compiler.meshdir, "");
-    mjs_setString(spec->compiler.texturedir, "");
-    mjs_setString(spec->modelfiledir, "");
-}
-
 #endif
 
 } // namespace
@@ -1027,12 +852,9 @@ const std::string& MuJoCoPhysicsWorld::GetLastError() const {
     return last_error_;
 }
 
-bool MuJoCoPhysicsWorld::BuildFromScene(const Node* scene_root) {
-    GOBOT_PROFILE_ZONE("MuJoCoPhysicsWorld::BuildFromScene");
-    if (!CaptureSceneSnapshot(scene_root)) {
-        return false;
-    }
-    ResetSceneStateFromSnapshot();
+bool MuJoCoPhysicsWorld::Build(PhysicsSceneSnapshot scene_snapshot) {
+    GOBOT_PROFILE_ZONE("MuJoCoPhysicsWorld::Build");
+    PhysicsWorld::Build(std::move(scene_snapshot));
 
     if (!available_) {
         SetLastError(GetUnavailableReason());
@@ -1040,7 +862,7 @@ bool MuJoCoPhysicsWorld::BuildFromScene(const Node* scene_root) {
     }
 
 #ifdef GOBOT_HAS_MUJOCO
-    if (!LoadModelFromRobotSources()) {
+    if (!CompileAuthoredModel()) {
         return false;
     }
 
@@ -1121,10 +943,10 @@ MuJoCoPhysicsWorld::Diagnostics MuJoCoPhysicsWorld::GetDiagnostics() const {
     }
 
     diagnostics.timestep = static_cast<RealType>(model->opt.timestep);
-    diagnostics.solver = model->opt.solver;
-    diagnostics.integrator = model->opt.integrator;
-    diagnostics.cone = model->opt.cone;
-    diagnostics.jacobian = model->opt.jacobian;
+    diagnostics.solver = static_cast<PhysicsSolverType>(model->opt.solver);
+    diagnostics.integrator = static_cast<PhysicsIntegratorType>(model->opt.integrator);
+    diagnostics.cone = static_cast<PhysicsFrictionConeType>(model->opt.cone);
+    diagnostics.jacobian = static_cast<PhysicsJacobianType>(model->opt.jacobian);
     diagnostics.iterations = model->opt.iterations;
     diagnostics.line_search_iterations = model->opt.ls_iterations;
     diagnostics.no_slip_iterations = model->opt.noslip_iterations;
@@ -1465,8 +1287,8 @@ bool MuJoCoPhysicsWorld::EnsureBatchWorkers(std::size_t worker_count) {
     batch_active_workers_ = 0;
     batch_environment_count_ = 0;
     batch_work_chunk_ = 1;
-    batch_ticks_ = 0;
-    batch_apply_controls_ = true;
+    batch_environment_task_ = {};
+    batch_worker_error_ = nullptr;
     batch_work_pending_ = false;
     batch_workers_.reserve(worker_count);
     for (std::size_t worker_index = 0; worker_index < worker_count; ++worker_index) {
@@ -1500,8 +1322,8 @@ void MuJoCoPhysicsWorld::StopBatchWorkers() {
     batch_active_workers_ = 0;
     batch_environment_count_ = 0;
     batch_work_chunk_ = 1;
-    batch_ticks_ = 0;
-    batch_apply_controls_ = true;
+    batch_environment_task_ = {};
+    batch_worker_error_ = nullptr;
     batch_work_pending_ = false;
 #endif
 }
@@ -1511,9 +1333,7 @@ void MuJoCoPhysicsWorld::BatchWorkerLoop(std::size_t worker_index) {
     GOB_UNUSED(worker_index);
     std::size_t observed_generation = 0;
     while (true) {
-        std::uint64_t ticks = 0;
-        bool sync_state = true;
-        bool apply_controls = true;
+        BatchEnvironmentTask task;
         {
             std::unique_lock<std::mutex> lock(batch_mutex_);
             batch_cv_.wait(lock, [&]() {
@@ -1523,33 +1343,31 @@ void MuJoCoPhysicsWorld::BatchWorkerLoop(std::size_t worker_index) {
                 return;
             }
             observed_generation = batch_generation_;
-            ticks = batch_ticks_;
-            sync_state = batch_sync_state_;
-            apply_controls = batch_apply_controls_;
+            task = batch_environment_task_;
         }
 
-        while (true) {
-            const std::size_t begin = batch_next_environment_.fetch_add(batch_work_chunk_, std::memory_order_relaxed);
-            if (begin >= batch_environment_count_) {
-                break;
+        try {
+            while (true) {
+                {
+                    std::lock_guard<std::mutex> lock(batch_mutex_);
+                    if (batch_worker_error_ != nullptr) {
+                        break;
+                    }
+                }
+                const std::size_t begin =
+                        batch_next_environment_.fetch_add(batch_work_chunk_, std::memory_order_relaxed);
+                if (begin >= batch_environment_count_) {
+                    break;
+                }
+                const std::size_t end = std::min(begin + batch_work_chunk_, batch_environment_count_);
+                for (std::size_t environment_index = begin; environment_index < end; ++environment_index) {
+                    task(environment_index);
+                }
             }
-            const std::size_t end = std::min(begin + batch_work_chunk_, batch_environment_count_);
-            for (std::size_t environment_index = begin; environment_index < end; ++environment_index) {
-                if (apply_controls) {
-                    ApplyControlsToMuJoCo(environment_index);
-                }
-                ApplyExternalForcesToMuJoCo(environment_index);
-                auto* model = static_cast<mjModel*>(ModelForEnvironment(environment_index));
-                auto* data = static_cast<mjData*>(DataForEnvironment(environment_index));
-                if (model == nullptr || data == nullptr) {
-                    continue;
-                }
-                for (std::uint64_t tick = 0; tick < ticks; ++tick) {
-                    mj_step(model, data);
-                }
-                if (sync_state) {
-                    SyncStateFromMuJoCo(environment_index);
-                }
+        } catch (...) {
+            std::lock_guard<std::mutex> lock(batch_mutex_);
+            if (batch_worker_error_ == nullptr) {
+                batch_worker_error_ = std::current_exception();
             }
         }
 
@@ -1561,6 +1379,77 @@ void MuJoCoPhysicsWorld::BatchWorkerLoop(std::size_t worker_index) {
     }
 #else
     GOB_UNUSED(worker_index);
+#endif
+}
+
+bool MuJoCoPhysicsWorld::RunEnvironmentBatchTask(std::size_t environment_count,
+                                                 std::size_t worker_count,
+                                                 BatchEnvironmentTask task) {
+#ifdef GOBOT_HAS_MUJOCO
+    if (!task) {
+        SetLastError("MuJoCo batch environment task is empty.");
+        return false;
+    }
+    const std::size_t resolved_workers = ResolveBatchWorkerCount(worker_count, environment_count);
+    if (resolved_workers <= 1 || environment_count <= 1) {
+        StopBatchWorkers();
+        try {
+            for (std::size_t environment_index = 0; environment_index < environment_count; ++environment_index) {
+                task(environment_index);
+            }
+        } catch (const std::exception& error) {
+            SetLastError(error.what());
+            return false;
+        } catch (...) {
+            SetLastError("MuJoCo batch environment task failed with an unknown error.");
+            return false;
+        }
+        return true;
+    }
+
+    if (!EnsureBatchWorkers(resolved_workers)) {
+        return false;
+    }
+
+    {
+        std::lock_guard<std::mutex> lock(batch_mutex_);
+        batch_environment_task_ = std::move(task);
+        batch_worker_error_ = nullptr;
+        batch_next_environment_ = 0;
+        batch_active_workers_ = resolved_workers;
+        batch_environment_count_ = environment_count;
+        batch_work_chunk_ = std::max<std::size_t>(1, environment_count / (resolved_workers * 4));
+        batch_completed_workers_ = 0;
+        batch_work_pending_ = true;
+        ++batch_generation_;
+    }
+    batch_cv_.notify_all();
+
+    std::exception_ptr worker_error;
+    {
+        std::unique_lock<std::mutex> lock(batch_mutex_);
+        batch_done_cv_.wait(lock, [&]() {
+            return !batch_work_pending_;
+        });
+        worker_error = batch_worker_error_;
+        batch_environment_task_ = {};
+    }
+    if (worker_error != nullptr) {
+        try {
+            std::rethrow_exception(worker_error);
+        } catch (const std::exception& error) {
+            SetLastError(error.what());
+        } catch (...) {
+            SetLastError("MuJoCo batch environment task failed with an unknown error.");
+        }
+        return false;
+    }
+    return true;
+#else
+    GOB_UNUSED(environment_count);
+    GOB_UNUSED(worker_count);
+    GOB_UNUSED(task);
+    return false;
 #endif
 }
 
@@ -1603,50 +1492,30 @@ bool MuJoCoPhysicsWorld::StepEnvironmentBatchInternal(RealType delta_time,
         model->opt.timestep = delta_time > 0.0 ? delta_time : settings_.fixed_time_step;
     }
 
-    const std::size_t resolved_workers = ResolveBatchWorkerCount(worker_count, environment_count);
-    if (resolved_workers == 1 || environment_count == 1) {
-        StopBatchWorkers();
-        for (std::size_t environment_index = 0; environment_index < environment_count; ++environment_index) {
-            if (apply_controls) {
-                ApplyControlsToMuJoCo(environment_index);
-            }
-            ApplyExternalForcesToMuJoCo(environment_index);
-            auto* model = static_cast<mjModel*>(ModelForEnvironment(environment_index));
-            auto* data = static_cast<mjData*>(DataForEnvironment(environment_index));
-            for (std::uint64_t tick = 0; tick < ticks; ++tick) {
-                mj_step(model, data);
-            }
-            if (sync_state) {
-                SyncStateFromMuJoCo(environment_index);
-            }
-        }
-        last_error_.clear();
-        return true;
-    }
-
-    if (!EnsureBatchWorkers(resolved_workers)) {
+    const bool stepped = RunEnvironmentBatchTask(
+            environment_count,
+            worker_count,
+            [this, ticks, sync_state, apply_controls](std::size_t environment_index) {
+                if (apply_controls) {
+                    ApplyControlsToMuJoCo(environment_index);
+                }
+                ApplyExternalForcesToMuJoCo(environment_index);
+                auto* model = static_cast<mjModel*>(ModelForEnvironment(environment_index));
+                auto* data = static_cast<mjData*>(DataForEnvironment(environment_index));
+                if (model == nullptr || data == nullptr) {
+                    throw std::runtime_error(fmt::format(
+                            "MuJoCo runtime data for environment {} is unavailable.",
+                            environment_index));
+                }
+                for (std::uint64_t tick = 0; tick < ticks; ++tick) {
+                    mj_step(model, data);
+                }
+                if (sync_state) {
+                    SyncStateFromMuJoCo(environment_index);
+                }
+            });
+    if (!stepped) {
         return false;
-    }
-
-    {
-        std::lock_guard<std::mutex> lock(batch_mutex_);
-        batch_ticks_ = ticks;
-        batch_next_environment_ = 0;
-        batch_active_workers_ = resolved_workers;
-        batch_environment_count_ = environment_count;
-        batch_work_chunk_ = std::max<std::size_t>(1, environment_count / (resolved_workers * 4));
-        batch_completed_workers_ = 0;
-        batch_work_pending_ = true;
-        batch_sync_state_ = sync_state;
-        batch_apply_controls_ = apply_controls;
-        ++batch_generation_;
-    }
-    batch_cv_.notify_all();
-    {
-        std::unique_lock<std::mutex> lock(batch_mutex_);
-        batch_done_cv_.wait(lock, [&]() {
-            return !batch_work_pending_;
-        });
     }
 
     last_error_.clear();
@@ -1785,6 +1654,91 @@ bool MuJoCoPhysicsWorld::ResetEnvironmentLinkState(std::size_t environment_index
     GOB_UNUSED(link_name);
     GOB_UNUSED(position);
     GOB_UNUSED(orientation);
+    GOB_UNUSED(linear_velocity);
+    GOB_UNUSED(angular_velocity);
+    return false;
+#endif
+}
+
+bool MuJoCoPhysicsWorld::WriteEnvironmentLinkVelocity(std::size_t environment_index,
+                                                      const std::string& robot_name,
+                                                      const std::string& link_name,
+                                                      const Vector3& linear_velocity,
+                                                      const Vector3& angular_velocity) {
+#ifdef GOBOT_HAS_MUJOCO
+    if (!IsEnvironmentIndexValid(environment_index)) {
+        SetLastError(fmt::format("Environment index {} is out of range.", environment_index));
+        return false;
+    }
+
+    std::size_t robot_index = scene_snapshot_.robots.size();
+    for (std::size_t index = 0; index < scene_snapshot_.robots.size(); ++index) {
+        const PhysicsRobotSnapshot& robot = scene_snapshot_.robots[index];
+        if (robot.name != robot_name) {
+            continue;
+        }
+        const bool has_link = std::any_of(
+                robot.links.begin(),
+                robot.links.end(),
+                [&link_name](const PhysicsLinkSnapshot& link) { return link.name == link_name; });
+        if (!has_link) {
+            SetLastError(fmt::format("Cannot set velocity for missing link '{}::{}'.", robot_name, link_name));
+            return false;
+        }
+        robot_index = index;
+        break;
+    }
+    if (robot_index >= scene_snapshot_.robots.size()) {
+        SetLastError(fmt::format("Cannot set velocity for missing robot '{}'.", robot_name));
+        return false;
+    }
+
+    const MuJoCoJointBinding* free_joint = nullptr;
+    for (const MuJoCoJointBinding& binding : joint_bindings_) {
+        if (binding.robot_index != robot_index ||
+            binding.joint_type != mjJNT_FREE ||
+            binding.joint_index >= scene_snapshot_.robots[robot_index].joints.size()) {
+            continue;
+        }
+        const PhysicsJointSnapshot& joint =
+                scene_snapshot_.robots[robot_index].joints[binding.joint_index];
+        if (joint.child_link == link_name) {
+            free_joint = &binding;
+            break;
+        }
+    }
+    if (free_joint == nullptr || free_joint->qpos_address < 0 || free_joint->dof_address < 0) {
+        SetLastError(fmt::format("Link '{}::{}' is not driven by a floating joint.",
+                                 robot_name,
+                                 link_name));
+        return false;
+    }
+
+    auto* model = static_cast<mjModel*>(ModelForEnvironment(environment_index));
+    auto* data = static_cast<mjData*>(DataForEnvironment(environment_index));
+    if (model == nullptr || data == nullptr ||
+        free_joint->qpos_address + 6 >= model->nq ||
+        free_joint->dof_address + 5 >= model->nv) {
+        SetLastError("MuJoCo floating base velocity state is unavailable.");
+        return false;
+    }
+
+    const int dof = free_joint->dof_address;
+    data->qvel[dof + 0] = linear_velocity.x();
+    data->qvel[dof + 1] = linear_velocity.y();
+    data->qvel[dof + 2] = linear_velocity.z();
+    const Vector3 angular_velocity_body = WorldAngularVelocityToFreeJointQvel(
+            data->qpos + free_joint->qpos_address + 3,
+            angular_velocity);
+    data->qvel[dof + 3] = angular_velocity_body.x();
+    data->qvel[dof + 4] = angular_velocity_body.y();
+    data->qvel[dof + 5] = angular_velocity_body.z();
+    last_error_.clear();
+    return true;
+#else
+    GOB_UNUSED(environment_index);
+    GOB_UNUSED(robot_name);
+    GOB_UNUSED(link_name);
     GOB_UNUSED(linear_velocity);
     GOB_UNUSED(angular_velocity);
     return false;
@@ -1953,18 +1907,96 @@ bool MuJoCoPhysicsWorld::SetEnvironmentJointControls(const std::string& robot_na
 #endif
 }
 
-bool MuJoCoPhysicsWorld::StepEnvironmentBatchFastRobotState(const BatchRobotStateRequest& request,
-                                                            BatchRobotStateArrays& arrays) {
+bool MuJoCoPhysicsWorld::StepRobotBatch(const PhysicsRobotBatchStepRequest& request,
+                                       PhysicsRobotBatchStepResult& arrays) {
 #ifdef GOBOT_HAS_MUJOCO
     const std::size_t environment_count = GetEnvironmentCount();
     if (environment_count == 0) {
         SetLastError("MuJoCo environment batch has not been configured.");
         return false;
     }
-    if (request.target_positions.size() != environment_count * request.joint_names.size()) {
+    const std::size_t joint_value_count = environment_count * request.joint_names.size();
+    if (request.target_positions.size() != joint_value_count) {
         SetLastError(fmt::format("Expected {} batched joint target value(s), got {}.",
-                                 environment_count * request.joint_names.size(),
+                                 joint_value_count,
                                  request.target_positions.size()));
+        return false;
+    }
+    const auto require_optional_size = [this](std::size_t actual,
+                                              std::size_t expected,
+                                              const char* name) {
+        if (actual == 0 || actual == expected) {
+            return true;
+        }
+        SetLastError(fmt::format("Expected {} {} value(s), got {}.", expected, name, actual));
+        return false;
+    };
+    const std::size_t override_link_count = request.override_link_names.size();
+    const std::size_t override_shape_count = request.override_shape_names.size();
+    if (!require_optional_size(request.joint_position_stiffness.size(),
+                               joint_value_count,
+                               "joint stiffness") ||
+        !require_optional_size(request.joint_velocity_damping.size(),
+                               joint_value_count,
+                               "joint damping") ||
+        !require_optional_size(request.link_mass_delta.size(),
+                               environment_count * override_link_count,
+                               "link mass delta") ||
+        !require_optional_size(request.link_center_of_mass_offset.size(),
+                               environment_count * override_link_count * 3,
+                               "link center-of-mass offset") ||
+        !require_optional_size(request.shape_friction.size(),
+                               environment_count * override_shape_count * 3,
+                               "shape friction") ||
+        !require_optional_size(request.shape_friction_enabled.size(),
+                               environment_count * override_shape_count,
+                               "shape friction mask") ||
+        !require_optional_size(request.external_force.size(),
+                               environment_count * 3,
+                               "external force") ||
+        !require_optional_size(request.external_torque.size(),
+                               environment_count * 3,
+                               "external torque")) {
+        return false;
+    }
+    const auto validate_nonnegative_finite = [this](const std::vector<RealType>& values,
+                                                     const char* name) {
+        const auto invalid = std::find_if(values.begin(), values.end(), [](RealType value) {
+            return !std::isfinite(value) || value < 0.0;
+        });
+        if (invalid == values.end()) {
+            return true;
+        }
+        SetLastError(fmt::format("{} values must be finite and non-negative.", name));
+        return false;
+    };
+    if (!validate_nonnegative_finite(request.joint_position_stiffness, "Joint stiffness") ||
+        !validate_nonnegative_finite(request.joint_velocity_damping, "Joint damping") ||
+        !validate_nonnegative_finite(request.shape_friction, "Shape friction")) {
+        return false;
+    }
+    if (request.shape_friction.empty() && !request.shape_friction_enabled.empty()) {
+        SetLastError("A shape friction mask requires shape friction values.");
+        return false;
+    }
+    std::set<std::string> contact_shape_group_names;
+    for (const PhysicsContactShapeGroup& group : request.contact_shape_groups) {
+        if (group.name.empty() || group.shape_names.empty()) {
+            SetLastError("Contact shape groups require a non-empty name and at least one shape.");
+            return false;
+        }
+        if (!contact_shape_group_names.insert(group.name).second) {
+            SetLastError("Duplicate contact shape group name '" + group.name + "'.");
+            return false;
+        }
+        if (!std::isfinite(group.force_threshold) || group.force_threshold < 0.0) {
+            SetLastError("Contact shape group force thresholds must be finite and non-negative.");
+            return false;
+        }
+    }
+    if ((!request.external_force.empty() || !request.external_torque.empty()) &&
+        request.external_wrench_link.empty()) {
+        SetLastError("A batch external wrench requires external_wrench_link.");
         return false;
     }
     if (!SetEnvironmentJointControls(request.robot_name,
@@ -1972,9 +2004,6 @@ bool MuJoCoPhysicsWorld::StepEnvironmentBatchFastRobotState(const BatchRobotStat
                                      PhysicsJointControlMode::Position,
                                      request.target_positions,
                                      environment_count)) {
-        return false;
-    }
-    if (!StepEnvironmentBatchInternal(settings_.fixed_time_step, request.ticks, request.worker_count, false)) {
         return false;
     }
 
@@ -2120,6 +2149,322 @@ bool MuJoCoPhysicsWorld::StepEnvironmentBatchFastRobotState(const BatchRobotStat
         }
     }
 
+    std::vector<const MuJoCoLinkBinding*> override_link_bindings;
+    override_link_bindings.reserve(request.override_link_names.size());
+    for (const std::string& link_name : request.override_link_names) {
+        const MuJoCoLinkBinding* binding = find_link_binding(link_name);
+        if (binding == nullptr) {
+            SetLastError("Gobot runtime state robot '" + request.robot_name +
+                         "' has no override link '" + link_name + "'");
+            return false;
+        }
+        override_link_bindings.push_back(binding);
+    }
+
+    const MuJoCoLinkBinding* external_wrench_binding = nullptr;
+    if (!request.external_wrench_link.empty()) {
+        external_wrench_binding = find_link_binding(request.external_wrench_link);
+        if (external_wrench_binding == nullptr) {
+            SetLastError("Gobot runtime state robot '" + request.robot_name +
+                         "' has no external-wrench link '" + request.external_wrench_link + "'");
+            return false;
+        }
+    }
+
+    std::vector<std::uint8_t> body_is_robot(static_cast<std::size_t>(model->nbody), 0);
+    for (const MuJoCoLinkBinding& binding : link_bindings_) {
+        if (binding.robot_index == robot_index &&
+            binding.body_id >= 0 &&
+            binding.body_id < model->nbody) {
+            body_is_robot[static_cast<std::size_t>(binding.body_id)] = 1;
+        }
+    }
+
+    std::vector<std::string> shape_names;
+    std::unordered_map<int, std::int32_t> shape_index_by_geom;
+    std::unordered_map<std::string, int> geom_by_shape_name;
+    const std::string robot_prefix = GetRobotPrefix(robot_index);
+    for (const PhysicsLinkSnapshot& link : robot_snapshot->links) {
+        for (std::size_t shape_index = 0; shape_index < link.collision_shapes.size(); ++shape_index) {
+            const PhysicsShapeSnapshot& shape = link.collision_shapes[shape_index];
+            const std::string runtime_name = shape.name.empty()
+                                                     ? fmt::format("{}{}_geom_{}",
+                                                                   robot_prefix,
+                                                                   link.name,
+                                                                   shape_index)
+                                                     : robot_prefix + SanitizeMuJoCoName(shape.name);
+            const int geom_id = mj_name2id(model, mjOBJ_GEOM, runtime_name.c_str());
+            if (geom_id < 0) {
+                continue;
+            }
+            shape_index_by_geom[geom_id] = static_cast<std::int32_t>(shape_names.size());
+            shape_names.push_back(shape.name.empty() ? runtime_name : shape.name);
+            if (!shape.name.empty()) {
+                geom_by_shape_name.emplace(shape.name, geom_id);
+            }
+        }
+    }
+
+    std::vector<int> override_shape_geom_ids;
+    override_shape_geom_ids.reserve(request.override_shape_names.size());
+    for (const std::string& shape_name : request.override_shape_names) {
+        const auto geom = geom_by_shape_name.find(shape_name);
+        if (geom == geom_by_shape_name.end()) {
+            SetLastError("Gobot runtime state robot '" + request.robot_name +
+                         "' has no override collision shape '" + shape_name + "'");
+            return false;
+        }
+        override_shape_geom_ids.push_back(geom->second);
+    }
+
+    std::vector<std::string> resolved_contact_shape_group_names;
+    std::vector<RealType> contact_shape_group_force_thresholds;
+    std::vector<std::vector<std::size_t>> contact_shape_groups_by_geom(
+            static_cast<std::size_t>(model->ngeom));
+    resolved_contact_shape_group_names.reserve(request.contact_shape_groups.size());
+    contact_shape_group_force_thresholds.reserve(request.contact_shape_groups.size());
+    for (std::size_t group_index = 0; group_index < request.contact_shape_groups.size(); ++group_index) {
+        const PhysicsContactShapeGroup& group = request.contact_shape_groups[group_index];
+        resolved_contact_shape_group_names.push_back(group.name);
+        contact_shape_group_force_thresholds.push_back(group.force_threshold);
+        for (const std::string& shape_name : group.shape_names) {
+            const auto geom = geom_by_shape_name.find(shape_name);
+            if (geom == geom_by_shape_name.end()) {
+                SetLastError("Gobot runtime state robot '" + request.robot_name +
+                             "' has no contact-group collision shape '" + shape_name + "'");
+                return false;
+            }
+            std::vector<std::size_t>& memberships =
+                    contact_shape_groups_by_geom[static_cast<std::size_t>(geom->second)];
+            if (std::find(memberships.begin(), memberships.end(), group_index) == memberships.end()) {
+                memberships.push_back(group_index);
+            }
+        }
+    }
+
+    const std::size_t link_count = link_views.size();
+    std::vector<std::int32_t> link_contact_tick_count(environment_count * link_count, 0);
+    std::vector<std::int32_t> shape_contact_tick_count(environment_count * shape_names.size(), 0);
+    std::vector<std::int32_t> contact_shape_group_tick_count(
+            environment_count * request.contact_shape_groups.size(),
+            0);
+    std::vector<std::uint8_t> contact_shape_group_history(
+            environment_count * request.contact_shape_groups.size() *
+                    static_cast<std::size_t>(request.ticks),
+            0);
+    std::vector<std::int32_t> self_contact_tick_count(environment_count, 0);
+
+    const bool stepped = RunEnvironmentBatchTask(
+            environment_count,
+            request.worker_count,
+            [&](std::size_t environment_index) {
+                auto* env_model = static_cast<mjModel*>(ModelForEnvironment(environment_index));
+                auto* data = static_cast<mjData*>(DataForEnvironment(environment_index));
+                if (env_model == nullptr || data == nullptr) {
+                    throw std::runtime_error(fmt::format(
+                            "MuJoCo runtime data for environment {} is unavailable.",
+                            environment_index));
+                }
+
+                ApplyMuJoCoOptions(&env_model->opt, settings_);
+                env_model->opt.timestep = settings_.fixed_time_step;
+                if (env_model->nv > 0) {
+                    mju_zero(data->qfrc_applied, env_model->nv);
+                }
+                if (env_model->nbody > 0) {
+                    mju_zero(data->xfrc_applied, 6 * env_model->nbody);
+                }
+
+                const std::size_t joint_row = environment_index * joint_views.size();
+                for (std::size_t joint_index = 0; joint_index < joint_views.size(); ++joint_index) {
+                    const MuJoCoJointBinding* binding = joint_views[joint_index].binding;
+                    const int actuator_id = binding->position_actuator_id >= 0
+                                                    ? binding->position_actuator_id
+                                                    : binding->motor_actuator_id;
+                    if (actuator_id < 0 || actuator_id >= env_model->nu) {
+                        throw std::runtime_error(fmt::format(
+                                "Joint '{}' has no position-control actuator.",
+                                request.joint_names[joint_index]));
+                    }
+                    data->ctrl[actuator_id] = request.target_positions[joint_row + joint_index];
+
+                    if (!request.joint_position_stiffness.empty()) {
+                        const RealType stiffness = request.joint_position_stiffness[joint_row + joint_index];
+                        env_model->actuator_gainprm[mjNGAIN * actuator_id + 0] = stiffness;
+                        env_model->actuator_biasprm[mjNBIAS * actuator_id + 1] = -stiffness;
+                    }
+                    if (!request.joint_velocity_damping.empty()) {
+                        const RealType damping = request.joint_velocity_damping[joint_row + joint_index];
+                        env_model->actuator_biasprm[mjNBIAS * actuator_id + 2] = -damping;
+                    }
+                }
+
+                bool constants_changed = false;
+                for (std::size_t link_index = 0; link_index < override_link_bindings.size(); ++link_index) {
+                    const int body_id = override_link_bindings[link_index]->body_id;
+                    if (body_id < 0 || body_id >= env_model->nbody) {
+                        continue;
+                    }
+                    const std::size_t scalar_offset =
+                            environment_index * override_link_bindings.size() + link_index;
+                    if (!request.link_mass_delta.empty()) {
+                        const mjtNum desired_mass = std::max<mjtNum>(
+                                mjMINVAL,
+                                model->body_mass[body_id] + request.link_mass_delta[scalar_offset]);
+                        if (std::abs(env_model->body_mass[body_id] - desired_mass) > 1.0e-12) {
+                            env_model->body_mass[body_id] = desired_mass;
+                            constants_changed = true;
+                        }
+                    }
+                    if (!request.link_center_of_mass_offset.empty()) {
+                        const std::size_t vector_offset = scalar_offset * 3;
+                        for (int axis = 0; axis < 3; ++axis) {
+                            const mjtNum desired = model->body_ipos[3 * body_id + axis] +
+                                                   request.link_center_of_mass_offset[vector_offset + axis];
+                            if (std::abs(env_model->body_ipos[3 * body_id + axis] - desired) > 1.0e-12) {
+                                env_model->body_ipos[3 * body_id + axis] = desired;
+                                constants_changed = true;
+                            }
+                        }
+                    }
+                }
+                if (!request.shape_friction.empty()) {
+                    for (std::size_t shape_index = 0; shape_index < override_shape_geom_ids.size(); ++shape_index) {
+                        const int geom_id = override_shape_geom_ids[shape_index];
+                        if (geom_id < 0 || geom_id >= env_model->ngeom) {
+                            continue;
+                        }
+                        const std::size_t scalar_offset =
+                                environment_index * override_shape_geom_ids.size() + shape_index;
+                        const bool enabled = request.shape_friction_enabled.empty() ||
+                                             request.shape_friction_enabled[scalar_offset] != 0;
+                        const std::size_t vector_offset = scalar_offset * 3;
+                        for (int axis = 0; axis < 3; ++axis) {
+                            env_model->geom_friction[3 * geom_id + axis] = enabled
+                                                                                   ? request.shape_friction[vector_offset + axis]
+                                                                                   : model->geom_friction[3 * geom_id + axis];
+                        }
+                    }
+                }
+
+                if (constants_changed) {
+                    const int state_size = mj_stateSize(env_model, mjSTATE_FULLPHYSICS);
+                    std::vector<mjtNum> state(static_cast<std::size_t>(std::max(state_size, 0)), 0.0);
+                    if (state_size > 0) {
+                        mj_getState(env_model, data, state.data(), mjSTATE_FULLPHYSICS);
+                    }
+                    mj_setConst(env_model, data);
+                    if (state_size > 0) {
+                        mj_setState(env_model, data, state.data(), mjSTATE_FULLPHYSICS);
+                    }
+                    mj_forward(env_model, data);
+                }
+
+                if (external_wrench_binding != nullptr) {
+                    const int body_id = external_wrench_binding->body_id;
+                    const std::size_t vector_offset = environment_index * 3;
+                    if (body_id >= 0 && body_id < env_model->nbody) {
+                        for (int axis = 0; axis < 3; ++axis) {
+                            if (!request.external_force.empty()) {
+                                data->xfrc_applied[6 * body_id + axis] +=
+                                        request.external_force[vector_offset + axis];
+                            }
+                            if (!request.external_torque.empty()) {
+                                data->xfrc_applied[6 * body_id + 3 + axis] +=
+                                        request.external_torque[vector_offset + axis];
+                            }
+                        }
+                    }
+                }
+
+                for (std::uint64_t tick = 0; tick < request.ticks; ++tick) {
+                    mj_step(env_model, data);
+                    if (!request.collect_contact_history) {
+                        continue;
+                    }
+                    std::vector<std::uint8_t> active_links(link_count, 0);
+                    std::vector<std::uint8_t> active_shapes(shape_names.size(), 0);
+                    std::vector<std::uint8_t> active_shape_groups(request.contact_shape_groups.size(), 0);
+                    bool self_contact = false;
+                    for (int contact_index = 0; contact_index < data->ncon; ++contact_index) {
+                        const mjContact& contact = data->contact[contact_index];
+                        const int geom_a = contact.geom[0];
+                        const int geom_b = contact.geom[1];
+                        if (geom_a < 0 || geom_a >= env_model->ngeom ||
+                            geom_b < 0 || geom_b >= env_model->ngeom) {
+                            continue;
+                        }
+                        const int body_a = env_model->geom_bodyid[geom_a];
+                        const int body_b = env_model->geom_bodyid[geom_b];
+                        const bool robot_a = body_a >= 0 &&
+                                             body_a < env_model->nbody &&
+                                             body_is_robot[static_cast<std::size_t>(body_a)] != 0;
+                        const bool robot_b = body_b >= 0 &&
+                                             body_b < env_model->nbody &&
+                                             body_is_robot[static_cast<std::size_t>(body_b)] != 0;
+                        if (!robot_a && !robot_b) {
+                            continue;
+                        }
+                        mjtNum force[6] = {};
+                        mj_contactForce(env_model, data, contact_index, force);
+                        const RealType magnitude = std::sqrt(
+                                static_cast<RealType>(force[0] * force[0] +
+                                                      force[1] * force[1] +
+                                                      force[2] * force[2]));
+                        if (robot_a && robot_b) {
+                            self_contact = self_contact ||
+                                           magnitude > request.self_contact_force_threshold;
+                            continue;
+                        }
+                        const int robot_geom = robot_a ? geom_a : geom_b;
+                        for (std::size_t group_index :
+                             contact_shape_groups_by_geom[static_cast<std::size_t>(robot_geom)]) {
+                            if (contact_shape_group_force_thresholds[group_index] <= 0.0 ||
+                                magnitude > contact_shape_group_force_thresholds[group_index]) {
+                                active_shape_groups[group_index] = 1;
+                            }
+                        }
+                        if (magnitude <= request.ground_contact_force_threshold) {
+                            continue;
+                        }
+                        const int robot_body = robot_a ? body_a : body_b;
+                        const auto link = link_index_by_body.find(robot_body);
+                        if (link != link_index_by_body.end()) {
+                            active_links[static_cast<std::size_t>(link->second)] = 1;
+                        }
+                        const auto shape = shape_index_by_geom.find(robot_geom);
+                        if (shape != shape_index_by_geom.end()) {
+                            active_shapes[static_cast<std::size_t>(shape->second)] = 1;
+                        }
+                    }
+                    for (std::size_t link_index = 0; link_index < link_count; ++link_index) {
+                        link_contact_tick_count[environment_index * link_count + link_index] +=
+                                active_links[link_index] != 0 ? 1 : 0;
+                    }
+                    for (std::size_t shape_index = 0; shape_index < shape_names.size(); ++shape_index) {
+                        shape_contact_tick_count[environment_index * shape_names.size() + shape_index] +=
+                                active_shapes[shape_index] != 0 ? 1 : 0;
+                    }
+                    for (std::size_t group_index = 0; group_index < active_shape_groups.size(); ++group_index) {
+                        contact_shape_group_tick_count[
+                                environment_index * active_shape_groups.size() + group_index] +=
+                                active_shape_groups[group_index] != 0 ? 1 : 0;
+                        const std::size_t history_offset =
+                                (environment_index * active_shape_groups.size() + group_index) *
+                                        static_cast<std::size_t>(request.ticks) +
+                                static_cast<std::size_t>(tick);
+                        contact_shape_group_history[history_offset] = active_shape_groups[group_index];
+                    }
+                    self_contact_tick_count[environment_index] += self_contact ? 1 : 0;
+                }
+                if (request.ticks == 0) {
+                    mj_forward(env_model, data);
+                }
+            });
+    if (!stepped) {
+        return false;
+    }
+
     std::vector<std::size_t> contact_counts(environment_count, 0);
     std::size_t max_contact_count = 0;
     for (std::size_t environment_index = 0; environment_index < environment_count; ++environment_index) {
@@ -2151,13 +2496,13 @@ bool MuJoCoPhysicsWorld::StepEnvironmentBatchFastRobotState(const BatchRobotStat
     arrays.joint_names = request.joint_names;
     arrays.link_names = resolved_link_names;
     arrays.sensor_names = request.sensor_names;
+    arrays.shape_names = std::move(shape_names);
     arrays.environment_count = environment_count;
     arrays.max_sensor_values = max_sensor_values;
     arrays.max_sensor_hits = max_sensor_hits;
     arrays.max_contact_count = max_contact_count;
 
     const std::size_t joint_count = joint_views.size();
-    const std::size_t link_count = link_views.size();
     const std::size_t sensor_count = sensor_views.size();
     arrays.base_position.assign(environment_count * 3, 0.0);
     arrays.base_quaternion.assign(environment_count * 4, 0.0);
@@ -2165,6 +2510,7 @@ bool MuJoCoPhysicsWorld::StepEnvironmentBatchFastRobotState(const BatchRobotStat
     arrays.base_angular_velocity.assign(environment_count * 3, 0.0);
     arrays.joint_position.assign(environment_count * joint_count, 0.0);
     arrays.joint_velocity.assign(environment_count * joint_count, 0.0);
+    arrays.joint_acceleration.assign(environment_count * joint_count, 0.0);
     arrays.joint_effort.assign(environment_count * joint_count, 0.0);
     arrays.joint_target_position = request.target_positions;
     arrays.joint_target_velocity.assign(environment_count * joint_count, 0.0);
@@ -2179,6 +2525,7 @@ bool MuJoCoPhysicsWorld::StepEnvironmentBatchFastRobotState(const BatchRobotStat
     arrays.sensor_hit_count.assign(sensor_count, 0);
     arrays.sensor_position.assign(environment_count * sensor_count * 3, 0.0);
     arrays.sensor_quaternion.assign(environment_count * sensor_count * 4, 0.0);
+    arrays.sensor_linear_velocity.assign(environment_count * sensor_count * 3, 0.0);
     arrays.sensor_values.assign(environment_count * sensor_count * max_sensor_values, 0.0);
     arrays.sensor_hit.assign(environment_count * sensor_count * max_sensor_hits, 0);
     arrays.sensor_hit_origin.assign(environment_count * sensor_count * max_sensor_hits * 3, 0.0);
@@ -2187,11 +2534,19 @@ bool MuJoCoPhysicsWorld::StepEnvironmentBatchFastRobotState(const BatchRobotStat
     arrays.sensor_hit_distance.assign(environment_count * sensor_count * max_sensor_hits, 0.0);
     arrays.contact_count.assign(environment_count, 0);
     arrays.contact_link_index.assign(environment_count * max_contact_count * 2, -1);
+    arrays.contact_shape_index.assign(environment_count * max_contact_count * 2, -1);
     arrays.contact_position.assign(environment_count * max_contact_count * 3, 0.0);
     arrays.contact_normal.assign(environment_count * max_contact_count * 3, 0.0);
     arrays.contact_force.assign(environment_count * max_contact_count * 3, 0.0);
     arrays.contact_normal_force.assign(environment_count * max_contact_count, 0.0);
     arrays.contact_distance.assign(environment_count * max_contact_count, 0.0);
+    arrays.link_contact_tick_count = std::move(link_contact_tick_count);
+    arrays.shape_contact_tick_count = std::move(shape_contact_tick_count);
+    arrays.contact_shape_group_names = std::move(resolved_contact_shape_group_names);
+    arrays.contact_shape_group_tick_count = std::move(contact_shape_group_tick_count);
+    arrays.contact_history_tick_count = static_cast<std::size_t>(request.ticks);
+    arrays.contact_shape_group_history = std::move(contact_shape_group_history);
+    arrays.self_contact_tick_count = std::move(self_contact_tick_count);
 
     for (std::size_t joint_index = 0; joint_index < joint_views.size(); ++joint_index) {
         arrays.joint_lower_limit[joint_index] = joint_views[joint_index].lower;
@@ -2235,9 +2590,24 @@ bool MuJoCoPhysicsWorld::StepEnvironmentBatchFastRobotState(const BatchRobotStat
         angular_velocity[position_offset + 0] = static_cast<RealType>(data->cvel[6 * body_id + 0]);
         angular_velocity[position_offset + 1] = static_cast<RealType>(data->cvel[6 * body_id + 1]);
         angular_velocity[position_offset + 2] = static_cast<RealType>(data->cvel[6 * body_id + 2]);
-        linear_velocity[position_offset + 0] = static_cast<RealType>(data->cvel[6 * body_id + 3]);
-        linear_velocity[position_offset + 1] = static_cast<RealType>(data->cvel[6 * body_id + 4]);
-        linear_velocity[position_offset + 2] = static_cast<RealType>(data->cvel[6 * body_id + 5]);
+        const Vector3 angular(data->cvel[6 * body_id + 0],
+                              data->cvel[6 * body_id + 1],
+                              data->cvel[6 * body_id + 2]);
+        const Vector3 center_of_mass_velocity(data->cvel[6 * body_id + 3],
+                                              data->cvel[6 * body_id + 4],
+                                              data->cvel[6 * body_id + 5]);
+        const int root_body_id = model_for_env->body_rootid[body_id];
+        const Vector3 subtree_center_of_mass(data->subtree_com[3 * root_body_id + 0],
+                                             data->subtree_com[3 * root_body_id + 1],
+                                             data->subtree_com[3 * root_body_id + 2]);
+        const Vector3 body_position(data->xpos[3 * body_id + 0],
+                                    data->xpos[3 * body_id + 1],
+                                    data->xpos[3 * body_id + 2]);
+        const Vector3 body_velocity =
+                center_of_mass_velocity - angular.cross(subtree_center_of_mass - body_position);
+        linear_velocity[position_offset + 0] = body_velocity.x();
+        linear_velocity[position_offset + 1] = body_velocity.y();
+        linear_velocity[position_offset + 2] = body_velocity.z();
     };
 
     for (std::size_t environment_index = 0; environment_index < environment_count; ++environment_index) {
@@ -2267,6 +2637,8 @@ bool MuJoCoPhysicsWorld::StepEnvironmentBatchFastRobotState(const BatchRobotStat
             }
             if (binding->dof_address >= 0 && binding->dof_address < env_model->nv) {
                 arrays.joint_velocity[offset] = static_cast<RealType>(data->qvel[binding->dof_address]);
+                arrays.joint_acceleration[offset] = static_cast<RealType>(data->qacc[binding->dof_address]);
+                arrays.joint_effort[offset] = static_cast<RealType>(data->qfrc_actuator[binding->dof_address]);
             }
         }
 
@@ -2319,6 +2691,26 @@ bool MuJoCoPhysicsWorld::StepEnvironmentBatchFastRobotState(const BatchRobotStat
             arrays.sensor_quaternion[sensor_offset4 + 1] = sensor_quaternion.x();
             arrays.sensor_quaternion[sensor_offset4 + 2] = sensor_quaternion.y();
             arrays.sensor_quaternion[sensor_offset4 + 3] = sensor_quaternion.z();
+            if (link_binding != nullptr &&
+                link_binding->body_id >= 0 &&
+                link_binding->body_id < env_model->nbody) {
+                const int body_id = link_binding->body_id;
+                const Vector3 angular(data->cvel[6 * body_id + 0],
+                                      data->cvel[6 * body_id + 1],
+                                      data->cvel[6 * body_id + 2]);
+                const Vector3 center_of_mass_velocity(data->cvel[6 * body_id + 3],
+                                                      data->cvel[6 * body_id + 4],
+                                                      data->cvel[6 * body_id + 5]);
+                const int root_body_id = env_model->body_rootid[body_id];
+                const Vector3 subtree_center_of_mass(data->subtree_com[3 * root_body_id + 0],
+                                                     data->subtree_com[3 * root_body_id + 1],
+                                                     data->subtree_com[3 * root_body_id + 2]);
+                const Vector3 velocity = center_of_mass_velocity -
+                                         angular.cross(subtree_center_of_mass - sensor_position);
+                arrays.sensor_linear_velocity[sensor_offset3 + 0] = velocity.x();
+                arrays.sensor_linear_velocity[sensor_offset3 + 1] = velocity.y();
+                arrays.sensor_linear_velocity[sensor_offset3 + 2] = velocity.z();
+            }
 
             if (sensor_view.binding != nullptr) {
                 for (const MuJoCoSensorComponentBinding& component : sensor_view.binding->components) {
@@ -2346,25 +2738,35 @@ bool MuJoCoPhysicsWorld::StepEnvironmentBatchFastRobotState(const BatchRobotStat
                                     sensor_snapshot->type == PhysicsSensorType::TerrainHeight ||
                                     sensor_snapshot->type == PhysicsSensorType::HeightScanner;
             if (ray_sensor && max_sensor_hits > 0) {
+                const bool terrain_height_sensor =
+                        sensor_snapshot->type == PhysicsSensorType::TerrainHeight;
                 const bool reduce_values = (sensor_snapshot->type == PhysicsSensorType::TerrainHeight ||
                                             sensor_snapshot->type == PhysicsSensorType::HeightScanner) &&
                                            sensor_snapshot->reduction_mode != RayReductionMode::None;
-                const Matrix3 alignment = SensorRayAlignmentMatrix(sensor_transform, sensor_snapshot->ray_alignment);
-                const Vector3 ray_direction = ResolveSensorRayDirection(*sensor_snapshot, alignment, sensor_transform);
+                const Matrix3 alignment =
+                        GetPhysicsRayAlignmentMatrix(sensor_transform, sensor_snapshot->ray_alignment);
+                const Vector3 ray_direction =
+                        ResolvePhysicsRayDirection(*sensor_snapshot, alignment, sensor_transform);
                 std::vector<RealType> ray_values;
                 if (reduce_values) {
                     ray_values.reserve(sensor_snapshot->sample_offsets.size());
                 }
+                bool any_hit = false;
                 for (std::size_t sample_index = 0; sample_index < sensor_snapshot->sample_offsets.size(); ++sample_index) {
                     const Vector3 origin = sensor_position + alignment * sensor_snapshot->sample_offsets[sample_index];
                     const PhysicsRaycastHit hit = RaycastTerrainWithMuJoCo({origin,
                                                                             ray_direction,
                                                                             sensor_snapshot->max_distance},
                                                                            environment_index);
-                    const RealType value = (sensor_snapshot->type == PhysicsSensorType::TerrainHeight ||
-                                            sensor_snapshot->type == PhysicsSensorType::HeightScanner)
-                                                   ? (hit.hit ? origin.z() - hit.point.z() : sensor_snapshot->max_distance)
-                                                   : hit.distance;
+                    any_hit = any_hit || hit.hit;
+                    RealType value = hit.distance;
+                    if (terrain_height_sensor) {
+                        value = hit.hit
+                                        ? (hit.normal.z() < 0.0 ? 0.0 : origin.z() - hit.point.z())
+                                        : sensor_snapshot->max_distance;
+                    } else if (sensor_snapshot->type == PhysicsSensorType::HeightScanner) {
+                        value = hit.hit ? origin.z() - hit.point.z() : sensor_snapshot->max_distance;
+                    }
                     if (reduce_values) {
                         ray_values.push_back(value);
                     } else if (sample_index < max_sensor_values) {
@@ -2385,9 +2787,27 @@ bool MuJoCoPhysicsWorld::StepEnvironmentBatchFastRobotState(const BatchRobotStat
                     arrays.sensor_hit_normal[hit_base * 3 + 1] = hit.normal.y();
                     arrays.sensor_hit_normal[hit_base * 3 + 2] = hit.normal.z();
                 }
+                if (terrain_height_sensor && !any_hit) {
+                    const RealType fallback = std::clamp(
+                            sensor_position.z(),
+                            static_cast<RealType>(0.0),
+                            sensor_snapshot->max_distance);
+                    if (reduce_values) {
+                        std::fill(ray_values.begin(), ray_values.end(), fallback);
+                    } else {
+                        const std::size_t value_base =
+                                (environment_index * sensor_count + sensor_index) * max_sensor_values;
+                        const std::size_t value_count = std::min(
+                                sensor_snapshot->sample_offsets.size(),
+                                max_sensor_values);
+                        std::fill_n(arrays.sensor_values.begin() + value_base,
+                                    value_count,
+                                    fallback);
+                    }
+                }
                 if (reduce_values && max_sensor_values > 0) {
                     arrays.sensor_values[(environment_index * sensor_count + sensor_index) * max_sensor_values] =
-                            ReduceSensorRayValues(ray_values, sensor_snapshot->reduction_mode);
+                            ReducePhysicsRayValues(ray_values, sensor_snapshot->reduction_mode);
                 }
             }
         }
@@ -2416,16 +2836,28 @@ bool MuJoCoPhysicsWorld::StepEnvironmentBatchFastRobotState(const BatchRobotStat
             const Vector3 frame_x(contact.frame[0], contact.frame[1], contact.frame[2]);
             const Vector3 frame_y(contact.frame[3], contact.frame[4], contact.frame[5]);
             const Vector3 frame_z(contact.frame[6], contact.frame[7], contact.frame[8]);
-            const Vector3 world_force = frame_x * static_cast<RealType>(force6[0]) +
-                                        frame_y * static_cast<RealType>(force6[1]) +
-                                        frame_z * static_cast<RealType>(force6[2]);
-            const Vector3 normal(contact.frame[0], contact.frame[1], contact.frame[2]);
+            Vector3 world_force = frame_x * static_cast<RealType>(force6[0]) +
+                                  frame_y * static_cast<RealType>(force6[1]) +
+                                  frame_z * static_cast<RealType>(force6[2]);
+            Vector3 normal(contact.frame[0], contact.frame[1], contact.frame[2]);
             const std::size_t contact_base = environment_index * max_contact_count + written_contact_count;
             if (link_a != link_index_by_body.end()) {
                 arrays.contact_link_index[contact_base * 2 + 0] = link_a->second;
             }
             if (link_b != link_index_by_body.end()) {
                 arrays.contact_link_index[contact_base * 2 + 1] = link_b->second;
+            }
+            const auto shape_a = shape_index_by_geom.find(geom_id_a);
+            if (shape_a != shape_index_by_geom.end()) {
+                arrays.contact_shape_index[contact_base * 2 + 0] = shape_a->second;
+            }
+            const auto shape_b = shape_index_by_geom.find(geom_id_b);
+            if (shape_b != shape_index_by_geom.end()) {
+                arrays.contact_shape_index[contact_base * 2 + 1] = shape_b->second;
+            }
+            if (link_a == link_index_by_body.end() && link_b != link_index_by_body.end()) {
+                world_force = -world_force;
+                normal = -normal;
             }
             arrays.contact_position[contact_base * 3 + 0] = static_cast<RealType>(contact.pos[0]);
             arrays.contact_position[contact_base * 3 + 1] = static_cast<RealType>(contact.pos[1]);
@@ -2520,7 +2952,7 @@ PhysicsRaycastHit MuJoCoPhysicsWorld::RaycastTerrainWithMuJoCo(const PhysicsRayc
     return result;
 }
 
-bool MuJoCoPhysicsWorld::LoadModelFromRobotSources() {
+bool MuJoCoPhysicsWorld::CompileAuthoredModel() {
     FreeModel();
 
     std::vector<std::size_t> robot_indices;
@@ -2557,23 +2989,13 @@ bool MuJoCoPhysicsWorld::LoadModelFromRobotSources() {
         }
         used_prefixes.insert(prefix);
 
-        bool attached = false;
-        if (HasUsableAuthoredModel(robot)) {
-            attached = AddAuthoredRobotToSpec(parent_spec, robot, robot_index, prefix);
-        } else if (!robot.source_path.empty()) {
-            const std::string model_path = ResolvePhysicsSourcePath(robot.source_path);
-            if (!model_path.empty() && std::filesystem::exists(model_path)) {
-                attached = AttachRobotModelToSpec(parent_spec, robot, robot_index, prefix);
-            } else {
-                LOG_WARN("MuJoCo robot '{}' source '{}' is unavailable; using authored Gobot scene data.",
-                         robot.name,
-                         robot.source_path);
-                attached = AddAuthoredRobotToSpec(parent_spec, robot, robot_index, prefix);
-            }
-        } else {
-            attached = AddAuthoredRobotToSpec(parent_spec, robot, robot_index, prefix);
+        if (!HasUsableAuthoredModel(robot)) {
+            SetLastError(fmt::format(
+                    "MuJoCo robot '{}' has no authored links or joints. Import the robot into the Gobot scene before building the runtime model.",
+                    robot.name));
+            return false;
         }
-        if (!attached) {
+        if (!AddAuthoredRobotToSpec(parent_spec, robot, robot_index, prefix)) {
             return false;
         }
 
@@ -2598,65 +3020,6 @@ bool MuJoCoPhysicsWorld::LoadModelFromRobotSources() {
              model->nq,
              model->nv,
              model->njnt);
-    return true;
-}
-
-bool MuJoCoPhysicsWorld::AttachRobotModelToSpec(void* parent_spec_ptr,
-                                                const PhysicsRobotSnapshot& robot,
-                                                std::size_t robot_index,
-                                                const std::string& prefix) {
-    auto* parent_spec = static_cast<mjSpec*>(parent_spec_ptr);
-    if (!parent_spec) {
-        SetLastError("Cannot attach robot to a null MuJoCo parent spec.");
-        return false;
-    }
-
-    const std::string model_path = ResolvePhysicsSourcePath(robot.source_path);
-    if (model_path.empty()) {
-        SetLastError(fmt::format("MuJoCo robot '{}' source path is empty after path resolution.", robot.name));
-        return false;
-    }
-
-    if (!std::filesystem::exists(model_path)) {
-        SetLastError(fmt::format("MuJoCo robot '{}' source file does not exist: {}", robot.name, model_path));
-        return false;
-    }
-
-    char error[kMuJoCoErrorBufferSize] = {};
-    mjSpec* child_spec = mj_parseXML(model_path.c_str(), nullptr, error, sizeof(error));
-    if (!child_spec) {
-        SetLastError(fmt::format("MuJoCo failed to parse robot '{}' source '{}': {}",
-                                 robot.name,
-                                 model_path,
-                                 error));
-        return false;
-    }
-    std::unique_ptr<mjSpec, decltype(&mj_deleteSpec)> child_spec_guard(child_spec, mj_deleteSpec);
-
-    NormalizeMuJoCoAssetPaths(child_spec, model_path);
-    AddFloatingBaseJointsToSpec(child_spec, robot);
-
-    mjsBody* world = mjs_findBody(parent_spec, "world");
-    if (!world) {
-        SetLastError("MuJoCo parent spec has no world body.");
-        return false;
-    }
-
-    mjsElement* attached = mjs_attach(world->element, child_spec->element, prefix.c_str(), "");
-    if (!attached) {
-        const std::string attach_error = mjs_getError(parent_spec) ? mjs_getError(parent_spec) : "unknown error";
-        SetLastError(fmt::format("MuJoCo failed to attach robot '{}' from '{}': {}",
-                                 robot.name,
-                                 model_path,
-                                 attach_error));
-        return false;
-    }
-
-    LOG_INFO("Attached MuJoCo robot '{}' from '{}' with prefix '{}'.",
-             robot.name,
-             model_path,
-             prefix);
-    GOB_UNUSED(robot_index);
     return true;
 }
 
@@ -3547,13 +3910,16 @@ void MuJoCoPhysicsWorld::SyncStateFromMuJoCo(std::size_t environment_index) {
                     if (link_state.link_name != joint_snapshot.child_link) {
                         continue;
                     }
-                    if (binding.dof_address >= 0 && binding.dof_address + 5 < model->nv) {
+                    if (binding.qpos_address >= 0 && binding.qpos_address + 6 < model->nq &&
+                        binding.dof_address >= 0 && binding.dof_address + 5 < model->nv) {
                         link_state.linear_velocity = Vector3(data->qvel[binding.dof_address + 0],
                                                              data->qvel[binding.dof_address + 1],
                                                              data->qvel[binding.dof_address + 2]);
-                        link_state.angular_velocity = Vector3(data->qvel[binding.dof_address + 3],
-                                                              data->qvel[binding.dof_address + 4],
-                                                              data->qvel[binding.dof_address + 5]);
+                        link_state.angular_velocity = FreeJointQvelToWorldAngularVelocity(
+                                data->qpos + binding.qpos_address + 3,
+                                Vector3(data->qvel[binding.dof_address + 3],
+                                        data->qvel[binding.dof_address + 4],
+                                        data->qvel[binding.dof_address + 5]));
                     }
                     break;
                 }
@@ -3627,14 +3993,16 @@ void MuJoCoPhysicsWorld::SyncStateToMuJoCo(std::size_t environment_index) {
                 }
             }
 
+            const Affine3 initial_transform = child_link_state != nullptr
+                                                      ? child_link_state->global_transform
+                                                      : (child_link_snapshot != nullptr
+                                                                 ? child_link_snapshot->global_transform
+                                                                 : (joint_snapshot != nullptr
+                                                                            ? joint_snapshot->global_transform
+                                                                            : Affine3::Identity()));
+            const Quaternion orientation(initial_transform.linear());
             if (joint_snapshot != nullptr && binding.qpos_address >= 0 && binding.qpos_address + 6 < model->nq) {
-                const Affine3 initial_transform = child_link_state != nullptr
-                                                          ? child_link_state->global_transform
-                                                          : (child_link_snapshot != nullptr
-                                                                     ? child_link_snapshot->global_transform
-                                                                     : joint_snapshot->global_transform);
                 const Vector3 position = initial_transform.translation();
-                const Quaternion orientation(initial_transform.linear());
                 data->qpos[binding.qpos_address + 0] = position.x();
                 data->qpos[binding.qpos_address + 1] = position.y();
                 data->qpos[binding.qpos_address + 2] = position.z();
@@ -3647,9 +4015,11 @@ void MuJoCoPhysicsWorld::SyncStateToMuJoCo(std::size_t environment_index) {
                 data->qvel[binding.dof_address + 0] = child_link_state->linear_velocity.x();
                 data->qvel[binding.dof_address + 1] = child_link_state->linear_velocity.y();
                 data->qvel[binding.dof_address + 2] = child_link_state->linear_velocity.z();
-                data->qvel[binding.dof_address + 3] = child_link_state->angular_velocity.x();
-                data->qvel[binding.dof_address + 4] = child_link_state->angular_velocity.y();
-                data->qvel[binding.dof_address + 5] = child_link_state->angular_velocity.z();
+                const Vector3 angular_velocity_body =
+                        orientation.normalized().conjugate() * child_link_state->angular_velocity;
+                data->qvel[binding.dof_address + 3] = angular_velocity_body.x();
+                data->qvel[binding.dof_address + 4] = angular_velocity_body.y();
+                data->qvel[binding.dof_address + 5] = angular_velocity_body.z();
             }
             continue;
         }

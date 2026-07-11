@@ -15,18 +15,8 @@
 #include <utility>
 
 #include "gobot/core/registration.hpp"
-#include "gobot/scene/collision_shape_3d.hpp"
-#include "gobot/scene/joint_3d.hpp"
-#include "gobot/scene/link_3d.hpp"
-#include "gobot/scene/mesh_instance_3d.hpp"
-#include "gobot/scene/node.hpp"
-#include "gobot/scene/resources/box_shape_3d.hpp"
-#include "gobot/scene/resources/capsule_shape_3d.hpp"
-#include "gobot/scene/resources/cylinder_shape_3d.hpp"
-#include "gobot/scene/resources/sphere_shape_3d.hpp"
-#include "gobot/scene/robot_3d.hpp"
-#include "gobot/scene/sensor_3d.hpp"
-#include "gobot/scene/terrain_3d.hpp"
+#include "gobot/core/robotics_types.hpp"
+#include "gobot/physics/physics_sensor_utils.hpp"
 
 namespace gobot {
 namespace {
@@ -44,443 +34,6 @@ PhysicsJointControlMode JointDriveModeToControlMode(int drive_mode) {
     }
 
     return PhysicsJointControlMode::Passive;
-}
-
-Affine3 ResolveNodeGlobalTransform(const Node3D* node, const Affine3& parent_global_transform) {
-    if (node == nullptr) {
-        return parent_global_transform;
-    }
-
-    return node->IsInsideTree() ? node->GetGlobalTransform() : parent_global_transform * node->GetTransform();
-}
-
-bool HasVisualMeshDescendant(const Node* node, const Node* root_node) {
-    if (!node) {
-        return false;
-    }
-
-    if (node != root_node && Object::PointerCastTo<Link3D>(node)) {
-        return false;
-    }
-
-    if (auto mesh_instance = Object::PointerCastTo<MeshInstance3D>(node)) {
-        return mesh_instance->GetMesh().IsValid();
-    }
-
-    for (std::size_t i = 0; i < node->GetChildCount(); ++i) {
-        if (HasVisualMeshDescendant(node->GetChild(static_cast<int>(i)), root_node)) {
-            return true;
-        }
-    }
-
-    return false;
-}
-
-bool HasCollisionShapeDescendant(const Node* node, const Node* root_node) {
-    if (!node) {
-        return false;
-    }
-
-    if (node != root_node && Object::PointerCastTo<Link3D>(node)) {
-        return false;
-    }
-
-    if (Object::PointerCastTo<CollisionShape3D>(node)) {
-        return true;
-    }
-
-    for (std::size_t i = 0; i < node->GetChildCount(); ++i) {
-        if (HasCollisionShapeDescendant(node->GetChild(static_cast<int>(i)), root_node)) {
-            return true;
-        }
-    }
-
-    return false;
-}
-
-bool IsImplicitVirtualRootLink(const Link3D* link, const PhysicsRobotSnapshot& robot_snapshot) {
-    if (link == nullptr || link->GetRole() == LinkRole::VirtualRoot) {
-        return link != nullptr;
-    }
-
-    const bool has_inertial = link->HasInertial() ||
-                              link->GetMass() > 0.0 ||
-                              !link->GetInertiaDiagonal().isZero(CMP_EPSILON) ||
-                              !link->GetInertiaOffDiagonal().isZero(CMP_EPSILON);
-    if (has_inertial) {
-        return false;
-    }
-
-    for (const PhysicsJointSnapshot& joint : robot_snapshot.joints) {
-        if (joint.child_link == link->GetName()) {
-            return false;
-        }
-    }
-
-    if (HasCollisionShapeDescendant(link, link)) {
-        return false;
-    }
-
-    return !HasVisualMeshDescendant(link, link);
-}
-
-PhysicsShapeSnapshot CaptureShapeSnapshot(const CollisionShape3D* collision_shape,
-                                          const Affine3& global_transform) {
-    PhysicsShapeSnapshot snapshot;
-    snapshot.node = collision_shape;
-    snapshot.name = collision_shape->GetName();
-    snapshot.global_transform = global_transform;
-    snapshot.disabled = collision_shape->IsDisabled();
-    snapshot.friction = collision_shape->GetFriction();
-    snapshot.contype = collision_shape->GetContactType();
-    snapshot.conaffinity = collision_shape->GetContactAffinity();
-    snapshot.condim = collision_shape->GetContactDimension();
-    snapshot.solref = collision_shape->GetSolref();
-    snapshot.solimp = collision_shape->GetSolimp();
-    snapshot.margin = collision_shape->GetMargin();
-    snapshot.gap = collision_shape->GetGap();
-    snapshot.priority = collision_shape->GetPriority();
-
-    const Ref<Shape3D>& shape = collision_shape->GetShape();
-    if (!shape.IsValid()) {
-        return snapshot;
-    }
-
-    if (auto box = dynamic_pointer_cast<BoxShape3D>(shape)) {
-        snapshot.type = PhysicsShapeType::Box;
-        snapshot.box_size = box->GetSize();
-    } else if (auto sphere = dynamic_pointer_cast<SphereShape3D>(shape)) {
-        snapshot.type = PhysicsShapeType::Sphere;
-        snapshot.radius = sphere->GetRadius();
-    } else if (auto capsule = dynamic_pointer_cast<CapsuleShape3D>(shape)) {
-        snapshot.type = PhysicsShapeType::Capsule;
-        snapshot.radius = capsule->GetRadius();
-        snapshot.height = capsule->GetHeight();
-    } else if (auto cylinder = dynamic_pointer_cast<CylinderShape3D>(shape)) {
-        snapshot.type = PhysicsShapeType::Cylinder;
-        snapshot.radius = cylinder->GetRadius();
-        snapshot.height = cylinder->GetHeight();
-    }
-
-    return snapshot;
-}
-
-std::vector<std::string> ChannelNamesForSensorType(PhysicsSensorType type) {
-    switch (type) {
-        case PhysicsSensorType::IMU:
-            return {
-                    "orientation_w",
-                    "orientation_x",
-                    "orientation_y",
-                    "orientation_z",
-                    "angular_velocity_x",
-                    "angular_velocity_y",
-                    "angular_velocity_z",
-                    "linear_velocity_x",
-                    "linear_velocity_y",
-                    "linear_velocity_z",
-                    "linear_acceleration_x",
-                    "linear_acceleration_y",
-                    "linear_acceleration_z"};
-        case PhysicsSensorType::AngularMomentum:
-            return {
-                    "angular_momentum_x",
-                    "angular_momentum_y",
-                    "angular_momentum_z"};
-        case PhysicsSensorType::Contact:
-            return {"contact_strength"};
-        case PhysicsSensorType::RayCast:
-            break;
-        case PhysicsSensorType::TerrainHeight:
-            break;
-        case PhysicsSensorType::HeightScanner:
-            break;
-        case PhysicsSensorType::Unknown:
-            break;
-    }
-
-    return {};
-}
-
-void SetBoxXYBounds(PhysicsTerrainBoxSnapshot* box);
-void SetHeightFieldXYBounds(PhysicsTerrainHeightFieldSnapshot* heightfield);
-void SetMeshPatchXYBounds(PhysicsTerrainMeshPatchSnapshot* mesh_patch);
-
-PhysicsSensorSnapshot CaptureSensorSnapshot(const Sensor3D* sensor,
-                                            const std::string& link_name,
-                                            const Affine3& global_transform) {
-    PhysicsSensorSnapshot snapshot;
-    snapshot.node = sensor;
-    snapshot.name = sensor->GetName();
-    snapshot.link_name = link_name;
-    snapshot.global_transform = global_transform;
-    snapshot.local_transform = sensor->GetTransform();
-    snapshot.enabled = sensor->IsEnabled();
-    snapshot.sensor_period = sensor->GetSensorPeriod();
-    snapshot.noise_stddev = sensor->GetNoiseStddev();
-    snapshot.visualize_debug = sensor->ShouldVisualizeDebug();
-
-    if (Object::PointerCastTo<IMUSensor3D>(sensor) != nullptr) {
-        snapshot.type = PhysicsSensorType::IMU;
-    } else if (Object::PointerCastTo<AngularMomentumSensor3D>(sensor) != nullptr) {
-        snapshot.type = PhysicsSensorType::AngularMomentum;
-    } else if (auto* contact_sensor = Object::PointerCastTo<ContactSensor3D>(sensor)) {
-        snapshot.type = PhysicsSensorType::Contact;
-        snapshot.radius = contact_sensor->GetRadius();
-        snapshot.min_threshold = contact_sensor->GetMinThreshold();
-        snapshot.max_threshold = contact_sensor->GetMaxThreshold();
-    } else if (auto* height_scanner = Object::PointerCastTo<HeightScanner3D>(sensor)) {
-        snapshot.type = PhysicsSensorType::HeightScanner;
-        snapshot.sample_offsets = height_scanner->GetResolvedSampleOffsets();
-        snapshot.ray_direction = height_scanner->GetRayDirection();
-        snapshot.ray_direction_world_space = height_scanner->IsRayDirectionWorldSpace();
-        snapshot.max_distance = height_scanner->GetMaxDistance();
-        snapshot.reduction_mode = height_scanner->GetReductionMode();
-        snapshot.pattern_mode = height_scanner->GetPatternMode();
-        snapshot.grid_size = height_scanner->GetGridSize();
-        snapshot.grid_resolution = height_scanner->GetGridResolution();
-        snapshot.ray_alignment = height_scanner->GetRayAlignment();
-    } else if (auto* terrain_height_sensor = Object::PointerCastTo<TerrainHeightSensor3D>(sensor)) {
-        snapshot.type = PhysicsSensorType::TerrainHeight;
-        snapshot.sample_offsets = terrain_height_sensor->GetResolvedSampleOffsets();
-        snapshot.ray_direction = terrain_height_sensor->GetRayDirection();
-        snapshot.ray_direction_world_space = terrain_height_sensor->IsRayDirectionWorldSpace();
-        snapshot.max_distance = terrain_height_sensor->GetMaxDistance();
-        snapshot.reduction_mode = terrain_height_sensor->GetReductionMode();
-        snapshot.pattern_mode = terrain_height_sensor->GetPatternMode();
-        snapshot.grid_size = terrain_height_sensor->GetGridSize();
-        snapshot.grid_resolution = terrain_height_sensor->GetGridResolution();
-        snapshot.ray_alignment = terrain_height_sensor->GetRayAlignment();
-    } else if (auto* raycast_sensor = Object::PointerCastTo<RayCastSensor3D>(sensor)) {
-        snapshot.type = PhysicsSensorType::RayCast;
-        snapshot.sample_offsets = raycast_sensor->GetResolvedSampleOffsets();
-        snapshot.ray_direction = raycast_sensor->GetRayDirection();
-        snapshot.ray_direction_world_space = raycast_sensor->IsRayDirectionWorldSpace();
-        snapshot.max_distance = raycast_sensor->GetMaxDistance();
-        snapshot.pattern_mode = raycast_sensor->GetPatternMode();
-        snapshot.grid_size = raycast_sensor->GetGridSize();
-        snapshot.grid_resolution = raycast_sensor->GetGridResolution();
-        snapshot.ray_alignment = raycast_sensor->GetRayAlignment();
-    }
-
-    snapshot.channel_names = ChannelNamesForSensorType(snapshot.type);
-    if (snapshot.type == PhysicsSensorType::RayCast || snapshot.type == PhysicsSensorType::HeightScanner) {
-        snapshot.channel_names.reserve(snapshot.sample_offsets.size());
-        for (std::size_t index = 0; index < snapshot.sample_offsets.size(); ++index) {
-            snapshot.channel_names.push_back(fmt::format("distance_{}", index));
-        }
-    } else if (snapshot.type == PhysicsSensorType::TerrainHeight) {
-        if (snapshot.reduction_mode == RayReductionMode::None) {
-            snapshot.channel_names.reserve(snapshot.sample_offsets.size());
-            for (std::size_t index = 0; index < snapshot.sample_offsets.size(); ++index) {
-                snapshot.channel_names.push_back(fmt::format("height_{}", index));
-            }
-        } else {
-            snapshot.channel_names.push_back("height");
-        }
-    }
-    return snapshot;
-}
-
-PhysicsTerrainSnapshot CaptureTerrainSnapshot(const Terrain3D* terrain,
-                                              const Affine3& global_transform) {
-    PhysicsTerrainSnapshot snapshot;
-    snapshot.node = terrain;
-    snapshot.name = terrain->GetName();
-    snapshot.surface_color = terrain->GetSurfaceColor();
-    snapshot.friction = terrain->GetFriction();
-    snapshot.contype = terrain->GetContactType();
-    snapshot.conaffinity = terrain->GetContactAffinity();
-    snapshot.condim = terrain->GetContactDimension();
-    snapshot.solref = terrain->GetSolref();
-    snapshot.solimp = terrain->GetSolimp();
-    snapshot.margin = terrain->GetMargin();
-    snapshot.gap = terrain->GetGap();
-    snapshot.spawn_origins = terrain->GetSpawnOrigins();
-
-    for (const TerrainBox& box : terrain->GetBoxes()) {
-        Affine3 local = Affine3::Identity();
-        local.translation() = box.center;
-        local.SetEulerAngle({
-                DEG_TO_RAD(box.rotation_degrees.x()),
-                DEG_TO_RAD(box.rotation_degrees.y()),
-                DEG_TO_RAD(box.rotation_degrees.z())
-        }, EulerOrder::SXYZ);
-
-        PhysicsTerrainBoxSnapshot box_snapshot;
-        box_snapshot.global_transform = global_transform * local;
-        box_snapshot.size = box.size;
-        SetBoxXYBounds(&box_snapshot);
-        snapshot.boxes.push_back(std::move(box_snapshot));
-    }
-
-    for (const TerrainHeightField& heightfield : terrain->GetHeightFields()) {
-        Affine3 local = Affine3::Identity();
-        local.translation() = heightfield.center;
-
-        PhysicsTerrainHeightFieldSnapshot heightfield_snapshot;
-        heightfield_snapshot.global_transform = global_transform * local;
-        heightfield_snapshot.size = heightfield.size;
-        heightfield_snapshot.rows = heightfield.rows;
-        heightfield_snapshot.cols = heightfield.cols;
-        heightfield_snapshot.heights = heightfield.heights;
-        heightfield_snapshot.normalized_elevation = heightfield.normalized_elevation;
-        heightfield_snapshot.base_thickness = heightfield.base_thickness;
-        heightfield_snapshot.z_offset = heightfield.z_offset;
-        SetHeightFieldXYBounds(&heightfield_snapshot);
-        snapshot.heightfields.push_back(std::move(heightfield_snapshot));
-    }
-
-    for (const TerrainMeshPatch& mesh_patch : terrain->GetMeshPatches()) {
-        Affine3 local = Affine3::Identity();
-        local.translation() = mesh_patch.center;
-        local.SetEulerAngle({
-                DEG_TO_RAD(mesh_patch.rotation_degrees.x()),
-                DEG_TO_RAD(mesh_patch.rotation_degrees.y()),
-                DEG_TO_RAD(mesh_patch.rotation_degrees.z())
-        }, EulerOrder::SXYZ);
-
-        PhysicsTerrainMeshPatchSnapshot mesh_patch_snapshot;
-        mesh_patch_snapshot.global_transform = global_transform * local;
-        mesh_patch_snapshot.vertices = mesh_patch.vertices;
-        mesh_patch_snapshot.indices = mesh_patch.indices;
-        mesh_patch_snapshot.color = mesh_patch.color;
-        SetMeshPatchXYBounds(&mesh_patch_snapshot);
-        snapshot.mesh_patches.push_back(std::move(mesh_patch_snapshot));
-    }
-
-    return snapshot;
-}
-
-void CollectRobotNodes(const Node* node,
-                       PhysicsRobotSnapshot* robot_snapshot,
-                       std::vector<PhysicsShapeSnapshot>* loose_collision_shapes,
-                       const Affine3& parent_global_transform) {
-    if (!node) {
-        return;
-    }
-
-    const Node3D* node_3d = Object::PointerCastTo<Node3D>(node);
-    const Affine3 node_global_transform = ResolveNodeGlobalTransform(node_3d, parent_global_transform);
-
-    if (auto link = Object::PointerCastTo<Link3D>(node)) {
-        PhysicsLinkSnapshot link_snapshot;
-        link_snapshot.node = link;
-        link_snapshot.name = link->GetName();
-        link_snapshot.role = link->GetRole() == LinkRole::VirtualRoot
-                                     ? PhysicsLinkRole::VirtualRoot
-                                     : PhysicsLinkRole::Physical;
-        link_snapshot.global_transform = node_global_transform;
-        link_snapshot.mass = link->GetMass();
-        link_snapshot.center_of_mass = link->GetCenterOfMass();
-        link_snapshot.inertia_orientation = link->GetInertiaOrientation();
-        link_snapshot.inertia_diagonal = link->GetInertiaDiagonal();
-        link_snapshot.inertia_off_diagonal = link->GetInertiaOffDiagonal();
-
-        for (std::size_t i = 0; i < node->GetChildCount(); ++i) {
-            if (auto collision_shape = Object::PointerCastTo<CollisionShape3D>(node->GetChild(static_cast<int>(i)))) {
-                link_snapshot.collision_shapes.emplace_back(CaptureShapeSnapshot(
-                        collision_shape,
-                        ResolveNodeGlobalTransform(collision_shape, node_global_transform)));
-            } else if (auto sensor = Object::PointerCastTo<Sensor3D>(node->GetChild(static_cast<int>(i)))) {
-                robot_snapshot->sensors.emplace_back(CaptureSensorSnapshot(
-                        sensor,
-                        link_snapshot.name,
-                        ResolveNodeGlobalTransform(sensor, node_global_transform)));
-            }
-        }
-
-        robot_snapshot->links.emplace_back(std::move(link_snapshot));
-    } else if (auto joint = Object::PointerCastTo<Joint3D>(node)) {
-        PhysicsJointSnapshot joint_snapshot;
-        joint_snapshot.node = joint;
-        joint_snapshot.name = joint->GetName();
-        joint_snapshot.parent_link = joint->GetParentLink();
-        joint_snapshot.child_link = joint->GetChildLink();
-        joint_snapshot.global_transform = node_global_transform;
-        joint_snapshot.axis = joint->GetAxis();
-        joint_snapshot.lower_limit = joint->GetLowerLimit();
-        joint_snapshot.upper_limit = joint->GetUpperLimit();
-        joint_snapshot.effort_limit = joint->GetEffortLimit();
-        joint_snapshot.velocity_limit = joint->GetVelocityLimit();
-        joint_snapshot.damping = joint->GetDamping();
-        joint_snapshot.armature = joint->GetArmature();
-        joint_snapshot.friction_loss = joint->GetFrictionLoss();
-        joint_snapshot.joint_position = joint->GetJointPosition();
-        joint_snapshot.initial_position = joint->GetInitialPosition();
-        joint_snapshot.drive_mode = static_cast<int>(joint->GetDriveMode());
-        joint_snapshot.drive_stiffness = joint->GetDriveStiffness();
-        joint_snapshot.drive_damping = joint->GetDriveDamping();
-        joint_snapshot.control_lower_limit = joint->GetControlLowerLimit();
-        joint_snapshot.control_upper_limit = joint->GetControlUpperLimit();
-        joint_snapshot.force_lower_limit = joint->GetForceLowerLimit();
-        joint_snapshot.force_upper_limit = joint->GetForceUpperLimit();
-        joint_snapshot.gear = joint->GetGear();
-        joint_snapshot.joint_type = static_cast<int>(joint->GetJointType());
-        robot_snapshot->joints.emplace_back(std::move(joint_snapshot));
-    } else if (auto collision_shape = Object::PointerCastTo<CollisionShape3D>(node)) {
-        if (!Object::PointerCastTo<Link3D>(node->GetParent())) {
-            loose_collision_shapes->emplace_back(CaptureShapeSnapshot(collision_shape, node_global_transform));
-        }
-    }
-
-    for (std::size_t i = 0; i < node->GetChildCount(); ++i) {
-        CollectRobotNodes(node->GetChild(static_cast<int>(i)),
-                          robot_snapshot,
-                          loose_collision_shapes,
-                          node_global_transform);
-    }
-}
-
-void CollectSceneNodes(const Node* node,
-                       PhysicsSceneSnapshot* snapshot,
-                       const Affine3& parent_global_transform) {
-    if (!node) {
-        return;
-    }
-
-    const Node3D* node_3d = Object::PointerCastTo<Node3D>(node);
-    const Affine3 node_global_transform = ResolveNodeGlobalTransform(node_3d, parent_global_transform);
-
-    if (auto robot = Object::PointerCastTo<Robot3D>(node)) {
-        PhysicsRobotSnapshot robot_snapshot;
-        robot_snapshot.node = robot;
-        robot_snapshot.name = robot->GetName();
-        robot_snapshot.source_path = robot->GetSourcePath();
-        CollectRobotNodes(node, &robot_snapshot, &snapshot->loose_collision_shapes, parent_global_transform);
-        for (PhysicsLinkSnapshot& link : robot_snapshot.links) {
-            if (IsImplicitVirtualRootLink(link.node, robot_snapshot)) {
-                link.role = PhysicsLinkRole::VirtualRoot;
-            }
-        }
-        snapshot->total_link_count += robot_snapshot.links.size();
-        snapshot->total_joint_count += robot_snapshot.joints.size();
-        snapshot->total_sensor_count += robot_snapshot.sensors.size();
-        for (const PhysicsLinkSnapshot& link : robot_snapshot.links) {
-            snapshot->total_collision_shape_count += link.collision_shapes.size();
-        }
-        snapshot->robots.emplace_back(std::move(robot_snapshot));
-        return;
-    }
-
-    if (auto collision_shape = Object::PointerCastTo<CollisionShape3D>(node)) {
-        snapshot->loose_collision_shapes.emplace_back(CaptureShapeSnapshot(collision_shape, node_global_transform));
-        ++snapshot->total_collision_shape_count;
-    } else if (auto sensor = Object::PointerCastTo<Sensor3D>(node)) {
-        snapshot->loose_sensors.emplace_back(CaptureSensorSnapshot(sensor, std::string{}, node_global_transform));
-        ++snapshot->total_sensor_count;
-    } else if (auto terrain = Object::PointerCastTo<Terrain3D>(node)) {
-        PhysicsTerrainSnapshot terrain_snapshot = CaptureTerrainSnapshot(terrain, node_global_transform);
-        snapshot->total_terrain_count += 1;
-        snapshot->total_collision_shape_count += terrain_snapshot.boxes.size() +
-                                                 terrain_snapshot.heightfields.size() +
-                                                 terrain_snapshot.mesh_patches.size();
-        snapshot->terrains.emplace_back(std::move(terrain_snapshot));
-    }
-
-    for (std::size_t i = 0; i < node->GetChildCount(); ++i) {
-        CollectSceneNodes(node->GetChild(static_cast<int>(i)), snapshot, node_global_transform);
-    }
 }
 
 const PhysicsRobotState* FindRobotState(const PhysicsSceneState& state, const std::string& robot_name) {
@@ -528,13 +81,14 @@ const PhysicsSensorState* FindPreviousSensorState(const PhysicsRobotState& robot
 PhysicsSensorState MakeSensorStateFromSnapshot(const PhysicsSensorSnapshot& sensor_snapshot,
                                                const std::string& robot_name = {}) {
     PhysicsSensorState sensor_state;
-    sensor_state.node = sensor_snapshot.node;
     sensor_state.robot_name = robot_name;
     sensor_state.link_name = sensor_snapshot.link_name;
     sensor_state.sensor_name = sensor_snapshot.name;
     sensor_state.type = sensor_snapshot.type;
     sensor_state.enabled = sensor_snapshot.enabled;
     sensor_state.visualize_debug = sensor_snapshot.visualize_debug;
+    sensor_state.visible = sensor_snapshot.visible;
+    sensor_state.debug_marker_radius = sensor_snapshot.debug_marker_radius;
     sensor_state.global_transform = sensor_snapshot.global_transform;
     sensor_state.channel_names = sensor_snapshot.channel_names;
     sensor_state.values.assign(sensor_state.channel_names.size(), 0.0);
@@ -557,63 +111,6 @@ bool IsRaycastSensorType(PhysicsSensorType type) {
 bool IsTerrainHeightSensorType(PhysicsSensorType type) {
     return type == PhysicsSensorType::TerrainHeight ||
            type == PhysicsSensorType::HeightScanner;
-}
-
-RealType ReduceRayValues(const std::vector<RealType>& values, RayReductionMode reduction_mode) {
-    if (values.empty()) {
-        return 0.0;
-    }
-    switch (reduction_mode) {
-        case RayReductionMode::Min:
-            return *std::min_element(values.begin(), values.end());
-        case RayReductionMode::Max:
-            return *std::max_element(values.begin(), values.end());
-        case RayReductionMode::Mean: {
-            RealType sum = 0.0;
-            for (RealType value : values) {
-                sum += value;
-            }
-            return sum / static_cast<RealType>(values.size());
-        }
-        case RayReductionMode::None:
-            break;
-    }
-    return values.front();
-}
-
-Matrix3 RayAlignmentMatrix(const Affine3& transform, RayAlignmentMode alignment) {
-    switch (alignment) {
-        case RayAlignmentMode::World:
-            return Matrix3::Identity();
-        case RayAlignmentMode::Base:
-            return transform.linear();
-        case RayAlignmentMode::Yaw: {
-            const Vector3 x_axis = transform.linear() * Vector3::UnitX();
-            const RealType yaw = std::atan2(x_axis.y(), x_axis.x());
-            return AngleAxis(yaw, Vector3::UnitZ()).toRotationMatrix();
-        }
-    }
-    return Matrix3::Identity();
-}
-
-Vector3 ResolveRayDirection(const PhysicsSensorSnapshot& sensor_snapshot,
-                            const Matrix3& alignment_matrix,
-                            const Affine3& sensor_transform) {
-    Vector3 ray_direction = sensor_snapshot.ray_direction;
-    if (sensor_snapshot.ray_alignment == RayAlignmentMode::Base) {
-        ray_direction = sensor_transform.linear() * ray_direction;
-    } else if (sensor_snapshot.ray_alignment == RayAlignmentMode::Yaw) {
-        ray_direction = alignment_matrix * ray_direction;
-    } else if (!sensor_snapshot.ray_direction_world_space) {
-        ray_direction = sensor_transform.linear() * ray_direction;
-    }
-
-    if (ray_direction.squaredNorm() <= CMP_EPSILON2) {
-        ray_direction = Vector3{0.0, 0.0, -1.0};
-    } else {
-        ray_direction.normalize();
-    }
-    return ray_direction;
 }
 
 bool IsVerticalTerrainHeightRay(const PhysicsRaycastQuery& query);
@@ -1183,12 +680,10 @@ void PhysicsWorld::SetSettings(const PhysicsWorldSettings& settings) {
     settings_ = settings;
 }
 
-bool PhysicsWorld::BuildFromScene(const Node* scene_root) {
-    if (!CaptureSceneSnapshot(scene_root)) {
-        return false;
-    }
-
+bool PhysicsWorld::Build(PhysicsSceneSnapshot scene_snapshot) {
+    scene_snapshot_ = std::move(scene_snapshot);
     ResetSceneStateFromSnapshot();
+    last_error_.clear();
     return true;
 }
 
@@ -1318,6 +813,14 @@ bool PhysicsWorld::StepEnvironmentBatch(RealType delta_time, std::uint64_t ticks
     return true;
 }
 
+bool PhysicsWorld::StepRobotBatch(const PhysicsRobotBatchStepRequest& request,
+                                  PhysicsRobotBatchStepResult& result) {
+    GOB_UNUSED(request);
+    GOB_UNUSED(result);
+    SetLastError("The active physics backend does not provide typed batch robot state extraction.");
+    return false;
+}
+
 std::size_t PhysicsWorld::ResolveEnvironmentBatchWorkerCount(std::size_t worker_count) const {
     const std::size_t environment_count = GetEnvironmentCount();
     if (environment_count == 0) {
@@ -1384,6 +887,39 @@ bool PhysicsWorld::ResetEnvironmentLinkState(std::size_t environment_index,
     }
 
     return ResetLinkState(robot_name, link_name, position, orientation, linear_velocity, angular_velocity);
+}
+
+bool PhysicsWorld::WriteEnvironmentLinkVelocity(std::size_t environment_index,
+                                                const std::string& robot_name,
+                                                const std::string& link_name,
+                                                const Vector3& linear_velocity,
+                                                const Vector3& angular_velocity) {
+    const PhysicsSceneState* state = GetEnvironmentState(environment_index);
+    if (state == nullptr) {
+        SetLastError(fmt::format("Environment index {} is out of range.", environment_index));
+        return false;
+    }
+
+    for (const PhysicsRobotState& robot : state->robots) {
+        if (robot.name != robot_name) {
+            continue;
+        }
+        for (const PhysicsLinkState& link : robot.links) {
+            if (link.link_name != link_name) {
+                continue;
+            }
+            return ResetEnvironmentLinkState(environment_index,
+                                             robot_name,
+                                             link_name,
+                                             link.global_transform.translation(),
+                                             link.global_transform.GetQuaternion(),
+                                             linear_velocity,
+                                             angular_velocity);
+        }
+    }
+
+    SetLastError(fmt::format("Cannot set velocity for missing link '{}::{}'.", robot_name, link_name));
+    return false;
 }
 
 bool PhysicsWorld::ResetEnvironmentRobotStates(const std::vector<PhysicsEnvironmentRobotResetState>& reset_states) {
@@ -1649,23 +1185,15 @@ PhysicsRaycastHit PhysicsWorld::RaycastTerrain(const PhysicsRaycastQuery& query)
     return RaycastTerrainFallback(query);
 }
 
+PhysicsRaycastHit PhysicsWorld::RaycastEnvironmentTerrain(const PhysicsRaycastQuery& query,
+                                                          std::size_t environment_index) const {
+    return RaycastTerrainForSensor(query, environment_index);
+}
+
 PhysicsRaycastHit PhysicsWorld::RaycastTerrainForSensor(const PhysicsRaycastQuery& query,
                                                         std::size_t environment_index) const {
     GOB_UNUSED(environment_index);
     return RaycastTerrainFallback(query, false);
-}
-
-bool PhysicsWorld::CaptureSceneSnapshot(const Node* scene_root) {
-    scene_snapshot_ = {};
-    scene_state_ = {};
-    if (!scene_root) {
-        SetLastError("Cannot build a physics world from a null scene root.");
-        return false;
-    }
-
-    CollectSceneNodes(scene_root, &scene_snapshot_, Affine3::Identity());
-    last_error_.clear();
-    return true;
 }
 
 void PhysicsWorld::UpdateRaycastSensorState(PhysicsSensorState& sensor_state,
@@ -1699,8 +1227,16 @@ void PhysicsWorld::UpdateRaycastSensorState(PhysicsSensorState& sensor_state,
     if (sensor_state.hits.size() != sensor_snapshot.sample_offsets.size()) {
         sensor_state.hits.assign(sensor_snapshot.sample_offsets.size(), {});
     }
-    const Matrix3 alignment_matrix = RayAlignmentMatrix(sensor_state.global_transform, sensor_snapshot.ray_alignment);
-    const Vector3 ray_direction = ResolveRayDirection(sensor_snapshot, alignment_matrix, sensor_state.global_transform);
+    const Matrix3 alignment_matrix =
+            GetPhysicsRayAlignmentMatrix(sensor_state.global_transform, sensor_snapshot.ray_alignment);
+    const Vector3 ray_direction =
+            ResolvePhysicsRayDirection(sensor_snapshot, alignment_matrix, sensor_state.global_transform);
+    const bool terrain_height_sensor = sensor_state.type == PhysicsSensorType::TerrainHeight;
+    bool any_hit = false;
+    std::vector<RealType> per_ray_values;
+    if (reduce_values) {
+        per_ray_values.reserve(sensor_snapshot.sample_offsets.size());
+    }
     for (std::size_t sample_index = 0; sample_index < sensor_snapshot.sample_offsets.size(); ++sample_index) {
         const Vector3 origin = sensor_state.global_transform.translation() +
                                alignment_matrix * sensor_snapshot.sample_offsets[sample_index];
@@ -1709,11 +1245,19 @@ void PhysicsWorld::UpdateRaycastSensorState(PhysicsSensorState& sensor_state,
                 ray_direction,
                 sensor_snapshot.max_distance
         }, environment_index);
-        const RealType value = IsTerrainHeightSensorType(sensor_state.type)
-                                       ? (hit.hit ? origin.z() - hit.point.z() : sensor_snapshot.max_distance)
-                                       : hit.distance;
+        any_hit = any_hit || hit.hit;
+        RealType value = hit.distance;
+        if (terrain_height_sensor) {
+            value = hit.hit
+                            ? (hit.normal.z() < 0.0 ? 0.0 : origin.z() - hit.point.z())
+                            : sensor_snapshot.max_distance;
+        } else if (sensor_state.type == PhysicsSensorType::HeightScanner) {
+            value = hit.hit ? origin.z() - hit.point.z() : sensor_snapshot.max_distance;
+        }
         if (!reduce_values) {
             sensor_state.values[sample_index] = value;
+        } else {
+            per_ray_values.push_back(value);
         }
         PhysicsSensorRaycastHit sensor_hit;
         sensor_hit.hit = hit.hit;
@@ -1724,15 +1268,19 @@ void PhysicsWorld::UpdateRaycastSensorState(PhysicsSensorState& sensor_state,
         sensor_hit.terrain_name = hit.terrain_name;
         sensor_state.hits[sample_index] = std::move(sensor_hit);
     }
-    if (reduce_values) {
-        std::vector<RealType> per_ray_values;
-        per_ray_values.reserve(sensor_snapshot.sample_offsets.size());
-        for (const PhysicsSensorRaycastHit& hit : sensor_state.hits) {
-            per_ray_values.push_back(hit.hit
-                                             ? hit.origin.z() - hit.point.z()
-                                             : sensor_snapshot.max_distance);
+    if (terrain_height_sensor && !any_hit) {
+        const RealType fallback = std::clamp(
+                sensor_state.global_transform.translation().z(),
+                static_cast<RealType>(0.0),
+                sensor_snapshot.max_distance);
+        if (reduce_values) {
+            std::fill(per_ray_values.begin(), per_ray_values.end(), fallback);
+        } else {
+            std::fill(sensor_state.values.begin(), sensor_state.values.end(), fallback);
         }
-        sensor_state.values[0] = ReduceRayValues(per_ray_values, sensor_snapshot.reduction_mode);
+    }
+    if (reduce_values) {
+        sensor_state.values[0] = ReducePhysicsRayValues(per_ray_values, sensor_snapshot.reduction_mode);
     }
     sensor_state.timestamp = timestamp;
 }
@@ -1908,14 +1456,12 @@ PhysicsSceneState PhysicsWorld::MakeSceneStateFromSnapshot() const {
 
     for (const PhysicsRobotSnapshot& robot_snapshot : scene_snapshot_.robots) {
         PhysicsRobotState robot_state;
-        robot_state.node = robot_snapshot.node;
         robot_state.name = robot_snapshot.name;
         robot_state.links.reserve(robot_snapshot.links.size());
         robot_state.joints.reserve(robot_snapshot.joints.size());
 
         for (const PhysicsLinkSnapshot& link_snapshot : robot_snapshot.links) {
             PhysicsLinkState link_state;
-            link_state.node = link_snapshot.node;
             link_state.robot_name = robot_snapshot.name;
             link_state.link_name = link_snapshot.name;
             link_state.role = link_snapshot.role;
@@ -1926,7 +1472,6 @@ PhysicsSceneState PhysicsWorld::MakeSceneStateFromSnapshot() const {
 
         for (const PhysicsJointSnapshot& joint_snapshot : robot_snapshot.joints) {
             PhysicsJointState joint_state;
-            joint_state.node = joint_snapshot.node;
             joint_state.robot_name = robot_snapshot.name;
             joint_state.joint_name = joint_snapshot.name;
             joint_state.joint_type = joint_snapshot.joint_type;
@@ -1970,6 +1515,10 @@ GOBOT_REGISTRATION {
     QuickEnumeration_<PhysicsShapeType>("PhysicsShapeType");
     QuickEnumeration_<PhysicsSensorType>("PhysicsSensorType");
     QuickEnumeration_<PhysicsJointControlMode>("PhysicsJointControlMode");
+    QuickEnumeration_<PhysicsSolverType>("PhysicsSolverType");
+    QuickEnumeration_<PhysicsIntegratorType>("PhysicsIntegratorType");
+    QuickEnumeration_<PhysicsFrictionConeType>("PhysicsFrictionConeType");
+    QuickEnumeration_<PhysicsJacobianType>("PhysicsJacobianType");
 
     Class_<PhysicsBackendInfo>("PhysicsBackendInfo")
             .constructor()

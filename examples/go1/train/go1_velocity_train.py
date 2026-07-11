@@ -13,6 +13,12 @@ import numpy as np
 import torch
 from rsl_rl.runners import OnPolicyRunner
 
+from gobot.rl.policy import (
+    POLICY_MANIFEST_KEY,
+    PolicyManifest,
+    scene_bundle_digest,
+    write_policy_manifest_sidecar,
+)
 from gobot.rl.rsl_rl import RslRlVecEnvWrapper
 
 try:
@@ -26,15 +32,30 @@ except ImportError:
 
 
 class Go1OnPolicyRunner(VideoCheckpointRunnerMixin, OnPolicyRunner):
-    def __init__(self, *args, video_recorder: Go1TrainingVideoRecorder | None = None, **kwargs) -> None:
+    def __init__(
+        self,
+        *args,
+        video_recorder: Go1TrainingVideoRecorder | None = None,
+        checkpoint_infos: dict | None = None,
+        **kwargs,
+    ) -> None:
         super().__init__(*args, **kwargs)
         self.video_recorder = video_recorder
+        self.checkpoint_infos = dict(checkpoint_infos or {})
+
+    def save(self, path: str, infos: dict | None = None) -> None:
+        merged_infos = dict(self.checkpoint_infos)
+        if infos:
+            merged_infos.update(infos)
+        env_state = dict(merged_infos.get("env_state", {}))
+        env_state["common_step_counter"] = int(self.env.common_step_counter)
+        merged_infos["env_state"] = env_state
+        super().save(path, infos=merged_infos)
 
 
 def build_arg_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser()
-    parser.add_argument("--task", type=str, default="go1_rough", help="Go1 velocity task name: go1_rough or go1_flat.")
-    parser.add_argument("--cpu-batch", action="store_true", help="Use CPU smoke-training defaults: go1_flat, 64 envs, no video.")
+    parser.add_argument("--cpu-batch", action="store_true", help="Use CPU smoke-training defaults: 64 rough-terrain environments and no video.")
     parser.add_argument("--num-envs", "--num_envs", type=int, default=256)
     parser.add_argument("--iterations", type=int, default=1500)
     parser.add_argument("--max-episode-length", type=int, default=None)
@@ -77,11 +98,10 @@ def resolve_log_dir(log_dir_arg: str, project_path: Path) -> Path:
 
 
 def build_velocity_cfg(args: argparse.Namespace, project_path: Path):
-    cfg = go1_velocity_cfg(args.task, project_path=project_path)
+    cfg = go1_velocity_cfg(project_path=project_path)
     if args.terrain_curriculum is not None:
         cfg.terrain_curriculum = bool(args.terrain_curriculum)
     cfg.observations.actor_noise = bool(args.obs_noise)
-    cfg.terrain_curriculum_steps = max(1, int(args.iterations * args.num_envs * 24 * 0.6))
     return cfg
 
 
@@ -101,7 +121,6 @@ def build_core_env(args: argparse.Namespace, cfg) -> Go1VelocityEnv:
 
 def build_env(args: argparse.Namespace, cfg) -> RslRlVecEnvWrapper:
     env = build_core_env(args, cfg)
-    env.rsl_rl_include_final_observation = True
     return RslRlVecEnvWrapper(env, device=args.device)
 
 
@@ -156,6 +175,7 @@ def build_runner(
     train_cfg: dict,
     log_dir: Path,
     video_recorder: Go1TrainingVideoRecorder,
+    checkpoint_infos: dict,
 ) -> Go1OnPolicyRunner:
     return Go1OnPolicyRunner(
         env,
@@ -163,6 +183,49 @@ def build_runner(
         log_dir=str(log_dir),
         device=args.device,
         video_recorder=video_recorder,
+        checkpoint_infos=checkpoint_infos,
+    )
+
+
+def build_policy_manifest(
+    env: RslRlVecEnvWrapper,
+    cfg,
+    train_cfg: dict,
+    project_path: Path,
+) -> PolicyManifest:
+    task_metadata = env.task_runtime_metadata
+    scene_digest = scene_bundle_digest(project_path, cfg.scene_path)
+    return PolicyManifest(
+        task_name=str(cfg.name),
+        task_version=str(task_metadata.version),
+        observation_spec=env.observation_spec.metadata(),
+        action_spec=env.action_spec.metadata(),
+        joint_names=tuple(env.joint_names),
+        physics_dt=float(env.physics_dt),
+        decimation=int(env.decimation),
+        control={
+            "mode": "position_offset",
+            "default_joint_position": np.asarray(env.default_joint_pos, dtype=np.float32),
+            "action_scale": np.asarray(env.action_scale, dtype=np.float32),
+            "action_clip": cfg.action_clip,
+            "kp": cfg.kp,
+            "kd": cfg.kd,
+            "reset_base_height": float(cfg.base_clearance),
+        },
+        model={
+            "type": "mlp",
+            "activation": str(train_cfg.get("actor", {}).get("activation", "elu")),
+            "hidden_dims": tuple(train_cfg.get("actor", {}).get("hidden_dims", ())),
+        },
+        scene_path=str(cfg.scene_path),
+        scene_digest=scene_digest,
+        extras={
+            "robot_name": str(cfg.robot_name),
+            "base_link": str(cfg.base_link),
+            "critic_observation_spec": env.critic_observation_spec.metadata(),
+            "solver_settings": dict(cfg.mujoco_solver_settings),
+            "height_scan_max_distance": float(cfg.observations.terrain_scan_max_distance),
+        },
     )
 
 
@@ -190,7 +253,12 @@ def run_training(args: argparse.Namespace) -> tuple[Path, Path]:
 
     train_cfg = build_train_cfg(args, cfg)
     video_recorder = build_video_recorder(args, env, log_dir, project_path)
-    runner = build_runner(args, env, train_cfg, log_dir, video_recorder)
+    policy_manifest = build_policy_manifest(env, cfg, train_cfg, project_path)
+    checkpoint_infos = {
+        POLICY_MANIFEST_KEY: policy_manifest.metadata(),
+        "task_config": env.cfg,
+    }
+    runner = build_runner(args, env, train_cfg, log_dir, video_recorder, checkpoint_infos)
     _install_cpu_logger_bookkeeping(runner.logger)
     if args.profile_memory:
         _install_runner_memory_profile(runner, device=args.device)
@@ -198,9 +266,10 @@ def run_training(args: argparse.Namespace) -> tuple[Path, Path]:
     checkpoint = _resolve_checkpoint(args.checkpoint, log_dir) if args.checkpoint or args.resume else None
     if checkpoint is not None:
         infos = runner.load(str(checkpoint), map_location=args.device)
-        env.set_training_progress(
-            runner.current_learning_iteration * args.num_envs * train_cfg["num_steps_per_env"]
-        )
+        common_step_counter = runner.current_learning_iteration * train_cfg["num_steps_per_env"]
+        if infos and isinstance(infos.get("env_state"), dict):
+            common_step_counter = int(infos["env_state"].get("common_step_counter", common_step_counter))
+        env.set_training_progress(common_step_counter)
         print(f"Resumed checkpoint: {checkpoint}")
         print(f"Resume iteration: {runner.current_learning_iteration}")
         if infos:
@@ -210,14 +279,15 @@ def run_training(args: argparse.Namespace) -> tuple[Path, Path]:
         runner.learn(num_learning_iterations=args.iterations, init_at_random_ep_len=checkpoint is None)
 
         final_path = log_dir / "model_final.pt"
-        checkpoint_infos = {"gobot_go1_velocity": env.cfg, cfg.name: env.cfg}
-        runner.save(str(final_path), infos=checkpoint_infos)
+        runner.save(str(final_path))
+        write_policy_manifest_sidecar(final_path, policy_manifest)
 
         policy_path = Path(args.policy_out)
         if not policy_path.is_absolute():
             policy_path = project_path / policy_path
         policy_path.parent.mkdir(parents=True, exist_ok=True)
-        runner.save(str(policy_path), infos=checkpoint_infos)
+        runner.save(str(policy_path))
+        write_policy_manifest_sidecar(policy_path, policy_manifest)
 
         print_training_summary(
             args=args,
@@ -270,7 +340,6 @@ def _checkpoint_iteration(path: Path) -> int:
 def apply_run_preset(args: argparse.Namespace) -> None:
     if not args.cpu_batch:
         return
-    args.task = "go1_flat"
     args.device = "cpu"
     args.num_envs = 64
     args.sim_workers = 0

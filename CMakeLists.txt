@@ -498,7 +498,6 @@ set(GOBOT_PYTHON_BINDING_SOURCES
         src/gobot/python/manual_bindings/manual_binding_common.cpp
         src/gobot/python/manual_bindings/manual_binding_helpers.cpp
         src/gobot/python/manual_bindings/manual_binding_module_functions.cpp
-        src/gobot/python/manual_bindings/manual_binding_mujoco_batch.cpp
         src/gobot/python/manual_bindings/manual_binding_robot.cpp
         src/gobot/python/manual_bindings/manual_binding_scene_nodes.cpp
         src/gobot/python/manual_bindings/manual_binding_sensors_terrain.cpp

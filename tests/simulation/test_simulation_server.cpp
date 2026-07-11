@@ -748,10 +748,10 @@ TEST(TestSimulationServer, mujoco_world_uses_training_solver_defaults) {
     ASSERT_TRUE(world.IsValid());
     const gobot::MuJoCoPhysicsWorld::Diagnostics diagnostics = world->GetDiagnostics();
     EXPECT_NEAR(diagnostics.timestep, 0.002, CMP_EPSILON);
-    EXPECT_EQ(diagnostics.solver, 2);
-    EXPECT_EQ(diagnostics.integrator, 0);
-    EXPECT_EQ(diagnostics.cone, 0);
-    EXPECT_EQ(diagnostics.jacobian, 2);
+    EXPECT_EQ(diagnostics.solver, gobot::PhysicsSolverType::Newton);
+    EXPECT_EQ(diagnostics.integrator, gobot::PhysicsIntegratorType::Euler);
+    EXPECT_EQ(diagnostics.cone, gobot::PhysicsFrictionConeType::Pyramidal);
+    EXPECT_EQ(diagnostics.jacobian, gobot::PhysicsJacobianType::Auto);
     EXPECT_EQ(diagnostics.iterations, 100);
     EXPECT_EQ(diagnostics.line_search_iterations, 50);
     EXPECT_EQ(diagnostics.no_slip_iterations, 0);
@@ -908,6 +908,21 @@ TEST(TestSimulationServer, unavailable_backend_build_failure_does_not_keep_world
 #endif
 
     gobot::Object::Delete(robot);
+}
+
+TEST(TestSimulationServer, mujoco_does_not_load_robot_source_as_runtime_fallback) {
+#ifdef GOBOT_HAS_MUJOCO
+    gobot::SimulationServer simulation_server(gobot::PhysicsBackendType::MuJoCoCpu);
+    gobot::Robot3D* robot = gobot::Object::New<gobot::Robot3D>();
+    robot->SetName("source_only_robot");
+    robot->SetSourcePath("tests/fixtures/mjcf/simple_robot.xml");
+
+    EXPECT_FALSE(simulation_server.BuildWorldFromScene(robot));
+    EXPECT_FALSE(simulation_server.HasWorld());
+    EXPECT_NE(simulation_server.GetLastError().find("no authored links or joints"), std::string::npos);
+
+    gobot::Object::Delete(robot);
+#endif
 }
 
 TEST(TestSimulationServer, unimplemented_backend_build_failure_does_not_fallback_to_null_world) {

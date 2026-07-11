@@ -1,7 +1,12 @@
 # MuJoCo Backend Setup
 
-Gobot keeps MuJoCo optional. The default build does not download or link MuJoCo,
-so editor and tests can still build on machines without the SDK.
+Gobot keeps MuJoCo build-time configurable. The standard source and wheel build
+enables MuJoCo CPU and may fetch the pinned release when no local package is
+available. A minimal editor-only build can disable it explicitly:
+
+```bash
+cmake -S . -B build -DGOB_BUILD_MUJOCO=OFF
+```
 
 ## Recommended: Local MuJoCo SDK
 
@@ -44,15 +49,15 @@ The fetched release is controlled by:
 -DGOB_MUJOCO_GIT_TAG=3.8.0
 ```
 
-This path is intentionally opt-in because MuJoCo's own CMake build uses
-`FetchContent` for dependencies. It may be slow or fail on restricted networks.
+Set `-DGOB_FETCH_MUJOCO=OFF` when builds must remain offline and provide a local
+SDK/package instead. MuJoCo's own CMake build uses `FetchContent` for some
+dependencies, so first-time fetched builds can be slow on restricted networks.
 
 ## Not Using A Submodule Yet
 
-MuJoCo is not added as a default git submodule because most Gobot builds do not
-need to compile a physics backend, and a source checkout still needs additional
-network downloads for MuJoCo dependencies. Keeping MuJoCo as an optional package
-or opt-in fetch keeps the base editor clone smaller and easier to build.
+MuJoCo is not added as a git submodule. Gobot first looks for a configured or
+system package and otherwise uses the configurable fetch path. This keeps one
+dependency source of truth and lets offline builds require a local SDK.
 
 ## Runtime Notes
 
@@ -65,9 +70,10 @@ export LD_LIBRARY_PATH=/path/to/mujoco/lib:$LD_LIBRARY_PATH
 
 The normal authored path builds a MuJoCo model from Gobot scene data in `.jscn`:
 robots, links, joints, collision shapes, contact parameters, and actuator
-settings. `Robot3D.source_path` is kept as provenance and may still be used as a
-fallback for older scenes, but new MJCF-imported examples should not depend on
-loading the original XML at runtime.
+settings. `Robot3D.source_path` is retained only as a record of where an import
+came from. Physics backends never load that file at
+runtime; imported scenes must contain the authored links, joints, collision
+shapes, sensors, and actuator settings needed to compile the model.
 
 For the importer/runtime equivalence goals, see `doc/mjcf_equivalence.md`.
 

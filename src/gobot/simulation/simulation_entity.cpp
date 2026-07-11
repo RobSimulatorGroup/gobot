@@ -8,7 +8,7 @@
 
 #include <algorithm>
 
-#include "gobot/scene/joint_3d.hpp"
+#include "gobot/core/robotics_types.hpp"
 
 namespace gobot {
 

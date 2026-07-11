@@ -11,6 +11,7 @@
 #include "gobot/error_macros.hpp"
 #include "gobot/log.hpp"
 #include "gobot/physics/backends/null_physics_world.hpp"
+#include "gobot/physics/physics_scene_compiler.hpp"
 #include "gobot/physics/physics_types.hpp"
 #include "gobot/physics/physics_world.hpp"
 #include "gobot/rendering/scene_render_items.hpp"
@@ -97,20 +98,14 @@ SensorHitDebugStyle GetSensorHitDebugStyle(const PhysicsSensorState& sensor) {
             return SensorHitDebugStyle{};
     }
 
-    if (sensor.node != nullptr) {
-        const RealType node_radius = sensor.node->GetDebugMarkerRadius();
-        if (node_radius > 0.0) {
-            radius = node_radius;
-        }
+    if (sensor.debug_marker_radius > 0.0) {
+        radius = sensor.debug_marker_radius;
     }
     return SensorHitDebugStyle{radius, show_normal};
 }
 
 bool ShouldVisualizeSensorDebug(const PhysicsSensorState& sensor) {
-    return sensor.node != nullptr ? sensor.node->IsEnabled() &&
-                                            sensor.node->ShouldVisualizeDebug() &&
-                                            sensor.node->IsVisibleInTree()
-                                  : sensor.enabled && sensor.visualize_debug;
+    return sensor.enabled && sensor.visualize_debug && sensor.visible;
 }
 
 void AppendLine(std::vector<float>& vertices,
@@ -788,7 +783,9 @@ void GLRendererDebugDraw::RenderEditorDebug(const RID& render_target,
     std::optional<NullPhysicsWorld> preview_world;
     if (physics_world == nullptr && scene_root != nullptr) {
         preview_world.emplace();
-        if (!preview_world->BuildFromScene(scene_root)) {
+        CompiledPhysicsScene compiled_scene;
+        if (!PhysicsSceneCompiler::Compile(scene_root, &compiled_scene) ||
+            !preview_world->Build(std::move(compiled_scene.snapshot))) {
             preview_world.reset();
         }
     }

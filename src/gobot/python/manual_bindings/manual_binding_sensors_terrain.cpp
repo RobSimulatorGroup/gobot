@@ -33,6 +33,9 @@ void RegisterManualTerrainSensorBindings(PyTerrain3DClass& terrain3d_class,
                      ExecuteSetNodeProperty(terrain, "heightfields", Variant(std::vector<TerrainHeightField>{}));
                      ExecuteSetNodeProperty(terrain, "mesh_patches", Variant(std::vector<TerrainMeshPatch>{}));
                      ExecuteSetNodeProperty(terrain, "spawn_origins", Variant(std::vector<Vector3>{}));
+                     ExecuteSetNodeProperty(terrain,
+                                            "generator_config",
+                                            Variant(Ref<TerrainGeneratorConfig>{}));
                  })
             .def("add_box",
                  [](PyTerrain3DHandle& handle,
@@ -41,7 +44,7 @@ void RegisterManualTerrainSensorBindings(PyTerrain3DClass& terrain3d_class,
                     const py::handle& rotation_degrees,
                     const py::handle& color) {
                      Terrain3D* terrain = handle.ResolveAs<Terrain3D>();
-                     std::vector<TerrainBox> boxes = terrain->GetBoxes();
+                     std::vector<TerrainBox> boxes = terrain->GetAuthoredBoxes();
                      TerrainBox box;
                      box.center = PythonToVector3(center);
                      box.size = PythonToVector3(size);
@@ -65,7 +68,7 @@ void RegisterManualTerrainSensorBindings(PyTerrain3DClass& terrain3d_class,
                     const std::vector<RealType>& normalized_elevation,
                     RealType z_offset) {
                      Terrain3D* terrain = handle.ResolveAs<Terrain3D>();
-                     std::vector<TerrainHeightField> heightfields = terrain->GetHeightFields();
+                     std::vector<TerrainHeightField> heightfields = terrain->GetAuthoredHeightFields();
                      TerrainHeightField heightfield;
                      heightfield.center = PythonToVector3(center);
                      heightfield.size = PythonToVector2(size);
@@ -94,7 +97,7 @@ void RegisterManualTerrainSensorBindings(PyTerrain3DClass& terrain3d_class,
                     const py::handle& rotation_degrees,
                     const py::handle& color) {
                      Terrain3D* terrain = handle.ResolveAs<Terrain3D>();
-                     std::vector<TerrainMeshPatch> mesh_patches = terrain->GetMeshPatches();
+                     std::vector<TerrainMeshPatch> mesh_patches = terrain->GetAuthoredMeshPatches();
                      TerrainMeshPatch mesh_patch;
                      mesh_patch.center = PythonToVector3(center);
                      mesh_patch.vertices = PythonToVector3List(vertices);
@@ -121,6 +124,19 @@ void RegisterManualTerrainSensorBindings(PyTerrain3DClass& terrain3d_class,
                                    [](const PyTerrain3DHandle& handle) {
                                        return handle.ResolveAs<Terrain3D>()->GetMeshPatches().size();
                                    })
+            .def_property_readonly("generator_config",
+                                   [](const PyTerrain3DHandle& handle) {
+                                       return ResourceToPythonDict(
+                                               handle.ResolveAs<Terrain3D>()->GetGeneratorConfig());
+                                   })
+            .def_property_readonly("generation_error",
+                                   [](const PyTerrain3DHandle& handle) {
+                                       return handle.ResolveAs<Terrain3D>()->GetGenerationError();
+                                   })
+            .def("regenerate_terrain",
+                 [](PyTerrain3DHandle& handle) {
+                     handle.ResolveAs<Terrain3D>()->RegenerateTerrain();
+                 })
             .def("get_heightfield_heights",
                  [](const PyTerrain3DHandle& handle, std::size_t index) {
                      const auto& heightfields = handle.ResolveAs<Terrain3D>()->GetHeightFields();

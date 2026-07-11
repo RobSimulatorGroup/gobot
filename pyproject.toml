@@ -31,6 +31,9 @@ gobot_editor = "gobot_cli.editor:editor"
 
 [project.optional-dependencies]
 train = [
+    "imageio>=2.34",
+    "imageio-ffmpeg>=0.5",
+    "onnx>=1.16",
     "rsl-rl-lib==5.2.0",
     "tensorboard",
     "tensordict",

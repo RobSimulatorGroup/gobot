@@ -4,13 +4,9 @@ from __future__ import annotations
 
 from pathlib import Path
 import re
-import sys
-
-sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "train"))
 
 import gobot
-
-from go1_velocity_cfg import (
+from gobot.rl.tasks.go1 import (
     GO1_JOINT_NAMES,
     GO1_ARMATURE,
     GO1_EFFORT_LIMIT,
@@ -28,12 +24,14 @@ FOOT_LINKS: dict[str, str] = {
 }
 
 FOOT_SAMPLE_OFFSETS: tuple[tuple[float, float, float], ...] = (
+    (0.0, 0.0, 0.0),
     (0.04, 0.0, 0.0),
     (0.0, 0.04, 0.0),
     (-0.04, 0.0, 0.0),
     (0.0, -0.04, 0.0),
 )
 FOOT_COLLISION_PATTERN = re.compile(r"^[FR][LR]_foot_collision$")
+COLLISION_PATTERN = re.compile(r"_collision\d*$")
 
 
 def _required_child(root: gobot.Node, path: str) -> gobot.Node:
@@ -70,22 +68,25 @@ def _configure_sensor(sensor: gobot.Sensor3D) -> None:
     sensor.enabled = True
     sensor.sensor_period = 0.0
     sensor.noise_stddev = 0.0
-    sensor.visualize_debug = True
+    sensor.visualize_debug = False
 
 
 def _add_trunk_sensors(root: gobot.Node) -> None:
     trunk = _required_name(root, "trunk")
-    for name in ("root_angmom", "imu", "gyro", "terrain_scan"):
+    for name in ("gyro", "terrain_scan"):
         _remove_if_present(trunk, name)
 
-    root_angmom = gobot.create_node("AngularMomentumSensor3D", "root_angmom")
+    root_angmom = trunk.find("root_angmom")
+    if root_angmom is None:
+        root_angmom = gobot.create_node("AngularMomentumSensor3D", "root_angmom")
+        trunk.add_child(root_angmom)
     _configure_sensor(root_angmom)
-    trunk.add_child(root_angmom)
 
-    imu = gobot.create_node("IMUSensor3D", "imu")
+    imu = trunk.find("imu")
+    if imu is None:
+        imu = gobot.create_node("IMUSensor3D", "imu")
+        trunk.add_child(imu)
     _configure_sensor(imu)
-    imu.position = (0.0, 0.0, 0.0)
-    trunk.add_child(imu)
 
     terrain_scan = gobot.create_node("HeightScanner3D", "terrain_scan")
     _configure_sensor(terrain_scan)
@@ -148,7 +149,7 @@ def _apply_go1_joint_dynamics(root: gobot.Node) -> None:
 
 
 def _apply_go1_collision_config(node: gobot.Node) -> None:
-    if isinstance(node, gobot.CollisionShape3D) and node.name.endswith("_collision"):
+    if isinstance(node, gobot.CollisionShape3D) and COLLISION_PATTERN.search(node.name) is not None:
         is_foot = FOOT_COLLISION_PATTERN.fullmatch(node.name) is not None
         node.set_property("contype", 1)
         node.set_property("conaffinity", 1)

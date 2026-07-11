@@ -11,9 +11,9 @@
 #include "gobot/core/registration.hpp"
 #include "gobot/core/string_utils.hpp"
 #include "gobot/log.hpp"
+#include "gobot/scene/joint_3d.hpp"
 #include "gobot/scene/mesh_instance_3d.hpp"
 #include "gobot/scene/node.hpp"
-#include "gobot/scene/robot_3d.hpp"
 #include "gobot/scene/resources/array_mesh.hpp"
 #include "gobot/scene/resources/primitive_mesh.hpp"
 
@@ -101,6 +101,35 @@ Ref<Material> GetImportedMeshMaterial(Node* node) {
     return mesh_material;
 }
 
+bool GetAssemblyTransformOverride(Node* node, Affine3* transform) {
+    auto* node_3d = Object::PointerCastTo<Node3D>(node);
+    if (node_3d == nullptr) {
+        return false;
+    }
+
+    auto* parent_joint = Object::PointerCastTo<Joint3D>(node->GetParent());
+    return parent_joint != nullptr &&
+           parent_joint->IsMotionModeEnabled() &&
+           parent_joint->GetAssemblyChildTransform(node_3d, transform);
+}
+
+Variant GetTransformProperty(const Node3D* node, const Affine3& transform, const std::string& property_name) {
+    if (property_name == "position") {
+        return Variant(Vector3(transform.translation()));
+    }
+    if (property_name == "rotation_degrees") {
+        const Vector3 euler = transform.GetEulerAngle(node->GetEulerOrder());
+        return Variant(Vector3{
+                RAD_TO_DEG(euler.x()),
+                RAD_TO_DEG(euler.y()),
+                RAD_TO_DEG(euler.z())});
+    }
+    if (property_name == "scale") {
+        return Variant(transform.GetScale());
+    }
+    return {};
+}
+
 } // namespace
 
 std::size_t SceneState::GetNodeCount() const {
@@ -148,55 +177,16 @@ bool PackedScene::Pack(Node* root) {
 
     state_->Clear();
 
-    std::vector<std::pair<Robot3D*, RobotMode>> original_robot_modes;
-    auto prepare_robot_assembly_pose = [&original_robot_modes](Node* node, auto&& self) -> void {
-        if (node == nullptr) {
-            return;
-        }
-
-        if (auto* robot = Object::PointerCastTo<Robot3D>(node)) {
-            const RobotMode mode = robot->GetMode();
-            original_robot_modes.emplace_back(robot, mode);
-            if (mode == RobotMode::Motion) {
-                robot->SetMode(RobotMode::Assembly);
-            }
-        }
-
-        for (std::size_t i = 0; i < node->GetChildCount(); ++i) {
-            self(node->GetChild(static_cast<int>(i)), self);
-        }
-    };
-
-    auto restore_robot_modes = [&original_robot_modes]() {
-        for (auto it = original_robot_modes.rbegin(); it != original_robot_modes.rend(); ++it) {
-            it->first->SetMode(it->second);
-        }
-    };
-
-    auto get_original_robot_mode = [&original_robot_modes](Node* node, RobotMode* mode) -> bool {
-        auto* robot = Object::PointerCastTo<Robot3D>(node);
-        if (robot == nullptr) {
-            return false;
-        }
-
-        for (const auto& [stored_robot, stored_mode] : original_robot_modes) {
-            if (stored_robot == robot) {
-                *mode = stored_mode;
-                return true;
-            }
-        }
-
-        return false;
-    };
-
-    prepare_robot_assembly_pose(root, prepare_robot_assembly_pose);
-
-    auto pack_node = [this, &get_original_robot_mode](Node* node, int parent, auto&& pack_node_ref) -> int {
+    auto pack_node = [this](Node* node, int parent, auto&& pack_node_ref) -> int {
         SceneState::NodeData node_data;
         node_data.type = node->GetClassStringName();
         node_data.name = node->GetName();
         node_data.parent = parent;
         node_data.instance = node->GetSceneInstance();
+
+        Affine3 assembly_transform = Affine3::Identity();
+        const bool has_assembly_transform = GetAssemblyTransformOverride(node, &assembly_transform);
+        auto* node_3d = Object::PointerCastTo<Node3D>(node);
 
         auto type = Object::GetDerivedTypeByInstance(Instance(node));
         for (auto& prop : type.get_properties()) {
@@ -217,9 +207,12 @@ bool PackedScene::Pack(Node* root) {
 
             USING_ENUM_BITWISE_OPERATORS;
             if (static_cast<bool>(property_info.usage & PropertyUsageFlags::Storage)) {
-                RobotMode original_mode{};
-                if (property_name == "mode" && get_original_robot_mode(node, &original_mode)) {
-                    node_data.properties.push_back({property_name, Variant(original_mode)});
+                if (has_assembly_transform &&
+                    (property_name == "position" ||
+                     property_name == "rotation_degrees" ||
+                     property_name == "scale")) {
+                    node_data.properties.push_back(
+                            {property_name, GetTransformProperty(node_3d, assembly_transform, property_name)});
                 } else if (property_name == "mesh_material") {
                     Ref<Material> imported_mesh_material = GetImportedMeshMaterial(node);
                     if (imported_mesh_material.IsValid()) {
@@ -244,7 +237,6 @@ bool PackedScene::Pack(Node* root) {
     };
 
     pack_node(root, -1, pack_node);
-    restore_robot_modes();
     return true;
 }
 

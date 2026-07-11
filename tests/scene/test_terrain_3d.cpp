@@ -1,11 +1,15 @@
 #include <gtest/gtest.h>
 
 #include <filesystem>
+#include <fstream>
+#include <iterator>
 
 #include <gobot/core/io/resource_loader.hpp>
 #include <gobot/core/io/resource_format_scene.hpp>
 #include <gobot/core/config/project_setting.hpp>
 #include <gobot/scene/resources/packed_scene.hpp>
+#include <gobot/scene/resources/terrain_generator_config.hpp>
+#include <gobot/scene/terrain_generator.hpp>
 #include <gobot/scene/terrain_3d.hpp>
 
 namespace {
@@ -33,6 +37,90 @@ protected:
 };
 
 } // namespace
+
+TEST_F(TestTerrain3D, generator_config_is_reflectively_constructible) {
+    const gobot::Type type = gobot::Type::get_by_name("TerrainGeneratorConfig");
+    ASSERT_TRUE(type.is_valid());
+
+    gobot::Variant instance = type.create();
+    bool success = false;
+    gobot::Resource* resource = instance.convert<gobot::Resource*>(&success);
+    ASSERT_TRUE(success);
+    ASSERT_NE(resource, nullptr);
+    gobot::Ref<gobot::Resource> owner(resource);
+}
+
+TEST_F(TestTerrain3D, generates_versioned_rough_terrain_deterministically) {
+    const gobot::Ref<gobot::TerrainGeneratorConfig> config =
+            gobot::MakeRoughTerrainGeneratorConfig();
+    gobot::GeneratedTerrainData first;
+    gobot::GeneratedTerrainData second;
+    std::string error;
+
+    ASSERT_TRUE(gobot::GenerateTerrain(*config.Get(), &first, &error)) << error;
+    ASSERT_TRUE(gobot::GenerateTerrain(*config.Get(), &second, &error)) << error;
+    EXPECT_EQ(first.boxes.size(), 514);
+    EXPECT_EQ(first.heightfields.size(), 40);
+    EXPECT_EQ(first.spawn_origins.size(), 70);
+    ASSERT_EQ(first.heightfields.size(), second.heightfields.size());
+    EXPECT_EQ(first.heightfields.front().heights, second.heightfields.front().heights);
+    EXPECT_EQ(first.spawn_origins, second.spawn_origins);
+}
+
+TEST_F(TestTerrain3D, generator_resource_round_trips_without_baking_geometry) {
+    gobot::Ref<gobot::TerrainGeneratorConfig> config =
+            gobot::MakeRoughTerrainGeneratorConfig();
+    USING_ENUM_BITWISE_OPERATORS;
+    ASSERT_TRUE(gobot::ResourceSaver::Save(
+            config,
+            "res://rough_terrain.jres",
+            gobot::ResourceSaverFlags::ChangePath));
+    gobot::Ref<gobot::Resource> loaded_resource =
+            gobot::ResourceLoader::Load("res://rough_terrain.jres",
+                                        "TerrainGeneratorConfig",
+                                        gobot::ResourceFormatLoader::CacheMode::Ignore);
+    gobot::Ref<gobot::TerrainGeneratorConfig> loaded_config =
+            gobot::dynamic_pointer_cast<gobot::TerrainGeneratorConfig>(loaded_resource);
+    ASSERT_TRUE(loaded_config.IsValid());
+    EXPECT_EQ(loaded_config->GetSchemaVersion(), 1);
+    EXPECT_EQ(loaded_config->GetSubTerrains().size(), 7);
+    config->SetPath("res://rough_terrain.jres", true);
+
+    auto* terrain = gobot::Object::New<gobot::Terrain3D>();
+    terrain->SetName("terrain");
+    terrain->SetGeneratorConfig(config);
+    ASSERT_EQ(terrain->GetBoxes().size(), 514);
+
+    gobot::Ref<gobot::PackedScene> packed = gobot::MakeRef<gobot::PackedScene>();
+    ASSERT_TRUE(packed->Pack(terrain));
+    ASSERT_TRUE(gobot::ResourceSaver::Save(packed, "res://procedural_terrain.jscn"));
+
+    const std::filesystem::path scene_path =
+            "/tmp/gobot_terrain_test_project/procedural_terrain.jscn";
+    std::ifstream input(scene_path);
+    const std::string scene_text((std::istreambuf_iterator<char>(input)),
+                                 std::istreambuf_iterator<char>());
+    EXPECT_LT(scene_text.size(), 10'000);
+    EXPECT_EQ(scene_text.find("\"heights\""), std::string::npos);
+    EXPECT_NE(scene_text.find("rough_terrain.jres"), std::string::npos);
+
+    gobot::Ref<gobot::Resource> loaded_scene_resource =
+            gobot::ResourceLoader::Load("res://procedural_terrain.jscn",
+                                        "PackedScene",
+                                        gobot::ResourceFormatLoader::CacheMode::Ignore);
+    gobot::Ref<gobot::PackedScene> loaded_scene =
+            gobot::dynamic_pointer_cast<gobot::PackedScene>(loaded_scene_resource);
+    ASSERT_TRUE(loaded_scene.IsValid());
+    gobot::Node* instance = loaded_scene->Instantiate();
+    auto* loaded_terrain = gobot::Object::PointerCastTo<gobot::Terrain3D>(instance);
+    ASSERT_NE(loaded_terrain, nullptr);
+    EXPECT_EQ(loaded_terrain->GetBoxes().size(), 514);
+    EXPECT_EQ(loaded_terrain->GetHeightFields().size(), 40);
+    EXPECT_EQ(loaded_terrain->GetSpawnOrigins().size(), 70);
+
+    gobot::Object::Delete(instance);
+    gobot::Object::Delete(terrain);
+}
 
 TEST_F(TestTerrain3D, stores_primitives_heightfields_and_spawn_origins) {
     auto* terrain = gobot::Object::New<gobot::Terrain3D>();

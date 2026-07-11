@@ -10,8 +10,6 @@
 
 namespace gobot {
 
-class Node;
-
 class GOBOT_EXPORT PhysicsWorld : public RefCounted {
     GOBCLASS(PhysicsWorld, RefCounted)
 
@@ -28,7 +26,7 @@ public:
 
     void SetSettings(const PhysicsWorldSettings& settings);
 
-    virtual bool BuildFromScene(const Node* scene_root);
+    virtual bool Build(PhysicsSceneSnapshot scene_snapshot);
 
     virtual bool RestoreCompatibleState(const PhysicsSceneState& previous_state);
 
@@ -49,6 +47,9 @@ public:
     virtual bool StepEnvironmentBatch(RealType delta_time,
                                       std::uint64_t ticks = 1,
                                       std::size_t worker_count = 0);
+
+    virtual bool StepRobotBatch(const PhysicsRobotBatchStepRequest& request,
+                                PhysicsRobotBatchStepResult& result);
 
     virtual std::size_t ResolveEnvironmentBatchWorkerCount(std::size_t worker_count) const;
 
@@ -77,6 +78,13 @@ public:
                                            const Quaternion& orientation = Quaternion::Identity(),
                                            const Vector3& linear_velocity = Vector3::Zero(),
                                            const Vector3& angular_velocity = Vector3::Zero());
+
+    // Writes primary velocity state. Derived state is refreshed by the next forward or step.
+    virtual bool WriteEnvironmentLinkVelocity(std::size_t environment_index,
+                                              const std::string& robot_name,
+                                              const std::string& link_name,
+                                              const Vector3& linear_velocity,
+                                              const Vector3& angular_velocity);
 
     virtual bool ResetEnvironmentRobotStates(const std::vector<PhysicsEnvironmentRobotResetState>& reset_states);
 
@@ -116,9 +124,10 @@ public:
 
     virtual PhysicsRaycastHit RaycastTerrain(const PhysicsRaycastQuery& query) const;
 
-protected:
-    bool CaptureSceneSnapshot(const Node* scene_root);
+    PhysicsRaycastHit RaycastEnvironmentTerrain(const PhysicsRaycastQuery& query,
+                                                std::size_t environment_index) const;
 
+protected:
     PhysicsRaycastHit RaycastTerrainFallback(const PhysicsRaycastQuery& query,
                                              bool include_terrain_name = true) const;
 

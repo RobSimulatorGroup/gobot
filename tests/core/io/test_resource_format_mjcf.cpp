@@ -524,7 +524,8 @@ TEST(TestResourceFormatMJCF, imports_go1_imu_velocimeter_as_imu_sensor_node) {
     ASSERT_NE(imu, nullptr);
     EXPECT_EQ(imu->GetParent(), trunk);
     EXPECT_EQ(imu->GetName(), "imu");
-    EXPECT_TRUE(imu->GetPosition().isApprox(gobot::Vector3::Zero(), 1.0e-9));
+    EXPECT_TRUE(imu->GetPosition().isApprox(
+            gobot::Vector3(-0.01592, -0.06659, -0.00617), 1.0e-9));
 
     gobot::Object::Delete(root_node);
 }

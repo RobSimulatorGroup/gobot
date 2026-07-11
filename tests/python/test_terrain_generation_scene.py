@@ -1,8 +1,12 @@
 import json
 import os
+from pathlib import Path
 
 import gobot
 import numpy as np
+
+
+REPO_ROOT = Path(__file__).resolve().parents[2]
 
 
 def main():
@@ -138,7 +142,35 @@ def test_go1_rough_terrain_uses_mixed_mujoco_geometry():
         assert len(heightfield["heights"]) == 80 * 80
 
 
+def test_go1_scene_previews_versioned_procedural_terrain_without_play():
+    project = REPO_ROOT / "examples/go1"
+    context = gobot.app.context()
+    context.set_project_path(str(project))
+    context.load_scene("res://go1_scene.jscn")
+
+    terrain_world = context.root.find("terrain_world")
+    assert terrain_world is not None
+    terrain = terrain_world.find("terrain")
+    assert isinstance(terrain, gobot.Terrain3D)
+    assert terrain.generation_error == ""
+    assert terrain.box_count == 514
+    assert terrain.heightfield_count == 40
+    assert len(terrain.spawn_origins) == 70
+
+    config = terrain.generator_config
+    assert config["schema_version"] == 1
+    assert config["curriculum"] is True
+    assert config["num_rows"] == 10
+    assert len(config["sub_terrains"]) == 7
+    assert config["sub_terrains"][0]["type"] == gobot.TerrainSubTerrainType.Flat
+
+    resource_path = project / "terrain/rough_terrain.jres"
+    assert resource_path.stat().st_size < 10_000
+    assert '"heights"' not in resource_path.read_text(encoding="utf-8")
+
+
 if __name__ == "__main__":
     test_go1_rough_terrain_cfg()
     test_go1_rough_terrain_uses_mixed_mujoco_geometry()
+    test_go1_scene_previews_versioned_procedural_terrain_without_play()
     main()

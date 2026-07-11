@@ -33,7 +33,7 @@ class BatchEnvState:
 
 
 class CpuBatchEnv:
-    """Minimal UniLab-style NumPy batch env lifecycle base."""
+    """Minimal NumPy batch-environment lifecycle base."""
 
     is_vector_env = True
 

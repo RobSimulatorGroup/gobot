@@ -18,6 +18,7 @@ from ._core import (
     Sensor3D,
     TerrainColorMode,
     Terrain3D,
+    TerrainSubTerrainType,
     VelocityCommandDebug3D,
     create_box_collision,
     create_box_visual,

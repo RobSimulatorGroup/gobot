@@ -32,7 +32,6 @@
 #include "gobot/core/os/input.hpp"
 #include "gobot/core/string_utils.hpp"
 #include "gobot/main/engine_context.hpp"
-#include "gobot/physics/backends/mujoco_physics_world.hpp"
 #include "gobot/physics/physics_types.hpp"
 #include "gobot/physics/physics_server.hpp"
 #include "gobot/physics/physics_world.hpp"
@@ -426,7 +425,7 @@ py::dict BatchRobotStateToPythonDict(SimulationServer& simulation,
                                      const std::vector<std::string>& joint_names,
                                      const std::vector<std::string>& link_names,
                                      const std::vector<std::string>& sensor_names);
-py::dict BatchRobotStateArraysToPythonDict(MuJoCoPhysicsWorld::BatchRobotStateArrays arrays);
+py::dict RobotBatchStepResultToPythonDict(PhysicsRobotBatchStepResult result);
 
 void RegisterManualCommonBindings(py::module_& module);
 void RegisterManualAppContextBindings(py::module_& module);
@@ -444,7 +443,6 @@ void RegisterManualTerrainSensorBindings(PyTerrain3DClass& terrain3d_class,
                                          PyTerrainHeightSensor3DClass& terrain_height_sensor3d_class,
                                          PyHeightScanner3DClass& height_scanner3d_class,
                                          PyMeshInstance3DClass& mesh_instance_class);
-void RegisterManualMujocoBatchBindings(py::module_& module);
 void RegisterManualModuleFunctions(py::module_& module);
 
 } // namespace gobot::python

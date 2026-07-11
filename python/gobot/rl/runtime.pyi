@@ -112,9 +112,9 @@ class LocomotionBatchSpec:
     foot_height_sensor_names: Sequence[str] = ()
     foot_contact_sensor_names: Sequence[str] = ()
     height_scan_sensor: str | None = None
-    thigh_link_patterns: Sequence[str] = ()
-    shank_link_patterns: Sequence[str] = ()
-    trunk_head_link_patterns: Sequence[str] = ()
+    thigh_shape_patterns: Sequence[str] = ()
+    shank_shape_patterns: Sequence[str] = ()
+    trunk_head_shape_patterns: Sequence[str] = ()
     terminate_on_thigh_contact: bool = True
     ground_force_threshold: float = 50.0
     self_collision_force_threshold: float = 20.0
@@ -137,9 +137,9 @@ class NativeLocomotionBatchBackend:
         foot_height_sensor_names: Sequence[str] = (),
         foot_contact_sensor_names: Sequence[str] = (),
         height_scan_sensor: str | None = None,
-        thigh_link_patterns: Sequence[str] = (),
-        shank_link_patterns: Sequence[str] = (),
-        trunk_head_link_patterns: Sequence[str] = (),
+        thigh_shape_patterns: Sequence[str] = (),
+        shank_shape_patterns: Sequence[str] = (),
+        trunk_head_shape_patterns: Sequence[str] = (),
         terminate_on_thigh_contact: bool = True,
         ground_force_threshold: float = 50.0,
         self_collision_force_threshold: float = 20.0,
@@ -173,7 +173,6 @@ class NativeLocomotionBatchBackend:
     def set_command_step_resampling(self, enabled: bool) -> None: ...
     def step_task_inputs(self, actions: Any, nsteps: int, *, workers: int = 0, simulate_action_latency: bool = False) -> dict[str, Any]: ...
     def step_profile(self) -> dict[str, float]: ...
-    def model_debug(self, env_id: int = 0) -> dict[str, Any]: ...
     def terrain_heights(self, points: Any, env_id: int = 0) -> Any: ...
     def set_position_targets(self, ctrl: Any) -> None: ...
     def set_joint_position_target(self, env_id: int, joint: str, target_position: float) -> None: ...
@@ -190,7 +189,14 @@ class NativeLocomotionBatchBackend:
     ) -> None: ...
     def reset_robot_states(self, env_ids: Sequence[int], **kwargs: Any) -> None: ...
     def set_base_velocity(self, env_id: int, linear_velocity: Any, angular_velocity: Any) -> None: ...
-    def set_base_velocities(self, env_ids: Sequence[int], linear_velocities: Any, angular_velocities: Any) -> None: ...
+    def set_base_velocities(
+        self,
+        env_ids: Sequence[int],
+        linear_velocities: Any,
+        angular_velocities: Any,
+        *,
+        refresh: bool = True,
+    ) -> None: ...
     def env_state(self, env_id: int) -> Any: ...
     def refresh(self) -> Any: ...
     def get_base_pos(self) -> np.ndarray: ...

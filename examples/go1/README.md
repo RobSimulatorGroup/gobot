@@ -2,18 +2,17 @@
 
 This example keeps the robot project self-contained:
 
-- `assets/xml/go1.xml` is the UniLab-aligned MJCF robot asset used for import.
-- `assets/xml/locomotion_task.xml` is the UniLab Go1 locomotion fragment used as the task reference.
-- `assets/xml/go1_scene.xml` is a flat MJCF reference scene that includes `go1.xml` and `locomotion_task.xml`.
+- `assets/xml/go1.xml` is the original MJCF robot asset retained for import/equivalence checks.
 - `go1.jscn` is the Gobot robot scene imported from `go1.xml`.
-- `go1_scene.jscn` is the Gobot scene that references `go1.jscn`.
+- `go1_scene.jscn` references `go1.jscn` and owns the `terrain_world/terrain` authoring nodes.
+- `terrain/rough_terrain.jres` is the versioned procedural terrain recipe used by the editor, playback, and training.
 - `train/go1_velocity_train.py` trains the Go1-owned velocity task into `policies/`.
 - `train/go1_velocity_env.py` contains the Go1 rsl_rl vector environment. It trains from the Gobot `.jscn` scene through a scene-authored CPU batch backend facade, not by importing XML directly.
-- `train/go1_velocity_cfg.py` contains Go1 joints, rewards, PPO, command, and terrain curriculum settings.
+- `train/go1_velocity_cfg.py` contains Go1 joints, rewards, PPO, command, and terrain spawn-curriculum settings.
 - `scripts/go1.py` is attached to the `go1_scene.jscn` root and plays a trained policy in `gobot_editor`.
-- `policies/go1.onnx` is the default lightweight rough-terrain playback policy.
-- `policies/go1.pt` is the Torch checkpoint used by training, export, and fallback playback.
-- `tools/export_policy_onnx.py` converts `policies/go1.pt` to `policies/go1.onnx`.
+- `policies/go1_velocity.pt` is the default training output.
+- `policies/go1_velocity.onnx` is generated from that checkpoint for lightweight playback.
+- `tools/export_policy_onnx.py` validates the checkpoint manifest and embeds it in ONNX.
 - `project.gobot` sets `go1_scene.jscn` as the project main scene.
 
 Regenerate the Gobot robot asset after editing the MJCF. The current editable
@@ -25,17 +24,17 @@ uv run python examples/go1/tools/refresh_go1_robot_scene.py
 ```
 
 This refreshes `go1.jscn` from `assets/xml/go1.xml` and restores the
-Gobot-authored runtime sensors used by training. Do not regenerate
-`go1_scene.jscn` from `go1_scene.xml` for training; the training world keeps
-the Gobot `.jscn` terrain instance as the source of truth.
+Gobot-authored runtime sensors used by training. The scene keeps a compact
+reference to `terrain/rough_terrain.jres`; native `Terrain3D` generation lazily
+builds render and collision geometry without serializing generated height
+arrays. The terrain is visible as soon as the scene is opened, before entering
+Play Mode, and training consumes the same authored recipe.
 
 Train from the Go1 project root:
 
 ```bash
 cd /home/wqq/gobot
-uv pip install imageio imageio-ffmpeg
 uv run --extra train python examples/go1/train/go1_velocity_train.py \
-  --task go1_rough \
   --num-envs 256 \
   --iterations 1500 \
   --device cuda \
@@ -64,7 +63,6 @@ Benchmark the Gobot Go1 vector env hot path without the PPO learner:
 ```bash
 cd /home/wqq/gobot
 uv run --extra train python benchmark/go1_velocity_benchmark.py \
-  --task go1_flat \
   --num-envs 64 \
   --steps 100 \
   --warmup-steps 10 \
@@ -79,25 +77,7 @@ preparation/application, physics, state refresh, command update, contact
 updates, reward, termination/reset, observation build, tensor conversion, and
 extras/logging.
 
-Benchmark a UniLab-style raw MuJoCo state-array batch step path:
-
-```bash
-cd /home/wqq/gobot
-uv run --extra train python benchmark/mujoco_uni_batch_benchmark.py \
-  --num-envs 64 \
-  --steps 100 \
-  --warmup-steps 10 \
-  --nstep 10 \
-  --threads 16
-```
-
-`mujoco_uni_batch_benchmark.py` uses `mujoco._batch_env`/`BatchEnvPool` when
-that extension is installed. Otherwise it falls back to official
-`mujoco.rollout.Rollout` and prints `Backend: rollout`, which is still useful
-as a raw MuJoCo state-array stepping baseline but is not the persistent
-`BatchEnvPool` implementation.
-
-The default `go1_rough` task follows the Go1 rough-terrain observation,
+The `go1_rough_velocity` task follows the Go1 rough-terrain observation,
 reward, command, event, robot-dynamics, collision, and mixed-terrain settings
 while loading the Gobot `.jscn` scene as the source of truth. Simulation always
 uses Gobot's CPU MuJoCo batch runtime. `--device` controls the PyTorch learner;
@@ -107,9 +87,7 @@ Resume from the latest checkpoint in the log directory:
 
 ```bash
 cd /home/wqq/gobot
-uv pip install imageio imageio-ffmpeg
 uv run --extra train python examples/go1/train/go1_velocity_train.py \
-  --task go1_rough \
   --num-envs 256 \
   --iterations 1500 \
   --device cuda \
@@ -124,34 +102,47 @@ Export a trained checkpoint for lightweight editor playback:
 
 ```bash
 cd /home/wqq/gobot
-uv pip install onnx
 uv run --extra train python examples/go1/tools/export_policy_onnx.py \
   --checkpoint examples/go1/policies/go1_velocity.pt \
-  --output examples/go1/policies/go1.onnx
+  --output examples/go1/policies/go1_velocity.onnx
 ```
 
-The default Go1 playback loads `policies/go1.onnx`, exported from the shipped
-Torch checkpoint with the current observation schema. Set
-`GOBOT_GO1_POLICY=res://policies/go1.pt` and install/use `gobot[train]` if you
-want to play the Torch checkpoint directly.
+The exporter embeds the same `gobot.rl.PolicyManifest` written by training and
+writes `go1_velocity.onnx.manifest.json`. Playback rejects policies without this
+manifest, mismatched observation/action specs, a different joint order, or a
+different scene resource digest. This makes stale 45-dimensional policies fail
+at load time instead of accepting keyboard commands that the policy cannot use.
 
-Play the current Go1 ONNX policy in the editor with keyboard velocity
-commands:
+To play the Torch checkpoint directly:
+
+```bash
+cd /home/wqq/gobot
+GOBOT_GO1_POLICY=res://policies/go1_velocity.pt \
+  uv run --extra train gobot_editor --path examples/go1
+```
+
+After exporting `policies/go1_velocity.onnx`, play it in the editor with
+keyboard velocity commands:
 
 ```bash
 cd /home/wqq/gobot
 uv run gobot_editor --path examples/go1
 ```
 
+Playback prefers `policies/go1_velocity.onnx` and then tries the training
+checkpoint `policies/go1_velocity.pt`. Both paths require the current policy
+manifest; older checkpoints are rejected instead of being guessed from tensor
+dimensions. A missing or rejected policy disables policy control but does not
+abort Play Mode: the authored rough terrain remains visible and Play still
+builds the CPU MuJoCo world so the scene can be inspected. The Console reports the exact
+policy rejection; train or export a current policy before testing keyboard
+velocity commands.
+
 Click the 3D viewer, then use `W/S` for forward/backward, `Q/E` for strafe,
-`A/D` for heading, `Space` to stop, and `R` to reset. The keyboard command
-limits default to the UniLab Go1 rough task ranges: `vx=1.0`, `vy=1.0`, and
-heading-rate input `0.5`; the policy yaw command is produced by UniLab-style
-heading feedback. Playback defaults to `200Hz` physics with `4` max substeps
-and `50Hz` policy updates (`decimation=4`), matching the Go1 rough
-configuration's `0.005s` physics step. Go1-specific hip/thigh/calf PD gains and
-`trunk` reset height `0.32m` are built in. Sensor debug visualization is
-enabled by the sensor nodes and velocity command debug is driven by the runtime
-`VelocityCommandDebug3D` node.
+`A/D` for yaw rate, `Space` to stop, and `R` to reset. The command limits are
+`vx=1.0`, `vy=1.0`, and `yaw_rate=0.5`. Physics rate, policy decimation, PD
+gains, action scaling, reset height, and solver settings come from the policy
+manifest. Terrain geometry comes from the versioned scene resource and is
+covered by the manifest's scene bundle digest.
 
 Run the editor from an editable install and open the `examples/go1` project.

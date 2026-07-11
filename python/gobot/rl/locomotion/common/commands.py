@@ -1,4 +1,4 @@
-"""Velocity command helpers aligned with UniLab locomotion tasks."""
+"""Velocity command helpers for Gobot locomotion tasks."""
 
 from __future__ import annotations
 

@@ -13,6 +13,7 @@
 
 #include "gobot/core/object.hpp"
 #include "gobot/physics/physics_server.hpp"
+#include "gobot/physics/physics_scene_compiler.hpp"
 #include "gobot/physics/physics_world.hpp"
 #include "gobot/simulation/simulation_scene.hpp"
 
@@ -136,6 +137,7 @@ private:
     bool registered_singleton_{false};
     PhysicsWorldSettings physics_world_settings_;
     Ref<PhysicsWorld> world_;
+    PhysicsSceneBindings scene_bindings_;
     SimulationScene runtime_scene_;
     bool paused_{true};
     bool sync_scene_on_fixed_step_{true};

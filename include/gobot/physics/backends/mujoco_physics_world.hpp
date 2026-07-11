@@ -9,6 +9,8 @@
 #include <atomic>
 #include <cstddef>
 #include <condition_variable>
+#include <exception>
+#include <functional>
 #include <mutex>
 #include <string>
 #include <thread>
@@ -18,9 +20,6 @@
 #include "gobot/physics/joint_controller.hpp"
 
 namespace gobot {
-namespace python {
-class PyLocomotionBatchView;
-}
 
 class GOBOT_EXPORT MuJoCoPhysicsWorld : public PhysicsWorld {
     GOBCLASS(MuJoCoPhysicsWorld, PhysicsWorld)
@@ -28,10 +27,10 @@ class GOBOT_EXPORT MuJoCoPhysicsWorld : public PhysicsWorld {
 public:
     struct Diagnostics {
         RealType timestep{0.0};
-        int solver{0};
-        int integrator{0};
-        int cone{0};
-        int jacobian{0};
+        PhysicsSolverType solver{PhysicsSolverType::ProjectedGaussSeidel};
+        PhysicsIntegratorType integrator{PhysicsIntegratorType::Euler};
+        PhysicsFrictionConeType cone{PhysicsFrictionConeType::Pyramidal};
+        PhysicsJacobianType jacobian{PhysicsJacobianType::Dense};
         int iterations{0};
         int line_search_iterations{0};
         int no_slip_iterations{0};
@@ -55,62 +54,6 @@ public:
         std::vector<RealType> first_collision_solimp;
     };
 
-    struct BatchRobotStateRequest {
-        std::string robot_name;
-        std::string base_link;
-        std::vector<std::string> joint_names;
-        std::vector<std::string> link_names;
-        std::vector<std::string> sensor_names;
-        std::vector<RealType> target_positions;
-        std::uint64_t ticks{1};
-        std::size_t worker_count{0};
-    };
-
-    struct BatchRobotStateArrays {
-        std::string robot_name;
-        std::string base_link;
-        std::vector<std::string> joint_names;
-        std::vector<std::string> link_names;
-        std::vector<std::string> sensor_names;
-        std::size_t environment_count{0};
-        std::size_t max_sensor_values{0};
-        std::size_t max_sensor_hits{0};
-        std::size_t max_contact_count{0};
-        std::vector<RealType> base_position;
-        std::vector<RealType> base_quaternion;
-        std::vector<RealType> base_linear_velocity;
-        std::vector<RealType> base_angular_velocity;
-        std::vector<RealType> joint_position;
-        std::vector<RealType> joint_velocity;
-        std::vector<RealType> joint_effort;
-        std::vector<RealType> joint_target_position;
-        std::vector<RealType> joint_target_velocity;
-        std::vector<RealType> joint_target_effort;
-        std::vector<RealType> joint_lower_limit;
-        std::vector<RealType> joint_upper_limit;
-        std::vector<RealType> link_position;
-        std::vector<RealType> link_quaternion;
-        std::vector<RealType> link_linear_velocity;
-        std::vector<RealType> link_angular_velocity;
-        std::vector<std::int32_t> sensor_value_count;
-        std::vector<std::int32_t> sensor_hit_count;
-        std::vector<RealType> sensor_position;
-        std::vector<RealType> sensor_quaternion;
-        std::vector<RealType> sensor_values;
-        std::vector<std::uint8_t> sensor_hit;
-        std::vector<RealType> sensor_hit_origin;
-        std::vector<RealType> sensor_hit_point;
-        std::vector<RealType> sensor_hit_normal;
-        std::vector<RealType> sensor_hit_distance;
-        std::vector<std::int32_t> contact_count;
-        std::vector<std::int32_t> contact_link_index;
-        std::vector<RealType> contact_position;
-        std::vector<RealType> contact_normal;
-        std::vector<RealType> contact_force;
-        std::vector<RealType> contact_normal_force;
-        std::vector<RealType> contact_distance;
-    };
-
     MuJoCoPhysicsWorld();
 
     ~MuJoCoPhysicsWorld() override;
@@ -125,7 +68,7 @@ public:
 
     const std::string& GetLastError() const override;
 
-    bool BuildFromScene(const Node* scene_root) override;
+    bool Build(PhysicsSceneSnapshot scene_snapshot) override;
 
     bool RestoreCompatibleState(const PhysicsSceneState& previous_state) override;
 
@@ -175,6 +118,12 @@ public:
                                    const Vector3& linear_velocity = Vector3::Zero(),
                                    const Vector3& angular_velocity = Vector3::Zero()) override;
 
+    bool WriteEnvironmentLinkVelocity(std::size_t environment_index,
+                                      const std::string& robot_name,
+                                      const std::string& link_name,
+                                      const Vector3& linear_velocity,
+                                      const Vector3& angular_velocity) override;
+
     bool ResetEnvironmentRobotStates(const std::vector<PhysicsEnvironmentRobotResetState>& reset_states) override;
 
     bool SetEnvironmentJointControl(std::size_t environment_index,
@@ -189,8 +138,8 @@ public:
                                      const std::vector<RealType>& targets,
                                      std::size_t environment_count) override;
 
-    bool StepEnvironmentBatchFastRobotState(const BatchRobotStateRequest& request,
-                                            BatchRobotStateArrays& arrays);
+    bool StepRobotBatch(const PhysicsRobotBatchStepRequest& request,
+                        PhysicsRobotBatchStepResult& result) override;
 
     bool SetLinkExternalForce(const std::string& robot_name,
                               const std::string& link_name,
@@ -214,15 +163,8 @@ protected:
                                               std::size_t environment_index) const override;
 
 private:
-    friend class python::PyLocomotionBatchView;
-
 #ifdef GOBOT_HAS_MUJOCO
-    bool LoadModelFromRobotSources();
-
-    bool AttachRobotModelToSpec(void* parent_spec,
-                                const PhysicsRobotSnapshot& robot,
-                                std::size_t robot_index,
-                                const std::string& prefix);
+    bool CompileAuthoredModel();
 
     bool AddAuthoredRobotToSpec(void* parent_spec,
                                 const PhysicsRobotSnapshot& robot,
@@ -320,6 +262,12 @@ private:
 
     bool EnsureBatchWorkers(std::size_t worker_count);
 
+    using BatchEnvironmentTask = std::function<void(std::size_t)>;
+
+    bool RunEnvironmentBatchTask(std::size_t environment_count,
+                                 std::size_t worker_count,
+                                 BatchEnvironmentTask task);
+
     void StopBatchWorkers();
 
     void BatchWorkerLoop(std::size_t worker_index);
@@ -347,9 +295,8 @@ private:
     std::size_t batch_active_workers_{0};
     std::size_t batch_environment_count_{0};
     std::size_t batch_work_chunk_{1};
-    std::uint64_t batch_ticks_{0};
-    bool batch_sync_state_{true};
-    bool batch_apply_controls_{true};
+    BatchEnvironmentTask batch_environment_task_;
+    std::exception_ptr batch_worker_error_;
     bool batch_stop_{false};
     bool batch_work_pending_{false};
 #endif

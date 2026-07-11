@@ -12,6 +12,7 @@
 #include "gobot/core/math/geometry.hpp"
 #include "gobot/scene/node_3d.hpp"
 #include "gobot/scene/resources/array_mesh.hpp"
+#include "gobot/scene/resources/terrain_generator_config.hpp"
 
 namespace gobot {
 
@@ -67,11 +68,15 @@ public:
 
     const std::vector<TerrainBox>& GetBoxes() const;
 
+    const std::vector<TerrainBox>& GetAuthoredBoxes() const;
+
     void AddHeightField(const TerrainHeightField& heightfield);
 
     void SetHeightFields(const std::vector<TerrainHeightField>& heightfields);
 
     const std::vector<TerrainHeightField>& GetHeightFields() const;
+
+    const std::vector<TerrainHeightField>& GetAuthoredHeightFields() const;
 
     void AddMeshPatch(const TerrainMeshPatch& mesh_patch);
 
@@ -79,9 +84,21 @@ public:
 
     const std::vector<TerrainMeshPatch>& GetMeshPatches() const;
 
+    const std::vector<TerrainMeshPatch>& GetAuthoredMeshPatches() const;
+
     void SetSpawnOrigins(const std::vector<Vector3>& spawn_origins);
 
     const std::vector<Vector3>& GetSpawnOrigins() const;
+
+    const std::vector<Vector3>& GetAuthoredSpawnOrigins() const;
+
+    void SetGeneratorConfig(const Ref<TerrainGeneratorConfig>& generator_config);
+
+    Ref<TerrainGeneratorConfig> GetGeneratorConfig() const;
+
+    void RegenerateTerrain();
+
+    const std::string& GetGenerationError() const;
 
     void SetSurfaceColor(const Color& color);
 
@@ -142,14 +159,26 @@ public:
     Ref<ArrayMesh> GetRenderMesh() const;
 
 private:
+    void EnsureGenerated() const;
+
+    void InvalidateGeneratedTerrain();
+
     void MarkMeshDirty();
 
     void RebuildRenderMesh() const;
 
-    std::vector<TerrainBox> boxes_;
-    std::vector<TerrainHeightField> heightfields_;
-    std::vector<TerrainMeshPatch> mesh_patches_;
-    std::vector<Vector3> spawn_origins_;
+    std::vector<TerrainBox> authored_boxes_;
+    std::vector<TerrainHeightField> authored_heightfields_;
+    std::vector<TerrainMeshPatch> authored_mesh_patches_;
+    std::vector<Vector3> authored_spawn_origins_;
+    Ref<TerrainGeneratorConfig> generator_config_;
+    mutable std::vector<TerrainBox> generated_boxes_;
+    mutable std::vector<TerrainHeightField> generated_heightfields_;
+    mutable std::vector<TerrainMeshPatch> generated_mesh_patches_;
+    mutable std::vector<Vector3> generated_spawn_origins_;
+    mutable std::size_t generated_config_hash_{0};
+    mutable bool generated_config_hash_valid_{false};
+    mutable std::string generation_error_;
     Color surface_color_{0.48f, 0.56f, 0.50f, 1.0f};
     TerrainColorMode color_mode_{TerrainColorMode::HeightRamp};
     Color height_low_color_{0.10f, 0.34f, 0.30f, 1.0f};

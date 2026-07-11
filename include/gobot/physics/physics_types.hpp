@@ -14,18 +14,10 @@
 #include "gobot/core/color.hpp"
 #include "gobot/core/math/geometry.hpp"
 #include "gobot/core/ref_counted.hpp"
+#include "gobot/core/robotics_types.hpp"
 #include "gobot/physics/joint_controller.hpp"
-#include "gobot/scene/sensor_3d.hpp"
 
 namespace gobot {
-
-class CollisionShape3D;
-class Joint3D;
-class Link3D;
-class Node3D;
-class Robot3D;
-class Sensor3D;
-class Terrain3D;
 
 enum class PhysicsBackendType {
     Null,
@@ -59,6 +51,30 @@ enum class PhysicsSensorType {
     HeightScanner
 };
 
+enum class PhysicsSolverType : int {
+    ProjectedGaussSeidel = 0,
+    ConjugateGradient = 1,
+    Newton = 2,
+};
+
+enum class PhysicsIntegratorType : int {
+    Euler = 0,
+    RungeKutta4 = 1,
+    Implicit = 2,
+    ImplicitFast = 3,
+};
+
+enum class PhysicsFrictionConeType : int {
+    Pyramidal = 0,
+    Elliptic = 1,
+};
+
+enum class PhysicsJacobianType : int {
+    Dense = 0,
+    Sparse = 1,
+    Auto = 2,
+};
+
 struct PhysicsBackendInfo {
     PhysicsBackendType type{PhysicsBackendType::Null};
     std::string name;
@@ -70,10 +86,10 @@ struct PhysicsBackendInfo {
 };
 
 struct MuJoCoSolverSettings {
-    int solver{2};
-    int integrator{0};
-    int cone{0};
-    int jacobian{2};
+    PhysicsSolverType solver{PhysicsSolverType::Newton};
+    PhysicsIntegratorType integrator{PhysicsIntegratorType::Euler};
+    PhysicsFrictionConeType cone{PhysicsFrictionConeType::Pyramidal};
+    PhysicsJacobianType jacobian{PhysicsJacobianType::Auto};
     int iterations{100};
     int line_search_iterations{50};
     int no_slip_iterations{0};
@@ -97,7 +113,6 @@ struct PhysicsWorldSettings {
 };
 
 struct PhysicsShapeSnapshot {
-    const CollisionShape3D* node{nullptr};
     std::string name;
     PhysicsShapeType type{PhysicsShapeType::Unknown};
     Affine3 global_transform{Affine3::Identity()};
@@ -117,7 +132,6 @@ struct PhysicsShapeSnapshot {
 };
 
 struct PhysicsLinkSnapshot {
-    const Link3D* node{nullptr};
     std::string name;
     PhysicsLinkRole role{PhysicsLinkRole::Physical};
     Affine3 global_transform{Affine3::Identity()};
@@ -130,7 +144,6 @@ struct PhysicsLinkSnapshot {
 };
 
 struct PhysicsSensorSnapshot {
-    const Sensor3D* node{nullptr};
     PhysicsSensorType type{PhysicsSensorType::Unknown};
     std::string name;
     std::string link_name;
@@ -140,6 +153,8 @@ struct PhysicsSensorSnapshot {
     RealType sensor_period{0.0};
     RealType noise_stddev{0.0};
     bool visualize_debug{false};
+    bool visible{true};
+    RealType debug_marker_radius{0.0};
     RealType radius{0.0};
     RealType min_threshold{0.0};
     RealType max_threshold{0.0};
@@ -156,7 +171,6 @@ struct PhysicsSensorSnapshot {
 };
 
 struct PhysicsJointSnapshot {
-    const Joint3D* node{nullptr};
     std::string name;
     std::string parent_link;
     std::string child_link;
@@ -183,9 +197,7 @@ struct PhysicsJointSnapshot {
 };
 
 struct PhysicsRobotSnapshot {
-    const Robot3D* node{nullptr};
     std::string name;
-    std::string source_path;
     std::vector<PhysicsLinkSnapshot> links;
     std::vector<PhysicsJointSnapshot> joints;
     std::vector<PhysicsSensorSnapshot> sensors;
@@ -224,7 +236,6 @@ struct PhysicsTerrainMeshPatchSnapshot {
 };
 
 struct PhysicsTerrainSnapshot {
-    const Terrain3D* node{nullptr};
     std::string name;
     Color surface_color{0.48f, 0.56f, 0.50f, 1.0f};
     Vector3 friction{1.0, 0.005, 0.0001};
@@ -253,8 +264,95 @@ struct PhysicsSceneSnapshot {
     std::size_t total_terrain_count{0};
 };
 
+struct PhysicsContactShapeGroup {
+    std::string name;
+    std::vector<std::string> shape_names;
+    RealType force_threshold{0.0};
+};
+
+struct PhysicsRobotBatchStepRequest {
+    std::string robot_name;
+    std::string base_link;
+    std::vector<std::string> joint_names;
+    std::vector<std::string> link_names;
+    std::vector<std::string> sensor_names;
+    std::vector<RealType> target_positions;
+    std::vector<RealType> joint_position_stiffness;
+    std::vector<RealType> joint_velocity_damping;
+    std::vector<std::string> override_link_names;
+    std::vector<RealType> link_mass_delta;
+    std::vector<RealType> link_center_of_mass_offset;
+    std::vector<std::string> override_shape_names;
+    std::vector<RealType> shape_friction;
+    std::vector<std::uint8_t> shape_friction_enabled;
+    std::string external_wrench_link;
+    std::vector<RealType> external_force;
+    std::vector<RealType> external_torque;
+    RealType ground_contact_force_threshold{0.0};
+    RealType self_contact_force_threshold{0.0};
+    std::vector<PhysicsContactShapeGroup> contact_shape_groups;
+    bool collect_contact_history{false};
+    std::uint64_t ticks{1};
+    std::size_t worker_count{0};
+};
+
+struct PhysicsRobotBatchStepResult {
+    std::string robot_name;
+    std::string base_link;
+    std::vector<std::string> joint_names;
+    std::vector<std::string> link_names;
+    std::vector<std::string> sensor_names;
+    std::vector<std::string> shape_names;
+    std::size_t environment_count{0};
+    std::size_t max_sensor_values{0};
+    std::size_t max_sensor_hits{0};
+    std::size_t max_contact_count{0};
+    std::vector<RealType> base_position;
+    std::vector<RealType> base_quaternion;
+    std::vector<RealType> base_linear_velocity;
+    std::vector<RealType> base_angular_velocity;
+    std::vector<RealType> joint_position;
+    std::vector<RealType> joint_velocity;
+    std::vector<RealType> joint_acceleration;
+    std::vector<RealType> joint_effort;
+    std::vector<RealType> joint_target_position;
+    std::vector<RealType> joint_target_velocity;
+    std::vector<RealType> joint_target_effort;
+    std::vector<RealType> joint_lower_limit;
+    std::vector<RealType> joint_upper_limit;
+    std::vector<RealType> link_position;
+    std::vector<RealType> link_quaternion;
+    std::vector<RealType> link_linear_velocity;
+    std::vector<RealType> link_angular_velocity;
+    std::vector<std::int32_t> sensor_value_count;
+    std::vector<std::int32_t> sensor_hit_count;
+    std::vector<RealType> sensor_position;
+    std::vector<RealType> sensor_quaternion;
+    std::vector<RealType> sensor_linear_velocity;
+    std::vector<RealType> sensor_values;
+    std::vector<std::uint8_t> sensor_hit;
+    std::vector<RealType> sensor_hit_origin;
+    std::vector<RealType> sensor_hit_point;
+    std::vector<RealType> sensor_hit_normal;
+    std::vector<RealType> sensor_hit_distance;
+    std::vector<std::int32_t> contact_count;
+    std::vector<std::int32_t> contact_link_index;
+    std::vector<std::int32_t> contact_shape_index;
+    std::vector<RealType> contact_position;
+    std::vector<RealType> contact_normal;
+    std::vector<RealType> contact_force;
+    std::vector<RealType> contact_normal_force;
+    std::vector<RealType> contact_distance;
+    std::vector<std::int32_t> link_contact_tick_count;
+    std::vector<std::int32_t> shape_contact_tick_count;
+    std::vector<std::string> contact_shape_group_names;
+    std::vector<std::int32_t> contact_shape_group_tick_count;
+    std::size_t contact_history_tick_count{0};
+    std::vector<std::uint8_t> contact_shape_group_history;
+    std::vector<std::int32_t> self_contact_tick_count;
+};
+
 struct PhysicsJointState {
-    const Joint3D* node{nullptr};
     std::string robot_name;
     std::string joint_name;
     int joint_type{0};
@@ -268,13 +366,12 @@ struct PhysicsJointState {
 };
 
 struct PhysicsLinkState {
-    const Link3D* node{nullptr};
     std::string robot_name;
     std::string link_name;
     PhysicsLinkRole role{PhysicsLinkRole::Physical};
     Affine3 global_transform{Affine3::Identity()};
-    Vector3 linear_velocity{Vector3::Zero()};
-    Vector3 angular_velocity{Vector3::Zero()};
+    Vector3 linear_velocity{Vector3::Zero()}; // World frame.
+    Vector3 angular_velocity{Vector3::Zero()}; // World frame.
 };
 
 struct PhysicsContactState {
@@ -314,13 +411,14 @@ struct PhysicsSensorRaycastHit {
 };
 
 struct PhysicsSensorState {
-    const Sensor3D* node{nullptr};
     std::string robot_name;
     std::string link_name;
     std::string sensor_name;
     PhysicsSensorType type{PhysicsSensorType::Unknown};
     bool enabled{true};
     bool visualize_debug{false};
+    bool visible{true};
+    RealType debug_marker_radius{0.0};
     Affine3 global_transform{Affine3::Identity()};
     std::vector<RealType> values;
     std::vector<PhysicsSensorRaycastHit> hits;
@@ -344,8 +442,8 @@ struct PhysicsEnvironmentRobotResetState {
     std::string base_link_name;
     Vector3 base_position{Vector3::Zero()};
     Quaternion base_orientation{Quaternion::Identity()};
-    Vector3 base_linear_velocity{Vector3::Zero()};
-    Vector3 base_angular_velocity{Vector3::Zero()};
+    Vector3 base_linear_velocity{Vector3::Zero()}; // World frame.
+    Vector3 base_angular_velocity{Vector3::Zero()}; // World frame.
     std::vector<std::string> joint_names;
     std::vector<RealType> joint_positions;
     std::vector<RealType> joint_velocities;
@@ -353,7 +451,6 @@ struct PhysicsEnvironmentRobotResetState {
 };
 
 struct PhysicsRobotState {
-    const Robot3D* node{nullptr};
     std::string name;
     std::vector<PhysicsLinkState> links;
     std::vector<PhysicsJointState> joints;

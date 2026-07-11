@@ -44,7 +44,7 @@ _MUJOCO_BLUE: Color4 = (0.25, 0.35, 0.55, 1.0)
 _MUJOCO_RED: Color4 = (0.65, 0.28, 0.22, 1.0)
 _MUJOCO_GREEN: Color4 = (0.34, 0.52, 0.36, 1.0)
 _PLATFORM_COLOR: Color4 = (0.44, 0.46, 0.42, 1.0)
-_UNILAB_VERTICAL_SCALE = 0.005
+_HEIGHTFIELD_VERTICAL_SCALE = 0.005
 
 
 @dataclass(slots=True)
@@ -417,54 +417,6 @@ def radial_pit(
     )
 
 
-def go1_training_terrains() -> dict[str, SubTerrainCfg]:
-    """UniLab Go1 rough terrain presets used by the PPO training profile."""
-
-    return {
-        "flat": flat(proportion=0.0),
-        "pyramid_stairs": pyramid_stairs(
-            proportion=0.1,
-            step_height_range=(0.025, 0.10),
-            step_width=0.40,
-            platform_width=3.0,
-            border_width=0.2,
-        ),
-        "pyramid_stairs_inv": pyramid_stairs_inv(
-            proportion=0.1,
-            step_height_range=(0.025, 0.10),
-            step_width=0.40,
-            platform_width=3.0,
-            border_width=0.2,
-        ),
-        "hf_pyramid_slope": hf_pyramid_slope(
-            proportion=0.2,
-            slope_range=(0.0, 0.3),
-            platform_width=2.0,
-            border_width=0.2,
-        ),
-        "hf_pyramid_slope_inv": hf_pyramid_slope_inv(
-            proportion=0.2,
-            slope_range=(0.0, 0.3),
-            platform_width=2.0,
-            border_width=0.2,
-        ),
-        "random_rough": random_rough(
-            proportion=0.3,
-            noise_range=(0.01, 0.06),
-            noise_step=0.01,
-            downsampled_scale=None,
-            border_width=0.2,
-            scale_by_difficulty=False,
-        ),
-        "wave_terrain": wave_terrain(
-            proportion=0.3,
-            amplitude_range=(0.0, 0.12),
-            num_waves=4.0,
-            border_width=0.2,
-        ),
-    }
-
-
 def go1_rough_terrain_cfg(*, seed: int = 42, curriculum: bool = True) -> TerrainGeneratorCfg:
     """Mixed-geometry rough terrain used by the Go1 velocity task."""
 
@@ -819,9 +771,9 @@ def _add_mixed_heightfield_patch(
     elevation_min = int(np.min(noise))
     elevation_max = int(np.max(noise))
     elevation_range = elevation_max - elevation_min if elevation_max != elevation_min else 1
-    physical = (noise.astype(np.float64) - elevation_min) * _UNILAB_VERTICAL_SCALE
+    physical = (noise.astype(np.float64) - elevation_min) * _HEIGHTFIELD_VERTICAL_SCALE
     normalized = (noise.astype(np.float64) - elevation_min) / elevation_range
-    max_physical_height = elevation_range * _UNILAB_VERTICAL_SCALE
+    max_physical_height = elevation_range * _HEIGHTFIELD_VERTICAL_SCALE
     center = corner + np.asarray([cfg.size[0] * 0.5, cfg.size[1] * 0.5, 0.0])
 
     # Terrain3D row zero is +Y while MuJoCo hfield row zero is -Y. The backend
@@ -860,7 +812,7 @@ def _mixed_heightfield_noise(
         inner_length = length_pixels - 2 * border_pixels
         target_width = inner_width if border_pixels > 0 else width_pixels
         target_length = inner_length if border_pixels > 0 else length_pixels
-        height_max = int(slope * (target_width * horizontal_scale) * 0.5 / _UNILAB_VERTICAL_SCALE)
+        height_max = int(slope * (target_width * horizontal_scale) * 0.5 / _HEIGHTFIELD_VERTICAL_SCALE)
         center_x = int(target_width * 0.5)
         center_y = int(target_length * 0.5)
         xx = ((center_x - np.abs(center_x - np.arange(target_width))) / center_x).reshape(target_width, 1)
@@ -876,7 +828,7 @@ def _mixed_heightfield_noise(
         else:
             noise = np.rint(raw).astype(np.int16)
         height_range = int(np.max(noise) - np.min(noise)) or 1
-        max_height = height_range * _UNILAB_VERTICAL_SCALE
+        max_height = height_range * _HEIGHTFIELD_VERTICAL_SCALE
         z_offset = -max_height if inverted else 0.0
         return noise, z_offset, z_offset if inverted else max_height, 1.0
 
@@ -888,9 +840,9 @@ def _mixed_heightfield_noise(
         inner_size = (inner_width * horizontal_scale, inner_length * horizontal_scale)
         width_downsampled = int(inner_size[0] / downsampled_scale)
         length_downsampled = int(inner_size[1] / downsampled_scale)
-        height_min = int(float(sub_cfg.kwargs.get("noise_min", -0.05)) / _UNILAB_VERTICAL_SCALE)
-        height_max = int(float(sub_cfg.kwargs.get("noise_max", 0.05)) / _UNILAB_VERTICAL_SCALE)
-        height_step = int(float(sub_cfg.kwargs.get("noise_step", 0.005)) / _UNILAB_VERTICAL_SCALE)
+        height_min = int(float(sub_cfg.kwargs.get("noise_min", -0.05)) / _HEIGHTFIELD_VERTICAL_SCALE)
+        height_max = int(float(sub_cfg.kwargs.get("noise_max", 0.05)) / _HEIGHTFIELD_VERTICAL_SCALE)
+        height_step = int(float(sub_cfg.kwargs.get("noise_step", 0.005)) / _HEIGHTFIELD_VERTICAL_SCALE)
         choices = np.arange(height_min, height_max + height_step, height_step)
         sampled = rng.choice(choices, size=(width_downsampled, length_downsampled))
         source_x = np.linspace(0.0, inner_size[0], width_downsampled)
@@ -915,7 +867,7 @@ def _mixed_heightfield_noise(
         amplitude = _difficulty_value(sub_cfg.kwargs, "amplitude", "amplitude_range", difficulty, 0.08)
         inner_width = width_pixels - 2 * border_pixels if border_pixels > 0 else width_pixels
         inner_length = length_pixels - 2 * border_pixels if border_pixels > 0 else length_pixels
-        amplitude_pixels = int(0.5 * amplitude / _UNILAB_VERTICAL_SCALE)
+        amplitude_pixels = int(0.5 * amplitude / _HEIGHTFIELD_VERTICAL_SCALE)
         num_waves = float(sub_cfg.kwargs.get("num_waves", 1.0))
         wave_number = 2.0 * np.pi / (inner_length / num_waves)
         xx = np.arange(inner_width).reshape(inner_width, 1)
@@ -926,7 +878,7 @@ def _mixed_heightfield_noise(
         else:
             noise = np.rint(raw).astype(np.int16)
         height_range = int(np.max(noise) - np.min(noise)) or 1
-        max_height = height_range * _UNILAB_VERTICAL_SCALE
+        max_height = height_range * _HEIGHTFIELD_VERTICAL_SCALE
         return noise, -max_height * 0.5, 0.0, 0.25
 
     raise ValueError(f"unsupported mixed heightfield kind {sub_cfg.kind!r}")
@@ -966,7 +918,7 @@ def _populate_merged_heightfield_terrain(terrain: _core.Terrain3D, cfg: TerrainG
                 sub_cfg = sub_terrain_cfgs[int(rng.choice(len(sub_terrain_cfgs), p=proportions))]
                 difficulty = float(rng.uniform(float(lower), float(upper)))
 
-            heights_xy, origin_local = _unilab_patch_heightfield(cfg, sub_cfg, difficulty, rng)
+            heights_xy, origin_local = _rough_patch_heightfield(cfg, sub_cfg, difficulty, rng)
             if heights_xy.shape != (tile_x_px, tile_y_px):
                 raise ValueError(
                     "merged terrain patch shape does not match TerrainGeneratorCfg.size: "
@@ -975,7 +927,7 @@ def _populate_merged_heightfield_terrain(terrain: _core.Terrain3D, cfg: TerrainG
             x0 = border_px + row * tile_x_px
             y0 = border_px + (num_cols - 1 - col) * tile_y_px
             heights_yx[y0 : y0 + tile_y_px, x0 : x0 + tile_x_px] = heights_xy.T
-            world_position = _unilab_sub_terrain_position(cfg, row, col, num_cols)
+            world_position = _rough_sub_terrain_position(cfg, row, col, num_cols)
             spawn = origin_local + world_position
             spawn_origins.append((float(spawn[0]), float(spawn[1]), float(spawn[2])))
 
@@ -1089,40 +1041,40 @@ def _add_radial_heightfield(
     return _add_heightfield_surface(terrain, cfg, center, heights)
 
 
-def _unilab_patch_heightfield(
+def _rough_patch_heightfield(
     cfg: TerrainGeneratorCfg,
     sub_cfg: SubTerrainCfg,
     difficulty: float,
     rng: np.random.Generator,
 ) -> tuple[np.ndarray, np.ndarray]:
     if sub_cfg.kind == "flat":
-        width_px, length_px = _unilab_patch_shape(cfg)
+        width_px, length_px = _rough_patch_shape(cfg)
         return np.zeros((width_px, length_px), dtype=np.float64), np.asarray(
             [cfg.size[0] * 0.5, cfg.size[1] * 0.5, 0.0],
             dtype=np.float64,
         )
     if sub_cfg.kind == "pyramid_stairs":
-        return _unilab_pyramid_stairs_heightfield(cfg, sub_cfg, difficulty)
+        return _pyramid_stairs_heightfield(cfg, sub_cfg, difficulty)
     if sub_cfg.kind == "hf_pyramid_slope":
-        return _unilab_pyramid_slope_heightfield(cfg, sub_cfg, difficulty)
+        return _pyramid_slope_heightfield(cfg, sub_cfg, difficulty)
     if sub_cfg.kind == "random_rough":
-        return _unilab_random_rough_heightfield(cfg, sub_cfg, rng)
+        return _random_rough_heightfield(cfg, sub_cfg, rng)
     if sub_cfg.kind == "wave":
-        return _unilab_wave_heightfield(cfg, sub_cfg, difficulty)
-    return np.zeros(_unilab_patch_shape(cfg), dtype=np.float64), np.asarray(
+        return _wave_heightfield(cfg, sub_cfg, difficulty)
+    return np.zeros(_rough_patch_shape(cfg), dtype=np.float64), np.asarray(
         [cfg.size[0] * 0.5, cfg.size[1] * 0.5, 0.0],
         dtype=np.float64,
     )
 
 
-def _unilab_patch_shape(cfg: TerrainGeneratorCfg) -> tuple[int, int]:
+def _rough_patch_shape(cfg: TerrainGeneratorCfg) -> tuple[int, int]:
     return (
         max(2, int(round(cfg.size[0] / cfg.horizontal_scale))),
         max(2, int(round(cfg.size[1] / cfg.horizontal_scale))),
     )
 
 
-def _unilab_sub_terrain_position(
+def _rough_sub_terrain_position(
     cfg: TerrainGeneratorCfg,
     row: int,
     col: int,
@@ -1138,25 +1090,25 @@ def _unilab_sub_terrain_position(
     )
 
 
-def _unilab_noise_to_physical(
+def _height_units_to_physical(
     noise: np.ndarray,
     *,
     z_offset: float = 0.0,
 ) -> np.ndarray:
-    return (noise.astype(np.float64) - int(np.min(noise))) * _UNILAB_VERTICAL_SCALE + float(z_offset)
+    return (noise.astype(np.float64) - int(np.min(noise))) * _HEIGHTFIELD_VERTICAL_SCALE + float(z_offset)
 
 
-def _unilab_pyramid_stairs_heightfield(
+def _pyramid_stairs_heightfield(
     cfg: TerrainGeneratorCfg,
     sub_cfg: SubTerrainCfg,
     difficulty: float,
 ) -> tuple[np.ndarray, np.ndarray]:
     step_height = _difficulty_value(sub_cfg.kwargs, "step_height", "step_height_range", difficulty, 0.08)
-    width_px, length_px = _unilab_patch_shape(cfg)
+    width_px, length_px = _rough_patch_shape(cfg)
     step_px = int(round(float(sub_cfg.kwargs.get("step_width", 0.4)) / cfg.horizontal_scale))
     platform_px = int(round(float(sub_cfg.kwargs.get("platform_width", 3.0)) / cfg.horizontal_scale))
     border_px = int(round(float(sub_cfg.kwargs.get("border_width", 0.0)) / cfg.horizontal_scale))
-    step_units = int(round(step_height / _UNILAB_VERTICAL_SCALE))
+    step_units = int(round(step_height / _HEIGHTFIELD_VERTICAL_SCALE))
     noise = np.zeros((width_px, length_px), dtype=np.int16)
     inner = min(width_px, length_px) - 2 * border_px
     n_steps = max(0, (inner - platform_px) // (2 * step_px)) if step_px > 0 else 0
@@ -1176,13 +1128,13 @@ def _unilab_pyramid_stairs_heightfield(
     plat_hi_y = length_px - border_px - n_steps * step_px
     noise[plat_lo_x:plat_hi_x, plat_lo_y:plat_hi_y] = sign * (n_steps + 1) * step_units
 
-    z_offset = -float(np.max(noise) - np.min(noise)) * _UNILAB_VERTICAL_SCALE if inverted else 0.0
-    spawn_z = sign * (n_steps + 1) * step_units * _UNILAB_VERTICAL_SCALE
+    z_offset = -float(np.max(noise) - np.min(noise)) * _HEIGHTFIELD_VERTICAL_SCALE if inverted else 0.0
+    spawn_z = sign * (n_steps + 1) * step_units * _HEIGHTFIELD_VERTICAL_SCALE
     origin = np.asarray([cfg.size[0] * 0.5, cfg.size[1] * 0.5, spawn_z], dtype=np.float64)
-    return _unilab_noise_to_physical(noise, z_offset=z_offset), origin
+    return _height_units_to_physical(noise, z_offset=z_offset), origin
 
 
-def _unilab_pyramid_slope_heightfield(
+def _pyramid_slope_heightfield(
     cfg: TerrainGeneratorCfg,
     sub_cfg: SubTerrainCfg,
     difficulty: float,
@@ -1192,7 +1144,7 @@ def _unilab_pyramid_slope_heightfield(
     if inverted:
         slope = -slope
 
-    width_px, length_px = _unilab_patch_shape(cfg)
+    width_px, length_px = _rough_patch_shape(cfg)
     border_px = int(float(sub_cfg.kwargs.get("border_width", 0.0)) / cfg.horizontal_scale)
     inner_width_px = width_px - 2 * border_px
     inner_length_px = length_px - 2 * border_px
@@ -1200,7 +1152,7 @@ def _unilab_pyramid_slope_heightfield(
 
     target_width_px = inner_width_px if border_px > 0 else width_px
     target_length_px = inner_length_px if border_px > 0 else length_px
-    height_max = int(slope * (target_width_px * cfg.horizontal_scale) * 0.5 / _UNILAB_VERTICAL_SCALE)
+    height_max = int(slope * (target_width_px * cfg.horizontal_scale) * 0.5 / _HEIGHTFIELD_VERTICAL_SCALE)
     center_x = int(target_width_px * 0.5)
     center_y = int(target_length_px * 0.5)
     x = np.arange(0, target_width_px)
@@ -1220,19 +1172,19 @@ def _unilab_pyramid_slope_heightfield(
     else:
         noise = np.rint(hf_raw).astype(np.int16)
 
-    max_h = float(np.max(noise) - np.min(noise)) * _UNILAB_VERTICAL_SCALE
+    max_h = float(np.max(noise) - np.min(noise)) * _HEIGHTFIELD_VERTICAL_SCALE
     z_offset = -max_h if inverted else 0.0
     spawn_height = z_offset if inverted else max_h
     origin = np.asarray([cfg.size[0] * 0.5, cfg.size[1] * 0.5, spawn_height], dtype=np.float64)
-    return _unilab_noise_to_physical(noise, z_offset=z_offset), origin
+    return _height_units_to_physical(noise, z_offset=z_offset), origin
 
 
-def _unilab_random_rough_heightfield(
+def _random_rough_heightfield(
     cfg: TerrainGeneratorCfg,
     sub_cfg: SubTerrainCfg,
     rng: np.random.Generator,
 ) -> tuple[np.ndarray, np.ndarray]:
-    width_px, length_px = _unilab_patch_shape(cfg)
+    width_px, length_px = _rough_patch_shape(cfg)
     border_px = int(float(sub_cfg.kwargs.get("border_width", 0.0)) / cfg.horizontal_scale)
     noise = np.zeros((width_px, length_px), dtype=np.int16)
     downsampled_scale = sub_cfg.kwargs.get("downsampled_scale")
@@ -1246,9 +1198,9 @@ def _unilab_random_rough_heightfield(
     target_size = (target_width_px * cfg.horizontal_scale, target_length_px * cfg.horizontal_scale)
     width_downsampled = max(2, int(target_size[0] / scale))
     length_downsampled = max(2, int(target_size[1] / scale))
-    height_min = int(float(sub_cfg.kwargs.get("noise_min", -0.05)) / _UNILAB_VERTICAL_SCALE)
-    height_max = int(float(sub_cfg.kwargs.get("noise_max", 0.05)) / _UNILAB_VERTICAL_SCALE)
-    height_step = max(1, int(float(sub_cfg.kwargs.get("noise_step", 0.01)) / _UNILAB_VERTICAL_SCALE))
+    height_min = int(float(sub_cfg.kwargs.get("noise_min", -0.05)) / _HEIGHTFIELD_VERTICAL_SCALE)
+    height_max = int(float(sub_cfg.kwargs.get("noise_max", 0.05)) / _HEIGHTFIELD_VERTICAL_SCALE)
+    height_step = max(1, int(float(sub_cfg.kwargs.get("noise_step", 0.01)) / _HEIGHTFIELD_VERTICAL_SCALE))
     height_range = np.arange(height_min, height_max + height_step, height_step)
     downsampled = rng.choice(height_range, size=(width_downsampled, length_downsampled))
     upsampled = _bilinear_resample_grid(
@@ -1264,20 +1216,20 @@ def _unilab_random_rough_heightfield(
         noise = np.rint(upsampled).astype(np.int16)
     spawn_height = (float(sub_cfg.kwargs.get("noise_min", -0.05)) + float(sub_cfg.kwargs.get("noise_max", 0.05))) * 0.5
     origin = np.asarray([cfg.size[0] * 0.5, cfg.size[1] * 0.5, spawn_height], dtype=np.float64)
-    return _unilab_noise_to_physical(noise), origin
+    return _height_units_to_physical(noise), origin
 
 
-def _unilab_wave_heightfield(
+def _wave_heightfield(
     cfg: TerrainGeneratorCfg,
     sub_cfg: SubTerrainCfg,
     difficulty: float,
 ) -> tuple[np.ndarray, np.ndarray]:
-    width_px, length_px = _unilab_patch_shape(cfg)
+    width_px, length_px = _rough_patch_shape(cfg)
     border_px = int(float(sub_cfg.kwargs.get("border_width", 0.0)) / cfg.horizontal_scale)
     target_width_px = width_px - 2 * border_px if border_px > 0 else width_px
     target_length_px = length_px - 2 * border_px if border_px > 0 else length_px
     amplitude = _difficulty_value(sub_cfg.kwargs, "amplitude", "amplitude_range", difficulty, 0.08)
-    amplitude_units = int(0.5 * amplitude / _UNILAB_VERTICAL_SCALE)
+    amplitude_units = int(0.5 * amplitude / _HEIGHTFIELD_VERTICAL_SCALE)
     num_waves = max(float(sub_cfg.kwargs.get("num_waves", 1.0)), 1.0e-6)
     wave_length = target_length_px / num_waves
     wave_number = 2.0 * np.pi / max(wave_length, 1.0e-6)
@@ -1290,9 +1242,9 @@ def _unilab_wave_heightfield(
         noise[border_px : width_px - border_px, border_px : length_px - border_px] = np.rint(hf_raw).astype(np.int16)
     else:
         noise = np.rint(hf_raw).astype(np.int16)
-    max_h = float(np.max(noise) - np.min(noise)) * _UNILAB_VERTICAL_SCALE
+    max_h = float(np.max(noise) - np.min(noise)) * _HEIGHTFIELD_VERTICAL_SCALE
     origin = np.asarray([cfg.size[0] * 0.5, cfg.size[1] * 0.5, 0.0], dtype=np.float64)
-    return _unilab_noise_to_physical(noise, z_offset=-max_h * 0.5), origin
+    return _height_units_to_physical(noise, z_offset=-max_h * 0.5), origin
 
 
 def _add_heightfield_surface(terrain: _core.Terrain3D, cfg: TerrainGeneratorCfg, center: Vector3, heights: np.ndarray) -> float:
@@ -1821,7 +1773,6 @@ __all__ = [
     "brand_ramp",
     "darken_rgba",
     "go1_rough_terrain_cfg",
-    "go1_training_terrains",
     "showcase_terrains",
     "create_terrain_node",
     "flat",

@@ -1,11 +1,14 @@
 import argparse
-import importlib.util
 import json
 import math
-import os
 import pathlib
 
 import gobot
+from gobot.rl.tasks.go1 import (
+    GO1_DEFAULT_BASE_POSITION,
+    GO1_DEFAULT_JOINT_POS,
+    GO1_JOINT_NAMES,
+)
 
 
 def _find_node_by_name(node, name):
@@ -60,36 +63,30 @@ def main():
         go1 = root if root.name == "go1" else None
 
     if args.expect_go1_stand:
-        script_path = pathlib.Path(args.project) / "scripts" / "go1.py"
-        spec = importlib.util.spec_from_file_location("go1_scene_script", script_path)
-        script_module = importlib.util.module_from_spec(spec)
-        spec.loader.exec_module(script_module)
-        os.environ["GOBOT_GO1_POLICY"] = ""
-
         if go1 is None:
             raise AssertionError("Loaded scene has no Robot3D node 'go1'")
         base_link = _find_node_by_name(go1, "trunk")
         if base_link is None:
             raise AssertionError("Go1 scene has no trunk link")
         joints = {}
-        for name, target in zip(script_module.JOINT_NAMES, script_module.DEFAULT_POS):
+        for name, target in zip(GO1_JOINT_NAMES, GO1_DEFAULT_JOINT_POS):
             joint = _find_node_by_name(go1, name)
             if joint is None:
                 raise AssertionError(f"Go1 scene has no joint {name!r}")
             joints[name] = joint
 
-        base_link.reset_runtime_state(script_module.RESET_BASE_POSITION,
+        base_link.reset_runtime_state(GO1_DEFAULT_BASE_POSITION,
                                       [1.0, 0.0, 0.0, 0.0],
                                       [0.0, 0.0, 0.0],
                                       [0.0, 0.0, 0.0])
-        for name, target in zip(script_module.JOINT_NAMES, script_module.DEFAULT_POS):
+        for name, target in zip(GO1_JOINT_NAMES, GO1_DEFAULT_JOINT_POS):
             joints[name].reset_runtime_state(target, 0.0)
             joints[name].set_position_target(target)
 
         context.step_once()
 
         for index in range(args.steps):
-            for name, target in zip(script_module.JOINT_NAMES, script_module.DEFAULT_POS):
+            for name, target in zip(GO1_JOINT_NAMES, GO1_DEFAULT_JOINT_POS):
                 joints[name].set_position_target(target)
             context.step_once()
             print(f"step={index + 1} time={context.simulation_time:.6f} frame={context.frame_count}")

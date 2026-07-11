@@ -11,6 +11,7 @@
 #include <gobot/scene/resources/resource_creation_registry.hpp>
 #include <gobot/scene/resources/shape_3d.hpp>
 #include <gobot/scene/resources/sphere_shape_3d.hpp>
+#include <gobot/scene/resources/terrain_generator_config.hpp>
 
 namespace {
 
@@ -43,6 +44,11 @@ TEST(TestResourceCreationRegistry, filters_resource_types_by_ref_property_type) 
     EXPECT_TRUE(ContainsResourceType(shape_types, "CylinderShape3D"));
     EXPECT_TRUE(ContainsResourceType(shape_types, "SphereShape3D"));
     EXPECT_FALSE(ContainsResourceType(shape_types, "BoxMesh"));
+
+    const auto terrain_generator_types = gobot::ResourceCreationRegistry::GetCreatableTypesForProperty(
+            gobot::Type::get<gobot::Ref<gobot::TerrainGeneratorConfig>>());
+    EXPECT_TRUE(ContainsResourceType(terrain_generator_types, "TerrainGeneratorConfig"));
+    EXPECT_FALSE(ContainsResourceType(terrain_generator_types, "BoxMesh"));
 }
 
 TEST(TestResourceCreationRegistry, created_variant_converts_to_requested_ref_base_type) {
@@ -89,4 +95,11 @@ TEST(TestResourceCreationRegistry, created_variant_converts_to_requested_ref_bas
             gobot::Type::get<gobot::Ref<gobot::Shape3D>>());
     ASSERT_TRUE(sphere_shape.is_valid());
     EXPECT_EQ(sphere_shape.get_type(), gobot::Type::get<gobot::Ref<gobot::Shape3D>>());
+
+    gobot::Variant terrain_generator = gobot::ResourceCreationRegistry::CreateResourceVariant(
+            "TerrainGeneratorConfig",
+            gobot::Type::get<gobot::Ref<gobot::TerrainGeneratorConfig>>());
+    ASSERT_TRUE(terrain_generator.is_valid());
+    EXPECT_EQ(terrain_generator.get_type(),
+              gobot::Type::get<gobot::Ref<gobot::TerrainGeneratorConfig>>());
 }

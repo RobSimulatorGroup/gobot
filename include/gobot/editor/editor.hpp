@@ -163,6 +163,10 @@ private:
 
     void DrawUnsavedSceneDialog();
 
+    void DrawPlayErrorDialog();
+
+    void RequestPlayError(std::string message);
+
     void HandleQuitRequest();
 
     void NotifyScenePlaySessionProcess();
@@ -211,10 +215,12 @@ private:
     std::uint64_t scene_change_version_{0};
     bool save_shortcut_down_{false};
     bool request_unsaved_scene_dialog_{false};
+    bool request_play_error_dialog_{false};
     bool pending_quit_request_{false};
     bool request_scene_viewer_focus_{true};
     bool request_python_panel_focus_{false};
     std::function<void()> pending_scene_switch_action_;
+    std::string play_error_dialog_message_;
 
     Node* selected_{nullptr};
 
