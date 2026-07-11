@@ -2610,12 +2610,13 @@ bool MuJoCoPhysicsWorld::StepRobotBatch(const PhysicsRobotBatchStepRequest& requ
         linear_velocity[position_offset + 2] = body_velocity.z();
     };
 
-    for (std::size_t environment_index = 0; environment_index < environment_count; ++environment_index) {
+    const auto extract_environment_state = [&](std::size_t environment_index) {
         auto* env_model = static_cast<mjModel*>(ModelForEnvironment(environment_index));
         auto* data = static_cast<mjData*>(DataForEnvironment(environment_index));
         if (env_model == nullptr || data == nullptr) {
-            SetLastError(fmt::format("MuJoCo runtime data for environment {} is unavailable.", environment_index));
-            return false;
+            throw std::runtime_error(fmt::format(
+                    "MuJoCo runtime data for environment {} is unavailable.",
+                    environment_index));
         }
         const std::size_t base3 = environment_index * 3;
         const std::size_t base4 = environment_index * 4;
@@ -2873,6 +2874,13 @@ bool MuJoCoPhysicsWorld::StepRobotBatch(const PhysicsRobotBatchStepRequest& requ
             ++written_contact_count;
         }
         arrays.contact_count[environment_index] = static_cast<std::int32_t>(written_contact_count);
+    };
+    const bool state_extracted = RunEnvironmentBatchTask(
+            environment_count,
+            request.worker_count,
+            extract_environment_state);
+    if (!state_extracted) {
+        return false;
     }
 
     last_error_.clear();

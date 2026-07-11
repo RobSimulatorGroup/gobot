@@ -316,7 +316,7 @@ class Go1VelocityEnv(LocomotionBatchEnv):
         self._state_reward = np.zeros((self.num_envs,), dtype=np.float32)
         self._state_terminated = np.zeros((self.num_envs,), dtype=bool)
         self._state_truncated = np.zeros((self.num_envs,), dtype=bool)
-        self._state_steps = self._episode_length_np.copy()
+        self._state_steps = self._episode_length_np
         self._state = BatchEnvState(
             obs={
                 "actor": self._state_obs_actor,
@@ -574,7 +574,6 @@ class Go1VelocityEnv(LocomotionBatchEnv):
 
         if reset_env_ids.size:
             batch_state = self.backend.state
-        self.backend.refresh()
         self.backend.advance_commands()
         self._apply_pushes()
         batch_state = self.backend.state
@@ -1276,6 +1275,7 @@ class Go1VelocityEnv(LocomotionBatchEnv):
             "trunk_head_collision",
             weights[15] * np.asarray(state.trunk_head_collision_count, dtype=np.float32),
         )
+        np.nan_to_num(terms, copy=False, nan=0.0, posinf=0.0, neginf=0.0)
         np.copyto(state.reward, (np.sum(terms, axis=1) * step_dt).astype(np.float32))
         if foot_peak_height.size:
             state.foot_peak_height[first_contact > 0.0] = 0.0

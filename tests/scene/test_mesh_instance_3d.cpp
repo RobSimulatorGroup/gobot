@@ -10,6 +10,7 @@
 #include <gobot/rendering/scene_render_items.hpp>
 #include <gobot/scene/collision_shape_3d.hpp>
 #include <gobot/scene/scene_tree.hpp>
+#include <gobot/scene/terrain_3d.hpp>
 #include <gobot/scene/window.hpp>
 #include <gobot/scene/mesh_instance_3d.hpp>
 #include <gobot/scene/resources/box_shape_3d.hpp>
@@ -89,6 +90,34 @@ TEST(TestMeshInstance3D, hidden_collision_shapes_are_excluded_from_debug_renderi
 
     const gobot::SceneRenderItems items = gobot::CollectSceneRenderItems(tree->GetRoot());
     EXPECT_TRUE(items.collision_shapes.empty());
+
+    gobot::Object::Delete(tree);
+}
+
+TEST(TestMeshInstance3D, terrain_vertex_colors_are_not_tinted_by_surface_color) {
+    auto render_server = std::make_unique<gobot::RenderServer>();
+    auto* tree = gobot::Object::New<gobot::SceneTree>(false);
+    tree->Initialize();
+
+    auto* terrain = gobot::Object::New<gobot::Terrain3D>();
+    terrain->SetSurfaceColor({0.2f, 0.3f, 0.4f, 0.75f});
+    terrain->AddBox({0.0, 0.0, -0.5}, {1.0, 1.0, 1.0});
+    terrain->SetColorMode(gobot::TerrainColorMode::Palette);
+    tree->GetRoot()->AddChild(terrain, true);
+
+    gobot::SceneRenderItems items = gobot::CollectSceneRenderItems(tree->GetRoot());
+    ASSERT_EQ(items.visual_meshes.size(), 1);
+    EXPECT_FLOAT_EQ(items.visual_meshes[0].surface_color.red(), 1.0f);
+    EXPECT_FLOAT_EQ(items.visual_meshes[0].surface_color.green(), 1.0f);
+    EXPECT_FLOAT_EQ(items.visual_meshes[0].surface_color.blue(), 1.0f);
+    EXPECT_FLOAT_EQ(items.visual_meshes[0].surface_color.alpha(), 0.75f);
+
+    terrain->SetColorMode(gobot::TerrainColorMode::SurfaceColor);
+    items = gobot::CollectSceneRenderItems(tree->GetRoot());
+    ASSERT_EQ(items.visual_meshes.size(), 1);
+    EXPECT_FLOAT_EQ(items.visual_meshes[0].surface_color.red(), 0.2f);
+    EXPECT_FLOAT_EQ(items.visual_meshes[0].surface_color.green(), 0.3f);
+    EXPECT_FLOAT_EQ(items.visual_meshes[0].surface_color.blue(), 0.4f);
 
     gobot::Object::Delete(tree);
 }

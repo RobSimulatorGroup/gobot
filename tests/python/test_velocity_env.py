@@ -3,6 +3,7 @@ import os
 from pathlib import Path
 import sys
 import tempfile
+from types import SimpleNamespace
 
 import numpy as np
 
@@ -227,17 +228,18 @@ def test_go1_robot_scene_matches_mujoco_contract():
     terrain_scan = _node_by_name(nodes, "terrain_scan", "HeightScanner3D")["properties"]
     assert terrain_scan["pattern_mode"] == "Grid"
     assert terrain_scan["reduction_mode"] == "None"
-    assert terrain_scan["visualize_debug"] is False
+    assert terrain_scan["visualize_debug"] is True
     for foot in ("FR", "FL", "RR", "RL"):
         foot_height_scan = _node_by_name(nodes, f"{foot}_foot_height_scan", "TerrainHeightSensor3D")[
             "properties"
         ]
         assert foot_height_scan["reduction_mode"] == "Min"
+        assert foot_height_scan["visualize_debug"] is True
         assert len(foot_height_scan["sample_offsets"]) == 5
         np.testing.assert_allclose(_matrix_storage(foot_height_scan["sample_offsets"][0]), (0.0, 0.0, 0.0))
-        assert _node_by_name(nodes, f"{foot}_foot_contact", "ContactSensor3D")["properties"]["radius"] == np.float32(
-            0.03
-        )
+        foot_contact = _node_by_name(nodes, f"{foot}_foot_contact", "ContactSensor3D")["properties"]
+        assert foot_contact["visualize_debug"] is True
+        assert foot_contact["radius"] == np.float32(0.03)
 
 
 def test_go1_env_applies_mujoco_solver_settings():
@@ -363,6 +365,217 @@ def test_go1_rough_env_reset_step_shapes():
         env.close()
 
 
+def _synthetic_go1_task_env():
+    cfg = go1_cfg.go1_velocity_cfg(project_path="/tmp/go1")
+    num_envs = 2
+    num_actions = len(cfg.joint_names)
+    foot_count = len(cfg.foot_names)
+    height_scan_dim = 4
+    actor_dim = velocity_actor_observation_schema(num_actions, height_scan_dim).dim
+    critic_dim = velocity_critic_observation_schema(num_actions, height_scan_dim, foot_count).dim
+    default_joint_position = np.asarray(cfg.default_joint_pos, dtype=np.float32)
+    joint_position = np.broadcast_to(default_joint_position, (num_envs, num_actions)).copy()
+    joint_position[0, 0] += 0.2
+    joint_position[0, 2] -= 0.15
+    joint_position[1] += 0.01
+    action = np.asarray(
+        [np.linspace(-0.3, 0.3, num_actions), np.full(num_actions, 0.2)],
+        dtype=np.float32,
+    )
+    flat_scan_points = np.asarray(
+        [[-0.5, -0.5, 0.0], [-0.5, 0.5, 0.0], [0.5, -0.5, 0.0], [0.5, 0.5, 0.0]],
+        dtype=np.float32,
+    )
+    reward_weights = np.asarray(
+        [
+            cfg.rewards.track_linear_velocity,
+            cfg.rewards.track_angular_velocity,
+            cfg.rewards.upright,
+            cfg.rewards.pose,
+            cfg.rewards.body_ang_vel,
+            cfg.rewards.angular_momentum,
+            cfg.rewards.dof_pos_limits,
+            cfg.rewards.action_rate_l2,
+            cfg.rewards.air_time,
+            cfg.rewards.foot_clearance,
+            cfg.rewards.foot_swing_height,
+            cfg.rewards.foot_slip,
+            cfg.rewards.soft_landing,
+            cfg.rewards.self_collisions,
+            cfg.rewards.shank_collision,
+            cfg.rewards.trunk_head_collision,
+        ],
+        dtype=np.float32,
+    )
+    state = SimpleNamespace(
+        task_params=np.asarray([0.02, 0.25, 0.5, 0.2, 0.05, 5.0], dtype=np.float32),
+        reward_weights=reward_weights,
+        command=np.asarray([[0.5, -0.2, 0.3], [0.0, 0.0, 0.0]], dtype=np.float32),
+        base_quaternion=np.asarray([[1.0, 0.0, 0.0, 0.0]] * num_envs, dtype=np.float32),
+        base_linear_velocity=np.asarray([[0.2, -0.1, 0.05], [0.1, 0.0, -0.2]], dtype=np.float32),
+        base_angular_velocity=np.asarray([[0.1, -0.2, 0.25], [0.0, 0.0, 0.0]], dtype=np.float32),
+        base_linear_velocity_body=np.asarray([[0.2, -0.1, 0.05], [0.1, 0.0, -0.2]], dtype=np.float32),
+        base_angular_velocity_body=np.asarray([[0.1, -0.2, 0.25], [0.0, 0.0, 0.0]], dtype=np.float32),
+        projected_gravity=np.asarray([[0.0, 0.0, -1.0]] * num_envs, dtype=np.float32),
+        joint_position=joint_position,
+        joint_velocity=np.zeros((num_envs, num_actions), dtype=np.float32),
+        previous_action=np.zeros((num_envs, num_actions), dtype=np.float32),
+        submitted_action=action.copy(),
+        action=action.copy(),
+        last_action=action.copy(),
+        default_joint_position=default_joint_position.copy(),
+        joint_lower_limit=default_joint_position - 0.1,
+        joint_upper_limit=default_joint_position + 0.1,
+        pose_std_standing=np.asarray([0.1 if "calf" in name else 0.05 for name in cfg.joint_names], dtype=np.float32),
+        pose_std_walking=np.asarray([0.6 if "calf" in name else 0.3 for name in cfg.joint_names], dtype=np.float32),
+        pose_std_running=np.asarray([0.6 if "calf" in name else 0.3 for name in cfg.joint_names], dtype=np.float32),
+        foot_contact=np.asarray([[1.0, 0.0, 1.0, 0.0], [1.0, 1.0, 1.0, 1.0]], dtype=np.float32),
+        foot_height=np.asarray([[0.04, 0.12, 0.08, 0.15], [0.03, 0.03, 0.03, 0.03]], dtype=np.float32),
+        foot_velocity=np.asarray(
+            [
+                [[0.2, 0.1, 0.0], [0.3, 0.0, 0.0], [0.1, 0.2, 0.0], [0.0, 0.4, 0.0]],
+                [[0.2, 0.0, 0.0]] * foot_count,
+            ],
+            dtype=np.float32,
+        ),
+        foot_peak_height=np.asarray([[0.08, 0.12, 0.10, 0.15], [0.2, 0.2, 0.2, 0.2]], dtype=np.float32),
+        first_contact=np.asarray([[1.0, 0.0, 1.0, 0.0], [1.0, 1.0, 1.0, 1.0]], dtype=np.float32),
+        landing_force=np.asarray([[20.0, 0.0, 30.0, 0.0], [100.0, 100.0, 100.0, 100.0]], dtype=np.float32),
+        self_collision_count=np.asarray([2.0, 0.0], dtype=np.float32),
+        shank_collision_count=np.asarray([1.0, 3.0], dtype=np.float32),
+        trunk_head_collision_count=np.asarray([0.0, 1.0], dtype=np.float32),
+        illegal_contact_count=np.asarray([0.0, 1.0], dtype=np.float32),
+        height_scan=np.asarray([[0.2, 0.3, 0.4, 0.5], [0.1, 0.1, 0.1, 0.1]], dtype=np.float32),
+        height_scan_point=np.broadcast_to(flat_scan_points, (num_envs, height_scan_dim, 3)).copy(),
+        height_scan_hit=np.ones((num_envs, height_scan_dim), dtype=bool),
+        foot_air_time=np.asarray([[0.0, 0.1, 0.0, 0.2], [0.0, 0.0, 0.0, 0.0]], dtype=np.float32),
+        foot_contact_force=np.arange(num_envs * foot_count * 3, dtype=np.float32).reshape(num_envs, foot_count, 3),
+        base_height=np.asarray([0.3, 0.25], dtype=np.float32),
+        reward_terms=np.zeros((num_envs, 16), dtype=np.float32),
+        reward=np.zeros(num_envs, dtype=np.float32),
+        terminated=np.zeros(num_envs, dtype=np.uint8),
+        velocity_error=np.zeros(num_envs, dtype=np.float32),
+        foot_slip=np.zeros(num_envs, dtype=np.float32),
+        base_clearance=np.zeros(num_envs, dtype=np.float32),
+        terrain_normal_error=np.zeros(num_envs, dtype=np.float32),
+        actor_obs=np.zeros((num_envs, actor_dim), dtype=np.float32),
+        critic_obs=np.zeros((num_envs, critic_dim), dtype=np.float32),
+    )
+    env = object.__new__(Go1VelocityEnv)
+    env.cfg_obj = cfg
+    env.num_envs = num_envs
+    env.num_actions = num_actions
+    env._foot_count = foot_count
+    env._height_scan_dim = height_scan_dim
+    env._reward_term_names = (
+        "track_linear_velocity",
+        "track_angular_velocity",
+        "upright",
+        "pose",
+        "body_ang_vel",
+        "angular_momentum",
+        "dof_pos_limits",
+        "action_rate_l2",
+        "air_time",
+        "foot_clearance",
+        "foot_swing_height",
+        "foot_slip",
+        "soft_landing",
+        "self_collisions",
+        "shank_collision",
+        "trunk_head_collision",
+    )
+    env.backend = SimpleNamespace(state=state)
+    return env, state
+
+
+def test_go1_reward_and_observation_formulas_match_task_contract():
+    env, state = _synthetic_go1_task_env()
+    original_peak_height = state.foot_peak_height.copy()
+    env._run_go1_rough_task_numpy()
+
+    cfg = env.cfg_obj.rewards
+    command = state.command
+    lin_vel = state.base_linear_velocity_body
+    ang_vel = state.base_angular_velocity_body
+    command_speed = np.linalg.norm(command[:, :2], axis=1) + np.abs(command[:, 2])
+    active = (command_speed > cfg.command_threshold).astype(np.float32)
+    lin_error = np.sum(np.square(command[:, :2] - lin_vel[:, :2]), axis=1) + np.square(lin_vel[:, 2])
+    ang_error = np.square(command[:, 2] - ang_vel[:, 2]) + np.sum(np.square(ang_vel[:, :2]), axis=1)
+    pose_std = env._go1_pose_std(command_speed)
+    pose_error = np.mean(
+        np.square((state.joint_position - state.default_joint_position.reshape(1, -1)) / pose_std),
+        axis=1,
+    )
+    foot_speed = np.linalg.norm(state.foot_velocity[:, :, :2], axis=2)
+    expected = np.zeros_like(state.reward_terms)
+    expected[:, 0] = cfg.track_linear_velocity * np.exp(-lin_error / cfg.lin_vel_std**2)
+    expected[:, 1] = cfg.track_angular_velocity * np.exp(-ang_error / cfg.ang_vel_std**2)
+    expected[:, 2] = cfg.upright
+    expected[:, 3] = cfg.pose * np.exp(-pose_error)
+    expected[:, 6] = cfg.dof_pos_limits * env._soft_joint_limit_penalty(state, cfg.soft_joint_pos_limit_factor)
+    expected[:, 7] = cfg.action_rate_l2 * np.sum(np.square(state.action - state.previous_action), axis=1)
+    expected[:, 9] = cfg.foot_clearance * np.sum(
+        np.abs(state.foot_height - cfg.foot_clearance_target_height) * foot_speed,
+        axis=1,
+    ) * active
+    expected[:, 10] = cfg.foot_swing_height * np.sum(
+        np.square(original_peak_height / cfg.foot_clearance_target_height - 1.0) * state.first_contact,
+        axis=1,
+    ) * active
+    expected[:, 11] = cfg.foot_slip * np.sum(
+        np.square(foot_speed) * (state.foot_contact > 0.0),
+        axis=1,
+    ) * active
+    expected[:, 12] = cfg.soft_landing * np.sum(state.landing_force, axis=1) * active
+    expected[:, 13] = cfg.self_collisions * state.self_collision_count
+    expected[:, 14] = cfg.shank_collision * state.shank_collision_count
+    expected[:, 15] = cfg.trunk_head_collision * state.trunk_head_collision_count
+
+    np.testing.assert_allclose(state.reward_terms, expected, rtol=2.0e-5, atol=1.0e-6)
+    np.testing.assert_allclose(state.reward, np.sum(expected, axis=1) * 0.02, rtol=2.0e-5, atol=1.0e-6)
+    np.testing.assert_array_equal(state.terminated, [0, 1])
+    np.testing.assert_allclose(state.actor_obs[:, -4:], state.height_scan / 5.0)
+    np.testing.assert_allclose(state.critic_obs[:, : state.actor_obs.shape[1]], state.actor_obs)
+
+    state.base_linear_velocity[0, 0] = np.nan
+    env._run_go1_rough_task_numpy()
+    assert np.isfinite(state.reward_terms).all()
+    assert np.isfinite(state.reward).all()
+
+
+def test_go1_training_configuration_matches_task_contract():
+    cfg = go1_cfg.go1_velocity_cfg(project_path="/tmp/go1")
+    train_cfg = go1_cfg.rsl_rl_train_cfg()
+    assert train_cfg["num_steps_per_env"] == 24
+    assert train_cfg["max_iterations"] == 10_000
+    assert train_cfg["save_interval"] == 50
+    assert train_cfg["actor"]["hidden_dims"] == [512, 256, 128]
+    assert train_cfg["critic"]["hidden_dims"] == [512, 256, 128]
+    assert train_cfg["algorithm"] == {
+        "class_name": "PPO",
+        "num_learning_epochs": 5,
+        "num_mini_batches": 4,
+        "clip_param": 0.2,
+        "use_clipped_value_loss": True,
+        "gamma": 0.99,
+        "lam": 0.95,
+        "value_loss_coef": 1.0,
+        "entropy_coef": 0.01,
+        "learning_rate": 1.0e-3,
+        "max_grad_norm": 1.0,
+        "schedule": "adaptive",
+        "desired_kl": 0.01,
+        "normalize_advantage_per_mini_batch": False,
+        "rnd_cfg": None,
+        "symmetry_cfg": None,
+    }
+    assert [stage.step for stage in cfg.command_curriculum] == [0, 5_000 * 24, 10_000 * 24]
+    assert cfg.episode_length_s == 20.0
+    assert cfg.physics_dt == 0.005
+    assert cfg.decimation == 4
+
+
 def test_go1_rough_first_contact_is_not_repeated_while_touching():
     cfg = go1_cfg.go1_velocity_cfg(project_path=REPO_ROOT / "examples/go1")
     cfg.observations.actor_noise = False
@@ -486,6 +699,54 @@ def test_go1_native_batch_arrays_track_actions_and_state():
         env.close()
 
 
+def test_go1_parallel_batch_extraction_matches_serial_results():
+    def make_env(workers: int):
+        cfg = go1_cfg.go1_velocity_cfg(project_path=REPO_ROOT / "examples/go1")
+        cfg.observations.actor_noise = False
+        cfg.push_enabled = False
+        cfg.domain_randomization.enabled = False
+        cfg.terrain_curriculum = False
+        return Go1VelocityEnv(
+            cfg,
+            num_envs=4,
+            device="cpu",
+            seed=17,
+            max_episode_length=32,
+            sim_workers=workers,
+            context=gobot.app.create_context(),
+        )
+
+    serial = make_env(1)
+    parallel = make_env(4)
+    try:
+        actions = np.linspace(-0.25, 0.25, serial.num_envs * serial.num_actions, dtype=np.float32).reshape(
+            serial.num_envs,
+            serial.num_actions,
+        )
+        serial_state = serial.step(actions)
+        parallel_state = parallel.step(actions)
+        np.testing.assert_allclose(parallel_state.obs["actor"], serial_state.obs["actor"], rtol=1.0e-5, atol=1.0e-6)
+        np.testing.assert_allclose(parallel_state.obs["critic"], serial_state.obs["critic"], rtol=1.0e-5, atol=1.0e-6)
+        np.testing.assert_allclose(parallel_state.reward, serial_state.reward, rtol=1.0e-5, atol=1.0e-6)
+        np.testing.assert_array_equal(parallel_state.terminated, serial_state.terminated)
+        np.testing.assert_array_equal(parallel_state.truncated, serial_state.truncated)
+        np.testing.assert_allclose(
+            parallel.backend.state.foot_contact_force,
+            serial.backend.state.foot_contact_force,
+            rtol=1.0e-5,
+            atol=1.0e-6,
+        )
+        np.testing.assert_allclose(
+            parallel.backend.state.height_scan,
+            serial.backend.state.height_scan,
+            rtol=1.0e-5,
+            atol=1.0e-6,
+        )
+    finally:
+        serial.close()
+        parallel.close()
+
+
 def test_go1_native_base_mass_randomization_preserves_reset_state_distribution():
     cfg = go1_cfg.go1_velocity_cfg(project_path=REPO_ROOT / "examples/go1")
     cfg.observations.actor_noise = False
@@ -525,12 +786,13 @@ def test_rsl_rl_wrapper_keeps_core_env_numpy():
         max_episode_length = 10
 
         def __init__(self):
+            self.episode_length_buf = np.zeros(2, dtype=np.int64)
             self.state = BatchEnvState(
                 obs={"actor": np.zeros((2, 4), dtype=np.float32), "critic": np.ones((2, 5), dtype=np.float32)},
                 reward=np.zeros(2, dtype=np.float32),
                 terminated=np.zeros(2, dtype=bool),
                 truncated=np.zeros(2, dtype=bool),
-                info={"steps": np.zeros(2, dtype=np.int64)},
+                info={"steps": self.episode_length_buf},
             )
 
         def reset(self, seed=None):
@@ -554,6 +816,8 @@ def test_rsl_rl_wrapper_keeps_core_env_numpy():
 
     env = DummyEnv()
     wrapper = RslRlVecEnvWrapper(env, device="cpu")
+    wrapper.episode_length_buf = torch.asarray([3, 7], dtype=torch.long)
+    np.testing.assert_array_equal(env.episode_length_buf, [3, 7])
     obs = wrapper.reset(seed=123)
     assert isinstance(obs["actor"], torch.Tensor)
     obs, reward, done, extras = wrapper.step(torch.zeros((2, 3), dtype=torch.float32))
@@ -688,22 +952,46 @@ def test_go1_playback_reads_authored_terrain_origins():
     np.testing.assert_allclose(script._resolve_reset_base_position(), (0.0, 0.0, 0.378))
 
 
-def test_go1_stale_policy_falls_back_to_terrain_preview():
+def test_go1_stale_policy_rejects_playback():
     script = object.__new__(go1_playback.Script)
 
     def reject_policy():
         raise RuntimeError("checkpoint has no policy manifest")
 
     script._load_policy = reject_policy
-    script._load_policy_or_enable_preview()
-    script._configure_runtime_profile()
+    try:
+        script._load_and_validate_policy()
+    except RuntimeError as error:
+        assert "Play requires a current manifest-backed policy" in str(error)
+    else:
+        raise AssertionError("stale policy should reject Go1 Play")
 
     assert script.policy is None
     assert script.manifest is None
     assert "no policy manifest" in script.policy_error
-    assert script.physics_dt == go1_playback.GO1_PHYSICS_DT
-    assert script.decimation == go1_playback.GO1_DECIMATION
-    np.testing.assert_allclose(script.default_pos, go1_cfg.GO1_DEFAULT_JOINT_POS)
+
+
+def test_go1_w_key_updates_forward_velocity_command():
+    class FakeInput:
+        has_control_focus = True
+
+        @staticmethod
+        def is_key_pressed(_key):
+            return False
+
+        @staticmethod
+        def is_key_held(key):
+            return key == "W"
+
+    script = object.__new__(go1_playback.Script)
+    script.context = type("FakeContext", (), {"input": FakeInput()})()
+    script.command = [0.0, 0.0, 0.0]
+    script.command_target = [0.0, 0.0, 0.0]
+
+    assert script._update_keyboard_command(0.02) is False
+    assert script.command[0] > 0.0
+    assert script.command[1] == 0.0
+    assert script.command[2] == 0.0
 
 
 def test_go1_zero_command_still_runs_manifest_policy():
@@ -811,14 +1099,18 @@ def main():
         test_go1_playback_prefers_onnx_then_falls_back_to_torch_checkpoint,
         test_go1_playback_builds_current_observation,
         test_go1_playback_reads_authored_terrain_origins,
-        test_go1_stale_policy_falls_back_to_terrain_preview,
+        test_go1_stale_policy_rejects_playback,
+        test_go1_w_key_updates_forward_velocity_command,
         test_go1_zero_command_still_runs_manifest_policy,
         test_go1_env_applies_mujoco_solver_settings,
         test_go1_robot_scene_matches_mujoco_contract,
         test_go1_rough_env_reset_step_shapes,
+        test_go1_reward_and_observation_formulas_match_task_contract,
+        test_go1_training_configuration_matches_task_contract,
         test_go1_rough_first_contact_is_not_repeated_while_touching,
         test_go1_rough_play_uses_rough_terrain_grid,
         test_go1_native_batch_arrays_track_actions_and_state,
+        test_go1_parallel_batch_extraction_matches_serial_results,
         test_go1_native_base_mass_randomization_preserves_reset_state_distribution,
         test_go1_velocity_push_adds_to_current_world_velocity,
         test_rsl_rl_wrapper_keeps_core_env_numpy,

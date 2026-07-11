@@ -68,7 +68,7 @@ def _configure_sensor(sensor: gobot.Sensor3D) -> None:
     sensor.enabled = True
     sensor.sensor_period = 0.0
     sensor.noise_stddev = 0.0
-    sensor.visualize_debug = False
+    sensor.visualize_debug = True
 
 
 def _add_trunk_sensors(root: gobot.Node) -> None:

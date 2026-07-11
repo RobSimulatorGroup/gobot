@@ -120,7 +120,9 @@ void CollectNodeRenderItems(const Node* node, SceneRenderItems& items, const Aff
             item.mesh = mesh_resource->GetRid();
             if (!item.mesh.IsNull()) {
                 item.model = node_transform.matrix();
-                item.surface_color = terrain->GetColorMode() == TerrainColorMode::HeightRamp
+                const bool uses_vertex_colors =
+                        terrain->GetColorMode() != TerrainColorMode::SurfaceColor;
+                item.surface_color = uses_vertex_colors
                         ? Color{1.0f, 1.0f, 1.0f, terrain->GetSurfaceColor().alpha()}
                         : terrain->GetSurfaceColor();
                 item.roughness = 0.92f;

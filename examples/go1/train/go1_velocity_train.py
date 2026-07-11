@@ -57,9 +57,10 @@ def build_arg_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser()
     parser.add_argument("--cpu-batch", action="store_true", help="Use CPU smoke-training defaults: 64 rough-terrain environments and no video.")
     parser.add_argument("--num-envs", "--num_envs", type=int, default=256)
-    parser.add_argument("--iterations", type=int, default=1500)
+    parser.add_argument("--iterations", type=int, default=10_000)
+    parser.add_argument("--save-interval", type=int, default=50)
     parser.add_argument("--max-episode-length", type=int, default=None)
-    parser.add_argument("--log-dir", "--log_dir", type=str, default="logs/go1_velocity")
+    parser.add_argument("--log-dir", "--log_dir", type=str, default="logs/go1_rough_velocity")
     parser.add_argument("--device", type=str, default="cuda" if torch.cuda.is_available() else "cpu")
     parser.add_argument("--seed", type=int, default=42)
     parser.add_argument("--sim-workers", type=int, default=0, help="CPU workers for batched physics stepping. 0 uses hardware concurrency; 1 keeps stepping serial.")
@@ -73,7 +74,7 @@ def build_arg_parser() -> argparse.ArgumentParser:
     parser.add_argument("--no-obs-noise", dest="obs_noise", action="store_false", default=True)
     parser.add_argument("--resume", action="store_true", help="Resume from the latest model_*.pt in log-dir.")
     parser.add_argument("--checkpoint", type=str, default=None, help="Checkpoint path to resume from.")
-    parser.add_argument("--render-video-interval", type=int, default=100, help="Write an MP4 every N training iterations. Set 0 to disable.")
+    parser.add_argument("--render-video-interval", type=int, default=0, help="Write an MP4 every N training iterations. Set 0 to disable.")
     parser.add_argument("--render-video-env-id", type=int, default=0, help="Eval batch env id to capture into the RGB training video.")
     parser.add_argument("--render-video-num-envs", type=int, default=1, help="Number of environments in the independent video eval rollout.")
     parser.add_argument("--render-video-steps", type=int, default=240)
@@ -129,7 +130,7 @@ def build_train_cfg(args: argparse.Namespace, cfg) -> dict:
     train_cfg = rsl_rl_train_cfg(
         experiment_name=cfg.name,
         max_iterations=args.iterations,
-        save_interval=max(1, int(args.render_video_interval)) if args.render_video_interval > 0 else 50,
+        save_interval=max(1, int(args.save_interval)),
         obs_normalization=False,
         clip_actions=None if action_clip is None else float(action_clip),
     )
@@ -276,7 +277,7 @@ def run_training(args: argparse.Namespace) -> tuple[Path, Path]:
             print(f"Checkpoint infos: {sorted(infos.keys())}")
 
     try:
-        runner.learn(num_learning_iterations=args.iterations, init_at_random_ep_len=checkpoint is None)
+        runner.learn(num_learning_iterations=args.iterations, init_at_random_ep_len=True)
 
         final_path = log_dir / "model_final.pt"
         runner.save(str(final_path))
@@ -344,7 +345,7 @@ def apply_run_preset(args: argparse.Namespace) -> None:
     args.num_envs = 64
     args.sim_workers = 0
     args.render_video_interval = 0
-    args.log_dir = "logs/go1_velocity_cpu_batch"
+    args.log_dir = "logs/go1_rough_velocity_cpu_batch"
     args.policy_out = "policies/go1_velocity_cpu_batch.pt"
 
 

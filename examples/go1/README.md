@@ -36,17 +36,10 @@ Train from the Go1 project root:
 cd /home/wqq/gobot
 uv run --extra train python examples/go1/train/go1_velocity_train.py \
   --num-envs 256 \
-  --iterations 1500 \
+  --iterations 10000 \
   --device cuda \
   --sim-workers 0 \
-  --render-video-interval 100 \
-  --render-video-num-envs 1 \
-  --render-video-env-id 0 \
-  --render-video-steps 240 \
-  --render-video-fps 30 \
-  --render-video-width 1280 \
-  --render-video-height 720 \
-  --log-dir logs/go1_velocity \
+  --log-dir logs/go1_rough_velocity \
   --policy-out policies/go1_velocity.pt
 ```
 
@@ -89,11 +82,11 @@ Resume from the latest checkpoint in the log directory:
 cd /home/wqq/gobot
 uv run --extra train python examples/go1/train/go1_velocity_train.py \
   --num-envs 256 \
-  --iterations 1500 \
+  --iterations 10000 \
   --device cuda \
   --sim-workers 0 \
   --render-video-interval 100 \
-  --log-dir logs/go1_velocity \
+  --log-dir logs/go1_rough_velocity \
   --policy-out policies/go1_velocity.pt \
   --resume
 ```
@@ -132,11 +125,8 @@ uv run gobot_editor --path examples/go1
 Playback prefers `policies/go1_velocity.onnx` and then tries the training
 checkpoint `policies/go1_velocity.pt`. Both paths require the current policy
 manifest; older checkpoints are rejected instead of being guessed from tensor
-dimensions. A missing or rejected policy disables policy control but does not
-abort Play Mode: the authored rough terrain remains visible and Play still
-builds the CPU MuJoCo world so the scene can be inspected. The Console reports the exact
-policy rejection; train or export a current policy before testing keyboard
-velocity commands.
+dimensions. A missing or rejected policy aborts Play with the exact validation
+error. Rough terrain remains available in the editor without entering Play.
 
 Click the 3D viewer, then use `W/S` for forward/backward, `Q/E` for strafe,
 `A/D` for yaw rate, `Space` to stop, and `R` to reset. The command limits are

@@ -251,25 +251,34 @@ class RslRlVecEnvWrapper:
         return state
 
     def _sync_steps_from_core(self) -> None:
-        state = getattr(self.env, "state", None)
-        if state is None:
-            return
-        steps = state.info.get("steps")
+        steps = getattr(self.env, "episode_length_buf", None)
+        if not isinstance(steps, np.ndarray):
+            state = getattr(self.env, "state", None)
+            if state is None:
+                return
+            steps = state.info.get("steps")
         if steps is None:
             return
         self._copy_array_to_tensor(self._episode_length_buf, np.asarray(steps, dtype=np.int64), self._episode_length_staging)
 
     def _sync_steps_to_core(self) -> None:
+        core_steps = getattr(self.env, "episode_length_buf", None)
+        if isinstance(core_steps, np.ndarray) and core_steps.shape == (self.num_envs,):
+            self._copy_steps_to_array(core_steps)
         state = getattr(self.env, "state", None)
         if state is None:
             return
         steps = state.info.get("steps")
         if isinstance(steps, np.ndarray) and steps.shape == (self.num_envs,):
-            if self._episode_length_buf.device.type == "cpu":
-                np.copyto(steps, self._episode_length_buf.numpy())
-            else:
-                self._episode_length_staging.copy_(self._episode_length_buf)
-                np.copyto(steps, self._episode_length_staging.numpy())
+            if steps is not core_steps:
+                self._copy_steps_to_array(steps)
+
+    def _copy_steps_to_array(self, target: np.ndarray) -> None:
+        if self._episode_length_buf.device.type == "cpu":
+            np.copyto(target, self._episode_length_buf.numpy())
+            return
+        self._episode_length_staging.copy_(self._episode_length_buf)
+        np.copyto(target, self._episode_length_staging.numpy())
 
     def _tensor_obs(self, obs: Mapping[str, Any]):
         self._ensure_obs_buffers(obs)

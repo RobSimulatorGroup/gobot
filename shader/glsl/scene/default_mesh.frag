@@ -19,7 +19,7 @@ void main() {
         geometric_normal = -geometric_normal;
     }
     normal = normalize(mix(normal, geometric_normal, 0.25));
-    vec3 light_dir = normalize(u_camera_position - v_world_position);
+    vec3 light_dir = normalize(vec3(0.35, 0.45, 0.82));
     vec3 view_dir = normalize(u_camera_position - v_world_position);
     vec3 half_dir = normalize(light_dir + view_dir);
     float roughness = clamp(u_roughness, 0.04, 1.0);
@@ -34,11 +34,19 @@ void main() {
     vec3 dielectric_f0 = mix(vec3(0.02), vec3(0.08), specular_weight);
     vec3 f0 = mix(dielectric_f0, base_color.rgb, metallic);
     vec3 fresnel = f0 + (1.0 - f0) * pow(1.0 - v_dot_h, 5.0);
-    float specular = pow(n_dot_h, shininess) * (1.0 - roughness * 0.90) * 0.0;
+    float specular = pow(n_dot_h, shininess) * (1.0 - roughness * 0.75);
 
     vec3 diffuse_color = base_color.rgb * (1.0 - metallic);
-    vec3 lit = diffuse_color * 0.30
-            + diffuse_color * n_dot_l * 0.60
-            + fresnel * specular;
-    frag_color = vec4(lit, base_color.a);
+    vec3 sky_color = vec3(0.55, 0.62, 0.70);
+    vec3 ground_color = vec3(0.08, 0.085, 0.09);
+    float sky_mix = clamp(normal.z * 0.5 + 0.5, 0.0, 1.0);
+    vec3 environment_color = mix(ground_color, sky_color, sky_mix);
+    vec3 ambient = diffuse_color * (vec3(0.28) + environment_color * 0.22);
+    vec3 direct = diffuse_color * n_dot_l * 0.78;
+    vec3 environment_specular =
+            environment_color * fresnel * mix(0.12, 0.45, metallic) * (1.0 - roughness * 0.65);
+    vec3 lit = ambient + direct + fresnel * specular * 0.35 + environment_specular;
+    vec3 mapped = vec3(1.0) - exp(-lit * 1.15);
+    vec3 display_color = pow(clamp(mapped, 0.0, 1.0), vec3(1.0 / 2.2));
+    frag_color = vec4(display_color, base_color.a);
 }

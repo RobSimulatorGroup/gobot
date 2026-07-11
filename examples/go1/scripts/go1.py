@@ -15,14 +15,8 @@ from gobot.rl.policy import (
 )
 from gobot.rl.spec import ActionSpec, SpecField
 from gobot.rl.tasks.go1 import (
-    GO1_DECIMATION,
     GO1_DEFAULT_BASE_POSITION,
-    GO1_DEFAULT_JOINT_POS,
     GO1_JOINT_NAMES,
-    GO1_KD,
-    GO1_KP,
-    GO1_MUJOCO_SOLVER_SETTINGS,
-    GO1_PHYSICS_DT,
     GO1_TASK_NAME,
     GO1_TASK_VERSION,
 )
@@ -341,7 +335,7 @@ class Script(gobot.NodeScript):
         self.joints = [self._find_joint(name) for name in JOINT_NAMES]
         self.imu = self._find_sensor(IMU_SENSOR)
         self.terrain_scan = self._find_sensor(TERRAIN_SCAN_SENSOR)
-        self._load_policy_or_enable_preview()
+        self._load_and_validate_policy()
         self._configure_runtime_profile()
 
         self.context.fixed_time_step = self.physics_dt
@@ -362,7 +356,7 @@ class Script(gobot.NodeScript):
         self._reset_playback_state()
         self._print_startup()
 
-    def _load_policy_or_enable_preview(self):
+    def _load_and_validate_policy(self):
         self.policy = None
         self.manifest = None
         self.policy_error = ""
@@ -375,26 +369,12 @@ class Script(gobot.NodeScript):
             self.policy = None
             self.manifest = None
             self.policy_error = f"{type(error).__name__}: {error}"
-            print(
-                "Go1 policy control disabled; terrain preview will continue. "
-                f"Rejected policy: {self.policy_error}"
-            )
+            raise RuntimeError(
+                "Go1 Play requires a current manifest-backed policy; "
+                f"rejected policy: {self.policy_error}"
+            ) from error
 
     def _configure_runtime_profile(self):
-        if self.manifest is None:
-            self.physics_dt = float(GO1_PHYSICS_DT)
-            self.decimation = int(GO1_DECIMATION)
-            self.policy_dt = self.physics_dt * self.decimation
-            self.default_pos = [float(value) for value in GO1_DEFAULT_JOINT_POS]
-            self.action_scale = [0.0] * len(JOINT_NAMES)
-            self.joint_kp = [float(value) for value in GO1_KP]
-            self.joint_kd = [float(value) for value in GO1_KD]
-            self.action_clip = None
-            self.reset_base_height = float(GO1_DEFAULT_BASE_POSITION[2])
-            self.height_scan_max_distance = HEIGHT_SCAN_MAX_DISTANCE
-            self.solver_settings = dict(GO1_MUJOCO_SOLVER_SETTINGS)
-            return
-
         self.physics_dt = float(self.manifest.physics_dt)
         self.decimation = int(self.manifest.decimation)
         self.policy_dt = self.manifest.policy_dt
@@ -483,16 +463,6 @@ class Script(gobot.NodeScript):
         self.last_targets = list(self.default_pos)
 
     def _print_startup(self):
-        if self.policy is None:
-            print(
-                "Go1 terrain preview started: policy=disabled fixed_dt={:.4f} "
-                "decimation={} reset_z={:.3f}".format(
-                    self.physics_dt,
-                    self.decimation,
-                    self.reset_base_position[2],
-                )
-            )
-            return
         print(
             "Go1 policy playback started: task={} obs={} actions={} fixed_dt={:.4f} "
             "policy_dt={:.4f} decimation={} reset_z={:.3f}".format(
@@ -510,9 +480,6 @@ class Script(gobot.NodeScript):
         if not self.playing or not self._ensure_world_controls():
             return
         if self._update_keyboard_command(delta):
-            return
-        if self.policy is None:
-            self.ticks += 1
             return
 
         policy_tick = self.ticks % self.decimation == 0
