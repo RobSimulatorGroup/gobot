@@ -3,12 +3,14 @@
 This example keeps the robot project self-contained:
 
 - `assets/xml/go1.xml` is the original MJCF robot asset retained for import/equivalence checks.
+- `go1_profile.py` owns the example-local Go1 articulation and controller profile.
+- `go1_velocity_contract.py` owns the versioned policy identity shared by training and playback.
 - `go1.jscn` is the Gobot robot scene imported from `go1.xml`.
 - `go1_scene.jscn` references `go1.jscn` and owns the `terrain_world/terrain` authoring nodes.
 - `terrain/rough_terrain.jres` is the versioned procedural terrain recipe used by the editor, playback, and training.
 - `train/go1_velocity_train.py` trains the Go1-owned velocity task into `policies/`.
 - `train/go1_velocity_env.py` contains the Go1 rsl_rl vector environment. It trains from the Gobot `.jscn` scene through a scene-authored CPU batch backend facade, not by importing XML directly.
-- `train/go1_velocity_cfg.py` contains Go1 joints, rewards, PPO, command, and terrain spawn-curriculum settings.
+- `train/go1_velocity_cfg.py` contains rewards, PPO, command, solver, and terrain spawn-curriculum settings.
 - `scripts/go1.py` is attached to the `go1_scene.jscn` root and plays a trained policy in `gobot_editor`.
 - `policies/go1_velocity.pt` is the default training output.
 - `policies/go1_velocity.onnx` is generated from that checkpoint for lightweight playback.
@@ -20,7 +22,7 @@ install supplies `gobot`; no source/build `PYTHONPATH` is needed:
 
 ```bash
 cd /home/wqq/gobot
-uv run python examples/go1/tools/refresh_go1_robot_scene.py
+uv run python -m examples.go1.tools.refresh_go1_robot_scene
 ```
 
 This refreshes `go1.jscn` from `assets/xml/go1.xml` and restores the
@@ -30,11 +32,11 @@ builds render and collision geometry without serializing generated height
 arrays. The terrain is visible as soon as the scene is opened, before entering
 Play Mode, and training consumes the same authored recipe.
 
-Train from the Go1 project root:
+Train from the repository root:
 
 ```bash
 cd /home/wqq/gobot
-uv run --extra train python examples/go1/train/go1_velocity_train.py \
+uv run --extra train python -m examples.go1.train.go1_velocity_train \
   --num-envs 256 \
   --iterations 10000 \
   --device cuda \
@@ -48,7 +50,7 @@ script:
 
 ```bash
 cd /home/wqq/gobot
-uv run --extra train python examples/go1/train/go1_velocity_train.py --cpu-batch --iterations 10
+uv run --extra train python -m examples.go1.train.go1_velocity_train --cpu-batch --iterations 10
 ```
 
 Benchmark the Gobot Go1 vector env hot path without the PPO learner:
@@ -80,7 +82,7 @@ Resume from the latest checkpoint in the log directory:
 
 ```bash
 cd /home/wqq/gobot
-uv run --extra train python examples/go1/train/go1_velocity_train.py \
+uv run --extra train python -m examples.go1.train.go1_velocity_train \
   --num-envs 256 \
   --iterations 10000 \
   --device cuda \
@@ -95,7 +97,7 @@ Export a trained checkpoint for lightweight editor playback:
 
 ```bash
 cd /home/wqq/gobot
-uv run --extra train python examples/go1/tools/export_policy_onnx.py \
+uv run --extra train python -m examples.go1.tools.export_policy_onnx \
   --checkpoint examples/go1/policies/go1_velocity.pt \
   --output examples/go1/policies/go1_velocity.onnx
 ```

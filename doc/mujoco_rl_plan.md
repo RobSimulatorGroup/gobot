@@ -193,9 +193,11 @@ second runtime source.
 
 The backend-neutral kernel split is complete: Python sources include no physics
 backend headers, `MuJoCoPhysicsWorld` has no Python friend, and architecture
-tests reject raw MuJoCo pointers or binding storage in Python code. The next
-split is smaller and above physics: move the locomotion view's command state,
-foot history, and zero-copy buffers from the binding translation unit into a
+tests reject raw MuJoCo pointers or binding storage in Python code. Batched
+velocity-command state, sampling, timers, and frame conversion now live in the
+Python-independent `LocomotionCommandRuntime` service with an independent RNG
+per environment. The next split is smaller and above physics: move foot history
+and zero-copy state buffers from the binding translation unit into a
 `LocomotionBatchRuntime` simulation service. The pybind class should then only
 adapt NumPy arrays and lifecycle calls to that service.
 

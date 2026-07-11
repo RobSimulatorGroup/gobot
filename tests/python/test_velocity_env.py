@@ -8,9 +8,12 @@ from types import SimpleNamespace
 import numpy as np
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
+GO1_PROJECT = REPO_ROOT / "examples/go1"
 sys.path.insert(0, str(REPO_ROOT))
+sys.path.insert(0, str(GO1_PROJECT))
 
 from examples.go1.scripts import go1 as go1_playback
+from examples.go1 import go1_profile
 from examples.go1.train import go1_velocity_cfg as go1_cfg
 from examples.go1.train.go1_velocity_env import Go1VelocityEnv
 import gobot
@@ -75,6 +78,8 @@ def test_repo_imports_use_one_gobot_package():
     assert gobot.__version__ == gobot._core.__version__
     assert gobot.__package__ == "gobot"
     assert gobot.rl.__package__ == "gobot.rl"
+    assert go1_profile.__package__ == "examples.go1"
+    assert not (REPO_ROOT / "python/gobot/rl/tasks/go1.py").exists()
 
 
 def test_batch_env_state_contract():

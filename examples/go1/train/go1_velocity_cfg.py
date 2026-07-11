@@ -5,12 +5,13 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 import math
 from pathlib import Path
+from types import MappingProxyType
 from typing import Any, Literal, Mapping
 
 from gobot.rl.locomotion import UniformVelocityCommandCfg, UniformVelocityCommandRanges, VelocityCommandStage
-from gobot.rl.tasks.go1 import (
+
+from ..go1_profile import (
     GO1_ARMATURE,
-    GO1_DECIMATION,
     GO1_DEFAULT_JOINT_POS,
     GO1_EFFORT_LIMIT,
     GO1_FOOT_LINK_NAMES,
@@ -18,11 +19,28 @@ from gobot.rl.tasks.go1 import (
     GO1_JOINT_NAMES,
     GO1_KD,
     GO1_KP,
-    GO1_MUJOCO_SOLVER_SETTINGS,
-    GO1_PHYSICS_DT,
-    GO1_TASK_NAME,
-    GO1_TASK_VERSION,
     GO1_VELOCITY_LIMIT,
+)
+from ..go1_velocity_contract import GO1_TASK_NAME, GO1_TASK_VERSION
+
+
+GO1_PHYSICS_DT = 0.005
+GO1_DECIMATION = 4
+
+GO1_MUJOCO_SOLVER_SETTINGS: Mapping[str, Any] = MappingProxyType(
+    {
+        "solver": "Newton",
+        "integrator": "ImplicitFast",
+        "cone": "Elliptic",
+        "jacobian": "Auto",
+        "iterations": 10,
+        "line_search_iterations": 20,
+        "convex_collision_iterations": 500,
+        "tolerance": 1.0e-8,
+        "line_search_tolerance": 0.01,
+        "convex_collision_tolerance": 1.0e-6,
+        "impedance_ratio": 10.0,
+    }
 )
 
 GO1_ACTION_SCALE: Mapping[str, float] = {

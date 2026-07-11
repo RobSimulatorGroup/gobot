@@ -6,7 +6,7 @@ from pathlib import Path
 import re
 
 import gobot
-from gobot.rl.tasks.go1 import (
+from ..go1_profile import (
     GO1_JOINT_NAMES,
     GO1_ARMATURE,
     GO1_EFFORT_LIMIT,

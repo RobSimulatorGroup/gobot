@@ -71,7 +71,9 @@ scene-authored MuJoCo CPU batch world through the normal Python API. It contains
 
 - `train/go1_velocity_train.py`: the rsl_rl PPO training entry point.
 - `train/go1_velocity_env.py`: the Go1-owned vectorized Gobot velocity environment.
-- `train/go1_velocity_cfg.py`: Go1 joints, rewards, PPO, command, and terrain spawn-curriculum settings.
+- `go1_profile.py`: the example-local articulation, default pose, drives, and actuator limits.
+- `go1_velocity_contract.py`: the policy task name and version shared by training and playback.
+- `train/go1_velocity_cfg.py`: rewards, PPO, command, solver, and terrain spawn-curriculum settings.
 - `go1_scene.jscn`: the authored scene with an editor-visible `Terrain3D` node.
 - `terrain/rough_terrain.jres`: the compact versioned procedural terrain recipe shared by editor, Play, and training.
 - `go1.jscn` and `assets/`: the imported robot scene and source meshes.

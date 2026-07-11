@@ -1,15 +1,6 @@
-"""Canonical Go1 articulation and controller profile."""
+"""Unitree Go1 articulation profile owned by the Go1 example."""
 
 from __future__ import annotations
-
-from types import MappingProxyType
-from typing import Any, Mapping
-
-
-GO1_TASK_NAME = "go1_rough_velocity"
-GO1_TASK_VERSION = "go1_rough_velocity_numpy_v2"
-GO1_PHYSICS_DT = 0.005
-GO1_DECIMATION = 4
 
 
 GO1_JOINT_NAMES: tuple[str, ...] = (
@@ -59,25 +50,9 @@ GO1_ARMATURE: tuple[float, ...] = _joint_values(0.000111842 * 6.0**2, 0.00011184
 GO1_EFFORT_LIMIT: tuple[float, ...] = _joint_values(23.7, 35.55)
 GO1_VELOCITY_LIMIT: tuple[float, ...] = _joint_values(30.1, 20.06)
 
-GO1_MUJOCO_SOLVER_SETTINGS: Mapping[str, Any] = MappingProxyType(
-    {
-        "solver": "Newton",
-        "integrator": "ImplicitFast",
-        "cone": "Elliptic",
-        "jacobian": "Auto",
-        "iterations": 10,
-        "line_search_iterations": 20,
-        "convex_collision_iterations": 500,
-        "tolerance": 1.0e-8,
-        "line_search_tolerance": 0.01,
-        "convex_collision_tolerance": 1.0e-6,
-        "impedance_ratio": 10.0,
-    }
-)
 
 __all__ = [
     "GO1_ARMATURE",
-    "GO1_DECIMATION",
     "GO1_DEFAULT_BASE_POSITION",
     "GO1_DEFAULT_JOINT_POS",
     "GO1_EFFORT_LIMIT",
@@ -86,9 +61,5 @@ __all__ = [
     "GO1_JOINT_NAMES",
     "GO1_KD",
     "GO1_KP",
-    "GO1_MUJOCO_SOLVER_SETTINGS",
-    "GO1_PHYSICS_DT",
-    "GO1_TASK_NAME",
-    "GO1_TASK_VERSION",
     "GO1_VELOCITY_LIMIT",
 ]

@@ -15,10 +15,7 @@ import gobot
 from gobot.rl.rsl_rl import RslRlVecEnvWrapper
 from gobot.rl.locomotion.math import _quat_to_yaw
 
-try:
-    from .go1_velocity_env import Go1VelocityEnv
-except ImportError:
-    from go1_velocity_env import Go1VelocityEnv
+from .go1_velocity_env import Go1VelocityEnv
 
 
 @dataclass

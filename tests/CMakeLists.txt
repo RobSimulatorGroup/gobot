@@ -119,9 +119,10 @@ set_target_properties(test_scene_play_session PROPERTIES FOLDER tests)
 package_add_test(test_physics_server physics/test_physics_server.cpp)
 package_add_test(test_joint_controller physics/test_joint_controller.cpp)
 package_add_test(test_simulation_server simulation/test_simulation_server.cpp)
+package_add_test(test_locomotion_command_runtime simulation/test_locomotion_command_runtime.cpp)
 
 set(GOBOT_PYTHON_TEST_ENV
-        "HOME=/tmp/gobot-test-home;PYTHONNOUSERSITE=1;PYTHONPATH=${CMAKE_BINARY_DIR}/python")
+        "HOME=/tmp/gobot-test-home;PYTHONNOUSERSITE=1;PYTHONPATH=${CMAKE_SOURCE_DIR}:${CMAKE_BINARY_DIR}/python")
 if(GOBOT_PYTHON_LIBRARY_DIR)
     string(APPEND GOBOT_PYTHON_TEST_ENV
             ";LD_LIBRARY_PATH=${GOBOT_PYTHON_LIBRARY_DIR}:${CMAKE_BINARY_DIR}/python/gobot")

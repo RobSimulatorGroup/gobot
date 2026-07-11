@@ -21,14 +21,9 @@ from gobot.rl.policy import (
 )
 from gobot.rl.rsl_rl import RslRlVecEnvWrapper
 
-try:
-    from .go1_velocity_cfg import go1_velocity_cfg, rsl_rl_train_cfg
-    from .go1_velocity_env import Go1VelocityEnv
-    from .go1_velocity_video import Go1TrainingVideoCfg, Go1TrainingVideoRecorder, VideoCheckpointRunnerMixin
-except ImportError:
-    from go1_velocity_cfg import go1_velocity_cfg, rsl_rl_train_cfg
-    from go1_velocity_env import Go1VelocityEnv
-    from go1_velocity_video import Go1TrainingVideoCfg, Go1TrainingVideoRecorder, VideoCheckpointRunnerMixin
+from .go1_velocity_cfg import go1_velocity_cfg, rsl_rl_train_cfg
+from .go1_velocity_env import Go1VelocityEnv
+from .go1_velocity_video import Go1TrainingVideoCfg, Go1TrainingVideoRecorder, VideoCheckpointRunnerMixin
 
 
 class Go1OnPolicyRunner(VideoCheckpointRunnerMixin, OnPolicyRunner):

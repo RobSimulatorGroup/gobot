@@ -14,12 +14,11 @@ from gobot.rl.policy import (
     scene_bundle_digest,
 )
 from gobot.rl.spec import ActionSpec, SpecField
-from gobot.rl.tasks.go1 import (
+from go1_profile import (
     GO1_DEFAULT_BASE_POSITION,
     GO1_JOINT_NAMES,
-    GO1_TASK_NAME,
-    GO1_TASK_VERSION,
 )
+from go1_velocity_contract import GO1_TASK_NAME, GO1_TASK_VERSION
 
 
 TASK_NAME = GO1_TASK_NAME

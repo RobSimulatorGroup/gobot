@@ -59,6 +59,12 @@ Python task code may consume NumPy views for state, actions, resets, commands,
 and task buffers. It must not read `mjModel`, `mjData`, MuJoCo ids, or per-node
 runtime dictionaries in the hot path.
 
+`LocomotionCommandRuntime` owns batched velocity-command sampling, timers,
+heading/world-frame conversion, and one independent random stream per
+environment. Python bindings only validate array shapes and expose views of
+those buffers. Contact history and the remaining locomotion state buffers are
+the next runtime ownership slice to move out of the binding layer.
+
 ## Policy Contract
 
 Training checkpoints, exported ONNX models, and Play Mode use one
@@ -107,8 +113,9 @@ New code must not add more dependencies in those directions.
 
 ## Current Migration Order
 
-1. Move locomotion command/history/buffer ownership into a bindable simulation
-   service on top of the completed typed physics batch contract.
+1. Move locomotion contact-history and state-buffer ownership into a bindable
+   simulation service on top of the completed typed physics batch contract;
+   command ownership has moved to `LocomotionCommandRuntime`.
 2. Represent procedural terrain configuration as a small versioned scene
    resource; do not check generated height arrays into projects.
 3. Split CMake targets so invalid dependency directions fail at link time.

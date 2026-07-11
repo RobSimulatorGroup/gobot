@@ -119,7 +119,7 @@ for exporting checkpoints to ONNX.
 Run example training through `uv` rather than a conda Python path:
 
 ```bash
-uv run --extra train python examples/go1/train/go1_velocity_train.py --num-envs 256 --iterations 1500
+uv run --extra train python -m examples.go1.train.go1_velocity_train --num-envs 256 --iterations 10000
 ```
 
 Packaged examples are available from the editor start screen under `Examples`.

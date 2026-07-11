@@ -32,24 +32,14 @@ from gobot.rl.locomotion.math import (
     _quat_from_yaw,
 )
 
-try:
-    from .go1_velocity_cfg import (
-        GO1_ARMATURE,
-        GO1_EFFORT_LIMIT,
-        GO1_TASK_VERSION,
-        GO1_VELOCITY_LIMIT,
-        Go1VelocityCfg,
-        go1_velocity_cfg,
-    )
-except ImportError:
-    from go1_velocity_cfg import (
-        GO1_ARMATURE,
-        GO1_EFFORT_LIMIT,
-        GO1_TASK_VERSION,
-        GO1_VELOCITY_LIMIT,
-        Go1VelocityCfg,
-        go1_velocity_cfg,
-    )
+from .go1_velocity_cfg import (
+    GO1_ARMATURE,
+    GO1_EFFORT_LIMIT,
+    GO1_TASK_VERSION,
+    GO1_VELOCITY_LIMIT,
+    Go1VelocityCfg,
+    go1_velocity_cfg,
+)
 
 _GO1_ROUGH_REWARD_TERM_NAMES: tuple[str, ...] = (
     "track_linear_velocity",

@@ -4,7 +4,7 @@ import math
 import pathlib
 
 import gobot
-from gobot.rl.tasks.go1 import (
+from examples.go1.go1_profile import (
     GO1_DEFAULT_BASE_POSITION,
     GO1_DEFAULT_JOINT_POS,
     GO1_JOINT_NAMES,
