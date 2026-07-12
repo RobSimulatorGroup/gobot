@@ -63,10 +63,12 @@ examples/go1/policies/*.onnx
 examples/go1/policies/*.manifest.json
 
 # Local reference checkouts used during development.
+/.upstream/
 /envpool/
 /mjlab/
 /mujoco/
 /mujoco_warp/
+/newton/
 /rsl_rl/
 /UniLab/
 /mujoco_uni/
