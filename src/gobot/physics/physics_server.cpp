@@ -6,12 +6,57 @@
 
 #include "gobot/physics/physics_server.hpp"
 
+#include <mutex>
+#include <utility>
+
 #include "gobot/core/registration.hpp"
 #include "gobot/error_macros.hpp"
-#include "gobot/physics/backends/mujoco_physics_world.hpp"
-#include "gobot/physics/backends/null_physics_world.hpp"
 
 namespace gobot {
+namespace {
+
+struct BackendRegistration {
+    PhysicsBackendInfo info;
+    PhysicsServer::WorldFactory factory;
+};
+
+std::vector<BackendRegistration>& BackendRegistry() {
+    static std::vector<BackendRegistration> registry;
+    return registry;
+}
+
+std::mutex& BackendRegistryMutex() {
+    static std::mutex mutex;
+    return mutex;
+}
+
+PhysicsBackendInfo MissingBackendInfo(PhysicsBackendType backend_type) {
+    switch (backend_type) {
+        case PhysicsBackendType::Null:
+            return {
+                    PhysicsBackendType::Null,
+                    "Null",
+                    false,
+                    true,
+                    false,
+                    false,
+                    "Null physics backend failed to register."
+            };
+        case PhysicsBackendType::MuJoCoCpu:
+            return {
+                    PhysicsBackendType::MuJoCoCpu,
+                    "MuJoCo CPU",
+                    false,
+                    true,
+                    false,
+                    true,
+                    "MuJoCo CPU support is not compiled into this build."
+            };
+    }
+    return {};
+}
+
+} // namespace
 
 PhysicsServer* PhysicsServer::s_singleton = nullptr;
 
@@ -55,62 +100,13 @@ PhysicsBackendInfo PhysicsServer::GetBackendInfo(PhysicsBackendType backend_type
 }
 
 PhysicsBackendInfo PhysicsServer::GetBackendInfoForBackend(PhysicsBackendType backend_type) {
-    switch (backend_type) {
-        case PhysicsBackendType::Null:
-            return {
-                    PhysicsBackendType::Null,
-                    "Null",
-                    true,
-                    true,
-                    false,
-                    false,
-                    "No-op physics backend for editor and tests."
-            };
-        case PhysicsBackendType::MuJoCoCpu:
-            return {
-                    PhysicsBackendType::MuJoCoCpu,
-                    "MuJoCo CPU",
-                    MuJoCoPhysicsWorld::IsBackendAvailable(),
-                    true,
-                    false,
-                    true,
-                    MuJoCoPhysicsWorld::IsBackendAvailable()
-                            ? "Available."
-                            : MuJoCoPhysicsWorld::GetUnavailableReason()
-            };
-        case PhysicsBackendType::MuJoCoWarp:
-            return {
-                    PhysicsBackendType::MuJoCoWarp,
-                    "MuJoCo Warp",
-                    false,
-                    false,
-                    true,
-                    true,
-                    "MuJoCo Warp backend is planned for CUDA graph vector simulation, but is not implemented yet."
-            };
-        case PhysicsBackendType::NewtonGpu:
-            return {
-                    PhysicsBackendType::NewtonGpu,
-                    "Newton GPU",
-                    false,
-                    false,
-                    true,
-                    true,
-                    "Newton backend is reserved but not implemented yet."
-            };
-        case PhysicsBackendType::RigidIpcCpu:
-            return {
-                    PhysicsBackendType::RigidIpcCpu,
-                    "Rigid IPC CPU",
-                    false,
-                    true,
-                    false,
-                    false,
-                    "Rigid IPC backend is reserved for robust intersection-free contact validation, but not implemented yet."
-            };
+    std::scoped_lock lock(BackendRegistryMutex());
+    for (const BackendRegistration& registration : BackendRegistry()) {
+        if (registration.info.type == backend_type) {
+            return registration.info;
+        }
     }
-
-    return {};
+    return MissingBackendInfo(backend_type);
 }
 
 std::vector<PhysicsBackendInfo> PhysicsServer::GetBackendInfos() const {
@@ -121,9 +117,6 @@ std::vector<PhysicsBackendInfo> PhysicsServer::GetBackendInfosForAllBackends() {
     return {
             GetBackendInfoForBackend(PhysicsBackendType::Null),
             GetBackendInfoForBackend(PhysicsBackendType::MuJoCoCpu),
-            GetBackendInfoForBackend(PhysicsBackendType::MuJoCoWarp),
-            GetBackendInfoForBackend(PhysicsBackendType::NewtonGpu),
-            GetBackendInfoForBackend(PhysicsBackendType::RigidIpcCpu),
     };
 }
 
@@ -133,21 +126,42 @@ Ref<PhysicsWorld> PhysicsServer::CreateWorld(const PhysicsWorldSettings& setting
 
 Ref<PhysicsWorld> PhysicsServer::CreateWorldForBackend(PhysicsBackendType backend_type,
                                                        const PhysicsWorldSettings& settings) {
-    Ref<PhysicsWorld> world;
-    switch (backend_type) {
-        case PhysicsBackendType::MuJoCoCpu:
-            world = MakeRef<MuJoCoPhysicsWorld>();
-            break;
-        case PhysicsBackendType::Null:
-        case PhysicsBackendType::MuJoCoWarp:
-        case PhysicsBackendType::NewtonGpu:
-        case PhysicsBackendType::RigidIpcCpu:
-            world = MakeRef<NullPhysicsWorld>();
-            break;
+    WorldFactory factory;
+    {
+        std::scoped_lock lock(BackendRegistryMutex());
+        for (const BackendRegistration& registration : BackendRegistry()) {
+            if (registration.info.type == backend_type && registration.info.available) {
+                factory = registration.factory;
+                break;
+            }
+        }
     }
 
+    if (!factory) {
+        return {};
+    }
+    Ref<PhysicsWorld> world = factory();
+    if (!world.IsValid()) {
+        return {};
+    }
     world->SetSettings(settings);
     return world;
+}
+
+bool PhysicsServer::RegisterBackend(PhysicsBackendInfo info, WorldFactory factory) {
+    if (!factory) {
+        return false;
+    }
+
+    std::scoped_lock lock(BackendRegistryMutex());
+    for (BackendRegistration& registration : BackendRegistry()) {
+        if (registration.info.type == info.type) {
+            registration = {std::move(info), std::move(factory)};
+            return true;
+        }
+    }
+    BackendRegistry().push_back({std::move(info), std::move(factory)});
+    return true;
 }
 
 } // namespace gobot

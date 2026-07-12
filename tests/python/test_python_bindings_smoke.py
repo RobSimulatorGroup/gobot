@@ -33,9 +33,7 @@ def main():
     assert infos
     assert any(info["name"] == "Null" and info["available"] for info in infos)
     assert any(info["name"] == "MuJoCo CPU" and info["robotics_focused"] for info in infos)
-    assert any(info["name"] == "MuJoCo Warp" and info["gpu"] and not info["available"] for info in infos)
     assert gobot.PhysicsBackendType.Null == gobot.physics.PhysicsBackendType.Null
-    assert gobot.PhysicsBackendType.MuJoCoWarp == gobot.physics.PhysicsBackendType.MuJoCoWarp
     assert gobot.sim.JointControllerGains is gobot.JointControllerGains
     assert gobot.scene.Node is gobot.Node
     assert gobot.scene.Terrain3D is gobot.Terrain3D

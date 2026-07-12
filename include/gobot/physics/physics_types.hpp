@@ -21,10 +21,7 @@ namespace gobot {
 
 enum class PhysicsBackendType {
     Null,
-    MuJoCoCpu,
-    NewtonGpu,
-    RigidIpcCpu,
-    MuJoCoWarp
+    MuJoCoCpu
 };
 
 enum class PhysicsShapeType {

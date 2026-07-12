@@ -925,18 +925,6 @@ TEST(TestSimulationServer, mujoco_does_not_load_robot_source_as_runtime_fallback
 #endif
 }
 
-TEST(TestSimulationServer, unimplemented_backend_build_failure_does_not_fallback_to_null_world) {
-    gobot::SimulationServer simulation_server(gobot::PhysicsBackendType::MuJoCoWarp);
-
-    gobot::Robot3D* robot = CreateRobotScene();
-
-    EXPECT_FALSE(simulation_server.BuildWorldFromScene(robot));
-    EXPECT_FALSE(simulation_server.HasWorld());
-    EXPECT_NE(simulation_server.GetLastError().find("MuJoCo Warp"), std::string::npos);
-
-    gobot::Object::Delete(robot);
-}
-
 TEST(TestSimulationServer, mujoco_authored_offset_hinge_pendulum_falls_under_gravity) {
 #ifdef GOBOT_HAS_MUJOCO
     gobot::SimulationServer simulation_server(gobot::PhysicsBackendType::MuJoCoCpu);

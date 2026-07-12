@@ -102,6 +102,32 @@ def main() -> int:
                     f"{path.relative_to(ROOT)}: simulation locomotion runtime depends on Python token {token!r}"
                 )
 
+    physics_server_source = ROOT / "src/gobot/physics/physics_server.cpp"
+    physics_server_text = physics_server_source.read_text(encoding="utf-8")
+    if "gobot/physics/backends/" in physics_server_text:
+        violations.append(
+            "src/gobot/physics/physics_server.cpp: physics service directly includes a backend implementation"
+        )
+
+    app_context_binding = ROOT / "src/gobot/python/manual_bindings/manual_binding_app_context.cpp"
+    if "GOBOT_HAS_MUJOCO" in app_context_binding.read_text(encoding="utf-8"):
+        violations.append(
+            "src/gobot/python/manual_bindings/manual_binding_app_context.cpp: "
+            "batch binding branches on a backend compile definition"
+        )
+
+    cmake_text = (ROOT / "CMakeLists.txt").read_text(encoding="utf-8")
+    for target_name in (
+        "gobot_physics_core",
+        "gobot_simulation_core",
+        "gobot_physics_mujoco_cpu",
+        "gobot_resource_mjcf",
+    ):
+        if f"add_library({target_name} OBJECT" not in cmake_text:
+            violations.append(
+                f"CMakeLists.txt: missing isolated engine object target {target_name!r}"
+            )
+
     example_specific_python_tokens = ("GO1_", "go1_rough_velocity")
     for path in source_files(ROOT / "python/gobot", {".py", ".pyi"}):
         text = path.read_text(encoding="utf-8")

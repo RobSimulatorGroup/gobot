@@ -18,6 +18,7 @@
 #include "gobot/core/registration.hpp"
 #include "gobot/log.hpp"
 #include "gobot/physics/joint_controller.hpp"
+#include "gobot/physics/physics_server.hpp"
 #include "gobot/physics/physics_sensor_utils.hpp"
 
 #ifdef GOBOT_HAS_MUJOCO
@@ -26,6 +27,24 @@
 
 namespace gobot {
 namespace {
+
+Ref<PhysicsWorld> CreateMuJoCoPhysicsWorld() {
+    return MakeRef<MuJoCoPhysicsWorld>();
+}
+
+const bool s_mujoco_backend_registered = PhysicsServer::RegisterBackend(
+        {
+                PhysicsBackendType::MuJoCoCpu,
+                "MuJoCo CPU",
+                MuJoCoPhysicsWorld::IsBackendAvailable(),
+                true,
+                false,
+                true,
+                MuJoCoPhysicsWorld::IsBackendAvailable()
+                        ? "Available."
+                        : MuJoCoPhysicsWorld::GetUnavailableReason()
+        },
+        &CreateMuJoCoPhysicsWorld);
 
 #ifdef GOBOT_HAS_MUJOCO
 constexpr RealType kMuJoCoActuatorEpsilon = 1.0e-9;

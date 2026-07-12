@@ -103,12 +103,6 @@ const char* BackendName(PhysicsBackendType backend_type) {
             return "Null";
         case PhysicsBackendType::MuJoCoCpu:
             return "MuJoCo CPU";
-        case PhysicsBackendType::MuJoCoWarp:
-            return "MuJoCo Warp";
-        case PhysicsBackendType::NewtonGpu:
-            return "Newton GPU";
-        case PhysicsBackendType::RigidIpcCpu:
-            return "Rigid IPC CPU";
     }
 
     return "Unknown";

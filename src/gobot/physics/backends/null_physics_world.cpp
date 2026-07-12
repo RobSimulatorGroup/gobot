@@ -10,11 +10,28 @@
 
 #include "gobot/core/registration.hpp"
 #include "gobot/log.hpp"
+#include "gobot/physics/physics_server.hpp"
 
 namespace gobot {
 namespace {
 
 std::atomic_bool s_reported_missing_native_raycast{false};
+
+Ref<PhysicsWorld> CreateNullPhysicsWorld() {
+    return MakeRef<NullPhysicsWorld>();
+}
+
+const bool s_null_backend_registered = PhysicsServer::RegisterBackend(
+        {
+                PhysicsBackendType::Null,
+                "Null",
+                true,
+                true,
+                false,
+                false,
+                "No-op physics backend for editor and tests."
+        },
+        &CreateNullPhysicsWorld);
 
 } // namespace
 

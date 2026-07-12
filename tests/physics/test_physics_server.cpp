@@ -49,22 +49,7 @@ TEST(TestPhysicsServer, exposes_backend_capabilities_without_optional_dependenci
     EXPECT_FALSE(mujoco_info.status.empty());
 #endif
 
-    const gobot::PhysicsBackendInfo mujoco_warp_info =
-            physics_server.GetBackendInfo(gobot::PhysicsBackendType::MuJoCoWarp);
-    EXPECT_FALSE(mujoco_warp_info.available);
-    EXPECT_FALSE(mujoco_warp_info.cpu);
-    EXPECT_TRUE(mujoco_warp_info.gpu);
-    EXPECT_TRUE(mujoco_warp_info.robotics_focused);
-    EXPECT_FALSE(mujoco_warp_info.status.empty());
-
-    const gobot::PhysicsBackendInfo rigid_ipc_info =
-            physics_server.GetBackendInfo(gobot::PhysicsBackendType::RigidIpcCpu);
-    EXPECT_FALSE(rigid_ipc_info.available);
-    EXPECT_TRUE(rigid_ipc_info.cpu);
-    EXPECT_FALSE(rigid_ipc_info.gpu);
-    EXPECT_FALSE(rigid_ipc_info.status.empty());
-
-    EXPECT_EQ(physics_server.GetBackendInfos().size(), 5);
+    EXPECT_EQ(physics_server.GetBackendInfos().size(), 2);
 }
 
 TEST(TestPhysicsServer, creates_world_for_selected_backend) {
@@ -820,12 +805,17 @@ TEST(TestPhysicsServer, stores_joint_control_targets_in_scene_state) {
 TEST(TestPhysicsServer, mujoco_world_reports_unavailable_when_not_built) {
     gobot::PhysicsServer physics_server(gobot::PhysicsBackendType::MuJoCoCpu);
     gobot::Ref<gobot::PhysicsWorld> world = physics_server.CreateWorld();
-    ASSERT_TRUE(world.IsValid());
-    EXPECT_EQ(world->GetBackendType(), gobot::PhysicsBackendType::MuJoCoCpu);
 
 #ifndef GOBOT_HAS_MUJOCO
-    EXPECT_FALSE(world->IsAvailable());
-    EXPECT_FALSE(world->GetLastError().empty());
+    EXPECT_FALSE(world.IsValid());
+    const gobot::PhysicsBackendInfo info =
+            physics_server.GetBackendInfo(gobot::PhysicsBackendType::MuJoCoCpu);
+    EXPECT_FALSE(info.available);
+    EXPECT_FALSE(info.status.empty());
+#else
+    ASSERT_TRUE(world.IsValid());
+    EXPECT_EQ(world->GetBackendType(), gobot::PhysicsBackendType::MuJoCoCpu);
+    EXPECT_TRUE(world->IsAvailable());
 #endif
 }
 

@@ -21,7 +21,7 @@ option(GOB_FETCH_MUJOCO "download MuJoCo from the official GitHub repository whe
 option(GOB_ENABLE_TRACY "enable Tracy profiler instrumentation" OFF)
 set(GOB_MUJOCO_ROOT "" CACHE PATH "MuJoCo SDK or install prefix. Supports either a CMake package install or an extracted SDK with include/ and lib/.")
 set(GOB_TRACY_ROOT "" CACHE PATH "Tracy install prefix or source checkout used when GOB_ENABLE_TRACY is ON")
-set(GOB_MUJOCO_GIT_TAG "3.8.0" CACHE STRING "MuJoCo release tag used when GOB_FETCH_MUJOCO is ON")
+set(GOB_MUJOCO_GIT_TAG "3.10.0" CACHE STRING "MuJoCo release tag used when GOB_FETCH_MUJOCO is ON")
 set(GOB_ASSIMP_IMPORTERS "COLLADA;OBJ;STL;PLY;GLTF" CACHE STRING "Assimp importers enabled for Gobot mesh import")
 
 if(NOT UNIX OR APPLE)
@@ -411,6 +411,12 @@ file(GLOB_RECURSE SOURCE_CORE CONFIGURE_DEPENDS "src/gobot/core/*.cpp")
 file(GLOB_RECURSE SOURCE_SCENE CONFIGURE_DEPENDS "src/gobot/scene/*.cpp")
 file(GLOB_RECURSE SOURCE_PHYSICS CONFIGURE_DEPENDS "src/gobot/physics/*.cpp")
 file(GLOB_RECURSE SOURCE_SIMULATION CONFIGURE_DEPENDS "src/gobot/simulation/*.cpp")
+set(SOURCE_PHYSICS_MUJOCO
+        "${CMAKE_CURRENT_SOURCE_DIR}/src/gobot/physics/backends/mujoco_physics_world.cpp")
+set(SOURCE_RESOURCE_MJCF
+        "${CMAKE_CURRENT_SOURCE_DIR}/src/gobot/core/io/resource_format_mjcf.cpp")
+list(REMOVE_ITEM SOURCE_PHYSICS ${SOURCE_PHYSICS_MUJOCO})
+list(REMOVE_ITEM SOURCE_CORE ${SOURCE_RESOURCE_MJCF})
 file(GLOB_RECURSE SOURCE_DRIVERS CONFIGURE_DEPENDS "src/gobot/drivers/*.cpp")
 file(GLOB_RECURSE SOURCE_OPENGL_DRIVERS CONFIGURE_DEPENDS "src/gobot/drivers/opengl/*.cpp")
 list(REMOVE_ITEM SOURCE_OPENGL_DRIVERS
@@ -432,8 +438,67 @@ set(SOURCE_EDITOR_SCENE
         "${CMAKE_CURRENT_SOURCE_DIR}/src/gobot/scene/imgui_window.cpp")
 list(REMOVE_ITEM SOURCE_SCENE ${SOURCE_EDITOR_SCENE})
 
+function(gobot_configure_engine_object_target TARGET_NAME)
+    target_compile_options(${TARGET_NAME} PRIVATE
+            "-fno-gnu-unique"
+            "-Wno-volatile"
+            "-Wno-deprecated-enum-enum-conversion")
+    target_include_directories(${TARGET_NAME}
+            PRIVATE
+                ${CMAKE_CURRENT_SOURCE_DIR}/include
+                ${PROJECT_BINARY_DIR}
+                ${PROJECT_BINARY_DIR}/generated)
+    target_link_libraries(${TARGET_NAME}
+            PRIVATE
+                RTTR::Core
+                stb
+                gli
+                spdlog::spdlog
+                fmt::fmt
+                Eigen3::Eigen
+                magic_enum::magic_enum
+                nlohmann_json::nlohmann_json
+                glad)
+    target_compile_definitions(${TARGET_NAME}
+            PRIVATE
+                GOBOT_VERSION_MAJOR=${PROJECT_VERSION_MAJOR}
+                GOBOT_VERSION_MINOR=${PROJECT_VERSION_MINOR}
+                GOBOT_VERSION_PATCH=${PROJECT_VERSION_PATCH}
+                GOBOT_VERSION="${PROJECT_VERSION}"
+                GOBOT_VERSION_COMMIT="${GOBOT_VERSION_COMMIT}")
+endfunction()
+
+add_library(gobot_physics_core OBJECT ${SOURCE_PHYSICS})
+gobot_configure_engine_object_target(gobot_physics_core)
+
+add_library(gobot_simulation_core OBJECT ${SOURCE_SIMULATION})
+gobot_configure_engine_object_target(gobot_simulation_core)
+
+add_library(gobot_physics_mujoco_cpu OBJECT ${SOURCE_PHYSICS_MUJOCO})
+gobot_configure_engine_object_target(gobot_physics_mujoco_cpu)
+
+add_library(gobot_resource_mjcf OBJECT ${SOURCE_RESOURCE_MJCF})
+gobot_configure_engine_object_target(gobot_resource_mjcf)
+
+if(GOB_BUILD_MUJOCO)
+    target_compile_definitions(gobot_physics_mujoco_cpu PRIVATE GOBOT_HAS_MUJOCO=1)
+    target_compile_definitions(gobot_resource_mjcf PRIVATE GOBOT_HAS_MUJOCO=1)
+    target_link_libraries(gobot_physics_mujoco_cpu PRIVATE ${GOBOT_MUJOCO_TARGET})
+    target_link_libraries(gobot_resource_mjcf PRIVATE ${GOBOT_MUJOCO_TARGET})
+endif()
+
 # https://github.com/bincrafters/community/issues/466#issuecomment-426265654
-add_library(gobot SHARED ${SOURCE_CORE} ${SOURCE_RENDERING} ${SOURCE_SCENE} ${SOURCE_PHYSICS} ${SOURCE_SIMULATION} ${SOURCE_OPENGL_DRIVERS} ${SOURCE_APP_RUNTIME} ${SOURCE_PYTHON_RUNTIME})
+add_library(gobot SHARED
+        ${SOURCE_CORE}
+        ${SOURCE_RENDERING}
+        ${SOURCE_SCENE}
+        ${SOURCE_OPENGL_DRIVERS}
+        ${SOURCE_APP_RUNTIME}
+        ${SOURCE_PYTHON_RUNTIME}
+        $<TARGET_OBJECTS:gobot_physics_core>
+        $<TARGET_OBJECTS:gobot_simulation_core>
+        $<TARGET_OBJECTS:gobot_physics_mujoco_cpu>
+        $<TARGET_OBJECTS:gobot_resource_mjcf>)
 target_compile_options(gobot PUBLIC "-fno-gnu-unique" "-Wno-volatile" "-Wno-deprecated-enum-enum-conversion")
 
 # https://forum.qt.io/topic/97296/export-qobject-based-class-from-dll/2
@@ -481,8 +546,7 @@ if(GOB_BUILD_ASSIMP AND GOBOT_ASSIMP_TARGET)
 endif()
 
 if(GOB_BUILD_MUJOCO)
-    target_compile_definitions(gobot PUBLIC GOBOT_HAS_MUJOCO=1)
-    target_link_libraries(gobot PUBLIC ${GOBOT_MUJOCO_TARGET})
+    target_link_libraries(gobot PRIVATE ${GOBOT_MUJOCO_TARGET})
 endif()
 
 if(GOB_BUILD_EGL AND GOBOT_EGL_TARGET)

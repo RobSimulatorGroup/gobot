@@ -18,9 +18,6 @@ Quaternion = FloatArray
 class PhysicsBackendType(Enum):
     Null: ClassVar[PhysicsBackendType]
     MuJoCoCpu: ClassVar[PhysicsBackendType]
-    MuJoCoWarp: ClassVar[PhysicsBackendType]
-    NewtonGpu: ClassVar[PhysicsBackendType]
-    RigidIpcCpu: ClassVar[PhysicsBackendType]
 
 
 class PhysicsSolverType(Enum):

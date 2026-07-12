@@ -525,9 +525,6 @@ PhysicsBackendType ParseBackend(const std::string& backend) {
     if (backend == "mujoco" || backend == "mujoco_cpu") {
         return PhysicsBackendType::MuJoCoCpu;
     }
-    if (backend == "mujoco_warp" || backend == "warp") {
-        return PhysicsBackendType::MuJoCoWarp;
-    }
     throw std::invalid_argument("unknown Gobot physics backend '" + backend + "'");
 }
 

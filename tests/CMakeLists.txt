@@ -15,6 +15,9 @@ add_library(gobot_test_support
 target_compile_options(gobot_test_support PUBLIC "${GOBOT_COMPILE_OPTIONS}")
 target_include_directories(gobot_test_support PUBLIC "${CMAKE_CURRENT_SOURCE_DIR}/support")
 target_link_libraries(gobot_test_support PUBLIC gtest gmock gobot)
+if(GOB_BUILD_MUJOCO AND GOBOT_MUJOCO_TARGET)
+    target_compile_definitions(gobot_test_support PUBLIC GOBOT_HAS_MUJOCO=1)
+endif()
 
 macro(package_add_test TESTNAME FILES)
     add_executable(${TESTNAME} ${FILES} ${ARGN})

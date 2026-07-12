@@ -6,6 +6,7 @@
 
 #pragma once
 
+#include <functional>
 #include <memory>
 
 #include "gobot/core/object.hpp"
@@ -18,6 +19,8 @@ class GOBOT_EXPORT PhysicsServer : public Object {
     GOBCLASS(PhysicsServer, Object)
 
 public:
+    using WorldFactory = std::function<Ref<PhysicsWorld>()>;
+
     explicit PhysicsServer(PhysicsBackendType backend_type = PhysicsBackendType::Null,
                            bool register_singleton = true);
 
@@ -45,6 +48,8 @@ public:
 
     static Ref<PhysicsWorld> CreateWorldForBackend(PhysicsBackendType backend_type,
                                                    const PhysicsWorldSettings& settings = {});
+
+    static bool RegisterBackend(PhysicsBackendInfo info, WorldFactory factory);
 
 private:
     static PhysicsServer* s_singleton;

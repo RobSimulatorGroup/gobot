@@ -343,26 +343,13 @@ public:
     }
 
     void StepActions(std::uint64_t ticks, std::size_t workers, bool simulate_action_latency) {
-#ifdef GOBOT_HAS_MUJOCO
         PrepareActionTargets(simulate_action_latency);
         Step(ticks, workers);
-#else
-        GOB_UNUSED(ticks);
-        GOB_UNUSED(workers);
-        GOB_UNUSED(simulate_action_latency);
-        throw std::runtime_error("Gobot was built without MuJoCo support");
-#endif
     }
 
     void Step(std::uint64_t ticks, std::size_t workers) {
-#ifdef GOBOT_HAS_MUJOCO
         RunPhysicsBatch(ticks, workers, false, false);
         batch_runtime_.UpdateState(physics_state_);
-#else
-        GOB_UNUSED(ticks);
-        GOB_UNUSED(workers);
-        throw std::runtime_error("Gobot was built without MuJoCo support");
-#endif
     }
 
     void ConfigureCommand(double step_dt,
@@ -481,7 +468,6 @@ public:
     }
 
     void StepTaskInputs(std::uint64_t ticks, std::size_t workers, bool simulate_action_latency) {
-#ifdef GOBOT_HAS_MUJOCO
         ResetStepProfile();
         const TimePoint total_begin = Clock::now();
         TimePoint phase_begin = Clock::now();
@@ -503,21 +489,11 @@ public:
                 physics_dt);
         SetProfileMs(kStepProfileCommand, ElapsedMs(phase_begin));
         SetProfileMs(kStepProfileTotal, ElapsedMs(total_begin));
-#else
-        GOB_UNUSED(ticks);
-        GOB_UNUSED(workers);
-        GOB_UNUSED(simulate_action_latency);
-        throw std::runtime_error("Gobot was built without MuJoCo support");
-#endif
     }
 
     void Refresh() {
-#ifdef GOBOT_HAS_MUJOCO
         RunPhysicsBatch(0, 0, false, false);
         batch_runtime_.UpdateState(physics_state_);
-#else
-        throw std::runtime_error("Gobot was built without MuJoCo support");
-#endif
     }
 
     void Reset(const std::vector<std::size_t>& env_ids) {
