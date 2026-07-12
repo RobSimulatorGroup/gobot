@@ -39,6 +39,12 @@ train = [
     "tensordict",
     "torch>=2.7",
 ]
+mujoco-warp = [
+    "mujoco==3.10.1.dev946137815; sys_platform == 'linux' and platform_machine == 'x86_64'",
+    "mujoco-warp==3.10.0.1; sys_platform == 'linux' and platform_machine == 'x86_64'",
+    "torch>=2.7; sys_platform == 'linux' and platform_machine == 'x86_64'",
+    "warp-lang==1.14.0; sys_platform == 'linux' and platform_machine == 'x86_64'",
+]
 
 [dependency-groups]
 dev = [
@@ -51,9 +57,28 @@ name = "pytorch-cu128"
 url = "https://download.pytorch.org/whl/cu128"
 explicit = true
 
+[[tool.uv.index]]
+name = "mujoco"
+url = "https://py.mujoco.org/"
+explicit = true
+
 [tool.uv.sources]
 torch = [
     { index = "pytorch-cu128", extra = "train", marker = "sys_platform == 'linux'" },
+    { index = "pytorch-cu128", extra = "mujoco-warp", marker = "sys_platform == 'linux'" },
+]
+mujoco = { index = "mujoco", extra = "mujoco-warp", marker = "sys_platform == 'linux' and platform_machine == 'x86_64'" }
+
+[[tool.uv.dependency-metadata]]
+name = "mujoco"
+version = "3.10.1.dev946137815"
+requires-python = ">=3.10"
+requires-dist = [
+    "absl-py",
+    "etils[epath]",
+    "glfw",
+    "numpy",
+    "pyopengl",
 ]
 
 [tool.scikit-build]
@@ -66,3 +91,5 @@ components = ["python"]
 
 [tool.scikit-build.cmake.define]
 GOB_BUILD_TESTS = "OFF"
+GOB_FORCE_FETCH_MUJOCO = "ON"
+GOB_MUJOCO_GIT_TAG = "3.10.0"

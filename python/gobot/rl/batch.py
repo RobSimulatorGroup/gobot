@@ -1,4 +1,4 @@
-"""Reusable NumPy batch environment scaffolding."""
+"""Reusable batch environment state and CPU lifecycle scaffolding."""
 
 from __future__ import annotations
 
@@ -13,20 +13,32 @@ import numpy as np
 class BatchEnvState:
     """Batched RL state returned by Gobot environments.
 
-    The core Gobot RL contract is intentionally NumPy-only. Frameworks such as
-    RSL-RL, Gymnasium, and Torch live behind adapters.
+    Arrays may be NumPy arrays or device-native tensors. A single state must use
+    one array framework consistently so adapters can select a zero-copy path.
     """
 
-    obs: dict[str, np.ndarray]
-    reward: np.ndarray
-    terminated: np.ndarray
-    truncated: np.ndarray
+    obs: dict[str, Any]
+    reward: Any
+    terminated: Any
+    truncated: Any
     info: dict[str, Any] = field(default_factory=dict)
-    final_observation: dict[str, np.ndarray] | None = None
+    final_observation: dict[str, Any] | None = None
 
     @property
-    def done(self) -> np.ndarray:
+    def done(self) -> Any:
+        if hasattr(self.terminated, "logical_or"):
+            return self.terminated.logical_or(self.truncated)
         return np.logical_or(self.terminated, self.truncated)
+
+    @property
+    def array_backend(self) -> str:
+        module = type(self.reward).__module__.partition(".")[0]
+        return "torch" if module == "torch" else "numpy"
+
+    @property
+    def device(self) -> str:
+        device = getattr(self.reward, "device", None)
+        return "cpu" if device is None else str(device)
 
     def replace(self, **updates: Any) -> "BatchEnvState":
         return replace(self, **updates)

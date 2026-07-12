@@ -22,7 +22,18 @@ from .runtime import (
 )
 from .spec import ActionSpec, ObservationSpec, SpecField, validate_spec_metadata
 from .task_runtime import TaskRuntimeMetadata
-from . import locomotion
+from . import locomotion, providers
+from .providers import (
+    BatchPhysicsProvider,
+    BatchProviderCapabilities,
+    CompiledSceneArtifact,
+    GraphInvalidatedError,
+    MuJoCoWarpProvider,
+    MuJoCoWarpProviderAvailability,
+    MuJoCoWarpRobotLayout,
+    ProviderUnavailableError,
+    SimulationCapacityError,
+)
 from .rsl_rl import (
     RslRlBaseRunnerCfg,
     RslRlModelCfg,
@@ -36,17 +47,26 @@ from .rsl_rl import (
 __all__ = [
     "ActionSpec",
     "BatchEnvState",
+    "BatchPhysicsProvider",
+    "BatchProviderCapabilities",
     "BatchSimulationRuntime",
+    "CompiledSceneArtifact",
     "CpuBatchEnv",
     "GobotSceneBatchBackend",
     "GobotSceneBatchState",
+    "GraphInvalidatedError",
     "LocomotionBatchSpec",
     "locomotion",
+    "MuJoCoWarpProvider",
+    "MuJoCoWarpProviderAvailability",
+    "MuJoCoWarpRobotLayout",
     "NativeLocomotionBatchBackend",
     "ObservationSpec",
     "ONNX_POLICY_MANIFEST_KEY",
     "POLICY_MANIFEST_KEY",
     "PolicyManifest",
+    "ProviderUnavailableError",
+    "providers",
     "RslRlBaseRunnerCfg",
     "RslRlModelCfg",
     "RslRlOnPolicyRunnerCfg",
@@ -59,6 +79,7 @@ __all__ = [
     "policy_manifest_from_onnx_metadata",
     "read_policy_manifest_sidecar",
     "scene_bundle_digest",
+    "SimulationCapacityError",
     "TaskRuntimeMetadata",
     "validate_spec_metadata",
     "write_policy_manifest_sidecar",

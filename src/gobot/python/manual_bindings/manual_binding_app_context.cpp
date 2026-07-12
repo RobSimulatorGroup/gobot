@@ -1280,6 +1280,14 @@ void RegisterManualAppContextBindings(py::module_& module) {
                     throw std::runtime_error(context.GetLastError());
                 }
             }, py::arg("backend_type") = PhysicsBackendType::Null)
+            .def("compile_scene_artifact", [](EngineContext& context,
+                                               PhysicsBackendType backend_type) {
+                PhysicsSceneArtifact artifact;
+                if (!context.CompileSceneArtifact(backend_type, &artifact)) {
+                    throw std::runtime_error(context.GetLastError());
+                }
+                return SceneArtifactToPython(artifact);
+            }, py::arg("backend_type") = PhysicsBackendType::MuJoCoCpu)
             .def("compiled_scene_artifact", [](EngineContext& context) {
                 SimulationServer* simulation = context.GetSimulationServer();
                 Ref<PhysicsWorld> world = simulation != nullptr ? simulation->GetWorld() : Ref<PhysicsWorld>();

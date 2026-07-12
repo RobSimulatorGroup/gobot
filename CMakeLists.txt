@@ -18,6 +18,7 @@ option(GOB_BUILD_ASSIMP "build mesh import support through Assimp" ON)
 option(GOB_BUILD_MUJOCO "build MuJoCo CPU physics backend support" ON)
 option(GOB_BUILD_EGL "build EGL headless OpenGL rendering support" ON)
 option(GOB_FETCH_MUJOCO "download MuJoCo from the official GitHub repository when GOB_BUILD_MUJOCO is ON and no local SDK/package is found" ON)
+option(GOB_FORCE_FETCH_MUJOCO "use the pinned fetched MuJoCo even when an SDK/package is discoverable" OFF)
 option(GOB_ENABLE_TRACY "enable Tracy profiler instrumentation" OFF)
 set(GOB_MUJOCO_ROOT "" CACHE PATH "MuJoCo SDK or install prefix. Supports either a CMake package install or an extracted SDK with include/ and lib/.")
 set(GOB_TRACY_ROOT "" CACHE PATH "Tracy install prefix or source checkout used when GOB_ENABLE_TRACY is ON")
@@ -116,55 +117,57 @@ endif()
 
 set(GOBOT_MUJOCO_TARGET "")
 if(GOB_BUILD_MUJOCO)
-    if(GOB_MUJOCO_ROOT)
-        find_package(mujoco CONFIG QUIET
-            PATHS
-                "${GOB_MUJOCO_ROOT}"
-                "${GOB_MUJOCO_ROOT}/lib/cmake/mujoco"
-                "${GOB_MUJOCO_ROOT}/lib64/cmake/mujoco"
-            NO_DEFAULT_PATH
-        )
-    endif()
-
-    if(NOT mujoco_FOUND)
-        find_package(mujoco CONFIG QUIET)
-    endif()
-
-    if(TARGET mujoco::mujoco)
-        set(GOBOT_MUJOCO_TARGET mujoco::mujoco)
-    elseif(TARGET mujoco)
-        set(GOBOT_MUJOCO_TARGET mujoco)
-    endif()
-
-    if(NOT GOBOT_MUJOCO_TARGET)
-        find_path(GOBOT_MUJOCO_INCLUDE_DIR
-            NAMES mujoco/mujoco.h
-            HINTS
-                "${GOB_MUJOCO_ROOT}/include"
-                "${GOB_MUJOCO_ROOT}"
-        )
-        find_library(GOBOT_MUJOCO_LIBRARY
-            NAMES mujoco
-            HINTS
-                "${GOB_MUJOCO_ROOT}/lib"
-                "${GOB_MUJOCO_ROOT}/lib64"
-                "${GOB_MUJOCO_ROOT}/bin"
-                "${GOB_MUJOCO_ROOT}"
-        )
-
-        if(GOBOT_MUJOCO_INCLUDE_DIR AND GOBOT_MUJOCO_LIBRARY)
-            add_library(gobot_mujoco_sdk SHARED IMPORTED GLOBAL)
-            set_target_properties(gobot_mujoco_sdk
-                PROPERTIES
-                    IMPORTED_LOCATION "${GOBOT_MUJOCO_LIBRARY}"
-                    INTERFACE_INCLUDE_DIRECTORIES "${GOBOT_MUJOCO_INCLUDE_DIR}"
+    if(NOT GOB_FORCE_FETCH_MUJOCO)
+        if(GOB_MUJOCO_ROOT)
+            find_package(mujoco CONFIG QUIET
+                PATHS
+                    "${GOB_MUJOCO_ROOT}"
+                    "${GOB_MUJOCO_ROOT}/lib/cmake/mujoco"
+                    "${GOB_MUJOCO_ROOT}/lib64/cmake/mujoco"
+                NO_DEFAULT_PATH
             )
-            set(GOBOT_MUJOCO_TARGET gobot_mujoco_sdk)
-            message(STATUS "Gobot MuJoCo backend enabled with SDK library: ${GOBOT_MUJOCO_LIBRARY}")
+        endif()
+
+        if(NOT mujoco_FOUND)
+            find_package(mujoco CONFIG QUIET)
+        endif()
+
+        if(TARGET mujoco::mujoco)
+            set(GOBOT_MUJOCO_TARGET mujoco::mujoco)
+        elseif(TARGET mujoco)
+            set(GOBOT_MUJOCO_TARGET mujoco)
+        endif()
+
+        if(NOT GOBOT_MUJOCO_TARGET)
+            find_path(GOBOT_MUJOCO_INCLUDE_DIR
+                NAMES mujoco/mujoco.h
+                HINTS
+                    "${GOB_MUJOCO_ROOT}/include"
+                    "${GOB_MUJOCO_ROOT}"
+            )
+            find_library(GOBOT_MUJOCO_LIBRARY
+                NAMES mujoco
+                HINTS
+                    "${GOB_MUJOCO_ROOT}/lib"
+                    "${GOB_MUJOCO_ROOT}/lib64"
+                    "${GOB_MUJOCO_ROOT}/bin"
+                    "${GOB_MUJOCO_ROOT}"
+            )
+
+            if(GOBOT_MUJOCO_INCLUDE_DIR AND GOBOT_MUJOCO_LIBRARY)
+                add_library(gobot_mujoco_sdk SHARED IMPORTED GLOBAL)
+                set_target_properties(gobot_mujoco_sdk
+                    PROPERTIES
+                        IMPORTED_LOCATION "${GOBOT_MUJOCO_LIBRARY}"
+                        INTERFACE_INCLUDE_DIRECTORIES "${GOBOT_MUJOCO_INCLUDE_DIR}"
+                )
+                set(GOBOT_MUJOCO_TARGET gobot_mujoco_sdk)
+                message(STATUS "Gobot MuJoCo backend enabled with SDK library: ${GOBOT_MUJOCO_LIBRARY}")
+            endif()
         endif()
     endif()
 
-    if(NOT GOBOT_MUJOCO_TARGET AND GOB_FETCH_MUJOCO)
+    if(NOT GOBOT_MUJOCO_TARGET AND (GOB_FETCH_MUJOCO OR GOB_FORCE_FETCH_MUJOCO))
         include(FetchContent)
         # MuJoCo examples build sample apps through GLFW. Keep this disabled for
         # wheel builds so packaged Python distributions do not need extra

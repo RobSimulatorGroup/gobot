@@ -20,7 +20,18 @@ from .runtime import (
 )
 from .spec import ActionSpec, ObservationSpec, SpecField, validate_spec_metadata
 from .task_runtime import TaskRuntimeMetadata
-from . import locomotion
+from . import locomotion, providers
+from .providers import (
+    BatchPhysicsProvider,
+    BatchProviderCapabilities,
+    CompiledSceneArtifact,
+    GraphInvalidatedError,
+    MuJoCoWarpProvider,
+    MuJoCoWarpProviderAvailability,
+    MuJoCoWarpRobotLayout,
+    ProviderUnavailableError,
+    SimulationCapacityError,
+)
 from .rsl_rl import (
     RslRlBaseRunnerCfg,
     RslRlModelCfg,

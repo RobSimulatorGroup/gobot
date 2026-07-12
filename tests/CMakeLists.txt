@@ -189,6 +189,19 @@ set_tests_properties(test_velocity_env
 
 if(GOB_BUILD_MUJOCO AND GOBOT_MUJOCO_TARGET)
     add_test(
+            NAME test_python_mujoco_warp_provider
+            COMMAND ${Python3_EXECUTABLE} -S
+                    ${CMAKE_CURRENT_SOURCE_DIR}/python/test_mujoco_warp_provider.py
+    )
+    set_tests_properties(test_python_mujoco_warp_provider
+            PROPERTIES
+                ENVIRONMENT "${GOBOT_PYTHON_TEST_ENV}"
+                WORKING_DIRECTORY "${CMAKE_SOURCE_DIR}"
+    )
+endif()
+
+if(GOB_BUILD_MUJOCO AND GOBOT_MUJOCO_TARGET)
+    add_test(
             NAME test_python_go1_mujoco_sensor_smoke
             COMMAND ${Python3_EXECUTABLE} -S
                     ${CMAKE_CURRENT_SOURCE_DIR}/python/smoke_real_scene.py

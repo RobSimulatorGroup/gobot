@@ -20,6 +20,10 @@ class GOBOT_EXPORT PhysicsServer : public Object {
 
 public:
     using WorldFactory = std::function<Ref<PhysicsWorld>()>;
+    using ArtifactCompiler = std::function<bool(PhysicsSceneSnapshot,
+                                                const PhysicsWorldSettings&,
+                                                PhysicsSceneArtifact*,
+                                                std::string*)>;
 
     explicit PhysicsServer(PhysicsBackendType backend_type = PhysicsBackendType::Null,
                            bool register_singleton = true);
@@ -49,7 +53,15 @@ public:
     static Ref<PhysicsWorld> CreateWorldForBackend(PhysicsBackendType backend_type,
                                                    const PhysicsWorldSettings& settings = {});
 
-    static bool RegisterBackend(PhysicsBackendInfo info, WorldFactory factory);
+    static bool CompileSceneArtifactForBackend(PhysicsBackendType backend_type,
+                                               PhysicsSceneSnapshot scene_snapshot,
+                                               const PhysicsWorldSettings& settings,
+                                               PhysicsSceneArtifact* artifact,
+                                               std::string* error = nullptr);
+
+    static bool RegisterBackend(PhysicsBackendInfo info,
+                                WorldFactory factory,
+                                ArtifactCompiler artifact_compiler = {});
 
 private:
     static PhysicsServer* s_singleton;

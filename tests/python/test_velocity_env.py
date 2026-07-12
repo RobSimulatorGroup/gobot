@@ -19,7 +19,9 @@ from examples.go1.train.go1_velocity_env import Go1VelocityEnv
 import gobot
 from gobot.rl import (
     BatchEnvState,
+    CompiledSceneArtifact,
     CpuBatchEnv,
+    MuJoCoWarpProvider,
     TaskRuntimeMetadata,
 )
 from gobot.rl.locomotion import (
@@ -846,6 +848,99 @@ def test_rsl_rl_wrapper_keeps_core_env_numpy():
     assert extras["reward_terms"]["term"].tolist() == [1.0, 1.0]
 
 
+def test_rsl_rl_wrapper_preserves_device_native_torch_buffers():
+    torch = _require_torch()
+
+    class TorchEnv:
+        num_envs = 2
+        num_actions = 3
+        num_obs = 4
+        num_privileged_obs = 5
+        cfg = {}
+        cfg_obj = object()
+        seed = 1
+        max_episode_length = 10
+        accepts_device_actions = True
+
+        def __init__(self):
+            self.episode_length_buf = torch.zeros(2, dtype=torch.long)
+            self.state = BatchEnvState(
+                obs={
+                    "actor": torch.zeros((2, 4), dtype=torch.float32),
+                    "critic": torch.ones((2, 5), dtype=torch.float32),
+                },
+                reward=torch.zeros(2, dtype=torch.float32),
+                terminated=torch.zeros(2, dtype=torch.bool),
+                truncated=torch.zeros(2, dtype=torch.bool),
+                info={"steps": self.episode_length_buf},
+            )
+            self.last_actions = None
+
+        def reset(self, seed=None):
+            return self.state.obs, {}
+
+        def step(self, actions):
+            self.last_actions = actions
+            self.state.reward.fill_(2.0)
+            self.state.truncated[1] = True
+            self.state.info["time_outs"] = self.state.truncated
+            return self.state
+
+        def close(self):
+            pass
+
+    env = TorchEnv()
+    wrapper = RslRlVecEnvWrapper(env, device="cpu")
+    actions = torch.zeros((2, 3), dtype=torch.float32)
+    obs, reward, done, extras = wrapper.step(actions)
+
+    assert env.last_actions is actions
+    assert obs["actor"].data_ptr() == env.state.obs["actor"].data_ptr()
+    assert obs["policy"].data_ptr() == env.state.obs["actor"].data_ptr()
+    assert reward.data_ptr() == env.state.reward.data_ptr()
+    assert extras["time_outs"].data_ptr() == env.state.truncated.data_ptr()
+    assert done.tolist() == [False, True]
+    assert env.state.array_backend == "torch"
+    assert env.state.device == "cpu"
+    assert wrapper.memory_profile()["device_native_observations"] is True
+
+
+def test_compiled_scene_artifact_validates_robot_prefixes():
+    content = "<mujoco/>"
+    artifact_mapping = {
+        "schema_version": 1,
+        "backend": "MuJoCoCpu",
+        "format": "mjcf",
+        "content": content,
+        "content_digest": "fnv1a64:f4053c9f5a9db5a9",
+        "backend_version": "3.10.0",
+        "dimensions": {"nq": 7, "nv": 6, "nu": 12},
+        "robot_names": ["go1"],
+        "robot_prefixes": ["go1_"],
+    }
+    artifact = CompiledSceneArtifact.from_mapping(artifact_mapping)
+    assert artifact.robot_prefix("go1") == "go1_"
+    assert artifact.dimensions["nq"] == 7
+    assert artifact.content_digest == artifact.digest
+    try:
+        CompiledSceneArtifact.from_mapping(
+            {"schema_version": 2, "format": "mjcf", "content": content}
+        )
+        raise AssertionError("unsupported artifact schema should fail")
+    except ValueError as error:
+        assert "schema" in str(error)
+    try:
+        CompiledSceneArtifact.from_mapping(
+            {**artifact_mapping, "content": "<mujoco model='changed'/>"}
+        )
+        raise AssertionError("modified artifact content should fail digest validation")
+    except ValueError as error:
+        assert "digest mismatch" in str(error)
+    availability = MuJoCoWarpProvider.availability()
+    assert isinstance(availability.available, bool)
+    assert availability.available or availability.reason
+
+
 def test_go1_current_policy_contract():
     cfg = go1_cfg.go1_velocity_cfg(project_path="/tmp/go1")
     actor_schema = velocity_actor_observation_schema(
@@ -1124,6 +1219,8 @@ def main():
         test_go1_native_base_mass_randomization_preserves_reset_state_distribution,
         test_go1_velocity_push_adds_to_current_world_velocity,
         test_rsl_rl_wrapper_keeps_core_env_numpy,
+        test_rsl_rl_wrapper_preserves_device_native_torch_buffers,
+        test_compiled_scene_artifact_validates_robot_prefixes,
     ]
     skipped = 0
     for test in tests:

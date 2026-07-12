@@ -5,6 +5,7 @@
 #include "gobot/core/config/project_setting.hpp"
 #include "gobot/core/io/resource_loader.hpp"
 #include "gobot/main/runtime_scene_owner.hpp"
+#include "gobot/physics/physics_scene_compiler.hpp"
 #include "gobot/python/python_script_runner.hpp"
 #include "gobot/scene/node.hpp"
 #include "gobot/scene/resources/packed_scene.hpp"
@@ -179,6 +180,41 @@ bool EngineContext::RebuildWorld(bool preserve_state) {
 
     if (!simulation_server_->RebuildWorldFromScene(scene_root_, preserve_state)) {
         SetLastError(simulation_server_->GetLastError());
+        return false;
+    }
+
+    last_error_.clear();
+    return true;
+}
+
+bool EngineContext::CompileSceneArtifact(PhysicsBackendType backend_type,
+                                         PhysicsSceneArtifact* artifact) {
+    if (physics_server_ == nullptr || simulation_server_ == nullptr) {
+        SetLastError("Physics compilation services are not available.");
+        return false;
+    }
+    if (scene_root_ == nullptr) {
+        SetLastError("Cannot compile a physics artifact without a loaded scene.");
+        return false;
+    }
+    if (artifact == nullptr) {
+        SetLastError("Cannot compile a physics artifact into a null output.");
+        return false;
+    }
+
+    CompiledPhysicsScene compiled_scene;
+    std::string compile_error;
+    if (!PhysicsSceneCompiler::Compile(scene_root_, &compiled_scene, &compile_error)) {
+        SetLastError(compile_error);
+        return false;
+    }
+    if (!PhysicsServer::CompileSceneArtifactForBackend(
+                backend_type,
+                std::move(compiled_scene.snapshot),
+                simulation_server_->GetPhysicsWorldSettings(),
+                artifact,
+                &compile_error)) {
+        SetLastError(compile_error);
         return false;
     }
 

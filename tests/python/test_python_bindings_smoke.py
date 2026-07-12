@@ -33,6 +33,7 @@ def main():
     assert infos
     assert any(info["name"] == "Null" and info["available"] for info in infos)
     assert any(info["name"] == "MuJoCo CPU" and info["robotics_focused"] for info in infos)
+    mujoco_available = any(info["name"] == "MuJoCo CPU" and info["available"] for info in infos)
     assert gobot.PhysicsBackendType.Null == gobot.physics.PhysicsBackendType.Null
     assert gobot.sim.JointControllerGains is gobot.JointControllerGains
     assert gobot.scene.Node is gobot.Node
@@ -174,6 +175,12 @@ def main():
     context.clear_scene()
     gobot.save_scene(cartpole_root, "res://gobot_python_binding_cartpole.jscn")
     context.load_scene("res://gobot_python_binding_cartpole.jscn")
+    if mujoco_available:
+        compiled_artifact = context.compile_scene_artifact(gobot.PhysicsBackendType.MuJoCoCpu)
+        assert compiled_artifact["format"] == "mjcf"
+        assert compiled_artifact["robot_names"] == ["cartpole"]
+        assert compiled_artifact["dimensions"]["nq"] == 2
+        assert context.has_world is False
     context.build_world(gobot.PhysicsBackendType.Null)
     try:
         context.compiled_scene_artifact()

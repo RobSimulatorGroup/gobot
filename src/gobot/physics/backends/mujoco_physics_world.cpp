@@ -47,7 +47,8 @@ const bool s_mujoco_backend_registered = PhysicsServer::RegisterBackend(
                         ? "Available."
                         : MuJoCoPhysicsWorld::GetUnavailableReason()
         },
-        &CreateMuJoCoPhysicsWorld);
+        &CreateMuJoCoPhysicsWorld,
+        &MuJoCoSceneCompiler::Compile);
 
 #ifdef GOBOT_HAS_MUJOCO
 constexpr RealType kMuJoCoActuatorEpsilon = 1.0e-9;

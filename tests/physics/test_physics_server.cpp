@@ -1278,7 +1278,8 @@ TEST(TestPhysicsServer, mujoco_authored_terrain_compiles) {
 
     gobot::PhysicsSceneArtifact recompiled_artifact;
     std::string compile_error;
-    ASSERT_TRUE(gobot::MuJoCoSceneCompiler::Compile(
+    ASSERT_TRUE(gobot::PhysicsServer::CompileSceneArtifactForBackend(
+            gobot::PhysicsBackendType::MuJoCoCpu,
             world->GetSceneSnapshot(),
             world->GetSettings(),
             &recompiled_artifact,

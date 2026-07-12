@@ -119,6 +119,16 @@ training or directly loading `.pt` checkpoints. It does not install Python
 `imageio imageio-ffmpeg` only for MP4 training captures, and `onnx>=1.16` only
 for exporting checkpoints to ONNX.
 
+The experimental MuJoCo Warp CUDA provider is a separate optional install on
+Linux x86_64:
+
+```bash
+uv sync --extra train --extra mujoco-warp
+```
+
+Requesting this provider requires an NVIDIA CUDA device and never falls back
+implicitly to the CPU backend. Normal MuJoCo CPU training only needs `train`.
+
 Run example training through `uv` rather than a conda Python path:
 
 ```bash
@@ -152,5 +162,6 @@ uv pip install --force-reinstall dist/gobot-*.whl
 - Supported platform: Linux.
 - Python package name: `gobot`.
 - MuJoCo support is included in release wheels when available in the build.
+- MuJoCo Warp is an optional Python provider and is not a C++ scene/backend API.
 - Packaged examples: `gobot/examples/` in wheels and `examples/` in source.
 - MuJoCo RL roadmap: `doc/mujoco_rl_plan.md`.

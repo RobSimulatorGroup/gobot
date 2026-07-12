@@ -296,6 +296,62 @@ Training loops must also avoid:
 - per-env Python loops around physics stepping
 - implicit CPU fallback
 
+### Implemented Provider Boundary
+
+The first provider infrastructure follows this split:
+
+```text
+SceneTree / .jscn
+  -> PhysicsSceneCompiler
+  -> PhysicsServer backend artifact compiler
+  -> versioned PhysicsSceneArtifact (canonical MJCF + digest + name map)
+  -> gobot.rl.MuJoCoWarpProvider
+  -> MuJoCo Warp model/data and Torch CUDA views
+```
+
+`AppContext.compile_scene_artifact()` performs compilation without installing a
+runtime `PhysicsWorld`. C++ and MuJoCo Warp communicate through the artifact
+value, not through `mjModel*`, Warp arrays, CUDA pointers, or editor state. The
+provider is an optional Python package layer and therefore is not a native
+`PhysicsBackendType` exposed to scene nodes or editor serialization.
+
+The provider currently owns persistent model/data arrays, a reset mask,
+zero-copy Torch views, and captured step/forward/reset/sense graphs. It rejects
+incompatible artifacts, changed captured storage, unavailable CUDA runtimes,
+fixed-capacity overflow, and non-finite state explicitly. The RSL-RL adapter
+preserves device-native action, observation, reward, and timeout tensors when a
+task environment supplies them.
+
+This is provider infrastructure, not yet a complete CUDA Go1 task. The current
+Go1 reward, observation, terrain scan, contact history, command, and domain
+randomization implementation remains the NumPy/MuJoCo CPU semantic baseline.
+Moving that task to CUDA requires persistent task buffers and Warp/Torch kernels
+for those terms; it must not wrap the CPU task in device transfers.
+
+### Newton Admission Boundary
+
+Newton should use the same provider lifecycle before it becomes a public Gobot
+backend. A prototype may live in an optional Python provider/plugin and consume
+either the existing compiled artifact or a Newton-specific artifact registered
+through `PhysicsServer`. It must not add Newton handles or Warp arrays to
+`Scene`, `Robot3D`, `SimulationServer`, or editor APIs.
+
+The initial Newton prototype must demonstrate all of the following:
+
+- stable Gobot robot/link/joint/sensor name resolution
+- fixed-capacity batched allocation with actionable overflow diagnostics
+- persistent device buffers and explicit graph recapture rules
+- masked reset and deterministic seed replay
+- joint control, state, contacts, and required sensor parity with MuJoCo CPU
+- short-horizon CPU parity tests and a standalone throughput benchmark
+- isolated optional dependency versions so Newton cannot silently replace the
+  Warp/MuJoCo versions used by the MuJoCo Warp provider
+
+Until those checks pass, do not add `NewtonGpu` to the public backend enum and
+do not make Newton a core build or wheel dependency. The local upstream
+checkouts are references only; normal Gobot builds and wheels must not discover
+or import them implicitly.
+
 ## Randomization And Variants
 
 Data randomization is cheap and should happen through persistent data buffers:

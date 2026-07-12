@@ -51,6 +51,7 @@ shader/generated/*
 CMakeUserPresets.json
 
 gobot.log
+MUJOCO_LOG.TXT
 imgui.ini
 
 dist/

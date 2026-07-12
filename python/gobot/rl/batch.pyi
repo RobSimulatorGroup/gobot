@@ -6,23 +6,27 @@ import numpy as np
 import numpy.typing as npt
 
 class BatchEnvState:
-    obs: dict[str, npt.NDArray[np.float32]]
-    reward: npt.NDArray[np.float32]
-    terminated: npt.NDArray[np.bool_]
-    truncated: npt.NDArray[np.bool_]
+    obs: dict[str, Any]
+    reward: Any
+    terminated: Any
+    truncated: Any
     info: dict[str, Any]
-    final_observation: dict[str, npt.NDArray[np.float32]] | None
+    final_observation: dict[str, Any] | None
     def __init__(
         self,
-        obs: dict[str, npt.NDArray[np.float32]],
-        reward: npt.NDArray[np.float32],
-        terminated: npt.NDArray[np.bool_],
-        truncated: npt.NDArray[np.bool_],
+        obs: dict[str, Any],
+        reward: Any,
+        terminated: Any,
+        truncated: Any,
         info: dict[str, Any] = ...,
-        final_observation: dict[str, npt.NDArray[np.float32]] | None = ...,
+        final_observation: dict[str, Any] | None = ...,
     ) -> None: ...
     @property
-    def done(self) -> npt.NDArray[np.bool_]: ...
+    def done(self) -> Any: ...
+    @property
+    def array_backend(self) -> str: ...
+    @property
+    def device(self) -> str: ...
     def replace(self, **updates: Any) -> BatchEnvState: ...
 
 class CpuBatchEnv:

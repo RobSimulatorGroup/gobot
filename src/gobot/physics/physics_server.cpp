@@ -18,6 +18,7 @@ namespace {
 struct BackendRegistration {
     PhysicsBackendInfo info;
     PhysicsServer::WorldFactory factory;
+    PhysicsServer::ArtifactCompiler artifact_compiler;
 };
 
 std::vector<BackendRegistration>& BackendRegistry() {
@@ -148,7 +149,33 @@ Ref<PhysicsWorld> PhysicsServer::CreateWorldForBackend(PhysicsBackendType backen
     return world;
 }
 
-bool PhysicsServer::RegisterBackend(PhysicsBackendInfo info, WorldFactory factory) {
+bool PhysicsServer::CompileSceneArtifactForBackend(PhysicsBackendType backend_type,
+                                                   PhysicsSceneSnapshot scene_snapshot,
+                                                   const PhysicsWorldSettings& settings,
+                                                   PhysicsSceneArtifact* artifact,
+                                                   std::string* error) {
+    ArtifactCompiler compiler;
+    {
+        std::scoped_lock lock(BackendRegistryMutex());
+        for (const BackendRegistration& registration : BackendRegistry()) {
+            if (registration.info.type == backend_type && registration.info.available) {
+                compiler = registration.artifact_compiler;
+                break;
+            }
+        }
+    }
+    if (!compiler) {
+        if (error != nullptr) {
+            *error = "Selected physics backend does not provide a scene artifact compiler.";
+        }
+        return false;
+    }
+    return compiler(std::move(scene_snapshot), settings, artifact, error);
+}
+
+bool PhysicsServer::RegisterBackend(PhysicsBackendInfo info,
+                                    WorldFactory factory,
+                                    ArtifactCompiler artifact_compiler) {
     if (!factory) {
         return false;
     }
@@ -156,11 +183,17 @@ bool PhysicsServer::RegisterBackend(PhysicsBackendInfo info, WorldFactory factor
     std::scoped_lock lock(BackendRegistryMutex());
     for (BackendRegistration& registration : BackendRegistry()) {
         if (registration.info.type == info.type) {
-            registration = {std::move(info), std::move(factory)};
+            registration = {
+                    std::move(info),
+                    std::move(factory),
+                    std::move(artifact_compiler)};
             return true;
         }
     }
-    BackendRegistry().push_back({std::move(info), std::move(factory)});
+    BackendRegistry().push_back({
+            std::move(info),
+            std::move(factory),
+            std::move(artifact_compiler)});
     return true;
 }
 
