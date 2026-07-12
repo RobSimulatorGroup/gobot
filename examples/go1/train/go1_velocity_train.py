@@ -23,6 +23,7 @@ from gobot.rl.rsl_rl import RslRlVecEnvWrapper
 
 from .go1_velocity_cfg import go1_velocity_cfg, rsl_rl_train_cfg
 from .go1_velocity_env import Go1VelocityEnv
+from .go1_warp_velocity_env import Go1WarpVelocityEnv
 from .go1_velocity_video import Go1TrainingVideoCfg, Go1TrainingVideoRecorder, VideoCheckpointRunnerMixin
 
 
@@ -51,18 +52,23 @@ class Go1OnPolicyRunner(VideoCheckpointRunnerMixin, OnPolicyRunner):
 def build_arg_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser()
     parser.add_argument("--cpu-batch", action="store_true", help="Use CPU smoke-training defaults: 64 rough-terrain environments and no video.")
+    parser.add_argument(
+        "--backend",
+        choices=("mujoco-warp", "mujoco-cpu"),
+        default="mujoco-warp",
+        help="Physics/task backend. Selection is explicit and never falls back silently.",
+    )
     parser.add_argument("--num-envs", "--num_envs", type=int, default=256)
     parser.add_argument("--iterations", type=int, default=10_000)
     parser.add_argument("--save-interval", type=int, default=50)
     parser.add_argument("--max-episode-length", type=int, default=None)
     parser.add_argument("--log-dir", "--log_dir", type=str, default="logs/go1_rough_velocity")
-    parser.add_argument("--device", type=str, default="cuda" if torch.cuda.is_available() else "cpu")
+    parser.add_argument("--device", type=str, default="cuda:0" if torch.cuda.is_available() else "cpu")
     parser.add_argument("--seed", type=int, default=42)
     parser.add_argument("--sim-workers", type=int, default=0, help="CPU workers for batched physics stepping. 0 uses hardware concurrency; 1 keeps stepping serial.")
     parser.add_argument("--profile-step", action="store_true", help="Log rolling Go1 env step phase timings.")
     parser.add_argument("--profile-memory", action="store_true", help="Print RSS/CUDA memory after each training iteration.")
     parser.add_argument("--no-step-extras", action="store_true", default=False, help="Disable per-step reward-term/log extras.")
-    parser.add_argument("--task-runtime", choices=("numpy",), default="numpy", help="Go1 task runtime. The current path is CPU batch NumPy.")
     parser.add_argument("--policy-out", type=str, default="policies/go1_velocity.pt")
     parser.add_argument("--terrain-curriculum", dest="terrain_curriculum", action="store_true", default=None)
     parser.add_argument("--no-terrain-curriculum", dest="terrain_curriculum", action="store_false")
@@ -101,7 +107,19 @@ def build_velocity_cfg(args: argparse.Namespace, project_path: Path):
     return cfg
 
 
-def build_core_env(args: argparse.Namespace, cfg) -> Go1VelocityEnv:
+def build_core_env(args: argparse.Namespace, cfg) -> Go1VelocityEnv | Go1WarpVelocityEnv:
+    if args.backend == "mujoco-warp":
+        return Go1WarpVelocityEnv(
+            cfg,
+            num_envs=args.num_envs,
+            device=args.device,
+            seed=args.seed,
+            max_episode_length=args.max_episode_length,
+            profile_step=args.profile_step,
+            collect_step_extras=not args.no_step_extras,
+        )
+    if args.backend != "mujoco-cpu":
+        raise ValueError(f"unsupported Go1 backend {args.backend!r}")
     return Go1VelocityEnv(
         cfg,
         num_envs=args.num_envs,
@@ -111,7 +129,7 @@ def build_core_env(args: argparse.Namespace, cfg) -> Go1VelocityEnv:
         sim_workers=args.sim_workers,
         profile_step=args.profile_step,
         collect_step_extras=not args.no_step_extras,
-        task_runtime=args.task_runtime,
+        task_runtime="numpy",
     )
 
 
@@ -167,7 +185,7 @@ def build_video_recorder(args: argparse.Namespace, env: RslRlVecEnvWrapper, log_
 
 def build_runner(
     args: argparse.Namespace,
-    env: Go1VelocityEnv,
+    env: RslRlVecEnvWrapper,
     train_cfg: dict,
     log_dir: Path,
     video_recorder: Go1TrainingVideoRecorder,
@@ -218,6 +236,7 @@ def build_policy_manifest(
         extras={
             "robot_name": str(cfg.robot_name),
             "base_link": str(cfg.base_link),
+            "training_backend": str(task_metadata.backend),
             "critic_observation_spec": env.critic_observation_spec.metadata(),
             "solver_settings": dict(cfg.mujoco_solver_settings),
             "height_scan_max_distance": float(cfg.observations.terrain_scan_max_distance),
@@ -235,6 +254,7 @@ def run_training(args: argparse.Namespace) -> tuple[Path, Path]:
     cfg = build_velocity_cfg(args, project_path)
 
     print(f"Task: {cfg.name}")
+    print(f"Backend: {args.backend}")
     print(f"Device: {args.device}")
     print(f"Envs: {args.num_envs}")
     print(f"Log dir: {log_dir}")
@@ -337,6 +357,7 @@ def apply_run_preset(args: argparse.Namespace) -> None:
     if not args.cpu_batch:
         return
     args.device = "cpu"
+    args.backend = "mujoco-cpu"
     args.num_envs = 64
     args.sim_workers = 0
     args.render_video_interval = 0
@@ -359,6 +380,7 @@ def print_training_summary(
     task_runtime = getattr(core_env, "task_runtime_info", {})
     rows = [
         ("task", cfg.name),
+        ("backend", args.backend),
         ("device", args.device),
         ("envs", args.num_envs),
         ("iterations", args.iterations),

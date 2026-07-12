@@ -5,8 +5,9 @@ from __future__ import annotations
 from dataclasses import dataclass
 import importlib
 import importlib.util
+import math
 from types import MappingProxyType
-from typing import Any, Mapping, Sequence
+from typing import Any, Literal, Mapping, Sequence
 
 from .base import (
     BatchPhysicsProvider,
@@ -44,6 +45,74 @@ class MuJoCoWarpRobotLayout:
     sensor_ids: tuple[int, ...]
     sensor_addresses: tuple[int, ...]
     sensor_dimensions: tuple[int, ...]
+    site_names: tuple[str, ...] = ()
+    geom_names: tuple[str, ...] = ()
+    site_ids: tuple[int, ...] = ()
+    geom_ids: tuple[int, ...] = ()
+    site_body_ids: tuple[int, ...] = ()
+    geom_body_ids: tuple[int, ...] = ()
+
+
+@dataclass(frozen=True)
+class MuJoCoWarpContactSensorSpec:
+    """Runtime contact sensor compiled below Gobot's scene boundary.
+
+    Names are runtime MJCF names from :class:`CompiledSceneArtifact`. A spec is
+    an observation resource; it does not become an authoring source or mutate
+    the edited Gobot scene.
+    """
+
+    name: str
+    primary_type: Literal["geom", "body", "subtree"]
+    primary_names: tuple[str, ...]
+    secondary_type: Literal["geom", "body", "subtree"] | None = None
+    secondary_name: str | None = None
+    fields: tuple[Literal["found", "force", "torque", "dist", "pos", "normal", "tangent"], ...] = (
+        "found",
+        "force",
+    )
+    reduce: Literal["none", "mindist", "maxforce", "netforce"] = "maxforce"
+    num_slots: int = 1
+
+
+@dataclass(frozen=True)
+class MuJoCoWarpRaycastSensorSpec:
+    """CUDA raycast description attached to compiled MuJoCo frames."""
+
+    name: str
+    frame_type: Literal["body", "site", "geom"]
+    frame_names: tuple[str, ...]
+    local_offsets: tuple[tuple[float, float, float], ...]
+    local_directions: tuple[tuple[float, float, float], ...] = ((0.0, 0.0, -1.0),)
+    alignment: Literal["base", "yaw", "world"] = "yaw"
+    max_distance: float = 10.0
+    exclude_parent_body: bool = True
+    include_geom_groups: tuple[int, ...] | None = (0,)
+
+
+@dataclass
+class _MuJoCoWarpRaycastRuntime:
+    spec: MuJoCoWarpRaycastSensorSpec
+    frame_ids: tuple[int, ...]
+    frame_body_ids: tuple[int, ...]
+    local_offsets: Any
+    local_directions: Any
+    ray_pnt: Any
+    ray_vec: Any
+    ray_dist: Any
+    ray_geomid: Any
+    ray_normal: Any
+    bodyexclude: Any
+    geomgroup: Any
+    ray_pnt_tensor: Any
+    ray_vec_tensor: Any
+    distances: Any
+    normals_w: Any
+    world_origins: Any | None = None
+    world_rays: Any | None = None
+    frame_pos_w: Any | None = None
+    frame_mat_w: Any | None = None
+    hit_pos_w: Any | None = None
 
 
 @dataclass(frozen=True)
@@ -63,6 +132,31 @@ _OVERFLOW_NAMES = {
     1 << 5: "height-field contacts",
     1 << 6: "contact-match sensors",
     1 << 7: "island dofs (nvmax)",
+}
+
+_CONTACT_FIELD_BITS = {
+    "found": 0,
+    "force": 1,
+    "torque": 2,
+    "dist": 3,
+    "pos": 4,
+    "normal": 5,
+    "tangent": 6,
+}
+_CONTACT_FIELD_DIMS = {
+    "found": 1,
+    "force": 3,
+    "torque": 3,
+    "dist": 1,
+    "pos": 3,
+    "normal": 3,
+    "tangent": 3,
+}
+_CONTACT_REDUCE = {
+    "none": 0,
+    "mindist": 1,
+    "maxforce": 2,
+    "netforce": 3,
 }
 
 
@@ -91,9 +185,13 @@ class MuJoCoWarpProvider(BatchPhysicsProvider):
         nconmax: int | None = None,
         njmax: int | None = None,
         njmax_nnz: int | None = None,
+        contact_sensor_maxmatch: int | None = None,
+        ls_parallel: bool | None = True,
         capture_graphs: bool = True,
         overflow_check_interval: int = 256,
         strict_mujoco_version: bool = True,
+        contact_sensors: Sequence[MuJoCoWarpContactSensorSpec] = (),
+        raycast_sensors: Sequence[MuJoCoWarpRaycastSensorSpec] = (),
         _bindings: _MuJoCoWarpBindings | None = None,
     ) -> None:
         if int(num_envs) <= 0:
@@ -104,6 +202,8 @@ class MuJoCoWarpProvider(BatchPhysicsProvider):
             raise ValueError("njmax must be non-negative")
         if njmax_nnz is not None and int(njmax_nnz) < 0:
             raise ValueError("njmax_nnz must be non-negative")
+        if contact_sensor_maxmatch is not None and int(contact_sensor_maxmatch) <= 0:
+            raise ValueError("contact_sensor_maxmatch must be positive")
         if int(overflow_check_interval) < 0:
             raise ValueError("overflow_check_interval must be non-negative")
 
@@ -127,6 +227,14 @@ class MuJoCoWarpProvider(BatchPhysicsProvider):
         self._closed = False
         self._graphs: dict[str, Any] = {}
         self._actuator_index_cache: dict[tuple[int, ...], Any] = {}
+        self._model_view_cache: dict[str, Any] = {}
+        self._contact_specs = tuple(contact_sensors)
+        self._raycast_specs = tuple(raycast_sensors)
+        self._contact_sensor_ranges: dict[str, dict[str, tuple[int, int, int]]] = {}
+        self._contact_sensor_views: Mapping[str, Mapping[str, Any]] = MappingProxyType({})
+        self._raycast_runtimes: dict[str, _MuJoCoWarpRaycastRuntime] = {}
+        self._raycast_views: Mapping[str, Mapping[str, Any]] = MappingProxyType({})
+        self._render_context = None
 
         if self._torch_device.type != "cuda":
             raise ProviderUnavailableError(
@@ -152,14 +260,25 @@ class MuJoCoWarpProvider(BatchPhysicsProvider):
                 f"{artifact_version}, but the Python Warp runtime uses {runtime_version}."
             )
 
-        self._mj_model = self._mujoco.MjModel.from_xml_string(self.artifact.content)
-        self._validate_artifact_dimensions()
+        source_model = self._mujoco.MjModel.from_xml_string(self.artifact.content)
+        self._validate_artifact_dimensions(source_model)
+        self._mj_model = self._compile_runtime_model(source_model)
         self._mj_data = self._mujoco.MjData(self._mj_model)
         # Warp 1.14 cannot begin graph capture on a Torch-owned external stream.
         # Build, warm up, and capture on Warp's native stream; captured graphs
         # can still be replayed on the current Torch stream at runtime.
         with self._wp.ScopedDevice(self._wp_device):
             self._model = self._mjw.put_model(self._mj_model)
+            if contact_sensor_maxmatch is not None:
+                self._model.opt.contact_sensor_maxmatch = int(contact_sensor_maxmatch)
+            if ls_parallel is not None:
+                try:
+                    self._model.opt.ls_parallel = bool(ls_parallel)
+                except AttributeError:
+                    if not ls_parallel:
+                        raise ProviderUnavailableError(
+                            "this MuJoCo Warp runtime no longer supports disabling parallel line search"
+                        )
             self._data = self._mjw.put_data(
                 self._mj_model,
                 self._mj_data,
@@ -173,12 +292,14 @@ class MuJoCoWarpProvider(BatchPhysicsProvider):
                 dtype=self._wp.bool,
                 device=self._wp_device,
             )
+            self._reset_mask_tensor = self._wp.to_torch(self._reset_mask)
+            self._arrays = MappingProxyType(self._make_torch_views())
+            self._contact_sensor_views = self._make_contact_sensor_views()
+            self._setup_raycast_sensors()
             self._warmup()
             if self._capture_enabled:
                 self._capture_all_graphs()
 
-        self._reset_mask_tensor = self._wp.to_torch(self._reset_mask)
-        self._arrays = MappingProxyType(self._make_torch_views())
         self._storage_signature = self._capture_storage_signature()
 
     @classmethod
@@ -239,6 +360,16 @@ class MuJoCoWarpProvider(BatchPhysicsProvider):
         return self._arrays
 
     @property
+    def contact_sensors(self) -> Mapping[str, Mapping[str, Any]]:
+        self._require_open()
+        return self._contact_sensor_views
+
+    @property
+    def raycast_sensors(self) -> Mapping[str, Mapping[str, Any]]:
+        self._require_open()
+        return self._raycast_views
+
+    @property
     def generation(self) -> int:
         return self._generation
 
@@ -275,6 +406,7 @@ class MuJoCoWarpProvider(BatchPhysicsProvider):
         qpos: Any | None = None,
         qvel: Any | None = None,
         ctrl: Any | None = None,
+        forward: bool = True,
     ) -> Mapping[str, Any]:
         self._require_open()
         self._validate_storage()
@@ -287,21 +419,108 @@ class MuJoCoWarpProvider(BatchPhysicsProvider):
             self._copy_masked_state("qpos", qpos, mask)
             self._copy_masked_state("qvel", qvel, mask)
             self._copy_masked_state("ctrl", ctrl, mask)
-            self._launch_or_call("forward", self._mjw.forward)
+            if forward:
+                self._launch_or_call("forward", self._mjw.forward)
         self._reset_mask_tensor.zero_()
+        return self._arrays
+
+    def forward(self) -> Mapping[str, Any]:
+        self._require_open()
+        self._validate_storage()
+        with self._stream_scope():
+            self._launch_or_call("forward", self._mjw.forward)
         return self._arrays
 
     def sense(self) -> Mapping[str, Any]:
         self._require_open()
         self._validate_storage()
+        self._prepare_raycasts()
         with self._stream_scope():
             if self._capture_enabled:
                 self._wp.capture_launch(self._graphs["sense"])
             else:
-                self._mjw.sensor_pos(self._model, self._data)
-                self._mjw.sensor_vel(self._model, self._data)
-                self._mjw.sensor_acc(self._model, self._data)
+                self._sense_kernel()
+        self._postprocess_raycasts()
         return self._arrays
+
+    def contact_sensor(self, name: str) -> Mapping[str, Any]:
+        self._require_open()
+        try:
+            return self._contact_sensor_views[str(name)]
+        except KeyError as error:
+            raise KeyError(f"MuJoCo Warp provider has no contact sensor {name!r}") from error
+
+    def raycast_sensor(self, name: str) -> Mapping[str, Any]:
+        self._require_open()
+        try:
+            return self._raycast_views[str(name)]
+        except KeyError as error:
+            raise KeyError(f"MuJoCo Warp provider has no raycast sensor {name!r}") from error
+
+    def resolve_object_ids(self, object_type: Literal["body", "joint", "geom", "site", "sensor"], names: Sequence[str]) -> tuple[int, ...]:
+        self._require_open()
+        enum = self._object_type_enum(object_type)
+        return tuple(self._required_name_id(enum, str(name), object_type) for name in names)
+
+    def model_constant(self, name: str) -> Any:
+        """Copy one compiled MuJoCo model field to the provider device."""
+
+        self._require_open()
+        if not hasattr(self._mj_model, str(name)):
+            raise KeyError(f"compiled MuJoCo model has no field {name!r}")
+        value = getattr(self._mj_model, str(name))
+        return self._torch.as_tensor(value, device=self._torch_device).clone()
+
+    def expand_model_fields(self, names: Sequence[str]) -> None:
+        """Expand selected Warp model arrays to one independently writable row per world."""
+
+        self._require_open()
+        changed = False
+        with self._wp.ScopedDevice(self._wp_device):
+            for name_value in names:
+                name = str(name_value)
+                if not hasattr(self._model, name):
+                    raise KeyError(f"MuJoCo Warp model has no field {name!r}")
+                value = getattr(self._model, name)
+                shape = tuple(int(dim) for dim in value.shape)
+                if not shape:
+                    raise ValueError(f"MuJoCo Warp model field {name!r} is not an array")
+                if shape[0] == self._num_envs:
+                    self._model_view_cache[name] = self._wp.to_torch(value)
+                    continue
+                if shape[0] != 1:
+                    raise ValueError(
+                        f"MuJoCo Warp model field {name!r} has leading dimension {shape[0]}, "
+                        f"expected 1 or {self._num_envs}"
+                    )
+                repeated = value.numpy().repeat(self._num_envs, axis=0)
+                expanded = self._wp.array(repeated, dtype=value.dtype, device=self._wp_device)
+                setattr(self._model, name, expanded)
+                self._model_view_cache[name] = self._wp.to_torch(expanded)
+                changed = True
+        if changed and self._capture_enabled:
+            self._capture_all_graphs()
+        self._storage_signature = self._capture_storage_signature()
+
+    def model_array(self, name: str) -> Any:
+        self._require_open()
+        key = str(name)
+        value = self._model_view_cache.get(key)
+        if value is None:
+            if not hasattr(self._model, key):
+                raise KeyError(f"MuJoCo Warp model has no field {name!r}")
+            value = self._wp.to_torch(getattr(self._model, key))
+            self._model_view_cache[key] = value
+            self._storage_signature = self._capture_storage_signature()
+        return value
+
+    def recompute_constants(self, level: Literal["set_const", "set_const_0", "set_const_fixed"] = "set_const") -> None:
+        self._require_open()
+        operation = getattr(self._mjw, str(level), None)
+        if operation is None:
+            raise ValueError(f"unsupported MuJoCo Warp constant recomputation level {level!r}")
+        with self._stream_scope():
+            operation(self._model, self._data)
 
     def resolve_robot_layout(
         self,
@@ -311,12 +530,16 @@ class MuJoCoWarpProvider(BatchPhysicsProvider):
         joint_names: Sequence[str],
         link_names: Sequence[str] = (),
         sensor_names: Sequence[str] = (),
+        site_names: Sequence[str] = (),
+        geom_names: Sequence[str] = (),
     ) -> MuJoCoWarpRobotLayout:
         self._require_open()
         prefix = self.artifact.robot_prefix(robot_name)
         joint_names = tuple(str(name) for name in joint_names)
         link_names = tuple(str(name) for name in link_names)
         sensor_names = tuple(str(name) for name in sensor_names)
+        site_names = tuple(str(name) for name in site_names)
+        geom_names = tuple(str(name) for name in geom_names)
         joint_ids = tuple(
             self._required_name_id(self._mujoco.mjtObj.mjOBJ_JOINT, prefix + name, "joint")
             for name in joint_names
@@ -332,6 +555,14 @@ class MuJoCoWarpProvider(BatchPhysicsProvider):
         sensor_ids = tuple(
             self._required_name_id(self._mujoco.mjtObj.mjOBJ_SENSOR, prefix + name, "sensor")
             for name in sensor_names
+        )
+        site_ids = tuple(
+            self._required_name_id(self._mujoco.mjtObj.mjOBJ_SITE, prefix + name, "site")
+            for name in site_names
+        )
+        geom_ids = tuple(
+            self._required_name_id(self._mujoco.mjtObj.mjOBJ_GEOM, prefix + name, "geom")
+            for name in geom_names
         )
         return MuJoCoWarpRobotLayout(
             robot_name=str(robot_name),
@@ -354,6 +585,12 @@ class MuJoCoWarpProvider(BatchPhysicsProvider):
             sensor_ids=sensor_ids,
             sensor_addresses=tuple(int(self._mj_model.sensor_adr[index]) for index in sensor_ids),
             sensor_dimensions=tuple(int(self._mj_model.sensor_dim[index]) for index in sensor_ids),
+            site_names=site_names,
+            geom_names=geom_names,
+            site_ids=site_ids,
+            geom_ids=geom_ids,
+            site_body_ids=tuple(int(self._mj_model.site_bodyid[index]) for index in site_ids),
+            geom_body_ids=tuple(int(self._mj_model.geom_bodyid[index]) for index in geom_ids),
         )
 
     def set_joint_position_targets(self, layout: MuJoCoWarpRobotLayout, targets: Any) -> None:
@@ -430,6 +667,11 @@ class MuJoCoWarpProvider(BatchPhysicsProvider):
             self._generation += 1
             self._graphs.clear()
             self._actuator_index_cache.clear()
+            self._model_view_cache.clear()
+            self._raycast_runtimes.clear()
+            self._contact_sensor_views = MappingProxyType({})
+            self._raycast_views = MappingProxyType({})
+            self._render_context = None
             self._arrays = MappingProxyType({})
             self._reset_mask_tensor = None
             self._reset_mask = None
@@ -445,14 +687,381 @@ class MuJoCoWarpProvider(BatchPhysicsProvider):
         warp_stream = self._wp.stream_from_torch(torch_stream)
         return self._wp.ScopedStream(warp_stream, sync_enter=False)
 
+    def _compile_runtime_model(self, source_model: Any) -> Any:
+        if not self._contact_specs:
+            return source_model
+
+        spec_names: set[str] = set()
+        model_spec = self._mujoco.MjSpec.from_string(self.artifact.content)
+        pending_ranges: dict[str, dict[str, list[str]]] = {}
+        for spec_index, sensor_spec in enumerate(self._contact_specs):
+            self._validate_contact_sensor_spec(sensor_spec, spec_names, source_model)
+            field_sensors: dict[str, list[str]] = {}
+            for field in sensor_spec.fields:
+                field_names: list[str] = []
+                for primary_index, primary_name in enumerate(sensor_spec.primary_names):
+                    runtime_name = f"__gobot_mw_contact_{spec_index}_{field}_{primary_index}"
+                    kwargs: dict[str, Any] = {
+                        "name": runtime_name,
+                        "type": self._mujoco.mjtSensor.mjSENS_CONTACT,
+                        "objtype": self._object_type_enum(sensor_spec.primary_type),
+                        "objname": primary_name,
+                        "intprm": [
+                            1 << _CONTACT_FIELD_BITS[field],
+                            _CONTACT_REDUCE[sensor_spec.reduce],
+                            int(sensor_spec.num_slots),
+                        ],
+                    }
+                    if sensor_spec.secondary_name is not None:
+                        kwargs["reftype"] = self._object_type_enum(sensor_spec.secondary_type)
+                        kwargs["refname"] = sensor_spec.secondary_name
+                    model_spec.add_sensor(**kwargs)
+                    field_names.append(runtime_name)
+                field_sensors[field] = field_names
+            pending_ranges[sensor_spec.name] = field_sensors
+
+        model = model_spec.compile()
+        for sensor_spec in self._contact_specs:
+            field_ranges: dict[str, tuple[int, int, int]] = {}
+            for field, sensor_names in pending_ranges[sensor_spec.name].items():
+                starts: list[int] = []
+                ends: list[int] = []
+                field_dim = _CONTACT_FIELD_DIMS[field]
+                expected_sensor_dim = int(sensor_spec.num_slots) * field_dim
+                for sensor_name in sensor_names:
+                    sensor = model.sensor(sensor_name)
+                    start = int(sensor.adr[0])
+                    dimension = int(sensor.dim[0])
+                    if dimension != expected_sensor_dim:
+                        raise RuntimeError(
+                            f"contact sensor {sensor_spec.name!r} field {field!r} compiled to "
+                            f"dimension {dimension}, expected {expected_sensor_dim}"
+                        )
+                    starts.append(start)
+                    ends.append(start + dimension)
+                for previous_end, next_start in zip(ends, starts[1:], strict=False):
+                    if previous_end != next_start:
+                        raise RuntimeError(
+                            f"contact sensor {sensor_spec.name!r} field {field!r} is not contiguous"
+                        )
+                field_ranges[field] = (starts[0], ends[-1], field_dim)
+            self._contact_sensor_ranges[sensor_spec.name] = field_ranges
+        return model
+
+    def _validate_contact_sensor_spec(
+        self,
+        sensor_spec: MuJoCoWarpContactSensorSpec,
+        names: set[str],
+        model: Any,
+    ) -> None:
+        if not sensor_spec.name or sensor_spec.name in names:
+            raise ValueError(f"contact sensor names must be non-empty and unique, got {sensor_spec.name!r}")
+        names.add(sensor_spec.name)
+        if not sensor_spec.primary_names:
+            raise ValueError(f"contact sensor {sensor_spec.name!r} has no primary names")
+        if int(sensor_spec.num_slots) <= 0:
+            raise ValueError(f"contact sensor {sensor_spec.name!r} num_slots must be positive")
+        if sensor_spec.reduce == "netforce" and int(sensor_spec.num_slots) != 1:
+            raise ValueError(f"contact sensor {sensor_spec.name!r} netforce reduction requires num_slots=1")
+        if not sensor_spec.fields or len(set(sensor_spec.fields)) != len(sensor_spec.fields):
+            raise ValueError(f"contact sensor {sensor_spec.name!r} fields must be non-empty and unique")
+        if (sensor_spec.secondary_type is None) != (sensor_spec.secondary_name is None):
+            raise ValueError(
+                f"contact sensor {sensor_spec.name!r} must set both secondary_type and secondary_name"
+            )
+        primary_enum = self._object_type_enum(sensor_spec.primary_type)
+        for name in sensor_spec.primary_names:
+            if int(self._mujoco.mj_name2id(model, primary_enum, name)) < 0:
+                raise KeyError(f"contact sensor {sensor_spec.name!r} has unknown primary {name!r}")
+        if sensor_spec.secondary_name is not None:
+            secondary_enum = self._object_type_enum(sensor_spec.secondary_type)
+            if int(self._mujoco.mj_name2id(model, secondary_enum, sensor_spec.secondary_name)) < 0:
+                raise KeyError(
+                    f"contact sensor {sensor_spec.name!r} has unknown secondary {sensor_spec.secondary_name!r}"
+                )
+
+    def _make_contact_sensor_views(self) -> Mapping[str, Mapping[str, Any]]:
+        if not self._contact_sensor_ranges:
+            return MappingProxyType({})
+        sensordata = self._arrays.get("sensordata")
+        if sensordata is None:
+            raise RuntimeError("runtime contact sensors require MuJoCo sensordata")
+        result: dict[str, Mapping[str, Any]] = {}
+        for sensor_spec in self._contact_specs:
+            fields: dict[str, Any] = {}
+            for field, (start, end, field_dim) in self._contact_sensor_ranges[sensor_spec.name].items():
+                value = sensordata[:, start:end].view(
+                    self._num_envs,
+                    len(sensor_spec.primary_names) * int(sensor_spec.num_slots),
+                    field_dim,
+                )
+                fields[field] = value.squeeze(-1) if field_dim == 1 else value
+            result[sensor_spec.name] = MappingProxyType(fields)
+        return MappingProxyType(result)
+
+    def _setup_raycast_sensors(self) -> None:
+        if not self._raycast_specs:
+            self._raycast_views = MappingProxyType({})
+            return
+        names: set[str] = set()
+        enabled_groups: set[int] = set()
+        for sensor_spec in self._raycast_specs:
+            self._validate_raycast_sensor_spec(sensor_spec, names)
+            if sensor_spec.include_geom_groups is None:
+                enabled_groups.update(range(6))
+            else:
+                enabled_groups.update(int(group) for group in sensor_spec.include_geom_groups)
+
+        self._render_context = self._mjw.create_render_context(
+            mjm=self._mj_model,
+            nworld=self._num_envs,
+            cam_res=None,
+            render_rgb=None,
+            render_depth=None,
+            use_textures=False,
+            use_shadows=False,
+            enabled_geom_groups=sorted(enabled_groups),
+            cam_active=[False] * int(self._mj_model.ncam),
+            use_precomputed_rays=True,
+            render_seg=None,
+        )
+
+        vec6 = self._wp.types.vector(length=6, dtype=float)
+        raycast_views: dict[str, Mapping[str, Any]] = {}
+        for sensor_spec in self._raycast_specs:
+            object_enum = self._object_type_enum(sensor_spec.frame_type)
+            frame_ids = tuple(
+                self._required_name_id(object_enum, name, f"raycast {sensor_spec.frame_type}")
+                for name in sensor_spec.frame_names
+            )
+            if sensor_spec.frame_type == "body":
+                frame_body_ids = frame_ids
+            elif sensor_spec.frame_type == "site":
+                frame_body_ids = tuple(int(self._mj_model.site_bodyid[index]) for index in frame_ids)
+            else:
+                frame_body_ids = tuple(int(self._mj_model.geom_bodyid[index]) for index in frame_ids)
+
+            local_offsets = self._torch.tensor(
+                sensor_spec.local_offsets,
+                dtype=self._torch.float32,
+                device=self._torch_device,
+            )
+            local_directions = self._torch.tensor(
+                sensor_spec.local_directions,
+                dtype=self._torch.float32,
+                device=self._torch_device,
+            )
+            if local_directions.shape[0] == 1:
+                local_directions = local_directions.expand(local_offsets.shape[0], 3).clone()
+            local_directions = local_directions / local_directions.norm(dim=1, keepdim=True).clamp(min=1.0e-8)
+
+            rays_per_frame = int(local_offsets.shape[0])
+            num_rays = len(frame_ids) * rays_per_frame
+            ray_pnt = self._wp.zeros(
+                (self._num_envs, num_rays), dtype=self._wp.vec3, device=self._wp_device
+            )
+            ray_vec = self._wp.zeros(
+                (self._num_envs, num_rays), dtype=self._wp.vec3, device=self._wp_device
+            )
+            ray_dist = self._wp.zeros(
+                (self._num_envs, num_rays), dtype=float, device=self._wp_device
+            )
+            ray_geomid = self._wp.zeros(
+                (self._num_envs, num_rays), dtype=int, device=self._wp_device
+            )
+            ray_normal = self._wp.zeros(
+                (self._num_envs, num_rays), dtype=self._wp.vec3, device=self._wp_device
+            )
+            body_excludes: list[int] = []
+            for body_id in frame_body_ids:
+                body_excludes.extend(
+                    [body_id if sensor_spec.exclude_parent_body else -1] * rays_per_frame
+                )
+            bodyexclude = self._wp.array(
+                body_excludes, dtype=int, device=self._wp_device
+            )
+            group_values = [0, 0, 0, 0, 0, 0]
+            if sensor_spec.include_geom_groups is None:
+                group_values = [-1] * 6
+            else:
+                for group in sensor_spec.include_geom_groups:
+                    group_values[int(group)] = -1
+            geomgroup = vec6(*group_values)
+            ray_pnt_tensor = self._wp.to_torch(ray_pnt).view(self._num_envs, num_rays, 3)
+            ray_vec_tensor = self._wp.to_torch(ray_vec).view(self._num_envs, num_rays, 3)
+            distances = self._wp.to_torch(ray_dist)
+            normals_w = self._wp.to_torch(ray_normal).view(self._num_envs, num_rays, 3)
+            runtime = _MuJoCoWarpRaycastRuntime(
+                spec=sensor_spec,
+                frame_ids=frame_ids,
+                frame_body_ids=frame_body_ids,
+                local_offsets=local_offsets,
+                local_directions=local_directions,
+                ray_pnt=ray_pnt,
+                ray_vec=ray_vec,
+                ray_dist=ray_dist,
+                ray_geomid=ray_geomid,
+                ray_normal=ray_normal,
+                bodyexclude=bodyexclude,
+                geomgroup=geomgroup,
+                ray_pnt_tensor=ray_pnt_tensor,
+                ray_vec_tensor=ray_vec_tensor,
+                distances=distances,
+                normals_w=normals_w,
+                frame_pos_w=self._torch.zeros(
+                    (self._num_envs, len(frame_ids), 3),
+                    dtype=self._torch.float32,
+                    device=self._torch_device,
+                ),
+                hit_pos_w=self._torch.zeros(
+                    (self._num_envs, num_rays, 3),
+                    dtype=self._torch.float32,
+                    device=self._torch_device,
+                ),
+            )
+            self._raycast_runtimes[sensor_spec.name] = runtime
+            raycast_views[sensor_spec.name] = MappingProxyType(
+                {
+                    "distances": runtime.distances,
+                    "normals_w": runtime.normals_w,
+                    "hit_pos_w": runtime.hit_pos_w,
+                    "frame_pos_w": runtime.frame_pos_w,
+                    "num_frames": len(frame_ids),
+                    "num_rays_per_frame": rays_per_frame,
+                }
+            )
+        self._raycast_views = MappingProxyType(raycast_views)
+
+    def _validate_raycast_sensor_spec(
+        self,
+        sensor_spec: MuJoCoWarpRaycastSensorSpec,
+        names: set[str],
+    ) -> None:
+        if not sensor_spec.name or sensor_spec.name in names:
+            raise ValueError(f"raycast sensor names must be non-empty and unique, got {sensor_spec.name!r}")
+        names.add(sensor_spec.name)
+        if not sensor_spec.frame_names:
+            raise ValueError(f"raycast sensor {sensor_spec.name!r} has no frames")
+        if not sensor_spec.local_offsets:
+            raise ValueError(f"raycast sensor {sensor_spec.name!r} has no rays")
+        if len(sensor_spec.local_directions) not in (1, len(sensor_spec.local_offsets)):
+            raise ValueError(
+                f"raycast sensor {sensor_spec.name!r} directions must contain one value or one per offset"
+            )
+        if not math.isfinite(float(sensor_spec.max_distance)) or float(sensor_spec.max_distance) <= 0.0:
+            raise ValueError(f"raycast sensor {sensor_spec.name!r} max_distance must be positive")
+        if sensor_spec.include_geom_groups is not None:
+            invalid = [group for group in sensor_spec.include_geom_groups if int(group) < 0 or int(group) > 5]
+            if invalid:
+                raise ValueError(f"raycast sensor {sensor_spec.name!r} has invalid geom groups {invalid}")
+
+    def _prepare_raycasts(self) -> None:
+        if not self._raycast_runtimes:
+            return
+        for runtime in self._raycast_runtimes.values():
+            positions: list[Any] = []
+            matrices: list[Any] = []
+            for frame_id in runtime.frame_ids:
+                if runtime.spec.frame_type == "body":
+                    positions.append(self._arrays["xpos"][:, frame_id])
+                    matrices.append(self._arrays["xmat"][:, frame_id].reshape(self._num_envs, 3, 3))
+                elif runtime.spec.frame_type == "site":
+                    positions.append(self._arrays["site_xpos"][:, frame_id])
+                    matrices.append(self._arrays["site_xmat"][:, frame_id].reshape(self._num_envs, 3, 3))
+                else:
+                    positions.append(self._arrays["geom_xpos"][:, frame_id])
+                    matrices.append(self._arrays["geom_xmat"][:, frame_id].reshape(self._num_envs, 3, 3))
+            frame_pos = self._torch.stack(positions, dim=1)
+            frame_mat = self._torch.stack(matrices, dim=1)
+            rotation = self._ray_alignment_rotation(frame_mat, runtime.spec.alignment)
+            world_offsets = self._torch.einsum("bfij,nj->bfni", rotation, runtime.local_offsets)
+            world_origins = frame_pos[:, :, None, :] + world_offsets
+            world_rays = self._torch.einsum("bfij,nj->bfni", rotation, runtime.local_directions)
+            runtime.world_origins = world_origins.reshape(self._num_envs, -1, 3)
+            runtime.world_rays = world_rays.reshape(self._num_envs, -1, 3)
+            runtime.frame_mat_w = frame_mat
+            assert runtime.frame_pos_w is not None
+            runtime.frame_pos_w.copy_(frame_pos)
+            runtime.ray_pnt_tensor.copy_(runtime.world_origins)
+            runtime.ray_vec_tensor.copy_(runtime.world_rays)
+
+    def _sense_kernel(self) -> None:
+        self._mjw.sensor_pos(self._model, self._data)
+        self._mjw.sensor_vel(self._model, self._data)
+        self._mjw.sensor_acc(self._model, self._data)
+        if self._render_context is None:
+            return
+        self._mjw.refit_bvh(self._model, self._data, self._render_context)
+        for runtime in self._raycast_runtimes.values():
+            self._mjw.rays(
+                m=self._model,
+                d=self._data,
+                pnt=runtime.ray_pnt,
+                vec=runtime.ray_vec,
+                geomgroup=runtime.geomgroup,
+                flg_static=True,
+                bodyexclude=runtime.bodyexclude,
+                dist=runtime.ray_dist,
+                geomid=runtime.ray_geomid,
+                normal=runtime.ray_normal,
+                rc=self._render_context,
+            )
+
+    def _postprocess_raycasts(self) -> None:
+        for runtime in self._raycast_runtimes.values():
+            assert runtime.world_origins is not None and runtime.world_rays is not None
+            assert runtime.hit_pos_w is not None
+            runtime.distances.masked_fill_(runtime.distances > float(runtime.spec.max_distance), -1.0)
+            hit = runtime.distances >= 0.0
+            runtime.normals_w.masked_fill_(~hit.unsqueeze(-1), 0.0)
+            self._torch.mul(
+                runtime.world_rays,
+                runtime.distances.clamp(min=0.0).unsqueeze(-1),
+                out=runtime.hit_pos_w,
+            )
+            runtime.hit_pos_w.add_(runtime.world_origins)
+
+    def _ray_alignment_rotation(self, frame_mat: Any, alignment: str) -> Any:
+        if alignment == "base":
+            return frame_mat
+        if alignment == "world":
+            return self._torch.eye(
+                3, dtype=frame_mat.dtype, device=frame_mat.device
+            ).view(1, 1, 3, 3).expand(frame_mat.shape[0], frame_mat.shape[1], 3, 3)
+        x_axis = frame_mat[..., :, 0]
+        x_projection = self._torch.stack(
+            (x_axis[..., 0], x_axis[..., 1], self._torch.zeros_like(x_axis[..., 0])),
+            dim=-1,
+        )
+        x_norm = x_projection.norm(dim=-1, keepdim=True)
+        y_axis = frame_mat[..., :, 1]
+        y_projection = self._torch.stack(
+            (y_axis[..., 0], y_axis[..., 1], self._torch.zeros_like(y_axis[..., 0])),
+            dim=-1,
+        )
+        y_projection = y_projection / y_projection.norm(dim=-1, keepdim=True).clamp(min=1.0e-6)
+        x_from_y = self._torch.stack(
+            (y_projection[..., 1], -y_projection[..., 0], self._torch.zeros_like(y_projection[..., 0])),
+            dim=-1,
+        )
+        x_projection = self._torch.where(x_norm < 0.1, x_from_y, x_projection)
+        x_projection = x_projection / x_projection.norm(dim=-1, keepdim=True).clamp(min=1.0e-6)
+        result = self._torch.zeros_like(frame_mat)
+        result[..., 0, 0] = x_projection[..., 0]
+        result[..., 1, 0] = x_projection[..., 1]
+        result[..., 0, 1] = -x_projection[..., 1]
+        result[..., 1, 1] = x_projection[..., 0]
+        result[..., 2, 2] = 1.0
+        return result
+
     def _warmup(self) -> None:
         self._mjw.forward(self._model, self._data)
         self._mjw.step(self._model, self._data)
         self._mjw.reset_data(self._model, self._data)
         self._mjw.reset_data(self._model, self._data, reset=self._reset_mask)
-        self._mjw.sensor_pos(self._model, self._data)
-        self._mjw.sensor_vel(self._model, self._data)
-        self._mjw.sensor_acc(self._model, self._data)
+        self._prepare_raycasts()
+        self._sense_kernel()
+        self._postprocess_raycasts()
         self._mjw.forward(self._model, self._data)
         self._wp.synchronize_device(self._wp_device)
 
@@ -463,12 +1072,8 @@ class MuJoCoWarpProvider(BatchPhysicsProvider):
             lambda: self._mjw.reset_data(self._model, self._data, reset=self._reset_mask)
         )
 
-        def sense() -> None:
-            self._mjw.sensor_pos(self._model, self._data)
-            self._mjw.sensor_vel(self._model, self._data)
-            self._mjw.sensor_acc(self._model, self._data)
-
-        self._graphs["sense"] = self._capture(sense)
+        self._prepare_raycasts()
+        self._graphs["sense"] = self._capture(self._sense_kernel)
 
     def _capture(self, operation) -> Any:
         with self._wp.ScopedCapture(device=self._wp_device) as capture:
@@ -493,8 +1098,17 @@ class MuJoCoWarpProvider(BatchPhysicsProvider):
             "xfrc_applied",
             "xpos",
             "xquat",
+            "xmat",
+            "xipos",
             "cvel",
+            "subtree_com",
+            "site_xpos",
+            "site_xmat",
+            "geom_xpos",
+            "geom_xmat",
             "sensordata",
+            "actuator_force",
+            "qfrc_actuator",
             "ncon",
             "nefc",
             "overflow",
@@ -508,6 +1122,17 @@ class MuJoCoWarpProvider(BatchPhysicsProvider):
         return values
 
     def _capture_storage_signature(self) -> tuple[Any, ...]:
+        values: list[tuple[str, Any]] = list(self._arrays.items())
+        values.extend((f"model:{name}", value) for name, value in self._model_view_cache.items())
+        for name, runtime in self._raycast_runtimes.items():
+            values.extend(
+                (
+                    (f"ray:{name}:pnt", runtime.ray_pnt_tensor),
+                    (f"ray:{name}:vec", runtime.ray_vec_tensor),
+                    (f"ray:{name}:dist", runtime.distances),
+                    (f"ray:{name}:normal", runtime.normals_w),
+                )
+            )
         return tuple(
             (
                 name,
@@ -518,7 +1143,7 @@ class MuJoCoWarpProvider(BatchPhysicsProvider):
                 str(value.dtype),
                 str(value.device),
             )
-            for name, value in self._arrays.items()
+            for name, value in values
         )
 
     def _validate_storage(self) -> None:
@@ -557,6 +1182,20 @@ class MuJoCoWarpProvider(BatchPhysicsProvider):
             raise KeyError(f"compiled MuJoCo artifact has no {label} {runtime_name!r}")
         return object_id
 
+    def _object_type_enum(self, object_type: str | None) -> Any:
+        values = {
+            "body": self._mujoco.mjtObj.mjOBJ_BODY,
+            "subtree": self._mujoco.mjtObj.mjOBJ_XBODY,
+            "joint": self._mujoco.mjtObj.mjOBJ_JOINT,
+            "geom": self._mujoco.mjtObj.mjOBJ_GEOM,
+            "site": self._mujoco.mjtObj.mjOBJ_SITE,
+            "sensor": self._mujoco.mjtObj.mjOBJ_SENSOR,
+        }
+        try:
+            return values[str(object_type)]
+        except KeyError as error:
+            raise ValueError(f"unsupported MuJoCo object type {object_type!r}") from error
+
     def _joint_actuator(self, prefixed_joint_name: str) -> tuple[int, str]:
         for suffix, mode in (
             ("_position", "position"),
@@ -574,16 +1213,16 @@ class MuJoCoWarpProvider(BatchPhysicsProvider):
                 return actuator_id, mode
         raise KeyError(f"compiled MuJoCo artifact has no actuator for joint {prefixed_joint_name!r}")
 
-    def _validate_artifact_dimensions(self) -> None:
+    def _validate_artifact_dimensions(self, model: Any) -> None:
         model_dimensions = {
-            "nq": int(self._mj_model.nq),
-            "nv": int(self._mj_model.nv),
-            "nu": int(self._mj_model.nu),
-            "nbody": int(self._mj_model.nbody),
-            "njoint": int(self._mj_model.njnt),
-            "ngeom": int(self._mj_model.ngeom),
-            "nsensor": int(self._mj_model.nsensor),
-            "nhfield": int(self._mj_model.nhfield),
+            "nq": int(model.nq),
+            "nv": int(model.nv),
+            "nu": int(model.nu),
+            "nbody": int(model.nbody),
+            "njoint": int(model.njnt),
+            "ngeom": int(model.ngeom),
+            "nsensor": int(model.nsensor),
+            "nhfield": int(model.nhfield),
         }
         for name, actual in model_dimensions.items():
             expected = self.artifact.dimensions.get(name)
@@ -599,7 +1238,9 @@ class MuJoCoWarpProvider(BatchPhysicsProvider):
 
 
 __all__ = [
+    "MuJoCoWarpContactSensorSpec",
     "MuJoCoWarpProvider",
     "MuJoCoWarpProviderAvailability",
+    "MuJoCoWarpRaycastSensorSpec",
     "MuJoCoWarpRobotLayout",
 ]

@@ -48,6 +48,25 @@ GO1_ACTION_SCALE: Mapping[str, float] = {
     r".*_calf_joint": 0.24850202579136574,
 }
 
+GO1_ROUGH_REWARD_TERM_NAMES: tuple[str, ...] = (
+    "track_linear_velocity",
+    "track_angular_velocity",
+    "upright",
+    "pose",
+    "body_ang_vel",
+    "angular_momentum",
+    "dof_pos_limits",
+    "action_rate_l2",
+    "air_time",
+    "foot_clearance",
+    "foot_swing_height",
+    "foot_slip",
+    "soft_landing",
+    "self_collisions",
+    "shank_collision",
+    "trunk_head_collision",
+)
+
 
 @dataclass
 class VelocityObservationCfg:
@@ -300,6 +319,7 @@ __all__ = [
     "GO1_KD",
     "GO1_KP",
     "GO1_MUJOCO_SOLVER_SETTINGS",
+    "GO1_ROUGH_REWARD_TERM_NAMES",
     "GO1_TASK_NAME",
     "GO1_TASK_VERSION",
     "GO1_VELOCITY_LIMIT",

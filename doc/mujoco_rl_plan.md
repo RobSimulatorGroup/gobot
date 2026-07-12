@@ -123,9 +123,10 @@ Current implementation status:
 - Task code defines observations, rewards, resets, commands, and metrics in
   Python while C++ provides generic batch stepping, action application, and
   runtime state extraction.
-- The batch API should stay backend-neutral: MuJoCo CPU may implement it as one
-  shared `mjModel` with one `mjData` per environment, while MuJoCo Warp should
-  expose the same reset/action/state surface over `wp_model` / `wp_data`.
+- The batch API stays backend-neutral: MuJoCo CPU implements the semantic
+  baseline with persistent native worlds, while the Go1 Warp task consumes the
+  same compiled scene artifact and exposes the same reset/action/state contract
+  over persistent CUDA model/data arrays.
 - Fixed task functions should be expressed as NumPy batch functions over
   structured arrays, not as arbitrary per-step Python scene traversal. That is
   the array-first contract: action, physics state, reward, done, reset masks,
@@ -315,18 +316,20 @@ value, not through `mjModel*`, Warp arrays, CUDA pointers, or editor state. The
 provider is an optional Python package layer and therefore is not a native
 `PhysicsBackendType` exposed to scene nodes or editor serialization.
 
-The provider currently owns persistent model/data arrays, a reset mask,
-zero-copy Torch views, and captured step/forward/reset/sense graphs. It rejects
-incompatible artifacts, changed captured storage, unavailable CUDA runtimes,
-fixed-capacity overflow, and non-finite state explicitly. The RSL-RL adapter
-preserves device-native action, observation, reward, and timeout tensors when a
-task environment supplies them.
+The provider owns persistent model/data arrays, a reset mask, zero-copy Torch
+views, runtime contact sensors, BVH terrain raycasts, per-world model fields,
+and captured step/forward/reset/sense graphs. It rejects incompatible
+artifacts, changed captured storage, unavailable CUDA runtimes, fixed-capacity
+overflow, and non-finite state explicitly. The RSL-RL adapter preserves
+device-native action, observation, reward, and timeout tensors.
 
-This is provider infrastructure, not yet a complete CUDA Go1 task. The current
-Go1 reward, observation, terrain scan, contact history, command, and domain
-randomization implementation remains the NumPy/MuJoCo CPU semantic baseline.
-Moving that task to CUDA requires persistent task buffers and Warp/Torch kernels
-for those terms; it must not wrap the CPU task in device transfers.
+`examples.go1.train.go1_warp_velocity_env.Go1WarpVelocityEnv` is the first
+complete CUDA task using this boundary. It implements the Go1 rough-terrain
+action, command, reset, terrain curriculum, contact history, ray sensing,
+reward, termination, actor observation, critic observation, startup
+randomization, and push semantics with CUDA tensors. The CPU environment
+remains the semantic baseline and short-step parity oracle. Backend selection
+is explicit in the training CLI and never falls back implicitly.
 
 ### Newton Admission Boundary
 

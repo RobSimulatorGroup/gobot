@@ -278,6 +278,7 @@ struct PhysicsSceneArtifact {
     std::size_t nhfield{0};
     std::vector<std::string> robot_names;
     std::vector<std::string> robot_prefixes;
+    std::vector<std::int32_t> terrain_geom_groups;
 };
 
 struct PhysicsContactShapeGroup {

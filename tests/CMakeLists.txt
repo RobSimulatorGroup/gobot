@@ -132,6 +132,18 @@ endif()
 if(Python3_SITEARCH AND NOT Python3_SITEARCH STREQUAL Python3_SITELIB)
     string(APPEND GOBOT_PYTHON_TEST_PATH ":${Python3_SITEARCH}")
 endif()
+# Tests use -S to ignore editable-install .pth hooks. Query the same
+# interpreter first so Debian dist-packages and other real dependencies remain visible.
+execute_process(
+        COMMAND ${Python3_EXECUTABLE} -c
+                "import os, sys; print(os.pathsep.join(dict.fromkeys(p for p in sys.path if 'site-packages' in p or 'dist-packages' in p)))"
+        RESULT_VARIABLE GOBOT_PYTHON_DEPENDENCY_PATH_RESULT
+        OUTPUT_VARIABLE GOBOT_PYTHON_DEPENDENCY_PATH
+        OUTPUT_STRIP_TRAILING_WHITESPACE
+)
+if(GOBOT_PYTHON_DEPENDENCY_PATH_RESULT EQUAL 0 AND GOBOT_PYTHON_DEPENDENCY_PATH)
+    string(APPEND GOBOT_PYTHON_TEST_PATH ":${GOBOT_PYTHON_DEPENDENCY_PATH}")
+endif()
 set(GOBOT_PYTHON_TEST_ENV
         "HOME=/tmp/gobot-test-home;PYTHONNOUSERSITE=1;PYTHONPATH=${GOBOT_PYTHON_TEST_PATH}")
 string(APPEND GOBOT_PYTHON_TEST_ENV
@@ -196,6 +208,20 @@ if(GOB_BUILD_MUJOCO AND GOBOT_MUJOCO_TARGET)
     set_tests_properties(test_python_mujoco_warp_provider
             PROPERTIES
                 ENVIRONMENT "${GOBOT_PYTHON_TEST_ENV}"
+                RESOURCE_LOCK gobot_cuda
+                WORKING_DIRECTORY "${CMAKE_SOURCE_DIR}"
+    )
+
+    add_test(
+            NAME test_python_go1_mujoco_warp_env
+            COMMAND ${Python3_EXECUTABLE} -S
+                    ${CMAKE_CURRENT_SOURCE_DIR}/python/test_go1_mujoco_warp_env.py
+    )
+    set_tests_properties(test_python_go1_mujoco_warp_env
+            PROPERTIES
+                ENVIRONMENT "${GOBOT_PYTHON_TEST_ENV}"
+                RESOURCE_LOCK gobot_cuda
+                SKIP_RETURN_CODE 77
                 WORKING_DIRECTORY "${CMAKE_SOURCE_DIR}"
     )
 endif()

@@ -33,32 +33,12 @@ from gobot.rl.locomotion.math import (
 )
 
 from .go1_velocity_cfg import (
-    GO1_ARMATURE,
-    GO1_EFFORT_LIMIT,
+    GO1_ROUGH_REWARD_TERM_NAMES,
     GO1_TASK_VERSION,
-    GO1_VELOCITY_LIMIT,
     Go1VelocityCfg,
     go1_velocity_cfg,
 )
-
-_GO1_ROUGH_REWARD_TERM_NAMES: tuple[str, ...] = (
-    "track_linear_velocity",
-    "track_angular_velocity",
-    "upright",
-    "pose",
-    "body_ang_vel",
-    "angular_momentum",
-    "dof_pos_limits",
-    "action_rate_l2",
-    "air_time",
-    "foot_clearance",
-    "foot_swing_height",
-    "foot_slip",
-    "soft_landing",
-    "self_collisions",
-    "shank_collision",
-    "trunk_head_collision",
-)
+from .go1_scene_runtime import prepare_go1_scene
 
 _GO1_HIP_INDICES = np.asarray([0, 3, 6, 9], dtype=np.int64)
 
@@ -157,7 +137,7 @@ class Go1VelocityEnv(LocomotionBatchEnv):
         self._episode_start_xy = np.zeros((self.num_envs, 2), dtype=np.float32)
         self._episode_returns = np.zeros(self.num_envs, dtype=np.float32)
         self.common_step_counter = 0
-        self._reward_term_names = _GO1_ROUGH_REWARD_TERM_NAMES
+        self._reward_term_names = GO1_ROUGH_REWARD_TERM_NAMES
         self._advance_task_time = False
 
         self._foot_count = len(self.cfg_obj.foot_names)
@@ -173,12 +153,11 @@ class Go1VelocityEnv(LocomotionBatchEnv):
         self._reset_reasons = np.zeros(self.num_envs, dtype=np.int64)
         self._current_command_stage = 0
         self.project_path = Path(self.cfg_obj.project_path).resolve()
-        self.context = context if context is not None else gobot.app.context()
-        self.context.set_project_path(str(self.project_path))
-        self.context.load_scene(self.cfg_obj.scene_path)
-        self._runtime_terrain_node = self._find_terrain_node()
+        self.context, self.robot, self._runtime_terrain_node = prepare_go1_scene(
+            self.cfg_obj,
+            context=context,
+        )
         self._terrain_config = self._read_terrain_generator_config()
-        self.robot = self._find_robot_node()
         self._spawn_origins = self._load_spawn_origins()
         self._spawn_grid_shape = self._infer_spawn_grid_shape()
         self._initialize_spawn_assignments()
@@ -186,22 +165,6 @@ class Go1VelocityEnv(LocomotionBatchEnv):
         max_difficulty = max(float(np.max(self._spawn_difficulties)), 1.0e-6)
         self._spawn_levels = np.clip(self._spawn_difficulties / max_difficulty, 0.0, 1.0).astype(np.float32)
 
-        self.context.fixed_time_step = self.physics_dt
-        default_kp = float(np.asarray(self.cfg_obj.kp, dtype=np.float32).reshape(-1)[0])
-        default_kd = float(np.asarray(self.cfg_obj.kd, dtype=np.float32).reshape(-1)[0])
-        self.context.set_default_joint_gains(
-            {
-                "position_stiffness": default_kp,
-                "velocity_damping": default_kd,
-                "integral_gain": 0.0,
-                "integral_limit": 0.0,
-            }
-        )
-        if self.cfg_obj.mujoco_solver_settings:
-            current_solver_settings = self.context.get_mujoco_solver_settings()
-            current_solver_settings.update(dict(self.cfg_obj.mujoco_solver_settings))
-            self.context.set_mujoco_solver_settings(current_solver_settings)
-        self._configure_robot_drives()
         self.context.build_world(gobot.PhysicsBackendType.MuJoCoCpu)
 
         self._scene_link_names = tuple(_node_names_by_type(self.robot, "Link3D"))
@@ -798,27 +761,6 @@ class Go1VelocityEnv(LocomotionBatchEnv):
                 )
         return 0
 
-    def _configure_robot_drives(self) -> None:
-        joint_kp = self._joint_gain_array(self.cfg_obj.kp)
-        joint_kd = self._joint_gain_array(self.cfg_obj.kd)
-        for joint_index, joint_name in enumerate(self.joint_names):
-            joint = self.robot.find(joint_name) or _find_node_by_name(self.robot, joint_name)
-            if joint is None:
-                continue
-            joint.drive_mode = gobot.JointDriveMode.Position
-            joint.drive_stiffness = float(joint_kp[joint_index])
-            joint.drive_damping = float(joint_kd[joint_index])
-            effort_limit = float(GO1_EFFORT_LIMIT[joint_index])
-            joint.armature = float(GO1_ARMATURE[joint_index])
-            joint.effort_limit = effort_limit
-            joint.velocity_limit = float(GO1_VELOCITY_LIMIT[joint_index])
-            joint.force_lower_limit = -effort_limit
-            joint.force_upper_limit = effort_limit
-            joint.control_lower_limit = 0.0
-            joint.control_upper_limit = 0.0
-            joint.damping = 0.0
-            joint.friction_loss = 0.0
-
     def _joint_gain_array(self, value: float | Sequence[float]) -> np.ndarray:
         array = np.asarray(value, dtype=np.float32)
         if array.ndim == 0:
@@ -946,29 +888,6 @@ class Go1VelocityEnv(LocomotionBatchEnv):
             seed=self.seed + 17_171,
         )
         self._apply_command_curriculum()
-
-    def _find_robot_node(self):
-        root = self.context.root
-        robot = root.find(self.cfg_obj.robot_name) if root is not None else None
-        if robot is None:
-            robot = _find_node_by_name(root, self.cfg_obj.robot_name)
-        if robot is None:
-            raise RuntimeError(f"Gobot scene has no robot named {self.cfg_obj.robot_name!r}")
-        return robot
-
-    def _find_terrain_node(self):
-        root = self.context.root
-        terrain_world = root.find("terrain_world") if root is not None else None
-        if terrain_world is None:
-            raise RuntimeError("Gobot scene has no terrain_world node")
-        terrain = terrain_world.find("terrain")
-        if terrain is None:
-            raise RuntimeError("Gobot scene terrain_world has no authored terrain node")
-        if terrain.generation_error:
-            raise RuntimeError(f"Gobot scene terrain generation failed: {terrain.generation_error}")
-        if not terrain.generator_config:
-            raise RuntimeError("Gobot scene terrain has no generator_config resource")
-        return terrain
 
     def _read_terrain_generator_config(self) -> dict[str, Any]:
         config = self._runtime_terrain_node.generator_config
@@ -1393,6 +1312,16 @@ class Go1VelocityEnv(LocomotionBatchEnv):
             raise ValueError("reset reasons must have the same length as env_ids")
 
         self._apply_command_curriculum()
+
+        if not self.cfg_obj.terrain_curriculum:
+            rows, cols = self._spawn_grid_shape
+            if rows > 0 and cols > 0:
+                self._spawn_env_levels[env_ids] = self._rng.integers(
+                    0, rows, size=env_ids.size
+                ).astype(np.int64)
+                self._spawn_type_cols[env_ids] = self._rng.integers(
+                    0, cols, size=env_ids.size
+                ).astype(np.int64)
 
         reset_count = int(env_ids.size)
         base_positions = np.zeros((reset_count, 3), dtype=np.float32)

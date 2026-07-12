@@ -179,6 +179,7 @@ def main():
         compiled_artifact = context.compile_scene_artifact(gobot.PhysicsBackendType.MuJoCoCpu)
         assert compiled_artifact["format"] == "mjcf"
         assert compiled_artifact["robot_names"] == ["cartpole"]
+        assert compiled_artifact["terrain_geom_groups"] == []
         assert compiled_artifact["dimensions"]["nq"] == 2
         assert context.has_world is False
     context.build_world(gobot.PhysicsBackendType.Null)

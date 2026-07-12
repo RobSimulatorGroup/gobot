@@ -3303,6 +3303,9 @@ bool MuJoCoPhysicsWorld::CompileAuthoredModel() {
     scene_artifact_.ngeom = static_cast<std::size_t>(model->ngeom);
     scene_artifact_.nsensor = static_cast<std::size_t>(model->nsensor);
     scene_artifact_.nhfield = static_cast<std::size_t>(model->nhfield);
+    if (!scene_snapshot_.terrains.empty()) {
+        scene_artifact_.terrain_geom_groups = {kGobotTerrainGeomGroup};
+    }
     for (const MuJoCoRobotBinding& binding : robot_bindings_) {
         if (binding.robot_index < scene_snapshot_.robots.size()) {
             scene_artifact_.robot_names.push_back(scene_snapshot_.robots[binding.robot_index].name);

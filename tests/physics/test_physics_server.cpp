@@ -1275,6 +1275,7 @@ TEST(TestPhysicsServer, mujoco_authored_terrain_compiles) {
     EXPECT_EQ(artifact->nhfield, 1);
     ASSERT_EQ(artifact->robot_names, std::vector<std::string>{"terrain_bot"});
     ASSERT_EQ(artifact->robot_prefixes, std::vector<std::string>{"terrain_bot_"});
+    ASSERT_EQ(artifact->terrain_geom_groups, std::vector<std::int32_t>{5});
 
     gobot::PhysicsSceneArtifact recompiled_artifact;
     std::string compile_error;
@@ -1289,6 +1290,7 @@ TEST(TestPhysicsServer, mujoco_authored_terrain_compiles) {
     EXPECT_EQ(recompiled_artifact.nq, artifact->nq);
     EXPECT_EQ(recompiled_artifact.nv, artifact->nv);
     EXPECT_EQ(recompiled_artifact.nu, artifact->nu);
+    EXPECT_EQ(recompiled_artifact.terrain_geom_groups, artifact->terrain_geom_groups);
 
     gobot::Object::Delete(root);
 #endif

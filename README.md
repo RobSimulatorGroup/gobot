@@ -129,10 +129,27 @@ uv sync --extra train --extra mujoco-warp
 Requesting this provider requires an NVIDIA CUDA device and never falls back
 implicitly to the CPU backend. Normal MuJoCo CPU training only needs `train`.
 
-Run example training through `uv` rather than a conda Python path:
+Run Go1 rough-terrain training on MuJoCo Warp through `uv`:
 
 ```bash
-uv run --extra train python -m examples.go1.train.go1_velocity_train --num-envs 256 --iterations 10000
+uv run --extra train --extra mujoco-warp \
+  python -m examples.go1.train.go1_velocity_train \
+  --backend mujoco-warp \
+  --device cuda:0 \
+  --num-envs 256 \
+  --iterations 10000 \
+  --no-step-extras
+```
+
+Select the CPU semantic baseline explicitly when CUDA is not desired:
+
+```bash
+uv run --extra train \
+  python -m examples.go1.train.go1_velocity_train \
+  --backend mujoco-cpu \
+  --device cpu \
+  --num-envs 64 \
+  --iterations 10000
 ```
 
 Packaged examples are available from the editor start screen under `Examples`.

@@ -40,6 +40,7 @@ class CompiledSceneArtifact:
     dimensions: Mapping[str, int]
     robot_names: tuple[str, ...]
     robot_prefixes: tuple[str, ...]
+    terrain_geom_groups: tuple[int, ...]
 
     @classmethod
     def from_mapping(cls, value: Mapping[str, Any]) -> "CompiledSceneArtifact":
@@ -80,6 +81,13 @@ class CompiledSceneArtifact:
         robot_prefixes = tuple(str(prefix) for prefix in value.get("robot_prefixes", ()))
         if len(robot_names) != len(robot_prefixes):
             raise ValueError("compiled scene artifact robot names and prefixes do not match")
+        terrain_geom_groups = tuple(int(group) for group in value.get("terrain_geom_groups", ()))
+        if len(set(terrain_geom_groups)) != len(terrain_geom_groups) or any(
+            group < 0 or group > 5 for group in terrain_geom_groups
+        ):
+            raise ValueError(
+                f"compiled scene artifact has invalid terrain geom groups {terrain_geom_groups}"
+            )
         backend_version = str(value.get("backend_version", ""))
         if not backend_version:
             raise ValueError("compiled scene artifact has no backend version")
@@ -93,6 +101,7 @@ class CompiledSceneArtifact:
             dimensions=dimensions,
             robot_names=robot_names,
             robot_prefixes=robot_prefixes,
+            terrain_geom_groups=terrain_geom_groups,
         )
 
     @property

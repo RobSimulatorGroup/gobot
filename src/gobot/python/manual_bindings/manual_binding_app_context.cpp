@@ -69,6 +69,7 @@ py::dict SceneArtifactToPython(const PhysicsSceneArtifact& artifact) {
     result["dimensions"] = std::move(dimensions);
     result["robot_names"] = artifact.robot_names;
     result["robot_prefixes"] = artifact.robot_prefixes;
+    result["terrain_geom_groups"] = artifact.terrain_geom_groups;
     return result;
 }
 

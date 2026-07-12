@@ -917,11 +917,13 @@ def test_compiled_scene_artifact_validates_robot_prefixes():
         "dimensions": {"nq": 7, "nv": 6, "nu": 12},
         "robot_names": ["go1"],
         "robot_prefixes": ["go1_"],
+        "terrain_geom_groups": [5],
     }
     artifact = CompiledSceneArtifact.from_mapping(artifact_mapping)
     assert artifact.robot_prefix("go1") == "go1_"
     assert artifact.dimensions["nq"] == 7
     assert artifact.content_digest == artifact.digest
+    assert artifact.terrain_geom_groups == (5,)
     try:
         CompiledSceneArtifact.from_mapping(
             {"schema_version": 2, "format": "mjcf", "content": content}

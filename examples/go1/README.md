@@ -9,7 +9,9 @@ This example keeps the robot project self-contained:
 - `go1_scene.jscn` references `go1.jscn` and owns the `terrain_world/terrain` authoring nodes.
 - `terrain/rough_terrain.jres` is the versioned procedural terrain recipe used by the editor, playback, and training.
 - `train/go1_velocity_train.py` trains the Go1-owned velocity task into `policies/`.
-- `train/go1_velocity_env.py` contains the Go1 rsl_rl vector environment. It trains from the Gobot `.jscn` scene through a scene-authored CPU batch backend facade, not by importing XML directly.
+- `train/go1_velocity_env.py` is the MuJoCo CPU semantic baseline.
+- `train/go1_warp_velocity_env.py` is the CUDA-native MuJoCo Warp task path.
+- `train/go1_scene_runtime.py` applies the shared scene, solver, controller, and terrain contract before either backend compiles its runtime.
 - `train/go1_velocity_cfg.py` contains rewards, PPO, command, solver, and terrain spawn-curriculum settings.
 - `scripts/go1.py` is attached to the `go1_scene.jscn` root and plays a trained policy in `gobot_editor`.
 - `policies/go1_velocity.pt` is the default training output.
@@ -36,11 +38,13 @@ Train from the repository root:
 
 ```bash
 cd /home/wqq/gobot
-uv run --extra train python -m examples.go1.train.go1_velocity_train \
+uv run --extra train --extra mujoco-warp \
+  python -m examples.go1.train.go1_velocity_train \
+  --backend mujoco-warp \
   --num-envs 256 \
   --iterations 10000 \
-  --device cuda \
-  --sim-workers 0 \
+  --device cuda:0 \
+  --no-step-extras \
   --log-dir logs/go1_rough_velocity \
   --policy-out policies/go1_velocity.pt
 ```
@@ -51,6 +55,16 @@ script:
 ```bash
 cd /home/wqq/gobot
 uv run --extra train python -m examples.go1.train.go1_velocity_train --cpu-batch --iterations 10
+```
+
+The equivalent fully explicit CPU selection is:
+
+```bash
+uv run --extra train python -m examples.go1.train.go1_velocity_train \
+  --backend mujoco-cpu \
+  --device cpu \
+  --num-envs 64 \
+  --iterations 10
 ```
 
 Benchmark the Gobot Go1 vector env hot path without the PPO learner:
@@ -74,19 +88,23 @@ extras/logging.
 
 The `go1_rough_velocity` task follows the Go1 rough-terrain observation,
 reward, command, event, robot-dynamics, collision, and mixed-terrain settings
-while loading the Gobot `.jscn` scene as the source of truth. Simulation always
-uses Gobot's CPU MuJoCo batch runtime. `--device` controls the PyTorch learner;
-it does not select the physics backend.
+while loading the Gobot `.jscn` scene as the source of truth. `--backend`
+selects `mujoco-warp` or `mujoco-cpu`; there is no implicit fallback. Warp keeps
+simulation, sensing, task state, observations, rewards, resets, and policy
+actions on CUDA. For the CPU backend, `--device` only selects the PyTorch
+learner device and `--sim-workers` controls native CPU stepping.
 
 Resume from the latest checkpoint in the log directory:
 
 ```bash
 cd /home/wqq/gobot
-uv run --extra train python -m examples.go1.train.go1_velocity_train \
+uv run --extra train --extra mujoco-warp \
+  python -m examples.go1.train.go1_velocity_train \
+  --backend mujoco-warp \
   --num-envs 256 \
   --iterations 10000 \
-  --device cuda \
-  --sim-workers 0 \
+  --device cuda:0 \
+  --no-step-extras \
   --render-video-interval 100 \
   --log-dir logs/go1_rough_velocity \
   --policy-out policies/go1_velocity.pt \

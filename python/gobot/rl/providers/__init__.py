@@ -9,8 +9,10 @@ from .base import (
     SimulationCapacityError,
 )
 from .mujoco_warp import (
+    MuJoCoWarpContactSensorSpec,
     MuJoCoWarpProvider,
     MuJoCoWarpProviderAvailability,
+    MuJoCoWarpRaycastSensorSpec,
     MuJoCoWarpRobotLayout,
 )
 
@@ -19,8 +21,10 @@ __all__ = [
     "BatchProviderCapabilities",
     "CompiledSceneArtifact",
     "GraphInvalidatedError",
+    "MuJoCoWarpContactSensorSpec",
     "MuJoCoWarpProvider",
     "MuJoCoWarpProviderAvailability",
+    "MuJoCoWarpRaycastSensorSpec",
     "MuJoCoWarpRobotLayout",
     "ProviderUnavailableError",
     "SimulationCapacityError",
