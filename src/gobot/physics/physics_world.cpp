@@ -1119,6 +1119,10 @@ const PhysicsSceneSnapshot& PhysicsWorld::GetSceneSnapshot() const {
     return scene_snapshot_;
 }
 
+const PhysicsSceneArtifact* PhysicsWorld::GetSceneArtifact() const {
+    return nullptr;
+}
+
 const PhysicsSceneState& PhysicsWorld::GetSceneState() const {
     return scene_state_;
 }

@@ -48,6 +48,30 @@ std::string FootGeomNameFromSensorOrLinkName(std::string_view sensor_name, std::
     return std::string(link_name);
 }
 
+py::dict SceneArtifactToPython(const PhysicsSceneArtifact& artifact) {
+    py::dict dimensions;
+    dimensions["nq"] = artifact.nq;
+    dimensions["nv"] = artifact.nv;
+    dimensions["nu"] = artifact.nu;
+    dimensions["nbody"] = artifact.nbody;
+    dimensions["njoint"] = artifact.njoint;
+    dimensions["ngeom"] = artifact.ngeom;
+    dimensions["nsensor"] = artifact.nsensor;
+    dimensions["nhfield"] = artifact.nhfield;
+
+    py::dict result;
+    result["schema_version"] = artifact.schema_version;
+    result["backend"] = artifact.backend;
+    result["format"] = artifact.format;
+    result["content"] = artifact.content;
+    result["content_digest"] = artifact.content_digest;
+    result["backend_version"] = artifact.backend_version;
+    result["dimensions"] = std::move(dimensions);
+    result["robot_names"] = artifact.robot_names;
+    result["robot_prefixes"] = artifact.robot_prefixes;
+    return result;
+}
+
 enum LocomotionStepProfileIndex : std::size_t {
     kStepProfileTotal = 0,
     kStepProfilePrepareAction,
@@ -1256,6 +1280,18 @@ void RegisterManualAppContextBindings(py::module_& module) {
                     throw std::runtime_error(context.GetLastError());
                 }
             }, py::arg("backend_type") = PhysicsBackendType::Null)
+            .def("compiled_scene_artifact", [](EngineContext& context) {
+                SimulationServer* simulation = context.GetSimulationServer();
+                Ref<PhysicsWorld> world = simulation != nullptr ? simulation->GetWorld() : Ref<PhysicsWorld>();
+                if (!world.IsValid()) {
+                    throw std::runtime_error("Gobot context has no built physics world");
+                }
+                const PhysicsSceneArtifact* artifact = world->GetSceneArtifact();
+                if (artifact == nullptr) {
+                    throw std::runtime_error("Active physics backend does not expose a compiled scene artifact");
+                }
+                return SceneArtifactToPython(*artifact);
+            })
             .def("rebuild_world", [](EngineContext& context, bool preserve_state) {
                 if (!context.RebuildWorld(preserve_state)) {
                     throw std::runtime_error(context.GetLastError());

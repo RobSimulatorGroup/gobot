@@ -261,6 +261,25 @@ struct PhysicsSceneSnapshot {
     std::size_t total_terrain_count{0};
 };
 
+struct PhysicsSceneArtifact {
+    std::uint32_t schema_version{0};
+    PhysicsBackendType backend{PhysicsBackendType::Null};
+    std::string format;
+    std::string content;
+    std::string content_digest;
+    std::string backend_version;
+    std::size_t nq{0};
+    std::size_t nv{0};
+    std::size_t nu{0};
+    std::size_t nbody{0};
+    std::size_t njoint{0};
+    std::size_t ngeom{0};
+    std::size_t nsensor{0};
+    std::size_t nhfield{0};
+    std::vector<std::string> robot_names;
+    std::vector<std::string> robot_prefixes;
+};
+
 struct PhysicsContactShapeGroup {
     std::string name;
     std::vector<std::string> shape_names;

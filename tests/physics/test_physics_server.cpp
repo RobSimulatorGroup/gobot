@@ -6,6 +6,7 @@
 
 #include <gobot/physics/physics_server.hpp>
 #include <gobot/physics/physics_scene_compiler.hpp>
+#include <gobot/physics/backends/mujoco_scene_compiler.hpp>
 #include <gobot/scene/collision_shape_3d.hpp>
 #include <gobot/scene/joint_3d.hpp>
 #include <gobot/scene/link_3d.hpp>
@@ -1261,6 +1262,32 @@ TEST(TestPhysicsServer, mujoco_authored_terrain_compiles) {
     world->Step(0.002);
     EXPECT_EQ(world->GetSceneSnapshot().total_terrain_count, 1);
     EXPECT_EQ(world->GetSceneSnapshot().terrains[0].heightfields.size(), 1);
+
+    const gobot::PhysicsSceneArtifact* artifact = world->GetSceneArtifact();
+    ASSERT_NE(artifact, nullptr);
+    EXPECT_EQ(artifact->schema_version, gobot::MuJoCoSceneCompiler::kArtifactSchemaVersion);
+    EXPECT_EQ(artifact->backend, gobot::PhysicsBackendType::MuJoCoCpu);
+    EXPECT_EQ(artifact->format, "mjcf");
+    EXPECT_FALSE(artifact->content_digest.empty());
+    EXPECT_FALSE(artifact->backend_version.empty());
+    EXPECT_NE(artifact->content.find("<hfield"), std::string::npos);
+    EXPECT_NE(artifact->content.find("elevation="), std::string::npos);
+    EXPECT_EQ(artifact->nhfield, 1);
+    ASSERT_EQ(artifact->robot_names, std::vector<std::string>{"terrain_bot"});
+    ASSERT_EQ(artifact->robot_prefixes, std::vector<std::string>{"terrain_bot_"});
+
+    gobot::PhysicsSceneArtifact recompiled_artifact;
+    std::string compile_error;
+    ASSERT_TRUE(gobot::MuJoCoSceneCompiler::Compile(
+            world->GetSceneSnapshot(),
+            world->GetSettings(),
+            &recompiled_artifact,
+            &compile_error)) << compile_error;
+    EXPECT_EQ(recompiled_artifact.content_digest, artifact->content_digest);
+    EXPECT_EQ(recompiled_artifact.content, artifact->content);
+    EXPECT_EQ(recompiled_artifact.nq, artifact->nq);
+    EXPECT_EQ(recompiled_artifact.nv, artifact->nv);
+    EXPECT_EQ(recompiled_artifact.nu, artifact->nu);
 
     gobot::Object::Delete(root);
 #endif

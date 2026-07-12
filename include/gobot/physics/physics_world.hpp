@@ -120,6 +120,8 @@ public:
 
     const PhysicsSceneSnapshot& GetSceneSnapshot() const;
 
+    virtual const PhysicsSceneArtifact* GetSceneArtifact() const;
+
     const PhysicsSceneState& GetSceneState() const;
 
     virtual PhysicsRaycastHit RaycastTerrain(const PhysicsRaycastQuery& query) const;

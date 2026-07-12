@@ -68,6 +68,8 @@ public:
 
     const std::string& GetLastError() const override;
 
+    const PhysicsSceneArtifact* GetSceneArtifact() const override;
+
     bool Build(PhysicsSceneSnapshot scene_snapshot) override;
 
     bool RestoreCompatibleState(const PhysicsSceneState& previous_state) override;
@@ -164,6 +166,8 @@ protected:
 
 private:
 #ifdef GOBOT_HAS_MUJOCO
+    struct RobotBatchLayout;
+
     bool CompileAuthoredModel();
 
     bool AddAuthoredRobotToSpec(void* parent_spec,
@@ -273,6 +277,7 @@ private:
     void BatchWorkerLoop(std::size_t worker_index);
 
     bool available_{false};
+    PhysicsSceneArtifact scene_artifact_;
 
 #ifdef GOBOT_HAS_MUJOCO
     void* model_{nullptr};
@@ -284,6 +289,7 @@ private:
     std::vector<MuJoCoJointBinding> joint_bindings_;
     std::vector<MuJoCoLinkBinding> link_bindings_;
     std::vector<MuJoCoSensorBinding> sensor_bindings_;
+    std::unique_ptr<RobotBatchLayout> robot_batch_layout_;
 
     std::vector<std::thread> batch_workers_;
     std::mutex batch_mutex_;

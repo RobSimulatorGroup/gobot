@@ -175,6 +175,11 @@ def main():
     gobot.save_scene(cartpole_root, "res://gobot_python_binding_cartpole.jscn")
     context.load_scene("res://gobot_python_binding_cartpole.jscn")
     context.build_world(gobot.PhysicsBackendType.Null)
+    try:
+        context.compiled_scene_artifact()
+        raise AssertionError("Null backend must not expose a compiled scene artifact")
+    except RuntimeError as error:
+        assert "does not expose" in str(error)
     runtime_cartpole = context.root
     assert runtime_cartpole is not None
     slider = runtime_cartpole.find("rail/slider")
