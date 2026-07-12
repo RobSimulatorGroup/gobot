@@ -197,11 +197,13 @@ tests reject raw MuJoCo pointers or binding storage in Python code. Batched
 velocity-command state, sampling, timers, and frame conversion now live in the
 Python-independent `LocomotionCommandRuntime` service with an independent RNG
 per environment. `LocomotionBatchRuntime` now composes that service and owns
+the resolved robot-state layout, float32 base/joint/link/foot/sensor buffers,
 batched foot contact events, air/contact timing, landing forces, peak heights,
-and collision counters. Task-specific reward and observation scratch arrays
-are allocated by the Python task backend. The next split is robot-state
-extraction and its zero-copy buffers; once moved, the pybind class should only
-adapt NumPy arrays and lifecycle calls to the simulation service.
+and collision counters. Every physics result is checked against the resolved
+name and dimension contract before extraction. Task-specific reward and
+observation scratch arrays are allocated by the Python task backend; the
+pybind class only adapts NumPy arrays and lifecycle calls to the simulation
+service.
 
 Performance work must preserve deterministic reset, stable joint ordering,
 substep contact history, and the policy manifest contract. Use persistent

@@ -2,7 +2,6 @@
 
 #include <algorithm>
 #include <chrono>
-#include <cmath>
 #include <cstdint>
 #include <limits>
 #include <string_view>
@@ -48,14 +47,6 @@ std::string FootGeomNameFromSensorOrLinkName(std::string_view sensor_name, std::
     }
     return std::string(link_name);
 }
-
-std::string FootContactGroupName(std::size_t foot_index) {
-    return fmt::format("foot_{}", foot_index);
-}
-
-constexpr std::string_view kThighContactGroup = "thigh";
-constexpr std::string_view kShankContactGroup = "shank";
-constexpr std::string_view kTrunkHeadContactGroup = "trunk_head";
 
 enum LocomotionStepProfileIndex : std::size_t {
     kStepProfileTotal = 0,
@@ -218,71 +209,71 @@ public:
         arrays["reset_joint_velocity"] =
                 VectorArrayView(reset_joint_velocity_, {EnvDim(), JointDim()}, owner, true);
         arrays["base_position"] =
-                VectorArrayView(base_position_, {EnvDim(), 3}, owner, false);
+                VectorArrayView(batch_runtime_.BasePositions(), {EnvDim(), 3}, owner, false);
         arrays["base_pos"] =
-                VectorArrayView(base_position_, {EnvDim(), 3}, owner, false);
+                VectorArrayView(batch_runtime_.BasePositions(), {EnvDim(), 3}, owner, false);
         arrays["base_quaternion"] =
-                VectorArrayView(base_quaternion_, {EnvDim(), 4}, owner, false);
+                VectorArrayView(batch_runtime_.BaseQuaternions(), {EnvDim(), 4}, owner, false);
         arrays["base_quat"] =
-                VectorArrayView(base_quaternion_, {EnvDim(), 4}, owner, false);
+                VectorArrayView(batch_runtime_.BaseQuaternions(), {EnvDim(), 4}, owner, false);
         arrays["base_linear_velocity"] =
-                VectorArrayView(base_linear_velocity_, {EnvDim(), 3}, owner, false);
+                VectorArrayView(batch_runtime_.BaseLinearVelocities(), {EnvDim(), 3}, owner, false);
         arrays["base_angular_velocity"] =
-                VectorArrayView(base_angular_velocity_, {EnvDim(), 3}, owner, false);
+                VectorArrayView(batch_runtime_.BaseAngularVelocities(), {EnvDim(), 3}, owner, false);
         arrays["base_linear_velocity_body"] =
-                VectorArrayView(base_linear_velocity_body_, {EnvDim(), 3}, owner, false);
+                VectorArrayView(batch_runtime_.BaseLinearVelocitiesBody(), {EnvDim(), 3}, owner, false);
         arrays["linvel"] =
-                VectorArrayView(base_linear_velocity_body_, {EnvDim(), 3}, owner, false);
+                VectorArrayView(batch_runtime_.BaseLinearVelocitiesBody(), {EnvDim(), 3}, owner, false);
         arrays["local_linvel"] =
-                VectorArrayView(base_linear_velocity_body_, {EnvDim(), 3}, owner, false);
+                VectorArrayView(batch_runtime_.BaseLinearVelocitiesBody(), {EnvDim(), 3}, owner, false);
         arrays["base_angular_velocity_body"] =
-                VectorArrayView(base_angular_velocity_body_, {EnvDim(), 3}, owner, false);
+                VectorArrayView(batch_runtime_.BaseAngularVelocitiesBody(), {EnvDim(), 3}, owner, false);
         arrays["gyro"] =
-                VectorArrayView(base_angular_velocity_body_, {EnvDim(), 3}, owner, false);
+                VectorArrayView(batch_runtime_.BaseAngularVelocitiesBody(), {EnvDim(), 3}, owner, false);
         arrays["projected_gravity"] =
-                VectorArrayView(projected_gravity_, {EnvDim(), 3}, owner, false);
+                VectorArrayView(batch_runtime_.ProjectedGravity(), {EnvDim(), 3}, owner, false);
         arrays["gravity"] =
-                VectorArrayView(projected_gravity_, {EnvDim(), 3}, owner, false);
+                VectorArrayView(batch_runtime_.ProjectedGravity(), {EnvDim(), 3}, owner, false);
         arrays["upvector"] =
-                VectorArrayView(upvector_, {EnvDim(), 3}, owner, false);
+                VectorArrayView(batch_runtime_.UpVectors(), {EnvDim(), 3}, owner, false);
         arrays["framezaxis"] =
-                VectorArrayView(upvector_, {EnvDim(), 3}, owner, false);
+                VectorArrayView(batch_runtime_.UpVectors(), {EnvDim(), 3}, owner, false);
         arrays["base_height"] =
-                VectorArrayView(base_height_, {EnvDim()}, owner, false);
+                VectorArrayView(batch_runtime_.BaseHeights(), {EnvDim()}, owner, false);
         arrays["joint_position"] =
-                VectorArrayView(joint_position_, {EnvDim(), JointDim()}, owner, false);
+                VectorArrayView(batch_runtime_.JointPositions(), {EnvDim(), JointDim()}, owner, false);
         arrays["dof_pos"] =
-                VectorArrayView(joint_position_, {EnvDim(), JointDim()}, owner, false);
+                VectorArrayView(batch_runtime_.JointPositions(), {EnvDim(), JointDim()}, owner, false);
         arrays["joint_velocity"] =
-                VectorArrayView(joint_velocity_, {EnvDim(), JointDim()}, owner, false);
+                VectorArrayView(batch_runtime_.JointVelocities(), {EnvDim(), JointDim()}, owner, false);
         arrays["dof_vel"] =
-                VectorArrayView(joint_velocity_, {EnvDim(), JointDim()}, owner, false);
+                VectorArrayView(batch_runtime_.JointVelocities(), {EnvDim(), JointDim()}, owner, false);
         arrays["qacc"] =
-                VectorArrayView(joint_acceleration_, {EnvDim(), JointDim()}, owner, false);
+                VectorArrayView(batch_runtime_.JointAccelerations(), {EnvDim(), JointDim()}, owner, false);
         arrays["torques"] =
-                VectorArrayView(joint_torque_, {EnvDim(), JointDim()}, owner, false);
+                VectorArrayView(batch_runtime_.JointTorques(), {EnvDim(), JointDim()}, owner, false);
         arrays["joint_lower_limit"] =
-                VectorArrayView(joint_lower_limit_, {JointDim()}, owner, false);
+                VectorArrayView(batch_runtime_.JointLowerLimits(), {JointDim()}, owner, false);
         arrays["joint_upper_limit"] =
-                VectorArrayView(joint_upper_limit_, {JointDim()}, owner, false);
+                VectorArrayView(batch_runtime_.JointUpperLimits(), {JointDim()}, owner, false);
         arrays["link_position"] =
-                VectorArrayView(link_position_, {EnvDim(), LinkDim(), 3}, owner, false);
+                VectorArrayView(batch_runtime_.LinkPositions(), {EnvDim(), LinkDim(), 3}, owner, false);
         arrays["link_quaternion"] =
-                VectorArrayView(link_quaternion_, {EnvDim(), LinkDim(), 4}, owner, false);
+                VectorArrayView(batch_runtime_.LinkQuaternions(), {EnvDim(), LinkDim(), 4}, owner, false);
         arrays["link_linear_velocity"] =
-                VectorArrayView(link_linear_velocity_, {EnvDim(), LinkDim(), 3}, owner, false);
+                VectorArrayView(batch_runtime_.LinkLinearVelocities(), {EnvDim(), LinkDim(), 3}, owner, false);
         arrays["link_angular_velocity"] =
-                VectorArrayView(link_angular_velocity_, {EnvDim(), LinkDim(), 3}, owner, false);
+                VectorArrayView(batch_runtime_.LinkAngularVelocities(), {EnvDim(), LinkDim(), 3}, owner, false);
         arrays["foot_position"] =
-                VectorArrayView(foot_position_, {EnvDim(), FootDim(), 3}, owner, false);
+                VectorArrayView(batch_runtime_.FootPositions(), {EnvDim(), FootDim(), 3}, owner, false);
         arrays["feet_pos"] =
-                VectorArrayView(foot_position_, {EnvDim(), FootDim(), 3}, owner, false);
+                VectorArrayView(batch_runtime_.FootPositions(), {EnvDim(), FootDim(), 3}, owner, false);
         arrays["feet_quat"] =
-                VectorArrayView(foot_quaternion_, {EnvDim(), FootDim(), 4}, owner, false);
+                VectorArrayView(batch_runtime_.FootQuaternions(), {EnvDim(), FootDim(), 4}, owner, false);
         arrays["foot_velocity"] =
-                VectorArrayView(foot_velocity_, {EnvDim(), FootDim(), 3}, owner, false);
+                VectorArrayView(batch_runtime_.FootVelocities(), {EnvDim(), FootDim(), 3}, owner, false);
         arrays["foot_height"] =
-                VectorArrayView(foot_height_, {EnvDim(), FootDim()}, owner, false);
+                VectorArrayView(batch_runtime_.FootHeights(), {EnvDim(), FootDim()}, owner, false);
         arrays["foot_contact"] =
                 VectorArrayView(batch_runtime_.FootContacts(), {EnvDim(), FootDim()}, owner, false);
         arrays["feet_contact"] =
@@ -290,13 +281,13 @@ public:
         arrays["foot_contact_force"] =
                 VectorArrayView(batch_runtime_.FootContactForces(), {EnvDim(), FootDim(), 3}, owner, false);
         arrays["height_scan"] =
-                VectorArrayView(height_scan_, {EnvDim(), HeightScanDim()}, owner, false);
+                VectorArrayView(batch_runtime_.HeightScan(), {EnvDim(), HeightScanDim()}, owner, false);
         arrays["height_scan_hit"] =
-                VectorArrayView(height_scan_hit_, {EnvDim(), HeightScanDim()}, owner, false);
+                VectorArrayView(batch_runtime_.HeightScanHits(), {EnvDim(), HeightScanDim()}, owner, false);
         arrays["height_scan_point"] =
-                VectorArrayView(height_scan_point_, {EnvDim(), HeightScanDim(), 3}, owner, false);
+                VectorArrayView(batch_runtime_.HeightScanPoints(), {EnvDim(), HeightScanDim(), 3}, owner, false);
         arrays["height_scan_normal"] =
-                VectorArrayView(height_scan_normal_, {EnvDim(), HeightScanDim(), 3}, owner, false);
+                VectorArrayView(batch_runtime_.HeightScanNormals(), {EnvDim(), HeightScanDim(), 3}, owner, false);
         arrays["illegal_contact_count"] =
                 VectorArrayView(batch_runtime_.IllegalContactCounts(), {EnvDim()}, owner, false);
         arrays["self_collision_count"] =
@@ -366,7 +357,7 @@ public:
     void Step(std::uint64_t ticks, std::size_t workers) {
 #ifdef GOBOT_HAS_MUJOCO
         RunPhysicsBatch(ticks, workers, false, false);
-        CopyPhysicsState();
+        batch_runtime_.UpdateState(physics_state_);
 #else
         GOB_UNUSED(ticks);
         GOB_UNUSED(workers);
@@ -500,14 +491,14 @@ public:
         RunPhysicsBatch(ticks, workers, true, true);
         SetProfileMs(kStepProfileMjStep, ElapsedMs(phase_begin));
         phase_begin = Clock::now();
-        CopyPhysicsState();
+        batch_runtime_.UpdateState(physics_state_);
         SetProfileMs(kStepProfileExtractState, ElapsedMs(phase_begin));
         phase_begin = Clock::now();
         const RealType control_dt = batch_runtime_.CommandRuntime().GetStepDt();
         const RealType physics_dt = world_->GetSettings().fixed_time_step;
         batch_runtime_.UpdateFootHistory(
                 physics_state_,
-                foot_height_,
+                batch_runtime_.FootHeights(),
                 control_dt,
                 physics_dt);
         SetProfileMs(kStepProfileCommand, ElapsedMs(phase_begin));
@@ -523,7 +514,7 @@ public:
     void Refresh() {
 #ifdef GOBOT_HAS_MUJOCO
         RunPhysicsBatch(0, 0, false, false);
-        CopyPhysicsState();
+        batch_runtime_.UpdateState(physics_state_);
 #else
         throw std::runtime_error("Gobot was built without MuJoCo support");
 #endif
@@ -572,7 +563,7 @@ public:
             throw std::runtime_error(world_->GetLastError());
         }
         RunPhysicsBatch(0, 0, false, false);
-        CopyPhysicsState();
+        batch_runtime_.UpdateState(physics_state_);
         batch_runtime_.ClearResetContacts(env_ids);
     }
 
@@ -601,7 +592,7 @@ public:
             throw std::runtime_error(world_->GetLastError());
         }
         RunPhysicsBatch(0, 0, false, false);
-        CopyPhysicsState();
+        batch_runtime_.UpdateState(physics_state_);
     }
 
     void SetBaseVelocities(const std::vector<std::size_t>& env_ids,
@@ -635,16 +626,16 @@ public:
         }
         if (refresh) {
             RunPhysicsBatch(0, 0, false, false);
-            CopyPhysicsState();
+            batch_runtime_.UpdateState(physics_state_);
         }
     }
 
     void AdvanceCommands() {
-        batch_runtime_.CommandRuntime().Advance(base_quaternion_);
+        batch_runtime_.CommandRuntime().Advance(batch_runtime_.BaseQuaternions());
     }
 
     void UpdateCommandFrames() {
-        batch_runtime_.CommandRuntime().UpdateFrames(base_quaternion_);
+        batch_runtime_.CommandRuntime().UpdateFrames(batch_runtime_.BaseQuaternions());
     }
 
 private:
@@ -703,7 +694,6 @@ private:
         const PhysicsRobotSnapshot* robot_snapshot = nullptr;
         for (std::size_t robot_index = 0; robot_index < snapshot.robots.size(); ++robot_index) {
             if (snapshot.robots[robot_index].name == robot_name_) {
-                robot_index_ = robot_index;
                 robot_snapshot = &snapshot.robots[robot_index];
                 break;
             }
@@ -800,9 +790,15 @@ private:
             }
             return names;
         };
-        thigh_shape_names_ = matching_shape_names(thigh_shape_patterns_, kThighContactGroup);
-        shank_shape_names_ = matching_shape_names(shank_shape_patterns_, kShankContactGroup);
-        trunk_head_shape_names_ = matching_shape_names(trunk_head_shape_patterns_, kTrunkHeadContactGroup);
+        thigh_shape_names_ = matching_shape_names(
+                thigh_shape_patterns_,
+                LocomotionBatchRuntime::kThighContactGroup);
+        shank_shape_names_ = matching_shape_names(
+                shank_shape_patterns_,
+                LocomotionBatchRuntime::kShankContactGroup);
+        trunk_head_shape_names_ = matching_shape_names(
+                trunk_head_shape_patterns_,
+                LocomotionBatchRuntime::kTrunkHeadContactGroup);
 
         const std::size_t invalid_index = std::numeric_limits<std::size_t>::max();
         const auto add_sensor = [&](const std::string& name) -> std::size_t {
@@ -850,6 +846,24 @@ private:
         }
     }
 
+    LocomotionBatchStateLayout MakeStateLayout() const {
+        LocomotionBatchStateLayout layout;
+        layout.robot_name = robot_name_;
+        layout.base_link = base_link_;
+        layout.joint_names = joint_names_;
+        layout.link_names = link_names_;
+        layout.sensor_names = sensor_names_;
+        layout.foot_link_indices = foot_link_indices_;
+        layout.foot_shape_names = foot_shape_names_;
+        layout.foot_height_sensor_indices = foot_height_sensor_indices_;
+        layout.foot_contact_sensor_indices = foot_contact_sensor_indices_;
+        layout.height_scan_sensor_index = height_scan_sensor_index_;
+        layout.imu_sensor_index = imu_sensor_index_;
+        layout.height_scan_count = height_scan_count_;
+        layout.terminate_on_thigh_contact = terminate_on_thigh_contact_;
+        return layout;
+    }
+
     void AllocateBuffers() {
         action_.assign(environment_count_ * joint_count_, 0.0f);
         submitted_action_.assign(environment_count_ * joint_count_, 0.0f);
@@ -867,7 +881,7 @@ private:
         previous_action_.assign(environment_count_ * joint_count_, 0.0f);
         last_action_.assign(environment_count_ * joint_count_, 0.0f);
         encoder_bias_.assign(environment_count_ * joint_count_, 0.0f);
-        batch_runtime_ = LocomotionBatchRuntime(environment_count_, foot_count_);
+        batch_runtime_ = LocomotionBatchRuntime(environment_count_, MakeStateLayout());
         step_profile_ms_.assign(kStepProfileCount, 0.0f);
         target_position_.assign(environment_count_ * joint_count_, 0.0f);
         reset_base_position_.assign(environment_count_ * 3, 0.0f);
@@ -876,50 +890,6 @@ private:
         reset_base_angular_velocity_.assign(environment_count_ * 3, 0.0f);
         reset_joint_position_.assign(environment_count_ * joint_count_, 0.0f);
         reset_joint_velocity_.assign(environment_count_ * joint_count_, 0.0f);
-        base_position_.assign(environment_count_ * 3, 0.0f);
-        base_quaternion_.assign(environment_count_ * 4, 0.0f);
-        base_linear_velocity_.assign(environment_count_ * 3, 0.0f);
-        base_angular_velocity_.assign(environment_count_ * 3, 0.0f);
-        base_linear_velocity_body_.assign(environment_count_ * 3, 0.0f);
-        base_angular_velocity_body_.assign(environment_count_ * 3, 0.0f);
-        projected_gravity_.assign(environment_count_ * 3, 0.0f);
-        upvector_.assign(environment_count_ * 3, 0.0f);
-        base_height_.assign(environment_count_, 0.0f);
-        joint_position_.assign(environment_count_ * joint_count_, 0.0f);
-        joint_velocity_.assign(environment_count_ * joint_count_, 0.0f);
-        joint_acceleration_.assign(environment_count_ * joint_count_, 0.0f);
-        joint_torque_.assign(environment_count_ * joint_count_, 0.0f);
-        joint_lower_limit_.assign(joint_count_, 0.0f);
-        joint_upper_limit_.assign(joint_count_, 0.0f);
-        link_position_.assign(environment_count_ * link_count_ * 3, 0.0f);
-        link_quaternion_.assign(environment_count_ * link_count_ * 4, 0.0f);
-        link_linear_velocity_.assign(environment_count_ * link_count_ * 3, 0.0f);
-        link_angular_velocity_.assign(environment_count_ * link_count_ * 3, 0.0f);
-        foot_position_.assign(environment_count_ * foot_count_ * 3, 0.0f);
-        foot_quaternion_.assign(environment_count_ * foot_count_ * 4, 0.0f);
-        foot_velocity_.assign(environment_count_ * foot_count_ * 3, 0.0f);
-        foot_height_.assign(environment_count_ * foot_count_, 0.0f);
-        height_scan_.assign(environment_count_ * height_scan_count_, 0.0f);
-        height_scan_hit_.assign(environment_count_ * height_scan_count_, 0);
-        height_scan_point_.assign(environment_count_ * height_scan_count_ * 3, 0.0f);
-        height_scan_normal_.assign(environment_count_ * height_scan_count_ * 3, 0.0f);
-
-        const PhysicsSceneSnapshot& snapshot = world_->GetSceneSnapshot();
-        const PhysicsRobotSnapshot& robot = snapshot.robots[robot_index_];
-        for (std::size_t joint_index = 0; joint_index < joint_names_.size(); ++joint_index) {
-            const auto joint = std::find_if(
-                    robot.joints.begin(),
-                    robot.joints.end(),
-                    [&](const PhysicsJointSnapshot& candidate) {
-                        return candidate.name == joint_names_[joint_index];
-                    });
-            if (joint == robot.joints.end()) {
-                throw std::runtime_error(fmt::format("joint '{}' disappeared from the physics snapshot",
-                                                     joint_names_[joint_index]));
-            }
-            joint_lower_limit_[joint_index] = static_cast<float>(joint->lower_limit);
-            joint_upper_limit_[joint_index] = static_cast<float>(joint->upper_limit);
-        }
     }
 
     void PrepareActionTargets(bool simulate_action_latency) {
@@ -985,11 +955,20 @@ private:
                             force_threshold});
                 }
             };
-            add_contact_group(kThighContactGroup, thigh_shape_names_, ground_force_threshold_);
-            add_contact_group(kShankContactGroup, shank_shape_names_, ground_force_threshold_);
-            add_contact_group(kTrunkHeadContactGroup, trunk_head_shape_names_, ground_force_threshold_);
+            add_contact_group(
+                    LocomotionBatchRuntime::kThighContactGroup,
+                    thigh_shape_names_,
+                    ground_force_threshold_);
+            add_contact_group(
+                    LocomotionBatchRuntime::kShankContactGroup,
+                    shank_shape_names_,
+                    ground_force_threshold_);
+            add_contact_group(
+                    LocomotionBatchRuntime::kTrunkHeadContactGroup,
+                    trunk_head_shape_names_,
+                    ground_force_threshold_);
             for (std::size_t foot_index = 0; foot_index < foot_shape_names_.size(); ++foot_index) {
-                add_contact_group(FootContactGroupName(foot_index),
+                add_contact_group(LocomotionBatchRuntime::FootContactGroupName(foot_index),
                                   {foot_shape_names_[foot_index]},
                                   0.0);
             }
@@ -1049,241 +1028,6 @@ private:
         }
     }
 
-    int FootIndexForShape(std::string_view shape_name) const {
-        for (std::size_t index = 0; index < foot_shape_names_.size(); ++index) {
-            if (shape_name == foot_shape_names_[index]) {
-                return static_cast<int>(index);
-            }
-        }
-        return -1;
-    }
-
-    void CopyPhysicsState() {
-        const PhysicsRobotBatchStepResult& state = physics_state_;
-        if (state.environment_count != environment_count_ ||
-            state.joint_names != joint_names_ ||
-            state.link_names != link_names_ ||
-            state.sensor_names != sensor_names_) {
-            throw std::runtime_error("Physics batch result does not match the locomotion view contract");
-        }
-        std::span<float> foot_contacts = batch_runtime_.FootContacts();
-        std::span<float> foot_contact_forces = batch_runtime_.FootContactForces();
-        std::span<float> illegal_contact_counts = batch_runtime_.IllegalContactCounts();
-        std::span<float> self_collision_counts = batch_runtime_.SelfCollisionCounts();
-        std::span<float> shank_collision_counts = batch_runtime_.ShankCollisionCounts();
-        std::span<float> trunk_head_collision_counts = batch_runtime_.TrunkHeadCollisionCounts();
-        std::copy(state.joint_lower_limit.begin(),
-                  state.joint_lower_limit.end(),
-                  joint_lower_limit_.begin());
-        std::copy(state.joint_upper_limit.begin(),
-                  state.joint_upper_limit.end(),
-                  joint_upper_limit_.begin());
-
-        const std::size_t invalid_index = std::numeric_limits<std::size_t>::max();
-        for (std::size_t env_id = 0; env_id < environment_count_; ++env_id) {
-            batch_runtime_.ClearStepContacts(env_id);
-            const std::size_t env3 = env_id * 3;
-            const std::size_t env4 = env_id * 4;
-            for (std::size_t axis = 0; axis < 3; ++axis) {
-                base_position_[env3 + axis] = static_cast<float>(state.base_position[env3 + axis]);
-                base_linear_velocity_[env3 + axis] =
-                        static_cast<float>(state.base_linear_velocity[env3 + axis]);
-                base_angular_velocity_[env3 + axis] =
-                        static_cast<float>(state.base_angular_velocity[env3 + axis]);
-            }
-            for (std::size_t axis = 0; axis < 4; ++axis) {
-                base_quaternion_[env4 + axis] = static_cast<float>(state.base_quaternion[env4 + axis]);
-            }
-            base_height_[env_id] = base_position_[env3 + 2];
-
-            const Quaternion base_orientation(state.base_quaternion[env4 + 0],
-                                               state.base_quaternion[env4 + 1],
-                                               state.base_quaternion[env4 + 2],
-                                               state.base_quaternion[env4 + 3]);
-            const Matrix3 base_rotation = base_orientation.normalized().toRotationMatrix();
-            const Vector3 linear_world(state.base_linear_velocity[env3 + 0],
-                                       state.base_linear_velocity[env3 + 1],
-                                       state.base_linear_velocity[env3 + 2]);
-            const Vector3 angular_world(state.base_angular_velocity[env3 + 0],
-                                        state.base_angular_velocity[env3 + 1],
-                                        state.base_angular_velocity[env3 + 2]);
-            const Vector3 linear_body = base_rotation.transpose() * linear_world;
-            const Vector3 angular_body = base_rotation.transpose() * angular_world;
-            const Vector3 gravity_body = base_rotation.transpose() * Vector3(0.0, 0.0, -1.0);
-            for (std::size_t axis = 0; axis < 3; ++axis) {
-                base_linear_velocity_body_[env3 + axis] = static_cast<float>(linear_body[axis]);
-                base_angular_velocity_body_[env3 + axis] = static_cast<float>(angular_body[axis]);
-                projected_gravity_[env3 + axis] = static_cast<float>(gravity_body[axis]);
-                upvector_[env3 + axis] = static_cast<float>(base_rotation(axis, 2));
-            }
-
-            if (imu_sensor_index_ != invalid_index &&
-                imu_sensor_index_ < sensor_names_.size()) {
-                const std::size_t sensor3 = (env_id * sensor_names_.size() + imu_sensor_index_) * 3;
-                const std::size_t sensor4 = (env_id * sensor_names_.size() + imu_sensor_index_) * 4;
-                const Quaternion imu_orientation(state.sensor_quaternion[sensor4 + 0],
-                                                 state.sensor_quaternion[sensor4 + 1],
-                                                 state.sensor_quaternion[sensor4 + 2],
-                                                 state.sensor_quaternion[sensor4 + 3]);
-                const Matrix3 imu_rotation = imu_orientation.normalized().toRotationMatrix();
-                for (std::size_t axis = 0; axis < 3; ++axis) {
-                    upvector_[env3 + axis] = static_cast<float>(imu_rotation(axis, 2));
-                }
-                const std::size_t sensor_values =
-                        (env_id * sensor_names_.size() + imu_sensor_index_) * state.max_sensor_values;
-                if (imu_sensor_index_ < state.sensor_value_count.size() &&
-                    state.sensor_value_count[imu_sensor_index_] >= 10) {
-                    for (std::size_t axis = 0; axis < 3; ++axis) {
-                        base_angular_velocity_body_[env3 + axis] =
-                                static_cast<float>(state.sensor_values[sensor_values + 4 + axis]);
-                        base_linear_velocity_body_[env3 + axis] =
-                                static_cast<float>(state.sensor_values[sensor_values + 7 + axis]);
-                    }
-                }
-                GOB_UNUSED(sensor3);
-            }
-
-            for (std::size_t joint_index = 0; joint_index < joint_count_; ++joint_index) {
-                const std::size_t offset = env_id * joint_count_ + joint_index;
-                joint_position_[offset] = static_cast<float>(state.joint_position[offset]);
-                joint_velocity_[offset] = static_cast<float>(state.joint_velocity[offset]);
-                joint_acceleration_[offset] = static_cast<float>(state.joint_acceleration[offset]);
-                joint_torque_[offset] = static_cast<float>(state.joint_effort[offset]);
-            }
-
-            for (std::size_t link_index = 0; link_index < link_count_; ++link_index) {
-                const std::size_t link3 = (env_id * link_count_ + link_index) * 3;
-                const std::size_t link4 = (env_id * link_count_ + link_index) * 4;
-                for (std::size_t axis = 0; axis < 3; ++axis) {
-                    link_position_[link3 + axis] = static_cast<float>(state.link_position[link3 + axis]);
-                    link_linear_velocity_[link3 + axis] =
-                            static_cast<float>(state.link_linear_velocity[link3 + axis]);
-                    link_angular_velocity_[link3 + axis] =
-                            static_cast<float>(state.link_angular_velocity[link3 + axis]);
-                }
-                for (std::size_t axis = 0; axis < 4; ++axis) {
-                    link_quaternion_[link4 + axis] = static_cast<float>(state.link_quaternion[link4 + axis]);
-                }
-            }
-
-            for (std::size_t foot_index = 0; foot_index < foot_count_; ++foot_index) {
-                const std::size_t foot = env_id * foot_count_ + foot_index;
-                const std::size_t foot3 = foot * 3;
-                const std::size_t foot4 = foot * 4;
-                const std::size_t link_index = foot_link_indices_[foot_index];
-                const std::size_t link3 = (env_id * link_count_ + link_index) * 3;
-                const std::size_t link4 = (env_id * link_count_ + link_index) * 4;
-                for (std::size_t axis = 0; axis < 3; ++axis) {
-                    foot_position_[foot3 + axis] = link_position_[link3 + axis];
-                    foot_velocity_[foot3 + axis] = link_linear_velocity_[link3 + axis];
-                }
-                for (std::size_t axis = 0; axis < 4; ++axis) {
-                    foot_quaternion_[foot4 + axis] = link_quaternion_[link4 + axis];
-                }
-
-                if (foot_index < foot_contact_sensor_indices_.size()) {
-                    const std::size_t sensor_index = foot_contact_sensor_indices_[foot_index];
-                    const std::size_t sensor3 = (env_id * sensor_names_.size() + sensor_index) * 3;
-                    for (std::size_t axis = 0; axis < 3; ++axis) {
-                        foot_position_[foot3 + axis] = static_cast<float>(state.sensor_position[sensor3 + axis]);
-                        foot_velocity_[foot3 + axis] =
-                                static_cast<float>(state.sensor_linear_velocity[sensor3 + axis]);
-                    }
-                }
-                if (foot_index < foot_height_sensor_indices_.size()) {
-                    const std::size_t sensor_index = foot_height_sensor_indices_[foot_index];
-                    const std::size_t value_offset =
-                            (env_id * sensor_names_.size() + sensor_index) * state.max_sensor_values;
-                    if (sensor_index < state.sensor_value_count.size() &&
-                        state.sensor_value_count[sensor_index] > 0) {
-                        foot_height_[foot] = static_cast<float>(state.sensor_values[value_offset]);
-                    }
-                }
-            }
-
-            if (height_scan_sensor_index_ != invalid_index && height_scan_count_ > 0) {
-                const std::size_t sensor_index = height_scan_sensor_index_;
-                const std::size_t value_offset =
-                        (env_id * sensor_names_.size() + sensor_index) * state.max_sensor_values;
-                const std::size_t hit_offset =
-                        (env_id * sensor_names_.size() + sensor_index) * state.max_sensor_hits;
-                for (std::size_t sample = 0; sample < height_scan_count_; ++sample) {
-                    const std::size_t output = env_id * height_scan_count_ + sample;
-                    height_scan_[output] = static_cast<float>(state.sensor_values[value_offset + sample]);
-                    height_scan_hit_[output] = state.sensor_hit[hit_offset + sample];
-                    for (std::size_t axis = 0; axis < 3; ++axis) {
-                        height_scan_point_[output * 3 + axis] =
-                                static_cast<float>(state.sensor_hit_point[(hit_offset + sample) * 3 + axis]);
-                        height_scan_normal_[output * 3 + axis] =
-                                static_cast<float>(state.sensor_hit_normal[(hit_offset + sample) * 3 + axis]);
-                    }
-                }
-            }
-
-            const std::size_t contact_count = env_id < state.contact_count.size()
-                                                      ? static_cast<std::size_t>(std::max(state.contact_count[env_id], 0))
-                                                      : 0;
-            for (std::size_t contact_index = 0;
-                 contact_index < std::min(contact_count, state.max_contact_count);
-                 ++contact_index) {
-                const std::size_t contact = env_id * state.max_contact_count + contact_index;
-                const int link_a = state.contact_link_index[contact * 2 + 0];
-                const int link_b = state.contact_link_index[contact * 2 + 1];
-                const int shape_a = state.contact_shape_index[contact * 2 + 0];
-                const int shape_b = state.contact_shape_index[contact * 2 + 1];
-                const bool self_contact = link_a >= 0 && link_b >= 0;
-                const int robot_link = link_a >= 0 ? link_a : link_b;
-                const int robot_shape = shape_a >= 0 ? shape_a : shape_b;
-                if (self_contact) {
-                    self_collision_counts[env_id] += 1.0f;
-                    continue;
-                }
-                if (robot_link < 0 || static_cast<std::size_t>(robot_link) >= link_names_.size()) {
-                    continue;
-                }
-                const std::string_view shape_name =
-                        robot_shape >= 0 && static_cast<std::size_t>(robot_shape) < state.shape_names.size()
-                                ? std::string_view(state.shape_names[static_cast<std::size_t>(robot_shape)])
-                                : std::string_view();
-                const int foot_index = FootIndexForShape(shape_name);
-                if (foot_index >= 0) {
-                    const std::size_t foot = env_id * foot_count_ + static_cast<std::size_t>(foot_index);
-                    const std::size_t foot3 = foot * 3;
-                    foot_contacts[foot] = 1.0f;
-                    for (std::size_t axis = 0; axis < 3; ++axis) {
-                        foot_contact_forces[foot3 + axis] +=
-                                static_cast<float>(state.contact_force[contact * 3 + axis]);
-                    }
-                }
-            }
-
-            if (env_id < state.self_contact_tick_count.size()) {
-                self_collision_counts[env_id] =
-                        static_cast<float>(state.self_contact_tick_count[env_id]);
-            }
-            const auto group_tick_count = [&](std::string_view group_name) {
-                const auto group = std::find(state.contact_shape_group_names.begin(),
-                                             state.contact_shape_group_names.end(),
-                                             group_name);
-                if (group == state.contact_shape_group_names.end()) {
-                    return 0.0f;
-                }
-                const std::size_t group_index = static_cast<std::size_t>(
-                        std::distance(state.contact_shape_group_names.begin(), group));
-                const std::size_t offset =
-                        env_id * state.contact_shape_group_names.size() + group_index;
-                return offset < state.contact_shape_group_tick_count.size()
-                               ? static_cast<float>(state.contact_shape_group_tick_count[offset])
-                               : 0.0f;
-            };
-            illegal_contact_counts[env_id] = terminate_on_thigh_contact_
-                                                     ? group_tick_count(kThighContactGroup)
-                                                     : 0.0f;
-            shank_collision_counts[env_id] = group_tick_count(kShankContactGroup);
-            trunk_head_collision_counts[env_id] = group_tick_count(kTrunkHeadContactGroup);
-        }
-    }
-
     Ref<PhysicsWorld> world_;
     std::string robot_name_;
     std::string base_link_;
@@ -1303,7 +1047,6 @@ private:
     RealType ground_force_threshold_{50.0};
     RealType self_collision_force_threshold_{20.0};
 
-    std::size_t robot_index_{0};
     std::size_t environment_count_{0};
     std::size_t joint_count_{0};
     std::size_t link_count_{0};
@@ -1344,33 +1087,6 @@ private:
     std::vector<float> reset_base_angular_velocity_;
     std::vector<float> reset_joint_position_;
     std::vector<float> reset_joint_velocity_;
-    std::vector<float> base_position_;
-    std::vector<float> base_quaternion_;
-    std::vector<float> base_linear_velocity_;
-    std::vector<float> base_angular_velocity_;
-    std::vector<float> base_linear_velocity_body_;
-    std::vector<float> base_angular_velocity_body_;
-    std::vector<float> projected_gravity_;
-    std::vector<float> upvector_;
-    std::vector<float> base_height_;
-    std::vector<float> joint_position_;
-    std::vector<float> joint_velocity_;
-    std::vector<float> joint_acceleration_;
-    std::vector<float> joint_torque_;
-    std::vector<float> joint_lower_limit_;
-    std::vector<float> joint_upper_limit_;
-    std::vector<float> link_position_;
-    std::vector<float> link_quaternion_;
-    std::vector<float> link_linear_velocity_;
-    std::vector<float> link_angular_velocity_;
-    std::vector<float> foot_position_;
-    std::vector<float> foot_quaternion_;
-    std::vector<float> foot_velocity_;
-    std::vector<float> foot_height_;
-    std::vector<float> height_scan_;
-    std::vector<std::uint8_t> height_scan_hit_;
-    std::vector<float> height_scan_point_;
-    std::vector<float> height_scan_normal_;
 };
 
 void RegisterManualAppContextBindings(py::module_& module) {
