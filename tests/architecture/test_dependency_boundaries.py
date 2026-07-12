@@ -54,6 +54,13 @@ def main() -> int:
         "sensor_bindings_": "MuJoCo sensor binding storage",
         "command_rng_": "locomotion command RNG ownership",
         "ResampleCommand(": "locomotion command sampling implementation",
+        "LocomotionCommandRuntime command_runtime_": "standalone locomotion command storage",
+        "foot_contact_time_": "locomotion contact-history storage",
+        "foot_air_time_": "locomotion contact-history storage",
+        "foot_peak_height_": "locomotion contact-history storage",
+        "reward_terms_": "task reward scratch storage",
+        "actor_obs_": "task observation scratch storage",
+        "critic_obs_": "task observation scratch storage",
     }
     for path in source_files(python_binding_root, {".cpp", ".cc", ".hpp", ".h"}):
         text = path.read_text(encoding="utf-8")
@@ -73,16 +80,18 @@ def main() -> int:
                     f"{path.relative_to(ROOT)}: Python binding references {description} ({token})"
                 )
 
-    locomotion_command_runtime_files = (
+    locomotion_runtime_files = (
         ROOT / "include/gobot/simulation/locomotion_command_runtime.hpp",
         ROOT / "src/gobot/simulation/locomotion_command_runtime.cpp",
+        ROOT / "include/gobot/simulation/locomotion_batch_runtime.hpp",
+        ROOT / "src/gobot/simulation/locomotion_batch_runtime.cpp",
     )
-    for path in locomotion_command_runtime_files:
+    for path in locomotion_runtime_files:
         text = path.read_text(encoding="utf-8")
         for token in ("pybind11", "py::", "numpy"):
             if token in text:
                 violations.append(
-                    f"{path.relative_to(ROOT)}: simulation command runtime depends on Python token {token!r}"
+                    f"{path.relative_to(ROOT)}: simulation locomotion runtime depends on Python token {token!r}"
                 )
 
     example_specific_python_tokens = ("GO1_", "go1_rough_velocity")

@@ -94,8 +94,11 @@ and the Python selected by `uv`:
 ```bash
 cmake -S . -B build/dev -DPython3_EXECUTABLE="$(uv python find)"
 cmake --build build/dev -j
+ctest --test-dir build/dev --output-on-failure
 ```
 
+Python CTest cases run against `build/dev/python` in an isolated interpreter,
+so an older editable `_core` in `.venv` cannot shadow the artifact under test.
 That standalone build is not the artifact used by the `.venv` console script;
 run the following command when the installed editor must be updated:
 

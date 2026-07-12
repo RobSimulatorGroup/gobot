@@ -514,21 +514,6 @@ class Go1VelocityEnv(LocomotionBatchEnv):
                 "foot_slip": float(np.mean(batch_state.foot_slip)),
                 "terrain_normal_error": float(np.mean(batch_state.terrain_normal_error)),
                 "illegal_contact_count": float(np.mean(batch_state.illegal_contact_count)),
-                "undesired_contact_count": float(
-                    np.mean(np.asarray(getattr(batch_state, "undesired_contact_count", 0.0), dtype=np.float32))
-                ),
-                "undesired_base_contact_count": float(
-                    np.mean(np.asarray(getattr(batch_state, "undesired_base_contact_count", 0.0), dtype=np.float32))
-                ),
-                "undesired_hip_contact_count": float(
-                    np.mean(np.asarray(getattr(batch_state, "undesired_hip_contact_count", 0.0), dtype=np.float32))
-                ),
-                "undesired_thigh_contact_count": float(
-                    np.mean(np.asarray(getattr(batch_state, "undesired_thigh_contact_count", 0.0), dtype=np.float32))
-                ),
-                "undesired_calf_contact_count": float(
-                    np.mean(np.asarray(getattr(batch_state, "undesired_calf_contact_count", 0.0), dtype=np.float32))
-                ),
                 "self_collision_count": float(np.mean(batch_state.self_collision_count)),
                 "shank_collision_count": float(np.mean(batch_state.shank_collision_count)),
                 "trunk_head_collision_count": float(np.mean(batch_state.trunk_head_collision_count)),
@@ -652,11 +637,6 @@ class Go1VelocityEnv(LocomotionBatchEnv):
             "/velocity/foot_slip": np.asarray(log_values["foot_slip"], dtype=np.float32),
             "/velocity/terrain_normal_error": np.asarray(log_values["terrain_normal_error"], dtype=np.float32),
             "/velocity/illegal_contact_count": np.asarray(log_values["illegal_contact_count"], dtype=np.float32),
-            "/velocity/undesired_contact_count": np.asarray(log_values["undesired_contact_count"], dtype=np.float32),
-            "/velocity/undesired_base_contact_count": np.asarray(log_values["undesired_base_contact_count"], dtype=np.float32),
-            "/velocity/undesired_hip_contact_count": np.asarray(log_values["undesired_hip_contact_count"], dtype=np.float32),
-            "/velocity/undesired_thigh_contact_count": np.asarray(log_values["undesired_thigh_contact_count"], dtype=np.float32),
-            "/velocity/undesired_calf_contact_count": np.asarray(log_values["undesired_calf_contact_count"], dtype=np.float32),
             "/velocity/self_collision_count": np.asarray(log_values["self_collision_count"], dtype=np.float32),
             "/velocity/shank_collision_count": np.asarray(log_values["shank_collision_count"], dtype=np.float32),
             "/velocity/trunk_head_collision_count": np.asarray(log_values["trunk_head_collision_count"], dtype=np.float32),
@@ -1267,8 +1247,6 @@ class Go1VelocityEnv(LocomotionBatchEnv):
         )
         np.nan_to_num(terms, copy=False, nan=0.0, posinf=0.0, neginf=0.0)
         np.copyto(state.reward, (np.sum(terms, axis=1) * step_dt).astype(np.float32))
-        if foot_peak_height.size:
-            state.foot_peak_height[first_contact > 0.0] = 0.0
 
         terminated = np.asarray(state.illegal_contact_count, dtype=np.float32) > 0.0
         np.copyto(state.terminated, terminated.astype(np.uint8))
@@ -1472,10 +1450,6 @@ class Go1VelocityEnv(LocomotionBatchEnv):
         state.previous_action[rows] = 0.0
         state.last_action[rows] = 0.0
         state.action[rows] = 0.0
-        state.foot_air_time[rows] = 0.0
-        state.foot_peak_height[rows] = 0.0
-        state.last_foot_contact[rows] = 0.0
-        state.previous_foot_position[rows] = 0.0
         if hasattr(self.backend, "clear_reset_contacts"):
             self.backend.clear_reset_contacts(env_ids.tolist())
         self.backend.reset_commands(env_ids.tolist())

@@ -120,9 +120,19 @@ package_add_test(test_physics_server physics/test_physics_server.cpp)
 package_add_test(test_joint_controller physics/test_joint_controller.cpp)
 package_add_test(test_simulation_server simulation/test_simulation_server.cpp)
 package_add_test(test_locomotion_command_runtime simulation/test_locomotion_command_runtime.cpp)
+package_add_test(test_locomotion_batch_runtime simulation/test_locomotion_batch_runtime.cpp)
 
+set(GOBOT_PYTHON_TEST_PATH "${CMAKE_BINARY_DIR}/python:${CMAKE_SOURCE_DIR}")
+if(Python3_SITELIB)
+    string(APPEND GOBOT_PYTHON_TEST_PATH ":${Python3_SITELIB}")
+endif()
+if(Python3_SITEARCH AND NOT Python3_SITEARCH STREQUAL Python3_SITELIB)
+    string(APPEND GOBOT_PYTHON_TEST_PATH ":${Python3_SITEARCH}")
+endif()
 set(GOBOT_PYTHON_TEST_ENV
-        "HOME=/tmp/gobot-test-home;PYTHONNOUSERSITE=1;PYTHONPATH=${CMAKE_SOURCE_DIR}:${CMAKE_BINARY_DIR}/python")
+        "HOME=/tmp/gobot-test-home;PYTHONNOUSERSITE=1;PYTHONPATH=${GOBOT_PYTHON_TEST_PATH}")
+string(APPEND GOBOT_PYTHON_TEST_ENV
+        ";GOBOT_TEST_BUILD_PYTHON_DIR=${CMAKE_BINARY_DIR}/python")
 if(GOBOT_PYTHON_LIBRARY_DIR)
     string(APPEND GOBOT_PYTHON_TEST_ENV
             ";LD_LIBRARY_PATH=${GOBOT_PYTHON_LIBRARY_DIR}:${CMAKE_BINARY_DIR}/python/gobot")
@@ -130,7 +140,7 @@ endif()
 
 add_test(
         NAME test_architecture_dependencies
-        COMMAND ${Python3_EXECUTABLE}
+        COMMAND ${Python3_EXECUTABLE} -S
                 ${CMAKE_CURRENT_SOURCE_DIR}/architecture/test_dependency_boundaries.py
 )
 set_tests_properties(test_architecture_dependencies
@@ -138,7 +148,7 @@ set_tests_properties(test_architecture_dependencies
 
 add_test(
         NAME test_python_bindings_smoke
-        COMMAND ${Python3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/python/test_python_bindings_smoke.py
+        COMMAND ${Python3_EXECUTABLE} -S ${CMAKE_CURRENT_SOURCE_DIR}/python/test_python_bindings_smoke.py
 )
 set_tests_properties(test_python_bindings_smoke
         PROPERTIES
@@ -147,7 +157,7 @@ set_tests_properties(test_python_bindings_smoke
 )
 add_test(
         NAME test_python_policy_manifest
-        COMMAND ${Python3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/python/test_policy_manifest.py
+        COMMAND ${Python3_EXECUTABLE} -S ${CMAKE_CURRENT_SOURCE_DIR}/python/test_policy_manifest.py
 )
 set_tests_properties(test_python_policy_manifest
         PROPERTIES
@@ -156,7 +166,7 @@ set_tests_properties(test_python_policy_manifest
 )
 add_test(
         NAME test_python_terrain_generation_scene
-        COMMAND ${Python3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/python/test_terrain_generation_scene.py
+        COMMAND ${Python3_EXECUTABLE} -S ${CMAKE_CURRENT_SOURCE_DIR}/python/test_terrain_generation_scene.py
 )
 set_tests_properties(test_python_terrain_generation_scene
         PROPERTIES
@@ -165,7 +175,7 @@ set_tests_properties(test_python_terrain_generation_scene
 )
 add_test(
         NAME test_velocity_env
-        COMMAND ${Python3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/python/test_velocity_env.py
+        COMMAND ${Python3_EXECUTABLE} -S ${CMAKE_CURRENT_SOURCE_DIR}/python/test_velocity_env.py
 )
 set_tests_properties(test_velocity_env
         PROPERTIES
@@ -177,7 +187,7 @@ set_tests_properties(test_velocity_env
 if(GOB_BUILD_MUJOCO AND GOBOT_MUJOCO_TARGET)
     add_test(
             NAME test_python_go1_mujoco_sensor_smoke
-            COMMAND ${Python3_EXECUTABLE}
+            COMMAND ${Python3_EXECUTABLE} -S
                     ${CMAKE_CURRENT_SOURCE_DIR}/python/smoke_real_scene.py
                     --project examples/go1
                     --scene res://go1_scene.jscn

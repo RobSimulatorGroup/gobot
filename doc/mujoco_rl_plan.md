@@ -196,10 +196,12 @@ backend headers, `MuJoCoPhysicsWorld` has no Python friend, and architecture
 tests reject raw MuJoCo pointers or binding storage in Python code. Batched
 velocity-command state, sampling, timers, and frame conversion now live in the
 Python-independent `LocomotionCommandRuntime` service with an independent RNG
-per environment. The next split is smaller and above physics: move foot history
-and zero-copy state buffers from the binding translation unit into a
-`LocomotionBatchRuntime` simulation service. The pybind class should then only
-adapt NumPy arrays and lifecycle calls to that service.
+per environment. `LocomotionBatchRuntime` now composes that service and owns
+batched foot contact events, air/contact timing, landing forces, peak heights,
+and collision counters. Task-specific reward and observation scratch arrays
+are allocated by the Python task backend. The next split is robot-state
+extraction and its zero-copy buffers; once moved, the pybind class should only
+adapt NumPy arrays and lifecycle calls to the simulation service.
 
 Performance work must preserve deterministic reset, stable joint ordering,
 substep contact history, and the policy manifest contract. Use persistent

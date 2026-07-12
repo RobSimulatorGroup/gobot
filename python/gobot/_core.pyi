@@ -167,11 +167,7 @@ class AppContext:
         terminate_on_thigh_contact: bool = True,
         ground_force_threshold: float = 50.0,
         self_collision_force_threshold: float = 20.0,
-        reward_term_count: int = 0,
-        task_param_count: int = 0,
-        task_flag_count: int = 0,
-        actor_obs_dim: int = 0,
-        critic_obs_dim: int = 0,
+        link_names: Sequence[str] = (),
     ) -> Any: ...
     def reset_batch_env(self, env_id: int) -> None: ...
     def step_batch_env(self, env_id: int, ticks: int = 1) -> None: ...

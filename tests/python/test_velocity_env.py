@@ -589,6 +589,11 @@ def test_go1_rough_first_contact_is_not_repeated_while_touching():
     cfg.terrain_curriculum = False
     env = Go1VelocityEnv(cfg, num_envs=1, device="cpu", seed=7, max_episode_length=20, sim_workers=1)
     try:
+        state = env.backend.state
+        assert not state.foot_air_time.flags.writeable
+        assert not state.foot_peak_height.flags.writeable
+        assert state.reward.flags.writeable
+        assert state.actor_obs.flags.writeable
         action = np.zeros((env.num_envs, env.num_actions), dtype=np.float32)
         previous_contact = np.zeros_like(env.backend.state.foot_contact, dtype=bool)
         saw_persistent_contact = False

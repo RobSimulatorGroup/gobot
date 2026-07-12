@@ -510,15 +510,32 @@ class NativeLocomotionBatchBackend:
             self.terminate_on_thigh_contact,
             self.ground_force_threshold,
             self.self_collision_force_threshold,
-            self.reward_term_count,
-            self.task_param_count,
-            self.task_flag_count,
-            self.actor_obs_dim,
-            self.critic_obs_dim,
             link_names=list(self.runtime.link_names),
         )
         self._arrays = {str(name): np.asarray(value) for name, value in dict(self._view.arrays()).items()}
+        self._arrays.update(self._allocate_task_arrays())
         self._state = self._state_from_arrays()
+
+    def _allocate_task_arrays(self) -> dict[str, np.ndarray]:
+        env_count = self.runtime.env_count
+        joint_count = len(self.runtime.joint_names)
+        return {
+            "pose_std_standing": np.zeros((joint_count,), dtype=np.float32),
+            "pose_std_walking": np.zeros((joint_count,), dtype=np.float32),
+            "pose_std_running": np.zeros((joint_count,), dtype=np.float32),
+            "reward_weights": np.zeros((self.reward_term_count,), dtype=np.float32),
+            "task_params": np.zeros((self.task_param_count,), dtype=np.float32),
+            "task_flags": np.zeros((self.task_flag_count,), dtype=np.float32),
+            "reward": np.zeros((env_count,), dtype=np.float32),
+            "terminated": np.zeros((env_count,), dtype=np.uint8),
+            "base_clearance": np.zeros((env_count,), dtype=np.float32),
+            "velocity_error": np.zeros((env_count,), dtype=np.float32),
+            "foot_slip": np.zeros((env_count,), dtype=np.float32),
+            "terrain_normal_error": np.zeros((env_count,), dtype=np.float32),
+            "reward_terms": np.zeros((env_count, self.reward_term_count), dtype=np.float32),
+            "actor_obs": np.zeros((env_count, self.actor_obs_dim), dtype=np.float32),
+            "critic_obs": np.zeros((env_count, self.critic_obs_dim), dtype=np.float32),
+        }
 
     def close(self) -> None:
         view = self._view

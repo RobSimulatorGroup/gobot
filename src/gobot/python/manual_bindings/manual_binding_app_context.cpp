@@ -3,12 +3,11 @@
 #include <algorithm>
 #include <chrono>
 #include <cmath>
-#include <cctype>
 #include <cstdint>
 #include <limits>
 #include <string_view>
 
-#include "gobot/simulation/locomotion_command_runtime.hpp"
+#include "gobot/simulation/locomotion_batch_runtime.hpp"
 
 namespace gobot::python {
 
@@ -30,18 +29,6 @@ bool MatchesAnyPattern(const std::string& name, const std::vector<std::regex>& p
         }
     }
     return false;
-}
-
-bool ContainsCaseInsensitive(const std::string& value, const std::string& needle) {
-    auto value_it = value.begin();
-    return std::search(value_it,
-                       value.end(),
-                       needle.begin(),
-                       needle.end(),
-                       [](char a, char b) {
-                           return std::tolower(static_cast<unsigned char>(a)) ==
-                                  std::tolower(static_cast<unsigned char>(b));
-                       }) != value.end();
 }
 
 bool EndsWith(std::string_view value, std::string_view suffix) {
@@ -66,9 +53,6 @@ std::string FootContactGroupName(std::size_t foot_index) {
     return fmt::format("foot_{}", foot_index);
 }
 
-constexpr std::size_t kDefaultRewardTermCount = 15;
-constexpr std::size_t kDefaultTaskParamCount = 11;
-constexpr std::size_t kDefaultTaskFlagCount = 3;
 constexpr std::string_view kThighContactGroup = "thigh";
 constexpr std::string_view kShankContactGroup = "shank";
 constexpr std::string_view kTrunkHeadContactGroup = "trunk_head";
@@ -130,12 +114,7 @@ public:
                              std::vector<std::string> trunk_head_shape_patterns,
                              bool terminate_on_thigh_contact,
                              double ground_force_threshold,
-                             double self_collision_force_threshold,
-                             std::size_t reward_term_count = 0,
-                             std::size_t task_param_count = 0,
-                             std::size_t task_flag_count = 0,
-                             std::size_t actor_obs_dim = 0,
-                             std::size_t critic_obs_dim = 0)
+                             double self_collision_force_threshold)
         : world_(std::move(world)),
           robot_name_(std::move(robot_name)),
           base_link_(std::move(base_link)),
@@ -150,28 +129,8 @@ public:
           trunk_head_shape_patterns_(CompileContactPatterns(trunk_head_shape_patterns)),
           terminate_on_thigh_contact_(terminate_on_thigh_contact),
           ground_force_threshold_(static_cast<RealType>(ground_force_threshold)),
-          self_collision_force_threshold_(static_cast<RealType>(self_collision_force_threshold)),
-          reward_term_count_(reward_term_count),
-          task_param_count_(task_param_count),
-          task_flag_count_(task_flag_count),
-          actor_obs_dim_(actor_obs_dim),
-          critic_obs_dim_(critic_obs_dim) {
+          self_collision_force_threshold_(static_cast<RealType>(self_collision_force_threshold)) {
         Initialize();
-        if (reward_term_count_ == 0) {
-            reward_term_count_ = kDefaultRewardTermCount;
-        }
-        if (task_param_count_ == 0) {
-            task_param_count_ = kDefaultTaskParamCount;
-        }
-        if (task_flag_count_ == 0) {
-            task_flag_count_ = kDefaultTaskFlagCount;
-        }
-        if (actor_obs_dim_ == 0) {
-            actor_obs_dim_ = DefaultActorObservationDim();
-        }
-        if (critic_obs_dim_ == 0) {
-            critic_obs_dim_ = DefaultCriticObservationDim();
-        }
         AllocateBuffers();
         Refresh();
     }
@@ -219,51 +178,33 @@ public:
         arrays["encoder_bias"] =
                 VectorArrayView(encoder_bias_, {EnvDim(), JointDim()}, owner, true);
         arrays["command"] =
-                VectorArrayView(command_runtime_.Commands(), {EnvDim(), 3}, owner, true);
+                VectorArrayView(batch_runtime_.CommandRuntime().Commands(), {EnvDim(), 3}, owner, true);
         arrays["commands"] =
-                VectorArrayView(command_runtime_.Commands(), {EnvDim(), 3}, owner, true);
+                VectorArrayView(batch_runtime_.CommandRuntime().Commands(), {EnvDim(), 3}, owner, true);
         arrays["command_world"] =
-                VectorArrayView(command_runtime_.WorldCommands(), {EnvDim(), 3}, owner, false);
+                VectorArrayView(batch_runtime_.CommandRuntime().WorldCommands(), {EnvDim(), 3}, owner, false);
         arrays["command_heading_target"] =
-                VectorArrayView(command_runtime_.HeadingTargets(), {EnvDim()}, owner, false);
+                VectorArrayView(batch_runtime_.CommandRuntime().HeadingTargets(), {EnvDim()}, owner, false);
         arrays["heading_commands"] =
-                VectorArrayView(command_runtime_.HeadingTargets(), {EnvDim()}, owner, false);
+                VectorArrayView(batch_runtime_.CommandRuntime().HeadingTargets(), {EnvDim()}, owner, false);
         arrays["command_heading_error"] =
-                VectorArrayView(command_runtime_.HeadingErrors(), {EnvDim()}, owner, false);
+                VectorArrayView(batch_runtime_.CommandRuntime().HeadingErrors(), {EnvDim()}, owner, false);
         arrays["command_time_left"] =
-                VectorArrayView(command_runtime_.TimeLeft(), {EnvDim()}, owner, false);
+                VectorArrayView(batch_runtime_.CommandRuntime().TimeLeft(), {EnvDim()}, owner, false);
         arrays["command_step"] =
-                VectorArrayView(command_runtime_.Steps(), {EnvDim()}, owner, false);
+                VectorArrayView(batch_runtime_.CommandRuntime().Steps(), {EnvDim()}, owner, false);
         arrays["command_is_heading_env"] =
-                VectorArrayView(command_runtime_.HeadingEnvironmentMask(), {EnvDim()}, owner, false);
+                VectorArrayView(batch_runtime_.CommandRuntime().HeadingEnvironmentMask(), {EnvDim()}, owner, false);
         arrays["command_is_standing_env"] =
-                VectorArrayView(command_runtime_.StandingEnvironmentMask(), {EnvDim()}, owner, false);
+                VectorArrayView(batch_runtime_.CommandRuntime().StandingEnvironmentMask(), {EnvDim()}, owner, false);
         arrays["command_is_world_env"] =
-                VectorArrayView(command_runtime_.WorldEnvironmentMask(), {EnvDim()}, owner, false);
+                VectorArrayView(batch_runtime_.CommandRuntime().WorldEnvironmentMask(), {EnvDim()}, owner, false);
         arrays["command_is_forward_env"] =
-                VectorArrayView(command_runtime_.ForwardEnvironmentMask(), {EnvDim()}, owner, false);
+                VectorArrayView(batch_runtime_.CommandRuntime().ForwardEnvironmentMask(), {EnvDim()}, owner, false);
         arrays["command_ranges"] =
-                VectorArrayView(command_runtime_.Ranges(), {CommandRangeDim()}, owner, true);
-        arrays["gait_phase"] =
-                VectorArrayView(gait_phase_, {EnvDim(), 2}, owner, true);
-        arrays["feet_phase_height_target"] =
-                VectorArrayView(feet_phase_height_target_, {EnvDim(), 2}, owner, true);
-        arrays["pose_weights"] =
-                VectorArrayView(pose_weights_, {JointDim()}, owner, true);
+                VectorArrayView(batch_runtime_.CommandRuntime().Ranges(), {CommandRangeDim()}, owner, true);
         arrays["step_profile_ms"] =
                 VectorArrayView(step_profile_ms_, {StepProfileDim()}, owner, false);
-        arrays["pose_std_standing"] =
-                VectorArrayView(pose_std_standing_, {JointDim()}, owner, true);
-        arrays["pose_std_walking"] =
-                VectorArrayView(pose_std_walking_, {JointDim()}, owner, true);
-        arrays["pose_std_running"] =
-                VectorArrayView(pose_std_running_, {JointDim()}, owner, true);
-        arrays["reward_weights"] =
-                VectorArrayView(reward_weights_, {RewardTermDim()}, owner, true);
-        arrays["task_params"] =
-                VectorArrayView(task_params_, {TaskParamDim()}, owner, true);
-        arrays["task_flags"] =
-                VectorArrayView(task_flags_, {TaskFlagDim()}, owner, true);
         arrays["reset_base_position"] =
                 VectorArrayView(reset_base_position_, {EnvDim(), 3}, owner, true);
         arrays["reset_base_quaternion"] =
@@ -343,11 +284,11 @@ public:
         arrays["foot_height"] =
                 VectorArrayView(foot_height_, {EnvDim(), FootDim()}, owner, false);
         arrays["foot_contact"] =
-                VectorArrayView(foot_contact_, {EnvDim(), FootDim()}, owner, false);
+                VectorArrayView(batch_runtime_.FootContacts(), {EnvDim(), FootDim()}, owner, false);
         arrays["feet_contact"] =
-                VectorArrayView(foot_contact_, {EnvDim(), FootDim()}, owner, false);
+                VectorArrayView(batch_runtime_.FootContacts(), {EnvDim(), FootDim()}, owner, false);
         arrays["foot_contact_force"] =
-                VectorArrayView(foot_contact_force_, {EnvDim(), FootDim(), 3}, owner, false);
+                VectorArrayView(batch_runtime_.FootContactForces(), {EnvDim(), FootDim(), 3}, owner, false);
         arrays["height_scan"] =
                 VectorArrayView(height_scan_, {EnvDim(), HeightScanDim()}, owner, false);
         arrays["height_scan_hit"] =
@@ -357,61 +298,21 @@ public:
         arrays["height_scan_normal"] =
                 VectorArrayView(height_scan_normal_, {EnvDim(), HeightScanDim(), 3}, owner, false);
         arrays["illegal_contact_count"] =
-                VectorArrayView(illegal_contact_count_, {EnvDim()}, owner, false);
-        arrays["undesired_contact_count"] =
-                VectorArrayView(undesired_contact_count_, {EnvDim()}, owner, false);
-        arrays["undesired_base_contact_count"] =
-                VectorArrayView(undesired_base_contact_count_, {EnvDim()}, owner, false);
-        arrays["undesired_hip_contact_count"] =
-                VectorArrayView(undesired_hip_contact_count_, {EnvDim()}, owner, false);
-        arrays["undesired_thigh_contact_count"] =
-                VectorArrayView(undesired_thigh_contact_count_, {EnvDim()}, owner, false);
-        arrays["undesired_calf_contact_count"] =
-                VectorArrayView(undesired_calf_contact_count_, {EnvDim()}, owner, false);
+                VectorArrayView(batch_runtime_.IllegalContactCounts(), {EnvDim()}, owner, false);
         arrays["self_collision_count"] =
-                VectorArrayView(self_collision_count_, {EnvDim()}, owner, false);
+                VectorArrayView(batch_runtime_.SelfCollisionCounts(), {EnvDim()}, owner, false);
         arrays["shank_collision_count"] =
-                VectorArrayView(shank_collision_count_, {EnvDim()}, owner, false);
+                VectorArrayView(batch_runtime_.ShankCollisionCounts(), {EnvDim()}, owner, false);
         arrays["trunk_head_collision_count"] =
-                VectorArrayView(trunk_head_collision_count_, {EnvDim()}, owner, false);
-        arrays["base_collision_count"] =
-                VectorArrayView(base_collision_count_, {EnvDim()}, owner, false);
-        arrays["hip_collision_count"] =
-                VectorArrayView(hip_collision_count_, {EnvDim()}, owner, false);
-        arrays["thigh_collision_count"] =
-                VectorArrayView(thigh_collision_count_, {EnvDim()}, owner, false);
-        arrays["calf_collision_count"] =
-                VectorArrayView(calf_collision_count_, {EnvDim()}, owner, false);
+                VectorArrayView(batch_runtime_.TrunkHeadCollisionCounts(), {EnvDim()}, owner, false);
         arrays["foot_air_time"] =
-                VectorArrayView(foot_air_time_, {EnvDim(), FootDim()}, owner, true);
+                VectorArrayView(batch_runtime_.FootAirTimes(), {EnvDim(), FootDim()}, owner, false);
         arrays["foot_peak_height"] =
-                VectorArrayView(foot_peak_height_, {EnvDim(), FootDim()}, owner, true);
-        arrays["last_foot_contact"] =
-                VectorArrayView(last_foot_contact_, {EnvDim(), FootDim()}, owner, true);
+                VectorArrayView(batch_runtime_.FootPeakHeights(), {EnvDim(), FootDim()}, owner, false);
         arrays["first_contact"] =
-                VectorArrayView(first_contact_, {EnvDim(), FootDim()}, owner, false);
+                VectorArrayView(batch_runtime_.FirstContacts(), {EnvDim(), FootDim()}, owner, false);
         arrays["landing_force"] =
-                VectorArrayView(landing_force_, {EnvDim(), FootDim()}, owner, false);
-        arrays["previous_foot_position"] =
-                VectorArrayView(previous_foot_position_, {EnvDim(), FootDim(), 3}, owner, true);
-        arrays["reward"] =
-                VectorArrayView(reward_, {EnvDim()}, owner, true);
-        arrays["terminated"] =
-                VectorArrayView(terminated_, {EnvDim()}, owner, true);
-        arrays["base_clearance"] =
-                VectorArrayView(base_clearance_, {EnvDim()}, owner, true);
-        arrays["velocity_error"] =
-                VectorArrayView(velocity_error_, {EnvDim()}, owner, true);
-        arrays["foot_slip"] =
-                VectorArrayView(foot_slip_, {EnvDim()}, owner, true);
-        arrays["terrain_normal_error"] =
-                VectorArrayView(terrain_normal_error_, {EnvDim()}, owner, true);
-        arrays["reward_terms"] =
-                VectorArrayView(reward_terms_, {EnvDim(), RewardTermDim()}, owner, true);
-        arrays["actor_obs"] =
-                VectorArrayView(actor_obs_, {EnvDim(), ActorObsDim()}, owner, true);
-        arrays["critic_obs"] =
-                VectorArrayView(critic_obs_, {EnvDim(), CriticObsDim()}, owner, true);
+                VectorArrayView(batch_runtime_.LandingForces(), {EnvDim(), FootDim()}, owner, false);
         return arrays;
     }
 
@@ -517,7 +418,7 @@ public:
         config.heading_control_stiffness = heading_control_stiffness;
         config.zero_small_xy_threshold = zero_small_xy_threshold;
         config.seed = seed;
-        command_runtime_.Configure(config);
+        batch_runtime_.CommandRuntime().Configure(config);
     }
 
     void SetCommandRanges(double lin_vel_x_min,
@@ -526,14 +427,14 @@ public:
                           double lin_vel_y_max,
                           double ang_vel_z_min,
                           double ang_vel_z_max) {
-        command_runtime_.SetVelocityRanges(
+        batch_runtime_.CommandRuntime().SetVelocityRanges(
                 {static_cast<RealType>(lin_vel_x_min), static_cast<RealType>(lin_vel_x_max)},
                 {static_cast<RealType>(lin_vel_y_min), static_cast<RealType>(lin_vel_y_max)},
                 {static_cast<RealType>(ang_vel_z_min), static_cast<RealType>(ang_vel_z_max)});
     }
 
     void ResetCommands(const std::vector<std::size_t>& env_ids) {
-        command_runtime_.Reset(env_ids);
+        batch_runtime_.CommandRuntime().Reset(env_ids);
     }
 
     void SetCommands(const std::vector<std::size_t>& env_ids,
@@ -561,7 +462,7 @@ public:
         const auto* command = static_cast<const float*>(command_buffer.ptr);
         const auto* heading = static_cast<const float*>(heading_buffer.ptr);
         const auto* remaining = static_cast<const float*>(time_left_buffer.ptr);
-        command_runtime_.SetCommands(
+        batch_runtime_.CommandRuntime().SetCommands(
                 env_ids,
                 std::span<const float>(command, count * LocomotionCommandRuntime::kCommandDimension),
                 std::span<const float>(heading, count),
@@ -579,11 +480,13 @@ public:
             throw std::invalid_argument("steps must have shape [len(env_ids)]");
         }
         const auto* step_values = static_cast<const std::uint32_t*>(step_buffer.ptr);
-        command_runtime_.SetSteps(env_ids, std::span<const std::uint32_t>(step_values, count));
+        batch_runtime_.CommandRuntime().SetSteps(
+                env_ids,
+                std::span<const std::uint32_t>(step_values, count));
     }
 
     void SetCommandStepResampling(bool enabled) {
-        command_runtime_.SetStepResamplingEnabled(enabled);
+        batch_runtime_.CommandRuntime().SetStepResamplingEnabled(enabled);
     }
 
     void StepTaskInputs(std::uint64_t ticks, std::size_t workers, bool simulate_action_latency) {
@@ -600,9 +503,13 @@ public:
         CopyPhysicsState();
         SetProfileMs(kStepProfileExtractState, ElapsedMs(phase_begin));
         phase_begin = Clock::now();
-        for (std::size_t env_id = 0; env_id < environment_count_; ++env_id) {
-            UpdateFootHistory(env_id);
-        }
+        const RealType control_dt = batch_runtime_.CommandRuntime().GetStepDt();
+        const RealType physics_dt = world_->GetSettings().fixed_time_step;
+        batch_runtime_.UpdateFootHistory(
+                physics_state_,
+                foot_height_,
+                control_dt,
+                physics_dt);
         SetProfileMs(kStepProfileCommand, ElapsedMs(phase_begin));
         SetProfileMs(kStepProfileTotal, ElapsedMs(total_begin));
 #else
@@ -666,24 +573,11 @@ public:
         }
         RunPhysicsBatch(0, 0, false, false);
         CopyPhysicsState();
-        for (std::size_t env_id : env_ids) {
-            ClearContactBuffersForEnvironment(env_id);
-            const std::size_t foot_begin = env_id * foot_count_;
-            std::fill(foot_contact_time_.begin() + static_cast<std::ptrdiff_t>(foot_begin),
-                      foot_contact_time_.begin() + static_cast<std::ptrdiff_t>(foot_begin + foot_count_),
-                      0.0f);
-        }
+        batch_runtime_.ClearResetContacts(env_ids);
     }
 
     void ClearResetContacts(const std::vector<std::size_t>& env_ids) {
-        for (std::size_t env_id : env_ids) {
-            RequireEnvironmentIndex(env_id);
-            ClearContactBuffersForEnvironment(env_id);
-            const std::size_t foot_begin = env_id * foot_count_;
-            std::fill(foot_contact_time_.begin() + static_cast<std::ptrdiff_t>(foot_begin),
-                      foot_contact_time_.begin() + static_cast<std::ptrdiff_t>(foot_begin + foot_count_),
-                      0.0f);
-        }
+        batch_runtime_.ClearResetContacts(env_ids);
     }
 
     void SetBaseVelocity(std::size_t env_id,
@@ -746,11 +640,11 @@ public:
     }
 
     void AdvanceCommands() {
-        command_runtime_.Advance(base_quaternion_);
+        batch_runtime_.CommandRuntime().Advance(base_quaternion_);
     }
 
     void UpdateCommandFrames() {
-        command_runtime_.UpdateFrames(base_quaternion_);
+        batch_runtime_.CommandRuntime().UpdateFrames(base_quaternion_);
     }
 
 private:
@@ -774,32 +668,12 @@ private:
         return static_cast<py::ssize_t>(height_scan_count_);
     }
 
-    py::ssize_t RewardTermDim() const {
-        return static_cast<py::ssize_t>(reward_term_count_);
-    }
-
-    py::ssize_t TaskParamDim() const {
-        return static_cast<py::ssize_t>(task_param_count_);
-    }
-
-    py::ssize_t TaskFlagDim() const {
-        return static_cast<py::ssize_t>(task_flag_count_);
-    }
-
     py::ssize_t CommandRangeDim() const {
         return static_cast<py::ssize_t>(LocomotionCommandRuntime::kRangeCount);
     }
 
     py::ssize_t StepProfileDim() const {
         return static_cast<py::ssize_t>(kStepProfileCount);
-    }
-
-    py::ssize_t ActorObsDim() const {
-        return static_cast<py::ssize_t>(actor_obs_dim_);
-    }
-
-    py::ssize_t CriticObsDim() const {
-        return static_cast<py::ssize_t>(critic_obs_dim_);
     }
 
     void RequireEnvironmentIndex(std::size_t env_id) const {
@@ -993,17 +867,8 @@ private:
         previous_action_.assign(environment_count_ * joint_count_, 0.0f);
         last_action_.assign(environment_count_ * joint_count_, 0.0f);
         encoder_bias_.assign(environment_count_ * joint_count_, 0.0f);
-        command_runtime_ = LocomotionCommandRuntime(environment_count_);
-        gait_phase_.assign(environment_count_ * 2, 0.0f);
-        feet_phase_height_target_.assign(environment_count_ * 2, 0.0f);
-        pose_weights_.assign(joint_count_, 1.0f);
+        batch_runtime_ = LocomotionBatchRuntime(environment_count_, foot_count_);
         step_profile_ms_.assign(kStepProfileCount, 0.0f);
-        pose_std_standing_.assign(joint_count_, 0.3f);
-        pose_std_walking_.assign(joint_count_, 0.3f);
-        pose_std_running_.assign(joint_count_, 0.3f);
-        reward_weights_.assign(reward_term_count_, 0.0f);
-        task_params_.assign(task_param_count_, 0.0f);
-        task_flags_.assign(task_flag_count_, 0.0f);
         target_position_.assign(environment_count_ * joint_count_, 0.0f);
         reset_base_position_.assign(environment_count_ * 3, 0.0f);
         reset_base_quaternion_.assign(environment_count_ * 4, 0.0f);
@@ -1034,41 +899,10 @@ private:
         foot_quaternion_.assign(environment_count_ * foot_count_ * 4, 0.0f);
         foot_velocity_.assign(environment_count_ * foot_count_ * 3, 0.0f);
         foot_height_.assign(environment_count_ * foot_count_, 0.0f);
-        foot_contact_.assign(environment_count_ * foot_count_, 0.0f);
-        foot_contact_force_.assign(environment_count_ * foot_count_ * 3, 0.0f);
         height_scan_.assign(environment_count_ * height_scan_count_, 0.0f);
         height_scan_hit_.assign(environment_count_ * height_scan_count_, 0);
         height_scan_point_.assign(environment_count_ * height_scan_count_ * 3, 0.0f);
         height_scan_normal_.assign(environment_count_ * height_scan_count_ * 3, 0.0f);
-        illegal_contact_count_.assign(environment_count_, 0.0f);
-        undesired_contact_count_.assign(environment_count_, 0.0f);
-        undesired_base_contact_count_.assign(environment_count_, 0.0f);
-        undesired_hip_contact_count_.assign(environment_count_, 0.0f);
-        undesired_thigh_contact_count_.assign(environment_count_, 0.0f);
-        undesired_calf_contact_count_.assign(environment_count_, 0.0f);
-        self_collision_count_.assign(environment_count_, 0.0f);
-        shank_collision_count_.assign(environment_count_, 0.0f);
-        trunk_head_collision_count_.assign(environment_count_, 0.0f);
-        base_collision_count_.assign(environment_count_, 0.0f);
-        hip_collision_count_.assign(environment_count_, 0.0f);
-        thigh_collision_count_.assign(environment_count_, 0.0f);
-        calf_collision_count_.assign(environment_count_, 0.0f);
-        foot_air_time_.assign(environment_count_ * foot_count_, 0.0f);
-        foot_contact_time_.assign(environment_count_ * foot_count_, 0.0f);
-        foot_peak_height_.assign(environment_count_ * foot_count_, 0.0f);
-        last_foot_contact_.assign(environment_count_ * foot_count_, 0.0f);
-        first_contact_.assign(environment_count_ * foot_count_, 0.0f);
-        landing_force_.assign(environment_count_ * foot_count_, 0.0f);
-        previous_foot_position_.assign(environment_count_ * foot_count_ * 3, 0.0f);
-        reward_.assign(environment_count_, 0.0f);
-        terminated_.assign(environment_count_, 0);
-        base_clearance_.assign(environment_count_, 0.0f);
-        velocity_error_.assign(environment_count_, 0.0f);
-        foot_slip_.assign(environment_count_, 0.0f);
-        terrain_normal_error_.assign(environment_count_, 0.0f);
-        reward_terms_.assign(environment_count_ * reward_term_count_, 0.0f);
-        actor_obs_.assign(environment_count_ * actor_obs_dim_, 0.0f);
-        critic_obs_.assign(environment_count_ * critic_obs_dim_, 0.0f);
 
         const PhysicsSceneSnapshot& snapshot = world_->GetSceneSnapshot();
         const PhysicsRobotSnapshot& robot = snapshot.robots[robot_index_];
@@ -1232,6 +1066,12 @@ private:
             state.sensor_names != sensor_names_) {
             throw std::runtime_error("Physics batch result does not match the locomotion view contract");
         }
+        std::span<float> foot_contacts = batch_runtime_.FootContacts();
+        std::span<float> foot_contact_forces = batch_runtime_.FootContactForces();
+        std::span<float> illegal_contact_counts = batch_runtime_.IllegalContactCounts();
+        std::span<float> self_collision_counts = batch_runtime_.SelfCollisionCounts();
+        std::span<float> shank_collision_counts = batch_runtime_.ShankCollisionCounts();
+        std::span<float> trunk_head_collision_counts = batch_runtime_.TrunkHeadCollisionCounts();
         std::copy(state.joint_lower_limit.begin(),
                   state.joint_lower_limit.end(),
                   joint_lower_limit_.begin());
@@ -1241,7 +1081,7 @@ private:
 
         const std::size_t invalid_index = std::numeric_limits<std::size_t>::max();
         for (std::size_t env_id = 0; env_id < environment_count_; ++env_id) {
-            ClearContactBuffersForEnvironment(env_id);
+            batch_runtime_.ClearStepContacts(env_id);
             const std::size_t env3 = env_id * 3;
             const std::size_t env4 = env_id * 4;
             for (std::size_t axis = 0; axis < 3; ++axis) {
@@ -1395,13 +1235,12 @@ private:
                 const int robot_link = link_a >= 0 ? link_a : link_b;
                 const int robot_shape = shape_a >= 0 ? shape_a : shape_b;
                 if (self_contact) {
-                    self_collision_count_[env_id] += 1.0f;
+                    self_collision_counts[env_id] += 1.0f;
                     continue;
                 }
                 if (robot_link < 0 || static_cast<std::size_t>(robot_link) >= link_names_.size()) {
                     continue;
                 }
-                const std::string& link_name = link_names_[static_cast<std::size_t>(robot_link)];
                 const std::string_view shape_name =
                         robot_shape >= 0 && static_cast<std::size_t>(robot_shape) < state.shape_names.size()
                                 ? std::string_view(state.shape_names[static_cast<std::size_t>(robot_shape)])
@@ -1410,38 +1249,16 @@ private:
                 if (foot_index >= 0) {
                     const std::size_t foot = env_id * foot_count_ + static_cast<std::size_t>(foot_index);
                     const std::size_t foot3 = foot * 3;
-                    foot_contact_[foot] = 1.0f;
+                    foot_contacts[foot] = 1.0f;
                     for (std::size_t axis = 0; axis < 3; ++axis) {
-                        foot_contact_force_[foot3 + axis] +=
+                        foot_contact_forces[foot3 + axis] +=
                                 static_cast<float>(state.contact_force[contact * 3 + axis]);
                     }
-                }
-
-                const RealType normal_force = state.contact_normal_force[contact];
-                if (normal_force < ground_force_threshold_) {
-                    continue;
-                }
-                const std::string match_name = shape_name.empty() ? link_name : std::string(shape_name);
-                const bool is_base = link_name == base_link_ ||
-                                     MatchesAnyPattern(match_name, trunk_head_shape_patterns_);
-                const bool is_hip = ContainsCaseInsensitive(link_name, "hip");
-                const bool is_thigh = MatchesAnyPattern(match_name, thigh_shape_patterns_);
-                const bool is_shank = foot_index < 0 && MatchesAnyPattern(match_name, shank_shape_patterns_);
-                base_collision_count_[env_id] += is_base ? 1.0f : 0.0f;
-                hip_collision_count_[env_id] += is_hip ? 1.0f : 0.0f;
-                thigh_collision_count_[env_id] += is_thigh ? 1.0f : 0.0f;
-                calf_collision_count_[env_id] += is_shank ? 1.0f : 0.0f;
-                if (is_base || is_hip || is_thigh || is_shank) {
-                    undesired_contact_count_[env_id] += 1.0f;
-                    undesired_base_contact_count_[env_id] += is_base ? 1.0f : 0.0f;
-                    undesired_hip_contact_count_[env_id] += is_hip ? 1.0f : 0.0f;
-                    undesired_thigh_contact_count_[env_id] += is_thigh ? 1.0f : 0.0f;
-                    undesired_calf_contact_count_[env_id] += is_shank ? 1.0f : 0.0f;
                 }
             }
 
             if (env_id < state.self_contact_tick_count.size()) {
-                self_collision_count_[env_id] =
+                self_collision_counts[env_id] =
                         static_cast<float>(state.self_contact_tick_count[env_id]);
             }
             const auto group_tick_count = [&](std::string_view group_name) {
@@ -1459,104 +1276,11 @@ private:
                                ? static_cast<float>(state.contact_shape_group_tick_count[offset])
                                : 0.0f;
             };
-            illegal_contact_count_[env_id] = terminate_on_thigh_contact_
-                                                      ? group_tick_count(kThighContactGroup)
-                                                      : 0.0f;
-            shank_collision_count_[env_id] = group_tick_count(kShankContactGroup);
-            trunk_head_collision_count_[env_id] = group_tick_count(kTrunkHeadContactGroup);
-        }
-    }
-
-    std::size_t DefaultActorObservationDim() const {
-        return 12 + joint_count_ * 3 + height_scan_count_;
-    }
-
-    std::size_t DefaultCriticObservationDim() const {
-        return DefaultActorObservationDim() + foot_count_ * 6;
-    }
-
-    void UpdateFootHistory(std::size_t env_id) {
-        const float step_dt = static_cast<float>(std::max<RealType>(command_runtime_.GetStepDt(), 1.0e-6));
-        const float physics_dt = static_cast<float>(
-                std::max(world_->GetSettings().fixed_time_step, static_cast<RealType>(1.0e-6)));
-        for (std::size_t foot_index = 0; foot_index < foot_count_; ++foot_index) {
-            const std::size_t foot = env_id * foot_count_ + foot_index;
-            const std::size_t foot3 = foot * 3;
-            bool contact = foot_contact_[foot] > 0.0f;
-            const std::string group_name = FootContactGroupName(foot_index);
-            const auto group = std::find(physics_state_.contact_shape_group_names.begin(),
-                                         physics_state_.contact_shape_group_names.end(),
-                                         group_name);
-            if (group != physics_state_.contact_shape_group_names.end() &&
-                physics_state_.contact_history_tick_count > 0) {
-                const std::size_t group_index = static_cast<std::size_t>(
-                        std::distance(physics_state_.contact_shape_group_names.begin(), group));
-                for (std::size_t tick = 0; tick < physics_state_.contact_history_tick_count; ++tick) {
-                    const std::size_t history_offset =
-                            (env_id * physics_state_.contact_shape_group_names.size() + group_index) *
-                                    physics_state_.contact_history_tick_count +
-                            tick;
-                    const bool tick_contact =
-                            history_offset < physics_state_.contact_shape_group_history.size() &&
-                            physics_state_.contact_shape_group_history[history_offset] != 0;
-                    if (tick_contact) {
-                        foot_contact_time_[foot] += physics_dt;
-                        foot_air_time_[foot] = 0.0f;
-                    } else {
-                        foot_contact_time_[foot] = 0.0f;
-                        foot_air_time_[foot] += physics_dt;
-                    }
-                    contact = tick_contact;
-                }
-                foot_contact_[foot] = contact ? 1.0f : 0.0f;
-            } else if (contact) {
-                foot_contact_time_[foot] += step_dt;
-                foot_air_time_[foot] = 0.0f;
-            } else {
-                foot_contact_time_[foot] = 0.0f;
-                foot_air_time_[foot] += step_dt;
-            }
-            first_contact_[foot] = contact &&
-                                                   foot_contact_time_[foot] > 0.0f &&
-                                                   foot_contact_time_[foot] < step_dt + 1.0e-6f
-                                           ? 1.0f
-                                           : 0.0f;
-            const float force_x = foot_contact_force_[foot3 + 0];
-            const float force_y = foot_contact_force_[foot3 + 1];
-            const float force_z = foot_contact_force_[foot3 + 2];
-            landing_force_[foot] = std::sqrt(force_x * force_x + force_y * force_y + force_z * force_z) *
-                                   first_contact_[foot];
-            if (!contact) {
-                foot_peak_height_[foot] = std::max(foot_peak_height_[foot], foot_height_[foot]);
-            }
-            last_foot_contact_[foot] = contact ? 1.0f : 0.0f;
-        }
-    }
-
-    void ClearContactBuffersForEnvironment(std::size_t env_id) {
-        illegal_contact_count_[env_id] = 0.0f;
-        undesired_contact_count_[env_id] = 0.0f;
-        undesired_base_contact_count_[env_id] = 0.0f;
-        undesired_hip_contact_count_[env_id] = 0.0f;
-        undesired_thigh_contact_count_[env_id] = 0.0f;
-        undesired_calf_contact_count_[env_id] = 0.0f;
-        self_collision_count_[env_id] = 0.0f;
-        shank_collision_count_[env_id] = 0.0f;
-        trunk_head_collision_count_[env_id] = 0.0f;
-        base_collision_count_[env_id] = 0.0f;
-        hip_collision_count_[env_id] = 0.0f;
-        thigh_collision_count_[env_id] = 0.0f;
-        calf_collision_count_[env_id] = 0.0f;
-        const std::size_t foot_begin = env_id * foot_count_;
-        for (std::size_t foot_index = 0; foot_index < foot_count_; ++foot_index) {
-            const std::size_t foot = foot_begin + foot_index;
-            const std::size_t foot3 = foot * 3;
-            foot_contact_[foot] = 0.0f;
-            first_contact_[foot] = 0.0f;
-            landing_force_[foot] = 0.0f;
-            foot_contact_force_[foot3 + 0] = 0.0f;
-            foot_contact_force_[foot3 + 1] = 0.0f;
-            foot_contact_force_[foot3 + 2] = 0.0f;
+            illegal_contact_counts[env_id] = terminate_on_thigh_contact_
+                                                     ? group_tick_count(kThighContactGroup)
+                                                     : 0.0f;
+            shank_collision_counts[env_id] = group_tick_count(kShankContactGroup);
+            trunk_head_collision_counts[env_id] = group_tick_count(kTrunkHeadContactGroup);
         }
     }
 
@@ -1585,11 +1309,6 @@ private:
     std::size_t link_count_{0};
     std::size_t foot_count_{0};
     std::size_t height_scan_count_{0};
-    std::size_t reward_term_count_{0};
-    std::size_t task_param_count_{0};
-    std::size_t task_flag_count_{0};
-    std::size_t actor_obs_dim_{0};
-    std::size_t critic_obs_dim_{0};
     std::vector<std::size_t> foot_link_indices_;
     std::vector<std::string> foot_shape_names_;
     std::vector<std::string> thigh_shape_names_;
@@ -1616,17 +1335,8 @@ private:
     std::vector<float> previous_action_;
     std::vector<float> last_action_;
     std::vector<float> encoder_bias_;
-    LocomotionCommandRuntime command_runtime_;
-    std::vector<float> gait_phase_;
-    std::vector<float> feet_phase_height_target_;
-    std::vector<float> pose_weights_;
+    LocomotionBatchRuntime batch_runtime_;
     std::vector<float> step_profile_ms_;
-    std::vector<float> pose_std_standing_;
-    std::vector<float> pose_std_walking_;
-    std::vector<float> pose_std_running_;
-    std::vector<float> reward_weights_;
-    std::vector<float> task_params_;
-    std::vector<float> task_flags_;
     std::vector<float> target_position_;
     std::vector<float> reset_base_position_;
     std::vector<float> reset_base_quaternion_;
@@ -1657,41 +1367,10 @@ private:
     std::vector<float> foot_quaternion_;
     std::vector<float> foot_velocity_;
     std::vector<float> foot_height_;
-    std::vector<float> foot_contact_;
-    std::vector<float> foot_contact_force_;
     std::vector<float> height_scan_;
     std::vector<std::uint8_t> height_scan_hit_;
     std::vector<float> height_scan_point_;
     std::vector<float> height_scan_normal_;
-    std::vector<float> illegal_contact_count_;
-    std::vector<float> undesired_contact_count_;
-    std::vector<float> undesired_base_contact_count_;
-    std::vector<float> undesired_hip_contact_count_;
-    std::vector<float> undesired_thigh_contact_count_;
-    std::vector<float> undesired_calf_contact_count_;
-    std::vector<float> self_collision_count_;
-    std::vector<float> shank_collision_count_;
-    std::vector<float> trunk_head_collision_count_;
-    std::vector<float> base_collision_count_;
-    std::vector<float> hip_collision_count_;
-    std::vector<float> thigh_collision_count_;
-    std::vector<float> calf_collision_count_;
-    std::vector<float> foot_air_time_;
-    std::vector<float> foot_contact_time_;
-    std::vector<float> foot_peak_height_;
-    std::vector<float> last_foot_contact_;
-    std::vector<float> first_contact_;
-    std::vector<float> landing_force_;
-    std::vector<float> previous_foot_position_;
-    std::vector<float> reward_;
-    std::vector<std::uint8_t> terminated_;
-    std::vector<float> base_clearance_;
-    std::vector<float> velocity_error_;
-    std::vector<float> foot_slip_;
-    std::vector<float> terrain_normal_error_;
-    std::vector<float> reward_terms_;
-    std::vector<float> actor_obs_;
-    std::vector<float> critic_obs_;
 };
 
 void RegisterManualAppContextBindings(py::module_& module) {
@@ -1929,11 +1608,6 @@ void RegisterManualAppContextBindings(py::module_& module) {
                                                     bool terminate_on_thigh_contact,
                                                     double ground_force_threshold,
                                                     double self_collision_force_threshold,
-                                                    std::size_t reward_term_count,
-                                                    std::size_t task_param_count,
-                                                    std::size_t task_flag_count,
-                                                    std::size_t actor_obs_dim,
-                                                    std::size_t critic_obs_dim,
                                                     const std::vector<std::string>& link_names) {
                 SimulationServer* simulation = context.GetSimulationServer();
                 if (simulation == nullptr) {
@@ -1957,12 +1631,7 @@ void RegisterManualAppContextBindings(py::module_& module) {
                                                                trunk_head_shape_patterns,
                                                                terminate_on_thigh_contact,
                                                                ground_force_threshold,
-                                                               self_collision_force_threshold,
-                                                               reward_term_count,
-                                                               task_param_count,
-                                                               task_flag_count,
-                                                               actor_obs_dim,
-                                                               critic_obs_dim);
+                                                               self_collision_force_threshold);
             }, py::arg("robot"),
                py::arg("base_link"),
                py::arg("joint_names"),
@@ -1976,11 +1645,6 @@ void RegisterManualAppContextBindings(py::module_& module) {
                py::arg("terminate_on_thigh_contact") = true,
                py::arg("ground_force_threshold") = 50.0,
                py::arg("self_collision_force_threshold") = 20.0,
-               py::arg("reward_term_count") = 0,
-               py::arg("task_param_count") = 0,
-               py::arg("task_flag_count") = 0,
-               py::arg("actor_obs_dim") = 0,
-               py::arg("critic_obs_dim") = 0,
                py::arg("link_names") = std::vector<std::string>{})
             .def_property_readonly("batch_env_count", [](EngineContext& context) {
                 SimulationServer* simulation = context.GetSimulationServer();

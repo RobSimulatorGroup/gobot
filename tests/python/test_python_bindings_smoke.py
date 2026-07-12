@@ -1,5 +1,6 @@
 import json
 import os
+from pathlib import Path
 import textwrap
 
 import gobot
@@ -15,6 +16,10 @@ def assert_close_tuple(actual, expected):
 
 
 def main():
+    expected_build_dir = os.environ.get("GOBOT_TEST_BUILD_PYTHON_DIR")
+    if expected_build_dir:
+        core_path = Path(gobot._core.__file__).resolve()
+        assert core_path.is_relative_to(Path(expected_build_dir).resolve()), core_path
     assert gobot.__version__ == gobot._core.__version__
     assert gobot.version() == gobot.__version__
     version_parts = [int(part) for part in gobot.__version__.split(".")[:3]]
