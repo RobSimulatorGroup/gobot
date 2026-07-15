@@ -137,6 +137,7 @@ class RslRlVecEnvWrapper:
         self._next_obs_buffer = 0
         self._native_obs_signature: tuple[Any, ...] | None = None
         self._native_obs_tensordict: Any | None = None
+        self._native_obs_tensordicts: dict[tuple[Any, ...], Any] = {}
         self._accepts_device_actions = bool(getattr(env, "accepts_device_actions", False))
         self._reward_buf = self.torch.empty(self.num_envs, dtype=self.torch.float32, device=self.device)
         self._reward_staging = self._empty_cpu_tensor((self.num_envs,), self.torch.float32)
@@ -256,6 +257,7 @@ class RslRlVecEnvWrapper:
             "pinned_transfer": self._use_pinned_transfer,
             "device_native_actions": self._accepts_device_actions,
             "device_native_observations": self._native_obs_tensordict is not None,
+            "native_obs_tensordicts": len(self._native_obs_tensordicts),
         }
 
     def close(self) -> None:
@@ -423,14 +425,22 @@ class RslRlVecEnvWrapper:
             (key, id(value), tuple(value.shape), value.dtype, value.device)
             for key, value in data.items()
         )
-        if signature != self._native_obs_signature:
-            self._native_obs_signature = signature
-            self._native_obs_tensordict = self.TensorDict(
+        tensor_dict = self._native_obs_tensordicts.get(signature)
+        if tensor_dict is None:
+            if len(self._native_obs_tensordicts) >= 8:
+                raise RuntimeError(
+                    "device-native observations must reuse a stable set of tensor buffers; "
+                    "received more than 8 distinct buffer signatures"
+                )
+            tensor_dict = self.TensorDict(
                 data,
                 batch_size=[self.num_envs],
                 device=self.device,
             )
-        return self._native_obs_tensordict
+            self._native_obs_tensordicts[signature] = tensor_dict
+        self._native_obs_signature = signature
+        self._native_obs_tensordict = tensor_dict
+        return tensor_dict
 
     def _ensure_obs_buffers(self, obs: Mapping[str, Any]) -> None:
         specs: dict[str, tuple[int, ...]] = {

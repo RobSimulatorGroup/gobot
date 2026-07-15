@@ -905,6 +905,68 @@ def test_rsl_rl_wrapper_preserves_device_native_torch_buffers():
     assert wrapper.memory_profile()["device_native_observations"] is True
 
 
+def test_rsl_rl_wrapper_caches_alternating_device_native_observations():
+    torch = _require_torch()
+
+    class TorchEnv:
+        num_envs = 2
+        num_actions = 1
+        num_obs = 2
+        num_privileged_obs = 3
+        cfg = {}
+        cfg_obj = object()
+        seed = 1
+        max_episode_length = 10
+        accepts_device_actions = True
+
+        def __init__(self):
+            self.episode_length_buf = torch.zeros(2, dtype=torch.long)
+            self.buffers = (
+                {
+                    "actor": torch.zeros((2, 2), dtype=torch.float32),
+                    "critic": torch.zeros((2, 3), dtype=torch.float32),
+                },
+                {
+                    "actor": torch.ones((2, 2), dtype=torch.float32),
+                    "critic": torch.ones((2, 3), dtype=torch.float32),
+                },
+            )
+            self.index = 0
+            self.state = BatchEnvState(
+                obs=self.buffers[0],
+                reward=torch.zeros(2),
+                terminated=torch.zeros(2, dtype=torch.bool),
+                truncated=torch.zeros(2, dtype=torch.bool),
+                info={"steps": self.episode_length_buf},
+            )
+
+        def reset(self, seed=None):
+            return self.state.obs, {}
+
+        def step(self, actions):
+            del actions
+            self.index = 1 - self.index
+            self.state.obs = self.buffers[self.index]
+            return self.state
+
+        def close(self):
+            pass
+
+    env = TorchEnv()
+    wrapper = RslRlVecEnvWrapper(env, device="cpu")
+    actions = torch.zeros((2, 1), dtype=torch.float32)
+    first = wrapper.reset()
+    first_values = first["actor"].clone()
+    second, _, _, _ = wrapper.step(actions)
+
+    torch.testing.assert_close(first["actor"], first_values)
+    assert second["actor"].data_ptr() != first["actor"].data_ptr()
+
+    third, _, _, _ = wrapper.step(actions)
+    assert third is first
+    assert wrapper.memory_profile()["native_obs_tensordicts"] == 2
+
+
 def test_compiled_scene_artifact_validates_robot_prefixes():
     content = "<mujoco/>"
     artifact_mapping = {
@@ -1222,6 +1284,7 @@ def main():
         test_go1_velocity_push_adds_to_current_world_velocity,
         test_rsl_rl_wrapper_keeps_core_env_numpy,
         test_rsl_rl_wrapper_preserves_device_native_torch_buffers,
+        test_rsl_rl_wrapper_caches_alternating_device_native_observations,
         test_compiled_scene_artifact_validates_robot_prefixes,
     ]
     skipped = 0

@@ -41,7 +41,7 @@ cd /home/wqq/gobot
 uv run --extra train --extra mujoco-warp \
   python -m examples.go1.train.go1_velocity_train \
   --backend mujoco-warp \
-  --num-envs 256 \
+  --num-envs 2048 \
   --iterations 10000 \
   --device cuda:0 \
   --no-step-extras \
@@ -72,6 +72,7 @@ Benchmark the Gobot Go1 vector env hot path without the PPO learner:
 ```bash
 cd /home/wqq/gobot
 uv run --extra train python benchmark/go1_velocity_benchmark.py \
+  --backend mujoco-cpu \
   --num-envs 64 \
   --steps 100 \
   --warmup-steps 10 \
@@ -81,10 +82,74 @@ uv run --extra train python benchmark/go1_velocity_benchmark.py \
   --profile-step
 ```
 
+Benchmark the same task on MuJoCo Warp. The measured interval is synchronized
+before and after all steps so CUDA enqueue time is not reported as simulation
+throughput:
+
+```bash
+uv run --extra train --extra mujoco-warp \
+  python benchmark/go1_velocity_benchmark.py \
+  --backend mujoco-warp \
+  --num-envs 2048 \
+  --steps 100 \
+  --warmup-steps 20 \
+  --device cuda:0 \
+  --no-step-extras \
+  --json-out /tmp/go1_warp_benchmark.json
+```
+
 `--profile-step` reports the major Go1 CPU batch env phases: action
 preparation/application, physics, state refresh, command update, contact
 updates, reward, termination/reset, observation build, tensor conversion, and
 extras/logging.
+
+The checked reference trace pins the upstream rough-terrain task revision and
+compares joint order, observation dimensions, all 70 terrain assignments and
+reset scans, all 40 physical heightfield fingerprints, stable first-step
+dynamics, all 16 reward terms, termination flags, and an eight-step flat state
+trajectory. The first impact on wave terrain is shape/finite checked because
+the pinned reference itself is not bitwise repeatable there. The reference and
+Gobot traces must use identical MuJoCo, MuJoCo Warp, Warp, and Torch versions;
+a dynamics-stack version mismatch is a parity failure.
+
+Regenerate and compare the traces with the two independent environments:
+
+```bash
+# Maintainer-only: install the pinned reference checkout at the revision and
+# with the compatibility patch recorded in examples/go1/tools/go1_parity.py.
+MPLCONFIGDIR=/tmp/gobot-matplotlib .venv/bin/python \
+  -m examples.go1.tools.export_reference_trace \
+  --output /tmp/go1_reference_trace.json \
+  --device cuda:0
+
+uv run --extra train --extra mujoco-warp \
+  python -m examples.go1.tools.export_gobot_trace \
+  --output /tmp/go1_gobot_trace.json
+
+uv run --no-sync python -m examples.go1.tools.compare_go1_traces \
+  /tmp/go1_reference_trace.json /tmp/go1_gobot_trace.json
+```
+
+The reference exporter and Gobot exporter execute independent environment
+implementations with an identical dynamics stack. The reference checkout and
+its compatibility patch are fixture-generation dependencies only; they are not
+Gobot runtime dependencies. The fixture records each MuJoCo, MuJoCo Warp,
+Torch, Warp, and task revision.
+
+Evaluate one or more checkpoints over every authored terrain cell. The report
+includes signed body-frame velocity, tracking error, survival, and illegal
+contact rates by terrain level and type:
+
+```bash
+uv run --extra train --extra mujoco-warp \
+  python -m examples.go1.tools.evaluate_velocity_policy \
+  examples/go1/logs/go1_rough_velocity/model_900.pt \
+  --device cuda:0 \
+  --command-x 0.5 \
+  --episodes-per-cell 2 \
+  --max-steps 500 \
+  --json-out /tmp/go1_velocity_evaluation.json
+```
 
 The `go1_rough_velocity` task follows the Go1 rough-terrain observation,
 reward, command, event, robot-dynamics, collision, and mixed-terrain settings
@@ -101,7 +166,7 @@ cd /home/wqq/gobot
 uv run --extra train --extra mujoco-warp \
   python -m examples.go1.train.go1_velocity_train \
   --backend mujoco-warp \
-  --num-envs 256 \
+  --num-envs 2048 \
   --iterations 10000 \
   --device cuda:0 \
   --no-step-extras \

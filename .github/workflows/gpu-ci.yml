@@ -1,0 +1,96 @@
+name: GPU CI
+
+on:
+  workflow_dispatch:
+  schedule:
+    - cron: "17 18 * * *"
+
+permissions:
+  contents: read
+
+concurrency:
+  group: gobot-gpu-ci
+  cancel-in-progress: false
+
+jobs:
+  go1-mujoco-warp:
+    name: Go1 MuJoCo Warp
+    runs-on: [self-hosted, linux, x64, gpu]
+    timeout-minutes: 60
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+        with:
+          submodules: recursive
+          persist-credentials: false
+
+      - name: Set up uv
+        uses: astral-sh/setup-uv@v6
+        with:
+          enable-cache: true
+
+      - name: Check CUDA runner
+        run: nvidia-smi
+
+      - name: Install Gobot training environment
+        run: uv sync --extra train --extra mujoco-warp
+
+      - name: Validate reference fixture
+        run: uv run --no-sync python tests/python/test_go1_reference_fixture.py
+
+      - name: Test MuJoCo Warp provider
+        run: uv run --no-sync python tests/python/test_mujoco_warp_provider.py
+
+      - name: Test Go1 MuJoCo Warp task
+        run: uv run --no-sync python tests/python/test_go1_mujoco_warp_env.py
+
+      - name: Test pinned Go1 reference parity
+        run: uv run --no-sync python tests/python/test_go1_reference_parity.py
+
+      - name: Benchmark Go1 MuJoCo Warp
+        run: |
+          mkdir -p /tmp/gobot-gpu-ci/benchmarks
+          for num_envs in 256 1024 2048; do
+            uv run --no-sync python benchmark/go1_velocity_benchmark.py \
+              --backend mujoco-warp \
+              --device cuda:0 \
+              --num-envs "${num_envs}" \
+              --steps 50 \
+              --warmup-steps 10 \
+              --no-step-extras \
+              --json-out "/tmp/gobot-gpu-ci/benchmarks/go1_warp_${num_envs}.json"
+          done
+
+      - name: Check MuJoCo Warp benchmark admission
+        run: |
+          uv run --no-sync python benchmark/check_go1_warp_admission.py \
+            /tmp/gobot-gpu-ci/benchmarks/go1_warp_256.json \
+            /tmp/gobot-gpu-ci/benchmarks/go1_warp_1024.json \
+            /tmp/gobot-gpu-ci/benchmarks/go1_warp_2048.json \
+            --minimum-throughput 256=8000 \
+            --minimum-throughput 1024=16000 \
+            --minimum-throughput 2048=25000 \
+            --minimum-scale-factor 1.05
+
+      - name: Run PPO admission training
+        run: |
+          mkdir -p /tmp/gobot-gpu-ci/training
+          uv run --no-sync python -m examples.go1.train.go1_velocity_train \
+            --backend mujoco-warp \
+            --device cuda:0 \
+            --num-envs 256 \
+            --iterations 3 \
+            --save-interval 3 \
+            --no-step-extras \
+            --log-dir /tmp/gobot-gpu-ci/training \
+            --policy-out /tmp/gobot-gpu-ci/training/policy.pt
+
+      - name: Upload GPU results
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: gobot-go1-gpu-results
+          path: /tmp/gobot-gpu-ci
+          if-no-files-found: warn
+          retention-days: 14

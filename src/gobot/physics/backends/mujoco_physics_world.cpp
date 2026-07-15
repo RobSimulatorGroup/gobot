@@ -646,6 +646,8 @@ std::vector<float> NormalizeHeightFieldData(const PhysicsTerrainHeightFieldSnaps
         max_value = *minmax.second;
     }
     const RealType range = std::max<RealType>(max_value - min_value, CMP_EPSILON);
+    const bool has_normalized_elevation =
+            heightfield.normalized_elevation.size() == expected_count;
 
     for (int row = 0; row < heightfield.rows; ++row) {
         const int source_row = heightfield.rows - 1 - row;
@@ -654,10 +656,15 @@ std::vector<float> NormalizeHeightFieldData(const PhysicsTerrainHeightFieldSnaps
                     static_cast<std::size_t>(row * heightfield.cols + col);
             const std::size_t source_index =
                     static_cast<std::size_t>(source_row * heightfield.cols + col);
-            const RealType value = source_index < heightfield.heights.size()
-                                           ? heightfield.heights[source_index]
-                                           : min_value;
-            data[destination_index] = static_cast<float>((value - min_value) / range);
+            if (has_normalized_elevation) {
+                data[destination_index] = static_cast<float>(std::clamp<RealType>(
+                        heightfield.normalized_elevation[source_index], 0.0, 1.0));
+            } else {
+                const RealType value = source_index < heightfield.heights.size()
+                                               ? heightfield.heights[source_index]
+                                               : min_value;
+                data[destination_index] = static_cast<float>((value - min_value) / range);
+            }
         }
     }
 

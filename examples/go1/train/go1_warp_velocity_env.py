@@ -51,8 +51,10 @@ def _quat_apply(quaternion: torch.Tensor, vector: torch.Tensor) -> torch.Tensor:
 
 
 def _quat_apply_inverse(quaternion: torch.Tensor, vector: torch.Tensor) -> torch.Tensor:
-    conjugate = torch.cat((quaternion[..., 0:1], -quaternion[..., 1:4]), dim=-1)
-    return _quat_apply(conjugate, vector)
+    xyz = quaternion[..., 1:4]
+    scalar = quaternion[..., 0:1]
+    cross = 2.0 * torch.cross(xyz, vector, dim=-1)
+    return vector - scalar * cross + torch.cross(xyz, cross, dim=-1)
 
 
 def _quat_from_yaw(yaw: torch.Tensor) -> torch.Tensor:
@@ -503,15 +505,54 @@ class Go1WarpVelocityEnv:
             device=self._torch_device,
         )
         self._foot_peak_height = torch.zeros_like(self._foot_height)
+        terrain_ray_count = len(_grid_offsets())
+        self._terrain_normal_indices = (
+            torch.linspace(
+                0,
+                terrain_ray_count - 1,
+                32,
+                dtype=torch.float32,
+                device=self._torch_device,
+            ).long()
+            if terrain_ray_count > 32
+            else None
+        )
+        self._gravity_world = torch.zeros(
+            (self.num_envs, 3), dtype=torch.float32, device=self._torch_device
+        )
+        self._gravity_world[:, 2] = -1.0
+        self._forward_body = torch.zeros_like(self._gravity_world)
+        self._forward_body[:, 0] = 1.0
+        self._terrain_up_world = torch.zeros_like(self._gravity_world)
+        self._terrain_up_world[:, 2] = 1.0
 
-        self._actor_obs = torch.zeros(
-            (self.num_envs, self.num_obs), dtype=torch.float32, device=self._torch_device
+        self._actor_obs_buffers = tuple(
+            torch.zeros(
+                (self.num_envs, self.num_obs),
+                dtype=torch.float32,
+                device=self._torch_device,
+            )
+            for _ in range(2)
         )
-        self._critic_obs = torch.zeros(
-            (self.num_envs, self.num_privileged_obs),
-            dtype=torch.float32,
-            device=self._torch_device,
+        self._critic_obs_buffers = tuple(
+            torch.zeros(
+                (self.num_envs, self.num_privileged_obs),
+                dtype=torch.float32,
+                device=self._torch_device,
+            )
+            for _ in range(2)
         )
+        self._observation_views = tuple(
+            {"actor": actor, "critic": critic}
+            for actor, critic in zip(
+                self._actor_obs_buffers,
+                self._critic_obs_buffers,
+                strict=True,
+            )
+        )
+        self._observation_buffer_index = 0
+        self._actor_obs = self._actor_obs_buffers[self._observation_buffer_index]
+        self._critic_obs = self._critic_obs_buffers[self._observation_buffer_index]
         self._reward_terms = torch.zeros(
             (self.num_envs, len(self._reward_term_names)),
             dtype=torch.float32,
@@ -525,6 +566,7 @@ class Go1WarpVelocityEnv:
         )
         self._truncated = torch.zeros_like(self._terminated)
         self._terrain_out = torch.zeros_like(self._terminated)
+        self._last_step_profile_ms: dict[str, float] = {}
 
         reward_cfg = self.cfg_obj.rewards
         self._reward_weights = torch.tensor(
@@ -811,24 +853,31 @@ class Go1WarpVelocityEnv:
         return observations
 
     def step(self, actions: Any) -> BatchEnvState:
+        profile_marks: list[tuple[str, torch.cuda.Event]] = []
+        self._profile_mark(profile_marks, "start")
         action = self._prepare_actions(actions)
         self.common_step_counter += 1
         self._previous_previous_action.copy_(self._previous_action)
         self._previous_action.copy_(self._action)
         self._action.copy_(action)
         self._joint_targets.copy_(
-            self._default_joint_pos.unsqueeze(0) + self._action_scale.unsqueeze(0) * self._action
+            self._default_joint_pos.unsqueeze(0)
+            + self._action_scale.unsqueeze(0) * self._action
+            - self._encoder_bias
         )
         self.provider.set_joint_position_targets(self._layout, self._joint_targets)
+        self._profile_mark(profile_marks, "action")
 
         for _ in range(self.decimation):
             self.provider.step(nsteps=1)
             self._update_contact_state_substep()
+        self._profile_mark(profile_marks, "physics")
 
         self.episode_length_buf.add_(1)
         self.step_counter += 1
         self._compute_terminations()
         self._compute_rewards()
+        self._profile_mark(profile_marks, "reward_termination")
         reward = self._reward.clone()
         terminated = self._terminated.clone()
         truncated = self._truncated.clone()
@@ -850,13 +899,16 @@ class Go1WarpVelocityEnv:
         if reset_ids.numel() > 0:
             self._update_terrain_curriculum(reset_ids)
             self._reset_idx(reset_ids, reset_reason.index_select(0, reset_ids))
+        self._profile_mark(profile_marks, "reset")
 
         self.provider.forward()
         self._compute_commands(dt=self.step_dt)
         self._apply_pushes()
         self.provider.sense()
         self._update_raycast_outputs()
+        self._profile_mark(profile_marks, "forward_sense")
         self._compute_observations()
+        self._profile_mark(profile_marks, "observation")
 
         info = self._make_step_info(reset_reason, truncated)
         self._state.reward = reward
@@ -864,7 +916,36 @@ class Go1WarpVelocityEnv:
         self._state.truncated = truncated
         self._state.info = info
         self.extras = info
+        self._finish_step_profile(profile_marks)
         return self._state
+
+    def _profile_mark(
+        self,
+        marks: list[tuple[str, torch.cuda.Event]],
+        name: str,
+    ) -> None:
+        if not self.profile_step:
+            return
+        event = torch.cuda.Event(enable_timing=True)
+        event.record(torch.cuda.current_stream(self._torch_device))
+        marks.append((name, event))
+
+    def _finish_step_profile(
+        self,
+        marks: list[tuple[str, torch.cuda.Event]],
+    ) -> None:
+        if not marks:
+            self._last_step_profile_ms = {}
+            return
+        marks[-1][1].synchronize()
+        profile: dict[str, float] = {}
+        for (previous_name, previous), (name, current) in zip(
+            marks, marks[1:], strict=True
+        ):
+            del previous_name
+            profile[f"{name}_ms"] = float(previous.elapsed_time(current))
+        profile["total_ms"] = float(marks[0][1].elapsed_time(marks[-1][1]))
+        self._last_step_profile_ms = profile
 
     def _prepare_actions(self, actions: Any) -> torch.Tensor:
         if isinstance(actions, torch.Tensor):
@@ -1086,11 +1167,7 @@ class Go1WarpVelocityEnv:
 
     def _heading(self) -> torch.Tensor:
         quaternion = self._arrays["xquat"][:, self._base_body_id]
-        forward = torch.zeros(
-            (self.num_envs, 3), dtype=torch.float32, device=self._torch_device
-        )
-        forward[:, 0] = 1.0
-        forward_world = _quat_apply(quaternion, forward)
+        forward_world = _quat_apply(quaternion, self._forward_body)
         return torch.atan2(forward_world[:, 1], forward_world[:, 0])
 
     def _reset_push_timers(self, env_ids: torch.Tensor) -> None:
@@ -1233,16 +1310,9 @@ class Go1WarpVelocityEnv:
         sensor = self.provider.raycast_sensor("terrain_scan")
         points = sensor["hit_pos_w"]
         valid = sensor["distances"] >= 0.0
-        if points.shape[1] > 32:
-            indices = torch.linspace(
-                0,
-                points.shape[1] - 1,
-                32,
-                dtype=torch.float32,
-                device=self._torch_device,
-            ).long()
-            points = points.index_select(1, indices)
-            valid = valid.index_select(1, indices)
+        if self._terrain_normal_indices is not None:
+            points = points.index_select(1, self._terrain_normal_indices)
+            valid = valid.index_select(1, self._terrain_normal_indices)
         count = valid.sum(dim=1)
         weights = valid.float().unsqueeze(-1)
         centroid = (points * weights).sum(dim=1) / count.clamp(min=1).float().unsqueeze(-1)
@@ -1256,9 +1326,7 @@ class Go1WarpVelocityEnv:
         plane_like = eigenvalues[:, 0] / eigenvalues[:, 1].clamp(min=epsilon) < 0.1
         has_spread = eigenvalues[:, 1] > eigenvalues[:, 2].clamp(min=epsilon) * 1.0e-6
         reliable = (count >= 3) & plane_like & has_spread
-        up = torch.zeros_like(normal)
-        up[:, 2] = 1.0
-        return torch.where(reliable.unsqueeze(-1), normal, up)
+        return torch.where(reliable.unsqueeze(-1), normal, self._terrain_up_world)
 
     def _compute_terminations(self) -> None:
         illegal_cfg = self.cfg_obj.illegal_contact
@@ -1405,57 +1473,56 @@ class Go1WarpVelocityEnv:
         self._episode_returns.add_(self._reward)
 
     def _compute_observations(self) -> None:
+        self._observation_buffer_index = 1 - self._observation_buffer_index
+        self._actor_obs = self._actor_obs_buffers[self._observation_buffer_index]
+        self._critic_obs = self._critic_obs_buffers[self._observation_buffer_index]
         sensordata = self._arrays["sensordata"]
         base_linear_velocity = sensordata[:, self._sensor_slices[0]]
         base_angular_velocity = sensordata[:, self._sensor_slices[1]]
         quaternion = self._arrays["xquat"][:, self._base_body_id]
-        gravity_world = torch.zeros(
-            (self.num_envs, 3), dtype=torch.float32, device=self._torch_device
-        )
-        gravity_world[:, 2] = -1.0
-        projected_gravity = _quat_apply_inverse(quaternion, gravity_world)
+        projected_gravity = _quat_apply_inverse(quaternion, self._gravity_world)
         joint_position = self._arrays["qpos"].index_select(1, self._joint_qpos_ids)
         joint_velocity = self._arrays["qvel"].index_select(1, self._joint_dof_ids)
-        clean_actor = torch.cat(
-            (
-                base_linear_velocity,
-                base_angular_velocity,
-                projected_gravity,
-                joint_position - self._default_joint_pos.unsqueeze(0),
-                joint_velocity,
-                self._action,
-                self._command,
-                self._terrain_scan_height
-                / max(float(self.cfg_obj.observations.terrain_scan_max_distance), 1.0e-6),
-            ),
-            dim=1,
+        actor = self._actor_obs
+        actor[:, 0:3].copy_(base_linear_velocity)
+        actor[:, 3:6].copy_(base_angular_velocity)
+        actor[:, 6:9].copy_(projected_gravity)
+        actor[:, 9 : 9 + self.num_actions].copy_(
+            joint_position - self._default_joint_pos.unsqueeze(0)
         )
-        if clean_actor.shape != self._actor_obs.shape:
-            raise RuntimeError(
-                f"Go1 Warp actor observation has shape {tuple(clean_actor.shape)}, "
-                f"expected {tuple(self._actor_obs.shape)}"
-            )
-        self._actor_obs.copy_(clean_actor)
+        joint_velocity_start = 9 + self.num_actions
+        action_start = joint_velocity_start + self.num_actions
+        command_start = action_start + self.num_actions
+        height_start = command_start + 3
+        actor[:, joint_velocity_start:action_start].copy_(joint_velocity)
+        actor[:, action_start:command_start].copy_(self._action)
+        actor[:, command_start:height_start].copy_(self._command)
+        actor[:, height_start:].copy_(
+            self._terrain_scan_height
+            / max(float(self.cfg_obj.observations.terrain_scan_max_distance), 1.0e-6)
+        )
+
+        critic = self._critic_obs
+        critic[:, : self.num_obs].copy_(actor)
+        critic_offset = self.num_obs
+        critic[:, critic_offset : critic_offset + self._foot_count].copy_(self._foot_height)
+        critic_offset += self._foot_count
+        critic[:, critic_offset : critic_offset + self._foot_count].copy_(
+            self._current_air_time
+        )
+        critic_offset += self._foot_count
+        critic[:, critic_offset : critic_offset + self._foot_count].copy_(
+            (self._feet_contact["found"] > 0).float()
+        )
+        critic_offset += self._foot_count
+        contact_force = self._feet_contact["force"].flatten(start_dim=1)
+        critic[:, critic_offset:].copy_(
+            torch.sign(contact_force) * torch.log1p(contact_force.abs())
+        )
         if self.cfg_obj.observations.actor_noise:
             self._apply_actor_noise()
-        contact_force = self._feet_contact["force"].flatten(start_dim=1)
-        contact_force = torch.sign(contact_force) * torch.log1p(contact_force.abs())
-        critic = torch.cat(
-            (
-                clean_actor,
-                self._foot_height,
-                self._current_air_time,
-                (self._feet_contact["found"] > 0).float(),
-                contact_force,
-            ),
-            dim=1,
-        )
-        if critic.shape != self._critic_obs.shape:
-            raise RuntimeError(
-                f"Go1 Warp critic observation has shape {tuple(critic.shape)}, "
-                f"expected {tuple(self._critic_obs.shape)}"
-            )
-        self._critic_obs.copy_(critic)
+        if hasattr(self, "_state"):
+            self._state.obs = self._observation_views[self._observation_buffer_index]
 
     def _apply_actor_noise(self) -> None:
         ranges = self.cfg_obj.observations.actor_noise_ranges
@@ -1537,7 +1604,7 @@ class Go1WarpVelocityEnv:
         return info
 
     def last_step_profile_ms(self) -> dict[str, float]:
-        return {}
+        return dict(self._last_step_profile_ms)
 
     def memory_profile(self) -> dict[str, Any]:
         return {
@@ -1546,6 +1613,8 @@ class Go1WarpVelocityEnv:
             "graph_capture": self.provider.capabilities.graph_capture,
             "nconmax": self.provider.capacities["nconmax"],
             "njmax": self.provider.capacities["njmax"],
+            "torch_allocated_bytes": int(torch.cuda.memory_allocated(self._torch_device)),
+            "torch_reserved_bytes": int(torch.cuda.memory_reserved(self._torch_device)),
         }
 
 

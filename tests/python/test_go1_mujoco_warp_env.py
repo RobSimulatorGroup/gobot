@@ -132,6 +132,26 @@ def _assert_warp_device_contract(torch, env) -> None:
     }
     contact_seen = torch.zeros((), dtype=torch.bool, device="cuda:0")
     actions = torch.zeros((1, env.num_actions), dtype=torch.float32, device="cuda:0")
+    previous_actor = env.get_observations()["actor"]
+    previous_critic = env.get_observations()["critic"]
+    previous_actor_values = previous_actor.clone()
+    previous_critic_values = previous_critic.clone()
+    state = env.step(actions)
+    torch.testing.assert_close(previous_actor, previous_actor_values)
+    torch.testing.assert_close(previous_critic, previous_critic_values)
+    assert state.obs["actor"].data_ptr() != previous_actor.data_ptr()
+    assert state.obs["critic"].data_ptr() != previous_critic.data_ptr()
+
+    env._encoder_bias.fill_(0.01)
+    env.step(actions)
+    torch.testing.assert_close(
+        env._joint_targets,
+        env._default_joint_pos.unsqueeze(0) - env._encoder_bias,
+        rtol=0.0,
+        atol=1.0e-7,
+    )
+    env._encoder_bias.zero_()
+    env.reset(seed=11)
     for _ in range(100):
         state = env.step(actions)
         contact_seen |= (feet["found"] > 0).any()

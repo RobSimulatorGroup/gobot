@@ -9,6 +9,7 @@ import time
 from pathlib import Path
 
 import numpy as np
+import torch
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
 GO1_PROJECT = REPO_ROOT / "examples/go1"
@@ -18,14 +19,20 @@ if str(REPO_ROOT) not in sys.path:
 
 from examples.go1.train.go1_velocity_cfg import go1_velocity_cfg
 from examples.go1.train.go1_velocity_env import Go1VelocityEnv
+from examples.go1.train.go1_warp_velocity_env import Go1WarpVelocityEnv
 
 
 def main() -> None:
     parser = argparse.ArgumentParser()
+    parser.add_argument(
+        "--backend",
+        choices=("mujoco-cpu", "mujoco-warp"),
+        default="mujoco-cpu",
+    )
     parser.add_argument("--num-envs", "--num_envs", type=int, default=2048)
     parser.add_argument("--steps", "--num-steps", "--num_steps", type=int, default=20, help="Measured env.step calls.")
     parser.add_argument("--warmup-steps", "--warmup_steps", type=int, default=5, help="Unmeasured env.step calls before timing.")
-    parser.add_argument("--device", type=str, default="cpu")
+    parser.add_argument("--device", type=str, default=None)
     parser.add_argument("--seed", type=int, default=42)
     parser.add_argument("--sim-workers", type=int, default=0)
     parser.add_argument("--max-episode-length", type=int, default=None)
@@ -34,6 +41,7 @@ def main() -> None:
     parser.add_argument("--terrain-curriculum", action="store_true", default=False)
     parser.add_argument("--profile-step", action="store_true", help="Enable Go1 env phase timing logs.")
     parser.add_argument("--no-step-extras", action="store_true", default=False, help="Disable per-step reward-term/log extras during timing.")
+    parser.add_argument("--no-capture-graphs", action="store_true", help="Disable MuJoCo Warp CUDA graph capture.")
     parser.add_argument("--json-out", type=str, default=None, help="Optional path for benchmark metrics JSON.")
     args = parser.parse_args()
 
@@ -43,24 +51,41 @@ def main() -> None:
         raise ValueError("--steps must be positive")
     if args.warmup_steps < 0:
         raise ValueError("--warmup-steps cannot be negative")
+    if args.device is None:
+        args.device = "cuda:0" if args.backend == "mujoco-warp" else "cpu"
+    if args.backend == "mujoco-warp" and not str(args.device).startswith("cuda"):
+        raise ValueError("mujoco-warp benchmark requires a CUDA --device")
 
     cfg = go1_velocity_cfg(project_path=GO1_PROJECT)
     cfg.observations.actor_noise = bool(args.obs_noise)
     cfg.terrain_curriculum = bool(args.terrain_curriculum)
 
-    env = Go1VelocityEnv(
-        cfg,
-        num_envs=args.num_envs,
-        device=args.device,
-        seed=args.seed,
-        max_episode_length=args.max_episode_length,
-        sim_workers=args.sim_workers,
-        profile_step=args.profile_step,
-        collect_step_extras=not args.no_step_extras,
-    )
+    if args.backend == "mujoco-warp":
+        env = Go1WarpVelocityEnv(
+            cfg,
+            num_envs=args.num_envs,
+            device=args.device,
+            seed=args.seed,
+            max_episode_length=args.max_episode_length,
+            profile_step=args.profile_step,
+            collect_step_extras=not args.no_step_extras,
+            capture_graphs=not args.no_capture_graphs,
+        )
+    else:
+        env = Go1VelocityEnv(
+            cfg,
+            num_envs=args.num_envs,
+            device=args.device,
+            seed=args.seed,
+            max_episode_length=args.max_episode_length,
+            sim_workers=args.sim_workers,
+            profile_step=args.profile_step,
+            collect_step_extras=not args.no_step_extras,
+        )
 
     try:
         print(f"Task: {cfg.name}")
+        print(f"Backend: {args.backend}")
         print(f"Device: {args.device}")
         print(f"Envs: {env.num_envs}")
         print(f"Actions: {args.actions}")
@@ -73,16 +98,22 @@ def main() -> None:
         print(f"Decimation: {env.decimation}")
 
         generator = np.random.default_rng(int(args.seed) + 10_000)
+        actions = _make_actions(env, args.actions, generator)
 
         for _ in range(args.warmup_steps):
-            env.step(_make_actions(env, args.actions, generator))
+            env.step(actions)
+        _synchronize(args.device)
 
         timing_records: dict[str, list[float]] = {}
+        step_wall_ms: list[float] = []
         total_begin = time.perf_counter()
         for _ in range(args.steps):
-            state = env.step(_make_actions(env, args.actions, generator))
+            step_begin = time.perf_counter()
+            state = env.step(actions)
+            step_wall_ms.append((time.perf_counter() - step_begin) * 1000.0)
             for key, value in state.info.get("timing", {}).items():
                 timing_records.setdefault(str(key), []).append(float(value))
+        _synchronize(args.device)
         elapsed = time.perf_counter() - total_begin
 
         metrics = build_benchmark_metrics(
@@ -91,13 +122,19 @@ def main() -> None:
             args=args,
             elapsed=elapsed,
             timing_records=timing_records,
+            step_wall_ms=step_wall_ms,
         )
         metrics.update({
             "task": cfg.name,
             "device": args.device,
         })
         if args.profile_step:
-            metrics["profile_ms"] = env.profile_summary()
+            if hasattr(env, "profile_summary"):
+                metrics["profile_ms"] = env.profile_summary()
+            else:
+                metrics["profile_ms"] = env.last_step_profile_ms()
+        if hasattr(env, "memory_profile"):
+            metrics["memory_profile"] = env.memory_profile()
 
         print("")
         print("Benchmark:")
@@ -146,22 +183,53 @@ def main() -> None:
         env.close()
 
 
-def _make_actions(env: Go1VelocityEnv, mode: str, generator: np.random.Generator) -> np.ndarray:
+def _make_actions(
+    env: Go1VelocityEnv | Go1WarpVelocityEnv,
+    mode: str,
+    generator: np.random.Generator,
+) -> np.ndarray | torch.Tensor:
     shape = (env.num_envs, env.num_actions)
     if mode == "zero":
-        return np.zeros(shape, dtype=np.float32)
-    return generator.uniform(-1.0, 1.0, size=shape).astype(np.float32)
+        values = np.zeros(shape, dtype=np.float32)
+    else:
+        values = generator.uniform(-1.0, 1.0, size=shape).astype(np.float32)
+    if isinstance(env, Go1WarpVelocityEnv):
+        return torch.as_tensor(values, dtype=torch.float32, device=env.device)
+    return values
 
 
-def build_benchmark_metrics(*, cfg_name: str, env: Go1VelocityEnv, args, elapsed: float, timing_records: dict[str, list[float]]) -> dict:
+def _synchronize(device: str) -> None:
+    torch_device = torch.device(device)
+    if torch_device.type == "cuda":
+        torch.cuda.synchronize(torch_device)
+
+
+def build_benchmark_metrics(
+    *,
+    cfg_name: str,
+    env: Go1VelocityEnv | Go1WarpVelocityEnv,
+    args,
+    elapsed: float,
+    timing_records: dict[str, list[float]],
+    step_wall_ms: list[float],
+) -> dict:
     env_steps = int(args.steps * env.num_envs)
     physics_ticks = int(env_steps * env.decimation)
-    total_arr = np.asarray(timing_records.get("env_step_total_ms", []), dtype=np.float64)
-    total_s = float(total_arr.sum() / 1000.0)
-    throughput = float(env_steps / total_s) if total_s > 0.0 else 0.0
+    wall_arr = np.asarray(step_wall_ms, dtype=np.float64)
+    throughput = float(env_steps / elapsed) if elapsed > 0.0 else 0.0
+    is_cuda = torch.device(args.device).type == "cuda"
+    mean_step_ms = float(elapsed * 1000.0 / args.steps)
+    if is_cuda:
+        # Only the complete interval is synchronized. Per-call enqueue times do
+        # not describe CUDA execution latency, so avoid publishing fake tails.
+        p50_step_ms = mean_step_ms
+        p95_step_ms = mean_step_ms
+    else:
+        p50_step_ms = float(np.median(wall_arr)) if wall_arr.size else 0.0
+        p95_step_ms = _percentile_ms(wall_arr, 0.95)
     return {
         "task_name": cfg_name,
-        "sim_backend": "gobot_mujoco_cpu",
+        "sim_backend": f"gobot_{args.backend.replace('-', '_')}",
         "num_envs": env.num_envs,
         "steps": int(args.steps),
         "num_steps": int(args.steps),
@@ -174,19 +242,21 @@ def build_benchmark_metrics(*, cfg_name: str, env: Go1VelocityEnv, args, elapsed
         "policy_dt": float(env.step_dt),
         "decimation": int(env.decimation),
         "elapsed_seconds": float(elapsed),
+        "cuda_synchronized_interval": is_cuda,
+        "per_step_latency_distribution_available": not is_cuda,
         "env_steps": env_steps,
         "throughput_env_steps_per_s": throughput,
         "env_steps_per_second": throughput,
         "physics_ticks": physics_ticks,
-        "physics_ticks_per_second": float(physics_ticks / total_s) if total_s > 0.0 else 0.0,
+        "physics_ticks_per_second": float(physics_ticks / elapsed) if elapsed > 0.0 else 0.0,
         "timing_records": timing_records,
         "timing_mean_ms": _timing_mean(timing_records),
         "timing_median_ms": _timing_median(timing_records),
-        "mean_step_ms": float(total_arr.mean()) if total_arr.size else 0.0,
-        "min_step_ms": float(total_arr.min()) if total_arr.size else 0.0,
-        "max_step_ms": float(total_arr.max()) if total_arr.size else 0.0,
-        "p50_step_ms": float(np.median(total_arr)) if total_arr.size else 0.0,
-        "p95_step_ms": _percentile_ms(total_arr, 0.95),
+        "mean_step_ms": mean_step_ms,
+        "min_step_ms": mean_step_ms if is_cuda else float(wall_arr.min()),
+        "max_step_ms": mean_step_ms if is_cuda else float(wall_arr.max()),
+        "p50_step_ms": p50_step_ms,
+        "p95_step_ms": p95_step_ms,
     }
 
 

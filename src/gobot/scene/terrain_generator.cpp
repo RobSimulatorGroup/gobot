@@ -14,6 +14,8 @@
 #include <numbers>
 #include <numeric>
 
+#include "gobot/core/math/pcg_random.hpp"
+
 namespace gobot {
 namespace {
 
@@ -22,34 +24,6 @@ const Color kBlue{0.25f, 0.35f, 0.55f, 1.0f};
 const Color kRed{0.65f, 0.28f, 0.22f, 1.0f};
 const Color kPlatform{0.44f, 0.46f, 0.42f, 1.0f};
 const Color kFlat{0.5f, 0.5f, 0.5f, 1.0f};
-
-class StableRng {
-public:
-    explicit StableRng(std::uint64_t seed) : state_(seed) {}
-
-    std::uint64_t Next() {
-        std::uint64_t value = (state_ += 0x9e3779b97f4a7c15ULL);
-        value = (value ^ (value >> 30U)) * 0xbf58476d1ce4e5b9ULL;
-        value = (value ^ (value >> 27U)) * 0x94d049bb133111ebULL;
-        return value ^ (value >> 31U);
-    }
-
-    RealType Uniform() {
-        constexpr RealType inverse = 1.0 / static_cast<RealType>(std::uint64_t{1} << 53U);
-        return static_cast<RealType>(Next() >> 11U) * inverse;
-    }
-
-    RealType Uniform(RealType lower, RealType upper) {
-        return lower + (upper - lower) * Uniform();
-    }
-
-    std::size_t Index(std::size_t count) {
-        return count == 0 ? 0 : static_cast<std::size_t>(Next() % count);
-    }
-
-private:
-    std::uint64_t state_;
-};
 
 Color Darken(const Color& color, RealType amount) {
     return {
@@ -253,7 +227,7 @@ HeightfieldNoise MakeSlopeNoise(const TerrainGeneratorConfig& config,
 
 HeightfieldNoise MakeRandomRoughNoise(const TerrainGeneratorConfig& config,
                                      const TerrainSubTerrainConfig& terrain,
-                                     StableRng* rng) {
+                                     Pcg64Random* rng) {
     const RealType horizontal_scale = config.GetHorizontalScale();
     const Vector2 patch_size = config.GetPatchSize();
     HeightfieldNoise noise;
@@ -278,7 +252,8 @@ HeightfieldNoise MakeRandomRoughNoise(const TerrainGeneratorConfig& config,
     const int choice_count = std::max(1, (maximum - minimum) / step + 1);
     std::vector<int> sampled(static_cast<std::size_t>(sampled_rows * sampled_cols));
     for (int& value : sampled) {
-        value = minimum + static_cast<int>(rng->Index(static_cast<std::size_t>(choice_count))) * step;
+        value = minimum + static_cast<int>(rng->BoundedUInt32(
+                                  static_cast<std::uint32_t>(choice_count))) * step;
     }
     const auto sampled_at = [&](int row, int col) {
         return sampled[static_cast<std::size_t>(row * sampled_cols + col)];
@@ -323,13 +298,13 @@ HeightfieldNoise MakeWaveNoise(const TerrainGeneratorConfig& config,
     const int inner_cols = border > 0 ? noise.cols - 2 * border : noise.cols;
     const RealType amplitude = DifficultyValue(terrain.amplitude_range, difficulty);
     const int amplitude_pixels = static_cast<int>(0.5 * amplitude / kHeightfieldVerticalScale);
-    const RealType wave_number = 2.0 * std::numbers::pi_v<RealType> /
-                                 (static_cast<RealType>(inner_cols) /
-                                  std::max<RealType>(terrain.num_waves, 1.0e-6));
+    const double wave_number = 2.0 * std::numbers::pi_v<double> /
+                               (static_cast<double>(inner_cols) /
+                                std::max<double>(terrain.num_waves, 1.0e-6));
     for (int row = 0; row < inner_rows; ++row) {
         for (int col = 0; col < inner_cols; ++col) {
-            const RealType value = amplitude_pixels *
-                                   (std::cos(col * wave_number) + std::sin(row * wave_number));
+            const double value = amplitude_pixels *
+                                 (std::cos(col * wave_number) + std::sin(row * wave_number));
             NoiseAt(noise, row + border, col + border) = static_cast<int>(std::nearbyint(value));
         }
     }
@@ -345,7 +320,7 @@ Vector3 AddHeightfield(GeneratedTerrainData* result,
                        const TerrainSubTerrainConfig& terrain,
                        const Vector3& corner,
                        RealType difficulty,
-                       StableRng* rng) {
+                       Pcg64Random* rng) {
     HeightfieldNoise noise;
     switch (terrain.type) {
         case TerrainSubTerrainType::PyramidSlope:
@@ -394,7 +369,7 @@ Vector3 AddHeightfield(GeneratedTerrainData* result,
 
 const TerrainSubTerrainConfig& ChooseTerrain(const std::vector<TerrainSubTerrainConfig>& terrains,
                                              const std::vector<RealType>& cumulative_weights,
-                                             StableRng* rng) {
+                                             Pcg64Random* rng) {
     const RealType sample = rng->Uniform();
     const auto iter = std::lower_bound(cumulative_weights.begin(), cumulative_weights.end(), sample);
     const std::size_t index = iter == cumulative_weights.end()
@@ -472,7 +447,7 @@ bool GenerateTerrain(const TerrainGeneratorConfig& config,
         }
     }
 
-    StableRng rng(config.GetSeed());
+    Pcg64Random rng(config.GetSeed());
     const int rows = config.GetNumRows();
     const int cols = config.IsCurriculum()
                              ? static_cast<int>(terrains.size())

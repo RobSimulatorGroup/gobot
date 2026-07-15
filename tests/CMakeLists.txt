@@ -44,6 +44,7 @@ package_add_test(test_project_setting core/test_project_setting.cpp )
 package_add_test(test_resource core/io/test_resource.cpp)
 package_add_test(test_matrix core/math/test_matrix.cpp)
 package_add_test(test_geometry core/math/test_geometry.cpp)
+package_add_test(test_pcg_random core/math/test_pcg_random.cpp)
 package_add_test(test_string_utils core/test_string_utils.cpp)
 package_add_test(test_input core/test_input.cpp)
 package_add_test(test_object_db core/test_object_db.cpp)
@@ -199,6 +200,28 @@ set_tests_properties(test_velocity_env
             WORKING_DIRECTORY "${CMAKE_SOURCE_DIR}"
 )
 
+add_test(
+        NAME test_python_go1_reference_fixture
+        COMMAND ${Python3_EXECUTABLE} -S
+                ${CMAKE_CURRENT_SOURCE_DIR}/python/test_go1_reference_fixture.py
+)
+set_tests_properties(test_python_go1_reference_fixture
+        PROPERTIES
+            ENVIRONMENT "${GOBOT_PYTHON_TEST_ENV}"
+            WORKING_DIRECTORY "${CMAKE_SOURCE_DIR}"
+)
+
+add_test(
+        NAME test_python_go1_warp_benchmark_admission
+        COMMAND ${Python3_EXECUTABLE} -S
+                ${CMAKE_CURRENT_SOURCE_DIR}/python/test_go1_warp_benchmark_admission.py
+)
+set_tests_properties(test_python_go1_warp_benchmark_admission
+        PROPERTIES
+            ENVIRONMENT "${GOBOT_PYTHON_TEST_ENV}"
+            WORKING_DIRECTORY "${CMAKE_SOURCE_DIR}"
+)
+
 if(GOB_BUILD_MUJOCO AND GOBOT_MUJOCO_TARGET)
     add_test(
             NAME test_python_mujoco_warp_provider
@@ -218,6 +241,19 @@ if(GOB_BUILD_MUJOCO AND GOBOT_MUJOCO_TARGET)
                     ${CMAKE_CURRENT_SOURCE_DIR}/python/test_go1_mujoco_warp_env.py
     )
     set_tests_properties(test_python_go1_mujoco_warp_env
+            PROPERTIES
+                ENVIRONMENT "${GOBOT_PYTHON_TEST_ENV}"
+                RESOURCE_LOCK gobot_cuda
+                SKIP_RETURN_CODE 77
+                WORKING_DIRECTORY "${CMAKE_SOURCE_DIR}"
+    )
+
+    add_test(
+            NAME test_python_go1_reference_parity
+            COMMAND ${Python3_EXECUTABLE} -S
+                    ${CMAKE_CURRENT_SOURCE_DIR}/python/test_go1_reference_parity.py
+    )
+    set_tests_properties(test_python_go1_reference_parity
             PROPERTIES
                 ENVIRONMENT "${GOBOT_PYTHON_TEST_ENV}"
                 RESOURCE_LOCK gobot_cuda

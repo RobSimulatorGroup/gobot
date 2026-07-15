@@ -1,5 +1,8 @@
 #include <gtest/gtest.h>
 
+#include <array>
+#include <cmath>
+#include <cstdint>
 #include <filesystem>
 #include <fstream>
 #include <iterator>
@@ -65,6 +68,79 @@ TEST_F(TestTerrain3D, generates_versioned_rough_terrain_deterministically) {
     ASSERT_EQ(first.heightfields.size(), second.heightfields.size());
     EXPECT_EQ(first.heightfields.front().heights, second.heightfields.front().heights);
     EXPECT_EQ(first.spawn_origins, second.spawn_origins);
+
+    constexpr std::array<gobot::RealType, 70> reference_spawn_heights{
+            0.0, 0.0222478807, -0.0454852656, 0.15, -0.09, 0.06, 0.0,
+            0.0, 0.1156058982, -0.0812715590, 0.405, -0.375, 0.06, 0.0,
+            0.0, 0.1586319059, -0.1782418787, 0.48, -0.555, 0.06, 0.0,
+            0.0, 0.2293656915, -0.2335872650, 0.695, -0.68, 0.06, 0.0,
+            0.0, 0.2666048408, -0.2867030203, 0.92, -0.995, 0.06, 0.0,
+            0.0, 0.3136343360, -0.3116783202, 1.07, -1.195, 0.06, 0.0,
+            0.0, 0.3932750821, -0.3880032599, 1.26, -1.315, 0.06, 0.0,
+            0.0, 0.4238290489, -0.4226282239, 1.54, -1.5, 0.06, 0.0,
+            0.0, 0.5296578407, -0.4892573655, 1.695, -1.79, 0.06, 0.0,
+            0.0, 0.5778998733, -0.5809829235, 1.995, -1.885, 0.06, 0.0,
+    };
+    ASSERT_EQ(first.spawn_origins.size(), reference_spawn_heights.size());
+    for (std::size_t index = 0; index < reference_spawn_heights.size(); ++index) {
+        EXPECT_NEAR(first.spawn_origins[index].z(), reference_spawn_heights[index], 2.0e-6)
+                << "spawn origin " << index;
+    }
+
+    constexpr std::array<std::uint64_t, 40> reference_height_hashes{
+            3308076349261282071ULL,
+            1537570290814498380ULL,
+            8486307799162883757ULL,
+            17912347945478465414ULL,
+            9514363561914487365ULL,
+            5346498560251053239ULL,
+            18244534153377678785ULL,
+            5554466124295405233ULL,
+            14718421681856606818ULL,
+            2044042142402052802ULL,
+            3568188847425352911ULL,
+            11969899394330726254ULL,
+            6431709196101568010ULL,
+            7710891872892983941ULL,
+            10988875027928486130ULL,
+            5496489328552530450ULL,
+            12412493327522819490ULL,
+            12061487693843585025ULL,
+            14905222431756037907ULL,
+            6061620617962440140ULL,
+            18440769612046412969ULL,
+            2044175874361025229ULL,
+            13858966672578492765ULL,
+            5914459757521232353ULL,
+            3374261437871076157ULL,
+            16663355936203210225ULL,
+            18276190619087912257ULL,
+            13127157874541737245ULL,
+            6923788999328072801ULL,
+            11777877319792681777ULL,
+            8431129296010057509ULL,
+            13842087131642905445ULL,
+            12959474911478855749ULL,
+            16328409261037607877ULL,
+            10101205941040430101ULL,
+            18180270245144884421ULL,
+            10711316576485045125ULL,
+            12625831916825559301ULL,
+            8991693125422934837ULL,
+            15266622839636850069ULL,
+    };
+    constexpr std::uint64_t fnv_offset = 14695981039346656037ULL;
+    constexpr std::uint64_t fnv_prime = 1099511628211ULL;
+    for (std::size_t index = 0; index < reference_height_hashes.size(); ++index) {
+        const gobot::TerrainHeightField& heightfield = first.heightfields[index];
+        std::uint64_t hash = fnv_offset;
+        for (gobot::RealType height : heightfield.heights) {
+            const std::uint64_t quantized = static_cast<std::uint64_t>(
+                    std::lround(height / 0.005));
+            hash = (hash ^ quantized) * fnv_prime;
+        }
+        EXPECT_EQ(hash, reference_height_hashes[index]) << "heightfield " << index;
+    }
 }
 
 TEST_F(TestTerrain3D, generator_resource_round_trips_without_baking_geometry) {
