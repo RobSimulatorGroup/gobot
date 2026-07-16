@@ -12,12 +12,76 @@ This example keeps the robot project self-contained:
 - `train/go1_velocity_env.py` is the MuJoCo CPU semantic baseline.
 - `train/go1_warp_velocity_env.py` is the CUDA-native MuJoCo Warp task path.
 - `train/go1_scene_runtime.py` applies the shared scene, solver, controller, and terrain contract before either backend compiles its runtime.
+- `train/go1_training_state.py` preserves and resizes terrain-curriculum assignments across checkpoints.
 - `train/go1_velocity_cfg.py` contains rewards, PPO, command, solver, and terrain spawn-curriculum settings.
+- `train/go1_velocity_video.py` owns optional checkpoint-triggered evaluation video capture.
 - `scripts/go1.py` is attached to the `go1_scene.jscn` root and plays a trained policy in `gobot_editor`.
 - `policies/go1_velocity.pt` is the default training output.
 - `policies/go1_velocity.onnx` is generated from that checkpoint for lightweight playback.
+- `tools/checkpoint_policy.py` is the shared deterministic checkpoint actor used by evaluation and ONNX export.
+- `tools/evaluate_velocity_policy.py` evaluates policy admission over every authored terrain cell.
 - `tools/export_policy_onnx.py` validates the checkpoint manifest and embeds it in ONNX.
+- `tools/export_gobot_trace.py`, `tools/export_reference_trace.py`, `tools/compare_go1_traces.py`, and `tools/go1_parity.py` form the pinned reference-parity workflow.
+- `tools/refresh_go1_robot_scene.py` regenerates the editable robot scene from the source MJCF.
 - `project.gobot` sets `go1_scene.jscn` as the project main scene.
+
+## Validated Behavior (Gobot 0.1.12, 2026-07-16)
+
+The current local playback policy was selected from `model_5100.pt` through
+`model_6000.pt` by fixed-seed terrain-cell admission, not by training reward or
+checkpoint age. `model_5600.pt` is the selected balance: later checkpoints
+tracked yaw more aggressively but regressed forward rough-terrain admission.
+Generated checkpoints and exported policies remain local artifacts and are not
+committed to the repository.
+
+The comparison below used all 70 authored terrain cells, seed `123`, and the
+same policy-admission threshold for each checkpoint. Forward evaluation used
+two 1000-step episodes per cell; yaw and 2 m/s run evaluation used one 500-step
+episode per cell.
+
+| Metric | Previous `model_5100` | Selected `model_5600` |
+| --- | ---: | ---: |
+| Forward 1 m/s admission | 0.829 | 0.836 |
+| Forward command-direction speed | 0.831 m/s | 0.837 m/s |
+| Yaw 0.5 rad/s admission | 0.043 | 0.914 |
+| Yaw command ratio | 0.348 | 0.514 |
+| Run 2 m/s admission | 0.814 | 0.829 |
+| Run command-direction speed | 1.587 m/s | 1.637 m/s |
+
+Directional checks for the selected policy produced:
+
+| Command | Admission | Survival | Measured command-direction rate |
+| --- | ---: | ---: | ---: |
+| Forward 1 m/s | 0.836 | 0.936 | 0.837 m/s |
+| Left strafe 1 m/s | 0.857 | 0.929 | 0.821 m/s |
+| Reverse 1 m/s | 0.857 | 0.943 | 0.890 m/s |
+| Yaw 0.5 rad/s | 0.914 | 1.000 | 0.257 rad/s |
+| Forward run 2 m/s | 0.829 | 0.829 | 1.637 m/s |
+
+Editor Play was also checked through the exported ONNX policy. Runtime logs
+showed forward body velocity around `0.75-1.02 m/s`, reverse velocity around
+`-0.80 m/s`, and yaw response around `+/-0.4 rad/s`; the robot traversed from a
+regular pyramid slope L4 cell into an inverted pyramid-stairs L5 cell without a
+false world-height reset.
+
+What changed to produce and verify this improvement:
+
+- Playback now uses terrain-relative base clearance for fall detection. A
+  below-zero terrain cell no longer causes a false reset solely from world Z.
+- Diagonal planar keyboard commands are normalized, and `Shift+W/S` exposes
+  the trained `[-1.5, 2.0] m/s` run range.
+- Runtime logs identify the nearest authored terrain type and exact level.
+- Checkpoints preserve command progress, terrain level/type assignments, and
+  RNG state. Resume no longer silently resets a learned terrain curriculum.
+- The evaluator requires survival plus planar and yaw command progress. A
+  stationary policy can no longer pass merely by avoiding a fall.
+- Checkpoint selection considers forward, reverse, strafe, yaw, and run
+  commands instead of selecting the final training iteration automatically.
+
+Known limit: inverted pyramid slopes remain the hardest terrain. At the fixed
+1 m/s evaluation, L4 averaged only about `0.074 m/s`; at a 2 m/s command the
+inverted-slope terrain type admitted 40% of cells. This is still an open policy
+capability issue, not a terrain-loading or keyboard-input issue.
 
 Regenerate the Gobot robot asset after editing the MJCF. The current editable
 install supplies `gobot`; no source/build `PYTHONPATH` is needed:
@@ -137,19 +201,30 @@ Gobot runtime dependencies. The fixture records each MuJoCo, MuJoCo Warp,
 Torch, Warp, and task revision.
 
 Evaluate one or more checkpoints over every authored terrain cell. The report
-includes signed body-frame velocity, tracking error, survival, and illegal
-contact rates by terrain level and type:
+includes planar and yaw command progress, tracking error, survival, combined
+admission, and illegal-contact rates by terrain level, type, and individual
+level/type cell:
 
 ```bash
 uv run --extra train --extra mujoco-warp \
   python -m examples.go1.tools.evaluate_velocity_policy \
   examples/go1/logs/go1_rough_velocity/model_900.pt \
   --device cuda:0 \
-  --command-x 0.5 \
+  --command-x 1.0 \
+  --command-y 0.0 \
+  --command-yaw 0.0 \
   --episodes-per-cell 2 \
-  --max-steps 500 \
+  --max-steps 1000 \
+  --min-progress-ratio 0.5 \
   --json-out /tmp/go1_velocity_evaluation.json
 ```
+
+The defaults intentionally use the editor's full forward command and a complete
+20-second training episode. Shorter `0.5 m/s` or 10-second rollouts are useful
+for smoke tests but are not a rough-terrain stability admission check. An
+episode is admitted only when it survives and averages at least half of each
+requested planar-speed and yaw-rate component, so a policy that stands still in
+a terrain depression or ignores a turn command does not pass.
 
 The `go1_rough_velocity` task follows the Go1 rough-terrain observation,
 reward, command, event, robot-dynamics, collision, and mixed-terrain settings
@@ -175,6 +250,14 @@ uv run --extra train --extra mujoco-warp \
   --policy-out policies/go1_velocity.pt \
   --resume
 ```
+
+Current checkpoints preserve command-curriculum progress, terrain level/type
+assignments, and the environment random generator. Resuming with a different
+`--num-envs` keeps each terrain type's level distribution. Legacy checkpoints
+that only contain `common_step_counter` report that terrain levels restart from
+the authored initial range instead of silently claiming an exact resume. Active
+MuJoCo episode state is intentionally not checkpointed; resume resets fresh
+episodes with the restored scheduler, curriculum, and random generator.
 
 Export a trained checkpoint for lightweight editor playback:
 
@@ -214,10 +297,11 @@ dimensions. A missing or rejected policy aborts Play with the exact validation
 error. Rough terrain remains available in the editor without entering Play.
 
 Click the 3D viewer, then use `W/S` for forward/backward, `Q/E` for strafe,
-`A/D` for yaw rate, `Space` to stop, and `R` to reset. The command limits are
-`vx=1.0`, `vy=1.0`, and `yaw_rate=0.5`. Physics rate, policy decimation, PD
-gains, action scaling, reset height, and solver settings come from the policy
-manifest. Terrain geometry comes from the versioned scene resource and is
-covered by the manifest's scene bundle digest.
+`A/D` for yaw rate, `Shift+W/S` for the trained run range, `Space` to stop, and
+`R` to reset. The normal command limits are `vx=1.0`, `vy=1.0`, and
+`yaw_rate=0.5`; run mode uses `vx=[-1.5, 2.0]`. Physics rate, policy decimation,
+PD gains, action scaling, reset height, and solver settings come from the
+policy manifest. Terrain geometry comes from the versioned scene resource and
+is covered by the manifest's scene bundle digest.
 
 Run the editor from an editable install and open the `examples/go1` project.

@@ -39,6 +39,10 @@ from .go1_velocity_cfg import (
     go1_velocity_cfg,
 )
 from .go1_scene_runtime import prepare_go1_scene
+from .go1_training_state import (
+    build_terrain_curriculum_state,
+    restore_terrain_curriculum_assignments,
+)
 
 _GO1_HIP_INDICES = np.asarray([0, 3, 6, 9], dtype=np.int64)
 
@@ -588,6 +592,53 @@ class Go1VelocityEnv(LocomotionBatchEnv):
     def set_training_progress(self, common_steps: int) -> None:
         self.common_step_counter = max(0, int(common_steps))
         self._apply_command_curriculum()
+
+    def training_state_dict(self) -> dict[str, Any]:
+        return {
+            "version": 1,
+            "backend": "mujoco-cpu",
+            "num_envs": self.num_envs,
+            "common_step_counter": int(self.common_step_counter),
+            "terrain_curriculum": build_terrain_curriculum_state(
+                self._spawn_env_levels,
+                self._spawn_type_cols,
+                rows=self._spawn_grid_shape[0],
+                cols=self._spawn_grid_shape[1],
+            ),
+            "rng_state": self._rng.bit_generator.state,
+        }
+
+    def load_training_state_dict(self, state: Mapping[str, Any]) -> dict[str, Any]:
+        version = int(state.get("version", 0))
+        if version not in (0, 1):
+            raise RuntimeError(f"unsupported Go1 CPU training checkpoint version {version}")
+        self.set_training_progress(int(state.get("common_step_counter", 0)))
+        terrain_state = state.get("terrain_curriculum")
+        if not isinstance(terrain_state, Mapping):
+            return {
+                "common_step_counter": int(self.common_step_counter),
+                "terrain_curriculum": "legacy_initial_levels",
+            }
+
+        rows, cols = self._spawn_grid_shape
+        levels, terrain_types, exact = restore_terrain_curriculum_assignments(
+            terrain_state,
+            self._spawn_env_levels,
+            self._spawn_type_cols,
+            rows=rows,
+            cols=cols,
+        )
+        np.copyto(self._spawn_env_levels, levels)
+        np.copyto(self._spawn_type_cols, terrain_types)
+        rng_state = state.get("rng_state")
+        if isinstance(rng_state, Mapping):
+            self._rng.bit_generator.state = dict(rng_state)
+        self.reset()
+        return {
+            "common_step_counter": int(self.common_step_counter),
+            "terrain_curriculum": "exact" if exact else "resampled_for_num_envs",
+            "mean_terrain_level": float(np.mean(self._spawn_env_levels)),
+        }
 
     def _step_log_info(self, batch_state: Any, reset_reason: np.ndarray, log_values: Mapping[str, float]) -> dict[str, np.ndarray]:
         command = np.asarray(batch_state.command, dtype=np.float32)

@@ -1,5 +1,5 @@
 cmake_minimum_required (VERSION 3.16)
-project (gobot VERSION 0.1.11)
+project (gobot VERSION 0.1.12)
 
 set(CMAKE_POLICY_VERSION_MINIMUM 3.5)
 

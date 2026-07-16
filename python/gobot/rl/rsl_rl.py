@@ -263,6 +263,28 @@ class RslRlVecEnvWrapper:
     def close(self) -> None:
         self.env.close()
 
+    def training_state_dict(self) -> dict[str, Any]:
+        """Return resumable training state, excluding active physics episodes."""
+        state_fn = getattr(self.env, "training_state_dict", None)
+        if callable(state_fn):
+            return dict(state_fn())
+        common_steps = getattr(self.env, "common_step_counter", None)
+        return {} if common_steps is None else {"common_step_counter": int(common_steps)}
+
+    def load_training_state_dict(self, state: Mapping[str, Any]) -> dict[str, Any]:
+        """Restore curriculum/scheduler state and refresh wrapper step buffers."""
+        load_fn = getattr(self.env, "load_training_state_dict", None)
+        if callable(load_fn):
+            result = dict(load_fn(state) or {})
+        else:
+            common_steps = int(state.get("common_step_counter", 0))
+            set_progress = getattr(self.env, "set_training_progress", None)
+            if callable(set_progress):
+                set_progress(common_steps)
+            result = {"common_step_counter": common_steps, "terrain_curriculum": "unsupported"}
+        self._sync_steps_from_core()
+        return result
+
     def _core_state(self) -> BatchEnvState:
         state = self.env.state
         if state is None:

@@ -83,6 +83,20 @@ dimension guessing is not a compatibility contract. ONNX stores the manifest
 under `gobot.policy_manifest` and also gets a `.manifest.json` sidecar for
 inspection without a model runtime.
 
+## Training State Contract
+
+Policy weights and resumable environment-training state are separate concerns.
+The RSL-RL adapter forwards `training_state_dict()` and
+`load_training_state_dict()` without knowing task-specific terrain fields.
+Tasks own scheduler, curriculum, and RNG serialization; backend providers do
+not leak raw MuJoCo or Warp state into the checkpoint API.
+
+This contract intentionally excludes active physics episodes. Restoring a
+checkpoint resets fresh episodes with restored training state. A task may
+restore exact per-environment curriculum assignments when the batch size is
+unchanged, or a documented aggregate distribution when it changes, but it must
+not silently claim an exact resume after discarding curriculum state.
+
 ## Runtime Scenes
 
 An edited scene and a runtime scene are different owners. Play Mode packs the

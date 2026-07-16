@@ -32,6 +32,10 @@ from .go1_scene_runtime import (
     terrain_generator_config,
     terrain_spawn_origins,
 )
+from .go1_training_state import (
+    build_terrain_curriculum_state,
+    restore_terrain_curriculum_assignments,
+)
 from .go1_velocity_cfg import (
     GO1_ROUGH_REWARD_TERM_NAMES,
     GO1_TASK_VERSION,
@@ -970,6 +974,53 @@ class Go1WarpVelocityEnv:
         self.common_step_counter = max(0, int(common_steps))
         self._apply_command_curriculum()
 
+    def training_state_dict(self) -> dict[str, Any]:
+        return {
+            "version": 1,
+            "backend": "mujoco-warp",
+            "num_envs": self.num_envs,
+            "common_step_counter": int(self.common_step_counter),
+            "terrain_curriculum": build_terrain_curriculum_state(
+                self._terrain_levels.detach().cpu().numpy(),
+                self._terrain_types.detach().cpu().numpy(),
+                rows=self._spawn_rows,
+                cols=self._spawn_cols,
+            ),
+            "rng_state": self._generator.get_state().cpu(),
+        }
+
+    def load_training_state_dict(self, state: Mapping[str, Any]) -> dict[str, Any]:
+        version = int(state.get("version", 0))
+        if version not in (0, 1):
+            raise RuntimeError(f"unsupported Go1 Warp training checkpoint version {version}")
+        self.set_training_progress(int(state.get("common_step_counter", 0)))
+        terrain_state = state.get("terrain_curriculum")
+        if not isinstance(terrain_state, Mapping):
+            return {
+                "common_step_counter": int(self.common_step_counter),
+                "terrain_curriculum": "legacy_initial_levels",
+            }
+
+        levels, terrain_types, exact = restore_terrain_curriculum_assignments(
+            terrain_state,
+            self._terrain_levels.detach().cpu().numpy(),
+            self._terrain_types.detach().cpu().numpy(),
+            rows=self._spawn_rows,
+            cols=self._spawn_cols,
+        )
+        self._terrain_levels.copy_(torch.as_tensor(levels, device=self._torch_device))
+        self._terrain_types.copy_(torch.as_tensor(terrain_types, device=self._torch_device))
+        rng_state = state.get("rng_state")
+        if rng_state is not None:
+            self._generator.set_state(torch.as_tensor(rng_state, dtype=torch.uint8, device="cpu"))
+        self._env_origins.copy_(self._terrain_origin_for(self._all_env_ids))
+        self.reset()
+        return {
+            "common_step_counter": int(self.common_step_counter),
+            "terrain_curriculum": "exact" if exact else "resampled_for_num_envs",
+            "mean_terrain_level": float(self._terrain_levels.float().mean()),
+        }
+
     def close(self) -> None:
         provider = getattr(self, "provider", None)
         if provider is not None:
@@ -1594,6 +1645,25 @@ class Go1WarpVelocityEnv:
             "/velocity/command_vy": self._command[:, 1].mean(),
             "/velocity/command_yaw": self._command[:, 2].mean(),
         }
+        terrain_level_sums = torch.zeros(
+            self._spawn_cols, dtype=torch.float32, device=self._torch_device
+        )
+        terrain_level_sums.scatter_add_(
+            0, self._terrain_types, self._terrain_levels.float()
+        )
+        terrain_type_counts = torch.bincount(
+            self._terrain_types, minlength=self._spawn_cols
+        ).clamp(min=1)
+        terrain_level_means = terrain_level_sums / terrain_type_counts
+        sub_terrains = self._terrain_config.get("sub_terrains", [])
+        for index in range(self._spawn_cols):
+            entry = sub_terrains[index] if index < len(sub_terrains) else None
+            name = (
+                str(entry.get("name", f"type_{index}"))
+                if isinstance(entry, Mapping)
+                else f"type_{index}"
+            )
+            log[f"/velocity/terrain_level/{name}"] = terrain_level_means[index]
         for index, name in enumerate(self._reward_term_names):
             log[f"reward/{name}"] = self._reward_terms[:, index].mean()
         info["log"] = log

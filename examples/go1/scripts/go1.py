@@ -32,9 +32,10 @@ PRINT_INTERVAL_SECONDS = 2.0
 ROBOT_ROOT_TO_BASE_Z = 0.4449999928474426
 COMMAND = [0.0, 0.0, 0.0]
 KEYBOARD_COMMAND_MAX = [1.0, 1.0, 0.5]
+KEYBOARD_RUN_COMMAND_X = [-1.5, 2.0]
 COMMAND_SMOOTHING = 8.0
-FALLEN_BASE_Z = 0.18
-FALLEN_ROLL_PITCH = 0.8
+FALLEN_BASE_CLEARANCE = 0.16
+FALLEN_ROLL_PITCH = math.radians(70.0)
 HEIGHT_SCAN_MAX_DISTANCE = 5.0
 TERRAIN_SCAN_SENSOR = "terrain_scan"
 IMU_SENSOR = "imu"
@@ -52,6 +53,7 @@ KEYBOARD_BINDINGS = {
     "turn_right": ("D", "Right"),
     "strafe_left": ("Q",),
     "strafe_right": ("E",),
+    "run": ("LeftShift", "RightShift"),
     "stop": ("Space",),
     "reset": ("R",),
 }
@@ -340,6 +342,8 @@ class Script(gobot.NodeScript):
         self.context.fixed_time_step = self.physics_dt
         self.context.max_sub_steps = self.decimation
         self.print_every_ticks = max(1, int(round(PRINT_INTERVAL_SECONDS / self.physics_dt)))
+        self.terrain_origins = self._terrain_spawn_origins()
+        self.terrain_rows, self.terrain_type_names = self._terrain_grid_metadata()
         self.reset_base_position = self._resolve_reset_base_position()
         if self.solver_settings and hasattr(self.context, "set_mujoco_solver_settings"):
             self.context.set_mujoco_solver_settings(self.solver_settings)
@@ -430,17 +434,17 @@ class Script(gobot.NodeScript):
         self.robot.mode = gobot.RobotMode.Motion
 
     def _resolve_reset_base_position(self):
-        origins = self._terrain_spawn_origins()
+        origins = getattr(self, "terrain_origins", None)
+        if origins is None:
+            origins = self._terrain_spawn_origins()
         if not origins:
             return [0.0, 0.0, self.reset_base_height]
         spawn = min(origins, key=lambda value: value[0] * value[0] + value[1] * value[1])
         return [spawn[0], spawn[1], spawn[2] + self.reset_base_height]
 
     def _terrain_spawn_origins(self):
-        root = self.get_root()
-        terrain_world = root.find("terrain_world") if root is not None else None
-        terrain = terrain_world.find("terrain") if terrain_world is not None else None
-        origins = getattr(terrain, "spawn_origins", None)
+        terrain = self._terrain_node()
+        origins = getattr(terrain, "spawn_origins", None) if terrain is not None else None
         if origins is None:
             return []
         parsed = []
@@ -451,6 +455,43 @@ class Script(gobot.NodeScript):
                 continue
             parsed.append(values)
         return parsed
+
+    def _terrain_node(self):
+        root = self.get_root()
+        terrain_world = root.find("terrain_world") if root is not None else None
+        return terrain_world.find("terrain") if terrain_world is not None else None
+
+    def _terrain_grid_metadata(self):
+        terrain = self._terrain_node()
+        config = getattr(terrain, "generator_config", None) if terrain is not None else None
+        properties = config.get("properties", config) if isinstance(config, dict) else None
+        if not isinstance(properties, dict):
+            return 0, []
+        entries = properties.get("sub_terrains", [])
+        names = [str(entry.get("name", f"type_{index}")) for index, entry in enumerate(entries)]
+        try:
+            rows = int(properties.get("num_rows", 0))
+        except (TypeError, ValueError):
+            rows = 0
+        if rows <= 0 or not names or rows * len(names) != len(self.terrain_origins):
+            return 0, []
+        return rows, names
+
+    def _terrain_cell(self, position):
+        origins = getattr(self, "terrain_origins", [])
+        type_names = getattr(self, "terrain_type_names", [])
+        rows = getattr(self, "terrain_rows", 0)
+        if not origins or not type_names or rows <= 0:
+            return None
+        index = min(
+            range(len(origins)),
+            key=lambda value: (
+                (origins[value][0] - position[0]) ** 2
+                + (origins[value][1] - position[1]) ** 2
+            ),
+        )
+        level, terrain_type = divmod(index, len(type_names))
+        return level, type_names[terrain_type], rows - 1
 
     def _reset_playback_state(self):
         self.ticks = 0
@@ -584,11 +625,26 @@ class Script(gobot.NodeScript):
         if not input_state.has_control_focus or _key_held(input_state, "stop"):
             desired = [0.0, 0.0, 0.0]
         else:
+            forward_axis = _key_axis(input_state, "backward", "forward")
+            forward_limit = KEYBOARD_COMMAND_MAX[0]
+            if _key_held(input_state, "run"):
+                forward_limit = (
+                    KEYBOARD_RUN_COMMAND_X[1]
+                    if forward_axis >= 0.0
+                    else abs(KEYBOARD_RUN_COMMAND_X[0])
+                )
             desired = [
-                KEYBOARD_COMMAND_MAX[0] * _key_axis(input_state, "backward", "forward"),
+                forward_limit * forward_axis,
                 KEYBOARD_COMMAND_MAX[1] * _key_axis(input_state, "strafe_right", "strafe_left"),
                 KEYBOARD_COMMAND_MAX[2] * _key_axis(input_state, "turn_right", "turn_left"),
             ]
+            normalized_planar_speed = math.hypot(
+                desired[0] / forward_limit,
+                desired[1] / KEYBOARD_COMMAND_MAX[1],
+            )
+            if normalized_planar_speed > 1.0:
+                desired[0] /= normalized_planar_speed
+                desired[1] /= normalized_planar_speed
         alpha = _clamp(float(delta) * COMMAND_SMOOTHING, 0.0, 1.0)
         for index in range(3):
             self.command_target[index] += (desired[index] - self.command_target[index]) * alpha
@@ -602,15 +658,16 @@ class Script(gobot.NodeScript):
         position = base.get("position", [0.0, 0.0, 0.0])
         quaternion = base.get("quaternion", [1.0, 0.0, 0.0, 0.0])
         roll, pitch = _quat_to_roll_pitch(quaternion)
+        terrain_clearance = self._terrain_scan_values(state)[TERRAIN_SCAN_DIM // 2]
         if (
-            position[2] >= FALLEN_BASE_Z
+            terrain_clearance >= FALLEN_BASE_CLEARANCE
             and abs(roll) <= FALLEN_ROLL_PITCH
             and abs(pitch) <= FALLEN_ROLL_PITCH
         ):
             return False
         print(
-            "Go1 reset after fall: z={:.3f} roll={:.2f} pitch={:.2f}".format(
-                position[2], roll, pitch
+            "Go1 reset after fall: z={:.3f} clearance={:.3f} roll={:.2f} pitch={:.2f}".format(
+                position[2], terrain_clearance, roll, pitch
             )
         )
         self.reset()
@@ -624,14 +681,22 @@ class Script(gobot.NodeScript):
         quaternion = base.get("quaternion", [1.0, 0.0, 0.0, 0.0]) if base is not None else [1.0, 0.0, 0.0, 0.0]
         linear = _quat_rotate_inv(base.get("linear_velocity", [0.0, 0.0, 0.0]), quaternion) if base is not None else [0.0, 0.0, 0.0]
         angular = _quat_rotate_inv(base.get("angular_velocity", [0.0, 0.0, 0.0]), quaternion) if base is not None else [0.0, 0.0, 0.0]
+        terrain_cell = self._terrain_cell(position)
+        terrain_label = (
+            "unknown"
+            if terrain_cell is None
+            else "{}:L{}/{}".format(terrain_cell[1], terrain_cell[0], terrain_cell[2])
+        )
         print(
             "Go1 t={:.2f}s base=({:.3f},{:.3f},{:.3f}) lin_b=({:.3f},{:.3f},{:.3f}) "
-            "ang_b=({:.3f},{:.3f},{:.3f}) cmd=({:.2f},{:.2f},{:.2f}) action_norm={:.3f}".format(
+            "ang_b=({:.3f},{:.3f},{:.3f}) cmd=({:.2f},{:.2f},{:.2f}) "
+            "terrain={} action_norm={:.3f}".format(
                 self.context.simulation_time,
                 *position[:3],
                 *linear[:3],
                 *angular[:3],
                 *self.command,
+                terrain_label,
                 math.sqrt(sum(value * value for value in self.last_action)),
             )
         )
@@ -683,6 +748,10 @@ class Script(gobot.NodeScript):
         return values[7:10], values[4:7]
 
     def _height_scan(self, robot_state):
+        values = self._terrain_scan_values(robot_state)
+        return [value / self.height_scan_max_distance for value in values]
+
+    def _terrain_scan_values(self, robot_state):
         sensor = self._sensor_map(robot_state).get(TERRAIN_SCAN_SENSOR)
         if sensor is None:
             raise RuntimeError(f"Go1 runtime state is missing sensor {TERRAIN_SCAN_SENSOR!r}")
@@ -692,7 +761,7 @@ class Script(gobot.NodeScript):
                 f"Go1 sensor {TERRAIN_SCAN_SENSOR!r} produced {len(values)} values; "
                 f"expected {TERRAIN_SCAN_DIM} finite values"
             )
-        return [value / self.height_scan_max_distance for value in values]
+        return values
 
     def _sensor_map(self, robot_state):
         return {

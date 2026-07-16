@@ -16,6 +16,10 @@ from examples.go1.scripts import go1 as go1_playback
 from examples.go1 import go1_profile
 from examples.go1.train import go1_velocity_cfg as go1_cfg
 from examples.go1.train.go1_velocity_env import Go1VelocityEnv
+from examples.go1.train.go1_training_state import (
+    build_terrain_curriculum_state,
+    restore_terrain_curriculum_assignments,
+)
 import gobot
 from gobot.rl import (
     BatchEnvState,
@@ -583,6 +587,72 @@ def test_go1_training_configuration_matches_task_contract():
     assert cfg.decimation == 4
 
 
+def test_go1_terrain_curriculum_checkpoint_restores_exact_assignments():
+    levels = np.asarray([0, 1, 2, 0, 2, 2], dtype=np.int64)
+    terrain_types = np.asarray([0, 0, 0, 1, 1, 1], dtype=np.int64)
+    state = build_terrain_curriculum_state(levels, terrain_types, rows=3, cols=2)
+
+    restored_levels, restored_types, exact = restore_terrain_curriculum_assignments(
+        state,
+        np.zeros_like(levels),
+        np.zeros_like(terrain_types),
+        rows=3,
+        cols=2,
+    )
+
+    assert exact
+    np.testing.assert_array_equal(restored_levels, levels)
+    np.testing.assert_array_equal(restored_types, terrain_types)
+
+
+def test_go1_terrain_curriculum_checkpoint_resamples_across_batch_sizes():
+    levels = np.asarray([0, 1, 2, 0, 2, 2], dtype=np.int64)
+    terrain_types = np.asarray([0, 0, 0, 1, 1, 1], dtype=np.int64)
+    state = build_terrain_curriculum_state(levels, terrain_types, rows=3, cols=2)
+    target_types = np.repeat(np.arange(2, dtype=np.int64), 6)
+
+    restored_levels, restored_types, exact = restore_terrain_curriculum_assignments(
+        state,
+        np.zeros(12, dtype=np.int64),
+        target_types,
+        rows=3,
+        cols=2,
+    )
+
+    assert not exact
+    np.testing.assert_array_equal(restored_types, target_types)
+    assert np.bincount(restored_levels[restored_types == 0], minlength=3).tolist() == [2, 2, 2]
+    assert np.bincount(restored_levels[restored_types == 1], minlength=3).tolist() == [2, 0, 4]
+
+
+def test_go1_checkpoint_admission_requires_survival_and_progress():
+    _require_torch()
+    from examples.go1.tools.evaluate_velocity_policy import _group_metrics
+
+    metrics = _group_metrics(
+        np.ones(3, dtype=bool),
+        reward=np.zeros(3, dtype=np.float32),
+        velocity_error=np.zeros(3, dtype=np.float32),
+        body_velocity_x=np.asarray([100.0, 20.0, 80.0], dtype=np.float32),
+        command_progress=np.asarray([100.0, 20.0, 80.0], dtype=np.float32),
+        target_planar_speed=np.ones(3, dtype=np.float32),
+        yaw_command_progress=np.asarray([100.0, 100.0, 20.0], dtype=np.float32),
+        target_yaw_speed=np.ones(3, dtype=np.float32),
+        velocity_samples=np.full(3, 100, dtype=np.int64),
+        survival_steps=np.full(3, 100, dtype=np.int64),
+        reset_reason=np.asarray([0, 0, 1], dtype=np.int64),
+        max_steps=100,
+        min_progress_ratio=0.5,
+    )
+
+    assert metrics["survival_rate"] == 2.0 / 3.0
+    assert metrics["planar_progress_success_rate"] == 2.0 / 3.0
+    assert metrics["yaw_progress_success_rate"] == 2.0 / 3.0
+    assert metrics["progress_success_rate"] == 1.0 / 3.0
+    assert metrics["admission_rate"] == 1.0 / 3.0
+    assert metrics["mean_command_progress"] == 2.0 / 3.0
+
+
 def test_go1_rough_first_contact_is_not_repeated_while_touching():
     cfg = go1_cfg.go1_velocity_cfg(project_path=REPO_ROOT / "examples/go1")
     cfg.observations.actor_noise = False
@@ -798,6 +868,8 @@ def test_rsl_rl_wrapper_keeps_core_env_numpy():
         max_episode_length = 10
 
         def __init__(self):
+            self.common_step_counter = 0
+            self.loaded_training_state = None
             self.episode_length_buf = np.zeros(2, dtype=np.int64)
             self.state = BatchEnvState(
                 obs={"actor": np.zeros((2, 4), dtype=np.float32), "critic": np.ones((2, 5), dtype=np.float32)},
@@ -823,6 +895,14 @@ def test_rsl_rl_wrapper_keeps_core_env_numpy():
             self.state.info["_final_observation"] = np.asarray([False, True], dtype=bool)
             return self.state
 
+        def training_state_dict(self):
+            return {"common_step_counter": 123, "terrain_curriculum": {"version": 1}}
+
+        def load_training_state_dict(self, state):
+            self.loaded_training_state = dict(state)
+            self.common_step_counter = int(state["common_step_counter"])
+            return {"terrain_curriculum": "exact"}
+
         def close(self):
             pass
 
@@ -841,6 +921,11 @@ def test_rsl_rl_wrapper_keeps_core_env_numpy():
     assert "final_observation" not in extras
     assert "_final_observation" not in extras
     assert isinstance(env.state.obs["actor"], np.ndarray)
+    assert wrapper.training_state_dict()["common_step_counter"] == 123
+    result = wrapper.load_training_state_dict({"common_step_counter": 456})
+    assert result == {"terrain_curriculum": "exact"}
+    assert env.loaded_training_state == {"common_step_counter": 456}
+    assert env.common_step_counter == 456
 
     env.rsl_rl_include_reward_terms = True
     wrapper = RslRlVecEnvWrapper(env, device="cpu")
@@ -1121,6 +1206,66 @@ def test_go1_playback_reads_authored_terrain_origins():
     np.testing.assert_allclose(script._resolve_reset_base_position(), (0.0, 0.0, 0.378))
 
 
+def test_go1_playback_reports_nearest_terrain_cell():
+    script = object.__new__(go1_playback.Script)
+    script.terrain_rows = 2
+    script.terrain_type_names = ["flat", "slope"]
+    script.terrain_origins = [
+        [-4.0, -4.0, 0.0],
+        [-4.0, 4.0, 0.0],
+        [4.0, -4.0, 0.0],
+        [4.0, 4.0, 0.0],
+    ]
+
+    assert script._terrain_cell([3.5, 4.5, 0.2]) == (1, "slope", 1.0)
+
+
+def test_go1_playback_fall_detection_uses_terrain_relative_clearance():
+    def state(*, world_z: float, clearance: float, roll_degrees: float = 0.0):
+        half_roll = np.deg2rad(roll_degrees) * 0.5
+        scan = [clearance] * go1_playback.TERRAIN_SCAN_DIM
+        return {
+            "links": [
+                {
+                    "name": go1_playback.BASE_LINK,
+                    "global_transform": {
+                        "position": [0.0, 0.0, world_z],
+                        "quaternion": [
+                            float(np.cos(half_roll)),
+                            float(np.sin(half_roll)),
+                            0.0,
+                            0.0,
+                        ],
+                    },
+                }
+            ],
+            "sensors": [
+                {
+                    "name": go1_playback.TERRAIN_SCAN_SENSOR,
+                    "values": scan,
+                }
+            ],
+        }
+
+    script = object.__new__(go1_playback.Script)
+    reset_count = 0
+
+    def reset():
+        nonlocal reset_count
+        reset_count += 1
+
+    script.reset = reset
+
+    assert not script._reset_if_fallen(state(world_z=-0.4, clearance=0.28))
+    assert reset_count == 0
+    assert script._reset_if_fallen(state(world_z=0.3, clearance=0.1))
+    assert reset_count == 1
+    assert script._reset_if_fallen(
+        state(world_z=0.3, clearance=0.28, roll_degrees=75.0)
+    )
+    assert reset_count == 2
+
+
 def test_go1_stale_policy_rejects_playback():
     script = object.__new__(go1_playback.Script)
 
@@ -1161,6 +1306,53 @@ def test_go1_w_key_updates_forward_velocity_command():
     assert script.command[0] > 0.0
     assert script.command[1] == 0.0
     assert script.command[2] == 0.0
+
+
+def test_go1_diagonal_keyboard_command_preserves_planar_speed_limit():
+    class FakeInput:
+        has_control_focus = True
+
+        @staticmethod
+        def is_key_pressed(_key):
+            return False
+
+        @staticmethod
+        def is_key_held(key):
+            return key in {"W", "E"}
+
+    script = object.__new__(go1_playback.Script)
+    script.context = type("FakeContext", (), {"input": FakeInput()})()
+    script.command = [0.0, 0.0, 0.0]
+    script.command_target = [0.0, 0.0, 0.0]
+
+    assert script._update_keyboard_command(1.0) is False
+    np.testing.assert_allclose(
+        script.command,
+        [np.sqrt(0.5), -np.sqrt(0.5), 0.0],
+        atol=1.0e-7,
+    )
+    assert np.linalg.norm(script.command[:2]) <= 1.0
+
+
+def test_go1_sprint_keyboard_command_uses_trained_stage_one_limit():
+    class FakeInput:
+        has_control_focus = True
+
+        @staticmethod
+        def is_key_pressed(_key):
+            return False
+
+        @staticmethod
+        def is_key_held(key):
+            return key in {"W", "LeftShift"}
+
+    script = object.__new__(go1_playback.Script)
+    script.context = type("FakeContext", (), {"input": FakeInput()})()
+    script.command = [0.0, 0.0, 0.0]
+    script.command_target = [0.0, 0.0, 0.0]
+
+    assert script._update_keyboard_command(1.0) is False
+    assert script.command == [2.0, 0.0, 0.0]
 
 
 def test_go1_zero_command_still_runs_manifest_policy():
@@ -1214,7 +1406,7 @@ def test_go1_zero_command_still_runs_manifest_policy():
         def get_runtime_state(self):
             return {
                 "name": go1_playback.TERRAIN_SCAN_SENSOR,
-                "values": [0.0] * go1_playback.TERRAIN_SCAN_DIM,
+                "values": [0.28] * go1_playback.TERRAIN_SCAN_DIM,
             }
 
     class FakeImuSensor:
@@ -1268,14 +1460,21 @@ def main():
         test_go1_playback_prefers_onnx_then_falls_back_to_torch_checkpoint,
         test_go1_playback_builds_current_observation,
         test_go1_playback_reads_authored_terrain_origins,
+        test_go1_playback_reports_nearest_terrain_cell,
+        test_go1_playback_fall_detection_uses_terrain_relative_clearance,
         test_go1_stale_policy_rejects_playback,
         test_go1_w_key_updates_forward_velocity_command,
+        test_go1_diagonal_keyboard_command_preserves_planar_speed_limit,
+        test_go1_sprint_keyboard_command_uses_trained_stage_one_limit,
         test_go1_zero_command_still_runs_manifest_policy,
         test_go1_env_applies_mujoco_solver_settings,
         test_go1_robot_scene_matches_mujoco_contract,
         test_go1_rough_env_reset_step_shapes,
         test_go1_reward_and_observation_formulas_match_task_contract,
         test_go1_training_configuration_matches_task_contract,
+        test_go1_terrain_curriculum_checkpoint_restores_exact_assignments,
+        test_go1_terrain_curriculum_checkpoint_resamples_across_batch_sizes,
+        test_go1_checkpoint_admission_requires_survival_and_progress,
         test_go1_rough_first_contact_is_not_repeated_while_touching,
         test_go1_rough_play_uses_rough_terrain_grid,
         test_go1_native_batch_arrays_track_actions_and_state,

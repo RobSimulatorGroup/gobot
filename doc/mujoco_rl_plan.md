@@ -139,6 +139,21 @@ Current implementation status:
   randomization buffers, and done masks. It must not call `node.find()`, pull
   Python dictionaries from `get_runtime_state()`, or mutate scene nodes inside
   the hot reward/observation path.
+- `RslRlVecEnvWrapper.training_state_dict()` is the task-neutral checkpoint
+  pass-through for resumable scheduler and curriculum state. The Go1 CPU and
+  Warp environments save command progress, terrain level/type assignments,
+  and RNG state through this boundary.
+- Go1 restores exact terrain assignments when `num_envs` is unchanged. When a
+  checkpoint is resumed at a different batch size, it reconstructs each
+  terrain type's level histogram instead of silently returning to initial
+  levels. Legacy checkpoints report the fallback explicitly.
+- Training state does not include active MuJoCo episode state. Resume starts
+  fresh episodes using the restored scheduler, curriculum, and RNG; it does
+  not claim byte-identical continuation of physics contacts or integrator
+  state.
+- Go1 checkpoint admission requires survival and commanded planar/yaw progress
+  over every authored terrain cell. Training reward alone is not a policy
+  selection criterion.
 
 ## MuJoCo CPU VectorEnv Baseline
 

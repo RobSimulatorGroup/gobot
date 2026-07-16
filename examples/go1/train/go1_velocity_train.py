@@ -43,9 +43,7 @@ class Go1OnPolicyRunner(VideoCheckpointRunnerMixin, OnPolicyRunner):
         merged_infos = dict(self.checkpoint_infos)
         if infos:
             merged_infos.update(infos)
-        env_state = dict(merged_infos.get("env_state", {}))
-        env_state["common_step_counter"] = int(self.env.common_step_counter)
-        merged_infos["env_state"] = env_state
+        merged_infos["env_state"] = self.env.training_state_dict()
         super().save(path, infos=merged_infos)
 
 
@@ -283,13 +281,21 @@ def run_training(args: argparse.Namespace) -> tuple[Path, Path]:
     if checkpoint is not None:
         infos = runner.load(str(checkpoint), map_location=args.device)
         common_step_counter = runner.current_learning_iteration * train_cfg["num_steps_per_env"]
+        restore_result = None
         if infos and isinstance(infos.get("env_state"), dict):
-            common_step_counter = int(infos["env_state"].get("common_step_counter", common_step_counter))
-        env.set_training_progress(common_step_counter)
+            env_state = dict(infos["env_state"])
+            env_state.setdefault("common_step_counter", common_step_counter)
+            restore_result = env.load_training_state_dict(env_state)
+        else:
+            env.set_training_progress(common_step_counter)
         print(f"Resumed checkpoint: {checkpoint}")
         print(f"Resume iteration: {runner.current_learning_iteration}")
         if infos:
             print(f"Checkpoint infos: {sorted(infos.keys())}")
+        if restore_result is None:
+            print("Training state: legacy checkpoint; terrain curriculum starts from authored initial levels")
+        else:
+            print(f"Training state: {restore_result}")
 
     try:
         runner.learn(num_learning_iterations=args.iterations, init_at_random_ep_len=True)

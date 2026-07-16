@@ -66,11 +66,13 @@ Gobot scene. Install `gobot[train]` only to load `.pt` checkpoints directly.
 
 `examples/go1` is a Unitree Go1 policy-playback and training example. The
 editor playback path uses ONNX Runtime when `policies/go1_velocity.onnx` is
-present, so it does not need the rsl_rl training stack. Training uses Gobot's
-scene-authored MuJoCo CPU batch world through the normal Python API. It contains:
+present, so it does not need the rsl_rl training stack. Training consumes the
+same scene-authored robot and terrain through an explicit MuJoCo CPU semantic
+baseline or MuJoCo Warp CUDA backend. It contains:
 
 - `train/go1_velocity_train.py`: the rsl_rl PPO training entry point.
-- `train/go1_velocity_env.py`: the Go1-owned vectorized Gobot velocity environment.
+- `train/go1_velocity_env.py`: the Go1-owned MuJoCo CPU vectorized environment.
+- `train/go1_warp_velocity_env.py`: the device-native MuJoCo Warp environment.
 - `go1_profile.py`: the example-local articulation, default pose, drives, and actuator limits.
 - `go1_velocity_contract.py`: the policy task name and version shared by training and playback.
 - `train/go1_velocity_cfg.py`: rewards, PPO, command, solver, and terrain spawn-curriculum settings.
@@ -82,6 +84,13 @@ scene-authored MuJoCo CPU batch world through the normal Python API. It contains
 The default Gobot install can play ONNX policies. Install `gobot[train]` only
 to train or load `.pt` checkpoints directly. Install `imageio imageio-ffmpeg`
 for MP4 training captures and `onnx` for ONNX export.
+
+Playback supports `W/S` forward/reverse, `Q/E` strafe, `A/D` yaw,
+`Shift+W/S` run, `Space` stop, and `R` reset. Policy admission evaluates every
+authored terrain cell and requires both survival and commanded planar/yaw
+progress. The current validation snapshot, checkpoint comparison, measured
+rates, and inverted-slope limitation are recorded in
+`examples/go1/README.md`.
 
 ## Packaging Rules
 
