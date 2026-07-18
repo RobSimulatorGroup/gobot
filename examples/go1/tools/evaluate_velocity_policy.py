@@ -14,6 +14,7 @@ import gobot
 from gobot.rl.policy import policy_manifest_from_checkpoint
 
 from examples.go1.tools.checkpoint_policy import CheckpointPolicy
+from examples.go1.train.go1_gait import GO1_GAIT_FOOT_ORDER, gait_joint_indices
 from examples.go1.train.go1_scene_runtime import (
     prepare_go1_scene,
     terrain_spawn_origins,
@@ -96,6 +97,54 @@ def _terrain_type_names(env: Go1WarpVelocityEnv) -> list[str]:
             result.append(str(entry.get("name", entry.get("type", f"type_{index}"))))
         else:
             result.append(f"type_{index}")
+    return result
+
+
+def _footfall_patterns(contacts: torch.Tensor) -> dict[str, torch.Tensor]:
+    if contacts.ndim != 2 or contacts.shape[1] != len(GO1_GAIT_FOOT_ORDER):
+        raise ValueError(
+            f"foot contacts must have shape (num_envs, {len(GO1_GAIT_FOOT_ORDER)})"
+        )
+    fr, fl, rr, rl = contacts.to(dtype=torch.bool).unbind(dim=1)
+    front_support = fr & fl & ~rr & ~rl
+    rear_support = ~fr & ~fl & rr & rl
+    trot_support = (fr & ~fl & ~rr & rl) | (~fr & fl & rr & ~rl)
+    return {
+        "front_pair_sync": fr == fl,
+        "rear_pair_sync": rr == rl,
+        "bound_support": front_support | rear_support,
+        "trot_support": trot_support,
+        "flight": ~(fr | fl | rr | rl),
+        "full_stance": fr & fl & rr & rl,
+    }
+
+
+def _group_gait_metrics(
+    mask: np.ndarray,
+    *,
+    samples: np.ndarray,
+    pattern_counts: dict[str, np.ndarray],
+    squared_error_sums: dict[str, np.ndarray],
+    scalar_sums: dict[str, np.ndarray],
+) -> dict[str, float | int]:
+    sample_count = int(np.sum(samples[mask]))
+    if sample_count == 0:
+        result: dict[str, float | int] = {"footfall_samples": 0}
+        result.update({f"{name}_ratio": 0.0 for name in pattern_counts})
+        result.update({name: 0.0 for name in squared_error_sums})
+        result.update({name: 0.0 for name in scalar_sums})
+        result["bound_over_trot"] = 0.0
+        return result
+    result: dict[str, float | int] = {"footfall_samples": sample_count}
+    for name, values in pattern_counts.items():
+        result[f"{name}_ratio"] = float(np.sum(values[mask]) / sample_count)
+    for name, values in squared_error_sums.items():
+        result[name] = float(np.sqrt(np.sum(values[mask]) / sample_count))
+    for name, values in scalar_sums.items():
+        result[name] = float(np.sum(values[mask]) / sample_count)
+    result["bound_over_trot"] = float(
+        result["bound_support_ratio"] - result["trot_support_ratio"]
+    )
     return result
 
 
@@ -192,6 +241,49 @@ def evaluate_checkpoint(
         (env.num_envs,), max_steps, dtype=torch.long, device=env.device
     )
     reset_reason = torch.zeros(env.num_envs, dtype=torch.long, device=env.device)
+    footfall_samples = torch.zeros_like(velocity_samples)
+    foot_name_to_index = {
+        name: index for index, name in enumerate(env.cfg_obj.foot_names)
+    }
+    try:
+        gait_foot_indices = torch.tensor(
+            [foot_name_to_index[name] for name in GO1_GAIT_FOOT_ORDER],
+            dtype=torch.long,
+            device=env.device,
+        )
+    except KeyError as error:
+        raise RuntimeError(
+            f"Go1 gait evaluation requires feet {GO1_GAIT_FOOT_ORDER}, got {env.cfg_obj.foot_names}"
+        ) from error
+    pattern_counts = {
+        name: torch.zeros_like(velocity_samples)
+        for name in _footfall_patterns(
+            torch.zeros(
+                (1, len(GO1_GAIT_FOOT_ORDER)), dtype=torch.bool, device=env.device
+            )
+        )
+    }
+    gait_joint_ids = torch.tensor(
+        gait_joint_indices(env.joint_names),
+        dtype=torch.long,
+        device=env.device,
+    )
+    squared_error_sums = {
+        name: torch.zeros(env.num_envs, dtype=torch.float32, device=env.device)
+        for name in (
+            "front_action_pair_rmse",
+            "rear_action_pair_rmse",
+            "front_foot_velocity_pair_rmse_mps",
+            "rear_foot_velocity_pair_rmse_mps",
+            "front_foot_height_pair_rmse_m",
+            "rear_foot_height_pair_rmse_m",
+        )
+    }
+    scalar_sums = {
+        "fore_rear_height_separation_m": torch.zeros(
+            env.num_envs, dtype=torch.float32, device=env.device
+        )
+    }
 
     for step in range(1, max_steps + 1):
         actions = policy(observations["actor"])
@@ -220,6 +312,50 @@ def evaluate_checkpoint(
             )
         )
         velocity_samples.add_((active & ~done).long())
+        gait_active = active & ~done
+        contacts = (env._feet_contact["found"] > 0).index_select(
+            1, gait_foot_indices
+        )
+        for name, pattern in _footfall_patterns(contacts).items():
+            pattern_counts[name].add_((gait_active & pattern).long())
+        paired_action = actions.index_select(1, gait_joint_ids.flatten()).view(
+            env.num_envs, 4, 3
+        )
+        front_action_error = (
+            paired_action[:, 0, 1:] - paired_action[:, 1, 1:]
+        ).square().mean(dim=1)
+        rear_action_error = (
+            paired_action[:, 2, 1:] - paired_action[:, 3, 1:]
+        ).square().mean(dim=1)
+        foot_velocity = env._foot_velocity_world().index_select(1, gait_foot_indices)
+        sagittal_velocity = foot_velocity[:, :, (0, 2)]
+        front_velocity_error = (
+            sagittal_velocity[:, 0] - sagittal_velocity[:, 1]
+        ).square().mean(dim=1)
+        rear_velocity_error = (
+            sagittal_velocity[:, 2] - sagittal_velocity[:, 3]
+        ).square().mean(dim=1)
+        foot_height = env._foot_height.index_select(1, gait_foot_indices)
+        front_height_error = (foot_height[:, 0] - foot_height[:, 1]).square()
+        rear_height_error = (foot_height[:, 2] - foot_height[:, 3]).square()
+        height_separation = (
+            0.5 * (foot_height[:, 0] + foot_height[:, 1])
+            - 0.5 * (foot_height[:, 2] + foot_height[:, 3])
+        ).abs()
+        continuous_values = {
+            "front_action_pair_rmse": front_action_error,
+            "rear_action_pair_rmse": rear_action_error,
+            "front_foot_velocity_pair_rmse_mps": front_velocity_error,
+            "rear_foot_velocity_pair_rmse_mps": rear_velocity_error,
+            "front_foot_height_pair_rmse_m": front_height_error,
+            "rear_foot_height_pair_rmse_m": rear_height_error,
+        }
+        for name, value in continuous_values.items():
+            squared_error_sums[name].add_(torch.where(gait_active, value, 0.0))
+        scalar_sums["fore_rear_height_separation_m"].add_(
+            torch.where(gait_active, height_separation, 0.0)
+        )
+        footfall_samples.add_(gait_active.long())
 
         survival_steps.copy_(torch.where(done, step, survival_steps))
         reset_reason.copy_(torch.where(done, reasons, reset_reason))
@@ -239,11 +375,21 @@ def evaluate_checkpoint(
     velocity_samples_np = velocity_samples.cpu().numpy()
     survival_steps_np = survival_steps.cpu().numpy()
     reset_reason_np = reset_reason.cpu().numpy()
+    footfall_samples_np = footfall_samples.cpu().numpy()
+    pattern_counts_np = {
+        name: values.cpu().numpy() for name, values in pattern_counts.items()
+    }
+    squared_error_sums_np = {
+        name: values.cpu().numpy() for name, values in squared_error_sums.items()
+    }
+    scalar_sums_np = {
+        name: values.cpu().numpy() for name, values in scalar_sums.items()
+    }
     all_mask = np.ones(env.num_envs, dtype=bool)
     type_names = _terrain_type_names(env)
 
     def metrics(mask: np.ndarray) -> dict[str, float | int]:
-        return _group_metrics(
+        result = _group_metrics(
             mask,
             reward=reward_np,
             velocity_error=velocity_error_np,
@@ -258,6 +404,16 @@ def evaluate_checkpoint(
             max_steps=max_steps,
             min_progress_ratio=min_progress_ratio,
         )
+        result.update(
+            _group_gait_metrics(
+                mask,
+                samples=footfall_samples_np,
+                pattern_counts=pattern_counts_np,
+                squared_error_sums=squared_error_sums_np,
+                scalar_sums=scalar_sums_np,
+            )
+        )
+        return result
 
     by_level = {
         str(level): metrics(levels_np == level)
@@ -366,6 +522,13 @@ def _print_summary(report: dict[str, Any]) -> None:
             f"steps={metrics['mean_survival_steps']:.1f}, "
             f"vx={metrics['mean_body_velocity_x']:.3f}, "
             f"velocity_error={metrics['mean_velocity_error']:.3f}, "
+            f"front_sync={metrics['front_pair_sync_ratio']:.3f}, "
+            f"rear_sync={metrics['rear_pair_sync_ratio']:.3f}, "
+            f"bound={metrics['bound_support_ratio']:.3f}, "
+            f"trot={metrics['trot_support_ratio']:.3f}, "
+            f"flight={metrics['flight_ratio']:.3f}, "
+            f"front_action_rmse={metrics['front_action_pair_rmse']:.3f}, "
+            f"front_height_rmse={metrics['front_foot_height_pair_rmse_m']:.3f}, "
             f"reward={metrics['mean_episode_reward']:.3f}, "
             f"illegal={metrics['illegal_contact_rate']:.3f}, "
             f"out={metrics['terrain_out_rate']:.3f}"

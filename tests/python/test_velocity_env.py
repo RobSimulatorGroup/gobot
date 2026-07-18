@@ -347,11 +347,11 @@ def test_go1_rough_env_reset_step_shapes():
         np.copyto(env.backend.state.encoder_bias, original_encoder_bias)
 
         assert env.cfg_obj.command.ranges.lin_vel_x == (-1.0, 1.0)
-        env.set_training_progress(119_999)
+        env.set_training_progress(59_999)
         assert env.cfg_obj.command.ranges.lin_vel_x == (-1.0, 1.0)
-        env.set_training_progress(120_000)
+        env.set_training_progress(60_000)
         assert env.cfg_obj.command.ranges.lin_vel_x == (-1.5, 2.0)
-        env.set_training_progress(240_000)
+        env.set_training_progress(120_000)
         assert env.cfg_obj.command.ranges.lin_vel_x == (-2.0, 3.0)
 
         startup_encoder_bias = env.backend.state.encoder_bias.copy()
@@ -555,6 +555,36 @@ def test_go1_reward_and_observation_formulas_match_task_contract():
     assert np.isfinite(state.reward).all()
 
 
+def test_go1_run_progress_reward_does_not_reward_standing():
+    from examples.go1.train.go1_gait import gait_foot_indices, gait_joint_indices
+
+    env, state = _synthetic_go1_task_env()
+    go1_cfg.apply_training_profile(env.cfg_obj, "run")
+    env._reward_term_names = (*env._reward_term_names, "run_progress", "bound_gait")
+    env._gait_foot_indices = gait_foot_indices(env.cfg_obj.foot_names)
+    env._gait_joint_indices = gait_joint_indices(env.cfg_obj.joint_names)
+    state.reward_weights = np.asarray(
+        [getattr(env.cfg_obj.rewards, name) for name in env._reward_term_names],
+        dtype=np.float32,
+    )
+    state.reward_terms = np.zeros((env.num_envs, len(env._reward_term_names)), dtype=np.float32)
+    state.command_is_run_env = np.asarray([True, True])
+    state.command[:, :] = 0.0
+    state.command[:, 0] = 0.5
+    state.base_linear_velocity[:, :] = 0.0
+    state.base_linear_velocity[0, 0] = 0.2
+
+    env._run_go1_rough_task_numpy()
+
+    progress_index = env._reward_term_names.index("run_progress")
+    np.testing.assert_allclose(
+        state.reward_terms[:, progress_index],
+        [env.cfg_obj.rewards.run_progress * 0.4, 0.0],
+    )
+    assert np.isfinite(state.reward_terms).all()
+    assert np.isfinite(state.reward).all()
+
+
 def test_go1_training_configuration_matches_task_contract():
     cfg = go1_cfg.go1_velocity_cfg(project_path="/tmp/go1")
     train_cfg = go1_cfg.rsl_rl_train_cfg()
@@ -581,10 +611,186 @@ def test_go1_training_configuration_matches_task_contract():
         "rnd_cfg": None,
         "symmetry_cfg": None,
     }
-    assert [stage.step for stage in cfg.command_curriculum] == [0, 5_000 * 24, 10_000 * 24]
+    assert [stage.step for stage in cfg.command_curriculum] == [0, 2_500 * 24, 5_000 * 24]
     assert cfg.episode_length_s == 20.0
     assert cfg.physics_dt == 0.005
     assert cfg.decimation == 4
+    assert cfg.training_profile == "balanced"
+    assert cfg.command.rel_run_envs == 0.0
+
+
+def test_go1_run_training_profile_reserves_high_speed_forward_commands():
+    cfg = go1_cfg.go1_velocity_cfg(project_path="/tmp/go1")
+
+    returned = go1_cfg.apply_training_profile(cfg, "run")
+
+    assert returned is cfg
+    assert cfg.training_profile == "run"
+    assert cfg.command.rel_forward_envs == 0.3
+    assert cfg.command.rel_run_envs == 0.6
+    assert cfg.command.run_velocity_x == (1.5, 2.5)
+    assert [stage.step for stage in cfg.command_curriculum] == [0, 2_500 * 24]
+    assert [stage.step for stage in cfg.run_command_curriculum] == [
+        0,
+        100 * 24,
+        250 * 24,
+    ]
+    assert [stage.run_velocity_x for stage in cfg.run_command_curriculum] == [
+        (1.5, 2.5),
+        (2.0, 3.0),
+        (2.5, 3.5),
+    ]
+    assert cfg.rewards.track_linear_velocity == 4.0
+    assert cfg.rewards.run_progress == 4.0
+    assert cfg.rewards.bound_gait == 3.0
+
+
+def test_go1_bound_gait_score_requires_pair_sync_speed_and_run_command():
+    from examples.go1.train.go1_gait import bound_gait_score_numpy
+
+    contacts = np.asarray(
+        [
+            [1, 1, 0, 0],
+            [1, 0, 0, 1],
+            [1, 1, 0, 0],
+            [1, 1, 0, 0],
+        ],
+        dtype=np.float32,
+    )
+    velocity = np.zeros((4, 4, 3), dtype=np.float32)
+    velocity[1, 0, 0] = 1.0
+    velocity[1, 1, 0] = -1.0
+    velocity[1, 2, 2] = 1.0
+    velocity[1, 3, 2] = -1.0
+    height = np.asarray(
+        [
+            [0.1, 0.1, 0.0, 0.0],
+            [0.1, 0.0, 0.1, 0.0],
+            [0.1, 0.1, 0.0, 0.0],
+            [0.1, 0.1, 0.0, 0.0],
+        ],
+        dtype=np.float32,
+    )
+    action = np.zeros((4, 12), dtype=np.float32)
+    action[1, 1:3] = 1.0
+    action[1, 4:6] = -1.0
+    action[1, 7:9] = 1.0
+    action[1, 10:12] = -1.0
+    score = bound_gait_score_numpy(
+        contacts,
+        velocity,
+        height,
+        action,
+        base_velocity_x=np.asarray([2.0, 2.0, 0.0, 2.0], dtype=np.float32),
+        command_x=np.full(4, 2.0, dtype=np.float32),
+        run_mask=np.asarray([True, True, True, False]),
+        foot_indices=(0, 1, 2, 3),
+        joint_indices=((0, 1, 2), (3, 4, 5), (6, 7, 8), (9, 10, 11)),
+        motion_std=1.0,
+        action_std=0.5,
+        height_sync_std=0.04,
+        height_separation_std=0.05,
+        trot_penalty=0.5,
+    )
+
+    assert score[0] > 0.99
+    assert score[1] < 0.01
+    assert score[2] == 0.0
+    assert score[3] == 0.0
+
+
+def test_go1_bound_gait_score_matches_torch_backend():
+    torch = _require_torch()
+    from examples.go1.train.go1_gait import bound_gait_score_numpy
+    from examples.go1.train.go1_warp_velocity_env import _bound_gait_score_torch
+
+    rng = np.random.default_rng(47)
+    contact = rng.integers(0, 2, size=(16, 4), dtype=np.int64).astype(np.float32)
+    velocity = rng.normal(size=(16, 4, 3)).astype(np.float32)
+    height = rng.uniform(0.0, 0.2, size=(16, 4)).astype(np.float32)
+    action = rng.normal(size=(16, 12)).astype(np.float32)
+    base_velocity_x = rng.uniform(-0.5, 3.5, size=16).astype(np.float32)
+    command_x = rng.uniform(1.5, 3.5, size=16).astype(np.float32)
+    run_mask = rng.integers(0, 2, size=16, dtype=np.int64).astype(bool)
+    expected = bound_gait_score_numpy(
+        contact,
+        velocity,
+        height,
+        action,
+        base_velocity_x,
+        command_x,
+        run_mask,
+        foot_indices=(0, 1, 2, 3),
+        joint_indices=((0, 1, 2), (3, 4, 5), (6, 7, 8), (9, 10, 11)),
+        motion_std=0.8,
+        action_std=0.6,
+        height_sync_std=0.04,
+        height_separation_std=0.05,
+        trot_penalty=0.4,
+    )
+    actual = _bound_gait_score_torch(
+        torch.from_numpy(contact),
+        torch.from_numpy(velocity),
+        torch.from_numpy(height),
+        torch.from_numpy(action),
+        torch.from_numpy(base_velocity_x),
+        torch.from_numpy(command_x),
+        torch.from_numpy(run_mask),
+        foot_indices=torch.arange(4, dtype=torch.long),
+        joint_indices=torch.arange(12, dtype=torch.long).view(4, 3),
+        motion_std=0.8,
+        action_std=0.6,
+        height_sync_std=0.04,
+        height_separation_std=0.05,
+        trot_penalty=0.4,
+    )
+
+    np.testing.assert_allclose(actual.numpy(), expected, rtol=1.0e-6, atol=1.0e-7)
+
+
+def test_go1_footfall_patterns_distinguish_bound_trot_and_flight():
+    torch = _require_torch()
+    from examples.go1.tools.evaluate_velocity_policy import _footfall_patterns
+
+    contacts = torch.tensor(
+        [
+            [1, 1, 0, 0],
+            [0, 0, 1, 1],
+            [1, 0, 0, 1],
+            [0, 1, 1, 0],
+            [0, 0, 0, 0],
+            [1, 1, 1, 1],
+        ],
+        dtype=torch.bool,
+    )
+    patterns = _footfall_patterns(contacts)
+
+    assert patterns["bound_support"].tolist() == [True, True, False, False, False, False]
+    assert patterns["trot_support"].tolist() == [False, False, True, True, False, False]
+    assert patterns["flight"].tolist() == [False, False, False, False, True, False]
+    assert patterns["full_stance"].tolist() == [False, False, False, False, False, True]
+    assert patterns["front_pair_sync"].tolist() == [True, True, False, False, True, True]
+    assert patterns["rear_pair_sync"].tolist() == [True, True, False, False, True, True]
+
+
+def test_go1_gait_metrics_are_defined_without_surviving_samples():
+    from examples.go1.tools.evaluate_velocity_policy import _group_gait_metrics
+
+    metrics = _group_gait_metrics(
+        np.asarray([True]),
+        samples=np.asarray([0]),
+        pattern_counts={"front_pair_sync": np.asarray([0])},
+        squared_error_sums={"front_action_pair_rmse": np.asarray([0.0])},
+        scalar_sums={"fore_rear_height_separation_m": np.asarray([0.0])},
+    )
+
+    assert metrics == {
+        "footfall_samples": 0,
+        "front_pair_sync_ratio": 0.0,
+        "front_action_pair_rmse": 0.0,
+        "fore_rear_height_separation_m": 0.0,
+        "bound_over_trot": 0.0,
+    }
 
 
 def test_go1_terrain_curriculum_checkpoint_restores_exact_assignments():
@@ -1132,6 +1338,34 @@ def test_go1_playback_prefers_onnx_then_falls_back_to_torch_checkpoint():
                 os.environ[go1_playback.POLICY_ENV] = original_policy_env
 
 
+def test_go1_playback_loads_optional_run_policy_and_switches_only_when_requested():
+    with tempfile.TemporaryDirectory() as temporary_directory:
+        policies = Path(temporary_directory) / "policies"
+        policies.mkdir()
+        run_path = policies / "go1_velocity_run.pt"
+        run_path.touch()
+
+        base_policy = object()
+        run_policy = object()
+        original_torch_policy = go1_playback.TorchPolicy
+        original_run_policy_env = os.environ.pop(go1_playback.RUN_POLICY_ENV, None)
+        try:
+            go1_playback.TorchPolicy = lambda path: run_policy
+            script = object.__new__(go1_playback.Script)
+            script.context = type("FakeContext", (), {"project_path": temporary_directory})()
+            script.policy = base_policy
+            script.run_policy = script._load_run_policy()
+
+            script.run_requested = False
+            assert script._active_policy() is base_policy
+            script.run_requested = True
+            assert script._active_policy() is run_policy
+        finally:
+            go1_playback.TorchPolicy = original_torch_policy
+            if original_run_policy_env is not None:
+                os.environ[go1_playback.RUN_POLICY_ENV] = original_run_policy_env
+
+
 def test_go1_playback_builds_current_observation():
     cfg = go1_cfg.go1_velocity_cfg(project_path="/tmp/go1")
     script = object.__new__(go1_playback.Script)
@@ -1334,7 +1568,7 @@ def test_go1_diagonal_keyboard_command_preserves_planar_speed_limit():
     assert np.linalg.norm(script.command[:2]) <= 1.0
 
 
-def test_go1_sprint_keyboard_command_uses_trained_stage_one_limit():
+def test_go1_sprint_keyboard_command_uses_trained_run_limit():
     class FakeInput:
         has_control_focus = True
 
@@ -1352,7 +1586,8 @@ def test_go1_sprint_keyboard_command_uses_trained_stage_one_limit():
     script.command_target = [0.0, 0.0, 0.0]
 
     assert script._update_keyboard_command(1.0) is False
-    assert script.command == [2.0, 0.0, 0.0]
+    assert script.command == [3.0, 0.0, 0.0]
+    assert script.run_requested is True
 
 
 def test_go1_zero_command_still_runs_manifest_policy():
@@ -1458,6 +1693,7 @@ def main():
         test_locomotion_common_helpers,
         test_go1_current_policy_contract,
         test_go1_playback_prefers_onnx_then_falls_back_to_torch_checkpoint,
+        test_go1_playback_loads_optional_run_policy_and_switches_only_when_requested,
         test_go1_playback_builds_current_observation,
         test_go1_playback_reads_authored_terrain_origins,
         test_go1_playback_reports_nearest_terrain_cell,
@@ -1465,13 +1701,19 @@ def main():
         test_go1_stale_policy_rejects_playback,
         test_go1_w_key_updates_forward_velocity_command,
         test_go1_diagonal_keyboard_command_preserves_planar_speed_limit,
-        test_go1_sprint_keyboard_command_uses_trained_stage_one_limit,
+        test_go1_sprint_keyboard_command_uses_trained_run_limit,
         test_go1_zero_command_still_runs_manifest_policy,
         test_go1_env_applies_mujoco_solver_settings,
         test_go1_robot_scene_matches_mujoco_contract,
         test_go1_rough_env_reset_step_shapes,
         test_go1_reward_and_observation_formulas_match_task_contract,
+        test_go1_run_progress_reward_does_not_reward_standing,
         test_go1_training_configuration_matches_task_contract,
+        test_go1_run_training_profile_reserves_high_speed_forward_commands,
+        test_go1_bound_gait_score_requires_pair_sync_speed_and_run_command,
+        test_go1_bound_gait_score_matches_torch_backend,
+        test_go1_footfall_patterns_distinguish_bound_trot_and_flight,
+        test_go1_gait_metrics_are_defined_without_surviving_samples,
         test_go1_terrain_curriculum_checkpoint_restores_exact_assignments,
         test_go1_terrain_curriculum_checkpoint_resamples_across_batch_sizes,
         test_go1_checkpoint_admission_requires_survival_and_progress,

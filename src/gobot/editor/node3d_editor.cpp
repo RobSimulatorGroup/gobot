@@ -225,10 +225,10 @@ void Node3DEditor::UpdateCamera(double delta_time) {
     const bool left_mouse_down = Input::GetInstance()->GetMouseClickedState(MouseButton::Left) == MouseClickedState::SingleClicked;
     const bool middle_mouse_down = Input::GetInstance()->GetMouseClickedState(MouseButton::Middle) == MouseClickedState::SingleClicked;
     const bool right_mouse_down = Input::GetInstance()->GetMouseClickedState(MouseButton::Right) == MouseClickedState::SingleClicked;
-    const bool shift_down = Input::GetInstance()->GetKeyPressed(KeyCode::LeftShift) ||
-                            Input::GetInstance()->GetKeyPressed(KeyCode::RightShift);
-    const bool ctrl_down = Input::GetInstance()->GetKeyPressed(KeyCode::LeftCtrl) ||
-                           Input::GetInstance()->GetKeyPressed(KeyCode::RightCtrl);
+    const bool shift_down = Input::GetInstance()->GetKeyHeld(KeyCode::LeftShift) ||
+                            Input::GetInstance()->GetKeyHeld(KeyCode::RightShift);
+    const bool ctrl_down = Input::GetInstance()->GetKeyHeld(KeyCode::LeftCtrl) ||
+                           Input::GetInstance()->GetKeyHeld(KeyCode::RightCtrl);
     const bool gizmo_captures_mouse = ImGuizmo::IsUsing() || ImGuizmo::IsOver();
     const bool orbit_mouse_down = (right_mouse_down || (left_mouse_down && ctrl_down)) && !gizmo_captures_mouse;
     const bool pan_mouse_down = middle_mouse_down || (left_mouse_down && shift_down && !ctrl_down && !gizmo_captures_mouse);

@@ -153,7 +153,13 @@ Current implementation status:
   state.
 - Go1 checkpoint admission requires survival and commanded planar/yaw progress
   over every authored terrain cell. Training reward alone is not a policy
-  selection criterion.
+  selection criterion. Run-policy evaluation additionally records paired-foot
+  contact patterns and action/foot-speed/foot-height errors, so a high-speed
+  trot or stationary reward exploit is not mislabeled as a bound.
+- Profile-local curriculum progress is checkpointed separately from global
+  command and terrain progress. Resuming the same profile restores it exactly;
+  switching from `balanced` to `run` starts the run-speed curriculum at stage
+  zero without discarding the learned terrain assignment.
 
 ## MuJoCo CPU VectorEnv Baseline
 

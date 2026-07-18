@@ -80,7 +80,9 @@ When Go1 appears to sink through the floor, check these in order:
    test is around `z=0.26`; values near `0.05` mean the robot has collapsed.
 4. Confirm changing `Robot3D.source_path` does not change the compiled model.
 5. For interactive walking, export the current manifest-backed policy to
-   `res://policies/go1_velocity.onnx`; `GOBOT_GO1_POLICY` can override that path.
+   `res://policies/go1_velocity.onnx`; `GOBOT_GO1_POLICY` can override that
+   path. The optional forward-running actor uses
+   `res://policies/go1_velocity_run.onnx` or `GOBOT_GO1_RUN_POLICY`.
 6. If physics height/contact are correct but debug shapes look below the floor,
    suspect scene-to-viewport synchronization or debug shape drawing, not MuJoCo
    contact generation.
@@ -102,10 +104,19 @@ fields, popups, and other editor UI should not drive the robot.
 
 The Go1 script polls `context.input` during `_physics_process()`. `W/S` control
 forward speed, `Q/E` strafe, `A/D` yaw, `Space` commands stop, and `R` resets
-the runtime pose. These keys drive the policy command velocity when
-`res://policies/go1_velocity.onnx`, the fallback
-`res://policies/go1_velocity.pt`, or a `GOBOT_GO1_POLICY` override is loaded.
-Missing, legacy, or contract-mismatched policies fail at startup.
+the runtime pose. `Shift+W` selects the optional run actor and a `3.0 m/s`
+command; `Shift+S` keeps the balanced actor and raises reverse command magnitude
+to `1.5 m/s`. The base policy is loaded from
+`res://policies/go1_velocity.onnx`, its `.pt` fallback, or
+`GOBOT_GO1_POLICY`. The run actor uses the matching `_run` paths or
+`GOBOT_GO1_RUN_POLICY`. Missing, legacy, or contract-mismatched base policies
+fail at startup; an absent run actor falls back to the base actor.
+
+The run actor is trained separately from the reference-aligned balanced actor.
+Its run-only rewards reduce diagonal trot support and pair the front/rear leg
+motions, but the current rough-terrain policy is not a strict phase-locked
+bound. Use the evaluator's contact, action, foot-speed, and foot-height pair
+metrics rather than inferring gait only from commanded speed.
 
 ## Regression Tests
 

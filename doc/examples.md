@@ -76,21 +76,25 @@ baseline or MuJoCo Warp CUDA backend. It contains:
 - `go1_profile.py`: the example-local articulation, default pose, drives, and actuator limits.
 - `go1_velocity_contract.py`: the policy task name and version shared by training and playback.
 - `train/go1_velocity_cfg.py`: rewards, PPO, command, solver, and terrain spawn-curriculum settings.
+- `train/go1_gait.py`: run-only paired-leg gait scoring shared by CPU parity tests and Warp training.
 - `go1_scene.jscn`: the authored scene with an editor-visible `Terrain3D` node.
 - `terrain/rough_terrain.jres`: the compact versioned procedural terrain recipe shared by editor, Play, and training.
 - `go1.jscn` and `assets/`: the imported robot scene and source meshes.
-- `policies/go1_velocity.onnx`: generated lightweight policy playback graph.
+- `policies/go1_velocity.onnx`: generated balanced policy playback graph.
+- `policies/go1_velocity_run.onnx`: optional generated forward-running policy graph.
 
 The default Gobot install can play ONNX policies. Install `gobot[train]` only
 to train or load `.pt` checkpoints directly. Install `imageio imageio-ffmpeg`
 for MP4 training captures and `onnx` for ONNX export.
 
 Playback supports `W/S` forward/reverse, `Q/E` strafe, `A/D` yaw,
-`Shift+W/S` run, `Space` stop, and `R` reset. Policy admission evaluates every
-authored terrain cell and requires both survival and commanded planar/yaw
-progress. The current validation snapshot, checkpoint comparison, measured
-rates, and inverted-slope limitation are recorded in
-`examples/go1/README.md`.
+`Shift+W` at 3 m/s with the optional run actor, `Shift+S` accelerated reverse
+through the balanced actor, `Space` stop, and `R` reset. `GOBOT_GO1_POLICY` and
+`GOBOT_GO1_RUN_POLICY` override the two policy paths. Policy admission
+evaluates every authored terrain cell, requires both survival and commanded
+planar/yaw progress, and reports paired-leg gait metrics. The current
+validation snapshot, checkpoint comparison, measured rates, and gait limits are
+recorded in `examples/go1/README.md`.
 
 ## Packaging Rules
 

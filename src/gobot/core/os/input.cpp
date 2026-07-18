@@ -117,7 +117,7 @@ bool Input::OnMouseReleased(const MouseButtonReleasedEvent& e)
 
 bool Input::OnMouseScrolled(const MouseScrolledEvent& e)
 {
-    SetScrollOffset(e.GetYOffset());
+    SetScrollOffset(GetScrollOffset() + e.GetYOffset());
     return false;
 }
 

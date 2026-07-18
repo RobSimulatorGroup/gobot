@@ -575,6 +575,9 @@ class NativeLocomotionBatchBackend:
         rel_heading_envs: float,
         rel_world_envs: float,
         rel_forward_envs: float,
+        rel_run_envs: float,
+        run_velocity_x_min: float,
+        run_velocity_x_max: float,
         heading_command: bool,
         heading_control_stiffness: float,
         zero_small_xy_threshold: float,
@@ -605,6 +608,9 @@ class NativeLocomotionBatchBackend:
             float(rel_heading_envs),
             float(rel_world_envs),
             float(rel_forward_envs),
+            float(rel_run_envs),
+            float(run_velocity_x_min),
+            float(run_velocity_x_max),
             bool(heading_command),
             float(heading_control_stiffness),
             float(zero_small_xy_threshold),
@@ -628,6 +634,23 @@ class NativeLocomotionBatchBackend:
             float(lin_vel_y[1]),
             float(ang_vel_z[0]),
             float(ang_vel_z[1]),
+        )
+
+    def set_command_run_sampling(
+        self,
+        *,
+        rel_run_envs: float,
+        run_velocity_x_min: float,
+        run_velocity_x_max: float,
+    ) -> None:
+        self._require_view()
+        setter = getattr(self._view, "set_command_run_sampling", None)
+        if setter is None:
+            raise RuntimeError("Gobot native locomotion batch view has no run command sampler")
+        setter(
+            float(rel_run_envs),
+            float(run_velocity_x_min),
+            float(run_velocity_x_max),
         )
 
     def reset_commands(self, env_ids: Sequence[int]) -> None:

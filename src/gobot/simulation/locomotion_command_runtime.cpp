@@ -44,6 +44,7 @@ void LocomotionCommandRuntime::Allocate(std::size_t environment_count) {
     standing_environment_mask_.assign(environment_count_, 0);
     world_environment_mask_.assign(environment_count_, 0);
     forward_environment_mask_.assign(environment_count_, 0);
+    run_environment_mask_.assign(environment_count_, 0);
     ranges_.assign(kRangeCount, 0.0f);
     SeedEnvironmentGenerators(config_.seed);
 }
@@ -63,6 +64,7 @@ void LocomotionCommandRuntime::Configure(const LocomotionCommandConfig& config) 
     config_.heading_environment_ratio = ClampRatio(config.heading_environment_ratio);
     config_.world_environment_ratio = ClampRatio(config.world_environment_ratio);
     config_.forward_environment_ratio = ClampRatio(config.forward_environment_ratio);
+    SetRunSampling(config.run_environment_ratio, config.run_velocity_x);
     config_.zero_small_xy_threshold = std::max<RealType>(0.0, config.zero_small_xy_threshold);
 
     SetVelocityRanges(config.linear_velocity_x,
@@ -74,6 +76,16 @@ void LocomotionCommandRuntime::Configure(const LocomotionCommandConfig& config) 
     ranges_[HeadingMax] = heading[1];
     SeedEnvironmentGenerators(config.seed);
     configured_ = true;
+}
+
+void LocomotionCommandRuntime::SetRunSampling(
+        RealType run_environment_ratio,
+        const std::array<RealType, 2>& run_velocity_x) {
+    config_.run_environment_ratio = ClampRatio(run_environment_ratio);
+    const auto ordered = OrderedRange(run_velocity_x);
+    config_.run_velocity_x = {
+            std::max<RealType>(0.0, ordered[0]),
+            std::max<RealType>(0.0, ordered[1])};
 }
 
 bool LocomotionCommandRuntime::IsConfigured() const {
@@ -156,6 +168,7 @@ void LocomotionCommandRuntime::SetCommands(
                 : 0;
         world_environment_mask_[environment_index] = 0;
         forward_environment_mask_[environment_index] = 0;
+        run_environment_mask_[environment_index] = 0;
     }
 }
 
@@ -287,10 +300,29 @@ void LocomotionCommandRuntime::Resample(std::size_t environment_index) {
         commands_[offset + 1] = 0.0f;
         commands_[offset + 2] = 0.0f;
     }
+    run_environment_mask_[environment_index] =
+            Uniform(environment_index, 0.0f, 1.0f) <=
+                    static_cast<float>(config_.run_environment_ratio)
+            ? 1
+            : 0;
+    if (run_environment_mask_[environment_index] != 0) {
+        heading_environment_mask_[environment_index] = 0;
+        world_environment_mask_[environment_index] = 0;
+        commands_[offset + 0] = Uniform(
+                environment_index,
+                static_cast<float>(config_.run_velocity_x[0]),
+                static_cast<float>(config_.run_velocity_x[1]));
+        commands_[offset + 1] = 0.0f;
+        commands_[offset + 2] = 0.0f;
+        for (std::size_t axis = 0; axis < kCommandDimension; ++axis) {
+            world_commands_[offset + axis] = commands_[offset + axis];
+        }
+    }
     if (standing_environment_mask_[environment_index] != 0) {
         commands_[offset + 0] = 0.0f;
         commands_[offset + 1] = 0.0f;
         commands_[offset + 2] = 0.0f;
+        run_environment_mask_[environment_index] = 0;
     }
     heading_errors_[environment_index] = 0.0f;
 }
@@ -405,6 +437,12 @@ std::span<std::uint8_t> LocomotionCommandRuntime::ForwardEnvironmentMask() {
 }
 std::span<const std::uint8_t> LocomotionCommandRuntime::ForwardEnvironmentMask() const {
     return forward_environment_mask_;
+}
+std::span<std::uint8_t> LocomotionCommandRuntime::RunEnvironmentMask() {
+    return run_environment_mask_;
+}
+std::span<const std::uint8_t> LocomotionCommandRuntime::RunEnvironmentMask() const {
+    return run_environment_mask_;
 }
 std::span<float> LocomotionCommandRuntime::Ranges() { return ranges_; }
 std::span<const float> LocomotionCommandRuntime::Ranges() const { return ranges_; }

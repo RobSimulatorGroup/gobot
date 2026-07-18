@@ -42,6 +42,7 @@ from .go1_velocity_cfg import (
     Go1VelocityCfg,
     go1_velocity_cfg,
 )
+from .go1_gait import gait_foot_indices, gait_joint_indices
 
 
 _CONTACT_HISTORY_LENGTH = 4
@@ -71,6 +72,100 @@ def _quat_from_yaw(yaw: torch.Tensor) -> torch.Tensor:
 
 def _wrap_to_pi(angle: torch.Tensor) -> torch.Tensor:
     return torch.remainder(angle + math.pi, 2.0 * math.pi) - math.pi
+
+
+def _bound_gait_score_torch(
+    foot_contact: torch.Tensor,
+    foot_velocity: torch.Tensor,
+    foot_height: torch.Tensor,
+    action: torch.Tensor,
+    base_velocity_x: torch.Tensor,
+    command_x: torch.Tensor,
+    run_mask: torch.Tensor,
+    *,
+    foot_indices: torch.Tensor,
+    joint_indices: torch.Tensor,
+    motion_std: float,
+    action_std: float,
+    height_sync_std: float,
+    height_separation_std: float,
+    trot_penalty: float,
+) -> torch.Tensor:
+    gait_contact = foot_contact.to(dtype=torch.bool).index_select(1, foot_indices)
+    gait_velocity = foot_velocity.index_select(1, foot_indices)
+    sagittal = gait_velocity[:, :, (0, 2)]
+    front_delta = sagittal[:, 0] - sagittal[:, 1]
+    rear_delta = sagittal[:, 2] - sagittal[:, 3]
+    motion_error = 0.5 * (
+        front_delta.square().sum(dim=1) + rear_delta.square().sum(dim=1)
+    )
+    motion_sync = torch.exp(
+        -motion_error / max(float(motion_std) ** 2, 1.0e-6)
+    )
+    paired_action = action.index_select(1, joint_indices.flatten()).view(
+        action.shape[0], 4, 3
+    )
+    front_action_delta = paired_action[:, 0, 1:] - paired_action[:, 1, 1:]
+    rear_action_delta = paired_action[:, 2, 1:] - paired_action[:, 3, 1:]
+    action_error = 0.5 * (
+        front_action_delta.square().mean(dim=1)
+        + rear_action_delta.square().mean(dim=1)
+    )
+    action_sync = torch.exp(
+        -action_error / max(float(action_std) ** 2, 1.0e-6)
+    )
+    height = foot_height.index_select(1, foot_indices)
+    height_pair_error = 0.5 * (
+        (height[:, 0] - height[:, 1]).square()
+        + (height[:, 2] - height[:, 3]).square()
+    )
+    height_sync = torch.exp(
+        -height_pair_error / max(float(height_sync_std) ** 2, 1.0e-6)
+    )
+    front_height = 0.5 * (height[:, 0] + height[:, 1])
+    rear_height = 0.5 * (height[:, 2] + height[:, 3])
+    height_separation = 1.0 - torch.exp(
+        -(front_height - rear_height).square()
+        / max(float(height_separation_std) ** 2, 1.0e-6)
+    )
+    height_gait = height_sync * height_separation
+    contact_sync = 1.0 - 0.5 * (
+        torch.logical_xor(gait_contact[:, 0], gait_contact[:, 1]).float()
+        + torch.logical_xor(gait_contact[:, 2], gait_contact[:, 3]).float()
+    )
+    gait_contact_float = gait_contact.float()
+    front_contact = 0.5 * (
+        gait_contact_float[:, 0] + gait_contact_float[:, 1]
+    )
+    rear_contact = 0.5 * (
+        gait_contact_float[:, 2] + gait_contact_float[:, 3]
+    )
+    support_separation = (front_contact - rear_contact).abs() * contact_sync
+    trot_support = (
+        (
+            gait_contact[:, 0]
+            & ~gait_contact[:, 1]
+            & ~gait_contact[:, 2]
+            & gait_contact[:, 3]
+        )
+        | (
+            ~gait_contact[:, 0]
+            & gait_contact[:, 1]
+            & gait_contact[:, 2]
+            & ~gait_contact[:, 3]
+        )
+    ).float()
+    speed_progress = (base_velocity_x / command_x.clamp(min=0.1)).clamp(
+        min=0.0, max=1.0
+    )
+    return speed_progress * run_mask.float() * (
+        0.25 * action_sync
+        + 0.15 * motion_sync
+        + 0.15 * contact_sync
+        + 0.15 * support_separation
+        + 0.30 * height_gait
+        - float(trot_penalty) * trot_support
+    )
 
 
 def _grid_offsets(
@@ -236,8 +331,22 @@ class Go1WarpVelocityEnv:
         self._action_scale = torch.as_tensor(
             self.action_scale, dtype=torch.float32, device=self._torch_device
         )
-        self._reward_term_names = GO1_ROUGH_REWARD_TERM_NAMES
+        self._reward_term_names = GO1_ROUGH_REWARD_TERM_NAMES + (
+            ("run_progress", "bound_gait")
+            if self.cfg_obj.training_profile == "run"
+            else ()
+        )
         self._foot_count = len(self.cfg_obj.foot_names)
+        self._gait_foot_indices = torch.tensor(
+            gait_foot_indices(self.cfg_obj.foot_names),
+            dtype=torch.long,
+            device=self._torch_device,
+        )
+        self._gait_joint_indices = torch.tensor(
+            gait_joint_indices(self.joint_names),
+            dtype=torch.long,
+            device=self._torch_device,
+        )
 
         self.project_path = Path(self.cfg_obj.project_path).resolve()
         self.context, self.robot, terrain = prepare_go1_scene(self.cfg_obj, context=context)
@@ -432,6 +541,15 @@ class Go1WarpVelocityEnv:
             "domain_randomization": self.cfg_obj.domain_randomization.enabled,
             "push_enabled": self.cfg_obj.push_enabled,
             "terrain_curriculum": self.cfg_obj.terrain_curriculum,
+            "training_profile": self.cfg_obj.training_profile,
+            "run_environment_ratio": self.cfg_obj.command.rel_run_envs,
+            "run_velocity_x": tuple(self.cfg_obj.command.run_velocity_x),
+            "run_velocity_curriculum": tuple(
+                (int(stage.step), stage.run_velocity_x)
+                for stage in self.cfg_obj.run_command_curriculum
+            ),
+            "bound_gait_reward": self.cfg_obj.rewards.bound_gait,
+            "run_progress_reward": self.cfg_obj.rewards.run_progress,
         }
 
     def _initialize_buffers(self) -> None:
@@ -473,6 +591,7 @@ class Go1WarpVelocityEnv:
         self._is_standing_env = torch.zeros_like(self._is_heading_env)
         self._is_world_env = torch.zeros_like(self._is_heading_env)
         self._is_forward_env = torch.zeros_like(self._is_heading_env)
+        self._is_run_env = torch.zeros_like(self._is_heading_env)
         self._command_counter = torch.zeros(
             self.num_envs, dtype=torch.long, device=self._torch_device
         )
@@ -491,6 +610,7 @@ class Go1WarpVelocityEnv:
             self.num_envs, dtype=torch.long, device=self._torch_device
         )
         self.common_step_counter = 0
+        self.profile_step_counter = 0
         self.step_counter = 0
 
         self._push_step_left = torch.zeros(
@@ -861,6 +981,7 @@ class Go1WarpVelocityEnv:
         self._profile_mark(profile_marks, "start")
         action = self._prepare_actions(actions)
         self.common_step_counter += 1
+        self.profile_step_counter += 1
         self._previous_previous_action.copy_(self._previous_action)
         self._previous_action.copy_(self._action)
         self._action.copy_(action)
@@ -976,10 +1097,12 @@ class Go1WarpVelocityEnv:
 
     def training_state_dict(self) -> dict[str, Any]:
         return {
-            "version": 1,
+            "version": 2,
             "backend": "mujoco-warp",
             "num_envs": self.num_envs,
             "common_step_counter": int(self.common_step_counter),
+            "training_profile": self.cfg_obj.training_profile,
+            "profile_step_counter": int(self.profile_step_counter),
             "terrain_curriculum": build_terrain_curriculum_state(
                 self._terrain_levels.detach().cpu().numpy(),
                 self._terrain_types.detach().cpu().numpy(),
@@ -991,13 +1114,22 @@ class Go1WarpVelocityEnv:
 
     def load_training_state_dict(self, state: Mapping[str, Any]) -> dict[str, Any]:
         version = int(state.get("version", 0))
-        if version not in (0, 1):
+        if version not in (0, 1, 2):
             raise RuntimeError(f"unsupported Go1 Warp training checkpoint version {version}")
         self.set_training_progress(int(state.get("common_step_counter", 0)))
+        saved_profile = state.get("training_profile")
+        profile_restored = saved_profile == self.cfg_obj.training_profile
+        self.profile_step_counter = (
+            max(0, int(state.get("profile_step_counter", 0)))
+            if profile_restored
+            else 0
+        )
+        self._apply_command_curriculum()
         terrain_state = state.get("terrain_curriculum")
         if not isinstance(terrain_state, Mapping):
             return {
                 "common_step_counter": int(self.common_step_counter),
+                "profile_curriculum": "exact" if profile_restored else "restarted",
                 "terrain_curriculum": "legacy_initial_levels",
             }
 
@@ -1017,6 +1149,7 @@ class Go1WarpVelocityEnv:
         self.reset()
         return {
             "common_step_counter": int(self.common_step_counter),
+            "profile_curriculum": "exact" if profile_restored else "restarted",
             "terrain_curriculum": "exact" if exact else "resampled_for_num_envs",
             "mean_terrain_level": float(self._terrain_levels.float().mean()),
         }
@@ -1149,7 +1282,15 @@ class Go1WarpVelocityEnv:
                 ranges.lin_vel_y = stage.lin_vel_y
             if stage.ang_vel_z is not None:
                 ranges.ang_vel_z = stage.ang_vel_z
+        run_stage = 0
+        for index, stage in enumerate(self.cfg_obj.run_command_curriculum):
+            if self.profile_step_counter < int(stage.step):
+                continue
+            run_stage = index
+            if stage.run_velocity_x is not None:
+                self.cfg_obj.command.run_velocity_x = stage.run_velocity_x
         self._current_command_stage = stage_index
+        self._current_run_command_stage = run_stage
 
     def _reset_commands(self, env_ids: torch.Tensor) -> None:
         self._command_counter[env_ids] = 0
@@ -1187,6 +1328,19 @@ class Go1WarpVelocityEnv:
         if forward_ids.numel() > 0:
             self._command[forward_ids, 0] = self._command[forward_ids, 0].abs().clamp(min=0.3)
             self._command[forward_ids, 1:] = 0.0
+        self._is_run_env[env_ids] = (
+            self._uniform((count,), 0.0, 1.0) <= float(cfg.rel_run_envs)
+        )
+        run_ids = env_ids[self._is_run_env[env_ids]]
+        if run_ids.numel() > 0:
+            run_low, run_high = sorted(float(value) for value in cfg.run_velocity_x)
+            self._command[run_ids, 0] = self._uniform(
+                (int(run_ids.numel()),), max(0.0, run_low), max(0.0, run_high)
+            )
+            self._command[run_ids, 1:] = 0.0
+            self._command_world[run_ids] = self._command[run_ids]
+            self._is_heading_env[run_ids] = False
+            self._is_world_env[run_ids] = False
         self._command_counter[env_ids] += 1
 
     def _compute_commands(self, *, dt: float) -> None:
@@ -1215,6 +1369,7 @@ class Go1WarpVelocityEnv:
         if standing_ids.numel() > 0:
             self._command[standing_ids] = 0.0
             self._command_world[standing_ids] = 0.0
+            self._is_run_env[standing_ids] = False
 
     def _heading(self) -> torch.Tensor:
         quaternion = self._arrays["xquat"][:, self._base_body_id]
@@ -1519,6 +1674,33 @@ class Go1WarpVelocityEnv:
         terms[:, 13] = self._reward_weights[13] * collision_costs["self_collision"]
         terms[:, 14] = self._reward_weights[14] * collision_costs["shank_ground_touch"]
         terms[:, 15] = self._reward_weights[15] * collision_costs["trunk_ground_touch"]
+        if "run_progress" in self._reward_term_names:
+            progress_index = self._reward_term_names.index("run_progress")
+            run_progress = (
+                linear_body[:, 0] / self._command[:, 0].clamp(min=0.1)
+            ).clamp(min=0.0, max=1.0) * self._is_run_env.float()
+            terms[:, progress_index] = (
+                self._reward_weights[progress_index] * run_progress
+            )
+        if "bound_gait" in self._reward_term_names:
+            gait_index = self._reward_term_names.index("bound_gait")
+            gait_score = _bound_gait_score_torch(
+                foot_found,
+                foot_velocity,
+                self._foot_height,
+                self._action,
+                linear_body[:, 0],
+                self._command[:, 0],
+                self._is_run_env,
+                foot_indices=self._gait_foot_indices,
+                joint_indices=self._gait_joint_indices,
+                motion_std=reward_cfg.bound_gait_motion_std,
+                action_std=reward_cfg.bound_gait_action_std,
+                height_sync_std=reward_cfg.bound_gait_height_sync_std,
+                height_separation_std=reward_cfg.bound_gait_height_separation_std,
+                trot_penalty=reward_cfg.bound_gait_trot_penalty,
+            )
+            terms[:, gait_index] = self._reward_weights[gait_index] * gait_score
         torch.nan_to_num(terms, nan=0.0, posinf=0.0, neginf=0.0, out=terms)
         self._reward.copy_(terms.sum(dim=1) * self.step_dt)
         self._episode_returns.add_(self._reward)
@@ -1635,6 +1817,9 @@ class Go1WarpVelocityEnv:
             "/velocity/command_stage": torch.tensor(
                 float(self._current_command_stage), device=self._torch_device
             ),
+            "/velocity/run_command_stage": torch.tensor(
+                float(self._current_run_command_stage), device=self._torch_device
+            ),
             "/velocity/reset_reason": reset_reason.float().mean(),
             "/velocity/command_speed": torch.linalg.vector_norm(
                 self._command[:, :2], dim=1
@@ -1644,6 +1829,7 @@ class Go1WarpVelocityEnv:
             "/velocity/command_vx": self._command[:, 0].mean(),
             "/velocity/command_vy": self._command[:, 1].mean(),
             "/velocity/command_yaw": self._command[:, 2].mean(),
+            "/velocity/run_env_ratio": self._is_run_env.float().mean(),
         }
         terrain_level_sums = torch.zeros(
             self._spawn_cols, dtype=torch.float32, device=self._torch_device

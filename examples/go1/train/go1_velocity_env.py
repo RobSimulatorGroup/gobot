@@ -38,6 +38,7 @@ from .go1_velocity_cfg import (
     Go1VelocityCfg,
     go1_velocity_cfg,
 )
+from .go1_gait import bound_gait_score_numpy, gait_foot_indices, gait_joint_indices
 from .go1_scene_runtime import prepare_go1_scene
 from .go1_training_state import (
     build_terrain_curriculum_state,
@@ -141,10 +142,17 @@ class Go1VelocityEnv(LocomotionBatchEnv):
         self._episode_start_xy = np.zeros((self.num_envs, 2), dtype=np.float32)
         self._episode_returns = np.zeros(self.num_envs, dtype=np.float32)
         self.common_step_counter = 0
-        self._reward_term_names = GO1_ROUGH_REWARD_TERM_NAMES
+        self.profile_step_counter = 0
+        self._reward_term_names = GO1_ROUGH_REWARD_TERM_NAMES + (
+            ("run_progress", "bound_gait")
+            if self.cfg_obj.training_profile == "run"
+            else ()
+        )
         self._advance_task_time = False
 
         self._foot_count = len(self.cfg_obj.foot_names)
+        self._gait_foot_indices = gait_foot_indices(self.cfg_obj.foot_names)
+        self._gait_joint_indices = gait_joint_indices(self.joint_names)
         self._encoder_bias = np.zeros((self.num_envs, self.num_actions), dtype=np.float32)
         self._push_time_left = np.zeros(self.num_envs, dtype=np.float32)
         self._push_step_left = np.zeros(self.num_envs, dtype=np.int64)
@@ -264,6 +272,15 @@ class Go1VelocityEnv(LocomotionBatchEnv):
             "push_interval_range_s": self.cfg_obj.push_interval_range_s,
             "terrain_out_of_bounds": self.cfg_obj.terrain_out_of_bounds,
             "terrain_distance_buffer": self.cfg_obj.terrain_distance_buffer,
+            "training_profile": self.cfg_obj.training_profile,
+            "run_environment_ratio": self.cfg_obj.command.rel_run_envs,
+            "run_velocity_x": tuple(self.cfg_obj.command.run_velocity_x),
+            "run_velocity_curriculum": tuple(
+                (int(stage.step), stage.run_velocity_x)
+                for stage in self.cfg_obj.run_command_curriculum
+            ),
+            "bound_gait_reward": self.cfg_obj.rewards.bound_gait,
+            "run_progress_reward": self.cfg_obj.rewards.run_progress,
             "fast_batch_view": bool(getattr(self.backend, "is_fast", False)),
         }
         self.extras: dict[str, Any] = {}
@@ -425,6 +442,7 @@ class Go1VelocityEnv(LocomotionBatchEnv):
         self.clear_step_final_observation()
         profile_marks = self._new_profile_marks()
         self.common_step_counter += 1
+        self.profile_step_counter += 1
 
         t0 = self.perf_counter()
         action_np = self._prepare_actions(actions)
@@ -595,10 +613,12 @@ class Go1VelocityEnv(LocomotionBatchEnv):
 
     def training_state_dict(self) -> dict[str, Any]:
         return {
-            "version": 1,
+            "version": 2,
             "backend": "mujoco-cpu",
             "num_envs": self.num_envs,
             "common_step_counter": int(self.common_step_counter),
+            "training_profile": self.cfg_obj.training_profile,
+            "profile_step_counter": int(self.profile_step_counter),
             "terrain_curriculum": build_terrain_curriculum_state(
                 self._spawn_env_levels,
                 self._spawn_type_cols,
@@ -610,13 +630,22 @@ class Go1VelocityEnv(LocomotionBatchEnv):
 
     def load_training_state_dict(self, state: Mapping[str, Any]) -> dict[str, Any]:
         version = int(state.get("version", 0))
-        if version not in (0, 1):
+        if version not in (0, 1, 2):
             raise RuntimeError(f"unsupported Go1 CPU training checkpoint version {version}")
         self.set_training_progress(int(state.get("common_step_counter", 0)))
+        saved_profile = state.get("training_profile")
+        profile_restored = saved_profile == self.cfg_obj.training_profile
+        self.profile_step_counter = (
+            max(0, int(state.get("profile_step_counter", 0)))
+            if profile_restored
+            else 0
+        )
+        self._apply_command_curriculum()
         terrain_state = state.get("terrain_curriculum")
         if not isinstance(terrain_state, Mapping):
             return {
                 "common_step_counter": int(self.common_step_counter),
+                "profile_curriculum": "exact" if profile_restored else "restarted",
                 "terrain_curriculum": "legacy_initial_levels",
             }
 
@@ -636,6 +665,7 @@ class Go1VelocityEnv(LocomotionBatchEnv):
         self.reset()
         return {
             "common_step_counter": int(self.common_step_counter),
+            "profile_curriculum": "exact" if profile_restored else "restarted",
             "terrain_curriculum": "exact" if exact else "resampled_for_num_envs",
             "mean_terrain_level": float(np.mean(self._spawn_env_levels)),
         }
@@ -659,6 +689,7 @@ class Go1VelocityEnv(LocomotionBatchEnv):
             "/velocity/encoder_bias_abs": np.asarray(log_values["encoder_bias_abs"], dtype=np.float32),
             "/velocity/push_count": np.asarray(log_values["push_count"], dtype=np.float32),
             "/velocity/command_stage": np.asarray(float(self._current_command_stage), dtype=np.float32),
+            "/velocity/run_command_stage": np.asarray(float(self._current_run_command_stage), dtype=np.float32),
             "/velocity/reset_reason": np.asarray(float(np.mean(reset_reason)), dtype=np.float32),
             "/velocity/command_speed": np.asarray(float(np.mean(np.linalg.norm(command[:, :2], axis=1))), dtype=np.float32),
             "/velocity/command_yaw_abs": np.asarray(float(np.mean(np.abs(command[:, 2]))), dtype=np.float32),
@@ -667,6 +698,9 @@ class Go1VelocityEnv(LocomotionBatchEnv):
             "/velocity/command_vx": np.asarray(float(np.mean(command[:, 0])), dtype=np.float32),
             "/velocity/command_vy": np.asarray(float(np.mean(command[:, 1])), dtype=np.float32),
             "/velocity/command_yaw": np.asarray(float(np.mean(command[:, 2])), dtype=np.float32),
+            "/velocity/run_env_ratio": np.asarray(
+                float(np.mean(self.backend.state.command_is_run_env)), dtype=np.float32
+            ),
         }
 
     def _make_observation_schemas(self) -> tuple[ObservationSpec, ObservationSpec]:
@@ -893,24 +927,7 @@ class Go1VelocityEnv(LocomotionBatchEnv):
 
     def _reward_weights(self) -> tuple[float, ...]:
         reward_cfg = self.cfg_obj.rewards
-        return (
-            reward_cfg.track_linear_velocity,
-            reward_cfg.track_angular_velocity,
-            reward_cfg.upright,
-            reward_cfg.pose,
-            reward_cfg.body_ang_vel,
-            reward_cfg.angular_momentum,
-            reward_cfg.dof_pos_limits,
-            reward_cfg.action_rate_l2,
-            reward_cfg.air_time,
-            reward_cfg.foot_clearance,
-            reward_cfg.foot_swing_height,
-            reward_cfg.foot_slip,
-            reward_cfg.soft_landing,
-            reward_cfg.self_collisions,
-            reward_cfg.shank_collision,
-            reward_cfg.trunk_head_collision,
-        )
+        return tuple(float(getattr(reward_cfg, name)) for name in self._reward_term_names)
 
     def _pose_std_array(self, hip_thigh: float, calf: float) -> np.ndarray:
         std = np.full((self.num_actions,), float(hip_thigh), dtype=np.float32)
@@ -933,6 +950,9 @@ class Go1VelocityEnv(LocomotionBatchEnv):
             rel_heading_envs=command_cfg.rel_heading_envs,
             rel_world_envs=command_cfg.rel_world_envs,
             rel_forward_envs=command_cfg.rel_forward_envs,
+            rel_run_envs=command_cfg.rel_run_envs,
+            run_velocity_x_min=command_cfg.run_velocity_x[0],
+            run_velocity_x_max=command_cfg.run_velocity_x[1],
             heading_command=command_cfg.heading_command,
             heading_control_stiffness=command_cfg.heading_control_stiffness,
             zero_small_xy_threshold=command_cfg.zero_small_xy_threshold,
@@ -1066,12 +1086,25 @@ class Go1VelocityEnv(LocomotionBatchEnv):
                 ranges.lin_vel_y = stage.lin_vel_y
             if stage.ang_vel_z is not None:
                 ranges.ang_vel_z = stage.ang_vel_z
+        run_stage = 0
+        for index, stage in enumerate(self.cfg_obj.run_command_curriculum):
+            if self.profile_step_counter < int(stage.step):
+                continue
+            run_stage = index
+            if stage.run_velocity_x is not None:
+                self.cfg_obj.command.run_velocity_x = stage.run_velocity_x
         self._current_command_stage = current_stage
+        self._current_run_command_stage = run_stage
         if hasattr(self, "backend"):
             self.backend.set_command_ranges(
                 lin_vel_x=ranges.lin_vel_x,
                 lin_vel_y=ranges.lin_vel_y,
                 ang_vel_z=ranges.ang_vel_z,
+            )
+            self.backend.set_command_run_sampling(
+                rel_run_envs=self.cfg_obj.command.rel_run_envs,
+                run_velocity_x_min=self.cfg_obj.command.run_velocity_x[0],
+                run_velocity_x_max=self.cfg_obj.command.run_velocity_x[1],
             )
 
     def _reset_all(self):
@@ -1215,6 +1248,41 @@ class Go1VelocityEnv(LocomotionBatchEnv):
             "trunk_head_collision",
             weights[15] * np.asarray(state.trunk_head_collision_count, dtype=np.float32),
         )
+        run_mask = np.asarray(
+            getattr(state, "command_is_run_env", np.zeros(self.num_envs, dtype=bool)),
+            dtype=bool,
+        )
+        if "run_progress" in self._reward_term_names:
+            progress_index = self._reward_term_names.index("run_progress")
+            run_progress = np.clip(
+                lin_vel[:, 0] / np.maximum(command[:, 0], 0.1),
+                0.0,
+                1.0,
+            ) * run_mask
+            self._set_reward_term(
+                terms,
+                "run_progress",
+                weights[progress_index] * run_progress,
+            )
+        if "bound_gait" in self._reward_term_names:
+            gait_index = self._reward_term_names.index("bound_gait")
+            gait_score = bound_gait_score_numpy(
+                foot_contact,
+                foot_vel,
+                foot_height,
+                current_action,
+                lin_vel[:, 0],
+                command[:, 0],
+                run_mask,
+                foot_indices=self._gait_foot_indices,
+                joint_indices=self._gait_joint_indices,
+                motion_std=reward_cfg.bound_gait_motion_std,
+                action_std=reward_cfg.bound_gait_action_std,
+                height_sync_std=reward_cfg.bound_gait_height_sync_std,
+                height_separation_std=reward_cfg.bound_gait_height_separation_std,
+                trot_penalty=reward_cfg.bound_gait_trot_penalty,
+            )
+            self._set_reward_term(terms, "bound_gait", weights[gait_index] * gait_score)
         np.nan_to_num(terms, copy=False, nan=0.0, posinf=0.0, neginf=0.0)
         np.copyto(state.reward, (np.sum(terms, axis=1) * step_dt).astype(np.float32))
 

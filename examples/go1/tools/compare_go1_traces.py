@@ -37,7 +37,9 @@ TOLERANCES: dict[str, NumericTolerance] = {
     # 3.8 and 3.10 even though qpos, qvel, contact state, and rewards agree.
     "sensors.contact_force": NumericTolerance(15.0),
     "reward": NumericTolerance(1.0e-6),
-    "reward_terms": NumericTolerance(1.0e-5),
+    # A fresh isolated Warp kernel cache can shift the angular tracker by
+    # 1.1920929e-5 while qpos, qvel, and the integrated reward still agree.
+    "reward_terms": NumericTolerance(2.0e-5),
 }
 
 CRITIC_STATE_DIM = 247

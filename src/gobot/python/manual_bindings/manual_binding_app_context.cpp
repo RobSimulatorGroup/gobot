@@ -217,6 +217,8 @@ public:
                 VectorArrayView(batch_runtime_.CommandRuntime().WorldEnvironmentMask(), {EnvDim()}, owner, false);
         arrays["command_is_forward_env"] =
                 VectorArrayView(batch_runtime_.CommandRuntime().ForwardEnvironmentMask(), {EnvDim()}, owner, false);
+        arrays["command_is_run_env"] =
+                VectorArrayView(batch_runtime_.CommandRuntime().RunEnvironmentMask(), {EnvDim()}, owner, false);
         arrays["command_ranges"] =
                 VectorArrayView(batch_runtime_.CommandRuntime().Ranges(), {CommandRangeDim()}, owner, true);
         arrays["step_profile_ms"] =
@@ -392,6 +394,9 @@ public:
                           double rel_heading_envs,
                           double rel_world_envs,
                           double rel_forward_envs,
+                          double rel_run_envs,
+                          double run_velocity_x_min,
+                          double run_velocity_x_max,
                           bool heading_command,
                           double heading_control_stiffness,
                           double zero_small_xy_threshold,
@@ -417,6 +422,10 @@ public:
         config.heading_environment_ratio = rel_heading_envs;
         config.world_environment_ratio = rel_world_envs;
         config.forward_environment_ratio = rel_forward_envs;
+        config.run_environment_ratio = rel_run_envs;
+        config.run_velocity_x = {
+                static_cast<RealType>(run_velocity_x_min),
+                static_cast<RealType>(run_velocity_x_max)};
         config.heading_command = heading_command;
         config.heading_control_stiffness = heading_control_stiffness;
         config.zero_small_xy_threshold = zero_small_xy_threshold;
@@ -434,6 +443,15 @@ public:
                 {static_cast<RealType>(lin_vel_x_min), static_cast<RealType>(lin_vel_x_max)},
                 {static_cast<RealType>(lin_vel_y_min), static_cast<RealType>(lin_vel_y_max)},
                 {static_cast<RealType>(ang_vel_z_min), static_cast<RealType>(ang_vel_z_max)});
+    }
+
+    void SetCommandRunSampling(double rel_run_envs,
+                               double run_velocity_x_min,
+                               double run_velocity_x_max) {
+        batch_runtime_.CommandRuntime().SetRunSampling(
+                static_cast<RealType>(rel_run_envs),
+                {static_cast<RealType>(run_velocity_x_min),
+                 static_cast<RealType>(run_velocity_x_max)});
     }
 
     void ResetCommands(const std::vector<std::size_t>& env_ids) {
@@ -1133,6 +1151,9 @@ void RegisterManualAppContextBindings(py::module_& module) {
                  py::arg("rel_heading_envs"),
                  py::arg("rel_world_envs"),
                  py::arg("rel_forward_envs"),
+                 py::arg("rel_run_envs"),
+                 py::arg("run_velocity_x_min"),
+                 py::arg("run_velocity_x_max"),
                  py::arg("heading_command"),
                  py::arg("heading_control_stiffness"),
                  py::arg("zero_small_xy_threshold"),
@@ -1145,6 +1166,11 @@ void RegisterManualAppContextBindings(py::module_& module) {
                  py::arg("lin_vel_y_max"),
                  py::arg("ang_vel_z_min"),
                  py::arg("ang_vel_z_max"))
+            .def("set_command_run_sampling",
+                 &PyLocomotionBatchView::SetCommandRunSampling,
+                 py::arg("rel_run_envs"),
+                 py::arg("run_velocity_x_min"),
+                 py::arg("run_velocity_x_max"))
             .def("reset_commands",
                  &PyLocomotionBatchView::ResetCommands,
                  py::arg("env_ids"))

@@ -21,7 +21,7 @@ from gobot.rl.policy import (
 )
 from gobot.rl.rsl_rl import RslRlVecEnvWrapper
 
-from .go1_velocity_cfg import go1_velocity_cfg, rsl_rl_train_cfg
+from .go1_velocity_cfg import apply_training_profile, go1_velocity_cfg, rsl_rl_train_cfg
 from .go1_velocity_env import Go1VelocityEnv
 from .go1_warp_velocity_env import Go1WarpVelocityEnv
 from .go1_velocity_video import Go1TrainingVideoCfg, Go1TrainingVideoRecorder, VideoCheckpointRunnerMixin
@@ -63,6 +63,15 @@ def build_arg_parser() -> argparse.ArgumentParser:
     parser.add_argument("--log-dir", "--log_dir", type=str, default="logs/go1_rough_velocity")
     parser.add_argument("--device", type=str, default="cuda:0" if torch.cuda.is_available() else "cpu")
     parser.add_argument("--seed", type=int, default=42)
+    parser.add_argument(
+        "--training-profile",
+        choices=("balanced", "run"),
+        default="balanced",
+        help=(
+            "Command sampling profile. 'run' keeps normal commands and reserves "
+            "60% of environments for a profile-local 1.5-3.5 m/s curriculum."
+        ),
+    )
     parser.add_argument("--sim-workers", type=int, default=0, help="CPU workers for batched physics stepping. 0 uses hardware concurrency; 1 keeps stepping serial.")
     parser.add_argument("--profile-step", action="store_true", help="Log rolling Go1 env step phase timings.")
     parser.add_argument("--profile-memory", action="store_true", help="Print RSS/CUDA memory after each training iteration.")
@@ -99,6 +108,7 @@ def resolve_log_dir(log_dir_arg: str, project_path: Path) -> Path:
 
 def build_velocity_cfg(args: argparse.Namespace, project_path: Path):
     cfg = go1_velocity_cfg(project_path=project_path)
+    apply_training_profile(cfg, args.training_profile)
     if args.terrain_curriculum is not None:
         cfg.terrain_curriculum = bool(args.terrain_curriculum)
     cfg.observations.actor_noise = bool(args.obs_noise)
@@ -238,6 +248,19 @@ def build_policy_manifest(
             "critic_observation_spec": env.critic_observation_spec.metadata(),
             "solver_settings": dict(cfg.mujoco_solver_settings),
             "height_scan_max_distance": float(cfg.observations.terrain_scan_max_distance),
+            "training_profile": str(cfg.training_profile),
+            "run_environment_ratio": float(cfg.command.rel_run_envs),
+            "run_velocity_x": tuple(float(value) for value in cfg.command.run_velocity_x),
+            "run_velocity_curriculum": tuple(
+                {
+                    "step": int(stage.step),
+                    "run_velocity_x": tuple(float(value) for value in stage.run_velocity_x),
+                }
+                for stage in cfg.run_command_curriculum
+                if stage.run_velocity_x is not None
+            ),
+            "bound_gait_reward": float(cfg.rewards.bound_gait),
+            "run_progress_reward": float(cfg.rewards.run_progress),
         },
     )
 
@@ -255,6 +278,7 @@ def run_training(args: argparse.Namespace) -> tuple[Path, Path]:
     print(f"Backend: {args.backend}")
     print(f"Device: {args.device}")
     print(f"Envs: {args.num_envs}")
+    print(f"Training profile: {cfg.training_profile}")
     print(f"Log dir: {log_dir}")
 
     if args.profile_memory:
@@ -389,6 +413,7 @@ def print_training_summary(
         ("backend", args.backend),
         ("device", args.device),
         ("envs", args.num_envs),
+        ("training profile", cfg.training_profile),
         ("iterations", args.iterations),
         ("rollout steps/env", train_cfg["num_steps_per_env"]),
         ("sim workers", f"requested={args.sim_workers}, resolved={env.resolved_sim_workers}"),

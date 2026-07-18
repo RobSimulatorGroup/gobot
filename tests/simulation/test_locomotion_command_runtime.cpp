@@ -118,5 +118,38 @@ TEST(TestLocomotionCommandRuntime, AppliesHeadingFeedbackWithinYawLimits) {
     EXPECT_NEAR(runtime.HeadingErrors()[0], 1.5707963f, 1.0e-6f);
 }
 
+TEST(TestLocomotionCommandRuntime, RunSamplingProducesPureForwardCommands) {
+    LocomotionCommandRuntime runtime(64);
+    LocomotionCommandConfig config = DeterministicCommandConfig(73);
+    config.heading_environment_ratio = 1.0;
+    config.world_environment_ratio = 1.0;
+    config.forward_environment_ratio = 1.0;
+    config.run_environment_ratio = 1.0;
+    config.run_velocity_x = {1.8, 2.2};
+    runtime.Configure(config);
+
+    std::vector<std::size_t> env_ids(64);
+    for (std::size_t index = 0; index < env_ids.size(); ++index) {
+        env_ids[index] = index;
+    }
+    runtime.Reset(env_ids);
+    std::vector<float> identity_quaternions(64 * 4, 0.0f);
+    for (std::size_t index = 0; index < 64; ++index) {
+        identity_quaternions[index * 4] = 1.0f;
+    }
+    runtime.UpdateFrames(identity_quaternions);
+
+    for (std::size_t index = 0; index < 64; ++index) {
+        const auto command = CommandForEnvironment(runtime, index);
+        EXPECT_GE(command[0], 1.8f);
+        EXPECT_LE(command[0], 2.2f);
+        EXPECT_FLOAT_EQ(command[1], 0.0f);
+        EXPECT_FLOAT_EQ(command[2], 0.0f);
+        EXPECT_EQ(runtime.RunEnvironmentMask()[index], 1);
+        EXPECT_EQ(runtime.HeadingEnvironmentMask()[index], 0);
+        EXPECT_EQ(runtime.WorldEnvironmentMask()[index], 0);
+    }
+}
+
 } // namespace
 } // namespace gobot

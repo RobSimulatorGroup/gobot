@@ -38,6 +38,22 @@ TEST(TestInput, KeyQueriesRequireControlFocus) {
     EXPECT_FALSE(input->IsKeyHeldByName("W"));
 }
 
+TEST(TestInput, KeyQueriesIncludeHighValueModifierScancodes) {
+    auto* input = GetTestInput();
+    input->SetControlFocus(true);
+
+    gobot::KeyCode parsed = gobot::KeyCode::Unknown;
+    ASSERT_TRUE(gobot::Input::TryParseKeyName("LeftShift", parsed));
+    EXPECT_EQ(parsed, gobot::KeyCode::LeftShift);
+    ASSERT_TRUE(gobot::Input::TryParseKeyName("right_shift", parsed));
+    EXPECT_EQ(parsed, gobot::KeyCode::RightShift);
+
+    FireKeyPressed(gobot::KeyCode::LeftShift);
+    EXPECT_TRUE(input->IsKeyHeldByName("LeftShift"));
+    FireKeyReleased(gobot::KeyCode::LeftShift);
+    EXPECT_FALSE(input->IsKeyHeldByName("LeftShift"));
+}
+
 TEST(TestInput, ControlFocusClearsJustPressedState) {
     auto* input = GetTestInput();
 

@@ -29,6 +29,8 @@ struct LocomotionCommandConfig {
     RealType heading_environment_ratio{0.3};
     RealType world_environment_ratio{0.0};
     RealType forward_environment_ratio{0.2};
+    RealType run_environment_ratio{0.0};
+    std::array<RealType, 2> run_velocity_x{1.5, 2.5};
     bool heading_command{true};
     RealType heading_control_stiffness{0.5};
     RealType zero_small_xy_threshold{0.0};
@@ -54,6 +56,9 @@ public:
     void SetVelocityRanges(const std::array<RealType, 2>& linear_velocity_x,
                            const std::array<RealType, 2>& linear_velocity_y,
                            const std::array<RealType, 2>& angular_velocity_z);
+
+    void SetRunSampling(RealType run_environment_ratio,
+                        const std::array<RealType, 2>& run_velocity_x);
 
     void Reset(std::span<const std::size_t> environment_indices);
 
@@ -100,6 +105,9 @@ public:
 
     std::span<std::uint8_t> ForwardEnvironmentMask();
     std::span<const std::uint8_t> ForwardEnvironmentMask() const;
+
+    std::span<std::uint8_t> RunEnvironmentMask();
+    std::span<const std::uint8_t> RunEnvironmentMask() const;
 
     std::span<float> Ranges();
     std::span<const float> Ranges() const;
@@ -150,6 +158,7 @@ private:
     std::vector<std::uint8_t> standing_environment_mask_;
     std::vector<std::uint8_t> world_environment_mask_;
     std::vector<std::uint8_t> forward_environment_mask_;
+    std::vector<std::uint8_t> run_environment_mask_;
     std::vector<float> ranges_;
 };
 

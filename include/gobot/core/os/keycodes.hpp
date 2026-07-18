@@ -8,6 +8,7 @@
 #pragma once
 
 #include <cstdint>
+#include <magic_enum/magic_enum.hpp>
 
 namespace gobot {
 
@@ -319,10 +320,20 @@ enum class KeyModifiers : std::uint16_t {
     Mode = 0x4000,
     ScrollLock = 0x8000,
 
-    Ctrl = LeftShift | RightShift,
+    Ctrl = LeftCtrl | RightCtrl,
     Shift = LeftShift | RightShift,
     Alt = LeftAlt | RightAlt,
     Super = LeftSuper | RightSuper
 };
 
 } // end of namespace gobot
+
+namespace magic_enum::customize {
+
+template <>
+struct enum_range<gobot::KeyCode> {
+    static constexpr int min = 0;
+    static constexpr int max = static_cast<int>(gobot::KeyCode::KeyCodeMaxNum) - 1;
+};
+
+} // namespace magic_enum::customize

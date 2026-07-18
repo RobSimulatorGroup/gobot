@@ -103,6 +103,13 @@ class VelocityRewardCfg:
     self_collisions: float = -0.1
     shank_collision: float = -0.1
     trunk_head_collision: float = -0.1
+    run_progress: float = 0.0
+    bound_gait: float = 0.0
+    bound_gait_motion_std: float = 1.0
+    bound_gait_action_std: float = 0.5
+    bound_gait_height_sync_std: float = 0.04
+    bound_gait_height_separation_std: float = 0.05
+    bound_gait_trot_penalty: float = 0.5
     lin_vel_std: float = math.sqrt(0.25)
     ang_vel_std: float = math.sqrt(0.5)
     upright_std: float = math.sqrt(0.2)
@@ -174,6 +181,7 @@ class Go1VelocityCfg:
     """Single source of truth for Go1 rough-terrain training and playback."""
 
     name: str = GO1_TASK_NAME
+    training_profile: Literal["balanced", "run"] = "balanced"
     project_path: str | Path = "examples/go1"
     scene_path: str = "res://go1_scene.jscn"
     robot_name: str = "go1"
@@ -218,6 +226,8 @@ class Go1VelocityCfg:
             rel_heading_envs=0.3,
             rel_world_envs=0.0,
             rel_forward_envs=0.2,
+            rel_run_envs=0.0,
+            run_velocity_x=(1.5, 2.5),
             heading_command=True,
             heading_control_stiffness=0.5,
             zero_small_xy_threshold=0.0,
@@ -231,8 +241,11 @@ class Go1VelocityCfg:
     )
     command_curriculum: tuple[VelocityCommandStage, ...] = (
         VelocityCommandStage(step=0),
-        VelocityCommandStage(step=120_000, lin_vel_x=(-1.5, 2.0), ang_vel_z=(-0.7, 0.7)),
-        VelocityCommandStage(step=240_000, lin_vel_x=(-2.0, 3.0)),
+        VelocityCommandStage(step=60_000, lin_vel_x=(-1.5, 2.0), ang_vel_z=(-0.7, 0.7)),
+        VelocityCommandStage(step=120_000, lin_vel_x=(-2.0, 3.0)),
+    )
+    run_command_curriculum: tuple[VelocityCommandStage, ...] = (
+        VelocityCommandStage(step=0, run_velocity_x=(1.5, 2.5)),
     )
     rewards: VelocityRewardCfg = field(default_factory=VelocityRewardCfg)
 
@@ -249,6 +262,29 @@ def go1_velocity_cfg(
         cfg.observations.actor_noise = False
         cfg.domain_randomization.enabled = False
         cfg.push_enabled = False
+    return cfg
+
+
+def apply_training_profile(
+    cfg: Go1VelocityCfg,
+    profile: Literal["balanced", "run"],
+) -> Go1VelocityCfg:
+    if profile not in {"balanced", "run"}:
+        raise ValueError(f"unsupported Go1 training profile {profile!r}")
+    cfg.training_profile = profile
+    if profile == "run":
+        cfg.command.rel_forward_envs = max(cfg.command.rel_forward_envs, 0.3)
+        cfg.command.rel_run_envs = 0.6
+        cfg.command.run_velocity_x = (1.5, 2.5)
+        cfg.command_curriculum = cfg.command_curriculum[:2]
+        cfg.run_command_curriculum = (
+            VelocityCommandStage(step=0, run_velocity_x=(1.5, 2.5)),
+            VelocityCommandStage(step=100 * 24, run_velocity_x=(2.0, 3.0)),
+            VelocityCommandStage(step=250 * 24, run_velocity_x=(2.5, 3.5)),
+        )
+        cfg.rewards.track_linear_velocity = 4.0
+        cfg.rewards.run_progress = 4.0
+        cfg.rewards.bound_gait = 3.0
     return cfg
 
 

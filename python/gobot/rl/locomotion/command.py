@@ -27,6 +27,8 @@ class UniformVelocityCommandCfg:
     rel_heading_envs: float = 0.3
     rel_world_envs: float = 0.0
     rel_forward_envs: float = 0.2
+    rel_run_envs: float = 0.0
+    run_velocity_x: tuple[float, float] = (1.5, 2.5)
     heading_command: bool = True
     heading_control_stiffness: float = 0.5
     zero_small_xy_threshold: float = 0.0
@@ -40,6 +42,7 @@ class VelocityCommandStage:
     lin_vel_x: tuple[float, float] | None = None
     lin_vel_y: tuple[float, float] | None = None
     ang_vel_z: tuple[float, float] | None = None
+    run_velocity_x: tuple[float, float] | None = None
 
 
 class VelocityCommandEnv(Protocol):
@@ -60,6 +63,7 @@ class UniformVelocityCommand:
         self.is_standing_env = np.zeros(env.num_envs, dtype=bool)
         self.is_world_env = np.zeros(env.num_envs, dtype=bool)
         self.is_forward_env = np.zeros(env.num_envs, dtype=bool)
+        self.is_run_env = np.zeros(env.num_envs, dtype=bool)
         self.time_left = np.zeros(env.num_envs, dtype=np.float32)
         self.metrics: dict[str, np.ndarray] = {
             "error_vel_xy": np.zeros(env.num_envs, dtype=np.float32),
@@ -138,9 +142,23 @@ class UniformVelocityCommand:
             self.command_b[forward_ids, 0] = np.maximum(np.abs(self.command_b[forward_ids, 0]), 0.3)
             self.command_b[forward_ids, 1] = 0.0
             self.command_b[forward_ids, 2] = 0.0
+        self.is_run_env[env_ids] = (
+            self.env._rng.uniform(0.0, 1.0, size=env_ids.shape) <= self.cfg.rel_run_envs
+        )
+        run_ids = env_ids[self.is_run_env[env_ids]]
+        if run_ids.size:
+            run_low, run_high = sorted(float(value) for value in self.cfg.run_velocity_x)
+            self.command_b[run_ids, 0] = self.env._rng.uniform(
+                max(0.0, run_low), max(0.0, run_high), size=run_ids.shape
+            )
+            self.command_b[run_ids, 1:] = 0.0
+            self.command_w[run_ids] = self.command_b[run_ids]
+            self.is_heading_env[run_ids] = False
+            self.is_world_env[run_ids] = False
         standing_ids = env_ids[self.is_standing_env[env_ids]]
         if standing_ids.size:
             self.command_b[standing_ids] = 0.0
+            self.is_run_env[standing_ids] = False
         self.heading_error[env_ids] = 0.0
 
     def _update_heading_and_world_commands(self, states: Sequence[Any | None]) -> None:
