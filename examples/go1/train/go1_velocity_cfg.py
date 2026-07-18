@@ -11,17 +11,14 @@ from typing import Any, Literal, Mapping
 from gobot.rl.locomotion import UniformVelocityCommandCfg, UniformVelocityCommandRanges, VelocityCommandStage
 
 from ..go1_profile import (
-    GO1_ARMATURE,
     GO1_DEFAULT_JOINT_POS,
-    GO1_EFFORT_LIMIT,
     GO1_FOOT_LINK_NAMES,
     GO1_FOOT_NAMES,
     GO1_JOINT_NAMES,
     GO1_KD,
     GO1_KP,
-    GO1_VELOCITY_LIMIT,
 )
-from ..go1_velocity_contract import GO1_TASK_NAME, GO1_TASK_VERSION
+from ..go1_velocity_contract import GO1_TASK_NAME
 
 
 GO1_PHYSICS_DT = 0.005
@@ -346,24 +343,14 @@ def rsl_rl_train_cfg(
 
 __all__ = [
     "GO1_ACTION_SCALE",
-    "GO1_ARMATURE",
-    "GO1_DEFAULT_JOINT_POS",
-    "GO1_EFFORT_LIMIT",
-    "GO1_FOOT_LINK_NAMES",
-    "GO1_FOOT_NAMES",
-    "GO1_JOINT_NAMES",
-    "GO1_KD",
-    "GO1_KP",
     "GO1_MUJOCO_SOLVER_SETTINGS",
     "GO1_ROUGH_REWARD_TERM_NAMES",
-    "GO1_TASK_NAME",
-    "GO1_TASK_VERSION",
-    "GO1_VELOCITY_LIMIT",
     "Go1VelocityCfg",
     "VelocityDomainRandomizationCfg",
     "VelocityIllegalContactCfg",
     "VelocityObservationCfg",
     "VelocityRewardCfg",
+    "apply_training_profile",
     "go1_velocity_cfg",
     "rsl_rl_train_cfg",
 ]

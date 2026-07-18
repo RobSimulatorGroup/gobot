@@ -11,9 +11,9 @@ import torch
 
 import gobot
 
+from examples.go1.go1_velocity_contract import GO1_TASK_VERSION
 from examples.go1.train.go1_velocity_cfg import (
     GO1_ROUGH_REWARD_TERM_NAMES,
-    GO1_TASK_VERSION,
     go1_velocity_cfg,
 )
 from examples.go1.train.go1_warp_velocity_env import Go1WarpVelocityEnv

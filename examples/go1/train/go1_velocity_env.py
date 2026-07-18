@@ -28,13 +28,13 @@ from gobot.rl.locomotion import (
     velocity_critic_observation_schema,
 )
 from gobot.rl.locomotion.math import (
-    _find_node_by_name,
-    _quat_from_yaw,
+    find_node_by_name,
+    quaternion_from_yaw,
 )
 
+from ..go1_velocity_contract import GO1_TASK_VERSION
 from .go1_velocity_cfg import (
     GO1_ROUGH_REWARD_TERM_NAMES,
-    GO1_TASK_VERSION,
     Go1VelocityCfg,
     go1_velocity_cfg,
 )
@@ -78,16 +78,6 @@ def _iter_nodes(node):
 
 def _node_names_by_type(root, type_name: str) -> list[str]:
     return [node.name for node in _iter_nodes(root) if getattr(node, "type", "") == type_name]
-
-
-def _node_names_by_base_type(root, base_type: str) -> list[str]:
-    if base_type != "Sensor3D":
-        return _node_names_by_type(root, base_type)
-    return [
-        node.name
-        for node in _iter_nodes(root)
-        if str(getattr(node, "type", "")).endswith("Sensor3D") or hasattr(node, "sensor_period")
-    ]
 
 
 class Go1VelocityEnv(LocomotionBatchEnv):
@@ -825,7 +815,7 @@ class Go1VelocityEnv(LocomotionBatchEnv):
     def _sensor_dim(self, sensor_name: str | None) -> int:
         if sensor_name is None:
             return 0
-        sensor = self.robot.find(sensor_name) or _find_node_by_name(self.robot, sensor_name)
+        sensor = self.robot.find(sensor_name) or find_node_by_name(self.robot, sensor_name)
         if sensor is None:
             return 0
         if getattr(sensor, "pattern_mode", None) == gobot.RayPatternMode.Grid:
@@ -1464,7 +1454,7 @@ class Go1VelocityEnv(LocomotionBatchEnv):
             orientation = np.asarray([1.0, 0.0, 0.0, 0.0], dtype=np.float32)
             if self.cfg_obj.randomize_reset_yaw:
                 yaw = float(self._rng.uniform(-3.14, 3.14))
-                orientation = _quat_from_yaw(yaw)
+                orientation = quaternion_from_yaw(yaw)
             base_positions[row] = np.asarray([float(spawn[0]), float(spawn[1]), float(base_z)], dtype=np.float32)
             base_orientations[row] = orientation
             base_linear_velocities[row] = reset_lin_vel

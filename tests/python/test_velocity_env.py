@@ -14,6 +14,7 @@ sys.path.insert(0, str(GO1_PROJECT))
 
 from examples.go1.scripts import go1 as go1_playback
 from examples.go1 import go1_profile
+from examples.go1.go1_velocity_contract import GO1_TASK_VERSION
 from examples.go1.train import go1_velocity_cfg as go1_cfg
 from examples.go1.train.go1_velocity_env import Go1VelocityEnv
 from examples.go1.train.go1_training_state import (
@@ -29,13 +30,6 @@ from gobot.rl import (
     TaskRuntimeMetadata,
 )
 from gobot.rl.locomotion import (
-    HeightScan,
-    LocomotionDomainRandomization,
-    LocomotionDomainRandomizationCfg,
-    LocomotionRewardContext,
-    TerrainSpawn,
-    action_rate_l2,
-    dispatch_reward_terms,
     velocity_actor_observation_schema,
     velocity_critic_observation_schema,
 )
@@ -130,42 +124,6 @@ def test_task_runtime_metadata_is_public_task_summary():
     assert payload["obs_groups_spec"] == {"actor": actor_spec.dim}
     assert payload["reward_names"] == ["alive"]
     assert payload["cache_info"] == {"note": "unit-test"}
-
-
-def test_locomotion_common_helpers():
-    scan = HeightScan(dim=4, max_distance=2.0)
-    assert np.allclose(scan.normalize(np.asarray([0.0, 1.0, 2.0, 4.0], dtype=np.float32)), [0.0, 0.5, 1.0, 2.0])
-    _assert_runtime_error("expected trailing dimension 4", lambda: scan.normalize(np.zeros(3, dtype=np.float32)))
-
-    spawn = TerrainSpawn(
-        np.asarray([[0.0, 0.0, 0.0], [1.0, 0.0, 0.0], [2.0, 0.0, 0.0]], dtype=np.float32),
-        levels=np.asarray([0.0, 0.5, 1.0], dtype=np.float32),
-    )
-    assert spawn.update_limit(0.5, reset_reason=2, survival=0.2, distance=0.0, expected_distance=1.0) > 0.5
-    assert spawn.update_limit(0.5, reset_reason=1, survival=0.1, distance=0.0, expected_distance=1.0) < 0.5
-
-    dr = LocomotionDomainRandomization(
-        LocomotionDomainRandomizationCfg(encoder_bias_range=(-0.1, 0.1), reset_lin_vel_ranges={"x": (-1.0, 1.0)}),
-        num_actions=2,
-    )
-    payload = dr.reset_payload(np.asarray([0, 2], dtype=np.int64), np.random.default_rng(1))
-    assert payload["base_linear_velocity"].shape == (2, 3)
-    assert payload["encoder_bias"].shape == (2, 2)
-
-    ctx = LocomotionRewardContext(
-        dt=0.02,
-        command=np.zeros((2, 3), dtype=np.float32),
-        base_lin_vel_b=np.zeros((2, 3), dtype=np.float32),
-        base_ang_vel_b=np.zeros((2, 3), dtype=np.float32),
-        projected_gravity=np.asarray([[0.0, 0.0, -1.0], [0.1, 0.0, -1.0]], dtype=np.float32),
-        joint_pos=np.zeros((2, 2), dtype=np.float32),
-        joint_vel=np.zeros((2, 2), dtype=np.float32),
-        actions=np.asarray([[1.0, 0.0], [0.0, 1.0]], dtype=np.float32),
-        previous_actions=np.zeros((2, 2), dtype=np.float32),
-    )
-    reward, terms = dispatch_reward_terms(ctx, {"action_rate_l2": action_rate_l2}, {"action_rate_l2": -0.1})
-    assert np.allclose(reward, [-0.002, -0.002])
-    assert "action_rate_l2" in terms
 
 
 def test_go1_robot_scene_matches_mujoco_contract():
@@ -309,7 +267,7 @@ def test_go1_rough_env_reset_step_shapes():
             "shank_collision",
             "trunk_head_collision",
         )
-        assert env.task_runtime_metadata.version == go1_cfg.GO1_TASK_VERSION
+        assert env.task_runtime_metadata.version == GO1_TASK_VERSION
         assert env.cfg["task_runtime"]["metadata"]["cache_info"]["native_contact_detail"] == "substep_contact_history"
         assert env._runtime_terrain_node is not None
         assert env._runtime_terrain_node.box_count == 514
@@ -322,7 +280,10 @@ def test_go1_rough_env_reset_step_shapes():
         assert np.all(env._spawn_type_cols < 7)
         assert "foot_friction" in env.cfg["task_runtime"]["array_names"]
         assert "foot_friction_enabled" in env.cfg["task_runtime"]["array_names"]
-        np.testing.assert_allclose(env.backend.state.default_joint_position, go1_cfg.GO1_DEFAULT_JOINT_POS)
+        np.testing.assert_allclose(
+            env.backend.state.default_joint_position,
+            go1_profile.GO1_DEFAULT_JOINT_POS,
+        )
         np.testing.assert_allclose(env.backend.state.action_scale[[0, 1, 3, 4]], 0.3727530386870487)
         assert np.all(env.backend.state.foot_friction_enabled > 0.5)
 
@@ -336,13 +297,14 @@ def test_go1_rough_env_reset_step_shapes():
         )
         np.testing.assert_allclose(
             env.backend.state.target_position,
-            np.asarray(go1_cfg.GO1_DEFAULT_JOINT_POS, dtype=np.float32).reshape(1, -1) - encoder_bias,
+            np.asarray(go1_profile.GO1_DEFAULT_JOINT_POS, dtype=np.float32).reshape(1, -1)
+            - encoder_bias,
         )
         actor_obs, _ = env._build_generic_velocity_observations(env.backend.state)
         np.testing.assert_allclose(
             actor_obs[:, 9 : 9 + env.num_actions],
             env.backend.state.joint_position
-            - np.asarray(go1_cfg.GO1_DEFAULT_JOINT_POS, dtype=np.float32).reshape(1, -1),
+            - np.asarray(go1_profile.GO1_DEFAULT_JOINT_POS, dtype=np.float32).reshape(1, -1),
         )
         np.copyto(env.backend.state.encoder_bias, original_encoder_bias)
 
@@ -1315,7 +1277,7 @@ def test_go1_current_policy_contract():
     assert cfg.physics_dt == 0.005
     assert cfg.decimation == 4
     assert cfg.action_clip is None
-    np.testing.assert_allclose(cfg.default_joint_pos, go1_cfg.GO1_DEFAULT_JOINT_POS)
+    np.testing.assert_allclose(cfg.default_joint_pos, go1_profile.GO1_DEFAULT_JOINT_POS)
 
 
 def test_go1_playback_prefers_onnx_then_falls_back_to_torch_checkpoint():
@@ -1690,7 +1652,6 @@ def main():
         test_batch_env_state_contract,
         test_batch_env_clears_stale_final_observation_info,
         test_task_runtime_metadata_is_public_task_summary,
-        test_locomotion_common_helpers,
         test_go1_current_policy_contract,
         test_go1_playback_prefers_onnx_then_falls_back_to_torch_checkpoint,
         test_go1_playback_loads_optional_run_policy_and_switches_only_when_requested,

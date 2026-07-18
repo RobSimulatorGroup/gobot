@@ -7,6 +7,7 @@ from gobot.rl.locomotion import (
     build_velocity_actor_observation,
     velocity_actor_observation_schema,
 )
+from gobot.rl.locomotion.math import find_node_by_name
 from gobot.rl.policy import (
     policy_manifest_from_checkpoint,
     policy_manifest_from_onnx_metadata,
@@ -125,18 +126,6 @@ def _key_axis(input_state, negative_action, positive_action):
     if _key_held(input_state, positive_action):
         value += 1.0
     return value
-
-
-def _find_node_by_name(node, name):
-    if node is None:
-        return None
-    if node.name == name:
-        return node
-    for child in node.children:
-        found = _find_node_by_name(child, name)
-        if found is not None:
-            return found
-    return None
 
 
 def _quat_rotate_inv(vector, quaternion):
@@ -857,25 +846,25 @@ class Script(gobot.NodeScript):
             raise RuntimeError("Go1 script has no scene root")
         if root.name == ROBOT:
             return root
-        robot = root.find(ROBOT) or _find_node_by_name(root, ROBOT)
+        robot = root.find(ROBOT) or find_node_by_name(root, ROBOT)
         if robot is None:
             raise RuntimeError(f"scene has no robot node {ROBOT!r}")
         return robot
 
     def _find_joint(self, name):
-        joint = _find_node_by_name(self.robot, name)
+        joint = find_node_by_name(self.robot, name)
         if joint is None:
             raise RuntimeError(f"robot {self.robot.name!r} has no joint {name!r}")
         return joint
 
     def _find_link(self, name):
-        link = _find_node_by_name(self.robot, name)
+        link = find_node_by_name(self.robot, name)
         if link is None:
             raise RuntimeError(f"robot {self.robot.name!r} has no link {name!r}")
         return link
 
     def _find_sensor(self, name):
-        sensor = _find_node_by_name(self.robot, name)
+        sensor = find_node_by_name(self.robot, name)
         if sensor is None:
             raise RuntimeError(f"robot {self.robot.name!r} has no sensor {name!r}")
         return sensor

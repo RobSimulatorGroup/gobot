@@ -104,9 +104,6 @@ class LocomotionBatchEnv(CpuBatchEnv):
             + self.action_scale.reshape(1, -1) * actions
         ).astype(np.float64)
 
-    def _target_positions_from_actions(self, actions: np.ndarray) -> np.ndarray:
-        return self.target_positions_from_actions(actions)
-
     def _action_scale_array(self, scale: float | Mapping[str, float]) -> np.ndarray:
         if self.num_actions <= 0:
             return np.zeros((0,), dtype=np.float32)

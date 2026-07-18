@@ -8,21 +8,21 @@ from typing import Any, Mapping, Sequence
 import numpy as np
 
 import gobot
-from gobot.rl.locomotion.math import _find_node_by_name
+from gobot.rl.locomotion.math import find_node_by_name
 
-from .go1_velocity_cfg import (
+from ..go1_profile import (
     GO1_ARMATURE,
     GO1_EFFORT_LIMIT,
     GO1_VELOCITY_LIMIT,
-    Go1VelocityCfg,
 )
+from .go1_velocity_cfg import Go1VelocityCfg
 
 
 def find_robot_node(context: gobot.AppContext, cfg: Go1VelocityCfg):
     root = context.root
     robot = root.find(cfg.robot_name) if root is not None else None
     if robot is None:
-        robot = _find_node_by_name(root, cfg.robot_name)
+        robot = find_node_by_name(root, cfg.robot_name)
     if robot is None:
         raise RuntimeError(f"Gobot scene has no robot named {cfg.robot_name!r}")
     return robot
@@ -72,7 +72,7 @@ def configure_robot_drives(robot, cfg: Go1VelocityCfg) -> None:
     joint_kp = joint_gain_array(cfg.kp, len(cfg.joint_names))
     joint_kd = joint_gain_array(cfg.kd, len(cfg.joint_names))
     for joint_index, joint_name in enumerate(cfg.joint_names):
-        joint = robot.find(joint_name) or _find_node_by_name(robot, joint_name)
+        joint = robot.find(joint_name) or find_node_by_name(robot, joint_name)
         if joint is None:
             raise RuntimeError(f"Gobot Go1 scene has no configured joint {joint_name!r}")
         joint.drive_mode = gobot.JointDriveMode.Position

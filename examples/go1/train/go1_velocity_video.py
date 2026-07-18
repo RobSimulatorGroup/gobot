@@ -13,7 +13,7 @@ import numpy as np
 
 import gobot
 from gobot.rl.rsl_rl import RslRlVecEnvWrapper
-from gobot.rl.locomotion.math import _quat_to_yaw
+from gobot.rl.locomotion.math import quaternion_to_yaw
 
 from .go1_velocity_env import Go1VelocityEnv
 
@@ -291,7 +291,7 @@ class Go1TrainingVideoRecorder:
         base_position = np.asarray(state.base_position[env_id], dtype=np.float32)
         start = base_position + np.array([0.0, 0.0, 0.30], dtype=np.float32)
         command_b = np.asarray(env.command_b[env_id], dtype=np.float32)
-        yaw = _quat_to_yaw(state.base_quaternion[env_id])
+        yaw = quaternion_to_yaw(state.base_quaternion[env_id])
         command_world = np.array(
             [
                 math.cos(yaw) * command_b[0] - math.sin(yaw) * command_b[1],

@@ -26,6 +26,10 @@ This example keeps the robot project self-contained:
 - `tools/refresh_go1_robot_scene.py` regenerates the editable robot scene from the source MJCF.
 - `project.gobot` sets `go1_scene.jscn` as the project main scene.
 
+Training logs and `*_candidate.*` policies are disposable local outputs.
+Promote selected actors to the four `go1_velocity{,_run}.{pt,onnx}` paths;
+training, export, and playback do not depend on retained log directories.
+
 ## Validated Behavior (Gobot 0.1.12, 2026-07-17)
 
 The normal walking policy remains `model_5600.pt`, selected from
@@ -172,7 +176,7 @@ uv run --extra train --extra mujoco-warp \
   --iterations 1000 \
   --save-interval 25 \
   --training-profile run \
-  --checkpoint examples/go1/logs/go1_warp_aligned_2048/model_5600.pt \
+  --checkpoint examples/go1/policies/go1_velocity.pt \
   --no-step-extras \
   --log-dir logs/go1_warp_run \
   --policy-out policies/go1_velocity_run_candidate.pt
@@ -280,7 +284,7 @@ level, type, and individual level/type cell:
 ```bash
 uv run --extra train --extra mujoco-warp \
   python -m examples.go1.tools.evaluate_velocity_policy \
-  examples/go1/logs/go1_rough_velocity/model_900.pt \
+  examples/go1/policies/go1_velocity.pt \
   --device cuda:0 \
   --command-x 1.0 \
   --command-y 0.0 \
@@ -345,7 +349,7 @@ Export the selected run checkpoint separately:
 
 ```bash
 uv run --extra train python -m examples.go1.tools.export_policy_onnx \
-  --checkpoint examples/go1/logs/go1_warp_bound_progress_2048/model_6575.pt \
+  --checkpoint examples/go1/policies/go1_velocity_run.pt \
   --output examples/go1/policies/go1_velocity_run.onnx
 ```
 

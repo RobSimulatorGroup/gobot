@@ -34,13 +34,6 @@ FOOT_COLLISION_PATTERN = re.compile(r"^[FR][LR]_foot_collision$")
 COLLISION_PATTERN = re.compile(r"_collision\d*$")
 
 
-def _required_child(root: gobot.Node, path: str) -> gobot.Node:
-    node = root.find(path)
-    if node is None:
-        raise RuntimeError(f"expected Go1 scene node '{path}' while refreshing robot sensors")
-    return node
-
-
 def _find_by_name(root: gobot.Node, name: str) -> gobot.Node | None:
     if root.name == name:
         return root

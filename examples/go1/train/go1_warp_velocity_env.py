@@ -5,7 +5,6 @@ from __future__ import annotations
 import math
 from pathlib import Path
 import re
-from types import MappingProxyType
 from typing import Any, Mapping, Sequence
 
 import numpy as np
@@ -27,6 +26,7 @@ from gobot.rl.locomotion import (
     velocity_critic_observation_schema,
 )
 
+from ..go1_velocity_contract import GO1_TASK_VERSION
 from .go1_scene_runtime import (
     prepare_go1_scene,
     terrain_generator_config,
@@ -38,7 +38,6 @@ from .go1_training_state import (
 )
 from .go1_velocity_cfg import (
     GO1_ROUGH_REWARD_TERM_NAMES,
-    GO1_TASK_VERSION,
     Go1VelocityCfg,
     go1_velocity_cfg,
 )

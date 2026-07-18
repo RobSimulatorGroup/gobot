@@ -478,10 +478,6 @@ def _cuda_host_memory_stats(device: str) -> dict[str, float] | None:
     }
 
 
-def _trim_cpu_allocator() -> None:
-    return
-
-
 def _synchronize_device(device: str) -> None:
     torch_device = torch.device(device)
     if torch_device.type != "cuda" or not torch.cuda.is_available():
