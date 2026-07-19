@@ -3,29 +3,59 @@
 from __future__ import annotations
 
 import argparse
+from functools import wraps
 import json
 from pathlib import Path
-from typing import Any, Sequence
+from typing import Any, Sequence, TYPE_CHECKING
 
 import numpy as np
-import torch
 
 import gobot
 from gobot.rl.policy import policy_manifest_from_checkpoint
 
-from examples.go1.tools.checkpoint_policy import CheckpointPolicy
 from examples.go1.train.go1_gait import GO1_GAIT_FOOT_ORDER, gait_joint_indices
 from examples.go1.train.go1_scene_runtime import (
     prepare_go1_scene,
     terrain_spawn_origins,
 )
 from examples.go1.train.go1_velocity_cfg import go1_velocity_cfg
-from examples.go1.train.go1_warp_velocity_env import Go1WarpVelocityEnv
+
+if TYPE_CHECKING:
+    import torch
+
+    from examples.go1.tools.checkpoint_policy import CheckpointPolicy
+    from examples.go1.train.go1_warp_velocity_env import Go1WarpVelocityEnv
+else:
+    try:
+        import torch
+    except ModuleNotFoundError as error:
+        if error.name != "torch":
+            raise
+        torch = None
 
 
 REPO_ROOT = Path(__file__).resolve().parents[3]
 GO1_PROJECT = REPO_ROOT / "examples/go1"
 DEFAULT_MIN_PROGRESS_RATIO = 0.5
+
+
+def _require_torch():
+    if torch is None:
+        raise RuntimeError(
+            "Go1 policy evaluation requires PyTorch; install the complete Gobot "
+            "Python environment."
+        )
+    return torch
+
+
+def _torch_inference_mode(function):
+    @wraps(function)
+    def wrapped(*args, **kwargs):
+        framework = _require_torch()
+        with framework.inference_mode():
+            return function(*args, **kwargs)
+
+    return wrapped
 
 
 def _evaluation_cfg(*, command_x: float, command_y: float, command_yaw: float):
@@ -51,6 +81,7 @@ def _terrain_assignments(
     env: Go1WarpVelocityEnv,
     episodes_per_cell: int,
 ) -> tuple[torch.Tensor, torch.Tensor]:
+    _require_torch()
     levels: list[int] = []
     types: list[int] = []
     for level in range(env._spawn_rows):
@@ -78,6 +109,9 @@ def _reset_to_assignments(
 
 
 def _load_policy(path: Path, device: str) -> CheckpointPolicy:
+    _require_torch()
+    from examples.go1.tools.checkpoint_policy import CheckpointPolicy
+
     checkpoint = torch.load(path, map_location="cpu", weights_only=False)
     manifest = policy_manifest_from_checkpoint(checkpoint)
     if manifest is None:
@@ -101,6 +135,7 @@ def _terrain_type_names(env: Go1WarpVelocityEnv) -> list[str]:
 
 
 def _footfall_patterns(contacts: torch.Tensor) -> dict[str, torch.Tensor]:
+    _require_torch()
     if contacts.ndim != 2 or contacts.shape[1] != len(GO1_GAIT_FOOT_ORDER):
         raise ValueError(
             f"foot contacts must have shape (num_envs, {len(GO1_GAIT_FOOT_ORDER)})"
@@ -213,7 +248,7 @@ def _group_metrics(
     }
 
 
-@torch.inference_mode()
+@_torch_inference_mode
 def evaluate_checkpoint(
     env: Go1WarpVelocityEnv,
     checkpoint: Path,
@@ -453,6 +488,9 @@ def evaluate(
     max_steps: int,
     min_progress_ratio: float,
 ) -> dict[str, Any]:
+    _require_torch()
+    from examples.go1.train.go1_warp_velocity_env import Go1WarpVelocityEnv
+
     cfg = _evaluation_cfg(
         command_x=command_x,
         command_y=command_y,

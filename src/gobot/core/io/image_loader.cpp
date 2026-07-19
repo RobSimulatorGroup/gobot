@@ -7,6 +7,7 @@
 
 
 #include "gobot/core/io/image_loader.hpp"
+#include "gobot/core/io/image_loader_stb.hpp"
 #include <fstream>
 #include "gobot/core/config/project_setting.hpp"
 #include "gobot/error_macros.hpp"
@@ -32,7 +33,18 @@ Ref<Image> ImageLoader::LoadImage(const std::string& path,
                                   LoaderFlags flags,
                                   float scale) {
 
-    std::string global_path = ProjectSettings::GetInstance()->GlobalizePath(ValidateLocalPath(path));
+    if (s_loaders.empty()) {
+        AddImageFormatLoader(MakeRef<ImageLoaderStb>());
+    }
+
+    std::string global_path;
+    if (std::filesystem::path(path).is_absolute()) {
+        global_path = path;
+    } else if (ProjectSettings::HasInstance()) {
+        global_path = ProjectSettings::GetInstance()->GlobalizePath(ValidateLocalPath(path));
+    } else {
+        global_path = std::filesystem::absolute(path).lexically_normal().string();
+    }
 
     ERR_FAIL_COND_V_MSG(!std::filesystem::exists(global_path), {}, fmt::format("Cannot open file: {}.", path));
     std::ifstream instream(global_path, std::ios::in | std::ios::binary);

@@ -19,7 +19,7 @@ permissions:
 jobs:
   build-wheels:
     name: Build wheel for Python ${{ matrix.python-version }}
-    runs-on: ubuntu-22.04
+    runs-on: [self-hosted, linux, x64, gpu]
     strategy:
       fail-fast: false
       matrix:
@@ -56,13 +56,15 @@ jobs:
           python-version: ${{ matrix.python-version }}
 
       - name: Install build tools
-        run: python -m pip install -U auditwheel build patchelf
+        run: python -m pip install -U 'cmake>=3.26' ninja auditwheel build packaging patchelf
 
       - name: Install native dependencies
         run: |
           sudo apt-get update
           sudo apt-get install -y \
             autoconf \
+            gcc-11 \
+            g++-11 \
             libeigen3-dev \
             libgl-dev \
             libx11-dev \
@@ -82,11 +84,51 @@ jobs:
             vim-common \
             xorg-dev
 
+      - name: Check CUDA build environment
+        run: |
+          nvidia-smi
+          nvcc --version
+
+      - name: Resolve LuisaCompute cache key
+        id: luisa-cache-key
+        run: |
+          {
+            git -C 3rdparty/luisa_compute rev-parse HEAD
+            sha256sum scripts/build_luisa_compute.sh
+            nvcc --version
+            g++-11 --version
+          } > "$RUNNER_TEMP/luisa-cache-key"
+          echo "value=$(sha256sum "$RUNNER_TEMP/luisa-cache-key" | cut -d' ' -f1)" >> "$GITHUB_OUTPUT"
+
+      - name: Restore LuisaCompute install
+        id: luisa-cache
+        uses: actions/cache@v4
+        with:
+          path: build/luisa_compute/install
+          key: luisa-cuda-${{ runner.os }}-${{ steps.luisa-cache-key.outputs.value }}
+
+      - name: Build LuisaCompute CUDA runtime
+        if: steps.luisa-cache.outputs.cache-hit != 'true'
+        run: scripts/build_luisa_compute.sh
+
       - name: Build wheel
         run: python -m build --wheel --outdir wheelhouse-unrepaired
 
       - name: Repair wheel
-        run: python -m auditwheel repair --plat manylinux_2_35_x86_64 --wheel-dir wheelhouse wheelhouse-unrepaired/*.whl
+        run: |
+          python -m auditwheel repair \
+            --exclude libcuda.so.1 \
+            --exclude libEGL.so.1 \
+            --exclude libGLdispatch.so.0 \
+            --exclude libGLX.so.0 \
+            --exclude libOpenGL.so.0 \
+            --exclude libGL.so.1 \
+            --plat manylinux_2_35_x86_64 \
+            --wheel-dir wheelhouse \
+            wheelhouse-unrepaired/*.whl
+
+      - name: Verify complete wheel payload
+        run: python scripts/verify_release_wheel.py wheelhouse/*.whl
 
       - name: Upload wheel
         uses: actions/upload-artifact@v4
@@ -101,6 +143,11 @@ jobs:
     runs-on: ubuntu-latest
 
     steps:
+      - name: Check out verification script
+        uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+
       - name: Download distributions
         uses: actions/download-artifact@v4
         with:
@@ -117,7 +164,9 @@ jobs:
         run: python -m pip install -U twine
 
       - name: Check distributions
-        run: twine check dist/*
+        run: |
+          twine check dist/*
+          python scripts/verify_release_wheel.py dist/*.whl
 
       - name: Upload distributions
         uses: actions/upload-artifact@v4

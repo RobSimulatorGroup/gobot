@@ -12,8 +12,8 @@ runtime path that conflicts with this one.
   `PhysicsSceneSnapshot`; it does not traverse or retain scene nodes.
 - `SimulationServer` owns the scene bindings needed to synchronize runtime
   state into a Play Mode scene. Backends never write scene nodes directly.
-- Renderers consume scene/render items. They do not own scene data or editor
-  policy.
+- Renderers consume immutable `SceneRenderSnapshot` values. They do not
+  traverse scene nodes or own scene data and editor policy.
 - The editor composes scene, simulation, rendering, commands, and tools.
 - Python bindings expose these services without exposing backend pointers,
   native ids, OpenGL handles, or editor widget internals.

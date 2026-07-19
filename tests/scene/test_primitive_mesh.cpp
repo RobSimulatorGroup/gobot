@@ -15,6 +15,22 @@
 #include <gobot/scene/resources/primitive_mesh.hpp>
 #include "gobot/rendering/render_server.hpp"
 
+namespace {
+
+void ExpectCompleteTexturedSurface(const gobot::Ref<gobot::Mesh>& mesh) {
+    const auto surfaces = mesh->GetSurfaceData();
+    ASSERT_NE(surfaces, nullptr);
+    ASSERT_EQ(surfaces->size(), 1);
+    const gobot::MeshSurfaceData& surface = surfaces->front();
+    ASSERT_FALSE(surface.vertices.empty());
+    EXPECT_EQ(surface.normals.size(), surface.vertices.size());
+    EXPECT_EQ(surface.uv0.size(), surface.vertices.size());
+    EXPECT_EQ(surface.tangents.size(), surface.vertices.size());
+    EXPECT_EQ(surface.indices.size() % 3, 0);
+}
+
+} // namespace
+
 TEST(TestBoxMesh, test_create) {
     auto render_server = std::make_unique<gobot::RenderServer>();
 
@@ -27,6 +43,7 @@ TEST(TestBoxMesh, test_create) {
     auto material = box_mesh->Get("material");
     gobot::Instance instance(material);
     ASSERT_TRUE(material.is_valid());
+    ExpectCompleteTexturedSurface(box_mesh);
 }
 
 TEST(TestBoxMesh, test_cast) {
@@ -48,6 +65,7 @@ TEST(TestCylinderMesh, test_properties_and_cast) {
     EXPECT_FLOAT_EQ(cylinder_mesh->GetRadius(), 0.75f);
     EXPECT_FLOAT_EQ(cylinder_mesh->GetHeight(), 2.5f);
     EXPECT_EQ(cylinder_mesh->GetRadialSegments(), 4);
+    ExpectCompleteTexturedSurface(cylinder_mesh);
 
     gobot::Variant variant = cylinder_mesh;
     ASSERT_TRUE(variant.can_convert<gobot::Ref<gobot::PrimitiveMesh>>());
@@ -64,6 +82,7 @@ TEST(TestSphereMesh, test_properties_and_cast) {
     EXPECT_FLOAT_EQ(sphere_mesh->GetRadius(), 1.25f);
     EXPECT_EQ(sphere_mesh->GetRadialSegments(), 6);
     EXPECT_EQ(sphere_mesh->GetRings(), 5);
+    ExpectCompleteTexturedSurface(sphere_mesh);
 
     gobot::Variant variant = sphere_mesh;
     ASSERT_TRUE(variant.can_convert<gobot::Ref<gobot::PrimitiveMesh>>());
@@ -77,6 +96,7 @@ TEST(TestPlaneMesh, test_properties_and_cast) {
 
     EXPECT_FLOAT_EQ(plane_mesh->GetSize().x(), 4.0f);
     EXPECT_FLOAT_EQ(plane_mesh->GetSize().y(), 5.0f);
+    ExpectCompleteTexturedSurface(plane_mesh);
 
     gobot::Variant variant = plane_mesh;
     ASSERT_TRUE(variant.can_convert<gobot::Ref<gobot::PrimitiveMesh>>());

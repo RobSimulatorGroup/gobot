@@ -5,6 +5,7 @@
 #include <algorithm>
 
 #include <gobot/core/io/resource_format_mesh.hpp>
+#include <gobot/core/config/project_setting.hpp>
 #include <gobot/rendering/render_server.hpp>
 #include <gobot/scene/resources/array_mesh.hpp>
 
@@ -20,6 +21,7 @@ TEST(TestResourceFormatMesh, imports_triangle_mesh_when_assimp_is_available) {
 #ifndef GOBOT_HAS_ASSIMP
     GTEST_SKIP() << "Assimp support is not enabled.";
 #else
+    gobot::ProjectSettings project_settings;
     auto render_server = std::make_unique<gobot::RenderServer>();
 
     const std::filesystem::path fixture_path =
@@ -87,5 +89,40 @@ TEST(TestResourceFormatMesh, preserves_collada_z_up_node_axis_transform) {
 
     EXPECT_LT(max_abs_y, 1e-4f);
     EXPECT_LT(min_z, -1.5f);
+#endif
+}
+
+TEST(TestResourceFormatMesh, preserves_multiple_surfaces_uv_tangents_and_material_textures) {
+#ifndef GOBOT_HAS_ASSIMP
+    GTEST_SKIP() << "Assimp support is not enabled.";
+#else
+    gobot::ProjectSettings project_settings;
+    auto render_server = std::make_unique<gobot::RenderServer>();
+    const std::filesystem::path fixture_path =
+            std::filesystem::current_path() / "tests/fixtures/mesh/two_material.obj";
+
+    gobot::ResourceFormatLoaderMesh loader;
+    const auto resource = loader.Load(
+            fixture_path.string(), fixture_path.string(), gobot::ResourceFormatLoader::CacheMode::Ignore);
+    const auto mesh = gobot::dynamic_pointer_cast<gobot::ArrayMesh>(resource);
+    ASSERT_TRUE(mesh.IsValid());
+
+    const gobot::MeshSurfaceList surfaces = mesh->GetSurfaces();
+    ASSERT_EQ(surfaces.size(), 2);
+    bool found_texture = false;
+    for (const gobot::MeshSurfaceData& surface : surfaces) {
+        EXPECT_EQ(surface.vertices.size(), 3);
+        EXPECT_EQ(surface.uv0.size(), surface.vertices.size());
+        EXPECT_EQ(surface.tangents.size(), surface.vertices.size());
+        const auto material = gobot::dynamic_pointer_cast<gobot::PBRMaterial3D>(surface.material);
+        ASSERT_TRUE(material.IsValid());
+        if (material->GetAlbedoTexture().IsValid()) {
+            found_texture = true;
+            ASSERT_TRUE(material->GetAlbedoTexture()->GetImage().IsValid());
+            EXPECT_GT(material->GetAlbedoTexture()->GetImage()->GetWidth(), 0);
+            EXPECT_GT(material->GetAlbedoTexture()->GetImage()->GetHeight(), 0);
+        }
+    }
+    EXPECT_TRUE(found_texture);
 #endif
 }

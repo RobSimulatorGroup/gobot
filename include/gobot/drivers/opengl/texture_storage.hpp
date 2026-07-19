@@ -106,18 +106,18 @@ public:
 
     void TextureFree(RID p_rid) override;
 
-    bool OwnsTexture(RID p_rid) { return texture_owner_.Owns(p_rid); };
+    bool OwnsTexture(RID p_rid) const override { return texture_owner_.Owns(p_rid); };
 
     inline Texture* GetTexture(RID rid) {
         Texture *texture = texture_owner_.GetOrNull(rid);
         return texture;
     }
 
-    void Texture2DInitialize(RID texture_id, const Ref<Image> &image);
+    void Texture2DInitialize(RID texture_id, const Ref<Image> &image) override;
 
     void Texture2DPlaceholderInitialize(RID texture);
 
-    void TextureSetData(RID texture_id, const Ref<Image> &image, int layer = 0);
+    void TextureSetData(RID texture_id, const Ref<Image> &image, int layer = 0) override;
 
     GLuint64 GetHandleBindless() const { return handle_bindless_; }
 

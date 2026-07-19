@@ -168,6 +168,7 @@ void Resource::SetPath(const std::string &path, bool take_over) {
         path_cache_registered_ = true;
     }
     ResourceCache::s_lock.unlock();
+    MarkChanged();
 
 }
 
@@ -188,11 +189,15 @@ void Resource::SetPathWithoutCache(const std::string& path) {
 
     path_cache_ = path;
     path_cache_registered_ = false;
+    MarkChanged();
 }
 
 void Resource::SetName(const std::string &name) {
+    if (name_ == name) {
+        return;
+    }
     name_ = name;
-    // TODO(notify resource changed)
+    MarkChanged();
 }
 
 std::string Resource::GetName() const {
@@ -200,7 +205,11 @@ std::string Resource::GetName() const {
 }
 
 void Resource::SetUniqueId(const std::string &unique_id) {
+    if (unique_id_ == unique_id) {
+        return;
+    }
     unique_id_ = unique_id;
+    MarkChanged();
 }
 
 std::string Resource::GetUniqueId() const {
@@ -282,6 +291,14 @@ bool Resource::CopyFrom(const Ref<Resource> &resource) {
 
 RID Resource::GetRid() const {
     return {};
+}
+
+std::uint64_t Resource::GetRevision() const noexcept {
+    return revision_.load(std::memory_order_relaxed);
+}
+
+void Resource::MarkChanged() noexcept {
+    revision_.fetch_add(1, std::memory_order_relaxed);
 }
 
 

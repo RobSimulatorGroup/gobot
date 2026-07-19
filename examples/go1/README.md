@@ -151,7 +151,7 @@ Train from the repository root:
 
 ```bash
 cd /home/wqq/gobot
-uv run --extra train --extra mujoco-warp \
+uv run \
   python -m examples.go1.train.go1_velocity_train \
   --backend mujoco-warp \
   --num-envs 2048 \
@@ -168,7 +168,7 @@ checkpoint with the explicit `run` profile:
 
 ```bash
 cd /home/wqq/gobot
-uv run --extra train --extra mujoco-warp \
+uv run \
   python -m examples.go1.train.go1_velocity_train \
   --backend mujoco-warp \
   --device cuda:0 \
@@ -194,13 +194,13 @@ script:
 
 ```bash
 cd /home/wqq/gobot
-uv run --extra train python -m examples.go1.train.go1_velocity_train --cpu-batch --iterations 10
+uv run python -m examples.go1.train.go1_velocity_train --cpu-batch --iterations 10
 ```
 
 The equivalent fully explicit CPU selection is:
 
 ```bash
-uv run --extra train python -m examples.go1.train.go1_velocity_train \
+uv run python -m examples.go1.train.go1_velocity_train \
   --backend mujoco-cpu \
   --device cpu \
   --num-envs 64 \
@@ -211,7 +211,7 @@ Benchmark the Gobot Go1 vector env hot path without the PPO learner:
 
 ```bash
 cd /home/wqq/gobot
-uv run --extra train python benchmark/go1_velocity_benchmark.py \
+uv run python benchmark/go1_velocity_benchmark.py \
   --backend mujoco-cpu \
   --num-envs 64 \
   --steps 100 \
@@ -227,7 +227,7 @@ before and after all steps so CUDA enqueue time is not reported as simulation
 throughput:
 
 ```bash
-uv run --extra train --extra mujoco-warp \
+uv run \
   python benchmark/go1_velocity_benchmark.py \
   --backend mujoco-warp \
   --num-envs 2048 \
@@ -262,7 +262,7 @@ MPLCONFIGDIR=/tmp/gobot-matplotlib .venv/bin/python \
   --output /tmp/go1_reference_trace.json \
   --device cuda:0
 
-uv run --extra train --extra mujoco-warp \
+uv run \
   python -m examples.go1.tools.export_gobot_trace \
   --output /tmp/go1_gobot_trace.json
 
@@ -282,7 +282,7 @@ admission, illegal-contact rates, and gait timing/error metrics by terrain
 level, type, and individual level/type cell:
 
 ```bash
-uv run --extra train --extra mujoco-warp \
+uv run \
   python -m examples.go1.tools.evaluate_velocity_policy \
   examples/go1/policies/go1_velocity.pt \
   --device cuda:0 \
@@ -314,7 +314,7 @@ Resume from the latest checkpoint in the log directory:
 
 ```bash
 cd /home/wqq/gobot
-uv run --extra train --extra mujoco-warp \
+uv run \
   python -m examples.go1.train.go1_velocity_train \
   --backend mujoco-warp \
   --num-envs 2048 \
@@ -340,7 +340,7 @@ Export a trained checkpoint for lightweight editor playback:
 
 ```bash
 cd /home/wqq/gobot
-uv run --extra train python -m examples.go1.tools.export_policy_onnx \
+uv run python -m examples.go1.tools.export_policy_onnx \
   --checkpoint examples/go1/policies/go1_velocity.pt \
   --output examples/go1/policies/go1_velocity.onnx
 ```
@@ -348,7 +348,7 @@ uv run --extra train python -m examples.go1.tools.export_policy_onnx \
 Export the selected run checkpoint separately:
 
 ```bash
-uv run --extra train python -m examples.go1.tools.export_policy_onnx \
+uv run python -m examples.go1.tools.export_policy_onnx \
   --checkpoint examples/go1/policies/go1_velocity_run.pt \
   --output examples/go1/policies/go1_velocity_run.onnx
 ```
@@ -364,7 +364,7 @@ To play the Torch checkpoint directly:
 ```bash
 cd /home/wqq/gobot
 GOBOT_GO1_POLICY=res://policies/go1_velocity.pt \
-  uv run --extra train gobot_editor --path examples/go1
+  uv run gobot_editor --path examples/go1
 ```
 
 After exporting `policies/go1_velocity.onnx`, play it in the editor with

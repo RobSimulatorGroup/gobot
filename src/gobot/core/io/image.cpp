@@ -7,6 +7,8 @@
 
 
 #include "gobot/core/io/image.hpp"
+#include "gobot/core/io/image_loader.hpp"
+#include "gobot/core/registration.hpp"
 #include "gobot/error_macros.hpp"
 #include "gobot/core/math/math_util.hpp"
 
@@ -379,14 +381,13 @@ Color Image::GetPixel(int x, int y) const {
 
 void Image::SetPixel(int x, int y, const Color& color) {
     uint32_t ofs = y * width_ + x;
-    return SetColorAtOfs(data_.data(), ofs, color);
+    SetColorAtOfs(data_.data(), ofs, color);
+    MarkChanged();
 }
 
 Ref<Image> Image::LoadFromFile(const std::string &path)
 {
-    // TODO(wqq)
-//    return gobot::dynamic_pointer_cast<Image>( ResourceFormatLoaderSDLImage::GetInstance()->Load(path));
-    return {};
+    return ImageLoader::LoadImage(path);
 }
 
 int Image::GetImageDataSize(int width, int height, ImageFormat format, bool mipmaps) {
@@ -400,6 +401,10 @@ std::string Image::GetFormatName(ImageFormat format) {
 }
 
 std::vector<uint8_t> Image::GetData() const {
+    return data_;
+}
+
+const std::vector<uint8_t>& Image::GetDataRef() const {
     return data_;
 }
 
@@ -698,6 +703,7 @@ void Image::InitializeData(int width, int height, bool use_mipmaps, ImageFormat 
     height_ = height;
     use_mipmaps_ = use_mipmaps;
     format_ = format;
+    MarkChanged();
 }
 
 void Image::InitializeData(int width, int height, bool use_mipmaps, ImageFormat format, const std::vector<uint8_t> &data) {
@@ -735,7 +741,20 @@ void Image::InitializeData(int width, int height, bool use_mipmaps, ImageFormat 
     format_ = format;
     data_ = data;
     use_mipmaps_ = use_mipmaps;
+    MarkChanged();
 
+}
+
+ImageStorageData Image::GetStorageData() const {
+    return {width_, height_, use_mipmaps_, format_, data_};
+}
+
+void Image::SetStorageData(const ImageStorageData& storage) {
+    InitializeData(storage.width,
+                   storage.height,
+                   storage.use_mipmaps,
+                   storage.format,
+                   storage.data);
 }
 
 std::array<Ref<Image>, 6> Image::ConvertEquirectangularMapToCubeMapFaces(const Ref<Image>& b) {
@@ -821,5 +840,22 @@ std::array<Ref<Image>, 6> Image::ConvertEquirectangularMapToCubeMapFaces(const R
     return cube_map;
 }
 
+}
 
+GOBOT_REGISTRATION {
+    QuickEnumeration_<ImageFormat>("ImageFormat");
+
+    Class_<ImageStorageData>("ImageStorageData")
+            .constructor()(CtorAsObject)
+            .property("width", &ImageStorageData::width)
+            .property("height", &ImageStorageData::height)
+            .property("use_mipmaps", &ImageStorageData::use_mipmaps)
+            .property("format", &ImageStorageData::format)
+            .property("data", &ImageStorageData::data);
+
+    Class_<Image>("Image")
+            .constructor()(CtorAsRawPtr)
+            .property("storage", &Image::GetStorageData, &Image::SetStorageData);
+
+    Type::register_wrapper_converter_for_base_classes<Ref<Image>, Ref<Resource>>();
 }

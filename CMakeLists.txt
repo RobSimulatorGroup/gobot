@@ -17,11 +17,14 @@ option(GOB_BUILD_OPENUSD "build OpenUSD scene importer/exporter support" OFF)
 option(GOB_BUILD_ASSIMP "build mesh import support through Assimp" ON)
 option(GOB_BUILD_MUJOCO "build MuJoCo CPU physics backend support" ON)
 option(GOB_BUILD_EGL "build EGL headless OpenGL rendering support" ON)
+option(GOB_BUILD_LUISA_RENDERER "build the optional LuisaCompute CUDA viewport renderer module" OFF)
 option(GOB_FETCH_MUJOCO "download MuJoCo from the official GitHub repository when GOB_BUILD_MUJOCO is ON and no local SDK/package is found" ON)
 option(GOB_FORCE_FETCH_MUJOCO "use the pinned fetched MuJoCo even when an SDK/package is discoverable" OFF)
 option(GOB_ENABLE_TRACY "enable Tracy profiler instrumentation" OFF)
 set(GOB_MUJOCO_ROOT "" CACHE PATH "MuJoCo SDK or install prefix. Supports either a CMake package install or an extracted SDK with include/ and lib/.")
 set(GOB_TRACY_ROOT "" CACHE PATH "Tracy install prefix or source checkout used when GOB_ENABLE_TRACY is ON")
+set(GOB_LUISA_COMPUTE_ROOT "${CMAKE_CURRENT_SOURCE_DIR}/build/luisa_compute/install" CACHE PATH
+        "LuisaCompute install prefix used by the optional CUDA renderer module")
 set(GOB_MUJOCO_GIT_TAG "3.10.0" CACHE STRING "MuJoCo release tag used when GOB_FETCH_MUJOCO is ON")
 set(GOB_ASSIMP_IMPORTERS "COLLADA;OBJ;STL;PLY;GLTF" CACHE STRING "Assimp importers enabled for Gobot mesh import")
 
@@ -552,6 +555,8 @@ if(GOB_BUILD_MUJOCO)
     target_link_libraries(gobot PRIVATE ${GOBOT_MUJOCO_TARGET})
 endif()
 
+target_link_libraries(gobot PRIVATE ${CMAKE_DL_LIBS})
+
 if(GOB_BUILD_EGL AND GOBOT_EGL_TARGET)
     target_compile_definitions(gobot PUBLIC GOBOT_HAS_EGL=1)
     target_link_libraries(gobot PUBLIC ${GOBOT_EGL_TARGET})
@@ -773,6 +778,79 @@ install(DIRECTORY "${CMAKE_CURRENT_SOURCE_DIR}/examples/"
         PATTERN "logs" EXCLUDE)
 install(TARGETS gobot_editor
         RUNTIME DESTINATION "gobot" COMPONENT python)
+
+if(GOB_BUILD_LUISA_RENDERER)
+    if(CMAKE_VERSION VERSION_LESS 3.26)
+        message(FATAL_ERROR
+            "GOB_BUILD_LUISA_RENDERER requires CMake 3.26 or newer because the pinned LuisaCompute source requires it.")
+    endif()
+
+    find_package(CUDAToolkit 12.1 REQUIRED)
+    set(GOBOT_LUISA_TARGETS_FILE "")
+    foreach(GOBOT_LUISA_LIBDIR lib lib64)
+        set(GOBOT_LUISA_TARGETS_CANDIDATE
+                "${GOB_LUISA_COMPUTE_ROOT}/${GOBOT_LUISA_LIBDIR}/cmake/LuisaCompute/LuisaComputeTargets.cmake")
+        if(EXISTS "${GOBOT_LUISA_TARGETS_CANDIDATE}")
+            set(GOBOT_LUISA_TARGETS_FILE "${GOBOT_LUISA_TARGETS_CANDIDATE}")
+            break()
+        endif()
+    endforeach()
+    if(NOT GOBOT_LUISA_TARGETS_FILE)
+        message(FATAL_ERROR
+            "LuisaCompute was not found under ${GOB_LUISA_COMPUTE_ROOT}.\n"
+            "Build and install the pinned source first with scripts/build_luisa_compute.sh.")
+    endif()
+    include("${GOBOT_LUISA_TARGETS_FILE}")
+    if(NOT TARGET luisa::compute)
+        message(FATAL_ERROR "${GOBOT_LUISA_TARGETS_FILE} does not export luisa::compute.")
+    endif()
+
+    add_library(gobot_luisa_renderer MODULE
+            modules/luisa_renderer/luisa_renderer_module.cpp)
+    target_include_directories(gobot_luisa_renderer PRIVATE
+            ${CMAKE_CURRENT_SOURCE_DIR}/include
+            ${PROJECT_BINARY_DIR}
+            ${GOB_LUISA_COMPUTE_ROOT}/include/luisa/ext)
+    target_compile_definitions(gobot_luisa_renderer PRIVATE
+            GOBOT_DISABLE_MATRIX_FMT=1
+            GOBOT_LUISA_CUDA_TOOLKIT_VERSION="${CUDAToolkit_VERSION}")
+    target_link_libraries(gobot_luisa_renderer PRIVATE
+            luisa::compute
+            CUDA::cuda_driver
+            Eigen3::Eigen
+            RTTR::Core
+            glad
+            "$<TARGET_FILE:gobot>")
+    add_dependencies(gobot_luisa_renderer gobot)
+    set_target_properties(gobot_luisa_renderer PROPERTIES
+            OUTPUT_NAME "gobot_luisa_renderer"
+            LIBRARY_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/python/gobot"
+            BUILD_RPATH "$ORIGIN;$ORIGIN/luisa;${GOB_LUISA_COMPUTE_ROOT}/lib;${GOB_LUISA_COMPUTE_ROOT}/lib64;${GOB_LUISA_COMPUTE_ROOT}/bin"
+            INSTALL_RPATH "$ORIGIN;$ORIGIN/luisa")
+    add_dependencies(gobot_editor gobot_luisa_renderer)
+
+    add_custom_command(TARGET gobot_luisa_renderer POST_BUILD
+            COMMAND "${CMAKE_COMMAND}" -E make_directory
+                    "$<TARGET_FILE_DIR:gobot_luisa_renderer>/luisa"
+            COMMAND "${CMAKE_COMMAND}" -E copy_directory
+                    "${GOB_LUISA_COMPUTE_ROOT}/lib"
+                    "$<TARGET_FILE_DIR:gobot_luisa_renderer>/luisa"
+            COMMAND "${CMAKE_COMMAND}" -E copy_directory
+                    "${GOB_LUISA_COMPUTE_ROOT}/bin"
+                    "$<TARGET_FILE_DIR:gobot_luisa_renderer>/luisa"
+            VERBATIM)
+
+    install(TARGETS gobot_luisa_renderer
+            LIBRARY DESTINATION "gobot" COMPONENT python)
+    install(DIRECTORY "${GOB_LUISA_COMPUTE_ROOT}/lib/"
+            DESTINATION "gobot/luisa" COMPONENT python
+            FILES_MATCHING PATTERN "*.so" PATTERN "*.so.*")
+    install(DIRECTORY "${GOB_LUISA_COMPUTE_ROOT}/bin/"
+            DESTINATION "gobot/luisa" COMPONENT python
+            FILES_MATCHING PATTERN "*.so" PATTERN "*.so.*")
+    install(PROGRAMS "${GOB_LUISA_COMPUTE_ROOT}/bin/luisa_nvrtc"
+            DESTINATION "gobot/luisa" COMPONENT python)
+endif()
 
 if (GOB_BUILD_TESTS)
     enable_testing()

@@ -71,6 +71,13 @@ package_add_test(test_node_creation_registry scene/test_node_creation_registry.c
 package_add_test(test_robot_nodes scene/test_robot_nodes.cpp)
 package_add_test(test_resource_creation_registry scene/test_resource_creation_registry.cpp)
 package_add_test(test_packed_scene scene/test_packed_scene.cpp)
+if(GOB_BUILD_LUISA_RENDERER)
+    package_add_test(test_luisa_renderer_module rendering/test_luisa_renderer_module.cpp)
+    target_compile_definitions(test_luisa_renderer_module PRIVATE
+            GOBOT_TEST_LUISA_MODULE_PATH="$<TARGET_FILE:gobot_luisa_renderer>")
+    target_link_libraries(test_luisa_renderer_module ${CMAKE_DL_LIBS})
+    add_dependencies(test_luisa_renderer_module gobot_luisa_renderer)
+endif()
 package_add_test(test_edited_scene
         editor/test_edited_scene.cpp
         ${PROJECT_SOURCE_DIR}/src/gobot/editor/edited_scene.cpp)

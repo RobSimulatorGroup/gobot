@@ -5,6 +5,8 @@
 
 #pragma once
 
+#include <atomic>
+#include <cstdint>
 #include <mutex>
 #include "gobot/core/ref_counted.hpp"
 #include "gobot/core/object_id.hpp"
@@ -64,7 +66,11 @@ public:
 
     virtual RID GetRid() const; // some resources may offer conversion to RID
 
+    [[nodiscard]] std::uint64_t GetRevision() const noexcept;
+
 protected:
+    void MarkChanged() noexcept;
+
     void SetPathNotTakeOver(const std::string &path);
 
     void SetPathTakeOver(const std::string &path);
@@ -80,6 +86,7 @@ private:
     Node *local_scene_ = nullptr;
     bool local_to_scene_{false};
     std::string unique_id_;
+    std::atomic<std::uint64_t> revision_{1};
 
     GOBOT_REGISTRATION_FRIEND
 };

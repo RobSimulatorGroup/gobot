@@ -55,6 +55,14 @@ Variant ExtractCheckedInteger(Source value, const Type& type, const Json& json_v
     return static_cast<Target>(value);
 }
 
+bool IsRefWrapper(const Type& type) {
+    if (type.is_wrapper() && type.get_wrapper_holder_type() == WrapperHolderType::Ref) {
+        return true;
+    }
+    const Type raw_type = type.get_raw_type();
+    return raw_type.is_wrapper() && raw_type.get_wrapper_holder_type() == WrapperHolderType::Ref;
+}
+
 } // namespace
 
 bool VariantSerializer::WriteAtomicTypesToJson(const Type& t, const Variant& var, Json& writer)
@@ -363,14 +371,26 @@ bool VariantSerializer::WriteArrayRecursively(VariantListView& view, const Json&
             auto sub_array_view = view.get_value(i).create_sequential_view();
             set_success &= WriteArrayRecursively(sub_array_view, json_index_value);
         } else if (json_index_value.is_object()) {
-            Variant var_tmp = view.get_value(i);
-            Variant wrapped_var = var_tmp.extract_wrapped_value();
-            set_success &= FromJsonRecursively(wrapped_var, json_index_value);
-            set_success &= view.set_value(i, wrapped_var);
+            Variant element = view.get_value(i);
+            Variant value = element.get_type().is_wrapper()
+                                    ? element.extract_wrapped_value()
+                                    : element;
+            set_success &= FromJsonRecursively(value, json_index_value);
+            set_success &= view.set_value(i, value);
         } else {
-            auto extracted_value = ExtractPrimitiveTypes(array_value_type, json_index_value);
-            if (extracted_value.is_valid()) {
-                set_success &= view.set_value(i, extracted_value);
+            if (IsRefWrapper(array_value_type)) {
+                Variant resource = view.get_value(i);
+                if (json_index_value.is_null()) {
+                    continue;
+                }
+                set_success &= LoadResource(resource, json_index_value);
+                set_success &= resource.convert(array_value_type);
+                set_success &= view.set_value(i, resource);
+            } else {
+                auto extracted_value = ExtractPrimitiveTypes(array_value_type, json_index_value);
+                if (extracted_value.is_valid()) {
+                    set_success &= view.set_value(i, extracted_value);
+                }
             }
         }
     }
@@ -519,11 +539,21 @@ bool VariantSerializer::FromJsonRecursively(Variant& variant, const Json& json) 
         if (static_cast<bool>(property_info.usage & PropertyUsageFlags::Storage)) {
             const auto prop_name = prop.get_name();
             if (!json.contains(prop_name.data())) {
-                LOG_ERROR("Cannot find key: {} in json: {}", prop_name.data(), json);
+                // Added storage properties must retain their defaults when loading older resources.
                 continue;
             }
             const auto& child_json = json[prop_name.data()];
             const auto& prop_type = prop.get_type();
+            if (IsRefWrapper(prop_type)) {
+                if (child_json.is_null()) {
+                    continue;
+                }
+                auto resource = prop.get_value(obj);
+                set_success &= LoadResource(resource, child_json);
+                set_success &= resource.convert(prop_type);
+                set_success &= prop.set_value(obj, resource);
+                continue;
+            }
             if (child_json.is_array()) {
                 if (prop_type.is_sequential_container()) {
                     auto value = prop.get_value(obj);

@@ -894,8 +894,8 @@ ImVec2 SceneView3DPanel::GetToolBarSize(const ImVec2& screen_position) const {
     const float separator_width = 9.0f;
     const float right_limit = ImGui::GetWindowPos().x + ImGui::GetWindowContentRegionMax().x - 8.0f;
 
-    constexpr int button_count = 9;
-    constexpr int separator_count = 5;
+    constexpr int button_count = 10;
+    constexpr int separator_count = 6;
     const float toolbar_width = button_count * button_extent +
                                 separator_count * separator_width +
                                 (button_count + separator_count - 1) * spacing;
@@ -933,6 +933,8 @@ ImVec2 SceneView3DPanel::GetToolBarSize(const ImVec2& screen_position) const {
     add_item(button_extent);
     add_item(separator_width);
     add_item(button_extent);
+    add_item(button_extent);
+    add_item(separator_width);
     add_item(button_extent);
     max_row_width = std::max(max_row_width, row_width);
 
@@ -1071,6 +1073,88 @@ void SceneView3DPanel::ToolBar(const ImVec2& screen_position)
         draw_toolbar_button("motion_mode", ICON_MDI_AXIS_ARROW, "Robot motion mode: edit joint positions", motion_mode, robot_available, [&]() {
             active_robot->SetMode(RobotMode::Motion);
         });
+    }
+
+    draw_separator();
+
+    bool open_renderer_popup = false;
+    auto* render_server = RS::GetInstance();
+    SceneRendererSettings renderer_settings = render_server->GetSceneRendererSettings();
+    const SceneRendererCapabilities renderer_capabilities = render_server->GetSceneRendererCapabilities();
+    const bool ray_tracing_selected = renderer_settings.mode != SceneRendererMode::Raster;
+    draw_toolbar_button("renderer_mode",
+                        ICON_MDI_CAMERA_IRIS,
+                        renderer_capabilities.status.c_str(),
+                        ray_tracing_selected,
+                        true,
+                        [&]() { open_renderer_popup = true; });
+    if (open_renderer_popup) {
+        ImGui::OpenPopup("renderer_mode_popup");
+    }
+    if (ImGui::BeginPopup("renderer_mode_popup")) {
+        bool settings_changed = false;
+        if (ImGui::MenuItem("Raster", nullptr, renderer_settings.mode == SceneRendererMode::Raster)) {
+            renderer_settings.mode = SceneRendererMode::Raster;
+            settings_changed = true;
+        }
+        if (!renderer_capabilities.realtime || !renderer_capabilities.progressive) {
+            ImGui::BeginDisabled();
+        }
+        if (ImGui::MenuItem("Ray Tracing Auto", nullptr,
+                            renderer_settings.mode == SceneRendererMode::RayTracingAuto)) {
+            renderer_settings.mode = SceneRendererMode::RayTracingAuto;
+            settings_changed = true;
+        }
+        if (!renderer_capabilities.realtime || !renderer_capabilities.progressive) {
+            ImGui::EndDisabled();
+        }
+        if (!renderer_capabilities.realtime) {
+            ImGui::BeginDisabled();
+        }
+        if (ImGui::MenuItem("Realtime Ray Tracing", nullptr,
+                            renderer_settings.mode == SceneRendererMode::RealtimeRayTracing)) {
+            renderer_settings.mode = SceneRendererMode::RealtimeRayTracing;
+            settings_changed = true;
+        }
+        if (!renderer_capabilities.realtime) {
+            ImGui::EndDisabled();
+        }
+        if (!renderer_capabilities.progressive) {
+            ImGui::BeginDisabled();
+        }
+        if (ImGui::MenuItem("Progressive Path Tracing", nullptr,
+                            renderer_settings.mode == SceneRendererMode::ProgressivePathTracing)) {
+            renderer_settings.mode = SceneRendererMode::ProgressivePathTracing;
+            settings_changed = true;
+        }
+        if (!renderer_capabilities.progressive) {
+            ImGui::EndDisabled();
+        }
+
+        ImGui::Separator();
+        settings_changed |= ImGui::SliderInt("Target FPS", &renderer_settings.target_fps, 1, 120);
+        settings_changed |= ImGui::SliderInt("Samples", &renderer_settings.samples_per_frame, 1, 64);
+        settings_changed |= ImGui::SliderInt("Bounces", &renderer_settings.max_bounces, 1, 12);
+        if (!renderer_capabilities.denoise) {
+            ImGui::BeginDisabled();
+        }
+        settings_changed |= ImGui::Checkbox("Denoise", &renderer_settings.denoise);
+        if (!renderer_capabilities.denoise) {
+            ImGui::EndDisabled();
+        }
+        settings_changed |= ImGui::Checkbox("Adaptive Quality", &renderer_settings.adaptive_quality);
+
+        const SceneRendererStats renderer_stats = render_server->GetSceneRendererStats();
+        ImGui::Separator();
+        ImGui::Text("Samples: %llu", static_cast<unsigned long long>(renderer_stats.accumulated_samples));
+        ImGui::Text("Render: %.2f ms", renderer_stats.render_ms);
+        if (!renderer_stats.status.empty()) {
+            ImGui::TextWrapped("%s", renderer_stats.status.c_str());
+        }
+        if (settings_changed) {
+            render_server->SetSceneRendererSettings(renderer_settings);
+        }
+        ImGui::EndPopup();
     }
 
     ImGui::PopStyleVar();

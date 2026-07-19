@@ -31,10 +31,20 @@ jobs:
           enable-cache: true
 
       - name: Check CUDA runner
-        run: nvidia-smi
+        run: |
+          nvidia-smi
+          nvcc --version
 
-      - name: Install Gobot training environment
-        run: uv sync --extra train --extra mujoco-warp
+      - name: Install LuisaCompute build tools
+        run: |
+          uv tool install 'cmake>=3.26'
+          echo "$HOME/.local/bin" >> "$GITHUB_PATH"
+
+      - name: Build LuisaCompute CUDA runtime
+        run: scripts/build_luisa_compute.sh
+
+      - name: Install complete Gobot environment
+        run: uv sync
 
       - name: Validate reference fixture
         run: uv run --no-sync python tests/python/test_go1_reference_fixture.py

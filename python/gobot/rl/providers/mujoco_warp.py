@@ -329,8 +329,8 @@ class MuJoCoWarpProvider(BatchPhysicsProvider):
         availability = MuJoCoWarpProvider.availability()
         if not availability.available:
             raise ProviderUnavailableError(
-                "MuJoCo Warp requested but its optional dependencies are unavailable: "
-                f"{availability.reason}. Install gobot[mujoco-warp]."
+                "MuJoCo Warp requested but its dependencies are unavailable: "
+                f"{availability.reason}. Reinstall gobot in the active environment."
             )
         return _MuJoCoWarpBindings(
             mujoco=importlib.import_module("mujoco"),

@@ -1,0 +1,9 @@
+newmtl Textured
+Kd 0.8 0.8 0.8
+Pr 0.45
+Pm 0.2
+map_Kd ../../../3rdparty/gli/data/kueken7_srgb8.png
+
+newmtl Blue
+Kd 0.1 0.2 0.9
+Pr 0.7

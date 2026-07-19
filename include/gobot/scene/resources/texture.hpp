@@ -15,6 +15,17 @@
 
 namespace gobot {
 
+enum class TextureFilter {
+    Nearest,
+    Linear
+};
+
+enum class TextureWrap {
+    Repeat,
+    ClampToEdge,
+    MirroredRepeat
+};
+
 enum class TextureFormat {
     BC1,          //!< DXT1 R5G6B5A1
     BC2,          //!< DXT3 R5G6B5A4
@@ -138,11 +149,40 @@ class Texture2D : public Texture {
 public:
     Texture2D() = default;
 
+    explicit Texture2D(const Ref<Image>& image);
+
+    void SetImage(const Ref<Image>& image);
+
+    const Ref<Image>& GetImage() const;
+
+    void SetMinFilter(TextureFilter filter);
+
+    TextureFilter GetMinFilter() const;
+
+    void SetMagFilter(TextureFilter filter);
+
+    TextureFilter GetMagFilter() const;
+
+    void SetWrapU(TextureWrap wrap);
+
+    TextureWrap GetWrapU() const;
+
+    void SetWrapV(TextureWrap wrap);
+
+    TextureWrap GetWrapV() const;
+
     int GetWidth() const;
 
     int GetHeight() const;
 
     Vector2i GetSize() const;
+
+private:
+    Ref<Image> image_;
+    TextureFilter min_filter_ = TextureFilter::Linear;
+    TextureFilter mag_filter_ = TextureFilter::Linear;
+    TextureWrap wrap_u_ = TextureWrap::Repeat;
+    TextureWrap wrap_v_ = TextureWrap::Repeat;
 
 };
 

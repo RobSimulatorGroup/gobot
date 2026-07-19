@@ -113,6 +113,12 @@ public:
 
     RID MeshCreate();
 
+    RID TextureCreate();
+
+    void Texture2DInitialize(const RID& texture, const Ref<Image>& image);
+
+    void TextureSetData(const RID& texture, const Ref<Image>& image);
+
     static bool HasInstance();
 
     void MeshSetBox(const RID& mesh, const Vector3& size);
@@ -128,6 +134,14 @@ public:
     void MeshSetSphere(const RID& mesh, RealType radius, int radial_segments, int rings);
 
     void RenderSceneToViewport(const RID& viewport, const Node* scene_root, const Camera3D* camera);
+
+    void SetSceneRendererSettings(const SceneRendererSettings& settings);
+
+    [[nodiscard]] SceneRendererSettings GetSceneRendererSettings() const;
+
+    [[nodiscard]] SceneRendererCapabilities GetSceneRendererCapabilities() const;
+
+    [[nodiscard]] SceneRendererStats GetSceneRendererStats() const;
 
     void RenderEditorDebugToViewport(const RID& viewport,
                                      const Camera3D* camera,

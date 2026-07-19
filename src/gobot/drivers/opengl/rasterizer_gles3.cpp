@@ -19,7 +19,7 @@ GLRasterizer::GLRasterizer() {
     texture_storage_ = new opengl::TextureStorage();
     material_storage_ = new opengl::GLMaterialStorage();
     mesh_storage_ =  new opengl::GLMeshStorage();
-    scene_ = new opengl::GLRasterizerScene(mesh_storage_);
+    scene_ = new opengl::GLRasterizerScene();
     debug_draw_ = new opengl::GLRendererDebugDraw();
     utilities_ = new opengl::GLRendererUtilities();
 }

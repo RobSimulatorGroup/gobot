@@ -171,14 +171,14 @@ void AppendHeightFieldMesh(std::vector<Vector3>& vertices,
             const std::uint32_t i1 = i0 + 1;
             const std::uint32_t i2 = i0 + static_cast<std::uint32_t>(heightfield.cols);
             const std::uint32_t i3 = i2 + 1;
-            indices.insert(indices.end(), {i0, i1, i3, i0, i3, i2});
+            indices.insert(indices.end(), {i0, i3, i1, i0, i2, i3});
 
             const Vector3& v0 = vertices[i0];
             const Vector3& v1 = vertices[i1];
             const Vector3& v2 = vertices[i2];
             const Vector3& v3 = vertices[i3];
-            Vector3 normal_a = (v1 - v0).cross(v3 - v0);
-            Vector3 normal_b = (v3 - v0).cross(v2 - v0);
+            Vector3 normal_a = (v3 - v0).cross(v1 - v0);
+            Vector3 normal_b = (v2 - v0).cross(v3 - v0);
             if (normal_a.norm() > CMP_EPSILON) {
                 normal_a.normalize();
                 normals[i0] += normal_a;

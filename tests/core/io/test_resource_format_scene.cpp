@@ -1025,3 +1025,72 @@ TEST_F(TestResourceFormatScene, built_in_mesh_material_and_instance_override_rou
     gobot::Object::Delete(root);
     gobot::Object::Delete(instance);
 }
+
+TEST_F(TestResourceFormatScene, array_mesh_round_trips_multiple_surfaces_and_nested_pbr_assets) {
+    auto image = gobot::MakeRef<gobot::Image>(
+            2, 1, false, gobot::ImageFormat::RGBA8,
+            std::vector<std::uint8_t>{255, 0, 0, 255, 0, 255, 0, 255});
+    auto texture = gobot::MakeRef<gobot::Texture2D>(image);
+    texture->SetWrapU(gobot::TextureWrap::ClampToEdge);
+
+    auto first_material = gobot::MakeRef<gobot::PBRMaterial3D>();
+    first_material->SetAlbedoTexture(texture);
+    first_material->SetMetallic(0.35f);
+    first_material->SetRoughness(0.65f);
+
+    auto second_material = gobot::MakeRef<gobot::PBRMaterial3D>();
+    second_material->SetAlbedo({0.1f, 0.3f, 0.9f, 0.75f});
+    second_material->SetAlphaMode(gobot::AlphaMode::Blend);
+    second_material->SetDoubleSided(true);
+
+    gobot::MeshSurfaceData first_surface;
+    first_surface.vertices = {{0.0, 0.0, 0.0}, {1.0, 0.0, 0.0}, {0.0, 1.0, 0.0}};
+    first_surface.indices = {0, 1, 2};
+    first_surface.uv0 = {{0.0, 0.0}, {1.0, 0.0}, {0.0, 1.0}};
+    first_surface.material = first_material;
+
+    gobot::MeshSurfaceData second_surface;
+    second_surface.vertices = {{0.0, 0.0, 1.0}, {1.0, 0.0, 1.0}, {0.0, 1.0, 1.0}};
+    second_surface.indices = {0, 1, 2};
+    second_surface.material = second_material;
+
+    auto mesh = gobot::MakeRef<gobot::ArrayMesh>();
+    mesh->SetSurfaces({first_surface, second_surface});
+    const std::uint64_t revision = mesh->GetRevision();
+    mesh->SetSurfaces({first_surface, second_surface});
+    EXPECT_GT(mesh->GetRevision(), revision);
+
+    USING_ENUM_BITWISE_OPERATORS;
+    ASSERT_TRUE(gobot::ResourceSaver::Save(
+            mesh, "res://multi_surface_mesh.jres",
+            gobot::ResourceSaverFlags::ReplaceSubResourcePaths |
+                    gobot::ResourceSaverFlags::ChangePath));
+
+    auto loaded_resource = gobot::ResourceLoader::Load(
+            "res://multi_surface_mesh.jres", "ArrayMesh",
+            gobot::ResourceFormatLoader::CacheMode::Ignore);
+    auto loaded_mesh = gobot::dynamic_pointer_cast<gobot::ArrayMesh>(loaded_resource);
+    ASSERT_TRUE(loaded_mesh.IsValid());
+    const gobot::MeshSurfaceList surfaces = loaded_mesh->GetSurfaces();
+    ASSERT_EQ(surfaces.size(), 2);
+    ASSERT_EQ(surfaces[0].uv0.size(), 3);
+    ASSERT_EQ(surfaces[0].tangents.size(), 3);
+    EXPECT_TRUE(surfaces[1].uv0.empty());
+    EXPECT_TRUE(surfaces[1].tangents.empty());
+
+    auto loaded_first = gobot::dynamic_pointer_cast<gobot::PBRMaterial3D>(surfaces[0].material);
+    auto loaded_second = gobot::dynamic_pointer_cast<gobot::PBRMaterial3D>(surfaces[1].material);
+    ASSERT_TRUE(loaded_first.IsValid());
+    ASSERT_TRUE(loaded_second.IsValid());
+    EXPECT_FLOAT_EQ(loaded_first->GetMetallic(), 0.35f);
+    EXPECT_FLOAT_EQ(loaded_first->GetRoughness(), 0.65f);
+    EXPECT_EQ(loaded_second->GetAlphaMode(), gobot::AlphaMode::Blend);
+    EXPECT_TRUE(loaded_second->IsDoubleSided());
+
+    const auto loaded_texture = loaded_first->GetAlbedoTexture();
+    ASSERT_TRUE(loaded_texture.IsValid());
+    EXPECT_EQ(loaded_texture->GetWrapU(), gobot::TextureWrap::ClampToEdge);
+    ASSERT_TRUE(loaded_texture->GetImage().IsValid());
+    EXPECT_EQ(loaded_texture->GetImage()->GetSize(), gobot::Vector2i(2, 1));
+    EXPECT_EQ(loaded_texture->GetImage()->GetDataRef(), image->GetDataRef());
+}

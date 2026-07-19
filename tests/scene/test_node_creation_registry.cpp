@@ -5,6 +5,8 @@
 
 #include <gobot/rendering/render_server.hpp>
 #include <gobot/scene/joint_3d.hpp>
+#include <gobot/scene/environment_3d.hpp>
+#include <gobot/scene/light_3d.hpp>
 #include <gobot/scene/link_3d.hpp>
 #include <gobot/scene/mesh_instance_3d.hpp>
 #include <gobot/scene/node_creation_registry.hpp>
@@ -44,6 +46,10 @@ TEST(TestNodeCreationRegistry, built_in_entries_keep_node_inheritance_shape) {
     const auto* height_scanner_sensor = FindEntry("HeightScanner3D");
     const auto* velocity_command_debug = FindEntry("VelocityCommandDebug3D");
     const auto* mesh_instance = FindEntry("MeshInstance3D");
+    const auto* environment = FindEntry("Environment3D");
+    const auto* directional_light = FindEntry("DirectionalLight3D");
+    const auto* point_light = FindEntry("PointLight3D");
+    const auto* spot_light = FindEntry("SpotLight3D");
     const auto* box_mesh = FindEntry("BoxMeshInstance3D");
     const auto* cylinder_mesh = FindEntry("CylinderMeshInstance3D");
     const auto* sphere_mesh = FindEntry("SphereMeshInstance3D");
@@ -64,6 +70,10 @@ TEST(TestNodeCreationRegistry, built_in_entries_keep_node_inheritance_shape) {
     ASSERT_NE(height_scanner_sensor, nullptr);
     ASSERT_NE(velocity_command_debug, nullptr);
     ASSERT_NE(mesh_instance, nullptr);
+    ASSERT_NE(environment, nullptr);
+    ASSERT_NE(directional_light, nullptr);
+    ASSERT_NE(point_light, nullptr);
+    ASSERT_NE(spot_light, nullptr);
     ASSERT_NE(box_mesh, nullptr);
     ASSERT_NE(cylinder_mesh, nullptr);
     ASSERT_NE(sphere_mesh, nullptr);
@@ -84,6 +94,10 @@ TEST(TestNodeCreationRegistry, built_in_entries_keep_node_inheritance_shape) {
     EXPECT_EQ(height_scanner_sensor->parent_id, "TerrainHeightSensor3D");
     EXPECT_EQ(velocity_command_debug->parent_id, "Node3D");
     EXPECT_EQ(mesh_instance->parent_id, "Node3D");
+    EXPECT_EQ(environment->parent_id, "Node3D");
+    EXPECT_EQ(directional_light->parent_id, "Light3D");
+    EXPECT_EQ(point_light->parent_id, "Light3D");
+    EXPECT_EQ(spot_light->parent_id, "PointLight3D");
     EXPECT_EQ(box_mesh->parent_id, "MeshInstance3D");
     EXPECT_EQ(cylinder_mesh->parent_id, "MeshInstance3D");
     EXPECT_EQ(sphere_mesh->parent_id, "MeshInstance3D");

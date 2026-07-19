@@ -124,7 +124,10 @@ class RslRlVecEnvWrapper:
             import torch
             from tensordict import TensorDict
         except ImportError as error:
-            raise RuntimeError("RslRlVecEnvWrapper requires gobot[train] dependencies.") from error
+            raise RuntimeError(
+                "RslRlVecEnvWrapper requires the complete Gobot installation; "
+                "reinstall gobot in the active environment."
+            ) from error
         self.torch = torch
         self.TensorDict = TensorDict
         self.include_reward_terms = bool(getattr(env, "rsl_rl_include_reward_terms", False))

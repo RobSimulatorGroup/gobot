@@ -56,6 +56,16 @@ enum class ImageFormat {
     MAX
 };
 
+struct ImageStorageData {
+    int width = 0;
+    int height = 0;
+    bool use_mipmaps = false;
+    ImageFormat format = ImageFormat::L8;
+    std::vector<std::uint8_t> data;
+
+    bool operator==(const ImageStorageData&) const = default;
+};
+
 class Image;
 
 using ImageMemLoadFunc = Ref<Image>(*)(const uint8_t *image, int size);
@@ -114,9 +124,15 @@ public:
 
     void InitializeData(int width, int height, bool use_mipmaps, ImageFormat format, const std::vector<uint8_t> &data);
 
+    ImageStorageData GetStorageData() const;
+
+    void SetStorageData(const ImageStorageData& storage);
+
 
 public:
     std::vector<uint8_t> GetData() const;
+
+    const std::vector<uint8_t>& GetDataRef() const;
 
     static Ref<Image> LoadFromFile(const std::string &path);
 

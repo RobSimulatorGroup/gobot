@@ -13,14 +13,17 @@
 
 #include <rttr/type.h>
 #include <Eigen/Dense>
-#include <fmt/ostream.h>
 #include <iostream>
 
-#include "gobot/core/math/math_defs.hpp"
+#ifndef GOBOT_DISABLE_MATRIX_FMT
+#include <fmt/ostream.h>
 
 template <typename T>
     requires std::is_base_of_v<Eigen::DenseBase<T>, T>
 struct fmt::formatter<T> : fmt::ostream_formatter {};
+#endif
+
+#include "gobot/core/math/math_defs.hpp"
 
 namespace gobot {
 

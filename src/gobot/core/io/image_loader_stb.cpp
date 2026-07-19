@@ -10,6 +10,8 @@
 
 #include <stb_image.h>
 
+#include <cstring>
+
 namespace gobot {
 
 ImageLoaderStb::ImageLoaderStb() {
@@ -21,6 +23,10 @@ Ref<Image> ImageLoaderStb::LoadImage(const std::vector<uint8_t>& byte_array, Loa
     (void) flags;
     (void) scale;
     return DecodeImage(byte_array.data(), static_cast<int>(byte_array.size()));
+}
+
+Ref<Image> ImageLoaderStb::LoadMemory(const std::uint8_t* source, int size) {
+    return DecodeImage(source, size);
 }
 
 void ImageLoaderStb::GetRecognizedExtensions(std::vector<std::string>* extensions) const {
@@ -47,6 +53,37 @@ Ref<Image> ImageLoaderStb::DecodeImage(const uint8_t* source, int size) {
     int width = 0;
     int height = 0;
     int channels = 0;
+    if (stbi_is_hdr_from_memory(source, size)) {
+        float* pixels = stbi_loadf_from_memory(source, size, &width, &height, &channels, 0);
+        ERR_FAIL_COND_V_MSG(!pixels, nullptr, stbi_failure_reason());
+
+        ImageFormat format;
+        switch (channels) {
+            case STBI_grey:
+                format = ImageFormat::RF;
+                break;
+            case STBI_grey_alpha:
+                format = ImageFormat::RGF;
+                break;
+            case STBI_rgb:
+                format = ImageFormat::RGBF;
+                break;
+            case STBI_rgb_alpha:
+                format = ImageFormat::RGBAF;
+                break;
+            default:
+                stbi_image_free(pixels);
+                LOG_ERROR("Unsupported HDR image channel count: {}", channels);
+                return nullptr;
+        }
+
+        const std::size_t byte_count = static_cast<std::size_t>(width) * height * channels * sizeof(float);
+        std::vector<uint8_t> data(byte_count);
+        std::memcpy(data.data(), pixels, byte_count);
+        stbi_image_free(pixels);
+        return MakeRef<Image>(width, height, false, format, data);
+    }
+
     stbi_uc* pixels = stbi_load_from_memory(source, size, &width, &height, &channels, 0);
     ERR_FAIL_COND_V_MSG(!pixels, nullptr, stbi_failure_reason());
 

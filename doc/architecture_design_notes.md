@@ -61,7 +61,8 @@ SceneTree nodes to attach them as `NodeScript` resources.
    It should not parse asset files, traverse scenes, or know about editor selection.
    The current transitional API includes `MeshAllocate`, `MeshInitialize`, `MeshSetBox`, `MeshSetSurface`, primitive setters, `OwnsMesh`, and `MeshFree`.
 2. `RendererSceneRender` owns the scene render pass:
-   `RenderScene(root, camera, target)`.
+   `RenderScene(render_target, scene_render_snapshot)`. Scene traversal and
+   camera extraction happen above the backend.
 3. `RendererDebugDraw` stays independent for editor and simulation debug rendering. Future operations should include `DrawAABB`, `DrawLine`, `DrawFrustum`, contact points, trajectories, and robot joint/debug overlays.
 4. `EditorViewportRenderer` is the editor-layer coordinator. It composes scene pass, debug pass, and later overlay/pass tools without moving editor decisions into `RenderBackend`.
 5. The editor keeps a fixed edited-scene boundary. SceneTree should display the user scene root, not the full engine tree with editor UI nodes.

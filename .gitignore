@@ -38,6 +38,7 @@ uv.lock
 *.app
 
 build/
+/build_*/
 cmake-build-debug/
 cmake-build-release/
 out/

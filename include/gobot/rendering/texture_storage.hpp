@@ -8,6 +8,7 @@
 #pragma once
 
 #include "gobot/core/hash_combine.hpp"
+#include "gobot/core/ref_counted.hpp"
 #include "gobot/core/rid.hpp"
 #include "gobot/core/rid_owner.hpp"
 
@@ -15,6 +16,8 @@
 #include <vector>
 
 namespace gobot {
+
+class Image;
 
 class RendererTextureStorage {
 public:
@@ -32,6 +35,12 @@ public:
 
     // texture
     virtual RID TextureAllocate() = 0;
+
+    virtual void Texture2DInitialize(RID texture, const Ref<Image>& image) = 0;
+
+    virtual void TextureSetData(RID texture, const Ref<Image>& image, int layer = 0) = 0;
+
+    virtual bool OwnsTexture(RID p_rid) const = 0;
 
     virtual void TextureFree(RID p_rid) = 0;
 };

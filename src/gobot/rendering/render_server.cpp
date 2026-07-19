@@ -13,8 +13,10 @@
 #include "gobot/error_macros.hpp"
 #include "gobot/rendering/rendering_server_globals.hpp"
 #include "gobot/rendering/renderer_compositor.hpp"
+#include "gobot/rendering/scene_render_items.hpp"
 #include "gobot/rendering/texture_storage.hpp"
 #include "gobot/rendering/renderer_viewport.hpp"
+#include "gobot/scene/camera_3d.hpp"
 
 
 namespace gobot {
@@ -81,6 +83,10 @@ void RenderServer::Free(const RID& p_rid) {
         RSG::mesh_storage->MeshFree(p_rid);
         return;
     }
+    if (RSG::texture_storage->OwnsTexture(p_rid)) {
+        RSG::texture_storage->TextureFree(p_rid);
+        return;
+    }
     if (RSG::utilities->Free(p_rid)) {
         return;
     }
@@ -98,6 +104,18 @@ RID RenderServer::MeshCreate() {
     auto rid = RSG::mesh_storage->MeshAllocate();
     RSG::mesh_storage->MeshInitialize(rid);
     return rid;
+}
+
+RID RenderServer::TextureCreate() {
+    return RSG::texture_storage->TextureAllocate();
+}
+
+void RenderServer::Texture2DInitialize(const RID& texture, const Ref<Image>& image) {
+    RSG::texture_storage->Texture2DInitialize(texture, image);
+}
+
+void RenderServer::TextureSetData(const RID& texture, const Ref<Image>& image) {
+    RSG::texture_storage->TextureSetData(texture, image);
 }
 
 void RenderServer::MeshSetBox(const RID& mesh, const Vector3& size) {
@@ -123,10 +141,35 @@ void RenderServer::MeshSetSphere(const RID& mesh, RealType radius, int radial_se
 void RenderServer::RenderSceneToViewport(const RID& viewport, const Node* scene_root, const Camera3D* camera) {
     GOBOT_PROFILE_ZONE("RenderServer::RenderSceneToViewport");
     ERR_FAIL_COND(RSG::scene == nullptr);
+    ERR_FAIL_COND(scene_root == nullptr);
+    ERR_FAIL_COND(camera == nullptr);
     const RID render_target = RSG::viewport->GetViewportRenderTarget(viewport);
     ERR_FAIL_COND(render_target.IsNull());
 
-    RSG::scene->RenderScene(render_target, scene_root, camera);
+    SceneRenderSnapshot snapshot;
+    {
+        GOBOT_PROFILE_ZONE("RenderServer::CaptureSceneRenderSnapshot");
+        snapshot = CaptureSceneRenderSnapshot(scene_root, *camera);
+    }
+    GOBOT_PROFILE_PLOT("visual_meshes", static_cast<double>(snapshot.visual_meshes.size()));
+    RSG::scene->RenderScene(render_target, snapshot);
+}
+
+void RenderServer::SetSceneRendererSettings(const SceneRendererSettings& settings) {
+    ERR_FAIL_COND(RSG::scene == nullptr);
+    RSG::scene->SetSettings(settings);
+}
+
+SceneRendererSettings RenderServer::GetSceneRendererSettings() const {
+    return RSG::scene != nullptr ? RSG::scene->GetSettings() : SceneRendererSettings{};
+}
+
+SceneRendererCapabilities RenderServer::GetSceneRendererCapabilities() const {
+    return RSG::scene != nullptr ? RSG::scene->GetCapabilities() : SceneRendererCapabilities{};
+}
+
+SceneRendererStats RenderServer::GetSceneRendererStats() const {
+    return RSG::scene != nullptr ? RSG::scene->GetStats() : SceneRendererStats{};
 }
 
 void RenderServer::RenderEditorDebugToViewport(const RID& viewport,

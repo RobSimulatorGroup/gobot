@@ -299,7 +299,9 @@ class Script(gobot.NodeScript):
             if os.path.exists(fallback):
                 print(
                     "CartPole ONNX policy not found at '{}'. Falling back to '{}' "
-                    "requires torch/rsl-rl-lib from gobot[train].".format(path or "<empty>", fallback)
+                    "requires torch/rsl-rl-lib from the complete Gobot installation.".format(
+                        path or "<empty>", fallback
+                    )
                 )
                 path = fallback
             else:
@@ -334,7 +336,7 @@ class Script(gobot.NodeScript):
             print(f"CartPole RL loading Torch policy: {path}")
             return TorchPolicy(path)
         except ImportError as error:
-            print("CartPole Torch policy load failed: install gobot[train] to use .pt policies.")
+            print("CartPole Torch policy load failed: PyTorch is unavailable in this environment.")
             print(f"CartPole Torch import error: {error}")
             return None
         except Exception as error:

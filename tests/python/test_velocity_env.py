@@ -1,6 +1,7 @@
 import json
 import os
 from pathlib import Path
+import subprocess
 import sys
 import tempfile
 from types import SimpleNamespace
@@ -753,6 +754,24 @@ def test_go1_gait_metrics_are_defined_without_surviving_samples():
         "fore_rear_height_separation_m": 0.0,
         "bound_over_trot": 0.0,
     }
+
+
+def test_go1_evaluation_numpy_metrics_import_without_torch():
+    source = """
+import sys
+sys.modules["torch"] = None
+from examples.go1.tools.evaluate_velocity_policy import _group_gait_metrics
+assert callable(_group_gait_metrics)
+"""
+    result = subprocess.run(
+        [sys.executable, "-c", source],
+        cwd=REPO_ROOT,
+        env=os.environ.copy(),
+        text=True,
+        capture_output=True,
+        check=False,
+    )
+    assert result.returncode == 0, result.stderr
 
 
 def test_go1_terrain_curriculum_checkpoint_restores_exact_assignments():
@@ -1675,6 +1694,7 @@ def main():
         test_go1_bound_gait_score_matches_torch_backend,
         test_go1_footfall_patterns_distinguish_bound_trot_and_flight,
         test_go1_gait_metrics_are_defined_without_surviving_samples,
+        test_go1_evaluation_numpy_metrics_import_without_torch,
         test_go1_terrain_curriculum_checkpoint_restores_exact_assignments,
         test_go1_terrain_curriculum_checkpoint_resamples_across_batch_sizes,
         test_go1_checkpoint_admission_requires_survival_and_progress,

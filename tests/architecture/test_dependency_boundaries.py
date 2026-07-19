@@ -116,6 +116,45 @@ def main() -> int:
             "batch binding branches on a backend compile definition"
         )
 
+    renderer_scene_interface = ROOT / "include/gobot/rendering/renderer_scene_render.hpp"
+    renderer_scene_text = renderer_scene_interface.read_text(encoding="utf-8")
+    for token, description in {
+        "const Node*": "authored Scene node pointer",
+        "const Camera3D*": "authored camera node pointer",
+    }.items():
+        if token in renderer_scene_text:
+            violations.append(
+                f"{renderer_scene_interface.relative_to(ROOT)}: render backend interface exposes "
+                f"{description} ({token})"
+            )
+
+    opengl_scene_source = ROOT / "src/gobot/drivers/opengl/rasterizer_scene_gl.cpp"
+    opengl_scene_text = opengl_scene_source.read_text(encoding="utf-8")
+    if "CollectSceneRenderItems" in opengl_scene_text:
+        violations.append(
+            f"{opengl_scene_source.relative_to(ROOT)}: OpenGL backend traverses the authored Scene tree"
+        )
+    for line_number, line in enumerate(opengl_scene_text.splitlines(), 1):
+        match = INCLUDE_RE.match(line)
+        if match and match.group(1).startswith("gobot/scene/"):
+            violations.append(
+                f"{opengl_scene_source.relative_to(ROOT)}:{line_number}: OpenGL scene backend "
+                f"includes Scene header {match.group(1)!r}"
+            )
+
+    for root in (ROOT / "include/gobot", ROOT / "src/gobot"):
+        for path in source_files(root, {".cpp", ".cc", ".hpp", ".h"}):
+            for line_number, line in enumerate(path.read_text(encoding="utf-8").splitlines(), 1):
+                match = INCLUDE_RE.match(line)
+                if match and (
+                    match.group(1).startswith("luisa/")
+                    or match.group(1) in {"cuda.h", "cudaGL.h"}
+                ):
+                    violations.append(
+                        f"{path.relative_to(ROOT)}:{line_number}: core engine includes optional "
+                        f"Luisa/CUDA implementation header {match.group(1)!r}"
+                    )
+
     cmake_text = (ROOT / "CMakeLists.txt").read_text(encoding="utf-8")
     for target_name in (
         "gobot_physics_core",
@@ -127,6 +166,10 @@ def main() -> int:
             violations.append(
                 f"CMakeLists.txt: missing isolated engine object target {target_name!r}"
             )
+    if "option(GOB_BUILD_LUISA_RENDERER" not in cmake_text:
+        violations.append("CMakeLists.txt: optional Luisa renderer build switch is missing")
+    if "add_library(gobot_luisa_renderer MODULE" not in cmake_text:
+        violations.append("CMakeLists.txt: Luisa renderer is not isolated as a loadable module")
 
     example_specific_python_tokens = ("GO1_", "go1_rough_velocity")
     for path in source_files(ROOT / "python/gobot", {".py", ".pyi"}):

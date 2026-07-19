@@ -18,6 +18,8 @@ public:
 
     Ref<Image> LoadImage(const std::vector<uint8_t>& byte_array, LoaderFlags flags, float scale) override;
 
+    static Ref<Image> LoadMemory(const std::uint8_t* source, int size);
+
     void GetRecognizedExtensions(std::vector<std::string>* extensions) const override;
 
 private:

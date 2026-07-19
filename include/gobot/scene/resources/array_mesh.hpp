@@ -26,7 +26,13 @@ public:
     void SetSurface(std::vector<Vector3> vertices,
                     std::vector<uint32_t> indices,
                     std::vector<Vector3> normals = {},
-                    std::vector<Color> colors = {});
+                    std::vector<Color> colors = {},
+                    std::vector<Vector4> tangents = {},
+                    std::vector<Vector2> uv0 = {});
+
+    void SetSurfaces(MeshSurfaceList surfaces);
+
+    MeshSurfaceList GetSurfaces() const;
 
     const std::vector<Vector3>& GetVertices() const;
 
@@ -46,10 +52,6 @@ private:
     void UploadSurface() const;
 
     mutable RID mesh_;
-    std::vector<Vector3> vertices_;
-    std::vector<uint32_t> indices_;
-    std::vector<Vector3> normals_;
-    std::vector<Color> colors_;
     Ref<Material> material_{nullptr};
 };
 

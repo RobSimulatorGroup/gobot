@@ -10,7 +10,9 @@
 #include <utility>
 
 #include "gobot/scene/collision_shape_3d.hpp"
+#include "gobot/scene/environment_3d.hpp"
 #include "gobot/scene/joint_3d.hpp"
+#include "gobot/scene/light_3d.hpp"
 #include "gobot/scene/link_3d.hpp"
 #include "gobot/scene/mesh_instance_3d.hpp"
 #include "gobot/scene/node_3d.hpp"
@@ -116,6 +118,46 @@ void NodeCreationRegistry::EnsureBuiltInNodeTypesRegistered() {
         "Node3D",
         "3D node that renders a mesh resource.",
         []() -> Node* { return CreateNodeInstance<MeshInstance3D>(); }
+    });
+
+    RegisterNodeType({
+        "Environment3D",
+        "Environment3D",
+        "Node3D",
+        "Scene environment colors, HDR lighting, ambient intensity, and exposure.",
+        []() -> Node* { return CreateNodeInstance<Environment3D>(); }
+    });
+
+    RegisterNodeType({
+        "Light3D",
+        "Light3D",
+        "Node3D",
+        "Base node for authored scene lights.",
+        []() -> Node* { return CreateNodeInstance<Light3D>(); }
+    });
+
+    RegisterNodeType({
+        "DirectionalLight3D",
+        "Directional Light",
+        "Light3D",
+        "Infinite directional light.",
+        []() -> Node* { return CreateNodeInstance<DirectionalLight3D>(); }
+    });
+
+    RegisterNodeType({
+        "PointLight3D",
+        "Point Light",
+        "Light3D",
+        "Finite-range omnidirectional point light.",
+        []() -> Node* { return CreateNodeInstance<PointLight3D>(); }
+    });
+
+    RegisterNodeType({
+        "SpotLight3D",
+        "Spot Light",
+        "PointLight3D",
+        "Finite-range conical spot light.",
+        []() -> Node* { return CreateNodeInstance<SpotLight3D>(); }
     });
 
     RegisterNodeType({

@@ -28,3 +28,8 @@
 [submodule "3rdparty/tracy"]
 	path = 3rdparty/tracy
 	url = https://github.com/wolfpld/tracy.git
+[submodule "3rdparty/luisa_compute"]
+	path = 3rdparty/luisa_compute
+	url = https://github.com/LuisaGroup/LuisaCompute.git
+	branch = stable
+	shallow = true

@@ -21,6 +21,8 @@ public:
 
     Color& operator=(const Color& color) = default;
 
+    bool operator==(const Color& color) const = default;
+
     Color(float r, float g, float b, float a = 1.0)
         : r_(r),
           g_(g),

@@ -60,7 +60,7 @@ first one from `example_roots` and hides the later duplicates.
 The training environment is intentionally local to the example. It does not use
 Gobot task JSON or project-specific code inside the `gobot` Python package. The
 editor script loads `policies/cartpole.onnx` for lightweight playback in the
-Gobot scene. Install `gobot[train]` only to load `.pt` checkpoints directly.
+Gobot scene. The default installation can also load `.pt` checkpoints directly.
 
 ## Go1
 
@@ -83,9 +83,8 @@ baseline or MuJoCo Warp CUDA backend. It contains:
 - `policies/go1_velocity.onnx`: generated balanced policy playback graph.
 - `policies/go1_velocity_run.onnx`: optional generated forward-running policy graph.
 
-The default Gobot install can play ONNX policies. Install `gobot[train]` only
-to train or load `.pt` checkpoints directly. Install `imageio imageio-ffmpeg`
-for MP4 training captures and `onnx` for ONNX export.
+The default Gobot install can play ONNX policies, train or load `.pt`
+checkpoints, capture MP4 video, and export ONNX policies.
 
 Playback supports `W/S` forward/reverse, `Q/E` strafe, `A/D` yaw,
 `Shift+W` at 3 m/s with the optional run actor, `Shift+S` accelerated reverse

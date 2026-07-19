@@ -12,7 +12,9 @@ drive reinforcement-learning experiments.
 
 ## Install
 
-Gobot currently publishes Linux wheels.
+Gobot currently publishes full-featured Linux x86_64 wheels for NVIDIA GPU
+systems. The wheel includes CPU simulation, MuJoCo Warp training dependencies,
+and the LuisaCompute CUDA viewport renderer.
 
 ```bash
 pip install gobot -i https://pypi.org/simple
@@ -53,7 +55,8 @@ For source checkout development:
 
 ```bash
 cd /path/to/gobot
-uv sync --extra train
+scripts/build_luisa_compute.sh
+uv sync
 uv run gobot_editor --path examples/go1
 ```
 
@@ -63,7 +66,7 @@ build installed in `.venv`. After changing C++ or CMake files, rebuild and
 reinstall only Gobot:
 
 ```bash
-uv sync --extra train --reinstall-package gobot --no-build-isolation-package gobot
+uv sync --reinstall-package gobot --no-build-isolation-package gobot
 ```
 
 The initial `uv sync` installs the build backend in `.venv`; disabling build
@@ -103,36 +106,18 @@ That standalone build is not the artifact used by the `.venv` console script;
 run the following command when the installed editor must be updated:
 
 ```bash
-uv sync --extra train --reinstall-package gobot --no-build-isolation-package gobot
+uv sync --reinstall-package gobot --no-build-isolation-package gobot
 ```
 
-The default install includes the lightweight ONNX Runtime path used for example
-policy playback. The heavier training stack stays optional:
-
-```bash
-uv sync --extra train
-```
-
-`train` installs PyTorch, `rsl-rl-lib`, `tensordict`, and `tensorboard` for
-training or directly loading `.pt` checkpoints. It does not install Python
-`mujoco`; Gobot uses its packaged native MuJoCo backend. Install
-`imageio imageio-ffmpeg` only for MP4 training captures, and `onnx>=1.16` only
-for exporting checkpoints to ONNX.
-
-The experimental MuJoCo Warp CUDA provider is a separate optional install on
-Linux x86_64:
-
-```bash
-uv sync --extra train --extra mujoco-warp
-```
-
-Requesting this provider requires an NVIDIA CUDA device and never falls back
-implicitly to the CPU backend. Normal MuJoCo CPU training only needs `train`.
+The default environment includes ONNX Runtime, PyTorch, rsl_rl, MuJoCo Warp,
+training logs, video capture, and ONNX export support. There are no separate
+CPU, CUDA, or training extras. Selecting `mujoco-cpu` or `mujoco-warp` remains
+an explicit runtime choice; requesting Warp never silently falls back to CPU.
 
 Run Go1 rough-terrain training on MuJoCo Warp through `uv`:
 
 ```bash
-uv run --extra train --extra mujoco-warp \
+uv run \
   python -m examples.go1.train.go1_velocity_train \
   --backend mujoco-warp \
   --device cuda:0 \
@@ -144,7 +129,7 @@ uv run --extra train --extra mujoco-warp \
 Select the CPU semantic baseline explicitly when CUDA is not desired:
 
 ```bash
-uv run --extra train \
+uv run \
   python -m examples.go1.train.go1_velocity_train \
   --backend mujoco-cpu \
   --device cpu \
@@ -170,6 +155,7 @@ From a source checkout:
 git clone https://github.com/RobSimulatorGroup/gobot.git
 cd gobot
 git submodule update --init --recursive
+scripts/build_luisa_compute.sh
 uv run --with build python -m build --wheel
 uv pip install --force-reinstall dist/gobot-*.whl
 ```
@@ -179,6 +165,12 @@ uv pip install --force-reinstall dist/gobot-*.whl
 - Supported platform: Linux.
 - Python package name: `gobot`.
 - MuJoCo support is included in release wheels when available in the build.
-- MuJoCo Warp is an optional Python provider and is not a C++ scene/backend API.
+- Release wheels install the MuJoCo Warp Python provider and LuisaCompute CUDA
+  renderer by default; neither becomes a C++ scene API.
+- A system CUDA Toolkit is needed to build from source, but not to use a wheel.
+  Wheel users need a compatible NVIDIA driver providing `libcuda.so.1` and
+  the system libglvnd EGL/OpenGL dispatch libraries. Driver libraries are not
+  copied into the wheel because they must match the target machine's driver.
 - Packaged examples: `gobot/examples/` in wheels and `examples/` in source.
 - MuJoCo RL roadmap: `doc/mujoco_rl_plan.md`.
+- Luisa CUDA renderer architecture and build guide: `doc/luisa_rendering_plan.md`.

@@ -30,6 +30,10 @@ public:
 protected:
     RID EnsureRid() const;
 
+    void SetGeneratedSurface(MeshSurfaceData surface) const;
+
+    void UploadSurface() const;
+
 private:
     mutable RID mesh_;
     Ref<Material> material_{nullptr};
@@ -52,6 +56,8 @@ public:
     const Vector3& GetSize() const;
 
 private:
+    void UpdateMesh() const;
+
     Vector3 size_ = Vector3::Ones();
 };
 

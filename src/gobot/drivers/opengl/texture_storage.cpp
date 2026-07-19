@@ -400,9 +400,11 @@ void TextureStorage::UpdateRenderTarget(RenderTarget* rt) {
         return;
     }
 
-    rt->color_internal_format = rt->is_transparent ? GL_RGBA8 : GL_RGB10_A2;
+    // GL_RGBA8 is supported by CUDA-OpenGL image interop and remains the
+    // presentation texture for both raster and optional CUDA renderers.
+    rt->color_internal_format = GL_RGBA8;
     rt->color_format = GL_RGBA;
-    rt->color_type = rt->is_transparent ? GL_UNSIGNED_BYTE : GL_UNSIGNED_INT_2_10_10_10_REV;
+    rt->color_type = GL_UNSIGNED_BYTE;
     rt->image_format = ImageFormat::RGBA8;
 
     // TODO(wqq): Do we need this.

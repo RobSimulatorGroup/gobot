@@ -245,6 +245,25 @@ TEST_F(TestTerrain3D, stores_primitives_heightfields_and_spawn_origins) {
     gobot::Object::Delete(terrain);
 }
 
+TEST_F(TestTerrain3D, heightfield_surface_normals_face_up) {
+    auto* terrain = gobot::Object::New<gobot::Terrain3D>();
+    gobot::TerrainHeightField heightfield;
+    heightfield.size = {2.0, 2.0};
+    heightfield.rows = 2;
+    heightfield.cols = 3;
+    heightfield.heights = {0.0, 0.0, 0.0, 0.0, 0.0, 0.0};
+    terrain->AddHeightField(heightfield);
+
+    const gobot::Ref<gobot::ArrayMesh> mesh = terrain->GetRenderMesh();
+    ASSERT_TRUE(mesh.IsValid());
+    ASSERT_EQ(mesh->GetNormals().size(), 6);
+    for (const gobot::Vector3& normal : mesh->GetNormals()) {
+        EXPECT_TRUE(normal.isApprox(gobot::Vector3::UnitZ(), CMP_EPSILON));
+    }
+
+    gobot::Object::Delete(terrain);
+}
+
 TEST_F(TestTerrain3D, render_mesh_uses_authored_colors) {
     auto* terrain = gobot::Object::New<gobot::Terrain3D>();
     terrain->SetColorMode(gobot::TerrainColorMode::Palette);

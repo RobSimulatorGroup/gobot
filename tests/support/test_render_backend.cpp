@@ -112,6 +112,9 @@ public:
         textures_.InitializeRID(rid);
         return rid;
     }
+    void Texture2DInitialize(RID, const Ref<Image>&) override {}
+    void TextureSetData(RID, const Ref<Image>&, int) override {}
+    bool OwnsTexture(RID p_rid) const override { return textures_.Owns(p_rid); }
     void TextureFree(RID p_rid) override { textures_.Free(p_rid); }
 
 private:
@@ -121,7 +124,7 @@ private:
 
 class TestSceneRender final : public RendererSceneRender {
 public:
-    void RenderScene(const RID&, const Node*, const Camera3D*) override {}
+    void RenderScene(const RID&, const SceneRenderSnapshot&) override {}
 };
 
 class TestDebugDraw final : public RendererDebugDraw {
