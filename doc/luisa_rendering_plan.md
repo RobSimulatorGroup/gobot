@@ -98,6 +98,12 @@ git submodule update --init 3rdparty/luisa_compute
 git -C 3rdparty/luisa_compute submodule update --init --recursive
 ```
 
+The build script rejects uninitialized, mismatched, conflicted, or dirty nested
+submodules before configuring CMake. This prevents an extracted dependency tree
+from being mistaken for the pinned Git checkout. Set
+`GOB_LUISA_ALLOW_DIRTY_SOURCE=1` only when intentionally developing a LuisaCompute
+dependency locally.
+
 Build and install the isolated CUDA-only dependency:
 
 ```bash
@@ -151,6 +157,15 @@ libraries; shader code is compiled for the active GPU by the bundled
 `luisa_nvrtc` helper. JIT cache files are written to
 `$XDG_CACHE_HOME/gobot/luisa/v1` or `~/.cache/gobot/luisa/v1`, never into the
 installed wheel.
+
+Release wheels are cross-built on standard GitHub-hosted Ubuntu runners. A
+physical GPU is not required to compile CUDA code or link against the driver
+stubs. LuisaCompute is built once per workflow in the pinned NVIDIA CUDA
+development container. Its install tree and a compact CUDA build SDK containing
+headers, `libcudart`, and the driver stub are passed to the Python-version wheel
+matrix as a versioned tar artifact. Actual CUDA/OpenGL frame validation remains
+in the independent GPU CI workflow on a self-hosted NVIDIA runner, so an offline
+GPU machine cannot block wheel creation or PyPI publication.
 
 ## libglvnd And GPU Selection
 

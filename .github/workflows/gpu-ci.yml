@@ -14,7 +14,7 @@ concurrency:
 
 jobs:
   go1-mujoco-warp:
-    name: Go1 MuJoCo Warp
+    name: GPU renderer and Go1 MuJoCo Warp
     runs-on: [self-hosted, linux, x64, gpu]
     timeout-minutes: 60
 
@@ -45,6 +45,30 @@ jobs:
 
       - name: Install complete Gobot environment
         run: uv sync
+
+      - name: Configure Luisa renderer integration test
+        run: |
+          PYTHON_EXECUTABLE="$(uv run --no-sync python -c 'import sys; print(sys.executable)')"
+          cmake -S . -B build_gpu_renderer -G Ninja \
+            -DCMAKE_BUILD_TYPE=Release \
+            -DGOB_BUILD_TESTS=ON \
+            -DGOB_BUILD_ASSIMP=OFF \
+            -DGOB_BUILD_MUJOCO=OFF \
+            -DGOB_BUILD_LUISA_RENDERER=ON \
+            -DGOB_LUISA_COMPUTE_ROOT="$PWD/build/luisa_compute/install" \
+            -DPython3_EXECUTABLE="${PYTHON_EXECUTABLE}"
+          cmake --build build_gpu_renderer \
+            --target test_luisa_renderer_module \
+            --parallel "$(nproc)"
+
+      - name: Test Luisa CUDA/OpenGL frame rendering
+        run: |
+          mkdir -p /tmp/gobot-gpu-ci/luisa-cache
+          XDG_CACHE_HOME=/tmp/gobot-gpu-ci/luisa-cache \
+          GOBOT_RUN_LUISA_GPU_TEST=1 \
+            build_gpu_renderer/tests/test_luisa_renderer_module \
+              --gtest_filter=LuisaRendererGpu.* \
+              --gtest_color=yes
 
       - name: Validate reference fixture
         run: uv run --no-sync python tests/python/test_go1_reference_fixture.py

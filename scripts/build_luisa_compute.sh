@@ -27,6 +27,39 @@ if [[ ! -f "${SOURCE_DIR}/CMakeLists.txt" ]]; then
     exit 1
 fi
 
+if git -C "${SOURCE_DIR}" rev-parse --is-inside-work-tree >/dev/null 2>&1; then
+    SUBMODULE_STATUS="$(git -C "${SOURCE_DIR}" submodule status --recursive)"
+    while IFS= read -r status_line; do
+        [[ -z "${status_line}" ]] && continue
+        case "${status_line:0:1}" in
+            -)
+                echo "LuisaCompute submodule is not initialized: ${status_line:1}" >&2
+                echo "Run: git submodule update --init --recursive" >&2
+                exit 1
+                ;;
+            +)
+                echo "LuisaCompute submodule is not at its pinned commit: ${status_line:1}" >&2
+                echo "Run: git submodule update --init --recursive" >&2
+                exit 1
+                ;;
+            U)
+                echo "LuisaCompute submodule has unresolved conflicts: ${status_line:1}" >&2
+                exit 1
+                ;;
+        esac
+    done <<< "${SUBMODULE_STATUS}"
+
+    if [[ "${GOB_LUISA_ALLOW_DIRTY_SOURCE:-0}" != "1" ]]; then
+        DIRTY_SOURCE="$(git -C "${SOURCE_DIR}" status --porcelain --untracked-files=all)"
+        if [[ -n "${DIRTY_SOURCE}" ]]; then
+            echo "LuisaCompute source or one of its submodules is dirty:" >&2
+            echo "${DIRTY_SOURCE}" >&2
+            echo "Use a clean pinned checkout, or set GOB_LUISA_ALLOW_DIRTY_SOURCE=1 for intentional dependency development." >&2
+            exit 1
+        fi
+    fi
+fi
+
 for dependency in reproc spdlog; do
     if [[ ! -f "${SOURCE_DIR}/src/ext/${dependency}/CMakeLists.txt" ]]; then
         echo "LuisaCompute dependency is missing: src/ext/${dependency}" >&2

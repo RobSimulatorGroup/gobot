@@ -17,9 +17,103 @@ permissions:
   contents: read
 
 jobs:
+  build-luisa:
+    name: Build LuisaCompute CUDA runtime
+    runs-on: ubuntu-22.04
+    timeout-minutes: 120
+    container:
+      image: nvidia/cuda:12.8.1-devel-ubuntu22.04
+
+    steps:
+      - name: Prepare CUDA build container
+        run: |
+          export DEBIAN_FRONTEND=noninteractive
+          apt-get update
+          apt-get install -y \
+            ca-certificates \
+            g++-11 \
+            gcc-11 \
+            git \
+            gzip \
+            libx11-dev \
+            ninja-build \
+            python3 \
+            python3-pip \
+            tar \
+            uuid-dev \
+            zstd
+          python3 -m pip install -U 'cmake>=3.26'
+
+      - name: Check out repository
+        uses: actions/checkout@v4
+        with:
+          submodules: false
+          persist-credentials: false
+
+      - name: Check out LuisaCompute
+        run: |
+          git submodule sync --recursive
+          git -c protocol.version=2 submodule update \
+            --init --force --depth=1 3rdparty/luisa_compute
+          git -C 3rdparty/luisa_compute submodule sync --recursive
+          git -C 3rdparty/luisa_compute -c protocol.version=2 submodule update \
+            --init --force --depth=1 --recursive
+
+      - name: Check CUDA compiler
+        run: nvcc --version
+
+      - name: Resolve LuisaCompute cache key
+        id: luisa-cache-key
+        run: |
+          {
+            git -C 3rdparty/luisa_compute rev-parse HEAD
+            git -C 3rdparty/luisa_compute submodule status --recursive
+            sha256sum scripts/build_luisa_compute.sh
+            nvcc --version
+            g++-11 --version
+          } > "$RUNNER_TEMP/luisa-cache-key"
+          echo "value=$(sha256sum "$RUNNER_TEMP/luisa-cache-key" | cut -d' ' -f1)" >> "$GITHUB_OUTPUT"
+
+      - name: Restore LuisaCompute install
+        id: luisa-cache
+        uses: actions/cache@v4
+        with:
+          path: build/luisa_compute/install
+          key: luisa-cuda-12.8.1-${{ runner.os }}-${{ steps.luisa-cache-key.outputs.value }}
+
+      - name: Build LuisaCompute CUDA runtime
+        if: steps.luisa-cache.outputs.cache-hit != 'true'
+        run: scripts/build_luisa_compute.sh
+
+      - name: Pack LuisaCompute and CUDA build SDK
+        run: |
+          test -x build/luisa_compute/install/bin/luisa_nvrtc
+          CUDA_ROOT="${CUDA_HOME:-/usr/local/cuda}"
+          CUDA_TARGET_ROOT="${CUDA_ROOT}/targets/x86_64-linux"
+          mkdir -p build/cuda-toolkit/lib64/stubs
+          cp -a "${CUDA_ROOT}/version.json" build/cuda-toolkit/version.json
+          cp -a "${CUDA_TARGET_ROOT}/include" build/cuda-toolkit/include
+          cp -a "${CUDA_TARGET_ROOT}"/lib/libcudart.so* build/cuda-toolkit/lib64/
+          cp -a "${CUDA_TARGET_ROOT}/lib/stubs/libcuda.so" \
+            build/cuda-toolkit/lib64/stubs/libcuda.so
+          test -f build/cuda-toolkit/include/cuda.h
+          test -f build/cuda-toolkit/lib64/stubs/libcuda.so
+          tar -C build -czf "$RUNNER_TEMP/luisa-cuda-build-inputs.tar.gz" \
+            luisa_compute/install cuda-toolkit
+
+      - name: Upload LuisaCompute and CUDA build SDK
+        uses: actions/upload-artifact@v4
+        with:
+          name: luisa-cuda-build-inputs
+          path: ${{ runner.temp }}/luisa-cuda-build-inputs.tar.gz
+          if-no-files-found: error
+          retention-days: 1
+
   build-wheels:
     name: Build wheel for Python ${{ matrix.python-version }}
-    runs-on: [self-hosted, linux, x64, gpu]
+    needs: build-luisa
+    runs-on: ubuntu-22.04
+    timeout-minutes: 120
     strategy:
       fail-fast: false
       matrix:
@@ -31,40 +125,19 @@ jobs:
           - "3.14"
 
     steps:
-      - name: Check out repository
-        uses: actions/checkout@v4
-        with:
-          submodules: false
-          persist-credentials: false
-
-      - name: Check out submodules
-        env:
-          SUBMODULES_TOKEN: ${{ secrets.SUBMODULES_TOKEN }}
-        run: |
-          if [ -z "${SUBMODULES_TOKEN}" ]; then
-            echo "::error::Missing SUBMODULES_TOKEN secret. Create a fine-grained PAT with Contents: Read access to the private submodule repositories."
-            exit 1
-          fi
-          git config --global url."https://x-access-token:${SUBMODULES_TOKEN}@github.com/".insteadOf "https://github.com/"
-          git config --global url."https://x-access-token:${SUBMODULES_TOKEN}@github.com/".insteadOf "git@github.com:"
-          git submodule sync --recursive
-          git -c protocol.version=2 submodule update --init --force --depth=1 --recursive
-
-      - name: Set up Python
-        uses: actions/setup-python@v5
-        with:
-          python-version: ${{ matrix.python-version }}
-
-      - name: Install build tools
-        run: python -m pip install -U 'cmake>=3.26' ninja auditwheel build packaging patchelf
-
       - name: Install native dependencies
         run: |
+          export DEBIAN_FRONTEND=noninteractive
           sudo apt-get update
           sudo apt-get install -y \
             autoconf \
+            ca-certificates \
+            curl \
             gcc-11 \
             g++-11 \
+            git \
+            gzip \
+            libegl-dev \
             libeigen3-dev \
             libgl-dev \
             libx11-dev \
@@ -80,39 +153,57 @@ jobs:
             libxss-dev \
             libxxf86vm-dev \
             mesa-common-dev \
+            ninja-build \
+            pkg-config \
+            tar \
+            unzip \
             uuid-dev \
             vim-common \
-            xorg-dev
+            xorg-dev \
+            xz-utils
 
-      - name: Check CUDA build environment
-        run: |
-          nvidia-smi
-          nvcc --version
-
-      - name: Resolve LuisaCompute cache key
-        id: luisa-cache-key
-        run: |
-          {
-            git -C 3rdparty/luisa_compute rev-parse HEAD
-            sha256sum scripts/build_luisa_compute.sh
-            nvcc --version
-            g++-11 --version
-          } > "$RUNNER_TEMP/luisa-cache-key"
-          echo "value=$(sha256sum "$RUNNER_TEMP/luisa-cache-key" | cut -d' ' -f1)" >> "$GITHUB_OUTPUT"
-
-      - name: Restore LuisaCompute install
-        id: luisa-cache
-        uses: actions/cache@v4
+      - name: Check out repository
+        uses: actions/checkout@v4
         with:
-          path: build/luisa_compute/install
-          key: luisa-cuda-${{ runner.os }}-${{ steps.luisa-cache-key.outputs.value }}
+          submodules: false
+          persist-credentials: false
 
-      - name: Build LuisaCompute CUDA runtime
-        if: steps.luisa-cache.outputs.cache-hit != 'true'
-        run: scripts/build_luisa_compute.sh
+      - name: Check out submodules
+        run: |
+          git submodule sync
+          git -c protocol.version=2 submodule update --init --force --depth=1
+
+      - name: Download LuisaCompute and CUDA build SDK
+        uses: actions/download-artifact@v4
+        with:
+          name: luisa-cuda-build-inputs
+          path: ${{ runner.temp }}/luisa-cuda-build-inputs
+
+      - name: Restore LuisaCompute and CUDA build SDK
+        run: |
+          mkdir -p build
+          tar -C build -xzf \
+            "$RUNNER_TEMP/luisa-cuda-build-inputs/luisa-cuda-build-inputs.tar.gz"
+          test -x build/luisa_compute/install/bin/luisa_nvrtc
+          test -f build/cuda-toolkit/include/cuda.h
+          test -f build/cuda-toolkit/lib64/stubs/libcuda.so
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python-version }}
+
+      - name: Install build tools
+        run: python -m pip install -U 'cmake>=3.26' ninja auditwheel build packaging patchelf
+
+      - name: Check CUDA build SDK
+        run: |
+          python -c 'from pathlib import Path; assert Path("build/cuda-toolkit/version.json").is_file()'
 
       - name: Build wheel
-        run: python -m build --wheel --outdir wheelhouse-unrepaired
+        run: |
+          CMAKE_ARGS="-DCUDAToolkit_ROOT=$PWD/build/cuda-toolkit" \
+            python -m build --wheel --outdir wheelhouse-unrepaired
 
       - name: Repair wheel
         run: |
