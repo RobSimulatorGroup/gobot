@@ -35,6 +35,12 @@ void RendererViewport::ViewportSetSize(RID p_viewport, int p_width, int p_height
     ViewportSetSize(viewport, p_width, p_height, 1);
 }
 
+void RendererViewport::ViewportSetOutputMask(RID p_viewport, std::uint32_t output_mask) {
+    Viewport* viewport = viewport_owner_.GetOrNull(p_viewport);
+    ERR_FAIL_COND(!viewport);
+    RSG::texture_storage->RenderTargetSetOutputMask(viewport->render_target, output_mask);
+}
+
 void RendererViewport::ViewportSetSize(Viewport *p_viewport, int p_width, int p_height, uint32_t p_view_count) {
     Vector2i new_size(p_width, p_height);
     if (p_viewport->size != new_size || p_viewport->view_count != p_view_count) {
@@ -70,6 +76,17 @@ std::vector<std::uint8_t> RendererViewport::ReadViewportRgbPixels(RID p_viewport
     ERR_FAIL_COND_V(!viewport, {});
 
     return RSG::texture_storage->RenderTargetReadRgbPixels(viewport->render_target, p_flip_y);
+}
+
+bool RendererViewport::ReadViewportOutput(RID p_viewport,
+                                          RenderOutputType output,
+                                          void* destination,
+                                          std::size_t destination_size,
+                                          bool p_flip_y) {
+    Viewport* viewport = viewport_owner_.GetOrNull(p_viewport);
+    ERR_FAIL_COND_V(!viewport, false);
+    return RSG::texture_storage->RenderTargetReadOutput(
+            viewport->render_target, output, destination, destination_size, p_flip_y);
 }
 
 RID RendererViewport::GetViewportRenderTarget(RID p_viewport) const {

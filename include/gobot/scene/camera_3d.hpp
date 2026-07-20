@@ -43,6 +43,12 @@ public:
 
     void SetViewMatrix(const Vector3& eye, const Vector3& at, const Vector3& up);
 
+    void SetViewMatrixEye(const Vector3& eye);
+
+    void SetViewMatrixAt(const Vector3& at);
+
+    void SetViewMatrixUp(const Vector3& up);
+
     FORCE_INLINE Vector3 GetViewMatrixEye() const { return eye_; };
 
     FORCE_INLINE Vector3 GetViewMatrixAt() const { return at_; };
@@ -62,9 +68,9 @@ private:
     ProjectionType mode_ = Perspective;
 
     // redundant info for ViewMatrix
-    Vector3 eye_{};
-    Vector3 at_{};
-    Vector3 up_{};
+    Vector3 eye_{0.0, -1.0, 0.0};
+    Vector3 at_{0.0, 0.0, 0.0};
+    Vector3 up_{0.0, 0.0, 1.0};
 };
 
 

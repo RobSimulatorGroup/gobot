@@ -19,10 +19,26 @@
 #include <cstdlib>
 #include <dlfcn.h>
 #include <filesystem>
+#include <limits>
 #include <string>
 #include <vector>
 
 namespace gobot::opengl {
+
+struct LuisaRendererLifetime {
+    void* library = nullptr;
+    void* renderer = nullptr;
+    const LuisaRendererModuleApi* api = nullptr;
+
+    ~LuisaRendererLifetime() {
+        if (renderer != nullptr && api != nullptr && api->destroy != nullptr) {
+            api->destroy(renderer);
+        }
+        if (library != nullptr) {
+            dlclose(library);
+        }
+    }
+};
 
 namespace {
 
@@ -188,10 +204,15 @@ SceneRendererCapabilities GLRasterizerScene::GetCapabilities() const {
     auto* self = const_cast<GLRasterizerScene*>(this);
     if (self->TryLoadLuisaModule() && self->luisa_api_->capabilities != nullptr) {
         SceneRendererCapabilities capabilities = self->luisa_api_->capabilities(nullptr);
+        capabilities.cuda_render_products = capabilities.cuda_render_products &&
+                                            self->luisa_api_->capture_render_product != nullptr &&
+                                            self->luisa_api_->release_render_product != nullptr &&
+                                            self->luisa_api_->readback_render_product != nullptr;
         if (self->luisa_create_attempted_ && self->luisa_renderer_ == nullptr) {
             capabilities.ray_tracing_available = false;
             capabilities.realtime = false;
             capabilities.progressive = false;
+            capabilities.cuda_render_products = false;
             capabilities.status = self->luisa_status_;
         }
         return capabilities;
@@ -206,6 +227,85 @@ SceneRendererCapabilities GLRasterizerScene::GetCapabilities() const {
 
 SceneRendererStats GLRasterizerScene::GetStats() const {
     return stats_;
+}
+
+bool GLRasterizerScene::CaptureCudaRenderProduct(const RenderSceneSnapshot& scene,
+                                                 const RenderViewSnapshot& view,
+                                                 int width,
+                                                 int height,
+                                                 std::uint32_t output_mask,
+                                                 std::uint32_t mode,
+                                                 RendererRenderProductFrame* frame,
+                                                 std::string* error) {
+    if (frame == nullptr) {
+        if (error != nullptr) {
+            *error = "CUDA render-product destination is null";
+        }
+        return false;
+    }
+    if (!EnsureLuisaRenderer() || luisa_api_ == nullptr ||
+        luisa_api_->capture_render_product == nullptr ||
+        luisa_api_->release_render_product == nullptr ||
+        luisa_api_->readback_render_product == nullptr) {
+        if (error != nullptr) {
+            *error = luisa_status_.empty()
+                             ? "Luisa CUDA render-product API is unavailable"
+                             : luisa_status_;
+        }
+        return false;
+    }
+
+    const LuisaRenderProductRequest request{width, height, output_mask, mode};
+    LuisaRenderProductFrame module_frame;
+    std::array<char, 1024> module_error{};
+    const LuisaRendererResult result = luisa_api_->capture_render_product(
+            luisa_renderer_,
+            &scene,
+            &view,
+            &request,
+            &module_frame,
+            module_error.data(),
+            module_error.size());
+    if (result != LuisaRendererResult::Success || module_frame.frame == nullptr) {
+        if (error != nullptr) {
+            *error = module_error[0] != '\0'
+                             ? module_error.data()
+                             : "Luisa CUDA render-product capture failed";
+        }
+        if (result == LuisaRendererResult::FatalError) {
+            luisa_status_ = error != nullptr ? *error : "Luisa CUDA render-product fatal error";
+        }
+        return false;
+    }
+
+    const LuisaRendererModuleApi* api = luisa_api_;
+    void* renderer = luisa_renderer_;
+    void* handle = module_frame.frame;
+    const std::shared_ptr<LuisaRendererLifetime> lifetime = luisa_lifetime_;
+    auto owner = std::shared_ptr<void>(handle, [api, renderer, lifetime](void* product_frame) {
+        api->release_render_product(renderer, product_frame);
+    });
+    frame->owner = owner;
+    frame->device_id = module_frame.device_id;
+    for (std::size_t index = 0; index < frame->buffers.size(); ++index) {
+        frame->buffers[index] = {
+                module_frame.buffers[index].device_pointer,
+                module_frame.buffers[index].allocation_size,
+                module_frame.buffers[index].pixel_stride_bytes};
+    }
+    frame->copy_to_host = [api, renderer, handle, owner](std::uint32_t output,
+                                                         void* destination,
+                                                         std::size_t destination_size) {
+        std::array<char, 1024> readback_error{};
+        return api->readback_render_product(renderer,
+                                            handle,
+                                            output,
+                                            destination,
+                                            destination_size,
+                                            readback_error.data(),
+                                            readback_error.size());
+    };
+    return true;
 }
 
 void GLRasterizerScene::SetSettings(const SceneRendererSettings& settings) {
@@ -239,7 +339,9 @@ GLRasterizerScene::~GLRasterizerScene() {
     }
 }
 
-void GLRasterizerScene::RenderScene(const RID& render_target, const SceneRenderSnapshot& snapshot) {
+void GLRasterizerScene::RenderScene(const RID& render_target,
+                                    const RenderSceneSnapshot& scene,
+                                    const RenderViewSnapshot& view) {
     GOBOT_PROFILE_ZONE("OpenGL::RenderScene");
     auto* rt = TextureStorage::GetInstance()->GetRenderTarget(render_target);
     ERR_FAIL_COND(rt == nullptr);
@@ -253,9 +355,10 @@ void GLRasterizerScene::RenderScene(const RID& render_target, const SceneRenderS
     }
 
     ++frame_index_;
-    if (settings_.mode != SceneRendererMode::Raster && EnsureLuisaRenderer()) {
-        RenderDepthPrepass(*rt, snapshot);
-        if (RenderWithLuisa(*rt, snapshot)) {
+    if (view.mode == RenderViewMode::Viewport &&
+        settings_.mode != SceneRendererMode::Raster && EnsureLuisaRenderer()) {
+        RenderDepthPrepass(*rt, scene, view);
+        if (RenderWithLuisa(*rt, scene, view)) {
             PruneCaches();
             return;
         }
@@ -274,18 +377,38 @@ void GLRasterizerScene::RenderScene(const RID& render_target, const SceneRenderS
     glDepthFunc(GL_LESS);
     glDepthMask(GL_TRUE);
     glFrontFace(GL_CCW);
-    const Color& clear_color = snapshot.environment.clear_color;
-    glClearColor(clear_color.red(), clear_color.green(), clear_color.blue(), clear_color.alpha());
-    glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
+    const Color& clear_color = scene.environment.clear_color;
+    glClear(GL_DEPTH_BUFFER_BIT);
+    if (RenderOutputMaskContains(rt->output_mask, RenderOutputType::Rgb)) {
+        const std::array<float, 4> value = {
+                clear_color.red(), clear_color.green(), clear_color.blue(), clear_color.alpha()};
+        glClearBufferfv(GL_COLOR, static_cast<GLint>(RenderOutputType::Rgb), value.data());
+    }
+    if (RenderOutputMaskContains(rt->output_mask, RenderOutputType::LinearDepth)) {
+        const std::array<float, 4> value = {
+                std::numeric_limits<float>::infinity(), 0.0f, 0.0f, 0.0f};
+        glClearBufferfv(GL_COLOR, static_cast<GLint>(RenderOutputType::LinearDepth), value.data());
+    }
+    if (RenderOutputMaskContains(rt->output_mask, RenderOutputType::WorldNormal)) {
+        const std::array<float, 4> value{};
+        glClearBufferfv(GL_COLOR, static_cast<GLint>(RenderOutputType::WorldNormal), value.data());
+    }
+    const std::array<std::uint32_t, 4> zero_ids{};
+    if (RenderOutputMaskContains(rt->output_mask, RenderOutputType::InstanceId)) {
+        glClearBufferuiv(GL_COLOR, static_cast<GLint>(RenderOutputType::InstanceId), zero_ids.data());
+    }
+    if (RenderOutputMaskContains(rt->output_mask, RenderOutputType::SemanticId)) {
+        glClearBufferuiv(GL_COLOR, static_cast<GLint>(RenderOutputType::SemanticId), zero_ids.data());
+    }
 
     glUseProgram(default_program_);
-    UploadFrameUniforms(snapshot);
-    for (const VisualMeshRenderItem& item : snapshot.visual_meshes) {
+    UploadFrameUniforms(scene, view);
+    for (const VisualMeshRenderItem& item : scene.visual_meshes) {
         if (item.material.alpha_mode != AlphaMode::Blend) {
             DrawVisualItem(item);
         }
     }
-    for (const VisualMeshRenderItem& item : snapshot.visual_meshes) {
+    for (const VisualMeshRenderItem& item : scene.visual_meshes) {
         if (item.material.alpha_mode == AlphaMode::Blend) {
             DrawVisualItem(item);
         }
@@ -308,6 +431,7 @@ bool GLRasterizerScene::TryLoadLuisaModule() {
         return false;
     }
     luisa_load_attempted_ = true;
+    luisa_lifetime_ = std::make_shared<LuisaRendererLifetime>();
 
     std::vector<std::filesystem::path> candidates;
     if (const char* explicit_path = std::getenv("GOBOT_LUISA_RENDERER_LIBRARY");
@@ -333,6 +457,7 @@ bool GLRasterizerScene::TryLoadLuisaModule() {
     for (const std::filesystem::path& candidate : candidates) {
         luisa_module_library_ = dlopen(candidate.string().c_str(), RTLD_NOW | RTLD_LOCAL);
         if (luisa_module_library_ != nullptr) {
+            luisa_lifetime_->library = luisa_module_library_;
             break;
         }
     }
@@ -357,6 +482,7 @@ bool GLRasterizerScene::TryLoadLuisaModule() {
         luisa_load_attempted_ = true;
         return false;
     }
+    luisa_lifetime_->api = luisa_api_;
 
     luisa_status_ = "LuisaCompute CUDA renderer module available.";
     return true;
@@ -388,24 +514,21 @@ bool GLRasterizerScene::EnsureLuisaRenderer() {
                                 : "LuisaCompute CUDA device initialization failed.";
         return false;
     }
+    luisa_lifetime_->renderer = luisa_renderer_;
     luisa_status_ = "LuisaCompute CUDA renderer loaded.";
     return true;
 }
 
 void GLRasterizerScene::UnloadLuisaModule() {
-    if (luisa_renderer_ != nullptr && luisa_api_ != nullptr && luisa_api_->destroy != nullptr) {
-        luisa_api_->destroy(luisa_renderer_);
-    }
     luisa_renderer_ = nullptr;
     luisa_api_ = nullptr;
-    if (luisa_module_library_ != nullptr) {
-        dlclose(luisa_module_library_);
-    }
     luisa_module_library_ = nullptr;
+    luisa_lifetime_.reset();
 }
 
 bool GLRasterizerScene::RenderWithLuisa(const RenderTarget& target,
-                                        const SceneRenderSnapshot& snapshot) {
+                                        const RenderSceneSnapshot& scene,
+                                        const RenderViewSnapshot& view) {
     if (luisa_api_ == nullptr || luisa_renderer_ == nullptr) {
         return false;
     }
@@ -418,7 +541,8 @@ bool GLRasterizerScene::RenderWithLuisa(const RenderTarget& target,
     const LuisaRendererResult result = luisa_api_->render(
             luisa_renderer_,
             &render_target,
-            &snapshot,
+            &scene,
+            &view,
             &settings_,
             &stats_,
             error.data(),
@@ -436,7 +560,8 @@ bool GLRasterizerScene::RenderWithLuisa(const RenderTarget& target,
 }
 
 void GLRasterizerScene::RenderDepthPrepass(const RenderTarget& target,
-                                           const SceneRenderSnapshot& snapshot) {
+                                           const RenderSceneSnapshot& scene,
+                                           const RenderViewSnapshot& view) {
     glBindFramebuffer(GL_FRAMEBUFFER, target.fbo);
     glViewport(0, 0, target.size.x(), target.size.y());
     glEnable(GL_DEPTH_TEST);
@@ -445,8 +570,8 @@ void GLRasterizerScene::RenderDepthPrepass(const RenderTarget& target,
     glColorMask(GL_FALSE, GL_FALSE, GL_FALSE, GL_FALSE);
     glClear(GL_DEPTH_BUFFER_BIT);
     glUseProgram(default_program_);
-    UploadFrameUniforms(snapshot);
-    for (const VisualMeshRenderItem& item : snapshot.visual_meshes) {
+    UploadFrameUniforms(scene, view);
+    for (const VisualMeshRenderItem& item : scene.visual_meshes) {
         if (item.material.alpha_mode != AlphaMode::Blend) {
             DrawVisualItem(item);
         }
@@ -500,8 +625,11 @@ void GLRasterizerScene::EnsureDefaultProgram() {
     default_uniforms_.model = glGetUniformLocation(default_program_, "u_model");
     default_uniforms_.normal_matrix = glGetUniformLocation(default_program_, "u_normal_matrix");
     default_uniforms_.view_projection = glGetUniformLocation(default_program_, "u_view_projection");
+    default_uniforms_.view = glGetUniformLocation(default_program_, "u_view");
     default_uniforms_.color = glGetUniformLocation(default_program_, "u_color");
     default_uniforms_.camera_position = glGetUniformLocation(default_program_, "u_camera_position");
+    default_uniforms_.instance_id = glGetUniformLocation(default_program_, "u_instance_id");
+    default_uniforms_.semantic_id = glGetUniformLocation(default_program_, "u_semantic_id");
     default_uniforms_.metallic = glGetUniformLocation(default_program_, "u_metallic");
     default_uniforms_.roughness = glGetUniformLocation(default_program_, "u_roughness");
     default_uniforms_.specular = glGetUniformLocation(default_program_, "u_specular");
@@ -552,10 +680,12 @@ void GLRasterizerScene::EnsureDefaultProgram() {
     glUseProgram(0);
 }
 
-void GLRasterizerScene::UploadFrameUniforms(const SceneRenderSnapshot& snapshot) {
-    const RenderCameraSnapshot& camera = snapshot.camera;
-    const RenderEnvironmentSnapshot& environment = snapshot.environment;
+void GLRasterizerScene::UploadFrameUniforms(const RenderSceneSnapshot& scene,
+                                            const RenderViewSnapshot& view) {
+    const RenderCameraSnapshot& camera = view.camera;
+    const RenderEnvironmentSnapshot& environment = scene.environment;
     glUniformMatrix4fv(default_uniforms_.view_projection, 1, GL_FALSE, camera.view_projection.data());
+    glUniformMatrix4fv(default_uniforms_.view, 1, GL_FALSE, camera.view.data());
     glUniform3f(default_uniforms_.camera_position,
                 static_cast<float>(camera.world_position.x()),
                 static_cast<float>(camera.world_position.y()),
@@ -589,10 +719,10 @@ void GLRasterizerScene::UploadFrameUniforms(const SceneRenderSnapshot& snapshot)
     glBindTextureUnit(5, environment_texture);
     glUniform1i(default_uniforms_.has_environment_texture, environment_texture != 0);
 
-    const std::size_t light_count = std::min(snapshot.lights.size(), default_uniforms_.light_position_type.size());
+    const std::size_t light_count = std::min(scene.lights.size(), default_uniforms_.light_position_type.size());
     glUniform1i(default_uniforms_.light_count, static_cast<GLint>(light_count));
     for (std::size_t i = 0; i < light_count; ++i) {
-        const RenderLightSnapshot& light = snapshot.lights[i];
+        const RenderLightSnapshot& light = scene.lights[i];
         glUniform4f(default_uniforms_.light_position_type[i],
                     static_cast<float>(light.position.x()),
                     static_cast<float>(light.position.y()),
@@ -782,6 +912,8 @@ void GLRasterizerScene::DrawVisualItem(const VisualMeshRenderItem& item) {
     }
     glUniformMatrix4fv(default_uniforms_.model, 1, GL_FALSE, item.model.data());
     glUniformMatrix3fv(default_uniforms_.normal_matrix, 1, GL_FALSE, normal_matrix.data());
+    glUniform1ui(default_uniforms_.instance_id, item.instance_id);
+    glUniform1ui(default_uniforms_.semantic_id, item.semantic_id);
     glUniform4f(default_uniforms_.color,
                 material.albedo.red(),
                 material.albedo.green(),

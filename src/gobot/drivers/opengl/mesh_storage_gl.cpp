@@ -142,12 +142,12 @@ void GLMeshStorage::MeshSetBox(const RID& p_rid, const Vector3& size) {
     };
 
     const std::array<BoxFace, 6> faces = {
-            BoxFace{{0, 1, 2, 3}, Vector3{0.0f, 0.0f, -1.0f}},
+            BoxFace{{0, 3, 2, 1}, Vector3{0.0f, 0.0f, -1.0f}},
             BoxFace{{4, 5, 6, 7}, Vector3{0.0f, 0.0f, 1.0f}},
             BoxFace{{0, 1, 5, 4}, Vector3{0.0f, -1.0f, 0.0f}},
-            BoxFace{{3, 2, 6, 7}, Vector3{0.0f, 1.0f, 0.0f}},
+            BoxFace{{3, 7, 6, 2}, Vector3{0.0f, 1.0f, 0.0f}},
             BoxFace{{1, 2, 6, 5}, Vector3{1.0f, 0.0f, 0.0f}},
-            BoxFace{{0, 3, 7, 4}, Vector3{-1.0f, 0.0f, 0.0f}},
+            BoxFace{{0, 4, 7, 3}, Vector3{-1.0f, 0.0f, 0.0f}},
     };
 
     std::vector<float> vertices;
@@ -163,7 +163,7 @@ void GLMeshStorage::MeshSetBox(const RID& p_rid, const Vector3& size) {
             PushVertex(vertices, point.x(), point.y(), point.z());
             PushVertex(normals, face.normal.x(), face.normal.y(), face.normal.z());
         }
-        indices.insert(indices.end(), {base, base + 2, base + 1, base, base + 3, base + 2});
+        indices.insert(indices.end(), {base, base + 1, base + 2, base, base + 2, base + 3});
     }
     SetMeshData(mesh, std::move(vertices), std::move(indices), std::move(normals));
 }

@@ -71,12 +71,24 @@ package_add_test(test_node_creation_registry scene/test_node_creation_registry.c
 package_add_test(test_robot_nodes scene/test_robot_nodes.cpp)
 package_add_test(test_resource_creation_registry scene/test_resource_creation_registry.cpp)
 package_add_test(test_packed_scene scene/test_packed_scene.cpp)
+package_add_test(test_render_product rendering/test_render_product.cpp)
 if(GOB_BUILD_LUISA_RENDERER)
+    add_library(gobot_test_luisa_bad_abi MODULE
+            rendering/fake_luisa_renderer_bad_abi.cpp)
+    target_compile_options(gobot_test_luisa_bad_abi PUBLIC "${GOBOT_COMPILE_OPTIONS}")
+    target_link_libraries(gobot_test_luisa_bad_abi PRIVATE gobot)
+    set_target_properties(gobot_test_luisa_bad_abi PROPERTIES
+            FOLDER tests
+            OUTPUT_NAME "gobot_test_luisa_bad_abi")
+
     package_add_test(test_luisa_renderer_module rendering/test_luisa_renderer_module.cpp)
     target_compile_definitions(test_luisa_renderer_module PRIVATE
-            GOBOT_TEST_LUISA_MODULE_PATH="$<TARGET_FILE:gobot_luisa_renderer>")
+            GOBOT_TEST_LUISA_MODULE_PATH="$<TARGET_FILE:gobot_luisa_renderer>"
+            GOBOT_TEST_LUISA_BAD_ABI_MODULE_PATH="$<TARGET_FILE:gobot_test_luisa_bad_abi>")
     target_link_libraries(test_luisa_renderer_module ${CMAKE_DL_LIBS})
-    add_dependencies(test_luisa_renderer_module gobot_luisa_renderer)
+    add_dependencies(test_luisa_renderer_module
+            gobot_luisa_renderer
+            gobot_test_luisa_bad_abi)
 endif()
 package_add_test(test_edited_scene
         editor/test_edited_scene.cpp
@@ -178,6 +190,30 @@ set_tests_properties(test_python_bindings_smoke
             ENVIRONMENT "${GOBOT_PYTHON_TEST_ENV}"
             WORKING_DIRECTORY "${CMAKE_SOURCE_DIR}"
 )
+add_test(
+        NAME test_python_render_product
+        COMMAND ${Python3_EXECUTABLE} -S ${CMAKE_CURRENT_SOURCE_DIR}/python/test_render_product.py
+)
+set_tests_properties(test_python_render_product
+        PROPERTIES
+            ENVIRONMENT "${GOBOT_PYTHON_TEST_ENV}"
+            SKIP_RETURN_CODE 77
+            WORKING_DIRECTORY "${CMAKE_SOURCE_DIR}"
+)
+if(GOB_BUILD_LUISA_RENDERER)
+    add_test(
+            NAME test_python_render_product_cuda
+            COMMAND ${Python3_EXECUTABLE} -S
+                    ${CMAKE_CURRENT_SOURCE_DIR}/python/test_render_product_cuda.py
+    )
+    set_tests_properties(test_python_render_product_cuda
+            PROPERTIES
+                ENVIRONMENT "${GOBOT_PYTHON_TEST_ENV};GOBOT_RUN_LUISA_GPU_TEST=1;GOBOT_LUISA_RENDERER_LIBRARY=$<TARGET_FILE:gobot_luisa_renderer>"
+                RESOURCE_LOCK gobot_cuda
+                SKIP_RETURN_CODE 77
+                WORKING_DIRECTORY "${CMAKE_SOURCE_DIR}"
+    )
+endif()
 add_test(
         NAME test_python_policy_manifest
         COMMAND ${Python3_EXECUTABLE} -S ${CMAKE_CURRENT_SOURCE_DIR}/python/test_policy_manifest.py

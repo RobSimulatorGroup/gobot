@@ -6,10 +6,17 @@ in vec4 v_color;
 in vec4 v_world_tangent;
 in vec2 v_uv;
 
-out vec4 frag_color;
+layout(location = 0) out vec4 frag_color;
+layout(location = 1) out float out_linear_depth;
+layout(location = 2) out vec3 out_world_normal;
+layout(location = 3) out uint out_instance_id;
+layout(location = 4) out uint out_semantic_id;
 
 uniform vec4 u_color;
+uniform mat4 u_view;
 uniform vec3 u_camera_position;
+uniform uint u_instance_id;
+uniform uint u_semantic_id;
 uniform float u_metallic;
 uniform float u_roughness;
 uniform float u_specular;
@@ -211,4 +218,8 @@ void main() {
     vec3 mapped = aces_film((ambient + direct + emissive) * u_exposure);
     vec3 display_color = pow(clamp(mapped, 0.0, 1.0), vec3(1.0 / 2.2));
     frag_color = vec4(display_color, base_color.a);
+    out_linear_depth = max(-(u_view * vec4(v_world_position, 1.0)).z, 0.0);
+    out_world_normal = normal;
+    out_instance_id = u_instance_id;
+    out_semantic_id = u_semantic_id;
 }

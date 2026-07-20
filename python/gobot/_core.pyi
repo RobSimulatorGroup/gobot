@@ -231,6 +231,7 @@ class NodeScript:
 class Node:
     id: int
     name: str
+    semantic_label: str
     type: str
     type_name: str
     path: str

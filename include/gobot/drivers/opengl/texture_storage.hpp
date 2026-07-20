@@ -65,6 +65,11 @@ struct RenderTarget {
     RID texture;
 
     GLuint color = 0;
+    GLuint linear_depth = 0;
+    GLuint world_normal = 0;
+    GLuint instance_id = 0;
+    GLuint semantic_id = 0;
+    std::uint32_t output_mask = RenderOutputBit(RenderOutputType::Rgb);
     GLuint color_internal_format = GL_RGBA8;
     GLuint color_format = GL_RGBA;
     GLuint color_type = GL_UNSIGNED_BYTE;
@@ -94,11 +99,19 @@ public:
 
     void RenderTargetSetSize(RID p_render_target, int p_width, int p_height, uint32_t p_view_count) override;
 
+    void RenderTargetSetOutputMask(RID p_render_target, std::uint32_t output_mask) override;
+
     RenderTarget* GetRenderTarget(RID p_rid) { return render_target_owner_.GetOrNull(p_rid); };
 
     void* GetRenderTargetColorTextureNativeHandle(RID p_render_target) override;
 
     std::vector<std::uint8_t> RenderTargetReadRgbPixels(RID p_render_target, bool p_flip_y) override;
+
+    bool RenderTargetReadOutput(RID p_render_target,
+                                RenderOutputType output,
+                                void* destination,
+                                std::size_t destination_size,
+                                bool p_flip_y) override;
 
     // texture related
 

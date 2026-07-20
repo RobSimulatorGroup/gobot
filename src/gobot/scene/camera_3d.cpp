@@ -6,6 +6,7 @@
  */
 
 #include "gobot/scene/camera_3d.hpp"
+#include "gobot/core/registration.hpp"
 #include "gobot/rendering/render_server.hpp"
 
 namespace gobot {
@@ -44,6 +45,18 @@ void Camera3D::SetViewMatrix(const Vector3& eye, const Vector3& at, const Vector
     SetGlobalTransform(Affine3(Matrix4::LookAt(eye_, at_, up_)));
 }
 
+void Camera3D::SetViewMatrixEye(const Vector3& eye) {
+    eye_ = eye;
+}
+
+void Camera3D::SetViewMatrixAt(const Vector3& at) {
+    at_ = at;
+}
+
+void Camera3D::SetViewMatrixUp(const Vector3& up) {
+    up_ = up;
+}
+
 Matrix4 Camera3D::GetViewMatrix() const {
     // TODO(wqq): Add cache
     return Matrix4::LookAt(eye_, at_, up_);
@@ -55,4 +68,15 @@ Matrix4 Camera3D::GetProjectionMatrix() const {
     return Matrix4f::Perspective(fovy_, aspect_, near_, far_);
 }
 
-}
+} // namespace gobot
+
+GOBOT_REGISTRATION {
+    Class_<gobot::Camera3D>("Camera3D")
+            .constructor()(gobot::CtorAsRawPtr)
+            .property("fov_y", &gobot::Camera3D::GetFovy, &gobot::Camera3D::SetFovy)
+            .property("z_near", &gobot::Camera3D::GetNear, &gobot::Camera3D::SetNear)
+            .property("z_far", &gobot::Camera3D::GetFar, &gobot::Camera3D::SetFar)
+            .property("eye", &gobot::Camera3D::GetViewMatrixEye, &gobot::Camera3D::SetViewMatrixEye)
+            .property("target", &gobot::Camera3D::GetViewMatrixAt, &gobot::Camera3D::SetViewMatrixAt)
+            .property("up", &gobot::Camera3D::GetViewMatrixUp, &gobot::Camera3D::SetViewMatrixUp);
+};

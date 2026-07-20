@@ -51,6 +51,10 @@ public:
      */
     void SetName(const std::string &p_name);
 
+    void SetSemanticLabel(const std::string& semantic_label);
+
+    [[nodiscard]] const std::string& GetSemanticLabel() const;
+
     /**
      * @brief Adds a child node. Nodes can have any number of children, but every child
      *  must have a unique name in a branch. Child nodes are automatically deleted when
@@ -280,6 +284,7 @@ private:
     std::vector<Node *> children_;
 
     std::string name_;
+    std::string semantic_label_;
     SceneTree *tree_ = nullptr;
     bool inside_tree_ = false;
     mutable NodePath path_cache_;

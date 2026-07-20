@@ -6,6 +6,13 @@ void RegisterManualNodeBindings(PyNodeClass& node_class, PyNode3DClass& node3d_c
     node_class
             .def_property_readonly("id", &NodeGetId)
             .def_property("name", &NodeGetName, &NodeSetName)
+            .def_property("semantic_label",
+                          [](const PyNodeHandle& handle) {
+                              return handle.Resolve()->GetSemanticLabel();
+                          },
+                          [](PyNodeHandle& handle, const std::string& label) {
+                              ExecuteSetNodeProperty(handle.Resolve(), "semantic_label", Variant(label));
+                          })
             .def_property_readonly("type", &NodeTypeName)
             .def_property_readonly("type_name", &NodeTypeName)
             .def_property_readonly("path", &NodeGetPath)

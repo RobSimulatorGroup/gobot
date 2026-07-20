@@ -19,6 +19,7 @@
 #include <bit>
 #include <cstdint>
 #include <mutex>
+#include <string>
 #include <unordered_map>
 #include <utility>
 
@@ -41,6 +42,38 @@ std::uint64_t HashCombine(std::uint64_t seed, std::uint64_t value) {
     value += 0x9e3779b97f4a7c15ULL + (seed << 6U) + (seed >> 2U);
     return seed ^ value;
 }
+
+std::uint32_t StableIdHash(const std::string& value, std::uint32_t salt = 0) {
+    std::uint32_t hash = 2166136261u ^ salt;
+    for (const unsigned char byte : value) {
+        hash ^= byte;
+        hash *= 16777619u;
+    }
+    return hash == 0 ? 1u : hash;
+}
+
+class StableIdAllocator {
+public:
+    std::uint32_t Get(const std::string& key) {
+        if (const auto existing = ids_by_key_.find(key); existing != ids_by_key_.end()) {
+            return existing->second;
+        }
+        std::uint32_t salt = 0;
+        std::uint32_t id = StableIdHash(key);
+        auto collision = keys_by_id_.find(id);
+        while (collision != keys_by_id_.end() && collision->second != key) {
+            id = StableIdHash(key, ++salt);
+            collision = keys_by_id_.find(id);
+        }
+        ids_by_key_.emplace(key, id);
+        keys_by_id_.emplace(id, key);
+        return id;
+    }
+
+private:
+    std::unordered_map<std::string, std::uint32_t> ids_by_key_;
+    std::unordered_map<std::uint32_t, std::string> keys_by_id_;
+};
 
 template <typename T>
 std::uint64_t HashScalar(std::uint64_t seed, const T& value) {
@@ -171,7 +204,11 @@ std::uint64_t HashMaterial(const RenderMaterialSnapshot& material) {
 }
 
 void AppendMeshItems(SceneRenderItems& items,
-                     ObjectID instance_id,
+                     ObjectID object_id,
+                     std::uint32_t instance_id,
+                     std::uint32_t semantic_id,
+                     const std::string& instance_path,
+                     const std::string& semantic_label,
                      const Ref<Mesh>& mesh,
                      const Matrix4& model,
                      const Ref<Material>& instance_material,
@@ -190,7 +227,11 @@ void AppendMeshItems(SceneRenderItems& items,
                                                       ? instance_material
                                                       : (surface.material.IsValid() ? surface.material : mesh_material);
         VisualMeshRenderItem item;
+        item.object_id = object_id;
         item.instance_id = instance_id;
+        item.semantic_id = semantic_id;
+        item.instance_path = instance_path;
+        item.semantic_label = semantic_label;
         item.mesh_id = mesh->GetInstanceId();
         item.mesh_revision = mesh->GetRevision();
         item.surface_index = surface_index;
@@ -202,7 +243,7 @@ void AppendMeshItems(SceneRenderItems& items,
 }
 
 void CollectLighting(const Node* node,
-                     SceneRenderSnapshot& snapshot,
+                     RenderSceneSnapshot& snapshot,
                      const Affine3& parent_transform,
                      bool* found_environment) {
     if (node == nullptr) {
@@ -275,16 +316,29 @@ std::string BuildMaterialDebugSignature(const std::string& material_source,
 }
 #endif
 
-void CollectNodeRenderItems(const Node* node, SceneRenderItems& items, const Affine3& parent_transform) {
+void CollectNodeRenderItems(const Node* node,
+                            SceneRenderItems& items,
+                            const Affine3& parent_transform,
+                            const std::string& relative_path,
+                            const std::string& inherited_semantic_label,
+                            bool parent_visible,
+                            StableIdAllocator& instance_ids,
+                            StableIdAllocator& semantic_ids) {
     if (node == nullptr) {
         return;
     }
 
     const auto* node_3d = Object::PointerCastTo<Node3D>(node);
     const Affine3 node_transform = ResolveNodeRenderTransform(node_3d, parent_transform);
+    const bool visible = parent_visible && (node_3d == nullptr || node_3d->IsVisible());
+    const std::string semantic_label = node->GetSemanticLabel().empty()
+                                               ? inherited_semantic_label
+                                               : node->GetSemanticLabel();
+    const std::uint32_t instance_id = instance_ids.Get(relative_path);
+    const std::uint32_t semantic_id = semantic_label.empty() ? 0u : semantic_ids.Get(semantic_label);
 
     const auto* mesh_instance = Object::PointerCastTo<MeshInstance3D>(node);
-    if (mesh_instance && IsNodeVisibleForRender(mesh_instance)) {
+    if (mesh_instance && visible) {
         Ref<Mesh> mesh_resource = mesh_instance->GetMesh();
         if (mesh_resource.IsValid()) {
             const Ref<Material> material = mesh_instance->GetMaterial().IsValid()
@@ -300,6 +354,10 @@ void CollectNodeRenderItems(const Node* node, SceneRenderItems& items, const Aff
 #endif
             AppendMeshItems(items,
                             mesh_instance->GetInstanceId(),
+                            instance_id,
+                            semantic_id,
+                            relative_path,
+                            semantic_label,
                             mesh_resource,
                             node_transform.matrix(),
                             mesh_instance->GetMaterial(),
@@ -337,7 +395,7 @@ void CollectNodeRenderItems(const Node* node, SceneRenderItems& items, const Aff
     }
 
     const auto* terrain = Object::PointerCastTo<Terrain3D>(node);
-    if (terrain && IsNodeVisibleForRender(terrain)) {
+    if (terrain && visible) {
         Ref<ArrayMesh> mesh_resource = terrain->GetRenderMesh();
         if (mesh_resource.IsValid()) {
             const bool uses_vertex_colors = terrain->GetColorMode() != TerrainColorMode::SurfaceColor;
@@ -347,6 +405,10 @@ void CollectNodeRenderItems(const Node* node, SceneRenderItems& items, const Aff
             const std::size_t first_item = items.visual_meshes.size();
             AppendMeshItems(items,
                             terrain->GetInstanceId(),
+                            instance_id,
+                            semantic_id,
+                            relative_path,
+                            semantic_label,
                             mesh_resource,
                             node_transform.matrix(),
                             {},
@@ -361,7 +423,7 @@ void CollectNodeRenderItems(const Node* node, SceneRenderItems& items, const Aff
 
     const auto* collision_shape = Object::PointerCastTo<CollisionShape3D>(node);
     if (collision_shape &&
-        IsNodeVisibleForRender(collision_shape) &&
+        visible &&
         !collision_shape->IsDisabled()) {
         const Ref<Shape3D>& shape = collision_shape->GetShape();
         if (shape.IsValid()) {
@@ -373,7 +435,21 @@ void CollectNodeRenderItems(const Node* node, SceneRenderItems& items, const Aff
     }
 
     for (std::size_t i = 0; i < node->GetChildCount(); ++i) {
-        CollectNodeRenderItems(node->GetChild(static_cast<int>(i)), items, node_transform);
+        const Node* child = node->GetChild(static_cast<int>(i));
+        const std::string child_name = child->GetName().empty()
+                                               ? "@" + std::to_string(i)
+                                               : child->GetName();
+        const std::string child_path = relative_path == "."
+                                               ? child_name
+                                               : relative_path + "/" + child_name;
+        CollectNodeRenderItems(child,
+                               items,
+                               node_transform,
+                               child_path,
+                               semantic_label,
+                               visible,
+                               instance_ids,
+                               semantic_ids);
     }
 }
 
@@ -381,20 +457,32 @@ void CollectNodeRenderItems(const Node* node, SceneRenderItems& items, const Aff
 
 SceneRenderItems CollectSceneRenderItems(const Node* scene_root) {
     SceneRenderItems items;
-    CollectNodeRenderItems(scene_root, items, Affine3::Identity());
+    StableIdAllocator instance_ids;
+    StableIdAllocator semantic_ids;
+    CollectNodeRenderItems(scene_root,
+                           items,
+                           Affine3::Identity(),
+                           ".",
+                           {},
+                           true,
+                           instance_ids,
+                           semantic_ids);
+    for (const VisualMeshRenderItem& item : items.visual_meshes) {
+        items.instance_paths.emplace(item.instance_id, item.instance_path);
+        if (item.semantic_id != 0) {
+            items.semantic_labels.emplace(item.semantic_id, item.semantic_label);
+        }
+    }
     return items;
 }
 
-SceneRenderSnapshot CaptureSceneRenderSnapshot(const Node* scene_root,
-                                               const Camera3D& camera) {
+RenderSceneSnapshot CaptureRenderSceneSnapshot(const Node* scene_root) {
     SceneRenderItems items = CollectSceneRenderItems(scene_root);
 
-    SceneRenderSnapshot snapshot;
+    RenderSceneSnapshot snapshot;
     snapshot.visual_meshes = std::move(items.visual_meshes);
-    snapshot.camera.view = camera.GetViewMatrix();
-    snapshot.camera.projection = camera.GetProjectionMatrix();
-    snapshot.camera.view_projection = snapshot.camera.projection * snapshot.camera.view;
-    snapshot.camera.world_position = camera.GetViewMatrixEye();
+    snapshot.instance_paths = std::move(items.instance_paths);
+    snapshot.semantic_labels = std::move(items.semantic_labels);
     bool found_environment = false;
     CollectLighting(scene_root, snapshot, Affine3::Identity(), &found_environment);
     if (snapshot.lights.empty()) {
@@ -419,8 +507,8 @@ SceneRenderSnapshot CaptureSceneRenderSnapshot(const Node* scene_root,
     snapshot.fingerprints.transforms = seed;
     snapshot.fingerprints.materials = seed;
     for (const VisualMeshRenderItem& item : snapshot.visual_meshes) {
-        snapshot.fingerprints.topology = HashCombine(
-                snapshot.fingerprints.topology, item.instance_id.operator std::uint64_t());
+        snapshot.fingerprints.topology = HashCombine(snapshot.fingerprints.topology, item.instance_id);
+        snapshot.fingerprints.topology = HashCombine(snapshot.fingerprints.topology, item.semantic_id);
         snapshot.fingerprints.topology = HashCombine(
                 snapshot.fingerprints.topology, item.mesh_id.operator std::uint64_t());
         snapshot.fingerprints.topology = HashCombine(snapshot.fingerprints.topology, item.surface_index);
@@ -431,8 +519,6 @@ SceneRenderSnapshot CaptureSceneRenderSnapshot(const Node* scene_root,
         snapshot.fingerprints.materials = HashCombine(
                 snapshot.fingerprints.materials, HashMaterial(item.material));
     }
-    snapshot.fingerprints.camera = HashMatrix(seed, snapshot.camera.view_projection);
-    snapshot.fingerprints.camera = HashMatrix(snapshot.fingerprints.camera, snapshot.camera.view);
     snapshot.fingerprints.lighting = HashColor(seed, snapshot.environment.clear_color);
     snapshot.fingerprints.lighting = HashColor(snapshot.fingerprints.lighting, snapshot.environment.sky_color);
     snapshot.fingerprints.lighting = HashColor(snapshot.fingerprints.lighting, snapshot.environment.ground_color);
@@ -473,9 +559,40 @@ SceneRenderSnapshot CaptureSceneRenderSnapshot(const Node* scene_root,
     snapshot.fingerprints.combined = HashCombine(
             snapshot.fingerprints.combined, snapshot.fingerprints.materials);
     snapshot.fingerprints.combined = HashCombine(
-            snapshot.fingerprints.combined, snapshot.fingerprints.camera);
-    snapshot.fingerprints.combined = HashCombine(
             snapshot.fingerprints.combined, snapshot.fingerprints.lighting);
+    return snapshot;
+}
+
+RenderViewSnapshot CaptureRenderViewSnapshot(const Camera3D& camera, RenderViewMode mode) {
+    RenderViewSnapshot snapshot;
+    snapshot.camera.view = camera.GetViewMatrix();
+    snapshot.camera.projection = camera.GetProjectionMatrix();
+    snapshot.camera.view_projection = snapshot.camera.projection * snapshot.camera.view;
+    snapshot.camera.world_position = camera.GetViewMatrixEye();
+    snapshot.camera.z_near = camera.GetNear();
+    snapshot.camera.z_far = camera.GetFar();
+    snapshot.mode = mode;
+    constexpr std::uint64_t seed = 1469598103934665603ULL;
+    snapshot.fingerprint = HashMatrix(seed, snapshot.camera.view_projection);
+    snapshot.fingerprint = HashMatrix(snapshot.fingerprint, snapshot.camera.view);
+    return snapshot;
+}
+
+SceneRenderSnapshot CaptureSceneRenderSnapshot(const Node* scene_root,
+                                               const Camera3D& camera) {
+    RenderSceneSnapshot scene = CaptureRenderSceneSnapshot(scene_root);
+    RenderViewSnapshot view = CaptureRenderViewSnapshot(camera);
+
+    SceneRenderSnapshot snapshot;
+    snapshot.visual_meshes = std::move(scene.visual_meshes);
+    snapshot.camera = view.camera;
+    snapshot.environment = std::move(scene.environment);
+    snapshot.lights = std::move(scene.lights);
+    snapshot.instance_paths = std::move(scene.instance_paths);
+    snapshot.semantic_labels = std::move(scene.semantic_labels);
+    snapshot.fingerprints = scene.fingerprints;
+    snapshot.fingerprints.camera = view.fingerprint;
+    snapshot.fingerprints.combined = HashCombine(snapshot.fingerprints.combined, view.fingerprint);
     return snapshot;
 }
 

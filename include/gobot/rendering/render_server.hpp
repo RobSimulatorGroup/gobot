@@ -14,6 +14,7 @@
 #include "render_types.hpp"
 #include "rendering_server_globals.hpp"
 #include "renderer_viewport.hpp"
+#include "scene_render_items.hpp"
 
 #include <cstdint>
 #include <vector>
@@ -50,9 +51,19 @@ public:
         RSG::viewport->ViewportSetSize(p_rid, width, height);
     }
 
+    void ViewportSetOutputMask(const RID& p_rid, std::uint32_t output_mask) {
+        RSG::viewport->ViewportSetOutputMask(p_rid, output_mask);
+    }
+
     void* GetRenderTargetColorTextureNativeHandle(const RID& p_view_port);
 
     std::vector<std::uint8_t> ReadViewportRgbPixels(const RID& p_view_port, bool p_flip_y = true);
+
+    bool ReadViewportOutput(const RID& viewport,
+                            RenderOutputType output,
+                            void* destination,
+                            std::size_t destination_size,
+                            bool flip_y = true);
 
     // shader
     RID ShaderCreate(ShaderType p_shader_type) {
@@ -135,6 +146,10 @@ public:
 
     void RenderSceneToViewport(const RID& viewport, const Node* scene_root, const Camera3D* camera);
 
+    void RenderSnapshotsToViewport(const RID& viewport,
+                                   const RenderSceneSnapshot& scene,
+                                   const RenderViewSnapshot& view);
+
     void SetSceneRendererSettings(const SceneRendererSettings& settings);
 
     [[nodiscard]] SceneRendererSettings GetSceneRendererSettings() const;
@@ -142,6 +157,15 @@ public:
     [[nodiscard]] SceneRendererCapabilities GetSceneRendererCapabilities() const;
 
     [[nodiscard]] SceneRendererStats GetSceneRendererStats() const;
+
+    bool CaptureCudaRenderProduct(const RenderSceneSnapshot& scene,
+                                  const RenderViewSnapshot& view,
+                                  int width,
+                                  int height,
+                                  std::uint32_t output_mask,
+                                  std::uint32_t mode,
+                                  RendererRenderProductFrame* frame,
+                                  std::string* error);
 
     void RenderEditorDebugToViewport(const RID& viewport,
                                      const Camera3D* camera,

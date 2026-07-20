@@ -10,7 +10,11 @@
 #include "gobot/core/rid.hpp"
 #include "gobot/rendering/scene_render_items.hpp"
 
+#include <array>
+#include <cstddef>
 #include <cstdint>
+#include <functional>
+#include <memory>
 #include <string>
 
 namespace gobot {
@@ -38,6 +42,8 @@ struct SceneRendererCapabilities {
     bool progressive = false;
     bool denoise = false;
     bool direct_presentation_interop = false;
+    bool cpu_render_products = true;
+    bool cuda_render_products = false;
     std::string backend_name = "OpenGL";
     std::string status;
 };
@@ -53,11 +59,26 @@ struct SceneRendererStats {
     std::string status;
 };
 
+struct RendererRenderProductBuffer {
+    void* device_pointer = nullptr;
+    std::size_t allocation_size = 0;
+    std::size_t pixel_stride_bytes = 0;
+};
+
+struct RendererRenderProductFrame {
+    std::array<RendererRenderProductBuffer, 5> buffers{};
+    int device_id = 0;
+    std::shared_ptr<void> owner;
+    std::function<bool(std::uint32_t, void*, std::size_t)> copy_to_host;
+};
+
 class RendererSceneRender {
 public:
     virtual ~RendererSceneRender() = default;
 
-    virtual void RenderScene(const RID& render_target, const SceneRenderSnapshot& snapshot) = 0;
+    virtual void RenderScene(const RID& render_target,
+                             const RenderSceneSnapshot& scene,
+                             const RenderViewSnapshot& view) = 0;
 
     virtual void SetSettings(const SceneRendererSettings& settings) { settings_ = settings; }
 
@@ -66,6 +87,20 @@ public:
     [[nodiscard]] virtual SceneRendererCapabilities GetCapabilities() const { return {}; }
 
     [[nodiscard]] virtual SceneRendererStats GetStats() const { return {}; }
+
+    virtual bool CaptureCudaRenderProduct(const RenderSceneSnapshot&,
+                                          const RenderViewSnapshot&,
+                                          int,
+                                          int,
+                                          std::uint32_t,
+                                          std::uint32_t,
+                                          RendererRenderProductFrame*,
+                                          std::string* error) {
+        if (error != nullptr) {
+            *error = "CUDA render products are unavailable through the active renderer";
+        }
+        return false;
+    }
 
 protected:
     SceneRendererSettings settings_;

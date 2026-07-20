@@ -10,6 +10,7 @@
 #include <utility>
 
 #include "gobot/scene/collision_shape_3d.hpp"
+#include "gobot/scene/camera_3d.hpp"
 #include "gobot/scene/environment_3d.hpp"
 #include "gobot/scene/joint_3d.hpp"
 #include "gobot/scene/light_3d.hpp"
@@ -110,6 +111,14 @@ void NodeCreationRegistry::EnsureBuiltInNodeTypesRegistered() {
         "Node",
         "3D scene node with local transform, global transform, and visibility.",
         []() -> Node* { return CreateNodeInstance<Node3D>(); }
+    });
+
+    RegisterNodeType({
+        "Camera3D",
+        "Camera3D",
+        "Node3D",
+        "Pinhole perspective camera used by viewports and render products.",
+        []() -> Node* { return CreateNodeInstance<Camera3D>(); }
     });
 
     RegisterNodeType({

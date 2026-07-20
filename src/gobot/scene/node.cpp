@@ -92,6 +92,14 @@ void Node::SetName(const std::string &p_name) {
     }
 }
 
+void Node::SetSemanticLabel(const std::string& semantic_label) {
+    semantic_label_ = semantic_label;
+}
+
+const std::string& Node::GetSemanticLabel() const {
+    return semantic_label_;
+}
+
 void Node::ValidateChildName(Node* child, bool force_human_readable) {
     /* Make sure the name is unique */
 
@@ -694,6 +702,8 @@ Ref<PythonScript> Node::GetScript() const {
 
 GOBOT_REGISTRATION {
 
+    USING_ENUM_BITWISE_OPERATORS;
+
     Class_<Node>("Node")
             .constructor()(CtorAsRawPtr)
 
@@ -707,6 +717,12 @@ GOBOT_REGISTRATION {
                     AddMetaPropertyInfo(
                             PropertyInfo()
                                 .SetUsageFlags(PropertyUsageFlags::Storage)))
+
+            .property("semantic_label", &Node::GetSemanticLabel, &Node::SetSemanticLabel)(
+                    AddMetaPropertyInfo(
+                            PropertyInfo()
+                                .SetUsageFlags(PropertyUsageFlags::Storage | PropertyUsageFlags::Editor)
+                                .SetToolTip("Semantic class inherited by rendered descendants.")))
 
             .property("name", &Node::GetName, &Node::SetName)(
                     AddMetaPropertyInfo(

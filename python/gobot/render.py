@@ -8,6 +8,8 @@ from typing import TYPE_CHECKING, Any, Mapping, Sequence
 if TYPE_CHECKING:
     import numpy as np
 
+    from ._core import RenderBuffer, RenderFrame, RenderProduct
+
 from . import _core
 
 
@@ -35,6 +37,60 @@ class DebugArrow:
 
 DebugArrowLike = DebugArrow | Mapping[str, Any]
 
+_NATIVE_RENDER_TYPES = {"RenderBuffer", "RenderFrame", "RenderProduct"}
+
+
+def __getattr__(name: str) -> Any:
+    if name in _NATIVE_RENDER_TYPES:
+        try:
+            return getattr(_core, name)
+        except AttributeError as error:
+            raise AttributeError(
+                f"gobot.render.{name} requires a Gobot native module with RenderProduct support"
+            ) from error
+    raise AttributeError(f"module {__name__!r} has no attribute {name!r}")
+
+
+class CameraSensor:
+    """Synchronous pinhole camera backed by a reusable render product."""
+
+    def __init__(
+        self,
+        camera: Any,
+        *,
+        root: Any | None = None,
+        width: int = 640,
+        height: int = 480,
+        outputs: Sequence[str] = ("rgb",),
+        device: str = "auto",
+        mode: str = "minimal",
+        frame_slots: int = 3,
+    ) -> None:
+        self.camera = camera
+        self.root = root
+        sensor_type = getattr(_core, "_CameraSensor", None)
+        if sensor_type is None:
+            raise RuntimeError(
+                "gobot.render.CameraSensor requires a Gobot native module with RenderProduct support"
+            )
+        self._impl = sensor_type(
+            camera,
+            root,
+            width,
+            height,
+            tuple(outputs),
+            device,
+            mode,
+            frame_slots,
+        )
+
+    @property
+    def render_product(self) -> RenderProduct:
+        return self._impl.render_product
+
+    def capture(self) -> RenderFrame:
+        return self._impl.capture()
+
 
 def capture_rgb(
     *,
@@ -49,11 +105,7 @@ def capture_rgb(
     z_far: float = 200.0,
     debug_arrows: Sequence[DebugArrowLike] | None = None,
 ) -> np.ndarray:
-    """Render a scene to an RGB uint8 image.
-
-    Experimental helper used by training video capture until Gobot has a
-    first-class runtime scene owner for headless rendering.
-    """
+    """Capture an RGB uint8 image through a one-output CPU render product."""
 
     return _core._capture_rgb(
         root,
@@ -93,4 +145,13 @@ def _shutdown_headless_render_context() -> None:
     _core._shutdown_headless_render_context()
 
 
-__all__ = ["DebugArrow", "capture_rgb", "clear_debug_arrows", "set_debug_arrows"]
+__all__ = [
+    "CameraSensor",
+    "DebugArrow",
+    "RenderBuffer",
+    "RenderFrame",
+    "RenderProduct",
+    "capture_rgb",
+    "clear_debug_arrows",
+    "set_debug_arrows",
+]

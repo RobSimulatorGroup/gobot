@@ -32,6 +32,12 @@ using namespace luisa::compute;
 
 constexpr std::uint32_t kInvalidTexture = std::numeric_limits<std::uint32_t>::max();
 constexpr std::uint32_t kMaxLights = 16;
+constexpr std::uint32_t kRgbOutput = 1u << 0u;
+constexpr std::uint32_t kDepthOutput = 1u << 1u;
+constexpr std::uint32_t kNormalOutput = 1u << 2u;
+constexpr std::uint32_t kInstanceOutput = 1u << 3u;
+constexpr std::uint32_t kSemanticOutput = 1u << 4u;
+constexpr std::uint32_t kAllProductOutputs = (1u << 5u) - 1u;
 
 struct GpuVertex {
     float3 position;
@@ -81,6 +87,7 @@ gobot::SceneRendererCapabilities MakeCapabilities() {
     capabilities.progressive = true;
     capabilities.denoise = true;
     capabilities.direct_presentation_interop = true;
+    capabilities.cuda_render_products = true;
     capabilities.backend_name = "LuisaCompute CUDA";
     capabilities.status =
             "LuisaCompute CUDA/OptiX (CUDA " GOBOT_LUISA_CUDA_TOOLKIT_VERSION
@@ -215,7 +222,7 @@ private:
                 base = "/tmp";
             }
         }
-        return base / "gobot" / "luisa" / "v1";
+        return base / "gobot" / "luisa" / "v2";
     }
 
     static std::filesystem::path Resolve(const std::filesystem::path& directory,
@@ -450,6 +457,17 @@ struct TextureResource {
     Image<float> image;
 };
 
+struct CudaRenderProductFrame {
+    int width = 0;
+    int height = 0;
+    std::uint32_t output_mask = 0;
+    Buffer<uint> rgb;
+    Buffer<float> linear_depth;
+    Buffer<float4> world_normal;
+    Buffer<uint> instance_id;
+    Buffer<uint> semantic_id;
+};
+
 class LuisaRenderer {
 public:
     explicit LuisaRenderer(const std::string& module_directory)
@@ -461,6 +479,9 @@ public:
           device_(std::make_unique<Device>(CreateCudaDevice(*context_, binary_io_.get()))),
           stream_(std::make_unique<Stream>(device_->create_stream(StreamTag::COMPUTE))) {
         CompileShaders();
+        dummy_uint_ = device_->create_buffer<uint>(1);
+        dummy_float_ = device_->create_buffer<float>(1);
+        dummy_float4_ = device_->create_buffer<float4>(1);
     }
 
     ~LuisaRenderer() {
@@ -480,7 +501,8 @@ public:
     }
 
     gobot::LuisaRendererResult Render(const gobot::LuisaRendererTarget& target,
-                                      const gobot::SceneRenderSnapshot& snapshot,
+                                      const gobot::RenderSceneSnapshot& snapshot,
+                                      const gobot::RenderViewSnapshot& view,
                                       const gobot::SceneRendererSettings& settings,
                                       gobot::SceneRendererStats* stats,
                                       std::string* error) {
@@ -493,14 +515,18 @@ public:
         }
         const auto scene_end = std::chrono::steady_clock::now();
 
-        const bool scene_changed = last_combined_ != snapshot.fingerprints.combined;
+        const std::uint64_t frame_fingerprint = snapshot.fingerprints.combined ^
+                                                (view.fingerprint + 0x9e3779b97f4a7c15ULL +
+                                                 (snapshot.fingerprints.combined << 6U) +
+                                                 (snapshot.fingerprints.combined >> 2U));
+        const bool scene_changed = last_combined_ != frame_fingerprint;
         if (scene_changed) {
             ResetAccumulation();
             stable_frame_count_ = 0;
         } else {
             ++stable_frame_count_;
         }
-        last_combined_ = snapshot.fingerprints.combined;
+        last_combined_ = frame_fingerprint;
 
         gobot::SceneRendererMode active_mode = settings.mode;
         if (active_mode == gobot::SceneRendererMode::RayTracingAuto) {
@@ -514,7 +540,7 @@ public:
         if (!accumulation_valid_) {
             const uint2 resolution = make_uint2(static_cast<uint>(target.width), static_cast<uint>(target.height));
             *stream_ << clear_shader_(accumulation_, guide_).dispatch(resolution)
-                     << seed_shader_(seeds_, static_cast<uint>(snapshot.fingerprints.combined)).dispatch(resolution);
+                     << seed_shader_(seeds_, static_cast<uint>(frame_fingerprint)).dispatch(resolution);
             accumulation_valid_ = true;
         }
 
@@ -535,7 +561,7 @@ public:
         sample_count = static_cast<int>(std::min<std::uint64_t>(sample_count, remaining));
 
         const uint2 resolution = make_uint2(static_cast<uint>(target.width), static_cast<uint>(target.height));
-        const gobot::Matrix4 inverse_view_projection = snapshot.camera.view_projection.inverse();
+        const gobot::Matrix4 inverse_view_projection = view.camera.view_projection.inverse();
         const auto render_start = std::chrono::steady_clock::now();
         for (int sample = 0; sample < sample_count; ++sample) {
             *stream_ << trace_shader_(accumulation_,
@@ -556,7 +582,7 @@ public:
                                                   snapshot.environment.ground_color.blue()),
                                       static_cast<float>(snapshot.environment.environment_intensity),
                                       ToLuisaMatrix(inverse_view_projection),
-                                      ToFloat3(snapshot.camera.world_position),
+                                      ToFloat3(view.camera.world_position),
                                       static_cast<uint>(settings.max_bounces),
                                       static_cast<uint>(accumulated_samples_ + sample))
                                 .dispatch(resolution);
@@ -594,6 +620,19 @@ public:
         return gobot::LuisaRendererResult::Success;
     }
 
+    gobot::LuisaRendererResult CaptureRenderProduct(
+            const gobot::RenderSceneSnapshot& snapshot,
+            const gobot::RenderViewSnapshot& view,
+            const gobot::LuisaRenderProductRequest& request,
+            gobot::LuisaRenderProductFrame* result,
+            std::string* error);
+
+    bool ReadbackRenderProduct(CudaRenderProductFrame* frame,
+                               std::uint32_t output,
+                               void* destination,
+                               std::size_t destination_size,
+                               std::string* error);
+
 private:
     static std::string ResolveRuntimeDirectory(const std::string& module_directory) {
         const std::filesystem::path packaged_runtime =
@@ -623,6 +662,29 @@ private:
     using ClearShader = Shader2D<Image<float>, Image<float>>;
     using SeedShader = Shader2D<Image<uint>, uint>;
     using ToneShader = Shader2D<Image<float>, Image<float>, Buffer<uint>, float, uint, uint2>;
+    using ProductShader = Shader2D<Buffer<uint>,
+                                   Buffer<float>,
+                                   Buffer<float4>,
+                                   Buffer<uint>,
+                                   Buffer<uint>,
+                                   Accel,
+                                   BindlessArray,
+                                   BindlessArray,
+                                   Buffer<GpuMaterial>,
+                                   Buffer<GpuLight>,
+                                   Buffer<uint>,
+                                   Buffer<uint>,
+                                   uint,
+                                   uint,
+                                   uint,
+                                   float3,
+                                   float3,
+                                   float,
+                                   float,
+                                   float,
+                                   float4x4,
+                                   float4x4,
+                                   float3>;
 
     std::string runtime_directory_;
     std::unique_ptr<Context> context_;
@@ -633,6 +695,7 @@ private:
     ClearShader clear_shader_;
     SeedShader seed_shader_;
     ToneShader tone_shader_;
+    ProductShader product_shader_;
 
     std::unordered_map<GeometryKey, std::unique_ptr<GeometryResource>, GeometryKeyHash> geometry_cache_;
     std::unordered_map<TextureKey, std::unique_ptr<TextureResource>, TextureKeyHash> texture_cache_;
@@ -642,6 +705,11 @@ private:
     BindlessArray texture_heap_;
     Buffer<GpuMaterial> materials_;
     Buffer<GpuLight> lights_;
+    Buffer<uint> instance_ids_;
+    Buffer<uint> semantic_ids_;
+    Buffer<uint> dummy_uint_;
+    Buffer<float> dummy_float_;
+    Buffer<float4> dummy_float4_;
     std::size_t active_light_count_ = 0;
     std::uint32_t next_texture_slot_ = 0;
     std::uint32_t environment_texture_slot_ = kInvalidTexture;
@@ -953,11 +1021,200 @@ private:
             output.write(pixel.y * resolution.x + pixel.x, packed);
         };
 
+        Kernel2D product_kernel = [=](BufferUInt rgb,
+                                      BufferFloat linear_depth,
+                                      BufferFloat4 world_normal,
+                                      BufferUInt output_instance_id,
+                                      BufferUInt output_semantic_id,
+                                      AccelVar accel,
+                                      BindlessVar geometry,
+                                      BindlessVar textures,
+                                      BufferVar<GpuMaterial> materials,
+                                      BufferVar<GpuLight> lights,
+                                      BufferUInt instance_ids,
+                                      BufferUInt semantic_ids,
+                                      UInt light_count,
+                                      UInt environment_texture,
+                                      UInt output_mask,
+                                      Float3 sky_color,
+                                      Float3 ground_color,
+                                      Float ambient_intensity,
+                                      Float environment_intensity,
+                                      Float exposure,
+                                      Float4x4 inverse_view_projection,
+                                      Float4x4 view_matrix,
+                                      Float3 camera_position) noexcept {
+            set_block_size(16u, 16u, 1u);
+            UInt2 pixel = dispatch_id().xy();
+            UInt2 resolution_u = dispatch_size().xy();
+            Float2 resolution = make_float2(resolution_u);
+            Float2 uv = (make_float2(pixel) + 0.5f) / resolution;
+            Float2 ndc = make_float2(uv.x * 2.0f - 1.0f, 1.0f - uv.y * 2.0f);
+            Float4 near_h = inverse_view_projection * make_float4(ndc, -1.0f, 1.0f);
+            Float4 far_h = inverse_view_projection * make_float4(ndc, 1.0f, 1.0f);
+            Float3 near_point = near_h.xyz() / near_h.w;
+            Float3 far_point = far_h.xyz() / far_h.w;
+            Var<Ray> ray = make_ray(camera_position, normalize(far_point - near_point));
+            Var<TriangleHit> hit = accel.intersect(ray, {});
+
+            Float3 radiance = def(make_float3(0.0f));
+            Float depth_value = def(std::numeric_limits<float>::infinity());
+            Float3 normal_value = def(make_float3(0.0f));
+            UInt instance_value = def(0u);
+            UInt semantic_value = def(0u);
+
+            $if (hit->miss()) {
+                Float3 direction = ray->direction();
+                Float sky_mix = clamp(direction.z * 0.5f + 0.5f, 0.0f, 1.0f);
+                radiance = lerp(ground_color, sky_color, sky_mix);
+                $if (environment_texture != kInvalidTexture) {
+                    Float2 environment_uv = make_float2(
+                            atan2(direction.y, direction.x) / (2.0f * constants::pi) + 0.5f,
+                            acos(clamp(direction.z, -1.0f, 1.0f)) / constants::pi);
+                    radiance = textures.tex2d(environment_texture).sample(environment_uv).xyz() *
+                               environment_intensity;
+                };
+            }
+            $else {
+                Var<Triangle> triangle = geometry.buffer<Triangle>(hit.inst * 2u + 1u).read(hit.prim);
+                Var<GpuVertex> vertex0 = geometry.buffer<GpuVertex>(hit.inst * 2u).read(triangle.i0);
+                Var<GpuVertex> vertex1 = geometry.buffer<GpuVertex>(hit.inst * 2u).read(triangle.i1);
+                Var<GpuVertex> vertex2 = geometry.buffer<GpuVertex>(hit.inst * 2u).read(triangle.i2);
+                Float4x4 model = accel.instance_transform(hit.inst);
+                Float4x4 normal_transform = transpose(inverse(model));
+                Float3 local_position = triangle_interpolate(
+                        hit.bary, vertex0.position, vertex1.position, vertex2.position);
+                Float3 position = (model * make_float4(local_position, 1.0f)).xyz();
+                Float3 normal = normalize((normal_transform * make_float4(
+                        triangle_interpolate(hit.bary, vertex0.normal, vertex1.normal, vertex2.normal),
+                        0.0f)).xyz());
+                normal = faceforward(normal, ray->direction(), normal);
+                Float4 tangent4 = triangle_interpolate(
+                        hit.bary, vertex0.tangent, vertex1.tangent, vertex2.tangent);
+                Float3 tangent = normalize((model * make_float4(tangent4.xyz(), 0.0f)).xyz());
+                tangent = normalize(tangent - normal * dot(normal, tangent));
+                Float3 bitangent = normalize(cross(normal, tangent)) * tangent4.w;
+                Float2 surface_uv = triangle_interpolate(
+                        hit.bary, vertex0.uv, vertex1.uv, vertex2.uv);
+                Float4 vertex_color = triangle_interpolate(
+                        hit.bary, vertex0.color, vertex1.color, vertex2.color);
+                Var<GpuMaterial> material = materials.read(hit.inst);
+                Float4 albedo = material.albedo * vertex_color;
+                $if (material.textures0.x != kInvalidTexture) {
+                    Float4 sampled = textures.tex2d(material.textures0.x).sample(surface_uv);
+                    albedo *= make_float4(
+                            pow(max(sampled.xyz(), make_float3(0.0f)), 2.2f), sampled.w);
+                };
+                Float metallic = material.pbr.x;
+                Float roughness = clamp(material.pbr.y, 0.04f, 1.0f);
+                $if (material.textures0.y != kInvalidTexture) {
+                    Float4 sampled = textures.tex2d(material.textures0.y).sample(surface_uv);
+                    roughness = clamp(roughness * sampled.y, 0.04f, 1.0f);
+                    metallic = clamp(metallic * sampled.z, 0.0f, 1.0f);
+                };
+                $if (material.textures0.z != kInvalidTexture) {
+                    Float3 mapped =
+                            textures.tex2d(material.textures0.z).sample(surface_uv).xyz() * 2.0f - 1.0f;
+                    mapped = make_float3(mapped.xy() * material.pbr.w, mapped.z);
+                    normal = normalize(tangent * mapped.x + bitangent * mapped.y + normal * mapped.z);
+                };
+
+                Float sky_mix = clamp(normal.z * 0.5f + 0.5f, 0.0f, 1.0f);
+                Float3 environment = lerp(ground_color, sky_color, sky_mix);
+                radiance = albedo.xyz() * environment * ambient_intensity;
+                Float3 emission = material.emissive.xyz();
+                $if (material.textures1.x != kInvalidTexture) {
+                    Float3 sampled = textures.tex2d(material.textures1.x).sample(surface_uv).xyz();
+                    emission *= pow(max(sampled, make_float3(0.0f)), 2.2f);
+                };
+                radiance += emission;
+
+                Float3 view_direction = -ray->direction();
+                $for (light_index, kMaxLights) {
+                    $if (light_index < light_count) {
+                        Var<GpuLight> light = lights.read(light_index);
+                        UInt light_type = cast<uint>(light.position_type.w);
+                        Float3 light_direction = light.direction_range.xyz();
+                        Float max_distance = def(1.0e20f);
+                        Float attenuation = def(1.0f);
+                        $if (light_type != 0u) {
+                            Float3 to_light = light.position_type.xyz() - position;
+                            max_distance = length(to_light);
+                            light_direction = to_light / max(max_distance, 1.0e-4f);
+                            Float range_weight = clamp(
+                                    1.0f - max_distance / max(light.direction_range.w, 1.0e-3f),
+                                    0.0f,
+                                    1.0f);
+                            attenuation = range_weight * range_weight /
+                                          max(max_distance * max_distance, 0.01f);
+                            $if (light_type == 2u) {
+                                Float cone = dot(-light_direction,
+                                                 normalize(light.direction_range.xyz()));
+                                attenuation *= smoothstep(light.spot_cosines.y,
+                                                          light.spot_cosines.x,
+                                                          cone);
+                            };
+                        };
+                        Var<Ray> shadow_ray = make_ray(offset_ray_origin(position, normal),
+                                                       light_direction,
+                                                       0.0f,
+                                                       max_distance - 1.0e-3f);
+                        Bool occluded = accel.intersect_any(shadow_ray, {});
+                        $if (!occluded) {
+                            Float3 light_radiance = light.color_intensity.xyz() *
+                                                   light.color_intensity.w * attenuation;
+                            radiance += direct_brdf(normal,
+                                                    view_direction,
+                                                    light_direction,
+                                                    light_radiance,
+                                                    albedo.xyz(),
+                                                    metallic,
+                                                    roughness,
+                                                    material.pbr.z);
+                        };
+                    };
+                };
+
+                normal_value = normal;
+                depth_value = max(-(view_matrix * make_float4(position, 1.0f)).z, 0.0f);
+                instance_value = instance_ids.read(hit.inst);
+                semantic_value = semantic_ids.read(hit.inst);
+            };
+
+            UInt linear_index = pixel.y * resolution_u.x + pixel.x;
+            $if ((output_mask & kRgbOutput) != 0u) {
+                Float3 color = max(radiance * exposure, make_float3(0.0f));
+                color = clamp((color * (2.51f * color + 0.03f)) /
+                              (color * (2.43f * color + 0.59f) + 0.14f),
+                              0.0f,
+                              1.0f);
+                color = pow(color, 1.0f / 2.2f);
+                UInt red = cast<uint>(round(color.x * 255.0f));
+                UInt green = cast<uint>(round(color.y * 255.0f));
+                UInt blue = cast<uint>(round(color.z * 255.0f));
+                rgb.write(linear_index,
+                          red | (green << 8u) | (blue << 16u) | (255u << 24u));
+            };
+            $if ((output_mask & kDepthOutput) != 0u) {
+                linear_depth.write(linear_index, depth_value);
+            };
+            $if ((output_mask & kNormalOutput) != 0u) {
+                world_normal.write(linear_index, make_float4(normal_value, 0.0f));
+            };
+            $if ((output_mask & kInstanceOutput) != 0u) {
+                output_instance_id.write(linear_index, instance_value);
+            };
+            $if ((output_mask & kSemanticOutput) != 0u) {
+                output_semantic_id.write(linear_index, semantic_value);
+            };
+        };
+
         ShaderOption option{.enable_debug_info = false};
         clear_shader_ = device_->compile(clear_kernel, option);
         seed_shader_ = device_->compile(seed_kernel, option);
         trace_shader_ = device_->compile(trace_kernel, option);
         tone_shader_ = device_->compile(tone_kernel, option);
+        product_shader_ = device_->compile(product_kernel, option);
     }
 
     GeometryResource* EnsureGeometry(const gobot::VisualMeshRenderItem& item, std::string* error) {
@@ -1072,7 +1329,7 @@ private:
                            kInvalidTexture)};
     }
 
-    bool RebuildTopology(const gobot::SceneRenderSnapshot& snapshot, std::string* error) {
+    bool RebuildTopology(const gobot::RenderSceneSnapshot& snapshot, std::string* error) {
         active_geometry_.clear();
         accel_ = device_->create_accel({});
         geometry_heap_ = device_->create_bindless_array(
@@ -1097,23 +1354,31 @@ private:
         return true;
     }
 
-    void UpdateTransforms(const gobot::SceneRenderSnapshot& snapshot) {
+    void UpdateTransforms(const gobot::RenderSceneSnapshot& snapshot) {
         for (std::size_t i = 0; i < snapshot.visual_meshes.size(); ++i) {
             accel_.set_transform_on_update(i, ToLuisaMatrix(snapshot.visual_meshes[i].model));
         }
         *stream_ << accel_.build(AccelBuildRequest::PREFER_UPDATE) << synchronize();
     }
 
-    void UpdateMaterialsAndLighting(const gobot::SceneRenderSnapshot& snapshot) {
+    void UpdateMaterialsAndLighting(const gobot::RenderSceneSnapshot& snapshot) {
         texture_heap_ = device_->create_bindless_array(65536);
         next_texture_slot_ = 0;
         std::vector<GpuMaterial> host_materials;
+        std::vector<uint> host_instance_ids;
+        std::vector<uint> host_semantic_ids;
         host_materials.reserve(std::max<std::size_t>(1, snapshot.visual_meshes.size()));
+        host_instance_ids.reserve(std::max<std::size_t>(1, snapshot.visual_meshes.size()));
+        host_semantic_ids.reserve(std::max<std::size_t>(1, snapshot.visual_meshes.size()));
         for (const gobot::VisualMeshRenderItem& item : snapshot.visual_meshes) {
             host_materials.emplace_back(MakeMaterial(item.material));
+            host_instance_ids.emplace_back(item.instance_id);
+            host_semantic_ids.emplace_back(item.semantic_id);
         }
         if (host_materials.empty()) {
             host_materials.emplace_back(MakeMaterial({}));
+            host_instance_ids.emplace_back(0u);
+            host_semantic_ids.emplace_back(0u);
         }
         environment_texture_slot_ = BindTexture(snapshot.environment.environment_texture);
 
@@ -1137,16 +1402,22 @@ private:
         }
         materials_ = device_->create_buffer<GpuMaterial>(host_materials.size());
         lights_ = device_->create_buffer<GpuLight>(host_lights.size());
+        instance_ids_ = device_->create_buffer<uint>(host_instance_ids.size());
+        semantic_ids_ = device_->create_buffer<uint>(host_semantic_ids.size());
         *stream_ << materials_.copy_from(luisa::span{host_materials})
-                 << lights_.copy_from(luisa::span{host_lights});
+                 << lights_.copy_from(luisa::span{host_lights})
+                 << instance_ids_.copy_from(luisa::span{host_instance_ids})
+                 << semantic_ids_.copy_from(luisa::span{host_semantic_ids});
         if (next_texture_slot_ != 0u) {
             *stream_ << texture_heap_.update();
         }
         *stream_ << synchronize();
     }
 
-    bool SyncScene(const gobot::SceneRenderSnapshot& snapshot, std::string* error) {
-        if (snapshot.visual_meshes.empty()) {
+    bool SyncScene(const gobot::RenderSceneSnapshot& snapshot,
+                   std::string* error,
+                   bool allow_empty = false) {
+        if (snapshot.visual_meshes.empty() && !allow_empty) {
             *error = "Scene has no renderable mesh; using raster fallback.";
             return false;
         }
@@ -1273,6 +1544,177 @@ private:
     }
 };
 
+gobot::LuisaRendererResult LuisaRenderer::CaptureRenderProduct(
+        const gobot::RenderSceneSnapshot& snapshot,
+        const gobot::RenderViewSnapshot& view,
+        const gobot::LuisaRenderProductRequest& request,
+        gobot::LuisaRenderProductFrame* result,
+        std::string* error) {
+    if (result == nullptr || request.width <= 0 || request.height <= 0 ||
+        request.output_mask == 0u || (request.output_mask & ~kAllProductOutputs) != 0u) {
+        *error = "Invalid Luisa CUDA render-product request.";
+        return gobot::LuisaRendererResult::RecoverableError;
+    }
+    if (!SyncScene(snapshot, error, true)) {
+        return gobot::LuisaRendererResult::RecoverableError;
+    }
+
+    auto frame = std::make_unique<CudaRenderProductFrame>();
+    frame->width = request.width;
+    frame->height = request.height;
+    frame->output_mask = request.output_mask;
+    const std::size_t pixel_count = static_cast<std::size_t>(request.width) * request.height;
+    if ((request.output_mask & kRgbOutput) != 0u) {
+        frame->rgb = device_->create_buffer<uint>(pixel_count);
+    }
+    if ((request.output_mask & kDepthOutput) != 0u) {
+        frame->linear_depth = device_->create_buffer<float>(pixel_count);
+    }
+    if ((request.output_mask & kNormalOutput) != 0u) {
+        frame->world_normal = device_->create_buffer<float4>(pixel_count);
+    }
+    if ((request.output_mask & kInstanceOutput) != 0u) {
+        frame->instance_id = device_->create_buffer<uint>(pixel_count);
+    }
+    if ((request.output_mask & kSemanticOutput) != 0u) {
+        frame->semantic_id = device_->create_buffer<uint>(pixel_count);
+    }
+
+    const gobot::Matrix4 inverse_view_projection = view.camera.view_projection.inverse();
+    const uint2 resolution = make_uint2(static_cast<uint>(request.width),
+                                        static_cast<uint>(request.height));
+    *stream_ << product_shader_(frame->rgb ? frame->rgb : dummy_uint_,
+                                frame->linear_depth ? frame->linear_depth : dummy_float_,
+                                frame->world_normal ? frame->world_normal : dummy_float4_,
+                                frame->instance_id ? frame->instance_id : dummy_uint_,
+                                frame->semantic_id ? frame->semantic_id : dummy_uint_,
+                                accel_,
+                                geometry_heap_,
+                                texture_heap_,
+                                materials_,
+                                lights_,
+                                instance_ids_,
+                                semantic_ids_,
+                                static_cast<uint>(active_light_count_),
+                                environment_texture_slot_,
+                                request.output_mask,
+                                make_float3(snapshot.environment.sky_color.red(),
+                                            snapshot.environment.sky_color.green(),
+                                            snapshot.environment.sky_color.blue()),
+                                make_float3(snapshot.environment.ground_color.red(),
+                                            snapshot.environment.ground_color.green(),
+                                            snapshot.environment.ground_color.blue()),
+                                static_cast<float>(snapshot.environment.ambient_intensity),
+                                static_cast<float>(snapshot.environment.environment_intensity),
+                                static_cast<float>(snapshot.environment.exposure),
+                                ToLuisaMatrix(inverse_view_projection),
+                                ToLuisaMatrix(view.camera.view),
+                                ToFloat3(view.camera.world_position))
+                        .dispatch(resolution)
+             << synchronize();
+
+    result->frame = frame.get();
+    result->device_id = 0;
+    if (frame->rgb) {
+        result->buffers[0] = {frame->rgb.native_handle(), frame->rgb.size_bytes(), sizeof(uint)};
+    }
+    if (frame->linear_depth) {
+        result->buffers[1] = {
+                frame->linear_depth.native_handle(), frame->linear_depth.size_bytes(), sizeof(float)};
+    }
+    if (frame->world_normal) {
+        result->buffers[2] = {frame->world_normal.native_handle(),
+                              frame->world_normal.size_bytes(),
+                              sizeof(float4)};
+    }
+    if (frame->instance_id) {
+        result->buffers[3] = {
+                frame->instance_id.native_handle(), frame->instance_id.size_bytes(), sizeof(uint)};
+    }
+    if (frame->semantic_id) {
+        result->buffers[4] = {
+                frame->semantic_id.native_handle(), frame->semantic_id.size_bytes(), sizeof(uint)};
+    }
+    frame.release();
+    return gobot::LuisaRendererResult::Success;
+}
+
+bool LuisaRenderer::ReadbackRenderProduct(CudaRenderProductFrame* frame,
+                                          std::uint32_t output,
+                                          void* destination,
+                                          std::size_t destination_size,
+                                          std::string* error) {
+    if (frame == nullptr || destination == nullptr || output >= 5u ||
+        (frame->output_mask & (1u << output)) == 0u) {
+        *error = "Invalid Luisa CUDA render-product readback request.";
+        return false;
+    }
+    const std::size_t pixel_count = static_cast<std::size_t>(frame->width) * frame->height;
+    switch (output) {
+        case 0u: {
+            if (destination_size != pixel_count * 3u) {
+                *error = "RGB render-product readback size does not match the frame.";
+                return false;
+            }
+            std::vector<uint> rgba(pixel_count);
+            *stream_ << frame->rgb.copy_to(luisa::span{rgba}) << synchronize();
+            auto* bytes = static_cast<std::uint8_t*>(destination);
+            for (std::size_t index = 0; index < pixel_count; ++index) {
+                bytes[index * 3u] = static_cast<std::uint8_t>(rgba[index] & 0xffu);
+                bytes[index * 3u + 1u] = static_cast<std::uint8_t>((rgba[index] >> 8u) & 0xffu);
+                bytes[index * 3u + 2u] = static_cast<std::uint8_t>((rgba[index] >> 16u) & 0xffu);
+            }
+            return true;
+        }
+        case 1u:
+            if (destination_size != pixel_count * sizeof(float)) {
+                *error = "Depth render-product readback size does not match the frame.";
+                return false;
+            }
+            *stream_ << frame->linear_depth.copy_to(
+                                luisa::span{static_cast<float*>(destination), pixel_count})
+                     << synchronize();
+            return true;
+        case 2u: {
+            if (destination_size != pixel_count * sizeof(float) * 3u) {
+                *error = "Normal render-product readback size does not match the frame.";
+                return false;
+            }
+            std::vector<float4> rgba_normal(pixel_count);
+            *stream_ << frame->world_normal.copy_to(luisa::span{rgba_normal}) << synchronize();
+            auto* values = static_cast<float*>(destination);
+            for (std::size_t index = 0; index < pixel_count; ++index) {
+                values[index * 3u] = rgba_normal[index].x;
+                values[index * 3u + 1u] = rgba_normal[index].y;
+                values[index * 3u + 2u] = rgba_normal[index].z;
+            }
+            return true;
+        }
+        case 3u:
+            if (destination_size != pixel_count * sizeof(uint)) {
+                *error = "Instance-ID render-product readback size does not match the frame.";
+                return false;
+            }
+            *stream_ << frame->instance_id.copy_to(
+                                luisa::span{static_cast<uint*>(destination), pixel_count})
+                     << synchronize();
+            return true;
+        case 4u:
+            if (destination_size != pixel_count * sizeof(uint)) {
+                *error = "Semantic-ID render-product readback size does not match the frame.";
+                return false;
+            }
+            *stream_ << frame->semantic_id.copy_to(
+                                luisa::span{static_cast<uint*>(destination), pixel_count})
+                     << synchronize();
+            return true;
+        default:
+            break;
+    }
+    *error = "Unknown Luisa CUDA render-product output.";
+    return false;
+}
+
 void* CreateRenderer(const char* module_directory, char* error, std::size_t error_size) {
     try {
         return new LuisaRenderer(module_directory != nullptr ? module_directory : ".");
@@ -1293,19 +1735,20 @@ gobot::SceneRendererCapabilities GetCapabilities(void* renderer) {
 
 gobot::LuisaRendererResult Render(void* renderer,
                                   const gobot::LuisaRendererTarget* target,
-                                  const gobot::SceneRenderSnapshot* snapshot,
+                                  const gobot::RenderSceneSnapshot* snapshot,
+                                  const gobot::RenderViewSnapshot* view,
                                   const gobot::SceneRendererSettings* settings,
                                   gobot::SceneRendererStats* stats,
                                   char* error,
                                   std::size_t error_size) {
-    if (renderer == nullptr || target == nullptr || snapshot == nullptr || settings == nullptr) {
+    if (renderer == nullptr || target == nullptr || snapshot == nullptr || view == nullptr || settings == nullptr) {
         SetError(error, error_size, "Invalid Luisa renderer call arguments.");
         return gobot::LuisaRendererResult::FatalError;
     }
     try {
         std::string message;
         const auto result = static_cast<LuisaRenderer*>(renderer)->Render(
-                *target, *snapshot, *settings, stats, &message);
+                *target, *snapshot, *view, *settings, stats, &message);
         if (result != gobot::LuisaRendererResult::Success) {
             SetError(error, error_size, message);
         }
@@ -1322,13 +1765,77 @@ void ResetAccumulation(void* renderer) {
     }
 }
 
+gobot::LuisaRendererResult CaptureRenderProduct(
+        void* renderer,
+        const gobot::RenderSceneSnapshot* snapshot,
+        const gobot::RenderViewSnapshot* view,
+        const gobot::LuisaRenderProductRequest* request,
+        gobot::LuisaRenderProductFrame* frame,
+        char* error,
+        std::size_t error_size) {
+    if (renderer == nullptr || snapshot == nullptr || view == nullptr || request == nullptr ||
+        frame == nullptr) {
+        SetError(error, error_size, "Invalid Luisa CUDA render-product call arguments.");
+        return gobot::LuisaRendererResult::FatalError;
+    }
+    try {
+        std::string message;
+        const gobot::LuisaRendererResult result =
+                static_cast<LuisaRenderer*>(renderer)->CaptureRenderProduct(
+                        *snapshot, *view, *request, frame, &message);
+        if (result != gobot::LuisaRendererResult::Success) {
+            SetError(error, error_size, message);
+        }
+        return result;
+    } catch (const std::exception& exception) {
+        SetError(error, error_size, exception.what());
+        return gobot::LuisaRendererResult::FatalError;
+    }
+}
+
+void ReleaseRenderProduct(void*, void* frame) {
+    delete static_cast<CudaRenderProductFrame*>(frame);
+}
+
+bool ReadbackRenderProduct(void* renderer,
+                           void* frame,
+                           std::uint32_t output,
+                           void* destination,
+                           std::size_t destination_size,
+                           char* error,
+                           std::size_t error_size) {
+    if (renderer == nullptr || frame == nullptr) {
+        SetError(error, error_size, "Invalid Luisa CUDA render-product readback arguments.");
+        return false;
+    }
+    try {
+        std::string message;
+        const bool success = static_cast<LuisaRenderer*>(renderer)->ReadbackRenderProduct(
+                static_cast<CudaRenderProductFrame*>(frame),
+                output,
+                destination,
+                destination_size,
+                &message);
+        if (!success) {
+            SetError(error, error_size, message);
+        }
+        return success;
+    } catch (const std::exception& exception) {
+        SetError(error, error_size, exception.what());
+        return false;
+    }
+}
+
 const gobot::LuisaRendererModuleApi kApi{
         gobot::GOBOT_LUISA_RENDERER_ABI_VERSION,
         &CreateRenderer,
         &DestroyRenderer,
         &GetCapabilities,
         &Render,
-        &ResetAccumulation};
+        &ResetAccumulation,
+        &CaptureRenderProduct,
+        &ReleaseRenderProduct,
+        &ReadbackRenderProduct};
 
 } // namespace
 

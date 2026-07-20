@@ -110,6 +110,27 @@ TEST(TestPackedScene, instantiate_rebuilds_scene_tree_structure) {
     gobot::Object::Delete(instance);
 }
 
+TEST(TestPackedScene, semantic_label_round_trips_as_storage_property) {
+    auto* root = gobot::Object::New<gobot::Node3D>();
+    root->SetName("Root");
+    root->SetSemanticLabel("vehicle");
+
+    gobot::Ref<gobot::PackedScene> packed_scene = gobot::MakeRef<gobot::PackedScene>();
+    ASSERT_TRUE(packed_scene->Pack(root));
+    const auto* root_data = packed_scene->GetState()->GetNodeData(0);
+    ASSERT_NE(root_data, nullptr);
+    const auto* semantic_label = FindProperty(*root_data, "semantic_label");
+    ASSERT_NE(semantic_label, nullptr);
+    EXPECT_EQ(semantic_label->value.convert<std::string>(), "vehicle");
+
+    gobot::Node* restored = packed_scene->Instantiate();
+    ASSERT_NE(restored, nullptr);
+    EXPECT_EQ(restored->GetSemanticLabel(), "vehicle");
+
+    gobot::Object::Delete(root);
+    gobot::Object::Delete(restored);
+}
+
 TEST(TestPackedScene, pack_motion_robot_reads_assembly_pose_without_mutating_scene) {
     auto* robot = gobot::Object::New<gobot::Robot3D>();
     robot->SetName("robot");

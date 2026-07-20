@@ -38,6 +38,7 @@
 #include "gobot/python/python_app_context.hpp"
 #include "gobot/python/python_script_runner.hpp"
 #include "gobot/rendering/headless_render_context.hpp"
+#include "gobot/rendering/render_product.hpp"
 #include "gobot/rendering/render_server.hpp"
 #include "gobot/scene/camera_3d.hpp"
 #include "gobot/scene/collision_shape_3d.hpp"

@@ -16,18 +16,18 @@ The data flow is:
 ```text
 .jscn / live authored scene
   -> RenderServer snapshot compiler
-  -> immutable SceneRenderSnapshot
+  -> immutable RenderSceneSnapshot + RenderViewSnapshot
        -> OpenGL raster renderer
        -> optional LuisaCompute CUDA renderer module
-  -> OpenGL viewport texture
-  -> editor scene pass + debug pass + overlays
+       -> RenderProduct RGB/AOV frame slots
+  -> editor viewport or camera sensor
 ```
 
-`SceneRenderSnapshot` contains CPU-side geometry, PBR materials, texture image
-data, camera state, environment state, and authored lights. It also contains
-separate topology, geometry, transform, material, camera, and lighting
-fingerprints. A renderer never traverses `Node`, retains `Camera3D`, or reads
-editor selection state.
+`RenderSceneSnapshot` contains camera-independent CPU-side geometry, PBR
+materials, texture image data, environment state, authored lights, stable
+instance paths, and semantic labels. `RenderViewSnapshot` contains one pinhole
+camera and its fingerprint. A renderer never traverses `Node`, retains
+`Camera3D`, or reads editor selection state.
 
 The optional module owns all Luisa and CUDA objects:
 
@@ -40,6 +40,37 @@ The optional module owns all Luisa and CUDA objects:
 No Luisa or CUDA implementation header is included by `include/gobot` or
 `src/gobot`. The private module ABI uses backend-neutral Gobot snapshots and is
 versioned by `GOBOT_LUISA_RENDERER_ABI_VERSION`.
+
+## Camera Render Products
+
+`RenderProduct` is shared by editor-independent `CameraSensor` captures and
+Python data collection. It allocates only requested outputs:
+
+- `rgb`: sRGB `uint8 [H,W,3]`
+- `linear_depth`: camera-forward metres in `float32 [H,W]`, background `+inf`
+- `world_normal`: world-space unit vectors in `float32 [H,W,3]`, background zero
+- `instance_id` and `semantic_id`: `uint32 [H,W]`, background/unlabelled zero
+
+Instance ids derive from scene-relative paths; all surfaces of one mesh node
+share an id. Semantic labels inherit from the nearest non-empty ancestor.
+Every frame carries both id maps.
+
+OpenGL writes all requested outputs in one MRT geometry pass and reads them
+through the backend-neutral `RenderBuffer`. The Luisa ABI v2 writes primary-hit
+AOVs to linear CUDA buffers. CUDA buffers export DLPack directly to Torch or
+Warp; `numpy()` performs an explicit synchronous host copy. Public APIs expose
+neither OpenGL textures nor CUDA/Luisa handles.
+
+Sensor `minimal` captures are unaccumulated: OpenGL uses one raster geometry
+pass, while Luisa uses one primary ray with direct lighting and hard shadows.
+The editor's realtime and progressive quality modes remain separate.
+
+Each product owns three frame slots by default. A frame, zero-copy CPU NumPy
+view, or DLPack consumer keeps its slot alive, and capture fails explicitly
+when the pool is exhausted. Capture is synchronous in this phase. Sensor
+passes do not include editor debug drawing, gizmos, or overlays. The legacy
+`capture_rgb()` helper is a one-output CPU render-product wrapper, retaining
+its old overlay path only when debug arrows are explicitly requested.
 
 ## Implemented Viewport Modes
 
@@ -155,7 +186,7 @@ require a system CUDA Toolkit or a local LuisaCompute checkout. It does require
 an NVIDIA display driver with `libcuda.so.1` and the system libglvnd dispatch
 libraries; shader code is compiled for the active GPU by the bundled
 `luisa_nvrtc` helper. JIT cache files are written to
-`$XDG_CACHE_HOME/gobot/luisa/v1` or `~/.cache/gobot/luisa/v1`, never into the
+`$XDG_CACHE_HOME/gobot/luisa/v2` or `~/.cache/gobot/luisa/v2`, never into the
 installed wheel.
 
 Release wheels are cross-built on standard GitHub-hosted Ubuntu runners. A
@@ -201,21 +232,26 @@ OpenGL, and architecture tests cover the shared render contracts.
 When `GOB_BUILD_LUISA_RENDERER=ON` and tests are enabled,
 `test_luisa_renderer_module` loads the shared module and checks its ABI and
 backend-neutral capability contract without creating a GPU device. GPU frame
-validation should additionally verify:
+validation additionally verifies:
 
 - the module selects the OpenGL-associated NVIDIA device
 - a non-empty scene produces nonblack finite pixels
 - progressive sample count increases while the scene is stable
 - camera or scene changes reset accumulation
 - CUDA-OpenGL presentation succeeds without CPU readback
+- five CUDA render-product outputs, background conventions, and id maps
+- CPU/CUDA primary-hit depth, normal, and id parity
+- direct Torch/Warp DLPack consumption when those packages expose CUDA
+- frame-slot retention across DLPack consumers
 - empty or unsupported scenes recover through OpenGL fallback
 
 ## Remaining Work
 
-The editor path is usable, but these are separate follow-up milestones:
+The editor and single-camera render-product paths are usable, but these are
+separate follow-up milestones:
 
-- backend-neutral offscreen depth, normal, instance-id, and semantic-id outputs
-  for camera sensors and Python workflows
+- persistent render scenes, dirty updates, asynchronous PBO/CUDA fences, and
+  same-resolution multi-camera batching
 - production denoising through an optional OptiX/OIDN integration
 - stronger light and environment importance sampling and transparent material
   handling
@@ -223,3 +259,5 @@ The editor path is usable, but these are separate follow-up milestones:
   can overlap safely
 - per-stage profiling for upload, acceleration build/update, tracing,
   denoising, interop, and sensor readback
+- camera distortion/noise/exposure, motion vectors, point clouds, optical flow,
+  and 2D/3D bounding boxes

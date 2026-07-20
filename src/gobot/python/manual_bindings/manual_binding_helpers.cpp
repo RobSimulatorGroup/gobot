@@ -975,18 +975,37 @@ py::array_t<std::uint8_t> CaptureRgb(const py::handle& root_handle,
     camera.SetPerspective(fov_y, z_near, z_far);
     camera.SetViewMatrix(PythonToVector3(eye), PythonToVector3(target), PythonToVector3(up));
 
-    RID capture_viewport = render_server->ViewportCreate();
+    py::array_t<std::uint8_t> array({height, width, 3});
+    py::buffer_info info = array.request();
+    const std::vector<DebugArrow> arrows = PythonToDebugArrows(debug_arrows);
+    if (arrows.empty()) {
+        RenderProductDesc desc;
+        desc.width = width;
+        desc.height = height;
+        desc.outputs = {RenderOutputType::Rgb};
+        desc.device = RenderDevice::Cpu;
+        desc.mode = RenderProductMode::Minimal;
+        RenderProduct product(std::move(desc));
+        const std::shared_ptr<RenderFrame> frame = product.Capture(
+                CaptureRenderSceneSnapshot(root), CaptureRenderViewSnapshot(camera));
+        const std::shared_ptr<RenderBuffer> rgb = frame->Get(RenderOutputType::Rgb);
+        if (rgb == nullptr ||
+            !rgb->CopyToHost(info.ptr, static_cast<std::size_t>(width) * height * 3u)) {
+            throw std::runtime_error("RGB render-product readback failed");
+        }
+        return array;
+    }
+
+    const RID capture_viewport = render_server->ViewportCreate();
     render_server->ViewportSetSize(capture_viewport, width, height);
     render_server->RenderSceneToViewport(capture_viewport, root, &camera);
-    render_server->RenderDebugArrowsToViewport(capture_viewport, &camera, PythonToDebugArrows(debug_arrows));
-    std::vector<std::uint8_t> pixels = render_server->ReadViewportRgbPixels(capture_viewport, true);
+    render_server->RenderDebugArrowsToViewport(capture_viewport, &camera, arrows);
+    const std::vector<std::uint8_t> pixels =
+            render_server->ReadViewportRgbPixels(capture_viewport, true);
     render_server->Free(capture_viewport);
     if (pixels.size() != static_cast<std::size_t>(width) * height * 3) {
         throw std::runtime_error("RGB capture readback returned an unexpected pixel buffer size");
     }
-
-    py::array_t<std::uint8_t> array({height, width, 3});
-    py::buffer_info info = array.request();
     std::copy(pixels.begin(), pixels.end(), static_cast<std::uint8_t*>(info.ptr));
     return array;
 }

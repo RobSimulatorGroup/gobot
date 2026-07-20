@@ -14,11 +14,13 @@
 
 #include <cstdint>
 #include <array>
+#include <memory>
 #include <unordered_map>
 
 namespace gobot::opengl {
 
 struct RenderTarget;
+struct LuisaRendererLifetime;
 
 class GLRasterizerScene : public RendererSceneRender {
 public:
@@ -26,7 +28,9 @@ public:
 
     ~GLRasterizerScene() override;
 
-    void RenderScene(const RID& render_target, const SceneRenderSnapshot& snapshot) override;
+    void RenderScene(const RID& render_target,
+                     const RenderSceneSnapshot& scene,
+                     const RenderViewSnapshot& view) override;
 
     [[nodiscard]] SceneRendererCapabilities GetCapabilities() const override;
 
@@ -34,13 +38,25 @@ public:
 
     void SetSettings(const SceneRendererSettings& settings) override;
 
+    bool CaptureCudaRenderProduct(const RenderSceneSnapshot& scene,
+                                  const RenderViewSnapshot& view,
+                                  int width,
+                                  int height,
+                                  std::uint32_t output_mask,
+                                  std::uint32_t mode,
+                                  RendererRenderProductFrame* frame,
+                                  std::string* error) override;
+
 private:
     struct DefaultProgramUniforms {
         GLint model = -1;
         GLint normal_matrix = -1;
         GLint view_projection = -1;
+        GLint view = -1;
         GLint color = -1;
         GLint camera_position = -1;
+        GLint instance_id = -1;
+        GLint semantic_id = -1;
         GLint metallic = -1;
         GLint roughness = -1;
         GLint specular = -1;
@@ -122,13 +138,14 @@ private:
     void* luisa_module_library_ = nullptr;
     void* luisa_renderer_ = nullptr;
     const LuisaRendererModuleApi* luisa_api_ = nullptr;
+    std::shared_ptr<LuisaRendererLifetime> luisa_lifetime_;
     bool luisa_load_attempted_ = false;
     bool luisa_create_attempted_ = false;
     std::string luisa_status_;
 
     void EnsureDefaultProgram();
 
-    void UploadFrameUniforms(const SceneRenderSnapshot& snapshot);
+    void UploadFrameUniforms(const RenderSceneSnapshot& scene, const RenderViewSnapshot& view);
 
     MeshCacheEntry* GetOrCreateMesh(const VisualMeshRenderItem& item);
 
@@ -142,9 +159,13 @@ private:
 
     void UnloadLuisaModule();
 
-    bool RenderWithLuisa(const RenderTarget& target, const SceneRenderSnapshot& snapshot);
+    bool RenderWithLuisa(const RenderTarget& target,
+                         const RenderSceneSnapshot& scene,
+                         const RenderViewSnapshot& view);
 
-    void RenderDepthPrepass(const RenderTarget& target, const SceneRenderSnapshot& snapshot);
+    void RenderDepthPrepass(const RenderTarget& target,
+                            const RenderSceneSnapshot& scene,
+                            const RenderViewSnapshot& view);
 
     static void DestroyMeshEntry(MeshCacheEntry& entry);
 

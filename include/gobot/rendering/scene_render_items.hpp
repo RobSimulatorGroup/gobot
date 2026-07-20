@@ -20,7 +20,9 @@
 
 #include <cstddef>
 #include <cstdint>
+#include <map>
 #include <memory>
+#include <string>
 #include <vector>
 
 namespace gobot {
@@ -72,7 +74,11 @@ struct RenderMaterialSnapshot {
 };
 
 struct VisualMeshRenderItem {
-    ObjectID instance_id;
+    ObjectID object_id;
+    std::uint32_t instance_id = 0;
+    std::uint32_t semantic_id = 0;
+    std::string instance_path;
+    std::string semantic_label;
     ObjectID mesh_id;
     std::uint64_t mesh_revision = 0;
     std::size_t surface_index = 0;
@@ -95,6 +101,8 @@ struct CollisionDebugRenderItem {
 struct SceneRenderItems {
     std::vector<VisualMeshRenderItem> visual_meshes;
     std::vector<CollisionDebugRenderItem> collision_shapes;
+    std::map<std::uint32_t, std::string> instance_paths;
+    std::map<std::uint32_t, std::string> semantic_labels;
 };
 
 struct RenderCameraSnapshot {
@@ -102,6 +110,13 @@ struct RenderCameraSnapshot {
     Matrix4 projection = Matrix4::Identity();
     Matrix4 view_projection = Matrix4::Identity();
     Vector3 world_position = Vector3::Zero();
+    RealType z_near = 0.05;
+    RealType z_far = 4000.0;
+};
+
+enum class RenderViewMode {
+    Viewport,
+    Minimal
 };
 
 struct RenderEnvironmentSnapshot {
@@ -146,17 +161,40 @@ struct SceneRenderFingerprints {
     std::uint64_t combined = 0;
 };
 
-// Immutable per-frame input shared by raster and future compute renderers.
+// Immutable camera-independent input shared by all views of an authored scene.
 // Backends must not traverse or retain the authored Scene tree.
+struct RenderSceneSnapshot {
+    std::vector<VisualMeshRenderItem> visual_meshes;
+    RenderEnvironmentSnapshot environment;
+    std::vector<RenderLightSnapshot> lights;
+    std::map<std::uint32_t, std::string> instance_paths;
+    std::map<std::uint32_t, std::string> semantic_labels;
+    SceneRenderFingerprints fingerprints;
+};
+
+struct RenderViewSnapshot {
+    RenderCameraSnapshot camera;
+    RenderViewMode mode = RenderViewMode::Viewport;
+    std::uint64_t fingerprint = 0;
+};
+
+// Compatibility snapshot for callers that still request a scene and camera in
+// one object. New render paths should pass RenderSceneSnapshot and
+// RenderViewSnapshot independently.
 struct SceneRenderSnapshot {
     std::vector<VisualMeshRenderItem> visual_meshes;
     RenderCameraSnapshot camera;
     RenderEnvironmentSnapshot environment;
     std::vector<RenderLightSnapshot> lights;
+    std::map<std::uint32_t, std::string> instance_paths;
+    std::map<std::uint32_t, std::string> semantic_labels;
     SceneRenderFingerprints fingerprints;
 };
 
 GOBOT_EXPORT SceneRenderItems CollectSceneRenderItems(const Node* scene_root);
+GOBOT_EXPORT RenderSceneSnapshot CaptureRenderSceneSnapshot(const Node* scene_root);
+GOBOT_EXPORT RenderViewSnapshot CaptureRenderViewSnapshot(const Camera3D& camera,
+                                                          RenderViewMode mode = RenderViewMode::Viewport);
 GOBOT_EXPORT SceneRenderSnapshot CaptureSceneRenderSnapshot(const Node* scene_root,
                                                              const Camera3D& camera);
 

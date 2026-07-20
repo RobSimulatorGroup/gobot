@@ -12,6 +12,10 @@
 #include <gli/gli.hpp>
 #include <gli/texture2d.hpp>
 
+#include <algorithm>
+#include <array>
+#include <cstring>
+
 namespace gobot::opengl {
 
 TextureStorage *TextureStorage::s_singleton = nullptr;
@@ -113,6 +117,18 @@ void TextureStorage::ClearRenderTarget(RenderTarget *rt) {
     }
     rt->color = 0;
 
+    const std::array<GLuint*, 4> aov_textures = {
+            &rt->linear_depth,
+            &rt->world_normal,
+            &rt->instance_id,
+            &rt->semantic_id};
+    for (GLuint* texture : aov_textures) {
+        if (*texture != 0) {
+            glDeleteTextures(1, texture);
+            *texture = 0;
+        }
+    }
+
     if (rt->depth) {
         glDeleteTextures(1, &rt->depth);
     }
@@ -132,6 +148,20 @@ void TextureStorage::RenderTargetSetSize(RID p_render_target, int p_width, int p
     rt->size = Vector2i(p_width, p_height);
     rt->view_count = p_view_count;
 
+    UpdateRenderTarget(rt);
+}
+
+void TextureStorage::RenderTargetSetOutputMask(RID p_render_target, std::uint32_t output_mask) {
+    RenderTarget* rt = render_target_owner_.GetOrNull(p_render_target);
+    ERR_FAIL_COND(!rt);
+    constexpr std::uint32_t valid_mask = (1u << 5u) - 1u;
+    output_mask &= valid_mask;
+    ERR_FAIL_COND_MSG(output_mask == 0u, "Render target must request at least one output");
+    if (rt->output_mask == output_mask) {
+        return;
+    }
+    ClearRenderTarget(rt);
+    rt->output_mask = output_mask;
     UpdateRenderTarget(rt);
 }
 
@@ -258,6 +288,81 @@ std::vector<std::uint8_t> TextureStorage::RenderTargetReadRgbPixels(RID p_render
         std::copy_n(bottom_left_data.data() + src, row_bytes, top_left_data.data() + dst);
     }
     return top_left_data;
+}
+
+bool TextureStorage::RenderTargetReadOutput(RID p_render_target,
+                                            RenderOutputType output,
+                                            void* destination,
+                                            std::size_t destination_size,
+                                            bool p_flip_y) {
+    auto* rt = GetRenderTarget(p_render_target);
+    ERR_FAIL_COND_V_MSG(!rt, false, "Render target cannot be null");
+    ERR_FAIL_COND_V_MSG(rt->fbo == 0, false, "Render target has no framebuffer");
+    ERR_FAIL_COND_V_MSG(destination == nullptr, false, "Render output destination cannot be null");
+    if (!RenderOutputMaskContains(rt->output_mask, output)) {
+        return false;
+    }
+
+    const std::size_t row_bytes = static_cast<std::size_t>(rt->size.x()) *
+                                  RenderOutputChannelCount(output) *
+                                  RenderDataTypeSize(RenderOutputDataType(output));
+    const std::size_t expected_size = row_bytes * static_cast<std::size_t>(rt->size.y());
+    if (destination_size != expected_size) {
+        return false;
+    }
+
+    GLenum pixel_format = GL_RGB;
+    GLenum pixel_type = GL_UNSIGNED_BYTE;
+    switch (output) {
+        case RenderOutputType::Rgb:
+            pixel_format = GL_RGB;
+            pixel_type = GL_UNSIGNED_BYTE;
+            break;
+        case RenderOutputType::LinearDepth:
+            pixel_format = GL_RED;
+            pixel_type = GL_FLOAT;
+            break;
+        case RenderOutputType::WorldNormal:
+            pixel_format = GL_RGB;
+            pixel_type = GL_FLOAT;
+            break;
+        case RenderOutputType::InstanceId:
+        case RenderOutputType::SemanticId:
+            pixel_format = GL_RED_INTEGER;
+            pixel_type = GL_UNSIGNED_INT;
+            break;
+    }
+
+    GLint previous_read_framebuffer = 0;
+    GLint previous_pack_alignment = 0;
+    glGetIntegerv(GL_READ_FRAMEBUFFER_BINDING, &previous_read_framebuffer);
+    glGetIntegerv(GL_PACK_ALIGNMENT, &previous_pack_alignment);
+    glBindFramebuffer(GL_READ_FRAMEBUFFER, rt->fbo);
+    glReadBuffer(GL_COLOR_ATTACHMENT0 + static_cast<GLenum>(output));
+    glPixelStorei(GL_PACK_ALIGNMENT, 1);
+
+    if (!p_flip_y) {
+        glReadPixels(0, 0, rt->size.x(), rt->size.y(), pixel_format, pixel_type, destination);
+    } else {
+        std::vector<std::byte> bottom_left_data(expected_size);
+        glReadPixels(0,
+                     0,
+                     rt->size.x(),
+                     rt->size.y(),
+                     pixel_format,
+                     pixel_type,
+                     bottom_left_data.data());
+        auto* top_left_data = static_cast<std::byte*>(destination);
+        for (int y = 0; y < rt->size.y(); ++y) {
+            const std::size_t source = static_cast<std::size_t>(rt->size.y() - 1 - y) * row_bytes;
+            const std::size_t target = static_cast<std::size_t>(y) * row_bytes;
+            std::memcpy(top_left_data + target, bottom_left_data.data() + source, row_bytes);
+        }
+    }
+
+    glPixelStorei(GL_PACK_ALIGNMENT, previous_pack_alignment);
+    glBindFramebuffer(GL_READ_FRAMEBUFFER, static_cast<GLuint>(previous_read_framebuffer));
+    return glGetError() == GL_NO_ERROR;
 }
 
 void TextureStorage::Texture2DInitialize(RID texture_id, const Ref<Image> &image) {
@@ -419,21 +524,48 @@ void TextureStorage::UpdateRenderTarget(RenderTarget* rt) {
         // create fbo
         glCreateFramebuffers(1, &rt->fbo);
 
-        // init attachment color
+        // Allocate only the requested color/AOV attachments. Output locations
+        // remain fixed so one shader can serve viewports and render products.
         auto* texture = GetTexture(rt->texture);
         ERR_FAIL_COND(!texture);
 
-        glCreateTextures(texture_target, 1, &rt->color);
-        glTextureParameteri(rt->color, GL_TEXTURE_MAX_LEVEL, 0);
-        glTextureParameteri(rt->color, GL_TEXTURE_BASE_LEVEL, 0);
-        glTextureParameteri(rt->color, GL_TEXTURE_MAX_LEVEL, 0);
-        glTextureParameteri(rt->color, GL_TEXTURE_MIN_FILTER, GL_NEAREST);
-        glTextureParameteri(rt->color, GL_TEXTURE_MAG_FILTER, GL_NEAREST);
-        glTextureParameteri(rt->color, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
-        glTextureParameteri(rt->color, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
+        auto allocate_attachment = [&](RenderOutputType output,
+                                       GLuint* handle,
+                                       GLenum internal_format) {
+            if (!RenderOutputMaskContains(rt->output_mask, output)) {
+                return;
+            }
+            glCreateTextures(texture_target, 1, handle);
+            glTextureParameteri(*handle, GL_TEXTURE_MAX_LEVEL, 0);
+            glTextureParameteri(*handle, GL_TEXTURE_BASE_LEVEL, 0);
+            glTextureParameteri(*handle, GL_TEXTURE_MIN_FILTER, GL_NEAREST);
+            glTextureParameteri(*handle, GL_TEXTURE_MAG_FILTER, GL_NEAREST);
+            glTextureParameteri(*handle, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
+            glTextureParameteri(*handle, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
+            glTextureStorage2D(*handle, 1, internal_format, rt->size.x(), rt->size.y());
+            glNamedFramebufferTexture(rt->fbo,
+                                      GL_COLOR_ATTACHMENT0 + static_cast<GLenum>(output),
+                                      *handle,
+                                      0);
+        };
 
-        glTextureStorage2D(rt->color, 1, rt->color_internal_format, rt->size.x(), rt->size.y());
-        glNamedFramebufferTexture(rt->fbo, GL_COLOR_ATTACHMENT0, rt->color, 0);
+        allocate_attachment(RenderOutputType::Rgb, &rt->color, GL_RGBA8);
+        allocate_attachment(RenderOutputType::LinearDepth, &rt->linear_depth, GL_R32F);
+        allocate_attachment(RenderOutputType::WorldNormal, &rt->world_normal, GL_RGB32F);
+        allocate_attachment(RenderOutputType::InstanceId, &rt->instance_id, GL_R32UI);
+        allocate_attachment(RenderOutputType::SemanticId, &rt->semantic_id, GL_R32UI);
+
+        std::array<GLenum, 5> draw_buffers{};
+        draw_buffers.fill(GL_NONE);
+        for (std::uint32_t index = 0; index < draw_buffers.size(); ++index) {
+            const auto output = static_cast<RenderOutputType>(index);
+            if (RenderOutputMaskContains(rt->output_mask, output)) {
+                draw_buffers[index] = GL_COLOR_ATTACHMENT0 + index;
+            }
+        }
+        glNamedFramebufferDrawBuffers(rt->fbo,
+                                      static_cast<GLsizei>(draw_buffers.size()),
+                                      draw_buffers.data());
 
         // init attachment depth
         glCreateTextures(texture_target, 1, &rt->depth);
@@ -454,14 +586,9 @@ void TextureStorage::UpdateRenderTarget(RenderTarget* rt) {
             const GLuint depth_internal_format = GL_DEPTH_COMPONENT24;
             // bind to default frame buffer
             glBindFramebuffer(GL_FRAMEBUFFER, 0);
-            glDeleteFramebuffers(1, &rt->fbo);
-            glDeleteTextures(1, &rt->color);
-            glDeleteTextures(1, &rt->depth);
-            rt->fbo = 0;
+            ClearRenderTarget(rt);
             rt->size.x() = 0;
             rt->size.y() = 0;
-            rt->color = 0;
-            rt->depth = 0;
             LOG_WARN("Could not create render target, status: {}, size: {}x{}, color format: 0x{:X}, depth format: 0x{:X}",
                      GetFramebufferError(status),
                      width,
@@ -474,7 +601,7 @@ void TextureStorage::UpdateRenderTarget(RenderTarget* rt) {
         texture->is_render_target = true;
         texture->render_target = rt;
         texture->tex_id = rt->color;
-        texture->active = true;
+        texture->active = rt->color != 0;
     }
 
     // TODO(wqq): Do we need this.

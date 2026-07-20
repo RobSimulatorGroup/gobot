@@ -9,6 +9,7 @@
 
 #include "gobot/core/rid_owner.hpp"
 #include "gobot/core/math/matrix.hpp"
+#include "gobot/rendering/render_product.hpp"
 
 #include <cstdint>
 #include <vector>
@@ -37,11 +38,19 @@ public:
 
     void ViewportSetSize(RID p_viewport, int p_width, int p_height);
 
+    void ViewportSetOutputMask(RID p_viewport, std::uint32_t output_mask);
+
     bool Free(const RID& p_rid);
 
     void* GetRenderTargetColorTextureNativeHandle(RID p_viewport);
 
     std::vector<std::uint8_t> ReadViewportRgbPixels(RID p_viewport, bool p_flip_y);
+
+    bool ReadViewportOutput(RID p_viewport,
+                            RenderOutputType output,
+                            void* destination,
+                            std::size_t destination_size,
+                            bool p_flip_y);
 
     RID GetViewportRenderTarget(RID p_viewport) const;
 

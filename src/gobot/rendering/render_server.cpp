@@ -100,6 +100,15 @@ std::vector<std::uint8_t> RenderServer::ReadViewportRgbPixels(const RID& p_view_
     return RSG::viewport->ReadViewportRgbPixels(p_view_port, p_flip_y);
 }
 
+bool RenderServer::ReadViewportOutput(const RID& viewport,
+                                      RenderOutputType output,
+                                      void* destination,
+                                      std::size_t destination_size,
+                                      bool flip_y) {
+    return RSG::viewport->ReadViewportOutput(
+            viewport, output, destination, destination_size, flip_y);
+}
+
 RID RenderServer::MeshCreate() {
     auto rid = RSG::mesh_storage->MeshAllocate();
     RSG::mesh_storage->MeshInitialize(rid);
@@ -143,16 +152,24 @@ void RenderServer::RenderSceneToViewport(const RID& viewport, const Node* scene_
     ERR_FAIL_COND(RSG::scene == nullptr);
     ERR_FAIL_COND(scene_root == nullptr);
     ERR_FAIL_COND(camera == nullptr);
+    RenderSceneSnapshot scene_snapshot;
+    RenderViewSnapshot view_snapshot;
+    {
+        GOBOT_PROFILE_ZONE("RenderServer::CaptureRenderSnapshots");
+        scene_snapshot = CaptureRenderSceneSnapshot(scene_root);
+        view_snapshot = CaptureRenderViewSnapshot(*camera);
+    }
+    GOBOT_PROFILE_PLOT("visual_meshes", static_cast<double>(scene_snapshot.visual_meshes.size()));
+    RenderSnapshotsToViewport(viewport, scene_snapshot, view_snapshot);
+}
+
+void RenderServer::RenderSnapshotsToViewport(const RID& viewport,
+                                             const RenderSceneSnapshot& scene,
+                                             const RenderViewSnapshot& view) {
+    ERR_FAIL_COND(RSG::scene == nullptr);
     const RID render_target = RSG::viewport->GetViewportRenderTarget(viewport);
     ERR_FAIL_COND(render_target.IsNull());
-
-    SceneRenderSnapshot snapshot;
-    {
-        GOBOT_PROFILE_ZONE("RenderServer::CaptureSceneRenderSnapshot");
-        snapshot = CaptureSceneRenderSnapshot(scene_root, *camera);
-    }
-    GOBOT_PROFILE_PLOT("visual_meshes", static_cast<double>(snapshot.visual_meshes.size()));
-    RSG::scene->RenderScene(render_target, snapshot);
+    RSG::scene->RenderScene(render_target, scene, view);
 }
 
 void RenderServer::SetSceneRendererSettings(const SceneRendererSettings& settings) {
@@ -170,6 +187,24 @@ SceneRendererCapabilities RenderServer::GetSceneRendererCapabilities() const {
 
 SceneRendererStats RenderServer::GetSceneRendererStats() const {
     return RSG::scene != nullptr ? RSG::scene->GetStats() : SceneRendererStats{};
+}
+
+bool RenderServer::CaptureCudaRenderProduct(const RenderSceneSnapshot& scene,
+                                            const RenderViewSnapshot& view,
+                                            int width,
+                                            int height,
+                                            std::uint32_t output_mask,
+                                            std::uint32_t mode,
+                                            RendererRenderProductFrame* frame,
+                                            std::string* error) {
+    if (RSG::scene == nullptr) {
+        if (error != nullptr) {
+            *error = "render scene backend is not initialized";
+        }
+        return false;
+    }
+    return RSG::scene->CaptureCudaRenderProduct(
+            scene, view, width, height, output_mask, mode, frame, error);
 }
 
 void RenderServer::RenderEditorDebugToViewport(const RID& viewport,

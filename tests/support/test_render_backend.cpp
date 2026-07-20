@@ -10,6 +10,7 @@
 #include "gobot/rendering/texture_storage.hpp"
 
 #include <string>
+#include <cstring>
 #include <unordered_map>
 
 namespace gobot::test {
@@ -26,6 +27,7 @@ struct TestRenderTarget {
     int width = 0;
     int height = 0;
     uint32_t view_count = 0;
+    std::uint32_t output_mask = RenderOutputBit(RenderOutputType::Rgb);
 };
 
 Rasterizer* CreateTestRasterizer();
@@ -98,6 +100,11 @@ public:
             target->view_count = p_view_count;
         }
     }
+    void RenderTargetSetOutputMask(RID p_render_target, std::uint32_t output_mask) override {
+        if (auto* target = render_targets_.GetOrNull(p_render_target)) {
+            target->output_mask = output_mask;
+        }
+    }
     void* GetRenderTargetColorTextureNativeHandle(RID) override { return nullptr; }
     std::vector<std::uint8_t> RenderTargetReadRgbPixels(RID p_render_target, bool) override {
         auto* target = render_targets_.GetOrNull(p_render_target);
@@ -105,6 +112,25 @@ public:
             return {};
         }
         return std::vector<std::uint8_t>(static_cast<std::size_t>(target->width) * target->height * 3, 0);
+    }
+    bool RenderTargetReadOutput(RID p_render_target,
+                                RenderOutputType output,
+                                void* destination,
+                                std::size_t destination_size,
+                                bool) override {
+        auto* target = render_targets_.GetOrNull(p_render_target);
+        if (target == nullptr || destination == nullptr ||
+            !RenderOutputMaskContains(target->output_mask, output)) {
+            return false;
+        }
+        const std::size_t expected = static_cast<std::size_t>(target->width) * target->height *
+                                     RenderOutputChannelCount(output) *
+                                     RenderDataTypeSize(RenderOutputDataType(output));
+        if (destination_size != expected) {
+            return false;
+        }
+        std::memset(destination, 0, destination_size);
+        return true;
     }
 
     RID TextureAllocate() override {
@@ -124,7 +150,7 @@ private:
 
 class TestSceneRender final : public RendererSceneRender {
 public:
-    void RenderScene(const RID&, const SceneRenderSnapshot&) override {}
+    void RenderScene(const RID&, const RenderSceneSnapshot&, const RenderViewSnapshot&) override {}
 };
 
 class TestDebugDraw final : public RendererDebugDraw {

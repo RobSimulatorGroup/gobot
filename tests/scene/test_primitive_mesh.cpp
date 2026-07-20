@@ -44,6 +44,18 @@ TEST(TestBoxMesh, test_create) {
     gobot::Instance instance(material);
     ASSERT_TRUE(material.is_valid());
     ExpectCompleteTexturedSurface(box_mesh);
+
+    const gobot::MeshSurfaceData& surface = box_mesh->GetSurfaceData()->front();
+    for (std::size_t index = 0; index < surface.indices.size(); index += 3) {
+        const std::uint32_t i0 = surface.indices[index];
+        const std::uint32_t i1 = surface.indices[index + 1];
+        const std::uint32_t i2 = surface.indices[index + 2];
+        const gobot::Vector3 geometric_normal =
+                (surface.vertices[i1] - surface.vertices[i0])
+                        .cross(surface.vertices[i2] - surface.vertices[i0])
+                        .normalized();
+        EXPECT_GT(geometric_normal.dot(surface.normals[i0]), 0.99);
+    }
 }
 
 TEST(TestBoxMesh, test_cast) {

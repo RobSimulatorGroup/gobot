@@ -17,6 +17,8 @@
 #include <gobot/scene/window.hpp>
 #include <gobot/scene/mesh_instance_3d.hpp>
 #include <gobot/scene/resources/box_shape_3d.hpp>
+#include <gobot/scene/resources/array_mesh.hpp>
+#include <gobot/scene/resources/packed_scene.hpp>
 #include <gobot/scene/resources/primitive_mesh.hpp>
 
 TEST(TestMeshInstance3D, render_server_forwards_backend_neutral_renderer_settings) {
@@ -175,6 +177,58 @@ TEST(TestMeshInstance3D, render_snapshot_fingerprints_isolate_scene_changes) {
     EXPECT_EQ(camera_changed.fingerprints.geometry, transform_changed.fingerprints.geometry);
 
     gobot::Object::Delete(tree);
+}
+
+TEST(TestMeshInstance3D, render_scene_snapshot_assigns_stable_instance_and_inherited_semantic_ids) {
+    auto render_server = std::make_unique<gobot::RenderServer>();
+
+    auto* root = gobot::Object::New<gobot::Node3D>();
+    root->SetName("World");
+    root->SetSemanticLabel("robot");
+    auto* link = gobot::Object::New<gobot::Node3D>();
+    link->SetName("link");
+    auto* mesh_instance = gobot::Object::New<gobot::MeshInstance3D>();
+    mesh_instance->SetName("visual");
+
+    gobot::MeshSurfaceData first;
+    first.vertices = {{0.0, 0.0, 0.0}, {1.0, 0.0, 0.0}, {0.0, 1.0, 0.0}};
+    first.indices = {0, 1, 2};
+    gobot::MeshSurfaceData second = first;
+    second.vertices = {{0.0, 0.0, 1.0}, {1.0, 0.0, 1.0}, {0.0, 1.0, 1.0}};
+    auto mesh = gobot::MakeRef<gobot::ArrayMesh>();
+    mesh->SetSurfaces({first, second});
+    mesh_instance->SetMesh(mesh);
+    link->AddChild(mesh_instance);
+    root->AddChild(link);
+
+    const gobot::RenderSceneSnapshot first_snapshot = gobot::CaptureRenderSceneSnapshot(root);
+    ASSERT_EQ(first_snapshot.visual_meshes.size(), 2);
+    EXPECT_EQ(first_snapshot.visual_meshes[0].instance_id,
+              first_snapshot.visual_meshes[1].instance_id);
+    EXPECT_EQ(first_snapshot.visual_meshes[0].semantic_id,
+              first_snapshot.visual_meshes[1].semantic_id);
+    EXPECT_EQ(first_snapshot.visual_meshes[0].instance_path, "link/visual");
+    EXPECT_EQ(first_snapshot.visual_meshes[0].semantic_label, "robot");
+    EXPECT_EQ(first_snapshot.instance_paths.at(first_snapshot.visual_meshes[0].instance_id),
+              "link/visual");
+    EXPECT_EQ(first_snapshot.semantic_labels.at(first_snapshot.visual_meshes[0].semantic_id),
+              "robot");
+
+    gobot::Ref<gobot::PackedScene> packed = gobot::MakeRef<gobot::PackedScene>();
+    ASSERT_TRUE(packed->Pack(root));
+    gobot::Node* restored = packed->Instantiate();
+    ASSERT_NE(restored, nullptr);
+    const gobot::RenderSceneSnapshot restored_snapshot = gobot::CaptureRenderSceneSnapshot(restored);
+    ASSERT_EQ(restored_snapshot.visual_meshes.size(), 2);
+    EXPECT_EQ(restored_snapshot.visual_meshes[0].instance_id,
+              first_snapshot.visual_meshes[0].instance_id);
+    EXPECT_EQ(restored_snapshot.visual_meshes[0].semantic_id,
+              first_snapshot.visual_meshes[0].semantic_id);
+    EXPECT_EQ(restored_snapshot.instance_paths, first_snapshot.instance_paths);
+    EXPECT_EQ(restored_snapshot.semantic_labels, first_snapshot.semantic_labels);
+
+    gobot::Object::Delete(root);
+    gobot::Object::Delete(restored);
 }
 
 TEST(TestMeshInstance3D, is_visible_by_default_when_inside_tree) {

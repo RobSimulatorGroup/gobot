@@ -12,8 +12,12 @@ runtime path that conflicts with this one.
   `PhysicsSceneSnapshot`; it does not traverse or retain scene nodes.
 - `SimulationServer` owns the scene bindings needed to synchronize runtime
   state into a Play Mode scene. Backends never write scene nodes directly.
-- Renderers consume immutable `SceneRenderSnapshot` values. They do not
-  traverse scene nodes or own scene data and editor policy.
+- Renderers consume immutable, camera-independent `RenderSceneSnapshot`
+  values plus one `RenderViewSnapshot` per camera. They do not traverse scene
+  nodes or own scene data and editor policy.
+- `RenderProduct` owns requested RGB/AOV outputs and bounded frame slots.
+  `CameraSensor` references authored camera/root nodes by stable object id; it
+  is a runtime service and is not inserted into the SceneTree.
 - The editor composes scene, simulation, rendering, commands, and tools.
 - Python bindings expose these services without exposing backend pointers,
   native ids, OpenGL handles, or editor widget internals.

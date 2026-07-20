@@ -131,12 +131,12 @@ void BoxMesh::UpdateMesh() const {
         Vector3 normal;
     };
     const std::array<Face, 6> faces = {
-            Face{{0, 1, 2, 3}, Vector3{0.0, 0.0, -1.0}},
+            Face{{0, 3, 2, 1}, Vector3{0.0, 0.0, -1.0}},
             Face{{4, 5, 6, 7}, Vector3{0.0, 0.0, 1.0}},
             Face{{0, 1, 5, 4}, Vector3{0.0, -1.0, 0.0}},
-            Face{{3, 2, 6, 7}, Vector3{0.0, 1.0, 0.0}},
+            Face{{3, 7, 6, 2}, Vector3{0.0, 1.0, 0.0}},
             Face{{1, 2, 6, 5}, Vector3{1.0, 0.0, 0.0}},
-            Face{{0, 3, 7, 4}, Vector3{-1.0, 0.0, 0.0}},
+            Face{{0, 4, 7, 3}, Vector3{-1.0, 0.0, 0.0}},
     };
     const std::array<Vector2, 4> uv = {
             Vector2{0.0, 0.0}, Vector2{1.0, 0.0}, Vector2{1.0, 1.0}, Vector2{0.0, 1.0}};
@@ -154,7 +154,7 @@ void BoxMesh::UpdateMesh() const {
             surface.uv0.push_back(uv[i]);
         }
         surface.indices.insert(surface.indices.end(),
-                               {base, base + 2, base + 1, base, base + 3, base + 2});
+                               {base, base + 1, base + 2, base, base + 2, base + 3});
     }
     SetGeneratedSurface(std::move(surface));
 }

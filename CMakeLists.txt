@@ -594,6 +594,8 @@ pybind11_add_module(gobot_python MODULE ${GOBOT_PYBIND11_MODULE_OPTIONS}
         src/gobot/python/python_module.cpp
         ${GOBOT_PYTHON_BINDING_SOURCES}
 )
+target_include_directories(gobot_python PRIVATE
+        ${CMAKE_CURRENT_SOURCE_DIR}/3rdparty/luisa_compute/src/py)
 target_link_libraries(gobot_python PRIVATE gobot)
 set_target_properties(gobot_python
     PROPERTIES
@@ -731,7 +733,8 @@ add_library(gobot_editor_runtime SHARED
 )
 add_dependencies(gobot_editor_runtime gobot_editor_resources gobot_python_package)
 target_include_directories(gobot_editor_runtime PRIVATE
-        ${CMAKE_CURRENT_SOURCE_DIR}/3rdparty/ImGuiColorTextEdit)
+        ${CMAKE_CURRENT_SOURCE_DIR}/3rdparty/ImGuiColorTextEdit
+        ${CMAKE_CURRENT_SOURCE_DIR}/3rdparty/luisa_compute/src/py)
 target_compile_definitions(gobot_editor_runtime PRIVATE
         GOBOT_ROOT_DIR="${CMAKE_CURRENT_SOURCE_DIR}")
 target_link_libraries(gobot_editor_runtime PRIVATE
