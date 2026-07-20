@@ -822,6 +822,8 @@ if(GOB_BUILD_LUISA_RENDERER)
             CUDA::cuda_driver
             Eigen3::Eigen
             RTTR::Core
+            magic_enum::magic_enum
+            nlohmann_json::nlohmann_json
             glad
             "$<TARGET_FILE:gobot>")
     add_dependencies(gobot_luisa_renderer gobot)
