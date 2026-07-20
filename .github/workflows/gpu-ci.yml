@@ -70,6 +70,12 @@ jobs:
               --gtest_filter=LuisaRendererGpu.* \
               --gtest_color=yes
 
+      - name: Test Python CUDA render product
+        run: |
+          XDG_CACHE_HOME=/tmp/gobot-gpu-ci/luisa-cache \
+          GOBOT_RUN_LUISA_GPU_TEST=1 \
+            uv run --no-sync python tests/python/test_render_product_cuda.py
+
       - name: Validate reference fixture
         run: uv run --no-sync python tests/python/test_go1_reference_fixture.py
 

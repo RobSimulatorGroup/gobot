@@ -189,6 +189,12 @@ libraries; shader code is compiled for the active GPU by the bundled
 `$XDG_CACHE_HOME/gobot/luisa/v2` or `~/.cache/gobot/luisa/v2`, never into the
 installed wheel.
 
+The Python dependency set also installs Torch for RL and DLPack workflows.
+Torch may install its own CUDA user-space packages, but the Gobot renderer does
+not discover libraries through Torch or require Torch to initialize first.
+Both stacks use the system NVIDIA driver; Gobot carries its own pinned Luisa
+runtime so a Torch CUDA-minor upgrade cannot silently change renderer loading.
+
 Release wheels are cross-built on standard GitHub-hosted Ubuntu runners. A
 physical GPU is not required to compile CUDA code or link against the driver
 stubs. LuisaCompute is built once per workflow in the pinned NVIDIA CUDA

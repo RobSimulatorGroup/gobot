@@ -77,14 +77,23 @@ jobs:
 
       - name: Restore LuisaCompute install
         id: luisa-cache
-        uses: actions/cache@v4
+        uses: actions/cache/restore@v4
         with:
           path: build/luisa_compute/install
           key: luisa-cuda-12.8.1-${{ runner.os }}-${{ steps.luisa-cache-key.outputs.value }}
 
       - name: Build LuisaCompute CUDA runtime
         if: steps.luisa-cache.outputs.cache-hit != 'true'
-        run: scripts/build_luisa_compute.sh
+        run: |
+          echo "Building LuisaCompute with $(nproc) parallel jobs"
+          scripts/build_luisa_compute.sh
+
+      - name: Save LuisaCompute install
+        if: steps.luisa-cache.outputs.cache-hit != 'true'
+        uses: actions/cache/save@v4
+        with:
+          path: build/luisa_compute/install
+          key: luisa-cuda-12.8.1-${{ runner.os }}-${{ steps.luisa-cache-key.outputs.value }}
 
       - name: Pack LuisaCompute and CUDA build SDK
         run: |
@@ -92,11 +101,21 @@ jobs:
           CUDA_ROOT="${CUDA_HOME:-/usr/local/cuda}"
           CUDA_TARGET_ROOT="${CUDA_ROOT}/targets/x86_64-linux"
           mkdir -p build/cuda-toolkit/lib64/stubs
-          cp -a "${CUDA_ROOT}/version.json" build/cuda-toolkit/version.json
+          if test -f "${CUDA_ROOT}/version.json"; then
+            cp -a "${CUDA_ROOT}/version.json" build/cuda-toolkit/version.json
+          elif test -f "${CUDA_ROOT}/version.txt"; then
+            cp -a "${CUDA_ROOT}/version.txt" build/cuda-toolkit/version.txt
+          else
+            CUDA_VERSION_LINE="$(nvcc --version | sed -n 's/.*V\([0-9][0-9.]*\).*/CUDA Version \1/p' | tail -n 1)"
+            test -n "${CUDA_VERSION_LINE}"
+            printf '%s\n' "${CUDA_VERSION_LINE}" > build/cuda-toolkit/version.txt
+          fi
           cp -a "${CUDA_TARGET_ROOT}/include" build/cuda-toolkit/include
           cp -a "${CUDA_TARGET_ROOT}"/lib/libcudart.so* build/cuda-toolkit/lib64/
           cp -a "${CUDA_TARGET_ROOT}/lib/stubs/libcuda.so" \
             build/cuda-toolkit/lib64/stubs/libcuda.so
+          test -f build/cuda-toolkit/version.json \
+            || test -f build/cuda-toolkit/version.txt
           test -f build/cuda-toolkit/include/cuda.h
           test -f build/cuda-toolkit/lib64/stubs/libcuda.so
           tar -C build -czf "$RUNNER_TEMP/luisa-cuda-build-inputs.tar.gz" \
@@ -199,7 +218,8 @@ jobs:
 
       - name: Check CUDA build SDK
         run: |
-          python -c 'from pathlib import Path; assert Path("build/cuda-toolkit/version.json").is_file()'
+          test -f build/cuda-toolkit/version.json \
+            || test -f build/cuda-toolkit/version.txt
 
       - name: Build wheel
         run: |
@@ -221,6 +241,14 @@ jobs:
 
       - name: Verify complete wheel payload
         run: python scripts/verify_release_wheel.py wheelhouse/*.whl
+
+      - name: Smoke test installed wheel
+        run: |
+          python -m venv "$RUNNER_TEMP/gobot-wheel-smoke"
+          "$RUNNER_TEMP/gobot-wheel-smoke/bin/python" -m pip install \
+            --no-deps wheelhouse/*.whl
+          "$RUNNER_TEMP/gobot-wheel-smoke/bin/python" \
+            scripts/smoke_installed_wheel.py
 
       - name: Upload wheel
         uses: actions/upload-artifact@v4
