@@ -124,7 +124,18 @@ def _find_current_python_library() -> str:
     )
 
 
-def _with_editor_python_environment(python_library: str) -> dict[str, str]:
+def _prepend_pythonpath(env: dict[str, str], paths: list[Path]) -> None:
+    existing = env.get("PYTHONPATH")
+    additions = [os.fspath(path) for path in _dedupe_paths(paths) if path.is_dir()]
+    if not additions:
+        return
+    env["PYTHONPATH"] = os.pathsep.join([*additions, existing] if existing else additions)
+
+
+def _with_editor_python_environment(
+    python_library: str,
+    gobot_package_dir: Path | None = None,
+) -> dict[str, str]:
     env = os.environ.copy()
     env[PYTHON_LIBRARY_ENV] = python_library
     env[PYTHON_LIBRARY_PRINTED_ENV] = "1"
@@ -134,6 +145,10 @@ def _with_editor_python_environment(python_library: str) -> dict[str, str]:
         env[PYTHON_HOME_ENV] = os.fspath(Path(sys.prefix).resolve())
     else:
         env.pop(PYTHON_HOME_ENV, None)
+
+    package_dir = gobot_package_dir or _distribution_gobot_dir()
+    if package_dir is not None:
+        _prepend_pythonpath(env, [package_dir.parent])
 
     return env
 
@@ -205,16 +220,21 @@ def _package_file(relative_path: str) -> Path | None:
     return None
 
 
+def _distribution_gobot_dir() -> Path | None:
+    marker = _package_file("gobot/__init__.py")
+    return marker.parent if marker is not None else None
+
+
 def _packaged_gobot_dir() -> Path | None:
     editor_path = _package_file("gobot/gobot_editor")
     if editor_path is not None:
         return editor_path.parent
 
-    marker = _package_file("gobot/__init__.py")
-    if marker is not None:
-        candidate = marker.parent / "gobot_editor"
+    package_dir = _distribution_gobot_dir()
+    if package_dir is not None:
+        candidate = package_dir / "gobot_editor"
         if candidate.exists():
-            return marker.parent
+            return package_dir
 
     return None
 
@@ -302,7 +322,11 @@ def editor() -> int:
     executable = _find_editor_executable()
     argv = [os.fspath(executable), *sys.argv[1:]]
     try:
-        os.execvpe(argv[0], argv, _with_editor_python_environment(python_library))
+        os.execvpe(
+            argv[0],
+            argv,
+            _with_editor_python_environment(python_library, _distribution_gobot_dir()),
+        )
     except OSError as error:
         print(f"[gobot] Failed to launch {argv[0]}: {error}", file=sys.stderr)
         return 127

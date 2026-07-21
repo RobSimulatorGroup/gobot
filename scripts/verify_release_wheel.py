@@ -13,6 +13,7 @@ from packaging.requirements import Requirement
 
 
 REQUIRED_PAYLOAD = {
+    "gobot/__init__.py",
     "gobot/gobot_editor",
     "gobot/libgobot.so",
     "gobot/libgobot_editor_runtime.so",
@@ -24,6 +25,10 @@ REQUIRED_PAYLOAD = {
     "gobot/luisa/libluisa-runtime.so",
     "gobot/luisa/libluisa-xir.so",
     "gobot/luisa/luisa_nvrtc",
+    "gobot/rl/__init__.py",
+    "gobot/rl/locomotion/__init__.py",
+    "gobot/rl/providers/__init__.py",
+    "gobot_cli/editor.py",
 }
 REQUIRED_DEPENDENCIES = {
     "imageio",

@@ -373,11 +373,8 @@ PythonExecutionResult ExecuteCompiledCode(const std::string& source,
         py::gil_scoped_acquire gil;
         previous_context = GetActiveAppContextOrNull();
         SetActiveAppContext(context);
-        AddProjectPathToSysPath(context);
-        py::module_ sys = py::module_::import("sys");
-        py::dict modules = sys.attr("modules");
-        modules.attr("pop")("gobot", py::none());
         py::module_::import("gobot");
+        AddProjectPathToSysPath(context);
 
         py::dict& globals = ScriptGlobals();
         globals["__name__"] = "__main__";
@@ -481,8 +478,8 @@ PythonExecutionResult PythonScriptRunner::AttachSceneScript(Node* node,
         py::gil_scoped_acquire gil;
         previous_context = GetActiveAppContextOrNull();
         SetActiveAppContext(SceneScriptContext());
-        AddProjectPathToSysPath(SceneScriptContext());
         py::module_::import("gobot");
+        AddProjectPathToSysPath(SceneScriptContext());
 
         ScopedPythonOutputCapture output_capture(script->GetPath().empty() ? "<gobot-node-script>" : script->GetPath());
         DetachSceneScript(node);

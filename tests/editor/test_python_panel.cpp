@@ -111,13 +111,14 @@ import pathlib
 import sys
 
 import gobot
+import gobot.rl
 import gobot.terrain
 
 cfg = gobot.terrain.go1_rough_terrain_cfg(seed=7, curriculum=False)
 path = pathlib.Path(os.environ["GOBOT_EMBEDDED_IMPORT_RESULT"])
 path.write_text(
     f"{gobot.__name__}:{gobot._core.__name__}:"
-    f"{hasattr(gobot, 'terrain')}:{cfg.num_rows}:{cfg.num_cols}:"
+    f"{hasattr(gobot, 'rl')}:{hasattr(gobot, 'terrain')}:{cfg.num_rows}:{cfg.num_cols}:"
     f"{'gobot' in sys.builtin_module_names}:{'gobot._core' in sys.builtin_module_names}"
 )
 )PY",
@@ -125,7 +126,7 @@ path.write_text(
                                                           "<embedded-import-test>");
 
     ASSERT_TRUE(result.ok) << result.error;
-    EXPECT_EQ(ReadText("scripts/embedded_import.txt"), "gobot:gobot._core:True:10:20:False:True");
+    EXPECT_EQ(ReadText("scripts/embedded_import.txt"), "gobot:gobot._core:True:True:10:20:False:True");
 
     gobot::python::PythonScriptRunner::Shutdown();
 }

@@ -38,6 +38,8 @@ protected:
         setenv("HOME", "/tmp/gobot-test-home", 1);
         project_path = std::filesystem::temp_directory_path() / "gobot_scene_play_session_test";
         std::filesystem::create_directories(project_path);
+        std::ofstream(project_path / "gobot.py")
+                << "raise RuntimeError('project gobot.py must not shadow the engine package')\n";
         setenv("GOBOT_SCENE_PLAY_SESSION_COUNTS",
                (project_path / "scripts" / "counts.txt").string().c_str(),
                1);
