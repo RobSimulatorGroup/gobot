@@ -1,5 +1,5 @@
 cmake_minimum_required (VERSION 3.16)
-project (gobot VERSION 0.1.13)
+project (gobot VERSION 0.1.14)
 
 set(CMAKE_POLICY_VERSION_MINIMUM 3.5)
 
@@ -778,7 +778,11 @@ install(DIRECTORY "${CMAKE_CURRENT_SOURCE_DIR}/examples/"
         DESTINATION "gobot/examples" COMPONENT python
         PATTERN "__pycache__" EXCLUDE
         PATTERN "*.pyc" EXCLUDE
-        PATTERN "logs" EXCLUDE)
+        PATTERN "logs" EXCLUDE
+        PATTERN "go1/policies" EXCLUDE)
+install(FILES
+        "${CMAKE_CURRENT_SOURCE_DIR}/examples/go1/policies/go1_velocity.onnx"
+        DESTINATION "gobot/examples/go1/policies" COMPONENT python)
 install(TARGETS gobot_editor
         RUNTIME DESTINATION "gobot" COMPONENT python)
 

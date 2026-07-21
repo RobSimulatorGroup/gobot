@@ -17,6 +17,13 @@ NATIVE_PAYLOAD = (
     "luisa/libluisa-runtime.so",
     "luisa/luisa_nvrtc",
 )
+GO1_POLICY_PAYLOAD = (
+    "examples/go1/policies/go1_velocity.onnx",
+)
+OTHER_EXAMPLE_PAYLOAD = (
+    "examples/cartpole/policies/cartpole.onnx",
+    "examples/cartpole/policies/cartpole.pt",
+)
 ELF_PAYLOAD = (
     "libgobot_luisa_renderer.so",
     "luisa/libluisa-backend-cuda.so",
@@ -44,9 +51,24 @@ def main() -> int:
     from gobot_cli import editor as editor_launcher
 
     package_root = Path(gobot.__file__).resolve().parent
-    missing_payload = [name for name in NATIVE_PAYLOAD if not (package_root / name).is_file()]
+    missing_payload = [
+        name
+        for name in (*NATIVE_PAYLOAD, *GO1_POLICY_PAYLOAD, *OTHER_EXAMPLE_PAYLOAD)
+        if not (package_root / name).is_file()
+    ]
     if missing_payload:
         raise RuntimeError("installed wheel is missing: " + ", ".join(missing_payload))
+    policy_directory = package_root / "examples/go1/policies"
+    installed_policies = sorted(
+        path.relative_to(package_root).as_posix()
+        for path in policy_directory.iterdir()
+        if path.is_file()
+    )
+    if installed_policies != list(GO1_POLICY_PAYLOAD):
+        raise RuntimeError(
+            "installed wheel must contain exactly one Go1 policy: "
+            + ", ".join(installed_policies)
+        )
 
     if gobot.render.RenderBuffer is not gobot._core.RenderBuffer:
         raise RuntimeError("gobot.render.RenderBuffer does not expose the native wheel type")

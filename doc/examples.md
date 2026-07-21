@@ -80,16 +80,13 @@ baseline or MuJoCo Warp CUDA backend. It contains:
 - `go1_scene.jscn`: the authored scene with an editor-visible `Terrain3D` node.
 - `terrain/rough_terrain.jres`: the compact versioned procedural terrain recipe shared by editor, Play, and training.
 - `go1.jscn` and `assets/`: the imported robot scene and source meshes.
-- `policies/go1_velocity.onnx`: generated balanced policy playback graph.
-- `policies/go1_velocity_run.onnx`: optional generated forward-running policy graph.
+- `policies/go1_velocity.onnx`: released balanced policy playback graph with an embedded manifest.
 
 The default Gobot install can play ONNX policies, train or load `.pt`
 checkpoints, capture MP4 video, and export ONNX policies.
 
-Playback supports `W/S` forward/reverse, `Q/E` strafe, `A/D` yaw,
-`Shift+W` at 3 m/s with the optional run actor, `Shift+S` accelerated reverse
-through the balanced actor, `Space` stop, and `R` reset. `GOBOT_GO1_POLICY` and
-`GOBOT_GO1_RUN_POLICY` override the two policy paths. Policy admission
+Playback supports `W/S` forward/reverse, `Q/E` strafe, `A/D` yaw, `Space`
+stop, and `R` reset. `GOBOT_GO1_POLICY` overrides the policy path. Policy admission
 evaluates every authored terrain cell, requires both survival and commanded
 planar/yaw progress, and reports paired-leg gait metrics. The current
 validation snapshot, checkpoint comparison, measured rates, and gait limits are
@@ -102,6 +99,6 @@ The Python package install step includes:
 - `.jscn` scene files.
 - `.py` scripts.
 - `.xml` MuJoCo scene files.
-- source assets checked into `examples/`; generated Go1 policies stay local.
+- source assets checked into `examples/`, including the released Go1 playback policy.
 
 Generated Python cache files and directories are excluded.

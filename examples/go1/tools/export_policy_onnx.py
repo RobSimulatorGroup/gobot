@@ -25,6 +25,8 @@ def _embed_manifest(output_path: Path, manifest: PolicyManifest) -> None:
     import onnx
 
     model = onnx.load(str(output_path))
+    for node in model.graph.node:
+        node.ClearField("metadata_props")
     properties = {entry.key: entry.value for entry in model.metadata_props}
     properties[ONNX_POLICY_MANIFEST_KEY] = manifest.to_json()
     onnx.helper.set_model_props(model, properties)

@@ -60,9 +60,8 @@ dist/
 .vscode/
 
 logs/
-examples/go1/policies/*.pt
-examples/go1/policies/*.onnx
-examples/go1/policies/*.manifest.json
+examples/go1/policies/*
+!examples/go1/policies/go1_velocity.onnx
 
 # Local reference checkouts used during development.
 /.upstream/

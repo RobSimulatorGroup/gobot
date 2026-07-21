@@ -17,8 +17,7 @@ This example keeps the robot project self-contained:
 - `train/go1_gait.py` owns the run-only paired-leg gait score shared by CPU tests and Warp training.
 - `train/go1_velocity_video.py` owns optional checkpoint-triggered evaluation video capture.
 - `scripts/go1.py` is attached to the `go1_scene.jscn` root and plays a trained policy in `gobot_editor`.
-- `policies/go1_velocity.pt` and `policies/go1_velocity.onnx` are the balanced walking policy artifacts.
-- `policies/go1_velocity_run.pt` and `policies/go1_velocity_run.onnx` are the optional forward-running policy artifacts.
+- `policies/go1_velocity.onnx` is the released balanced walking policy and contains its manifest.
 - `tools/checkpoint_policy.py` is the shared deterministic checkpoint actor used by evaluation and ONNX export.
 - `tools/evaluate_velocity_policy.py` evaluates policy admission over every authored terrain cell.
 - `tools/export_policy_onnx.py` validates the checkpoint manifest and embeds it in ONNX.
@@ -26,18 +25,17 @@ This example keeps the robot project self-contained:
 - `tools/refresh_go1_robot_scene.py` regenerates the editable robot scene from the source MJCF.
 - `project.gobot` sets `go1_scene.jscn` as the project main scene.
 
-Training logs and `*_candidate.*` policies are disposable local outputs.
-Promote selected actors to the four `go1_velocity{,_run}.{pt,onnx}` paths;
+Training logs, checkpoints, sidecar manifests, and optional run policies are local outputs.
+Promote the selected balanced actor to the `go1_velocity.onnx` release path;
 training, export, and playback do not depend on retained log directories.
 
-## Validated Behavior (Gobot 0.1.12, 2026-07-17)
+## Validated Policy Snapshot (2026-07-17)
 
 The normal walking policy remains `model_5600.pt`, selected from
 `model_5100.pt` through `model_6000.pt` by fixed-seed terrain-cell admission,
-not by training reward or checkpoint age. Ordinary `W/S/Q/E/A/D` commands use
-this balanced actor. A separate forward-running actor was trained and selected
-for `Shift+W`; generated checkpoints and exported policies remain local
-artifacts and are not committed to the repository.
+not by training reward or checkpoint age. Editor playback uses this balanced
+actor exclusively. The released ONNX is committed, while generated checkpoints
+and experimental run actors remain local artifacts.
 
 The comparison below used all 70 authored terrain cells, seed `123`, and the
 same policy-admission threshold for each checkpoint. Forward evaluation used
@@ -95,12 +93,8 @@ What changed to produce and verify this improvement:
 
 - Playback now uses terrain-relative base clearance for fall detection. A
   below-zero terrain cell no longer causes a false reset solely from world Z.
-- Diagonal planar keyboard commands are normalized. `Shift+W` commands
-  `3.0 m/s`; `Shift+S` keeps the balanced actor at `-1.5 m/s`.
-- High SDL scancodes are now included in key-name conversion, so
-  `LeftShift`/`RightShift` actually reach Python. `Shift+W` switches both the
-  command and actor to the dedicated run policy; reverse remains on the
-  balanced actor because the run profile is forward-only.
+- Diagonal planar keyboard commands are normalized, and editor playback keeps
+  the balanced policy's `1.0 m/s` planar command limit.
 - CPU and MuJoCo Warp command samplers share an explicit run-environment ratio
   and forward run range. The run profile uses 60% dedicated environments and a
   profile-local `[1.5, 2.5]`, `[2.0, 3.0]`, `[2.5, 3.5] m/s` curriculum.
@@ -345,14 +339,6 @@ uv run python -m examples.go1.tools.export_policy_onnx \
   --output examples/go1/policies/go1_velocity.onnx
 ```
 
-Export the selected run checkpoint separately:
-
-```bash
-uv run python -m examples.go1.tools.export_policy_onnx \
-  --checkpoint examples/go1/policies/go1_velocity_run.pt \
-  --output examples/go1/policies/go1_velocity_run.onnx
-```
-
 The exporter embeds the same `gobot.rl.PolicyManifest` written by training and
 writes `go1_velocity.onnx.manifest.json`. Playback rejects policies without this
 manifest, mismatched observation/action specs, a different joint order, or a
@@ -375,25 +361,17 @@ cd /home/wqq/gobot
 uv run gobot_editor --path examples/go1
 ```
 
-Playback prefers `policies/go1_velocity.onnx` and then tries the training
-checkpoint `policies/go1_velocity.pt`. Both paths require the current policy
-manifest; older checkpoints are rejected instead of being guessed from tensor
-dimensions. It independently loads `policies/go1_velocity_run.onnx`, then
-`policies/go1_velocity_run.pt`, as the optional run actor. Set
-`GOBOT_GO1_POLICY` or `GOBOT_GO1_RUN_POLICY` to override either actor. A missing
-base policy or a contract mismatch aborts Play with the exact validation
-error; an absent run policy falls back to the base actor. Rough terrain remains
-available in the editor without entering Play.
+Playback loads the released `policies/go1_velocity.onnx`. Set
+`GOBOT_GO1_POLICY` to explicitly use another manifest-backed `.onnx` or `.pt`
+policy during development. A missing policy or contract mismatch aborts Play
+with the exact validation error. Rough terrain remains available in the editor
+without entering Play.
 
 Click the 3D viewer, then use `W/S` for forward/backward, `Q/E` for strafe,
-`A/D` for yaw rate, `Shift+W` for the run actor, `Shift+S` for faster reverse,
-`Space` to stop, and `R` to reset. The normal command limits are `vx=1.0`,
-`vy=1.0`, and `yaw_rate=0.5`; `Shift+W` commands `3.0 m/s`, while `Shift+S`
-commands `-1.5 m/s` through the balanced actor. Physics rate, policy
-decimation, PD gains, action scaling, reset height, and solver settings come
-from the policy manifest. Terrain geometry comes from the versioned scene
-resource and is covered by the manifest's scene bundle digest. The periodic
-Play log reports `mode=walk` or `mode=run`, so actor switching is observable
-without inferring it from speed alone.
+`A/D` for yaw rate, `Space` to stop, and `R` to reset. The command limits are
+`vx=1.0`, `vy=1.0`, and `yaw_rate=0.5`. Physics rate, policy decimation, PD
+gains, action scaling, reset height, and solver settings come from the policy
+manifest. Terrain geometry comes from the versioned scene resource and is
+covered by the manifest's scene bundle digest.
 
 Run the editor from an editable install and open the `examples/go1` project.

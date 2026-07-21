@@ -28,8 +28,12 @@ REQUIRED_PAYLOAD = {
     "gobot/rl/__init__.py",
     "gobot/rl/locomotion/__init__.py",
     "gobot/rl/providers/__init__.py",
+    "gobot/examples/cartpole/policies/cartpole.onnx",
+    "gobot/examples/cartpole/policies/cartpole.pt",
+    "gobot/examples/go1/policies/go1_velocity.onnx",
     "gobot_cli/editor.py",
 }
+GO1_POLICY_PAYLOAD = {"gobot/examples/go1/policies/go1_velocity.onnx"}
 REQUIRED_DEPENDENCIES = {
     "imageio",
     "imageio-ffmpeg",
@@ -67,6 +71,16 @@ def verify_wheel(path: Path) -> list[str]:
         missing_payload = sorted(REQUIRED_PAYLOAD - names)
         if missing_payload:
             errors.append("missing payload: " + ", ".join(missing_payload))
+        packaged_go1_policies = {
+            name
+            for name in names
+            if name.startswith("gobot/examples/go1/policies/") and not name.endswith("/")
+        }
+        unexpected_go1_policies = sorted(packaged_go1_policies - GO1_POLICY_PAYLOAD)
+        if unexpected_go1_policies:
+            errors.append(
+                "contains non-release Go1 policies: " + ", ".join(unexpected_go1_policies)
+            )
         if not any(
             name.startswith("gobot/_core.") and name.endswith(".so")
             for name in names

@@ -27,16 +27,11 @@ TASK_VERSION = GO1_TASK_VERSION
 ROBOT = "go1"
 BASE_LINK = "trunk"
 POLICY_ENV = "GOBOT_GO1_POLICY"
-RUN_POLICY_ENV = "GOBOT_GO1_RUN_POLICY"
 DEFAULT_POLICY_PATH = "res://policies/go1_velocity.onnx"
-DEFAULT_TORCH_POLICY_PATH = "res://policies/go1_velocity.pt"
-DEFAULT_RUN_POLICY_PATH = "res://policies/go1_velocity_run.onnx"
-DEFAULT_RUN_TORCH_POLICY_PATH = "res://policies/go1_velocity_run.pt"
 PRINT_INTERVAL_SECONDS = 2.0
 ROBOT_ROOT_TO_BASE_Z = 0.4449999928474426
 COMMAND = [0.0, 0.0, 0.0]
 KEYBOARD_COMMAND_MAX = [1.0, 1.0, 0.5]
-KEYBOARD_RUN_COMMAND_X = [-1.5, 3.0]
 COMMAND_SMOOTHING = 8.0
 FALLEN_BASE_CLEARANCE = 0.16
 FALLEN_ROLL_PITCH = math.radians(70.0)
@@ -57,7 +52,6 @@ KEYBOARD_BINDINGS = {
     "turn_right": ("D", "Right"),
     "strafe_left": ("Q",),
     "strafe_right": ("E",),
-    "run": ("LeftShift", "RightShift"),
     "stop": ("Space",),
     "reset": ("R",),
 }
@@ -353,22 +347,15 @@ class Script(gobot.NodeScript):
 
     def _load_and_validate_policy(self):
         self.policy = None
-        self.run_policy = None
         self.manifest = None
         self.policy_error = ""
         try:
             policy = self._load_policy()
             self.policy = policy
             self.manifest = policy.manifest
-            self._validate_policy_contract(policy, "base")
-            run_policy = self._load_run_policy()
-            if run_policy is not None:
-                self._validate_policy_contract(run_policy, "run")
-                self._validate_matching_control_contract(run_policy.manifest)
-                self.run_policy = run_policy
+            self._validate_policy_contract(policy)
         except Exception as error:
             self.policy = None
-            self.run_policy = None
             self.manifest = None
             self.policy_error = f"{type(error).__name__}: {error}"
             raise RuntimeError(
@@ -394,7 +381,7 @@ class Script(gobot.NodeScript):
         )
         self.solver_settings = dict(self.manifest.extras.get("solver_settings", {}))
 
-    def _validate_policy_contract(self, policy, label):
+    def _validate_policy_contract(self, policy):
         manifest = policy.manifest
         digest = scene_bundle_digest(self.context.project_path, manifest.scene_path)
         manifest.validate_runtime(
@@ -409,23 +396,9 @@ class Script(gobot.NodeScript):
         )
         if policy.action_dim != len(JOINT_NAMES):
             raise RuntimeError(
-                f"Go1 {label} policy action dimension mismatch: "
+                "Go1 policy action dimension mismatch: "
                 f"{policy.action_dim} != {len(JOINT_NAMES)}"
             )
-
-    def _validate_matching_control_contract(self, manifest):
-        fields = (
-            "mode",
-            "default_joint_position",
-            "action_scale",
-            "action_clip",
-            "kp",
-            "kd",
-            "reset_base_height",
-        )
-        for name in fields:
-            if manifest.control.get(name) != self.manifest.control.get(name):
-                raise RuntimeError(f"Go1 run policy control {name!r} differs from the base policy")
 
     def _control_vector(self, name):
         value = self.manifest.control.get(name)
@@ -514,14 +487,13 @@ class Script(gobot.NodeScript):
         self.world_controls_ready = False
         self.command = list(COMMAND)
         self.command_target = list(COMMAND)
-        self.run_requested = False
         self.last_action = [0.0] * len(JOINT_NAMES)
         self.last_targets = list(self.default_pos)
 
     def _print_startup(self):
         print(
             "Go1 policy playback started: task={} obs={} actions={} fixed_dt={:.4f} "
-            "policy_dt={:.4f} decimation={} reset_z={:.3f} run_policy={}".format(
+            "policy_dt={:.4f} decimation={} reset_z={:.3f}".format(
                 self.manifest.task_name,
                 self.policy.obs_dim,
                 self.policy.action_dim,
@@ -529,7 +501,6 @@ class Script(gobot.NodeScript):
                 self.policy_dt,
                 self.decimation,
                 self.reset_base_position[2],
-                "enabled" if self.run_policy is not None else "base_fallback",
             )
         )
 
@@ -544,8 +515,7 @@ class Script(gobot.NodeScript):
         if robot_state is not None and self._reset_if_fallen(robot_state):
             return
         if policy_tick:
-            active_policy = self._active_policy()
-            action = active_policy.action(self._observation(robot_state))
+            action = self.policy.action(self._observation(robot_state))
             if len(action) != len(JOINT_NAMES):
                 raise RuntimeError(
                     f"Go1 policy produced {len(action)} actions, expected {len(JOINT_NAMES)}"
@@ -569,50 +539,25 @@ class Script(gobot.NodeScript):
         self.playing = True
 
     def _load_policy(self):
-        return self._load_policy_candidates(
-            env_name=POLICY_ENV,
-            defaults=(DEFAULT_POLICY_PATH, DEFAULT_TORCH_POLICY_PATH),
-            label="base",
-            required=True,
-        )
-
-    def _load_run_policy(self):
-        return self._load_policy_candidates(
-            env_name=RUN_POLICY_ENV,
-            defaults=(DEFAULT_RUN_POLICY_PATH, DEFAULT_RUN_TORCH_POLICY_PATH),
-            label="run",
-            required=False,
-        )
-
-    def _load_policy_candidates(self, *, env_name, defaults, label, required):
-        requested_policy = os.environ.get(env_name)
+        requested_policy = os.environ.get(POLICY_ENV)
         if requested_policy is not None and not requested_policy.strip():
-            raise RuntimeError(f"{env_name} is empty; provide a manifest-backed .onnx or .pt policy")
-        policy_refs = (requested_policy,) if requested_policy is not None else defaults
-        candidates = [_resolve_project_path(self.context, policy_ref) for policy_ref in policy_refs]
-        path = next((candidate for candidate in candidates if candidate and os.path.isfile(candidate)), None)
-        if path is None:
-            if not required and requested_policy is None:
-                return None
+            raise RuntimeError(
+                f"{POLICY_ENV} is empty; provide a manifest-backed .onnx or .pt policy"
+            )
+        policy_ref = requested_policy if requested_policy is not None else DEFAULT_POLICY_PATH
+        path = _resolve_project_path(self.context, policy_ref)
+        if not os.path.isfile(path):
             raise FileNotFoundError(
-                "Go1 {} policy not found; tried {}. Train or export a manifest-backed policy, "
-                "or set {} explicitly.".format(
-                    label,
-                    ", ".join(repr(candidate) for candidate in candidates),
-                    env_name,
-                )
+                f"Go1 policy not found: {path!r}. Export the default ONNX policy or set "
+                f"{POLICY_ENV} explicitly."
             )
         extension = _policy_extension(path)
-        print(f"Go1 loading {label} policy: {path}")
+        print(f"Go1 loading policy: {path}")
         if extension == ".onnx":
             return OnnxPolicy(path)
         if extension == ".pt":
             return TorchPolicy(path)
         raise RuntimeError(f"unsupported Go1 policy format {extension!r}; expected .onnx or .pt")
-
-    def _active_policy(self):
-        run_policy = getattr(self, "run_policy", None)
-        return run_policy if getattr(self, "run_requested", False) and run_policy is not None else self.policy
 
     def _ensure_world_controls(self):
         if self.world_controls_ready:
@@ -658,32 +603,21 @@ class Script(gobot.NodeScript):
     def _update_keyboard_command(self, delta):
         input_state = getattr(self.context, "input", None)
         if input_state is None:
-            self.run_requested = False
             return False
         if _key_pressed(input_state, "reset"):
             self.reset()
             return True
         if not input_state.has_control_focus or _key_held(input_state, "stop"):
             desired = [0.0, 0.0, 0.0]
-            self.run_requested = False
         else:
             forward_axis = _key_axis(input_state, "backward", "forward")
-            forward_limit = KEYBOARD_COMMAND_MAX[0]
-            run_held = _key_held(input_state, "run")
-            self.run_requested = run_held and forward_axis > 0.0
-            if run_held:
-                forward_limit = (
-                    KEYBOARD_RUN_COMMAND_X[1]
-                    if forward_axis >= 0.0
-                    else abs(KEYBOARD_RUN_COMMAND_X[0])
-                )
             desired = [
-                forward_limit * forward_axis,
+                KEYBOARD_COMMAND_MAX[0] * forward_axis,
                 KEYBOARD_COMMAND_MAX[1] * _key_axis(input_state, "strafe_right", "strafe_left"),
                 KEYBOARD_COMMAND_MAX[2] * _key_axis(input_state, "turn_right", "turn_left"),
             ]
             normalized_planar_speed = math.hypot(
-                desired[0] / forward_limit,
+                desired[0] / KEYBOARD_COMMAND_MAX[0],
                 desired[1] / KEYBOARD_COMMAND_MAX[1],
             )
             if normalized_planar_speed > 1.0:
@@ -734,13 +668,12 @@ class Script(gobot.NodeScript):
         print(
             "Go1 t={:.2f}s base=({:.3f},{:.3f},{:.3f}) lin_b=({:.3f},{:.3f},{:.3f}) "
             "ang_b=({:.3f},{:.3f},{:.3f}) cmd=({:.2f},{:.2f},{:.2f}) "
-            "mode={} terrain={} action_norm={:.3f}".format(
+            "terrain={} action_norm={:.3f}".format(
                 self.context.simulation_time,
                 *position[:3],
                 *linear[:3],
                 *angular[:3],
                 *self.command,
-                "run" if self._active_policy() is getattr(self, "run_policy", None) else "walk",
                 terrain_label,
                 math.sqrt(sum(value * value for value in self.last_action)),
             )

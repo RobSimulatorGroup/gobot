@@ -1299,7 +1299,20 @@ def test_go1_current_policy_contract():
     np.testing.assert_allclose(cfg.default_joint_pos, go1_profile.GO1_DEFAULT_JOINT_POS)
 
 
-def test_go1_playback_prefers_onnx_then_falls_back_to_torch_checkpoint():
+def test_go1_released_onnx_loads_with_current_scene_contract():
+    script = object.__new__(go1_playback.Script)
+    script.context = type("FakeContext", (), {"project_path": str(GO1_PROJECT)})()
+    original_policy_env = os.environ.pop(go1_playback.POLICY_ENV, None)
+    try:
+        policy = script._load_policy()
+        assert isinstance(policy, go1_playback.OnnxPolicy)
+        script._validate_policy_contract(policy)
+    finally:
+        if original_policy_env is not None:
+            os.environ[go1_playback.POLICY_ENV] = original_policy_env
+
+
+def test_go1_playback_supports_explicit_torch_checkpoint():
     with tempfile.TemporaryDirectory() as temporary_directory:
         policies = Path(temporary_directory) / "policies"
         policies.mkdir()
@@ -1307,44 +1320,19 @@ def test_go1_playback_prefers_onnx_then_falls_back_to_torch_checkpoint():
 
         sentinel = object()
         original_torch_policy = go1_playback.TorchPolicy
-        original_policy_env = os.environ.pop(go1_playback.POLICY_ENV, None)
+        original_policy_env = os.environ.get(go1_playback.POLICY_ENV)
         try:
+            os.environ[go1_playback.POLICY_ENV] = "res://policies/go1_velocity.pt"
             go1_playback.TorchPolicy = lambda path: sentinel
             script = object.__new__(go1_playback.Script)
             script.context = type("FakeContext", (), {"project_path": temporary_directory})()
             assert script._load_policy() is sentinel
         finally:
             go1_playback.TorchPolicy = original_torch_policy
-            if original_policy_env is not None:
+            if original_policy_env is None:
+                os.environ.pop(go1_playback.POLICY_ENV, None)
+            else:
                 os.environ[go1_playback.POLICY_ENV] = original_policy_env
-
-
-def test_go1_playback_loads_optional_run_policy_and_switches_only_when_requested():
-    with tempfile.TemporaryDirectory() as temporary_directory:
-        policies = Path(temporary_directory) / "policies"
-        policies.mkdir()
-        run_path = policies / "go1_velocity_run.pt"
-        run_path.touch()
-
-        base_policy = object()
-        run_policy = object()
-        original_torch_policy = go1_playback.TorchPolicy
-        original_run_policy_env = os.environ.pop(go1_playback.RUN_POLICY_ENV, None)
-        try:
-            go1_playback.TorchPolicy = lambda path: run_policy
-            script = object.__new__(go1_playback.Script)
-            script.context = type("FakeContext", (), {"project_path": temporary_directory})()
-            script.policy = base_policy
-            script.run_policy = script._load_run_policy()
-
-            script.run_requested = False
-            assert script._active_policy() is base_policy
-            script.run_requested = True
-            assert script._active_policy() is run_policy
-        finally:
-            go1_playback.TorchPolicy = original_torch_policy
-            if original_run_policy_env is not None:
-                os.environ[go1_playback.RUN_POLICY_ENV] = original_run_policy_env
 
 
 def test_go1_playback_builds_current_observation():
@@ -1549,7 +1537,7 @@ def test_go1_diagonal_keyboard_command_preserves_planar_speed_limit():
     assert np.linalg.norm(script.command[:2]) <= 1.0
 
 
-def test_go1_sprint_keyboard_command_uses_trained_run_limit():
+def test_go1_shift_modifier_keeps_balanced_policy_command_limit():
     class FakeInput:
         has_control_focus = True
 
@@ -1567,8 +1555,7 @@ def test_go1_sprint_keyboard_command_uses_trained_run_limit():
     script.command_target = [0.0, 0.0, 0.0]
 
     assert script._update_keyboard_command(1.0) is False
-    assert script.command == [3.0, 0.0, 0.0]
-    assert script.run_requested is True
+    assert script.command == [1.0, 0.0, 0.0]
 
 
 def test_go1_zero_command_still_runs_manifest_policy():
@@ -1672,8 +1659,8 @@ def main():
         test_batch_env_clears_stale_final_observation_info,
         test_task_runtime_metadata_is_public_task_summary,
         test_go1_current_policy_contract,
-        test_go1_playback_prefers_onnx_then_falls_back_to_torch_checkpoint,
-        test_go1_playback_loads_optional_run_policy_and_switches_only_when_requested,
+        test_go1_released_onnx_loads_with_current_scene_contract,
+        test_go1_playback_supports_explicit_torch_checkpoint,
         test_go1_playback_builds_current_observation,
         test_go1_playback_reads_authored_terrain_origins,
         test_go1_playback_reports_nearest_terrain_cell,
@@ -1681,7 +1668,7 @@ def main():
         test_go1_stale_policy_rejects_playback,
         test_go1_w_key_updates_forward_velocity_command,
         test_go1_diagonal_keyboard_command_preserves_planar_speed_limit,
-        test_go1_sprint_keyboard_command_uses_trained_run_limit,
+        test_go1_shift_modifier_keeps_balanced_policy_command_limit,
         test_go1_zero_command_still_runs_manifest_policy,
         test_go1_env_applies_mujoco_solver_settings,
         test_go1_robot_scene_matches_mujoco_contract,
