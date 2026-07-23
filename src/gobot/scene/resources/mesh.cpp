@@ -39,8 +39,11 @@ void CompleteMeshSurface(MeshSurfaceData& surface) {
         surface.tangents.clear();
         surface.uv0.clear();
         surface.colors.clear();
+        surface.bounds = {};
         return;
     }
+
+    surface.bounds = AABB::FromPoints(surface.vertices);
 
     surface.indices.erase(
             std::remove_if(surface.indices.begin(), surface.indices.end(),

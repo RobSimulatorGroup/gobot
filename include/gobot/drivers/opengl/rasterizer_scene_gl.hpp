@@ -10,6 +10,7 @@
 #include "glad/glad.h"
 #include "gobot/rendering/renderer_scene_render.hpp"
 #include "gobot/rendering/luisa_renderer_module_api.hpp"
+#include "gobot/rendering/render_scene_preparation.hpp"
 #include "gobot/rendering/scene_render_items.hpp"
 
 #include <cstdint>
@@ -80,6 +81,13 @@ private:
         GLint has_environment_texture = -1;
         GLint environment_rotation = -1;
         GLint environment_intensity = -1;
+        GLint has_shadow_map = -1;
+        GLint shadow_view_projection = -1;
+        GLint shadow_light_index = -1;
+        GLint shadow_bias = -1;
+        GLint shadow_normal_bias = -1;
+        GLint shadow_texel_size = -1;
+        GLint shadow_filter_radius = -1;
         GLint light_count = -1;
         std::array<GLint, 16> light_position_type{};
         std::array<GLint, 16> light_direction_range{};
@@ -129,10 +137,40 @@ private:
         std::uint64_t last_used_frame = 0;
     };
 
+    struct ShadowPassState {
+        GLuint program = 0;
+        GLuint framebuffer = 0;
+        GLuint depth_texture = 0;
+        int resolution = 0;
+        GLint model = -1;
+        GLint light_view_projection = -1;
+        GLint alpha = -1;
+        GLint alpha_cutoff = -1;
+        GLint has_albedo_texture = -1;
+        Matrix4 view_projection = Matrix4::Identity();
+        int light_index = -1;
+        RealType bias = 0.0;
+        RealType normal_bias = 0.0;
+        int filter_radius = 0;
+        bool active = false;
+    };
+
+    struct FxaaPassState {
+        GLuint program = 0;
+        GLuint framebuffer = 0;
+        GLuint color_texture = 0;
+        GLuint vertex_array = 0;
+        GLint inverse_size = -1;
+        int width = 0;
+        int height = 0;
+    };
+
     GLuint default_program_ = 0;
     DefaultProgramUniforms default_uniforms_;
     std::unordered_map<MeshCacheKey, MeshCacheEntry, MeshCacheKeyHash> mesh_cache_;
     std::unordered_map<TextureCacheKey, TextureCacheEntry, TextureCacheKeyHash> texture_cache_;
+    ShadowPassState shadow_pass_;
+    FxaaPassState fxaa_pass_;
     std::uint64_t frame_index_ = 0;
     SceneRendererStats stats_;
     void* luisa_module_library_ = nullptr;
@@ -151,7 +189,9 @@ private:
 
     GLuint GetOrCreateTexture(const RenderTextureSnapshot& texture);
 
-    void DrawVisualItem(const VisualMeshRenderItem& item);
+    bool DrawVisualItem(const VisualMeshRenderItem& item);
+
+    bool DrawShadowItem(const VisualMeshRenderItem& item);
 
     bool TryLoadLuisaModule();
 
@@ -165,7 +205,24 @@ private:
 
     void RenderDepthPrepass(const RenderTarget& target,
                             const RenderSceneSnapshot& scene,
-                            const RenderViewSnapshot& view);
+                            const RenderViewSnapshot& view,
+                            const RenderDrawLists& draw_lists);
+
+    bool RenderDirectionalShadow(const RenderSceneSnapshot& scene,
+                                 const RenderViewSnapshot& view,
+                                 const RenderDrawLists& draw_lists);
+
+    bool EnsureShadowPassResources(int resolution);
+
+    bool EnsureFxaaPassResources(int width, int height, GLuint depth_texture);
+
+    void ApplyFxaa(const RenderTarget& target);
+
+    void DestroyPassResources();
+
+    void UploadShadowUniforms();
+
+    static void ConfigureDrawBuffers(const RenderTarget& target, bool rgb_only);
 
     static void DestroyMeshEntry(MeshCacheEntry& entry);
 

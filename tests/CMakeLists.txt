@@ -72,6 +72,7 @@ package_add_test(test_robot_nodes scene/test_robot_nodes.cpp)
 package_add_test(test_resource_creation_registry scene/test_resource_creation_registry.cpp)
 package_add_test(test_packed_scene scene/test_packed_scene.cpp)
 package_add_test(test_render_product rendering/test_render_product.cpp)
+package_add_test(test_render_scene_preparation rendering/test_render_scene_preparation.cpp)
 if(GOB_BUILD_LUISA_RENDERER)
     add_library(gobot_test_luisa_bad_abi MODULE
             rendering/fake_luisa_renderer_bad_abi.cpp)
@@ -195,6 +196,16 @@ add_test(
         COMMAND ${Python3_EXECUTABLE} -S ${CMAKE_CURRENT_SOURCE_DIR}/python/test_render_product.py
 )
 set_tests_properties(test_python_render_product
+        PROPERTIES
+            ENVIRONMENT "${GOBOT_PYTHON_TEST_ENV}"
+            SKIP_RETURN_CODE 77
+            WORKING_DIRECTORY "${CMAKE_SOURCE_DIR}"
+)
+add_test(
+        NAME test_python_raster_pipeline
+        COMMAND ${Python3_EXECUTABLE} -S ${CMAKE_CURRENT_SOURCE_DIR}/python/test_raster_pipeline.py
+)
+set_tests_properties(test_python_raster_pipeline
         PROPERTIES
             ENVIRONMENT "${GOBOT_PYTHON_TEST_ENV}"
             SKIP_RETURN_CODE 77

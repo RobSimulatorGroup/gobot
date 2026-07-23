@@ -26,6 +26,25 @@ enum class SceneRendererMode {
     ProgressivePathTracing
 };
 
+enum class RasterAntiAliasingMode {
+    Disabled,
+    Fxaa
+};
+
+enum class RasterShadowQuality {
+    Disabled,
+    Low,
+    Medium,
+    High
+};
+
+struct RasterRendererSettings {
+    bool frustum_culling = true;
+    RasterAntiAliasingMode anti_aliasing = RasterAntiAliasingMode::Fxaa;
+    RasterShadowQuality shadow_quality = RasterShadowQuality::Medium;
+    RealType shadow_distance = 50.0;
+};
+
 struct SceneRendererSettings {
     SceneRendererMode mode = SceneRendererMode::Raster;
     int target_fps = 30;
@@ -34,6 +53,7 @@ struct SceneRendererSettings {
     int max_bounces = 4;
     bool denoise = true;
     bool adaptive_quality = true;
+    RasterRendererSettings raster;
 };
 
 struct SceneRendererCapabilities {
@@ -44,6 +64,9 @@ struct SceneRendererCapabilities {
     bool direct_presentation_interop = false;
     bool cpu_render_products = true;
     bool cuda_render_products = false;
+    bool raster_frustum_culling = false;
+    bool raster_directional_shadows = false;
+    bool raster_fxaa = false;
     std::string backend_name = "OpenGL";
     std::string status;
 };
@@ -56,6 +79,12 @@ struct SceneRendererStats {
     double render_ms = 0.0;
     double denoise_ms = 0.0;
     double presentation_ms = 0.0;
+    double shadow_ms = 0.0;
+    double post_process_ms = 0.0;
+    std::uint64_t visible_items = 0;
+    std::uint64_t culled_items = 0;
+    std::uint64_t draw_calls = 0;
+    std::uint64_t shadow_draw_calls = 0;
     std::string status;
 };
 

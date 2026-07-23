@@ -1132,22 +1132,61 @@ void SceneView3DPanel::ToolBar(const ImVec2& screen_position)
         }
 
         ImGui::Separator();
-        settings_changed |= ImGui::SliderInt("Target FPS", &renderer_settings.target_fps, 1, 120);
-        settings_changed |= ImGui::SliderInt("Samples", &renderer_settings.samples_per_frame, 1, 64);
-        settings_changed |= ImGui::SliderInt("Bounces", &renderer_settings.max_bounces, 1, 12);
-        if (!renderer_capabilities.denoise) {
-            ImGui::BeginDisabled();
+        if (renderer_settings.mode == SceneRendererMode::Raster) {
+            settings_changed |= ImGui::Checkbox(
+                    "Frustum Culling", &renderer_settings.raster.frustum_culling);
+
+            int anti_aliasing = static_cast<int>(renderer_settings.raster.anti_aliasing);
+            constexpr const char* anti_aliasing_items[] = {"Disabled", "FXAA"};
+            if (ImGui::Combo("Anti-aliasing", &anti_aliasing, anti_aliasing_items,
+                             static_cast<int>(std::size(anti_aliasing_items)))) {
+                renderer_settings.raster.anti_aliasing =
+                        static_cast<RasterAntiAliasingMode>(anti_aliasing);
+                settings_changed = true;
+            }
+
+            int shadow_quality = static_cast<int>(renderer_settings.raster.shadow_quality);
+            constexpr const char* shadow_quality_items[] = {"Disabled", "Low", "Medium", "High"};
+            if (ImGui::Combo("Shadows", &shadow_quality, shadow_quality_items,
+                             static_cast<int>(std::size(shadow_quality_items)))) {
+                renderer_settings.raster.shadow_quality =
+                        static_cast<RasterShadowQuality>(shadow_quality);
+                settings_changed = true;
+            }
+            if (renderer_settings.raster.shadow_quality != RasterShadowQuality::Disabled) {
+                float shadow_distance = static_cast<float>(renderer_settings.raster.shadow_distance);
+                if (ImGui::SliderFloat("Shadow Distance", &shadow_distance, 1.0f, 250.0f, "%.0f m")) {
+                    renderer_settings.raster.shadow_distance = shadow_distance;
+                    settings_changed = true;
+                }
+            }
+        } else {
+            settings_changed |= ImGui::SliderInt("Target FPS", &renderer_settings.target_fps, 1, 120);
+            settings_changed |= ImGui::SliderInt("Samples", &renderer_settings.samples_per_frame, 1, 64);
+            settings_changed |= ImGui::SliderInt("Bounces", &renderer_settings.max_bounces, 1, 12);
+            if (!renderer_capabilities.denoise) {
+                ImGui::BeginDisabled();
+            }
+            settings_changed |= ImGui::Checkbox("Denoise", &renderer_settings.denoise);
+            if (!renderer_capabilities.denoise) {
+                ImGui::EndDisabled();
+            }
+            settings_changed |= ImGui::Checkbox("Adaptive Quality", &renderer_settings.adaptive_quality);
         }
-        settings_changed |= ImGui::Checkbox("Denoise", &renderer_settings.denoise);
-        if (!renderer_capabilities.denoise) {
-            ImGui::EndDisabled();
-        }
-        settings_changed |= ImGui::Checkbox("Adaptive Quality", &renderer_settings.adaptive_quality);
 
         const SceneRendererStats renderer_stats = render_server->GetSceneRendererStats();
         ImGui::Separator();
         ImGui::Text("Samples: %llu", static_cast<unsigned long long>(renderer_stats.accumulated_samples));
         ImGui::Text("Render: %.2f ms", renderer_stats.render_ms);
+        if (renderer_stats.active_mode == SceneRendererMode::Raster) {
+            ImGui::Text("Visible: %llu  Culled: %llu",
+                        static_cast<unsigned long long>(renderer_stats.visible_items),
+                        static_cast<unsigned long long>(renderer_stats.culled_items));
+            ImGui::Text("Draws: %llu  Shadow: %.2f ms  FXAA: %.2f ms",
+                        static_cast<unsigned long long>(renderer_stats.draw_calls),
+                        renderer_stats.shadow_ms,
+                        renderer_stats.post_process_ms);
+        }
         if (!renderer_stats.status.empty()) {
             ImGui::TextWrapped("%s", renderer_stats.status.c_str());
         }

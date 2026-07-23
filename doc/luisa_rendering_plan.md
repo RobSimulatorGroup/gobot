@@ -83,9 +83,10 @@ The camera-iris button in the 3D viewport exposes:
   accumulation.
 - `Progressive Path Tracing`: accumulates samples until the configured limit.
 
-The same popup controls target FPS, samples per frame, bounce count, denoising,
-and adaptive quality. It also reports active samples, render time, and backend
-status.
+Raster mode exposes frustum culling, FXAA, shadow quality, and shadow distance.
+Ray modes expose target FPS, samples per frame, bounce count, denoising, and
+adaptive quality. The popup also reports active samples, visible/culled item
+counts, draw calls, per-stage timing, and backend status.
 
 Implemented rendering features include:
 
@@ -102,6 +103,19 @@ Implemented rendering features include:
 - direct CUDA writes into the editor's `GL_RGBA8` presentation texture
 - an OpenGL depth prepass so editor debug geometry and overlays keep normal
   depth behavior
+- conservative world-AABB frustum culling and deterministic opaque/alpha-mask/
+  transparent draw queues
+- back-to-front alpha blending without writing blended surfaces into geometry
+  AOV attachments
+- one texel-stabilized directional-light shadow map with low/medium/high PCF
+  quality levels
+- an LDR FXAA pass for RGB-only viewport output, applied before editor debug
+  geometry and overlays
+
+`Light3D.shadow_enabled`, `shadow_bias`, and `shadow_normal_bias` are serialized
+backend-neutral scene properties. Shadow offsets use metres. Python callers can
+configure the global viewport defaults with `gobot.render.RasterSettings`,
+`get_raster_settings()`, and `set_raster_settings()`.
 
 If module loading, CUDA initialization, scene synchronization, or interop fails,
 the frame falls back to OpenGL and the renderer popup shows the exact error.
@@ -261,6 +275,8 @@ separate follow-up milestones:
 - production denoising through an optional OptiX/OIDN integration
 - stronger light and environment importance sampling and transparent material
   handling
+- cascaded directional shadows, point/spot shadow maps, prefiltered IBL, SSAO,
+  bloom, TAA, and order-independent transparency
 - render-thread command submission so scene snapshot compilation and GPU work
   can overlap safely
 - per-stage profiling for upload, acceleration build/update, tracing,

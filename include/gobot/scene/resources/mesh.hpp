@@ -8,6 +8,7 @@
 #pragma once
 
 #include "gobot/core/color.hpp"
+#include "gobot/core/math/aabb.hpp"
 #include "gobot/core/math/matrix.hpp"
 #include "gobot/core/io/resource.hpp"
 #include "gobot/scene/resources/material.hpp"
@@ -25,6 +26,7 @@ struct MeshSurfaceData {
     std::vector<Vector2> uv0;
     std::vector<Color> colors;
     Ref<Material> material;
+    AABB bounds;
 };
 
 using MeshSurfaceList = std::vector<MeshSurfaceData>;

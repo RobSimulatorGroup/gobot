@@ -30,6 +30,10 @@ TEST(TestMeshInstance3D, render_server_forwards_backend_neutral_renderer_setting
     settings.samples_per_frame = 8;
     settings.max_bounces = 6;
     settings.denoise = false;
+    settings.raster.frustum_culling = false;
+    settings.raster.anti_aliasing = gobot::RasterAntiAliasingMode::Disabled;
+    settings.raster.shadow_quality = gobot::RasterShadowQuality::High;
+    settings.raster.shadow_distance = 80.0;
     render_server->SetSceneRendererSettings(settings);
 
     const gobot::SceneRendererSettings stored = render_server->GetSceneRendererSettings();
@@ -38,6 +42,10 @@ TEST(TestMeshInstance3D, render_server_forwards_backend_neutral_renderer_setting
     EXPECT_EQ(stored.samples_per_frame, 8);
     EXPECT_EQ(stored.max_bounces, 6);
     EXPECT_FALSE(stored.denoise);
+    EXPECT_FALSE(stored.raster.frustum_culling);
+    EXPECT_EQ(stored.raster.anti_aliasing, gobot::RasterAntiAliasingMode::Disabled);
+    EXPECT_EQ(stored.raster.shadow_quality, gobot::RasterShadowQuality::High);
+    EXPECT_DOUBLE_EQ(stored.raster.shadow_distance, 80.0);
 
     const gobot::SceneRendererCapabilities capabilities =
             render_server->GetSceneRendererCapabilities();

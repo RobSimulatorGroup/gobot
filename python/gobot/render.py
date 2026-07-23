@@ -3,7 +3,8 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import TYPE_CHECKING, Any, Mapping, Sequence
+import math
+from typing import TYPE_CHECKING, Any, Literal, Mapping, Sequence
 
 if TYPE_CHECKING:
     import numpy as np
@@ -32,6 +33,30 @@ class DebugArrow:
             "color": tuple(float(value) for value in self.color),
             "scale": float(self.scale),
             "label": self.label,
+        }
+
+
+@dataclass(frozen=True)
+class RasterSettings:
+    frustum_culling: bool = True
+    anti_aliasing: Literal["disabled", "fxaa"] = "fxaa"
+    shadow_quality: Literal["disabled", "low", "medium", "high"] = "medium"
+    shadow_distance: float = 50.0
+
+    def __post_init__(self) -> None:
+        if self.anti_aliasing not in {"disabled", "fxaa"}:
+            raise ValueError(f"unknown raster anti_aliasing mode: {self.anti_aliasing!r}")
+        if self.shadow_quality not in {"disabled", "low", "medium", "high"}:
+            raise ValueError(f"unknown raster shadow_quality: {self.shadow_quality!r}")
+        if not math.isfinite(self.shadow_distance) or self.shadow_distance <= 0.0:
+            raise ValueError("shadow_distance must be finite and positive")
+
+    def to_dict(self) -> dict[str, object]:
+        return {
+            "frustum_culling": bool(self.frustum_culling),
+            "anti_aliasing": self.anti_aliasing,
+            "shadow_quality": self.shadow_quality,
+            "shadow_distance": float(self.shadow_distance),
         }
 
 
@@ -121,6 +146,16 @@ def capture_rgb(
     )
 
 
+def get_raster_settings() -> RasterSettings:
+    return RasterSettings(**_core._get_raster_settings())
+
+
+def set_raster_settings(settings: RasterSettings) -> None:
+    if not isinstance(settings, RasterSettings):
+        raise TypeError("settings must be a gobot.render.RasterSettings instance")
+    _core._set_raster_settings(settings.to_dict())
+
+
 def _debug_arrows_to_core(debug_arrows: Sequence[DebugArrowLike] | None) -> list[dict[str, object]] | None:
     if debug_arrows is None:
         return None
@@ -148,10 +183,13 @@ def _shutdown_headless_render_context() -> None:
 __all__ = [
     "CameraSensor",
     "DebugArrow",
+    "RasterSettings",
     "RenderBuffer",
     "RenderFrame",
     "RenderProduct",
     "capture_rgb",
     "clear_debug_arrows",
     "set_debug_arrows",
+    "get_raster_settings",
+    "set_raster_settings",
 ]

@@ -15,6 +15,7 @@
 
 #include <algorithm>
 #include <array>
+#include <chrono>
 #include <cmath>
 #include <cstdlib>
 #include <dlfcn.h>
@@ -204,6 +205,9 @@ SceneRendererCapabilities GLRasterizerScene::GetCapabilities() const {
     auto* self = const_cast<GLRasterizerScene*>(this);
     if (self->TryLoadLuisaModule() && self->luisa_api_->capabilities != nullptr) {
         SceneRendererCapabilities capabilities = self->luisa_api_->capabilities(nullptr);
+        capabilities.raster_frustum_culling = true;
+        capabilities.raster_directional_shadows = true;
+        capabilities.raster_fxaa = true;
         capabilities.cuda_render_products = capabilities.cuda_render_products &&
                                             self->luisa_api_->capture_render_product != nullptr &&
                                             self->luisa_api_->release_render_product != nullptr &&
@@ -219,6 +223,9 @@ SceneRendererCapabilities GLRasterizerScene::GetCapabilities() const {
     }
     SceneRendererCapabilities fallback;
     fallback.backend_name = "OpenGL 4.6";
+    fallback.raster_frustum_culling = true;
+    fallback.raster_directional_shadows = true;
+    fallback.raster_fxaa = true;
     fallback.status = luisa_status_.empty()
                               ? "Optional LuisaCompute renderer module is not available."
                               : luisa_status_;
@@ -315,6 +322,8 @@ void GLRasterizerScene::SetSettings(const SceneRendererSettings& settings) {
     settings_.samples_per_frame = std::clamp(settings_.samples_per_frame, 1, 1024);
     settings_.max_accumulated_samples = std::max(settings_.max_accumulated_samples, 1);
     settings_.max_bounces = std::clamp(settings_.max_bounces, 1, 32);
+    settings_.raster.shadow_distance = std::clamp<RealType>(
+            settings_.raster.shadow_distance, 1.0, 10000.0);
     if (settings_.mode != SceneRendererMode::Raster) {
         EnsureLuisaRenderer();
     }
@@ -326,6 +335,7 @@ void GLRasterizerScene::SetSettings(const SceneRendererSettings& settings) {
 
 GLRasterizerScene::~GLRasterizerScene() {
     UnloadLuisaModule();
+    DestroyPassResources();
     for (auto& [key, entry] : mesh_cache_) {
         DestroyMeshEntry(entry);
     }
@@ -355,9 +365,17 @@ void GLRasterizerScene::RenderScene(const RID& render_target,
     }
 
     ++frame_index_;
+    const RenderDrawLists draw_lists = BuildRenderDrawLists(
+            scene, view, settings_.raster.frustum_culling);
+    stats_.visible_items = draw_lists.visible_count;
+    stats_.culled_items = draw_lists.culled_count;
+    stats_.draw_calls = 0;
+    stats_.shadow_draw_calls = 0;
+    stats_.shadow_ms = 0.0;
+    stats_.post_process_ms = 0.0;
     if (view.mode == RenderViewMode::Viewport &&
         settings_.mode != SceneRendererMode::Raster && EnsureLuisaRenderer()) {
-        RenderDepthPrepass(*rt, scene, view);
+        RenderDepthPrepass(*rt, scene, view, draw_lists);
         if (RenderWithLuisa(*rt, scene, view)) {
             PruneCaches();
             return;
@@ -371,7 +389,17 @@ void GLRasterizerScene::RenderScene(const RID& render_target,
                                       (luisa_status_.empty()
                                                ? std::string{"LuisaCompute renderer unavailable."}
                                                : luisa_status_);
-    glBindFramebuffer(GL_FRAMEBUFFER, rt->fbo);
+    const auto raster_start = std::chrono::steady_clock::now();
+    const auto shadow_start = std::chrono::steady_clock::now();
+    RenderDirectionalShadow(scene, view, draw_lists);
+    stats_.shadow_ms = std::chrono::duration<double, std::milli>(
+            std::chrono::steady_clock::now() - shadow_start).count();
+
+    const bool apply_fxaa = view.mode == RenderViewMode::Viewport &&
+                            rt->output_mask == RenderOutputBit(RenderOutputType::Rgb) &&
+                            settings_.raster.anti_aliasing == RasterAntiAliasingMode::Fxaa &&
+                            EnsureFxaaPassResources(rt->size.x(), rt->size.y(), rt->depth);
+    glBindFramebuffer(GL_FRAMEBUFFER, apply_fxaa ? fxaa_pass_.framebuffer : rt->fbo);
     glViewport(0, 0, rt->size.x(), rt->size.y());
     glEnable(GL_DEPTH_TEST);
     glDepthFunc(GL_LESS);
@@ -403,15 +431,19 @@ void GLRasterizerScene::RenderScene(const RID& render_target,
 
     glUseProgram(default_program_);
     UploadFrameUniforms(scene, view);
-    for (const VisualMeshRenderItem& item : scene.visual_meshes) {
-        if (item.material.alpha_mode != AlphaMode::Blend) {
-            DrawVisualItem(item);
-        }
+    UploadShadowUniforms();
+    for (const PreparedRenderItem& prepared : draw_lists.opaque) {
+        stats_.draw_calls += DrawVisualItem(*prepared.item) ? 1u : 0u;
     }
-    for (const VisualMeshRenderItem& item : scene.visual_meshes) {
-        if (item.material.alpha_mode == AlphaMode::Blend) {
-            DrawVisualItem(item);
+    for (const PreparedRenderItem& prepared : draw_lists.alpha_masked) {
+        stats_.draw_calls += DrawVisualItem(*prepared.item) ? 1u : 0u;
+    }
+    if (RenderOutputMaskContains(rt->output_mask, RenderOutputType::Rgb)) {
+        ConfigureDrawBuffers(*rt, true);
+        for (const PreparedRenderItem& prepared : draw_lists.transparent) {
+            stats_.draw_calls += DrawVisualItem(*prepared.item) ? 1u : 0u;
         }
+        ConfigureDrawBuffers(*rt, false);
     }
 
     glDisable(GL_BLEND);
@@ -419,6 +451,14 @@ void GLRasterizerScene::RenderScene(const RID& render_target,
     glDepthMask(GL_TRUE);
     glBindVertexArray(0);
     glUseProgram(0);
+    if (apply_fxaa) {
+        const auto post_start = std::chrono::steady_clock::now();
+        ApplyFxaa(*rt);
+        stats_.post_process_ms = std::chrono::duration<double, std::milli>(
+                std::chrono::steady_clock::now() - post_start).count();
+    }
+    stats_.render_ms = std::chrono::duration<double, std::milli>(
+            std::chrono::steady_clock::now() - raster_start).count();
     glBindFramebuffer(GL_FRAMEBUFFER, 0);
     PruneCaches();
 }
@@ -561,7 +601,8 @@ bool GLRasterizerScene::RenderWithLuisa(const RenderTarget& target,
 
 void GLRasterizerScene::RenderDepthPrepass(const RenderTarget& target,
                                            const RenderSceneSnapshot& scene,
-                                           const RenderViewSnapshot& view) {
+                                           const RenderViewSnapshot& view,
+                                           const RenderDrawLists& draw_lists) {
     glBindFramebuffer(GL_FRAMEBUFFER, target.fbo);
     glViewport(0, 0, target.size.x(), target.size.y());
     glEnable(GL_DEPTH_TEST);
@@ -571,10 +612,11 @@ void GLRasterizerScene::RenderDepthPrepass(const RenderTarget& target,
     glClear(GL_DEPTH_BUFFER_BIT);
     glUseProgram(default_program_);
     UploadFrameUniforms(scene, view);
-    for (const VisualMeshRenderItem& item : scene.visual_meshes) {
-        if (item.material.alpha_mode != AlphaMode::Blend) {
-            DrawVisualItem(item);
-        }
+    for (const PreparedRenderItem& prepared : draw_lists.opaque) {
+        DrawVisualItem(*prepared.item);
+    }
+    for (const PreparedRenderItem& prepared : draw_lists.alpha_masked) {
+        DrawVisualItem(*prepared.item);
     }
     glColorMask(GL_TRUE, GL_TRUE, GL_TRUE, GL_TRUE);
     glDisable(GL_BLEND);
@@ -657,6 +699,15 @@ void GLRasterizerScene::EnsureDefaultProgram() {
             glGetUniformLocation(default_program_, "u_environment_rotation");
     default_uniforms_.environment_intensity =
             glGetUniformLocation(default_program_, "u_environment_intensity");
+    default_uniforms_.has_shadow_map = glGetUniformLocation(default_program_, "u_has_shadow_map");
+    default_uniforms_.shadow_view_projection =
+            glGetUniformLocation(default_program_, "u_shadow_view_projection");
+    default_uniforms_.shadow_light_index = glGetUniformLocation(default_program_, "u_shadow_light_index");
+    default_uniforms_.shadow_bias = glGetUniformLocation(default_program_, "u_shadow_bias");
+    default_uniforms_.shadow_normal_bias = glGetUniformLocation(default_program_, "u_shadow_normal_bias");
+    default_uniforms_.shadow_texel_size = glGetUniformLocation(default_program_, "u_shadow_texel_size");
+    default_uniforms_.shadow_filter_radius =
+            glGetUniformLocation(default_program_, "u_shadow_filter_radius");
     default_uniforms_.light_count = glGetUniformLocation(default_program_, "u_light_count");
     for (std::size_t i = 0; i < default_uniforms_.light_position_type.size(); ++i) {
         const std::string index = std::to_string(i);
@@ -677,6 +728,7 @@ void GLRasterizerScene::EnsureDefaultProgram() {
     glUniform1i(glGetUniformLocation(default_program_, "u_occlusion_texture"), 3);
     glUniform1i(glGetUniformLocation(default_program_, "u_emissive_texture"), 4);
     glUniform1i(glGetUniformLocation(default_program_, "u_environment_texture"), 5);
+    glUniform1i(glGetUniformLocation(default_program_, "u_shadow_map"), 6);
     glUseProgram(0);
 }
 
@@ -883,10 +935,10 @@ GLuint GLRasterizerScene::GetOrCreateTexture(const RenderTextureSnapshot& textur
     return entry.texture;
 }
 
-void GLRasterizerScene::DrawVisualItem(const VisualMeshRenderItem& item) {
+bool GLRasterizerScene::DrawVisualItem(const VisualMeshRenderItem& item) {
     MeshCacheEntry* mesh = GetOrCreateMesh(item);
     if (mesh == nullptr || mesh->index_count <= 0) {
-        return;
+        return false;
     }
 
     const RenderMaterialSnapshot& material = item.material;
@@ -950,6 +1002,7 @@ void GLRasterizerScene::DrawVisualItem(const VisualMeshRenderItem& item) {
 
     glBindVertexArray(mesh->vao);
     glDrawElements(GL_TRIANGLES, mesh->index_count, GL_UNSIGNED_INT, nullptr);
+    return true;
 }
 
 void GLRasterizerScene::PruneCaches() {

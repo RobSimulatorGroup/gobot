@@ -1,5 +1,5 @@
 from dataclasses import dataclass
-from typing import Any, Mapping, Sequence
+from typing import Any, Literal, Mapping, Sequence
 
 import numpy as np
 
@@ -14,6 +14,14 @@ class DebugArrow:
     scale: float = 1.0
     label: str = ""
 
+    def to_dict(self) -> dict[str, object]: ...
+
+@dataclass(frozen=True)
+class RasterSettings:
+    frustum_culling: bool = True
+    anti_aliasing: Literal["disabled", "fxaa"] = "fxaa"
+    shadow_quality: Literal["disabled", "low", "medium", "high"] = "medium"
+    shadow_distance: float = 50.0
     def to_dict(self) -> dict[str, object]: ...
 
 DebugArrowLike = DebugArrow | Mapping[str, Any]
@@ -85,6 +93,9 @@ def capture_rgb(
     z_far: float = 200.0,
     debug_arrows: Sequence[DebugArrowLike] | None = None,
 ) -> np.ndarray: ...
+
+def get_raster_settings() -> RasterSettings: ...
+def set_raster_settings(settings: RasterSettings) -> None: ...
 
 def set_debug_arrows(debug_arrows: Sequence[DebugArrowLike]) -> None: ...
 def clear_debug_arrows() -> None: ...

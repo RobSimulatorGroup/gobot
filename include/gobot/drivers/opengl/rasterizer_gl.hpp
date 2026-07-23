@@ -9,7 +9,6 @@
 
 #include "gobot/rendering/renderer_compositor.hpp"
 #include "gobot/drivers/opengl/texture_storage.hpp"
-#include "gobot/drivers/opengl/rasterizer_gl.hpp"
 #include "gobot/drivers/opengl/rasterizer_scene_gl.hpp"
 #include "gobot/drivers/opengl/material_storage_gl.hpp"
 #include "gobot/drivers/opengl/mesh_storage_gl.hpp"

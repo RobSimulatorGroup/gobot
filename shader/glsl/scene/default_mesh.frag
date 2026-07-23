@@ -46,6 +46,14 @@ uniform sampler2D u_emissive_texture;
 uniform sampler2D u_environment_texture;
 uniform mat3 u_environment_rotation;
 uniform float u_environment_intensity;
+uniform bool u_has_shadow_map;
+uniform sampler2D u_shadow_map;
+uniform mat4 u_shadow_view_projection;
+uniform int u_shadow_light_index;
+uniform float u_shadow_bias;
+uniform float u_shadow_normal_bias;
+uniform vec2 u_shadow_texel_size;
+uniform int u_shadow_filter_radius;
 
 const int MAX_LIGHTS = 16;
 uniform int u_light_count;
@@ -116,6 +124,34 @@ vec3 evaluate_direct_light(vec3 normal,
     return (diffuse_weight * base_color / PI + specular) * radiance * n_dot_l;
 }
 
+float evaluate_shadow(vec3 world_position, vec3 normal, vec3 light_dir) {
+    if (!u_has_shadow_map) {
+        return 1.0;
+    }
+    vec3 biased_position = world_position + normal * u_shadow_normal_bias +
+                           light_dir * u_shadow_bias;
+    vec4 light_clip = u_shadow_view_projection * vec4(biased_position, 1.0);
+    vec3 shadow_coord = light_clip.xyz / max(abs(light_clip.w), 0.000001);
+    shadow_coord = shadow_coord * 0.5 + 0.5;
+    if (shadow_coord.x <= 0.0 || shadow_coord.x >= 1.0 ||
+        shadow_coord.y <= 0.0 || shadow_coord.y >= 1.0 ||
+        shadow_coord.z <= 0.0 || shadow_coord.z >= 1.0) {
+        return 1.0;
+    }
+
+    float visibility = 0.0;
+    int sample_count = 0;
+    for (int y = -u_shadow_filter_radius; y <= u_shadow_filter_radius; ++y) {
+        for (int x = -u_shadow_filter_radius; x <= u_shadow_filter_radius; ++x) {
+            float stored_depth = texture(u_shadow_map,
+                                         shadow_coord.xy + vec2(x, y) * u_shadow_texel_size).r;
+            visibility += shadow_coord.z <= stored_depth ? 1.0 : 0.0;
+            ++sample_count;
+        }
+    }
+    return visibility / max(float(sample_count), 1.0);
+}
+
 void main() {
     vec3 normal = normalize(v_world_normal);
     if (!gl_FrontFacing) {
@@ -177,14 +213,17 @@ void main() {
         }
         vec3 radiance = u_light_color_intensity[i].rgb *
                         u_light_color_intensity[i].a * attenuation;
-        direct += evaluate_direct_light(normal,
-                                        view_dir,
-                                        light_dir,
-                                        radiance,
-                                        base_color.rgb,
-                                        metallic,
-                                        roughness,
-                                        specular_weight);
+        float visibility = i == u_shadow_light_index
+                ? evaluate_shadow(v_world_position, normal, light_dir)
+                : 1.0;
+        direct += visibility * evaluate_direct_light(normal,
+                                                     view_dir,
+                                                     light_dir,
+                                                     radiance,
+                                                     base_color.rgb,
+                                                     metallic,
+                                                     roughness,
+                                                     specular_weight);
     }
 
     float sky_mix = clamp(normal.z * 0.5 + 0.5, 0.0, 1.0);

@@ -10,6 +10,7 @@
 #include <gobot/scene/node_3d.hpp>
 #include <gobot/scene/joint_3d.hpp>
 #include <gobot/scene/link_3d.hpp>
+#include <gobot/scene/light_3d.hpp>
 #include <gobot/scene/robot_3d.hpp>
 #include <gobot/scene/resources/packed_scene.hpp>
 #include <gobot/scene/velocity_command_debug_3d.hpp>
@@ -128,6 +129,32 @@ TEST(TestPackedScene, semantic_label_round_trips_as_storage_property) {
     EXPECT_EQ(restored->GetSemanticLabel(), "vehicle");
 
     gobot::Object::Delete(root);
+    gobot::Object::Delete(restored);
+}
+
+TEST(TestPackedScene, light_shadow_settings_round_trip_as_storage_properties) {
+    auto* light = gobot::Object::New<gobot::DirectionalLight3D>();
+    light->SetName("sun");
+    light->SetShadowEnabled(true);
+    light->SetShadowBias(0.004);
+    light->SetShadowNormalBias(0.03);
+
+    gobot::Ref<gobot::PackedScene> packed_scene = gobot::MakeRef<gobot::PackedScene>();
+    ASSERT_TRUE(packed_scene->Pack(light));
+    const auto* light_data = packed_scene->GetState()->GetNodeData(0);
+    ASSERT_NE(light_data, nullptr);
+    EXPECT_NE(FindProperty(*light_data, "shadow_enabled"), nullptr);
+    EXPECT_NE(FindProperty(*light_data, "shadow_bias"), nullptr);
+    EXPECT_NE(FindProperty(*light_data, "shadow_normal_bias"), nullptr);
+
+    gobot::Node* restored_node = packed_scene->Instantiate();
+    auto* restored = gobot::Object::PointerCastTo<gobot::DirectionalLight3D>(restored_node);
+    ASSERT_NE(restored, nullptr);
+    EXPECT_TRUE(restored->IsShadowEnabled());
+    EXPECT_NEAR(restored->GetShadowBias(), 0.004, 1.0e-9);
+    EXPECT_NEAR(restored->GetShadowNormalBias(), 0.03, 1.0e-9);
+
+    gobot::Object::Delete(light);
     gobot::Object::Delete(restored);
 }
 

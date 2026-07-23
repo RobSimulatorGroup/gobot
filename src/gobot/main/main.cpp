@@ -16,7 +16,6 @@
 #include "gobot/rendering/render_server.hpp"
 #include "gobot/rendering/rendering_server_globals.hpp"
 #include "gobot/rendering/renderer_compositor.hpp"
-#include "gobot/rendering/scene_renderer.hpp"
 #include "gobot/drivers/opengl/rasterizer_gl.hpp"
 #include "gobot/drivers/sdl/sdl_window.hpp"
 #include "gobot/physics/physics_server.hpp"

@@ -48,6 +48,34 @@ RenderProductMode ParseRenderProductMode(const std::string& name) {
     throw std::invalid_argument("unknown render product mode '" + name + "'");
 }
 
+RasterAntiAliasingMode ParseRasterAntiAliasing(const std::string& name) {
+    if (name == "disabled") return RasterAntiAliasingMode::Disabled;
+    if (name == "fxaa") return RasterAntiAliasingMode::Fxaa;
+    throw std::invalid_argument("unknown raster anti-aliasing mode '" + name + "'");
+}
+
+RasterShadowQuality ParseRasterShadowQuality(const std::string& name) {
+    if (name == "disabled") return RasterShadowQuality::Disabled;
+    if (name == "low") return RasterShadowQuality::Low;
+    if (name == "medium") return RasterShadowQuality::Medium;
+    if (name == "high") return RasterShadowQuality::High;
+    throw std::invalid_argument("unknown raster shadow quality '" + name + "'");
+}
+
+const char* RasterAntiAliasingName(RasterAntiAliasingMode mode) {
+    return mode == RasterAntiAliasingMode::Fxaa ? "fxaa" : "disabled";
+}
+
+const char* RasterShadowQualityName(RasterShadowQuality quality) {
+    switch (quality) {
+        case RasterShadowQuality::Disabled: return "disabled";
+        case RasterShadowQuality::Low: return "low";
+        case RasterShadowQuality::Medium: return "medium";
+        case RasterShadowQuality::High: return "high";
+    }
+    return "disabled";
+}
+
 std::string RenderDeviceName(RenderDevice device) {
     switch (device) {
         case RenderDevice::Auto: return "auto";
@@ -316,6 +344,43 @@ void RegisterManualModuleFunctions(py::module_& module) {
                 EnsureRenderContext();
                 return sensor.Capture();
             });
+
+    module.def("_get_raster_settings", []() {
+        EnsureRenderContext();
+        const RasterRendererSettings settings =
+                RenderServer::GetInstance()->GetSceneRendererSettings().raster;
+        py::dict result;
+        result["frustum_culling"] = settings.frustum_culling;
+        result["anti_aliasing"] = RasterAntiAliasingName(settings.anti_aliasing);
+        result["shadow_quality"] = RasterShadowQualityName(settings.shadow_quality);
+        result["shadow_distance"] = settings.shadow_distance;
+        return result;
+    });
+    module.def("_set_raster_settings", [](const py::dict& values) {
+        EnsureRenderContext();
+        SceneRendererSettings settings = RenderServer::GetInstance()->GetSceneRendererSettings();
+        for (const auto& entry : values) {
+            const std::string key = py::cast<std::string>(entry.first);
+            if (key == "frustum_culling") {
+                settings.raster.frustum_culling = py::cast<bool>(entry.second);
+            } else if (key == "anti_aliasing") {
+                settings.raster.anti_aliasing =
+                        ParseRasterAntiAliasing(py::cast<std::string>(entry.second));
+            } else if (key == "shadow_quality") {
+                settings.raster.shadow_quality =
+                        ParseRasterShadowQuality(py::cast<std::string>(entry.second));
+            } else if (key == "shadow_distance") {
+                settings.raster.shadow_distance = py::cast<RealType>(entry.second);
+                if (!std::isfinite(settings.raster.shadow_distance) ||
+                    settings.raster.shadow_distance <= 0.0) {
+                    throw py::value_error("shadow_distance must be a finite positive number");
+                }
+            } else {
+                throw py::key_error("unknown raster setting '" + key + "'");
+            }
+        }
+        RenderServer::GetInstance()->SetSceneRendererSettings(settings);
+    });
 
     module.def("set_project_path", [](const std::string& project_path) {
         EngineContext& context = GetActiveAppContext();

@@ -7,9 +7,6 @@
 
 #include "gobot/rendering/renderer_compositor.hpp"
 #include "gobot/error_macros.hpp"
-#include "gobot/rendering/texture_storage.hpp"
-#include "gobot/rendering/frame_buffer_cache.hpp"
-#include "gobot/rendering/scene_renderer.hpp"
 
 namespace gobot {
 

@@ -9,7 +9,6 @@
 
 namespace gobot {
 
-class FrameBufferCache;
 class RendererSceneRender;
 class RendererTextureStorage;
 class MaterialStorage;

@@ -237,6 +237,7 @@ void AppendMeshItems(SceneRenderItems& items,
         item.surface_index = surface_index;
         item.surfaces = surfaces;
         item.model = model;
+        item.world_bounds = surface.bounds.Transformed(model);
         item.material = CaptureMaterial(active_material, fallback_color);
         items.visual_meshes.emplace_back(std::move(item));
     }
@@ -273,6 +274,9 @@ void CollectLighting(const Node* node,
         render_light.light_id = light->GetInstanceId();
         render_light.color = light->GetColor();
         render_light.intensity = light->GetIntensity();
+        render_light.shadow_enabled = light->IsShadowEnabled();
+        render_light.shadow_bias = light->GetShadowBias();
+        render_light.shadow_normal_bias = light->GetShadowNormalBias();
         render_light.position = node_transform.translation();
         if (Object::PointerCastTo<DirectionalLight3D>(light) != nullptr) {
             render_light.type = RenderLightType::Directional;
@@ -550,6 +554,11 @@ RenderSceneSnapshot CaptureRenderSceneSnapshot(const Node* scene_root) {
         snapshot.fingerprints.lighting = HashScalar(snapshot.fingerprints.lighting, light.range);
         snapshot.fingerprints.lighting = HashScalar(snapshot.fingerprints.lighting, light.inner_angle);
         snapshot.fingerprints.lighting = HashScalar(snapshot.fingerprints.lighting, light.outer_angle);
+        snapshot.fingerprints.lighting = HashCombine(
+                snapshot.fingerprints.lighting, light.shadow_enabled ? 1ULL : 0ULL);
+        snapshot.fingerprints.lighting = HashScalar(snapshot.fingerprints.lighting, light.shadow_bias);
+        snapshot.fingerprints.lighting = HashScalar(
+                snapshot.fingerprints.lighting, light.shadow_normal_bias);
     }
     snapshot.fingerprints.combined = snapshot.fingerprints.topology;
     snapshot.fingerprints.combined = HashCombine(

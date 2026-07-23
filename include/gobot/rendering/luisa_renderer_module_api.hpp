@@ -13,7 +13,7 @@
 
 namespace gobot {
 
-inline constexpr std::uint32_t GOBOT_LUISA_RENDERER_ABI_VERSION = 2;
+inline constexpr std::uint32_t GOBOT_LUISA_RENDERER_ABI_VERSION = 3;
 
 struct LuisaRendererTarget {
     std::uint32_t gl_color_texture = 0;

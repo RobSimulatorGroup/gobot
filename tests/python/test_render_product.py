@@ -15,6 +15,27 @@ OUTPUTS = (
 
 
 def main() -> int:
+    original_raster_settings = gobot.render.get_raster_settings()
+    configured_raster_settings = gobot.render.RasterSettings(
+        frustum_culling=False,
+        anti_aliasing="disabled",
+        shadow_quality="low",
+        shadow_distance=24.0,
+    )
+    gobot.render.set_raster_settings(configured_raster_settings)
+    assert gobot.render.get_raster_settings() == configured_raster_settings
+    gobot.render.set_raster_settings(original_raster_settings)
+    try:
+        gobot.render.RasterSettings(anti_aliasing="msaa")
+        raise AssertionError("unknown raster anti-aliasing mode should fail")
+    except ValueError:
+        pass
+    try:
+        gobot.render.RasterSettings(shadow_distance=float("nan"))
+        raise AssertionError("non-finite shadow distance should fail")
+    except ValueError:
+        pass
+
     root = gobot.create_node("Node3D", "World")
     root.semantic_label = "crate"
     box = gobot.create_box_visual("box", (1.0, 1.0, 1.0))

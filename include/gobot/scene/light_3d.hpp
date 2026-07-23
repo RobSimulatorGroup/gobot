@@ -23,10 +23,22 @@ public:
     void SetIntensity(RealType intensity);
     [[nodiscard]] RealType GetIntensity() const;
 
+    void SetShadowEnabled(bool enabled);
+    [[nodiscard]] bool IsShadowEnabled() const;
+
+    void SetShadowBias(RealType bias);
+    [[nodiscard]] RealType GetShadowBias() const;
+
+    void SetShadowNormalBias(RealType bias);
+    [[nodiscard]] RealType GetShadowNormalBias() const;
+
 private:
     bool enabled_ = true;
     Color color_{1.0f, 1.0f, 1.0f, 1.0f};
     RealType intensity_ = 1.0;
+    bool shadow_enabled_ = false;
+    RealType shadow_bias_ = 0.002;
+    RealType shadow_normal_bias_ = 0.01;
 };
 
 class GOBOT_EXPORT DirectionalLight3D : public Light3D {

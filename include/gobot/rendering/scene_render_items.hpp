@@ -9,6 +9,7 @@
 #include "gobot/core/color.hpp"
 #include "gobot/core/io/image.hpp"
 #include "gobot/core/math/geometry.hpp"
+#include "gobot/core/math/aabb.hpp"
 #include "gobot/core/math/matrix.hpp"
 #include "gobot/core/object_id.hpp"
 #include "gobot/scene/resources/material.hpp"
@@ -84,6 +85,7 @@ struct VisualMeshRenderItem {
     std::size_t surface_index = 0;
     std::shared_ptr<const MeshSurfaceList> surfaces;
     Matrix4 model = Matrix4::Identity();
+    AABB world_bounds;
     RenderMaterialSnapshot material;
 
     [[nodiscard]] const MeshSurfaceData* GetSurface() const {
@@ -149,6 +151,9 @@ struct RenderLightSnapshot {
     RealType range = 0.0;
     RealType inner_angle = 0.0;
     RealType outer_angle = 0.0;
+    bool shadow_enabled = false;
+    RealType shadow_bias = 0.002;
+    RealType shadow_normal_bias = 0.01;
 };
 
 struct SceneRenderFingerprints {

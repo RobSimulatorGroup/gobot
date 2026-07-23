@@ -21,6 +21,17 @@ Color Light3D::GetColor() const { return color_; }
 void Light3D::SetIntensity(RealType intensity) { intensity_ = std::max<RealType>(0.0, intensity); }
 RealType Light3D::GetIntensity() const { return intensity_; }
 
+void Light3D::SetShadowEnabled(bool enabled) { shadow_enabled_ = enabled; }
+bool Light3D::IsShadowEnabled() const { return shadow_enabled_; }
+
+void Light3D::SetShadowBias(RealType bias) { shadow_bias_ = std::max<RealType>(0.0, bias); }
+RealType Light3D::GetShadowBias() const { return shadow_bias_; }
+
+void Light3D::SetShadowNormalBias(RealType bias) {
+    shadow_normal_bias_ = std::max<RealType>(0.0, bias);
+}
+RealType Light3D::GetShadowNormalBias() const { return shadow_normal_bias_; }
+
 void PointLight3D::SetRange(RealType range) { range_ = std::max<RealType>(0.001, range); }
 RealType PointLight3D::GetRange() const { return range_; }
 
@@ -42,7 +53,10 @@ GOBOT_REGISTRATION {
             .constructor()(CtorAsRawPtr)
             .property("enabled", &gobot::Light3D::IsEnabled, &gobot::Light3D::SetEnabled)
             .property("color", &gobot::Light3D::GetColor, &gobot::Light3D::SetColor)
-            .property("intensity", &gobot::Light3D::GetIntensity, &gobot::Light3D::SetIntensity);
+            .property("intensity", &gobot::Light3D::GetIntensity, &gobot::Light3D::SetIntensity)
+            .property("shadow_enabled", &gobot::Light3D::IsShadowEnabled, &gobot::Light3D::SetShadowEnabled)
+            .property("shadow_bias", &gobot::Light3D::GetShadowBias, &gobot::Light3D::SetShadowBias)
+            .property("shadow_normal_bias", &gobot::Light3D::GetShadowNormalBias, &gobot::Light3D::SetShadowNormalBias);
 
     Class_<gobot::DirectionalLight3D>("DirectionalLight3D")
             .constructor()(CtorAsRawPtr);
