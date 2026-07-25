@@ -24,8 +24,6 @@
 #include "imgui.h"
 #include "imgui_internal.h"
 #include "imgui_extension/gizmos/ImGuizmo.h"
-#include "glsl_shader_hpp/grid_frag.hpp"
-#include "glsl_shader_hpp/grid_vert.hpp"
 
 #include <algorithm>
 #include <cmath>
@@ -77,19 +75,6 @@ Node3DEditor::Node3DEditor() {
     ResetCamera();
     scene_view3d_panel_ = Object::New<SceneView3DPanel>();
     AddChild(scene_view3d_panel_);
-
-    shader_material_ = MakeRef<ShaderMaterial>();
-
-    auto vs_shader = MakeRef<Shader>();
-    vs_shader->SetShaderType(ShaderType::VertexShader);
-    vs_shader->SetCode(GRID_VERT);
-    auto fs_shader = MakeRef<Shader>();
-    fs_shader->SetShaderType(ShaderType::FragmentShader);
-    fs_shader->SetCode(GRID_FRAG);
-    auto shader_program = MakeRef<RasterizerShaderProgram>();
-    shader_program->SetRasterizerShader(vs_shader, fs_shader);
-
-    shader_material_->SetShaderProgram(shader_program);
 }
 
 void Node3DEditor::ResetCamera() {
@@ -99,8 +84,11 @@ void Node3DEditor::ResetCamera() {
     mouse_position_now_.y() = 0;
 
     mouse_down_ = false;
-    mouse_speed_ = 0.0020f;
+    fly_speed_ = 3.0f;
+    zoom_pivot_ = Vector3::Zero();
+    zoom_pivot_valid_ = false;
 
+    camera3d_->SetFovy(75.0);
     SetCameraOrbit({8.0f, 8.0f, 6.0f}, {0.0f, 0.0f, 0.0f}, Vector3::UnitZ());
 }
 
@@ -112,6 +100,7 @@ EditorSceneViewState Node3DEditor::GetSceneViewState() const {
             .eye = camera3d_->GetViewMatrixEye(),
             .at = camera3d_->GetViewMatrixAt(),
             .up = camera3d_->GetViewMatrixUp(),
+            .fov_y = camera3d_->GetFovy(),
     };
 }
 
@@ -119,7 +108,8 @@ void Node3DEditor::ApplySceneViewState(const EditorSceneViewState& state) {
     const Vector3 view_direction = state.at - state.eye;
     if (!IsFiniteVector(state.eye) || !IsFiniteVector(state.at) ||
         !IsFiniteVector(state.up) || view_direction.isZero(CMP_EPSILON) ||
-        state.up.isZero(CMP_EPSILON)) {
+        state.up.isZero(CMP_EPSILON) || !std::isfinite(state.fov_y) ||
+        state.fov_y <= 0.0 || state.fov_y >= 180.0) {
         ResetCamera();
         return;
     }
@@ -132,6 +122,7 @@ void Node3DEditor::ApplySceneViewState(const EditorSceneViewState& state) {
         }
     }
 
+    camera3d_->SetFovy(state.fov_y);
     SetCameraOrbit(state.eye, state.at, up);
 }
 
@@ -207,44 +198,53 @@ void Node3DEditor::FocusNode(const Node3D* node) {
 }
 
 void Node3DEditor::UpdateCamera(double delta_time) {
+    auto* input = Input::GetInstance();
     if (block_camera_input_ || ImGuiBlocksViewportInput()) {
         mouse_down_ = false;
         editing_ = false;
-        mouse_position_last_ = Input::GetInstance()->GetMousePosition();
-        Input::GetInstance()->SetScrollOffset(0.0);
+        mouse_position_last_ = input->GetMousePosition();
+        input->SetScrollOffset(0.0);
         return;
     }
 
     if (!mouse_down_) {
-        mouse_position_last_ = Input::GetInstance()->GetMousePosition();
+        mouse_position_last_ = input->GetMousePosition();
     }
 
-    auto scroll_offset = Input::GetInstance()->GetScrollOffset();
-    Input::GetInstance()->SetScrollOffset(0.0);
+    const float scroll_offset = input->GetScrollOffset();
+    input->SetScrollOffset(0.0);
 
-    const bool left_mouse_down = Input::GetInstance()->GetMouseClickedState(MouseButton::Left) == MouseClickedState::SingleClicked;
-    const bool middle_mouse_down = Input::GetInstance()->GetMouseClickedState(MouseButton::Middle) == MouseClickedState::SingleClicked;
-    const bool right_mouse_down = Input::GetInstance()->GetMouseClickedState(MouseButton::Right) == MouseClickedState::SingleClicked;
-    const bool shift_down = Input::GetInstance()->GetKeyHeld(KeyCode::LeftShift) ||
-                            Input::GetInstance()->GetKeyHeld(KeyCode::RightShift);
-    const bool ctrl_down = Input::GetInstance()->GetKeyHeld(KeyCode::LeftCtrl) ||
-                           Input::GetInstance()->GetKeyHeld(KeyCode::RightCtrl);
-    const bool gizmo_captures_mouse = ImGuizmo::IsUsing() || ImGuizmo::IsOver();
-    const bool orbit_mouse_down = (right_mouse_down || (left_mouse_down && ctrl_down)) && !gizmo_captures_mouse;
-    const bool pan_mouse_down = middle_mouse_down || (left_mouse_down && shift_down && !ctrl_down && !gizmo_captures_mouse);
+    const bool left_mouse_down = input->GetMouseClickedState(MouseButton::Left) == MouseClickedState::SingleClicked;
+    const bool middle_mouse_down = input->GetMouseClickedState(MouseButton::Middle) == MouseClickedState::SingleClicked;
+    const bool right_mouse_down = input->GetMouseClickedState(MouseButton::Right) == MouseClickedState::SingleClicked;
+    const bool shift_down = input->GetKeyHeld(KeyCode::LeftShift) ||
+                            input->GetKeyHeld(KeyCode::RightShift);
+    const bool ctrl_down = input->GetKeyHeld(KeyCode::LeftCtrl) ||
+                           input->GetKeyHeld(KeyCode::RightCtrl);
+    const bool alt_down = input->GetKeyHeld(KeyCode::LeftAlt) ||
+                          input->GetKeyHeld(KeyCode::RightAlt);
+    const bool gizmo_captures_mouse = ImGui::GetCurrentContext() != nullptr &&
+                                      (ImGuizmo::IsUsing() || ImGuizmo::IsOver());
+    const bool orbit_mouse_down = left_mouse_down && (alt_down || ctrl_down) && !gizmo_captures_mouse;
+    const bool pan_mouse_down = (middle_mouse_down ||
+                                 (left_mouse_down && shift_down && !ctrl_down && !alt_down)) &&
+                                !gizmo_captures_mouse;
+    const bool dolly_mouse_down = right_mouse_down && alt_down && !gizmo_captures_mouse;
+    const bool fly_look_mouse_down = right_mouse_down && !alt_down && !gizmo_captures_mouse;
 
-    mouse_down_ = orbit_mouse_down || pan_mouse_down;
+    mouse_down_ = orbit_mouse_down || pan_mouse_down || dolly_mouse_down || fly_look_mouse_down;
 
-    Vector2i delta;
+    Vector2i delta = Vector2i::Zero();
     if (mouse_down_) {
-        mouse_position_now_ = Input::GetInstance()->GetMousePosition();
+        mouse_position_now_ = input->GetMousePosition();
         delta = mouse_position_now_ - mouse_position_last_;
 
-        // TODO(wqq): Right hand or left hand
         delta[0] *= -1.0f;
-        if (orbit_mouse_down) {
-            horizontal_angle_ += mouse_speed_ * float(delta[0]);
-            vertical_angle_   -= mouse_speed_ * float(delta[1]);
+        if (orbit_mouse_down || fly_look_mouse_down) {
+            horizontal_angle_ += orbit_speed_ * static_cast<float>(delta[0]);
+            vertical_angle_ -= orbit_speed_ * static_cast<float>(delta[1]);
+            constexpr float kPitchLimit = static_cast<float>(M_PI * 0.5 - 0.01);
+            vertical_angle_ = std::clamp(vertical_angle_, -kPitchLimit, kPitchLimit);
         }
         mouse_position_last_ = mouse_position_now_;
 
@@ -270,27 +270,62 @@ void Node3DEditor::UpdateCamera(double delta_time) {
     auto at = camera3d_->GetViewMatrixAt();
 
     Vector3 up = right.cross(direction).normalized();
-    if (Input::GetInstance()->GetMouseClickedState(MouseButton::Middle) == MouseClickedState::DoubleClicked) {
+    if (input->GetMouseClickedState(MouseButton::Middle) == MouseClickedState::DoubleClicked) {
         ResetCamera();
         return;
     } else if (pan_mouse_down) {
-        const Vector3 offset = up * delta[1] * translation_speed_ + right * delta[0] * translation_speed_;
+        const float scale = std::max(distance_, static_cast<float>(camera3d_->GetNear()) * 10.0f) * pan_speed_;
+        const Vector3 offset = up * static_cast<float>(delta[1]) * scale +
+                               right * static_cast<float>(delta[0]) * scale;
         eye += offset;
         at += offset;
     } else if (orbit_mouse_down) {
         eye = at - direction * distance_;
+    } else if (dolly_mouse_down) {
+        const float drag_delta = std::abs(delta[0]) >= std::abs(delta[1])
+                ? -static_cast<float>(delta[0])
+                : -static_cast<float>(delta[1]);
+        const float amount = drag_delta *
+                             std::max(distance_, static_cast<float>(camera3d_->GetNear()) * 10.0f) *
+                             dolly_speed_;
+        const Vector3 offset = direction * amount;
+        eye += offset;
+        at += offset;
+    } else if (fly_look_mouse_down) {
+        at = eye + direction * distance_;
+
+        if (std::abs(scroll_offset) > CMP_EPSILON) {
+            fly_speed_ *= std::pow(1.25f, scroll_offset);
+            fly_speed_ = std::clamp(fly_speed_, 0.05f, 500.0f);
+        }
+
+        Vector3 movement = Vector3::Zero();
+        movement += direction * static_cast<float>(input->GetKeyHeld(KeyCode::W) - input->GetKeyHeld(KeyCode::S));
+        movement += right * static_cast<float>(input->GetKeyHeld(KeyCode::D) - input->GetKeyHeld(KeyCode::A));
+        movement += Vector3::UnitZ() * static_cast<float>(input->GetKeyHeld(KeyCode::E) - input->GetKeyHeld(KeyCode::Q));
+        if (movement.squaredNorm() > CMP_EPSILON2) {
+            const float speed_scale = shift_down ? 4.0f : (ctrl_down ? 0.25f : 1.0f);
+            const float frame_delta = static_cast<float>(std::clamp(delta_time, 0.0, 0.1));
+            const Vector3 offset = movement.normalized() * fly_speed_ * speed_scale * frame_delta;
+            eye += offset;
+            at += offset;
+        }
     } else {
         if (std::abs(scroll_offset) > CMP_EPSILON) {
-            const float previous_distance = distance_;
-            distance_ *= std::pow(0.85f, scroll_offset);
-            distance_ = std::max(distance_, static_cast<float>(camera3d_->GetNear()));
-            if (zoom_pivot_valid_ && previous_distance > CMP_EPSILON) {
-                const float zoom_ratio = distance_ / previous_distance;
-                eye = zoom_pivot_ + (eye - zoom_pivot_) * zoom_ratio;
-                at = zoom_pivot_ + (at - zoom_pivot_) * zoom_ratio;
+            Vector3 dolly_direction = direction;
+            float dolly_distance = distance_;
+            if (zoom_pivot_valid_) {
+                const Vector3 to_pivot = zoom_pivot_ - eye;
+                if (to_pivot.squaredNorm() > CMP_EPSILON2) {
+                    dolly_distance = static_cast<float>(to_pivot.norm());
+                    dolly_direction = to_pivot / dolly_distance;
+                }
             }
+            const float amount = dolly_distance * (1.0f - std::pow(0.8f, scroll_offset));
+            const Vector3 offset = dolly_direction * amount;
+            eye += offset;
+            at += offset;
         }
-        eye = at - direction * distance_;
     }
 
     SetCameraOrbit(eye, at, up);

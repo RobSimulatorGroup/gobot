@@ -241,11 +241,20 @@ __global__ void ProjectKernel(const float* means,
             }
         }
     }
+    // Bound the Jacobian evaluation point for Gaussians whose centers lie
+    // outside the viewport. Without this EWA guard, x/z or y/z can become
+    // arbitrarily large and an off-screen Gaussian can cover the whole image.
+    const float tan_fov_x = 0.5f * static_cast<float>(width) / fx;
+    const float tan_fov_y = 0.5f * static_cast<float>(height) / fy;
+    const float clamped_camera_x =
+            fminf(1.3f * tan_fov_x, fmaxf(-1.3f * tan_fov_x, camera_x / depth)) * depth;
+    const float clamped_camera_y =
+            fminf(1.3f * tan_fov_y, fmaxf(-1.3f * tan_fov_y, camera_y / depth)) * depth;
     const float inverse_depth = 1.0f / depth;
     const float j00 = fx * inverse_depth;
-    const float j02 = -fx * camera_x * inverse_depth * inverse_depth;
+    const float j02 = -fx * clamped_camera_x * inverse_depth * inverse_depth;
     const float j11 = fy * inverse_depth;
-    const float j12 = -fy * camera_y * inverse_depth * inverse_depth;
+    const float j12 = -fy * clamped_camera_y * inverse_depth * inverse_depth;
     const float covariance_xx =
             j00 * j00 * covariance_camera[0] + 2.0f * j00 * j02 * covariance_camera[2] +
             j02 * j02 * covariance_camera[8] + 0.3f;

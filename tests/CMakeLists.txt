@@ -95,6 +95,19 @@ endif()
 package_add_test(test_edited_scene
         editor/test_edited_scene.cpp
         ${PROJECT_SOURCE_DIR}/src/gobot/editor/edited_scene.cpp)
+add_executable(test_node3d_editor_camera
+        editor/test_node3d_editor_camera.cpp)
+target_compile_options(test_node3d_editor_camera PUBLIC "${GOBOT_COMPILE_OPTIONS}")
+target_link_libraries(test_node3d_editor_camera gtest gmock gobot_editor_runtime)
+if (MSVC)
+    target_link_libraries(test_node3d_editor_camera -Wl,--whole-archive gobot_test_support)
+else ()
+    target_link_libraries(test_node3d_editor_camera -Wl,--no-as-needed gobot_test_support)
+endif ()
+gtest_discover_tests(test_node3d_editor_camera
+        EXTRA_ARGS --gtest_color=yes
+        WORKING_DIRECTORY "${PROJECT_SOURCE_DIR}")
+set_target_properties(test_node3d_editor_camera PROPERTIES FOLDER tests)
 package_add_test(test_editor_type_icons
         editor/test_type_icons.cpp
         ${PROJECT_SOURCE_DIR}/src/gobot/editor/imgui/type_icons.cpp)
@@ -181,6 +194,14 @@ add_test(
                 ${CMAKE_CURRENT_SOURCE_DIR}/architecture/test_dependency_boundaries.py
 )
 set_tests_properties(test_architecture_dependencies
+        PROPERTIES WORKING_DIRECTORY "${CMAKE_SOURCE_DIR}")
+
+add_test(
+        NAME test_gaussian_splat_sample
+        COMMAND ${Python3_EXECUTABLE} -S
+                ${CMAKE_CURRENT_SOURCE_DIR}/python/test_gaussian_splat_sample.py
+)
+set_tests_properties(test_gaussian_splat_sample
         PROPERTIES WORKING_DIRECTORY "${CMAKE_SOURCE_DIR}")
 
 add_test(

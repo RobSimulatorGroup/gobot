@@ -22,6 +22,7 @@ struct EditorSceneViewState {
     Vector3 eye{};
     Vector3 at{};
     Vector3 up{0.0, 0.0, 1.0};
+    RealType fov_y{75.0};
 };
 
 class GOBOT_EXPORT ProjectSettings : public Object {

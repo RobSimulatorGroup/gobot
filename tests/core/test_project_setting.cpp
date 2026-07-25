@@ -109,6 +109,7 @@ TEST(TestProjectSetting, saves_and_loads_editor_scene_view_state) {
             .eye = gobot::Vector3(1.0, 2.0, 3.0),
             .at = gobot::Vector3(4.0, 5.0, 6.0),
             .up = gobot::Vector3(0.0, 0.0, 1.0),
+            .fov_y = 52.5,
     };
 
     {
@@ -129,6 +130,7 @@ TEST(TestProjectSetting, saves_and_loads_editor_scene_view_state) {
         EXPECT_TRUE(loaded->eye.isApprox(state.eye, CMP_EPSILON));
         EXPECT_TRUE(loaded->at.isApprox(state.at, CMP_EPSILON));
         EXPECT_TRUE(loaded->up.isApprox(state.up, CMP_EPSILON));
+        EXPECT_DOUBLE_EQ(loaded->fov_y, state.fov_y);
     }
 }
 
@@ -147,11 +149,13 @@ TEST(TestProjectSetting, caches_editor_scene_view_state_without_saving_project_f
             .eye = gobot::Vector3(1.0, 2.0, 3.0),
             .at = gobot::Vector3(4.0, 5.0, 6.0),
             .up = gobot::Vector3(0.0, 0.0, 1.0),
+            .fov_y = 48.0,
     };
     const gobot::EditorSceneViewState saved_state{
             .eye = gobot::Vector3(7.0, 8.0, 9.0),
             .at = gobot::Vector3(10.0, 11.0, 12.0),
             .up = gobot::Vector3(0.0, 1.0, 0.0),
+            .fov_y = 61.0,
     };
 
     {
@@ -187,5 +191,6 @@ TEST(TestProjectSetting, caches_editor_scene_view_state_without_saving_project_f
         EXPECT_TRUE(loaded->eye.isApprox(saved_state.eye, CMP_EPSILON));
         EXPECT_TRUE(loaded->at.isApprox(saved_state.at, CMP_EPSILON));
         EXPECT_TRUE(loaded->up.isApprox(saved_state.up, CMP_EPSILON));
+        EXPECT_DOUBLE_EQ(loaded->fov_y, saved_state.fov_y);
     }
 }

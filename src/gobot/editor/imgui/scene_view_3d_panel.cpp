@@ -561,7 +561,9 @@ void SceneView3DPanel::ProcessViewportInput(Node* scene_root,
     const bool gizmo_captures_mouse = ImGuizmo::IsUsing() || ImGuizmo::IsOver();
     const bool runtime_playing = IsSceneRuntimePlaying();
     const bool left_down = ImGui::IsMouseDown(ImGuiMouseButton_Left);
-    const bool camera_modifier_down = ImGui::GetIO().KeyCtrl || ImGui::GetIO().KeyShift;
+    const bool camera_modifier_down = ImGui::GetIO().KeyCtrl ||
+                                      ImGui::GetIO().KeyShift ||
+                                      ImGui::GetIO().KeyAlt;
     const bool runtime_zooming =
             runtime_playing && std::abs(ImGui::GetIO().MouseWheel) > CMP_EPSILON;
     const bool should_pick =

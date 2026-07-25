@@ -1,12 +1,12 @@
 {
     "__VERSION__": 1,
     "__TYPE__": "GaussianSplatScene",
-    "ply": "assets/train-7000.ply",
+    "ply": "assets/playroom-7000.ply",
     "meters_per_unit": 1.0,
     "source_to_gobot": [
         1, 0, 0, 0,
         0, 0, 1, 0,
-        0, -1, 0, 0,
+        0, -1, 0, 3,
         0, 0, 0, 1
     ]
 }

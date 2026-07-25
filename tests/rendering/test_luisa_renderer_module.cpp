@@ -196,14 +196,15 @@ TEST(LuisaRendererGpu, CompositesGaussianBackgroundBehindProxyAovs) {
     const std::filesystem::path ply_path = "/tmp/gobot-gsplat-gpu-test.ply";
     {
         std::ofstream stream(ply_path);
-        stream << "ply\nformat ascii 1.0\nelement vertex 1\n"
+        stream << "ply\nformat ascii 1.0\nelement vertex 2\n"
                   "property float x\nproperty float y\nproperty float z\n"
                   "property float f_dc_0\nproperty float f_dc_1\nproperty float f_dc_2\n"
                   "property float opacity\n"
                   "property float scale_0\nproperty float scale_1\nproperty float scale_2\n"
                   "property float rot_0\nproperty float rot_1\nproperty float rot_2\nproperty float rot_3\n"
                   "end_header\n"
-                  "0 0 0 1.75 -1.75 -1.75 10 -0.693147 -0.693147 -0.693147 1 0 0 0\n";
+                  "0 0 0 1.75 -1.75 -1.75 10 -0.693147 -0.693147 -0.693147 1 0 0 0\n"
+                  "10 -2.9 0 -1.75 1.75 -1.75 10 -0.693147 -0.693147 -0.693147 1 0 0 0\n";
     }
     Ref<GaussianSplatResource> resource = MakeRef<GaussianSplatResource>();
     std::string load_error;
@@ -303,7 +304,7 @@ TEST(LuisaRendererGpu, CompositesGaussianBackgroundBehindProxyAovs) {
     EXPECT_GT(viewport_rgb[center * 3u], viewport_rgb[center * 3u + 2u] + 40u);
     const SceneRendererStats stats = render_server->GetSceneRendererStats();
     EXPECT_EQ(stats.active_mode, SceneRendererMode::Raster) << stats.status;
-    EXPECT_EQ(stats.gaussian_count, 1u) << stats.status;
+    EXPECT_EQ(stats.gaussian_count, 2u) << stats.status;
     EXPECT_GT(stats.gaussian_splat_ms, 0.0) << stats.status;
 
     settings.mode = SceneRendererMode::RealtimeRayTracing;

@@ -34,7 +34,7 @@ REQUIRED_PAYLOAD = {
     "gobot/examples/cartpole/policies/cartpole.pt",
     "gobot/examples/gaussian_splatting/download_sample.py",
     "gobot/examples/gaussian_splatting/project.gobot",
-    "gobot/examples/gaussian_splatting/tandt_train.gsplat",
+    "gobot/examples/gaussian_splatting/deep_blending_playroom.gsplat",
     "gobot/examples/go1/policies/go1_velocity.onnx",
     "gobot_cli/editor.py",
 }

@@ -77,8 +77,10 @@ training code, or the upstream HiGS macro-tile wrapper.
 ## Pretrained Environment Sample
 
 The repository includes an optional example project backed by the pretrained
-Tanks & Temples `train` scene. Its 166 MB PLY is downloaded and SHA-256 checked
-on demand instead of being stored in Git or bundled into wheels:
+Deep Blending `playroom` scene. Its 371 MB PLY is downloaded and SHA-256 checked
+on demand instead of being stored in Git or bundled into wheels. The saved
+editor view uses a real training-camera pose so the first frame stays inside
+the model's capture distribution:
 
 ```bash
 python3 examples/gaussian_splatting/download_sample.py

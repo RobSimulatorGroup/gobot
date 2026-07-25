@@ -11,7 +11,6 @@
 #include "gobot/core/config/project_setting.hpp"
 #include "gobot/scene/camera_3d.hpp"
 #include "gobot/scene/imgui_node.hpp"
-#include "gobot/scene/resources/material.hpp"
 
 struct ImVec2;
 
@@ -75,9 +74,10 @@ private:
     Vector2i mouse_position_last_{0, 0};
     Vector2i mouse_position_now_{0, 0};
 
-    float mouse_speed_{0.0020f};
-    float scroll_move_speed_{50.0f};
-    float translation_speed_{0.02f};
+    float orbit_speed_{0.004f};
+    float pan_speed_{0.0015f};
+    float dolly_speed_{0.005f};
+    float fly_speed_{3.0f};
 
     float horizontal_angle_{0.01f};
     float vertical_angle_{0.0};
@@ -95,8 +95,6 @@ private:
     uint32_t imguizmo_operation_ = UINT32_MAX;
 
     bool snap_guizmo_{false};
-
-    Ref<ShaderMaterial> shader_material_;
 
     SceneView3DPanel* scene_view3d_panel_;
 

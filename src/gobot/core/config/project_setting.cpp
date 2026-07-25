@@ -9,6 +9,7 @@
 #include "gobot/core/string_utils.hpp"
 #include "gobot/error_macros.hpp"
 
+#include <cmath>
 #include <fstream>
 
 namespace gobot {
@@ -21,6 +22,7 @@ constexpr const char* kEditorSceneViewsKey = "editor_scene_views";
 constexpr const char* kEyeKey = "eye";
 constexpr const char* kAtKey = "at";
 constexpr const char* kUpKey = "up";
+constexpr const char* kFovYKey = "fov_y";
 
 Json Vector3ToJson(const Vector3& vector) {
     return Json::array({vector.x(), vector.y(), vector.z()});
@@ -54,10 +56,22 @@ std::optional<EditorSceneViewState> SceneViewStateFromJson(const Json& json) {
         return std::nullopt;
     }
 
+    RealType fov_y = 75.0;
+    if (json.contains(kFovYKey)) {
+        if (!json[kFovYKey].is_number()) {
+            return std::nullopt;
+        }
+        fov_y = static_cast<RealType>(json[kFovYKey].get<double>());
+        if (!std::isfinite(fov_y) || fov_y <= 0.0 || fov_y >= 180.0) {
+            return std::nullopt;
+        }
+    }
+
     return EditorSceneViewState{
             .eye = *eye,
             .at = *at,
             .up = *up,
+            .fov_y = fov_y,
     };
 }
 
@@ -66,6 +80,7 @@ Json SceneViewStateToJson(const EditorSceneViewState& state) {
             {kEyeKey, Vector3ToJson(state.eye)},
             {kAtKey, Vector3ToJson(state.at)},
             {kUpKey, Vector3ToJson(state.up)},
+            {kFovYKey, state.fov_y},
     };
 }
 
