@@ -3,7 +3,10 @@
 #include "gobot/rendering/render_product.hpp"
 #include "gobot/rendering/render_server.hpp"
 #include "gobot/scene/camera_3d.hpp"
+#include "gobot/scene/environment_3d.hpp"
+#include "gobot/scene/gaussian_splat_3d.hpp"
 #include "gobot/scene/mesh_instance_3d.hpp"
+#include "gobot/scene/resources/gaussian_splat.hpp"
 #include "gobot/scene/resources/material.hpp"
 #include "gobot/scene/resources/primitive_mesh.hpp"
 #include "gobot/scene/node_3d.hpp"
@@ -14,6 +17,8 @@
 #include <cmath>
 #include <cstdlib>
 #include <dlfcn.h>
+#include <filesystem>
+#include <fstream>
 #include <memory>
 #include <string>
 
@@ -36,6 +41,7 @@ TEST(LuisaRendererModule, ExportsMatchingBackendNeutralAbi) {
     ASSERT_NE(api->destroy, nullptr);
     ASSERT_NE(api->capabilities, nullptr);
     ASSERT_NE(api->render, nullptr);
+    ASSERT_NE(api->render_gaussian_background, nullptr);
     ASSERT_NE(api->reset_accumulation, nullptr);
     ASSERT_NE(api->capture_render_product, nullptr);
     ASSERT_NE(api->release_render_product, nullptr);
@@ -47,6 +53,8 @@ TEST(LuisaRendererModule, ExportsMatchingBackendNeutralAbi) {
     EXPECT_TRUE(capabilities.progressive);
     EXPECT_TRUE(capabilities.direct_presentation_interop);
     EXPECT_TRUE(capabilities.cuda_render_products);
+    EXPECT_TRUE(capabilities.gaussian_splatting);
+    EXPECT_TRUE(capabilities.gaussian_splat_cuda);
     EXPECT_EQ(capabilities.backend_name, "LuisaCompute CUDA");
 
     EXPECT_EQ(dlclose(library), 0);
@@ -97,9 +105,7 @@ TEST(LuisaRendererGpu, RendersCudaRenderProductAovs) {
     if (run_gpu_test == nullptr || std::string{run_gpu_test} != "1") {
         GTEST_SKIP() << "Set GOBOT_RUN_LUISA_GPU_TEST=1 on a CUDA runner.";
     }
-    if (std::getenv("GOBOT_LUISA_RENDERER_LIBRARY") == nullptr) {
-        ASSERT_EQ(setenv("GOBOT_LUISA_RENDERER_LIBRARY", GOBOT_TEST_LUISA_MODULE_PATH, 0), 0);
-    }
+    ASSERT_EQ(setenv("GOBOT_LUISA_RENDERER_LIBRARY", GOBOT_TEST_LUISA_MODULE_PATH, 1), 0);
 
     HeadlessRenderContext context;
     ASSERT_TRUE(context.Initialize()) << context.GetLastError();
@@ -178,15 +184,149 @@ TEST(LuisaRendererGpu, RendersCudaRenderProductAovs) {
     EXPECT_FLOAT_EQ(normal[2], 0.0f);
 }
 
+TEST(LuisaRendererGpu, CompositesGaussianBackgroundBehindProxyAovs) {
+    const char* run_gpu_test = std::getenv("GOBOT_RUN_LUISA_GPU_TEST");
+    if (run_gpu_test == nullptr || std::string{run_gpu_test} != "1") {
+        GTEST_SKIP() << "Set GOBOT_RUN_LUISA_GPU_TEST=1 on a CUDA runner.";
+    }
+    ASSERT_EQ(setenv("GOBOT_LUISA_RENDERER_LIBRARY", GOBOT_TEST_LUISA_MODULE_PATH, 1), 0);
+
+    HeadlessRenderContext context;
+    ASSERT_TRUE(context.Initialize()) << context.GetLastError();
+    const std::filesystem::path ply_path = "/tmp/gobot-gsplat-gpu-test.ply";
+    {
+        std::ofstream stream(ply_path);
+        stream << "ply\nformat ascii 1.0\nelement vertex 1\n"
+                  "property float x\nproperty float y\nproperty float z\n"
+                  "property float f_dc_0\nproperty float f_dc_1\nproperty float f_dc_2\n"
+                  "property float opacity\n"
+                  "property float scale_0\nproperty float scale_1\nproperty float scale_2\n"
+                  "property float rot_0\nproperty float rot_1\nproperty float rot_2\nproperty float rot_3\n"
+                  "end_header\n"
+                  "0 0 0 1.75 -1.75 -1.75 10 -0.693147 -0.693147 -0.693147 1 0 0 0\n";
+    }
+    Ref<GaussianSplatResource> resource = MakeRef<GaussianSplatResource>();
+    std::string load_error;
+    ASSERT_TRUE(resource->LoadPly(ply_path.string(), &load_error)) << load_error;
+
+    auto delete_node = [](Node3D* node) {
+        if (node != nullptr) Object::Delete(node);
+    };
+    std::unique_ptr<Node3D, decltype(delete_node)> root(Object::New<Node3D>(), delete_node);
+    auto* environment = Object::New<Environment3D>();
+    environment->SetClearColor({0.0f, 0.0f, 0.0f, 1.0f});
+    environment->SetSkyColor({0.0f, 0.0f, 0.0f, 1.0f});
+    environment->SetGroundColor({0.0f, 0.0f, 0.0f, 1.0f});
+    root->AddChild(environment);
+    auto* gaussian = Object::New<GaussianSplat3D>();
+    gaussian->SetName("environment");
+    gaussian->SetSplat(resource);
+    root->AddChild(gaussian);
+    auto* proxy = Object::New<MeshInstance3D>();
+    proxy->SetName("proxy");
+    proxy->SetMesh(MakeRef<BoxMesh>());
+    proxy->SetVisibleInRgb(false);
+    proxy->SetCastShadow(false);
+    auto proxy_material = MakeRef<PBRMaterial3D>();
+    proxy_material->SetAlphaMode(AlphaMode::Blend);
+    proxy_material->SetAlbedo({0.2f, 0.8f, 0.2f, 0.2f});
+    proxy_material->SetEmissive({0.0f, 10.0f, 0.0f, 1.0f});
+    proxy->SetMaterial(proxy_material);
+    root->AddChild(proxy);
+
+    constexpr int width = 64;
+    constexpr int height = 64;
+    Camera3D camera;
+    camera.SetPerspective(55.0, 0.05, 20.0);
+    camera.SetViewMatrix({0.0, -3.0, 0.0},
+                         {0.0, 0.0, 0.0},
+                         {0.0, 0.0, 1.0});
+    RenderViewSnapshot view = CaptureRenderViewSnapshot(camera);
+    view.camera.projection = Matrix4f::Perspective(55.0, 1.0, 0.05, 20.0);
+    view.camera.view_projection = view.camera.projection * view.camera.view;
+
+    RenderProductDesc desc;
+    desc.width = width;
+    desc.height = height;
+    desc.device = RenderDevice::Cuda;
+    desc.mode = RenderProductMode::Minimal;
+    desc.outputs = {RenderOutputType::Rgb,
+                    RenderOutputType::LinearDepth,
+                    RenderOutputType::InstanceId};
+    RenderProduct product(desc);
+    const std::shared_ptr<RenderFrame> frame = product.Capture(
+            CaptureRenderSceneSnapshot(root.get()), view);
+    ASSERT_NE(frame, nullptr);
+
+    std::vector<std::uint8_t> rgb(static_cast<std::size_t>(width) * height * 3u);
+    std::vector<float> depth(static_cast<std::size_t>(width) * height);
+    std::vector<std::uint32_t> instance(static_cast<std::size_t>(width) * height);
+    ASSERT_TRUE(frame->Get(RenderOutputType::Rgb)->CopyToHost(rgb.data(), rgb.size()));
+    ASSERT_TRUE(frame->Get(RenderOutputType::LinearDepth)
+                        ->CopyToHost(depth.data(), depth.size() * sizeof(float)));
+    ASSERT_TRUE(frame->Get(RenderOutputType::InstanceId)
+                        ->CopyToHost(instance.data(), instance.size() * sizeof(std::uint32_t)));
+    const std::size_t center = static_cast<std::size_t>(height / 2) * width + width / 2;
+    EXPECT_GT(rgb[center * 3u], rgb[center * 3u + 1u] + 40u);
+    EXPECT_GT(rgb[center * 3u], rgb[center * 3u + 2u] + 40u);
+    EXPECT_NEAR(depth[center], 2.5f, 1.0e-3f);
+    EXPECT_NE(instance[center], 0u);
+
+    RenderProductDesc cpu_desc = desc;
+    cpu_desc.device = RenderDevice::Cpu;
+    RenderProduct cpu_product(cpu_desc);
+    const std::shared_ptr<RenderFrame> cpu_frame = cpu_product.Capture(
+            CaptureRenderSceneSnapshot(root.get()), view);
+    ASSERT_NE(cpu_frame, nullptr);
+    EXPECT_EQ(cpu_product.GetDevice(), RenderDevice::Cpu);
+    std::vector<std::uint8_t> cpu_rgb(static_cast<std::size_t>(width) * height * 3u);
+    ASSERT_TRUE(cpu_frame->Get(RenderOutputType::Rgb)->CopyToHost(
+            cpu_rgb.data(), cpu_rgb.size()));
+    EXPECT_EQ(cpu_rgb[center * 3u], rgb[center * 3u]);
+    EXPECT_EQ(cpu_rgb[center * 3u + 1u], rgb[center * 3u + 1u]);
+    EXPECT_EQ(cpu_rgb[center * 3u + 2u], rgb[center * 3u + 2u]);
+
+    RenderServer* render_server = RenderServer::GetInstance();
+    ASSERT_NE(render_server, nullptr);
+    const RID viewport = render_server->ViewportCreate();
+    render_server->ViewportSetSize(viewport, width, height);
+    SceneRendererSettings settings;
+    settings.mode = SceneRendererMode::Raster;
+    settings.raster.anti_aliasing = RasterAntiAliasingMode::Disabled;
+    render_server->SetSceneRendererSettings(settings);
+    camera.SetAspect(1.0);
+    render_server->RenderSceneToViewport(viewport, root.get(), &camera);
+    const std::vector<std::uint8_t> viewport_rgb =
+            render_server->ReadViewportRgbPixels(viewport, true);
+    ASSERT_EQ(viewport_rgb.size(), rgb.size());
+    EXPECT_GT(viewport_rgb[center * 3u], viewport_rgb[center * 3u + 1u] + 40u);
+    EXPECT_GT(viewport_rgb[center * 3u], viewport_rgb[center * 3u + 2u] + 40u);
+    const SceneRendererStats stats = render_server->GetSceneRendererStats();
+    EXPECT_EQ(stats.active_mode, SceneRendererMode::Raster) << stats.status;
+    EXPECT_EQ(stats.gaussian_count, 1u) << stats.status;
+    EXPECT_GT(stats.gaussian_splat_ms, 0.0) << stats.status;
+
+    settings.mode = SceneRendererMode::RealtimeRayTracing;
+    settings.denoise = false;
+    render_server->SetSceneRendererSettings(settings);
+    render_server->RenderSceneToViewport(viewport, root.get(), &camera);
+    const std::vector<std::uint8_t> ray_traced_rgb =
+            render_server->ReadViewportRgbPixels(viewport, true);
+    ASSERT_EQ(ray_traced_rgb.size(), rgb.size());
+    EXPECT_LT(ray_traced_rgb[center * 3u], 10u);
+    EXPECT_LT(ray_traced_rgb[center * 3u + 1u], 10u);
+    EXPECT_LT(ray_traced_rgb[center * 3u + 2u], 10u);
+    render_server->Free(viewport);
+    std::filesystem::remove(ply_path);
+}
+
 TEST(LuisaRendererGpu, RendersProgressiveFramesAndResetsAccumulation) {
     const char* run_gpu_test = std::getenv("GOBOT_RUN_LUISA_GPU_TEST");
     if (run_gpu_test == nullptr || std::string{run_gpu_test} != "1") {
         GTEST_SKIP() << "Set GOBOT_RUN_LUISA_GPU_TEST=1 on a CUDA/OpenGL runner.";
     }
 
-    if (std::getenv("GOBOT_LUISA_RENDERER_LIBRARY") == nullptr) {
-        ASSERT_EQ(setenv("GOBOT_LUISA_RENDERER_LIBRARY", GOBOT_TEST_LUISA_MODULE_PATH, 0), 0);
-    }
+    ASSERT_EQ(setenv("GOBOT_LUISA_RENDERER_LIBRARY", GOBOT_TEST_LUISA_MODULE_PATH, 1), 0);
 
     HeadlessRenderContext context;
     ASSERT_TRUE(context.Initialize()) << context.GetLastError();

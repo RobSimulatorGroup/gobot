@@ -21,6 +21,7 @@ dependencies = [
     "mujoco==3.10.0; sys_platform == 'linux' and platform_machine == 'x86_64'",
     "mujoco-warp==3.10.0.1; sys_platform == 'linux' and platform_machine == 'x86_64'",
     "numpy>=2,<3",
+    "nvidia-cuda-runtime-cu12>=12.8,<13; sys_platform == 'linux' and platform_machine == 'x86_64'",
     "onnx>=1.16",
     "onnxruntime>=1.19",
     "rsl-rl-lib==5.2.0",
@@ -67,5 +68,6 @@ components = ["python"]
 [tool.scikit-build.cmake.define]
 GOB_BUILD_TESTS = "OFF"
 GOB_BUILD_LUISA_RENDERER = "ON"
+GOB_BUILD_GSPLAT_INFERENCE = "ON"
 GOB_FORCE_FETCH_MUJOCO = "ON"
 GOB_MUJOCO_GIT_TAG = "3.10.0"

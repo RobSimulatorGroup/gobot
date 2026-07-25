@@ -54,6 +54,7 @@ package_add_test(test_resource_format_mesh core/io/test_resource_format_mesh.cpp
 package_add_test(test_resource_format_usd core/io/test_resource_format_usd.cpp)
 package_add_test(test_resource_format_mjcf core/io/test_resource_format_mjcf.cpp)
 package_add_test(test_resource_format_urdf core/io/test_resource_format_urdf.cpp)
+package_add_test(test_resource_format_gaussian_splat core/io/test_resource_format_gaussian_splat.cpp)
 package_add_test(test_rid core/test_rid.cpp)
 
 package_add_test(test_sdl_window core/window/test_sdl_window.cpp)

@@ -13,7 +13,7 @@
 
 namespace gobot {
 
-inline constexpr std::uint32_t GOBOT_LUISA_RENDERER_ABI_VERSION = 3;
+inline constexpr std::uint32_t GOBOT_LUISA_RENDERER_ABI_VERSION = 4;
 
 struct LuisaRendererTarget {
     std::uint32_t gl_color_texture = 0;
@@ -61,6 +61,13 @@ struct LuisaRendererModuleApi {
                                   SceneRendererStats* stats,
                                   char* error,
                                   std::size_t error_size) = nullptr;
+    LuisaRendererResult (*render_gaussian_background)(void* renderer,
+                                                      const LuisaRendererTarget* target,
+                                                      const RenderSceneSnapshot* scene,
+                                                      const RenderViewSnapshot* view,
+                                                      SceneRendererStats* stats,
+                                                      char* error,
+                                                      std::size_t error_size) = nullptr;
     void (*reset_accumulation)(void* renderer) = nullptr;
     LuisaRendererResult (*capture_render_product)(void* renderer,
                                                   const RenderSceneSnapshot* scene,

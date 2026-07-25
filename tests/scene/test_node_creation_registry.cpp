@@ -6,6 +6,7 @@
 #include <gobot/rendering/render_server.hpp>
 #include <gobot/scene/joint_3d.hpp>
 #include <gobot/scene/environment_3d.hpp>
+#include <gobot/scene/gaussian_splat_3d.hpp>
 #include <gobot/scene/light_3d.hpp>
 #include <gobot/scene/link_3d.hpp>
 #include <gobot/scene/mesh_instance_3d.hpp>
@@ -46,6 +47,7 @@ TEST(TestNodeCreationRegistry, built_in_entries_keep_node_inheritance_shape) {
     const auto* height_scanner_sensor = FindEntry("HeightScanner3D");
     const auto* velocity_command_debug = FindEntry("VelocityCommandDebug3D");
     const auto* mesh_instance = FindEntry("MeshInstance3D");
+    const auto* gaussian_splat = FindEntry("GaussianSplat3D");
     const auto* environment = FindEntry("Environment3D");
     const auto* directional_light = FindEntry("DirectionalLight3D");
     const auto* point_light = FindEntry("PointLight3D");
@@ -70,6 +72,7 @@ TEST(TestNodeCreationRegistry, built_in_entries_keep_node_inheritance_shape) {
     ASSERT_NE(height_scanner_sensor, nullptr);
     ASSERT_NE(velocity_command_debug, nullptr);
     ASSERT_NE(mesh_instance, nullptr);
+    ASSERT_NE(gaussian_splat, nullptr);
     ASSERT_NE(environment, nullptr);
     ASSERT_NE(directional_light, nullptr);
     ASSERT_NE(point_light, nullptr);
@@ -94,6 +97,7 @@ TEST(TestNodeCreationRegistry, built_in_entries_keep_node_inheritance_shape) {
     EXPECT_EQ(height_scanner_sensor->parent_id, "TerrainHeightSensor3D");
     EXPECT_EQ(velocity_command_debug->parent_id, "Node3D");
     EXPECT_EQ(mesh_instance->parent_id, "Node3D");
+    EXPECT_EQ(gaussian_splat->parent_id, "Node3D");
     EXPECT_EQ(environment->parent_id, "Node3D");
     EXPECT_EQ(directional_light->parent_id, "Light3D");
     EXPECT_EQ(point_light->parent_id, "Light3D");
@@ -176,6 +180,13 @@ TEST(TestNodeCreationRegistry, creates_mesh_instance_node) {
     ASSERT_NE(mesh_instance, nullptr);
     EXPECT_FALSE(mesh_instance->GetMesh().IsValid());
 
+    gobot::Object::Delete(node);
+}
+
+TEST(TestNodeCreationRegistry, creates_gaussian_splat_node) {
+    gobot::Node* node = gobot::NodeCreationRegistry::CreateNode("GaussianSplat3D");
+    ASSERT_NE(node, nullptr);
+    EXPECT_NE(gobot::Object::PointerCastTo<gobot::GaussianSplat3D>(node), nullptr);
     gobot::Object::Delete(node);
 }
 

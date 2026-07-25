@@ -209,6 +209,9 @@ void RenderProduct::EnsureCpuViewport() {
 
 std::shared_ptr<RenderFrame> RenderProduct::Capture(const RenderSceneSnapshot& scene,
                                                     const RenderViewSnapshot& view) {
+    if (!scene.gaussian_splat_error.empty()) {
+        throw std::runtime_error(scene.gaussian_splat_error);
+    }
     EnsureDevice();
     auto available = std::find_if(slots_.begin(), slots_.end(), [](const FrameSlot& slot) {
         return slot.lease.expired();
@@ -223,21 +226,36 @@ std::shared_ptr<RenderFrame> RenderProduct::Capture(const RenderSceneSnapshot& s
         output_mask |= RenderOutputBit(output);
     }
 
+    RenderViewSnapshot capture_view = view;
+    if (desc_.mode == RenderProductMode::Minimal) {
+        capture_view.mode = RenderViewMode::Minimal;
+    }
+
     RendererRenderProductFrame cuda_frame;
-    if (device_ == RenderDevice::Cuda) {
+    const bool gaussian_active = !scene.gaussian_splats.empty();
+    const bool gaussian_rgb_requested = gaussian_active &&
+                                        RenderOutputMaskContains(
+                                                output_mask, RenderOutputType::Rgb);
+    bool captured_with_cuda = false;
+    if (device_ == RenderDevice::Cuda || gaussian_rgb_requested) {
         // The slot lease is expired, so its previous backend frame can be
         // released before allocating the replacement.
         available->storage.clear();
         std::string error;
-        if (!RenderServer::GetInstance()->CaptureCudaRenderProduct(
+        captured_with_cuda = RenderServer::GetInstance()->CaptureCudaRenderProduct(
                     scene,
-                    view,
+                    capture_view,
                     desc_.width,
                     desc_.height,
                     output_mask,
                     static_cast<std::uint32_t>(desc_.mode),
                     &cuda_frame,
-                    &error)) {
+                    &error);
+        if (!captured_with_cuda) {
+            if (gaussian_rgb_requested) {
+                throw std::runtime_error(
+                        "Gaussian Splatting capture requires the CUDA renderer: " + error);
+            }
             if (desc_.device == RenderDevice::Cuda) {
                 throw std::runtime_error(
                         "CUDA render-product capture failed; explicit device='cuda' does not fall back: " +
@@ -256,13 +274,8 @@ std::shared_ptr<RenderFrame> RenderProduct::Capture(const RenderSceneSnapshot& s
     frame->instance_paths_ = scene.instance_paths;
     frame->semantic_labels_ = scene.semantic_labels;
 
-    RenderViewSnapshot capture_view = view;
-    if (desc_.mode == RenderProductMode::Minimal) {
-        capture_view.mode = RenderViewMode::Minimal;
-    }
-
     RenderServer* render_server = RenderServer::GetInstance();
-    if (device_ == RenderDevice::Cpu) {
+    if (device_ == RenderDevice::Cpu && !captured_with_cuda) {
         render_server->RenderSnapshotsToViewport(viewport_, scene, capture_view);
     }
     for (const RenderOutputType output : desc_.outputs) {
@@ -281,8 +294,15 @@ std::shared_ptr<RenderFrame> RenderProduct::Capture(const RenderSceneSnapshot& s
             storage->backend_owner.reset();
             storage->copy_to_host = {};
             storage->bytes.resize(byte_size);
-            if (!render_server->ReadViewportOutput(
-                        viewport_, output, storage->bytes.data(), storage->bytes.size(), true)) {
+            if (captured_with_cuda) {
+                const std::uint32_t index = static_cast<std::uint32_t>(output);
+                if (!captured_with_cuda || cuda_frame.copy_to_host == nullptr ||
+                    !cuda_frame.copy_to_host(index, storage->bytes.data(), storage->bytes.size())) {
+                    throw std::runtime_error(std::string("failed to read CUDA render output '") +
+                                             RenderOutputTypeName(output) + "'");
+                }
+            } else if (!render_server->ReadViewportOutput(
+                               viewport_, output, storage->bytes.data(), storage->bytes.size(), true)) {
                 throw std::runtime_error(std::string("failed to read render output '") +
                                          RenderOutputTypeName(output) + "'");
             }

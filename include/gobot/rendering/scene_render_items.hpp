@@ -14,6 +14,7 @@
 #include "gobot/core/object_id.hpp"
 #include "gobot/scene/resources/material.hpp"
 #include "gobot/scene/resources/mesh.hpp"
+#include "gobot/scene/resources/gaussian_splat.hpp"
 #include "gobot/scene/resources/shape_3d.hpp"
 #include "gobot/scene/resources/texture.hpp"
 
@@ -87,11 +88,27 @@ struct VisualMeshRenderItem {
     Matrix4 model = Matrix4::Identity();
     AABB world_bounds;
     RenderMaterialSnapshot material;
+    bool visible_in_rgb = true;
+    bool cast_shadow = true;
 
     [[nodiscard]] const MeshSurfaceData* GetSurface() const {
         return surfaces != nullptr && surface_index < surfaces->size()
                        ? &(*surfaces)[surface_index]
                        : nullptr;
+    }
+};
+
+struct GaussianSplatRenderItem {
+    ObjectID object_id;
+    ObjectID resource_id;
+    std::uint64_t resource_revision = 0;
+    std::string source_path;
+    Matrix4 model = Matrix4::Identity();
+    AABB world_bounds;
+    std::shared_ptr<const GaussianSplatData> data;
+
+    [[nodiscard]] bool IsValid() const {
+        return object_id.IsValid() && resource_id.IsValid() && data != nullptr && data->IsValid();
     }
 };
 
@@ -102,6 +119,7 @@ struct CollisionDebugRenderItem {
 
 struct SceneRenderItems {
     std::vector<VisualMeshRenderItem> visual_meshes;
+    std::vector<GaussianSplatRenderItem> gaussian_splats;
     std::vector<CollisionDebugRenderItem> collision_shapes;
     std::map<std::uint32_t, std::string> instance_paths;
     std::map<std::uint32_t, std::string> semantic_labels;
@@ -170,6 +188,8 @@ struct SceneRenderFingerprints {
 // Backends must not traverse or retain the authored Scene tree.
 struct RenderSceneSnapshot {
     std::vector<VisualMeshRenderItem> visual_meshes;
+    std::vector<GaussianSplatRenderItem> gaussian_splats;
+    std::string gaussian_splat_error;
     RenderEnvironmentSnapshot environment;
     std::vector<RenderLightSnapshot> lights;
     std::map<std::uint32_t, std::string> instance_paths;
@@ -188,6 +208,8 @@ struct RenderViewSnapshot {
 // RenderViewSnapshot independently.
 struct SceneRenderSnapshot {
     std::vector<VisualMeshRenderItem> visual_meshes;
+    std::vector<GaussianSplatRenderItem> gaussian_splats;
+    std::string gaussian_splat_error;
     RenderCameraSnapshot camera;
     RenderEnvironmentSnapshot environment;
     std::vector<RenderLightSnapshot> lights;

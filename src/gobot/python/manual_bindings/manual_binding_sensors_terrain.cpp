@@ -399,6 +399,26 @@ void RegisterManualTerrainSensorBindings(PyTerrain3DClass& terrain3d_class,
                                       py::cast<float>(sequence[2]),
                                       py::cast<float>(sequence[3])
                               }));
+                          })
+            .def_property("visible_in_rgb",
+                          [](const PyMeshInstance3DHandle& handle) {
+                              return handle.ResolveAs<MeshInstance3D>()->IsVisibleInRgb();
+                          },
+                          [](PyMeshInstance3DHandle& handle, bool visible) {
+                              ExecuteSetNodeProperty(
+                                      handle.ResolveAs<MeshInstance3D>(),
+                                      "visible_in_rgb",
+                                      Variant(visible));
+                          })
+            .def_property("cast_shadow",
+                          [](const PyMeshInstance3DHandle& handle) {
+                              return handle.ResolveAs<MeshInstance3D>()->IsCastShadow();
+                          },
+                          [](PyMeshInstance3DHandle& handle, bool cast_shadow) {
+                              ExecuteSetNodeProperty(
+                                      handle.ResolveAs<MeshInstance3D>(),
+                                      "cast_shadow",
+                                      Variant(cast_shadow));
                           });
 }
 

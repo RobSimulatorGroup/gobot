@@ -1,0 +1,17 @@
+gsplat CUDA inference adaptation for Gobot
+
+Upstream project: https://github.com/nerfstudio-project/gsplat
+Upstream commit: bf302ef532a25175e44bd6bf7f777f599570748c
+Upstream commit date: 2026-07-20
+
+The projection, spherical-harmonics evaluation, tile binning, depth sorting,
+and front-to-back Gaussian compositing implemented here are derived from the
+Apache-2.0 gsplat CUDA rendering and inference sources. This adaptation is not
+the upstream ATen-based HiGS macro-tile implementation.
+
+Gobot modifications:
+- removed ATen, PyTorch, pybind, training, autograd, and runtime JIT dependencies;
+- replaced tensor ownership with an opaque raw-CUDA renderer and persistent buffers;
+- added external CUDA stream support for LuisaCompute context integration;
+- added packed RGBA8 output and optional geometry-coverage composition;
+- limited the implementation to forward inference for one pinhole camera.

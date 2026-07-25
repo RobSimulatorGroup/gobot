@@ -179,10 +179,17 @@ TEST(TestMeshInstance3D, render_snapshot_fingerprints_isolate_scene_changes) {
     EXPECT_NE(transform_changed.fingerprints.transforms, material_changed.fingerprints.transforms);
     EXPECT_EQ(transform_changed.fingerprints.materials, material_changed.fingerprints.materials);
 
+    mesh_instance->SetVisibleInRgb(false);
+    mesh_instance->SetCastShadow(false);
+    const auto visibility_changed = gobot::CaptureSceneRenderSnapshot(tree->GetRoot(), camera);
+    EXPECT_NE(visibility_changed.fingerprints.topology, transform_changed.fingerprints.topology);
+    EXPECT_EQ(visibility_changed.fingerprints.geometry, transform_changed.fingerprints.geometry);
+    EXPECT_EQ(visibility_changed.fingerprints.materials, transform_changed.fingerprints.materials);
+
     camera.SetViewMatrix({4.0, -3.0, 2.0}, {0.0, 0.0, 0.0}, {0.0, 0.0, 1.0});
     const auto camera_changed = gobot::CaptureSceneRenderSnapshot(tree->GetRoot(), camera);
-    EXPECT_NE(camera_changed.fingerprints.camera, transform_changed.fingerprints.camera);
-    EXPECT_EQ(camera_changed.fingerprints.geometry, transform_changed.fingerprints.geometry);
+    EXPECT_NE(camera_changed.fingerprints.camera, visibility_changed.fingerprints.camera);
+    EXPECT_EQ(camera_changed.fingerprints.geometry, visibility_changed.fingerprints.geometry);
 
     gobot::Object::Delete(tree);
 }

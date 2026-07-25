@@ -12,6 +12,7 @@
 #include "gobot/scene/resources/box_shape_3d.hpp"
 #include "gobot/scene/resources/capsule_shape_3d.hpp"
 #include "gobot/scene/resources/cylinder_shape_3d.hpp"
+#include "gobot/scene/resources/gaussian_splat.hpp"
 #include "gobot/scene/resources/material.hpp"
 #include "gobot/scene/resources/mesh.hpp"
 #include "gobot/scene/resources/primitive_mesh.hpp"
@@ -113,6 +114,9 @@ Variant ResourceRefToPropertyVariant(const Ref<Resource>& resource, const Type& 
     if (expected_type == Type::get<TerrainGeneratorConfig>()) {
         return resource.DynamicPointerCast<TerrainGeneratorConfig>();
     }
+    if (expected_type == Type::get<GaussianSplatResource>()) {
+        return resource.DynamicPointerCast<GaussianSplatResource>();
+    }
 
     return {};
 }
@@ -201,6 +205,15 @@ void ResourceCreationRegistry::EnsureBuiltInResourceTypesRegistered() {
         "Physically based 3D material.",
         Type::get<PBRMaterial3D>(),
         []() -> Ref<Resource> { return CreateResourceRef<PBRMaterial3D>(); }
+    });
+
+    RegisterResourceType({
+        "GaussianSplatResource",
+        "GaussianSplatResource",
+        "Resource",
+        "Activated forward-inference 3D Gaussian data loaded from PLY.",
+        Type::get<GaussianSplatResource>(),
+        []() -> Ref<Resource> { return CreateResourceRef<GaussianSplatResource>(); }
     });
 
     RegisterResourceType({

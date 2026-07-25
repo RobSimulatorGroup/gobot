@@ -212,11 +212,16 @@ SceneRendererCapabilities GLRasterizerScene::GetCapabilities() const {
                                             self->luisa_api_->capture_render_product != nullptr &&
                                             self->luisa_api_->release_render_product != nullptr &&
                                             self->luisa_api_->readback_render_product != nullptr;
+        capabilities.gaussian_splatting = capabilities.gaussian_splatting &&
+                                          self->luisa_api_->render_gaussian_background != nullptr;
+        capabilities.gaussian_splat_cuda = capabilities.gaussian_splatting;
         if (self->luisa_create_attempted_ && self->luisa_renderer_ == nullptr) {
             capabilities.ray_tracing_available = false;
             capabilities.realtime = false;
             capabilities.progressive = false;
             capabilities.cuda_render_products = false;
+            capabilities.gaussian_splatting = false;
+            capabilities.gaussian_splat_cuda = false;
             capabilities.status = self->luisa_status_;
         }
         return capabilities;
@@ -373,6 +378,8 @@ void GLRasterizerScene::RenderScene(const RID& render_target,
     stats_.shadow_draw_calls = 0;
     stats_.shadow_ms = 0.0;
     stats_.post_process_ms = 0.0;
+    stats_.gaussian_splat_ms = 0.0;
+    stats_.gaussian_count = 0;
     if (view.mode == RenderViewMode::Viewport &&
         settings_.mode != SceneRendererMode::Raster && EnsureLuisaRenderer()) {
         RenderDepthPrepass(*rt, scene, view, draw_lists);
@@ -429,20 +436,37 @@ void GLRasterizerScene::RenderScene(const RID& render_target,
         glClearBufferuiv(GL_COLOR, static_cast<GLint>(RenderOutputType::SemanticId), zero_ids.data());
     }
 
+    if (!scene.gaussian_splats.empty() &&
+        RenderOutputMaskContains(rt->output_mask, RenderOutputType::Rgb)) {
+        const GLuint gaussian_target = apply_fxaa ? fxaa_pass_.color_texture : rt->color;
+        if (!RenderGaussianBackground(
+                    gaussian_target, rt->size.x(), rt->size.y(), scene, view)) {
+            stats_.status = "OpenGL raster without Gaussian background: " + luisa_status_;
+        }
+    }
+
     glUseProgram(default_program_);
     UploadFrameUniforms(scene, view);
     UploadShadowUniforms();
     for (const PreparedRenderItem& prepared : draw_lists.opaque) {
+        glColorMaski(0, prepared.item->visible_in_rgb, prepared.item->visible_in_rgb,
+                    prepared.item->visible_in_rgb, prepared.item->visible_in_rgb);
         stats_.draw_calls += DrawVisualItem(*prepared.item) ? 1u : 0u;
     }
     for (const PreparedRenderItem& prepared : draw_lists.alpha_masked) {
+        glColorMaski(0, prepared.item->visible_in_rgb, prepared.item->visible_in_rgb,
+                    prepared.item->visible_in_rgb, prepared.item->visible_in_rgb);
         stats_.draw_calls += DrawVisualItem(*prepared.item) ? 1u : 0u;
     }
+    glColorMaski(0, GL_TRUE, GL_TRUE, GL_TRUE, GL_TRUE);
     if (RenderOutputMaskContains(rt->output_mask, RenderOutputType::Rgb)) {
         ConfigureDrawBuffers(*rt, true);
         for (const PreparedRenderItem& prepared : draw_lists.transparent) {
+            glColorMaski(0, prepared.item->visible_in_rgb, prepared.item->visible_in_rgb,
+                        prepared.item->visible_in_rgb, prepared.item->visible_in_rgb);
             stats_.draw_calls += DrawVisualItem(*prepared.item) ? 1u : 0u;
         }
+        glColorMaski(0, GL_TRUE, GL_TRUE, GL_TRUE, GL_TRUE);
         ConfigureDrawBuffers(*rt, false);
     }
 
@@ -592,6 +616,37 @@ bool GLRasterizerScene::RenderWithLuisa(const RenderTarget& target,
     }
     luisa_status_ = error[0] != '\0' ? error.data() : "LuisaCompute renderer failed; using raster fallback.";
     stats_.status = luisa_status_;
+    if (result == LuisaRendererResult::FatalError) {
+        UnloadLuisaModule();
+        luisa_load_attempted_ = true;
+    }
+    return false;
+}
+
+bool GLRasterizerScene::RenderGaussianBackground(GLuint color_texture,
+                                                 int width,
+                                                 int height,
+                                                 const RenderSceneSnapshot& scene,
+                                                 const RenderViewSnapshot& view) {
+    if (settings_.mode != SceneRendererMode::Raster) {
+        luisa_status_ = "Gaussian Splatting is supported only in Raster viewport mode.";
+        return false;
+    }
+    if (!EnsureLuisaRenderer() || luisa_api_->render_gaussian_background == nullptr) {
+        if (luisa_status_.empty()) {
+            luisa_status_ = "Gaussian Splatting CUDA support is unavailable.";
+        }
+        return false;
+    }
+    glFinish();
+    const LuisaRendererTarget target{color_texture, 0u, width, height};
+    std::array<char, 1024> error{};
+    const LuisaRendererResult result = luisa_api_->render_gaussian_background(
+            luisa_renderer_, &target, &scene, &view, &stats_, error.data(), error.size());
+    if (result == LuisaRendererResult::Success) {
+        return true;
+    }
+    luisa_status_ = error[0] != '\0' ? error.data() : "Gaussian Splatting render failed.";
     if (result == LuisaRendererResult::FatalError) {
         UnloadLuisaModule();
         luisa_load_attempted_ = true;
@@ -942,7 +997,10 @@ bool GLRasterizerScene::DrawVisualItem(const VisualMeshRenderItem& item) {
     }
 
     const RenderMaterialSnapshot& material = item.material;
-    if (material.alpha_mode == AlphaMode::Blend) {
+    const AlphaMode alpha_mode = item.visible_in_rgb
+                                         ? material.alpha_mode
+                                         : AlphaMode::Opaque;
+    if (alpha_mode == AlphaMode::Blend) {
         glEnable(GL_BLEND);
         glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
         glDepthMask(GL_FALSE);
@@ -980,7 +1038,7 @@ bool GLRasterizerScene::DrawVisualItem(const VisualMeshRenderItem& item) {
                 material.emissive.red(),
                 material.emissive.green(),
                 material.emissive.blue());
-    glUniform1i(default_uniforms_.alpha_mode, static_cast<int>(material.alpha_mode));
+    glUniform1i(default_uniforms_.alpha_mode, static_cast<int>(alpha_mode));
     glUniform1f(default_uniforms_.alpha_cutoff, static_cast<float>(material.alpha_cutoff));
 
     const std::array<RenderTextureSnapshot, 5> textures = {

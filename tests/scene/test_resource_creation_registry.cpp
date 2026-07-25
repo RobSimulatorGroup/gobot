@@ -6,6 +6,7 @@
 #include <gobot/rendering/render_server.hpp>
 #include <gobot/scene/resources/box_shape_3d.hpp>
 #include <gobot/scene/resources/cylinder_shape_3d.hpp>
+#include <gobot/scene/resources/gaussian_splat.hpp>
 #include <gobot/scene/resources/material.hpp>
 #include <gobot/scene/resources/primitive_mesh.hpp>
 #include <gobot/scene/resources/resource_creation_registry.hpp>
@@ -49,6 +50,10 @@ TEST(TestResourceCreationRegistry, filters_resource_types_by_ref_property_type) 
             gobot::Type::get<gobot::Ref<gobot::TerrainGeneratorConfig>>());
     EXPECT_TRUE(ContainsResourceType(terrain_generator_types, "TerrainGeneratorConfig"));
     EXPECT_FALSE(ContainsResourceType(terrain_generator_types, "BoxMesh"));
+
+    const auto gaussian_types = gobot::ResourceCreationRegistry::GetCreatableTypesForProperty(
+            gobot::Type::get<gobot::Ref<gobot::GaussianSplatResource>>());
+    EXPECT_TRUE(ContainsResourceType(gaussian_types, "GaussianSplatResource"));
 }
 
 TEST(TestResourceCreationRegistry, created_variant_converts_to_requested_ref_base_type) {

@@ -3,6 +3,7 @@
 #include "gobot/scene/collision_shape_3d.hpp"
 #include "gobot/scene/camera_3d.hpp"
 #include "gobot/scene/environment_3d.hpp"
+#include "gobot/scene/gaussian_splat_3d.hpp"
 #include "gobot/scene/light_3d.hpp"
 #include "gobot/scene/mesh_instance_3d.hpp"
 #include "gobot/scene/node.hpp"
@@ -213,7 +214,9 @@ void AppendMeshItems(SceneRenderItems& items,
                      const Matrix4& model,
                      const Ref<Material>& instance_material,
                      const Ref<Material>& mesh_material,
-                     const Color& fallback_color) {
+                     const Color& fallback_color,
+                     bool visible_in_rgb = true,
+                     bool cast_shadow = true) {
     const std::shared_ptr<const MeshSurfaceList> surfaces = mesh->GetSurfaceData();
     if (surfaces == nullptr) {
         return;
@@ -239,6 +242,8 @@ void AppendMeshItems(SceneRenderItems& items,
         item.model = model;
         item.world_bounds = surface.bounds.Transformed(model);
         item.material = CaptureMaterial(active_material, fallback_color);
+        item.visible_in_rgb = visible_in_rgb;
+        item.cast_shadow = cast_shadow;
         items.visual_meshes.emplace_back(std::move(item));
     }
 }
@@ -366,7 +371,9 @@ void CollectNodeRenderItems(const Node* node,
                             node_transform.matrix(),
                             mesh_instance->GetMaterial(),
                             mesh_instance->GetMeshMaterial(),
-                            mesh_instance->GetSurfaceColor());
+                            mesh_instance->GetSurfaceColor(),
+                            mesh_instance->IsVisibleInRgb(),
+                            mesh_instance->IsCastShadow());
 #if GOB_LOG_ACTIVE_LEVEL <= GOB_LOG_LEVEL_TRACE
             if (!items.visual_meshes.empty()) {
                 const RenderMaterialSnapshot& render_material = items.visual_meshes.back().material;
@@ -395,6 +402,22 @@ void CollectNodeRenderItems(const Node* node,
                 }
             }
 #endif
+        }
+    }
+
+    const auto* gaussian = Object::PointerCastTo<GaussianSplat3D>(node);
+    if (gaussian != nullptr && visible && gaussian->IsEnabled()) {
+        const Ref<GaussianSplatResource>& resource = gaussian->GetSplat();
+        if (resource.IsValid() && resource->GetData() != nullptr) {
+            GaussianSplatRenderItem item;
+            item.object_id = gaussian->GetInstanceId();
+            item.resource_id = resource->GetInstanceId();
+            item.resource_revision = resource->GetRevision();
+            item.source_path = resource->GetSourcePath();
+            item.model = node_transform.matrix();
+            item.world_bounds = resource->GetBounds().Transformed(item.model);
+            item.data = resource->GetData();
+            items.gaussian_splats.emplace_back(std::move(item));
         }
     }
 
@@ -485,6 +508,11 @@ RenderSceneSnapshot CaptureRenderSceneSnapshot(const Node* scene_root) {
 
     RenderSceneSnapshot snapshot;
     snapshot.visual_meshes = std::move(items.visual_meshes);
+    snapshot.gaussian_splats = std::move(items.gaussian_splats);
+    if (snapshot.gaussian_splats.size() > 1u) {
+        snapshot.gaussian_splat_error =
+                "Only one enabled GaussianSplat3D is supported per RenderSceneSnapshot.";
+    }
     snapshot.instance_paths = std::move(items.instance_paths);
     snapshot.semantic_labels = std::move(items.semantic_labels);
     bool found_environment = false;
@@ -516,12 +544,25 @@ RenderSceneSnapshot CaptureRenderSceneSnapshot(const Node* scene_root) {
         snapshot.fingerprints.topology = HashCombine(
                 snapshot.fingerprints.topology, item.mesh_id.operator std::uint64_t());
         snapshot.fingerprints.topology = HashCombine(snapshot.fingerprints.topology, item.surface_index);
+        snapshot.fingerprints.topology = HashCombine(
+                snapshot.fingerprints.topology, item.visible_in_rgb ? 1ULL : 0ULL);
+        snapshot.fingerprints.topology = HashCombine(
+                snapshot.fingerprints.topology, item.cast_shadow ? 1ULL : 0ULL);
         snapshot.fingerprints.geometry = HashCombine(
                 snapshot.fingerprints.geometry, item.mesh_id.operator std::uint64_t());
         snapshot.fingerprints.geometry = HashCombine(snapshot.fingerprints.geometry, item.mesh_revision);
         snapshot.fingerprints.transforms = HashMatrix(snapshot.fingerprints.transforms, item.model);
         snapshot.fingerprints.materials = HashCombine(
                 snapshot.fingerprints.materials, HashMaterial(item.material));
+    }
+    for (const GaussianSplatRenderItem& item : snapshot.gaussian_splats) {
+        snapshot.fingerprints.topology = HashCombine(
+                snapshot.fingerprints.topology, item.object_id.operator std::uint64_t());
+        snapshot.fingerprints.topology = HashCombine(
+                snapshot.fingerprints.topology, item.resource_id.operator std::uint64_t());
+        snapshot.fingerprints.geometry = HashCombine(
+                snapshot.fingerprints.geometry, item.resource_revision);
+        snapshot.fingerprints.transforms = HashMatrix(snapshot.fingerprints.transforms, item.model);
     }
     snapshot.fingerprints.lighting = HashColor(seed, snapshot.environment.clear_color);
     snapshot.fingerprints.lighting = HashColor(snapshot.fingerprints.lighting, snapshot.environment.sky_color);
@@ -594,6 +635,8 @@ SceneRenderSnapshot CaptureSceneRenderSnapshot(const Node* scene_root,
 
     SceneRenderSnapshot snapshot;
     snapshot.visual_meshes = std::move(scene.visual_meshes);
+    snapshot.gaussian_splats = std::move(scene.gaussian_splats);
+    snapshot.gaussian_splat_error = std::move(scene.gaussian_splat_error);
     snapshot.camera = view.camera;
     snapshot.environment = std::move(scene.environment);
     snapshot.lights = std::move(scene.lights);

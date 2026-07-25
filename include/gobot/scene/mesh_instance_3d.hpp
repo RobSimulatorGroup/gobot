@@ -37,10 +37,20 @@ public:
 
     Ref<Material> GetActiveMaterial() const;
 
+    void SetVisibleInRgb(bool visible);
+
+    [[nodiscard]] bool IsVisibleInRgb() const;
+
+    void SetCastShadow(bool cast_shadow);
+
+    [[nodiscard]] bool IsCastShadow() const;
+
 private:
     Ref<Mesh> mesh_{nullptr};
     Ref<Material> material_{nullptr};
     Color surface_color_{0.66f, 0.78f, 0.95f, 1.0f};
+    bool visible_in_rgb_ = true;
+    bool cast_shadow_ = true;
 };
 
 }

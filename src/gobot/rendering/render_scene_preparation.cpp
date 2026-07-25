@@ -82,7 +82,7 @@ RenderDrawLists BuildRenderDrawLists(const RenderSceneSnapshot& scene,
     const RenderFrustum frustum = RenderFrustum::FromViewProjection(view.camera.view_projection);
     for (const VisualMeshRenderItem& item : scene.visual_meshes) {
         PreparedRenderItem prepared{&item, CameraDepth(item, view.camera.view)};
-        if (item.material.alpha_mode != AlphaMode::Blend) {
+        if (item.material.alpha_mode != AlphaMode::Blend && item.cast_shadow) {
             lists.shadow_casters.emplace_back(prepared);
         }
         if (frustum_culling && !frustum.Intersects(item.world_bounds)) {
@@ -91,7 +91,12 @@ RenderDrawLists BuildRenderDrawLists(const RenderSceneSnapshot& scene,
         }
 
         ++lists.visible_count;
-        switch (item.material.alpha_mode) {
+        // A proxy is an opaque geometry contract even if its source scene used
+        // a transparent visual material: it must still provide stable depth and AOVs.
+        const AlphaMode queue_alpha_mode = item.visible_in_rgb
+                                                   ? item.material.alpha_mode
+                                                   : AlphaMode::Opaque;
+        switch (queue_alpha_mode) {
             case AlphaMode::Opaque:
                 lists.opaque.emplace_back(prepared);
                 break;

@@ -18,6 +18,7 @@ option(GOB_BUILD_ASSIMP "build mesh import support through Assimp" ON)
 option(GOB_BUILD_MUJOCO "build MuJoCo CPU physics backend support" ON)
 option(GOB_BUILD_EGL "build EGL headless OpenGL rendering support" ON)
 option(GOB_BUILD_LUISA_RENDERER "build the optional LuisaCompute CUDA viewport renderer module" OFF)
+option(GOB_BUILD_GSPLAT_INFERENCE "build Gaussian Splatting inference support into the Luisa renderer" ON)
 option(GOB_FETCH_MUJOCO "download MuJoCo from the official GitHub repository when GOB_BUILD_MUJOCO is ON and no local SDK/package is found" ON)
 option(GOB_FORCE_FETCH_MUJOCO "use the pinned fetched MuJoCo even when an SDK/package is discoverable" OFF)
 option(GOB_ENABLE_TRACY "enable Tracy profiler instrumentation" OFF)
@@ -25,6 +26,8 @@ set(GOB_MUJOCO_ROOT "" CACHE PATH "MuJoCo SDK or install prefix. Supports either
 set(GOB_TRACY_ROOT "" CACHE PATH "Tracy install prefix or source checkout used when GOB_ENABLE_TRACY is ON")
 set(GOB_LUISA_COMPUTE_ROOT "${CMAKE_CURRENT_SOURCE_DIR}/build/luisa_compute/install" CACHE PATH
         "LuisaCompute install prefix used by the optional CUDA renderer module")
+set(GOB_GSPLAT_INFERENCE_ROOT "${CMAKE_CURRENT_SOURCE_DIR}/build/gsplat_inference/install" CACHE PATH
+        "Prebuilt gsplat CUDA inference library install prefix")
 set(GOB_MUJOCO_GIT_TAG "3.10.0" CACHE STRING "MuJoCo release tag used when GOB_FETCH_MUJOCO is ON")
 set(GOB_ASSIMP_IMPORTERS "COLLADA;OBJ;STL;PLY;GLTF" CACHE STRING "Assimp importers enabled for Gobot mesh import")
 
@@ -779,6 +782,7 @@ install(DIRECTORY "${CMAKE_CURRENT_SOURCE_DIR}/examples/"
         PATTERN "__pycache__" EXCLUDE
         PATTERN "*.pyc" EXCLUDE
         PATTERN "logs" EXCLUDE
+        PATTERN "gaussian_splatting/assets" EXCLUDE
         PATTERN "go1/policies" EXCLUDE)
 install(FILES
         "${CMAKE_CURRENT_SOURCE_DIR}/examples/go1/policies/go1_velocity.onnx"
@@ -830,12 +834,28 @@ if(GOB_BUILD_LUISA_RENDERER)
             nlohmann_json::nlohmann_json
             glad
             "$<TARGET_FILE:gobot>")
+    if(GOB_BUILD_GSPLAT_INFERENCE)
+        find_path(GOBOT_GSPLAT_INFERENCE_INCLUDE_DIR
+                NAMES gsplat_inference/renderer.h
+                PATHS "${GOB_GSPLAT_INFERENCE_ROOT}/include"
+                NO_DEFAULT_PATH REQUIRED)
+        find_library(GOBOT_GSPLAT_INFERENCE_LIBRARY
+                NAMES gobot_gsplat_inference
+                PATHS "${GOB_GSPLAT_INFERENCE_ROOT}/lib" "${GOB_GSPLAT_INFERENCE_ROOT}/lib64"
+                NO_DEFAULT_PATH REQUIRED)
+        target_include_directories(gobot_luisa_renderer PRIVATE
+                "${GOBOT_GSPLAT_INFERENCE_INCLUDE_DIR}")
+        target_compile_definitions(gobot_luisa_renderer PRIVATE GOBOT_HAS_GSPLAT_INFERENCE=1)
+        target_link_libraries(gobot_luisa_renderer PRIVATE
+                "${GOBOT_GSPLAT_INFERENCE_LIBRARY}"
+                CUDA::cudart)
+    endif()
     add_dependencies(gobot_luisa_renderer gobot)
     set_target_properties(gobot_luisa_renderer PROPERTIES
             OUTPUT_NAME "gobot_luisa_renderer"
             LIBRARY_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/python/gobot"
             BUILD_RPATH "$ORIGIN;$ORIGIN/luisa;${GOB_LUISA_COMPUTE_ROOT}/lib;${GOB_LUISA_COMPUTE_ROOT}/lib64;${GOB_LUISA_COMPUTE_ROOT}/bin"
-            INSTALL_RPATH "$ORIGIN;$ORIGIN/luisa")
+            INSTALL_RPATH "$ORIGIN;$ORIGIN/luisa;$ORIGIN/../nvidia/cuda_runtime/lib")
     add_dependencies(gobot_editor gobot_luisa_renderer)
 
     add_custom_command(TARGET gobot_luisa_renderer POST_BUILD
@@ -859,6 +879,12 @@ if(GOB_BUILD_LUISA_RENDERER)
             FILES_MATCHING PATTERN "*.so" PATTERN "*.so.*")
     install(PROGRAMS "${GOB_LUISA_COMPUTE_ROOT}/bin/luisa_nvrtc"
             DESTINATION "gobot/luisa" COMPONENT python)
+    if(GOB_BUILD_GSPLAT_INFERENCE)
+        install(FILES
+                "${GOB_GSPLAT_INFERENCE_ROOT}/share/gobot_gsplat_inference/LICENSE"
+                "${GOB_GSPLAT_INFERENCE_ROOT}/share/gobot_gsplat_inference/NOTICE"
+                DESTINATION "gobot/licenses/gsplat_inference" COMPONENT python)
+    endif()
 endif()
 
 if (GOB_BUILD_TESTS)

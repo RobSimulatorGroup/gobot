@@ -87,4 +87,18 @@ TEST(RenderScenePreparation, invalid_bounds_are_kept_visible) {
     EXPECT_EQ(lists.opaque.front().item->instance_id, 9u);
 }
 
+TEST(RenderScenePreparation, rgb_hidden_proxy_is_opaque_and_does_not_cast_shadow) {
+    RenderSceneSnapshot scene;
+    VisualMeshRenderItem proxy = Item(10, Vector3::Zero(), AlphaMode::Blend);
+    proxy.visible_in_rgb = false;
+    proxy.cast_shadow = false;
+    scene.visual_meshes.push_back(proxy);
+
+    const RenderDrawLists lists = BuildRenderDrawLists(scene, TestView(), false);
+    ASSERT_EQ(lists.opaque.size(), 1u);
+    EXPECT_EQ(lists.opaque.front().item->instance_id, 10u);
+    EXPECT_TRUE(lists.transparent.empty());
+    EXPECT_TRUE(lists.shadow_casters.empty());
+}
+
 } // namespace gobot

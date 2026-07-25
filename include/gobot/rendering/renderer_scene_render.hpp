@@ -64,6 +64,8 @@ struct SceneRendererCapabilities {
     bool direct_presentation_interop = false;
     bool cpu_render_products = true;
     bool cuda_render_products = false;
+    bool gaussian_splatting = false;
+    bool gaussian_splat_cuda = false;
     bool raster_frustum_culling = false;
     bool raster_directional_shadows = false;
     bool raster_fxaa = false;
@@ -81,6 +83,8 @@ struct SceneRendererStats {
     double presentation_ms = 0.0;
     double shadow_ms = 0.0;
     double post_process_ms = 0.0;
+    double gaussian_splat_ms = 0.0;
+    std::uint64_t gaussian_count = 0;
     std::uint64_t visible_items = 0;
     std::uint64_t culled_items = 0;
     std::uint64_t draw_calls = 0;

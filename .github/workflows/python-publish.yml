@@ -70,6 +70,8 @@ jobs:
             git -C 3rdparty/luisa_compute rev-parse HEAD
             git -C 3rdparty/luisa_compute submodule status --recursive
             sha256sum scripts/build_luisa_compute.sh
+            sha256sum scripts/build_gsplat_inference.sh
+            find 3rdparty/gsplat_inference -type f -print0 | sort -z | xargs -0 sha256sum
             nvcc --version
             g++-11 --version
           } > "$RUNNER_TEMP/luisa-cache-key"
@@ -79,7 +81,9 @@ jobs:
         id: luisa-cache
         uses: actions/cache/restore@v4
         with:
-          path: build/luisa_compute/install
+          path: |
+            build/luisa_compute/install
+            build/gsplat_inference/install
           key: luisa-cuda-12.8.1-${{ runner.os }}-${{ steps.luisa-cache-key.outputs.value }}
 
       - name: Build LuisaCompute CUDA runtime
@@ -87,17 +91,22 @@ jobs:
         run: |
           echo "Building LuisaCompute with $(nproc) parallel jobs"
           scripts/build_luisa_compute.sh
+          GOBOT_GSPLAT_CUDA_ARCHITECTURES="75-real;80-real;86-real;89-real;90-real;100-real;120-real;120-virtual" \
+            scripts/build_gsplat_inference.sh
 
       - name: Save LuisaCompute install
         if: steps.luisa-cache.outputs.cache-hit != 'true'
         uses: actions/cache/save@v4
         with:
-          path: build/luisa_compute/install
+          path: |
+            build/luisa_compute/install
+            build/gsplat_inference/install
           key: luisa-cuda-12.8.1-${{ runner.os }}-${{ steps.luisa-cache-key.outputs.value }}
 
       - name: Pack LuisaCompute and CUDA build SDK
         run: |
           test -x build/luisa_compute/install/bin/luisa_nvrtc
+          test -f build/gsplat_inference/install/lib/libgobot_gsplat_inference.a
           CUDA_ROOT="${CUDA_HOME:-/usr/local/cuda}"
           CUDA_TARGET_ROOT="${CUDA_ROOT}/targets/x86_64-linux"
           mkdir -p build/cuda-toolkit/lib64/stubs
@@ -119,7 +128,7 @@ jobs:
           test -f build/cuda-toolkit/include/cuda.h
           test -f build/cuda-toolkit/lib64/stubs/libcuda.so
           tar -C build -czf "$RUNNER_TEMP/luisa-cuda-build-inputs.tar.gz" \
-            luisa_compute/install cuda-toolkit
+            luisa_compute/install gsplat_inference/install cuda-toolkit
 
       - name: Upload LuisaCompute and CUDA build SDK
         uses: actions/upload-artifact@v4
@@ -205,6 +214,7 @@ jobs:
           tar -C build -xzf \
             "$RUNNER_TEMP/luisa-cuda-build-inputs/luisa-cuda-build-inputs.tar.gz"
           test -x build/luisa_compute/install/bin/luisa_nvrtc
+          test -f build/gsplat_inference/install/lib/libgobot_gsplat_inference.a
           test -f build/cuda-toolkit/include/cuda.h
           test -f build/cuda-toolkit/lib64/stubs/libcuda.so
 
@@ -223,13 +233,14 @@ jobs:
 
       - name: Build wheel
         run: |
-          CMAKE_ARGS="-DCUDAToolkit_ROOT=$PWD/build/cuda-toolkit" \
+          CMAKE_ARGS="-DCUDAToolkit_ROOT=$PWD/build/cuda-toolkit -DGOB_GSPLAT_INFERENCE_ROOT=$PWD/build/gsplat_inference/install" \
             python -m build --wheel --outdir wheelhouse-unrepaired
 
       - name: Repair wheel
         run: |
           python -m auditwheel repair \
             --exclude libcuda.so.1 \
+            --exclude libcudart.so.12 \
             --exclude libEGL.so.1 \
             --exclude libGLdispatch.so.0 \
             --exclude libGLX.so.0 \

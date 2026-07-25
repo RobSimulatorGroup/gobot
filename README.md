@@ -174,3 +174,4 @@ uv pip install --force-reinstall dist/gobot-*.whl
 - Packaged examples: `gobot/examples/` in wheels and `examples/` in source.
 - MuJoCo RL roadmap: `doc/mujoco_rl_plan.md`.
 - Luisa CUDA renderer architecture and build guide: `doc/luisa_rendering_plan.md`.
+- Gaussian Splatting environment assets and inference runtime: `doc/gaussian_splatting.md`.

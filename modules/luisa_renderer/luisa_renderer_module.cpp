@@ -9,6 +9,10 @@
 #include <cuda.h>
 #include <cudaGL.h>
 
+#if defined(GOBOT_HAS_GSPLAT_INFERENCE)
+#include <gsplat_inference/renderer.h>
+#endif
+
 #include <luisa/luisa-compute.h>
 #include <luisa/dsl/sugar.h>
 
@@ -38,6 +42,9 @@ constexpr std::uint32_t kNormalOutput = 1u << 2u;
 constexpr std::uint32_t kInstanceOutput = 1u << 3u;
 constexpr std::uint32_t kSemanticOutput = 1u << 4u;
 constexpr std::uint32_t kAllProductOutputs = (1u << 5u) - 1u;
+constexpr std::uint32_t kRgbVisibility = 1u << 0u;
+constexpr std::uint32_t kShadowVisibility = 1u << 1u;
+constexpr std::uint32_t kAovVisibility = 1u << 2u;
 
 struct GpuVertex {
     float3 position;
@@ -88,6 +95,10 @@ gobot::SceneRendererCapabilities MakeCapabilities() {
     capabilities.denoise = true;
     capabilities.direct_presentation_interop = true;
     capabilities.cuda_render_products = true;
+#if defined(GOBOT_HAS_GSPLAT_INFERENCE)
+    capabilities.gaussian_splatting = true;
+    capabilities.gaussian_splat_cuda = true;
+#endif
     capabilities.backend_name = "LuisaCompute CUDA";
     capabilities.status =
             "LuisaCompute CUDA/OptiX (CUDA " GOBOT_LUISA_CUDA_TOOLKIT_VERSION
@@ -315,6 +326,17 @@ float4x4 ToLuisaMatrix(const gobot::Matrix4& matrix) {
             make_float4(matrix(0, 3), matrix(1, 3), matrix(2, 3), matrix(3, 3)));
 }
 
+std::array<float, 16> ToFloatMatrix(const gobot::Matrix4& matrix) {
+    std::array<float, 16> result{};
+    for (int column = 0; column < 4; ++column) {
+        for (int row = 0; row < 4; ++row) {
+            result[static_cast<std::size_t>(column * 4 + row)] =
+                    static_cast<float>(matrix(row, column));
+        }
+    }
+    return result;
+}
+
 float3 ToFloat3(const gobot::Vector3& value) {
     return make_float3(static_cast<float>(value.x()),
                        static_cast<float>(value.y()),
@@ -466,6 +488,7 @@ struct CudaRenderProductFrame {
     Buffer<float4> world_normal;
     Buffer<uint> instance_id;
     Buffer<uint> semantic_id;
+    Buffer<uint> geometry_coverage;
 };
 
 class LuisaRenderer {
@@ -478,6 +501,12 @@ public:
           binary_io_(std::make_unique<GobotBinaryIO>(runtime_directory_)),
           device_(std::make_unique<Device>(CreateCudaDevice(*context_, binary_io_.get()))),
           stream_(std::make_unique<Stream>(device_->create_stream(StreamTag::COMPUTE))) {
+#if defined(GOBOT_HAS_GSPLAT_INFERENCE)
+        gaussian_renderer_ = gsplat_inference::Create();
+        if (gaussian_renderer_ == nullptr) {
+            throw std::runtime_error("Failed to create the gsplat inference renderer.");
+        }
+#endif
         CompileShaders();
         dummy_uint_ = device_->create_buffer<uint>(1);
         dummy_float_ = device_->create_buffer<float>(1);
@@ -489,6 +518,17 @@ public:
         if (stream_ != nullptr) {
             *stream_ << synchronize();
         }
+#if defined(GOBOT_HAS_GSPLAT_INFERENCE)
+        if (gaussian_renderer_ != nullptr && device_ != nullptr) {
+            CUcontext context = reinterpret_cast<CUcontext>(device_->native_handle());
+            if (cuCtxPushCurrent(context) == CUDA_SUCCESS) {
+                gsplat_inference::Destroy(gaussian_renderer_);
+                CUcontext popped = nullptr;
+                cuCtxPopCurrent(&popped);
+            }
+            gaussian_renderer_ = nullptr;
+        }
+#endif
     }
 
     gobot::SceneRendererCapabilities Capabilities() const {
@@ -616,6 +656,9 @@ public:
             stats->status = active_mode == gobot::SceneRendererMode::RealtimeRayTracing
                                     ? "LuisaCompute realtime"
                                     : "LuisaCompute progressive";
+            if (!snapshot.gaussian_splats.empty()) {
+                stats->status += " (Gaussian background requires Raster mode)";
+            }
         }
         return gobot::LuisaRendererResult::Success;
     }
@@ -625,6 +668,13 @@ public:
             const gobot::RenderViewSnapshot& view,
             const gobot::LuisaRenderProductRequest& request,
             gobot::LuisaRenderProductFrame* result,
+            std::string* error);
+
+    gobot::LuisaRendererResult RenderGaussianBackground(
+            const gobot::LuisaRendererTarget& target,
+            const gobot::RenderSceneSnapshot& snapshot,
+            const gobot::RenderViewSnapshot& view,
+            gobot::SceneRendererStats* stats,
             std::string* error);
 
     bool ReadbackRenderProduct(CudaRenderProductFrame* frame,
@@ -667,6 +717,7 @@ private:
                                    Buffer<float4>,
                                    Buffer<uint>,
                                    Buffer<uint>,
+                                   Buffer<uint>,
                                    Accel,
                                    BindlessArray,
                                    BindlessArray,
@@ -674,6 +725,8 @@ private:
                                    Buffer<GpuLight>,
                                    Buffer<uint>,
                                    Buffer<uint>,
+                                   Buffer<uint>,
+                                   uint,
                                    uint,
                                    uint,
                                    uint,
@@ -707,6 +760,7 @@ private:
     Buffer<GpuLight> lights_;
     Buffer<uint> instance_ids_;
     Buffer<uint> semantic_ids_;
+    Buffer<uint> rgb_modes_;
     Buffer<uint> dummy_uint_;
     Buffer<float> dummy_float_;
     Buffer<float4> dummy_float4_;
@@ -734,6 +788,21 @@ private:
 
     CUgraphicsResource interop_resource_ = nullptr;
     std::uint32_t interop_texture_ = 0;
+
+#if defined(GOBOT_HAS_GSPLAT_INFERENCE)
+    gsplat_inference::Renderer* gaussian_renderer_ = nullptr;
+    std::uint64_t gaussian_resource_id_ = 0;
+    std::uint64_t gaussian_resource_revision_ = 0;
+#endif
+
+    bool RenderGaussianToBuffer(const gobot::RenderSceneSnapshot& snapshot,
+                                const gobot::RenderViewSnapshot& view,
+                                int width,
+                                int height,
+                                void* output,
+                                const void* geometry_coverage,
+                                bool top_left_origin,
+                                std::string* error);
 
     void CompileShaders() {
         Callable tea = [](UInt value0, UInt value1) noexcept {
@@ -837,7 +906,8 @@ private:
 
             $for (depth, 12u) {
                 $if (depth >= max_bounces) { $break; };
-                Var<TriangleHit> hit = accel.intersect(ray, {});
+                Var<TriangleHit> hit = accel.intersect(
+                        ray, {.visibility_mask = kRgbVisibility});
                 $if (hit->miss()) {
                     Float3 direction = ray->direction();
                     Float sky_mix = clamp(direction.z * 0.5f + 0.5f, 0.0f, 1.0f);
@@ -933,7 +1003,8 @@ private:
                                                        light_direction,
                                                        0.0f,
                                                        max_distance - 1.0e-3f);
-                        Bool occluded = accel.intersect_any(shadow_ray, {});
+                        Bool occluded = accel.intersect_any(
+                                shadow_ray, {.visibility_mask = kShadowVisibility});
                         $if (!occluded) {
                             Float3 light_radiance = light.color_intensity.xyz() *
                                                    light.color_intensity.w * attenuation;
@@ -1026,6 +1097,7 @@ private:
                                       BufferFloat4 world_normal,
                                       BufferUInt output_instance_id,
                                       BufferUInt output_semantic_id,
+                                      BufferUInt geometry_coverage,
                                       AccelVar accel,
                                       BindlessVar geometry,
                                       BindlessVar textures,
@@ -1033,9 +1105,11 @@ private:
                                       BufferVar<GpuLight> lights,
                                       BufferUInt instance_ids,
                                       BufferUInt semantic_ids,
+                                      BufferUInt rgb_modes,
                                       UInt light_count,
                                       UInt environment_texture,
                                       UInt output_mask,
+                                      UInt gaussian_active,
                                       Float3 sky_color,
                                       Float3 ground_color,
                                       Float ambient_intensity,
@@ -1055,13 +1129,15 @@ private:
             Float3 near_point = near_h.xyz() / near_h.w;
             Float3 far_point = far_h.xyz() / far_h.w;
             Var<Ray> ray = make_ray(camera_position, normalize(far_point - near_point));
-            Var<TriangleHit> hit = accel.intersect(ray, {});
+            Var<TriangleHit> hit = accel.intersect(
+                    ray, {.visibility_mask = kAovVisibility});
 
             Float3 radiance = def(make_float3(0.0f));
             Float depth_value = def(std::numeric_limits<float>::infinity());
             Float3 normal_value = def(make_float3(0.0f));
             UInt instance_value = def(0u);
             UInt semantic_value = def(0u);
+            UInt coverage_value = def(0u);
 
             $if (hit->miss()) {
                 Float3 direction = ray->direction();
@@ -1159,7 +1235,8 @@ private:
                                                        light_direction,
                                                        0.0f,
                                                        max_distance - 1.0e-3f);
-                        Bool occluded = accel.intersect_any(shadow_ray, {});
+                        Bool occluded = accel.intersect_any(
+                                shadow_ray, {.visibility_mask = kShadowVisibility});
                         $if (!occluded) {
                             Float3 light_radiance = light.color_intensity.xyz() *
                                                    light.color_intensity.w * attenuation;
@@ -1179,9 +1256,13 @@ private:
                 depth_value = max(-(view_matrix * make_float4(position, 1.0f)).z, 0.0f);
                 instance_value = instance_ids.read(hit.inst);
                 semantic_value = semantic_ids.read(hit.inst);
+                coverage_value = rgb_modes.read(hit.inst);
             };
 
             UInt linear_index = pixel.y * resolution_u.x + pixel.x;
+            $if (gaussian_active != 0u) {
+                geometry_coverage.write(linear_index, coverage_value);
+            };
             $if ((output_mask & kRgbOutput) != 0u) {
                 Float3 color = max(radiance * exposure, make_float3(0.0f));
                 color = clamp((color * (2.51f * color + 0.03f)) /
@@ -1342,9 +1423,13 @@ private:
             active_geometry_.push_back(geometry);
             geometry_heap_.emplace_on_update(i * 2, geometry->vertices);
             geometry_heap_.emplace_on_update(i * 2 + 1, geometry->triangles);
+            const auto visibility = static_cast<std::uint8_t>(
+                    (snapshot.visual_meshes[i].visible_in_rgb ? kRgbVisibility : 0u) |
+                    (snapshot.visual_meshes[i].cast_shadow ? kShadowVisibility : 0u) |
+                    kAovVisibility);
             accel_.emplace_back(geometry->mesh,
                                 ToLuisaMatrix(snapshot.visual_meshes[i].model),
-                                0xffu,
+                                visibility,
                                 snapshot.visual_meshes[i].material.alpha_mode == gobot::AlphaMode::Opaque,
                                 static_cast<uint>(i));
         }
@@ -1367,18 +1452,22 @@ private:
         std::vector<GpuMaterial> host_materials;
         std::vector<uint> host_instance_ids;
         std::vector<uint> host_semantic_ids;
+        std::vector<uint> host_rgb_modes;
         host_materials.reserve(std::max<std::size_t>(1, snapshot.visual_meshes.size()));
         host_instance_ids.reserve(std::max<std::size_t>(1, snapshot.visual_meshes.size()));
         host_semantic_ids.reserve(std::max<std::size_t>(1, snapshot.visual_meshes.size()));
+        host_rgb_modes.reserve(std::max<std::size_t>(1, snapshot.visual_meshes.size()));
         for (const gobot::VisualMeshRenderItem& item : snapshot.visual_meshes) {
             host_materials.emplace_back(MakeMaterial(item.material));
             host_instance_ids.emplace_back(item.instance_id);
             host_semantic_ids.emplace_back(item.semantic_id);
+            host_rgb_modes.emplace_back(item.visible_in_rgb ? 1u : 2u);
         }
         if (host_materials.empty()) {
             host_materials.emplace_back(MakeMaterial({}));
             host_instance_ids.emplace_back(0u);
             host_semantic_ids.emplace_back(0u);
+            host_rgb_modes.emplace_back(1u);
         }
         environment_texture_slot_ = BindTexture(snapshot.environment.environment_texture);
 
@@ -1404,10 +1493,12 @@ private:
         lights_ = device_->create_buffer<GpuLight>(host_lights.size());
         instance_ids_ = device_->create_buffer<uint>(host_instance_ids.size());
         semantic_ids_ = device_->create_buffer<uint>(host_semantic_ids.size());
+        rgb_modes_ = device_->create_buffer<uint>(host_rgb_modes.size());
         *stream_ << materials_.copy_from(luisa::span{host_materials})
                  << lights_.copy_from(luisa::span{host_lights})
                  << instance_ids_.copy_from(luisa::span{host_instance_ids})
                  << semantic_ids_.copy_from(luisa::span{host_semantic_ids});
+        *stream_ << rgb_modes_.copy_from(luisa::span{host_rgb_modes});
         if (next_texture_slot_ != 0u) {
             *stream_ << texture_heap_.update();
         }
@@ -1544,6 +1635,163 @@ private:
     }
 };
 
+bool LuisaRenderer::RenderGaussianToBuffer(const gobot::RenderSceneSnapshot& snapshot,
+                                           const gobot::RenderViewSnapshot& view,
+                                           int width,
+                                           int height,
+                                           void* output,
+                                           const void* geometry_coverage,
+                                           bool top_left_origin,
+                                           std::string* error) {
+    if (!snapshot.gaussian_splat_error.empty()) {
+        *error = snapshot.gaussian_splat_error;
+        return false;
+    }
+    if (snapshot.gaussian_splats.size() != 1u || output == nullptr) {
+        *error = "Gaussian rendering requires exactly one valid GaussianSplat3D and an output buffer.";
+        return false;
+    }
+#if !defined(GOBOT_HAS_GSPLAT_INFERENCE)
+    (void)view;
+    (void)width;
+    (void)height;
+    (void)geometry_coverage;
+    (void)top_left_origin;
+    *error = "This Luisa renderer was built without gsplat CUDA inference support.";
+    return false;
+#else
+    const gobot::GaussianSplatRenderItem& item = snapshot.gaussian_splats.front();
+    if (!item.IsValid() || gaussian_renderer_ == nullptr) {
+        *error = "Render snapshot contains invalid Gaussian Splatting data.";
+        return false;
+    }
+    const gobot::Matrix3 linear = item.model.template block<3, 3>(0, 0);
+    const gobot::Vector3 scales{
+            linear.col(0).norm(), linear.col(1).norm(), linear.col(2).norm()};
+    const float mean_scale = static_cast<float>(scales.mean());
+    if (!(mean_scale > 0.0f) ||
+        (scales.array() - scales.mean()).abs().maxCoeff() > 1e-5 * scales.mean()) {
+        *error = "GaussianSplat3D requires a positive uniform world scale.";
+        return false;
+    }
+    const gobot::Matrix3 rotation = linear / scales.mean();
+    if (!(rotation.transpose() * rotation).isApprox(gobot::Matrix3::Identity(), 1e-5) ||
+        std::abs(rotation.determinant() - 1.0) > 1e-5) {
+        *error = "GaussianSplat3D world transform must not contain shear or reflection.";
+        return false;
+    }
+
+    CUcontext context = reinterpret_cast<CUcontext>(device_->native_handle());
+    CUstream stream = reinterpret_cast<CUstream>(stream_->native_handle());
+    CUresult context_result = cuCtxPushCurrent(context);
+    if (context_result != CUDA_SUCCESS) {
+        *error = CudaError(context_result, "cuCtxPushCurrent for gsplat");
+        return false;
+    }
+
+    bool success = true;
+    std::array<char, 1024> gsplat_error{};
+    const std::uint64_t resource_id = item.resource_id.operator std::uint64_t();
+    if (gaussian_resource_id_ != resource_id ||
+        gaussian_resource_revision_ != item.resource_revision) {
+        const gobot::GaussianSplatData& data = *item.data;
+        const gsplat_inference::SceneData scene_data{
+                data.means.data(),
+                data.rotations_wxyz.data(),
+                data.scales.data(),
+                data.opacities.data(),
+                data.sh_coefficients.data(),
+                data.count,
+                data.sh_degree};
+        success = gsplat_inference::Upload(gaussian_renderer_,
+                                           scene_data,
+                                           reinterpret_cast<void*>(stream),
+                                           gsplat_error.data(),
+                                           gsplat_error.size());
+        if (success) {
+            gaussian_resource_id_ = resource_id;
+            gaussian_resource_revision_ = item.resource_revision;
+        }
+    }
+
+    if (success) {
+        const std::array<float, 16> view_matrix = ToFloatMatrix(view.camera.view);
+        const std::array<float, 16> projection_matrix = ToFloatMatrix(view.camera.projection);
+        const std::array<float, 16> model_matrix = ToFloatMatrix(item.model);
+        gsplat_inference::CameraData camera;
+        camera.view_column_major = view_matrix.data();
+        camera.projection_column_major = projection_matrix.data();
+        camera.model_column_major = model_matrix.data();
+        camera.camera_position[0] = static_cast<float>(view.camera.world_position.x());
+        camera.camera_position[1] = static_cast<float>(view.camera.world_position.y());
+        camera.camera_position[2] = static_cast<float>(view.camera.world_position.z());
+        camera.clear_color[0] = snapshot.environment.clear_color.red();
+        camera.clear_color[1] = snapshot.environment.clear_color.green();
+        camera.clear_color[2] = snapshot.environment.clear_color.blue();
+        camera.near_plane = static_cast<float>(view.camera.z_near);
+        camera.far_plane = static_cast<float>(view.camera.z_far);
+        camera.width = width;
+        camera.height = height;
+        camera.top_left_origin = top_left_origin;
+        const gsplat_inference::RenderTarget target{
+                static_cast<std::uint32_t*>(output),
+                static_cast<const std::uint32_t*>(geometry_coverage)};
+        success = gsplat_inference::Render(gaussian_renderer_,
+                                           camera,
+                                           target,
+                                           reinterpret_cast<void*>(stream),
+                                           gsplat_error.data(),
+                                           gsplat_error.size());
+    }
+    if (success) {
+        context_result = cuStreamSynchronize(stream);
+        success = context_result == CUDA_SUCCESS;
+        if (!success) {
+            *error = CudaError(context_result, "cuStreamSynchronize for gsplat");
+        }
+    }
+    CUcontext popped = nullptr;
+    cuCtxPopCurrent(&popped);
+    if (!success && error->empty()) {
+        *error = gsplat_error[0] != '\0' ? gsplat_error.data() : "gsplat inference failed.";
+    }
+    return success;
+#endif
+}
+
+gobot::LuisaRendererResult LuisaRenderer::RenderGaussianBackground(
+        const gobot::LuisaRendererTarget& target,
+        const gobot::RenderSceneSnapshot& snapshot,
+        const gobot::RenderViewSnapshot& view,
+        gobot::SceneRendererStats* stats,
+        std::string* error) {
+    if (snapshot.gaussian_splats.empty()) return gobot::LuisaRendererResult::Success;
+    if (target.gl_color_texture == 0u || !EnsureFrameResources(target.width, target.height, error)) {
+        if (error->empty()) *error = "Gaussian raster presentation requires a valid OpenGL color texture.";
+        return gobot::LuisaRendererResult::RecoverableError;
+    }
+    const auto start = std::chrono::steady_clock::now();
+    if (!RenderGaussianToBuffer(snapshot,
+                                view,
+                                target.width,
+                                target.height,
+                                presentation_.native_handle(),
+                                nullptr,
+                                false,
+                                error)) {
+        return gobot::LuisaRendererResult::RecoverableError;
+    }
+    if (!Present(target, error)) {
+        return gobot::LuisaRendererResult::RecoverableError;
+    }
+    if (stats != nullptr) {
+        stats->gaussian_splat_ms = std::chrono::duration<double, std::milli>(
+                std::chrono::steady_clock::now() - start).count();
+        stats->gaussian_count = snapshot.gaussian_splats.front().data->count;
+    }
+    return gobot::LuisaRendererResult::Success;
+}
+
 gobot::LuisaRendererResult LuisaRenderer::CaptureRenderProduct(
         const gobot::RenderSceneSnapshot& snapshot,
         const gobot::RenderViewSnapshot& view,
@@ -1579,6 +1827,11 @@ gobot::LuisaRendererResult LuisaRenderer::CaptureRenderProduct(
     if ((request.output_mask & kSemanticOutput) != 0u) {
         frame->semantic_id = device_->create_buffer<uint>(pixel_count);
     }
+    const bool gaussian_rgb_requested = !snapshot.gaussian_splats.empty() &&
+                                        (request.output_mask & kRgbOutput) != 0u;
+    if (gaussian_rgb_requested) {
+        frame->geometry_coverage = device_->create_buffer<uint>(pixel_count);
+    }
 
     const gobot::Matrix4 inverse_view_projection = view.camera.view_projection.inverse();
     const uint2 resolution = make_uint2(static_cast<uint>(request.width),
@@ -1588,6 +1841,7 @@ gobot::LuisaRendererResult LuisaRenderer::CaptureRenderProduct(
                                 frame->world_normal ? frame->world_normal : dummy_float4_,
                                 frame->instance_id ? frame->instance_id : dummy_uint_,
                                 frame->semantic_id ? frame->semantic_id : dummy_uint_,
+                                frame->geometry_coverage ? frame->geometry_coverage : dummy_uint_,
                                 accel_,
                                 geometry_heap_,
                                 texture_heap_,
@@ -1595,9 +1849,11 @@ gobot::LuisaRendererResult LuisaRenderer::CaptureRenderProduct(
                                 lights_,
                                 instance_ids_,
                                 semantic_ids_,
+                                rgb_modes_,
                                 static_cast<uint>(active_light_count_),
                                 environment_texture_slot_,
                                 request.output_mask,
+                                gaussian_rgb_requested ? 1u : 0u,
                                 make_float3(snapshot.environment.sky_color.red(),
                                             snapshot.environment.sky_color.green(),
                                             snapshot.environment.sky_color.blue()),
@@ -1612,6 +1868,19 @@ gobot::LuisaRendererResult LuisaRenderer::CaptureRenderProduct(
                                 ToFloat3(view.camera.world_position))
                         .dispatch(resolution)
              << synchronize();
+
+    if (gaussian_rgb_requested) {
+        if (!RenderGaussianToBuffer(snapshot,
+                                    view,
+                                    request.width,
+                                    request.height,
+                                    frame->rgb.native_handle(),
+                                    frame->geometry_coverage.native_handle(),
+                                    true,
+                                    error)) {
+            return gobot::LuisaRendererResult::RecoverableError;
+        }
+    }
 
     result->frame = frame.get();
     result->device_id = 0;
@@ -1759,6 +2028,33 @@ gobot::LuisaRendererResult Render(void* renderer,
     }
 }
 
+gobot::LuisaRendererResult RenderGaussianBackground(
+        void* renderer,
+        const gobot::LuisaRendererTarget* target,
+        const gobot::RenderSceneSnapshot* snapshot,
+        const gobot::RenderViewSnapshot* view,
+        gobot::SceneRendererStats* stats,
+        char* error,
+        std::size_t error_size) {
+    if (renderer == nullptr || target == nullptr || snapshot == nullptr || view == nullptr) {
+        SetError(error, error_size, "Invalid Gaussian background render call arguments.");
+        return gobot::LuisaRendererResult::FatalError;
+    }
+    try {
+        std::string message;
+        const gobot::LuisaRendererResult result =
+                static_cast<LuisaRenderer*>(renderer)->RenderGaussianBackground(
+                        *target, *snapshot, *view, stats, &message);
+        if (result != gobot::LuisaRendererResult::Success) {
+            SetError(error, error_size, message);
+        }
+        return result;
+    } catch (const std::exception& exception) {
+        SetError(error, error_size, exception.what());
+        return gobot::LuisaRendererResult::FatalError;
+    }
+}
+
 void ResetAccumulation(void* renderer) {
     if (renderer != nullptr) {
         static_cast<LuisaRenderer*>(renderer)->ResetAccumulation();
@@ -1832,6 +2128,7 @@ const gobot::LuisaRendererModuleApi kApi{
         &DestroyRenderer,
         &GetCapabilities,
         &Render,
+        &RenderGaussianBackground,
         &ResetAccumulation,
         &CaptureRenderProduct,
         &ReleaseRenderProduct,

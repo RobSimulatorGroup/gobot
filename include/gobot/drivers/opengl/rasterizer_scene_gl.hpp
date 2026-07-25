@@ -202,6 +202,11 @@ private:
     bool RenderWithLuisa(const RenderTarget& target,
                          const RenderSceneSnapshot& scene,
                          const RenderViewSnapshot& view);
+    bool RenderGaussianBackground(GLuint color_texture,
+                                  int width,
+                                  int height,
+                                  const RenderSceneSnapshot& scene,
+                                  const RenderViewSnapshot& view);
 
     void RenderDepthPrepass(const RenderTarget& target,
                             const RenderSceneSnapshot& scene,

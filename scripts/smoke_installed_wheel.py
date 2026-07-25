@@ -29,7 +29,7 @@ ELF_PAYLOAD = (
     "luisa/libluisa-backend-cuda.so",
     "luisa/luisa_nvrtc",
 )
-ALLOWED_MISSING_LIBRARIES = {"libcuda.so.1"}
+ALLOWED_MISSING_LIBRARIES = {"libcuda.so.1", "libcudart.so.12"}
 
 
 def missing_libraries(path: Path) -> set[str]:

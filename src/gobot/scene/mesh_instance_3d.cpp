@@ -67,6 +67,22 @@ Ref<Material> MeshInstance3D::GetActiveMaterial() const {
     return GetMeshMaterial();
 }
 
+void MeshInstance3D::SetVisibleInRgb(bool visible) {
+    visible_in_rgb_ = visible;
+}
+
+bool MeshInstance3D::IsVisibleInRgb() const {
+    return visible_in_rgb_;
+}
+
+void MeshInstance3D::SetCastShadow(bool cast_shadow) {
+    cast_shadow_ = cast_shadow;
+}
+
+bool MeshInstance3D::IsCastShadow() const {
+    return cast_shadow_;
+}
+
 }
 
 GOBOT_REGISTRATION {
@@ -85,6 +101,8 @@ GOBOT_REGISTRATION {
                     AddMetaPropertyInfo(
                             PropertyInfo()
                                 .SetUsageFlags(PropertyUsageFlags::Storage)))
-            .property("surface_color", &MeshInstance3D::GetSurfaceColor, &MeshInstance3D::SetSurfaceColor);
+            .property("surface_color", &MeshInstance3D::GetSurfaceColor, &MeshInstance3D::SetSurfaceColor)
+            .property("visible_in_rgb", &MeshInstance3D::IsVisibleInRgb, &MeshInstance3D::SetVisibleInRgb)
+            .property("cast_shadow", &MeshInstance3D::IsCastShadow, &MeshInstance3D::SetCastShadow);
 
 };

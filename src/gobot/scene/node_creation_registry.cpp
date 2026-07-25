@@ -12,6 +12,7 @@
 #include "gobot/scene/collision_shape_3d.hpp"
 #include "gobot/scene/camera_3d.hpp"
 #include "gobot/scene/environment_3d.hpp"
+#include "gobot/scene/gaussian_splat_3d.hpp"
 #include "gobot/scene/joint_3d.hpp"
 #include "gobot/scene/light_3d.hpp"
 #include "gobot/scene/link_3d.hpp"
@@ -127,6 +128,14 @@ void NodeCreationRegistry::EnsureBuiltInNodeTypesRegistered() {
         "Node3D",
         "3D node that renders a mesh resource.",
         []() -> Node* { return CreateNodeInstance<MeshInstance3D>(); }
+    });
+
+    RegisterNodeType({
+        "GaussianSplat3D",
+        "Gaussian Splat Environment",
+        "Node3D",
+        "Inference-only 3D Gaussian environment background.",
+        []() -> Node* { return CreateNodeInstance<GaussianSplat3D>(); }
     });
 
     RegisterNodeType({

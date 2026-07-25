@@ -25,11 +25,16 @@ REQUIRED_PAYLOAD = {
     "gobot/luisa/libluisa-runtime.so",
     "gobot/luisa/libluisa-xir.so",
     "gobot/luisa/luisa_nvrtc",
+    "gobot/licenses/gsplat_inference/LICENSE",
+    "gobot/licenses/gsplat_inference/NOTICE",
     "gobot/rl/__init__.py",
     "gobot/rl/locomotion/__init__.py",
     "gobot/rl/providers/__init__.py",
     "gobot/examples/cartpole/policies/cartpole.onnx",
     "gobot/examples/cartpole/policies/cartpole.pt",
+    "gobot/examples/gaussian_splatting/download_sample.py",
+    "gobot/examples/gaussian_splatting/project.gobot",
+    "gobot/examples/gaussian_splatting/tandt_train.gsplat",
     "gobot/examples/go1/policies/go1_velocity.onnx",
     "gobot_cli/editor.py",
 }
@@ -40,6 +45,7 @@ REQUIRED_DEPENDENCIES = {
     "mujoco",
     "mujoco-warp",
     "numpy",
+    "nvidia-cuda-runtime-cu12",
     "onnx",
     "onnxruntime",
     "rsl-rl-lib",
@@ -94,6 +100,17 @@ def verify_wheel(path: Path) -> list[str]:
         packaged_cache = sorted(name for name in names if "/luisa/.cache/" in name)
         if packaged_cache:
             errors.append("contains runtime shader cache files")
+        packaged_gaussian_samples = sorted(
+            name
+            for name in names
+            if name.startswith("gobot/examples/gaussian_splatting/assets/")
+            and not name.endswith("/")
+        )
+        if packaged_gaussian_samples:
+            errors.append(
+                "contains downloaded Gaussian sample assets: "
+                + ", ".join(packaged_gaussian_samples)
+            )
         packaged_driver_libraries = sorted(
             name
             for name in names
