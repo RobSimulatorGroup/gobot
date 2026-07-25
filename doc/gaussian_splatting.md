@@ -87,9 +87,11 @@ gobot_editor --path examples/gaussian_splatting
 
 The downloader is standalone and uses only the Python standard library. Do not
 wrap it in `uv run`, which may synchronize the editable Gobot environment first.
-Launch `gobot_editor` from an installed or activated environment. Developers
-with an already synchronized `.venv` can use `.venv/bin/gobot_editor` or
-`uv run --no-sync gobot_editor` to prevent an implicit editable rebuild.
+Launch `gobot_editor` from an installed or activated environment. Plain
+`uv run gobot_editor` may first synchronize and rebuild Gobot; editable builds
+reuse the MuJoCo SDK installed in the project `.venv`. Use
+`uv run --no-sync gobot_editor` when the environment is already synchronized
+and no rebuild is wanted.
 
 See `examples/gaussian_splatting/README.md` for the pinned source revision,
 license declaration, file size, and checksum.

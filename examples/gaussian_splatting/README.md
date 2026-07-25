@@ -14,9 +14,10 @@ The downloader uses only the Python standard library. Run it directly with
 environment before starting the download.
 
 Run `gobot_editor` from an installed or activated Gobot environment. In a
-source checkout whose `.venv` is already current, use
-`.venv/bin/gobot_editor` or `uv run --no-sync gobot_editor`; plain `uv run`
-may rebuild the editable package and fetch missing build inputs.
+source checkout, plain `uv run gobot_editor` synchronizes and may rebuild the
+editable package using the MuJoCo SDK installed in `.venv`. When the environment
+is already current, `.venv/bin/gobot_editor` or
+`uv run --no-sync gobot_editor` skips that synchronization work.
 
 Use the Raster viewport mode. The first implementation does not show Gaussian
 environments in ray-traced viewport modes. This visual-only sample does not

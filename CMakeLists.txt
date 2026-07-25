@@ -124,41 +124,111 @@ endif()
 set(GOBOT_MUJOCO_TARGET "")
 if(GOB_BUILD_MUJOCO)
     if(NOT GOB_FORCE_FETCH_MUJOCO)
+        set(GOBOT_MUJOCO_SEARCH_ROOTS "")
         if(GOB_MUJOCO_ROOT)
-            find_package(mujoco CONFIG QUIET
-                PATHS
-                    "${GOB_MUJOCO_ROOT}"
-                    "${GOB_MUJOCO_ROOT}/lib/cmake/mujoco"
-                    "${GOB_MUJOCO_ROOT}/lib64/cmake/mujoco"
-                NO_DEFAULT_PATH
-            )
+            list(APPEND GOBOT_MUJOCO_SEARCH_ROOTS "${GOB_MUJOCO_ROOT}")
         endif()
 
-        if(NOT mujoco_FOUND)
-            find_package(mujoco CONFIG QUIET)
+        # Python MuJoCo wheels contain both the public headers and the shared
+        # library. Editable uv/pip builds run CMake in an isolated build
+        # environment, so CMAKE_PREFIX_PATH alone cannot see the project's
+        # runtime virtual environment.
+        set(GOBOT_MUJOCO_VIRTUAL_ENVS "")
+        if(DEFINED ENV{VIRTUAL_ENV} AND NOT "$ENV{VIRTUAL_ENV}" STREQUAL "")
+            list(APPEND GOBOT_MUJOCO_VIRTUAL_ENVS "$ENV{VIRTUAL_ENV}")
         endif()
+        if(DEFINED ENV{UV_PROJECT_ENVIRONMENT} AND NOT "$ENV{UV_PROJECT_ENVIRONMENT}" STREQUAL "")
+            list(APPEND GOBOT_MUJOCO_VIRTUAL_ENVS "$ENV{UV_PROJECT_ENVIRONMENT}")
+        endif()
+        if(DEFINED SKBUILD_STATE AND SKBUILD_STATE STREQUAL "editable")
+            list(APPEND GOBOT_MUJOCO_VIRTUAL_ENVS "${CMAKE_CURRENT_SOURCE_DIR}/.venv")
+        endif()
+        list(REMOVE_DUPLICATES GOBOT_MUJOCO_VIRTUAL_ENVS)
 
-        if(TARGET mujoco::mujoco)
-            set(GOBOT_MUJOCO_TARGET mujoco::mujoco)
-        elseif(TARGET mujoco)
-            set(GOBOT_MUJOCO_TARGET mujoco)
-        endif()
+        foreach(GOBOT_MUJOCO_VIRTUAL_ENV IN LISTS GOBOT_MUJOCO_VIRTUAL_ENVS)
+            get_filename_component(GOBOT_MUJOCO_VIRTUAL_ENV
+                "${GOBOT_MUJOCO_VIRTUAL_ENV}" ABSOLUTE
+                BASE_DIR "${CMAKE_CURRENT_SOURCE_DIR}")
+            file(GLOB GOBOT_MUJOCO_PYTHON_PACKAGE_ROOTS
+                LIST_DIRECTORIES TRUE
+                "${GOBOT_MUJOCO_VIRTUAL_ENV}/lib/python*/site-packages/mujoco")
+            foreach(GOBOT_MUJOCO_PYTHON_PACKAGE_ROOT IN LISTS GOBOT_MUJOCO_PYTHON_PACKAGE_ROOTS)
+                if(EXISTS "${GOBOT_MUJOCO_PYTHON_PACKAGE_ROOT}/include/mujoco/mujoco.h")
+                    list(APPEND GOBOT_MUJOCO_SEARCH_ROOTS "${GOBOT_MUJOCO_PYTHON_PACKAGE_ROOT}")
+                endif()
+            endforeach()
+        endforeach()
+
+        # PEP 517 installs build requirements into an isolated site-packages
+        # directory and places that directory in CMAKE_PREFIX_PATH. Keep this
+        # after virtualenv discovery so editable builds use stable include and
+        # library paths once the project environment has been synchronized.
+        foreach(GOBOT_MUJOCO_CMAKE_PREFIX IN LISTS CMAKE_PREFIX_PATH)
+            if(EXISTS "${GOBOT_MUJOCO_CMAKE_PREFIX}/mujoco/include/mujoco/mujoco.h")
+                list(APPEND GOBOT_MUJOCO_SEARCH_ROOTS
+                    "${GOBOT_MUJOCO_CMAKE_PREFIX}/mujoco")
+            endif()
+        endforeach()
+        list(REMOVE_DUPLICATES GOBOT_MUJOCO_SEARCH_ROOTS)
+
+        set(GOBOT_MUJOCO_CONFIG_PATHS "")
+        foreach(GOBOT_MUJOCO_SEARCH_ROOT IN LISTS GOBOT_MUJOCO_SEARCH_ROOTS)
+            list(APPEND GOBOT_MUJOCO_CONFIG_PATHS
+                "${GOBOT_MUJOCO_SEARCH_ROOT}"
+                "${GOBOT_MUJOCO_SEARCH_ROOT}/lib/cmake/mujoco"
+                "${GOBOT_MUJOCO_SEARCH_ROOT}/lib64/cmake/mujoco")
+        endforeach()
 
         if(NOT GOBOT_MUJOCO_TARGET)
-            find_path(GOBOT_MUJOCO_INCLUDE_DIR
-                NAMES mujoco/mujoco.h
-                HINTS
-                    "${GOB_MUJOCO_ROOT}/include"
-                    "${GOB_MUJOCO_ROOT}"
-            )
-            find_library(GOBOT_MUJOCO_LIBRARY
-                NAMES mujoco
-                HINTS
-                    "${GOB_MUJOCO_ROOT}/lib"
-                    "${GOB_MUJOCO_ROOT}/lib64"
-                    "${GOB_MUJOCO_ROOT}/bin"
-                    "${GOB_MUJOCO_ROOT}"
-            )
+            set(GOBOT_MUJOCO_INCLUDE_HINTS "")
+            set(GOBOT_MUJOCO_LIBRARY_HINTS "")
+            foreach(GOBOT_MUJOCO_SEARCH_ROOT IN LISTS GOBOT_MUJOCO_SEARCH_ROOTS)
+                list(APPEND GOBOT_MUJOCO_INCLUDE_HINTS
+                    "${GOBOT_MUJOCO_SEARCH_ROOT}/include"
+                    "${GOBOT_MUJOCO_SEARCH_ROOT}")
+                list(APPEND GOBOT_MUJOCO_LIBRARY_HINTS
+                    "${GOBOT_MUJOCO_SEARCH_ROOT}/lib"
+                    "${GOBOT_MUJOCO_SEARCH_ROOT}/lib64"
+                    "${GOBOT_MUJOCO_SEARCH_ROOT}/bin"
+                    "${GOBOT_MUJOCO_SEARCH_ROOT}")
+            endforeach()
+
+            # Prefer an exact SDK root over a stale system/CMake package. Clear
+            # cached discovery results whenever explicit roots are available.
+            if(GOBOT_MUJOCO_SEARCH_ROOTS)
+                set(GOBOT_MUJOCO_INCLUDE_DIR "")
+                set(GOBOT_MUJOCO_LIBRARY "")
+            endif()
+            foreach(GOBOT_MUJOCO_INCLUDE_HINT IN LISTS GOBOT_MUJOCO_INCLUDE_HINTS)
+                if(EXISTS "${GOBOT_MUJOCO_INCLUDE_HINT}/mujoco/mujoco.h")
+                    set(GOBOT_MUJOCO_INCLUDE_DIR "${GOBOT_MUJOCO_INCLUDE_HINT}")
+                    break()
+                endif()
+            endforeach()
+
+            # PyPI's mujoco package intentionally ships only its SONAME file,
+            # for example libmujoco.so.3.10.0, without a development symlink.
+            foreach(GOBOT_MUJOCO_LIBRARY_HINT IN LISTS GOBOT_MUJOCO_LIBRARY_HINTS)
+                set(GOBOT_MUJOCO_VERSIONED_LIBRARY
+                    "${GOBOT_MUJOCO_LIBRARY_HINT}/libmujoco.so.${GOB_MUJOCO_GIT_TAG}")
+                if(EXISTS "${GOBOT_MUJOCO_VERSIONED_LIBRARY}")
+                    set(GOBOT_MUJOCO_LIBRARY "${GOBOT_MUJOCO_VERSIONED_LIBRARY}")
+                    break()
+                endif()
+            endforeach()
+
+            if(NOT GOBOT_MUJOCO_INCLUDE_DIR)
+                find_path(GOBOT_MUJOCO_INCLUDE_DIR
+                    NAMES mujoco/mujoco.h
+                    HINTS ${GOBOT_MUJOCO_INCLUDE_HINTS}
+                )
+            endif()
+            if(NOT GOBOT_MUJOCO_LIBRARY)
+                find_library(GOBOT_MUJOCO_LIBRARY
+                    NAMES mujoco
+                    HINTS ${GOBOT_MUJOCO_LIBRARY_HINTS}
+                )
+            endif()
 
             if(GOBOT_MUJOCO_INCLUDE_DIR AND GOBOT_MUJOCO_LIBRARY)
                 add_library(gobot_mujoco_sdk SHARED IMPORTED GLOBAL)
@@ -169,6 +239,27 @@ if(GOB_BUILD_MUJOCO)
                 )
                 set(GOBOT_MUJOCO_TARGET gobot_mujoco_sdk)
                 message(STATUS "Gobot MuJoCo backend enabled with SDK library: ${GOBOT_MUJOCO_LIBRARY}")
+            endif()
+        endif()
+
+        if(NOT GOBOT_MUJOCO_TARGET AND GOBOT_MUJOCO_CONFIG_PATHS)
+            find_package(mujoco CONFIG QUIET
+                PATHS ${GOBOT_MUJOCO_CONFIG_PATHS}
+                NO_DEFAULT_PATH
+            )
+            if(TARGET mujoco::mujoco)
+                set(GOBOT_MUJOCO_TARGET mujoco::mujoco)
+            elseif(TARGET mujoco)
+                set(GOBOT_MUJOCO_TARGET mujoco)
+            endif()
+        endif()
+
+        if(NOT GOBOT_MUJOCO_TARGET)
+            find_package(mujoco CONFIG QUIET)
+            if(TARGET mujoco::mujoco)
+                set(GOBOT_MUJOCO_TARGET mujoco::mujoco)
+            elseif(TARGET mujoco)
+                set(GOBOT_MUJOCO_TARGET mujoco)
             endif()
         endif()
     endif()

@@ -233,7 +233,7 @@ jobs:
 
       - name: Build wheel
         run: |
-          CMAKE_ARGS="-DCUDAToolkit_ROOT=$PWD/build/cuda-toolkit -DGOB_GSPLAT_INFERENCE_ROOT=$PWD/build/gsplat_inference/install" \
+          CMAKE_ARGS="-DCUDAToolkit_ROOT=$PWD/build/cuda-toolkit -DGOB_GSPLAT_INFERENCE_ROOT=$PWD/build/gsplat_inference/install -DGOB_FORCE_FETCH_MUJOCO=ON" \
             python -m build --wheel --outdir wheelhouse-unrepaired
 
       - name: Repair wheel

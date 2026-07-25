@@ -1,5 +1,6 @@
 [build-system]
 requires = [
+    "mujoco==3.10.0; sys_platform == 'linux' and platform_machine == 'x86_64'",
     "packaging>=23.2",
     "scikit-build-core>=0.10",
 ]
@@ -69,5 +70,6 @@ components = ["python"]
 GOB_BUILD_TESTS = "OFF"
 GOB_BUILD_LUISA_RENDERER = "ON"
 GOB_BUILD_GSPLAT_INFERENCE = "ON"
-GOB_FORCE_FETCH_MUJOCO = "ON"
+GOB_FETCH_MUJOCO = "OFF"
+GOB_FORCE_FETCH_MUJOCO = "OFF"
 GOB_MUJOCO_GIT_TAG = "3.10.0"

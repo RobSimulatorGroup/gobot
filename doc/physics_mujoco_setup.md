@@ -25,6 +25,13 @@ cmake -S . -B build \
 `mujocoConfig.cmake`, or to the extracted SDK layout containing `include/` and
 `lib/` or `bin/`.
 
+For Python builds, Gobot declares the pinned `mujoco` wheel as both a build and
+runtime dependency, then detects its headers and versioned shared library in
+the isolated PEP 517 environment or active uv/virtualenv. This keeps `uv run`
+and `uv sync` builds offline after the wheel is cached. Python builds disable
+the CMake source fallback; set `GOB_FORCE_FETCH_MUJOCO=ON` only for release
+builds that must compile the pinned MuJoCo source.
+
 If MuJoCo was installed into a normal CMake prefix, this also works:
 
 ```bash
