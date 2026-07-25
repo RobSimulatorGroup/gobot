@@ -5,9 +5,13 @@ Gobot's real 3DGS environment path. The large PLY is downloaded separately and
 is not committed to Gobot or included in wheels.
 
 ```bash
-python examples/gaussian_splatting/download_sample.py
+python3 examples/gaussian_splatting/download_sample.py
 uv run gobot_editor --path examples/gaussian_splatting
 ```
+
+The downloader uses only the Python standard library. Run it directly with
+`python3`; `uv run` may try to synchronize and rebuild the editable Gobot
+environment before starting the download.
 
 Use the Raster viewport mode. The first implementation does not show Gaussian
 environments in ray-traced viewport modes. This visual-only sample does not

@@ -81,9 +81,12 @@ Tanks & Temples `train` scene. Its 166 MB PLY is downloaded and SHA-256 checked
 on demand instead of being stored in Git or bundled into wheels:
 
 ```bash
-python examples/gaussian_splatting/download_sample.py
+python3 examples/gaussian_splatting/download_sample.py
 uv run gobot_editor --path examples/gaussian_splatting
 ```
+
+The downloader is standalone and uses only the Python standard library. Do not
+wrap it in `uv run`, which may synchronize the editable Gobot environment first.
 
 See `examples/gaussian_splatting/README.md` for the pinned source revision,
 license declaration, file size, and checksum.
