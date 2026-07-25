@@ -2,7 +2,7 @@
 requires = [
     "mujoco==3.10.0; sys_platform == 'linux' and platform_machine == 'x86_64'",
     "packaging>=23.2",
-    "scikit-build-core>=0.10",
+    "scikit-build-core>=1.0.3",
 ]
 build-backend = "scikit_build_core.build"
 
@@ -43,8 +43,10 @@ gobot_editor = "gobot_cli.editor:editor"
 
 [dependency-groups]
 dev = [
+    "cmake>=3.26",
+    "ninja>=1.11",
     "packaging>=23.2",
-    "scikit-build-core>=0.10",
+    "scikit-build-core>=1.0.3",
 ]
 
 [[tool.uv.index]]

@@ -6,7 +6,13 @@ import numpy as np
 
 
 def main() -> int:
-    original_settings = gobot.render.get_raster_settings()
+    try:
+        original_settings = gobot.render.get_raster_settings()
+    except RuntimeError as error:
+        if "EGL" in str(error) or "egl" in str(error):
+            print(f"raster pipeline test skipped: {error}")
+            return 77
+        raise
     root = gobot.create_node("Node3D", "World")
 
     ground = gobot.create_box_visual("ground", (6.0, 6.0, 0.1))

@@ -62,8 +62,11 @@ uv run gobot_editor --path examples/go1
 
 `uv sync` installs Gobot editable: Python files import directly from the
 checkout, while `_core`, `libgobot`, and `gobot_editor` come from the same
-build installed in `.venv`. After changing C++ or CMake files, rebuild and
-reinstall only Gobot:
+build installed in `.venv`. The editable `gobot_editor` launcher runs an
+incremental CMake/Ninja rebuild before every start, so changed C++ and CMake
+files cannot silently leave the editor on stale native binaries. When native
+changes must be used by another Python entry point, rebuild and reinstall only
+Gobot explicitly:
 
 ```bash
 uv sync --reinstall-package gobot --no-build-isolation-package gobot

@@ -10,6 +10,7 @@ from __future__ import annotations
 
 import json
 import os
+import subprocess
 import sys
 import sysconfig
 from importlib import metadata
@@ -204,6 +205,140 @@ def _editable_source_examples() -> Path | None:
     return examples if examples.is_dir() else None
 
 
+def _cmake_cache_value(build_dir: Path, key: str) -> str | None:
+    try:
+        lines = (build_dir / "CMakeCache.txt").read_text(
+            encoding="utf-8", errors="ignore"
+        ).splitlines()
+    except OSError:
+        return None
+
+    prefix = f"{key}:"
+    for line in lines:
+        if line.startswith(prefix) and "=" in line:
+            return line.split("=", 1)[1]
+    return None
+
+
+def _run_native_rebuild_command(
+    command: list[str], *, cwd: Path, environment: dict[str, str]
+) -> None:
+    try:
+        result = subprocess.run(
+            command,
+            cwd=cwd,
+            env=environment,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.STDOUT,
+            text=True,
+            check=False,
+        )
+    except OSError as error:
+        raise RuntimeError(f"could not run editable native rebuild: {error}") from error
+    if result.returncode != 0:
+        if result.stdout:
+            print(result.stdout, file=sys.stderr, end="")
+        raise RuntimeError(
+            f"editable native rebuild command exited with code {result.returncode}"
+        )
+
+
+def _rebuild_stale_editable_gsplat(
+    source_root: Path, build_dir: Path, environment: dict[str, str]
+) -> None:
+    if _cmake_cache_value(build_dir, "GOB_BUILD_GSPLAT_INFERENCE") != "ON":
+        return
+
+    install_value = _cmake_cache_value(build_dir, "GOB_GSPLAT_INFERENCE_ROOT")
+    default_build_dir = source_root / "build" / "gsplat_inference"
+    default_install_dir = default_build_dir / "install"
+    if install_value is None or Path(install_value).resolve() != default_install_dir.resolve():
+        return
+
+    source_dir = source_root / "3rdparty" / "gsplat_inference"
+    script = source_root / "scripts" / "build_gsplat_inference.sh"
+    if not source_dir.is_dir() or not script.is_file():
+        return
+
+    library_candidates = (
+        default_install_dir / "lib" / "libgobot_gsplat_inference.a",
+        default_install_dir / "lib64" / "libgobot_gsplat_inference.a",
+    )
+    library = next((candidate for candidate in library_candidates if candidate.is_file()), None)
+    source_files = (
+        path
+        for path in source_dir.rglob("*")
+        if path.is_file()
+        and (path.suffix in {".cu", ".cpp", ".h", ".hpp", ".txt"} or path.name in {"LICENSE", "NOTICE"})
+    )
+    library_mtime = library.stat().st_mtime_ns if library is not None else -1
+    if library is not None and not any(
+        source.stat().st_mtime_ns > library_mtime for source in source_files
+    ):
+        return
+
+    gsplat_environment = environment.copy()
+    gsplat_environment["GOB_GSPLAT_BUILD_DIR"] = os.fspath(default_build_dir)
+    gsplat_environment["GOB_GSPLAT_INSTALL_DIR"] = os.fspath(default_install_dir)
+    _run_native_rebuild_command(
+        [os.fspath(script)], cwd=source_root, environment=gsplat_environment
+    )
+
+
+def _rebuild_editable_native_artifacts() -> None:
+    source_root = _editable_source_root()
+    if source_root is None:
+        return
+
+    loader = globals().get("__loader__")
+    finder = getattr(loader, "_skbuild_finder", None)
+    build_dir_value = getattr(finder, "path", None)
+    install_dir_value = getattr(finder, "dir", None)
+    if not build_dir_value or not install_dir_value:
+        raise RuntimeError(
+            "The editable Gobot install does not expose its persistent native build. "
+            "Reinstall it with 'uv sync --reinstall-package gobot'."
+        )
+
+    build_dir = Path(build_dir_value)
+    if not build_dir.is_dir():
+        raise RuntimeError(
+            f"The editable Gobot build directory '{build_dir}' does not exist. "
+            "Reinstall it with 'uv sync --reinstall-package gobot'."
+        )
+
+    environment_bin = os.fspath(Path(sys.executable).absolute().parent)
+    environment = os.environ.copy()
+    current_path = environment.get("PATH")
+    environment["PATH"] = os.pathsep.join(
+        [environment_bin, current_path] if current_path else [environment_bin]
+    )
+
+    build_options = list(getattr(finder, "build_options", ()) or ())
+    if "--parallel" not in build_options and not any(
+        option == "-j" or option.startswith("-j") for option in build_options
+    ):
+        build_options.append("--parallel")
+    install_options = list(getattr(finder, "install_options", ()) or ())
+    if "--component" not in install_options:
+        install_options.extend(("--component", "python"))
+
+    _rebuild_stale_editable_gsplat(source_root, build_dir, environment)
+    commands = (
+        ["cmake", "--build", ".", *build_options],
+        [
+            "cmake",
+            "--install",
+            ".",
+            "--prefix",
+            os.fspath(install_dir_value),
+            *install_options,
+        ],
+    )
+    for command in commands:
+        _run_native_rebuild_command(command, cwd=build_dir, environment=environment)
+
+
 def _package_file(relative_path: str) -> Path | None:
     dist = _distribution()
     if dist is None:
@@ -314,6 +449,12 @@ def _register_packaged_examples() -> None:
 
 
 def editor() -> int:
+    try:
+        _rebuild_editable_native_artifacts()
+    except RuntimeError as error:
+        print(f"[gobot] {error}", file=sys.stderr)
+        return 1
+
     _register_packaged_examples()
 
     python_library = _find_current_python_library()

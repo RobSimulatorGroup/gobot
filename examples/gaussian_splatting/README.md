@@ -19,7 +19,9 @@ Run `gobot_editor` from an installed or activated Gobot environment. In a
 source checkout, plain `uv run gobot_editor` synchronizes and may rebuild the
 editable package using the MuJoCo SDK installed in `.venv`. When the environment
 is already current, `.venv/bin/gobot_editor` or
-`uv run --no-sync gobot_editor` skips that synchronization work.
+`uv run --no-sync gobot_editor` skips that synchronization work. In a source
+editable install, the launcher still runs a fast CMake/Ninja dependency check
+so changed native code cannot start an older editor binary.
 
 Viewport navigation follows common DCC controls: `Alt+Left Mouse` orbits,
 `Middle Mouse` pans, the wheel or `Alt+Right Mouse` dollies, and holding

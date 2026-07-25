@@ -1,0 +1,132 @@
+from __future__ import annotations
+
+from contextlib import redirect_stderr
+import io
+import os
+from pathlib import Path
+import sys
+import tempfile
+from types import SimpleNamespace
+from unittest.mock import Mock, patch
+
+ROOT = Path(__file__).resolve().parents[2]
+sys.path.insert(0, os.fspath(ROOT / "python"))
+
+from gobot_cli import editor as launcher
+
+
+def test_wheel_install_does_not_rebuild() -> None:
+    run = Mock()
+    with (
+        patch.object(launcher, "_editable_source_root", return_value=None),
+        patch.object(launcher.subprocess, "run", run),
+    ):
+        launcher._rebuild_editable_native_artifacts()
+    run.assert_not_called()
+
+
+def test_editable_install_rebuilds_with_environment_tools() -> None:
+    invocations = []
+
+    def run(command, **kwargs):
+        invocations.append((command, kwargs))
+        return SimpleNamespace(returncode=0, stdout="")
+
+    with tempfile.TemporaryDirectory() as directory:
+        finder = SimpleNamespace(
+            path=directory,
+            dir=directory,
+            build_options=[],
+            install_options=[],
+        )
+        loader = SimpleNamespace(_skbuild_finder=finder)
+        with (
+            patch.object(launcher, "_editable_source_root", return_value=Path("/source")),
+            patch.object(launcher, "__loader__", loader),
+            patch.object(launcher.subprocess, "run", side_effect=run),
+        ):
+            launcher._rebuild_editable_native_artifacts()
+
+    assert len(invocations) == 2
+    build_command, build_kwargs = invocations[0]
+    install_command, install_kwargs = invocations[1]
+    assert build_command == ["cmake", "--build", ".", "--parallel"]
+    assert install_command[-2:] == ["--component", "python"]
+    assert build_kwargs["env"]["PATH"].split(os.pathsep)[0] == os.fspath(
+        Path(launcher.sys.executable).absolute().parent
+    )
+    assert install_kwargs["cwd"] == build_kwargs["cwd"]
+
+
+def test_editable_install_rebuilds_stale_bundled_gsplat() -> None:
+    invocations = []
+
+    def run(command, **kwargs):
+        invocations.append((command, kwargs))
+        return SimpleNamespace(returncode=0, stdout="")
+
+    with tempfile.TemporaryDirectory() as directory:
+        source_root = Path(directory)
+        build_dir = source_root / "build" / "cp-test"
+        install_dir = source_root / "build" / "gsplat_inference" / "install"
+        gsplat_source = source_root / "3rdparty" / "gsplat_inference" / "src" / "renderer.cu"
+        script = source_root / "scripts" / "build_gsplat_inference.sh"
+        library = install_dir / "lib" / "libgobot_gsplat_inference.a"
+        for parent in (build_dir, gsplat_source.parent, script.parent, library.parent):
+            parent.mkdir(parents=True, exist_ok=True)
+        build_dir.joinpath("CMakeCache.txt").write_text(
+            "GOB_BUILD_GSPLAT_INFERENCE:BOOL=ON\n"
+            f"GOB_GSPLAT_INFERENCE_ROOT:PATH={install_dir}\n",
+            encoding="utf-8",
+        )
+        library.write_bytes(b"old")
+        gsplat_source.write_text("// changed\n", encoding="utf-8")
+        script.write_text("#!/bin/sh\n", encoding="utf-8")
+        os.utime(library, ns=(1_000_000_000, 1_000_000_000))
+        os.utime(gsplat_source, ns=(2_000_000_000, 2_000_000_000))
+
+        finder = SimpleNamespace(
+            path=os.fspath(build_dir),
+            dir=os.fspath(source_root / "site-packages"),
+            build_options=[],
+            install_options=[],
+        )
+        loader = SimpleNamespace(_skbuild_finder=finder)
+        with (
+            patch.object(launcher, "_editable_source_root", return_value=source_root),
+            patch.object(launcher, "__loader__", loader),
+            patch.object(launcher.subprocess, "run", side_effect=run),
+        ):
+            launcher._rebuild_editable_native_artifacts()
+
+    assert len(invocations) == 3
+    assert invocations[0][0] == [os.fspath(script)]
+    assert invocations[0][1]["env"]["GOB_GSPLAT_INSTALL_DIR"] == os.fspath(install_dir)
+    assert invocations[1][0][:3] == ["cmake", "--build", "."]
+
+
+def test_editor_stops_instead_of_launching_stale_binary() -> None:
+    with (
+        patch.object(
+            launcher,
+            "_rebuild_editable_native_artifacts",
+            side_effect=RuntimeError("native rebuild failed"),
+        ),
+        patch.object(launcher, "_register_packaged_examples") as register_examples,
+        redirect_stderr(io.StringIO()) as stderr,
+    ):
+        assert launcher.editor() == 1
+
+    register_examples.assert_not_called()
+    assert "native rebuild failed" in stderr.getvalue()
+
+
+def main() -> None:
+    test_wheel_install_does_not_rebuild()
+    test_editable_install_rebuilds_with_environment_tools()
+    test_editable_install_rebuilds_stale_bundled_gsplat()
+    test_editor_stops_instead_of_launching_stale_binary()
+
+
+if __name__ == "__main__":
+    main()

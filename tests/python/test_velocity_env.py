@@ -1,4 +1,5 @@
 import json
+from importlib.util import find_spec
 import os
 from pathlib import Path
 import subprocess
@@ -49,6 +50,13 @@ def _require_torch():
         return __import__("torch")
     except ImportError as error:
         raise OptionalDependencyUnavailable("torch is unavailable; skipping torch-backed integration test") from error
+
+
+def _require_onnxruntime() -> None:
+    if find_spec("onnxruntime") is None:
+        raise OptionalDependencyUnavailable(
+            "onnxruntime is unavailable; skipping released ONNX policy integration test"
+        )
 
 
 def _assert_runtime_error(pattern: str, fn) -> None:
@@ -1300,6 +1308,7 @@ def test_go1_current_policy_contract():
 
 
 def test_go1_released_onnx_loads_with_current_scene_contract():
+    _require_onnxruntime()
     script = object.__new__(go1_playback.Script)
     script.context = type("FakeContext", (), {"project_path": str(GO1_PROJECT)})()
     original_policy_env = os.environ.pop(go1_playback.POLICY_ENV, None)

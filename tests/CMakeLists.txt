@@ -205,6 +205,17 @@ set_tests_properties(test_gaussian_splat_sample
         PROPERTIES WORKING_DIRECTORY "${CMAKE_SOURCE_DIR}")
 
 add_test(
+        NAME test_python_editor_launcher
+        COMMAND ${Python3_EXECUTABLE} -S
+                ${CMAKE_CURRENT_SOURCE_DIR}/python/test_editor_launcher.py
+)
+set_tests_properties(test_python_editor_launcher
+        PROPERTIES
+            ENVIRONMENT "${GOBOT_PYTHON_TEST_ENV}"
+            WORKING_DIRECTORY "${CMAKE_SOURCE_DIR}"
+)
+
+add_test(
         NAME test_python_bindings_smoke
         COMMAND ${Python3_EXECUTABLE} -S ${CMAKE_CURRENT_SOURCE_DIR}/python/test_python_bindings_smoke.py
 )

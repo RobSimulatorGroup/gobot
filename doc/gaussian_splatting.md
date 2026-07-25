@@ -93,7 +93,8 @@ Launch `gobot_editor` from an installed or activated environment. Plain
 `uv run gobot_editor` may first synchronize and rebuild Gobot; editable builds
 reuse the MuJoCo SDK installed in the project `.venv`. Use
 `uv run --no-sync gobot_editor` when the environment is already synchronized
-and no rebuild is wanted.
+and dependency synchronization is not wanted. Source editable installs still
+run the editor launcher's incremental CMake/Ninja native rebuild check.
 
 See `examples/gaussian_splatting/README.md` for the pinned source revision,
 license declaration, file size, and checksum.

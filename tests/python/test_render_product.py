@@ -15,16 +15,22 @@ OUTPUTS = (
 
 
 def main() -> int:
-    original_raster_settings = gobot.render.get_raster_settings()
     configured_raster_settings = gobot.render.RasterSettings(
         frustum_culling=False,
         anti_aliasing="disabled",
         shadow_quality="low",
         shadow_distance=24.0,
     )
-    gobot.render.set_raster_settings(configured_raster_settings)
-    assert gobot.render.get_raster_settings() == configured_raster_settings
-    gobot.render.set_raster_settings(original_raster_settings)
+    try:
+        original_raster_settings = gobot.render.get_raster_settings()
+        gobot.render.set_raster_settings(configured_raster_settings)
+        assert gobot.render.get_raster_settings() == configured_raster_settings
+        gobot.render.set_raster_settings(original_raster_settings)
+    except RuntimeError as error:
+        if "EGL" in str(error) or "egl" in str(error):
+            print(f"render product test skipped: {error}")
+            return 77
+        raise
     try:
         gobot.render.RasterSettings(anti_aliasing="msaa")
         raise AssertionError("unknown raster anti-aliasing mode should fail")
