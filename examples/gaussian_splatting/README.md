@@ -6,12 +6,17 @@ is not committed to Gobot or included in wheels.
 
 ```bash
 python3 examples/gaussian_splatting/download_sample.py
-uv run gobot_editor --path examples/gaussian_splatting
+gobot_editor --path examples/gaussian_splatting
 ```
 
 The downloader uses only the Python standard library. Run it directly with
 `python3`; `uv run` may try to synchronize and rebuild the editable Gobot
 environment before starting the download.
+
+Run `gobot_editor` from an installed or activated Gobot environment. In a
+source checkout whose `.venv` is already current, use
+`.venv/bin/gobot_editor` or `uv run --no-sync gobot_editor`; plain `uv run`
+may rebuild the editable package and fetch missing build inputs.
 
 Use the Raster viewport mode. The first implementation does not show Gaussian
 environments in ray-traced viewport modes. This visual-only sample does not
