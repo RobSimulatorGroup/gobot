@@ -53,8 +53,10 @@ TEST(LuisaRendererModule, ExportsMatchingBackendNeutralAbi) {
     EXPECT_TRUE(capabilities.progressive);
     EXPECT_TRUE(capabilities.direct_presentation_interop);
     EXPECT_TRUE(capabilities.cuda_render_products);
-    EXPECT_TRUE(capabilities.gaussian_splatting);
-    EXPECT_TRUE(capabilities.gaussian_splat_cuda);
+    EXPECT_EQ(capabilities.gaussian_splatting,
+              static_cast<bool>(GOBOT_TEST_HAS_GSPLAT_INFERENCE));
+    EXPECT_EQ(capabilities.gaussian_splat_cuda,
+              static_cast<bool>(GOBOT_TEST_HAS_GSPLAT_INFERENCE));
     EXPECT_EQ(capabilities.backend_name, "LuisaCompute CUDA");
 
     EXPECT_EQ(dlclose(library), 0);
@@ -185,6 +187,9 @@ TEST(LuisaRendererGpu, RendersCudaRenderProductAovs) {
 }
 
 TEST(LuisaRendererGpu, CompositesGaussianBackgroundBehindProxyAovs) {
+#if !GOBOT_TEST_HAS_GSPLAT_INFERENCE
+    GTEST_SKIP() << "The Luisa renderer was built without gsplat inference support.";
+#endif
     const char* run_gpu_test = std::getenv("GOBOT_RUN_LUISA_GPU_TEST");
     if (run_gpu_test == nullptr || std::string{run_gpu_test} != "1") {
         GTEST_SKIP() << "Set GOBOT_RUN_LUISA_GPU_TEST=1 on a CUDA runner.";
@@ -397,6 +402,27 @@ TEST(LuisaRendererGpu, RendersProgressiveFramesAndResetsAccumulation) {
     ASSERT_EQ(reset_stats.active_mode, SceneRendererMode::ProgressivePathTracing)
             << reset_stats.status;
     EXPECT_EQ(reset_stats.accumulated_samples, 1u);
+
+    constexpr int resized_width = 96;
+    constexpr int resized_height = 72;
+    render_server->ViewportSetSize(viewport, resized_width, resized_height);
+    camera.SetAspect(static_cast<RealType>(resized_width) /
+                     static_cast<RealType>(resized_height));
+    render_server->RenderSceneToViewport(viewport, tree->GetRoot(), &camera);
+    const SceneRendererStats resized_stats = render_server->GetSceneRendererStats();
+    ASSERT_EQ(resized_stats.active_mode, SceneRendererMode::ProgressivePathTracing)
+            << resized_stats.status;
+    EXPECT_EQ(resized_stats.accumulated_samples, 1u);
+    const std::vector<std::uint8_t> resized_pixels =
+            render_server->ReadViewportRgbPixels(viewport, true);
+    ASSERT_EQ(resized_pixels.size(),
+              static_cast<std::size_t>(resized_width * resized_height * 3));
+
+    render_server->RenderSceneToViewport(viewport, tree->GetRoot(), &camera);
+    const SceneRendererStats consecutive_stats = render_server->GetSceneRendererStats();
+    ASSERT_EQ(consecutive_stats.active_mode, SceneRendererMode::ProgressivePathTracing)
+            << consecutive_stats.status;
+    EXPECT_EQ(consecutive_stats.accumulated_samples, 2u);
 
     std::unique_ptr<SceneTree, decltype(delete_tree)> empty_tree(
             Object::New<SceneTree>(false), delete_tree);

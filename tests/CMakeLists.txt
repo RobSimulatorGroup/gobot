@@ -86,7 +86,8 @@ if(GOB_BUILD_LUISA_RENDERER)
     package_add_test(test_luisa_renderer_module rendering/test_luisa_renderer_module.cpp)
     target_compile_definitions(test_luisa_renderer_module PRIVATE
             GOBOT_TEST_LUISA_MODULE_PATH="$<TARGET_FILE:gobot_luisa_renderer>"
-            GOBOT_TEST_LUISA_BAD_ABI_MODULE_PATH="$<TARGET_FILE:gobot_test_luisa_bad_abi>")
+            GOBOT_TEST_LUISA_BAD_ABI_MODULE_PATH="$<TARGET_FILE:gobot_test_luisa_bad_abi>"
+            GOBOT_TEST_HAS_GSPLAT_INFERENCE=$<BOOL:${GOB_BUILD_GSPLAT_INFERENCE}>)
     target_link_libraries(test_luisa_renderer_module ${CMAKE_DL_LIBS})
     add_dependencies(test_luisa_renderer_module
             gobot_luisa_renderer

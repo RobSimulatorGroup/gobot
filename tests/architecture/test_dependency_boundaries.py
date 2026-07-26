@@ -156,6 +156,9 @@ def main() -> int:
                     )
 
     cmake_text = (ROOT / "CMakeLists.txt").read_text(encoding="utf-8")
+    luisa_cmake_text = (ROOT / "modules/luisa_renderer/CMakeLists.txt").read_text(
+        encoding="utf-8"
+    )
     for target_name in (
         "gobot_physics_core",
         "gobot_simulation_core",
@@ -168,7 +171,9 @@ def main() -> int:
             )
     if "option(GOB_BUILD_LUISA_RENDERER" not in cmake_text:
         violations.append("CMakeLists.txt: optional Luisa renderer build switch is missing")
-    if "add_library(gobot_luisa_renderer MODULE" not in cmake_text:
+    if "add_subdirectory(modules/luisa_renderer)" not in cmake_text:
+        violations.append("CMakeLists.txt: optional Luisa renderer subdirectory is missing")
+    if "add_library(gobot_luisa_renderer MODULE" not in luisa_cmake_text:
         violations.append("CMakeLists.txt: Luisa renderer is not isolated as a loadable module")
 
     example_specific_python_tokens = ("GO1_", "go1_rough_velocity")

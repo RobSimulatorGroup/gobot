@@ -33,6 +33,7 @@ def test_editable_install_rebuilds_with_environment_tools() -> None:
         return SimpleNamespace(returncode=0, stdout="")
 
     with tempfile.TemporaryDirectory() as directory:
+        Path(directory, "CMakeCache.txt").write_text("", encoding="utf-8")
         finder = SimpleNamespace(
             path=directory,
             dir=directory,
@@ -43,6 +44,10 @@ def test_editable_install_rebuilds_with_environment_tools() -> None:
         with (
             patch.object(launcher, "_editable_source_root", return_value=Path("/source")),
             patch.object(launcher, "__loader__", loader),
+            patch.object(
+                launcher, "_editable_build_needs_reconfigure", return_value=False
+            ),
+            patch.dict(launcher.os.environ, {"CMAKE_BUILD_PARALLEL_LEVEL": ""}),
             patch.object(launcher.subprocess, "run", side_effect=run),
         ):
             launcher._rebuild_editable_native_artifacts()
@@ -50,7 +55,13 @@ def test_editable_install_rebuilds_with_environment_tools() -> None:
     assert len(invocations) == 2
     build_command, build_kwargs = invocations[0]
     install_command, install_kwargs = invocations[1]
-    assert build_command == ["cmake", "--build", ".", "--parallel"]
+    assert build_command == [
+        "cmake",
+        "--build",
+        ".",
+        "--parallel",
+        str(min(os.cpu_count() or 1, 4)),
+    ]
     assert install_command[-2:] == ["--component", "python"]
     assert build_kwargs["env"]["PATH"].split(os.pathsep)[0] == os.fspath(
         Path(launcher.sys.executable).absolute().parent
@@ -95,6 +106,9 @@ def test_editable_install_rebuilds_stale_bundled_gsplat() -> None:
         with (
             patch.object(launcher, "_editable_source_root", return_value=source_root),
             patch.object(launcher, "__loader__", loader),
+            patch.object(
+                launcher, "_editable_build_needs_reconfigure", return_value=False
+            ),
             patch.object(launcher.subprocess, "run", side_effect=run),
         ):
             launcher._rebuild_editable_native_artifacts()
@@ -103,6 +117,76 @@ def test_editable_install_rebuilds_stale_bundled_gsplat() -> None:
     assert invocations[0][0] == [os.fspath(script)]
     assert invocations[0][1]["env"]["GOB_GSPLAT_INSTALL_DIR"] == os.fspath(install_dir)
     assert invocations[1][0][:3] == ["cmake", "--build", "."]
+
+
+def test_editable_install_repairs_isolated_cmake_cache() -> None:
+    invocations = []
+
+    def run(command, **kwargs):
+        invocations.append((command, kwargs))
+        return SimpleNamespace(returncode=0, stdout="")
+
+    with tempfile.TemporaryDirectory() as directory:
+        source_root = Path(directory)
+        build_dir = source_root / "build" / "cp-test"
+        install_dir = source_root / ".venv" / "lib" / "python" / "site-packages"
+        build_dir.mkdir(parents=True)
+        install_dir.mkdir(parents=True)
+        build_dir.joinpath("CMakeCache.txt").write_text(
+            "CMAKE_COMMAND:INTERNAL=/deleted/build-env/bin/cmake\n"
+            "CMAKE_GENERATOR:INTERNAL=Ninja\n"
+            "CMAKE_INSTALL_PREFIX:PATH=/tmp/deleted-wheel/platlib\n"
+            "Python3_EXECUTABLE:FILEPATH=/deleted/build-env/bin/python\n"
+            "GOB_BUILD_GSPLAT_INFERENCE:BOOL=OFF\n",
+            encoding="utf-8",
+        )
+        finder = SimpleNamespace(
+            path=os.fspath(build_dir),
+            dir=os.fspath(install_dir),
+            build_options=[],
+            install_options=[],
+        )
+        loader = SimpleNamespace(_skbuild_finder=finder)
+        with (
+            patch.object(launcher, "_editable_source_root", return_value=source_root),
+            patch.object(launcher, "__loader__", loader),
+            patch.object(launcher.shutil, "which", return_value="/stable/bin/ninja"),
+            patch.object(launcher.subprocess, "run", side_effect=run),
+        ):
+            launcher._rebuild_editable_native_artifacts()
+
+    assert len(invocations) == 3
+    configure_command, configure_kwargs = invocations[0]
+    assert configure_command[:3] == ["cmake", "-S", os.fspath(source_root)]
+    assert "-B" in configure_command
+    assert (
+        f"-DPython3_EXECUTABLE:FILEPATH={Path(launcher.sys.executable).absolute()}"
+        in configure_command
+    )
+    assert f"-DCMAKE_INSTALL_PREFIX:PATH={install_dir}" in configure_command
+    assert "-DCMAKE_MAKE_PROGRAM:FILEPATH=/stable/bin/ninja" in configure_command
+    assert configure_kwargs["cwd"] == source_root
+    assert invocations[1][0][:3] == ["cmake", "--build", "."]
+    assert invocations[2][0][:3] == ["cmake", "--install", "."]
+
+
+def test_editable_install_repairs_missing_cached_ninja() -> None:
+    with tempfile.TemporaryDirectory() as directory:
+        build_dir = Path(directory)
+        install_dir = build_dir / "site-packages"
+        install_dir.mkdir()
+        build_dir.joinpath("CMakeCache.txt").write_text(
+            f"CMAKE_COMMAND:INTERNAL={launcher.sys.executable}\n"
+            "CMAKE_GENERATOR:INTERNAL=Ninja\n"
+            "CMAKE_MAKE_PROGRAM:FILEPATH=/deleted/build-env/bin/ninja\n"
+            f"CMAKE_INSTALL_PREFIX:PATH={install_dir}\n"
+            f"Python3_EXECUTABLE:FILEPATH={launcher.sys.executable}\n",
+            encoding="utf-8",
+        )
+
+        assert launcher._editable_build_needs_reconfigure(
+            build_dir, install_dir, os.environ.copy()
+        )
 
 
 def test_editor_stops_instead_of_launching_stale_binary() -> None:
@@ -125,6 +209,8 @@ def main() -> None:
     test_wheel_install_does_not_rebuild()
     test_editable_install_rebuilds_with_environment_tools()
     test_editable_install_rebuilds_stale_bundled_gsplat()
+    test_editable_install_repairs_isolated_cmake_cache()
+    test_editable_install_repairs_missing_cached_ninja()
     test_editor_stops_instead_of_launching_stale_binary()
 
 

@@ -638,7 +638,6 @@ bool GLRasterizerScene::RenderGaussianBackground(GLuint color_texture,
         }
         return false;
     }
-    glFinish();
     const LuisaRendererTarget target{color_texture, 0u, width, height};
     std::array<char, 1024> error{};
     const LuisaRendererResult result = luisa_api_->render_gaussian_background(

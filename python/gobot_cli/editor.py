@@ -10,6 +10,7 @@ from __future__ import annotations
 
 import json
 import os
+import shutil
 import subprocess
 import sys
 import sysconfig
@@ -220,6 +221,87 @@ def _cmake_cache_value(build_dir: Path, key: str) -> str | None:
     return None
 
 
+def _paths_match(first: str | None, second: Path) -> bool:
+    if not first:
+        return False
+    try:
+        return Path(first).expanduser().resolve() == second.expanduser().resolve()
+    except OSError:
+        return False
+
+
+def _cached_executable_exists(value: str | None, environment: dict[str, str]) -> bool:
+    if not value:
+        return False
+    path = Path(value).expanduser()
+    if path.is_absolute():
+        return path.is_file()
+    return shutil.which(value, path=environment.get("PATH")) is not None
+
+
+def _editable_build_needs_reconfigure(
+    build_dir: Path, install_dir: Path, environment: dict[str, str]
+) -> bool:
+    if not _cached_executable_exists(
+        _cmake_cache_value(build_dir, "CMAKE_COMMAND"), environment
+    ):
+        return True
+    if not _paths_match(
+        _cmake_cache_value(build_dir, "Python3_EXECUTABLE"), Path(sys.executable)
+    ):
+        return True
+    if _cmake_cache_value(build_dir, "CMAKE_GENERATOR") == "Ninja" and not (
+        _cached_executable_exists(
+            _cmake_cache_value(build_dir, "CMAKE_MAKE_PROGRAM"), environment
+        )
+    ):
+        return True
+    return not _paths_match(
+        _cmake_cache_value(build_dir, "CMAKE_INSTALL_PREFIX"), install_dir
+    )
+
+
+def _editable_reconfigure_command(
+    source_root: Path,
+    build_dir: Path,
+    install_dir: Path,
+    environment: dict[str, str],
+) -> list[str]:
+    python_executable = Path(sys.executable).expanduser().absolute()
+    python_root = Path(sys.prefix).expanduser().absolute()
+    command = [
+        "cmake",
+        "-S",
+        os.fspath(source_root),
+        "-B",
+        os.fspath(build_dir),
+        "-U",
+        "PYTHON_EXECUTABLE",
+        "-U",
+        "Python*_EXECUTABLE",
+        "-U",
+        "Python*_NumPy_INCLUDE_DIR",
+        "-U",
+        "_Python*",
+        f"-DPYTHON_EXECUTABLE:FILEPATH={python_executable}",
+        f"-DPython_EXECUTABLE:FILEPATH={python_executable}",
+        f"-DPython3_EXECUTABLE:FILEPATH={python_executable}",
+        f"-DPython_ROOT_DIR:PATH={python_root}",
+        f"-DPython3_ROOT_DIR:PATH={python_root}",
+        f"-DCMAKE_PREFIX_PATH:PATH={install_dir}",
+        f"-DCMAKE_INSTALL_PREFIX:PATH={install_dir}",
+    ]
+    if _cmake_cache_value(build_dir, "CMAKE_GENERATOR") == "Ninja":
+        ninja = shutil.which("ninja", path=environment.get("PATH"))
+        if ninja is None:
+            raise RuntimeError(
+                "The editable Gobot build uses Ninja, but the current environment "
+                "does not provide it. Run 'uv sync --reinstall-package gobot'."
+            )
+        command.append(f"-DCMAKE_MAKE_PROGRAM:FILEPATH={ninja}")
+    return command
+
+
 def _run_native_rebuild_command(
     command: list[str], *, cwd: Path, environment: dict[str, str]
 ) -> None:
@@ -306,6 +388,11 @@ def _rebuild_editable_native_artifacts() -> None:
             f"The editable Gobot build directory '{build_dir}' does not exist. "
             "Reinstall it with 'uv sync --reinstall-package gobot'."
         )
+    if not (build_dir / "CMakeCache.txt").is_file():
+        raise RuntimeError(
+            f"The editable Gobot build directory '{build_dir}' has no CMake cache. "
+            "Reinstall it with 'uv sync --reinstall-package gobot'."
+        )
 
     environment_bin = os.fspath(Path(sys.executable).absolute().parent)
     environment = os.environ.copy()
@@ -318,10 +405,21 @@ def _rebuild_editable_native_artifacts() -> None:
     if "--parallel" not in build_options and not any(
         option == "-j" or option.startswith("-j") for option in build_options
     ):
-        build_options.append("--parallel")
+        if not environment.get("CMAKE_BUILD_PARALLEL_LEVEL"):
+            build_options.extend(("--parallel", str(min(os.cpu_count() or 1, 4))))
     install_options = list(getattr(finder, "install_options", ()) or ())
     if "--component" not in install_options:
         install_options.extend(("--component", "python"))
+
+    install_dir = Path(install_dir_value)
+    if _editable_build_needs_reconfigure(build_dir, install_dir, environment):
+        _run_native_rebuild_command(
+            _editable_reconfigure_command(
+                source_root, build_dir, install_dir, environment
+            ),
+            cwd=source_root,
+            environment=environment,
+        )
 
     _rebuild_stale_editable_gsplat(source_root, build_dir, environment)
     commands = (
