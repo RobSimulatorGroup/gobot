@@ -58,7 +58,7 @@ class CompiledSceneArtifact:
         backend_value = value.get("backend", "")
         backend = str(getattr(backend_value, "name", backend_value)).rsplit(".", 1)[-1]
         if backend != "MuJoCoCpu":
-            raise ValueError(f"MuJoCo Warp requires a MuJoCoCpu artifact, got {backend!r}")
+            raise ValueError(f"MuJoCo device providers require a MuJoCoCpu artifact, got {backend!r}")
         digest = str(value.get("content_digest", value.get("digest", "")))
         if not digest:
             raise ValueError("compiled scene artifact has no content digest")

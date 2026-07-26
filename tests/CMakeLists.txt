@@ -217,6 +217,17 @@ set_tests_properties(test_python_editor_launcher
 )
 
 add_test(
+        NAME test_python_build_backend
+        COMMAND ${Python3_EXECUTABLE} -S
+                ${CMAKE_CURRENT_SOURCE_DIR}/python/test_build_backend.py
+)
+set_tests_properties(test_python_build_backend
+        PROPERTIES
+            ENVIRONMENT "${GOBOT_PYTHON_TEST_ENV}"
+            WORKING_DIRECTORY "${CMAKE_SOURCE_DIR}"
+)
+
+add_test(
         NAME test_python_bindings_smoke
         COMMAND ${Python3_EXECUTABLE} -S ${CMAKE_CURRENT_SOURCE_DIR}/python/test_python_bindings_smoke.py
 )
@@ -266,6 +277,17 @@ add_test(
 set_tests_properties(test_python_policy_manifest
         PROPERTIES
             ENVIRONMENT "${GOBOT_PYTHON_TEST_ENV}"
+            WORKING_DIRECTORY "${CMAKE_SOURCE_DIR}"
+)
+add_test(
+        NAME test_python_newton_provider
+        COMMAND ${Python3_EXECUTABLE} -S
+                ${CMAKE_CURRENT_SOURCE_DIR}/python/test_newton_provider.py
+)
+set_tests_properties(test_python_newton_provider
+        PROPERTIES
+            ENVIRONMENT "${GOBOT_PYTHON_TEST_ENV}"
+            RESOURCE_LOCK gobot_cuda
             WORKING_DIRECTORY "${CMAKE_SOURCE_DIR}"
 )
 add_test(

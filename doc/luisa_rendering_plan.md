@@ -130,11 +130,15 @@ dependency.
 
 Requirements:
 
-- Linux with an NVIDIA driver
+- Linux
 - CUDA Toolkit 12.1 or newer
-- CMake 3.26 or newer
+- CMake 3.27 or newer
 - a C++20 compiler
 - Ninja is recommended
+
+The CUDA toolkit/compiler is required only for a source build. A physical GPU
+and NVIDIA driver are not required to compile; the driver is required when the
+installed renderer runs.
 
 Initialize the source and its pinned dependencies:
 
@@ -143,33 +147,38 @@ git submodule update --init 3rdparty/luisa_compute
 git -C 3rdparty/luisa_compute submodule update --init --recursive
 ```
 
-The build script rejects uninitialized, mismatched, conflicted, or dirty nested
-submodules before configuring CMake. This prevents an extracted dependency tree
-from being mistaken for the pinned Git checkout. Set
-`GOB_LUISA_ALLOW_DIRTY_SOURCE=1` only when intentionally developing a LuisaCompute
+The dependency-only CMake configuration rejects incomplete or dirty nested
+submodules before configuring LuisaCompute. This prevents an extracted
+dependency tree from being mistaken for the pinned Git checkout. Set
+`GOB_LUISA_ALLOW_DIRTY_SOURCE=ON` only when intentionally developing a LuisaCompute
 dependency locally.
 
 Build and install the isolated CUDA-only dependency:
 
 ```bash
-scripts/build_luisa_compute.sh
+cmake --workflow --preset dependencies-render
 ```
 
-The default install prefix is `build/luisa_compute/install`. Run this script
-before `uv sync` or a local wheel build. The script keeps
-Luisa's CMake options and bundled targets out of Gobot's build graph. It prefers
-GCC 11 when available because GCC 12.3 on Ubuntu 22.04 can hit an internal
-compiler error in Luisa's CUDA acceleration code.
+The default install prefix is `build/luisa_compute/install`. Python source and
+editable builds (`pip install .`, `uv sync`, and the first `uv run`) initialize
+the pinned sources and run this dependency build automatically. Use the command
+above directly only for standalone CMake development or to prepare the SDK
+explicitly. The dependency-only project keeps Luisa's CMake options and bundled
+targets out of Gobot's build graph. It prefers GCC 11 when available because
+GCC 12.3 on Ubuntu 22.04 can hit an internal compiler error in Luisa's CUDA
+acceleration code.
 
 Override tools or paths when needed:
 
 ```bash
-CMAKE_BIN=/path/to/cmake \
-GOB_LUISA_CC=/usr/bin/gcc-11 \
-GOB_LUISA_CXX=/usr/bin/g++-11 \
-GOB_LUISA_BUILD_DIR="$PWD/build/luisa_compute" \
-GOB_LUISA_INSTALL_DIR="$PWD/build/luisa_compute/install" \
-scripts/build_luisa_compute.sh
+cmake -S . -B build/dependencies-render -G Ninja \
+  -DGOB_BUILD_DEPENDENCIES_ONLY=ON \
+  -DGOB_DEPENDENCY_BUILD_LUISA=ON \
+  -DGOB_DEPENDENCY_BUILD_GSPLAT=ON \
+  -DGOB_DEPENDENCY_BUILD_OPENUSD=OFF \
+  -DGOB_LUISA_C_COMPILER=/usr/bin/gcc-11 \
+  -DGOB_LUISA_CXX_COMPILER=/usr/bin/g++-11
+cmake --build build/dependencies-render --target gobot_dependencies --parallel
 ```
 
 ## Build Gobot

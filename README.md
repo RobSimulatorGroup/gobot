@@ -12,9 +12,11 @@ drive reinforcement-learning experiments.
 
 ## Install
 
-Gobot currently publishes full-featured Linux x86_64 wheels for NVIDIA GPU
-systems. The wheel includes CPU simulation, MuJoCo Warp training dependencies,
-and the LuisaCompute CUDA viewport renderer.
+Gobot publishes full-featured Linux x86_64 wheels for NVIDIA GPU systems.
+The default install includes CPU simulation, MuJoCo Warp, Newton, PyTorch and
+CUDA user-space dependencies, the LuisaCompute renderer, Gaussian Splatting
+inference, and the bundled OpenUSD importer/runtime. There are no feature extras
+to select.
 
 ```bash
 pip install gobot -i https://pypi.org/simple
@@ -55,19 +57,20 @@ For source checkout development:
 
 ```bash
 cd /path/to/gobot
-scripts/build_luisa_compute.sh
-uv sync
 uv run gobot_editor --path examples/go1
 ```
 
-`uv sync` installs Gobot editable: Python files import directly from the
-checkout, while `_core`, `libgobot`, and `gobot_editor` come from the same
-build installed in `.venv`. The editable `gobot_editor` launcher runs an
-incremental CMake/Ninja rebuild before every start, so changed C++ and CMake
-files cannot silently leave the editor on stale native binaries. If the initial
-editable install was configured inside uv's temporary build isolation
-environment, the launcher repairs that persistent CMake cache with the current
-virtual environment before its first incremental rebuild.
+The first `uv run` initializes the required Git submodules and builds the
+cached LuisaCompute, gsplat, and OpenUSD SDKs before installing Gobot editable.
+It requires the source-build toolchain, including a CUDA toolkit with `nvcc`.
+Later runs are incremental. Python files import directly from the checkout,
+while `_core`, `libgobot`, and `gobot_editor` come from the same build installed
+in `.venv`. The editable `gobot_editor` launcher runs an incremental CMake/Ninja
+rebuild before every start, so changed C++ and CMake files cannot silently leave
+the editor on stale native binaries. If the initial editable install was
+configured inside uv's temporary build isolation environment, the launcher
+repairs that persistent CMake cache with the current virtual environment before
+its first incremental rebuild.
 
 When native changes must be used by another Python entry point, rebuild and
 reinstall only Gobot explicitly:
@@ -116,10 +119,34 @@ run the following command when the installed editor must be updated:
 uv sync --reinstall-package gobot --no-build-isolation-package gobot
 ```
 
-The default environment includes ONNX Runtime, PyTorch, rsl_rl, MuJoCo Warp,
-training logs, video capture, and ONNX export support. There are no separate
-CPU, CUDA, or training extras. Selecting `mujoco-cpu` or `mujoco-warp` remains
-an explicit runtime choice; requesting Warp never silently falls back to CPU.
+The default Linux x86-64 environment includes ONNX Runtime, PyTorch, rsl_rl,
+MuJoCo Warp, Newton, training logs, video capture, and ONNX export support.
+There are no separate CPU, CUDA, or training extras. Selecting a simulation
+provider remains explicit; requesting a CUDA provider never silently falls
+back to CPU.
+
+OpenUSD remains an optional CMake feature, but Python source builds enable it by
+default. Official Linux x86-64 wheels bundle the runtime, so
+`pip install gobot` does not need OpenUSD, LuisaCompute, or oneTBB checkouts and
+does not compile them on the user's computer. Source builds use pinned, shallow
+submodules under `3rdparty`; the PEP 517 backend initializes and builds them
+automatically. The explicit CMake workflow remains available for SDK work:
+
+```bash
+git submodule update --init --depth=1 3rdparty/openusd 3rdparty/onetbb
+cmake --workflow --preset dependencies-openusd
+cmake -S . -B build/openusd-dev \
+  -DGOB_BUILD_OPENUSD=ON \
+  -DGOB_OPENUSD_ROOT="$PWD/build/openusd/install"
+cmake --build build/openusd-dev -j
+```
+
+The importer maps USD hierarchy, stage units/up-axis, transforms, visibility,
+render-purpose polygon meshes, normals, UVs, and constant `UsdPreviewSurface`
+material inputs into Gobot `PackedScene` data. OpenUSD-enabled installs bundle
+their native runtime under `gobot/openusd`. See
+[Newton and OpenUSD integration](doc/newton_openusd.md) for the data boundary
+and provider example.
 
 Run Go1 rough-terrain training on MuJoCo Warp through `uv`:
 
@@ -161,19 +188,22 @@ From a source checkout:
 ```bash
 git clone https://github.com/RobSimulatorGroup/gobot.git
 cd gobot
-git submodule update --init --recursive
-scripts/build_luisa_compute.sh
 uv run --with build python -m build --wheel
 uv pip install --force-reinstall dist/gobot-*.whl
 ```
+
+The PEP 517 backend initializes the pinned submodules and incrementally builds
+all native SDKs. A complete Git checkout is required for source builds; install
+the published wheel when the dependency sources or native build toolchain are
+not available.
 
 ## Notes
 
 - Supported platform: Linux.
 - Python package name: `gobot`.
-- MuJoCo support is included in release wheels when available in the build.
-- Release wheels install the MuJoCo Warp Python provider and LuisaCompute CUDA
-  renderer by default; neither becomes a C++ scene API.
+- Release wheels install MuJoCo CPU, MuJoCo Warp, Newton, LuisaCompute,
+  Gaussian Splatting inference, and OpenUSD support by default. The Python GPU
+  providers remain behind Gobot's backend-neutral simulation boundary.
 - A system CUDA Toolkit is needed to build from source, but not to use a wheel.
   Wheel users need a compatible NVIDIA driver providing `libcuda.so.1` and
   the system libglvnd EGL/OpenGL dispatch libraries. Driver libraries are not

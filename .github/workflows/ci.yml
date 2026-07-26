@@ -20,9 +20,22 @@ jobs:
     runs-on: ${{ matrix.os }}
 
     steps:
-    - uses: actions/checkout@v3
+    - uses: actions/checkout@v4
       with:
-        submodules: 'true'
+        submodules: false
+
+    - name: Check out core submodules
+      run: |
+        git submodule sync
+        git -c protocol.version=2 submodule update --init --force --depth=1 \
+          3rdparty/assimp \
+          3rdparty/gli \
+          3rdparty/googletest \
+          3rdparty/imgui \
+          3rdparty/meshoptimizer \
+          3rdparty/pybind11 \
+          3rdparty/rttr \
+          3rdparty/stb
 
     - name: Get Ninja
       uses: seanmiddleditch/gha-setup-ninja@v3
@@ -76,3 +89,61 @@ jobs:
       # Execute tests defined by the CMake configuration.
       # See https://cmake.org/cmake/help/latest/manual/ctest.1.html for more detail
       run: ctest -C ${{env.BUILD_TYPE}} --output-on-failure
+
+  openusd-import:
+    name: OpenUSD Import
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+
+    steps:
+    - uses: actions/checkout@v4
+      with:
+        submodules: false
+
+    - name: Check out OpenUSD and test submodules
+      run: |
+        git submodule sync
+        git -c protocol.version=2 submodule update --init --force --depth=1 \
+          3rdparty/gli \
+          3rdparty/googletest \
+          3rdparty/imgui \
+          3rdparty/meshoptimizer \
+          3rdparty/onetbb \
+          3rdparty/openusd \
+          3rdparty/pybind11 \
+          3rdparty/rttr \
+          3rdparty/stb
+
+    - name: Install build dependencies
+      run: |
+        sudo apt-get update
+        sudo apt-get install -y libeigen3-dev libegl1-mesa-dev ninja-build python3-dev
+
+    - name: Restore OpenUSD SDK cache
+      uses: actions/cache@v4
+      with:
+        path: |
+          build/dependencies-openusd
+          build/openusd
+          build/onetbb
+        key: openusd-${{ runner.os }}-c58778b-9afd759-${{ hashFiles('cmake/GobotDependencies.cmake') }}
+
+    - name: Build cached OpenUSD SDK
+      run: cmake --workflow --preset dependencies-openusd
+
+    - name: Build OpenUSD importer tests
+      run: |
+        cmake -S . -B build/openusd-ci -G Ninja \
+          -DCMAKE_BUILD_TYPE=Release \
+          -DGOB_BUILD_TESTS=ON \
+          -DGOB_BUILD_OPENUSD=ON \
+          -DGOB_OPENUSD_ROOT="$PWD/build/openusd/install" \
+          -DGOB_BUILD_ASSIMP=OFF \
+          -DGOB_BUILD_MUJOCO=OFF \
+          -DGOB_BUILD_EGL=OFF \
+          -DGOB_BUILD_LUISA_RENDERER=OFF \
+          -DGOB_BUILD_GSPLAT_INFERENCE=OFF
+        cmake --build build/openusd-ci --target test_resource_format_usd --parallel 4
+
+    - name: Test OpenUSD importer
+      run: ctest --test-dir build/openusd-ci -R TestResourceFormatUSD --output-on-failure

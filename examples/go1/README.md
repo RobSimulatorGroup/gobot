@@ -246,6 +246,11 @@ the pinned reference itself is not bitwise repeatable there. The reference and
 Gobot traces must use identical MuJoCo, MuJoCo Warp, Warp, and Torch versions;
 a dynamics-stack version mismatch is a parity failure.
 
+GPU CI installs the fixture's three pinned dynamics packages into an isolated
+target directory for this comparison. That target overrides the provider
+packages only for the parity process; Gobot's normal environment continues to
+use the current Newton-compatible stack.
+
 Regenerate and compare the traces with the two independent environments:
 
 ```bash

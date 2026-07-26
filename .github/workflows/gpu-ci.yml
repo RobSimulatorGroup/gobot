@@ -22,8 +22,24 @@ jobs:
       - name: Check out repository
         uses: actions/checkout@v4
         with:
-          submodules: recursive
+          submodules: false
           persist-credentials: false
+
+      - name: Check out renderer and test submodules
+        run: |
+          git submodule sync --recursive
+          git -c protocol.version=2 submodule update --init --force --depth=1 \
+            3rdparty/gli \
+            3rdparty/googletest \
+            3rdparty/imgui \
+            3rdparty/luisa_compute \
+            3rdparty/meshoptimizer \
+            3rdparty/pybind11 \
+            3rdparty/rttr \
+            3rdparty/stb
+          git -C 3rdparty/luisa_compute submodule sync --recursive
+          git -C 3rdparty/luisa_compute -c protocol.version=2 submodule update \
+            --init --force --depth=1 --recursive
 
       - name: Set up uv
         uses: astral-sh/setup-uv@v6
@@ -37,15 +53,16 @@ jobs:
 
       - name: Install LuisaCompute build tools
         run: |
-          uv tool install 'cmake>=3.26'
+          uv tool install 'cmake>=3.27'
           echo "$HOME/.local/bin" >> "$GITHUB_PATH"
 
       - name: Build LuisaCompute CUDA runtime
-        run: |
-          scripts/build_luisa_compute.sh
-          scripts/build_gsplat_inference.sh
+        run: cmake --workflow --preset dependencies-render
 
       - name: Install complete Gobot environment
+        env:
+          CMAKE_ARGS: "-DGOB_BUILD_OPENUSD=OFF"
+          GOBOT_SKIP_DEPENDENCY_BOOTSTRAP: "1"
         run: uv sync
 
       - name: Configure Luisa renderer integration test
@@ -85,10 +102,31 @@ jobs:
       - name: Test MuJoCo Warp provider
         run: uv run --no-sync python tests/python/test_mujoco_warp_provider.py
 
+      - name: Test Newton provider
+        env:
+          GOBOT_RUN_NEWTON_GPU_TEST: "1"
+        run: uv run --no-sync python tests/python/test_newton_provider.py
+
       - name: Test Go1 MuJoCo Warp task
         run: uv run --no-sync python tests/python/test_go1_mujoco_warp_env.py
 
+      - name: Install pinned Go1 reference dynamics stack
+        run: |
+          mkdir -p /tmp/gobot-gpu-ci/go1-reference-stack
+          uv pip install \
+            --target /tmp/gobot-gpu-ci/go1-reference-stack \
+            --no-deps \
+            warp-lang==1.14.0 \
+            mujoco-warp==3.10.0.1
+          uv pip install \
+            --target /tmp/gobot-gpu-ci/go1-reference-stack \
+            --no-deps \
+            --default-index https://py.mujoco.org \
+            mujoco==3.10.1.dev946137815
+
       - name: Test pinned Go1 reference parity
+        env:
+          PYTHONPATH: /tmp/gobot-gpu-ci/go1-reference-stack
         run: uv run --no-sync python tests/python/test_go1_reference_parity.py
 
       - name: Benchmark Go1 MuJoCo Warp

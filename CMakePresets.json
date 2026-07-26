@@ -1,0 +1,84 @@
+{
+  "version": 6,
+  "cmakeMinimumRequired": {
+    "major": 3,
+    "minor": 27,
+    "patch": 0
+  },
+  "configurePresets": [
+    {
+      "name": "dependencies",
+      "displayName": "All Gobot dependency SDKs",
+      "generator": "Ninja",
+      "binaryDir": "${sourceDir}/build/dependencies",
+      "cacheVariables": {
+        "GOB_BUILD_DEPENDENCIES_ONLY": "ON",
+        "GOB_DEPENDENCY_BUILD_LUISA": "ON",
+        "GOB_DEPENDENCY_BUILD_GSPLAT": "ON",
+        "GOB_DEPENDENCY_BUILD_OPENUSD": "ON"
+      }
+    },
+    {
+      "name": "dependencies-render",
+      "displayName": "LuisaCompute and Gaussian Splatting SDKs",
+      "inherits": "dependencies",
+      "binaryDir": "${sourceDir}/build/dependencies-render",
+      "cacheVariables": {
+        "GOB_DEPENDENCY_BUILD_OPENUSD": "OFF"
+      }
+    },
+    {
+      "name": "dependencies-openusd",
+      "displayName": "OpenUSD SDK",
+      "inherits": "dependencies",
+      "binaryDir": "${sourceDir}/build/dependencies-openusd",
+      "cacheVariables": {
+        "GOB_DEPENDENCY_BUILD_LUISA": "OFF",
+        "GOB_DEPENDENCY_BUILD_GSPLAT": "OFF"
+      }
+    }
+  ],
+  "buildPresets": [
+    {
+      "name": "dependencies",
+      "configurePreset": "dependencies",
+      "targets": ["gobot_dependencies"]
+    },
+    {
+      "name": "dependencies-render",
+      "configurePreset": "dependencies-render",
+      "targets": ["gobot_dependencies"]
+    },
+    {
+      "name": "dependencies-openusd",
+      "configurePreset": "dependencies-openusd",
+      "targets": ["gobot_dependencies"]
+    }
+  ],
+  "workflowPresets": [
+    {
+      "name": "dependencies",
+      "displayName": "Configure and build all dependency SDKs",
+      "steps": [
+        {"type": "configure", "name": "dependencies"},
+        {"type": "build", "name": "dependencies"}
+      ]
+    },
+    {
+      "name": "dependencies-render",
+      "displayName": "Configure and build rendering dependency SDKs",
+      "steps": [
+        {"type": "configure", "name": "dependencies-render"},
+        {"type": "build", "name": "dependencies-render"}
+      ]
+    },
+    {
+      "name": "dependencies-openusd",
+      "displayName": "Configure and build the OpenUSD SDK",
+      "steps": [
+        {"type": "configure", "name": "dependencies-openusd"},
+        {"type": "build", "name": "dependencies-openusd"}
+      ]
+    }
+  ]
+}

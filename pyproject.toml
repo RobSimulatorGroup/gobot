@@ -4,11 +4,12 @@ requires = [
     "packaging>=23.2",
     "scikit-build-core>=1.0.3",
 ]
-build-backend = "scikit_build_core.build"
+backend-path = ["."]
+build-backend = "gobot_build_backend"
 
 [project]
 name = "gobot"
-version = "0.1.15"
+version = "0.1.16"
 description = "Python bindings for the Gobot robotics scene, simulation, and rendering engine."
 readme = "README.md"
 requires-python = ">=3.10"
@@ -20,7 +21,8 @@ dependencies = [
     "imageio>=2.34",
     "imageio-ffmpeg>=0.5",
     "mujoco==3.10.0; sys_platform == 'linux' and platform_machine == 'x86_64'",
-    "mujoco-warp==3.10.0.1; sys_platform == 'linux' and platform_machine == 'x86_64'",
+    "mujoco-warp==3.10.0.2; sys_platform == 'linux' and platform_machine == 'x86_64'",
+    "newton[sim]==1.4.0; sys_platform == 'linux' and platform_machine == 'x86_64'",
     "numpy>=2,<3",
     "nvidia-cuda-runtime-cu12>=12.8,<13; sys_platform == 'linux' and platform_machine == 'x86_64'",
     "onnx>=1.16",
@@ -30,7 +32,8 @@ dependencies = [
     "tensorboard",
     "tensordict",
     "torch>=2.7; sys_platform == 'linux' and platform_machine == 'x86_64'",
-    "warp-lang==1.14.0; sys_platform == 'linux' and platform_machine == 'x86_64'",
+    "trimesh>=4.6.8; sys_platform == 'linux' and platform_machine == 'x86_64'",
+    "warp-lang==1.15.0; sys_platform == 'linux' and platform_machine == 'x86_64'",
 ]
 
 [project.urls]
@@ -43,7 +46,7 @@ gobot_editor = "gobot_cli.editor:editor"
 
 [dependency-groups]
 dev = [
-    "cmake>=3.26",
+    "cmake>=3.27",
     "ninja>=1.11",
     "packaging>=23.2",
     "scikit-build-core>=1.0.3",
@@ -60,7 +63,7 @@ torch = [
 ]
 
 [tool.scikit-build]
-cmake.version = ">=3.26"
+cmake.version = ">=3.27"
 cmake.build-type = "Release"
 build-dir = "build/{wheel_tag}"
 wheel.packages = ["python/gobot", "python/gobot_cli"]
@@ -70,8 +73,13 @@ components = ["python"]
 
 [tool.scikit-build.cmake.define]
 GOB_BUILD_TESTS = "OFF"
+GOB_BUILD_ASSIMP = "ON"
+GOB_BUILD_MUJOCO = "ON"
+GOB_BUILD_EGL = "ON"
 GOB_BUILD_LUISA_RENDERER = "ON"
 GOB_BUILD_GSPLAT_INFERENCE = "ON"
+GOB_BUILD_OPENUSD = "ON"
+GOB_BUNDLE_OPENUSD_RUNTIME = "ON"
 GOB_FETCH_MUJOCO = "OFF"
 GOB_FORCE_FETCH_MUJOCO = "OFF"
 GOB_MUJOCO_GIT_TAG = "3.10.0"

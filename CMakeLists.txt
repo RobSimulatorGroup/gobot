@@ -1,5 +1,18 @@
 cmake_minimum_required (VERSION 3.16)
-project (gobot VERSION 0.1.15)
+
+option(GOB_BUILD_DEPENDENCIES_ONLY
+       "configure only the isolated Gobot dependency SDK build"
+       OFF)
+if(GOB_BUILD_DEPENDENCIES_ONLY)
+    if(CMAKE_VERSION VERSION_LESS 3.27)
+        message(FATAL_ERROR "The Gobot dependency build requires CMake 3.27 or newer.")
+    endif()
+    project(gobot_dependencies NONE)
+    include(cmake/GobotDependencies.cmake)
+    return()
+endif()
+
+project (gobot VERSION 0.1.16)
 
 set(CMAKE_POLICY_VERSION_MINIMUM 3.5)
 
@@ -13,7 +26,10 @@ set(GOBOT_VERSION "${PROJECT_VERSION}")
 set(GOBOT_VERSION_COMMIT "" CACHE STRING "Git commit or build identifier embedded in Gobot version output")
 
 option(GOB_BUILD_TESTS "build tests" OFF)
-option(GOB_BUILD_OPENUSD "build OpenUSD scene importer/exporter support" OFF)
+option(GOB_BUILD_OPENUSD "build OpenUSD scene importer support" OFF)
+option(GOB_BUNDLE_OPENUSD_RUNTIME
+       "install the OpenUSD runtime libraries and plugin resources with Gobot"
+       ON)
 option(GOB_BUILD_ASSIMP "build mesh import support through Assimp" ON)
 option(GOB_BUILD_MUJOCO "build MuJoCo CPU physics backend support" ON)
 option(GOB_BUILD_EGL "build EGL headless OpenGL rendering support" ON)
@@ -23,6 +39,8 @@ option(GOB_FETCH_MUJOCO "download MuJoCo from the official GitHub repository whe
 option(GOB_FORCE_FETCH_MUJOCO "use the pinned fetched MuJoCo even when an SDK/package is discoverable" OFF)
 option(GOB_ENABLE_TRACY "enable Tracy profiler instrumentation" OFF)
 set(GOB_MUJOCO_ROOT "" CACHE PATH "MuJoCo SDK or install prefix. Supports either a CMake package install or an extracted SDK with include/ and lib/.")
+set(GOB_OPENUSD_ROOT "${CMAKE_CURRENT_SOURCE_DIR}/build/openusd/install" CACHE PATH
+        "OpenUSD install prefix containing pxrConfig.cmake.")
 set(GOB_TRACY_ROOT "" CACHE PATH "Tracy install prefix or source checkout used when GOB_ENABLE_TRACY is ON")
 set(GOB_LUISA_COMPUTE_ROOT "${CMAKE_CURRENT_SOURCE_DIR}/build/luisa_compute/install" CACHE PATH
         "LuisaCompute install prefix used by the optional CUDA renderer module")
@@ -79,7 +97,78 @@ CPMFindPackage(
 )
 
 if(GOB_BUILD_OPENUSD)
-    find_package(pxr REQUIRED CONFIG)
+    # Older editable-build caches stored this value as an empty string. Repair
+    # that cache entry when OpenUSD is enabled, while preserving any explicit
+    # non-empty SDK path supplied by the caller.
+    if(NOT GOB_OPENUSD_ROOT)
+        set(GOB_OPENUSD_ROOT "${CMAKE_CURRENT_SOURCE_DIR}/build/openusd/install"
+            CACHE PATH "OpenUSD install prefix containing pxrConfig.cmake." FORCE)
+    endif()
+    if(CMAKE_VERSION VERSION_LESS 3.27)
+        message(FATAL_ERROR
+            "GOB_BUILD_OPENUSD requires CMake 3.27 or newer. "
+            "Use the project build environment or set CMAKE_BIN when building the SDK.")
+    endif()
+    if(GOB_OPENUSD_ROOT)
+        # OpenUSD's exported package may delegate oneTBB discovery to CMake.
+        # The cached SDK helper installs oneTBB into the same prefix, so prime
+        # TBB_DIR before loading pxrConfig.cmake. Clear cached package paths so
+        # changing GOB_OPENUSD_ROOT cannot silently retain a previous SDK.
+        unset(TBB_DIR CACHE)
+        unset(pxr_DIR CACHE)
+        find_package(TBB CONFIG QUIET
+            PATHS
+                "${GOB_OPENUSD_ROOT}"
+                "${GOB_OPENUSD_ROOT}/lib/cmake/TBB"
+                "${GOB_OPENUSD_ROOT}/lib64/cmake/TBB"
+            NO_DEFAULT_PATH)
+        find_package(pxr CONFIG QUIET
+            PATHS
+                "${GOB_OPENUSD_ROOT}"
+                "${GOB_OPENUSD_ROOT}/lib/cmake/pxr"
+                "${GOB_OPENUSD_ROOT}/lib64/cmake/pxr"
+            NO_DEFAULT_PATH)
+    endif()
+    if(NOT pxr_FOUND)
+        find_package(pxr REQUIRED CONFIG)
+    endif()
+
+    if(TARGET usd_m)
+        set(GOBOT_OPENUSD_TARGETS usd_m)
+    else()
+        set(GOBOT_OPENUSD_TARGETS usd usdGeom usdShade sdf tf vt gf)
+        foreach(GOBOT_OPENUSD_TARGET IN LISTS GOBOT_OPENUSD_TARGETS)
+            if(NOT TARGET ${GOBOT_OPENUSD_TARGET})
+                message(FATAL_ERROR
+                    "OpenUSD package was found, but required target '${GOBOT_OPENUSD_TARGET}' is missing. "
+                    "Set GOB_OPENUSD_ROOT to a complete OpenUSD install prefix.")
+            endif()
+        endforeach()
+    endif()
+
+    set(GOBOT_OPENUSD_RUNTIME_ROOT "")
+    foreach(GOBOT_OPENUSD_PREFIX IN ITEMS
+            "${GOB_OPENUSD_ROOT}"
+            "${pxr_DIR}"
+            "${pxr_DIR}/../.."
+            "${pxr_DIR}/../../..")
+        cmake_path(ABSOLUTE_PATH GOBOT_OPENUSD_PREFIX
+                   NORMALIZE OUTPUT_VARIABLE GOBOT_OPENUSD_PREFIX_NORMALIZED)
+        if(EXISTS "${GOBOT_OPENUSD_PREFIX_NORMALIZED}/lib/usd/plugInfo.json")
+            set(GOBOT_OPENUSD_RUNTIME_ROOT "${GOBOT_OPENUSD_PREFIX_NORMALIZED}")
+            break()
+        elseif(EXISTS "${GOBOT_OPENUSD_PREFIX_NORMALIZED}/lib64/usd/plugInfo.json")
+            set(GOBOT_OPENUSD_RUNTIME_ROOT "${GOBOT_OPENUSD_PREFIX_NORMALIZED}")
+            break()
+        endif()
+    endforeach()
+    if(GOB_BUNDLE_OPENUSD_RUNTIME AND NOT GOBOT_OPENUSD_RUNTIME_ROOT)
+        message(FATAL_ERROR
+            "OpenUSD runtime resources could not be found beside pxrConfig.cmake. "
+            "Set GOB_OPENUSD_ROOT to the SDK prefix, or explicitly disable "
+            "GOB_BUNDLE_OPENUSD_RUNTIME for a system-managed OpenUSD install.")
+    endif()
+    message(STATUS "Gobot OpenUSD scene import enabled from: ${pxr_DIR}")
 endif()
 
 set(GOBOT_TRACY_TARGET "")
@@ -494,7 +583,8 @@ function(gobot_install_license_files SOURCE_DIR LICENSE_DIR_NAME)
             COPYING.md
             NOTICE
             NOTICE.txt
-            NOTICE.md)
+            NOTICE.md
+            LICENSES_THIRD_PARTY.md)
         if(EXISTS "${SOURCE_DIR}/${GOBOT_LICENSE_FILE}")
             list(APPEND GOBOT_LICENSE_FILES "${SOURCE_DIR}/${GOBOT_LICENSE_FILE}")
         endif()
@@ -636,8 +726,8 @@ if(GOB_ENABLE_TRACY AND GOBOT_TRACY_TARGET)
 endif()
 
 if(GOB_BUILD_OPENUSD)
-    target_compile_definitions(gobot PUBLIC GOBOT_HAS_OPENUSD=1)
-    target_link_libraries(gobot PUBLIC usd usdGeom usdShade sdf tf vt gf)
+    target_compile_definitions(gobot PRIVATE GOBOT_HAS_OPENUSD=1)
+    target_link_libraries(gobot PRIVATE ${GOBOT_OPENUSD_TARGETS})
 endif()
 
 if(GOB_BUILD_ASSIMP AND GOBOT_ASSIMP_TARGET)
@@ -697,10 +787,11 @@ set_target_properties(gobot_python
         LIBRARY_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/python/gobot"
         INSTALL_RPATH "$ORIGIN"
 )
-set_target_properties(gobot
-    PROPERTIES
-        INSTALL_RPATH "$ORIGIN"
-)
+set(GOBOT_INSTALL_RPATH "$ORIGIN")
+if(GOB_BUILD_OPENUSD AND GOB_BUNDLE_OPENUSD_RUNTIME)
+    list(APPEND GOBOT_INSTALL_RPATH "$ORIGIN/openusd/lib")
+endif()
+set_target_properties(gobot PROPERTIES INSTALL_RPATH "${GOBOT_INSTALL_RPATH}")
 set(GOBOT_PYTHON_PACKAGE_DIR "${CMAKE_CURRENT_SOURCE_DIR}/python/gobot")
 set(GOBOT_PYTHON_CLI_PACKAGE_DIR "${CMAKE_CURRENT_SOURCE_DIR}/python/gobot_cli")
 add_custom_target(gobot_python_package
@@ -718,6 +809,50 @@ add_dependencies(gobot_python gobot_python_package)
 install(TARGETS gobot_python gobot
         RUNTIME DESTINATION "gobot" COMPONENT python
         LIBRARY DESTINATION "gobot" COMPONENT python)
+if(GOB_BUILD_OPENUSD AND GOB_BUNDLE_OPENUSD_RUNTIME)
+    if(EXISTS "${GOBOT_OPENUSD_RUNTIME_ROOT}/lib/usd/plugInfo.json")
+        set(GOBOT_OPENUSD_RUNTIME_LIBDIR "${GOBOT_OPENUSD_RUNTIME_ROOT}/lib")
+    else()
+        set(GOBOT_OPENUSD_RUNTIME_LIBDIR "${GOBOT_OPENUSD_RUNTIME_ROOT}/lib64")
+    endif()
+    file(GLOB GOBOT_OPENUSD_RUNTIME_LIBRARIES
+         "${GOBOT_OPENUSD_RUNTIME_LIBDIR}/libusd_*.so*")
+    if(NOT GOBOT_OPENUSD_RUNTIME_LIBRARIES)
+        message(FATAL_ERROR
+            "No shared OpenUSD runtime libraries were found in "
+            "${GOBOT_OPENUSD_RUNTIME_LIBDIR}.")
+    endif()
+    install(FILES ${GOBOT_OPENUSD_RUNTIME_LIBRARIES}
+            DESTINATION "gobot/openusd/lib"
+            COMPONENT python)
+    install(DIRECTORY "${GOBOT_OPENUSD_RUNTIME_LIBDIR}/usd"
+            DESTINATION "gobot/openusd/lib"
+            COMPONENT python)
+    if(EXISTS "${GOBOT_OPENUSD_RUNTIME_ROOT}/plugin")
+        install(DIRECTORY "${GOBOT_OPENUSD_RUNTIME_ROOT}/plugin"
+                DESTINATION "gobot/openusd"
+                COMPONENT python)
+    endif()
+    if(TARGET TBB::tbb)
+        install(FILES "$<TARGET_FILE:TBB::tbb>"
+                DESTINATION "gobot/openusd/lib"
+                COMPONENT python
+                RENAME "$<TARGET_SONAME_FILE_NAME:TBB::tbb>")
+    else()
+        message(FATAL_ERROR "Bundled OpenUSD requires the imported TBB::tbb target.")
+    endif()
+    if(NOT EXISTS "${GOBOT_OPENUSD_RUNTIME_ROOT}/share/licenses/OpenUSD/LICENSE.txt" OR
+       NOT EXISTS "${GOBOT_OPENUSD_RUNTIME_ROOT}/share/licenses/oneTBB/LICENSE.txt")
+        message(FATAL_ERROR
+            "Bundling OpenUSD requires OpenUSD and oneTBB license files below "
+            "${GOBOT_OPENUSD_RUNTIME_ROOT}/share/licenses. Build the SDK with "
+            "cmake --workflow --preset dependencies-openusd, or disable "
+            "GOB_BUNDLE_OPENUSD_RUNTIME.")
+    endif()
+    install(DIRECTORY "${GOBOT_OPENUSD_RUNTIME_ROOT}/share/licenses"
+            DESTINATION "gobot/openusd/share"
+            COMPONENT python)
+endif()
 if(NOT SKBUILD)
     # scikit-build-core installs these through wheel.packages. Keeping a second
     # CMake copy makes editable imports resolve to stale wheel staging files.
@@ -736,10 +871,28 @@ if(NOT SKBUILD)
             PATTERN "*.pyc" EXCLUDE
             PATTERN "*.py")
 endif()
+set(GOBOT_MUJOCO_LICENSE_SOURCE_DIR "")
 if(GOB_BUILD_MUJOCO AND GOBOT_MUJOCO_TARGET)
     install(FILES "$<TARGET_FILE:${GOBOT_MUJOCO_TARGET}>" DESTINATION "gobot" COMPONENT python)
     get_target_property(GOBOT_MUJOCO_IMPORTED_LOCATION "${GOBOT_MUJOCO_TARGET}" IMPORTED_LOCATION)
     if(GOBOT_MUJOCO_IMPORTED_LOCATION)
+        # The PyPI MuJoCo SDK keeps its licenses in the sibling dist-info
+        # directory. Gobot copies that SDK's shared library into its wheel, so
+        # retain the matching license payload as well.
+        get_filename_component(GOBOT_MUJOCO_PACKAGE_DIR
+            "${GOBOT_MUJOCO_IMPORTED_LOCATION}" DIRECTORY)
+        get_filename_component(GOBOT_MUJOCO_SITE_PACKAGES_DIR
+            "${GOBOT_MUJOCO_PACKAGE_DIR}" DIRECTORY)
+        file(GLOB GOBOT_MUJOCO_DIST_LICENSE_DIRS LIST_DIRECTORIES TRUE
+            "${GOBOT_MUJOCO_SITE_PACKAGES_DIR}/mujoco-${GOB_MUJOCO_GIT_TAG}.dist-info/licenses")
+        foreach(GOBOT_MUJOCO_DIST_LICENSE_DIR IN LISTS GOBOT_MUJOCO_DIST_LICENSE_DIRS)
+            if(EXISTS "${GOBOT_MUJOCO_DIST_LICENSE_DIR}/LICENSE")
+                set(GOBOT_MUJOCO_LICENSE_SOURCE_DIR
+                    "${GOBOT_MUJOCO_DIST_LICENSE_DIR}")
+                break()
+            endif()
+        endforeach()
+
         execute_process(
                 COMMAND "${CMAKE_OBJDUMP}" -p "${GOBOT_MUJOCO_IMPORTED_LOCATION}"
                 OUTPUT_VARIABLE GOBOT_MUJOCO_OBJDUMP
@@ -782,7 +935,15 @@ if(cxxopts_SOURCE_DIR)
     gobot_install_license_files("${cxxopts_SOURCE_DIR}" "cxxopts")
 endif()
 if(mujoco_SOURCE_DIR)
-    gobot_install_license_files("${mujoco_SOURCE_DIR}" "mujoco")
+    set(GOBOT_MUJOCO_LICENSE_SOURCE_DIR "${mujoco_SOURCE_DIR}")
+endif()
+if(GOBOT_MUJOCO_LICENSE_SOURCE_DIR)
+    gobot_install_license_files("${GOBOT_MUJOCO_LICENSE_SOURCE_DIR}" "mujoco")
+elseif(SKBUILD AND GOB_BUILD_MUJOCO AND GOBOT_MUJOCO_TARGET)
+    message(FATAL_ERROR
+        "The MuJoCo runtime is being bundled without its license files. "
+        "Install the pinned mujoco==${GOB_MUJOCO_GIT_TAG} build requirement "
+        "or provide a complete MuJoCo SDK.")
 endif()
 
 set_target_properties(gobot

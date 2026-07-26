@@ -31,6 +31,8 @@ from .providers import (
     MuJoCoWarpProviderAvailability,
     MuJoCoWarpRaycastSensorSpec,
     MuJoCoWarpRobotLayout,
+    NewtonProvider,
+    NewtonProviderAvailability,
     ProviderUnavailableError,
     SimulationCapacityError,
 )

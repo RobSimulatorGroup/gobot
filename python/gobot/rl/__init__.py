@@ -33,6 +33,8 @@ from .providers import (
     MuJoCoWarpProviderAvailability,
     MuJoCoWarpRaycastSensorSpec,
     MuJoCoWarpRobotLayout,
+    NewtonProvider,
+    NewtonProviderAvailability,
     ProviderUnavailableError,
     SimulationCapacityError,
 )
@@ -65,6 +67,8 @@ __all__ = [
     "MuJoCoWarpRaycastSensorSpec",
     "MuJoCoWarpRobotLayout",
     "NativeLocomotionBatchBackend",
+    "NewtonProvider",
+    "NewtonProviderAvailability",
     "ObservationSpec",
     "ONNX_POLICY_MANIFEST_KEY",
     "POLICY_MANIFEST_KEY",

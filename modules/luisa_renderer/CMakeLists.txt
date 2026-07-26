@@ -16,7 +16,7 @@ endforeach()
 if(NOT GOBOT_LUISA_TARGETS_FILE)
     message(FATAL_ERROR
         "LuisaCompute was not found under ${GOB_LUISA_COMPUTE_ROOT}.\n"
-        "Build and install the pinned source first with scripts/build_luisa_compute.sh.")
+        "Build the pinned SDK first with: cmake --workflow --preset dependencies-render")
 endif()
 include("${GOBOT_LUISA_TARGETS_FILE}")
 if(NOT TARGET luisa::compute)

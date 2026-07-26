@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import importlib.util
+from importlib.metadata import PackageNotFoundError, version
 import os
 from pathlib import Path
 import subprocess
@@ -13,6 +14,8 @@ import tempfile
 NATIVE_PAYLOAD = (
     "libgobot.so",
     "libgobot_luisa_renderer.so",
+    "licenses/mujoco/LICENSE",
+    "licenses/mujoco/LICENSES_THIRD_PARTY.md",
     "luisa/libluisa-backend-cuda.so",
     "luisa/libluisa-runtime.so",
     "luisa/luisa_nvrtc",
@@ -24,12 +27,29 @@ OTHER_EXAMPLE_PAYLOAD = (
     "examples/cartpole/policies/cartpole.onnx",
     "examples/cartpole/policies/cartpole.pt",
 )
+OPENUSD_PAYLOAD = (
+    "openusd/lib/libtbb.so.12",
+    "openusd/lib/libusd_usd.so",
+    "openusd/lib/libusd_usdGeom.so",
+    "openusd/lib/usd/plugInfo.json",
+    "openusd/plugin/usd/plugInfo.json",
+    "openusd/share/licenses/OpenUSD/LICENSE.txt",
+    "openusd/share/licenses/oneTBB/LICENSE.txt",
+)
 ELF_PAYLOAD = (
     "libgobot_luisa_renderer.so",
     "luisa/libluisa-backend-cuda.so",
     "luisa/luisa_nvrtc",
 )
 ALLOWED_MISSING_LIBRARIES = {"libcuda.so.1", "libcudart.so.12"}
+DEFAULT_DISTRIBUTIONS = (
+    "mujoco",
+    "mujoco-warp",
+    "newton",
+    "nvidia-cuda-runtime-cu12",
+    "torch",
+    "warp-lang",
+)
 
 
 def missing_libraries(path: Path) -> set[str]:
@@ -53,7 +73,12 @@ def main() -> int:
     package_root = Path(gobot.__file__).resolve().parent
     missing_payload = [
         name
-        for name in (*NATIVE_PAYLOAD, *GO1_POLICY_PAYLOAD, *OTHER_EXAMPLE_PAYLOAD)
+        for name in (
+            *NATIVE_PAYLOAD,
+            *OPENUSD_PAYLOAD,
+            *GO1_POLICY_PAYLOAD,
+            *OTHER_EXAMPLE_PAYLOAD,
+        )
         if not (package_root / name).is_file()
     ]
     if missing_payload:
@@ -82,6 +107,32 @@ def main() -> int:
     if importlib.util.find_spec("gobot.rl") is None:
         raise RuntimeError("installed wheel does not expose gobot.rl")
 
+    if os.environ.get("GOBOT_SMOKE_REQUIRE_DEFAULT_DEPENDENCIES") == "1":
+        missing_distributions = []
+        for distribution in DEFAULT_DISTRIBUTIONS:
+            try:
+                version(distribution)
+            except PackageNotFoundError:
+                missing_distributions.append(distribution)
+        if missing_distributions:
+            raise RuntimeError(
+                "default pip install is missing distributions: "
+                + ", ".join(missing_distributions)
+            )
+        availability = gobot.rl.NewtonProvider.availability()
+        if not availability.available:
+            raise RuntimeError(
+                "default pip install cannot resolve Newton provider dependencies: "
+                + availability.reason
+            )
+        import torch
+
+        if torch.version.cuda is None:
+            raise RuntimeError(
+                "default pip install resolved a CPU-only Torch build; "
+                "Gobot's default Newton runtime requires CUDA-enabled Torch"
+            )
+
     resolved_package_root = editor_launcher._distribution_gobot_dir()
     if resolved_package_root is None or resolved_package_root.resolve() != package_root:
         raise RuntimeError("editor launcher cannot resolve the installed Gobot package")
@@ -109,6 +160,34 @@ assert importlib.util.find_spec("gobot.rl") is not None
             cwd=temporary_directory,
             env=launcher_env,
         )
+
+        usd_path = Path(temporary_directory) / "wheel_smoke.usda"
+        usd_path.write_text(
+            """#usda 1.0
+(
+    defaultPrim = "World"
+    metersPerUnit = 1
+    upAxis = "Z"
+)
+
+def Xform "World"
+{
+    def Mesh "Triangle"
+    {
+        uniform token subdivisionScheme = "none"
+        int[] faceVertexCounts = [3]
+        int[] faceVertexIndices = [0, 1, 2]
+        point3f[] points = [(0, 0, 0), (1, 0, 0), (0, 1, 0)]
+    }
+}
+""",
+            encoding="utf-8",
+        )
+        usd_resource = gobot.load_resource(str(usd_path), "PackedScene")
+        if usd_resource.get("type") != "PackedScene":
+            raise RuntimeError(
+                "installed wheel cannot import USD with its bundled OpenUSD runtime"
+            )
 
     unexpected_missing: dict[str, set[str]] = {}
     for relative_path in ELF_PAYLOAD:

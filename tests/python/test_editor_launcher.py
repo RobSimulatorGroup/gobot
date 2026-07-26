@@ -81,9 +81,14 @@ def test_editable_install_rebuilds_stale_bundled_gsplat() -> None:
         build_dir = source_root / "build" / "cp-test"
         install_dir = source_root / "build" / "gsplat_inference" / "install"
         gsplat_source = source_root / "3rdparty" / "gsplat_inference" / "src" / "renderer.cu"
-        script = source_root / "scripts" / "build_gsplat_inference.sh"
+        dependency_project = source_root / "cmake" / "GobotDependencies.cmake"
         library = install_dir / "lib" / "libgobot_gsplat_inference.a"
-        for parent in (build_dir, gsplat_source.parent, script.parent, library.parent):
+        for parent in (
+            build_dir,
+            gsplat_source.parent,
+            dependency_project.parent,
+            library.parent,
+        ):
             parent.mkdir(parents=True, exist_ok=True)
         build_dir.joinpath("CMakeCache.txt").write_text(
             "GOB_BUILD_GSPLAT_INFERENCE:BOOL=ON\n"
@@ -92,7 +97,7 @@ def test_editable_install_rebuilds_stale_bundled_gsplat() -> None:
         )
         library.write_bytes(b"old")
         gsplat_source.write_text("// changed\n", encoding="utf-8")
-        script.write_text("#!/bin/sh\n", encoding="utf-8")
+        dependency_project.write_text("# dependency project\n", encoding="utf-8")
         os.utime(library, ns=(1_000_000_000, 1_000_000_000))
         os.utime(gsplat_source, ns=(2_000_000_000, 2_000_000_000))
 
@@ -113,10 +118,17 @@ def test_editable_install_rebuilds_stale_bundled_gsplat() -> None:
         ):
             launcher._rebuild_editable_native_artifacts()
 
-    assert len(invocations) == 3
-    assert invocations[0][0] == [os.fspath(script)]
-    assert invocations[0][1]["env"]["GOB_GSPLAT_INSTALL_DIR"] == os.fspath(install_dir)
-    assert invocations[1][0][:3] == ["cmake", "--build", "."]
+    assert len(invocations) == 4
+    assert invocations[0][0][:3] == ["cmake", "-S", os.fspath(source_root)]
+    assert "-DGOB_BUILD_DEPENDENCIES_ONLY=ON" in invocations[0][0]
+    assert f"-DGOB_GSPLAT_INSTALL_DIR={install_dir}" in invocations[0][0]
+    assert invocations[1][0][:3] == [
+        "cmake",
+        "--build",
+        os.fspath(source_root / "build" / "dependencies-gsplat"),
+    ]
+    assert invocations[1][0][3:5] == ["--target", "gobot_gsplat_sdk"]
+    assert invocations[2][0][:3] == ["cmake", "--build", "."]
 
 
 def test_editable_install_repairs_isolated_cmake_cache() -> None:

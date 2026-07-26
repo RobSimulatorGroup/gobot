@@ -338,8 +338,8 @@ def _rebuild_stale_editable_gsplat(
         return
 
     source_dir = source_root / "3rdparty" / "gsplat_inference"
-    script = source_root / "scripts" / "build_gsplat_inference.sh"
-    if not source_dir.is_dir() or not script.is_file():
+    dependency_project = source_root / "cmake" / "GobotDependencies.cmake"
+    if not source_dir.is_dir() or not dependency_project.is_file():
         return
 
     library_candidates = (
@@ -359,11 +359,38 @@ def _rebuild_stale_editable_gsplat(
     ):
         return
 
-    gsplat_environment = environment.copy()
-    gsplat_environment["GOB_GSPLAT_BUILD_DIR"] = os.fspath(default_build_dir)
-    gsplat_environment["GOB_GSPLAT_INSTALL_DIR"] = os.fspath(default_install_dir)
+    dependency_build_dir = source_root / "build" / "dependencies-gsplat"
+    jobs = str(min(os.cpu_count() or 1, 4))
     _run_native_rebuild_command(
-        [os.fspath(script)], cwd=source_root, environment=gsplat_environment
+        [
+            "cmake",
+            "-S",
+            os.fspath(source_root),
+            "-B",
+            os.fspath(dependency_build_dir),
+            "-DGOB_BUILD_DEPENDENCIES_ONLY=ON",
+            "-DGOB_DEPENDENCY_BUILD_LUISA=OFF",
+            "-DGOB_DEPENDENCY_BUILD_GSPLAT=ON",
+            "-DGOB_DEPENDENCY_BUILD_OPENUSD=OFF",
+            f"-DGOB_DEPENDENCY_JOBS={jobs}",
+            f"-DGOB_GSPLAT_BUILD_DIR={default_build_dir / 'sdk-build'}",
+            f"-DGOB_GSPLAT_INSTALL_DIR={default_install_dir}",
+        ],
+        cwd=source_root,
+        environment=environment,
+    )
+    _run_native_rebuild_command(
+        [
+            "cmake",
+            "--build",
+            os.fspath(dependency_build_dir),
+            "--target",
+            "gobot_gsplat_sdk",
+            "--parallel",
+            jobs,
+        ],
+        cwd=source_root,
+        environment=environment,
     )
 
 

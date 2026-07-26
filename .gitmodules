@@ -33,3 +33,11 @@
 	url = https://github.com/LuisaGroup/LuisaCompute.git
 	branch = stable
 	shallow = true
+[submodule "3rdparty/openusd"]
+	path = 3rdparty/openusd
+	url = https://github.com/PixarAnimationStudios/OpenUSD.git
+	shallow = true
+[submodule "3rdparty/onetbb"]
+	path = 3rdparty/onetbb
+	url = https://github.com/uxlfoundation/oneTBB.git
+	shallow = true

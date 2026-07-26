@@ -1,0 +1,253 @@
+from __future__ import annotations
+
+import os
+from pathlib import Path
+import tempfile
+from unittest.mock import patch
+
+import gobot_build_backend as backend
+
+
+def test_python_build_defaults_enable_complete_native_runtime() -> None:
+    pyproject = (backend.ROOT / "pyproject.toml").read_text(encoding="utf-8")
+
+    assert 'build-backend = "gobot_build_backend"' in pyproject
+    assert 'backend-path = ["."]' in pyproject
+    for define in (
+        "GOB_BUILD_ASSIMP",
+        "GOB_BUILD_MUJOCO",
+        "GOB_BUILD_EGL",
+        "GOB_BUILD_LUISA_RENDERER",
+        "GOB_BUILD_GSPLAT_INFERENCE",
+        "GOB_BUILD_OPENUSD",
+        "GOB_BUNDLE_OPENUSD_RUNTIME",
+    ):
+        assert f'{define} = "ON"' in pyproject
+    for requirement in (
+        '"mujoco==3.10.0;',
+        '"mujoco-warp==3.10.0.2;',
+        '"newton[sim]==1.4.0;',
+        '"nvidia-cuda-runtime-cu12>=12.8,<13;',
+        '"torch>=2.7;',
+        '"warp-lang==1.15.0;',
+    ):
+        assert requirement in pyproject
+    assert "[project.optional-dependencies]" not in pyproject
+
+
+def test_wheel_and_editable_hooks_prepare_dependencies() -> None:
+    with (
+        patch.object(backend, "_ensure_native_sdks") as ensure,
+        patch.object(backend._backend, "build_wheel", return_value="gobot.whl") as wheel,
+        patch.object(
+            backend._backend, "build_editable", return_value="gobot-editable.whl"
+        ) as editable,
+    ):
+        assert backend.build_wheel("dist") == "gobot.whl"
+        assert backend.build_editable("dist") == "gobot-editable.whl"
+
+    assert ensure.call_count == 2
+    wheel.assert_called_once_with("dist", None, None)
+    editable.assert_called_once_with("dist", None, None)
+
+
+def test_metadata_and_sdist_do_not_prepare_dependencies() -> None:
+    with (
+        patch.object(backend, "_ensure_native_sdks") as ensure,
+        patch.object(
+            backend._backend,
+            "prepare_metadata_for_build_wheel",
+            return_value="gobot.dist-info",
+        ),
+        patch.object(backend._backend, "build_sdist", return_value="gobot.tar.gz"),
+    ):
+        assert (
+            backend.prepare_metadata_for_build_wheel("metadata")
+            == "gobot.dist-info"
+        )
+        assert backend.build_sdist("dist") == "gobot.tar.gz"
+
+    ensure.assert_not_called()
+
+
+def test_skip_environment_avoids_dependency_commands() -> None:
+    with (
+        patch.dict(os.environ, {backend.SKIP_BOOTSTRAP_ENV: "1"}),
+        patch.object(backend, "_run") as run,
+    ):
+        backend._ensure_native_sdks()
+    run.assert_not_called()
+
+
+def test_build_tool_prefers_current_virtual_environment() -> None:
+    with tempfile.TemporaryDirectory() as directory:
+        environment = Path(directory)
+        tool = environment / "bin/cmake"
+        tool.parent.mkdir()
+        tool.touch(mode=0o755)
+        with (
+            patch.object(backend.sys, "prefix", os.fspath(environment)),
+            patch.object(backend.sys, "base_prefix", "/usr"),
+            patch.object(backend.shutil, "which", return_value="/usr/bin/cmake"),
+        ):
+            assert backend._find_build_tool("cmake") == os.fspath(tool)
+
+
+def test_native_sdk_bootstrap_uses_dependency_only_cmake_project() -> None:
+    invocations: list[tuple[list[str], Path]] = []
+
+    def run(command: list[str], *, cwd: Path = backend.ROOT) -> None:
+        invocations.append((command, cwd))
+
+    with tempfile.TemporaryDirectory() as directory:
+        root = Path(directory)
+        with (
+            patch.object(backend, "ROOT", root),
+            patch.object(backend, "_SDK_ARTIFACTS", ()),
+            patch.object(backend, "_ensure_source_dependencies"),
+            patch.object(
+                backend,
+                "_find_build_tool",
+                side_effect=lambda name: f"/tools/{name}",
+            ),
+            patch.object(backend, "_run", side_effect=run),
+            patch.dict(os.environ, {}, clear=False),
+        ):
+            os.environ.pop(backend.SKIP_BOOTSTRAP_ENV, None)
+            backend._ensure_native_sdks()
+
+    assert len(invocations) == 2
+    configure = invocations[0][0]
+    build = invocations[1][0]
+    assert configure[:3] == ["/tools/cmake", "-S", os.fspath(root)]
+    assert "-DGOB_BUILD_DEPENDENCIES_ONLY=ON" in configure
+    assert "-DGOB_DEPENDENCY_BUILD_LUISA=ON" in configure
+    assert "-DGOB_DEPENDENCY_BUILD_GSPLAT=ON" in configure
+    assert "-DGOB_DEPENDENCY_BUILD_OPENUSD=ON" in configure
+    assert build[-2:] == ["--target", "gobot_dependencies"]
+
+
+def test_checkout_submodules_are_revalidated_at_pinned_gitlinks() -> None:
+    with tempfile.TemporaryDirectory() as directory:
+        root = Path(directory)
+        root.joinpath(".git").mkdir()
+        luisa_root = root / "3rdparty/luisa_compute"
+        for marker in backend._LUISA_NESTED_MARKERS:
+            path = luisa_root / marker
+            path.parent.mkdir(parents=True, exist_ok=True)
+            path.touch()
+
+        with (
+            patch.object(
+                backend,
+                "_missing_submodule_paths",
+                return_value=[],
+            ),
+            patch.object(
+                backend,
+                "_submodule_status",
+                side_effect=[
+                    ("-abc 3rdparty/openusd",),
+                    (" abc 3rdparty/openusd",),
+                    ("-def src/ext/reproc",),
+                    (" def src/ext/reproc",),
+                ],
+            ),
+            patch.object(backend.shutil, "which", return_value="/usr/bin/git"),
+            patch.object(backend, "_run") as run,
+        ):
+            backend._ensure_source_dependencies(root)
+
+    assert run.call_count == 4
+    update = run.call_args_list[1].args[0]
+    assert "3rdparty/assimp" in update
+    assert "3rdparty/luisa_compute" in update
+    assert "3rdparty/openusd" in update
+    assert "--depth=1" in update
+    nested_update = run.call_args_list[3].args[0]
+    assert "--recursive" in nested_update
+    assert run.call_args_list[3].kwargs["cwd"] == luisa_root
+
+
+def test_pinned_checkout_does_not_run_submodule_update() -> None:
+    with tempfile.TemporaryDirectory() as directory:
+        root = Path(directory)
+        root.joinpath(".git").mkdir()
+        luisa_root = root / "3rdparty/luisa_compute"
+        for marker in backend._LUISA_NESTED_MARKERS:
+            path = luisa_root / marker
+            path.parent.mkdir(parents=True, exist_ok=True)
+            path.touch()
+
+        with (
+            patch.object(backend, "_missing_submodule_paths", return_value=[]),
+            patch.object(
+                backend,
+                "_submodule_status",
+                return_value=(" abc pinned/submodule",),
+            ),
+            patch.object(backend.shutil, "which", return_value="/usr/bin/git"),
+            patch.object(backend, "_run") as run,
+        ):
+            backend._ensure_source_dependencies(root)
+
+    run.assert_not_called()
+
+
+def test_mismatched_checkout_is_not_overwritten() -> None:
+    with tempfile.TemporaryDirectory() as directory:
+        root = Path(directory)
+        root.joinpath(".git").mkdir()
+        with (
+            patch.object(backend, "_missing_submodule_paths", return_value=[]),
+            patch.object(
+                backend,
+                "_submodule_status",
+                return_value=("+abc 3rdparty/openusd",),
+            ),
+            patch.object(backend.shutil, "which", return_value="/usr/bin/git"),
+            patch.object(backend, "_run") as run,
+        ):
+            try:
+                backend._ensure_source_dependencies(root)
+            except RuntimeError as error:
+                message = str(error)
+            else:
+                raise AssertionError("mismatched submodule was accepted")
+
+    run.assert_not_called()
+    assert "different from the superproject gitlink" in message
+
+
+def test_source_archive_without_submodules_fails_clearly() -> None:
+    with tempfile.TemporaryDirectory() as directory:
+        root = Path(directory)
+        with patch.object(
+            backend, "_missing_submodule_paths", return_value=["3rdparty/openusd"]
+        ):
+            try:
+                backend._ensure_source_dependencies(root)
+            except RuntimeError as error:
+                message = str(error)
+            else:
+                raise AssertionError("missing source dependencies were accepted")
+
+    assert "published binary wheel" in message
+    assert "3rdparty/openusd" in message
+
+
+def main() -> None:
+    test_python_build_defaults_enable_complete_native_runtime()
+    test_wheel_and_editable_hooks_prepare_dependencies()
+    test_metadata_and_sdist_do_not_prepare_dependencies()
+    test_skip_environment_avoids_dependency_commands()
+    test_build_tool_prefers_current_virtual_environment()
+    test_native_sdk_bootstrap_uses_dependency_only_cmake_project()
+    test_checkout_submodules_are_revalidated_at_pinned_gitlinks()
+    test_pinned_checkout_does_not_run_submodule_update()
+    test_mismatched_checkout_is_not_overwritten()
+    test_source_archive_without_submodules_fails_clearly()
+
+
+if __name__ == "__main__":
+    main()

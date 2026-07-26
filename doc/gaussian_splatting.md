@@ -56,12 +56,12 @@ Linux NVIDIA wheels contain AOT-compiled kernels and declare the CUDA 12 runtime
 as a pip dependency. End users need a compatible NVIDIA driver, but do not need
 `nvcc`, a system CUDA Toolkit, gsplat, or runtime network access.
 
-For a source build, compile the pinned inference library before enabling the
-Luisa module:
+Python source and editable builds initialize and compile the pinned inference
+library automatically. A standalone CMake build can prepare the renderer SDKs
+explicitly before enabling the Luisa module:
 
 ```bash
-scripts/build_luisa_compute.sh
-scripts/build_gsplat_inference.sh
+cmake --workflow --preset dependencies-render
 cmake -S . -B build_cuda \
   -DGOB_BUILD_LUISA_RENDERER=ON \
   -DGOB_BUILD_GSPLAT_INFERENCE=ON \
