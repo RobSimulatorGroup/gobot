@@ -62,11 +62,13 @@ jobs:
             cuda-nvcc-12-8=12.8.93-1 \
             cuda-nvrtc-12-8=12.8.93-1 \
             cuda-nvrtc-dev-12-8=12.8.93-1 \
+            cuda-nvtx-12-8=12.8.90-1 \
             cuda-toolkit-config-common=12.8.90-1 \
             cuda-toolkit-12-config-common=12.8.90-1 \
             cuda-toolkit-12-8-config-common=12.8.90-1
 
           test -x /usr/local/cuda-12.8/bin/nvcc
+          test -f /usr/local/cuda-12.8/targets/x86_64-linux/include/nvtx3/nvToolsExtCuda.h
           test -f /usr/local/cuda-12.8/targets/x86_64-linux/lib/libnvrtc_static.a
           test -f /usr/local/cuda-12.8/targets/x86_64-linux/lib/stubs/libcuda.so
           echo "CUDA_HOME=/usr/local/cuda-12.8" >> "$GITHUB_ENV"
