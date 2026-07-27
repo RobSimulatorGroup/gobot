@@ -2,10 +2,33 @@ from __future__ import annotations
 
 import os
 from pathlib import Path
+import sys
 import tempfile
+from types import ModuleType, SimpleNamespace
 from unittest.mock import patch
 
-import gobot_build_backend as backend
+
+def _unexpected_backend_hook(*args: object, **kwargs: object) -> None:
+    raise AssertionError("unpatched scikit-build-core hook was called")
+
+
+# scikit-build-core is a PEP 517 build requirement, not a Gobot runtime
+# dependency. Native CMake tests exercise this wrapper without installing a
+# Python build frontend, so provide just the delegation surface under test.
+_backend_stub = SimpleNamespace(
+    build_editable=_unexpected_backend_hook,
+    build_sdist=_unexpected_backend_hook,
+    build_wheel=_unexpected_backend_hook,
+    get_requires_for_build_editable=_unexpected_backend_hook,
+    get_requires_for_build_sdist=_unexpected_backend_hook,
+    get_requires_for_build_wheel=_unexpected_backend_hook,
+    prepare_metadata_for_build_editable=_unexpected_backend_hook,
+    prepare_metadata_for_build_wheel=_unexpected_backend_hook,
+)
+_scikit_build_core_stub = ModuleType("scikit_build_core")
+_scikit_build_core_stub.build = _backend_stub  # type: ignore[attr-defined]
+with patch.dict(sys.modules, {"scikit_build_core": _scikit_build_core_stub}):
+    import gobot_build_backend as backend
 
 
 def test_python_build_defaults_enable_complete_native_runtime() -> None:

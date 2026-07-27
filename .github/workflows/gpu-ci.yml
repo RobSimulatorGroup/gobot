@@ -2,8 +2,9 @@ name: GPU CI
 
 on:
   workflow_dispatch:
-  schedule:
-    - cron: "17 18 * * *"
+  # Scheduled GPU CI is temporarily disabled; keep manual dispatch available.
+  # schedule:
+  #   - cron: "17 18 * * *"
 
 permissions:
   contents: read

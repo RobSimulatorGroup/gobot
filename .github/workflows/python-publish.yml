@@ -21,16 +21,15 @@ jobs:
     name: Build LuisaCompute CUDA runtime
     runs-on: ubuntu-22.04
     timeout-minutes: 120
-    container:
-      image: nvidia/cuda:12.8.1-devel-ubuntu22.04
 
     steps:
-      - name: Prepare CUDA build container
+      - name: Prepare CUDA 12.8.1 build environment
         run: |
           export DEBIAN_FRONTEND=noninteractive
-          apt-get update
-          apt-get install -y \
+          sudo apt-get -o Acquire::Retries=5 update
+          sudo apt-get -o Acquire::Retries=5 install -y \
             ca-certificates \
+            curl \
             g++-11 \
             gcc-11 \
             git \
@@ -42,7 +41,40 @@ jobs:
             tar \
             uuid-dev \
             zstd
-          python3 -m pip install -U 'cmake>=3.27'
+
+          # NVIDIA's Linux nvcc wheel only ships ptxas, NVVM, and headers. Use
+          # the official APT packages for the nvcc frontend and static NVRTC
+          # libraries required by LuisaCompute, pinned to CUDA Toolkit 12.8.1.
+          curl --fail --location \
+            --retry 5 --retry-all-errors --retry-delay 2 \
+            --output "$RUNNER_TEMP/cuda-keyring.deb" \
+            https://developer.download.nvidia.com/compute/cuda/repos/ubuntu2204/x86_64/cuda-keyring_1.1-1_all.deb
+          echo "d93190d50b98ad4699ff40f4f7af50f16a76dac3bb8da1eaaf366d47898ff8df  $RUNNER_TEMP/cuda-keyring.deb" \
+            | sha256sum --check --strict
+          sudo dpkg -i "$RUNNER_TEMP/cuda-keyring.deb"
+          sudo apt-get -o Acquire::Retries=5 update
+          sudo apt-get -o Acquire::Retries=5 install -y \
+            --allow-downgrades --no-install-recommends \
+            cuda-cccl-12-8=12.8.90-1 \
+            cuda-cudart-12-8=12.8.90-1 \
+            cuda-cudart-dev-12-8=12.8.90-1 \
+            cuda-driver-dev-12-8=12.8.90-1 \
+            cuda-nvcc-12-8=12.8.93-1 \
+            cuda-nvrtc-12-8=12.8.93-1 \
+            cuda-nvrtc-dev-12-8=12.8.93-1 \
+            cuda-toolkit-config-common=12.8.90-1 \
+            cuda-toolkit-12-config-common=12.8.90-1 \
+            cuda-toolkit-12-8-config-common=12.8.90-1
+
+          test -x /usr/local/cuda-12.8/bin/nvcc
+          test -f /usr/local/cuda-12.8/targets/x86_64-linux/lib/libnvrtc_static.a
+          test -f /usr/local/cuda-12.8/targets/x86_64-linux/lib/stubs/libcuda.so
+          echo "CUDA_HOME=/usr/local/cuda-12.8" >> "$GITHUB_ENV"
+          echo "CUDAToolkit_ROOT=/usr/local/cuda-12.8" >> "$GITHUB_ENV"
+          echo "CUDACXX=/usr/local/cuda-12.8/bin/nvcc" >> "$GITHUB_ENV"
+          echo "/usr/local/cuda-12.8/bin" >> "$GITHUB_PATH"
+          echo "$HOME/.local/bin" >> "$GITHUB_PATH"
+          python3 -m pip install --user -U 'cmake>=3.27'
 
       - name: Check out repository
         uses: actions/checkout@v4
@@ -61,7 +93,9 @@ jobs:
             --init --force --depth=1 --recursive
 
       - name: Check CUDA compiler
-        run: nvcc --version
+        run: |
+          nvcc --version
+          nvcc --version | grep -F "V12.8.93"
 
       - name: Resolve LuisaCompute cache key
         id: luisa-cache-key
@@ -86,7 +120,7 @@ jobs:
             build/luisa_compute/sdk-build
             build/gsplat_inference/install
             build/gsplat_inference/sdk-build
-          key: luisa-cuda-12.8.1-${{ runner.os }}-${{ steps.luisa-cache-key.outputs.value }}
+          key: luisa-cuda-12.8.1-host-v1-${{ runner.os }}-${{ steps.luisa-cache-key.outputs.value }}
 
       - name: Build LuisaCompute CUDA runtime
         if: steps.luisa-cache.outputs.cache-hit != 'true'
@@ -111,7 +145,7 @@ jobs:
             build/luisa_compute/sdk-build
             build/gsplat_inference/install
             build/gsplat_inference/sdk-build
-          key: luisa-cuda-12.8.1-${{ runner.os }}-${{ steps.luisa-cache-key.outputs.value }}
+          key: luisa-cuda-12.8.1-host-v1-${{ runner.os }}-${{ steps.luisa-cache-key.outputs.value }}
 
       - name: Pack LuisaCompute and CUDA build SDK
         run: |
