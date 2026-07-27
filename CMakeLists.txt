@@ -96,6 +96,22 @@ CPMFindPackage(
     OPTIONS "JSON_BuildTests OFF"
 )
 
+# RenderBuffer exposes the backend-neutral Python DLPack protocol even when
+# the optional Luisa renderer is disabled. Keep that ABI dependency explicit
+# instead of borrowing LuisaCompute's private Python binding header.
+CPMAddPackage(
+    NAME dlpack
+    VERSION 1.0
+    GITHUB_REPOSITORY dmlc/dlpack
+    GIT_TAG bbd2f4d32427e548797929af08cfe2a9cbb3cf12
+    OPTIONS
+        "BUILD_DOCS OFF"
+        "BUILD_MOCK OFF"
+)
+if(NOT TARGET dlpack::dlpack)
+    message(FATAL_ERROR "The pinned DLPack dependency did not define dlpack::dlpack.")
+endif()
+
 if(GOB_BUILD_OPENUSD)
     # Older editable-build caches stored this value as an empty string. Repair
     # that cache entry when OpenUSD is enabled, while preserving any explicit
@@ -778,9 +794,7 @@ pybind11_add_module(gobot_python MODULE ${GOBOT_PYBIND11_MODULE_OPTIONS}
         src/gobot/python/python_module.cpp
         ${GOBOT_PYTHON_BINDING_SOURCES}
 )
-target_include_directories(gobot_python PRIVATE
-        ${CMAKE_CURRENT_SOURCE_DIR}/3rdparty/luisa_compute/src/py)
-target_link_libraries(gobot_python PRIVATE gobot)
+target_link_libraries(gobot_python PRIVATE gobot dlpack::dlpack)
 set_target_properties(gobot_python
     PROPERTIES
         OUTPUT_NAME "_core"
@@ -934,6 +948,9 @@ endif()
 if(cxxopts_SOURCE_DIR)
     gobot_install_license_files("${cxxopts_SOURCE_DIR}" "cxxopts")
 endif()
+if(dlpack_SOURCE_DIR)
+    gobot_install_license_files("${dlpack_SOURCE_DIR}" "dlpack")
+endif()
 if(mujoco_SOURCE_DIR)
     set(GOBOT_MUJOCO_LICENSE_SOURCE_DIR "${mujoco_SOURCE_DIR}")
 endif()
@@ -988,8 +1005,7 @@ add_library(gobot_editor_runtime SHARED
 )
 add_dependencies(gobot_editor_runtime gobot_editor_resources gobot_python_package)
 target_include_directories(gobot_editor_runtime PRIVATE
-        ${CMAKE_CURRENT_SOURCE_DIR}/3rdparty/ImGuiColorTextEdit
-        ${CMAKE_CURRENT_SOURCE_DIR}/3rdparty/luisa_compute/src/py)
+        ${CMAKE_CURRENT_SOURCE_DIR}/3rdparty/ImGuiColorTextEdit)
 target_compile_definitions(gobot_editor_runtime PRIVATE
         GOBOT_ROOT_DIR="${CMAKE_CURRENT_SOURCE_DIR}")
 target_link_libraries(gobot_editor_runtime PRIVATE
@@ -998,7 +1014,8 @@ target_link_libraries(gobot_editor_runtime PRIVATE
         imgui-gobot
         glad
         SDL2::SDL2
-        cxxopts::cxxopts)
+        cxxopts::cxxopts
+        dlpack::dlpack)
 set_target_properties(gobot_editor_runtime
     PROPERTIES
         OUTPUT_NAME "gobot_editor_runtime"

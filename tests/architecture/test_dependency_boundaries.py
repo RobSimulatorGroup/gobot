@@ -175,6 +175,14 @@ def main() -> int:
         violations.append("CMakeLists.txt: optional Luisa renderer subdirectory is missing")
     if "add_library(gobot_luisa_renderer MODULE" not in luisa_cmake_text:
         violations.append("CMakeLists.txt: Luisa renderer is not isolated as a loadable module")
+    if "3rdparty/luisa_compute/src/py" in cmake_text:
+        violations.append(
+            "CMakeLists.txt: core Python bindings borrow an optional Luisa private include path"
+        )
+    if "dlpack::dlpack" not in cmake_text:
+        violations.append(
+            "CMakeLists.txt: core Python DLPack bindings lack an explicit DLPack target"
+        )
 
     example_specific_python_tokens = ("GO1_", "go1_rough_velocity")
     for path in source_files(ROOT / "python/gobot", {".py", ".pyi"}):

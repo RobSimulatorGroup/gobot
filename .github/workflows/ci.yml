@@ -142,7 +142,8 @@ jobs:
           -DGOB_BUILD_MUJOCO=OFF \
           -DGOB_BUILD_EGL=OFF \
           -DGOB_BUILD_LUISA_RENDERER=OFF \
-          -DGOB_BUILD_GSPLAT_INFERENCE=OFF
+          -DGOB_BUILD_GSPLAT_INFERENCE=OFF \
+          -DSDL_X11=OFF
         cmake --build build/openusd-ci --target test_resource_format_usd --parallel 4
 
     - name: Test OpenUSD importer

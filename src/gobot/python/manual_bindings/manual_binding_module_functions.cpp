@@ -1,6 +1,6 @@
 #include "manual_bindings_internal.hpp"
 
-#include <dlpack.h>
+#include <dlpack/dlpack.h>
 
 namespace gobot {
 

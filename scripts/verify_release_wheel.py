@@ -25,6 +25,7 @@ REQUIRED_PAYLOAD = {
     "gobot/luisa/libluisa-runtime.so",
     "gobot/luisa/libluisa-xir.so",
     "gobot/luisa/luisa_nvrtc",
+    "gobot/licenses/dlpack/LICENSE",
     "gobot/licenses/gsplat_inference/LICENSE",
     "gobot/licenses/gsplat_inference/NOTICE",
     "gobot/licenses/mujoco/LICENSE",
