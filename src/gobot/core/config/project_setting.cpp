@@ -19,6 +19,7 @@ ProjectSettings *ProjectSettings::s_singleton = nullptr;
 namespace {
 
 constexpr const char* kEditorSceneViewsKey = "editor_scene_views";
+constexpr const char* kProjectLoadHookKey = "project_load_hook";
 constexpr const char* kEyeKey = "eye";
 constexpr const char* kAtKey = "at";
 constexpr const char* kUpKey = "up";
@@ -109,6 +110,7 @@ bool ProjectSettings::SetProjectPath(const std::string& project_path) {
         LOG_ERROR("Invalid project path specified: {}", project_path);
         project_path_.clear();
         main_scene_path_.clear();
+        project_load_hook_path_.clear();
         return false;
     }
     LoadProjectConfig();
@@ -118,7 +120,22 @@ bool ProjectSettings::SetProjectPath(const std::string& project_path) {
 void ProjectSettings::ClearProjectPath() {
     project_path_.clear();
     main_scene_path_.clear();
+    project_load_hook_path_.clear();
     editor_scene_view_states_.clear();
+}
+
+std::optional<std::string> ProjectSettings::ResolveProjectLoadHookPath() const {
+    if (project_path_.empty() || project_load_hook_path_.empty()) {
+        return std::nullopt;
+    }
+
+    std::error_code error;
+    const std::filesystem::path resolved_path = std::filesystem::weakly_canonical(
+            std::filesystem::path(project_path_) / project_load_hook_path_.substr(6), error);
+    if (error || !LocalizePath(resolved_path.string()).starts_with("res://")) {
+        return std::nullopt;
+    }
+    return resolved_path.string();
 }
 
 std::string ProjectSettings::LocalizePath(std::string_view path) const {
@@ -253,6 +270,9 @@ bool ProjectSettings::SaveProjectConfig() const {
 
     Json json = Json::object();
     json["main_scene"] = main_scene_path_;
+    if (!project_load_hook_path_.empty()) {
+        json[kProjectLoadHookKey] = project_load_hook_path_;
+    }
     if (!editor_scene_view_states_.empty()) {
         Json scene_views = Json::object();
         for (const auto& [path, state] : editor_scene_view_states_) {
@@ -273,6 +293,7 @@ bool ProjectSettings::SaveProjectConfig() const {
 
 void ProjectSettings::LoadProjectConfig() {
     main_scene_path_.clear();
+    project_load_hook_path_.clear();
     editor_scene_view_states_.clear();
 
     if (project_path_.empty()) {
@@ -301,6 +322,32 @@ void ProjectSettings::LoadProjectConfig() {
     if (!json.is_object()) {
         LOG_ERROR("Project config '{}' must be a JSON object.", config_path.string());
         return;
+    }
+
+    if (json.contains(kProjectLoadHookKey) && !json[kProjectLoadHookKey].is_null()) {
+        if (!json[kProjectLoadHookKey].is_string()) {
+            LOG_ERROR("Project config '{}' has non-string project_load_hook.", config_path.string());
+        } else {
+            const std::string configured_path = json[kProjectLoadHookKey].get<std::string>();
+            if (!configured_path.starts_with("res://")) {
+                LOG_ERROR("Ignoring project load hook without a res:// path in '{}': {}",
+                          config_path.string(), configured_path);
+            } else {
+                std::error_code path_error;
+                const std::filesystem::path global_path = std::filesystem::weakly_canonical(
+                        std::filesystem::path(project_path_) / configured_path.substr(6), path_error);
+                const std::string local_path = path_error ? std::string{} : LocalizePath(global_path.string());
+                if (!local_path.starts_with("res://")) {
+                    LOG_ERROR("Ignoring project load hook outside project in '{}': {}",
+                              config_path.string(), configured_path);
+                } else if (std::filesystem::path(local_path).extension() != ".py") {
+                    LOG_ERROR("Ignoring project load hook that is not a Python file in '{}': {}",
+                              config_path.string(), local_path);
+                } else {
+                    project_load_hook_path_ = local_path;
+                }
+            }
+        }
     }
 
     if (json.contains(kEditorSceneViewsKey) && !json[kEditorSceneViewsKey].is_null()) {

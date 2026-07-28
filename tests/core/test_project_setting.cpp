@@ -194,3 +194,111 @@ TEST(TestProjectSetting, caches_editor_scene_view_state_without_saving_project_f
         EXPECT_DOUBLE_EQ(loaded->fov_y, saved_state.fov_y);
     }
 }
+
+TEST(TestProjectSetting, loads_and_preserves_project_load_hook) {
+    const std::filesystem::path project_path =
+            std::filesystem::temp_directory_path() / "gobot_project_settings_load_hook_test";
+    std::error_code error;
+    std::filesystem::remove_all(project_path, error);
+    std::filesystem::create_directories(project_path / "hooks");
+    {
+        std::ofstream scene(project_path / "main.jscn");
+        scene << "{}";
+        std::ofstream hook(project_path / "hooks" / "download_assets.py");
+        hook << "# project load hook\n";
+        std::ofstream config(project_path / "project.gobot");
+        config << R"({"main_scene":"res://main.jscn","project_load_hook":"res://hooks/download_assets.py"})";
+    }
+
+    {
+        gobot::ProjectSettings project_settings;
+        ASSERT_TRUE(project_settings.SetProjectPath(project_path.string()));
+        EXPECT_EQ(project_settings.GetProjectLoadHook(), "res://hooks/download_assets.py");
+        ASSERT_TRUE(project_settings.SaveProjectConfig());
+    }
+
+    {
+        std::ifstream config(project_path / "project.gobot");
+        gobot::Json json;
+        config >> json;
+        EXPECT_EQ(json["project_load_hook"], "res://hooks/download_assets.py");
+    }
+
+    {
+        gobot::ProjectSettings project_settings;
+        ASSERT_TRUE(project_settings.SetProjectPath(project_path.string()));
+        EXPECT_EQ(project_settings.GetProjectLoadHook(), "res://hooks/download_assets.py");
+        project_settings.ClearProjectPath();
+        EXPECT_TRUE(project_settings.GetProjectLoadHook().empty());
+    }
+}
+
+TEST(TestProjectSetting, ignores_invalid_project_load_hooks_and_clears_on_project_failure) {
+    const std::filesystem::path project_path =
+            std::filesystem::temp_directory_path() / "gobot_project_settings_invalid_load_hook_test";
+    std::error_code error;
+    std::filesystem::remove_all(project_path, error);
+    std::filesystem::create_directories(project_path);
+
+    const auto load_hook = [&](std::string_view json) {
+        std::ofstream config(project_path / "project.gobot", std::ios::out | std::ios::trunc);
+        config << json;
+        config.close();
+
+        gobot::ProjectSettings project_settings;
+        EXPECT_TRUE(project_settings.SetProjectPath(project_path.string()));
+        return project_settings.GetProjectLoadHook();
+    };
+
+    EXPECT_TRUE(load_hook(R"({"project_load_hook":"/tmp/outside.py"})").empty());
+    EXPECT_TRUE(load_hook(R"({"project_load_hook":"https://example.com/setup.py"})").empty());
+    EXPECT_TRUE(load_hook(R"({"project_load_hook":"hooks/setup.py"})").empty());
+    EXPECT_TRUE(load_hook(R"({"project_load_hook":"res://../outside.py"})").empty());
+    EXPECT_TRUE(load_hook(R"({"project_load_hook":"res://hooks/setup.txt"})").empty());
+    EXPECT_TRUE(load_hook(R"({"project_load_hook":42})").empty());
+
+    {
+        std::ofstream config(project_path / "project.gobot", std::ios::out | std::ios::trunc);
+        config << R"({"project_load_hook":"res://setup.py"})";
+    }
+    gobot::ProjectSettings project_settings;
+    ASSERT_TRUE(project_settings.SetProjectPath(project_path.string()));
+    ASSERT_EQ(project_settings.GetProjectLoadHook(), "res://setup.py");
+    EXPECT_FALSE(project_settings.SetProjectPath((project_path / "missing").string()));
+    EXPECT_TRUE(project_settings.GetProjectLoadHook().empty());
+}
+
+TEST(TestProjectSetting, resolves_project_load_hook_inside_project_at_execution_time) {
+    const std::filesystem::path project_path =
+            std::filesystem::temp_directory_path() / "gobot_project_settings_hook_resolve_test";
+    const std::filesystem::path outside_path =
+            std::filesystem::temp_directory_path() / "gobot_project_settings_outside_hook.py";
+    std::error_code error;
+    std::filesystem::remove_all(project_path, error);
+    std::filesystem::remove(outside_path, error);
+    std::filesystem::create_directories(project_path);
+    {
+        std::ofstream config(project_path / "project.gobot");
+        config << R"({"project_load_hook":"res://setup.py"})";
+        std::ofstream outside(outside_path);
+        outside << "# outside project\n";
+    }
+
+    gobot::ProjectSettings project_settings;
+    ASSERT_TRUE(project_settings.SetProjectPath(project_path.string()));
+    ASSERT_EQ(project_settings.GetProjectLoadHook(), "res://setup.py");
+    ASSERT_TRUE(project_settings.ResolveProjectLoadHookPath().has_value());
+
+    std::filesystem::create_symlink(outside_path, project_path / "setup.py", error);
+    ASSERT_FALSE(error) << error.message();
+    EXPECT_FALSE(project_settings.ResolveProjectLoadHookPath().has_value());
+
+    std::filesystem::remove(project_path / "setup.py", error);
+    {
+        std::ofstream inside(project_path / "setup.py");
+        inside << "# inside project\n";
+    }
+    const std::optional<std::string> resolved = project_settings.ResolveProjectLoadHookPath();
+    ASSERT_TRUE(resolved.has_value());
+    EXPECT_EQ(*resolved, std::filesystem::canonical(project_path / "setup.py").string());
+}

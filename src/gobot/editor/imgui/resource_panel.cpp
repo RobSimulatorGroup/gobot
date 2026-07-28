@@ -677,28 +677,16 @@ bool ResourcePanel::SetProjectPath(const std::string& project_path)
         return false;
     }
 
-    if (!ProjectSettings::GetInstance()->SetProjectPath(project_path)) {
-        return false;
-    }
+    Editor::GetInstance()->RequestOpenProject(project_path);
+    return true;
+}
 
+void ResourcePanel::NotifyProjectOpened() {
     Refresh();
     if (!IsExampleProjectPath(project_path_)) {
         AddProjectHistory(project_path_);
     }
     LOG_INFO("Opened project: {}", project_path_);
-    const std::string& main_scene_path = ProjectSettings::GetInstance()->GetMainScenePath();
-    if (!main_scene_path.empty()) {
-        const std::string main_scene_global_path =
-                ProjectSettings::GetInstance()->GlobalizePath(main_scene_path);
-        if (std::filesystem::exists(main_scene_global_path)) {
-            Editor::GetInstance()->RequestOpenSceneFromPath(main_scene_path);
-            SelectResource(main_scene_path);
-            LOG_INFO("Opening project main scene: {}", main_scene_path);
-        } else {
-            LOG_ERROR("Project main scene does not exist: {}", main_scene_path);
-        }
-    }
-    return true;
 }
 
 bool ResourcePanel::OpenResource(DirectoryInformation* resource)

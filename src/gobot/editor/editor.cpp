@@ -9,6 +9,8 @@
 
 #include <algorithm>
 #include <cctype>
+#include <cstdio>
+#include <cstdlib>
 #include <filesystem>
 #include <string>
 #include <utility>
@@ -19,6 +21,7 @@
 #include "gobot/core/os/input.hpp"
 #include "gobot/editor/edited_scene.hpp"
 #include "gobot/editor/node3d_editor.hpp"
+#include "gobot/editor/project_hook_runner.hpp"
 #include "gobot/core/registration.hpp"
 #include "gobot/log.hpp"
 #include "gobot/editor/imgui/console_sink.hpp"
@@ -161,10 +164,12 @@ Editor::Editor() {
     file_browser_ = new ImGui::FileBrowser();
     file_browser_->SetTitle("File Browser");
 
-    OpenProjectMainScene();
+    project_hook_runner_ = std::make_unique<ProjectHookRunner>();
+    BeginCurrentProjectLoad();
 }
 
 Editor::~Editor() {
+    project_hook_runner_.reset();
     SaveCurrentSceneViewState();
     if (scene_play_session_ != nullptr) {
         scene_play_session_->Stop();
@@ -480,6 +485,155 @@ bool Editor::OpenProjectMainScene() {
     }
     LOG_INFO("Opened project main scene: {}", main_scene_path);
     return true;
+}
+
+void Editor::RequestOpenProject(const std::string& path) {
+    RequestSceneSwitch([this, path]() {
+        OpenProjectFromPath(path);
+    });
+}
+
+bool Editor::OpenProjectFromPath(const std::string& path) {
+    if (path.empty() || !std::filesystem::is_directory(path)) {
+        LOG_ERROR("Invalid project path specified: {}", path);
+        return false;
+    }
+
+    if (project_hook_runner_ != nullptr) {
+        project_hook_runner_->Cancel();
+    }
+
+    // Clear the old authored scene while its project settings are still active,
+    // so view state cannot be written into the newly opened project.
+    if (!NewEditedScene()) {
+        return false;
+    }
+
+    ProjectSettings* settings = ProjectSettings::GetInstance();
+    if (settings == nullptr || !settings->SetProjectPath(path)) {
+        return false;
+    }
+
+    if (resource_panel_ != nullptr) {
+        resource_panel_->NotifyProjectOpened();
+    }
+    BeginCurrentProjectLoad();
+    return true;
+}
+
+void Editor::BeginCurrentProjectLoad() {
+    project_load_completion_handled_ = false;
+    project_load_succeeded_ = false;
+    project_load_error_.clear();
+    active_project_hook_path_.clear();
+    active_project_hook_global_path_.clear();
+    active_project_hook_python_.clear();
+    active_project_hook_working_directory_.clear();
+    project_hook_start_pending_ = false;
+    request_project_load_dialog_ = false;
+
+    ProjectSettings* settings = ProjectSettings::GetInstance();
+    if (settings == nullptr || settings->GetProjectPath().empty()) {
+        project_load_completion_handled_ = true;
+        return;
+    }
+
+    active_project_hook_path_ = settings->GetProjectLoadHook();
+    if (active_project_hook_path_.empty()) {
+        project_load_completion_handled_ = true;
+        project_load_succeeded_ = OpenProjectMainScene();
+        return;
+    }
+
+    request_project_load_dialog_ = true;
+    const std::optional<std::string> hook_path = settings->ResolveProjectLoadHookPath();
+    if (!hook_path || !std::filesystem::is_regular_file(*hook_path)) {
+        project_load_completion_handled_ = true;
+        project_load_error_ = "Project load hook is missing or outside the project: " +
+                              active_project_hook_path_;
+        LOG_ERROR("{}", project_load_error_);
+        return;
+    }
+
+    const char* configured_python = std::getenv("GOBOT_PYTHON_EXECUTABLE");
+    active_project_hook_python_ =
+            configured_python != nullptr && configured_python[0] != '\0'
+                    ? configured_python
+                    : "python3";
+    active_project_hook_global_path_ = *hook_path;
+    active_project_hook_working_directory_ = settings->GetProjectPath();
+    if (project_hook_runner_ == nullptr) {
+        project_load_completion_handled_ = true;
+        project_load_error_ = "Project hook runner is unavailable.";
+        return;
+    }
+
+    StartCurrentProjectHook();
+}
+
+bool Editor::StartCurrentProjectHook() {
+    if (project_hook_runner_ == nullptr || active_project_hook_global_path_.empty()) {
+        project_load_completion_handled_ = true;
+        project_load_error_ = "Project hook runner is unavailable.";
+        return false;
+    }
+
+    ProjectSettings* settings = ProjectSettings::GetInstance();
+    const std::optional<std::string> resolved_path =
+            settings != nullptr ? settings->ResolveProjectLoadHookPath() : std::nullopt;
+    if (!resolved_path || !std::filesystem::is_regular_file(*resolved_path)) {
+        project_hook_start_pending_ = false;
+        project_load_completion_handled_ = true;
+        project_load_error_ = "Project load hook is missing or outside the project: " +
+                              active_project_hook_path_;
+        LOG_ERROR("{}", project_load_error_);
+        return false;
+    }
+    active_project_hook_global_path_ = *resolved_path;
+
+    if (project_hook_runner_->GetSnapshot().state == ProjectHookState::Running) {
+        project_hook_runner_->Cancel();
+        project_hook_start_pending_ = true;
+        return false;
+    }
+
+    project_hook_start_pending_ = false;
+    LOG_INFO("Running project load hook: {}", active_project_hook_path_);
+    return project_hook_runner_->Start(active_project_hook_python_,
+                                       active_project_hook_global_path_,
+                                       active_project_hook_working_directory_);
+}
+
+void Editor::UpdateProjectLoadHook() {
+    if (project_hook_runner_ == nullptr || active_project_hook_path_.empty()) {
+        return;
+    }
+
+    for (ProjectHookOutputLine& line : project_hook_runner_->DrainOutput()) {
+        ConsolePanel::AddMessage(MakeRef<ConsoleMessage>(
+                line.text,
+                line.is_stderr ? ConsoleMessage::Warn : ConsoleMessage::Info,
+                "Project Hook"));
+    }
+
+    ProjectHookSnapshot snapshot = project_hook_runner_->GetSnapshot();
+    if (project_hook_start_pending_ && snapshot.state != ProjectHookState::Running) {
+        StartCurrentProjectHook();
+        snapshot = project_hook_runner_->GetSnapshot();
+    }
+    if (snapshot.state != ProjectHookState::Succeeded || project_load_completion_handled_) {
+        return;
+    }
+
+    project_load_completion_handled_ = true;
+    RefreshResourcePanel();
+    project_load_succeeded_ = OpenProjectMainScene();
+    if (project_load_succeeded_) {
+        LOG_INFO("Project load hook completed: {}", active_project_hook_path_);
+    } else {
+        project_load_error_ = "Project setup completed, but the main scene could not be opened.";
+        LOG_ERROR("{}", project_load_error_);
+    }
 }
 
 void Editor::RefreshResourcePanel() {
@@ -826,10 +980,12 @@ void Editor::End() {
 
 void Editor::OnImGuiContent() {
     HandleQuitRequest();
+    UpdateProjectLoadHook();
     file_browser_->Display();
     HandleSceneFileDialogSelection();
     DrawUnsavedSceneDialog();
     DrawPlayErrorDialog();
+    DrawProjectLoadDialog();
 }
 
 void Editor::DrawMenuBar() {
@@ -1086,6 +1242,77 @@ void Editor::DrawPlayErrorDialog() {
     if (ImGui::Button("Close")) {
         ImGui::CloseCurrentPopup();
     }
+    ImGui::EndPopup();
+}
+
+void Editor::DrawProjectLoadDialog() {
+    if (request_project_load_dialog_) {
+        ImGui::OpenPopup("Preparing Project");
+        request_project_load_dialog_ = false;
+    }
+
+    if (!ImGui::BeginPopupModal("Preparing Project", nullptr, ImGuiWindowFlags_AlwaysAutoResize)) {
+        return;
+    }
+
+    if (project_load_succeeded_) {
+        ImGui::CloseCurrentPopup();
+        ImGui::EndPopup();
+        return;
+    }
+
+    ProjectHookSnapshot snapshot;
+    if (project_hook_runner_ != nullptr && project_load_error_.empty()) {
+        snapshot = project_hook_runner_->GetSnapshot();
+    }
+
+    ImGui::TextUnformatted(active_project_hook_path_.c_str());
+    ImGui::Separator();
+    const std::string message = !project_load_error_.empty()
+                                        ? project_load_error_
+                                        : (!snapshot.message.empty()
+                                                   ? snapshot.message
+                                                   : "Preparing project resources...");
+    ImGui::PushTextWrapPos(ImGui::GetFontSize() * 36.0f);
+    ImGui::TextUnformatted(message.c_str());
+    if (!snapshot.error.empty() && project_load_error_.empty()) {
+        ImGui::TextUnformatted(snapshot.error.c_str());
+    }
+    ImGui::PopTextWrapPos();
+
+    char progress_text[96]{};
+    float progress = 0.0f;
+    if (snapshot.total > 0) {
+        progress = std::clamp(static_cast<float>(snapshot.current) /
+                                      static_cast<float>(snapshot.total),
+                              0.0f,
+                              1.0f);
+        std::snprintf(progress_text,
+                      sizeof(progress_text),
+                      "%.1f / %.1f MiB",
+                      static_cast<double>(snapshot.current) / (1024.0 * 1024.0),
+                      static_cast<double>(snapshot.total) / (1024.0 * 1024.0));
+    } else {
+        std::snprintf(progress_text, sizeof(progress_text), "Working...");
+    }
+    ImGui::ProgressBar(progress, ImVec2(ImGui::GetFontSize() * 30.0f, 0.0f), progress_text);
+    ImGui::Separator();
+
+    if (snapshot.state == ProjectHookState::Running) {
+        if (ImGui::Button("Cancel")) {
+            project_hook_start_pending_ = false;
+            project_hook_runner_->Cancel();
+        }
+    } else {
+        if (ImGui::Button("Retry")) {
+            BeginCurrentProjectLoad();
+        }
+        ImGui::SameLine();
+        if (ImGui::Button("Close")) {
+            ImGui::CloseCurrentPopup();
+        }
+    }
+
     ImGui::EndPopup();
 }
 

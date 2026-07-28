@@ -79,6 +79,64 @@ def test_download_resumes_partial_file() -> None:
         assert destination.read_bytes() == b"abcdef"
 
 
+def test_project_hook_emits_machine_readable_progress() -> None:
+    project = json.loads((EXAMPLE / "project.gobot").read_text())
+    assert project["project_load_hook"] == "res://download_sample.py"
+
+    downloader = runpy.run_path(str(EXAMPLE / "download_sample.py"))
+    download = downloader["download"]
+    download.__globals__["EXPECTED_SIZE"] = 6
+
+    class Response(io.BytesIO):
+        status = 200
+        headers: dict[str, str] = {}
+
+    with tempfile.TemporaryDirectory() as directory:
+        destination = Path(directory) / "sample.part"
+        output = io.StringIO()
+        with (
+            patch("urllib.request.urlopen", return_value=Response(b"abcdef")),
+            patch.dict("os.environ", {"GOBOT_PROJECT_HOOK": "1"}),
+            redirect_stdout(output),
+        ):
+            download("https://example.invalid/sample.ply", destination)
+
+    lines = output.getvalue().splitlines()
+    prefix = "GOBOT_PROGRESS "
+    assert lines == [
+        'GOBOT_PROGRESS {"current":6,"total":6,"message":"Downloading playroom 3DGS"}'
+    ]
+    assert json.loads(lines[0][len(prefix):]) == {
+        "current": 6,
+        "total": 6,
+        "message": "Downloading playroom 3DGS",
+    }
+
+
+def test_download_rejects_oversized_response_before_writing() -> None:
+    downloader = runpy.run_path(str(EXAMPLE / "download_sample.py"))
+    download = downloader["download"]
+    download.__globals__["EXPECTED_SIZE"] = 6
+
+    class Response(io.BytesIO):
+        status = 200
+        headers = {"Content-Length": "7"}
+
+    with tempfile.TemporaryDirectory() as directory:
+        destination = Path(directory) / "sample.part"
+        with (
+            patch("urllib.request.urlopen", return_value=Response(b"abcdefg")),
+            redirect_stdout(io.StringIO()),
+        ):
+            try:
+                download("https://example.invalid/sample.ply", destination)
+            except RuntimeError as error:
+                assert "exceeds expected size" in str(error)
+            else:
+                raise AssertionError("oversized response was accepted")
+        assert not destination.exists()
+
+
 def test_initial_view_matches_training_camera() -> None:
     project = json.loads((EXAMPLE / "project.gobot").read_text())
     assert project["main_scene"] == SCENE_PATH
@@ -104,6 +162,8 @@ def test_initial_view_matches_training_camera() -> None:
 def main() -> None:
     test_download_and_manifest_are_pinned()
     test_download_resumes_partial_file()
+    test_project_hook_emits_machine_readable_progress()
+    test_download_rejects_oversized_response_before_writing()
     test_initial_view_matches_training_camera()
 
 

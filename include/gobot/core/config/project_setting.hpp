@@ -50,6 +50,14 @@ public:
 
     [[nodiscard]] FORCE_INLINE const std::string& GetMainScenePath() const { return main_scene_path_; }
 
+    [[nodiscard]] FORCE_INLINE const std::string& GetProjectLoadHook() const {
+        return project_load_hook_path_;
+    }
+
+    // Resolves the configured hook again at execution time so a symlink
+    // replacement cannot redirect it outside the current project.
+    [[nodiscard]] std::optional<std::string> ResolveProjectLoadHookPath() const;
+
     bool SetMainScenePath(const std::string& main_scene_path);
 
     bool SetEditorSceneViewState(const std::string& scene_path, const EditorSceneViewState& state);
@@ -69,6 +77,7 @@ private:
 
     std::string project_path_;
     std::string main_scene_path_;
+    std::string project_load_hook_path_;
     std::map<std::string, EditorSceneViewState> editor_scene_view_states_;
 };
 

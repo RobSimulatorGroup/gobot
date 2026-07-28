@@ -47,6 +47,35 @@ that scene automatically.
 If multiple roots contain the same example directory name, the editor shows the
 first one from `example_roots` and hides the later duplicates.
 
+## Project Load Hooks
+
+A project may declare a trusted Python setup hook in `project.gobot`:
+
+```json
+{
+    "main_scene": "res://main.jscn",
+    "project_load_hook": "res://download_assets.py"
+}
+```
+
+The hook must be a `.py` file inside the project. The editor runs it in a
+separate process using the Python environment that launched `gobot_editor`, and
+opens the main scene only after the hook exits successfully. A nonzero exit
+keeps the project setup dialog open with Retry and Close actions. Project hooks
+are executable code, so only open projects from sources you trust.
+
+Hooks can publish modal progress by writing one compact JSON object per line to
+stdout with the `GOBOT_PROGRESS ` prefix:
+
+```python
+print('GOBOT_PROGRESS {"current":1048576,"total":8388608,"message":"Downloading assets"}', flush=True)
+```
+
+Other stdout and stderr lines are forwarded to the editor Console. Gobot sets
+`GOBOT_PROJECT_HOOK=1`, `GOBOT_PROJECT_DIR`, and `PYTHONUNBUFFERED=1` in the hook
+process. Hooks should be idempotent so reopening a prepared project completes
+quickly without downloading the same assets again.
+
 ## Cartpole
 
 `examples/cartpole` is an inverted-pendulum project with two workflows:

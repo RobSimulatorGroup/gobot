@@ -27,6 +27,7 @@ class EditedScene;
 class EngineContext;
 class ResourcePanel;
 class PythonPanel;
+class ProjectHookRunner;
 class ScenePlaySession;
 
 class GOBOT_EXPORT Editor : public ImGuiNode {
@@ -93,6 +94,8 @@ public:
     bool AddGroundToEditedScene();
 
     bool OpenProjectMainScene();
+
+    void RequestOpenProject(const std::string& path);
 
     void RefreshResourcePanel();
 
@@ -165,6 +168,16 @@ private:
 
     void DrawPlayErrorDialog();
 
+    void DrawProjectLoadDialog();
+
+    bool OpenProjectFromPath(const std::string& path);
+
+    void BeginCurrentProjectLoad();
+
+    bool StartCurrentProjectHook();
+
+    void UpdateProjectLoadHook();
+
     void RequestPlayError(std::string message);
 
     void HandleQuitRequest();
@@ -208,6 +221,7 @@ private:
     ResourcePanel* resource_panel_{nullptr};
     PythonPanel* python_panel_{nullptr};
     std::unique_ptr<ScenePlaySession> scene_play_session_;
+    std::unique_ptr<ProjectHookRunner> project_hook_runner_;
 
     SceneFileDialogMode scene_file_dialog_mode_{SceneFileDialogMode::None};
     std::string current_scene_path_;
@@ -216,11 +230,20 @@ private:
     bool save_shortcut_down_{false};
     bool request_unsaved_scene_dialog_{false};
     bool request_play_error_dialog_{false};
+    bool request_project_load_dialog_{false};
+    bool project_load_completion_handled_{false};
+    bool project_load_succeeded_{false};
+    bool project_hook_start_pending_{false};
     bool pending_quit_request_{false};
     bool request_scene_viewer_focus_{true};
     bool request_python_panel_focus_{false};
     std::function<void()> pending_scene_switch_action_;
     std::string play_error_dialog_message_;
+    std::string active_project_hook_path_;
+    std::string active_project_hook_global_path_;
+    std::string active_project_hook_python_;
+    std::string active_project_hook_working_directory_;
+    std::string project_load_error_;
 
     Node* selected_{nullptr};
 

@@ -19,5 +19,6 @@
             ]
         }
     },
-    "main_scene": "res://deep_blending_playroom.gsplat"
+    "main_scene": "res://deep_blending_playroom.gsplat",
+    "project_load_hook": "res://download_sample.py"
 }

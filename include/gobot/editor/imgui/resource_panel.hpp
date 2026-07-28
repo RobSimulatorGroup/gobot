@@ -67,6 +67,8 @@ public:
 
     bool SetProjectPath(const std::string& project_path);
 
+    void NotifyProjectOpened();
+
     bool SelectResource(const std::string& local_path);
 
     void LoadProjectHistory();

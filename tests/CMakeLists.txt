@@ -109,6 +109,21 @@ gtest_discover_tests(test_node3d_editor_camera
         EXTRA_ARGS --gtest_color=yes
         WORKING_DIRECTORY "${PROJECT_SOURCE_DIR}")
 set_target_properties(test_node3d_editor_camera PROPERTIES FOLDER tests)
+add_executable(test_project_hook_runner
+        editor/test_project_hook_runner.cpp)
+target_compile_options(test_project_hook_runner PUBLIC "${GOBOT_COMPILE_OPTIONS}")
+target_compile_definitions(test_project_hook_runner
+        PRIVATE GOBOT_TEST_PYTHON_EXECUTABLE="${Python3_EXECUTABLE}")
+target_link_libraries(test_project_hook_runner gtest gmock gobot_editor_runtime)
+if (MSVC)
+    target_link_libraries(test_project_hook_runner -Wl,--whole-archive gobot_test_support)
+else ()
+    target_link_libraries(test_project_hook_runner -Wl,--no-as-needed gobot_test_support)
+endif ()
+gtest_discover_tests(test_project_hook_runner
+        EXTRA_ARGS --gtest_color=yes
+        WORKING_DIRECTORY "${PROJECT_SOURCE_DIR}")
+set_target_properties(test_project_hook_runner PROPERTIES FOLDER tests)
 package_add_test(test_editor_type_icons
         editor/test_type_icons.cpp
         ${PROJECT_SOURCE_DIR}/src/gobot/editor/imgui/type_icons.cpp)

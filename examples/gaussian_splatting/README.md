@@ -4,16 +4,25 @@ This example uses the pretrained Deep Blending `playroom` scene to exercise
 Gobot's real 3DGS environment path. The large PLY is downloaded separately and
 is not committed to Gobot or included in wheels.
 
+Opening the project automatically runs its project-load hook. If the PLY is
+missing, the editor downloads it into `assets/`, verifies its size and SHA-256,
+and displays download progress in a modal dialog:
+
+```bash
+gobot_editor --path examples/gaussian_splatting
+```
+
+The downloader remains available as a manual command:
+
 ```bash
 python3 examples/gaussian_splatting/download_sample.py
-gobot_editor --path examples/gaussian_splatting
 ```
 
 The downloader uses only the Python standard library. Run it directly with
 `python3`; `uv run` may try to synchronize and rebuild the editable Gobot
-environment before starting the download. A verified PLY is reused on later
-runs, and an interrupted `.part` download resumes when the server supports HTTP
-range requests.
+environment before starting the download. Both automatic and manual downloads
+reuse a verified PLY on later runs, and an interrupted `.part` download resumes
+when the server supports HTTP range requests.
 
 Run `gobot_editor` from an installed or activated Gobot environment. In a
 source checkout, plain `uv run gobot_editor` synchronizes and may rebuild the

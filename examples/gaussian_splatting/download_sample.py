@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import argparse
 import hashlib
+import json
 import os
 from pathlib import Path
 import sys
@@ -19,6 +20,23 @@ DEFAULT_URLS = (
     f"https://huggingface.co/datasets/Voxel51/gaussian_splatting/resolve/{REVISION}/{FILE_PATH}",
     f"https://hf-mirror.com/datasets/Voxel51/gaussian_splatting/resolve/{REVISION}/{FILE_PATH}",
 )
+
+
+def report_progress(current: int, total: int, message: str) -> None:
+    if "GOBOT_PROJECT_HOOK" in os.environ:
+        payload = json.dumps(
+            {"current": current, "total": total, "message": message},
+            separators=(",", ":"),
+        )
+        print(f"GOBOT_PROGRESS {payload}", flush=True)
+        return
+
+    print(
+        f"\r{message}: {current / (1024 * 1024):.1f} / "
+        f"{total / (1024 * 1024):.1f} MiB",
+        end="",
+        flush=True,
+    )
 
 
 def sha256(path: Path) -> str:
@@ -57,18 +75,31 @@ def download(url: str, destination: Path) -> None:
             existing_size = 0
 
         received = existing_size
+        remaining = EXPECTED_SIZE - received
+        content_length = response.headers.get("Content-Length")
+        if content_length is not None:
+            try:
+                response_size = int(content_length)
+            except ValueError as error:
+                raise RuntimeError(
+                    f"invalid Content-Length: {content_length!r}"
+                ) from error
+            if response_size > remaining:
+                raise RuntimeError(
+                    f"response exceeds expected size: {response_size} > {remaining}"
+                )
         mode = "ab" if append else "wb"
         with destination.open(mode) as stream:
             while block := response.read(1024 * 1024):
+                if len(block) > EXPECTED_SIZE - received:
+                    raise RuntimeError(
+                        f"response exceeds expected size after {received} bytes"
+                    )
                 stream.write(block)
                 received += len(block)
-                print(
-                    f"\rDownloading playroom 3DGS: {received / (1024 * 1024):.1f} / "
-                    f"{EXPECTED_SIZE / (1024 * 1024):.1f} MiB",
-                    end="",
-                    flush=True,
-                )
-    print()
+                report_progress(received, EXPECTED_SIZE, "Downloading playroom 3DGS")
+    if "GOBOT_PROJECT_HOOK" not in os.environ:
+        print()
 
 
 def main() -> int:
