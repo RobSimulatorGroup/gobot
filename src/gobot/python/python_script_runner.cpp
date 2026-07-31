@@ -27,8 +27,12 @@ py::object MakeContextHandle();
 
 class SourceLocationWriter {
 public:
-    explicit SourceLocationWriter(std::string default_filename) :
-            default_filename_(std::move(default_filename)) {}
+    using FlushCallback = std::function<void(const std::string&)>;
+
+    explicit SourceLocationWriter(std::string default_filename,
+                                  FlushCallback flush_callback = {}) :
+            default_filename_(std::move(default_filename)),
+            flush_callback_(std::move(flush_callback)) {}
 
     void Write(const std::string& text) {
         for (char character : text) {
@@ -74,22 +78,33 @@ private:
             return;
         }
 
+        std::stringstream formatted_line;
         const bool only_newline = pending_line_ == "\n";
         if (!only_newline) {
             auto [filename, line] = CurrentSourceLocation();
-            buffer_ << "[" << filename;
+            formatted_line << "[" << filename;
             if (line > 0) {
-                buffer_ << ":" << line;
+                formatted_line << ":" << line;
             }
-            buffer_ << "] ";
+            formatted_line << "] ";
         }
-        buffer_ << pending_line_;
+        formatted_line << pending_line_;
+        std::string text = formatted_line.str();
+        buffer_ << text;
+        if (flush_callback_) {
+            try {
+                flush_callback_(text);
+            } catch (...) {
+                // Diagnostic output must not change script execution behavior.
+            }
+        }
         pending_line_.clear();
     }
 
     std::string default_filename_;
     std::string pending_line_;
     std::stringstream buffer_;
+    FlushCallback flush_callback_;
 };
 
 py::object MakeWriterObject(const std::shared_ptr<SourceLocationWriter>& writer) {
@@ -105,9 +120,23 @@ py::object MakeWriterObject(const std::shared_ptr<SourceLocationWriter>& writer)
 
 class ScopedPythonOutputCapture {
 public:
-    explicit ScopedPythonOutputCapture(const std::string& filename) :
-            stdout_writer_(std::make_shared<SourceLocationWriter>(filename)),
-            stderr_writer_(std::make_shared<SourceLocationWriter>(filename)) {
+    explicit ScopedPythonOutputCapture(
+            const std::string& filename,
+            const PythonScriptRunner::OutputCallback& output_callback = {}) :
+            stdout_writer_(std::make_shared<SourceLocationWriter>(
+                    filename,
+                    [output_callback](const std::string& message) {
+                        if (output_callback) {
+                            output_callback(message, false);
+                        }
+                    })),
+            stderr_writer_(std::make_shared<SourceLocationWriter>(
+                    filename,
+                    [output_callback](const std::string& message) {
+                        if (output_callback) {
+                            output_callback(message, true);
+                        }
+                    })) {
         py::module_ contextlib = py::module_::import("contextlib");
         stdout_buffer_ = MakeWriterObject(stdout_writer_);
         stderr_buffer_ = MakeWriterObject(stderr_writer_);
@@ -465,6 +494,12 @@ bool PythonScriptRunner::HasSceneScriptInstance(Node* node) {
 
 PythonExecutionResult PythonScriptRunner::AttachSceneScript(Node* node,
                                                             const Ref<PythonScript>& script) {
+    return AttachSceneScript(node, script, {});
+}
+
+PythonExecutionResult PythonScriptRunner::AttachSceneScript(Node* node,
+                                                            const Ref<PythonScript>& script,
+                                                            OutputCallback output_callback) {
     PythonExecutionResult result;
     EngineContext* previous_context = nullptr;
 
@@ -481,7 +516,9 @@ PythonExecutionResult PythonScriptRunner::AttachSceneScript(Node* node,
         py::module_::import("gobot");
         AddProjectPathToSysPath(SceneScriptContext());
 
-        ScopedPythonOutputCapture output_capture(script->GetPath().empty() ? "<gobot-node-script>" : script->GetPath());
+        ScopedPythonOutputCapture output_capture(
+                script->GetPath().empty() ? "<gobot-node-script>" : script->GetPath(),
+                output_callback);
         DetachSceneScript(node);
         ScopedSceneScriptExecution scoped_execution;
         SceneScriptInstances()[node->GetInstanceId()] =
@@ -524,6 +561,13 @@ void PythonScriptRunner::DetachSceneScript(ObjectID node_id) {
 PythonExecutionResult PythonScriptRunner::NotifySceneScript(Node* node,
                                                             NotificationType notification,
                                                             double delta_time) {
+    return NotifySceneScript(node, notification, delta_time, {});
+}
+
+PythonExecutionResult PythonScriptRunner::NotifySceneScript(Node* node,
+                                                            NotificationType notification,
+                                                            double delta_time,
+                                                            OutputCallback output_callback) {
     PythonExecutionResult result;
     EngineContext* previous_context = nullptr;
     if (node == nullptr) {
@@ -548,7 +592,8 @@ PythonExecutionResult PythonScriptRunner::NotifySceneScript(Node* node,
         py::object& instance = instance_iter->second.instance;
         ScopedPythonOutputCapture output_capture(instance_iter->second.path.empty()
                                                  ? "<gobot-node-script>"
-                                                 : instance_iter->second.path);
+                                                 : instance_iter->second.path,
+                                                 output_callback);
         ScopedSceneScriptExecution scoped_execution;
         switch (notification) {
             case NotificationType::Ready:

@@ -140,7 +140,7 @@ def test_playback_uses_stable_provider_and_warp_nn_without_newton_viewer() -> No
     assert "joint.force_lower_limit = 0.0" in source
     assert "joint.force_upper_limit = 0.0" in source
     assert 'node.set("contype", 0)' in source
-    assert "affine_actuator_enabled" in source
+    assert 'int(artifact["dimensions"]["nu"]) != ACTION_DIM' in source
     assert 'artifact["dimensions"]["nu"]' in source
     assert "g1_visual" not in source
     assert "g1_physics" not in source
@@ -148,6 +148,11 @@ def test_playback_uses_stable_provider_and_warp_nn_without_newton_viewer() -> No
     assert "use_mujoco_contacts=True" in source
     assert "provider.use_mujoco_contacts" in source
     assert "synchronize_device" in source
+    assert "compiling the Gobot scene artifact" in source
+    assert "initializing the Newton provider" in source
+    assert "loading the Warp ONNX policy" in source
+    assert "first CUDA simulation frame ready" in source
+    assert "flush=True" in source
 
 
 def test_playback_module_imports_from_the_project_root() -> None:

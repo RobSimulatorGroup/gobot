@@ -23,15 +23,17 @@ MANIFEST_PATH = Path(__file__).with_name("asset_manifest.json")
 DEFAULT_OUTPUT = Path(__file__).resolve().parent / "assets"
 DEFAULT_PROJECT_DIR = Path(__file__).resolve().parent
 SOURCE_USD = PurePosixPath(
-    "unitree_g1/usd_structured/g1_29dof_with_hand_rev_1_0.usda"
+    "unitree_g1/usd/g1_isaac.usd"
 )
 GENERATED_SCENE = PurePosixPath("generated/g1_29dof.jscn")
 GENERATED_SCENE_STAMP = PurePosixPath("generated/g1_29dof.import.json")
-SCENE_CACHE_VERSION = 6
+SCENE_CACHE_VERSION = 7
 DEFAULT_BASE_URLS = (
     f"https://raw.githubusercontent.com/newton-physics/newton-assets/{REVISION}",
     f"https://cdn.jsdelivr.net/gh/newton-physics/newton-assets@{REVISION}",
 )
+GITHUB_BLOB_API = "https://api.github.com/repos/newton-physics/newton-assets/git/blobs"
+GITHUB_RAW_SIZE_LIMIT = 20 * 1024 * 1024
 CHUNK_SIZE = 256 * 1024
 NETWORK_TIMEOUT_SECONDS = 45
 RETRIES_PER_URL = 3
@@ -201,7 +203,7 @@ def _import_usd_with_gobot(project_dir: Path, source_path: Path, scene_path: Pat
         stack.extend(reversed(node.children))
     if len(robots) != 1:
         raise RuntimeError(
-            f"structured G1 USD must import exactly one Robot3D, got {len(robots)}"
+            f"official G1 USD must import exactly one Robot3D, got {len(robots)}"
         )
     gobot.save_scene(robots[0], scene_resource)
     return str(gobot.__version__)
@@ -219,7 +221,7 @@ def ensure_generated_scene(
     scene_path = output.joinpath(*GENERATED_SCENE.parts)
     stamp_path = output.joinpath(*GENERATED_SCENE_STAMP.parts)
     if not source_path.is_file():
-        raise FileNotFoundError(f"structured G1 USD is missing: {source_path}")
+        raise FileNotFoundError(f"official G1 USD is missing: {source_path}")
 
     if importer is None:
         importer = _import_usd_with_gobot
@@ -311,6 +313,15 @@ def asset_url(base_url: str, asset: Asset) -> str:
     return f"{base_url.rstrip('/')}/{encoded_path}"
 
 
+def asset_urls(base_urls: Sequence[str], asset: Asset) -> tuple[str, ...]:
+    urls = tuple(asset_url(base_url, asset) for base_url in base_urls)
+    if tuple(base_urls) == DEFAULT_BASE_URLS and asset.size > GITHUB_RAW_SIZE_LIMIT:
+        # GitHub raw and jsDelivr reject repository blobs above their normal
+        # size limits. The Git blobs endpoint serves the pinned object directly.
+        return (f"{GITHUB_BLOB_API}/{asset.git_blob_sha1}", *urls)
+    return urls
+
+
 def _response_status(response: Any) -> int | None:
     status = getattr(response, "status", None)
     if status is None and hasattr(response, "getcode"):
@@ -335,6 +346,8 @@ def download_from_url(
         existing_size = 0
 
     headers = {"User-Agent": "Gobot Newton G1 asset downloader"}
+    if url.startswith(f"{GITHUB_BLOB_API}/"):
+        headers["Accept"] = "application/vnd.github.raw+json"
     if existing_size:
         headers["Range"] = f"bytes={existing_size}-"
     request = urllib.request.Request(url, headers=headers)
@@ -415,8 +428,7 @@ def _install_asset(
 
     failures: list[str] = []
     for attempt in range(1, RETRIES_PER_URL + 1):
-        for base_url in base_urls:
-            url = asset_url(base_url, asset)
+        for url in asset_urls(base_urls, asset):
             try:
                 download_from_url(
                     url,

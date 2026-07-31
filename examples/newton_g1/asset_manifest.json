@@ -4,12 +4,6 @@
     {"path": "unitree_g1/rl_policies/LICENSE", "size": 10172, "git_blob_sha1": "2bb9ad240fa04c8cf706a4901c4807878e90c2dc"},
     {"path": "unitree_g1/rl_policies/g1_29dof.yaml", "size": 2280, "git_blob_sha1": "93fc0768122a531419e0bfcc141a2704f5c4b988"},
     {"path": "unitree_g1/rl_policies/mjw_g1_29DOF.onnx", "size": 366396, "git_blob_sha1": "99ad82803cea8db536accfaf472f126012534891"},
-    {"path": "unitree_g1/usd_structured/Payload/Contents.usda", "size": 361, "git_blob_sha1": "d649bd23300d69d15491c5d1a59d4580685d0e7d"},
-    {"path": "unitree_g1/usd_structured/Payload/Geometry.usda", "size": 172995, "git_blob_sha1": "f10b418c14e53b8a7b08ee2c8c2a52b386369214"},
-    {"path": "unitree_g1/usd_structured/Payload/GeometryLibrary.usdc", "size": 10666552, "git_blob_sha1": "94b052fbc5d521d6de99e92ce3ab033f300f34e5"},
-    {"path": "unitree_g1/usd_structured/Payload/Materials.usda", "size": 26104, "git_blob_sha1": "3d80ec09a2777c42e21d05004a0cc8933989f7ce"},
-    {"path": "unitree_g1/usd_structured/Payload/MaterialsLibrary.usdc", "size": 1690, "git_blob_sha1": "07ffc6ebf3d969c06d496aec5261f348bac8c612"},
-    {"path": "unitree_g1/usd_structured/Payload/Physics.usda", "size": 173622, "git_blob_sha1": "459be0fa607a9f6610e270d48b837becdb96f53f"},
-    {"path": "unitree_g1/usd_structured/g1_29dof_with_hand_rev_1_0.usda", "size": 921, "git_blob_sha1": "2906cb50229bbfec16e0a7660db006c642879a45"}
+    {"path": "unitree_g1/usd/g1_isaac.usd", "size": 39591922, "git_blob_sha1": "0174fed16dff3298d75e6e7b9c676c33ddcc5561"}
   ]
 }

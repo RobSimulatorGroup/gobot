@@ -130,13 +130,6 @@ Editor::Editor() {
         return OpenSceneFromPath(path);
     });
     scene_play_session_ = std::make_unique<ScenePlaySession>();
-    scene_play_session_->SetScriptOutputCallback(
-            [](const std::string& message, bool is_stderr, const std::string& source) {
-                ConsolePanel::AddMessage(MakeRef<ConsoleMessage>(
-                        message,
-                        is_stderr ? ConsoleMessage::Warn : ConsoleMessage::Info,
-                        source));
-            });
     BindEngineContextToEditedScene();
     python::SetActiveAppContext(engine_context_);
     python::PythonScriptRunner::SetSceneScriptContext(engine_context_);

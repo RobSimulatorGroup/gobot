@@ -70,21 +70,14 @@ def test_manifest_is_complete_and_pinned() -> None:
 
     assert manifest["revision"] == REVISION
     assert downloader.REVISION == REVISION
-    assert len(manifest["files"]) == 10
-    assert len(paths) == 10
-    assert sum(entry["size"] for entry in manifest["files"]) == 11_421_093
-    assert downloader.TOTAL_BYTES == 11_421_093
+    assert len(manifest["files"]) == 4
+    assert len(paths) == 4
+    assert sum(entry["size"] for entry in manifest["files"]) == 39_970_770
+    assert downloader.TOTAL_BYTES == 39_970_770
     assert all(len(entry["git_blob_sha1"]) == 40 for entry in manifest["files"])
 
-    usd_paths = {path for path in paths if "/usd_structured/" in path}
-    assert usd_paths == {
-        "unitree_g1/usd_structured/g1_29dof_with_hand_rev_1_0.usda",
-        "unitree_g1/usd_structured/Payload/Contents.usda",
-        "unitree_g1/usd_structured/Payload/Geometry.usda",
-        "unitree_g1/usd_structured/Payload/GeometryLibrary.usdc",
-        "unitree_g1/usd_structured/Payload/Materials.usda",
-        "unitree_g1/usd_structured/Payload/MaterialsLibrary.usdc",
-        "unitree_g1/usd_structured/Payload/Physics.usda",
+    assert {path for path in paths if "/usd/" in path} == {
+        "unitree_g1/usd/g1_isaac.usd",
     }
     assert {path for path in paths if "/rl_policies/" in path} == {
         "unitree_g1/rl_policies/LICENSE",
@@ -98,6 +91,38 @@ def test_manifest_is_complete_and_pinned() -> None:
         f"https://raw.githubusercontent.com/newton-physics/newton-assets/{REVISION}",
         f"https://cdn.jsdelivr.net/gh/newton-physics/newton-assets@{REVISION}",
     )
+    assert downloader.SOURCE_USD.as_posix() == "unitree_g1/usd/g1_isaac.usd"
+    assert downloader.SCENE_CACHE_VERSION == 7
+
+
+def test_large_asset_uses_git_blob_api_with_raw_response() -> None:
+    downloader = load_downloader()
+    content = b"official-usd"
+    asset = downloader.Asset("unitree_g1/usd/test.usd", len(content), blob_sha1(content))
+    requests: list[object] = []
+
+    def opener(request: object, timeout: int) -> Response:
+        requests.append(request)
+        assert timeout == downloader.NETWORK_TIMEOUT_SECONDS
+        return Response(content, headers={"Content-Length": str(len(content))})
+
+    with tempfile.TemporaryDirectory() as directory:
+        destination = Path(directory) / "test.usd.part"
+        with patch.object(downloader, "GITHUB_RAW_SIZE_LIMIT", 0):
+            urls = downloader.asset_urls(downloader.DEFAULT_BASE_URLS, asset)
+            assert urls[0] == f"{downloader.GITHUB_BLOB_API}/{asset.git_blob_sha1}"
+            downloader.download_from_url(
+                urls[0],
+                destination,
+                asset,
+                progress=lambda current: None,
+                opener=opener,
+            )
+
+        assert destination.read_bytes() == content
+
+    assert len(requests) == 1
+    assert requests[0].get_header("Accept") == "application/vnd.github.raw+json"
 
 
 def test_scene_cache_is_versioned_and_skips_current_import() -> None:
@@ -571,6 +596,7 @@ def test_terminal_failure_stops_queued_downloads() -> None:
 
 def main() -> None:
     test_manifest_is_complete_and_pinned()
+    test_large_asset_uses_git_blob_api_with_raw_response()
     test_scene_cache_is_versioned_and_skips_current_import()
     test_scene_cache_reimports_when_an_external_mesh_is_missing()
     test_downloader_lazily_uses_public_gobot_scene_api()

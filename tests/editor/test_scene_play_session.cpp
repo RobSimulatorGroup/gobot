@@ -3,6 +3,7 @@
 #include <filesystem>
 #include <fstream>
 #include <cstdlib>
+#include <stdexcept>
 #include <vector>
 
 #include <gobot/core/config/project_setting.hpp>
@@ -466,6 +467,9 @@ import gobot
 class Script(gobot.NodeScript):
     def _ready(self):
         print("_ready")
+
+    def _process(self, delta):
+        print("_process")
 )PY");
 
     auto* child = gobot::Object::New<gobot::Node>();
@@ -478,12 +482,56 @@ class Script(gobot.NodeScript):
             gobot::python::PythonScriptRunner::AttachSceneScript(child, script);
     ASSERT_TRUE(attach.ok) << attach.error;
 
+    std::vector<std::string> streamed_output;
     gobot::python::PythonExecutionResult ready =
             gobot::python::PythonScriptRunner::NotifySceneScript(child,
                                                                  gobot::NotificationType::Ready,
-                                                                 0.0);
+                                                                 0.0,
+                                                                 [&](const std::string& message,
+                                                                     bool is_stderr) {
+                                                                     EXPECT_FALSE(is_stderr);
+                                                                     streamed_output.push_back(message);
+                                                                 });
     EXPECT_TRUE(ready.ok) << ready.error;
     EXPECT_NE(ready.output.find("_ready"), std::string::npos);
+    ASSERT_EQ(streamed_output.size(), 1);
+    EXPECT_NE(streamed_output[0].find("_ready"), std::string::npos);
+
+    gobot::python::PythonExecutionResult process =
+            gobot::python::PythonScriptRunner::NotifySceneScript(
+                    child,
+                    gobot::NotificationType::Process,
+                    0.0,
+                    [](const std::string&, bool) { throw std::runtime_error("callback failed"); });
+    EXPECT_TRUE(process.ok) << process.error;
+    EXPECT_NE(process.output.find("_process"), std::string::npos);
 
     gobot::python::PythonScriptRunner::DetachSceneScript(child);
+}
+
+TEST_F(TestScenePlaySession, node_script_output_streams_through_session_callback) {
+    auto script = MakeScript("scripts/streamed_output.py", R"PY(
+import sys
+
+import gobot
+
+class Script(gobot.NodeScript):
+    def _ready(self):
+        print("initializing provider", flush=True)
+        print("diagnostic warning", file=sys.stderr, flush=True)
+)PY");
+    root->SetScript(script);
+
+    std::vector<std::pair<std::string, bool>> messages;
+    session.SetScriptOutputCallback(
+            [&](const std::string& message, bool is_stderr, const std::string&) {
+                messages.emplace_back(message, is_stderr);
+            });
+
+    ASSERT_TRUE(session.Start(root, context.get())) << session.GetLastError();
+    ASSERT_EQ(messages.size(), 2);
+    EXPECT_NE(messages[0].first.find("initializing provider"), std::string::npos);
+    EXPECT_FALSE(messages[0].second);
+    EXPECT_NE(messages[1].first.find("diagnostic warning"), std::string::npos);
+    EXPECT_TRUE(messages[1].second);
 }

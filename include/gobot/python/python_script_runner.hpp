@@ -1,6 +1,7 @@
 #pragma once
 
 #include <cstdint>
+#include <functional>
 #include <string>
 
 #include "gobot_export.h"
@@ -24,6 +25,8 @@ struct GOBOT_EXPORT PythonExecutionResult {
 
 class GOBOT_EXPORT PythonScriptRunner {
 public:
+    using OutputCallback = std::function<void(const std::string& message, bool is_stderr)>;
+
     static bool IsAvailable();
 
     static PythonExecutionResult ExecuteString(const std::string& source,
@@ -50,6 +53,10 @@ public:
     static PythonExecutionResult AttachSceneScript(Node* node,
                                                    const Ref<PythonScript>& script);
 
+    static PythonExecutionResult AttachSceneScript(Node* node,
+                                                   const Ref<PythonScript>& script,
+                                                   OutputCallback output_callback);
+
     static void DetachSceneScript(Node* node);
 
     static void DetachSceneScript(ObjectID node_id);
@@ -57,6 +64,11 @@ public:
     static PythonExecutionResult NotifySceneScript(Node* node,
                                                    NotificationType notification,
                                                    double delta_time);
+
+    static PythonExecutionResult NotifySceneScript(Node* node,
+                                                   NotificationType notification,
+                                                   double delta_time,
+                                                   OutputCallback output_callback);
 
     static void Shutdown();
 };

@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import os
+import time
 
 import gobot
 from gobot.rl.providers import NewtonModelConfig, NewtonProvider
@@ -149,7 +150,24 @@ class WarpOnnxPolicy:
 
 
 class Script(gobot.NodeScript):
+    def _startup_begin(self, message):
+        self._startup_stage_started_at = time.perf_counter()
+        print(f"Newton G1 startup: {message}...", flush=True)
+
+    def _startup_finish(self, message):
+        now = time.perf_counter()
+        stage_seconds = now - self._startup_stage_started_at
+        total_seconds = now - self._startup_started_at
+        print(
+            f"Newton G1 startup: {message} in {stage_seconds:.2f}s "
+            f"(total {total_seconds:.2f}s)",
+            flush=True,
+        )
+
     def _ready(self):
+        self._startup_started_at = time.perf_counter()
+        self._startup_stage_started_at = self._startup_started_at
+        self._first_frame_warmup_started_at = None
         self.provider = None
         self._runtime_settings_changed = False
         self.ticks = 0
@@ -160,6 +178,7 @@ class Script(gobot.NodeScript):
         self._original_max_sub_steps = self.context.max_sub_steps
 
         try:
+            self._startup_begin("validating the Gobot scene and policy contract")
             root = self.get_root()
             if root is None:
                 raise RuntimeError("Newton G1 script has no scene root")
@@ -171,14 +190,6 @@ class Script(gobot.NodeScript):
             self.robot = robots[0]
             self.links = _nodes_by_name(self.robot, LINK_NAMES, type_name="Link3D")
             joints = _nodes_by_name(self.robot, JOINT_NAMES, type_name="Joint3D")
-            affine_actuator_count = sum(
-                bool(joint.affine_actuator_enabled) for joint in joints.values()
-            )
-            if affine_actuator_count != ACTION_DIM:
-                raise RuntimeError(
-                    "G1 USD import must preserve one authored affine actuator per policy "
-                    f"joint, got {affine_actuator_count}/{ACTION_DIM}"
-                )
 
             contract_path = os.path.join(
                 self.context.project_path,
@@ -192,20 +203,24 @@ class Script(gobot.NodeScript):
             self.action_scale = float(native_contract["action_scale"])
             default_position = native_contract["mjw_joint_pos"]
             _configure_native_g1_scene(self.robot, joints, native_contract)
+            self._startup_finish("scene and policy contract validated")
 
+            self._startup_begin("compiling the Gobot scene artifact")
             artifact = self.context.compile_scene_artifact(gobot.PhysicsBackendType.MuJoCoCpu)
             robot_names = tuple(artifact.get("robot_names", ()))
             if len(robot_names) != 1:
                 raise RuntimeError(
                     f"Newton G1 scene must compile exactly one robot, got {robot_names}"
                 )
-            if int(artifact["dimensions"]["nu"]) != 2 * ACTION_DIM:
+            if int(artifact["dimensions"]["nu"]) != ACTION_DIM:
                 raise RuntimeError(
-                    "G1 compiled artifact must contain the policy target and authored USD "
-                    f"actuator banks, got nu={artifact['dimensions']['nu']}"
+                    "G1 compiled artifact must contain one position drive per policy "
+                    f"joint, got nu={artifact['dimensions']['nu']}"
                 )
+            self._startup_finish("Gobot scene artifact compiled")
 
             device = os.environ.get("GOBOT_NEWTON_DEVICE", "cuda:0")
+            self._startup_begin(f"initializing the Newton provider on {device}")
             self.provider = NewtonProvider(
                 artifact,
                 num_envs=1,
@@ -218,6 +233,9 @@ class Script(gobot.NodeScript):
             )
             if not self.provider.use_mujoco_contacts:
                 raise RuntimeError("Newton G1 playback requires the official MuJoCo contact path")
+            self._startup_finish("Newton provider initialized")
+
+            self._startup_begin("resolving the G1 layout and allocating CUDA tensors")
             self.layout = self.provider.resolve_robot_layout(
                 robot_names[0],
                 base_link=BASE_LINK,
@@ -271,6 +289,7 @@ class Script(gobot.NodeScript):
             self.gravity = torch.tensor(
                 [[0.0, 0.0, -1.0]], dtype=torch.float32, device=self.device
             )
+            self._startup_finish("G1 layout and CUDA tensors ready")
 
             policy_path = os.path.join(
                 self.context.project_path,
@@ -280,7 +299,11 @@ class Script(gobot.NodeScript):
                 raise FileNotFoundError(
                     f"Newton G1 policy is missing: {policy_path}. Re-run the project asset hook."
                 )
+            self._startup_begin("loading the Warp ONNX policy and uploading its weights")
             self.policy = WarpOnnxPolicy(policy_path, device=device, torch=torch)
+            self._startup_finish("Warp ONNX policy loaded")
+
+            self._startup_begin("resetting Newton state and synchronizing Gobot transforms")
             self._reset_provider()
 
             self._runtime_settings_changed = True
@@ -288,10 +311,12 @@ class Script(gobot.NodeScript):
             self.context.max_sub_steps = max(POLICY_DECIMATION, 8)
             self.context.backend_type = gobot.PhysicsBackendType.Null
             self._sync_robot_links()
+            self._startup_finish("initial Newton state synchronized")
             print(
                 "Newton G1 policy playback started: physics=Newton renderer=Gobot "
                 f"obs={OBSERVATION_DIM} actions={ACTION_DIM} fixed_dt={PHYSICS_DT:.4f} "
-                f"policy_dt={POLICY_DT:.4f} device={device}"
+                f"policy_dt={POLICY_DT:.4f} device={device}; the first simulation frame "
+                "will warm up CUDA kernels"
             )
         except Exception:
             try:
@@ -322,6 +347,12 @@ class Script(gobot.NodeScript):
         self.command.copy_(self.torch.tensor([command], device=self.device))
 
         if self.ticks % POLICY_DECIMATION == 0:
+            if self.ticks == 0:
+                self._first_frame_warmup_started_at = time.perf_counter()
+                print(
+                    "Newton G1 startup: warming up the first policy and physics CUDA kernels...",
+                    flush=True,
+                )
             action = self.policy.action(self._observation())
             targets = self.default_joint_position + self.action_scale * action
             self.provider.set_joint_position_targets(self.layout, targets)
@@ -348,6 +379,13 @@ class Script(gobot.NodeScript):
         del delta
         if self.provider is not None:
             self._sync_robot_links()
+            if self._first_frame_warmup_started_at is not None:
+                elapsed = time.perf_counter() - self._first_frame_warmup_started_at
+                print(
+                    f"Newton G1 startup: first CUDA simulation frame ready in {elapsed:.2f}s",
+                    flush=True,
+                )
+                self._first_frame_warmup_started_at = None
 
     def _exit_tree(self):
         try:

@@ -117,8 +117,8 @@ scripts. A scene whose script computes a terrain-relative spawn pose must pass
 that valid pose through `reset()` before the first simulation step.
 
 `examples/newton_g1` is the end-to-end editor example: Gobot imports and
-persists the structured G1 USD as one generated `.jscn` plus compact binary
-mesh sidecars, compiles the physics artifact from that same Gobot robot tree,
-runs the official ONNX policy with Warp-NN, and writes Newton body transforms
-back to its `Link3D` nodes for Gobot rendering. The hook never introduces a
+persists Newton's canonical `g1_isaac.usd` as one generated `.jscn` plus
+compact binary mesh sidecars, compiles the physics artifact from that same
+Gobot robot tree, runs the official ONNX policy with Warp-NN, and writes Newton
+body transforms back to its `Link3D` nodes for Gobot rendering. The hook never introduces a
 companion MJCF scene, and runtime playback never reopens the source USD.

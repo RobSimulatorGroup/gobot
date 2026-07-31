@@ -154,7 +154,7 @@ Run the Gobot-rendered Newton G1 policy example through `uv`:
 uv run gobot_editor --path examples/newton_g1
 ```
 
-Its project hook downloads the pinned official structured USD and policy files,
+Its project hook downloads the pinned official `g1_isaac.usd` and policy files,
 verifies them, and caches the USD as one Gobot `Robot3D` scene before opening.
 
 Run Go1 rough-terrain training on MuJoCo Warp through `uv`:

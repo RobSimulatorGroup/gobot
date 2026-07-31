@@ -77,26 +77,23 @@ private:
     std::vector<SceneInstanceBackup> backups_;
 };
 
-void LogScriptOutput(const char* phase,
-                     const Node& node,
-                     const ScenePlaySession::ScriptOutputCallback& callback,
-                     const python::PythonExecutionResult& result) {
-    if (!result.output.empty()) {
-        LOG_INFO("Python node script {} on '{}':\n{}", phase, node.GetName(), result.output);
-        if (callback) {
-            callback(result.output,
-                     false,
-                     "Python node script " + std::string(phase) + " on '" + node.GetName() + "'");
+python::PythonScriptRunner::OutputCallback MakeScriptOutputCallback(
+        const char* phase,
+        const Node& node,
+        const ScenePlaySession::ScriptOutputCallback& callback) {
+    const std::string node_name = node.GetName();
+    const std::string phase_name = phase;
+    const std::string source = "Python node script " + phase_name + " on '" + node_name + "'";
+    return [phase_name, node_name, source, callback](const std::string& message, bool is_stderr) {
+        if (is_stderr) {
+            LOG_WARN("Python node script {} stderr on '{}':\n{}", phase_name, node_name, message);
+        } else {
+            LOG_INFO("Python node script {} on '{}':\n{}", phase_name, node_name, message);
         }
-    }
-    if (result.ok && !result.error.empty()) {
-        LOG_WARN("Python node script {} stderr on '{}':\n{}", phase, node.GetName(), result.error);
         if (callback) {
-            callback(result.error,
-                     true,
-                     "Python node script " + std::string(phase) + " stderr on '" + node.GetName() + "'");
+            callback(message, is_stderr, is_stderr ? source + " stderr" : source);
         }
-    }
+    };
 }
 
 } // namespace
@@ -279,8 +276,8 @@ bool ScenePlaySession::AttachNodeScript(Node* node) {
     }
 
     LOG_INFO("Attaching Python node script '{}' to node '{}'.", script->GetPath(), node->GetName());
-    python::PythonExecutionResult result = python::PythonScriptRunner::AttachSceneScript(node, script);
-    LogScriptOutput("attach", *node, script_output_callback_, result);
+    python::PythonExecutionResult result = python::PythonScriptRunner::AttachSceneScript(
+            node, script, MakeScriptOutputCallback("attach", *node, script_output_callback_));
     if (!result.ok) {
         last_error_ = "Python node script attach failed on '" + node->GetName() + "': " + result.error;
         LOG_ERROR("{}", last_error_);
@@ -326,16 +323,22 @@ bool ScenePlaySession::NotifyScripts(NotificationType notification, double delta
         }
 
         python::PythonExecutionResult result =
-                python::PythonScriptRunner::NotifySceneScript(node, notification, delta_time);
-        LogScriptOutput("notification", *node, script_output_callback_, result);
+                python::PythonScriptRunner::NotifySceneScript(
+                        node,
+                        notification,
+                        delta_time,
+                        MakeScriptOutputCallback("notification", *node, script_output_callback_));
         if (!result.ok) {
             last_error_ = "Python node script failed on '" + node->GetName() + "': " + result.error;
             LOG_ERROR("{}", last_error_);
             if (notification != NotificationType::ExitTree) {
                 python::PythonExecutionResult exit_result =
                         python::PythonScriptRunner::NotifySceneScript(
-                                node, NotificationType::ExitTree, 0.0);
-                LogScriptOutput("exit after failure", *node, script_output_callback_, exit_result);
+                                node,
+                                NotificationType::ExitTree,
+                                0.0,
+                                MakeScriptOutputCallback(
+                                        "exit after failure", *node, script_output_callback_));
                 if (!exit_result.ok) {
                     LOG_ERROR("Python node script cleanup failed on '{}': {}",
                               node->GetName(),
@@ -366,8 +369,11 @@ void ScenePlaySession::ClearAttachedScripts(bool call_exit_tree) {
 
         if (call_exit_tree) {
             python::PythonExecutionResult result =
-                    python::PythonScriptRunner::NotifySceneScript(node, NotificationType::ExitTree, 0.0);
-            LogScriptOutput("exit", *node, script_output_callback_, result);
+                    python::PythonScriptRunner::NotifySceneScript(
+                            node,
+                            NotificationType::ExitTree,
+                            0.0,
+                            MakeScriptOutputCallback("exit", *node, script_output_callback_));
             if (!result.ok) {
                 LOG_ERROR("Python node script exit failed on '{}': {}", node->GetName(), result.error);
             }
