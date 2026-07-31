@@ -3,6 +3,7 @@
 #include <filesystem>
 #include <fstream>
 #include <cstdlib>
+#include <vector>
 
 #include <gobot/core/config/project_setting.hpp>
 #include <gobot/core/io/python_script.hpp>
@@ -167,6 +168,40 @@ class Script(gobot.NodeScript):
     EXPECT_EQ(ReadText("scripts/counts.txt"), "1,1,1,1");
 }
 
+TEST_F(TestScenePlaySession, failing_node_script_receives_exit_before_detach) {
+    auto script = MakeScript("scripts/failure_cleanup.py", R"PY(
+import pathlib
+
+import gobot
+
+class Script(gobot.NodeScript):
+    def _result(self):
+        return pathlib.Path(self.context.project_path) / "scripts" / "failure_cleanup.txt"
+
+    def _process(self, delta):
+        del delta
+        self._result().write_text("process")
+        raise RuntimeError("process failed")
+
+    def _exit_tree(self):
+        result = self._result()
+        result.write_text(result.read_text() + ",exit")
+)PY");
+    root->SetScript(script);
+
+    ASSERT_TRUE(session.Start(root, context.get())) << session.GetLastError();
+    ASSERT_EQ(session.GetActiveScriptCount(), 1);
+
+    session.NotifyProcess(0.016);
+
+    EXPECT_EQ(session.GetActiveScriptCount(), 0);
+    EXPECT_EQ(ReadText("scripts/failure_cleanup.txt"), "process,exit");
+    EXPECT_NE(session.GetLastError().find("process failed"), std::string::npos);
+
+    session.Stop();
+    EXPECT_EQ(ReadText("scripts/failure_cleanup.txt"), "process,exit");
+}
+
 TEST_F(TestScenePlaySession, stop_after_scene_tree_finalize_does_not_touch_deleted_runtime_scene) {
     auto script = MakeScript("scripts/lifecycle.py", R"PY(
 import gobot
@@ -225,6 +260,48 @@ class Script(gobot.NodeScript):
 
     session.Stop();
     EXPECT_EQ(session.GetRuntimeRoot(), nullptr);
+}
+
+TEST_F(TestScenePlaySession, node_script_artifact_compile_uses_runtime_clone) {
+#ifndef GOBOT_HAS_MUJOCO
+    GTEST_SKIP() << "MuJoCo support is not enabled.";
+#else
+    auto* robot = gobot::Object::New<gobot::Robot3D>();
+    robot->SetName("edited_robot");
+    auto* base = gobot::Object::New<gobot::Link3D>();
+    base->SetName("base");
+    base->SetMass(1.0);
+    base->SetInertiaDiagonal({0.01, 0.01, 0.01});
+    robot->AddChild(base);
+    root->AddChild(robot);
+
+    auto script = MakeScript("scripts/runtime_artifact.py", R"PY(
+import gobot
+
+class Script(gobot.NodeScript):
+    def _ready(self):
+        robot = self.context.root.find("edited_robot")
+        robot.name = "runtime_robot"
+        artifact = self.context.compile_scene_artifact(
+            gobot.PhysicsBackendType.MuJoCoCpu
+        )
+        result = self.context.project_path + "/scripts/runtime_artifact.txt"
+        with open(result, "w", encoding="utf-8") as stream:
+            stream.write(",".join(artifact["robot_names"]))
+)PY");
+    root->SetScript(script);
+
+    ASSERT_TRUE(session.Start(root, context.get())) << session.GetLastError();
+    EXPECT_EQ(ReadText("scripts/runtime_artifact.txt"), "runtime_robot");
+    EXPECT_EQ(robot->GetName(), "edited_robot");
+
+    gobot::PhysicsSceneArtifact edited_artifact;
+    ASSERT_TRUE(context->CompileSceneArtifact(gobot::PhysicsBackendType::MuJoCoCpu,
+                                              &edited_artifact))
+            << context->GetLastError();
+    EXPECT_EQ(edited_artifact.robot_names,
+              std::vector<std::string>{"edited_robot"});
+#endif
 }
 
 TEST_F(TestScenePlaySession, node_script_root_handle_uses_live_external_context) {

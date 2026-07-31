@@ -49,7 +49,7 @@ def test_python_build_defaults_enable_complete_native_runtime() -> None:
     for requirement in (
         '"mujoco==3.10.0;',
         '"mujoco-warp==3.10.0.2;',
-        '"newton[sim]==1.4.0;',
+        '"newton[onnx,sim]==1.4.0;',
         '"nvidia-cuda-runtime-cu12>=12.8,<13;',
         '"torch>=2.7;',
         '"warp-lang==1.15.0;',

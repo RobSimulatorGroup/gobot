@@ -63,6 +63,7 @@ logs/
 examples/go1/policies/*
 !examples/go1/policies/go1_velocity.onnx
 examples/gaussian_splatting/assets/*
+examples/newton_g1/assets/*
 
 # Local reference checkouts used during development.
 /.upstream/

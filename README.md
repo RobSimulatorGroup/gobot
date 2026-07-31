@@ -148,6 +148,15 @@ their native runtime under `gobot/openusd`. See
 [Newton and OpenUSD integration](doc/newton_openusd.md) for the data boundary
 and provider example.
 
+Run the Gobot-rendered Newton G1 policy example through `uv`:
+
+```bash
+uv run gobot_editor --path examples/newton_g1
+```
+
+Its project hook downloads the pinned official structured USD and policy files,
+verifies them, and caches the USD as one Gobot `Robot3D` scene before opening.
+
 Run Go1 rough-terrain training on MuJoCo Warp through `uv`:
 
 ```bash

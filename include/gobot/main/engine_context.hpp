@@ -54,6 +54,9 @@ public:
     bool RebuildWorld(bool preserve_state = true);
     bool CompileSceneArtifact(PhysicsBackendType backend_type,
                               PhysicsSceneArtifact* artifact);
+    bool CompileSceneArtifact(const Node* scene_root,
+                              PhysicsBackendType backend_type,
+                              PhysicsSceneArtifact* artifact);
     void ClearWorld();
     bool HasWorld() const;
 

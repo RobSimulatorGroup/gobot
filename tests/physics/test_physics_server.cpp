@@ -1,7 +1,9 @@
 #include <gtest/gtest.h>
 
 #include <algorithm>
+#include <cstdint>
 #include <cmath>
+#include <string_view>
 #include <utility>
 
 #include <gobot/physics/physics_server.hpp>
@@ -11,7 +13,9 @@
 #include <gobot/scene/joint_3d.hpp>
 #include <gobot/scene/link_3d.hpp>
 #include <gobot/scene/mesh_instance_3d.hpp>
+#include <gobot/scene/resources/array_mesh.hpp>
 #include <gobot/scene/resources/box_shape_3d.hpp>
+#include <gobot/scene/resources/convex_mesh_shape_3d.hpp>
 #include <gobot/scene/resources/mesh.hpp>
 #include <gobot/scene/robot_3d.hpp>
 #include <gobot/scene/sensor_3d.hpp>
@@ -26,6 +30,34 @@ bool BuildWorldFromScene(const gobot::Ref<gobot::PhysicsWorld>& world, const gob
         return false;
     }
     return world->Build(std::move(compiled_scene.snapshot));
+}
+
+gobot::Ref<gobot::ArrayMesh> CreateTetrahedronMesh() {
+    auto mesh = gobot::MakeRef<gobot::ArrayMesh>();
+    mesh->SetSurface(
+            {
+                    {0.0, 0.0, 0.0},
+                    {1.0, 0.0, 0.0},
+                    {0.0, 1.0, 0.0},
+                    {0.0, 0.0, 1.0},
+            },
+            {
+                    0, 2, 1,
+                    0, 1, 3,
+                    1, 2, 3,
+                    2, 0, 3,
+            });
+    return mesh;
+}
+
+std::size_t CountOccurrences(std::string_view value, std::string_view needle) {
+    std::size_t count = 0;
+    for (std::size_t offset = 0;
+         (offset = value.find(needle, offset)) != std::string_view::npos;
+         offset += needle.size()) {
+        ++count;
+    }
+    return count;
 }
 
 } // namespace
@@ -102,6 +134,12 @@ TEST(TestPhysicsServer, captures_robot_scene_snapshot) {
     joint->SetLowerLimit(-1.0);
     joint->SetUpperLimit(1.0);
     joint->SetJointPosition(0.25);
+    joint->SetAffineActuatorEnabled(true);
+    joint->SetAffineActuatorControlGain(18.0);
+    joint->SetAffineActuatorForceOffset(0.25);
+    joint->SetAffineActuatorPositionGain(-18.0);
+    joint->SetAffineActuatorVelocityGain(0.75);
+    joint->SetAffineActuatorInheritRange(0.8);
 
     robot->AddChild(base_link);
     base_link->AddChild(collision_shape);
@@ -127,9 +165,116 @@ TEST(TestPhysicsServer, captures_robot_scene_snapshot) {
     EXPECT_EQ(snapshot.robots[0].joints[0].parent_link, "base_link");
     EXPECT_EQ(snapshot.robots[0].joints[0].child_link, "tip_link");
     EXPECT_DOUBLE_EQ(snapshot.robots[0].joints[0].joint_position, 0.25);
+    EXPECT_TRUE(snapshot.robots[0].joints[0].affine_actuator_enabled);
+    EXPECT_DOUBLE_EQ(snapshot.robots[0].joints[0].affine_actuator_control_gain, 18.0);
+    EXPECT_DOUBLE_EQ(snapshot.robots[0].joints[0].affine_actuator_force_offset, 0.25);
+    EXPECT_DOUBLE_EQ(snapshot.robots[0].joints[0].affine_actuator_position_gain, -18.0);
+    EXPECT_DOUBLE_EQ(snapshot.robots[0].joints[0].affine_actuator_velocity_gain, 0.75);
+    EXPECT_NEAR(snapshot.robots[0].joints[0].affine_actuator_inherit_range, 0.8, 1.0e-6);
     EXPECT_EQ(snapshot.total_link_count, 1);
     EXPECT_EQ(snapshot.total_joint_count, 1);
     EXPECT_EQ(snapshot.total_collision_shape_count, 1);
+
+    gobot::Object::Delete(robot);
+}
+
+TEST(TestPhysicsServer, mujoco_compiles_primary_and_affine_joint_actuators) {
+#ifdef GOBOT_HAS_MUJOCO
+    auto* robot = gobot::Object::New<gobot::Robot3D>();
+    robot->SetName("affine_robot");
+
+    auto* base = gobot::Object::New<gobot::Link3D>();
+    base->SetName("base");
+    base->SetMass(2.0);
+    base->SetInertiaDiagonal({0.1, 0.1, 0.1});
+    robot->AddChild(base);
+
+    auto* joint = gobot::Object::New<gobot::Joint3D>();
+    joint->SetName("hinge");
+    joint->SetJointType(gobot::JointType::Revolute);
+    joint->SetParentLink("base");
+    joint->SetChildLink("tip");
+    joint->SetAxis(gobot::Vector3::UnitZ());
+    joint->SetLowerLimit(-1.0);
+    joint->SetUpperLimit(1.0);
+    joint->SetDriveMode(gobot::JointDriveMode::Position);
+    joint->SetDriveStiffness(30.0);
+    joint->SetDriveDamping(2.0);
+    joint->SetAffineActuatorEnabled(true);
+    joint->SetAffineActuatorControlGain(500.0);
+    joint->SetAffineActuatorPositionGain(-500.0);
+    joint->SetAffineActuatorVelocityGain(1.0);
+    joint->SetAffineActuatorInheritRange(1.0);
+    base->AddChild(joint);
+
+    auto* tip = gobot::Object::New<gobot::Link3D>();
+    tip->SetName("tip");
+    tip->SetMass(1.0);
+    tip->SetCenterOfMass({0.2, 0.0, 0.0});
+    tip->SetInertiaDiagonal({0.01, 0.05, 0.05});
+    joint->AddChild(tip);
+
+    gobot::PhysicsServer physics_server(gobot::PhysicsBackendType::MuJoCoCpu);
+    const gobot::Ref<gobot::PhysicsWorld> world = physics_server.CreateWorld();
+    ASSERT_TRUE(BuildWorldFromScene(world, robot)) << world->GetLastError();
+
+    const gobot::PhysicsSceneArtifact* artifact = world->GetSceneArtifact();
+    ASSERT_NE(artifact, nullptr);
+    EXPECT_EQ(artifact->nu, 2);
+    EXPECT_NE(artifact->content.find("name=\"affine_robot_hinge_position\""),
+              std::string::npos);
+    EXPECT_NE(artifact->content.find("name=\"affine_robot_hinge_affine\""),
+              std::string::npos);
+
+    gobot::Object::Delete(robot);
+#endif
+}
+
+TEST(TestPhysicsServer, scene_compiler_flattens_convex_mesh_surfaces) {
+    auto* robot = gobot::Object::New<gobot::Robot3D>();
+    robot->SetName("mesh_robot");
+    auto* link = gobot::Object::New<gobot::Link3D>();
+    link->SetName("base");
+    robot->AddChild(link);
+
+    gobot::MeshSurfaceData indexed_surface;
+    indexed_surface.vertices = {
+            {0.0, 0.0, 0.0},
+            {1.0, 0.0, 0.0},
+            {1.0, 1.0, 0.0},
+            {0.0, 1.0, 0.0},
+    };
+    indexed_surface.indices = {0, 1, 2, 0, 2, 3};
+    gobot::MeshSurfaceData unindexed_surface;
+    unindexed_surface.vertices = {
+            {0.0, 0.0, 1.0},
+            {1.0, 0.0, 1.0},
+            {0.0, 1.0, 1.0},
+            {0.0, 0.0, 2.0},
+            {1.0, 0.0, 2.0},
+            {0.0, 1.0, 2.0},
+    };
+    auto mesh = gobot::MakeRef<gobot::ArrayMesh>();
+    mesh->SetSurfaces({std::move(indexed_surface), std::move(unindexed_surface)});
+    auto convex_shape = gobot::MakeRef<gobot::ConvexMeshShape3D>();
+    convex_shape->SetMesh(mesh);
+
+    auto* collision = gobot::Object::New<gobot::CollisionShape3D>();
+    collision->SetName("convex_collision");
+    collision->SetShape(convex_shape);
+    link->AddChild(collision);
+
+    gobot::CompiledPhysicsScene compiled;
+    ASSERT_TRUE(gobot::PhysicsSceneCompiler::Compile(robot, &compiled));
+    ASSERT_EQ(compiled.snapshot.robots.size(), 1);
+    ASSERT_EQ(compiled.snapshot.robots[0].links.size(), 1);
+    ASSERT_EQ(compiled.snapshot.robots[0].links[0].collision_shapes.size(), 1);
+    const gobot::PhysicsShapeSnapshot& snapshot =
+            compiled.snapshot.robots[0].links[0].collision_shapes[0];
+    EXPECT_EQ(snapshot.type, gobot::PhysicsShapeType::Mesh);
+    ASSERT_EQ(snapshot.vertices.size(), 10);
+    EXPECT_EQ(snapshot.indices,
+              (std::vector<std::uint32_t>{0, 1, 2, 0, 2, 3, 4, 5, 6, 7, 8, 9}));
 
     gobot::Object::Delete(robot);
 }
@@ -1225,6 +1370,64 @@ TEST(TestPhysicsServer, mujoco_authored_sensor_nodes_produce_runtime_values) {
     EXPECT_GT(contact_state.timestamp, 0.0);
 
     gobot::Object::Delete(robot);
+#endif
+}
+
+TEST(TestPhysicsServer, mujoco_compiles_robot_and_loose_convex_mesh_shapes) {
+#ifdef GOBOT_HAS_MUJOCO
+    auto* root = gobot::Object::New<gobot::Node3D>();
+    root->SetName("root");
+
+    auto mesh = CreateTetrahedronMesh();
+    auto convex_shape = gobot::MakeRef<gobot::ConvexMeshShape3D>();
+    convex_shape->SetMesh(mesh);
+
+    auto* robot = gobot::Object::New<gobot::Robot3D>();
+    robot->SetName("mesh_robot");
+    auto* link = gobot::Object::New<gobot::Link3D>();
+    link->SetName("base");
+    link->SetPosition({1.0, 2.0, 3.0});
+    link->SetMass(1.0);
+    link->SetCenterOfMass({0.1, 0.1, 0.1});
+    link->SetInertiaDiagonal({0.1, 0.1, 0.1});
+    auto* robot_collision = gobot::Object::New<gobot::CollisionShape3D>();
+    robot_collision->SetName("robot_convex");
+    robot_collision->SetPosition({0.1, 0.2, 0.3});
+    robot_collision->SetFriction({0.7, 0.02, 0.003});
+    robot_collision->SetMargin(0.01);
+    robot_collision->SetGap(0.002);
+    robot_collision->SetShape(convex_shape);
+    link->AddChild(robot_collision);
+    robot->AddChild(link);
+    root->AddChild(robot);
+
+    auto* loose_collision = gobot::Object::New<gobot::CollisionShape3D>();
+    loose_collision->SetName("loose_convex");
+    loose_collision->SetPosition({-2.0, 0.0, 0.0});
+    loose_collision->SetShape(convex_shape);
+    root->AddChild(loose_collision);
+
+    gobot::PhysicsServer physics_server(gobot::PhysicsBackendType::MuJoCoCpu);
+    gobot::Ref<gobot::PhysicsWorld> world = physics_server.CreateWorld();
+    ASSERT_TRUE(BuildWorldFromScene(world, root)) << world->GetLastError();
+
+    const gobot::PhysicsSceneArtifact* artifact = world->GetSceneArtifact();
+    ASSERT_NE(artifact, nullptr);
+    EXPECT_EQ(artifact->ngeom, 2);
+    EXPECT_EQ(CountOccurrences(artifact->content, "<mesh name="), 2);
+    EXPECT_EQ(CountOccurrences(artifact->content, "type=\"mesh\""), 2);
+    EXPECT_NE(artifact->content.find("vertex=\""), std::string::npos);
+    EXPECT_NE(artifact->content.find("face=\""), std::string::npos);
+    EXPECT_NE(artifact->content.find("name=\"mesh_robot_robot_convex_mesh\""),
+              std::string::npos);
+    EXPECT_NE(artifact->content.find("mesh=\"mesh_robot_robot_convex_mesh\""),
+              std::string::npos);
+    EXPECT_NE(artifact->content.find("name=\"gobot_loose_box_0_mesh\""),
+              std::string::npos);
+    EXPECT_NE(artifact->content.find("mesh=\"gobot_loose_box_0_mesh\""),
+              std::string::npos);
+
+    gobot::Object::Delete(root);
 #endif
 }
 

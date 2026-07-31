@@ -70,6 +70,22 @@ TEST(TestRobotNodes, reflected_properties_are_available) {
     EXPECT_TRUE(gobot::Type::get<gobot::Joint3D>().get_property("upper_limit").is_valid());
     EXPECT_TRUE(gobot::Type::get<gobot::Joint3D>().get_property("effort_limit").is_valid());
     EXPECT_TRUE(gobot::Type::get<gobot::Joint3D>().get_property("velocity_limit").is_valid());
+    EXPECT_TRUE(gobot::Type::get<gobot::Joint3D>().get_property("affine_actuator_enabled").is_valid());
+    EXPECT_TRUE(gobot::Type::get<gobot::Joint3D>()
+                        .get_property("affine_actuator_control_gain")
+                        .is_valid());
+    EXPECT_TRUE(gobot::Type::get<gobot::Joint3D>()
+                        .get_property("affine_actuator_force_offset")
+                        .is_valid());
+    EXPECT_TRUE(gobot::Type::get<gobot::Joint3D>()
+                        .get_property("affine_actuator_position_gain")
+                        .is_valid());
+    EXPECT_TRUE(gobot::Type::get<gobot::Joint3D>()
+                        .get_property("affine_actuator_velocity_gain")
+                        .is_valid());
+    EXPECT_TRUE(gobot::Type::get<gobot::Joint3D>()
+                        .get_property("affine_actuator_inherit_range")
+                        .is_valid());
 
     EXPECT_TRUE(gobot::Type::get<gobot::CollisionShape3D>().get_property("priority").is_valid());
 

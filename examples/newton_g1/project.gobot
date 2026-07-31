@@ -1,0 +1,12 @@
+{
+    "editor_scene_views": {
+        "res://newton_g1.jscn": {
+            "at": [0.0, 0.0, 0.9],
+            "eye": [3.0, -3.0, 1.8],
+            "fov_y": 45.0,
+            "up": [-0.145521375, 0.145521375, 0.978606965]
+        }
+    },
+    "main_scene": "res://newton_g1.jscn",
+    "project_load_hook": "res://download_assets.py"
+}

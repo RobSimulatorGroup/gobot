@@ -120,6 +120,30 @@ public:
 
     const std::vector<RealType>& GetGear() const;
 
+    void SetAffineActuatorEnabled(bool enabled);
+
+    bool IsAffineActuatorEnabled() const;
+
+    void SetAffineActuatorControlGain(RealType gain);
+
+    RealType GetAffineActuatorControlGain() const;
+
+    void SetAffineActuatorForceOffset(RealType offset);
+
+    RealType GetAffineActuatorForceOffset() const;
+
+    void SetAffineActuatorPositionGain(RealType gain);
+
+    RealType GetAffineActuatorPositionGain() const;
+
+    void SetAffineActuatorVelocityGain(RealType gain);
+
+    RealType GetAffineActuatorVelocityGain() const;
+
+    void SetAffineActuatorInheritRange(RealType inherit_range);
+
+    RealType GetAffineActuatorInheritRange() const;
+
     bool HasDrive() const;
 
 private:
@@ -155,6 +179,12 @@ private:
     RealType force_lower_limit_{0.0};
     RealType force_upper_limit_{0.0};
     std::vector<RealType> gear_{1.0, 0.0, 0.0, 0.0, 0.0, 0.0};
+    bool affine_actuator_enabled_{false};
+    RealType affine_actuator_control_gain_{0.0};
+    RealType affine_actuator_force_offset_{0.0};
+    RealType affine_actuator_position_gain_{0.0};
+    RealType affine_actuator_velocity_gain_{0.0};
+    RealType affine_actuator_inherit_range_{0.0};
 };
 
 }

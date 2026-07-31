@@ -47,6 +47,14 @@ def Xform "World"
         point3f[] points = [(0, 0, 0), (20, 0, 0), (20, 10, 0), (10, 10, 0), (10, 20, 0), (0, 20, 0)]
     }
 
+    def Mesh "TinyTriangle"
+    {
+        uniform token subdivisionScheme = "none"
+        int[] faceVertexCounts = [3]
+        int[] faceVertexIndices = [0, 1, 2]
+        point3f[] points = [(0, 0, 0), (0.000001, 0, 0), (0, 0.000001, 0)]
+    }
+
     def Mesh "ProxyRepresentation"
     {
         uniform token purpose = "proxy"
@@ -60,6 +68,14 @@ def Xform "World"
     {
         matrix4d xformOp:transform = ((0, 1, 0, 0), (0, 0, 1, 0), (1, 0, 0, 0), (0, 0, 0, 1))
         uniform token[] xformOpOrder = ["xformOp:transform"]
+
+        def Mesh "RotatedMarker"
+        {
+            uniform token subdivisionScheme = "none"
+            int[] faceVertexCounts = [3]
+            int[] faceVertexIndices = [0, 1, 2]
+            point3f[] points = [(0, 0, 0), (10, 0, 0), (0, 10, 0)]
+        }
     }
 }
 

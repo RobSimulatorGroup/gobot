@@ -7,7 +7,9 @@
 #include <gtest/gtest.h>
 
 #include <gobot/scene/collision_shape_3d.hpp>
+#include <gobot/scene/resources/array_mesh.hpp>
 #include <gobot/scene/resources/box_shape_3d.hpp>
+#include <gobot/scene/resources/convex_mesh_shape_3d.hpp>
 #include <gobot/scene/resources/cylinder_shape_3d.hpp>
 #include <gobot/scene/resources/sphere_shape_3d.hpp>
 
@@ -56,4 +58,18 @@ TEST(TestCollisionShape3D, built_in_shape_resources_keep_dimensions) {
     cylinder->SetHeight(2.5f);
     EXPECT_FLOAT_EQ(cylinder->GetRadius(), 0.75f);
     EXPECT_FLOAT_EQ(cylinder->GetHeight(), 2.5f);
+}
+
+TEST(TestCollisionShape3D, convex_mesh_shape_stores_reflected_mesh_resource) {
+    gobot::Ref<gobot::ArrayMesh> mesh = gobot::MakeRef<gobot::ArrayMesh>();
+    mesh->SetSurface(
+            {{0.0, 0.0, 0.0}, {1.0, 0.0, 0.0}, {0.0, 1.0, 0.0}},
+            {0, 1, 2});
+
+    gobot::Ref<gobot::ConvexMeshShape3D> shape = gobot::MakeRef<gobot::ConvexMeshShape3D>();
+    shape->SetMesh(mesh);
+
+    ASSERT_TRUE(shape->GetMesh().IsValid());
+    EXPECT_EQ(shape->GetMesh().Get(), mesh.Get());
+    EXPECT_TRUE(gobot::Type::get<gobot::ConvexMeshShape3D>().get_property("mesh").is_valid());
 }

@@ -331,6 +331,17 @@ bool ScenePlaySession::NotifyScripts(NotificationType notification, double delta
         if (!result.ok) {
             last_error_ = "Python node script failed on '" + node->GetName() + "': " + result.error;
             LOG_ERROR("{}", last_error_);
+            if (notification != NotificationType::ExitTree) {
+                python::PythonExecutionResult exit_result =
+                        python::PythonScriptRunner::NotifySceneScript(
+                                node, NotificationType::ExitTree, 0.0);
+                LogScriptOutput("exit after failure", *node, script_output_callback_, exit_result);
+                if (!exit_result.ok) {
+                    LOG_ERROR("Python node script cleanup failed on '{}': {}",
+                              node->GetName(),
+                              exit_result.error);
+                }
+            }
             python::PythonScriptRunner::DetachSceneScript(node);
             ok = false;
             continue;

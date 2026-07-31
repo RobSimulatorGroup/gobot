@@ -121,6 +121,33 @@ planar/yaw progress, and reports paired-leg gait metrics. The current
 validation snapshot, checkpoint comparison, measured rates, and gait limits are
 recorded in `examples/go1/README.md`.
 
+## Newton G1
+
+`examples/newton_g1` reproduces Newton 1.4's
+`robot_policy --robot g1_29dof` playback contract inside Gobot. It uses the
+official `g1_29dof_with_hand_rev_1_0.usda` as the visible scene asset, compiles
+that USD once into a Gobot `.jscn`, and steps the artifact compiled from the
+same `Robot3D`/`Link3D`/`Joint3D` tree with `NewtonProvider` on CUDA. Gobot
+remains responsible for the viewport; the Newton viewer is not loaded.
+
+The project load hook downloads only the files needed by this example at a
+pinned revision of the official
+[`newton-physics/newton-assets`](https://github.com/newton-physics/newton-assets)
+repository. Each file is checked by size and Git blob SHA-1, partial downloads
+resume, and verified files are reused without network access. Only seven USD
+composition files and the policy, YAML, and license are downloaded; no
+companion MJCF or duplicate STL set is needed. The generated scene has a
+versioned cache stamp, and its large render/collision meshes are kept in a
+sibling binary `.meshes/` cache instead of expanding into JSON. The hook
+validates both the stamp and every external mesh before reusing the scene.
+The downloaded `assets/` directory is excluded from source and wheel packages.
+
+Press Play, then use `I`/`K` for forward/backward, `J`/`L` for lateral motion,
+`U`/`O` for yaw, and `P` to reset. The policy runs at 50 Hz over a 200 Hz Newton
+simulation and controls all 43 G1 joints, including the hands. The compiled
+artifact also retains the 43 affine actuators authored in the USD, for 86
+actuators total, instead of silently replacing the source model's dynamics.
+
 ## Packaging Rules
 
 The Python package install step includes:
@@ -129,5 +156,6 @@ The Python package install step includes:
 - `.py` scripts.
 - `.xml` MuJoCo scene files.
 - source assets checked into `examples/`, including the released Go1 playback policy.
+- pinned manifests and project hooks for large optional example assets.
 
 Generated Python cache files and directories are excluded.

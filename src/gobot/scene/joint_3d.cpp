@@ -333,6 +333,54 @@ const std::vector<RealType>& Joint3D::GetGear() const {
     return gear_;
 }
 
+void Joint3D::SetAffineActuatorEnabled(bool enabled) {
+    affine_actuator_enabled_ = enabled;
+}
+
+bool Joint3D::IsAffineActuatorEnabled() const {
+    return affine_actuator_enabled_;
+}
+
+void Joint3D::SetAffineActuatorControlGain(RealType gain) {
+    affine_actuator_control_gain_ = gain;
+}
+
+RealType Joint3D::GetAffineActuatorControlGain() const {
+    return affine_actuator_control_gain_;
+}
+
+void Joint3D::SetAffineActuatorForceOffset(RealType offset) {
+    affine_actuator_force_offset_ = offset;
+}
+
+RealType Joint3D::GetAffineActuatorForceOffset() const {
+    return affine_actuator_force_offset_;
+}
+
+void Joint3D::SetAffineActuatorPositionGain(RealType gain) {
+    affine_actuator_position_gain_ = gain;
+}
+
+RealType Joint3D::GetAffineActuatorPositionGain() const {
+    return affine_actuator_position_gain_;
+}
+
+void Joint3D::SetAffineActuatorVelocityGain(RealType gain) {
+    affine_actuator_velocity_gain_ = gain;
+}
+
+RealType Joint3D::GetAffineActuatorVelocityGain() const {
+    return affine_actuator_velocity_gain_;
+}
+
+void Joint3D::SetAffineActuatorInheritRange(RealType inherit_range) {
+    affine_actuator_inherit_range_ = inherit_range;
+}
+
+RealType Joint3D::GetAffineActuatorInheritRange() const {
+    return affine_actuator_inherit_range_;
+}
+
 bool Joint3D::HasDrive() const {
     return drive_mode_ != JointDriveMode::Passive;
 }
@@ -366,6 +414,18 @@ GOBOT_REGISTRATION {
             .property("control_upper_limit", &Joint3D::GetControlUpperLimit, &Joint3D::SetControlUpperLimit)
             .property("force_lower_limit", &Joint3D::GetForceLowerLimit, &Joint3D::SetForceLowerLimit)
             .property("force_upper_limit", &Joint3D::GetForceUpperLimit, &Joint3D::SetForceUpperLimit)
-            .property("gear", &Joint3D::GetGear, &Joint3D::SetGear);
+            .property("gear", &Joint3D::GetGear, &Joint3D::SetGear)
+            .property("affine_actuator_enabled", &Joint3D::IsAffineActuatorEnabled,
+                      &Joint3D::SetAffineActuatorEnabled)
+            .property("affine_actuator_control_gain", &Joint3D::GetAffineActuatorControlGain,
+                      &Joint3D::SetAffineActuatorControlGain)
+            .property("affine_actuator_force_offset", &Joint3D::GetAffineActuatorForceOffset,
+                      &Joint3D::SetAffineActuatorForceOffset)
+            .property("affine_actuator_position_gain", &Joint3D::GetAffineActuatorPositionGain,
+                      &Joint3D::SetAffineActuatorPositionGain)
+            .property("affine_actuator_velocity_gain", &Joint3D::GetAffineActuatorVelocityGain,
+                      &Joint3D::SetAffineActuatorVelocityGain)
+            .property("affine_actuator_inherit_range", &Joint3D::GetAffineActuatorInheritRange,
+                      &Joint3D::SetAffineActuatorInheritRange);
 
 };

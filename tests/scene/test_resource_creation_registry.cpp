@@ -5,6 +5,7 @@
 
 #include <gobot/rendering/render_server.hpp>
 #include <gobot/scene/resources/box_shape_3d.hpp>
+#include <gobot/scene/resources/convex_mesh_shape_3d.hpp>
 #include <gobot/scene/resources/cylinder_shape_3d.hpp>
 #include <gobot/scene/resources/gaussian_splat.hpp>
 #include <gobot/scene/resources/material.hpp>
@@ -43,6 +44,7 @@ TEST(TestResourceCreationRegistry, filters_resource_types_by_ref_property_type) 
             gobot::Type::get<gobot::Ref<gobot::Shape3D>>());
     EXPECT_TRUE(ContainsResourceType(shape_types, "BoxShape3D"));
     EXPECT_TRUE(ContainsResourceType(shape_types, "CylinderShape3D"));
+    EXPECT_TRUE(ContainsResourceType(shape_types, "ConvexMeshShape3D"));
     EXPECT_TRUE(ContainsResourceType(shape_types, "SphereShape3D"));
     EXPECT_FALSE(ContainsResourceType(shape_types, "BoxMesh"));
 
@@ -94,6 +96,12 @@ TEST(TestResourceCreationRegistry, created_variant_converts_to_requested_ref_bas
             gobot::Type::get<gobot::Ref<gobot::Shape3D>>());
     ASSERT_TRUE(cylinder_shape.is_valid());
     EXPECT_EQ(cylinder_shape.get_type(), gobot::Type::get<gobot::Ref<gobot::Shape3D>>());
+
+    gobot::Variant convex_mesh_shape = gobot::ResourceCreationRegistry::CreateResourceVariant(
+            "ConvexMeshShape3D",
+            gobot::Type::get<gobot::Ref<gobot::Shape3D>>());
+    ASSERT_TRUE(convex_mesh_shape.is_valid());
+    EXPECT_EQ(convex_mesh_shape.get_type(), gobot::Type::get<gobot::Ref<gobot::Shape3D>>());
 
     gobot::Variant sphere_shape = gobot::ResourceCreationRegistry::CreateResourceVariant(
             "SphereShape3D",

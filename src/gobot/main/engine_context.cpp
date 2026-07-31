@@ -189,11 +189,17 @@ bool EngineContext::RebuildWorld(bool preserve_state) {
 
 bool EngineContext::CompileSceneArtifact(PhysicsBackendType backend_type,
                                          PhysicsSceneArtifact* artifact) {
+    return CompileSceneArtifact(scene_root_, backend_type, artifact);
+}
+
+bool EngineContext::CompileSceneArtifact(const Node* scene_root,
+                                         PhysicsBackendType backend_type,
+                                         PhysicsSceneArtifact* artifact) {
     if (physics_server_ == nullptr || simulation_server_ == nullptr) {
         SetLastError("Physics compilation services are not available.");
         return false;
     }
-    if (scene_root_ == nullptr) {
+    if (scene_root == nullptr) {
         SetLastError("Cannot compile a physics artifact without a loaded scene.");
         return false;
     }
@@ -204,7 +210,7 @@ bool EngineContext::CompileSceneArtifact(PhysicsBackendType backend_type,
 
     CompiledPhysicsScene compiled_scene;
     std::string compile_error;
-    if (!PhysicsSceneCompiler::Compile(scene_root_, &compiled_scene, &compile_error)) {
+    if (!PhysicsSceneCompiler::Compile(scene_root, &compiled_scene, &compile_error)) {
         SetLastError(compile_error);
         return false;
     }

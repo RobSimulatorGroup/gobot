@@ -116,6 +116,8 @@ struct PhysicsShapeSnapshot {
     Vector3 box_size{Vector3::Ones()};
     RealType radius{0.0};
     RealType height{0.0};
+    std::vector<Vector3> vertices;
+    std::vector<std::uint32_t> indices;
     Vector3 friction{1.0, 0.005, 0.0001};
     int contype{1};
     int conaffinity{1};
@@ -190,6 +192,12 @@ struct PhysicsJointSnapshot {
     RealType force_lower_limit{0.0};
     RealType force_upper_limit{0.0};
     std::vector<RealType> gear{1.0, 0.0, 0.0, 0.0, 0.0, 0.0};
+    bool affine_actuator_enabled{false};
+    RealType affine_actuator_control_gain{0.0};
+    RealType affine_actuator_force_offset{0.0};
+    RealType affine_actuator_position_gain{0.0};
+    RealType affine_actuator_velocity_gain{0.0};
+    RealType affine_actuator_inherit_range{0.0};
     int joint_type{0};
 };
 

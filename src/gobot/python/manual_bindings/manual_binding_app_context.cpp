@@ -1310,7 +1310,8 @@ void RegisterManualAppContextBindings(py::module_& module) {
             .def("compile_scene_artifact", [](EngineContext& context,
                                                PhysicsBackendType backend_type) {
                 PhysicsSceneArtifact artifact;
-                if (!context.CompileSceneArtifact(backend_type, &artifact)) {
+                Node* root = SceneRootForContext(context);
+                if (!context.CompileSceneArtifact(root, backend_type, &artifact)) {
                     throw std::runtime_error(context.GetLastError());
                 }
                 return SceneArtifactToPython(artifact);

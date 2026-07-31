@@ -714,13 +714,12 @@ void NormalizeMJCFAssetPaths(mjSpec* spec, const std::filesystem::path& source_f
         mjsTexture* texture = mjs_asTexture(element);
         if (texture != nullptr) {
             NormalizeMJCFFileString(texture->file, source_file, texture_dir);
-            if (texture->cubefiles != nullptr) {
-                for (std::string& cube_file : *texture->cubefiles) {
-                    if (!cube_file.empty()) {
-                        cube_file = ResolveMJCFAssetPath(source_file, texture_dir, cube_file).string();
-                    }
-                }
-            }
+            // mjStringVec is a std::vector<std::string> owned by the MuJoCo
+            // library. Do not dereference it across the shared-library ABI:
+            // pip SDKs may use a different libstdc++ string ABI than Gobot.
+            // Separate cubemap files have no public per-entry C setter. Keep
+            // their base directory below instead of crossing the mjStringVec
+            // shared-library ABI.
         }
     }
 
@@ -734,7 +733,14 @@ void NormalizeMJCFAssetPaths(mjSpec* spec, const std::filesystem::path& source_f
     }
 
     mjs_setString(spec->compiler.meshdir, "");
-    mjs_setString(spec->compiler.texturedir, "");
+    const std::filesystem::path texture_root = texture_dir.empty()
+                                                       ? source_file.parent_path()
+                                                       : ResolveMJCFAssetPath(
+                                                                 source_file,
+                                                                 "",
+                                                                 texture_dir + "/placeholder")
+                                                                 .parent_path();
+    mjs_setString(spec->compiler.texturedir, texture_root.string().c_str());
     mjs_setString(spec->modelfiledir, "");
 }
 

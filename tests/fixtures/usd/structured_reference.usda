@@ -1,0 +1,23 @@
+#usda 1.0
+(
+    defaultPrim = "ReferencedVisual"
+)
+
+def Xform "ReferencedVisual"
+{
+    double3 xformOp:translate = (0, 0, 2)
+    uniform token[] xformOpOrder = ["xformOp:translate"]
+
+    def Mesh "Surface"
+    {
+        uniform token subdivisionScheme = "none"
+        int[] faceVertexCounts = [3]
+        int[] faceVertexIndices = [0, 1, 2]
+        point3f[] points = [(0, 0, 0), (1, 0, 0), (0, 1, 0)]
+    }
+
+    def Scope "ReferenceMetadata"
+    {
+        custom string source = "not scene content"
+    }
+}

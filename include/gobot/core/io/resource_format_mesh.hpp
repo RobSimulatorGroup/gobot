@@ -7,6 +7,7 @@
 #pragma once
 
 #include "gobot/core/io/resource_loader.hpp"
+#include "gobot/core/io/resource_saver.hpp"
 
 namespace gobot {
 
@@ -26,6 +27,20 @@ public:
     [[nodiscard]] bool HandlesType(const std::string& type) const override;
 
     [[nodiscard]] bool Exists(const std::string& path) const override;
+};
+
+class GOBOT_EXPORT ResourceFormatSaverPLY : public ResourceFormatSaver {
+    GOBCLASS(ResourceFormatSaverPLY, ResourceFormatSaver)
+
+public:
+    bool Save(const Ref<Resource>& resource,
+              const std::string& path,
+              ResourceSaverFlags flags = ResourceSaverFlags::None) override;
+
+    [[nodiscard]] bool Recognize(const Ref<Resource>& resource) const override;
+
+    void GetRecognizedExtensions(const Ref<Resource>& resource,
+                                 std::vector<std::string>* extensions) const override;
 };
 
 } // namespace gobot

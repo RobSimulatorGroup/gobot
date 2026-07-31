@@ -152,6 +152,22 @@ def main():
     link.add_child(contact)
     angular_momentum = gobot.create_node("AngularMomentumSensor3D", "root_angmom")
     link.add_child(angular_momentum)
+    authored_joint = gobot.create_node("Joint3D", "authored_joint")
+    authored_joint.friction_loss = 0.25
+    authored_joint.affine_actuator_enabled = True
+    authored_joint.affine_actuator_control_gain = 500.0
+    authored_joint.affine_actuator_force_offset = 0.125
+    authored_joint.affine_actuator_position_gain = -500.0
+    authored_joint.affine_actuator_velocity_gain = 1.0
+    authored_joint.affine_actuator_inherit_range = 1.0
+    authored.add_child(authored_joint)
+    assert abs(authored_joint.friction_loss - 0.25) < 1e-6
+    assert authored_joint.affine_actuator_enabled
+    assert abs(authored_joint.affine_actuator_control_gain - 500.0) < 1e-6
+    assert abs(authored_joint.affine_actuator_force_offset - 0.125) < 1e-6
+    assert abs(authored_joint.affine_actuator_position_gain + 500.0) < 1e-6
+    assert abs(authored_joint.affine_actuator_velocity_gain - 1.0) < 1e-6
+    assert abs(authored_joint.affine_actuator_inherit_range - 1.0) < 1e-6
     assert authored.find("link/collision").name == "collision"
     assert authored.find("link/imu").type == "IMUSensor3D"
     assert authored.find("link/root_angmom").type == "AngularMomentumSensor3D"

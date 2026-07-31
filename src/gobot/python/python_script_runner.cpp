@@ -532,7 +532,8 @@ PythonExecutionResult PythonScriptRunner::NotifySceneScript(Node* node,
     }
 
     auto instance_iter = SceneScriptInstances().find(node->GetInstanceId());
-    if (instance_iter == SceneScriptInstances().end() || instance_iter->second.disabled) {
+    if (instance_iter == SceneScriptInstances().end() ||
+        (instance_iter->second.disabled && notification != NotificationType::ExitTree)) {
         result.ok = true;
         return result;
     }

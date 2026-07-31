@@ -21,6 +21,7 @@
 #include "gobot/scene/node.hpp"
 #include "gobot/scene/resources/box_shape_3d.hpp"
 #include "gobot/scene/resources/capsule_shape_3d.hpp"
+#include "gobot/scene/resources/convex_mesh_shape_3d.hpp"
 #include "gobot/scene/resources/cylinder_shape_3d.hpp"
 #include "gobot/scene/resources/sphere_shape_3d.hpp"
 #include "gobot/scene/robot_3d.hpp"
@@ -192,6 +193,44 @@ PhysicsShapeSnapshot CaptureShapeSnapshot(const CollisionShape3D* collision_shap
         snapshot.type = PhysicsShapeType::Cylinder;
         snapshot.radius = cylinder->GetRadius();
         snapshot.height = cylinder->GetHeight();
+    } else if (const auto convex_mesh = dynamic_pointer_cast<ConvexMeshShape3D>(shape)) {
+        const Ref<Mesh>& mesh = convex_mesh->GetMesh();
+        const std::shared_ptr<const MeshSurfaceList> surfaces =
+                mesh.IsValid() ? mesh->GetSurfaceData() : nullptr;
+        if (!surfaces) {
+            return snapshot;
+        }
+
+        snapshot.type = PhysicsShapeType::Mesh;
+        for (const MeshSurfaceData& surface : *surfaces) {
+            const std::uint32_t vertex_offset =
+                    static_cast<std::uint32_t>(snapshot.vertices.size());
+            snapshot.vertices.insert(snapshot.vertices.end(),
+                                     surface.vertices.begin(),
+                                     surface.vertices.end());
+
+            if (surface.indices.empty()) {
+                const std::size_t triangle_vertex_count =
+                        surface.vertices.size() - surface.vertices.size() % 3;
+                for (std::size_t index = 0; index < triangle_vertex_count; ++index) {
+                    snapshot.indices.push_back(vertex_offset + static_cast<std::uint32_t>(index));
+                }
+                continue;
+            }
+
+            for (std::size_t index = 0; index + 2 < surface.indices.size(); index += 3) {
+                const std::uint32_t a = surface.indices[index];
+                const std::uint32_t b = surface.indices[index + 1];
+                const std::uint32_t c = surface.indices[index + 2];
+                if (a >= surface.vertices.size() ||
+                    b >= surface.vertices.size() ||
+                    c >= surface.vertices.size()) {
+                    continue;
+                }
+                snapshot.indices.insert(snapshot.indices.end(),
+                                        {vertex_offset + a, vertex_offset + b, vertex_offset + c});
+            }
+        }
     }
     return snapshot;
 }
@@ -402,6 +441,12 @@ void CollectRobotNodes(const Node* node,
         snapshot.force_lower_limit = joint->GetForceLowerLimit();
         snapshot.force_upper_limit = joint->GetForceUpperLimit();
         snapshot.gear = joint->GetGear();
+        snapshot.affine_actuator_enabled = joint->IsAffineActuatorEnabled();
+        snapshot.affine_actuator_control_gain = joint->GetAffineActuatorControlGain();
+        snapshot.affine_actuator_force_offset = joint->GetAffineActuatorForceOffset();
+        snapshot.affine_actuator_position_gain = joint->GetAffineActuatorPositionGain();
+        snapshot.affine_actuator_velocity_gain = joint->GetAffineActuatorVelocityGain();
+        snapshot.affine_actuator_inherit_range = joint->GetAffineActuatorInheritRange();
         snapshot.joint_type = static_cast<int>(joint->GetJointType());
         robot_snapshot->joints.push_back(std::move(snapshot));
         scene_binding->joints.push_back(joint);

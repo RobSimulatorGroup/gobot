@@ -218,6 +218,54 @@ void RegisterManualRobotBindings(PyRobot3DClass& robot3d_class,
                               Joint3D* joint = handle.ResolveAs<Joint3D>();
                               ExecuteSetNodeProperty(joint, "friction_loss", Variant(friction_loss));
                           })
+            .def_property("affine_actuator_enabled",
+                          [](const PyJoint3DHandle& handle) {
+                              return handle.ResolveAs<Joint3D>()->IsAffineActuatorEnabled();
+                          },
+                          [](PyJoint3DHandle& handle, bool enabled) {
+                              Joint3D* joint = handle.ResolveAs<Joint3D>();
+                              ExecuteSetNodeProperty(joint, "affine_actuator_enabled", Variant(enabled));
+                          })
+            .def_property("affine_actuator_control_gain",
+                          [](const PyJoint3DHandle& handle) {
+                              return handle.ResolveAs<Joint3D>()->GetAffineActuatorControlGain();
+                          },
+                          [](PyJoint3DHandle& handle, RealType gain) {
+                              Joint3D* joint = handle.ResolveAs<Joint3D>();
+                              ExecuteSetNodeProperty(joint, "affine_actuator_control_gain", Variant(gain));
+                          })
+            .def_property("affine_actuator_force_offset",
+                          [](const PyJoint3DHandle& handle) {
+                              return handle.ResolveAs<Joint3D>()->GetAffineActuatorForceOffset();
+                          },
+                          [](PyJoint3DHandle& handle, RealType offset) {
+                              Joint3D* joint = handle.ResolveAs<Joint3D>();
+                              ExecuteSetNodeProperty(joint, "affine_actuator_force_offset", Variant(offset));
+                          })
+            .def_property("affine_actuator_position_gain",
+                          [](const PyJoint3DHandle& handle) {
+                              return handle.ResolveAs<Joint3D>()->GetAffineActuatorPositionGain();
+                          },
+                          [](PyJoint3DHandle& handle, RealType gain) {
+                              Joint3D* joint = handle.ResolveAs<Joint3D>();
+                              ExecuteSetNodeProperty(joint, "affine_actuator_position_gain", Variant(gain));
+                          })
+            .def_property("affine_actuator_velocity_gain",
+                          [](const PyJoint3DHandle& handle) {
+                              return handle.ResolveAs<Joint3D>()->GetAffineActuatorVelocityGain();
+                          },
+                          [](PyJoint3DHandle& handle, RealType gain) {
+                              Joint3D* joint = handle.ResolveAs<Joint3D>();
+                              ExecuteSetNodeProperty(joint, "affine_actuator_velocity_gain", Variant(gain));
+                          })
+            .def_property("affine_actuator_inherit_range",
+                          [](const PyJoint3DHandle& handle) {
+                              return handle.ResolveAs<Joint3D>()->GetAffineActuatorInheritRange();
+                          },
+                          [](PyJoint3DHandle& handle, RealType inherit_range) {
+                              Joint3D* joint = handle.ResolveAs<Joint3D>();
+                              ExecuteSetNodeProperty(joint, "affine_actuator_inherit_range", Variant(inherit_range));
+                          })
             .def_property("joint_position",
                           [](const PyJoint3DHandle& handle) {
                               return handle.ResolveAs<Joint3D>()->GetJointPosition();

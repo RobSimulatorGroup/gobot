@@ -111,6 +111,13 @@ class PhysicsBackendInfo:
     def from_dict(value: dict[str, Any]) -> PhysicsBackendInfo: ...
 
 
+class Input:
+    has_control_focus: bool
+
+    def is_key_pressed(self, key_name: str) -> bool: ...
+    def is_key_held(self, key_name: str) -> bool: ...
+
+
 class AppContext:
     project_path: str
     scene_path: str
@@ -130,6 +137,7 @@ class AppContext:
     max_sub_steps: int
     batch_env_count: int
     gravity: Vector3
+    input: Input
 
     def set_project_path(self, project_path: str) -> None: ...
     def load_scene(self, scene_path: str) -> Node: ...
@@ -260,6 +268,17 @@ class Node3D(Node):
     scale: Vector3
     visible: bool
 
+    def set_global_transform(
+        self,
+        position: VectorLike,
+        orientation: VectorLike = (1.0, 0.0, 0.0, 0.0),
+    ) -> None: ...
+    def set_transform(
+        self,
+        position: VectorLike,
+        orientation: VectorLike = (1.0, 0.0, 0.0, 0.0),
+    ) -> None: ...
+
 
 class VelocityCommandDebug3D(Node3D):
     enabled: bool
@@ -304,6 +323,14 @@ class Joint3D(Node3D):
     damping: float
     joint_position: float
     initial_position: float
+    armature: float
+    friction_loss: float
+    affine_actuator_enabled: bool
+    affine_actuator_control_gain: float
+    affine_actuator_force_offset: float
+    affine_actuator_position_gain: float
+    affine_actuator_velocity_gain: float
+    affine_actuator_inherit_range: float
     drive_mode: JointDriveMode
     drive_stiffness: float
     drive_damping: float

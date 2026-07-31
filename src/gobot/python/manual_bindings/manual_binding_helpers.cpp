@@ -1,6 +1,157 @@
 #include "manual_bindings_internal.hpp"
 
+#include "gobot/scene/resources/array_mesh.hpp"
+#include "gobot/scene/resources/convex_mesh_shape_3d.hpp"
+
+#include <iomanip>
+#include <limits>
+#include <numeric>
+#include <ranges>
+#include <unordered_set>
+
 namespace gobot::python {
+
+namespace {
+
+constexpr std::size_t kArrayMeshExternalizationThreshold = 1024U * 1024U;
+
+std::size_t EstimateArrayMeshBytes(const Ref<ArrayMesh>& mesh) {
+    std::size_t bytes = 0;
+    for (const MeshSurfaceData& surface : mesh->GetSurfaces()) {
+        bytes += surface.vertices.size() * 3U * sizeof(float);
+        bytes += surface.indices.size() * sizeof(std::uint32_t);
+        bytes += surface.normals.size() * 3U * sizeof(float);
+        bytes += surface.tangents.size() * 4U * sizeof(float);
+        bytes += surface.uv0.size() * 2U * sizeof(float);
+        bytes += surface.colors.size() * 4U * sizeof(std::uint8_t);
+    }
+    return bytes;
+}
+
+bool CanExternalizeAsPLY(const MeshSurfaceData& surface) {
+    const std::size_t vertex_count = surface.vertices.size();
+    const auto attribute_is_complete = [vertex_count](std::size_t count) {
+        return count == 0 || count == vertex_count;
+    };
+    return vertex_count > 0 &&
+           vertex_count <= std::numeric_limits<std::uint32_t>::max() &&
+           !surface.indices.empty() && surface.indices.size() % 3 == 0 &&
+           surface.indices.size() / 3 <= std::numeric_limits<std::uint32_t>::max() &&
+           std::ranges::all_of(surface.indices,
+                               [vertex_count](std::uint32_t index) {
+                                   return index < vertex_count;
+                               }) &&
+           attribute_is_complete(surface.normals.size()) &&
+           attribute_is_complete(surface.uv0.size()) &&
+           attribute_is_complete(surface.colors.size()) &&
+           surface.tangents.empty() && !surface.material.IsValid();
+}
+
+std::vector<Ref<ArrayMesh>> CollectBuiltInArrayMeshes(Node* root) {
+    std::vector<Ref<ArrayMesh>> meshes;
+    std::unordered_set<ArrayMesh*> seen;
+    std::vector<Node*> stack{root};
+    while (!stack.empty()) {
+        Node* node = stack.back();
+        stack.pop_back();
+        for (std::size_t child_index = node->GetChildCount(); child_index > 0; --child_index) {
+            stack.push_back(node->GetChild(static_cast<int>(child_index - 1)));
+        }
+
+        Ref<Mesh> mesh;
+        if (auto* mesh_instance = Object::PointerCastTo<MeshInstance3D>(node)) {
+            mesh = mesh_instance->GetMesh();
+        } else if (auto* collision = Object::PointerCastTo<CollisionShape3D>(node)) {
+            const Ref<ConvexMeshShape3D> shape =
+                    dynamic_pointer_cast<ConvexMeshShape3D>(collision->GetShape());
+            if (shape.IsValid()) {
+                mesh = shape->GetMesh();
+            }
+        }
+
+        const Ref<ArrayMesh> array_mesh = dynamic_pointer_cast<ArrayMesh>(mesh);
+        if (!array_mesh.IsValid() || !array_mesh->IsBuiltIn()) {
+            continue;
+        }
+        const MeshSurfaceList surfaces = array_mesh->GetSurfaces();
+        if (surfaces.size() != 1 || !CanExternalizeAsPLY(surfaces.front()) ||
+            !seen.emplace(array_mesh.Get()).second) {
+            continue;
+        }
+        meshes.push_back(array_mesh);
+    }
+    return meshes;
+}
+
+class ScopedExternalMeshPaths {
+public:
+    ~ScopedExternalMeshPaths() {
+        for (auto& entry : paths_) {
+            if (entry.was_cached) {
+                entry.mesh->SetPath(entry.original_path);
+            } else {
+                entry.mesh->SetPathWithoutCache(entry.original_path);
+            }
+        }
+    }
+
+    void Add(const Ref<ArrayMesh>& mesh, std::string original_path) {
+        const bool was_cached = !original_path.empty() &&
+                                ResourceCache::GetRef(original_path).Get() == mesh.Get();
+        paths_.push_back({mesh, std::move(original_path), was_cached});
+    }
+
+private:
+    struct Entry {
+        Ref<ArrayMesh> mesh;
+        std::string original_path;
+        bool was_cached{false};
+    };
+    std::vector<Entry> paths_;
+};
+
+bool ExternalizeLargeSceneMeshes(Node* root,
+                                 const std::string& global_scene_path,
+                                 ScopedExternalMeshPaths* scoped_paths) {
+#ifndef GOBOT_HAS_ASSIMP
+    // PLY loading currently uses Assimp. Keep meshes embedded when this build
+    // cannot reload the sidecars it would otherwise create.
+    GOB_UNUSED(root);
+    GOB_UNUSED(global_scene_path);
+    GOB_UNUSED(scoped_paths);
+    return true;
+#else
+    const std::vector<Ref<ArrayMesh>> meshes = CollectBuiltInArrayMeshes(root);
+    const std::size_t total_bytes = std::accumulate(
+            meshes.begin(), meshes.end(), std::size_t{0},
+            [](std::size_t total, const Ref<ArrayMesh>& mesh) {
+                return total + EstimateArrayMeshBytes(mesh);
+            });
+    if (total_bytes < kArrayMeshExternalizationThreshold) {
+        return true;
+    }
+
+    std::filesystem::path mesh_directory(global_scene_path);
+    mesh_directory.replace_extension();
+    mesh_directory += ".meshes";
+    for (std::size_t mesh_index = 0; mesh_index < meshes.size(); ++mesh_index) {
+        std::ostringstream filename;
+        filename << "mesh_" << std::setw(4) << std::setfill('0') << mesh_index << ".ply";
+        const std::filesystem::path mesh_path = mesh_directory / filename.str();
+        if (!ResourceSaver::Save(meshes[mesh_index], mesh_path.string())) {
+            LOG_ERROR("Failed to externalize scene mesh '{}' while saving '{}'.",
+                      mesh_path.string(), global_scene_path);
+            return false;
+        }
+        scoped_paths->Add(meshes[mesh_index], meshes[mesh_index]->GetPath());
+        meshes[mesh_index]->SetPathWithoutCache(
+                ProjectSettings::GetInstance()->LocalizePath(mesh_path.string()));
+    }
+    return true;
+#endif
+}
+
+} // namespace
 
 std::uint64_t ActiveSceneEpoch() {
     const std::uint64_t scene_script_epoch = PythonScriptRunner::GetExecutingSceneScriptEpoch();
@@ -153,12 +304,17 @@ bool SaveSceneRoot(Node* root, const std::string& path) {
     if (root == nullptr) {
         throw std::invalid_argument("cannot save a null Gobot scene root");
     }
+    const std::string global_path = ProjectSettings::GetInstance()->GlobalizePath(path);
+    ScopedExternalMeshPaths scoped_mesh_paths;
+    if (!ExternalizeLargeSceneMeshes(root, global_path, &scoped_mesh_paths)) {
+        return false;
+    }
+
     Ref<PackedScene> packed_scene = MakeRef<PackedScene>();
     if (!packed_scene->Pack(root)) {
         return false;
     }
     USING_ENUM_BITWISE_OPERATORS;
-    const std::string global_path = ProjectSettings::GetInstance()->GlobalizePath(path);
     return ResourceSaver::Save(packed_scene,
                                global_path,
                                ResourceSaverFlags::ReplaceSubResourcePaths |
@@ -1107,6 +1263,12 @@ py::dict JointSnapshotToPythonDict(const PhysicsJointSnapshot& joint) {
     result["force_lower_limit"] = joint.force_lower_limit;
     result["force_upper_limit"] = joint.force_upper_limit;
     result["gear"] = joint.gear;
+    result["affine_actuator_enabled"] = joint.affine_actuator_enabled;
+    result["affine_actuator_control_gain"] = joint.affine_actuator_control_gain;
+    result["affine_actuator_force_offset"] = joint.affine_actuator_force_offset;
+    result["affine_actuator_position_gain"] = joint.affine_actuator_position_gain;
+    result["affine_actuator_velocity_gain"] = joint.affine_actuator_velocity_gain;
+    result["affine_actuator_inherit_range"] = joint.affine_actuator_inherit_range;
     result["global_transform"] = TransformToPythonDict(joint.global_transform);
     return result;
 }

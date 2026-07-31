@@ -9,10 +9,16 @@
 #include "gobot/core/config/project_setting.hpp"
 #include "gobot/core/math/geometry.hpp"
 #include "gobot/core/registration.hpp"
+#include "gobot/core/robotics_types.hpp"
 #include "gobot/log.hpp"
+#include "gobot/scene/link_3d.hpp"
 #include "gobot/scene/resources/array_mesh.hpp"
+#include "gobot/scene/resources/box_shape_3d.hpp"
+#include "gobot/scene/resources/convex_mesh_shape_3d.hpp"
+#include "gobot/scene/resources/cylinder_shape_3d.hpp"
 #include "gobot/scene/resources/material.hpp"
 #include "gobot/scene/resources/packed_scene.hpp"
+#include "gobot/scene/resources/sphere_shape_3d.hpp"
 
 #include <algorithm>
 #include <array>
@@ -20,6 +26,7 @@
 #include <cstddef>
 #include <cstdint>
 #include <filesystem>
+#include <functional>
 #include <optional>
 #include <unordered_map>
 #include <unordered_set>
@@ -28,6 +35,7 @@
 
 #ifdef GOBOT_HAS_OPENUSD
 #include <pxr/base/gf/matrix4d.h>
+#include <pxr/base/gf/quatf.h>
 #include <pxr/base/gf/vec2d.h>
 #include <pxr/base/gf/vec2f.h>
 #include <pxr/base/gf/vec3d.h>
@@ -40,11 +48,14 @@
 #include <pxr/usd/usd/primRange.h>
 #include <pxr/usd/usd/stage.h>
 #include <pxr/usd/usdGeom/gprim.h>
+#include <pxr/usd/usdGeom/cube.h>
+#include <pxr/usd/usdGeom/cylinder.h>
 #include <pxr/usd/usdGeom/imageable.h>
 #include <pxr/usd/usdGeom/mesh.h>
 #include <pxr/usd/usdGeom/metrics.h>
 #include <pxr/usd/usdGeom/primvar.h>
 #include <pxr/usd/usdGeom/primvarsAPI.h>
+#include <pxr/usd/usdGeom/sphere.h>
 #include <pxr/usd/usdGeom/tokens.h>
 #include <pxr/usd/usdGeom/xformCache.h>
 #include <pxr/usd/usdGeom/xformable.h>
@@ -53,6 +64,16 @@
 #include <pxr/usd/usdShade/nodeGraph.h>
 #include <pxr/usd/usdShade/input.h>
 #include <pxr/usd/usdShade/shader.h>
+#include <pxr/usd/usdPhysics/articulationRootAPI.h>
+#include <pxr/usd/usdPhysics/collisionAPI.h>
+#include <pxr/usd/usdPhysics/driveAPI.h>
+#include <pxr/usd/usdPhysics/joint.h>
+#include <pxr/usd/usdPhysics/massAPI.h>
+#include <pxr/usd/usdPhysics/materialAPI.h>
+#include <pxr/usd/usdPhysics/metrics.h>
+#include <pxr/usd/usdPhysics/prismaticJoint.h>
+#include <pxr/usd/usdPhysics/revoluteJoint.h>
+#include <pxr/usd/usdPhysics/rigidBodyAPI.h>
 #endif
 
 namespace gobot {
@@ -191,6 +212,16 @@ std::optional<std::vector<std::array<std::size_t, 3>>> TriangulateFace(
         const pxr::VtIntArray& face_vertex_indices,
         std::size_t corner_offset,
         std::size_t corner_count) {
+    if (corner_count == 3) {
+        for (std::size_t local_corner = 0; local_corner < corner_count; ++local_corner) {
+            const int point_index = face_vertex_indices[corner_offset + local_corner];
+            if (point_index < 0 || static_cast<std::size_t>(point_index) >= points.size()) {
+                return std::nullopt;
+            }
+        }
+        return std::vector<std::array<std::size_t, 3>>{{{0, 1, 2}}};
+    }
+
     std::vector<Vector3> vertices;
     vertices.reserve(corner_count);
     for (std::size_t local_corner = 0; local_corner < corner_count; ++local_corner) {
@@ -509,9 +540,832 @@ Ref<ArrayMesh> ImportMesh(
     return mesh;
 }
 
+Ref<Material> DetachSingleSurfaceMaterial(const Ref<ArrayMesh>& mesh) {
+    if (!mesh.IsValid()) {
+        return {};
+    }
+    MeshSurfaceList surfaces = mesh->GetSurfaces();
+    if (surfaces.size() != 1 || !surfaces.front().material.IsValid()) {
+        return {};
+    }
+    Ref<Material> material = surfaces.front().material;
+    surfaces.front().material.Reset();
+    mesh->SetSurfaces(std::move(surfaces));
+    return material;
+}
+
+void ClearSurfaceMaterials(const Ref<ArrayMesh>& mesh) {
+    if (!mesh.IsValid()) {
+        return;
+    }
+    MeshSurfaceList surfaces = mesh->GetSurfaces();
+    bool changed = false;
+    for (MeshSurfaceData& surface : surfaces) {
+        if (surface.material.IsValid()) {
+            surface.material.Reset();
+            changed = true;
+        }
+    }
+    if (changed) {
+        mesh->SetSurfaces(std::move(surfaces));
+    }
+}
+
 std::string MakeSceneName(const std::string& path) {
     const std::string stem = std::filesystem::path(path).stem().string();
     return stem.empty() ? "USDScene" : stem;
+}
+
+bool PrimContainsPhysicsSchema(const pxr::UsdPrim& prim) {
+    if (prim.GetTypeName().GetString().starts_with("Physics")) {
+        return true;
+    }
+    return std::ranges::any_of(prim.GetAppliedSchemas(), [](const pxr::TfToken& schema) {
+        return schema.GetString().starts_with("Physics");
+    });
+}
+
+bool IsSupportedVisualMesh(const pxr::UsdPrim& prim) {
+    if (!pxr::UsdGeomMesh(prim)) {
+        return false;
+    }
+    if (const pxr::UsdGeomImageable imageable(prim); imageable) {
+        const pxr::TfToken purpose = imageable.ComputePurpose();
+        if (purpose == pxr::UsdGeomTokens->proxy || purpose == pxr::UsdGeomTokens->guide) {
+            return false;
+        }
+    }
+    return true;
+}
+
+void IncludePrimAndAncestors(const pxr::UsdPrim& prim,
+                             std::unordered_set<std::string>* included_paths) {
+    for (pxr::UsdPrim current = prim; current && !current.IsPseudoRoot();
+         current = current.GetParent()) {
+        included_paths->insert(current.GetPath().GetString());
+    }
+}
+
+Vector3 ToGobotVector3(const pxr::GfVec3f& value) {
+    return {value[0], value[1], value[2]};
+}
+
+Quaternion ToGobotQuaternion(const pxr::GfQuatf& value) {
+    const pxr::GfVec3f imaginary = value.GetImaginary();
+    Quaternion result(value.GetReal(), imaginary[0], imaginary[1], imaginary[2]);
+    if (!result.coeffs().allFinite() || result.norm() <= CMP_EPSILON) {
+        return Quaternion::Identity();
+    }
+    return result.normalized();
+}
+
+Affine3 MakeFrame(const pxr::GfVec3f& position, const pxr::GfQuatf& rotation) {
+    Affine3 result = Affine3::Identity();
+    result.translation() = ToGobotVector3(position);
+    result.linear() = ToGobotQuaternion(rotation).toRotationMatrix();
+    return result;
+}
+
+void AddAffineTransformProperties(SceneState::NodeData& node,
+                                  const Affine3& transform,
+                                  const std::string& prim_path,
+                                  bool preserve_scale) {
+    Affine3 rigid = transform;
+    Vector3 scale = rigid.GetScale();
+    Matrix3 rotation = Matrix3::Identity();
+    bool degenerate = false;
+    for (int column = 0; column < 3; ++column) {
+        if (std::abs(scale[column]) <= CMP_EPSILON) {
+            degenerate = true;
+            continue;
+        }
+        rotation.col(column) = rigid.linear().col(column) / scale[column];
+    }
+    if (degenerate) {
+        LOG_WARN("USD physics prim '{}' has a degenerate transform; using identity rotation.", prim_path);
+        rotation = Matrix3::Identity();
+    } else {
+        Affine3 rotation_transform = Affine3::Identity();
+        rotation_transform.linear() = rotation;
+        rotation_transform.Orthonormalize();
+        rotation = rotation_transform.linear();
+    }
+    Affine3 rotation_transform = Affine3::Identity();
+    rotation_transform.linear() = rotation;
+    const Vector3 euler = rotation_transform.GetEulerAngle(EulerOrder::SXYZ);
+    AddProperty(node, "position", Vector3(rigid.translation()));
+    AddProperty(node, "rotation_degrees", Vector3{
+            RAD_TO_DEG(euler.x()), RAD_TO_DEG(euler.y()), RAD_TO_DEG(euler.z())});
+    AddProperty(node, "scale", preserve_scale ? scale : Vector3::Ones());
+}
+
+void AddRigidTransformProperties(SceneState::NodeData& node,
+                                 const Affine3& transform,
+                                 const std::string& prim_path) {
+    AddAffineTransformProperties(node, transform, prim_path, false);
+}
+
+Affine3 ScaleTranslation(Affine3 transform, RealType meters_per_unit) {
+    transform.translation() *= meters_per_unit;
+    return transform;
+}
+
+template <typename T>
+bool ReadAttribute(const pxr::UsdPrim& prim, const char* name, T* value) {
+    const pxr::UsdAttribute attribute = prim.GetAttribute(pxr::TfToken(name));
+    return attribute && attribute.Get(value);
+}
+
+bool ReadRealArrayAttribute(const pxr::UsdPrim& prim,
+                            const char* name,
+                            std::vector<RealType>* values) {
+    pxr::VtDoubleArray source;
+    if (!ReadAttribute(prim, name, &source)) {
+        return false;
+    }
+    values->clear();
+    values->reserve(source.size());
+    for (double value : source) {
+        values->push_back(static_cast<RealType>(value));
+    }
+    return true;
+}
+
+bool IsApproximatelyZero(RealType value) {
+    return std::abs(value) <= static_cast<RealType>(1.0e-12);
+}
+
+bool AddAffineActuatorProperties(const pxr::UsdPrim& actuator,
+                                 SceneState::NodeData& joint_node) {
+    pxr::TfToken bias_type("none");
+    pxr::TfToken gain_type("fixed");
+    pxr::TfToken dynamics_type("none");
+    ReadAttribute(actuator, "mjc:biasType", &bias_type);
+    ReadAttribute(actuator, "mjc:gainType", &gain_type);
+    ReadAttribute(actuator, "mjc:dynType", &dynamics_type);
+    if (bias_type != pxr::TfToken("affine") ||
+        gain_type != pxr::TfToken("fixed") ||
+        dynamics_type != pxr::TfToken("none")) {
+        return false;
+    }
+
+    std::vector<RealType> gain;
+    std::vector<RealType> bias;
+    if (!ReadRealArrayAttribute(actuator, "mjc:gainPrm", &gain) || gain.empty() ||
+        !ReadRealArrayAttribute(actuator, "mjc:biasPrm", &bias) || bias.size() < 3) {
+        return false;
+    }
+    if (!std::isfinite(gain[0]) ||
+        !std::all_of(bias.begin(), bias.begin() + 3,
+                     [](RealType value) { return std::isfinite(value); }) ||
+        !std::all_of(gain.begin() + 1, gain.end(), IsApproximatelyZero) ||
+        !std::all_of(bias.begin() + 3, bias.end(), IsApproximatelyZero)) {
+        return false;
+    }
+
+    std::vector<RealType> gear;
+    if (ReadRealArrayAttribute(actuator, "mjc:gear", &gear)) {
+        if (gear.empty() || !std::isfinite(gear.front()) ||
+            std::abs(gear.front() - static_cast<RealType>(1.0)) > static_cast<RealType>(1.0e-12) ||
+            !std::all_of(gear.begin() + 1, gear.end(), IsApproximatelyZero)) {
+            return false;
+        }
+    }
+
+    double inherit_range = 0.0;
+    ReadAttribute(actuator, "mjc:inheritRange", &inherit_range);
+    if (!std::isfinite(inherit_range)) {
+        return false;
+    }
+    AddProperty(joint_node, "affine_actuator_enabled", true);
+    AddProperty(joint_node, "affine_actuator_control_gain", gain[0]);
+    AddProperty(joint_node, "affine_actuator_force_offset", bias[0]);
+    AddProperty(joint_node, "affine_actuator_position_gain", bias[1]);
+    AddProperty(joint_node, "affine_actuator_velocity_gain", bias[2]);
+    AddProperty(joint_node, "affine_actuator_inherit_range",
+                static_cast<RealType>(inherit_range));
+    return true;
+}
+
+std::optional<std::string> ReadRelationshipTarget(const pxr::UsdPrim& prim,
+                                                  const char* name) {
+    const pxr::UsdRelationship relationship = prim.GetRelationship(pxr::TfToken(name));
+    pxr::SdfPathVector targets;
+    if (!relationship || !relationship.GetTargets(&targets) || targets.size() != 1) {
+        return std::nullopt;
+    }
+    return targets.front().GetString();
+}
+
+Vector3 AxisForToken(const pxr::TfToken& axis) {
+    if (axis == pxr::TfToken("Y")) {
+        return Vector3::UnitY();
+    }
+    if (axis == pxr::TfToken("Z")) {
+        return Vector3::UnitZ();
+    }
+    return Vector3::UnitX();
+}
+
+struct PhysicsLinkImportData {
+    pxr::UsdPrim prim;
+    std::string path;
+    std::string name;
+    pxr::GfMatrix4d world;
+    int node_index{-1};
+};
+
+struct PhysicsJointImportData {
+    pxr::UsdPrim prim;
+    std::string parent_path;
+    std::string child_path;
+    Affine3 frame0{Affine3::Identity()};
+    Affine3 frame1{Affine3::Identity()};
+};
+
+bool IsPhysicsArticulationStage(const pxr::UsdStageRefPtr& stage) {
+    std::vector<pxr::UsdPrim> articulation_roots;
+    for (const pxr::UsdPrim& prim :
+         pxr::UsdPrimRange::Stage(stage, pxr::UsdTraverseInstanceProxies())) {
+        if (prim.IsActive() && prim.HasAPI<pxr::UsdPhysicsArticulationRootAPI>()) {
+            articulation_roots.push_back(prim);
+        }
+    }
+    if (articulation_roots.empty()) {
+        return false;
+    }
+    return std::ranges::any_of(
+            pxr::UsdPrimRange::Stage(stage, pxr::UsdTraverseInstanceProxies()),
+            [&articulation_roots](const pxr::UsdPrim& prim) {
+                return prim.IsActive() && prim.HasAPI<pxr::UsdPhysicsRigidBodyAPI>() &&
+                       std::ranges::any_of(
+                               articulation_roots,
+                               [&prim](const pxr::UsdPrim& root) {
+                                   if (prim.GetPath().HasPrefix(root.GetPath())) {
+                                       return true;
+                                   }
+                                   if (!pxr::UsdPhysicsJoint(root)) {
+                                       return false;
+                                   }
+                                   for (const char* relationship : {"physics:body0", "physics:body1"}) {
+                                       if (const auto target = ReadRelationshipTarget(root, relationship);
+                                           target.has_value() && *target == prim.GetPath().GetString()) {
+                                           return true;
+                                       }
+                                   }
+                                   return false;
+                               });
+            });
+}
+
+pxr::UsdPrim FindOwningRigidBody(pxr::UsdPrim prim) {
+    for (pxr::UsdPrim current = prim; current && !current.IsPseudoRoot();
+         current = current.GetParent()) {
+        if (current.HasAPI<pxr::UsdPhysicsRigidBodyAPI>()) {
+            return current;
+        }
+    }
+    return {};
+}
+
+Vector3 ReadPhysicsFriction(const pxr::UsdPrim& collision_prim) {
+    Vector3 friction{1.0, 0.005, 0.0001};
+    const auto material_path = ReadRelationshipTarget(collision_prim, "material:binding:physics");
+    if (!material_path.has_value()) {
+        return friction;
+    }
+    const pxr::UsdPrim material = collision_prim.GetStage()->GetPrimAtPath(pxr::SdfPath(*material_path));
+    float value = 0.0f;
+    if (material && pxr::UsdPhysicsMaterialAPI(material).GetDynamicFrictionAttr().Get(&value)) {
+        friction.x() = value;
+    }
+    if (material && ReadAttribute(material, "newton:torsionalFriction", &value)) {
+        friction.y() = value;
+    }
+    if (material && ReadAttribute(material, "newton:rollingFriction", &value)) {
+        friction.z() = value;
+    }
+    return friction;
+}
+
+void AddPhysicsContactProperties(SceneState::NodeData& node, const pxr::UsdPrim& prim) {
+    bool collision_enabled = true;
+    pxr::UsdPhysicsCollisionAPI(prim).GetCollisionEnabledAttr().Get(&collision_enabled);
+    AddProperty(node, "disabled", !collision_enabled);
+    AddProperty(node, "friction", ReadPhysicsFriction(prim));
+    int contype = 1;
+    int conaffinity = 1;
+    ReadAttribute(prim, "mjc:contype", &contype);
+    ReadAttribute(prim, "mjc:conaffinity", &conaffinity);
+    AddProperty(node, "contype", contype);
+    AddProperty(node, "conaffinity", conaffinity);
+    float gap = 0.0f;
+    if (ReadAttribute(prim, "newton:contactGap", &gap)) {
+        AddProperty(node, "gap", static_cast<RealType>(gap));
+    }
+    int priority = 0;
+    if (ReadAttribute(prim, "mjc:priority", &priority)) {
+        AddProperty(node, "priority", priority);
+    }
+    AddProperty(node, "visible", false);
+}
+
+Ref<ArrayMesh> ScaledMesh(const Ref<ArrayMesh>& source, const Vector3& scale) {
+    if (!source.IsValid() || scale.isApprox(Vector3::Ones(), CMP_EPSILON)) {
+        return source;
+    }
+    MeshSurfaceList surfaces = source->GetSurfaces();
+    for (MeshSurfaceData& surface : surfaces) {
+        for (Vector3& vertex : surface.vertices) {
+            vertex = vertex.cwiseProduct(scale);
+        }
+        for (Vector3& normal : surface.normals) {
+            normal = scale.cwiseInverse().cwiseProduct(normal).normalized();
+        }
+    }
+    Ref<ArrayMesh> result = MakeRef<ArrayMesh>();
+    result->SetName(source->GetName());
+    result->SetSurfaces(std::move(surfaces));
+    return result;
+}
+
+Ref<PackedScene> ImportPhysicsArticulation(const pxr::UsdStageRefPtr& stage,
+                                           const std::string& path,
+                                           const std::string& global_path) {
+    pxr::UsdGeomXformCache xform_cache(pxr::UsdTimeCode::Default());
+    pxr::UsdPrim articulation_root;
+    for (const pxr::UsdPrim& prim :
+         pxr::UsdPrimRange::Stage(stage, pxr::UsdTraverseInstanceProxies())) {
+        if (!prim.IsActive() || !prim.HasAPI<pxr::UsdPhysicsArticulationRootAPI>()) {
+            continue;
+        }
+        if (articulation_root) {
+            LOG_WARN("USD stage '{}' contains multiple articulation roots; importing the first one at '{}'.",
+                     path, articulation_root.GetPath().GetString());
+            break;
+        }
+        articulation_root = prim;
+    }
+    if (!articulation_root) {
+        return {};
+    }
+
+    pxr::UsdPrim model_prim = stage->GetDefaultPrim();
+    if (!model_prim || !articulation_root.GetPath().HasPrefix(model_prim.GetPath())) {
+        model_prim = articulation_root;
+        while (model_prim.GetParent() && !model_prim.GetParent().IsPseudoRoot()) {
+            model_prim = model_prim.GetParent();
+        }
+    }
+
+    const RealType meters_per_unit = static_cast<RealType>(pxr::UsdGeomGetStageMetersPerUnit(stage));
+    const RealType kilograms_per_unit = static_cast<RealType>(pxr::UsdPhysicsGetStageKilogramsPerUnit(stage));
+    const RealType inertia_scale = kilograms_per_unit * meters_per_unit * meters_per_unit;
+    const pxr::GfMatrix4d model_world = xform_cache.GetLocalToWorldTransform(model_prim);
+
+    std::vector<PhysicsLinkImportData> links;
+    std::unordered_map<std::string, std::size_t> link_by_path;
+    std::vector<PhysicsJointImportData> joints;
+    std::unordered_map<std::string, std::vector<std::size_t>> outgoing_joints;
+    std::unordered_set<std::string> child_link_paths;
+    std::unordered_set<std::string> world_anchored_link_paths;
+    std::unordered_map<std::string, pxr::UsdPrim> actuator_by_joint_path;
+    std::unordered_map<std::string, std::vector<pxr::UsdPrim>> owned_prims;
+
+    for (const pxr::UsdPrim& prim :
+         pxr::UsdPrimRange::Stage(stage, pxr::UsdTraverseInstanceProxies())) {
+        if (!prim.IsActive() || !prim.GetPath().HasPrefix(model_prim.GetPath())) {
+            continue;
+        }
+        const std::string prim_path = prim.GetPath().GetString();
+        if (prim.HasAPI<pxr::UsdPhysicsRigidBodyAPI>()) {
+            link_by_path.emplace(prim_path, links.size());
+            links.push_back({prim, prim_path, prim.GetName().GetString(),
+                             xform_cache.GetLocalToWorldTransform(prim)});
+        }
+        if (prim.GetTypeName() == pxr::TfToken("MjcActuator")) {
+            if (const auto target = ReadRelationshipTarget(prim, "mjc:target")) {
+                actuator_by_joint_path.emplace(*target, prim);
+            }
+        }
+    }
+
+    for (const pxr::UsdPrim& prim :
+         pxr::UsdPrimRange::Stage(stage, pxr::UsdTraverseInstanceProxies())) {
+        if (!prim.IsActive() || !prim.GetPath().HasPrefix(model_prim.GetPath())) {
+            continue;
+        }
+        const pxr::UsdPhysicsJoint usd_joint(prim);
+        if (usd_joint) {
+            const auto body0 = ReadRelationshipTarget(prim, "physics:body0");
+            const auto body1 = ReadRelationshipTarget(prim, "physics:body1");
+            const bool known_body0 = body0.has_value() && link_by_path.contains(*body0);
+            const bool known_body1 = body1.has_value() && link_by_path.contains(*body1);
+            if (known_body0 && known_body1) {
+                pxr::GfVec3f local_pos0(0.0f);
+                pxr::GfVec3f local_pos1(0.0f);
+                pxr::GfQuatf local_rot0(1.0f);
+                pxr::GfQuatf local_rot1(1.0f);
+                usd_joint.GetLocalPos0Attr().Get(&local_pos0);
+                usd_joint.GetLocalPos1Attr().Get(&local_pos1);
+                usd_joint.GetLocalRot0Attr().Get(&local_rot0);
+                usd_joint.GetLocalRot1Attr().Get(&local_rot1);
+                PhysicsJointImportData data{
+                        prim, *body0, *body1,
+                        MakeFrame(local_pos0, local_rot0),
+                        MakeFrame(local_pos1, local_rot1)};
+                outgoing_joints[*body0].push_back(joints.size());
+                child_link_paths.insert(*body1);
+                joints.push_back(std::move(data));
+            } else if (prim.GetTypeName() == pxr::TfToken("PhysicsFixedJoint") &&
+                       known_body0 != known_body1) {
+                // A fixed joint with exactly one body target welds that body to
+                // the world. Gobot represents the same constraint by placing
+                // the root Link3D directly under Robot3D without a floating
+                // Joint3D.
+                world_anchored_link_paths.insert(known_body0 ? *body0 : *body1);
+            }
+        }
+
+        if (const pxr::UsdPrim owner = FindOwningRigidBody(prim); owner) {
+            const std::string owner_path = owner.GetPath().GetString();
+            if (link_by_path.contains(owner_path)) {
+                owned_prims[owner_path].push_back(prim);
+            }
+        }
+    }
+
+    if (links.empty()) {
+        LOG_ERROR("USD articulation '{}' contains no rigid bodies.", path);
+        return {};
+    }
+
+    pxr::UsdPrim articulation_body;
+    const std::string articulation_root_path = articulation_root.GetPath().GetString();
+    if (articulation_root.HasAPI<pxr::UsdPhysicsRigidBodyAPI>() &&
+        link_by_path.contains(articulation_root_path)) {
+        articulation_body = articulation_root;
+    } else if (pxr::UsdPhysicsJoint(articulation_root)) {
+        for (const char* relationship : {"physics:body1", "physics:body0"}) {
+            const auto target = ReadRelationshipTarget(articulation_root, relationship);
+            if (target.has_value()) {
+                const auto link = link_by_path.find(*target);
+                if (link != link_by_path.end()) {
+                    articulation_body = links[link->second].prim;
+                    break;
+                }
+            }
+        }
+    } else {
+        const auto root_link = std::find_if(
+                links.begin(), links.end(),
+                [&articulation_root, &child_link_paths](const PhysicsLinkImportData& link) {
+                    return link.prim.GetPath().HasPrefix(articulation_root.GetPath()) &&
+                           !child_link_paths.contains(link.path);
+                });
+        if (root_link != links.end()) {
+            articulation_body = root_link->prim;
+        }
+    }
+    if (!articulation_body) {
+        LOG_ERROR("USD articulation '{}' has no root rigid body below '{}'.",
+                  path, articulation_root_path);
+        return {};
+    }
+
+    Ref<PackedScene> packed_scene = MakeRef<PackedScene>();
+    Ref<SceneState> state = packed_scene->GetState();
+    SceneState::NodeData robot_node;
+    robot_node.type = "Robot3D";
+    robot_node.name = model_prim.GetName().GetString();
+    AddProperty(robot_node, "source_path", path);
+    Affine3 robot_transform = ScaleTranslation(ToGobotTransform(model_world), meters_per_unit);
+    for (int column = 0; column < 3; ++column) {
+        const RealType length = robot_transform.linear().col(column).norm();
+        if (length > CMP_EPSILON) {
+            robot_transform.linear().col(column) /= length;
+        }
+    }
+    if (pxr::UsdGeomGetStageUpAxis(stage) == pxr::UsdGeomTokens->y) {
+        Affine3 up_axis = Affine3::Identity();
+        up_axis.SetEulerAngle({DEG_TO_RAD(90.0), 0.0, 0.0}, EulerOrder::SXYZ);
+        robot_transform = up_axis * robot_transform;
+    }
+    AddRigidTransformProperties(robot_node, robot_transform, model_prim.GetPath().GetString());
+    const int robot_index = state->AddNode(robot_node);
+
+    std::unordered_map<std::string, Ref<PBRMaterial3D>> material_cache;
+    auto emit_owned_prims = [&](PhysicsLinkImportData& link) {
+        const auto owned = owned_prims.find(link.path);
+        if (owned == owned_prims.end()) {
+            return;
+        }
+        for (const pxr::UsdPrim& prim : owned->second) {
+            const bool collision = prim.HasAPI<pxr::UsdPhysicsCollisionAPI>();
+            const pxr::UsdGeomMesh usd_mesh(prim);
+            if (IsSupportedVisualMesh(prim)) {
+                SceneState::NodeData visual;
+                visual.type = "MeshInstance3D";
+                visual.name = prim.GetName().GetString();
+                visual.parent = link.node_index;
+                Affine3 relative = ToGobotTransform(
+                        xform_cache.GetLocalToWorldTransform(prim) * link.world.GetInverse());
+                relative.translation() *= meters_per_unit;
+                relative.linear() *= meters_per_unit;
+                AddAffineTransformProperties(visual, relative, prim.GetPath().GetString(), true);
+                if (const pxr::UsdGeomImageable imageable(prim);
+                    imageable && imageable.ComputeVisibility() == pxr::UsdGeomTokens->invisible) {
+                    AddProperty(visual, "visible", false);
+                }
+                if (const Ref<ArrayMesh> mesh = ImportMesh(usd_mesh, &material_cache); mesh.IsValid()) {
+                    const Ref<Material> material = DetachSingleSurfaceMaterial(mesh);
+                    AddProperty(visual, "mesh", dynamic_pointer_cast<Mesh>(mesh));
+                    if (material.IsValid()) {
+                        AddProperty(visual, "material", material);
+                    }
+                }
+                state->AddNode(visual);
+            }
+            if (!collision) {
+                continue;
+            }
+
+            SceneState::NodeData collision_node;
+            collision_node.type = "CollisionShape3D";
+            collision_node.name = link.name + "_" + prim.GetName().GetString() + "_collision";
+            collision_node.parent = link.node_index;
+            Affine3 relative = ToGobotTransform(
+                    xform_cache.GetLocalToWorldTransform(prim) * link.world.GetInverse());
+            relative.translation() *= meters_per_unit;
+            Vector3 scale = relative.GetScale().cwiseAbs();
+            for (int column = 0; column < 3; ++column) {
+                const RealType length = relative.linear().col(column).norm();
+                if (length > CMP_EPSILON) {
+                    relative.linear().col(column) /= length;
+                }
+            }
+            Affine3 rigid = relative;
+            rigid.Orthonormalize();
+
+            Ref<Shape3D> shape;
+            if (usd_mesh) {
+                pxr::TfToken approximation;
+                ReadAttribute(prim, "physics:approximation", &approximation);
+                if (approximation == pxr::TfToken("convexDecomposition")) {
+                    LOG_WARN("USD collision mesh '{}' requests convex decomposition; Gobot currently "
+                             "imports it as one convex hull.",
+                             prim.GetPath().GetString());
+                } else if (!approximation.IsEmpty() && approximation != pxr::TfToken("convexHull")) {
+                    LOG_WARN("USD collision mesh '{}' uses unsupported approximation '{}'; using convex hull.",
+                             prim.GetPath().GetString(), approximation.GetString());
+                }
+                Ref<ArrayMesh> mesh = ImportMesh(usd_mesh, &material_cache);
+                ClearSurfaceMaterials(mesh);
+                mesh = ScaledMesh(mesh, scale * meters_per_unit);
+                if (mesh.IsValid()) {
+                    Ref<ConvexMeshShape3D> convex = MakeRef<ConvexMeshShape3D>();
+                    convex->SetMesh(dynamic_pointer_cast<Mesh>(mesh));
+                    shape = dynamic_pointer_cast<Shape3D>(convex);
+                }
+            } else if (const pxr::UsdGeomSphere sphere(prim); sphere) {
+                double radius = 0.5;
+                sphere.GetRadiusAttr().Get(&radius);
+                Ref<SphereShape3D> sphere_shape = MakeRef<SphereShape3D>();
+                sphere_shape->SetRadius(static_cast<float>(radius * scale.maxCoeff() * meters_per_unit));
+                shape = dynamic_pointer_cast<Shape3D>(sphere_shape);
+            } else if (const pxr::UsdGeomCylinder cylinder(prim); cylinder) {
+                double radius = 0.5;
+                double height = 1.0;
+                pxr::TfToken axis("Z");
+                cylinder.GetRadiusAttr().Get(&radius);
+                cylinder.GetHeightAttr().Get(&height);
+                cylinder.GetAxisAttr().Get(&axis);
+                if (axis == pxr::TfToken("X")) {
+                    Affine3 correction = Affine3::Identity();
+                    correction.SetEulerAngle({0.0, DEG_TO_RAD(90.0), 0.0}, EulerOrder::SXYZ);
+                    rigid.linear() *= correction.linear();
+                    std::swap(scale.x(), scale.z());
+                } else if (axis == pxr::TfToken("Y")) {
+                    Affine3 correction = Affine3::Identity();
+                    correction.SetEulerAngle({DEG_TO_RAD(-90.0), 0.0, 0.0}, EulerOrder::SXYZ);
+                    rigid.linear() *= correction.linear();
+                    std::swap(scale.y(), scale.z());
+                }
+                Ref<CylinderShape3D> cylinder_shape = MakeRef<CylinderShape3D>();
+                cylinder_shape->SetRadius(static_cast<float>(radius * std::max(scale.x(), scale.y()) * meters_per_unit));
+                cylinder_shape->SetHeight(static_cast<float>(height * scale.z() * meters_per_unit));
+                shape = dynamic_pointer_cast<Shape3D>(cylinder_shape);
+            } else if (const pxr::UsdGeomCube cube(prim); cube) {
+                double size = 2.0;
+                cube.GetSizeAttr().Get(&size);
+                Ref<BoxShape3D> box = MakeRef<BoxShape3D>();
+                box->SetSize(scale * static_cast<RealType>(size * meters_per_unit));
+                shape = dynamic_pointer_cast<Shape3D>(box);
+            }
+            if (!shape.IsValid()) {
+                LOG_WARN("USD collision prim '{}' has unsupported or empty geometry and was skipped.",
+                         prim.GetPath().GetString());
+                continue;
+            }
+            AddRigidTransformProperties(collision_node, rigid, prim.GetPath().GetString());
+            AddProperty(collision_node, "shape", shape);
+            AddPhysicsContactProperties(collision_node, prim);
+            state->AddNode(collision_node);
+        }
+    };
+
+    std::function<int(const std::string&, int, const Affine3&)> emit_link;
+    emit_link = [&](const std::string& link_path, int parent, const Affine3& local_transform) -> int {
+        const auto link_iter = link_by_path.find(link_path);
+        if (link_iter == link_by_path.end()) {
+            return -1;
+        }
+        PhysicsLinkImportData& link = links[link_iter->second];
+        if (link.node_index >= 0) {
+            return link.node_index;
+        }
+        SceneState::NodeData link_node;
+        link_node.type = "Link3D";
+        link_node.name = link.name;
+        link_node.parent = parent;
+        AddRigidTransformProperties(link_node, local_transform, link.path);
+        const pxr::UsdPhysicsMassAPI mass_api(link.prim);
+        float mass = 0.0f;
+        pxr::GfVec3f center_of_mass(0.0f);
+        pxr::GfVec3f diagonal_inertia(0.0f);
+        pxr::GfQuatf principal_axes(1.0f);
+        const bool has_mass = mass_api && mass_api.GetMassAttr().Get(&mass) &&
+                              std::isfinite(mass) && mass > 0.0f;
+        if (mass_api) {
+            mass_api.GetCenterOfMassAttr().Get(&center_of_mass);
+            mass_api.GetDiagonalInertiaAttr().Get(&diagonal_inertia);
+            mass_api.GetPrincipalAxesAttr().Get(&principal_axes);
+        }
+        if (!std::isfinite(mass)) {
+            mass = 0.0f;
+        }
+        if (!ToGobotVector3(center_of_mass).allFinite()) {
+            center_of_mass = pxr::GfVec3f(0.0f);
+        }
+        const Vector3 imported_inertia = ToGobotVector3(diagonal_inertia);
+        if (!imported_inertia.allFinite() || (imported_inertia.array() < 0.0).any()) {
+            diagonal_inertia = pxr::GfVec3f(0.0f);
+        }
+        AddProperty(link_node, "has_inertial", has_mass);
+        AddProperty(link_node, "mass", static_cast<RealType>(mass) * kilograms_per_unit);
+        const Vector3 center_of_mass_meters = ToGobotVector3(center_of_mass) * meters_per_unit;
+        const Vector3 inertia_si = ToGobotVector3(diagonal_inertia) * inertia_scale;
+        AddProperty(link_node, "center_of_mass", center_of_mass_meters);
+        AddProperty(link_node, "inertia_orientation", ToGobotQuaternion(principal_axes));
+        AddProperty(link_node, "inertia_diagonal", inertia_si);
+        AddProperty(link_node, "inertia_off_diagonal", Vector3{0.0, 0.0, 0.0});
+        AddProperty(link_node, "role", LinkRole::Physical);
+        link.node_index = state->AddNode(link_node);
+        emit_owned_prims(link);
+
+        const auto outgoing = outgoing_joints.find(link_path);
+        if (outgoing == outgoing_joints.end()) {
+            return link.node_index;
+        }
+        for (const std::size_t joint_index : outgoing->second) {
+            PhysicsJointImportData& joint = joints[joint_index];
+            SceneState::NodeData joint_node;
+            joint_node.type = "Joint3D";
+            joint_node.name = joint.prim.GetName().GetString();
+            joint_node.parent = link.node_index;
+            joint.frame0.translation() *= meters_per_unit;
+            joint.frame1.translation() *= meters_per_unit;
+            AddRigidTransformProperties(joint_node, joint.frame0, joint.prim.GetPath().GetString());
+            const auto child_iter = link_by_path.find(joint.child_path);
+            if (child_iter == link_by_path.end()) {
+                continue;
+            }
+            AddProperty(joint_node, "parent_link", link.name);
+            AddProperty(joint_node, "child_link", links[child_iter->second].name);
+
+            JointType joint_type = JointType::Fixed;
+            pxr::TfToken axis_token("X");
+            float lower_limit = 0.0f;
+            float upper_limit = 0.0f;
+            if (const pxr::UsdPhysicsRevoluteJoint revolute(joint.prim); revolute) {
+                joint_type = JointType::Revolute;
+                revolute.GetAxisAttr().Get(&axis_token);
+                revolute.GetLowerLimitAttr().Get(&lower_limit);
+                revolute.GetUpperLimitAttr().Get(&upper_limit);
+                lower_limit = static_cast<float>(DEG_TO_RAD(lower_limit));
+                upper_limit = static_cast<float>(DEG_TO_RAD(upper_limit));
+            } else if (const pxr::UsdPhysicsPrismaticJoint prismatic(joint.prim); prismatic) {
+                joint_type = JointType::Prismatic;
+                prismatic.GetAxisAttr().Get(&axis_token);
+                prismatic.GetLowerLimitAttr().Get(&lower_limit);
+                prismatic.GetUpperLimitAttr().Get(&upper_limit);
+                lower_limit *= meters_per_unit;
+                upper_limit *= meters_per_unit;
+            }
+            AddProperty(joint_node, "joint_type", joint_type);
+            AddProperty(joint_node, "axis", AxisForToken(axis_token));
+            AddProperty(joint_node, "lower_limit", static_cast<RealType>(lower_limit));
+            AddProperty(joint_node, "upper_limit", static_cast<RealType>(upper_limit));
+
+            double force_min = 0.0;
+            double force_max = 0.0;
+            ReadAttribute(joint.prim, "mjc:actuatorfrcrange:min", &force_min);
+            ReadAttribute(joint.prim, "mjc:actuatorfrcrange:max", &force_max);
+            AddProperty(joint_node, "force_lower_limit", static_cast<RealType>(force_min));
+            AddProperty(joint_node, "force_upper_limit", static_cast<RealType>(force_max));
+            AddProperty(joint_node, "effort_limit",
+                        static_cast<RealType>(std::max(std::abs(force_min), std::abs(force_max))));
+            double scalar = 0.0;
+            if (ReadAttribute(joint.prim, "mjc:armature", &scalar)) {
+                AddProperty(joint_node, "armature", static_cast<RealType>(scalar));
+            }
+            if (ReadAttribute(joint.prim, "mjc:frictionloss", &scalar)) {
+                AddProperty(joint_node, "friction_loss", static_cast<RealType>(scalar));
+            }
+            if (ReadAttribute(joint.prim, "mjc:damping", &scalar)) {
+                AddProperty(joint_node, "damping", static_cast<RealType>(scalar));
+            }
+
+            const pxr::TfToken drive_name = joint_type == JointType::Prismatic
+                                                     ? pxr::TfToken("linear")
+                                                     : pxr::TfToken("angular");
+            const pxr::UsdPhysicsDriveAPI drive = pxr::UsdPhysicsDriveAPI::Get(joint.prim, drive_name);
+            float stiffness = 0.0f;
+            float damping = 0.0f;
+            float max_force = 0.0f;
+            float target_position = 0.0f;
+            const auto actuator_iter = actuator_by_joint_path.find(joint.prim.GetPath().GetString());
+            const bool has_affine_actuator =
+                    actuator_iter != actuator_by_joint_path.end() &&
+                    AddAffineActuatorProperties(actuator_iter->second, joint_node);
+            if (actuator_iter != actuator_by_joint_path.end() && !has_affine_actuator) {
+                LOG_WARN("USD actuator '{}' uses features outside Gobot's affine joint actuator contract; "
+                         "importing it as a direct motor.",
+                         actuator_iter->second.GetPath().GetString());
+            }
+
+            if (drive) {
+                drive.GetStiffnessAttr().Get(&stiffness);
+                drive.GetDampingAttr().Get(&damping);
+                drive.GetMaxForceAttr().Get(&max_force);
+                drive.GetTargetPositionAttr().Get(&target_position);
+                AddProperty(joint_node, "drive_mode",
+                            stiffness > 0.0f ? JointDriveMode::Position : JointDriveMode::Velocity);
+                AddProperty(joint_node, "drive_stiffness", static_cast<RealType>(stiffness));
+                AddProperty(joint_node, "drive_damping", static_cast<RealType>(damping));
+                if (max_force > 0.0f && std::isfinite(max_force)) {
+                    AddProperty(joint_node, "effort_limit", static_cast<RealType>(max_force));
+                    AddProperty(joint_node, "force_lower_limit", static_cast<RealType>(-max_force));
+                    AddProperty(joint_node, "force_upper_limit", static_cast<RealType>(max_force));
+                }
+                const RealType initial = joint_type == JointType::Revolute
+                                                 ? DEG_TO_RAD(target_position)
+                                                 : target_position * meters_per_unit;
+                AddProperty(joint_node, "joint_position", initial);
+                AddProperty(joint_node, "initial_position", initial);
+            } else if (actuator_iter != actuator_by_joint_path.end() && !has_affine_actuator) {
+                AddProperty(joint_node, "drive_mode", JointDriveMode::Motor);
+            }
+            const int emitted_joint = state->AddNode(joint_node);
+            emit_link(joint.child_path, emitted_joint, joint.frame1.inverse());
+        }
+        return link.node_index;
+    };
+
+    for (PhysicsLinkImportData& link : links) {
+        if (child_link_paths.contains(link.path)) {
+            continue;
+        }
+        Affine3 relative = ScaleTranslation(
+                ToGobotTransform(link.world * model_world.GetInverse()), meters_per_unit);
+        if (link.path == articulation_body.GetPath().GetString() &&
+            !world_anchored_link_paths.contains(link.path)) {
+            SceneState::NodeData floating;
+            floating.type = "Joint3D";
+            floating.name = "floating_base_joint";
+            floating.parent = robot_index;
+            AddRigidTransformProperties(floating, relative, link.path);
+            AddProperty(floating, "joint_type", JointType::Floating);
+            AddProperty(floating, "parent_link", std::string{});
+            AddProperty(floating, "child_link", link.name);
+            const int floating_index = state->AddNode(floating);
+            emit_link(link.path, floating_index, Affine3::Identity());
+        } else {
+            emit_link(link.path, robot_index, relative);
+        }
+    }
+    for (PhysicsLinkImportData& link : links) {
+        if (link.node_index < 0) {
+            Affine3 relative = ScaleTranslation(
+                    ToGobotTransform(link.world * model_world.GetInverse()), meters_per_unit);
+            emit_link(link.path, robot_index, relative);
+        }
+    }
+
+    LOG_INFO("USD '{}' imported articulation '{}' with {} links, {} joints, and {} scene nodes.",
+             path, robot_node.name, links.size(), joints.size(), state->GetNodeCount());
+    GOB_UNUSED(global_path);
+    return packed_scene;
 }
 
 #endif
@@ -543,6 +1397,10 @@ Ref<Resource> ResourceFormatLoaderUSD::Load(const std::string& path,
         return {};
     }
 
+    if (IsPhysicsArticulationStage(stage)) {
+        return ImportPhysicsArticulation(stage, original_path.empty() ? path : original_path, global_path);
+    }
+
     Ref<PackedScene> packed_scene = MakeRef<PackedScene>();
     Ref<SceneState> state = packed_scene->GetState();
 
@@ -562,32 +1420,35 @@ Ref<Resource> ResourceFormatLoaderUSD::Load(const std::string& path,
     pxr::UsdGeomXformCache xform_cache(pxr::UsdTimeCode::Default());
     bool has_usd_physics = false;
 
+    // UsdStage::Open composes layers and loads payloads by default. Build the
+    // imported hierarchy from supported visual prims in that composed stage so
+    // physics-only scopes, joints, and custom actuator metadata stay out of the
+    // user-facing SceneTree.
+    std::unordered_set<std::string> included_paths;
+    for (const pxr::UsdPrim& prim :
+         pxr::UsdPrimRange::Stage(stage, pxr::UsdTraverseInstanceProxies())) {
+        if (!prim.IsActive() || prim.IsPseudoRoot()) {
+            continue;
+        }
+        has_usd_physics = has_usd_physics || PrimContainsPhysicsSchema(prim);
+        if (IsSupportedVisualMesh(prim)) {
+            IncludePrimAndAncestors(prim, &included_paths);
+        }
+    }
+
     for (const pxr::UsdPrim& prim :
          pxr::UsdPrimRange::Stage(stage, pxr::UsdTraverseInstanceProxies())) {
         if (!prim.IsActive() || prim.IsPseudoRoot()) {
             continue;
         }
 
-        const std::string prim_type = prim.GetTypeName().GetString();
-        has_usd_physics = has_usd_physics || prim_type.starts_with("Physics");
-        if (!has_usd_physics) {
-            for (const pxr::TfToken& schema : prim.GetAppliedSchemas()) {
-                if (schema.GetString().starts_with("Physics")) {
-                    has_usd_physics = true;
-                    break;
-                }
-            }
+        const std::string prim_path = prim.GetPath().GetString();
+        if (!included_paths.contains(prim_path)) {
+            continue;
         }
         if (pxr::UsdShadeMaterial(prim) || pxr::UsdShadeShader(prim) ||
             pxr::UsdShadeNodeGraph(prim)) {
             continue;
-        }
-
-        if (const pxr::UsdGeomImageable imageable(prim); imageable) {
-            const pxr::TfToken purpose = imageable.ComputePurpose();
-            if (purpose == pxr::UsdGeomTokens->proxy || purpose == pxr::UsdGeomTokens->guide) {
-                continue;
-            }
         }
 
         SceneState::NodeData node;
@@ -619,8 +1480,8 @@ Ref<Resource> ResourceFormatLoaderUSD::Load(const std::string& path,
                 }
                 transform_parent = transform_parent.GetParent();
             }
-            AddTransformProperties(node, relative, prim.GetPath().GetString());
-            xform_world.emplace(prim.GetPath().GetString(), world);
+            AddTransformProperties(node, relative, prim_path);
+            xform_world.emplace(prim_path, world);
 
             if (const pxr::UsdGeomImageable imageable(prim);
                 imageable && imageable.ComputeVisibility() == pxr::UsdGeomTokens->invisible) {
@@ -631,12 +1492,16 @@ Ref<Resource> ResourceFormatLoaderUSD::Load(const std::string& path,
         if (usd_mesh) {
             const Ref<ArrayMesh> mesh = ImportMesh(usd_mesh, &material_cache);
             if (mesh.IsValid()) {
+                const Ref<Material> material = DetachSingleSurfaceMaterial(mesh);
                 AddProperty(node, "mesh", dynamic_pointer_cast<Mesh>(mesh));
+                if (material.IsValid()) {
+                    AddProperty(node, "material", material);
+                }
             }
         }
 
         const int node_index = state->AddNode(node);
-        prim_to_node.emplace(prim.GetPath().GetString(), node_index);
+        prim_to_node.emplace(prim_path, node_index);
     }
 
     if (has_usd_physics) {

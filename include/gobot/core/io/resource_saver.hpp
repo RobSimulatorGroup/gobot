@@ -3,6 +3,8 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
+#pragma once
+
 #include "gobot/core/ref_counted.hpp"
 #include "gobot/core/io/resource.hpp"
 

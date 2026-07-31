@@ -586,30 +586,38 @@ void SetMuJoCoGeomColor(mjsGeom* geom, const Color& color) {
     geom->rgba[3] = color.alpha();
 }
 
+bool IsValidTriangleMesh(const std::vector<Vector3>& vertices,
+                         const std::vector<std::uint32_t>& indices) {
+    if (vertices.empty() || indices.size() < 3 || indices.size() % 3 != 0) {
+        return false;
+    }
+
+    return std::all_of(indices.begin(), indices.end(),
+                       [&vertices](std::uint32_t index) { return index < vertices.size(); });
+}
+
 bool SetMuJoCoMeshData(mjsMesh* mesh,
-                       const PhysicsTerrainMeshPatchSnapshot& mesh_patch) {
-    if (!mesh || mesh_patch.vertices.empty() || mesh_patch.indices.empty()) {
+                       const std::vector<Vector3>& mesh_vertices,
+                       const std::vector<std::uint32_t>& mesh_indices) {
+    if (!mesh || !IsValidTriangleMesh(mesh_vertices, mesh_indices)) {
         return false;
     }
 
     std::vector<float> vertices;
-    vertices.reserve(mesh_patch.vertices.size() * 3);
-    for (const Vector3& vertex : mesh_patch.vertices) {
+    vertices.reserve(mesh_vertices.size() * 3);
+    for (const Vector3& vertex : mesh_vertices) {
         vertices.push_back(static_cast<float>(vertex.x()));
         vertices.push_back(static_cast<float>(vertex.y()));
         vertices.push_back(static_cast<float>(vertex.z()));
     }
 
     std::vector<int> indices;
-    indices.reserve(mesh_patch.indices.size());
-    for (std::uint32_t index : mesh_patch.indices) {
-        if (index >= mesh_patch.vertices.size()) {
-            return false;
-        }
+    indices.reserve(mesh_indices.size());
+    for (std::uint32_t index : mesh_indices) {
         indices.push_back(static_cast<int>(index));
     }
 
-    const int vertex_count = static_cast<int>(mesh_patch.vertices.size());
+    const int vertex_count = static_cast<int>(mesh_vertices.size());
     const int face_count = static_cast<int>(indices.size() / 3);
     if (vertex_count <= 0 || face_count <= 0) {
         return false;
@@ -618,6 +626,86 @@ bool SetMuJoCoMeshData(mjsMesh* mesh,
     mjs_setFloat(mesh->uservert, vertices.data(), static_cast<int>(vertices.size()));
     mjs_setInt(mesh->userface, indices.data(), static_cast<int>(indices.size()));
     return true;
+}
+
+bool SetMuJoCoMeshData(mjsMesh* mesh,
+                       const PhysicsTerrainMeshPatchSnapshot& mesh_patch) {
+    return SetMuJoCoMeshData(mesh, mesh_patch.vertices, mesh_patch.indices);
+}
+
+bool IsSupportedShapeType(PhysicsShapeType type) {
+    switch (type) {
+        case PhysicsShapeType::Box:
+        case PhysicsShapeType::Sphere:
+        case PhysicsShapeType::Cylinder:
+        case PhysicsShapeType::Capsule:
+        case PhysicsShapeType::Mesh:
+            return true;
+        case PhysicsShapeType::Unknown:
+            return false;
+    }
+    return false;
+}
+
+bool AddShapeMeshAsset(mjSpec* spec,
+                       const PhysicsShapeSnapshot& shape,
+                       const std::string& geom_name,
+                       std::string* mesh_name) {
+    mesh_name->clear();
+    if (shape.type != PhysicsShapeType::Mesh) {
+        return true;
+    }
+    if (!spec || !IsValidTriangleMesh(shape.vertices, shape.indices)) {
+        return false;
+    }
+
+    mjsMesh* mesh = mjs_addMesh(spec, nullptr);
+    if (!mesh) {
+        return false;
+    }
+    *mesh_name = geom_name + "_mesh";
+    mjs_setName(mesh->element, mesh_name->c_str());
+    return SetMuJoCoMeshData(mesh, shape.vertices, shape.indices);
+}
+
+bool ConfigureShapeGeometry(mjsGeom* geom,
+                            const PhysicsShapeSnapshot& shape,
+                            const std::string& mesh_name) {
+    if (!geom) {
+        return false;
+    }
+    switch (shape.type) {
+        case PhysicsShapeType::Box:
+            geom->type = mjGEOM_BOX;
+            geom->size[0] = shape.box_size.x() * 0.5;
+            geom->size[1] = shape.box_size.y() * 0.5;
+            geom->size[2] = shape.box_size.z() * 0.5;
+            return true;
+        case PhysicsShapeType::Sphere:
+            geom->type = mjGEOM_SPHERE;
+            geom->size[0] = shape.radius;
+            return true;
+        case PhysicsShapeType::Cylinder:
+            geom->type = mjGEOM_CYLINDER;
+            geom->size[0] = shape.radius;
+            geom->size[1] = shape.height * 0.5;
+            return true;
+        case PhysicsShapeType::Capsule:
+            geom->type = mjGEOM_CAPSULE;
+            geom->size[0] = shape.radius;
+            geom->size[1] = shape.height * 0.5;
+            return true;
+        case PhysicsShapeType::Mesh:
+            if (mesh_name.empty()) {
+                return false;
+            }
+            geom->type = mjGEOM_MESH;
+            mjs_setString(geom->meshname, mesh_name.c_str());
+            return true;
+        case PhysicsShapeType::Unknown:
+            return false;
+    }
+    return false;
 }
 
 std::vector<float> NormalizeHeightFieldData(const PhysicsTerrainHeightFieldSnapshot& heightfield,
@@ -677,11 +765,17 @@ std::vector<float> NormalizeHeightFieldData(const PhysicsTerrainHeightFieldSnaps
     return data;
 }
 
-void AddShapeGeomToBody(mjsBody* body,
+void AddShapeGeomToBody(mjSpec* spec,
+                        mjsBody* body,
                         const PhysicsShapeSnapshot& shape,
                         const PhysicsLinkSnapshot& link,
                         const std::string& name) {
-    if (!body || shape.disabled) {
+    if (!spec || !body || shape.disabled || !IsSupportedShapeType(shape.type)) {
+        return;
+    }
+
+    std::string mesh_name;
+    if (!AddShapeMeshAsset(spec, shape, name, &mesh_name)) {
         return;
     }
 
@@ -691,29 +785,8 @@ void AddShapeGeomToBody(mjsBody* body,
     }
 
     mjs_setName(geom->element, name.c_str());
-    switch (shape.type) {
-        case PhysicsShapeType::Box:
-            geom->type = mjGEOM_BOX;
-            geom->size[0] = shape.box_size.x() * 0.5;
-            geom->size[1] = shape.box_size.y() * 0.5;
-            geom->size[2] = shape.box_size.z() * 0.5;
-            break;
-        case PhysicsShapeType::Sphere:
-            geom->type = mjGEOM_SPHERE;
-            geom->size[0] = shape.radius;
-            break;
-        case PhysicsShapeType::Cylinder:
-            geom->type = mjGEOM_CYLINDER;
-            geom->size[0] = shape.radius;
-            geom->size[1] = shape.height * 0.5;
-            break;
-        case PhysicsShapeType::Capsule:
-            geom->type = mjGEOM_CAPSULE;
-            geom->size[0] = shape.radius;
-            geom->size[1] = shape.height * 0.5;
-            break;
-        default:
-            return;
+    if (!ConfigureShapeGeometry(geom, shape, mesh_name)) {
+        return;
     }
     SetMuJoCoGeomPose(geom, RelativeTransform(link.global_transform, shape.global_transform));
     ConfigureGeomContact(geom, shape);
@@ -840,19 +913,12 @@ mjsActuator* AddJointActuator(mjSpec* spec,
 
 void AddJointActuators(mjSpec* spec, const PhysicsJointSnapshot& joint, const std::string& prefixed_name) {
     const auto drive_mode = static_cast<JointDriveMode>(joint.drive_mode);
-    if (drive_mode == JointDriveMode::Passive) {
-        return;
-    }
-
     if (drive_mode == JointDriveMode::Motor) {
         mjsActuator* motor = AddJointActuator(spec, joint, prefixed_name, "_motor", false);
         if (motor) {
             mjs_setToMotor(motor);
         }
-        return;
-    }
-
-    if (drive_mode == JointDriveMode::Position) {
+    } else if (drive_mode == JointDriveMode::Position) {
         mjsActuator* position = AddJointActuator(spec, joint, prefixed_name, "_position", true);
         if (position) {
             double kv = static_cast<double>(joint.drive_damping);
@@ -867,15 +933,39 @@ void AddJointActuators(mjSpec* spec, const PhysicsJointSnapshot& joint, const st
             }
             ConfigureActuatorLimits(position, joint, true);
         }
-        return;
-    }
-
-    if (drive_mode == JointDriveMode::Velocity) {
+    } else if (drive_mode == JointDriveMode::Velocity) {
         mjsActuator* velocity = AddJointActuator(spec, joint, prefixed_name, "_velocity", false);
         if (velocity) {
             mjs_setToVelocity(velocity, joint.drive_damping);
             ConfigureActuatorLimits(velocity, joint, false);
         }
+    }
+
+    if (!joint.affine_actuator_enabled) {
+        return;
+    }
+
+    mjsActuator* affine = AddJointActuator(spec, joint, prefixed_name, "_affine", false);
+    if (!affine) {
+        return;
+    }
+    affine->dyntype = mjDYN_NONE;
+    affine->gaintype = mjGAIN_FIXED;
+    affine->biastype = mjBIAS_AFFINE;
+    affine->gainprm[0] = static_cast<double>(joint.affine_actuator_control_gain);
+    affine->biasprm[0] = static_cast<double>(joint.affine_actuator_force_offset);
+    affine->biasprm[1] = static_cast<double>(joint.affine_actuator_position_gain);
+    affine->biasprm[2] = static_cast<double>(joint.affine_actuator_velocity_gain);
+    affine->inheritrange = static_cast<double>(joint.affine_actuator_inherit_range);
+
+    // The joint-level actuator force range clamps the combined primary and
+    // affine drives. Keep this auxiliary actuator's force range unbounded so
+    // importing it does not apply the same limit twice.
+    affine->forcelimited = mjLIMITED_FALSE;
+    if (!HasControlRange(joint)) {
+        affine->ctrllimited = joint.affine_actuator_inherit_range > 0.0
+                                      ? mjLIMITED_AUTO
+                                      : mjLIMITED_FALSE;
     }
 }
 
@@ -3387,7 +3477,8 @@ bool MuJoCoPhysicsWorld::AddAuthoredRobotToSpec(void* parent_spec_ptr,
             const std::string shape_name = shape.name.empty()
                                                    ? fmt::format("{}{}_geom_{}", prefix, link.name, shape_index)
                                                    : prefix + SanitizeMuJoCoName(shape.name);
-            AddShapeGeomToBody(body,
+            AddShapeGeomToBody(parent_spec,
+                               body,
                                shape,
                                link,
                                shape_name);
@@ -3431,36 +3522,24 @@ void MuJoCoPhysicsWorld::AddLooseSceneGeomsToSpec(void* spec_ptr) {
             continue;
         }
 
+        if (!IsSupportedShapeType(shape.type)) {
+            continue;
+        }
+
+        const std::string name = fmt::format("gobot_loose_box_{}", shape_index);
+        std::string mesh_name;
+        if (!AddShapeMeshAsset(spec, shape, name, &mesh_name)) {
+            continue;
+        }
+
         mjsGeom* geom = mjs_addGeom(world, nullptr);
         if (!geom) {
             continue;
         }
 
-        const std::string name = fmt::format("gobot_loose_box_{}", shape_index);
         mjs_setName(geom->element, name.c_str());
-        switch (shape.type) {
-            case PhysicsShapeType::Box:
-                geom->type = mjGEOM_BOX;
-                geom->size[0] = shape.box_size.x() * 0.5;
-                geom->size[1] = shape.box_size.y() * 0.5;
-                geom->size[2] = shape.box_size.z() * 0.5;
-                break;
-            case PhysicsShapeType::Sphere:
-                geom->type = mjGEOM_SPHERE;
-                geom->size[0] = shape.radius;
-                break;
-            case PhysicsShapeType::Cylinder:
-                geom->type = mjGEOM_CYLINDER;
-                geom->size[0] = shape.radius;
-                geom->size[1] = shape.height * 0.5;
-                break;
-            case PhysicsShapeType::Capsule:
-                geom->type = mjGEOM_CAPSULE;
-                geom->size[0] = shape.radius;
-                geom->size[1] = shape.height * 0.5;
-                break;
-            default:
-                continue;
+        if (!ConfigureShapeGeometry(geom, shape, mesh_name)) {
+            continue;
         }
         geom->pos[0] = shape.global_transform.translation().x();
         geom->pos[1] = shape.global_transform.translation().y();

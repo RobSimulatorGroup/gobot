@@ -221,6 +221,37 @@ set_tests_properties(test_gaussian_splat_sample
         PROPERTIES WORKING_DIRECTORY "${CMAKE_SOURCE_DIR}")
 
 add_test(
+        NAME test_newton_g1_assets
+        COMMAND ${Python3_EXECUTABLE} -S
+                ${CMAKE_CURRENT_SOURCE_DIR}/python/test_newton_g1_assets.py
+)
+set_tests_properties(test_newton_g1_assets
+        PROPERTIES WORKING_DIRECTORY "${CMAKE_SOURCE_DIR}")
+
+add_test(
+        NAME test_newton_g1_example
+        COMMAND ${Python3_EXECUTABLE} -S
+                ${CMAKE_CURRENT_SOURCE_DIR}/python/test_newton_g1_example.py
+)
+set_tests_properties(test_newton_g1_example
+        PROPERTIES
+            ENVIRONMENT "${GOBOT_PYTHON_TEST_ENV}"
+            WORKING_DIRECTORY "${CMAKE_SOURCE_DIR}")
+
+add_test(
+        NAME test_python_newton_g1_gpu
+        COMMAND ${Python3_EXECUTABLE} -S
+                ${CMAKE_CURRENT_SOURCE_DIR}/python/test_newton_g1_gpu.py
+)
+set_tests_properties(test_python_newton_g1_gpu
+        PROPERTIES
+            ENVIRONMENT "${GOBOT_PYTHON_TEST_ENV}"
+            RESOURCE_LOCK gobot_cuda
+            SKIP_RETURN_CODE 77
+            WORKING_DIRECTORY "${CMAKE_SOURCE_DIR}"
+)
+
+add_test(
         NAME test_python_editor_launcher
         COMMAND ${Python3_EXECUTABLE} -S
                 ${CMAKE_CURRENT_SOURCE_DIR}/python/test_editor_launcher.py

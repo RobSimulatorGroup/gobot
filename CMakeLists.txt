@@ -152,7 +152,7 @@ if(GOB_BUILD_OPENUSD)
     if(TARGET usd_m)
         set(GOBOT_OPENUSD_TARGETS usd_m)
     else()
-        set(GOBOT_OPENUSD_TARGETS usd usdGeom usdShade sdf tf vt gf)
+        set(GOBOT_OPENUSD_TARGETS usd usdGeom usdShade usdPhysics sdf tf vt gf)
         foreach(GOBOT_OPENUSD_TARGET IN LISTS GOBOT_OPENUSD_TARGETS)
             if(NOT TARGET ${GOBOT_OPENUSD_TARGET})
                 message(FATAL_ERROR
@@ -231,6 +231,12 @@ if(GOB_BUILD_MUJOCO)
     if(NOT GOB_FORCE_FETCH_MUJOCO)
         set(GOBOT_MUJOCO_SEARCH_ROOTS "")
         if(GOB_MUJOCO_ROOT)
+            # Accept either the MuJoCo package directory itself or its
+            # site-packages parent. Prefer the active Python package over a
+            # stale compatibility SDK that may also live in site-packages/lib.
+            if(EXISTS "${GOB_MUJOCO_ROOT}/mujoco/include/mujoco/mujoco.h")
+                list(APPEND GOBOT_MUJOCO_SEARCH_ROOTS "${GOB_MUJOCO_ROOT}/mujoco")
+            endif()
             list(APPEND GOBOT_MUJOCO_SEARCH_ROOTS "${GOB_MUJOCO_ROOT}")
         endif()
 
@@ -1052,6 +1058,7 @@ install(DIRECTORY "${CMAKE_CURRENT_SOURCE_DIR}/examples/"
         PATTERN "*.pyc" EXCLUDE
         PATTERN "logs" EXCLUDE
         PATTERN "gaussian_splatting/assets" EXCLUDE
+        PATTERN "newton_g1/assets" EXCLUDE
         PATTERN "go1/policies" EXCLUDE)
 install(FILES
         "${CMAKE_CURRENT_SOURCE_DIR}/examples/go1/policies/go1_velocity.onnx"

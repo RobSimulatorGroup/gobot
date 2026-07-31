@@ -18,6 +18,7 @@
 namespace gobot {
 
 static Ref<ResourceFormatSaverScene> s_resource_saver_scene = nullptr;
+static Ref<ResourceFormatSaverPLY> s_resource_saver_ply = nullptr;
 static Ref<ResourceFormatLoaderScene> s_resource_loader_scene = nullptr;
 static Ref<ResourceFormatLoaderMesh> s_resource_loader_mesh = nullptr;
 static Ref<ResourceFormatLoaderGaussianSplat> s_resource_loader_gaussian_splat = nullptr;
@@ -31,6 +32,9 @@ static Ref<ResourceFormatLoaderPythonScript> s_resource_loader_python_script = n
 void SceneInitializer::Init() {
     s_resource_saver_scene = MakeRef<ResourceFormatSaverScene>();
     ResourceSaver::AddResourceFormatSaver(s_resource_saver_scene, true);
+
+    s_resource_saver_ply = MakeRef<ResourceFormatSaverPLY>();
+    ResourceSaver::AddResourceFormatSaver(s_resource_saver_ply, true);
 
     s_resource_loader_scene = MakeRef<ResourceFormatLoaderScene>();
     ResourceLoader::AddResourceFormatLoader(s_resource_loader_scene, true);
@@ -58,6 +62,9 @@ void SceneInitializer::Init() {
 }
 
 void SceneInitializer::Destroy() {
+    ResourceSaver::RemoveResourceFormatSaver(s_resource_saver_ply);
+    s_resource_saver_ply.Reset();
+
     ResourceSaver::RemoveResourceFormatSaver(s_resource_saver_scene);
     s_resource_saver_scene.Reset();
 

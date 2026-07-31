@@ -1,0 +1,99 @@
+#usda 1.0
+(
+    defaultPrim = "TinyRobot"
+    kilogramsPerUnit = 1
+    metersPerUnit = 1
+    upAxis = "Z"
+)
+
+def Xform "TinyRobot"
+{
+    double3 xformOp:translate = (1, 2, 3)
+    uniform token[] xformOpOrder = ["xformOp:translate"]
+
+    def Xform "base" (
+        prepend apiSchemas = ["PhysicsArticulationRootAPI", "PhysicsRigidBodyAPI", "PhysicsMassAPI"]
+    )
+    {
+        point3f physics:centerOfMass = (0.1, 0.2, 0.3)
+        float3 physics:diagonalInertia = (0.4, 0.5, 0.6)
+        float physics:mass = 2.5
+        quatf physics:principalAxes = (1, 0, 0, 0)
+
+        def Sphere "collider" (
+            prepend apiSchemas = ["PhysicsCollisionAPI"]
+        )
+        {
+            double radius = 0.2
+            double3 xformOp:translate = (0.1, 0, 0)
+            uniform token[] xformOpOrder = ["xformOp:translate"]
+        }
+
+        def Mesh "shared_collider" (
+            prepend apiSchemas = ["PhysicsCollisionAPI"]
+        )
+        {
+            int[] faceVertexCounts = [3]
+            int[] faceVertexIndices = [0, 1, 2]
+            uniform int mjc:conaffinity = 4
+            uniform int mjc:contype = 2
+            point3f[] points = [(0, 0, 0), (0.2, 0, 0), (0, 0.2, 0)]
+            uniform token subdivisionScheme = "none"
+        }
+
+        def PhysicsRevoluteJoint "shoulder" (
+            prepend apiSchemas = ["PhysicsDriveAPI:angular"]
+        )
+        {
+            uniform token physics:axis = "Z"
+            rel physics:body0 = </TinyRobot/base>
+            rel physics:body1 = </TinyRobot/arm>
+            point3f physics:localPos0 = (0, 0, 0.5)
+            point3f physics:localPos1 = (0, 0, -0.5)
+            quatf physics:localRot0 = (1, 0, 0, 0)
+            quatf physics:localRot1 = (1, 0, 0, 0)
+            float physics:lowerLimit = -90
+            float physics:upperLimit = 45
+            float drive:angular:physics:damping = 3
+            float drive:angular:physics:maxForce = 20
+            float drive:angular:physics:stiffness = 12
+            float drive:angular:physics:targetPosition = 15
+        }
+    }
+
+    def Mesh "arm" (
+        prepend apiSchemas = ["PhysicsRigidBodyAPI", "PhysicsMassAPI", "PhysicsCollisionAPI"]
+    )
+    {
+        int[] faceVertexCounts = [3]
+        int[] faceVertexIndices = [0, 1, 2]
+        point3f physics:centerOfMass = (0, 0, 0.25)
+        float3 physics:diagonalInertia = (0.1, 0.2, 0.3)
+        float physics:mass = 1.25
+        quatf physics:principalAxes = (1, 0, 0, 0)
+        point3f[] points = [(0, 0, 0), (0.1, 0, 0), (0, 0.1, 0)]
+        uniform token subdivisionScheme = "none"
+        token visibility = "invisible"
+
+        def Cube "collider" (
+            prepend apiSchemas = ["PhysicsCollisionAPI"]
+        )
+        {
+            double size = 0.4
+            float3 xformOp:scale = (1, 2, 3)
+            uniform token[] xformOpOrder = ["xformOp:scale"]
+        }
+    }
+
+    def Scope "Actuators"
+    {
+        def MjcActuator "shoulder_affine"
+        {
+            uniform double[] mjc:biasPrm = [0.25, -18, 0.75, 0, 0, 0, 0, 0, 0, 0]
+            uniform token mjc:biasType = "affine"
+            uniform double[] mjc:gainPrm = [18, 0, 0, 0, 0, 0, 0, 0, 0, 0]
+            uniform double mjc:inheritRange = 0.8
+            rel mjc:target = </TinyRobot/base/shoulder>
+        }
+    }
+}

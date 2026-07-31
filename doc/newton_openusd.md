@@ -48,9 +48,12 @@ The first importer version supports `.usd`, `.usda`, and `.usdc` hierarchy,
 stage units and up-axis conversion, local transforms, inherited visibility,
 concave polygon triangulation, normals, `st` UVs, and constant
 `UsdPreviewSurface` parameters. The importer uses `default` and `render`
-purpose data and skips duplicate `proxy`/`guide` representations. Cameras,
-lights, animation, subdivision evaluation, texture graphs, variants, payload
-UI, and USD Physics schemas are not imported yet.
+purpose data and skips duplicate `proxy`/`guide` representations. For one
+articulation it also maps rigid bodies, mass/inertia, fixed/revolute/prismatic
+joints, limits, position drives, and box/sphere/cylinder/convex-mesh colliders
+into backend-neutral Gobot nodes. Cameras, lights, animation, subdivision
+evaluation, texture graphs, variants, payload UI, multi-articulation stages,
+and advanced USD Physics schemas are not imported yet.
 
 ## Run Newton
 
@@ -80,6 +83,21 @@ with gobot.rl.NewtonProvider(
     joint_qd = arrays["joint_qd"]
 ```
 
+Use `resolve_robot_layout()` to translate stable Gobot robot, link, and joint
+names into per-environment columns without exposing a Newton or MuJoCo model.
+`set_joint_position_targets()` and `reset_robot_state()` then operate on that
+layout. Select `use_mujoco_contacts=False` when the Newton collision pipeline
+is required explicitly.
+
+`NewtonModelConfig` provides explicit Newton-side joint-limit and contact
+response overrides for policies that were trained with a known Newton model
+profile. Its fields default to `None`, so ordinary providers preserve the
+physics parameters compiled from the Gobot scene. The `newton_g1` example
+uses the exact limit and contact defaults from Newton's released G1 policy
+demo while keeping the imported Gobot scene as the model source of truth.
+Contact overrides replace geom `solref` values; explicit MJCF contact pairs
+remain authored scene data and take precedence.
+
 The provider exposes stable CUDA Torch views for Newton-layout joint/body
 state, controls, and reset masks. `joint_q` deliberately is not aliased as
 MuJoCo `qpos`: Newton stores quaternion coordinates as `xyzw`, while MuJoCo
@@ -97,3 +115,10 @@ MuJoCo-Warp solve non-finite. Call `assert_finite()` and
 Headless providers use the authored scene state and do not execute editor Play
 scripts. A scene whose script computes a terrain-relative spawn pose must pass
 that valid pose through `reset()` before the first simulation step.
+
+`examples/newton_g1` is the end-to-end editor example: Gobot imports and
+persists the structured G1 USD as one generated `.jscn` plus compact binary
+mesh sidecars, compiles the physics artifact from that same Gobot robot tree,
+runs the official ONNX policy with Warp-NN, and writes Newton body transforms
+back to its `Link3D` nodes for Gobot rendering. The hook never introduces a
+companion MJCF scene, and runtime playback never reopens the source USD.

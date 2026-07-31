@@ -15,7 +15,12 @@ from .mujoco_warp import (
     MuJoCoWarpRaycastSensorSpec,
     MuJoCoWarpRobotLayout,
 )
-from .newton import NewtonProvider, NewtonProviderAvailability
+from .newton import (
+    NewtonModelConfig,
+    NewtonProvider,
+    NewtonProviderAvailability,
+    NewtonRobotLayout,
+)
 
 __all__ = [
     "BatchPhysicsProvider",
@@ -27,8 +32,10 @@ __all__ = [
     "MuJoCoWarpProviderAvailability",
     "MuJoCoWarpRaycastSensorSpec",
     "MuJoCoWarpRobotLayout",
+    "NewtonModelConfig",
     "NewtonProvider",
     "NewtonProviderAvailability",
+    "NewtonRobotLayout",
     "ProviderUnavailableError",
     "SimulationCapacityError",
 ]

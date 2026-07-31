@@ -212,6 +212,32 @@ TEST(TestPackedScene, pack_motion_robot_reads_assembly_pose_without_mutating_sce
     gobot::Object::Delete(robot);
 }
 
+TEST(TestPackedScene, preserves_affine_joint_actuator_properties) {
+    auto* joint = gobot::Object::New<gobot::Joint3D>();
+    joint->SetName("joint");
+    joint->SetAffineActuatorEnabled(true);
+    joint->SetAffineActuatorControlGain(500.0);
+    joint->SetAffineActuatorForceOffset(0.25);
+    joint->SetAffineActuatorPositionGain(-500.0);
+    joint->SetAffineActuatorVelocityGain(1.0);
+    joint->SetAffineActuatorInheritRange(0.8);
+
+    const gobot::Ref<gobot::PackedScene> packed = gobot::MakeRef<gobot::PackedScene>();
+    ASSERT_TRUE(packed->Pack(joint));
+    gobot::Node* restored_node = packed->Instantiate();
+    auto* restored = gobot::Object::PointerCastTo<gobot::Joint3D>(restored_node);
+    ASSERT_NE(restored, nullptr);
+    EXPECT_TRUE(restored->IsAffineActuatorEnabled());
+    EXPECT_DOUBLE_EQ(restored->GetAffineActuatorControlGain(), 500.0);
+    EXPECT_DOUBLE_EQ(restored->GetAffineActuatorForceOffset(), 0.25);
+    EXPECT_DOUBLE_EQ(restored->GetAffineActuatorPositionGain(), -500.0);
+    EXPECT_DOUBLE_EQ(restored->GetAffineActuatorVelocityGain(), 1.0);
+    EXPECT_NEAR(restored->GetAffineActuatorInheritRange(), 0.8, 1.0e-6);
+
+    gobot::Object::Delete(joint);
+    gobot::Object::Delete(restored);
+}
+
 TEST(TestPackedScene, velocity_command_debug_packs_config_without_runtime_state) {
     auto* root = gobot::Node3D::New<gobot::Node3D>();
     root->SetName("Root");
