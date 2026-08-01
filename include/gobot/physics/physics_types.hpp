@@ -8,6 +8,7 @@
 
 #include <cstddef>
 #include <cstdint>
+#include <limits>
 #include <string>
 #include <vector>
 
@@ -269,12 +270,68 @@ struct PhysicsSceneSnapshot {
     std::size_t total_terrain_count{0};
 };
 
+inline constexpr std::size_t kInvalidPhysicsTopologyIndex =
+        std::numeric_limits<std::size_t>::max();
+
+struct PhysicsLinkTopology {
+    std::size_t index{kInvalidPhysicsTopologyIndex};
+    std::size_t scene_index{kInvalidPhysicsTopologyIndex};
+    std::string name;
+    PhysicsLinkRole role{PhysicsLinkRole::Physical};
+    std::vector<std::size_t> incoming_joint_indices;
+    std::vector<std::size_t> outgoing_joint_indices;
+};
+
+struct PhysicsJointTopology {
+    std::size_t index{kInvalidPhysicsTopologyIndex};
+    std::size_t scene_index{kInvalidPhysicsTopologyIndex};
+    std::string name;
+    int joint_type{0};
+    std::string parent_link;
+    std::string child_link;
+    std::size_t parent_link_index{kInvalidPhysicsTopologyIndex};
+    std::size_t child_link_index{kInvalidPhysicsTopologyIndex};
+};
+
+struct PhysicsRobotTopology {
+    std::size_t index{kInvalidPhysicsTopologyIndex};
+    std::string name;
+    std::vector<PhysicsLinkTopology> links;
+    std::vector<PhysicsJointTopology> joints;
+};
+
+// PhysicsWorld exposes this value through a const reference. It is rebuilt only
+// when a new authored snapshot is built, while PhysicsSceneState remains mutable.
+struct PhysicsSceneTopology {
+    std::vector<PhysicsRobotTopology> robots;
+    std::size_t total_link_count{0};
+    std::size_t total_joint_count{0};
+};
+
+struct PhysicsArtifactControlTopology {
+    std::int32_t index{-1};
+    std::string name;
+    std::string joint;
+    std::string mode;
+    std::string robot;
+};
+
+struct PhysicsArtifactRobotTopology {
+    std::string name;
+    std::string runtime_prefix;
+    std::vector<std::string> body_names;
+    std::vector<std::string> joint_names;
+    std::vector<std::int32_t> control_indices;
+};
+
 struct PhysicsSceneArtifact {
     std::uint32_t schema_version{0};
     PhysicsBackendType backend{PhysicsBackendType::Null};
+    std::string producer;
     std::string format;
     std::string content;
     std::string content_digest;
+    std::string producer_version;
     std::string backend_version;
     std::size_t nq{0};
     std::size_t nv{0};
@@ -286,6 +343,8 @@ struct PhysicsSceneArtifact {
     std::size_t nhfield{0};
     std::vector<std::string> robot_names;
     std::vector<std::string> robot_prefixes;
+    std::vector<PhysicsArtifactRobotTopology> robots;
+    std::vector<PhysicsArtifactControlTopology> controls;
     std::vector<std::int32_t> terrain_geom_groups;
 };
 

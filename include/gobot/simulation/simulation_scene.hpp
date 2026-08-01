@@ -6,6 +6,7 @@
 
 #pragma once
 
+#include <memory>
 #include <string>
 #include <unordered_map>
 #include <vector>
@@ -19,7 +20,7 @@ class Node;
 
 class GOBOT_EXPORT SimulationScene {
 public:
-    SimulationScene() = default;
+    SimulationScene();
 
     bool Initialize(Ref<PhysicsWorld> world, const Node* scene_root);
 
@@ -134,6 +135,7 @@ private:
     const Node* scene_root_{nullptr};
     std::vector<SimulationEntity> entities_;
     std::unordered_map<std::string, std::size_t> entity_indices_;
+    std::shared_ptr<RobotController::SessionState> controller_session_state_;
     std::string last_error_;
 };
 

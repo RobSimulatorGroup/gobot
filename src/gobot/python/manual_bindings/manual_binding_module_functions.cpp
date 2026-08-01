@@ -525,7 +525,7 @@ void RegisterManualModuleFunctions(py::module_& module) {
     module.def("backend_infos", []() {
         EnsureRuntimeContext();
         py::list infos;
-        for (const PhysicsBackendInfo& info : PhysicsServer::GetBackendInfosForAllBackends()) {
+        for (const PhysicsBackendInfo& info : PhysicsServer::GetBackendInfos()) {
             infos.append(ReflectedToPythonDict(info));
         }
         return infos;

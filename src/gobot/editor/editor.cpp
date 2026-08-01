@@ -96,7 +96,7 @@ void SelectEditorPlayBackend(SimulationServer* simulation) {
     }
 
     const PhysicsBackendInfo mujoco_info =
-            PhysicsServer::GetBackendInfoForBackend(PhysicsBackendType::MuJoCoCpu);
+            PhysicsServer::GetBackendInfo(PhysicsBackendType::MuJoCoCpu);
     if (!mujoco_info.available) {
         return;
     }
@@ -119,7 +119,6 @@ Editor::Editor() {
     AddChild(edited_scene_, true);
     selected_ = edited_scene_->GetRoot();
     engine_context_ = new EngineContext(ProjectSettings::GetInstance(),
-                                        PhysicsServer::GetInstance(),
                                         SimulationServer::GetInstance());
     python::RegisterExternalAppContext(engine_context_);
     engine_context_->SetSceneChangedCallback([this]() {
@@ -248,11 +247,19 @@ bool Editor::SyncRuntimeSceneFromSimulation() {
     }
 
     SimulationServer* simulation = SimulationServer::GetInstance();
-    if (!simulation->HasWorld() || simulation->GetSceneRoot() != scene_play_session_->GetRuntimeRoot()) {
+    if (!simulation->HasActiveSession() ||
+        simulation->GetSceneRoot() != scene_play_session_->GetRuntimeRoot()) {
         return false;
     }
 
-    return simulation->SyncSceneFromWorld();
+    if (simulation->SyncSceneFromWorld()) {
+        return true;
+    }
+
+    const std::string& error = simulation->GetLastError();
+    RequestPlayError(error.empty() ? "Failed to synchronize the runtime simulation scene."
+                                   : error);
+    return false;
 }
 
 bool Editor::SaveEditedScene(const std::string& path) const {
@@ -796,7 +803,15 @@ bool Editor::PlayScene() {
         return false;
     }
 
-    if (!simulation->HasWorld() || simulation->GetSceneRoot() != play_root) {
+    if (simulation->HasExternalSession()) {
+        if (simulation->GetSceneRoot() != play_root) {
+            StopScenePlaySession();
+            simulation->SetPaused(true);
+            RequestPlayError("External simulation session registered a different runtime scene.");
+            return false;
+        }
+        simulation->SetSyncSceneOnFixedStep(false);
+    } else if (!simulation->HasWorld() || simulation->GetSceneRoot() != play_root) {
         simulation->ClearWorld();
         simulation->SetSyncSceneOnFixedStep(false);
         if (!simulation->BuildWorldFromScene(play_root)) {
@@ -811,8 +826,7 @@ bool Editor::PlayScene() {
     }
 
     simulation->SetPaused(false);
-    SyncRuntimeSceneFromSimulation();
-    return true;
+    return SyncRuntimeSceneFromSimulation();
 }
 
 bool Editor::PauseScene() {
@@ -880,13 +894,19 @@ bool Editor::ResetScenePlaySession() {
     const bool running = scene_play_session_->Reset(GetEditedSceneRoot(), engine_context_);
     if (running && SimulationServer::HasInstance()) {
         SimulationServer* simulation = SimulationServer::GetInstance();
-        simulation->ClearWorld();
-        simulation->SetSyncSceneOnFixedStep(false);
-        if (!simulation->BuildWorldFromScene(scene_play_session_->GetRuntimeRoot())) {
-            scene_play_session_->Stop();
+        if (simulation->HasExternalSession()) {
+            simulation->SetSyncSceneOnFixedStep(false);
+        } else {
+            simulation->ClearWorld();
+            simulation->SetSyncSceneOnFixedStep(false);
+            if (!simulation->BuildWorldFromScene(scene_play_session_->GetRuntimeRoot())) {
+                scene_play_session_->Stop();
+                return false;
+            }
+        }
+        if (!SyncRuntimeSceneFromSimulation()) {
             return false;
         }
-        SyncRuntimeSceneFromSimulation();
     }
     return running;
 }

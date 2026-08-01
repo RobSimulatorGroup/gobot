@@ -131,11 +131,22 @@ target_include_directories(test_editor_type_icons PRIVATE
         ${PROJECT_SOURCE_DIR}/3rdparty/imgui_extension)
 add_executable(test_python_panel
         editor/test_python_panel.cpp)
+get_filename_component(GOBOT_TEST_BASE_PYTHON_EXECUTABLE
+        "${Python3_EXECUTABLE}" REALPATH)
+set(GOBOT_TEST_EMBEDDED_PYTHON_PATHS "${CMAKE_BINARY_DIR}/python")
+foreach(GOBOT_TEST_DEPENDENCY_PATH IN ITEMS "${Python3_SITEARCH}" "${Python3_SITELIB}")
+    if(GOBOT_TEST_DEPENDENCY_PATH)
+        list(APPEND GOBOT_TEST_EMBEDDED_PYTHON_PATHS "${GOBOT_TEST_DEPENDENCY_PATH}")
+    endif()
+endforeach()
+list(REMOVE_DUPLICATES GOBOT_TEST_EMBEDDED_PYTHON_PATHS)
+list(JOIN GOBOT_TEST_EMBEDDED_PYTHON_PATHS ":" GOBOT_TEST_EMBEDDED_PYTHON_PATH)
 target_compile_options(test_python_panel PUBLIC "${GOBOT_COMPILE_OPTIONS}")
 target_compile_definitions(test_python_panel
         PRIVATE
             GOBOT_TEST_BUILD_PYTHON_DIR="${CMAKE_BINARY_DIR}/python"
-            GOBOT_TEST_PYTHON_EXECUTABLE="${Python3_EXECUTABLE}")
+            GOBOT_TEST_PYTHON_PATH="${GOBOT_TEST_EMBEDDED_PYTHON_PATH}"
+            GOBOT_TEST_PYTHON_EXECUTABLE="${GOBOT_TEST_BASE_PYTHON_EXECUTABLE}")
 target_include_directories(test_python_panel PRIVATE
         ${PROJECT_SOURCE_DIR}/3rdparty/ImGuiColorTextEdit
         ${PROJECT_SOURCE_DIR}/3rdparty/imgui
@@ -158,7 +169,8 @@ target_compile_options(test_scene_play_session PUBLIC "${GOBOT_COMPILE_OPTIONS}"
 target_compile_definitions(test_scene_play_session
         PRIVATE
             GOBOT_TEST_BUILD_PYTHON_DIR="${CMAKE_BINARY_DIR}/python"
-            GOBOT_TEST_PYTHON_EXECUTABLE="${Python3_EXECUTABLE}")
+            GOBOT_TEST_PYTHON_PATH="${GOBOT_TEST_EMBEDDED_PYTHON_PATH}"
+            GOBOT_TEST_PYTHON_EXECUTABLE="${GOBOT_TEST_BASE_PYTHON_EXECUTABLE}")
 target_link_libraries(test_scene_play_session gtest gmock)
 if (MSVC)
     target_link_libraries(test_scene_play_session -Wl,--whole-archive gobot_test_support)
@@ -334,6 +346,16 @@ set_tests_properties(test_python_newton_provider
         PROPERTIES
             ENVIRONMENT "${GOBOT_PYTHON_TEST_ENV}"
             RESOURCE_LOCK gobot_cuda
+            WORKING_DIRECTORY "${CMAKE_SOURCE_DIR}"
+)
+add_test(
+        NAME test_python_provider_play_session
+        COMMAND ${Python3_EXECUTABLE} -S
+                ${CMAKE_CURRENT_SOURCE_DIR}/python/test_provider_play_session.py
+)
+set_tests_properties(test_python_provider_play_session
+        PROPERTIES
+            ENVIRONMENT "${GOBOT_PYTHON_TEST_ENV}"
             WORKING_DIRECTORY "${CMAKE_SOURCE_DIR}"
 )
 add_test(

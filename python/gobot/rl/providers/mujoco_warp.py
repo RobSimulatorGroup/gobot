@@ -16,6 +16,7 @@ from .base import (
     GraphInvalidatedError,
     ProviderUnavailableError,
     SimulationCapacityError,
+    validate_compiled_artifact,
 )
 
 
@@ -207,10 +208,9 @@ class MuJoCoWarpProvider(BatchPhysicsProvider):
         if int(overflow_check_interval) < 0:
             raise ValueError("overflow_check_interval must be non-negative")
 
-        self.artifact = (
-            artifact
-            if isinstance(artifact, CompiledSceneArtifact)
-            else CompiledSceneArtifact.from_mapping(artifact)
+        self.artifact = validate_compiled_artifact(
+            artifact,
+            allow_current_compiler_bridge=True,
         )
         self._bindings = _bindings if _bindings is not None else self._load_bindings()
         self._mujoco = self._bindings.mujoco
@@ -235,6 +235,23 @@ class MuJoCoWarpProvider(BatchPhysicsProvider):
         self._raycast_runtimes: dict[str, _MuJoCoWarpRaycastRuntime] = {}
         self._raycast_views: Mapping[str, Mapping[str, Any]] = MappingProxyType({})
         self._render_context = None
+        provider_version = str(getattr(self._mjw, "__version__", "unknown"))
+        self._runtime_fingerprint = self.artifact.runtime_fingerprint(
+            "mujoco-warp",
+            provider_version,
+            {
+                "num_envs": self._num_envs,
+                "device": self._device_name,
+                "nconmax": nconmax,
+                "njmax": njmax,
+                "njmax_nnz": njmax_nnz,
+                "contact_sensor_maxmatch": contact_sensor_maxmatch,
+                "ls_parallel": ls_parallel,
+                "capture_graphs": self._capture_enabled,
+                "contact_sensors": self._contact_specs,
+                "raycast_sensors": self._raycast_specs,
+            },
+        )
 
         if self._torch_device.type != "cuda":
             raise ProviderUnavailableError(
@@ -372,6 +389,10 @@ class MuJoCoWarpProvider(BatchPhysicsProvider):
     @property
     def generation(self) -> int:
         return self._generation
+
+    @property
+    def runtime_fingerprint(self) -> str:
+        return self._runtime_fingerprint
 
     @property
     def capacities(self) -> Mapping[str, int]:
@@ -1197,21 +1218,19 @@ class MuJoCoWarpProvider(BatchPhysicsProvider):
             raise ValueError(f"unsupported MuJoCo object type {object_type!r}") from error
 
     def _joint_actuator(self, prefixed_joint_name: str) -> tuple[int, str]:
-        for suffix, mode in (
-            ("_position", "position"),
-            ("_motor", "motor"),
-            ("_velocity", "velocity"),
-        ):
-            actuator_id = int(
-                self._mujoco.mj_name2id(
-                    self._mj_model,
-                    self._mujoco.mjtObj.mjOBJ_ACTUATOR,
-                    prefixed_joint_name + suffix,
-                )
+        control = self.artifact.control_for_joint(prefixed_joint_name)
+        actuator_id = int(
+            self._mujoco.mj_name2id(
+                self._mj_model,
+                self._mujoco.mjtObj.mjOBJ_ACTUATOR,
+                control.name,
             )
-            if actuator_id >= 0:
-                return actuator_id, mode
-        raise KeyError(f"compiled MuJoCo artifact has no actuator for joint {prefixed_joint_name!r}")
+        )
+        if actuator_id < 0 or actuator_id != control.index:
+            raise RuntimeError(
+                f"compiled control topology for {control.name!r} does not match runtime actuator order"
+            )
+        return actuator_id, control.mode
 
     def _validate_artifact_dimensions(self, model: Any) -> None:
         model_dimensions = {

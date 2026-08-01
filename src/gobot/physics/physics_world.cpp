@@ -682,6 +682,7 @@ void PhysicsWorld::SetSettings(const PhysicsWorldSettings& settings) {
 
 bool PhysicsWorld::Build(PhysicsSceneSnapshot scene_snapshot) {
     scene_snapshot_ = std::move(scene_snapshot);
+    scene_topology_ = MakeSceneTopologyFromSnapshot();
     ResetSceneStateFromSnapshot();
     last_error_.clear();
     return true;
@@ -1119,6 +1120,10 @@ const PhysicsSceneSnapshot& PhysicsWorld::GetSceneSnapshot() const {
     return scene_snapshot_;
 }
 
+const PhysicsSceneTopology& PhysicsWorld::GetSceneTopology() const {
+    return scene_topology_;
+}
+
 const PhysicsSceneArtifact* PhysicsWorld::GetSceneArtifact() const {
     return nullptr;
 }
@@ -1500,6 +1505,69 @@ PhysicsSceneState PhysicsWorld::MakeSceneStateFromSnapshot() const {
     }
 
     return scene_state;
+}
+
+PhysicsSceneTopology PhysicsWorld::MakeSceneTopologyFromSnapshot() const {
+    PhysicsSceneTopology topology;
+    topology.robots.reserve(scene_snapshot_.robots.size());
+
+    for (std::size_t robot_index = 0; robot_index < scene_snapshot_.robots.size(); ++robot_index) {
+        const PhysicsRobotSnapshot& robot_snapshot = scene_snapshot_.robots[robot_index];
+        PhysicsRobotTopology robot_topology;
+        robot_topology.index = robot_index;
+        robot_topology.name = robot_snapshot.name;
+        robot_topology.links.reserve(robot_snapshot.links.size());
+        robot_topology.joints.reserve(robot_snapshot.joints.size());
+
+        for (std::size_t link_index = 0; link_index < robot_snapshot.links.size(); ++link_index) {
+            const PhysicsLinkSnapshot& link_snapshot = robot_snapshot.links[link_index];
+            PhysicsLinkTopology link_topology;
+            link_topology.index = link_index;
+            link_topology.scene_index = topology.total_link_count++;
+            link_topology.name = link_snapshot.name;
+            link_topology.role = link_snapshot.role;
+            robot_topology.links.emplace_back(std::move(link_topology));
+        }
+
+        const auto find_link_index = [&](const std::string& name) {
+            if (name.empty()) {
+                return kInvalidPhysicsTopologyIndex;
+            }
+            for (std::size_t link_index = 0; link_index < robot_topology.links.size(); ++link_index) {
+                if (robot_topology.links[link_index].name == name) {
+                    return link_index;
+                }
+            }
+            return kInvalidPhysicsTopologyIndex;
+        };
+
+        for (std::size_t joint_index = 0; joint_index < robot_snapshot.joints.size(); ++joint_index) {
+            const PhysicsJointSnapshot& joint_snapshot = robot_snapshot.joints[joint_index];
+            PhysicsJointTopology joint_topology;
+            joint_topology.index = joint_index;
+            joint_topology.scene_index = topology.total_joint_count++;
+            joint_topology.name = joint_snapshot.name;
+            joint_topology.joint_type = joint_snapshot.joint_type;
+            joint_topology.parent_link = joint_snapshot.parent_link;
+            joint_topology.child_link = joint_snapshot.child_link;
+            joint_topology.parent_link_index = find_link_index(joint_snapshot.parent_link);
+            joint_topology.child_link_index = find_link_index(joint_snapshot.child_link);
+
+            if (joint_topology.parent_link_index != kInvalidPhysicsTopologyIndex) {
+                robot_topology.links[joint_topology.parent_link_index]
+                        .outgoing_joint_indices.push_back(joint_index);
+            }
+            if (joint_topology.child_link_index != kInvalidPhysicsTopologyIndex) {
+                robot_topology.links[joint_topology.child_link_index]
+                        .incoming_joint_indices.push_back(joint_index);
+            }
+            robot_topology.joints.emplace_back(std::move(joint_topology));
+        }
+
+        topology.robots.emplace_back(std::move(robot_topology));
+    }
+
+    return topology;
 }
 
 void PhysicsWorld::ResetSceneStateFromSnapshot() {

@@ -14,10 +14,8 @@
 namespace gobot {
 
 EngineContext::EngineContext(ProjectSettings* project_settings,
-                             PhysicsServer* physics_server,
                              SimulationServer* simulation_server)
     : project_settings_(project_settings),
-      physics_server_(physics_server),
       simulation_server_(simulation_server) {
 }
 
@@ -195,7 +193,7 @@ bool EngineContext::CompileSceneArtifact(PhysicsBackendType backend_type,
 bool EngineContext::CompileSceneArtifact(const Node* scene_root,
                                          PhysicsBackendType backend_type,
                                          PhysicsSceneArtifact* artifact) {
-    if (physics_server_ == nullptr || simulation_server_ == nullptr) {
+    if (simulation_server_ == nullptr) {
         SetLastError("Physics compilation services are not available.");
         return false;
     }
@@ -214,7 +212,7 @@ bool EngineContext::CompileSceneArtifact(const Node* scene_root,
         SetLastError(compile_error);
         return false;
     }
-    if (!PhysicsServer::CompileSceneArtifactForBackend(
+    if (!PhysicsServer::CompileSceneArtifact(
                 backend_type,
                 std::move(compiled_scene.snapshot),
                 simulation_server_->GetPhysicsWorldSettings(),

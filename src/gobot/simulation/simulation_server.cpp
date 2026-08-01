@@ -6,11 +6,13 @@
 
 #include "gobot/simulation/simulation_server.hpp"
 
+#include <cmath>
 #include <utility>
 
 #include "gobot/core/profile.hpp"
 #include "gobot/core/registration.hpp"
 #include "gobot/error_macros.hpp"
+#include "gobot/log.hpp"
 #include "gobot/scene/joint_3d.hpp"
 #include "gobot/scene/link_3d.hpp"
 #include "gobot/scene/node.hpp"
@@ -57,10 +59,99 @@ const PhysicsLinkSnapshot* FindLinkSnapshot(const PhysicsRobotSnapshot& robot_sn
     return nullptr;
 }
 
-const PhysicsRobotSceneBinding* FindRobotSceneBinding(const PhysicsSceneBindings& bindings,
-                                                      const PhysicsSceneSnapshot& snapshot,
-                                                      std::size_t robot_index,
-                                                      const std::string& robot_name) {
+struct ResolvedRobotSceneBinding {
+    Robot3D* robot{nullptr};
+    std::vector<Link3D*> links;
+    std::vector<Joint3D*> joints;
+};
+
+struct ResolvedSceneBindings {
+    Node* scene_root{nullptr};
+    std::vector<ResolvedRobotSceneBinding> robots;
+};
+
+bool IsOwnedBySceneRoot(const Node* scene_root, const Node* node) {
+    return scene_root != nullptr && node != nullptr &&
+           (scene_root == node || scene_root->IsAncestorOf(node));
+}
+
+template <typename NodeType>
+NodeType* ResolveBoundNode(ObjectID object_id, Node* scene_root) {
+    auto* node = Object::PointerCastTo<NodeType>(ObjectDB::GetInstance(object_id));
+    return IsOwnedBySceneRoot(scene_root, node) ? node : nullptr;
+}
+
+bool ResolveSceneBindings(const PhysicsSceneBindings& bindings,
+                          const PhysicsSceneSnapshot& snapshot,
+                          ResolvedSceneBindings* resolved,
+                          std::string* error) {
+    *resolved = {};
+    resolved->scene_root = Object::PointerCastTo<Node>(
+            ObjectDB::GetInstance(bindings.scene_root_id));
+    if (resolved->scene_root == nullptr) {
+        *error = "Compiled physics scene root is no longer alive.";
+        return false;
+    }
+    if (bindings.robots.size() != snapshot.robots.size()) {
+        *error = "Physics scene robot bindings do not match the compiled snapshot.";
+        return false;
+    }
+
+    resolved->robots.reserve(bindings.robots.size());
+    for (std::size_t robot_index = 0; robot_index < bindings.robots.size(); ++robot_index) {
+        const PhysicsRobotSceneBinding& binding = bindings.robots[robot_index];
+        const PhysicsRobotSnapshot& robot_snapshot = snapshot.robots[robot_index];
+        if (binding.link_ids.size() != robot_snapshot.links.size() ||
+            binding.joint_ids.size() != robot_snapshot.joints.size()) {
+            *error = fmt::format(
+                    "Physics scene bindings for robot '{}' do not match the compiled snapshot.",
+                    robot_snapshot.name);
+            return false;
+        }
+
+        ResolvedRobotSceneBinding robot_binding;
+        robot_binding.robot = ResolveBoundNode<Robot3D>(binding.robot_id, resolved->scene_root);
+        if (robot_binding.robot == nullptr) {
+            *error = fmt::format(
+                    "Physics scene robot '{}' is no longer alive inside the compiled scene root.",
+                    robot_snapshot.name);
+            return false;
+        }
+
+        robot_binding.links.reserve(binding.link_ids.size());
+        for (std::size_t link_index = 0; link_index < binding.link_ids.size(); ++link_index) {
+            Link3D* link = ResolveBoundNode<Link3D>(binding.link_ids[link_index], resolved->scene_root);
+            if (link == nullptr) {
+                *error = fmt::format(
+                        "Physics scene link '{}.{}' is no longer alive inside the compiled scene root.",
+                        robot_snapshot.name,
+                        robot_snapshot.links[link_index].name);
+                return false;
+            }
+            robot_binding.links.push_back(link);
+        }
+
+        robot_binding.joints.reserve(binding.joint_ids.size());
+        for (std::size_t joint_index = 0; joint_index < binding.joint_ids.size(); ++joint_index) {
+            Joint3D* joint = ResolveBoundNode<Joint3D>(binding.joint_ids[joint_index], resolved->scene_root);
+            if (joint == nullptr) {
+                *error = fmt::format(
+                        "Physics scene joint '{}.{}' is no longer alive inside the compiled scene root.",
+                        robot_snapshot.name,
+                        robot_snapshot.joints[joint_index].name);
+                return false;
+            }
+            robot_binding.joints.push_back(joint);
+        }
+        resolved->robots.push_back(std::move(robot_binding));
+    }
+    return true;
+}
+
+ResolvedRobotSceneBinding* FindRobotSceneBinding(ResolvedSceneBindings& bindings,
+                                                 const PhysicsSceneSnapshot& snapshot,
+                                                 std::size_t robot_index,
+                                                 const std::string& robot_name) {
     if (robot_index < bindings.robots.size() &&
         robot_index < snapshot.robots.size() &&
         snapshot.robots[robot_index].name == robot_name) {
@@ -75,9 +166,9 @@ const PhysicsRobotSceneBinding* FindRobotSceneBinding(const PhysicsSceneBindings
     return nullptr;
 }
 
-const Joint3D* FindJointSceneNode(const PhysicsRobotSceneBinding& binding,
-                                 const PhysicsRobotSnapshot& snapshot,
-                                 const std::string& joint_name) {
+Joint3D* FindJointSceneNode(const ResolvedRobotSceneBinding& binding,
+                           const PhysicsRobotSnapshot& snapshot,
+                           const std::string& joint_name) {
     for (std::size_t index = 0; index < snapshot.joints.size() && index < binding.joints.size(); ++index) {
         if (snapshot.joints[index].name == joint_name) {
             return binding.joints[index];
@@ -86,9 +177,9 @@ const Joint3D* FindJointSceneNode(const PhysicsRobotSceneBinding& binding,
     return nullptr;
 }
 
-const Link3D* FindLinkSceneNode(const PhysicsRobotSceneBinding& binding,
-                               const PhysicsRobotSnapshot& snapshot,
-                               const std::string& link_name) {
+Link3D* FindLinkSceneNode(const ResolvedRobotSceneBinding& binding,
+                         const PhysicsRobotSnapshot& snapshot,
+                         const std::string& link_name) {
     for (std::size_t index = 0; index < snapshot.links.size() && index < binding.links.size(); ++index) {
         if (snapshot.links[index].name == link_name) {
             return binding.links[index];
@@ -145,6 +236,7 @@ SimulationServer::SimulationServer(PhysicsBackendType backend_type, bool registe
 }
 
 SimulationServer::~SimulationServer() {
+    ClearWorld();
     if (s_singleton == this) {
         s_singleton = nullptr;
     }
@@ -177,9 +269,21 @@ const PhysicsWorldSettings& SimulationServer::GetPhysicsWorldSettings() const {
 }
 
 void SimulationServer::SetPhysicsWorldSettings(const PhysicsWorldSettings& settings) {
+    if (!std::isfinite(settings.fixed_time_step) || settings.fixed_time_step <= 0.0) {
+        SetLastError("Simulation fixed time step must be finite and greater than zero.");
+        return;
+    }
+    if (external_driver_.IsValid() &&
+        settings.fixed_time_step != physics_world_settings_.fixed_time_step) {
+        SetLastError("Cannot change the fixed time step while an external simulation session is active.");
+        return;
+    }
     physics_world_settings_ = settings;
     if (world_.IsValid()) {
         world_->SetSettings(physics_world_settings_);
+    }
+    if (!faulted_) {
+        last_error_.clear();
     }
 }
 
@@ -192,6 +296,9 @@ void SimulationServer::SetDefaultJointGains(const JointControllerGains& gains) {
     if (world_.IsValid()) {
         world_->SetSettings(physics_world_settings_);
     }
+    if (!faulted_) {
+        last_error_.clear();
+    }
 }
 
 RealType SimulationServer::GetFixedTimeStep() const {
@@ -199,8 +306,18 @@ RealType SimulationServer::GetFixedTimeStep() const {
 }
 
 void SimulationServer::SetFixedTimeStep(RealType fixed_time_step) {
-    if (fixed_time_step <= 0.0) {
-        SetLastError("Simulation fixed time step must be greater than zero.");
+    if (!std::isfinite(fixed_time_step) || fixed_time_step <= 0.0) {
+        SetLastError("Simulation fixed time step must be finite and greater than zero.");
+        return;
+    }
+    if (external_driver_.IsValid()) {
+        if (fixed_time_step == physics_world_settings_.fixed_time_step) {
+            if (!faulted_) {
+                last_error_.clear();
+            }
+            return;
+        }
+        SetLastError("Cannot change the fixed time step while an external simulation session is active.");
         return;
     }
 
@@ -208,7 +325,9 @@ void SimulationServer::SetFixedTimeStep(RealType fixed_time_step) {
     if (world_.IsValid()) {
         world_->SetSettings(physics_world_settings_);
     }
-    last_error_.clear();
+    if (!faulted_) {
+        last_error_.clear();
+    }
 }
 
 RealType SimulationServer::GetTimeScale() const {
@@ -216,12 +335,15 @@ RealType SimulationServer::GetTimeScale() const {
 }
 
 void SimulationServer::SetTimeScale(RealType time_scale) {
-    if (time_scale < 0.0) {
-        SetLastError("Simulation time scale cannot be negative.");
+    if (!std::isfinite(time_scale) || time_scale < 0.0) {
+        SetLastError("Simulation time scale must be finite and non-negative.");
         return;
     }
 
     time_scale_ = time_scale;
+    if (!faulted_) {
+        last_error_.clear();
+    }
 }
 
 int SimulationServer::GetMaxSubSteps() const {
@@ -233,8 +355,21 @@ void SimulationServer::SetMaxSubSteps(int max_sub_steps) {
         SetLastError("Simulation max sub-steps must be greater than zero.");
         return;
     }
+    if (external_driver_.IsValid()) {
+        if (max_sub_steps == max_sub_steps_) {
+            if (!faulted_) {
+                last_error_.clear();
+            }
+            return;
+        }
+        SetLastError("Cannot change max sub-steps while an external simulation session is active.");
+        return;
+    }
 
     max_sub_steps_ = max_sub_steps;
+    if (!faulted_) {
+        last_error_.clear();
+    }
 }
 
 int SimulationServer::GetLastStepCount() const {
@@ -249,6 +384,10 @@ void SimulationServer::SetPaused(bool paused) {
     paused_ = paused;
 }
 
+bool SimulationServer::IsFaulted() const {
+    return faulted_;
+}
+
 bool SimulationServer::ShouldSyncSceneOnFixedStep() const {
     return sync_scene_on_fixed_step_;
 }
@@ -258,9 +397,17 @@ void SimulationServer::SetSyncSceneOnFixedStep(bool sync_scene_on_fixed_step) {
 }
 
 bool SimulationServer::BuildWorldFromScene(const Node* scene_root) {
+    const ObjectID requested_scene_root_id =
+            scene_root != nullptr ? scene_root->GetInstanceId() : ObjectID{};
+    ClearExternalSession();
+    scene_root = Object::PointerCastTo<Node>(ObjectDB::GetInstance(requested_scene_root_id));
+    if (requested_scene_root_id != ObjectID{} && scene_root == nullptr) {
+        SetLastError("Physics scene root was deleted while closing the previous simulation session.");
+        return false;
+    }
     runtime_scene_.Clear();
     scene_bindings_ = {};
-    world_ = PhysicsServer::CreateWorldForBackend(backend_type_, physics_world_settings_);
+    world_ = PhysicsServer::CreateWorld(backend_type_, physics_world_settings_);
     if (!world_.IsValid()) {
         SetLastError("Failed to create physics world.");
         return false;
@@ -298,6 +445,14 @@ bool SimulationServer::BuildWorldFromScene(const Node* scene_root) {
 }
 
 bool SimulationServer::RebuildWorldFromScene(const Node* scene_root, bool preserve_state) {
+    const ObjectID requested_scene_root_id =
+            scene_root != nullptr ? scene_root->GetInstanceId() : ObjectID{};
+    ClearExternalSession();
+    scene_root = Object::PointerCastTo<Node>(ObjectDB::GetInstance(requested_scene_root_id));
+    if (requested_scene_root_id != ObjectID{} && scene_root == nullptr) {
+        SetLastError("Physics scene root was deleted while closing the previous simulation session.");
+        return false;
+    }
     PhysicsSceneState previous_state;
     if (preserve_state && world_.IsValid()) {
         previous_state = world_->GetSceneState();
@@ -305,7 +460,7 @@ bool SimulationServer::RebuildWorldFromScene(const Node* scene_root, bool preser
 
     runtime_scene_.Clear();
     scene_bindings_ = {};
-    world_ = PhysicsServer::CreateWorldForBackend(backend_type_, physics_world_settings_);
+    world_ = PhysicsServer::CreateWorld(backend_type_, physics_world_settings_);
     if (!world_.IsValid()) {
         SetLastError("Failed to create physics world.");
         return false;
@@ -344,16 +499,22 @@ bool SimulationServer::RebuildWorldFromScene(const Node* scene_root, bool preser
     }
 
     ResetClock();
-    ApplyWorldStateToScene();
+    if (!ApplyWorldStateToScene()) {
+        return false;
+    }
     last_error_.clear();
     return true;
 }
 
 const Node* SimulationServer::GetSceneRoot() const {
-    return runtime_scene_.GetSceneRoot();
+    if (external_driver_.IsValid()) {
+        return Object::PointerCastTo<Node>(ObjectDB::GetInstance(external_scene_root_id_));
+    }
+    return Object::PointerCastTo<Node>(ObjectDB::GetInstance(scene_bindings_.scene_root_id));
 }
 
 void SimulationServer::ClearWorld() {
+    ClearExternalSession();
     runtime_scene_.Clear();
     scene_bindings_ = {};
     world_.Reset();
@@ -362,6 +523,110 @@ void SimulationServer::ClearWorld() {
 
 bool SimulationServer::HasWorld() const {
     return world_.IsValid();
+}
+
+bool SimulationServer::HasExternalSession() const {
+    return external_driver_.IsValid();
+}
+
+bool SimulationServer::HasActiveSession() const {
+    return world_.IsValid() || external_driver_.IsValid();
+}
+
+std::uint64_t SimulationServer::BeginExternalSession(Ref<ExternalSimulationDriver> driver,
+                                                     const Node* scene_root,
+                                                     RealType fixed_time_step,
+                                                     int max_sub_steps) {
+    if (external_session_transitioning_) {
+        SetLastError("Cannot begin an external simulation session while another session is closing.");
+        return 0;
+    }
+    if (!driver.IsValid()) {
+        SetLastError("External simulation session requires a driver.");
+        return 0;
+    }
+    if (scene_root == nullptr) {
+        SetLastError("External simulation session requires a scene root.");
+        return 0;
+    }
+    const ObjectID requested_scene_root_id = scene_root->GetInstanceId();
+    if (!std::isfinite(fixed_time_step) || fixed_time_step <= 0.0 || max_sub_steps <= 0) {
+        SetLastError(
+                "External simulation timing must use a finite positive fixed time step and positive max sub-steps.");
+        return 0;
+    }
+
+    ClearWorld();
+    scene_root = Object::PointerCastTo<Node>(ObjectDB::GetInstance(requested_scene_root_id));
+    if (scene_root == nullptr) {
+        SetLastError(
+                "External simulation scene root was deleted while closing the previous session.");
+        return 0;
+    }
+    saved_fixed_time_step_ = physics_world_settings_.fixed_time_step;
+    saved_max_sub_steps_ = max_sub_steps_;
+    external_timing_saved_ = true;
+    physics_world_settings_.fixed_time_step = fixed_time_step;
+    max_sub_steps_ = max_sub_steps;
+    external_driver_ = std::move(driver);
+    external_scene_root_id_ = requested_scene_root_id;
+    external_session_token_ = next_session_token_++;
+    if (external_session_token_ == 0) {
+        external_session_token_ = next_session_token_++;
+    }
+    ResetClock();
+    last_error_.clear();
+    return external_session_token_;
+}
+
+bool SimulationServer::EndExternalSession(std::uint64_t session_token) {
+    if (!external_driver_.IsValid() || session_token == 0 || session_token != external_session_token_) {
+        SetLastError("External simulation session token is stale.");
+        return false;
+    }
+    ClearExternalSession();
+    ResetClock();
+    last_error_.clear();
+    return true;
+}
+
+bool SimulationServer::ResetExternalSession(std::uint64_t session_token) {
+    if (!external_driver_.IsValid() || session_token == 0 || session_token != external_session_token_) {
+        SetLastError("External simulation session token is stale.");
+        return false;
+    }
+    Ref<ExternalSimulationDriver> driver = external_driver_;
+    const bool reset_succeeded = driver->Reset();
+    if (!IsExternalSessionCurrent(driver, session_token)) {
+        SetLastError("Simulation session changed during an external reset callback.");
+        return false;
+    }
+    if (!reset_succeeded) {
+        SetLastError(driver->GetLastError());
+        LatchFailure("external reset");
+        return false;
+    }
+    ResetClock();
+    const bool sync_succeeded = driver->SyncScene();
+    if (!IsExternalSessionCurrent(driver, session_token)) {
+        SetLastError("Simulation session changed during an external scene sync callback.");
+        return false;
+    }
+    if (!sync_succeeded) {
+        SetLastError(driver->GetLastError());
+        LatchFailure("external reset synchronization");
+        return false;
+    }
+    last_error_.clear();
+    return true;
+}
+
+bool SimulationServer::SyncExternalSession(std::uint64_t session_token) {
+    if (!external_driver_.IsValid() || session_token == 0 || session_token != external_session_token_) {
+        SetLastError("External simulation session token is stale.");
+        return false;
+    }
+    return SyncSceneFromWorld();
 }
 
 Ref<PhysicsWorld> SimulationServer::GetWorld() const {
@@ -377,13 +642,20 @@ const SimulationScene* SimulationServer::GetRuntimeScene() const {
 }
 
 bool SimulationServer::Reset() {
-    if (!EnsureWorldReady()) {
+    if (!EnsureActiveSessionReady()) {
         return false;
+    }
+
+    if (external_driver_.IsValid()) {
+        return ResetExternalSession(external_session_token_);
     }
 
     world_->Reset();
     ResetClock();
-    ApplyWorldStateToScene();
+    if (!ApplyWorldStateToScene()) {
+        LatchFailure("reset synchronization");
+        return false;
+    }
     last_error_.clear();
     return true;
 }
@@ -393,13 +665,31 @@ bool SimulationServer::StepOnce() {
 }
 
 bool SimulationServer::StepOnce(const FixedStepCallback& fixed_step_callback) {
-    if (!StepFixed(fixed_step_callback ? &fixed_step_callback : nullptr)) {
+    if (faulted_) {
         last_step_count_ = 0;
         return false;
     }
+    const std::uint64_t step_epoch = session_clock_epoch_;
+    const FixedStepResult result = StepFixed(
+            fixed_step_callback ? &fixed_step_callback : nullptr);
+    if (result.session_changed || session_clock_epoch_ != step_epoch) {
+        if (session_clock_epoch_ == step_epoch) {
+            ResetClock();
+        }
+        return false;
+    }
 
-    accumulator_ = 0.0;
-    last_step_count_ = 1;
+    if (result.advanced) {
+        accumulator_ = 0.0;
+        last_step_count_ = 1;
+    } else {
+        last_step_count_ = 0;
+    }
+    if (!result.succeeded) {
+        LatchFailure("fixed step");
+        return false;
+    }
+
     last_error_.clear();
     return true;
 }
@@ -410,26 +700,52 @@ int SimulationServer::Step(RealType delta_time) {
 
 int SimulationServer::Step(RealType delta_time, const FixedStepCallback& fixed_step_callback) {
     GOBOT_PROFILE_ZONE("SimulationServer::Step");
+    if (!std::isfinite(delta_time)) {
+        SetLastError("Simulation frame delta must be finite.");
+        last_step_count_ = 0;
+        LatchFailure("frame step");
+        return 0;
+    }
     if (paused_ || delta_time <= 0.0 || time_scale_ <= 0.0) {
         last_step_count_ = 0;
         return 0;
     }
 
-    if (!EnsureWorldReady()) {
+    if (faulted_) {
+        paused_ = true;
         last_step_count_ = 0;
         return 0;
     }
 
+    if (!EnsureActiveSessionReady()) {
+        last_step_count_ = 0;
+        LatchFailure("fixed step");
+        return 0;
+    }
+
+    const std::uint64_t step_epoch = session_clock_epoch_;
     accumulator_ += delta_time * time_scale_;
 
     int steps = 0;
     while (accumulator_ + CMP_EPSILON >= physics_world_settings_.fixed_time_step && steps < max_sub_steps_) {
-        if (!StepFixed(fixed_step_callback ? &fixed_step_callback : nullptr)) {
+        const RealType fixed_delta = physics_world_settings_.fixed_time_step;
+        const FixedStepResult result = StepFixed(
+                fixed_step_callback ? &fixed_step_callback : nullptr);
+        if (result.session_changed || session_clock_epoch_ != step_epoch) {
+            if (session_clock_epoch_ == step_epoch) {
+                ResetClock();
+            }
+            return 0;
+        }
+        if (result.advanced) {
+            accumulator_ -= fixed_delta;
+            ++steps;
+        }
+        if (!result.succeeded) {
             last_step_count_ = steps;
+            LatchFailure("fixed step");
             return steps;
         }
-        accumulator_ -= physics_world_settings_.fixed_time_step;
-        ++steps;
     }
 
     if (steps == max_sub_steps_ && accumulator_ >= physics_world_settings_.fixed_time_step) {
@@ -528,11 +844,32 @@ std::size_t SimulationServer::ResolveEnvironmentBatchWorkerCount(std::size_t wor
 }
 
 bool SimulationServer::SyncSceneFromWorld() {
-    if (!EnsureWorldReady()) {
+    if (!EnsureActiveSessionReady()) {
         return false;
     }
 
-    return ApplyWorldStateToScene();
+    if (external_driver_.IsValid()) {
+        Ref<ExternalSimulationDriver> driver = external_driver_;
+        const std::uint64_t session_token = external_session_token_;
+        const bool sync_succeeded = driver->SyncScene();
+        if (!IsExternalSessionCurrent(driver, session_token)) {
+            SetLastError("Simulation session changed during an external scene sync callback.");
+            return false;
+        }
+        if (!sync_succeeded) {
+            SetLastError(driver->GetLastError());
+            LatchFailure("scene synchronization");
+            return false;
+        }
+        last_error_.clear();
+        return true;
+    }
+
+    if (!ApplyWorldStateToScene()) {
+        LatchFailure("scene synchronization");
+        return false;
+    }
+    return true;
 }
 
 RealType SimulationServer::GetSimulationTime() const {
@@ -565,28 +902,129 @@ bool SimulationServer::EnsureWorldReady() {
     return true;
 }
 
-bool SimulationServer::StepFixed(const FixedStepCallback* fixed_step_callback) {
-    GOBOT_PROFILE_ZONE("SimulationServer::StepFixed");
-    if (!EnsureWorldReady()) {
-        return false;
+bool SimulationServer::EnsureActiveSessionReady() {
+    if (external_driver_.IsValid()) {
+        if (ObjectDB::GetInstance(external_scene_root_id_) == nullptr) {
+            SetLastError("External simulation scene is no longer alive.");
+            return false;
+        }
+        return true;
     }
+    return EnsureWorldReady();
+}
+
+bool SimulationServer::IsExternalSessionCurrent(
+        const Ref<ExternalSimulationDriver>& driver,
+        std::uint64_t session_token) const {
+    return driver.IsValid() && external_driver_ == driver && session_token != 0 &&
+           external_session_token_ == session_token && !world_.IsValid();
+}
+
+void SimulationServer::ClearExternalSession() {
+    Ref<ExternalSimulationDriver> driver = std::move(external_driver_);
+    external_scene_root_id_ = ObjectID{};
+    external_session_token_ = 0;
+    if (external_timing_saved_) {
+        physics_world_settings_.fixed_time_step = saved_fixed_time_step_;
+        max_sub_steps_ = saved_max_sub_steps_;
+        external_timing_saved_ = false;
+    }
+    if (driver.IsValid()) {
+        external_session_transitioning_ = true;
+        try {
+            driver->Close();
+        } catch (const std::exception& error) {
+            SetLastError(fmt::format("External simulation close failed: {}", error.what()));
+            LOG_ERROR("{}", last_error_);
+        } catch (...) {
+            SetLastError("External simulation close failed with an unknown error.");
+            LOG_ERROR("{}", last_error_);
+        }
+        external_session_transitioning_ = false;
+    }
+}
+
+SimulationServer::FixedStepResult SimulationServer::StepFixed(
+        const FixedStepCallback* fixed_step_callback) {
+    GOBOT_PROFILE_ZONE("SimulationServer::StepFixed");
+    if (!EnsureActiveSessionReady()) {
+        return {};
+    }
+
+    const RealType fixed_delta = physics_world_settings_.fixed_time_step;
+    const Ref<ExternalSimulationDriver> active_external_driver = external_driver_;
+    const Ref<PhysicsWorld> active_world = world_;
+    const std::uint64_t active_external_token = external_session_token_;
+    const std::uint64_t active_epoch = session_clock_epoch_;
+    const auto session_is_current = [&]() {
+        if (session_clock_epoch_ != active_epoch) {
+            return false;
+        }
+        if (active_external_driver.IsValid()) {
+            return IsExternalSessionCurrent(active_external_driver, active_external_token);
+        }
+        return active_world.IsValid() && world_ == active_world && !external_driver_.IsValid();
+    };
+    const auto fail_if_session_changed = [&]() {
+        if (session_is_current()) {
+            return false;
+        }
+        SetLastError("Simulation session changed during a fixed step; the tick was aborted.");
+        return true;
+    };
 
     if (fixed_step_callback != nullptr) {
         GOBOT_PROFILE_ZONE("SimulationServer::FixedStepCallback");
-        (*fixed_step_callback)(physics_world_settings_.fixed_time_step);
+        (*fixed_step_callback)(fixed_delta);
+        if (fail_if_session_changed()) {
+            return {.session_changed = true};
+        }
     }
 
-    {
+    bool advanced = false;
+    if (active_external_driver.IsValid()) {
+        GOBOT_PROFILE_ZONE("SimulationServer::ExternalDriverStep");
+        const bool step_succeeded = active_external_driver->Step(fixed_delta);
+        advanced = step_succeeded;
+        if (fail_if_session_changed()) {
+            return {.advanced = advanced, .session_changed = true};
+        }
+        if (!step_succeeded) {
+            SetLastError(active_external_driver->GetLastError());
+            return {};
+        }
+    } else {
         GOBOT_PROFILE_ZONE("SimulationServer::WorldStep");
-        world_->Step(physics_world_settings_.fixed_time_step);
+        active_world->Step(fixed_delta);
+        advanced = true;
+        if (fail_if_session_changed()) {
+            return {.advanced = true, .session_changed = true};
+        }
     }
-    simulation_time_ += physics_world_settings_.fixed_time_step;
+    simulation_time_ += fixed_delta;
     ++frame_count_;
     if (sync_scene_on_fixed_step_) {
         GOBOT_PROFILE_ZONE("SimulationServer::ApplyWorldStateToScene");
-        ApplyWorldStateToScene();
+        if (active_external_driver.IsValid()) {
+            const bool sync_succeeded = active_external_driver->SyncScene();
+            if (fail_if_session_changed()) {
+                return {.advanced = true, .session_changed = true};
+            }
+            if (!sync_succeeded) {
+                SetLastError(active_external_driver->GetLastError());
+                return {.advanced = true};
+            }
+        } else {
+            const bool sync_succeeded = ApplyWorldStateToScene();
+            if (fail_if_session_changed()) {
+                return {.advanced = true, .session_changed = true};
+            }
+            if (!sync_succeeded) {
+                return {.advanced = true};
+            }
+        }
     }
-    return true;
+    return {.succeeded = true, .advanced = true};
 }
 
 bool SimulationServer::ApplyWorldStateToScene() {
@@ -597,13 +1035,20 @@ bool SimulationServer::ApplyWorldStateToScene() {
 
     const PhysicsSceneState& scene_state = world_->GetSceneState();
     const PhysicsSceneSnapshot& scene_snapshot = world_->GetSceneSnapshot();
+    ResolvedSceneBindings resolved_bindings;
+    std::string binding_error;
+    if (!ResolveSceneBindings(scene_bindings_, scene_snapshot, &resolved_bindings, &binding_error)) {
+        SetLastError(std::move(binding_error));
+        return false;
+    }
+
     for (std::size_t robot_index = 0; robot_index < scene_state.robots.size(); ++robot_index) {
         const PhysicsRobotState& robot_state = scene_state.robots[robot_index];
         const PhysicsRobotSnapshot* robot_snapshot =
                 FindRobotSnapshot(scene_snapshot, robot_index, robot_state.name);
-        const PhysicsRobotSceneBinding* scene_binding =
-                FindRobotSceneBinding(scene_bindings_, scene_snapshot, robot_index, robot_state.name);
-        auto* robot = scene_binding != nullptr ? const_cast<Robot3D*>(scene_binding->robot) : nullptr;
+        ResolvedRobotSceneBinding* scene_binding =
+                FindRobotSceneBinding(resolved_bindings, scene_snapshot, robot_index, robot_state.name);
+        Robot3D* robot = scene_binding != nullptr ? scene_binding->robot : nullptr;
         if (!robot || robot->GetMode() != RobotMode::Motion) {
             continue;
         }
@@ -622,10 +1067,10 @@ bool SimulationServer::ApplyWorldStateToScene() {
                     continue;
                 }
 
-                auto* joint = const_cast<Joint3D*>(
-                        FindJointSceneNode(*scene_binding, *robot_snapshot, joint_snapshot.name));
-                auto* floating_link = const_cast<Link3D*>(
-                        FindLinkSceneNode(*scene_binding, *robot_snapshot, floating_link_state->link_name));
+                Joint3D* joint =
+                        FindJointSceneNode(*scene_binding, *robot_snapshot, joint_snapshot.name);
+                Link3D* floating_link =
+                        FindLinkSceneNode(*scene_binding, *robot_snapshot, floating_link_state->link_name);
                 const PhysicsLinkSnapshot* floating_link_snapshot =
                         FindLinkSnapshot(*robot_snapshot, joint_snapshot.child_link);
                 if (joint != nullptr && floating_link != nullptr && floating_link_snapshot != nullptr) {
@@ -640,10 +1085,10 @@ bool SimulationServer::ApplyWorldStateToScene() {
         }
 
         for (const PhysicsJointState& joint_state : robot_state.joints) {
-            auto* joint = robot_snapshot != nullptr && scene_binding != nullptr
-                                  ? const_cast<Joint3D*>(FindJointSceneNode(
-                                            *scene_binding, *robot_snapshot, joint_state.joint_name))
-                                  : nullptr;
+            Joint3D* joint = robot_snapshot != nullptr && scene_binding != nullptr
+                                     ? FindJointSceneNode(
+                                               *scene_binding, *robot_snapshot, joint_state.joint_name)
+                                     : nullptr;
             if (joint && joint->IsMotionModeEnabled() && joint->GetJointType() != JointType::Floating) {
                 joint->SetJointPosition(joint_state.position);
             }
@@ -657,24 +1102,41 @@ bool SimulationServer::ApplyWorldStateToScene() {
                 continue;
             }
 
-            auto* link = robot_snapshot != nullptr && scene_binding != nullptr
-                                 ? const_cast<Link3D*>(FindLinkSceneNode(
-                                           *scene_binding, *robot_snapshot, link_state.link_name))
-                                 : nullptr;
+            Link3D* link = robot_snapshot != nullptr && scene_binding != nullptr
+                                   ? FindLinkSceneNode(
+                                             *scene_binding, *robot_snapshot, link_state.link_name)
+                                   : nullptr;
             if (link != nullptr) {
                 ApplyLinkGlobalTransform(link, link_state.global_transform);
             }
         }
     }
 
+    last_error_.clear();
     return true;
 }
 
 void SimulationServer::ResetClock() {
+    ++session_clock_epoch_;
+    if (session_clock_epoch_ == 0) {
+        ++session_clock_epoch_;
+    }
     accumulator_ = 0.0;
     simulation_time_ = 0.0;
     frame_count_ = 0;
     last_step_count_ = 0;
+    faulted_ = false;
+}
+
+void SimulationServer::LatchFailure(const char* operation) {
+    if (last_error_.empty()) {
+        SetLastError("Simulation fixed step failed.");
+    }
+    if (!faulted_) {
+        LOG_ERROR("Simulation paused after {} failure: {}", operation, last_error_);
+    }
+    faulted_ = true;
+    paused_ = true;
 }
 
 void SimulationServer::SetLastError(std::string error) {

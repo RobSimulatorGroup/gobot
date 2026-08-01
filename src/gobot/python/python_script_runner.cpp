@@ -223,6 +223,35 @@ private:
     bool previous_{false};
 };
 
+class ScopedSceneScriptCallbackContext {
+public:
+    ScopedSceneScriptCallbackContext(EngineContext* context,
+                                     Node* root,
+                                     std::uint64_t scene_epoch)
+        : previous_script_context_(SceneScriptContext()),
+          previous_script_root_(SceneScriptRoot()),
+          previous_script_epoch_(SceneScriptEpoch()),
+          previous_active_context_(GetActiveAppContextOrNull()) {
+        SceneScriptContext() = context;
+        SceneScriptRoot() = root;
+        SceneScriptEpoch() = scene_epoch;
+        SetActiveAppContext(context);
+    }
+
+    ~ScopedSceneScriptCallbackContext() {
+        SetActiveAppContext(previous_active_context_);
+        SceneScriptContext() = previous_script_context_;
+        SceneScriptRoot() = previous_script_root_;
+        SceneScriptEpoch() = previous_script_epoch_;
+    }
+
+private:
+    EngineContext* previous_script_context_{nullptr};
+    Node* previous_script_root_{nullptr};
+    std::uint64_t previous_script_epoch_{0};
+    EngineContext* previous_active_context_{nullptr};
+};
+
 struct SceneScriptInstance {
     py::object instance;
     std::string path;
@@ -483,6 +512,19 @@ Node* PythonScriptRunner::GetExecutingSceneScriptRoot() {
 
 std::uint64_t PythonScriptRunner::GetExecutingSceneScriptEpoch() {
     return IsExecutingSceneScript() ? SceneScriptEpoch() : 0;
+}
+
+void PythonScriptRunner::ExecuteInSceneScriptContext(
+        EngineContext* context,
+        Node* root,
+        std::uint64_t scene_epoch,
+        const std::function<void()>& callback) {
+    if (!callback) {
+        return;
+    }
+    ScopedSceneScriptCallbackContext callback_context(context, root, scene_epoch);
+    ScopedSceneScriptExecution scoped_execution;
+    callback();
 }
 
 bool PythonScriptRunner::HasSceneScriptInstance(Node* node) {

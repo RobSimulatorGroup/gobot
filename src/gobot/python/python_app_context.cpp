@@ -6,7 +6,6 @@
 
 #include "gobot/core/config/project_setting.hpp"
 #include "gobot/main/engine_context.hpp"
-#include "gobot/physics/physics_server.hpp"
 #include "gobot/rendering/headless_render_context.hpp"
 #include "gobot/scene/node.hpp"
 #include "gobot/scene/scene_initializer.hpp"
@@ -49,15 +48,13 @@ const Node* RootForNode(const Node* node) {
 
 struct OwnedAppContext {
     ProjectSettings* project_settings{nullptr};
-    PhysicsServer* physics_server{nullptr};
     SimulationServer* simulation_server{nullptr};
     std::unique_ptr<EngineContext> context;
 
     OwnedAppContext() {
         project_settings = ProjectSettings::GetInstance();
-        physics_server = Object::New<PhysicsServer>(PhysicsBackendType::Null, false);
         simulation_server = Object::New<SimulationServer>(PhysicsBackendType::Null, false);
-        context = std::make_unique<EngineContext>(project_settings, physics_server, simulation_server);
+        context = std::make_unique<EngineContext>(project_settings, simulation_server);
         RegisterAppContext(context.get());
     }
 
@@ -71,21 +68,15 @@ struct OwnedAppContext {
             Object::Delete(simulation_server);
             simulation_server = nullptr;
         }
-        if (physics_server != nullptr) {
-            Object::Delete(physics_server);
-            physics_server = nullptr;
-        }
     }
 };
 
 struct GobotRuntime {
     ProjectSettings* project_settings{nullptr};
-    PhysicsServer* physics_server{nullptr};
     SimulationServer* app_simulation_server{nullptr};
     std::unique_ptr<EngineContext> app_context;
     std::unique_ptr<HeadlessRenderContext> headless_render_context;
     bool owns_project_settings{false};
-    bool owns_physics_server{false};
     bool owns_simulation_server{false};
     bool scene_initializer_ready{false};
 
@@ -96,12 +87,6 @@ struct GobotRuntime {
             project_settings = Object::New<ProjectSettings>();
             owns_project_settings = true;
         }
-        if (PhysicsServer::HasInstance()) {
-            physics_server = PhysicsServer::GetInstance();
-        } else {
-            physics_server = Object::New<PhysicsServer>(PhysicsBackendType::Null, true);
-            owns_physics_server = true;
-        }
         if (SimulationServer::HasInstance()) {
             app_simulation_server = SimulationServer::GetInstance();
         } else {
@@ -109,7 +94,6 @@ struct GobotRuntime {
             owns_simulation_server = true;
         }
         app_context = std::make_unique<EngineContext>(project_settings,
-                                                      physics_server,
                                                       app_simulation_server);
         RegisterAppContext(app_context.get());
         SceneInitializer::Init();
@@ -127,10 +111,6 @@ struct GobotRuntime {
         if (scene_initializer_ready) {
             SceneInitializer::Destroy();
             scene_initializer_ready = false;
-        }
-        if (owns_physics_server && physics_server != nullptr) {
-            Object::Delete(physics_server);
-            physics_server = nullptr;
         }
         if (owns_project_settings && project_settings != nullptr) {
             Object::Delete(project_settings);

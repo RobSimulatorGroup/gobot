@@ -8,7 +8,6 @@ import importlib
 import importlib.util
 import math
 from pathlib import Path
-import tempfile
 from types import MappingProxyType
 from typing import Any, Iterator, Mapping, Sequence
 import xml.etree.ElementTree as ET
@@ -19,7 +18,12 @@ from .base import (
     CompiledSceneArtifact,
     ProviderUnavailableError,
     SimulationCapacityError,
+    validate_compiled_artifact,
 )
+from .cache import ContentAddressedCache
+
+
+_MJCF_ADAPTER_VERSION = "1"
 
 
 @dataclass(frozen=True)
@@ -38,6 +42,8 @@ class NewtonModelConfig:
     and damping overrides are paired because applying only half of a MuJoCo
     constraint response produces a different physical model. Contact
     overrides apply to geoms; explicit MJCF contact pairs remain authoritative.
+    ``default_contact_friction`` is the compatibility name for
+    ``contact_friction_override``; equivalent values normalize identically.
     """
 
     joint_limit_stiffness: float | None = None
@@ -46,6 +52,7 @@ class NewtonModelConfig:
     contact_damping: float | None = None
     contact_friction_stiffness: float | None = None
     default_contact_friction: float | None = None
+    contact_friction_override: float | None = None
 
     def __post_init__(self) -> None:
         for name in (
@@ -55,12 +62,31 @@ class NewtonModelConfig:
             "contact_damping",
             "contact_friction_stiffness",
             "default_contact_friction",
+            "contact_friction_override",
         ):
             value = getattr(self, name)
             if value is not None and (
                 not math.isfinite(float(value)) or float(value) < 0.0
             ):
                 raise ValueError(f"{name} must be finite and non-negative")
+        legacy_friction = self.default_contact_friction
+        friction_override = self.contact_friction_override
+        if (
+            legacy_friction is not None
+            and friction_override is not None
+            and float(legacy_friction) != float(friction_override)
+        ):
+            raise ValueError(
+                "default_contact_friction and contact_friction_override "
+                "must match when both are set"
+            )
+        resolved_friction = (
+            friction_override if friction_override is not None else legacy_friction
+        )
+        if resolved_friction is not None:
+            resolved_friction = float(resolved_friction)
+        object.__setattr__(self, "default_contact_friction", resolved_friction)
+        object.__setattr__(self, "contact_friction_override", resolved_friction)
         if (self.joint_limit_stiffness is None) != (
             self.joint_limit_damping is None
         ):
@@ -136,24 +162,20 @@ def _major_minor(value: str) -> tuple[int, int] | None:
         return None
 
 
+def _module_version(module: Any) -> str:
+    for attribute in ("__version__", "version"):
+        value = getattr(module, attribute, None)
+        if value is not None and str(value).strip():
+            return str(value)
+    return "unknown"
+
+
 def _validated_artifact(
     artifact: Mapping[str, Any] | CompiledSceneArtifact,
 ) -> CompiledSceneArtifact:
-    if not isinstance(artifact, CompiledSceneArtifact):
-        return CompiledSceneArtifact.from_mapping(artifact)
-    return CompiledSceneArtifact.from_mapping(
-        {
-            "schema_version": artifact.schema_version,
-            "backend": artifact.backend,
-            "format": artifact.format,
-            "content": artifact.content,
-            "content_digest": artifact.digest,
-            "backend_version": artifact.backend_version,
-            "dimensions": artifact.dimensions,
-            "robot_names": artifact.robot_names,
-            "robot_prefixes": artifact.robot_prefixes,
-            "terrain_geom_groups": artifact.terrain_geom_groups,
-        }
+    return validate_compiled_artifact(
+        artifact,
+        allow_current_compiler_bridge=True,
     )
 
 
@@ -230,6 +252,33 @@ def _remove_overridden_mjcf_response(
     return changed
 
 
+def _override_geom_friction(
+    root: ET.Element,
+    model_config: NewtonModelConfig,
+) -> bool:
+    """Apply a true scene-wide sliding-friction override.
+
+    MuJoCo friction attributes contain sliding, torsional, and rolling values.
+    Only the first component is replaced; authored secondary components remain
+    unchanged and omitted components receive MuJoCo's documented defaults.
+    """
+
+    override = model_config.contact_friction_override
+    if override is None:
+        return False
+    sliding = format(float(override), ".17g")
+    changed = False
+    for geom in root.iter("geom"):
+        values = geom.attrib.get("friction", "").split()
+        torsional = values[1] if len(values) >= 2 else "0.005"
+        rolling = values[2] if len(values) >= 3 else "0.0001"
+        friction = f"{sliding} {torsional} {rolling}"
+        if geom.attrib.get("friction") != friction:
+            geom.set("friction", friction)
+            changed = True
+    return changed
+
+
 def _configure_blueprint_defaults(
     blueprint: Any,
     model_config: NewtonModelConfig,
@@ -246,8 +295,8 @@ def _configure_blueprint_defaults(
         blueprint.default_shape_cfg.kf = float(
             model_config.contact_friction_stiffness
         )
-    if model_config.default_contact_friction is not None:
-        blueprint.default_shape_cfg.mu = float(model_config.default_contact_friction)
+    if model_config.contact_friction_override is not None:
+        blueprint.default_shape_cfg.mu = float(model_config.contact_friction_override)
 
 
 def _apply_imported_joint_limit_response(
@@ -350,30 +399,15 @@ def _normalize_position_actuators(root: ET.Element) -> bool:
     return changed
 
 
-def _mjcf_actuator_modes(root: ET.Element, expected_count: int) -> tuple[str, ...]:
-    """Return the semantic input mode of each source MJCF actuator."""
-
-    elements = [element for section in root.findall("actuator") for element in section]
-    if len(elements) != expected_count:
-        raise RuntimeError(
-            "Newton cannot preserve the compiled MJCF actuator layout: "
-            f"XML actuators={len(elements)}/{expected_count}"
-        )
-    return tuple(
-        element.tag
-        if element.tag in ("position", "velocity") and "joint" in element.attrib
-        else "direct"
-        for element in elements
-    )
-
-
 @contextmanager
 def _prepare_mjcf_for_newton(
     mjcf: str,
     *,
     model_config: NewtonModelConfig | None = None,
+    cache_key: str,
+    cache: ContentAddressedCache | None = None,
 ) -> Iterator[str]:
-    """Normalize valid MuJoCo shorthand and materialize Newton 1.4 mesh assets."""
+    """Normalize MJCF and materialize inline meshes in a persistent cache."""
 
     try:
         root = ET.fromstring(mjcf)
@@ -382,6 +416,7 @@ def _prepare_mjcf_for_newton(
 
     model_config = model_config or NewtonModelConfig()
     normalized = _remove_overridden_mjcf_response(root, model_config)
+    normalized = _override_geom_friction(root, model_config) or normalized
 
     # Newton 1.4's raw custom-attribute path fills an omitted second geom
     # solref value with 0 instead of retaining the MuJoCo default, which can
@@ -399,8 +434,11 @@ def _prepare_mjcf_for_newton(
         yield ET.tostring(root, encoding="unicode") if normalized else mjcf
         return
 
-    with tempfile.TemporaryDirectory(prefix="gobot-newton-mesh-") as directory:
-        directory_path = Path(directory)
+    cache = cache or ContentAddressedCache(
+        f"newton/mjcf-adapter-v{_MJCF_ADAPTER_VERSION}"
+    )
+
+    def build(directory_path: Path) -> Mapping[str, Any]:
         for mesh_index, mesh in enumerate(inline_meshes):
             vertex_tokens = mesh.attrib["vertex"].split()
             face_tokens = mesh.attrib.get("face", "").split()
@@ -429,18 +467,25 @@ def _prepare_mjcf_for_newton(
             )
             mesh_path.write_text("\n".join(lines) + "\n", encoding="utf-8")
 
-            mesh.set("file", str(mesh_path))
-            for attribute in (
-                "vertex",
-                "normal",
-                "texcoord",
-                "face",
-                "facenormal",
-                "facetexcoord",
-            ):
-                mesh.attrib.pop(attribute, None)
+        return {
+            "adapter_version": _MJCF_ADAPTER_VERSION,
+            "mesh_count": len(inline_meshes),
+        }
 
-        yield ET.tostring(root, encoding="unicode")
+    directory_path = cache.get_or_create(cache_key, build)
+    for mesh_index, mesh in enumerate(inline_meshes):
+        mesh.set("file", str((directory_path / f"mesh_{mesh_index}.obj").resolve()))
+        for attribute in (
+            "vertex",
+            "normal",
+            "texcoord",
+            "face",
+            "facenormal",
+            "facetexcoord",
+        ):
+            mesh.attrib.pop(attribute, None)
+
+    yield ET.tostring(root, encoding="unicode")
 
 
 class NewtonProvider(BatchPhysicsProvider):
@@ -500,6 +545,26 @@ class NewtonProvider(BatchPhysicsProvider):
         self._torch_device = self._torch.device(self._device_name)
         self._closed = False
         self._empty_arrays: dict[str, Any] = {}
+        self._provider_version = _module_version(self._newton)
+        self._runtime_fingerprint = self.artifact.runtime_fingerprint(
+            "newton",
+            self._provider_version,
+            {
+                "num_envs": self._num_envs,
+                "device": self._device_name,
+                "fixed_time_step": self._fixed_time_step,
+                "nconmax": nconmax,
+                "njmax": njmax,
+                "iterations": iterations,
+                "use_mujoco_contacts": self._use_mujoco_contacts,
+                "model_config": self._model_config,
+            },
+        )
+        adapter_fingerprint = self.artifact.runtime_fingerprint(
+            "newton-mjcf-adapter",
+            f"{self._provider_version}+compat{_MJCF_ADAPTER_VERSION}",
+            self._model_config,
+        )
 
         if self._torch_device.type != "cuda":
             raise ProviderUnavailableError(
@@ -536,11 +601,11 @@ class NewtonProvider(BatchPhysicsProvider):
             with _prepare_mjcf_for_newton(
                 self.artifact.content,
                 model_config=self._model_config,
+                cache_key=adapter_fingerprint,
             ) as mjcf:
                 self._metadata_model = self._mujoco.MjModel.from_xml_string(mjcf)
-                self._actuator_modes = _mjcf_actuator_modes(
-                    ET.fromstring(mjcf),
-                    int(self.artifact.dimensions["nu"]),
+                self._actuator_modes = tuple(
+                    control.mode for control in self.artifact.controls
                 )
                 blueprint.add_mjcf(
                     mjcf,
@@ -741,6 +806,10 @@ class NewtonProvider(BatchPhysicsProvider):
         """Newton-side model overrides used for this provider."""
 
         return self._model_config
+
+    @property
+    def runtime_fingerprint(self) -> str:
+        return self._runtime_fingerprint
 
     @property
     def arrays(self) -> Mapping[str, Any]:
@@ -1524,21 +1593,19 @@ class NewtonProvider(BatchPhysicsProvider):
         return object_id
 
     def _joint_actuator(self, prefixed_joint_name: str) -> tuple[int, str]:
-        for suffix, mode in (
-            ("_position", "position"),
-            ("_motor", "motor"),
-            ("_velocity", "velocity"),
-        ):
-            actuator_id = int(
-                self._mujoco.mj_name2id(
-                    self._metadata_model,
-                    self._mujoco.mjtObj.mjOBJ_ACTUATOR,
-                    prefixed_joint_name + suffix,
-                )
+        control = self.artifact.control_for_joint(prefixed_joint_name)
+        actuator_id = int(
+            self._mujoco.mj_name2id(
+                self._metadata_model,
+                self._mujoco.mjtObj.mjOBJ_ACTUATOR,
+                control.name,
             )
-            if actuator_id >= 0:
-                return actuator_id, mode
-        raise KeyError(f"compiled MuJoCo artifact has no actuator for joint {prefixed_joint_name!r}")
+        )
+        if actuator_id < 0 or actuator_id != control.index:
+            raise RuntimeError(
+                f"compiled control topology for {control.name!r} does not match runtime actuator order"
+            )
+        return actuator_id, control.mode
 
     def _mapping_row(self, name: str) -> list[int]:
         cached = self._mapping_cache.get(name)

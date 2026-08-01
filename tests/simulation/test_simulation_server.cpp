@@ -1,6 +1,8 @@
 #include <gtest/gtest.h>
 
 #include <cmath>
+#include <functional>
+#include <limits>
 #include <vector>
 
 #include <gobot/scene/collision_shape_3d.hpp>
@@ -30,6 +32,56 @@ public:
 
     int physics_process_count{0};
     std::vector<double> physics_process_deltas;
+};
+
+class TestExternalSimulationDriver final : public ExternalSimulationDriver {
+    GOBCLASS(TestExternalSimulationDriver, ExternalSimulationDriver)
+
+public:
+    bool Step(RealType fixed_delta) override {
+        ++step_count;
+        last_fixed_delta = fixed_delta;
+        return step_result;
+    }
+
+    bool Reset() override {
+        ++reset_count;
+        if (reset_callback) {
+            reset_callback();
+        }
+        return true;
+    }
+
+    bool SyncScene() override {
+        ++sync_count;
+        if (sync_callback) {
+            sync_callback();
+        }
+        return sync_result;
+    }
+
+    void Close() override {
+        ++close_count;
+        if (close_callback) {
+            close_callback();
+        }
+    }
+
+    const std::string& GetLastError() const override {
+        return last_error;
+    }
+
+    int step_count{0};
+    int reset_count{0};
+    int sync_count{0};
+    int close_count{0};
+    RealType last_fixed_delta{0.0};
+    std::string last_error;
+    bool step_result{true};
+    bool sync_result{true};
+    std::function<void()> reset_callback;
+    std::function<void()> sync_callback;
+    std::function<void()> close_callback;
 };
 
 } // namespace gobot
@@ -399,6 +451,63 @@ TEST(TestSimulationServer, syncs_world_joint_state_to_motion_mode_robot) {
     gobot::Object::Delete(robot);
 }
 
+TEST(TestSimulationServer, scene_sync_rejects_deleted_compiled_scene_root) {
+    gobot::SimulationServer simulation_server;
+
+    auto* root = gobot::Object::New<gobot::Node3D>();
+    root->SetName("scene");
+    root->AddChild(CreateRobotScene());
+    ASSERT_TRUE(simulation_server.BuildWorldFromScene(root));
+    ASSERT_EQ(simulation_server.GetSceneRoot(), root);
+
+    gobot::Object::Delete(root);
+
+    EXPECT_EQ(simulation_server.GetSceneRoot(), nullptr);
+    EXPECT_FALSE(simulation_server.SyncSceneFromWorld());
+    EXPECT_NE(simulation_server.GetLastError().find("scene root is no longer alive"),
+              std::string::npos);
+    simulation_server.ClearWorld();
+}
+
+TEST(TestSimulationServer, scene_sync_rejects_deleted_bound_link) {
+    gobot::SimulationServer simulation_server;
+
+    gobot::Robot3D* robot = CreateRobotScene();
+    auto* base = gobot::Object::PointerCastTo<gobot::Link3D>(robot->GetChild(0));
+    ASSERT_NE(base, nullptr);
+    ASSERT_TRUE(simulation_server.BuildWorldFromScene(robot));
+
+    gobot::Object::Delete(base);
+
+    EXPECT_FALSE(simulation_server.SyncSceneFromWorld());
+    EXPECT_NE(simulation_server.GetLastError().find("link 'robot.base'"),
+              std::string::npos);
+    simulation_server.ClearWorld();
+    gobot::Object::Delete(robot);
+}
+
+TEST(TestSimulationServer, scene_sync_rejects_bound_joint_moved_outside_compiled_root) {
+    gobot::SimulationServer simulation_server;
+
+    gobot::Robot3D* robot = CreateRobotScene();
+    auto* joint = gobot::Object::PointerCastTo<gobot::Joint3D>(robot->GetChild(1));
+    ASSERT_NE(joint, nullptr);
+    auto* tip = gobot::Object::PointerCastTo<gobot::Link3D>(joint->GetChild(0));
+    ASSERT_NE(tip, nullptr);
+    ASSERT_TRUE(simulation_server.BuildWorldFromScene(robot));
+
+    joint->RemoveChild(tip);
+    robot->AddChild(tip);
+    robot->RemoveChild(joint);
+
+    EXPECT_FALSE(simulation_server.SyncSceneFromWorld());
+    EXPECT_NE(simulation_server.GetLastError().find("joint 'robot.joint'"),
+              std::string::npos);
+    simulation_server.ClearWorld();
+    gobot::Object::Delete(joint);
+    gobot::Object::Delete(robot);
+}
+
 TEST(TestSimulationServer, can_defer_scene_sync_until_explicit_request) {
     gobot::SimulationServer simulation_server;
 
@@ -662,6 +771,36 @@ TEST(TestSimulationServer, sets_joint_control_targets_on_world) {
     gobot::Object::Delete(robot);
 }
 
+TEST(TestSimulationServer, invalidates_robot_controller_when_runtime_scene_session_changes) {
+    gobot::SimulationServer simulation_server;
+
+    gobot::Robot3D* robot = CreateRobotScene();
+    ASSERT_TRUE(simulation_server.BuildWorldFromScene(robot));
+    ASSERT_NE(simulation_server.GetRuntimeScene(), nullptr);
+
+    gobot::RobotController stale_controller =
+            simulation_server.GetRuntimeScene()->GetRobotController("robot");
+    ASSERT_TRUE(stale_controller.IsValid());
+
+    simulation_server.ClearWorld();
+    EXPECT_FALSE(stale_controller.IsValid());
+    EXPECT_FALSE(stale_controller.SetJointPositionTarget("joint", 0.75));
+    EXPECT_EQ(stale_controller.GetLastError(), "Robot controller session is no longer active.");
+
+    ASSERT_TRUE(simulation_server.BuildWorldFromScene(robot));
+    ASSERT_NE(simulation_server.GetRuntimeScene(), nullptr);
+    EXPECT_FALSE(stale_controller.IsValid());
+
+    gobot::RobotController current_controller =
+            simulation_server.GetRuntimeScene()->GetRobotController("robot");
+    ASSERT_TRUE(current_controller.IsValid());
+    ASSERT_TRUE(current_controller.SetJointPositionTarget("joint", 0.5));
+    EXPECT_DOUBLE_EQ(simulation_server.GetWorld()->GetSceneState().robots[0].joints[0].target_position,
+                     0.5);
+
+    gobot::Object::Delete(robot);
+}
+
 TEST(TestSimulationServer, maps_normalized_robot_action_to_joint_position_targets) {
     gobot::SimulationServer simulation_server;
 
@@ -893,6 +1032,399 @@ TEST(TestSimulationServer, reports_error_when_stepping_without_world) {
     EXPECT_FALSE(simulation_server.GetLastError().empty());
     EXPECT_FALSE(simulation_server.Reset());
     EXPECT_FALSE(simulation_server.StepOnce());
+}
+
+TEST(TestSimulationServer, external_driver_uses_fixed_clock_and_generation_checked_lifecycle) {
+    gobot::SimulationServer simulation_server;
+    simulation_server.SetFixedTimeStep(1.0 / 120.0);
+    simulation_server.SetMaxSubSteps(3);
+    simulation_server.SetSyncSceneOnFixedStep(false);
+
+    auto* scene_root = gobot::Object::New<gobot::Node>();
+    auto first_driver = gobot::MakeRef<gobot::TestExternalSimulationDriver>();
+    const std::uint64_t first_token = simulation_server.BeginExternalSession(
+            first_driver, scene_root, 0.005, 4);
+    ASSERT_NE(first_token, 0);
+    EXPECT_TRUE(simulation_server.HasExternalSession());
+    EXPECT_TRUE(simulation_server.HasActiveSession());
+    EXPECT_FALSE(simulation_server.HasWorld());
+    EXPECT_EQ(simulation_server.GetSceneRoot(), scene_root);
+    EXPECT_NEAR(simulation_server.GetFixedTimeStep(), 0.005, CMP_EPSILON);
+    EXPECT_EQ(simulation_server.GetMaxSubSteps(), 4);
+
+    simulation_server.SetFixedTimeStep(0.01);
+    EXPECT_NEAR(simulation_server.GetFixedTimeStep(), 0.005, CMP_EPSILON);
+    EXPECT_NE(simulation_server.GetLastError().find("external simulation session"),
+              std::string::npos);
+    simulation_server.SetMaxSubSteps(2);
+    EXPECT_EQ(simulation_server.GetMaxSubSteps(), 4);
+    EXPECT_NE(simulation_server.GetLastError().find("external simulation session"),
+              std::string::npos);
+    gobot::PhysicsWorldSettings changed_settings = simulation_server.GetPhysicsWorldSettings();
+    changed_settings.fixed_time_step = 0.02;
+    simulation_server.SetPhysicsWorldSettings(changed_settings);
+    EXPECT_NEAR(simulation_server.GetFixedTimeStep(), 0.005, CMP_EPSILON);
+
+    simulation_server.SetPaused(false);
+    int callback_count = 0;
+    EXPECT_EQ(simulation_server.Step(0.011, [&](gobot::RealType fixed_delta) {
+        ++callback_count;
+        EXPECT_NEAR(fixed_delta, 0.005, CMP_EPSILON);
+    }), 2);
+    EXPECT_EQ(callback_count, 2);
+    EXPECT_EQ(first_driver->step_count, 2);
+    EXPECT_NEAR(first_driver->last_fixed_delta, 0.005, CMP_EPSILON);
+    EXPECT_EQ(first_driver->sync_count, 0);
+    EXPECT_TRUE(simulation_server.SyncSceneFromWorld());
+    EXPECT_EQ(first_driver->sync_count, 1);
+
+    EXPECT_TRUE(simulation_server.ResetExternalSession(first_token));
+    EXPECT_EQ(first_driver->reset_count, 1);
+    EXPECT_EQ(first_driver->sync_count, 2);
+
+    auto second_driver = gobot::MakeRef<gobot::TestExternalSimulationDriver>();
+    const std::uint64_t second_token = simulation_server.BeginExternalSession(
+            second_driver, scene_root, 0.002, 6);
+    ASSERT_NE(second_token, 0);
+    EXPECT_NE(second_token, first_token);
+    EXPECT_EQ(first_driver->close_count, 1);
+    EXPECT_FALSE(simulation_server.EndExternalSession(first_token));
+    EXPECT_TRUE(simulation_server.EndExternalSession(second_token));
+    EXPECT_EQ(second_driver->close_count, 1);
+    EXPECT_FALSE(simulation_server.HasActiveSession());
+    EXPECT_NEAR(simulation_server.GetFixedTimeStep(), 1.0 / 120.0, CMP_EPSILON);
+    EXPECT_EQ(simulation_server.GetMaxSubSteps(), 3);
+
+    gobot::Object::Delete(scene_root);
+}
+
+TEST(TestSimulationServer, rejects_non_finite_timing_at_external_and_frame_boundaries) {
+    gobot::SimulationServer simulation_server;
+    auto* scene_root = gobot::Object::New<gobot::Node>();
+    auto driver = gobot::MakeRef<gobot::TestExternalSimulationDriver>();
+    const gobot::RealType original_fixed_dt = simulation_server.GetFixedTimeStep();
+
+    simulation_server.SetFixedTimeStep(std::numeric_limits<gobot::RealType>::quiet_NaN());
+    EXPECT_DOUBLE_EQ(simulation_server.GetFixedTimeStep(), original_fixed_dt);
+    simulation_server.SetFixedTimeStep(std::numeric_limits<gobot::RealType>::infinity());
+    EXPECT_DOUBLE_EQ(simulation_server.GetFixedTimeStep(), original_fixed_dt);
+    simulation_server.SetTimeScale(std::numeric_limits<gobot::RealType>::quiet_NaN());
+    EXPECT_DOUBLE_EQ(simulation_server.GetTimeScale(), 1.0);
+    simulation_server.SetTimeScale(std::numeric_limits<gobot::RealType>::infinity());
+    EXPECT_DOUBLE_EQ(simulation_server.GetTimeScale(), 1.0);
+
+    EXPECT_EQ(simulation_server.BeginExternalSession(
+                      driver,
+                      scene_root,
+                      std::numeric_limits<gobot::RealType>::quiet_NaN(),
+                      4),
+              0);
+    EXPECT_EQ(simulation_server.BeginExternalSession(
+                      driver,
+                      scene_root,
+                      std::numeric_limits<gobot::RealType>::infinity(),
+                      4),
+              0);
+    EXPECT_FALSE(simulation_server.HasActiveSession());
+
+    const std::uint64_t token = simulation_server.BeginExternalSession(
+            driver, scene_root, 0.005, 4);
+    ASSERT_NE(token, 0);
+    simulation_server.SetPaused(false);
+    EXPECT_EQ(simulation_server.Step(
+                      std::numeric_limits<gobot::RealType>::quiet_NaN()),
+              0);
+    EXPECT_TRUE(simulation_server.IsFaulted());
+    EXPECT_TRUE(simulation_server.IsPaused());
+    EXPECT_TRUE(std::isfinite(simulation_server.GetAccumulator()));
+    EXPECT_EQ(driver->step_count, 0);
+
+    EXPECT_TRUE(simulation_server.EndExternalSession(token));
+    gobot::Object::Delete(scene_root);
+}
+
+TEST(TestSimulationServer, external_close_rejects_reentrant_session_begin) {
+    gobot::SimulationServer simulation_server;
+    auto* scene_root = gobot::Object::New<gobot::Node>();
+    auto first_driver = gobot::MakeRef<gobot::TestExternalSimulationDriver>();
+    auto reentrant_driver = gobot::MakeRef<gobot::TestExternalSimulationDriver>();
+    std::uint64_t reentrant_token = 1;
+    first_driver->close_callback = [&]() {
+        reentrant_token = simulation_server.BeginExternalSession(
+                reentrant_driver, scene_root, 0.002, 3);
+    };
+    ASSERT_NE(simulation_server.BeginExternalSession(
+                      first_driver, scene_root, 0.005, 4),
+              0);
+
+    simulation_server.ClearWorld();
+
+    EXPECT_EQ(reentrant_token, 0);
+    EXPECT_EQ(first_driver->close_count, 1);
+    EXPECT_EQ(reentrant_driver->close_count, 0);
+    EXPECT_FALSE(simulation_server.HasActiveSession());
+    EXPECT_NE(simulation_server.GetLastError().find("while another session is closing"),
+              std::string::npos);
+    gobot::Object::Delete(scene_root);
+}
+
+TEST(TestSimulationServer, session_transitions_revalidate_scene_roots_after_close_callbacks) {
+    gobot::SimulationServer simulation_server;
+    auto* active_root = gobot::Object::New<gobot::Node>();
+    auto* pending_root = gobot::Object::New<gobot::Node>();
+    auto first_driver = gobot::MakeRef<gobot::TestExternalSimulationDriver>();
+    auto pending_driver = gobot::MakeRef<gobot::TestExternalSimulationDriver>();
+    first_driver->close_callback = [&]() {
+        gobot::Object::Delete(pending_root);
+        pending_root = nullptr;
+    };
+    ASSERT_NE(simulation_server.BeginExternalSession(
+                      first_driver, active_root, 0.005, 4),
+              0);
+
+    EXPECT_EQ(simulation_server.BeginExternalSession(
+                      pending_driver, pending_root, 0.002, 3),
+              0);
+    EXPECT_EQ(first_driver->close_count, 1);
+    EXPECT_EQ(pending_driver->close_count, 0);
+    EXPECT_FALSE(simulation_server.HasActiveSession());
+    EXPECT_NE(simulation_server.GetLastError().find("scene root was deleted"),
+              std::string::npos);
+
+    auto build_driver = gobot::MakeRef<gobot::TestExternalSimulationDriver>();
+    auto* pending_robot = CreateRobotScene();
+    build_driver->close_callback = [&]() {
+        gobot::Object::Delete(pending_robot);
+        pending_robot = nullptr;
+    };
+    ASSERT_NE(simulation_server.BeginExternalSession(
+                      build_driver, active_root, 0.005, 4),
+              0);
+    EXPECT_FALSE(simulation_server.BuildWorldFromScene(pending_robot));
+    EXPECT_EQ(build_driver->close_count, 1);
+    EXPECT_FALSE(simulation_server.HasActiveSession());
+    EXPECT_NE(simulation_server.GetLastError().find("scene root was deleted"),
+              std::string::npos);
+
+    gobot::Object::Delete(active_root);
+}
+
+TEST(TestSimulationServer, manual_external_sync_failure_latches_and_pauses_session) {
+    gobot::SimulationServer simulation_server;
+    simulation_server.SetSyncSceneOnFixedStep(false);
+    auto* scene_root = gobot::Object::New<gobot::Node>();
+    auto driver = gobot::MakeRef<gobot::TestExternalSimulationDriver>();
+    driver->sync_result = false;
+    driver->last_error = "render-rate external sync failed";
+    const std::uint64_t token = simulation_server.BeginExternalSession(
+            driver, scene_root, 0.005, 4);
+    ASSERT_NE(token, 0);
+    simulation_server.SetPaused(false);
+
+    EXPECT_FALSE(simulation_server.SyncSceneFromWorld());
+    EXPECT_TRUE(simulation_server.IsFaulted());
+    EXPECT_TRUE(simulation_server.IsPaused());
+    EXPECT_EQ(simulation_server.GetLastError(), "render-rate external sync failed");
+    EXPECT_EQ(driver->sync_count, 1);
+
+    driver->sync_result = true;
+    EXPECT_TRUE(simulation_server.ResetExternalSession(token));
+    EXPECT_FALSE(simulation_server.IsFaulted());
+    EXPECT_EQ(driver->sync_count, 2);
+    EXPECT_TRUE(simulation_server.EndExternalSession(token));
+    gobot::Object::Delete(scene_root);
+}
+
+TEST(TestSimulationServer, external_sync_failure_after_advance_counts_and_consumes_tick) {
+    gobot::SimulationServer simulation_server;
+    auto* scene_root = gobot::Object::New<gobot::Node>();
+    auto driver = gobot::MakeRef<gobot::TestExternalSimulationDriver>();
+    driver->sync_result = false;
+    driver->last_error = "external scene sync failed";
+    const std::uint64_t token = simulation_server.BeginExternalSession(
+            driver, scene_root, 0.005, 4);
+    ASSERT_NE(token, 0);
+
+    simulation_server.SetPaused(false);
+    EXPECT_EQ(simulation_server.Step(0.005), 1);
+    EXPECT_EQ(driver->step_count, 1);
+    EXPECT_EQ(driver->sync_count, 1);
+    EXPECT_EQ(simulation_server.GetFrameCount(), 1);
+    EXPECT_NEAR(simulation_server.GetSimulationTime(), 0.005, CMP_EPSILON);
+    EXPECT_NEAR(simulation_server.GetAccumulator(), 0.0, CMP_EPSILON);
+    EXPECT_EQ(simulation_server.GetLastStepCount(), 1);
+    EXPECT_EQ(simulation_server.GetLastError(), "external scene sync failed");
+    EXPECT_TRUE(simulation_server.IsFaulted());
+    EXPECT_TRUE(simulation_server.IsPaused());
+
+    simulation_server.SetPaused(false);
+    EXPECT_EQ(simulation_server.Step(0.005), 0);
+    EXPECT_EQ(driver->step_count, 1);
+    EXPECT_TRUE(simulation_server.IsPaused());
+
+    driver->sync_result = true;
+    EXPECT_TRUE(simulation_server.ResetExternalSession(token));
+    EXPECT_FALSE(simulation_server.IsFaulted());
+    EXPECT_EQ(driver->reset_count, 1);
+    EXPECT_EQ(driver->sync_count, 2);
+    simulation_server.SetPaused(false);
+    EXPECT_EQ(simulation_server.Step(0.005), 1);
+    EXPECT_EQ(driver->step_count, 2);
+
+    EXPECT_TRUE(simulation_server.EndExternalSession(token));
+    gobot::Object::Delete(scene_root);
+}
+
+TEST(TestSimulationServer, native_sync_failure_after_advance_counts_step_once_tick) {
+    gobot::SimulationServer simulation_server;
+    simulation_server.SetFixedTimeStep(0.01);
+    gobot::Robot3D* robot = CreateRobotScene();
+    auto* base = gobot::Object::PointerCastTo<gobot::Link3D>(robot->GetChild(0));
+    ASSERT_NE(base, nullptr);
+    ASSERT_TRUE(simulation_server.BuildWorldFromScene(robot));
+
+    gobot::Object::Delete(base);
+
+    EXPECT_FALSE(simulation_server.StepOnce());
+    EXPECT_EQ(simulation_server.GetFrameCount(), 1);
+    EXPECT_NEAR(simulation_server.GetSimulationTime(), 0.01, CMP_EPSILON);
+    EXPECT_NEAR(simulation_server.GetAccumulator(), 0.0, CMP_EPSILON);
+    EXPECT_EQ(simulation_server.GetLastStepCount(), 1);
+    EXPECT_TRUE(simulation_server.IsFaulted());
+    EXPECT_TRUE(simulation_server.IsPaused());
+    EXPECT_NE(simulation_server.GetLastError().find("link 'robot.base'"),
+              std::string::npos);
+
+    simulation_server.ClearWorld();
+    gobot::Object::Delete(robot);
+}
+
+TEST(TestSimulationServer, second_fixed_callback_replacing_session_preserves_new_clock) {
+    gobot::SimulationServer simulation_server;
+    simulation_server.SetSyncSceneOnFixedStep(false);
+    auto* scene_root = gobot::Object::New<gobot::Node>();
+    auto first_driver = gobot::MakeRef<gobot::TestExternalSimulationDriver>();
+    auto second_driver = gobot::MakeRef<gobot::TestExternalSimulationDriver>();
+    const std::uint64_t first_token = simulation_server.BeginExternalSession(
+            first_driver, scene_root, 0.005, 4);
+    ASSERT_NE(first_token, 0);
+
+    simulation_server.SetPaused(false);
+    std::uint64_t second_token = 0;
+    int callback_count = 0;
+    EXPECT_EQ(simulation_server.Step(0.011, [&](gobot::RealType) {
+        ++callback_count;
+        if (callback_count == 2) {
+            second_token = simulation_server.BeginExternalSession(
+                    second_driver, scene_root, 0.002, 6);
+        }
+    }), 0);
+
+    ASSERT_NE(second_token, 0);
+    EXPECT_EQ(callback_count, 2);
+    EXPECT_EQ(first_driver->step_count, 1);
+    EXPECT_EQ(first_driver->close_count, 1);
+    EXPECT_EQ(second_driver->step_count, 0);
+    EXPECT_TRUE(simulation_server.HasExternalSession());
+    EXPECT_NEAR(simulation_server.GetFixedTimeStep(), 0.002, CMP_EPSILON);
+    EXPECT_EQ(simulation_server.GetFrameCount(), 0);
+    EXPECT_DOUBLE_EQ(simulation_server.GetSimulationTime(), 0.0);
+    EXPECT_DOUBLE_EQ(simulation_server.GetAccumulator(), 0.0);
+    EXPECT_EQ(simulation_server.GetLastStepCount(), 0);
+    EXPECT_NE(simulation_server.GetLastError().find("session changed"), std::string::npos);
+
+    EXPECT_TRUE(simulation_server.EndExternalSession(second_token));
+    gobot::Object::Delete(scene_root);
+}
+
+TEST(TestSimulationServer, fixed_callback_resetting_current_session_aborts_without_negative_accumulator) {
+    gobot::SimulationServer simulation_server;
+    simulation_server.SetSyncSceneOnFixedStep(false);
+    auto* scene_root = gobot::Object::New<gobot::Node>();
+    auto driver = gobot::MakeRef<gobot::TestExternalSimulationDriver>();
+    const std::uint64_t token = simulation_server.BeginExternalSession(
+            driver, scene_root, 0.005, 4);
+    ASSERT_NE(token, 0);
+
+    simulation_server.SetPaused(false);
+    EXPECT_EQ(simulation_server.Step(0.005, [&](gobot::RealType) {
+        EXPECT_TRUE(simulation_server.ResetExternalSession(token));
+    }), 0);
+    EXPECT_EQ(driver->reset_count, 1);
+    EXPECT_EQ(driver->step_count, 0);
+    EXPECT_EQ(simulation_server.GetFrameCount(), 0);
+    EXPECT_DOUBLE_EQ(simulation_server.GetSimulationTime(), 0.0);
+    EXPECT_DOUBLE_EQ(simulation_server.GetAccumulator(), 0.0);
+    EXPECT_EQ(simulation_server.GetLastStepCount(), 0);
+    EXPECT_NE(simulation_server.GetLastError().find("session changed"), std::string::npos);
+
+    EXPECT_EQ(simulation_server.Step(0.005), 1);
+    EXPECT_EQ(driver->step_count, 1);
+    EXPECT_NEAR(simulation_server.GetAccumulator(), 0.0, CMP_EPSILON);
+
+    EXPECT_TRUE(simulation_server.EndExternalSession(token));
+    gobot::Object::Delete(scene_root);
+}
+
+TEST(TestSimulationServer, fixed_callback_closing_external_session_aborts_tick) {
+    gobot::SimulationServer simulation_server;
+    simulation_server.SetSyncSceneOnFixedStep(false);
+
+    auto* scene_root = gobot::Object::New<gobot::Node>();
+    auto driver = gobot::MakeRef<gobot::TestExternalSimulationDriver>();
+    const std::uint64_t token = simulation_server.BeginExternalSession(
+            driver, scene_root, 0.005, 4);
+    ASSERT_NE(token, 0);
+
+    EXPECT_FALSE(simulation_server.StepOnce([&](gobot::RealType) {
+        EXPECT_TRUE(simulation_server.EndExternalSession(token));
+    }));
+    EXPECT_EQ(driver->step_count, 0);
+    EXPECT_EQ(driver->close_count, 1);
+    EXPECT_FALSE(simulation_server.HasActiveSession());
+    EXPECT_EQ(simulation_server.GetFrameCount(), 0);
+    EXPECT_DOUBLE_EQ(simulation_server.GetSimulationTime(), 0.0);
+    EXPECT_DOUBLE_EQ(simulation_server.GetAccumulator(), 0.0);
+    EXPECT_EQ(simulation_server.GetLastStepCount(), 0);
+    EXPECT_NE(simulation_server.GetLastError().find("session changed"), std::string::npos);
+
+    gobot::Object::Delete(scene_root);
+}
+
+TEST(TestSimulationServer, external_reset_callback_closing_session_is_detected) {
+    gobot::SimulationServer simulation_server;
+    auto* scene_root = gobot::Object::New<gobot::Node>();
+    auto driver = gobot::MakeRef<gobot::TestExternalSimulationDriver>();
+    const std::uint64_t token = simulation_server.BeginExternalSession(
+            driver, scene_root, 0.005, 4);
+    ASSERT_NE(token, 0);
+    driver->reset_callback = [&]() {
+        EXPECT_TRUE(simulation_server.EndExternalSession(token));
+    };
+
+    EXPECT_FALSE(simulation_server.ResetExternalSession(token));
+    EXPECT_EQ(driver->reset_count, 1);
+    EXPECT_EQ(driver->close_count, 1);
+    EXPECT_FALSE(simulation_server.HasActiveSession());
+    EXPECT_NE(simulation_server.GetLastError().find("session changed"), std::string::npos);
+
+    gobot::Object::Delete(scene_root);
+}
+
+TEST(TestSimulationServer, fixed_callback_clearing_native_world_aborts_tick) {
+    gobot::SimulationServer simulation_server;
+    auto* robot = CreateRobotScene();
+    ASSERT_TRUE(simulation_server.BuildWorldFromScene(robot));
+
+    EXPECT_FALSE(simulation_server.StepOnce([&](gobot::RealType) {
+        simulation_server.ClearWorld();
+    }));
+    EXPECT_FALSE(simulation_server.HasActiveSession());
+    EXPECT_EQ(simulation_server.GetFrameCount(), 0);
+    EXPECT_DOUBLE_EQ(simulation_server.GetSimulationTime(), 0.0);
+    EXPECT_NE(simulation_server.GetLastError().find("session changed"), std::string::npos);
+
+    gobot::Object::Delete(robot);
 }
 
 TEST(TestSimulationServer, unavailable_backend_build_failure_does_not_keep_world) {

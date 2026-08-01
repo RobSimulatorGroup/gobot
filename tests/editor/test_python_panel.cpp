@@ -98,7 +98,7 @@ TEST_F(TestPythonPanel, failed_load_keeps_current_script_state) {
 
 TEST_F(TestPythonPanel, embedded_runtime_imports_public_gobot_package) {
     setenv("PYTHONNOUSERSITE", "1", 1);
-    setenv("PYTHONPATH", GOBOT_TEST_BUILD_PYTHON_DIR, 1);
+    setenv("PYTHONPATH", GOBOT_TEST_PYTHON_PATH, 1);
     setenv("GOBOT_PYTHON_EXECUTABLE", GOBOT_TEST_PYTHON_EXECUTABLE, 1);
 
     const std::filesystem::path result_path = project_path / "scripts" / "embedded_import.txt";

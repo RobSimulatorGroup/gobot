@@ -416,7 +416,7 @@ void CollectRobotNodes(const Node* node,
         snapshot.inertia_off_diagonal = link->GetInertiaOffDiagonal();
         link_index = robot_snapshot->links.size();
         robot_snapshot->links.push_back(std::move(snapshot));
-        scene_binding->links.push_back(link);
+        scene_binding->link_ids.push_back(link->GetInstanceId());
     } else if (const auto* joint = Object::PointerCastTo<Joint3D>(node)) {
         PhysicsJointSnapshot snapshot;
         snapshot.name = joint->GetName();
@@ -449,7 +449,7 @@ void CollectRobotNodes(const Node* node,
         snapshot.affine_actuator_inherit_range = joint->GetAffineActuatorInheritRange();
         snapshot.joint_type = static_cast<int>(joint->GetJointType());
         robot_snapshot->joints.push_back(std::move(snapshot));
-        scene_binding->joints.push_back(joint);
+        scene_binding->joint_ids.push_back(joint->GetInstanceId());
     } else if (const auto* collision_shape = Object::PointerCastTo<CollisionShape3D>(node)) {
         PhysicsShapeSnapshot snapshot = CaptureShapeSnapshot(collision_shape, global_transform);
         if (link_index.has_value()) {
@@ -485,14 +485,16 @@ void CollectSceneNodes(const Node* node,
         PhysicsRobotSnapshot robot_snapshot;
         robot_snapshot.name = robot->GetName();
         PhysicsRobotSceneBinding scene_binding;
-        scene_binding.robot = robot;
+        scene_binding.robot_id = robot->GetInstanceId();
         CollectRobotNodes(node,
                           &robot_snapshot,
                           &scene_binding,
                           &snapshot->loose_collision_shapes,
                           parent_global_transform);
         for (std::size_t index = 0; index < robot_snapshot.links.size(); ++index) {
-            if (IsImplicitVirtualRootLink(scene_binding.links[index], robot_snapshot)) {
+            const auto* link = Object::PointerCastTo<Link3D>(
+                    ObjectDB::GetInstance(scene_binding.link_ids[index]));
+            if (IsImplicitVirtualRootLink(link, robot_snapshot)) {
                 robot_snapshot.links[index].role = PhysicsLinkRole::VirtualRoot;
             }
         }
@@ -641,7 +643,7 @@ bool PhysicsSceneCompiler::Compile(const Node* scene_root,
         return false;
     }
 
-    compiled_scene->bindings.scene_root = scene_root;
+    compiled_scene->bindings.scene_root_id = scene_root->GetInstanceId();
     CollectSceneNodes(scene_root,
                       &compiled_scene->snapshot,
                       &compiled_scene->bindings,

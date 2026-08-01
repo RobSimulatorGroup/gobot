@@ -193,10 +193,24 @@ def main():
     context.load_scene("res://gobot_python_binding_cartpole.jscn")
     if mujoco_available:
         compiled_artifact = context.compile_scene_artifact(gobot.PhysicsBackendType.MuJoCoCpu)
+        assert compiled_artifact["schema_version"] == 2
+        assert compiled_artifact["producer"] == "mujoco"
         assert compiled_artifact["format"] == "mjcf"
+        assert compiled_artifact["producer_version"]
         assert compiled_artifact["robot_names"] == ["cartpole"]
         assert compiled_artifact["terrain_geom_groups"] == []
         assert compiled_artifact["dimensions"]["nq"] == 2
+        assert len(compiled_artifact["robots"]) == 1
+        robot_topology = compiled_artifact["robots"][0]
+        assert robot_topology["name"] == "cartpole"
+        assert robot_topology["runtime_prefix"] == "cartpole_"
+        controls = compiled_artifact["controls"]
+        assert len(controls) == compiled_artifact["dimensions"]["nu"]
+        assert [control["index"] for control in controls] == list(range(len(controls)))
+        assert robot_topology["control_indices"] == [
+            control["index"] for control in controls if control["robot"] == "cartpole"
+        ]
+        assert all(control["mode"] in {"position", "velocity", "direct"} for control in controls)
         assert context.has_world is False
     context.build_world(gobot.PhysicsBackendType.Null)
     try:

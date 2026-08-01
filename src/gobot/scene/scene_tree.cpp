@@ -80,7 +80,7 @@ bool SceneTree::PhysicsProcess(double time) {
     GOBOT_PROFILE_ZONE("SceneTree::PhysicsProcess");
     if (SimulationServer::HasInstance()) {
         SimulationServer* simulation = SimulationServer::GetInstance();
-        if (simulation->HasWorld() && !simulation->IsPaused()) {
+        if (simulation->HasActiveSession() && !simulation->IsPaused()) {
             simulation->Step(static_cast<RealType>(time),
                              [this](RealType fixed_delta) {
                                  GOBOT_PROFILE_ZONE("SceneTree::PhysicsProcessCallbacks");

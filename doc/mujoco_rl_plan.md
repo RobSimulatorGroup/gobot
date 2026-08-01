@@ -39,6 +39,10 @@ Compatibility wrappers can live above the core API.
   in vectorized RL stepping.
 - Editor playback should use the same Gobot action/control API as training, but
   it remains a visualization/debug surface rather than the training runtime.
+- Python-backed playback uses `gobot.sim.ProviderPlaySession`. It registers an
+  external driver with `SimulationServer`, which owns the fixed-step clock,
+  pause/reset/sync/stop lifecycle, and excludes a simultaneous native world.
+  The provider and its CUDA objects remain outside the SceneTree.
 
 Long-term, Gobot should provide an explicit runtime scene owner/root for
 headless simulation, offscreen rendering, editor Play Mode, and policy
@@ -325,8 +329,8 @@ The first provider infrastructure follows this split:
 ```text
 SceneTree / .jscn
   -> PhysicsSceneCompiler
-  -> PhysicsServer backend artifact compiler
-  -> versioned PhysicsSceneArtifact (canonical MJCF + digest + name map)
+  -> stateless PhysicsServer registry/compiler
+  -> PhysicsSceneArtifact schema v2
   -> gobot.rl.MuJoCoWarpProvider
   -> MuJoCo Warp model/data and Torch CUDA views
 ```
@@ -334,8 +338,12 @@ SceneTree / .jscn
 `AppContext.compile_scene_artifact()` performs compilation without installing a
 runtime `PhysicsWorld`. C++ and MuJoCo Warp communicate through the artifact
 value, not through `mjModel*`, Warp arrays, CUDA pointers, or editor state. The
-provider is an optional Python package layer and therefore is not a native
-`PhysicsBackendType` exposed to scene nodes or editor serialization.
+Schema v2 carries canonical content and digest, producer and producer-version
+metadata, dimensions, robot/body/joint topology, and ordered control topology.
+Providers validate those fields and consume the explicit control map rather
+than deriving actuator semantics from runtime names. The provider is a Python
+package layer and therefore is not a native `PhysicsBackendType` exposed to
+scene nodes or editor serialization.
 
 The provider owns persistent model/data arrays, a reset mask, zero-copy Torch
 views, runtime contact sensors, BVH terrain raycasts, per-world model fields,
@@ -343,6 +351,13 @@ and captured step/forward/reset/sense graphs. It rejects incompatible
 artifacts, changed captured storage, unavailable CUDA runtimes, fixed-capacity
 overflow, and non-finite state explicitly. The RSL-RL adapter preserves
 device-native action, observation, reward, and timeout tensors.
+
+Provider runtime fingerprints include the artifact digest, provider name and
+version, and normalized provider configuration. Prepared runtime assets use a
+content-addressed cache rooted at `$XDG_CACHE_HOME/gobot/physics`, or
+`~/.cache/gobot/physics` when XDG is unset. `GOBOT_PHYSICS_CACHE_DIR` can
+override the root for controlled environments. Cache entries use checksums,
+process locks, corruption invalidation, and atomic directory publication.
 
 `examples.go1.train.go1_warp_velocity_env.Go1WarpVelocityEnv` is the first
 complete CUDA task using this boundary. It implements the Go1 rough-terrain
@@ -354,11 +369,16 @@ is explicit in the training CLI and never falls back implicitly.
 
 ### Newton Admission Boundary
 
-Newton should use the same provider lifecycle before it becomes a public Gobot
-backend. A prototype may live in an optional Python provider/plugin and consume
-either the existing compiled artifact or a Newton-specific artifact registered
-through `PhysicsServer`. It must not add Newton handles or Warp arrays to
-`Scene`, `Robot3D`, `SimulationServer`, or editor APIs.
+`NewtonProvider` uses the same validated schema-v2 artifact and provider
+lifecycle without becoming a public Gobot backend. Its MJCF compatibility
+adapter caches materialized inline meshes using the runtime fingerprint. It
+must not add Newton handles or Warp arrays to `Scene`, `Robot3D`,
+`SimulationServer`, or editor APIs.
+
+For editor policy playback, `ProviderPlaySession` registers Newton as an
+external simulation driver. `SimulationServer` remains the single owner of the
+active native-or-external session and supplies fixed stepping, reset, scene
+synchronization, and deterministic shutdown.
 
 The initial Newton prototype must demonstrate all of the following:
 
@@ -371,10 +391,9 @@ The initial Newton prototype must demonstrate all of the following:
 - isolated optional dependency versions so Newton cannot silently replace the
   Warp/MuJoCo versions used by the MuJoCo Warp provider
 
-Until those checks pass, do not add `NewtonGpu` to the public backend enum and
-do not make Newton a core build or wheel dependency. The local upstream
-checkouts are references only; normal Gobot builds and wheels must not discover
-or import them implicitly.
+Do not add `NewtonGpu` to the public backend enum. Local upstream checkouts are
+references only; runtime integration goes through the packaged provider and
+the external-session contract.
 
 ## Randomization And Variants
 
@@ -412,6 +431,12 @@ Scene script boundary:
 
 - Play Mode runs `_ready`, `_process`, `_physics_process`, and `_exit_tree`.
 - Python Panel Run Once does not start Play Mode.
+- `ProviderPlaySession` uses the SimulationServer clock and closes its provider
+  idempotently when the session stops or is explicitly cleaned up.
+- Native and external simulation sessions cannot be active together.
+- External callback or scene-sync failures pause the session and preserve the
+  first diagnostic until reset, preventing a failing CUDA callback from being
+  retried every editor frame.
 
 Scene to runtime compile:
 

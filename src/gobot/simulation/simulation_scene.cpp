@@ -12,6 +12,10 @@
 
 namespace gobot {
 
+SimulationScene::SimulationScene()
+    : controller_session_state_(std::make_shared<RobotController::SessionState>()) {
+}
+
 bool SimulationScene::Initialize(Ref<PhysicsWorld> world, const Node* scene_root) {
     Clear();
     if (!world.IsValid()) {
@@ -33,6 +37,7 @@ bool SimulationScene::Initialize(Ref<PhysicsWorld> world, const Node* scene_root
 }
 
 void SimulationScene::Clear() {
+    controller_session_state_->generation.fetch_add(1, std::memory_order_release);
     world_.Reset();
     scene_root_ = nullptr;
     entities_.clear();
@@ -66,7 +71,15 @@ const SimulationEntity* SimulationScene::GetEntity(const std::string& entity_nam
 }
 
 RobotController SimulationScene::GetRobotController(const std::string& entity_name) const {
-    return RobotController(world_, GetEntity(entity_name));
+    const SimulationEntity* entity = GetEntity(entity_name);
+    if (!world_.IsValid() || entity == nullptr) {
+        return {};
+    }
+
+    return RobotController(world_,
+                           entity->GetName(),
+                           controller_session_state_,
+                           controller_session_state_->generation.load(std::memory_order_acquire));
 }
 
 bool SimulationScene::ResetEnvironment(std::size_t environment_index) {
@@ -424,7 +437,7 @@ RobotController SimulationScene::GetRequiredRobotController(const std::string& r
         return {};
     }
 
-    return RobotController(world_, entity);
+    return GetRobotController(robot_name);
 }
 
 void SimulationScene::SetLastError(std::string error) {

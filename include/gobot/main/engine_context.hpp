@@ -8,14 +8,12 @@
 
 #include "gobot/core/object.hpp"
 #include "gobot/physics/physics_types.hpp"
-#include "gobot/physics/physics_server.hpp"
 #include "gobot/rendering/renderer_debug_draw.hpp"
 #include "gobot/scene/scene_command.hpp"
 
 namespace gobot {
 
 class Node;
-class PhysicsServer;
 class ProjectSettings;
 class RuntimeSceneOwner;
 class SimulationServer;
@@ -26,7 +24,6 @@ public:
     using LoadSceneCallback = std::function<bool(const std::string& path)>;
 
     EngineContext(ProjectSettings* project_settings,
-                  PhysicsServer* physics_server,
                   SimulationServer* simulation_server);
 
     ~EngineContext();
@@ -105,7 +102,6 @@ private:
     void SetLastError(std::string error);
 
     ProjectSettings* project_settings_{nullptr};
-    PhysicsServer* physics_server_{nullptr};
     SimulationServer* simulation_server_{nullptr};
     Node* scene_root_{nullptr};
     bool owns_scene_root_{false};

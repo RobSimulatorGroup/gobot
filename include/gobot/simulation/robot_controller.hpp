@@ -6,6 +6,9 @@
 
 #pragma once
 
+#include <atomic>
+#include <cstdint>
+#include <memory>
 #include <string>
 #include <vector>
 
@@ -14,13 +17,11 @@
 
 namespace gobot {
 
-class SimulationEntity;
+class SimulationScene;
 
 class GOBOT_EXPORT RobotController {
 public:
     RobotController() = default;
-
-    RobotController(Ref<PhysicsWorld> world, const SimulationEntity* entity);
 
     bool IsValid() const;
 
@@ -54,6 +55,17 @@ public:
                                            const std::vector<RealType>& action);
 
 private:
+    friend class SimulationScene;
+
+    struct SessionState {
+        std::atomic<std::uint64_t> generation{0};
+    };
+
+    RobotController(Ref<PhysicsWorld> world,
+                    std::string entity_name,
+                    std::weak_ptr<const SessionState> session_state,
+                    std::uint64_t session_generation);
+
     bool EnsureReady();
 
     bool SetJointControl(const std::string& joint_name,
@@ -68,7 +80,9 @@ private:
     void SetLastError(std::string error);
 
     Ref<PhysicsWorld> world_;
-    const SimulationEntity* entity_{nullptr};
+    std::string entity_name_;
+    std::weak_ptr<const SessionState> session_state_;
+    std::uint64_t session_generation_{0};
     std::string last_error_;
 };
 

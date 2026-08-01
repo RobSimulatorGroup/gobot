@@ -25,8 +25,7 @@ public:
                                                 PhysicsSceneArtifact*,
                                                 std::string*)>;
 
-    explicit PhysicsServer(PhysicsBackendType backend_type = PhysicsBackendType::Null,
-                           bool register_singleton = true);
+    explicit PhysicsServer(bool register_singleton = true);
 
     ~PhysicsServer() override;
 
@@ -34,30 +33,20 @@ public:
 
     static bool HasInstance();
 
-    PhysicsBackendType GetBackendType() const;
+    static bool IsBackendAvailable(PhysicsBackendType backend_type);
 
-    void SetBackendType(PhysicsBackendType backend_type);
+    static PhysicsBackendInfo GetBackendInfo(PhysicsBackendType backend_type);
 
-    bool IsBackendAvailable(PhysicsBackendType backend_type) const;
+    static std::vector<PhysicsBackendInfo> GetBackendInfos();
 
-    PhysicsBackendInfo GetBackendInfo(PhysicsBackendType backend_type) const;
+    static Ref<PhysicsWorld> CreateWorld(PhysicsBackendType backend_type = PhysicsBackendType::Null,
+                                         const PhysicsWorldSettings& settings = {});
 
-    std::vector<PhysicsBackendInfo> GetBackendInfos() const;
-
-    Ref<PhysicsWorld> CreateWorld(const PhysicsWorldSettings& settings = {});
-
-    static PhysicsBackendInfo GetBackendInfoForBackend(PhysicsBackendType backend_type);
-
-    static std::vector<PhysicsBackendInfo> GetBackendInfosForAllBackends();
-
-    static Ref<PhysicsWorld> CreateWorldForBackend(PhysicsBackendType backend_type,
-                                                   const PhysicsWorldSettings& settings = {});
-
-    static bool CompileSceneArtifactForBackend(PhysicsBackendType backend_type,
-                                               PhysicsSceneSnapshot scene_snapshot,
-                                               const PhysicsWorldSettings& settings,
-                                               PhysicsSceneArtifact* artifact,
-                                               std::string* error = nullptr);
+    static bool CompileSceneArtifact(PhysicsBackendType backend_type,
+                                     PhysicsSceneSnapshot scene_snapshot,
+                                     const PhysicsWorldSettings& settings,
+                                     PhysicsSceneArtifact* artifact,
+                                     std::string* error = nullptr);
 
     static bool RegisterBackend(PhysicsBackendInfo info,
                                 WorldFactory factory,
@@ -66,7 +55,6 @@ public:
 private:
     static PhysicsServer* s_singleton;
 
-    PhysicsBackendType backend_type_{PhysicsBackendType::Null};
     bool registered_singleton_{false};
 };
 

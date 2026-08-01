@@ -1104,12 +1104,20 @@ bool MuJoCoSceneCompiler::Compile(PhysicsSceneSnapshot scene_snapshot,
 
     MuJoCoPhysicsWorld world;
     world.SetSettings(settings);
-    if (!world.Build(std::move(scene_snapshot))) {
+#ifdef GOBOT_HAS_MUJOCO
+    if (!world.CompileArtifactOnly(std::move(scene_snapshot))) {
         if (error != nullptr) {
             *error = world.GetLastError();
         }
         return false;
     }
+#else
+    GOB_UNUSED(scene_snapshot);
+    if (error != nullptr) {
+        *error = MuJoCoPhysicsWorld::GetUnavailableReason();
+    }
+    return false;
+#endif
     const PhysicsSceneArtifact* compiled_artifact = world.GetSceneArtifact();
     if (compiled_artifact == nullptr) {
         if (error != nullptr) {
@@ -1134,7 +1142,7 @@ bool MuJoCoPhysicsWorld::Build(PhysicsSceneSnapshot scene_snapshot) {
     }
 
 #ifdef GOBOT_HAS_MUJOCO
-    if (!CompileAuthoredModel()) {
+    if (!CompileAuthoredModel(true)) {
         return false;
     }
 
@@ -1310,20 +1318,7 @@ void MuJoCoPhysicsWorld::Step(RealType delta_time) {
         return;
     }
 
-    ApplyMuJoCoOptions(&model->opt, settings_);
-    model->opt.timestep = delta_time > 0.0 ? delta_time : settings_.fixed_time_step;
-    {
-        GOBOT_PROFILE_ZONE("MuJoCoPhysicsWorld::ApplyControls");
-        ApplyControlsToMuJoCo(0);
-    }
-    {
-        GOBOT_PROFILE_ZONE("MuJoCoPhysicsWorld::ApplyExternalForces");
-        ApplyExternalForcesToMuJoCo(0);
-    }
-    {
-        GOBOT_PROFILE_ZONE("MuJoCoPhysicsWorld::mj_step");
-        mj_step(model, data);
-    }
+    StepEnvironmentTick(0, delta_time);
     {
         GOBOT_PROFILE_ZONE("MuJoCoPhysicsWorld::SyncStateFromMuJoCo");
         SyncStateFromMuJoCo(0);
@@ -1493,20 +1488,7 @@ bool MuJoCoPhysicsWorld::StepEnvironment(std::size_t environment_index, RealType
         return false;
     }
 
-    ApplyMuJoCoOptions(&model->opt, settings_);
-    model->opt.timestep = delta_time > 0.0 ? delta_time : settings_.fixed_time_step;
-    {
-        GOBOT_PROFILE_ZONE("MuJoCoPhysicsWorld::ApplyControls");
-        ApplyControlsToMuJoCo(environment_index);
-    }
-    {
-        GOBOT_PROFILE_ZONE("MuJoCoPhysicsWorld::ApplyExternalForces");
-        ApplyExternalForcesToMuJoCo(environment_index);
-    }
-    {
-        GOBOT_PROFILE_ZONE("MuJoCoPhysicsWorld::mj_step");
-        mj_step(model, data);
-    }
+    StepEnvironmentTick(environment_index, delta_time);
     {
         GOBOT_PROFILE_ZONE("MuJoCoPhysicsWorld::SyncStateFromMuJoCo");
         SyncStateFromMuJoCo(environment_index);
@@ -1726,14 +1708,12 @@ bool MuJoCoPhysicsWorld::RunEnvironmentBatchTask(std::size_t environment_count,
 }
 
 bool MuJoCoPhysicsWorld::StepEnvironmentBatch(RealType delta_time, std::uint64_t ticks, std::size_t worker_count) {
-    return StepEnvironmentBatchInternal(delta_time, ticks, worker_count, true);
+    return StepEnvironmentBatchInternal(delta_time, ticks, worker_count);
 }
 
 bool MuJoCoPhysicsWorld::StepEnvironmentBatchInternal(RealType delta_time,
                                                       std::uint64_t ticks,
-                                                      std::size_t worker_count,
-                                                      bool sync_state,
-                                                      bool apply_controls) {
+                                                      std::size_t worker_count) {
 #ifdef GOBOT_HAS_MUJOCO
     if (ticks == 0) {
         last_error_.clear();
@@ -1758,33 +1738,14 @@ bool MuJoCoPhysicsWorld::StepEnvironmentBatchInternal(RealType delta_time,
         }
     }
 
-    for (std::size_t environment_index = 0; environment_index < environment_count; ++environment_index) {
-        auto* model = static_cast<mjModel*>(ModelForEnvironment(environment_index));
-        ApplyMuJoCoOptions(&model->opt, settings_);
-        model->opt.timestep = delta_time > 0.0 ? delta_time : settings_.fixed_time_step;
-    }
-
     const bool stepped = RunEnvironmentBatchTask(
             environment_count,
             worker_count,
-            [this, ticks, sync_state, apply_controls](std::size_t environment_index) {
-                if (apply_controls) {
-                    ApplyControlsToMuJoCo(environment_index);
-                }
-                ApplyExternalForcesToMuJoCo(environment_index);
-                auto* model = static_cast<mjModel*>(ModelForEnvironment(environment_index));
-                auto* data = static_cast<mjData*>(DataForEnvironment(environment_index));
-                if (model == nullptr || data == nullptr) {
-                    throw std::runtime_error(fmt::format(
-                            "MuJoCo runtime data for environment {} is unavailable.",
-                            environment_index));
-                }
+            [this, delta_time, ticks](std::size_t environment_index) {
                 for (std::uint64_t tick = 0; tick < ticks; ++tick) {
-                    mj_step(model, data);
+                    StepEnvironmentTick(environment_index, delta_time);
                 }
-                if (sync_state) {
-                    SyncStateFromMuJoCo(environment_index);
-                }
+                SyncStateFromMuJoCo(environment_index);
             });
     if (!stepped) {
         return false;
@@ -3295,7 +3256,18 @@ PhysicsRaycastHit MuJoCoPhysicsWorld::RaycastTerrainWithMuJoCo(const PhysicsRayc
     return result;
 }
 
-bool MuJoCoPhysicsWorld::CompileAuthoredModel() {
+bool MuJoCoPhysicsWorld::CompileArtifactOnly(PhysicsSceneSnapshot scene_snapshot) {
+    scene_snapshot_ = std::move(scene_snapshot);
+    scene_state_ = {};
+    external_forces_.clear();
+    if (!available_) {
+        SetLastError(GetUnavailableReason());
+        return false;
+    }
+    return CompileAuthoredModel(false);
+}
+
+bool MuJoCoPhysicsWorld::CompileAuthoredModel(bool build_runtime_bindings) {
     FreeModel();
     scene_artifact_ = {};
 
@@ -3346,10 +3318,10 @@ bool MuJoCoPhysicsWorld::CompileAuthoredModel() {
         robot_bindings_.push_back({robot_index, prefix});
     }
 
-    std::unique_ptr<mjModel, decltype(&mj_deleteModel)> validation_model(
+    std::unique_ptr<mjModel, decltype(&mj_deleteModel)> compiled_model(
             mj_compile(parent_spec, nullptr),
             mj_deleteModel);
-    if (!validation_model) {
+    if (!compiled_model) {
         const std::string compile_error =
                 mjs_getError(parent_spec) ? mjs_getError(parent_spec) : "unknown error";
         SetLastError(fmt::format("MuJoCo failed to compile authored scene model: {}", compile_error));
@@ -3363,35 +3335,17 @@ bool MuJoCoPhysicsWorld::CompileAuthoredModel() {
         return false;
     }
 
-    std::array<char, kMuJoCoErrorBufferSize> parse_error{};
-    std::unique_ptr<mjSpec, decltype(&mj_deleteSpec)> runtime_spec(
-            mj_parseXMLString(serialized_mjcf.c_str(),
-                              nullptr,
-                              parse_error.data(),
-                              static_cast<int>(parse_error.size())),
-            mj_deleteSpec);
-    if (!runtime_spec) {
-        SetLastError(fmt::format("MuJoCo failed to parse the compiled scene artifact: {}",
-                                 parse_error.data()));
-        return false;
-    }
-
-    mjModel* model = mj_compile(runtime_spec.get(), nullptr);
-    if (!model) {
-        const std::string compile_error =
-                mjs_getError(runtime_spec.get()) ? mjs_getError(runtime_spec.get()) : "unknown error";
-        SetLastError(fmt::format("MuJoCo failed to compile merged scene model: {}", compile_error));
-        return false;
-    }
-
-    model_ = model;
+    model_ = compiled_model.release();
     data_ = nullptr;
+    auto* model = static_cast<mjModel*>(model_);
     scene_artifact_.schema_version = MuJoCoSceneCompiler::kArtifactSchemaVersion;
     scene_artifact_.backend = PhysicsBackendType::MuJoCoCpu;
+    scene_artifact_.producer = "mujoco";
     scene_artifact_.format = "mjcf";
     scene_artifact_.content = std::move(serialized_mjcf);
     scene_artifact_.content_digest = ArtifactDigest(scene_artifact_.content);
-    scene_artifact_.backend_version = mj_versionString();
+    scene_artifact_.producer_version = mj_versionString();
+    scene_artifact_.backend_version = scene_artifact_.producer_version;
     scene_artifact_.nq = static_cast<std::size_t>(model->nq);
     scene_artifact_.nv = static_cast<std::size_t>(model->nv);
     scene_artifact_.nu = static_cast<std::size_t>(model->nu);
@@ -3405,15 +3359,85 @@ bool MuJoCoPhysicsWorld::CompileAuthoredModel() {
     }
     for (const MuJoCoRobotBinding& binding : robot_bindings_) {
         if (binding.robot_index < scene_snapshot_.robots.size()) {
-            scene_artifact_.robot_names.push_back(scene_snapshot_.robots[binding.robot_index].name);
+            const std::string& robot_name = scene_snapshot_.robots[binding.robot_index].name;
+            scene_artifact_.robot_names.push_back(robot_name);
             scene_artifact_.robot_prefixes.push_back(binding.prefix);
+            scene_artifact_.robots.push_back({robot_name, binding.prefix, {}, {}, {}});
         }
     }
-    BuildLinkBindings();
-    BuildJointBindings();
-    BuildSensorBindings();
 
-    LOG_INFO("MuJoCo merged physics model loaded: robots={}, nq={}, nv={}, joints={}",
+    auto find_robot_topology = [&](std::string_view runtime_name)
+            -> PhysicsArtifactRobotTopology* {
+        PhysicsArtifactRobotTopology* result = nullptr;
+        std::size_t matched_length = 0;
+        for (PhysicsArtifactRobotTopology& robot : scene_artifact_.robots) {
+            if (!robot.runtime_prefix.empty() &&
+                runtime_name.starts_with(robot.runtime_prefix) &&
+                robot.runtime_prefix.size() > matched_length) {
+                result = &robot;
+                matched_length = robot.runtime_prefix.size();
+            }
+        }
+        return result;
+    };
+
+    for (int body_id = 0; body_id < model->nbody; ++body_id) {
+        const char* name = mj_id2name(model, mjOBJ_BODY, body_id);
+        if (name != nullptr) {
+            if (auto* robot = find_robot_topology(name)) {
+                robot->body_names.emplace_back(name);
+            }
+        }
+    }
+    for (int joint_id = 0; joint_id < model->njnt; ++joint_id) {
+        const char* name = mj_id2name(model, mjOBJ_JOINT, joint_id);
+        if (name != nullptr) {
+            if (auto* robot = find_robot_topology(name)) {
+                robot->joint_names.emplace_back(name);
+            }
+        }
+    }
+    for (int actuator_id = 0; actuator_id < model->nu; ++actuator_id) {
+        const char* actuator_name_value = mj_id2name(model, mjOBJ_ACTUATOR, actuator_id);
+        const std::string actuator_name = actuator_name_value != nullptr
+                                                  ? actuator_name_value
+                                                  : fmt::format("actuator_{}", actuator_id);
+        std::string joint_name;
+        if (model->actuator_trntype[actuator_id] == mjTRN_JOINT ||
+            model->actuator_trntype[actuator_id] == mjTRN_JOINTINPARENT) {
+            const int joint_id = model->actuator_trnid[2 * actuator_id];
+            const char* joint_name_value = joint_id >= 0
+                                                   ? mj_id2name(model, mjOBJ_JOINT, joint_id)
+                                                   : nullptr;
+            if (joint_name_value != nullptr) {
+                joint_name = joint_name_value;
+            }
+        }
+        PhysicsArtifactRobotTopology* robot = find_robot_topology(
+                joint_name.empty() ? std::string_view(actuator_name) : std::string_view(joint_name));
+        const std::string mode = EndsWith(actuator_name, "_position")
+                                         ? "position"
+                                 : EndsWith(actuator_name, "_velocity")
+                                         ? "velocity"
+                                         : "direct";
+        scene_artifact_.controls.push_back({
+                actuator_id,
+                actuator_name,
+                joint_name,
+                mode,
+                robot != nullptr ? robot->name : std::string{}});
+        if (robot != nullptr) {
+            robot->control_indices.push_back(actuator_id);
+        }
+    }
+    if (build_runtime_bindings) {
+        BuildLinkBindings();
+        BuildJointBindings();
+        BuildSensorBindings();
+    }
+
+    LOG_INFO("MuJoCo {} compiled: robots={}, nq={}, nv={}, joints={}",
+             build_runtime_bindings ? "runtime model" : "scene artifact",
              robot_bindings_.size(),
              model->nq,
              model->nv,
@@ -3971,7 +3995,31 @@ void* MuJoCoPhysicsWorld::DataForEnvironment(std::size_t environment_index) cons
     return nullptr;
 }
 
-void MuJoCoPhysicsWorld::ApplyControlsToMuJoCo(std::size_t environment_index) {
+void MuJoCoPhysicsWorld::StepEnvironmentTick(std::size_t environment_index, RealType delta_time) {
+    auto* model = static_cast<mjModel*>(ModelForEnvironment(environment_index));
+    auto* data = static_cast<mjData*>(DataForEnvironment(environment_index));
+    if (model == nullptr || data == nullptr) {
+        return;
+    }
+
+    const RealType resolved_delta_time = delta_time > 0.0 ? delta_time : settings_.fixed_time_step;
+    ApplyMuJoCoOptions(&model->opt, settings_);
+    model->opt.timestep = resolved_delta_time;
+    {
+        GOBOT_PROFILE_ZONE("MuJoCoPhysicsWorld::ApplyControls");
+        ApplyControlsToMuJoCo(environment_index, resolved_delta_time);
+    }
+    {
+        GOBOT_PROFILE_ZONE("MuJoCoPhysicsWorld::ApplyExternalForces");
+        ApplyExternalForcesToMuJoCo(environment_index);
+    }
+    {
+        GOBOT_PROFILE_ZONE("MuJoCoPhysicsWorld::mj_step");
+        mj_step(model, data);
+    }
+}
+
+void MuJoCoPhysicsWorld::ApplyControlsToMuJoCo(std::size_t environment_index, RealType delta_time) {
     auto* model = static_cast<mjModel*>(ModelForEnvironment(environment_index));
     auto* data = static_cast<mjData*>(DataForEnvironment(environment_index));
     if (!model || !data) {
@@ -4001,6 +4049,12 @@ void MuJoCoPhysicsWorld::ApplyControlsToMuJoCo(std::size_t environment_index) {
         if (binding.dof_address < 0 || binding.dof_address >= model->nv) {
             continue;
         }
+
+        JointControllerState controller_state = MakeJointControllerState(joint_state);
+        if (binding.qpos_address >= 0 && binding.qpos_address < model->nq) {
+            controller_state.position = static_cast<RealType>(data->qpos[binding.qpos_address]);
+        }
+        controller_state.velocity = static_cast<RealType>(data->qvel[binding.dof_address]);
 
         if (binding.controllers.size() <= environment_index) {
             binding.controllers.resize(environment_index + 1, JointController(settings_.default_joint_gains));
@@ -4057,13 +4111,13 @@ void MuJoCoPhysicsWorld::ApplyControlsToMuJoCo(std::size_t environment_index) {
                         } else if (binding.passive_damping <= 0.0 &&
                                    settings_.default_joint_gains.velocity_damping > 0.0) {
                             data->qfrc_applied[binding.dof_address] -=
-                                    settings_.default_joint_gains.velocity_damping * joint_state.velocity;
+                                    settings_.default_joint_gains.velocity_damping * controller_state.velocity;
                         }
                     } else {
-                        const RealType effort = controller.ComputeEffort(MakeJointControllerState(joint_state),
+                        const RealType effort = controller.ComputeEffort(controller_state,
                                                                          MakeJointControllerCommand(joint_state),
                                                                          limits,
-                                                                         settings_.fixed_time_step);
+                                                                         delta_time);
                         if (binding.motor_actuator_id >= 0) {
                             SetMotorActuator(model, data, binding.motor_actuator_id, effort);
                         } else {
@@ -4082,10 +4136,10 @@ void MuJoCoPhysicsWorld::ApplyControlsToMuJoCo(std::size_t environment_index) {
                                             joint_state.target_velocity,
                                             damping);
                     } else {
-                        const RealType effort = controller.ComputeEffort(MakeJointControllerState(joint_state),
+                        const RealType effort = controller.ComputeEffort(controller_state,
                                                                          MakeJointControllerCommand(joint_state),
                                                                          limits,
-                                                                         settings_.fixed_time_step);
+                                                                         delta_time);
                         if (binding.motor_actuator_id >= 0) {
                             SetMotorActuator(model, data, binding.motor_actuator_id, effort);
                         } else {
@@ -4097,10 +4151,10 @@ void MuJoCoPhysicsWorld::ApplyControlsToMuJoCo(std::size_t environment_index) {
             continue;
         }
 
-        const RealType effort = controller.ComputeEffort(MakeJointControllerState(joint_state),
+        const RealType effort = controller.ComputeEffort(controller_state,
                                                          MakeJointControllerCommand(joint_state),
                                                          limits,
-                                                         settings_.fixed_time_step);
+                                                         delta_time);
         data->qfrc_applied[binding.dof_address] = effort;
     }
 }

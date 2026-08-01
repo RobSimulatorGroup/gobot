@@ -31,7 +31,7 @@ NEWTON_MODEL_CONFIG = NewtonModelConfig(
     contact_stiffness=5.0e4,
     contact_damping=5.0e2,
     contact_friction_stiffness=1.0e3,
-    default_contact_friction=0.75,
+    contact_friction_override=0.75,
 )
 
 
@@ -169,13 +169,10 @@ class Script(gobot.NodeScript):
         self._startup_stage_started_at = self._startup_started_at
         self._first_frame_warmup_started_at = None
         self.provider = None
-        self._runtime_settings_changed = False
+        self.play_session = None
         self.ticks = 0
         self.command = None
         self.previous_action = None
-        self._original_backend = self.context.backend_type
-        self._original_fixed_time_step = self.context.fixed_time_step
-        self._original_max_sub_steps = self.context.max_sub_steps
 
         try:
             self._startup_begin("validating the Gobot scene and policy contract")
@@ -305,12 +302,15 @@ class Script(gobot.NodeScript):
 
             self._startup_begin("resetting Newton state and synchronizing Gobot transforms")
             self._reset_provider()
-
-            self._runtime_settings_changed = True
-            self.context.fixed_time_step = PHYSICS_DT
-            self.context.max_sub_steps = max(POLICY_DECIMATION, 8)
-            self.context.backend_type = gobot.PhysicsBackendType.Null
             self._sync_robot_links()
+            self.play_session = gobot.sim.ProviderPlaySession(
+                self.context,
+                self.provider,
+                fixed_dt=PHYSICS_DT,
+                max_sub_steps=max(POLICY_DECIMATION, 8),
+                reset=self._reset_provider,
+                sync_scene=self._sync_robot_links,
+            ).start()
             self._startup_finish("initial Newton state synchronized")
             print(
                 "Newton G1 policy playback started: physics=Newton renderer=Gobot "
@@ -320,11 +320,9 @@ class Script(gobot.NodeScript):
             )
         except Exception:
             try:
-                self._close_provider()
+                self._close_play_session()
             except Exception as cleanup_error:
                 print(f"Newton G1 provider cleanup failed: {cleanup_error}")
-            finally:
-                self._restore_runtime_settings()
             raise
 
     def _physics_process(self, delta):
@@ -333,7 +331,8 @@ class Script(gobot.NodeScript):
             return
         input_state = getattr(self.context, "input", None)
         if input_state is not None and input_state.is_key_pressed("P"):
-            self._reset_provider()
+            if self.play_session is not None:
+                self.play_session.reset()
             return
 
         if input_state is not None and input_state.has_control_focus:
@@ -358,7 +357,6 @@ class Script(gobot.NodeScript):
             self.provider.set_joint_position_targets(self.layout, targets)
             self.previous_action.copy_(action)
 
-        self.provider.step(nsteps=1)
         self.ticks += 1
         print_every = max(1, int(round(PRINT_INTERVAL_SECONDS / PHYSICS_DT)))
         if self.ticks % print_every == 0:
@@ -378,7 +376,6 @@ class Script(gobot.NodeScript):
     def _process(self, delta):
         del delta
         if self.provider is not None:
-            self._sync_robot_links()
             if self._first_frame_warmup_started_at is not None:
                 elapsed = time.perf_counter() - self._first_frame_warmup_started_at
                 print(
@@ -388,23 +385,17 @@ class Script(gobot.NodeScript):
                 self._first_frame_warmup_started_at = None
 
     def _exit_tree(self):
-        try:
-            self._close_provider()
-        finally:
-            self._restore_runtime_settings()
+        self._close_play_session()
 
-    def _close_provider(self):
+    def _close_play_session(self):
+        play_session = self.play_session
+        self.play_session = None
+        if play_session is not None:
+            play_session.close()
         provider = self.provider
         self.provider = None
-        if provider is not None:
+        if provider is not None and play_session is None:
             provider.close()
-
-    def _restore_runtime_settings(self):
-        if self._runtime_settings_changed:
-            self.context.fixed_time_step = self._original_fixed_time_step
-            self.context.max_sub_steps = self._original_max_sub_steps
-            self.context.backend_type = self._original_backend
-            self._runtime_settings_changed = False
 
     def _observation(self):
         arrays = self.provider.arrays
@@ -461,9 +452,9 @@ class Script(gobot.NodeScript):
             .index_select(1, self.body_index)[0]
             .detach()
             .cpu()
-            .tolist()
+            .numpy()
         )
-        for name, pose in zip(LINK_NAMES, body_poses, strict=True):
-            position = pose[:3]
-            orientation_wxyz = (pose[6], pose[3], pose[4], pose[5])
-            self.links[name].set_global_transform(position, orientation_wxyz)
+        self.context._apply_link_pose_batch(
+            tuple(self.links[name] for name in LINK_NAMES),
+            body_poses,
+        )

@@ -9,6 +9,7 @@
 #include <string>
 #include <vector>
 
+#include "gobot/core/object_id.hpp"
 #include "gobot/physics/physics_types.hpp"
 
 namespace gobot {
@@ -19,13 +20,13 @@ class Node;
 class Robot3D;
 
 struct PhysicsRobotSceneBinding {
-    const Robot3D* robot{nullptr};
-    std::vector<const Link3D*> links;
-    std::vector<const Joint3D*> joints;
+    ObjectID robot_id{};
+    std::vector<ObjectID> link_ids;
+    std::vector<ObjectID> joint_ids;
 };
 
 struct PhysicsSceneBindings {
-    const Node* scene_root{nullptr};
+    ObjectID scene_root_id{};
     std::vector<PhysicsRobotSceneBinding> robots;
 };
 

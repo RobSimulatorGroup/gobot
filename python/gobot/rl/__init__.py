@@ -26,6 +26,8 @@ from . import locomotion, providers
 from .providers import (
     BatchPhysicsProvider,
     BatchProviderCapabilities,
+    CompiledControlTopology,
+    CompiledRobotTopology,
     CompiledSceneArtifact,
     GraphInvalidatedError,
     MuJoCoWarpContactSensorSpec,
@@ -56,6 +58,8 @@ __all__ = [
     "BatchPhysicsProvider",
     "BatchProviderCapabilities",
     "BatchSimulationRuntime",
+    "CompiledControlTopology",
+    "CompiledRobotTopology",
     "CompiledSceneArtifact",
     "CpuBatchEnv",
     "GobotSceneBatchBackend",

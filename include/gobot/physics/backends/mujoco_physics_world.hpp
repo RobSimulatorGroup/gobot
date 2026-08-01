@@ -166,9 +166,13 @@ protected:
 
 private:
 #ifdef GOBOT_HAS_MUJOCO
+    friend class MuJoCoSceneCompiler;
+
     struct RobotBatchLayout;
 
-    bool CompileAuthoredModel();
+    bool CompileArtifactOnly(PhysicsSceneSnapshot scene_snapshot);
+
+    bool CompileAuthoredModel(bool build_runtime_bindings = true);
 
     bool AddAuthoredRobotToSpec(void* parent_spec,
                                 const PhysicsRobotSnapshot& robot,
@@ -199,7 +203,9 @@ private:
 
     void* DataForEnvironment(std::size_t environment_index) const;
 
-    void ApplyControlsToMuJoCo(std::size_t environment_index);
+    void StepEnvironmentTick(std::size_t environment_index, RealType delta_time);
+
+    void ApplyControlsToMuJoCo(std::size_t environment_index, RealType delta_time);
 
     void ApplyExternalForcesToMuJoCo(std::size_t environment_index);
 
@@ -260,9 +266,7 @@ private:
 
     bool StepEnvironmentBatchInternal(RealType delta_time,
                                       std::uint64_t ticks,
-                                      std::size_t worker_count,
-                                      bool sync_state,
-                                      bool apply_controls = true);
+                                      std::size_t worker_count);
 
     bool EnsureBatchWorkers(std::size_t worker_count);
 

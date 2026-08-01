@@ -61,9 +61,8 @@ PhysicsBackendInfo MissingBackendInfo(PhysicsBackendType backend_type) {
 
 PhysicsServer* PhysicsServer::s_singleton = nullptr;
 
-PhysicsServer::PhysicsServer(PhysicsBackendType backend_type, bool register_singleton)
-    : backend_type_(backend_type),
-      registered_singleton_(register_singleton) {
+PhysicsServer::PhysicsServer(bool register_singleton)
+    : registered_singleton_(register_singleton) {
     if (registered_singleton_) {
         s_singleton = this;
     }
@@ -84,23 +83,11 @@ bool PhysicsServer::HasInstance() {
     return s_singleton != nullptr;
 }
 
-PhysicsBackendType PhysicsServer::GetBackendType() const {
-    return backend_type_;
-}
-
-void PhysicsServer::SetBackendType(PhysicsBackendType backend_type) {
-    backend_type_ = backend_type;
-}
-
-bool PhysicsServer::IsBackendAvailable(PhysicsBackendType backend_type) const {
+bool PhysicsServer::IsBackendAvailable(PhysicsBackendType backend_type) {
     return GetBackendInfo(backend_type).available;
 }
 
-PhysicsBackendInfo PhysicsServer::GetBackendInfo(PhysicsBackendType backend_type) const {
-    return GetBackendInfoForBackend(backend_type);
-}
-
-PhysicsBackendInfo PhysicsServer::GetBackendInfoForBackend(PhysicsBackendType backend_type) {
+PhysicsBackendInfo PhysicsServer::GetBackendInfo(PhysicsBackendType backend_type) {
     std::scoped_lock lock(BackendRegistryMutex());
     for (const BackendRegistration& registration : BackendRegistry()) {
         if (registration.info.type == backend_type) {
@@ -110,23 +97,15 @@ PhysicsBackendInfo PhysicsServer::GetBackendInfoForBackend(PhysicsBackendType ba
     return MissingBackendInfo(backend_type);
 }
 
-std::vector<PhysicsBackendInfo> PhysicsServer::GetBackendInfos() const {
-    return GetBackendInfosForAllBackends();
-}
-
-std::vector<PhysicsBackendInfo> PhysicsServer::GetBackendInfosForAllBackends() {
+std::vector<PhysicsBackendInfo> PhysicsServer::GetBackendInfos() {
     return {
-            GetBackendInfoForBackend(PhysicsBackendType::Null),
-            GetBackendInfoForBackend(PhysicsBackendType::MuJoCoCpu),
+            GetBackendInfo(PhysicsBackendType::Null),
+            GetBackendInfo(PhysicsBackendType::MuJoCoCpu),
     };
 }
 
-Ref<PhysicsWorld> PhysicsServer::CreateWorld(const PhysicsWorldSettings& settings) {
-    return CreateWorldForBackend(backend_type_, settings);
-}
-
-Ref<PhysicsWorld> PhysicsServer::CreateWorldForBackend(PhysicsBackendType backend_type,
-                                                       const PhysicsWorldSettings& settings) {
+Ref<PhysicsWorld> PhysicsServer::CreateWorld(PhysicsBackendType backend_type,
+                                             const PhysicsWorldSettings& settings) {
     WorldFactory factory;
     {
         std::scoped_lock lock(BackendRegistryMutex());
@@ -149,11 +128,11 @@ Ref<PhysicsWorld> PhysicsServer::CreateWorldForBackend(PhysicsBackendType backen
     return world;
 }
 
-bool PhysicsServer::CompileSceneArtifactForBackend(PhysicsBackendType backend_type,
-                                                   PhysicsSceneSnapshot scene_snapshot,
-                                                   const PhysicsWorldSettings& settings,
-                                                   PhysicsSceneArtifact* artifact,
-                                                   std::string* error) {
+bool PhysicsServer::CompileSceneArtifact(PhysicsBackendType backend_type,
+                                         PhysicsSceneSnapshot scene_snapshot,
+                                         const PhysicsWorldSettings& settings,
+                                         PhysicsSceneArtifact* artifact,
+                                         std::string* error) {
     ArtifactCompiler compiler;
     {
         std::scoped_lock lock(BackendRegistryMutex());
@@ -203,7 +182,6 @@ GOBOT_REGISTRATION {
 
     Class_<PhysicsServer>("PhysicsServer")
             .constructor()(CtorAsRawPtr)
-            .property("backend_type", &PhysicsServer::GetBackendType, &PhysicsServer::SetBackendType)
             .method("is_backend_available", &PhysicsServer::IsBackendAvailable)
             .method("create_world", &PhysicsServer::CreateWorld);
 

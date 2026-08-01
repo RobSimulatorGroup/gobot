@@ -36,14 +36,14 @@ std::vector<PhysicsBackendInfo> GetBackendInfos() {
     if (PhysicsServer::HasInstance()) {
         return PhysicsServer::GetInstance()->GetBackendInfos();
     }
-    return PhysicsServer::GetBackendInfosForAllBackends();
+    return PhysicsServer::GetBackendInfos();
 }
 
 PhysicsBackendInfo GetBackendInfo(PhysicsBackendType backend_type) {
     if (PhysicsServer::HasInstance()) {
         return PhysicsServer::GetInstance()->GetBackendInfo(backend_type);
     }
-    return PhysicsServer::GetBackendInfoForBackend(backend_type);
+    return PhysicsServer::GetBackendInfo(backend_type);
 }
 
 void DrawStatusText(bool ok, const char* available_text, const char* unavailable_text) {
@@ -52,7 +52,10 @@ void DrawStatusText(bool ok, const char* available_text, const char* unavailable
     ImGui::TextColored(color, "%s", ok ? available_text : unavailable_text);
 }
 
-void DrawTimingControls(SimulationServer* simulation) {
+void DrawTimingControls(SimulationServer* simulation, bool lock_provider_timing) {
+    if (lock_provider_timing) {
+        ImGui::BeginDisabled();
+    }
     const RealType fixed_time_step = simulation->GetFixedTimeStep();
     double physics_hz = fixed_time_step > 0.0 ? 1.0 / static_cast<double>(fixed_time_step) : 0.0;
     physics_hz = std::clamp(physics_hz, 1.0, 2000.0);
@@ -61,8 +64,10 @@ void DrawTimingControls(SimulationServer* simulation) {
             simulation->SetFixedTimeStep(static_cast<RealType>(1.0 / physics_hz));
         }
     }
-    if (ImGui::IsItemHovered()) {
-        ImGui::SetTooltip("Fixed physics tick rate. Higher values run more simulation ticks per second.");
+    if (ImGui::IsItemHovered(ImGuiHoveredFlags_AllowWhenDisabled)) {
+        ImGui::SetTooltip(lock_provider_timing
+                                  ? "Physics Hz is owned by the active external provider"
+                                  : "Fixed physics tick rate. Higher values run more simulation ticks per second.");
     }
 
     double fixed_dt = static_cast<double>(simulation->GetFixedTimeStep());
@@ -71,8 +76,13 @@ void DrawTimingControls(SimulationServer* simulation) {
             simulation->SetFixedTimeStep(static_cast<RealType>(fixed_dt));
         }
     }
-    if (ImGui::IsItemHovered()) {
-        ImGui::SetTooltip("Seconds per physics tick. This is the inverse of Physics Hz.");
+    if (ImGui::IsItemHovered(ImGuiHoveredFlags_AllowWhenDisabled)) {
+        ImGui::SetTooltip(lock_provider_timing
+                                  ? "Fixed dt is owned by the active external provider"
+                                  : "Seconds per physics tick. This is the inverse of Physics Hz.");
+    }
+    if (lock_provider_timing) {
+        ImGui::EndDisabled();
     }
 
     double time_scale = static_cast<double>(simulation->GetTimeScale());
@@ -82,12 +92,20 @@ void DrawTimingControls(SimulationServer* simulation) {
         }
     }
 
+    if (lock_provider_timing) {
+        ImGui::BeginDisabled();
+    }
     int max_sub_steps = simulation->GetMaxSubSteps();
     if (ImGui::InputInt("Max substeps", &max_sub_steps, 1, 4)) {
         simulation->SetMaxSubSteps(std::max(1, max_sub_steps));
     }
-    if (ImGui::IsItemHovered()) {
-        ImGui::SetTooltip("Maximum physics ticks allowed during one editor frame.");
+    if (ImGui::IsItemHovered(ImGuiHoveredFlags_AllowWhenDisabled)) {
+        ImGui::SetTooltip(lock_provider_timing
+                                  ? "Max substeps is owned by the active external provider"
+                                  : "Maximum physics ticks allowed during one editor frame.");
+    }
+    if (lock_provider_timing) {
+        ImGui::EndDisabled();
     }
 
     const float render_fps = ImGui::GetIO().Framerate;
@@ -183,7 +201,7 @@ void PhysicsPanel::OnImGuiContent() {
         return;
     }
 
-    if (!simulation->HasWorld() && simulation->GetBackendType() != selected_backend_) {
+    if (!simulation->HasActiveSession() && simulation->GetBackendType() != selected_backend_) {
         simulation->SetBackendType(selected_backend_);
     }
 
@@ -232,12 +250,19 @@ void PhysicsPanel::OnImGuiContent() {
     ImGui::Separator();
 
     const bool has_world = simulation->HasWorld();
-    DrawStatusText(has_world, "World built", "No world");
+    const bool has_active_session = simulation->HasActiveSession();
+    DrawStatusText(has_active_session,
+                   simulation->HasExternalSession() ? "External provider active" : "World built",
+                   "No simulation session");
+    if (simulation->IsFaulted()) {
+        ImGui::SameLine();
+        ImGui::TextColored(ImVec4(0.95f, 0.35f, 0.35f, 1.0f), "Reset required");
+    }
 
     ImGui::Text("Time: %.6f", static_cast<double>(simulation->GetSimulationTime()));
     ImGui::Text("Frame: %llu", static_cast<unsigned long long>(simulation->GetFrameCount()));
     if (ImGui::CollapsingHeader("Timing", ImGuiTreeNodeFlags_DefaultOpen)) {
-        DrawTimingControls(simulation);
+        DrawTimingControls(simulation, simulation->HasExternalSession());
     }
     const Vector3& gravity = simulation->GetPhysicsWorldSettings().gravity;
     ImGui::Text("Gravity: %.3f, %.3f, %.3f m/s^2",
@@ -272,20 +297,23 @@ void PhysicsPanel::OnImGuiContent() {
     }
 
     ImGui::SameLine();
-    const bool can_play = selected_info.available && scene_root != nullptr;
+    const bool can_play = scene_root != nullptr && !simulation->IsFaulted() &&
+                          (editor != nullptr || has_active_session || selected_info.available);
     if (!can_play) {
         ImGui::BeginDisabled();
     }
     if (simulation->IsPaused()) {
         if (ImGui::Button(ICON_MDI_PLAY " Play")) {
-            simulation->SetBackendType(selected_backend_);
+            if (!simulation->HasActiveSession()) {
+                simulation->SetBackendType(selected_backend_);
+            }
             if (editor != nullptr) {
                 editor->PlayScene();
             } else if (scene_root != nullptr) {
-                if (!simulation->HasWorld()) {
+                if (!simulation->HasActiveSession()) {
                     simulation->BuildWorldFromScene(scene_root);
                 }
-                simulation->SetPaused(!simulation->HasWorld());
+                simulation->SetPaused(!simulation->HasActiveSession());
             }
         }
     } else {
@@ -302,7 +330,7 @@ void PhysicsPanel::OnImGuiContent() {
     }
 
     ImGui::SameLine();
-    if (!has_world) {
+    if (!has_active_session) {
         ImGui::BeginDisabled();
     }
     if (ImGui::Button(ICON_MDI_RESTART " Reset")) {
@@ -326,7 +354,7 @@ void PhysicsPanel::OnImGuiContent() {
     if (ImGui::IsItemHovered(ImGuiHoveredFlags_AllowWhenDisabled)) {
         ImGui::SetTooltip("Stop playback and remove the current physics world");
     }
-    if (!has_world) {
+    if (!has_active_session) {
         ImGui::EndDisabled();
     }
 

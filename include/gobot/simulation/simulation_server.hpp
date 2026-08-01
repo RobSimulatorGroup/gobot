@@ -15,6 +15,7 @@
 #include "gobot/physics/physics_server.hpp"
 #include "gobot/physics/physics_scene_compiler.hpp"
 #include "gobot/physics/physics_world.hpp"
+#include "gobot/simulation/external_simulation_driver.hpp"
 #include "gobot/simulation/simulation_scene.hpp"
 
 namespace gobot {
@@ -64,6 +65,8 @@ public:
 
     void SetPaused(bool paused);
 
+    bool IsFaulted() const;
+
     bool ShouldSyncSceneOnFixedStep() const;
 
     void SetSyncSceneOnFixedStep(bool sync_scene_on_fixed_step);
@@ -77,6 +80,21 @@ public:
     void ClearWorld();
 
     bool HasWorld() const;
+
+    bool HasExternalSession() const;
+
+    bool HasActiveSession() const;
+
+    std::uint64_t BeginExternalSession(Ref<ExternalSimulationDriver> driver,
+                                       const Node* scene_root,
+                                       RealType fixed_time_step,
+                                       int max_sub_steps = 8);
+
+    bool EndExternalSession(std::uint64_t session_token);
+
+    bool ResetExternalSession(std::uint64_t session_token);
+
+    bool SyncExternalSession(std::uint64_t session_token);
 
     Ref<PhysicsWorld> GetWorld() const;
 
@@ -121,13 +139,28 @@ public:
     const std::string& GetLastError() const;
 
 private:
+    struct FixedStepResult {
+        bool succeeded{false};
+        bool advanced{false};
+        bool session_changed{false};
+    };
+
     bool EnsureWorldReady();
 
-    bool StepFixed(const FixedStepCallback* fixed_step_callback = nullptr);
+    bool EnsureActiveSessionReady();
+
+    bool IsExternalSessionCurrent(const Ref<ExternalSimulationDriver>& driver,
+                                  std::uint64_t session_token) const;
+
+    void ClearExternalSession();
+
+    FixedStepResult StepFixed(const FixedStepCallback* fixed_step_callback = nullptr);
 
     bool ApplyWorldStateToScene();
 
     void ResetClock();
+
+    void LatchFailure(const char* operation);
 
     void SetLastError(std::string error);
 
@@ -137,9 +170,18 @@ private:
     bool registered_singleton_{false};
     PhysicsWorldSettings physics_world_settings_;
     Ref<PhysicsWorld> world_;
+    Ref<ExternalSimulationDriver> external_driver_;
+    ObjectID external_scene_root_id_{};
+    std::uint64_t external_session_token_{0};
+    std::uint64_t next_session_token_{1};
+    bool external_session_transitioning_{false};
+    RealType saved_fixed_time_step_{1.0 / 60.0};
+    int saved_max_sub_steps_{8};
+    bool external_timing_saved_{false};
     PhysicsSceneBindings scene_bindings_;
     SimulationScene runtime_scene_;
     bool paused_{true};
+    bool faulted_{false};
     bool sync_scene_on_fixed_step_{true};
     RealType time_scale_{1.0};
     int max_sub_steps_{8};
@@ -147,6 +189,7 @@ private:
     RealType accumulator_{0.0};
     RealType simulation_time_{0.0};
     std::uint64_t frame_count_{0};
+    std::uint64_t session_clock_epoch_{1};
     std::string last_error_;
 };
 

@@ -11,7 +11,6 @@
 #include <gobot/editor/python_script_sync.hpp>
 #include <gobot/editor/scene_play_session.hpp>
 #include <gobot/main/engine_context.hpp>
-#include <gobot/physics/physics_server.hpp>
 #include <gobot/python/python_app_context.hpp>
 #include <gobot/scene/joint_3d.hpp>
 #include <gobot/scene/link_3d.hpp>
@@ -28,17 +27,18 @@ class TestScenePlaySession : public testing::Test {
 protected:
     void SetUp() override {
         project_settings = gobot::Object::New<gobot::ProjectSettings>();
-        physics_server = gobot::Object::New<gobot::PhysicsServer>();
         simulation_server = gobot::Object::New<gobot::SimulationServer>();
         context = std::make_unique<gobot::EngineContext>(project_settings,
-                                                         physics_server,
                                                          simulation_server);
         gobot::python::RegisterExternalAppContext(context.get());
         setenv("PYTHONNOUSERSITE", "1", 1);
         setenv("GOBOT_PYTHON_EXECUTABLE", GOBOT_TEST_PYTHON_EXECUTABLE, 1);
-        setenv("PYTHONPATH", GOBOT_TEST_BUILD_PYTHON_DIR, 1);
+        setenv("PYTHONPATH", GOBOT_TEST_PYTHON_PATH, 1);
         setenv("HOME", "/tmp/gobot-test-home", 1);
-        project_path = std::filesystem::temp_directory_path() / "gobot_scene_play_session_test";
+        const auto* test_info = testing::UnitTest::GetInstance()->current_test_info();
+        ASSERT_NE(test_info, nullptr);
+        project_path = std::filesystem::temp_directory_path() /
+                       (std::string{"gobot_scene_play_session_test_"} + test_info->name());
         std::filesystem::create_directories(project_path);
         std::ofstream(project_path / "gobot.py")
                 << "raise RuntimeError('project gobot.py must not shadow the engine package')\n";
@@ -68,7 +68,6 @@ protected:
             gobot::SceneTree::Delete(tree);
         }
         gobot::Object::Delete(simulation_server);
-        gobot::Object::Delete(physics_server);
         gobot::Object::Delete(project_settings);
         std::filesystem::remove_all(project_path);
     }
@@ -92,7 +91,6 @@ protected:
     }
 
     gobot::ProjectSettings* project_settings{nullptr};
-    gobot::PhysicsServer* physics_server{nullptr};
     gobot::SimulationServer* simulation_server{nullptr};
     std::unique_ptr<gobot::EngineContext> context;
     gobot::SceneTree* tree{nullptr};
@@ -201,6 +199,132 @@ class Script(gobot.NodeScript):
 
     session.Stop();
     EXPECT_EQ(ReadText("scripts/failure_cleanup.txt"), "process,exit");
+}
+
+TEST_F(TestScenePlaySession, external_provider_exception_is_reported_without_outer_python_gil) {
+    auto script = MakeScript("scripts/failing_provider.py", R"PY(
+import gobot
+
+class Provider:
+    def step(self, *, nsteps=1):
+        del nsteps
+        raise RuntimeError("external provider exploded")
+
+    def close(self):
+        pass
+
+class Script(gobot.NodeScript):
+    def _ready(self):
+        self.session = gobot.sim.ProviderPlaySession(
+            self.context,
+            Provider(),
+            fixed_dt=0.005,
+            sync_scene=lambda: None,
+        ).start()
+
+    def _exit_tree(self):
+        self.session.close()
+)PY");
+    root->SetScript(script);
+
+    ASSERT_TRUE(session.Start(root, context.get())) << session.GetLastError();
+    ASSERT_TRUE(simulation_server->HasExternalSession());
+
+    EXPECT_FALSE(simulation_server->StepOnce([&](gobot::RealType fixed_delta) {
+        session.NotifyPhysicsProcess(fixed_delta);
+    }));
+    EXPECT_NE(simulation_server->GetLastError().find("external provider exploded"),
+              std::string::npos);
+
+    session.Stop();
+    EXPECT_FALSE(simulation_server->HasActiveSession());
+}
+
+TEST_F(TestScenePlaySession, external_provider_sync_resolves_runtime_link_handles) {
+    auto* parent_link = gobot::Object::New<gobot::Link3D>();
+    parent_link->SetName("parent_link");
+    auto* child_link = gobot::Object::New<gobot::Link3D>();
+    child_link->SetName("child_link");
+    parent_link->AddChild(child_link);
+    root->AddChild(parent_link);
+    auto script = MakeScript("scripts/provider_sync.py", R"PY(
+import gobot
+import numpy as np
+
+class Provider:
+    def step(self, *, nsteps=1):
+        del nsteps
+
+    def close(self):
+        pass
+
+class Script(gobot.NodeScript):
+    def _ready(self):
+        self.parent_link = self.get_root().child(0)
+        self.child_link = self.parent_link.child(0)
+        self.session = gobot.sim.ProviderPlaySession(
+            self.context,
+            Provider(),
+            fixed_dt=0.005,
+            sync_scene=self._sync,
+        ).start()
+
+    def _sync(self):
+        original_parent = self.parent_link.position.copy()
+        invalid = np.asarray([
+            [9.0, 9.0, 9.0, 0.0, 0.0, 0.0, 1.0],
+            [0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0],
+        ], dtype=np.float32)
+        try:
+            self.context._apply_link_pose_batch(
+                (self.parent_link, self.child_link), invalid
+            )
+            raise AssertionError("invalid quaternion should reject the whole batch")
+        except ValueError:
+            pass
+        assert np.allclose(self.parent_link.position, original_parent)
+
+        non_finite = np.asarray(
+            [[np.nan, 0.0, 0.0, 0.0, 0.0, 0.0, 1.0]], dtype=np.float32
+        )
+        try:
+            self.context._apply_link_pose_batch((self.parent_link,), non_finite)
+            raise AssertionError("non-finite positions must be rejected")
+        except ValueError:
+            pass
+
+        poses = np.asarray([
+            [4.0, 5.0, 6.0, 0.0, 0.0, 0.0, 1.0],
+            [1.0, 2.0, 3.0, 0.0, 0.0, 0.0, 1.0],
+        ], dtype=np.float32)
+        self.context._apply_link_pose_batch(
+            (self.child_link, self.parent_link), poses
+        )
+
+    def _exit_tree(self):
+        self.session.close()
+)PY");
+    root->SetScript(script);
+
+    ASSERT_TRUE(session.Start(root, context.get())) << session.GetLastError();
+    ASSERT_TRUE(simulation_server->HasExternalSession());
+    ASSERT_TRUE(simulation_server->StepOnce([&](gobot::RealType fixed_delta) {
+        session.NotifyPhysicsProcess(fixed_delta);
+    })) << simulation_server->GetLastError();
+
+    auto* runtime_parent = gobot::Object::PointerCastTo<gobot::Link3D>(
+            session.GetRuntimeRoot()->GetChild(0));
+    ASSERT_NE(runtime_parent, nullptr);
+    auto* runtime_child = gobot::Object::PointerCastTo<gobot::Link3D>(
+            runtime_parent->GetChild(0));
+    ASSERT_NE(runtime_child, nullptr);
+    EXPECT_TRUE(runtime_parent->GetGlobalPosition().isApprox(
+            gobot::Vector3{1.0, 2.0, 3.0}, CMP_EPSILON));
+    EXPECT_TRUE(runtime_child->GetGlobalPosition().isApprox(
+            gobot::Vector3{4.0, 5.0, 6.0}, CMP_EPSILON));
+
+    session.Stop();
+    EXPECT_FALSE(simulation_server->HasActiveSession());
 }
 
 TEST_F(TestScenePlaySession, stop_after_scene_tree_finalize_does_not_touch_deleted_runtime_scene) {

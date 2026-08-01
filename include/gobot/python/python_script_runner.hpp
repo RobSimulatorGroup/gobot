@@ -48,6 +48,11 @@ public:
 
     static std::uint64_t GetExecutingSceneScriptEpoch();
 
+    static void ExecuteInSceneScriptContext(EngineContext* context,
+                                            Node* root,
+                                            std::uint64_t scene_epoch,
+                                            const std::function<void()>& callback);
+
     static bool HasSceneScriptInstance(Node* node);
 
     static PythonExecutionResult AttachSceneScript(Node* node,

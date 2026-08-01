@@ -120,6 +120,8 @@ public:
 
     const PhysicsSceneSnapshot& GetSceneSnapshot() const;
 
+    const PhysicsSceneTopology& GetSceneTopology() const;
+
     virtual const PhysicsSceneArtifact* GetSceneArtifact() const;
 
     const PhysicsSceneState& GetSceneState() const;
@@ -182,12 +184,15 @@ protected:
 
     PhysicsSceneState MakeSceneStateFromSnapshot() const;
 
+    PhysicsSceneTopology MakeSceneTopologyFromSnapshot() const;
+
     void ResetSceneStateFromSnapshot();
 
     void SetLastError(std::string error);
 
     PhysicsWorldSettings settings_;
     PhysicsSceneSnapshot scene_snapshot_;
+    PhysicsSceneTopology scene_topology_;
     PhysicsSceneState scene_state_;
     std::vector<PhysicsExternalForce> external_forces_;
     std::string last_error_;

@@ -155,17 +155,19 @@ The intended dependency boundary is:
 1. `Scene` owns authored robot data:
    - `Robot3D`, `Link3D`, `Joint3D`, `CollisionShape3D`, transforms, limits, inertial data, and material/mesh resources.
    - Scene nodes do not expose MuJoCo, Newton, CUDA, or backend object handles.
-2. `PhysicsServer` owns backend selection and backend capability reporting:
-   - available backends, CPU/GPU flags, robotics focus, and human-readable status.
-   - creation of backend-specific `PhysicsWorld` instances.
+2. `PhysicsServer` is a stateless backend registry and factory:
+   - registered backend metadata, availability, CPU/GPU flags, and capability reporting.
+   - backend-specific `PhysicsWorld` factories and compile-only artifact compilers.
+   - it does not own the selected backend or an active world.
 3. `PhysicsWorld` owns one runtime simulation world:
    - build from a scene snapshot.
    - reset, step, query, and eventually sync results back to scene nodes.
    - keep backend implementation details below this interface.
-4. `SimulationServer` should become the high-level simulation entry point:
+4. `SimulationServer` is the high-level simulation entry point:
    - fixed-step accumulation, pause/play/single-step, reset, time scale, deterministic mode.
-   - owns or references the active `PhysicsWorld`.
-   - is the API that editor tools and future Python bindings should call.
+   - owns exactly one active native `PhysicsWorld` or external simulation session.
+   - owns backend selection and the active session's timing, reset, synchronization, and cleanup.
+   - is the API that editor tools and Python bindings call.
 5. `Editor` only coordinates simulation controls and debug visualization:
    - play/pause, single-step, backend selection UI, collision/joint/contact overlays.
    - it should not call MuJoCo/Newton APIs directly.
@@ -175,7 +177,9 @@ Backend direction:
 - `NullPhysicsWorld` remains the always-available no-op backend for editor startup, tests, and systems without optional SDKs.
 - `MuJoCoCpu` should be the first real backend because it is robotics-focused and strong at articulated bodies, URDF-style robots, contacts, and deterministic CPU simulation.
 - `MuJoCoWarp` should be the high-throughput RL backend direction after the CPU semantics are tested. Its design should use persistent buffers, reset masks, and CUDA graph replay.
-- `NewtonGpu` should stay reserved for GPU robotics experiments, but it should not shape the public Gobot API before a small prototype proves the needed concepts.
+- Newton remains a Python/CUDA provider driven through an external simulation
+  session; it is not a native `PhysicsBackendType` and its handles do not enter
+  the scene or editor API.
 - `RigidIpcCpu` should be reserved as a research/validation backend based on intersection-free rigid body dynamics. Its role is robust contact, tight-fit geometry, and offline verification, not first-pass real-time robot control or RL throughput.
 - The backend list should be explicit rather than implicit: users should be able to see which backends are compiled in, available at runtime, CPU/GPU capable, and suitable for robotics.
 
@@ -188,12 +192,28 @@ The scene-to-physics data model should be backend-neutral:
 - `PhysicsJointSnapshot`: parent/child links, joint type, axis, limits, velocity/effort limits, current joint position.
 - `PhysicsShapeSnapshot`: shape type, transform, box/sphere/cylinder/mesh dimensions, disabled state.
 
+The implemented runtime boundary also includes:
+
+- `PhysicsSceneArtifact` schema v2, with canonical content and digest, explicit
+  producer/producer-version metadata, dimensions, robot topology, and ordered
+  control topology. Python providers validate this value before creating a
+  runtime and use its control mapping instead of inferring actuator modes.
+- `SimulationServer` native and external sessions are mutually exclusive.
+  External providers implement the fixed-step/reset/sync/close driver contract;
+  `gobot.sim.ProviderPlaySession` connects a Python provider to that contract.
+- Session timing is owned by `SimulationServer`; external sessions lock their
+  fixed step and sub-step limit until close. A step or scene-sync failure is
+  latched once, pauses playback, and requires a successful reset or rebuild.
+- Prepared provider assets use the per-user content-addressed cache under
+  `$XDG_CACHE_HOME/gobot/physics` (falling back to `~/.cache/gobot/physics`).
+  Entries are checksum-validated, lock-protected, and atomically published.
+
 Implementation phases:
 
 1. Stabilize the abstraction layer:
    - keep `PhysicsBackendType`, `PhysicsBackendInfo`, `PhysicsWorldSettings`, `PhysicsWorld`, and `PhysicsServer` backend-neutral.
    - add focused tests for backend capability reporting and scene snapshot capture.
-2. Add `SimulationServer`:
+2. Maintain `SimulationServer` as the sole active-session owner:
    - fixed time step, accumulated stepping, pause/play, single-step, reset.
    - build the active physics world from a scene root.
    - expose current simulation time, frame count, active backend, and last error.
@@ -218,9 +238,9 @@ Implementation phases:
    - ray cast, shape cast, overlap tests, closest points.
    - joint position/velocity/torque state.
    - position/velocity/torque drives for robot control.
-7. Add GPU backend prototypes only after the high-level contract is tested:
+7. Add GPU provider prototypes only after the high-level contract is tested:
    - `MuJoCoWarp` for CUDA graph vector simulation.
-   - `NewtonGpu` for robotics/GPU articulation experiments if it proves useful.
+   - Newton through the external provider/session boundary.
    - keep CPU/GPU backend differences behind capability flags and shared query/step APIs.
 8. Add a Rigid IPC prototype only after MuJoCo stepping and the shared synchronization path are usable:
    - keep it optional and CPU-first.
@@ -293,7 +313,6 @@ The binding should call stable C++ services. It should not duplicate editor logi
 
 ## Open Design Questions
 
-- Whether the simulation world should live only behind `SimulationServer`, or also have a scene subsystem object for multi-world editing.
 - Whether robotics algorithms live as engine plugins, Python packages, or C++ services with Python wrappers.
 - How to represent sensors and advanced robot articulations once the basic `Robot3D`/`Link3D`/`Joint3D` model is stable.
 - How command/undo should work across C++, editor UI, and Python.

@@ -1,6 +1,7 @@
 #include <gtest/gtest.h>
 
 #include <algorithm>
+#include <array>
 #include <cstdint>
 #include <cmath>
 #include <string_view>
@@ -87,7 +88,6 @@ TEST(TestPhysicsServer, exposes_backend_capabilities_without_optional_dependenci
 
 TEST(TestPhysicsServer, creates_world_for_selected_backend) {
     gobot::PhysicsServer physics_server;
-    physics_server.SetBackendType(gobot::PhysicsBackendType::Null);
 
     gobot::PhysicsWorldSettings settings;
     settings.fixed_time_step = 1.0 / 120.0;
@@ -97,7 +97,8 @@ TEST(TestPhysicsServer, creates_world_for_selected_backend) {
     settings.default_joint_gains.integral_gain = 1.5;
     settings.default_joint_gains.integral_limit = 0.25;
 
-    gobot::Ref<gobot::PhysicsWorld> world = physics_server.CreateWorld(settings);
+    gobot::Ref<gobot::PhysicsWorld> world = physics_server.CreateWorld(
+            gobot::PhysicsBackendType::Null, settings);
     ASSERT_TRUE(world.IsValid());
     EXPECT_EQ(world->GetBackendType(), gobot::PhysicsBackendType::Null);
     EXPECT_TRUE(world->IsAvailable());
@@ -178,6 +179,114 @@ TEST(TestPhysicsServer, captures_robot_scene_snapshot) {
     gobot::Object::Delete(robot);
 }
 
+TEST(TestPhysicsServer, builds_backend_neutral_indexed_topology_from_snapshot) {
+    gobot::PhysicsSceneSnapshot snapshot;
+
+    gobot::PhysicsRobotSnapshot first_robot;
+    first_robot.name = "first_robot";
+    gobot::PhysicsLinkSnapshot base_link;
+    base_link.name = "base";
+    gobot::PhysicsLinkSnapshot tip_link;
+    tip_link.name = "tip";
+    tip_link.role = gobot::PhysicsLinkRole::VirtualRoot;
+    first_robot.links = {base_link, tip_link};
+
+    gobot::PhysicsJointSnapshot hinge_joint;
+    hinge_joint.name = "hinge";
+    hinge_joint.parent_link = "base";
+    hinge_joint.child_link = "tip";
+    hinge_joint.joint_type = static_cast<int>(gobot::JointType::Revolute);
+    gobot::PhysicsJointSnapshot dangling_joint;
+    dangling_joint.name = "dangling";
+    dangling_joint.parent_link = "tip";
+    dangling_joint.child_link = "missing_link";
+    dangling_joint.joint_type = static_cast<int>(gobot::JointType::Prismatic);
+    first_robot.joints = {hinge_joint, dangling_joint};
+
+    gobot::PhysicsRobotSnapshot second_robot;
+    second_robot.name = "second_robot";
+    gobot::PhysicsLinkSnapshot second_base;
+    second_base.name = "root";
+    second_robot.links = {second_base};
+
+    snapshot.robots = {first_robot, second_robot};
+    // The topology is derived from authored arrays instead of trusting cached
+    // snapshot counters, which may come from an older serializer.
+    snapshot.total_link_count = 99;
+    snapshot.total_joint_count = 99;
+
+    gobot::PhysicsServer physics_server;
+    const gobot::Ref<gobot::PhysicsWorld> world = physics_server.CreateWorld();
+    ASSERT_TRUE(world.IsValid());
+    ASSERT_TRUE(world->Build(std::move(snapshot)));
+
+    const gobot::PhysicsSceneTopology& topology = world->GetSceneTopology();
+    ASSERT_EQ(topology.robots.size(), 2);
+    EXPECT_EQ(topology.total_link_count, 3);
+    EXPECT_EQ(topology.total_joint_count, 2);
+
+    const gobot::PhysicsRobotTopology& first = topology.robots[0];
+    EXPECT_EQ(first.index, 0);
+    EXPECT_EQ(first.name, "first_robot");
+    ASSERT_EQ(first.links.size(), 2);
+    ASSERT_EQ(first.joints.size(), 2);
+    EXPECT_EQ(first.links[0].index, 0);
+    EXPECT_EQ(first.links[0].scene_index, 0);
+    EXPECT_EQ(first.links[1].index, 1);
+    EXPECT_EQ(first.links[1].scene_index, 1);
+    EXPECT_EQ(first.links[1].role, gobot::PhysicsLinkRole::VirtualRoot);
+    EXPECT_EQ(first.joints[0].index, 0);
+    EXPECT_EQ(first.joints[0].scene_index, 0);
+    EXPECT_EQ(first.joints[0].parent_link_index, 0);
+    EXPECT_EQ(first.joints[0].child_link_index, 1);
+    EXPECT_EQ(first.joints[1].parent_link_index, 1);
+    EXPECT_EQ(first.joints[1].child_link_index, gobot::kInvalidPhysicsTopologyIndex);
+    EXPECT_EQ(first.links[0].outgoing_joint_indices, std::vector<std::size_t>({0}));
+    EXPECT_TRUE(first.links[0].incoming_joint_indices.empty());
+    EXPECT_EQ(first.links[1].incoming_joint_indices, std::vector<std::size_t>({0}));
+    EXPECT_EQ(first.links[1].outgoing_joint_indices, std::vector<std::size_t>({1}));
+
+    const gobot::PhysicsRobotTopology& second = topology.robots[1];
+    EXPECT_EQ(second.index, 1);
+    ASSERT_EQ(second.links.size(), 1);
+    EXPECT_EQ(second.links[0].scene_index, 2);
+}
+
+TEST(TestPhysicsServer, runtime_state_changes_do_not_rebuild_scene_topology) {
+    gobot::PhysicsSceneSnapshot snapshot;
+    gobot::PhysicsRobotSnapshot robot;
+    robot.name = "robot";
+    gobot::PhysicsLinkSnapshot link;
+    link.name = "base";
+    robot.links.push_back(link);
+    gobot::PhysicsJointSnapshot joint;
+    joint.name = "joint";
+    joint.parent_link = "base";
+    joint.joint_position = 0.25;
+    robot.joints.push_back(joint);
+    snapshot.robots.push_back(robot);
+
+    gobot::PhysicsServer physics_server;
+    const gobot::Ref<gobot::PhysicsWorld> world = physics_server.CreateWorld();
+    ASSERT_TRUE(world.IsValid());
+    ASSERT_TRUE(world->Build(std::move(snapshot)));
+
+    const gobot::PhysicsSceneTopology* topology = &world->GetSceneTopology();
+    ASSERT_EQ(topology->robots.size(), 1);
+    ASSERT_EQ(topology->robots[0].joints.size(), 1);
+    const gobot::PhysicsRobotTopology* robot_topology = &topology->robots[0];
+    const gobot::PhysicsJointTopology* joint_topology = &robot_topology->joints[0];
+    EXPECT_TRUE(world->ResetJointState("robot", "joint", 0.75, 0.5));
+    world->Step(0.01);
+    world->Reset();
+
+    EXPECT_EQ(&world->GetSceneTopology(), topology);
+    EXPECT_EQ(&topology->robots[0], robot_topology);
+    EXPECT_EQ(&topology->robots[0].joints[0], joint_topology);
+    EXPECT_EQ(topology->robots[0].joints[0].name, "joint");
+    EXPECT_EQ(topology->robots[0].joints[0].parent_link_index, 0);
+}
+
 TEST(TestPhysicsServer, mujoco_compiles_primary_and_affine_joint_actuators) {
 #ifdef GOBOT_HAS_MUJOCO
     auto* robot = gobot::Object::New<gobot::Robot3D>();
@@ -214,13 +323,42 @@ TEST(TestPhysicsServer, mujoco_compiles_primary_and_affine_joint_actuators) {
     tip->SetInertiaDiagonal({0.01, 0.05, 0.05});
     joint->AddChild(tip);
 
-    gobot::PhysicsServer physics_server(gobot::PhysicsBackendType::MuJoCoCpu);
-    const gobot::Ref<gobot::PhysicsWorld> world = physics_server.CreateWorld();
+    gobot::PhysicsServer physics_server;
+    const gobot::Ref<gobot::PhysicsWorld> world =
+            physics_server.CreateWorld(gobot::PhysicsBackendType::MuJoCoCpu);
     ASSERT_TRUE(BuildWorldFromScene(world, robot)) << world->GetLastError();
 
     const gobot::PhysicsSceneArtifact* artifact = world->GetSceneArtifact();
     ASSERT_NE(artifact, nullptr);
+    EXPECT_EQ(artifact->schema_version, gobot::MuJoCoSceneCompiler::kArtifactSchemaVersion);
+    EXPECT_EQ(artifact->producer, "mujoco");
+    EXPECT_EQ(artifact->format, "mjcf");
+    EXPECT_FALSE(artifact->producer_version.empty());
     EXPECT_EQ(artifact->nu, 2);
+    ASSERT_EQ(artifact->robots.size(), 1);
+    EXPECT_EQ(artifact->robots[0].name, "affine_robot");
+    EXPECT_EQ(artifact->robots[0].runtime_prefix, "affine_robot_");
+    EXPECT_EQ(artifact->robots[0].control_indices,
+              std::vector<std::int32_t>({0, 1}));
+    EXPECT_NE(std::find(artifact->robots[0].body_names.begin(),
+                        artifact->robots[0].body_names.end(),
+                        "affine_robot_tip"),
+              artifact->robots[0].body_names.end());
+    EXPECT_NE(std::find(artifact->robots[0].joint_names.begin(),
+                        artifact->robots[0].joint_names.end(),
+                        "affine_robot_hinge"),
+              artifact->robots[0].joint_names.end());
+    ASSERT_EQ(artifact->controls.size(), 2);
+    EXPECT_EQ(artifact->controls[0].index, 0);
+    EXPECT_EQ(artifact->controls[0].name, "affine_robot_hinge_position");
+    EXPECT_EQ(artifact->controls[0].joint, "affine_robot_hinge");
+    EXPECT_EQ(artifact->controls[0].mode, "position");
+    EXPECT_EQ(artifact->controls[0].robot, "affine_robot");
+    EXPECT_EQ(artifact->controls[1].index, 1);
+    EXPECT_EQ(artifact->controls[1].name, "affine_robot_hinge_affine");
+    EXPECT_EQ(artifact->controls[1].joint, "affine_robot_hinge");
+    EXPECT_EQ(artifact->controls[1].mode, "direct");
+    EXPECT_EQ(artifact->controls[1].robot, "affine_robot");
     EXPECT_NE(artifact->content.find("name=\"affine_robot_hinge_position\""),
               std::string::npos);
     EXPECT_NE(artifact->content.find("name=\"affine_robot_hinge_affine\""),
@@ -303,10 +441,11 @@ TEST(TestPhysicsServer, scene_compiler_keeps_import_provenance_out_of_runtime_sn
     EXPECT_EQ(first.snapshot.robots[0].links[0].name, second.snapshot.robots[0].links[0].name);
     EXPECT_DOUBLE_EQ(first.snapshot.robots[0].links[0].mass,
                      second.snapshot.robots[0].links[0].mass);
+    EXPECT_EQ(first.bindings.scene_root_id, robot->GetInstanceId());
     ASSERT_EQ(first.bindings.robots.size(), 1);
-    EXPECT_EQ(first.bindings.robots[0].robot, robot);
-    ASSERT_EQ(first.bindings.robots[0].links.size(), 1);
-    EXPECT_EQ(first.bindings.robots[0].links[0], link);
+    EXPECT_EQ(first.bindings.robots[0].robot_id, robot->GetInstanceId());
+    ASSERT_EQ(first.bindings.robots[0].link_ids.size(), 1);
+    EXPECT_EQ(first.bindings.robots[0].link_ids[0], link->GetInstanceId());
 
     gobot::Object::Delete(robot);
 }
@@ -949,8 +1088,8 @@ TEST(TestPhysicsServer, stores_joint_control_targets_in_scene_state) {
 }
 
 TEST(TestPhysicsServer, mujoco_world_reports_unavailable_when_not_built) {
-    gobot::PhysicsServer physics_server(gobot::PhysicsBackendType::MuJoCoCpu);
-    gobot::Ref<gobot::PhysicsWorld> world = physics_server.CreateWorld();
+    gobot::PhysicsServer physics_server;
+    gobot::Ref<gobot::PhysicsWorld> world = physics_server.CreateWorld(gobot::PhysicsBackendType::MuJoCoCpu);
 
 #ifndef GOBOT_HAS_MUJOCO
     EXPECT_FALSE(world.IsValid());
@@ -980,8 +1119,8 @@ TEST(TestPhysicsServer, mujoco_compiles_authored_floating_joint) {
     base->SetName("base");
     floating_joint->AddChild(base);
 
-    gobot::PhysicsServer physics_server(gobot::PhysicsBackendType::MuJoCoCpu);
-    gobot::Ref<gobot::PhysicsWorld> world = physics_server.CreateWorld();
+    gobot::PhysicsServer physics_server;
+    gobot::Ref<gobot::PhysicsWorld> world = physics_server.CreateWorld(gobot::PhysicsBackendType::MuJoCoCpu);
     ASSERT_TRUE(BuildWorldFromScene(world, robot)) << world->GetLastError();
     ASSERT_EQ(world->GetSceneState().robots.size(), 1);
     ASSERT_EQ(world->GetSceneState().robots[0].joints.size(), 1);
@@ -1008,8 +1147,8 @@ TEST(TestPhysicsServer, mujoco_exposes_backend_neutral_batch_robot_state) {
     base->SetInertiaDiagonal({0.01, 0.01, 0.01});
     floating_joint->AddChild(base);
 
-    gobot::PhysicsServer physics_server(gobot::PhysicsBackendType::MuJoCoCpu);
-    gobot::Ref<gobot::PhysicsWorld> world = physics_server.CreateWorld();
+    gobot::PhysicsServer physics_server;
+    gobot::Ref<gobot::PhysicsWorld> world = physics_server.CreateWorld(gobot::PhysicsBackendType::MuJoCoCpu);
     ASSERT_TRUE(BuildWorldFromScene(world, robot)) << world->GetLastError();
     ASSERT_TRUE(world->ConfigureEnvironmentBatch(3)) << world->GetLastError();
 
@@ -1035,6 +1174,177 @@ TEST(TestPhysicsServer, mujoco_exposes_backend_neutral_batch_robot_state) {
 #endif
 }
 
+TEST(TestPhysicsServer, mujoco_environment_batch_matches_single_ticks_for_software_pd_and_actual_dt) {
+#ifdef GOBOT_HAS_MUJOCO
+    auto* robot = gobot::Object::New<gobot::Robot3D>();
+    robot->SetName("pd_parity_robot");
+
+    auto* base = gobot::Object::New<gobot::Link3D>();
+    base->SetName("base");
+    base->SetMass(5.0);
+    base->SetInertiaDiagonal({1.0, 1.0, 1.0});
+    robot->AddChild(base);
+
+    auto* joint = gobot::Object::New<gobot::Joint3D>();
+    joint->SetName("hinge");
+    joint->SetJointType(gobot::JointType::Revolute);
+    joint->SetParentLink("base");
+    joint->SetChildLink("tip");
+    joint->SetAxis({0.0, 0.0, 1.0});
+    joint->SetLowerLimit(-1.5);
+    joint->SetUpperLimit(1.5);
+    joint->SetEffortLimit(100.0);
+    base->AddChild(joint);
+
+    auto* tip = gobot::Object::New<gobot::Link3D>();
+    tip->SetName("tip");
+    tip->SetMass(1.0);
+    tip->SetCenterOfMass({0.3, 0.0, 0.0});
+    tip->SetInertiaDiagonal({0.01, 0.05, 0.05});
+    joint->AddChild(tip);
+
+    constexpr gobot::RealType step_delta_time = 0.002;
+    constexpr std::uint64_t tick_count = 25;
+    constexpr std::size_t environment_count = 2;
+
+    gobot::PhysicsWorldSettings settings;
+    settings.fixed_time_step = 0.02;
+    settings.gravity = gobot::Vector3::Zero();
+    settings.default_joint_gains.position_stiffness = 8.0;
+    settings.default_joint_gains.velocity_damping = 0.5;
+    settings.default_joint_gains.integral_gain = 30.0;
+    settings.default_joint_gains.integral_limit = 1.0;
+    gobot::PhysicsWorldSettings actual_dt_settings = settings;
+    actual_dt_settings.fixed_time_step = step_delta_time;
+
+    gobot::PhysicsServer physics_server;
+    gobot::Ref<gobot::PhysicsWorld> batch_world = physics_server.CreateWorld(gobot::PhysicsBackendType::MuJoCoCpu, settings);
+    gobot::Ref<gobot::PhysicsWorld> single_world = physics_server.CreateWorld(gobot::PhysicsBackendType::MuJoCoCpu, settings);
+    gobot::Ref<gobot::PhysicsWorld> actual_dt_reference_world =
+            physics_server.CreateWorld(gobot::PhysicsBackendType::MuJoCoCpu, actual_dt_settings);
+    ASSERT_TRUE(BuildWorldFromScene(batch_world, robot)) << batch_world->GetLastError();
+    ASSERT_TRUE(BuildWorldFromScene(single_world, robot)) << single_world->GetLastError();
+    ASSERT_TRUE(BuildWorldFromScene(actual_dt_reference_world, robot))
+            << actual_dt_reference_world->GetLastError();
+    ASSERT_TRUE(batch_world->ConfigureEnvironmentBatch(environment_count)) << batch_world->GetLastError();
+    ASSERT_TRUE(single_world->ConfigureEnvironmentBatch(environment_count)) << single_world->GetLastError();
+    ASSERT_TRUE(actual_dt_reference_world->ConfigureEnvironmentBatch(environment_count))
+            << actual_dt_reference_world->GetLastError();
+
+    const std::array<gobot::RealType, environment_count> targets{0.75, -0.4};
+    for (std::size_t environment_index = 0; environment_index < environment_count; ++environment_index) {
+        for (const gobot::Ref<gobot::PhysicsWorld>& world :
+             {batch_world, single_world, actual_dt_reference_world}) {
+            ASSERT_TRUE(world->SetEnvironmentJointControl(environment_index,
+                                                          "pd_parity_robot",
+                                                          "hinge",
+                                                          gobot::PhysicsJointControlMode::Position,
+                                                          targets[environment_index]))
+                    << world->GetLastError();
+        }
+    }
+
+    ASSERT_TRUE(batch_world->StepEnvironmentBatch(step_delta_time, tick_count, 2))
+            << batch_world->GetLastError();
+    for (std::uint64_t tick = 0; tick < tick_count; ++tick) {
+        for (std::size_t environment_index = 0; environment_index < environment_count; ++environment_index) {
+            ASSERT_TRUE(single_world->StepEnvironment(environment_index, step_delta_time))
+                    << single_world->GetLastError();
+            ASSERT_TRUE(actual_dt_reference_world->StepEnvironment(environment_index, step_delta_time))
+                    << actual_dt_reference_world->GetLastError();
+        }
+    }
+
+    for (std::size_t environment_index = 0; environment_index < environment_count; ++environment_index) {
+        const gobot::PhysicsSceneState* batch_state = batch_world->GetEnvironmentState(environment_index);
+        const gobot::PhysicsSceneState* single_state = single_world->GetEnvironmentState(environment_index);
+        const gobot::PhysicsSceneState* actual_dt_state =
+                actual_dt_reference_world->GetEnvironmentState(environment_index);
+        ASSERT_NE(batch_state, nullptr);
+        ASSERT_NE(single_state, nullptr);
+        ASSERT_NE(actual_dt_state, nullptr);
+        ASSERT_EQ(batch_state->robots[0].joints.size(), 1);
+        const gobot::PhysicsJointState& batch_joint = batch_state->robots[0].joints[0];
+        const gobot::PhysicsJointState& single_joint = single_state->robots[0].joints[0];
+        const gobot::PhysicsJointState& actual_dt_joint = actual_dt_state->robots[0].joints[0];
+        EXPECT_NEAR(batch_joint.position, single_joint.position, 1.0e-10);
+        EXPECT_NEAR(batch_joint.velocity, single_joint.velocity, 1.0e-10);
+        EXPECT_NEAR(single_joint.position, actual_dt_joint.position, 1.0e-10);
+        EXPECT_NEAR(single_joint.velocity, actual_dt_joint.velocity, 1.0e-10);
+        EXPECT_GT(std::abs(batch_joint.position), 1.0e-6);
+    }
+
+    gobot::Object::Delete(robot);
+#endif
+}
+
+TEST(TestPhysicsServer, mujoco_environment_batch_recomputes_spring_wrench_each_tick) {
+#ifdef GOBOT_HAS_MUJOCO
+    auto* robot = gobot::Object::New<gobot::Robot3D>();
+    robot->SetName("spring_parity_robot");
+
+    auto* floating_joint = gobot::Object::New<gobot::Joint3D>();
+    floating_joint->SetName("floating_base_joint");
+    floating_joint->SetJointType(gobot::JointType::Floating);
+    floating_joint->SetChildLink("base");
+    robot->AddChild(floating_joint);
+
+    auto* base = gobot::Object::New<gobot::Link3D>();
+    base->SetName("base");
+    base->SetMass(1.0);
+    base->SetInertiaDiagonal({0.05, 0.05, 0.05});
+    floating_joint->AddChild(base);
+
+    gobot::PhysicsWorldSettings settings;
+    settings.fixed_time_step = 0.01;
+    settings.gravity = gobot::Vector3::Zero();
+    gobot::PhysicsServer physics_server;
+    gobot::Ref<gobot::PhysicsWorld> batch_world = physics_server.CreateWorld(gobot::PhysicsBackendType::MuJoCoCpu, settings);
+    gobot::Ref<gobot::PhysicsWorld> single_world = physics_server.CreateWorld(gobot::PhysicsBackendType::MuJoCoCpu, settings);
+    ASSERT_TRUE(BuildWorldFromScene(batch_world, robot)) << batch_world->GetLastError();
+    ASSERT_TRUE(BuildWorldFromScene(single_world, robot)) << single_world->GetLastError();
+    ASSERT_TRUE(batch_world->ConfigureEnvironmentBatch(2)) << batch_world->GetLastError();
+    ASSERT_TRUE(single_world->ConfigureEnvironmentBatch(2)) << single_world->GetLastError();
+
+    for (const gobot::Ref<gobot::PhysicsWorld>& world : {batch_world, single_world}) {
+        ASSERT_TRUE(world->SetLinkSpringForce("spring_parity_robot",
+                                              "base",
+                                              gobot::Vector3::Zero(),
+                                              {0.5, 0.0, 0.0},
+                                              {1.0, 0.0, 0.0}))
+                << world->GetLastError();
+    }
+
+    constexpr gobot::RealType delta_time = 0.004;
+    constexpr std::uint64_t tick_count = 40;
+    ASSERT_TRUE(batch_world->StepEnvironmentBatch(delta_time, tick_count, 2))
+            << batch_world->GetLastError();
+    for (std::uint64_t tick = 0; tick < tick_count; ++tick) {
+        for (std::size_t environment_index = 0; environment_index < 2; ++environment_index) {
+            ASSERT_TRUE(single_world->StepEnvironment(environment_index, delta_time))
+                    << single_world->GetLastError();
+        }
+    }
+
+    for (std::size_t environment_index = 0; environment_index < 2; ++environment_index) {
+        const gobot::PhysicsSceneState* batch_state = batch_world->GetEnvironmentState(environment_index);
+        const gobot::PhysicsSceneState* single_state = single_world->GetEnvironmentState(environment_index);
+        ASSERT_NE(batch_state, nullptr);
+        ASSERT_NE(single_state, nullptr);
+        ASSERT_EQ(batch_state->robots[0].links.size(), 1);
+        const gobot::PhysicsLinkState& batch_link = batch_state->robots[0].links[0];
+        const gobot::PhysicsLinkState& single_link = single_state->robots[0].links[0];
+        EXPECT_TRUE(batch_link.global_transform.matrix().isApprox(
+                single_link.global_transform.matrix(), 1.0e-10));
+        EXPECT_TRUE(batch_link.linear_velocity.isApprox(single_link.linear_velocity, 1.0e-10));
+        EXPECT_TRUE(batch_link.angular_velocity.isApprox(single_link.angular_velocity, 1.0e-10));
+        EXPECT_GT(batch_link.global_transform.translation().x(), 1.0e-3);
+    }
+
+    gobot::Object::Delete(robot);
+#endif
+}
+
 TEST(TestPhysicsServer, mujoco_sets_floating_link_velocity_per_environment) {
 #ifdef GOBOT_HAS_MUJOCO
     auto* robot = gobot::Object::New<gobot::Robot3D>();
@@ -1052,8 +1362,8 @@ TEST(TestPhysicsServer, mujoco_sets_floating_link_velocity_per_environment) {
     base->SetInertiaDiagonal({0.01, 0.01, 0.01});
     floating_joint->AddChild(base);
 
-    gobot::PhysicsServer physics_server(gobot::PhysicsBackendType::MuJoCoCpu);
-    gobot::Ref<gobot::PhysicsWorld> world = physics_server.CreateWorld();
+    gobot::PhysicsServer physics_server;
+    gobot::Ref<gobot::PhysicsWorld> world = physics_server.CreateWorld(gobot::PhysicsBackendType::MuJoCoCpu);
     ASSERT_TRUE(BuildWorldFromScene(world, robot)) << world->GetLastError();
     ASSERT_TRUE(world->ConfigureEnvironmentBatch(2)) << world->GetLastError();
 
@@ -1148,8 +1458,8 @@ TEST(TestPhysicsServer, mujoco_batch_step_applies_named_link_overrides_and_wrenc
     gobot::PhysicsWorldSettings settings;
     settings.fixed_time_step = 0.01;
     settings.gravity = gobot::Vector3::Zero();
-    gobot::PhysicsServer physics_server(gobot::PhysicsBackendType::MuJoCoCpu);
-    gobot::Ref<gobot::PhysicsWorld> world = physics_server.CreateWorld(settings);
+    gobot::PhysicsServer physics_server;
+    gobot::Ref<gobot::PhysicsWorld> world = physics_server.CreateWorld(gobot::PhysicsBackendType::MuJoCoCpu, settings);
     ASSERT_TRUE(BuildWorldFromScene(world, robot)) << world->GetLastError();
     ASSERT_TRUE(world->ConfigureEnvironmentBatch(2)) << world->GetLastError();
 
@@ -1215,8 +1525,8 @@ TEST(TestPhysicsServer, mujoco_batch_step_accepts_zero_pd_gains_and_rejects_inva
     gobot::PhysicsWorldSettings settings;
     settings.fixed_time_step = 0.005;
     settings.gravity = gobot::Vector3::Zero();
-    gobot::PhysicsServer physics_server(gobot::PhysicsBackendType::MuJoCoCpu);
-    gobot::Ref<gobot::PhysicsWorld> world = physics_server.CreateWorld(settings);
+    gobot::PhysicsServer physics_server;
+    gobot::Ref<gobot::PhysicsWorld> world = physics_server.CreateWorld(gobot::PhysicsBackendType::MuJoCoCpu, settings);
     ASSERT_TRUE(BuildWorldFromScene(world, robot)) << world->GetLastError();
     ASSERT_TRUE(world->ConfigureEnvironmentBatch(2)) << world->GetLastError();
 
@@ -1275,8 +1585,8 @@ TEST(TestPhysicsServer, mujoco_batch_step_reports_named_contact_history) {
     floating_joint->AddChild(base);
     root->AddChild(robot);
 
-    gobot::PhysicsServer physics_server(gobot::PhysicsBackendType::MuJoCoCpu);
-    gobot::Ref<gobot::PhysicsWorld> world = physics_server.CreateWorld();
+    gobot::PhysicsServer physics_server;
+    gobot::Ref<gobot::PhysicsWorld> world = physics_server.CreateWorld(gobot::PhysicsBackendType::MuJoCoCpu);
     ASSERT_TRUE(BuildWorldFromScene(world, root)) << world->GetLastError();
     ASSERT_TRUE(world->ConfigureEnvironmentBatch(1)) << world->GetLastError();
 
@@ -1337,8 +1647,8 @@ TEST(TestPhysicsServer, mujoco_authored_sensor_nodes_produce_runtime_values) {
     base->AddChild(contact);
     robot->AddChild(base);
 
-    gobot::PhysicsServer physics_server(gobot::PhysicsBackendType::MuJoCoCpu);
-    gobot::Ref<gobot::PhysicsWorld> world = physics_server.CreateWorld();
+    gobot::PhysicsServer physics_server;
+    gobot::Ref<gobot::PhysicsWorld> world = physics_server.CreateWorld(gobot::PhysicsBackendType::MuJoCoCpu);
     ASSERT_TRUE(BuildWorldFromScene(world, robot)) << world->GetLastError();
     world->Step(0.002);
 
@@ -1407,8 +1717,8 @@ TEST(TestPhysicsServer, mujoco_compiles_robot_and_loose_convex_mesh_shapes) {
     loose_collision->SetShape(convex_shape);
     root->AddChild(loose_collision);
 
-    gobot::PhysicsServer physics_server(gobot::PhysicsBackendType::MuJoCoCpu);
-    gobot::Ref<gobot::PhysicsWorld> world = physics_server.CreateWorld();
+    gobot::PhysicsServer physics_server;
+    gobot::Ref<gobot::PhysicsWorld> world = physics_server.CreateWorld(gobot::PhysicsBackendType::MuJoCoCpu);
     ASSERT_TRUE(BuildWorldFromScene(world, root)) << world->GetLastError();
 
     const gobot::PhysicsSceneArtifact* artifact = world->GetSceneArtifact();
@@ -1459,8 +1769,8 @@ TEST(TestPhysicsServer, mujoco_authored_terrain_compiles) {
     robot->AddChild(base);
     root->AddChild(robot);
 
-    gobot::PhysicsServer physics_server(gobot::PhysicsBackendType::MuJoCoCpu);
-    gobot::Ref<gobot::PhysicsWorld> world = physics_server.CreateWorld();
+    gobot::PhysicsServer physics_server;
+    gobot::Ref<gobot::PhysicsWorld> world = physics_server.CreateWorld(gobot::PhysicsBackendType::MuJoCoCpu);
     ASSERT_TRUE(BuildWorldFromScene(world, root)) << world->GetLastError();
     world->Step(0.002);
     EXPECT_EQ(world->GetSceneSnapshot().total_terrain_count, 1);
@@ -1482,7 +1792,7 @@ TEST(TestPhysicsServer, mujoco_authored_terrain_compiles) {
 
     gobot::PhysicsSceneArtifact recompiled_artifact;
     std::string compile_error;
-    ASSERT_TRUE(gobot::PhysicsServer::CompileSceneArtifactForBackend(
+    ASSERT_TRUE(gobot::PhysicsServer::CompileSceneArtifact(
             gobot::PhysicsBackendType::MuJoCoCpu,
             world->GetSceneSnapshot(),
             world->GetSettings(),
@@ -1527,8 +1837,8 @@ TEST(TestPhysicsServer, mujoco_terrain_raycast_ignores_robot_collision_geoms) {
     robot->AddChild(base);
     root->AddChild(robot);
 
-    gobot::PhysicsServer physics_server(gobot::PhysicsBackendType::MuJoCoCpu);
-    gobot::Ref<gobot::PhysicsWorld> world = physics_server.CreateWorld();
+    gobot::PhysicsServer physics_server;
+    gobot::Ref<gobot::PhysicsWorld> world = physics_server.CreateWorld(gobot::PhysicsBackendType::MuJoCoCpu);
     ASSERT_TRUE(BuildWorldFromScene(world, root)) << world->GetLastError();
 
     const gobot::PhysicsRaycastHit hit = world->RaycastTerrain({
@@ -1574,8 +1884,8 @@ TEST(TestPhysicsServer, mujoco_heightfield_raycast_uses_visible_heights_not_pale
     robot->AddChild(base);
     root->AddChild(robot);
 
-    gobot::PhysicsServer physics_server(gobot::PhysicsBackendType::MuJoCoCpu);
-    gobot::Ref<gobot::PhysicsWorld> world = physics_server.CreateWorld();
+    gobot::PhysicsServer physics_server;
+    gobot::Ref<gobot::PhysicsWorld> world = physics_server.CreateWorld(gobot::PhysicsBackendType::MuJoCoCpu);
     ASSERT_TRUE(BuildWorldFromScene(world, root)) << world->GetLastError();
 
     const gobot::PhysicsRaycastHit hit = world->RaycastTerrain({

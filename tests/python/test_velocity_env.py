@@ -45,6 +45,14 @@ class OptionalDependencyUnavailable(RuntimeError):
     pass
 
 
+def _artifact_digest(content: str) -> str:
+    value = 14695981039346656037
+    for byte in content.encode("utf-8"):
+        value ^= byte
+        value = (value * 1099511628211) & 0xFFFFFFFFFFFFFFFF
+    return f"fnv1a64:{value:016x}"
+
+
 def _require_torch():
     try:
         return __import__("torch")
@@ -1248,17 +1256,38 @@ def test_rsl_rl_wrapper_caches_alternating_device_native_observations():
 
 
 def test_compiled_scene_artifact_validates_robot_prefixes():
-    content = "<mujoco/>"
+    content = (
+        "<mujoco><worldbody><body name='go1_trunk'>"
+        "<joint name='go1_hip' type='hinge'/></body></worldbody>"
+        "<actuator><position name='go1_hip_position' joint='go1_hip'/>"
+        "</actuator></mujoco>"
+    )
     artifact_mapping = {
-        "schema_version": 1,
-        "backend": "MuJoCoCpu",
+        "schema_version": 2,
+        "producer": "mujoco",
         "format": "mjcf",
         "content": content,
-        "content_digest": "fnv1a64:f4053c9f5a9db5a9",
-        "backend_version": "3.10.0",
-        "dimensions": {"nq": 7, "nv": 6, "nu": 12},
-        "robot_names": ["go1"],
-        "robot_prefixes": ["go1_"],
+        "content_digest": _artifact_digest(content),
+        "producer_version": "3.10.0",
+        "dimensions": {"nq": 7, "nv": 6, "nu": 1},
+        "robots": [
+            {
+                "name": "go1",
+                "runtime_prefix": "go1_",
+                "body_names": ["go1_trunk"],
+                "joint_names": ["go1_hip"],
+                "control_indices": [0],
+            }
+        ],
+        "controls": [
+            {
+                "index": 0,
+                "name": "go1_hip_position",
+                "joint": "go1_hip",
+                "mode": "position",
+                "robot": "go1",
+            }
+        ],
         "terrain_geom_groups": [5],
     }
     artifact = CompiledSceneArtifact.from_mapping(artifact_mapping)
@@ -1266,13 +1295,107 @@ def test_compiled_scene_artifact_validates_robot_prefixes():
     assert artifact.dimensions["nq"] == 7
     assert artifact.content_digest == artifact.digest
     assert artifact.terrain_geom_groups == (5,)
+    assert artifact.robots[0].joint_names == ("go1_hip",)
+    assert artifact.controls[0].mode == "position"
+    first_fingerprint = artifact.runtime_fingerprint(
+        "Newton",
+        "1.4.0",
+        {"device": "cuda:0", "iterations": 10},
+    )
+    assert first_fingerprint == artifact.runtime_fingerprint(
+        "newton",
+        "1.4.0",
+        {"iterations": 10, "device": "cuda:0"},
+    )
+    assert first_fingerprint != artifact.runtime_fingerprint(
+        "newton",
+        "1.4.0",
+        {"device": "cuda:0", "iterations": 11},
+    )
+    assert first_fingerprint == artifact.runtime_fingerprint(
+        "newton",
+        "1.4.0",
+        {"device": "cuda:0", "iterations": np.int64(10)},
+    )
+    scalar_fingerprint = artifact.runtime_fingerprint(
+        "newton",
+        "1.4.0",
+        {"device": "cuda:0", "step": np.float32(0.5)},
+    )
+    assert scalar_fingerprint == artifact.runtime_fingerprint(
+        "newton",
+        "1.4.0",
+        {"step": 0.5, "device": "cuda:0"},
+    )
+    for changed_contract in (
+        {
+            **artifact_mapping,
+            "dimensions": {**artifact_mapping["dimensions"], "nq": 8},
+        },
+        {
+            **artifact_mapping,
+            "robots": [
+                {**artifact_mapping["robots"][0], "body_names": ["go1_other"]}
+            ],
+        },
+        {
+            **artifact_mapping,
+            "controls": [
+                {**artifact_mapping["controls"][0], "mode": "direct"}
+            ],
+        },
+        {**artifact_mapping, "terrain_geom_groups": [4]},
+    ):
+        changed = CompiledSceneArtifact.from_mapping(changed_contract)
+        assert first_fingerprint != changed.runtime_fingerprint(
+            "newton",
+            "1.4.0",
+            {"device": "cuda:0", "iterations": 10},
+        )
     try:
         CompiledSceneArtifact.from_mapping(
-            {"schema_version": 2, "format": "mjcf", "content": content}
+            {
+                **artifact_mapping,
+                "robots": [
+                    {
+                        **artifact_mapping["robots"][0],
+                        "joint_names": ["go1_other_joint"],
+                    }
+                ],
+            }
         )
-        raise AssertionError("unsupported artifact schema should fail")
+        raise AssertionError("control joint outside its declared robot should fail")
+    except ValueError as error:
+        assert "outside robot" in str(error)
+    try:
+        CompiledSceneArtifact.from_mapping(
+            {
+                "schema_version": 1,
+                "backend": "MuJoCoCpu",
+                "format": "mjcf",
+                "content": content,
+            }
+        )
+        raise AssertionError("public v1 artifact should fail")
     except ValueError as error:
         assert "schema" in str(error)
+    bridged = CompiledSceneArtifact.from_compiler_mapping(
+        {
+            "schema_version": 1,
+            "backend": "MuJoCoCpu",
+            "format": "mjcf",
+            "content": content,
+            "content_digest": _artifact_digest(content),
+            "backend_version": "3.10.0",
+            "dimensions": {"nq": 7, "nv": 6, "nu": 1},
+            "robot_names": ["go1"],
+            "robot_prefixes": ["go1_"],
+            "terrain_geom_groups": [5],
+        }
+    )
+    assert bridged.schema_version == 2
+    assert bridged.robots[0].body_names == ("go1_trunk",)
+    assert bridged.controls[0].joint == "go1_hip"
     try:
         CompiledSceneArtifact.from_mapping(
             {**artifact_mapping, "content": "<mujoco model='changed'/>"}

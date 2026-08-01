@@ -3,6 +3,8 @@
 from .base import (
     BatchPhysicsProvider,
     BatchProviderCapabilities,
+    CompiledControlTopology,
+    CompiledRobotTopology,
     CompiledSceneArtifact,
     GraphInvalidatedError,
     ProviderUnavailableError,
@@ -25,6 +27,8 @@ from .newton import (
 __all__ = [
     "BatchPhysicsProvider",
     "BatchProviderCapabilities",
+    "CompiledControlTopology",
+    "CompiledRobotTopology",
     "CompiledSceneArtifact",
     "GraphInvalidatedError",
     "MuJoCoWarpContactSensorSpec",

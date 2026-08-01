@@ -127,13 +127,18 @@ def test_playback_uses_stable_provider_and_warp_nn_without_newton_viewer() -> No
     assert "resolve_robot_layout" in source
     assert "set_joint_position_targets" in source
     assert "reset_robot_state" in source
-    assert "set_global_transform" in source
+    assert "ProviderPlaySession" in source
+    assert "self.play_session.reset()" in source
+    assert "_apply_link_pose_batch" in source
+    assert "self.provider.step" not in source
+    assert "self.context.backend_type" not in source
     assert 'type_name="Link3D"' in source
     assert "load_native_policy_contract" in source
     assert "_configure_native_g1_scene" in source
     assert "NewtonModelConfig" in source
     assert "joint_limit_stiffness=1.0e2" in source
     assert "contact_stiffness=5.0e4" in source
+    assert "contact_friction_override=0.75" in source
     assert "model_config=NEWTON_MODEL_CONFIG" in source
     assert "joint.friction_loss = 0.0" in source
     assert "joint.effort_limit = 0.0" in source

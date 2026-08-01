@@ -5,8 +5,11 @@
 #include <cstdint>
 #include <limits>
 #include <string_view>
+#include <unordered_set>
 
+#include "gobot/log.hpp"
 #include "gobot/simulation/locomotion_batch_runtime.hpp"
+#include "gobot/simulation/external_simulation_driver.hpp"
 
 namespace gobot::python {
 
@@ -59,14 +62,40 @@ py::dict SceneArtifactToPython(const PhysicsSceneArtifact& artifact) {
     dimensions["nsensor"] = artifact.nsensor;
     dimensions["nhfield"] = artifact.nhfield;
 
+    py::list robots;
+    for (const PhysicsArtifactRobotTopology& robot : artifact.robots) {
+        py::dict value;
+        value["name"] = robot.name;
+        value["runtime_prefix"] = robot.runtime_prefix;
+        value["body_names"] = robot.body_names;
+        value["joint_names"] = robot.joint_names;
+        value["control_indices"] = robot.control_indices;
+        robots.append(std::move(value));
+    }
+
+    py::list controls;
+    for (const PhysicsArtifactControlTopology& control : artifact.controls) {
+        py::dict value;
+        value["index"] = control.index;
+        value["name"] = control.name;
+        value["joint"] = control.joint;
+        value["mode"] = control.mode;
+        value["robot"] = control.robot;
+        controls.append(std::move(value));
+    }
+
     py::dict result;
     result["schema_version"] = artifact.schema_version;
     result["backend"] = artifact.backend;
+    result["producer"] = artifact.producer;
     result["format"] = artifact.format;
     result["content"] = artifact.content;
     result["content_digest"] = artifact.content_digest;
     result["backend_version"] = artifact.backend_version;
+    result["producer_version"] = artifact.producer_version;
     result["dimensions"] = std::move(dimensions);
+    result["robots"] = std::move(robots);
+    result["controls"] = std::move(controls);
     result["robot_names"] = artifact.robot_names;
     result["robot_prefixes"] = artifact.robot_prefixes;
     result["terrain_geom_groups"] = artifact.terrain_geom_groups;
@@ -113,6 +142,133 @@ py::array_t<T> VectorArrayView(std::vector<T>& values,
 }
 
 } // namespace
+
+class GOBOT_NO_EXPORT PyExternalSimulationDriver final : public ExternalSimulationDriver {
+    GOBCLASS(PyExternalSimulationDriver, ExternalSimulationDriver)
+
+public:
+    PyExternalSimulationDriver(EngineContext* context,
+                               ObjectID scene_root_id,
+                               std::uint64_t scene_epoch,
+                               py::object step,
+                               py::object reset,
+                               py::object sync_scene,
+                               py::object close)
+        : context_(context),
+          scene_root_id_(scene_root_id),
+          scene_epoch_(scene_epoch),
+          step_(std::move(step)),
+          reset_(std::move(reset)),
+          sync_scene_(std::move(sync_scene)),
+          close_(std::move(close)) {}
+
+    ~PyExternalSimulationDriver() override {
+        if (!Py_IsInitialized()) {
+            step_.release();
+            reset_.release();
+            sync_scene_.release();
+            close_.release();
+            return;
+        }
+        py::gil_scoped_acquire acquire;
+        ReleaseCallbacks();
+    }
+
+    bool Step(RealType fixed_delta) override {
+        return Invoke(step_, fixed_delta);
+    }
+
+    bool Reset() override {
+        return Invoke(reset_);
+    }
+
+    bool SyncScene() override {
+        return Invoke(sync_scene_);
+    }
+
+    void Close() override {
+        if (!Py_IsInitialized()) {
+            step_.release();
+            reset_.release();
+            sync_scene_.release();
+            close_.release();
+            return;
+        }
+        py::gil_scoped_acquire acquire;
+        py::object callback = std::move(close_);
+        ReleaseCallbacks();
+        if (callback && !callback.is_none()) {
+            if (!Invoke<false>(callback)) {
+                LOG_ERROR("External simulation provider close failed: {}", last_error_);
+            }
+        }
+    }
+
+    const std::string& GetLastError() const override {
+        return last_error_;
+    }
+
+private:
+    template <bool RequireScene = true, typename... Args>
+    bool Invoke(const py::object& callback, Args&&... args) {
+        py::gil_scoped_acquire acquire;
+        py::object retained_callback = callback;
+        if (!retained_callback || retained_callback.is_none()) {
+            last_error_ = "External simulation callback is no longer available.";
+            return false;
+        }
+        const bool context_is_live = context_ == nullptr || IsAppContextLive(context_);
+        if constexpr (RequireScene) {
+            if (!context_is_live) {
+                last_error_ = "External simulation context is no longer alive.";
+                return false;
+            }
+        }
+        Node* scene_root = Object::PointerCastTo<Node>(ObjectDB::GetInstance(scene_root_id_));
+        if constexpr (RequireScene) {
+            if (scene_root == nullptr) {
+                last_error_ = "External simulation scene is no longer alive.";
+                return false;
+            }
+        }
+        try {
+            if (context_is_live && scene_root != nullptr) {
+                PythonScriptRunner::ExecuteInSceneScriptContext(
+                        context_, scene_root, scene_epoch_, [&]() {
+                            retained_callback(std::forward<Args>(args)...);
+                        });
+            } else {
+                retained_callback(std::forward<Args>(args)...);
+            }
+            last_error_.clear();
+            return true;
+        } catch (py::error_already_set& error) {
+            last_error_ = error.what();
+            error.restore();
+            PyErr_Clear();
+            return false;
+        } catch (const std::exception& error) {
+            last_error_ = error.what();
+            return false;
+        }
+    }
+
+    void ReleaseCallbacks() {
+        step_ = py::object{};
+        reset_ = py::object{};
+        sync_scene_ = py::object{};
+        close_ = py::object{};
+    }
+
+    EngineContext* context_{nullptr};
+    ObjectID scene_root_id_{};
+    std::uint64_t scene_epoch_{0};
+    py::object step_;
+    py::object reset_;
+    py::object sync_scene_;
+    py::object close_;
+    std::string last_error_;
+};
 
 class PyLocomotionBatchView {
 public:
@@ -1316,6 +1472,140 @@ void RegisterManualAppContextBindings(py::module_& module) {
                 }
                 return SceneArtifactToPython(artifact);
             }, py::arg("backend_type") = PhysicsBackendType::MuJoCoCpu)
+            .def("_begin_external_simulation", [](EngineContext& context,
+                                                   py::object step,
+                                                   py::object reset,
+                                                   py::object sync_scene,
+                                                   py::object close,
+                                                   RealType fixed_time_step,
+                                                   int max_sub_steps) {
+                SimulationServer* simulation = context.GetSimulationServer();
+                Node* root = SceneRootForContext(context);
+                if (simulation == nullptr || root == nullptr) {
+                    throw std::runtime_error(
+                            "External simulation requires an active context and scene root");
+                }
+                Ref<ExternalSimulationDriver> driver =
+                        MakeRef<PyExternalSimulationDriver>(&context,
+                                                            root->GetInstanceId(),
+                                                            SceneEpochForContext(&context),
+                                                            std::move(step),
+                                                            std::move(reset),
+                                                            std::move(sync_scene),
+                                                            std::move(close));
+                const std::uint64_t token = simulation->BeginExternalSession(
+                        std::move(driver), root, fixed_time_step, max_sub_steps);
+                if (token == 0) {
+                    throw std::runtime_error(simulation->GetLastError());
+                }
+                return token;
+            },
+            py::arg("step"),
+            py::arg("reset"),
+            py::arg("sync_scene"),
+            py::arg("close"),
+            py::arg("fixed_time_step"),
+            py::arg("max_sub_steps") = 8)
+            .def("_end_external_simulation", [](EngineContext& context, std::uint64_t token) {
+                SimulationServer* simulation = context.GetSimulationServer();
+                if (simulation == nullptr) {
+                    throw std::runtime_error("External simulation server is unavailable");
+                }
+                if (!simulation->EndExternalSession(token)) {
+                    throw std::runtime_error(simulation->GetLastError());
+                }
+                return true;
+            }, py::arg("token"))
+            .def("_reset_external_simulation", [](EngineContext& context, std::uint64_t token) {
+                SimulationServer* simulation = context.GetSimulationServer();
+                if (simulation == nullptr) {
+                    throw std::runtime_error("External simulation server is unavailable");
+                }
+                if (!simulation->ResetExternalSession(token)) {
+                    throw std::runtime_error(simulation->GetLastError());
+                }
+                return true;
+            }, py::arg("token"))
+            .def("_sync_external_simulation", [](EngineContext& context, std::uint64_t token) {
+                SimulationServer* simulation = context.GetSimulationServer();
+                if (simulation == nullptr) {
+                    throw std::runtime_error("External simulation server is unavailable");
+                }
+                if (!simulation->SyncExternalSession(token)) {
+                    throw std::runtime_error(simulation->GetLastError());
+                }
+                return true;
+            }, py::arg("token"))
+            .def("_apply_link_pose_batch", [](EngineContext& context,
+                                               const std::vector<PyLink3DHandle>& links,
+                                               py::array_t<float,
+                                                           py::array::c_style |
+                                                           py::array::forcecast> poses) {
+                const py::buffer_info buffer = poses.request();
+                if (buffer.ndim != 2 || buffer.shape[1] != 7 ||
+                    static_cast<std::size_t>(buffer.shape[0]) != links.size()) {
+                    throw std::invalid_argument(
+                            "link poses must have shape [link_count, 7] in xyz+xyzw order");
+                }
+                const auto* values = static_cast<const float*>(buffer.ptr);
+                Node* scene_root = SceneRootForContext(context);
+                if (scene_root == nullptr) {
+                    throw std::runtime_error("link pose batch requires an active scene root");
+                }
+
+                struct LinkPoseUpdate {
+                    Link3D* link{nullptr};
+                    Affine3 transform{Affine3::Identity()};
+                    std::size_t depth{0};
+                };
+                std::vector<LinkPoseUpdate> updates;
+                updates.reserve(links.size());
+                std::unordered_set<Link3D*> unique_links;
+                for (std::size_t index = 0; index < links.size(); ++index) {
+                    Link3D* link = links[index].ResolveAs<Link3D>();
+                    if (link != scene_root && !scene_root->IsAncestorOf(link)) {
+                        throw std::invalid_argument(
+                                "link pose batch contains a Link3D outside the active scene");
+                    }
+                    if (!unique_links.insert(link).second) {
+                        throw std::invalid_argument("link pose batch contains a duplicate Link3D");
+                    }
+                    const float* pose = values + index * 7;
+                    const Vector3 position(pose[0], pose[1], pose[2]);
+                    if (!position.allFinite()) {
+                        throw std::invalid_argument("link pose batch contains a non-finite position");
+                    }
+                    Quaternion orientation(pose[6], pose[3], pose[4], pose[5]);
+                    if (!orientation.coeffs().allFinite() || orientation.squaredNorm() <= CMP_EPSILON2) {
+                        throw std::invalid_argument("link pose batch contains an invalid quaternion");
+                    }
+                    orientation.normalize();
+                    Affine3 transform = Affine3::Identity();
+                    transform.translation() = position;
+                    transform.linear() = orientation.toRotationMatrix();
+
+                    std::size_t depth = 0;
+                    for (Node* ancestor = link; ancestor != scene_root; ancestor = ancestor->GetParent()) {
+                        if (ancestor == nullptr) {
+                            throw std::invalid_argument(
+                                    "link pose batch contains a Link3D outside the active scene");
+                        }
+                        ++depth;
+                    }
+                    updates.push_back({link, std::move(transform), depth});
+                }
+
+                std::stable_sort(updates.begin(), updates.end(), [](const auto& left, const auto& right) {
+                    return left.depth < right.depth;
+                });
+                for (const LinkPoseUpdate& update : updates) {
+                    if (update.link->IsInsideTree()) {
+                        update.link->SetGlobalTransform(update.transform);
+                    } else {
+                        update.link->SetTransform(update.transform);
+                    }
+                }
+            }, py::arg("links"), py::arg("poses"))
             .def("compiled_scene_artifact", [](EngineContext& context) {
                 SimulationServer* simulation = context.GetSimulationServer();
                 Ref<PhysicsWorld> world = simulation != nullptr ? simulation->GetWorld() : Ref<PhysicsWorld>();

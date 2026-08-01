@@ -1,9 +1,14 @@
 from __future__ import annotations
 
+from concurrent.futures import ThreadPoolExecutor
+import json
 import os
 from dataclasses import replace
 from pathlib import Path
+import shutil
 import tempfile
+import threading
+import time
 from types import SimpleNamespace
 from unittest.mock import patch
 import xml.etree.ElementTree as ET
@@ -17,6 +22,7 @@ from gobot.rl.providers.newton import (
     NewtonRobotLayout,
     _NewtonBindings,
 )
+from gobot.rl.providers.cache import ContentAddressedCache
 
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
@@ -512,6 +518,8 @@ class _FakeSolver:
 
 
 class _FakeNewton:
+    __version__ = "1.4.0"
+
     def __init__(self, **builder_options):
         self.builders = []
         self.solvers = SimpleNamespace(SolverMuJoCo=_FakeSolver)
@@ -591,24 +599,48 @@ def _digest(content):
 
 
 def _artifact(*, nq=2, nv=2, nu=2):
-    content = (
-        "<mujoco><worldbody><body name='body'><joint name='joint' type='slide'/>"
-        "<geom type='sphere' size='0.1'/></body></worldbody><actuator>"
-        "<position name='robot_joint_a_position' joint='joint_a'/>"
-        "<position name='robot_joint_b_position' joint='joint_b'/>"
-        "</actuator></mujoco>"
+    actuator_elements = (
+        "<position name='robot_joint_a_position' joint='robot_joint_a'/>",
+        "<position name='robot_joint_b_position' joint='robot_joint_b'/>",
     )
-    return gobot.rl.CompiledSceneArtifact(
-        schema_version=1,
-        backend="MuJoCoCpu",
-        format="mjcf",
-        content=content,
-        digest=_digest(content),
-        backend_version="3.10.0",
-        dimensions={"nq": nq, "nv": nv, "nu": nu},
-        robot_names=("robot",),
-        robot_prefixes=("robot_",),
-        terrain_geom_groups=(),
+    actuators = "".join(actuator_elements[:nu])
+    content = (
+        "<mujoco><worldbody><body name='robot_base'>"
+        "<joint name='robot_joint_a' type='slide'/>"
+        "<joint name='robot_joint_b' type='slide'/>"
+        "<geom type='sphere' size='0.1'/></body></worldbody>"
+        f"<actuator>{actuators}</actuator></mujoco>"
+    )
+    return gobot.rl.CompiledSceneArtifact.from_compiler_mapping(
+        {
+            "schema_version": 1,
+            "backend": "MuJoCoCpu",
+            "format": "mjcf",
+            "content": content,
+            "content_digest": _digest(content),
+            "backend_version": "3.10.0",
+            "dimensions": {"nq": nq, "nv": nv, "nu": nu},
+            "robot_names": ("robot",),
+            "robot_prefixes": ("robot_",),
+            "terrain_geom_groups": (),
+        }
+    )
+
+
+def _artifact_with_content(artifact, content):
+    return gobot.rl.CompiledSceneArtifact.from_compiler_mapping(
+        {
+            "schema_version": 1,
+            "backend": "MuJoCoCpu",
+            "format": "mjcf",
+            "content": content,
+            "content_digest": _digest(content),
+            "backend_version": artifact.producer_version,
+            "dimensions": dict(artifact.dimensions),
+            "robot_names": artifact.robot_names,
+            "robot_prefixes": artifact.robot_prefixes,
+            "terrain_geom_groups": artifact.terrain_geom_groups,
+        }
     )
 
 
@@ -813,8 +845,31 @@ def test_named_robot_layout_controls_and_reset():
 
 
 def test_named_robot_layout_reports_name_and_actuator_errors():
-    bindings = _bindings()
-    provider = NewtonProvider(_artifact(), num_envs=1, _bindings=bindings)
+    base_artifact = _artifact()
+    artifact = _artifact_with_content(
+        base_artifact,
+        base_artifact.content.replace(
+            "<position name='robot_joint_b_position' joint='robot_joint_b'/>",
+            "<motor name='robot_joint_b_motor' joint='robot_joint_b'/>",
+        ),
+    )
+    bindings = _bindings(
+        newton_options={
+            "actuator_routes": {
+                "sources": np.asarray([0, 1], dtype=np.int32),
+                "indices": np.asarray([1, 1], dtype=np.int32),
+                "targets": np.asarray([1, -1], dtype=np.int32),
+                "axes": np.asarray([-1, -1], dtype=np.int32),
+            }
+        }
+    )
+    del bindings.mujoco.name_ids[
+        (bindings.mujoco.mjtObj.mjOBJ_ACTUATOR, "robot_joint_b_position")
+    ]
+    bindings.mujoco.name_ids[
+        (bindings.mujoco.mjtObj.mjOBJ_ACTUATOR, "robot_joint_b_motor")
+    ] = 1
+    provider = NewtonProvider(artifact, num_envs=1, _bindings=bindings)
     try:
         try:
             provider.resolve_robot_layout(
@@ -838,18 +893,12 @@ def test_named_robot_layout_reports_name_and_actuator_errors():
         else:
             raise AssertionError("duplicate joint names were accepted")
 
-        del bindings.mujoco.name_ids[
-            (bindings.mujoco.mjtObj.mjOBJ_ACTUATOR, "robot_joint_b_position")
-        ]
-        bindings.mujoco.name_ids[
-            (bindings.mujoco.mjtObj.mjOBJ_ACTUATOR, "robot_joint_b_motor")
-        ] = 1
         mixed_layout = provider.resolve_robot_layout(
             "robot",
             base_link="base",
             joint_names=("joint_a", "joint_b"),
         )
-        assert mixed_layout.actuator_modes == ("position", "motor")
+        assert mixed_layout.actuator_modes == ("position", "direct")
         try:
             provider.set_joint_position_targets(
                 mixed_layout,
@@ -857,7 +906,7 @@ def test_named_robot_layout_reports_name_and_actuator_errors():
             )
         except ValueError as error:
             assert "position actuators" in str(error)
-            assert "motor" in str(error)
+            assert "direct" in str(error)
         else:
             raise AssertionError("position targets were written to a motor actuator")
     finally:
@@ -984,27 +1033,132 @@ def test_inline_mjcf_mesh_is_materialized_for_newton_import():
         "<body name='body'><joint name='joint' type='slide'/></body></worldbody></mujoco>"
     )
     base = _artifact(nu=0)
-    artifact = type(base)(
-        **{
-            **base.__dict__,
-            "content": content,
-            "digest": _digest(content),
+    artifact = _artifact_with_content(base, content)
+    with tempfile.TemporaryDirectory() as cache_directory, patch.dict(
+        os.environ,
+        {"GOBOT_PHYSICS_CACHE_DIR": cache_directory},
+    ):
+        bindings = _bindings()
+        provider = NewtonProvider(artifact, num_envs=1, _bindings=bindings)
+        try:
+            blueprint = bindings.newton.builders[0]
+            assert len(blueprint.loaded_meshes) == 1
+            assert "v 0.0 0.0 0.0" in blueprint.loaded_meshes[0]
+            assert "f 1 2 3" in blueprint.loaded_meshes[0]
+            imported = ET.fromstring(blueprint.mjcf_call[0]).find("./asset/mesh")
+            assert imported is not None
+            assert "vertex" not in imported.attrib
+            assert "face" not in imported.attrib
+            mesh_path = Path(imported.attrib["file"])
+            assert mesh_path.is_file()
+        finally:
+            provider.close()
+
+        second_bindings = _bindings()
+        second = NewtonProvider(artifact, num_envs=1, _bindings=second_bindings)
+        try:
+            second_mesh = ET.fromstring(
+                second_bindings.newton.builders[0].mjcf_call[0]
+            ).find("./asset/mesh")
+            assert second_mesh is not None
+            assert Path(second_mesh.attrib["file"]) == mesh_path
+        finally:
+            second.close()
+
+        mesh_path.write_text("corrupt\n", encoding="utf-8")
+        third_bindings = _bindings()
+        third = NewtonProvider(artifact, num_envs=1, _bindings=third_bindings)
+        try:
+            assert "v 0.0 0.0 0.0" in mesh_path.read_text(encoding="utf-8")
+            assert third_bindings.newton.builders[0].loaded_meshes == [
+                mesh_path.read_text(encoding="utf-8")
+            ]
+        finally:
+            third.close()
+
+
+def test_content_addressed_cache_is_atomic_and_self_healing():
+    with tempfile.TemporaryDirectory() as cache_directory:
+        root = Path(cache_directory)
+        cache = ContentAddressedCache("provider-test", root=root)
+        build_count = 0
+        count_lock = threading.Lock()
+
+        def build(directory: Path):
+            nonlocal build_count
+            with count_lock:
+                build_count += 1
+            time.sleep(0.05)
+            (directory / "payload.txt").write_text("ready\n", encoding="utf-8")
+            nested = directory / "nested"
+            nested.mkdir()
+            (nested / "manifest.json").write_text("nested\n", encoding="utf-8")
+            return {"builder": "test"}
+
+        with ThreadPoolExecutor(max_workers=2) as executor:
+            futures = [
+                executor.submit(cache.get_or_create, "shared-key", build)
+                for _ in range(2)
+            ]
+            entries = [future.result(timeout=5.0) for future in futures]
+        assert entries[0] == entries[1]
+        assert build_count == 1
+        entry = entries[0]
+        manifest = json.loads((entry / "manifest.json").read_text(encoding="utf-8"))
+        assert {record["path"] for record in manifest["files"]} == {
+            "nested/manifest.json",
+            "payload.txt",
         }
-    )
-    bindings = _bindings()
-    provider = NewtonProvider(artifact, num_envs=1, _bindings=bindings)
-    try:
-        blueprint = bindings.newton.builders[0]
-        assert len(blueprint.loaded_meshes) == 1
-        assert "v 0.0 0.0 0.0" in blueprint.loaded_meshes[0]
-        assert "f 1 2 3" in blueprint.loaded_meshes[0]
-        imported = ET.fromstring(blueprint.mjcf_call[0]).find("./asset/mesh")
-        assert imported is not None
-        assert "vertex" not in imported.attrib
-        assert "face" not in imported.attrib
-        assert not Path(imported.attrib["file"]).exists()
-    finally:
-        provider.close()
+
+        (entry / "payload.txt").write_text("corrupt\n", encoding="utf-8")
+        assert cache.get_or_create("shared-key", build) == entry
+        assert build_count == 2
+        assert (entry / "payload.txt").read_text(encoding="utf-8") == "ready\n"
+
+        (entry / "unlisted.txt").write_text("unexpected\n", encoding="utf-8")
+        assert cache.get_or_create("shared-key", build) == entry
+        assert build_count == 3
+        assert not (entry / "unlisted.txt").exists()
+
+        shutil.rmtree(entry)
+        entry.write_text("not a directory\n", encoding="utf-8")
+        assert cache.get_or_create("shared-key", build) == entry
+        assert build_count == 4
+        assert entry.is_dir()
+
+        shutil.rmtree(entry)
+        external = root / "external"
+        external.mkdir()
+        (external / "marker.txt").write_text("keep\n", encoding="utf-8")
+        entry.symlink_to(external, target_is_directory=True)
+        assert cache.get_or_create("shared-key", build) == entry
+        assert build_count == 5
+        assert entry.is_dir() and not entry.is_symlink()
+        assert (external / "marker.txt").read_text(encoding="utf-8") == "keep\n"
+
+
+def test_content_addressed_cache_cleans_failed_builds():
+    with tempfile.TemporaryDirectory() as cache_directory:
+        cache = ContentAddressedCache("provider-test", root=Path(cache_directory))
+
+        def fail(directory: Path):
+            (directory / "partial.txt").write_text("partial\n", encoding="utf-8")
+            raise RuntimeError("builder failed")
+
+        try:
+            cache.get_or_create("failed-key", fail)
+        except RuntimeError as error:
+            assert "builder failed" in str(error)
+        else:
+            raise AssertionError("cache builder failure was ignored")
+        assert [path for path in cache.root.iterdir() if path.name != ".locks"] == []
+
+        def succeed(directory: Path):
+            (directory / "complete.txt").write_text("complete\n", encoding="utf-8")
+            return None
+
+        entry = cache.get_or_create("failed-key", succeed)
+        assert (entry / "complete.txt").read_text(encoding="utf-8") == "complete\n"
 
 
 def test_mujoco_solref_shorthand_is_normalized_for_newton_import():
@@ -1016,13 +1170,7 @@ def test_mujoco_solref_shorthand_is_normalized_for_newton_import():
         "</contact></mujoco>"
     )
     base = _artifact(nu=0)
-    artifact = type(base)(
-        **{
-            **base.__dict__,
-            "content": content,
-            "digest": _digest(content),
-        }
-    )
+    artifact = _artifact_with_content(base, content)
     bindings = _bindings()
     provider = NewtonProvider(artifact, num_envs=1, _bindings=bindings)
     try:
@@ -1047,13 +1195,7 @@ def test_mujoco_solref_shorthand_preserves_default_class_inheritance():
         "</body></body></worldbody></mujoco>"
     )
     base = _artifact(nu=0)
-    artifact = type(base)(
-        **{
-            **base.__dict__,
-            "content": content,
-            "digest": _digest(content),
-        }
-    )
+    artifact = _artifact_with_content(base, content)
     bindings = _bindings()
     provider = NewtonProvider(artifact, num_envs=1, _bindings=bindings)
     try:
@@ -1077,20 +1219,16 @@ def test_mujoco_solref_shorthand_preserves_default_class_inheritance():
 def test_explicit_model_config_overrides_mjcf_constraint_response():
     content = (
         "<mujoco><default><joint solreflimit='0.02 1'/>"
-        "<geom solref='0.03 2'/></default><worldbody>"
+        "<geom solref='0.03 2' friction='0.2 0.03 0.004'/></default><worldbody>"
         "<body name='body'><joint name='joint' type='slide' range='-1 1'/>"
-        "<geom name='body_geom' type='sphere' size='0.1' solref='0.04 3'/>"
+        "<geom name='body_geom' type='sphere' size='0.1' solref='0.04 3' "
+        "friction='0.4 0.07 0.008'/>"
+        "<geom name='implicit_friction' type='sphere' size='0.05'/>"
         "</body></worldbody><contact><pair geom1='a' geom2='b' "
         "solref='0.05 4' solreffriction='0.06 5'/></contact></mujoco>"
     )
     base = _artifact(nq=1, nv=1, nu=0)
-    artifact = type(base)(
-        **{
-            **base.__dict__,
-            "content": content,
-            "digest": _digest(content),
-        }
-    )
+    artifact = _artifact_with_content(base, content)
     config = NewtonModelConfig(
         joint_limit_stiffness=100.0,
         joint_limit_damping=1.0,
@@ -1109,6 +1247,8 @@ def test_explicit_model_config_overrides_mjcf_constraint_response():
     try:
         blueprint = bindings.newton.builders[0]
         assert provider.model_config == config
+        assert config.default_contact_friction == 0.75
+        assert config.contact_friction_override == 0.75
         assert blueprint.default_joint_cfg.limit_ke == 100.0
         assert blueprint.default_joint_cfg.limit_kd == 1.0
         assert blueprint.default_shape_cfg.ke == 50_000.0
@@ -1119,9 +1259,17 @@ def test_explicit_model_config_overrides_mjcf_constraint_response():
         assert blueprint.joint_limit_kd == [1.0]
 
         imported = ET.fromstring(blueprint.mjcf_call[0])
+        default_geom = imported.find("./default/geom")
         assert "solreflimit" not in imported.find("./default/joint").attrib
-        assert "solref" not in imported.find("./default/geom").attrib
-        assert "solref" not in imported.find("./worldbody/body/geom").attrib
+        assert "solref" not in default_geom.attrib
+        assert default_geom.attrib["friction"] == "0.75 0.03 0.004"
+        geoms = {
+            geom.attrib["name"]: geom
+            for geom in imported.findall("./worldbody/body/geom")
+        }
+        assert "solref" not in geoms["body_geom"].attrib
+        assert geoms["body_geom"].attrib["friction"] == "0.75 0.07 0.008"
+        assert geoms["implicit_friction"].attrib["friction"] == "0.75 0.005 0.0001"
         pair = imported.find("./contact/pair")
         assert pair.attrib["solref"] == "0.05 4"
         assert pair.attrib["solreffriction"] == "0.06 5"
@@ -1137,6 +1285,14 @@ def test_newton_model_config_validation_and_provider_type_check():
         ({"joint_limit_stiffness": 0.0, "joint_limit_damping": 1.0}, "positive"),
         ({"contact_stiffness": 1.0, "contact_damping": 0.0}, "positive"),
         ({"default_contact_friction": float("nan")}, "finite"),
+        ({"contact_friction_override": float("nan")}, "finite"),
+        (
+            {
+                "default_contact_friction": 0.5,
+                "contact_friction_override": 0.6,
+            },
+            "must match",
+        ),
     ):
         try:
             NewtonModelConfig(**kwargs)
@@ -1157,25 +1313,30 @@ def test_newton_model_config_validation_and_provider_type_check():
     else:
         raise AssertionError("NewtonProvider accepted an untyped model config")
 
+    legacy = NewtonModelConfig(default_contact_friction=0.4)
+    current = NewtonModelConfig(contact_friction_override=0.4)
+    assert legacy == current
+    assert legacy.default_contact_friction == 0.4
+    assert current.default_contact_friction == 0.4
+    artifact = _artifact()
+    assert artifact.runtime_fingerprint("newton", "1.4.0", legacy) == (
+        artifact.runtime_fingerprint("newton", "1.4.0", current)
+    )
+
 
 def test_mujoco_affine_position_general_is_normalized_for_joint_targets():
     content = (
-        "<mujoco><worldbody><body name='body'><joint name='joint' type='slide'/>"
+        "<mujoco><worldbody><body name='robot_body'>"
+        "<joint name='robot_joint' type='slide'/>"
         "<geom type='sphere' size='0.1'/></body></worldbody><actuator>"
-        "<general name='robot_joint_position' joint='joint' ctrllimited='false' "
+        "<general name='robot_joint_position' joint='robot_joint' ctrllimited='false' "
         "forcerange='-12 12' forcelimited='true' biastype='affine' "
         "gainprm='150 0 0' biasprm='0 -150 -5 0'/>"
-        "<general name='robot_joint_affine' joint='joint' biastype='affine' "
+        "<general name='robot_joint_affine' joint='robot_joint' biastype='affine' "
         "gainprm='150 0 0' biasprm='0 -150 -5 0'/></actuator></mujoco>"
     )
     base = _artifact()
-    artifact = type(base)(
-        **{
-            **base.__dict__,
-            "content": content,
-            "digest": _digest(content),
-        }
-    )
+    artifact = _artifact_with_content(base, content)
     bindings = _bindings(
         newton_options={
             "actuator_routes": {
@@ -1193,7 +1354,7 @@ def test_mujoco_affine_position_general_is_normalized_for_joint_targets():
         position = imported.find("./actuator/position")
         assert position is not None
         assert position.attrib["name"] == "robot_joint_position"
-        assert position.attrib["joint"] == "joint"
+        assert position.attrib["joint"] == "robot_joint"
         assert position.attrib["kp"] == "150"
         assert position.attrib["kv"] == "5"
         assert position.attrib["forcerange"] == "-12 12"
@@ -1209,8 +1370,8 @@ def test_mujoco_affine_position_general_is_normalized_for_joint_targets():
 
 
 def test_direct_artifact_is_revalidated():
-    artifact = _artifact()
-    corrupt = type(artifact)(**{**artifact.__dict__, "digest": "fnv1a64:bad"})
+    corrupt = _artifact()
+    object.__setattr__(corrupt, "content_digest", "fnv1a64:bad")
     try:
         NewtonProvider(corrupt, num_envs=1, _bindings=_bindings())
     except ValueError as error:
@@ -1237,13 +1398,7 @@ def test_optional_real_gpu_smoke():
         "<geom type='sphere' size='0.1' mass='1'/></body></worldbody>"
         "<actuator><motor name='motor' joint='joint'/></actuator></mujoco>"
     )
-    artifact = type(artifact)(
-        **{
-            **artifact.__dict__,
-            "content": content,
-            "digest": _digest(content),
-        }
-    )
+    artifact = _artifact_with_content(artifact, content)
     provider = NewtonProvider(
         artifact,
         num_envs=2,
@@ -1383,6 +1538,8 @@ def main():
     test_import_version_failure_is_reported_as_unavailable()
     test_provider_rejects_non_cuda_device_and_dimension_mismatch()
     test_inline_mjcf_mesh_is_materialized_for_newton_import()
+    test_content_addressed_cache_is_atomic_and_self_healing()
+    test_content_addressed_cache_cleans_failed_builds()
     test_mujoco_solref_shorthand_is_normalized_for_newton_import()
     test_mujoco_solref_shorthand_preserves_default_class_inheritance()
     test_explicit_model_config_overrides_mjcf_constraint_response()

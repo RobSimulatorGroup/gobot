@@ -13,7 +13,6 @@
 
 #include "gobot/core/robotics_types.hpp"
 #include "gobot/physics/joint_controller.hpp"
-#include "gobot/simulation/simulation_entity.hpp"
 
 namespace gobot {
 namespace {
@@ -40,13 +39,21 @@ const PhysicsRobotState* FindRobotState(const PhysicsSceneState& state,
 
 } // namespace
 
-RobotController::RobotController(Ref<PhysicsWorld> world, const SimulationEntity* entity)
+RobotController::RobotController(Ref<PhysicsWorld> world,
+                                 std::string entity_name,
+                                 std::weak_ptr<const SessionState> session_state,
+                                 std::uint64_t session_generation)
     : world_(std::move(world)),
-      entity_(entity) {
+      entity_name_(std::move(entity_name)),
+      session_state_(std::move(session_state)),
+      session_generation_(session_generation) {
 }
 
 bool RobotController::IsValid() const {
-    return world_.IsValid() && entity_ != nullptr;
+    const std::shared_ptr<const SessionState> session_state = session_state_.lock();
+    return world_.IsValid() &&
+           session_state != nullptr &&
+           session_state->generation.load(std::memory_order_acquire) == session_generation_;
 }
 
 const std::string& RobotController::GetLastError() const {
@@ -64,13 +71,13 @@ bool RobotController::SetJointPositionTargets(const std::vector<std::string>& jo
     }
     if (joint_names.size() != target_positions.size()) {
         SetLastError(fmt::format("Robot '{}' expected {} joint position target value(s), got {}.",
-                                 entity_->GetName(),
+                                 entity_name_,
                                  joint_names.size(),
                                  target_positions.size()));
         return false;
     }
     for (std::size_t index = 0; index < joint_names.size(); ++index) {
-        if (!world_->SetJointControl(entity_->GetName(),
+        if (!world_->SetJointControl(entity_name_,
                                      joint_names[index],
                                      PhysicsJointControlMode::Position,
                                      target_positions[index])) {
@@ -100,7 +107,7 @@ bool RobotController::ResetJointState(const std::string& joint_name, RealType po
         return false;
     }
 
-    if (!world_->ResetJointState(entity_->GetName(), joint_name, position, velocity)) {
+    if (!world_->ResetJointState(entity_name_, joint_name, position, velocity)) {
         SetLastError(world_->GetLastError());
         return false;
     }
@@ -117,7 +124,7 @@ bool RobotController::ResetEnvironmentJointState(std::size_t environment_index,
         return false;
     }
 
-    if (!world_->ResetEnvironmentJointState(environment_index, entity_->GetName(), joint_name, position, velocity)) {
+    if (!world_->ResetEnvironmentJointState(environment_index, entity_name_, joint_name, position, velocity)) {
         SetLastError(world_->GetLastError());
         return false;
     }
@@ -141,11 +148,11 @@ bool RobotController::SetNormalizedJointPositionTargets(const std::vector<RealTy
     }
 
     const PhysicsRobotSnapshot* robot_snapshot =
-            FindRobotSnapshot(world_->GetSceneSnapshot(), entity_->GetName());
+            FindRobotSnapshot(world_->GetSceneSnapshot(), entity_name_);
     const PhysicsRobotState* robot_state =
-            FindRobotState(world_->GetSceneState(), entity_->GetName());
+            FindRobotState(world_->GetSceneState(), entity_name_);
     if (robot_snapshot == nullptr || robot_state == nullptr) {
-        SetLastError(fmt::format("Cannot set normalized action for missing robot '{}'.", entity_->GetName()));
+        SetLastError(fmt::format("Cannot set normalized action for missing robot '{}'.", entity_name_));
         return false;
     }
 
@@ -166,7 +173,7 @@ bool RobotController::SetNormalizedJointPositionTargets(const std::vector<RealTy
 
         if (action_index >= action.size()) {
             SetLastError(fmt::format("Robot '{}' expected at least {} joint action value(s), got {}.",
-                                     entity_->GetName(),
+                                     entity_name_,
                                      action_index + 1,
                                      action.size()));
             return false;
@@ -182,7 +189,7 @@ bool RobotController::SetNormalizedJointPositionTargets(const std::vector<RealTy
                                                                      limits,
                                                                      joint_state.position,
                                                                      1.0);
-        if (!world_->SetJointControl(entity_->GetName(),
+        if (!world_->SetJointControl(entity_name_,
                                      joint_state.joint_name,
                                      PhysicsJointControlMode::Position,
                                      target_position)) {
@@ -195,7 +202,7 @@ bool RobotController::SetNormalizedJointPositionTargets(const std::vector<RealTy
 
     if (action_index < action.size()) {
         SetLastError(fmt::format("Robot '{}' expected {} joint action value(s), got {}.",
-                                 entity_->GetName(),
+                                 entity_name_,
                                  action_index,
                                  action.size()));
         return false;
@@ -213,18 +220,18 @@ bool RobotController::SetNormalizedJointPositionTargets(const std::vector<std::s
 
     if (joint_names.size() != action.size()) {
         SetLastError(fmt::format("Robot '{}' expected {} named joint action value(s), got {}.",
-                                 entity_->GetName(),
+                                 entity_name_,
                                  joint_names.size(),
                                  action.size()));
         return false;
     }
 
     const PhysicsRobotSnapshot* robot_snapshot =
-            FindRobotSnapshot(world_->GetSceneSnapshot(), entity_->GetName());
+            FindRobotSnapshot(world_->GetSceneSnapshot(), entity_name_);
     const PhysicsRobotState* robot_state =
-            FindRobotState(world_->GetSceneState(), entity_->GetName());
+            FindRobotState(world_->GetSceneState(), entity_name_);
     if (robot_snapshot == nullptr || robot_state == nullptr) {
-        SetLastError(fmt::format("Cannot set normalized action for missing robot '{}'.", entity_->GetName()));
+        SetLastError(fmt::format("Cannot set normalized action for missing robot '{}'.", entity_name_));
         return false;
     }
 
@@ -241,7 +248,7 @@ bool RobotController::SetNormalizedJointPositionTargets(const std::vector<std::s
                                                  return joint_state.joint_name == joint_name;
                                              });
         if (snapshot_iter == robot_snapshot->joints.end() || state_iter == robot_state->joints.end()) {
-            SetLastError(fmt::format("Robot '{}' has no joint named '{}'.", entity_->GetName(), joint_name));
+            SetLastError(fmt::format("Robot '{}' has no joint named '{}'.", entity_name_, joint_name));
             return false;
         }
 
@@ -250,7 +257,7 @@ bool RobotController::SetNormalizedJointPositionTargets(const std::vector<std::s
             joint_type != JointType::Continuous &&
             joint_type != JointType::Prismatic) {
             SetLastError(fmt::format("Robot '{}' joint '{}' is not controllable by normalized position action.",
-                                     entity_->GetName(),
+                                     entity_name_,
                                      joint_name));
             return false;
         }
@@ -265,7 +272,7 @@ bool RobotController::SetNormalizedJointPositionTargets(const std::vector<std::s
                                                                      limits,
                                                                      state_iter->position,
                                                                      1.0);
-        if (!world_->SetJointControl(entity_->GetName(),
+        if (!world_->SetJointControl(entity_name_,
                                      state_iter->joint_name,
                                      PhysicsJointControlMode::Position,
                                      target_position)) {
@@ -279,8 +286,15 @@ bool RobotController::SetNormalizedJointPositionTargets(const std::vector<std::s
 }
 
 bool RobotController::EnsureReady() {
-    if (!world_.IsValid() || entity_ == nullptr) {
-        SetLastError("Robot controller is not bound to a simulation world and entity.");
+    if (!world_.IsValid()) {
+        SetLastError("Robot controller is not bound to a simulation world.");
+        return false;
+    }
+
+    const std::shared_ptr<const SessionState> session_state = session_state_.lock();
+    if (session_state == nullptr ||
+        session_state->generation.load(std::memory_order_acquire) != session_generation_) {
+        SetLastError("Robot controller session is no longer active.");
         return false;
     }
 
@@ -299,7 +313,7 @@ bool RobotController::SetJointControl(const std::string& joint_name,
         return false;
     }
 
-    if (!world_->SetJointControl(entity_->GetName(), joint_name, control_mode, target)) {
+    if (!world_->SetJointControl(entity_name_, joint_name, control_mode, target)) {
         SetLastError(world_->GetLastError());
         return false;
     }
@@ -317,7 +331,7 @@ bool RobotController::SetEnvironmentJointControl(std::size_t environment_index,
     }
 
     if (!world_->SetEnvironmentJointControl(environment_index,
-                                            entity_->GetName(),
+                                            entity_name_,
                                             joint_name,
                                             control_mode,
                                             target)) {
