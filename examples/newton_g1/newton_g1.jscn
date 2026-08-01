@@ -38,7 +38,7 @@
             "properties": {
                 "mode": "Motion",
                 "position": {
-                    "matrix_data": {"cols": 1, "rows": 3, "storage": [0.0, 0.0, 0.0]}
+                    "matrix_data": {"cols": 1, "rows": 3, "storage": [0.0, 0.0, 0.76]}
                 },
                 "rotation_degrees": {
                     "matrix_data": {"cols": 1, "rows": 3, "storage": [0.0, 0.0, 0.0]}

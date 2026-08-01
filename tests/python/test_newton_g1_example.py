@@ -33,6 +33,7 @@ def test_project_hook_and_initial_camera_are_valid() -> None:
 
 def test_scene_instances_one_generated_gobot_robot() -> None:
     scene = json.loads((EXAMPLE / "newton_g1.jscn").read_text(encoding="utf-8"))
+    contract = runpy.run_path(str(EXAMPLE / "scripts" / "g1_policy_contract.py"))
     resources = {entry["__ID__"]: entry for entry in scene["__EXT_RESOURCES__"]}
     assert resources["2_robot"]["__PATH__"] == "res://assets/generated/g1_29dof.jscn"
     assert all("mjcf" not in resource["__PATH__"].lower() for resource in resources.values())
@@ -43,6 +44,8 @@ def test_scene_instances_one_generated_gobot_robot() -> None:
     assert nodes["g1"]["instance"] == "ExtResource(2_robot)"
     assert nodes["g1"]["properties"]["visible"] is True
     assert nodes["g1"]["properties"]["mode"] == "Motion"
+    preview_position = nodes["g1"]["properties"]["position"]["matrix_data"]["storage"]
+    assert preview_position == list(contract["BASE_POSE_XYZW"][:3])
     assert nodes["ground_collision"]["type"] == "CollisionShape3D"
     assert nodes["ground_visual"]["type"] == "MeshInstance3D"
 
