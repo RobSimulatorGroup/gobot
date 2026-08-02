@@ -21,6 +21,7 @@ TEST(TestTypeIcons, uses_distinct_icons_for_editor_node_categories) {
 
 TEST(TestTypeIcons, uses_resource_icons_from_paths) {
     EXPECT_STREQ(gobot::GetResourcePathIcon("res://go1_scene.jscn", false), ICON_MDI_FILE_TREE);
+    EXPECT_STREQ(gobot::GetResourcePathIcon("res://playroom.gsplat", false), ICON_MDI_FILE_TREE);
     EXPECT_STREQ(gobot::GetResourcePathIcon("res://scripts/go1.py", false), ICON_MDI_LANGUAGE_PYTHON);
     EXPECT_STREQ(gobot::GetResourcePathIcon("res://meshes/body.obj", false), ICON_MDI_VECTOR_TRIANGLE);
     EXPECT_STREQ(gobot::GetResourcePathIcon("res://textures/body.png", false), ICON_MDI_FILE_IMAGE);

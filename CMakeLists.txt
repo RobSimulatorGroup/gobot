@@ -12,7 +12,7 @@ if(GOB_BUILD_DEPENDENCIES_ONLY)
     return()
 endif()
 
-project (gobot VERSION 0.1.17)
+project (gobot VERSION 0.1.18)
 
 set(CMAKE_POLICY_VERSION_MINIMUM 3.5)
 

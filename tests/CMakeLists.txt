@@ -129,6 +129,9 @@ package_add_test(test_editor_type_icons
         ${PROJECT_SOURCE_DIR}/src/gobot/editor/imgui/type_icons.cpp)
 target_include_directories(test_editor_type_icons PRIVATE
         ${PROJECT_SOURCE_DIR}/3rdparty/imgui_extension)
+package_add_test(test_example_project_discovery
+        editor/test_example_project_discovery.cpp
+        ${PROJECT_SOURCE_DIR}/src/gobot/editor/example_project_discovery.cpp)
 add_executable(test_python_panel
         editor/test_python_panel.cpp)
 get_filename_component(GOBOT_TEST_BASE_PYTHON_EXECUTABLE

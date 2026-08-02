@@ -10,6 +10,7 @@
 #include "gobot/core/os/input.hpp"
 #include "gobot/core/string_utils.hpp"
 #include "gobot/editor/editor.hpp"
+#include "gobot/editor/detail/example_project_discovery.hpp"
 #include "gobot/editor/imgui/imgui_utilities.hpp"
 #include "gobot/editor/imgui/type_icons.hpp"
 #include "gobot/editor/python_script_template.hpp"
@@ -30,8 +31,6 @@
 namespace gobot {
 namespace {
 
-std::string ToLower(std::string value);
-
 std::string DefaultProjectHistoryFile() {
     const char* home = std::getenv("HOME");
     if (home == nullptr || std::string(home).empty()) {
@@ -50,51 +49,6 @@ std::filesystem::path SourceExamplesDirectory() {
     return std::filesystem::path(GOBOT_ROOT_DIR) / "examples";
 }
 
-void AppendExampleProjectDirectories(const std::filesystem::path& examples_dir,
-                                     std::vector<std::string>& projects) {
-    std::error_code error;
-    if (examples_dir.empty() || !std::filesystem::is_directory(examples_dir, error)) {
-        return;
-    }
-
-    for (const auto& entry : std::filesystem::directory_iterator(examples_dir, error)) {
-        if (error) {
-            LOG_WARN("Skipping examples directory '{}': {}.", examples_dir.string(), error.message());
-            return;
-        }
-        if (!entry.is_directory(error)) {
-            continue;
-        }
-
-        bool has_scene = false;
-        for (const auto& project_entry : std::filesystem::directory_iterator(entry.path(), error)) {
-            if (error) {
-                break;
-            }
-            if (project_entry.is_regular_file(error) &&
-                    ToLower(project_entry.path().extension().string()) == ".jscn") {
-                has_scene = true;
-                break;
-            }
-        }
-        if (!has_scene) {
-            continue;
-        }
-
-        const std::string project_path = std::filesystem::weakly_canonical(entry.path(), error).string();
-        if (error || project_path.empty()) {
-            continue;
-        }
-        const std::string project_name = ToLower(entry.path().filename().string());
-        const bool duplicate_name = std::ranges::any_of(projects, [&](const std::string& existing_project) {
-            return ToLower(std::filesystem::path(existing_project).filename().string()) == project_name;
-        });
-        if (!duplicate_name && std::ranges::find(projects, project_path) == projects.end()) {
-            projects.push_back(project_path);
-        }
-    }
-}
-
 std::string CanonicalExistingDirectory(const std::filesystem::path& directory) {
     std::error_code error;
     if (!std::filesystem::is_directory(directory, error)) {
@@ -111,12 +65,12 @@ std::string ToLower(std::string value) {
     return value;
 }
 
-bool IsNativeSceneFile(const DirectoryInformation* dir_info) {
+bool IsSceneFile(const DirectoryInformation* dir_info) {
     if (dir_info == nullptr || dir_info->is_directory) {
         return false;
     }
 
-    return ToLower(std::filesystem::path(dir_info->global_path).extension().string()) == ".jscn";
+    return editor_detail::IsSceneResourcePath(dir_info->global_path);
 }
 
 bool IsPythonScriptFile(const DirectoryInformation* dir_info) {
@@ -128,7 +82,7 @@ bool IsPythonScriptFile(const DirectoryInformation* dir_info) {
 }
 
 const char* DragDropPayloadType(const DirectoryInformation* dir_info) {
-    if (IsNativeSceneFile(dir_info)) {
+    if (IsSceneFile(dir_info)) {
         return "GobotSceneResource";
     }
     if (IsPythonScriptFile(dir_info)) {
@@ -594,15 +548,15 @@ void ResourcePanel::DrawResourceTree(DirectoryInformation* dir_info, bool root)
 
     const std::string popup_id = "##ResourceFileContext_" + dir_info->global_path;
     if (!dir_info->is_directory && ImGui::BeginPopupContextItem(popup_id.c_str())) {
-        if (IsNativeSceneFile(dir_info) && ImGui::MenuItem(ICON_MDI_OPEN_IN_NEW " Open Scene")) {
+        if (IsSceneFile(dir_info) && ImGui::MenuItem(ICON_MDI_OPEN_IN_NEW " Open Scene")) {
             OpenResource(dir_info);
         }
-        if (IsNativeSceneFile(dir_info) && ImGui::MenuItem(ICON_MDI_STAR " Set as Main Scene")) {
+        if (IsSceneFile(dir_info) && ImGui::MenuItem(ICON_MDI_STAR " Set as Main Scene")) {
             if (ProjectSettings::GetInstance()->SetMainScenePath(dir_info->local_path)) {
                 LOG_INFO("Set project main scene: {}", dir_info->local_path);
             }
         }
-        if (IsNativeSceneFile(dir_info)) {
+        if (IsSceneFile(dir_info)) {
             ImGui::Separator();
         }
         if (ImGui::MenuItem(ICON_MDI_RENAME_BOX " Rename File")) {
@@ -611,7 +565,7 @@ void ResourcePanel::DrawResourceTree(DirectoryInformation* dir_info, bool root)
             pending_rename_resource_file_name_ = dir_info->this_path;
             request_rename_resource_file_popup_ = true;
         }
-        const char* delete_label = IsNativeSceneFile(dir_info) ?
+        const char* delete_label = IsSceneFile(dir_info) ?
                 ICON_MDI_DELETE " Delete Scene File" :
                 ICON_MDI_DELETE " Delete File";
         if (ImGui::MenuItem(delete_label)) {
@@ -696,7 +650,7 @@ bool ResourcePanel::OpenResource(DirectoryInformation* resource)
     }
 
     const std::string local_path = resource->local_path;
-    if (IsNativeSceneFile(resource)) {
+    if (IsSceneFile(resource)) {
         SelectResource(local_path);
         Editor::GetInstance()->RequestOpenSceneFromPath(local_path);
         Editor::GetInstance()->FocusSceneViewerPanel();
@@ -800,7 +754,7 @@ void ResourcePanel::LoadExampleProjects(const Json& history_json)
             if (std::ranges::find(example_roots_, root_path) == example_roots_.end()) {
                 example_roots_.push_back(root_path);
             }
-            AppendExampleProjectDirectories(root_path, example_projects_);
+            editor_detail::AppendExampleProjectDirectories(root_path, example_projects_);
         }
     }
 
@@ -810,7 +764,7 @@ void ResourcePanel::LoadExampleProjects(const Json& history_json)
                 std::ranges::find(example_roots_, source_examples) == example_roots_.end()) {
             example_roots_.push_back(source_examples);
         }
-        AppendExampleProjectDirectories(source_examples, example_projects_);
+        editor_detail::AppendExampleProjectDirectories(source_examples, example_projects_);
     }
 }
 

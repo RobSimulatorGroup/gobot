@@ -210,7 +210,7 @@ EditorIcon GetResourcePathEditorIcon(std::string_view path, bool is_directory) {
     if (filename == "project.gobot") {
         return FontIcon(ICON_MDI_APPLICATION, kSceneColor);
     }
-    if (extension == ".jscn") {
+    if (extension == ".jscn" || extension == ".gsplat") {
         return FontIcon(ICON_MDI_FILE_TREE, kSceneColor);
     }
     if (extension == ".jres" || extension == ".res") {

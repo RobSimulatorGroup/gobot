@@ -39,11 +39,11 @@ It moves the installed package's examples root to the front of the list.
 For a source checkout, the editor falls back to the build-time source
 `examples/` directory and writes it into `projects.json`.
 
-Each immediate child directory is treated as an example project when it contains
-at least one `.jscn` scene file. Opening an example sets that directory as the
-current project, so `res://` paths resolve within the example project. If the
-project has a `project.gobot` file with a `main_scene` entry, the editor opens
-that scene automatically.
+Each immediate child directory is treated as an example project when its
+`project.gobot` points to an existing `.jscn` or `.gsplat` main scene. For
+compatibility, a top-level scene file is also enough. Opening an example sets
+that directory as the current project, so `res://` paths resolve within the
+example project and the configured main scene opens automatically.
 If multiple roots contain the same example directory name, the editor shows the
 first one from `example_roots` and hides the later duplicates.
 
