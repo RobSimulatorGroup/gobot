@@ -108,6 +108,28 @@ jobs:
           GOBOT_RUN_NEWTON_GPU_TEST: "1"
         run: uv run --no-sync python tests/python/test_newton_provider.py
 
+      - name: Restore pinned Newton G1 assets
+        uses: actions/cache@v4
+        with:
+          path: examples/newton_g1/assets
+          key: newton-g1-assets-261cd1f429619d8ef4f546bd788ab9dea906b5e1-v8
+
+      - name: Prepare pinned Newton G1 scene
+        run: uv run --no-sync python examples/newton_g1/download_assets.py
+
+      - name: Test Newton G1 admission
+        env:
+          GOBOT_RUN_NEWTON_G1_GPU_TEST: "1"
+        run: uv run --no-sync python tests/python/test_newton_g1_gpu.py
+
+      - name: Benchmark Newton G1
+        run: |
+          mkdir -p /tmp/gobot-gpu-ci/benchmarks
+          uv run --no-sync python benchmark/newton_g1_benchmark.py \
+            --envs 1,32,128 \
+            --ticks 1000 \
+            --output /tmp/gobot-gpu-ci/benchmarks/newton_g1.json
+
       - name: Test Go1 MuJoCo Warp task
         run: uv run --no-sync python tests/python/test_go1_mujoco_warp_env.py
 

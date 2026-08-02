@@ -1051,6 +1051,16 @@ TEST(TestSimulationServer, external_driver_uses_fixed_clock_and_generation_check
     EXPECT_EQ(simulation_server.GetSceneRoot(), scene_root);
     EXPECT_NEAR(simulation_server.GetFixedTimeStep(), 0.005, CMP_EPSILON);
     EXPECT_EQ(simulation_server.GetMaxSubSteps(), 4);
+    gobot::ExternalSessionDiagnostics diagnostics;
+    diagnostics.provider_name = "Newton";
+    diagnostics.device = "cuda:0";
+    diagnostics.environment_count = 4;
+    diagnostics.controlled_joint_count = 43;
+    diagnostics.capacities = "{nconmax:64}";
+    diagnostics.graph_status = "Captured";
+    diagnostics.status = "Running";
+    EXPECT_TRUE(simulation_server.SetExternalSessionDiagnostics(first_token, diagnostics));
+    EXPECT_EQ(simulation_server.GetExternalSessionDiagnostics().provider_name, "Newton");
 
     simulation_server.SetFixedTimeStep(0.01);
     EXPECT_NEAR(simulation_server.GetFixedTimeStep(), 0.005, CMP_EPSILON);
@@ -1073,6 +1083,8 @@ TEST(TestSimulationServer, external_driver_uses_fixed_clock_and_generation_check
     }), 2);
     EXPECT_EQ(callback_count, 2);
     EXPECT_EQ(first_driver->step_count, 2);
+    EXPECT_GE(simulation_server.GetExternalSessionDiagnostics().last_step_latency_ms, 0.0);
+    EXPECT_GE(simulation_server.GetExternalSessionDiagnostics().average_step_latency_ms, 0.0);
     EXPECT_NEAR(first_driver->last_fixed_delta, 0.005, CMP_EPSILON);
     EXPECT_EQ(first_driver->sync_count, 0);
     EXPECT_TRUE(simulation_server.SyncSceneFromWorld());

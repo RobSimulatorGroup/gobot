@@ -209,11 +209,17 @@ void PhysicsPanel::OnImGuiContent() {
     const PhysicsBackendInfo selected_info = GetBackendInfo(selected_backend_);
     Editor* editor = Editor::GetInstanceOrNull();
     const bool script_session_running = editor != nullptr && editor->IsScenePlaySessionRunning();
+    const bool external_session = simulation->HasExternalSession();
+    const ExternalSessionDiagnostics& external = simulation->GetExternalSessionDiagnostics();
+    const char* backend_label =
+            external_session && !external.provider_name.empty()
+                    ? external.provider_name.c_str()
+                    : BackendTypeLabel(selected_backend_);
 
     if (script_session_running) {
         ImGui::BeginDisabled();
     }
-    if (ImGui::BeginCombo("Backend", BackendTypeLabel(selected_backend_))) {
+    if (ImGui::BeginCombo("Backend", backend_label)) {
         for (const PhysicsBackendInfo& info : backend_infos) {
             const bool selected = info.type == selected_backend_;
             std::string label = info.name;
@@ -244,9 +250,13 @@ void PhysicsPanel::OnImGuiContent() {
     }
 
     ImGui::SameLine();
-    DrawStatusText(selected_info.available, "Available", "Unavailable");
+    DrawStatusText(external_session || selected_info.available, "Available", "Unavailable");
 
-    ImGui::TextWrapped("%s", selected_info.status.c_str());
+    if (external_session) {
+        ImGui::TextWrapped("%s", external.status.empty() ? "External provider active" : external.status.c_str());
+    } else {
+        ImGui::TextWrapped("%s", selected_info.status.c_str());
+    }
     ImGui::Separator();
 
     const bool has_world = simulation->HasWorld();
@@ -254,6 +264,17 @@ void PhysicsPanel::OnImGuiContent() {
     DrawStatusText(has_active_session,
                    simulation->HasExternalSession() ? "External provider active" : "World built",
                    "No simulation session");
+    if (external_session) {
+        ImGui::Text("Provider: %s", external.provider_name.empty() ? "External" : external.provider_name.c_str());
+        ImGui::Text("Device: %s", external.device.empty() ? "-" : external.device.c_str());
+        ImGui::Text("Environments: %zu", external.environment_count);
+        ImGui::Text("Controlled joints: %zu", external.controlled_joint_count);
+        ImGui::Text("Capacities: %s", external.capacities.empty() ? "{}" : external.capacities.c_str());
+        ImGui::Text("CUDA graph: %s", external.graph_status.empty() ? "Unknown" : external.graph_status.c_str());
+        ImGui::Text("Step latency: %.3f ms last, %.3f ms average",
+                    external.last_step_latency_ms,
+                    external.average_step_latency_ms);
+    }
     if (simulation->IsFaulted()) {
         ImGui::SameLine();
         ImGui::TextColored(ImVec4(0.95f, 0.35f, 0.35f, 1.0f), "Reset required");

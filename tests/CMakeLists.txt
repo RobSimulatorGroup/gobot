@@ -359,6 +359,16 @@ set_tests_properties(test_python_provider_play_session
             WORKING_DIRECTORY "${CMAKE_SOURCE_DIR}"
 )
 add_test(
+        NAME test_python_robot_batch_view
+        COMMAND ${Python3_EXECUTABLE} -S
+                ${CMAKE_CURRENT_SOURCE_DIR}/python/test_robot_batch_view.py
+)
+set_tests_properties(test_python_robot_batch_view
+        PROPERTIES
+            ENVIRONMENT "${GOBOT_PYTHON_TEST_ENV}"
+            WORKING_DIRECTORY "${CMAKE_SOURCE_DIR}"
+)
+add_test(
         NAME test_python_terrain_generation_scene
         COMMAND ${Python3_EXECUTABLE} -S ${CMAKE_CURRENT_SOURCE_DIR}/python/test_terrain_generation_scene.py
 )

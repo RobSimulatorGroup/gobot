@@ -6,6 +6,7 @@
 
 #include "gobot/simulation/simulation_server.hpp"
 
+#include <chrono>
 #include <cmath>
 #include <utility>
 
@@ -629,6 +630,25 @@ bool SimulationServer::SyncExternalSession(std::uint64_t session_token) {
     return SyncSceneFromWorld();
 }
 
+bool SimulationServer::SetExternalSessionDiagnostics(
+        std::uint64_t session_token,
+        ExternalSessionDiagnostics diagnostics) {
+    if (!external_driver_.IsValid() || session_token == 0 ||
+        session_token != external_session_token_) {
+        SetLastError("External simulation session token is stale.");
+        return false;
+    }
+    diagnostics.last_step_latency_ms = external_diagnostics_.last_step_latency_ms;
+    diagnostics.average_step_latency_ms = external_diagnostics_.average_step_latency_ms;
+    external_diagnostics_ = std::move(diagnostics);
+    last_error_.clear();
+    return true;
+}
+
+const ExternalSessionDiagnostics& SimulationServer::GetExternalSessionDiagnostics() const {
+    return external_diagnostics_;
+}
+
 Ref<PhysicsWorld> SimulationServer::GetWorld() const {
     return world_;
 }
@@ -924,6 +944,9 @@ void SimulationServer::ClearExternalSession() {
     Ref<ExternalSimulationDriver> driver = std::move(external_driver_);
     external_scene_root_id_ = ObjectID{};
     external_session_token_ = 0;
+    external_diagnostics_ = {};
+    external_step_latency_sum_ms_ = 0.0;
+    external_step_latency_count_ = 0;
     if (external_timing_saved_) {
         physics_world_settings_.fixed_time_step = saved_fixed_time_step_;
         max_sub_steps_ = saved_max_sub_steps_;
@@ -984,7 +1007,17 @@ SimulationServer::FixedStepResult SimulationServer::StepFixed(
     bool advanced = false;
     if (active_external_driver.IsValid()) {
         GOBOT_PROFILE_ZONE("SimulationServer::ExternalDriverStep");
+        const auto step_started_at = std::chrono::steady_clock::now();
         const bool step_succeeded = active_external_driver->Step(fixed_delta);
+        const double step_latency_ms = std::chrono::duration<double, std::milli>(
+                                               std::chrono::steady_clock::now() - step_started_at)
+                                               .count();
+        external_diagnostics_.last_step_latency_ms = step_latency_ms;
+        external_step_latency_sum_ms_ += step_latency_ms;
+        ++external_step_latency_count_;
+        external_diagnostics_.average_step_latency_ms =
+                external_step_latency_sum_ms_ /
+                static_cast<double>(external_step_latency_count_);
         advanced = step_succeeded;
         if (fail_if_session_changed()) {
             return {.advanced = advanced, .session_changed = true};

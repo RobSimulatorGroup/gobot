@@ -1536,7 +1536,35 @@ void RegisterManualAppContextBindings(py::module_& module) {
                 }
                 return true;
             }, py::arg("token"))
-            .def("_apply_link_pose_batch", [](EngineContext& context,
+            .def("_set_external_simulation_diagnostics", [](EngineContext& context,
+                                                              std::uint64_t token,
+                                                              const py::dict& values) {
+                SimulationServer* simulation = context.GetSimulationServer();
+                if (simulation == nullptr) {
+                    throw std::runtime_error("External simulation server is unavailable");
+                }
+                ExternalSessionDiagnostics diagnostics;
+                const auto string_value = [&](const char* name) {
+                    const py::str key(name);
+                    return values.contains(key) ? py::cast<std::string>(values[key]) : std::string{};
+                };
+                const auto size_value = [&](const char* name) {
+                    const py::str key(name);
+                    return values.contains(key) ? py::cast<std::size_t>(values[key]) : std::size_t{0};
+                };
+                diagnostics.provider_name = string_value("provider_name");
+                diagnostics.device = string_value("device");
+                diagnostics.capacities = string_value("capacities");
+                diagnostics.graph_status = string_value("graph_status");
+                diagnostics.status = string_value("status");
+                diagnostics.environment_count = size_value("environment_count");
+                diagnostics.controlled_joint_count = size_value("controlled_joint_count");
+                if (!simulation->SetExternalSessionDiagnostics(token, std::move(diagnostics))) {
+                    throw std::runtime_error(simulation->GetLastError());
+                }
+                return true;
+            }, py::arg("token"), py::arg("values"))
+            .def("apply_link_poses", [](EngineContext& context,
                                                const std::vector<PyLink3DHandle>& links,
                                                py::array_t<float,
                                                            py::array::c_style |
@@ -1605,6 +1633,12 @@ void RegisterManualAppContextBindings(py::module_& module) {
                         update.link->SetTransform(update.transform);
                     }
                 }
+            }, py::arg("links"), py::arg("poses"))
+            .def("_apply_link_pose_batch", [](EngineContext& context,
+                                                py::object links,
+                                                py::object poses) {
+                py::cast(&context, py::return_value_policy::reference)
+                        .attr("apply_link_poses")(std::move(links), std::move(poses));
             }, py::arg("links"), py::arg("poses"))
             .def("compiled_scene_artifact", [](EngineContext& context) {
                 SimulationServer* simulation = context.GetSimulationServer();

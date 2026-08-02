@@ -1,0 +1,24 @@
+{
+  "version": 1,
+  "runtime": "newton-1.4",
+  "asset_revision": "261cd1f429619d8ef4f546bd788ab9dea906b5e1",
+  "fixed_dt": 0.005,
+  "policy_decimation": 4,
+  "zero_command_height_every_10_policy_steps": [
+    0.7895,
+    0.7816,
+    0.7786,
+    0.7766,
+    0.7789,
+    0.7807,
+    0.7801,
+    0.7818,
+    0.7823,
+    0.7815
+  ],
+  "absolute_tolerance": 0.005,
+  "forward_command": [0.5, 0.0, 0.0],
+  "forward_policy_steps": 100,
+  "forward_planar_displacement_range": [0.05, 2.5],
+  "forward_minimum_height": 0.72
+}

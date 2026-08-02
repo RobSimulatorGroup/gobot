@@ -92,7 +92,11 @@ def test_manifest_is_complete_and_pinned() -> None:
         f"https://cdn.jsdelivr.net/gh/newton-physics/newton-assets@{REVISION}",
     )
     assert downloader.SOURCE_USD.as_posix() == "unitree_g1/usd/g1_isaac.usd"
-    assert downloader.SCENE_CACHE_VERSION == 7
+    assert downloader.SCENE_CACHE_VERSION == 8
+    identity = downloader.scene_cache_identity("test-version")
+    assert identity["task_config_sha256"] == hashlib.sha256(
+        downloader.TASK_CONFIG_PATH.read_bytes()
+    ).hexdigest()
 
 
 def test_large_asset_uses_git_blob_api_with_raw_response() -> None:

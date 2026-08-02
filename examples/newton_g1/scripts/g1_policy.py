@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import json
 import os
 import time
 
@@ -22,17 +23,35 @@ from scripts.g1_policy_contract import (
 )
 
 
-POLICY_PATH = "res://assets/unitree_g1/rl_policies/mjw_g1_29DOF.onnx"
-POLICY_CONTRACT_PATH = "res://assets/unitree_g1/rl_policies/g1_29dof.yaml"
+TASK_CONFIG_PATH = "res://newton_g1.task.json"
 PRINT_INTERVAL_SECONDS = 2.0
-NEWTON_MODEL_CONFIG = NewtonModelConfig(
-    joint_limit_stiffness=1.0e2,
-    joint_limit_damping=1.0,
-    contact_stiffness=5.0e4,
-    contact_damping=5.0e2,
-    contact_friction_stiffness=1.0e3,
-    contact_friction_override=0.75,
-)
+
+
+def _load_task_config(project_path):
+    path = os.path.join(project_path, TASK_CONFIG_PATH.removeprefix("res://"))
+    with open(path, encoding="utf-8") as stream:
+        task = json.load(stream)
+    expected = {
+        "version": 1,
+        "fixed_dt": PHYSICS_DT,
+        "policy_decimation": POLICY_DECIMATION,
+        "actions": ACTION_DIM,
+        "observations": OBSERVATION_DIM,
+        "initial_base_pose_xyzw": list(BASE_POSE_XYZW),
+    }
+    actual = {
+        "version": task.get("version"),
+        "fixed_dt": task.get("physics", {}).get("fixed_dt"),
+        "policy_decimation": task.get("physics", {}).get("policy_decimation"),
+        "actions": task.get("dimensions", {}).get("actions"),
+        "observations": task.get("dimensions", {}).get("observations"),
+        "initial_base_pose_xyzw": task.get("physics", {}).get("initial_base_pose_xyzw"),
+    }
+    if actual != expected:
+        raise RuntimeError(
+            f"Newton G1 task config does not match the pinned policy contract: {actual!r}"
+        )
+    return task
 
 
 def _walk_nodes(root):
@@ -69,8 +88,8 @@ def _key_axis(input_state, negative, positive, scale):
     return value
 
 
-def _configure_native_g1_scene(robot, joints, native_contract):
-    """Apply the reference demo's policy drives and collision filtering."""
+def _validate_native_g1_scene(robot, joints, native_contract):
+    """Reject generated scenes that predate the versioned task contract."""
 
     default_position = native_contract["mjw_joint_pos"]
     stiffness = native_contract["mjw_joint_stiffness"]
@@ -78,24 +97,39 @@ def _configure_native_g1_scene(robot, joints, native_contract):
     armature = native_contract["mjw_joint_armature"]
     for index, name in enumerate(JOINT_NAMES):
         joint = joints[name]
-        joint.drive_mode = gobot.JointDriveMode.Position
-        joint.drive_stiffness = stiffness[index]
-        joint.drive_damping = damping[index]
-        joint.armature = armature[index]
-        joint.initial_position = default_position[index]
-        joint.friction_loss = 0.0
-        joint.effort_limit = 0.0
-        joint.force_lower_limit = 0.0
-        joint.force_upper_limit = 0.0
+        expected = (
+            ("drive_stiffness", stiffness[index]),
+            ("drive_damping", damping[index]),
+            ("armature", armature[index]),
+            ("initial_position", default_position[index]),
+            ("friction_loss", 0.0),
+            ("effort_limit", 0.0),
+            ("force_lower_limit", 0.0),
+            ("force_upper_limit", 0.0),
+        )
+        if joint.drive_mode != gobot.JointDriveMode.Position or any(
+            abs(float(getattr(joint, field)) - float(value)) > 1.0e-6
+            for field, value in expected
+        ):
+            raise RuntimeError(
+                f"generated G1 scene has stale physics settings for {name!r}; "
+                "re-run the project asset hook to rebuild its cache"
+            )
 
     # Newton's reference G1 import disables articulation self-collision. Keep
     # that example policy out of the generic USD importer while retaining
     # collision with the world (world geoms use contype/conaffinity 1/1).
     for node in _walk_nodes(robot):
-        if node.type_name == "CollisionShape3D":
-            node.set("contype", 0)
-            node.set("conaffinity", 1)
-    robot.mode = gobot.RobotMode.Motion
+        if node.type_name == "CollisionShape3D" and (
+            int(node.get("contype")) != 0 or int(node.get("conaffinity")) != 1
+        ):
+            raise RuntimeError(
+                "generated G1 scene has stale collision filters; re-run the project asset hook"
+            )
+    if robot.mode != gobot.RobotMode.Motion:
+        raise RuntimeError(
+            "generated G1 scene has a stale Robot3D mode; re-run the project asset hook"
+        )
 
 
 def _quat_rotate_inverse(torch, quaternion_xyzw, vector):
@@ -179,6 +213,8 @@ class Script(gobot.NodeScript):
             root = self.get_root()
             if root is None:
                 raise RuntimeError("Newton G1 script has no scene root")
+            task_config = _load_task_config(self.context.project_path)
+            resources = task_config["resources"]
             robots = [node for node in _walk_nodes(root) if node.type_name == "Robot3D"]
             if len(robots) != 1:
                 raise RuntimeError(
@@ -190,7 +226,7 @@ class Script(gobot.NodeScript):
 
             contract_path = os.path.join(
                 self.context.project_path,
-                POLICY_CONTRACT_PATH.removeprefix("res://"),
+                resources["policy_contract"].removeprefix("res://"),
             )
             native_contract = load_native_policy_contract(contract_path)
             if native_contract["mjw_joint_names"] != JOINT_NAMES:
@@ -199,7 +235,7 @@ class Script(gobot.NodeScript):
                 raise RuntimeError("G1 policy YAML does not describe 43 joints")
             self.action_scale = float(native_contract["action_scale"])
             default_position = native_contract["mjw_joint_pos"]
-            _configure_native_g1_scene(self.robot, joints, native_contract)
+            _validate_native_g1_scene(self.robot, joints, native_contract)
             self._startup_finish("scene and policy contract validated")
 
             self._startup_begin("compiling the Gobot scene artifact")
@@ -226,54 +262,27 @@ class Script(gobot.NodeScript):
                 nconmax=30,
                 njmax=100,
                 use_mujoco_contacts=True,
-                model_config=NEWTON_MODEL_CONFIG,
+                model_config=NewtonModelConfig(**task_config["newton_model"]),
             )
             if not self.provider.use_mujoco_contacts:
                 raise RuntimeError("Newton G1 playback requires the official MuJoCo contact path")
             self._startup_finish("Newton provider initialized")
 
             self._startup_begin("resolving the G1 layout and allocating CUDA tensors")
-            self.layout = self.provider.resolve_robot_layout(
-                robot_names[0],
+            self.robot_view = self.provider.create_robot_view(
+                robot_name=robot_names[0],
                 base_link=BASE_LINK,
                 joint_names=JOINT_NAMES,
                 link_names=LINK_NAMES,
+                scene_context=self.context,
+                scene_links=tuple(self.links[name] for name in LINK_NAMES),
             )
-            if self.layout.actuator_modes != ("position",) * ACTION_DIM:
-                raise RuntimeError(
-                    "compiled G1 scene did not preserve all position actuators"
-                )
 
             arrays = self.provider.arrays
             import torch
 
             self.torch = torch
             self.device = arrays["joint_q"].device
-            self.joint_q_index = torch.as_tensor(
-                self.layout.joint_q_indices,
-                dtype=torch.long,
-                device=self.device,
-            )
-            self.joint_qd_index = torch.as_tensor(
-                self.layout.joint_qd_indices,
-                dtype=torch.long,
-                device=self.device,
-            )
-            self.base_q_index = torch.as_tensor(
-                self.layout.base_joint_q_indices,
-                dtype=torch.long,
-                device=self.device,
-            )
-            self.base_qd_index = torch.as_tensor(
-                self.layout.base_joint_qd_indices,
-                dtype=torch.long,
-                device=self.device,
-            )
-            self.body_index = torch.as_tensor(
-                self.layout.link_body_indices,
-                dtype=torch.long,
-                device=self.device,
-            )
             self.default_joint_position = torch.as_tensor(
                 default_position,
                 dtype=torch.float32,
@@ -290,7 +299,7 @@ class Script(gobot.NodeScript):
 
             policy_path = os.path.join(
                 self.context.project_path,
-                POLICY_PATH.removeprefix("res://"),
+                resources["policy"].removeprefix("res://"),
             )
             if not os.path.isfile(policy_path):
                 raise FileNotFoundError(
@@ -311,6 +320,7 @@ class Script(gobot.NodeScript):
                 reset=self._reset_provider,
                 sync_scene=self._sync_robot_links,
             ).start()
+            self.play_session.set_status("Ready; first policy and physics tick pending")
             self._startup_finish("initial Newton state synchronized")
             print(
                 "Newton G1 policy playback started: physics=Newton renderer=Gobot "
@@ -347,6 +357,8 @@ class Script(gobot.NodeScript):
 
         if self.ticks % POLICY_DECIMATION == 0:
             if self.ticks == 0:
+                if self.play_session is not None:
+                    self.play_session.set_status("Warming up policy and physics CUDA kernels")
                 self._first_frame_warmup_started_at = time.perf_counter()
                 print(
                     "Newton G1 startup: warming up the first policy and physics CUDA kernels...",
@@ -354,14 +366,15 @@ class Script(gobot.NodeScript):
                 )
             action = self.policy.action(self._observation())
             targets = self.default_joint_position + self.action_scale * action
-            self.provider.set_joint_position_targets(self.layout, targets)
+            self.robot_view.set_position_targets(targets)
             self.previous_action.copy_(action)
 
         self.ticks += 1
         print_every = max(1, int(round(PRINT_INTERVAL_SECONDS / PHYSICS_DT)))
         if self.ticks % print_every == 0:
-            base = self.provider.arrays["joint_q"].index_select(1, self.base_q_index)[0]
-            speed = self.provider.arrays["joint_qd"].index_select(1, self.base_qd_index)[0]
+            state = self.robot_view.read_state()
+            base = state.base_pose[0]
+            speed = state.base_velocity[0]
             self.provider.synchronize()
             print(
                 "Newton G1 t={:.2f}s base=({:.3f},{:.3f},{:.3f}) "
@@ -383,6 +396,8 @@ class Script(gobot.NodeScript):
                     flush=True,
                 )
                 self._first_frame_warmup_started_at = None
+                if self.play_session is not None:
+                    self.play_session.set_status("Running")
 
     def _exit_tree(self):
         self._close_play_session()
@@ -398,11 +413,11 @@ class Script(gobot.NodeScript):
             provider.close()
 
     def _observation(self):
-        arrays = self.provider.arrays
-        base_pose = arrays["joint_q"].index_select(1, self.base_q_index)
-        base_velocity = arrays["joint_qd"].index_select(1, self.base_qd_index)
-        joint_position = arrays["joint_q"].index_select(1, self.joint_q_index)
-        joint_velocity = arrays["joint_qd"].index_select(1, self.joint_qd_index)
+        state = self.robot_view.read_state()
+        base_pose = state.base_pose
+        base_velocity = state.base_velocity
+        joint_position = state.joint_position
+        joint_velocity = state.joint_velocity
         orientation = base_pose[:, 3:7]
         observation = self.torch.cat(
             (
@@ -432,8 +447,7 @@ class Script(gobot.NodeScript):
         ).reshape(1, 7)
         zeros6 = torch.zeros((1, 6), dtype=torch.float32, device=self.device)
         zeros43 = torch.zeros((1, ACTION_DIM), dtype=torch.float32, device=self.device)
-        self.provider.reset_robot_state(
-            self.layout,
+        self.robot_view.reset(
             torch.ones(1, dtype=torch.bool, device=self.device),
             base_pose=base_pose,
             base_velocity=zeros6,
@@ -447,14 +461,4 @@ class Script(gobot.NodeScript):
 
     def _sync_robot_links(self):
         self.provider.synchronize()
-        body_poses = (
-            self.provider.arrays["body_q"]
-            .index_select(1, self.body_index)[0]
-            .detach()
-            .cpu()
-            .numpy()
-        )
-        self.context._apply_link_pose_batch(
-            tuple(self.links[name] for name in LINK_NAMES),
-            body_poses,
-        )
+        self.robot_view.sync_scene()

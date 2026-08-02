@@ -22,6 +22,18 @@ namespace gobot {
 
 class Node;
 
+struct GOBOT_EXPORT ExternalSessionDiagnostics {
+    std::string provider_name;
+    std::string device;
+    std::string capacities;
+    std::string graph_status;
+    std::string status;
+    std::size_t environment_count{0};
+    std::size_t controlled_joint_count{0};
+    double last_step_latency_ms{0.0};
+    double average_step_latency_ms{0.0};
+};
+
 class GOBOT_EXPORT SimulationServer : public Object {
     GOBCLASS(SimulationServer, Object)
 
@@ -95,6 +107,11 @@ public:
     bool ResetExternalSession(std::uint64_t session_token);
 
     bool SyncExternalSession(std::uint64_t session_token);
+
+    bool SetExternalSessionDiagnostics(std::uint64_t session_token,
+                                       ExternalSessionDiagnostics diagnostics);
+
+    const ExternalSessionDiagnostics& GetExternalSessionDiagnostics() const;
 
     Ref<PhysicsWorld> GetWorld() const;
 
@@ -178,6 +195,9 @@ private:
     RealType saved_fixed_time_step_{1.0 / 60.0};
     int saved_max_sub_steps_{8};
     bool external_timing_saved_{false};
+    ExternalSessionDiagnostics external_diagnostics_;
+    double external_step_latency_sum_ms_{0.0};
+    std::uint64_t external_step_latency_count_{0};
     PhysicsSceneBindings scene_bindings_;
     SimulationScene runtime_scene_;
     bool paused_{true};

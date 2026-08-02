@@ -72,7 +72,25 @@ def main() -> None:
                 link_names=("cart", "pole"),
             )
             assert layout.actuator_modes == ("position", "position")
-            provider.set_joint_position_targets(layout, zero_actions)
+            view = provider.create_robot_view(
+                robot_name="warp_cartpole",
+                base_link="cart",
+                joint_names=("slider", "hinge"),
+                link_names=("cart", "pole"),
+            )
+            state = view.read_state()
+            state_pointers = tuple(value.data_ptr() for value in state.__dict__.values())
+            assert state.base_pose.shape == (4, 7)
+            assert state.base_velocity.shape == (4, 6)
+            assert state.joint_position.shape == (4, 2)
+            assert state.link_pose.shape == (4, 2, 7)
+            torch.testing.assert_close(
+                state.base_pose[:, 3:7],
+                torch.tensor([[0.0, 0.0, 0.0, 1.0]], device="cuda:0").repeat(4, 1),
+            )
+            assert view.read_state() is state
+            assert tuple(value.data_ptr() for value in state.__dict__.values()) == state_pointers
+            view.set_position_targets(zero_actions)
 
             provider.step(zero_actions, nsteps=2)
             provider.synchronize()

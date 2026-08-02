@@ -16,7 +16,10 @@ from .base import (
     BatchPhysicsProvider,
     BatchProviderCapabilities,
     CompiledSceneArtifact,
+    GraphInvalidatedError,
     ProviderUnavailableError,
+    RobotBatchSpec,
+    RobotBatchState,
     SimulationCapacityError,
     validate_compiled_artifact,
 )
@@ -131,6 +134,67 @@ class NewtonRobotLayout:
     actuator_indices: tuple[int, ...]
     actuator_modes: tuple[str, ...]
     link_body_indices: tuple[int, ...]
+
+
+class _NewtonRobotViewAdapter:
+    def __init__(self, provider: "NewtonProvider", spec: RobotBatchSpec) -> None:
+        self.provider = provider
+        self.layout = provider.resolve_robot_layout(
+            spec.robot_name,
+            base_link=spec.base_link,
+            joint_names=spec.joint_names,
+            link_names=spec.link_names,
+        )
+        torch = provider._torch
+        device = provider._torch_device
+        self.joint_q = torch.as_tensor(self.layout.joint_q_indices, dtype=torch.long, device=device)
+        self.joint_qd = torch.as_tensor(self.layout.joint_qd_indices, dtype=torch.long, device=device)
+        self.base_qd = torch.as_tensor(self.layout.base_joint_qd_indices, dtype=torch.long, device=device)
+        self.controls = torch.as_tensor(self.layout.actuator_indices, dtype=torch.long, device=device)
+        self.links = torch.as_tensor(self.layout.link_body_indices, dtype=torch.long, device=device)
+        self.fixed_base_velocity = torch.zeros(
+            (provider.num_envs, 6),
+            dtype=provider.arrays["body_qd"].dtype,
+            device=device,
+        )
+
+    def read_state(self, state: RobotBatchState | None) -> RobotBatchState:
+        arrays = self.provider.arrays
+        if state is None:
+            base_velocity = (
+                arrays["joint_qd"].index_select(1, self.base_qd)
+                if self.layout.base_joint_qd_indices
+                else self.fixed_base_velocity.clone()
+            )
+            return RobotBatchState(
+                arrays["body_q"][:, self.layout.base_body_index].clone(),
+                base_velocity,
+                arrays["joint_q"].index_select(1, self.joint_q),
+                arrays["joint_qd"].index_select(1, self.joint_qd),
+                arrays["ctrl"].index_select(1, self.controls),
+                arrays["body_q"].index_select(1, self.links),
+            )
+        state.base_pose.copy_(arrays["body_q"][:, self.layout.base_body_index])
+        if self.layout.base_joint_qd_indices:
+            self.provider._torch.index_select(
+                arrays["joint_qd"], 1, self.base_qd, out=state.base_velocity
+            )
+        else:
+            state.base_velocity.copy_(self.fixed_base_velocity)
+        self.provider._torch.index_select(arrays["joint_q"], 1, self.joint_q, out=state.joint_position)
+        self.provider._torch.index_select(arrays["joint_qd"], 1, self.joint_qd, out=state.joint_velocity)
+        self.provider._torch.index_select(arrays["ctrl"], 1, self.controls, out=state.joint_control)
+        self.provider._torch.index_select(arrays["body_q"], 1, self.links, out=state.link_pose)
+        return state
+
+    def set_position_targets(self, targets: Any) -> None:
+        self.provider.set_joint_position_targets(self.layout, targets)
+
+    def set_controls(self, controls: Any) -> None:
+        self.provider.set_joint_controls(self.layout, controls)
+
+    def reset(self, reset_mask: Any, **state: Any) -> Mapping[str, Any]:
+        return self.provider.reset_robot_state(self.layout, reset_mask, **state)
 
 
 @dataclass(frozen=True)
@@ -508,6 +572,7 @@ class NewtonProvider(BatchPhysicsProvider):
         njmax: int | None = None,
         iterations: int | None = None,
         use_mujoco_contacts: bool = True,
+        capture_graphs: bool = True,
         overflow_check_interval: int = 256,
         strict_mujoco_version: bool = True,
         model_config: NewtonModelConfig | None = None,
@@ -540,10 +605,17 @@ class NewtonProvider(BatchPhysicsProvider):
         self._device_name = str(device)
         self._fixed_time_step = float(fixed_time_step)
         self._overflow_check_interval = int(overflow_check_interval)
+        self._requested_capacities = {
+            name: int(value)
+            for name, value in (("nconmax", nconmax), ("njmax", njmax))
+            if value is not None
+        }
         self._step_count = 0
         self._use_mujoco_contacts = use_mujoco_contacts
+        self._capture_enabled = bool(capture_graphs)
         self._torch_device = self._torch.device(self._device_name)
         self._closed = False
+        self._generation = 1
         self._empty_arrays: dict[str, Any] = {}
         self._provider_version = _module_version(self._newton)
         self._runtime_fingerprint = self.artifact.runtime_fingerprint(
@@ -557,6 +629,7 @@ class NewtonProvider(BatchPhysicsProvider):
                 "njmax": njmax,
                 "iterations": iterations,
                 "use_mujoco_contacts": self._use_mujoco_contacts,
+                "capture_graphs": self._capture_enabled,
                 "model_config": self._model_config,
             },
         )
@@ -723,6 +796,8 @@ class NewtonProvider(BatchPhysicsProvider):
             self._actuator_routes = self._build_actuator_routes()
             self._sync_semantic_controls_from_targets()
             self._initial_ctrl = self._arrays["ctrl"].clone()
+            self._initial_joint_q = self._arrays["joint_q"].clone()
+            self._initial_joint_qd = self._arrays["joint_qd"].clone()
             self._initial_joint_target_q = self._joint_target_q_tensor.clone()
             self._initial_joint_target_qd = self._joint_target_qd_tensor.clone()
             self._initial_time = (
@@ -731,6 +806,10 @@ class NewtonProvider(BatchPhysicsProvider):
             self._initial_overflow = (
                 self._arrays["overflow"].clone() if "overflow" in self._arrays else None
             )
+            self._physics_graph = None
+            if self._capture_enabled:
+                self._warmup_and_capture_graph()
+            self._storage_signature = self._capture_storage_signature()
 
     @classmethod
     def from_context(cls, context: Any, **kwargs: Any) -> "NewtonProvider":
@@ -782,7 +861,7 @@ class NewtonProvider(BatchPhysicsProvider):
             name="Newton",
             device=self._device_name,
             device_native=True,
-            graph_capture=False,
+            graph_capture=self._capture_enabled,
             masked_reset=True,
             fixed_capacity=True,
         )
@@ -815,6 +894,32 @@ class NewtonProvider(BatchPhysicsProvider):
     def arrays(self) -> Mapping[str, Any]:
         self._require_open()
         return self._arrays
+
+    @property
+    def generation(self) -> int:
+        return self._generation
+
+    @property
+    def capacities(self) -> Mapping[str, int]:
+        self._require_open()
+        result = dict(self._requested_capacities)
+        active_contact_capacity = getattr(self._solver_data, "naconmax", None)
+        if active_contact_capacity is not None:
+            result["nconmax"] = int(active_contact_capacity) // self._num_envs
+        for name in ("njmax", "njmax_nnz"):
+            value = getattr(self._solver_data, name, None)
+            if value is not None:
+                result[name] = int(value)
+        return MappingProxyType(result)
+
+    @property
+    def graph_captured(self) -> bool:
+        self._require_open()
+        return self._physics_graph is not None
+
+    def _create_robot_view_adapter(self, spec: RobotBatchSpec) -> _NewtonRobotViewAdapter:
+        self._require_open()
+        return _NewtonRobotViewAdapter(self, spec)
 
     def resolve_robot_layout(
         self,
@@ -999,8 +1104,111 @@ class NewtonProvider(BatchPhysicsProvider):
             ctrl=ctrl,
         )
 
+    def _physics_tick(self) -> None:
+        """Execute one fixed tick using only capture-stable storage."""
+
+        self._state.clear_forces()
+        if self._contacts is not None:
+            self._model.collide(self._state, self._contacts)
+        self._solver.step(
+            self._state,
+            self._next_state,
+            self._control,
+            self._contacts,
+            self._fixed_time_step,
+        )
+        self._state.assign(self._next_state)
+
+    def _restore_initial_state_after_capture(self) -> None:
+        mask = self._torch.as_tensor(
+            [True] * self._num_envs,
+            dtype=self._torch.bool,
+            device=self._torch_device,
+        )
+        self._reset_mask_tensor.copy_(mask)
+        self._solver.reset(self._state, self._reset_mask)
+        self._arrays["joint_q"].copy_(self._initial_joint_q)
+        self._arrays["joint_qd"].copy_(self._initial_joint_qd)
+        self._arrays["ctrl"].copy_(self._initial_ctrl)
+        self._joint_target_q_tensor.copy_(self._initial_joint_target_q)
+        self._joint_target_qd_tensor.copy_(self._initial_joint_target_qd)
+        if self._initial_time is not None:
+            self._arrays["time"].copy_(self._initial_time)
+        if self._initial_overflow is not None:
+            self._arrays["overflow"].copy_(self._initial_overflow)
+        self._route_actuator_controls()
+        self._newton.eval_fk(
+            self._model,
+            self._state.joint_q,
+            self._state.joint_qd,
+            self._state,
+        )
+        self._next_state.assign(self._state)
+        self._reset_mask_tensor.zero_()
+
+    def _warmup_and_capture_graph(self) -> None:
+        try:
+            self._physics_tick()
+            self._restore_initial_state_after_capture()
+            with self._wp.ScopedCapture(device=self._wp_device) as capture:
+                self._physics_tick()
+            self._physics_graph = capture.graph
+            # The CPU fake runtime uses a callable graph to exercise replay
+            # without requiring CUDA. A real Warp capture always returns a graph.
+            if self._physics_graph is None and getattr(self._wp, "_gobot_test_fake", False):
+                self._physics_graph = self._physics_tick
+            if self._physics_graph is None:
+                raise RuntimeError("Warp returned no CUDA graph")
+            self._restore_initial_state_after_capture()
+        except Exception as error:
+            raise RuntimeError(
+                "Newton CUDA graph capture was explicitly enabled but failed: "
+                f"{type(error).__name__}: {error}. Set capture_graphs=False for debugging."
+            ) from error
+
+    def _capture_storage_signature(self) -> tuple[Any, ...]:
+        tensors = tuple(
+            (name, value.data_ptr())
+            for name, value in sorted(self._arrays.items())
+            if callable(getattr(value, "data_ptr", None))
+        )
+        return (
+            id(self._model),
+            id(getattr(self._model, "joint_q", None)),
+            id(getattr(self._model, "joint_qd", None)),
+            id(self._state),
+            id(getattr(self._state, "joint_q", None)),
+            id(getattr(self._state, "joint_qd", None)),
+            id(getattr(self._state, "body_q", None)),
+            id(getattr(self._state, "body_qd", None)),
+            id(self._next_state),
+            id(getattr(self._next_state, "joint_q", None)),
+            id(getattr(self._next_state, "joint_qd", None)),
+            id(getattr(self._next_state, "body_q", None)),
+            id(getattr(self._next_state, "body_qd", None)),
+            id(self._control),
+            id(self._contacts),
+            id(self._solver_data),
+            id(getattr(self._solver, "mjw_model", None)),
+            id(self._joint_target_q_array),
+            id(self._joint_target_qd_array),
+            id(self._direct_ctrl_array),
+            id(self._reset_mask),
+            tensors,
+        )
+
+    def _validate_storage(self) -> None:
+        if not self._capture_enabled:
+            return
+        if self._capture_storage_signature() != self._storage_signature:
+            raise GraphInvalidatedError(
+                "Newton model/state/control/reset storage changed after graph capture; "
+                "close this provider and create a new session"
+            )
+
     def step(self, actions: Any | None = None, *, nsteps: int = 1) -> Mapping[str, Any]:
         self._require_open()
+        self._validate_storage()
         if int(nsteps) < 0:
             raise ValueError("nsteps must be non-negative")
         if actions is not None:
@@ -1011,24 +1219,11 @@ class NewtonProvider(BatchPhysicsProvider):
             # solver consumes each actuator from one of three backend arrays,
             # so route even when callers mutated the public view directly.
             self._route_actuator_controls()
-            state_in = self._state
-            state_out = self._next_state
             for _ in range(int(nsteps)):
-                state_in.clear_forces()
-                if self._contacts is not None:
-                    self._model.collide(state_in, self._contacts)
-                self._solver.step(
-                    state_in,
-                    state_out,
-                    self._control,
-                    self._contacts,
-                    self._fixed_time_step,
-                )
-                state_in, state_out = state_out, state_in
-            # Keep public Torch views pinned to one allocation, with at most
-            # one full state copy per public step call.
-            if state_in is not self._state:
-                self._state.assign(state_in)
+                if self._capture_enabled:
+                    self._wp.capture_launch(self._physics_graph)
+                else:
+                    self._physics_tick()
         self._step_count += 1
         if self._overflow_check_interval and self._step_count % self._overflow_check_interval == 0:
             self.assert_no_overflow()
@@ -1045,6 +1240,7 @@ class NewtonProvider(BatchPhysicsProvider):
         joint_target_qd: Any | None = None,
     ) -> Mapping[str, Any]:
         self._require_open()
+        self._validate_storage()
         mask = self._as_tensor(reset_mask, dtype=self._torch.bool)
         if tuple(mask.shape) != (self._num_envs,):
             raise ValueError(f"reset mask must have shape ({self._num_envs},), got {tuple(mask.shape)}")
@@ -1151,8 +1347,12 @@ class NewtonProvider(BatchPhysicsProvider):
             self._wp.synchronize_device(self._wp_device)
         finally:
             self._closed = True
+            self._generation += 1
+            self._physics_graph = None
             self._arrays = MappingProxyType({})
             self._initial_ctrl = None
+            self._initial_joint_q = None
+            self._initial_joint_qd = None
             self._initial_joint_target_q = None
             self._initial_joint_target_qd = None
             self._initial_time = None

@@ -570,6 +570,115 @@ class BatchProviderCapabilities:
     fixed_capacity: bool
 
 
+@dataclass(frozen=True)
+class RobotBatchSpec:
+    """Backend-neutral names selecting one robot from a compiled scene."""
+
+    robot_name: str
+    base_link: str
+    joint_names: tuple[str, ...]
+    link_names: tuple[str, ...] = ()
+
+    def __post_init__(self) -> None:
+        object.__setattr__(self, "robot_name", str(self.robot_name))
+        object.__setattr__(self, "base_link", str(self.base_link))
+        object.__setattr__(self, "joint_names", tuple(str(value) for value in self.joint_names))
+        object.__setattr__(self, "link_names", tuple(str(value) for value in self.link_names))
+        if not self.robot_name or not self.base_link:
+            raise ValueError("robot_name and base_link must not be empty")
+        _validate_unique_strings(self.joint_names, "robot joint name")
+        _validate_unique_strings(self.link_names, "robot link name")
+
+
+@dataclass(frozen=True)
+class RobotBatchState:
+    """Stable device tensors updated in place by :meth:`RobotBatchView.read_state`."""
+
+    base_pose: Any
+    base_velocity: Any
+    joint_position: Any
+    joint_velocity: Any
+    joint_control: Any
+    link_pose: Any
+
+
+class RobotBatchView:
+    """Provider-independent robot state, control, reset, and scene-sync view."""
+
+    def __init__(self, provider: "BatchPhysicsProvider", spec: RobotBatchSpec, adapter: Any) -> None:
+        self._provider = provider
+        self.spec = spec
+        self._adapter = adapter
+        self._generation = getattr(provider, "generation", None)
+        self._artifact_digest = getattr(getattr(provider, "artifact", None), "digest", None)
+        self._state: RobotBatchState | None = None
+        self._scene_context: Any | None = None
+        self._scene_links: tuple[Any, ...] | None = None
+
+    def _validate(self) -> None:
+        if getattr(self._provider, "generation", None) != self._generation:
+            raise RuntimeError("robot batch view is stale because its provider was closed or rebuilt")
+        digest = getattr(getattr(self._provider, "artifact", None), "digest", None)
+        if digest != self._artifact_digest:
+            raise RuntimeError("robot batch view cannot be used with a different compiled artifact")
+
+    def read_state(self) -> RobotBatchState:
+        self._validate()
+        self._state = self._adapter.read_state(self._state)
+        return self._state
+
+    def set_position_targets(self, targets: Any) -> None:
+        self._validate()
+        self._adapter.set_position_targets(targets)
+
+    def set_controls(self, controls: Any) -> None:
+        self._validate()
+        self._adapter.set_controls(controls)
+
+    def reset(self, reset_mask: Any, **state: Any) -> Mapping[str, Any]:
+        self._validate()
+        return self._adapter.reset(reset_mask, **state)
+
+    def bind_scene(self, context: Any, links: Sequence[Any]) -> "RobotBatchView":
+        if len(links) != len(self.spec.link_names):
+            raise ValueError(
+                f"scene sync requires {len(self.spec.link_names)} links, got {len(links)}"
+            )
+        self._scene_context = context
+        self._scene_links = tuple(links)
+        return self
+
+    def sync_scene(
+        self,
+        context: Any | None = None,
+        links: Sequence[Any] | None = None,
+        *,
+        env_index: int = 0,
+    ) -> None:
+        self._validate()
+        context = self._scene_context if context is None else context
+        links = self._scene_links if links is None else tuple(links)
+        if context is None or links is None:
+            raise RuntimeError("robot batch view has no bound scene context and links")
+        if len(links) != len(self.spec.link_names):
+            raise ValueError(
+                f"scene sync requires {len(self.spec.link_names)} links, got {len(links)}"
+            )
+        if not 0 <= int(env_index) < int(self._provider.num_envs):
+            raise IndexError(
+                f"scene sync environment index {env_index} is outside "
+                f"[0, {self._provider.num_envs})"
+            )
+        state = self.read_state()
+        poses = state.link_pose[int(env_index)].detach().cpu().numpy()
+        apply_poses = getattr(context, "apply_link_poses", None)
+        if not callable(apply_poses):
+            apply_poses = getattr(context, "_apply_link_pose_batch", None)
+        if not callable(apply_poses):
+            raise RuntimeError("this Gobot build does not expose AppContext.apply_link_poses")
+        apply_poses(tuple(links), poses)
+
+
 class BatchPhysicsProvider(ABC):
     """Stable lifecycle used by backend-specific batched physics providers."""
 
@@ -581,6 +690,37 @@ class BatchPhysicsProvider(ABC):
     def __exit__(self, exc_type: Any, exc_value: Any, traceback: Any) -> bool:
         self.close()
         return False
+
+    def create_robot_view(
+        self,
+        spec: RobotBatchSpec | None = None,
+        **names: Any,
+    ) -> RobotBatchView:
+        """Resolve Gobot names once and return a backend-neutral batched view."""
+
+        scene_context = names.pop("scene_context", None)
+        scene_links = names.pop("scene_links", None)
+        if spec is not None and names:
+            raise TypeError("pass either RobotBatchSpec or keyword names, not both")
+        if spec is None:
+            spec = RobotBatchSpec(
+                robot_name=str(names.pop("robot_name")),
+                base_link=str(names.pop("base_link")),
+                joint_names=tuple(str(value) for value in names.pop("joint_names")),
+                link_names=tuple(str(value) for value in names.pop("link_names", ())),
+            )
+        if names:
+            raise TypeError("unexpected robot view arguments: " + ", ".join(sorted(names)))
+        self._last_robot_view_joint_count = len(spec.joint_names)
+        view = RobotBatchView(self, spec, self._create_robot_view_adapter(spec))
+        if scene_context is not None or scene_links is not None:
+            if scene_context is None or scene_links is None:
+                raise TypeError("scene_context and scene_links must be provided together")
+            view.bind_scene(scene_context, scene_links)
+        return view
+
+    def _create_robot_view_adapter(self, spec: RobotBatchSpec) -> Any:
+        raise NotImplementedError(f"{type(self).__name__} does not implement robot batch views")
 
     @property
     @abstractmethod
@@ -612,6 +752,9 @@ __all__ = [
     "CompiledSceneArtifact",
     "GraphInvalidatedError",
     "ProviderUnavailableError",
+    "RobotBatchSpec",
+    "RobotBatchState",
+    "RobotBatchView",
     "SimulationCapacityError",
     "validate_compiled_artifact",
 ]

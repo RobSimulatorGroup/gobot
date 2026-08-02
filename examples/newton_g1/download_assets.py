@@ -6,6 +6,7 @@ import argparse
 from concurrent.futures import Future, ThreadPoolExecutor
 from dataclasses import dataclass
 import hashlib
+import importlib.util
 import json
 import os
 from pathlib import Path, PurePosixPath
@@ -20,6 +21,7 @@ import urllib.request
 
 REVISION = "261cd1f429619d8ef4f546bd788ab9dea906b5e1"
 MANIFEST_PATH = Path(__file__).with_name("asset_manifest.json")
+TASK_CONFIG_PATH = Path(__file__).with_name("newton_g1.task.json")
 DEFAULT_OUTPUT = Path(__file__).resolve().parent / "assets"
 DEFAULT_PROJECT_DIR = Path(__file__).resolve().parent
 SOURCE_USD = PurePosixPath(
@@ -27,7 +29,7 @@ SOURCE_USD = PurePosixPath(
 )
 GENERATED_SCENE = PurePosixPath("generated/g1_29dof.jscn")
 GENERATED_SCENE_STAMP = PurePosixPath("generated/g1_29dof.import.json")
-SCENE_CACHE_VERSION = 7
+SCENE_CACHE_VERSION = 8
 DEFAULT_BASE_URLS = (
     f"https://raw.githubusercontent.com/newton-physics/newton-assets/{REVISION}",
     f"https://cdn.jsdelivr.net/gh/newton-physics/newton-assets@{REVISION}",
@@ -99,11 +101,13 @@ def scene_cache_identity(gobot_version: str, assets: Sequence[Asset] = ASSETS) -
         digest.update(b"\0")
         digest.update(asset.git_blob_sha1.encode("ascii"))
         digest.update(b"\n")
+    task_config_sha256 = hashlib.sha256(TASK_CONFIG_PATH.read_bytes()).hexdigest()
     return {
         "cache_version": SCENE_CACHE_VERSION,
         "gobot_version": gobot_version,
         "newton_assets_revision": REVISION,
         "manifest_sha256": digest.hexdigest(),
+        "task_config_sha256": task_config_sha256,
         "source": SOURCE_USD.as_posix(),
     }
 
@@ -205,7 +209,48 @@ def _import_usd_with_gobot(project_dir: Path, source_path: Path, scene_path: Pat
         raise RuntimeError(
             f"official G1 USD must import exactly one Robot3D, got {len(robots)}"
         )
-    gobot.save_scene(robots[0], scene_resource)
+    robot = robots[0]
+    contract_module_path = Path(__file__).resolve().parent / "scripts" / "g1_policy_contract.py"
+    spec = importlib.util.spec_from_file_location("_gobot_newton_g1_contract", contract_module_path)
+    if spec is None or spec.loader is None:
+        raise RuntimeError(f"cannot load G1 policy contract from {contract_module_path}")
+    contract_module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(contract_module)
+    output_contract = source_path.parents[1] / "rl_policies" / "g1_29dof.yaml"
+    contract = contract_module.load_native_policy_contract(output_contract)
+    joint_names = tuple(contract_module.JOINT_NAMES)
+    if contract["mjw_joint_names"] != joint_names:
+        raise RuntimeError("official G1 policy joint order does not match Gobot's pinned contract")
+
+    stack = [robot]
+    nodes = {}
+    collisions = []
+    while stack:
+        node = stack.pop()
+        if node.name in joint_names and node.type_name == "Joint3D":
+            nodes[node.name] = node
+        if node.type_name == "CollisionShape3D":
+            collisions.append(node)
+        stack.extend(reversed(node.children))
+    missing = [name for name in joint_names if name not in nodes]
+    if missing:
+        raise RuntimeError("imported G1 scene is missing policy joints: " + ", ".join(missing))
+    for index, name in enumerate(joint_names):
+        joint = nodes[name]
+        joint.drive_mode = gobot.JointDriveMode.Position
+        joint.drive_stiffness = contract["mjw_joint_stiffness"][index]
+        joint.drive_damping = contract["mjw_joint_damping"][index]
+        joint.armature = contract["mjw_joint_armature"][index]
+        joint.initial_position = contract["mjw_joint_pos"][index]
+        joint.friction_loss = 0.0
+        joint.effort_limit = 0.0
+        joint.force_lower_limit = 0.0
+        joint.force_upper_limit = 0.0
+    for collision in collisions:
+        collision.set("contype", 0)
+        collision.set("conaffinity", 1)
+    robot.mode = gobot.RobotMode.Motion
+    gobot.save_scene(robot, scene_resource)
     return str(gobot.__version__)
 
 

@@ -42,6 +42,9 @@ def main():
     assert "BatchEnvState" in gobot.rl.__all__
     assert "BatchSimulationRuntime" in gobot.rl.__all__
     assert "CpuBatchEnv" in gobot.rl.__all__
+    assert "RobotBatchSpec" in gobot.rl.__all__
+    assert "RobotBatchState" in gobot.rl.__all__
+    assert "RobotBatchView" in gobot.rl.__all__
     assert "ManagerBasedEnv" not in gobot.rl.__all__
     assert "VectorEnv" not in gobot.rl.__all__
     assert "velocity_actor_observation_schema" in gobot.rl.locomotion.__all__
@@ -71,6 +74,8 @@ def main():
     assert state.done.tolist() == [False, True]
 
     context = gobot.app.context()
+    assert hasattr(context, "apply_link_poses")
+    assert hasattr(context, "_apply_link_pose_batch")
     assert context.backend_type == gobot.PhysicsBackendType.Null
     assert context.has_scene is False
     assert context.has_world is False

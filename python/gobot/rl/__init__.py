@@ -40,6 +40,9 @@ from .providers import (
     NewtonProviderAvailability,
     NewtonRobotLayout,
     ProviderUnavailableError,
+    RobotBatchSpec,
+    RobotBatchState,
+    RobotBatchView,
     SimulationCapacityError,
 )
 from .rsl_rl import (
@@ -82,6 +85,9 @@ __all__ = [
     "POLICY_MANIFEST_KEY",
     "PolicyManifest",
     "ProviderUnavailableError",
+    "RobotBatchSpec",
+    "RobotBatchState",
+    "RobotBatchView",
     "providers",
     "RslRlBaseRunnerCfg",
     "RslRlModelCfg",

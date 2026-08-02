@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from types import SimpleNamespace
+
 import gobot
 
 
@@ -7,6 +9,11 @@ class FakeProvider:
     def __init__(self) -> None:
         self.steps = 0
         self.closed = False
+        self.capabilities = SimpleNamespace(name="Newton", device="cuda:0", graph_capture=True)
+        self.num_envs = 4
+        self.capacities = {"nconmax": 64}
+        self.graph_captured = True
+        self._last_robot_view_joint_count = 43
 
     def step(self, *, nsteps: int = 1) -> None:
         self.steps += nsteps
@@ -20,6 +27,7 @@ class FakeContext:
         self.token = 41
         self.callbacks = None
         self.ended = []
+        self.diagnostics = []
 
     def _begin_external_simulation(self, *callbacks):
         self.callbacks = callbacks
@@ -39,6 +47,11 @@ class FakeContext:
     def _sync_external_simulation(self, token: int) -> bool:
         assert token == self.token
         self.callbacks[2]()
+        return True
+
+    def _set_external_simulation_diagnostics(self, token: int, values: dict) -> bool:
+        assert token == self.token
+        self.diagnostics.append(values)
         return True
 
 
@@ -111,6 +124,17 @@ def main() -> int:
     ).start()
 
     assert session.running
+    assert context.diagnostics[-1] == {
+        "provider_name": "Newton",
+        "device": "cuda:0",
+        "environment_count": 4,
+        "controlled_joint_count": 43,
+        "capacities": '{"nconmax":64}',
+        "graph_status": "Captured",
+        "status": "Starting",
+    }
+    session.set_status("Running")
+    assert context.diagnostics[-1]["status"] == "Running"
     step, reset, sync, close, fixed_dt, max_sub_steps = context.callbacks
     assert fixed_dt == 0.005
     assert max_sub_steps == 4

@@ -15,6 +15,8 @@ from .base import (
     CompiledSceneArtifact,
     GraphInvalidatedError,
     ProviderUnavailableError,
+    RobotBatchSpec,
+    RobotBatchState,
     SimulationCapacityError,
     validate_compiled_artifact,
 )
@@ -52,6 +54,161 @@ class MuJoCoWarpRobotLayout:
     geom_ids: tuple[int, ...] = ()
     site_body_ids: tuple[int, ...] = ()
     geom_body_ids: tuple[int, ...] = ()
+
+
+class _MuJoCoWarpRobotViewAdapter:
+    def __init__(self, provider: "MuJoCoWarpProvider", spec: RobotBatchSpec) -> None:
+        self.provider = provider
+        self.layout = provider.resolve_robot_layout(
+            spec.robot_name,
+            base_link=spec.base_link,
+            joint_names=spec.joint_names,
+            link_names=spec.link_names,
+        )
+        torch = provider._torch
+        device = provider._torch_device
+        self.joint_q = torch.as_tensor(self.layout.joint_qpos_addresses, dtype=torch.long, device=device)
+        self.joint_qd = torch.as_tensor(self.layout.joint_dof_addresses, dtype=torch.long, device=device)
+        self.controls = torch.as_tensor(self.layout.actuator_ids, dtype=torch.long, device=device)
+        self.links = torch.as_tensor(self.layout.link_body_ids, dtype=torch.long, device=device)
+        pose_dtype = provider.arrays["xpos"].dtype
+        self.link_position = torch.empty(
+            (provider.num_envs, len(spec.link_names), 3), dtype=pose_dtype, device=device
+        )
+        self.link_quaternion = torch.empty(
+            (provider.num_envs, len(spec.link_names), 4), dtype=pose_dtype, device=device
+        )
+        self.angular_velocity = torch.empty(
+            (provider.num_envs, 3, 1), dtype=provider.arrays["qvel"].dtype, device=device
+        )
+        body = self.layout.base_body_id
+        joint_adr = int(provider._mj_model.body_jntadr[body])
+        joint_count = int(provider._mj_model.body_jntnum[body])
+        if joint_count and int(provider._mj_model.jnt_type[joint_adr]) == int(provider._mujoco.mjtJoint.mjJNT_FREE):
+            self.base_q = int(provider._mj_model.jnt_qposadr[joint_adr])
+            self.base_qd = int(provider._mj_model.jnt_dofadr[joint_adr])
+        else:
+            self.base_q = self.base_qd = None
+
+    @staticmethod
+    def _copy_pose_xyzw(target: Any, position: Any, quaternion_wxyz: Any) -> None:
+        target[..., :3].copy_(position)
+        target[..., 3:6].copy_(quaternion_wxyz[..., 1:4])
+        target[..., 6:7].copy_(quaternion_wxyz[..., 0:1])
+
+    def read_state(self, state: RobotBatchState | None) -> RobotBatchState:
+        arrays = self.provider.arrays
+        body = self.layout.base_body_id
+        spatial = arrays["cvel"][:, body]
+        if state is None:
+            torch = self.provider._torch
+            state = RobotBatchState(
+                torch.empty(
+                    (self.provider.num_envs, 7),
+                    dtype=arrays["xpos"].dtype,
+                    device=self.provider._torch_device,
+                ),
+                torch.empty(
+                    (self.provider.num_envs, 6),
+                    dtype=spatial.dtype,
+                    device=self.provider._torch_device,
+                ),
+                torch.empty(
+                    (self.provider.num_envs, len(self.layout.joint_ids)),
+                    dtype=arrays["qpos"].dtype,
+                    device=self.provider._torch_device,
+                ),
+                torch.empty(
+                    (self.provider.num_envs, len(self.layout.joint_ids)),
+                    dtype=arrays["qvel"].dtype,
+                    device=self.provider._torch_device,
+                ),
+                torch.empty(
+                    (self.provider.num_envs, len(self.layout.actuator_ids)),
+                    dtype=arrays["ctrl"].dtype,
+                    device=self.provider._torch_device,
+                ),
+                torch.empty(
+                    (self.provider.num_envs, len(self.layout.link_body_ids), 7),
+                    dtype=arrays["xpos"].dtype,
+                    device=self.provider._torch_device,
+                ),
+            )
+        self._copy_pose_xyzw(state.base_pose, arrays["xpos"][:, body], arrays["xquat"][:, body])
+        torch = self.provider._torch
+        if self.base_qd is not None:
+            free_velocity = arrays["qvel"][:, self.base_qd:self.base_qd + 6]
+            state.base_velocity[:, :3].copy_(free_velocity[:, :3])
+            rotation = arrays["xmat"][:, body].reshape(self.provider.num_envs, 3, 3)
+            torch.bmm(
+                rotation,
+                free_velocity[:, 3:6].unsqueeze(-1),
+                out=self.angular_velocity,
+            )
+            state.base_velocity[:, 3:6].copy_(self.angular_velocity[..., 0])
+        else:
+            state.base_velocity[:, :3].copy_(spatial[:, 3:6])
+            state.base_velocity[:, 3:6].copy_(spatial[:, 0:3])
+        torch.index_select(arrays["qpos"], 1, self.joint_q, out=state.joint_position)
+        torch.index_select(arrays["qvel"], 1, self.joint_qd, out=state.joint_velocity)
+        torch.index_select(arrays["ctrl"], 1, self.controls, out=state.joint_control)
+        torch.index_select(arrays["xpos"], 1, self.links, out=self.link_position)
+        torch.index_select(arrays["xquat"], 1, self.links, out=self.link_quaternion)
+        self._copy_pose_xyzw(state.link_pose, self.link_position, self.link_quaternion)
+        return state
+
+    def set_position_targets(self, targets: Any) -> None:
+        self.provider.set_joint_position_targets(self.layout, targets)
+
+    def set_controls(self, controls: Any) -> None:
+        self.provider.set_joint_controls(self.layout, controls)
+
+    def reset(self, reset_mask: Any, **state: Any) -> Mapping[str, Any]:
+        qpos = self.provider.arrays["qpos"].clone()
+        qvel = self.provider.arrays["qvel"].clone()
+        ctrl = self.provider.arrays["ctrl"].clone()
+        mask = self.provider._as_tensor(reset_mask, dtype=self.provider._torch.bool)
+        def copy_columns(target: Any, indices: Any, value: Any, name: str) -> None:
+            if value is None:
+                return
+            source = self.provider._as_tensor(value, dtype=target.dtype)
+            expected = (self.provider.num_envs, int(indices.numel()))
+            if tuple(source.shape) != expected:
+                raise ValueError(f"{name} must have shape {expected}, got {tuple(source.shape)}")
+            target[:, indices] = source
+        base_pose = state.pop("base_pose", None)
+        base_velocity = state.pop("base_velocity", None)
+        if base_pose is not None:
+            if self.base_q is None:
+                raise ValueError(f"base link {self.layout.base_link!r} has no free joint")
+            pose = self.provider._as_tensor(base_pose, dtype=qpos.dtype)
+            qpos[:, self.base_q:self.base_q + 3] = pose[:, :3]
+            qpos[:, self.base_q + 3:self.base_q + 7] = pose[:, (6, 3, 4, 5)]
+        if base_velocity is not None:
+            if self.base_qd is None:
+                raise ValueError(f"base link {self.layout.base_link!r} has no free joint")
+            velocity = self.provider._as_tensor(base_velocity, dtype=qvel.dtype)
+            expected = (self.provider.num_envs, 6)
+            if tuple(velocity.shape) != expected:
+                raise ValueError(
+                    f"base_velocity must have shape {expected}, got {tuple(velocity.shape)}"
+                )
+            qvel[:, self.base_qd:self.base_qd + 3] = velocity[:, :3]
+            quaternion = qpos[:, self.base_q + 3:self.base_q + 7]
+            vector = quaternion[:, 1:4]
+            scalar = quaternion[:, 0:1]
+            first_cross = self.provider._torch.cross(vector, velocity[:, 3:6], dim=1)
+            second_cross = self.provider._torch.cross(vector, first_cross, dim=1)
+            local_angular_velocity = velocity[:, 3:6] + 2.0 * (
+                second_cross - scalar * first_cross
+            )
+            qvel[:, self.base_qd + 3:self.base_qd + 6] = local_angular_velocity
+        copy_columns(qpos, self.joint_q, state.pop("joint_position", None), "joint_position")
+        copy_columns(qvel, self.joint_qd, state.pop("joint_velocity", None), "joint_velocity")
+        copy_columns(ctrl, self.controls, state.pop("controls", None), "controls")
+        if state:
+            raise TypeError("unexpected robot reset fields: " + ", ".join(sorted(state)))
+        return self.provider.reset(mask, qpos=qpos, qvel=qvel, ctrl=ctrl)
 
 
 @dataclass(frozen=True)
@@ -613,6 +770,10 @@ class MuJoCoWarpProvider(BatchPhysicsProvider):
             site_body_ids=tuple(int(self._mj_model.site_bodyid[index]) for index in site_ids),
             geom_body_ids=tuple(int(self._mj_model.geom_bodyid[index]) for index in geom_ids),
         )
+
+    def _create_robot_view_adapter(self, spec: RobotBatchSpec) -> _MuJoCoWarpRobotViewAdapter:
+        self._require_open()
+        return _MuJoCoWarpRobotViewAdapter(self, spec)
 
     def set_joint_position_targets(self, layout: MuJoCoWarpRobotLayout, targets: Any) -> None:
         invalid_modes = sorted({mode for mode in layout.actuator_modes if mode != "position"})

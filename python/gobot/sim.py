@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from collections.abc import Callable
+import json
 import math
 import operator
 from typing import Any
@@ -47,6 +48,7 @@ class ProviderPlaySession:
         self._token: int | None = None
         self._closed = False
         self._provider_closed = False
+        self._status = "Starting"
 
     @property
     def running(self) -> bool:
@@ -70,7 +72,49 @@ class ProviderPlaySession:
                 self.max_sub_steps,
             )
         )
+        self._publish_diagnostics()
         return self
+
+    def set_status(self, status: str) -> None:
+        """Publish a human-readable provider state without touching device data."""
+
+        normalized = str(status).strip()
+        if not normalized:
+            raise ValueError("provider session status must not be empty")
+        self._status = normalized
+        if self.running:
+            self._publish_diagnostics()
+
+    def _publish_diagnostics(self) -> None:
+        publish = getattr(self.context, "_set_external_simulation_diagnostics", None)
+        if not callable(publish) or self._token is None:
+            return
+        capabilities = getattr(self.provider, "capabilities", None)
+        capacities = getattr(self.provider, "capacities", {})
+        if callable(capacities):
+            capacities = capacities()
+        graph_enabled = bool(getattr(capabilities, "graph_capture", False))
+        graph_captured = bool(getattr(self.provider, "graph_captured", graph_enabled))
+        if graph_captured:
+            graph_status = "Captured"
+        elif graph_enabled:
+            graph_status = "Pending"
+        else:
+            graph_status = "Disabled"
+        publish(
+            self._token,
+            {
+                "provider_name": str(getattr(capabilities, "name", type(self.provider).__name__)),
+                "device": str(getattr(capabilities, "device", "")),
+                "environment_count": int(getattr(self.provider, "num_envs", 0)),
+                "controlled_joint_count": int(
+                    getattr(self.provider, "_last_robot_view_joint_count", 0)
+                ),
+                "capacities": json.dumps(dict(capacities), sort_keys=True, separators=(",", ":")),
+                "graph_status": graph_status,
+                "status": self._status,
+            },
+        )
 
     def reset(self) -> None:
         if not self.running:

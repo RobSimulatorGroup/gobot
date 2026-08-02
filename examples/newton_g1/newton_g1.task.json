@@ -1,0 +1,26 @@
+{
+  "version": 1,
+  "physics": {
+    "fixed_dt": 0.005,
+    "policy_decimation": 4,
+    "initial_base_pose_xyzw": [0.0, 0.0, 0.76, 0.0, 0.0, 0.7071, 0.7071]
+  },
+  "dimensions": {
+    "actions": 43,
+    "observations": 141
+  },
+  "resources": {
+    "source_usd": "res://assets/unitree_g1/usd/g1_isaac.usd",
+    "generated_scene": "res://assets/generated/g1_29dof.jscn",
+    "policy": "res://assets/unitree_g1/rl_policies/mjw_g1_29DOF.onnx",
+    "policy_contract": "res://assets/unitree_g1/rl_policies/g1_29dof.yaml"
+  },
+  "newton_model": {
+    "joint_limit_stiffness": 100.0,
+    "joint_limit_damping": 1.0,
+    "contact_stiffness": 50000.0,
+    "contact_damping": 500.0,
+    "contact_friction_stiffness": 1000.0,
+    "contact_friction_override": 0.75
+  }
+}

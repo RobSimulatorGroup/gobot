@@ -72,6 +72,10 @@ class _FakeTensor:
         self._value[:, indices] = values
         return self
 
+    def index_select(self, dim, index):
+        indices = index._value if isinstance(index, _FakeTensor) else np.asarray(index)
+        return _FakeTensor(np.take(self._value, indices, axis=dim))
+
     def numel(self):
         return self._value.size
 
@@ -133,6 +137,18 @@ class _FakeTorch:
         return _FakeTensor(source, dtype=dtype)
 
     @staticmethod
+    def zeros(shape, *, dtype, device):
+        del device
+        return _FakeTensor(np.zeros(shape, dtype=dtype))
+
+    @staticmethod
+    def index_select(value, dim, index, *, out):
+        indices = index._value
+        selected = np.take(value._value, indices, axis=dim)
+        out.copy_(selected)
+        return out
+
+    @staticmethod
     def where(mask, true_value, false_value):
         return _FakeTensor(
             np.where(mask._value, true_value._value, false_value._value)
@@ -163,12 +179,17 @@ class _FakeScope:
         return False
 
 
+class _FakeCapture(_FakeScope):
+    graph = None
+
+
 class _FakeWarpDevice:
     is_cuda = True
 
 
 class _FakeWarp:
     bool = object()
+    _gobot_test_fake = True
 
     def __init__(self):
         self.initialized = False
@@ -196,9 +217,25 @@ class _FakeWarp:
         assert device.is_cuda
         return _FakeScope()
 
+    @staticmethod
+    def ScopedCapture(*, device):
+        assert device.is_cuda
+        return _FakeCapture()
+
+    @staticmethod
+    def capture_launch(graph):
+        graph()
+
     def synchronize_device(self, device):
         assert device.is_cuda
         self.synchronize_count += 1
+
+
+class _FailingCaptureWarp(_FakeWarp):
+    @staticmethod
+    def ScopedCapture(*, device):
+        del device
+        raise RuntimeError("fixture capture failure")
 
 
 class _FakeState:
@@ -681,7 +718,8 @@ def test_fake_provider_lifecycle_and_masked_reset():
         assert provider.capabilities.name == "Newton"
         assert provider.capabilities.device_native
         assert provider.capabilities.masked_reset
-        assert not provider.capabilities.graph_capture
+        assert provider.capabilities.graph_capture
+        assert provider.graph_captured
 
         blueprint, runtime_builder = bindings.newton.builders
         assert blueprint.mjcf_call[1] == {
@@ -735,7 +773,7 @@ def test_fake_provider_lifecycle_and_masked_reset():
 
         provider.reset([False, True, False])
         np.testing.assert_allclose(arrays["joint_q"].numpy()[1], 0.0)
-        assert _FakeSolver.last_instance.reset_count == 2
+        assert _FakeSolver.last_instance.reset_count == 4
 
         arrays["overflow"][2] = 1 << 3
         try:
@@ -788,6 +826,21 @@ def test_named_robot_layout_controls_and_reset():
         assert layout.actuator_indices == (0, 1)
         assert layout.actuator_modes == ("position", "position")
         assert layout.link_body_indices == (1, 0)
+
+        view = provider.create_robot_view(
+            robot_name="robot",
+            base_link="base",
+            joint_names=("joint_a", "joint_b"),
+            link_names=("base", "tip"),
+        )
+        state = view.read_state()
+        pointers = tuple(value.data_ptr() for value in state.__dict__.values())
+        assert state.base_pose.shape == (2, 7)
+        assert state.base_velocity.shape == (2, 6)
+        assert state.joint_position.shape == (2, 2)
+        assert state.link_pose.shape == (2, 2, 7)
+        assert view.read_state() is state
+        assert tuple(value.data_ptr() for value in state.__dict__.values()) == pointers
 
         targets = np.asarray([[10.0, 20.0], [30.0, 40.0]], dtype=np.float32)
         provider.set_joint_position_targets(layout, targets)
@@ -963,9 +1016,68 @@ def test_explicit_newton_contact_mode_generates_contacts_each_substep():
         assert provider.use_mujoco_contacts is False
         assert _FakeSolver.last_instance.options["use_mujoco_contacts"] is False
         provider.step(np.zeros((1, 2), dtype=np.float32), nsteps=3)
-        assert model.collide_count == 3
+        assert model.collide_count == 5
     finally:
         provider.close()
+
+
+def test_graph_capture_can_be_disabled_and_storage_invalidation_is_rejected():
+    uncaptured = NewtonProvider(
+        _artifact(),
+        num_envs=1,
+        capture_graphs=False,
+        _bindings=_bindings(),
+    )
+    try:
+        assert not uncaptured.capabilities.graph_capture
+        assert not uncaptured.graph_captured
+        uncaptured.step(np.ones((1, 2), dtype=np.float32), nsteps=2)
+        np.testing.assert_allclose(uncaptured.arrays["time"].numpy(), [0.004])
+    finally:
+        uncaptured.close()
+
+    captured = NewtonProvider(_artifact(), num_envs=1, _bindings=_bindings())
+    try:
+        captured._state = captured._model.state()
+        try:
+            captured.step(np.zeros((1, 2), dtype=np.float32))
+        except gobot.rl.GraphInvalidatedError as error:
+            assert "storage changed" in str(error)
+        else:
+            raise AssertionError("replaced Newton state storage must invalidate the graph")
+    finally:
+        captured.close()
+
+
+def test_graph_capture_matches_uncaptured_and_explicit_failure_is_not_silent():
+    captured = NewtonProvider(_artifact(), num_envs=2, _bindings=_bindings())
+    uncaptured = NewtonProvider(
+        _artifact(), num_envs=2, capture_graphs=False, _bindings=_bindings()
+    )
+    try:
+        first = np.asarray([[0.5, -0.25], [0.1, 0.75]], dtype=np.float32)
+        second = np.asarray([[-0.2, 0.4], [0.9, -0.6]], dtype=np.float32)
+        captured.step(first, nsteps=3)
+        uncaptured.step(first, nsteps=3)
+        captured.step(second, nsteps=2)
+        uncaptured.step(second, nsteps=2)
+        for name in ("joint_q", "joint_qd", "body_q", "body_qd", "ctrl", "time"):
+            np.testing.assert_allclose(
+                captured.arrays[name].numpy(), uncaptured.arrays[name].numpy(), rtol=0.0, atol=0.0
+            )
+    finally:
+        captured.close()
+        uncaptured.close()
+
+    bindings = _bindings()
+    failing = replace(bindings, warp=_FailingCaptureWarp())
+    try:
+        NewtonProvider(_artifact(), num_envs=1, capture_graphs=True, _bindings=failing)
+    except RuntimeError as error:
+        assert "explicitly enabled but failed" in str(error)
+        assert "capture_graphs=False" in str(error)
+    else:
+        raise AssertionError("explicit Newton graph capture failure was silently ignored")
 
     try:
         NewtonProvider(
@@ -1534,6 +1646,8 @@ def main():
     test_named_robot_layout_controls_and_reset()
     test_named_robot_layout_reports_name_and_actuator_errors()
     test_explicit_newton_contact_mode_generates_contacts_each_substep()
+    test_graph_capture_can_be_disabled_and_storage_invalidation_is_rejected()
+    test_graph_capture_matches_uncaptured_and_explicit_failure_is_not_silent()
     test_availability_reports_missing_optional_package()
     test_import_version_failure_is_reported_as_unavailable()
     test_provider_rejects_non_cuda_device_and_dimension_mismatch()
