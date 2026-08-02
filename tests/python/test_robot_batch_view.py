@@ -1,8 +1,9 @@
 from __future__ import annotations
 
 from types import SimpleNamespace
+from typing import Any
 
-import torch
+import numpy as np
 
 from gobot.rl.providers import (
     BatchPhysicsProvider,
@@ -10,6 +11,57 @@ from gobot.rl.providers import (
     RobotBatchSpec,
     RobotBatchState,
 )
+
+
+class _Tensor:
+    """Small NumPy-backed stand-in for the device tensor view contract."""
+
+    def __init__(self, values: Any):
+        self._array = np.asarray(values)
+
+    @classmethod
+    def zeros(cls, shape: tuple[int, ...]) -> "_Tensor":
+        return cls(np.zeros(shape, dtype=np.float32))
+
+    @classmethod
+    def ones(cls, shape: tuple[int, ...]) -> "_Tensor":
+        return cls(np.ones(shape, dtype=np.float32))
+
+    @property
+    def shape(self) -> tuple[int, ...]:
+        return self._array.shape
+
+    def clone(self) -> "_Tensor":
+        return _Tensor(self._array.copy())
+
+    def copy_(self, other: "_Tensor") -> "_Tensor":
+        np.copyto(self._array, other._array)
+        return self
+
+    def data_ptr(self) -> int:
+        return int(self._array.__array_interface__["data"][0])
+
+    def detach(self) -> "_Tensor":
+        return self
+
+    def cpu(self) -> "_Tensor":
+        return self
+
+    def numpy(self) -> np.ndarray:
+        return self._array
+
+    def __getitem__(self, key: Any) -> "_Tensor":
+        return _Tensor(self._array[key])
+
+    def __setitem__(self, key: Any, value: Any) -> None:
+        self._array[key] = value._array if isinstance(value, _Tensor) else value
+
+    def __mul__(self, value: float) -> "_Tensor":
+        return _Tensor(self._array * value)
+
+
+def _equal(left: _Tensor, right: _Tensor) -> bool:
+    return bool(np.array_equal(left._array, right._array))
 
 
 class _Adapter:
@@ -47,13 +99,13 @@ class _Provider(BatchPhysicsProvider):
     def __init__(self):
         self.artifact = SimpleNamespace(digest="fixture")
         self.generation = 1
-        self.base_pose = torch.zeros((2, 7))
-        self.base_velocity = torch.zeros((2, 6))
-        self.joint_position = torch.zeros((2, 2))
-        self.joint_velocity = torch.zeros((2, 2))
-        self.joint_control = torch.zeros((2, 2))
-        self.position_targets = torch.zeros((2, 2))
-        self.link_pose = torch.zeros((2, 1, 7))
+        self.base_pose = _Tensor.zeros((2, 7))
+        self.base_velocity = _Tensor.zeros((2, 6))
+        self.joint_position = _Tensor.zeros((2, 2))
+        self.joint_velocity = _Tensor.zeros((2, 2))
+        self.joint_control = _Tensor.zeros((2, 2))
+        self.position_targets = _Tensor.zeros((2, 2))
+        self.link_pose = _Tensor.zeros((2, 1, 7))
         self.last_reset = None
 
     @property
@@ -101,17 +153,17 @@ def test_robot_batch_view_contract() -> None:
     updated = view.read_state()
     assert updated is state
     assert tuple(value.data_ptr() for value in updated.__dict__.values()) == pointers
-    assert torch.equal(updated.base_pose[:, 2], torch.tensor([1.25, 1.25]))
+    assert _equal(updated.base_pose[:, 2], _Tensor([1.25, 1.25]))
 
-    targets = torch.ones((2, 2))
+    targets = _Tensor.ones((2, 2))
     view.set_position_targets(targets)
     view.set_controls(targets * 2.0)
-    assert torch.equal(provider.position_targets, targets)
-    assert torch.equal(provider.joint_control, targets * 2.0)
+    assert _equal(provider.position_targets, targets)
+    assert _equal(provider.joint_control, targets * 2.0)
 
-    mask = torch.tensor([True, False])
+    mask = _Tensor([True, False])
     view.reset(mask, joint_position=targets)
-    assert torch.equal(provider.last_reset[0], mask)
+    assert _equal(provider.last_reset[0], mask)
 
     context = _Context()
     view.bind_scene(context, ("link-handle",))
