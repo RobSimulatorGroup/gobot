@@ -58,6 +58,15 @@ def test_python_build_defaults_enable_complete_native_runtime() -> None:
     assert "[project.optional-dependencies]" not in pyproject
 
 
+def test_warp_ipc_wheel_payload_keeps_portable_sources_only() -> None:
+    cmake = (backend.ROOT / "CMakeLists.txt").read_text(encoding="utf-8")
+
+    assert 'DESTINATION "gobot/examples" COMPONENT python' in cmake
+    assert 'PATTERN "warp_ipc/assets" EXCLUDE' in cmake
+    assert 'PATTERN "*.ptx" EXCLUDE' in cmake
+    assert 'PATTERN "warp_ipc" EXCLUDE' not in cmake
+
+
 def test_wheel_and_editable_hooks_prepare_dependencies() -> None:
     with (
         patch.object(backend, "_ensure_native_sdks") as ensure,
@@ -261,6 +270,7 @@ def test_source_archive_without_submodules_fails_clearly() -> None:
 
 def main() -> None:
     test_python_build_defaults_enable_complete_native_runtime()
+    test_warp_ipc_wheel_payload_keeps_portable_sources_only()
     test_wheel_and_editable_hooks_prepare_dependencies()
     test_metadata_and_sdist_do_not_prepare_dependencies()
     test_skip_environment_avoids_dependency_commands()

@@ -775,6 +775,7 @@ set(GOBOT_PYTHON_BINDING_SOURCES
         src/gobot/python/manual_bindings/manual_binding_app_context.cpp
         src/gobot/python/manual_bindings/manual_binding_common.cpp
         src/gobot/python/manual_bindings/manual_binding_helpers.cpp
+        src/gobot/python/manual_bindings/manual_binding_ipc_scene.cpp
         src/gobot/python/manual_bindings/manual_binding_module_functions.cpp
         src/gobot/python/manual_bindings/manual_binding_robot.cpp
         src/gobot/python/manual_bindings/manual_binding_scene_nodes.cpp
@@ -1059,6 +1060,8 @@ install(DIRECTORY "${CMAKE_CURRENT_SOURCE_DIR}/examples/"
         PATTERN "logs" EXCLUDE
         PATTERN "gaussian_splatting/assets" EXCLUDE
         PATTERN "newton_g1/assets" EXCLUDE
+        PATTERN "warp_ipc/assets" EXCLUDE
+        PATTERN "*.ptx" EXCLUDE
         PATTERN "go1/policies" EXCLUDE)
 install(FILES
         "${CMAKE_CURRENT_SOURCE_DIR}/examples/go1/policies/go1_velocity.onnx"

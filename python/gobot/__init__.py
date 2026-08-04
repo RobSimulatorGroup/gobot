@@ -41,7 +41,7 @@ render = _importlib.import_module(__name__ + ".render")
 scene = _importlib.import_module(__name__ + ".scene")
 sim = _importlib.import_module(__name__ + ".sim")
 
-_LAZY_SUBMODULES = {"rl", "terrain"}
+_LAZY_SUBMODULES = {"ipc", "rl", "terrain"}
 
 
 def __getattr__(name):

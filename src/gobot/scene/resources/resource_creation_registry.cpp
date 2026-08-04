@@ -19,7 +19,9 @@
 #include "gobot/scene/resources/primitive_mesh.hpp"
 #include "gobot/scene/resources/shape_3d.hpp"
 #include "gobot/scene/resources/sphere_shape_3d.hpp"
+#include "gobot/scene/resources/tetrahedral_mesh.hpp"
 #include "gobot/scene/resources/terrain_generator_config.hpp"
+#include "gobot/scene/tactile_sensor_3d.hpp"
 
 namespace gobot {
 
@@ -120,6 +122,12 @@ Variant ResourceRefToPropertyVariant(const Ref<Resource>& resource, const Type& 
     }
     if (expected_type == Type::get<GaussianSplatResource>()) {
         return resource.DynamicPointerCast<GaussianSplatResource>();
+    }
+    if (expected_type == Type::get<TetrahedralMesh>()) {
+        return resource.DynamicPointerCast<TetrahedralMesh>();
+    }
+    if (expected_type == Type::get<TactileSensorConfig>()) {
+        return resource.DynamicPointerCast<TactileSensorConfig>();
     }
 
     return {};
@@ -317,6 +325,24 @@ void ResourceCreationRegistry::EnsureBuiltInResourceTypesRegistered() {
         "Versioned procedural terrain generation configuration.",
         Type::get<TerrainGeneratorConfig>(),
         []() -> Ref<Resource> { return CreateResourceRef<TerrainGeneratorConfig>(); }
+    });
+
+    RegisterResourceType({
+        "TetrahedralMesh",
+        "TetrahedralMesh",
+        "Resource",
+        "Volumetric tetrahedral mesh for deformable simulation.",
+        Type::get<TetrahedralMesh>(),
+        []() -> Ref<Resource> { return CreateResourceRef<TetrahedralMesh>(); }
+    });
+
+    RegisterResourceType({
+        "TactileSensorConfig",
+        "TactileSensorConfig",
+        "Resource",
+        "Image, material, and marker configuration for a tactile gel sensor.",
+        Type::get<TactileSensorConfig>(),
+        []() -> Ref<Resource> { return CreateResourceRef<TactileSensorConfig>(); }
     });
 }
 

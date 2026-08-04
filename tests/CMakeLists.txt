@@ -187,6 +187,7 @@ gtest_discover_tests(test_scene_play_session
 set_target_properties(test_scene_play_session PROPERTIES FOLDER tests)
 package_add_test(test_physics_server physics/test_physics_server.cpp)
 package_add_test(test_joint_controller physics/test_joint_controller.cpp)
+package_add_test(test_ipc_scene_compiler physics/test_ipc_scene_compiler.cpp)
 package_add_test(test_simulation_server simulation/test_simulation_server.cpp)
 package_add_test(test_locomotion_command_runtime simulation/test_locomotion_command_runtime.cpp)
 package_add_test(test_locomotion_batch_runtime simulation/test_locomotion_batch_runtime.cpp)
@@ -369,6 +370,38 @@ add_test(
 set_tests_properties(test_python_robot_batch_view
         PROPERTIES
             ENVIRONMENT "${GOBOT_PYTHON_TEST_ENV}"
+            WORKING_DIRECTORY "${CMAKE_SOURCE_DIR}"
+)
+add_test(
+        NAME test_python_warp_ipc_provider
+        COMMAND ${Python3_EXECUTABLE} -S
+                ${CMAKE_CURRENT_SOURCE_DIR}/python/test_warp_ipc_provider.py
+)
+set_tests_properties(test_python_warp_ipc_provider
+        PROPERTIES
+            ENVIRONMENT "${GOBOT_PYTHON_TEST_ENV}"
+            WORKING_DIRECTORY "${CMAKE_SOURCE_DIR}"
+)
+add_test(
+        NAME test_python_warp_ipc_assets
+        COMMAND ${Python3_EXECUTABLE} -S
+                ${CMAKE_CURRENT_SOURCE_DIR}/python/test_warp_ipc_assets.py
+)
+set_tests_properties(test_python_warp_ipc_assets
+        PROPERTIES
+            ENVIRONMENT "${GOBOT_PYTHON_TEST_ENV}"
+            WORKING_DIRECTORY "${CMAKE_SOURCE_DIR}"
+)
+add_test(
+        NAME test_python_warp_ipc_gpu_kernels
+        COMMAND ${Python3_EXECUTABLE} -S
+                ${CMAKE_CURRENT_SOURCE_DIR}/python/test_warp_ipc_gpu_kernels.py
+)
+set_tests_properties(test_python_warp_ipc_gpu_kernels
+        PROPERTIES
+            ENVIRONMENT "${GOBOT_PYTHON_TEST_ENV}"
+            RESOURCE_LOCK gobot_cuda
+            SKIP_RETURN_CODE 77
             WORKING_DIRECTORY "${CMAKE_SOURCE_DIR}"
 )
 add_test(

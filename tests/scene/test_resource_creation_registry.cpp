@@ -13,7 +13,9 @@
 #include <gobot/scene/resources/resource_creation_registry.hpp>
 #include <gobot/scene/resources/shape_3d.hpp>
 #include <gobot/scene/resources/sphere_shape_3d.hpp>
+#include <gobot/scene/resources/tetrahedral_mesh.hpp>
 #include <gobot/scene/resources/terrain_generator_config.hpp>
+#include <gobot/scene/tactile_sensor_3d.hpp>
 
 namespace {
 
@@ -56,6 +58,18 @@ TEST(TestResourceCreationRegistry, filters_resource_types_by_ref_property_type) 
     const auto gaussian_types = gobot::ResourceCreationRegistry::GetCreatableTypesForProperty(
             gobot::Type::get<gobot::Ref<gobot::GaussianSplatResource>>());
     EXPECT_TRUE(ContainsResourceType(gaussian_types, "GaussianSplatResource"));
+
+    const auto tetrahedral_mesh_types =
+            gobot::ResourceCreationRegistry::GetCreatableTypesForProperty(
+                    gobot::Type::get<gobot::Ref<gobot::TetrahedralMesh>>());
+    EXPECT_TRUE(ContainsResourceType(tetrahedral_mesh_types, "TetrahedralMesh"));
+    EXPECT_FALSE(ContainsResourceType(tetrahedral_mesh_types, "ArrayMesh"));
+
+    const auto tactile_config_types =
+            gobot::ResourceCreationRegistry::GetCreatableTypesForProperty(
+                    gobot::Type::get<gobot::Ref<gobot::TactileSensorConfig>>());
+    EXPECT_TRUE(ContainsResourceType(tactile_config_types, "TactileSensorConfig"));
+    EXPECT_FALSE(ContainsResourceType(tactile_config_types, "TetrahedralMesh"));
 }
 
 TEST(TestResourceCreationRegistry, created_variant_converts_to_requested_ref_base_type) {
@@ -115,4 +129,20 @@ TEST(TestResourceCreationRegistry, created_variant_converts_to_requested_ref_bas
     ASSERT_TRUE(terrain_generator.is_valid());
     EXPECT_EQ(terrain_generator.get_type(),
               gobot::Type::get<gobot::Ref<gobot::TerrainGeneratorConfig>>());
+
+    gobot::Variant tetrahedral_mesh =
+            gobot::ResourceCreationRegistry::CreateResourceVariant(
+                    "TetrahedralMesh",
+                    gobot::Type::get<gobot::Ref<gobot::TetrahedralMesh>>());
+    ASSERT_TRUE(tetrahedral_mesh.is_valid());
+    EXPECT_EQ(tetrahedral_mesh.get_type(),
+              gobot::Type::get<gobot::Ref<gobot::TetrahedralMesh>>());
+
+    gobot::Variant tactile_config =
+            gobot::ResourceCreationRegistry::CreateResourceVariant(
+                    "TactileSensorConfig",
+                    gobot::Type::get<gobot::Ref<gobot::TactileSensorConfig>>());
+    ASSERT_TRUE(tactile_config.is_valid());
+    EXPECT_EQ(tactile_config.get_type(),
+              gobot::Type::get<gobot::Ref<gobot::TactileSensorConfig>>());
 }

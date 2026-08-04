@@ -8,6 +8,7 @@ import numpy as np
 from gobot.rl.providers import (
     BatchPhysicsProvider,
     BatchProviderCapabilities,
+    GraphInvalidatedError,
     RobotBatchSpec,
     RobotBatchState,
 )
@@ -87,6 +88,9 @@ class _Adapter:
     def set_position_targets(self, targets):
         self.provider.position_targets.copy_(targets)
 
+    def set_base_pose_targets(self, targets):
+        self.provider.base_pose_targets.copy_(targets)
+
     def set_controls(self, controls):
         self.provider.joint_control.copy_(controls)
 
@@ -105,6 +109,7 @@ class _Provider(BatchPhysicsProvider):
         self.joint_velocity = _Tensor.zeros((2, 2))
         self.joint_control = _Tensor.zeros((2, 2))
         self.position_targets = _Tensor.zeros((2, 2))
+        self.base_pose_targets = _Tensor.zeros((2, 7))
         self.link_pose = _Tensor.zeros((2, 1, 7))
         self.last_reset = None
 
@@ -156,9 +161,12 @@ def test_robot_batch_view_contract() -> None:
     assert _equal(updated.base_pose[:, 2], _Tensor([1.25, 1.25]))
 
     targets = _Tensor.ones((2, 2))
+    base_targets = _Tensor.ones((2, 7))
     view.set_position_targets(targets)
+    view.set_base_pose_targets(base_targets)
     view.set_controls(targets * 2.0)
     assert _equal(provider.position_targets, targets)
+    assert _equal(provider.base_pose_targets, base_targets)
     assert _equal(provider.joint_control, targets * 2.0)
 
     mask = _Tensor([True, False])
@@ -176,6 +184,12 @@ def test_robot_batch_view_contract() -> None:
         assert "outside" in str(error)
     else:
         raise AssertionError("out-of-range scene sync environment was accepted")
+    try:
+        view.sync_scene(env_index=0.5)
+    except TypeError as error:
+        assert "integer" in str(error)
+    else:
+        raise AssertionError("a fractional scene sync environment was accepted")
 
     provider.close()
     try:
@@ -184,6 +198,29 @@ def test_robot_batch_view_contract() -> None:
         assert "stale" in str(error)
     else:
         raise AssertionError("closed-provider view access must fail")
+
+
+def test_robot_batch_view_rejects_replaced_state_storage() -> None:
+    provider = _Provider()
+    view = provider.create_robot_view(
+        RobotBatchSpec("robot", "base", ("joint_a", "joint_b"), ("link",))
+    )
+    view.read_state()
+    adapter = view._adapter
+    adapter.read_state = lambda state: RobotBatchState(
+        provider.base_pose.clone(),
+        provider.base_velocity.clone(),
+        provider.joint_position.clone(),
+        provider.joint_velocity.clone(),
+        provider.joint_control.clone(),
+        provider.link_pose.clone(),
+    )
+    try:
+        view.read_state()
+    except GraphInvalidatedError as error:
+        assert "storage changed" in str(error)
+    else:
+        raise AssertionError("replaced robot batch state storage was accepted")
 
 
 def test_robot_batch_spec_rejects_invalid_names() -> None:
@@ -200,6 +237,22 @@ def test_robot_batch_spec_rejects_invalid_names() -> None:
             raise AssertionError("invalid RobotBatchSpec must fail")
 
 
+def test_robot_batch_view_reports_unsupported_base_targets() -> None:
+    provider = _Provider()
+    view = provider.create_robot_view(
+        RobotBatchSpec("robot", "base", ("joint_a", "joint_b"))
+    )
+    view._adapter.set_base_pose_targets = None
+    try:
+        view.set_base_pose_targets(_Tensor.ones((2, 7)))
+    except NotImplementedError as error:
+        assert "kinematic base pose targets" in str(error)
+    else:
+        raise AssertionError("unsupported kinematic base targets were accepted")
+
+
 if __name__ == "__main__":
     test_robot_batch_view_contract()
+    test_robot_batch_view_rejects_replaced_state_storage()
     test_robot_batch_spec_rejects_invalid_names()
+    test_robot_batch_view_reports_unsupported_base_targets()

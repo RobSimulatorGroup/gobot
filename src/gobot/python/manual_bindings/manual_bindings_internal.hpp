@@ -42,6 +42,7 @@
 #include "gobot/rendering/render_server.hpp"
 #include "gobot/scene/camera_3d.hpp"
 #include "gobot/scene/collision_shape_3d.hpp"
+#include "gobot/scene/deformable_body_3d.hpp"
 #include "gobot/scene/joint_3d.hpp"
 #include "gobot/scene/link_3d.hpp"
 #include "gobot/scene/mesh_instance_3d.hpp"
@@ -51,10 +52,12 @@
 #include "gobot/scene/resources/material.hpp"
 #include "gobot/scene/resources/packed_scene.hpp"
 #include "gobot/scene/resources/primitive_mesh.hpp"
+#include "gobot/scene/resources/tetrahedral_mesh.hpp"
 #include "gobot/scene/robot_3d.hpp"
 #include "gobot/scene/scene_command.hpp"
 #include "gobot/scene/scene_initializer.hpp"
 #include "gobot/scene/sensor_3d.hpp"
+#include "gobot/scene/tactile_sensor_3d.hpp"
 #include "gobot/scene/terrain_3d.hpp"
 #include "gobot/scene/velocity_command_debug_3d.hpp"
 #include "gobot/simulation/simulation_scene.hpp"
@@ -240,6 +243,32 @@ struct PyVelocityCommandDebug3DHandle : public PyNode3DHandle {
     using PyNode3DHandle::PyNode3DHandle;
 };
 
+struct PyDeformableBody3DHandle : public PyNode3DHandle {
+    using PyNode3DHandle::PyNode3DHandle;
+};
+
+struct PyTactileSensor3DHandle : public PySensor3DHandle {
+    using PySensor3DHandle::PySensor3DHandle;
+};
+
+struct PyTetrahedralMesh {
+    Ref<TetrahedralMesh> resource{MakeRef<TetrahedralMesh>()};
+
+    PyTetrahedralMesh() = default;
+    explicit PyTetrahedralMesh(Ref<TetrahedralMesh> value)
+        : resource(std::move(value)) {
+    }
+};
+
+struct PyTactileSensorConfig {
+    Ref<TactileSensorConfig> resource{MakeRef<TactileSensorConfig>()};
+
+    PyTactileSensorConfig() = default;
+    explicit PyTactileSensorConfig(Ref<TactileSensorConfig> value)
+        : resource(std::move(value)) {
+    }
+};
+
 std::uint64_t ActiveSceneEpoch();
 
 struct PyScene {
@@ -311,6 +340,10 @@ using PyRayCastSensor3DClass = py::class_<PyRayCastSensor3DHandle, PySensor3DHan
 using PyTerrainHeightSensor3DClass = py::class_<PyTerrainHeightSensor3DHandle, PyRayCastSensor3DHandle>;
 using PyHeightScanner3DClass = py::class_<PyHeightScanner3DHandle, PyTerrainHeightSensor3DHandle>;
 using PyVelocityCommandDebug3DClass = py::class_<PyVelocityCommandDebug3DHandle, PyNode3DHandle>;
+using PyDeformableBody3DClass = py::class_<PyDeformableBody3DHandle, PyNode3DHandle>;
+using PyTactileSensor3DClass = py::class_<PyTactileSensor3DHandle, PySensor3DHandle>;
+using PyTetrahedralMeshClass = py::class_<PyTetrahedralMesh>;
+using PyTactileSensorConfigClass = py::class_<PyTactileSensorConfig>;
 
 EngineContext& EnsureRuntimeContext();
 std::uint64_t ActiveSceneEpoch();
@@ -364,6 +397,9 @@ void ImportMJCFScene(const std::string& xml_path,
                      const std::optional<std::string>& name,
                      const std::optional<std::string>& script_path);
 PhysicsBackendType ParseBackend(const std::string& backend);
+std::vector<double> PythonToFixedDoubleArray(const py::handle& object,
+                                             py::ssize_t expected_size,
+                                             const std::string& description);
 
 std::string NodeTypeName(const PyNodeHandle& handle);
 py::list GetNodeChildren(PyNodeHandle& handle);
@@ -444,6 +480,11 @@ void RegisterManualTerrainSensorBindings(PyTerrain3DClass& terrain3d_class,
                                          PyTerrainHeightSensor3DClass& terrain_height_sensor3d_class,
                                          PyHeightScanner3DClass& height_scanner3d_class,
                                          PyMeshInstance3DClass& mesh_instance_class);
+void RegisterManualIpcSceneBindings(
+        PyTetrahedralMeshClass& tetrahedral_mesh_class,
+        PyTactileSensorConfigClass& tactile_config_class,
+        PyDeformableBody3DClass& deformable_body_class,
+        PyTactileSensor3DClass& tactile_sensor_class);
 void RegisterManualModuleFunctions(py::module_& module);
 
 } // namespace gobot::python

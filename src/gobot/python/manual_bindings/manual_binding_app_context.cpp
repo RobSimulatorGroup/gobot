@@ -2,6 +2,7 @@
 
 #include <algorithm>
 #include <chrono>
+#include <cmath>
 #include <cstdint>
 #include <limits>
 #include <string_view>
@@ -99,6 +100,30 @@ py::dict SceneArtifactToPython(const PhysicsSceneArtifact& artifact) {
     result["robot_names"] = artifact.robot_names;
     result["robot_prefixes"] = artifact.robot_prefixes;
     result["terrain_geom_groups"] = artifact.terrain_geom_groups;
+    return result;
+}
+
+py::dict IpcSceneArtifactToPython(const IpcSceneArtifact& artifact) {
+    py::list blobs;
+    for (const IpcSceneArtifactBlob& blob : artifact.blobs) {
+        py::dict value;
+        value["id"] = blob.id;
+        value["encoding"] = blob.encoding;
+        value["sha256"] = blob.sha256;
+        value["byte_length"] = blob.data.size();
+        value["data"] = py::bytes(
+                reinterpret_cast<const char*>(blob.data.data()), blob.data.size());
+        blobs.append(std::move(value));
+    }
+
+    py::dict result;
+    result["schema_version"] = artifact.schema_version;
+    result["producer"] = artifact.producer;
+    result["producer_version"] = artifact.producer_version;
+    result["format"] = artifact.format;
+    result["manifest"] = artifact.manifest;
+    result["manifest_sha256"] = artifact.manifest_sha256;
+    result["blobs"] = std::move(blobs);
     return result;
 }
 
@@ -1472,6 +1497,14 @@ void RegisterManualAppContextBindings(py::module_& module) {
                 }
                 return SceneArtifactToPython(artifact);
             }, py::arg("backend_type") = PhysicsBackendType::MuJoCoCpu)
+            .def("compile_ipc_scene_artifact", [](EngineContext& context) {
+                IpcSceneArtifact artifact;
+                Node* root = SceneRootForContext(context);
+                if (!context.CompileIpcSceneArtifact(root, &artifact)) {
+                    throw std::runtime_error(context.GetLastError());
+                }
+                return IpcSceneArtifactToPython(artifact);
+            })
             .def("_begin_external_simulation", [](EngineContext& context,
                                                    py::object step,
                                                    py::object reset,
@@ -1640,6 +1673,89 @@ void RegisterManualAppContextBindings(py::module_& module) {
                 py::cast(&context, py::return_value_policy::reference)
                         .attr("apply_link_poses")(std::move(links), std::move(poses));
             }, py::arg("links"), py::arg("poses"))
+            .def("apply_deformable_vertices", [](EngineContext& context,
+                                                  const std::vector<PyDeformableBody3DHandle>& bodies,
+                                                  py::array_t<float,
+                                                              py::array::c_style |
+                                                              py::array::forcecast> positions,
+                                                  const std::vector<std::size_t>& vertex_counts) {
+                const py::buffer_info buffer = positions.request();
+                if (buffer.ndim != 3 || buffer.shape[2] != 3 ||
+                    static_cast<std::size_t>(buffer.shape[0]) != bodies.size() ||
+                    vertex_counts.size() != bodies.size()) {
+                    throw std::invalid_argument(
+                            "deformable positions must have shape [body_count, max_vertices, 3] "
+                            "with one vertex count per body");
+                }
+                Node* scene_root = SceneRootForContext(context);
+                if (scene_root == nullptr) {
+                    throw std::runtime_error(
+                            "deformable vertex batch requires an active scene root");
+                }
+                const std::size_t max_vertices = static_cast<std::size_t>(buffer.shape[1]);
+                const auto* values = static_cast<const float*>(buffer.ptr);
+                std::unordered_set<DeformableBody3D*> unique_bodies;
+                for (std::size_t body_index = 0; body_index < bodies.size(); ++body_index) {
+                    DeformableBody3D* body = bodies[body_index].ResolveAs<DeformableBody3D>();
+                    if (body != scene_root && !scene_root->IsAncestorOf(body)) {
+                        throw std::invalid_argument(
+                                "deformable vertex batch contains a body outside the active scene");
+                    }
+                    if (!unique_bodies.insert(body).second) {
+                        throw std::invalid_argument(
+                                "deformable vertex batch contains a duplicate body");
+                    }
+                    const std::size_t vertex_count = vertex_counts[body_index];
+                    if (vertex_count > max_vertices) {
+                        throw std::invalid_argument(
+                                "deformable vertex count exceeds the padded tensor width");
+                    }
+                    const Ref<TetrahedralMesh>& mesh = body->GetMesh();
+                    if (!mesh.IsValid() || vertex_count != mesh->GetVertexCount()) {
+                        throw std::invalid_argument(
+                                "deformable vertex count does not match the authored mesh topology");
+                    }
+                    const Affine3 global_transform = body->GetGlobalTransform();
+                    const RealType determinant = global_transform.linear().determinant();
+                    const RealType column_scale =
+                            global_transform.linear().col(0).norm() *
+                            global_transform.linear().col(1).norm() *
+                            global_transform.linear().col(2).norm();
+                    const RealType relative_tolerance =
+                            std::numeric_limits<RealType>::epsilon() * 128.0 * column_scale;
+                    if (!global_transform.matrix().allFinite() ||
+                        !std::isfinite(determinant) ||
+                        !std::isfinite(column_scale) || column_scale <= 0.0 ||
+                        determinant <= relative_tolerance) {
+                        throw std::invalid_argument(
+                                "deformable body has a non-invertible runtime transform");
+                    }
+                    const Affine3 inverse_transform = global_transform.inverse();
+                    std::vector<Vector3> local_vertices;
+                    local_vertices.reserve(vertex_count);
+                    for (std::size_t vertex_index = 0; vertex_index < vertex_count; ++vertex_index) {
+                        const std::size_t offset =
+                                (body_index * max_vertices + vertex_index) * 3;
+                        const Vector3 world_position(
+                                values[offset], values[offset + 1], values[offset + 2]);
+                        if (!world_position.allFinite()) {
+                            throw std::invalid_argument(
+                                    "deformable vertex batch contains a non-finite position");
+                        }
+                        local_vertices.push_back(inverse_transform * world_position);
+                    }
+                    body->SetRuntimeVertices(local_vertices);
+                }
+            }, py::arg("bodies"), py::arg("positions"), py::arg("vertex_counts"))
+            .def("_apply_deformable_vertex_batch", [](EngineContext& context,
+                                                       py::object bodies,
+                                                       py::object positions,
+                                                       py::object vertex_counts) {
+                py::cast(&context, py::return_value_policy::reference)
+                        .attr("apply_deformable_vertices")(
+                                std::move(bodies), std::move(positions),
+                                std::move(vertex_counts));
+            }, py::arg("bodies"), py::arg("positions"), py::arg("vertex_counts"))
             .def("compiled_scene_artifact", [](EngineContext& context) {
                 SimulationServer* simulation = context.GetSimulationServer();
                 Ref<PhysicsWorld> world = simulation != nullptr ? simulation->GetWorld() : Ref<PhysicsWorld>();

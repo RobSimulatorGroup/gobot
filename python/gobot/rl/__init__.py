@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from importlib import import_module
+
 from .batch import BatchEnvState, CpuBatchEnv
 from .policy import (
     ONNX_POLICY_MANIFEST_KEY,
@@ -55,6 +57,26 @@ from .rsl_rl import (
     rsl_rl_cfg_to_dict,
 )
 
+_IPC_EXPORTS = {
+    "CompiledIpcSceneArtifact",
+    "DeformableBatchSpec",
+    "DeformableBatchState",
+    "DeformableBatchView",
+    "TactileBatchSpec",
+    "TactileBatchState",
+    "TactileBatchView",
+    "WarpIpcConfig",
+    "WarpIpcProvider",
+}
+
+
+def __getattr__(name: str):
+    if name in _IPC_EXPORTS:
+        value = getattr(import_module("gobot.ipc"), name)
+        globals()[name] = value
+        return value
+    raise AttributeError(f"module {__name__!r} has no attribute {name!r}")
+
 __all__ = [
     "ActionSpec",
     "BatchEnvState",
@@ -64,7 +86,11 @@ __all__ = [
     "CompiledControlTopology",
     "CompiledRobotTopology",
     "CompiledSceneArtifact",
+    "CompiledIpcSceneArtifact",
     "CpuBatchEnv",
+    "DeformableBatchSpec",
+    "DeformableBatchState",
+    "DeformableBatchView",
     "GobotSceneBatchBackend",
     "GobotSceneBatchState",
     "GraphInvalidatedError",
@@ -103,6 +129,11 @@ __all__ = [
     "scene_bundle_digest",
     "SimulationCapacityError",
     "TaskRuntimeMetadata",
+    "TactileBatchSpec",
+    "TactileBatchState",
+    "TactileBatchView",
     "validate_spec_metadata",
     "write_policy_manifest_sidecar",
+    "WarpIpcConfig",
+    "WarpIpcProvider",
 ]

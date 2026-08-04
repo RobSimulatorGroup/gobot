@@ -3,6 +3,7 @@ from ._core import (
     AppContext,
     CollisionShape3D,
     ContactSensor3D,
+    DeformableBody3D,
     HeightScanner3D,
     IMUSensor3D,
     Joint3D,
@@ -25,6 +26,9 @@ from ._core import (
     RobotMode,
     Scene,
     Sensor3D,
+    TactileSensor3D,
+    TactileSensorConfig,
+    TetrahedralMesh,
     TerrainColorMode,
     Terrain3D,
     TerrainSubTerrainType,
@@ -44,7 +48,7 @@ from ._core import (
 )
 from .scene_helpers import create_cartpole_scene, save_cartpole_scene
 
-from . import app, physics, render, rl, scene, sim, terrain
+from . import app, ipc, physics, render, rl, scene, sim, terrain
 
 __version__: str
 

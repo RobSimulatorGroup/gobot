@@ -8,6 +8,7 @@ import hashlib
 import json
 import math
 from numbers import Integral, Real
+import operator
 from types import MappingProxyType
 from typing import Any, Mapping, Sequence
 import xml.etree.ElementTree as ET
@@ -612,6 +613,9 @@ class RobotBatchView:
         self._generation = getattr(provider, "generation", None)
         self._artifact_digest = getattr(getattr(provider, "artifact", None), "digest", None)
         self._state: RobotBatchState | None = None
+        self._state_storage_signature: tuple[
+            tuple[str, int, tuple[int, ...], str], ...
+        ] | None = None
         self._scene_context: Any | None = None
         self._scene_links: tuple[Any, ...] | None = None
 
@@ -624,12 +628,77 @@ class RobotBatchView:
 
     def read_state(self) -> RobotBatchState:
         self._validate()
-        self._state = self._adapter.read_state(self._state)
+        state = self._adapter.read_state(self._state)
+        if not isinstance(state, RobotBatchState):
+            raise RuntimeError("robot batch adapter returned an invalid state object")
+        expected_shapes = {
+            "base_pose": (int(self._provider.num_envs), 7),
+            "base_velocity": (int(self._provider.num_envs), 6),
+            "joint_position": (
+                int(self._provider.num_envs),
+                len(self.spec.joint_names),
+            ),
+            "joint_velocity": (
+                int(self._provider.num_envs),
+                len(self.spec.joint_names),
+            ),
+            "joint_control": (
+                int(self._provider.num_envs),
+                len(self.spec.joint_names),
+            ),
+            "link_pose": (
+                int(self._provider.num_envs),
+                len(self.spec.link_names),
+                7,
+            ),
+        }
+        signature = []
+        for name, expected_shape in expected_shapes.items():
+            value = getattr(state, name)
+            shape = tuple(int(item) for item in getattr(value, "shape", ()))
+            if shape != expected_shape:
+                raise RuntimeError(
+                    f"robot batch {name} tensor has shape {shape}, expected {expected_shape}"
+                )
+            data_ptr = getattr(value, "data_ptr", None)
+            if callable(data_ptr):
+                pointer = int(data_ptr())
+            elif getattr(value, "ptr", None) is not None:
+                pointer = int(value.ptr)
+            else:
+                pointer = id(value)
+            array = getattr(value, "array", getattr(value, "_array", None))
+            dtype = str(getattr(value, "dtype", getattr(array, "dtype", ""))).lower()
+            signature.append((name, pointer, shape, dtype))
+        resolved_signature = tuple(signature)
+        if self._state_storage_signature is None:
+            self._state_storage_signature = resolved_signature
+        elif resolved_signature != self._state_storage_signature:
+            raise GraphInvalidatedError(
+                "robot batch state storage changed after its first read"
+            )
+        self._state = state
         return self._state
 
     def set_position_targets(self, targets: Any) -> None:
         self._validate()
         self._adapter.set_position_targets(targets)
+
+    def set_base_pose_targets(self, targets: Any) -> None:
+        """Set kinematic base targets as ``[x, y, z, qx, qy, qz, qw]``.
+
+        Providers whose robot base is dynamic or fixed may decline this optional
+        capability. Keeping it on the backend-neutral view lets manipulation
+        examples move a kinematic hand without exposing solver storage.
+        """
+
+        self._validate()
+        set_targets = getattr(self._adapter, "set_base_pose_targets", None)
+        if not callable(set_targets):
+            raise NotImplementedError(
+                f"{type(self._provider).__name__} does not support kinematic base pose targets"
+            )
+        set_targets(targets)
 
     def set_controls(self, controls: Any) -> None:
         self._validate()
@@ -664,13 +733,19 @@ class RobotBatchView:
             raise ValueError(
                 f"scene sync requires {len(self.spec.link_names)} links, got {len(links)}"
             )
-        if not 0 <= int(env_index) < int(self._provider.num_envs):
+        try:
+            resolved_env_index = operator.index(env_index)
+        except TypeError as error:
+            raise TypeError("scene sync environment index must be an integer") from error
+        if isinstance(env_index, bool):
+            raise TypeError("scene sync environment index must be an integer")
+        if not 0 <= resolved_env_index < int(self._provider.num_envs):
             raise IndexError(
                 f"scene sync environment index {env_index} is outside "
                 f"[0, {self._provider.num_envs})"
             )
         state = self.read_state()
-        poses = state.link_pose[int(env_index)].detach().cpu().numpy()
+        poses = state.link_pose[resolved_env_index].detach().cpu().numpy()
         apply_poses = getattr(context, "apply_link_poses", None)
         if not callable(apply_poses):
             apply_poses = getattr(context, "_apply_link_pose_batch", None)

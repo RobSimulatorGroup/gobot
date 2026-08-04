@@ -11,6 +11,7 @@
 
 #include "gobot/scene/collision_shape_3d.hpp"
 #include "gobot/scene/camera_3d.hpp"
+#include "gobot/scene/deformable_body_3d.hpp"
 #include "gobot/scene/environment_3d.hpp"
 #include "gobot/scene/gaussian_splat_3d.hpp"
 #include "gobot/scene/joint_3d.hpp"
@@ -21,6 +22,7 @@
 #include "gobot/scene/resources/primitive_mesh.hpp"
 #include "gobot/scene/robot_3d.hpp"
 #include "gobot/scene/sensor_3d.hpp"
+#include "gobot/scene/tactile_sensor_3d.hpp"
 #include "gobot/scene/terrain_3d.hpp"
 #include "gobot/scene/velocity_command_debug_3d.hpp"
 
@@ -224,6 +226,22 @@ void NodeCreationRegistry::EnsureBuiltInNodeTypesRegistered() {
         "Node3D",
         "Base 3D sensor node with backend-neutral sampling properties.",
         []() -> Node* { return CreateNodeInstance<Sensor3D>(); }
+    });
+
+    RegisterNodeType({
+        "DeformableBody3D",
+        "Deformable Body",
+        "Node3D",
+        "Tetrahedral deformable body authored for device-native IPC simulation.",
+        []() -> Node* { return CreateNodeInstance<DeformableBody3D>(); }
+    });
+
+    RegisterNodeType({
+        "TactileSensor3D",
+        "Tactile Sensor",
+        "Sensor3D",
+        "Deformable gel tactile sensor with explicit image and marker configuration.",
+        []() -> Node* { return CreateNodeInstance<TactileSensor3D>(); }
     });
 
     RegisterNodeType({

@@ -29,6 +29,13 @@ void RegisterManualApis(py::module_& module) {
             py::class_<PyHeightScanner3DHandle, PyTerrainHeightSensor3DHandle>(module, "HeightScanner3D");
     auto velocity_command_debug3d_class =
             py::class_<PyVelocityCommandDebug3DHandle, PyNode3DHandle>(module, "VelocityCommandDebug3D");
+    auto deformable_body3d_class =
+            py::class_<PyDeformableBody3DHandle, PyNode3DHandle>(module, "DeformableBody3D");
+    auto tactile_sensor3d_class =
+            py::class_<PyTactileSensor3DHandle, PySensor3DHandle>(module, "TactileSensor3D");
+    auto tetrahedral_mesh_class = py::class_<PyTetrahedralMesh>(module, "TetrahedralMesh");
+    auto tactile_sensor_config_class =
+            py::class_<PyTactileSensorConfig>(module, "TactileSensorConfig");
 
     py::implicitly_convertible<PyRobot3DHandle, PyNodeHandle>();
     py::implicitly_convertible<PyLink3DHandle, PyNodeHandle>();
@@ -43,6 +50,8 @@ void RegisterManualApis(py::module_& module) {
     py::implicitly_convertible<PyTerrainHeightSensor3DHandle, PyNodeHandle>();
     py::implicitly_convertible<PyHeightScanner3DHandle, PyNodeHandle>();
     py::implicitly_convertible<PyVelocityCommandDebug3DHandle, PyNodeHandle>();
+    py::implicitly_convertible<PyDeformableBody3DHandle, PyNodeHandle>();
+    py::implicitly_convertible<PyTactileSensor3DHandle, PyNodeHandle>();
 
     GOB_UNUSED(velocity_command_debug3d_class);
 
@@ -58,6 +67,10 @@ void RegisterManualApis(py::module_& module) {
                                         terrain_height_sensor3d_class,
                                         height_scanner3d_class,
                                         mesh_instance_class);
+    RegisterManualIpcSceneBindings(tetrahedral_mesh_class,
+                                   tactile_sensor_config_class,
+                                   deformable_body3d_class,
+                                   tactile_sensor3d_class);
     RegisterManualModuleFunctions(module);
 }
 

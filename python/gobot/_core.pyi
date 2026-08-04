@@ -152,6 +152,7 @@ class AppContext:
     def transaction(self, name: str = "Scene Transaction") -> SceneTransaction: ...
     def build_world(self, backend_type: PhysicsBackendType = PhysicsBackendType.Null) -> None: ...
     def compile_scene_artifact(self, backend_type: PhysicsBackendType = PhysicsBackendType.MuJoCoCpu) -> dict[str, Any]: ...
+    def compile_ipc_scene_artifact(self) -> dict[str, Any]: ...
     def _begin_external_simulation(
         self,
         step: Callable[[float], None],
@@ -169,6 +170,18 @@ class AppContext:
     ) -> bool: ...
     def apply_link_poses(
         self, links: Sequence[Link3D], poses: npt.NDArray[np.float32]
+    ) -> None: ...
+    def apply_deformable_vertices(
+        self,
+        bodies: Sequence[DeformableBody3D],
+        positions: npt.NDArray[np.float32],
+        vertex_counts: Sequence[int],
+    ) -> None: ...
+    def _apply_deformable_vertex_batch(
+        self,
+        bodies: Sequence[DeformableBody3D],
+        positions: npt.NDArray[np.float32],
+        vertex_counts: Sequence[int],
     ) -> None: ...
     def _apply_link_pose_batch(
         self, links: Sequence[Link3D], poses: npt.NDArray[np.float32]
@@ -379,6 +392,50 @@ class MeshInstance3D(Node3D):
     cast_shadow: bool
 
 
+class TetrahedralMesh:
+    vertices: list[Vector3]
+    tetrahedra: npt.NDArray[np.uint32]
+    surface_triangles: npt.NDArray[np.uint32]
+    vertex_count: int
+    tetrahedron_count: int
+
+    def __init__(self) -> None: ...
+    def validate(self) -> None: ...
+
+
+class TactileSensorConfig:
+    image_width: int
+    image_height: int
+    near_plane: float
+    far_plane: float
+    pixel_size: float
+    density: float
+    young_modulus: float
+    poisson_ratio: float
+    damping: float
+    friction_coefficient: float
+    coat_vertex_indices: list[int]
+    stick_vertex_indices: list[int]
+    marker_positions: list[Vector2]
+    marker_tetrahedra: list[int]
+    marker_barycentric: list[Vector4]
+    rgb_model: str
+
+    def __init__(self) -> None: ...
+
+
+class DeformableBody3D(Node3D):
+    mesh: TetrahedralMesh | None
+    density: float
+    young_modulus: float
+    poisson_ratio: float
+    damping: float
+    kinematic: bool
+    collision_layer: int
+    collision_mask: int
+    self_collision_enabled: bool
+
+
 class Terrain3D(Node3D):
     box_count: int
     heightfield_count: int
@@ -449,6 +506,13 @@ class ContactSensor3D(Sensor3D):
     radius: float
     min_threshold: float
     max_threshold: float
+
+
+class TactileSensor3D(Sensor3D):
+    config: TactileSensorConfig | None
+    gel_mesh: TetrahedralMesh | None
+    collision_layer: int
+    collision_mask: int
 
 
 class RayReductionMode(Enum):

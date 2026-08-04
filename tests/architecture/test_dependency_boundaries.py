@@ -17,8 +17,14 @@ def main() -> int:
     physics_headers = source_files(ROOT / "include/gobot/physics", {".hpp", ".h"})
     physics_sources = source_files(ROOT / "src/gobot/physics", {".cpp", ".cc"})
 
+    scene_compiler_sources = {
+        "ipc_scene_compiler.cpp",
+        "physics_scene_compiler.cpp",
+    }
     for path in [*physics_headers, *physics_sources]:
-        if path.name == "physics_scene_compiler.cpp":
+        # Compiler implementations are the explicit Scene -> runtime artifact
+        # boundary. Physics runtime headers and all other sources stay Scene-free.
+        if path.name in scene_compiler_sources:
             continue
         for line_number, line in enumerate(path.read_text(encoding="utf-8").splitlines(), 1):
             match = INCLUDE_RE.match(line)

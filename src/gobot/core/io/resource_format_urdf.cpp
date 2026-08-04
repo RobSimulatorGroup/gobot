@@ -215,7 +215,14 @@ std::filesystem::path FindPackageRoot(const std::filesystem::path& source_file_p
     std::filesystem::path current = source_file_path.parent_path();
     while (!current.empty() && current != current.root_path()) {
         const std::filesystem::path package_xml = current / "package.xml";
-        if (std::filesystem::exists(package_xml) && ReadPackageName(package_xml) == package_name) {
+        if (std::filesystem::exists(package_xml)) {
+            if (ReadPackageName(package_xml) == package_name) {
+                return current;
+            }
+        } else if (current.filename() == package_name) {
+            // Some redistributable robot asset bundles preserve ROS package://
+            // URIs without shipping package.xml. The matching directory name is
+            // still an unambiguous, local package boundary.
             return current;
         }
         current = current.parent_path();
@@ -320,7 +327,14 @@ std::string ResolvePackageUri(const std::string& filename, const std::string& so
     }
 
     const std::string package_name = package_relative.substr(0, slash);
-    const std::string relative_asset_path = package_relative.substr(slash + 1);
+    const std::filesystem::path relative_asset_path =
+            std::filesystem::path(package_relative.substr(slash + 1)).lexically_normal();
+    const auto first_component = relative_asset_path.begin();
+    if (relative_asset_path.is_absolute() || relative_asset_path.empty() ||
+        (first_component != relative_asset_path.end() && *first_component == "..")) {
+        LOG_ERROR("URDF package URI escapes its package root: '{}'.", filename);
+        return filename;
+    }
     const std::filesystem::path package_root = FindPackageRoot(source_file_path, package_name);
     if (package_root.empty()) {
         return filename;

@@ -7,6 +7,7 @@
 #include <vector>
 
 #include "gobot/core/object.hpp"
+#include "gobot/physics/ipc_scene_compiler.hpp"
 #include "gobot/physics/physics_types.hpp"
 #include "gobot/rendering/renderer_debug_draw.hpp"
 #include "gobot/scene/scene_command.hpp"
@@ -54,6 +55,9 @@ public:
     bool CompileSceneArtifact(const Node* scene_root,
                               PhysicsBackendType backend_type,
                               PhysicsSceneArtifact* artifact);
+    bool CompileIpcSceneArtifact(IpcSceneArtifact* artifact);
+    bool CompileIpcSceneArtifact(const Node* scene_root,
+                                 IpcSceneArtifact* artifact);
     void ClearWorld();
     bool HasWorld() const;
 

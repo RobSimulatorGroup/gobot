@@ -2212,12 +2212,40 @@ PyVelocityCommandDebug3DHandle MakeVelocityCommandDebug3DHandle(
             ownership);
 }
 
+PyDeformableBody3DHandle MakeDeformableBody3DHandle(
+        DeformableBody3D* node,
+        PyNodeOwnership ownership,
+        EngineContext* context,
+        std::uint64_t epoch) {
+    EngineContext* resolved_context = ResolveHandleContext(context);
+    return PyDeformableBody3DHandle(
+            node, "DeformableBody3D", resolved_context,
+            ResolveHandleEpoch(resolved_context, epoch), ownership);
+}
+
+PyTactileSensor3DHandle MakeTactileSensor3DHandle(
+        TactileSensor3D* node,
+        PyNodeOwnership ownership,
+        EngineContext* context,
+        std::uint64_t epoch) {
+    EngineContext* resolved_context = ResolveHandleContext(context);
+    return PyTactileSensor3DHandle(
+            node, "TactileSensor3D", resolved_context,
+            ResolveHandleEpoch(resolved_context, epoch), ownership);
+}
+
 PyNodeHandle MakeTypedNodeHandle(Node* node,
                                  PyNodeOwnership ownership,
                                  EngineContext* context,
                                  std::uint64_t epoch) {
     if (auto* velocity_debug = Object::PointerCastTo<VelocityCommandDebug3D>(node)) {
         return MakeVelocityCommandDebug3DHandle(velocity_debug, ownership, context, epoch);
+    }
+    if (auto* deformable = Object::PointerCastTo<DeformableBody3D>(node)) {
+        return MakeDeformableBody3DHandle(deformable, ownership, context, epoch);
+    }
+    if (auto* tactile = Object::PointerCastTo<TactileSensor3D>(node)) {
+        return MakeTactileSensor3DHandle(tactile, ownership, context, epoch);
     }
     if (auto* mesh_instance = Object::PointerCastTo<MeshInstance3D>(node)) {
         return MakeMeshInstance3DHandle(mesh_instance, ownership, context, epoch);
@@ -2270,6 +2298,12 @@ py::object MakeTypedNodeObject(Node* node,
                                std::uint64_t epoch) {
     if (auto* velocity_debug = Object::PointerCastTo<VelocityCommandDebug3D>(node)) {
         return py::cast(MakeVelocityCommandDebug3DHandle(velocity_debug, ownership, context, epoch));
+    }
+    if (auto* deformable = Object::PointerCastTo<DeformableBody3D>(node)) {
+        return py::cast(MakeDeformableBody3DHandle(deformable, ownership, context, epoch));
+    }
+    if (auto* tactile = Object::PointerCastTo<TactileSensor3D>(node)) {
+        return py::cast(MakeTactileSensor3DHandle(tactile, ownership, context, epoch));
     }
     if (auto* mesh_instance = Object::PointerCastTo<MeshInstance3D>(node)) {
         return py::cast(MakeMeshInstance3DHandle(mesh_instance, ownership, context, epoch));

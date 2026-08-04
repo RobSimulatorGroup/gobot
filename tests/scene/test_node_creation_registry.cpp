@@ -4,6 +4,7 @@
 #include <memory>
 
 #include <gobot/rendering/render_server.hpp>
+#include <gobot/scene/deformable_body_3d.hpp>
 #include <gobot/scene/joint_3d.hpp>
 #include <gobot/scene/environment_3d.hpp>
 #include <gobot/scene/gaussian_splat_3d.hpp>
@@ -14,6 +15,7 @@
 #include <gobot/scene/resources/primitive_mesh.hpp>
 #include <gobot/scene/robot_3d.hpp>
 #include <gobot/scene/sensor_3d.hpp>
+#include <gobot/scene/tactile_sensor_3d.hpp>
 #include <gobot/scene/terrain_3d.hpp>
 #include <gobot/scene/velocity_command_debug_3d.hpp>
 
@@ -39,6 +41,8 @@ TEST(TestNodeCreationRegistry, built_in_entries_keep_node_inheritance_shape) {
     const auto* link = FindEntry("Link3D");
     const auto* joint = FindEntry("Joint3D");
     const auto* sensor = FindEntry("Sensor3D");
+    const auto* deformable = FindEntry("DeformableBody3D");
+    const auto* tactile = FindEntry("TactileSensor3D");
     const auto* imu_sensor = FindEntry("IMUSensor3D");
     const auto* angular_momentum_sensor = FindEntry("AngularMomentumSensor3D");
     const auto* contact_sensor = FindEntry("ContactSensor3D");
@@ -64,6 +68,8 @@ TEST(TestNodeCreationRegistry, built_in_entries_keep_node_inheritance_shape) {
     ASSERT_NE(link, nullptr);
     ASSERT_NE(joint, nullptr);
     ASSERT_NE(sensor, nullptr);
+    ASSERT_NE(deformable, nullptr);
+    ASSERT_NE(tactile, nullptr);
     ASSERT_NE(imu_sensor, nullptr);
     ASSERT_NE(angular_momentum_sensor, nullptr);
     ASSERT_NE(contact_sensor, nullptr);
@@ -89,6 +95,8 @@ TEST(TestNodeCreationRegistry, built_in_entries_keep_node_inheritance_shape) {
     EXPECT_EQ(link->parent_id, "Node3D");
     EXPECT_EQ(joint->parent_id, "Node3D");
     EXPECT_EQ(sensor->parent_id, "Node3D");
+    EXPECT_EQ(deformable->parent_id, "Node3D");
+    EXPECT_EQ(tactile->parent_id, "Sensor3D");
     EXPECT_EQ(imu_sensor->parent_id, "Sensor3D");
     EXPECT_EQ(angular_momentum_sensor->parent_id, "Sensor3D");
     EXPECT_EQ(contact_sensor->parent_id, "Sensor3D");
@@ -105,6 +113,28 @@ TEST(TestNodeCreationRegistry, built_in_entries_keep_node_inheritance_shape) {
     EXPECT_EQ(box_mesh->parent_id, "MeshInstance3D");
     EXPECT_EQ(cylinder_mesh->parent_id, "MeshInstance3D");
     EXPECT_EQ(sphere_mesh->parent_id, "MeshInstance3D");
+}
+
+TEST(TestNodeCreationRegistry, creates_ipc_scene_nodes) {
+    gobot::Node* deformable_node =
+            gobot::NodeCreationRegistry::CreateNode("DeformableBody3D");
+    ASSERT_NE(deformable_node, nullptr);
+    auto* deformable =
+            gobot::Object::PointerCastTo<gobot::DeformableBody3D>(deformable_node);
+    ASSERT_NE(deformable, nullptr);
+    EXPECT_FALSE(deformable->GetMesh().IsValid());
+    EXPECT_FALSE(deformable->IsKinematic());
+    gobot::Object::Delete(deformable_node);
+
+    gobot::Node* tactile_node =
+            gobot::NodeCreationRegistry::CreateNode("TactileSensor3D");
+    ASSERT_NE(tactile_node, nullptr);
+    auto* tactile =
+            gobot::Object::PointerCastTo<gobot::TactileSensor3D>(tactile_node);
+    ASSERT_NE(tactile, nullptr);
+    EXPECT_FALSE(tactile->GetConfig().IsValid());
+    EXPECT_FALSE(tactile->GetGelMesh().IsValid());
+    gobot::Object::Delete(tactile_node);
 }
 
 TEST(TestNodeCreationRegistry, creates_velocity_command_debug_node) {

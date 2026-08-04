@@ -226,6 +226,30 @@ bool EngineContext::CompileSceneArtifact(const Node* scene_root,
     return true;
 }
 
+bool EngineContext::CompileIpcSceneArtifact(IpcSceneArtifact* artifact) {
+    return CompileIpcSceneArtifact(scene_root_, artifact);
+}
+
+bool EngineContext::CompileIpcSceneArtifact(const Node* scene_root,
+                                            IpcSceneArtifact* artifact) {
+    if (scene_root == nullptr) {
+        SetLastError("Cannot compile an IPC artifact without a loaded scene.");
+        return false;
+    }
+    if (artifact == nullptr) {
+        SetLastError("Cannot compile an IPC artifact into a null output.");
+        return false;
+    }
+
+    std::string compile_error;
+    if (!IpcSceneCompiler::Compile(scene_root, artifact, &compile_error)) {
+        SetLastError(std::move(compile_error));
+        return false;
+    }
+    last_error_.clear();
+    return true;
+}
+
 void EngineContext::ClearWorld() {
     ClearDebugArrows();
     if (simulation_server_ != nullptr) {

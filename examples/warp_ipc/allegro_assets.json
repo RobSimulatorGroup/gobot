@@ -1,0 +1,25 @@
+{
+  "asset_root": "wonik_allegro",
+  "files": [
+    {"path": "LICENSE", "sha256": "37766593733254c83007eac1e810cae21ecefb1f7e1e8af7e5183aef58c3774b", "size": 1427},
+    {"path": "meshes/base_link_left.STL", "sha256": "9f66c1cb8d27b9f07e49101a7997a49c60d3cc3ccbc8de96065322df68f47a0b", "size": 433984},
+    {"path": "meshes/link_0.0.STL", "sha256": "32b90a6744d472a6ffaee02cbf32eb8a5600b1da0944e86aeb9f53503a9f8ac9", "size": 57584},
+    {"path": "meshes/link_1.0.STL", "sha256": "e3dfb35b6682f62f18ca6ed0b39cb94ff627b68e0e3373cf7212390574604680", "size": 70084},
+    {"path": "meshes/link_12.0_left.STL", "sha256": "1749ba567bf36729a81eaecf384bc4f5483be8c496af54d230500b96f1d81dcc", "size": 217084},
+    {"path": "meshes/link_13.0.STL", "sha256": "e906896afc078a12c9c377e3a2b07f375583d3b869581f9962030cabc888be29", "size": 22484},
+    {"path": "meshes/link_14.0.STL", "sha256": "a9e4983e4bff7fc7d868b4965c9865edb2669b946434095703766202b5de01ff", "size": 46884},
+    {"path": "meshes/link_15.0.STL", "sha256": "bf963adb775b79b27649f4f5dff4ced58ef676ce86cc677de49d3810382d11e0", "size": 43284},
+    {"path": "meshes/link_15.0_tip.STL", "sha256": "d7d26213e35e7fac648b6807c94f8fa43a780f820d80dcca1236d6a3e00b5317", "size": 15384},
+    {"path": "meshes/link_2.0.STL", "sha256": "9c98477c65b45f5a3de1df0e1b54281da2385f4eafd057d103ab40893771c2d0", "size": 52884},
+    {"path": "meshes/link_3.0.STL", "sha256": "fe333088176395aa7d8a913aa953d3cd649c4c77753224239b78b2c99e3e314c", "size": 18084},
+    {"path": "meshes/link_3.0_tip.STL", "sha256": "d7d26213e35e7fac648b6807c94f8fa43a780f820d80dcca1236d6a3e00b5317", "size": 15384},
+    {"path": "urdf/allegro_hand_description_left.urdf", "sha256": "683268fd363ef02caf5a70f08f8d72269e8ffca5040f3764bcbf2e7d65a7de5b", "size": 19840}
+  ],
+  "license": {
+    "path": "LICENSE",
+    "spdx": "BSD-2-Clause"
+  },
+  "revision": "261cd1f429619d8ef4f546bd788ab9dea906b5e1",
+  "source": "https://github.com/newton-physics/newton-assets.git",
+  "total_size": 1014391
+}

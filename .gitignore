@@ -64,6 +64,7 @@ examples/go1/policies/*
 !examples/go1/policies/go1_velocity.onnx
 examples/gaussian_splatting/assets/*
 examples/newton_g1/assets/*
+examples/warp_ipc/assets/
 
 # Local reference checkouts used during development.
 /.upstream/
@@ -76,6 +77,7 @@ examples/newton_g1/assets/*
 /UniLab/
 /mujoco_uni/
 /warp/
+/Taccel/
 
 # Local LLVM/Clang dependency installed from Warp packman.
 /3rdparty/llvm/
