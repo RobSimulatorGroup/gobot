@@ -1,0 +1,6 @@
+if(NOT TARGET Octree::Octree)
+    set(Octree_FOUND FALSE)
+    set(Octree_NOT_FOUND_MESSAGE "Gobot did not configure its pinned Octree target")
+    return()
+endif()
+set(Octree_FOUND TRUE)

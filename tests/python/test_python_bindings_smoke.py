@@ -7,12 +7,12 @@ import gobot
 import numpy as np
 
 
-def assert_close_tuple(actual, expected):
+def assert_close_tuple(actual, expected, tolerance=1e-9):
     if hasattr(actual, "tolist"):
         actual = actual.tolist()
     assert len(actual) == len(expected)
     for left, right in zip(actual, expected):
-        assert abs(left - right) < 1e-9
+        assert abs(left - right) < tolerance
 
 
 def main():
@@ -80,6 +80,12 @@ def main():
     assert context.has_scene is False
     assert context.has_world is False
     assert context.frame_count == 0
+    physics_debug_settings = context.get_physics_debug_settings()
+    assert physics_debug_settings["draw_contact_forces"] is True
+    assert abs(physics_debug_settings["contact_force_scale"] - 0.08) < 1e-6
+    assert abs(physics_debug_settings["contact_force_max_length"] - 0.8) < 1e-6
+    physics_debug_settings["draw_contact_forces"] = False
+    assert context.get_physics_debug_settings()["draw_contact_forces"] is True
     assert not hasattr(gobot, "set_editor_tick_callback")
     assert not hasattr(gobot, "set_editor_physics_callback")
     assert not hasattr(gobot.app, "set_editor_tick_callback")
@@ -143,6 +149,7 @@ def main():
     link = gobot.create_node("Link3D", "link")
     authored.add_child(link)
     collision = gobot.create_box_collision("collision", (0.2, 0.3, 0.4))
+    collision.friction = (0.8, 0.01, 0.001)
     link.add_child(collision)
     visual = gobot.create_box_visual("visual", (0.2, 0.3, 0.4))
     link.add_child(visual)
@@ -174,6 +181,7 @@ def main():
     assert abs(authored_joint.affine_actuator_velocity_gain - 1.0) < 1e-6
     assert abs(authored_joint.affine_actuator_inherit_range - 1.0) < 1e-6
     assert authored.find("link/collision").name == "collision"
+    assert_close_tuple(collision.friction, (0.8, 0.01, 0.001), tolerance=1e-6)
     assert authored.find("link/imu").type == "IMUSensor3D"
     assert authored.find("link/root_angmom").type == "AngularMomentumSensor3D"
     assert abs(authored.find("link/foot_contact").radius - 0.05) < 1e-6

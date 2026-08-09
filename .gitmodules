@@ -41,3 +41,6 @@
 	path = 3rdparty/onetbb
 	url = https://github.com/uxlfoundation/oneTBB.git
 	shallow = true
+[submodule "3rdparty/libuipc"]
+	path = 3rdparty/libuipc
+	url = https://github.com/spiriMirror/libuipc.git

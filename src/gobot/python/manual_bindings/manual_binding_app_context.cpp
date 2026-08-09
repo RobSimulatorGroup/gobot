@@ -2022,6 +2022,20 @@ void RegisterManualAppContextBindings(py::module_& module) {
                 }
                 return ReflectedToPythonDict(simulation->GetPhysicsWorldSettings().mujoco_solver);
             })
+            .def("get_physics_debug_settings", [](EngineContext& context) {
+                SimulationServer* simulation = context.GetSimulationServer();
+                if (simulation == nullptr) {
+                    throw std::runtime_error("active Gobot app context has no SimulationServer");
+                }
+                const PhysicsWorldSettings& settings =
+                        simulation->GetPhysicsWorldSettings();
+                py::dict result;
+                result["draw_contact_forces"] = settings.debug_draw_contact_forces;
+                result["contact_force_scale"] = settings.debug_contact_force_scale;
+                result["contact_force_max_length"] =
+                        settings.debug_contact_force_max_length;
+                return result;
+            })
             .def("get_batch_runtime_state", [](EngineContext& context, std::size_t env_id) {
                 SimulationServer* simulation = context.GetSimulationServer();
                 if (simulation == nullptr) {

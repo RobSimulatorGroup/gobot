@@ -40,6 +40,8 @@ private:
     LineBuffer editor_grid_;
     LineBuffer world_axes_;
     LineBuffer collision_lines_;
+    LineBuffer deformable_triangles_;
+    LineBuffer deformable_lines_;
     LineBuffer height_scanner_ray_lines_;
     LineBuffer height_scanner_miss_ray_lines_;
     LineBuffer height_scanner_hit_spheres_;
@@ -63,6 +65,8 @@ private:
     void DrawWorldAxes();
 
     void DrawCollisionDebug(const SceneRenderItems& render_items);
+
+    void DrawDeformableDebug(const Node* scene_root);
 
     void DrawHeightScannerDebug(const PhysicsSceneState* physics_state);
 

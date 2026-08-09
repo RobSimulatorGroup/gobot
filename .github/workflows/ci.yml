@@ -79,7 +79,7 @@ jobs:
     - name: Configure CMake
       # Configure CMake in a 'build' subdirectory. `CMAKE_BUILD_TYPE` is only required if you are using a single-configuration generator such as make.
       # See https://cmake.org/cmake/help/latest/variable/CMAKE_BUILD_TYPE.html?highlight=cmake_build_type
-      run: cmake -B ${{ github.workspace }}/build -G Ninja -DCMAKE_BUILD_TYPE=${{ env.BUILD_TYPE }} -DGOB_BUILD_TESTS=ON
+      run: cmake -B ${{ github.workspace }}/build -G Ninja -DCMAKE_BUILD_TYPE=${{ env.BUILD_TYPE }} -DGOB_BUILD_TESTS=ON -DGOB_BUILD_LIBUIPC=OFF
 
     - name: Build
       run: cmake --build ${{ github.workspace }}/build --config ${{ env.BUILD_TYPE }}
@@ -142,6 +142,7 @@ jobs:
           -DGOB_BUILD_MUJOCO=OFF \
           -DGOB_BUILD_EGL=OFF \
           -DGOB_BUILD_LUISA_RENDERER=OFF \
+          -DGOB_BUILD_LIBUIPC=OFF \
           -DGOB_BUILD_GSPLAT_INFERENCE=OFF \
           -DSDL_X11=OFF
         cmake --build build/openusd-ci --target test_resource_format_usd --parallel 4

@@ -1,0 +1,21 @@
+{
+    "editor_scene_views": {
+        "res://fr3_brick_grasp.jscn": {
+            "at": [0.26, 0.0, 0.34],
+            "eye": [1.80, 1.90, 1.20],
+            "fov_y": 45.0,
+            "up": [-0.18, -0.20, 0.96]
+        },
+        "res://soft_cube_stack.jscn": {
+            "at": [0.0, 0.0, 0.27],
+            "eye": [0.70, 0.90, 0.56],
+            "up": [-0.20, -0.25, 0.95]
+        },
+        "res://soft_cube_press.jscn": {
+            "at": [0.0, 0.0, 0.16],
+            "eye": [0.62, 0.82, 0.44],
+            "up": [-0.18, -0.24, 0.95]
+        }
+    },
+    "main_scene": "res://fr3_brick_grasp.jscn"
+}

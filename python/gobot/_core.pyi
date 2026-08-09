@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from enum import Enum
 from types import ModuleType
-from typing import Any, Callable, ClassVar, Sequence
+from typing import Any, Callable, ClassVar, Mapping, Sequence
 
 import numpy as np
 import numpy.typing as npt
@@ -13,6 +13,38 @@ Vector2 = FloatArray
 Vector3 = FloatArray
 Vector4 = FloatArray
 Quaternion = FloatArray
+
+
+class _IpcSolverSession:
+    def __init__(
+        self,
+        artifact: Mapping[str, Any],
+        config: Mapping[str, Any] = ...,
+        module_path: str = "",
+    ) -> None: ...
+    @staticmethod
+    def is_module_available(module_path: str = "") -> bool: ...
+    def step(self, steps: int = 1) -> None: ...
+    def reset(self) -> None: ...
+    def set_affine_target(
+        self, path: str, transform: npt.NDArray[np.float64]
+    ) -> None: ...
+    def set_joint_target(self, path: str, position: float) -> None: ...
+    @property
+    def deformable_bodies(self) -> list[dict[str, Any]]: ...
+    @property
+    def affine_bodies(self) -> list[dict[str, Any]]: ...
+    @property
+    def positions(self) -> npt.NDArray[np.float64]: ...
+    @property
+    def velocities(self) -> npt.NDArray[np.float64]: ...
+    @property
+    def deformable_contact_forces(self) -> npt.NDArray[np.float64]: ...
+    @property
+    def affine_transforms(self) -> npt.NDArray[np.float64]: ...
+    @property
+    def diagnostics(self) -> dict[str, Any]: ...
+    def close(self) -> None: ...
 
 
 class PhysicsBackendType(Enum):
@@ -237,6 +269,7 @@ class AppContext:
     def get_default_joint_gains(self) -> dict[str, Any]: ...
     def set_mujoco_solver_settings(self, settings: dict[str, Any]) -> None: ...
     def get_mujoco_solver_settings(self) -> dict[str, Any]: ...
+    def get_physics_debug_settings(self) -> dict[str, bool | float]: ...
     def get_batch_runtime_state(self, env_id: int) -> dict[str, Any]: ...
     def get_batch_robot_state(
         self,
@@ -384,6 +417,7 @@ class Joint3D(Node3D):
 
 class CollisionShape3D(Node3D):
     disabled: bool
+    friction: Vector3
 
 
 class MeshInstance3D(Node3D):

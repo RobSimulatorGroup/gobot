@@ -36,6 +36,102 @@ class CompiledIpcSceneArtifact:
     @property
     def robots(self) -> tuple[Mapping[str, Any], ...]: ...
 
+class LibuipcConfig:
+    fixed_time_step: float
+    gravity: tuple[float, float, float]
+    friction_coefficient: float
+    contact_activation_distance: float
+    contact_resistance: float
+    affine_stiffness: float
+    kinematic_strength: float
+    device_index: int
+    workspace: str
+    backend_module_directory: str
+    module_path: str
+    def __init__(
+        self,
+        fixed_time_step: float = 0.01,
+        gravity: tuple[float, float, float] = (0.0, 0.0, -9.81),
+        friction_coefficient: float = 0.5,
+        contact_activation_distance: float = 0.01,
+        contact_resistance: float = 1000000000.0,
+        affine_stiffness: float = 100000000.0,
+        kinematic_strength: float = 100.0,
+        device_index: int = 0,
+        workspace: str = "",
+        backend_module_directory: str = "",
+        module_path: str = "",
+    ) -> None: ...
+    def solver_mapping(self) -> Mapping[str, Any]: ...
+
+class LibuipcProviderAvailability:
+    available: bool
+    reason: str
+    def __init__(self, available: bool, reason: str = "") -> None: ...
+
+class LibuipcProvider(BatchPhysicsProvider):
+    artifact: CompiledIpcSceneArtifact
+    config: LibuipcConfig
+    accepts_device_actions: bool
+    def __init__(
+        self,
+        artifact: Mapping[str, Any] | CompiledIpcSceneArtifact,
+        *,
+        config: LibuipcConfig | None = None,
+        _session: Any | None = None,
+    ) -> None: ...
+    @classmethod
+    def availability(
+        cls, config: LibuipcConfig | None = None
+    ) -> LibuipcProviderAvailability: ...
+    @classmethod
+    def from_context(cls, context: Any, **kwargs: Any) -> LibuipcProvider: ...
+    @property
+    def capabilities(self) -> BatchProviderCapabilities: ...
+    @property
+    def num_envs(self) -> int: ...
+    @property
+    def generation(self) -> int: ...
+    @property
+    def fixed_time_step(self) -> float: ...
+    @property
+    def runtime_fingerprint(self) -> str: ...
+    @property
+    def graph_captured(self) -> bool: ...
+    @property
+    def capacities(self) -> Mapping[str, int]: ...
+    @property
+    def diagnostics(self) -> Mapping[str, Any]: ...
+    @property
+    def arrays(self) -> Mapping[str, Any]: ...
+    @property
+    def deformable_bodies(self) -> tuple[Mapping[str, Any], ...]: ...
+    @property
+    def affine_bodies(self) -> tuple[Mapping[str, Any], ...]: ...
+    @property
+    def joints(self) -> tuple[Mapping[str, Any], ...]: ...
+    def step(
+        self, actions: Any | None = None, *, nsteps: int = 1
+    ) -> Mapping[str, Any]: ...
+    def reset(
+        self, reset_mask: Any | None = None, **state: Any
+    ) -> Mapping[str, Any]: ...
+    def set_affine_target(self, path: str, transform: Any) -> None: ...
+    def set_joint_target(self, path: str, position: float) -> None: ...
+    def bind_scene(
+        self,
+        context: Any,
+        bodies: Sequence[Any],
+        affine_links: Sequence[Any] | None = None,
+    ) -> LibuipcProvider: ...
+    def sync_scene(
+        self,
+        context: Any | None = None,
+        bodies: Sequence[Any] | None = None,
+        affine_links: Sequence[Any] | None = None,
+    ) -> None: ...
+    def close(self) -> None: ...
+
 class WarpIpcConfig:
     device: str
     fixed_time_step: float

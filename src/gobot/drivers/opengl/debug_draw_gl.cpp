@@ -16,8 +16,10 @@
 #include "gobot/physics/physics_world.hpp"
 #include "gobot/rendering/scene_render_items.hpp"
 #include "gobot/scene/camera_3d.hpp"
+#include "gobot/scene/deformable_body_3d.hpp"
 #include "gobot/scene/resources/box_shape_3d.hpp"
 #include "gobot/scene/resources/capsule_shape_3d.hpp"
+#include "gobot/scene/resources/convex_mesh_shape_3d.hpp"
 #include "gobot/scene/resources/cylinder_shape_3d.hpp"
 #include "gobot/scene/resources/sphere_shape_3d.hpp"
 #include "gobot/scene/sensor_3d.hpp"
@@ -119,6 +121,75 @@ void AppendLine(std::vector<float>& vertices,
 void AppendWorldLine(std::vector<float>& vertices, const Vector3& from, const Vector3& to) {
     PushWorldVertex(vertices, from);
     PushWorldVertex(vertices, to);
+}
+
+Affine3 ResolveDebugTransform(const Node3D* node, const Affine3& parent_transform) {
+    if (node == nullptr) {
+        return parent_transform;
+    }
+    return node->IsInsideTree()
+                   ? node->GetGlobalTransform()
+                   : parent_transform * node->GetTransform();
+}
+
+bool IsDebugNodeVisible(const Node3D* node, bool parent_visible) {
+    if (!parent_visible || node == nullptr) {
+        return parent_visible;
+    }
+    return node->IsInsideTree() ? node->IsVisibleInTree() : node->IsVisible();
+}
+
+void CollectDeformableGeometry(const Node* node,
+                               const Affine3& parent_transform,
+                               bool parent_visible,
+                               std::vector<float>& triangles,
+                               std::vector<float>& lines) {
+    if (node == nullptr) {
+        return;
+    }
+
+    const auto* node_3d = Object::PointerCastTo<Node3D>(node);
+    const Affine3 transform = ResolveDebugTransform(node_3d, parent_transform);
+    const bool visible = IsDebugNodeVisible(node_3d, parent_visible);
+    if (visible) {
+        if (const auto* body = Object::PointerCastTo<DeformableBody3D>(node)) {
+            const Ref<TetrahedralMesh>& mesh = body->GetMesh();
+            if (mesh.IsValid()) {
+                const std::vector<Vector3>& authored_vertices = mesh->GetVertices();
+                const std::vector<Vector3>& runtime_vertices = body->GetRuntimeVertices();
+                const std::vector<Vector3>& vertices =
+                        runtime_vertices.size() == authored_vertices.size()
+                                ? runtime_vertices
+                                : authored_vertices;
+                const std::vector<std::uint32_t> surface =
+                        mesh->GetResolvedSurfaceTriangles();
+                for (std::size_t index = 0; index + 2 < surface.size(); index += 3) {
+                    const std::uint32_t ia = surface[index];
+                    const std::uint32_t ib = surface[index + 1];
+                    const std::uint32_t ic = surface[index + 2];
+                    if (ia >= vertices.size() || ib >= vertices.size() ||
+                        ic >= vertices.size()) {
+                        continue;
+                    }
+                    const Vector3 a = transform * vertices[ia];
+                    const Vector3 b = transform * vertices[ib];
+                    const Vector3 c = transform * vertices[ic];
+                    PushWorldVertex(triangles, a);
+                    PushWorldVertex(triangles, b);
+                    PushWorldVertex(triangles, c);
+                    AppendWorldLine(lines, a, b);
+                    AppendWorldLine(lines, b, c);
+                    AppendWorldLine(lines, c, a);
+                }
+            }
+        }
+    }
+
+    for (std::size_t index = 0; index < node->GetChildCount(); ++index) {
+        CollectDeformableGeometry(
+                node->GetChild(static_cast<int>(index)), transform, visible,
+                triangles, lines);
+    }
 }
 
 void AppendCross(std::vector<float>& vertices, const Vector3& center, RealType radius) {
@@ -381,6 +452,46 @@ void AppendCapsuleLines(std::vector<float>& vertices, const Affine3& transform, 
     AppendSphereLines(vertices, bottom_transform, radius);
 }
 
+void AppendTriangleMeshLines(std::vector<float>& vertices,
+                             const Affine3& transform,
+                             const Ref<Mesh>& mesh) {
+    if (!mesh.IsValid()) {
+        return;
+    }
+    const std::shared_ptr<const MeshSurfaceList> surfaces = mesh->GetSurfaceData();
+    if (!surfaces) {
+        return;
+    }
+
+    for (const MeshSurfaceData& surface : *surfaces) {
+        const auto append_triangle = [&](std::size_t ia, std::size_t ib, std::size_t ic) {
+            if (ia >= surface.vertices.size() ||
+                ib >= surface.vertices.size() ||
+                ic >= surface.vertices.size()) {
+                return;
+            }
+            const Vector3& a = surface.vertices[ia];
+            const Vector3& b = surface.vertices[ib];
+            const Vector3& c = surface.vertices[ic];
+            AppendLine(vertices, transform, a, b);
+            AppendLine(vertices, transform, b, c);
+            AppendLine(vertices, transform, c, a);
+        };
+
+        if (surface.indices.empty()) {
+            for (std::size_t i = 0; i + 2 < surface.vertices.size(); i += 3) {
+                append_triangle(i, i + 1, i + 2);
+            }
+            continue;
+        }
+        for (std::size_t i = 0; i + 2 < surface.indices.size(); i += 3) {
+            append_triangle(surface.indices[i],
+                            surface.indices[i + 1],
+                            surface.indices[i + 2]);
+        }
+    }
+}
+
 void CollectCollisionLines(const SceneRenderItems& render_items, std::vector<float>& vertices) {
     for (const CollisionDebugRenderItem& item : render_items.collision_shapes) {
         if (Ref<BoxShape3D> box = dynamic_pointer_cast<BoxShape3D>(item.shape); box.IsValid()) {
@@ -397,6 +508,9 @@ void CollectCollisionLines(const SceneRenderItems& render_items, std::vector<flo
                                item.transform,
                                static_cast<RealType>(capsule->GetRadius()),
                                static_cast<RealType>(capsule->GetHeight()));
+        } else if (Ref<ConvexMeshShape3D> convex_mesh = dynamic_pointer_cast<ConvexMeshShape3D>(item.shape);
+                   convex_mesh.IsValid()) {
+            AppendTriangleMeshLines(vertices, item.transform, convex_mesh->GetMesh());
         }
     }
 }
@@ -411,6 +525,8 @@ GLRendererDebugDraw::~GLRendererDebugDraw() {
     FreeLineBuffer(editor_grid_);
     FreeLineBuffer(world_axes_);
     FreeLineBuffer(collision_lines_);
+    FreeLineBuffer(deformable_triangles_);
+    FreeLineBuffer(deformable_lines_);
     FreeLineBuffer(height_scanner_ray_lines_);
     FreeLineBuffer(height_scanner_miss_ray_lines_);
     FreeLineBuffer(height_scanner_hit_spheres_);
@@ -582,6 +698,28 @@ void GLRendererDebugDraw::DrawCollisionDebug(const SceneRenderItems& render_item
     glLineWidth(1.5f);
     glDrawArrays(GL_LINES, 0, collision_lines_.vertex_count);
     glLineWidth(1.0f);
+}
+
+void GLRendererDebugDraw::DrawDeformableDebug(const Node* scene_root) {
+    GOBOT_PROFILE_ZONE("OpenGL::DrawDeformableDebug");
+    std::vector<float> triangles;
+    std::vector<float> lines;
+    CollectDeformableGeometry(
+            scene_root, Affine3::Identity(), true, triangles, lines);
+    GOBOT_PROFILE_PLOT(
+            "deformable_triangles", static_cast<double>(triangles.size() / 9));
+
+    const GLboolean culling_enabled = glIsEnabled(GL_CULL_FACE);
+    glDisable(GL_CULL_FACE);
+    DrawTriangleBuffer(
+            deformable_triangles_, triangles, program_,
+            0.12f, 0.78f, 0.58f, 0.55f);
+    if (culling_enabled == GL_TRUE) {
+        glEnable(GL_CULL_FACE);
+    }
+    DrawLineBuffer(
+            deformable_lines_, lines, program_,
+            0.02f, 0.95f, 0.70f, 0.95f, 1.5f);
 }
 
 void GLRendererDebugDraw::DrawHeightScannerDebug(const PhysicsSceneState* physics_state) {
@@ -805,6 +943,7 @@ void GLRendererDebugDraw::RenderEditorDebug(const RID& render_target,
         collision_lines_.vertex_count = 0;
         GOBOT_PROFILE_PLOT("debug_vertices", 0.0);
     }
+    DrawDeformableDebug(scene_root);
     DrawHeightScannerDebug(physics_state);
 
     glDisable(GL_DEPTH_TEST);

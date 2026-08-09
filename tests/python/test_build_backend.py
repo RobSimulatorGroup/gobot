@@ -41,6 +41,7 @@ def test_python_build_defaults_enable_complete_native_runtime() -> None:
         "GOB_BUILD_MUJOCO",
         "GOB_BUILD_EGL",
         "GOB_BUILD_LUISA_RENDERER",
+        "GOB_BUILD_LIBUIPC",
         "GOB_BUILD_GSPLAT_INFERENCE",
         "GOB_BUILD_OPENUSD",
         "GOB_BUNDLE_OPENUSD_RUNTIME",
@@ -58,13 +59,13 @@ def test_python_build_defaults_enable_complete_native_runtime() -> None:
     assert "[project.optional-dependencies]" not in pyproject
 
 
-def test_warp_ipc_wheel_payload_keeps_portable_sources_only() -> None:
+def test_removed_warp_ipc_demo_is_not_packaged() -> None:
     cmake = (backend.ROOT / "CMakeLists.txt").read_text(encoding="utf-8")
 
     assert 'DESTINATION "gobot/examples" COMPONENT python' in cmake
-    assert 'PATTERN "warp_ipc/assets" EXCLUDE' in cmake
+    assert 'PATTERN "warp_ipc/assets" EXCLUDE' not in cmake
     assert 'PATTERN "*.ptx" EXCLUDE' in cmake
-    assert 'PATTERN "warp_ipc" EXCLUDE' not in cmake
+    assert not (backend.ROOT / "examples" / "warp_ipc").exists()
 
 
 def test_wheel_and_editable_hooks_prepare_dependencies() -> None:
@@ -168,6 +169,11 @@ def test_checkout_submodules_are_revalidated_at_pinned_gitlinks() -> None:
             path = luisa_root / marker
             path.parent.mkdir(parents=True, exist_ok=True)
             path.touch()
+        libuipc_root = root / "3rdparty/libuipc"
+        for marker in backend._LIBUIPC_NESTED_MARKERS:
+            path = libuipc_root / marker
+            path.parent.mkdir(parents=True, exist_ok=True)
+            path.touch()
 
         with (
             patch.object(
@@ -181,8 +187,10 @@ def test_checkout_submodules_are_revalidated_at_pinned_gitlinks() -> None:
                 side_effect=[
                     ("-abc 3rdparty/openusd",),
                     (" abc 3rdparty/openusd",),
-                    ("-def src/ext/reproc",),
-                    (" def src/ext/reproc",),
+                    ("-def external/muda",),
+                    (" def external/muda",),
+                    ("-123 src/ext/reproc",),
+                    (" 123 src/ext/reproc",),
                 ],
             ),
             patch.object(backend.shutil, "which", return_value="/usr/bin/git"),
@@ -190,15 +198,18 @@ def test_checkout_submodules_are_revalidated_at_pinned_gitlinks() -> None:
         ):
             backend._ensure_source_dependencies(root)
 
-    assert run.call_count == 4
+    assert run.call_count == 6
     update = run.call_args_list[1].args[0]
     assert "3rdparty/assimp" in update
     assert "3rdparty/luisa_compute" in update
     assert "3rdparty/openusd" in update
     assert "--depth=1" in update
-    nested_update = run.call_args_list[3].args[0]
-    assert "--recursive" in nested_update
-    assert run.call_args_list[3].kwargs["cwd"] == luisa_root
+    libuipc_update = run.call_args_list[3].args[0]
+    assert "--recursive" in libuipc_update
+    assert run.call_args_list[3].kwargs["cwd"] == libuipc_root
+    luisa_update = run.call_args_list[5].args[0]
+    assert "--recursive" in luisa_update
+    assert run.call_args_list[5].kwargs["cwd"] == luisa_root
 
 
 def test_pinned_checkout_does_not_run_submodule_update() -> None:
@@ -208,6 +219,11 @@ def test_pinned_checkout_does_not_run_submodule_update() -> None:
         luisa_root = root / "3rdparty/luisa_compute"
         for marker in backend._LUISA_NESTED_MARKERS:
             path = luisa_root / marker
+            path.parent.mkdir(parents=True, exist_ok=True)
+            path.touch()
+        libuipc_root = root / "3rdparty/libuipc"
+        for marker in backend._LIBUIPC_NESTED_MARKERS:
+            path = libuipc_root / marker
             path.parent.mkdir(parents=True, exist_ok=True)
             path.touch()
 
@@ -270,7 +286,7 @@ def test_source_archive_without_submodules_fails_clearly() -> None:
 
 def main() -> None:
     test_python_build_defaults_enable_complete_native_runtime()
-    test_warp_ipc_wheel_payload_keeps_portable_sources_only()
+    test_removed_warp_ipc_demo_is_not_packaged()
     test_wheel_and_editable_hooks_prepare_dependencies()
     test_metadata_and_sdist_do_not_prepare_dependencies()
     test_skip_environment_avoids_dependency_commands()

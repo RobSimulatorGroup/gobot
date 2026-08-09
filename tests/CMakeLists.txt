@@ -188,6 +188,34 @@ set_target_properties(test_scene_play_session PROPERTIES FOLDER tests)
 package_add_test(test_physics_server physics/test_physics_server.cpp)
 package_add_test(test_joint_controller physics/test_joint_controller.cpp)
 package_add_test(test_ipc_scene_compiler physics/test_ipc_scene_compiler.cpp)
+
+add_library(gobot_test_ipc_solver_module MODULE
+        physics/fake_ipc_solver_module.cpp)
+target_compile_options(gobot_test_ipc_solver_module PUBLIC "${GOBOT_COMPILE_OPTIONS}")
+target_include_directories(gobot_test_ipc_solver_module PRIVATE
+        ${PROJECT_SOURCE_DIR}/include)
+set_target_properties(gobot_test_ipc_solver_module PROPERTIES
+        FOLDER tests
+        OUTPUT_NAME "gobot_test_ipc_solver_module")
+
+add_library(gobot_test_ipc_solver_bad_abi MODULE
+        physics/fake_ipc_solver_bad_abi.cpp)
+target_compile_options(gobot_test_ipc_solver_bad_abi PUBLIC "${GOBOT_COMPILE_OPTIONS}")
+target_include_directories(gobot_test_ipc_solver_bad_abi PRIVATE
+        ${PROJECT_SOURCE_DIR}/include)
+set_target_properties(gobot_test_ipc_solver_bad_abi PROPERTIES
+        FOLDER tests
+        OUTPUT_NAME "gobot_test_ipc_solver_bad_abi")
+
+package_add_test(test_ipc_solver physics/test_ipc_solver.cpp)
+target_compile_definitions(test_ipc_solver PRIVATE
+        GOBOT_TEST_IPC_SOLVER_MODULE_PATH="$<TARGET_FILE:gobot_test_ipc_solver_module>"
+        GOBOT_TEST_IPC_SOLVER_BAD_ABI_PATH="$<TARGET_FILE:gobot_test_ipc_solver_bad_abi>")
+target_link_libraries(test_ipc_solver ${CMAKE_DL_LIBS})
+add_dependencies(test_ipc_solver
+        gobot_test_ipc_solver_module
+        gobot_test_ipc_solver_bad_abi)
+
 package_add_test(test_simulation_server simulation/test_simulation_server.cpp)
 package_add_test(test_locomotion_command_runtime simulation/test_locomotion_command_runtime.cpp)
 package_add_test(test_locomotion_batch_runtime simulation/test_locomotion_batch_runtime.cpp)
@@ -383,15 +411,39 @@ set_tests_properties(test_python_warp_ipc_provider
             WORKING_DIRECTORY "${CMAKE_SOURCE_DIR}"
 )
 add_test(
-        NAME test_python_warp_ipc_assets
+        NAME test_python_libuipc_provider
         COMMAND ${Python3_EXECUTABLE} -S
-                ${CMAKE_CURRENT_SOURCE_DIR}/python/test_warp_ipc_assets.py
+                ${CMAKE_CURRENT_SOURCE_DIR}/python/test_libuipc_provider.py
 )
-set_tests_properties(test_python_warp_ipc_assets
+set_tests_properties(test_python_libuipc_provider
         PROPERTIES
             ENVIRONMENT "${GOBOT_PYTHON_TEST_ENV}"
             WORKING_DIRECTORY "${CMAKE_SOURCE_DIR}"
 )
+add_test(
+        NAME test_python_libuipc_examples
+        COMMAND ${Python3_EXECUTABLE} -S
+                ${CMAKE_CURRENT_SOURCE_DIR}/python/test_libuipc_examples.py
+)
+set_tests_properties(test_python_libuipc_examples
+        PROPERTIES
+            ENVIRONMENT "${GOBOT_PYTHON_TEST_ENV}"
+            WORKING_DIRECTORY "${CMAKE_SOURCE_DIR}"
+)
+if(GOB_BUILD_LIBUIPC)
+    add_test(
+            NAME test_python_libuipc_gpu
+            COMMAND ${Python3_EXECUTABLE} -S
+                    ${CMAKE_CURRENT_SOURCE_DIR}/python/test_libuipc_gpu.py
+    )
+    set_tests_properties(test_python_libuipc_gpu
+            PROPERTIES
+                ENVIRONMENT "${GOBOT_PYTHON_TEST_ENV}"
+                RESOURCE_LOCK gobot_cuda
+                SKIP_RETURN_CODE 77
+                WORKING_DIRECTORY "${CMAKE_SOURCE_DIR}"
+    )
+endif()
 add_test(
         NAME test_python_warp_ipc_gpu_kernels
         COMMAND ${Python3_EXECUTABLE} -S

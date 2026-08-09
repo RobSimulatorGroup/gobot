@@ -1,0 +1,6 @@
+if(NOT TARGET fmt::fmt)
+    set(fmt_FOUND FALSE)
+    set(fmt_NOT_FOUND_MESSAGE "Gobot did not configure its pinned fmt target")
+    return()
+endif()
+set(fmt_FOUND TRUE)

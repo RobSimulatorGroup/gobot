@@ -71,6 +71,7 @@ void RegisterManualApis(py::module_& module) {
                                    tactile_sensor_config_class,
                                    deformable_body3d_class,
                                    tactile_sensor3d_class);
+    RegisterManualIpcSolverBindings(module);
     RegisterManualModuleFunctions(module);
 }
 

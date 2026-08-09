@@ -1,0 +1,6 @@
+if(NOT TARGET igl::igl_core)
+    set(libigl_FOUND FALSE)
+    set(libigl_NOT_FOUND_MESSAGE "Gobot did not configure its pinned libigl target")
+    return()
+endif()
+set(libigl_FOUND TRUE)

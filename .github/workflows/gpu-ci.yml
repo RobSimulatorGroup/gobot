@@ -62,7 +62,7 @@ jobs:
 
       - name: Install complete Gobot environment
         env:
-          CMAKE_ARGS: "-DGOB_BUILD_OPENUSD=OFF"
+          CMAKE_ARGS: "-DGOB_BUILD_OPENUSD=OFF -DGOB_BUILD_LIBUIPC=OFF"
           GOBOT_SKIP_DEPENDENCY_BOOTSTRAP: "1"
         run: uv sync
 
@@ -75,6 +75,7 @@ jobs:
             -DGOB_BUILD_ASSIMP=OFF \
             -DGOB_BUILD_MUJOCO=OFF \
             -DGOB_BUILD_LUISA_RENDERER=ON \
+            -DGOB_BUILD_LIBUIPC=OFF \
             -DGOB_LUISA_COMPUTE_ROOT="$PWD/build/luisa_compute/install" \
             -DGOB_GSPLAT_INFERENCE_ROOT="$PWD/build/gsplat_inference/install" \
             -DPython3_EXECUTABLE="${PYTHON_EXECUTABLE}"

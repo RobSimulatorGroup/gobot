@@ -25,6 +25,7 @@ _SUBMODULE_MARKERS = {
     "3rdparty/gli": "CMakeLists.txt",
     "3rdparty/imgui": "imgui.cpp",
     "3rdparty/luisa_compute": "CMakeLists.txt",
+    "3rdparty/libuipc": "CMakeLists.txt",
     "3rdparty/meshoptimizer": "CMakeLists.txt",
     "3rdparty/onetbb": "CMakeLists.txt",
     "3rdparty/openusd": "pxr/pxrConfig.cmake.in",
@@ -35,6 +36,10 @@ _SUBMODULE_MARKERS = {
 _LUISA_NESTED_MARKERS = (
     "src/ext/reproc/CMakeLists.txt",
     "src/ext/spdlog/CMakeLists.txt",
+)
+_LIBUIPC_NESTED_MARKERS = (
+    "external/muda/CMakeLists.txt",
+    "scripts/SymEigen/SymEigen.py",
 )
 _SDK_ARTIFACTS = (
     "build/luisa_compute/install/bin/luisa_nvrtc",
@@ -178,6 +183,51 @@ def _ensure_source_dependencies(root: Path) -> None:
         raise RuntimeError(
             "Required Gobot submodules do not match the commits pinned by the "
             "superproject after git submodule update."
+        )
+
+    libuipc_root = root / "3rdparty/libuipc"
+    missing_libuipc_nested = [
+        marker
+        for marker in _LIBUIPC_NESTED_MARKERS
+        if not (libuipc_root / marker).is_file()
+    ]
+    libuipc_nested_status = (
+        _submodule_status(libuipc_root, recursive=True) if git_checkout else ()
+    )
+    if _status_has_mismatch(libuipc_nested_status):
+        raise RuntimeError(
+            "A nested libuipc submodule differs from the commit pinned by libuipc."
+        )
+    if git_checkout and (
+        missing_libuipc_nested
+        or not libuipc_nested_status
+        or any(line.startswith("-") for line in libuipc_nested_status)
+    ):
+        _run(["git", "submodule", "sync", "--recursive"], cwd=libuipc_root)
+        _run(
+            ["git", "submodule", "update", "--init", "--depth=1", "--recursive"],
+            cwd=libuipc_root,
+        )
+    elif missing_libuipc_nested:
+        raise RuntimeError(
+            "Gobot's source archive is missing libuipc nested sources: "
+            + ", ".join(missing_libuipc_nested)
+        )
+    still_missing_libuipc_nested = [
+        marker
+        for marker in _LIBUIPC_NESTED_MARKERS
+        if not (libuipc_root / marker).is_file()
+    ]
+    if still_missing_libuipc_nested:
+        raise RuntimeError(
+            "Git completed without initializing libuipc nested sources: "
+            + ", ".join(still_missing_libuipc_nested)
+        )
+    if git_checkout and not _status_is_pinned(
+        _submodule_status(libuipc_root, recursive=True)
+    ):
+        raise RuntimeError(
+            "libuipc nested submodules do not match their pinned commits."
         )
 
     luisa_root = root / "3rdparty/luisa_compute"

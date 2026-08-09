@@ -16,6 +16,7 @@
 #include <gobot/scene/mesh_instance_3d.hpp>
 #include <gobot/scene/resources/array_mesh.hpp>
 #include <gobot/scene/resources/box_shape_3d.hpp>
+#include <gobot/scene/resources/convex_mesh_shape_3d.hpp>
 #include <gobot/scene/resources/packed_scene.hpp>
 #include <gobot/scene/robot_3d.hpp>
 #include <gobot/scene/scene_tree.hpp>
@@ -427,6 +428,66 @@ TEST(TestResourceFormatURDF, copies_external_package_meshes_into_project_assets)
     EXPECT_TRUE(std::filesystem::exists(project_path / "assets" / "robot_pkg" / "meshes" / "base_visual.stl"));
 
     gobot::Object::Delete(root_node);
+    std::filesystem::remove_all(temp_root);
+}
+
+TEST(TestResourceFormatURDF, imports_mesh_collisions_after_self_closing_links) {
+    const std::filesystem::path temp_root =
+            std::filesystem::temp_directory_path() /
+            "gobot_urdf_mesh_collision_test";
+    const std::filesystem::path mesh_path = temp_root / "tool_collision.stl";
+    const std::filesystem::path urdf_path = temp_root / "robot.urdf";
+    std::filesystem::remove_all(temp_root);
+    std::filesystem::create_directories(temp_root);
+    {
+        std::ofstream mesh_file(mesh_path);
+        mesh_file << "solid tool\nendsolid tool\n";
+    }
+    {
+        std::ofstream urdf_file(urdf_path);
+        urdf_file << R"(<?xml version="1.0"?>
+<robot name="mesh_collision_bot">
+  <link name="base"/>
+  <link name="tool">
+    <collision>
+      <origin xyz="0.1 0.2 0.3" rpy="0 0 0"/>
+      <geometry>
+        <mesh filename="tool_collision.stl" scale="2 3 4"/>
+      </geometry>
+    </collision>
+  </link>
+  <joint name="tool_joint" type="fixed">
+    <parent link="base"/>
+    <child link="tool"/>
+  </joint>
+</robot>)";
+    }
+
+    gobot::Ref<gobot::ResourceFormatLoaderURDF> loader =
+            gobot::MakeRef<gobot::ResourceFormatLoaderURDF>();
+    gobot::Ref<gobot::PackedScene> packed_scene =
+            gobot::dynamic_pointer_cast<gobot::PackedScene>(
+                    loader->Load(urdf_path.string()));
+    ASSERT_TRUE(packed_scene.IsValid());
+    gobot::Node* root = packed_scene->Instantiate();
+    ASSERT_NE(root, nullptr);
+
+    EXPECT_NE(FindNodeByName(root, "base"), nullptr);
+    EXPECT_NE(FindNodeByName(root, "tool"), nullptr);
+    auto* collision = gobot::Object::PointerCastTo<gobot::CollisionShape3D>(
+            FindNodeByName(root, "tool_collision"));
+    ASSERT_NE(collision, nullptr);
+    const gobot::Ref<gobot::ConvexMeshShape3D> shape =
+            gobot::dynamic_pointer_cast<gobot::ConvexMeshShape3D>(
+                    collision->GetShape());
+    ASSERT_TRUE(shape.IsValid());
+    ASSERT_TRUE(shape->GetMesh().IsValid());
+    EXPECT_EQ(std::filesystem::path(shape->GetMesh()->GetPath()).filename(),
+              mesh_path.filename());
+    EXPECT_TRUE(collision->GetScale().isApprox(gobot::Vector3{2.0, 3.0, 4.0}));
+    EXPECT_TRUE(collision->GetPosition().isApprox(gobot::Vector3{0.1, 0.2, 0.3}));
+
+    gobot::Object::Delete(root);
     std::filesystem::remove_all(temp_root);
 }
 

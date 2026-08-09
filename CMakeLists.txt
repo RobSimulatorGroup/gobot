@@ -12,6 +12,20 @@ if(GOB_BUILD_DEPENDENCIES_ONLY)
     return()
 endif()
 
+option(GOB_BUILD_LIBUIPC "build the libuipc CUDA IPC solver module" ON)
+if(GOB_BUILD_LIBUIPC)
+    if(CMAKE_VERSION VERSION_LESS 3.26)
+        message(FATAL_ERROR
+            "GOB_BUILD_LIBUIPC requires CMake 3.26 or newer. Use the CMake executable from Gobot's project environment.")
+    endif()
+    set(GOBOT_LIBUIPC_SOURCE_DIR "${CMAKE_CURRENT_SOURCE_DIR}/3rdparty/libuipc")
+    if(NOT EXISTS "${GOBOT_LIBUIPC_SOURCE_DIR}/CMakeLists.txt")
+        message(FATAL_ERROR
+            "The libuipc submodule is missing. Initialize it with: git submodule update --init --recursive 3rdparty/libuipc")
+    endif()
+    set(GOBOT_LIBUIPC_BINARY_DIR "${CMAKE_BINARY_DIR}/3rdparty/libuipc")
+endif()
+
 project (gobot VERSION 0.1.18)
 
 set(CMAKE_POLICY_VERSION_MINIMUM 3.5)
@@ -44,6 +58,8 @@ set(GOB_OPENUSD_ROOT "${CMAKE_CURRENT_SOURCE_DIR}/build/openusd/install" CACHE P
 set(GOB_TRACY_ROOT "" CACHE PATH "Tracy install prefix or source checkout used when GOB_ENABLE_TRACY is ON")
 set(GOB_LUISA_COMPUTE_ROOT "${CMAKE_CURRENT_SOURCE_DIR}/build/luisa_compute/install" CACHE PATH
         "LuisaCompute install prefix used by the optional CUDA renderer module")
+set(GOB_LIBUIPC_CUDA_ARCHITECTURES "native" CACHE STRING
+        "CUDA architectures used by the optional libuipc solver module")
 set(GOB_GSPLAT_INFERENCE_ROOT "${CMAKE_CURRENT_SOURCE_DIR}/build/gsplat_inference/install" CACHE PATH
         "Prebuilt gsplat CUDA inference library install prefix")
 set(GOB_MUJOCO_GIT_TAG "3.10.0" CACHE STRING "MuJoCo release tag used when GOB_FETCH_MUJOCO is ON")
@@ -776,6 +792,7 @@ set(GOBOT_PYTHON_BINDING_SOURCES
         src/gobot/python/manual_bindings/manual_binding_common.cpp
         src/gobot/python/manual_bindings/manual_binding_helpers.cpp
         src/gobot/python/manual_bindings/manual_binding_ipc_scene.cpp
+        src/gobot/python/manual_bindings/manual_binding_ipc_solver.cpp
         src/gobot/python/manual_bindings/manual_binding_module_functions.cpp
         src/gobot/python/manual_bindings/manual_binding_robot.cpp
         src/gobot/python/manual_bindings/manual_binding_scene_nodes.cpp
@@ -1060,7 +1077,6 @@ install(DIRECTORY "${CMAKE_CURRENT_SOURCE_DIR}/examples/"
         PATTERN "logs" EXCLUDE
         PATTERN "gaussian_splatting/assets" EXCLUDE
         PATTERN "newton_g1/assets" EXCLUDE
-        PATTERN "warp_ipc/assets" EXCLUDE
         PATTERN "*.ptx" EXCLUDE
         PATTERN "go1/policies" EXCLUDE)
 install(FILES
@@ -1071,6 +1087,99 @@ install(TARGETS gobot_editor
 
 if(GOB_BUILD_LUISA_RENDERER)
     add_subdirectory(modules/luisa_renderer)
+endif()
+
+if(GOB_BUILD_LIBUIPC)
+    include(cmake/GobotLibuipcDependencies.cmake)
+
+    set(UIPC_BUILD_GUI OFF CACHE BOOL "" FORCE)
+    set(UIPC_BUILD_PYBIND OFF CACHE BOOL "" FORCE)
+    set(UIPC_BUILD_PYTHON_WHEEL OFF CACHE BOOL "" FORCE)
+    set(UIPC_BUILD_EXAMPLES OFF CACHE BOOL "" FORCE)
+    set(UIPC_BUILD_TESTS OFF CACHE BOOL "" FORCE)
+    set(UIPC_BUILD_BENCHMARKS OFF CACHE BOOL "" FORCE)
+    set(UIPC_DEV_MODE ON CACHE BOOL "" FORCE)
+    set(UIPC_WITH_USD_SUPPORT OFF CACHE BOOL "" FORCE)
+    set(UIPC_WITH_VDB_SUPPORT OFF CACHE BOOL "" FORCE)
+    set(UIPC_WITH_CUDA_BACKEND ON CACHE BOOL "" FORCE)
+    set(UIPC_CUDA_ARCHITECTURES "${GOB_LIBUIPC_CUDA_ARCHITECTURES}" CACHE STRING "" FORCE)
+    set(UIPC_INSTALL_DIR "gobot/libuipc" CACHE PATH "" FORCE)
+    # Editable builds may leave libuipc's cached interpreter pointing at a
+    # deleted uv build environment. Reuse Gobot's active Python interpreter.
+    set(UIPC_PYTHON_EXECUTABLE_PATH "${Python3_EXECUTABLE}"
+        CACHE FILEPATH "Python executable used by embedded libuipc" FORCE)
+
+    # libuipc currently requires CMAKE_TOOLCHAIN_FILE to be non-empty even
+    # when every dependency is already available. This inert compatibility
+    # file prevents its CMake code from invoking a package manager.
+    if(NOT CMAKE_TOOLCHAIN_FILE)
+        set(CMAKE_TOOLCHAIN_FILE
+            "${CMAKE_CURRENT_SOURCE_DIR}/cmake/GobotLibuipcToolchain.cmake")
+    endif()
+
+    # scikit-build exposes its wheel mode to every subdirectory through these
+    # variables. libuipc interprets that as a request to build pyuipc, install
+    # pybind11-stubgen at configure time, and copy a vcpkg runtime. Gobot embeds
+    # only the C++ libraries, so isolate the nested project from that state.
+    set(GOBOT_LIBUIPC_SAVED_SKBUILD_DEFINED FALSE)
+    set(GOBOT_LIBUIPC_SAVED_SKBUILD_CACHE_DEFINED FALSE)
+    if(DEFINED SKBUILD)
+        set(GOBOT_LIBUIPC_SAVED_SKBUILD_DEFINED TRUE)
+        set(GOBOT_LIBUIPC_SAVED_SKBUILD "${SKBUILD}")
+    endif()
+    if(DEFINED CACHE{SKBUILD})
+        set(GOBOT_LIBUIPC_SAVED_SKBUILD_CACHE_DEFINED TRUE)
+        set(GOBOT_LIBUIPC_SAVED_SKBUILD_CACHE "$CACHE{SKBUILD}")
+    endif()
+    set(GOBOT_LIBUIPC_SAVED_PROJECT_VERSION_DEFINED FALSE)
+    set(GOBOT_LIBUIPC_SAVED_PROJECT_VERSION_CACHE_DEFINED FALSE)
+    if(DEFINED SKBUILD_PROJECT_VERSION)
+        set(GOBOT_LIBUIPC_SAVED_PROJECT_VERSION_DEFINED TRUE)
+        set(GOBOT_LIBUIPC_SAVED_PROJECT_VERSION "${SKBUILD_PROJECT_VERSION}")
+    endif()
+    if(DEFINED CACHE{SKBUILD_PROJECT_VERSION})
+        set(GOBOT_LIBUIPC_SAVED_PROJECT_VERSION_CACHE_DEFINED TRUE)
+        set(GOBOT_LIBUIPC_SAVED_PROJECT_VERSION_CACHE
+            "$CACHE{SKBUILD_PROJECT_VERSION}")
+    endif()
+    unset(SKBUILD)
+    unset(SKBUILD CACHE)
+    unset(SKBUILD_PROJECT_VERSION)
+    unset(SKBUILD_PROJECT_VERSION CACHE)
+
+    add_subdirectory("${GOBOT_LIBUIPC_SOURCE_DIR}"
+                     "${GOBOT_LIBUIPC_BINARY_DIR}"
+                     EXCLUDE_FROM_ALL)
+
+    if(TARGET pyuipc)
+        message(FATAL_ERROR
+            "Embedded libuipc unexpectedly enabled pyuipc. Gobot ships only "
+            "the C++ IPC runtime and must not run Python package installation "
+            "from the nested project.")
+    endif()
+
+    if(GOBOT_LIBUIPC_SAVED_SKBUILD_CACHE_DEFINED)
+        set(SKBUILD "${GOBOT_LIBUIPC_SAVED_SKBUILD_CACHE}"
+            CACHE STRING "scikit-build mode" FORCE)
+    endif()
+    if(GOBOT_LIBUIPC_SAVED_SKBUILD_DEFINED)
+        set(SKBUILD "${GOBOT_LIBUIPC_SAVED_SKBUILD}")
+    endif()
+    if(GOBOT_LIBUIPC_SAVED_PROJECT_VERSION_CACHE_DEFINED)
+        set(SKBUILD_PROJECT_VERSION
+            "${GOBOT_LIBUIPC_SAVED_PROJECT_VERSION_CACHE}"
+            CACHE STRING "scikit-build project version" FORCE)
+    endif()
+    if(GOBOT_LIBUIPC_SAVED_PROJECT_VERSION_DEFINED)
+        set(SKBUILD_PROJECT_VERSION
+            "${GOBOT_LIBUIPC_SAVED_PROJECT_VERSION}")
+    endif()
+
+    # vcpkg's flat install prefix used to make these undeclared includes
+    # visible to uipc_io. Keep them target-scoped in the Gobot build.
+    target_link_libraries(uipc_io PRIVATE igl::igl_core)
+    target_include_directories(uipc_io PRIVATE "${TINYGLTF_INCLUDE_DIRS}")
+    add_subdirectory(modules/libuipc_solver)
 endif()
 
 if (GOB_BUILD_TESTS)

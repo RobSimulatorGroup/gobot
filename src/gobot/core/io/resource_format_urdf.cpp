@@ -27,6 +27,7 @@
 #include "gobot/scene/link_3d.hpp"
 #include "gobot/scene/mesh_instance_3d.hpp"
 #include "gobot/scene/resources/box_shape_3d.hpp"
+#include "gobot/scene/resources/convex_mesh_shape_3d.hpp"
 #include "gobot/scene/resources/cylinder_shape_3d.hpp"
 #include "gobot/scene/resources/mesh.hpp"
 #include "gobot/scene/resources/packed_scene.hpp"
@@ -56,6 +57,7 @@ struct CollisionImportData {
     Vector3 origin_rpy{Vector3::Zero()};
     CollisionGeometryType geometry_type{CollisionGeometryType::None};
     std::string mesh_path;
+    Vector3 mesh_scale{Vector3::Ones()};
     Vector3 box_size{Vector3::Ones()};
     RealType radius{0.5};
     RealType height{1.0};
@@ -418,6 +420,7 @@ std::vector<CollisionImportData> ParseCollisions(const std::string& link_body, c
         if (!mesh_attrs.empty()) {
             collision.geometry_type = CollisionGeometryType::Mesh;
             collision.mesh_path = NormalizeImportedAssetPath(GetAttribute(mesh_attrs, "filename"), source_file_path);
+            collision.mesh_scale = ParseVector3(GetAttribute(mesh_attrs, "scale"), Vector3::Ones());
         } else if (!box_attrs.empty()) {
             collision.geometry_type = CollisionGeometryType::Box;
             collision.box_size = ParseVector3(GetAttribute(box_attrs, "size"), Vector3::Ones());
@@ -440,15 +443,15 @@ std::vector<CollisionImportData> ParseCollisions(const std::string& link_body, c
 
 std::vector<LinkImportData> ParseLinks(const std::string& xml, const std::string& source_file_path) {
     std::vector<LinkImportData> links;
-    const std::regex link_regex(R"(<\s*link\b([^>]*)>([\s\S]*?)<\s*/\s*link\s*>|<\s*link\b([^>]*)/\s*>)",
+    const std::regex link_regex(R"(<\s*link\b([^>]*)/\s*>|<\s*link\b([^>]*)>([\s\S]*?)<\s*/\s*link\s*>)",
                                 std::regex::icase);
 
     for (auto iter = std::sregex_iterator(xml.begin(), xml.end(), link_regex);
          iter != std::sregex_iterator();
          ++iter) {
         const std::smatch& match = *iter;
-        const std::string attributes = match[1].matched ? match[1].str() : match[3].str();
-        const std::string body = match[2].matched ? match[2].str() : std::string();
+        const std::string attributes = match[1].matched ? match[1].str() : match[2].str();
+        const std::string body = match[3].matched ? match[3].str() : std::string();
 
         LinkImportData link;
         link.name = GetAttribute(attributes, "name");
@@ -616,9 +619,18 @@ SceneState::NodeData MakeCollisionNode(const LinkImportData& link,
                      ? link.name + "_collision"
                      : link.name + "_collision_" + std::to_string(collision_index + 1);
     node_data.parent = parent;
-    AddTransformProperties(node_data, collision.origin_xyz, collision.origin_rpy);
+    if (collision.geometry_type == CollisionGeometryType::Mesh) {
+        AddTransformProperties(
+                node_data, collision.origin_xyz, collision.origin_rpy, collision.mesh_scale);
+    } else {
+        AddTransformProperties(node_data, collision.origin_xyz, collision.origin_rpy);
+    }
 
-    if (collision.geometry_type == CollisionGeometryType::Box) {
+    if (collision.geometry_type == CollisionGeometryType::Mesh) {
+        Ref<ConvexMeshShape3D> shape = MakeRef<ConvexMeshShape3D>();
+        shape->SetMesh(MakeMeshReference(collision.mesh_path));
+        AddProperty(node_data, "shape", dynamic_pointer_cast<Shape3D>(shape));
+    } else if (collision.geometry_type == CollisionGeometryType::Box) {
         Ref<BoxShape3D> shape = MakeRef<BoxShape3D>();
         shape->SetSize(collision.box_size);
         AddProperty(node_data, "shape", dynamic_pointer_cast<Shape3D>(shape));

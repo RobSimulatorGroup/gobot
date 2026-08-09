@@ -414,6 +414,19 @@ void RegisterManualRobotBindings(PyRobot3DClass& robot3d_class,
                           [](PyCollisionShape3DHandle& handle, bool disabled) {
                               CollisionShape3D* collision_shape = handle.ResolveAs<CollisionShape3D>();
                               ExecuteSetNodeProperty(collision_shape, "disabled", Variant(disabled));
+                          })
+            .def_property("friction",
+                          [](const PyCollisionShape3DHandle& handle) {
+                              return Vector3ToPython(
+                                      handle.ResolveAs<CollisionShape3D>()->GetFriction());
+                          },
+                          [](PyCollisionShape3DHandle& handle, const py::handle& value) {
+                              CollisionShape3D* collision_shape =
+                                      handle.ResolveAs<CollisionShape3D>();
+                              ExecuteSetNodeProperty(
+                                      collision_shape,
+                                      "friction",
+                                      Variant(PythonToVector3(value)));
                           });
 }
 

@@ -1,0 +1,6 @@
+if(NOT TARGET spdlog::spdlog)
+    set(spdlog_FOUND FALSE)
+    set(spdlog_NOT_FOUND_MESSAGE "Gobot did not configure its pinned spdlog target")
+    return()
+endif()
+set(spdlog_FOUND TRUE)

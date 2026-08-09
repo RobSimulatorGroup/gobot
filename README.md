@@ -125,6 +125,12 @@ There are no separate CPU, CUDA, or training extras. Selecting a simulation
 provider remains explicit; requesting a CUDA provider never silently falls
 back to CPU.
 
+The libuipc C++ IPC backend is also enabled by default for source builds and is
+pinned as `3rdparty/libuipc`; it does not use `pyuipc` or vcpkg. Building that
+native module is validated with CUDA 12.2 on Linux. CPU-only builds can pass
+`-DGOB_BUILD_LIBUIPC=OFF`. The native FEM/contact demos live in
+`examples/libuipc`; see [libuipc IPC backend](doc/libuipc_ipc.md).
+
 OpenUSD remains an optional CMake feature, but Python source builds enable it by
 default. Official Linux x86-64 wheels bundle the runtime, so
 `pip install gobot` does not need OpenUSD, LuisaCompute, or oneTBB checkouts and
