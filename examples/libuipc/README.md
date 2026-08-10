@@ -9,7 +9,7 @@ Open the project and press Play:
 uv run gobot_editor --path examples/libuipc
 ```
 
-The project contains one featured robot scene and two focused checks:
+The project contains one focused robot scene:
 
 - `fr3_brick_grasp.jscn`: the Franka Research 3 and Franka Hand used by
   Newton's `python -m newton.examples brick_stacking` example. The checked-in
@@ -18,11 +18,6 @@ The project contains one featured robot scene and two focused checks:
   fingers with their eight box colliders. It closes around, lifts, returns, and
   releases a `50 x 30 x 25 mm` tetrahedral FEM box resting directly on one
   complete, uninterrupted tabletop. No collision proxy geometry is substituted.
-- `soft_cube_stack.jscn`: two independent FEM bodies exercising soft-soft and
-  soft-affine contact, based on libuipc's multi-FEM cases.
-- `soft_cube_press.jscn`: a constrained affine press cyclically compressing a
-  soft block, based on `28_fem_periodically_pressed_tet`.
-
 The translucent green surface is the live deformable mesh synchronized from
 libuipc. Orange-red arrows show the real per-vertex contact forces exported by
 libuipc. The Physics panel's `Contact force arrows`, `Force scale`, and
@@ -41,16 +36,20 @@ The robot asset is copied from Newton's pinned `newton-assets` revision
 `261cd1f429619d8ef4f546bd788ab9dea906b5e1`. See
 `assets/franka_emika_panda/SOURCE.md`, `README.md`, and `LICENSE`.
 
+Soft-soft stacking and affine-press coverage lives in runtime-generated test
+fixtures under `tests/python/libuipc_test_scenes.py`; they are regression inputs,
+not additional user-facing projects.
+
 Validate a scene without starting CUDA:
 
 ```bash
-python examples/libuipc/libuipc_demo.py \
+uv run python examples/libuipc/libuipc_demo.py \
   --scene examples/libuipc/fr3_brick_grasp.jscn
 ```
 
 Run a short native CUDA smoke test with:
 
 ```bash
-python examples/libuipc/libuipc_demo.py \
+uv run python examples/libuipc/libuipc_demo.py \
   --scene examples/libuipc/fr3_brick_grasp.jscn --steps 2
 ```

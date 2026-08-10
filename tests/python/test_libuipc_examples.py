@@ -9,15 +9,15 @@ import xml.etree.ElementTree as ET
 import gobot
 import numpy as np
 from gobot.ipc import CompiledIpcSceneArtifact
+from gobot.rl import CompiledMuJoCoIpcArtifact
+
+from libuipc_test_scenes import TEST_SCENE_NAMES, build_libuipc_test_scene
 
 
 ROOT = Path(__file__).resolve().parents[2]
 EXAMPLE_ROOT = ROOT / "examples" / "libuipc"
-SCENE_NAMES = (
-    "fr3_brick_grasp.jscn",
-    "soft_cube_stack.jscn",
-    "soft_cube_press.jscn",
-)
+MUJOCO_LIBUIPC_EXAMPLE_ROOT = ROOT / "examples" / "mujoco_libuipc"
+SCENE_NAMES = ("fr3_brick_grasp.jscn",)
 
 
 def _load_builder():
@@ -40,6 +40,17 @@ def _load_play_script():
     return module
 
 
+def _load_mujoco_libuipc_builder():
+    spec = importlib.util.spec_from_file_location(
+        "gobot_mujoco_libuipc_example_builder",
+        MUJOCO_LIBUIPC_EXAMPLE_ROOT / "build_scene.py",
+    )
+    assert spec is not None and spec.loader is not None
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    return module
+
+
 def test_checked_in_libuipc_scenes_are_reproducible() -> None:
     builder = _load_builder()
     with tempfile.TemporaryDirectory(prefix="gobot-libuipc-demos-") as directory:
@@ -49,13 +60,87 @@ def test_checked_in_libuipc_scenes_are_reproducible() -> None:
             assert (Path(directory) / name).read_bytes() == (
                 EXAMPLE_ROOT / name
             ).read_bytes()
+        assert (Path(directory) / "libuipc_demo.py").is_file()
+        assert (Path(directory) / "project.gobot").is_file()
+        assert (
+            Path(directory)
+            / "assets"
+            / "franka_emika_panda"
+            / "urdf"
+            / "fr3_franka_hand.urdf"
+        ).is_file()
+        context = gobot.app.create_context()
+        context.set_project_path(directory)
+        context.load_scene("res://fr3_brick_grasp.jscn")
+        artifact = CompiledIpcSceneArtifact.from_mapping(
+            context.compile_ipc_scene_artifact()
+        )
+        assert len(artifact.deformable_bodies) == 1
+
+
+def test_mujoco_libuipc_batch_example_is_reproducible_and_mapped() -> None:
+    builder = _load_mujoco_libuipc_builder()
+    with tempfile.TemporaryDirectory(
+        prefix="gobot-mujoco-libuipc-example-"
+    ) as directory:
+        generated = builder.build_scene(Path(directory))
+        checked_in = MUJOCO_LIBUIPC_EXAMPLE_ROOT / "soft_press_batch.jscn"
+        assert generated.read_bytes() == checked_in.read_bytes()
+        assert (Path(directory) / "mujoco_libuipc_play.py").is_file()
+        assert (Path(directory) / "project.gobot").is_file()
+
+        context = gobot.app.create_context()
+        context.set_project_path(directory)
+        context.load_scene("res://soft_press_batch.jscn")
+        artifact = CompiledMuJoCoIpcArtifact.from_context(context)
+        assert artifact.mujoco.dimensions["nq"] == 1
+        assert artifact.mujoco.dimensions["nu"] == 1
+        assert len(artifact.ipc.deformable_bodies) == 1
+        assert [
+            (mapping.robot_name, mapping.link_name)
+            for mapping in artifact.coupled_bodies
+        ] == [
+            ("static_colliders", "ground"),
+            ("press", "press_head"),
+        ]
+
+        scene = json.loads(generated.read_text(encoding="utf-8"))
+        root = next(node for node in scene["__NODES__"] if node["parent"] == -1)
+        assert root["properties"]["script"] == (
+            "ExtResource(mujoco_libuipc_play_script)"
+        )
+        assert any(
+            resource["__ID__"] == "mujoco_libuipc_play_script"
+            and resource["__PATH__"] == "res://mujoco_libuipc_play.py"
+            and resource["__TYPE__"] == "PythonScript"
+            for resource in scene["__EXT_RESOURCES__"]
+        )
+        slide = next(
+            node
+            for node in scene["__NODES__"]
+            if node["name"] == "press_slide"
+        )
+        assert slide["type"] == "Joint3D"
+        assert slide["properties"]["joint_type"] == "Prismatic"
+        assert slide["properties"]["drive_mode"] == "Position"
+
+
+def test_mujoco_libuipc_play_script_uses_the_composite_gpu_provider() -> None:
+    source = (
+        MUJOCO_LIBUIPC_EXAMPLE_ROOT / "mujoco_libuipc_play.py"
+    ).read_text(encoding="utf-8")
+    assert "class Script(gobot.NodeScript)" in source
+    assert "MuJoCoIpcProvider" in source
+    assert "LibuipcBatchSolver" in source
+    assert "ProviderPlaySession" in source
+    assert "apply_deformable_vertices" in source
+    assert "press_view.sync_scene" in source
+    assert "NUM_ENVS = 4" in source
 
 
 def test_libuipc_scenes_compile_to_supported_native_contracts() -> None:
     expected_counts = {
         "fr3_brick_grasp.jscn": (1, 11),
-        "soft_cube_stack.jscn": (2, 1),
-        "soft_cube_press.jscn": (1, 2),
     }
     for name in SCENE_NAMES:
         scene = json.loads((EXAMPLE_ROOT / name).read_text(encoding="utf-8"))
@@ -86,13 +171,6 @@ def test_libuipc_scenes_compile_to_supported_native_contracts() -> None:
             )
         ]
         assert (len(artifact.deformable_bodies), len(affine_links)) == expected_counts[name]
-        if name != "fr3_brick_grasp.jscn":
-            assert all(
-                shape["shape_type"] == "box"
-                for link in affine_links
-                for shape in link["collision_shapes"]
-                if not shape.get("disabled", False)
-            )
         assert not artifact.tactile_sensors
         if name == "fr3_brick_grasp.jscn":
             node_names = {node["name"] for node in scene["__NODES__"]}
@@ -216,6 +294,67 @@ def test_libuipc_scenes_compile_to_supported_native_contracts() -> None:
             assert all(
                 abs(shape["friction"][0] - 1.25) < 1.0e-6
                 for shape in finger_shapes
+            )
+
+            links_by_name = {
+                link["name"]: link
+                for robot in artifact.robots
+                for link in robot["links"]
+            }
+            np.testing.assert_allclose(
+                links_by_name["fr3_link1"]["inertia_off_diagonal"],
+                (1.33179e-5, -0.0001140478, -0.00199503),
+                rtol=2.0e-6,
+                atol=1.0e-10,
+            )
+            link7 = links_by_name["fr3_link7"]
+            assert abs(link7["mass"] - (0.6271432862 + 0.6544)) < 1.0e-6
+            np.testing.assert_allclose(
+                link7["center_of_mass"],
+                (0.00650101, 0.00853633, 0.05731151),
+                rtol=2.0e-6,
+                atol=1.0e-8,
+            )
+            assert np.linalg.norm(link7["inertia_off_diagonal"]) > 1.0e-4
+
+
+def test_libuipc_contact_scenes_are_generated_test_fixtures() -> None:
+    expected_counts = {
+        "soft_cube_stack.jscn": (2, 1),
+        "soft_cube_press.jscn": (1, 2),
+    }
+    with tempfile.TemporaryDirectory(prefix="gobot-libuipc-fixtures-") as directory:
+        project_path = Path(directory)
+        for scene_name in TEST_SCENE_NAMES:
+            destination = build_libuipc_test_scene(project_path, scene_name)
+            scene = json.loads(destination.read_text(encoding="utf-8"))
+            root = next(node for node in scene["__NODES__"] if node["parent"] == -1)
+            assert root["properties"]["script"] is None
+
+            context = gobot.app.create_context()
+            context.set_project_path(directory)
+            context.load_scene("res://" + scene_name)
+            artifact = CompiledIpcSceneArtifact.from_mapping(
+                context.compile_ipc_scene_artifact()
+            )
+            affine_links = [
+                link
+                for robot in artifact.robots
+                for link in robot["links"]
+                if any(
+                    not shape.get("disabled", False)
+                    for shape in link["collision_shapes"]
+                )
+            ]
+            assert (
+                len(artifact.deformable_bodies),
+                len(affine_links),
+            ) == expected_counts[scene_name]
+            assert all(
+                shape["shape_type"] == "box"
+                for link in affine_links
+                for shape in link["collision_shapes"]
+                if not shape.get("disabled", False)
             )
 
 
@@ -346,7 +485,10 @@ def test_libuipc_play_script_builds_bounded_contact_force_arrows() -> None:
 
 def main() -> int:
     test_checked_in_libuipc_scenes_are_reproducible()
+    test_mujoco_libuipc_batch_example_is_reproducible_and_mapped()
+    test_mujoco_libuipc_play_script_uses_the_composite_gpu_provider()
     test_libuipc_scenes_compile_to_supported_native_contracts()
+    test_libuipc_contact_scenes_are_generated_test_fixtures()
     test_fr3_asset_has_complete_licensed_urdf_and_meshes()
     test_fr3_scene_uses_urdf_visual_and_collision_meshes()
     test_libuipc_play_script_uses_only_the_native_provider()

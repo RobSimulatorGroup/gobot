@@ -3,6 +3,25 @@ from typing import Any
 
 from ._core import JointControllerGains
 
+class ProviderUnavailableError(RuntimeError): ...
+
+class ProviderCapabilities:
+    name: str
+    device: str
+    device_native: bool
+    graph_capture: bool
+    masked_reset: bool
+    fixed_capacity: bool
+    def __init__(
+        self,
+        name: str,
+        device: str,
+        device_native: bool,
+        graph_capture: bool,
+        masked_reset: bool,
+        fixed_capacity: bool,
+    ) -> None: ...
+
 class ProviderPlaySession:
     context: Any
     provider: Any

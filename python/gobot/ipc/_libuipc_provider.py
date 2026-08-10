@@ -11,9 +11,8 @@ from types import MappingProxyType
 from typing import Any, Mapping, Sequence
 
 from gobot import _core
-from gobot.rl.providers.base import (
-    BatchPhysicsProvider,
-    BatchProviderCapabilities,
+from gobot.sim import (
+    ProviderCapabilities,
     ProviderUnavailableError,
 )
 
@@ -168,10 +167,17 @@ def _affine_transforms_to_poses(transforms: Any) -> Any:
     return poses
 
 
-class LibuipcProvider(BatchPhysicsProvider):
+class LibuipcProvider:
     """Single-environment provider using the native libuipc solver module."""
 
     accepts_device_actions = False
+
+    def __enter__(self) -> "LibuipcProvider":
+        return self
+
+    def __exit__(self, exc_type: Any, exc_value: Any, traceback: Any) -> bool:
+        self.close()
+        return False
 
     def __init__(
         self,
@@ -322,8 +328,8 @@ class LibuipcProvider(BatchPhysicsProvider):
                 )
 
     @property
-    def capabilities(self) -> BatchProviderCapabilities:
-        return BatchProviderCapabilities(
+    def capabilities(self) -> ProviderCapabilities:
+        return ProviderCapabilities(
             name="libuipc",
             device=f"cuda:{self.config.device_index}",
             device_native=True,

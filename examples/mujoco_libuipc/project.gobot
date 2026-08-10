@@ -1,0 +1,11 @@
+{
+    "editor_scene_views": {
+        "res://soft_press_batch.jscn": {
+            "at": [0.0, 0.0, 0.14],
+            "eye": [0.62, 0.70, 0.48],
+            "fov_y": 45.0,
+            "up": [-0.18, -0.20, 0.96]
+        }
+    },
+    "main_scene": "res://soft_press_batch.jscn"
+}

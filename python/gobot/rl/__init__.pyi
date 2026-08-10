@@ -20,28 +20,22 @@ from .runtime import (
 )
 from .spec import ActionSpec, ObservationSpec, SpecField, validate_spec_metadata
 from .task_runtime import TaskRuntimeMetadata
-from ..ipc import (
-    CompiledIpcSceneArtifact,
-    DeformableBatchSpec,
-    DeformableBatchState,
-    DeformableBatchView,
-    TactileBatchSpec,
-    TactileBatchState,
-    TactileBatchView,
-    WarpIpcConfig,
-    WarpIpcProvider,
-)
 from . import locomotion, providers
 from .providers import (
     BatchPhysicsProvider,
     BatchProviderCapabilities,
     CompiledSceneArtifact,
+    CompiledMuJoCoIpcArtifact,
     GraphInvalidatedError,
     MuJoCoWarpContactSensorSpec,
     MuJoCoWarpProvider,
     MuJoCoWarpProviderAvailability,
     MuJoCoWarpRaycastSensorSpec,
     MuJoCoWarpRobotLayout,
+    MuJoCoIpcBodyMapping,
+    MuJoCoIpcConfig,
+    MuJoCoIpcCoupler,
+    MuJoCoIpcProvider,
     NewtonModelConfig,
     NewtonProvider,
     NewtonProviderAvailability,

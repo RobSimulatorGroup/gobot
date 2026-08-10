@@ -3,12 +3,29 @@
 from __future__ import annotations
 
 from collections.abc import Callable
+from dataclasses import dataclass
 import json
 import math
 import operator
 from typing import Any
 
 from ._core import JointControllerGains
+
+
+class ProviderUnavailableError(RuntimeError):
+    """Raised when an explicitly requested simulation provider is unavailable."""
+
+
+@dataclass(frozen=True)
+class ProviderCapabilities:
+    """Backend-neutral capabilities reported by an external simulation provider."""
+
+    name: str
+    device: str
+    device_native: bool
+    graph_capture: bool
+    masked_reset: bool
+    fixed_capacity: bool
 
 
 class ProviderPlaySession:
@@ -177,4 +194,9 @@ class ProviderPlaySession:
             self.provider.close()
 
 
-__all__ = ["JointControllerGains", "ProviderPlaySession"]
+__all__ = [
+    "JointControllerGains",
+    "ProviderCapabilities",
+    "ProviderPlaySession",
+    "ProviderUnavailableError",
+]

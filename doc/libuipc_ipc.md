@@ -99,8 +99,92 @@ read-only NumPy arrays. `contact_forces` contains the physical libuipc contact
 force accumulated at each deformable vertex, in newtons; it is not normalized
 or display-scaled by the provider.
 
-Tactile artifacts are rejected instead of being silently ignored. Use the
-separate Warp IPC provider while tactile image products remain adapter work.
+Tactile artifacts are rejected instead of being silently ignored. Tactile image
+products remain native adapter work and are not currently exposed by
+`gobot.ipc`.
+
+## MuJoCo + libuipc Batch Co-simulation
+
+`gobot.rl.MuJoCoIpcProvider` composes MuJoCo Warp rigid/articulation dynamics
+with native libuipc FEM and IPC contact. The authored `.jscn` remains the only
+source of truth. `CompiledMuJoCoIpcArtifact` stores the two compiled runtime
+artifacts plus an explicit, validated mapping from each Gobot link path to its
+MuJoCo runtime body and libuipc affine proxy.
+
+```text
+Gobot .jscn
+    -> CompiledMuJoCoIpcArtifact
+       -> MuJoCoWarpProvider     (rigid bodies and articulations)
+       -> LibuipcBatchSolver     (FEM, soft contact, rigid proxies)
+       -> MuJoCoIpcCoupler       (pose targets and reaction wrenches)
+```
+
+Collision ownership is fixed so a contact pair is never solved twice:
+
+| Pair | Owner |
+| --- | --- |
+| rigid-rigid | MuJoCo |
+| rigid-terrain | MuJoCo |
+| deformable-deformable | libuipc |
+| deformable-rigid | libuipc |
+| deformable-terrain | libuipc |
+
+One composite tick performs the following ordered operations:
+
+1. gather mapped MuJoCo body poses into the stable libuipc target tensor;
+2. advance every isolated libuipc subscene by the same fixed timestep;
+3. recover a contact reaction wrench from each proxy pose error, including
+   mass, center-of-mass, inertia, and gravity compensation;
+4. replace only the Coupler-owned contribution in MuJoCo `xfrc_applied`;
+5. advance MuJoCo Warp once.
+
+The default capacity is 256 environments split into four fixed shards of 64.
+Each shard owns one libuipc world and one subscene per environment. Cross-env
+contact is disabled by subscene membership, and proxy-proxy contact is disabled
+because MuJoCo owns rigid-rigid pairs. Storage addresses, body order, shard
+count, and capacity stay fixed for the provider lifetime.
+
+```python
+from gobot.rl import (
+    CompiledMuJoCoIpcArtifact,
+    MuJoCoIpcConfig,
+    MuJoCoIpcProvider,
+)
+
+artifact = CompiledMuJoCoIpcArtifact.from_context(context)
+provider = MuJoCoIpcProvider(
+    artifact,
+    config=MuJoCoIpcConfig(
+        num_envs=256,
+        device="cuda:0",
+        environments_per_shard=64,
+    ),
+)
+provider.step(actions)
+provider.reset(full_batch_mask)
+```
+
+Batch v1 intentionally supports full-batch reset only. Each shard restores its
+frame-zero libuipc snapshot, including solver history and contact caches, and
+each batch session uses an exclusive workspace that is removed when the session
+closes. The composite provider does not claim CUDA graph capture, although its
+MuJoCo Warp subsolver may use a captured graph. FEM positions/velocities and
+affine proxy transforms are written directly into pre-bound CUDA tensors. The
+pinned libuipc public API has a device `BufferView` output but no corresponding
+affine-transform input, so the small rigid target table currently uses one
+device-to-host-to-device staging operation per shard and tick. The raw batch
+contact-force and affine-wrench buffers are reserved and zero in v1; the Coupler
+applies the gravity-compensated proxy reaction wrench instead. Removing target
+staging and exporting native device contact gradients are the next
+ABI-compatible performance steps.
+
+The opt-in two-environment regression covers both the native batch solver and
+the complete MuJoCo Warp + libuipc Coupler path:
+
+```bash
+GOBOT_RUN_LIBUIPC_BATCH_GPU_TEST=1 \
+ctest --test-dir build -R test_python_libuipc_batch_gpu --output-on-failure
+```
 
 ## Examples
 
@@ -131,10 +215,11 @@ This is intentionally different from
 `libuipc-samples/examples/86_panda_hydro_traj_cubes`: that upstream diagnostic
 uses ten equal-sized cubes, disables gravity and contact, and replays only two
 target rows. It is useful for testing affine joints but is not a robot geometry
-or grasping example. The other two Gobot scenes remain focused contact and
-affine-press checks. All scenes report `Provider: libuipc` in the Physics panel
-and can be validated or stepped headlessly through `libuipc_demo.py`. The
-obsolete `examples/warp_ipc` project has been removed.
+or grasping example. Soft-soft contact and affine-press cases are generated as
+test-only fixtures, while the user-facing project stays focused on the FR3
+workflow. The scene reports `Provider: libuipc` in the Physics panel and can be
+validated or stepped headlessly through `libuipc_demo.py`. The obsolete Warp
+IPC Python provider and `examples/warp_ipc` project have been removed.
 
 The real CUDA admission test is opt-in:
 

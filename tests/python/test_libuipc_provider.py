@@ -130,6 +130,28 @@ def test_libuipc_config_validation() -> None:
     _raises(ValueError, lambda: LibuipcConfig(device_index=True))
 
 
+def test_libuipc_public_api_is_native_only() -> None:
+    assert gobot.ipc.__all__ == [
+        "CompiledIpcSceneArtifact",
+        "LibuipcBatchConfig",
+        "LibuipcBatchSolver",
+        "LibuipcConfig",
+        "LibuipcProvider",
+        "LibuipcProviderAvailability",
+    ]
+    for removed_name in (
+        "DeformableBatchView",
+        "TactileBatchView",
+        "WarpIpcProvider",
+    ):
+        assert not hasattr(gobot.ipc, removed_name)
+        assert not hasattr(gobot.rl, removed_name)
+    assert gobot.rl.BatchProviderCapabilities is gobot.sim.ProviderCapabilities
+    assert gobot.rl.ProviderUnavailableError is gobot.sim.ProviderUnavailableError
+    assert not issubclass(LibuipcProvider, gobot.rl.BatchPhysicsProvider)
+    assert hasattr(gobot.rl, "MuJoCoIpcProvider")
+
+
 def test_libuipc_provider_lifecycle_and_scene_sync() -> None:
     artifact = _artifact()
     manifest = json.loads(artifact["manifest"])
@@ -254,6 +276,7 @@ def test_libuipc_provider_rejects_contact_force_shape_mismatch() -> None:
 
 def main() -> int:
     test_libuipc_config_validation()
+    test_libuipc_public_api_is_native_only()
     test_libuipc_provider_lifecycle_and_scene_sync()
     test_libuipc_provider_rejects_runtime_layout_mismatch()
     test_libuipc_provider_rejects_contact_force_shape_mismatch()

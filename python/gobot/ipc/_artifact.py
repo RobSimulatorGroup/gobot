@@ -1,4 +1,4 @@
-"""Validated portable artifacts consumed by Gobot's Warp IPC provider."""
+"""Validated portable artifacts consumed by Gobot's native IPC provider."""
 
 from __future__ import annotations
 

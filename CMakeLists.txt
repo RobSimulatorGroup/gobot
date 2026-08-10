@@ -835,6 +835,8 @@ set(GOBOT_PYTHON_CLI_PACKAGE_DIR "${CMAKE_CURRENT_SOURCE_DIR}/python/gobot_cli")
 add_custom_target(gobot_python_package
         COMMAND ${CMAKE_COMMAND} -E rm -rf
                 "${CMAKE_BINARY_DIR}/python/gobot/rl"
+        COMMAND ${CMAKE_COMMAND} -E rm -rf
+                "${CMAKE_BINARY_DIR}/python/gobot/ipc"
         COMMAND ${CMAKE_COMMAND} -E copy_directory
                 "${GOBOT_PYTHON_PACKAGE_DIR}"
                 "${CMAKE_BINARY_DIR}/python/gobot"

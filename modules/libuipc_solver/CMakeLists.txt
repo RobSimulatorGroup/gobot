@@ -1,3 +1,5 @@
+find_package(CUDAToolkit REQUIRED)
+
 add_library(gobot_libuipc_solver MODULE
         libuipc_solver_module.cpp)
 target_compile_features(gobot_libuipc_solver PRIVATE cxx_std_20)
@@ -7,7 +9,8 @@ target_compile_definitions(gobot_libuipc_solver PRIVATE
         GOBOT_LIBUIPC_BACKEND_BUILD_DIR="${CMAKE_BINARY_DIR}/$<CONFIG>/bin"
         GOBOT_LIBUIPC_REVISION="619a5412cf958eb59cf3c9cebc9a8e8e9625ebd3")
 target_link_libraries(gobot_libuipc_solver PRIVATE
-        uipc::uipc)
+        uipc::uipc
+        CUDA::cudart)
 add_dependencies(gobot_libuipc_solver uipc_backends)
 set_target_properties(gobot_libuipc_solver PROPERTIES
         OUTPUT_NAME "gobot_libuipc_solver"

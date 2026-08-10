@@ -6,6 +6,7 @@ import argparse
 import json
 import math
 from pathlib import Path
+import shutil
 from typing import Any, Callable
 import xml.etree.ElementTree as ET
 
@@ -107,43 +108,6 @@ def _soft_box(
     body.damping = 0.08
     body.self_collision_enabled = False
     return body
-
-
-def _kinematic_box(
-    robot,
-    name: str,
-    size: tuple[float, float, float],
-    position: tuple[float, float, float],
-    color: tuple[float, float, float, float],
-):
-    link = _box_link(name, size, position, color, mass=10.0)
-    robot.add_child(link)
-    return link
-
-
-def _box_link(
-    name: str,
-    size: tuple[float, float, float],
-    position: tuple[float, float, float],
-    color: tuple[float, float, float, float],
-    *,
-    mass: float,
-):
-    link = gobot.create_node("Link3D", name)
-    link.position = position
-    link.has_inertial = True
-    link.mass = mass
-    size_x, size_y, size_z = size
-    link.inertia_diagonal = (
-        mass * (size_y * size_y + size_z * size_z) / 12.0,
-        mass * (size_x * size_x + size_z * size_z) / 12.0,
-        mass * (size_x * size_x + size_y * size_y) / 12.0,
-    )
-    visual = gobot.create_box_visual(f"{name}_visual", size)
-    visual.surface_color = color
-    link.add_child(visual)
-    link.add_child(gobot.create_box_collision(f"{name}_collision", size))
-    return link
 
 
 def _box_visual(
@@ -332,6 +296,78 @@ def _set_matrix(node: Any, matrix: np.ndarray) -> None:
     )
 
 
+def _inertia_components(matrix: np.ndarray) -> tuple[tuple[float, ...], tuple[float, ...]]:
+    return (
+        tuple(float(matrix[index, index]) for index in range(3)),
+        (float(matrix[0, 1]), float(matrix[0, 2]), float(matrix[1, 2])),
+    )
+
+
+def _inertia_matrix(spec: dict[str, Any]) -> np.ndarray:
+    diagonal = spec["inertia"]
+    off_diagonal = spec.get("inertia_off_diagonal", (0.0, 0.0, 0.0))
+    return np.asarray(
+        (
+            (diagonal[0], off_diagonal[0], off_diagonal[1]),
+            (off_diagonal[0], diagonal[1], off_diagonal[2]),
+            (off_diagonal[1], off_diagonal[2], diagonal[2]),
+        ),
+        dtype=np.float64,
+    )
+
+
+def _merge_fixed_link_inertia(
+    parent: dict[str, Any],
+    child: dict[str, Any],
+    child_transform: np.ndarray,
+) -> dict[str, Any]:
+    """Return parent inertial data with one fixed child rigidly aggregated."""
+
+    parent_mass = float(parent["mass"])
+    child_mass = float(child["mass"])
+    total_mass = parent_mass + child_mass
+    if total_mass <= 0.0:
+        raise ValueError("fixed-link inertia merge requires positive total mass")
+
+    parent_center = np.asarray(parent["center_of_mass"], dtype=np.float64)
+    child_center = (
+        child_transform[:3, :3]
+        @ np.asarray(child["center_of_mass"], dtype=np.float64)
+        + child_transform[:3, 3]
+    )
+    center = (
+        parent_mass * parent_center + child_mass * child_center
+    ) / total_mass
+
+    child_inertia = (
+        child_transform[:3, :3]
+        @ _inertia_matrix(child)
+        @ child_transform[:3, :3].T
+    )
+
+    def shifted(inertia: np.ndarray, mass: float, body_center: np.ndarray) -> np.ndarray:
+        offset = body_center - center
+        return inertia + mass * (
+            float(offset @ offset) * np.eye(3, dtype=np.float64)
+            - np.outer(offset, offset)
+        )
+
+    inertia = shifted(
+        _inertia_matrix(parent), parent_mass, parent_center
+    ) + shifted(child_inertia, child_mass, child_center)
+    diagonal, off_diagonal = _inertia_components(inertia)
+    merged = dict(parent)
+    merged.update(
+        {
+            "center_of_mass": tuple(float(value) for value in center),
+            "inertia": diagonal,
+            "inertia_off_diagonal": off_diagonal,
+            "mass": total_mass,
+        }
+    )
+    return merged
+
+
 def _parse_fr3_urdf() -> tuple[dict[str, dict[str, Any]], dict[str, dict[str, Any]]]:
     robot = ET.parse(FR3_URDF_PATH).getroot()
     if robot.get("name") != "fr3":
@@ -345,18 +381,42 @@ def _parse_fr3_urdf() -> tuple[dict[str, dict[str, Any]], dict[str, dict[str, An
         mass_element = inertial.find("mass") if inertial is not None else None
         inertia_element = inertial.find("inertia") if inertial is not None else None
         mass = float(mass_element.get("value", "0")) if mass_element is not None else 0.0
-        inertia = (
-            tuple(
-                float(inertia_element.get(component, "0"))
-                for component in ("ixx", "iyy", "izz")
-            )
-            if inertia_element is not None
-            else (1.0e-6, 1.0e-6, 1.0e-6)
-        )
-        center_of_mass = (
-            tuple(float(component) for component in _origin_matrix(inertial)[:3, 3])
+        inertial_transform = (
+            _origin_matrix(inertial)
             if inertial is not None
-            else (0.0, 0.0, 0.0)
+            else np.eye(4, dtype=np.float64)
+        )
+        if inertia_element is not None:
+            raw_inertia = np.asarray(
+                (
+                    (
+                        float(inertia_element.get("ixx", "0")),
+                        float(inertia_element.get("ixy", "0")),
+                        float(inertia_element.get("ixz", "0")),
+                    ),
+                    (
+                        float(inertia_element.get("ixy", "0")),
+                        float(inertia_element.get("iyy", "0")),
+                        float(inertia_element.get("iyz", "0")),
+                    ),
+                    (
+                        float(inertia_element.get("ixz", "0")),
+                        float(inertia_element.get("iyz", "0")),
+                        float(inertia_element.get("izz", "0")),
+                    ),
+                ),
+                dtype=np.float64,
+            )
+        else:
+            raw_inertia = np.eye(3, dtype=np.float64) * 1.0e-6
+        inertia_matrix = (
+            inertial_transform[:3, :3]
+            @ raw_inertia
+            @ inertial_transform[:3, :3].T
+        )
+        inertia, inertia_off_diagonal = _inertia_components(inertia_matrix)
+        center_of_mass = tuple(
+            float(component) for component in inertial_transform[:3, 3]
         )
         collisions = []
         for index, collision_element in enumerate(link_element.findall("collision")):
@@ -397,6 +457,7 @@ def _parse_fr3_urdf() -> tuple[dict[str, dict[str, Any]], dict[str, dict[str, An
             "center_of_mass": center_of_mass,
             "collisions": collisions,
             "inertia": inertia,
+            "inertia_off_diagonal": inertia_off_diagonal,
             "mass": mass,
         }
 
@@ -525,6 +586,7 @@ def _fr3_link(name: str, spec: dict[str, Any], asset: dict[str, Any]):
     link.inertia_diagonal = tuple(
         max(1.0e-7, float(component)) for component in spec["inertia"]
     )
+    link.set("inertia_off_diagonal", spec["inertia_off_diagonal"])
     _attach_fr3_visual(link, asset["visual"])
     _attach_fr3_collisions(link, name, asset["collisions"], spec)
     return link
@@ -608,6 +670,12 @@ def _fr3_soft_grasp_scene():
 
     links, joints = _parse_fr3_urdf()
     asset_scene, assets = _load_fr3_assets()
+    hand_transform = (
+        joints["fr3_joint8"]["origin"] @ joints["fr3_hand_joint"]["origin"]
+    )
+    links["fr3_link7"] = _merge_fixed_link_inertia(
+        links["fr3_link7"], links["fr3_hand"], hand_transform
+    )
     robot = gobot.create_node("Robot3D", "fr3_arm")
     robot.source_path = FR3_URDF_RESOURCE
     root.add_child(robot)
@@ -626,9 +694,6 @@ def _fr3_soft_grasp_scene():
         joint.add_child(child)
         parent = child
 
-    hand_transform = (
-        joints["fr3_joint8"]["origin"] @ joints["fr3_hand_joint"]["origin"]
-    )
     _attach_fr3_visual(parent, assets["fr3_hand"]["visual"], hand_transform)
     _attach_fr3_collisions(
         parent,
@@ -655,51 +720,6 @@ def _fr3_soft_grasp_scene():
         )
         joint.add_child(child)
     del asset_scene
-    return root
-
-
-def _stack_scene():
-    root, colliders = _scene_root("libuipc_soft_stack")
-    root.add_child(
-        _soft_box("lower_cube", (0.18, 0.18, 0.18), (-0.035, 0.0, 0.25))
-    )
-    root.add_child(
-        _soft_box("upper_cube", (0.16, 0.16, 0.16), (0.045, 0.0, 0.50))
-    )
-    _kinematic_box(
-        colliders,
-        "ground",
-        (1.0, 0.75, 0.05),
-        (0.0, 0.0, -0.025),
-        (0.20, 0.24, 0.27, 1.0),
-    )
-    return root
-
-
-def _press_scene():
-    root, colliders = _scene_root("libuipc_soft_press")
-    root.add_child(
-        _soft_box(
-            "compression_block",
-            (0.22, 0.22, 0.16),
-            (0.0, 0.0, 0.10),
-            young_modulus=2.5e4,
-        )
-    )
-    _kinematic_box(
-        colliders,
-        "ground",
-        (0.8, 0.65, 0.05),
-        (0.0, 0.0, -0.025),
-        (0.20, 0.24, 0.27, 1.0),
-    )
-    _kinematic_box(
-        colliders,
-        "press_head",
-        (0.30, 0.30, 0.06),
-        (0.0, 0.0, 0.34),
-        (0.72, 0.20, 0.14, 1.0),
-    )
     return root
 
 
@@ -788,14 +808,21 @@ def _attach_play_script(scene_path: Path) -> None:
 
 SCENES: tuple[tuple[str, Callable[[], object]], ...] = (
     ("fr3_brick_grasp.jscn", _fr3_soft_grasp_scene),
-    ("soft_cube_stack.jscn", _stack_scene),
-    ("soft_cube_press.jscn", _press_scene),
 )
+
+
+def _stage_demo_project(output_dir: Path) -> None:
+    if output_dir == HERE:
+        return
+    shutil.copy2(HERE / "libuipc_demo.py", output_dir / "libuipc_demo.py")
+    shutil.copy2(HERE / "project.gobot", output_dir / "project.gobot")
+    shutil.copytree(HERE / "assets", output_dir / "assets", dirs_exist_ok=True)
 
 
 def build_demos(output_dir: Path = HERE) -> tuple[Path, ...]:
     output_dir = output_dir.expanduser().resolve()
     output_dir.mkdir(parents=True, exist_ok=True)
+    _stage_demo_project(output_dir)
     destinations = []
     for filename, create_scene in SCENES:
         gobot.app.context().set_project_path(str(HERE))

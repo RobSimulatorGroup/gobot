@@ -13,9 +13,10 @@ from types import MappingProxyType
 from typing import Any, Mapping, Sequence
 import xml.etree.ElementTree as ET
 
-
-class ProviderUnavailableError(RuntimeError):
-    """Raised when an explicitly requested simulation provider is unavailable."""
+from ...sim import (
+    ProviderCapabilities as BatchProviderCapabilities,
+    ProviderUnavailableError,
+)
 
 
 class GraphInvalidatedError(RuntimeError):
@@ -559,16 +560,6 @@ def validate_compiled_artifact(
     if allow_current_compiler_bridge:
         return CompiledSceneArtifact.from_compiler_mapping(artifact)
     return CompiledSceneArtifact.from_mapping(artifact)
-
-
-@dataclass(frozen=True)
-class BatchProviderCapabilities:
-    name: str
-    device: str
-    device_native: bool
-    graph_capture: bool
-    masked_reset: bool
-    fixed_capacity: bool
 
 
 @dataclass(frozen=True)

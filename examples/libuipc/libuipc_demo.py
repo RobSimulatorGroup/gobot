@@ -20,13 +20,8 @@ from gobot.render import DebugArrow, clear_debug_arrows, set_debug_arrows
 HERE = Path(__file__).resolve().parent
 DEFAULT_SCENE = HERE / "fr3_brick_grasp.jscn"
 FIXED_DT = 0.01
-LOOP_SECONDS = {
-    "libuipc_fr3_soft_grasp": 10.0,
-    "libuipc_soft_stack": 5.0,
-    "libuipc_soft_press": 8.0,
-}
-PRESS_TRAVEL = 0.14
-PRESS_PERIOD_SECONDS = 4.0
+LOOP_SECONDS = 10.0
+SCENE_ROOT_NAME = "libuipc_fr3_soft_grasp"
 FR3_INITIAL_ARM = {
     "fr3_joint1": -0.0036802115,
     "fr3_joint2": 0.023901723,
@@ -59,30 +54,21 @@ CONTACT_FORCE_ARROW_MAX_LENGTH = 0.8
 CONTACT_FORCE_ARROW_COLOR = (1.0, 0.16, 0.04, 1.0)
 
 
-def _find_descendant(node: Any, name: str) -> Any | None:
-    if node.name == name:
-        return node
-    for child in node.children:
-        result = _find_descendant(child, name)
-        if result is not None:
-            return result
-    return None
+def _nodes_by_name(root: Any) -> dict[str, Any]:
+    nodes: dict[str, Any] = {}
+    pending = [root]
+    while pending:
+        node = pending.pop()
+        if node.name in nodes:
+            raise RuntimeError(f"libuipc demo has duplicate node name {node.name!r}")
+        nodes[node.name] = node
+        pending.extend(node.children)
+    return nodes
 
 
 def _smoothstep(value: float) -> float:
     value = max(0.0, min(1.0, float(value)))
     return value * value * (3.0 - 2.0 * value)
-
-
-def _press_depth(time_seconds: float) -> float:
-    phase = math.fmod(max(0.0, time_seconds), PRESS_PERIOD_SECONDS)
-    if phase < 1.0:
-        return _smoothstep(phase)
-    if phase < 2.0:
-        return 1.0
-    if phase < 3.0:
-        return 1.0 - _smoothstep(phase - 2.0)
-    return 0.0
 
 
 def _transition(time_seconds: float, start: float, end: float) -> float:
@@ -175,109 +161,77 @@ def _contact_force_arrows(
     return arrows
 
 
-def _libuipc_config(demo_name: str) -> LibuipcConfig:
-    if demo_name == "libuipc_fr3_soft_grasp":
-        return LibuipcConfig(
-            fixed_time_step=FIXED_DT,
-            friction_coefficient=0.8,
-            contact_activation_distance=5.0e-4,
-            contact_resistance=1.0e8,
-            affine_stiffness=1.0e8,
-            kinematic_strength=100.0,
-        )
-    return LibuipcConfig(fixed_time_step=FIXED_DT)
+def _libuipc_config() -> LibuipcConfig:
+    return LibuipcConfig(
+        fixed_time_step=FIXED_DT,
+        friction_coefficient=0.8,
+        contact_activation_distance=5.0e-4,
+        contact_resistance=1.0e8,
+        affine_stiffness=1.0e8,
+        kinematic_strength=100.0,
+    )
 
 
 def _scene_provider(
     context: Any,
-    demo_name: str,
-) -> tuple[CompiledIpcSceneArtifact, LibuipcProvider]:
-    artifact = CompiledIpcSceneArtifact.from_mapping(
-        context.compile_ipc_scene_artifact()
+) -> LibuipcProvider:
+    return LibuipcProvider.from_context(
+        context,
+        config=_libuipc_config(),
     )
-    provider = LibuipcProvider(
-        artifact,
-        config=_libuipc_config(demo_name),
-    )
-    return artifact, provider
 
 
 class Script(gobot.NodeScript):
-    """Editor Play entry point shared by all libuipc demo scenes."""
+    """Editor Play entry point for the native libuipc FR3 scene."""
 
     def _ready(self) -> None:
         self.provider = None
         self.play_session = None
         self.tick = 0
-        self.loop_ticks = 1
-        self.demo_name = ""
-        self.press_path = None
-        self.press_initial = None
+        self.loop_ticks = max(1, round(LOOP_SECONDS / FIXED_DT))
         self.joint_targets = {}
         clear_debug_arrows()
         try:
             root = self.get_root()
             if root is None:
                 raise RuntimeError("libuipc demo script has no scene root")
-            if root.name not in LOOP_SECONDS:
-                raise RuntimeError(f"unknown libuipc demo scene {root.name!r}")
-            self.demo_name = root.name
-            self.loop_ticks = max(1, round(LOOP_SECONDS[root.name] / FIXED_DT))
+            if root.name != SCENE_ROOT_NAME:
+                raise RuntimeError(f"unexpected libuipc demo scene {root.name!r}")
 
-            _, self.provider = _scene_provider(self.context, root.name)
+            self.provider = _scene_provider(self.context)
+            nodes_by_name = _nodes_by_name(root)
             bodies = []
             for entry in self.provider.deformable_bodies:
                 name = str(entry["path"]).rsplit("/", 1)[-1]
-                body = _find_descendant(root, name)
+                body = nodes_by_name.get(name)
                 if body is None or body.type_name != "DeformableBody3D":
                     raise RuntimeError(f"libuipc demo is missing deformable body {name!r}")
                 bodies.append(body)
             affine_links = []
             for entry in self.provider.affine_bodies:
                 name = str(entry["path"]).rsplit("/", 1)[-1]
-                link = _find_descendant(root, name)
+                link = nodes_by_name.get(name)
                 if link is None or link.type_name != "Link3D":
                     raise RuntimeError(f"libuipc demo is missing affine link {name!r}")
                 affine_links.append(link)
             self.provider.bind_scene(self.context, bodies, affine_links)
 
-            if root.name == "libuipc_soft_press":
+            for name in FR3_JOINT_NAMES:
                 matches = [
                     str(entry["path"])
-                    for entry in self.provider.affine_bodies
-                    if str(entry["path"]).endswith("/press_head")
+                    for entry in self.provider.joints
+                    if str(entry["path"]).endswith("/" + name)
                 ]
                 if len(matches) != 1:
-                    raise RuntimeError("press demo has no unique press_head affine body")
-                self.press_path = matches[0]
-                import numpy as np
-
-                index = next(
-                    index
-                    for index, entry in enumerate(self.provider.affine_bodies)
-                    if str(entry["path"]) == self.press_path
-                )
-                self.press_initial = np.array(
-                    self.provider.arrays["affine_transforms"][index], copy=True
-                )
-
-            if root.name == "libuipc_fr3_soft_grasp":
-                for name in FR3_JOINT_NAMES:
-                    matches = [
-                        str(entry["path"])
-                        for entry in self.provider.joints
-                        if str(entry["path"]).endswith("/" + name)
-                    ]
-                    if len(matches) != 1:
-                        raise RuntimeError(
-                            f"FR3 grasp demo has no unique {name} joint"
-                        )
-                    initial = (
-                        FR3_INITIAL_ARM[name]
-                        if name in FR3_INITIAL_ARM
-                        else FR3_OPEN_FINGER
+                    raise RuntimeError(
+                        f"FR3 grasp demo has no unique {name} joint"
                     )
-                    self.joint_targets[name] = (matches[0], initial)
+                initial = (
+                    FR3_INITIAL_ARM[name]
+                    if name in FR3_INITIAL_ARM
+                    else FR3_OPEN_FINGER
+                )
+                self.joint_targets[name] = (matches[0], initial)
 
             self.provider.sync_scene()
             self.play_session = gobot.sim.ProviderPlaySession(
@@ -302,15 +256,8 @@ class Script(gobot.NodeScript):
     def _before_step(self, fixed_dt: float) -> None:
         if self.provider is None:
             return
-        if self.press_path is not None and self.press_initial is not None:
-            target = self.press_initial.copy()
-            target[2, 3] -= PRESS_TRAVEL * _press_depth(self.tick * fixed_dt)
-            self.provider.set_affine_target(self.press_path, target)
-        if self.demo_name == "libuipc_fr3_soft_grasp":
-            for name, target in _fr3_motion_targets(
-                self.tick * fixed_dt
-            ).items():
-                self.provider.set_joint_target(self.joint_targets[name][0], target)
+        for name, target in _fr3_motion_targets(self.tick * fixed_dt).items():
+            self.provider.set_joint_target(self.joint_targets[name][0], target)
         self.tick += 1
 
     def _physics_process(self, delta: float) -> None:
@@ -340,8 +287,6 @@ class Script(gobot.NodeScript):
         self.provider.reset()
         self.tick = 0
         clear_debug_arrows()
-        if self.press_path is not None and self.press_initial is not None:
-            self.provider.set_affine_target(self.press_path, self.press_initial)
         for path, initial in self.joint_targets.values():
             self.provider.set_joint_target(path, initial)
 
@@ -411,14 +356,9 @@ def main() -> None:
         "scene": args.scene.name,
     }
     if args.steps:
-        demo_name = (
-            "libuipc_fr3_soft_grasp"
-            if args.scene.name == "fr3_brick_grasp.jscn"
-            else ""
-        )
         provider = LibuipcProvider(
             artifact,
-            config=_libuipc_config(demo_name),
+            config=_libuipc_config(),
         )
         try:
             provider.step(nsteps=args.steps)

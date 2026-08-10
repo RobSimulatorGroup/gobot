@@ -5,6 +5,7 @@
 #include <cstring>
 #include <span>
 
+#include "gobot/physics/ipc_batch_solver.hpp"
 #include "gobot/physics/ipc_solver.hpp"
 
 namespace gobot::python {
@@ -73,6 +74,18 @@ IpcSolverConfig ConfigFromPython(const py::dict& value) {
     return config;
 }
 
+IpcBatchSolverConfig BatchConfigFromPython(const py::dict& value) {
+    IpcBatchSolverConfig config;
+    config.solver = ConfigFromPython(value);
+    config.environment_count = Required<std::uint32_t>(
+            value, "environment_count");
+    config.environments_per_shard = Required<std::uint32_t>(
+            value, "environments_per_shard");
+    config.external_affine_proxies = ConfigValue(
+            value, "external_affine_proxies", true);
+    return config;
+}
+
 py::list BodyInfoToPython(const std::vector<IpcSolverBodyInfo>& bodies) {
     py::list result;
     for (const IpcSolverBodyInfo& body : bodies) {
@@ -94,6 +107,70 @@ py::dict DiagnosticsToPython(const IpcSolverDiagnostics& diagnostics) {
     result["affine_body_count"] = diagnostics.affine_body_count;
     result["last_step_latency_ms"] = diagnostics.last_step_latency_ms;
     result["valid"] = diagnostics.valid;
+    return result;
+}
+
+py::dict DiagnosticsToPython(const IpcBatchSolverDiagnostics& diagnostics) {
+    py::dict result;
+    result["provider_name"] = diagnostics.provider_name;
+    result["frame"] = diagnostics.frame;
+    result["environment_count"] = diagnostics.environment_count;
+    result["shard_count"] = diagnostics.shard_count;
+    result["deformable_body_count_per_environment"] =
+            diagnostics.deformable_body_count_per_environment;
+    result["deformable_vertex_count_per_environment"] =
+            diagnostics.deformable_vertex_count_per_environment;
+    result["affine_body_count_per_environment"] =
+            diagnostics.affine_body_count_per_environment;
+    result["last_step_latency_ms"] = diagnostics.last_step_latency_ms;
+    result["valid"] = diagnostics.valid;
+    return result;
+}
+
+IpcSolverDeviceBufferView DeviceBufferFromPython(
+        const py::handle& tensor, const char* name) {
+    if (!py::hasattr(tensor, "data_ptr") ||
+        !py::hasattr(tensor, "shape") ||
+        !py::hasattr(tensor, "stride") ||
+        !py::hasattr(tensor, "dtype") ||
+        !py::hasattr(tensor, "device")) {
+        throw py::type_error(std::string(name) + " must be a Torch tensor");
+    }
+    const std::string dtype = py::str(tensor.attr("dtype"));
+    if (dtype != "torch.float64") {
+        throw py::value_error(std::string(name) + " must use torch.float64");
+    }
+    if (!tensor.attr("is_contiguous")().cast<bool>()) {
+        throw py::value_error(std::string(name) + " must be contiguous");
+    }
+    const py::object device = tensor.attr("device");
+    const std::string device_type = py::str(device.attr("type"));
+    if (device_type != "cuda") {
+        throw py::value_error(std::string(name) + " must be a CUDA tensor");
+    }
+    const py::tuple shape = py::tuple(tensor.attr("shape"));
+    const py::tuple stride = tensor.attr("stride")().cast<py::tuple>();
+    if (shape.size() > 4 || stride.size() != shape.size()) {
+        throw py::value_error(std::string(name) + " has unsupported dimensions");
+    }
+
+    IpcSolverDeviceBufferView result;
+    const std::uintptr_t address =
+            tensor.attr("data_ptr")().cast<std::uintptr_t>();
+    result.data = reinterpret_cast<void*>(address);
+    const py::object device_index = device.attr("index");
+    if (device_index.is_none()) {
+        throw py::value_error(std::string(name) + " has no CUDA device index");
+    }
+    result.device_index = device_index.cast<std::uint32_t>();
+    result.scalar_type = IpcSolverDeviceScalarType::Float64;
+    result.rank = static_cast<std::uint32_t>(shape.size());
+    for (py::ssize_t axis = 0; axis < shape.size(); ++axis) {
+        result.shape[static_cast<std::size_t>(axis)] =
+                shape[axis].cast<std::size_t>();
+        result.stride[static_cast<std::size_t>(axis)] =
+                stride[axis].cast<std::size_t>();
+    }
     return result;
 }
 
@@ -233,6 +310,105 @@ private:
     bool closed_{false};
 };
 
+class PyIpcBatchSolverSession final {
+public:
+    PyIpcBatchSolverSession(const py::dict& artifact,
+                            const py::dict& config,
+                            const std::string& module_path) {
+        std::string error;
+        session_ = IpcBatchSolverSession::Create(
+                ArtifactFromPython(artifact), BatchConfigFromPython(config),
+                module_path, &error);
+        if (session_ == nullptr) {
+            throw std::runtime_error(
+                    error.empty() ? "IPC batch solver session creation failed"
+                                  : error);
+        }
+    }
+
+    static bool IsModuleAvailable(const std::string& module_path) {
+        return IpcBatchSolverSession::IsModuleAvailable(module_path);
+    }
+
+    void BindDeviceBuffers(const py::dict& values) {
+        IpcBatchSolverModuleBuffers buffers;
+        buffers.deformable_positions = DeviceBufferFromPython(
+                values["positions"], "positions");
+        buffers.deformable_velocities = DeviceBufferFromPython(
+                values["velocities"], "velocities");
+        buffers.deformable_contact_forces = DeviceBufferFromPython(
+                values["contact_forces"], "contact_forces");
+        buffers.affine_targets = DeviceBufferFromPython(
+                values["affine_targets"], "affine_targets");
+        buffers.affine_transforms = DeviceBufferFromPython(
+                values["affine_transforms"], "affine_transforms");
+        buffers.affine_contact_wrenches = DeviceBufferFromPython(
+                values["affine_contact_wrenches"],
+                "affine_contact_wrenches");
+        if (!RequireSession().BindDeviceBuffers(buffers)) {
+            throw std::runtime_error(RequireSession().GetLastError());
+        }
+    }
+
+    void Step(std::uint32_t steps) {
+        bool success = false;
+        {
+            py::gil_scoped_release release;
+            success = RequireSession().Step(steps);
+        }
+        if (!success) {
+            throw std::runtime_error(RequireSession().GetLastError());
+        }
+    }
+
+    void Reset() {
+        bool success = false;
+        {
+            py::gil_scoped_release release;
+            success = RequireSession().ResetFull();
+        }
+        if (!success) {
+            throw std::runtime_error(RequireSession().GetLastError());
+        }
+    }
+
+    void Synchronize() {
+        bool success = false;
+        {
+            py::gil_scoped_release release;
+            success = RequireSession().Synchronize();
+        }
+        if (!success) {
+            throw std::runtime_error(RequireSession().GetLastError());
+        }
+    }
+
+    py::list DeformableBodies() const {
+        return BodyInfoToPython(RequireSession().GetDeformableBodies());
+    }
+
+    py::list AffineBodies() const {
+        return BodyInfoToPython(RequireSession().GetAffineBodies());
+    }
+
+    py::dict Diagnostics() const {
+        return DiagnosticsToPython(RequireSession().GetDiagnostics());
+    }
+
+    void Close() { closed_ = true; }
+
+private:
+    IpcBatchSolverSession& RequireSession() const {
+        if (closed_ || session_ == nullptr) {
+            throw std::runtime_error("IPC batch solver session is closed");
+        }
+        return *session_;
+    }
+
+    std::unique_ptr<IpcBatchSolverSession> session_;
+    bool closed_{false};
+};
+
 } // namespace
 
 void RegisterManualIpcSolverBindings(py::module_& module) {
@@ -277,6 +453,29 @@ void RegisterManualIpcSolverBindings(py::module_& module) {
                     })
             .def_property_readonly("diagnostics", &PyIpcSolverSession::Diagnostics)
             .def("close", &PyIpcSolverSession::Close);
+
+    py::class_<PyIpcBatchSolverSession>(module, "_IpcBatchSolverSession")
+            .def(py::init<const py::dict&, const py::dict&,
+                          const std::string&>(),
+                 py::arg("artifact"), py::arg("config") = py::dict{},
+                 py::arg("module_path") = std::string{})
+            .def_static("is_module_available",
+                        &PyIpcBatchSolverSession::IsModuleAvailable,
+                        py::arg("module_path") = std::string{})
+            .def("bind_device_buffers",
+                 &PyIpcBatchSolverSession::BindDeviceBuffers,
+                 py::arg("buffers"))
+            .def("step", &PyIpcBatchSolverSession::Step,
+                 py::arg("steps") = 1)
+            .def("reset", &PyIpcBatchSolverSession::Reset)
+            .def("synchronize", &PyIpcBatchSolverSession::Synchronize)
+            .def_property_readonly("deformable_bodies",
+                                   &PyIpcBatchSolverSession::DeformableBodies)
+            .def_property_readonly("affine_bodies",
+                                   &PyIpcBatchSolverSession::AffineBodies)
+            .def_property_readonly("diagnostics",
+                                   &PyIpcBatchSolverSession::Diagnostics)
+            .def("close", &PyIpcBatchSolverSession::Close);
 }
 
 } // namespace gobot::python

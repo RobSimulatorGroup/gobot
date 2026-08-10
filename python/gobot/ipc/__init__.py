@@ -1,32 +1,17 @@
-"""Device-native affine/tetrahedral IPC simulation contracts."""
+"""Native libuipc scene artifacts and simulation provider."""
 
 from ._artifact import CompiledIpcSceneArtifact
+from ._batch_solver import LibuipcBatchConfig, LibuipcBatchSolver
 from ._libuipc_provider import (
     LibuipcConfig,
     LibuipcProvider,
     LibuipcProviderAvailability,
 )
-from ._provider import WarpIpcConfig, WarpIpcProvider
-from ._views import (
-    DeformableBatchSpec,
-    DeformableBatchState,
-    DeformableBatchView,
-    TactileBatchSpec,
-    TactileBatchState,
-    TactileBatchView,
-)
-
 __all__ = [
     "CompiledIpcSceneArtifact",
-    "DeformableBatchSpec",
-    "DeformableBatchState",
-    "DeformableBatchView",
+    "LibuipcBatchConfig",
+    "LibuipcBatchSolver",
     "LibuipcConfig",
     "LibuipcProvider",
     "LibuipcProviderAvailability",
-    "TactileBatchSpec",
-    "TactileBatchState",
-    "TactileBatchView",
-    "WarpIpcConfig",
-    "WarpIpcProvider",
 ]

@@ -3,6 +3,7 @@ from __future__ import annotations
 import importlib.util
 import os
 from pathlib import Path
+import tempfile
 
 
 if os.environ.get("GOBOT_RUN_LIBUIPC_GPU_TEST") != "1":
@@ -12,6 +13,8 @@ import numpy as np
 
 import gobot
 from gobot.ipc import LibuipcConfig, LibuipcProvider
+
+from libuipc_test_scenes import build_libuipc_test_scene
 
 
 ROOT = Path(__file__).resolve().parents[2]
@@ -30,8 +33,16 @@ def _load_play_script():
 
 
 def _provider(scene_name: str):
+    temporary_directory = None
+    project_root = EXAMPLE_ROOT
+    if scene_name != "fr3_brick_grasp.jscn":
+        temporary_directory = tempfile.TemporaryDirectory(
+            prefix="gobot-libuipc-gpu-fixture-"
+        )
+        project_root = Path(temporary_directory.name)
+        build_libuipc_test_scene(project_root, scene_name)
     context = gobot.app.create_context()
-    context.set_project_path(str(EXAMPLE_ROOT))
+    context.set_project_path(str(project_root))
     context.load_scene("res://" + scene_name)
     if scene_name == "fr3_brick_grasp.jscn":
         config = LibuipcConfig(
@@ -50,7 +61,7 @@ def _provider(scene_name: str):
         context,
         config=config,
     )
-    return context, provider
+    return context, provider, temporary_directory
 
 
 def _assert_finite(provider: LibuipcProvider) -> np.ndarray:
@@ -75,7 +86,7 @@ def _assert_contact_forces(
 def test_fr3_soft_box_grasp_joint_targets() -> None:
     demo = _load_play_script()
     assert demo.FR3_CLOSED_FINGER == 0.0146
-    context, provider = _provider("fr3_brick_grasp.jscn")
+    context, provider, temporary_directory = _provider("fr3_brick_grasp.jscn")
     held_positions = np.asarray(provider.arrays["positions"])
     try:
         assert not held_positions.flags.writeable
@@ -229,23 +240,48 @@ def test_fr3_soft_box_grasp_joint_targets() -> None:
     finally:
         provider.close()
         del context
+        if temporary_directory is not None:
+            temporary_directory.cleanup()
     assert np.isfinite(held_positions).all()
 
 
 def test_two_deformable_contact() -> None:
-    context, provider = _provider("soft_cube_stack.jscn")
+    context, provider, temporary_directory = _provider("soft_cube_stack.jscn")
     try:
-        provider.step(nsteps=50)
+        upper_body = next(
+            entry
+            for entry in provider.deformable_bodies
+            if str(entry["path"]).endswith("/upper_cube")
+        )
+        upper_offset = int(upper_body["element_offset"])
+        upper_count = int(upper_body["element_count"])
+        peak_airborne_contact = 0.0
+        for _ in range(80):
+            provider.step()
+            positions = np.asarray(provider.arrays["positions"])
+            forces = _assert_contact_forces(
+                provider, positions
+            )
+            upper_positions = positions[upper_offset : upper_offset + upper_count]
+            upper_forces = forces[upper_offset : upper_offset + upper_count]
+            if float(upper_positions[:, 2].min()) > 0.06:
+                peak_airborne_contact = max(
+                    peak_airborne_contact,
+                    float(np.linalg.norm(upper_forces, axis=1).max()),
+                )
         positions = _assert_finite(provider)
         assert provider.diagnostics["deformable_body_count"] == 2
+        assert peak_airborne_contact > 1.0e-4
         assert float(positions[:, 2].min()) > -0.01
     finally:
         provider.close()
         del context
+        if temporary_directory is not None:
+            temporary_directory.cleanup()
 
 
 def test_affine_press_target() -> None:
-    context, provider = _provider("soft_cube_press.jscn")
+    context, provider, temporary_directory = _provider("soft_cube_press.jscn")
     try:
         matches = [
             (index, str(entry["path"]))
@@ -270,6 +306,8 @@ def test_affine_press_target() -> None:
     finally:
         provider.close()
         del context
+        if temporary_directory is not None:
+            temporary_directory.cleanup()
 
 
 def main() -> int:

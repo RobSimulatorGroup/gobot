@@ -1,7 +1,5 @@
 """Optional batched simulation providers."""
 
-from importlib import import_module
-
 from .base import (
     BatchPhysicsProvider,
     BatchProviderCapabilities,
@@ -22,6 +20,13 @@ from .mujoco_warp import (
     MuJoCoWarpRaycastSensorSpec,
     MuJoCoWarpRobotLayout,
 )
+from .mujoco_ipc import (
+    CompiledMuJoCoIpcArtifact,
+    MuJoCoIpcBodyMapping,
+    MuJoCoIpcConfig,
+    MuJoCoIpcCoupler,
+    MuJoCoIpcProvider,
+)
 from .newton import (
     NewtonModelConfig,
     NewtonProvider,
@@ -29,48 +34,23 @@ from .newton import (
     NewtonRobotLayout,
 )
 
-_IPC_EXPORTS = {
-    "CompiledIpcSceneArtifact",
-    "DeformableBatchSpec",
-    "DeformableBatchState",
-    "DeformableBatchView",
-    "LibuipcConfig",
-    "LibuipcProvider",
-    "LibuipcProviderAvailability",
-    "TactileBatchSpec",
-    "TactileBatchState",
-    "TactileBatchView",
-    "WarpIpcConfig",
-    "WarpIpcProvider",
-}
-
-
-def __getattr__(name: str):
-    if name in _IPC_EXPORTS:
-        value = getattr(import_module("gobot.ipc"), name)
-        globals()[name] = value
-        return value
-    raise AttributeError(f"module {__name__!r} has no attribute {name!r}")
-
 __all__ = [
     "BatchPhysicsProvider",
     "BatchProviderCapabilities",
     "CompiledControlTopology",
     "CompiledRobotTopology",
     "CompiledSceneArtifact",
+    "CompiledMuJoCoIpcArtifact",
     "GraphInvalidatedError",
-    "LibuipcConfig",
-    "LibuipcProvider",
-    "LibuipcProviderAvailability",
-    "CompiledIpcSceneArtifact",
-    "DeformableBatchSpec",
-    "DeformableBatchState",
-    "DeformableBatchView",
     "MuJoCoWarpContactSensorSpec",
     "MuJoCoWarpProvider",
     "MuJoCoWarpProviderAvailability",
     "MuJoCoWarpRaycastSensorSpec",
     "MuJoCoWarpRobotLayout",
+    "MuJoCoIpcBodyMapping",
+    "MuJoCoIpcConfig",
+    "MuJoCoIpcCoupler",
+    "MuJoCoIpcProvider",
     "NewtonModelConfig",
     "NewtonProvider",
     "NewtonProviderAvailability",
@@ -80,9 +60,4 @@ __all__ = [
     "RobotBatchState",
     "RobotBatchView",
     "SimulationCapacityError",
-    "TactileBatchSpec",
-    "TactileBatchState",
-    "TactileBatchView",
-    "WarpIpcConfig",
-    "WarpIpcProvider",
 ]

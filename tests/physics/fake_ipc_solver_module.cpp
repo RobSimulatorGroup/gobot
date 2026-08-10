@@ -5,6 +5,7 @@
  */
 
 #include "gobot/physics/ipc_solver_module_api.hpp"
+#include "gobot/physics/ipc_batch_solver_module_api.hpp"
 
 #include <algorithm>
 #include <array>
@@ -21,6 +22,10 @@ using gobot::IpcSolverModuleApi;
 using gobot::IpcSolverModuleBodyInfo;
 using gobot::IpcSolverModuleConfig;
 using gobot::IpcSolverModuleDiagnostics;
+using gobot::IpcBatchSolverModuleApi;
+using gobot::IpcBatchSolverModuleBuffers;
+using gobot::IpcBatchSolverModuleConfig;
+using gobot::IpcBatchSolverModuleDiagnostics;
 
 constexpr std::array<double, 16> kIdentity{
         1.0, 0.0, 0.0, 0.0,
@@ -266,9 +271,209 @@ const IpcSolverModuleApi kApi{
         &SetJointTarget,
         &Diagnostics};
 
+struct BatchSession {
+    std::uint32_t environment_count{0};
+    std::uint32_t environments_per_shard{0};
+    IpcBatchSolverModuleBuffers buffers{};
+    std::uint64_t frame{0};
+    bool bound{false};
+};
+
+double* Data(const gobot::IpcSolverDeviceBufferView& view) {
+    return static_cast<double*>(view.data);
+}
+
+void InitializeBatchBuffers(BatchSession* session) {
+    const std::size_t environments = session->environment_count;
+    double* positions = Data(session->buffers.deformable_positions);
+    double* velocities = Data(session->buffers.deformable_velocities);
+    double* contact_forces = Data(session->buffers.deformable_contact_forces);
+    double* transforms = Data(session->buffers.affine_transforms);
+    double* targets = Data(session->buffers.affine_targets);
+    double* wrenches = Data(session->buffers.affine_contact_wrenches);
+    for (std::size_t environment = 0; environment < environments;
+         ++environment) {
+        const std::size_t vertex_offset = environment * 2 * 3;
+        std::fill_n(positions + vertex_offset, 6, 0.0);
+        positions[vertex_offset + 2] = 1.0;
+        positions[vertex_offset + 5] = 1.0;
+        std::fill_n(velocities + vertex_offset, 6, 0.0);
+        std::fill_n(contact_forces + vertex_offset, 6, 0.0);
+        std::copy_n(targets + environment * 16, 16,
+                    transforms + environment * 16);
+        std::fill_n(wrenches + environment * 6, 6, 0.0);
+    }
+}
+
+void* BatchCreate(const IpcSolverArtifactView* artifact,
+                  const IpcBatchSolverModuleConfig* config,
+                  char* error,
+                  std::size_t error_size) {
+    if (artifact == nullptr || config == nullptr || artifact->manifest == nullptr ||
+        config->environment_count == 0 ||
+        config->environments_per_shard == 0 ||
+        config->environment_count % config->environments_per_shard != 0) {
+        WriteError(error, error_size, "fake IPC batch module rejected its config");
+        return nullptr;
+    }
+    auto session = std::make_unique<BatchSession>();
+    session->environment_count = config->environment_count;
+    session->environments_per_shard = config->environments_per_shard;
+    return session.release();
+}
+
+void BatchDestroy(void* session) {
+    delete static_cast<BatchSession*>(session);
+}
+
+bool BatchBind(void* opaque,
+               const IpcBatchSolverModuleBuffers* buffers,
+               char* error,
+               std::size_t error_size) {
+    auto* session = static_cast<BatchSession*>(opaque);
+    if (session == nullptr || buffers == nullptr ||
+        buffers->deformable_positions.data == nullptr ||
+        buffers->affine_targets.data == nullptr) {
+        WriteError(error, error_size, "fake IPC batch buffers are invalid");
+        return false;
+    }
+    session->buffers = *buffers;
+    session->bound = true;
+    InitializeBatchBuffers(session);
+    return true;
+}
+
+bool BatchStep(void* opaque,
+               std::uint32_t steps,
+               char* error,
+               std::size_t error_size) {
+    auto* session = static_cast<BatchSession*>(opaque);
+    if (session == nullptr || !session->bound || steps == 0) {
+        WriteError(error, error_size, "fake IPC batch step is invalid");
+        return false;
+    }
+    session->frame += steps;
+    double* positions = Data(session->buffers.deformable_positions);
+    double* velocities = Data(session->buffers.deformable_velocities);
+    double* contact_forces = Data(session->buffers.deformable_contact_forces);
+    double* transforms = Data(session->buffers.affine_transforms);
+    double* targets = Data(session->buffers.affine_targets);
+    double* wrenches = Data(session->buffers.affine_contact_wrenches);
+    for (std::size_t environment = 0;
+         environment < session->environment_count; ++environment) {
+        for (std::size_t vertex = 0; vertex < 2; ++vertex) {
+            const std::size_t offset = (environment * 2 + vertex) * 3;
+            positions[offset] += 0.25 * static_cast<double>(steps);
+            velocities[offset] = 0.25;
+            contact_forces[offset + 2] =
+                    static_cast<double>((vertex + 1) * session->frame);
+        }
+        std::copy_n(targets + environment * 16, 16,
+                    transforms + environment * 16);
+        std::fill_n(wrenches + environment * 6, 6, 0.0);
+        wrenches[environment * 6 + 2] =
+                static_cast<double>(session->frame);
+    }
+    return true;
+}
+
+bool BatchReset(void* opaque, char* error, std::size_t error_size) {
+    auto* session = static_cast<BatchSession*>(opaque);
+    if (session == nullptr || !session->bound) {
+        WriteError(error, error_size, "fake IPC batch reset is invalid");
+        return false;
+    }
+    session->frame = 0;
+    InitializeBatchBuffers(session);
+    return true;
+}
+
+bool BatchSynchronize(void* opaque, char* error, std::size_t error_size) {
+    auto* session = static_cast<BatchSession*>(opaque);
+    if (session == nullptr || !session->bound) {
+        WriteError(error, error_size, "fake IPC batch sync is invalid");
+        return false;
+    }
+    return true;
+}
+
+std::size_t BatchDeformableBodyCount(void*) { return 1; }
+
+bool BatchDeformableBodyInfo(void* opaque,
+                             std::size_t index,
+                             IpcSolverModuleBodyInfo* info,
+                             char* error,
+                             std::size_t error_size) {
+    if (opaque == nullptr || info == nullptr || index != 0) {
+        WriteError(error, error_size,
+                   "fake IPC batch deformable body index is invalid");
+        return false;
+    }
+    *info = IpcSolverModuleBodyInfo{"/World/Soft", 0, 2};
+    return true;
+}
+
+std::size_t BatchAffineBodyCount(void*) { return 1; }
+
+bool BatchAffineBodyInfo(void* opaque,
+                         std::size_t index,
+                         IpcSolverModuleBodyInfo* info,
+                         char* error,
+                         std::size_t error_size) {
+    if (opaque == nullptr || info == nullptr || index != 0) {
+        WriteError(error, error_size,
+                   "fake IPC batch affine body index is invalid");
+        return false;
+    }
+    *info = IpcSolverModuleBodyInfo{"/World/Robot/Finger", 0, 1};
+    return true;
+}
+
+bool BatchDiagnostics(void* opaque,
+                      IpcBatchSolverModuleDiagnostics* diagnostics,
+                      char* error,
+                      std::size_t error_size) {
+    auto* session = static_cast<BatchSession*>(opaque);
+    if (session == nullptr || diagnostics == nullptr) {
+        WriteError(error, error_size,
+                   "fake IPC batch diagnostics output is invalid");
+        return false;
+    }
+    *diagnostics = IpcBatchSolverModuleDiagnostics{
+            session->frame,
+            session->environment_count,
+            session->environment_count / session->environments_per_shard,
+            1,
+            2,
+            1,
+            0.25,
+            true};
+    return true;
+}
+
+const IpcBatchSolverModuleApi kBatchApi{
+        gobot::GOBOT_IPC_BATCH_SOLVER_MODULE_ABI_VERSION,
+        "fake-ipc-batch",
+        &BatchCreate,
+        &BatchDestroy,
+        &BatchBind,
+        &BatchStep,
+        &BatchReset,
+        &BatchSynchronize,
+        &BatchDeformableBodyCount,
+        &BatchDeformableBodyInfo,
+        &BatchAffineBodyCount,
+        &BatchAffineBodyInfo,
+        &BatchDiagnostics};
+
 } // namespace
 
 extern "C" __attribute__((visibility("default")))
 const gobot::IpcSolverModuleApi* gobot_ipc_solver_get_api() {
     return &kApi;
+}
+
+extern "C" __attribute__((visibility("default")))
+const gobot::IpcBatchSolverModuleApi* gobot_ipc_solver_get_batch_api() {
+    return &kBatchApi;
 }

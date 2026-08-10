@@ -401,16 +401,6 @@ set_tests_properties(test_python_robot_batch_view
             WORKING_DIRECTORY "${CMAKE_SOURCE_DIR}"
 )
 add_test(
-        NAME test_python_warp_ipc_provider
-        COMMAND ${Python3_EXECUTABLE} -S
-                ${CMAKE_CURRENT_SOURCE_DIR}/python/test_warp_ipc_provider.py
-)
-set_tests_properties(test_python_warp_ipc_provider
-        PROPERTIES
-            ENVIRONMENT "${GOBOT_PYTHON_TEST_ENV}"
-            WORKING_DIRECTORY "${CMAKE_SOURCE_DIR}"
-)
-add_test(
         NAME test_python_libuipc_provider
         COMMAND ${Python3_EXECUTABLE} -S
                 ${CMAKE_CURRENT_SOURCE_DIR}/python/test_libuipc_provider.py
@@ -430,6 +420,16 @@ set_tests_properties(test_python_libuipc_examples
             ENVIRONMENT "${GOBOT_PYTHON_TEST_ENV}"
             WORKING_DIRECTORY "${CMAKE_SOURCE_DIR}"
 )
+add_test(
+        NAME test_python_mujoco_ipc_provider
+        COMMAND ${Python3_EXECUTABLE} -S
+                ${CMAKE_CURRENT_SOURCE_DIR}/python/test_mujoco_ipc_provider.py
+)
+set_tests_properties(test_python_mujoco_ipc_provider
+        PROPERTIES
+            ENVIRONMENT "${GOBOT_PYTHON_TEST_ENV}"
+            WORKING_DIRECTORY "${CMAKE_SOURCE_DIR}"
+)
 if(GOB_BUILD_LIBUIPC)
     add_test(
             NAME test_python_libuipc_gpu
@@ -443,19 +443,19 @@ if(GOB_BUILD_LIBUIPC)
                 SKIP_RETURN_CODE 77
                 WORKING_DIRECTORY "${CMAKE_SOURCE_DIR}"
     )
+    add_test(
+            NAME test_python_libuipc_batch_gpu
+            COMMAND ${Python3_EXECUTABLE} -S
+                    ${CMAKE_CURRENT_SOURCE_DIR}/python/test_libuipc_batch_gpu.py
+    )
+    set_tests_properties(test_python_libuipc_batch_gpu
+            PROPERTIES
+                ENVIRONMENT "${GOBOT_PYTHON_TEST_ENV}"
+                RESOURCE_LOCK gobot_cuda
+                SKIP_RETURN_CODE 77
+                WORKING_DIRECTORY "${CMAKE_SOURCE_DIR}"
+    )
 endif()
-add_test(
-        NAME test_python_warp_ipc_gpu_kernels
-        COMMAND ${Python3_EXECUTABLE} -S
-                ${CMAKE_CURRENT_SOURCE_DIR}/python/test_warp_ipc_gpu_kernels.py
-)
-set_tests_properties(test_python_warp_ipc_gpu_kernels
-        PROPERTIES
-            ENVIRONMENT "${GOBOT_PYTHON_TEST_ENV}"
-            RESOURCE_LOCK gobot_cuda
-            SKIP_RETURN_CODE 77
-            WORKING_DIRECTORY "${CMAKE_SOURCE_DIR}"
-)
 add_test(
         NAME test_python_terrain_generation_scene
         COMMAND ${Python3_EXECUTABLE} -S ${CMAKE_CURRENT_SOURCE_DIR}/python/test_terrain_generation_scene.py
