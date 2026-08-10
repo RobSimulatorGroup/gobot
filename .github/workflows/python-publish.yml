@@ -305,11 +305,15 @@ jobs:
             3rdparty/assimp \
             3rdparty/gli \
             3rdparty/imgui \
+            3rdparty/libuipc \
             3rdparty/luisa_compute \
             3rdparty/meshoptimizer \
             3rdparty/pybind11 \
             3rdparty/rttr \
             3rdparty/stb
+          git -C 3rdparty/libuipc submodule sync --recursive
+          git -C 3rdparty/libuipc -c protocol.version=2 submodule update \
+            --init --force --depth=1 --recursive
 
       - name: Download LuisaCompute and CUDA build SDK
         uses: actions/download-artifact@v4

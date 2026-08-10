@@ -428,6 +428,7 @@ add_test(
 set_tests_properties(test_python_mujoco_ipc_provider
         PROPERTIES
             ENVIRONMENT "${GOBOT_PYTHON_TEST_ENV}"
+            SKIP_RETURN_CODE 77
             WORKING_DIRECTORY "${CMAKE_SOURCE_DIR}"
 )
 if(GOB_BUILD_LIBUIPC)

@@ -3,8 +3,10 @@ from __future__ import annotations
 import importlib.util
 import json
 from pathlib import Path
+import sys
 import tempfile
 import xml.etree.ElementTree as ET
+from unittest.mock import patch
 
 import gobot
 import numpy as np
@@ -165,13 +167,21 @@ def test_mujoco_libuipc_play_script_uses_the_composite_gpu_provider() -> None:
 
 
 def test_mujoco_libuipc_display_copies_are_runtime_only_and_unique() -> None:
-    module = _load_mujoco_libuipc_play_script()
+    with patch.dict(sys.modules, {"torch": None}):
+        module = _load_mujoco_libuipc_play_script()
     context = gobot.app.create_context()
     context.set_project_path(str(MUJOCO_LIBUIPC_EXAMPLE_ROOT))
     root = context.load_scene("res://soft_press_batch.jscn")
     artifact = CompiledMuJoCoIpcArtifact.from_context(context)
 
-    display_roots, display_nodes = module._create_display_scenes(root)
+    original_file = module.__file__
+    module.__file__ = "res://mujoco_libuipc_play.py"
+    try:
+        display_roots, display_nodes = module._create_display_scenes(
+            root, context.project_path
+        )
+    finally:
+        module.__file__ = original_file
     assert len(display_roots) == len(display_nodes) == module.NUM_ENVS == 4
     assert tuple(display_root.name for display_root in display_roots) == (
         "mujoco_libuipc_soft_press",

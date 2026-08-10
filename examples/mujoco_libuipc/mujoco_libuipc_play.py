@@ -8,9 +8,6 @@ from pathlib import Path
 import tempfile
 from typing import Any
 
-# Load Torch's CUDA runtime before the native libuipc solver module.
-import torch
-
 import gobot
 from gobot.ipc import LibuipcBatchConfig, LibuipcBatchSolver, LibuipcConfig
 from gobot.rl import (
@@ -112,8 +109,14 @@ def _solver_module_path(project_path: str) -> str:
     return ""
 
 
-def _load_scene_builder() -> Any:
-    path = Path(__file__).with_name("build_scene.py")
+def _load_scene_builder(project_path: str) -> Any:
+    if not str(project_path).strip():
+        raise RuntimeError("MuJoCo+libuipc display setup requires a project path")
+    path = Path(project_path).expanduser().resolve() / "build_scene.py"
+    if not path.is_file():
+        raise FileNotFoundError(
+            f"MuJoCo+libuipc scene builder does not exist: {path}"
+        )
     spec = importlib.util.spec_from_file_location(
         "gobot_mujoco_libuipc_runtime_builder", path
     )
@@ -126,8 +129,9 @@ def _load_scene_builder() -> Any:
 
 def _create_display_scenes(
     root: Any,
+    project_path: str,
 ) -> tuple[tuple[Any, ...], tuple[dict[str, Any], ...]]:
-    builder = _load_scene_builder()
+    builder = _load_scene_builder(project_path)
     display_roots = [root]
     display_nodes = [_nodes_by_name(root)]
     for environment in range(1, NUM_ENVS):
@@ -159,6 +163,9 @@ class Script(gobot.NodeScript):
     """Run the GPU batch and render all four environments in Play Mode."""
 
     def _ready(self) -> None:
+        # Load Torch's CUDA runtime before the native libuipc solver module.
+        import torch
+
         self.provider = None
         self.play_session = None
         self.press_view = None
@@ -212,7 +219,9 @@ class Script(gobot.NodeScript):
                 link_names=("press_head",),
             )
 
-            display_roots, display_nodes = _create_display_scenes(root)
+            display_roots, display_nodes = _create_display_scenes(
+                root, self.context.project_path
+            )
             self.display_roots = display_roots
             self.display_nodes = display_nodes
             self.display_press_heads = tuple(

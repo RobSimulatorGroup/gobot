@@ -6,7 +6,12 @@ import json
 from pathlib import Path
 from types import MappingProxyType
 
-import torch
+try:
+    import torch
+except ModuleNotFoundError as error:
+    if error.name != "torch":
+        raise
+    torch = None
 
 import gobot
 from gobot.ipc import (
@@ -570,6 +575,9 @@ def test_composite_rejects_time_step_and_layout_mismatch() -> None:
 
 
 def main() -> int:
+    if torch is None:
+        print("MuJoCo+IPC provider test skipped: Torch is not installed")
+        return 77
     test_composite_artifact_has_explicit_mapping_and_ownership()
     test_composite_rejects_v1_and_missing_physics_coupling()
     test_libuipc_batch_solver_owns_stable_tensor_storage()

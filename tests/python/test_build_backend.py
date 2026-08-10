@@ -59,6 +59,16 @@ def test_python_build_defaults_enable_complete_native_runtime() -> None:
     assert "[project.optional-dependencies]" not in pyproject
 
 
+def test_release_wheel_checkout_includes_libuipc_sources() -> None:
+    workflow = (
+        backend.ROOT / ".github" / "workflows" / "python-publish.yml"
+    ).read_text(encoding="utf-8")
+
+    assert "3rdparty/libuipc" in workflow
+    assert "git -C 3rdparty/libuipc submodule sync --recursive" in workflow
+    assert "git -C 3rdparty/libuipc -c protocol.version=2 submodule update" in workflow
+
+
 def test_removed_warp_ipc_demo_is_not_packaged() -> None:
     cmake = (backend.ROOT / "CMakeLists.txt").read_text(encoding="utf-8")
 
@@ -286,6 +296,7 @@ def test_source_archive_without_submodules_fails_clearly() -> None:
 
 def main() -> None:
     test_python_build_defaults_enable_complete_native_runtime()
+    test_release_wheel_checkout_includes_libuipc_sources()
     test_removed_warp_ipc_demo_is_not_packaged()
     test_wheel_and_editable_hooks_prepare_dependencies()
     test_metadata_and_sdist_do_not_prepare_dependencies()
