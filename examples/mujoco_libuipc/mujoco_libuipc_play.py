@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import importlib.util
 import os
 from pathlib import Path
 import tempfile
@@ -24,7 +25,13 @@ SCENE_ROOT_NAME = "mujoco_libuipc_soft_press"
 FIXED_DT = 0.002
 NUM_ENVS = 4
 ENVIRONMENTS_PER_SHARD = 4
-DISPLAY_ENV = NUM_ENVS - 1
+GRID_OFFSETS = (
+    (0.0, 0.0, 0.0),
+    (0.50, 0.0, 0.0),
+    (0.0, 0.45, 0.0),
+    (0.50, 0.45, 0.0),
+)
+DEPTH_SCALES = (0.75, 5.0 / 6.0, 11.0 / 12.0, 1.0)
 PRESS_DEPTH = 0.17
 SETTLE_TICKS = 16
 PRESS_TICKS = 128
@@ -105,6 +112,35 @@ def _solver_module_path(project_path: str) -> str:
     return ""
 
 
+def _load_scene_builder() -> Any:
+    path = Path(__file__).with_name("build_scene.py")
+    spec = importlib.util.spec_from_file_location(
+        "gobot_mujoco_libuipc_runtime_builder", path
+    )
+    if spec is None or spec.loader is None:
+        raise RuntimeError(f"cannot load MuJoCo+libuipc scene builder: {path}")
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    return module
+
+
+def _create_display_scenes(
+    root: Any,
+) -> tuple[tuple[Any, ...], tuple[dict[str, Any], ...]]:
+    builder = _load_scene_builder()
+    display_roots = [root]
+    display_nodes = [_nodes_by_name(root)]
+    for environment in range(1, NUM_ENVS):
+        display_root = builder.create_scene()
+        display_root.name = f"display_env_{environment}"
+        root.add_child(display_root)
+        display_roots.append(display_root)
+        display_nodes.append(_nodes_by_name(display_root))
+    for display_root, offset in zip(display_roots, GRID_OFFSETS, strict=True):
+        display_root.position = offset
+    return tuple(display_roots), tuple(display_nodes)
+
+
 def _batch_config(context: Any) -> LibuipcBatchConfig:
     return LibuipcBatchConfig(
         solver=LibuipcConfig(
@@ -120,16 +156,19 @@ def _batch_config(context: Any) -> LibuipcBatchConfig:
 
 
 class Script(gobot.NodeScript):
-    """Run the GPU batch and render its deepest-press environment in Play Mode."""
+    """Run the GPU batch and render all four environments in Play Mode."""
 
     def _ready(self) -> None:
         self.provider = None
         self.play_session = None
         self.press_view = None
-        self.press_joint = None
-        self.deformable_bodies = ()
-        self.deformable_counts = ()
+        self.display_roots = ()
+        self.display_nodes = ()
+        self.display_press_heads = ()
+        self.display_deformable_bodies = ()
+        self.display_deformable_counts = ()
         self.deformable_buffer = None
+        self.link_pose_buffer = None
         self.command = None
         self.depth_scale = None
         self.reset_mask = None
@@ -138,7 +177,6 @@ class Script(gobot.NodeScript):
             root = self.get_root()
             if root is None or root.name != SCENE_ROOT_NAME:
                 raise RuntimeError("unexpected MuJoCo+libuipc demo scene root")
-            nodes = _nodes_by_name(root)
 
             solver_config = _batch_config(self.context)
             rigid_availability = MuJoCoWarpProvider.availability()
@@ -172,35 +210,40 @@ class Script(gobot.NodeScript):
                 base_link="press_head",
                 joint_names=("press_slide",),
                 link_names=("press_head",),
-                scene_context=self.context,
-                scene_links=(nodes["press_head"],),
             )
-            self.press_joint = nodes["press_slide"]
 
+            display_roots, display_nodes = _create_display_scenes(root)
+            self.display_roots = display_roots
+            self.display_nodes = display_nodes
+            self.display_press_heads = tuple(
+                nodes["press_head"] for nodes in display_nodes
+            )
+
+            deformable_entries = tuple(self.provider.ipc_solver.deformable_bodies)
             bodies = []
             counts = []
-            for entry in self.provider.ipc_solver.deformable_bodies:
-                name = str(entry["path"]).rsplit("/", 1)[-1]
-                body = nodes.get(name)
-                if body is None or body.type_name != "DeformableBody3D":
-                    raise RuntimeError(
-                        f"MuJoCo+libuipc demo is missing deformable body {name!r}"
-                    )
-                bodies.append(body)
-                counts.append(int(entry["element_count"]))
-            self.deformable_bodies = tuple(bodies)
-            self.deformable_counts = tuple(counts)
+            for nodes in display_nodes:
+                for entry in deformable_entries:
+                    name = str(entry["path"]).rsplit("/", 1)[-1]
+                    body = nodes.get(name)
+                    if body is None or body.type_name != "DeformableBody3D":
+                        raise RuntimeError(
+                            f"MuJoCo+libuipc demo is missing deformable body {name!r}"
+                        )
+                    bodies.append(body)
+                    counts.append(int(entry["element_count"]))
+            self.display_deformable_bodies = tuple(bodies)
+            self.display_deformable_counts = tuple(counts)
 
             import numpy as np
 
             self.deformable_buffer = np.zeros(
-                (len(counts), max(counts), 3), dtype=np.float32
+                (len(bodies), max(counts), 3), dtype=np.float32
             )
+            self.link_pose_buffer = np.zeros((NUM_ENVS, 7), dtype=np.float32)
             control = self.provider.arrays["ctrl"]
-            self.depth_scale = torch.linspace(
-                0.75,
-                1.0,
-                NUM_ENVS,
+            self.depth_scale = torch.tensor(
+                DEPTH_SCALES,
                 dtype=control.dtype,
                 device=control.device,
             ).unsqueeze(1)
@@ -221,11 +264,11 @@ class Script(gobot.NodeScript):
                 sync_scene=self._sync_scene,
             ).start()
             self.play_session.set_status(
-                f"GPU soft press batch; displaying environment {DISPLAY_ENV}"
+                "GPU soft press batch | 4 environments | 2x2 display"
             )
             print(
                 "MuJoCo Warp + libuipc editor demo started: "
-                f"environments={NUM_ENVS} display_env={DISPLAY_ENV} device=cuda:0"
+                f"environments={NUM_ENVS} display_grid=2x2 device=cuda:0"
             )
         except Exception:
             self._close_play_session()
@@ -250,13 +293,11 @@ class Script(gobot.NodeScript):
             self.play_session.reset()
             return
         if self.tick and self.tick % 32 == 0:
-            state = self.press_view.read_state()
-            position = float(
-                state.joint_position[DISPLAY_ENV, 0].detach().cpu().item()
-            )
+            minimum = float(self.link_pose_buffer[:, 2].min())
+            maximum = float(self.link_pose_buffer[:, 2].max())
             self.play_session.set_status(
-                f"GPU soft press batch | env {DISPLAY_ENV} | "
-                f"joint {position:.3f} m"
+                "GPU soft press batch | 4 environments | "
+                f"press height {minimum:.3f}..{maximum:.3f} m"
             )
 
     def _process(self, delta: float) -> None:
@@ -274,33 +315,31 @@ class Script(gobot.NodeScript):
         if self.provider is None:
             return
         self.provider.synchronize()
-        positions = (
-            self.provider.arrays["ipc_positions"][DISPLAY_ENV]
-            .detach()
-            .cpu()
-            .numpy()
-        )
-        for body_index, (entry, count) in enumerate(
-            zip(
-                self.provider.ipc_solver.deformable_bodies,
-                self.deformable_counts,
-                strict=True,
-            )
-        ):
-            offset = int(entry["element_offset"])
-            self.deformable_buffer[body_index, :count] = positions[
-                offset : offset + count
-            ]
-        self.context.apply_deformable_vertices(
-            self.deformable_bodies,
-            self.deformable_buffer,
-            self.deformable_counts,
-        )
+        positions = self.provider.arrays["ipc_positions"].detach().cpu().numpy()
         state = self.press_view.read_state()
-        self.press_joint.joint_position = float(
-            state.joint_position[DISPLAY_ENV, 0].detach().cpu().item()
+        self.link_pose_buffer[:] = state.link_pose[:, 0].detach().cpu().numpy()
+
+        deformable_entries = tuple(self.provider.ipc_solver.deformable_bodies)
+        body_index = 0
+        for environment, grid_offset in enumerate(GRID_OFFSETS):
+            for entry in deformable_entries:
+                count = int(entry["element_count"])
+                offset = int(entry["element_offset"])
+                self.deformable_buffer[body_index, :count] = positions[
+                    environment, offset : offset + count
+                ]
+                self.deformable_buffer[body_index, :count] += grid_offset
+                body_index += 1
+        self.context.apply_deformable_vertices(
+            self.display_deformable_bodies,
+            self.deformable_buffer,
+            self.display_deformable_counts,
         )
-        self.press_view.sync_scene(env_index=DISPLAY_ENV)
+        for environment in range(NUM_ENVS):
+            self.link_pose_buffer[environment, :3] += GRID_OFFSETS[environment]
+        self.context.apply_link_poses(
+            self.display_press_heads, self.link_pose_buffer
+        )
 
     def _exit_tree(self) -> None:
         self._close_play_session()

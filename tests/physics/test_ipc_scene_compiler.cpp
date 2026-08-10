@@ -6,6 +6,7 @@
 
 #include <gtest/gtest.h>
 
+#include <limits>
 #include <nlohmann/json.hpp>
 
 #include <gobot/core/sha256.hpp>
@@ -15,6 +16,7 @@
 #include <gobot/scene/joint_3d.hpp>
 #include <gobot/scene/link_3d.hpp>
 #include <gobot/scene/node_3d.hpp>
+#include <gobot/scene/physics_coupling.hpp>
 #include <gobot/scene/resources/array_mesh.hpp>
 #include <gobot/scene/resources/box_shape_3d.hpp>
 #include <gobot/scene/resources/convex_mesh_shape_3d.hpp>
@@ -89,7 +91,7 @@ TEST(TestIpcSceneCompiler, compiles_deterministic_content_addressed_artifact) {
     ASSERT_TRUE(gobot::IpcSceneCompiler::Compile(root, &first, &error)) << error;
     ASSERT_TRUE(gobot::IpcSceneCompiler::Compile(root, &second, &error)) << error;
 
-    EXPECT_EQ(first.schema_version, 1);
+    EXPECT_EQ(first.schema_version, 2);
     EXPECT_EQ(first.producer, "gobot");
     EXPECT_EQ(first.format, "gobot-ipc");
     EXPECT_EQ(first.manifest, second.manifest);
@@ -102,6 +104,8 @@ TEST(TestIpcSceneCompiler, compiles_deterministic_content_addressed_artifact) {
 
     const nlohmann::json manifest = nlohmann::json::parse(first.manifest);
     EXPECT_EQ(manifest.at("scene_name"), "ipc_world");
+    EXPECT_EQ(manifest.at("schema_version"), 2);
+    EXPECT_TRUE(manifest.at("couplings").empty());
     ASSERT_EQ(manifest.at("deformable_bodies").size(), 1);
     ASSERT_EQ(manifest.at("tactile_sensors").size(), 1);
     ASSERT_EQ(manifest.at("blobs").size(), 1);
@@ -281,5 +285,117 @@ TEST(TestIpcSceneCompiler, records_robot_fk_and_inertial_topology) {
     EXPECT_TRUE(compiled_joint.at("child_link_path").get<std::string>().ends_with("/finger"));
     EXPECT_EQ(compiled_joint.at("axis"), nlohmann::json::array({0.0, 1.0, 0.0}));
     EXPECT_EQ(compiled_joint.at("local_transform").at("matrix_row_major").size(), 16);
+    tree.Finalize();
+}
+
+TEST(TestIpcSceneCompiler, compiles_explicit_couplings_in_canonical_order) {
+    gobot::SceneTree tree(false);
+    tree.Initialize();
+    auto* root = gobot::Object::New<gobot::Node3D>();
+    root->SetName("coupled_world");
+    tree.GetRoot()->AddChild(root);
+    auto* robot = gobot::Object::New<gobot::Robot3D>();
+    robot->SetName("rigid_bodies");
+    root->AddChild(robot);
+
+    auto add_link = [robot](const std::string& name) {
+        auto* link = gobot::Object::New<gobot::Link3D>();
+        link->SetName(name);
+        robot->AddChild(link);
+        auto shape = gobot::MakeRef<gobot::BoxShape3D>();
+        shape->SetSize({0.2, 0.3, 0.4});
+        auto* collision = gobot::Object::New<gobot::CollisionShape3D>();
+        collision->SetName(name + "_collision");
+        collision->SetShape(gobot::dynamic_pointer_cast<gobot::Shape3D>(shape));
+        link->AddChild(collision);
+        return link;
+    };
+    add_link("ground");
+    add_link("press");
+
+    auto* ground_coupling = gobot::Object::New<gobot::PhysicsCoupling>();
+    ground_coupling->SetName("z_ground_coupling");
+    ground_coupling->SetRigidLinkPath(
+            gobot::NodePath("../rigid_bodies/ground"));
+    ground_coupling->SetMode(gobot::PhysicsCouplingMode::OneWay);
+    ground_coupling->SetForceScale(0.25);
+    ground_coupling->SetTorqueScale(0.5);
+    root->AddChild(ground_coupling);
+
+    auto* press_coupling = gobot::Object::New<gobot::PhysicsCoupling>();
+    press_coupling->SetName("a_press_coupling");
+    press_coupling->SetRigidLinkPath(
+            gobot::NodePath("../rigid_bodies/press"));
+    press_coupling->SetMode(gobot::PhysicsCouplingMode::TwoWay);
+    press_coupling->SetForceScale(2.0);
+    press_coupling->SetTorqueScale(3.0);
+    root->AddChild(press_coupling);
+
+    gobot::IpcSceneArtifact artifact;
+    std::string error;
+    ASSERT_TRUE(gobot::IpcSceneCompiler::Compile(root, &artifact, &error)) << error;
+    const nlohmann::json manifest = nlohmann::json::parse(artifact.manifest);
+    const nlohmann::json& couplings = manifest.at("couplings");
+    ASSERT_EQ(couplings.size(), 2);
+    EXPECT_TRUE(couplings.at(0).at("coupling_path").get<std::string>().ends_with(
+            "/a_press_coupling"));
+    EXPECT_EQ(couplings.at(0).at("link_name"), "press");
+    EXPECT_EQ(couplings.at(0).at("robot_name"), "rigid_bodies");
+    EXPECT_EQ(couplings.at(0).at("mode"), "TwoWay");
+    EXPECT_EQ(couplings.at(0).at("proxy_index"), 0);
+    EXPECT_EQ(couplings.at(0).at("force_scale"), 2.0);
+    EXPECT_EQ(couplings.at(0).at("torque_scale"), 3.0);
+    EXPECT_TRUE(couplings.at(0).at("link_path").get<std::string>().ends_with(
+            "/rigid_bodies/press"));
+    EXPECT_TRUE(couplings.at(1).at("coupling_path").get<std::string>().ends_with(
+            "/z_ground_coupling"));
+    EXPECT_EQ(couplings.at(1).at("mode"), "OneWay");
+    EXPECT_EQ(couplings.at(1).at("proxy_index"), 1);
+    tree.Finalize();
+}
+
+TEST(TestIpcSceneCompiler, rejects_invalid_or_duplicate_couplings) {
+    gobot::SceneTree tree(false);
+    tree.Initialize();
+    auto* root = gobot::Object::New<gobot::Node3D>();
+    root->SetName("coupled_world");
+    tree.GetRoot()->AddChild(root);
+    auto* robot = gobot::Object::New<gobot::Robot3D>();
+    robot->SetName("robot");
+    root->AddChild(robot);
+    auto* link = gobot::Object::New<gobot::Link3D>();
+    link->SetName("link");
+    robot->AddChild(link);
+    auto shape = gobot::MakeRef<gobot::BoxShape3D>();
+    auto* collision = gobot::Object::New<gobot::CollisionShape3D>();
+    collision->SetName("collision");
+    collision->SetShape(gobot::dynamic_pointer_cast<gobot::Shape3D>(shape));
+    link->AddChild(collision);
+    auto* coupling = gobot::Object::New<gobot::PhysicsCoupling>();
+    coupling->SetName("coupling");
+    root->AddChild(coupling);
+
+    gobot::IpcSceneArtifact artifact;
+    std::string error;
+    EXPECT_FALSE(gobot::IpcSceneCompiler::Compile(root, &artifact, &error));
+    EXPECT_NE(error.find("requires a rigid_link_path"), std::string::npos);
+
+    coupling->SetRigidLinkPath(gobot::NodePath("../robot/link"));
+    collision->SetDisabled(true);
+    EXPECT_FALSE(gobot::IpcSceneCompiler::Compile(root, &artifact, &error));
+    EXPECT_NE(error.find("no enabled CollisionShape3D"), std::string::npos);
+
+    collision->SetDisabled(false);
+    coupling->SetForceScale(std::numeric_limits<double>::infinity());
+    EXPECT_FALSE(gobot::IpcSceneCompiler::Compile(root, &artifact, &error));
+    EXPECT_NE(error.find("finite and non-negative"), std::string::npos);
+
+    coupling->SetForceScale(1.0);
+    auto* duplicate = gobot::Object::New<gobot::PhysicsCoupling>();
+    duplicate->SetName("duplicate");
+    duplicate->SetRigidLinkPath(gobot::NodePath("../robot/link"));
+    root->AddChild(duplicate);
+    EXPECT_FALSE(gobot::IpcSceneCompiler::Compile(root, &artifact, &error));
+    EXPECT_NE(error.find("multiple enabled PhysicsCoupling"), std::string::npos);
     tree.Finalize();
 }

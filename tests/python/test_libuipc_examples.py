@@ -51,6 +51,17 @@ def _load_mujoco_libuipc_builder():
     return module
 
 
+def _load_mujoco_libuipc_play_script():
+    spec = importlib.util.spec_from_file_location(
+        "gobot_mujoco_libuipc_example_play",
+        MUJOCO_LIBUIPC_EXAMPLE_ROOT / "mujoco_libuipc_play.py",
+    )
+    assert spec is not None and spec.loader is not None
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    return module
+
+
 def test_checked_in_libuipc_scenes_are_reproducible() -> None:
     builder = _load_builder()
     with tempfile.TemporaryDirectory(prefix="gobot-libuipc-demos-") as directory:
@@ -86,6 +97,7 @@ def test_mujoco_libuipc_batch_example_is_reproducible_and_mapped() -> None:
         generated = builder.build_scene(Path(directory))
         checked_in = MUJOCO_LIBUIPC_EXAMPLE_ROOT / "soft_press_batch.jscn"
         assert generated.read_bytes() == checked_in.read_bytes()
+        assert (Path(directory) / "build_scene.py").is_file()
         assert (Path(directory) / "mujoco_libuipc_play.py").is_file()
         assert (Path(directory) / "project.gobot").is_file()
 
@@ -97,12 +109,16 @@ def test_mujoco_libuipc_batch_example_is_reproducible_and_mapped() -> None:
         assert artifact.mujoco.dimensions["nu"] == 1
         assert len(artifact.ipc.deformable_bodies) == 1
         assert [
-            (mapping.robot_name, mapping.link_name)
+            (mapping.robot_name, mapping.link_name, mapping.mode)
             for mapping in artifact.coupled_bodies
         ] == [
-            ("static_colliders", "ground"),
-            ("press", "press_head"),
+            ("static_colliders", "ground", "OneWay"),
+            ("press", "press_head", "TwoWay"),
         ]
+        assert artifact.ipc.schema_version == 2
+        assert tuple(
+            mapping.ipc_body_index for mapping in artifact.coupled_bodies
+        ) == (0, 1)
 
         scene = json.loads(generated.read_text(encoding="utf-8"))
         root = next(node for node in scene["__NODES__"] if node["parent"] == -1)
@@ -123,6 +139,15 @@ def test_mujoco_libuipc_batch_example_is_reproducible_and_mapped() -> None:
         assert slide["type"] == "Joint3D"
         assert slide["properties"]["joint_type"] == "Prismatic"
         assert slide["properties"]["drive_mode"] == "Position"
+        coupling_nodes = [
+            node for node in scene["__NODES__"] if node["type"] == "PhysicsCoupling"
+        ]
+        assert {
+            node["name"]: node["properties"]["mode"] for node in coupling_nodes
+        } == {
+            "ground_coupling": "OneWay",
+            "press_head_coupling": "TwoWay",
+        }
 
 
 def test_mujoco_libuipc_play_script_uses_the_composite_gpu_provider() -> None:
@@ -134,8 +159,41 @@ def test_mujoco_libuipc_play_script_uses_the_composite_gpu_provider() -> None:
     assert "LibuipcBatchSolver" in source
     assert "ProviderPlaySession" in source
     assert "apply_deformable_vertices" in source
-    assert "press_view.sync_scene" in source
+    assert "apply_link_poses" in source
+    assert "_create_display_scenes" in source
     assert "NUM_ENVS = 4" in source
+
+
+def test_mujoco_libuipc_display_copies_are_runtime_only_and_unique() -> None:
+    module = _load_mujoco_libuipc_play_script()
+    context = gobot.app.create_context()
+    context.set_project_path(str(MUJOCO_LIBUIPC_EXAMPLE_ROOT))
+    root = context.load_scene("res://soft_press_batch.jscn")
+    artifact = CompiledMuJoCoIpcArtifact.from_context(context)
+
+    display_roots, display_nodes = module._create_display_scenes(root)
+    assert len(display_roots) == len(display_nodes) == module.NUM_ENVS == 4
+    assert tuple(display_root.name for display_root in display_roots) == (
+        "mujoco_libuipc_soft_press",
+        "display_env_1",
+        "display_env_2",
+        "display_env_3",
+    )
+    positions = tuple(
+        tuple(float(value) for value in display_root.position)
+        for display_root in display_roots
+    )
+    np.testing.assert_allclose(positions, module.GRID_OFFSETS, atol=1.0e-7)
+    assert len(set(positions)) == 4
+    assert len(set(module.DEPTH_SCALES)) == 4
+    scripts = tuple(
+        display_root.get_property("script") for display_root in display_roots
+    )
+    assert bool(scripts[0])
+    assert all(not script for script in scripts[1:])
+    assert len(artifact.coupled_bodies) == 2
+    assert all("compression_block" in nodes for nodes in display_nodes)
+    context.clear_scene()
 
 
 def test_libuipc_scenes_compile_to_supported_native_contracts() -> None:
@@ -487,6 +545,7 @@ def main() -> int:
     test_checked_in_libuipc_scenes_are_reproducible()
     test_mujoco_libuipc_batch_example_is_reproducible_and_mapped()
     test_mujoco_libuipc_play_script_uses_the_composite_gpu_provider()
+    test_mujoco_libuipc_display_copies_are_runtime_only_and_unique()
     test_libuipc_scenes_compile_to_supported_native_contracts()
     test_libuipc_contact_scenes_are_generated_test_fixtures()
     test_fr3_asset_has_complete_licensed_urdf_and_meshes()

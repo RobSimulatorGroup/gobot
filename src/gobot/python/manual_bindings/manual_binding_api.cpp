@@ -7,6 +7,8 @@ void RegisterManualApis(py::module_& module) {
 
     auto node_class = py::class_<PyNodeHandle>(module, "Node");
     auto node3d_class = py::class_<PyNode3DHandle, PyNodeHandle>(module, "Node3D");
+    auto physics_coupling_class =
+            py::class_<PyPhysicsCouplingHandle, PyNodeHandle>(module, "PhysicsCoupling");
     auto robot3d_class = py::class_<PyRobot3DHandle, PyNode3DHandle>(module, "Robot3D");
     auto link3d_class = py::class_<PyLink3DHandle, PyNode3DHandle>(module, "Link3D");
     auto joint3d_class = py::class_<PyJoint3DHandle, PyNode3DHandle>(module, "Joint3D");
@@ -38,6 +40,7 @@ void RegisterManualApis(py::module_& module) {
             py::class_<PyTactileSensorConfig>(module, "TactileSensorConfig");
 
     py::implicitly_convertible<PyRobot3DHandle, PyNodeHandle>();
+    py::implicitly_convertible<PyPhysicsCouplingHandle, PyNodeHandle>();
     py::implicitly_convertible<PyLink3DHandle, PyNodeHandle>();
     py::implicitly_convertible<PyJoint3DHandle, PyNodeHandle>();
     py::implicitly_convertible<PyCollisionShape3DHandle, PyNodeHandle>();
@@ -69,6 +72,7 @@ void RegisterManualApis(py::module_& module) {
                                         mesh_instance_class);
     RegisterManualIpcSceneBindings(tetrahedral_mesh_class,
                                    tactile_sensor_config_class,
+                                   physics_coupling_class,
                                    deformable_body3d_class,
                                    tactile_sensor3d_class);
     RegisterManualIpcSolverBindings(module);

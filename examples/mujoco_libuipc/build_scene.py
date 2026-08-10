@@ -152,6 +152,20 @@ def create_scene():
     soft.damping = 0.08
     soft.self_collision_enabled = False
     root.add_child(soft)
+
+    ground_coupling = gobot.create_node("PhysicsCoupling", "ground_coupling")
+    ground_coupling.rigid_link_path = "../static_colliders/ground"
+    ground_coupling.mode = gobot.PhysicsCouplingMode.OneWay
+    ground_coupling.force_scale = 1.0
+    ground_coupling.torque_scale = 1.0
+    root.add_child(ground_coupling)
+
+    press_coupling = gobot.create_node("PhysicsCoupling", "press_head_coupling")
+    press_coupling.rigid_link_path = "../press/press_frame/press_slide/press_head"
+    press_coupling.mode = gobot.PhysicsCouplingMode.TwoWay
+    press_coupling.force_scale = 1.0
+    press_coupling.torque_scale = 1.0
+    root.add_child(press_coupling)
     return root
 
 
@@ -220,6 +234,7 @@ def _finalize_scene(scene_path: Path) -> None:
 def _stage_project(output_dir: Path) -> None:
     if output_dir == HERE:
         return
+    shutil.copy2(HERE / "build_scene.py", output_dir / "build_scene.py")
     shutil.copy2(HERE / PLAY_SCRIPT_NAME, output_dir / PLAY_SCRIPT_NAME)
     shutil.copy2(HERE / "project.gobot", output_dir / "project.gobot")
 

@@ -2212,6 +2212,17 @@ PyVelocityCommandDebug3DHandle MakeVelocityCommandDebug3DHandle(
             ownership);
 }
 
+PyPhysicsCouplingHandle MakePhysicsCouplingHandle(
+        PhysicsCoupling* node,
+        PyNodeOwnership ownership,
+        EngineContext* context,
+        std::uint64_t epoch) {
+    EngineContext* resolved_context = ResolveHandleContext(context);
+    return PyPhysicsCouplingHandle(
+            node, "PhysicsCoupling", resolved_context,
+            ResolveHandleEpoch(resolved_context, epoch), ownership);
+}
+
 PyDeformableBody3DHandle MakeDeformableBody3DHandle(
         DeformableBody3D* node,
         PyNodeOwnership ownership,
@@ -2238,6 +2249,9 @@ PyNodeHandle MakeTypedNodeHandle(Node* node,
                                  PyNodeOwnership ownership,
                                  EngineContext* context,
                                  std::uint64_t epoch) {
+    if (auto* coupling = Object::PointerCastTo<PhysicsCoupling>(node)) {
+        return MakePhysicsCouplingHandle(coupling, ownership, context, epoch);
+    }
     if (auto* velocity_debug = Object::PointerCastTo<VelocityCommandDebug3D>(node)) {
         return MakeVelocityCommandDebug3DHandle(velocity_debug, ownership, context, epoch);
     }
@@ -2296,6 +2310,9 @@ py::object MakeTypedNodeObject(Node* node,
                                PyNodeOwnership ownership,
                                EngineContext* context,
                                std::uint64_t epoch) {
+    if (auto* coupling = Object::PointerCastTo<PhysicsCoupling>(node)) {
+        return py::cast(MakePhysicsCouplingHandle(coupling, ownership, context, epoch));
+    }
     if (auto* velocity_debug = Object::PointerCastTo<VelocityCommandDebug3D>(node)) {
         return py::cast(MakeVelocityCommandDebug3DHandle(velocity_debug, ownership, context, epoch));
     }

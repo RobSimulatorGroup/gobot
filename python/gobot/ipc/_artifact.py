@@ -11,7 +11,7 @@ from types import MappingProxyType
 from typing import Any, Mapping, Sequence
 
 
-_SCHEMA_VERSION = 1
+_SCHEMA_VERSION = 2
 _PRODUCER = "gobot"
 _FORMAT = "gobot-ipc"
 _MESH_ENCODING = "gobot.tetrahedral-mesh.le.v1"
@@ -408,7 +408,7 @@ def _decode_surface_mesh_blob(data: bytes) -> Mapping[str, Any]:
 
 @dataclass(frozen=True)
 class CompiledIpcSceneArtifact:
-    """Schema-v1 IPC scene manifest and its content-addressed binary blobs."""
+    """Schema-v2 IPC scene manifest and its content-addressed binary blobs."""
 
     schema_version: int
     producer: str
@@ -423,6 +423,11 @@ class CompiledIpcSceneArtifact:
             self.schema_version, "compiled IPC artifact schema version", minimum=1
         )
         if schema_version != _SCHEMA_VERSION:
+            if schema_version == 1:
+                raise ValueError(
+                    "unsupported compiled IPC artifact schema 1; schema 2 requires "
+                    "explicit PhysicsCoupling entries"
+                )
             raise ValueError(
                 f"unsupported compiled IPC artifact schema {schema_version}; "
                 f"expected {_SCHEMA_VERSION}"
@@ -554,6 +559,9 @@ class CompiledIpcSceneArtifact:
         deformables = manifest_data.get("deformable_bodies", [])
         tactile = manifest_data.get("tactile_sensors", [])
         robots = manifest_data.get("robots", [])
+        couplings = manifest_data.get("couplings")
+        if not isinstance(couplings, list):
+            raise ValueError("IPC manifest coupling table must be a list")
         for values, name in (
             (deformables, "deformable body"),
             (tactile, "tactile sensor"),
@@ -762,10 +770,12 @@ class CompiledIpcSceneArtifact:
                     raise ValueError("tactile sensor marker has invalid barycentric weights")
 
         robot_link_paths: set[str] = set()
+        robot_links_by_path: dict[str, tuple[str, Mapping[str, Any]]] = {}
         robot_collision_paths: set[str] = set()
         for raw_robot in robots:
             robot = _require_mapping(raw_robot, "robot")
             robot_path = str(robot["path"])
+            robot_name = str(robot["name"])
             _validate_transform(robot.get("transform"), "robot transform")
             links = robot.get("links")
             joints = robot.get("joints")
@@ -789,6 +799,7 @@ class CompiledIpcSceneArtifact:
                 if link_path in robot_link_paths:
                     raise ValueError("IPC manifest contains duplicate robot link paths")
                 robot_link_paths.add(link_path)
+                robot_links_by_path[link_path] = (robot_name, link)
                 _validate_transform(link.get("transform"), "robot link transform")
                 _validate_transform(
                     link.get("local_transform"), "robot link local transform"
@@ -1025,6 +1036,63 @@ class CompiledIpcSceneArtifact:
                     visited.add(current)
                     current = parent_by_child[current]
 
+        coupling_paths: list[str] = []
+        coupled_link_paths: set[str] = set()
+        for expected_proxy_index, raw_coupling in enumerate(couplings):
+            coupling = _require_mapping(raw_coupling, "physics coupling")
+            coupling_path = coupling.get("coupling_path")
+            link_path = coupling.get("link_path")
+            robot_name = coupling.get("robot_name")
+            link_name = coupling.get("link_name")
+            if not isinstance(coupling_path, str) or not coupling_path:
+                raise ValueError("PhysicsCoupling entry requires a non-empty coupling_path")
+            if not isinstance(link_path, str) or not link_path:
+                raise ValueError("PhysicsCoupling entry requires a non-empty link_path")
+            if not isinstance(robot_name, str) or not robot_name:
+                raise ValueError("PhysicsCoupling entry requires a non-empty robot_name")
+            if not isinstance(link_name, str) or not link_name:
+                raise ValueError("PhysicsCoupling entry requires a non-empty link_name")
+            coupling_paths.append(coupling_path)
+            if link_path in coupled_link_paths:
+                raise ValueError(
+                    "IPC manifest contains multiple PhysicsCoupling entries for one Link3D"
+                )
+            coupled_link_paths.add(link_path)
+            if _require_int(
+                coupling.get("proxy_index"),
+                "PhysicsCoupling proxy index",
+                minimum=0,
+            ) != expected_proxy_index:
+                raise ValueError(
+                    "PhysicsCoupling proxy indices must be contiguous and match table order"
+                )
+            if coupling.get("mode") not in ("OneWay", "TwoWay"):
+                raise ValueError("PhysicsCoupling mode must be OneWay or TwoWay")
+            for field in ("force_scale", "torque_scale"):
+                if _require_number(
+                    coupling.get(field), f"PhysicsCoupling {field.replace('_', ' ')}"
+                ) < 0.0:
+                    raise ValueError(f"PhysicsCoupling {field} must be non-negative")
+            target = robot_links_by_path.get(link_path)
+            if target is None:
+                raise ValueError("PhysicsCoupling references an unknown Robot3D Link3D")
+            target_robot_name, target_link = target
+            if target_robot_name != robot_name or str(target_link["name"]) != link_name:
+                raise ValueError(
+                    "PhysicsCoupling robot/link names do not match its canonical link path"
+                )
+            if not any(
+                not bool(shape["disabled"])
+                for shape in target_link["collision_shapes"]
+            ):
+                raise ValueError(
+                    "PhysicsCoupling target Link3D has no enabled CollisionShape3D"
+                )
+        if len(set(coupling_paths)) != len(coupling_paths):
+            raise ValueError("IPC manifest contains duplicate PhysicsCoupling paths")
+        if coupling_paths != sorted(coupling_paths):
+            raise ValueError("PhysicsCoupling table must be sorted by coupling_path")
+
         for sensor_path, link_path in sensor_attachment_paths:
             if link_path not in robot_link_paths:
                 raise ValueError(
@@ -1093,6 +1161,10 @@ class CompiledIpcSceneArtifact:
     @property
     def robots(self) -> tuple[Mapping[str, Any], ...]:
         return tuple(self._manifest_data["robots"])
+
+    @property
+    def couplings(self) -> tuple[Mapping[str, Any], ...]:
+        return tuple(self._manifest_data["couplings"])
 
 
 def validate_ipc_artifact(

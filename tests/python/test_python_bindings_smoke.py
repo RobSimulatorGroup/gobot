@@ -29,6 +29,18 @@ def main():
     assert version_info["patch"] == version_parts[2]
     assert isinstance(version_info["commit"], str)
 
+    coupling = gobot.create_node("PhysicsCoupling", "press_feedback")
+    assert isinstance(coupling, gobot.PhysicsCoupling)
+    coupling.rigid_link_path = "../press/press_head"
+    coupling.mode = gobot.PhysicsCouplingMode.OneWay
+    coupling.force_scale = 0.75
+    coupling.torque_scale = 0.25
+    assert coupling.enabled
+    assert coupling.rigid_link_path == "../press/press_head"
+    assert coupling.mode == gobot.PhysicsCouplingMode.OneWay
+    assert coupling.force_scale == 0.75
+    assert coupling.torque_scale == 0.25
+
     infos = gobot.backend_infos()
     assert infos
     assert any(info["name"] == "Null" and info["available"] for info in infos)

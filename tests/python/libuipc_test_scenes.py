@@ -113,6 +113,13 @@ def _scene_root(name: str):
     return root, colliders
 
 
+def _coupling(root, name: str, link_name: str, mode) -> None:
+    coupling = gobot.create_node("PhysicsCoupling", name)
+    coupling.rigid_link_path = f"../kinematic_colliders/{link_name}"
+    coupling.mode = mode
+    root.add_child(coupling)
+
+
 def _stack_scene():
     root, colliders = _scene_root("libuipc_soft_stack_test")
     root.add_child(
@@ -127,6 +134,7 @@ def _stack_scene():
         (1.0, 0.75, 0.05),
         (0.0, 0.0, -0.025),
     )
+    _coupling(root, "ground_coupling", "ground", gobot.PhysicsCouplingMode.OneWay)
     return root
 
 
@@ -151,6 +159,13 @@ def _press_scene():
         "press_head",
         (0.30, 0.30, 0.06),
         (0.0, 0.0, 0.34),
+    )
+    _coupling(root, "ground_coupling", "ground", gobot.PhysicsCouplingMode.OneWay)
+    _coupling(
+        root,
+        "press_head_coupling",
+        "press_head",
+        gobot.PhysicsCouplingMode.TwoWay,
     )
     return root
 

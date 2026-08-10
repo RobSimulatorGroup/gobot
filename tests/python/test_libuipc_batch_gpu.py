@@ -206,10 +206,40 @@ def test_mujoco_libuipc_editor_play_session() -> None:
         positions = script.provider.arrays["ipc_positions"]
         heights = positions[..., 2].amax(dim=1) - positions[..., 2].amin(dim=1)
         assert script.provider.num_envs == module.NUM_ENVS == 4
+        assert len(script.display_roots) == 4
+        assert len(script.display_deformable_bodies) == 4
+        grid_positions = {
+            tuple(round(float(value), 6) for value in root.position)
+            for root in script.display_roots
+        }
+        assert len(grid_positions) == 4
+        scripts = tuple(root.get_property("script") for root in script.display_roots)
+        assert bool(scripts[0]) and all(not value for value in scripts[1:])
         assert script.tick == 180
-        assert state.joint_position[module.DISPLAY_ENV, 0].item() < -0.1
-        assert (0.16 - heights[module.DISPLAY_ENV]).item() > 0.005
+        joint_positions = state.joint_position[:, 0]
+        assert joint_positions[-1].item() < -0.1
+        assert torch.all(joint_positions[1:] < joint_positions[:-1]).item()
+        compression = 0.16 - heights
+        assert compression[-1].item() > 0.005
+        assert (compression.max() - compression.min()).item() > 0.001
+        mappings = {
+            mapping.link_name: mapping
+            for mapping in script.provider.artifact.coupled_bodies
+        }
+        ground_id, press_id = script.provider.rigid_solver.resolve_object_ids(
+            "body",
+            (
+                mappings["ground"].mujoco_body_name,
+                mappings["press_head"].mujoco_body_name,
+            ),
+        )
+        applied = script.provider.arrays["xfrc_applied"]
+        assert torch.count_nonzero(applied[:, ground_id]) == 0
+        assert torch.isfinite(applied[:, press_id]).all().item()
+        assert torch.linalg.vector_norm(applied[:, press_id, :3]).max().item() > 0.0
         assert script.provider.rigid_solver.capabilities.graph_capture
+        assert script.provider.diagnostics["feedback_source"] == "proxy_constraint"
+        assert script.provider.diagnostics["graph_captured"] is False
     finally:
         if script is not None:
             script._exit_tree()

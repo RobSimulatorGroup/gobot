@@ -16,6 +16,8 @@ from ._core import (
     Node,
     Node3D,
     NodeScript,
+    PhysicsCoupling,
+    PhysicsCouplingMode,
     PhysicsBackendInfo,
     PhysicsBackendType,
     PhysicsFrictionConeType,

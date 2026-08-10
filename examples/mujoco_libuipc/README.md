@@ -15,11 +15,13 @@ uv run gobot_editor --path examples/mujoco_libuipc
 ```
 
 The attached `mujoco_libuipc_play.py` starts four GPU environments through an
-external `ProviderPlaySession`. The viewport displays environment 3, which has
-the deepest press command, while all four environments continue stepping. The
-Physics panel should report `Provider: MuJoCo+libuipc`, `Device: cuda:0`, and
-`Environments: 4`; the backend selector is disabled while this session owns
-simulation.
+external `ProviderPlaySession`. It compiles the authored scene once, then adds
+three display-only runtime copies after compilation. The viewport shows all
+four environments in a 2x2 grid with different press depths and deformation.
+The copies do not run scripts, enter the physics artifact, or modify the
+checked-in scene. The Physics panel should report `Provider: MuJoCo+libuipc`,
+`Device: cuda:0`, and `Environments: 4`; the backend selector is disabled while
+this session owns simulation.
 
 The script discovers the usual in-tree solver build automatically. Override it
 when necessary:
@@ -41,6 +43,10 @@ The authored source scene is `soft_press_batch.jscn`. Regenerate it with:
 uv run python examples/mujoco_libuipc/build_scene.py
 ```
 
+Its two explicit `PhysicsCoupling` nodes make the ground a `OneWay` pose proxy
+and the press head a `TwoWay` proxy. Collision layers and masks still select
+which libuipc deformables may contact those proxies.
+
 Run the default four-environment batch without the editor:
 
 ```bash
@@ -50,7 +56,8 @@ uv run python examples/mujoco_libuipc/mujoco_libuipc_batch.py
 The default trajectory uses 128 coupled steps so the press reaches the soft
 block. Environments receive different press depths, so the final JSON reports
 a range of joint positions, soft-block compression, and reaction forces. It
-also checks stable CUDA storage and demonstrates the v1 full-batch reset.
+also checks stable CUDA storage and demonstrates deterministic full-batch
+reset.
 
 Run a short topology/throughput smoke test with four 64-environment shards:
 
@@ -58,6 +65,20 @@ Run a short topology/throughput smoke test with four 64-environment shards:
 uv run python examples/mujoco_libuipc/mujoco_libuipc_batch.py \
   --num-envs 256 --environments-per-shard 64 --steps 24
 ```
+
+Record median results at the admission capacities with warmup and repeated
+runs:
+
+```bash
+uv run python benchmark/mujoco_libuipc_batch_benchmark.py \
+  --module-path "$PWD/build/libuipc-novcpkg/python/gobot/libgobot_libuipc_solver.so"
+```
+
+The benchmark covers 4, 64, and 256 environments. Pass a prior JSON report as
+`--baseline-json`; the 256-environment run then fails if throughput regresses
+by more than 10 percent. Results include median environment-steps/s, per-shard
+IPC latency, storage stability, feedback source, reset scope, graph state, and
+the remaining affine-target staging mode.
 
 For a non-installed solver module, provide its exact path:
 
@@ -71,12 +92,19 @@ Useful options:
 - `--num-envs`: fixed environment capacity.
 - `--environments-per-shard`: isolated libuipc subscenes per native world.
 - `--steps`: coupled fixed steps.
+- `--warmup-steps`: unmeasured warmup steps before timing.
+- `--repeats`: number of timed runs used for the median.
 - `--press-depth`: final prismatic target in meters, limited to `0.17`.
 - `--fixed-dt`: shared MuJoCo/libuipc timestep.
 - `--no-mujoco-graph`: disable MuJoCo Warp CUDA graph capture for debugging.
 - `--rebuild-scene`: regenerate the `.jscn` before running.
 
-Batch v1 requires a full reset and fixed topology. The composite provider does
-not claim graph capture; its MuJoCo Warp subsolver can still replay captured
-graphs. libuipc currently stages the small affine-target table through host
-memory once per shard and step.
+The native batch C ABI remains v1, while the compiled scene artifact is schema
+v2. The composite provider requires fixed topology, a shared fixed timestep,
+one IPC and one rigid step per tick, and full-batch reset. A partial reset is
+rejected because shard-local history cannot yet be restored selectively. The
+composite provider reports `graph_capture=false` because libuipc shards are
+stepped outside capture; its MuJoCo Warp subsolver can still replay a captured
+graph. libuipc currently stages the small affine-target table D2H/H2D once per
+shard and step. The Play display adds batched CPU readback only in its viewport
+callback; the headless batch path does not perform that display synchronization.

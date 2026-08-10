@@ -99,8 +99,52 @@ void SetNodeValue(PyNodeHandle& handle, const char* property, T value) {
 void RegisterManualIpcSceneBindings(
         PyTetrahedralMeshClass& tetrahedral_mesh_class,
         PyTactileSensorConfigClass& tactile_config_class,
+        PyPhysicsCouplingClass& physics_coupling_class,
         PyDeformableBody3DClass& deformable_body_class,
         PyTactileSensor3DClass& tactile_sensor_class) {
+    physics_coupling_class
+            .def_property(
+                    "enabled",
+                    [](const PyPhysicsCouplingHandle& handle) {
+                        return handle.ResolveAs<PhysicsCoupling>()->IsEnabled();
+                    },
+                    [](PyPhysicsCouplingHandle& handle, bool value) {
+                        SetNodeValue(handle, "enabled", value);
+                    })
+            .def_property(
+                    "rigid_link_path",
+                    [](const PyPhysicsCouplingHandle& handle) {
+                        return static_cast<std::string>(
+                                handle.ResolveAs<PhysicsCoupling>()->GetRigidLinkPath());
+                    },
+                    [](PyPhysicsCouplingHandle& handle, const std::string& value) {
+                        SetNodeValue(handle, "rigid_link_path", NodePath(value));
+                    })
+            .def_property(
+                    "mode",
+                    [](const PyPhysicsCouplingHandle& handle) {
+                        return handle.ResolveAs<PhysicsCoupling>()->GetMode();
+                    },
+                    [](PyPhysicsCouplingHandle& handle, PhysicsCouplingMode value) {
+                        SetNodeValue(handle, "mode", value);
+                    })
+            .def_property(
+                    "force_scale",
+                    [](const PyPhysicsCouplingHandle& handle) {
+                        return handle.ResolveAs<PhysicsCoupling>()->GetForceScale();
+                    },
+                    [](PyPhysicsCouplingHandle& handle, RealType value) {
+                        SetNodeValue(handle, "force_scale", value);
+                    })
+            .def_property(
+                    "torque_scale",
+                    [](const PyPhysicsCouplingHandle& handle) {
+                        return handle.ResolveAs<PhysicsCoupling>()->GetTorqueScale();
+                    },
+                    [](PyPhysicsCouplingHandle& handle, RealType value) {
+                        SetNodeValue(handle, "torque_scale", value);
+                    });
+
     tetrahedral_mesh_class
             .def(py::init<>())
             .def_property(

@@ -8,6 +8,7 @@
 
 #include <gobot/scene/node.hpp>
 #include <gobot/scene/node_3d.hpp>
+#include <gobot/scene/physics_coupling.hpp>
 #include <gobot/scene/joint_3d.hpp>
 #include <gobot/scene/link_3d.hpp>
 #include <gobot/scene/light_3d.hpp>
@@ -235,6 +236,30 @@ TEST(TestPackedScene, preserves_affine_joint_actuator_properties) {
     EXPECT_NEAR(restored->GetAffineActuatorInheritRange(), 0.8, 1.0e-6);
 
     gobot::Object::Delete(joint);
+    gobot::Object::Delete(restored);
+}
+
+TEST(TestPackedScene, preserves_physics_coupling_properties) {
+    auto* coupling = gobot::Object::New<gobot::PhysicsCoupling>();
+    coupling->SetName("press_feedback");
+    coupling->SetEnabled(false);
+    coupling->SetRigidLinkPath(gobot::NodePath("../press/press_head"));
+    coupling->SetMode(gobot::PhysicsCouplingMode::OneWay);
+    coupling->SetForceScale(0.75);
+    coupling->SetTorqueScale(0.25);
+
+    const gobot::Ref<gobot::PackedScene> packed = gobot::MakeRef<gobot::PackedScene>();
+    ASSERT_TRUE(packed->Pack(coupling));
+    gobot::Node* restored_node = packed->Instantiate();
+    auto* restored = gobot::Object::PointerCastTo<gobot::PhysicsCoupling>(restored_node);
+    ASSERT_NE(restored, nullptr);
+    EXPECT_FALSE(restored->IsEnabled());
+    EXPECT_EQ(restored->GetRigidLinkPath(), gobot::NodePath("../press/press_head"));
+    EXPECT_EQ(restored->GetMode(), gobot::PhysicsCouplingMode::OneWay);
+    EXPECT_DOUBLE_EQ(restored->GetForceScale(), 0.75);
+    EXPECT_DOUBLE_EQ(restored->GetTorqueScale(), 0.25);
+
+    gobot::Object::Delete(coupling);
     gobot::Object::Delete(restored);
 }
 

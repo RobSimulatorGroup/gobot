@@ -13,6 +13,8 @@ from ._core import (
     MeshInstance3D,
     Node,
     Node3D,
+    PhysicsCoupling,
+    PhysicsCouplingMode,
     Robot3D,
     RobotMode,
     Scene,

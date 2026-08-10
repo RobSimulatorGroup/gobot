@@ -369,6 +369,19 @@ class Node3D(Node):
     ) -> None: ...
 
 
+class PhysicsCouplingMode(Enum):
+    OneWay: ClassVar[PhysicsCouplingMode]
+    TwoWay: ClassVar[PhysicsCouplingMode]
+
+
+class PhysicsCoupling(Node):
+    enabled: bool
+    rigid_link_path: str
+    mode: PhysicsCouplingMode
+    force_scale: float
+    torque_scale: float
+
+
 class VelocityCommandDebug3D(Node3D):
     enabled: bool
     show_command_velocity: bool

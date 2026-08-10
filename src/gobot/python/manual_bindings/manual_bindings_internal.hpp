@@ -48,6 +48,7 @@
 #include "gobot/scene/mesh_instance_3d.hpp"
 #include "gobot/scene/node_3d.hpp"
 #include "gobot/scene/node_creation_registry.hpp"
+#include "gobot/scene/physics_coupling.hpp"
 #include "gobot/scene/resources/box_shape_3d.hpp"
 #include "gobot/scene/resources/material.hpp"
 #include "gobot/scene/resources/packed_scene.hpp"
@@ -184,6 +185,10 @@ struct PyNodeHandle {
 };
 
 struct PyNode3DHandle : public PyNodeHandle {
+    using PyNodeHandle::PyNodeHandle;
+};
+
+struct PyPhysicsCouplingHandle : public PyNodeHandle {
     using PyNodeHandle::PyNodeHandle;
 };
 
@@ -326,6 +331,7 @@ struct PySceneTransaction {
 
 using PyNodeClass = py::class_<PyNodeHandle>;
 using PyNode3DClass = py::class_<PyNode3DHandle, PyNodeHandle>;
+using PyPhysicsCouplingClass = py::class_<PyPhysicsCouplingHandle, PyNodeHandle>;
 using PyRobot3DClass = py::class_<PyRobot3DHandle, PyNode3DHandle>;
 using PyLink3DClass = py::class_<PyLink3DHandle, PyNode3DHandle>;
 using PyJoint3DClass = py::class_<PyJoint3DHandle, PyNode3DHandle>;
@@ -483,6 +489,7 @@ void RegisterManualTerrainSensorBindings(PyTerrain3DClass& terrain3d_class,
 void RegisterManualIpcSceneBindings(
         PyTetrahedralMeshClass& tetrahedral_mesh_class,
         PyTactileSensorConfigClass& tactile_config_class,
+        PyPhysicsCouplingClass& physics_coupling_class,
         PyDeformableBody3DClass& deformable_body_class,
         PyTactileSensor3DClass& tactile_sensor_class);
 void RegisterManualIpcSolverBindings(py::module_& module);

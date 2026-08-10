@@ -19,6 +19,7 @@
 #include "gobot/scene/link_3d.hpp"
 #include "gobot/scene/mesh_instance_3d.hpp"
 #include "gobot/scene/node_3d.hpp"
+#include "gobot/scene/physics_coupling.hpp"
 #include "gobot/scene/resources/primitive_mesh.hpp"
 #include "gobot/scene/robot_3d.hpp"
 #include "gobot/scene/sensor_3d.hpp"
@@ -114,6 +115,14 @@ void NodeCreationRegistry::EnsureBuiltInNodeTypesRegistered() {
         "Node",
         "3D scene node with local transform, global transform, and visibility.",
         []() -> Node* { return CreateNodeInstance<Node3D>(); }
+    });
+
+    RegisterNodeType({
+        "PhysicsCoupling",
+        "Physics Coupling",
+        "Node",
+        "Explicit rigid-link binding between rigid and deformable physics solvers.",
+        []() -> Node* { return CreateNodeInstance<PhysicsCoupling>(); }
     });
 
     RegisterNodeType({

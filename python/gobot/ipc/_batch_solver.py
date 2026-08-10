@@ -101,6 +101,10 @@ class LibuipcBatchSolver:
             raise ValueError(
                 "the libuipc batch solver does not yet render tactile images"
             )
+        if not self.artifact.couplings:
+            raise ValueError(
+                "external affine proxy mode requires at least one enabled PhysicsCoupling"
+            )
 
         self._num_envs = environment_count
         self._device_name = str(
@@ -180,7 +184,7 @@ class LibuipcBatchSolver:
             "device": self._device_name,
             "num_envs": self._num_envs,
             "provider": "libuipc-batch",
-            "schema_version": 1,
+            "schema_version": 2,
         }
         self._runtime_fingerprint = "sha256:" + hashlib.sha256(
             json.dumps(
@@ -251,42 +255,46 @@ class LibuipcBatchSolver:
         return tuple(result)
 
     def _build_affine_layout(self) -> tuple[Mapping[str, Any], ...]:
+        links_by_path = {
+            str(link["path"]): link
+            for robot in self.artifact.robots
+            for link in robot["links"]
+        }
         result = []
-        for robot in self.artifact.robots:
-            for link in robot["links"]:
-                if not any(
-                    not bool(shape.get("disabled", False))
-                    for shape in link["collision_shapes"]
-                ):
-                    continue
-                result.append(
-                    MappingProxyType(
-                        {
-                            "path": str(link["path"]),
-                            "element_offset": len(result),
-                            "element_count": 1,
-                            "mass": max(float(link.get("mass", 0.0)), 1.0e-6),
-                            "center_of_mass": tuple(
-                                float(value)
-                                for value in link.get(
-                                    "center_of_mass", (0.0, 0.0, 0.0)
-                                )
-                            ),
-                            "inertia_diagonal": tuple(
-                                float(value)
-                                for value in link.get(
-                                    "inertia_diagonal", (1.0e-6,) * 3
-                                )
-                            ),
-                            "inertia_off_diagonal": tuple(
-                                float(value)
-                                for value in link.get(
-                                    "inertia_off_diagonal", (0.0,) * 3
-                                )
-                            ),
-                        }
-                    )
+        for coupling in self.artifact.couplings:
+            link = links_by_path[str(coupling["link_path"])]
+            result.append(
+                MappingProxyType(
+                    {
+                        "path": str(link["path"]),
+                        "coupling_path": str(coupling["coupling_path"]),
+                        "mode": str(coupling["mode"]),
+                        "force_scale": float(coupling["force_scale"]),
+                        "torque_scale": float(coupling["torque_scale"]),
+                        "element_offset": int(coupling["proxy_index"]),
+                        "element_count": 1,
+                        "mass": max(float(link.get("mass", 0.0)), 1.0e-6),
+                        "center_of_mass": tuple(
+                            float(value)
+                            for value in link.get(
+                                "center_of_mass", (0.0, 0.0, 0.0)
+                            )
+                        ),
+                        "inertia_diagonal": tuple(
+                            float(value)
+                            for value in link.get(
+                                "inertia_diagonal", (1.0e-6,) * 3
+                            )
+                        ),
+                        "inertia_off_diagonal": tuple(
+                            float(value)
+                            for value in link.get(
+                                "inertia_off_diagonal", (0.0,) * 3
+                            )
+                        ),
+                    }
                 )
+            )
         return tuple(result)
 
     def _validate_native_layout(self) -> None:
@@ -396,6 +404,10 @@ class LibuipcBatchSolver:
                 "shard_count": self.shard_count,
                 "frame": int(values.get("frame", self._frame)),
                 "graph_captured": False,
+                "graph_capture_reason": "native libuipc shards are stepped outside CUDA Graph capture",
+                "affine_target_staging": "per_shard_device_host_device",
+                "reset_scope": "full_batch_only",
+                "stable_storage": True,
             }
         )
         return MappingProxyType(values)
@@ -442,7 +454,8 @@ class LibuipcBatchSolver:
                 )
             if not bool(mask.all().item()):
                 raise NotImplementedError(
-                    "libuipc batch v1 supports only full-batch reset"
+                    "partial reset is unsupported because libuipc cannot restore "
+                    "individual environments within a shard"
                 )
         self._session.reset()
         self._frame = 0

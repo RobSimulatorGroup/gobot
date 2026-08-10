@@ -449,9 +449,11 @@ public:
         ConfigureLibuipc(config);
         const Json manifest = Json::parse(
                 std::string_view(artifact.manifest, artifact.manifest_size));
-        if (manifest.value("schema_version", 0) != 1 ||
+        if (artifact.schema_version != 2 ||
+            manifest.value("schema_version", 0) != 2 ||
             manifest.value("format", std::string{}) != "gobot-ipc") {
-            throw std::runtime_error("libuipc module requires a Gobot IPC schema v1 artifact");
+            throw std::runtime_error(
+                    "libuipc module requires a Gobot IPC schema v2 artifact with explicit PhysicsCoupling entries");
         }
         for (std::size_t index = 0; index < artifact.blob_count; ++index) {
             const IpcSolverArtifactBlobView& blob = artifact.blobs[index];
@@ -513,8 +515,10 @@ public:
 
         BuildDeformables(manifest.value("deformable_bodies", Json::array()),
                          contact, subscenes);
-        BuildAffineBodies(manifest.value("robots", Json::array()), contact,
-                          config, subscenes);
+        const Json affine_robots = external_affine_proxies_
+                                           ? SelectExternalAffineRobots(manifest)
+                                           : manifest.value("robots", Json::array());
+        BuildAffineBodies(affine_robots, contact, config, subscenes);
         if (deformable_bodies_.empty()) {
             throw std::runtime_error("libuipc module requires at least one deformable body");
         }
@@ -839,6 +843,105 @@ private:
                                      " blob has unsupported encoding");
         }
         return found->second;
+    }
+
+    static Json SelectExternalAffineRobots(const Json& manifest) {
+        const Json& robots = manifest.at("robots");
+        const Json& couplings = manifest.at("couplings");
+        if (!robots.is_array() || !couplings.is_array()) {
+            throw std::runtime_error(
+                    "IPC schema v2 robot and PhysicsCoupling tables must be arrays");
+        }
+        if (couplings.empty()) {
+            throw std::runtime_error(
+                    "combined MuJoCo/libuipc simulation requires at least one enabled PhysicsCoupling");
+        }
+
+        struct RobotLinkRecord {
+            const Json* robot;
+            const Json* link;
+        };
+        std::unordered_map<std::string, RobotLinkRecord> links_by_path;
+        for (const Json& robot : robots) {
+            if (!robot.contains("links") || !robot.at("links").is_array()) {
+                throw std::runtime_error("IPC robot table contains invalid links");
+            }
+            for (const Json& link : robot.at("links")) {
+                const std::string path = link.at("path").get<std::string>();
+                if (!links_by_path.emplace(
+                            path, RobotLinkRecord{&robot, &link}).second) {
+                    throw std::runtime_error(
+                            "IPC schema v2 contains duplicate Robot3D Link3D paths");
+                }
+            }
+        }
+
+        Json selected = Json::array();
+        std::unordered_set<std::string> coupling_paths;
+        std::unordered_set<std::string> link_paths;
+        std::string previous_coupling_path;
+        for (std::size_t proxy_index = 0; proxy_index < couplings.size();
+             ++proxy_index) {
+            const Json& coupling = couplings.at(proxy_index);
+            const std::string coupling_path =
+                    coupling.at("coupling_path").get<std::string>();
+            const std::string link_path =
+                    coupling.at("link_path").get<std::string>();
+            if (coupling_path.empty() || link_path.empty() ||
+                !coupling_paths.insert(coupling_path).second ||
+                !link_paths.insert(link_path).second) {
+                throw std::runtime_error(
+                        "IPC schema v2 PhysicsCoupling paths must be non-empty and unique");
+            }
+            if (proxy_index != 0 && previous_coupling_path > coupling_path) {
+                throw std::runtime_error(
+                        "IPC schema v2 PhysicsCoupling table is not canonically sorted");
+            }
+            previous_coupling_path = coupling_path;
+            if (coupling.at("proxy_index").get<std::size_t>() != proxy_index) {
+                throw std::runtime_error(
+                        "IPC schema v2 PhysicsCoupling proxy indices must be contiguous");
+            }
+            const std::string mode = coupling.at("mode").get<std::string>();
+            const double force_scale = coupling.at("force_scale").get<double>();
+            const double torque_scale = coupling.at("torque_scale").get<double>();
+            if ((mode != "OneWay" && mode != "TwoWay") ||
+                !std::isfinite(force_scale) || force_scale < 0.0 ||
+                !std::isfinite(torque_scale) || torque_scale < 0.0) {
+                throw std::runtime_error(
+                        "IPC schema v2 PhysicsCoupling mode or wrench scale is invalid");
+            }
+            const auto found = links_by_path.find(link_path);
+            if (found == links_by_path.end()) {
+                throw std::runtime_error(
+                        "IPC schema v2 PhysicsCoupling references an unknown Link3D path");
+            }
+            const Json& robot = *found->second.robot;
+            const Json& link = *found->second.link;
+            if (coupling.at("robot_name").get<std::string>() !=
+                        robot.at("name").get<std::string>() ||
+                coupling.at("link_name").get<std::string>() !=
+                        link.at("name").get<std::string>()) {
+                throw std::runtime_error(
+                        "IPC schema v2 PhysicsCoupling names do not match its Link3D path");
+            }
+            const bool has_enabled_collision = std::ranges::any_of(
+                    link.at("collision_shapes"), [](const Json& shape) {
+                        return !shape.value("disabled", false);
+                    });
+            if (!has_enabled_collision) {
+                throw std::runtime_error(
+                        "IPC schema v2 PhysicsCoupling target has no enabled collision shape");
+            }
+            selected.push_back({
+                    {"joints", Json::array()},
+                    {"links", Json::array({link})},
+                    {"name", robot.at("name")},
+                    {"path", robot.at("path")},
+                    {"root_link_paths", Json::array({link_path})},
+                    {"transform", robot.at("transform")}});
+        }
+        return selected;
     }
 
     template <typename ContactElement>

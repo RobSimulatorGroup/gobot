@@ -71,6 +71,11 @@ class NodeScript:
             .value("Motion", RobotMode::Motion)
             .export_values();
 
+    py::enum_<PhysicsCouplingMode>(module, "PhysicsCouplingMode")
+            .value("OneWay", PhysicsCouplingMode::OneWay)
+            .value("TwoWay", PhysicsCouplingMode::TwoWay)
+            .export_values();
+
     py::enum_<RayReductionMode>(module, "RayReductionMode")
             .value("None_", RayReductionMode::None)
             .value("Min", RayReductionMode::Min)

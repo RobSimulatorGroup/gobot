@@ -230,7 +230,7 @@ class LibuipcProvider:
             "artifact": self.artifact.digest,
             "config": asdict(self.config),
             "provider": "libuipc",
-            "schema_version": 1,
+            "schema_version": 2,
         }
         self._runtime_fingerprint = "sha256:" + hashlib.sha256(
             json.dumps(

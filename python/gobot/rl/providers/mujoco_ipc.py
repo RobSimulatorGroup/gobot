@@ -40,14 +40,24 @@ _COLLISION_OWNERSHIP = MappingProxyType(
 class MuJoCoIpcBodyMapping:
     """One authored rigid link shared by MuJoCo and a libuipc proxy."""
 
+    coupling_path: str
     ipc_path: str
     robot_name: str
     link_name: str
     mujoco_body_name: str
     ipc_body_index: int
+    mode: str
+    force_scale: float
+    torque_scale: float
 
     def __post_init__(self) -> None:
-        for name in ("ipc_path", "robot_name", "link_name", "mujoco_body_name"):
+        for name in (
+            "coupling_path",
+            "ipc_path",
+            "robot_name",
+            "link_name",
+            "mujoco_body_name",
+        ):
             value = str(getattr(self, name))
             if not value:
                 raise ValueError(f"coupled body {name} must not be empty")
@@ -56,26 +66,43 @@ class MuJoCoIpcBodyMapping:
         if isinstance(self.ipc_body_index, bool) or index < 0:
             raise ValueError("ipc_body_index must be non-negative")
         object.__setattr__(self, "ipc_body_index", index)
+        mode = str(self.mode)
+        if mode not in ("OneWay", "TwoWay"):
+            raise ValueError("coupled body mode must be OneWay or TwoWay")
+        object.__setattr__(self, "mode", mode)
+        for name in ("force_scale", "torque_scale"):
+            scale = float(getattr(self, name))
+            if not math.isfinite(scale) or scale < 0.0:
+                raise ValueError(f"coupled body {name} must be finite and non-negative")
+            object.__setattr__(self, name, scale)
 
     @classmethod
     def from_mapping(cls, value: Mapping[str, Any]) -> "MuJoCoIpcBodyMapping":
         if not isinstance(value, Mapping):
             raise TypeError("coupled body mapping must be a mapping")
         return cls(
+            coupling_path=str(value.get("coupling_path", "")),
             ipc_path=str(value.get("ipc_path", "")),
             robot_name=str(value.get("robot_name", "")),
             link_name=str(value.get("link_name", "")),
             mujoco_body_name=str(value.get("mujoco_body_name", "")),
             ipc_body_index=int(value.get("ipc_body_index", -1)),
+            mode=str(value.get("mode", "")),
+            force_scale=float(value.get("force_scale", float("nan"))),
+            torque_scale=float(value.get("torque_scale", float("nan"))),
         )
 
     def to_mapping(self) -> Mapping[str, Any]:
         return {
+            "coupling_path": self.coupling_path,
             "ipc_path": self.ipc_path,
             "robot_name": self.robot_name,
             "link_name": self.link_name,
             "mujoco_body_name": self.mujoco_body_name,
             "ipc_body_index": self.ipc_body_index,
+            "mode": self.mode,
+            "force_scale": self.force_scale,
+            "torque_scale": self.torque_scale,
         }
 
 
@@ -86,13 +113,18 @@ class CompiledMuJoCoIpcArtifact:
     mujoco: CompiledSceneArtifact
     ipc: CompiledIpcSceneArtifact
     coupled_bodies: tuple[MuJoCoIpcBodyMapping, ...]
-    schema_version: int = 1
+    schema_version: int = 2
 
     def __post_init__(self) -> None:
-        if int(self.schema_version) != 1:
+        if int(self.schema_version) != 2:
+            if int(self.schema_version) == 1:
+                raise ValueError(
+                    "unsupported MuJoCo+IPC artifact schema 1; schema 2 requires "
+                    "explicit PhysicsCoupling entries"
+                )
             raise ValueError(
                 f"unsupported MuJoCo+IPC artifact schema {self.schema_version}; "
-                "expected schema 1"
+                "expected schema 2"
             )
         mujoco = validate_compiled_artifact(self.mujoco)
         ipc = validate_ipc_artifact(self.ipc)
@@ -104,11 +136,14 @@ class CompiledMuJoCoIpcArtifact:
         )
         if not mappings:
             raise ValueError(
-                "MuJoCo+IPC artifact has no shared rigid links for coupling"
+                "MuJoCo+IPC artifact has no enabled PhysicsCoupling entries"
             )
+        coupling_paths = tuple(mapping.coupling_path for mapping in mappings)
         paths = tuple(mapping.ipc_path for mapping in mappings)
         body_names = tuple(mapping.mujoco_body_name for mapping in mappings)
         indices = tuple(mapping.ipc_body_index for mapping in mappings)
+        if len(set(coupling_paths)) != len(coupling_paths):
+            raise ValueError("MuJoCo+IPC artifact has duplicate PhysicsCoupling paths")
         if len(set(paths)) != len(paths):
             raise ValueError("MuJoCo+IPC artifact has duplicate IPC body paths")
         if len(set(body_names)) != len(body_names):
@@ -122,7 +157,7 @@ class CompiledMuJoCoIpcArtifact:
             raise ValueError(
                 "MuJoCo+IPC body mapping does not match the two compiled artifacts"
             )
-        object.__setattr__(self, "schema_version", 1)
+        object.__setattr__(self, "schema_version", 2)
         object.__setattr__(self, "mujoco", mujoco)
         object.__setattr__(self, "ipc", ipc)
         object.__setattr__(self, "coupled_bodies", mappings)
@@ -132,38 +167,41 @@ class CompiledMuJoCoIpcArtifact:
         mujoco: CompiledSceneArtifact,
         ipc: CompiledIpcSceneArtifact,
     ) -> tuple[MuJoCoIpcBodyMapping, ...]:
+        if not ipc.couplings:
+            raise ValueError(
+                "MuJoCo+IPC artifact requires at least one enabled PhysicsCoupling"
+            )
         rigid_robots = {robot.name: robot for robot in mujoco.robots}
         result = []
-        for ipc_robot in ipc.robots:
-            robot_name = str(ipc_robot["name"])
+        for coupling in ipc.couplings:
+            robot_name = str(coupling["robot_name"])
             rigid_robot = rigid_robots.get(robot_name)
             if rigid_robot is None:
                 raise ValueError(
-                    f"IPC robot {robot_name!r} has no matching MuJoCo robot"
+                    f"PhysicsCoupling {coupling['coupling_path']!r} references "
+                    f"robot {robot_name!r}, which has no matching MuJoCo robot"
                 )
             rigid_body_names = set(rigid_robot.body_names)
-            for link in ipc_robot["links"]:
-                if not any(
-                    not bool(shape.get("disabled", False))
-                    for shape in link["collision_shapes"]
-                ):
-                    continue
-                link_name = str(link["name"])
-                runtime_name = rigid_robot.runtime_prefix + link_name
-                if runtime_name not in rigid_body_names:
-                    raise ValueError(
-                        f"IPC link {link['path']!r} maps to missing MuJoCo body "
-                        f"{runtime_name!r}"
-                    )
-                result.append(
-                    MuJoCoIpcBodyMapping(
-                        ipc_path=str(link["path"]),
-                        robot_name=robot_name,
-                        link_name=link_name,
-                        mujoco_body_name=runtime_name,
-                        ipc_body_index=len(result),
-                    )
+            link_name = str(coupling["link_name"])
+            runtime_name = rigid_robot.runtime_prefix + link_name
+            if runtime_name not in rigid_body_names:
+                raise ValueError(
+                    f"PhysicsCoupling {coupling['coupling_path']!r} maps to missing "
+                    f"MuJoCo body {runtime_name!r}"
                 )
+            result.append(
+                MuJoCoIpcBodyMapping(
+                    coupling_path=str(coupling["coupling_path"]),
+                    ipc_path=str(coupling["link_path"]),
+                    robot_name=robot_name,
+                    link_name=link_name,
+                    mujoco_body_name=runtime_name,
+                    ipc_body_index=int(coupling["proxy_index"]),
+                    mode=str(coupling["mode"]),
+                    force_scale=float(coupling["force_scale"]),
+                    torque_scale=float(coupling["torque_scale"]),
+                )
+            )
         return tuple(result)
 
     @classmethod
@@ -196,9 +234,15 @@ class CompiledMuJoCoIpcArtifact:
     def from_mapping(cls, value: Mapping[str, Any]) -> "CompiledMuJoCoIpcArtifact":
         if not isinstance(value, Mapping):
             raise TypeError("MuJoCo+IPC artifact must be a mapping")
-        if int(value.get("schema_version", 0)) != 1:
+        supplied_schema = int(value.get("schema_version", 0))
+        if supplied_schema != 2:
+            if supplied_schema == 1:
+                raise ValueError(
+                    "unsupported MuJoCo+IPC artifact schema 1; missing explicit "
+                    "PhysicsCoupling mapping"
+                )
             raise ValueError(
-                "unsupported MuJoCo+IPC artifact schema; expected schema 1"
+                "unsupported MuJoCo+IPC artifact schema; expected schema 2"
             )
         artifact = cls(
             mujoco=validate_compiled_artifact(value.get("mujoco", {})),
@@ -268,14 +312,12 @@ class MuJoCoIpcConfig:
     num_envs: int = 256
     device: str = "cuda:0"
     environments_per_shard: int = 64
-    ipc_substeps: int = 1
     force_scale: float = 1.0
     torque_scale: float = 1.0
     capture_mujoco_graphs: bool = True
-    require_full_reset: bool = True
 
     def __post_init__(self) -> None:
-        for name in ("num_envs", "environments_per_shard", "ipc_substeps"):
+        for name in ("num_envs", "environments_per_shard"):
             try:
                 value = operator.index(getattr(self, name))
             except TypeError as error:
@@ -283,11 +325,6 @@ class MuJoCoIpcConfig:
             if isinstance(getattr(self, name), bool) or value <= 0:
                 raise ValueError(f"{name} must be positive")
             object.__setattr__(self, name, value)
-        if self.ipc_substeps != 1:
-            raise ValueError(
-                "MuJoCo+libuipc v1 requires ipc_substeps=1 so both solvers "
-                "advance the same physical time"
-            )
         if self.num_envs % self.environments_per_shard != 0:
             raise ValueError(
                 "num_envs must be divisible by environments_per_shard"
@@ -304,12 +341,6 @@ class MuJoCoIpcConfig:
         object.__setattr__(
             self, "capture_mujoco_graphs", bool(self.capture_mujoco_graphs)
         )
-        require_full_reset = bool(self.require_full_reset)
-        if not require_full_reset:
-            raise ValueError(
-                "MuJoCo+libuipc v1 requires full-batch reset"
-            )
-        object.__setattr__(self, "require_full_reset", require_full_reset)
 
     @property
     def shard_count(self) -> int:
@@ -331,6 +362,17 @@ class MuJoCoIpcCoupler:
         self.rigid_solver = rigid_solver
         self.ipc_solver = ipc_solver
         self.mappings = tuple(mappings)
+        for name, value in (
+            ("force_scale", force_scale),
+            ("torque_scale", torque_scale),
+        ):
+            numeric_value = float(value)
+            if not math.isfinite(numeric_value) or numeric_value < 0.0:
+                raise ValueError(f"{name} must be finite and non-negative")
+            if name == "force_scale":
+                force_scale = numeric_value
+            else:
+                torque_scale = numeric_value
         self._torch = getattr(rigid_solver, "_torch", None)
         if self._torch is None:
             raise TypeError("rigid solver must expose its Torch runtime")
@@ -355,7 +397,8 @@ class MuJoCoIpcCoupler:
                 f"unsupported IPC affine wrench source {self._wrench_source!r}"
             )
         self._proxy_transforms = ipc_arrays.get("affine_transforms")
-        self._source_wrenches = ipc_arrays["affine_contact_wrenches"]
+        self._native_wrenches = ipc_arrays["affine_contact_wrenches"]
+        self._source_wrenches = self._native_wrenches
         self._num_envs = int(rigid_solver.num_envs)
         self._body_count = len(self.mappings)
         expected_targets = (self._num_envs, self._body_count, 4, 4)
@@ -365,16 +408,16 @@ class MuJoCoIpcCoupler:
                 f"IPC affine target storage has shape {tuple(self._targets.shape)}, "
                 f"expected {expected_targets}"
             )
-        if tuple(self._source_wrenches.shape) != expected_wrenches:
+        if tuple(self._native_wrenches.shape) != expected_wrenches:
             raise RuntimeError(
                 "IPC affine contact wrench storage has shape "
-                f"{tuple(self._source_wrenches.shape)}, expected {expected_wrenches}"
+                f"{tuple(self._native_wrenches.shape)}, expected {expected_wrenches}"
             )
         if self._xpos.device != self._targets.device:
             raise RuntimeError(
                 "MuJoCo and libuipc coupling tensors must be on the same device"
             )
-        if not self._targets.is_contiguous() or not self._source_wrenches.is_contiguous():
+        if not self._targets.is_contiguous() or not self._native_wrenches.is_contiguous():
             raise RuntimeError("IPC coupling tensors must be contiguous")
 
         body_names = tuple(mapping.mujoco_body_name for mapping in self.mappings)
@@ -405,6 +448,23 @@ class MuJoCoIpcCoupler:
         self._applied_wrenches = self._torch.zeros_like(self._selected_wrenches)
         self._force_scale = float(force_scale)
         self._torque_scale = float(torque_scale)
+        self._feedback_mask = self._torch.as_tensor(
+            [mapping.mode == "TwoWay" for mapping in self.mappings],
+            dtype=self._xfrc.dtype,
+            device=self._xfrc.device,
+        ).reshape(1, self._body_count, 1)
+        self._force_scales = self._torch.as_tensor(
+            [self._force_scale * mapping.force_scale for mapping in self.mappings],
+            dtype=self._xfrc.dtype,
+            device=self._xfrc.device,
+        ).reshape(1, self._body_count, 1)
+        self._torque_scales = self._torch.as_tensor(
+            [self._torque_scale * mapping.torque_scale for mapping in self.mappings],
+            dtype=self._xfrc.dtype,
+            device=self._xfrc.device,
+        ).reshape(1, self._body_count, 1)
+        self._phase = "Idle"
+        self._completed_steps = 0
         if self._wrench_source == "pose_error":
             self._initialize_pose_error_feedback()
         self._storage_signature = self._capture_storage_signature()
@@ -413,21 +473,44 @@ class MuJoCoIpcCoupler:
         self._targets[..., 3, 3] = 1.0
 
     def _capture_storage_signature(self) -> tuple[tuple[str, int], ...]:
-        return tuple(
-            (name, int(value.data_ptr()))
-            for name, value in (
-                ("xpos", self._xpos),
-                ("xmat", self._xmat),
-                ("xfrc_applied", self._xfrc),
-                ("affine_targets", self._targets),
-                ("affine_contact_wrenches", self._source_wrenches),
-                *(
-                    (("affine_transforms", self._proxy_transforms),)
-                    if self._wrench_source == "pose_error"
-                    else ()
-                ),
+        values = [
+            ("xpos", self._xpos),
+            ("xmat", self._xmat),
+            ("xfrc_applied", self._xfrc),
+            ("affine_targets", self._targets),
+            ("affine_contact_wrenches", self._native_wrenches),
+            ("body_ids", self._body_ids),
+            ("positions", self._positions),
+            ("rotations", self._rotations),
+            ("selected_wrenches", self._selected_wrenches),
+            ("next_wrenches", self._next_wrenches),
+            ("applied_wrenches", self._applied_wrenches),
+            ("feedback_mask", self._feedback_mask),
+            ("force_scales", self._force_scales),
+            ("torque_scales", self._torque_scales),
+        ]
+        if self._wrench_source == "pose_error":
+            values.extend(
+                (
+                    ("affine_transforms", self._proxy_transforms),
+                    ("mass_factor", self._mass_factor),
+                    ("center_of_mass", self._center_of_mass),
+                    ("gravity_force", self._gravity_force),
+                    ("inertia", self._inertia),
+                    ("computed_wrenches", self._computed_wrenches),
+                    ("relative_rotation", self._relative_rotation),
+                    ("rotation_error", self._rotation_error),
+                    ("local_rotation_error", self._local_rotation_error),
+                    ("local_torque", self._local_torque),
+                    ("world_torque", self._world_torque),
+                    ("world_center", self._world_center),
+                    (
+                        "center_acceleration_force",
+                        self._center_acceleration_force,
+                    ),
+                )
             )
-        )
+        return tuple((name, int(value.data_ptr())) for name, value in values)
 
     def _initialize_pose_error_feedback(self) -> None:
         if self._proxy_transforms is None or tuple(self._proxy_transforms.shape) != (
@@ -594,9 +677,7 @@ class MuJoCoIpcCoupler:
                 "MuJoCo+IPC coupling storage changed after construction"
             )
 
-    def push_rigid_poses(self) -> None:
-        """Gather MuJoCo world poses into libuipc proxy targets."""
-
+    def _gather_rigid_pose(self) -> None:
         self._validate_storage()
         self._torch.index_select(
             self._xpos, 1, self._body_ids, out=self._positions
@@ -608,21 +689,43 @@ class MuJoCoIpcCoupler:
             self._rotations.reshape(self._num_envs, self._body_count, 3, 3)
         )
         self._targets[..., :3, 3].copy_(self._positions)
-        set_targets = getattr(self.ipc_solver, "set_affine_targets", None)
-        if callable(set_targets):
-            set_targets(self._targets)
 
-    def apply_ipc_wrenches(self) -> None:
-        """Replace this coupler's previous wrench contribution in MuJoCo."""
+    def _require_phase(self, expected: str) -> None:
+        if self._phase != expected:
+            raise RuntimeError(
+                f"MuJoCo+IPC phase violation: expected {expected}, got {self._phase}"
+            )
 
+    def sync_rigid_pose(self) -> None:
+        """Synchronize targets outside a step, for construction/reset/forward."""
+
+        self._gather_rigid_pose()
+
+    def push_rigid_pose(self) -> None:
+        """PushRigidPose: gather every mapped MuJoCo body into proxy targets."""
+
+        self._require_phase("Idle")
+        self._gather_rigid_pose()
+        self._phase = "StepIpc"
+
+    def step_ipc(self) -> None:
+        """StepIpc: advance libuipc exactly one fixed tick."""
+
+        self._require_phase("StepIpc")
+        self.ipc_solver.step(nsteps=1)
+        self._phase = "ApplyFeedback"
+
+    def apply_feedback(self) -> None:
+        """ApplyFeedback: replace only this coupler's TwoWay wrench contribution."""
+
+        self._require_phase("ApplyFeedback")
         self._validate_storage()
         if self._wrench_source == "pose_error":
             self._compute_pose_error_wrenches()
         self._next_wrenches.copy_(self._source_wrenches)
-        if self._force_scale != 1.0:
-            self._next_wrenches[..., :3].mul_(self._force_scale)
-        if self._torque_scale != 1.0:
-            self._next_wrenches[..., 3:].mul_(self._torque_scale)
+        self._next_wrenches[..., :3].mul_(self._force_scales)
+        self._next_wrenches[..., 3:].mul_(self._torque_scales)
+        self._next_wrenches.mul_(self._feedback_mask)
         self._torch.index_select(
             self._xfrc, 1, self._body_ids, out=self._selected_wrenches
         )
@@ -630,6 +733,22 @@ class MuJoCoIpcCoupler:
         self._selected_wrenches.add_(self._next_wrenches)
         self._xfrc.index_copy_(1, self._body_ids, self._selected_wrenches)
         self._applied_wrenches.copy_(self._next_wrenches)
+        self._phase = "StepRigid"
+
+    def step_rigid(self, actions: Any | None = None) -> None:
+        """StepRigid: advance MuJoCo exactly one fixed tick."""
+
+        self._require_phase("StepRigid")
+        self.rigid_solver.step(actions, nsteps=1)
+        self._phase = "Finalize"
+
+    def finalize(self) -> None:
+        """Finalize: validate storage and complete the fixed tick."""
+
+        self._require_phase("Finalize")
+        self._validate_storage()
+        self._completed_steps += 1
+        self._phase = "Idle"
 
     def release_wrenches(self) -> None:
         """Remove only forces previously contributed by this coupler."""
@@ -640,6 +759,36 @@ class MuJoCoIpcCoupler:
         self._selected_wrenches.sub_(self._applied_wrenches)
         self._xfrc.index_copy_(1, self._body_ids, self._selected_wrenches)
         self._applied_wrenches.zero_()
+
+    def abort(self) -> None:
+        self.release_wrenches()
+        self._phase = "Faulted"
+
+    def recover(self) -> None:
+        self.release_wrenches()
+        self._phase = "Idle"
+
+    @property
+    def phase(self) -> str:
+        return self._phase
+
+    @property
+    def feedback_source(self) -> str:
+        return (
+            "proxy_constraint"
+            if self._wrench_source == "pose_error"
+            else "native_contact_wrench"
+        )
+
+    @property
+    def storage_signature(self) -> tuple[tuple[str, int], ...]:
+        return self._storage_signature
+
+    PushRigidPose = push_rigid_pose
+    StepIpc = step_ipc
+    ApplyFeedback = apply_feedback
+    StepRigid = step_rigid
+    Finalize = finalize
 
 
 class _MuJoCoIpcRobotViewAdapter:
@@ -659,13 +808,10 @@ class _MuJoCoIpcRobotViewAdapter:
         self.inner.set_controls(controls)
 
     def reset(self, reset_mask: Any, **state: Any) -> Mapping[str, Any]:
-        self.provider._require_full_reset(reset_mask)
-        self.provider.coupler.release_wrenches()
-        result = self.inner.reset(reset_mask, **state)
-        self.provider.ipc_solver.reset(reset_mask)
-        self.provider.coupler.push_rigid_poses()
-        self.provider._step_count = 0
-        return result
+        mask = self.provider._require_full_reset(reset_mask)
+        return self.provider._perform_full_reset(
+            mask, lambda: self.inner.reset(mask, **state)
+        )
 
 
 class MuJoCoIpcProvider(BatchPhysicsProvider):
@@ -694,6 +840,8 @@ class MuJoCoIpcProvider(BatchPhysicsProvider):
         self.artifact = validate_mujoco_ipc_artifact(artifact)
         self.config = config or MuJoCoIpcConfig()
         self._closed = False
+        self._faulted = False
+        self._fault_reason = ""
         self._generation = 1
         self._step_count = 0
 
@@ -747,9 +895,15 @@ class MuJoCoIpcProvider(BatchPhysicsProvider):
                 force_scale=self.config.force_scale,
                 torque_scale=self.config.torque_scale,
             )
-            self.coupler.push_rigid_poses()
+            self.coupler.sync_rigid_pose()
             self._arrays = self._make_array_views()
         except Exception:
+            coupler = getattr(self, "coupler", None)
+            if coupler is not None:
+                try:
+                    coupler.release_wrenches()
+                except Exception:
+                    pass
             close = getattr(self.rigid_solver, "close", None)
             if callable(close):
                 close()
@@ -942,6 +1096,16 @@ class MuJoCoIpcProvider(BatchPhysicsProvider):
                 "mujoco": dict(getattr(self.rigid_solver, "diagnostics", {})),
                 "libuipc": dict(getattr(self.ipc_solver, "diagnostics", {})),
                 "graph_captured": False,
+                "graph_capture_reason": (
+                    "the composite step spans MuJoCo Warp and native libuipc shards"
+                ),
+                "feedback_source": self.coupler.feedback_source,
+                "faulted": self._faulted,
+                "fault_reason": self._fault_reason,
+                "coupler_phase": self.coupler.phase,
+                "stable_storage": True,
+                "reset_scope": "full_batch_only",
+                "affine_target_staging": "per_shard_device_host_device",
             }
         )
 
@@ -954,21 +1118,28 @@ class MuJoCoIpcProvider(BatchPhysicsProvider):
     def step(
         self, actions: Any | None = None, *, nsteps: int = 1
     ) -> Mapping[str, Any]:
-        self._require_open()
+        self._require_operational()
         try:
             count = operator.index(nsteps)
         except TypeError as error:
             raise TypeError("MuJoCo+IPC step count must be an integer") from error
         if isinstance(nsteps, bool) or count <= 0:
             raise ValueError("MuJoCo+IPC step count must be positive")
-        for index in range(count):
-            self.coupler.push_rigid_poses()
-            self.ipc_solver.step(nsteps=self.config.ipc_substeps)
-            self.coupler.apply_ipc_wrenches()
-            self.rigid_solver.step(
-                actions if index == 0 else None,
-                nsteps=1,
-            )
+        try:
+            for index in range(count):
+                self.coupler.push_rigid_pose()
+                self.coupler.step_ipc()
+                self.coupler.apply_feedback()
+                self.coupler.step_rigid(actions if index == 0 else None)
+                self.coupler.finalize()
+        except Exception as error:
+            self._faulted = True
+            self._fault_reason = str(error)
+            try:
+                self.coupler.abort()
+            except Exception:
+                pass
+            raise
         self._step_count += count
         return self._arrays
 
@@ -985,32 +1156,51 @@ class MuJoCoIpcProvider(BatchPhysicsProvider):
             )
         if not bool(mask.all().item()):
             raise NotImplementedError(
-                "MuJoCo+libuipc v1 supports only full-batch reset; masked reset "
-                "requires per-subscene state restore"
+                "partial reset is unsupported because libuipc cannot restore "
+                "individual environments within a shard"
             )
         return mask
+
+    def _perform_full_reset(self, mask: Any, reset_rigid: Any) -> Mapping[str, Any]:
+        self._require_open()
+        try:
+            self.coupler.release_wrenches()
+            result = reset_rigid()
+            self.ipc_solver.reset(mask)
+            self.coupler.recover()
+            self.coupler.sync_rigid_pose()
+        except Exception as error:
+            self._faulted = True
+            self._fault_reason = str(error)
+            try:
+                self.coupler.abort()
+            except Exception:
+                pass
+            raise
+        self._faulted = False
+        self._fault_reason = ""
+        self._step_count = 0
+        return result
 
     def reset(self, reset_mask: Any, **state: Any) -> Mapping[str, Any]:
         self._require_open()
         mask = self._require_full_reset(reset_mask)
-        self.coupler.release_wrenches()
-        self.rigid_solver.reset(mask, **state)
-        self.ipc_solver.reset(mask)
-        self.coupler.push_rigid_poses()
-        self._step_count = 0
+        self._perform_full_reset(
+            mask, lambda: self.rigid_solver.reset(mask, **state)
+        )
         return self._arrays
 
     def forward(self) -> Mapping[str, Any]:
-        self._require_open()
+        self._require_operational()
         forward = getattr(self.rigid_solver, "forward", None)
         if not callable(forward):
             raise NotImplementedError("rigid solver does not support forward()")
         forward()
-        self.coupler.push_rigid_poses()
+        self.coupler.sync_rigid_pose()
         return self._arrays
 
     def sense(self) -> Mapping[str, Any]:
-        self._require_open()
+        self._require_operational()
         sense = getattr(self.rigid_solver, "sense", None)
         if not callable(sense):
             raise NotImplementedError("rigid solver does not support sense()")
@@ -1018,7 +1208,7 @@ class MuJoCoIpcProvider(BatchPhysicsProvider):
         return self._arrays
 
     def synchronize(self) -> None:
-        self._require_open()
+        self._require_operational()
         synchronize = getattr(self.ipc_solver, "synchronize", None)
         if callable(synchronize):
             synchronize()
@@ -1048,6 +1238,14 @@ class MuJoCoIpcProvider(BatchPhysicsProvider):
     def _require_open(self) -> None:
         if self._closed:
             raise RuntimeError("MuJoCo+libuipc provider is closed")
+
+    def _require_operational(self) -> None:
+        self._require_open()
+        if self._faulted:
+            raise RuntimeError(
+                "MuJoCo+libuipc provider is faulted; perform a successful full "
+                "reset or close it"
+            )
 
 
 __all__ = [

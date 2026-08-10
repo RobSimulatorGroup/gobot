@@ -26,11 +26,11 @@ constexpr std::array<double, 16> kIdentity{
 
 gobot::IpcSceneArtifact MakeArtifact() {
     gobot::IpcSceneArtifact artifact;
-    artifact.schema_version = 1;
+    artifact.schema_version = 2;
     artifact.producer = "gobot-test";
     artifact.producer_version = "1";
     artifact.format = "gobot-ipc";
-    artifact.manifest = R"({"schema_version":1,"format":"gobot-ipc"})";
+    artifact.manifest = R"({"couplings":[],"format":"gobot-ipc","schema_version":2})";
     artifact.manifest_sha256 = "test";
     return artifact;
 }

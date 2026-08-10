@@ -26,6 +26,7 @@
 #include "gobot/scene/link_3d.hpp"
 #include "gobot/scene/node.hpp"
 #include "gobot/scene/node_3d.hpp"
+#include "gobot/scene/physics_coupling.hpp"
 #include "gobot/scene/resources/box_shape_3d.hpp"
 #include "gobot/scene/resources/capsule_shape_3d.hpp"
 #include "gobot/scene/resources/convex_mesh_shape_3d.hpp"
@@ -257,6 +258,49 @@ std::string NodePathString(const Node& node) {
     return static_cast<std::string>(node.GetPath());
 }
 
+const Node* ResolveNodePath(const Node& source, const NodePath& path) {
+    if (path.IsEmpty() || path.GetSubNameCount() != 0) {
+        return nullptr;
+    }
+    const Node* current = &source;
+    std::size_t name_index = 0;
+    const std::vector<std::string> names = path.GetNames();
+    if (path.IsAbsolute()) {
+        while (current->GetParent() != nullptr) {
+            current = current->GetParent();
+        }
+        if (!names.empty() && names.front() == current->GetName()) {
+            name_index = 1;
+        }
+    }
+    for (; name_index < names.size(); ++name_index) {
+        const std::string& name = names[name_index];
+        if (name == ".") {
+            continue;
+        }
+        if (name == "..") {
+            current = current->GetParent();
+            if (current == nullptr) {
+                return nullptr;
+            }
+            continue;
+        }
+        const Node* child = nullptr;
+        for (std::size_t index = 0; index < current->GetChildCount(); ++index) {
+            const Node* candidate = current->GetChild(static_cast<int>(index));
+            if (candidate->GetName() == name) {
+                child = candidate;
+                break;
+            }
+        }
+        if (child == nullptr) {
+            return nullptr;
+        }
+        current = child;
+    }
+    return current;
+}
+
 const Link3D* FindAncestorLink(const Node& node) {
     const Node* ancestor = node.GetParent();
     while (ancestor != nullptr) {
@@ -326,10 +370,143 @@ public:
                 return false;
             }
         }
+        if (const auto* coupling = Object::PointerCastTo<PhysicsCoupling>(node)) {
+            coupling_nodes_.push_back(coupling);
+        }
         for (std::size_t index = 0; index < node->GetChildCount(); ++index) {
             if (!Visit(node->GetChild(static_cast<int>(index)), error)) {
                 return false;
             }
+        }
+        return true;
+    }
+
+    bool FinalizeCouplings(const Node& scene_root, std::string* error) {
+        struct PendingCoupling {
+            std::string coupling_path;
+            std::string link_path;
+            std::string robot_name;
+            std::string link_name;
+            PhysicsCouplingMode mode;
+            RealType force_scale;
+            RealType torque_scale;
+        };
+
+        std::vector<PendingCoupling> pending;
+        std::unordered_set<std::string> linked_paths;
+        for (const PhysicsCoupling* coupling : coupling_nodes_) {
+            if (!coupling->IsEnabled()) {
+                continue;
+            }
+            const std::string coupling_path = NodePathString(*coupling);
+            const NodePath& target_path = coupling->GetRigidLinkPath();
+            if (target_path.IsEmpty()) {
+                return SetCompileError(
+                        error, "PhysicsCoupling '" + coupling_path +
+                                       "' requires a rigid_link_path");
+            }
+            const Node* target = ResolveNodePath(*coupling, target_path);
+            const auto* link = Object::PointerCastTo<Link3D>(target);
+            if (link == nullptr) {
+                return SetCompileError(
+                        error, "PhysicsCoupling '" + coupling_path +
+                                       "' rigid_link_path does not resolve to a Link3D");
+            }
+            if (link != &scene_root && !scene_root.IsAncestorOf(link)) {
+                return SetCompileError(
+                        error, "PhysicsCoupling '" + coupling_path +
+                                       "' must target a Link3D in the compiled scene");
+            }
+
+            const Robot3D* robot = nullptr;
+            for (const Node* ancestor = link->GetParent(); ancestor != nullptr;
+                 ancestor = ancestor->GetParent()) {
+                if (const auto* candidate = Object::PointerCastTo<Robot3D>(ancestor)) {
+                    robot = candidate;
+                    break;
+                }
+            }
+            if (robot == nullptr ||
+                (robot != &scene_root && !scene_root.IsAncestorOf(robot))) {
+                return SetCompileError(
+                        error, "PhysicsCoupling '" + coupling_path +
+                                       "' target must belong to a Robot3D in the compiled scene");
+            }
+
+            const std::string link_path = NodePathString(*link);
+            const Json* compiled_link = nullptr;
+            for (const Json& compiled_robot : robots_) {
+                if (compiled_robot.at("path").get<std::string>() !=
+                    NodePathString(*robot)) {
+                    continue;
+                }
+                for (const Json& candidate : compiled_robot.at("links")) {
+                    if (candidate.at("path").get<std::string>() == link_path) {
+                        compiled_link = &candidate;
+                        break;
+                    }
+                }
+                break;
+            }
+            if (compiled_link == nullptr) {
+                return SetCompileError(
+                        error, "PhysicsCoupling '" + coupling_path +
+                                       "' target is not a compiled Robot3D Link3D");
+            }
+            const bool has_enabled_collision = std::ranges::any_of(
+                    compiled_link->at("collision_shapes"), [](const Json& shape) {
+                        return !shape.value("disabled", false);
+                    });
+            if (!has_enabled_collision) {
+                return SetCompileError(
+                        error, "PhysicsCoupling '" + coupling_path +
+                                       "' target Link3D has no enabled CollisionShape3D");
+            }
+
+            const int mode = static_cast<int>(coupling->GetMode());
+            if (mode < static_cast<int>(PhysicsCouplingMode::OneWay) ||
+                mode > static_cast<int>(PhysicsCouplingMode::TwoWay)) {
+                return SetCompileError(
+                        error, "PhysicsCoupling '" + coupling_path +
+                                       "' has an invalid coupling mode");
+            }
+            if (!std::isfinite(coupling->GetForceScale()) ||
+                coupling->GetForceScale() < 0.0 ||
+                !std::isfinite(coupling->GetTorqueScale()) ||
+                coupling->GetTorqueScale() < 0.0) {
+                return SetCompileError(
+                        error, "PhysicsCoupling '" + coupling_path +
+                                       "' force and torque scales must be finite and non-negative");
+            }
+            if (!linked_paths.insert(link_path).second) {
+                return SetCompileError(
+                        error, "multiple enabled PhysicsCoupling nodes target Link3D '" +
+                                       link_path + "'");
+            }
+            pending.push_back(PendingCoupling{
+                    coupling_path,
+                    link_path,
+                    robot->GetName(),
+                    link->GetName(),
+                    coupling->GetMode(),
+                    coupling->GetForceScale(),
+                    coupling->GetTorqueScale()});
+        }
+
+        std::ranges::sort(pending, {}, &PendingCoupling::coupling_path);
+        for (std::size_t proxy_index = 0; proxy_index < pending.size(); ++proxy_index) {
+            const PendingCoupling& coupling = pending[proxy_index];
+            couplings_.push_back({
+                    {"coupling_path", coupling.coupling_path},
+                    {"force_scale", coupling.force_scale},
+                    {"link_name", coupling.link_name},
+                    {"link_path", coupling.link_path},
+                    {"mode", coupling.mode == PhysicsCouplingMode::OneWay
+                                     ? "OneWay"
+                                     : "TwoWay"},
+                    {"proxy_index", proxy_index},
+                    {"robot_name", coupling.robot_name},
+                    {"torque_scale", coupling.torque_scale}});
         }
         return true;
     }
@@ -345,13 +522,14 @@ public:
         }
         return Json{
                 {"blobs", std::move(blob_table)},
+                {"couplings", couplings_},
                 {"deformable_bodies", deformable_bodies_},
                 {"format", "gobot-ipc"},
                 {"producer", "gobot"},
                 {"producer_version", ProducerVersion()},
                 {"robots", robots_},
                 {"scene_name", scene_root.GetName()},
-                {"schema_version", 1},
+                {"schema_version", 2},
                 {"tactile_sensors", tactile_sensors_}};
     }
 
@@ -880,6 +1058,8 @@ private:
     Json deformable_bodies_ = Json::array();
     Json tactile_sensors_ = Json::array();
     Json robots_ = Json::array();
+    Json couplings_ = Json::array();
+    std::vector<const PhysicsCoupling*> coupling_nodes_;
     std::map<std::string, IpcSceneArtifactBlob> blobs_;
 };
 
@@ -901,9 +1081,12 @@ bool IpcSceneCompiler::Compile(
     if (!compiler.Visit(scene_root, error)) {
         return false;
     }
+    if (!compiler.FinalizeCouplings(*scene_root, error)) {
+        return false;
+    }
     const Json manifest_json = compiler.BuildManifest(*scene_root);
     IpcSceneArtifact result;
-    result.schema_version = 1;
+    result.schema_version = 2;
     result.producer = "gobot";
     result.producer_version = ProducerVersion();
     result.format = "gobot-ipc";

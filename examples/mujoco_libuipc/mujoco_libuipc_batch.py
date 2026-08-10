@@ -5,6 +5,7 @@ from __future__ import annotations
 import argparse
 import json
 from pathlib import Path
+import statistics
 import tempfile
 import time
 from typing import Any
@@ -34,6 +35,8 @@ def _parser() -> argparse.ArgumentParser:
     parser.add_argument("--num-envs", type=int, default=4)
     parser.add_argument("--environments-per-shard", type=int, default=4)
     parser.add_argument("--steps", type=int, default=128)
+    parser.add_argument("--warmup-steps", type=int, default=8)
+    parser.add_argument("--repeats", type=int, default=3)
     parser.add_argument("--fixed-dt", type=float, default=0.002)
     parser.add_argument("--press-depth", type=float, default=0.17)
     parser.add_argument("--device", default="cuda:0")
@@ -58,6 +61,10 @@ def _validate_args(args: argparse.Namespace) -> None:
         )
     if args.steps <= 0:
         raise ValueError("--steps must be positive")
+    if args.warmup_steps < 0:
+        raise ValueError("--warmup-steps must be non-negative")
+    if args.repeats <= 0:
+        raise ValueError("--repeats must be positive")
     if args.fixed_dt <= 0.0:
         raise ValueError("--fixed-dt must be positive")
     if not 0.0 < args.press_depth <= 0.17:
@@ -142,17 +149,46 @@ def run(args: argparse.Namespace) -> dict[str, Any]:
             device=args.device,
         ).unsqueeze(1)
         command = torch.empty_like(depth_scale)
+        all_envs = torch.ones(args.num_envs, dtype=torch.bool, device=args.device)
 
-        provider.synchronize()
-        started = time.perf_counter()
-        for step in range(args.steps):
-            progress = float(step + 1) / float(args.steps)
-            smooth_progress = progress * progress * (3.0 - 2.0 * progress)
-            command.copy_(depth_scale).mul_(-args.press_depth * smooth_progress)
+        for warmup_step in range(args.warmup_steps):
+            progress = float(warmup_step + 1) / float(max(args.warmup_steps, 1))
+            command.copy_(depth_scale).mul_(-0.5 * args.press_depth * progress)
             press_view.set_position_targets(command)
             provider.step()
-        provider.synchronize()
-        elapsed = time.perf_counter() - started
+        if args.warmup_steps:
+            provider.synchronize()
+
+        elapsed_samples = []
+        throughput_samples = []
+        ipc_shard_latency_samples = []
+        for _ in range(args.repeats):
+            provider.reset(all_envs)
+            provider.synchronize()
+            started = time.perf_counter()
+            for step in range(args.steps):
+                progress = float(step + 1) / float(args.steps)
+                smooth_progress = progress * progress * (3.0 - 2.0 * progress)
+                command.copy_(depth_scale).mul_(
+                    -args.press_depth * smooth_progress
+                )
+                press_view.set_position_targets(command)
+                provider.step()
+            provider.synchronize()
+            elapsed = time.perf_counter() - started
+            elapsed_samples.append(elapsed)
+            throughput_samples.append(args.num_envs * args.steps / elapsed)
+            ipc_shard_latency_samples.append(
+                float(
+                    provider.ipc_solver.diagnostics.get(
+                        "last_step_latency_ms", 0.0
+                    )
+                )
+                / provider.ipc_solver.shard_count
+            )
+
+        elapsed = statistics.median(elapsed_samples)
+        median_throughput = statistics.median(throughput_samples)
 
         state = press_view.read_state()
         current_height = (
@@ -175,7 +211,6 @@ def run(args: argparse.Namespace) -> dict[str, Any]:
             if not bool(torch.isfinite(provider.arrays[name]).all().item()):
                 raise RuntimeError(f"non-finite values in {name}")
 
-        all_envs = torch.ones(args.num_envs, dtype=torch.bool, device=args.device)
         provider.reset(all_envs)
         provider.synchronize()
         reset_error = float(
@@ -189,12 +224,20 @@ def run(args: argparse.Namespace) -> dict[str, Any]:
             "artifact": artifact.digest,
             "collision_ownership": dict(artifact.collision_ownership),
             "composite_graph_captured": provider.graph_captured,
+            "composite_graph_capture_reason": provider.diagnostics[
+                "graph_capture_reason"
+            ],
             "device": args.device,
             "elapsed_seconds": elapsed,
-            "environment_steps_per_second": args.num_envs * args.steps / elapsed,
+            "environment_steps_per_second": median_throughput,
+            "environment_steps_per_second_samples": throughput_samples,
             "environments": args.num_envs,
             "environments_per_shard": args.environments_per_shard,
             "ipc_position_storage_stable": positions.data_ptr() == position_pointer,
+            "ipc_shard_latency_median_ms": statistics.median(
+                ipc_shard_latency_samples
+            ),
+            "feedback_source": provider.diagnostics["feedback_source"],
             "joint_position_range": _range(state.joint_position[:, 0]),
             "mujoco_graph_capture_enabled": (
                 provider.rigid_solver.capabilities.graph_capture
@@ -203,10 +246,16 @@ def run(args: argparse.Namespace) -> dict[str, Any]:
             "qpos_storage_stable": qpos.data_ptr() == qpos_pointer,
             "reaction_force_range_newtons": _range(reaction_force),
             "reset_max_position_error": reset_error,
+            "reset_scope": provider.diagnostics["reset_scope"],
             "scene": str(scene_path),
             "shards": provider.ipc_solver.shard_count,
             "soft_compression_range_meters": _range(compression),
+            "affine_target_staging": provider.diagnostics[
+                "affine_target_staging"
+            ],
             "steps": args.steps,
+            "warmup_steps": args.warmup_steps,
+            "repeats": args.repeats,
         }
     finally:
         provider.close()

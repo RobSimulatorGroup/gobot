@@ -12,6 +12,7 @@
 #include <gobot/scene/link_3d.hpp>
 #include <gobot/scene/mesh_instance_3d.hpp>
 #include <gobot/scene/node_creation_registry.hpp>
+#include <gobot/scene/physics_coupling.hpp>
 #include <gobot/scene/resources/primitive_mesh.hpp>
 #include <gobot/scene/robot_3d.hpp>
 #include <gobot/scene/sensor_3d.hpp>
@@ -35,6 +36,7 @@ const gobot::NodeCreationEntry* FindEntry(const std::string& id) {
 TEST(TestNodeCreationRegistry, built_in_entries_keep_node_inheritance_shape) {
     const auto* node = FindEntry("Node");
     const auto* node_3d = FindEntry("Node3D");
+    const auto* physics_coupling = FindEntry("PhysicsCoupling");
     const auto* collision_shape = FindEntry("CollisionShape3D");
     const auto* terrain = FindEntry("Terrain3D");
     const auto* robot = FindEntry("Robot3D");
@@ -62,6 +64,7 @@ TEST(TestNodeCreationRegistry, built_in_entries_keep_node_inheritance_shape) {
 
     ASSERT_NE(node, nullptr);
     ASSERT_NE(node_3d, nullptr);
+    ASSERT_NE(physics_coupling, nullptr);
     ASSERT_NE(collision_shape, nullptr);
     ASSERT_NE(terrain, nullptr);
     ASSERT_NE(robot, nullptr);
@@ -89,6 +92,7 @@ TEST(TestNodeCreationRegistry, built_in_entries_keep_node_inheritance_shape) {
 
     EXPECT_TRUE(node->parent_id.empty());
     EXPECT_EQ(node_3d->parent_id, "Node");
+    EXPECT_EQ(physics_coupling->parent_id, "Node");
     EXPECT_EQ(collision_shape->parent_id, "Node3D");
     EXPECT_EQ(terrain->parent_id, "Node3D");
     EXPECT_EQ(robot->parent_id, "Node3D");
@@ -116,6 +120,16 @@ TEST(TestNodeCreationRegistry, built_in_entries_keep_node_inheritance_shape) {
 }
 
 TEST(TestNodeCreationRegistry, creates_ipc_scene_nodes) {
+    gobot::Node* coupling_node =
+            gobot::NodeCreationRegistry::CreateNode("PhysicsCoupling");
+    ASSERT_NE(coupling_node, nullptr);
+    auto* coupling =
+            gobot::Object::PointerCastTo<gobot::PhysicsCoupling>(coupling_node);
+    ASSERT_NE(coupling, nullptr);
+    EXPECT_TRUE(coupling->IsEnabled());
+    EXPECT_EQ(coupling->GetMode(), gobot::PhysicsCouplingMode::TwoWay);
+    gobot::Object::Delete(coupling_node);
+
     gobot::Node* deformable_node =
             gobot::NodeCreationRegistry::CreateNode("DeformableBody3D");
     ASSERT_NE(deformable_node, nullptr);
