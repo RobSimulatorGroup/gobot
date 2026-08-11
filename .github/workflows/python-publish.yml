@@ -155,7 +155,8 @@ jobs:
           test -f build/gsplat_inference/install/lib/libgobot_gsplat_inference.a
           CUDA_ROOT="${CUDA_HOME:-/usr/local/cuda}"
           CUDA_TARGET_ROOT="${CUDA_ROOT}/targets/x86_64-linux"
-          mkdir -p build/cuda-toolkit/lib64/stubs
+          CUDA_PACKAGE_TARGET_ROOT="build/cuda-toolkit/targets/x86_64-linux"
+          mkdir -p "${CUDA_PACKAGE_TARGET_ROOT}/lib/stubs"
           if test -f "${CUDA_ROOT}/version.json"; then
             cp -a "${CUDA_ROOT}/version.json" build/cuda-toolkit/version.json
           elif test -f "${CUDA_ROOT}/version.txt"; then
@@ -165,13 +166,27 @@ jobs:
             test -n "${CUDA_VERSION_LINE}"
             printf '%s\n' "${CUDA_VERSION_LINE}" > build/cuda-toolkit/version.txt
           fi
-          cp -a "${CUDA_TARGET_ROOT}/include" build/cuda-toolkit/include
-          cp -a "${CUDA_TARGET_ROOT}"/lib/libcudart.so* build/cuda-toolkit/lib64/
+          cp -a "${CUDA_ROOT}/bin" build/cuda-toolkit/bin
+          cp -a "${CUDA_ROOT}/nvvm" build/cuda-toolkit/nvvm
+          cp -a "${CUDA_TARGET_ROOT}/include" "${CUDA_PACKAGE_TARGET_ROOT}/include"
+          cp -a "${CUDA_TARGET_ROOT}"/lib/libcudart.so* \
+            "${CUDA_PACKAGE_TARGET_ROOT}/lib/"
+          cp -a \
+            "${CUDA_TARGET_ROOT}/lib/libcudadevrt.a" \
+            "${CUDA_TARGET_ROOT}/lib/libcudart_static.a" \
+            "${CUDA_TARGET_ROOT}/lib/libculibos.a" \
+            "${CUDA_PACKAGE_TARGET_ROOT}/lib/"
           cp -a "${CUDA_TARGET_ROOT}/lib/stubs/libcuda.so" \
-            build/cuda-toolkit/lib64/stubs/libcuda.so
+            "${CUDA_PACKAGE_TARGET_ROOT}/lib/stubs/libcuda.so"
+          ln -s targets/x86_64-linux/include build/cuda-toolkit/include
+          ln -s targets/x86_64-linux/lib build/cuda-toolkit/lib64
           test -f build/cuda-toolkit/version.json \
             || test -f build/cuda-toolkit/version.txt
+          test -x build/cuda-toolkit/bin/nvcc
+          test -x build/cuda-toolkit/nvvm/bin/cicc
+          test -f build/cuda-toolkit/nvvm/libdevice/libdevice.10.bc
           test -f build/cuda-toolkit/include/cuda.h
+          test -f build/cuda-toolkit/lib64/libcudadevrt.a
           test -f build/cuda-toolkit/lib64/stubs/libcuda.so
           tar -C build -czf "$RUNNER_TEMP/luisa-cuda-build-inputs.tar.gz" \
             luisa_compute/install gsplat_inference/install cuda-toolkit
@@ -336,7 +351,11 @@ jobs:
             "$RUNNER_TEMP/luisa-cuda-build-inputs/luisa-cuda-build-inputs.tar.gz"
           test -x build/luisa_compute/install/bin/luisa_nvrtc
           test -f build/gsplat_inference/install/lib/libgobot_gsplat_inference.a
+          test -x build/cuda-toolkit/bin/nvcc
+          test -x build/cuda-toolkit/nvvm/bin/cicc
+          test -f build/cuda-toolkit/nvvm/libdevice/libdevice.10.bc
           test -f build/cuda-toolkit/include/cuda.h
+          test -f build/cuda-toolkit/lib64/libcudadevrt.a
           test -f build/cuda-toolkit/lib64/stubs/libcuda.so
 
       - name: Restore OpenUSD SDK
@@ -361,12 +380,15 @@ jobs:
         run: |
           test -f build/cuda-toolkit/version.json \
             || test -f build/cuda-toolkit/version.txt
+          build/cuda-toolkit/bin/nvcc --version | grep -F "V12.8.93"
 
       - name: Build wheel
         env:
           GOBOT_SKIP_DEPENDENCY_BOOTSTRAP: "1"
         run: |
+          CUDACXX="$PWD/build/cuda-toolkit/bin/nvcc" \
           CMAKE_ARGS="-DCUDAToolkit_ROOT=$PWD/build/cuda-toolkit \
+            -DGOB_LIBUIPC_CUDA_ARCHITECTURES=75-real;80-real;86-real;89-real;90-real;100-real;120-real;120-virtual \
             -DGOB_GSPLAT_INFERENCE_ROOT=$PWD/build/gsplat_inference/install \
             -DGOB_BUILD_OPENUSD=ON \
             -DGOB_OPENUSD_ROOT=$PWD/build/openusd/install \

@@ -69,6 +69,12 @@ def test_release_wheel_provisions_libuipc_sources_and_native_dependencies() -> N
     assert "git -C 3rdparty/libuipc -c protocol.version=2 submodule update" in workflow
     assert "libtbb-dev" in workflow
     assert "liburdfdom-dev" in workflow
+    assert "build/cuda-toolkit/bin/nvcc" in workflow
+    assert "build/cuda-toolkit/nvvm/bin/cicc" in workflow
+    assert "build/cuda-toolkit/lib64/libcudadevrt.a" in workflow
+    assert 'CUDA_PACKAGE_TARGET_ROOT="build/cuda-toolkit/targets/x86_64-linux"' in workflow
+    assert "ln -s targets/x86_64-linux/include" in workflow
+    assert "GOB_LIBUIPC_CUDA_ARCHITECTURES=75-real;" in workflow
 
 
 def test_removed_warp_ipc_demo_is_not_packaged() -> None:
