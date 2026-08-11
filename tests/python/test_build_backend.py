@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import os
 from pathlib import Path
+import re
 import sys
 import tempfile
 from types import ModuleType, SimpleNamespace
@@ -104,6 +105,19 @@ def test_release_wheel_provisions_libuipc_sources_and_native_dependencies() -> N
     cmake = (backend.ROOT / "CMakeLists.txt").read_text(encoding="utf-8")
     assert 'set(GOB_LIBUIPC_CUDA_DIAGNOSTIC_SUPPRESSIONS "" CACHE STRING' in cmake
     assert "--diag-suppress=${GOB_LIBUIPC_CUDA_DIAGNOSTIC_SUPPRESSIONS}" in cmake
+
+
+def test_publish_workflow_sets_runner_paths_at_step_runtime() -> None:
+    workflow = (
+        backend.ROOT / ".github" / "workflows" / "python-publish.yml"
+    ).read_text(encoding="utf-8")
+    job_env_blocks = re.findall(r"^    env:\n(?:^      [^\n]*\n)+", workflow, re.MULTILINE)
+
+    assert all("${{ runner." not in block for block in job_env_blocks)
+    assert (
+        'echo "CCACHE_DIR=$RUNNER_TEMP/gobot-wheel-ccache" >> "$GITHUB_ENV"'
+        in workflow
+    )
 
 
 def test_removed_warp_ipc_demo_is_not_packaged() -> None:
@@ -334,6 +348,7 @@ def test_source_archive_without_submodules_fails_clearly() -> None:
 def main() -> None:
     test_python_build_defaults_enable_complete_native_runtime()
     test_release_wheel_provisions_libuipc_sources_and_native_dependencies()
+    test_publish_workflow_sets_runner_paths_at_step_runtime()
     test_removed_warp_ipc_demo_is_not_packaged()
     test_wheel_and_editable_hooks_prepare_dependencies()
     test_metadata_and_sdist_do_not_prepare_dependencies()
