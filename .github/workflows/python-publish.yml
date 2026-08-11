@@ -289,6 +289,12 @@ jobs:
     needs: [build-luisa, build-openusd]
     runs-on: ubuntu-22.04
     timeout-minutes: 240
+    env:
+      CCACHE_BASEDIR: ${{ github.workspace }}
+      CCACHE_COMPILERCHECK: content
+      CCACHE_COMPRESS: "true"
+      CCACHE_DIR: ${{ runner.temp }}/gobot-wheel-ccache
+      CCACHE_MAXSIZE: 1G
     strategy:
       fail-fast: false
       matrix:
@@ -307,6 +313,7 @@ jobs:
           sudo apt-get install -y \
             autoconf \
             ca-certificates \
+            ccache \
             curl \
             gcc-11 \
             g++-11 \
@@ -361,6 +368,24 @@ jobs:
           git -C 3rdparty/libuipc submodule sync --recursive
           git -C 3rdparty/libuipc -c protocol.version=2 submodule update \
             --init --force --depth=1 --recursive
+
+      - name: Resolve compilation cache key
+        id: wheel-ccache-key
+        run: |
+          git ls-files -s \
+            .github/workflows/python-publish.yml \
+            CMakeLists.txt \
+            cmake \
+            include \
+            modules \
+            pyproject.toml \
+            python \
+            shader \
+            src \
+            3rdparty \
+            > "$RUNNER_TEMP/wheel-ccache-inputs"
+          echo "source=$(sha256sum "$RUNNER_TEMP/wheel-ccache-inputs" | cut -d' ' -f1)" \
+            >> "$GITHUB_OUTPUT"
 
       - name: Download LuisaCompute and CUDA build SDK
         uses: actions/download-artifact@v4
@@ -418,25 +443,53 @@ jobs:
       - name: Install build tools
         run: python -m pip install -U 'cmake>=3.27' ninja auditwheel build packaging patchelf
 
+      - name: Restore C and CUDA compilation cache
+        id: wheel-ccache
+        uses: actions/cache/restore@v4
+        with:
+          path: ${{ runner.temp }}/gobot-wheel-ccache
+          key: gobot-wheel-ccache-v2-${{ runner.os }}-cuda12.8-gcc11-py${{ matrix.python-version }}-${{ steps.wheel-ccache-key.outputs.source }}
+          restore-keys: |
+            gobot-wheel-ccache-v2-${{ runner.os }}-cuda12.8-gcc11-py${{ matrix.python-version }}-
+
       - name: Check CUDA build SDK
         run: |
+          ccache --version
+          ccache --zero-stats
           test -f "${GOBOT_CUDA_BUILD_SDK_ROOT}/version.json" \
             || test -f "${GOBOT_CUDA_BUILD_SDK_ROOT}/version.txt"
           "${GOBOT_CUDA_BUILD_SDK_ROOT}/bin/nvcc" --version | grep -F "V12.8.93"
 
       - name: Build wheel
         env:
-          CMAKE_BUILD_PARALLEL_LEVEL: "2"
+          CMAKE_BUILD_PARALLEL_LEVEL: "3"
           GOBOT_SKIP_DEPENDENCY_BOOTSTRAP: "1"
         run: |
+          # A bare CMake architecture emits both sm_75 SASS and compute_75 PTX;
+          # newer supported GPUs use the forward-compatible PTX through driver JIT.
           CUDACXX="$GOBOT_CUDA_BUILD_SDK_ROOT/bin/nvcc" \
           CMAKE_ARGS="-DCUDAToolkit_ROOT=$GOBOT_CUDA_BUILD_SDK_ROOT \
-            -DGOB_LIBUIPC_CUDA_ARCHITECTURES='75-real\;80-real\;86-real\;89-real\;90-real\;100-real\;120-real\;120-virtual' \
+            -DCMAKE_C_COMPILER_LAUNCHER=ccache \
+            -DCMAKE_CXX_COMPILER_LAUNCHER=ccache \
+            -DCMAKE_CUDA_COMPILER_LAUNCHER=ccache \
+            -DGOB_LIBUIPC_CUDA_ARCHITECTURES=75 \
+            -DGOB_LIBUIPC_CUDA_DIAGNOSTIC_SUPPRESSIONS=68,20054,20208 \
             -DGOB_GSPLAT_INFERENCE_ROOT=$PWD/build/gsplat_inference/install \
             -DGOB_BUILD_OPENUSD=ON \
             -DGOB_OPENUSD_ROOT=$PWD/build/openusd/install \
             -DGOB_BUNDLE_OPENUSD_RUNTIME=ON" \
             python -m build --wheel --outdir wheelhouse-unrepaired
+
+      - name: Report compilation cache
+        if: always()
+        run: ccache --show-stats
+
+      - name: Save C and CUDA compilation cache
+        if: ${{ success() && steps.wheel-ccache.outputs.cache-hit != 'true' }}
+        uses: actions/cache/save@v4
+        with:
+          path: ${{ runner.temp }}/gobot-wheel-ccache
+          key: gobot-wheel-ccache-v2-${{ runner.os }}-cuda12.8-gcc11-py${{ matrix.python-version }}-${{ steps.wheel-ccache-key.outputs.source }}
 
       - name: Repair wheel
         run: |

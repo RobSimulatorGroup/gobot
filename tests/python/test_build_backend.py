@@ -87,15 +87,23 @@ def test_release_wheel_provisions_libuipc_sources_and_native_dependencies() -> N
     assert 'GOBOT_CUDA_BUILD_SDK_ROOT="$RUNNER_TEMP/gobot-cuda-toolkit"' in workflow
     assert "-DCUDAToolkit_ROOT=$GOBOT_CUDA_BUILD_SDK_ROOT" in workflow
     assert 'timeout-minutes: 240' in workflow
-    assert 'CMAKE_BUILD_PARALLEL_LEVEL: "2"' in workflow
+    assert 'CMAKE_BUILD_PARALLEL_LEVEL: "3"' in workflow
+    assert "ccache" in workflow
+    assert "actions/cache/restore@v4" in workflow
+    assert "actions/cache/save@v4" in workflow
+    assert "git ls-files -s" in workflow
+    assert "CCACHE_MAXSIZE: 1G" in workflow
+    assert "py${{ matrix.python-version }}" in workflow
+    assert "-DCMAKE_CUDA_COMPILER_LAUNCHER=ccache" in workflow
+    assert "-DGOB_LIBUIPC_CUDA_ARCHITECTURES=75" in workflow
+    assert "-DGOB_LIBUIPC_CUDA_DIAGNOSTIC_SUPPRESSIONS=68,20054,20208" in workflow
     assert "--exclude libcublas.so.12" in workflow
     assert "--exclude libcusolver.so.11" in workflow
     assert "--exclude libcusparse.so.12" in workflow
     assert "--exclude libnvJitLink.so.12" in workflow
-    assert (
-        r"GOB_LIBUIPC_CUDA_ARCHITECTURES='75-real\;80-real\;86-real\;89-real"
-        in workflow
-    )
+    cmake = (backend.ROOT / "CMakeLists.txt").read_text(encoding="utf-8")
+    assert 'set(GOB_LIBUIPC_CUDA_DIAGNOSTIC_SUPPRESSIONS "" CACHE STRING' in cmake
+    assert "--diag-suppress=${GOB_LIBUIPC_CUDA_DIAGNOSTIC_SUPPRESSIONS}" in cmake
 
 
 def test_removed_warp_ipc_demo_is_not_packaged() -> None:

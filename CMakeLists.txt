@@ -60,6 +60,8 @@ set(GOB_LUISA_COMPUTE_ROOT "${CMAKE_CURRENT_SOURCE_DIR}/build/luisa_compute/inst
         "LuisaCompute install prefix used by the optional CUDA renderer module")
 set(GOB_LIBUIPC_CUDA_ARCHITECTURES "native" CACHE STRING
         "CUDA architectures used by the optional libuipc solver module")
+set(GOB_LIBUIPC_CUDA_DIAGNOSTIC_SUPPRESSIONS "" CACHE STRING
+        "Comma-separated NVCC diagnostic IDs suppressed only for the optional libuipc CUDA target")
 set(GOB_GSPLAT_INFERENCE_ROOT "${CMAKE_CURRENT_SOURCE_DIR}/build/gsplat_inference/install" CACHE PATH
         "Prebuilt gsplat CUDA inference library install prefix")
 set(GOB_MUJOCO_GIT_TAG "3.10.0" CACHE STRING "MuJoCo release tag used when GOB_FETCH_MUJOCO is ON")
@@ -1152,6 +1154,11 @@ if(GOB_BUILD_LIBUIPC)
     add_subdirectory("${GOBOT_LIBUIPC_SOURCE_DIR}"
                      "${GOBOT_LIBUIPC_BINARY_DIR}"
                      EXCLUDE_FROM_ALL)
+
+    if(GOB_LIBUIPC_CUDA_DIAGNOSTIC_SUPPRESSIONS AND TARGET cuda)
+        target_compile_options(cuda PRIVATE
+            "$<$<COMPILE_LANGUAGE:CUDA>:--diag-suppress=${GOB_LIBUIPC_CUDA_DIAGNOSTIC_SUPPRESSIONS}>")
+    endif()
 
     if(TARGET pyuipc)
         message(FATAL_ERROR
