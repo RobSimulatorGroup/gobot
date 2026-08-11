@@ -14,7 +14,11 @@ from gobot import _core
 from gobot.sim import ProviderCapabilities, ProviderUnavailableError
 
 from ._artifact import CompiledIpcSceneArtifact, validate_ipc_artifact
-from ._libuipc_provider import LibuipcConfig, LibuipcProviderAvailability
+from ._libuipc_provider import (
+    LibuipcConfig,
+    LibuipcProviderAvailability,
+    _preload_libuipc_cuda_libraries,
+)
 
 
 @dataclass(frozen=True)
@@ -203,6 +207,7 @@ class LibuipcBatchSolver:
                 False, "this Gobot build has no native IPC batch bindings"
             )
         try:
+            _preload_libuipc_cuda_libraries()
             available = bool(
                 session_type.is_module_available(resolved.solver.module_path)
             )

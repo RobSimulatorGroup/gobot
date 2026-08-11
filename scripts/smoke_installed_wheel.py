@@ -12,8 +12,10 @@ import tempfile
 
 
 NATIVE_PAYLOAD = (
+    "libgobot_libuipc_solver.so",
     "libgobot.so",
     "libgobot_luisa_renderer.so",
+    "libuipc/Release/bin/libuipc_backend_cuda.so",
     "licenses/mujoco/LICENSE",
     "licenses/mujoco/LICENSES_THIRD_PARTY.md",
     "luisa/libluisa-backend-cuda.so",
@@ -37,16 +39,30 @@ OPENUSD_PAYLOAD = (
     "openusd/share/licenses/oneTBB/LICENSE.txt",
 )
 ELF_PAYLOAD = (
+    "libgobot_libuipc_solver.so",
     "libgobot_luisa_renderer.so",
+    "libuipc/Release/bin/libuipc_backend_cuda.so",
     "luisa/libluisa-backend-cuda.so",
     "luisa/luisa_nvrtc",
 )
-ALLOWED_MISSING_LIBRARIES = {"libcuda.so.1", "libcudart.so.12"}
+ALLOWED_MISSING_LIBRARIES = {
+    "libcuda.so.1",
+    "libcublas.so.12",
+    "libcublasLt.so.12",
+    "libcudart.so.12",
+    "libcusolver.so.11",
+    "libcusparse.so.12",
+    "libnvJitLink.so.12",
+}
 DEFAULT_DISTRIBUTIONS = (
     "mujoco",
     "mujoco-warp",
     "newton",
+    "nvidia-cublas-cu12",
     "nvidia-cuda-runtime-cu12",
+    "nvidia-cusolver-cu12",
+    "nvidia-cusparse-cu12",
+    "nvidia-nvjitlink-cu12",
     "torch",
     "warp-lang",
 )
@@ -119,6 +135,11 @@ def main() -> int:
                 "default pip install is missing distributions: "
                 + ", ".join(missing_distributions)
             )
+        from gobot.ipc._libuipc_provider import (
+            _preload_libuipc_cuda_libraries,
+        )
+
+        _preload_libuipc_cuda_libraries()
         availability = gobot.rl.NewtonProvider.availability()
         if not availability.available:
             raise RuntimeError(

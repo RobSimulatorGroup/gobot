@@ -1,8 +1,11 @@
 from __future__ import annotations
 
+import importlib
 import json
 from pathlib import Path
+import tempfile
 from types import SimpleNamespace
+from unittest.mock import patch
 
 import numpy as np
 
@@ -152,6 +155,46 @@ def test_libuipc_public_api_is_native_only() -> None:
     assert hasattr(gobot.rl, "MuJoCoIpcProvider")
 
 
+def test_libuipc_cuda_dependencies_are_preloaded_in_dependency_order() -> None:
+    module = importlib.import_module("gobot.ipc._libuipc_provider")
+    loaded = []
+    handles = [object() for _ in module._LIBUIPC_CUDA_LIBRARIES]
+
+    class _FakeDistribution:
+        def __init__(self, root: Path) -> None:
+            self.root = root
+
+        def locate_file(self, relative_path: str) -> Path:
+            return self.root / relative_path
+
+    with tempfile.TemporaryDirectory() as temporary_directory:
+        root = Path(temporary_directory)
+        for _, relative_path in module._LIBUIPC_CUDA_LIBRARIES:
+            path = root / relative_path
+            path.parent.mkdir(parents=True, exist_ok=True)
+            path.touch()
+
+        def _load(path: str, *, mode: int):
+            loaded.append((Path(path).name, mode))
+            return handles[len(loaded) - 1]
+
+        with (
+            patch.object(module, "distribution", return_value=_FakeDistribution(root)),
+            patch.object(module.ctypes, "CDLL", side_effect=_load),
+            patch.object(module, "_libuipc_cuda_library_handles", []),
+            patch.object(module, "_libuipc_cuda_libraries_preloaded", False),
+        ):
+            module._preload_libuipc_cuda_libraries()
+            module._preload_libuipc_cuda_libraries()
+            assert module._libuipc_cuda_library_handles == handles
+
+    assert [name for name, _ in loaded] == [
+        Path(relative_path).name
+        for _, relative_path in module._LIBUIPC_CUDA_LIBRARIES
+    ]
+    assert all(mode == module.ctypes.RTLD_GLOBAL for _, mode in loaded)
+
+
 def test_libuipc_provider_lifecycle_and_scene_sync() -> None:
     artifact = _artifact()
     manifest = json.loads(artifact["manifest"])
@@ -277,6 +320,7 @@ def test_libuipc_provider_rejects_contact_force_shape_mismatch() -> None:
 def main() -> int:
     test_libuipc_config_validation()
     test_libuipc_public_api_is_native_only()
+    test_libuipc_cuda_dependencies_are_preloaded_in_dependency_order()
     test_libuipc_provider_lifecycle_and_scene_sync()
     test_libuipc_provider_rejects_runtime_layout_mismatch()
     test_libuipc_provider_rejects_contact_force_shape_mismatch()

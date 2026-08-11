@@ -17,7 +17,15 @@ REQUIRED_PAYLOAD = {
     "gobot/gobot_editor",
     "gobot/libgobot.so",
     "gobot/libgobot_editor_runtime.so",
+    "gobot/libgobot_libuipc_solver.so",
     "gobot/libgobot_luisa_renderer.so",
+    "gobot/libuipc/Release/bin/libuipc_backend_cuda.so",
+    "gobot/libuipc/Release/bin/libuipc_backend_none.so",
+    "gobot/libuipc/Release/bin/libuipc_constitution.so",
+    "gobot/libuipc/Release/bin/libuipc_core.so",
+    "gobot/libuipc/Release/bin/libuipc_geometry.so",
+    "gobot/libuipc/Release/bin/libuipc_io.so",
+    "gobot/libuipc/Release/bin/libuipc_sanity_check.so",
     "gobot/luisa/libluisa-ast.so",
     "gobot/luisa/libluisa-backend-cuda.so",
     "gobot/luisa/libluisa-core.so",
@@ -28,6 +36,8 @@ REQUIRED_PAYLOAD = {
     "gobot/licenses/dlpack/LICENSE",
     "gobot/licenses/gsplat_inference/LICENSE",
     "gobot/licenses/gsplat_inference/NOTICE",
+    "gobot/licenses/libuipc/LICENSE",
+    "gobot/licenses/libuipc/NOTICE",
     "gobot/licenses/mujoco/LICENSE",
     "gobot/licenses/mujoco/LICENSES_THIRD_PARTY.md",
     "gobot/openusd/lib/libtbb.so.12",
@@ -64,7 +74,11 @@ REQUIRED_DEPENDENCIES = {
     "mujoco-warp",
     "newton",
     "numpy",
+    "nvidia-cublas-cu12",
     "nvidia-cuda-runtime-cu12",
+    "nvidia-cusolver-cu12",
+    "nvidia-cusparse-cu12",
+    "nvidia-nvjitlink-cu12",
     "onnx",
     "onnxruntime",
     "rsl-rl-lib",
@@ -75,8 +89,12 @@ REQUIRED_DEPENDENCIES = {
     "trimesh",
     "warp-lang",
 }
-SYSTEM_DRIVER_LIBRARY_PREFIXES = (
+EXTERNAL_GPU_LIBRARY_PREFIXES = (
     "libcuda",
+    "libcublas",
+    "libcusolver",
+    "libcusparse",
+    "libnvJitLink",
     "libEGL",
     "libGLdispatch",
     "libGLX",
@@ -131,16 +149,16 @@ def verify_wheel(path: Path) -> list[str]:
                 "contains downloaded Gaussian sample assets: "
                 + ", ".join(packaged_gaussian_samples)
             )
-        packaged_driver_libraries = sorted(
+        packaged_external_gpu_libraries = sorted(
             name
             for name in names
             if ".libs/" in name
-            and Path(name).name.startswith(SYSTEM_DRIVER_LIBRARY_PREFIXES)
+            and Path(name).name.startswith(EXTERNAL_GPU_LIBRARY_PREFIXES)
         )
-        if packaged_driver_libraries:
+        if packaged_external_gpu_libraries:
             errors.append(
-                "bundles system GPU driver libraries: "
-                + ", ".join(packaged_driver_libraries)
+                "bundles external GPU libraries: "
+                + ", ".join(packaged_external_gpu_libraries)
             )
 
         metadata_names = [name for name in names if name.endswith(".dist-info/METADATA")]

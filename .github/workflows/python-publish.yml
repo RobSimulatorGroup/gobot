@@ -42,9 +42,8 @@ jobs:
             uuid-dev \
             zstd
 
-          # NVIDIA's Linux nvcc wheel only ships ptxas, NVVM, and headers. Use
-          # the official APT packages for the nvcc frontend and static NVRTC
-          # libraries required by LuisaCompute, pinned to CUDA Toolkit 12.8.1.
+          # Use NVIDIA's APT packages for the complete compiler and solver SDK
+          # required by LuisaCompute and libuipc, pinned to CUDA Toolkit 12.8.1.
           curl --fail --location \
             --retry 5 --retry-all-errors --retry-delay 2 \
             --output "$RUNNER_TEMP/cuda-keyring.deb" \
@@ -65,9 +64,23 @@ jobs:
             cuda-nvtx-12-8=12.8.90-1 \
             cuda-toolkit-config-common=12.8.90-1 \
             cuda-toolkit-12-config-common=12.8.90-1 \
-            cuda-toolkit-12-8-config-common=12.8.90-1
+            cuda-toolkit-12-8-config-common=12.8.90-1 \
+            libcublas-12-8=12.8.4.1-1 \
+            libcublas-dev-12-8=12.8.4.1-1 \
+            libcusolver-12-8=11.7.3.90-1 \
+            libcusolver-dev-12-8=11.7.3.90-1 \
+            libcusparse-12-8=12.5.8.93-1 \
+            libcusparse-dev-12-8=12.5.8.93-1 \
+            libnvjitlink-12-8=12.8.93-1 \
+            libnvjitlink-dev-12-8=12.8.93-1
 
           test -x /usr/local/cuda-12.8/bin/nvcc
+          test -f /usr/local/cuda-12.8/targets/x86_64-linux/include/cublas_v2.h
+          test -f /usr/local/cuda-12.8/targets/x86_64-linux/include/cusolverDn.h
+          test -f /usr/local/cuda-12.8/targets/x86_64-linux/include/cusparse.h
+          test -f /usr/local/cuda-12.8/targets/x86_64-linux/lib/libcublas.so
+          test -f /usr/local/cuda-12.8/targets/x86_64-linux/lib/libcusolver.so
+          test -f /usr/local/cuda-12.8/targets/x86_64-linux/lib/libcusparse.so
           test -f /usr/local/cuda-12.8/targets/x86_64-linux/include/nvtx3/nvToolsExtCuda.h
           test -f /usr/local/cuda-12.8/targets/x86_64-linux/lib/libnvrtc_static.a
           test -f /usr/local/cuda-12.8/targets/x86_64-linux/lib/stubs/libcuda.so
@@ -172,6 +185,13 @@ jobs:
           cp -a "${CUDA_TARGET_ROOT}"/lib/libcudart.so* \
             "${CUDA_PACKAGE_TARGET_ROOT}/lib/"
           cp -a \
+            "${CUDA_TARGET_ROOT}"/lib/libcublas.so* \
+            "${CUDA_TARGET_ROOT}"/lib/libcublasLt.so* \
+            "${CUDA_TARGET_ROOT}"/lib/libcusolver.so* \
+            "${CUDA_TARGET_ROOT}"/lib/libcusparse.so* \
+            "${CUDA_TARGET_ROOT}"/lib/libnvJitLink.so* \
+            "${CUDA_PACKAGE_TARGET_ROOT}/lib/"
+          cp -a \
             "${CUDA_TARGET_ROOT}/lib/libcudadevrt.a" \
             "${CUDA_TARGET_ROOT}/lib/libcudart_static.a" \
             "${CUDA_TARGET_ROOT}/lib/libculibos.a" \
@@ -186,6 +206,13 @@ jobs:
           test -x build/cuda-toolkit/nvvm/bin/cicc
           test -f build/cuda-toolkit/nvvm/libdevice/libdevice.10.bc
           test -f build/cuda-toolkit/include/cuda.h
+          test -f build/cuda-toolkit/include/cublas_v2.h
+          test -f build/cuda-toolkit/include/cusolverDn.h
+          test -f build/cuda-toolkit/include/cusparse.h
+          test -f build/cuda-toolkit/lib64/libcublas.so
+          test -f build/cuda-toolkit/lib64/libcusolver.so
+          test -f build/cuda-toolkit/lib64/libcusparse.so
+          test -f build/cuda-toolkit/lib64/libnvJitLink.so
           test -f build/cuda-toolkit/lib64/libcudadevrt.a
           test -f build/cuda-toolkit/lib64/stubs/libcuda.so
           tar -C build -czf "$RUNNER_TEMP/luisa-cuda-build-inputs.tar.gz" \
@@ -349,14 +376,25 @@ jobs:
           mkdir -p build
           tar -C build -xzf \
             "$RUNNER_TEMP/luisa-cuda-build-inputs/luisa-cuda-build-inputs.tar.gz"
+          GOBOT_CUDA_BUILD_SDK_ROOT="$RUNNER_TEMP/gobot-cuda-toolkit"
+          test ! -e "${GOBOT_CUDA_BUILD_SDK_ROOT}"
+          mv build/cuda-toolkit "${GOBOT_CUDA_BUILD_SDK_ROOT}"
+          echo "GOBOT_CUDA_BUILD_SDK_ROOT=${GOBOT_CUDA_BUILD_SDK_ROOT}" >> "$GITHUB_ENV"
           test -x build/luisa_compute/install/bin/luisa_nvrtc
           test -f build/gsplat_inference/install/lib/libgobot_gsplat_inference.a
-          test -x build/cuda-toolkit/bin/nvcc
-          test -x build/cuda-toolkit/nvvm/bin/cicc
-          test -f build/cuda-toolkit/nvvm/libdevice/libdevice.10.bc
-          test -f build/cuda-toolkit/include/cuda.h
-          test -f build/cuda-toolkit/lib64/libcudadevrt.a
-          test -f build/cuda-toolkit/lib64/stubs/libcuda.so
+          test -x "${GOBOT_CUDA_BUILD_SDK_ROOT}/bin/nvcc"
+          test -x "${GOBOT_CUDA_BUILD_SDK_ROOT}/nvvm/bin/cicc"
+          test -f "${GOBOT_CUDA_BUILD_SDK_ROOT}/nvvm/libdevice/libdevice.10.bc"
+          test -f "${GOBOT_CUDA_BUILD_SDK_ROOT}/include/cuda.h"
+          test -f "${GOBOT_CUDA_BUILD_SDK_ROOT}/include/cublas_v2.h"
+          test -f "${GOBOT_CUDA_BUILD_SDK_ROOT}/include/cusolverDn.h"
+          test -f "${GOBOT_CUDA_BUILD_SDK_ROOT}/include/cusparse.h"
+          test -f "${GOBOT_CUDA_BUILD_SDK_ROOT}/lib64/libcublas.so"
+          test -f "${GOBOT_CUDA_BUILD_SDK_ROOT}/lib64/libcusolver.so"
+          test -f "${GOBOT_CUDA_BUILD_SDK_ROOT}/lib64/libcusparse.so"
+          test -f "${GOBOT_CUDA_BUILD_SDK_ROOT}/lib64/libnvJitLink.so"
+          test -f "${GOBOT_CUDA_BUILD_SDK_ROOT}/lib64/libcudadevrt.a"
+          test -f "${GOBOT_CUDA_BUILD_SDK_ROOT}/lib64/stubs/libcuda.so"
 
       - name: Restore OpenUSD SDK
         run: |
@@ -378,16 +416,16 @@ jobs:
 
       - name: Check CUDA build SDK
         run: |
-          test -f build/cuda-toolkit/version.json \
-            || test -f build/cuda-toolkit/version.txt
-          build/cuda-toolkit/bin/nvcc --version | grep -F "V12.8.93"
+          test -f "${GOBOT_CUDA_BUILD_SDK_ROOT}/version.json" \
+            || test -f "${GOBOT_CUDA_BUILD_SDK_ROOT}/version.txt"
+          "${GOBOT_CUDA_BUILD_SDK_ROOT}/bin/nvcc" --version | grep -F "V12.8.93"
 
       - name: Build wheel
         env:
           GOBOT_SKIP_DEPENDENCY_BOOTSTRAP: "1"
         run: |
-          CUDACXX="$PWD/build/cuda-toolkit/bin/nvcc" \
-          CMAKE_ARGS="-DCUDAToolkit_ROOT=$PWD/build/cuda-toolkit \
+          CUDACXX="$GOBOT_CUDA_BUILD_SDK_ROOT/bin/nvcc" \
+          CMAKE_ARGS="-DCUDAToolkit_ROOT=$GOBOT_CUDA_BUILD_SDK_ROOT \
             -DGOB_LIBUIPC_CUDA_ARCHITECTURES='75-real\;80-real\;86-real\;89-real\;90-real\;100-real\;120-real\;120-virtual' \
             -DGOB_GSPLAT_INFERENCE_ROOT=$PWD/build/gsplat_inference/install \
             -DGOB_BUILD_OPENUSD=ON \
@@ -400,6 +438,11 @@ jobs:
           python -m auditwheel repair \
             --exclude libcuda.so.1 \
             --exclude libcudart.so.12 \
+            --exclude libcublas.so.12 \
+            --exclude libcublasLt.so.12 \
+            --exclude libcusolver.so.11 \
+            --exclude libcusparse.so.12 \
+            --exclude libnvJitLink.so.12 \
             --exclude libEGL.so.1 \
             --exclude libGLdispatch.so.0 \
             --exclude libGLX.so.0 \

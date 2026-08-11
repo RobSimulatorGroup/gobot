@@ -3,7 +3,9 @@
 from __future__ import annotations
 
 from dataclasses import asdict, dataclass
+import ctypes
 import hashlib
+from importlib.metadata import PackageNotFoundError, distribution
 import json
 import math
 import operator
@@ -80,6 +82,44 @@ class LibuipcConfig:
 class LibuipcProviderAvailability:
     available: bool
     reason: str = ""
+
+
+_LIBUIPC_CUDA_LIBRARIES = (
+    ("nvidia-cuda-runtime-cu12", "nvidia/cuda_runtime/lib/libcudart.so.12"),
+    ("nvidia-nvjitlink-cu12", "nvidia/nvjitlink/lib/libnvJitLink.so.12"),
+    ("nvidia-cublas-cu12", "nvidia/cublas/lib/libcublasLt.so.12"),
+    ("nvidia-cublas-cu12", "nvidia/cublas/lib/libcublas.so.12"),
+    ("nvidia-cusparse-cu12", "nvidia/cusparse/lib/libcusparse.so.12"),
+    ("nvidia-cusolver-cu12", "nvidia/cusolver/lib/libcusolver.so.11"),
+)
+_libuipc_cuda_library_handles: list[Any] = []
+_libuipc_cuda_libraries_preloaded = False
+
+
+def _preload_libuipc_cuda_libraries() -> None:
+    global _libuipc_cuda_libraries_preloaded
+    if _libuipc_cuda_libraries_preloaded:
+        return
+
+    handles = []
+    for distribution_name, relative_path in _LIBUIPC_CUDA_LIBRARIES:
+        try:
+            library_path = distribution(distribution_name).locate_file(relative_path)
+        except PackageNotFoundError:
+            continue
+        if not library_path.is_file():
+            continue
+        try:
+            handles.append(
+                ctypes.CDLL(str(library_path), mode=ctypes.RTLD_GLOBAL)
+            )
+        except OSError as error:
+            raise RuntimeError(
+                f"cannot preload {distribution_name} library '{library_path.name}': {error}"
+            ) from error
+
+    _libuipc_cuda_library_handles.extend(handles)
+    _libuipc_cuda_libraries_preloaded = True
 
 
 def _normalized_body_info(values: Any, description: str) -> tuple[Mapping[str, Any], ...]:
@@ -249,6 +289,7 @@ class LibuipcProvider:
                 False, "this Gobot build has no native IPC solver bindings"
             )
         try:
+            _preload_libuipc_cuda_libraries()
             available = bool(
                 session_type.is_module_available(resolved.module_path)
             )
