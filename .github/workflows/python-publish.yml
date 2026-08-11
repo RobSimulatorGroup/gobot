@@ -59,6 +59,7 @@ jobs:
             cuda-cudart-dev-12-8=12.8.90-1 \
             cuda-driver-dev-12-8=12.8.90-1 \
             cuda-nvcc-12-8=12.8.93-1 \
+            cuda-profiler-api-12-8=12.8.90-1 \
             cuda-nvrtc-12-8=12.8.93-1 \
             cuda-nvrtc-dev-12-8=12.8.93-1 \
             cuda-nvtx-12-8=12.8.90-1 \
@@ -75,6 +76,7 @@ jobs:
             libnvjitlink-dev-12-8=12.8.93-1
 
           test -x /usr/local/cuda-12.8/bin/nvcc
+          test -f /usr/local/cuda-12.8/targets/x86_64-linux/include/cuda_profiler_api.h
           test -f /usr/local/cuda-12.8/targets/x86_64-linux/include/cublas_v2.h
           test -f /usr/local/cuda-12.8/targets/x86_64-linux/include/cusolverDn.h
           test -f /usr/local/cuda-12.8/targets/x86_64-linux/include/cusparse.h
@@ -206,6 +208,7 @@ jobs:
           test -x build/cuda-toolkit/nvvm/bin/cicc
           test -f build/cuda-toolkit/nvvm/libdevice/libdevice.10.bc
           test -f build/cuda-toolkit/include/cuda.h
+          test -f build/cuda-toolkit/include/cuda_profiler_api.h
           test -f build/cuda-toolkit/include/cublas_v2.h
           test -f build/cuda-toolkit/include/cusolverDn.h
           test -f build/cuda-toolkit/include/cusparse.h
@@ -386,6 +389,7 @@ jobs:
           test -x "${GOBOT_CUDA_BUILD_SDK_ROOT}/nvvm/bin/cicc"
           test -f "${GOBOT_CUDA_BUILD_SDK_ROOT}/nvvm/libdevice/libdevice.10.bc"
           test -f "${GOBOT_CUDA_BUILD_SDK_ROOT}/include/cuda.h"
+          test -f "${GOBOT_CUDA_BUILD_SDK_ROOT}/include/cuda_profiler_api.h"
           test -f "${GOBOT_CUDA_BUILD_SDK_ROOT}/include/cublas_v2.h"
           test -f "${GOBOT_CUDA_BUILD_SDK_ROOT}/include/cusolverDn.h"
           test -f "${GOBOT_CUDA_BUILD_SDK_ROOT}/include/cusparse.h"

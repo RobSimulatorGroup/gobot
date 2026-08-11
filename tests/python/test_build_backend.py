@@ -73,12 +73,14 @@ def test_release_wheel_provisions_libuipc_sources_and_native_dependencies() -> N
     assert "git -C 3rdparty/libuipc -c protocol.version=2 submodule update" in workflow
     assert "libtbb-dev" in workflow
     assert "liburdfdom-dev" in workflow
+    assert "cuda-profiler-api-12-8=12.8.90-1" in workflow
     assert "libcublas-dev-12-8=12.8.4.1-1" in workflow
     assert "libcusolver-dev-12-8=11.7.3.90-1" in workflow
     assert "libcusparse-dev-12-8=12.5.8.93-1" in workflow
     assert "libnvjitlink-dev-12-8=12.8.93-1" in workflow
     assert "build/cuda-toolkit/bin/nvcc" in workflow
     assert "build/cuda-toolkit/nvvm/bin/cicc" in workflow
+    assert "build/cuda-toolkit/include/cuda_profiler_api.h" in workflow
     assert "build/cuda-toolkit/lib64/libcudadevrt.a" in workflow
     assert 'CUDA_PACKAGE_TARGET_ROOT="build/cuda-toolkit/targets/x86_64-linux"' in workflow
     assert "ln -s targets/x86_64-linux/include" in workflow
