@@ -14,7 +14,7 @@ namespace gobot {
 
 class GOBOT_EXPORT MuJoCoSceneCompiler {
 public:
-    static constexpr std::uint32_t kArtifactSchemaVersion = 2;
+    static constexpr std::uint32_t kArtifactSchemaVersion = 3;
 
     static bool Compile(PhysicsSceneSnapshot scene_snapshot,
                         const PhysicsWorldSettings& settings,

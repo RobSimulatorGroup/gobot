@@ -54,8 +54,8 @@ leaving the backend-neutral artifact compiler and module loader available.
 The engine-facing API owns copied, stable state storage and exposes no libuipc
 `World`, `Scene`, geometry, CUDA buffer, or solver handles. A solver session:
 
-- consumes only `IpcSceneArtifact` schema v2; schema v1 is rejected because it
-  has no explicit `PhysicsCoupling` table;
+- consumes only `IpcSceneArtifact` schema v3; older artifacts are rejected
+  because they lack the complete neutral material and stable-path contract;
 - maps tetrahedral deformables to `StableNeoHookean` FEM;
 - maps supported robot collision links to affine bodies, with soft transform
   targets for kinematic robots and fixed-root articulated dynamics for robots
@@ -73,13 +73,17 @@ shapes, joint types and limits, tactile image products, and articulated force
 feedback remain Gobot adapter work; they do not change the public scene
 ownership boundary.
 
-Schema v2 adds a canonical `couplings` table. Entries are sorted by coupling
+Schema v3 includes a canonical `couplings` table. Entries are sorted by coupling
 node path and carry the coupling path, canonical `Link3D` path, robot/link
 names, mode, per-binding force and torque scales, and a contiguous
 `proxy_index`. In normal libuipc mode the solver still compiles the complete
 robot. In `external_affine_proxies` mode it creates only the links named in
 that table and preserves `proxy_index` order. There is no same-name link
 discovery fallback.
+
+Collision shapes and terrains use `PhysicsMaterial3D`, collision layer/mask,
+and contact/rest offsets. The IPC compiler consumes only those neutral fields;
+it does not read MuJoCo-specific friction or contact parameters.
 
 The authored non-spatial `PhysicsCoupling` node exposes `enabled`,
 `rigid_link_path`, `mode`, `force_scale`, and `torque_scale`. `OneWay` sends a
@@ -151,17 +155,18 @@ One composite tick is a fixed five-stage protocol:
 
 1. `PushRigidPose`: gather every mapped MuJoCo body pose directly into the
    stable libuipc affine-target tensor;
-2. `StepIpc`: advance every isolated libuipc subscene once;
-3. `ApplyFeedback`: derive proxy-constraint force and torque from GPU pose
-   error, mass, inertia, center of mass, and gravity compensation, then apply
-   it only for `TwoWay` entries;
-4. `StepRigid`: advance MuJoCo Warp once;
+2. `StepIpc`: advance every isolated libuipc subscene by the configured IPC
+   microstep count;
+3. `ApplyFeedback`: consume the native affine contact wrench accumulated from
+   libuipc contact gradients and apply it only for `TwoWay` entries;
+4. `StepRigid`: advance MuJoCo Warp by the configured rigid microstep count;
 5. `Finalize`: validate stable storage and return the Coupler to idle.
 
 The global force and torque scales multiply each binding's scales. The Coupler
 subtracts only its previous contribution from MuJoCo `xfrc_applied`, preserving
-external forces written by callers. Diagnostics identify the source as
-`feedback_source=proxy_constraint`. A failed stage releases the Coupler-owned
+external forces written by callers. Native diagnostics identify the source as
+`feedback_source=native_contact_wrench`; the explicit proxy pose-error fallback
+reports `proxy_constraint`. A failed stage releases the Coupler-owned
 wrench and faults the provider; another step is rejected until a successful
 full reset, while `close()` remains available. Construction failure, reset,
 and close also clear Coupler state.
@@ -192,25 +197,24 @@ provider.step(actions)
 provider.reset(full_batch_mask)
 ```
 
-The native batch C ABI stays at v1, but its input scene artifact is schema v2.
+The native batch C ABI stays at v1, but its input scene artifact is schema v3.
 The first composite revision intentionally supports full-batch reset only. Each
 shard restores its frame-zero libuipc snapshot, including solver history and
 contact caches, and each batch session uses an exclusive workspace that is
 removed when the session closes. A partial mask raises an explicit unsupported
-shard-recovery error. The two solvers must use the same fixed timestep; solver
-substeps are not exposed. The composite provider reports
-`graph_capture=false` because native libuipc shards execute outside graph
-capture, although its MuJoCo Warp subsolver may use a captured graph. FEM
-positions/velocities and affine proxy transforms are written directly into
-pre-bound CUDA tensors. The pinned libuipc public API has a device `BufferView`
-output but no corresponding affine-transform input, so the small rigid target
-table currently uses one device-to-host-to-device staging operation per shard
-and tick. The raw batch contact-force and affine-wrench buffers are reserved
-and zero in native ABI v1; the Coupler applies the gravity-compensated
-proxy-constraint wrench instead. No Coupler hot stage calls `.cpu()` or
-`.item()`, and its tensor storage remains fixed. Removing target staging and
-exporting native device contact gradients are the next ABI-compatible
-performance steps.
+shard-recovery error. Solver microstep counts are explicit, positive integers;
+`rigid_dt * rigid_substeps` must equal `ipc_dt * ipc_substeps`. The split remains
+sequential (`PushRigidPose -> StepIpc -> ApplyFeedback -> StepRigid`) rather
+than pretending to be a monolithic integrator.
+
+The composite provider reports `graph_capture=false` because native libuipc
+shards execute outside graph capture, although its MuJoCo Warp subsolver may
+use a captured graph. FEM positions/velocities and affine proxy transforms are
+written into pre-bound CUDA tensors. The pinned libuipc interfaces still
+require per-shard device-to-host-to-device staging for affine targets and for
+the exported exact affine contact wrenches. Both paths are named in diagnostics
+and benchmark output. No Python Coupler hot stage calls `.cpu()` or `.item()`,
+and tensor storage remains fixed.
 
 The opt-in two-environment regression covers both the native batch solver and
 the complete MuJoCo Warp + libuipc Coupler path:
@@ -228,8 +232,8 @@ Use `benchmark/mujoco_libuipc_batch_benchmark.py` to record warmup/repeated
 median results for 4, 64, and 256 environments and optionally enforce the
 10-percent 256-environment regression gate against a saved report.
 
-Exact native contact wrench export, shard-masked reset, solver subcycling,
-composite CUDA Graph capture, sensor pipelines, and RL randomization remain
+Shard-masked reset, native composite checkpoints, device-only affine exchange,
+composite CUDA Graph capture, and coupled sensor/randomization pipelines remain
 future work. None of those extensions require changing `.jscn` as the authored
 source of truth.
 

@@ -147,6 +147,17 @@ def main() -> None:
             torch.testing.assert_close(arrays["qpos"][1:], before_reset[1:])
             assert provider.capabilities.graph_capture is True
             assert provider.capabilities.device_native is True
+            assert provider.capabilities.runtime_checkpoint is True
+            assert provider.capabilities.sensor_batch is True
+            assert provider.capabilities.reset_scope == "masked"
+
+            checkpoint = provider.capture_checkpoint()
+            checkpoint_qpos = arrays["qpos"].clone()
+            provider.step(zero_actions, nsteps=2)
+            provider.restore_checkpoint(checkpoint)
+            provider.synchronize()
+            assert arrays["qpos"].data_ptr() == qpos_pointer
+            torch.testing.assert_close(arrays["qpos"], checkpoint_qpos)
 
             provider.reset(mask, qpos=reset_qpos)
             provider.synchronize()

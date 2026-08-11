@@ -330,7 +330,7 @@ The first provider infrastructure follows this split:
 SceneTree / .jscn
   -> PhysicsSceneCompiler
   -> stateless PhysicsServer registry/compiler
-  -> PhysicsSceneArtifact schema v2
+  -> PhysicsSceneArtifact schema v3
   -> gobot.rl.MuJoCoWarpProvider
   -> MuJoCo Warp model/data and Torch CUDA views
 ```
@@ -338,8 +338,12 @@ SceneTree / .jscn
 `AppContext.compile_scene_artifact()` performs compilation without installing a
 runtime `PhysicsWorld`. C++ and MuJoCo Warp communicate through the artifact
 value, not through `mjModel*`, Warp arrays, CUDA pointers, or editor state. The
-Schema v2 carries canonical content and digest, producer and producer-version
+Schema v3 carries canonical content and digest, producer and producer-version
 metadata, dimensions, robot/body/joint topology, and ordered control topology.
+The compiler's backend-neutral `PhysicsSceneSnapshot` is the source for stable
+authored paths/ids and collision, material, actuator, and sensor-noise data;
+the portable MuJoCo artifact contains the compiled MJCF representation of the
+subset consumed by MuJoCo plus the explicit runtime topology.
 Providers validate those fields and consume the explicit control map rather
 than deriving actuator semantics from runtime names. The provider is a Python
 package layer and therefore is not a native `PhysicsBackendType` exposed to
@@ -369,7 +373,7 @@ is explicit in the training CLI and never falls back implicitly.
 
 ### Newton Admission Boundary
 
-`NewtonProvider` uses the same validated schema-v2 artifact and provider
+`NewtonProvider` uses the same validated schema-v3 artifact and provider
 lifecycle without becoming a public Gobot backend. Its MJCF compatibility
 adapter caches materialized inline meshes using the runtime fingerprint. It
 must not add Newton handles or Warp arrays to `Scene`, `Robot3D`,

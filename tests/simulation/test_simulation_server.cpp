@@ -11,6 +11,7 @@
 #include <gobot/scene/robot_3d.hpp>
 #include <gobot/scene/resources/box_shape_3d.hpp>
 #include <gobot/scene/resources/capsule_shape_3d.hpp>
+#include <gobot/scene/resources/physics_material_3d.hpp>
 #include <gobot/scene/scene_tree.hpp>
 #include <gobot/scene/window.hpp>
 #include <gobot/physics/backends/mujoco_physics_world.hpp>
@@ -267,12 +268,15 @@ gobot::Node3D* CreateSceneWithRobotAndGround(gobot::Robot3D* robot, gobot::Colli
 
     auto* ground = CreateBoxCollision("ground", {4.0, 4.0, 0.1});
     ground->SetPosition({0.0, 0.0, -0.05});
-    ground->SetFriction({1.0, 0.005, 0.0001});
-    ground->SetContactType(3);
-    ground->SetContactAffinity(5);
-    ground->SetContactDimension(4);
-    ground->SetSolref({0.012, 0.8});
-    ground->SetSolimp({0.85, 0.94, 0.002, 0.45, 1.8});
+    auto material = gobot::MakeRef<gobot::PhysicsMaterial3D>();
+    material->SetSlidingFriction(1.0);
+    material->SetTorsionalFriction(0.005);
+    material->SetRollingFriction(0.0001);
+    material->SetContactCompliance(0.012 * 0.012);
+    material->SetContactDamping(0.8);
+    ground->SetPhysicsMaterial(material);
+    ground->SetCollisionLayer(3);
+    ground->SetCollisionMask(5);
 
     root->AddChild(ground);
     root->AddChild(robot);
@@ -952,15 +956,9 @@ TEST(TestSimulationServer, mujoco_authored_contact_parameters_match_scene_values
     EXPECT_NEAR(diagnostics.first_collision_friction.x(), 1.0, CMP_EPSILON);
     EXPECT_NEAR(diagnostics.first_collision_friction.y(), 0.005, CMP_EPSILON);
     EXPECT_NEAR(diagnostics.first_collision_friction.z(), 0.0001, CMP_EPSILON);
-    EXPECT_EQ(diagnostics.first_collision_contact_dimension, 4);
+    EXPECT_EQ(diagnostics.first_collision_contact_dimension, 6);
     EXPECT_NEAR(diagnostics.first_collision_solref.x(), 0.012, CMP_EPSILON);
     EXPECT_NEAR(diagnostics.first_collision_solref.y(), 0.8, CMP_EPSILON);
-    ASSERT_EQ(diagnostics.first_collision_solimp.size(), 5);
-    EXPECT_NEAR(diagnostics.first_collision_solimp[0], 0.85, CMP_EPSILON);
-    EXPECT_NEAR(diagnostics.first_collision_solimp[1], 0.94, CMP_EPSILON);
-    EXPECT_NEAR(diagnostics.first_collision_solimp[2], 0.002, CMP_EPSILON);
-    EXPECT_NEAR(diagnostics.first_collision_solimp[3], 0.45, CMP_EPSILON);
-    EXPECT_NEAR(diagnostics.first_collision_solimp[4], 1.8, CMP_EPSILON);
 
     gobot::Object::Delete(root);
 #endif

@@ -33,32 +33,195 @@ const JointControllerGains& JointController::GetGains() const {
     return gains_;
 }
 
+void JointController::SetActuatorModel(const JointActuatorModel& model) {
+    actuator_model_ = model;
+}
+
+const JointActuatorModel& JointController::GetActuatorModel() const {
+    return actuator_model_;
+}
+
+const JointControllerTelemetry& JointController::GetTelemetry() const {
+    return telemetry_;
+}
+
+JointControllerRuntimeState JointController::CaptureRuntimeState() const {
+    JointControllerRuntimeState state;
+    state.integral_error = integral_error_;
+    state.delayed_commands.assign(delayed_commands_.begin(), delayed_commands_.end());
+    state.previous_mode = previous_mode_;
+    state.previous_target = previous_target_;
+    state.has_previous_target = has_previous_target_;
+    state.telemetry = telemetry_;
+    return state;
+}
+
+void JointController::RestoreRuntimeState(const JointControllerRuntimeState& state) {
+    RestoreIntegralError(state.integral_error);
+    delayed_commands_.assign(state.delayed_commands.begin(), state.delayed_commands.end());
+    previous_mode_ = state.previous_mode;
+    previous_target_ = state.previous_target;
+    has_previous_target_ = state.has_previous_target;
+    telemetry_ = state.telemetry;
+}
+
 void JointController::Reset() {
     integral_error_ = 0.0;
+    delayed_commands_.clear();
+    previous_mode_ = PhysicsJointControlMode::Passive;
+    previous_target_ = 0.0;
+    has_previous_target_ = false;
+    telemetry_ = {};
+}
+
+JointControllerCommand JointController::ProcessCommand(
+        const JointControllerState& state,
+        const JointControllerCommand& command,
+        RealType delta_time) {
+    const auto target_for = [](const JointControllerCommand& value) {
+        switch (value.mode) {
+            case PhysicsJointControlMode::Position: return value.target_position;
+            case PhysicsJointControlMode::Velocity: return value.target_velocity;
+            case PhysicsJointControlMode::Effort: return value.target_effort;
+            case PhysicsJointControlMode::Passive: return RealType{0.0};
+        }
+        return RealType{0.0};
+    };
+    const auto set_target = [](JointControllerCommand* value, RealType target) {
+        switch (value->mode) {
+            case PhysicsJointControlMode::Position: value->target_position = target; break;
+            case PhysicsJointControlMode::Velocity: value->target_velocity = target; break;
+            case PhysicsJointControlMode::Effort: value->target_effort = target; break;
+            case PhysicsJointControlMode::Passive: break;
+        }
+    };
+
+    telemetry_ = {};
+    telemetry_.commanded_target = target_for(command);
+    delayed_commands_.push_back(command);
+    JointControllerCommand processed = command;
+    if (delayed_commands_.size() <= actuator_model_.command_delay_steps) {
+        telemetry_.delayed = true;
+        processed.mode = command.mode;
+        if (command.mode == PhysicsJointControlMode::Position) {
+            processed.target_position = state.position;
+        } else if (command.mode == PhysicsJointControlMode::Velocity) {
+            processed.target_velocity = state.velocity;
+        } else if (command.mode == PhysicsJointControlMode::Effort) {
+            processed.target_effort = 0.0;
+        }
+    } else {
+        processed = delayed_commands_.front();
+        delayed_commands_.pop_front();
+        telemetry_.delayed = actuator_model_.command_delay_steps > 0;
+    }
+
+    RealType target = target_for(processed);
+    if (actuator_model_.command_deadband > 0.0) {
+        RealType reference = 0.0;
+        if (processed.mode == PhysicsJointControlMode::Position) {
+            reference = state.position;
+        } else if (processed.mode == PhysicsJointControlMode::Velocity) {
+            reference = state.velocity;
+        }
+        if (std::abs(target - reference) < actuator_model_.command_deadband) {
+            target = reference;
+            telemetry_.deadband_applied = true;
+        }
+    }
+
+    if (!has_previous_target_ || previous_mode_ != processed.mode) {
+        if (processed.mode == PhysicsJointControlMode::Position) {
+            previous_target_ = state.position;
+        } else if (processed.mode == PhysicsJointControlMode::Velocity) {
+            previous_target_ = state.velocity;
+        } else {
+            previous_target_ = 0.0;
+        }
+        has_previous_target_ = true;
+    }
+    if (actuator_model_.command_slew_rate > 0.0 && delta_time > 0.0) {
+        const RealType maximum_delta = actuator_model_.command_slew_rate * delta_time;
+        const RealType limited = ClampValue(
+                target, previous_target_ - maximum_delta, previous_target_ + maximum_delta);
+        telemetry_.rate_limited = limited != target;
+        target = limited;
+    }
+    previous_mode_ = processed.mode;
+    previous_target_ = target;
+    set_target(&processed, target);
+    telemetry_.applied_target = target;
+    if (processed.mode == PhysicsJointControlMode::Position) {
+        telemetry_.tracking_error = target - state.position;
+    } else if (processed.mode == PhysicsJointControlMode::Velocity) {
+        telemetry_.tracking_error = target - state.velocity;
+    }
+    return processed;
+}
+
+RealType JointController::GetStrengthScaleAtVelocity(RealType velocity) const {
+    RealType scale = std::max<RealType>(0.0, actuator_model_.strength_scale);
+    if (actuator_model_.motor_velocity_limit > 0.0) {
+        scale *= std::max<RealType>(
+                0.0, 1.0 - std::abs(velocity) / actuator_model_.motor_velocity_limit);
+    }
+    return scale;
+}
+
+RealType JointController::ApplyEffortEnvelope(
+        RealType effort,
+        const JointControllerState& state,
+        const JointControllerLimits& limits) {
+    const RealType scaled_effort = effort *
+                                   std::max<RealType>(0.0, actuator_model_.strength_scale);
+    RealType effort_limit = std::max<RealType>(0.0, limits.effort_limit);
+    if (actuator_model_.motor_stall_effort > 0.0) {
+        const RealType motor_limit = actuator_model_.motor_stall_effort *
+                                     (actuator_model_.motor_velocity_limit > 0.0
+                                              ? std::max<RealType>(
+                                                        0.0,
+                                                        1.0 - std::abs(state.velocity) /
+                                                                      actuator_model_.motor_velocity_limit)
+                                              : 1.0);
+        effort_limit = effort_limit > 0.0 ? std::min(effort_limit, motor_limit) : motor_limit;
+    }
+    const RealType result = ClampEffort(scaled_effort, effort_limit);
+    telemetry_.applied_effort = result;
+    telemetry_.effort_saturated = result != scaled_effort;
+    return result;
 }
 
 RealType JointController::GetIntegralError() const {
     return integral_error_;
 }
 
+void JointController::RestoreIntegralError(RealType integral_error) {
+    integral_error_ = std::isfinite(integral_error) ? integral_error : 0.0;
+    if (gains_.integral_limit > 0.0) {
+        integral_error_ = ClampValue(
+                integral_error_, -gains_.integral_limit, gains_.integral_limit);
+    }
+}
+
 RealType JointController::ComputeEffort(const JointControllerState& state,
                                         const JointControllerCommand& command,
                                         const JointControllerLimits& limits,
                                         RealType delta_time) {
-    switch (command.mode) {
+    const JointControllerCommand processed = ProcessCommand(state, command, delta_time);
+    switch (processed.mode) {
         case PhysicsJointControlMode::Passive:
             return 0.0;
         case PhysicsJointControlMode::Effort:
-            return ClampEffort(command.target_effort, limits.effort_limit);
+            return ApplyEffortEnvelope(processed.target_effort, state, limits);
         case PhysicsJointControlMode::Velocity: {
-            const RealType velocity_error = command.target_velocity - state.velocity;
-            return ClampEffort(gains_.velocity_damping * velocity_error, limits.effort_limit);
+            const RealType velocity_error = processed.target_velocity - state.velocity;
+            return ApplyEffortEnvelope(gains_.velocity_damping * velocity_error, state, limits);
         }
         case PhysicsJointControlMode::Position:
             break;
     }
 
-    const RealType target_position = ClampTargetPosition(command.target_position, limits);
+    const RealType target_position = ClampTargetPosition(processed.target_position, limits);
     const RealType position_error = target_position - state.position;
 
     if (delta_time > 0.0 && gains_.integral_gain != 0.0) {
@@ -72,7 +235,7 @@ RealType JointController::ComputeEffort(const JointControllerState& state,
             gains_.position_stiffness * position_error -
             gains_.velocity_damping * state.velocity +
             gains_.integral_gain * integral_error_;
-    return ClampEffort(effort, limits.effort_limit);
+    return ApplyEffortEnvelope(effort, state, limits);
 }
 
 RealType JointController::ClampTargetPosition(RealType target_position, const JointControllerLimits& limits) {

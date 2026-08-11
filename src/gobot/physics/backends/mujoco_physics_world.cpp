@@ -14,6 +14,7 @@
 #include <set>
 #include <span>
 #include <thread>
+#include <type_traits>
 #include <unordered_map>
 
 #include "gobot/core/profile.hpp"
@@ -386,7 +387,7 @@ mjsSensor* AddSiteSensor(mjSpec* spec,
     mujoco_sensor->type = type;
     mujoco_sensor->objtype = mjOBJ_SITE;
     mjs_setString(mujoco_sensor->objname, site_name.c_str());
-    mujoco_sensor->noise = sensor.noise_stddev;
+    mujoco_sensor->noise = 0.0;
     if (sensor.sensor_period > 0.0) {
         mujoco_sensor->interval[0] = sensor.sensor_period;
     }
@@ -411,7 +412,7 @@ mjsSensor* AddBodySensor(mjSpec* spec,
     mujoco_sensor->type = type;
     mujoco_sensor->objtype = mjOBJ_BODY;
     mjs_setString(mujoco_sensor->objname, body_name.c_str());
-    mujoco_sensor->noise = sensor.noise_stddev;
+    mujoco_sensor->noise = 0.0;
     if (sensor.sensor_period > 0.0) {
         mujoco_sensor->interval[0] = sensor.sensor_period;
     }
@@ -538,23 +539,52 @@ void ApplyMuJoCoOptions(mjOption* option, const PhysicsWorldSettings& settings) 
     option->impratio = settings.mujoco_solver.impedance_ratio;
 }
 
-void ConfigureGeomContact(mjsGeom* geom, const PhysicsShapeSnapshot& shape) {
+int ContactDimension(const PhysicsMaterialSnapshot& material) {
+    if (material.rolling_friction > 0.0) {
+        return 6;
+    }
+    if (material.torsional_friction > 0.0) {
+        return 4;
+    }
+    return material.sliding_friction > 0.0 ? 3 : 1;
+}
+
+void ConfigureMaterialContact(mjsGeom* geom,
+                              const PhysicsMaterialSnapshot& material,
+                              std::uint32_t collision_layer,
+                              std::uint32_t collision_mask,
+                              RealType contact_offset,
+                              RealType rest_offset) {
     if (!geom) {
         return;
     }
 
-    geom->contype = shape.contype;
-    geom->conaffinity = shape.conaffinity;
-    geom->condim = shape.condim;
-    geom->friction[0] = shape.friction.x();
-    geom->friction[1] = shape.friction.y();
-    geom->friction[2] = shape.friction.z();
-    geom->solref[0] = shape.solref.x();
-    geom->solref[1] = shape.solref.y();
-    SetMuJoCoArray(geom->solimp, shape.solimp, mjNIMP);
-    geom->margin = shape.margin;
-    geom->gap = shape.gap;
-    geom->priority = shape.priority;
+    geom->contype = static_cast<int>(collision_layer);
+    geom->conaffinity = static_cast<int>(collision_mask);
+    geom->condim = ContactDimension(material);
+    geom->friction[0] = material.sliding_friction;
+    geom->friction[1] = material.torsional_friction;
+    geom->friction[2] = material.rolling_friction;
+
+    const RealType compliance_time = material.contact_compliance > 0.0
+            ? std::max<RealType>(0.001, std::sqrt(material.contact_compliance))
+            : 0.02;
+    const RealType restitution_damping = std::max<RealType>(
+            0.001, material.contact_damping * (1.0 - material.restitution));
+    geom->solref[0] = compliance_time;
+    geom->solref[1] = restitution_damping;
+    geom->margin = contact_offset;
+    geom->gap = std::max<RealType>(0.0, contact_offset - rest_offset);
+    geom->priority = 0;
+}
+
+void ConfigureGeomContact(mjsGeom* geom, const PhysicsShapeSnapshot& shape) {
+    ConfigureMaterialContact(geom,
+                             shape.material,
+                             shape.collision_layer,
+                             shape.collision_mask,
+                             shape.contact_offset,
+                             shape.rest_offset);
 }
 
 void ConfigureGeomContact(mjsGeom* geom, const PhysicsTerrainSnapshot& terrain) {
@@ -562,17 +592,12 @@ void ConfigureGeomContact(mjsGeom* geom, const PhysicsTerrainSnapshot& terrain) 
         return;
     }
 
-    geom->contype = terrain.contype;
-    geom->conaffinity = terrain.conaffinity;
-    geom->condim = terrain.condim;
-    geom->friction[0] = terrain.friction.x();
-    geom->friction[1] = terrain.friction.y();
-    geom->friction[2] = terrain.friction.z();
-    geom->solref[0] = terrain.solref.x();
-    geom->solref[1] = terrain.solref.y();
-    SetMuJoCoArray(geom->solimp, terrain.solimp, mjNIMP);
-    geom->margin = terrain.margin;
-    geom->gap = terrain.gap;
+    ConfigureMaterialContact(geom,
+                             terrain.material,
+                             terrain.collision_layer,
+                             terrain.collision_mask,
+                             terrain.contact_offset,
+                             terrain.rest_offset);
     geom->group = kGobotTerrainGeomGroup;
 }
 
@@ -1040,6 +1065,8 @@ struct MuJoCoPhysicsWorld::RobotBatchLayout {
     const MuJoCoLinkBinding* external_wrench_binding{nullptr};
     std::vector<std::uint8_t> body_is_robot;
     std::vector<std::string> shape_names;
+    std::vector<std::string> shape_paths;
+    std::vector<std::uint64_t> shape_stable_ids;
     std::unordered_map<int, std::int32_t> shape_index_by_geom;
     std::vector<int> override_shape_geom_ids;
     std::vector<std::vector<std::size_t>> contact_shape_groups_by_geom;
@@ -1085,6 +1112,16 @@ bool MuJoCoPhysicsWorld::IsAvailable() const {
 
 const std::string& MuJoCoPhysicsWorld::GetLastError() const {
     return last_error_;
+}
+
+PhysicsBackendCapabilities MuJoCoPhysicsWorld::GetCapabilities() const {
+    PhysicsBackendCapabilities capabilities;
+    capabilities.environment_batch = true;
+    capabilities.masked_reset = true;
+    capabilities.runtime_checkpoint = true;
+    capabilities.exact_contact_wrench = true;
+    capabilities.sensor_batch = true;
+    return capabilities;
 }
 
 const PhysicsSceneArtifact* MuJoCoPhysicsWorld::GetSceneArtifact() const {
@@ -1405,6 +1442,14 @@ bool MuJoCoPhysicsWorld::ConfigureEnvironmentBatch(std::size_t environment_count
     environment_states_.assign(environment_count, scene_state_);
     for (MuJoCoJointBinding& binding : joint_bindings_) {
         binding.controllers.assign(environment_count, JointController(settings_.default_joint_gains));
+        if (binding.robot_index < scene_snapshot_.robots.size() &&
+            binding.joint_index < scene_snapshot_.robots[binding.robot_index].joints.size()) {
+            const JointActuatorModel& model =
+                    scene_snapshot_.robots[binding.robot_index].joints[binding.joint_index].actuator_model;
+            for (JointController& controller : binding.controllers) {
+                controller.SetActuatorModel(model);
+            }
+        }
     }
     for (std::size_t i = 0; i < environment_count; ++i) {
         auto* environment_model = static_cast<mjModel*>(ModelForEnvironment(i));
@@ -1418,6 +1463,103 @@ bool MuJoCoPhysicsWorld::ConfigureEnvironmentBatch(std::size_t environment_count
     return true;
 #else
     GOB_UNUSED(environment_count);
+    return false;
+#endif
+}
+
+Ref<PhysicsRuntimeCheckpoint> MuJoCoPhysicsWorld::CaptureCheckpoint() const {
+#ifdef GOBOT_HAS_MUJOCO
+    static_assert(std::is_same_v<mjtNum, double>);
+    Ref<PhysicsRuntimeCheckpoint> checkpoint = PhysicsWorld::CaptureCheckpoint();
+    if (!checkpoint.IsValid()) {
+        return {};
+    }
+    const std::size_t environment_count = GetEnvironmentCount();
+    checkpoint->backend_states_.resize(environment_count);
+    for (std::size_t environment_index = 0; environment_index < environment_count;
+         ++environment_index) {
+        const auto* model = static_cast<const mjModel*>(ModelForEnvironment(environment_index));
+        const auto* data = static_cast<const mjData*>(DataForEnvironment(environment_index));
+        if (model == nullptr || data == nullptr) {
+            return {};
+        }
+        std::vector<double>& state = checkpoint->backend_states_[environment_index];
+        state.resize(static_cast<std::size_t>(mj_stateSize(model, mjSTATE_INTEGRATION)));
+        mj_getState(model, data, state.data(), mjSTATE_INTEGRATION);
+    }
+    checkpoint->controller_states_.reserve(joint_bindings_.size() * environment_count);
+    for (const MuJoCoJointBinding& binding : joint_bindings_) {
+        if (binding.controllers.size() != environment_count) {
+            return {};
+        }
+        for (const JointController& controller : binding.controllers) {
+            checkpoint->controller_states_.push_back(controller.CaptureRuntimeState());
+        }
+    }
+    return checkpoint;
+#else
+    return {};
+#endif
+}
+
+bool MuJoCoPhysicsWorld::RestoreCheckpoint(
+        const Ref<PhysicsRuntimeCheckpoint>& checkpoint,
+        const std::vector<std::size_t>& environment_indices) {
+#ifdef GOBOT_HAS_MUJOCO
+    static_assert(std::is_same_v<mjtNum, double>);
+    std::vector<std::size_t> resolved_indices;
+    std::string error;
+    if (!ValidateCheckpoint(checkpoint, environment_indices, &resolved_indices, &error)) {
+        SetLastError(std::move(error));
+        return false;
+    }
+    const std::size_t environment_count = GetEnvironmentCount();
+    if (checkpoint->backend_states_.size() != environment_count ||
+        checkpoint->controller_states_.size() != joint_bindings_.size() * environment_count) {
+        SetLastError("MuJoCo runtime checkpoint payload has incompatible dimensions.");
+        return false;
+    }
+    for (const std::size_t environment_index : resolved_indices) {
+        const auto* model = static_cast<const mjModel*>(ModelForEnvironment(environment_index));
+        const auto* data = static_cast<const mjData*>(DataForEnvironment(environment_index));
+        if (model == nullptr || data == nullptr ||
+            checkpoint->backend_states_[environment_index].size() !=
+                    static_cast<std::size_t>(mj_stateSize(model, mjSTATE_INTEGRATION))) {
+            SetLastError("MuJoCo runtime checkpoint state size does not match this model.");
+            return false;
+        }
+    }
+
+    for (const std::size_t environment_index : resolved_indices) {
+        auto* model = static_cast<mjModel*>(ModelForEnvironment(environment_index));
+        auto* data = static_cast<mjData*>(DataForEnvironment(environment_index));
+        mj_setState(
+                model,
+                data,
+                checkpoint->backend_states_[environment_index].data(),
+                mjSTATE_INTEGRATION);
+        EnvironmentState(environment_index) = checkpoint->scene_states_[environment_index];
+        for (std::size_t binding_index = 0; binding_index < joint_bindings_.size();
+             ++binding_index) {
+            joint_bindings_[binding_index].controllers[environment_index].RestoreRuntimeState(
+                    checkpoint->controller_states_[binding_index * environment_count +
+                                                   environment_index]);
+        }
+        mj_forward(model, data);
+        SyncStateFromMuJoCo(environment_index);
+    }
+    if (resolved_indices.size() == environment_count) {
+        external_forces_ = checkpoint->external_forces_;
+    }
+    if (!environment_states_.empty()) {
+        scene_state_ = environment_states_.front();
+    }
+    last_error_.clear();
+    return true;
+#else
+    GOB_UNUSED(checkpoint);
+    GOB_UNUSED(environment_indices);
+    SetLastError(GetUnavailableReason());
     return false;
 #endif
 }
@@ -2435,6 +2577,8 @@ bool MuJoCoPhysicsWorld::StepRobotBatch(const PhysicsRobotBatchStepRequest& requ
                 layout->shape_index_by_geom[geom_id] =
                         static_cast<std::int32_t>(layout->shape_names.size());
                 layout->shape_names.push_back(shape.name.empty() ? runtime_name : shape.name);
+                layout->shape_paths.push_back(shape.scene_path);
+                layout->shape_stable_ids.push_back(shape.stable_id);
                 if (!shape.name.empty()) {
                     geom_by_shape_name.emplace(shape.name, geom_id);
                 }
@@ -2793,6 +2937,8 @@ bool MuJoCoPhysicsWorld::StepRobotBatch(const PhysicsRobotBatchStepRequest& requ
     arrays.link_names = resolved_link_names;
     arrays.sensor_names = request.sensor_names;
     arrays.shape_names = shape_names;
+    arrays.shape_paths = layout.shape_paths;
+    arrays.shape_stable_ids = layout.shape_stable_ids;
     arrays.environment_count = environment_count;
     arrays.max_sensor_values = max_sensor_values;
     arrays.max_sensor_hits = max_sensor_hits;
@@ -2834,7 +2980,10 @@ bool MuJoCoPhysicsWorld::StepRobotBatch(const PhysicsRobotBatchStepRequest& requ
     arrays.contact_position.assign(environment_count * max_contact_count * 3, 0.0);
     arrays.contact_normal.assign(environment_count * max_contact_count * 3, 0.0);
     arrays.contact_force.assign(environment_count * max_contact_count * 3, 0.0);
+    arrays.contact_tangent_force.assign(environment_count * max_contact_count * 3, 0.0);
+    arrays.contact_torque.assign(environment_count * max_contact_count * 3, 0.0);
     arrays.contact_normal_force.assign(environment_count * max_contact_count, 0.0);
+    arrays.contact_normal_impulse.assign(environment_count * max_contact_count, 0.0);
     arrays.contact_distance.assign(environment_count * max_contact_count, 0.0);
     arrays.link_contact_tick_count = std::move(link_contact_tick_count);
     arrays.shape_contact_tick_count = std::move(shape_contact_tick_count);
@@ -3136,6 +3285,9 @@ bool MuJoCoPhysicsWorld::StepRobotBatch(const PhysicsRobotBatchStepRequest& requ
             Vector3 world_force = frame_x * static_cast<RealType>(force6[0]) +
                                   frame_y * static_cast<RealType>(force6[1]) +
                                   frame_z * static_cast<RealType>(force6[2]);
+            Vector3 world_torque = frame_x * static_cast<RealType>(force6[3]) +
+                                   frame_y * static_cast<RealType>(force6[4]) +
+                                   frame_z * static_cast<RealType>(force6[5]);
             Vector3 normal(contact.frame[0], contact.frame[1], contact.frame[2]);
             const std::size_t contact_base = environment_index * max_contact_count + written_contact_count;
             if (link_a != link_index_by_body.end()) {
@@ -3154,8 +3306,11 @@ bool MuJoCoPhysicsWorld::StepRobotBatch(const PhysicsRobotBatchStepRequest& requ
             }
             if (link_a == link_index_by_body.end() && link_b != link_index_by_body.end()) {
                 world_force = -world_force;
+                world_torque = -world_torque;
                 normal = -normal;
             }
+            const RealType normal_force = std::abs(static_cast<RealType>(force6[0]));
+            const Vector3 tangent_force = world_force - normal * normal_force;
             arrays.contact_position[contact_base * 3 + 0] = static_cast<RealType>(contact.pos[0]);
             arrays.contact_position[contact_base * 3 + 1] = static_cast<RealType>(contact.pos[1]);
             arrays.contact_position[contact_base * 3 + 2] = static_cast<RealType>(contact.pos[2]);
@@ -3165,7 +3320,14 @@ bool MuJoCoPhysicsWorld::StepRobotBatch(const PhysicsRobotBatchStepRequest& requ
             arrays.contact_force[contact_base * 3 + 0] = world_force.x();
             arrays.contact_force[contact_base * 3 + 1] = world_force.y();
             arrays.contact_force[contact_base * 3 + 2] = world_force.z();
-            arrays.contact_normal_force[contact_base] = std::abs(static_cast<RealType>(force6[0]));
+            arrays.contact_tangent_force[contact_base * 3 + 0] = tangent_force.x();
+            arrays.contact_tangent_force[contact_base * 3 + 1] = tangent_force.y();
+            arrays.contact_tangent_force[contact_base * 3 + 2] = tangent_force.z();
+            arrays.contact_torque[contact_base * 3 + 0] = world_torque.x();
+            arrays.contact_torque[contact_base * 3 + 1] = world_torque.y();
+            arrays.contact_torque[contact_base * 3 + 2] = world_torque.z();
+            arrays.contact_normal_force[contact_base] = normal_force;
+            arrays.contact_normal_impulse[contact_base] = normal_force * settings_.fixed_time_step;
             arrays.contact_distance[contact_base] = static_cast<RealType>(contact.dist);
             ++written_contact_count;
         }
@@ -3432,6 +3594,7 @@ bool MuJoCoPhysicsWorld::CompileAuthoredModel(bool build_runtime_bindings) {
     }
     if (build_runtime_bindings) {
         BuildLinkBindings();
+        BuildShapeBindings();
         BuildJointBindings();
         BuildSensorBindings();
     }
@@ -3810,6 +3973,81 @@ void MuJoCoPhysicsWorld::BuildLinkBindings() {
              scene_state_.total_link_count);
 }
 
+void MuJoCoPhysicsWorld::BuildShapeBindings() {
+    shape_bindings_.clear();
+    auto* model = static_cast<mjModel*>(model_);
+    if (model == nullptr) {
+        return;
+    }
+    const auto add_binding = [this, model](const std::string& runtime_name,
+                                           const std::string& authored_name,
+                                           const std::string& scene_path,
+                                           std::uint64_t stable_id) {
+        const int geom_id = mj_name2id(model, mjOBJ_GEOM, runtime_name.c_str());
+        if (geom_id >= 0) {
+            shape_bindings_.push_back({
+                    geom_id,
+                    authored_name.empty() ? runtime_name : authored_name,
+                    scene_path,
+                    stable_id});
+        }
+    };
+
+    for (std::size_t robot_index = 0; robot_index < scene_snapshot_.robots.size(); ++robot_index) {
+        const PhysicsRobotSnapshot& robot = scene_snapshot_.robots[robot_index];
+        const std::string prefix = GetRobotPrefix(robot_index);
+        for (std::size_t link_index = 0; link_index < robot.links.size(); ++link_index) {
+            const PhysicsLinkSnapshot& link = robot.links[link_index];
+            for (std::size_t shape_index = 0; shape_index < link.collision_shapes.size(); ++shape_index) {
+                const PhysicsShapeSnapshot& shape = link.collision_shapes[shape_index];
+                const std::string runtime_name = shape.name.empty()
+                                                         ? fmt::format("{}{}_geom_{}", prefix, link.name, shape_index)
+                                                         : prefix + SanitizeMuJoCoName(shape.name);
+                add_binding(runtime_name, shape.name, shape.scene_path, shape.stable_id);
+            }
+        }
+    }
+
+    for (std::size_t shape_index = 0;
+         shape_index < scene_snapshot_.loose_collision_shapes.size();
+         ++shape_index) {
+        const PhysicsShapeSnapshot& shape =
+                scene_snapshot_.loose_collision_shapes[shape_index];
+        add_binding(fmt::format("gobot_loose_box_{}", shape_index),
+                    shape.name,
+                    shape.scene_path,
+                    shape.stable_id);
+    }
+
+    for (std::size_t terrain_index = 0;
+         terrain_index < scene_snapshot_.terrains.size();
+         ++terrain_index) {
+        const PhysicsTerrainSnapshot& terrain = scene_snapshot_.terrains[terrain_index];
+        const std::string terrain_name = SanitizeMuJoCoName(
+                terrain.name.empty() ? fmt::format("terrain_{}", terrain_index)
+                                     : terrain.name);
+        for (std::size_t box_index = 0; box_index < terrain.boxes.size(); ++box_index) {
+            const std::string runtime_name =
+                    fmt::format("gobot_{}_box_{}", terrain_name, box_index);
+            add_binding(runtime_name, runtime_name, terrain.scene_path, terrain.stable_id);
+        }
+        for (std::size_t hfield_index = 0;
+             hfield_index < terrain.heightfields.size();
+             ++hfield_index) {
+            const std::string runtime_name =
+                    fmt::format("gobot_{}_hfield_{}_geom", terrain_name, hfield_index);
+            add_binding(runtime_name, runtime_name, terrain.scene_path, terrain.stable_id);
+        }
+        for (std::size_t mesh_index = 0;
+             mesh_index < terrain.mesh_patches.size();
+             ++mesh_index) {
+            const std::string runtime_name =
+                    fmt::format("gobot_{}_mesh_{}_geom", terrain_name, mesh_index);
+            add_binding(runtime_name, runtime_name, terrain.scene_path, terrain.stable_id);
+        }
+    }
+}
+
 void MuJoCoPhysicsWorld::BuildJointBindings() {
     joint_bindings_.clear();
 
@@ -4036,12 +4274,12 @@ void MuJoCoPhysicsWorld::ApplyControlsToMuJoCo(std::size_t environment_index, Re
             continue;
         }
 
-        const PhysicsRobotState& robot_state = state.robots[binding.robot_index];
+        PhysicsRobotState& robot_state = state.robots[binding.robot_index];
         if (binding.joint_index >= robot_state.joints.size()) {
             continue;
         }
 
-        const PhysicsJointState& joint_state = robot_state.joints[binding.joint_index];
+        PhysicsJointState& joint_state = robot_state.joints[binding.joint_index];
         if (binding.joint_type == mjJNT_FREE || binding.joint_type == mjJNT_BALL) {
             continue;
         }
@@ -4068,8 +4306,23 @@ void MuJoCoPhysicsWorld::ApplyControlsToMuJoCo(std::size_t environment_index, Re
         JointControllerLimits limits;
         if (binding.robot_index < scene_snapshot_.robots.size() &&
             binding.joint_index < scene_snapshot_.robots[binding.robot_index].joints.size()) {
-            limits = MakeJointControllerLimits(scene_snapshot_.robots[binding.robot_index].joints[binding.joint_index]);
+            const PhysicsJointSnapshot& joint_snapshot =
+                    scene_snapshot_.robots[binding.robot_index].joints[binding.joint_index];
+            limits = MakeJointControllerLimits(joint_snapshot);
+            controller.SetActuatorModel(joint_snapshot.actuator_model);
         }
+
+        const auto publish_telemetry = [&joint_state, &controller]() {
+            const JointControllerTelemetry& telemetry = controller.GetTelemetry();
+            joint_state.commanded_target = telemetry.commanded_target;
+            joint_state.applied_target = telemetry.applied_target;
+            joint_state.tracking_error = telemetry.tracking_error;
+            joint_state.applied_effort = telemetry.applied_effort;
+            joint_state.command_delayed = telemetry.delayed;
+            joint_state.command_deadband_applied = telemetry.deadband_applied;
+            joint_state.command_rate_limited = telemetry.rate_limited;
+            joint_state.effort_saturated = telemetry.effort_saturated;
+        };
 
         const bool has_native_actuator =
                 binding.motor_actuator_id >= 0 ||
@@ -4079,26 +4332,35 @@ void MuJoCoPhysicsWorld::ApplyControlsToMuJoCo(std::size_t environment_index, Re
         if (has_native_actuator) {
             switch (joint_state.control_mode) {
                 case PhysicsJointControlMode::Passive:
+                    controller.ProcessCommand(
+                            controller_state, MakeJointControllerCommand(joint_state), delta_time);
                     break;
                 case PhysicsJointControlMode::Effort:
+                    {
+                    const JointControllerCommand command = controller.ProcessCommand(
+                            controller_state, MakeJointControllerCommand(joint_state), delta_time);
+                    const RealType effort = controller.ApplyEffortEnvelope(
+                            command.target_effort, controller_state, limits);
                     if (binding.motor_actuator_id >= 0) {
-                        SetMotorActuator(model, data, binding.motor_actuator_id, joint_state.target_effort);
+                        SetMotorActuator(model, data, binding.motor_actuator_id, effort);
                     } else {
-                        data->qfrc_applied[binding.dof_address] = JointController::ClampEffort(
-                                joint_state.target_effort,
-                                limits.effort_limit);
+                        data->qfrc_applied[binding.dof_address] = effort;
                     }
                     break;
+                    }
                 case PhysicsJointControlMode::Position:
                     if (binding.position_actuator_id >= 0) {
+                        const JointControllerCommand command = controller.ProcessCommand(
+                                controller_state, MakeJointControllerCommand(joint_state), delta_time);
                         const RealType stiffness = binding.position_stiffness > 0.0
                                                            ? binding.position_stiffness
                                                            : settings_.default_joint_gains.position_stiffness;
                         SetPositionActuator(model,
                                             data,
                                             binding.position_actuator_id,
-                                            joint_state.target_position,
-                                            stiffness);
+                                            command.target_position,
+                                            stiffness * controller.GetStrengthScaleAtVelocity(
+                                                                controller_state.velocity));
                         if (binding.velocity_actuator_id >= 0 && settings_.default_joint_gains.velocity_damping > 0.0) {
                             const RealType damping = binding.velocity_damping > 0.0
                                                              ? binding.velocity_damping
@@ -4106,8 +4368,9 @@ void MuJoCoPhysicsWorld::ApplyControlsToMuJoCo(std::size_t environment_index, Re
                             SetVelocityActuator(model,
                                                 data,
                                                 binding.velocity_actuator_id,
-                                                joint_state.target_velocity,
-                                                damping);
+                                                command.target_velocity,
+                                                damping * controller.GetStrengthScaleAtVelocity(
+                                                              controller_state.velocity));
                         } else if (binding.passive_damping <= 0.0 &&
                                    settings_.default_joint_gains.velocity_damping > 0.0) {
                             data->qfrc_applied[binding.dof_address] -=
@@ -4127,14 +4390,17 @@ void MuJoCoPhysicsWorld::ApplyControlsToMuJoCo(std::size_t environment_index, Re
                     break;
                 case PhysicsJointControlMode::Velocity:
                     if (binding.velocity_actuator_id >= 0) {
+                        const JointControllerCommand command = controller.ProcessCommand(
+                                controller_state, MakeJointControllerCommand(joint_state), delta_time);
                         const RealType damping = binding.velocity_damping > 0.0
                                                          ? binding.velocity_damping
                                                          : settings_.default_joint_gains.velocity_damping;
                         SetVelocityActuator(model,
                                             data,
                                             binding.velocity_actuator_id,
-                                            joint_state.target_velocity,
-                                            damping);
+                                            command.target_velocity,
+                                            damping * controller.GetStrengthScaleAtVelocity(
+                                                              controller_state.velocity));
                     } else {
                         const RealType effort = controller.ComputeEffort(controller_state,
                                                                          MakeJointControllerCommand(joint_state),
@@ -4148,6 +4414,7 @@ void MuJoCoPhysicsWorld::ApplyControlsToMuJoCo(std::size_t environment_index, Re
                     }
                     break;
             }
+            publish_telemetry();
             continue;
         }
 
@@ -4156,6 +4423,7 @@ void MuJoCoPhysicsWorld::ApplyControlsToMuJoCo(std::size_t environment_index, Re
                                                          limits,
                                                          delta_time);
         data->qfrc_applied[binding.dof_address] = effort;
+        publish_telemetry();
     }
 }
 
@@ -4252,6 +4520,7 @@ void MuJoCoPhysicsWorld::FreeModel() {
 
     sensor_bindings_.clear();
     link_bindings_.clear();
+    shape_bindings_.clear();
     joint_bindings_.clear();
 
     for (void* environment_data : environment_data_) {
@@ -4377,6 +4646,10 @@ void MuJoCoPhysicsWorld::SyncStateFromMuJoCo(std::size_t environment_index) {
         }
         if (binding.dof_address >= 0 && binding.dof_address < model->nv) {
             joint_state.velocity = static_cast<RealType>(data->qvel[binding.dof_address]);
+            joint_state.effort = static_cast<RealType>(
+                    data->qfrc_actuator[binding.dof_address] +
+                    data->qfrc_applied[binding.dof_address]);
+            joint_state.applied_effort = joint_state.effort;
         }
     }
 
@@ -4502,6 +4775,14 @@ void MuJoCoPhysicsWorld::SyncContactsFromMuJoCo(std::size_t environment_index) {
 
         return nullptr;
     };
+    auto find_shape_binding_for_geom = [this](int geom_id) -> const MuJoCoShapeBinding* {
+        for (const MuJoCoShapeBinding& binding : shape_bindings_) {
+            if (binding.geom_id == geom_id) {
+                return &binding;
+            }
+        }
+        return nullptr;
+    };
 
     for (int contact_index = 0; contact_index < data->ncon; ++contact_index) {
         const mjContact& contact = data->contact[contact_index];
@@ -4515,6 +4796,8 @@ void MuJoCoPhysicsWorld::SyncContactsFromMuJoCo(std::size_t environment_index) {
         const int body_id_b = model->geom_bodyid[geom_id_b];
         const MuJoCoLinkBinding* binding_a = find_link_binding_for_body(body_id_a);
         const MuJoCoLinkBinding* binding_b = find_link_binding_for_body(body_id_b);
+        const MuJoCoShapeBinding* shape_binding_a = find_shape_binding_for_geom(geom_id_a);
+        const MuJoCoShapeBinding* shape_binding_b = find_shape_binding_for_geom(geom_id_b);
         if (binding_a == nullptr && binding_b == nullptr) {
             continue;
         }
@@ -4527,9 +4810,14 @@ void MuJoCoPhysicsWorld::SyncContactsFromMuJoCo(std::size_t environment_index) {
         const Vector3 world_force = frame_x * static_cast<RealType>(force6[0]) +
                                     frame_y * static_cast<RealType>(force6[1]) +
                                     frame_z * static_cast<RealType>(force6[2]);
+        const Vector3 world_torque = frame_x * static_cast<RealType>(force6[3]) +
+                                     frame_y * static_cast<RealType>(force6[4]) +
+                                     frame_z * static_cast<RealType>(force6[5]);
 
         auto add_contact = [&](const MuJoCoLinkBinding& link_binding,
                                const MuJoCoLinkBinding* other_binding,
+                               const MuJoCoShapeBinding* shape_binding,
+                               const MuJoCoShapeBinding* other_shape_binding,
                                RealType normal_sign) {
             if (link_binding.robot_index >= state.robots.size()) {
                 return;
@@ -4550,19 +4838,41 @@ void MuJoCoPhysicsWorld::SyncContactsFromMuJoCo(std::size_t environment_index) {
                 contact_state.other_robot_name = other_robot_state.name;
                 contact_state.other_link_name = other_robot_state.links[other_binding->link_index].link_name;
             }
+            const auto assign_shape = [&](const MuJoCoShapeBinding* binding,
+                                          std::string* name,
+                                          std::string* path,
+                                          std::uint64_t* stable_id) {
+                if (binding == nullptr) {
+                    return;
+                }
+                *name = binding->name;
+                *path = binding->scene_path;
+                *stable_id = binding->stable_id;
+            };
+            assign_shape(shape_binding,
+                         &contact_state.shape_name,
+                         &contact_state.shape_path,
+                         &contact_state.shape_stable_id);
+            assign_shape(other_shape_binding,
+                         &contact_state.other_shape_name,
+                         &contact_state.other_shape_path,
+                         &contact_state.other_shape_stable_id);
             contact_state.position = Vector3(contact.pos[0], contact.pos[1], contact.pos[2]);
             contact_state.normal = -normal_sign * Vector3(contact.frame[0], contact.frame[1], contact.frame[2]);
             contact_state.force = -normal_sign * world_force;
+            contact_state.torque = -normal_sign * world_torque;
             contact_state.normal_force = std::max<RealType>(0.0, contact_state.force.dot(contact_state.normal));
+            contact_state.tangent_force = contact_state.force - contact_state.normal * contact_state.normal_force;
+            contact_state.normal_impulse = contact_state.normal_force * settings_.fixed_time_step;
             contact_state.distance = contact.dist;
             state.contacts.emplace_back(std::move(contact_state));
         };
 
         if (binding_a != nullptr) {
-            add_contact(*binding_a, binding_b, 1.0);
+            add_contact(*binding_a, binding_b, shape_binding_a, shape_binding_b, 1.0);
         }
         if (binding_b != nullptr) {
-            add_contact(*binding_b, binding_a, -1.0);
+            add_contact(*binding_b, binding_a, shape_binding_b, shape_binding_a, -1.0);
         }
     }
 }
@@ -4591,6 +4901,15 @@ void MuJoCoPhysicsWorld::SyncSensorsFromMuJoCo(std::size_t environment_index) {
         if (!sensor_state.enabled) {
             continue;
         }
+        if (binding.robot_index >= scene_snapshot_.robots.size() ||
+            binding.sensor_index >= scene_snapshot_.robots[binding.robot_index].sensors.size()) {
+            continue;
+        }
+        const PhysicsSensorSnapshot& sensor_snapshot =
+                scene_snapshot_.robots[binding.robot_index].sensors[binding.sensor_index];
+        if (!ShouldSampleSensor(sensor_state, sensor_snapshot, timestamp)) {
+            continue;
+        }
 
         for (const MuJoCoSensorComponentBinding& component : binding.components) {
             const int sensor_id = component.sensor_id;
@@ -4615,6 +4934,7 @@ void MuJoCoPhysicsWorld::SyncSensorsFromMuJoCo(std::size_t environment_index) {
             }
         }
 
+        ApplySensorNoise(sensor_state, sensor_snapshot, timestamp, environment_index);
         sensor_state.timestamp = timestamp;
     }
 }

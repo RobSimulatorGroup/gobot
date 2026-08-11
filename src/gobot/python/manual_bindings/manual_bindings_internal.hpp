@@ -50,9 +50,12 @@
 #include "gobot/scene/node_creation_registry.hpp"
 #include "gobot/scene/physics_coupling.hpp"
 #include "gobot/scene/resources/box_shape_3d.hpp"
+#include "gobot/scene/resources/joint_actuator_config.hpp"
 #include "gobot/scene/resources/material.hpp"
 #include "gobot/scene/resources/packed_scene.hpp"
+#include "gobot/scene/resources/physics_material_3d.hpp"
 #include "gobot/scene/resources/primitive_mesh.hpp"
+#include "gobot/scene/resources/sensor_noise_model.hpp"
 #include "gobot/scene/resources/tetrahedral_mesh.hpp"
 #include "gobot/scene/robot_3d.hpp"
 #include "gobot/scene/scene_command.hpp"
@@ -425,6 +428,9 @@ std::uint64_t NodeGetId(const PyNodeHandle& handle);
 bool NodeIsValid(const PyNodeHandle& handle);
 py::dict NodeToDict(const PyNodeHandle& handle);
 py::dict ResourceToPythonDict(const Ref<Resource>& resource);
+Ref<PhysicsMaterial3D> PhysicsMaterialFromPython(const py::handle& value);
+Ref<JointActuatorConfig> JointActuatorConfigFromPython(const py::handle& value);
+Ref<SensorNoiseModel> SensorNoiseModelFromPython(const py::handle& value);
 py::dict TransformToPythonDict(const Affine3& transform);
 
 Quaternion PythonToQuaternionWxyz(const py::handle& object);

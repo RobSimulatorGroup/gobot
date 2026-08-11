@@ -333,23 +333,11 @@
             "name": "ground_collision",
             "parent": 2,
             "properties": {
-                "conaffinity": 1,
-                "condim": 3,
-                "contype": 1,
+                "collision_layer": 1,
+                "collision_mask": 1,
+                "contact_offset": 0.0,
                 "disabled": false,
-                "friction": {
-                    "matrix_data": {
-                        "cols": 1,
-                        "rows": 3,
-                        "storage": [
-                            1.0,
-                            0.004999999888241291,
-                            9.999999747378752e-05
-                        ]
-                    }
-                },
-                "gap": 0.0,
-                "margin": 0.0,
+                "physics_material": null,
                 "position": {
                     "matrix_data": {
                         "cols": 1,
@@ -361,7 +349,7 @@
                         ]
                     }
                 },
-                "priority": 0,
+                "rest_offset": 0.0,
                 "rotation_degrees": {
                     "matrix_data": {
                         "cols": 1,
@@ -387,23 +375,6 @@
                 "script": null,
                 "semantic_label": "",
                 "shape": "SubResource(BoxShape3D_0)",
-                "solimp": [
-                    0.8999999761581421,
-                    0.949999988079071,
-                    0.0010000000474974513,
-                    0.5,
-                    2.0
-                ],
-                "solref": {
-                    "matrix_data": {
-                        "cols": 1,
-                        "rows": 2,
-                        "storage": [
-                            0.019999999552965164,
-                            1.0
-                        ]
-                    }
-                },
                 "visible": true
             },
             "type": "CollisionShape3D"
@@ -465,23 +436,11 @@
             "name": "workbench_collision",
             "parent": 2,
             "properties": {
-                "conaffinity": 1,
-                "condim": 3,
-                "contype": 1,
+                "collision_layer": 1,
+                "collision_mask": 1,
+                "contact_offset": 0.0,
                 "disabled": false,
-                "friction": {
-                    "matrix_data": {
-                        "cols": 1,
-                        "rows": 3,
-                        "storage": [
-                            1.0,
-                            0.004999999888241291,
-                            9.999999747378752e-05
-                        ]
-                    }
-                },
-                "gap": 0.0,
-                "margin": 0.0,
+                "physics_material": null,
                 "position": {
                     "matrix_data": {
                         "cols": 1,
@@ -493,7 +452,7 @@
                         ]
                     }
                 },
-                "priority": 0,
+                "rest_offset": 0.0,
                 "rotation_degrees": {
                     "matrix_data": {
                         "cols": 1,
@@ -519,23 +478,6 @@
                 "script": null,
                 "semantic_label": "",
                 "shape": "SubResource(BoxShape3D_1)",
-                "solimp": [
-                    0.8999999761581421,
-                    0.949999988079071,
-                    0.0010000000474974513,
-                    0.5,
-                    2.0
-                ],
-                "solref": {
-                    "matrix_data": {
-                        "cols": 1,
-                        "rows": 2,
-                        "storage": [
-                            0.019999999552965164,
-                            1.0
-                        ]
-                    }
-                },
                 "visible": true
             },
             "type": "CollisionShape3D"
@@ -779,23 +721,11 @@
             "name": "fr3_link0_collision",
             "parent": 9,
             "properties": {
-                "conaffinity": 2,
-                "condim": 3,
-                "contype": 2,
+                "collision_layer": 2,
+                "collision_mask": 2,
+                "contact_offset": 0.0,
                 "disabled": false,
-                "friction": {
-                    "matrix_data": {
-                        "cols": 1,
-                        "rows": 3,
-                        "storage": [
-                            0.25,
-                            0.004999999888241291,
-                            9.999999747378752e-05
-                        ]
-                    }
-                },
-                "gap": 0.0,
-                "margin": 0.0,
+                "physics_material": "SubResource(PhysicsMaterial3D_0)",
                 "position": {
                     "matrix_data": {
                         "cols": 1,
@@ -807,7 +737,7 @@
                         ]
                     }
                 },
-                "priority": 0,
+                "rest_offset": 0.0,
                 "rotation_degrees": {
                     "matrix_data": {
                         "cols": 1,
@@ -833,23 +763,6 @@
                 "script": null,
                 "semantic_label": "",
                 "shape": "SubResource(ConvexMeshShape3D_0)",
-                "solimp": [
-                    0.8999999761581421,
-                    0.949999988079071,
-                    0.0010000000474974513,
-                    0.5,
-                    2.0
-                ],
-                "solref": {
-                    "matrix_data": {
-                        "cols": 1,
-                        "rows": 2,
-                        "storage": [
-                            0.019999999552965164,
-                            1.0
-                        ]
-                    }
-                },
                 "visible": false
             },
             "type": "CollisionShape3D"
@@ -858,6 +771,7 @@
             "name": "fr3_joint1",
             "parent": 9,
             "properties": {
+                "actuator_config": null,
                 "affine_actuator_control_gain": 0.0,
                 "affine_actuator_enabled": false,
                 "affine_actuator_force_offset": 0.0,
@@ -1083,23 +997,11 @@
             "name": "fr3_link1_collision",
             "parent": 13,
             "properties": {
-                "conaffinity": 1,
-                "condim": 3,
-                "contype": 1,
+                "collision_layer": 1,
+                "collision_mask": 1,
+                "contact_offset": 0.0,
                 "disabled": false,
-                "friction": {
-                    "matrix_data": {
-                        "cols": 1,
-                        "rows": 3,
-                        "storage": [
-                            0.25,
-                            0.004999999888241291,
-                            9.999999747378752e-05
-                        ]
-                    }
-                },
-                "gap": 0.0,
-                "margin": 0.0,
+                "physics_material": "SubResource(PhysicsMaterial3D_1)",
                 "position": {
                     "matrix_data": {
                         "cols": 1,
@@ -1111,7 +1013,7 @@
                         ]
                     }
                 },
-                "priority": 0,
+                "rest_offset": 0.0,
                 "rotation_degrees": {
                     "matrix_data": {
                         "cols": 1,
@@ -1137,23 +1039,6 @@
                 "script": null,
                 "semantic_label": "",
                 "shape": "SubResource(ConvexMeshShape3D_1)",
-                "solimp": [
-                    0.8999999761581421,
-                    0.949999988079071,
-                    0.0010000000474974513,
-                    0.5,
-                    2.0
-                ],
-                "solref": {
-                    "matrix_data": {
-                        "cols": 1,
-                        "rows": 2,
-                        "storage": [
-                            0.019999999552965164,
-                            1.0
-                        ]
-                    }
-                },
                 "visible": false
             },
             "type": "CollisionShape3D"
@@ -1162,6 +1047,7 @@
             "name": "fr3_joint2",
             "parent": 13,
             "properties": {
+                "actuator_config": null,
                 "affine_actuator_control_gain": 0.0,
                 "affine_actuator_enabled": false,
                 "affine_actuator_force_offset": 0.0,
@@ -1387,23 +1273,11 @@
             "name": "fr3_link2_collision",
             "parent": 17,
             "properties": {
-                "conaffinity": 1,
-                "condim": 3,
-                "contype": 1,
+                "collision_layer": 1,
+                "collision_mask": 1,
+                "contact_offset": 0.0,
                 "disabled": false,
-                "friction": {
-                    "matrix_data": {
-                        "cols": 1,
-                        "rows": 3,
-                        "storage": [
-                            0.25,
-                            0.004999999888241291,
-                            9.999999747378752e-05
-                        ]
-                    }
-                },
-                "gap": 0.0,
-                "margin": 0.0,
+                "physics_material": "SubResource(PhysicsMaterial3D_2)",
                 "position": {
                     "matrix_data": {
                         "cols": 1,
@@ -1415,7 +1289,7 @@
                         ]
                     }
                 },
-                "priority": 0,
+                "rest_offset": 0.0,
                 "rotation_degrees": {
                     "matrix_data": {
                         "cols": 1,
@@ -1441,23 +1315,6 @@
                 "script": null,
                 "semantic_label": "",
                 "shape": "SubResource(ConvexMeshShape3D_2)",
-                "solimp": [
-                    0.8999999761581421,
-                    0.949999988079071,
-                    0.0010000000474974513,
-                    0.5,
-                    2.0
-                ],
-                "solref": {
-                    "matrix_data": {
-                        "cols": 1,
-                        "rows": 2,
-                        "storage": [
-                            0.019999999552965164,
-                            1.0
-                        ]
-                    }
-                },
                 "visible": false
             },
             "type": "CollisionShape3D"
@@ -1466,6 +1323,7 @@
             "name": "fr3_joint3",
             "parent": 17,
             "properties": {
+                "actuator_config": null,
                 "affine_actuator_control_gain": 0.0,
                 "affine_actuator_enabled": false,
                 "affine_actuator_force_offset": 0.0,
@@ -1691,23 +1549,11 @@
             "name": "fr3_link3_collision",
             "parent": 21,
             "properties": {
-                "conaffinity": 1,
-                "condim": 3,
-                "contype": 1,
+                "collision_layer": 1,
+                "collision_mask": 1,
+                "contact_offset": 0.0,
                 "disabled": false,
-                "friction": {
-                    "matrix_data": {
-                        "cols": 1,
-                        "rows": 3,
-                        "storage": [
-                            0.25,
-                            0.004999999888241291,
-                            9.999999747378752e-05
-                        ]
-                    }
-                },
-                "gap": 0.0,
-                "margin": 0.0,
+                "physics_material": "SubResource(PhysicsMaterial3D_3)",
                 "position": {
                     "matrix_data": {
                         "cols": 1,
@@ -1719,7 +1565,7 @@
                         ]
                     }
                 },
-                "priority": 0,
+                "rest_offset": 0.0,
                 "rotation_degrees": {
                     "matrix_data": {
                         "cols": 1,
@@ -1745,23 +1591,6 @@
                 "script": null,
                 "semantic_label": "",
                 "shape": "SubResource(ConvexMeshShape3D_3)",
-                "solimp": [
-                    0.8999999761581421,
-                    0.949999988079071,
-                    0.0010000000474974513,
-                    0.5,
-                    2.0
-                ],
-                "solref": {
-                    "matrix_data": {
-                        "cols": 1,
-                        "rows": 2,
-                        "storage": [
-                            0.019999999552965164,
-                            1.0
-                        ]
-                    }
-                },
                 "visible": false
             },
             "type": "CollisionShape3D"
@@ -1770,6 +1599,7 @@
             "name": "fr3_joint4",
             "parent": 21,
             "properties": {
+                "actuator_config": null,
                 "affine_actuator_control_gain": 0.0,
                 "affine_actuator_enabled": false,
                 "affine_actuator_force_offset": 0.0,
@@ -1995,23 +1825,11 @@
             "name": "fr3_link4_collision",
             "parent": 25,
             "properties": {
-                "conaffinity": 1,
-                "condim": 3,
-                "contype": 1,
+                "collision_layer": 1,
+                "collision_mask": 1,
+                "contact_offset": 0.0,
                 "disabled": false,
-                "friction": {
-                    "matrix_data": {
-                        "cols": 1,
-                        "rows": 3,
-                        "storage": [
-                            0.25,
-                            0.004999999888241291,
-                            9.999999747378752e-05
-                        ]
-                    }
-                },
-                "gap": 0.0,
-                "margin": 0.0,
+                "physics_material": "SubResource(PhysicsMaterial3D_4)",
                 "position": {
                     "matrix_data": {
                         "cols": 1,
@@ -2023,7 +1841,7 @@
                         ]
                     }
                 },
-                "priority": 0,
+                "rest_offset": 0.0,
                 "rotation_degrees": {
                     "matrix_data": {
                         "cols": 1,
@@ -2049,23 +1867,6 @@
                 "script": null,
                 "semantic_label": "",
                 "shape": "SubResource(ConvexMeshShape3D_4)",
-                "solimp": [
-                    0.8999999761581421,
-                    0.949999988079071,
-                    0.0010000000474974513,
-                    0.5,
-                    2.0
-                ],
-                "solref": {
-                    "matrix_data": {
-                        "cols": 1,
-                        "rows": 2,
-                        "storage": [
-                            0.019999999552965164,
-                            1.0
-                        ]
-                    }
-                },
                 "visible": false
             },
             "type": "CollisionShape3D"
@@ -2074,6 +1875,7 @@
             "name": "fr3_joint5",
             "parent": 25,
             "properties": {
+                "actuator_config": null,
                 "affine_actuator_control_gain": 0.0,
                 "affine_actuator_enabled": false,
                 "affine_actuator_force_offset": 0.0,
@@ -2299,23 +2101,11 @@
             "name": "fr3_link5_collision",
             "parent": 29,
             "properties": {
-                "conaffinity": 1,
-                "condim": 3,
-                "contype": 1,
+                "collision_layer": 1,
+                "collision_mask": 1,
+                "contact_offset": 0.0,
                 "disabled": false,
-                "friction": {
-                    "matrix_data": {
-                        "cols": 1,
-                        "rows": 3,
-                        "storage": [
-                            0.25,
-                            0.004999999888241291,
-                            9.999999747378752e-05
-                        ]
-                    }
-                },
-                "gap": 0.0,
-                "margin": 0.0,
+                "physics_material": "SubResource(PhysicsMaterial3D_5)",
                 "position": {
                     "matrix_data": {
                         "cols": 1,
@@ -2327,7 +2117,7 @@
                         ]
                     }
                 },
-                "priority": 0,
+                "rest_offset": 0.0,
                 "rotation_degrees": {
                     "matrix_data": {
                         "cols": 1,
@@ -2353,23 +2143,6 @@
                 "script": null,
                 "semantic_label": "",
                 "shape": "SubResource(ConvexMeshShape3D_5)",
-                "solimp": [
-                    0.8999999761581421,
-                    0.949999988079071,
-                    0.0010000000474974513,
-                    0.5,
-                    2.0
-                ],
-                "solref": {
-                    "matrix_data": {
-                        "cols": 1,
-                        "rows": 2,
-                        "storage": [
-                            0.019999999552965164,
-                            1.0
-                        ]
-                    }
-                },
                 "visible": false
             },
             "type": "CollisionShape3D"
@@ -2378,6 +2151,7 @@
             "name": "fr3_joint6",
             "parent": 29,
             "properties": {
+                "actuator_config": null,
                 "affine_actuator_control_gain": 0.0,
                 "affine_actuator_enabled": false,
                 "affine_actuator_force_offset": 0.0,
@@ -2603,23 +2377,11 @@
             "name": "fr3_link6_collision",
             "parent": 33,
             "properties": {
-                "conaffinity": 1,
-                "condim": 3,
-                "contype": 1,
+                "collision_layer": 1,
+                "collision_mask": 1,
+                "contact_offset": 0.0,
                 "disabled": false,
-                "friction": {
-                    "matrix_data": {
-                        "cols": 1,
-                        "rows": 3,
-                        "storage": [
-                            0.25,
-                            0.004999999888241291,
-                            9.999999747378752e-05
-                        ]
-                    }
-                },
-                "gap": 0.0,
-                "margin": 0.0,
+                "physics_material": "SubResource(PhysicsMaterial3D_6)",
                 "position": {
                     "matrix_data": {
                         "cols": 1,
@@ -2631,7 +2393,7 @@
                         ]
                     }
                 },
-                "priority": 0,
+                "rest_offset": 0.0,
                 "rotation_degrees": {
                     "matrix_data": {
                         "cols": 1,
@@ -2657,23 +2419,6 @@
                 "script": null,
                 "semantic_label": "",
                 "shape": "SubResource(ConvexMeshShape3D_6)",
-                "solimp": [
-                    0.8999999761581421,
-                    0.949999988079071,
-                    0.0010000000474974513,
-                    0.5,
-                    2.0
-                ],
-                "solref": {
-                    "matrix_data": {
-                        "cols": 1,
-                        "rows": 2,
-                        "storage": [
-                            0.019999999552965164,
-                            1.0
-                        ]
-                    }
-                },
                 "visible": false
             },
             "type": "CollisionShape3D"
@@ -2682,6 +2427,7 @@
             "name": "fr3_joint7",
             "parent": 33,
             "properties": {
+                "actuator_config": null,
                 "affine_actuator_control_gain": 0.0,
                 "affine_actuator_enabled": false,
                 "affine_actuator_force_offset": 0.0,
@@ -2907,23 +2653,11 @@
             "name": "fr3_link7_collision",
             "parent": 37,
             "properties": {
-                "conaffinity": 1,
-                "condim": 3,
-                "contype": 1,
+                "collision_layer": 1,
+                "collision_mask": 1,
+                "contact_offset": 0.0,
                 "disabled": false,
-                "friction": {
-                    "matrix_data": {
-                        "cols": 1,
-                        "rows": 3,
-                        "storage": [
-                            0.25,
-                            0.004999999888241291,
-                            9.999999747378752e-05
-                        ]
-                    }
-                },
-                "gap": 0.0,
-                "margin": 0.0,
+                "physics_material": "SubResource(PhysicsMaterial3D_7)",
                 "position": {
                     "matrix_data": {
                         "cols": 1,
@@ -2935,7 +2669,7 @@
                         ]
                     }
                 },
-                "priority": 0,
+                "rest_offset": 0.0,
                 "rotation_degrees": {
                     "matrix_data": {
                         "cols": 1,
@@ -2961,23 +2695,6 @@
                 "script": null,
                 "semantic_label": "",
                 "shape": "SubResource(ConvexMeshShape3D_7)",
-                "solimp": [
-                    0.8999999761581421,
-                    0.949999988079071,
-                    0.0010000000474974513,
-                    0.5,
-                    2.0
-                ],
-                "solref": {
-                    "matrix_data": {
-                        "cols": 1,
-                        "rows": 2,
-                        "storage": [
-                            0.019999999552965164,
-                            1.0
-                        ]
-                    }
-                },
                 "visible": false
             },
             "type": "CollisionShape3D"
@@ -3039,23 +2756,11 @@
             "name": "fr3_hand_collision",
             "parent": 37,
             "properties": {
-                "conaffinity": 1,
-                "condim": 3,
-                "contype": 1,
+                "collision_layer": 1,
+                "collision_mask": 1,
+                "contact_offset": 0.0,
                 "disabled": false,
-                "friction": {
-                    "matrix_data": {
-                        "cols": 1,
-                        "rows": 3,
-                        "storage": [
-                            0.25,
-                            0.004999999888241291,
-                            9.999999747378752e-05
-                        ]
-                    }
-                },
-                "gap": 0.0,
-                "margin": 0.0,
+                "physics_material": "SubResource(PhysicsMaterial3D_8)",
                 "position": {
                     "matrix_data": {
                         "cols": 1,
@@ -3067,7 +2772,7 @@
                         ]
                     }
                 },
-                "priority": 0,
+                "rest_offset": 0.0,
                 "rotation_degrees": {
                     "matrix_data": {
                         "cols": 1,
@@ -3093,23 +2798,6 @@
                 "script": null,
                 "semantic_label": "",
                 "shape": "SubResource(ConvexMeshShape3D_8)",
-                "solimp": [
-                    0.8999999761581421,
-                    0.949999988079071,
-                    0.0010000000474974513,
-                    0.5,
-                    2.0
-                ],
-                "solref": {
-                    "matrix_data": {
-                        "cols": 1,
-                        "rows": 2,
-                        "storage": [
-                            0.019999999552965164,
-                            1.0
-                        ]
-                    }
-                },
                 "visible": false
             },
             "type": "CollisionShape3D"
@@ -3118,6 +2806,7 @@
             "name": "fr3_finger_joint1",
             "parent": 37,
             "properties": {
+                "actuator_config": null,
                 "affine_actuator_control_gain": 0.0,
                 "affine_actuator_enabled": false,
                 "affine_actuator_force_offset": 0.0,
@@ -3343,23 +3032,11 @@
             "name": "fr3_leftfinger_collision",
             "parent": 43,
             "properties": {
-                "conaffinity": 1,
-                "condim": 3,
-                "contype": 1,
+                "collision_layer": 1,
+                "collision_mask": 1,
+                "contact_offset": 0.0,
                 "disabled": false,
-                "friction": {
-                    "matrix_data": {
-                        "cols": 1,
-                        "rows": 3,
-                        "storage": [
-                            1.25,
-                            0.004999999888241291,
-                            9.999999747378752e-05
-                        ]
-                    }
-                },
-                "gap": 0.0,
-                "margin": 0.0,
+                "physics_material": "SubResource(PhysicsMaterial3D_9)",
                 "position": {
                     "matrix_data": {
                         "cols": 1,
@@ -3371,7 +3048,7 @@
                         ]
                     }
                 },
-                "priority": 0,
+                "rest_offset": 0.0,
                 "rotation_degrees": {
                     "matrix_data": {
                         "cols": 1,
@@ -3397,23 +3074,6 @@
                 "script": null,
                 "semantic_label": "",
                 "shape": "SubResource(BoxShape3D_2)",
-                "solimp": [
-                    0.8999999761581421,
-                    0.949999988079071,
-                    0.0010000000474974513,
-                    0.5,
-                    2.0
-                ],
-                "solref": {
-                    "matrix_data": {
-                        "cols": 1,
-                        "rows": 2,
-                        "storage": [
-                            0.019999999552965164,
-                            1.0
-                        ]
-                    }
-                },
                 "visible": false
             },
             "type": "CollisionShape3D"
@@ -3422,23 +3082,11 @@
             "name": "fr3_leftfinger_collision_2",
             "parent": 43,
             "properties": {
-                "conaffinity": 1,
-                "condim": 3,
-                "contype": 1,
+                "collision_layer": 1,
+                "collision_mask": 1,
+                "contact_offset": 0.0,
                 "disabled": false,
-                "friction": {
-                    "matrix_data": {
-                        "cols": 1,
-                        "rows": 3,
-                        "storage": [
-                            1.25,
-                            0.004999999888241291,
-                            9.999999747378752e-05
-                        ]
-                    }
-                },
-                "gap": 0.0,
-                "margin": 0.0,
+                "physics_material": "SubResource(PhysicsMaterial3D_10)",
                 "position": {
                     "matrix_data": {
                         "cols": 1,
@@ -3450,7 +3098,7 @@
                         ]
                     }
                 },
-                "priority": 0,
+                "rest_offset": 0.0,
                 "rotation_degrees": {
                     "matrix_data": {
                         "cols": 1,
@@ -3476,23 +3124,6 @@
                 "script": null,
                 "semantic_label": "",
                 "shape": "SubResource(BoxShape3D_3)",
-                "solimp": [
-                    0.8999999761581421,
-                    0.949999988079071,
-                    0.0010000000474974513,
-                    0.5,
-                    2.0
-                ],
-                "solref": {
-                    "matrix_data": {
-                        "cols": 1,
-                        "rows": 2,
-                        "storage": [
-                            0.019999999552965164,
-                            1.0
-                        ]
-                    }
-                },
                 "visible": false
             },
             "type": "CollisionShape3D"
@@ -3501,23 +3132,11 @@
             "name": "fr3_leftfinger_collision_3",
             "parent": 43,
             "properties": {
-                "conaffinity": 1,
-                "condim": 3,
-                "contype": 1,
+                "collision_layer": 1,
+                "collision_mask": 1,
+                "contact_offset": 0.0,
                 "disabled": false,
-                "friction": {
-                    "matrix_data": {
-                        "cols": 1,
-                        "rows": 3,
-                        "storage": [
-                            1.25,
-                            0.004999999888241291,
-                            9.999999747378752e-05
-                        ]
-                    }
-                },
-                "gap": 0.0,
-                "margin": 0.0,
+                "physics_material": "SubResource(PhysicsMaterial3D_11)",
                 "position": {
                     "matrix_data": {
                         "cols": 1,
@@ -3529,7 +3148,7 @@
                         ]
                     }
                 },
-                "priority": 0,
+                "rest_offset": 0.0,
                 "rotation_degrees": {
                     "matrix_data": {
                         "cols": 1,
@@ -3555,23 +3174,6 @@
                 "script": null,
                 "semantic_label": "",
                 "shape": "SubResource(BoxShape3D_4)",
-                "solimp": [
-                    0.8999999761581421,
-                    0.949999988079071,
-                    0.0010000000474974513,
-                    0.5,
-                    2.0
-                ],
-                "solref": {
-                    "matrix_data": {
-                        "cols": 1,
-                        "rows": 2,
-                        "storage": [
-                            0.019999999552965164,
-                            1.0
-                        ]
-                    }
-                },
                 "visible": false
             },
             "type": "CollisionShape3D"
@@ -3580,23 +3182,11 @@
             "name": "fr3_leftfinger_collision_4",
             "parent": 43,
             "properties": {
-                "conaffinity": 1,
-                "condim": 3,
-                "contype": 1,
+                "collision_layer": 1,
+                "collision_mask": 1,
+                "contact_offset": 0.0,
                 "disabled": false,
-                "friction": {
-                    "matrix_data": {
-                        "cols": 1,
-                        "rows": 3,
-                        "storage": [
-                            1.25,
-                            0.004999999888241291,
-                            9.999999747378752e-05
-                        ]
-                    }
-                },
-                "gap": 0.0,
-                "margin": 0.0,
+                "physics_material": "SubResource(PhysicsMaterial3D_12)",
                 "position": {
                     "matrix_data": {
                         "cols": 1,
@@ -3608,7 +3198,7 @@
                         ]
                     }
                 },
-                "priority": 0,
+                "rest_offset": 0.0,
                 "rotation_degrees": {
                     "matrix_data": {
                         "cols": 1,
@@ -3634,23 +3224,6 @@
                 "script": null,
                 "semantic_label": "",
                 "shape": "SubResource(BoxShape3D_5)",
-                "solimp": [
-                    0.8999999761581421,
-                    0.949999988079071,
-                    0.0010000000474974513,
-                    0.5,
-                    2.0
-                ],
-                "solref": {
-                    "matrix_data": {
-                        "cols": 1,
-                        "rows": 2,
-                        "storage": [
-                            0.019999999552965164,
-                            1.0
-                        ]
-                    }
-                },
                 "visible": false
             },
             "type": "CollisionShape3D"
@@ -3659,6 +3232,7 @@
             "name": "fr3_finger_joint2",
             "parent": 37,
             "properties": {
+                "actuator_config": null,
                 "affine_actuator_control_gain": 0.0,
                 "affine_actuator_enabled": false,
                 "affine_actuator_force_offset": 0.0,
@@ -3884,23 +3458,11 @@
             "name": "fr3_rightfinger_collision",
             "parent": 50,
             "properties": {
-                "conaffinity": 1,
-                "condim": 3,
-                "contype": 1,
+                "collision_layer": 1,
+                "collision_mask": 1,
+                "contact_offset": 0.0,
                 "disabled": false,
-                "friction": {
-                    "matrix_data": {
-                        "cols": 1,
-                        "rows": 3,
-                        "storage": [
-                            1.25,
-                            0.004999999888241291,
-                            9.999999747378752e-05
-                        ]
-                    }
-                },
-                "gap": 0.0,
-                "margin": 0.0,
+                "physics_material": "SubResource(PhysicsMaterial3D_13)",
                 "position": {
                     "matrix_data": {
                         "cols": 1,
@@ -3912,7 +3474,7 @@
                         ]
                     }
                 },
-                "priority": 0,
+                "rest_offset": 0.0,
                 "rotation_degrees": {
                     "matrix_data": {
                         "cols": 1,
@@ -3938,23 +3500,6 @@
                 "script": null,
                 "semantic_label": "",
                 "shape": "SubResource(BoxShape3D_6)",
-                "solimp": [
-                    0.8999999761581421,
-                    0.949999988079071,
-                    0.0010000000474974513,
-                    0.5,
-                    2.0
-                ],
-                "solref": {
-                    "matrix_data": {
-                        "cols": 1,
-                        "rows": 2,
-                        "storage": [
-                            0.019999999552965164,
-                            1.0
-                        ]
-                    }
-                },
                 "visible": false
             },
             "type": "CollisionShape3D"
@@ -3963,23 +3508,11 @@
             "name": "fr3_rightfinger_collision_2",
             "parent": 50,
             "properties": {
-                "conaffinity": 1,
-                "condim": 3,
-                "contype": 1,
+                "collision_layer": 1,
+                "collision_mask": 1,
+                "contact_offset": 0.0,
                 "disabled": false,
-                "friction": {
-                    "matrix_data": {
-                        "cols": 1,
-                        "rows": 3,
-                        "storage": [
-                            1.25,
-                            0.004999999888241291,
-                            9.999999747378752e-05
-                        ]
-                    }
-                },
-                "gap": 0.0,
-                "margin": 0.0,
+                "physics_material": "SubResource(PhysicsMaterial3D_14)",
                 "position": {
                     "matrix_data": {
                         "cols": 1,
@@ -3991,7 +3524,7 @@
                         ]
                     }
                 },
-                "priority": 0,
+                "rest_offset": 0.0,
                 "rotation_degrees": {
                     "matrix_data": {
                         "cols": 1,
@@ -4017,23 +3550,6 @@
                 "script": null,
                 "semantic_label": "",
                 "shape": "SubResource(BoxShape3D_7)",
-                "solimp": [
-                    0.8999999761581421,
-                    0.949999988079071,
-                    0.0010000000474974513,
-                    0.5,
-                    2.0
-                ],
-                "solref": {
-                    "matrix_data": {
-                        "cols": 1,
-                        "rows": 2,
-                        "storage": [
-                            0.019999999552965164,
-                            1.0
-                        ]
-                    }
-                },
                 "visible": false
             },
             "type": "CollisionShape3D"
@@ -4042,23 +3558,11 @@
             "name": "fr3_rightfinger_collision_3",
             "parent": 50,
             "properties": {
-                "conaffinity": 1,
-                "condim": 3,
-                "contype": 1,
+                "collision_layer": 1,
+                "collision_mask": 1,
+                "contact_offset": 0.0,
                 "disabled": false,
-                "friction": {
-                    "matrix_data": {
-                        "cols": 1,
-                        "rows": 3,
-                        "storage": [
-                            1.25,
-                            0.004999999888241291,
-                            9.999999747378752e-05
-                        ]
-                    }
-                },
-                "gap": 0.0,
-                "margin": 0.0,
+                "physics_material": "SubResource(PhysicsMaterial3D_15)",
                 "position": {
                     "matrix_data": {
                         "cols": 1,
@@ -4070,7 +3574,7 @@
                         ]
                     }
                 },
-                "priority": 0,
+                "rest_offset": 0.0,
                 "rotation_degrees": {
                     "matrix_data": {
                         "cols": 1,
@@ -4096,23 +3600,6 @@
                 "script": null,
                 "semantic_label": "",
                 "shape": "SubResource(BoxShape3D_8)",
-                "solimp": [
-                    0.8999999761581421,
-                    0.949999988079071,
-                    0.0010000000474974513,
-                    0.5,
-                    2.0
-                ],
-                "solref": {
-                    "matrix_data": {
-                        "cols": 1,
-                        "rows": 2,
-                        "storage": [
-                            0.019999999552965164,
-                            1.0
-                        ]
-                    }
-                },
                 "visible": false
             },
             "type": "CollisionShape3D"
@@ -4121,23 +3608,11 @@
             "name": "fr3_rightfinger_collision_4",
             "parent": 50,
             "properties": {
-                "conaffinity": 1,
-                "condim": 3,
-                "contype": 1,
+                "collision_layer": 1,
+                "collision_mask": 1,
+                "contact_offset": 0.0,
                 "disabled": false,
-                "friction": {
-                    "matrix_data": {
-                        "cols": 1,
-                        "rows": 3,
-                        "storage": [
-                            1.25,
-                            0.004999999888241291,
-                            9.999999747378752e-05
-                        ]
-                    }
-                },
-                "gap": 0.0,
-                "margin": 0.0,
+                "physics_material": "SubResource(PhysicsMaterial3D_16)",
                 "position": {
                     "matrix_data": {
                         "cols": 1,
@@ -4149,7 +3624,7 @@
                         ]
                     }
                 },
-                "priority": 0,
+                "rest_offset": 0.0,
                 "rotation_degrees": {
                     "matrix_data": {
                         "cols": 1,
@@ -4175,23 +3650,6 @@
                 "script": null,
                 "semantic_label": "",
                 "shape": "SubResource(BoxShape3D_9)",
-                "solimp": [
-                    0.8999999761581421,
-                    0.949999988079071,
-                    0.0010000000474974513,
-                    0.5,
-                    2.0
-                ],
-                "solref": {
-                    "matrix_data": {
-                        "cols": 1,
-                        "rows": 2,
-                        "storage": [
-                            0.019999999552965164,
-                            1.0
-                        ]
-                    }
-                },
                 "visible": false
             },
             "type": "CollisionShape3D"
@@ -6417,10 +5875,32 @@
             "resource_name": ""
         },
         {
+            "__ID__": "PhysicsMaterial3D_0",
+            "__TYPE__": "PhysicsMaterial3D",
+            "contact_compliance": 0.0,
+            "contact_damping": 1.0,
+            "resource_name": "",
+            "restitution": 0.0,
+            "rolling_friction": 9.999999747378752e-05,
+            "sliding_friction": 0.25,
+            "torsional_friction": 0.004999999888241291
+        },
+        {
             "__ID__": "ConvexMeshShape3D_1",
             "__TYPE__": "ConvexMeshShape3D",
             "mesh": "ExtResource(external_mesh_1)",
             "resource_name": ""
+        },
+        {
+            "__ID__": "PhysicsMaterial3D_1",
+            "__TYPE__": "PhysicsMaterial3D",
+            "contact_compliance": 0.0,
+            "contact_damping": 1.0,
+            "resource_name": "",
+            "restitution": 0.0,
+            "rolling_friction": 9.999999747378752e-05,
+            "sliding_friction": 0.25,
+            "torsional_friction": 0.004999999888241291
         },
         {
             "__ID__": "ConvexMeshShape3D_2",
@@ -6429,10 +5909,32 @@
             "resource_name": ""
         },
         {
+            "__ID__": "PhysicsMaterial3D_2",
+            "__TYPE__": "PhysicsMaterial3D",
+            "contact_compliance": 0.0,
+            "contact_damping": 1.0,
+            "resource_name": "",
+            "restitution": 0.0,
+            "rolling_friction": 9.999999747378752e-05,
+            "sliding_friction": 0.25,
+            "torsional_friction": 0.004999999888241291
+        },
+        {
             "__ID__": "ConvexMeshShape3D_3",
             "__TYPE__": "ConvexMeshShape3D",
             "mesh": "ExtResource(external_mesh_3)",
             "resource_name": ""
+        },
+        {
+            "__ID__": "PhysicsMaterial3D_3",
+            "__TYPE__": "PhysicsMaterial3D",
+            "contact_compliance": 0.0,
+            "contact_damping": 1.0,
+            "resource_name": "",
+            "restitution": 0.0,
+            "rolling_friction": 9.999999747378752e-05,
+            "sliding_friction": 0.25,
+            "torsional_friction": 0.004999999888241291
         },
         {
             "__ID__": "ConvexMeshShape3D_4",
@@ -6441,10 +5943,32 @@
             "resource_name": ""
         },
         {
+            "__ID__": "PhysicsMaterial3D_4",
+            "__TYPE__": "PhysicsMaterial3D",
+            "contact_compliance": 0.0,
+            "contact_damping": 1.0,
+            "resource_name": "",
+            "restitution": 0.0,
+            "rolling_friction": 9.999999747378752e-05,
+            "sliding_friction": 0.25,
+            "torsional_friction": 0.004999999888241291
+        },
+        {
             "__ID__": "ConvexMeshShape3D_5",
             "__TYPE__": "ConvexMeshShape3D",
             "mesh": "ExtResource(external_mesh_5)",
             "resource_name": ""
+        },
+        {
+            "__ID__": "PhysicsMaterial3D_5",
+            "__TYPE__": "PhysicsMaterial3D",
+            "contact_compliance": 0.0,
+            "contact_damping": 1.0,
+            "resource_name": "",
+            "restitution": 0.0,
+            "rolling_friction": 9.999999747378752e-05,
+            "sliding_friction": 0.25,
+            "torsional_friction": 0.004999999888241291
         },
         {
             "__ID__": "ConvexMeshShape3D_6",
@@ -6453,16 +5977,49 @@
             "resource_name": ""
         },
         {
+            "__ID__": "PhysicsMaterial3D_6",
+            "__TYPE__": "PhysicsMaterial3D",
+            "contact_compliance": 0.0,
+            "contact_damping": 1.0,
+            "resource_name": "",
+            "restitution": 0.0,
+            "rolling_friction": 9.999999747378752e-05,
+            "sliding_friction": 0.25,
+            "torsional_friction": 0.004999999888241291
+        },
+        {
             "__ID__": "ConvexMeshShape3D_7",
             "__TYPE__": "ConvexMeshShape3D",
             "mesh": "ExtResource(external_mesh_7)",
             "resource_name": ""
         },
         {
+            "__ID__": "PhysicsMaterial3D_7",
+            "__TYPE__": "PhysicsMaterial3D",
+            "contact_compliance": 0.0,
+            "contact_damping": 1.0,
+            "resource_name": "",
+            "restitution": 0.0,
+            "rolling_friction": 9.999999747378752e-05,
+            "sliding_friction": 0.25,
+            "torsional_friction": 0.004999999888241291
+        },
+        {
             "__ID__": "ConvexMeshShape3D_8",
             "__TYPE__": "ConvexMeshShape3D",
             "mesh": "ExtResource(external_mesh_16)",
             "resource_name": ""
+        },
+        {
+            "__ID__": "PhysicsMaterial3D_8",
+            "__TYPE__": "PhysicsMaterial3D",
+            "contact_compliance": 0.0,
+            "contact_damping": 1.0,
+            "resource_name": "",
+            "restitution": 0.0,
+            "rolling_friction": 9.999999747378752e-05,
+            "sliding_friction": 0.25,
+            "torsional_friction": 0.004999999888241291
         },
         {
             "__ID__": "BoxShape3D_2",
@@ -6481,6 +6038,17 @@
             }
         },
         {
+            "__ID__": "PhysicsMaterial3D_9",
+            "__TYPE__": "PhysicsMaterial3D",
+            "contact_compliance": 0.0,
+            "contact_damping": 1.0,
+            "resource_name": "",
+            "restitution": 0.0,
+            "rolling_friction": 9.999999747378752e-05,
+            "sliding_friction": 1.25,
+            "torsional_friction": 0.004999999888241291
+        },
+        {
             "__ID__": "BoxShape3D_3",
             "__TYPE__": "BoxShape3D",
             "resource_name": "",
@@ -6495,6 +6063,17 @@
                     ]
                 }
             }
+        },
+        {
+            "__ID__": "PhysicsMaterial3D_10",
+            "__TYPE__": "PhysicsMaterial3D",
+            "contact_compliance": 0.0,
+            "contact_damping": 1.0,
+            "resource_name": "",
+            "restitution": 0.0,
+            "rolling_friction": 9.999999747378752e-05,
+            "sliding_friction": 1.25,
+            "torsional_friction": 0.004999999888241291
         },
         {
             "__ID__": "BoxShape3D_4",
@@ -6513,6 +6092,17 @@
             }
         },
         {
+            "__ID__": "PhysicsMaterial3D_11",
+            "__TYPE__": "PhysicsMaterial3D",
+            "contact_compliance": 0.0,
+            "contact_damping": 1.0,
+            "resource_name": "",
+            "restitution": 0.0,
+            "rolling_friction": 9.999999747378752e-05,
+            "sliding_friction": 1.25,
+            "torsional_friction": 0.004999999888241291
+        },
+        {
             "__ID__": "BoxShape3D_5",
             "__TYPE__": "BoxShape3D",
             "resource_name": "",
@@ -6527,6 +6117,17 @@
                     ]
                 }
             }
+        },
+        {
+            "__ID__": "PhysicsMaterial3D_12",
+            "__TYPE__": "PhysicsMaterial3D",
+            "contact_compliance": 0.0,
+            "contact_damping": 1.0,
+            "resource_name": "",
+            "restitution": 0.0,
+            "rolling_friction": 9.999999747378752e-05,
+            "sliding_friction": 1.25,
+            "torsional_friction": 0.004999999888241291
         },
         {
             "__ID__": "BoxShape3D_6",
@@ -6545,6 +6146,17 @@
             }
         },
         {
+            "__ID__": "PhysicsMaterial3D_13",
+            "__TYPE__": "PhysicsMaterial3D",
+            "contact_compliance": 0.0,
+            "contact_damping": 1.0,
+            "resource_name": "",
+            "restitution": 0.0,
+            "rolling_friction": 9.999999747378752e-05,
+            "sliding_friction": 1.25,
+            "torsional_friction": 0.004999999888241291
+        },
+        {
             "__ID__": "BoxShape3D_7",
             "__TYPE__": "BoxShape3D",
             "resource_name": "",
@@ -6559,6 +6171,17 @@
                     ]
                 }
             }
+        },
+        {
+            "__ID__": "PhysicsMaterial3D_14",
+            "__TYPE__": "PhysicsMaterial3D",
+            "contact_compliance": 0.0,
+            "contact_damping": 1.0,
+            "resource_name": "",
+            "restitution": 0.0,
+            "rolling_friction": 9.999999747378752e-05,
+            "sliding_friction": 1.25,
+            "torsional_friction": 0.004999999888241291
         },
         {
             "__ID__": "BoxShape3D_8",
@@ -6577,6 +6200,17 @@
             }
         },
         {
+            "__ID__": "PhysicsMaterial3D_15",
+            "__TYPE__": "PhysicsMaterial3D",
+            "contact_compliance": 0.0,
+            "contact_damping": 1.0,
+            "resource_name": "",
+            "restitution": 0.0,
+            "rolling_friction": 9.999999747378752e-05,
+            "sliding_friction": 1.25,
+            "torsional_friction": 0.004999999888241291
+        },
+        {
             "__ID__": "BoxShape3D_9",
             "__TYPE__": "BoxShape3D",
             "resource_name": "",
@@ -6591,8 +6225,19 @@
                     ]
                 }
             }
+        },
+        {
+            "__ID__": "PhysicsMaterial3D_16",
+            "__TYPE__": "PhysicsMaterial3D",
+            "contact_compliance": 0.0,
+            "contact_damping": 1.0,
+            "resource_name": "",
+            "restitution": 0.0,
+            "rolling_friction": 9.999999747378752e-05,
+            "sliding_friction": 1.25,
+            "torsional_friction": 0.004999999888241291
         }
     ],
     "__TYPE__": "PackedScene",
-    "__VERSION__": 2
+    "__VERSION__": 3
 }

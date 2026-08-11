@@ -202,29 +202,52 @@ void RegisterManualTerrainSensorBindings(PyTerrain3DClass& terrain3d_class,
                               Terrain3D* terrain = handle.ResolveAs<Terrain3D>();
                               ExecuteSetNodeProperty(terrain, "height_range_max", Variant(value));
                           })
-            .def_property("friction",
+            .def_property("physics_material",
                           [](const PyTerrain3DHandle& handle) {
-                              return Vector3ToPython(handle.ResolveAs<Terrain3D>()->GetFriction());
+                              return ResourceToPythonDict(
+                                      handle.ResolveAs<Terrain3D>()->GetPhysicsMaterial());
                           },
                           [](PyTerrain3DHandle& handle, const py::handle& value) {
                               Terrain3D* terrain = handle.ResolveAs<Terrain3D>();
-                              ExecuteSetNodeProperty(terrain, "friction", Variant(PythonToVector3(value)));
+                              ExecuteSetNodeProperty(terrain,
+                                                     "physics_material",
+                                                     Variant(PhysicsMaterialFromPython(value)));
                           })
-            .def_property("solref",
+            .def_property("collision_layer",
                           [](const PyTerrain3DHandle& handle) {
-                              return Vector2ToPython(handle.ResolveAs<Terrain3D>()->GetSolref());
+                              return handle.ResolveAs<Terrain3D>()->GetCollisionLayer();
                           },
-                          [](PyTerrain3DHandle& handle, const py::handle& value) {
-                              Terrain3D* terrain = handle.ResolveAs<Terrain3D>();
-                              ExecuteSetNodeProperty(terrain, "solref", Variant(PythonToVector2(value)));
+                          [](PyTerrain3DHandle& handle, std::uint32_t value) {
+                              ExecuteSetNodeProperty(handle.ResolveAs<Terrain3D>(),
+                                                     "collision_layer",
+                                                     Variant(value));
                           })
-            .def_property("solimp",
+            .def_property("collision_mask",
                           [](const PyTerrain3DHandle& handle) {
-                              return handle.ResolveAs<Terrain3D>()->GetSolimp();
+                              return handle.ResolveAs<Terrain3D>()->GetCollisionMask();
                           },
-                          [](PyTerrain3DHandle& handle, const std::vector<RealType>& value) {
-                              Terrain3D* terrain = handle.ResolveAs<Terrain3D>();
-                              ExecuteSetNodeProperty(terrain, "solimp", Variant(value));
+                          [](PyTerrain3DHandle& handle, std::uint32_t value) {
+                              ExecuteSetNodeProperty(handle.ResolveAs<Terrain3D>(),
+                                                     "collision_mask",
+                                                     Variant(value));
+                          })
+            .def_property("contact_offset",
+                          [](const PyTerrain3DHandle& handle) {
+                              return handle.ResolveAs<Terrain3D>()->GetContactOffset();
+                          },
+                          [](PyTerrain3DHandle& handle, RealType value) {
+                              ExecuteSetNodeProperty(handle.ResolveAs<Terrain3D>(),
+                                                     "contact_offset",
+                                                     Variant(value));
+                          })
+            .def_property("rest_offset",
+                          [](const PyTerrain3DHandle& handle) {
+                              return handle.ResolveAs<Terrain3D>()->GetRestOffset();
+                          },
+                          [](PyTerrain3DHandle& handle, RealType value) {
+                              ExecuteSetNodeProperty(handle.ResolveAs<Terrain3D>(),
+                                                     "rest_offset",
+                                                     Variant(value));
                           });
 
     sensor3d_class
@@ -251,6 +274,21 @@ void RegisterManualTerrainSensorBindings(PyTerrain3DClass& terrain3d_class,
                           [](PySensor3DHandle& handle, RealType noise_stddev) {
                               Sensor3D* sensor = handle.ResolveAs<Sensor3D>();
                               ExecuteSetNodeProperty(sensor, "noise_stddev", Variant(noise_stddev));
+                          })
+            .def_property("noise_model",
+                          [](const PySensor3DHandle& handle) -> py::object {
+                              const Ref<SensorNoiseModel>& model =
+                                      handle.ResolveAs<Sensor3D>()->GetNoiseModel();
+                              if (!model.IsValid()) {
+                                  return py::none();
+                              }
+                              return ResourceToPythonDict(model);
+                          },
+                          [](PySensor3DHandle& handle, const py::handle& value) {
+                              ExecuteSetNodeProperty(
+                                      handle.ResolveAs<Sensor3D>(),
+                                      "noise_model",
+                                      Variant(SensorNoiseModelFromPython(value)));
                           })
             .def_property("visualize_debug",
                           [](const PySensor3DHandle& handle) {

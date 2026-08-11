@@ -68,6 +68,8 @@ public:
 
     const std::string& GetLastError() const override;
 
+    PhysicsBackendCapabilities GetCapabilities() const override;
+
     const PhysicsSceneArtifact* GetSceneArtifact() const override;
 
     bool Build(PhysicsSceneSnapshot scene_snapshot) override;
@@ -91,6 +93,12 @@ public:
     bool StepEnvironmentBatch(RealType delta_time,
                               std::uint64_t ticks = 1,
                               std::size_t worker_count = 0) override;
+
+    Ref<PhysicsRuntimeCheckpoint> CaptureCheckpoint() const override;
+
+    bool RestoreCheckpoint(
+            const Ref<PhysicsRuntimeCheckpoint>& checkpoint,
+            const std::vector<std::size_t>& environment_indices = {}) override;
 
     std::size_t ResolveEnvironmentBatchWorkerCount(std::size_t worker_count) const override;
 
@@ -191,6 +199,8 @@ private:
 
     void BuildLinkBindings();
 
+    void BuildShapeBindings();
+
     std::string GetRobotPrefix(std::size_t robot_index) const;
 
     bool IsEnvironmentIndexValid(std::size_t environment_index) const;
@@ -244,6 +254,13 @@ private:
         int body_id{-1};
     };
 
+    struct MuJoCoShapeBinding {
+        int geom_id{-1};
+        std::string name;
+        std::string scene_path;
+        std::uint64_t stable_id{0};
+    };
+
     struct MuJoCoSensorComponentBinding {
         int sensor_id{-1};
         std::size_t value_offset{0};
@@ -292,6 +309,7 @@ private:
     std::vector<MuJoCoRobotBinding> robot_bindings_;
     std::vector<MuJoCoJointBinding> joint_bindings_;
     std::vector<MuJoCoLinkBinding> link_bindings_;
+    std::vector<MuJoCoShapeBinding> shape_bindings_;
     std::vector<MuJoCoSensorBinding> sensor_bindings_;
     std::unique_ptr<RobotBatchLayout> robot_batch_layout_;
 

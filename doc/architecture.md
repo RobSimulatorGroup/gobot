@@ -42,6 +42,23 @@ Physics snapshots and states contain values and stable Gobot names, not scene
 node pointers. `SceneBindings` stays above `PhysicsWorld` and is used only when
 a runtime scene needs visual synchronization.
 
+Scene format v3 is an intentional breaking physics-authoring boundary. Every
+compiled robot, link, joint, collision shape, terrain, deformable, sensor, and
+coupling carries its canonical scene path and a deterministic stable id.
+`CollisionShape3D` and `Terrain3D` use backend-neutral collision layers/masks,
+contact/rest offsets, and a `PhysicsMaterial3D` resource. The material owns
+sliding, torsional, and rolling friction, restitution, compliance, and damping;
+backend-specific MuJoCo contact fields are not scene properties.
+
+`Joint3D.actuator_config` owns motor strength, deadband, command delay, slew
+rate, and speed/torque envelope data; joint armature remains a `Joint3D`
+property. `Sensor3D.noise_model` owns white noise, bias, random walk,
+quantization, clipping, and seed, while sample cadence remains the
+`Sensor3D.sensor_period` property.
+Sensor noise is generated from stable sensor id, environment index, sample
+index, channel, and seed so reset and checkpoint replay do not depend on worker
+scheduling.
+
 The compiler reports structured diagnostics and rejects duplicate runtime robot,
 link, joint, and sensor names. Different Scene paths do not create different
 backend namespaces. `test_architecture_dependencies` prevents physics runtime
@@ -58,6 +75,20 @@ typed contiguous buffers. MuJoCo CPU is the semantic reference backend.
 returns `PhysicsRobotBatchStepResult`. The request describes controls, named
 link dynamics overrides, external wrenches, sensors, and contact-history needs
 without backend ids. MuJoCo owns its worker pool and all raw model/data access.
+
+Every world/provider reports capabilities rather than requiring callers to
+infer behavior from its name. The contract covers deterministic fixed step,
+batching, device-native storage, graph capture, masked reset, runtime
+checkpoints, exact contact wrenches, batched sensors, solver substeps, graph
+limitations, and reset scope. Runtime checkpoints are guarded by backend,
+artifact, environment-count, and fixed-dt compatibility and restore controller,
+external-force, sensor-noise, and backend integration state without replacing
+stable storage.
+
+Contact results identify both shapes by name, canonical path, and stable id and
+report world-space normal force, tangential force, torque, and normal impulse.
+MuJoCo CPU is the semantic oracle for these fields; GPU providers must either
+match the contract or report the unsupported capability explicitly.
 
 Python task code may consume NumPy views for state, actions, resets, commands,
 and task buffers. It must not read `mjModel`, `mjData`, MuJoCo ids, or per-node

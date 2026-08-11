@@ -26,77 +26,27 @@ bool CollisionShape3D::IsDisabled() const {
     return disabled_;
 }
 
-void CollisionShape3D::SetFriction(const Vector3& friction) {
-    friction_ = friction;
+void CollisionShape3D::SetPhysicsMaterial(const Ref<PhysicsMaterial3D>& material) {
+    physics_material_ = material;
 }
 
-const Vector3& CollisionShape3D::GetFriction() const {
-    return friction_;
-}
+const Ref<PhysicsMaterial3D>& CollisionShape3D::GetPhysicsMaterial() const { return physics_material_; }
 
-void CollisionShape3D::SetContactType(int contype) {
-    contype_ = contype;
-}
+void CollisionShape3D::SetCollisionLayer(std::uint32_t layer) { collision_layer_ = layer; }
 
-int CollisionShape3D::GetContactType() const {
-    return contype_;
-}
+std::uint32_t CollisionShape3D::GetCollisionLayer() const { return collision_layer_; }
 
-void CollisionShape3D::SetContactAffinity(int conaffinity) {
-    conaffinity_ = conaffinity;
-}
+void CollisionShape3D::SetCollisionMask(std::uint32_t mask) { collision_mask_ = mask; }
 
-int CollisionShape3D::GetContactAffinity() const {
-    return conaffinity_;
-}
+std::uint32_t CollisionShape3D::GetCollisionMask() const { return collision_mask_; }
 
-void CollisionShape3D::SetContactDimension(int condim) {
-    condim_ = condim;
-}
+void CollisionShape3D::SetContactOffset(RealType offset) { contact_offset_ = offset; }
 
-int CollisionShape3D::GetContactDimension() const {
-    return condim_;
-}
+RealType CollisionShape3D::GetContactOffset() const { return contact_offset_; }
 
-void CollisionShape3D::SetSolref(const Vector2& solref) {
-    solref_ = solref;
-}
+void CollisionShape3D::SetRestOffset(RealType offset) { rest_offset_ = offset; }
 
-const Vector2& CollisionShape3D::GetSolref() const {
-    return solref_;
-}
-
-void CollisionShape3D::SetSolimp(const std::vector<RealType>& solimp) {
-    solimp_ = solimp;
-}
-
-const std::vector<RealType>& CollisionShape3D::GetSolimp() const {
-    return solimp_;
-}
-
-void CollisionShape3D::SetMargin(RealType margin) {
-    margin_ = margin;
-}
-
-RealType CollisionShape3D::GetMargin() const {
-    return margin_;
-}
-
-void CollisionShape3D::SetGap(RealType gap) {
-    gap_ = gap;
-}
-
-RealType CollisionShape3D::GetGap() const {
-    return gap_;
-}
-
-void CollisionShape3D::SetPriority(int priority) {
-    priority_ = priority;
-}
-
-int CollisionShape3D::GetPriority() const {
-    return priority_;
-}
+RealType CollisionShape3D::GetRestOffset() const { return rest_offset_; }
 
 } // namespace gobot
 
@@ -106,14 +56,20 @@ GOBOT_REGISTRATION {
             .constructor()(CtorAsRawPtr)
             .property("shape", &CollisionShape3D::GetShape, &CollisionShape3D::SetShape)
             .property("disabled", &CollisionShape3D::IsDisabled, &CollisionShape3D::SetDisabled)
-            .property("friction", &CollisionShape3D::GetFriction, &CollisionShape3D::SetFriction)
-            .property("contype", &CollisionShape3D::GetContactType, &CollisionShape3D::SetContactType)
-            .property("conaffinity", &CollisionShape3D::GetContactAffinity, &CollisionShape3D::SetContactAffinity)
-            .property("condim", &CollisionShape3D::GetContactDimension, &CollisionShape3D::SetContactDimension)
-            .property("solref", &CollisionShape3D::GetSolref, &CollisionShape3D::SetSolref)
-            .property("solimp", &CollisionShape3D::GetSolimp, &CollisionShape3D::SetSolimp)
-            .property("margin", &CollisionShape3D::GetMargin, &CollisionShape3D::SetMargin)
-            .property("gap", &CollisionShape3D::GetGap, &CollisionShape3D::SetGap)
-            .property("priority", &CollisionShape3D::GetPriority, &CollisionShape3D::SetPriority);
+            .property("physics_material",
+                      &CollisionShape3D::GetPhysicsMaterial,
+                      &CollisionShape3D::SetPhysicsMaterial)
+            .property("collision_layer",
+                      &CollisionShape3D::GetCollisionLayer,
+                      &CollisionShape3D::SetCollisionLayer)
+            .property("collision_mask",
+                      &CollisionShape3D::GetCollisionMask,
+                      &CollisionShape3D::SetCollisionMask)
+            .property("contact_offset",
+                      &CollisionShape3D::GetContactOffset,
+                      &CollisionShape3D::SetContactOffset)
+            .property("rest_offset",
+                      &CollisionShape3D::GetRestOffset,
+                      &CollisionShape3D::SetRestOffset);
 
 };

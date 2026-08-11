@@ -864,7 +864,67 @@ class NewtonProvider(BatchPhysicsProvider):
             graph_capture=self._capture_enabled,
             masked_reset=True,
             fixed_capacity=True,
+            runtime_checkpoint=True,
+            exact_contact_wrench=True,
+            sensor_batch=False,
+            solver_substeps=True,
+            reset_scope="masked",
         )
+
+    def _checkpoint_array_names(self) -> tuple[str, ...]:
+        return tuple(
+            name
+            for name in ("joint_q", "joint_qd", "ctrl", "time", "overflow")
+            if name in self._arrays
+        )
+
+    def _capture_checkpoint_auxiliary(self) -> Mapping[str, Any]:
+        return MappingProxyType(
+            {
+                "joint_target_q": self._joint_target_q_tensor.clone(),
+                "joint_target_qd": self._joint_target_qd_tensor.clone(),
+                "step_count": int(self._step_count),
+            }
+        )
+
+    def _restore_checkpoint_auxiliary(
+        self,
+        auxiliary: Mapping[str, Any],
+        environment_indices: tuple[int, ...],
+    ) -> None:
+        if set(auxiliary) != {"joint_target_q", "joint_target_qd", "step_count"}:
+            raise ValueError("Newton checkpoint auxiliary state is invalid")
+        full_restore = len(environment_indices) == self._num_envs
+        indices = self._torch.as_tensor(
+            environment_indices,
+            dtype=self._torch.long,
+            device=self._torch_device,
+        )
+        for name, target in (
+            ("joint_target_q", self._joint_target_q_tensor),
+            ("joint_target_qd", self._joint_target_qd_tensor),
+        ):
+            source = auxiliary[name]
+            if tuple(source.shape) != tuple(target.shape):
+                raise ValueError(f"Newton checkpoint {name!r} has an incompatible shape")
+            if full_restore:
+                target.copy_(source)
+            else:
+                target.index_copy_(0, indices, source.index_select(0, indices))
+        if full_restore:
+            self._step_count = int(auxiliary["step_count"])
+
+    def _after_checkpoint_restore(self, environment_indices: tuple[int, ...]) -> None:
+        del environment_indices
+        with self._stream_scope():
+            self._route_actuator_controls()
+            self._newton.eval_fk(
+                self._model,
+                self._state.joint_q,
+                self._state.joint_qd,
+                self._state,
+            )
+            self._next_state.assign(self._state)
 
     @property
     def num_envs(self) -> int:

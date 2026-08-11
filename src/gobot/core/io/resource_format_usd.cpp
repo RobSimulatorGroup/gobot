@@ -18,6 +18,7 @@
 #include "gobot/scene/resources/cylinder_shape_3d.hpp"
 #include "gobot/scene/resources/material.hpp"
 #include "gobot/scene/resources/packed_scene.hpp"
+#include "gobot/scene/resources/physics_material_3d.hpp"
 #include "gobot/scene/resources/sphere_shape_3d.hpp"
 
 #include <algorithm>
@@ -828,44 +829,44 @@ pxr::UsdPrim FindOwningRigidBody(pxr::UsdPrim prim) {
     return {};
 }
 
-Vector3 ReadPhysicsFriction(const pxr::UsdPrim& collision_prim) {
-    Vector3 friction{1.0, 0.005, 0.0001};
+Ref<PhysicsMaterial3D> ReadPhysicsMaterial(const pxr::UsdPrim& collision_prim) {
+    Ref<PhysicsMaterial3D> result = MakeRef<PhysicsMaterial3D>();
     const auto material_path = ReadRelationshipTarget(collision_prim, "material:binding:physics");
     if (!material_path.has_value()) {
-        return friction;
+        return result;
     }
     const pxr::UsdPrim material = collision_prim.GetStage()->GetPrimAtPath(pxr::SdfPath(*material_path));
     float value = 0.0f;
     if (material && pxr::UsdPhysicsMaterialAPI(material).GetDynamicFrictionAttr().Get(&value)) {
-        friction.x() = value;
+        result->SetSlidingFriction(value);
     }
     if (material && ReadAttribute(material, "newton:torsionalFriction", &value)) {
-        friction.y() = value;
+        result->SetTorsionalFriction(value);
     }
     if (material && ReadAttribute(material, "newton:rollingFriction", &value)) {
-        friction.z() = value;
+        result->SetRollingFriction(value);
     }
-    return friction;
+    if (material && pxr::UsdPhysicsMaterialAPI(material).GetRestitutionAttr().Get(&value)) {
+        result->SetRestitution(value);
+    }
+    return result;
 }
 
 void AddPhysicsContactProperties(SceneState::NodeData& node, const pxr::UsdPrim& prim) {
     bool collision_enabled = true;
     pxr::UsdPhysicsCollisionAPI(prim).GetCollisionEnabledAttr().Get(&collision_enabled);
     AddProperty(node, "disabled", !collision_enabled);
-    AddProperty(node, "friction", ReadPhysicsFriction(prim));
+    AddProperty(node, "physics_material", ReadPhysicsMaterial(prim));
     int contype = 1;
     int conaffinity = 1;
     ReadAttribute(prim, "mjc:contype", &contype);
     ReadAttribute(prim, "mjc:conaffinity", &conaffinity);
-    AddProperty(node, "contype", contype);
-    AddProperty(node, "conaffinity", conaffinity);
+    AddProperty(node, "collision_layer", static_cast<std::uint32_t>(contype));
+    AddProperty(node, "collision_mask", static_cast<std::uint32_t>(conaffinity));
     float gap = 0.0f;
     if (ReadAttribute(prim, "newton:contactGap", &gap)) {
-        AddProperty(node, "gap", static_cast<RealType>(gap));
-    }
-    int priority = 0;
-    if (ReadAttribute(prim, "mjc:priority", &priority)) {
-        AddProperty(node, "priority", priority);
+        AddProperty(node, "contact_offset", static_cast<RealType>(gap));
+        AddProperty(node, "rest_offset", static_cast<RealType>(0.0));
     }
     AddProperty(node, "visible", false);
 }

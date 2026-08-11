@@ -238,7 +238,12 @@ def test_mujoco_libuipc_editor_play_session() -> None:
         assert torch.isfinite(applied[:, press_id]).all().item()
         assert torch.linalg.vector_norm(applied[:, press_id, :3]).max().item() > 0.0
         assert script.provider.rigid_solver.capabilities.graph_capture
-        assert script.provider.diagnostics["feedback_source"] == "proxy_constraint"
+        assert (
+            script.provider.diagnostics["feedback_source"]
+            == "native_contact_wrench"
+        )
+        assert script.provider.capabilities.exact_contact_wrench
+        assert script.provider.capabilities.reset_scope == "full_batch_only"
         assert script.provider.diagnostics["graph_captured"] is False
     finally:
         if script is not None:

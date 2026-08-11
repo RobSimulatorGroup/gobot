@@ -12,7 +12,11 @@
 #include <gobot/core/io/python_script.hpp>
 #include <gobot/core/config/project_setting.hpp>
 #include <gobot/scene/collision_shape_3d.hpp>
+#include <gobot/scene/joint_3d.hpp>
 #include <gobot/scene/resources/cylinder_shape_3d.hpp>
+#include <gobot/scene/resources/joint_actuator_config.hpp>
+#include <gobot/scene/resources/physics_material_3d.hpp>
+#include <gobot/scene/resources/sensor_noise_model.hpp>
 #include <gobot/scene/mesh_instance_3d.hpp>
 #include <gobot/scene/node.hpp>
 #include <gobot/scene/node_3d.hpp>
@@ -204,7 +208,15 @@ TEST_F(TestResourceFormatScene, packed_scene_round_trips_collision_shape_resourc
     auto* collision_shape = gobot::Object::New<gobot::CollisionShape3D>();
     collision_shape->SetName("Collision");
     collision_shape->SetPosition({1.0f, 2.0f, 3.0f});
-    collision_shape->SetPriority(3);
+    collision_shape->SetCollisionLayer(4);
+    collision_shape->SetCollisionMask(7);
+    collision_shape->SetContactOffset(0.01);
+    collision_shape->SetRestOffset(0.008);
+
+    gobot::Ref<gobot::PhysicsMaterial3D> material = gobot::MakeRef<gobot::PhysicsMaterial3D>();
+    material->SetSlidingFriction(0.75);
+    material->SetRestitution(0.2);
+    collision_shape->SetPhysicsMaterial(material);
 
     gobot::Ref<gobot::CylinderShape3D> cylinder_shape = gobot::MakeRef<gobot::CylinderShape3D>();
     cylinder_shape->SetRadius(0.25f);
@@ -238,7 +250,13 @@ TEST_F(TestResourceFormatScene, packed_scene_round_trips_collision_shape_resourc
     ASSERT_NE(instanced_collision, nullptr);
     EXPECT_EQ(instanced_collision->GetName(), "Collision");
     EXPECT_TRUE(instanced_collision->GetPosition().isApprox(gobot::Vector3(1.0f, 2.0f, 3.0f), CMP_EPSILON));
-    EXPECT_EQ(instanced_collision->GetPriority(), 3);
+    EXPECT_EQ(instanced_collision->GetCollisionLayer(), 4u);
+    EXPECT_EQ(instanced_collision->GetCollisionMask(), 7u);
+    EXPECT_NEAR(instanced_collision->GetContactOffset(), 0.01, 1.0e-6);
+    EXPECT_NEAR(instanced_collision->GetRestOffset(), 0.008, 1.0e-6);
+    ASSERT_TRUE(instanced_collision->GetPhysicsMaterial().IsValid());
+    EXPECT_DOUBLE_EQ(instanced_collision->GetPhysicsMaterial()->GetSlidingFriction(), 0.75);
+    EXPECT_NEAR(instanced_collision->GetPhysicsMaterial()->GetRestitution(), 0.2, 1.0e-6);
 
     gobot::Ref<gobot::CylinderShape3D> instanced_shape =
             gobot::dynamic_pointer_cast<gobot::CylinderShape3D>(instanced_collision->GetShape());
@@ -375,6 +393,85 @@ TEST_F(TestResourceFormatScene, packed_scene_round_trips_sensor_nodes_under_link
     EXPECT_TRUE(loaded_contact->GetPosition().isApprox(gobot::Vector3(0.0, 0.0, -0.2), CMP_EPSILON));
 
     gobot::Object::Delete(robot);
+    gobot::Object::Delete(instance);
+}
+
+TEST_F(TestResourceFormatScene, packed_scene_round_trips_actuator_and_sensor_noise_resources) {
+    auto* root = gobot::Object::New<gobot::Node>();
+    root->SetName("PhysicsResources");
+
+    auto* joint = gobot::Object::New<gobot::Joint3D>();
+    joint->SetName("joint");
+    gobot::Ref<gobot::JointActuatorConfig> actuator =
+            gobot::MakeRef<gobot::JointActuatorConfig>();
+    actuator->SetCommandDelaySteps(3);
+    actuator->SetCommandDeadband(0.02);
+    actuator->SetCommandSlewRate(4.0);
+    actuator->SetStrengthScale(0.8);
+    actuator->SetMotorVelocityLimit(12.0);
+    actuator->SetMotorStallEffort(25.0);
+    joint->SetActuatorConfig(actuator);
+    root->AddChild(joint);
+
+    auto* sensor = gobot::Object::New<gobot::IMUSensor3D>();
+    sensor->SetName("imu");
+    gobot::Ref<gobot::SensorNoiseModel> noise =
+            gobot::MakeRef<gobot::SensorNoiseModel>();
+    noise->SetWhiteNoiseStddev(0.01);
+    noise->SetBiasMean(0.1);
+    noise->SetBiasStddev(0.02);
+    noise->SetRandomWalkStddev(0.003);
+    noise->SetQuantizationStep(0.005);
+    noise->SetClipMin(-2.0);
+    noise->SetClipMax(2.0);
+    noise->SetSeedOffset(17);
+    sensor->SetNoiseModel(noise);
+    root->AddChild(sensor);
+
+    gobot::Ref<gobot::PackedScene> packed = gobot::MakeRef<gobot::PackedScene>();
+    ASSERT_TRUE(packed->Pack(root));
+    USING_ENUM_BITWISE_OPERATORS;
+    ASSERT_TRUE(gobot::ResourceSaver::Save(
+            packed,
+            "res://physics_resources.jscn",
+            gobot::ResourceSaverFlags::ReplaceSubResourcePaths |
+                    gobot::ResourceSaverFlags::ChangePath));
+
+    gobot::Ref<gobot::PackedScene> loaded =
+            gobot::dynamic_pointer_cast<gobot::PackedScene>(
+                    gobot::ResourceLoader::Load(
+                            "res://physics_resources.jscn",
+                            "PackedScene",
+                            gobot::ResourceFormatLoader::CacheMode::Ignore));
+    ASSERT_TRUE(loaded.IsValid());
+    gobot::Node* instance = loaded->Instantiate();
+    ASSERT_NE(instance, nullptr);
+
+    auto* loaded_joint = gobot::Object::PointerCastTo<gobot::Joint3D>(
+            instance->GetChild(0));
+    ASSERT_NE(loaded_joint, nullptr);
+    ASSERT_TRUE(loaded_joint->GetActuatorConfig().IsValid());
+    EXPECT_EQ(loaded_joint->GetActuatorConfig()->GetCommandDelaySteps(), 3u);
+    EXPECT_NEAR(loaded_joint->GetActuatorConfig()->GetCommandDeadband(), 0.02, 1.0e-6);
+    EXPECT_NEAR(loaded_joint->GetActuatorConfig()->GetCommandSlewRate(), 4.0, 1.0e-6);
+    EXPECT_NEAR(loaded_joint->GetActuatorConfig()->GetStrengthScale(), 0.8, 1.0e-6);
+    EXPECT_NEAR(loaded_joint->GetActuatorConfig()->GetMotorVelocityLimit(), 12.0, 1.0e-6);
+    EXPECT_NEAR(loaded_joint->GetActuatorConfig()->GetMotorStallEffort(), 25.0, 1.0e-6);
+
+    auto* loaded_sensor = gobot::Object::PointerCastTo<gobot::IMUSensor3D>(
+            instance->GetChild(1));
+    ASSERT_NE(loaded_sensor, nullptr);
+    ASSERT_TRUE(loaded_sensor->GetNoiseModel().IsValid());
+    EXPECT_NEAR(loaded_sensor->GetNoiseModel()->GetWhiteNoiseStddev(), 0.01, 1.0e-6);
+    EXPECT_NEAR(loaded_sensor->GetNoiseModel()->GetBiasMean(), 0.1, 1.0e-6);
+    EXPECT_NEAR(loaded_sensor->GetNoiseModel()->GetBiasStddev(), 0.02, 1.0e-6);
+    EXPECT_NEAR(loaded_sensor->GetNoiseModel()->GetRandomWalkStddev(), 0.003, 1.0e-6);
+    EXPECT_NEAR(loaded_sensor->GetNoiseModel()->GetQuantizationStep(), 0.005, 1.0e-6);
+    EXPECT_NEAR(loaded_sensor->GetNoiseModel()->GetClipMin(), -2.0, 1.0e-6);
+    EXPECT_NEAR(loaded_sensor->GetNoiseModel()->GetClipMax(), 2.0, 1.0e-6);
+    EXPECT_EQ(loaded_sensor->GetNoiseModel()->GetSeedOffset(), 17u);
+
+    gobot::Object::Delete(root);
     gobot::Object::Delete(instance);
 }
 
@@ -744,7 +841,7 @@ TEST_F(TestResourceFormatScene, malformed_external_resource_path_fails_without_t
             }
         ],
         "__TYPE__": "PackedScene",
-        "__VERSION__": 2
+        "__VERSION__": 3
     })json";
     output.close();
 

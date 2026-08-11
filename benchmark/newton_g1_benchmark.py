@@ -121,7 +121,7 @@ def benchmark(environment_counts: tuple[int, ...], ticks: int) -> dict[str, obje
         context.clear_world()
         context.clear_scene()
     return {
-        "schema_version": 1,
+        "schema_version": 3,
         "benchmark": "newton_g1_physics",
         "asset_revision": "261cd1f429619d8ef4f546bd788ab9dea906b5e1",
         "ticks": ticks,

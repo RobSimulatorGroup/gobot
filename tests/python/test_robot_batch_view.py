@@ -9,8 +9,10 @@ from gobot.rl.providers import (
     BatchPhysicsProvider,
     BatchProviderCapabilities,
     GraphInvalidatedError,
+    ProviderCheckpoint,
     RobotBatchSpec,
     RobotBatchState,
+    SensorBatchSpec,
 )
 
 
@@ -111,11 +113,25 @@ class _Provider(BatchPhysicsProvider):
         self.position_targets = _Tensor.zeros((2, 2))
         self.base_pose_targets = _Tensor.zeros((2, 7))
         self.link_pose = _Tensor.zeros((2, 1, 7))
+        self.sensor_values = _Tensor.zeros((2, 3))
+        self.contact_sensors = {
+            "feet": {"force": self.sensor_values, "num_slots": 1}
+        }
         self.last_reset = None
 
     @property
     def capabilities(self):
-        return BatchProviderCapabilities("Fake", "cpu", True, False, True, True)
+        return BatchProviderCapabilities(
+            "Fake",
+            "cpu",
+            True,
+            False,
+            True,
+            True,
+            runtime_checkpoint=True,
+            sensor_batch=True,
+            reset_scope="masked",
+        )
 
     @property
     def num_envs(self):
@@ -124,6 +140,13 @@ class _Provider(BatchPhysicsProvider):
     @property
     def arrays(self):
         return {"joint_position": self.joint_position}
+
+    @property
+    def fixed_time_step(self):
+        return 0.01
+
+    def _checkpoint_array_names(self):
+        return ("joint_position",)
 
     def step(self, actions=None, *, nsteps=1):
         return self.arrays
@@ -251,8 +274,62 @@ def test_robot_batch_view_reports_unsupported_base_targets() -> None:
         raise AssertionError("unsupported kinematic base targets were accepted")
 
 
+def test_sensor_batch_view_keeps_named_device_storage_stable() -> None:
+    provider = _Provider()
+    view = provider.create_sensor_view(
+        SensorBatchSpec("feet", "contact", ("force",))
+    )
+    state = view.read_state()
+    assert tuple(state.values) == ("force",)
+    pointer = state.values["force"].data_ptr()
+    provider.sensor_values[:, :] = 2.5
+    updated = view.read_state()
+    assert updated is state
+    assert updated.values["force"].data_ptr() == pointer
+    assert np.all(updated.values["force"].numpy() == 2.5)
+
+    provider.close()
+    try:
+        view.read_state()
+    except RuntimeError as error:
+        assert "stale" in str(error)
+    else:
+        raise AssertionError("closed-provider sensor view access must fail")
+
+
+def test_provider_checkpoint_restores_full_batch_without_replacing_storage() -> None:
+    provider = _Provider()
+    provider.joint_position[:, :] = 1.25
+    pointer = provider.joint_position.data_ptr()
+    checkpoint = provider.capture_checkpoint()
+    assert isinstance(checkpoint, ProviderCheckpoint)
+    provider.joint_position[:, :] = -3.0
+    provider.restore_checkpoint(checkpoint)
+    assert provider.joint_position.data_ptr() == pointer
+    assert np.all(provider.joint_position.numpy() == 1.25)
+
+    incompatible = ProviderCheckpoint(
+        schema_version=checkpoint.schema_version,
+        provider_name=checkpoint.provider_name,
+        runtime_fingerprint="different",
+        num_envs=checkpoint.num_envs,
+        fixed_time_step=checkpoint.fixed_time_step,
+        device=checkpoint.device,
+        arrays=checkpoint.arrays,
+        auxiliary=checkpoint.auxiliary,
+    )
+    try:
+        provider.restore_checkpoint(incompatible)
+    except ValueError as error:
+        assert "incompatible" in str(error)
+    else:
+        raise AssertionError("an incompatible checkpoint was accepted")
+
+
 if __name__ == "__main__":
     test_robot_batch_view_contract()
     test_robot_batch_view_rejects_replaced_state_storage()
     test_robot_batch_spec_rejects_invalid_names()
     test_robot_batch_view_reports_unsupported_base_targets()
+    test_sensor_batch_view_keeps_named_device_storage_stable()
+    test_provider_checkpoint_restores_full_batch_without_replacing_storage()

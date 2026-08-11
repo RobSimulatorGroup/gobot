@@ -10,8 +10,10 @@
 #include <cmath>
 #include <cstdint>
 #include <limits>
+#include <numeric>
 #include <optional>
 #include <thread>
+#include <unordered_set>
 #include <utility>
 
 #include "gobot/core/registration.hpp"
@@ -76,6 +78,43 @@ const PhysicsSensorState* FindPreviousSensorState(const PhysicsRobotState& robot
     }
 
     return nullptr;
+}
+
+std::uint64_t MixNoiseKey(std::uint64_t value) {
+    value += UINT64_C(0x9e3779b97f4a7c15);
+    value = (value ^ (value >> 30U)) * UINT64_C(0xbf58476d1ce4e5b9);
+    value = (value ^ (value >> 27U)) * UINT64_C(0x94d049bb133111eb);
+    return value ^ (value >> 31U);
+}
+
+std::uint64_t SensorNoiseKey(const PhysicsSensorSnapshot& sensor_snapshot,
+                             std::size_t environment_index,
+                             std::uint64_t sample_index,
+                             std::size_t channel_index,
+                             std::uint64_t stream) {
+    std::uint64_t key = sensor_snapshot.stable_id;
+    if (key == 0) {
+        key = UINT64_C(14695981039346656037);
+        for (const unsigned char value : sensor_snapshot.scene_path) {
+            key ^= value;
+            key *= UINT64_C(1099511628211);
+        }
+    }
+    key = MixNoiseKey(key ^ static_cast<std::uint64_t>(sensor_snapshot.noise_seed_offset));
+    key = MixNoiseKey(key ^ static_cast<std::uint64_t>(environment_index));
+    key = MixNoiseKey(key ^ sample_index);
+    key = MixNoiseKey(key ^ static_cast<std::uint64_t>(channel_index));
+    return MixNoiseKey(key ^ stream);
+}
+
+RealType NormalNoiseSample(std::uint64_t key) {
+    constexpr double kTwoPi = 6.283185307179586476925286766559;
+    constexpr double kInverseMantissaRange = 1.0 / 9007199254740993.0;
+    const double u1 = static_cast<double>((MixNoiseKey(key) >> 11U) + 1U) *
+                      kInverseMantissaRange;
+    const double u2 = static_cast<double>((MixNoiseKey(key ^ UINT64_C(0xd1b54a32d192ed03)) >> 11U) + 1U) *
+                      kInverseMantissaRange;
+    return static_cast<RealType>(std::sqrt(-2.0 * std::log(u1)) * std::cos(kTwoPi * u2));
 }
 
 PhysicsSensorState MakeSensorStateFromSnapshot(const PhysicsSensorSnapshot& sensor_snapshot,
@@ -676,6 +715,13 @@ const PhysicsWorldSettings& PhysicsWorld::GetSettings() const {
     return settings_;
 }
 
+PhysicsBackendCapabilities PhysicsWorld::GetCapabilities() const {
+    PhysicsBackendCapabilities capabilities;
+    capabilities.runtime_checkpoint = true;
+    capabilities.sensor_batch = true;
+    return capabilities;
+}
+
 void PhysicsWorld::SetSettings(const PhysicsWorldSettings& settings) {
     settings_ = settings;
 }
@@ -732,7 +778,10 @@ bool PhysicsWorld::RestoreCompatibleState(const PhysicsSceneState& previous_stat
             }
 
             sensor_state.values = previous_sensor_state->values;
+            sensor_state.noise_bias = previous_sensor_state->noise_bias;
+            sensor_state.noise_random_walk = previous_sensor_state->noise_random_walk;
             sensor_state.timestamp = previous_sensor_state->timestamp;
+            sensor_state.sample_count = previous_sensor_state->sample_count;
         }
     }
 
@@ -810,6 +859,238 @@ bool PhysicsWorld::StepEnvironmentBatch(RealType delta_time, std::uint64_t ticks
             }
         }
     }
+    last_error_.clear();
+    return true;
+}
+
+std::string PhysicsWorld::GetCheckpointCompatibilityKey() const {
+    std::uint64_t digest = 14695981039346656037ULL;
+    const auto append = [&digest](std::string_view value) {
+        for (const unsigned char byte : value) {
+            digest ^= byte;
+            digest *= 1099511628211ULL;
+        }
+        digest ^= 0xffU;
+        digest *= 1099511628211ULL;
+    };
+    const auto append_integer = [&append](auto value) {
+        append(fmt::format("{}", value));
+    };
+    const auto append_real = [&append](RealType value) {
+        append(fmt::format("{:.17g}", value));
+    };
+    const auto append_material = [&append_real](const PhysicsMaterialSnapshot& material) {
+        append_real(material.sliding_friction);
+        append_real(material.torsional_friction);
+        append_real(material.rolling_friction);
+        append_real(material.restitution);
+        append_real(material.contact_compliance);
+        append_real(material.contact_damping);
+    };
+    const auto append_shape = [&](const PhysicsShapeSnapshot& shape) {
+        append(shape.scene_path);
+        append_integer(shape.stable_id);
+        append_integer(static_cast<int>(shape.type));
+        append_material(shape.material);
+        append_integer(shape.collision_layer);
+        append_integer(shape.collision_mask);
+        append_real(shape.contact_offset);
+        append_real(shape.rest_offset);
+        append_integer(shape.disabled);
+    };
+    const auto append_sensor = [&](const PhysicsSensorSnapshot& sensor) {
+        append(sensor.scene_path);
+        append_integer(sensor.stable_id);
+        append_integer(static_cast<int>(sensor.type));
+        append_real(sensor.sensor_period);
+        append_real(sensor.noise_stddev);
+        append_integer(sensor.has_noise_model);
+        append_real(sensor.noise_bias_mean);
+        append_real(sensor.noise_bias_stddev);
+        append_real(sensor.noise_random_walk_stddev);
+        append_real(sensor.noise_quantization_step);
+        append_real(sensor.noise_clip_min);
+        append_real(sensor.noise_clip_max);
+        append_integer(sensor.noise_seed_offset);
+    };
+
+    append("gobot.physics-checkpoint-contract.v2");
+    const PhysicsSceneArtifact* artifact = GetSceneArtifact();
+    append(artifact != nullptr ? artifact->content_digest : std::string_view{});
+    append_real(settings_.default_joint_gains.position_stiffness);
+    append_real(settings_.default_joint_gains.velocity_damping);
+    append_real(settings_.default_joint_gains.integral_gain);
+    append_real(settings_.default_joint_gains.integral_limit);
+    for (const PhysicsRobotSnapshot& robot : scene_snapshot_.robots) {
+        append(robot.scene_path);
+        append_integer(robot.stable_id);
+        for (const PhysicsLinkSnapshot& link : robot.links) {
+            append(link.scene_path);
+            append_integer(link.stable_id);
+            append_real(link.mass);
+            append_real(link.center_of_mass.x());
+            append_real(link.center_of_mass.y());
+            append_real(link.center_of_mass.z());
+            for (const PhysicsShapeSnapshot& shape : link.collision_shapes) {
+                append_shape(shape);
+            }
+        }
+        for (const PhysicsJointSnapshot& joint : robot.joints) {
+            append(joint.scene_path);
+            append_integer(joint.stable_id);
+            append_integer(joint.actuator_model.command_delay_steps);
+            append_real(joint.actuator_model.command_deadband);
+            append_real(joint.actuator_model.command_slew_rate);
+            append_real(joint.actuator_model.strength_scale);
+            append_real(joint.actuator_model.motor_velocity_limit);
+            append_real(joint.actuator_model.motor_stall_effort);
+        }
+        for (const PhysicsSensorSnapshot& sensor : robot.sensors) {
+            append_sensor(sensor);
+        }
+    }
+    for (const PhysicsShapeSnapshot& shape : scene_snapshot_.loose_collision_shapes) {
+        append_shape(shape);
+    }
+    for (const PhysicsSensorSnapshot& sensor : scene_snapshot_.loose_sensors) {
+        append_sensor(sensor);
+    }
+    for (const PhysicsTerrainSnapshot& terrain : scene_snapshot_.terrains) {
+        append(terrain.scene_path);
+        append_integer(terrain.stable_id);
+        append_material(terrain.material);
+        append_integer(terrain.collision_layer);
+        append_integer(terrain.collision_mask);
+        append_real(terrain.contact_offset);
+        append_real(terrain.rest_offset);
+    }
+    for (const PhysicsDeformableSnapshot& deformable : scene_snapshot_.deformables) {
+        append(deformable.scene_path);
+        append_integer(deformable.stable_id);
+        append_real(deformable.density);
+        append_real(deformable.young_modulus);
+        append_real(deformable.poisson_ratio);
+        append_real(deformable.damping);
+        append_integer(deformable.kinematic);
+        append_integer(deformable.collision_layer);
+        append_integer(deformable.collision_mask);
+        append_integer(deformable.self_collision_enabled);
+    }
+    for (const PhysicsCouplingSnapshot& coupling : scene_snapshot_.couplings) {
+        append(coupling.scene_path);
+        append_integer(coupling.stable_id);
+        append_integer(coupling.enabled);
+        append(coupling.rigid_link_path);
+        append_integer(coupling.mode);
+        append_real(coupling.force_scale);
+        append_real(coupling.torque_scale);
+    }
+    return fmt::format("fnv1a64:{:016x}", digest);
+}
+
+bool PhysicsWorld::ValidateCheckpoint(
+        const Ref<PhysicsRuntimeCheckpoint>& checkpoint,
+        const std::vector<std::size_t>& environment_indices,
+        std::vector<std::size_t>* resolved_indices,
+        std::string* error) const {
+    if (!checkpoint.IsValid()) {
+        *error = "Runtime checkpoint is null.";
+        return false;
+    }
+    if (checkpoint->schema_version_ != 1) {
+        *error = fmt::format(
+                "Runtime checkpoint schema {} is unsupported; expected 1.",
+                checkpoint->schema_version_);
+        return false;
+    }
+    if (checkpoint->backend_ != GetBackendType()) {
+        *error = "Runtime checkpoint belongs to a different physics backend.";
+        return false;
+    }
+    const std::size_t environment_count = GetEnvironmentCount();
+    if (checkpoint->environment_count_ != environment_count ||
+        checkpoint->scene_states_.size() != environment_count) {
+        *error = fmt::format(
+                "Runtime checkpoint has {} environment(s), but this world has {}.",
+                checkpoint->environment_count_,
+                environment_count);
+        return false;
+    }
+    const RealType dt_tolerance = std::numeric_limits<RealType>::epsilon() *
+                                  std::max<RealType>(1.0, std::abs(settings_.fixed_time_step));
+    if (!std::isfinite(checkpoint->fixed_time_step_) ||
+        std::abs(checkpoint->fixed_time_step_ - settings_.fixed_time_step) > dt_tolerance) {
+        *error = "Runtime checkpoint fixed dt does not match this world.";
+        return false;
+    }
+    if (checkpoint->artifact_digest_ != GetCheckpointCompatibilityKey()) {
+        *error = "Runtime checkpoint artifact digest does not match this world.";
+        return false;
+    }
+
+    resolved_indices->clear();
+    if (environment_indices.empty()) {
+        resolved_indices->resize(environment_count);
+        std::iota(resolved_indices->begin(), resolved_indices->end(), std::size_t{0});
+        return true;
+    }
+    std::unordered_set<std::size_t> unique_indices;
+    for (const std::size_t environment_index : environment_indices) {
+        if (environment_index >= environment_count) {
+            *error = fmt::format(
+                    "Runtime checkpoint environment index {} is out of range.",
+                    environment_index);
+            return false;
+        }
+        if (!unique_indices.insert(environment_index).second) {
+            *error = fmt::format(
+                    "Runtime checkpoint environment index {} is duplicated.",
+                    environment_index);
+            return false;
+        }
+        resolved_indices->push_back(environment_index);
+    }
+    return true;
+}
+
+Ref<PhysicsRuntimeCheckpoint> PhysicsWorld::CaptureCheckpoint() const {
+    const std::size_t environment_count = GetEnvironmentCount();
+    if (environment_count == 0) {
+        return {};
+    }
+    Ref<PhysicsRuntimeCheckpoint> checkpoint = MakeRef<PhysicsRuntimeCheckpoint>();
+    checkpoint->backend_ = GetBackendType();
+    checkpoint->artifact_digest_ = GetCheckpointCompatibilityKey();
+    checkpoint->environment_count_ = environment_count;
+    checkpoint->fixed_time_step_ = settings_.fixed_time_step;
+    checkpoint->external_forces_ = external_forces_;
+    checkpoint->scene_states_.reserve(environment_count);
+    for (std::size_t environment_index = 0; environment_index < environment_count;
+         ++environment_index) {
+        const PhysicsSceneState* state = GetEnvironmentState(environment_index);
+        if (state == nullptr) {
+            return {};
+        }
+        checkpoint->scene_states_.push_back(*state);
+    }
+    return checkpoint;
+}
+
+bool PhysicsWorld::RestoreCheckpoint(
+        const Ref<PhysicsRuntimeCheckpoint>& checkpoint,
+        const std::vector<std::size_t>& environment_indices) {
+    std::vector<std::size_t> resolved_indices;
+    std::string error;
+    if (!ValidateCheckpoint(checkpoint, environment_indices, &resolved_indices, &error)) {
+        SetLastError(std::move(error));
+        return false;
+    }
+    if (resolved_indices.size() != 1 || resolved_indices.front() != 0) {
+        SetLastError("This physics backend only supports restoring environment 0.");
+        return false;
+    }
+    scene_state_ = checkpoint->scene_states_.front();
+    external_forces_ = checkpoint->external_forces_;
     last_error_.clear();
     return true;
 }
@@ -1215,16 +1496,8 @@ void PhysicsWorld::UpdateRaycastSensorState(PhysicsSensorState& sensor_state,
     if (!IsRaycastSensorType(sensor_state.type) || !sensor_state.enabled) {
         return;
     }
-    if (sensor_snapshot.sensor_period > 0.0 &&
-        timestamp > 0.0 &&
-        sensor_state.timestamp > 0.0) {
-        const auto current_bucket = static_cast<std::int64_t>(
-                std::floor((timestamp + CMP_EPSILON) / sensor_snapshot.sensor_period));
-        const auto previous_bucket = static_cast<std::int64_t>(
-                std::floor((sensor_state.timestamp + CMP_EPSILON) / sensor_snapshot.sensor_period));
-        if (current_bucket <= previous_bucket) {
-            return;
-        }
+    if (!ShouldSampleSensor(sensor_state, sensor_snapshot, timestamp)) {
+        return;
     }
 
     const bool reduce_values = IsTerrainHeightSensorType(sensor_state.type) &&
@@ -1291,7 +1564,101 @@ void PhysicsWorld::UpdateRaycastSensorState(PhysicsSensorState& sensor_state,
     if (reduce_values) {
         sensor_state.values[0] = ReducePhysicsRayValues(per_ray_values, sensor_snapshot.reduction_mode);
     }
+    ApplySensorNoise(sensor_state, sensor_snapshot, timestamp, environment_index);
     sensor_state.timestamp = timestamp;
+}
+
+bool PhysicsWorld::ShouldSampleSensor(const PhysicsSensorState& sensor_state,
+                                      const PhysicsSensorSnapshot& sensor_snapshot,
+                                      RealType timestamp) const {
+    if (sensor_snapshot.sensor_period <= 0.0 || sensor_state.sample_count == 0) {
+        return true;
+    }
+    const auto current_bucket = static_cast<std::int64_t>(
+            std::floor((timestamp + CMP_EPSILON) / sensor_snapshot.sensor_period));
+    const auto previous_bucket = static_cast<std::int64_t>(
+            std::floor((sensor_state.timestamp + CMP_EPSILON) / sensor_snapshot.sensor_period));
+    return current_bucket > previous_bucket;
+}
+
+void PhysicsWorld::ApplySensorNoise(PhysicsSensorState& sensor_state,
+                                    const PhysicsSensorSnapshot& sensor_snapshot,
+                                    RealType timestamp,
+                                    std::size_t environment_index) {
+    const std::size_t value_count = sensor_state.values.size();
+    if (sensor_state.noise_bias.size() != value_count ||
+        sensor_state.noise_random_walk.size() != value_count) {
+        sensor_state.noise_bias.assign(value_count, 0.0);
+        sensor_state.noise_random_walk.assign(value_count, 0.0);
+        sensor_state.sample_count = 0;
+    }
+
+    const RealType white_stddev = std::max<RealType>(0.0, sensor_snapshot.noise_stddev);
+    const RealType bias_mean = sensor_snapshot.has_noise_model
+                                       ? sensor_snapshot.noise_bias_mean
+                                       : 0.0;
+    const RealType bias_stddev = sensor_snapshot.has_noise_model
+                                         ? std::max<RealType>(0.0, sensor_snapshot.noise_bias_stddev)
+                                         : 0.0;
+    const RealType walk_stddev = sensor_snapshot.has_noise_model
+                                         ? std::max<RealType>(0.0, sensor_snapshot.noise_random_walk_stddev)
+                                         : 0.0;
+    const RealType quantization = sensor_snapshot.has_noise_model
+                                          ? std::max<RealType>(0.0, sensor_snapshot.noise_quantization_step)
+                                          : 0.0;
+    const RealType clip_min = sensor_snapshot.has_noise_model
+                                      ? sensor_snapshot.noise_clip_min
+                                      : -std::numeric_limits<RealType>::infinity();
+    const RealType clip_max = sensor_snapshot.has_noise_model
+                                      ? sensor_snapshot.noise_clip_max
+                                      : std::numeric_limits<RealType>::infinity();
+    RealType elapsed = timestamp - sensor_state.timestamp;
+    if (sensor_state.sample_count == 0) {
+        elapsed = 0.0;
+    } else if (!std::isfinite(elapsed) || elapsed <= 0.0) {
+        elapsed = sensor_snapshot.sensor_period > 0.0
+                          ? sensor_snapshot.sensor_period
+                          : settings_.fixed_time_step;
+    }
+    const RealType walk_scale = walk_stddev * std::sqrt(std::max<RealType>(0.0, elapsed));
+
+    for (std::size_t channel_index = 0; channel_index < value_count; ++channel_index) {
+        if (sensor_state.sample_count == 0) {
+            sensor_state.noise_bias[channel_index] =
+                    bias_mean + bias_stddev * NormalNoiseSample(SensorNoiseKey(
+                                                sensor_snapshot,
+                                                environment_index,
+                                                0,
+                                                channel_index,
+                                                0));
+        }
+        if (walk_scale > 0.0) {
+            sensor_state.noise_random_walk[channel_index] +=
+                    walk_scale * NormalNoiseSample(SensorNoiseKey(
+                                         sensor_snapshot,
+                                         environment_index,
+                                         sensor_state.sample_count,
+                                         channel_index,
+                                         1));
+        }
+        const RealType white_noise = white_stddev > 0.0
+                                             ? white_stddev * NormalNoiseSample(SensorNoiseKey(
+                                                                       sensor_snapshot,
+                                                                       environment_index,
+                                                                       sensor_state.sample_count,
+                                                                       channel_index,
+                                                                       2))
+                                             : 0.0;
+        RealType value = sensor_state.values[channel_index] +
+                         sensor_state.noise_bias[channel_index] +
+                         sensor_state.noise_random_walk[channel_index] +
+                         white_noise;
+        if (quantization > 0.0) {
+            value = std::round(value / quantization) * quantization;
+        }
+        sensor_state.values[channel_index] = std::clamp(value, clip_min, clip_max);
+    }
+    ++sensor_state.sample_count;
 }
 
 void PhysicsWorld::UpdateSensorGlobalTransformsAndRaycastSensors(PhysicsSceneState& scene_state,

@@ -194,7 +194,7 @@ The scene-to-physics data model should be backend-neutral:
 
 The implemented runtime boundary also includes:
 
-- `PhysicsSceneArtifact` schema v2, with canonical content and digest, explicit
+- `PhysicsSceneArtifact` schema v3, with canonical content and digest, explicit
   producer/producer-version metadata, dimensions, robot topology, and ordered
   control topology. Python providers validate this value before creating a
   runtime and use its control mapping instead of inferring actuator modes.

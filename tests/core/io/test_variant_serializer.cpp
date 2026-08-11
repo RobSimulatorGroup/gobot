@@ -79,6 +79,15 @@ TEST(TestVariantSerializer, test_primitive_type) {
     ASSERT_TRUE(gobot::VariantSerializer::JsonToVariant(variant, json));
     ASSERT_TRUE(variant.get_value<float>() == f);
   }
+  {
+    gobot::Variant float_variant(0.0f);
+    ASSERT_TRUE(gobot::VariantSerializer::JsonToVariant(float_variant, 1));
+    EXPECT_FLOAT_EQ(float_variant.get_value<float>(), 1.0f);
+
+    gobot::Variant double_variant(0.0);
+    ASSERT_TRUE(gobot::VariantSerializer::JsonToVariant(double_variant, 2u));
+    EXPECT_DOUBLE_EQ(double_variant.get_value<double>(), 2.0);
+  }
 
   // test std::string
   {

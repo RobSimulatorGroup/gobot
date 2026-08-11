@@ -86,12 +86,30 @@ TEST(TestRobotNodes, reflected_properties_are_available) {
     EXPECT_TRUE(gobot::Type::get<gobot::Joint3D>()
                         .get_property("affine_actuator_inherit_range")
                         .is_valid());
+    EXPECT_TRUE(gobot::Type::get<gobot::Joint3D>()
+                        .get_property("actuator_config")
+                        .is_valid());
 
-    EXPECT_TRUE(gobot::Type::get<gobot::CollisionShape3D>().get_property("priority").is_valid());
+    EXPECT_TRUE(gobot::Type::get<gobot::CollisionShape3D>()
+                        .get_property("physics_material")
+                        .is_valid());
+    EXPECT_TRUE(gobot::Type::get<gobot::CollisionShape3D>()
+                        .get_property("collision_layer")
+                        .is_valid());
+    EXPECT_TRUE(gobot::Type::get<gobot::CollisionShape3D>()
+                        .get_property("collision_mask")
+                        .is_valid());
+    EXPECT_TRUE(gobot::Type::get<gobot::CollisionShape3D>()
+                        .get_property("contact_offset")
+                        .is_valid());
+    EXPECT_TRUE(gobot::Type::get<gobot::CollisionShape3D>()
+                        .get_property("rest_offset")
+                        .is_valid());
 
     EXPECT_TRUE(gobot::Type::get<gobot::Sensor3D>().get_property("enabled").is_valid());
     EXPECT_TRUE(gobot::Type::get<gobot::Sensor3D>().get_property("sensor_period").is_valid());
     EXPECT_TRUE(gobot::Type::get<gobot::Sensor3D>().get_property("noise_stddev").is_valid());
+    EXPECT_TRUE(gobot::Type::get<gobot::Sensor3D>().get_property("noise_model").is_valid());
     EXPECT_TRUE(gobot::Type::get<gobot::Sensor3D>().get_property("visualize_debug").is_valid());
     EXPECT_TRUE(gobot::Type::get<gobot::AngularMomentumSensor3D>().is_valid());
     EXPECT_TRUE(gobot::Type::get<gobot::ContactSensor3D>().get_property("radius").is_valid());

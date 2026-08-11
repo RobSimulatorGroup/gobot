@@ -524,14 +524,11 @@ void CopyMJCFDynamicProperties(Node* target, const Node* source) {
     if (auto* target_collision = Object::PointerCastTo<CollisionShape3D>(target)) {
         const auto* source_collision = Object::PointerCastTo<CollisionShape3D>(source);
         if (source_collision != nullptr) {
-            target_collision->SetFriction(source_collision->GetFriction());
-            target_collision->SetContactType(source_collision->GetContactType());
-            target_collision->SetContactAffinity(source_collision->GetContactAffinity());
-            target_collision->SetContactDimension(source_collision->GetContactDimension());
-            target_collision->SetSolref(source_collision->GetSolref());
-            target_collision->SetSolimp(source_collision->GetSolimp());
-            target_collision->SetMargin(source_collision->GetMargin());
-            target_collision->SetGap(source_collision->GetGap());
+            target_collision->SetPhysicsMaterial(source_collision->GetPhysicsMaterial());
+            target_collision->SetCollisionLayer(source_collision->GetCollisionLayer());
+            target_collision->SetCollisionMask(source_collision->GetCollisionMask());
+            target_collision->SetContactOffset(source_collision->GetContactOffset());
+            target_collision->SetRestOffset(source_collision->GetRestOffset());
         }
     }
 
@@ -932,6 +929,92 @@ py::dict ResourceToPythonDict(const Ref<Resource>& resource) {
     return result;
 }
 
+Ref<PhysicsMaterial3D> PhysicsMaterialFromPython(const py::handle& value) {
+    if (value.is_none()) {
+        return {};
+    }
+    if (!py::isinstance<py::dict>(value)) {
+        throw py::type_error("physics_material must be a dict or None");
+    }
+
+    py::dict source = py::reinterpret_borrow<py::dict>(value);
+    if (source.contains("properties") && py::isinstance<py::dict>(source["properties"])) {
+        source = py::reinterpret_borrow<py::dict>(source["properties"]);
+    }
+
+    Ref<PhysicsMaterial3D> material = MakeRef<PhysicsMaterial3D>();
+    const auto set_if_present = [&source](const char* name, const auto& setter) {
+        if (source.contains(name)) {
+            setter(py::cast<RealType>(source[name]));
+        }
+    };
+    set_if_present("sliding_friction", [&material](RealType v) { material->SetSlidingFriction(v); });
+    set_if_present("torsional_friction", [&material](RealType v) { material->SetTorsionalFriction(v); });
+    set_if_present("rolling_friction", [&material](RealType v) { material->SetRollingFriction(v); });
+    set_if_present("restitution", [&material](RealType v) { material->SetRestitution(v); });
+    set_if_present("contact_compliance", [&material](RealType v) { material->SetContactCompliance(v); });
+    set_if_present("contact_damping", [&material](RealType v) { material->SetContactDamping(v); });
+    return material;
+}
+
+Ref<JointActuatorConfig> JointActuatorConfigFromPython(const py::handle& value) {
+    if (value.is_none()) {
+        return {};
+    }
+    if (!py::isinstance<py::dict>(value)) {
+        throw py::type_error("actuator_config must be a dict or None");
+    }
+    py::dict source = py::reinterpret_borrow<py::dict>(value);
+    if (source.contains("properties") && py::isinstance<py::dict>(source["properties"])) {
+        source = py::reinterpret_borrow<py::dict>(source["properties"]);
+    }
+    Ref<JointActuatorConfig> config = MakeRef<JointActuatorConfig>();
+    if (source.contains("command_delay_steps")) {
+        config->SetCommandDelaySteps(py::cast<std::uint32_t>(source["command_delay_steps"]));
+    }
+    const auto set_if_present = [&source](const char* name, const auto& setter) {
+        if (source.contains(name)) {
+            setter(py::cast<RealType>(source[name]));
+        }
+    };
+    set_if_present("command_deadband", [&config](RealType v) { config->SetCommandDeadband(v); });
+    set_if_present("command_slew_rate", [&config](RealType v) { config->SetCommandSlewRate(v); });
+    set_if_present("strength_scale", [&config](RealType v) { config->SetStrengthScale(v); });
+    set_if_present("motor_velocity_limit", [&config](RealType v) { config->SetMotorVelocityLimit(v); });
+    set_if_present("motor_stall_effort", [&config](RealType v) { config->SetMotorStallEffort(v); });
+    return config;
+}
+
+Ref<SensorNoiseModel> SensorNoiseModelFromPython(const py::handle& value) {
+    if (value.is_none()) {
+        return {};
+    }
+    if (!py::isinstance<py::dict>(value)) {
+        throw py::type_error("noise_model must be a dict or None");
+    }
+    py::dict source = py::reinterpret_borrow<py::dict>(value);
+    if (source.contains("properties") && py::isinstance<py::dict>(source["properties"])) {
+        source = py::reinterpret_borrow<py::dict>(source["properties"]);
+    }
+    Ref<SensorNoiseModel> model = MakeRef<SensorNoiseModel>();
+    const auto set_if_present = [&source](const char* name, const auto& setter) {
+        if (source.contains(name)) {
+            setter(py::cast<RealType>(source[name]));
+        }
+    };
+    set_if_present("white_noise_stddev", [&model](RealType v) { model->SetWhiteNoiseStddev(v); });
+    set_if_present("bias_mean", [&model](RealType v) { model->SetBiasMean(v); });
+    set_if_present("bias_stddev", [&model](RealType v) { model->SetBiasStddev(v); });
+    set_if_present("random_walk_stddev", [&model](RealType v) { model->SetRandomWalkStddev(v); });
+    set_if_present("quantization_step", [&model](RealType v) { model->SetQuantizationStep(v); });
+    set_if_present("clip_min", [&model](RealType v) { model->SetClipMin(v); });
+    set_if_present("clip_max", [&model](RealType v) { model->SetClipMax(v); });
+    if (source.contains("seed_offset")) {
+        model->SetSeedOffset(py::cast<std::uint32_t>(source["seed_offset"]));
+    }
+    return model;
+}
+
 py::dict TransformToPythonDict(const Affine3& transform) {
     const Vector3 position = transform.translation();
     const Quaternion rotation(transform.linear());
@@ -1296,6 +1379,16 @@ py::dict SensorSnapshotToPythonDict(const PhysicsSensorSnapshot& sensor) {
     result["enabled"] = sensor.enabled;
     result["sensor_period"] = sensor.sensor_period;
     result["noise_stddev"] = sensor.noise_stddev;
+    py::dict noise_model;
+    noise_model["white_noise_stddev"] = sensor.noise_stddev;
+    noise_model["bias_mean"] = sensor.noise_bias_mean;
+    noise_model["bias_stddev"] = sensor.noise_bias_stddev;
+    noise_model["random_walk_stddev"] = sensor.noise_random_walk_stddev;
+    noise_model["quantization_step"] = sensor.noise_quantization_step;
+    noise_model["clip_min"] = sensor.noise_clip_min;
+    noise_model["clip_max"] = sensor.noise_clip_max;
+    noise_model["seed_offset"] = sensor.noise_seed_offset;
+    result["noise_model"] = std::move(noise_model);
     result["visualize_debug"] = sensor.visualize_debug;
     result["debug_marker_radius"] = sensor.debug_marker_radius;
     result["radius"] = sensor.radius;
@@ -1329,6 +1422,14 @@ py::dict JointStateToPythonDict(const PhysicsJointState& joint) {
     result["target_position"] = joint.target_position;
     result["target_velocity"] = joint.target_velocity;
     result["target_effort"] = joint.target_effort;
+    result["commanded_target"] = joint.commanded_target;
+    result["applied_target"] = joint.applied_target;
+    result["tracking_error"] = joint.tracking_error;
+    result["applied_effort"] = joint.applied_effort;
+    result["command_delayed"] = joint.command_delayed;
+    result["command_deadband_applied"] = joint.command_deadband_applied;
+    result["command_rate_limited"] = joint.command_rate_limited;
+    result["effort_saturated"] = joint.effort_saturated;
     return result;
 }
 
@@ -1350,10 +1451,19 @@ py::dict ContactStateToPythonDict(const PhysicsContactState& contact) {
     result["link_name"] = contact.link_name;
     result["other_robot_name"] = contact.other_robot_name;
     result["other_link_name"] = contact.other_link_name;
+    result["shape_name"] = contact.shape_name;
+    result["shape_path"] = contact.shape_path;
+    result["shape_stable_id"] = contact.shape_stable_id;
+    result["other_shape_name"] = contact.other_shape_name;
+    result["other_shape_path"] = contact.other_shape_path;
+    result["other_shape_stable_id"] = contact.other_shape_stable_id;
     result["position"] = Vector3ToPython(contact.position);
     result["normal"] = Vector3ToPython(contact.normal);
     result["force"] = Vector3ToPython(contact.force);
+    result["tangent_force"] = Vector3ToPython(contact.tangent_force);
+    result["torque"] = Vector3ToPython(contact.torque);
     result["normal_force"] = contact.normal_force;
+    result["normal_impulse"] = contact.normal_impulse;
     result["distance"] = contact.distance;
     return result;
 }
@@ -1381,6 +1491,8 @@ py::dict SensorStateToPythonDict(const PhysicsSensorState& sensor) {
     result["debug_marker_radius"] = sensor.debug_marker_radius;
     result["global_transform"] = TransformToPythonDict(sensor.global_transform);
     result["values"] = sensor.values;
+    result["noise_bias"] = sensor.noise_bias;
+    result["noise_random_walk"] = sensor.noise_random_walk;
     py::list hits;
     for (const PhysicsSensorRaycastHit& hit : sensor.hits) {
         hits.append(SensorRaycastHitToPythonDict(hit));
@@ -1388,6 +1500,7 @@ py::dict SensorStateToPythonDict(const PhysicsSensorState& sensor) {
     result["hits"] = hits;
     result["channel_names"] = sensor.channel_names;
     result["timestamp"] = sensor.timestamp;
+    result["sample_count"] = sensor.sample_count;
     return result;
 }
 
@@ -1792,7 +1905,10 @@ py::dict BatchRobotStateToPythonDict(SimulationServer& simulation,
     std::vector<RealType> contact_position(environment_count * max_contact_count * 3, 0.0);
     std::vector<RealType> contact_normal(environment_count * max_contact_count * 3, 0.0);
     std::vector<RealType> contact_force(environment_count * max_contact_count * 3, 0.0);
+    std::vector<RealType> contact_tangent_force(environment_count * max_contact_count * 3, 0.0);
+    std::vector<RealType> contact_torque(environment_count * max_contact_count * 3, 0.0);
     std::vector<RealType> contact_normal_force(environment_count * max_contact_count, 0.0);
+    std::vector<RealType> contact_normal_impulse(environment_count * max_contact_count, 0.0);
     std::vector<RealType> contact_distance(environment_count * max_contact_count, 0.0);
 
     for (std::size_t environment_index = 0; environment_index < environment_count; ++environment_index) {
@@ -1895,7 +2011,10 @@ py::dict BatchRobotStateToPythonDict(SimulationServer& simulation,
             FillVector3(contact_position, contact_base * 3, contact.position);
             FillVector3(contact_normal, contact_base * 3, contact.normal);
             FillVector3(contact_force, contact_base * 3, contact.force);
+            FillVector3(contact_tangent_force, contact_base * 3, contact.tangent_force);
+            FillVector3(contact_torque, contact_base * 3, contact.torque);
             contact_normal_force[contact_base] = contact.normal_force;
+            contact_normal_impulse[contact_base] = contact.normal_impulse;
             contact_distance[contact_base] = contact.distance;
             ++contact_index;
         }
@@ -1940,7 +2059,10 @@ py::dict BatchRobotStateToPythonDict(SimulationServer& simulation,
     result["contact_position"] = MakeRealArray(std::move(contact_position), {static_cast<py::ssize_t>(environment_count), static_cast<py::ssize_t>(max_contact_count), 3});
     result["contact_normal"] = MakeRealArray(std::move(contact_normal), {static_cast<py::ssize_t>(environment_count), static_cast<py::ssize_t>(max_contact_count), 3});
     result["contact_force"] = MakeRealArray(std::move(contact_force), {static_cast<py::ssize_t>(environment_count), static_cast<py::ssize_t>(max_contact_count), 3});
+    result["contact_tangent_force"] = MakeRealArray(std::move(contact_tangent_force), {static_cast<py::ssize_t>(environment_count), static_cast<py::ssize_t>(max_contact_count), 3});
+    result["contact_torque"] = MakeRealArray(std::move(contact_torque), {static_cast<py::ssize_t>(environment_count), static_cast<py::ssize_t>(max_contact_count), 3});
     result["contact_normal_force"] = MakeRealArray(std::move(contact_normal_force), {static_cast<py::ssize_t>(environment_count), static_cast<py::ssize_t>(max_contact_count)});
+    result["contact_normal_impulse"] = MakeRealArray(std::move(contact_normal_impulse), {static_cast<py::ssize_t>(environment_count), static_cast<py::ssize_t>(max_contact_count)});
     result["contact_distance"] = MakeRealArray(std::move(contact_distance), {static_cast<py::ssize_t>(environment_count), static_cast<py::ssize_t>(max_contact_count)});
     return result;
 }
@@ -1961,6 +2083,8 @@ py::dict RobotBatchStepResultToPythonDict(PhysicsRobotBatchStepResult arrays) {
     result["link_names"] = arrays.link_names;
     result["sensor_names"] = arrays.sensor_names;
     result["shape_names"] = arrays.shape_names;
+    result["shape_paths"] = arrays.shape_paths;
+    result["shape_stable_ids"] = arrays.shape_stable_ids;
     result["contact_shape_group_names"] = arrays.contact_shape_group_names;
     result["env_count"] = arrays.environment_count;
     result["base_position"] = MakeRealArray(std::move(arrays.base_position), {environment_count, 3});
@@ -1997,7 +2121,10 @@ py::dict RobotBatchStepResultToPythonDict(PhysicsRobotBatchStepResult arrays) {
     result["contact_position"] = MakeRealArray(std::move(arrays.contact_position), {environment_count, max_contact_count, 3});
     result["contact_normal"] = MakeRealArray(std::move(arrays.contact_normal), {environment_count, max_contact_count, 3});
     result["contact_force"] = MakeRealArray(std::move(arrays.contact_force), {environment_count, max_contact_count, 3});
+    result["contact_tangent_force"] = MakeRealArray(std::move(arrays.contact_tangent_force), {environment_count, max_contact_count, 3});
+    result["contact_torque"] = MakeRealArray(std::move(arrays.contact_torque), {environment_count, max_contact_count, 3});
     result["contact_normal_force"] = MakeRealArray(std::move(arrays.contact_normal_force), {environment_count, max_contact_count});
+    result["contact_normal_impulse"] = MakeRealArray(std::move(arrays.contact_normal_impulse), {environment_count, max_contact_count});
     result["contact_distance"] = MakeRealArray(std::move(arrays.contact_distance), {environment_count, max_contact_count});
     result["link_contact_tick_count"] = MakeArray<std::int32_t>(std::move(arrays.link_contact_tick_count), {environment_count, link_count});
     result["shape_contact_tick_count"] = MakeArray<std::int32_t>(std::move(arrays.shape_contact_tick_count), {environment_count, static_cast<py::ssize_t>(arrays.shape_names.size())});

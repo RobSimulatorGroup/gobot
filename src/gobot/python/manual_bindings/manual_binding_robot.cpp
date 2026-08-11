@@ -218,6 +218,21 @@ void RegisterManualRobotBindings(PyRobot3DClass& robot3d_class,
                               Joint3D* joint = handle.ResolveAs<Joint3D>();
                               ExecuteSetNodeProperty(joint, "friction_loss", Variant(friction_loss));
                           })
+            .def_property("actuator_config",
+                          [](const PyJoint3DHandle& handle) -> py::object {
+                              const Ref<JointActuatorConfig>& config =
+                                      handle.ResolveAs<Joint3D>()->GetActuatorConfig();
+                              if (!config.IsValid()) {
+                                  return py::none();
+                              }
+                              return ResourceToPythonDict(config);
+                          },
+                          [](PyJoint3DHandle& handle, const py::handle& value) {
+                              ExecuteSetNodeProperty(
+                                      handle.ResolveAs<Joint3D>(),
+                                      "actuator_config",
+                                      Variant(JointActuatorConfigFromPython(value)));
+                          })
             .def_property("affine_actuator_enabled",
                           [](const PyJoint3DHandle& handle) {
                               return handle.ResolveAs<Joint3D>()->IsAffineActuatorEnabled();
@@ -415,18 +430,54 @@ void RegisterManualRobotBindings(PyRobot3DClass& robot3d_class,
                               CollisionShape3D* collision_shape = handle.ResolveAs<CollisionShape3D>();
                               ExecuteSetNodeProperty(collision_shape, "disabled", Variant(disabled));
                           })
-            .def_property("friction",
+            .def_property("physics_material",
                           [](const PyCollisionShape3DHandle& handle) {
-                              return Vector3ToPython(
-                                      handle.ResolveAs<CollisionShape3D>()->GetFriction());
+                              return ResourceToPythonDict(
+                                      handle.ResolveAs<CollisionShape3D>()->GetPhysicsMaterial());
                           },
                           [](PyCollisionShape3DHandle& handle, const py::handle& value) {
                               CollisionShape3D* collision_shape =
                                       handle.ResolveAs<CollisionShape3D>();
                               ExecuteSetNodeProperty(
                                       collision_shape,
-                                      "friction",
-                                      Variant(PythonToVector3(value)));
+                                      "physics_material",
+                                      Variant(PhysicsMaterialFromPython(value)));
+                          })
+            .def_property("collision_layer",
+                          [](const PyCollisionShape3DHandle& handle) {
+                              return handle.ResolveAs<CollisionShape3D>()->GetCollisionLayer();
+                          },
+                          [](PyCollisionShape3DHandle& handle, std::uint32_t value) {
+                              ExecuteSetNodeProperty(handle.ResolveAs<CollisionShape3D>(),
+                                                     "collision_layer",
+                                                     Variant(value));
+                          })
+            .def_property("collision_mask",
+                          [](const PyCollisionShape3DHandle& handle) {
+                              return handle.ResolveAs<CollisionShape3D>()->GetCollisionMask();
+                          },
+                          [](PyCollisionShape3DHandle& handle, std::uint32_t value) {
+                              ExecuteSetNodeProperty(handle.ResolveAs<CollisionShape3D>(),
+                                                     "collision_mask",
+                                                     Variant(value));
+                          })
+            .def_property("contact_offset",
+                          [](const PyCollisionShape3DHandle& handle) {
+                              return handle.ResolveAs<CollisionShape3D>()->GetContactOffset();
+                          },
+                          [](PyCollisionShape3DHandle& handle, RealType value) {
+                              ExecuteSetNodeProperty(handle.ResolveAs<CollisionShape3D>(),
+                                                     "contact_offset",
+                                                     Variant(value));
+                          })
+            .def_property("rest_offset",
+                          [](const PyCollisionShape3DHandle& handle) {
+                              return handle.ResolveAs<CollisionShape3D>()->GetRestOffset();
+                          },
+                          [](PyCollisionShape3DHandle& handle, RealType value) {
+                              ExecuteSetNodeProperty(handle.ResolveAs<CollisionShape3D>(),
+                                                     "rest_offset",
+                                                     Variant(value));
                           });
 }
 

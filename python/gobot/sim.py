@@ -26,6 +26,12 @@ class ProviderCapabilities:
     graph_capture: bool
     masked_reset: bool
     fixed_capacity: bool
+    runtime_checkpoint: bool = False
+    exact_contact_wrench: bool = False
+    sensor_batch: bool = False
+    solver_substeps: bool = False
+    graph_capture_reason: str = ""
+    reset_scope: str = "full"
 
 
 class ProviderPlaySession:

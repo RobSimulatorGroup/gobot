@@ -1,5 +1,5 @@
 {
-    "__VERSION__": 2,
+    "__VERSION__": 3,
     "__META_TYPE__": "RESOURCE",
     "__TYPE__": "TerrainGeneratorConfig",
     "__EXT_RESOURCES__": [],

@@ -41,6 +41,10 @@ from .providers import (
     NewtonProviderAvailability,
     NewtonRobotLayout,
     ProviderUnavailableError,
+    ProviderCheckpoint,
+    SensorBatchSpec,
+    SensorBatchState,
+    SensorBatchView,
     SimulationCapacityError,
 )
 from .rsl_rl import (

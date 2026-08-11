@@ -247,8 +247,8 @@ def _import_usd_with_gobot(project_dir: Path, source_path: Path, scene_path: Pat
         joint.force_lower_limit = 0.0
         joint.force_upper_limit = 0.0
     for collision in collisions:
-        collision.set("contype", 0)
-        collision.set("conaffinity", 1)
+        collision.collision_layer = 0
+        collision.collision_mask = 1
     robot.mode = gobot.RobotMode.Motion
     gobot.save_scene(robot, scene_resource)
     return str(gobot.__version__)

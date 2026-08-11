@@ -117,7 +117,7 @@ def test_newton_reference_fixture_and_import_hook_are_versioned() -> None:
     assert "task_config_sha256" in hook
     assert "joint.drive_stiffness =" in hook
     assert "joint.initial_position =" in hook
-    assert 'collision.set("contype", 0)' in hook
+    assert "collision.collision_layer = 0" in hook
 
 
 def test_native_policy_yaml_reader_preserves_order_and_values() -> None:
@@ -181,7 +181,7 @@ def test_playback_uses_stable_provider_and_warp_nn_without_newton_viewer() -> No
     assert "model_config=NewtonModelConfig" in source
     assert "joint.drive_stiffness =" not in source
     assert "joint.initial_position =" not in source
-    assert 'node.set("contype", 0)' not in source
+    assert 'node.get("contype")' not in source
     assert 'int(artifact["dimensions"]["nu"]) != ACTION_DIM' in source
     assert 'artifact["dimensions"]["nu"]' in source
     assert "g1_visual" not in source

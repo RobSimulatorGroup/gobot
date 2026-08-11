@@ -522,7 +522,48 @@ class MuJoCoWarpProvider(BatchPhysicsProvider):
             graph_capture=self._capture_enabled,
             masked_reset=True,
             fixed_capacity=True,
+            runtime_checkpoint=True,
+            exact_contact_wrench=True,
+            sensor_batch=True,
+            solver_substeps=True,
+            reset_scope="masked",
         )
+
+    def _checkpoint_array_names(self) -> tuple[str, ...]:
+        candidates = (
+            "time",
+            "qpos",
+            "qvel",
+            "act",
+            "qacc_warmstart",
+            "ctrl",
+            "qfrc_applied",
+            "xfrc_applied",
+            "mocap_pos",
+            "mocap_quat",
+            "eq_active",
+            "userdata",
+            "plugin_state",
+        )
+        return tuple(name for name in candidates if name in self._arrays)
+
+    def _capture_checkpoint_auxiliary(self) -> Mapping[str, Any]:
+        return MappingProxyType({"step_count": int(self._step_count)})
+
+    def _restore_checkpoint_auxiliary(
+        self,
+        auxiliary: Mapping[str, Any],
+        environment_indices: tuple[int, ...],
+    ) -> None:
+        if set(auxiliary) != {"step_count"}:
+            raise ValueError("MuJoCo Warp checkpoint auxiliary state is invalid")
+        if len(environment_indices) == self._num_envs:
+            self._step_count = int(auxiliary["step_count"])
+
+    def _after_checkpoint_restore(self, environment_indices: tuple[int, ...]) -> None:
+        del environment_indices
+        self.forward()
+        self.sense()
 
     @property
     def num_envs(self) -> int:
@@ -1277,7 +1318,14 @@ class MuJoCoWarpProvider(BatchPhysicsProvider):
             "qacc",
             "ctrl",
             "act",
+            "qacc_warmstart",
+            "qfrc_applied",
             "xfrc_applied",
+            "mocap_pos",
+            "mocap_quat",
+            "eq_active",
+            "userdata",
+            "plugin_state",
             "xpos",
             "xquat",
             "xmat",

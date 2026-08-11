@@ -146,6 +146,10 @@ def test_task_runtime_metadata_is_public_task_summary():
 def test_go1_robot_scene_matches_mujoco_contract():
     scene = json.loads((REPO_ROOT / "examples/go1/go1.jscn").read_text(encoding="utf-8"))
     nodes = scene["__NODES__"]
+    subresources = {
+        f"SubResource({resource['__ID__']})": resource
+        for resource in scene["__SUB_RESOURCES__"]
+    }
 
     hip_joint = _node_by_name(nodes, "FR_hip_joint", "Joint3D")["properties"]
     assert hip_joint["damping"] == 0.0
@@ -194,19 +198,29 @@ def test_go1_robot_scene_matches_mujoco_contract():
     } <= node_names
 
     base_collision = _node_by_name(nodes, "trunk_collision", "CollisionShape3D")["properties"]
-    assert base_collision["condim"] == 1
-    np.testing.assert_allclose(_matrix_storage(base_collision["solref"]), (0.01, 1.0))
+    assert base_collision["collision_layer"] == 1
+    assert base_collision["collision_mask"] == 1
+    assert subresources[base_collision["physics_material"]]["contact_compliance"] == np.float32(0.01) ** 2
 
     for collision_name in ("FR_thigh_collision1", "FR_calf_collision1"):
         collision = _node_by_name(nodes, collision_name, "CollisionShape3D")["properties"]
-        assert collision["condim"] == 1
-        np.testing.assert_allclose(_matrix_storage(collision["solref"]), (0.01, 1.0))
+        material = subresources[collision["physics_material"]]
+        assert collision["collision_layer"] == 1
+        assert collision["collision_mask"] == 1
+        assert material["torsional_friction"] == 0.0
+        assert material["rolling_friction"] == 0.0
 
     foot_collision = _node_by_name(nodes, "FR_foot_collision", "CollisionShape3D")["properties"]
-    np.testing.assert_allclose(_matrix_storage(foot_collision["friction"]), (1.0, 0.005, 0.0005))
-    assert foot_collision["condim"] == 6
-    assert foot_collision["priority"] == 1
-    np.testing.assert_allclose(_matrix_storage(foot_collision["solref"]), (0.01, 1.0))
+    foot_material = subresources[foot_collision["physics_material"]]
+    np.testing.assert_allclose(
+        [
+            foot_material["sliding_friction"],
+            foot_material["torsional_friction"],
+            foot_material["rolling_friction"],
+        ],
+        (1.0, 0.005, 0.0005),
+    )
+    assert foot_material["contact_compliance"] == np.float32(0.01) ** 2
 
     trunk_index = nodes.index(_node_by_name(nodes, "trunk", "Link3D"))
     assert _node_by_name(nodes, "imu", "IMUSensor3D")["parent"] == trunk_index
@@ -1263,7 +1277,7 @@ def test_compiled_scene_artifact_validates_robot_prefixes():
         "</actuator></mujoco>"
     )
     artifact_mapping = {
-        "schema_version": 2,
+        "schema_version": 3,
         "producer": "mujoco",
         "format": "mjcf",
         "content": content,
@@ -1379,23 +1393,18 @@ def test_compiled_scene_artifact_validates_robot_prefixes():
         raise AssertionError("public v1 artifact should fail")
     except ValueError as error:
         assert "schema" in str(error)
-    bridged = CompiledSceneArtifact.from_compiler_mapping(
-        {
-            "schema_version": 1,
-            "backend": "MuJoCoCpu",
-            "format": "mjcf",
-            "content": content,
-            "content_digest": _artifact_digest(content),
-            "backend_version": "3.10.0",
-            "dimensions": {"nq": 7, "nv": 6, "nu": 1},
-            "robot_names": ["go1"],
-            "robot_prefixes": ["go1_"],
-            "terrain_geom_groups": [5],
-        }
-    )
-    assert bridged.schema_version == 2
-    assert bridged.robots[0].body_names == ("go1_trunk",)
-    assert bridged.controls[0].joint == "go1_hip"
+    try:
+        CompiledSceneArtifact.from_compiler_mapping(
+            {
+                "schema_version": 1,
+                "backend": "MuJoCoCpu",
+                "format": "mjcf",
+                "content": content,
+            }
+        )
+        raise AssertionError("legacy compiler artifact should fail")
+    except ValueError as error:
+        assert "schema" in str(error)
     try:
         CompiledSceneArtifact.from_mapping(
             {**artifact_mapping, "content": "<mujoco model='changed'/>"}

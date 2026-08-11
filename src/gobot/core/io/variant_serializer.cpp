@@ -303,6 +303,10 @@ Variant VariantSerializer::ExtractPrimitiveTypes(const Type& type, const Json& j
             return ExtractCheckedInteger<uint32_t>(value, type, json_value);
         } else if (type == Type::get<uint64_t>()) {
             return value;
+        } else if (type == Type::get<float>()) {
+            return static_cast<float>(value);
+        } else if (type == Type::get<double>()) {
+            return static_cast<double>(value);
         } else if (type == Type::get<int8_t>()) {
             return ExtractCheckedInteger<int8_t>(value, type, json_value);
         } else if (type == Type::get<int16_t>()) {
@@ -332,6 +336,10 @@ Variant VariantSerializer::ExtractPrimitiveTypes(const Type& type, const Json& j
             return ExtractCheckedInteger<uint32_t>(value, type, json_value);
         } else if (type == Type::get<uint64_t>()) {
             return ExtractCheckedInteger<uint64_t>(value, type, json_value);
+        } else if (type == Type::get<float>()) {
+            return static_cast<float>(value);
+        } else if (type == Type::get<double>()) {
+            return static_cast<double>(value);
         } else {
             LOG_ERROR("json_value:{} and type: {} is unmatched.", json_value, type.get_name().data());
         }

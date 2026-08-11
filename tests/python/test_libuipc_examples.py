@@ -70,9 +70,9 @@ def test_checked_in_libuipc_scenes_are_reproducible() -> None:
         generated = builder.build_demos(Path(directory))
         assert tuple(path.name for path in generated) == SCENE_NAMES
         for name in SCENE_NAMES:
-            assert (Path(directory) / name).read_bytes() == (
-                EXAMPLE_ROOT / name
-            ).read_bytes()
+            assert json.loads((Path(directory) / name).read_text(encoding="utf-8")) == json.loads(
+                (EXAMPLE_ROOT / name).read_text(encoding="utf-8")
+            )
         assert (Path(directory) / "libuipc_demo.py").is_file()
         assert (Path(directory) / "project.gobot").is_file()
         assert (
@@ -117,7 +117,7 @@ def test_mujoco_libuipc_batch_example_is_reproducible_and_mapped() -> None:
             ("static_colliders", "ground", "OneWay"),
             ("press", "press_head", "TwoWay"),
         ]
-        assert artifact.ipc.schema_version == 2
+        assert artifact.ipc.schema_version == 3
         assert tuple(
             mapping.ipc_body_index for mapping in artifact.coupled_bodies
         ) == (0, 1)
@@ -338,10 +338,10 @@ def test_libuipc_scenes_compile_to_supported_native_contracts() -> None:
                 int(shape["triangle_count"])
                 for shape in triangle_shapes.values()
             ) == 2300
-            assert triangle_shapes["fr3_link0_collision"]["contact_type"] == 2
-            assert triangle_shapes["fr3_link0_collision"]["contact_affinity"] == 2
-            assert workbench["contact_type"] == 1
-            assert workbench["contact_affinity"] == 1
+            assert triangle_shapes["fr3_link0_collision"]["collision_layer"] == 2
+            assert triangle_shapes["fr3_link0_collision"]["collision_mask"] == 2
+            assert workbench["collision_layer"] == 1
+            assert workbench["collision_mask"] == 1
             blob_encodings = {
                 entry["id"]: entry["encoding"]
                 for entry in artifact.manifest_data["blobs"]
@@ -360,7 +360,7 @@ def test_libuipc_scenes_compile_to_supported_native_contracts() -> None:
             assert len(finger_shapes) == 8
             assert all(shape["shape_type"] == "box" for shape in finger_shapes)
             assert all(
-                abs(shape["friction"][0] - 1.25) < 1.0e-6
+                abs(shape["material"]["sliding_friction"] - 1.25) < 1.0e-6
                 for shape in finger_shapes
             )
 

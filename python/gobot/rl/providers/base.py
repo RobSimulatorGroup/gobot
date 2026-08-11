@@ -27,6 +27,20 @@ class SimulationCapacityError(RuntimeError):
     """Raised when a batched simulation exceeds a configured fixed capacity."""
 
 
+@dataclass(frozen=True)
+class ProviderCheckpoint:
+    """Opaque provider state guarded by a runtime compatibility fingerprint."""
+
+    schema_version: int
+    provider_name: str
+    runtime_fingerprint: str
+    num_envs: int
+    fixed_time_step: float
+    device: str
+    arrays: Mapping[str, Any]
+    auxiliary: Mapping[str, Any]
+
+
 def _artifact_digest(content: str) -> str:
     """Return the digest used by Gobot's C++ scene artifact compiler."""
 
@@ -206,7 +220,7 @@ def _legacy_robot_and_control_topology(
             mode = element.tag
         elif element.tag == "general" and control_name.endswith("_position"):
             # The legacy compiler serialized MuJoCo's canonical affine form;
-            # schema v2 carries this semantic explicitly and needs no inference.
+            # Current artifacts carry this semantic explicitly and need no inference.
             mode = "position"
         elif element.tag == "general" and control_name.endswith("_velocity"):
             mode = "velocity"
@@ -239,7 +253,7 @@ def _legacy_robot_and_control_topology(
 
 @dataclass(frozen=True)
 class CompiledSceneArtifact:
-    """Schema-v2 portable physics artifact compiled from a Gobot scene."""
+    """Schema-v3 portable physics artifact compiled from a Gobot scene."""
 
     schema_version: int
     producer: str
@@ -254,9 +268,9 @@ class CompiledSceneArtifact:
 
     def __post_init__(self) -> None:
         schema_version = int(self.schema_version)
-        if schema_version != 2:
+        if schema_version != 3:
             raise ValueError(
-                f"unsupported compiled scene artifact schema {schema_version}; expected schema 2"
+                f"unsupported compiled scene artifact schema {schema_version}; expected schema 3"
             )
         producer = str(self.producer).lower()
         if producer != "mujoco":
@@ -377,18 +391,14 @@ class CompiledSceneArtifact:
 
     @classmethod
     def from_mapping(cls, value: Mapping[str, Any]) -> "CompiledSceneArtifact":
-        """Validate a public schema-v2 artifact mapping.
-
-        Schema v1 is intentionally rejected here. Providers use the separate
-        compiler bridge for the current in-process C++ binding during migration.
-        """
+        """Validate a public schema-v3 artifact mapping."""
 
         if not isinstance(value, Mapping):
             raise TypeError("compiled scene artifact must be a mapping")
         schema_version = int(value.get("schema_version", 0))
-        if schema_version != 2:
+        if schema_version != 3:
             raise ValueError(
-                f"unsupported compiled scene artifact schema {schema_version}; expected schema 2"
+                f"unsupported compiled scene artifact schema {schema_version}; expected schema 3"
             )
         return cls(
             schema_version=schema_version,
@@ -405,47 +415,12 @@ class CompiledSceneArtifact:
 
     @classmethod
     def from_compiler_mapping(cls, value: Mapping[str, Any]) -> "CompiledSceneArtifact":
-        """Validate compiler output, bridging only legacy Gobot schema v1."""
+        """Validate current compiler output without legacy schema bridging."""
 
         if not isinstance(value, Mapping):
             raise TypeError("compiled scene artifact must be a mapping")
         schema_version = int(value.get("schema_version", 0))
-        if schema_version == 2:
-            return cls.from_mapping(value)
-        if schema_version != 1:
-            raise ValueError(
-                f"unsupported compiled scene artifact schema {schema_version}; expected schema 2"
-            )
-        backend_value = value.get("backend", "")
-        backend = str(getattr(backend_value, "name", backend_value)).rsplit(".", 1)[-1]
-        if backend != "MuJoCoCpu":
-            raise ValueError(
-                "legacy compiler artifact bridge only accepts MuJoCoCpu output, "
-                f"got {backend!r}"
-            )
-        content = str(value.get("content", ""))
-        robot_names = tuple(str(name) for name in value.get("robot_names", ()))
-        robot_prefixes = tuple(str(prefix) for prefix in value.get("robot_prefixes", ()))
-        if len(robot_names) != len(robot_prefixes):
-            raise ValueError("compiled scene artifact robot names and prefixes do not match")
-        _validate_unique_strings(robot_names, "robot name")
-        robots, controls = _legacy_robot_and_control_topology(
-            content,
-            robot_names,
-            robot_prefixes,
-        )
-        return cls(
-            schema_version=2,
-            producer="mujoco",
-            format=str(value.get("format", "")),
-            content=content,
-            content_digest=str(value.get("content_digest", value.get("digest", ""))),
-            producer_version=str(value.get("backend_version", "")),
-            dimensions=value.get("dimensions", {}),
-            robots=robots,
-            controls=controls,
-            terrain_geom_groups=tuple(value.get("terrain_geom_groups", ())),
-        )
+        return cls.from_mapping(value)
 
     def to_mapping(self) -> Mapping[str, Any]:
         return {
@@ -592,6 +567,89 @@ class RobotBatchState:
     joint_velocity: Any
     joint_control: Any
     link_pose: Any
+
+
+@dataclass(frozen=True)
+class SensorBatchSpec:
+    """Select one named batched sensor through a backend-neutral contract."""
+
+    name: str
+    kind: str
+    fields: tuple[str, ...] = ()
+
+    def __post_init__(self) -> None:
+        object.__setattr__(self, "name", str(self.name))
+        object.__setattr__(self, "kind", str(self.kind).lower())
+        object.__setattr__(self, "fields", tuple(str(value) for value in self.fields))
+        if not self.name:
+            raise ValueError("sensor name must not be empty")
+        if self.kind not in ("contact", "raycast", "generic"):
+            raise ValueError(f"unsupported sensor kind {self.kind!r}")
+        _validate_unique_strings(self.fields, "sensor field")
+
+
+@dataclass(frozen=True)
+class SensorBatchState:
+    """Stable device tensors for one named sensor."""
+
+    values: Mapping[str, Any]
+
+
+class _MappingSensorBatchAdapter:
+    def __init__(self, values: Mapping[str, Any]) -> None:
+        self._state = SensorBatchState(MappingProxyType(dict(values)))
+
+    def read_state(self, state: SensorBatchState | None) -> SensorBatchState:
+        del state
+        return self._state
+
+
+class SensorBatchView:
+    """Provider-independent view over stable batched sensor tensors."""
+
+    def __init__(self, provider: "BatchPhysicsProvider", spec: SensorBatchSpec, adapter: Any) -> None:
+        self._provider = provider
+        self.spec = spec
+        self._adapter = adapter
+        self._generation = getattr(provider, "generation", None)
+        self._artifact_digest = getattr(getattr(provider, "artifact", None), "digest", None)
+        self._state: SensorBatchState | None = None
+        self._storage_signature: tuple[tuple[str, int, tuple[int, ...], str], ...] | None = None
+
+    def _validate(self) -> None:
+        if getattr(self._provider, "generation", None) != self._generation:
+            raise RuntimeError("sensor batch view is stale because its provider was closed or rebuilt")
+        digest = getattr(getattr(self._provider, "artifact", None), "digest", None)
+        if digest != self._artifact_digest:
+            raise RuntimeError("sensor batch view cannot be used with a different compiled artifact")
+
+    def read_state(self) -> SensorBatchState:
+        self._validate()
+        state = self._adapter.read_state(self._state)
+        if not isinstance(state, SensorBatchState) or not isinstance(state.values, Mapping):
+            raise RuntimeError("sensor batch adapter returned an invalid state object")
+        if self.spec.fields and tuple(state.values) != self.spec.fields:
+            raise RuntimeError("sensor batch adapter returned fields outside its resolved spec")
+        signature: list[tuple[str, int, tuple[int, ...], str]] = []
+        for name, value in state.values.items():
+            shape = tuple(int(item) for item in getattr(value, "shape", ()))
+            if not shape or shape[0] != int(self._provider.num_envs):
+                raise RuntimeError(
+                    f"sensor batch field {name!r} has shape {shape}; "
+                    f"expected a leading environment dimension of {self._provider.num_envs}"
+                )
+            data_ptr = getattr(value, "data_ptr", None)
+            pointer = int(data_ptr()) if callable(data_ptr) else int(getattr(value, "ptr", id(value)))
+            array = getattr(value, "array", getattr(value, "_array", None))
+            dtype = str(getattr(value, "dtype", getattr(array, "dtype", ""))).lower()
+            signature.append((str(name), pointer, shape, dtype))
+        resolved_signature = tuple(signature)
+        if self._storage_signature is None:
+            self._storage_signature = resolved_signature
+        elif self._storage_signature != resolved_signature:
+            raise GraphInvalidatedError("sensor batch state storage changed after its first read")
+        self._state = state
+        return state
 
 
 class RobotBatchView:
@@ -788,6 +846,169 @@ class BatchPhysicsProvider(ABC):
     def _create_robot_view_adapter(self, spec: RobotBatchSpec) -> Any:
         raise NotImplementedError(f"{type(self).__name__} does not implement robot batch views")
 
+    def create_sensor_view(
+        self,
+        spec: SensorBatchSpec | None = None,
+        **selection: Any,
+    ) -> SensorBatchView:
+        """Resolve one named sensor and retain stable device tensor views."""
+
+        if spec is not None and selection:
+            raise TypeError("pass either SensorBatchSpec or keyword selection, not both")
+        if spec is None:
+            spec = SensorBatchSpec(
+                name=str(selection.pop("name")),
+                kind=str(selection.pop("kind")),
+                fields=tuple(str(value) for value in selection.pop("fields", ())),
+            )
+        if selection:
+            raise TypeError("unexpected sensor view arguments: " + ", ".join(sorted(selection)))
+        return SensorBatchView(self, spec, self._create_sensor_view_adapter(spec))
+
+    def _create_sensor_view_adapter(self, spec: SensorBatchSpec) -> Any:
+        collection_name = {
+            "contact": "contact_sensors",
+            "raycast": "raycast_sensors",
+            "generic": "sensors",
+        }[spec.kind]
+        collection = getattr(self, collection_name, None)
+        if collection is None or spec.name not in collection:
+            raise KeyError(
+                f"{type(self).__name__} has no {spec.kind} sensor {spec.name!r}"
+            )
+        source = collection[spec.name]
+        if not isinstance(source, Mapping):
+            raise RuntimeError(f"sensor {spec.name!r} does not expose a field mapping")
+        fields = spec.fields or tuple(
+            str(name) for name, value in source.items() if getattr(value, "shape", None) is not None
+        )
+        missing = tuple(name for name in fields if name not in source)
+        if missing:
+            raise KeyError(f"sensor {spec.name!r} has no field(s): {', '.join(missing)}")
+        values = {name: source[name] for name in fields}
+        return _MappingSensorBatchAdapter(values)
+
+    def _checkpoint_array_names(self) -> tuple[str, ...]:
+        return ()
+
+    def _capture_checkpoint_auxiliary(self) -> Mapping[str, Any]:
+        return MappingProxyType({})
+
+    def _restore_checkpoint_auxiliary(
+        self,
+        auxiliary: Mapping[str, Any],
+        environment_indices: tuple[int, ...],
+    ) -> None:
+        if auxiliary:
+            raise RuntimeError(
+                f"{type(self).__name__} checkpoint contains unsupported auxiliary state"
+            )
+
+    def _after_checkpoint_restore(self, environment_indices: tuple[int, ...]) -> None:
+        del environment_indices
+
+    def _checkpoint_fingerprint(self) -> str:
+        value = getattr(self, "runtime_fingerprint", None)
+        if callable(value):
+            value = value()
+        if value is None:
+            value = getattr(getattr(self, "artifact", None), "digest", "")
+        return str(value)
+
+    def _checkpoint_fixed_time_step(self) -> float:
+        value = getattr(self, "fixed_time_step", None)
+        if callable(value):
+            value = value()
+        if value is None:
+            value = getattr(self, "_fixed_time_step", 0.0)
+        return float(value)
+
+    def capture_checkpoint(self) -> ProviderCheckpoint:
+        if not self.capabilities.runtime_checkpoint:
+            raise NotImplementedError(
+                f"{self.capabilities.name} does not support runtime checkpoints"
+            )
+        payload: dict[str, Any] = {}
+        for name in self._checkpoint_array_names():
+            value = self.arrays.get(name)
+            clone = getattr(value, "clone", None)
+            if value is None or not callable(clone):
+                raise RuntimeError(
+                    f"{self.capabilities.name} checkpoint array {name!r} is unavailable"
+                )
+            payload[name] = clone()
+        return ProviderCheckpoint(
+            schema_version=1,
+            provider_name=self.capabilities.name,
+            runtime_fingerprint=self._checkpoint_fingerprint(),
+            num_envs=int(self.num_envs),
+            fixed_time_step=self._checkpoint_fixed_time_step(),
+            device=str(self.capabilities.device),
+            arrays=MappingProxyType(payload),
+            auxiliary=MappingProxyType(dict(self._capture_checkpoint_auxiliary())),
+        )
+
+    def restore_checkpoint(
+        self,
+        checkpoint: ProviderCheckpoint,
+        environment_indices: Sequence[int] | None = None,
+    ) -> Mapping[str, Any]:
+        if not self.capabilities.runtime_checkpoint:
+            raise NotImplementedError(
+                f"{self.capabilities.name} does not support runtime checkpoints"
+            )
+        if not isinstance(checkpoint, ProviderCheckpoint) or checkpoint.schema_version != 1:
+            raise TypeError("checkpoint must be a schema v1 ProviderCheckpoint")
+        expected = (
+            self.capabilities.name,
+            self._checkpoint_fingerprint(),
+            int(self.num_envs),
+            self._checkpoint_fixed_time_step(),
+            str(self.capabilities.device),
+        )
+        actual = (
+            checkpoint.provider_name,
+            checkpoint.runtime_fingerprint,
+            checkpoint.num_envs,
+            checkpoint.fixed_time_step,
+            checkpoint.device,
+        )
+        if actual != expected:
+            raise ValueError("checkpoint is incompatible with this provider session")
+        if environment_indices is None:
+            resolved_indices = tuple(range(int(self.num_envs)))
+        else:
+            resolved_indices = tuple(operator.index(value) for value in environment_indices)
+            if len(set(resolved_indices)) != len(resolved_indices):
+                raise ValueError("checkpoint environment indices must be unique")
+            if any(value < 0 or value >= int(self.num_envs) for value in resolved_indices):
+                raise IndexError("checkpoint environment index is out of range")
+        if not resolved_indices:
+            return self.arrays
+        full_restore = len(resolved_indices) == int(self.num_envs)
+        torch_module = getattr(self, "_torch", None)
+        for name in self._checkpoint_array_names():
+            target = self.arrays[name]
+            source = checkpoint.arrays.get(name)
+            if source is None or tuple(source.shape) != tuple(target.shape):
+                raise ValueError(f"checkpoint array {name!r} has an incompatible shape")
+            if full_restore or getattr(target, "ndim", 0) == 0:
+                target.copy_(source)
+                continue
+            if int(target.shape[0]) != int(self.num_envs) or torch_module is None:
+                raise ValueError(
+                    f"checkpoint array {name!r} does not support environment selection"
+                )
+            indices = torch_module.as_tensor(
+                resolved_indices,
+                dtype=torch_module.long,
+                device=target.device,
+            )
+            target.index_copy_(0, indices, source.index_select(0, indices))
+        self._restore_checkpoint_auxiliary(checkpoint.auxiliary, resolved_indices)
+        self._after_checkpoint_restore(resolved_indices)
+        return self.arrays
+
     @property
     @abstractmethod
     def capabilities(self) -> BatchProviderCapabilities: ...
@@ -818,9 +1039,13 @@ __all__ = [
     "CompiledSceneArtifact",
     "GraphInvalidatedError",
     "ProviderUnavailableError",
+    "ProviderCheckpoint",
     "RobotBatchSpec",
     "RobotBatchState",
     "RobotBatchView",
+    "SensorBatchSpec",
+    "SensorBatchState",
+    "SensorBatchView",
     "SimulationCapacityError",
     "validate_compiled_artifact",
 ]

@@ -11,7 +11,7 @@ from types import MappingProxyType
 from typing import Any, Mapping, Sequence
 
 
-_SCHEMA_VERSION = 2
+_SCHEMA_VERSION = 3
 _PRODUCER = "gobot"
 _FORMAT = "gobot-ipc"
 _MESH_ENCODING = "gobot.tetrahedral-mesh.le.v1"
@@ -408,7 +408,7 @@ def _decode_surface_mesh_blob(data: bytes) -> Mapping[str, Any]:
 
 @dataclass(frozen=True)
 class CompiledIpcSceneArtifact:
-    """Schema-v2 IPC scene manifest and its content-addressed binary blobs."""
+    """Schema-v3 IPC scene manifest and its content-addressed binary blobs."""
 
     schema_version: int
     producer: str
@@ -423,10 +423,10 @@ class CompiledIpcSceneArtifact:
             self.schema_version, "compiled IPC artifact schema version", minimum=1
         )
         if schema_version != _SCHEMA_VERSION:
-            if schema_version == 1:
+            if schema_version < _SCHEMA_VERSION:
                 raise ValueError(
-                    "unsupported compiled IPC artifact schema 1; schema 2 requires "
-                    "explicit PhysicsCoupling entries"
+                    f"unsupported compiled IPC artifact schema {schema_version}; schema 3 "
+                    "requires backend-neutral contact materials and explicit PhysicsCoupling entries"
                 )
             raise ValueError(
                 f"unsupported compiled IPC artifact schema {schema_version}; "
@@ -862,38 +862,43 @@ class CompiledIpcSceneArtifact:
                         collision.get("disabled"),
                         "robot collision shape disabled flag",
                     )
-                    friction = _require_vector(
-                        collision.get("friction"),
-                        3,
-                        "robot collision shape friction",
-                    )
-                    if any(value < 0.0 for value in friction):
-                        raise ValueError(
-                            "robot collision shape friction must be non-negative"
-                        )
-                    for field in (
-                        "contact_type",
-                        "contact_affinity",
-                        "contact_dimension",
-                    ):
-                        minimum = 1 if field == "contact_dimension" else 0
+                    for field in ("collision_layer", "collision_mask"):
                         _require_int(
                             collision.get(field),
                             f"robot collision shape {field.replace('_', ' ')}",
-                            minimum=minimum,
+                            minimum=0,
+                            maximum=(1 << 32) - 1,
                         )
-                    _require_int(
-                        collision.get("priority"),
-                        "robot collision shape priority",
+                    contact_offset = _require_number(
+                        collision.get("contact_offset"),
+                        "robot collision shape contact offset",
                     )
-                    for field in ("margin", "gap"):
-                        if _require_number(
-                            collision.get(field),
-                            f"robot collision shape {field}",
-                        ) < 0.0:
-                            raise ValueError(
-                                f"robot collision shape {field} must be non-negative"
-                            )
+                    rest_offset = _require_number(
+                        collision.get("rest_offset"),
+                        "robot collision shape rest offset",
+                    )
+                    if contact_offset < 0.0 or rest_offset > contact_offset:
+                        raise ValueError(
+                            "robot collision shape offsets require contact_offset >= 0 "
+                            "and rest_offset <= contact_offset"
+                        )
+                    material = _require_mapping(
+                        collision.get("material"), "robot collision shape material"
+                    )
+                    for field in (
+                        "sliding_friction",
+                        "torsional_friction",
+                        "rolling_friction",
+                        "contact_compliance",
+                        "contact_damping",
+                    ):
+                        if _require_number(material.get(field), f"physics material {field}") < 0.0:
+                            raise ValueError(f"physics material {field} must be non-negative")
+                    restitution = _require_number(
+                        material.get("restitution"), "physics material restitution"
+                    )
+                    if not 0.0 <= restitution <= 1.0:
+                        raise ValueError("physics material restitution must be in [0, 1]")
 
                     shape_type = collision.get("shape_type")
                     if shape_type == "box":

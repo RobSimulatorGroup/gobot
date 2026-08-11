@@ -86,7 +86,7 @@ void* Create(const IpcSolverArtifactView* artifact,
              char* error,
              std::size_t error_size) {
     if (artifact == nullptr || config == nullptr || artifact->manifest == nullptr ||
-        artifact->schema_version != 2 || artifact->format == nullptr ||
+        artifact->schema_version != 3 || artifact->format == nullptr ||
         std::string_view(artifact->format) != "gobot-ipc") {
         WriteError(error, error_size, "fake IPC module rejected the artifact");
         return nullptr;

@@ -18,13 +18,37 @@
             "parent": -1,
             "properties": {
                 "position": {
-                    "matrix_data": {"cols": 1, "rows": 3, "storage": [0.0, 0.0, 0.0]}
+                    "matrix_data": {
+                        "cols": 1,
+                        "rows": 3,
+                        "storage": [
+                            0,
+                            0,
+                            0
+                        ]
+                    }
                 },
                 "rotation_degrees": {
-                    "matrix_data": {"cols": 1, "rows": 3, "storage": [0.0, 0.0, 0.0]}
+                    "matrix_data": {
+                        "cols": 1,
+                        "rows": 3,
+                        "storage": [
+                            0,
+                            0,
+                            0
+                        ]
+                    }
                 },
                 "scale": {
-                    "matrix_data": {"cols": 1, "rows": 3, "storage": [1.0, 1.0, 1.0]}
+                    "matrix_data": {
+                        "cols": 1,
+                        "rows": 3,
+                        "storage": [
+                            1,
+                            1,
+                            1
+                        ]
+                    }
                 },
                 "script": "ExtResource(1_script)",
                 "visible": true
@@ -38,13 +62,37 @@
             "properties": {
                 "mode": "Motion",
                 "position": {
-                    "matrix_data": {"cols": 1, "rows": 3, "storage": [0.0, 0.0, 0.76]}
+                    "matrix_data": {
+                        "cols": 1,
+                        "rows": 3,
+                        "storage": [
+                            0,
+                            0,
+                            0.76
+                        ]
+                    }
                 },
                 "rotation_degrees": {
-                    "matrix_data": {"cols": 1, "rows": 3, "storage": [0.0, 0.0, 90.0]}
+                    "matrix_data": {
+                        "cols": 1,
+                        "rows": 3,
+                        "storage": [
+                            0,
+                            0,
+                            90
+                        ]
+                    }
                 },
                 "scale": {
-                    "matrix_data": {"cols": 1, "rows": 3, "storage": [1.0, 1.0, 1.0]}
+                    "matrix_data": {
+                        "cols": 1,
+                        "rows": 3,
+                        "storage": [
+                            1,
+                            1,
+                            1
+                        ]
+                    }
                 },
                 "script": null,
                 "visible": true
@@ -58,17 +106,41 @@
                 "material": null,
                 "mesh": "SubResource(BoxMesh_ground)",
                 "position": {
-                    "matrix_data": {"cols": 1, "rows": 3, "storage": [0.0, 0.0, -0.05]}
+                    "matrix_data": {
+                        "cols": 1,
+                        "rows": 3,
+                        "storage": [
+                            0,
+                            0,
+                            -0.05
+                        ]
+                    }
                 },
                 "rotation_degrees": {
-                    "matrix_data": {"cols": 1, "rows": 3, "storage": [0.0, 0.0, 0.0]}
+                    "matrix_data": {
+                        "cols": 1,
+                        "rows": 3,
+                        "storage": [
+                            0,
+                            0,
+                            0
+                        ]
+                    }
                 },
                 "scale": {
-                    "matrix_data": {"cols": 1, "rows": 3, "storage": [1.0, 1.0, 1.0]}
+                    "matrix_data": {
+                        "cols": 1,
+                        "rows": 3,
+                        "storage": [
+                            1,
+                            1,
+                            1
+                        ]
+                    }
                 },
                 "script": null,
                 "surface_color": {
-                    "alpha": 1.0,
+                    "alpha": 1,
                     "blue": 0.24,
                     "green": 0.22,
                     "red": 0.2
@@ -81,31 +153,48 @@
             "name": "ground_collision",
             "parent": 0,
             "properties": {
-                "conaffinity": 1,
-                "condim": 3,
-                "contype": 1,
                 "disabled": false,
-                "friction": {
-                    "matrix_data": {"cols": 1, "rows": 3, "storage": [0.75, 0.005, 0.0001]}
-                },
-                "gap": 0.0,
-                "margin": 0.0,
                 "position": {
-                    "matrix_data": {"cols": 1, "rows": 3, "storage": [0.0, 0.0, -0.05]}
+                    "matrix_data": {
+                        "cols": 1,
+                        "rows": 3,
+                        "storage": [
+                            0,
+                            0,
+                            -0.05
+                        ]
+                    }
                 },
                 "rotation_degrees": {
-                    "matrix_data": {"cols": 1, "rows": 3, "storage": [0.0, 0.0, 0.0]}
+                    "matrix_data": {
+                        "cols": 1,
+                        "rows": 3,
+                        "storage": [
+                            0,
+                            0,
+                            0
+                        ]
+                    }
                 },
                 "scale": {
-                    "matrix_data": {"cols": 1, "rows": 3, "storage": [1.0, 1.0, 1.0]}
+                    "matrix_data": {
+                        "cols": 1,
+                        "rows": 3,
+                        "storage": [
+                            1,
+                            1,
+                            1
+                        ]
+                    }
                 },
                 "script": null,
                 "shape": "SubResource(BoxShape3D_ground)",
-                "solimp": [0.9, 0.95, 0.001, 0.5, 2.0],
-                "solref": {
-                    "matrix_data": {"cols": 1, "rows": 2, "storage": [0.02, 1.0]}
-                },
-                "visible": false
+                "visible": false,
+                "physics_material": "SubResource(PhysicsMaterial3D_v3_3)",
+                "collision_layer": 1,
+                "collision_mask": 1,
+                "contact_offset": 0,
+                "rest_offset": 0
             },
             "type": "CollisionShape3D"
         }
@@ -117,7 +206,15 @@
             "material": null,
             "resource_name": "",
             "size": {
-                "matrix_data": {"cols": 1, "rows": 3, "storage": [12.0, 12.0, 0.1]}
+                "matrix_data": {
+                    "cols": 1,
+                    "rows": 3,
+                    "storage": [
+                        12,
+                        12,
+                        0.1
+                    ]
+                }
             }
         },
         {
@@ -125,10 +222,29 @@
             "__TYPE__": "BoxShape3D",
             "resource_name": "",
             "size": {
-                "matrix_data": {"cols": 1, "rows": 3, "storage": [12.0, 12.0, 0.1]}
+                "matrix_data": {
+                    "cols": 1,
+                    "rows": 3,
+                    "storage": [
+                        12,
+                        12,
+                        0.1
+                    ]
+                }
             }
+        },
+        {
+            "__TYPE__": "PhysicsMaterial3D",
+            "__ID__": "PhysicsMaterial3D_v3_3",
+            "resource_name": "",
+            "sliding_friction": 0.75,
+            "torsional_friction": 0.005,
+            "rolling_friction": 0.0001,
+            "restitution": 0,
+            "contact_compliance": 0.0004,
+            "contact_damping": 1
         }
     ],
     "__TYPE__": "PackedScene",
-    "__VERSION__": 2
+    "__VERSION__": 3
 }

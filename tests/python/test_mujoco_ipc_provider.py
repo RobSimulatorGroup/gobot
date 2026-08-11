@@ -77,13 +77,24 @@ class _FakeRigidSolver:
             }
         )
         self.step_count = 0
+        self.step_nsteps = []
         self.reset_count = 0
         self.last_actions = None
         self.fail_next_step = False
         self.closed = False
         self.runtime_fingerprint = "fake-rigid"
         self.capabilities = gobot.sim.ProviderCapabilities(
-            "fake-mujoco", "cpu", False, True, True, True
+            "fake-mujoco",
+            "cpu",
+            False,
+            True,
+            True,
+            True,
+            runtime_checkpoint=True,
+            exact_contact_wrench=True,
+            sensor_batch=True,
+            solver_substeps=True,
+            reset_scope="masked",
         )
         self.capacities = {"bodies": count}
 
@@ -104,6 +115,7 @@ class _FakeRigidSolver:
             self.fail_next_step = False
             raise RuntimeError("injected rigid step failure")
         self.step_count += nsteps
+        self.step_nsteps.append(nsteps)
         if actions is not None:
             self.last_actions = actions.clone()
         return self._arrays
@@ -159,13 +171,23 @@ class _FakeIpcSolver:
             }
         )
         self.step_count = 0
+        self.step_nsteps = []
         self.reset_count = 0
         self.closed = False
         self.target_set_calls = 0
         self.fail_next_reset = False
         self.runtime_fingerprint = "fake-ipc"
         self.capabilities = gobot.sim.ProviderCapabilities(
-            "fake-libuipc", "cpu", False, False, False, True
+            "fake-libuipc",
+            "cpu",
+            False,
+            False,
+            False,
+            True,
+            exact_contact_wrench=True,
+            solver_substeps=True,
+            graph_capture_reason="fake staged exchange",
+            reset_scope="full_batch_only",
         )
         self.capacities = {"affine_bodies_per_env": count}
 
@@ -182,6 +204,7 @@ class _FakeIpcSolver:
 
     def step(self, *, nsteps=1):
         self.step_count += nsteps
+        self.step_nsteps.append(nsteps)
         base = torch.arange(1, 7, dtype=torch.float64)
         self._arrays["affine_contact_wrenches"].copy_(
             base * float(self.step_count)
@@ -219,6 +242,7 @@ class _FakePoseErrorIpcSolver(_FakeIpcSolver):
 
     def step(self, *, nsteps=1):
         self.step_count += nsteps
+        self.step_nsteps.append(nsteps)
         self._arrays["affine_transforms"].copy_(
             self._arrays["affine_targets"]
         )
@@ -260,7 +284,7 @@ class _FakeNativeBatchSession:
 
 def test_composite_artifact_has_explicit_mapping_and_ownership() -> None:
     artifact = _artifact()
-    assert artifact.schema_version == 2
+    assert artifact.schema_version == 3
     assert artifact.coupled_bodies
     assert tuple(mapping.mode for mapping in artifact.coupled_bodies) == (
         "OneWay",
@@ -539,9 +563,48 @@ def test_mujoco_ipc_pose_error_feedback_uses_proxy_displacement() -> None:
     provider.close()
 
 
-def test_mujoco_ipc_config_has_no_fake_fixed_value_options() -> None:
-    _raises(TypeError, lambda: MuJoCoIpcConfig(ipc_substeps=2))
+def test_mujoco_ipc_config_validates_solver_substeps() -> None:
+    config = MuJoCoIpcConfig(rigid_substeps=2, ipc_substeps=3)
+    assert config.rigid_substeps == 2
+    assert config.ipc_substeps == 3
+    _raises(ValueError, lambda: MuJoCoIpcConfig(rigid_substeps=0))
+    _raises(ValueError, lambda: MuJoCoIpcConfig(ipc_substeps=True))
+    _raises(TypeError, lambda: MuJoCoIpcConfig(ipc_substeps=1.5))
     _raises(TypeError, lambda: MuJoCoIpcConfig(require_full_reset=False))
+
+
+def test_composite_supports_explicit_solver_subcycling() -> None:
+    artifact = _artifact()
+    rigid = _FakeRigidSolver(artifact, 4)
+    ipc = _FakeIpcSolver(artifact, 4)
+    ipc.fixed_time_step = 0.02
+    provider = MuJoCoIpcProvider(
+        artifact,
+        config=MuJoCoIpcConfig(
+            num_envs=4,
+            device="cpu",
+            environments_per_shard=2,
+            rigid_substeps=2,
+            ipc_substeps=1,
+        ),
+        rigid_solver=rigid,
+        ipc_solver=ipc,
+    )
+
+    provider.step()
+
+    assert provider.fixed_time_step == 0.02
+    assert rigid.step_nsteps == [2]
+    assert ipc.step_nsteps == [1]
+    assert provider.capabilities.exact_contact_wrench is True
+    assert provider.capabilities.sensor_batch is True
+    assert provider.capabilities.solver_substeps is True
+    assert provider.capabilities.runtime_checkpoint is False
+    assert provider.capabilities.reset_scope == "full_batch_only"
+    assert provider.diagnostics["integration_scheme"] == "sequential_split"
+    assert provider.diagnostics["rigid_substeps"] == 2
+    assert provider.diagnostics["ipc_substeps"] == 1
+    provider.close()
 
 
 def test_composite_rejects_time_step_and_layout_mismatch() -> None:
@@ -558,7 +621,7 @@ def test_composite_rejects_time_step_and_layout_mismatch() -> None:
             artifact, config=config, rigid_solver=rigid, ipc_solver=ipc
         ),
     )
-    assert "same fixed time step" in str(error)
+    assert "same macro fixed time step" in str(error)
     assert rigid.closed and ipc.closed
 
     rigid = _FakeRigidSolver(artifact, 4)
@@ -585,7 +648,8 @@ def main() -> int:
     test_coupler_five_phase_protocol_binding_scales_and_storage()
     test_step_failure_releases_owned_wrench_and_full_reset_recovers()
     test_mujoco_ipc_pose_error_feedback_uses_proxy_displacement()
-    test_mujoco_ipc_config_has_no_fake_fixed_value_options()
+    test_mujoco_ipc_config_validates_solver_substeps()
+    test_composite_supports_explicit_solver_subcycling()
     test_composite_rejects_time_step_and_layout_mismatch()
     return 0
 

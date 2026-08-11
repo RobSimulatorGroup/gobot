@@ -113,18 +113,18 @@ class CompiledMuJoCoIpcArtifact:
     mujoco: CompiledSceneArtifact
     ipc: CompiledIpcSceneArtifact
     coupled_bodies: tuple[MuJoCoIpcBodyMapping, ...]
-    schema_version: int = 2
+    schema_version: int = 3
 
     def __post_init__(self) -> None:
-        if int(self.schema_version) != 2:
+        if int(self.schema_version) != 3:
             if int(self.schema_version) == 1:
                 raise ValueError(
-                    "unsupported MuJoCo+IPC artifact schema 1; schema 2 requires "
-                    "explicit PhysicsCoupling entries"
+                    "unsupported MuJoCo+IPC artifact schema 1; schema 3 requires "
+                    "backend-neutral materials and explicit PhysicsCoupling entries"
                 )
             raise ValueError(
                 f"unsupported MuJoCo+IPC artifact schema {self.schema_version}; "
-                "expected schema 2"
+                "expected schema 3"
             )
         mujoco = validate_compiled_artifact(self.mujoco)
         ipc = validate_ipc_artifact(self.ipc)
@@ -157,7 +157,7 @@ class CompiledMuJoCoIpcArtifact:
             raise ValueError(
                 "MuJoCo+IPC body mapping does not match the two compiled artifacts"
             )
-        object.__setattr__(self, "schema_version", 2)
+        object.__setattr__(self, "schema_version", 3)
         object.__setattr__(self, "mujoco", mujoco)
         object.__setattr__(self, "ipc", ipc)
         object.__setattr__(self, "coupled_bodies", mappings)
@@ -235,14 +235,14 @@ class CompiledMuJoCoIpcArtifact:
         if not isinstance(value, Mapping):
             raise TypeError("MuJoCo+IPC artifact must be a mapping")
         supplied_schema = int(value.get("schema_version", 0))
-        if supplied_schema != 2:
-            if supplied_schema == 1:
+        if supplied_schema != 3:
+            if supplied_schema < 3:
                 raise ValueError(
-                    "unsupported MuJoCo+IPC artifact schema 1; missing explicit "
-                    "PhysicsCoupling mapping"
+                    f"unsupported MuJoCo+IPC artifact schema {supplied_schema}; "
+                    "schema 3 requires backend-neutral materials and explicit PhysicsCoupling mapping"
                 )
             raise ValueError(
-                "unsupported MuJoCo+IPC artifact schema; expected schema 2"
+                "unsupported MuJoCo+IPC artifact schema; expected schema 3"
             )
         artifact = cls(
             mujoco=validate_compiled_artifact(value.get("mujoco", {})),
@@ -314,10 +314,17 @@ class MuJoCoIpcConfig:
     environments_per_shard: int = 64
     force_scale: float = 1.0
     torque_scale: float = 1.0
+    rigid_substeps: int = 1
+    ipc_substeps: int = 1
     capture_mujoco_graphs: bool = True
 
     def __post_init__(self) -> None:
-        for name in ("num_envs", "environments_per_shard"):
+        for name in (
+            "num_envs",
+            "environments_per_shard",
+            "rigid_substeps",
+            "ipc_substeps",
+        ):
             try:
                 value = operator.index(getattr(self, name))
             except TypeError as error:
@@ -358,6 +365,8 @@ class MuJoCoIpcCoupler:
         *,
         force_scale: float = 1.0,
         torque_scale: float = 1.0,
+        rigid_substeps: int = 1,
+        ipc_substeps: int = 1,
     ) -> None:
         self.rigid_solver = rigid_solver
         self.ipc_solver = ipc_solver
@@ -373,6 +382,20 @@ class MuJoCoIpcCoupler:
                 force_scale = numeric_value
             else:
                 torque_scale = numeric_value
+        for name, value in (
+            ("rigid_substeps", rigid_substeps),
+            ("ipc_substeps", ipc_substeps),
+        ):
+            try:
+                count = operator.index(value)
+            except TypeError as error:
+                raise TypeError(f"{name} must be an integer") from error
+            if isinstance(value, bool) or count <= 0:
+                raise ValueError(f"{name} must be positive")
+            if name == "rigid_substeps":
+                rigid_substeps = count
+            else:
+                ipc_substeps = count
         self._torch = getattr(rigid_solver, "_torch", None)
         if self._torch is None:
             raise TypeError("rigid solver must expose its Torch runtime")
@@ -448,6 +471,8 @@ class MuJoCoIpcCoupler:
         self._applied_wrenches = self._torch.zeros_like(self._selected_wrenches)
         self._force_scale = float(force_scale)
         self._torque_scale = float(torque_scale)
+        self._rigid_substeps = int(rigid_substeps)
+        self._ipc_substeps = int(ipc_substeps)
         self._feedback_mask = self._torch.as_tensor(
             [mapping.mode == "TwoWay" for mapping in self.mappings],
             dtype=self._xfrc.dtype,
@@ -709,10 +734,10 @@ class MuJoCoIpcCoupler:
         self._phase = "StepIpc"
 
     def step_ipc(self) -> None:
-        """StepIpc: advance libuipc exactly one fixed tick."""
+        """StepIpc: advance libuipc through one configured macro tick."""
 
         self._require_phase("StepIpc")
-        self.ipc_solver.step(nsteps=1)
+        self.ipc_solver.step(nsteps=self._ipc_substeps)
         self._phase = "ApplyFeedback"
 
     def apply_feedback(self) -> None:
@@ -736,10 +761,10 @@ class MuJoCoIpcCoupler:
         self._phase = "StepRigid"
 
     def step_rigid(self, actions: Any | None = None) -> None:
-        """StepRigid: advance MuJoCo exactly one fixed tick."""
+        """StepRigid: advance MuJoCo through one configured macro tick."""
 
         self._require_phase("StepRigid")
-        self.rigid_solver.step(actions, nsteps=1)
+        self.rigid_solver.step(actions, nsteps=self._rigid_substeps)
         self._phase = "Finalize"
 
     def finalize(self) -> None:
@@ -869,7 +894,11 @@ class MuJoCoIpcProvider(BatchPhysicsProvider):
 
                 if libuipc_config is None:
                     solver_config = LibuipcConfig(
-                        fixed_time_step=self._rigid_fixed_time_step(),
+                        fixed_time_step=(
+                            self._rigid_fixed_time_step()
+                            * self.config.rigid_substeps
+                            / self.config.ipc_substeps
+                        ),
                         device_index=self._device_index(),
                     )
                     libuipc_config = LibuipcBatchConfig(
@@ -894,6 +923,8 @@ class MuJoCoIpcProvider(BatchPhysicsProvider):
                 self.artifact.coupled_bodies,
                 force_scale=self.config.force_scale,
                 torque_scale=self.config.torque_scale,
+                rigid_substeps=self.config.rigid_substeps,
+                ipc_substeps=self.config.ipc_substeps,
             )
             self.coupler.sync_rigid_pose()
             self._arrays = self._make_array_views()
@@ -973,10 +1004,15 @@ class MuJoCoIpcProvider(BatchPhysicsProvider):
                 )
         rigid_dt = self._rigid_fixed_time_step()
         ipc_dt = float(getattr(self.ipc_solver, "fixed_time_step", float("nan")))
-        if not math.isclose(rigid_dt, ipc_dt, rel_tol=0.0, abs_tol=1.0e-12):
+        rigid_macro_dt = rigid_dt * self.config.rigid_substeps
+        ipc_macro_dt = ipc_dt * self.config.ipc_substeps
+        if not math.isclose(
+            rigid_macro_dt, ipc_macro_dt, rel_tol=0.0, abs_tol=1.0e-12
+        ):
             raise ValueError(
-                "MuJoCo and libuipc must use the same fixed time step: "
-                f"{rigid_dt} != {ipc_dt}"
+                "MuJoCo and libuipc must cover the same macro fixed time step: "
+                f"{rigid_dt} * {self.config.rigid_substeps} != "
+                f"{ipc_dt} * {self.config.ipc_substeps}"
             )
         ipc_shard_count = int(getattr(self.ipc_solver, "shard_count", -1))
         if ipc_shard_count != self.config.shard_count:
@@ -1026,6 +1062,19 @@ class MuJoCoIpcProvider(BatchPhysicsProvider):
             graph_capture=False,
             masked_reset=False,
             fixed_capacity=True,
+            runtime_checkpoint=False,
+            exact_contact_wrench=(
+                self.coupler.feedback_source == "native_contact_wrench"
+                and bool(ipc_capabilities.exact_contact_wrench)
+            ),
+            sensor_batch=bool(rigid_capabilities.sensor_batch),
+            solver_substeps=True,
+            graph_capture_reason=(
+                "the composite step spans MuJoCo Warp and libuipc; native "
+                "affine-target and exact-contact-wrench exchange uses "
+                "per-shard device-host-device staging"
+            ),
+            reset_scope="full_batch_only",
         )
 
     @property
@@ -1038,7 +1087,7 @@ class MuJoCoIpcProvider(BatchPhysicsProvider):
 
     @property
     def fixed_time_step(self) -> float:
-        return self._rigid_fixed_time_step()
+        return self._rigid_fixed_time_step() * self.config.rigid_substeps
 
     @property
     def runtime_fingerprint(self) -> str:
@@ -1097,7 +1146,7 @@ class MuJoCoIpcProvider(BatchPhysicsProvider):
                 "libuipc": dict(getattr(self.ipc_solver, "diagnostics", {})),
                 "graph_captured": False,
                 "graph_capture_reason": (
-                    "the composite step spans MuJoCo Warp and native libuipc shards"
+                    self.capabilities.graph_capture_reason
                 ),
                 "feedback_source": self.coupler.feedback_source,
                 "faulted": self._faulted,
@@ -1106,6 +1155,13 @@ class MuJoCoIpcProvider(BatchPhysicsProvider):
                 "stable_storage": True,
                 "reset_scope": "full_batch_only",
                 "affine_target_staging": "per_shard_device_host_device",
+                "contact_wrench_staging": "per_shard_device_host_device",
+                "integration_scheme": "sequential_split",
+                "macro_fixed_time_step": self.fixed_time_step,
+                "rigid_fixed_time_step": self._rigid_fixed_time_step(),
+                "ipc_fixed_time_step": float(self.ipc_solver.fixed_time_step),
+                "rigid_substeps": self.config.rigid_substeps,
+                "ipc_substeps": self.config.ipc_substeps,
             }
         )
 

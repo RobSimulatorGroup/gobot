@@ -138,7 +138,11 @@ def _box_collision(
     collision = gobot.create_box_collision(name, size, position)
     collision.rotation_degrees = rotation_degrees
     if sliding_friction is not None:
-        collision.friction = (sliding_friction, 0.005, 0.0001)
+        collision.physics_material = {
+            "sliding_friction": sliding_friction,
+            "torsional_friction": 0.005,
+            "rolling_friction": 0.0001,
+        }
     parent.add_child(collision)
     return collision
 
@@ -566,11 +570,15 @@ def _attach_fr3_collisions(
     for collision, collision_spec in zip(collisions, collision_specs, strict=True):
         collision.reparent(link)
         collision.visible = False
-        collision.friction = (sliding_friction, 0.005, 0.0001)
+        collision.physics_material = {
+            "sliding_friction": sliding_friction,
+            "torsional_friction": 0.005,
+            "rolling_friction": 0.0001,
+        }
         if link_name == "fr3_link0":
             # The fixed base is mounted through the workbench surface.
-            collision.set("contype", 2)
-            collision.set("conaffinity", 2)
+            collision.collision_layer = 2
+            collision.collision_mask = 2
         _set_matrix(
             collision,
             parent_transform @ collision_spec["transform"],

@@ -20,6 +20,7 @@
 
 #include "gobot/core/sha256.hpp"
 #include "gobot/core/types.hpp"
+#include "gobot/physics/physics_types.hpp"
 #include "gobot/scene/collision_shape_3d.hpp"
 #include "gobot/scene/deformable_body_3d.hpp"
 #include "gobot/scene/joint_3d.hpp"
@@ -529,7 +530,7 @@ public:
                 {"producer_version", ProducerVersion()},
                 {"robots", robots_},
                 {"scene_name", scene_root.GetName()},
-                {"schema_version", 2},
+                {"schema_version", 3},
                 {"tactile_sensors", tactile_sensors_}};
     }
 
@@ -709,30 +710,50 @@ private:
             return SetCompileError(
                     error, "robot collision shape '" + path + "' has no shape resource");
         }
-        const Vector3 friction = collision.GetFriction();
-        if (!friction.allFinite() || (friction.array() < 0.0).any() ||
-            collision.GetContactType() < 0 || collision.GetContactAffinity() < 0 ||
-            collision.GetContactDimension() <= 0 ||
-            !std::isfinite(collision.GetMargin()) || collision.GetMargin() < 0.0 ||
-            !std::isfinite(collision.GetGap()) || collision.GetGap() < 0.0) {
+        PhysicsMaterialSnapshot material;
+        if (const Ref<PhysicsMaterial3D>& authored = collision.GetPhysicsMaterial(); authored.IsValid()) {
+            material.sliding_friction = authored->GetSlidingFriction();
+            material.torsional_friction = authored->GetTorsionalFriction();
+            material.rolling_friction = authored->GetRollingFriction();
+            material.restitution = authored->GetRestitution();
+            material.contact_compliance = authored->GetContactCompliance();
+            material.contact_damping = authored->GetContactDamping();
+        }
+        const std::array<RealType, 6> material_values{
+                material.sliding_friction,
+                material.torsional_friction,
+                material.rolling_friction,
+                material.restitution,
+                material.contact_compliance,
+                material.contact_damping};
+        if (!std::ranges::all_of(material_values, [](RealType value) {
+                return std::isfinite(value) && value >= 0.0;
+            }) || material.restitution > 1.0 ||
+            !std::isfinite(collision.GetContactOffset()) || collision.GetContactOffset() < 0.0 ||
+            !std::isfinite(collision.GetRestOffset()) ||
+            collision.GetRestOffset() > collision.GetContactOffset()) {
             return SetCompileError(
                     error, "robot collision shape '" + path + "' has invalid contact parameters");
         }
 
         Json compiled = {
-                {"contact_affinity", collision.GetContactAffinity()},
-                {"contact_dimension", collision.GetContactDimension()},
-                {"contact_type", collision.GetContactType()},
+                {"collision_layer", collision.GetCollisionLayer()},
+                {"collision_mask", collision.GetCollisionMask()},
+                {"contact_offset", collision.GetContactOffset()},
                 {"disabled", collision.IsDisabled()},
-                {"friction", Vector3Json(friction)},
-                {"gap", collision.GetGap()},
                 {"link_transform", TransformJson(
                         link.GetGlobalTransform().inverse() *
                         collision.GetGlobalTransform())},
-                {"margin", collision.GetMargin()},
+                {"material", {
+                        {"contact_compliance", material.contact_compliance},
+                        {"contact_damping", material.contact_damping},
+                        {"restitution", material.restitution},
+                        {"rolling_friction", material.rolling_friction},
+                        {"sliding_friction", material.sliding_friction},
+                        {"torsional_friction", material.torsional_friction}}},
                 {"name", collision.GetName()},
                 {"path", path},
-                {"priority", collision.GetPriority()},
+                {"rest_offset", collision.GetRestOffset()},
                 {"transform", GlobalTransformJson(collision)}};
 
         if (const auto box = dynamic_pointer_cast<BoxShape3D>(shape)) {
@@ -1086,7 +1107,7 @@ bool IpcSceneCompiler::Compile(
     }
     const Json manifest_json = compiler.BuildManifest(*scene_root);
     IpcSceneArtifact result;
-    result.schema_version = 2;
+    result.schema_version = 3;
     result.producer = "gobot";
     result.producer_version = ProducerVersion();
     result.format = "gobot-ipc";

@@ -121,6 +121,15 @@ struct DeformableContactRange {
     IndexT global_vertex_offset{-1};
 };
 
+struct AffineContactRange {
+    std::size_t output_offset{0};
+    std::size_t vertex_count{0};
+    S<SimplicialComplexSlot> geometry;
+    IndexT global_vertex_offset{-1};
+    std::vector<Vector3> local_vertices;
+    Vector3 local_center_of_mass{Vector3::Zero()};
+};
+
 struct ContactGradientBuffer {
     std::string primitive_type;
     std::unique_ptr<Geometry> geometry;
@@ -449,11 +458,11 @@ public:
         ConfigureLibuipc(config);
         const Json manifest = Json::parse(
                 std::string_view(artifact.manifest, artifact.manifest_size));
-        if (artifact.schema_version != 2 ||
-            manifest.value("schema_version", 0) != 2 ||
+        if (artifact.schema_version != 3 ||
+            manifest.value("schema_version", 0) != 3 ||
             manifest.value("format", std::string{}) != "gobot-ipc") {
             throw std::runtime_error(
-                    "libuipc module requires a Gobot IPC schema v2 artifact with explicit PhysicsCoupling entries");
+                    "libuipc module requires a Gobot IPC schema v3 artifact with explicit PhysicsCoupling entries");
         }
         for (std::size_t index = 0; index < artifact.blob_count; ++index) {
             const IpcSolverArtifactBlobView& blob = artifact.blobs[index];
@@ -528,6 +537,7 @@ public:
             throw std::runtime_error("libuipc rejected the compiled Gobot scene");
         }
         InitializeAccessors();
+        InitializeContactForceExport(config.fixed_time_step);
         if (external_affine_proxies_) {
             if (world_->frame() != 0 || !world_->dump()) {
                 throw std::runtime_error(
@@ -536,7 +546,6 @@ public:
             initial_state_dumped_ = true;
         }
         if (!external_affine_proxies_) {
-            InitializeContactForceExport(config.fixed_time_step);
             Refresh(false);
         }
     }
@@ -763,21 +772,50 @@ private:
                     DeviceView(device_buffers_.affine_transforms,
                                affine_count, sizeof(Matrix4x4)));
         }
+        if (frame_ != 0 && affine_count != 0) {
+            affine_accessor_->copy_to(*affine_state_);
+        }
+        world_->sync();
 
         const std::size_t deformable_force_scalars = vertex_count * 3;
-        if (deformable_force_scalars != 0) {
-            RequireCuda(
-                    cudaMemset(device_buffers_.deformable_contact_forces.data,
-                               0,
-                               deformable_force_scalars * sizeof(double)),
-                    "clearing batched deformable contact forces");
-        }
         const std::size_t affine_wrench_scalars = affine_count * 6;
-        if (affine_wrench_scalars != 0) {
-            RequireCuda(
-                    cudaMemset(device_buffers_.affine_contact_wrenches.data, 0,
-                               affine_wrench_scalars * sizeof(double)),
-                    "clearing batched affine contact wrenches");
+        if (frame_ != 0) {
+            RefreshContactForces();
+            if (deformable_force_scalars != 0) {
+                RequireCuda(
+                        cudaMemcpy(
+                                device_buffers_.deformable_contact_forces.data,
+                                contact_forces_.data(),
+                                deformable_force_scalars * sizeof(double),
+                                cudaMemcpyHostToDevice),
+                        "uploading batched deformable contact forces");
+            }
+            if (affine_wrench_scalars != 0) {
+                RequireCuda(
+                        cudaMemcpy(
+                                device_buffers_.affine_contact_wrenches.data,
+                                affine_contact_wrenches_.data(),
+                                affine_wrench_scalars * sizeof(double),
+                                cudaMemcpyHostToDevice),
+                        "uploading batched affine contact wrenches");
+            }
+        } else {
+            if (deformable_force_scalars != 0) {
+                RequireCuda(
+                        cudaMemset(
+                                device_buffers_.deformable_contact_forces.data,
+                                0,
+                                deformable_force_scalars * sizeof(double)),
+                        "clearing batched deformable contact forces");
+            }
+            if (affine_wrench_scalars != 0) {
+                RequireCuda(
+                        cudaMemset(
+                                device_buffers_.affine_contact_wrenches.data,
+                                0,
+                                affine_wrench_scalars * sizeof(double)),
+                        "clearing batched affine contact wrenches");
+            }
         }
         RequireCuda(cudaDeviceSynchronize(),
                     "synchronizing libuipc batch device state");
@@ -850,7 +888,7 @@ private:
         const Json& couplings = manifest.at("couplings");
         if (!robots.is_array() || !couplings.is_array()) {
             throw std::runtime_error(
-                    "IPC schema v2 robot and PhysicsCoupling tables must be arrays");
+                    "IPC schema v3 robot and PhysicsCoupling tables must be arrays");
         }
         if (couplings.empty()) {
             throw std::runtime_error(
@@ -871,7 +909,7 @@ private:
                 if (!links_by_path.emplace(
                             path, RobotLinkRecord{&robot, &link}).second) {
                     throw std::runtime_error(
-                            "IPC schema v2 contains duplicate Robot3D Link3D paths");
+                            "IPC schema v3 contains duplicate Robot3D Link3D paths");
                 }
             }
         }
@@ -891,16 +929,16 @@ private:
                 !coupling_paths.insert(coupling_path).second ||
                 !link_paths.insert(link_path).second) {
                 throw std::runtime_error(
-                        "IPC schema v2 PhysicsCoupling paths must be non-empty and unique");
+                        "IPC schema v3 PhysicsCoupling paths must be non-empty and unique");
             }
             if (proxy_index != 0 && previous_coupling_path > coupling_path) {
                 throw std::runtime_error(
-                        "IPC schema v2 PhysicsCoupling table is not canonically sorted");
+                        "IPC schema v3 PhysicsCoupling table is not canonically sorted");
             }
             previous_coupling_path = coupling_path;
             if (coupling.at("proxy_index").get<std::size_t>() != proxy_index) {
                 throw std::runtime_error(
-                        "IPC schema v2 PhysicsCoupling proxy indices must be contiguous");
+                        "IPC schema v3 PhysicsCoupling proxy indices must be contiguous");
             }
             const std::string mode = coupling.at("mode").get<std::string>();
             const double force_scale = coupling.at("force_scale").get<double>();
@@ -909,12 +947,12 @@ private:
                 !std::isfinite(force_scale) || force_scale < 0.0 ||
                 !std::isfinite(torque_scale) || torque_scale < 0.0) {
                 throw std::runtime_error(
-                        "IPC schema v2 PhysicsCoupling mode or wrench scale is invalid");
+                        "IPC schema v3 PhysicsCoupling mode or wrench scale is invalid");
             }
             const auto found = links_by_path.find(link_path);
             if (found == links_by_path.end()) {
                 throw std::runtime_error(
-                        "IPC schema v2 PhysicsCoupling references an unknown Link3D path");
+                        "IPC schema v3 PhysicsCoupling references an unknown Link3D path");
             }
             const Json& robot = *found->second.robot;
             const Json& link = *found->second.link;
@@ -923,7 +961,7 @@ private:
                 coupling.at("link_name").get<std::string>() !=
                         link.at("name").get<std::string>()) {
                 throw std::runtime_error(
-                        "IPC schema v2 PhysicsCoupling names do not match its Link3D path");
+                        "IPC schema v3 PhysicsCoupling names do not match its Link3D path");
             }
             const bool has_enabled_collision = std::ranges::any_of(
                     link.at("collision_shapes"), [](const Json& shape) {
@@ -931,7 +969,7 @@ private:
                     });
             if (!has_enabled_collision) {
                 throw std::runtime_error(
-                        "IPC schema v2 PhysicsCoupling target has no enabled collision shape");
+                        "IPC schema v3 PhysicsCoupling target has no enabled collision shape");
             }
             selected.push_back({
                     {"joints", Json::array()},
@@ -998,12 +1036,10 @@ private:
                             path, environment_vertex_offset,
                             decoded.vertices.size()});
                 }
-                if (!external_affine_proxies_) {
-                    deformable_contact_ranges_.push_back(
-                            DeformableContactRange{
-                                    global_vertex_offset,
-                                    decoded.vertices.size(), created.geometry});
-                }
+                deformable_contact_ranges_.push_back(
+                        DeformableContactRange{
+                                global_vertex_offset,
+                                decoded.vertices.size(), created.geometry});
                 initial_fem_positions_.insert(initial_fem_positions_.end(),
                                               decoded.vertices.begin(),
                                               decoded.vertices.end());
@@ -1065,13 +1101,15 @@ private:
                     if (shape.value("disabled", false)) {
                         continue;
                     }
-                    const Json& friction = shape.at("friction");
-                    if (!friction.is_array() || friction.size() != 3) {
+                    const Json& material = shape.at("material");
+                    if (!material.is_object() ||
+                        !material.contains("sliding_friction")) {
                         throw std::runtime_error(
-                                "libuipc collision shape has invalid friction: '" +
+                                "libuipc collision shape has invalid physics material: '" +
                                 shape.at("path").get<std::string>() + "'");
                     }
-                    const double shape_sliding_friction = friction.at(0).get<double>();
+                    const double shape_sliding_friction =
+                            material.at("sliding_friction").get<double>();
                     if (!std::isfinite(shape_sliding_friction) ||
                         shape_sliding_friction < 0.0) {
                         throw std::runtime_error(
@@ -1082,9 +1120,9 @@ private:
                                                 shape_sliding_friction);
                     has_collision_friction = true;
                     const std::int64_t shape_contact_type =
-                            shape.at("contact_type").get<std::int64_t>();
+                            shape.at("collision_layer").get<std::int64_t>();
                     const std::int64_t shape_contact_affinity =
-                            shape.at("contact_affinity").get<std::int64_t>();
+                            shape.at("collision_mask").get<std::int64_t>();
                     if (shape_contact_type < 0 || shape_contact_affinity < 0 ||
                         shape_contact_type >
                                 std::numeric_limits<std::uint32_t>::max() ||
@@ -1207,6 +1245,7 @@ private:
                     affine_bodies_.push_back(
                             BodyRecord{path, environment_body_offset, 1});
                 }
+                const std::size_t affine_output_offset = *global_body_offset;
                 initial_affine_transforms_.push_back(initial);
                 ++environment_body_offset;
                 ++(*global_body_offset);
@@ -1218,6 +1257,13 @@ private:
                                               environment));
                 auto created = object->geometries().create(mesh);
                 link_slots.emplace(path, created.geometry);
+                affine_contact_ranges_.push_back(AffineContactRange{
+                        affine_output_offset,
+                        combined.vertices.size(),
+                        created.geometry,
+                        -1,
+                        combined.vertices,
+                        center});
 
                 if (!articulated && !external_affine_proxies_) {
                     auto target = std::make_shared<AffineTarget>();
@@ -1374,6 +1420,8 @@ private:
 
     void InitializeContactForceExport(double fixed_time_step) {
         contact_forces_.assign(initial_fem_positions_.size() * 3, 0.0);
+        affine_contact_wrenches_.assign(initial_affine_transforms_.size() * 6,
+                                        0.0);
         inverse_time_step_squared_ =
                 1.0 / (fixed_time_step * fixed_time_step);
 
@@ -1394,6 +1442,20 @@ private:
             if (offsets.size() != 1 || offsets[0] < 0) {
                 throw std::runtime_error(
                         "libuipc deformable geometry has an invalid global vertex offset");
+            }
+            range.global_vertex_offset = offsets[0];
+        }
+        for (AffineContactRange& range : affine_contact_ranges_) {
+            auto global_offset = range.geometry->geometry().meta().find<IndexT>(
+                    uipc::builtin::global_vertex_offset);
+            if (global_offset == nullptr) {
+                throw std::runtime_error(
+                        "libuipc affine geometry has no global vertex offset");
+            }
+            const auto offsets = view(*global_offset);
+            if (offsets.size() != 1 || offsets[0] < 0) {
+                throw std::runtime_error(
+                        "libuipc affine geometry has an invalid global vertex offset");
             }
             range.global_vertex_offset = offsets[0];
         }
@@ -1430,8 +1492,35 @@ private:
         return std::nullopt;
     }
 
+    std::optional<std::pair<std::size_t, std::size_t>> FindAffineVertex(
+            IndexT global_vertex) const {
+        for (std::size_t range_index = 0;
+             range_index < affine_contact_ranges_.size(); ++range_index) {
+            const AffineContactRange& range = affine_contact_ranges_[range_index];
+            if (global_vertex < range.global_vertex_offset) {
+                continue;
+            }
+            const IndexT relative = global_vertex - range.global_vertex_offset;
+            if (static_cast<std::size_t>(relative) < range.vertex_count) {
+                return std::pair{range_index, static_cast<std::size_t>(relative)};
+            }
+        }
+        return std::nullopt;
+    }
+
     void RefreshContactForces() {
         std::ranges::fill(contact_forces_, 0.0);
+        std::ranges::fill(affine_contact_wrenches_, 0.0);
+        std::span<const Matrix4x4> affine_transforms;
+        if (!affine_contact_ranges_.empty()) {
+            auto transforms = affine_state_->instances().find<Matrix4x4>(
+                    uipc::builtin::transform);
+            if (transforms == nullptr) {
+                throw std::runtime_error(
+                        "libuipc affine state has no transforms for contact wrench export");
+            }
+            affine_transforms = view(*transforms);
+        }
         for (ContactGradientBuffer& buffer : contact_gradient_buffers_) {
             contact_system_->contact_gradient(buffer.primitive_type,
                                                *buffer.geometry);
@@ -1448,10 +1537,6 @@ private:
                         "libuipc contact-gradient exporter returned inconsistent data");
             }
             for (std::size_t index = 0; index < index_values.size(); ++index) {
-                const auto output_vertex = FindDeformableVertex(index_values[index]);
-                if (!output_vertex.has_value()) {
-                    continue;
-                }
                 // libuipc assembles dt^2 times the physical IPC potential.
                 const Vector3 force =
                         -gradient_values[index] * inverse_time_step_squared_;
@@ -1459,12 +1544,51 @@ private:
                     throw std::runtime_error(
                             "libuipc contact-gradient exporter returned a non-finite force");
                 }
+                if (const auto output_vertex =
+                            FindDeformableVertex(index_values[index]);
+                    output_vertex.has_value()) {
+                    for (std::size_t axis = 0; axis < 3; ++axis) {
+                        double& value = contact_forces_[*output_vertex * 3 + axis];
+                        value += force[static_cast<Eigen::Index>(axis)];
+                        if (!std::isfinite(value)) {
+                            throw std::runtime_error(
+                                    "libuipc accumulated a non-finite deformable contact force");
+                        }
+                    }
+                    continue;
+                }
+                const auto affine_vertex = FindAffineVertex(index_values[index]);
+                if (!affine_vertex.has_value()) {
+                    continue;
+                }
+                const AffineContactRange& range =
+                        affine_contact_ranges_[affine_vertex->first];
+                if (range.output_offset >= affine_transforms.size() ||
+                    affine_vertex->second >= range.local_vertices.size()) {
+                    throw std::runtime_error(
+                            "libuipc affine contact vertex mapping is out of range");
+                }
+                const Matrix4x4& transform = affine_transforms[range.output_offset];
+                const Vector3 world_point = TransformPoint(
+                        transform, range.local_vertices[affine_vertex->second]);
+                const Vector3 world_center = TransformPoint(
+                        transform, range.local_center_of_mass);
+                const Vector3 torque = (world_point - world_center).cross(force);
+                if (!torque.allFinite()) {
+                    throw std::runtime_error(
+                            "libuipc accumulated a non-finite affine contact torque");
+                }
                 for (std::size_t axis = 0; axis < 3; ++axis) {
-                    double& value = contact_forces_[*output_vertex * 3 + axis];
-                    value += force[static_cast<Eigen::Index>(axis)];
-                    if (!std::isfinite(value)) {
+                    double& force_value = affine_contact_wrenches_[
+                            range.output_offset * 6 + axis];
+                    double& torque_value = affine_contact_wrenches_[
+                            range.output_offset * 6 + 3 + axis];
+                    force_value += force[static_cast<Eigen::Index>(axis)];
+                    torque_value += torque[static_cast<Eigen::Index>(axis)];
+                    if (!std::isfinite(force_value) ||
+                        !std::isfinite(torque_value)) {
                         throw std::runtime_error(
-                                "libuipc accumulated a non-finite deformable contact force");
+                                "libuipc accumulated a non-finite affine contact wrench");
                     }
                 }
             }
@@ -1514,6 +1638,7 @@ private:
     std::unique_ptr<SimplicialComplex> affine_state_;
     std::vector<BodyRecord> deformable_bodies_;
     std::vector<DeformableContactRange> deformable_contact_ranges_;
+    std::vector<AffineContactRange> affine_contact_ranges_;
     std::vector<BodyRecord> affine_bodies_;
     std::vector<ContactGradientBuffer> contact_gradient_buffers_;
     std::unordered_map<std::string, std::shared_ptr<AffineTarget>> affine_targets_;
@@ -1523,6 +1648,7 @@ private:
     std::vector<double> positions_;
     std::vector<double> velocities_;
     std::vector<double> contact_forces_;
+    std::vector<double> affine_contact_wrenches_;
     std::vector<double> affine_transforms_;
     std::vector<double> target_row_major_;
     IpcBatchSolverModuleBuffers device_buffers_{};

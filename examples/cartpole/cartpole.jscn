@@ -18,9 +18,9 @@
                         "cols": 1,
                         "rows": 3,
                         "storage": [
-                            0.0,
-                            0.0,
-                            0.0
+                            0,
+                            0,
+                            0
                         ]
                     }
                 },
@@ -29,9 +29,9 @@
                         "cols": 1,
                         "rows": 3,
                         "storage": [
-                            0.0,
-                            0.0,
-                            0.0
+                            0,
+                            0,
+                            0
                         ]
                     }
                 },
@@ -40,9 +40,9 @@
                         "cols": 1,
                         "rows": 3,
                         "storage": [
-                            1.0,
-                            1.0,
-                            1.0
+                            1,
+                            1,
+                            1
                         ]
                     }
                 },
@@ -61,9 +61,9 @@
                         "cols": 1,
                         "rows": 3,
                         "storage": [
-                            0.0,
-                            0.0,
-                            0.0
+                            0,
+                            0,
+                            0
                         ]
                     }
                 },
@@ -73,9 +73,9 @@
                         "cols": 1,
                         "rows": 3,
                         "storage": [
-                            0.0,
-                            0.0,
-                            0.0
+                            0,
+                            0,
+                            0
                         ]
                     }
                 },
@@ -84,21 +84,21 @@
                         "cols": 1,
                         "rows": 3,
                         "storage": [
-                            0.0,
-                            0.0,
-                            0.0
+                            0,
+                            0,
+                            0
                         ]
                     }
                 },
-                "mass": 0.0,
+                "mass": 0,
                 "position": {
                     "matrix_data": {
                         "cols": 1,
                         "rows": 3,
                         "storage": [
-                            0.0,
-                            0.0,
-                            0.0
+                            0,
+                            0,
+                            0
                         ]
                     }
                 },
@@ -108,9 +108,9 @@
                         "cols": 1,
                         "rows": 3,
                         "storage": [
-                            0.0,
-                            0.0,
-                            0.0
+                            0,
+                            0,
+                            0
                         ]
                     }
                 },
@@ -119,9 +119,9 @@
                         "cols": 1,
                         "rows": 3,
                         "storage": [
-                            1.0,
-                            1.0,
-                            1.0
+                            1,
+                            1,
+                            1
                         ]
                     }
                 },
@@ -139,32 +139,32 @@
                         "cols": 1,
                         "rows": 3,
                         "storage": [
-                            1.0,
-                            0.0,
-                            0.0
+                            1,
+                            0,
+                            0
                         ]
                     }
                 },
                 "child_link": "cart",
-                "control_lower_limit": 0.0,
-                "control_upper_limit": 0.0,
-                "damping": 0.0,
-                "drive_damping": 0.0,
+                "control_lower_limit": 0,
+                "control_upper_limit": 0,
+                "damping": 0,
+                "drive_damping": 0,
                 "drive_mode": "Passive",
-                "drive_stiffness": 0.0,
-                "effort_limit": 15.0,
-                "force_lower_limit": 0.0,
-                "force_upper_limit": 0.0,
+                "drive_stiffness": 0,
+                "effort_limit": 15,
+                "force_lower_limit": 0,
+                "force_upper_limit": 0,
                 "gear": [
-                    1.0,
-                    0.0,
-                    0.0,
-                    0.0,
-                    0.0,
-                    0.0
+                    1,
+                    0,
+                    0,
+                    0,
+                    0,
+                    0
                 ],
-                "initial_position": 0.0,
-                "joint_position": 0.0,
+                "initial_position": 0,
+                "joint_position": 0,
                 "joint_type": "Prismatic",
                 "lower_limit": -2.4000000953674316,
                 "parent_link": "rail",
@@ -173,9 +173,9 @@
                         "cols": 1,
                         "rows": 3,
                         "storage": [
-                            0.0,
-                            0.0,
-                            0.0
+                            0,
+                            0,
+                            0
                         ]
                     }
                 },
@@ -184,9 +184,9 @@
                         "cols": 1,
                         "rows": 3,
                         "storage": [
-                            0.0,
-                            -0.0,
-                            0.0
+                            0,
+                            -0,
+                            0
                         ]
                     }
                 },
@@ -195,15 +195,15 @@
                         "cols": 1,
                         "rows": 3,
                         "storage": [
-                            1.0,
-                            1.0,
-                            1.0
+                            1,
+                            1,
+                            1
                         ]
                     }
                 },
                 "script": null,
                 "upper_limit": 2.4000000953674316,
-                "velocity_limit": 20.0,
+                "velocity_limit": 20,
                 "visible": true
             },
             "type": "Joint3D"
@@ -217,9 +217,9 @@
                         "cols": 1,
                         "rows": 3,
                         "storage": [
-                            0.0,
-                            0.0,
-                            0.0
+                            0,
+                            0,
+                            0
                         ]
                     }
                 },
@@ -240,21 +240,21 @@
                         "cols": 1,
                         "rows": 3,
                         "storage": [
-                            0.0,
-                            0.0,
-                            0.0
+                            0,
+                            0,
+                            0
                         ]
                     }
                 },
-                "mass": 1.0,
+                "mass": 1,
                 "position": {
                     "matrix_data": {
                         "cols": 1,
                         "rows": 3,
                         "storage": [
-                            0.0,
-                            0.0,
-                            0.0
+                            0,
+                            0,
+                            0
                         ]
                     }
                 },
@@ -264,9 +264,9 @@
                         "cols": 1,
                         "rows": 3,
                         "storage": [
-                            0.0,
-                            -0.0,
-                            0.0
+                            0,
+                            -0,
+                            0
                         ]
                     }
                 },
@@ -275,9 +275,9 @@
                         "cols": 1,
                         "rows": 3,
                         "storage": [
-                            1.0,
-                            1.0,
-                            1.0
+                            1,
+                            1,
+                            1
                         ]
                     }
                 },
@@ -297,9 +297,9 @@
                         "cols": 1,
                         "rows": 3,
                         "storage": [
-                            0.0,
-                            0.0,
-                            0.0
+                            0,
+                            0,
+                            0
                         ]
                     }
                 },
@@ -308,9 +308,9 @@
                         "cols": 1,
                         "rows": 3,
                         "storage": [
-                            0.0,
-                            0.0,
-                            0.0
+                            0,
+                            0,
+                            0
                         ]
                     }
                 },
@@ -319,15 +319,15 @@
                         "cols": 1,
                         "rows": 3,
                         "storage": [
-                            1.0,
-                            1.0,
-                            1.0
+                            1,
+                            1,
+                            1
                         ]
                     }
                 },
                 "script": null,
                 "surface_color": {
-                    "alpha": 1.0,
+                    "alpha": 1,
                     "blue": 0.949999988079071,
                     "green": 0.7799999713897705,
                     "red": 0.6600000262260437
@@ -340,31 +340,15 @@
             "name": "cart_collision",
             "parent": 3,
             "properties": {
-                "conaffinity": 1,
-                "condim": 3,
-                "contype": 1,
                 "disabled": false,
-                "friction": {
-                    "matrix_data": {
-                        "cols": 1,
-                        "rows": 3,
-                        "storage": [
-                            1.0,
-                            0.004999999888241291,
-                            9.999999747378752e-05
-                        ]
-                    }
-                },
-                "gap": 0.0,
-                "margin": 0.0,
                 "position": {
                     "matrix_data": {
                         "cols": 1,
                         "rows": 3,
                         "storage": [
-                            0.0,
-                            0.0,
-                            0.0
+                            0,
+                            0,
+                            0
                         ]
                     }
                 },
@@ -373,9 +357,9 @@
                         "cols": 1,
                         "rows": 3,
                         "storage": [
-                            0.0,
-                            0.0,
-                            0.0
+                            0,
+                            0,
+                            0
                         ]
                     }
                 },
@@ -384,32 +368,20 @@
                         "cols": 1,
                         "rows": 3,
                         "storage": [
-                            1.0,
-                            1.0,
-                            1.0
+                            1,
+                            1,
+                            1
                         ]
                     }
                 },
                 "script": null,
                 "shape": "SubResource(BoxShape3D_s1STQ)",
-                "solimp": [
-                    0.8999999761581421,
-                    0.949999988079071,
-                    0.0010000000474974513,
-                    0.5,
-                    2.0
-                ],
-                "solref": {
-                    "matrix_data": {
-                        "cols": 1,
-                        "rows": 2,
-                        "storage": [
-                            0.019999999552965164,
-                            1.0
-                        ]
-                    }
-                },
-                "visible": true
+                "visible": true,
+                "physics_material": "SubResource(PhysicsMaterial3D_v3_5)",
+                "collision_layer": 1,
+                "collision_mask": 1,
+                "contact_offset": 0,
+                "rest_offset": 0
             },
             "type": "CollisionShape3D"
         },
@@ -422,42 +394,42 @@
                         "cols": 1,
                         "rows": 3,
                         "storage": [
-                            0.0,
-                            1.0,
-                            0.0
+                            0,
+                            1,
+                            0
                         ]
                     }
                 },
                 "child_link": "pole",
-                "control_lower_limit": 0.0,
-                "control_upper_limit": 0.0,
-                "damping": 0.0,
-                "drive_damping": 0.0,
+                "control_lower_limit": 0,
+                "control_upper_limit": 0,
+                "damping": 0,
+                "drive_damping": 0,
                 "drive_mode": "Passive",
-                "drive_stiffness": 0.0,
-                "effort_limit": 0.0,
-                "force_lower_limit": 0.0,
-                "force_upper_limit": 0.0,
+                "drive_stiffness": 0,
+                "effort_limit": 0,
+                "force_lower_limit": 0,
+                "force_upper_limit": 0,
                 "gear": [
-                    1.0,
-                    0.0,
-                    0.0,
-                    0.0,
-                    0.0,
-                    0.0
+                    1,
+                    0,
+                    0,
+                    0,
+                    0,
+                    0
                 ],
-                "initial_position": 0.0,
-                "joint_position": 0.0,
+                "initial_position": 0,
+                "joint_position": 0,
                 "joint_type": "Continuous",
-                "lower_limit": 0.0,
+                "lower_limit": 0,
                 "parent_link": "cart",
                 "position": {
                     "matrix_data": {
                         "cols": 1,
                         "rows": 3,
                         "storage": [
-                            0.0,
-                            0.0,
+                            0,
+                            0,
                             0.11999999731779099
                         ]
                     }
@@ -467,9 +439,9 @@
                         "cols": 1,
                         "rows": 3,
                         "storage": [
-                            0.0,
-                            -0.0,
-                            0.0
+                            0,
+                            -0,
+                            0
                         ]
                     }
                 },
@@ -478,15 +450,15 @@
                         "cols": 1,
                         "rows": 3,
                         "storage": [
-                            1.0,
-                            1.0,
-                            1.0
+                            1,
+                            1,
+                            1
                         ]
                     }
                 },
                 "script": null,
-                "upper_limit": 0.0,
-                "velocity_limit": 20.0,
+                "upper_limit": 0,
+                "velocity_limit": 20,
                 "visible": true
             },
             "type": "Joint3D"
@@ -500,9 +472,9 @@
                         "cols": 1,
                         "rows": 3,
                         "storage": [
-                            0.0,
-                            0.0,
-                            0.0
+                            0,
+                            0,
+                            0
                         ]
                     }
                 },
@@ -523,9 +495,9 @@
                         "cols": 1,
                         "rows": 3,
                         "storage": [
-                            0.0,
-                            0.0,
-                            0.0
+                            0,
+                            0,
+                            0
                         ]
                     }
                 },
@@ -535,8 +507,8 @@
                         "cols": 1,
                         "rows": 3,
                         "storage": [
-                            0.0,
-                            0.0,
+                            0,
+                            0,
                             0.5
                         ]
                     }
@@ -547,9 +519,9 @@
                         "cols": 1,
                         "rows": 3,
                         "storage": [
-                            0.0,
-                            -0.0,
-                            0.0
+                            0,
+                            -0,
+                            0
                         ]
                     }
                 },
@@ -558,9 +530,9 @@
                         "cols": 1,
                         "rows": 3,
                         "storage": [
-                            1.0,
-                            1.0,
-                            1.0
+                            1,
+                            1,
+                            1
                         ]
                     }
                 },
@@ -580,9 +552,9 @@
                         "cols": 1,
                         "rows": 3,
                         "storage": [
-                            0.0,
-                            0.0,
-                            0.0
+                            0,
+                            0,
+                            0
                         ]
                     }
                 },
@@ -591,9 +563,9 @@
                         "cols": 1,
                         "rows": 3,
                         "storage": [
-                            0.0,
-                            0.0,
-                            0.0
+                            0,
+                            0,
+                            0
                         ]
                     }
                 },
@@ -602,15 +574,15 @@
                         "cols": 1,
                         "rows": 3,
                         "storage": [
-                            1.0,
-                            1.0,
-                            1.0
+                            1,
+                            1,
+                            1
                         ]
                     }
                 },
                 "script": null,
                 "surface_color": {
-                    "alpha": 1.0,
+                    "alpha": 1,
                     "blue": 0.949999988079071,
                     "green": 0.7799999713897705,
                     "red": 0.6600000262260437
@@ -623,31 +595,15 @@
             "name": "pole_collision",
             "parent": 7,
             "properties": {
-                "conaffinity": 1,
-                "condim": 3,
-                "contype": 1,
                 "disabled": false,
-                "friction": {
-                    "matrix_data": {
-                        "cols": 1,
-                        "rows": 3,
-                        "storage": [
-                            1.0,
-                            0.004999999888241291,
-                            9.999999747378752e-05
-                        ]
-                    }
-                },
-                "gap": 0.0,
-                "margin": 0.0,
                 "position": {
                     "matrix_data": {
                         "cols": 1,
                         "rows": 3,
                         "storage": [
-                            0.0,
-                            0.0,
-                            0.0
+                            0,
+                            0,
+                            0
                         ]
                     }
                 },
@@ -656,9 +612,9 @@
                         "cols": 1,
                         "rows": 3,
                         "storage": [
-                            0.0,
-                            0.0,
-                            0.0
+                            0,
+                            0,
+                            0
                         ]
                     }
                 },
@@ -667,32 +623,20 @@
                         "cols": 1,
                         "rows": 3,
                         "storage": [
-                            1.0,
-                            1.0,
-                            1.0
+                            1,
+                            1,
+                            1
                         ]
                     }
                 },
                 "script": null,
                 "shape": "SubResource(BoxShape3D_ayuc4)",
-                "solimp": [
-                    0.8999999761581421,
-                    0.949999988079071,
-                    0.0010000000474974513,
-                    0.5,
-                    2.0
-                ],
-                "solref": {
-                    "matrix_data": {
-                        "cols": 1,
-                        "rows": 2,
-                        "storage": [
-                            0.019999999552965164,
-                            1.0
-                        ]
-                    }
-                },
-                "visible": true
+                "visible": true,
+                "physics_material": "SubResource(PhysicsMaterial3D_v3_9)",
+                "collision_layer": 1,
+                "collision_mask": 1,
+                "contact_offset": 0,
+                "rest_offset": 0
             },
             "type": "CollisionShape3D"
         },
@@ -707,9 +651,9 @@
                         "cols": 1,
                         "rows": 3,
                         "storage": [
-                            0.0,
-                            0.0,
-                            0.0
+                            0,
+                            0,
+                            0
                         ]
                     }
                 },
@@ -718,9 +662,9 @@
                         "cols": 1,
                         "rows": 3,
                         "storage": [
-                            0.0,
-                            0.0,
-                            -90.0
+                            0,
+                            0,
+                            -90
                         ]
                     }
                 },
@@ -729,18 +673,18 @@
                         "cols": 1,
                         "rows": 3,
                         "storage": [
-                            1.0,
-                            1.0,
-                            1.0
+                            1,
+                            1,
+                            1
                         ]
                     }
                 },
                 "script": null,
                 "surface_color": {
-                    "alpha": 1.0,
+                    "alpha": 1,
                     "blue": 0.75,
-                    "green": 0.0,
-                    "red": 1.0
+                    "green": 0,
+                    "red": 1
                 },
                 "visible": true
             },
@@ -793,7 +737,7 @@
                     "storage": [
                         0.03999999910593033,
                         0.03999999910593033,
-                        1.0
+                        1
                     ]
                 }
             }
@@ -809,7 +753,7 @@
                     "storage": [
                         0.03999999910593033,
                         0.03999999910593033,
-                        1.0
+                        1
                     ]
                 }
             }
@@ -822,8 +766,30 @@
             "radial_segments": 24,
             "radius": 0.05000000074505806,
             "resource_name": ""
+        },
+        {
+            "__TYPE__": "PhysicsMaterial3D",
+            "__ID__": "PhysicsMaterial3D_v3_5",
+            "resource_name": "",
+            "sliding_friction": 1,
+            "torsional_friction": 0.004999999888241291,
+            "rolling_friction": 9.999999747378752e-05,
+            "restitution": 0,
+            "contact_compliance": 0.00039999998211860677,
+            "contact_damping": 1
+        },
+        {
+            "__TYPE__": "PhysicsMaterial3D",
+            "__ID__": "PhysicsMaterial3D_v3_9",
+            "resource_name": "",
+            "sliding_friction": 1,
+            "torsional_friction": 0.004999999888241291,
+            "rolling_friction": 9.999999747378752e-05,
+            "restitution": 0,
+            "contact_compliance": 0.00039999998211860677,
+            "contact_damping": 1
         }
     ],
     "__TYPE__": "PackedScene",
-    "__VERSION__": 2
+    "__VERSION__": 3
 }

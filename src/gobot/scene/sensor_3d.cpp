@@ -45,6 +45,14 @@ RealType Sensor3D::GetNoiseStddev() const {
     return noise_stddev_;
 }
 
+void Sensor3D::SetNoiseModel(const Ref<SensorNoiseModel>& noise_model) {
+    noise_model_ = noise_model;
+}
+
+const Ref<SensorNoiseModel>& Sensor3D::GetNoiseModel() const {
+    return noise_model_;
+}
+
 void Sensor3D::SetVisualizeDebug(bool visualize_debug) {
     visualize_debug_ = visualize_debug;
 }
@@ -221,6 +229,7 @@ GOBOT_REGISTRATION {
             .property("enabled", &Sensor3D::IsEnabled, &Sensor3D::SetEnabled)
             .property("sensor_period", &Sensor3D::GetSensorPeriod, &Sensor3D::SetSensorPeriod)
             .property("noise_stddev", &Sensor3D::GetNoiseStddev, &Sensor3D::SetNoiseStddev)
+            .property("noise_model", &Sensor3D::GetNoiseModel, &Sensor3D::SetNoiseModel)
             .property("visualize_debug", &Sensor3D::ShouldVisualizeDebug, &Sensor3D::SetVisualizeDebug)
             .property("debug_marker_radius", &Sensor3D::GetDebugMarkerRadius, &Sensor3D::SetDebugMarkerRadius);
 

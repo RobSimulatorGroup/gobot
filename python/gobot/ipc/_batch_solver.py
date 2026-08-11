@@ -62,7 +62,7 @@ class LibuipcBatchSolver:
     """
 
     accepts_device_targets = True
-    wrench_source = "pose_error"
+    wrench_source = "direct"
 
     def __enter__(self) -> "LibuipcBatchSolver":
         return self
@@ -184,7 +184,7 @@ class LibuipcBatchSolver:
             "device": self._device_name,
             "num_envs": self._num_envs,
             "provider": "libuipc-batch",
-            "schema_version": 2,
+            "schema_version": 3,
         }
         self._runtime_fingerprint = "sha256:" + hashlib.sha256(
             json.dumps(
@@ -335,6 +335,15 @@ class LibuipcBatchSolver:
             graph_capture=False,
             masked_reset=False,
             fixed_capacity=True,
+            runtime_checkpoint=False,
+            exact_contact_wrench=True,
+            sensor_batch=False,
+            solver_substeps=True,
+            graph_capture_reason=(
+                "libuipc shards stage affine targets and exact contact wrenches "
+                "through host memory"
+            ),
+            reset_scope="full_batch_only",
         )
 
     @property
@@ -404,8 +413,10 @@ class LibuipcBatchSolver:
                 "shard_count": self.shard_count,
                 "frame": int(values.get("frame", self._frame)),
                 "graph_captured": False,
-                "graph_capture_reason": "native libuipc shards are stepped outside CUDA Graph capture",
+                "graph_capture_reason": self.capabilities.graph_capture_reason,
                 "affine_target_staging": "per_shard_device_host_device",
+                "contact_wrench_staging": "per_shard_device_host_device",
+                "feedback_source": "native_contact_wrench",
                 "reset_scope": "full_batch_only",
                 "stable_storage": True,
             }

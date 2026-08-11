@@ -13,6 +13,7 @@
 #include "gobot/core/math/geometry.hpp"
 #include "gobot/core/robotics_types.hpp"
 #include "gobot/scene/node_3d.hpp"
+#include "gobot/scene/resources/joint_actuator_config.hpp"
 
 namespace gobot {
 
@@ -65,6 +66,10 @@ public:
     void SetFrictionLoss(RealType friction_loss);
 
     RealType GetFrictionLoss() const;
+
+    void SetActuatorConfig(const Ref<JointActuatorConfig>& config);
+
+    const Ref<JointActuatorConfig>& GetActuatorConfig() const;
 
     void SetJointPosition(RealType joint_position);
 
@@ -164,6 +169,7 @@ private:
     RealType damping_{0.0};
     RealType armature_{0.0};
     RealType friction_loss_{0.0};
+    Ref<JointActuatorConfig> actuator_config_{nullptr};
     RealType joint_position_{0.0};
     RealType initial_position_{0.0};
     RealType motion_reference_position_{0.0};

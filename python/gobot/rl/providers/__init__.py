@@ -8,9 +8,13 @@ from .base import (
     CompiledSceneArtifact,
     GraphInvalidatedError,
     ProviderUnavailableError,
+    ProviderCheckpoint,
     RobotBatchSpec,
     RobotBatchState,
     RobotBatchView,
+    SensorBatchSpec,
+    SensorBatchState,
+    SensorBatchView,
     SimulationCapacityError,
 )
 from .mujoco_warp import (
@@ -56,8 +60,12 @@ __all__ = [
     "NewtonProviderAvailability",
     "NewtonRobotLayout",
     "ProviderUnavailableError",
+    "ProviderCheckpoint",
     "RobotBatchSpec",
     "RobotBatchState",
     "RobotBatchView",
+    "SensorBatchSpec",
+    "SensorBatchState",
+    "SensorBatchView",
     "SimulationCapacityError",
 ]

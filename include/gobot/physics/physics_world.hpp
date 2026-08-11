@@ -22,6 +22,8 @@ public:
 
     virtual const std::string& GetLastError() const = 0;
 
+    virtual PhysicsBackendCapabilities GetCapabilities() const;
+
     const PhysicsWorldSettings& GetSettings() const;
 
     void SetSettings(const PhysicsWorldSettings& settings);
@@ -47,6 +49,12 @@ public:
     virtual bool StepEnvironmentBatch(RealType delta_time,
                                       std::uint64_t ticks = 1,
                                       std::size_t worker_count = 0);
+
+    virtual Ref<PhysicsRuntimeCheckpoint> CaptureCheckpoint() const;
+
+    virtual bool RestoreCheckpoint(
+            const Ref<PhysicsRuntimeCheckpoint>& checkpoint,
+            const std::vector<std::size_t>& environment_indices = {});
 
     virtual bool StepRobotBatch(const PhysicsRobotBatchStepRequest& request,
                                 PhysicsRobotBatchStepResult& result);
@@ -144,6 +152,15 @@ protected:
                                   RealType timestamp,
                                   std::size_t environment_index = 0);
 
+    bool ShouldSampleSensor(const PhysicsSensorState& sensor_state,
+                            const PhysicsSensorSnapshot& sensor_snapshot,
+                            RealType timestamp) const;
+
+    void ApplySensorNoise(PhysicsSensorState& sensor_state,
+                          const PhysicsSensorSnapshot& sensor_snapshot,
+                          RealType timestamp,
+                          std::size_t environment_index);
+
     void UpdateSensorGlobalTransformsAndRaycastSensors(PhysicsSceneState& scene_state,
                                                        RealType timestamp,
                                                        std::size_t environment_index = 0);
@@ -189,6 +206,14 @@ protected:
     void ResetSceneStateFromSnapshot();
 
     void SetLastError(std::string error);
+
+    std::string GetCheckpointCompatibilityKey() const;
+
+    bool ValidateCheckpoint(
+            const Ref<PhysicsRuntimeCheckpoint>& checkpoint,
+            const std::vector<std::size_t>& environment_indices,
+            std::vector<std::size_t>* resolved_indices,
+            std::string* error) const;
 
     PhysicsWorldSettings settings_;
     PhysicsSceneSnapshot scene_snapshot_;

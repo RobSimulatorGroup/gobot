@@ -9,6 +9,7 @@
 #include <vector>
 
 #include "gobot/scene/node_3d.hpp"
+#include "gobot/scene/resources/physics_material_3d.hpp"
 #include "gobot/scene/resources/shape_3d.hpp"
 
 namespace gobot {
@@ -27,54 +28,29 @@ public:
 
     bool IsDisabled() const;
 
-    void SetFriction(const Vector3& friction);
+    void SetPhysicsMaterial(const Ref<PhysicsMaterial3D>& material);
+    const Ref<PhysicsMaterial3D>& GetPhysicsMaterial() const;
 
-    const Vector3& GetFriction() const;
+    void SetCollisionLayer(std::uint32_t layer);
+    std::uint32_t GetCollisionLayer() const;
 
-    void SetContactType(int contype);
+    void SetCollisionMask(std::uint32_t mask);
+    std::uint32_t GetCollisionMask() const;
 
-    int GetContactType() const;
+    void SetContactOffset(RealType offset);
+    RealType GetContactOffset() const;
 
-    void SetContactAffinity(int conaffinity);
-
-    int GetContactAffinity() const;
-
-    void SetContactDimension(int condim);
-
-    int GetContactDimension() const;
-
-    void SetSolref(const Vector2& solref);
-
-    const Vector2& GetSolref() const;
-
-    void SetSolimp(const std::vector<RealType>& solimp);
-
-    const std::vector<RealType>& GetSolimp() const;
-
-    void SetMargin(RealType margin);
-
-    RealType GetMargin() const;
-
-    void SetGap(RealType gap);
-
-    RealType GetGap() const;
-
-    void SetPriority(int priority);
-
-    int GetPriority() const;
+    void SetRestOffset(RealType offset);
+    RealType GetRestOffset() const;
 
 private:
     Ref<Shape3D> shape_{nullptr};
+    Ref<PhysicsMaterial3D> physics_material_{nullptr};
     bool disabled_{false};
-    Vector3 friction_{1.0, 0.005, 0.0001};
-    int contype_{1};
-    int conaffinity_{1};
-    int condim_{3};
-    Vector2 solref_{0.02, 1.0};
-    std::vector<RealType> solimp_{0.9, 0.95, 0.001, 0.5, 2.0};
-    RealType margin_{0.0};
-    RealType gap_{0.0};
-    int priority_{0};
+    std::uint32_t collision_layer_{1};
+    std::uint32_t collision_mask_{1};
+    RealType contact_offset_{0.0};
+    RealType rest_offset_{0.0};
 };
 
 }

@@ -7,6 +7,8 @@
 #include "gobot/physics/physics_scene_compiler.hpp"
 
 #include <algorithm>
+#include <array>
+#include <cmath>
 #include <optional>
 #include <unordered_set>
 #include <utility>
@@ -15,10 +17,12 @@
 
 #include "gobot/core/registration.hpp"
 #include "gobot/scene/collision_shape_3d.hpp"
+#include "gobot/scene/deformable_body_3d.hpp"
 #include "gobot/scene/joint_3d.hpp"
 #include "gobot/scene/link_3d.hpp"
 #include "gobot/scene/mesh_instance_3d.hpp"
 #include "gobot/scene/node.hpp"
+#include "gobot/scene/physics_coupling.hpp"
 #include "gobot/scene/resources/box_shape_3d.hpp"
 #include "gobot/scene/resources/capsule_shape_3d.hpp"
 #include "gobot/scene/resources/convex_mesh_shape_3d.hpp"
@@ -30,6 +34,76 @@
 
 namespace gobot {
 namespace {
+
+std::string CanonicalScenePath(const Node* node) {
+    std::vector<std::string> names;
+    for (const Node* current = node; current != nullptr; current = current->GetParent()) {
+        names.push_back(current->GetName());
+    }
+    std::string path;
+    for (auto iterator = names.rbegin(); iterator != names.rend(); ++iterator) {
+        path.push_back('/');
+        path += *iterator;
+    }
+    return path.empty() ? std::string{"/"} : path;
+}
+
+const Node* ResolveNodePath(const Node& source, const NodePath& path) {
+    if (path.IsEmpty() || path.GetSubNameCount() != 0) {
+        return nullptr;
+    }
+    const Node* current = &source;
+    std::size_t name_index = 0;
+    const std::vector<std::string> names = path.GetNames();
+    if (path.IsAbsolute()) {
+        while (current->GetParent() != nullptr) {
+            current = current->GetParent();
+        }
+        if (!names.empty() && names.front() == current->GetName()) {
+            name_index = 1;
+        }
+    }
+    for (; name_index < names.size(); ++name_index) {
+        const std::string& name = names[name_index];
+        if (name == ".") {
+            continue;
+        }
+        if (name == "..") {
+            current = current->GetParent();
+            if (current == nullptr) {
+                return nullptr;
+            }
+            continue;
+        }
+        const Node* child = nullptr;
+        for (std::size_t index = 0; index < current->GetChildCount(); ++index) {
+            const Node* candidate = current->GetChild(static_cast<int>(index));
+            if (candidate->GetName() == name) {
+                child = candidate;
+                break;
+            }
+        }
+        if (child == nullptr) {
+            return nullptr;
+        }
+        current = child;
+    }
+    return current;
+}
+
+PhysicsMaterialSnapshot CapturePhysicsMaterial(const Ref<PhysicsMaterial3D>& material) {
+    PhysicsMaterialSnapshot snapshot;
+    if (!material.IsValid()) {
+        return snapshot;
+    }
+    snapshot.sliding_friction = material->GetSlidingFriction();
+    snapshot.torsional_friction = material->GetTorsionalFriction();
+    snapshot.rolling_friction = material->GetRollingFriction();
+    snapshot.restitution = material->GetRestitution();
+    snapshot.contact_compliance = material->GetContactCompliance();
+    snapshot.contact_damping = material->GetContactDamping();
+    return snapshot;
+}
 
 Affine3 ResolveNodeGlobalTransform(const Node3D* node, const Affine3& parent_global_transform) {
     if (node == nullptr) {
@@ -163,17 +237,14 @@ PhysicsShapeSnapshot CaptureShapeSnapshot(const CollisionShape3D* collision_shap
                                           const Affine3& global_transform) {
     PhysicsShapeSnapshot snapshot;
     snapshot.name = collision_shape->GetName();
+    snapshot.scene_path = CanonicalScenePath(collision_shape);
     snapshot.global_transform = global_transform;
     snapshot.disabled = collision_shape->IsDisabled();
-    snapshot.friction = collision_shape->GetFriction();
-    snapshot.contype = collision_shape->GetContactType();
-    snapshot.conaffinity = collision_shape->GetContactAffinity();
-    snapshot.condim = collision_shape->GetContactDimension();
-    snapshot.solref = collision_shape->GetSolref();
-    snapshot.solimp = collision_shape->GetSolimp();
-    snapshot.margin = collision_shape->GetMargin();
-    snapshot.gap = collision_shape->GetGap();
-    snapshot.priority = collision_shape->GetPriority();
+    snapshot.material = CapturePhysicsMaterial(collision_shape->GetPhysicsMaterial());
+    snapshot.collision_layer = collision_shape->GetCollisionLayer();
+    snapshot.collision_mask = collision_shape->GetCollisionMask();
+    snapshot.contact_offset = collision_shape->GetContactOffset();
+    snapshot.rest_offset = collision_shape->GetRestOffset();
 
     const Ref<Shape3D>& shape = collision_shape->GetShape();
     if (!shape.IsValid()) {
@@ -261,12 +332,25 @@ PhysicsSensorSnapshot CaptureSensorSnapshot(const Sensor3D* sensor,
                                             const Affine3& global_transform) {
     PhysicsSensorSnapshot snapshot;
     snapshot.name = sensor->GetName();
+    snapshot.scene_path = CanonicalScenePath(sensor);
     snapshot.link_name = link_name;
     snapshot.global_transform = global_transform;
     snapshot.local_transform = sensor->GetTransform();
     snapshot.enabled = sensor->IsEnabled();
     snapshot.sensor_period = sensor->GetSensorPeriod();
     snapshot.noise_stddev = sensor->GetNoiseStddev();
+    if (const Ref<SensorNoiseModel>& noise_model = sensor->GetNoiseModel();
+        noise_model.IsValid()) {
+        snapshot.has_noise_model = true;
+        snapshot.noise_stddev = noise_model->GetWhiteNoiseStddev();
+        snapshot.noise_bias_mean = noise_model->GetBiasMean();
+        snapshot.noise_bias_stddev = noise_model->GetBiasStddev();
+        snapshot.noise_random_walk_stddev = noise_model->GetRandomWalkStddev();
+        snapshot.noise_quantization_step = noise_model->GetQuantizationStep();
+        snapshot.noise_clip_min = noise_model->GetClipMin();
+        snapshot.noise_clip_max = noise_model->GetClipMax();
+        snapshot.noise_seed_offset = noise_model->GetSeedOffset();
+    }
     snapshot.visualize_debug = sensor->ShouldVisualizeDebug();
     snapshot.visible = sensor->IsInsideTree() ? sensor->IsVisibleInTree() : sensor->IsVisible();
     snapshot.debug_marker_radius = sensor->GetDebugMarkerRadius();
@@ -335,15 +419,13 @@ PhysicsTerrainSnapshot CaptureTerrainSnapshot(const Terrain3D* terrain,
                                               const Affine3& global_transform) {
     PhysicsTerrainSnapshot snapshot;
     snapshot.name = terrain->GetName();
+    snapshot.scene_path = CanonicalScenePath(terrain);
     snapshot.surface_color = terrain->GetSurfaceColor();
-    snapshot.friction = terrain->GetFriction();
-    snapshot.contype = terrain->GetContactType();
-    snapshot.conaffinity = terrain->GetContactAffinity();
-    snapshot.condim = terrain->GetContactDimension();
-    snapshot.solref = terrain->GetSolref();
-    snapshot.solimp = terrain->GetSolimp();
-    snapshot.margin = terrain->GetMargin();
-    snapshot.gap = terrain->GetGap();
+    snapshot.material = CapturePhysicsMaterial(terrain->GetPhysicsMaterial());
+    snapshot.collision_layer = terrain->GetCollisionLayer();
+    snapshot.collision_mask = terrain->GetCollisionMask();
+    snapshot.contact_offset = terrain->GetContactOffset();
+    snapshot.rest_offset = terrain->GetRestOffset();
     snapshot.spawn_origins = terrain->GetSpawnOrigins();
 
     for (const TerrainBox& box : terrain->GetBoxes()) {
@@ -405,6 +487,7 @@ void CollectRobotNodes(const Node* node,
     if (const auto* link = Object::PointerCastTo<Link3D>(node)) {
         PhysicsLinkSnapshot snapshot;
         snapshot.name = link->GetName();
+        snapshot.scene_path = CanonicalScenePath(link);
         snapshot.role = link->GetRole() == LinkRole::VirtualRoot
                                 ? PhysicsLinkRole::VirtualRoot
                                 : PhysicsLinkRole::Physical;
@@ -420,6 +503,7 @@ void CollectRobotNodes(const Node* node,
     } else if (const auto* joint = Object::PointerCastTo<Joint3D>(node)) {
         PhysicsJointSnapshot snapshot;
         snapshot.name = joint->GetName();
+        snapshot.scene_path = CanonicalScenePath(joint);
         snapshot.parent_link = joint->GetParentLink();
         snapshot.child_link = joint->GetChildLink();
         snapshot.global_transform = global_transform;
@@ -431,6 +515,15 @@ void CollectRobotNodes(const Node* node,
         snapshot.damping = joint->GetDamping();
         snapshot.armature = joint->GetArmature();
         snapshot.friction_loss = joint->GetFrictionLoss();
+        if (const Ref<JointActuatorConfig>& config = joint->GetActuatorConfig();
+            config.IsValid()) {
+            snapshot.actuator_model.command_delay_steps = config->GetCommandDelaySteps();
+            snapshot.actuator_model.command_deadband = config->GetCommandDeadband();
+            snapshot.actuator_model.command_slew_rate = config->GetCommandSlewRate();
+            snapshot.actuator_model.strength_scale = config->GetStrengthScale();
+            snapshot.actuator_model.motor_velocity_limit = config->GetMotorVelocityLimit();
+            snapshot.actuator_model.motor_stall_effort = config->GetMotorStallEffort();
+        }
         snapshot.joint_position = joint->GetJointPosition();
         snapshot.initial_position = joint->GetInitialPosition();
         snapshot.drive_mode = static_cast<int>(joint->GetDriveMode());
@@ -484,6 +577,7 @@ void CollectSceneNodes(const Node* node,
     if (const auto* robot = Object::PointerCastTo<Robot3D>(node)) {
         PhysicsRobotSnapshot robot_snapshot;
         robot_snapshot.name = robot->GetName();
+        robot_snapshot.scene_path = CanonicalScenePath(robot);
         PhysicsRobotSceneBinding scene_binding;
         scene_binding.robot_id = robot->GetInstanceId();
         CollectRobotNodes(node,
@@ -522,10 +616,90 @@ void CollectSceneNodes(const Node* node,
                                                  terrain_snapshot.heightfields.size() +
                                                  terrain_snapshot.mesh_patches.size();
         snapshot->terrains.push_back(std::move(terrain_snapshot));
+    } else if (const auto* deformable = Object::PointerCastTo<DeformableBody3D>(node)) {
+        PhysicsDeformableSnapshot deformable_snapshot;
+        deformable_snapshot.name = deformable->GetName();
+        deformable_snapshot.scene_path = CanonicalScenePath(deformable);
+        deformable_snapshot.global_transform = global_transform;
+        if (const Ref<TetrahedralMesh>& mesh = deformable->GetMesh(); mesh.IsValid()) {
+            deformable_snapshot.vertices = mesh->GetVertices();
+            deformable_snapshot.tetrahedra = mesh->GetTetrahedra();
+            deformable_snapshot.surface_triangles = mesh->GetResolvedSurfaceTriangles();
+        }
+        deformable_snapshot.density = deformable->GetDensity();
+        deformable_snapshot.young_modulus = deformable->GetYoungModulus();
+        deformable_snapshot.poisson_ratio = deformable->GetPoissonRatio();
+        deformable_snapshot.damping = deformable->GetDamping();
+        deformable_snapshot.kinematic = deformable->IsKinematic();
+        deformable_snapshot.collision_layer = deformable->GetCollisionLayer();
+        deformable_snapshot.collision_mask = deformable->GetCollisionMask();
+        deformable_snapshot.self_collision_enabled = deformable->IsSelfCollisionEnabled();
+        snapshot->deformables.push_back(std::move(deformable_snapshot));
+        ++snapshot->total_deformable_count;
+    } else if (const auto* coupling = Object::PointerCastTo<PhysicsCoupling>(node)) {
+        PhysicsCouplingSnapshot coupling_snapshot;
+        coupling_snapshot.name = coupling->GetName();
+        coupling_snapshot.scene_path = CanonicalScenePath(coupling);
+        coupling_snapshot.enabled = coupling->IsEnabled();
+        const Node* target = ResolveNodePath(*coupling, coupling->GetRigidLinkPath());
+        coupling_snapshot.rigid_link_path = Object::PointerCastTo<Link3D>(target) != nullptr
+                ? CanonicalScenePath(target)
+                : std::string{};
+        coupling_snapshot.mode = static_cast<int>(coupling->GetMode());
+        coupling_snapshot.force_scale = coupling->GetForceScale();
+        coupling_snapshot.torque_scale = coupling->GetTorqueScale();
+        snapshot->couplings.push_back(std::move(coupling_snapshot));
+        ++snapshot->total_coupling_count;
     }
 
     for (std::size_t index = 0; index < node->GetChildCount(); ++index) {
         CollectSceneNodes(node->GetChild(static_cast<int>(index)), snapshot, bindings, global_transform);
+    }
+}
+
+void AssignStableIds(PhysicsSceneSnapshot* snapshot) {
+    struct Entry {
+        std::string_view path;
+        std::uint64_t* id;
+    };
+    std::vector<Entry> entries;
+    for (PhysicsRobotSnapshot& robot : snapshot->robots) {
+        entries.push_back({robot.scene_path, &robot.stable_id});
+        for (PhysicsLinkSnapshot& link : robot.links) {
+            entries.push_back({link.scene_path, &link.stable_id});
+            for (PhysicsShapeSnapshot& shape : link.collision_shapes) {
+                entries.push_back({shape.scene_path, &shape.stable_id});
+            }
+        }
+        for (PhysicsJointSnapshot& joint : robot.joints) {
+            entries.push_back({joint.scene_path, &joint.stable_id});
+        }
+        for (PhysicsSensorSnapshot& sensor : robot.sensors) {
+            entries.push_back({sensor.scene_path, &sensor.stable_id});
+        }
+    }
+    for (PhysicsShapeSnapshot& shape : snapshot->loose_collision_shapes) {
+        entries.push_back({shape.scene_path, &shape.stable_id});
+    }
+    for (PhysicsSensorSnapshot& sensor : snapshot->loose_sensors) {
+        entries.push_back({sensor.scene_path, &sensor.stable_id});
+    }
+    for (PhysicsTerrainSnapshot& terrain : snapshot->terrains) {
+        entries.push_back({terrain.scene_path, &terrain.stable_id});
+    }
+    for (PhysicsDeformableSnapshot& deformable : snapshot->deformables) {
+        entries.push_back({deformable.scene_path, &deformable.stable_id});
+    }
+    for (PhysicsCouplingSnapshot& coupling : snapshot->couplings) {
+        entries.push_back({coupling.scene_path, &coupling.stable_id});
+    }
+    for (const Entry& entry : entries) {
+        std::uint64_t stable_id = UINT64_C(14695981039346656037);
+        for (const unsigned char byte : entry.path) {
+            stable_id ^= byte;
+            stable_id *= UINT64_C(1099511628211);
+        }
+        *entry.id = stable_id;
     }
 }
 
@@ -534,6 +708,34 @@ void AddDiagnostic(CompiledPhysicsScene* compiled_scene,
                    std::string path,
                    std::string message) {
     compiled_scene->diagnostics.push_back({severity, std::move(path), std::move(message)});
+}
+
+bool ValidateContactParameters(const PhysicsMaterialSnapshot& material,
+                               RealType contact_offset,
+                               RealType rest_offset,
+                               std::string_view path,
+                               CompiledPhysicsScene* compiled_scene) {
+    const std::array<RealType, 6> values{
+            material.sliding_friction,
+            material.torsional_friction,
+            material.rolling_friction,
+            material.restitution,
+            material.contact_compliance,
+            material.contact_damping};
+    const bool valid_material = std::ranges::all_of(values, [](RealType value) {
+        return std::isfinite(value) && value >= 0.0;
+    });
+    if (!valid_material || material.restitution > 1.0 ||
+        !std::isfinite(contact_offset) || contact_offset < 0.0 ||
+        !std::isfinite(rest_offset) || rest_offset > contact_offset) {
+        AddDiagnostic(compiled_scene,
+                      PhysicsSceneCompileSeverity::Error,
+                      std::string(path),
+                      "Physics material values must be finite and non-negative, restitution "
+                      "must be in [0, 1], and rest_offset must not exceed contact_offset.");
+        return false;
+    }
+    return true;
 }
 
 bool InsertUnique(const std::string& name,
@@ -551,8 +753,95 @@ bool InsertUnique(const std::string& name,
     return false;
 }
 
+bool ValidateSensorNoise(const PhysicsSensorSnapshot& sensor,
+                         CompiledPhysicsScene* compiled_scene) {
+    bool valid = std::isfinite(sensor.noise_stddev) && sensor.noise_stddev >= 0.0;
+    if (sensor.has_noise_model) {
+        const std::array<RealType, 3> non_negative_values{
+                sensor.noise_bias_stddev,
+                sensor.noise_random_walk_stddev,
+                sensor.noise_quantization_step};
+        valid = valid && std::ranges::all_of(non_negative_values, [](RealType value) {
+            return std::isfinite(value) && value >= 0.0;
+        }) && std::isfinite(sensor.noise_bias_mean) &&
+                !std::isnan(sensor.noise_clip_min) &&
+                !std::isnan(sensor.noise_clip_max) &&
+                sensor.noise_clip_min <= sensor.noise_clip_max;
+    }
+    if (!valid) {
+        AddDiagnostic(compiled_scene,
+                      PhysicsSceneCompileSeverity::Error,
+                      sensor.scene_path,
+                      "SensorNoiseModel standard deviations and quantization must be "
+                      "finite and non-negative, with an ordered clip range.");
+    }
+    return valid;
+}
+
 bool ValidateCompiledScene(CompiledPhysicsScene* compiled_scene) {
     bool valid = true;
+    std::unordered_set<std::string> stable_paths;
+    std::unordered_set<std::uint64_t> stable_ids;
+    const auto validate_identity = [&](const std::string& path,
+                                       std::uint64_t stable_id,
+                                       std::string_view kind) {
+        if (path.empty() || stable_id == 0) {
+            AddDiagnostic(compiled_scene,
+                          PhysicsSceneCompileSeverity::Error,
+                          path,
+                          fmt::format("{} requires a canonical scene path and non-zero stable id.",
+                                      kind));
+            valid = false;
+            return;
+        }
+        if (!stable_paths.insert(path).second) {
+            AddDiagnostic(compiled_scene,
+                          PhysicsSceneCompileSeverity::Error,
+                          path,
+                          "Duplicate canonical scene path; physics node names must be unique "
+                          "within their parent.");
+            valid = false;
+        }
+        if (!stable_ids.insert(stable_id).second) {
+            AddDiagnostic(compiled_scene,
+                          PhysicsSceneCompileSeverity::Error,
+                          path,
+                          "Duplicate physics stable id; canonical scene paths must be unique.");
+            valid = false;
+        }
+    };
+
+    for (const PhysicsRobotSnapshot& robot : compiled_scene->snapshot.robots) {
+        validate_identity(robot.scene_path, robot.stable_id, "Robot3D");
+        for (const PhysicsLinkSnapshot& link : robot.links) {
+            validate_identity(link.scene_path, link.stable_id, "Link3D");
+            for (const PhysicsShapeSnapshot& shape : link.collision_shapes) {
+                validate_identity(shape.scene_path, shape.stable_id, "CollisionShape3D");
+            }
+        }
+        for (const PhysicsJointSnapshot& joint : robot.joints) {
+            validate_identity(joint.scene_path, joint.stable_id, "Joint3D");
+        }
+        for (const PhysicsSensorSnapshot& sensor : robot.sensors) {
+            validate_identity(sensor.scene_path, sensor.stable_id, "Sensor3D");
+        }
+    }
+    for (const PhysicsShapeSnapshot& shape : compiled_scene->snapshot.loose_collision_shapes) {
+        validate_identity(shape.scene_path, shape.stable_id, "CollisionShape3D");
+    }
+    for (const PhysicsSensorSnapshot& sensor : compiled_scene->snapshot.loose_sensors) {
+        validate_identity(sensor.scene_path, sensor.stable_id, "Sensor3D");
+    }
+    for (const PhysicsTerrainSnapshot& terrain : compiled_scene->snapshot.terrains) {
+        validate_identity(terrain.scene_path, terrain.stable_id, "Terrain3D");
+    }
+    for (const PhysicsDeformableSnapshot& deformable : compiled_scene->snapshot.deformables) {
+        validate_identity(deformable.scene_path, deformable.stable_id, "DeformableBody3D");
+    }
+    for (const PhysicsCouplingSnapshot& coupling : compiled_scene->snapshot.couplings) {
+        validate_identity(coupling.scene_path, coupling.stable_id, "PhysicsCoupling");
+    }
+
     std::unordered_set<std::string> robot_names;
     for (const PhysicsRobotSnapshot& robot : compiled_scene->snapshot.robots) {
         const std::string robot_path = fmt::format("/robots/{}", robot.name);
@@ -567,6 +856,11 @@ bool ValidateCompiledScene(CompiledPhysicsScene* compiled_scene) {
                                  &link_names,
                                  compiled_scene) && valid;
             for (const PhysicsShapeSnapshot& shape : link.collision_shapes) {
+                valid = ValidateContactParameters(shape.material,
+                                                  shape.contact_offset,
+                                                  shape.rest_offset,
+                                                  shape.scene_path,
+                                                  compiled_scene) && valid;
                 if (shape.name.empty()) {
                     continue;
                 }
@@ -585,6 +879,21 @@ bool ValidateCompiledScene(CompiledPhysicsScene* compiled_scene) {
         for (const PhysicsJointSnapshot& joint : robot.joints) {
             const std::string joint_path = fmt::format("{}/joints/{}", robot_path, joint.name);
             valid = InsertUnique(joint.name, "joint", joint_path, &joint_names, compiled_scene) && valid;
+            const std::array<RealType, 5> actuator_values{
+                    joint.actuator_model.command_deadband,
+                    joint.actuator_model.command_slew_rate,
+                    joint.actuator_model.strength_scale,
+                    joint.actuator_model.motor_velocity_limit,
+                    joint.actuator_model.motor_stall_effort};
+            if (!std::ranges::all_of(actuator_values, [](RealType value) {
+                    return std::isfinite(value) && value >= 0.0;
+                })) {
+                AddDiagnostic(compiled_scene,
+                              PhysicsSceneCompileSeverity::Error,
+                              joint.scene_path,
+                              "JointActuatorConfig values must be finite and non-negative.");
+                valid = false;
+            }
             if (!joint.parent_link.empty() && !link_names.contains(joint.parent_link)) {
                 AddDiagnostic(compiled_scene,
                               PhysicsSceneCompileSeverity::Warning,
@@ -603,6 +912,7 @@ bool ValidateCompiledScene(CompiledPhysicsScene* compiled_scene) {
         for (const PhysicsSensorSnapshot& sensor : robot.sensors) {
             const std::string sensor_path = fmt::format("{}/sensors/{}", robot_path, sensor.name);
             valid = InsertUnique(sensor.name, "sensor", sensor_path, &sensor_names, compiled_scene) && valid;
+            valid = ValidateSensorNoise(sensor, compiled_scene) && valid;
             if (!sensor.link_name.empty() && !link_names.contains(sensor.link_name)) {
                 AddDiagnostic(compiled_scene,
                               PhysicsSceneCompileSeverity::Error,
@@ -610,6 +920,46 @@ bool ValidateCompiledScene(CompiledPhysicsScene* compiled_scene) {
                               fmt::format("Sensor link '{}' is not authored in this robot.", sensor.link_name));
                 valid = false;
             }
+        }
+    }
+
+    for (const PhysicsShapeSnapshot& shape : compiled_scene->snapshot.loose_collision_shapes) {
+        valid = ValidateContactParameters(shape.material,
+                                          shape.contact_offset,
+                                          shape.rest_offset,
+                                          shape.scene_path,
+                                          compiled_scene) && valid;
+    }
+    for (const PhysicsSensorSnapshot& sensor : compiled_scene->snapshot.loose_sensors) {
+        valid = ValidateSensorNoise(sensor, compiled_scene) && valid;
+    }
+    for (const PhysicsTerrainSnapshot& terrain : compiled_scene->snapshot.terrains) {
+        valid = ValidateContactParameters(terrain.material,
+                                          terrain.contact_offset,
+                                          terrain.rest_offset,
+                                          terrain.scene_path,
+                                          compiled_scene) && valid;
+    }
+    std::unordered_set<std::string> coupled_links;
+    for (const PhysicsCouplingSnapshot& coupling : compiled_scene->snapshot.couplings) {
+        if (!coupling.enabled) {
+            continue;
+        }
+        if (coupling.rigid_link_path.empty() || !std::isfinite(coupling.force_scale) ||
+            coupling.force_scale < 0.0 || !std::isfinite(coupling.torque_scale) ||
+            coupling.torque_scale < 0.0) {
+            AddDiagnostic(compiled_scene,
+                          PhysicsSceneCompileSeverity::Error,
+                          coupling.scene_path,
+                          "Enabled PhysicsCoupling requires a valid Link3D path and finite, "
+                          "non-negative force scales.");
+            valid = false;
+        } else if (!coupled_links.insert(coupling.rigid_link_path).second) {
+            AddDiagnostic(compiled_scene,
+                          PhysicsSceneCompileSeverity::Error,
+                          coupling.scene_path,
+                          "Multiple enabled PhysicsCoupling nodes target the same Link3D.");
+            valid = false;
         }
     }
 
@@ -648,6 +998,7 @@ bool PhysicsSceneCompiler::Compile(const Node* scene_root,
                       &compiled_scene->snapshot,
                       &compiled_scene->bindings,
                       Affine3::Identity());
+    AssignStableIds(&compiled_scene->snapshot);
     if (!ValidateCompiledScene(compiled_scene)) {
         if (error != nullptr) {
             const auto diagnostic = std::find_if(

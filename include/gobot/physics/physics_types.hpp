@@ -83,6 +83,18 @@ struct PhysicsBackendInfo {
     std::string status;
 };
 
+struct PhysicsBackendCapabilities {
+    bool deterministic_fixed_step{true};
+    bool environment_batch{false};
+    bool device_native{false};
+    bool graph_capture{false};
+    bool masked_reset{false};
+    bool runtime_checkpoint{false};
+    bool exact_contact_wrench{false};
+    bool sensor_batch{false};
+    bool solver_substeps{false};
+};
+
 struct MuJoCoSolverSettings {
     PhysicsSolverType solver{PhysicsSolverType::Newton};
     PhysicsIntegratorType integrator{PhysicsIntegratorType::Euler};
@@ -110,8 +122,19 @@ struct PhysicsWorldSettings {
     RealType debug_contact_force_max_length{0.8};
 };
 
+struct PhysicsMaterialSnapshot {
+    RealType sliding_friction{1.0};
+    RealType torsional_friction{0.005};
+    RealType rolling_friction{0.0001};
+    RealType restitution{0.0};
+    RealType contact_compliance{0.0};
+    RealType contact_damping{1.0};
+};
+
 struct PhysicsShapeSnapshot {
     std::string name;
+    std::string scene_path;
+    std::uint64_t stable_id{0};
     PhysicsShapeType type{PhysicsShapeType::Unknown};
     Affine3 global_transform{Affine3::Identity()};
     Vector3 box_size{Vector3::Ones()};
@@ -119,20 +142,18 @@ struct PhysicsShapeSnapshot {
     RealType height{0.0};
     std::vector<Vector3> vertices;
     std::vector<std::uint32_t> indices;
-    Vector3 friction{1.0, 0.005, 0.0001};
-    int contype{1};
-    int conaffinity{1};
-    int condim{3};
-    Vector2 solref{0.02, 1.0};
-    std::vector<RealType> solimp{0.9, 0.95, 0.001, 0.5, 2.0};
-    RealType margin{0.0};
-    RealType gap{0.0};
-    int priority{0};
+    PhysicsMaterialSnapshot material;
+    std::uint32_t collision_layer{1};
+    std::uint32_t collision_mask{1};
+    RealType contact_offset{0.0};
+    RealType rest_offset{0.0};
     bool disabled{false};
 };
 
 struct PhysicsLinkSnapshot {
     std::string name;
+    std::string scene_path;
+    std::uint64_t stable_id{0};
     PhysicsLinkRole role{PhysicsLinkRole::Physical};
     Affine3 global_transform{Affine3::Identity()};
     RealType mass{0.0};
@@ -146,12 +167,22 @@ struct PhysicsLinkSnapshot {
 struct PhysicsSensorSnapshot {
     PhysicsSensorType type{PhysicsSensorType::Unknown};
     std::string name;
+    std::string scene_path;
+    std::uint64_t stable_id{0};
     std::string link_name;
     Affine3 global_transform{Affine3::Identity()};
     Affine3 local_transform{Affine3::Identity()};
     bool enabled{true};
     RealType sensor_period{0.0};
     RealType noise_stddev{0.0};
+    bool has_noise_model{false};
+    RealType noise_bias_mean{0.0};
+    RealType noise_bias_stddev{0.0};
+    RealType noise_random_walk_stddev{0.0};
+    RealType noise_quantization_step{0.0};
+    RealType noise_clip_min{-std::numeric_limits<RealType>::infinity()};
+    RealType noise_clip_max{std::numeric_limits<RealType>::infinity()};
+    std::uint32_t noise_seed_offset{0};
     bool visualize_debug{false};
     bool visible{true};
     RealType debug_marker_radius{0.0};
@@ -172,6 +203,8 @@ struct PhysicsSensorSnapshot {
 
 struct PhysicsJointSnapshot {
     std::string name;
+    std::string scene_path;
+    std::uint64_t stable_id{0};
     std::string parent_link;
     std::string child_link;
     Affine3 global_transform{Affine3::Identity()};
@@ -183,6 +216,7 @@ struct PhysicsJointSnapshot {
     RealType damping{0.0};
     RealType armature{0.0};
     RealType friction_loss{0.0};
+    JointActuatorModel actuator_model;
     RealType joint_position{0.0};
     RealType initial_position{0.0};
     int drive_mode{0};
@@ -204,9 +238,40 @@ struct PhysicsJointSnapshot {
 
 struct PhysicsRobotSnapshot {
     std::string name;
+    std::string scene_path;
+    std::uint64_t stable_id{0};
     std::vector<PhysicsLinkSnapshot> links;
     std::vector<PhysicsJointSnapshot> joints;
     std::vector<PhysicsSensorSnapshot> sensors;
+};
+
+struct PhysicsDeformableSnapshot {
+    std::string name;
+    std::string scene_path;
+    std::uint64_t stable_id{0};
+    Affine3 global_transform{Affine3::Identity()};
+    std::vector<Vector3> vertices;
+    std::vector<std::uint32_t> tetrahedra;
+    std::vector<std::uint32_t> surface_triangles;
+    RealType density{1000.0};
+    RealType young_modulus{100000.0};
+    RealType poisson_ratio{0.45};
+    RealType damping{0.0};
+    bool kinematic{false};
+    std::uint32_t collision_layer{1};
+    std::uint32_t collision_mask{0xffffffffU};
+    bool self_collision_enabled{false};
+};
+
+struct PhysicsCouplingSnapshot {
+    std::string name;
+    std::string scene_path;
+    std::uint64_t stable_id{0};
+    bool enabled{true};
+    std::string rigid_link_path;
+    int mode{0};
+    RealType force_scale{1.0};
+    RealType torque_scale{1.0};
 };
 
 struct PhysicsTerrainBoxSnapshot {
@@ -243,15 +308,14 @@ struct PhysicsTerrainMeshPatchSnapshot {
 
 struct PhysicsTerrainSnapshot {
     std::string name;
+    std::string scene_path;
+    std::uint64_t stable_id{0};
     Color surface_color{0.48f, 0.56f, 0.50f, 1.0f};
-    Vector3 friction{1.0, 0.005, 0.0001};
-    int contype{1};
-    int conaffinity{1};
-    int condim{3};
-    Vector2 solref{0.02, 1.0};
-    std::vector<RealType> solimp{0.9, 0.95, 0.001, 0.5, 2.0};
-    RealType margin{0.0};
-    RealType gap{0.0};
+    PhysicsMaterialSnapshot material;
+    std::uint32_t collision_layer{1};
+    std::uint32_t collision_mask{1};
+    RealType contact_offset{0.0};
+    RealType rest_offset{0.0};
     std::vector<PhysicsTerrainBoxSnapshot> boxes;
     std::vector<PhysicsTerrainHeightFieldSnapshot> heightfields;
     std::vector<PhysicsTerrainMeshPatchSnapshot> mesh_patches;
@@ -263,11 +327,15 @@ struct PhysicsSceneSnapshot {
     std::vector<PhysicsTerrainSnapshot> terrains;
     std::vector<PhysicsShapeSnapshot> loose_collision_shapes;
     std::vector<PhysicsSensorSnapshot> loose_sensors;
+    std::vector<PhysicsDeformableSnapshot> deformables;
+    std::vector<PhysicsCouplingSnapshot> couplings;
     std::size_t total_link_count{0};
     std::size_t total_joint_count{0};
     std::size_t total_collision_shape_count{0};
     std::size_t total_sensor_count{0};
     std::size_t total_terrain_count{0};
+    std::size_t total_deformable_count{0};
+    std::size_t total_coupling_count{0};
 };
 
 inline constexpr std::size_t kInvalidPhysicsTopologyIndex =
@@ -387,6 +455,8 @@ struct PhysicsRobotBatchStepResult {
     std::vector<std::string> link_names;
     std::vector<std::string> sensor_names;
     std::vector<std::string> shape_names;
+    std::vector<std::string> shape_paths;
+    std::vector<std::uint64_t> shape_stable_ids;
     std::size_t environment_count{0};
     std::size_t max_sensor_values{0};
     std::size_t max_sensor_hits{0};
@@ -425,7 +495,10 @@ struct PhysicsRobotBatchStepResult {
     std::vector<RealType> contact_position;
     std::vector<RealType> contact_normal;
     std::vector<RealType> contact_force;
+    std::vector<RealType> contact_tangent_force;
+    std::vector<RealType> contact_torque;
     std::vector<RealType> contact_normal_force;
+    std::vector<RealType> contact_normal_impulse;
     std::vector<RealType> contact_distance;
     std::vector<std::int32_t> link_contact_tick_count;
     std::vector<std::int32_t> shape_contact_tick_count;
@@ -447,6 +520,14 @@ struct PhysicsJointState {
     RealType target_position{0.0};
     RealType target_velocity{0.0};
     RealType target_effort{0.0};
+    RealType commanded_target{0.0};
+    RealType applied_target{0.0};
+    RealType tracking_error{0.0};
+    RealType applied_effort{0.0};
+    bool command_delayed{false};
+    bool command_deadband_applied{false};
+    bool command_rate_limited{false};
+    bool effort_saturated{false};
 };
 
 struct PhysicsLinkState {
@@ -463,10 +544,19 @@ struct PhysicsContactState {
     std::string link_name;
     std::string other_robot_name;
     std::string other_link_name;
+    std::string shape_name;
+    std::string shape_path;
+    std::uint64_t shape_stable_id{0};
+    std::string other_shape_name;
+    std::string other_shape_path;
+    std::uint64_t other_shape_stable_id{0};
     Vector3 position{Vector3::Zero()};
     Vector3 normal{Vector3::UnitZ()};
     Vector3 force{Vector3::Zero()};
+    Vector3 tangent_force{Vector3::Zero()};
+    Vector3 torque{Vector3::Zero()};
     RealType normal_force{0.0};
+    RealType normal_impulse{0.0};
     RealType distance{0.0};
 };
 
@@ -505,9 +595,12 @@ struct PhysicsSensorState {
     RealType debug_marker_radius{0.0};
     Affine3 global_transform{Affine3::Identity()};
     std::vector<RealType> values;
+    std::vector<RealType> noise_bias;
+    std::vector<RealType> noise_random_walk;
     std::vector<PhysicsSensorRaycastHit> hits;
     std::vector<std::string> channel_names;
     RealType timestamp{0.0};
+    std::uint64_t sample_count{0};
 };
 
 struct PhysicsExternalForce {
@@ -548,6 +641,31 @@ struct PhysicsSceneState {
     std::size_t total_link_count{0};
     std::size_t total_joint_count{0};
     std::size_t total_sensor_count{0};
+};
+
+class GOBOT_EXPORT PhysicsRuntimeCheckpoint : public RefCounted {
+    GOBCLASS(PhysicsRuntimeCheckpoint, RefCounted)
+
+public:
+    std::uint32_t GetSchemaVersion() const { return schema_version_; }
+    PhysicsBackendType GetBackendType() const { return backend_; }
+    const std::string& GetArtifactDigest() const { return artifact_digest_; }
+    std::size_t GetEnvironmentCount() const { return environment_count_; }
+    RealType GetFixedTimeStep() const { return fixed_time_step_; }
+
+private:
+    friend class PhysicsWorld;
+    friend class MuJoCoPhysicsWorld;
+
+    std::uint32_t schema_version_{1};
+    PhysicsBackendType backend_{PhysicsBackendType::Null};
+    std::string artifact_digest_;
+    std::size_t environment_count_{0};
+    RealType fixed_time_step_{0.0};
+    std::vector<PhysicsSceneState> scene_states_;
+    std::vector<PhysicsExternalForce> external_forces_;
+    std::vector<std::vector<double>> backend_states_;
+    std::vector<JointControllerRuntimeState> controller_states_;
 };
 
 } // namespace gobot

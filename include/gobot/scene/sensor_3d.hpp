@@ -10,6 +10,7 @@
 
 #include "gobot/core/robotics_types.hpp"
 #include "gobot/scene/node_3d.hpp"
+#include "gobot/scene/resources/sensor_noise_model.hpp"
 
 namespace gobot {
 
@@ -31,6 +32,10 @@ public:
 
     RealType GetNoiseStddev() const;
 
+    void SetNoiseModel(const Ref<SensorNoiseModel>& noise_model);
+
+    const Ref<SensorNoiseModel>& GetNoiseModel() const;
+
     void SetVisualizeDebug(bool visualize_debug);
 
     bool ShouldVisualizeDebug() const;
@@ -43,6 +48,7 @@ private:
     bool enabled_{true};
     RealType sensor_period_{0.0};
     RealType noise_stddev_{0.0};
+    Ref<SensorNoiseModel> noise_model_{nullptr};
     bool visualize_debug_{true};
     RealType debug_marker_radius_{0.0};
 };

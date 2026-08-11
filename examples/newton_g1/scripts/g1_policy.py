@@ -118,10 +118,10 @@ def _validate_native_g1_scene(robot, joints, native_contract):
 
     # Newton's reference G1 import disables articulation self-collision. Keep
     # that example policy out of the generic USD importer while retaining
-    # collision with the world (world geoms use contype/conaffinity 1/1).
+    # collision with the world (world shapes use layer/mask 1/1).
     for node in _walk_nodes(robot):
         if node.type_name == "CollisionShape3D" and (
-            int(node.get("contype")) != 0 or int(node.get("conaffinity")) != 1
+            int(node.collision_layer) != 0 or int(node.collision_mask) != 1
         ):
             raise RuntimeError(
                 "generated G1 scene has stale collision filters; re-run the project asset hook"

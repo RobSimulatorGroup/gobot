@@ -427,6 +427,7 @@ class Joint3D(Node3D):
     initial_position: float
     armature: float
     friction_loss: float
+    actuator_config: dict[str, Any] | None
     affine_actuator_enabled: bool
     affine_actuator_control_gain: float
     affine_actuator_force_offset: float
@@ -452,7 +453,11 @@ class Joint3D(Node3D):
 
 class CollisionShape3D(Node3D):
     disabled: bool
-    friction: Vector3
+    physics_material: dict[str, Any] | None
+    collision_layer: int
+    collision_mask: int
+    contact_offset: float
+    rest_offset: float
 
 
 class MeshInstance3D(Node3D):
@@ -518,9 +523,11 @@ class Terrain3D(Node3D):
     height_high_color: tuple[float, float, float, float]
     height_range_min: float
     height_range_max: float
-    friction: Vector3
-    solref: Vector2
-    solimp: list[float]
+    physics_material: dict[str, Any] | None
+    collision_layer: int
+    collision_mask: int
+    contact_offset: float
+    rest_offset: float
 
     def clear_terrain(self) -> None: ...
     def regenerate_terrain(self) -> None: ...
@@ -557,6 +564,7 @@ class Sensor3D(Node3D):
     enabled: bool
     sensor_period: float
     noise_stddev: float
+    noise_model: dict[str, Any] | None
     visualize_debug: bool
     debug_marker_radius: float
 

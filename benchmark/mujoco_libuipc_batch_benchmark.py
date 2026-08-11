@@ -26,6 +26,8 @@ def _parser() -> argparse.ArgumentParser:
     parser.add_argument("--warmup-steps", type=int, default=8)
     parser.add_argument("--repeats", type=int, default=5)
     parser.add_argument("--fixed-dt", type=float, default=0.002)
+    parser.add_argument("--rigid-substeps", type=int, default=1)
+    parser.add_argument("--ipc-substeps", type=int, default=1)
     parser.add_argument("--device", default="cuda:0")
     parser.add_argument("--module-path", default="")
     parser.add_argument("--baseline-json", type=Path)
@@ -59,12 +61,14 @@ def run(args: argparse.Namespace) -> dict[str, Any]:
         example_args.warmup_steps = args.warmup_steps
         example_args.repeats = args.repeats
         example_args.fixed_dt = args.fixed_dt
+        example_args.rigid_substeps = args.rigid_substeps
+        example_args.ipc_substeps = args.ipc_substeps
         example_args.device = args.device
         example_args.module_path = args.module_path
         results.append(batch_example.run(example_args))
 
     output: dict[str, Any] = {
-        "benchmark_schema_version": 1,
+        "benchmark_schema_version": 2,
         "results": results,
     }
     if args.baseline_json is not None:

@@ -18,6 +18,8 @@
 #include <gobot/scene/resources/box_shape_3d.hpp>
 #include <gobot/scene/resources/convex_mesh_shape_3d.hpp>
 #include <gobot/scene/resources/mesh.hpp>
+#include <gobot/scene/resources/physics_material_3d.hpp>
+#include <gobot/scene/resources/sensor_noise_model.hpp>
 #include <gobot/scene/robot_3d.hpp>
 #include <gobot/scene/sensor_3d.hpp>
 #include <gobot/scene/terrain_3d.hpp>
@@ -450,6 +452,90 @@ TEST(TestPhysicsServer, scene_compiler_keeps_import_provenance_out_of_runtime_sn
     gobot::Object::Delete(robot);
 }
 
+TEST(TestPhysicsServer, stable_ids_are_derived_from_canonical_paths) {
+    auto* root = gobot::Object::New<gobot::Node>();
+    root->SetName("world");
+    auto* robot = gobot::Object::New<gobot::Robot3D>();
+    robot->SetName("robot");
+    root->AddChild(robot);
+    auto* link = gobot::Object::New<gobot::Link3D>();
+    link->SetName("base");
+    robot->AddChild(link);
+    auto* sensor = gobot::Object::New<gobot::IMUSensor3D>();
+    sensor->SetName("imu");
+    link->AddChild(sensor);
+
+    gobot::CompiledPhysicsScene first;
+    ASSERT_TRUE(gobot::PhysicsSceneCompiler::Compile(root, &first));
+    const gobot::PhysicsSensorSnapshot& first_sensor =
+            first.snapshot.robots[0].sensors[0];
+    EXPECT_EQ(first_sensor.scene_path, "/world/robot/base/imu");
+    EXPECT_NE(first_sensor.stable_id, 0u);
+
+    auto* unrelated = gobot::Object::New<gobot::Node>();
+    unrelated->SetName("aaa_unrelated");
+    root->AddChild(unrelated);
+    gobot::CompiledPhysicsScene second;
+    ASSERT_TRUE(gobot::PhysicsSceneCompiler::Compile(root, &second));
+    const gobot::PhysicsSensorSnapshot& second_sensor =
+            second.snapshot.robots[0].sensors[0];
+    EXPECT_EQ(second_sensor.scene_path, first_sensor.scene_path);
+    EXPECT_EQ(second_sensor.stable_id, first_sensor.stable_id);
+
+    gobot::Object::Delete(root);
+}
+
+TEST(TestPhysicsServer, scene_compiler_assigns_unique_identities_to_duplicate_authored_names) {
+    auto* root = gobot::Object::New<gobot::Node>();
+    root->SetName("world");
+    auto* robot = gobot::Object::New<gobot::Robot3D>();
+    robot->SetName("robot");
+    root->AddChild(robot);
+    auto* link = gobot::Object::New<gobot::Link3D>();
+    link->SetName("base");
+    robot->AddChild(link);
+    auto* collision = gobot::Object::New<gobot::CollisionShape3D>();
+    collision->SetName("shared_name");
+    collision->SetShape(gobot::MakeRef<gobot::BoxShape3D>());
+    link->AddChild(collision);
+    auto* sensor = gobot::Object::New<gobot::IMUSensor3D>();
+    sensor->SetName("shared_name");
+    link->AddChild(sensor);
+
+    gobot::CompiledPhysicsScene compiled;
+    ASSERT_TRUE(gobot::PhysicsSceneCompiler::Compile(root, &compiled));
+    ASSERT_EQ(compiled.snapshot.robots.size(), 1u);
+    ASSERT_EQ(compiled.snapshot.robots[0].links.size(), 1u);
+    ASSERT_EQ(compiled.snapshot.robots[0].links[0].collision_shapes.size(), 1u);
+    ASSERT_EQ(compiled.snapshot.robots[0].sensors.size(), 1u);
+    const gobot::PhysicsShapeSnapshot& shape =
+            compiled.snapshot.robots[0].links[0].collision_shapes[0];
+    const gobot::PhysicsSensorSnapshot& sensor_snapshot =
+            compiled.snapshot.robots[0].sensors[0];
+    EXPECT_NE(shape.scene_path, sensor_snapshot.scene_path);
+    EXPECT_NE(shape.stable_id, sensor_snapshot.stable_id);
+
+    gobot::Object::Delete(root);
+}
+
+TEST(TestPhysicsServer, scene_compiler_validates_loose_sensor_noise) {
+    auto* root = gobot::Object::New<gobot::Node>();
+    root->SetName("world");
+    auto* sensor = gobot::Object::New<gobot::IMUSensor3D>();
+    sensor->SetName("imu");
+    auto noise = gobot::MakeRef<gobot::SensorNoiseModel>();
+    noise->SetWhiteNoiseStddev(-0.01);
+    sensor->SetNoiseModel(noise);
+    root->AddChild(sensor);
+
+    gobot::CompiledPhysicsScene compiled;
+    std::string error;
+    EXPECT_FALSE(gobot::PhysicsSceneCompiler::Compile(root, &compiled, &error));
+    EXPECT_NE(error.find("SensorNoiseModel"), std::string::npos);
+
+    gobot::Object::Delete(root);
+}
+
 TEST(TestPhysicsServer, scene_compiler_captures_nested_link_shapes_and_sensors) {
     auto* robot = gobot::Object::New<gobot::Robot3D>();
     robot->SetName("robot");
@@ -826,6 +912,136 @@ TEST(TestPhysicsServer, height_scanner_raycast_queries_box_heightfield_and_mesh_
     gobot::Object::Delete(root);
 }
 
+TEST(TestPhysicsServer, sensor_noise_is_deterministic_across_reset_and_checkpoint_restore) {
+    auto* root = gobot::Object::New<gobot::Node3D>();
+    root->SetName("root");
+
+    auto* terrain = gobot::Object::New<gobot::Terrain3D>();
+    terrain->SetName("ground");
+    terrain->AddBox({0.0, 0.0, -0.1}, {2.0, 2.0, 0.2});
+    root->AddChild(terrain);
+
+    auto* robot = gobot::Object::New<gobot::Robot3D>();
+    robot->SetName("robot");
+    auto* link = gobot::Object::New<gobot::Link3D>();
+    link->SetName("base");
+    link->SetPosition({0.0, 0.0, 1.0});
+    auto* sensor = gobot::Object::New<gobot::TerrainHeightSensor3D>();
+    sensor->SetName("height");
+    sensor->SetSampleOffsets({{0.0, 0.0, 0.0}});
+    sensor->SetMaxDistance(2.0);
+    auto noise = gobot::MakeRef<gobot::SensorNoiseModel>();
+    noise->SetWhiteNoiseStddev(0.02);
+    noise->SetBiasMean(0.03);
+    noise->SetBiasStddev(0.01);
+    noise->SetRandomWalkStddev(0.1);
+    noise->SetSeedOffset(17);
+    sensor->SetNoiseModel(noise);
+    link->AddChild(sensor);
+    robot->AddChild(link);
+    root->AddChild(robot);
+
+    gobot::PhysicsWorldSettings settings;
+    settings.fixed_time_step = 0.01;
+    gobot::PhysicsServer physics_server;
+    gobot::Ref<gobot::PhysicsWorld> world = physics_server.CreateWorld(
+            gobot::PhysicsBackendType::Null, settings);
+    ASSERT_TRUE(BuildWorldFromScene(world, root));
+
+    const gobot::PhysicsSensorState initial = world->GetSceneState().robots[0].sensors[0];
+    ASSERT_EQ(initial.sample_count, 1);
+    ASSERT_EQ(initial.noise_bias.size(), 1);
+    ASSERT_EQ(initial.noise_random_walk.size(), 1);
+    const gobot::Ref<gobot::PhysicsRuntimeCheckpoint> checkpoint = world->CaptureCheckpoint();
+    ASSERT_TRUE(checkpoint.IsValid());
+
+    ASSERT_TRUE(world->ResetLinkState("robot", "base", {0.0, 0.0, 1.25}));
+    const gobot::PhysicsSensorState advanced = world->GetSceneState().robots[0].sensors[0];
+    ASSERT_EQ(advanced.sample_count, 2);
+    EXPECT_NE(advanced.values[0], initial.values[0]);
+
+    ASSERT_TRUE(world->RestoreCheckpoint(checkpoint));
+    const gobot::PhysicsSensorState restored = world->GetSceneState().robots[0].sensors[0];
+    EXPECT_EQ(restored.sample_count, initial.sample_count);
+    EXPECT_DOUBLE_EQ(restored.values[0], initial.values[0]);
+    EXPECT_DOUBLE_EQ(restored.noise_bias[0], initial.noise_bias[0]);
+    EXPECT_DOUBLE_EQ(restored.noise_random_walk[0], initial.noise_random_walk[0]);
+
+    ASSERT_TRUE(world->ResetLinkState("robot", "base", {0.0, 0.0, 1.25}));
+    const gobot::PhysicsSensorState replayed = world->GetSceneState().robots[0].sensors[0];
+    EXPECT_DOUBLE_EQ(replayed.values[0], advanced.values[0]);
+    EXPECT_DOUBLE_EQ(replayed.noise_random_walk[0], advanced.noise_random_walk[0]);
+
+    world->Reset();
+    const gobot::PhysicsSensorState reset = world->GetSceneState().robots[0].sensors[0];
+    EXPECT_DOUBLE_EQ(reset.values[0], initial.values[0]);
+    EXPECT_DOUBLE_EQ(reset.noise_bias[0], initial.noise_bias[0]);
+    EXPECT_EQ(reset.sample_count, initial.sample_count);
+
+    gobot::Object::Delete(root);
+}
+
+TEST(TestPhysicsServer, sensor_noise_quantizes_then_clips_samples) {
+    auto* root = gobot::Object::New<gobot::Node3D>();
+    root->SetName("root");
+    auto* terrain = gobot::Object::New<gobot::Terrain3D>();
+    terrain->SetName("ground");
+    terrain->AddBox({0.0, 0.0, -0.1}, {2.0, 2.0, 0.2});
+    root->AddChild(terrain);
+    auto* sensor = gobot::Object::New<gobot::TerrainHeightSensor3D>();
+    sensor->SetName("height");
+    sensor->SetPosition({0.0, 0.0, 1.0});
+    sensor->SetSampleOffsets({{0.0, 0.0, 0.0}});
+    sensor->SetMaxDistance(2.0);
+    auto noise = gobot::MakeRef<gobot::SensorNoiseModel>();
+    noise->SetBiasMean(0.137);
+    noise->SetQuantizationStep(0.05);
+    noise->SetClipMin(0.0);
+    noise->SetClipMax(1.12);
+    sensor->SetNoiseModel(noise);
+    root->AddChild(sensor);
+
+    gobot::PhysicsServer physics_server;
+    gobot::Ref<gobot::PhysicsWorld> world = physics_server.CreateWorld();
+    ASSERT_TRUE(BuildWorldFromScene(world, root));
+    const gobot::PhysicsSensorState& state = world->GetSceneState().loose_sensors[0];
+    ASSERT_EQ(state.values.size(), 1);
+    EXPECT_NEAR(state.values[0], 1.12, 1.0e-7);
+
+    gobot::Object::Delete(root);
+}
+
+TEST(TestPhysicsServer, checkpoint_rejects_changed_backend_neutral_runtime_contract) {
+    auto* root = gobot::Object::New<gobot::Node>();
+    root->SetName("world");
+    auto* robot = gobot::Object::New<gobot::Robot3D>();
+    robot->SetName("robot");
+    root->AddChild(robot);
+    auto* link = gobot::Object::New<gobot::Link3D>();
+    link->SetName("base");
+    robot->AddChild(link);
+    auto* sensor = gobot::Object::New<gobot::IMUSensor3D>();
+    sensor->SetName("imu");
+    link->AddChild(sensor);
+    auto noise = gobot::MakeRef<gobot::SensorNoiseModel>();
+    noise->SetWhiteNoiseStddev(0.01);
+    sensor->SetNoiseModel(noise);
+
+    gobot::PhysicsServer physics_server;
+    gobot::Ref<gobot::PhysicsWorld> world =
+            physics_server.CreateWorld(gobot::PhysicsBackendType::Null);
+    ASSERT_TRUE(BuildWorldFromScene(world, root)) << world->GetLastError();
+    gobot::Ref<gobot::PhysicsRuntimeCheckpoint> checkpoint = world->CaptureCheckpoint();
+    ASSERT_TRUE(checkpoint.IsValid());
+
+    noise->SetWhiteNoiseStddev(0.02);
+    ASSERT_TRUE(BuildWorldFromScene(world, root)) << world->GetLastError();
+    EXPECT_FALSE(world->RestoreCheckpoint(checkpoint));
+    EXPECT_NE(world->GetLastError().find("artifact digest"), std::string::npos);
+
+    gobot::Object::Delete(root);
+}
+
 TEST(TestPhysicsServer, terrain_height_sensor_falls_back_to_clamped_frame_height_when_all_rays_miss) {
     auto* robot = gobot::Object::New<gobot::Robot3D>();
     robot->SetName("robot");
@@ -898,7 +1114,11 @@ TEST(TestPhysicsServer, captures_terrain_nodes_in_snapshot) {
     auto* terrain = gobot::Object::New<gobot::Terrain3D>();
     terrain->SetName("terrain");
     terrain->SetPosition({1.0, 2.0, 0.0});
-    terrain->SetFriction({1.2, 0.01, 0.0002});
+    auto terrain_material = gobot::MakeRef<gobot::PhysicsMaterial3D>();
+    terrain_material->SetSlidingFriction(1.2);
+    terrain_material->SetTorsionalFriction(0.01);
+    terrain_material->SetRollingFriction(0.0002);
+    terrain->SetPhysicsMaterial(terrain_material);
     terrain->AddBox({0.0, 0.0, -0.5}, {4.0, 3.0, 1.0});
 
     gobot::TerrainHeightField heightfield;
@@ -928,7 +1148,9 @@ TEST(TestPhysicsServer, captures_terrain_nodes_in_snapshot) {
     ASSERT_EQ(snapshot.terrains.size(), 1);
     EXPECT_EQ(snapshot.total_terrain_count, 1);
     EXPECT_EQ(snapshot.total_collision_shape_count, 3);
-    EXPECT_TRUE(snapshot.terrains[0].friction.isApprox(gobot::Vector3(1.2, 0.01, 0.0002), CMP_EPSILON));
+    EXPECT_NEAR(snapshot.terrains[0].material.sliding_friction, 1.2, CMP_EPSILON);
+    EXPECT_NEAR(snapshot.terrains[0].material.torsional_friction, 0.01, CMP_EPSILON);
+    EXPECT_NEAR(snapshot.terrains[0].material.rolling_friction, 0.0002, CMP_EPSILON);
     ASSERT_EQ(snapshot.terrains[0].boxes.size(), 1);
     ASSERT_EQ(snapshot.terrains[0].heightfields.size(), 1);
     ASSERT_EQ(snapshot.terrains[0].mesh_patches.size(), 1);
@@ -1605,6 +1827,10 @@ TEST(TestPhysicsServer, mujoco_batch_step_reports_named_contact_history) {
     ASSERT_TRUE(world->StepRobotBatch(request, arrays)) << world->GetLastError();
     ASSERT_EQ(arrays.shape_names.size(), 1);
     EXPECT_EQ(arrays.shape_names[0], "base_collision");
+    ASSERT_EQ(arrays.shape_paths.size(), 1);
+    EXPECT_NE(arrays.shape_paths[0].find("base_collision"), std::string::npos);
+    ASSERT_EQ(arrays.shape_stable_ids.size(), 1);
+    EXPECT_NE(arrays.shape_stable_ids[0], 0);
     ASSERT_EQ(arrays.link_contact_tick_count.size(), 1);
     EXPECT_GT(arrays.link_contact_tick_count[0], 0);
     ASSERT_EQ(arrays.contact_shape_group_names, std::vector<std::string>{"base_group"});
@@ -1615,6 +1841,48 @@ TEST(TestPhysicsServer, mujoco_batch_step_reports_named_contact_history) {
     EXPECT_GT(arrays.contact_count[0], 0);
     ASSERT_GE(arrays.contact_shape_index.size(), 2);
     EXPECT_TRUE(arrays.contact_shape_index[0] == 0 || arrays.contact_shape_index[1] == 0);
+    ASSERT_GE(arrays.contact_force.size(), 3);
+    ASSERT_GE(arrays.contact_tangent_force.size(), 3);
+    ASSERT_GE(arrays.contact_torque.size(), 3);
+    ASSERT_GE(arrays.contact_normal.size(), 3);
+    ASSERT_GE(arrays.contact_normal_force.size(), 1);
+    ASSERT_GE(arrays.contact_normal_impulse.size(), 1);
+    const gobot::Vector3 contact_force(
+            arrays.contact_force[0], arrays.contact_force[1], arrays.contact_force[2]);
+    const gobot::Vector3 contact_normal(
+            arrays.contact_normal[0], arrays.contact_normal[1], arrays.contact_normal[2]);
+    const gobot::Vector3 tangent_force(
+            arrays.contact_tangent_force[0],
+            arrays.contact_tangent_force[1],
+            arrays.contact_tangent_force[2]);
+    const gobot::Vector3 contact_torque(
+            arrays.contact_torque[0], arrays.contact_torque[1], arrays.contact_torque[2]);
+    EXPECT_TRUE(contact_force.allFinite());
+    EXPECT_TRUE(contact_torque.allFinite());
+    EXPECT_GT(arrays.contact_normal_force[0], 0.0);
+    EXPECT_NEAR(tangent_force.dot(contact_normal), 0.0, 1.0e-8);
+    EXPECT_TRUE(tangent_force.isApprox(
+            contact_force - contact_normal * arrays.contact_normal_force[0],
+            1.0e-8));
+    EXPECT_NEAR(
+            arrays.contact_normal_impulse[0],
+            arrays.contact_normal_force[0] * world->GetSettings().fixed_time_step,
+            1.0e-10);
+
+    const gobot::PhysicsSceneState* runtime_state = world->GetEnvironmentState(0);
+    ASSERT_NE(runtime_state, nullptr);
+    const auto runtime_contact = std::ranges::find_if(
+            runtime_state->contacts,
+            [](const gobot::PhysicsContactState& contact) {
+                return contact.shape_name == "base_collision";
+            });
+    ASSERT_NE(runtime_contact, runtime_state->contacts.end());
+    EXPECT_NE(runtime_contact->shape_stable_id, 0);
+    EXPECT_NE(runtime_contact->other_shape_stable_id, 0);
+    EXPECT_NE(runtime_contact->shape_path.find("base_collision"), std::string::npos);
+    EXPECT_NE(runtime_contact->other_shape_path.find("terrain"), std::string::npos);
+    EXPECT_NE(runtime_contact->other_shape_name.find("gobot_terrain_box_"),
+              std::string::npos);
 
     gobot::Object::Delete(root);
 #endif
@@ -1703,9 +1971,13 @@ TEST(TestPhysicsServer, mujoco_compiles_robot_and_loose_convex_mesh_shapes) {
     auto* robot_collision = gobot::Object::New<gobot::CollisionShape3D>();
     robot_collision->SetName("robot_convex");
     robot_collision->SetPosition({0.1, 0.2, 0.3});
-    robot_collision->SetFriction({0.7, 0.02, 0.003});
-    robot_collision->SetMargin(0.01);
-    robot_collision->SetGap(0.002);
+    auto robot_material = gobot::MakeRef<gobot::PhysicsMaterial3D>();
+    robot_material->SetSlidingFriction(0.7);
+    robot_material->SetTorsionalFriction(0.02);
+    robot_material->SetRollingFriction(0.003);
+    robot_collision->SetPhysicsMaterial(robot_material);
+    robot_collision->SetContactOffset(0.01);
+    robot_collision->SetRestOffset(0.008);
     robot_collision->SetShape(convex_shape);
     link->AddChild(robot_collision);
     robot->AddChild(link);

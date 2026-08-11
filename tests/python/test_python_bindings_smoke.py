@@ -161,13 +161,22 @@ def main():
     link = gobot.create_node("Link3D", "link")
     authored.add_child(link)
     collision = gobot.create_box_collision("collision", (0.2, 0.3, 0.4))
-    collision.friction = (0.8, 0.01, 0.001)
+    collision.physics_material = {
+        "sliding_friction": 0.8,
+        "torsional_friction": 0.01,
+        "rolling_friction": 0.001,
+    }
     link.add_child(collision)
     visual = gobot.create_box_visual("visual", (0.2, 0.3, 0.4))
     link.add_child(visual)
     imu = gobot.create_node("IMUSensor3D", "imu")
     imu.sensor_period = 0.01
     imu.noise_stddev = 0.02
+    imu.noise_model = {
+        "white_noise_stddev": 0.02,
+        "bias_stddev": 0.001,
+        "seed_offset": 7,
+    }
     link.add_child(imu)
     contact = gobot.create_node("ContactSensor3D", "foot_contact")
     contact.radius = 0.05
@@ -178,6 +187,11 @@ def main():
     link.add_child(angular_momentum)
     authored_joint = gobot.create_node("Joint3D", "authored_joint")
     authored_joint.friction_loss = 0.25
+    authored_joint.actuator_config = {
+        "command_delay_steps": 2,
+        "command_deadband": 0.01,
+        "strength_scale": 0.9,
+    }
     authored_joint.affine_actuator_enabled = True
     authored_joint.affine_actuator_control_gain = 500.0
     authored_joint.affine_actuator_force_offset = 0.125
@@ -193,7 +207,10 @@ def main():
     assert abs(authored_joint.affine_actuator_velocity_gain - 1.0) < 1e-6
     assert abs(authored_joint.affine_actuator_inherit_range - 1.0) < 1e-6
     assert authored.find("link/collision").name == "collision"
-    assert_close_tuple(collision.friction, (0.8, 0.01, 0.001), tolerance=1e-6)
+    assert abs(collision.physics_material["sliding_friction"] - 0.8) < 1e-6
+    assert authored_joint.actuator_config["command_delay_steps"] == 2
+    assert abs(authored_joint.actuator_config["strength_scale"] - 0.9) < 1e-6
+    assert imu.noise_model["seed_offset"] == 7
     assert authored.find("link/imu").type == "IMUSensor3D"
     assert authored.find("link/root_angmom").type == "AngularMomentumSensor3D"
     assert abs(authored.find("link/foot_contact").radius - 0.05) < 1e-6
@@ -218,7 +235,7 @@ def main():
     context.load_scene("res://gobot_python_binding_cartpole.jscn")
     if mujoco_available:
         compiled_artifact = context.compile_scene_artifact(gobot.PhysicsBackendType.MuJoCoCpu)
-        assert compiled_artifact["schema_version"] == 2
+        assert compiled_artifact["schema_version"] == 3
         assert compiled_artifact["producer"] == "mujoco"
         assert compiled_artifact["format"] == "mjcf"
         assert compiled_artifact["producer_version"]
@@ -247,7 +264,12 @@ def main():
     assert runtime_cartpole is not None
     slider = runtime_cartpole.find("rail/slider")
     hinge = runtime_cartpole.find("rail/slider/cart/hinge")
-    assert slider.get_runtime_state()["name"] == "slider"
+    slider_state = slider.get_runtime_state()
+    assert slider_state["name"] == "slider"
+    assert slider_state["commanded_target"] == 0.0
+    assert slider_state["applied_target"] == 0.0
+    assert slider_state["command_delayed"] is False
+    assert slider_state["effort_saturated"] is False
     assert hinge.get_runtime_state()["name"] == "hinge"
     assert not hasattr(context, "get_runtime_state")
     assert not hasattr(context, "get_runtime_name_map")

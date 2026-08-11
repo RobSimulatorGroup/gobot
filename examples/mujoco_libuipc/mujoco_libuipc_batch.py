@@ -38,6 +38,8 @@ def _parser() -> argparse.ArgumentParser:
     parser.add_argument("--warmup-steps", type=int, default=8)
     parser.add_argument("--repeats", type=int, default=3)
     parser.add_argument("--fixed-dt", type=float, default=0.002)
+    parser.add_argument("--rigid-substeps", type=int, default=1)
+    parser.add_argument("--ipc-substeps", type=int, default=1)
     parser.add_argument("--press-depth", type=float, default=0.17)
     parser.add_argument("--device", default="cuda:0")
     parser.add_argument("--module-path", default="")
@@ -67,6 +69,10 @@ def _validate_args(args: argparse.Namespace) -> None:
         raise ValueError("--repeats must be positive")
     if args.fixed_dt <= 0.0:
         raise ValueError("--fixed-dt must be positive")
+    if args.rigid_substeps <= 0:
+        raise ValueError("--rigid-substeps must be positive")
+    if args.ipc_substeps <= 0:
+        raise ValueError("--ipc-substeps must be positive")
     if not 0.0 < args.press_depth <= 0.17:
         raise ValueError("--press-depth must be in (0, 0.17]")
 
@@ -95,7 +101,9 @@ def run(args: argparse.Namespace) -> dict[str, Any]:
 
     solver_config = LibuipcBatchConfig(
         solver=LibuipcConfig(
-            fixed_time_step=args.fixed_dt,
+            fixed_time_step=(
+                args.fixed_dt * args.rigid_substeps / args.ipc_substeps
+            ),
             module_path=args.module_path,
             workspace=str(args.workspace.expanduser().resolve()),
         ),
@@ -115,6 +123,8 @@ def run(args: argparse.Namespace) -> dict[str, Any]:
             num_envs=args.num_envs,
             device=args.device,
             environments_per_shard=args.environments_per_shard,
+            rigid_substeps=args.rigid_substeps,
+            ipc_substeps=args.ipc_substeps,
             capture_mujoco_graphs=not args.no_mujoco_graph,
         ),
         libuipc_config=solver_config,
@@ -238,6 +248,15 @@ def run(args: argparse.Namespace) -> dict[str, Any]:
                 ipc_shard_latency_samples
             ),
             "feedback_source": provider.diagnostics["feedback_source"],
+            "exact_contact_wrench": provider.capabilities.exact_contact_wrench,
+            "integration_scheme": provider.diagnostics["integration_scheme"],
+            "macro_fixed_time_step": provider.fixed_time_step,
+            "rigid_fixed_time_step": provider.diagnostics[
+                "rigid_fixed_time_step"
+            ],
+            "ipc_fixed_time_step": provider.diagnostics["ipc_fixed_time_step"],
+            "rigid_substeps": provider.diagnostics["rigid_substeps"],
+            "ipc_substeps": provider.diagnostics["ipc_substeps"],
             "joint_position_range": _range(state.joint_position[:, 0]),
             "mujoco_graph_capture_enabled": (
                 provider.rigid_solver.capabilities.graph_capture
@@ -252,6 +271,9 @@ def run(args: argparse.Namespace) -> dict[str, Any]:
             "soft_compression_range_meters": _range(compression),
             "affine_target_staging": provider.diagnostics[
                 "affine_target_staging"
+            ],
+            "contact_wrench_staging": provider.diagnostics[
+                "contact_wrench_staging"
             ],
             "steps": args.steps,
             "warmup_steps": args.warmup_steps,

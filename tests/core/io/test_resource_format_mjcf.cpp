@@ -158,7 +158,7 @@ TEST(TestResourceFormatMJCF, imports_body_inertial_orientation) {
   <worldbody>
     <body name="base">
       <inertial pos="0.1 0.2 0.3" quat="0.5 0.5 -0.5 0.5" mass="2.0" diaginertia="1 2 3"/>
-      <geom name="base_collision" type="sphere" size="0.05" priority="4"/>
+      <geom name="base_collision" type="sphere" size="0.05" friction="0.6 0.01 0.001"/>
     </body>
   </worldbody>
 </mujoco>
@@ -182,7 +182,8 @@ TEST(TestResourceFormatMJCF, imports_body_inertial_orientation) {
     auto* collision = gobot::Object::PointerCastTo<gobot::CollisionShape3D>(
             FindNodeByName(root_node, "base_collision"));
     ASSERT_NE(collision, nullptr);
-    EXPECT_EQ(collision->GetPriority(), 4);
+    ASSERT_TRUE(collision->GetPhysicsMaterial().IsValid());
+    EXPECT_NEAR(collision->GetPhysicsMaterial()->GetSlidingFriction(), 0.6, 1.0e-6);
 
     gobot::Object::Delete(root_node);
 }
@@ -426,19 +427,16 @@ TEST(TestResourceFormatMJCF, imports_capsule_contact_and_position_actuator_seman
     ASSERT_TRUE(capsule.IsValid());
     EXPECT_NEAR(capsule->GetRadius(), 0.03, 1.0e-6);
     EXPECT_NEAR(capsule->GetHeight(), 0.4, 1.0e-6);
-    EXPECT_TRUE(collision->GetFriction().isApprox(gobot::Vector3(0.8, 0.02, 0.003), 1.0e-9));
-    EXPECT_EQ(collision->GetContactType(), 2);
-    EXPECT_EQ(collision->GetContactAffinity(), 4);
-    EXPECT_EQ(collision->GetContactDimension(), 4);
-    EXPECT_TRUE(collision->GetSolref().isApprox(gobot::Vector2(0.01, 0.9), 1.0e-9));
-    ASSERT_EQ(collision->GetSolimp().size(), 5);
-    EXPECT_NEAR(collision->GetSolimp()[0], 0.7, 1.0e-6);
-    EXPECT_NEAR(collision->GetSolimp()[1], 0.8, 1.0e-6);
-    EXPECT_NEAR(collision->GetSolimp()[2], 0.02, 1.0e-9);
-    EXPECT_NEAR(collision->GetSolimp()[3], 0.5, 1.0e-9);
-    EXPECT_NEAR(collision->GetSolimp()[4], 2.0, 1.0e-9);
-    EXPECT_NEAR(collision->GetMargin(), 0.001, 1.0e-9);
-    EXPECT_NEAR(collision->GetGap(), 0.0002, 1.0e-9);
+    ASSERT_TRUE(collision->GetPhysicsMaterial().IsValid());
+    EXPECT_NEAR(collision->GetPhysicsMaterial()->GetSlidingFriction(), 0.8, 1.0e-6);
+    EXPECT_NEAR(collision->GetPhysicsMaterial()->GetTorsionalFriction(), 0.02, 1.0e-6);
+    EXPECT_NEAR(collision->GetPhysicsMaterial()->GetRollingFriction(), 0.003, 1.0e-6);
+    EXPECT_NEAR(collision->GetPhysicsMaterial()->GetContactCompliance(), 0.0001, 1.0e-9);
+    EXPECT_NEAR(collision->GetPhysicsMaterial()->GetContactDamping(), 0.9, 1.0e-6);
+    EXPECT_EQ(collision->GetCollisionLayer(), 2u);
+    EXPECT_EQ(collision->GetCollisionMask(), 4u);
+    EXPECT_NEAR(collision->GetContactOffset(), 0.001, 1.0e-9);
+    EXPECT_NEAR(collision->GetRestOffset(), 0.0008, 1.0e-9);
 
     gobot::Object::Delete(root_node);
 }

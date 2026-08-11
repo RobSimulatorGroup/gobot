@@ -19,8 +19,8 @@ robot stands, contacts the floor, and responds to commands:
 - joint limits and initial/reset positions
 - capsule, box, sphere, cylinder, and mesh collision shapes
 - MJCF `fromto` placement for capsule/cylinder geoms
-- geom friction, contact type, contact affinity, contact dimension, `solref`,
-  `solimp`, `margin`, and `gap`
+- geom friction, collision filtering, contact dimensionality, contact
+  compliance/damping, margin, and gap through backend-neutral equivalents
 - position, velocity, and motor actuator intent, including gains, control
   ranges, force ranges, and gear values
 - inertial properties needed by the backend
@@ -42,9 +42,16 @@ After import, MJCF data should be represented as normal Gobot scene objects:
 
 - `Robot3D` owns the robot node.
 - `Link3D` owns link inertial data and visual/collision children.
-- `Joint3D` owns joint axis, limits, initial position, and drive config.
-- `CollisionShape3D` owns contact and friction parameters.
+- `Joint3D` owns joint axis, limits, initial position, drive config, and its
+  optional backend-neutral `JointActuatorConfig`.
+- `CollisionShape3D` owns collision layer/mask, contact/rest offsets, and a
+  shared `PhysicsMaterial3D` reference.
 - shape resources, including `CapsuleShape3D`, preserve geometry.
+
+The importer translates MuJoCo geom fields into those neutral resources. The
+runtime compiler then maps the neutral values back to MuJoCo `friction`,
+`condim`, `solref`, `margin`, and `gap`. Backend-specific solver curves such as
+the full `solimp` tuple are not editable scene properties.
 
 Go1 must stand even if its `source_path` is changed to a missing file. The
 physics snapshot intentionally contains no import source path, proving the

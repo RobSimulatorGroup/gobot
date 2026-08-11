@@ -91,7 +91,7 @@ TEST(TestIpcSceneCompiler, compiles_deterministic_content_addressed_artifact) {
     ASSERT_TRUE(gobot::IpcSceneCompiler::Compile(root, &first, &error)) << error;
     ASSERT_TRUE(gobot::IpcSceneCompiler::Compile(root, &second, &error)) << error;
 
-    EXPECT_EQ(first.schema_version, 2);
+    EXPECT_EQ(first.schema_version, 3);
     EXPECT_EQ(first.producer, "gobot");
     EXPECT_EQ(first.format, "gobot-ipc");
     EXPECT_EQ(first.manifest, second.manifest);
@@ -104,7 +104,7 @@ TEST(TestIpcSceneCompiler, compiles_deterministic_content_addressed_artifact) {
 
     const nlohmann::json manifest = nlohmann::json::parse(first.manifest);
     EXPECT_EQ(manifest.at("scene_name"), "ipc_world");
-    EXPECT_EQ(manifest.at("schema_version"), 2);
+    EXPECT_EQ(manifest.at("schema_version"), 3);
     EXPECT_TRUE(manifest.at("couplings").empty());
     ASSERT_EQ(manifest.at("deformable_bodies").size(), 1);
     ASSERT_EQ(manifest.at("tactile_sensors").size(), 1);

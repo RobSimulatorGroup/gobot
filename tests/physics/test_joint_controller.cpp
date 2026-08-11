@@ -91,6 +91,82 @@ TEST(TestJointController, integral_error_is_clamped_and_resettable) {
     EXPECT_DOUBLE_EQ(controller.GetIntegralError(), 0.0);
 }
 
+TEST(TestJointController, actuator_model_delays_and_filters_commands_with_telemetry) {
+    gobot::JointController controller;
+    gobot::JointActuatorModel model;
+    model.command_delay_steps = 2;
+    model.command_deadband = 0.2;
+    model.command_slew_rate = 1.0;
+    controller.SetActuatorModel(model);
+
+    gobot::JointControllerState state;
+    state.position = 0.1;
+    gobot::JointControllerCommand command;
+    command.mode = gobot::PhysicsJointControlMode::Position;
+    command.target_position = 1.0;
+
+    gobot::JointControllerCommand processed =
+            controller.ProcessCommand(state, command, 0.1);
+    EXPECT_DOUBLE_EQ(processed.target_position, state.position);
+    EXPECT_TRUE(controller.GetTelemetry().delayed);
+
+    command.target_position = 2.0;
+    processed = controller.ProcessCommand(state, command, 0.1);
+    EXPECT_DOUBLE_EQ(processed.target_position, state.position);
+
+    command.target_position = 3.0;
+    processed = controller.ProcessCommand(state, command, 0.1);
+    EXPECT_NEAR(processed.target_position, 0.2, CMP_EPSILON);
+    EXPECT_TRUE(controller.GetTelemetry().rate_limited);
+    EXPECT_DOUBLE_EQ(controller.GetTelemetry().commanded_target, 3.0);
+    EXPECT_NEAR(controller.GetTelemetry().applied_target, 0.2, CMP_EPSILON);
+
+    controller.Reset();
+    model.command_delay_steps = 0;
+    model.command_slew_rate = 0.0;
+    controller.SetActuatorModel(model);
+    command.target_position = 0.15;
+    processed = controller.ProcessCommand(state, command, 0.1);
+    EXPECT_DOUBLE_EQ(processed.target_position, state.position);
+    EXPECT_TRUE(controller.GetTelemetry().deadband_applied);
+}
+
+TEST(TestJointController, actuator_effort_envelope_and_runtime_state_are_replayable) {
+    gobot::JointController controller;
+    gobot::JointActuatorModel model;
+    model.command_delay_steps = 1;
+    model.strength_scale = 0.5;
+    model.motor_velocity_limit = 10.0;
+    model.motor_stall_effort = 8.0;
+    controller.SetActuatorModel(model);
+
+    gobot::JointControllerState state;
+    state.velocity = 5.0;
+    gobot::JointControllerLimits limits;
+    limits.effort_limit = 100.0;
+    EXPECT_DOUBLE_EQ(controller.ApplyEffortEnvelope(20.0, state, limits), 4.0);
+    EXPECT_DOUBLE_EQ(controller.GetStrengthScaleAtVelocity(state.velocity), 0.25);
+    EXPECT_TRUE(controller.GetTelemetry().effort_saturated);
+
+    gobot::JointControllerCommand command;
+    command.mode = gobot::PhysicsJointControlMode::Effort;
+    command.target_effort = 3.0;
+    controller.ProcessCommand({}, command, 0.01);
+    const gobot::JointControllerRuntimeState checkpoint =
+            controller.CaptureRuntimeState();
+
+    gobot::JointController restored;
+    restored.SetActuatorModel(model);
+    restored.RestoreRuntimeState(checkpoint);
+    const gobot::JointControllerCommand expected =
+            controller.ProcessCommand({}, command, 0.01);
+    const gobot::JointControllerCommand actual =
+            restored.ProcessCommand({}, command, 0.01);
+    EXPECT_DOUBLE_EQ(actual.target_effort, expected.target_effort);
+    EXPECT_EQ(restored.GetTelemetry().delayed,
+              controller.GetTelemetry().delayed);
+}
+
 TEST(TestJointController, normalized_action_maps_to_joint_limits) {
     gobot::JointControllerLimits limits;
     limits.has_position_limits = true;

@@ -16,9 +16,12 @@
 #include "gobot/scene/resources/gaussian_splat.hpp"
 #include "gobot/scene/resources/material.hpp"
 #include "gobot/scene/resources/mesh.hpp"
+#include "gobot/scene/resources/joint_actuator_config.hpp"
 #include "gobot/scene/resources/primitive_mesh.hpp"
+#include "gobot/scene/resources/physics_material_3d.hpp"
 #include "gobot/scene/resources/shape_3d.hpp"
 #include "gobot/scene/resources/sphere_shape_3d.hpp"
+#include "gobot/scene/resources/sensor_noise_model.hpp"
 #include "gobot/scene/resources/tetrahedral_mesh.hpp"
 #include "gobot/scene/resources/terrain_generator_config.hpp"
 #include "gobot/scene/tactile_sensor_3d.hpp"
@@ -98,6 +101,15 @@ Variant ResourceRefToPropertyVariant(const Ref<Resource>& resource, const Type& 
     }
     if (expected_type == Type::get<PBRMaterial3D>()) {
         return resource.DynamicPointerCast<PBRMaterial3D>();
+    }
+    if (expected_type == Type::get<PhysicsMaterial3D>()) {
+        return resource.DynamicPointerCast<PhysicsMaterial3D>();
+    }
+    if (expected_type == Type::get<JointActuatorConfig>()) {
+        return resource.DynamicPointerCast<JointActuatorConfig>();
+    }
+    if (expected_type == Type::get<SensorNoiseModel>()) {
+        return resource.DynamicPointerCast<SensorNoiseModel>();
     }
     if (expected_type == Type::get<Shape3D>()) {
         return resource.DynamicPointerCast<Shape3D>();
@@ -217,6 +229,33 @@ void ResourceCreationRegistry::EnsureBuiltInResourceTypesRegistered() {
         "Physically based 3D material.",
         Type::get<PBRMaterial3D>(),
         []() -> Ref<Resource> { return CreateResourceRef<PBRMaterial3D>(); }
+    });
+
+    RegisterResourceType({
+        "PhysicsMaterial3D",
+        "PhysicsMaterial3D",
+        "Physics",
+        "Backend-neutral contact material.",
+        Type::get<PhysicsMaterial3D>(),
+        []() -> Ref<Resource> { return CreateResourceRef<PhysicsMaterial3D>(); }
+    });
+
+    RegisterResourceType({
+        "JointActuatorConfig",
+        "JointActuatorConfig",
+        "Physics",
+        "Backend-neutral actuator dynamics and command conditioning.",
+        Type::get<JointActuatorConfig>(),
+        []() -> Ref<Resource> { return CreateResourceRef<JointActuatorConfig>(); }
+    });
+
+    RegisterResourceType({
+        "SensorNoiseModel",
+        "SensorNoiseModel",
+        "Physics",
+        "Backend-neutral sensor noise, bias, quantization, and clipping.",
+        Type::get<SensorNoiseModel>(),
+        []() -> Ref<Resource> { return CreateResourceRef<SensorNoiseModel>(); }
     });
 
     RegisterResourceType({

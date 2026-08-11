@@ -6,6 +6,10 @@
 
 #pragma once
 
+#include <cstdint>
+#include <deque>
+#include <vector>
+
 #include "gobot/core/math/geometry.hpp"
 
 namespace gobot {
@@ -43,6 +47,35 @@ struct JointControllerState {
     RealType velocity{0.0};
 };
 
+struct JointActuatorModel {
+    std::uint32_t command_delay_steps{0};
+    RealType command_deadband{0.0};
+    RealType command_slew_rate{0.0};
+    RealType strength_scale{1.0};
+    RealType motor_velocity_limit{0.0};
+    RealType motor_stall_effort{0.0};
+};
+
+struct JointControllerTelemetry {
+    RealType commanded_target{0.0};
+    RealType applied_target{0.0};
+    RealType tracking_error{0.0};
+    RealType applied_effort{0.0};
+    bool delayed{false};
+    bool deadband_applied{false};
+    bool rate_limited{false};
+    bool effort_saturated{false};
+};
+
+struct JointControllerRuntimeState {
+    RealType integral_error{0.0};
+    std::vector<JointControllerCommand> delayed_commands;
+    PhysicsJointControlMode previous_mode{PhysicsJointControlMode::Passive};
+    RealType previous_target{0.0};
+    bool has_previous_target{false};
+    JointControllerTelemetry telemetry;
+};
+
 struct PhysicsJointSnapshot;
 struct PhysicsJointState;
 
@@ -56,9 +89,31 @@ public:
 
     const JointControllerGains& GetGains() const;
 
+    void SetActuatorModel(const JointActuatorModel& model);
+
+    const JointActuatorModel& GetActuatorModel() const;
+
+    const JointControllerTelemetry& GetTelemetry() const;
+
+    JointControllerRuntimeState CaptureRuntimeState() const;
+
+    void RestoreRuntimeState(const JointControllerRuntimeState& state);
+
     void Reset();
 
     RealType GetIntegralError() const;
+
+    void RestoreIntegralError(RealType integral_error);
+
+    JointControllerCommand ProcessCommand(const JointControllerState& state,
+                                          const JointControllerCommand& command,
+                                          RealType delta_time);
+
+    RealType ApplyEffortEnvelope(RealType effort,
+                                 const JointControllerState& state,
+                                 const JointControllerLimits& limits);
+
+    RealType GetStrengthScaleAtVelocity(RealType velocity) const;
 
     RealType ComputeEffort(const JointControllerState& state,
                            const JointControllerCommand& command,
@@ -76,7 +131,13 @@ public:
 
 private:
     JointControllerGains gains_;
+    JointActuatorModel actuator_model_;
+    JointControllerTelemetry telemetry_;
     RealType integral_error_{0.0};
+    std::deque<JointControllerCommand> delayed_commands_;
+    PhysicsJointControlMode previous_mode_{PhysicsJointControlMode::Passive};
+    RealType previous_target_{0.0};
+    bool has_previous_target_{false};
 };
 
 JointControllerLimits MakeJointControllerLimits(const PhysicsJointSnapshot& joint_snapshot);

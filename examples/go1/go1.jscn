@@ -1,27 +1,27 @@
 {
     "__EXT_RESOURCES__": [
         {
-            "__ID__": "5_kmCel",
+            "__ID__": "5_hV7HG",
             "__PATH__": "res://assets/thigh.stl",
             "__TYPE__": "ArrayMesh"
         },
         {
-            "__ID__": "4_a37Ny",
-            "__PATH__": "res://assets/calf.stl",
-            "__TYPE__": "ArrayMesh"
-        },
-        {
-            "__ID__": "3_GouZE",
+            "__ID__": "3_6qQo1",
             "__PATH__": "res://assets/thigh_mirror.stl",
             "__TYPE__": "ArrayMesh"
         },
         {
-            "__ID__": "2_kfHRl",
+            "__ID__": "4_GxvN0",
+            "__PATH__": "res://assets/calf.stl",
+            "__TYPE__": "ArrayMesh"
+        },
+        {
+            "__ID__": "2_1GlEh",
             "__PATH__": "res://assets/hip.stl",
             "__TYPE__": "ArrayMesh"
         },
         {
-            "__ID__": "1_y6t3J",
+            "__ID__": "1_dQ9by",
             "__PATH__": "res://assets/trunk.stl",
             "__TYPE__": "ArrayMesh"
         }
@@ -67,6 +67,7 @@
                     }
                 },
                 "script": null,
+                "semantic_label": "",
                 "source_path": "res://assets/xml/go1.xml",
                 "visible": true
             },
@@ -76,6 +77,12 @@
             "name": "floating_base_joint",
             "parent": 0,
             "properties": {
+                "affine_actuator_control_gain": 0.0,
+                "affine_actuator_enabled": false,
+                "affine_actuator_force_offset": 0.0,
+                "affine_actuator_inherit_range": 0.0,
+                "affine_actuator_position_gain": 0.0,
+                "affine_actuator_velocity_gain": 0.0,
                 "armature": 0.0,
                 "axis": {
                     "matrix_data": {
@@ -146,6 +153,7 @@
                     }
                 },
                 "script": null,
+                "semantic_label": "",
                 "upper_limit": 0.0,
                 "velocity_limit": 0.0,
                 "visible": true
@@ -232,6 +240,7 @@
                     }
                 },
                 "script": null,
+                "semantic_label": "",
                 "visible": true
             },
             "type": "Link3D"
@@ -240,9 +249,9 @@
             "name": "trunk_visual_0",
             "parent": 2,
             "properties": {
-                "material": "SubResource(PBRMaterial3D_UZ100)",
-                "mesh": "ExtResource(1_y6t3J)",
-                "mesh_material": "SubResource(PBRMaterial3D_MBRhO)",
+                "cast_shadow": true,
+                "material": "SubResource(PBRMaterial3D_Ok3MG)",
+                "mesh": "ExtResource(1_dQ9by)",
                 "position": {
                     "matrix_data": {
                         "cols": 1,
@@ -277,13 +286,15 @@
                     }
                 },
                 "script": null,
+                "semantic_label": "",
                 "surface_color": {
                     "alpha": 1.0,
                     "blue": 0.20000000298023224,
                     "green": 0.20000000298023224,
                     "red": 0.20000000298023224
                 },
-                "visible": true
+                "visible": true,
+                "visible_in_rgb": true
             },
             "type": "MeshInstance3D"
         },
@@ -291,23 +302,11 @@
             "name": "trunk_collision",
             "parent": 2,
             "properties": {
-                "conaffinity": 1,
-                "condim": 1,
-                "contype": 1,
+                "collision_layer": 1,
+                "collision_mask": 1,
+                "contact_offset": 0.0,
                 "disabled": false,
-                "friction": {
-                    "matrix_data": {
-                        "cols": 1,
-                        "rows": 3,
-                        "storage": [
-                            1.0,
-                            0.004999999888241291,
-                            9.999999747378752e-05
-                        ]
-                    }
-                },
-                "gap": 0.0,
-                "margin": 0.0,
+                "physics_material": "SubResource(PhysicsMaterial3D_UPpAf)",
                 "position": {
                     "matrix_data": {
                         "cols": 1,
@@ -319,7 +318,7 @@
                         ]
                     }
                 },
-                "priority": 0,
+                "rest_offset": 0.0,
                 "rotation_degrees": {
                     "matrix_data": {
                         "cols": 1,
@@ -343,24 +342,8 @@
                     }
                 },
                 "script": null,
-                "shape": "SubResource(BoxShape3D_qhinl)",
-                "solimp": [
-                    0.8999999761581421,
-                    0.949999988079071,
-                    0.0010000000474974513,
-                    0.5,
-                    2.0
-                ],
-                "solref": {
-                    "matrix_data": {
-                        "cols": 1,
-                        "rows": 2,
-                        "storage": [
-                            0.009999999776482582,
-                            1.0
-                        ]
-                    }
-                },
+                "semantic_label": "",
+                "shape": "SubResource(BoxShape3D_pw9sY)",
                 "visible": false
             },
             "type": "CollisionShape3D"
@@ -369,23 +352,11 @@
             "name": "head_collision",
             "parent": 2,
             "properties": {
-                "conaffinity": 1,
-                "condim": 1,
-                "contype": 1,
+                "collision_layer": 1,
+                "collision_mask": 1,
+                "contact_offset": 0.0,
                 "disabled": false,
-                "friction": {
-                    "matrix_data": {
-                        "cols": 1,
-                        "rows": 3,
-                        "storage": [
-                            1.0,
-                            0.004999999888241291,
-                            9.999999747378752e-05
-                        ]
-                    }
-                },
-                "gap": 0.0,
-                "margin": 0.0,
+                "physics_material": "SubResource(PhysicsMaterial3D_XG8Q3)",
                 "position": {
                     "matrix_data": {
                         "cols": 1,
@@ -397,7 +368,7 @@
                         ]
                     }
                 },
-                "priority": 0,
+                "rest_offset": 0.0,
                 "rotation_degrees": {
                     "matrix_data": {
                         "cols": 1,
@@ -421,24 +392,8 @@
                     }
                 },
                 "script": null,
-                "shape": "SubResource(SphereShape3D_xZR8u)",
-                "solimp": [
-                    0.8999999761581421,
-                    0.949999988079071,
-                    0.0010000000474974513,
-                    0.5,
-                    2.0
-                ],
-                "solref": {
-                    "matrix_data": {
-                        "cols": 1,
-                        "rows": 2,
-                        "storage": [
-                            0.009999999776482582,
-                            1.0
-                        ]
-                    }
-                },
+                "semantic_label": "",
+                "shape": "SubResource(SphereShape3D_Rslvj)",
                 "visible": false
             },
             "type": "CollisionShape3D"
@@ -447,6 +402,12 @@
             "name": "FR_hip_joint",
             "parent": 2,
             "properties": {
+                "affine_actuator_control_gain": 0.0,
+                "affine_actuator_enabled": false,
+                "affine_actuator_force_offset": 0.0,
+                "affine_actuator_inherit_range": 0.0,
+                "affine_actuator_position_gain": 0.0,
+                "affine_actuator_velocity_gain": 0.0,
                 "armature": 0.004026311915367842,
                 "axis": {
                     "matrix_data": {
@@ -517,6 +478,7 @@
                     }
                 },
                 "script": null,
+                "semantic_label": "",
                 "upper_limit": 0.8629999756813049,
                 "velocity_limit": 30.100000381469727,
                 "visible": true
@@ -603,6 +565,7 @@
                     }
                 },
                 "script": null,
+                "semantic_label": "",
                 "visible": true
             },
             "type": "Link3D"
@@ -611,9 +574,9 @@
             "name": "hip_visual_3",
             "parent": 7,
             "properties": {
-                "material": "SubResource(PBRMaterial3D_4mdxZ)",
-                "mesh": "ExtResource(2_kfHRl)",
-                "mesh_material": "SubResource(PBRMaterial3D_xPezD)",
+                "cast_shadow": true,
+                "material": "SubResource(PBRMaterial3D_5Wpx7)",
+                "mesh": "ExtResource(2_1GlEh)",
                 "position": {
                     "matrix_data": {
                         "cols": 1,
@@ -648,13 +611,15 @@
                     }
                 },
                 "script": null,
+                "semantic_label": "",
                 "surface_color": {
                     "alpha": 1.0,
                     "blue": 0.20000000298023224,
                     "green": 0.20000000298023224,
                     "red": 0.20000000298023224
                 },
-                "visible": true
+                "visible": true,
+                "visible_in_rgb": true
             },
             "type": "MeshInstance3D"
         },
@@ -662,23 +627,11 @@
             "name": "FR_hip_collision",
             "parent": 7,
             "properties": {
-                "conaffinity": 1,
-                "condim": 1,
-                "contype": 1,
+                "collision_layer": 1,
+                "collision_mask": 1,
+                "contact_offset": 0.0,
                 "disabled": false,
-                "friction": {
-                    "matrix_data": {
-                        "cols": 1,
-                        "rows": 3,
-                        "storage": [
-                            1.0,
-                            0.004999999888241291,
-                            9.999999747378752e-05
-                        ]
-                    }
-                },
-                "gap": 0.0,
-                "margin": 0.0,
+                "physics_material": "SubResource(PhysicsMaterial3D_89vDE)",
                 "position": {
                     "matrix_data": {
                         "cols": 1,
@@ -690,7 +643,7 @@
                         ]
                     }
                 },
-                "priority": 0,
+                "rest_offset": 0.0,
                 "rotation_degrees": {
                     "matrix_data": {
                         "cols": 1,
@@ -714,24 +667,8 @@
                     }
                 },
                 "script": null,
-                "shape": "SubResource(CapsuleShape3D_oXfKD)",
-                "solimp": [
-                    0.8999999761581421,
-                    0.949999988079071,
-                    0.0010000000474974513,
-                    0.5,
-                    2.0
-                ],
-                "solref": {
-                    "matrix_data": {
-                        "cols": 1,
-                        "rows": 2,
-                        "storage": [
-                            0.009999999776482582,
-                            1.0
-                        ]
-                    }
-                },
+                "semantic_label": "",
+                "shape": "SubResource(CapsuleShape3D_FiU2c)",
                 "visible": false
             },
             "type": "CollisionShape3D"
@@ -740,6 +677,12 @@
             "name": "FR_thigh_joint",
             "parent": 7,
             "properties": {
+                "affine_actuator_control_gain": 0.0,
+                "affine_actuator_enabled": false,
+                "affine_actuator_force_offset": 0.0,
+                "affine_actuator_inherit_range": 0.0,
+                "affine_actuator_position_gain": 0.0,
+                "affine_actuator_velocity_gain": 0.0,
                 "armature": 0.004026311915367842,
                 "axis": {
                     "matrix_data": {
@@ -810,6 +753,7 @@
                     }
                 },
                 "script": null,
+                "semantic_label": "",
                 "upper_limit": 4.500999927520752,
                 "velocity_limit": 30.100000381469727,
                 "visible": true
@@ -896,6 +840,7 @@
                     }
                 },
                 "script": null,
+                "semantic_label": "",
                 "visible": true
             },
             "type": "Link3D"
@@ -904,9 +849,9 @@
             "name": "thigh_mirror_visual_5",
             "parent": 11,
             "properties": {
-                "material": "SubResource(PBRMaterial3D_JoA4f)",
-                "mesh": "ExtResource(3_GouZE)",
-                "mesh_material": "SubResource(PBRMaterial3D_C43DP)",
+                "cast_shadow": true,
+                "material": "SubResource(PBRMaterial3D_69Vqf)",
+                "mesh": "ExtResource(3_6qQo1)",
                 "position": {
                     "matrix_data": {
                         "cols": 1,
@@ -941,13 +886,15 @@
                     }
                 },
                 "script": null,
+                "semantic_label": "",
                 "surface_color": {
                     "alpha": 1.0,
                     "blue": 0.20000000298023224,
                     "green": 0.20000000298023224,
                     "red": 0.20000000298023224
                 },
-                "visible": true
+                "visible": true,
+                "visible_in_rgb": true
             },
             "type": "MeshInstance3D"
         },
@@ -955,23 +902,11 @@
             "name": "FR_thigh_collision1",
             "parent": 11,
             "properties": {
-                "conaffinity": 1,
-                "condim": 1,
-                "contype": 1,
+                "collision_layer": 1,
+                "collision_mask": 1,
+                "contact_offset": 0.0,
                 "disabled": false,
-                "friction": {
-                    "matrix_data": {
-                        "cols": 1,
-                        "rows": 3,
-                        "storage": [
-                            1.0,
-                            0.004999999888241291,
-                            9.999999747378752e-05
-                        ]
-                    }
-                },
-                "gap": 0.0,
-                "margin": 0.0,
+                "physics_material": "SubResource(PhysicsMaterial3D_tAsF3)",
                 "position": {
                     "matrix_data": {
                         "cols": 1,
@@ -983,7 +918,7 @@
                         ]
                     }
                 },
-                "priority": 0,
+                "rest_offset": 0.0,
                 "rotation_degrees": {
                     "matrix_data": {
                         "cols": 1,
@@ -1007,24 +942,8 @@
                     }
                 },
                 "script": null,
-                "shape": "SubResource(CapsuleShape3D_KEJps)",
-                "solimp": [
-                    0.8999999761581421,
-                    0.949999988079071,
-                    0.0010000000474974513,
-                    0.5,
-                    2.0
-                ],
-                "solref": {
-                    "matrix_data": {
-                        "cols": 1,
-                        "rows": 2,
-                        "storage": [
-                            0.009999999776482582,
-                            1.0
-                        ]
-                    }
-                },
+                "semantic_label": "",
+                "shape": "SubResource(CapsuleShape3D_wpSCl)",
                 "visible": false
             },
             "type": "CollisionShape3D"
@@ -1033,23 +952,11 @@
             "name": "FR_thigh_collision2",
             "parent": 11,
             "properties": {
-                "conaffinity": 1,
-                "condim": 1,
-                "contype": 1,
+                "collision_layer": 1,
+                "collision_mask": 1,
+                "contact_offset": 0.0,
                 "disabled": false,
-                "friction": {
-                    "matrix_data": {
-                        "cols": 1,
-                        "rows": 3,
-                        "storage": [
-                            1.0,
-                            0.004999999888241291,
-                            9.999999747378752e-05
-                        ]
-                    }
-                },
-                "gap": 0.0,
-                "margin": 0.0,
+                "physics_material": "SubResource(PhysicsMaterial3D_rGGKX)",
                 "position": {
                     "matrix_data": {
                         "cols": 1,
@@ -1061,7 +968,7 @@
                         ]
                     }
                 },
-                "priority": 0,
+                "rest_offset": 0.0,
                 "rotation_degrees": {
                     "matrix_data": {
                         "cols": 1,
@@ -1085,24 +992,8 @@
                     }
                 },
                 "script": null,
-                "shape": "SubResource(CapsuleShape3D_5fswI)",
-                "solimp": [
-                    0.8999999761581421,
-                    0.949999988079071,
-                    0.0010000000474974513,
-                    0.5,
-                    2.0
-                ],
-                "solref": {
-                    "matrix_data": {
-                        "cols": 1,
-                        "rows": 2,
-                        "storage": [
-                            0.009999999776482582,
-                            1.0
-                        ]
-                    }
-                },
+                "semantic_label": "",
+                "shape": "SubResource(CapsuleShape3D_4xBMr)",
                 "visible": false
             },
             "type": "CollisionShape3D"
@@ -1111,23 +1002,11 @@
             "name": "FR_thigh_collision3",
             "parent": 11,
             "properties": {
-                "conaffinity": 1,
-                "condim": 1,
-                "contype": 1,
+                "collision_layer": 1,
+                "collision_mask": 1,
+                "contact_offset": 0.0,
                 "disabled": false,
-                "friction": {
-                    "matrix_data": {
-                        "cols": 1,
-                        "rows": 3,
-                        "storage": [
-                            1.0,
-                            0.004999999888241291,
-                            9.999999747378752e-05
-                        ]
-                    }
-                },
-                "gap": 0.0,
-                "margin": 0.0,
+                "physics_material": "SubResource(PhysicsMaterial3D_xja0s)",
                 "position": {
                     "matrix_data": {
                         "cols": 1,
@@ -1139,7 +1018,7 @@
                         ]
                     }
                 },
-                "priority": 0,
+                "rest_offset": 0.0,
                 "rotation_degrees": {
                     "matrix_data": {
                         "cols": 1,
@@ -1163,24 +1042,8 @@
                     }
                 },
                 "script": null,
-                "shape": "SubResource(CapsuleShape3D_mU3uV)",
-                "solimp": [
-                    0.8999999761581421,
-                    0.949999988079071,
-                    0.0010000000474974513,
-                    0.5,
-                    2.0
-                ],
-                "solref": {
-                    "matrix_data": {
-                        "cols": 1,
-                        "rows": 2,
-                        "storage": [
-                            0.009999999776482582,
-                            1.0
-                        ]
-                    }
-                },
+                "semantic_label": "",
+                "shape": "SubResource(CapsuleShape3D_1BpbA)",
                 "visible": false
             },
             "type": "CollisionShape3D"
@@ -1189,6 +1052,12 @@
             "name": "FR_calf_joint",
             "parent": 11,
             "properties": {
+                "affine_actuator_control_gain": 0.0,
+                "affine_actuator_enabled": false,
+                "affine_actuator_force_offset": 0.0,
+                "affine_actuator_inherit_range": 0.0,
+                "affine_actuator_position_gain": 0.0,
+                "affine_actuator_velocity_gain": 0.0,
                 "armature": 0.009059201925992966,
                 "axis": {
                     "matrix_data": {
@@ -1259,6 +1128,7 @@
                     }
                 },
                 "script": null,
+                "semantic_label": "",
                 "upper_limit": -0.8880000114440918,
                 "velocity_limit": 20.059999465942383,
                 "visible": true
@@ -1345,6 +1215,7 @@
                     }
                 },
                 "script": null,
+                "semantic_label": "",
                 "visible": true
             },
             "type": "Link3D"
@@ -1353,9 +1224,9 @@
             "name": "calf_visual_9",
             "parent": 17,
             "properties": {
-                "material": "SubResource(PBRMaterial3D_RDz3d)",
-                "mesh": "ExtResource(4_a37Ny)",
-                "mesh_material": "SubResource(PBRMaterial3D_0iapp)",
+                "cast_shadow": true,
+                "material": "SubResource(PBRMaterial3D_SkadP)",
+                "mesh": "ExtResource(4_GxvN0)",
                 "position": {
                     "matrix_data": {
                         "cols": 1,
@@ -1390,13 +1261,15 @@
                     }
                 },
                 "script": null,
+                "semantic_label": "",
                 "surface_color": {
                     "alpha": 1.0,
                     "blue": 0.20000000298023224,
                     "green": 0.20000000298023224,
                     "red": 0.20000000298023224
                 },
-                "visible": true
+                "visible": true,
+                "visible_in_rgb": true
             },
             "type": "MeshInstance3D"
         },
@@ -1404,23 +1277,11 @@
             "name": "FR_calf_collision1",
             "parent": 17,
             "properties": {
-                "conaffinity": 1,
-                "condim": 1,
-                "contype": 1,
+                "collision_layer": 1,
+                "collision_mask": 1,
+                "contact_offset": 0.0,
                 "disabled": false,
-                "friction": {
-                    "matrix_data": {
-                        "cols": 1,
-                        "rows": 3,
-                        "storage": [
-                            1.0,
-                            0.004999999888241291,
-                            9.999999747378752e-05
-                        ]
-                    }
-                },
-                "gap": 0.0,
-                "margin": 0.0,
+                "physics_material": "SubResource(PhysicsMaterial3D_uFk9b)",
                 "position": {
                     "matrix_data": {
                         "cols": 1,
@@ -1432,7 +1293,7 @@
                         ]
                     }
                 },
-                "priority": 0,
+                "rest_offset": 0.0,
                 "rotation_degrees": {
                     "matrix_data": {
                         "cols": 1,
@@ -1456,24 +1317,8 @@
                     }
                 },
                 "script": null,
-                "shape": "SubResource(CapsuleShape3D_fDebR)",
-                "solimp": [
-                    0.8999999761581421,
-                    0.949999988079071,
-                    0.0010000000474974513,
-                    0.5,
-                    2.0
-                ],
-                "solref": {
-                    "matrix_data": {
-                        "cols": 1,
-                        "rows": 2,
-                        "storage": [
-                            0.009999999776482582,
-                            1.0
-                        ]
-                    }
-                },
+                "semantic_label": "",
+                "shape": "SubResource(CapsuleShape3D_ZaTZJ)",
                 "visible": false
             },
             "type": "CollisionShape3D"
@@ -1482,23 +1327,11 @@
             "name": "FR_calf_collision2",
             "parent": 17,
             "properties": {
-                "conaffinity": 1,
-                "condim": 1,
-                "contype": 1,
+                "collision_layer": 1,
+                "collision_mask": 1,
+                "contact_offset": 0.0,
                 "disabled": false,
-                "friction": {
-                    "matrix_data": {
-                        "cols": 1,
-                        "rows": 3,
-                        "storage": [
-                            1.0,
-                            0.004999999888241291,
-                            9.999999747378752e-05
-                        ]
-                    }
-                },
-                "gap": 0.0,
-                "margin": 0.0,
+                "physics_material": "SubResource(PhysicsMaterial3D_z4wPK)",
                 "position": {
                     "matrix_data": {
                         "cols": 1,
@@ -1510,7 +1343,7 @@
                         ]
                     }
                 },
-                "priority": 0,
+                "rest_offset": 0.0,
                 "rotation_degrees": {
                     "matrix_data": {
                         "cols": 1,
@@ -1534,24 +1367,8 @@
                     }
                 },
                 "script": null,
-                "shape": "SubResource(CapsuleShape3D_MZDIS)",
-                "solimp": [
-                    0.8999999761581421,
-                    0.949999988079071,
-                    0.0010000000474974513,
-                    0.5,
-                    2.0
-                ],
-                "solref": {
-                    "matrix_data": {
-                        "cols": 1,
-                        "rows": 2,
-                        "storage": [
-                            0.009999999776482582,
-                            1.0
-                        ]
-                    }
-                },
+                "semantic_label": "",
+                "shape": "SubResource(CapsuleShape3D_OkxnP)",
                 "visible": false
             },
             "type": "CollisionShape3D"
@@ -1560,23 +1377,11 @@
             "name": "FR_foot_collision",
             "parent": 17,
             "properties": {
-                "conaffinity": 1,
-                "condim": 6,
-                "contype": 1,
+                "collision_layer": 1,
+                "collision_mask": 1,
+                "contact_offset": 0.0,
                 "disabled": false,
-                "friction": {
-                    "matrix_data": {
-                        "cols": 1,
-                        "rows": 3,
-                        "storage": [
-                            1.0,
-                            0.004999999888241291,
-                            0.0005000000237487257
-                        ]
-                    }
-                },
-                "gap": 0.0,
-                "margin": 0.0,
+                "physics_material": "SubResource(PhysicsMaterial3D_h9dx3)",
                 "position": {
                     "matrix_data": {
                         "cols": 1,
@@ -1588,7 +1393,7 @@
                         ]
                     }
                 },
-                "priority": 1,
+                "rest_offset": 0.0,
                 "rotation_degrees": {
                     "matrix_data": {
                         "cols": 1,
@@ -1612,24 +1417,8 @@
                     }
                 },
                 "script": null,
-                "shape": "SubResource(SphereShape3D_g7Gv7)",
-                "solimp": [
-                    0.8999999761581421,
-                    0.949999988079071,
-                    0.0010000000474974513,
-                    0.5,
-                    2.0
-                ],
-                "solref": {
-                    "matrix_data": {
-                        "cols": 1,
-                        "rows": 2,
-                        "storage": [
-                            0.009999999776482582,
-                            1.0
-                        ]
-                    }
-                },
+                "semantic_label": "",
+                "shape": "SubResource(SphereShape3D_WoZUA)",
                 "visible": false
             },
             "type": "CollisionShape3D"
@@ -1759,6 +1548,7 @@
                     }
                 },
                 "script": null,
+                "semantic_label": "",
                 "sensor_period": 0.0,
                 "visible": true,
                 "visualize_debug": true
@@ -1809,6 +1599,7 @@
                     }
                 },
                 "script": null,
+                "semantic_label": "",
                 "sensor_period": 0.0,
                 "visible": true,
                 "visualize_debug": true
@@ -1819,6 +1610,12 @@
             "name": "FL_hip_joint",
             "parent": 2,
             "properties": {
+                "affine_actuator_control_gain": 0.0,
+                "affine_actuator_enabled": false,
+                "affine_actuator_force_offset": 0.0,
+                "affine_actuator_inherit_range": 0.0,
+                "affine_actuator_position_gain": 0.0,
+                "affine_actuator_velocity_gain": 0.0,
                 "armature": 0.004026311915367842,
                 "axis": {
                     "matrix_data": {
@@ -1889,6 +1686,7 @@
                     }
                 },
                 "script": null,
+                "semantic_label": "",
                 "upper_limit": 0.8629999756813049,
                 "velocity_limit": 30.100000381469727,
                 "visible": true
@@ -1975,6 +1773,7 @@
                     }
                 },
                 "script": null,
+                "semantic_label": "",
                 "visible": true
             },
             "type": "Link3D"
@@ -1983,9 +1782,9 @@
             "name": "hip_visual_13",
             "parent": 25,
             "properties": {
-                "material": "SubResource(PBRMaterial3D_91wow)",
-                "mesh": "ExtResource(2_kfHRl)",
-                "mesh_material": "SubResource(PBRMaterial3D_xPezD)",
+                "cast_shadow": true,
+                "material": "SubResource(PBRMaterial3D_E7ymP)",
+                "mesh": "ExtResource(2_1GlEh)",
                 "position": {
                     "matrix_data": {
                         "cols": 1,
@@ -2020,13 +1819,15 @@
                     }
                 },
                 "script": null,
+                "semantic_label": "",
                 "surface_color": {
                     "alpha": 1.0,
                     "blue": 0.20000000298023224,
                     "green": 0.20000000298023224,
                     "red": 0.20000000298023224
                 },
-                "visible": true
+                "visible": true,
+                "visible_in_rgb": true
             },
             "type": "MeshInstance3D"
         },
@@ -2034,23 +1835,11 @@
             "name": "FL_hip_collision",
             "parent": 25,
             "properties": {
-                "conaffinity": 1,
-                "condim": 1,
-                "contype": 1,
+                "collision_layer": 1,
+                "collision_mask": 1,
+                "contact_offset": 0.0,
                 "disabled": false,
-                "friction": {
-                    "matrix_data": {
-                        "cols": 1,
-                        "rows": 3,
-                        "storage": [
-                            1.0,
-                            0.004999999888241291,
-                            9.999999747378752e-05
-                        ]
-                    }
-                },
-                "gap": 0.0,
-                "margin": 0.0,
+                "physics_material": "SubResource(PhysicsMaterial3D_84wKT)",
                 "position": {
                     "matrix_data": {
                         "cols": 1,
@@ -2062,7 +1851,7 @@
                         ]
                     }
                 },
-                "priority": 0,
+                "rest_offset": 0.0,
                 "rotation_degrees": {
                     "matrix_data": {
                         "cols": 1,
@@ -2086,24 +1875,8 @@
                     }
                 },
                 "script": null,
-                "shape": "SubResource(CapsuleShape3D_6fSQd)",
-                "solimp": [
-                    0.8999999761581421,
-                    0.949999988079071,
-                    0.0010000000474974513,
-                    0.5,
-                    2.0
-                ],
-                "solref": {
-                    "matrix_data": {
-                        "cols": 1,
-                        "rows": 2,
-                        "storage": [
-                            0.009999999776482582,
-                            1.0
-                        ]
-                    }
-                },
+                "semantic_label": "",
+                "shape": "SubResource(CapsuleShape3D_YGjOD)",
                 "visible": false
             },
             "type": "CollisionShape3D"
@@ -2112,6 +1885,12 @@
             "name": "FL_thigh_joint",
             "parent": 25,
             "properties": {
+                "affine_actuator_control_gain": 0.0,
+                "affine_actuator_enabled": false,
+                "affine_actuator_force_offset": 0.0,
+                "affine_actuator_inherit_range": 0.0,
+                "affine_actuator_position_gain": 0.0,
+                "affine_actuator_velocity_gain": 0.0,
                 "armature": 0.004026311915367842,
                 "axis": {
                     "matrix_data": {
@@ -2182,6 +1961,7 @@
                     }
                 },
                 "script": null,
+                "semantic_label": "",
                 "upper_limit": 4.500999927520752,
                 "velocity_limit": 30.100000381469727,
                 "visible": true
@@ -2268,6 +2048,7 @@
                     }
                 },
                 "script": null,
+                "semantic_label": "",
                 "visible": true
             },
             "type": "Link3D"
@@ -2276,9 +2057,9 @@
             "name": "thigh_visual_15",
             "parent": 29,
             "properties": {
-                "material": "SubResource(PBRMaterial3D_B76Zv)",
-                "mesh": "ExtResource(5_kmCel)",
-                "mesh_material": "SubResource(PBRMaterial3D_uPX6t)",
+                "cast_shadow": true,
+                "material": "SubResource(PBRMaterial3D_R5Wf0)",
+                "mesh": "ExtResource(5_hV7HG)",
                 "position": {
                     "matrix_data": {
                         "cols": 1,
@@ -2313,13 +2094,15 @@
                     }
                 },
                 "script": null,
+                "semantic_label": "",
                 "surface_color": {
                     "alpha": 1.0,
                     "blue": 0.20000000298023224,
                     "green": 0.20000000298023224,
                     "red": 0.20000000298023224
                 },
-                "visible": true
+                "visible": true,
+                "visible_in_rgb": true
             },
             "type": "MeshInstance3D"
         },
@@ -2327,23 +2110,11 @@
             "name": "FL_thigh_collision1",
             "parent": 29,
             "properties": {
-                "conaffinity": 1,
-                "condim": 1,
-                "contype": 1,
+                "collision_layer": 1,
+                "collision_mask": 1,
+                "contact_offset": 0.0,
                 "disabled": false,
-                "friction": {
-                    "matrix_data": {
-                        "cols": 1,
-                        "rows": 3,
-                        "storage": [
-                            1.0,
-                            0.004999999888241291,
-                            9.999999747378752e-05
-                        ]
-                    }
-                },
-                "gap": 0.0,
-                "margin": 0.0,
+                "physics_material": "SubResource(PhysicsMaterial3D_VOSgK)",
                 "position": {
                     "matrix_data": {
                         "cols": 1,
@@ -2355,7 +2126,7 @@
                         ]
                     }
                 },
-                "priority": 0,
+                "rest_offset": 0.0,
                 "rotation_degrees": {
                     "matrix_data": {
                         "cols": 1,
@@ -2379,24 +2150,8 @@
                     }
                 },
                 "script": null,
-                "shape": "SubResource(CapsuleShape3D_GLpJM)",
-                "solimp": [
-                    0.8999999761581421,
-                    0.949999988079071,
-                    0.0010000000474974513,
-                    0.5,
-                    2.0
-                ],
-                "solref": {
-                    "matrix_data": {
-                        "cols": 1,
-                        "rows": 2,
-                        "storage": [
-                            0.009999999776482582,
-                            1.0
-                        ]
-                    }
-                },
+                "semantic_label": "",
+                "shape": "SubResource(CapsuleShape3D_Dxt4Z)",
                 "visible": false
             },
             "type": "CollisionShape3D"
@@ -2405,23 +2160,11 @@
             "name": "FL_thigh_collision2",
             "parent": 29,
             "properties": {
-                "conaffinity": 1,
-                "condim": 1,
-                "contype": 1,
+                "collision_layer": 1,
+                "collision_mask": 1,
+                "contact_offset": 0.0,
                 "disabled": false,
-                "friction": {
-                    "matrix_data": {
-                        "cols": 1,
-                        "rows": 3,
-                        "storage": [
-                            1.0,
-                            0.004999999888241291,
-                            9.999999747378752e-05
-                        ]
-                    }
-                },
-                "gap": 0.0,
-                "margin": 0.0,
+                "physics_material": "SubResource(PhysicsMaterial3D_ybzLy)",
                 "position": {
                     "matrix_data": {
                         "cols": 1,
@@ -2433,7 +2176,7 @@
                         ]
                     }
                 },
-                "priority": 0,
+                "rest_offset": 0.0,
                 "rotation_degrees": {
                     "matrix_data": {
                         "cols": 1,
@@ -2457,24 +2200,8 @@
                     }
                 },
                 "script": null,
-                "shape": "SubResource(CapsuleShape3D_lIfKb)",
-                "solimp": [
-                    0.8999999761581421,
-                    0.949999988079071,
-                    0.0010000000474974513,
-                    0.5,
-                    2.0
-                ],
-                "solref": {
-                    "matrix_data": {
-                        "cols": 1,
-                        "rows": 2,
-                        "storage": [
-                            0.009999999776482582,
-                            1.0
-                        ]
-                    }
-                },
+                "semantic_label": "",
+                "shape": "SubResource(CapsuleShape3D_dTprJ)",
                 "visible": false
             },
             "type": "CollisionShape3D"
@@ -2483,23 +2210,11 @@
             "name": "FL_thigh_collision3",
             "parent": 29,
             "properties": {
-                "conaffinity": 1,
-                "condim": 1,
-                "contype": 1,
+                "collision_layer": 1,
+                "collision_mask": 1,
+                "contact_offset": 0.0,
                 "disabled": false,
-                "friction": {
-                    "matrix_data": {
-                        "cols": 1,
-                        "rows": 3,
-                        "storage": [
-                            1.0,
-                            0.004999999888241291,
-                            9.999999747378752e-05
-                        ]
-                    }
-                },
-                "gap": 0.0,
-                "margin": 0.0,
+                "physics_material": "SubResource(PhysicsMaterial3D_5MJWQ)",
                 "position": {
                     "matrix_data": {
                         "cols": 1,
@@ -2511,7 +2226,7 @@
                         ]
                     }
                 },
-                "priority": 0,
+                "rest_offset": 0.0,
                 "rotation_degrees": {
                     "matrix_data": {
                         "cols": 1,
@@ -2535,24 +2250,8 @@
                     }
                 },
                 "script": null,
-                "shape": "SubResource(CapsuleShape3D_Li6sC)",
-                "solimp": [
-                    0.8999999761581421,
-                    0.949999988079071,
-                    0.0010000000474974513,
-                    0.5,
-                    2.0
-                ],
-                "solref": {
-                    "matrix_data": {
-                        "cols": 1,
-                        "rows": 2,
-                        "storage": [
-                            0.009999999776482582,
-                            1.0
-                        ]
-                    }
-                },
+                "semantic_label": "",
+                "shape": "SubResource(CapsuleShape3D_KvlkI)",
                 "visible": false
             },
             "type": "CollisionShape3D"
@@ -2561,6 +2260,12 @@
             "name": "FL_calf_joint",
             "parent": 29,
             "properties": {
+                "affine_actuator_control_gain": 0.0,
+                "affine_actuator_enabled": false,
+                "affine_actuator_force_offset": 0.0,
+                "affine_actuator_inherit_range": 0.0,
+                "affine_actuator_position_gain": 0.0,
+                "affine_actuator_velocity_gain": 0.0,
                 "armature": 0.009059201925992966,
                 "axis": {
                     "matrix_data": {
@@ -2631,6 +2336,7 @@
                     }
                 },
                 "script": null,
+                "semantic_label": "",
                 "upper_limit": -0.8880000114440918,
                 "velocity_limit": 20.059999465942383,
                 "visible": true
@@ -2717,6 +2423,7 @@
                     }
                 },
                 "script": null,
+                "semantic_label": "",
                 "visible": true
             },
             "type": "Link3D"
@@ -2725,9 +2432,9 @@
             "name": "calf_visual_19",
             "parent": 35,
             "properties": {
-                "material": "SubResource(PBRMaterial3D_2mKd3)",
-                "mesh": "ExtResource(4_a37Ny)",
-                "mesh_material": "SubResource(PBRMaterial3D_0iapp)",
+                "cast_shadow": true,
+                "material": "SubResource(PBRMaterial3D_uiwQy)",
+                "mesh": "ExtResource(4_GxvN0)",
                 "position": {
                     "matrix_data": {
                         "cols": 1,
@@ -2762,13 +2469,15 @@
                     }
                 },
                 "script": null,
+                "semantic_label": "",
                 "surface_color": {
                     "alpha": 1.0,
                     "blue": 0.20000000298023224,
                     "green": 0.20000000298023224,
                     "red": 0.20000000298023224
                 },
-                "visible": true
+                "visible": true,
+                "visible_in_rgb": true
             },
             "type": "MeshInstance3D"
         },
@@ -2776,23 +2485,11 @@
             "name": "FL_calf_collision1",
             "parent": 35,
             "properties": {
-                "conaffinity": 1,
-                "condim": 1,
-                "contype": 1,
+                "collision_layer": 1,
+                "collision_mask": 1,
+                "contact_offset": 0.0,
                 "disabled": false,
-                "friction": {
-                    "matrix_data": {
-                        "cols": 1,
-                        "rows": 3,
-                        "storage": [
-                            1.0,
-                            0.004999999888241291,
-                            9.999999747378752e-05
-                        ]
-                    }
-                },
-                "gap": 0.0,
-                "margin": 0.0,
+                "physics_material": "SubResource(PhysicsMaterial3D_zEow3)",
                 "position": {
                     "matrix_data": {
                         "cols": 1,
@@ -2804,7 +2501,7 @@
                         ]
                     }
                 },
-                "priority": 0,
+                "rest_offset": 0.0,
                 "rotation_degrees": {
                     "matrix_data": {
                         "cols": 1,
@@ -2828,24 +2525,8 @@
                     }
                 },
                 "script": null,
-                "shape": "SubResource(CapsuleShape3D_lmtpZ)",
-                "solimp": [
-                    0.8999999761581421,
-                    0.949999988079071,
-                    0.0010000000474974513,
-                    0.5,
-                    2.0
-                ],
-                "solref": {
-                    "matrix_data": {
-                        "cols": 1,
-                        "rows": 2,
-                        "storage": [
-                            0.009999999776482582,
-                            1.0
-                        ]
-                    }
-                },
+                "semantic_label": "",
+                "shape": "SubResource(CapsuleShape3D_IXFzt)",
                 "visible": false
             },
             "type": "CollisionShape3D"
@@ -2854,23 +2535,11 @@
             "name": "FL_calf_collision2",
             "parent": 35,
             "properties": {
-                "conaffinity": 1,
-                "condim": 1,
-                "contype": 1,
+                "collision_layer": 1,
+                "collision_mask": 1,
+                "contact_offset": 0.0,
                 "disabled": false,
-                "friction": {
-                    "matrix_data": {
-                        "cols": 1,
-                        "rows": 3,
-                        "storage": [
-                            1.0,
-                            0.004999999888241291,
-                            9.999999747378752e-05
-                        ]
-                    }
-                },
-                "gap": 0.0,
-                "margin": 0.0,
+                "physics_material": "SubResource(PhysicsMaterial3D_PoVUX)",
                 "position": {
                     "matrix_data": {
                         "cols": 1,
@@ -2882,7 +2551,7 @@
                         ]
                     }
                 },
-                "priority": 0,
+                "rest_offset": 0.0,
                 "rotation_degrees": {
                     "matrix_data": {
                         "cols": 1,
@@ -2906,24 +2575,8 @@
                     }
                 },
                 "script": null,
-                "shape": "SubResource(CapsuleShape3D_XFHP5)",
-                "solimp": [
-                    0.8999999761581421,
-                    0.949999988079071,
-                    0.0010000000474974513,
-                    0.5,
-                    2.0
-                ],
-                "solref": {
-                    "matrix_data": {
-                        "cols": 1,
-                        "rows": 2,
-                        "storage": [
-                            0.009999999776482582,
-                            1.0
-                        ]
-                    }
-                },
+                "semantic_label": "",
+                "shape": "SubResource(CapsuleShape3D_sAVfS)",
                 "visible": false
             },
             "type": "CollisionShape3D"
@@ -2932,23 +2585,11 @@
             "name": "FL_foot_collision",
             "parent": 35,
             "properties": {
-                "conaffinity": 1,
-                "condim": 6,
-                "contype": 1,
+                "collision_layer": 1,
+                "collision_mask": 1,
+                "contact_offset": 0.0,
                 "disabled": false,
-                "friction": {
-                    "matrix_data": {
-                        "cols": 1,
-                        "rows": 3,
-                        "storage": [
-                            1.0,
-                            0.004999999888241291,
-                            0.0005000000237487257
-                        ]
-                    }
-                },
-                "gap": 0.0,
-                "margin": 0.0,
+                "physics_material": "SubResource(PhysicsMaterial3D_mh5Os)",
                 "position": {
                     "matrix_data": {
                         "cols": 1,
@@ -2960,7 +2601,7 @@
                         ]
                     }
                 },
-                "priority": 1,
+                "rest_offset": 0.0,
                 "rotation_degrees": {
                     "matrix_data": {
                         "cols": 1,
@@ -2984,24 +2625,8 @@
                     }
                 },
                 "script": null,
-                "shape": "SubResource(SphereShape3D_6Evsp)",
-                "solimp": [
-                    0.8999999761581421,
-                    0.949999988079071,
-                    0.0010000000474974513,
-                    0.5,
-                    2.0
-                ],
-                "solref": {
-                    "matrix_data": {
-                        "cols": 1,
-                        "rows": 2,
-                        "storage": [
-                            0.009999999776482582,
-                            1.0
-                        ]
-                    }
-                },
+                "semantic_label": "",
+                "shape": "SubResource(SphereShape3D_qVGQQ)",
                 "visible": false
             },
             "type": "CollisionShape3D"
@@ -3131,6 +2756,7 @@
                     }
                 },
                 "script": null,
+                "semantic_label": "",
                 "sensor_period": 0.0,
                 "visible": true,
                 "visualize_debug": true
@@ -3181,6 +2807,7 @@
                     }
                 },
                 "script": null,
+                "semantic_label": "",
                 "sensor_period": 0.0,
                 "visible": true,
                 "visualize_debug": true
@@ -3191,6 +2818,12 @@
             "name": "RR_hip_joint",
             "parent": 2,
             "properties": {
+                "affine_actuator_control_gain": 0.0,
+                "affine_actuator_enabled": false,
+                "affine_actuator_force_offset": 0.0,
+                "affine_actuator_inherit_range": 0.0,
+                "affine_actuator_position_gain": 0.0,
+                "affine_actuator_velocity_gain": 0.0,
                 "armature": 0.004026311915367842,
                 "axis": {
                     "matrix_data": {
@@ -3261,6 +2894,7 @@
                     }
                 },
                 "script": null,
+                "semantic_label": "",
                 "upper_limit": 0.8629999756813049,
                 "velocity_limit": 30.100000381469727,
                 "visible": true
@@ -3347,6 +2981,7 @@
                     }
                 },
                 "script": null,
+                "semantic_label": "",
                 "visible": true
             },
             "type": "Link3D"
@@ -3355,9 +2990,9 @@
             "name": "hip_visual_23",
             "parent": 43,
             "properties": {
-                "material": "SubResource(PBRMaterial3D_mygH5)",
-                "mesh": "ExtResource(2_kfHRl)",
-                "mesh_material": "SubResource(PBRMaterial3D_xPezD)",
+                "cast_shadow": true,
+                "material": "SubResource(PBRMaterial3D_PnC0V)",
+                "mesh": "ExtResource(2_1GlEh)",
                 "position": {
                     "matrix_data": {
                         "cols": 1,
@@ -3392,13 +3027,15 @@
                     }
                 },
                 "script": null,
+                "semantic_label": "",
                 "surface_color": {
                     "alpha": 1.0,
                     "blue": 0.20000000298023224,
                     "green": 0.20000000298023224,
                     "red": 0.20000000298023224
                 },
-                "visible": true
+                "visible": true,
+                "visible_in_rgb": true
             },
             "type": "MeshInstance3D"
         },
@@ -3406,23 +3043,11 @@
             "name": "RR_hip_collision",
             "parent": 43,
             "properties": {
-                "conaffinity": 1,
-                "condim": 1,
-                "contype": 1,
+                "collision_layer": 1,
+                "collision_mask": 1,
+                "contact_offset": 0.0,
                 "disabled": false,
-                "friction": {
-                    "matrix_data": {
-                        "cols": 1,
-                        "rows": 3,
-                        "storage": [
-                            1.0,
-                            0.004999999888241291,
-                            9.999999747378752e-05
-                        ]
-                    }
-                },
-                "gap": 0.0,
-                "margin": 0.0,
+                "physics_material": "SubResource(PhysicsMaterial3D_yWFeo)",
                 "position": {
                     "matrix_data": {
                         "cols": 1,
@@ -3434,7 +3059,7 @@
                         ]
                     }
                 },
-                "priority": 0,
+                "rest_offset": 0.0,
                 "rotation_degrees": {
                     "matrix_data": {
                         "cols": 1,
@@ -3458,24 +3083,8 @@
                     }
                 },
                 "script": null,
-                "shape": "SubResource(CapsuleShape3D_iEb4v)",
-                "solimp": [
-                    0.8999999761581421,
-                    0.949999988079071,
-                    0.0010000000474974513,
-                    0.5,
-                    2.0
-                ],
-                "solref": {
-                    "matrix_data": {
-                        "cols": 1,
-                        "rows": 2,
-                        "storage": [
-                            0.009999999776482582,
-                            1.0
-                        ]
-                    }
-                },
+                "semantic_label": "",
+                "shape": "SubResource(CapsuleShape3D_Z61G5)",
                 "visible": false
             },
             "type": "CollisionShape3D"
@@ -3484,6 +3093,12 @@
             "name": "RR_thigh_joint",
             "parent": 43,
             "properties": {
+                "affine_actuator_control_gain": 0.0,
+                "affine_actuator_enabled": false,
+                "affine_actuator_force_offset": 0.0,
+                "affine_actuator_inherit_range": 0.0,
+                "affine_actuator_position_gain": 0.0,
+                "affine_actuator_velocity_gain": 0.0,
                 "armature": 0.004026311915367842,
                 "axis": {
                     "matrix_data": {
@@ -3554,6 +3169,7 @@
                     }
                 },
                 "script": null,
+                "semantic_label": "",
                 "upper_limit": 4.500999927520752,
                 "velocity_limit": 30.100000381469727,
                 "visible": true
@@ -3640,6 +3256,7 @@
                     }
                 },
                 "script": null,
+                "semantic_label": "",
                 "visible": true
             },
             "type": "Link3D"
@@ -3648,9 +3265,9 @@
             "name": "thigh_mirror_visual_25",
             "parent": 47,
             "properties": {
-                "material": "SubResource(PBRMaterial3D_eRTOv)",
-                "mesh": "ExtResource(3_GouZE)",
-                "mesh_material": "SubResource(PBRMaterial3D_C43DP)",
+                "cast_shadow": true,
+                "material": "SubResource(PBRMaterial3D_k79Ob)",
+                "mesh": "ExtResource(3_6qQo1)",
                 "position": {
                     "matrix_data": {
                         "cols": 1,
@@ -3685,13 +3302,15 @@
                     }
                 },
                 "script": null,
+                "semantic_label": "",
                 "surface_color": {
                     "alpha": 1.0,
                     "blue": 0.20000000298023224,
                     "green": 0.20000000298023224,
                     "red": 0.20000000298023224
                 },
-                "visible": true
+                "visible": true,
+                "visible_in_rgb": true
             },
             "type": "MeshInstance3D"
         },
@@ -3699,23 +3318,11 @@
             "name": "RR_thigh_collision1",
             "parent": 47,
             "properties": {
-                "conaffinity": 1,
-                "condim": 1,
-                "contype": 1,
+                "collision_layer": 1,
+                "collision_mask": 1,
+                "contact_offset": 0.0,
                 "disabled": false,
-                "friction": {
-                    "matrix_data": {
-                        "cols": 1,
-                        "rows": 3,
-                        "storage": [
-                            1.0,
-                            0.004999999888241291,
-                            9.999999747378752e-05
-                        ]
-                    }
-                },
-                "gap": 0.0,
-                "margin": 0.0,
+                "physics_material": "SubResource(PhysicsMaterial3D_UOHBu)",
                 "position": {
                     "matrix_data": {
                         "cols": 1,
@@ -3727,7 +3334,7 @@
                         ]
                     }
                 },
-                "priority": 0,
+                "rest_offset": 0.0,
                 "rotation_degrees": {
                     "matrix_data": {
                         "cols": 1,
@@ -3751,24 +3358,8 @@
                     }
                 },
                 "script": null,
-                "shape": "SubResource(CapsuleShape3D_AA1Zm)",
-                "solimp": [
-                    0.8999999761581421,
-                    0.949999988079071,
-                    0.0010000000474974513,
-                    0.5,
-                    2.0
-                ],
-                "solref": {
-                    "matrix_data": {
-                        "cols": 1,
-                        "rows": 2,
-                        "storage": [
-                            0.009999999776482582,
-                            1.0
-                        ]
-                    }
-                },
+                "semantic_label": "",
+                "shape": "SubResource(CapsuleShape3D_RW9Bh)",
                 "visible": false
             },
             "type": "CollisionShape3D"
@@ -3777,23 +3368,11 @@
             "name": "RR_thigh_collision2",
             "parent": 47,
             "properties": {
-                "conaffinity": 1,
-                "condim": 1,
-                "contype": 1,
+                "collision_layer": 1,
+                "collision_mask": 1,
+                "contact_offset": 0.0,
                 "disabled": false,
-                "friction": {
-                    "matrix_data": {
-                        "cols": 1,
-                        "rows": 3,
-                        "storage": [
-                            1.0,
-                            0.004999999888241291,
-                            9.999999747378752e-05
-                        ]
-                    }
-                },
-                "gap": 0.0,
-                "margin": 0.0,
+                "physics_material": "SubResource(PhysicsMaterial3D_p8Xvj)",
                 "position": {
                     "matrix_data": {
                         "cols": 1,
@@ -3805,7 +3384,7 @@
                         ]
                     }
                 },
-                "priority": 0,
+                "rest_offset": 0.0,
                 "rotation_degrees": {
                     "matrix_data": {
                         "cols": 1,
@@ -3829,24 +3408,8 @@
                     }
                 },
                 "script": null,
-                "shape": "SubResource(CapsuleShape3D_5c3cr)",
-                "solimp": [
-                    0.8999999761581421,
-                    0.949999988079071,
-                    0.0010000000474974513,
-                    0.5,
-                    2.0
-                ],
-                "solref": {
-                    "matrix_data": {
-                        "cols": 1,
-                        "rows": 2,
-                        "storage": [
-                            0.009999999776482582,
-                            1.0
-                        ]
-                    }
-                },
+                "semantic_label": "",
+                "shape": "SubResource(CapsuleShape3D_bIy0O)",
                 "visible": false
             },
             "type": "CollisionShape3D"
@@ -3855,23 +3418,11 @@
             "name": "RR_thigh_collision3",
             "parent": 47,
             "properties": {
-                "conaffinity": 1,
-                "condim": 1,
-                "contype": 1,
+                "collision_layer": 1,
+                "collision_mask": 1,
+                "contact_offset": 0.0,
                 "disabled": false,
-                "friction": {
-                    "matrix_data": {
-                        "cols": 1,
-                        "rows": 3,
-                        "storage": [
-                            1.0,
-                            0.004999999888241291,
-                            9.999999747378752e-05
-                        ]
-                    }
-                },
-                "gap": 0.0,
-                "margin": 0.0,
+                "physics_material": "SubResource(PhysicsMaterial3D_7Waf7)",
                 "position": {
                     "matrix_data": {
                         "cols": 1,
@@ -3883,7 +3434,7 @@
                         ]
                     }
                 },
-                "priority": 0,
+                "rest_offset": 0.0,
                 "rotation_degrees": {
                     "matrix_data": {
                         "cols": 1,
@@ -3907,24 +3458,8 @@
                     }
                 },
                 "script": null,
-                "shape": "SubResource(CapsuleShape3D_xEmZ8)",
-                "solimp": [
-                    0.8999999761581421,
-                    0.949999988079071,
-                    0.0010000000474974513,
-                    0.5,
-                    2.0
-                ],
-                "solref": {
-                    "matrix_data": {
-                        "cols": 1,
-                        "rows": 2,
-                        "storage": [
-                            0.009999999776482582,
-                            1.0
-                        ]
-                    }
-                },
+                "semantic_label": "",
+                "shape": "SubResource(CapsuleShape3D_Y3Wb0)",
                 "visible": false
             },
             "type": "CollisionShape3D"
@@ -3933,6 +3468,12 @@
             "name": "RR_calf_joint",
             "parent": 47,
             "properties": {
+                "affine_actuator_control_gain": 0.0,
+                "affine_actuator_enabled": false,
+                "affine_actuator_force_offset": 0.0,
+                "affine_actuator_inherit_range": 0.0,
+                "affine_actuator_position_gain": 0.0,
+                "affine_actuator_velocity_gain": 0.0,
                 "armature": 0.009059201925992966,
                 "axis": {
                     "matrix_data": {
@@ -4003,6 +3544,7 @@
                     }
                 },
                 "script": null,
+                "semantic_label": "",
                 "upper_limit": -0.8880000114440918,
                 "velocity_limit": 20.059999465942383,
                 "visible": true
@@ -4089,6 +3631,7 @@
                     }
                 },
                 "script": null,
+                "semantic_label": "",
                 "visible": true
             },
             "type": "Link3D"
@@ -4097,9 +3640,9 @@
             "name": "calf_visual_29",
             "parent": 53,
             "properties": {
-                "material": "SubResource(PBRMaterial3D_Eby1g)",
-                "mesh": "ExtResource(4_a37Ny)",
-                "mesh_material": "SubResource(PBRMaterial3D_0iapp)",
+                "cast_shadow": true,
+                "material": "SubResource(PBRMaterial3D_KDiBz)",
+                "mesh": "ExtResource(4_GxvN0)",
                 "position": {
                     "matrix_data": {
                         "cols": 1,
@@ -4134,13 +3677,15 @@
                     }
                 },
                 "script": null,
+                "semantic_label": "",
                 "surface_color": {
                     "alpha": 1.0,
                     "blue": 0.20000000298023224,
                     "green": 0.20000000298023224,
                     "red": 0.20000000298023224
                 },
-                "visible": true
+                "visible": true,
+                "visible_in_rgb": true
             },
             "type": "MeshInstance3D"
         },
@@ -4148,23 +3693,11 @@
             "name": "RR_calf_collision1",
             "parent": 53,
             "properties": {
-                "conaffinity": 1,
-                "condim": 1,
-                "contype": 1,
+                "collision_layer": 1,
+                "collision_mask": 1,
+                "contact_offset": 0.0,
                 "disabled": false,
-                "friction": {
-                    "matrix_data": {
-                        "cols": 1,
-                        "rows": 3,
-                        "storage": [
-                            1.0,
-                            0.004999999888241291,
-                            9.999999747378752e-05
-                        ]
-                    }
-                },
-                "gap": 0.0,
-                "margin": 0.0,
+                "physics_material": "SubResource(PhysicsMaterial3D_IWu6w)",
                 "position": {
                     "matrix_data": {
                         "cols": 1,
@@ -4176,7 +3709,7 @@
                         ]
                     }
                 },
-                "priority": 0,
+                "rest_offset": 0.0,
                 "rotation_degrees": {
                     "matrix_data": {
                         "cols": 1,
@@ -4200,24 +3733,8 @@
                     }
                 },
                 "script": null,
-                "shape": "SubResource(CapsuleShape3D_G6oz7)",
-                "solimp": [
-                    0.8999999761581421,
-                    0.949999988079071,
-                    0.0010000000474974513,
-                    0.5,
-                    2.0
-                ],
-                "solref": {
-                    "matrix_data": {
-                        "cols": 1,
-                        "rows": 2,
-                        "storage": [
-                            0.009999999776482582,
-                            1.0
-                        ]
-                    }
-                },
+                "semantic_label": "",
+                "shape": "SubResource(CapsuleShape3D_Ds7nS)",
                 "visible": false
             },
             "type": "CollisionShape3D"
@@ -4226,23 +3743,11 @@
             "name": "RR_calf_collision2",
             "parent": 53,
             "properties": {
-                "conaffinity": 1,
-                "condim": 1,
-                "contype": 1,
+                "collision_layer": 1,
+                "collision_mask": 1,
+                "contact_offset": 0.0,
                 "disabled": false,
-                "friction": {
-                    "matrix_data": {
-                        "cols": 1,
-                        "rows": 3,
-                        "storage": [
-                            1.0,
-                            0.004999999888241291,
-                            9.999999747378752e-05
-                        ]
-                    }
-                },
-                "gap": 0.0,
-                "margin": 0.0,
+                "physics_material": "SubResource(PhysicsMaterial3D_9teHs)",
                 "position": {
                     "matrix_data": {
                         "cols": 1,
@@ -4254,7 +3759,7 @@
                         ]
                     }
                 },
-                "priority": 0,
+                "rest_offset": 0.0,
                 "rotation_degrees": {
                     "matrix_data": {
                         "cols": 1,
@@ -4278,24 +3783,8 @@
                     }
                 },
                 "script": null,
-                "shape": "SubResource(CapsuleShape3D_CY5Ae)",
-                "solimp": [
-                    0.8999999761581421,
-                    0.949999988079071,
-                    0.0010000000474974513,
-                    0.5,
-                    2.0
-                ],
-                "solref": {
-                    "matrix_data": {
-                        "cols": 1,
-                        "rows": 2,
-                        "storage": [
-                            0.009999999776482582,
-                            1.0
-                        ]
-                    }
-                },
+                "semantic_label": "",
+                "shape": "SubResource(CapsuleShape3D_xAYoW)",
                 "visible": false
             },
             "type": "CollisionShape3D"
@@ -4304,23 +3793,11 @@
             "name": "RR_foot_collision",
             "parent": 53,
             "properties": {
-                "conaffinity": 1,
-                "condim": 6,
-                "contype": 1,
+                "collision_layer": 1,
+                "collision_mask": 1,
+                "contact_offset": 0.0,
                 "disabled": false,
-                "friction": {
-                    "matrix_data": {
-                        "cols": 1,
-                        "rows": 3,
-                        "storage": [
-                            1.0,
-                            0.004999999888241291,
-                            0.0005000000237487257
-                        ]
-                    }
-                },
-                "gap": 0.0,
-                "margin": 0.0,
+                "physics_material": "SubResource(PhysicsMaterial3D_YnOdp)",
                 "position": {
                     "matrix_data": {
                         "cols": 1,
@@ -4332,7 +3809,7 @@
                         ]
                     }
                 },
-                "priority": 1,
+                "rest_offset": 0.0,
                 "rotation_degrees": {
                     "matrix_data": {
                         "cols": 1,
@@ -4356,24 +3833,8 @@
                     }
                 },
                 "script": null,
-                "shape": "SubResource(SphereShape3D_yai8M)",
-                "solimp": [
-                    0.8999999761581421,
-                    0.949999988079071,
-                    0.0010000000474974513,
-                    0.5,
-                    2.0
-                ],
-                "solref": {
-                    "matrix_data": {
-                        "cols": 1,
-                        "rows": 2,
-                        "storage": [
-                            0.009999999776482582,
-                            1.0
-                        ]
-                    }
-                },
+                "semantic_label": "",
+                "shape": "SubResource(SphereShape3D_PKiBg)",
                 "visible": false
             },
             "type": "CollisionShape3D"
@@ -4503,6 +3964,7 @@
                     }
                 },
                 "script": null,
+                "semantic_label": "",
                 "sensor_period": 0.0,
                 "visible": true,
                 "visualize_debug": true
@@ -4553,6 +4015,7 @@
                     }
                 },
                 "script": null,
+                "semantic_label": "",
                 "sensor_period": 0.0,
                 "visible": true,
                 "visualize_debug": true
@@ -4563,6 +4026,12 @@
             "name": "RL_hip_joint",
             "parent": 2,
             "properties": {
+                "affine_actuator_control_gain": 0.0,
+                "affine_actuator_enabled": false,
+                "affine_actuator_force_offset": 0.0,
+                "affine_actuator_inherit_range": 0.0,
+                "affine_actuator_position_gain": 0.0,
+                "affine_actuator_velocity_gain": 0.0,
                 "armature": 0.004026311915367842,
                 "axis": {
                     "matrix_data": {
@@ -4633,6 +4102,7 @@
                     }
                 },
                 "script": null,
+                "semantic_label": "",
                 "upper_limit": 0.8629999756813049,
                 "velocity_limit": 30.100000381469727,
                 "visible": true
@@ -4719,6 +4189,7 @@
                     }
                 },
                 "script": null,
+                "semantic_label": "",
                 "visible": true
             },
             "type": "Link3D"
@@ -4727,9 +4198,9 @@
             "name": "hip_visual_33",
             "parent": 61,
             "properties": {
-                "material": "SubResource(PBRMaterial3D_UZLix)",
-                "mesh": "ExtResource(2_kfHRl)",
-                "mesh_material": "SubResource(PBRMaterial3D_xPezD)",
+                "cast_shadow": true,
+                "material": "SubResource(PBRMaterial3D_tsa9w)",
+                "mesh": "ExtResource(2_1GlEh)",
                 "position": {
                     "matrix_data": {
                         "cols": 1,
@@ -4764,13 +4235,15 @@
                     }
                 },
                 "script": null,
+                "semantic_label": "",
                 "surface_color": {
                     "alpha": 1.0,
                     "blue": 0.20000000298023224,
                     "green": 0.20000000298023224,
                     "red": 0.20000000298023224
                 },
-                "visible": true
+                "visible": true,
+                "visible_in_rgb": true
             },
             "type": "MeshInstance3D"
         },
@@ -4778,23 +4251,11 @@
             "name": "RL_hip_collision",
             "parent": 61,
             "properties": {
-                "conaffinity": 1,
-                "condim": 1,
-                "contype": 1,
+                "collision_layer": 1,
+                "collision_mask": 1,
+                "contact_offset": 0.0,
                 "disabled": false,
-                "friction": {
-                    "matrix_data": {
-                        "cols": 1,
-                        "rows": 3,
-                        "storage": [
-                            1.0,
-                            0.004999999888241291,
-                            9.999999747378752e-05
-                        ]
-                    }
-                },
-                "gap": 0.0,
-                "margin": 0.0,
+                "physics_material": "SubResource(PhysicsMaterial3D_bowy3)",
                 "position": {
                     "matrix_data": {
                         "cols": 1,
@@ -4806,7 +4267,7 @@
                         ]
                     }
                 },
-                "priority": 0,
+                "rest_offset": 0.0,
                 "rotation_degrees": {
                     "matrix_data": {
                         "cols": 1,
@@ -4830,24 +4291,8 @@
                     }
                 },
                 "script": null,
-                "shape": "SubResource(CapsuleShape3D_sY4oZ)",
-                "solimp": [
-                    0.8999999761581421,
-                    0.949999988079071,
-                    0.0010000000474974513,
-                    0.5,
-                    2.0
-                ],
-                "solref": {
-                    "matrix_data": {
-                        "cols": 1,
-                        "rows": 2,
-                        "storage": [
-                            0.009999999776482582,
-                            1.0
-                        ]
-                    }
-                },
+                "semantic_label": "",
+                "shape": "SubResource(CapsuleShape3D_EzKyR)",
                 "visible": false
             },
             "type": "CollisionShape3D"
@@ -4856,6 +4301,12 @@
             "name": "RL_thigh_joint",
             "parent": 61,
             "properties": {
+                "affine_actuator_control_gain": 0.0,
+                "affine_actuator_enabled": false,
+                "affine_actuator_force_offset": 0.0,
+                "affine_actuator_inherit_range": 0.0,
+                "affine_actuator_position_gain": 0.0,
+                "affine_actuator_velocity_gain": 0.0,
                 "armature": 0.004026311915367842,
                 "axis": {
                     "matrix_data": {
@@ -4926,6 +4377,7 @@
                     }
                 },
                 "script": null,
+                "semantic_label": "",
                 "upper_limit": 4.500999927520752,
                 "velocity_limit": 30.100000381469727,
                 "visible": true
@@ -5012,6 +4464,7 @@
                     }
                 },
                 "script": null,
+                "semantic_label": "",
                 "visible": true
             },
             "type": "Link3D"
@@ -5020,9 +4473,9 @@
             "name": "thigh_visual_35",
             "parent": 65,
             "properties": {
-                "material": "SubResource(PBRMaterial3D_dZgJn)",
-                "mesh": "ExtResource(5_kmCel)",
-                "mesh_material": "SubResource(PBRMaterial3D_uPX6t)",
+                "cast_shadow": true,
+                "material": "SubResource(PBRMaterial3D_Fnzlu)",
+                "mesh": "ExtResource(5_hV7HG)",
                 "position": {
                     "matrix_data": {
                         "cols": 1,
@@ -5057,13 +4510,15 @@
                     }
                 },
                 "script": null,
+                "semantic_label": "",
                 "surface_color": {
                     "alpha": 1.0,
                     "blue": 0.20000000298023224,
                     "green": 0.20000000298023224,
                     "red": 0.20000000298023224
                 },
-                "visible": true
+                "visible": true,
+                "visible_in_rgb": true
             },
             "type": "MeshInstance3D"
         },
@@ -5071,23 +4526,11 @@
             "name": "RL_thigh_collision1",
             "parent": 65,
             "properties": {
-                "conaffinity": 1,
-                "condim": 1,
-                "contype": 1,
+                "collision_layer": 1,
+                "collision_mask": 1,
+                "contact_offset": 0.0,
                 "disabled": false,
-                "friction": {
-                    "matrix_data": {
-                        "cols": 1,
-                        "rows": 3,
-                        "storage": [
-                            1.0,
-                            0.004999999888241291,
-                            9.999999747378752e-05
-                        ]
-                    }
-                },
-                "gap": 0.0,
-                "margin": 0.0,
+                "physics_material": "SubResource(PhysicsMaterial3D_2F1Il)",
                 "position": {
                     "matrix_data": {
                         "cols": 1,
@@ -5099,7 +4542,7 @@
                         ]
                     }
                 },
-                "priority": 0,
+                "rest_offset": 0.0,
                 "rotation_degrees": {
                     "matrix_data": {
                         "cols": 1,
@@ -5123,24 +4566,8 @@
                     }
                 },
                 "script": null,
-                "shape": "SubResource(CapsuleShape3D_wze9r)",
-                "solimp": [
-                    0.8999999761581421,
-                    0.949999988079071,
-                    0.0010000000474974513,
-                    0.5,
-                    2.0
-                ],
-                "solref": {
-                    "matrix_data": {
-                        "cols": 1,
-                        "rows": 2,
-                        "storage": [
-                            0.009999999776482582,
-                            1.0
-                        ]
-                    }
-                },
+                "semantic_label": "",
+                "shape": "SubResource(CapsuleShape3D_h2p4K)",
                 "visible": false
             },
             "type": "CollisionShape3D"
@@ -5149,23 +4576,11 @@
             "name": "RL_thigh_collision2",
             "parent": 65,
             "properties": {
-                "conaffinity": 1,
-                "condim": 1,
-                "contype": 1,
+                "collision_layer": 1,
+                "collision_mask": 1,
+                "contact_offset": 0.0,
                 "disabled": false,
-                "friction": {
-                    "matrix_data": {
-                        "cols": 1,
-                        "rows": 3,
-                        "storage": [
-                            1.0,
-                            0.004999999888241291,
-                            9.999999747378752e-05
-                        ]
-                    }
-                },
-                "gap": 0.0,
-                "margin": 0.0,
+                "physics_material": "SubResource(PhysicsMaterial3D_YmFo6)",
                 "position": {
                     "matrix_data": {
                         "cols": 1,
@@ -5177,7 +4592,7 @@
                         ]
                     }
                 },
-                "priority": 0,
+                "rest_offset": 0.0,
                 "rotation_degrees": {
                     "matrix_data": {
                         "cols": 1,
@@ -5201,24 +4616,8 @@
                     }
                 },
                 "script": null,
-                "shape": "SubResource(CapsuleShape3D_DY6VT)",
-                "solimp": [
-                    0.8999999761581421,
-                    0.949999988079071,
-                    0.0010000000474974513,
-                    0.5,
-                    2.0
-                ],
-                "solref": {
-                    "matrix_data": {
-                        "cols": 1,
-                        "rows": 2,
-                        "storage": [
-                            0.009999999776482582,
-                            1.0
-                        ]
-                    }
-                },
+                "semantic_label": "",
+                "shape": "SubResource(CapsuleShape3D_TmEed)",
                 "visible": false
             },
             "type": "CollisionShape3D"
@@ -5227,23 +4626,11 @@
             "name": "RL_thigh_collision3",
             "parent": 65,
             "properties": {
-                "conaffinity": 1,
-                "condim": 1,
-                "contype": 1,
+                "collision_layer": 1,
+                "collision_mask": 1,
+                "contact_offset": 0.0,
                 "disabled": false,
-                "friction": {
-                    "matrix_data": {
-                        "cols": 1,
-                        "rows": 3,
-                        "storage": [
-                            1.0,
-                            0.004999999888241291,
-                            9.999999747378752e-05
-                        ]
-                    }
-                },
-                "gap": 0.0,
-                "margin": 0.0,
+                "physics_material": "SubResource(PhysicsMaterial3D_h8nuQ)",
                 "position": {
                     "matrix_data": {
                         "cols": 1,
@@ -5255,7 +4642,7 @@
                         ]
                     }
                 },
-                "priority": 0,
+                "rest_offset": 0.0,
                 "rotation_degrees": {
                     "matrix_data": {
                         "cols": 1,
@@ -5279,24 +4666,8 @@
                     }
                 },
                 "script": null,
-                "shape": "SubResource(CapsuleShape3D_G9YLI)",
-                "solimp": [
-                    0.8999999761581421,
-                    0.949999988079071,
-                    0.0010000000474974513,
-                    0.5,
-                    2.0
-                ],
-                "solref": {
-                    "matrix_data": {
-                        "cols": 1,
-                        "rows": 2,
-                        "storage": [
-                            0.009999999776482582,
-                            1.0
-                        ]
-                    }
-                },
+                "semantic_label": "",
+                "shape": "SubResource(CapsuleShape3D_Rjlo6)",
                 "visible": false
             },
             "type": "CollisionShape3D"
@@ -5305,6 +4676,12 @@
             "name": "RL_calf_joint",
             "parent": 65,
             "properties": {
+                "affine_actuator_control_gain": 0.0,
+                "affine_actuator_enabled": false,
+                "affine_actuator_force_offset": 0.0,
+                "affine_actuator_inherit_range": 0.0,
+                "affine_actuator_position_gain": 0.0,
+                "affine_actuator_velocity_gain": 0.0,
                 "armature": 0.009059201925992966,
                 "axis": {
                     "matrix_data": {
@@ -5375,6 +4752,7 @@
                     }
                 },
                 "script": null,
+                "semantic_label": "",
                 "upper_limit": -0.8880000114440918,
                 "velocity_limit": 20.059999465942383,
                 "visible": true
@@ -5461,6 +4839,7 @@
                     }
                 },
                 "script": null,
+                "semantic_label": "",
                 "visible": true
             },
             "type": "Link3D"
@@ -5469,9 +4848,9 @@
             "name": "calf_visual_39",
             "parent": 71,
             "properties": {
-                "material": "SubResource(PBRMaterial3D_xUxbD)",
-                "mesh": "ExtResource(4_a37Ny)",
-                "mesh_material": "SubResource(PBRMaterial3D_0iapp)",
+                "cast_shadow": true,
+                "material": "SubResource(PBRMaterial3D_XxA8q)",
+                "mesh": "ExtResource(4_GxvN0)",
                 "position": {
                     "matrix_data": {
                         "cols": 1,
@@ -5506,13 +4885,15 @@
                     }
                 },
                 "script": null,
+                "semantic_label": "",
                 "surface_color": {
                     "alpha": 1.0,
                     "blue": 0.20000000298023224,
                     "green": 0.20000000298023224,
                     "red": 0.20000000298023224
                 },
-                "visible": true
+                "visible": true,
+                "visible_in_rgb": true
             },
             "type": "MeshInstance3D"
         },
@@ -5520,23 +4901,11 @@
             "name": "RL_calf_collision1",
             "parent": 71,
             "properties": {
-                "conaffinity": 1,
-                "condim": 1,
-                "contype": 1,
+                "collision_layer": 1,
+                "collision_mask": 1,
+                "contact_offset": 0.0,
                 "disabled": false,
-                "friction": {
-                    "matrix_data": {
-                        "cols": 1,
-                        "rows": 3,
-                        "storage": [
-                            1.0,
-                            0.004999999888241291,
-                            9.999999747378752e-05
-                        ]
-                    }
-                },
-                "gap": 0.0,
-                "margin": 0.0,
+                "physics_material": "SubResource(PhysicsMaterial3D_HWVEU)",
                 "position": {
                     "matrix_data": {
                         "cols": 1,
@@ -5548,7 +4917,7 @@
                         ]
                     }
                 },
-                "priority": 0,
+                "rest_offset": 0.0,
                 "rotation_degrees": {
                     "matrix_data": {
                         "cols": 1,
@@ -5572,24 +4941,8 @@
                     }
                 },
                 "script": null,
-                "shape": "SubResource(CapsuleShape3D_1f0Zg)",
-                "solimp": [
-                    0.8999999761581421,
-                    0.949999988079071,
-                    0.0010000000474974513,
-                    0.5,
-                    2.0
-                ],
-                "solref": {
-                    "matrix_data": {
-                        "cols": 1,
-                        "rows": 2,
-                        "storage": [
-                            0.009999999776482582,
-                            1.0
-                        ]
-                    }
-                },
+                "semantic_label": "",
+                "shape": "SubResource(CapsuleShape3D_FFgUY)",
                 "visible": false
             },
             "type": "CollisionShape3D"
@@ -5598,23 +4951,11 @@
             "name": "RL_calf_collision2",
             "parent": 71,
             "properties": {
-                "conaffinity": 1,
-                "condim": 1,
-                "contype": 1,
+                "collision_layer": 1,
+                "collision_mask": 1,
+                "contact_offset": 0.0,
                 "disabled": false,
-                "friction": {
-                    "matrix_data": {
-                        "cols": 1,
-                        "rows": 3,
-                        "storage": [
-                            1.0,
-                            0.004999999888241291,
-                            9.999999747378752e-05
-                        ]
-                    }
-                },
-                "gap": 0.0,
-                "margin": 0.0,
+                "physics_material": "SubResource(PhysicsMaterial3D_NwKBE)",
                 "position": {
                     "matrix_data": {
                         "cols": 1,
@@ -5626,7 +4967,7 @@
                         ]
                     }
                 },
-                "priority": 0,
+                "rest_offset": 0.0,
                 "rotation_degrees": {
                     "matrix_data": {
                         "cols": 1,
@@ -5650,24 +4991,8 @@
                     }
                 },
                 "script": null,
-                "shape": "SubResource(CapsuleShape3D_2LGxw)",
-                "solimp": [
-                    0.8999999761581421,
-                    0.949999988079071,
-                    0.0010000000474974513,
-                    0.5,
-                    2.0
-                ],
-                "solref": {
-                    "matrix_data": {
-                        "cols": 1,
-                        "rows": 2,
-                        "storage": [
-                            0.009999999776482582,
-                            1.0
-                        ]
-                    }
-                },
+                "semantic_label": "",
+                "shape": "SubResource(CapsuleShape3D_dADGE)",
                 "visible": false
             },
             "type": "CollisionShape3D"
@@ -5676,23 +5001,11 @@
             "name": "RL_foot_collision",
             "parent": 71,
             "properties": {
-                "conaffinity": 1,
-                "condim": 6,
-                "contype": 1,
+                "collision_layer": 1,
+                "collision_mask": 1,
+                "contact_offset": 0.0,
                 "disabled": false,
-                "friction": {
-                    "matrix_data": {
-                        "cols": 1,
-                        "rows": 3,
-                        "storage": [
-                            1.0,
-                            0.004999999888241291,
-                            0.0005000000237487257
-                        ]
-                    }
-                },
-                "gap": 0.0,
-                "margin": 0.0,
+                "physics_material": "SubResource(PhysicsMaterial3D_GzuEg)",
                 "position": {
                     "matrix_data": {
                         "cols": 1,
@@ -5704,7 +5017,7 @@
                         ]
                     }
                 },
-                "priority": 1,
+                "rest_offset": 0.0,
                 "rotation_degrees": {
                     "matrix_data": {
                         "cols": 1,
@@ -5728,24 +5041,8 @@
                     }
                 },
                 "script": null,
-                "shape": "SubResource(SphereShape3D_JnxMi)",
-                "solimp": [
-                    0.8999999761581421,
-                    0.949999988079071,
-                    0.0010000000474974513,
-                    0.5,
-                    2.0
-                ],
-                "solref": {
-                    "matrix_data": {
-                        "cols": 1,
-                        "rows": 2,
-                        "storage": [
-                            0.009999999776482582,
-                            1.0
-                        ]
-                    }
-                },
+                "semantic_label": "",
+                "shape": "SubResource(SphereShape3D_CjtF4)",
                 "visible": false
             },
             "type": "CollisionShape3D"
@@ -5875,6 +5172,7 @@
                     }
                 },
                 "script": null,
+                "semantic_label": "",
                 "sensor_period": 0.0,
                 "visible": true,
                 "visualize_debug": true
@@ -5925,6 +5223,7 @@
                     }
                 },
                 "script": null,
+                "semantic_label": "",
                 "sensor_period": 0.0,
                 "visible": true,
                 "visualize_debug": true
@@ -5972,6 +5271,7 @@
                     }
                 },
                 "script": null,
+                "semantic_label": "",
                 "sensor_period": 0.0,
                 "visible": true,
                 "visualize_debug": true
@@ -6019,6 +5319,7 @@
                     }
                 },
                 "script": null,
+                "semantic_label": "",
                 "sensor_period": 0.0,
                 "visible": true,
                 "visualize_debug": true
@@ -6106,6 +5407,7 @@
                     }
                 },
                 "script": null,
+                "semantic_label": "",
                 "sensor_period": 0.0,
                 "visible": true,
                 "visualize_debug": true
@@ -6115,7 +5417,7 @@
     ],
     "__SUB_RESOURCES__": [
         {
-            "__ID__": "PBRMaterial3D_UZ100",
+            "__ID__": "PBRMaterial3D_Ok3MG",
             "__TYPE__": "PBRMaterial3D",
             "albedo": {
                 "alpha": 1.0,
@@ -6123,27 +5425,29 @@
                 "green": 0.20000000298023224,
                 "red": 0.20000000298023224
             },
+            "albedo_texture": null,
+            "alpha_cutoff": 0.5,
+            "alpha_mode": "Opaque",
+            "double_sided": false,
+            "emissive": {
+                "alpha": 1.0,
+                "blue": 0.0,
+                "green": 0.0,
+                "red": 0.0
+            },
+            "emissive_texture": null,
             "metallic": 0.0,
+            "metallic_roughness_texture": null,
+            "normal_scale": 1.0,
+            "normal_texture": null,
+            "occlusion_strength": 1.0,
+            "occlusion_texture": null,
             "resource_name": "",
             "roughness": 0.0,
             "specular": 0.5
         },
         {
-            "__ID__": "PBRMaterial3D_MBRhO",
-            "__TYPE__": "PBRMaterial3D",
-            "albedo": {
-                "alpha": 1.0,
-                "blue": 1.0,
-                "green": 1.0,
-                "red": 1.0
-            },
-            "metallic": 0.0,
-            "resource_name": "",
-            "roughness": 0.5,
-            "specular": 0.5
-        },
-        {
-            "__ID__": "BoxShape3D_qhinl",
+            "__ID__": "BoxShape3D_pw9sY",
             "__TYPE__": "BoxShape3D",
             "resource_name": "",
             "size": {
@@ -6159,13 +5463,35 @@
             }
         },
         {
-            "__ID__": "SphereShape3D_xZR8u",
+            "__ID__": "PhysicsMaterial3D_UPpAf",
+            "__TYPE__": "PhysicsMaterial3D",
+            "contact_compliance": 9.999999747378752e-05,
+            "contact_damping": 1.0,
+            "resource_name": "",
+            "restitution": 0.0,
+            "rolling_friction": 0.0,
+            "sliding_friction": 0.800000011920929,
+            "torsional_friction": 0.0
+        },
+        {
+            "__ID__": "SphereShape3D_Rslvj",
             "__TYPE__": "SphereShape3D",
             "radius": 0.05999999865889549,
             "resource_name": ""
         },
         {
-            "__ID__": "PBRMaterial3D_4mdxZ",
+            "__ID__": "PhysicsMaterial3D_XG8Q3",
+            "__TYPE__": "PhysicsMaterial3D",
+            "contact_compliance": 9.999999747378752e-05,
+            "contact_damping": 1.0,
+            "resource_name": "",
+            "restitution": 0.0,
+            "rolling_friction": 0.0,
+            "sliding_friction": 0.800000011920929,
+            "torsional_friction": 0.0
+        },
+        {
+            "__ID__": "PBRMaterial3D_5Wpx7",
             "__TYPE__": "PBRMaterial3D",
             "albedo": {
                 "alpha": 1.0,
@@ -6173,34 +5499,47 @@
                 "green": 0.20000000298023224,
                 "red": 0.20000000298023224
             },
+            "albedo_texture": null,
+            "alpha_cutoff": 0.5,
+            "alpha_mode": "Opaque",
+            "double_sided": false,
+            "emissive": {
+                "alpha": 1.0,
+                "blue": 0.0,
+                "green": 0.0,
+                "red": 0.0
+            },
+            "emissive_texture": null,
             "metallic": 0.0,
+            "metallic_roughness_texture": null,
+            "normal_scale": 1.0,
+            "normal_texture": null,
+            "occlusion_strength": 1.0,
+            "occlusion_texture": null,
             "resource_name": "",
             "roughness": 0.0,
             "specular": 0.5
         },
         {
-            "__ID__": "PBRMaterial3D_xPezD",
-            "__TYPE__": "PBRMaterial3D",
-            "albedo": {
-                "alpha": 1.0,
-                "blue": 1.0,
-                "green": 1.0,
-                "red": 1.0
-            },
-            "metallic": 0.0,
-            "resource_name": "",
-            "roughness": 0.5,
-            "specular": 0.5
-        },
-        {
-            "__ID__": "CapsuleShape3D_oXfKD",
+            "__ID__": "CapsuleShape3D_FiU2c",
             "__TYPE__": "CapsuleShape3D",
             "height": 0.019999999552965164,
             "radius": 0.05000000074505806,
             "resource_name": ""
         },
         {
-            "__ID__": "PBRMaterial3D_JoA4f",
+            "__ID__": "PhysicsMaterial3D_89vDE",
+            "__TYPE__": "PhysicsMaterial3D",
+            "contact_compliance": 9.999999747378752e-05,
+            "contact_damping": 1.0,
+            "resource_name": "",
+            "restitution": 0.0,
+            "rolling_friction": 0.0,
+            "sliding_friction": 0.800000011920929,
+            "torsional_friction": 0.0
+        },
+        {
+            "__ID__": "PBRMaterial3D_69Vqf",
             "__TYPE__": "PBRMaterial3D",
             "albedo": {
                 "alpha": 1.0,
@@ -6208,48 +5547,83 @@
                 "green": 0.20000000298023224,
                 "red": 0.20000000298023224
             },
+            "albedo_texture": null,
+            "alpha_cutoff": 0.5,
+            "alpha_mode": "Opaque",
+            "double_sided": false,
+            "emissive": {
+                "alpha": 1.0,
+                "blue": 0.0,
+                "green": 0.0,
+                "red": 0.0
+            },
+            "emissive_texture": null,
             "metallic": 0.0,
+            "metallic_roughness_texture": null,
+            "normal_scale": 1.0,
+            "normal_texture": null,
+            "occlusion_strength": 1.0,
+            "occlusion_texture": null,
             "resource_name": "",
             "roughness": 0.0,
             "specular": 0.5
         },
         {
-            "__ID__": "PBRMaterial3D_C43DP",
-            "__TYPE__": "PBRMaterial3D",
-            "albedo": {
-                "alpha": 1.0,
-                "blue": 1.0,
-                "green": 1.0,
-                "red": 1.0
-            },
-            "metallic": 0.0,
-            "resource_name": "",
-            "roughness": 0.5,
-            "specular": 0.5
-        },
-        {
-            "__ID__": "CapsuleShape3D_KEJps",
+            "__ID__": "CapsuleShape3D_wpSCl",
             "__TYPE__": "CapsuleShape3D",
             "height": 0.1599999964237213,
             "radius": 0.014999999664723873,
             "resource_name": ""
         },
         {
-            "__ID__": "CapsuleShape3D_5fswI",
+            "__ID__": "PhysicsMaterial3D_tAsF3",
+            "__TYPE__": "PhysicsMaterial3D",
+            "contact_compliance": 9.999999747378752e-05,
+            "contact_damping": 1.0,
+            "resource_name": "",
+            "restitution": 0.0,
+            "rolling_friction": 0.0,
+            "sliding_friction": 0.800000011920929,
+            "torsional_friction": 0.0
+        },
+        {
+            "__ID__": "CapsuleShape3D_4xBMr",
             "__TYPE__": "CapsuleShape3D",
             "height": 0.10198038816452026,
             "radius": 0.014999999664723873,
             "resource_name": ""
         },
         {
-            "__ID__": "CapsuleShape3D_mU3uV",
+            "__ID__": "PhysicsMaterial3D_rGGKX",
+            "__TYPE__": "PhysicsMaterial3D",
+            "contact_compliance": 9.999999747378752e-05,
+            "contact_damping": 1.0,
+            "resource_name": "",
+            "restitution": 0.0,
+            "rolling_friction": 0.0,
+            "sliding_friction": 0.800000011920929,
+            "torsional_friction": 0.0
+        },
+        {
+            "__ID__": "CapsuleShape3D_1BpbA",
             "__TYPE__": "CapsuleShape3D",
             "height": 0.04472136124968529,
             "radius": 0.014999999664723873,
             "resource_name": ""
         },
         {
-            "__ID__": "PBRMaterial3D_RDz3d",
+            "__ID__": "PhysicsMaterial3D_xja0s",
+            "__TYPE__": "PhysicsMaterial3D",
+            "contact_compliance": 9.999999747378752e-05,
+            "contact_damping": 1.0,
+            "resource_name": "",
+            "restitution": 0.0,
+            "rolling_friction": 0.0,
+            "sliding_friction": 0.800000011920929,
+            "torsional_friction": 0.0
+        },
+        {
+            "__ID__": "PBRMaterial3D_SkadP",
             "__TYPE__": "PBRMaterial3D",
             "albedo": {
                 "alpha": 1.0,
@@ -6257,47 +5631,82 @@
                 "green": 0.20000000298023224,
                 "red": 0.20000000298023224
             },
+            "albedo_texture": null,
+            "alpha_cutoff": 0.5,
+            "alpha_mode": "Opaque",
+            "double_sided": false,
+            "emissive": {
+                "alpha": 1.0,
+                "blue": 0.0,
+                "green": 0.0,
+                "red": 0.0
+            },
+            "emissive_texture": null,
             "metallic": 0.0,
+            "metallic_roughness_texture": null,
+            "normal_scale": 1.0,
+            "normal_texture": null,
+            "occlusion_strength": 1.0,
+            "occlusion_texture": null,
             "resource_name": "",
             "roughness": 0.0,
             "specular": 0.5
         },
         {
-            "__ID__": "PBRMaterial3D_0iapp",
-            "__TYPE__": "PBRMaterial3D",
-            "albedo": {
-                "alpha": 1.0,
-                "blue": 1.0,
-                "green": 1.0,
-                "red": 1.0
-            },
-            "metallic": 0.0,
-            "resource_name": "",
-            "roughness": 0.5,
-            "specular": 0.5
-        },
-        {
-            "__ID__": "CapsuleShape3D_fDebR",
+            "__ID__": "CapsuleShape3D_ZaTZJ",
             "__TYPE__": "CapsuleShape3D",
             "height": 0.13152946531772614,
             "radius": 0.009999999776482582,
             "resource_name": ""
         },
         {
-            "__ID__": "CapsuleShape3D_MZDIS",
+            "__ID__": "PhysicsMaterial3D_uFk9b",
+            "__TYPE__": "PhysicsMaterial3D",
+            "contact_compliance": 9.999999747378752e-05,
+            "contact_damping": 1.0,
+            "resource_name": "",
+            "restitution": 0.0,
+            "rolling_friction": 0.0,
+            "sliding_friction": 0.800000011920929,
+            "torsional_friction": 0.0
+        },
+        {
+            "__ID__": "CapsuleShape3D_OkxnP",
             "__TYPE__": "CapsuleShape3D",
             "height": 0.07280109822750092,
             "radius": 0.009999999776482582,
             "resource_name": ""
         },
         {
-            "__ID__": "SphereShape3D_g7Gv7",
+            "__ID__": "PhysicsMaterial3D_z4wPK",
+            "__TYPE__": "PhysicsMaterial3D",
+            "contact_compliance": 9.999999747378752e-05,
+            "contact_damping": 1.0,
+            "resource_name": "",
+            "restitution": 0.0,
+            "rolling_friction": 0.0,
+            "sliding_friction": 0.800000011920929,
+            "torsional_friction": 0.0
+        },
+        {
+            "__ID__": "SphereShape3D_WoZUA",
             "__TYPE__": "SphereShape3D",
             "radius": 0.023000000044703484,
             "resource_name": ""
         },
         {
-            "__ID__": "PBRMaterial3D_91wow",
+            "__ID__": "PhysicsMaterial3D_h9dx3",
+            "__TYPE__": "PhysicsMaterial3D",
+            "contact_compliance": 9.999999747378752e-05,
+            "contact_damping": 1.0,
+            "resource_name": "",
+            "restitution": 0.0,
+            "rolling_friction": 0.0005000000237487257,
+            "sliding_friction": 1.0,
+            "torsional_friction": 0.004999999888241291
+        },
+        {
+            "__ID__": "PBRMaterial3D_E7ymP",
             "__TYPE__": "PBRMaterial3D",
             "albedo": {
                 "alpha": 1.0,
@@ -6305,20 +5714,47 @@
                 "green": 0.20000000298023224,
                 "red": 0.20000000298023224
             },
+            "albedo_texture": null,
+            "alpha_cutoff": 0.5,
+            "alpha_mode": "Opaque",
+            "double_sided": false,
+            "emissive": {
+                "alpha": 1.0,
+                "blue": 0.0,
+                "green": 0.0,
+                "red": 0.0
+            },
+            "emissive_texture": null,
             "metallic": 0.0,
+            "metallic_roughness_texture": null,
+            "normal_scale": 1.0,
+            "normal_texture": null,
+            "occlusion_strength": 1.0,
+            "occlusion_texture": null,
             "resource_name": "",
             "roughness": 0.0,
             "specular": 0.5
         },
         {
-            "__ID__": "CapsuleShape3D_6fSQd",
+            "__ID__": "CapsuleShape3D_YGjOD",
             "__TYPE__": "CapsuleShape3D",
             "height": 0.019999999552965164,
             "radius": 0.05000000074505806,
             "resource_name": ""
         },
         {
-            "__ID__": "PBRMaterial3D_B76Zv",
+            "__ID__": "PhysicsMaterial3D_84wKT",
+            "__TYPE__": "PhysicsMaterial3D",
+            "contact_compliance": 9.999999747378752e-05,
+            "contact_damping": 1.0,
+            "resource_name": "",
+            "restitution": 0.0,
+            "rolling_friction": 0.0,
+            "sliding_friction": 0.800000011920929,
+            "torsional_friction": 0.0
+        },
+        {
+            "__ID__": "PBRMaterial3D_R5Wf0",
             "__TYPE__": "PBRMaterial3D",
             "albedo": {
                 "alpha": 1.0,
@@ -6326,48 +5762,83 @@
                 "green": 0.20000000298023224,
                 "red": 0.20000000298023224
             },
+            "albedo_texture": null,
+            "alpha_cutoff": 0.5,
+            "alpha_mode": "Opaque",
+            "double_sided": false,
+            "emissive": {
+                "alpha": 1.0,
+                "blue": 0.0,
+                "green": 0.0,
+                "red": 0.0
+            },
+            "emissive_texture": null,
             "metallic": 0.0,
+            "metallic_roughness_texture": null,
+            "normal_scale": 1.0,
+            "normal_texture": null,
+            "occlusion_strength": 1.0,
+            "occlusion_texture": null,
             "resource_name": "",
             "roughness": 0.0,
             "specular": 0.5
         },
         {
-            "__ID__": "PBRMaterial3D_uPX6t",
-            "__TYPE__": "PBRMaterial3D",
-            "albedo": {
-                "alpha": 1.0,
-                "blue": 1.0,
-                "green": 1.0,
-                "red": 1.0
-            },
-            "metallic": 0.0,
-            "resource_name": "",
-            "roughness": 0.5,
-            "specular": 0.5
-        },
-        {
-            "__ID__": "CapsuleShape3D_GLpJM",
+            "__ID__": "CapsuleShape3D_Dxt4Z",
             "__TYPE__": "CapsuleShape3D",
             "height": 0.1599999964237213,
             "radius": 0.014999999664723873,
             "resource_name": ""
         },
         {
-            "__ID__": "CapsuleShape3D_lIfKb",
+            "__ID__": "PhysicsMaterial3D_VOSgK",
+            "__TYPE__": "PhysicsMaterial3D",
+            "contact_compliance": 9.999999747378752e-05,
+            "contact_damping": 1.0,
+            "resource_name": "",
+            "restitution": 0.0,
+            "rolling_friction": 0.0,
+            "sliding_friction": 0.800000011920929,
+            "torsional_friction": 0.0
+        },
+        {
+            "__ID__": "CapsuleShape3D_dTprJ",
             "__TYPE__": "CapsuleShape3D",
             "height": 0.10198038816452026,
             "radius": 0.014999999664723873,
             "resource_name": ""
         },
         {
-            "__ID__": "CapsuleShape3D_Li6sC",
+            "__ID__": "PhysicsMaterial3D_ybzLy",
+            "__TYPE__": "PhysicsMaterial3D",
+            "contact_compliance": 9.999999747378752e-05,
+            "contact_damping": 1.0,
+            "resource_name": "",
+            "restitution": 0.0,
+            "rolling_friction": 0.0,
+            "sliding_friction": 0.800000011920929,
+            "torsional_friction": 0.0
+        },
+        {
+            "__ID__": "CapsuleShape3D_KvlkI",
             "__TYPE__": "CapsuleShape3D",
             "height": 0.04472136124968529,
             "radius": 0.014999999664723873,
             "resource_name": ""
         },
         {
-            "__ID__": "PBRMaterial3D_2mKd3",
+            "__ID__": "PhysicsMaterial3D_5MJWQ",
+            "__TYPE__": "PhysicsMaterial3D",
+            "contact_compliance": 9.999999747378752e-05,
+            "contact_damping": 1.0,
+            "resource_name": "",
+            "restitution": 0.0,
+            "rolling_friction": 0.0,
+            "sliding_friction": 0.800000011920929,
+            "torsional_friction": 0.0
+        },
+        {
+            "__ID__": "PBRMaterial3D_uiwQy",
             "__TYPE__": "PBRMaterial3D",
             "albedo": {
                 "alpha": 1.0,
@@ -6375,33 +5846,82 @@
                 "green": 0.20000000298023224,
                 "red": 0.20000000298023224
             },
+            "albedo_texture": null,
+            "alpha_cutoff": 0.5,
+            "alpha_mode": "Opaque",
+            "double_sided": false,
+            "emissive": {
+                "alpha": 1.0,
+                "blue": 0.0,
+                "green": 0.0,
+                "red": 0.0
+            },
+            "emissive_texture": null,
             "metallic": 0.0,
+            "metallic_roughness_texture": null,
+            "normal_scale": 1.0,
+            "normal_texture": null,
+            "occlusion_strength": 1.0,
+            "occlusion_texture": null,
             "resource_name": "",
             "roughness": 0.0,
             "specular": 0.5
         },
         {
-            "__ID__": "CapsuleShape3D_lmtpZ",
+            "__ID__": "CapsuleShape3D_IXFzt",
             "__TYPE__": "CapsuleShape3D",
             "height": 0.13152946531772614,
             "radius": 0.009999999776482582,
             "resource_name": ""
         },
         {
-            "__ID__": "CapsuleShape3D_XFHP5",
+            "__ID__": "PhysicsMaterial3D_zEow3",
+            "__TYPE__": "PhysicsMaterial3D",
+            "contact_compliance": 9.999999747378752e-05,
+            "contact_damping": 1.0,
+            "resource_name": "",
+            "restitution": 0.0,
+            "rolling_friction": 0.0,
+            "sliding_friction": 0.800000011920929,
+            "torsional_friction": 0.0
+        },
+        {
+            "__ID__": "CapsuleShape3D_sAVfS",
             "__TYPE__": "CapsuleShape3D",
             "height": 0.07280109822750092,
             "radius": 0.009999999776482582,
             "resource_name": ""
         },
         {
-            "__ID__": "SphereShape3D_6Evsp",
+            "__ID__": "PhysicsMaterial3D_PoVUX",
+            "__TYPE__": "PhysicsMaterial3D",
+            "contact_compliance": 9.999999747378752e-05,
+            "contact_damping": 1.0,
+            "resource_name": "",
+            "restitution": 0.0,
+            "rolling_friction": 0.0,
+            "sliding_friction": 0.800000011920929,
+            "torsional_friction": 0.0
+        },
+        {
+            "__ID__": "SphereShape3D_qVGQQ",
             "__TYPE__": "SphereShape3D",
             "radius": 0.023000000044703484,
             "resource_name": ""
         },
         {
-            "__ID__": "PBRMaterial3D_mygH5",
+            "__ID__": "PhysicsMaterial3D_mh5Os",
+            "__TYPE__": "PhysicsMaterial3D",
+            "contact_compliance": 9.999999747378752e-05,
+            "contact_damping": 1.0,
+            "resource_name": "",
+            "restitution": 0.0,
+            "rolling_friction": 0.0005000000237487257,
+            "sliding_friction": 1.0,
+            "torsional_friction": 0.004999999888241291
+        },
+        {
+            "__ID__": "PBRMaterial3D_PnC0V",
             "__TYPE__": "PBRMaterial3D",
             "albedo": {
                 "alpha": 1.0,
@@ -6409,20 +5929,47 @@
                 "green": 0.20000000298023224,
                 "red": 0.20000000298023224
             },
+            "albedo_texture": null,
+            "alpha_cutoff": 0.5,
+            "alpha_mode": "Opaque",
+            "double_sided": false,
+            "emissive": {
+                "alpha": 1.0,
+                "blue": 0.0,
+                "green": 0.0,
+                "red": 0.0
+            },
+            "emissive_texture": null,
             "metallic": 0.0,
+            "metallic_roughness_texture": null,
+            "normal_scale": 1.0,
+            "normal_texture": null,
+            "occlusion_strength": 1.0,
+            "occlusion_texture": null,
             "resource_name": "",
             "roughness": 0.0,
             "specular": 0.5
         },
         {
-            "__ID__": "CapsuleShape3D_iEb4v",
+            "__ID__": "CapsuleShape3D_Z61G5",
             "__TYPE__": "CapsuleShape3D",
             "height": 0.019999999552965164,
             "radius": 0.05000000074505806,
             "resource_name": ""
         },
         {
-            "__ID__": "PBRMaterial3D_eRTOv",
+            "__ID__": "PhysicsMaterial3D_yWFeo",
+            "__TYPE__": "PhysicsMaterial3D",
+            "contact_compliance": 9.999999747378752e-05,
+            "contact_damping": 1.0,
+            "resource_name": "",
+            "restitution": 0.0,
+            "rolling_friction": 0.0,
+            "sliding_friction": 0.800000011920929,
+            "torsional_friction": 0.0
+        },
+        {
+            "__ID__": "PBRMaterial3D_k79Ob",
             "__TYPE__": "PBRMaterial3D",
             "albedo": {
                 "alpha": 1.0,
@@ -6430,34 +5977,83 @@
                 "green": 0.20000000298023224,
                 "red": 0.20000000298023224
             },
+            "albedo_texture": null,
+            "alpha_cutoff": 0.5,
+            "alpha_mode": "Opaque",
+            "double_sided": false,
+            "emissive": {
+                "alpha": 1.0,
+                "blue": 0.0,
+                "green": 0.0,
+                "red": 0.0
+            },
+            "emissive_texture": null,
             "metallic": 0.0,
+            "metallic_roughness_texture": null,
+            "normal_scale": 1.0,
+            "normal_texture": null,
+            "occlusion_strength": 1.0,
+            "occlusion_texture": null,
             "resource_name": "",
             "roughness": 0.0,
             "specular": 0.5
         },
         {
-            "__ID__": "CapsuleShape3D_AA1Zm",
+            "__ID__": "CapsuleShape3D_RW9Bh",
             "__TYPE__": "CapsuleShape3D",
             "height": 0.1599999964237213,
             "radius": 0.014999999664723873,
             "resource_name": ""
         },
         {
-            "__ID__": "CapsuleShape3D_5c3cr",
+            "__ID__": "PhysicsMaterial3D_UOHBu",
+            "__TYPE__": "PhysicsMaterial3D",
+            "contact_compliance": 9.999999747378752e-05,
+            "contact_damping": 1.0,
+            "resource_name": "",
+            "restitution": 0.0,
+            "rolling_friction": 0.0,
+            "sliding_friction": 0.800000011920929,
+            "torsional_friction": 0.0
+        },
+        {
+            "__ID__": "CapsuleShape3D_bIy0O",
             "__TYPE__": "CapsuleShape3D",
             "height": 0.10198038816452026,
             "radius": 0.014999999664723873,
             "resource_name": ""
         },
         {
-            "__ID__": "CapsuleShape3D_xEmZ8",
+            "__ID__": "PhysicsMaterial3D_p8Xvj",
+            "__TYPE__": "PhysicsMaterial3D",
+            "contact_compliance": 9.999999747378752e-05,
+            "contact_damping": 1.0,
+            "resource_name": "",
+            "restitution": 0.0,
+            "rolling_friction": 0.0,
+            "sliding_friction": 0.800000011920929,
+            "torsional_friction": 0.0
+        },
+        {
+            "__ID__": "CapsuleShape3D_Y3Wb0",
             "__TYPE__": "CapsuleShape3D",
             "height": 0.04472136124968529,
             "radius": 0.014999999664723873,
             "resource_name": ""
         },
         {
-            "__ID__": "PBRMaterial3D_Eby1g",
+            "__ID__": "PhysicsMaterial3D_7Waf7",
+            "__TYPE__": "PhysicsMaterial3D",
+            "contact_compliance": 9.999999747378752e-05,
+            "contact_damping": 1.0,
+            "resource_name": "",
+            "restitution": 0.0,
+            "rolling_friction": 0.0,
+            "sliding_friction": 0.800000011920929,
+            "torsional_friction": 0.0
+        },
+        {
+            "__ID__": "PBRMaterial3D_KDiBz",
             "__TYPE__": "PBRMaterial3D",
             "albedo": {
                 "alpha": 1.0,
@@ -6465,33 +6061,82 @@
                 "green": 0.20000000298023224,
                 "red": 0.20000000298023224
             },
+            "albedo_texture": null,
+            "alpha_cutoff": 0.5,
+            "alpha_mode": "Opaque",
+            "double_sided": false,
+            "emissive": {
+                "alpha": 1.0,
+                "blue": 0.0,
+                "green": 0.0,
+                "red": 0.0
+            },
+            "emissive_texture": null,
             "metallic": 0.0,
+            "metallic_roughness_texture": null,
+            "normal_scale": 1.0,
+            "normal_texture": null,
+            "occlusion_strength": 1.0,
+            "occlusion_texture": null,
             "resource_name": "",
             "roughness": 0.0,
             "specular": 0.5
         },
         {
-            "__ID__": "CapsuleShape3D_G6oz7",
+            "__ID__": "CapsuleShape3D_Ds7nS",
             "__TYPE__": "CapsuleShape3D",
             "height": 0.13152946531772614,
             "radius": 0.009999999776482582,
             "resource_name": ""
         },
         {
-            "__ID__": "CapsuleShape3D_CY5Ae",
+            "__ID__": "PhysicsMaterial3D_IWu6w",
+            "__TYPE__": "PhysicsMaterial3D",
+            "contact_compliance": 9.999999747378752e-05,
+            "contact_damping": 1.0,
+            "resource_name": "",
+            "restitution": 0.0,
+            "rolling_friction": 0.0,
+            "sliding_friction": 0.800000011920929,
+            "torsional_friction": 0.0
+        },
+        {
+            "__ID__": "CapsuleShape3D_xAYoW",
             "__TYPE__": "CapsuleShape3D",
             "height": 0.07280109822750092,
             "radius": 0.009999999776482582,
             "resource_name": ""
         },
         {
-            "__ID__": "SphereShape3D_yai8M",
+            "__ID__": "PhysicsMaterial3D_9teHs",
+            "__TYPE__": "PhysicsMaterial3D",
+            "contact_compliance": 9.999999747378752e-05,
+            "contact_damping": 1.0,
+            "resource_name": "",
+            "restitution": 0.0,
+            "rolling_friction": 0.0,
+            "sliding_friction": 0.800000011920929,
+            "torsional_friction": 0.0
+        },
+        {
+            "__ID__": "SphereShape3D_PKiBg",
             "__TYPE__": "SphereShape3D",
             "radius": 0.023000000044703484,
             "resource_name": ""
         },
         {
-            "__ID__": "PBRMaterial3D_UZLix",
+            "__ID__": "PhysicsMaterial3D_YnOdp",
+            "__TYPE__": "PhysicsMaterial3D",
+            "contact_compliance": 9.999999747378752e-05,
+            "contact_damping": 1.0,
+            "resource_name": "",
+            "restitution": 0.0,
+            "rolling_friction": 0.0005000000237487257,
+            "sliding_friction": 1.0,
+            "torsional_friction": 0.004999999888241291
+        },
+        {
+            "__ID__": "PBRMaterial3D_tsa9w",
             "__TYPE__": "PBRMaterial3D",
             "albedo": {
                 "alpha": 1.0,
@@ -6499,20 +6144,47 @@
                 "green": 0.20000000298023224,
                 "red": 0.20000000298023224
             },
+            "albedo_texture": null,
+            "alpha_cutoff": 0.5,
+            "alpha_mode": "Opaque",
+            "double_sided": false,
+            "emissive": {
+                "alpha": 1.0,
+                "blue": 0.0,
+                "green": 0.0,
+                "red": 0.0
+            },
+            "emissive_texture": null,
             "metallic": 0.0,
+            "metallic_roughness_texture": null,
+            "normal_scale": 1.0,
+            "normal_texture": null,
+            "occlusion_strength": 1.0,
+            "occlusion_texture": null,
             "resource_name": "",
             "roughness": 0.0,
             "specular": 0.5
         },
         {
-            "__ID__": "CapsuleShape3D_sY4oZ",
+            "__ID__": "CapsuleShape3D_EzKyR",
             "__TYPE__": "CapsuleShape3D",
             "height": 0.019999999552965164,
             "radius": 0.05000000074505806,
             "resource_name": ""
         },
         {
-            "__ID__": "PBRMaterial3D_dZgJn",
+            "__ID__": "PhysicsMaterial3D_bowy3",
+            "__TYPE__": "PhysicsMaterial3D",
+            "contact_compliance": 9.999999747378752e-05,
+            "contact_damping": 1.0,
+            "resource_name": "",
+            "restitution": 0.0,
+            "rolling_friction": 0.0,
+            "sliding_friction": 0.800000011920929,
+            "torsional_friction": 0.0
+        },
+        {
+            "__ID__": "PBRMaterial3D_Fnzlu",
             "__TYPE__": "PBRMaterial3D",
             "albedo": {
                 "alpha": 1.0,
@@ -6520,34 +6192,83 @@
                 "green": 0.20000000298023224,
                 "red": 0.20000000298023224
             },
+            "albedo_texture": null,
+            "alpha_cutoff": 0.5,
+            "alpha_mode": "Opaque",
+            "double_sided": false,
+            "emissive": {
+                "alpha": 1.0,
+                "blue": 0.0,
+                "green": 0.0,
+                "red": 0.0
+            },
+            "emissive_texture": null,
             "metallic": 0.0,
+            "metallic_roughness_texture": null,
+            "normal_scale": 1.0,
+            "normal_texture": null,
+            "occlusion_strength": 1.0,
+            "occlusion_texture": null,
             "resource_name": "",
             "roughness": 0.0,
             "specular": 0.5
         },
         {
-            "__ID__": "CapsuleShape3D_wze9r",
+            "__ID__": "CapsuleShape3D_h2p4K",
             "__TYPE__": "CapsuleShape3D",
             "height": 0.1599999964237213,
             "radius": 0.014999999664723873,
             "resource_name": ""
         },
         {
-            "__ID__": "CapsuleShape3D_DY6VT",
+            "__ID__": "PhysicsMaterial3D_2F1Il",
+            "__TYPE__": "PhysicsMaterial3D",
+            "contact_compliance": 9.999999747378752e-05,
+            "contact_damping": 1.0,
+            "resource_name": "",
+            "restitution": 0.0,
+            "rolling_friction": 0.0,
+            "sliding_friction": 0.800000011920929,
+            "torsional_friction": 0.0
+        },
+        {
+            "__ID__": "CapsuleShape3D_TmEed",
             "__TYPE__": "CapsuleShape3D",
             "height": 0.10198038816452026,
             "radius": 0.014999999664723873,
             "resource_name": ""
         },
         {
-            "__ID__": "CapsuleShape3D_G9YLI",
+            "__ID__": "PhysicsMaterial3D_YmFo6",
+            "__TYPE__": "PhysicsMaterial3D",
+            "contact_compliance": 9.999999747378752e-05,
+            "contact_damping": 1.0,
+            "resource_name": "",
+            "restitution": 0.0,
+            "rolling_friction": 0.0,
+            "sliding_friction": 0.800000011920929,
+            "torsional_friction": 0.0
+        },
+        {
+            "__ID__": "CapsuleShape3D_Rjlo6",
             "__TYPE__": "CapsuleShape3D",
             "height": 0.04472136124968529,
             "radius": 0.014999999664723873,
             "resource_name": ""
         },
         {
-            "__ID__": "PBRMaterial3D_xUxbD",
+            "__ID__": "PhysicsMaterial3D_h8nuQ",
+            "__TYPE__": "PhysicsMaterial3D",
+            "contact_compliance": 9.999999747378752e-05,
+            "contact_damping": 1.0,
+            "resource_name": "",
+            "restitution": 0.0,
+            "rolling_friction": 0.0,
+            "sliding_friction": 0.800000011920929,
+            "torsional_friction": 0.0
+        },
+        {
+            "__ID__": "PBRMaterial3D_XxA8q",
             "__TYPE__": "PBRMaterial3D",
             "albedo": {
                 "alpha": 1.0,
@@ -6555,32 +6276,81 @@
                 "green": 0.20000000298023224,
                 "red": 0.20000000298023224
             },
+            "albedo_texture": null,
+            "alpha_cutoff": 0.5,
+            "alpha_mode": "Opaque",
+            "double_sided": false,
+            "emissive": {
+                "alpha": 1.0,
+                "blue": 0.0,
+                "green": 0.0,
+                "red": 0.0
+            },
+            "emissive_texture": null,
             "metallic": 0.0,
+            "metallic_roughness_texture": null,
+            "normal_scale": 1.0,
+            "normal_texture": null,
+            "occlusion_strength": 1.0,
+            "occlusion_texture": null,
             "resource_name": "",
             "roughness": 0.0,
             "specular": 0.5
         },
         {
-            "__ID__": "CapsuleShape3D_1f0Zg",
+            "__ID__": "CapsuleShape3D_FFgUY",
             "__TYPE__": "CapsuleShape3D",
             "height": 0.13152946531772614,
             "radius": 0.009999999776482582,
             "resource_name": ""
         },
         {
-            "__ID__": "CapsuleShape3D_2LGxw",
+            "__ID__": "PhysicsMaterial3D_HWVEU",
+            "__TYPE__": "PhysicsMaterial3D",
+            "contact_compliance": 9.999999747378752e-05,
+            "contact_damping": 1.0,
+            "resource_name": "",
+            "restitution": 0.0,
+            "rolling_friction": 0.0,
+            "sliding_friction": 0.800000011920929,
+            "torsional_friction": 0.0
+        },
+        {
+            "__ID__": "CapsuleShape3D_dADGE",
             "__TYPE__": "CapsuleShape3D",
             "height": 0.07280109822750092,
             "radius": 0.009999999776482582,
             "resource_name": ""
         },
         {
-            "__ID__": "SphereShape3D_JnxMi",
+            "__ID__": "PhysicsMaterial3D_NwKBE",
+            "__TYPE__": "PhysicsMaterial3D",
+            "contact_compliance": 9.999999747378752e-05,
+            "contact_damping": 1.0,
+            "resource_name": "",
+            "restitution": 0.0,
+            "rolling_friction": 0.0,
+            "sliding_friction": 0.800000011920929,
+            "torsional_friction": 0.0
+        },
+        {
+            "__ID__": "SphereShape3D_CjtF4",
             "__TYPE__": "SphereShape3D",
             "radius": 0.023000000044703484,
             "resource_name": ""
+        },
+        {
+            "__ID__": "PhysicsMaterial3D_GzuEg",
+            "__TYPE__": "PhysicsMaterial3D",
+            "contact_compliance": 9.999999747378752e-05,
+            "contact_damping": 1.0,
+            "resource_name": "",
+            "restitution": 0.0,
+            "rolling_friction": 0.0005000000237487257,
+            "sliding_friction": 1.0,
+            "torsional_friction": 0.004999999888241291
         }
     ],
     "__TYPE__": "PackedScene",
-    "__VERSION__": 2
+    "__VERSION__": 3
 }

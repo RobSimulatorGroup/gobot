@@ -18,7 +18,7 @@
 #include "gobot/core/string_utils.hpp"
 #include "gobot/error_macros.hpp"
 
-#define FORMAT_VERSION 2
+#define FORMAT_VERSION 3
 
 namespace gobot {
 
@@ -47,9 +47,9 @@ ResourceFormatLoaderSceneInstance::ResourceFormatLoaderSceneInstance() {
 bool ResourceFormatLoaderSceneInstance::LoadResource() {
     Json json = Json::parse(file_context_);
     if (json.contains("__VERSION__")) {
-        float version = json["__VERSION__"];
-        if (version > FORMAT_VERSION) {
-            LOG_ERROR("__VERSION__ must be {}", FORMAT_VERSION);
+        const int version = json["__VERSION__"];
+        if (version != FORMAT_VERSION) {
+            LOG_ERROR("Unsupported scene/resource version {}; expected {}", version, FORMAT_VERSION);
             return false;
         }
     } else {

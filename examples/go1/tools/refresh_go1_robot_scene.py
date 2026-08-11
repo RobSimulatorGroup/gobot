@@ -144,13 +144,15 @@ def _apply_go1_joint_dynamics(root: gobot.Node) -> None:
 def _apply_go1_collision_config(node: gobot.Node) -> None:
     if isinstance(node, gobot.CollisionShape3D) and COLLISION_PATTERN.search(node.name) is not None:
         is_foot = FOOT_COLLISION_PATTERN.fullmatch(node.name) is not None
-        node.set_property("contype", 1)
-        node.set_property("conaffinity", 1)
-        node.set_property("condim", 6 if is_foot else 1)
-        node.set_property("priority", 1 if is_foot else 0)
-        node.set_property("solref", (0.01, 1.0))
-        if is_foot:
-            node.set_property("friction", (1.0, 5.0e-3, 5.0e-4))
+        node.collision_layer = 1
+        node.collision_mask = 1
+        node.physics_material = {
+            "sliding_friction": 1.0 if is_foot else 0.8,
+            "torsional_friction": 5.0e-3 if is_foot else 0.0,
+            "rolling_friction": 5.0e-4 if is_foot else 0.0,
+            "contact_compliance": 1.0e-4,
+            "contact_damping": 1.0,
+        }
     for child in node.children:
         _apply_go1_collision_config(child)
 

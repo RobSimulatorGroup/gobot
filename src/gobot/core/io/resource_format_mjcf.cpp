@@ -37,6 +37,7 @@
 #include "gobot/scene/resources/material.hpp"
 #include "gobot/scene/resources/mesh.hpp"
 #include "gobot/scene/resources/packed_scene.hpp"
+#include "gobot/scene/resources/physics_material_3d.hpp"
 #include "gobot/scene/resources/sphere_shape_3d.hpp"
 #include "gobot/scene/robot_3d.hpp"
 #include "gobot/scene/sensor_3d.hpp"
@@ -922,17 +923,24 @@ SceneState::NodeData MakeGeomCollisionNode(const mjModel* model, int geom_id, in
                            ToVector3(model->geom_pos + 3 * geom_id),
                            ToMatrix3FromMuJoCoQuat(model->geom_quat + 4 * geom_id));
     AddProperty(node_data, "shape", MakeGeomShape(model, geom_id));
-    AddProperty(node_data, "friction", ToVector3(model->geom_friction + 3 * geom_id));
-    AddProperty(node_data, "contype", model->geom_contype[geom_id]);
-    AddProperty(node_data, "conaffinity", model->geom_conaffinity[geom_id]);
-    AddProperty(node_data, "condim", model->geom_condim[geom_id]);
-    AddProperty(node_data, "solref", Vector2{
-            static_cast<RealType>(model->geom_solref[2 * geom_id + 0]),
-            static_cast<RealType>(model->geom_solref[2 * geom_id + 1])});
-    AddProperty(node_data, "solimp", ToRealVector(model->geom_solimp + 5 * geom_id, 5));
-    AddProperty(node_data, "margin", static_cast<RealType>(model->geom_margin[geom_id]));
-    AddProperty(node_data, "gap", static_cast<RealType>(model->geom_gap[geom_id]));
-    AddProperty(node_data, "priority", model->geom_priority[geom_id]);
+    const Vector3 friction = ToVector3(model->geom_friction + 3 * geom_id);
+    Ref<PhysicsMaterial3D> material = MakeRef<PhysicsMaterial3D>();
+    material->SetSlidingFriction(friction.x());
+    material->SetTorsionalFriction(friction.y());
+    material->SetRollingFriction(friction.z());
+    const RealType time_constant = static_cast<RealType>(model->geom_solref[2 * geom_id]);
+    material->SetContactCompliance(time_constant > 0.0 ? time_constant * time_constant : 0.0);
+    material->SetContactDamping(
+            std::max<RealType>(0.0, static_cast<RealType>(model->geom_solref[2 * geom_id + 1])));
+    AddProperty(node_data, "physics_material", material);
+    AddProperty(node_data, "collision_layer",
+                static_cast<std::uint32_t>(model->geom_contype[geom_id]));
+    AddProperty(node_data, "collision_mask",
+                static_cast<std::uint32_t>(model->geom_conaffinity[geom_id]));
+    const RealType contact_offset = static_cast<RealType>(model->geom_margin[geom_id]);
+    const RealType gap = static_cast<RealType>(model->geom_gap[geom_id]);
+    AddProperty(node_data, "contact_offset", contact_offset);
+    AddProperty(node_data, "rest_offset", contact_offset - gap);
     AddProperty(node_data, "visible", false);
     return node_data;
 }

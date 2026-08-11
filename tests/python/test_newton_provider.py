@@ -648,36 +648,90 @@ def _artifact(*, nq=2, nv=2, nu=2):
         "<geom type='sphere' size='0.1'/></body></worldbody>"
         f"<actuator>{actuators}</actuator></mujoco>"
     )
+    joint_names = ("robot_joint_a", "robot_joint_b")
+    controls = [
+        {
+            "index": index,
+            "name": f"{joint_names[index]}_position",
+            "joint": joint_names[index],
+            "mode": "position",
+            "robot": "robot",
+        }
+        for index in range(nu)
+    ]
     return gobot.rl.CompiledSceneArtifact.from_compiler_mapping(
         {
-            "schema_version": 1,
-            "backend": "MuJoCoCpu",
+            "schema_version": 3,
+            "producer": "mujoco",
             "format": "mjcf",
             "content": content,
             "content_digest": _digest(content),
-            "backend_version": "3.10.0",
+            "producer_version": "3.10.0",
             "dimensions": {"nq": nq, "nv": nv, "nu": nu},
-            "robot_names": ("robot",),
-            "robot_prefixes": ("robot_",),
+            "robots": [
+                {
+                    "name": "robot",
+                    "runtime_prefix": "robot_",
+                    "body_names": ["robot_base"],
+                    "joint_names": list(joint_names),
+                    "control_indices": list(range(nu)),
+                }
+            ],
+            "controls": controls,
             "terrain_geom_groups": (),
         }
     )
 
 
 def _artifact_with_content(artifact, content):
+    mapping = dict(artifact.to_mapping())
+    mapping["content"] = content
+    mapping["content_digest"] = _digest(content)
+    root = ET.fromstring(content)
+    actuator_nodes = list(root.findall("./actuator/*"))
+    controls = []
+    for index, actuator in enumerate(actuator_nodes):
+        name = actuator.attrib.get("name", f"actuator_{index}")
+        joint = actuator.attrib.get("joint", "")
+        mode = {
+            "position": "position",
+            "velocity": "velocity",
+            "motor": "direct",
+        }.get(actuator.tag, "position" if name.endswith("_position") else "direct")
+        controls.append(
+            {
+                "index": index,
+                "name": name,
+                "joint": joint,
+                "mode": mode,
+                "robot": "robot" if joint.startswith("robot_") else "",
+            }
+        )
+    mapping["controls"] = controls
+    dimensions = dict(mapping["dimensions"])
+    dimensions["nu"] = len(controls)
+    mapping["dimensions"] = dimensions
+    robots = [dict(robot) for robot in mapping["robots"]]
+    if robots:
+        prefix = str(robots[0]["runtime_prefix"])
+        runtime_bodies = [
+            node.attrib["name"]
+            for node in root.findall("./worldbody//body")
+            if node.attrib.get("name", "").startswith(prefix)
+        ]
+        runtime_joints = [
+            node.attrib["name"]
+            for node in root.findall("./worldbody//joint")
+            if node.attrib.get("name", "").startswith(prefix)
+        ]
+        robots[0]["body_names"] = runtime_bodies
+        robots[0]["joint_names"] = runtime_joints
+        robots[0]["control_indices"] = [
+            control["index"] for control in controls if control["robot"] == robots[0]["name"]
+        ]
+    mapping["robots"] = robots
     return gobot.rl.CompiledSceneArtifact.from_compiler_mapping(
-        {
-            "schema_version": 1,
-            "backend": "MuJoCoCpu",
-            "format": "mjcf",
-            "content": content,
-            "content_digest": _digest(content),
-            "backend_version": artifact.producer_version,
-            "dimensions": dict(artifact.dimensions),
-            "robot_names": artifact.robot_names,
-            "robot_prefixes": artifact.robot_prefixes,
-            "terrain_geom_groups": artifact.terrain_geom_groups,
-        }
+        mapping
     )
 
 
@@ -719,6 +773,8 @@ def test_fake_provider_lifecycle_and_masked_reset():
         assert provider.capabilities.device_native
         assert provider.capabilities.masked_reset
         assert provider.capabilities.graph_capture
+        assert provider.capabilities.runtime_checkpoint
+        assert provider.capabilities.reset_scope == "masked"
         assert provider.graph_captured
 
         blueprint, runtime_builder = bindings.newton.builders
@@ -750,6 +806,18 @@ def test_fake_provider_lifecycle_and_masked_reset():
         assert provider.arrays["joint_qd"].data_ptr() == qd_pointer
         assert np.all(arrays["joint_q"].numpy() > 0.0)
         np.testing.assert_allclose(arrays["time"].numpy(), 0.02)
+
+        checkpoint = provider.capture_checkpoint()
+        checkpoint_q = arrays["joint_q"].clone()
+        checkpoint_target = provider._joint_target_q_tensor.clone()
+        provider.step(np.zeros_like(actions), nsteps=1)
+        provider._joint_target_q_tensor.zero_()
+        provider.restore_checkpoint(checkpoint)
+        assert arrays["joint_q"].data_ptr() == q_pointer
+        np.testing.assert_allclose(arrays["joint_q"].numpy(), checkpoint_q.numpy())
+        np.testing.assert_allclose(
+            provider._joint_target_q_tensor.numpy(), checkpoint_target.numpy()
+        )
 
         before_reset_q = arrays["joint_q"].clone()
         before_reset_qd = arrays["joint_qd"].clone()

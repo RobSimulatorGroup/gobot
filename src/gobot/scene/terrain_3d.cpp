@@ -523,69 +523,27 @@ RealType Terrain3D::GetHeightRangeMax() const {
     return height_range_max_;
 }
 
-void Terrain3D::SetFriction(const Vector3& friction) {
-    friction_ = friction;
+void Terrain3D::SetPhysicsMaterial(const Ref<PhysicsMaterial3D>& material) {
+    physics_material_ = material;
 }
 
-const Vector3& Terrain3D::GetFriction() const {
-    return friction_;
-}
+const Ref<PhysicsMaterial3D>& Terrain3D::GetPhysicsMaterial() const { return physics_material_; }
 
-void Terrain3D::SetContactType(int contype) {
-    contype_ = contype;
-}
+void Terrain3D::SetCollisionLayer(std::uint32_t layer) { collision_layer_ = layer; }
 
-int Terrain3D::GetContactType() const {
-    return contype_;
-}
+std::uint32_t Terrain3D::GetCollisionLayer() const { return collision_layer_; }
 
-void Terrain3D::SetContactAffinity(int conaffinity) {
-    conaffinity_ = conaffinity;
-}
+void Terrain3D::SetCollisionMask(std::uint32_t mask) { collision_mask_ = mask; }
 
-int Terrain3D::GetContactAffinity() const {
-    return conaffinity_;
-}
+std::uint32_t Terrain3D::GetCollisionMask() const { return collision_mask_; }
 
-void Terrain3D::SetContactDimension(int condim) {
-    condim_ = condim;
-}
+void Terrain3D::SetContactOffset(RealType offset) { contact_offset_ = offset; }
 
-int Terrain3D::GetContactDimension() const {
-    return condim_;
-}
+RealType Terrain3D::GetContactOffset() const { return contact_offset_; }
 
-void Terrain3D::SetSolref(const Vector2& solref) {
-    solref_ = solref;
-}
+void Terrain3D::SetRestOffset(RealType offset) { rest_offset_ = offset; }
 
-const Vector2& Terrain3D::GetSolref() const {
-    return solref_;
-}
-
-void Terrain3D::SetSolimp(const std::vector<RealType>& solimp) {
-    solimp_ = solimp;
-}
-
-const std::vector<RealType>& Terrain3D::GetSolimp() const {
-    return solimp_;
-}
-
-void Terrain3D::SetMargin(RealType margin) {
-    margin_ = margin;
-}
-
-RealType Terrain3D::GetMargin() const {
-    return margin_;
-}
-
-void Terrain3D::SetGap(RealType gap) {
-    gap_ = gap;
-}
-
-RealType Terrain3D::GetGap() const {
-    return gap_;
-}
+RealType Terrain3D::GetRestOffset() const { return rest_offset_; }
 
 Ref<ArrayMesh> Terrain3D::GetRenderMesh() const {
     RebuildRenderMesh();
@@ -721,13 +679,20 @@ GOBOT_REGISTRATION {
             .property("height_high_color", &gobot::Terrain3D::GetHeightHighColor, &gobot::Terrain3D::SetHeightHighColor)
             .property("height_range_min", &gobot::Terrain3D::GetHeightRangeMin, &gobot::Terrain3D::SetHeightRangeMin)
             .property("height_range_max", &gobot::Terrain3D::GetHeightRangeMax, &gobot::Terrain3D::SetHeightRangeMax)
-            .property("friction", &gobot::Terrain3D::GetFriction, &gobot::Terrain3D::SetFriction)
-            .property("contype", &gobot::Terrain3D::GetContactType, &gobot::Terrain3D::SetContactType)
-            .property("conaffinity", &gobot::Terrain3D::GetContactAffinity, &gobot::Terrain3D::SetContactAffinity)
-            .property("condim", &gobot::Terrain3D::GetContactDimension, &gobot::Terrain3D::SetContactDimension)
-            .property("solref", &gobot::Terrain3D::GetSolref, &gobot::Terrain3D::SetSolref)
-            .property("solimp", &gobot::Terrain3D::GetSolimp, &gobot::Terrain3D::SetSolimp)
-            .property("margin", &gobot::Terrain3D::GetMargin, &gobot::Terrain3D::SetMargin)
-            .property("gap", &gobot::Terrain3D::GetGap, &gobot::Terrain3D::SetGap);
+            .property("physics_material",
+                      &gobot::Terrain3D::GetPhysicsMaterial,
+                      &gobot::Terrain3D::SetPhysicsMaterial)
+            .property("collision_layer",
+                      &gobot::Terrain3D::GetCollisionLayer,
+                      &gobot::Terrain3D::SetCollisionLayer)
+            .property("collision_mask",
+                      &gobot::Terrain3D::GetCollisionMask,
+                      &gobot::Terrain3D::SetCollisionMask)
+            .property("contact_offset",
+                      &gobot::Terrain3D::GetContactOffset,
+                      &gobot::Terrain3D::SetContactOffset)
+            .property("rest_offset",
+                      &gobot::Terrain3D::GetRestOffset,
+                      &gobot::Terrain3D::SetRestOffset);
 
 };

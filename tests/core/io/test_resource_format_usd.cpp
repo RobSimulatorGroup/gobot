@@ -371,10 +371,10 @@ TEST(TestResourceFormatUSD, imports_articulation_nodes_and_unique_collision_name
     EXPECT_EQ(FindNodeByName(instance, "collider"), nullptr);
     EXPECT_FALSE(base_collision->IsVisible());
     EXPECT_FALSE(arm_collision->IsVisible());
-    EXPECT_EQ(base_collision->GetContactType(), 1);
-    EXPECT_EQ(base_collision->GetContactAffinity(), 1);
-    EXPECT_EQ(shared_collision->GetContactType(), 2);
-    EXPECT_EQ(shared_collision->GetContactAffinity(), 4);
+    EXPECT_EQ(base_collision->GetCollisionLayer(), 1u);
+    EXPECT_EQ(base_collision->GetCollisionMask(), 1u);
+    EXPECT_EQ(shared_collision->GetCollisionLayer(), 2u);
+    EXPECT_EQ(shared_collision->GetCollisionMask(), 4u);
     EXPECT_TRUE(base_collision->GetPosition().isApprox(gobot::Vector3{0.1, 0.0, 0.0}, 1e-6));
 
     const gobot::Ref<gobot::SphereShape3D> sphere =

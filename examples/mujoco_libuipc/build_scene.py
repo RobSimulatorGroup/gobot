@@ -95,7 +95,11 @@ def _add_box_geometry(
     visual.surface_color = color
     link.add_child(visual)
     collision = gobot.create_box_collision(name + "_collision", size)
-    collision.friction = (0.8, 0.005, 0.0001)
+    collision.physics_material = {
+        "sliding_friction": 0.8,
+        "torsional_friction": 0.005,
+        "rolling_friction": 0.0001,
+    }
     link.add_child(collision)
 
 
