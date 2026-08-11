@@ -288,7 +288,7 @@ jobs:
     name: Build wheel for Python ${{ matrix.python-version }}
     needs: [build-luisa, build-openusd]
     runs-on: ubuntu-22.04
-    timeout-minutes: 120
+    timeout-minutes: 240
     strategy:
       fail-fast: false
       matrix:
@@ -426,6 +426,7 @@ jobs:
 
       - name: Build wheel
         env:
+          CMAKE_BUILD_PARALLEL_LEVEL: "2"
           GOBOT_SKIP_DEPENDENCY_BOOTSTRAP: "1"
         run: |
           CUDACXX="$GOBOT_CUDA_BUILD_SDK_ROOT/bin/nvcc" \

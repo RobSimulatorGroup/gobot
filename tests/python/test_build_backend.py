@@ -86,6 +86,8 @@ def test_release_wheel_provisions_libuipc_sources_and_native_dependencies() -> N
     assert "ln -s targets/x86_64-linux/include" in workflow
     assert 'GOBOT_CUDA_BUILD_SDK_ROOT="$RUNNER_TEMP/gobot-cuda-toolkit"' in workflow
     assert "-DCUDAToolkit_ROOT=$GOBOT_CUDA_BUILD_SDK_ROOT" in workflow
+    assert 'timeout-minutes: 240' in workflow
+    assert 'CMAKE_BUILD_PARALLEL_LEVEL: "2"' in workflow
     assert "--exclude libcublas.so.12" in workflow
     assert "--exclude libcusolver.so.11" in workflow
     assert "--exclude libcusparse.so.12" in workflow
