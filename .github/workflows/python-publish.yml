@@ -388,7 +388,7 @@ jobs:
         run: |
           CUDACXX="$PWD/build/cuda-toolkit/bin/nvcc" \
           CMAKE_ARGS="-DCUDAToolkit_ROOT=$PWD/build/cuda-toolkit \
-            -DGOB_LIBUIPC_CUDA_ARCHITECTURES=75-real;80-real;86-real;89-real;90-real;100-real;120-real;120-virtual \
+            -DGOB_LIBUIPC_CUDA_ARCHITECTURES='75-real\;80-real\;86-real\;89-real\;90-real\;100-real\;120-real\;120-virtual' \
             -DGOB_GSPLAT_INFERENCE_ROOT=$PWD/build/gsplat_inference/install \
             -DGOB_BUILD_OPENUSD=ON \
             -DGOB_OPENUSD_ROOT=$PWD/build/openusd/install \
