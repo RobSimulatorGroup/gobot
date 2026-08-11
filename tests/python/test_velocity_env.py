@@ -200,7 +200,11 @@ def test_go1_robot_scene_matches_mujoco_contract():
     base_collision = _node_by_name(nodes, "trunk_collision", "CollisionShape3D")["properties"]
     assert base_collision["collision_layer"] == 1
     assert base_collision["collision_mask"] == 1
-    assert subresources[base_collision["physics_material"]]["contact_compliance"] == np.float32(0.01) ** 2
+    expected_contact_compliance = np.float32(1.0e-4).item()
+    assert (
+        subresources[base_collision["physics_material"]]["contact_compliance"]
+        == expected_contact_compliance
+    )
 
     for collision_name in ("FR_thigh_collision1", "FR_calf_collision1"):
         collision = _node_by_name(nodes, collision_name, "CollisionShape3D")["properties"]
@@ -220,7 +224,7 @@ def test_go1_robot_scene_matches_mujoco_contract():
         ],
         (1.0, 0.005, 0.0005),
     )
-    assert foot_material["contact_compliance"] == np.float32(0.01) ** 2
+    assert foot_material["contact_compliance"] == expected_contact_compliance
 
     trunk_index = nodes.index(_node_by_name(nodes, "trunk", "Link3D"))
     assert _node_by_name(nodes, "imu", "IMUSensor3D")["parent"] == trunk_index

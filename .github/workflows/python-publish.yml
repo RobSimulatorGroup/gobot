@@ -270,6 +270,8 @@ jobs:
             libegl-dev \
             libeigen3-dev \
             libgl-dev \
+            libtbb-dev \
+            liburdfdom-dev \
             libx11-dev \
             libxcb1-dev \
             libxcursor-dev \
