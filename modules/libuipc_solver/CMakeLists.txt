@@ -21,8 +21,11 @@ set_target_properties(gobot_libuipc_solver PROPERTIES
         INSTALL_RPATH "$ORIGIN;$ORIGIN/libuipc/$<CONFIG>/bin")
 add_dependencies(gobot_editor gobot_libuipc_solver)
 
-install(TARGETS gobot_libuipc_solver
-        LIBRARY DESTINATION "gobot" COMPONENT python)
+foreach(GOBOT_LIBUIPC_INSTALL_COMPONENT python libuipc_runtime)
+    install(TARGETS gobot_libuipc_solver
+            LIBRARY DESTINATION "gobot"
+            COMPONENT "${GOBOT_LIBUIPC_INSTALL_COMPONENT}")
+endforeach()
 
 # libuipc's own install rules use the default CMake component. scikit-build
 # installs only Gobot's `python` component, so explicitly include the private
@@ -38,8 +41,12 @@ set(GOBOT_LIBUIPC_RUNTIME_TARGETS
         ${GOBOT_LIBUIPC_BACKEND_TARGETS})
 set(GOBOT_LIBUIPC_RUNTIME_INSTALL_DIR
         "gobot/libuipc/$<CONFIG>/bin")
-install(TARGETS ${GOBOT_LIBUIPC_RUNTIME_TARGETS}
-        RUNTIME DESTINATION "${GOBOT_LIBUIPC_RUNTIME_INSTALL_DIR}" COMPONENT python
-        LIBRARY DESTINATION "${GOBOT_LIBUIPC_RUNTIME_INSTALL_DIR}" COMPONENT python)
+foreach(GOBOT_LIBUIPC_INSTALL_COMPONENT python libuipc_runtime)
+    install(TARGETS ${GOBOT_LIBUIPC_RUNTIME_TARGETS}
+            RUNTIME DESTINATION "${GOBOT_LIBUIPC_RUNTIME_INSTALL_DIR}"
+            LIBRARY DESTINATION "${GOBOT_LIBUIPC_RUNTIME_INSTALL_DIR}"
+            COMPONENT "${GOBOT_LIBUIPC_INSTALL_COMPONENT}")
+endforeach()
 
-gobot_install_license_files("${PROJECT_SOURCE_DIR}/3rdparty/libuipc" "libuipc")
+gobot_install_license_files("${PROJECT_SOURCE_DIR}/3rdparty/libuipc" "libuipc"
+        python libuipc_runtime)

@@ -13,17 +13,25 @@ if(GOB_BUILD_DEPENDENCIES_ONLY)
 endif()
 
 option(GOB_BUILD_LIBUIPC "build the libuipc CUDA IPC solver module" ON)
+set(GOB_LIBUIPC_PREBUILT_ROOT "" CACHE PATH
+        "CMake install prefix containing a prebuilt Release libuipc runtime bundle")
+if(GOB_LIBUIPC_PREBUILT_ROOT AND NOT GOB_BUILD_LIBUIPC)
+    message(FATAL_ERROR
+        "GOB_LIBUIPC_PREBUILT_ROOT requires GOB_BUILD_LIBUIPC=ON.")
+endif()
 if(GOB_BUILD_LIBUIPC)
     if(CMAKE_VERSION VERSION_LESS 3.26)
         message(FATAL_ERROR
             "GOB_BUILD_LIBUIPC requires CMake 3.26 or newer. Use the CMake executable from Gobot's project environment.")
     endif()
-    set(GOBOT_LIBUIPC_SOURCE_DIR "${CMAKE_CURRENT_SOURCE_DIR}/3rdparty/libuipc")
-    if(NOT EXISTS "${GOBOT_LIBUIPC_SOURCE_DIR}/CMakeLists.txt")
-        message(FATAL_ERROR
-            "The libuipc submodule is missing. Initialize it with: git submodule update --init --recursive 3rdparty/libuipc")
+    if(NOT GOB_LIBUIPC_PREBUILT_ROOT)
+        set(GOBOT_LIBUIPC_SOURCE_DIR "${CMAKE_CURRENT_SOURCE_DIR}/3rdparty/libuipc")
+        if(NOT EXISTS "${GOBOT_LIBUIPC_SOURCE_DIR}/CMakeLists.txt")
+            message(FATAL_ERROR
+                "The libuipc submodule is missing. Initialize it with: git submodule update --init --recursive 3rdparty/libuipc")
+        endif()
+        set(GOBOT_LIBUIPC_BINARY_DIR "${CMAKE_BINARY_DIR}/3rdparty/libuipc")
     endif()
-    set(GOBOT_LIBUIPC_BINARY_DIR "${CMAKE_BINARY_DIR}/3rdparty/libuipc")
 endif()
 
 project (gobot VERSION 0.1.18)
@@ -69,6 +77,20 @@ set(GOB_ASSIMP_IMPORTERS "COLLADA;OBJ;STL;PLY;GLTF" CACHE STRING "Assimp importe
 
 if(NOT UNIX OR APPLE)
     message(FATAL_ERROR "Only Linux is supported.")
+endif()
+
+if(GOB_LIBUIPC_PREBUILT_ROOT)
+    if(NOT CMAKE_BUILD_TYPE STREQUAL "Release")
+        message(FATAL_ERROR
+            "GOB_LIBUIPC_PREBUILT_ROOT requires CMAKE_BUILD_TYPE=Release.")
+    endif()
+    get_filename_component(GOB_LIBUIPC_PREBUILT_ROOT
+        "${GOB_LIBUIPC_PREBUILT_ROOT}" ABSOLUTE
+        BASE_DIR "${CMAKE_CURRENT_SOURCE_DIR}")
+    set(GOB_LIBUIPC_PREBUILT_ROOT "${GOB_LIBUIPC_PREBUILT_ROOT}" CACHE PATH
+        "CMake install prefix containing a prebuilt Release libuipc runtime bundle" FORCE)
+    include(cmake/GobotLibuipcRuntime.cmake)
+    gobot_use_libuipc_prebuilt_bundle("${GOB_LIBUIPC_PREBUILT_ROOT}")
 endif()
 
 include(cmake/CPM.cmake)
@@ -615,6 +637,8 @@ function(gobot_install_license_files SOURCE_DIR LICENSE_DIR_NAME)
     foreach(GOBOT_LICENSE_FILE
             LICENSE
             LICENSE.MIT
+            LICENSE.MPL2
+            LICENSE.GPL
             LICENSE.rst
             LICENSE.txt
             LICENSE.md
@@ -630,11 +654,18 @@ function(gobot_install_license_files SOURCE_DIR LICENSE_DIR_NAME)
         endif()
     endforeach()
 
-    if(GOBOT_LICENSE_FILES)
-        install(FILES ${GOBOT_LICENSE_FILES}
-                DESTINATION "gobot/licenses/${LICENSE_DIR_NAME}"
-                COMPONENT python)
+    if(ARGC GREATER 2)
+        set(GOBOT_LICENSE_COMPONENTS ${ARGN})
+    else()
+        set(GOBOT_LICENSE_COMPONENTS python)
     endif()
+    foreach(GOBOT_LICENSE_COMPONENT IN LISTS GOBOT_LICENSE_COMPONENTS)
+        if(GOBOT_LICENSE_FILES)
+            install(FILES ${GOBOT_LICENSE_FILES}
+                    DESTINATION "gobot/licenses/${LICENSE_DIR_NAME}"
+                    COMPONENT "${GOBOT_LICENSE_COMPONENT}")
+        endif()
+    endforeach()
 endfunction()
 
 file(GLOB_RECURSE SOURCE_CORE CONFIGURE_DEPENDS "src/gobot/core/*.cpp")
@@ -1093,7 +1124,7 @@ if(GOB_BUILD_LUISA_RENDERER)
     add_subdirectory(modules/luisa_renderer)
 endif()
 
-if(GOB_BUILD_LIBUIPC)
+if(GOB_BUILD_LIBUIPC AND NOT GOB_LIBUIPC_PREBUILT_ROOT)
     include(cmake/GobotLibuipcDependencies.cmake)
 
     set(UIPC_BUILD_GUI OFF CACHE BOOL "" FORCE)

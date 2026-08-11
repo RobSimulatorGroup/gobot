@@ -143,9 +143,31 @@ set(Octree_DIR "${GOBOT_LIBUIPC_PACKAGE_CONFIG_DIR}")
 set(libigl_DIR "${GOBOT_LIBUIPC_PACKAGE_CONFIG_DIR}")
 
 gobot_install_license_files(
-    "${gobot_libuipc_cppitertools_SOURCE_DIR}" "cppitertools")
-gobot_install_license_files("${gobot_libuipc_dylib_SOURCE_DIR}" "dylib")
-gobot_install_license_files("${gobot_libuipc_tinygltf_SOURCE_DIR}" "tinygltf")
-gobot_install_license_files("${gobot_libuipc_libigl_SOURCE_DIR}" "libigl")
-gobot_install_license_files("${gobot_libuipc_octree_SOURCE_DIR}" "Octree")
-gobot_install_license_files("${cpptrace_SOURCE_DIR}" "cpptrace")
+    "${gobot_libuipc_cppitertools_SOURCE_DIR}" "cppitertools"
+    python libuipc_runtime)
+gobot_install_license_files("${gobot_libuipc_dylib_SOURCE_DIR}" "dylib"
+    python libuipc_runtime)
+gobot_install_license_files("${gobot_libuipc_tinygltf_SOURCE_DIR}" "tinygltf"
+    python libuipc_runtime)
+gobot_install_license_files("${gobot_libuipc_libigl_SOURCE_DIR}" "libigl"
+    python libuipc_runtime)
+gobot_install_license_files("${gobot_libuipc_octree_SOURCE_DIR}" "Octree"
+    python libuipc_runtime)
+gobot_install_license_files("${cpptrace_SOURCE_DIR}" "cpptrace"
+    python libuipc_runtime)
+gobot_install_license_files("${GOBOT_LIBUIPC_SOURCE_DIR}/external/GKlib" "GKlib"
+    python libuipc_runtime)
+gobot_install_license_files("${GOBOT_LIBUIPC_SOURCE_DIR}/external/METIS" "METIS"
+    python libuipc_runtime)
+gobot_install_license_files("${GOBOT_LIBUIPC_SOURCE_DIR}/external/muda" "muda"
+    python libuipc_runtime)
+
+# These Gobot dependencies are linked statically or instantiated into the
+# libuipc shared objects. Their normal Python-component rules remain above;
+# repeat only the license payload for the standalone runtime bundle.
+gobot_install_license_files("${fmt_SOURCE_DIR}" "fmt" libuipc_runtime)
+gobot_install_license_files("${spdlog_SOURCE_DIR}" "spdlog" libuipc_runtime)
+gobot_install_license_files("${nlohmann_json_SOURCE_DIR}" "nlohmann_json"
+    libuipc_runtime)
+gobot_install_license_files("${magic_enum_SOURCE_DIR}" "magic_enum"
+    libuipc_runtime)

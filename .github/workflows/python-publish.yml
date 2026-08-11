@@ -284,9 +284,214 @@ jobs:
           if-no-files-found: error
           retention-days: 1
 
+  build-libuipc-runtime:
+    name: Build libuipc Release runtime
+    needs: build-luisa
+    runs-on: ubuntu-22.04
+    timeout-minutes: 240
+    env:
+      CMAKE_BUILD_PARALLEL_LEVEL: "3"
+
+    steps:
+      - name: Install libuipc build dependencies
+        run: |
+          export DEBIAN_FRONTEND=noninteractive
+          sudo apt-get update
+          sudo apt-get install -y \
+            autoconf \
+            ca-certificates \
+            gcc-11 \
+            g++-11 \
+            git \
+            gzip \
+            libeigen3-dev \
+            libtbb-dev \
+            liburdfdom-dev \
+            libx11-dev \
+            libxcb1-dev \
+            libxcursor-dev \
+            libxdamage-dev \
+            libxext-dev \
+            libxfixes-dev \
+            libxi-dev \
+            libxinerama-dev \
+            libxrandr-dev \
+            libxrender-dev \
+            libxss-dev \
+            libxxf86vm-dev \
+            mesa-common-dev \
+            ninja-build \
+            pkg-config \
+            tar \
+            uuid-dev \
+            vim-common \
+            xorg-dev
+
+      - name: Check out repository
+        uses: actions/checkout@v4
+        with:
+          submodules: false
+          persist-credentials: false
+
+      - name: Check out libuipc build sources
+        run: |
+          git submodule sync
+          git -c protocol.version=2 submodule update --init --force --depth=1 \
+            3rdparty/gli \
+            3rdparty/imgui \
+            3rdparty/libuipc \
+            3rdparty/meshoptimizer \
+            3rdparty/pybind11 \
+            3rdparty/rttr \
+            3rdparty/stb
+          git -C 3rdparty/libuipc submodule sync --recursive
+          git -C 3rdparty/libuipc -c protocol.version=2 submodule update \
+            --init --force --depth=1 --recursive
+
+      - name: Download CUDA build SDK
+        uses: actions/download-artifact@v4
+        with:
+          name: luisa-cuda-build-inputs
+          path: ${{ runner.temp }}/luisa-cuda-build-inputs
+
+      - name: Restore CUDA build SDK
+        run: |
+          mkdir -p build
+          tar -C build -xzf \
+            "$RUNNER_TEMP/luisa-cuda-build-inputs/luisa-cuda-build-inputs.tar.gz" \
+            cuda-toolkit
+          GOBOT_CUDA_BUILD_SDK_ROOT="$RUNNER_TEMP/gobot-cuda-toolkit"
+          test ! -e "${GOBOT_CUDA_BUILD_SDK_ROOT}"
+          mv build/cuda-toolkit "${GOBOT_CUDA_BUILD_SDK_ROOT}"
+          echo "GOBOT_CUDA_BUILD_SDK_ROOT=${GOBOT_CUDA_BUILD_SDK_ROOT}" >> "$GITHUB_ENV"
+          test -x "${GOBOT_CUDA_BUILD_SDK_ROOT}/bin/nvcc"
+          test -x "${GOBOT_CUDA_BUILD_SDK_ROOT}/nvvm/bin/cicc"
+          test -f "${GOBOT_CUDA_BUILD_SDK_ROOT}/include/cuda_profiler_api.h"
+          test -f "${GOBOT_CUDA_BUILD_SDK_ROOT}/include/cublas_v2.h"
+          test -f "${GOBOT_CUDA_BUILD_SDK_ROOT}/include/cusolverDn.h"
+          test -f "${GOBOT_CUDA_BUILD_SDK_ROOT}/include/cusparse.h"
+          test -f "${GOBOT_CUDA_BUILD_SDK_ROOT}/lib64/libcublas.so"
+          test -f "${GOBOT_CUDA_BUILD_SDK_ROOT}/lib64/libcusolver.so"
+          test -f "${GOBOT_CUDA_BUILD_SDK_ROOT}/lib64/libcusparse.so"
+          test -f "${GOBOT_CUDA_BUILD_SDK_ROOT}/lib64/libcudadevrt.a"
+          test -f "${GOBOT_CUDA_BUILD_SDK_ROOT}/lib64/stubs/libcuda.so"
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.13"
+
+      - name: Install libuipc build tools
+        run: python -m pip install -U 'cmake>=3.27' ninja
+
+      - name: Resolve libuipc runtime cache key
+        id: libuipc-cache-key
+        run: |
+          {
+            git rev-parse HEAD:3rdparty/libuipc
+            git -C 3rdparty/libuipc submodule status --recursive
+            git ls-files -s -- \
+              .github/workflows/python-publish.yml \
+              CMakeLists.txt \
+              cmake/GobotLibuipcDependencies.cmake \
+              cmake/GobotLibuipcRuntime.cmake \
+              cmake/GobotLibuipcToolchain.cmake \
+              include/gobot/physics/ipc_batch_solver_module_api.hpp \
+              include/gobot/physics/ipc_solver_module_api.hpp \
+              modules/libuipc_solver
+            "$GOBOT_CUDA_BUILD_SDK_ROOT/bin/nvcc" --version
+            g++-11 --version
+          } > "$RUNNER_TEMP/libuipc-runtime-cache-key"
+          echo "value=$(sha256sum "$RUNNER_TEMP/libuipc-runtime-cache-key" | cut -d' ' -f1)" \
+            >> "$GITHUB_OUTPUT"
+
+      - name: Restore libuipc runtime bundle
+        id: libuipc-cache
+        uses: actions/cache/restore@v4
+        with:
+          path: ${{ runner.temp }}/gobot-libuipc-runtime.tar.gz
+          key: libuipc-runtime-v1-${{ runner.os }}-cuda12.8-gcc11-${{ steps.libuipc-cache-key.outputs.value }}
+
+      - name: Build libuipc runtime bundle
+        if: steps.libuipc-cache.outputs.cache-hit != 'true'
+        run: |
+          CUDACXX="$GOBOT_CUDA_BUILD_SDK_ROOT/bin/nvcc" \
+          cmake -S . -B build/libuipc-runtime -G Ninja \
+            -DCMAKE_BUILD_TYPE=Release \
+            -DCMAKE_C_COMPILER=/usr/bin/gcc-11 \
+            -DCMAKE_CXX_COMPILER=/usr/bin/g++-11 \
+            -DCMAKE_CUDA_HOST_COMPILER=/usr/bin/g++-11 \
+            -DCUDAToolkit_ROOT="$GOBOT_CUDA_BUILD_SDK_ROOT" \
+            -DGOB_BUILD_ASSIMP=OFF \
+            -DGOB_BUILD_MUJOCO=OFF \
+            -DGOB_BUILD_EGL=OFF \
+            -DGOB_BUILD_LUISA_RENDERER=OFF \
+            -DGOB_BUILD_OPENUSD=OFF \
+            -DGOB_BUILD_TESTS=OFF \
+            -DGOB_BUILD_LIBUIPC=ON \
+            -DGOB_LIBUIPC_CUDA_ARCHITECTURES=75 \
+            -DGOB_LIBUIPC_CUDA_DIAGNOSTIC_SUPPRESSIONS=68,20054,20208
+          cmake --build build/libuipc-runtime \
+            --target gobot_libuipc_solver --parallel 3
+          test ! -e build/libuipc-runtime-bundle
+          cmake --install build/libuipc-runtime \
+            --config Release \
+            --component libuipc_runtime \
+            --prefix build/libuipc-runtime-bundle
+          tar -C build/libuipc-runtime-bundle -czf \
+            "$RUNNER_TEMP/gobot-libuipc-runtime.tar.gz" gobot
+
+      - name: Verify libuipc runtime bundle
+        run: |
+          mkdir "$RUNNER_TEMP/gobot-libuipc-runtime-verify"
+          tar -C "$RUNNER_TEMP/gobot-libuipc-runtime-verify" -xzf \
+            "$RUNNER_TEMP/gobot-libuipc-runtime.tar.gz"
+          BUNDLE_ROOT="$RUNNER_TEMP/gobot-libuipc-runtime-verify"
+          test -f "$BUNDLE_ROOT/gobot/libgobot_libuipc_solver.so"
+          for library in \
+            libuipc_backend_cuda.so \
+            libuipc_backend_none.so \
+            libuipc_constitution.so \
+            libuipc_core.so \
+            libuipc_geometry.so \
+            libuipc_io.so \
+            libuipc_sanity_check.so; do
+            test -f "$BUNDLE_ROOT/gobot/libuipc/Release/bin/$library"
+            test "$(readelf -d \
+              "$BUNDLE_ROOT/gobot/libuipc/Release/bin/$library" \
+              | sed -n 's/.*RUNPATH.*\[\(.*\)\].*/\1/p')" = '$ORIGIN'
+          done
+          test "$(readelf -d "$BUNDLE_ROOT/gobot/libgobot_libuipc_solver.so" \
+            | sed -n 's/.*RUNPATH.*\[\(.*\)\].*/\1/p')" \
+            = '$ORIGIN:$ORIGIN/libuipc/Release/bin'
+          nm -D --defined-only "$BUNDLE_ROOT/gobot/libgobot_libuipc_solver.so" \
+            | grep -F "gobot_ipc_solver_get_api"
+          nm -D --defined-only "$BUNDLE_ROOT/gobot/libgobot_libuipc_solver.so" \
+            | grep -F "gobot_ipc_solver_get_batch_api"
+          if find "$BUNDLE_ROOT/gobot" -type f -name '*.so' -print0 \
+            | xargs -0 readelf -d | grep -F 'Shared library: [libpython'; then
+            echo "libuipc runtime bundle unexpectedly depends on libpython" >&2
+            exit 1
+          fi
+
+      - name: Save libuipc runtime bundle
+        if: steps.libuipc-cache.outputs.cache-hit != 'true'
+        uses: actions/cache/save@v4
+        with:
+          path: ${{ runner.temp }}/gobot-libuipc-runtime.tar.gz
+          key: libuipc-runtime-v1-${{ runner.os }}-cuda12.8-gcc11-${{ steps.libuipc-cache-key.outputs.value }}
+
+      - name: Upload libuipc runtime bundle
+        uses: actions/upload-artifact@v4
+        with:
+          name: libuipc-runtime
+          path: ${{ runner.temp }}/gobot-libuipc-runtime.tar.gz
+          if-no-files-found: error
+          retention-days: 1
+
   build-wheels:
     name: Build wheel for Python ${{ matrix.python-version }}
-    needs: [build-luisa, build-openusd]
+    needs: [build-luisa, build-openusd, build-libuipc-runtime]
     runs-on: ubuntu-22.04
     timeout-minutes: 240
     env:
@@ -321,8 +526,8 @@ jobs:
             libegl-dev \
             libeigen3-dev \
             libgl-dev \
-            libtbb-dev \
-            liburdfdom-dev \
+            libtbb12 \
+            liburdfdom-world3.0 \
             libx11-dev \
             libxcb1-dev \
             libxcursor-dev \
@@ -358,15 +563,11 @@ jobs:
             3rdparty/assimp \
             3rdparty/gli \
             3rdparty/imgui \
-            3rdparty/libuipc \
             3rdparty/luisa_compute \
             3rdparty/meshoptimizer \
             3rdparty/pybind11 \
             3rdparty/rttr \
             3rdparty/stb
-          git -C 3rdparty/libuipc submodule sync --recursive
-          git -C 3rdparty/libuipc -c protocol.version=2 submodule update \
-            --init --force --depth=1 --recursive
 
       - name: Resolve compilation cache key
         id: wheel-ccache-key
@@ -397,6 +598,12 @@ jobs:
         with:
           name: openusd-sdk
           path: ${{ runner.temp }}/openusd-sdk
+
+      - name: Download libuipc runtime bundle
+        uses: actions/download-artifact@v4
+        with:
+          name: libuipc-runtime
+          path: ${{ runner.temp }}/libuipc-runtime
 
       - name: Restore LuisaCompute and CUDA build SDK
         run: |
@@ -434,6 +641,16 @@ jobs:
           test -f build/openusd/install/lib/usd/plugInfo.json
           test -f build/openusd/install/plugin/usd/plugInfo.json
 
+      - name: Restore libuipc runtime bundle
+        run: |
+          mkdir -p build/libuipc-runtime
+          tar -C build/libuipc-runtime -xzf \
+            "$RUNNER_TEMP/libuipc-runtime/gobot-libuipc-runtime.tar.gz"
+          GOBOT_LIBUIPC_PREBUILT_ROOT="$PWD/build/libuipc-runtime"
+          echo "GOBOT_LIBUIPC_PREBUILT_ROOT=${GOBOT_LIBUIPC_PREBUILT_ROOT}" >> "$GITHUB_ENV"
+          test -f "$GOBOT_LIBUIPC_PREBUILT_ROOT/gobot/libgobot_libuipc_solver.so"
+          test -f "$GOBOT_LIBUIPC_PREBUILT_ROOT/gobot/libuipc/Release/bin/libuipc_backend_cuda.so"
+
       - name: Set up Python
         uses: actions/setup-python@v5
         with:
@@ -445,14 +662,14 @@ jobs:
       - name: Configure compilation cache
         run: echo "CCACHE_DIR=$RUNNER_TEMP/gobot-wheel-ccache" >> "$GITHUB_ENV"
 
-      - name: Restore C and CUDA compilation cache
+      - name: Restore C and C++ compilation cache
         id: wheel-ccache
         uses: actions/cache/restore@v4
         with:
           path: ${{ runner.temp }}/gobot-wheel-ccache
-          key: gobot-wheel-ccache-v2-${{ runner.os }}-cuda12.8-gcc11-py${{ matrix.python-version }}-${{ steps.wheel-ccache-key.outputs.source }}
+          key: gobot-wheel-ccache-v3-${{ runner.os }}-cuda12.8-gcc11-py${{ matrix.python-version }}-${{ steps.wheel-ccache-key.outputs.source }}
           restore-keys: |
-            gobot-wheel-ccache-v2-${{ runner.os }}-cuda12.8-gcc11-py${{ matrix.python-version }}-
+            gobot-wheel-ccache-v3-${{ runner.os }}-cuda12.8-gcc11-py${{ matrix.python-version }}-
 
       - name: Check CUDA build SDK
         run: |
@@ -467,15 +684,11 @@ jobs:
           CMAKE_BUILD_PARALLEL_LEVEL: "3"
           GOBOT_SKIP_DEPENDENCY_BOOTSTRAP: "1"
         run: |
-          # A bare CMake architecture emits both sm_75 SASS and compute_75 PTX;
-          # newer supported GPUs use the forward-compatible PTX through driver JIT.
           CUDACXX="$GOBOT_CUDA_BUILD_SDK_ROOT/bin/nvcc" \
           CMAKE_ARGS="-DCUDAToolkit_ROOT=$GOBOT_CUDA_BUILD_SDK_ROOT \
             -DCMAKE_C_COMPILER_LAUNCHER=ccache \
             -DCMAKE_CXX_COMPILER_LAUNCHER=ccache \
-            -DCMAKE_CUDA_COMPILER_LAUNCHER=ccache \
-            -DGOB_LIBUIPC_CUDA_ARCHITECTURES=75 \
-            -DGOB_LIBUIPC_CUDA_DIAGNOSTIC_SUPPRESSIONS=68,20054,20208 \
+            -DGOB_LIBUIPC_PREBUILT_ROOT=$GOBOT_LIBUIPC_PREBUILT_ROOT \
             -DGOB_GSPLAT_INFERENCE_ROOT=$PWD/build/gsplat_inference/install \
             -DGOB_BUILD_OPENUSD=ON \
             -DGOB_OPENUSD_ROOT=$PWD/build/openusd/install \
@@ -486,12 +699,12 @@ jobs:
         if: always()
         run: ccache --show-stats
 
-      - name: Save C and CUDA compilation cache
+      - name: Save C and C++ compilation cache
         if: ${{ success() && steps.wheel-ccache.outputs.cache-hit != 'true' }}
         uses: actions/cache/save@v4
         with:
           path: ${{ runner.temp }}/gobot-wheel-ccache
-          key: gobot-wheel-ccache-v2-${{ runner.os }}-cuda12.8-gcc11-py${{ matrix.python-version }}-${{ steps.wheel-ccache-key.outputs.source }}
+          key: gobot-wheel-ccache-v3-${{ runner.os }}-cuda12.8-gcc11-py${{ matrix.python-version }}-${{ steps.wheel-ccache-key.outputs.source }}
 
       - name: Repair wheel
         run: |

@@ -68,12 +68,61 @@ def test_release_wheel_provisions_libuipc_sources_and_native_dependencies() -> N
     workflow = (
         backend.ROOT / ".github" / "workflows" / "python-publish.yml"
     ).read_text(encoding="utf-8")
+    libuipc_job = re.search(
+        r"^  build-libuipc-runtime:\n(?P<body>.*?)(?=^  build-wheels:)",
+        workflow,
+        re.MULTILINE | re.DOTALL,
+    )
+    wheel_job = re.search(
+        r"^  build-wheels:\n(?P<body>.*?)(?=^  check:)",
+        workflow,
+        re.MULTILINE | re.DOTALL,
+    )
+    assert libuipc_job is not None
+    assert wheel_job is not None
+    libuipc = libuipc_job.group("body")
+    wheels = wheel_job.group("body")
 
-    assert "3rdparty/libuipc" in workflow
-    assert "git -C 3rdparty/libuipc submodule sync --recursive" in workflow
-    assert "git -C 3rdparty/libuipc -c protocol.version=2 submodule update" in workflow
-    assert "libtbb-dev" in workflow
-    assert "liburdfdom-dev" in workflow
+    assert "needs: build-luisa" in libuipc
+    assert "3rdparty/libuipc" in libuipc
+    assert "git -C 3rdparty/libuipc submodule sync --recursive" in libuipc
+    assert "git -C 3rdparty/libuipc -c protocol.version=2 submodule update" in libuipc
+    assert "libtbb-dev" in libuipc
+    assert "liburdfdom-dev" in libuipc
+    assert "--component libuipc_runtime" in libuipc
+    assert "--target gobot_libuipc_solver" in libuipc
+    assert "steps.libuipc-cache.outputs.cache-hit != 'true'" in libuipc
+    assert "git rev-parse HEAD:3rdparty/libuipc" in libuipc
+    assert "git -C 3rdparty/libuipc submodule status --recursive" in libuipc
+    assert "include/gobot/physics/ipc_solver_module_api.hpp" in libuipc
+    assert "include/gobot/physics/ipc_batch_solver_module_api.hpp" in libuipc
+    assert "modules/libuipc_solver" in libuipc
+    assert 'name: libuipc-runtime' in libuipc
+    assert "-DGOB_LIBUIPC_CUDA_ARCHITECTURES=75" in libuipc
+    assert "-DGOB_LIBUIPC_CUDA_DIAGNOSTIC_SUPPRESSIONS=68,20054,20208" in libuipc
+
+    assert "needs: [build-luisa, build-openusd, build-libuipc-runtime]" in wheels
+    assert 'name: libuipc-runtime' in wheels
+    assert "-DGOB_LIBUIPC_PREBUILT_ROOT=$GOBOT_LIBUIPC_PREBUILT_ROOT" in wheels
+    assert "3rdparty/libuipc" not in wheels
+    assert "libtbb-dev" not in wheels
+    assert "liburdfdom-dev" not in wheels
+    assert "libtbb12" in wheels
+    assert "liburdfdom-world3.0" in wheels
+    assert "-DCMAKE_CUDA_COMPILER_LAUNCHER=ccache" not in wheels
+    assert "-DGOB_LIBUIPC_CUDA_ARCHITECTURES" not in wheels
+    assert "-DGOB_LIBUIPC_CUDA_DIAGNOSTIC_SUPPRESSIONS" not in wheels
+    assert 'CMAKE_BUILD_PARALLEL_LEVEL: "3"' in wheels
+    assert "ccache" in wheels
+    assert "actions/cache/restore@v4" in wheels
+    assert "actions/cache/save@v4" in wheels
+    assert "git ls-files -s" in wheels
+    assert "CCACHE_MAXSIZE: 1G" in wheels
+    assert "py${{ matrix.python-version }}" in wheels
+    assert "-DCMAKE_C_COMPILER_LAUNCHER=ccache" in wheels
+    assert "-DCMAKE_CXX_COMPILER_LAUNCHER=ccache" in wheels
+    assert wheels.count('          - "3.1') == 5
+
     assert "cuda-profiler-api-12-8=12.8.90-1" in workflow
     assert "libcublas-dev-12-8=12.8.4.1-1" in workflow
     assert "libcusolver-dev-12-8=11.7.3.90-1" in workflow
@@ -87,17 +136,6 @@ def test_release_wheel_provisions_libuipc_sources_and_native_dependencies() -> N
     assert "ln -s targets/x86_64-linux/include" in workflow
     assert 'GOBOT_CUDA_BUILD_SDK_ROOT="$RUNNER_TEMP/gobot-cuda-toolkit"' in workflow
     assert "-DCUDAToolkit_ROOT=$GOBOT_CUDA_BUILD_SDK_ROOT" in workflow
-    assert 'timeout-minutes: 240' in workflow
-    assert 'CMAKE_BUILD_PARALLEL_LEVEL: "3"' in workflow
-    assert "ccache" in workflow
-    assert "actions/cache/restore@v4" in workflow
-    assert "actions/cache/save@v4" in workflow
-    assert "git ls-files -s" in workflow
-    assert "CCACHE_MAXSIZE: 1G" in workflow
-    assert "py${{ matrix.python-version }}" in workflow
-    assert "-DCMAKE_CUDA_COMPILER_LAUNCHER=ccache" in workflow
-    assert "-DGOB_LIBUIPC_CUDA_ARCHITECTURES=75" in workflow
-    assert "-DGOB_LIBUIPC_CUDA_DIAGNOSTIC_SUPPRESSIONS=68,20054,20208" in workflow
     assert "--exclude libcublas.so.12" in workflow
     assert "--exclude libcusolver.so.11" in workflow
     assert "--exclude libcusparse.so.12" in workflow
@@ -105,6 +143,37 @@ def test_release_wheel_provisions_libuipc_sources_and_native_dependencies() -> N
     cmake = (backend.ROOT / "CMakeLists.txt").read_text(encoding="utf-8")
     assert 'set(GOB_LIBUIPC_CUDA_DIAGNOSTIC_SUPPRESSIONS "" CACHE STRING' in cmake
     assert "--diag-suppress=${GOB_LIBUIPC_CUDA_DIAGNOSTIC_SUPPRESSIONS}" in cmake
+
+
+def test_libuipc_runtime_bundle_has_a_strict_cmake_contract() -> None:
+    cmake = (backend.ROOT / "CMakeLists.txt").read_text(encoding="utf-8")
+    runtime = (
+        backend.ROOT / "cmake" / "GobotLibuipcRuntime.cmake"
+    ).read_text(encoding="utf-8")
+    solver = (
+        backend.ROOT / "modules" / "libuipc_solver" / "CMakeLists.txt"
+    ).read_text(encoding="utf-8")
+
+    assert 'set(GOB_LIBUIPC_PREBUILT_ROOT "" CACHE PATH' in cmake
+    assert "GOB_LIBUIPC_PREBUILT_ROOT requires GOB_BUILD_LIBUIPC=ON" in cmake
+    assert "GOB_LIBUIPC_PREBUILT_ROOT requires CMAKE_BUILD_TYPE=Release" in cmake
+    assert "gobot_use_libuipc_prebuilt_bundle" in cmake
+    for library in (
+        "libgobot_libuipc_solver.so",
+        "libuipc_backend_cuda.so",
+        "libuipc_backend_none.so",
+        "libuipc_constitution.so",
+        "libuipc_core.so",
+        "libuipc_geometry.so",
+        "libuipc_io.so",
+        "libuipc_sanity_check.so",
+    ):
+        assert library in runtime
+    assert '"\\$ORIGIN:\\$ORIGIN/libuipc/Release/bin"' in runtime
+    assert '"\\$ORIGIN"' in runtime
+    assert "file(COPY" in runtime
+    assert 'COMPONENT "${GOBOT_LIBUIPC_INSTALL_COMPONENT}"' in runtime
+    assert "libuipc_runtime" in solver
 
 
 def test_publish_workflow_sets_runner_paths_at_step_runtime() -> None:
@@ -348,6 +417,7 @@ def test_source_archive_without_submodules_fails_clearly() -> None:
 def main() -> None:
     test_python_build_defaults_enable_complete_native_runtime()
     test_release_wheel_provisions_libuipc_sources_and_native_dependencies()
+    test_libuipc_runtime_bundle_has_a_strict_cmake_contract()
     test_publish_workflow_sets_runner_paths_at_step_runtime()
     test_removed_warp_ipc_demo_is_not_packaged()
     test_wheel_and_editable_hooks_prepare_dependencies()
