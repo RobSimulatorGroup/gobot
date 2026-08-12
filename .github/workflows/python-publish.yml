@@ -17,33 +17,30 @@ permissions:
   contents: read
 
 jobs:
-  build-luisa:
-    name: Build LuisaCompute CUDA runtime
+  prepare-cuda-sdk:
+    name: Prepare CUDA 12.8 build SDK
     runs-on: ubuntu-22.04
-    timeout-minutes: 120
+    timeout-minutes: 60
 
     steps:
-      - name: Prepare CUDA 12.8.1 build environment
+      - name: Restore cached CUDA build SDK
+        id: cuda-sdk-cache
+        uses: actions/cache/restore@v4
+        with:
+          path: ${{ runner.temp }}/gobot-cuda-build-sdk.tar.gz
+          key: gobot-cuda-build-sdk-v1-${{ runner.os }}-cuda12.8.1
+
+      - name: Install CUDA 12.8.1 build SDK
+        if: steps.cuda-sdk-cache.outputs.cache-hit != 'true'
         run: |
           export DEBIAN_FRONTEND=noninteractive
           sudo apt-get -o Acquire::Retries=5 update
           sudo apt-get -o Acquire::Retries=5 install -y \
             ca-certificates \
             curl \
-            g++-11 \
-            gcc-11 \
-            git \
             gzip \
-            libx11-dev \
-            ninja-build \
-            python3 \
-            python3-pip \
-            tar \
-            uuid-dev \
-            zstd
+            tar
 
-          # Use NVIDIA's APT packages for the complete compiler and solver SDK
-          # required by LuisaCompute and libuipc, pinned to CUDA Toolkit 12.8.1.
           curl --fail --location \
             --retry 5 --retry-all-errors --retry-delay 2 \
             --output "$RUNNER_TEMP/cuda-keyring.deb" \
@@ -84,14 +81,159 @@ jobs:
           test -f /usr/local/cuda-12.8/targets/x86_64-linux/lib/libcusolver.so
           test -f /usr/local/cuda-12.8/targets/x86_64-linux/lib/libcusparse.so
           test -f /usr/local/cuda-12.8/targets/x86_64-linux/include/nvtx3/nvToolsExtCuda.h
+          test -f /usr/local/cuda-12.8/targets/x86_64-linux/lib/libnvptxcompiler_static.a
+          test -f /usr/local/cuda-12.8/targets/x86_64-linux/lib/libnvrtc-builtins_static.a
           test -f /usr/local/cuda-12.8/targets/x86_64-linux/lib/libnvrtc_static.a
           test -f /usr/local/cuda-12.8/targets/x86_64-linux/lib/stubs/libcuda.so
-          echo "CUDA_HOME=/usr/local/cuda-12.8" >> "$GITHUB_ENV"
-          echo "CUDAToolkit_ROOT=/usr/local/cuda-12.8" >> "$GITHUB_ENV"
-          echo "CUDACXX=/usr/local/cuda-12.8/bin/nvcc" >> "$GITHUB_ENV"
-          echo "/usr/local/cuda-12.8/bin" >> "$GITHUB_PATH"
+
+      - name: Pack CUDA build SDK
+        if: steps.cuda-sdk-cache.outputs.cache-hit != 'true'
+        run: |
+          CUDA_ROOT="/usr/local/cuda-12.8"
+          CUDA_TARGET_ROOT="${CUDA_ROOT}/targets/x86_64-linux"
+          CUDA_PACKAGE_ROOT="$RUNNER_TEMP/gobot-cuda-toolkit"
+          CUDA_PACKAGE_TARGET_ROOT="${CUDA_PACKAGE_ROOT}/targets/x86_64-linux"
+          mkdir -p "${CUDA_PACKAGE_TARGET_ROOT}/lib/stubs"
+          if test -f "${CUDA_ROOT}/version.json"; then
+            cp -a "${CUDA_ROOT}/version.json" "${CUDA_PACKAGE_ROOT}/version.json"
+          elif test -f "${CUDA_ROOT}/version.txt"; then
+            cp -a "${CUDA_ROOT}/version.txt" "${CUDA_PACKAGE_ROOT}/version.txt"
+          else
+            CUDA_VERSION_LINE="$("${CUDA_ROOT}/bin/nvcc" --version \
+              | sed -n 's/.*V\([0-9][0-9.]*\).*/CUDA Version \1/p' | tail -n 1)"
+            test -n "${CUDA_VERSION_LINE}"
+            printf '%s\n' "${CUDA_VERSION_LINE}" > "${CUDA_PACKAGE_ROOT}/version.txt"
+          fi
+          cp -a "${CUDA_ROOT}/bin" "${CUDA_PACKAGE_ROOT}/bin"
+          cp -a "${CUDA_ROOT}/nvvm" "${CUDA_PACKAGE_ROOT}/nvvm"
+          cp -a "${CUDA_TARGET_ROOT}/include" "${CUDA_PACKAGE_TARGET_ROOT}/include"
+          cp -a "${CUDA_TARGET_ROOT}"/lib/libcudart.so* \
+            "${CUDA_PACKAGE_TARGET_ROOT}/lib/"
+          cp -a \
+            "${CUDA_TARGET_ROOT}"/lib/libcublas.so* \
+            "${CUDA_TARGET_ROOT}"/lib/libcublasLt.so* \
+            "${CUDA_TARGET_ROOT}"/lib/libcusolver.so* \
+            "${CUDA_TARGET_ROOT}"/lib/libcusparse.so* \
+            "${CUDA_TARGET_ROOT}"/lib/libnvJitLink.so* \
+            "${CUDA_PACKAGE_TARGET_ROOT}/lib/"
+          cp -a \
+            "${CUDA_TARGET_ROOT}/lib/libcudadevrt.a" \
+            "${CUDA_TARGET_ROOT}/lib/libcudart_static.a" \
+            "${CUDA_TARGET_ROOT}/lib/libculibos.a" \
+            "${CUDA_TARGET_ROOT}/lib/libnvptxcompiler_static.a" \
+            "${CUDA_TARGET_ROOT}/lib/libnvrtc-builtins_static.a" \
+            "${CUDA_TARGET_ROOT}/lib/libnvrtc_static.a" \
+            "${CUDA_PACKAGE_TARGET_ROOT}/lib/"
+          cp -a "${CUDA_TARGET_ROOT}/lib/stubs/libcuda.so" \
+            "${CUDA_PACKAGE_TARGET_ROOT}/lib/stubs/libcuda.so"
+          ln -s targets/x86_64-linux/include "${CUDA_PACKAGE_ROOT}/include"
+          ln -s targets/x86_64-linux/lib "${CUDA_PACKAGE_ROOT}/lib64"
+          test -f "${CUDA_PACKAGE_ROOT}/version.json" \
+            || test -f "${CUDA_PACKAGE_ROOT}/version.txt"
+          test -x "${CUDA_PACKAGE_ROOT}/bin/nvcc"
+          test -x "${CUDA_PACKAGE_ROOT}/nvvm/bin/cicc"
+          test -f "${CUDA_PACKAGE_ROOT}/nvvm/libdevice/libdevice.10.bc"
+          test -f "${CUDA_PACKAGE_ROOT}/include/cuda.h"
+          test -f "${CUDA_PACKAGE_ROOT}/include/cuda_profiler_api.h"
+          test -f "${CUDA_PACKAGE_ROOT}/include/cublas_v2.h"
+          test -f "${CUDA_PACKAGE_ROOT}/include/cusolverDn.h"
+          test -f "${CUDA_PACKAGE_ROOT}/include/cusparse.h"
+          test -f "${CUDA_PACKAGE_ROOT}/lib64/libcublas.so"
+          test -f "${CUDA_PACKAGE_ROOT}/lib64/libcusolver.so"
+          test -f "${CUDA_PACKAGE_ROOT}/lib64/libcusparse.so"
+          test -f "${CUDA_PACKAGE_ROOT}/lib64/libnvJitLink.so"
+          test -f "${CUDA_PACKAGE_ROOT}/lib64/libcudadevrt.a"
+          test -f "${CUDA_PACKAGE_ROOT}/lib64/libnvptxcompiler_static.a"
+          test -f "${CUDA_PACKAGE_ROOT}/lib64/libnvrtc-builtins_static.a"
+          test -f "${CUDA_PACKAGE_ROOT}/lib64/libnvrtc_static.a"
+          test -f "${CUDA_PACKAGE_ROOT}/lib64/stubs/libcuda.so"
+          tar -C "$RUNNER_TEMP" -czf "$RUNNER_TEMP/gobot-cuda-build-sdk.tar.gz" \
+            gobot-cuda-toolkit
+
+      - name: Verify CUDA build SDK
+        run: |
+          test -s "$RUNNER_TEMP/gobot-cuda-build-sdk.tar.gz"
+          tar -tzf "$RUNNER_TEMP/gobot-cuda-build-sdk.tar.gz" \
+            > "$RUNNER_TEMP/gobot-cuda-build-sdk-contents"
+          for required_file in \
+            gobot-cuda-toolkit/bin/nvcc \
+            gobot-cuda-toolkit/nvvm/bin/cicc \
+            gobot-cuda-toolkit/targets/x86_64-linux/include/cuda_profiler_api.h \
+            gobot-cuda-toolkit/targets/x86_64-linux/lib/libcudadevrt.a \
+            gobot-cuda-toolkit/targets/x86_64-linux/lib/libnvptxcompiler_static.a \
+            gobot-cuda-toolkit/targets/x86_64-linux/lib/libnvrtc-builtins_static.a \
+            gobot-cuda-toolkit/targets/x86_64-linux/lib/libnvrtc_static.a; do
+            grep -Fx "${required_file}" "$RUNNER_TEMP/gobot-cuda-build-sdk-contents"
+          done
+
+      - name: Save CUDA build SDK cache
+        if: steps.cuda-sdk-cache.outputs.cache-hit != 'true'
+        uses: actions/cache/save@v4
+        with:
+          path: ${{ runner.temp }}/gobot-cuda-build-sdk.tar.gz
+          key: gobot-cuda-build-sdk-v1-${{ runner.os }}-cuda12.8.1
+
+      - name: Upload CUDA build SDK
+        uses: actions/upload-artifact@v4
+        with:
+          name: cuda-build-sdk
+          path: ${{ runner.temp }}/gobot-cuda-build-sdk.tar.gz
+          if-no-files-found: error
+          retention-days: 1
+          compression-level: 0
+
+  build-luisa:
+    name: Build LuisaCompute CUDA runtime
+    needs: prepare-cuda-sdk
+    runs-on: ubuntu-22.04
+    timeout-minutes: 120
+
+    steps:
+      - name: Install LuisaCompute build dependencies
+        run: |
+          export DEBIAN_FRONTEND=noninteractive
+          sudo apt-get -o Acquire::Retries=5 update
+          sudo apt-get -o Acquire::Retries=5 install -y \
+            ca-certificates \
+            curl \
+            g++-11 \
+            gcc-11 \
+            git \
+            gzip \
+            libx11-dev \
+            ninja-build \
+            python3 \
+            python3-pip \
+            tar \
+            uuid-dev \
+            zstd
           echo "$HOME/.local/bin" >> "$GITHUB_PATH"
           python3 -m pip install --user -U 'cmake>=3.27'
+
+      - name: Download CUDA build SDK
+        uses: actions/download-artifact@v4
+        with:
+          name: cuda-build-sdk
+          path: ${{ runner.temp }}/cuda-build-sdk
+
+      - name: Restore CUDA build SDK
+        run: |
+          GOBOT_CUDA_BUILD_SDK_ROOT="$RUNNER_TEMP/gobot-cuda-toolkit"
+          test ! -e "${GOBOT_CUDA_BUILD_SDK_ROOT}"
+          tar -C "$RUNNER_TEMP" -xzf \
+            "$RUNNER_TEMP/cuda-build-sdk/gobot-cuda-build-sdk.tar.gz"
+          echo "GOBOT_CUDA_BUILD_SDK_ROOT=${GOBOT_CUDA_BUILD_SDK_ROOT}" >> "$GITHUB_ENV"
+          echo "CUDA_HOME=${GOBOT_CUDA_BUILD_SDK_ROOT}" >> "$GITHUB_ENV"
+          echo "CUDAToolkit_ROOT=${GOBOT_CUDA_BUILD_SDK_ROOT}" >> "$GITHUB_ENV"
+          echo "CUDACXX=${GOBOT_CUDA_BUILD_SDK_ROOT}/bin/nvcc" >> "$GITHUB_ENV"
+          echo "${GOBOT_CUDA_BUILD_SDK_ROOT}/bin" >> "$GITHUB_PATH"
+          test -x "${GOBOT_CUDA_BUILD_SDK_ROOT}/bin/nvcc"
+          test -x "${GOBOT_CUDA_BUILD_SDK_ROOT}/nvvm/bin/cicc"
+          test -f "${GOBOT_CUDA_BUILD_SDK_ROOT}/include/cuda_profiler_api.h"
+          test -f "${GOBOT_CUDA_BUILD_SDK_ROOT}/lib64/libcudadevrt.a"
+          test -f "${GOBOT_CUDA_BUILD_SDK_ROOT}/lib64/libnvptxcompiler_static.a"
+          test -f "${GOBOT_CUDA_BUILD_SDK_ROOT}/lib64/libnvrtc-builtins_static.a"
+          test -f "${GOBOT_CUDA_BUILD_SDK_ROOT}/lib64/libnvrtc_static.a"
 
       - name: Check out repository
         uses: actions/checkout@v4
@@ -137,7 +279,7 @@ jobs:
             build/luisa_compute/sdk-build
             build/gsplat_inference/install
             build/gsplat_inference/sdk-build
-          key: luisa-cuda-12.8.1-host-v1-${{ runner.os }}-${{ steps.luisa-cache-key.outputs.value }}
+          key: luisa-cuda-12.8.1-host-v2-${{ runner.os }}-${{ steps.luisa-cache-key.outputs.value }}
 
       - name: Build LuisaCompute CUDA runtime
         if: steps.luisa-cache.outputs.cache-hit != 'true'
@@ -162,70 +304,20 @@ jobs:
             build/luisa_compute/sdk-build
             build/gsplat_inference/install
             build/gsplat_inference/sdk-build
-          key: luisa-cuda-12.8.1-host-v1-${{ runner.os }}-${{ steps.luisa-cache-key.outputs.value }}
+          key: luisa-cuda-12.8.1-host-v2-${{ runner.os }}-${{ steps.luisa-cache-key.outputs.value }}
 
-      - name: Pack LuisaCompute and CUDA build SDK
+      - name: Pack LuisaCompute build inputs
         run: |
           test -x build/luisa_compute/install/bin/luisa_nvrtc
           test -f build/gsplat_inference/install/lib/libgobot_gsplat_inference.a
-          CUDA_ROOT="${CUDA_HOME:-/usr/local/cuda}"
-          CUDA_TARGET_ROOT="${CUDA_ROOT}/targets/x86_64-linux"
-          CUDA_PACKAGE_TARGET_ROOT="build/cuda-toolkit/targets/x86_64-linux"
-          mkdir -p "${CUDA_PACKAGE_TARGET_ROOT}/lib/stubs"
-          if test -f "${CUDA_ROOT}/version.json"; then
-            cp -a "${CUDA_ROOT}/version.json" build/cuda-toolkit/version.json
-          elif test -f "${CUDA_ROOT}/version.txt"; then
-            cp -a "${CUDA_ROOT}/version.txt" build/cuda-toolkit/version.txt
-          else
-            CUDA_VERSION_LINE="$(nvcc --version | sed -n 's/.*V\([0-9][0-9.]*\).*/CUDA Version \1/p' | tail -n 1)"
-            test -n "${CUDA_VERSION_LINE}"
-            printf '%s\n' "${CUDA_VERSION_LINE}" > build/cuda-toolkit/version.txt
-          fi
-          cp -a "${CUDA_ROOT}/bin" build/cuda-toolkit/bin
-          cp -a "${CUDA_ROOT}/nvvm" build/cuda-toolkit/nvvm
-          cp -a "${CUDA_TARGET_ROOT}/include" "${CUDA_PACKAGE_TARGET_ROOT}/include"
-          cp -a "${CUDA_TARGET_ROOT}"/lib/libcudart.so* \
-            "${CUDA_PACKAGE_TARGET_ROOT}/lib/"
-          cp -a \
-            "${CUDA_TARGET_ROOT}"/lib/libcublas.so* \
-            "${CUDA_TARGET_ROOT}"/lib/libcublasLt.so* \
-            "${CUDA_TARGET_ROOT}"/lib/libcusolver.so* \
-            "${CUDA_TARGET_ROOT}"/lib/libcusparse.so* \
-            "${CUDA_TARGET_ROOT}"/lib/libnvJitLink.so* \
-            "${CUDA_PACKAGE_TARGET_ROOT}/lib/"
-          cp -a \
-            "${CUDA_TARGET_ROOT}/lib/libcudadevrt.a" \
-            "${CUDA_TARGET_ROOT}/lib/libcudart_static.a" \
-            "${CUDA_TARGET_ROOT}/lib/libculibos.a" \
-            "${CUDA_PACKAGE_TARGET_ROOT}/lib/"
-          cp -a "${CUDA_TARGET_ROOT}/lib/stubs/libcuda.so" \
-            "${CUDA_PACKAGE_TARGET_ROOT}/lib/stubs/libcuda.so"
-          ln -s targets/x86_64-linux/include build/cuda-toolkit/include
-          ln -s targets/x86_64-linux/lib build/cuda-toolkit/lib64
-          test -f build/cuda-toolkit/version.json \
-            || test -f build/cuda-toolkit/version.txt
-          test -x build/cuda-toolkit/bin/nvcc
-          test -x build/cuda-toolkit/nvvm/bin/cicc
-          test -f build/cuda-toolkit/nvvm/libdevice/libdevice.10.bc
-          test -f build/cuda-toolkit/include/cuda.h
-          test -f build/cuda-toolkit/include/cuda_profiler_api.h
-          test -f build/cuda-toolkit/include/cublas_v2.h
-          test -f build/cuda-toolkit/include/cusolverDn.h
-          test -f build/cuda-toolkit/include/cusparse.h
-          test -f build/cuda-toolkit/lib64/libcublas.so
-          test -f build/cuda-toolkit/lib64/libcusolver.so
-          test -f build/cuda-toolkit/lib64/libcusparse.so
-          test -f build/cuda-toolkit/lib64/libnvJitLink.so
-          test -f build/cuda-toolkit/lib64/libcudadevrt.a
-          test -f build/cuda-toolkit/lib64/stubs/libcuda.so
-          tar -C build -czf "$RUNNER_TEMP/luisa-cuda-build-inputs.tar.gz" \
-            luisa_compute/install gsplat_inference/install cuda-toolkit
+          tar -C build -czf "$RUNNER_TEMP/luisa-build-inputs.tar.gz" \
+            luisa_compute/install gsplat_inference/install
 
-      - name: Upload LuisaCompute and CUDA build SDK
+      - name: Upload LuisaCompute build inputs
         uses: actions/upload-artifact@v4
         with:
-          name: luisa-cuda-build-inputs
-          path: ${{ runner.temp }}/luisa-cuda-build-inputs.tar.gz
+          name: luisa-build-inputs
+          path: ${{ runner.temp }}/luisa-build-inputs.tar.gz
           if-no-files-found: error
           retention-days: 1
 
@@ -286,7 +378,7 @@ jobs:
 
   build-libuipc-runtime:
     name: Build libuipc Release runtime
-    needs: build-luisa
+    needs: prepare-cuda-sdk
     runs-on: ubuntu-22.04
     timeout-minutes: 240
     env:
@@ -351,18 +443,15 @@ jobs:
       - name: Download CUDA build SDK
         uses: actions/download-artifact@v4
         with:
-          name: luisa-cuda-build-inputs
-          path: ${{ runner.temp }}/luisa-cuda-build-inputs
+          name: cuda-build-sdk
+          path: ${{ runner.temp }}/cuda-build-sdk
 
       - name: Restore CUDA build SDK
         run: |
-          mkdir -p build
-          tar -C build -xzf \
-            "$RUNNER_TEMP/luisa-cuda-build-inputs/luisa-cuda-build-inputs.tar.gz" \
-            cuda-toolkit
           GOBOT_CUDA_BUILD_SDK_ROOT="$RUNNER_TEMP/gobot-cuda-toolkit"
           test ! -e "${GOBOT_CUDA_BUILD_SDK_ROOT}"
-          mv build/cuda-toolkit "${GOBOT_CUDA_BUILD_SDK_ROOT}"
+          tar -C "$RUNNER_TEMP" -xzf \
+            "$RUNNER_TEMP/cuda-build-sdk/gobot-cuda-build-sdk.tar.gz"
           echo "GOBOT_CUDA_BUILD_SDK_ROOT=${GOBOT_CUDA_BUILD_SDK_ROOT}" >> "$GITHUB_ENV"
           test -x "${GOBOT_CUDA_BUILD_SDK_ROOT}/bin/nvcc"
           test -x "${GOBOT_CUDA_BUILD_SDK_ROOT}/nvvm/bin/cicc"
@@ -587,11 +676,17 @@ jobs:
           echo "source=$(sha256sum "$RUNNER_TEMP/wheel-ccache-inputs" | cut -d' ' -f1)" \
             >> "$GITHUB_OUTPUT"
 
-      - name: Download LuisaCompute and CUDA build SDK
+      - name: Download LuisaCompute build inputs
         uses: actions/download-artifact@v4
         with:
-          name: luisa-cuda-build-inputs
-          path: ${{ runner.temp }}/luisa-cuda-build-inputs
+          name: luisa-build-inputs
+          path: ${{ runner.temp }}/luisa-build-inputs
+
+      - name: Download CUDA build SDK
+        uses: actions/download-artifact@v4
+        with:
+          name: cuda-build-sdk
+          path: ${{ runner.temp }}/cuda-build-sdk
 
       - name: Download OpenUSD SDK
         uses: actions/download-artifact@v4
@@ -605,14 +700,15 @@ jobs:
           name: libuipc-runtime
           path: ${{ runner.temp }}/libuipc-runtime
 
-      - name: Restore LuisaCompute and CUDA build SDK
+      - name: Restore LuisaCompute and CUDA build inputs
         run: |
           mkdir -p build
           tar -C build -xzf \
-            "$RUNNER_TEMP/luisa-cuda-build-inputs/luisa-cuda-build-inputs.tar.gz"
+            "$RUNNER_TEMP/luisa-build-inputs/luisa-build-inputs.tar.gz"
           GOBOT_CUDA_BUILD_SDK_ROOT="$RUNNER_TEMP/gobot-cuda-toolkit"
           test ! -e "${GOBOT_CUDA_BUILD_SDK_ROOT}"
-          mv build/cuda-toolkit "${GOBOT_CUDA_BUILD_SDK_ROOT}"
+          tar -C "$RUNNER_TEMP" -xzf \
+            "$RUNNER_TEMP/cuda-build-sdk/gobot-cuda-build-sdk.tar.gz"
           echo "GOBOT_CUDA_BUILD_SDK_ROOT=${GOBOT_CUDA_BUILD_SDK_ROOT}" >> "$GITHUB_ENV"
           test -x build/luisa_compute/install/bin/luisa_nvrtc
           test -f build/gsplat_inference/install/lib/libgobot_gsplat_inference.a

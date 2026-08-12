@@ -70,6 +70,16 @@ def test_release_wheel_provisions_libuipc_sources_and_native_dependencies() -> N
     workflow = (
         backend.ROOT / ".github" / "workflows" / "python-publish.yml"
     ).read_text(encoding="utf-8")
+    cuda_job = re.search(
+        r"^  prepare-cuda-sdk:\n(?P<body>.*?)(?=^  build-luisa:)",
+        workflow,
+        re.MULTILINE | re.DOTALL,
+    )
+    luisa_job = re.search(
+        r"^  build-luisa:\n(?P<body>.*?)(?=^  build-openusd:)",
+        workflow,
+        re.MULTILINE | re.DOTALL,
+    )
     libuipc_job = re.search(
         r"^  build-libuipc-runtime:\n(?P<body>.*?)(?=^  build-wheels:)",
         workflow,
@@ -80,12 +90,33 @@ def test_release_wheel_provisions_libuipc_sources_and_native_dependencies() -> N
         workflow,
         re.MULTILINE | re.DOTALL,
     )
+    assert cuda_job is not None
+    assert luisa_job is not None
     assert libuipc_job is not None
     assert wheel_job is not None
+    cuda = cuda_job.group("body")
+    luisa = luisa_job.group("body")
     libuipc = libuipc_job.group("body")
     wheels = wheel_job.group("body")
 
-    assert "needs: build-luisa" in libuipc
+    assert "needs: prepare-cuda-sdk" in luisa
+    assert "needs: prepare-cuda-sdk" in libuipc
+    assert "needs: build-luisa" not in libuipc
+    assert 'name: cuda-build-sdk' in cuda
+    assert 'name: cuda-build-sdk' in luisa
+    assert 'name: cuda-build-sdk' in libuipc
+    assert "gobot-cuda-build-sdk-v1-${{ runner.os }}-cuda12.8.1" in cuda
+    assert "steps.cuda-sdk-cache.outputs.cache-hit != 'true'" in cuda
+    assert 'name: luisa-build-inputs' in luisa
+    assert 'name: luisa-cuda-build-inputs' not in workflow
+    luisa_pack_step = re.search(
+        r"      - name: Pack LuisaCompute build inputs\n(?P<body>.*?)"
+        r"(?=      - name: Upload LuisaCompute build inputs)",
+        luisa,
+        re.DOTALL,
+    )
+    assert luisa_pack_step is not None
+    assert "gobot-cuda-toolkit" not in luisa_pack_step.group("body")
     assert "3rdparty/libuipc" in libuipc
     assert "git -C 3rdparty/libuipc submodule sync --recursive" in libuipc
     assert "git -C 3rdparty/libuipc -c protocol.version=2 submodule update" in libuipc
@@ -130,11 +161,15 @@ def test_release_wheel_provisions_libuipc_sources_and_native_dependencies() -> N
     assert "libcusolver-dev-12-8=11.7.3.90-1" in workflow
     assert "libcusparse-dev-12-8=12.5.8.93-1" in workflow
     assert "libnvjitlink-dev-12-8=12.8.93-1" in workflow
-    assert "build/cuda-toolkit/bin/nvcc" in workflow
-    assert "build/cuda-toolkit/nvvm/bin/cicc" in workflow
-    assert "build/cuda-toolkit/include/cuda_profiler_api.h" in workflow
-    assert "build/cuda-toolkit/lib64/libcudadevrt.a" in workflow
-    assert 'CUDA_PACKAGE_TARGET_ROOT="build/cuda-toolkit/targets/x86_64-linux"' in workflow
+    assert 'CUDA_PACKAGE_ROOT="$RUNNER_TEMP/gobot-cuda-toolkit"' in cuda
+    assert '"${CUDA_PACKAGE_ROOT}/bin/nvcc"' in cuda
+    assert '"${CUDA_PACKAGE_ROOT}/nvvm/bin/cicc"' in cuda
+    assert '"${CUDA_PACKAGE_ROOT}/include/cuda_profiler_api.h"' in cuda
+    assert '"${CUDA_PACKAGE_ROOT}/lib64/libcudadevrt.a"' in cuda
+    assert '"${CUDA_PACKAGE_ROOT}/lib64/libnvptxcompiler_static.a"' in cuda
+    assert '"${CUDA_PACKAGE_ROOT}/lib64/libnvrtc-builtins_static.a"' in cuda
+    assert '"${CUDA_PACKAGE_ROOT}/lib64/libnvrtc_static.a"' in cuda
+    assert 'CUDA_PACKAGE_TARGET_ROOT="${CUDA_PACKAGE_ROOT}/targets/x86_64-linux"' in cuda
     assert "ln -s targets/x86_64-linux/include" in workflow
     assert 'GOBOT_CUDA_BUILD_SDK_ROOT="$RUNNER_TEMP/gobot-cuda-toolkit"' in workflow
     assert "-DCUDAToolkit_ROOT=$GOBOT_CUDA_BUILD_SDK_ROOT" in workflow
