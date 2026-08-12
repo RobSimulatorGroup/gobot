@@ -3,6 +3,8 @@ from __future__ import annotations
 import os
 from pathlib import Path
 import re
+import shutil
+import subprocess
 import sys
 import tempfile
 from types import ModuleType, SimpleNamespace
@@ -172,8 +174,198 @@ def test_libuipc_runtime_bundle_has_a_strict_cmake_contract() -> None:
     assert '"\\$ORIGIN:\\$ORIGIN/libuipc/Release/bin"' in runtime
     assert '"\\$ORIGIN"' in runtime
     assert "file(COPY" in runtime
+    assert "file(SHA256" in runtime
+    assert "string(SHA256 GOBOT_LIBUIPC_BUNDLE_HASH" in runtime
+    assert "GOBOT_LIBUIPC_STAGED_BUNDLE_ROOT" in runtime
+    assert "GOBOT_LIBUIPC_CACHED_BUNDLE_ROOT" in runtime
+    assert (
+        'install(DIRECTORY "${GOBOT_LIBUIPC_STAGED_BUNDLE_ROOT}/gobot/"'
+        in runtime
+    )
+    assert 'install(DIRECTORY "${BUNDLE_ROOT}/gobot/"' not in runtime
     assert 'COMPONENT "${GOBOT_LIBUIPC_INSTALL_COMPONENT}"' in runtime
     assert "libuipc_runtime" in solver
+
+
+def test_libuipc_runtime_bundle_survives_removing_its_input() -> None:
+    cmake = shutil.which("cmake")
+    compiler = shutil.which("cc")
+    if cmake is None or compiler is None:
+        raise AssertionError("the libuipc bundle test requires cmake and a C compiler")
+
+    libraries = (
+        "libuipc_backend_cuda.so",
+        "libuipc_backend_none.so",
+        "libuipc_constitution.so",
+        "libuipc_core.so",
+        "libuipc_geometry.so",
+        "libuipc_io.so",
+        "libuipc_sanity_check.so",
+    )
+    licenses = (
+        "Octree/LICENSE",
+        "GKlib/LICENSE.txt",
+        "METIS/LICENSE",
+        "cppitertools/LICENSE.md",
+        "cpptrace/LICENSE",
+        "dylib/LICENSE",
+        "fmt/LICENSE.rst",
+        "libigl/LICENSE.GPL",
+        "libigl/LICENSE.MPL2",
+        "libuipc/LICENSE",
+        "libuipc/NOTICE",
+        "magic_enum/LICENSE",
+        "muda/LICENSE",
+        "nlohmann_json/LICENSE.MIT",
+        "spdlog/LICENSE",
+        "tinygltf/LICENSE",
+    )
+
+    with tempfile.TemporaryDirectory() as directory:
+        root = Path(directory)
+        source_bundle = root / "source-bundle"
+        package = source_bundle / "gobot"
+        runtime = package / "libuipc" / "Release" / "bin"
+        runtime.mkdir(parents=True)
+        fixture_source = root / "fixture.c"
+        fixture_source.write_text("int gobot_libuipc_fixture(void) { return 0; }\n")
+
+        subprocess.run(
+            [
+                compiler,
+                "-shared",
+                "-fPIC",
+                os.fspath(fixture_source),
+                "-Wl,-rpath,$ORIGIN:$ORIGIN/libuipc/Release/bin",
+                "-o",
+                os.fspath(package / "libgobot_libuipc_solver.so"),
+            ],
+            check=True,
+        )
+        runtime_fixture = root / "libuipc_fixture.so"
+        subprocess.run(
+            [
+                compiler,
+                "-shared",
+                "-fPIC",
+                os.fspath(fixture_source),
+                "-Wl,-rpath,$ORIGIN",
+                "-o",
+                os.fspath(runtime_fixture),
+            ],
+            check=True,
+        )
+        for library in libraries:
+            shutil.copy2(runtime_fixture, runtime / library)
+        for license_path in licenses:
+            destination = package / "licenses" / license_path
+            destination.parent.mkdir(parents=True, exist_ok=True)
+            destination.write_text(f"fixture license: {license_path}\n")
+
+        source_dir = root / "project"
+        build_dir = root / "build"
+        install_dir = root / "install"
+        source_dir.mkdir()
+        runtime_module = backend.ROOT / "cmake" / "GobotLibuipcRuntime.cmake"
+        (source_dir / "CMakeLists.txt").write_text(
+            "\n".join(
+                (
+                    "cmake_minimum_required(VERSION 3.16)",
+                    "project(gobot_libuipc_staging_test NONE)",
+                    'set(GOB_LIBUIPC_PREBUILT_ROOT "${GOB_LIBUIPC_PREBUILT_ROOT}" CACHE PATH "")',
+                    f'include("{runtime_module.as_posix()}")',
+                    'gobot_use_libuipc_prebuilt_bundle("${GOB_LIBUIPC_PREBUILT_ROOT}")',
+                    "",
+                )
+            )
+        )
+        subprocess.run(
+            [
+                cmake,
+                "-S",
+                os.fspath(source_dir),
+                "-B",
+                os.fspath(build_dir),
+                f"-DGOB_LIBUIPC_PREBUILT_ROOT={source_bundle}",
+            ],
+            check=True,
+            stdout=subprocess.DEVNULL,
+        )
+
+        cache = (build_dir / "CMakeCache.txt").read_text(encoding="utf-8")
+        configured_root = re.search(
+            r"^GOB_LIBUIPC_PREBUILT_ROOT:PATH=(?P<root>.+)$",
+            cache,
+            re.MULTILINE,
+        )
+        cached_root = re.search(
+            r"^GOBOT_LIBUIPC_CACHED_BUNDLE_ROOT:INTERNAL=(?P<root>.+)$",
+            cache,
+            re.MULTILINE,
+        )
+        assert configured_root is not None
+        assert Path(configured_root.group("root")) == source_bundle
+        assert cached_root is not None
+        cached_bundle = Path(cached_root.group("root"))
+        assert cached_bundle.is_relative_to(build_dir)
+        install_script = (build_dir / "cmake_install.cmake").read_text(
+            encoding="utf-8"
+        )
+        assert os.fspath(source_bundle) not in install_script
+        assert os.fspath(cached_bundle) in install_script
+
+        removed_bundle = root / "removed-source-bundle"
+        source_bundle.rename(removed_bundle)
+        subprocess.run(
+            [cmake, "-S", os.fspath(source_dir), "-B", os.fspath(build_dir)],
+            check=True,
+            stdout=subprocess.DEVNULL,
+        )
+        subprocess.run(
+            [
+                cmake,
+                "--install",
+                os.fspath(build_dir),
+                "--component",
+                "libuipc_runtime",
+                "--prefix",
+                os.fspath(install_dir),
+            ],
+            check=True,
+            stdout=subprocess.DEVNULL,
+        )
+
+        expected_files = sorted(
+            path.relative_to(removed_bundle) for path in removed_bundle.rglob("*")
+            if path.is_file()
+        )
+        installed_files = sorted(
+            path.relative_to(install_dir) for path in install_dir.rglob("*")
+            if path.is_file()
+        )
+        assert installed_files == expected_files
+        for relative_path in expected_files:
+            assert (install_dir / relative_path).read_bytes() == (
+                removed_bundle / relative_path
+            ).read_bytes()
+
+        invalid_bundle = root / "different-missing-bundle"
+        invalid_result = subprocess.run(
+            [
+                cmake,
+                "-S",
+                os.fspath(source_dir),
+                "-B",
+                os.fspath(build_dir),
+                f"-DGOB_LIBUIPC_PREBUILT_ROOT={invalid_bundle}",
+            ],
+            check=False,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.STDOUT,
+            text=True,
+        )
+        assert invalid_result.returncode != 0
+        assert "GOB_LIBUIPC_PREBUILT_ROOT is not a directory" in invalid_result.stdout
 
 
 def test_publish_workflow_sets_runner_paths_at_step_runtime() -> None:
@@ -418,6 +610,7 @@ def main() -> None:
     test_python_build_defaults_enable_complete_native_runtime()
     test_release_wheel_provisions_libuipc_sources_and_native_dependencies()
     test_libuipc_runtime_bundle_has_a_strict_cmake_contract()
+    test_libuipc_runtime_bundle_survives_removing_its_input()
     test_publish_workflow_sets_runner_paths_at_step_runtime()
     test_removed_warp_ipc_demo_is_not_packaged()
     test_wheel_and_editable_hooks_prepare_dependencies()
