@@ -421,6 +421,16 @@ set_tests_properties(test_python_libuipc_examples
             WORKING_DIRECTORY "${CMAKE_SOURCE_DIR}"
 )
 add_test(
+        NAME test_python_dual_arm_rope_twist_example
+        COMMAND ${Python3_EXECUTABLE} -S
+                ${CMAKE_CURRENT_SOURCE_DIR}/python/test_dual_arm_rope_twist_example.py
+)
+set_tests_properties(test_python_dual_arm_rope_twist_example
+        PROPERTIES
+            ENVIRONMENT "${GOBOT_PYTHON_TEST_ENV}"
+            WORKING_DIRECTORY "${CMAKE_SOURCE_DIR}"
+)
+add_test(
         NAME test_python_mujoco_ipc_provider
         COMMAND ${Python3_EXECUTABLE} -S
                 ${CMAKE_CURRENT_SOURCE_DIR}/python/test_mujoco_ipc_provider.py
@@ -452,6 +462,24 @@ if(GOB_BUILD_LIBUIPC)
     set_tests_properties(test_python_libuipc_batch_gpu
             PROPERTIES
                 ENVIRONMENT "${GOBOT_PYTHON_TEST_ENV}"
+                RESOURCE_LOCK gobot_cuda
+                SKIP_RETURN_CODE 77
+                WORKING_DIRECTORY "${CMAKE_SOURCE_DIR}"
+    )
+    set(GOBOT_DUAL_ARM_ROPE_TWIST_GPU_TEST_ENV
+            "${GOBOT_PYTHON_TEST_ENV}")
+    if(TARGET gobot_libuipc_solver)
+        string(APPEND GOBOT_DUAL_ARM_ROPE_TWIST_GPU_TEST_ENV
+                ";GOBOT_LIBUIPC_TEST_MODULE_PATH=$<TARGET_FILE:gobot_libuipc_solver>")
+    endif()
+    add_test(
+            NAME test_python_dual_arm_rope_twist_gpu
+            COMMAND ${Python3_EXECUTABLE} -S
+                    ${CMAKE_CURRENT_SOURCE_DIR}/python/test_dual_arm_rope_twist_gpu.py
+    )
+    set_tests_properties(test_python_dual_arm_rope_twist_gpu
+            PROPERTIES
+                ENVIRONMENT "${GOBOT_DUAL_ARM_ROPE_TWIST_GPU_TEST_ENV}"
                 RESOURCE_LOCK gobot_cuda
                 SKIP_RETURN_CODE 77
                 WORKING_DIRECTORY "${CMAKE_SOURCE_DIR}"

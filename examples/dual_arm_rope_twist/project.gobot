@@ -1,0 +1,11 @@
+{
+    "editor_scene_views": {
+        "res://dual_arm_rope_twist.jscn": {
+            "at": [0.0, 0.0, 0.69],
+            "eye": [1.12, 1.58, 1.20],
+            "fov_y": 50.0,
+            "up": [-0.12, -0.09, 0.99]
+        }
+    },
+    "main_scene": "res://dual_arm_rope_twist.jscn"
+}
