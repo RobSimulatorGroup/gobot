@@ -4,6 +4,7 @@
 #include <memory>
 
 #include <gobot/rendering/render_server.hpp>
+#include <gobot/scene/deformable_attachment_3d.hpp>
 #include <gobot/scene/deformable_body_3d.hpp>
 #include <gobot/scene/joint_3d.hpp>
 #include <gobot/scene/environment_3d.hpp>
@@ -37,6 +38,7 @@ TEST(TestNodeCreationRegistry, built_in_entries_keep_node_inheritance_shape) {
     const auto* node = FindEntry("Node");
     const auto* node_3d = FindEntry("Node3D");
     const auto* physics_coupling = FindEntry("PhysicsCoupling");
+    const auto* deformable_attachment = FindEntry("DeformableAttachment3D");
     const auto* collision_shape = FindEntry("CollisionShape3D");
     const auto* terrain = FindEntry("Terrain3D");
     const auto* robot = FindEntry("Robot3D");
@@ -65,6 +67,7 @@ TEST(TestNodeCreationRegistry, built_in_entries_keep_node_inheritance_shape) {
     ASSERT_NE(node, nullptr);
     ASSERT_NE(node_3d, nullptr);
     ASSERT_NE(physics_coupling, nullptr);
+    ASSERT_NE(deformable_attachment, nullptr);
     ASSERT_NE(collision_shape, nullptr);
     ASSERT_NE(terrain, nullptr);
     ASSERT_NE(robot, nullptr);
@@ -93,6 +96,7 @@ TEST(TestNodeCreationRegistry, built_in_entries_keep_node_inheritance_shape) {
     EXPECT_TRUE(node->parent_id.empty());
     EXPECT_EQ(node_3d->parent_id, "Node");
     EXPECT_EQ(physics_coupling->parent_id, "Node");
+    EXPECT_EQ(deformable_attachment->parent_id, "Node");
     EXPECT_EQ(collision_shape->parent_id, "Node3D");
     EXPECT_EQ(terrain->parent_id, "Node3D");
     EXPECT_EQ(robot->parent_id, "Node3D");
@@ -120,6 +124,18 @@ TEST(TestNodeCreationRegistry, built_in_entries_keep_node_inheritance_shape) {
 }
 
 TEST(TestNodeCreationRegistry, creates_ipc_scene_nodes) {
+    gobot::Node* attachment_node =
+            gobot::NodeCreationRegistry::CreateNode("DeformableAttachment3D");
+    ASSERT_NE(attachment_node, nullptr);
+    auto* attachment =
+            gobot::Object::PointerCastTo<gobot::DeformableAttachment3D>(
+                    attachment_node);
+    ASSERT_NE(attachment, nullptr);
+    EXPECT_TRUE(attachment->IsEnabled());
+    EXPECT_DOUBLE_EQ(attachment->GetStrengthRate(), 100.0);
+    EXPECT_TRUE(attachment->GetVertexIndices().empty());
+    gobot::Object::Delete(attachment_node);
+
     gobot::Node* coupling_node =
             gobot::NodeCreationRegistry::CreateNode("PhysicsCoupling");
     ASSERT_NE(coupling_node, nullptr);
@@ -138,6 +154,14 @@ TEST(TestNodeCreationRegistry, creates_ipc_scene_nodes) {
     ASSERT_NE(deformable, nullptr);
     EXPECT_FALSE(deformable->GetMesh().IsValid());
     EXPECT_FALSE(deformable->IsKinematic());
+    EXPECT_EQ(deformable->GetDebugSurfaceColor(),
+              gobot::Color(0.12f, 0.78f, 0.58f, 0.55f));
+    EXPECT_TRUE(deformable->IsDebugWireframeVisible());
+    deformable->SetDebugSurfaceColor(gobot::Color(0.96f, 0.31f, 0.055f, 0.92f));
+    deformable->SetDebugWireframeVisible(false);
+    EXPECT_EQ(deformable->GetDebugSurfaceColor(),
+              gobot::Color(0.96f, 0.31f, 0.055f, 0.92f));
+    EXPECT_FALSE(deformable->IsDebugWireframeVisible());
     gobot::Object::Delete(deformable_node);
 
     gobot::Node* tactile_node =

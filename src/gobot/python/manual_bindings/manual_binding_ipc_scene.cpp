@@ -100,6 +100,7 @@ void RegisterManualIpcSceneBindings(
         PyTetrahedralMeshClass& tetrahedral_mesh_class,
         PyTactileSensorConfigClass& tactile_config_class,
         PyPhysicsCouplingClass& physics_coupling_class,
+        PyDeformableAttachment3DClass& deformable_attachment_class,
         PyDeformableBody3DClass& deformable_body_class,
         PyTactileSensor3DClass& tactile_sensor_class) {
     physics_coupling_class
@@ -143,6 +144,57 @@ void RegisterManualIpcSceneBindings(
                     },
                     [](PyPhysicsCouplingHandle& handle, RealType value) {
                         SetNodeValue(handle, "torque_scale", value);
+                    });
+
+    deformable_attachment_class
+            .def_property(
+                    "enabled",
+                    [](const PyDeformableAttachment3DHandle& handle) {
+                        return handle.ResolveAs<DeformableAttachment3D>()->IsEnabled();
+                    },
+                    [](PyDeformableAttachment3DHandle& handle, bool value) {
+                        SetNodeValue(handle, "enabled", value);
+                    })
+            .def_property(
+                    "deformable_body_path",
+                    [](const PyDeformableAttachment3DHandle& handle) {
+                        return static_cast<std::string>(
+                                handle.ResolveAs<DeformableAttachment3D>()
+                                        ->GetDeformableBodyPath());
+                    },
+                    [](PyDeformableAttachment3DHandle& handle,
+                       const std::string& value) {
+                        SetNodeValue(handle, "deformable_body_path", NodePath(value));
+                    })
+            .def_property(
+                    "rigid_link_path",
+                    [](const PyDeformableAttachment3DHandle& handle) {
+                        return static_cast<std::string>(
+                                handle.ResolveAs<DeformableAttachment3D>()
+                                        ->GetRigidLinkPath());
+                    },
+                    [](PyDeformableAttachment3DHandle& handle,
+                       const std::string& value) {
+                        SetNodeValue(handle, "rigid_link_path", NodePath(value));
+                    })
+            .def_property(
+                    "vertex_indices",
+                    [](const PyDeformableAttachment3DHandle& handle) {
+                        return handle.ResolveAs<DeformableAttachment3D>()
+                                ->GetVertexIndices();
+                    },
+                    [](PyDeformableAttachment3DHandle& handle,
+                       const std::vector<std::uint32_t>& value) {
+                        SetNodeValue(handle, "vertex_indices", value);
+                    })
+            .def_property(
+                    "strength_rate",
+                    [](const PyDeformableAttachment3DHandle& handle) {
+                        return handle.ResolveAs<DeformableAttachment3D>()
+                                ->GetStrengthRate();
+                    },
+                    [](PyDeformableAttachment3DHandle& handle, RealType value) {
+                        SetNodeValue(handle, "strength_rate", value);
                     });
 
     tetrahedral_mesh_class
@@ -394,6 +446,23 @@ void RegisterManualIpcSceneBindings(
                     },
                     [](PyDeformableBody3DHandle& handle, bool value) {
                         SetNodeValue(handle, "self_collision_enabled", value);
+                    })
+            .def_property(
+                    "debug_surface_color",
+                    [](const PyDeformableBody3DHandle& handle) {
+                        return ColorToPython(
+                                handle.ResolveAs<DeformableBody3D>()->GetDebugSurfaceColor());
+                    },
+                    [](PyDeformableBody3DHandle& handle, const py::handle& value) {
+                        SetNodeValue(handle, "debug_surface_color", PythonToColor4(value));
+                    })
+            .def_property(
+                    "debug_wireframe_visible",
+                    [](const PyDeformableBody3DHandle& handle) {
+                        return handle.ResolveAs<DeformableBody3D>()->IsDebugWireframeVisible();
+                    },
+                    [](PyDeformableBody3DHandle& handle, bool value) {
+                        SetNodeValue(handle, "debug_wireframe_visible", value);
                     });
 
     tactile_sensor_class

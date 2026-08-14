@@ -12,6 +12,7 @@
 #include <gobot/core/sha256.hpp>
 #include <gobot/physics/ipc_scene_compiler.hpp>
 #include <gobot/scene/collision_shape_3d.hpp>
+#include <gobot/scene/deformable_attachment_3d.hpp>
 #include <gobot/scene/deformable_body_3d.hpp>
 #include <gobot/scene/joint_3d.hpp>
 #include <gobot/scene/link_3d.hpp>
@@ -106,6 +107,7 @@ TEST(TestIpcSceneCompiler, compiles_deterministic_content_addressed_artifact) {
     EXPECT_EQ(manifest.at("scene_name"), "ipc_world");
     EXPECT_EQ(manifest.at("schema_version"), 3);
     EXPECT_TRUE(manifest.at("couplings").empty());
+    EXPECT_TRUE(manifest.at("deformable_attachments").empty());
     ASSERT_EQ(manifest.at("deformable_bodies").size(), 1);
     ASSERT_EQ(manifest.at("tactile_sensors").size(), 1);
     ASSERT_EQ(manifest.at("blobs").size(), 1);
@@ -397,5 +399,121 @@ TEST(TestIpcSceneCompiler, rejects_invalid_or_duplicate_couplings) {
     root->AddChild(duplicate);
     EXPECT_FALSE(gobot::IpcSceneCompiler::Compile(root, &artifact, &error));
     EXPECT_NE(error.find("multiple enabled PhysicsCoupling"), std::string::npos);
+    tree.Finalize();
+}
+
+TEST(TestIpcSceneCompiler, treats_coupled_floating_base_as_external_proxy) {
+    gobot::SceneTree tree(false);
+    tree.Initialize();
+    auto* root = gobot::Object::New<gobot::Node3D>();
+    root->SetName("floating_world");
+    tree.GetRoot()->AddChild(root);
+
+    auto* robot = gobot::Object::New<gobot::Robot3D>();
+    robot->SetName("fixture");
+    root->AddChild(robot);
+    auto* floating = gobot::Object::New<gobot::Joint3D>();
+    floating->SetName("fixture_free_joint");
+    floating->SetJointType(gobot::JointType::Floating);
+    floating->SetChildLink("fixture_link");
+    robot->AddChild(floating);
+    auto* link = gobot::Object::New<gobot::Link3D>();
+    link->SetName("fixture_link");
+    floating->AddChild(link);
+    auto shape = gobot::MakeRef<gobot::BoxShape3D>();
+    auto* collision = gobot::Object::New<gobot::CollisionShape3D>();
+    collision->SetName("fixture_collision");
+    collision->SetShape(gobot::dynamic_pointer_cast<gobot::Shape3D>(shape));
+    link->AddChild(collision);
+
+    auto* coupling = gobot::Object::New<gobot::PhysicsCoupling>();
+    coupling->SetName("fixture_coupling");
+    coupling->SetRigidLinkPath(
+            gobot::NodePath("../fixture/fixture_free_joint/fixture_link"));
+    root->AddChild(coupling);
+
+    gobot::IpcSceneArtifact artifact;
+    std::string error;
+    ASSERT_TRUE(gobot::IpcSceneCompiler::Compile(root, &artifact, &error)) << error;
+    const nlohmann::json manifest = nlohmann::json::parse(artifact.manifest);
+    ASSERT_EQ(manifest.at("robots").size(), 1);
+    EXPECT_TRUE(manifest.at("robots").at(0).at("joints").empty());
+    ASSERT_EQ(manifest.at("robots").at(0).at("root_link_paths").size(), 1);
+    EXPECT_TRUE(manifest.at("robots").at(0).at("root_link_paths").at(0)
+                        .get<std::string>()
+                        .ends_with("/fixture_link"));
+
+    coupling->SetEnabled(false);
+    EXPECT_FALSE(gobot::IpcSceneCompiler::Compile(root, &artifact, &error));
+    EXPECT_NE(error.find("requires an enabled PhysicsCoupling"), std::string::npos);
+    tree.Finalize();
+}
+
+TEST(TestIpcSceneCompiler, compiles_and_validates_deformable_attachments) {
+    gobot::SceneTree tree(false);
+    tree.Initialize();
+    auto* root = gobot::Object::New<gobot::Node3D>();
+    root->SetName("attachment_world");
+    tree.GetRoot()->AddChild(root);
+
+    auto* body = gobot::Object::New<gobot::DeformableBody3D>();
+    body->SetName("rope");
+    body->SetMesh(MakeTetrahedron());
+    root->AddChild(body);
+
+    auto* robot = gobot::Object::New<gobot::Robot3D>();
+    robot->SetName("robot");
+    root->AddChild(robot);
+    auto* link = gobot::Object::New<gobot::Link3D>();
+    link->SetName("gripper");
+    robot->AddChild(link);
+    auto shape = gobot::MakeRef<gobot::BoxShape3D>();
+    auto* collision = gobot::Object::New<gobot::CollisionShape3D>();
+    collision->SetName("gripper_collision");
+    collision->SetShape(gobot::dynamic_pointer_cast<gobot::Shape3D>(shape));
+    link->AddChild(collision);
+
+    auto* coupling = gobot::Object::New<gobot::PhysicsCoupling>();
+    coupling->SetName("gripper_coupling");
+    coupling->SetRigidLinkPath(gobot::NodePath("../robot/gripper"));
+    root->AddChild(coupling);
+
+    auto* attachment = gobot::Object::New<gobot::DeformableAttachment3D>();
+    attachment->SetName("rope_grip");
+    attachment->SetDeformableBodyPath(gobot::NodePath("../rope"));
+    attachment->SetRigidLinkPath(gobot::NodePath("../robot/gripper"));
+    attachment->SetVertexIndices({2, 0});
+    attachment->SetStrengthRate(250.0);
+    root->AddChild(attachment);
+
+    gobot::IpcSceneArtifact artifact;
+    std::string error;
+    ASSERT_TRUE(gobot::IpcSceneCompiler::Compile(root, &artifact, &error)) << error;
+    const nlohmann::json manifest = nlohmann::json::parse(artifact.manifest);
+    const nlohmann::json& attachments = manifest.at("deformable_attachments");
+    ASSERT_EQ(attachments.size(), 1);
+    EXPECT_TRUE(attachments.at(0).at("attachment_path").get<std::string>().ends_with(
+            "/rope_grip"));
+    EXPECT_TRUE(attachments.at(0).at("deformable_body_path").get<std::string>().ends_with(
+            "/rope"));
+    EXPECT_TRUE(attachments.at(0).at("rigid_link_path").get<std::string>().ends_with(
+            "/robot/gripper"));
+    EXPECT_EQ(attachments.at(0).at("proxy_index"), 0);
+    EXPECT_EQ(attachments.at(0).at("vertex_indices"),
+              nlohmann::json::array({0, 2}));
+    EXPECT_DOUBLE_EQ(attachments.at(0).at("strength_rate"), 250.0);
+
+    attachment->SetVertexIndices({0, 0});
+    EXPECT_FALSE(gobot::IpcSceneCompiler::Compile(root, &artifact, &error));
+    EXPECT_NE(error.find("non-empty and unique"), std::string::npos);
+
+    attachment->SetVertexIndices({4});
+    EXPECT_FALSE(gobot::IpcSceneCompiler::Compile(root, &artifact, &error));
+    EXPECT_NE(error.find("out-of-range"), std::string::npos);
+
+    attachment->SetVertexIndices({0});
+    coupling->SetEnabled(false);
+    EXPECT_FALSE(gobot::IpcSceneCompiler::Compile(root, &artifact, &error));
+    EXPECT_NE(error.find("requires an enabled PhysicsCoupling"), std::string::npos);
     tree.Finalize();
 }

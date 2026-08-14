@@ -42,6 +42,7 @@
 #include "gobot/rendering/render_server.hpp"
 #include "gobot/scene/camera_3d.hpp"
 #include "gobot/scene/collision_shape_3d.hpp"
+#include "gobot/scene/deformable_attachment_3d.hpp"
 #include "gobot/scene/deformable_body_3d.hpp"
 #include "gobot/scene/joint_3d.hpp"
 #include "gobot/scene/link_3d.hpp"
@@ -195,6 +196,10 @@ struct PyPhysicsCouplingHandle : public PyNodeHandle {
     using PyNodeHandle::PyNodeHandle;
 };
 
+struct PyDeformableAttachment3DHandle : public PyNodeHandle {
+    using PyNodeHandle::PyNodeHandle;
+};
+
 struct PyRobot3DHandle : public PyNode3DHandle {
     using PyNode3DHandle::PyNode3DHandle;
 };
@@ -335,6 +340,8 @@ struct PySceneTransaction {
 using PyNodeClass = py::class_<PyNodeHandle>;
 using PyNode3DClass = py::class_<PyNode3DHandle, PyNodeHandle>;
 using PyPhysicsCouplingClass = py::class_<PyPhysicsCouplingHandle, PyNodeHandle>;
+using PyDeformableAttachment3DClass =
+        py::class_<PyDeformableAttachment3DHandle, PyNodeHandle>;
 using PyRobot3DClass = py::class_<PyRobot3DHandle, PyNode3DHandle>;
 using PyLink3DClass = py::class_<PyLink3DHandle, PyNode3DHandle>;
 using PyJoint3DClass = py::class_<PyJoint3DHandle, PyNode3DHandle>;
@@ -496,6 +503,7 @@ void RegisterManualIpcSceneBindings(
         PyTetrahedralMeshClass& tetrahedral_mesh_class,
         PyTactileSensorConfigClass& tactile_config_class,
         PyPhysicsCouplingClass& physics_coupling_class,
+        PyDeformableAttachment3DClass& deformable_attachment_class,
         PyDeformableBody3DClass& deformable_body_class,
         PyTactileSensor3DClass& tactile_sensor_class);
 void RegisterManualIpcSolverBindings(py::module_& module);

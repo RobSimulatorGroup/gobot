@@ -11,6 +11,7 @@
 
 #include "gobot/scene/collision_shape_3d.hpp"
 #include "gobot/scene/camera_3d.hpp"
+#include "gobot/scene/deformable_attachment_3d.hpp"
 #include "gobot/scene/deformable_body_3d.hpp"
 #include "gobot/scene/environment_3d.hpp"
 #include "gobot/scene/gaussian_splat_3d.hpp"
@@ -123,6 +124,14 @@ void NodeCreationRegistry::EnsureBuiltInNodeTypesRegistered() {
         "Node",
         "Explicit rigid-link binding between rigid and deformable physics solvers.",
         []() -> Node* { return CreateNodeInstance<PhysicsCoupling>(); }
+    });
+
+    RegisterNodeType({
+        "DeformableAttachment3D",
+        "Deformable Attachment",
+        "Node",
+        "Finite-element vertex attachment to a rigid Link3D.",
+        []() -> Node* { return CreateNodeInstance<DeformableAttachment3D>(); }
     });
 
     RegisterNodeType({

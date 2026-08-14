@@ -6,6 +6,10 @@ uniform mat4 u_model;
 uniform mat4 u_view;
 uniform mat4 u_projection;
 
+layout(location = 0) out vec3 v_world_position;
+
 void main() {
-    gl_Position = u_projection * u_view * u_model * vec4(a_position, 1.0);
+    vec4 world_position = u_model * vec4(a_position, 1.0);
+    v_world_position = world_position.xyz;
+    gl_Position = u_projection * u_view * world_position;
 }

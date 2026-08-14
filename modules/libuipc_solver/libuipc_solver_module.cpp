@@ -18,6 +18,7 @@
 #include <uipc/constitution/affine_body_prismatic_joint.h>
 #include <uipc/constitution/affine_body_revolute_joint.h>
 #include <uipc/constitution/elastic_moduli.h>
+#include <uipc/constitution/soft_position_constraint.h>
 #include <uipc/constitution/soft_transform_constraint.h>
 #include <uipc/constitution/stable_neo_hookean.h>
 #include <uipc/core/affine_body_state_accessor_feature.h>
@@ -74,6 +75,7 @@ using uipc::constitution::AffineBodyDrivingRevoluteJoint;
 using uipc::constitution::AffineBodyPrismaticJoint;
 using uipc::constitution::AffineBodyRevoluteJoint;
 using uipc::constitution::ElasticModuli;
+using uipc::constitution::SoftPositionConstraint;
 using uipc::constitution::SoftTransformConstraint;
 using uipc::constitution::StableNeoHookean;
 using uipc::core::AffineBodyStateAccessorFeature;
@@ -128,6 +130,34 @@ struct AffineContactRange {
     IndexT global_vertex_offset{-1};
     std::vector<Vector3> local_vertices;
     Vector3 local_center_of_mass{Vector3::Zero()};
+};
+
+struct DeformableAttachmentSpec {
+    std::string path;
+    std::string deformable_path;
+    std::string rigid_link_path;
+    std::size_t proxy_index{0};
+    double strength_rate{0.0};
+    std::vector<IndexT> vertex_indices;
+};
+
+struct DeformableAttachmentAim {
+    IndexT local_vertex{0};
+    std::string rigid_link_path;
+    std::size_t environment{0};
+    std::size_t affine_output_offset{0};
+    Vector3 link_local_position{Vector3::Zero()};
+};
+
+struct DeformableAttachmentVertex {
+    std::size_t deformable_output_offset{0};
+    std::string rigid_link_path;
+    std::size_t environment{0};
+    std::size_t affine_output_offset{0};
+    Vector3 link_local_position{Vector3::Zero()};
+    Vector3 link_local_center_of_mass{Vector3::Zero()};
+    double vertex_mass{0.0};
+    double strength_rate{0.0};
 };
 
 struct ContactGradientBuffer {
@@ -522,12 +552,20 @@ public:
             }
         }
 
+        const Json deformable_attachments =
+                manifest.value("deformable_attachments", Json::array());
+        const std::vector<DeformableAttachmentSpec> attachment_specs =
+                ParseDeformableAttachments(
+                        manifest.value("deformable_bodies", Json::array()),
+                        manifest.value("couplings", Json::array()),
+                        deformable_attachments);
         BuildDeformables(manifest.value("deformable_bodies", Json::array()),
-                         contact, subscenes);
+                         attachment_specs, contact, subscenes);
         const Json affine_robots = external_affine_proxies_
                                            ? SelectExternalAffineRobots(manifest)
                                            : manifest.value("robots", Json::array());
         BuildAffineBodies(affine_robots, contact, config, subscenes);
+        ValidateDeformableAttachmentMappings(attachment_specs);
         if (deformable_bodies_.empty()) {
             throw std::runtime_error("libuipc module requires at least one deformable body");
         }
@@ -585,6 +623,7 @@ public:
             for (const auto& [path, target] : affine_targets_) {
                 target->value = target->initial;
             }
+            attachment_target_transforms_ = initial_affine_transforms_;
             for (const auto& [path, target] : joint_targets_) {
                 target->value = target->initial;
                 auto geometry = target->geometry->geometry().as<SimplicialComplex>();
@@ -614,6 +653,11 @@ public:
                       static_cast<Eigen::Index>(index % 4)) = row_major[index];
         }
         found->second->value = transform;
+        const auto attachment_body = affine_output_offsets_.find(
+                AffineEnvironmentKey(0, path));
+        if (attachment_body != affine_output_offsets_.end()) {
+            attachment_target_transforms_.at(attachment_body->second) = transform;
+        }
     }
 
     void SetJointTarget(std::string_view path, double position) {
@@ -731,6 +775,10 @@ private:
         if (body_count == 0) {
             return;
         }
+        if (external_affine_targets_.size() != body_count) {
+            throw std::runtime_error(
+                    "libuipc external affine target layout changed after initialization");
+        }
         target_row_major_.resize(body_count * 16);
         RequireCuda(
                 cudaMemcpy(target_row_major_.data(),
@@ -738,11 +786,6 @@ private:
                            target_row_major_.size() * sizeof(double),
                            cudaMemcpyDeviceToHost),
                 "copying MuJoCo affine targets to libuipc");
-        auto transform = affine_state_->instances().find<Matrix4x4>(
-                uipc::builtin::transform);
-        auto velocity = affine_state_->instances().find<Matrix4x4>(
-                uipc::builtin::velocity);
-        auto transforms = view(*transform);
         for (std::size_t body = 0; body < body_count; ++body) {
             Matrix4x4 value;
             for (std::size_t index = 0; index < 16; ++index) {
@@ -750,10 +793,9 @@ private:
                       static_cast<Eigen::Index>(index % 4)) =
                         target_row_major_[body * 16 + index];
             }
-            transforms[body] = value;
+            external_affine_targets_[body]->value = value;
+            attachment_target_transforms_.at(body) = value;
         }
-        std::ranges::fill(view(*velocity), Matrix4x4::Zero());
-        affine_accessor_->copy_from(*affine_state_);
     }
 
     void WriteDeviceState() {
@@ -780,6 +822,9 @@ private:
         const std::size_t deformable_force_scalars = vertex_count * 3;
         const std::size_t affine_wrench_scalars = affine_count * 6;
         if (frame_ != 0) {
+            if (!deformable_attachment_vertices_.empty()) {
+                fem_accessor_->copy_to(*fem_state_);
+            }
             RefreshContactForces();
             if (deformable_force_scalars != 0) {
                 RequireCuda(
@@ -836,6 +881,11 @@ private:
                 throw std::runtime_error("libuipc gravity contains a non-finite value");
             }
         }
+    }
+
+    static std::string AffineEnvironmentKey(
+            std::size_t environment, std::string_view path) {
+        return fmt::format("{}#{}", environment, path);
     }
 
     static std::string ResolveWorkspace(const IpcSolverModuleConfig& config) {
@@ -982,16 +1032,134 @@ private:
         return selected;
     }
 
+    static std::vector<DeformableAttachmentSpec> ParseDeformableAttachments(
+            const Json& bodies,
+            const Json& couplings,
+            const Json& attachments) {
+        if (!attachments.is_array()) {
+            throw std::runtime_error(
+                    "IPC deformable attachment table must be an array");
+        }
+        if (attachments.empty()) {
+            return {};
+        }
+        if (!bodies.is_array() || !couplings.is_array()) {
+            throw std::runtime_error(
+                    "IPC deformable attachments require body and coupling tables");
+        }
+
+        std::unordered_map<std::string, std::size_t> body_vertex_counts;
+        for (const Json& body : bodies) {
+            body_vertex_counts.emplace(
+                    body.at("path").get<std::string>(),
+                    body.at("vertex_count").get<std::size_t>());
+        }
+        std::unordered_map<std::string, std::size_t> proxy_indices;
+        for (const Json& coupling : couplings) {
+            proxy_indices.emplace(
+                    coupling.at("link_path").get<std::string>(),
+                    coupling.at("proxy_index").get<std::size_t>());
+        }
+
+        std::vector<DeformableAttachmentSpec> result;
+        result.reserve(attachments.size());
+        std::unordered_set<std::string> paths;
+        std::unordered_set<std::string> attached_vertices;
+        std::string previous_path;
+        for (const Json& attachment : attachments) {
+            const std::string path =
+                    attachment.at("attachment_path").get<std::string>();
+            const std::string body_path =
+                    attachment.at("deformable_body_path").get<std::string>();
+            const std::string link_path =
+                    attachment.at("rigid_link_path").get<std::string>();
+            const auto body = body_vertex_counts.find(body_path);
+            const auto proxy = proxy_indices.find(link_path);
+            if (path.empty() || !paths.insert(path).second ||
+                (!previous_path.empty() && previous_path > path)) {
+                throw std::runtime_error(
+                        "IPC deformable attachment paths must be unique and canonically sorted");
+            }
+            previous_path = path;
+            if (body == body_vertex_counts.end() || proxy == proxy_indices.end()) {
+                throw std::runtime_error(
+                        "IPC deformable attachment references an unknown body or coupling");
+            }
+            const std::size_t proxy_index =
+                    attachment.at("proxy_index").get<std::size_t>();
+            const double strength_rate =
+                    attachment.at("strength_rate").get<double>();
+            const Json& indices = attachment.at("vertex_indices");
+            if (proxy_index != proxy->second || !std::isfinite(strength_rate) ||
+                strength_rate <= 0.0 || !indices.is_array() || indices.empty()) {
+                throw std::runtime_error(
+                        "IPC deformable attachment has invalid proxy, strength, or vertices");
+            }
+
+            DeformableAttachmentSpec spec;
+            spec.path = path;
+            spec.deformable_path = body_path;
+            spec.rigid_link_path = link_path;
+            spec.proxy_index = proxy_index;
+            spec.strength_rate = strength_rate;
+            IndexT previous_vertex = -1;
+            for (const Json& value : indices) {
+                const std::size_t vertex = value.get<std::size_t>();
+                if (vertex >= body->second ||
+                    (previous_vertex >= 0 &&
+                     vertex <= static_cast<std::size_t>(previous_vertex))) {
+                    throw std::runtime_error(
+                            "IPC deformable attachment vertices must be sorted, unique, and in range");
+                }
+                const std::string vertex_key =
+                        fmt::format("{}#{}", body_path, vertex);
+                if (!attached_vertices.insert(vertex_key).second) {
+                    throw std::runtime_error(
+                            "IPC deformable vertex is assigned to multiple attachments");
+                }
+                previous_vertex = static_cast<IndexT>(vertex);
+                spec.vertex_indices.push_back(previous_vertex);
+            }
+            result.push_back(std::move(spec));
+        }
+        return result;
+    }
+
+    static std::vector<double> ComputeVertexMasses(
+            const TetMeshData& mesh, double density) {
+        std::vector<double> masses(mesh.vertices.size(), 0.0);
+        for (const Vector4i& tetrahedron : mesh.tetrahedra) {
+            const Vector3& p0 = mesh.vertices[static_cast<std::size_t>(tetrahedron[0])];
+            const Vector3& p1 = mesh.vertices[static_cast<std::size_t>(tetrahedron[1])];
+            const Vector3& p2 = mesh.vertices[static_cast<std::size_t>(tetrahedron[2])];
+            const Vector3& p3 = mesh.vertices[static_cast<std::size_t>(tetrahedron[3])];
+            const double volume =
+                    (p1 - p0).dot((p2 - p0).cross(p3 - p0)) / 6.0;
+            if (!std::isfinite(volume) || volume <= 0.0) {
+                throw std::runtime_error(
+                        "IPC deformable attachment mesh has a non-positive tetrahedron");
+            }
+            const double vertex_mass = density * volume / 4.0;
+            for (const IndexT vertex : tetrahedron) {
+                masses[static_cast<std::size_t>(vertex)] += vertex_mass;
+            }
+        }
+        return masses;
+    }
+
     template <typename ContactElement>
     void BuildDeformables(
             const Json& bodies,
+            const std::vector<DeformableAttachmentSpec>& attachment_specs,
             const ContactElement& contact,
             const std::vector<SubsceneElement>& subscenes) {
         if (!bodies.is_array()) {
             throw std::runtime_error("IPC deformable body table must be an array");
         }
         StableNeoHookean material;
+        SoftPositionConstraint attachment_constraint;
         auto object = scene_->objects().create("gobot_deformables");
+        attachment_aims_by_geometry_.clear();
         std::size_t global_vertex_offset = 0;
         for (std::size_t environment = 0; environment < environment_count_;
              ++environment) {
@@ -1019,6 +1187,46 @@ private:
                                 body.at("young_modulus").get<double>(),
                                 body.at("poisson_ratio").get<double>()),
                         body.at("density").get<double>());
+                std::vector<DeformableAttachmentAim> geometry_aims;
+                const double density = body.at("density").get<double>();
+                const std::vector<double> vertex_masses =
+                        ComputeVertexMasses(decoded, density);
+                bool has_attachment_constraint = false;
+                for (const DeformableAttachmentSpec& attachment :
+                     attachment_specs) {
+                    if (attachment.deformable_path != path) {
+                        continue;
+                    }
+                    if (!has_attachment_constraint) {
+                        attachment_constraint.apply_to(mesh,
+                                                       attachment.strength_rate);
+                        has_attachment_constraint = true;
+                    }
+                    auto constrained = mesh.vertices().find<IndexT>(
+                            uipc::builtin::is_constrained);
+                    auto strengths = mesh.vertices().find<Float>(
+                            "strength_ratio");
+                    for (const IndexT vertex : attachment.vertex_indices) {
+                        view(*constrained)[static_cast<std::size_t>(vertex)] = 1;
+                        view(*strengths)[static_cast<std::size_t>(vertex)] =
+                                attachment.strength_rate;
+                        geometry_aims.push_back(DeformableAttachmentAim{
+                                vertex, attachment.rigid_link_path, environment,
+                                attachment.proxy_index,
+                                decoded.vertices[static_cast<std::size_t>(vertex)]});
+                        deformable_attachment_vertices_.push_back(
+                                DeformableAttachmentVertex{
+                                        global_vertex_offset +
+                                                static_cast<std::size_t>(vertex),
+                                        attachment.rigid_link_path,
+                                        environment,
+                                        attachment.proxy_index,
+                                        decoded.vertices[static_cast<std::size_t>(vertex)],
+                                        Vector3::Zero(),
+                                        vertex_masses[static_cast<std::size_t>(vertex)],
+                                        attachment.strength_rate});
+                    }
+                }
                 contact.apply_to(mesh);
                 subscenes[environment].apply_to(mesh);
                 auto self_collision = mesh.meta().find<IndexT>(
@@ -1031,6 +1239,8 @@ private:
                     std::ranges::fill(view(*is_fixed), 1);
                 }
                 auto created = object->geometries().create(mesh);
+                attachment_aims_by_geometry_.push_back(
+                        std::move(geometry_aims));
                 if (environment == 0) {
                     deformable_bodies_.push_back(BodyRecord{
                             path, environment_vertex_offset,
@@ -1046,6 +1256,41 @@ private:
                 environment_vertex_offset += decoded.vertices.size();
                 global_vertex_offset += decoded.vertices.size();
             }
+        }
+        if (!deformable_attachment_vertices_.empty()) {
+            scene_->animator().insert(
+                    *object,
+                    [this](uipc::core::Animation::UpdateInfo& info) {
+                        const auto slots = info.geo_slots();
+                        if (slots.size() != attachment_aims_by_geometry_.size()) {
+                            throw std::runtime_error(
+                                    "libuipc deformable attachment geometry layout changed");
+                        }
+                        for (std::size_t geometry_index = 0;
+                             geometry_index < slots.size(); ++geometry_index) {
+                            if (attachment_aims_by_geometry_[geometry_index].empty()) {
+                                continue;
+                            }
+                            auto geometry = slots[geometry_index]
+                                                    ->geometry()
+                                                    .as<SimplicialComplex>();
+                            auto aim = geometry->vertices().find<Vector3>(
+                                    uipc::builtin::aim_position);
+                            auto constrained = geometry->vertices().find<IndexT>(
+                                    uipc::builtin::is_constrained);
+                            for (const DeformableAttachmentAim& attachment :
+                                 attachment_aims_by_geometry_[geometry_index]) {
+                                view(*constrained)[static_cast<std::size_t>(
+                                        attachment.local_vertex)] = 1;
+                                view(*aim)[static_cast<std::size_t>(
+                                        attachment.local_vertex)] =
+                                        TransformPoint(
+                                                attachment_target_transforms_.at(
+                                                        attachment.affine_output_offset),
+                                                attachment.link_local_position);
+                            }
+                        }
+                    });
         }
     }
 
@@ -1197,10 +1442,15 @@ private:
                     auto fixed = mesh.instances().find<IndexT>(uipc::builtin::is_fixed);
                     view(*fixed)[0] = root_paths.contains(
                             link.at("path").get<std::string>()) ? 1 : 0;
-                } else if (!external_affine_proxies_) {
+                } else {
                     constraint.apply_to(
                             mesh, Vector2{config.kinematic_strength,
                                           config.kinematic_strength});
+                    if (external_affine_proxies_) {
+                        auto external_kinetic = mesh.instances().find<IndexT>(
+                                uipc::builtin::external_kinetic);
+                        view(*external_kinetic)[0] = 1;
+                    }
                 }
                 auto link_contact = scene_->contact_tabular().create(
                         environment_count_ == 1
@@ -1247,6 +1497,9 @@ private:
                 }
                 const std::size_t affine_output_offset = *global_body_offset;
                 initial_affine_transforms_.push_back(initial);
+                affine_output_offsets_.emplace(
+                        AffineEnvironmentKey(environment, path),
+                        affine_output_offset);
                 ++environment_body_offset;
                 ++(*global_body_offset);
 
@@ -1265,11 +1518,20 @@ private:
                         combined.vertices,
                         center});
 
-                if (!articulated && !external_affine_proxies_) {
+                if (!articulated) {
                     auto target = std::make_shared<AffineTarget>();
                     target->initial = initial;
                     target->value = initial;
-                    affine_targets_.emplace(path, target);
+                    if (external_affine_proxies_) {
+                        if (external_affine_targets_.size() !=
+                            affine_output_offset) {
+                            throw std::runtime_error(
+                                    "libuipc external affine target layout is not contiguous");
+                        }
+                        external_affine_targets_.push_back(target);
+                    } else {
+                        affine_targets_.emplace(path, target);
+                    }
                     scene_->animator().insert(
                             *object,
                             [target](uipc::core::Animation::UpdateInfo& info) {
@@ -1394,6 +1656,57 @@ private:
                             view(*aim)[0] = target->value;
                         });
             }
+        }
+    }
+
+    void ValidateDeformableAttachmentMappings(
+            const std::vector<DeformableAttachmentSpec>& attachment_specs) {
+        // Affine target upload shares this storage with attachment animation.
+        // Keep it sized even for ordinary contact-only scenes with no
+        // DeformableAttachment3D nodes.
+        attachment_target_transforms_ = initial_affine_transforms_;
+        if (attachment_specs.empty()) {
+            return;
+        }
+        if (initial_affine_transforms_.empty()) {
+            throw std::runtime_error(
+                    "libuipc deformable attachments require affine proxies");
+        }
+        for (std::vector<DeformableAttachmentAim>& geometry_aims :
+             attachment_aims_by_geometry_) {
+            for (DeformableAttachmentAim& attachment : geometry_aims) {
+                const auto found = affine_output_offsets_.find(
+                        AffineEnvironmentKey(attachment.environment,
+                                             attachment.rigid_link_path));
+                if (found == affine_output_offsets_.end()) {
+                    throw std::runtime_error(
+                            "libuipc deformable attachment has no affine proxy mapping");
+                }
+                attachment.affine_output_offset = found->second;
+                const Matrix4x4& initial =
+                        initial_affine_transforms_[found->second];
+                attachment.link_local_position =
+                        TransformPoint(initial.inverse(),
+                                       attachment.link_local_position);
+            }
+        }
+        for (DeformableAttachmentVertex& attachment :
+             deformable_attachment_vertices_) {
+            const auto found = affine_output_offsets_.find(
+                    AffineEnvironmentKey(attachment.environment,
+                                         attachment.rigid_link_path));
+            if (found == affine_output_offsets_.end()) {
+                throw std::runtime_error(
+                        "libuipc deformable attachment reaction has no affine proxy mapping");
+            }
+            attachment.affine_output_offset = found->second;
+            const Matrix4x4& initial = initial_affine_transforms_[found->second];
+            attachment.link_local_position =
+                    TransformPoint(initial.inverse(),
+                                   attachment.link_local_position);
+            attachment.link_local_center_of_mass =
+                    affine_contact_ranges_.at(found->second)
+                            .local_center_of_mass;
         }
     }
 
@@ -1593,6 +1906,53 @@ private:
                 }
             }
         }
+        AccumulateDeformableAttachmentWrenches();
+    }
+
+    void AccumulateDeformableAttachmentWrenches() {
+        if (deformable_attachment_vertices_.empty()) {
+            return;
+        }
+        auto positions = fem_state_->vertices().find<Vector3>(
+                uipc::builtin::position);
+        if (positions == nullptr) {
+            throw std::runtime_error(
+                    "libuipc FEM state has no positions for attachment wrench export");
+        }
+        const auto position_values = view(*positions);
+        for (const DeformableAttachmentVertex& attachment :
+             deformable_attachment_vertices_) {
+            if (attachment.deformable_output_offset >= position_values.size() ||
+                attachment.affine_output_offset >=
+                        attachment_target_transforms_.size()) {
+                throw std::runtime_error(
+                        "libuipc deformable attachment wrench mapping is out of range");
+            }
+            const Matrix4x4& transform =
+                    attachment_target_transforms_[attachment.affine_output_offset];
+            const Vector3 target = TransformPoint(
+                    transform, attachment.link_local_position);
+            // SoftPositionConstraint contributes s*m*(x-aim) directly to the
+            // incremental potential. Dividing by dt^2 recovers physical force.
+            const Vector3 force_on_link =
+                    attachment.strength_rate * attachment.vertex_mass *
+                    (position_values[attachment.deformable_output_offset] - target) *
+                    inverse_time_step_squared_;
+            const Vector3 world_center = TransformPoint(
+                    transform, attachment.link_local_center_of_mass);
+            const Vector3 torque_on_link =
+                    (target - world_center).cross(force_on_link);
+            if (!force_on_link.allFinite() || !torque_on_link.allFinite()) {
+                throw std::runtime_error(
+                        "libuipc deformable attachment produced a non-finite wrench");
+            }
+            for (std::size_t axis = 0; axis < 3; ++axis) {
+                affine_contact_wrenches_[attachment.affine_output_offset * 6 + axis] +=
+                        force_on_link[static_cast<Eigen::Index>(axis)];
+                affine_contact_wrenches_[attachment.affine_output_offset * 6 + 3 + axis] +=
+                        torque_on_link[static_cast<Eigen::Index>(axis)];
+            }
+        }
     }
 
     void Refresh(bool refresh_contact_forces) {
@@ -1621,9 +1981,13 @@ private:
             }
         }
         if (refresh_contact_forces) {
+            if (affine_accessor_ != nullptr) {
+                affine_accessor_->copy_to(*affine_state_);
+            }
             RefreshContactForces();
         } else {
             std::ranges::fill(contact_forces_, 0.0);
+            std::ranges::fill(affine_contact_wrenches_, 0.0);
         }
     }
 
@@ -1638,13 +2002,18 @@ private:
     std::unique_ptr<SimplicialComplex> affine_state_;
     std::vector<BodyRecord> deformable_bodies_;
     std::vector<DeformableContactRange> deformable_contact_ranges_;
+    std::vector<std::vector<DeformableAttachmentAim>> attachment_aims_by_geometry_;
+    std::vector<DeformableAttachmentVertex> deformable_attachment_vertices_;
     std::vector<AffineContactRange> affine_contact_ranges_;
     std::vector<BodyRecord> affine_bodies_;
     std::vector<ContactGradientBuffer> contact_gradient_buffers_;
     std::unordered_map<std::string, std::shared_ptr<AffineTarget>> affine_targets_;
+    std::vector<std::shared_ptr<AffineTarget>> external_affine_targets_;
     std::unordered_map<std::string, std::shared_ptr<JointTarget>> joint_targets_;
+    std::unordered_map<std::string, std::size_t> affine_output_offsets_;
     std::vector<Vector3> initial_fem_positions_;
     std::vector<Matrix4x4> initial_affine_transforms_;
+    std::vector<Matrix4x4> attachment_target_transforms_;
     std::vector<double> positions_;
     std::vector<double> velocities_;
     std::vector<double> contact_forces_;

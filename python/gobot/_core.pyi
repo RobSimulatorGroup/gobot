@@ -382,6 +382,14 @@ class PhysicsCoupling(Node):
     torque_scale: float
 
 
+class DeformableAttachment3D(Node):
+    enabled: bool
+    deformable_body_path: str
+    rigid_link_path: str
+    vertex_indices: list[int]
+    strength_rate: float
+
+
 class VelocityCommandDebug3D(Node3D):
     enabled: bool
     show_command_velocity: bool
@@ -508,6 +516,8 @@ class DeformableBody3D(Node3D):
     collision_layer: int
     collision_mask: int
     self_collision_enabled: bool
+    debug_surface_color: tuple[float, float, float, float]
+    debug_wireframe_visible: bool
 
 
 class Terrain3D(Node3D):

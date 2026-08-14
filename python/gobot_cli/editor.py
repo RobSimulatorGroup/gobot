@@ -24,6 +24,10 @@ PYTHON_EXECUTABLE_ENV = "GOBOT_PYTHON_EXECUTABLE"
 PYTHON_HOME_ENV = "GOBOT_PYTHON_HOME"
 EDITOR_EXECUTABLE_ENV = "GOBOT_EDITOR_EXECUTABLE"
 DIST_NAME = "gobot"
+CUDA_RUNTIME_DIST_NAME = "nvidia-cuda-runtime-cu12"
+CUDA_RUNTIME_RELATIVE_PATH = Path(
+    "nvidia/cuda_runtime/lib/libcudart.so.12"
+)
 
 
 def _dedupe_paths(paths: list[Path]) -> list[Path]:
@@ -134,6 +138,28 @@ def _prepend_pythonpath(env: dict[str, str], paths: list[Path]) -> None:
     env["PYTHONPATH"] = os.pathsep.join([*additions, existing] if existing else additions)
 
 
+def _find_current_cuda_runtime_library() -> Path | None:
+    try:
+        runtime_distribution = metadata.distribution(CUDA_RUNTIME_DIST_NAME)
+    except metadata.PackageNotFoundError:
+        return None
+
+    candidate = Path(
+        runtime_distribution.locate_file(CUDA_RUNTIME_RELATIVE_PATH)
+    )
+    return candidate.resolve() if candidate.is_file() else None
+
+
+def _prepend_ld_preload(env: dict[str, str], library: Path) -> None:
+    library_path = os.fspath(library)
+    existing = env.get("LD_PRELOAD", "")
+    if library_path in existing.split(os.pathsep):
+        return
+    env["LD_PRELOAD"] = (
+        os.pathsep.join((library_path, existing)) if existing else library_path
+    )
+
+
 def _with_editor_python_environment(
     python_library: str,
     gobot_package_dir: Path | None = None,
@@ -151,6 +177,10 @@ def _with_editor_python_environment(
     package_dir = gobot_package_dir or _distribution_gobot_dir()
     if package_dir is not None:
         _prepend_pythonpath(env, [package_dir.parent])
+
+    cuda_runtime = _find_current_cuda_runtime_library()
+    if cuda_runtime is not None:
+        _prepend_ld_preload(env, cuda_runtime)
 
     return env
 

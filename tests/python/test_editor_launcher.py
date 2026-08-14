@@ -217,6 +217,44 @@ def test_editor_stops_instead_of_launching_stale_binary() -> None:
     assert "native rebuild failed" in stderr.getvalue()
 
 
+def test_editor_preloads_current_environment_cuda_runtime() -> None:
+    runtime = Path("/environment/nvidia/cuda_runtime/lib/libcudart.so.12")
+    with (
+        patch.object(
+            launcher, "_find_current_cuda_runtime_library", return_value=runtime
+        ),
+        patch.object(launcher, "_distribution_gobot_dir", return_value=None),
+        patch.dict(
+            launcher.os.environ,
+            {"LD_PRELOAD": "/user/libinstrumentation.so"},
+            clear=False,
+        ),
+    ):
+        environment = launcher._with_editor_python_environment(
+            "/environment/lib/libpython.so"
+        )
+
+    assert environment["LD_PRELOAD"].split(os.pathsep) == [
+        os.fspath(runtime),
+        "/user/libinstrumentation.so",
+    ]
+
+
+def test_editor_cuda_runtime_is_optional() -> None:
+    with (
+        patch.object(
+            launcher, "_find_current_cuda_runtime_library", return_value=None
+        ),
+        patch.object(launcher, "_distribution_gobot_dir", return_value=None),
+        patch.dict(launcher.os.environ, {}, clear=True),
+    ):
+        environment = launcher._with_editor_python_environment(
+            "/environment/lib/libpython.so"
+        )
+
+    assert "LD_PRELOAD" not in environment
+
+
 def main() -> None:
     test_wheel_install_does_not_rebuild()
     test_editable_install_rebuilds_with_environment_tools()
@@ -224,6 +262,8 @@ def main() -> None:
     test_editable_install_repairs_isolated_cmake_cache()
     test_editable_install_repairs_missing_cached_ninja()
     test_editor_stops_instead_of_launching_stale_binary()
+    test_editor_preloads_current_environment_cuda_runtime()
+    test_editor_cuda_runtime_is_optional()
 
 
 if __name__ == "__main__":

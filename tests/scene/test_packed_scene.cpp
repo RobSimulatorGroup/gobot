@@ -6,6 +6,7 @@
 
 #include <gtest/gtest.h>
 
+#include <gobot/scene/deformable_attachment_3d.hpp>
 #include <gobot/scene/node.hpp>
 #include <gobot/scene/node_3d.hpp>
 #include <gobot/scene/physics_coupling.hpp>
@@ -260,6 +261,33 @@ TEST(TestPackedScene, preserves_physics_coupling_properties) {
     EXPECT_DOUBLE_EQ(restored->GetTorqueScale(), 0.25);
 
     gobot::Object::Delete(coupling);
+    gobot::Object::Delete(restored);
+}
+
+TEST(TestPackedScene, preserves_deformable_attachment_properties) {
+    auto* attachment = gobot::Object::New<gobot::DeformableAttachment3D>();
+    attachment->SetName("rope_grip");
+    attachment->SetEnabled(false);
+    attachment->SetDeformableBodyPath(gobot::NodePath("../rope"));
+    attachment->SetRigidLinkPath(gobot::NodePath("../robot/gripper"));
+    attachment->SetVertexIndices({0, 2, 4});
+    attachment->SetStrengthRate(350.0);
+
+    const gobot::Ref<gobot::PackedScene> packed = gobot::MakeRef<gobot::PackedScene>();
+    ASSERT_TRUE(packed->Pack(attachment));
+    gobot::Node* restored_node = packed->Instantiate();
+    auto* restored =
+            gobot::Object::PointerCastTo<gobot::DeformableAttachment3D>(
+                    restored_node);
+    ASSERT_NE(restored, nullptr);
+    EXPECT_FALSE(restored->IsEnabled());
+    EXPECT_EQ(restored->GetDeformableBodyPath(), gobot::NodePath("../rope"));
+    EXPECT_EQ(restored->GetRigidLinkPath(), gobot::NodePath("../robot/gripper"));
+    EXPECT_EQ(restored->GetVertexIndices(),
+              (std::vector<std::uint32_t>{0, 2, 4}));
+    EXPECT_DOUBLE_EQ(restored->GetStrengthRate(), 350.0);
+
+    gobot::Object::Delete(attachment);
     gobot::Object::Delete(restored);
 }
 

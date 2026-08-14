@@ -22,6 +22,7 @@
 #include "gobot/core/types.hpp"
 #include "gobot/physics/physics_types.hpp"
 #include "gobot/scene/collision_shape_3d.hpp"
+#include "gobot/scene/deformable_attachment_3d.hpp"
 #include "gobot/scene/deformable_body_3d.hpp"
 #include "gobot/scene/joint_3d.hpp"
 #include "gobot/scene/link_3d.hpp"
@@ -374,10 +375,127 @@ public:
         if (const auto* coupling = Object::PointerCastTo<PhysicsCoupling>(node)) {
             coupling_nodes_.push_back(coupling);
         }
+        if (const auto* attachment =
+                    Object::PointerCastTo<DeformableAttachment3D>(node)) {
+            attachment_nodes_.push_back(attachment);
+        }
         for (std::size_t index = 0; index < node->GetChildCount(); ++index) {
             if (!Visit(node->GetChild(static_cast<int>(index)), error)) {
                 return false;
             }
+        }
+        return true;
+    }
+
+    bool FinalizeAttachments(const Node& scene_root, std::string* error) {
+        struct PendingAttachment {
+            std::string attachment_path;
+            std::string deformable_body_path;
+            std::string rigid_link_path;
+            std::size_t proxy_index;
+            RealType strength_rate;
+            std::vector<std::uint32_t> vertex_indices;
+        };
+
+        std::unordered_map<std::string, std::size_t> proxy_indices;
+        for (const Json& coupling : couplings_) {
+            proxy_indices.emplace(
+                    coupling.at("link_path").get<std::string>(),
+                    coupling.at("proxy_index").get<std::size_t>());
+        }
+        std::unordered_set<std::string> deformable_paths;
+        for (const Json& body : deformable_bodies_) {
+            deformable_paths.insert(body.at("path").get<std::string>());
+        }
+
+        std::vector<PendingAttachment> pending;
+        std::set<std::pair<std::string, std::uint32_t>> attached_vertices;
+        for (const DeformableAttachment3D* attachment : attachment_nodes_) {
+            if (!attachment->IsEnabled()) {
+                continue;
+            }
+            const std::string attachment_path = NodePathString(*attachment);
+            if (attachment->GetDeformableBodyPath().IsEmpty() ||
+                attachment->GetRigidLinkPath().IsEmpty()) {
+                return SetCompileError(
+                        error, "DeformableAttachment3D '" + attachment_path +
+                                       "' requires deformable_body_path and rigid_link_path");
+            }
+
+            const Node* body_node = ResolveNodePath(
+                    *attachment, attachment->GetDeformableBodyPath());
+            const auto* body = Object::PointerCastTo<DeformableBody3D>(body_node);
+            if (body == nullptr ||
+                (body != &scene_root && !scene_root.IsAncestorOf(body))) {
+                return SetCompileError(
+                        error, "DeformableAttachment3D '" + attachment_path +
+                                       "' deformable_body_path must resolve to a DeformableBody3D in the compiled scene");
+            }
+            const std::string body_path = NodePathString(*body);
+            if (!deformable_paths.contains(body_path) || body->IsKinematic() ||
+                !body->GetMesh().IsValid()) {
+                return SetCompileError(
+                        error, "DeformableAttachment3D '" + attachment_path +
+                                       "' requires a compiled dynamic deformable body");
+            }
+
+            const Node* link_node = ResolveNodePath(
+                    *attachment, attachment->GetRigidLinkPath());
+            const auto* link = Object::PointerCastTo<Link3D>(link_node);
+            if (link == nullptr ||
+                (link != &scene_root && !scene_root.IsAncestorOf(link))) {
+                return SetCompileError(
+                        error, "DeformableAttachment3D '" + attachment_path +
+                                       "' rigid_link_path must resolve to a Link3D in the compiled scene");
+            }
+            const std::string link_path = NodePathString(*link);
+            const auto proxy = proxy_indices.find(link_path);
+            if (proxy == proxy_indices.end()) {
+                return SetCompileError(
+                        error, "DeformableAttachment3D '" + attachment_path +
+                                       "' rigid Link3D requires an enabled PhysicsCoupling");
+            }
+            if (!std::isfinite(attachment->GetStrengthRate()) ||
+                attachment->GetStrengthRate() <= 0.0) {
+                return SetCompileError(
+                        error, "DeformableAttachment3D '" + attachment_path +
+                                       "' strength_rate must be finite and positive");
+            }
+
+            std::vector<std::uint32_t> indices = attachment->GetVertexIndices();
+            std::ranges::sort(indices);
+            if (indices.empty() ||
+                std::ranges::adjacent_find(indices) != indices.end()) {
+                return SetCompileError(
+                        error, "DeformableAttachment3D '" + attachment_path +
+                                       "' vertex_indices must be non-empty and unique");
+            }
+            const std::size_t vertex_count = body->GetMesh()->GetVertexCount();
+            for (const std::uint32_t vertex : indices) {
+                if (vertex >= vertex_count) {
+                    return SetCompileError(
+                            error, "DeformableAttachment3D '" + attachment_path +
+                                           "' contains an out-of-range vertex index");
+                }
+                if (!attached_vertices.emplace(body_path, vertex).second) {
+                    return SetCompileError(
+                            error, "multiple DeformableAttachment3D nodes target the same deformable vertex");
+                }
+            }
+            pending.push_back(PendingAttachment{
+                    attachment_path, body_path, link_path, proxy->second,
+                    attachment->GetStrengthRate(), std::move(indices)});
+        }
+
+        std::ranges::sort(pending, {}, &PendingAttachment::attachment_path);
+        for (const PendingAttachment& attachment : pending) {
+            deformable_attachments_.push_back({
+                    {"attachment_path", attachment.attachment_path},
+                    {"deformable_body_path", attachment.deformable_body_path},
+                    {"proxy_index", attachment.proxy_index},
+                    {"rigid_link_path", attachment.rigid_link_path},
+                    {"strength_rate", attachment.strength_rate},
+                    {"vertex_indices", attachment.vertex_indices}});
         }
         return true;
     }
@@ -512,6 +630,22 @@ public:
         return true;
     }
 
+    bool FinalizeExternalFloatingBases(std::string* error) const {
+        std::unordered_set<std::string> coupled_link_paths;
+        for (const Json& coupling : couplings_) {
+            coupled_link_paths.insert(
+                    coupling.at("link_path").get<std::string>());
+        }
+        for (const ExternalFloatingBase& base : external_floating_bases_) {
+            if (!coupled_link_paths.contains(base.link_path)) {
+                return SetCompileError(
+                        error, "root floating joint '" + base.joint_path +
+                                       "' requires an enabled PhysicsCoupling on its child Link3D");
+            }
+        }
+        return true;
+    }
+
     Json BuildManifest(const Node& scene_root) const {
         Json blob_table = Json::array();
         for (const auto& [id, blob] : blobs_) {
@@ -524,6 +658,7 @@ public:
         return Json{
                 {"blobs", std::move(blob_table)},
                 {"couplings", couplings_},
+                {"deformable_attachments", deformable_attachments_},
                 {"deformable_bodies", deformable_bodies_},
                 {"format", "gobot-ipc"},
                 {"producer", "gobot"},
@@ -545,6 +680,11 @@ public:
     }
 
 private:
+    struct ExternalFloatingBase {
+        std::string joint_path;
+        std::string link_path;
+    };
+
     std::string AddMesh(const TetrahedralMesh& mesh) {
         std::vector<std::uint8_t> data = EncodeMesh(mesh);
         const std::string digest = Sha256Digest(std::span<const std::uint8_t>(data));
@@ -1006,7 +1146,14 @@ private:
                     joint->GetAffineActuatorPositionGain(),
                     joint->GetAffineActuatorVelocityGain(),
                     joint->GetAffineActuatorInheritRange()};
-            if (parent_link == nullptr || child_link == nullptr ||
+            if (joint->GetJointType() == JointType::Floating &&
+                parent_link == nullptr && child_link != nullptr) {
+                // MuJoCo owns floating-base dynamics. In the IPC artifact the
+                // coupled child is an externally driven affine proxy, so this
+                // root joint is intentionally omitted from IPC articulation.
+                external_floating_bases_.push_back(
+                        {path, NodePathString(*child_link)});
+            } else if (parent_link == nullptr || child_link == nullptr ||
                 !joint->GetAxis().allFinite() ||
                 joint->GetAxis().squaredNorm() <=
                         std::numeric_limits<RealType>::epsilon() ||
@@ -1030,8 +1177,8 @@ private:
                         [](RealType value) { return std::isfinite(value); })) {
                 return SetCompileError(
                         error, "robot joint '" + path + "' has invalid topology or parameters");
-            }
-            joints->push_back({
+            } else {
+                joints->push_back({
                     {"affine_actuator_control_gain", joint->GetAffineActuatorControlGain()},
                     {"affine_actuator_enabled", joint->IsAffineActuatorEnabled()},
                     {"affine_actuator_force_offset", joint->GetAffineActuatorForceOffset()},
@@ -1065,6 +1212,7 @@ private:
                     {"transform", GlobalTransformJson(*joint)},
                     {"velocity_limit", joint->GetVelocityLimit()},
                     {"upper_limit", joint->GetUpperLimit()}});
+            }
         }
         for (std::size_t index = 0; index < node->GetChildCount(); ++index) {
             if (!CollectRobotNodes(
@@ -1080,7 +1228,10 @@ private:
     Json tactile_sensors_ = Json::array();
     Json robots_ = Json::array();
     Json couplings_ = Json::array();
+    Json deformable_attachments_ = Json::array();
     std::vector<const PhysicsCoupling*> coupling_nodes_;
+    std::vector<const DeformableAttachment3D*> attachment_nodes_;
+    std::vector<ExternalFloatingBase> external_floating_bases_;
     std::map<std::string, IpcSceneArtifactBlob> blobs_;
 };
 
@@ -1103,6 +1254,12 @@ bool IpcSceneCompiler::Compile(
         return false;
     }
     if (!compiler.FinalizeCouplings(*scene_root, error)) {
+        return false;
+    }
+    if (!compiler.FinalizeExternalFloatingBases(error)) {
+        return false;
+    }
+    if (!compiler.FinalizeAttachments(*scene_root, error)) {
         return false;
     }
     const Json manifest_json = compiler.BuildManifest(*scene_root);

@@ -560,8 +560,15 @@ class CompiledIpcSceneArtifact:
         tactile = manifest_data.get("tactile_sensors", [])
         robots = manifest_data.get("robots", [])
         couplings = manifest_data.get("couplings")
+        deformable_attachments = manifest_data.get(
+            "deformable_attachments", []
+        )
         if not isinstance(couplings, list):
             raise ValueError("IPC manifest coupling table must be a list")
+        if not isinstance(deformable_attachments, list):
+            raise ValueError(
+                "IPC manifest deformable attachment table must be a list"
+            )
         for values, name in (
             (deformables, "deformable body"),
             (tactile, "tactile sensor"),
@@ -1098,6 +1105,91 @@ class CompiledIpcSceneArtifact:
         if coupling_paths != sorted(coupling_paths):
             raise ValueError("PhysicsCoupling table must be sorted by coupling_path")
 
+        deformable_by_path = {
+            str(body["path"]): body for body in deformables
+        }
+        coupling_by_link_path = {
+            str(coupling["link_path"]): coupling for coupling in couplings
+        }
+        attachment_paths: list[str] = []
+        attached_vertices: set[tuple[str, int]] = set()
+        for raw_attachment in deformable_attachments:
+            attachment = _require_mapping(
+                raw_attachment, "deformable attachment"
+            )
+            attachment_path = attachment.get("attachment_path")
+            body_path = attachment.get("deformable_body_path")
+            link_path = attachment.get("rigid_link_path")
+            if not isinstance(attachment_path, str) or not attachment_path:
+                raise ValueError(
+                    "DeformableAttachment3D entry requires a non-empty "
+                    "attachment_path"
+                )
+            if not isinstance(body_path, str) or body_path not in deformable_by_path:
+                raise ValueError(
+                    "DeformableAttachment3D references an unknown deformable body"
+                )
+            coupling = coupling_by_link_path.get(str(link_path))
+            if coupling is None:
+                raise ValueError(
+                    "DeformableAttachment3D references a rigid link without a "
+                    "PhysicsCoupling"
+                )
+            if _require_int(
+                attachment.get("proxy_index"),
+                "DeformableAttachment3D proxy index",
+                minimum=0,
+            ) != int(coupling["proxy_index"]):
+                raise ValueError(
+                    "DeformableAttachment3D proxy index does not match its "
+                    "PhysicsCoupling"
+                )
+            if _require_number(
+                attachment.get("strength_rate"),
+                "DeformableAttachment3D strength rate",
+            ) <= 0.0:
+                raise ValueError(
+                    "DeformableAttachment3D strength rate must be positive"
+                )
+            raw_indices = attachment.get("vertex_indices")
+            if not isinstance(raw_indices, list) or not raw_indices:
+                raise ValueError(
+                    "DeformableAttachment3D vertex_indices must be a non-empty list"
+                )
+            indices = tuple(
+                _require_int(
+                    value,
+                    "DeformableAttachment3D vertex index",
+                    minimum=0,
+                )
+                for value in raw_indices
+            )
+            vertex_count = int(deformable_by_path[body_path]["vertex_count"])
+            if tuple(sorted(indices)) != indices or len(set(indices)) != len(indices):
+                raise ValueError(
+                    "DeformableAttachment3D vertex indices must be sorted and unique"
+                )
+            if any(index >= vertex_count for index in indices):
+                raise ValueError(
+                    "DeformableAttachment3D contains an out-of-range vertex index"
+                )
+            for index in indices:
+                key = (body_path, index)
+                if key in attached_vertices:
+                    raise ValueError(
+                        "multiple DeformableAttachment3D entries target the same vertex"
+                    )
+                attached_vertices.add(key)
+            attachment_paths.append(attachment_path)
+        if len(set(attachment_paths)) != len(attachment_paths):
+            raise ValueError(
+                "IPC manifest contains duplicate DeformableAttachment3D paths"
+            )
+        if attachment_paths != sorted(attachment_paths):
+            raise ValueError(
+                "DeformableAttachment3D table must be sorted by attachment_path"
+            )
+
         for sensor_path, link_path in sensor_attachment_paths:
             if link_path not in robot_link_paths:
                 raise ValueError(
@@ -1170,6 +1262,10 @@ class CompiledIpcSceneArtifact:
     @property
     def couplings(self) -> tuple[Mapping[str, Any], ...]:
         return tuple(self._manifest_data["couplings"])
+
+    @property
+    def deformable_attachments(self) -> tuple[Mapping[str, Any], ...]:
+        return tuple(self._manifest_data.get("deformable_attachments", ()))
 
 
 def validate_ipc_artifact(

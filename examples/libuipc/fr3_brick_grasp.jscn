@@ -489,6 +489,13 @@
                 "collision_layer": 1,
                 "collision_mask": 4294967295,
                 "damping": 0.07999999821186066,
+                "debug_surface_color": {
+                    "alpha": 0.550000011920929,
+                    "blue": 0.5799999833106995,
+                    "green": 0.7799999713897705,
+                    "red": 0.11999999731779099
+                },
+                "debug_wireframe_visible": true,
                 "density": 650.0,
                 "kinematic": false,
                 "mesh": "SubResource(TetrahedralMesh_0)",

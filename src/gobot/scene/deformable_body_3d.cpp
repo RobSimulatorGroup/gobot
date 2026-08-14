@@ -83,6 +83,22 @@ bool DeformableBody3D::IsSelfCollisionEnabled() const {
     return self_collision_enabled_;
 }
 
+void DeformableBody3D::SetDebugSurfaceColor(const Color& color) {
+    debug_surface_color_ = color;
+}
+
+Color DeformableBody3D::GetDebugSurfaceColor() const {
+    return debug_surface_color_;
+}
+
+void DeformableBody3D::SetDebugWireframeVisible(bool visible) {
+    debug_wireframe_visible_ = visible;
+}
+
+bool DeformableBody3D::IsDebugWireframeVisible() const {
+    return debug_wireframe_visible_;
+}
+
 void DeformableBody3D::SetRuntimeVertices(const std::vector<Vector3>& vertices) {
     runtime_vertices_ = vertices;
 }
@@ -118,5 +134,11 @@ GOBOT_REGISTRATION {
                       &gobot::DeformableBody3D::SetCollisionMask)
             .property("self_collision_enabled",
                       &gobot::DeformableBody3D::IsSelfCollisionEnabled,
-                      &gobot::DeformableBody3D::SetSelfCollisionEnabled);
+                      &gobot::DeformableBody3D::SetSelfCollisionEnabled)
+            .property("debug_surface_color",
+                      &gobot::DeformableBody3D::GetDebugSurfaceColor,
+                      &gobot::DeformableBody3D::SetDebugSurfaceColor)
+            .property("debug_wireframe_visible",
+                      &gobot::DeformableBody3D::IsDebugWireframeVisible,
+                      &gobot::DeformableBody3D::SetDebugWireframeVisible);
 };

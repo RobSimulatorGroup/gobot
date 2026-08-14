@@ -32,6 +32,7 @@
 #include <iterator>
 #include <optional>
 #include <string>
+#include <utility>
 #include <vector>
 
 namespace gobot::opengl {
@@ -139,11 +140,16 @@ bool IsDebugNodeVisible(const Node3D* node, bool parent_visible) {
     return node->IsInsideTree() ? node->IsVisibleInTree() : node->IsVisible();
 }
 
+struct DeformableDebugGeometry {
+    Color surface_color;
+    std::vector<float> triangles;
+    std::vector<float> lines;
+};
+
 void CollectDeformableGeometry(const Node* node,
                                const Affine3& parent_transform,
                                bool parent_visible,
-                               std::vector<float>& triangles,
-                               std::vector<float>& lines) {
+                               std::vector<DeformableDebugGeometry>& geometries) {
     if (node == nullptr) {
         return;
     }
@@ -155,6 +161,8 @@ void CollectDeformableGeometry(const Node* node,
         if (const auto* body = Object::PointerCastTo<DeformableBody3D>(node)) {
             const Ref<TetrahedralMesh>& mesh = body->GetMesh();
             if (mesh.IsValid()) {
+                DeformableDebugGeometry geometry;
+                geometry.surface_color = body->GetDebugSurfaceColor();
                 const std::vector<Vector3>& authored_vertices = mesh->GetVertices();
                 const std::vector<Vector3>& runtime_vertices = body->GetRuntimeVertices();
                 const std::vector<Vector3>& vertices =
@@ -174,12 +182,17 @@ void CollectDeformableGeometry(const Node* node,
                     const Vector3 a = transform * vertices[ia];
                     const Vector3 b = transform * vertices[ib];
                     const Vector3 c = transform * vertices[ic];
-                    PushWorldVertex(triangles, a);
-                    PushWorldVertex(triangles, b);
-                    PushWorldVertex(triangles, c);
-                    AppendWorldLine(lines, a, b);
-                    AppendWorldLine(lines, b, c);
-                    AppendWorldLine(lines, c, a);
+                    PushWorldVertex(geometry.triangles, a);
+                    PushWorldVertex(geometry.triangles, b);
+                    PushWorldVertex(geometry.triangles, c);
+                    if (body->IsDebugWireframeVisible()) {
+                        AppendWorldLine(geometry.lines, a, b);
+                        AppendWorldLine(geometry.lines, b, c);
+                        AppendWorldLine(geometry.lines, c, a);
+                    }
+                }
+                if (!geometry.triangles.empty()) {
+                    geometries.push_back(std::move(geometry));
                 }
             }
         }
@@ -188,7 +201,7 @@ void CollectDeformableGeometry(const Node* node,
     for (std::size_t index = 0; index < node->GetChildCount(); ++index) {
         CollectDeformableGeometry(
                 node->GetChild(static_cast<int>(index)), transform, visible,
-                triangles, lines);
+                geometries);
     }
 }
 
@@ -329,6 +342,7 @@ void DrawLineBuffer(GLRendererDebugDraw::LineBuffer& buffer,
     const Matrix4 model = Matrix4::Identity();
     glUniformMatrix4fv(glGetUniformLocation(program, "u_model"), 1, GL_FALSE, model.data());
     glUniform4f(glGetUniformLocation(program, "u_color"), red, green, blue, alpha);
+    glUniform1i(glGetUniformLocation(program, "u_surface_shading"), GL_FALSE);
     glBindVertexArray(buffer.vao);
     glLineWidth(line_width);
     glDrawArrays(GL_LINES, 0, buffer.vertex_count);
@@ -341,7 +355,8 @@ void DrawTriangleBuffer(GLRendererDebugDraw::LineBuffer& buffer,
                         float red,
                         float green,
                         float blue,
-                        float alpha) {
+                        float alpha,
+                        bool surface_shading = false) {
     if (vertices.empty()) {
         buffer.vertex_count = 0;
         return;
@@ -357,6 +372,7 @@ void DrawTriangleBuffer(GLRendererDebugDraw::LineBuffer& buffer,
     const Matrix4 model = Matrix4::Identity();
     glUniformMatrix4fv(glGetUniformLocation(program, "u_model"), 1, GL_FALSE, model.data());
     glUniform4f(glGetUniformLocation(program, "u_color"), red, green, blue, alpha);
+    glUniform1i(glGetUniformLocation(program, "u_surface_shading"), surface_shading);
     glBindVertexArray(buffer.vao);
     glDrawArrays(GL_TRIANGLES, 0, buffer.vertex_count);
 }
@@ -702,24 +718,84 @@ void GLRendererDebugDraw::DrawCollisionDebug(const SceneRenderItems& render_item
 
 void GLRendererDebugDraw::DrawDeformableDebug(const Node* scene_root) {
     GOBOT_PROFILE_ZONE("OpenGL::DrawDeformableDebug");
-    std::vector<float> triangles;
-    std::vector<float> lines;
+    std::vector<DeformableDebugGeometry> geometries;
     CollectDeformableGeometry(
-            scene_root, Affine3::Identity(), true, triangles, lines);
+            scene_root, Affine3::Identity(), true, geometries);
+    std::size_t triangle_count = 0;
+    for (const DeformableDebugGeometry& geometry : geometries) {
+        triangle_count += geometry.triangles.size() / 9;
+    }
     GOBOT_PROFILE_PLOT(
-            "deformable_triangles", static_cast<double>(triangles.size() / 9));
+            "deformable_triangles", static_cast<double>(triangle_count));
 
+    GLboolean depth_write_enabled = GL_FALSE;
+    glGetBooleanv(GL_DEPTH_WRITEMASK, &depth_write_enabled);
+    GLint depth_function = GL_LESS;
+    glGetIntegerv(GL_DEPTH_FUNC, &depth_function);
+    const GLboolean blending_enabled = glIsEnabled(GL_BLEND);
     const GLboolean culling_enabled = glIsEnabled(GL_CULL_FACE);
+
     glDisable(GL_CULL_FACE);
-    DrawTriangleBuffer(
-            deformable_triangles_, triangles, program_,
-            0.12f, 0.78f, 0.58f, 0.55f);
+
+    // Opaque soft bodies participate in the depth buffer just like scene meshes.
+    // Without this pass, a later body paints over an earlier one regardless of
+    // which surface is actually closest to the camera.
+    glDisable(GL_BLEND);
+    glDepthMask(GL_TRUE);
+    for (const DeformableDebugGeometry& geometry : geometries) {
+        const Color& color = geometry.surface_color;
+        if (color.alpha() < 0.999f) {
+            continue;
+        }
+        DrawTriangleBuffer(
+                deformable_triangles_, geometry.triangles, program_,
+                color.red(), color.green(), color.blue(), color.alpha(), true);
+    }
+
+    // Transparent debug surfaces keep the original overlay behavior. Opaque
+    // surfaces rendered above still occlude transparent fragments behind them.
+    glEnable(GL_BLEND);
+    glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
+    glDepthMask(GL_FALSE);
+    for (const DeformableDebugGeometry& geometry : geometries) {
+        const Color& color = geometry.surface_color;
+        if (color.alpha() >= 0.999f) {
+            continue;
+        }
+        DrawTriangleBuffer(
+                deformable_triangles_, geometry.triangles, program_,
+                color.red(), color.green(), color.blue(), color.alpha(), true);
+    }
+    glUniform1i(glGetUniformLocation(program_, "u_surface_shading"), GL_FALSE);
+
     if (culling_enabled == GL_TRUE) {
         glEnable(GL_CULL_FACE);
     }
-    DrawLineBuffer(
-            deformable_lines_, lines, program_,
-            0.02f, 0.95f, 0.70f, 0.95f, 1.5f);
+
+    // LEQUAL keeps an optional wireframe visible on the surface that just wrote
+    // the same depth value, without allowing hidden edges through foregrounds.
+    glDepthFunc(GL_LEQUAL);
+    for (const DeformableDebugGeometry& geometry : geometries) {
+        if (geometry.lines.empty()) {
+            continue;
+        }
+        const Color& color = geometry.surface_color;
+        DrawLineBuffer(
+                deformable_lines_, geometry.lines, program_,
+                std::min(1.0f, color.red() * 1.2f),
+                std::min(1.0f, color.green() * 1.2f),
+                std::min(1.0f, color.blue() * 1.2f),
+                std::max(0.8f, color.alpha()), 1.5f);
+    }
+    glDepthFunc(static_cast<GLenum>(depth_function));
+    glDepthMask(depth_write_enabled);
+    if (blending_enabled == GL_FALSE) {
+        glDisable(GL_BLEND);
+    }
+    if (geometries.empty()) {
+        deformable_triangles_.vertex_count = 0;
+        deformable_lines_.vertex_count = 0;
+    }
 }
 
 void GLRendererDebugDraw::DrawHeightScannerDebug(const PhysicsSceneState* physics_state) {

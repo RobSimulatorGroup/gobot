@@ -41,6 +41,20 @@ def main():
     assert coupling.force_scale == 0.75
     assert coupling.torque_scale == 0.25
 
+    attachment = gobot.create_node(
+        "DeformableAttachment3D", "rope_endpoint"
+    )
+    assert isinstance(attachment, gobot.DeformableAttachment3D)
+    attachment.deformable_body_path = "../rope"
+    attachment.rigid_link_path = "../robot/tool"
+    attachment.vertex_indices = [0, 1, 2]
+    attachment.strength_rate = 120.0
+    assert attachment.enabled
+    assert attachment.deformable_body_path == "../rope"
+    assert attachment.rigid_link_path == "../robot/tool"
+    assert attachment.vertex_indices == [0, 1, 2]
+    assert attachment.strength_rate == 120.0
+
     infos = gobot.backend_infos()
     assert infos
     assert any(info["name"] == "Null" and info["available"] for info in infos)

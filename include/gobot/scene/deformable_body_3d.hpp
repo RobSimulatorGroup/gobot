@@ -9,6 +9,7 @@
 #include <cstdint>
 #include <vector>
 
+#include "gobot/core/color.hpp"
 #include "gobot/scene/node_3d.hpp"
 #include "gobot/scene/resources/tetrahedral_mesh.hpp"
 
@@ -47,6 +48,12 @@ public:
     void SetSelfCollisionEnabled(bool enabled);
     bool IsSelfCollisionEnabled() const;
 
+    void SetDebugSurfaceColor(const Color& color);
+    Color GetDebugSurfaceColor() const;
+
+    void SetDebugWireframeVisible(bool visible);
+    bool IsDebugWireframeVisible() const;
+
     void SetRuntimeVertices(const std::vector<Vector3>& vertices);
     const std::vector<Vector3>& GetRuntimeVertices() const;
     void ClearRuntimeVertices();
@@ -61,6 +68,8 @@ private:
     std::uint32_t collision_layer_{1};
     std::uint32_t collision_mask_{0xffffffffU};
     bool self_collision_enabled_{false};
+    Color debug_surface_color_{0.12f, 0.78f, 0.58f, 0.55f};
+    bool debug_wireframe_visible_{true};
     std::vector<Vector3> runtime_vertices_;
 };
 
