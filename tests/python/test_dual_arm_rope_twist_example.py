@@ -753,8 +753,8 @@ def test_rope_twist_editor_quality_profiles_are_distinct() -> None:
     try:
         os.environ.pop(play.COUPLING_ITERATIONS_ENVIRONMENT_VARIABLE, None)
         expected = {
-            "interactive": (1, "fixed", 2, 4, 16, 8, 1.0e-3, False),
-            "accurate": (2, "aitken", 1, 1, 16, 8, 1.0e-3, True),
+            "interactive": (1, "fixed", 2, 4, 16, 8, 1.0e-3),
+            "accurate": (2, "aitken", 1, 1, 16, 8, 1.0e-3),
         }
         for quality, values in expected.items():
             os.environ[play.QUALITY_ENVIRONMENT_VARIABLE] = quality
@@ -767,13 +767,12 @@ def test_rope_twist_editor_quality_profiles_are_distinct() -> None:
                 profile.newton_max_iterations,
                 profile.line_search_max_iterations,
                 profile.linear_system_tolerance_rate,
-                profile.export_deformable_contact_forces,
             ) == values
             solver = play._batch_config(Context(), profile)
             assert solver.newton_max_iterations == values[4]
             assert solver.line_search_max_iterations == values[5]
             assert solver.linear_system_tolerance_rate == values[6]
-            assert solver.export_deformable_contact_forces == values[7]
+            assert not solver.export_deformable_contact_forces
 
         os.environ[play.QUALITY_ENVIRONMENT_VARIABLE] = "invalid"
         try:

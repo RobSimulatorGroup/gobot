@@ -117,11 +117,11 @@ def main():
     assert context.has_world is False
     assert context.frame_count == 0
     physics_debug_settings = context.get_physics_debug_settings()
-    assert physics_debug_settings["draw_contact_forces"] is True
+    assert physics_debug_settings["draw_contact_forces"] is False
     assert abs(physics_debug_settings["contact_force_scale"] - 0.08) < 1e-6
     assert abs(physics_debug_settings["contact_force_max_length"] - 0.8) < 1e-6
-    physics_debug_settings["draw_contact_forces"] = False
-    assert context.get_physics_debug_settings()["draw_contact_forces"] is True
+    physics_debug_settings["draw_contact_forces"] = True
+    assert context.get_physics_debug_settings()["draw_contact_forces"] is False
     assert not hasattr(gobot, "set_editor_tick_callback")
     assert not hasattr(gobot, "set_editor_physics_callback")
     assert not hasattr(gobot.app, "set_editor_tick_callback")

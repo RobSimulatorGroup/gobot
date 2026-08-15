@@ -65,7 +65,6 @@ class RopeTwistQualityProfile:
     newton_max_iterations: int
     line_search_max_iterations: int
     linear_system_tolerance_rate: float
-    export_deformable_contact_forces: bool
 
 
 QUALITY_PROFILES = {
@@ -78,7 +77,6 @@ QUALITY_PROFILES = {
         newton_max_iterations=16,
         line_search_max_iterations=8,
         linear_system_tolerance_rate=1.0e-3,
-        export_deformable_contact_forces=False,
     ),
     "accurate": RopeTwistQualityProfile(
         name="accurate",
@@ -89,7 +87,6 @@ QUALITY_PROFILES = {
         newton_max_iterations=16,
         line_search_max_iterations=8,
         linear_system_tolerance_rate=1.0e-3,
-        export_deformable_contact_forces=True,
     ),
 }
 COUPLING_ITERATIONS = QUALITY_PROFILES[DEFAULT_QUALITY].coupling_iterations
@@ -191,9 +188,9 @@ def _batch_config(
         newton_max_iterations=profile.newton_max_iterations,
         line_search_max_iterations=profile.line_search_max_iterations,
         linear_system_tolerance_rate=profile.linear_system_tolerance_rate,
-        export_deformable_contact_forces=(
-            profile.export_deformable_contact_forces
-        ),
+        # Contact-force visualization is a debug output. Both editor profiles
+        # refresh it on demand when the Physics-panel flag is enabled.
+        export_deformable_contact_forces=False,
     )
 
 
@@ -755,8 +752,7 @@ class Script(gobot.NodeScript):
             return
 
         if contact_due:
-            if not self.quality_profile.export_deformable_contact_forces:
-                self.provider.refresh_deformable_contact_forces()
+            self.provider.refresh_deformable_contact_forces()
             self.provider.sense()
         self.provider.synchronize()
 

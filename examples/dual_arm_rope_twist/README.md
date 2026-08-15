@@ -88,8 +88,10 @@ libuipc `advance()`/`sync()` is a required host boundary. Gobot separately
 captures graph-safe checkpoint, kinematic gather, and wrench relaxation/apply
 segments and falls back to eager execution when capture is unavailable.
 
-The Physics panel's `Contact force arrows` toggle also controls the runtime
-force overlay. Magenta arrows show libuipc contact forces on rope vertices, green
+The Physics panel's `Contact force arrows` toggle, which defaults to off,
+controls the runtime force overlay and its per-vertex contact-force export.
+No deformable contact-force refresh or arrow construction runs while it is
+off. Magenta arrows show libuipc contact forces on rope vertices, green
 arrows show MuJoCo pad/fixture contact forces, and the existing amber/cyan
 arrows show the two wrist reaction torques. The panel's force scale and maximum
 length settings apply to both contact-force sources. MuJoCo's contact-frame
@@ -99,9 +101,9 @@ arrows use a 15 mm minimum display length so weak IPC forces remain visible;
 their directions and labels still use the unscaled world-space force in newtons.
 Every rope vertex above the 0.001 N display threshold is drawn without a
 strongest-contact count limit. In the interactive profile the overlay is at
-most four physics steps old; disabling the toggle clears contact arrows
-immediately. Per-vertex IPC contact forces are not exported on other
-interactive steps.
+most four physics steps old; in accurate it refreshes every step. Disabling
+the toggle clears contact arrows immediately. Per-vertex IPC contact forces
+are not exported on steps that do not refresh the enabled overlay.
 
 The default `showcase` mode still computes and applies MuJoCo/libuipc reaction
 forces; it only raises the wrist torque cap to the stock FR3 joint limit. To run

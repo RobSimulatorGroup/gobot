@@ -117,7 +117,7 @@ struct PhysicsWorldSettings {
     JointControllerGains default_joint_gains{100.0, 10.0, 0.0, 0.0};
     MuJoCoSolverSettings mujoco_solver;
     bool debug_draw_contacts{false};
-    bool debug_draw_contact_forces{true};
+    bool debug_draw_contact_forces{false};
     RealType debug_contact_force_scale{0.08};
     RealType debug_contact_force_max_length{0.8};
 };
